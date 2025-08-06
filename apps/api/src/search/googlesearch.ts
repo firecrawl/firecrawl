@@ -116,7 +116,7 @@ export async function googleSearch(
       let htmlContent: string;
       try {
         // Try to decode as UTF-8 first
-        htmlContent = new TextDecoder('utf-8').decode(resp.data);
+        htmlContent = new TextDecoder('utf-8', { fatal: true }).decode(resp.data);
       } catch (e) {
         // Fallback to latin1 if UTF-8 fails
         logger.warn("UTF-8 decoding failed, trying latin1");
