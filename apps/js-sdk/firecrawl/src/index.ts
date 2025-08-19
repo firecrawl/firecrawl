@@ -659,31 +659,81 @@ export default class FirecrawlApp {
         },
       };
     }
-    try {
-      const response: AxiosResponse = await axios.post(
-        this.apiUrl + `/v1/scrape`,
-        jsonData,
-        { headers, timeout: params?.timeout !== undefined ? (params.timeout + 5000) : undefined },
-      );
-      if (response.status === 200) {
-        const responseData = response.data;
-        if (responseData.success) {
-          return {
-            success: true,
-            warning: responseData.warning,
-            error: responseData.error,
-            ...responseData.data
-          };
+    // Retry logic for transient errors
+    const maxRetries = 3;
+    const baseDelay = 1000;
+    let lastError: any = null;
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        const response: AxiosResponse = await axios.post(
+          this.apiUrl + `/v1/scrape`,
+          jsonData,
+          { headers, timeout: params?.timeout !== undefined ? (params.timeout + 5000) : undefined },
+        );
+        if (response.status === 200) {
+          const responseData = response.data;
+          if (responseData.success) {
+            return {
+              success: true,
+              warning: responseData.warning,
+              error: responseData.error,
+              ...responseData.data
+            };
+          } else {
+            return { success: false, error: `Failed to scrape URL. Error: ${responseData.error}` };
+          }
         } else {
-          throw new FirecrawlError(`Failed to scrape URL. Error: ${responseData.error}`, response.status);
+          // Non-200 response, handle error
+          return this._formatError(response, "scrape URL");
         }
-      } else {
-        this.handleError(response, "scrape URL");
+      } catch (error: any) {
+        lastError = error;
+        // Network or Axios error
+        if (attempt < maxRetries && (!error.response || error.code === 'ECONNABORTED' || error.code === 'ENOTFOUND' || error.code === 'ETIMEDOUT')) {
+          await new Promise(res => setTimeout(res, baseDelay * attempt)); // Exponential backoff
+          continue;
+        }
+        // Final attempt or non-retryable error
+        if (error.response) {
+          return this._formatError(error.response, "scrape URL");
+        } else {
+          return {
+            success: false,
+            error: `No response received while trying to scrape URL. This may be a network error, timeout, or the server is unreachable. Details: ${error.message || error}`
+          };
+        }
       }
-    } catch (error: any) {
-      this.handleError(error.response, "scrape URL");
     }
-    return { success: false, error: "Internal server error." };
+    // If all retries failed
+    return {
+      success: false,
+      error: `Scrape failed after ${maxRetries} attempts. Last error: ${lastError?.message || lastError}`
+    };
+  }
+
+  /**
+   * Formats error responses for scrapeUrl and other methods.
+   */
+  private _formatError(response: AxiosResponse, action: string): ErrorResponse {
+    if (!response) {
+      return {
+        success: false,
+        error: `No response received while trying to ${action}. This may be a network error or the server is unreachable.`
+      };
+    }
+    if ([400, 402, 403, 408, 409, 500].includes(response.status)) {
+      const errorMessage: string = response.data?.error || "Unknown error occurred";
+      const details = response.data?.details ? ` - ${JSON.stringify(response.data.details)}` : '';
+      return {
+        success: false,
+        error: `Failed to ${action}. Status code: ${response.status}. Error: ${errorMessage}${details}`
+      };
+    } else {
+      return {
+        success: false,
+        error: `Unexpected error occurred while trying to ${action}. Status code: ${response.status}`
+      };
+    }
   }
 
   /**
