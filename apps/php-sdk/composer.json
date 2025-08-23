@@ -1,0 +1,26 @@
+{
+    "name": "mendable.ai/firecrawl",
+    "description": "PHP SDK for Firecrawl API.",
+    "type": "library",
+    "require": {
+        "guzzlehttp/guzzle": "^7.9",
+        "ratchet/pawl": "^0.4.1",
+        "psr/log": "^3.0",
+        "monolog/monolog": "^3.7"
+    },
+    "require-dev": {
+        "phpunit/phpunit": "^11.4"
+    },
+    "license": "MIT",
+    "autoload": {
+        "psr-4": {
+            "Firecrawl\\": "src/"
+        }
+    },
+    "authors": [
+        {
+            "name": "sanix-darker",
+            "email": "s4nixd@gmail.com"
+        }
+    ]
+}
