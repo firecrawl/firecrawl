@@ -533,6 +533,97 @@ pub unsafe extern "C" fn get_inner_json(html: *const libc::c_char) -> *mut libc:
     CString::new(out).unwrap().into_raw()
 }
 
+#[derive(Deserialize)]
+struct AttributeSelector {
+    selector: String,
+    attribute: String,
+}
+
+#[derive(Deserialize)]
+struct ExtractAttributesOptions {
+    selectors: Vec<AttributeSelector>,
+}
+
+fn _extract_attributes(html: &str, options: &ExtractAttributesOptions) -> Result<String, Box<dyn std::error::Error>> {
+    let document = parse_html().one(html);
+    let mut results = Vec::new();
+
+    for selector_config in &options.selectors {
+        let mut values = Vec::new();
+
+        let elements: Vec<_> = match document.select(&selector_config.selector).map_err(|_| format!("Failed to select with selector: {}", selector_config.selector)) {
+            Ok(x) => x.collect(),
+            Err(_) => {
+                // Return empty values for invalid selectors rather than failing completely
+                Vec::new()
+            }
+        };
+
+        for element in elements {
+            // Try the attribute as-is first
+            if let Some(attr_value) = element.attributes.borrow().get(selector_config.attribute.as_str()) {
+                values.push(attr_value.to_string());
+                continue;
+            }
+
+            // If not found and doesn't start with 'data-', try with 'data-' prefix
+            if !selector_config.attribute.starts_with("data-") {
+                let data_attr = format!("data-{}", selector_config.attribute);
+                if let Some(attr_value) = element.attributes.borrow().get(data_attr.as_str()) {
+                    values.push(attr_value.to_string());
+                }
+            }
+        }
+
+        results.push(serde_json::json!({
+            "selector": selector_config.selector,
+            "attribute": selector_config.attribute,
+            "values": values
+        }));
+    }
+
+    Ok(serde_json::to_string(&results)?)
+}
+
+/// Extracts attributes from HTML elements using CSS selectors
+/// 
+/// # Safety
+/// html must be a C HTML string. options must be a C JSON string with format:
+/// {"selectors": [{"selector": "...", "attribute": "..."}]}
+/// Output will be a JSON string. Output string must be freed with free_string.
+#[no_mangle]
+pub unsafe extern "C" fn extract_attributes(html: *const libc::c_char, options: *const libc::c_char) -> *mut libc::c_char {
+    let html = match unsafe { CStr::from_ptr(html) }.to_str().map_err(|_| ()) {
+        Ok(x) => x,
+        Err(_) => {
+            return CString::new("RUSTFC:ERROR:Failed to parse input HTML as C string").unwrap().into_raw();
+        }
+    };
+
+    let options_str = match unsafe { CStr::from_ptr(options) }.to_str().map_err(|_| ()) {
+        Ok(x) => x,
+        Err(_) => {
+            return CString::new("RUSTFC:ERROR:Failed to parse input options as C string").unwrap().into_raw();
+        }
+    };
+
+    let parsed_options: ExtractAttributesOptions = match serde_json::from_str(options_str) {
+        Ok(x) => x,
+        Err(e) => {
+            return CString::new(format!("RUSTFC:ERROR:Failed to parse options JSON: {}", e)).unwrap().into_raw();
+        }
+    };
+
+    let result = match _extract_attributes(html, &parsed_options) {
+        Ok(x) => x,
+        Err(e) => {
+            return CString::new(format!("RUSTFC:ERROR:{}", e)).unwrap().into_raw();
+        }
+    };
+
+    CString::new(result).unwrap().into_raw()
+}
+
 /// Frees a string allocated in Rust-land.
 /// 
 /// # Safety

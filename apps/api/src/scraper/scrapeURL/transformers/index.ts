@@ -8,6 +8,7 @@ import { performLLMExtract, performSummary } from "./llmExtract";
 import { uploadScreenshot } from "./uploadScreenshot";
 import { removeBase64Images } from "./removeBase64Images";
 import { performAgent } from "./agent";
+import { performAttributes } from "./performAttributes";
 
 import { deriveDiff } from "./diff";
 import { useIndex } from "../../../services/index";
@@ -274,6 +275,7 @@ export const transformerStack: Transformer[] = [
   ...(useIndex ? [sendDocumentToIndex] : []),
   performLLMExtract,
   performSummary,
+  performAttributes,
   performAgent,
   deriveDiff,
   coerceFieldsToFormats,

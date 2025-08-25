@@ -211,6 +211,17 @@ export const screenshotFormatWithOptions = z.object({
 
 export type ScreenshotFormatWithOptions = z.output<typeof screenshotFormatWithOptions>;
 
+export const attributesFormatWithOptions = z.object({
+  type: z.literal("attributes"),
+  selectors: z.array(z.object({
+    selector: z.string().describe("CSS selector to find elements"),
+    attribute: z.string().describe("Attribute name to extract (e.g., 'data-vehicle-name' or 'id')")
+  })).describe("Extract specific attributes from elements"),
+}).strict();
+
+export type AttributesFormatWithOptions = z.output<typeof attributesFormatWithOptions>;
+
+
 export type FormatObject = 
   | { type: "markdown" }
   | { type: "html" }
@@ -219,7 +230,8 @@ export type FormatObject =
   | { type: "summary" }
   | JsonFormatWithOptions
   | ChangeTrackingFormatWithOptions
-  | ScreenshotFormatWithOptions;
+  | ScreenshotFormatWithOptions
+  | AttributesFormatWithOptions
 
 export const parsersSchema = z.array(z.enum(["pdf"])).default(["pdf"]);
 
@@ -254,6 +266,7 @@ const baseScrapeOptions = z
           jsonFormatWithOptions,
           changeTrackingFormatWithOptions,
           screenshotFormatWithOptions,
+          attributesFormatWithOptions,
         ])
         .array()
         .optional()
@@ -634,6 +647,11 @@ export type Document = {
   json?: any;
   summary?: string;
   warning?: string;
+  attributes?: {
+    selector: string;
+    attribute: string;
+    values: string[];
+  }[];
   actions?: {
     screenshots?: string[];
     scrapes?: ScrapeActionContent[];

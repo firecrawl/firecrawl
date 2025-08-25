@@ -114,6 +114,12 @@ class DocumentMetadata(BaseModel):
     def coerce_status_code_to_int(cls, v):
         return cls._coerce_string_to_int(v)
 
+class AttributeResult(BaseModel):
+    """Result of attribute extraction."""
+    selector: str
+    attribute: str
+    values: List[str]
+
 class Document(BaseModel):
     """A scraped document."""
     markdown: Optional[str] = None
@@ -182,7 +188,7 @@ CategoryOption = Union[str, Category]
 
 FormatString = Literal[
     # camelCase versions (API format)
-    "markdown", "html", "rawHtml", "links", "screenshot", "summary", "changeTracking", "json",
+    "markdown", "html", "rawHtml", "links", "screenshot", "summary", "changeTracking", "json", "attributes",
     # snake_case versions (user-friendly)
     "raw_html", "change_tracking"
 ]
@@ -214,9 +220,18 @@ class ScreenshotFormat(BaseModel):
     full_page: Optional[bool] = None
     quality: Optional[int] = None
     viewport: Optional[Union[Dict[str, int], Viewport]] = None
+    
+class AttributeSelector(BaseModel):
+    """Selector and attribute pair for attribute extraction."""
+    selector: str
+    attribute: str
 
-FormatOption = Union[Dict[str, Any], FormatString, JsonFormat, ChangeTrackingFormat, ScreenshotFormat, Format]
+class AttributesFormat(Format):
+    """Configuration for attribute extraction."""
+    type: Literal["attributes"] = "attributes"
+    selectors: List[AttributeSelector]
 
+FormatOption = Union[Dict[str, Any], FormatString, JsonFormat, ChangeTrackingFormat, ScreenshotFormat, AttributesFormat, Format]
 # Scrape types
 class ScrapeFormats(BaseModel):
     """Output formats for scraping."""

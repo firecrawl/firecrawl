@@ -27,6 +27,7 @@ class RustHTMLTransformer {
   private _transformHtml: KoffiFunction;
   private _freeString: KoffiFunction;
   private _getInnerJSON: KoffiFunction;
+  private _extractAttributes: KoffiFunction;
 
   private constructor() {
     const lib = koffi.load(rustExecutablePath);
@@ -38,6 +39,7 @@ class RustHTMLTransformer {
     this._extractMetadata = lib.func("extract_metadata", freedResultString, ["string"]);
     this._transformHtml = lib.func("transform_html", freedResultString, ["string"]);
     this._getInnerJSON = lib.func("get_inner_json", freedResultString, ["string"]);
+    this._extractAttributes = lib.func("extract_attributes", freedResultString, ["string", "string"]);
   }
 
   public static async getInstance(): Promise<RustHTMLTransformer> {
@@ -119,6 +121,22 @@ class RustHTMLTransformer {
       });
     });
   }
+
+  public async extractAttributes(html: string, options: string): Promise<string> {
+    return new Promise<string>((resolve, reject) => {
+      this._extractAttributes.async(html, options, (err: Error, res: string) => {
+        if (err) {
+          reject(err);
+        } else {
+          if (res.startsWith("RUSTFC:ERROR:")) {
+            reject(new Error("Rust attribute extraction failed: " + res.split("RUSTFC:ERROR:")[1]));
+          } else {
+            resolve(res);
+          }
+        }
+      });
+    });
+  }
 }
 
 export async function extractLinks(
@@ -167,4 +185,34 @@ export async function getInnerJSON(
 ): Promise<string> {
   const converter = await RustHTMLTransformer.getInstance();
   return await converter.getInnerJSON(html);
+}
+
+export type AttributeSelector = {
+  selector: string;
+  attribute: string;
+};
+
+export type AttributeResult = {
+  selector: string;
+  attribute: string;
+  values: string[];
+};
+
+export async function extractAttributesRust(
+  html: string,
+  selectors: AttributeSelector[]
+): Promise<AttributeResult[]> {
+  if (!html || selectors.length === 0) {
+    return [];
+  }
+
+  const converter = await RustHTMLTransformer.getInstance();
+  const options = JSON.stringify({ selectors });
+  const resultJson = await converter.extractAttributes(html, options);
+
+  try {
+    return JSON.parse(resultJson);
+  } catch (error) {
+    throw new Error(`Failed to parse Rust attribute extraction result: ${error}`);
+  }
 }
