@@ -362,10 +362,10 @@ let cantAcceptConnectionCount = 0;
  * @param filePath - The file path to convert
  * @returns A properly formatted path/URL for the current platform
  */
-function getWorkerPath(filePath: string): string {
+function getWorkerPath(filePath: string): string | URL {
   if (process.platform === 'win32' && path.isAbsolute(filePath)) {
     // On Windows, convert absolute paths to file:// URLs for ESM compatibility
-    return pathToFileURL(filePath).href;
+    return pathToFileURL(filePath);
   }
   return filePath;
 }
