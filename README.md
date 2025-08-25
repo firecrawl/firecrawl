@@ -33,6 +33,18 @@
   </p>
 </div>
 
+<div align="center">
+  <!-- Keep these links. Translations will automatically update with the README. -->
+  <a href="https://zdoc.app/de/mendableai/firecrawl">Deutsch</a> | 
+  <a href="https://zdoc.app/es/mendableai/firecrawl">Español</a> | 
+  <a href="https://zdoc.app/fr/mendableai/firecrawl">français</a> | 
+  <a href="https://zdoc.app/ja/mendableai/firecrawl">日本語</a> | 
+  <a href="https://zdoc.app/ko/mendableai/firecrawl">한국어</a> | 
+  <a href="https://zdoc.app/pt/mendableai/firecrawl">Português</a> | 
+  <a href="https://zdoc.app/ru/mendableai/firecrawl">Русский</a> | 
+  <a href="https://zdoc.app/zh/mendableai/firecrawl">中文</a>
+</div>
+
 # 🔥 Firecrawl
 
 Empower your AI apps with clean data from any website. Featuring advanced scraping, crawling, and data extraction capabilities.
