@@ -235,7 +235,10 @@ export function normalizeURL(url: string, sc: StoredCrawl): string {
   if (sc && sc.crawlerOptions && sc.crawlerOptions.ignoreQueryParameters) {
     urlO.search = "";
   }
-  urlO.hash = "";
+  // allow hash-based routes
+  if (!urlO.hash || urlO.hash.length <= 2 || !urlO.hash.startsWith("#/")) {
+    urlO.hash = "";
+  }
   return urlO.href;
 }
 
