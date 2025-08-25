@@ -163,7 +163,7 @@ app.get(`/serverHealthCheck`, async (req, res) => {
     const [waitingJobs] = await Promise.all([scrapeQueue.getWaitingCount()]);
     const noWaitingJobs = waitingJobs === 0;
     // 200 if no active jobs, 503 if there are active jobs
-    return res.status(noWaitingJobs ? 200 : 500).json({
+    return res.status(noWaitingJobs ? 200 : 503).json({
       waitingJobs,
     });
   } catch (error) {

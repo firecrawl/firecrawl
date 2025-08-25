@@ -78,7 +78,7 @@ export async function queuesController(req: Request, res: Response) {
 
     const noActiveJobs = webScraperActive === 0;
     // 200 if no active jobs, 503 if there are active jobs
-    return res.status(noActiveJobs ? 200 : 500).json({
+    return res.status(noActiveJobs ? 200 : 503).json({
       webScraperActive,
       noActiveJobs,
     });
