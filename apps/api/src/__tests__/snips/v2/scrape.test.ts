@@ -120,6 +120,39 @@ describe("Scrape tests", () => {
     expect(response.links?.length).toBeGreaterThan(0);
   });
 
+  it.concurrent("images format works", async () => {
+    const response = await scrape({
+      url: "https://firecrawl.dev",
+      formats: ["images"],
+    }, identity);
+
+    expect(response.images).toBeDefined();
+    expect(response.images?.length).toBeGreaterThan(0);
+    // Firecrawl website should have at least the logo
+    expect(response.images?.some(img => img.includes("firecrawl"))).toBe(true);
+  });
+
+  it.concurrent("images format works with multiple formats", async () => {
+    const response = await scrape({
+      url: "https://firecrawl.dev",
+      formats: ["markdown", "links", "images"],
+    }, identity);
+
+    expect(response.markdown).toBeDefined();
+    expect(response.links).toBeDefined();
+    expect(response.images).toBeDefined();
+    expect(response.images?.length).toBeGreaterThan(0);
+    
+    // Images should include things that aren't in links
+    const imageExtensions = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.svg', '.ico'];
+    const linkImages = response.links?.filter(link => 
+      imageExtensions.some(ext => link.toLowerCase().includes(ext))
+    ) || [];
+    
+    // Should have found more images than just those with obvious extensions in links
+    expect(response.images?.length).toBeGreaterThanOrEqual(linkImages.length);
+  });
+
   if (process.env.TEST_SUITE_SELF_HOSTED && process.env.PROXY_SERVER) {
     it.concurrent("self-hosted proxy works", async () => {
       const response = await scrape({

@@ -6,6 +6,7 @@ export type FormatString =
   | "html"
   | "rawHtml"
   | "links"
+  | "images"
   | "screenshot"
   | "summary"
   | "changeTracking"
@@ -167,6 +168,7 @@ export interface Document {
   summary?: string;
   metadata?: DocumentMetadata;
   links?: string[];
+  images?: string[];
   screenshot?: string;
   actions?: Record<string, unknown>;
   warning?: string;

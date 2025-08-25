@@ -123,6 +123,7 @@ class Document(BaseModel):
     summary: Optional[str] = None
     metadata: Optional[DocumentMetadata] = None
     links: Optional[List[str]] = None
+    images: Optional[List[str]] = None
     screenshot: Optional[str] = None
     actions: Optional[Dict[str, Any]] = None
     warning: Optional[str] = None
@@ -182,7 +183,7 @@ CategoryOption = Union[str, Category]
 
 FormatString = Literal[
     # camelCase versions (API format)
-    "markdown", "html", "rawHtml", "links", "screenshot", "summary", "changeTracking", "json",
+    "markdown", "html", "rawHtml", "links", "images", "screenshot", "summary", "changeTracking", "json",
     # snake_case versions (user-friendly)
     "raw_html", "change_tracking"
 ]
@@ -226,6 +227,7 @@ class ScrapeFormats(BaseModel):
     raw_html: bool = False
     summary: bool = False
     links: bool = False
+    images: bool = False
     screenshot: bool = False
     change_tracking: bool = False
     json: bool = False

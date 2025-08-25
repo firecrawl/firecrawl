@@ -829,6 +829,7 @@ export type Document = {
   html?: string;
   rawHtml?: string;
   links?: string[];
+  images?: string[];
   screenshot?: string;
   extract?: any;
   json?: any;

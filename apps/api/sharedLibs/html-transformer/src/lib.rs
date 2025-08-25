@@ -533,6 +533,195 @@ pub unsafe extern "C" fn get_inner_json(html: *const libc::c_char) -> *mut libc:
     CString::new(out).unwrap().into_raw()
 }
 
+fn _extract_images(html: &str, base_url: &str) -> Result<Vec<String>, Box<dyn std::error::Error>> {
+    let document = parse_html().one(html);
+    let base_url = Url::parse(base_url)?;
+    let base_href = _extract_base_href_from_document(&document, &base_url)?;
+    let base_href_url = Url::parse(&base_href)?;
+    let mut images = HashSet::<String>::new();
+
+    // Helper function to resolve image URLs
+    let resolve_image_url = |src: &str| -> Result<String, Box<dyn std::error::Error>> {
+        // Skip data URIs and blob URLs
+        if src.starts_with("data:") || src.starts_with("blob:") {
+            return Ok(src.to_string());
+        }
+        
+        // Handle absolute URLs
+        if src.starts_with("http://") || src.starts_with("https://") {
+            return Ok(src.to_string());
+        }
+        
+        // Handle protocol-relative URLs
+        if src.starts_with("//") {
+            let resolved = base_url.join(src)?;
+            return Ok(resolved.to_string());
+        }
+        
+        // Handle relative URLs
+        let resolved = base_href_url.join(src)?;
+        Ok(resolved.to_string())
+    };
+
+    // Extract from img tags
+    let img_elements: Vec<_> = match document.select("img").map_err(|_| "Failed to select img tags") {
+        Ok(x) => x.collect(),
+        Err(e) => return Err(e.into()),
+    };
+
+    for img in img_elements {
+        let attrs = img.attributes.borrow();
+        
+        // Extract from src attribute
+        if let Some(src) = attrs.get("src") {
+            if let Ok(resolved) = resolve_image_url(src) {
+                images.insert(resolved);
+            }
+        }
+        
+        // Extract from data-src (lazy loading)
+        if let Some(data_src) = attrs.get("data-src") {
+            if let Ok(resolved) = resolve_image_url(data_src) {
+                images.insert(resolved);
+            }
+        }
+        
+        // Extract from srcset (responsive images)
+        if let Some(srcset) = attrs.get("srcset") {
+            for part in srcset.split(',') {
+                if let Some(url) = part.trim().split_whitespace().next() {
+                    if !url.is_empty() {
+                        if let Ok(resolved) = resolve_image_url(url) {
+                            images.insert(resolved);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    // Extract from picture source elements
+    let source_elements: Vec<_> = match document.select("picture source").map_err(|_| "Failed to select picture source") {
+        Ok(x) => x.collect(),
+        Err(_) => Vec::new(),
+    };
+    
+    for source in source_elements {
+        if let Some(srcset) = source.attributes.borrow().get("srcset") {
+            for part in srcset.split(',') {
+                if let Some(url) = part.trim().split_whitespace().next() {
+                    if !url.is_empty() {
+                        if let Ok(resolved) = resolve_image_url(url) {
+                            images.insert(resolved);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Extract from meta tags (Open Graph, Twitter Cards)
+    let meta_selectors = [
+        "meta[property=\"og:image\"]",
+        "meta[property=\"og:image:url\"]", 
+        "meta[property=\"og:image:secure_url\"]",
+        "meta[name=\"twitter:image\"]",
+        "meta[name=\"twitter:image:src\"]",
+        "meta[itemprop=\"image\"]"
+    ];
+    
+    for selector in &meta_selectors {
+        if let Ok(elements) = document.select(selector) {
+            for element in elements {
+                if let Some(content) = element.attributes.borrow().get("content") {
+                    if let Ok(resolved) = resolve_image_url(content) {
+                        images.insert(resolved);
+                    }
+                }
+            }
+        }
+    }
+
+    // Extract from link tags (favicons, apple-touch-icons)
+    let link_selectors = [
+        "link[rel*=\"icon\"]",
+        "link[rel*=\"apple-touch-icon\"]",
+        "link[rel*=\"image_src\"]"
+    ];
+    
+    for selector in &link_selectors {
+        if let Ok(elements) = document.select(selector) {
+            for element in elements {
+                if let Some(href) = element.attributes.borrow().get("href") {
+                    if let Ok(resolved) = resolve_image_url(href) {
+                        images.insert(resolved);
+                    }
+                }
+            }
+        }
+    }
+
+    // Extract from video poster attributes
+    if let Ok(video_elements) = document.select("video[poster]") {
+        for video in video_elements {
+            if let Some(poster) = video.attributes.borrow().get("poster") {
+                if let Ok(resolved) = resolve_image_url(poster) {
+                    images.insert(resolved);
+                }
+            }
+        }
+    }
+
+    // Filter out javascript: URLs for security and validate URLs
+    let filtered_images: Vec<String> = images.into_iter()
+        .filter(|url| !url.to_lowercase().starts_with("javascript:"))
+        .filter(|url| !url.is_empty())
+        .filter(|url| {
+            // Validate URLs (allow data URIs and valid URLs)
+            url.starts_with("data:") || url.starts_with("blob:") || Url::parse(url).is_ok()
+        })
+        .collect();
+
+    Ok(filtered_images)
+}
+
+/// Extracts images from HTML
+/// 
+/// # Safety
+/// Input must be a C HTML string and base URL string. Output will be a JSON string array. Output string must be freed with free_string.
+#[no_mangle]
+pub unsafe extern "C" fn extract_images(html: *const libc::c_char, base_url: *const libc::c_char) -> *mut libc::c_char {
+    let html = match unsafe { CStr::from_ptr(html) }.to_str().map_err(|_| ()) {
+        Ok(x) => x,
+        Err(_) => {
+            return CString::new("RUSTFC:ERROR:Failed to parse input HTML as C string").unwrap().into_raw();
+        }
+    };
+    
+    let base_url = match unsafe { CStr::from_ptr(base_url) }.to_str().map_err(|_| ()) {
+        Ok(x) => x,
+        Err(_) => {
+            return CString::new("RUSTFC:ERROR:Failed to parse input base URL as C string").unwrap().into_raw();
+        }
+    };
+
+    let images = match _extract_images(html, base_url) {
+        Ok(x) => x,
+        Err(e) => {
+            return CString::new(format!("RUSTFC:ERROR:{}", e)).unwrap().into_raw();
+        }
+    };
+
+    let images_out = match serde_json::ser::to_string(&images) {
+        Ok(x) => x,
+        Err(e) => {
+            return CString::new(format!("RUSTFC:ERROR:{}", e)).unwrap().into_raw();
+        }
+    };
+
+    CString::new(images_out).unwrap().into_raw()
+}
+
 /// Frees a string allocated in Rust-land.
 /// 
 /// # Safety

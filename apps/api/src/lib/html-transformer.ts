@@ -22,6 +22,7 @@ type TransformHtmlOptions = {
 class RustHTMLTransformer {
   private static instance: RustHTMLTransformer;
   private _extractLinks: KoffiFunction;
+  private _extractImages: KoffiFunction;
   private _extractBaseHref: KoffiFunction;
   private _extractMetadata: KoffiFunction;
   private _transformHtml: KoffiFunction;
@@ -34,6 +35,7 @@ class RustHTMLTransformer {
     const cstn = "CString:" + crypto.randomUUID();
     const freedResultString = koffi.disposable(cstn, "string", this._freeString);
     this._extractLinks = lib.func("extract_links", freedResultString, ["string"]);
+    this._extractImages = lib.func("extract_images", freedResultString, ["string", "string"]);
     this._extractBaseHref = lib.func("extract_base_href", freedResultString, ["string", "string"]);
     this._extractMetadata = lib.func("extract_metadata", freedResultString, ["string"]);
     this._transformHtml = lib.func("transform_html", freedResultString, ["string"]);
@@ -59,6 +61,22 @@ class RustHTMLTransformer {
           reject(err);
         } else {
           resolve(JSON.parse(res));
+        }
+      });
+    });
+  }
+
+  public async extractImages(html: string, baseUrl: string): Promise<string[]> {
+    return new Promise<string[]>((resolve, reject) => {
+      this._extractImages.async(html, baseUrl, (err: Error, res: string) => {
+        if (err) {
+          reject(err);
+        } else {
+          if (res.startsWith("RUSTFC:ERROR:")) {
+            reject(new Error(res.replace("RUSTFC:ERROR:", "")));
+          } else {
+            resolve(JSON.parse(res));
+          }
         }
       });
     });
@@ -130,6 +148,18 @@ export async function extractLinks(
 
     const converter = await RustHTMLTransformer.getInstance();
     return await converter.extractLinks(html);
+}
+
+export async function extractImages(
+  html: string | null | undefined,
+  baseUrl: string = ''
+): Promise<string[]> {
+    if (!html) {
+        return [];
+    }
+
+    const converter = await RustHTMLTransformer.getInstance();
+    return await converter.extractImages(html, baseUrl);
 }
 
 export async function extractBaseHref(

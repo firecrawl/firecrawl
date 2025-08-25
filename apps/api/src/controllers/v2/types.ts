@@ -35,6 +35,7 @@ export type Format =
   | "html"
   | "rawHtml"
   | "links"
+  | "images"
   | "screenshot"
   | "screenshot@fullPage"
   | "extract"
@@ -216,6 +217,7 @@ export type FormatObject =
   | { type: "html" }
   | { type: "rawHtml" }
   | { type: "links" }
+  | { type: "images" }
   | { type: "summary" }
   | JsonFormatWithOptions
   | ChangeTrackingFormatWithOptions
@@ -250,6 +252,7 @@ const baseScrapeOptions = z
           z.object({ type: z.literal("html") }),
           z.object({ type: z.literal("rawHtml") }),
           z.object({ type: z.literal("links") }),
+          z.object({ type: z.literal("images") }),
           z.object({ type: z.literal("summary") }),
           jsonFormatWithOptions,
           changeTrackingFormatWithOptions,
@@ -629,6 +632,7 @@ export type Document = {
   html?: string;
   rawHtml?: string;
   links?: string[];
+  images?: string[];
   screenshot?: string;
   extract?: any;
   json?: any;
@@ -1348,6 +1352,7 @@ export const searchRequestSchema = z
               z.object({ type: z.literal("html") }),
               z.object({ type: z.literal("rawHtml") }),
               z.object({ type: z.literal("links") }),
+              z.object({ type: z.literal("images") }),
               z.object({ type: z.literal("summary") }),
               jsonFormatWithOptions,
               screenshotFormatWithOptions,
