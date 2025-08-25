@@ -44,10 +44,40 @@ RUN cd /app/sharedLibs/crawler && \
     cargo build --release --locked && \
     chmod +x target/release/libcrawler.so
 
+# N-API Go HTML-to-Markdown build stage
+FROM node:22-slim AS napi-base
+COPY sharedLibs/go-html-to-md-napi /app/sharedLibs/go-html-to-md-napi
+WORKDIR /app/sharedLibs/go-html-to-md-napi
+
+# Install build dependencies
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    python3 \
+    wget \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Go
+RUN wget https://go.dev/dl/go1.24.5.linux-amd64.tar.gz && \
+    tar -C /usr/local -xzf go1.24.5.linux-amd64.tar.gz && \
+    rm go1.24.5.linux-amd64.tar.gz
+ENV PATH="/usr/local/go/bin:${PATH}"
+ENV CGO_ENABLED=1
+
+# Install node-addon-api
+RUN npm install node-addon-api
+
+# Build the N-API module
+RUN mkdir -p lib && \
+    go mod download && \
+    go build -buildmode=c-archive -o lib/libhtml_converter.a main.go && \
+    cp lib/libhtml_converter.h src/ && \
+    npx node-gyp rebuild
+
 FROM base
 COPY --from=build /app/dist /app/dist
 COPY --from=prod-deps /app/node_modules /app/node_modules
 COPY --from=go-base /app/sharedLibs/go-html-to-md/html-to-markdown.so /app/sharedLibs/go-html-to-md/html-to-markdown.so
+COPY --from=napi-base /app/sharedLibs/go-html-to-md-napi/build/Release/html_to_markdown.node /app/sharedLibs/go-html-to-md-napi/build/Release/html_to_markdown.node
 COPY --from=rust-base /app/sharedLibs/html-transformer/target/release/libhtml_transformer.so /app/sharedLibs/html-transformer/target/release/libhtml_transformer.so
 COPY --from=rust-base /app/sharedLibs/pdf-parser/target/release/libpdf_parser.so /app/sharedLibs/pdf-parser/target/release/libpdf_parser.so
 COPY --from=rust-base /app/sharedLibs/crawler/target/release/libcrawler.so /app/sharedLibs/crawler/target/release/libcrawler.so

@@ -73,6 +73,19 @@ jobs:
           go build -o html-to-markdown.so -buildmode=c-shared html-to-markdown.go
           chmod +x html-to-markdown.so
         working-directory: ./apps/api/sharedLibs/go-html-to-md
+      - name: Install build tools for N-API
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential python3
+      - name: Build go-html-to-md-napi
+        run: |
+          npm install node-addon-api
+          mkdir -p lib
+          go mod tidy
+          go build -buildmode=c-archive -o lib/libhtml_converter.a main.go
+          cp lib/libhtml_converter.h src/
+          npx node-gyp rebuild
+        working-directory: ./apps/api/sharedLibs/go-html-to-md-napi
       - name: Build html-transformer
         run: |
           cargo build --release

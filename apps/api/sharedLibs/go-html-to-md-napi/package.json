@@ -1,0 +1,31 @@
+{
+  "name": "html-to-markdown-napi",
+  "version": "1.0.0",
+  "description": "N-API wrapper for Go HTML to Markdown converter",
+  "main": "lib/index.js",
+  "types": "lib/index.d.ts",
+  "scripts": {
+    "build": "npm run build:go && npm run build:native && npm run build:ts",
+    "build:go": "cd . && go build -buildmode=c-archive -o lib/libhtml_converter.a main.go",
+    "build:native": "node-gyp rebuild",
+    "build:ts": "tsc",
+    "clean": "node-gyp clean && rm -rf lib/ build/",
+    "test": "node test/test.js"
+  },
+  "dependencies": {
+    "node-addon-api": "^8.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "typescript": "^5.0.0"
+  },
+  "gypfile": true,
+  "keywords": [
+    "html",
+    "markdown",
+    "converter",
+    "napi",
+    "go",
+    "native"
+  ]
+}

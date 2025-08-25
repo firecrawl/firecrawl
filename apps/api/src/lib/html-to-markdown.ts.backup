@@ -8,18 +8,8 @@ import { logger } from "./logger";
 import { stat } from "fs/promises";
 dotenv.config();
 
-// N-API module path (preferred)
-const napiModulePath = join(
-  process.cwd(),
-  "sharedLibs",
-  "go-html-to-md-napi",
-  "build",
-  "Release",
-  "html_to_markdown.node"
-);
-
-// Koffi module path (fallback)
-const koffiExecutablePath = join(
+// TODO: add a timeout to the Go parser
+const goExecutablePath = join(
   process.cwd(),
   "sharedLibs",
   "go-html-to-md",
@@ -28,80 +18,39 @@ const koffiExecutablePath = join(
 
 class GoMarkdownConverter {
   private static instance: GoMarkdownConverter;
-  private napiModule: any = null;
-  private koffiModule: any = null;
-  private moduleLoadAttempted = false;
+  private convert: any;
+  private free: any;
   
-  private async loadModules() {
-    if (this.moduleLoadAttempted) {
-      return;
-    }
-    
-    this.moduleLoadAttempted = true;
-    
-    // Try to load N-API module first
-    try {
-      await stat(napiModulePath);
-      this.napiModule = require(napiModulePath);
-      logger.info("Successfully loaded N-API HTML-to-Markdown module");
-      return; // Success, don't load koffi
-    } catch (error) {
-      logger.warn("N-API module not available, falling back to koffi", { 
-        error: error instanceof Error ? error.message : String(error),
-        path: napiModulePath 
-      });
-    }
-
-    // Fallback to koffi if N-API fails
-    try {
-      await stat(koffiExecutablePath);
-      const lib = koffi.load(koffiExecutablePath);
-      const free = lib.func("FreeCString", "void", ["string"]);
-      const cstn = "CString:" + crypto.randomUUID();
-      const freedResultString = koffi.disposable(cstn, "string", free);
-      const convert = lib.func("ConvertHTMLToMarkdown", freedResultString, ["string"]);
-      
-      this.koffiModule = { convert, free };
-      logger.info("Successfully loaded koffi HTML-to-Markdown module");
-    } catch (error) {
-      logger.error("Failed to load both N-API and koffi modules", { error });
-      throw new Error("No HTML-to-Markdown module available");
-    }
+  private constructor() {
+    const lib = koffi.load(goExecutablePath);
+    this.free = lib.func("FreeCString", "void", ["string"]);
+    const cstn = "CString:" + crypto.randomUUID();
+    const freedResultString = koffi.disposable(cstn, "string", this.free);
+    this.convert = lib.func("ConvertHTMLToMarkdown", freedResultString, ["string"]);
   }
 
   public static async getInstance(): Promise<GoMarkdownConverter> {
     if (!GoMarkdownConverter.instance) {
+      try {
+        await stat(goExecutablePath);
+      } catch (_) {
+        throw Error("Go shared library not found");
+      }
       GoMarkdownConverter.instance = new GoMarkdownConverter();
-      await GoMarkdownConverter.instance.loadModules();
     }
     return GoMarkdownConverter.instance;
   }
 
   public async convertHTMLToMarkdown(html: string): Promise<string> {
-    // Try N-API first (synchronous, stable)
-    if (this.napiModule && this.napiModule.convertSync) {
-      try {
-        return this.napiModule.convertSync(html);
-      } catch (error) {
-        logger.error("N-API conversion failed, trying koffi fallback", { error });
-        Sentry.captureException(error);
-      }
-    }
-    
-    // Fallback to koffi (asynchronous)
-    if (this.koffiModule) {
-      return new Promise<string>((resolve, reject) => {
-        this.koffiModule.convert.async(html, (err: Error, res: string) => {
-          if (err) {
-            reject(err);
-          } else {
-            resolve(res);
-          }
-        });
+    return new Promise<string>((resolve, reject) => {
+      this.convert.async(html, (err: Error, res: string) => {
+        if (err) {
+          reject(err);
+        } else {
+          resolve(res);
+        }
       });
-    }
-    
-    throw new Error("No HTML-to-Markdown module available");
+    });
   }
 }
 
@@ -134,7 +83,7 @@ export async function parseMarkdown(
     } else {
       logger.warn(
         "Tried to use Go parser, but it doesn't exist in the file system.",
-        { koffiExecutablePath, napiModulePath },
+        { goExecutablePath },
       );
     }
   }
