@@ -55,7 +55,7 @@ jobs:
         ports:
           - 6379:6379
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v5
       - name: Tailscale
         uses: tailscale/github-action@v3
         with:

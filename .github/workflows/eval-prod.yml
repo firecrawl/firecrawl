@@ -20,7 +20,7 @@ jobs:
         if: ${{ github.event.workflow_run.conclusion == 'success' || github.event_name == 'workflow_dispatch' }}
         steps:
           - name: Checkout repository
-            uses: actions/checkout@v3
+            uses: actions/checkout@v5
 
           - name: 'Install dependencies'
             run: |
