@@ -44,11 +44,15 @@ async function _req(
     const resp = await axios.get("https://www.google.com/search", {
       headers: {
         "User-Agent": agent,
-          "Accept": "*/*"
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.9",
+        "Accept-Charset": "utf-8", // Explicitly request UTF-8
+        "Accept-Encoding": "gzip, deflate"
       },
       params: params,
       proxy: proxies,
       timeout: timeout,
+      responseType: 'arraybuffer', // Get raw bytes to handle encoding properly
       httpsAgent: new https.Agent({
         rejectUnauthorized: true 
       }),
@@ -87,13 +91,13 @@ export async function googleSearch(
       proxies = { http: proxy };
     }
   }
-
   // TODO: knowledge graph, answer box, etc.
 
   let start = 0;
   let results: SearchResult[] = [];
   let attempts = 0;
   const maxAttempts = 20; // Define a maximum number of attempts to prevent infinite loop
+  
   while (start < num_results && attempts < maxAttempts) {
     try {
       const resp = await _req(
@@ -107,7 +111,40 @@ export async function googleSearch(
         tbs,
         filter,
       );
-      const dom = new JSDOM(resp.data);
+      
+      // Convert ArrayBuffer to string with proper encoding
+      let htmlContent: string;
+      try {
+        // Try to decode as UTF-8 first
+        htmlContent = new TextDecoder('utf-8', { fatal: true }).decode(resp.data);
+      } catch (e) {
+        // Fallback to latin1 if UTF-8 fails
+        logger.warn("UTF-8 decoding failed, trying latin1");
+        htmlContent = new TextDecoder('latin1').decode(resp.data);
+      }
+      
+      // Alternative: Try to detect charset from response headers
+      const contentType = resp.headers['content-type'];
+      if (contentType) {
+        const charsetMatch = contentType.match(/charset=([^;]+)/i);
+        if (charsetMatch) {
+          const detectedCharset = charsetMatch[1].toLowerCase();
+          if (detectedCharset !== 'utf-8') {
+            try {
+              htmlContent = new TextDecoder(detectedCharset).decode(resp.data);
+            } catch (e) {
+              logger.warn(`Failed to decode with detected charset ${detectedCharset}, using UTF-8`);
+            }
+          }
+        }
+      }
+
+      const dom = new JSDOM(htmlContent, {
+        contentType: "text/html",
+        includeNodeLocations: false,
+        storageQuota: 10000000
+      });
+      
       const document = dom.window.document;
       const result_block = document.querySelectorAll("div.ezO2md");
       let new_results = 0;
@@ -131,13 +168,16 @@ export async function googleSearch(
               const link = decodeURIComponent(link_tag.href.split("&")[0].replace("/url?q=", ""));
               if (fetched_links.has(link) && unique) continue;
               fetched_links.add(link);
-              const title = title_tag.textContent || "";
-              const description = description_tag.textContent || "";
+              
+              // Clean up text content and normalize Unicode
+              const title = (title_tag.textContent || "").trim().normalize('NFC');
+              const description = (description_tag.textContent || "").trim().normalize('NFC');
+              
               fetched_results++;
               new_results++;
               if (link && title && description) {
-                start += 1
-                  results.push(new SearchResult(link, title, description));
+                start += 1;
+                results.push(new SearchResult(link, title, description));
               }
               if (fetched_results >= num_results) break;
           }
