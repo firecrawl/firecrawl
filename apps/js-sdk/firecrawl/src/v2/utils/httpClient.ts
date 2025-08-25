@@ -56,15 +56,14 @@ export class HttpClient {
           cfg.data = { ...data, origin: `js-sdk@${version}` };
         }
         const res = await this.instance.request<T>(cfg);
-        if (res.status === 502 && attempt < this.maxRetries - 1) {
-          await this.sleep(this.backoffFactor * Math.pow(2, attempt));
-          continue;
-        }
+        // Note: 5xx errors (502, 503, 504) are NOT retried to prevent double billing
         return res;
       } catch (err: any) {
         lastError = err;
         const status = err?.response?.status;
-        if (status === 502 && attempt < this.maxRetries - 1) {
+        // Only retry on network errors or specific safe status codes (408, 429)
+        // Note: 5xx errors (502, 503, 504) are NOT retried to prevent double billing
+        if (this.isRetryableError(err) && attempt < this.maxRetries - 1) {
           await this.sleep(this.backoffFactor * Math.pow(2, attempt));
           continue;
         }
@@ -72,6 +71,28 @@ export class HttpClient {
       }
     }
     throw lastError ?? new Error("Unexpected HTTP client error");
+  }
+
+  private isRetryableError(error: any): boolean {
+    // Network-level errors without response
+    if (!error.response) {
+      const code = error.code;
+      const message = error.message?.toLowerCase() || '';
+      
+      return (
+        code === 'ECONNRESET' ||
+        code === 'ETIMEDOUT' ||
+        code === 'ENOTFOUND' ||
+        code === 'ECONNREFUSED' ||
+        message.includes('socket hang up') ||
+        message.includes('network error') ||
+        message.includes('timeout')
+      );
+    }
+    
+    // HTTP status codes that are safe to retry (won't cause double billing)
+    const status = error.response.status;
+    return status === 408 || status === 429;
   }
 
   private sleep(seconds: number): Promise<void> {

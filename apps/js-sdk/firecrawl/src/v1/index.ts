@@ -623,7 +623,7 @@ export default class FirecrawlApp {
   }
 
   /**
-   * Scrapes a URL using the Firecrawl API.
+   * Scrapes a URL using the Firecrawl API with automatic retry on network errors.
    * @param url - The URL to scrape.
    * @param params - Additional parameters for the scrape request.
    * @returns The response from the scrape operation.
@@ -637,14 +637,14 @@ export default class FirecrawlApp {
       Authorization: `Bearer ${this.apiKey}`,
     } as AxiosRequestHeaders;
     let jsonData: any = { url, ...params, origin: `js-sdk@${this.version}` };
+    
+    // Handle schema transformations
     if (jsonData?.extract?.schema) {
       let schema = jsonData.extract.schema;
-
-      // Try parsing the schema as a Zod schema
       try {
         schema = zodToJsonSchema(schema);
       } catch (error) {
-        
+        // Ignore error if schema can't be parsed as Zod
       }
       jsonData = {
         ...jsonData,
@@ -657,11 +657,10 @@ export default class FirecrawlApp {
 
     if (jsonData?.jsonOptions?.schema) {
       let schema = jsonData.jsonOptions.schema;
-      // Try parsing the schema as a Zod schema
       try {
         schema = zodToJsonSchema(schema);
       } catch (error) {
-        
+        // Ignore error if schema can't be parsed as Zod
       }
       jsonData = {
         ...jsonData,
@@ -671,31 +670,74 @@ export default class FirecrawlApp {
         },
       };
     }
-    try {
-      const response: AxiosResponse = await axios.post(
-        this.apiUrl + `/v1/scrape`,
-        jsonData,
-        { headers, timeout: params?.timeout !== undefined ? (params.timeout + 5000) : undefined },
-      );
-      if (response.status === 200) {
-        const responseData = response.data;
-        if (responseData.success) {
-          return {
-            success: true,
-            warning: responseData.warning,
-            error: responseData.error,
-            ...responseData.data
-          };
+
+    // Retry configuration
+    const maxRetries = 3;
+    const baseDelay = 1000; // 1 second
+    let lastError: any;
+
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      try {
+        const response: AxiosResponse = await axios.post(
+          this.apiUrl + `/v1/scrape`,
+          jsonData,
+          { 
+            headers, 
+            timeout: params?.timeout !== undefined ? (params.timeout + 5000) : 30000 // Default 30s timeout
+          }
+        );
+        
+        if (response.status === 200) {
+          const responseData = response.data;
+          if (responseData.success) {
+            return {
+              success: true,
+              warning: responseData.warning,
+              error: responseData.error,
+              ...responseData.data
+            };
+          } else {
+            throw new FirecrawlError(`Failed to scrape URL. Error: ${responseData.error}`, response.status);
+          }
         } else {
-          throw new FirecrawlError(`Failed to scrape URL. Error: ${responseData.error}`, response.status);
+          // For non-200 status codes, check if it's retryable
+          if (this.isRetryableHttpStatus(response.status) && attempt < maxRetries) {
+            lastError = new FirecrawlError(`HTTP ${response.status}: ${response.data?.error || 'Server error'}`, response.status);
+            const delay = this.calculateBackoffDelay(attempt, baseDelay);
+            await new Promise(resolve => setTimeout(resolve, delay));
+            continue;
+          } else {
+            this.handleError(response, "scrape URL");
+          }
         }
-      } else {
-        this.handleError(response, "scrape URL");
+      } catch (error: any) {
+        lastError = error;
+        
+        // Check if this is a retryable network error
+        if (this.isRetryableError(error) && attempt < maxRetries) {
+          const delay = this.calculateBackoffDelay(attempt, baseDelay);
+          await new Promise(resolve => setTimeout(resolve, delay));
+          continue;
+        }
+        
+        // For non-retryable errors or final attempt, handle the error
+        if (error.response) {
+          this.handleError(error.response, "scrape URL");
+        } else {
+          // Network-level error without response
+          throw new FirecrawlError(
+            `No response received while trying to scrape URL. This may be a network error or the server is unreachable. ${error.message}`,
+            0
+          );
+        }
       }
-    } catch (error: any) {
-      this.handleError(error.response, "scrape URL");
     }
-    return { success: false, error: "Internal server error." };
+    
+    // If we reach here, all retries failed
+    throw new FirecrawlError(
+      `Failed to scrape URL after ${maxRetries + 1} attempts. Last error: ${lastError?.message || 'Unknown error'}`,
+      lastError?.statusCode || 500
+    );
   }
 
   /**
@@ -1398,22 +1440,48 @@ export default class FirecrawlApp {
   }
 
   /**
-   * Sends a POST request to the specified URL.
+   * Sends a POST request to the specified URL with automatic retry on network errors.
    * @param url - The URL to send the request to.
    * @param data - The data to send in the request.
    * @param headers - The headers for the request.
    * @returns The response from the POST request.
    */
-  postRequest(
+  async postRequest(
     url: string,
     data: any,
     headers: AxiosRequestHeaders
   ): Promise<AxiosResponse> {
-    return axios.post(url, data, { headers, timeout: (data?.timeout ? (data.timeout + 5000) : undefined) });
+    const maxRetries = 3;
+    const baseDelay = 1000;
+    let lastError: any;
+
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      try {
+        return await axios.post(url, data, { 
+          headers, 
+          timeout: (data?.timeout ? (data.timeout + 5000) : 30000) // Default 30s timeout
+        });
+      } catch (error: any) {
+        lastError = error;
+        
+        // Check if this is a retryable network error
+        if (this.isRetryableError(error) && attempt < maxRetries) {
+          const delay = this.calculateBackoffDelay(attempt, baseDelay);
+          await new Promise(resolve => setTimeout(resolve, delay));
+          continue;
+        }
+        
+        // For non-retryable errors or final attempt, throw the error
+        throw error;
+      }
+    }
+    
+    // This should never be reached, but added for completeness
+    throw lastError;
   }
 
   /**
-   * Sends a GET request to the specified URL.
+   * Sends a GET request to the specified URL with automatic retry on network errors.
    * @param url - The URL to send the request to.
    * @param headers - The headers for the request.
    * @returns The response from the GET request.
@@ -1422,15 +1490,41 @@ export default class FirecrawlApp {
     url: string,
     headers: AxiosRequestHeaders
   ): Promise<AxiosResponse> {
-    try {
-      return await axios.get(url, { headers });
-    } catch (error) {
-      if (error instanceof AxiosError && error.response) {
-        return error.response as AxiosResponse;
-      } else {
-        throw error;
+    const maxRetries = 3;
+    const baseDelay = 1000;
+    let lastError: any;
+
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      try {
+        return await axios.get(url, { headers, timeout: 30000 });
+      } catch (error: any) {
+        lastError = error;
+        
+        // Return the error response if it exists (for handling by calling code)
+        if (error instanceof AxiosError && error.response) {
+          // For retryable network errors, continue the retry loop
+          if (this.isRetryableError(error) && attempt < maxRetries) {
+            const delay = this.calculateBackoffDelay(attempt, baseDelay);
+            await new Promise(resolve => setTimeout(resolve, delay));
+            continue;
+          }
+          // For non-retryable errors or final attempt, return the response
+          return error.response as AxiosResponse;
+        } else {
+          // For network-level errors, retry if possible
+          if (this.isRetryableError(error) && attempt < maxRetries) {
+            const delay = this.calculateBackoffDelay(attempt, baseDelay);
+            await new Promise(resolve => setTimeout(resolve, delay));
+            continue;
+          }
+          // If all retries failed, throw the error
+          throw error;
+        }
       }
     }
+    
+    // This should never be reached, but added for completeness
+    throw lastError;
   }
 
   /**
@@ -1579,6 +1673,31 @@ export default class FirecrawlApp {
     }
     
     return false;
+  }
+
+  /**
+   * Determines if an HTTP status code indicates a retryable server error
+   * @param status - The HTTP status code
+   * @returns True if the status code indicates a retryable error
+   */
+  private isRetryableHttpStatus(status: number): boolean {
+    // Only retry on status codes that are safe and won't cause double billing:
+    // 408 Request Timeout - server explicitly didn't process the request
+    // 429 Too Many Requests - rate limited, request wasn't processed
+    // Note: 5xx errors (502, 503, 504) are NOT retried to prevent double billing
+    return [408, 429].includes(status);
+  }
+
+  /**
+   * Calculates exponential backoff delay with jitter
+   * @param attempt - The current attempt number (0-based)
+   * @param baseDelay - The base delay in milliseconds
+   * @returns The delay in milliseconds
+   */
+  private calculateBackoffDelay(attempt: number, baseDelay: number): number {
+    const exponentialDelay = baseDelay * Math.pow(2, attempt);
+    const jitter = Math.random() * 0.1 * exponentialDelay; // Add up to 10% jitter
+    return Math.min(exponentialDelay + jitter, 30000); // Cap at 30 seconds
   }
 
   /**
