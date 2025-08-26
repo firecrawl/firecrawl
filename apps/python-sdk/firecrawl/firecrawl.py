@@ -527,6 +527,10 @@ class FirecrawlApp:
             'origin': f"python-sdk@{version}"
         }
 
+        # Special handling for WeChat articles
+        if self._is_wechat_url(url):
+            scrape_params = self._prepare_wechat_params(scrape_params)
+            
         # Add optional parameters if provided
         if formats:
             scrape_params['formats'] = formats
@@ -2318,6 +2322,32 @@ class FirecrawlApp:
                     raise Exception(f'Crawl job failed or was stopped. Status: {status_data["status"]}')
             else:
                 self._handle_error(status_response, 'check crawl status')
+
+    def _is_wechat_url(self, url: str) -> bool:
+        """Check if the URL is a WeChat article URL."""
+        return "mp.weixin.qq.com" in url.lower()
+
+    def _prepare_wechat_params(self, params: dict) -> dict:
+        """Prepare parameters specifically for WeChat article scraping."""
+        params['proxy'] = "stealth"  # Always use stealth mode for WeChat
+        params['wait_for'] = params.get('wait_for', 5000)  # Default 5s wait
+        params['mobile'] = params.get('mobile', True)  # Default to mobile view
+        
+        # Set proper headers for WeChat
+        default_headers = {
+            "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 16_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.5 Mobile/15E148 Safari/604.1",
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            "Accept-Language": "en-US,en;q=0.5",
+            "Accept-Encoding": "gzip, deflate, br",
+            "Connection": "keep-alive",
+            "Upgrade-Insecure-Requests": "1"
+        }
+        params['headers'] = {**default_headers, **(params.get('headers') or {})}
+        
+        # Ensure proper timeouts
+        params['timeout'] = params.get('timeout', 30000)  # 30s default timeout
+        
+        return params
 
     def _handle_error(
             self,
