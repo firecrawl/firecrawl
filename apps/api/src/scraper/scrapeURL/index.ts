@@ -36,7 +36,7 @@ import {
 } from "./error";
 import { executeTransformers } from "./transformers";
 import { LLMRefusalError } from "./transformers/llmExtract";
-import { urlSpecificParams } from "./lib/urlSpecificParams";
+import { urlSpecificParams, shouldDisableAutoProxySwitch } from "./lib/urlSpecificParams";
 import { loadMock, MockState } from "./lib/mock";
 import { CostTracking } from "../../lib/extract/extraction-service";
 import { addIndexRFInsertJob, generateDomainSplits, hashURL, index_supabase_service, normalizeURLForIndex, useIndex } from "../../services/index";
@@ -272,9 +272,18 @@ async function scrapeURLLoopIter(meta: Meta, engine: Engine, snipeAbort): Promis
   const hasNoPageError = engineResult.error === undefined;
   const isLikelyProxyError = [401, 403, 429].includes(engineResult.statusCode);
 
-  if (isLikelyProxyError && meta.options.proxy === "auto" && !meta.featureFlags.has("stealthProxy")) {
+  // Check if this domain should disable auto proxy switching
+  const hostname = new URL(meta.url).hostname;
+  const shouldDisableSwitch = shouldDisableAutoProxySwitch(hostname);
+
+  if (isLikelyProxyError && meta.options.proxy === "auto" && !meta.featureFlags.has("stealthProxy") && !shouldDisableSwitch) {
     meta.logger.info("Scrape via " + engine + " deemed unsuccessful due to proxy inadequacy. Adding stealthProxy flag.");
     throw new AddFeatureError(["stealthProxy"]);
+  }
+
+  // Log when auto-switching is disabled for transparency
+  if (isLikelyProxyError && shouldDisableSwitch) {
+    meta.logger.info(`Auto proxy switching disabled for domain ${hostname} to prevent anti-bot detection`);
   }
 
   // NOTE: TODO: what to do when status code is bad is tough...
