@@ -482,6 +482,7 @@ export async function searchController(
               screenshot: doc?.screenshot,
               summary: doc?.summary,
               metadata: doc?.metadata,
+              json: doc?.json
             };
           });
         }
@@ -498,6 +499,7 @@ export async function searchController(
               rawHtml: doc?.rawHtml,
               summary: doc?.summary,
               metadata: doc?.metadata,
+              json: doc?.json
             };
           });
         }
@@ -514,6 +516,7 @@ export async function searchController(
               rawHtml: doc?.rawHtml,
               summary: doc?.summary,
               metadata: doc?.metadata,
+              json: doc?.json
             };
           });
         }
