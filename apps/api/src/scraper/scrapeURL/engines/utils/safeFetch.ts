@@ -2,6 +2,8 @@ import type { Socket } from "net";
 import type { TLSSocket } from "tls";
 import * as undici from "undici";
 import { Address6 } from "ip-address";
+import { CookieJar } from "tough-cookie";
+import { cookie } from "http-cookie-agent/undici";
 
 export class InsecureConnectionError extends Error {
   constructor() {
@@ -40,27 +42,34 @@ function isIPv6Private(ipv6) {
 }
 
 export function makeSecureDispatcher(
-  url: string,
-  options?: undici.Agent.Options,
+  skipTlsVerification: boolean = false,
 ) {
   const agentOpts: undici.Agent.Options = {
-    connect: {
-      rejectUnauthorized: false, // bypass SSL failures -- this is fine
-      // lookup: secureLookup,
-    },
     maxRedirections: 5000,
-    ...options,
   };
 
-  const agent = process.env.PROXY_SERVER
+  const baseAgent = process.env.PROXY_SERVER
     ? new undici.ProxyAgent({
       uri: process.env.PROXY_SERVER.includes("://") ? process.env.PROXY_SERVER : ("http://" + process.env.PROXY_SERVER),
       token: process.env.PROXY_USERNAME
         ? `Basic ${Buffer.from(process.env.PROXY_USERNAME + ":" + (process.env.PROXY_PASSWORD ?? "")).toString("base64")}`
         : undefined,
+      requestTls: {
+        rejectUnauthorized: !skipTlsVerification, // Only bypass SSL verification if explicitly requested
+      },
       ...agentOpts,
     })
-    : new undici.Agent(agentOpts);
+    : new undici.Agent({
+      connect: {
+        rejectUnauthorized: !skipTlsVerification, // Only bypass SSL verification if explicitly requested
+      },
+      ...agentOpts,
+    });
+
+  const cookieJar = new CookieJar();
+
+  const agent = baseAgent
+    .compose(cookie({ jar: cookieJar }));
 
   agent.on("connect", (_, targets) => {
     const client: undici.Client = targets.slice(-1)[0] as undici.Client;
@@ -82,3 +91,6 @@ export function makeSecureDispatcher(
 
   return agent;
 }
+
+export const secureDispatcher = makeSecureDispatcher(false);
+export const secureDispatcherSkipTlsVerification = makeSecureDispatcher(true);

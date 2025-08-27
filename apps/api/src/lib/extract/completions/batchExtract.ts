@@ -25,6 +25,7 @@ type BatchExtractOptions = {
   extractId?: string;
   sessionId?: string;
   costTracking: CostTracking;
+  metadata: { teamId: string, functionId?: string, extractId?: string, scrapeId?: string };
 };
 
 /**
@@ -56,14 +57,15 @@ export async function batchExtractPromise(options: BatchExtractOptions, logger: 
     doc,
     useAgent,
     extractId,
-    sessionId } = options;
+    sessionId,
+    metadata,
+  } = options;
 
   const generationOptions: GenerateCompletionsOptions = {
     logger: logger.child({
       method: "extractService/generateCompletions",
     }),
     options: {
-      mode: "llm",
       systemPrompt: buildBatchExtractSystemPrompt(
         systemPrompt,
         multiEntitySchema,
@@ -74,14 +76,18 @@ export async function batchExtractPromise(options: BatchExtractOptions, logger: 
     },
     markdown: buildDocument(doc),
     isExtractEndpoint: true,
-    model: getModel("gemini-2.5-pro-preview-03-25", "vertex"),
-    retryModel: getModel("gemini-2.5-pro-preview-03-25", "google"),
+    model: getModel("gemini-2.5-pro", "vertex"),
+    retryModel: getModel("gemini-2.5-pro", "google"),
     costTrackingOptions: {
       costTracking: options.costTracking,
       metadata: {
         module: "extract",
         method: "batchExtractPromise",
       },
+    },
+    metadata: {
+      ...metadata,
+      functionId: metadata.functionId ? (metadata.functionId + "/batchExtractPromise") : "batchExtractPromise",
     },
   };
 
@@ -98,6 +104,10 @@ export async function batchExtractPromise(options: BatchExtractOptions, logger: 
       useAgent,
       extractId,
       sessionId,
+      metadata: {
+        ...metadata,
+        functionId: metadata.functionId ? (metadata.functionId + "/batchExtractPromise") : "batchExtractPromise",
+      },
     });
     extractedDataArray = e;
     warning = w;

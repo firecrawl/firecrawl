@@ -124,3 +124,25 @@ export function buildRephraseToSerpPrompt(prompt: string): string {
 
 Original Prompt: "${prompt}"`;
 }
+
+export function buildCrawlerOptionsPrompt(prompt: string): string {
+  return `You are a web crawler configuration expert. Based on the user's natural language instruction, generate appropriate crawler options.
+
+User instruction: "${prompt}"
+
+Generate a JSON object with crawler configuration options. Available options:
+- includePaths: string[] - URL patterns to include (regex patterns)
+- excludePaths: string[] - URL patterns to exclude (regex patterns)  
+- maxDepth: number - Maximum crawl depth (default: 10)
+- crawlEntireDomain: boolean - Whether to crawl the entire domain
+- allowExternalLinks: boolean - Whether to follow external links
+- allowSubdomains: boolean - Whether to crawl subdomains
+- ignoreRobotsTxt: boolean - Whether to ignore robots.txt
+- sitemap: "skip" | "include" - Whether to ignore sitemap
+- deduplicateSimilarURLs: boolean - Whether to deduplicate similar URLs
+- ignoreQueryParameters: boolean - Whether to ignore query parameters
+- regexOnFullURL: boolean - Whether regex patterns apply to full URL
+- delay: number - Delay between requests in milliseconds
+
+Return only a valid JSON object with the appropriate options based on the user's intent. If the instruction doesn't clearly map to specific options, use reasonable defaults.`;
+}

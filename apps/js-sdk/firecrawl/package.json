@@ -1,6 +1,6 @@
 {
   "name": "@mendable/firecrawl-js",
-  "version": "1.24.0",
+  "version": "3.2.1",
   "description": "JavaScript SDK for Firecrawl API",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -16,36 +16,36 @@
     "build": "tsup",
     "build-and-publish": "npm run build && npm publish --access public",
     "publish-beta": "npm run build && npm publish --access public --tag beta",
-    "test": "NODE_OPTIONS=--experimental-vm-modules jest --verbose src/__tests__/v1/**/*.test.ts"
+    "test": "NODE_OPTIONS=--experimental-vm-modules jest --verbose src/__tests__/e2e/v2/*.test.ts --detectOpenHandles",
+    "test:unit": "NODE_OPTIONS=--experimental-vm-modules jest --verbose src/__tests__/unit/v2/*.test.ts"
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/mendableai/firecrawl.git"
+    "url": "git+https://github.com/firecrawl/firecrawl.git"
   },
   "author": "Mendable.ai",
   "license": "MIT",
   "dependencies": {
+    "axios": "^1.11.0",
     "typescript-event-target": "^1.1.1",
     "zod": "^3.23.8",
-    "zod-to-json-schema": "^3.23.0",
-    "axios": "^1.6.8"
+    "zod-to-json-schema": "^3.23.0"
   },
   "bugs": {
-    "url": "https://github.com/mendableai/firecrawl/issues"
+    "url": "https://github.com/firecrawl/firecrawl/issues"
   },
-  "homepage": "https://github.com/mendableai/firecrawl#readme",
+  "homepage": "https://github.com/firecrawl/firecrawl#readme",
   "devDependencies": {
-    "@jest/globals": "^29.7.0",
-    "@types/axios": "^0.14.0",
+    "@jest/globals": "^30.0.5",
     "@types/dotenv": "^8.2.0",
-    "@types/jest": "^29.5.14",
+    "@types/jest": "^30.0.0",
     "@types/mocha": "^10.0.6",
     "@types/node": "^20.12.12",
     "@types/uuid": "^9.0.8",
     "dotenv": "^16.4.5",
-    "jest": "^29.7.0",
-    "ts-jest": "^29.2.2",
-    "tsup": "^8.2.4",
+    "jest": "^30.0.5",
+    "ts-jest": "^29.4.0",
+    "tsup": "^8.5.0",
     "typescript": "^5.4.5",
     "uuid": "^9.0.1"
   },
@@ -60,5 +60,12 @@
   ],
   "engines": {
     "node": ">=22.0.0"
+  },
+  "pnpm": {
+    "overrides": {
+      "@babel/helpers@<7.26.10": ">=7.26.10",
+      "brace-expansion@>=1.0.0 <=1.1.11": ">=1.1.12",
+      "brace-expansion@>=2.0.0 <=2.0.1": ">=2.0.2"
+    }
   }
 }

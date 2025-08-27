@@ -9,12 +9,14 @@ export async function singleAnswerCompletion_F0({
   links,
   prompt,
   systemPrompt,
+  metadata,
 }: {
   singleAnswerDocs: Document[];
   rSchema: any;
   links: string[];
   prompt: string;
   systemPrompt: string;
+  metadata: { teamId: string, functionId?: string, extractId?: string, scrapeId?: string };
 }): Promise<{
   extract: any;
   tokenUsage: TokenUsage;
@@ -32,7 +34,11 @@ export async function singleAnswerCompletion_F0({
       schema: rSchema,
     },
     markdown: singleAnswerDocs.map((x) => buildDocument_F0(x)).join("\n"),
-    isExtractEndpoint: true
+    isExtractEndpoint: true,
+    metadata: {
+      ...metadata,
+      functionId: metadata.functionId ? (metadata.functionId + "/singleAnswerCompletion_F0") : "singleAnswerCompletion_F0",
+    }
   });
   return { 
     extract: completion.extract, 

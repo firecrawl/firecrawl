@@ -14,7 +14,14 @@
     "baseUrl": ".",
     "strictNullChecks": true,
 
-    "inlineSources": true
+    "inlineSources": true,
+
+    "typeRoots": ["./src/types", "./node_modules/@types"],
+    "paths": {
+      "x402": ["./src/types/x402"],
+      "x402/*": ["./src/types/x402"],
+      "x402-express": ["./src/types/x402"]
+    }
   },
   "include": [
     "src/",
@@ -23,6 +30,7 @@
     "utils/utils.ts",
     "services/db/supabaseEmbeddings.ts",
     "utils/EventEmmitter.ts",
-    "src/services/queue-service.ts"
+    "src/services/queue-service.ts",
+    "src/types/x402.d.ts"
   ]
 }

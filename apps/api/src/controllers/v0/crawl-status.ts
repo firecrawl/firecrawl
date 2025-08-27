@@ -1,7 +1,8 @@
 import { Request, Response } from "express";
 import { authenticateUser } from "../auth";
 import { RateLimiterMode } from "../../../src/types";
-import { getScrapeQueue, redisConnection } from "../../../src/services/queue-service";
+import { getScrapeQueue } from "../../../src/services/queue-service";
+import { redisEvictConnection } from "../../../src/services/redis";
 import { logger } from "../../../src/lib/logger";
 import { getCrawl, getCrawlJobs } from "../../../src/lib/crawl-redis";
 import { supabaseGetJobsByCrawlId } from "../../../src/lib/supabase-jobs";
@@ -54,7 +55,7 @@ export async function getJobs(crawlId: string, ids: string[]): Promise<PseudoJob
   
       const job: PseudoJob<any> = {
         id,
-        getState: bullJob ? (() => bullJob.getState()) : (() => dbJob!.success ? "completed" : "failed"),
+        getState: dbJob ? (() => dbJob.success ? "completed" : "failed") : (() => bullJob!.getState()),
         returnvalue: Array.isArray(data)
           ? data[0]
           : data,
@@ -78,10 +79,17 @@ export async function crawlStatusController(req: Request, res: Response) {
       return res.status(auth.status).json({ error: auth.error });
     }
 
+    if (auth.chunk?.flags?.forceZDR) {
+      return res.status(400).json({ error: "Your team has zero data retention enabled. This is not supported on the v0 API. Please update your code to use the v1 API." });
+    }
+
     const { team_id } = auth;
 
-    redisConnection.sadd("teams_using_v0", team_id)
+    redisEvictConnection.sadd("teams_using_v0", team_id)
       .catch(error => logger.error("Failed to add team to teams_using_v0", { error, team_id }));
+    
+    redisEvictConnection.sadd("teams_using_v0:" + team_id, "crawl:" + req.params.jobId + ":status")
+      .catch(error => logger.error("Failed to add team to teams_using_v0 (2)", { error, team_id }));
 
     const sc = await getCrawl(req.params.jobId);
     if (!sc) {

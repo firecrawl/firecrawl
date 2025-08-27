@@ -59,7 +59,7 @@ describe("WebCrawler", () => {
         initialUrl + "/page3",
       ]);
 
-    const filteredLinks = crawler["filterLinks"](
+    const filteredLinks = await crawler["filterLinks"](
       [
         initialUrl,
         initialUrl + "/page1",
@@ -70,7 +70,7 @@ describe("WebCrawler", () => {
       10,
     );
 
-    expect(filteredLinks.length).toBe(limit); // Check if the number of results respects the limit
-    expect(filteredLinks).toEqual([initialUrl, initialUrl + "/page1"]);
+    expect(filteredLinks.links.length).toBe(limit); // Check if the number of results respects the limit
+    expect(filteredLinks.links).toEqual([initialUrl, initialUrl + "/page1"]);
   });
 });

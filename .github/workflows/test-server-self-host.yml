@@ -4,18 +4,15 @@ on:
   pull_request:
     branches:
       - main
-    paths:
-      - apps/api/**
-      - apps/playwright-service-ts/**
+      - nsc/v2
 
 env:
-  PORT: 3002
   REDIS_URL: redis://localhost:6379
-  HOST: 0.0.0.0
   ENV: ${{ secrets.ENV }}
   TEST_SUITE_SELF_HOSTED: true
   USE_GO_MARKDOWN_PARSER: true
   FIRECRAWL_DEBUG_FILTER_LINKS: true
+  SENTRY_ENVIRONMENT: dev
 
 jobs:
   test:
@@ -66,14 +63,31 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.19'
+          go-version: '1.24'
           cache-dependency-path: ./apps/api/sharedLibs/go-html-to-md/go.sum
+      - name: Set up Rust
+        uses: actions-rust-lang/setup-rust-toolchain@v1
       - name: Build go-html-to-md
         run: |
           go mod tidy
           go build -o html-to-markdown.so -buildmode=c-shared html-to-markdown.go
           chmod +x html-to-markdown.so
         working-directory: ./apps/api/sharedLibs/go-html-to-md
+      - name: Build html-transformer
+        run: |
+          cargo build --release
+          chmod +x target/release/libhtml_transformer.so
+        working-directory: ./apps/api/sharedLibs/html-transformer
+      - name: Build pdf-parser
+        run: |
+          cargo build --release
+          chmod +x target/release/libpdf_parser.so
+        working-directory: ./apps/api/sharedLibs/pdf-parser
+      - name: Build crawler
+        run: |
+          cargo build --release
+          chmod +x target/release/libcrawler.so
+        working-directory: ./apps/api/sharedLibs/crawler
       - name: Set up SearXNG
         if: matrix.search == 'searxng'
         run: |
@@ -88,11 +102,20 @@ jobs:
           docker run -d -p 3434:8080 -v "${PWD}/searxng:/etc/searxng" --name searxng searxng/searxng
           pnpx wait-on tcp:3434 -t 30s
         working-directory: ./
+      - name: Build the application
+        run: npm run build
+        working-directory: ./apps/api
       - name: Start server
-        run: npm start > api.log 2>&1 &
+        run: npm run start:production:nobuild > api.log 2>&1 &
+        env:
+          PORT: 3002
+          HOST: 0.0.0.0
         working-directory: ./apps/api
       - name: Start worker
-        run: npm run workers > worker.log 2>&1 &
+        run: npm run worker:production > worker.log 2>&1 &
+        env:
+          PORT: 3005
+          HOST: 0.0.0.0
         working-directory: ./apps/api
       - name: Start playwright
         if: matrix.engine == 'playwright'
@@ -101,7 +124,7 @@ jobs:
         env:
           PORT: 3003
       - name: Wait for server
-        run: pnpx wait-on tcp:3002 -t 15s
+        run: pnpx wait-on tcp:3002 -t 60s
       - name: Wait for playwright
         if: matrix.engine == 'playwright'
         run: pnpx wait-on tcp:3003 -t 15s
@@ -115,7 +138,7 @@ jobs:
       - name: Kill SearXNG
         if: always() && matrix.search == 'searxng'
         run: |
-          docker logs searxng > searxng/searxng.log 2>&1
+          docker logs searxng > searxng.log 2>&1
           docker kill searxng
         working-directory: ./
       - uses: actions/upload-artifact@v4
@@ -136,5 +159,4 @@ jobs:
         with:
           name: SearXNG (${{ matrix.ai }}, ${{ matrix.engine }}, ${{ matrix.proxy }})
           path: |
-            ./searxng/searxng.log
-            ./searxng/settings.yml
+            ./searxng.log

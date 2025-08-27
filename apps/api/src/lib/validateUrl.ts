@@ -1,7 +1,7 @@
 export const protocolIncluded = (url: string) => {
   // if :// not in the start of the url assume http (maybe https?)
   // regex checks if :// appears before any .
-  return /^([^.:]+:\/\/)/.test(url);
+  return /^([^.:]+:\/\/)/i.test(url);
 };
 
 const getURLobj = (s: string) => {
@@ -126,7 +126,7 @@ export function isSameSubdomain(url: string, baseUrl: string) {
   return domain1 === domain2 && subdomain1 === subdomain2;
 }
 
-export const checkAndUpdateURLForMap = (url: string) => {
+export const checkAndUpdateURLForMap = (url: string, ignoreQueryParameters: boolean = false) => {
   if (!protocolIncluded(url)) {
     url = `http://${url}`;
   }
@@ -147,7 +147,10 @@ export const checkAndUpdateURLForMap = (url: string) => {
   }
 
   // remove any query params
-  // url = url.split("?")[0].trim();
+  if (ignoreQueryParameters) {
+    url = url.split("?")[0].trim();
+    typedUrlObj.search = "";
+  }
 
   return { urlObj: typedUrlObj, url: url };
 };

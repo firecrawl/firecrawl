@@ -86,7 +86,7 @@ export async function smartScrape({
         scrapeId,
         models: {
           thinkingModel: {
-            model: "gemini-2.5-pro-preview-03-25",
+            model: "gemini-2.5-pro",
             provider: "vertex",
             supportTools: true,
             toolChoice: "required",

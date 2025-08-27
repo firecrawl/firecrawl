@@ -76,7 +76,7 @@ Now, navigate to the apps/api/ directory and run:
 
 ```bash
 pnpm run workers
-# if you are going to use the [llm-extract feature](https://github.com/mendableai/firecrawl/pull/586/), you should also export OPENAI_API_KEY=sk-______
+# if you are going to use the [llm-extract feature](https://github.com/firecrawl/firecrawl/pull/586/), you should also export OPENAI_API_KEY=sk-______
 ```
 
 This will start the workers who are responsible for processing crawl jobs.

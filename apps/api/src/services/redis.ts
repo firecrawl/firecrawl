@@ -1,4 +1,4 @@
-import Redis from "ioredis";
+import IORedis from "ioredis";
 import { redisRateLimitClient } from "./rate-limiter";
 import { logger } from "../lib/logger";
 
@@ -70,3 +70,6 @@ const deleteKey = async (key: string) => {
 };
 
 export { setValue, getValue, deleteKey };
+
+const redisEvictURL = process.env.REDIS_EVICT_URL ?? process.env.REDIS_RATE_LIMIT_URL;
+export const redisEvictConnection = new IORedis(redisEvictURL!);

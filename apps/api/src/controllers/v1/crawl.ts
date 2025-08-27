@@ -8,9 +8,9 @@ import {
   toLegacyCrawlerOptions,
 } from "./types";
 import { crawlToCrawler, saveCrawl, StoredCrawl } from "../../lib/crawl-redis";
-import { logCrawl } from "../../services/logging/crawl_log";
 import { _addScrapeJobToBullMQ } from "../../services/queue-jobs";
 import { logger as _logger } from "../../lib/logger";
+import { fromV1ScrapeOptions } from "../v2/types";
 
 export async function crawlController(
   req: RequestWithAuth<{}, CrawlResponse, CrawlRequest>,
@@ -19,20 +19,29 @@ export async function crawlController(
   const preNormalizedBody = req.body;
   req.body = crawlRequestSchema.parse(req.body);
 
+  if (req.body.zeroDataRetention && !req.acuc?.flags?.allowZDR) {
+    return res.status(400).json({
+      success: false,
+      error: "Zero data retention is enabled for this team. If you're interested in ZDR, please contact support@firecrawl.com",
+    });
+  }
+
+  const zeroDataRetention = req.acuc?.flags?.forceZDR || req.body.zeroDataRetention;
+
   const id = uuidv4();
   const logger = _logger.child({
     crawlId: id,
     module: "api/v1",
     method: "crawlController",
     teamId: req.auth.team_id,
+    zeroDataRetention,
   });
+
   logger.debug("Crawl " + id + " starting", {
     request: req.body,
     originalRequest: preNormalizedBody,
     account: req.account,
   });
-
-  await logCrawl(id, req.auth.team_id);
 
   let { remainingCredits } = req.account!;
   const useDbAuthentication = process.env.USE_DB_AUTHENTICATION === "true";
@@ -45,7 +54,7 @@ export async function crawlController(
     url: undefined,
     scrapeOptions: undefined,
   };
-  const scrapeOptions = req.body.scrapeOptions;
+  const { scrapeOptions, internalOptions } = fromV1ScrapeOptions(req.body.scrapeOptions, req.body.scrapeOptions.timeout, req.auth.team_id);
 
   // TODO: @rafa, is this right? copied from v0
   if (Array.isArray(crawlerOptions.includePaths)) {
@@ -81,12 +90,16 @@ export async function crawlController(
     crawlerOptions: toLegacyCrawlerOptions(crawlerOptions),
     scrapeOptions,
     internalOptions: {
+      ...internalOptions,
       disableSmartWaitCache: true,
       teamId: req.auth.team_id,
       saveScrapeResultToGCS: process.env.GCS_FIRE_ENGINE_BUCKET_NAME ? true : false,
+      zeroDataRetention,
     }, // NOTE: smart wait disabled for crawls to ensure contentful scrape, speed does not matter
     team_id: req.auth.team_id,
     createdAt: Date.now(),
+    maxConcurrency: req.body.maxConcurrency !== undefined ? (req.acuc?.concurrency !== undefined ? Math.min(req.body.maxConcurrency, req.acuc.concurrency) : req.body.maxConcurrency) : undefined,
+    zeroDataRetention,
   };
 
   const crawler = crawlToCrawler(id, sc, req.acuc?.flags ?? null);
@@ -114,9 +127,11 @@ export async function crawlController(
       scrapeOptions: sc.scrapeOptions,
       internalOptions: sc.internalOptions,
       origin: req.body.origin,
+      integration: req.body.integration,
       crawl_id: id,
       webhook: req.body.webhook,
       v1: true,
+      zeroDataRetention: zeroDataRetention || false,
     },
     {},
     crypto.randomUUID(),

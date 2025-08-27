@@ -1,4 +1,4 @@
-import { redisConnection } from "../../services/queue-service";
+import { redisEvictConnection } from "../../services/redis";
 import { logger as _logger } from "../logger";
 
 export interface GenerationData {
@@ -9,6 +9,7 @@ export interface GenerationData {
   url: string;
   maxUrls: number;
   showFullText: boolean;
+  cache?: boolean;
   generatedText: string;
   fullText: string;
   error?: string;
@@ -19,12 +20,12 @@ const GENERATION_TTL = 24 * 60 * 60;
 
 export async function saveGeneratedLlmsTxt(id: string, data: GenerationData): Promise<void> {
   _logger.debug("Saving llmstxt generation " + id + " to Redis...");
-  await redisConnection.set("generation:" + id, JSON.stringify(data));
-  await redisConnection.expire("generation:" + id, GENERATION_TTL);
+  await redisEvictConnection.set("generation:" + id, JSON.stringify(data));
+  await redisEvictConnection.expire("generation:" + id, GENERATION_TTL);
 }
 
 export async function getGeneratedLlmsTxt(id: string): Promise<GenerationData | null> {
-  const x = await redisConnection.get("generation:" + id);
+  const x = await redisEvictConnection.get("generation:" + id);
   return x ? JSON.parse(x) : null;
 }
 
@@ -40,13 +41,13 @@ export async function updateGeneratedLlmsTxt(
     ...data
   };
 
-  await redisConnection.set("generation:" + id, JSON.stringify(updatedGeneration));
-  await redisConnection.expire("generation:" + id, GENERATION_TTL);
+  await redisEvictConnection.set("generation:" + id, JSON.stringify(updatedGeneration));
+  await redisEvictConnection.expire("generation:" + id, GENERATION_TTL);
 }
 
 export async function getGeneratedLlmsTxtExpiry(id: string): Promise<Date> {
   const d = new Date();
-  const ttl = await redisConnection.pttl("generation:" + id);
+  const ttl = await redisEvictConnection.pttl("generation:" + id);
   d.setMilliseconds(d.getMilliseconds() + ttl);
   d.setMilliseconds(0);
   return d;
@@ -66,4 +67,4 @@ export async function updateGeneratedLlmsTxtStatus(
   if (error !== undefined) updates.error = error;
   
   await updateGeneratedLlmsTxt(id, updates);
-} 
+}    

@@ -94,6 +94,99 @@ describe("HTML Transformer", () => {
       expect(links).toContain("https://valid.com");
       // Other links should be filtered out or handled appropriately
     });
+
+    it("should handle base href for relative links", async () => {
+      const html = `
+        <html>
+          <head>
+            <base href="/" />
+          </head>
+          <body>
+            <a href="page.php">Page</a>
+            <a href="/absolute">Absolute</a>
+            <a href="https://external.com">External</a>
+          </body>
+        </html>
+      `;
+      const links = await extractLinks(html);
+      expect(links).toContain("page.php");
+      expect(links).toContain("/absolute");
+      expect(links).toContain("https://external.com");
+    });
+
+    it("should handle relative base href", async () => {
+      const html = `
+        <html>
+          <head>
+            <base href="../" />
+          </head>
+          <body>
+            <a href="page.php">Page</a>
+          </body>
+        </html>
+      `;
+      const links = await extractLinks(html);
+      expect(links).toContain("page.php");
+    });
+
+    it("should handle absolute base href", async () => {
+      const html = `
+        <html>
+          <head>
+            <base href="https://cdn.example.com/" />
+          </head>
+          <body>
+            <a href="assets/style.css">CSS</a>
+          </body>
+        </html>
+      `;
+      const links = await extractLinks(html);
+      expect(links).toContain("assets/style.css");
+    });
+
+    it("should use first base href when multiple exist", async () => {
+      const html = `
+        <html>
+          <head>
+            <base href="/" />
+            <base href="/other/" />
+          </head>
+          <body>
+            <a href="page.php">Page</a>
+          </body>
+        </html>
+      `;
+      const links = await extractLinks(html);
+      expect(links).toContain("page.php");
+    });
+
+    it("should fallback to page URL when no base href", async () => {
+      const html = `
+        <html>
+          <body>
+            <a href="page.php">Page</a>
+          </body>
+        </html>
+      `;
+      const links = await extractLinks(html);
+      expect(links).toContain("page.php");
+    });
+
+    it("should handle malformed base href gracefully", async () => {
+      const html = `
+        <html>
+          <head>
+            <base href="" />
+            <base />
+          </head>
+          <body>
+            <a href="page.php">Page</a>
+          </body>
+        </html>
+      `;
+      const links = await extractLinks(html);
+      expect(links).toContain("page.php");
+    });
   });
 
   describe("extractMetadata", () => {

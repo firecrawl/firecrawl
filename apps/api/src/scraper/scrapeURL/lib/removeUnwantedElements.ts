@@ -1,9 +1,10 @@
 // TODO: refactor
 
 import { AnyNode, Cheerio, load } from "cheerio"; // rustified
-import { ScrapeOptions } from "../../../controllers/v1/types";
+import { ScrapeOptions } from "../../../controllers/v2/types";
 import { transformHtml } from "../../../lib/html-transformer";
 import { logger } from "../../../lib/logger";
+import { queryOMCESignatures } from "../../../services/index";
 
 const excludeNonMainTags = [
   "header",
@@ -70,6 +71,21 @@ export const htmlTransform = async (
   url: string,
   scrapeOptions: ScrapeOptions,
 ) => {
+  let omce_signatures: string[] | undefined = undefined;
+
+  if (scrapeOptions.__experimental_omce) {
+    try {
+      const hostname = new URL(url).hostname;
+      omce_signatures = await queryOMCESignatures(hostname);
+    } catch (error) {
+      logger.warn("Failed to get omce signatures.", {
+        error,
+        scrapeURL: url,
+        module: "scrapeURL", method: "htmlTransform",
+      })
+    };
+  }
+
   try {
     return await transformHtml({
       html,
@@ -77,12 +93,13 @@ export const htmlTransform = async (
       include_tags: (scrapeOptions.includeTags ?? []).map(x => x.trim()).filter((x) => x.length !== 0),
       exclude_tags: (scrapeOptions.excludeTags ?? []).map(x => x.trim()).filter((x) => x.length !== 0),
       only_main_content: scrapeOptions.onlyMainContent,
+      omce_signatures: omce_signatures,
     })
   } catch (error) {
     logger.warn("Failed to call html-transformer! Falling back to cheerio...", {
-        error,
-        module: "scrapeURL", method: "extractLinks"
-      });
+      error,
+      module: "scrapeURL", method: "htmlTransform"
+    });
   }
 
   let soup = load(html);

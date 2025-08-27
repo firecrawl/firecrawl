@@ -19,7 +19,7 @@ fi
 # Set maxmemory to 80% of RAM
 MAXMEMORY=$(($FLY_VM_MEMORY_MB*80/100))
 
-mkdir /data/redis
+mkdir -p /data/redis
 
 redis-server $PW_ARG \
   --dir /data/redis \

@@ -1,6 +1,6 @@
 [submodule "apps/go-sdk/firecrawl-go"]
 	path = apps/go-sdk/firecrawl-go
-	url = https://github.com/mendableai/firecrawl-go
+	url = https://github.com/firecrawl/firecrawl-go
 [submodule "apps/go-sdk/firecrawl-go-examples"]
 	path = apps/go-sdk/firecrawl-go-examples
-	url = https://github.com/mendableai/firecrawl-go-examples
+	url = https://github.com/firecrawl/firecrawl-go-examples

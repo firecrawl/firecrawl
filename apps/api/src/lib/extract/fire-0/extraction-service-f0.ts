@@ -3,7 +3,7 @@ import {
     ExtractRequest,
     TokenUsage,
     URLTrace,
-  } from "../../../controllers/v1/types";
+  } from "../../../controllers/v2/types";
   import { logger as _logger } from "../../logger";
   import { scrapeDocument_F0 } from "./document-scraper-f0";
   import { billTeam } from "../../../services/billing/credit_billing";
@@ -33,6 +33,7 @@ import { singleAnswerCompletion_F0 } from "./completions/singleAnswer-f0";
 import { calculateFinalResultCost_F0, estimateTotalCost_F0 } from "./usage/llm-cost-f0";
 import { SourceTracker_F0 } from "./helpers/source-tracker-f0";
 import { getACUCTeam } from "../../../controllers/auth";
+import { langfuse } from "../../../services/langfuse";
 
   
   interface ExtractServiceOptions {
@@ -88,15 +89,26 @@ import { getACUCTeam } from "../../../controllers/auth";
       extractId,
       teamId,
     });
+
+    langfuse.trace({
+      id: "extract:" + extractId,
+      name: "performExtraction",
+      metadata: {
+        teamId,
+        extractId,
+        model: "fire-0",
+      },
+    });
   
     // If no URLs are provided, generate URLs from the prompt
     if ((!request.urls || request.urls.length === 0) && request.prompt) {
       logger.debug("Generating URLs from prompt...", {
         prompt: request.prompt,
       });
-      const rephrasedPrompt = await generateBasicCompletion_FO(buildRephraseToSerpPrompt_F0(request.prompt));
+      const rephrasedPrompt = await generateBasicCompletion_FO(buildRephraseToSerpPrompt_F0(request.prompt), { teamId, extractId });
       const searchResults = await search({
         query:  rephrasedPrompt.replace('"', "").replace("'", ""),
+        logger,
         num_results: 10,
       });
   
@@ -118,9 +130,11 @@ import { getACUCTeam } from "../../../controllers/auth";
         url: request.urls?.join(", ") || "",
         scrapeOptions: request,
         origin: request.origin ?? "api",
+        integration: request.integration,
         num_tokens: 0,
         tokens_billed: 0,
         sources,
+        zeroDataRetention: false, // not supported
       });
       return {
         success: false,
@@ -177,6 +191,7 @@ import { getACUCTeam } from "../../../controllers/auth";
           limit: request.limit,
           includeSubdomains: request.includeSubdomains,
           schema: request.schema,
+          extractId,
         },
         urlTraces,
         (links: string[]) => {
@@ -219,9 +234,11 @@ import { getACUCTeam } from "../../../controllers/auth";
         url: request.urls?.join(", ") || "",
         scrapeOptions: request,
         origin: request.origin ?? "api",
+        integration: request.integration,
         num_tokens: 0,
         tokens_billed: 0,
         sources,
+        zeroDataRetention: false, // not supported
       });
       return {
         success: false,
@@ -247,7 +264,7 @@ import { getACUCTeam } from "../../../controllers/auth";
   
     let reqSchema = request.schema;
     if (!reqSchema && request.prompt) {
-      reqSchema = await generateSchemaFromPrompt_F0(request.prompt);
+      reqSchema = await generateSchemaFromPrompt_F0(request.prompt, { teamId, extractId });
       logger.debug("Generated request schema.", {
         originalSchema: request.schema,
         schema: reqSchema,
@@ -275,7 +292,7 @@ import { getACUCTeam } from "../../../controllers/auth";
       reasoning,
       keyIndicators,
       tokenUsage: schemaAnalysisTokenUsage,
-    } = await analyzeSchemaAndPrompt_F0(links, reqSchema, request.prompt ?? "");
+    } = await analyzeSchemaAndPrompt_F0(links, reqSchema, request.prompt ?? "", { teamId, extractId });
   
     logger.debug("Analyzed schema.", {
       isMultiEntity,
@@ -338,8 +355,9 @@ import { getACUCTeam } from "../../../controllers/auth";
             {
               url,
               teamId,
-              origin: request.origin || "api",
+              origin: "extract",
               timeout,
+              flags: acuc?.flags ?? null,
             },
             urlTraces,
             logger.child({
@@ -418,6 +436,7 @@ import { getACUCTeam } from "../../../controllers/auth";
               request.prompt ?? "",
               multiEntitySchema,
               doc,
+              { teamId, extractId, functionId: "performExtraction_F0" }
             );
   
             tokenUsage.push(shouldExtractCheckTokenUsage);
@@ -459,7 +478,7 @@ import { getACUCTeam } from "../../../controllers/auth";
               ],
             });
   
-            const completionPromise = batchExtractPromise_F0(multiEntitySchema, links, request.prompt ?? "", request.systemPrompt ?? "", doc);
+            const completionPromise = batchExtractPromise_F0(multiEntitySchema, links, request.prompt ?? "", request.systemPrompt ?? "", doc, { teamId, extractId, functionId: "performExtraction_F0" });
   
             // Race between timeout and completion
             const multiEntityCompletion = (await Promise.race([
@@ -568,9 +587,11 @@ import { getACUCTeam } from "../../../controllers/auth";
           url: request.urls?.join(", ") || "",
           scrapeOptions: request,
           origin: request.origin ?? "api",
+          integration: request.integration,
           num_tokens: 0,
           tokens_billed: 0,
           sources,
+          zeroDataRetention: false, // not supported
         });
         return {
           success: false,
@@ -616,8 +637,9 @@ import { getACUCTeam } from "../../../controllers/auth";
             {
               url,
               teamId,
-              origin: request.origin || "api",
+              origin: "extract",
               timeout,
+              flags: acuc?.flags ?? null,
             },
             urlTraces,
             logger.child({
@@ -663,9 +685,11 @@ import { getACUCTeam } from "../../../controllers/auth";
           url: request.urls?.join(", ") || "",
           scrapeOptions: request,
           origin: request.origin ?? "api",
+          integration: request.integration,
           num_tokens: 0,
           tokens_billed: 0,
           sources,
+          zeroDataRetention: false, // not supported
         });
         return {
           success: false,
@@ -691,9 +715,11 @@ import { getACUCTeam } from "../../../controllers/auth";
           url: request.urls?.join(", ") || "",
           scrapeOptions: request,
           origin: request.origin ?? "api",
+          integration: request.integration,
           num_tokens: 0,
           tokens_billed: 0,
           sources,
+          zeroDataRetention: false, // not supported
         });
         return {
           success: false,
@@ -724,7 +750,8 @@ import { getACUCTeam } from "../../../controllers/auth";
         rSchema,
         links,
         prompt: request.prompt ?? "",
-        systemPrompt: request.systemPrompt ?? ""
+        systemPrompt: request.systemPrompt ?? "",
+        metadata: { teamId, extractId, functionId: "performExtraction_F0" }
       });
       logger.debug("Done generating singleAnswer completions.");
   
@@ -852,14 +879,17 @@ import { getACUCTeam } from "../../../controllers/auth";
       url: request.urls?.join(", ") || "",
       scrapeOptions: request,
       origin: request.origin ?? "api",
+      integration: request.integration,
       num_tokens: totalTokensUsed,
       tokens_billed: tokensToBill,
       sources,
+      zeroDataRetention: false, // not supported
     }).then(() => {
       updateExtract(extractId, {
         status: "completed",
         llmUsage,
         sources,
+        tokensBilled: tokensToBill,
       }).catch((error) => {
         logger.error(
           `Failed to update extract ${extractId} status to completed: ${error}`,

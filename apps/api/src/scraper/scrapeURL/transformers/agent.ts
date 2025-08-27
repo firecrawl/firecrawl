@@ -5,13 +5,19 @@ import { Meta } from "..";
 import { logger } from "../../../lib/logger";
 import { parseMarkdown } from "../../../lib/html-to-markdown";
 import { smartScrape, SmartScrapeResult } from "../lib/smartScrape";
+import { hasFormatOfType } from "../../../lib/format-utils";
 
 
 export async function performAgent(
   meta: Meta,
   document: Document,
 ): Promise<Document> {
-  if (meta.options.agent?.prompt) {
+  if (meta.internalOptions.v1Agent?.prompt) {
+    if (meta.internalOptions.zeroDataRetention) {
+      document.warning = "Agent is not supported with zero data retention." + (document.warning ? " " + document.warning : "")
+      return document;
+    }
+
     const url: string | undefined = document.url || document.metadata.sourceURL
 
     if (!url) {
@@ -20,8 +26,8 @@ export async function performAgent(
       return document;
     }
 
-    const prompt = meta.options.agent?.prompt ?? undefined
-    const sessionId = meta.options.agent?.sessionId ?? undefined
+    const prompt = meta.internalOptions.v1Agent?.prompt ?? undefined
+    const sessionId = meta.internalOptions.v1Agent?.sessionId ?? undefined
 
     let smartscrapeResults: SmartScrapeResult;
     try {
@@ -44,11 +50,11 @@ export async function performAgent(
 
     const html = smartscrapeResults.scrapedPages[smartscrapeResults.scrapedPages.length - 1].html
 
-    if (meta.options.formats.includes("markdown")) {
+    if (hasFormatOfType(meta.options.formats, "markdown")) {
       const markdown = await parseMarkdown(html)
       document.markdown = markdown
     }
-    if (meta.options.formats.includes("html")) {
+    if (hasFormatOfType(meta.options.formats, "html")) {
       document.html = html
     }
   }

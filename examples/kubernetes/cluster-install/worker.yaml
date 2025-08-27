@@ -14,16 +14,36 @@ spec:
     spec:
       imagePullSecrets:
         - name: docker-registry-secret
+      terminationGracePeriodSeconds: 60
       containers:
         - name: worker
-          image: ghcr.io/winkk-dev/firecrawl:latest
+          image: ghcr.io/firecrawl/firecrawl:latest
           imagePullPolicy: Always
-          args: [ "pnpm", "run", "workers" ]
+          command: [ "node" ]
+          args: [ "--max-old-space-size=3072", "dist/src/services/queue-worker.js" ]
           env:
             - name: FLY_PROCESS_GROUP
               value: "worker"
+            - name: PORT
+              value: "3005"
           envFrom:
             - configMapRef:
                 name: firecrawl-config
             - secretRef:
                 name: firecrawl-secret
+          resources:
+            requests:
+              memory: "3G"
+              cpu: "1000m"
+            limits:
+              memory: "4G"
+              cpu: "1000m"
+          livenessProbe:
+            httpGet:
+              path: /liveness
+              port: 3005
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            timeoutSeconds: 5
+            successThreshold: 1
+            failureThreshold: 3

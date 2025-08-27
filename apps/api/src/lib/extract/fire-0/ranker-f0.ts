@@ -4,10 +4,17 @@ import { getEmbeddingModel } from "../../../lib/generic-ai";
 
 configDotenv();
 
-async function getEmbedding(text: string) {
+async function getEmbedding(text: string, metadata: { teamId: string, extractId?: string }) {
   const { embedding } = await embed({
     model: getEmbeddingModel("text-embedding-3-small"),
     value: text,
+    experimental_telemetry: {
+      isEnabled: true,
+      metadata: {
+        ...(metadata.extractId ? { langfuseTraceId: "extract:" + metadata.extractId, extractId: metadata.extractId } : {}),
+        teamId: metadata.teamId,
+      }
+    }
   });
 
   return embedding;
@@ -35,6 +42,7 @@ async function performRanking_F0(
   linksWithContext: string[],
   links: string[],
   searchQuery: string,
+  metadata: { teamId: string, extractId?: string }
 ) {
   try {
     // Handle invalid inputs
@@ -46,12 +54,12 @@ async function performRanking_F0(
     const sanitizedQuery = searchQuery;
 
     // Generate embeddings for the search query
-    const queryEmbedding = await getEmbedding(sanitizedQuery);
+    const queryEmbedding = await getEmbedding(sanitizedQuery, metadata);
 
     // Generate embeddings for each link and calculate similarity in parallel
     const linksAndScores = await Promise.all(
       linksWithContext.map((linkWithContext, index) =>
-        getEmbedding(linkWithContext)
+        getEmbedding(linkWithContext, metadata)
           .then((linkEmbedding) => {
             const score = cosineSimilarity(queryEmbedding, linkEmbedding);
             return {

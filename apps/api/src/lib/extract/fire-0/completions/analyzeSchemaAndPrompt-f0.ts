@@ -5,7 +5,6 @@ import {
   buildAnalyzeSchemaUserPrompt,
 } from "../../build-prompts";
 import { logger } from "../../../logger";
-import { jsonSchema } from "ai";
 import { getModel } from "../../../generic-ai";
 import {
   generateCompletions_F0,
@@ -16,6 +15,7 @@ export async function analyzeSchemaAndPrompt_F0(
   urls: string[],
   schema: any,
   prompt: string,
+  metadata: { teamId: string, extractId?: string }
 ): Promise<{
   isMultiEntity: boolean;
   multiEntityKeys: string[];
@@ -24,7 +24,7 @@ export async function analyzeSchemaAndPrompt_F0(
   tokenUsage: TokenUsage;
 }> {
   if (!schema) {
-    schema = await generateSchemaFromPrompt_F0(prompt);
+    schema = await generateSchemaFromPrompt_F0(prompt, metadata);
   }
 
   const schemaString = JSON.stringify(schema);
@@ -54,6 +54,7 @@ export async function analyzeSchemaAndPrompt_F0(
       },
       markdown: "",
       model,
+      metadata,
     });
 
     const { isMultiEntity, multiEntityKeys, reasoning, keyIndicators } =

@@ -1,5 +1,5 @@
 import { logger } from "../../lib/logger";
-import { redisConnection } from "../queue-service";
+import { getRedisConnection } from "../queue-service";
 import { supabase_service } from "../supabase";
 import * as Sentry from "@sentry/node";
 import { Queue } from "bullmq";
@@ -9,7 +9,7 @@ import { getACUC, setCachedACUC, setCachedACUCTeam } from "../../controllers/aut
 // Configuration constants
 const BATCH_KEY = "billing_batch";
 const BATCH_LOCK_KEY = "billing_batch_lock";
-const BATCH_SIZE = 50; // Batch size for processing
+const BATCH_SIZE = 1000; // Batch size for processing
 const BATCH_TIMEOUT = 15000; // 15 seconds processing interval
 const LOCK_TIMEOUT = 30000; // 30 seconds lock timeout
 
@@ -33,7 +33,7 @@ interface GroupedBillingOperation {
 
 // Function to acquire a lock for batch processing
 async function acquireLock(): Promise<boolean> {
-  const redis = redisConnection;
+  const redis = getRedisConnection();
   // Set lock with NX (only if it doesn't exist) and PX (millisecond expiry)
   const result = await redis.set(BATCH_LOCK_KEY, "1", "PX", LOCK_TIMEOUT, "NX");
   const acquired = result === "OK";
@@ -45,14 +45,14 @@ async function acquireLock(): Promise<boolean> {
 
 // Function to release the lock
 async function releaseLock() {
-  const redis = redisConnection;
+  const redis = getRedisConnection();
   await redis.del(BATCH_LOCK_KEY);
   logger.info("🔓 Released billing batch processing lock");
 }
 
 // Main function to process the billing batch
 export async function processBillingBatch() {
-  const redis = redisConnection;
+  const redis = getRedisConnection();
   
   // Try to acquire lock
   if (!(await acquireLock())) {
@@ -156,7 +156,7 @@ export function startBillingBatchProcessing() {
   
   logger.info("🔄 Starting periodic billing batch processing");
   batchInterval = setInterval(async () => {
-    const queueLength = await redisConnection.llen(BATCH_KEY);
+    const queueLength = await getRedisConnection().llen(BATCH_KEY);
     logger.info(`Checking billing batch queue (${queueLength} items pending)`);
     await processBillingBatch();
   }, BATCH_TIMEOUT);
@@ -195,9 +195,9 @@ export async function queueBillingOperation(
     };
     
     // Add operation to Redis list
-    const redis = redisConnection;
+    const redis = getRedisConnection();
     await redis.rpush(BATCH_KEY, JSON.stringify(operation));
-    const queueLength = await redis.llen(BATCH_KEY);
+    const queueLength = await getRedisConnection().llen(BATCH_KEY);
     logger.info(`📥 Added billing operation to queue (${queueLength} total pending)`, {
       team_id,
       credits

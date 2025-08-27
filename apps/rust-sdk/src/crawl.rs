@@ -99,6 +99,49 @@ impl From<CrawlScrapeOptions> for ScrapeOptions {
     }
 }
 
+/// Options for webhook notifications
+#[serde_with::skip_serializing_none]
+#[derive(Deserialize, Serialize, Debug, Default, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct WebhookOptions {
+    /// URL to send webhook notifications to
+    pub url: String,
+
+    /// Custom headers to include in webhook requests
+    pub headers: Option<HashMap<String, String>>,
+
+    /// Custom data included in all webhook payloads
+    pub metadata: Option<HashMap<String, String>>,
+
+    /// Event types to receive
+    pub events: Option<Vec<WebhookEvent>>,
+}
+
+impl From<String> for WebhookOptions {
+    fn from(value: String) -> Self {
+        Self {
+            url: value,
+            ..Default::default()
+        }
+    }
+}
+
+#[derive(Deserialize, Serialize, Debug, PartialEq, Eq, Clone, Copy)]
+#[serde(rename_all = "camelCase")]
+pub enum WebhookEvent {
+    /// Crawl finished successfully
+    Completed,
+
+    /// Crawl encountered an error
+    Failed,
+
+    /// Individual page scraped
+    Page,
+
+    /// Crawl job initiated
+    Started,
+}
+
 #[serde_with::skip_serializing_none]
 #[derive(Deserialize, Serialize, Debug, Default, Clone)]
 #[serde(rename_all = "camelCase")]
@@ -132,7 +175,7 @@ pub struct CrawlOptions {
     pub allow_external_links: Option<bool>,
 
     /// URL to send Webhook crawl events to.
-    pub webhook: Option<String>,
+    pub webhook: Option<WebhookOptions>,
 
     /// Idempotency key to send to the crawl endpoint.
     #[serde(skip)]

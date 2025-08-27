@@ -1,18 +1,15 @@
 import { Request, Response } from "express";
 import { authenticateUser } from "../auth";
 import { RateLimiterMode } from "../../../src/types";
-import { supabase_service } from "../../../src/services/supabase";
 import { logger } from "../../../src/lib/logger";
 import { getCrawl, saveCrawl } from "../../../src/lib/crawl-redis";
 import * as Sentry from "@sentry/node";
 import { configDotenv } from "dotenv";
-import { redisConnection } from "../../services/queue-service";
+import { redisEvictConnection } from "../../../src/services/redis";
 configDotenv();
 
 export async function crawlCancelController(req: Request, res: Response) {
   try {
-    const useDbAuthentication = process.env.USE_DB_AUTHENTICATION === "true";
-
     const auth = await authenticateUser(req, res, RateLimiterMode.CrawlStatus);
     if (!auth.success) {
       return res.status(auth.status).json({ error: auth.error });
@@ -20,8 +17,15 @@ export async function crawlCancelController(req: Request, res: Response) {
 
     const { team_id } = auth;
 
-    redisConnection.sadd("teams_using_v0", team_id)
+    if (auth.chunk?.flags?.forceZDR) {
+      return res.status(400).json({ error: "Your team has zero data retention enabled. This is not supported on the v0 API. Please update your code to use the v1 API." });
+    }
+
+    redisEvictConnection.sadd("teams_using_v0", team_id)
       .catch(error => logger.error("Failed to add team to teams_using_v0", { error, team_id }));
+    
+    redisEvictConnection.sadd("teams_using_v0:" + team_id, "crawl:" + req.params.jobId + ":cancel")
+      .catch(error => logger.error("Failed to add team to teams_using_v0 (2)", { error, team_id }));
 
     const sc = await getCrawl(req.params.jobId);
     if (!sc) {
@@ -29,19 +33,8 @@ export async function crawlCancelController(req: Request, res: Response) {
     }
 
     // check if the job belongs to the team
-    if (useDbAuthentication) {
-      const { data, error: supaError } = await supabase_service
-        .from("bulljobs_teams")
-        .select("*")
-        .eq("job_id", req.params.jobId)
-        .eq("team_id", team_id);
-      if (supaError) {
-        return res.status(500).json({ error: supaError.message });
-      }
-
-      if (data.length === 0) {
-        return res.status(403).json({ error: "Unauthorized" });
-      }
+    if (sc.team_id !== team_id) {
+      return res.status(403).json({ error: "Unauthorized" });
     }
 
     try {

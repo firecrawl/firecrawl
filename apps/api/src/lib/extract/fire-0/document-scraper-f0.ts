@@ -1,10 +1,10 @@
-import { Document, ScrapeOptions, URLTrace, scrapeOptions } from "../../../controllers/v1/types";
-import { logger } from "../../logger";
+import { Document, ScrapeOptions, TeamFlags, URLTrace, scrapeOptions as scrapeOptionsSchema } from "../../../controllers/v2/types";
 import { getScrapeQueue } from "../../../services/queue-service";
 import { waitForJob } from "../../../services/queue-jobs";
 import { addScrapeJob } from "../../../services/queue-jobs";
 import { getJobPriority } from "../../job-priority";
 import type { Logger } from "winston";
+import { isUrlBlocked } from "../../../scraper/WebScraper/utils/blocklist";
 
 interface ScrapeDocumentOptions {
   url: string;
@@ -12,6 +12,7 @@ interface ScrapeDocumentOptions {
   origin: string;
   timeout: number;
   isSingleUrl?: boolean;
+  flags: TeamFlags | null;
 }
 
 export async function scrapeDocument_F0(
@@ -26,6 +27,10 @@ export async function scrapeDocument_F0(
     trace.timing.scrapedAt = new Date().toISOString();
   }
 
+  if (isUrlBlocked(options.url, options.flags ?? null)) {
+    return null;
+  }
+
   async function attemptScrape(timeout: number) {
     const jobId = crypto.randomUUID();
     const jobPriority = await getJobPriority({
@@ -34,19 +39,26 @@ export async function scrapeDocument_F0(
       from_extract: true,
     });
 
+    const scrapeOptions = scrapeOptionsSchema.parse({
+      ...internalScrapeOptions,
+      maxAge: 4 * 60 * 60 * 1000,
+    });
+
     await addScrapeJob(
       {
         url: options.url,
         mode: "single_urls",
         team_id: options.teamId,
-        scrapeOptions: scrapeOptions.parse({ ...internalScrapeOptions }),
+        scrapeOptions,
         internalOptions: {
-          useCache: true,
           teamId: options.teamId,
+          bypassBilling: true,
         },
         origin: options.origin,
         is_scrape: true,
         from_extract: true,
+        startTime: Date.now(),
+        zeroDataRetention: false, // not supported
       },
       {},
       jobId,

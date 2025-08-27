@@ -24,6 +24,14 @@ const logFormat = winston.format.printf(
     }`,
 );
 
+// Filter function to prevent logging when zeroDataRetention is true
+const zeroDataRetentionFilter = winston.format((info) => {
+  if (info.metadata?.zeroDataRetention === true || info.zeroDataRetention === true) {
+    return false; // Don't log this message
+  }
+  return info;
+})();
+
 export const logger = winston.createLogger({
   level: process.env.LOGGING_LEVEL?.toLowerCase() ?? "debug",
   format: winston.format.json({
@@ -51,11 +59,16 @@ export const logger = winston.createLogger({
               "-" +
               crypto.randomUUID() +
               ".log",
+            format: winston.format.combine(
+              zeroDataRetentionFilter,
+              winston.format.json()
+            ),
           }),
         ]
       : []),
     new winston.transports.Console({
       format: winston.format.combine(
+        zeroDataRetentionFilter,
         winston.format.timestamp({ format: "YYYY-MM-DD HH:mm:ss" }),
         winston.format.metadata({
           fillExcept: ["message", "level", "timestamp"],

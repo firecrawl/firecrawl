@@ -4,7 +4,6 @@ import { authenticateUser } from "../auth";
 import { RateLimiterMode } from "../../../src/types";
 import { addScrapeJob } from "../../../src/services/queue-jobs";
 import { isUrlBlocked } from "../../../src/scraper/WebScraper/utils/blocklist";
-import { logCrawl } from "../../../src/services/logging/crawl_log";
 import { validateIdempotencyKey } from "../../../src/services/idempotency/validate";
 import { createIdempotencyKey } from "../../../src/services/idempotency/create";
 import {
@@ -24,13 +23,14 @@ import {
   saveCrawl,
   StoredCrawl,
 } from "../../../src/lib/crawl-redis";
-import { getScrapeQueue, redisConnection } from "../../../src/services/queue-service";
+import { redisEvictConnection } from "../../../src/services/redis";
 import { checkAndUpdateURL } from "../../../src/lib/validateUrl";
 import * as Sentry from "@sentry/node";
 import { getJobPriority } from "../../lib/job-priority";
 import { fromLegacyScrapeOptions, url as urlSchema } from "../v1/types";
 import { ZodError } from "zod";
 import { BLOCKLISTED_URL_MESSAGE } from "../../lib/strings";
+import { fromV0ScrapeOptions } from "../v2/types";
 
 export async function crawlController(req: Request, res: Response) {
   try {
@@ -41,8 +41,17 @@ export async function crawlController(req: Request, res: Response) {
 
     const { team_id, chunk } = auth;
 
-    redisConnection.sadd("teams_using_v0", team_id)
+    if (chunk?.flags?.forceZDR) {
+      return res.status(400).json({ error: "Your team has zero data retention enabled. This is not supported on the v0 API. Please update your code to use the v1 API." });
+    }
+
+    const id = uuidv4();
+
+    redisEvictConnection.sadd("teams_using_v0", team_id)
       .catch(error => logger.error("Failed to add team to teams_using_v0", { error, team_id }));
+    
+    redisEvictConnection.sadd("teams_using_v0:" + team_id, "crawl:" + id)
+      .catch(error => logger.error("Failed to add team to teams_using_v0 (2)", { error, team_id }));
 
     if (req.headers["x-idempotency-key"]) {
       const isIdempotencyValid = await validateIdempotencyKey(req);
@@ -150,11 +159,7 @@ export async function crawlController(req: Request, res: Response) {
     //   }
     // }
 
-    const id = uuidv4();
-
-    await logCrawl(id, team_id);
-
-    const { scrapeOptions, internalOptions } = fromLegacyScrapeOptions(
+    const { scrapeOptions, internalOptions } = fromV0ScrapeOptions(
       pageOptions,
       undefined,
       undefined,
@@ -198,14 +203,16 @@ export async function crawlController(req: Request, res: Response) {
               name: uuid,
               data: {
                 url,
-                mode: "single_urls",
+                mode: "single_urls" as const,
                 crawlerOptions,
                 scrapeOptions,
                 internalOptions,
                 team_id,
                 origin: req.body.origin ?? defaultOrigin,
+                integration: req.body.integration,
                 crawl_id: id,
                 sitemapped: true,
+                zeroDataRetention: false, // not supported on v0
               },
               opts: {
                 jobId: uuid,
@@ -218,14 +225,16 @@ export async function crawlController(req: Request, res: Response) {
             id,
             sc,
             jobs.map((x) => x.data.url),
+            logger,
           );
           await addCrawlJobs(
             id,
             jobs.map((x) => x.opts.jobId),
+            logger,
           );
           for (const job of jobs) {
             // add with sentry instrumentation
-            await addScrapeJob(job.data as any, {}, job.opts.jobId);
+            await addScrapeJob(job.data, {}, job.opts.jobId);
           }
         });
 
@@ -245,14 +254,16 @@ export async function crawlController(req: Request, res: Response) {
           internalOptions,
           team_id,
           origin: req.body.origin ?? defaultOrigin,
+          integration: req.body.integration,
           crawl_id: id,
+          zeroDataRetention: false, // not supported on v0
         },
         {
           priority: 15, // prioritize request 0 of crawl jobs same as scrape jobs
         },
         jobId,
       );
-      await addCrawlJob(id, jobId);
+      await addCrawlJob(id, jobId, logger);
     }
 
     res.json({ jobId: id });

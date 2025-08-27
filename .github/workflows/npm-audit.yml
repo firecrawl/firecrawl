@@ -1,0 +1,24 @@
+name: Audit NPM Packages
+
+on:
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - name: Audit NPM Packages
+        run: |
+          pnpm dlx audit-ci@^7 --directory apps/api --config apps/api/audit-ci.jsonc
+          pnpm dlx audit-ci@^7 --directory apps/playwright-service-ts --config apps/playwright-service-ts/audit-ci.jsonc
+          pnpm dlx audit-ci@^7 --directory apps/js-sdk --config apps/js-sdk/audit-ci.jsonc
+          pnpm dlx audit-ci@^7 --directory apps/js-sdk/firecrawl --config apps/js-sdk/firecrawl/audit-ci.jsonc
+          pnpm dlx audit-ci@^7 --directory apps/test-suite --config apps/test-suite/audit-ci.jsonc
+          pnpm dlx audit-ci@^7 --directory apps/ui/ingestion-ui --config apps/ui/ingestion-ui/audit-ci.jsonc

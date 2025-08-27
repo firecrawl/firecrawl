@@ -10,10 +10,11 @@ readme = {file="README.md", content-type = "text/markdown"}
 requires-python = ">=3.8"
 dependencies = [
     "requests",
+    "httpx",
     "python-dotenv",
     "websockets",
     "nest-asyncio",
-    "pydantic",
+    "pydantic>=2.0",
     "aiohttp"
 ]
 authors = [{name = "Mendable.ai",email = "nick@mendable.ai"}]
@@ -46,8 +47,8 @@ keywords = ["SDK", "API", "firecrawl"]
 
 [project.urls]
 "Documentation" = "https://docs.firecrawl.dev"
-"Source" = "https://github.com/mendableai/firecrawl"
-"Tracker" = "https://github.com/mendableai/firecrawl/issues"
+"Source" = "https://github.com/firecrawl/firecrawl"
+"Tracker" = "https://github.com/firecrawl/firecrawl/issues"
 
 [tool.setuptools.packages.find]
 where = ["."]

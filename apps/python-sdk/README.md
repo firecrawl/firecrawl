@@ -13,24 +13,25 @@ pip install firecrawl-py
 ## Usage
 
 1. Get an API key from [firecrawl.dev](https://firecrawl.dev)
-2. Set the API key as an environment variable named `FIRECRAWL_API_KEY` or pass it as a parameter to the `FirecrawlApp` class.
+2. Set the API key as an environment variable named `FIRECRAWL_API_KEY` or pass it as a parameter to the `Firecrawl` class.
 
 Here's an example of how to use the SDK:
 
 ```python 
-from firecrawl import FirecrawlApp, ScrapeOptions
+from firecrawl import Firecrawl
+from firecrawl.types import ScrapeOptions
 
-app = FirecrawlApp(api_key="fc-YOUR_API_KEY")
+firecrawl = Firecrawl(api_key="fc-YOUR_API_KEY")
 
-# Scrape a website:
-data = app.scrape_url(
+# Scrape a website (v2):
+data = firecrawl.scrape(
   'https://firecrawl.dev', 
   formats=['markdown', 'html']
 )
 print(data)
 
-# Crawl a website:
-crawl_status = app.crawl_url(
+# Crawl a website (v2 waiter):
+crawl_status = firecrawl.crawl(
   'https://firecrawl.dev', 
   limit=100, 
   scrape_options=ScrapeOptions(formats=['markdown', 'html'])
@@ -40,20 +41,20 @@ print(crawl_status)
 
 ### Scraping a URL
 
-To scrape a single URL, use the `scrape_url` method. It takes the URL as a parameter and returns the scraped data as a dictionary.
+To scrape a single URL, use the `scrape` method. It takes the URL as a parameter and returns a document with the requested formats.
 
 ```python 
-# Scrape a website:
-scrape_result = app.scrape_url('firecrawl.dev', formats=['markdown', 'html'])
+# Scrape a website (v2):
+scrape_result = firecrawl.scrape('https://firecrawl.dev', formats=['markdown', 'html'])
 print(scrape_result)
 ```
 
 ### Crawling a Website
 
-To crawl a website, use the `crawl_url` method. It takes the starting URL and optional parameters as arguments. The `params` argument allows you to specify additional options for the crawl job, such as the maximum number of pages to crawl, allowed domains, and the output format.
+To crawl a website, use the `crawl` method. It takes the starting URL and optional parameters as arguments. You can control depth, limits, formats, and more.
 
 ```python 
-crawl_status = app.crawl_url(
+crawl_status = firecrawl.crawl(
   'https://firecrawl.dev', 
   limit=100, 
   scrape_options=ScrapeOptions(formats=['markdown', 'html']),
@@ -66,23 +67,23 @@ print(crawl_status)
 
 <Tip>Looking for async operations? Check out the [Async Class](#async-class) section below.</Tip>
 
-To crawl a website asynchronously, use the `crawl_url_async` method. It returns the crawl `ID` which you can use to check the status of the crawl job. It takes the starting URL and optional parameters as arguments. The `params` argument allows you to specify additional options for the crawl job, such as the maximum number of pages to crawl, allowed domains, and the output format.
+To enqueue a crawl asynchronously, use `start_crawl`. It returns the crawl `ID` which you can use to check the status of the crawl job.
 
 ```python 
-crawl_status = app.async_crawl_url(
+crawl_job = firecrawl.start_crawl(
   'https://firecrawl.dev', 
   limit=100, 
   scrape_options=ScrapeOptions(formats=['markdown', 'html']),
 )
-print(crawl_status)
+print(crawl_job)
 ```
 
 ### Checking Crawl Status
 
-To check the status of a crawl job, use the `check_crawl_status` method. It takes the job ID as a parameter and returns the current status of the crawl job.
+To check the status of a crawl job, use the `get_crawl_status` method. It takes the job ID as a parameter and returns the current status of the crawl job.
 
 ```python 
-crawl_status = app.check_crawl_status("<crawl_id>")
+crawl_status = firecrawl.get_crawl_status("<crawl_id>")
 print(crawl_status)
 ```
 
@@ -91,17 +92,17 @@ print(crawl_status)
 To cancel an asynchronous crawl job, use the `cancel_crawl` method. It takes the job ID of the asynchronous crawl as a parameter and returns the cancellation status.
 
 ```python 
-cancel_crawl = app.cancel_crawl(id)
+cancel_crawl = firecrawl.cancel_crawl(id)
 print(cancel_crawl)
 ```
 
 ### Map a Website
 
-Use `map_url` to generate a list of URLs from a website. The `params` argument let you customize the mapping process, including options to exclude subdomains or to utilize the sitemap.
+Use `map` to generate a list of URLs from a website. Options let you customize the mapping process, including whether to use the sitemap or include subdomains.
 
 ```python 
-# Map a website:
-map_result = app.map_url('https://firecrawl.dev')
+# Map a website (v2):
+map_result = firecrawl.map('https://firecrawl.dev')
 print(map_result)
 ```
 
@@ -152,20 +153,35 @@ The SDK handles errors returned by the Firecrawl API and raises appropriate exce
 
 ## Async Class
 
-For async operations, you can use the `AsyncFirecrawlApp` class. Its methods are the same as the `FirecrawlApp` class, but they don't block the main thread.
+For async operations, you can use the `AsyncFirecrawl` class. Its methods mirror the `Firecrawl` class, but you `await` them.
 
 ```python 
-from firecrawl import AsyncFirecrawlApp
+from firecrawl import AsyncFirecrawl
 
-app = AsyncFirecrawlApp(api_key="YOUR_API_KEY")
+firecrawl = AsyncFirecrawl(api_key="YOUR_API_KEY")
 
-# Async Scrape
+# Async Scrape (v2)
 async def example_scrape():
-  scrape_result = await app.scrape_url(url="https://example.com")
+  scrape_result = await firecrawl.scrape(url="https://example.com")
   print(scrape_result)
 
-# Async Crawl
+# Async Crawl (v2)
 async def example_crawl():
-  crawl_result = await app.crawl_url(url="https://example.com")
+  crawl_result = await firecrawl.crawl(url="https://example.com")
   print(crawl_result)
+```
+
+## v1 compatibility
+
+For legacy code paths, v1 remains available under `firecrawl.v1` with the original method names.
+
+```python
+from firecrawl import Firecrawl
+
+firecrawl = Firecrawl(api_key="YOUR_API_KEY")
+
+# v1 methods (feature‑frozen)
+doc_v1 = firecrawl.v1.scrape_url('https://firecrawl.dev', formats=['markdown', 'html'])
+crawl_v1 = firecrawl.v1.crawl_url('https://firecrawl.dev', limit=100)
+map_v1 = firecrawl.v1.map_url('https://firecrawl.dev')
 ```

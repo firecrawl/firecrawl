@@ -17,7 +17,8 @@
     "noImplicitOverride": true,
 
     /* If NOT transpiling with TypeScript: */
-    "module": "NodeNext",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
     "noEmit": true,
   },
   "include": ["src/**/*"],

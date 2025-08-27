@@ -1,0 +1,12 @@
+{
+    "$schema": "https://github.com/IBM/audit-ci/raw/main/docs/schema.json",
+    "low": true,
+    "allowlist": [
+        {
+            "GHSA-3gc7-fjrx-p6mg|x402-express>@coinbase/cdp-sdk>@solana/spl-token>@solana/buffer-layout-utils>bigint-buffer": {
+                "active": true,
+                "notes": "Vulnerable code path is never called via the x402-express package."
+            }
+        }
+    ]
+}

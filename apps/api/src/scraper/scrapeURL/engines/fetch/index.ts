@@ -1,23 +1,21 @@
 import * as undici from "undici";
 import { EngineScrapeResult } from "..";
 import { Meta } from "../..";
-import { TimeoutError } from "../../error";
+import { SSLError } from "../../error";
 import { specialtyScrapeCheck } from "../utils/specialtyHandler";
 import {
   InsecureConnectionError,
-  makeSecureDispatcher,
+  secureDispatcher,
+  secureDispatcherSkipTlsVerification,
 } from "../utils/safeFetch";
 import { MockState, saveMock } from "../../lib/mock";
 import { TextDecoder } from "util";
 
 export async function scrapeURLWithFetch(
   meta: Meta,
-  timeToRun: number | undefined,
 ): Promise<EngineScrapeResult> {
-  const timeout = timeToRun ?? 300000;
-
   const mockOptions = {
-    url: meta.url,
+    url: meta.rewrittenUrl ?? meta.url,
 
     // irrelevant
     method: "GET",
@@ -30,7 +28,7 @@ export async function scrapeURLWithFetch(
     url: string;
     body: string,
     status: number;
-    headers: any;
+    headers: [string, string][];
   };
 
   if (meta.mock !== null) {
@@ -54,23 +52,12 @@ export async function scrapeURLWithFetch(
     };
   } else {
     try {
-      const x = await Promise.race([
-        undici.fetch(meta.url, {
-          dispatcher: await makeSecureDispatcher(meta.url),
-          redirect: "follow",
-          headers: meta.options.headers,
-          signal: meta.internalOptions.abort,
-        }),
-        (async () => {
-          await new Promise((resolve) =>
-            setTimeout(() => resolve(null), timeout),
-          );
-          throw new TimeoutError(
-            "Fetch was unable to scrape the page before timing out",
-            { cause: { timeout } },
-          );
-        })(),
-      ]);
+      const x = await undici.fetch(meta.rewrittenUrl ?? meta.url, {
+        dispatcher: meta.options.skipTlsVerification ? secureDispatcherSkipTlsVerification : secureDispatcher,
+        redirect: "follow",
+        headers: meta.options.headers,
+        signal: meta.abort.asSignal(),
+      });
 
       const buf = Buffer.from(await x.arrayBuffer());
       let text = buf.toString("utf8");
@@ -102,6 +89,8 @@ export async function scrapeURLWithFetch(
         error.cause instanceof InsecureConnectionError
       ) {
         throw error.cause;
+      } else if (error instanceof Error && error.message === "fetch failed" && error.cause && (error.cause as any).code === "CERT_HAS_EXPIRED") {
+        throw new SSLError(meta.options.skipTlsVerification);
       } else {
         throw error;
       }
@@ -117,5 +106,14 @@ export async function scrapeURLWithFetch(
     url: response.url,
     html: response.body,
     statusCode: response.status,
+    contentType: (response.headers.find(
+      (x) => x[0].toLowerCase() === "content-type",
+    ) ?? [])[1] ?? undefined,
+
+    proxyUsed: "basic",
   };
+}
+
+export function fetchMaxReasonableTime(meta: Meta): number {
+  return 15000;
 }

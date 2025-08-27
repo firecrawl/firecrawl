@@ -19,10 +19,14 @@ const goExecutablePath = join(
 class GoMarkdownConverter {
   private static instance: GoMarkdownConverter;
   private convert: any;
-
+  private free: any;
+  
   private constructor() {
     const lib = koffi.load(goExecutablePath);
-    this.convert = lib.func("ConvertHTMLToMarkdown", "string", ["string"]);
+    this.free = lib.func("FreeCString", "void", ["string"]);
+    const cstn = "CString:" + crypto.randomUUID();
+    const freedResultString = koffi.disposable(cstn, "string", this.free);
+    this.convert = lib.func("ConvertHTMLToMarkdown", freedResultString, ["string"]);
   }
 
   public static async getInstance(): Promise<GoMarkdownConverter> {

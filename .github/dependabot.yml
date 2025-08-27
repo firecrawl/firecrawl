@@ -6,7 +6,6 @@ updates:
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 0  # Disable version updates
-    security-updates: "all"
     commit-message:
       prefix: "apps/playwright-service"
       include: "scope"
@@ -17,7 +16,6 @@ updates:
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 0  # Disable version updates
-    security-updates: "all"
     commit-message:
       prefix: "apps/python-sdk"
       include: "scope"
@@ -28,7 +26,6 @@ updates:
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 0  # Disable version updates
-    security-updates: "all"
     commit-message:
       prefix: "apps/api"
       include: "scope"
@@ -39,7 +36,12 @@ updates:
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 0  # Disable version updates
-    security-updates: "all"
     commit-message:
       prefix: "apps/test-suite"
       include: "scope"
+
+  # GitHub Actions
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"

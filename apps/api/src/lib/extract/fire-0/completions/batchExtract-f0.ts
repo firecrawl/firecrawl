@@ -20,6 +20,7 @@ export async function batchExtractPromise_F0(
   prompt: string,
   systemPrompt: string,
   doc: Document,
+  metadata: { teamId: string, functionId?: string, extractId?: string, scrapeId?: string }
 ): Promise<{
   extract: any;
   numTokens: number;
@@ -42,7 +43,11 @@ export async function batchExtractPromise_F0(
       schema: multiEntitySchema,
     },
     markdown: buildDocument_F0(doc),
-    isExtractEndpoint: true
+    isExtractEndpoint: true,
+    metadata: {
+      ...metadata,
+      functionId: metadata.functionId ? (metadata.functionId + "/batchExtractPromise_F0") : "batchExtractPromise_F0",
+    }
   });
 
   return {

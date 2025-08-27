@@ -1,5 +1,5 @@
 python-dotenv==1.0.1
-requests==2.31.0
+requests==2.32.4
 serpapi-python==0.1.5
 openai==1.12.0
 firecrawl==0.1.2 

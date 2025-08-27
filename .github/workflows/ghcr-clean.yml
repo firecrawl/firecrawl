@@ -10,7 +10,7 @@ jobs:
     steps:
       - uses: bots-house/ghcr-delete-image-action@v1.1.0
         with:
-          owner: mendableai
+          owner: firecrawl
           name: firecrawl
           # NOTE: using Personal Access Token
           token: ${{secrets.GITHUB_TOKEN}}

@@ -12,5 +12,6 @@ if (process.env.SENTRY_DSN) {
     profilesSampleRate: 1.0,
     serverName: process.env.FLY_MACHINE_ID,
     environment: process.env.SENTRY_ENVIRONMENT ?? "production",
+    skipOpenTelemetrySetup: true,
   });
 }

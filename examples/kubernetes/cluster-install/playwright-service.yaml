@@ -23,7 +23,7 @@ spec:
         - name: docker-registry-secret
       containers:
         - name: playwright-service
-          image: ghcr.io/winkk-dev/firecrawl-playwright:latest
+          image: ghcr.io/firecrawl/playwright-service:latest
           imagePullPolicy: Always
           ports:
             - containerPort: 3000
@@ -32,16 +32,7 @@ spec:
                 name: playwright-service-config
           livenessProbe:
             httpGet:
-              path: /health/liveness
-              port: 3000
-            initialDelaySeconds: 30
-            periodSeconds: 30
-            timeoutSeconds: 5
-            successThreshold: 1
-            failureThreshold: 3
-          readinessProbe:
-            httpGet:
-              path: /health/readiness
+              path: /health
               port: 3000
             initialDelaySeconds: 30
             periodSeconds: 30

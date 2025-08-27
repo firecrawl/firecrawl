@@ -1,4 +1,4 @@
-import { redisConnection } from "../../services/queue-service";
+import { redisEvictConnection } from "../../services/redis";
 import { logger as _logger } from "../logger";
 
 export enum DeepResearchStep {
@@ -52,12 +52,12 @@ const DEEP_RESEARCH_TTL = 6 * 60 * 60;
 
 export async function saveDeepResearch(id: string, research: StoredDeepResearch) {
   _logger.debug("Saving deep research " + id + " to Redis...");
-  await redisConnection.set("deep-research:" + id, JSON.stringify(research));
-  await redisConnection.expire("deep-research:" + id, DEEP_RESEARCH_TTL);
+  await redisEvictConnection.set("deep-research:" + id, JSON.stringify(research));
+  await redisEvictConnection.expire("deep-research:" + id, DEEP_RESEARCH_TTL);
 }
 
 export async function getDeepResearch(id: string): Promise<StoredDeepResearch | null> {
-  const x = await redisConnection.get("deep-research:" + id);
+  const x = await redisEvictConnection.get("deep-research:" + id);
   return x ? JSON.parse(x) : null;
 }
 
@@ -91,13 +91,13 @@ export async function updateDeepResearch(
 
   
 
-  await redisConnection.set("deep-research:" + id, JSON.stringify(updatedResearch));
-  await redisConnection.expire("deep-research:" + id, DEEP_RESEARCH_TTL);
+  await redisEvictConnection.set("deep-research:" + id, JSON.stringify(updatedResearch));
+  await redisEvictConnection.expire("deep-research:" + id, DEEP_RESEARCH_TTL);
 }
 
 export async function getDeepResearchExpiry(id: string): Promise<Date> {
   const d = new Date();
-  const ttl = await redisConnection.pttl("deep-research:" + id);
+  const ttl = await redisEvictConnection.pttl("deep-research:" + id);
   d.setMilliseconds(d.getMilliseconds() + ttl);
   d.setMilliseconds(0);
   return d;

@@ -278,7 +278,7 @@ describe("E2E Tests for v1 API Routes", () => {
       if (!("error" in response.body)) {
         throw new Error("Expected response body to have 'error' property");
       }
-      expect(response.body.error).toBe("Request timed out");
+      expect(response.body.error).toContain("Scrape timed out");
       expect(response.body.success).toBe(false);
     },
     30000,

@@ -21,7 +21,7 @@ export async function tokenUsageController(
     }
 
     // Otherwise fetch fresh data
-    const chunk = await getACUCTeam(req.auth.team_id, false, true, RateLimiterMode.Extract);
+    const chunk = await getACUCTeam(req.auth.team_id, false, false, RateLimiterMode.Extract);
     if (!chunk) {
       res.status(404).json({
         success: false,

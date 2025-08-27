@@ -1,6 +1,6 @@
 // Import necessary dependencies and types
 import { AuthCreditUsageChunk } from "../../controllers/v1/types";
-import { getACUC } from "../../controllers/auth";
+import { clearACUC, clearACUCTeam, getACUC } from "../../controllers/auth";
 import { redlock } from "../redlock";
 import { supabase_rr_service, supabase_service } from "../supabase";
 import { createPaymentIntent } from "./stripe";
@@ -10,7 +10,7 @@ import { NotificationType } from "../../types";
 import { deleteKey, getValue, setValue } from "../redis";
 import { redisRateLimitClient } from "../rate-limiter";
 import { sendSlackWebhook } from "../alerts/slack";
-import { logger } from "../../lib/logger";
+import { logger as _logger } from "../../lib/logger";
 
 // Define the number of credits to be added during auto-recharge
 const AUTO_RECHARGE_CREDITS = 1000;
@@ -32,6 +32,13 @@ export async function autoCharge(
   remainingCredits: number;
   chunk: AuthCreditUsageChunk;
 }> {
+  const logger = _logger.child({
+    module: "auto_charge",
+    method: "autoCharge",
+    team_id: chunk.team_id,
+    teamId: chunk.team_id,
+  });
+
   const resource = `auto-recharge:${chunk.team_id}`;
   const cooldownKey = `auto-recharge-cooldown:${chunk.team_id}`;
   const hourlyCounterKey = `auto-recharge-hourly:${chunk.team_id}`;
@@ -52,7 +59,7 @@ export async function autoCharge(
 
     if (hourlyCharges >= MAX_CHARGES_PER_HOUR) {
       logger.warn(
-        `Auto-recharge for team ${chunk.team_id} exceeded hourly limit of ${MAX_CHARGES_PER_HOUR}`,
+        `Auto-recharge exceeded hourly limit of ${MAX_CHARGES_PER_HOUR}`,
       );
       return {
         success: false,
@@ -66,7 +73,7 @@ export async function autoCharge(
     const cooldownValue = await getValue(cooldownKey);
     if (cooldownValue) {
       logger.info(
-        `Auto-recharge for team ${chunk.team_id} is in cooldown period`,
+        `Auto-recharge is in cooldown period`,
       );
       return {
         success: false,
@@ -95,7 +102,7 @@ export async function autoCharge(
         const cooldownValue = await getValue(cooldownKey);
         if (cooldownValue) {
           logger.info(
-            `Auto-recharge for team ${chunk.team_id} is in cooldown period`,
+            `Auto-recharge is in cooldown period`,
           );
           return {
             success: false,
@@ -131,7 +138,7 @@ export async function autoCharge(
                 .single();
 
             if (customersError) {
-              logger.error(`Error fetching customer data: ${customersError}`);
+              logger.error(`Error fetching customer data`, { error: customersError });
               return {
                 success: false,
                 message: "Error fetching customer data",
@@ -178,6 +185,7 @@ export async function autoCharge(
                 await redisRateLimitClient.expire(
                   hourlyCounterKey,
                   HOURLY_COUNTER_EXPIRY,
+                  "NX",
                 );
 
                 try {
@@ -197,7 +205,7 @@ export async function autoCharge(
                   );
                 }
                 } catch (error) {
-                  logger.error(`Error sending frequent auto-recharge notification: ${error}`);
+                  logger.error(`Error sending frequent auto-recharge notification`, { error });
                 }
 
                 await sendNotification(
@@ -210,8 +218,13 @@ export async function autoCharge(
                 );
 
                 // Reset ACUC cache to reflect the new credit balance
-                const cacheKeyACUC = `acuc_${chunk.api_key}`;
-                await deleteKey(cacheKeyACUC);
+                await clearACUC(chunk.api_key);
+                await clearACUCTeam(chunk.team_id);
+
+                logger.info(`Auto-recharge successful`, {
+                  credits: AUTO_RECHARGE_CREDITS,
+                  paymentStatus: paymentStatus.return_status,
+                });
 
                 if (process.env.SLACK_ADMIN_WEBHOOK_URL) {
                   const webhookCooldownKey = `webhook_cooldown_${chunk.team_id}`;
@@ -280,7 +293,7 @@ export async function autoCharge(
       },
     );
   } catch (error) {
-    logger.error(`Failed to acquire lock for auto-recharge: ${error}`);
+    logger.error(`Failed to acquire lock for auto-recharge`, { error });
     return {
       success: false,
       message: "Failed to acquire lock for auto-recharge",

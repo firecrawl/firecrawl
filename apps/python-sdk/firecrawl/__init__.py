@@ -1,19 +1,23 @@
 """
-This is the Firecrawl package.
+Firecrawl Python SDK
 
-This package provides a Python SDK for interacting with the Firecrawl API.
-It includes methods to scrape URLs, perform searches, initiate and monitor crawl jobs,
-and check the status of these jobs.
-
-For more information visit https://github.com/firecrawl/
 """
 
 import logging
 import os
 
-from .firecrawl import FirecrawlApp, AsyncFirecrawlApp, JsonConfig, ScrapeOptions, ChangeTrackingOptions # noqa
+from .client import Firecrawl, AsyncFirecrawl, FirecrawlApp, AsyncFirecrawlApp
+from .v2.watcher import Watcher
+from .v2.watcher_async import AsyncWatcher
+from .v1 import (
+    V1FirecrawlApp,
+    AsyncV1FirecrawlApp,
+    V1JsonConfig,
+    V1ScrapeOptions,
+    V1ChangeTrackingOptions,
+)
 
-__version__ = "2.5.4"
+__version__ = "3.3.2"
 
 # Define the logger for the Firecrawl project
 logger: logging.Logger = logging.getLogger("firecrawl")
@@ -27,17 +31,14 @@ def _configure_logger() -> None:
     format to the firecrawl logger.
     """
     try:
-        # Create the formatter
         formatter = logging.Formatter(
             "[%(asctime)s - %(name)s:%(lineno)d - %(levelname)s] %(message)s",
             datefmt="%Y-%m-%d %H:%M:%S",
         )
 
-        # Create the console handler and set the formatter
         console_handler = logging.StreamHandler()
         console_handler.setFormatter(formatter)
 
-        # Add the console handler to the firecrawl logger
         logger.addHandler(console_handler)
     except Exception as e:
         logger.error("Failed to configure logging: %s", e)
@@ -45,20 +46,15 @@ def _configure_logger() -> None:
 
 def setup_logging() -> None:
     """Set up logging based on the FIRECRAWL_LOGGING_LEVEL environment variable."""
-    # Check if the firecrawl logger already has a handler
     if logger.hasHandlers():
-        return # To prevent duplicate logging
+        return
 
-    # Check if the FIRECRAWL_LOGGING_LEVEL environment variable is set
     if not (env := os.getenv("FIRECRAWL_LOGGING_LEVEL", "").upper()):
-        # Attach a no-op handler to prevent warnings about no handlers
         logger.addHandler(logging.NullHandler()) 
         return
 
-    # Attach the console handler to the firecrawl logger
     _configure_logger()
 
-    # Set the logging level based on the FIRECRAWL_LOGGING_LEVEL environment variable
     if env == "DEBUG":
         logger.setLevel(logging.DEBUG)
     elif env == "INFO":
@@ -73,7 +69,19 @@ def setup_logging() -> None:
         logger.setLevel(logging.INFO)
         logger.warning("Unknown logging level: %s, defaulting to INFO", env)
 
-
-# Initialize logging configuration when the module is imported
 setup_logging()
 logger.debug("Debugging logger setup")
+
+__all__ = [
+    'Firecrawl',
+    'AsyncFirecrawl',
+    'FirecrawlApp',
+    'AsyncFirecrawlApp',
+    'Watcher',
+    'AsyncWatcher',
+    'V1FirecrawlApp',
+    'AsyncV1FirecrawlApp',
+    'V1JsonConfig',
+    'V1ScrapeOptions',
+    'V1ChangeTrackingOptions',
+]

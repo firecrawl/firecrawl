@@ -1,9 +1,10 @@
 import { FirecrawlJob } from "../types";
-import { Storage } from "@google-cloud/storage";
+import { ApiError, Storage } from "@google-cloud/storage";
 import { logger } from "./logger";
 import { Document } from "../controllers/v1/types";
 
 const credentials = process.env.GCS_CREDENTIALS ? JSON.parse(atob(process.env.GCS_CREDENTIALS)) : undefined;
+const storage = new Storage({ credentials });
 
 export async function saveJobToGCS(job: FirecrawlJob): Promise<void> {
     try {
@@ -11,7 +12,6 @@ export async function saveJobToGCS(job: FirecrawlJob): Promise<void> {
             return;
         }
 
-        const storage = new Storage({ credentials });
         const bucket = storage.bucket(process.env.GCS_BUCKET_NAME);
         const blob = bucket.file(`${job.job_id}.json`);
         for (let i = 0; i < 3; i++) {
@@ -48,6 +48,7 @@ export async function saveJobToGCS(job: FirecrawlJob): Promise<void> {
                         crawler_options: JSON.stringify(job.crawlerOptions),
                         page_options: JSON.stringify(job.scrapeOptions),
                         origin: job.origin,
+                        integration: job.integration ?? null,
                         num_tokens: job.num_tokens ?? null,
                         retry: !!job.retry,
                         crawl_id: job.crawl_id ?? null,
@@ -83,17 +84,17 @@ export async function getJobFromGCS(jobId: string): Promise<Document[] | null> {
             return null;
         }
 
-        const storage = new Storage({ credentials });
         const bucket = storage.bucket(process.env.GCS_BUCKET_NAME);
         const blob = bucket.file(`${jobId}.json`);
-        const [exists] = await blob.exists();
-        if (!exists) {
-            return null;
-        }
         const [content] = await blob.download();
         const x = JSON.parse(content.toString());
         return x;
     } catch (error) {
+        if (error instanceof ApiError && error.code === 404 && error.message.includes("No such object:")) {
+            // Object does not exist
+            return null;
+        }
+        
         logger.error(`Error getting job from GCS`, {
             error,
             jobId,
@@ -103,17 +104,41 @@ export async function getJobFromGCS(jobId: string): Promise<Document[] | null> {
     }
 }
 
+export async function removeJobFromGCS(jobId: string): Promise<void> {
+    try {
+        if (!process.env.GCS_BUCKET_NAME) {
+            return;
+        }
+
+        const bucket = storage.bucket(process.env.GCS_BUCKET_NAME);
+        const blob = bucket.file(`${jobId}.json`);
+        await blob.delete({
+            ignoreNotFound: true,
+        });
+    } catch (error) {
+        if (error instanceof ApiError && error.code === 404 && error.message.includes("No such object:")) {
+            // Object does not exist
+            return;
+        }
+        
+        logger.error(`Error removing job from GCS`, {
+            error,
+            jobId,
+            scrapeId: jobId,
+        });
+    }
+}
+
 // TODO: fix the any type (we have multiple Document types in the codebase)
 export async function getDocFromGCS(url: string): Promise<any | null> {
-  logger.info(`Getting f-engine document from GCS`, {
-    url,
-  });
+//   logger.info(`Getting f-engine document from GCS`, {
+//     url,
+//   });
   try {
       if (!process.env.GCS_FIRE_ENGINE_BUCKET_NAME) {
           return null;
       }
 
-      const storage = new Storage({ credentials });
       const bucket = storage.bucket(process.env.GCS_FIRE_ENGINE_BUCKET_NAME);
       const blob = bucket.file(`${url}`);
       const [exists] = await blob.exists();

@@ -1,0 +1,29 @@
+# Pick your baseUrl here:
+@baseUrl = http://localhost:3002
+# @baseUrl = https://api.firecrawl.dev
+
+
+### Crawl
+# @name crawl
+POST {{baseUrl}}/v2/map HTTP/1.1
+Authorization: Bearer {{$dotenv TEST_API_KEY}}
+content-type: application/json
+
+{
+  "url": "https://firecrawl.dev"
+}
+
+# {
+#     "web": [
+#         {
+#             "url": "https://firecrawl.dev",
+#             "title": "Firecrawl",
+#             "description": "Firecrawl is a platform for crawling and mapping websites."
+#         },
+#         {
+#             "url": "https://firecrawl.dev/blog",
+#             "title": "Firecrawl Blog",
+#             "description": "Firecrawl Blog is a blog about Firecrawl."
+#         }
+#     ]
+# }

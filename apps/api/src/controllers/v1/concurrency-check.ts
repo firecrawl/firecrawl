@@ -4,7 +4,7 @@ import {
   RequestWithAuth,
 } from "./types";
 import { Response } from "express";
-import { redisConnection } from "../../services/queue-service";
+import { redisEvictConnection } from "../../../src/services/redis";
 
 // Basically just middleware and error wrapping
 export async function concurrencyCheckController(
@@ -13,7 +13,7 @@ export async function concurrencyCheckController(
 ) {
   const concurrencyLimiterKey = "concurrency-limiter:" + req.auth.team_id;
   const now = Date.now();
-  const activeJobsOfTeam = await redisConnection.zrangebyscore(
+  const activeJobsOfTeam = await redisEvictConnection.zrangebyscore(
     concurrencyLimiterKey,
     now,
     Infinity,

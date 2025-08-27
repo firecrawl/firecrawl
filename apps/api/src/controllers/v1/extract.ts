@@ -13,6 +13,8 @@ import { performExtraction } from "../../lib/extract/extraction-service";
 import { performExtraction_F0 } from "../../lib/extract/fire-0/extraction-service-f0";
 import { BLOCKLISTED_URL_MESSAGE } from "../../lib/strings";
 import { isUrlBlocked } from "../../scraper/WebScraper/utils/blocklist";
+import { logger as _logger } from "../../lib/logger";
+import { fromV1ScrapeOptions } from "../v2/types";
 
 export async function oldExtract(
   req: RequestWithAuth<{}, ExtractResponse, ExtractRequest>,
@@ -58,9 +60,16 @@ export async function extractController(
   res: Response<ExtractResponse>,
 ) {
   const selfHosted = process.env.USE_DB_AUTHENTICATION !== "true";
+  const originalRequest = { ...req.body };
   req.body = extractRequestSchema.parse(req.body);
 
-  if (req.body.urls?.some((url: string) => isUrlBlocked(url, req.acuc?.flags ?? null))) {
+  if (req.acuc?.flags?.forceZDR) {
+    return res.status(400).json({ success: false, error: "Your team has zero data retention enabled. This is not supported on extract. Please contact support@firecrawl.com to unblock this feature." });
+  }
+
+  const invalidURLs: string[] = req.body.urls?.filter((url: string) => isUrlBlocked(url, req.acuc?.flags ?? null)) ?? [];
+
+  if (invalidURLs.length > 0 && !req.body.ignoreInvalidURLs) {
     if (!res.headersSent) {
       return res.status(403).json({
         success: false,
@@ -70,8 +79,26 @@ export async function extractController(
   }
 
   const extractId = crypto.randomUUID();
-  const jobData = {
+
+  _logger.info("Extract starting...", {
     request: req.body,
+    originalRequest,
+    teamId: req.auth.team_id,
+    team_id: req.auth.team_id,
+    subId: req.acuc?.sub_id,
+    extractId,
+    zeroDataRetention: req.acuc?.flags?.forceZDR,
+  });
+
+  const scrapeOptions = req.body.scrapeOptions
+    ? fromV1ScrapeOptions(req.body.scrapeOptions, req.body.scrapeOptions.timeout, req.auth.team_id).scrapeOptions
+    : undefined;
+
+  const jobData = {
+    request: {
+      ...req.body,
+      scrapeOptions,
+    },
     teamId: req.auth.team_id,
     subId: req.acuc?.sub_id,
     extractId,
@@ -97,40 +124,19 @@ export async function extractController(
     showLLMUsage: req.body.__experimental_llmUsage,
     showSources: req.body.__experimental_showSources || req.body.showSources,
     showCostTracking: req.body.__experimental_showCostTracking,
+    zeroDataRetention: req.acuc?.flags?.forceZDR,
   });
 
-  if (Sentry.isInitialized()) {
-    const size = JSON.stringify(jobData).length;
-    await Sentry.startSpan(
-      {
-        name: "Add extract job",
-        op: "queue.publish",
-        attributes: {
-          "messaging.message.id": extractId,
-          "messaging.destination.name": getExtractQueue().name,
-          "messaging.message.body.size": size,
-        },
-      },
-      async (span) => {
-        await getExtractQueue().add(extractId, {
-          ...jobData,
-          sentry: {
-            trace: Sentry.spanToTraceHeader(span),
-            baggage: Sentry.spanToBaggageHeader(span),
-            size,
-          },
-        }, { jobId: extractId });
-      },
-    );
-  } else {
-    await getExtractQueue().add(extractId, jobData, {
-      jobId: extractId,
-    });
-  }
+  await getExtractQueue().add(extractId, jobData, {
+    jobId: extractId,
+  });
 
   return res.status(200).json({
     success: true,
     id: extractId,
     urlTrace: [],
+    ...(invalidURLs.length > 0 && req.body.ignoreInvalidURLs ? {
+      invalidURLs,
+    } : {}),
   });
 }

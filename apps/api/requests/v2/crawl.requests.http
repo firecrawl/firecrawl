@@ -1,0 +1,57 @@
+# Pick your baseUrl here:
+@baseUrl = http://localhost:3002
+# @baseUrl = https://api.firecrawl.dev
+
+
+### Crawl
+# @name crawl
+POST {{baseUrl}}/v2/crawl HTTP/1.1
+Authorization: Bearer {{$dotenv TEST_API_KEY}}
+content-type: application/json
+
+{
+  "url": "https://firecrawl.dev",
+  "prompt": "only get me the blog posts"
+}
+
+
+### Crawl Parameters Preview
+# @name crawlParamsPreview
+POST {{baseUrl}}/v2/crawl/params-preview HTTP/1.1
+Authorization: Bearer {{$dotenv TEST_API_KEY}}
+content-type: application/json
+
+{
+  "url": "https://firecrawl.dev",
+  "prompt": "only get me the blog and news posts"
+}
+
+# Expected response:
+# {
+#   "success": true,
+#   "data": {
+#     "url": "https://firecrawl.dev",
+#     "includePaths": ["blog", "news"],
+#     "excludePaths": [],
+#     "limit": 50,
+#     "maxDepth": 2
+#   }
+# }
+
+### Crawl with Generated Parameters
+# @name crawlWithParams
+POST {{baseUrl}}/v2/crawl HTTP/1.1
+Authorization: Bearer {{$dotenv TEST_API_KEY}}
+content-type: application/json
+
+{
+    "url": "https://firecrawl.dev",
+    "includePaths": ["blog", "news"]
+}
+
+
+### Active Crawls
+# @name activeCrawls
+GET {{baseUrl}}/v2/crawl/active HTTP/1.1
+Authorization: Bearer {{$dotenv TEST_API_KEY}}
+content-type: application/json

@@ -8,8 +8,8 @@ export function normalizeUrl(url: string) {
 
 export function normalizeUrlOnlyHostname(url: string) {
   try {
-    const hostname = new URL(url).hostname;
-    return hostname.replace(/^www\./, "");
+    const urlObj = new URL(url);
+    return urlObj.hostname.replace(/^www\./, "");
   } catch (error) {
     return url
       .replace(/^https?:\/\//, "")

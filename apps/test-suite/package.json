@@ -12,22 +12,40 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.24.3",
+    "@anthropic-ai/sdk": "^0.57.0",
     "@dqbd/tiktoken": "^1.0.14",
     "@supabase/supabase-js": "^2.43.1",
     "dotenv": "^16.4.5",
-    "jest": "^29.7.0",
-    "openai": "^4.40.2",
-    "playwright": "^1.43.1",
-    "supertest": "^7.0.0",
-    "ts-jest": "^29.1.2"
+    "jest": "^30.0.5",
+    "openai": "^5.10.2",
+    "playwright": "^1.54.1",
+    "supertest": "^7.1.4",
+    "ts-jest": "^29.4.0"
   },
   "devDependencies": {
-    "@jest/globals": "^29.7.0",
-    "@types/jest": "^29.5.12",
+    "@jest/globals": "^30.0.5",
+    "@types/jest": "^30.0.0",
     "@types/supertest": "^6.0.2",
-    "artillery": "^2.0.19",
+    "artillery": "^2.0.23",
     "typescript": "^5.4.5",
     "zod": "^3.24.1"
+  },
+  "pnpm": {
+    "overrides": {
+      "braces@<3.0.3": ">=3.0.3",
+      "micromatch@<4.0.8": ">=4.0.8",
+      "nanoid@<3.3.8": ">=3.3.8",
+      "undici@>=6.0.0 <6.21.1": ">=6.21.1",
+      "cookie@<0.7.0": ">=0.7.0",
+      "@babel/helpers@<7.26.10": ">=7.26.10",
+      "undici@>=6.0.0 <6.21.2": ">=6.21.2",
+      "cross-spawn@>=7.0.0 <7.0.5": ">=7.0.5",
+      "@supabase/auth-js@<2.69.1": ">=2.69.1",
+      "brace-expansion@>=1.0.0 <=1.1.11": ">=1.1.12",
+      "brace-expansion@>=2.0.0 <=2.0.1": ">=2.0.2",
+      "prismjs@<1.30.0": ">=1.30.0",
+      "form-data@>=3.0.0 <3.0.4": ">=3.0.4",
+      "tmp@<=0.2.3": ">=0.2.4"
+    }
   }
 }

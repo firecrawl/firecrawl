@@ -6,7 +6,7 @@ Welcome to [Firecrawl](https://firecrawl.dev) 🔥! Here are some instructions o
 
 If you're contributing, note that the process is similar to other open-source repos, i.e., fork Firecrawl, make changes, run tests, PR.
 
-If you have any questions or would like help getting on board, join our Discord community [here](https://discord.gg/gSmWdAkdwd) for more information or submit an issue on Github [here](https://github.com/mendableai/firecrawl/issues/new/choose)!
+If you have any questions or would like help getting on board, join our Discord community [here](https://discord.gg/gSmWdAkdwd) for more information or submit an issue on Github [here](https://github.com/firecrawl/firecrawl/issues/new/choose)!
 
 ## Why?
 
@@ -41,6 +41,8 @@ Create an `.env` in the root directory using the template below.
 # ===== Required ENVS ======
 PORT=3002
 HOST=0.0.0.0
+
+# Note: PORT is used by both the main API server and worker liveness check endpoint
 
 # To turn on DB authentication, you need to set up Supabase.
 USE_DB_AUTHENTICATION=false
@@ -103,6 +105,15 @@ BULL_AUTH_KEY=CHANGEME
 # Set if you'd like to send posthog events like job logs
 # POSTHOG_API_KEY=
 # POSTHOG_HOST=
+
+## === System Resource Configuration ===
+# Maximum CPU usage threshold (0.0-1.0). Worker will reject new jobs when CPU usage exceeds this value.
+# Default: 0.8 (80%)
+# MAX_CPU=0.8
+
+# Maximum RAM usage threshold (0.0-1.0). Worker will reject new jobs when memory usage exceeds this value.
+# Default: 0.8 (80%)
+# MAX_RAM=0.8
 ```
 
 3.  Build and run the Docker containers:
@@ -112,11 +123,13 @@ BULL_AUTH_KEY=CHANGEME
     docker compose up
     ```
 
-This will run a local instance of Firecrawl which can be accessed at `http://localhost:3002`.
+    If you encounter an error, make sure you're using `docker compose` and not `docker-compose`.
+    
+    This will run a local instance of Firecrawl which can be accessed at `http://localhost:3002`.
+    
+    You should be able to see the Bull Queue Manager UI on `http://localhost:3002/admin/CHANGEME/queues`.
 
-You should be able to see the Bull Queue Manager UI on `http://localhost:3002/admin/CHANGEME/queues`.
-
-4. *(Optional)* Test the API
+5. *(Optional)* Test the API
 
 If you’d like to test the crawl endpoint, you can run this:
 
@@ -195,8 +208,8 @@ By addressing these common issues, you can ensure a smoother setup and operation
 
 ## Install Firecrawl on a Kubernetes Cluster (Simple Version)
 
-Read the [examples/kubernetes/cluster-install/README.md](https://github.com/mendableai/firecrawl/blob/main/examples/kubernetes/cluster-install/README.md) for instructions on how to install Firecrawl on a Kubernetes Cluster.
+Read the [examples/kubernetes/cluster-install/README.md](https://github.com/firecrawl/firecrawl/blob/main/examples/kubernetes/cluster-install/README.md) for instructions on how to install Firecrawl on a Kubernetes Cluster.
 
 ## Install Firecrawl on a Kubernetes Cluster with Helm
 
-Read the [examples/kubernetes/firecrawl-helm/README.md](https://github.com/mendableai/firecrawl/blob/main/examples/kubernetes/firecrawl-helm/README.md) for instructions on how to install Firecrawl on a Kubernetes Cluster with helm.
+Read the [examples/kubernetes/firecrawl-helm/README.md](https://github.com/firecrawl/firecrawl/blob/main/examples/kubernetes/firecrawl-helm/README.md) for instructions on how to install Firecrawl on a Kubernetes Cluster with Helm.

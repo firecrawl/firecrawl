@@ -19,6 +19,7 @@ export async function singleAnswerCompletion({
   extractId,
   sessionId,
   costTracking,
+  metadata,
 }: {
   singleAnswerDocs: Document[];
   rSchema: any;
@@ -29,6 +30,7 @@ export async function singleAnswerCompletion({
   extractId: string;
   sessionId: string;
   costTracking: CostTracking;
+  metadata: { teamId: string, functionId?: string, extractId?: string, scrapeId?: string };
 }): Promise<{
   extract: any;
   tokenUsage: TokenUsage;
@@ -42,7 +44,6 @@ export async function singleAnswerCompletion({
       extractId,
     }),
     options: {
-      mode: "llm",
       systemPrompt:
         (systemPrompt ? `${systemPrompt}\n` : "") +
         "Always prioritize using the provided content to answer the question. Do not make up an answer. Do not hallucinate. In case you can't find the information and the string is required, instead of 'N/A' or 'Not speficied', return an empty string: '', if it's not a string and you can't find the information, return null. Be concise and follow the schema always if provided.",
@@ -51,14 +52,18 @@ export async function singleAnswerCompletion({
     },
     markdown: `${singleAnswerDocs.map((x, i) => `[START_PAGE (ID: ${i})]` + buildDocument(x)).join("\n")} [END_PAGE]\n`,
     isExtractEndpoint: true,
-    model: getModel("gemini-2.5-pro-preview-03-25", "vertex"),
-    retryModel: getModel("gemini-2.5-pro-preview-03-25", "google"),
+    model: getModel("gemini-2.5-pro", "vertex"),
+    retryModel: getModel("gemini-2.5-pro", "google"),
     costTrackingOptions: {
       costTracking,
       metadata: {
         module: "extract",
         method: "singleAnswerCompletion",
       },
+    },
+    metadata: {
+      ...metadata,
+      functionId: metadata.functionId ? (metadata.functionId + "/singleAnswerCompletion") : "singleAnswerCompletion",
     },
   };
     
@@ -68,6 +73,10 @@ export async function singleAnswerCompletion({
     useAgent,
     extractId,
     sessionId,
+    metadata: {
+      ...metadata,
+      functionId: metadata.functionId ? (metadata.functionId + "/singleAnswerCompletion") : "singleAnswerCompletion",
+    },
   });
 
   const completion = {
@@ -76,7 +85,7 @@ export async function singleAnswerCompletion({
       promptTokens: 0,
       completionTokens: 0,
       totalTokens: 0,
-      model: "gemini-2.5-pro-preview-03-25",
+      model: "gemini-2.5-pro",
     },
     sources: singleAnswerDocs.map(
       (doc) => doc.metadata.url || doc.metadata.sourceURL || "",

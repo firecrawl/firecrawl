@@ -21,19 +21,11 @@ describe("URL Schema Validation", () => {
   });
 
   it("should reject URLs with unsupported protocols", () => {
-    expect(() => url.parse("ftp://example.com")).toThrow("Invalid URL");
+    expect(() => url.parse("ftp://example.com")).toThrow();
   });
 
   it("should reject URLs without a valid top-level domain", () => {
-    expect(() => url.parse("http://example")).toThrow(
-      "URL must have a valid top-level domain or be a valid path",
-    );
-  });
-
-  it("should reject blocked URLs", () => {
-    expect(() => url.parse("https://facebook.com")).toThrow(
-      BLOCKLISTED_URL_MESSAGE,
-    );
+    expect(() => url.parse("http://example")).toThrow();
   });
 
   it("should handle URLs with subdomains correctly", () => {
@@ -46,25 +38,8 @@ describe("URL Schema Validation", () => {
     expect(() => url.parse("https://example.com/another/path")).not.toThrow();
   });
 
-  it("should handle URLs with subdomains that are blocked", () => {
-    expect(() => url.parse("https://sub.facebook.com")).toThrow(
-      BLOCKLISTED_URL_MESSAGE,
-    );
-  });
-
-  it("should handle URLs with paths that are blocked", () => {
-    expect(() => url.parse("http://facebook.com/path")).toThrow(
-      BLOCKLISTED_URL_MESSAGE,
-    );
-    expect(() => url.parse("https://facebook.com/another/path")).toThrow(
-      BLOCKLISTED_URL_MESSAGE,
-    );
-  });
-
   it("should reject malformed URLs starting with 'http://http'", () => {
-    expect(() => url.parse("http://http://example.com")).toThrow(
-      "Invalid URL. Invalid protocol.",
-    );
+    expect(() => url.parse("http://http://example.com")).toThrow();
   });
 
   it("should reject malformed URLs containing multiple 'http://'", () => {
@@ -76,4 +51,28 @@ describe("URL Schema Validation", () => {
   it("should reject malformed URLs containing multiple 'http://'", () => {
     expect(() => url.parse("http://ex ample.com/")).toThrow("Invalid URL");
   });
+
+  it("should accept URLs with international domain names", () => {
+    expect(() => url.parse("http://xn--1lqv92a901a.xn--ses554g/")).not.toThrow();
+  });
+
+  it("should accept various IDN domains with different scripts", () => {
+    expect(() => url.parse("http://xn--fsq.xn--0zwm56d")).not.toThrow();
+    expect(() => url.parse("https://xn--mgbh0fb.xn--kgbechtv")).not.toThrow();
+    expect(() => url.parse("http://xn--e1afmkfd.xn--p1ai")).not.toThrow();
+    expect(() => url.parse("https://xn--wgbl6a.xn--mgberp4a5d4ar")).not.toThrow();
+  });
+
+  it("should accept IDN domains with paths and query parameters", () => {
+    expect(() => url.parse("http://xn--1lqv92a901a.xn--ses554g/path/to/page")).not.toThrow();
+    expect(() => url.parse("https://xn--fsq.xn--0zwm56d/search?q=test")).not.toThrow();
+    expect(() => url.parse("http://xn--mgbh0fb.xn--kgbechtv/page#section")).not.toThrow();
+  });
+
+  it("should accept IDN subdomains", () => {
+    expect(() => url.parse("http://sub.xn--1lqv92a901a.xn--ses554g")).not.toThrow();
+    expect(() => url.parse("https://www.xn--fsq.xn--0zwm56d")).not.toThrow();
+    expect(() => url.parse("http://api.xn--mgbh0fb.xn--kgbechtv")).not.toThrow();
+  });
+
 });

@@ -6,8 +6,9 @@ import os from "os";
 import { writeFile } from "fs/promises";
 import { Meta } from "../..";
 
-async function feResToPdfPrefetch(feRes: FireEngineCheckStatusSuccess | undefined): Promise<Meta["pdfPrefetch"]> {
+async function feResToPdfPrefetch(logger: Logger, feRes: FireEngineCheckStatusSuccess | undefined): Promise<Meta["pdfPrefetch"]> {
   if (!feRes?.file) {
+    logger.warn("No file in pdf prefetch");
     return null;
   }
 
@@ -18,6 +19,7 @@ async function feResToPdfPrefetch(feRes: FireEngineCheckStatusSuccess | undefine
     status: feRes.pageStatusCode,
     url: feRes.url,
     filePath,
+    proxyUsed: feRes.usedMobileProxy ? "stealth" : "basic",
   };
 }
 
@@ -39,7 +41,7 @@ export async function specialtyScrapeCheck(
     contentType.startsWith("application/pdf;")
   ) {
     // .pdf
-    throw new AddFeatureError(["pdf"], await feResToPdfPrefetch(feRes));
+    throw new AddFeatureError(["pdf"], await feResToPdfPrefetch(logger, feRes));
   } else if (
     contentType ===
       "application/vnd.openxmlformats-officedocument.wordprocessingml.document" ||

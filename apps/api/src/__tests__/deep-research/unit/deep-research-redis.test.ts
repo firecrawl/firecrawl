@@ -1,4 +1,4 @@
-import { redisConnection } from "../../../services/queue-service";
+import { redisEvictConnection } from "../../../services/redis";
 import {
   saveDeepResearch,
   getDeepResearch,
@@ -40,11 +40,11 @@ describe("Deep Research Redis Operations", () => {
     it("should save research data to Redis with TTL", async () => {
       await saveDeepResearch("test-id", mockResearch);
 
-      expect(redisConnection.set).toHaveBeenCalledWith(
+      expect(redisEvictConnection.set).toHaveBeenCalledWith(
         "deep-research:test-id",
         JSON.stringify(mockResearch)
       );
-      expect(redisConnection.expire).toHaveBeenCalledWith(
+      expect(redisEvictConnection.expire).toHaveBeenCalledWith(
         "deep-research:test-id",
         6 * 60 * 60
       );
@@ -53,17 +53,17 @@ describe("Deep Research Redis Operations", () => {
 
   describe("getDeepResearch", () => {
     it("should retrieve research data from Redis", async () => {
-      (redisConnection.get as jest.Mock).mockResolvedValue(
+      (redisEvictConnection.get as jest.Mock).mockResolvedValue(
         JSON.stringify(mockResearch)
       );
 
       const result = await getDeepResearch("test-id");
       expect(result).toEqual(mockResearch);
-      expect(redisConnection.get).toHaveBeenCalledWith("deep-research:test-id");
+      expect(redisEvictConnection.get).toHaveBeenCalledWith("deep-research:test-id");
     });
 
     it("should return null when research not found", async () => {
-      (redisConnection.get as jest.Mock).mockResolvedValue(null);
+      (redisEvictConnection.get as jest.Mock).mockResolvedValue(null);
 
       const result = await getDeepResearch("non-existent-id");
       expect(result).toBeNull();
@@ -72,7 +72,7 @@ describe("Deep Research Redis Operations", () => {
 
   describe("updateDeepResearch", () => {
     it("should update existing research with new data", async () => {
-      (redisConnection.get as jest.Mock).mockResolvedValue(
+      (redisEvictConnection.get as jest.Mock).mockResolvedValue(
         JSON.stringify(mockResearch)
       );
 
@@ -98,30 +98,30 @@ describe("Deep Research Redis Operations", () => {
         activities: [...mockResearch.activities, ...update.activities],
       };
 
-      expect(redisConnection.set).toHaveBeenCalledWith(
+      expect(redisEvictConnection.set).toHaveBeenCalledWith(
         "deep-research:test-id",
         JSON.stringify(expectedUpdate)
       );
-      expect(redisConnection.expire).toHaveBeenCalledWith(
+      expect(redisEvictConnection.expire).toHaveBeenCalledWith(
         "deep-research:test-id",
         6 * 60 * 60
       );
     });
 
     it("should do nothing if research not found", async () => {
-      (redisConnection.get as jest.Mock).mockResolvedValue(null);
+      (redisEvictConnection.get as jest.Mock).mockResolvedValue(null);
 
       await updateDeepResearch("test-id", { status: "completed" });
 
-      expect(redisConnection.set).not.toHaveBeenCalled();
-      expect(redisConnection.expire).not.toHaveBeenCalled();
+      expect(redisEvictConnection.set).not.toHaveBeenCalled();
+      expect(redisEvictConnection.expire).not.toHaveBeenCalled();
     });
   });
 
   describe("getDeepResearchExpiry", () => {
     it("should return correct expiry date", async () => {
       const mockTTL = 3600000; // 1 hour in milliseconds
-      (redisConnection.pttl as jest.Mock).mockResolvedValue(mockTTL);
+      (redisEvictConnection.pttl as jest.Mock).mockResolvedValue(mockTTL);
 
       const result = await getDeepResearchExpiry("test-id");
       

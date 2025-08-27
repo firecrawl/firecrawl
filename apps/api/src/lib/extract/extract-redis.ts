@@ -1,4 +1,4 @@
-import { redisConnection } from "../../services/queue-service";
+import { redisEvictConnection } from "../../services/redis";
 import { logger as _logger } from "../logger";
 import { CostTracking } from "./extraction-service";
 
@@ -40,6 +40,8 @@ export type StoredExtract = {
     [key: string]: string[];
   };
   sessionIds?: string[];
+  tokensBilled?: number;
+  zeroDataRetention?: boolean;
 };
 
 // Reduce TTL to 6 hours instead of 24
@@ -61,12 +63,12 @@ export async function saveExtract(id: string, extract: StoredExtract) {
       discoveredLinks: step.discoveredLinks?.slice(0, STEPS_MAX_DISCOVERED_LINKS)
     }))
   };
-  await redisConnection.set("extract:" + id, JSON.stringify(minimalExtract));
-  await redisConnection.expire("extract:" + id, EXTRACT_TTL);
+  await redisEvictConnection.set("extract:" + id, JSON.stringify(minimalExtract));
+  await redisEvictConnection.expire("extract:" + id, EXTRACT_TTL);
 }
 
 export async function getExtract(id: string): Promise<StoredExtract | null> {
-  const x = await redisConnection.get("extract:" + id);
+  const x = await redisEvictConnection.get("extract:" + id);
   return x ? JSON.parse(x) : null;
 }
 
@@ -111,13 +113,13 @@ export async function updateExtract(
 
   console.log(minimalExtract.sessionIds)
 
-  await redisConnection.set("extract:" + id, JSON.stringify(minimalExtract));
-  await redisConnection.expire("extract:" + id, EXTRACT_TTL);
+  await redisEvictConnection.set("extract:" + id, JSON.stringify(minimalExtract));
+  await redisEvictConnection.expire("extract:" + id, EXTRACT_TTL);
 }
 
 export async function getExtractExpiry(id: string): Promise<Date> {
   const d = new Date();
-  const ttl = await redisConnection.pttl("extract:" + id);
+  const ttl = await redisEvictConnection.pttl("extract:" + id);
   d.setMilliseconds(d.getMilliseconds() + ttl);
   d.setMilliseconds(0);
   return d;

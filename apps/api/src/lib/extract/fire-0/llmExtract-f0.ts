@@ -12,7 +12,6 @@ import { generateObject, generateText, LanguageModel } from 'ai';
 import { jsonSchema } from 'ai';
 import { getModel } from "../../../lib/generic-ai";
 import { z } from "zod";
-import { EngineResultsTracker, Meta } from "../../../scraper/scrapeURL";
 
 // Get max tokens from model prices
 const getModelLimits_F0 = (model: string) => {
@@ -34,7 +33,6 @@ const getModelLimits_F0 = (model: string) => {
 
 export class LLMRefusalError extends Error {
   public refusal: string;
-  public results: EngineResultsTracker | undefined;
 
   constructor(refusal: string) {
     super("LLM refused to extract the website's content");
@@ -157,6 +155,7 @@ export async function generateCompletions_F0({
   isExtractEndpoint,
   model = getModel("gpt-4o-mini"),
   mode = "object",
+  metadata,
 }: {
   model?: LanguageModel; 
   logger: Logger;
@@ -165,6 +164,7 @@ export async function generateCompletions_F0({
   previousWarning?: string;
   isExtractEndpoint?: boolean;
   mode?: "object" | "no-object";
+  metadata: { teamId: string, functionId?: string, extractId?: string, scrapeId?: string };
 }): Promise<{
   extract: any;
   numTokens: number;
@@ -205,6 +205,25 @@ export async function generateCompletions_F0({
         prompt: options.prompt + (markdown ? `\n\nData:${markdown}` : ""),
         temperature: options.temperature ?? 0,
         system: options.systemPrompt,
+        providerOptions: {
+          google: {
+            labels: {
+              functionId: metadata.functionId ?? "unspecified",
+              extractId: metadata.extractId ?? "unspecified",
+              scrapeId: metadata.scrapeId ?? "unspecified",
+              teamId: metadata.teamId,
+            }
+          }
+        },
+        experimental_telemetry: {
+          isEnabled: true,
+          functionId: metadata.functionId,
+          metadata: {
+            teamId: metadata.teamId,
+            ...(metadata.extractId ? { langfuseTraceId: "extract:" + metadata.extractId, extractId: metadata.extractId } : {}),
+            ...(metadata.scrapeId ? { langfuseTraceId: "scrape:" + metadata.scrapeId, scrapeId: metadata.scrapeId } : {}),
+          }
+        }
       });
 
       extract = result.text;
@@ -279,7 +298,26 @@ export async function generateCompletions_F0({
         const { text: fixedText } = await generateText({
           model: model,
           prompt: `Fix this JSON that had the following error: ${error}\n\nOriginal text:\n${text}\n\nReturn only the fixed JSON, no explanation.`,
-          system: "You are a JSON repair expert. Your only job is to fix malformed JSON and return valid JSON that matches the original structure and intent as closely as possible. Do not include any explanation or commentary - only return the fixed JSON. Do not return it in a Markdown code block, just plain JSON."
+          system: "You are a JSON repair expert. Your only job is to fix malformed JSON and return valid JSON that matches the original structure and intent as closely as possible. Do not include any explanation or commentary - only return the fixed JSON. Do not return it in a Markdown code block, just plain JSON.",
+          providerOptions: {
+            google: {
+              labels: {
+                functionId: metadata.functionId ?? "unspecified",
+                extractId: metadata.extractId ?? "unspecified",
+                scrapeId: metadata.scrapeId ?? "unspecified",
+                teamId: metadata.teamId,
+              }
+            }
+          },
+          experimental_telemetry: {
+            isEnabled: true,
+            functionId: metadata.functionId,
+            metadata: {
+              teamId: metadata.teamId,
+              ...(metadata.extractId ? { langfuseTraceId: "extract:" + metadata.extractId, extractId: metadata.extractId } : {}),
+              ...(metadata.scrapeId ? { langfuseTraceId: "scrape:" + metadata.scrapeId, scrapeId: metadata.scrapeId } : {}),
+            }
+          }
         });
         return fixedText;
       }
@@ -297,7 +335,26 @@ export async function generateCompletions_F0({
         onError: (error: Error) => {
           console.error(error);
         }
-      })
+      }),
+      providerOptions: {
+        google: {
+          labels: {
+            functionId: metadata.functionId ?? "unspecified",
+            extractId: metadata.extractId ?? "unspecified",
+            scrapeId: metadata.scrapeId ?? "unspecified",
+            teamId: metadata.teamId,
+          }
+        }
+      },
+      experimental_telemetry: {
+        isEnabled: true,
+        functionId: metadata.functionId,
+        metadata: {
+          teamId: metadata.teamId,
+          ...(metadata.extractId ? { langfuseTraceId: "extract:" + metadata.extractId, extractId: metadata.extractId } : {}),
+          ...(metadata.scrapeId ? { langfuseTraceId: "scrape:" + metadata.scrapeId, scrapeId: metadata.scrapeId } : {}),
+        }
+      }
     } satisfies Parameters<typeof generateObject>[0];
 
     const result = await generateObject(generateObjectConfig);
@@ -334,32 +391,6 @@ export async function generateCompletions_F0({
     }
     throw error;
   }
-}
-
-export async function performLLMExtract(
-  meta: Meta,
-  document: Document,
-): Promise<Document> {
-  if (meta.options.formats.includes("extract")) {
-    meta.internalOptions.abort?.throwIfAborted();
-    const { extract, warning } = await generateCompletions_F0({
-      logger: meta.logger.child({
-        method: "performLLMExtract/generateCompletions",
-      }),
-      options: meta.options.extract!,
-      markdown: document.markdown,
-      previousWarning: document.warning
-    });
-
-    if (meta.options.formats.includes("json")) {
-      document.json = extract;
-    } else {
-      document.extract = extract;
-    }
-    document.warning = warning;
-  }
-
-  return document;
 }
 
 export function removeDefaultProperty_F0(schema: any): any {
@@ -408,7 +439,7 @@ export function removeDefaultProperty_F0(schema: any): any {
   return rest;
 }
 
-export async function generateSchemaFromPrompt_F0(prompt: string): Promise<any> {
+export async function generateSchemaFromPrompt_F0(prompt: string, metadata: { teamId: string, functionId?: string, extractId?: string }): Promise<any> {
   const model = getModel("gpt-4o");
   const temperatures = [0, 0.1, 0.3]; // Different temperatures to try
   let lastError: Error | null = null;
@@ -450,7 +481,11 @@ Return a valid JSON schema object with properties that would capture the informa
           prompt: `Generate a JSON schema for extracting the following information: ${prompt}`,
           temperature: temp 
         },
-        markdown: prompt
+        markdown: prompt,
+        metadata: {
+          ...metadata,
+          functionId: metadata.functionId ? (metadata.functionId + "/generateSchemaFromPrompt_F0") : "generateSchemaFromPrompt_F0",
+        },
       });
 
       return extract;

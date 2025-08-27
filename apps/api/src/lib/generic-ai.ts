@@ -40,7 +40,9 @@ const providerList: Record<Provider, any> = {
   deepinfra, //DEEPINFRA_API_KEY
   vertex: createVertex({
     project: "firecrawl",
-    location: "us-central1",
+    //https://github.com/vercel/ai/issues/6644 bug
+    baseURL:"https://aiplatform.googleapis.com/v1/projects/firecrawl/locations/global/publishers/google",
+    location: "global",
     googleAuthOptions: process.env.VERTEX_CREDENTIALS ? {
       credentials: JSON.parse(atob(process.env.VERTEX_CREDENTIALS)),
     } : {
@@ -50,6 +52,9 @@ const providerList: Record<Provider, any> = {
 };
 
 export function getModel(name: string, provider: Provider = defaultProvider) {
+  if(name === "gemini-2.5-pro"){
+    name = "gemini-2.5-pro"
+  }
   return process.env.MODEL_NAME
     ? providerList[provider](process.env.MODEL_NAME)
     : providerList[provider](name);

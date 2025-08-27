@@ -5,16 +5,18 @@ import { getJob } from "../../../controllers/v1/crawl-status";
 import gitDiff from 'git-diff';
 import parseDiff from 'parse-diff';
 import { generateCompletions } from "./llmExtract";
+import { hasFormatOfType } from "../../../lib/format-utils";
 
 async function extractDataWithSchema(content: string, meta: Meta): Promise<{ extract: any } | null> {
+    const changeTrackingFormat = hasFormatOfType(meta.options.formats, "changeTracking")!;
+
     try {
         const { extract } = await generateCompletions({
             logger: meta.logger.child({
                 method: "extractDataWithSchema/generateCompletions",
             }),
             options: {
-                mode: "llm",
-                schema: meta.options.changeTrackingOptions?.schema,
+                schema: changeTrackingFormat?.schema as any,
                 systemPrompt: "Extract the requested information from the content based on the provided schema.",
                 temperature: 0
             },
@@ -25,6 +27,11 @@ async function extractDataWithSchema(content: string, meta: Meta): Promise<{ ext
                     module: "extract",
                     method: "extractDataWithSchema",
                 },
+            },
+            metadata: {
+                teamId: meta.internalOptions.teamId,
+                functionId: "deriveDiff/extractDataWithSchema",
+                scrapeId: meta.id,
             },
         });
         return { extract };
@@ -58,16 +65,24 @@ function compareExtractedData(previousData: any, currentData: any): any {
 }
 
 export async function deriveDiff(meta: Meta, document: Document): Promise<Document> {
-  if (meta.options.formats.includes("changeTracking")) {
+  const changeTrackingFormat = hasFormatOfType(meta.options.formats, "changeTracking");
+
+  if (changeTrackingFormat) {
+    if (meta.internalOptions.zeroDataRetention) {
+        document.warning = "Change tracking is not supported with zero data retention." + (document.warning ? " " + document.warning : "")
+        return document;
+    }
+    
     const start = Date.now();
     const res = await supabase_service
-        .rpc("diff_get_last_scrape_3", {
+        .rpc("diff_get_last_scrape_5", {
             i_team_id: meta.internalOptions.teamId,
-            i_url: document.metadata.sourceURL ?? meta.url,
+            i_url: document.metadata.sourceURL ?? meta.rewrittenUrl ?? meta.url,
+            i_tag: changeTrackingFormat?.tag ?? null,
         });
     const end = Date.now();
     if (end - start > 100) {
-        meta.logger.debug("Diffing took a while", { time: end - start, params: { i_team_id: meta.internalOptions.teamId, i_url: document.metadata.sourceURL ?? meta.url } });
+        meta.logger.debug("Diffing took a while", { time: end - start, params: { i_team_id: meta.internalOptions.teamId, i_url: document.metadata.sourceURL ?? meta.rewrittenUrl ?? meta.url } });
     }
 
     const data: {
@@ -78,7 +93,6 @@ export async function deriveDiff(meta: Meta, document: Document): Promise<Docume
     const job: {
         returnvalue: Document,
     } | null = data?.o_job_id ? await getJob(data.o_job_id) : null;
-
     if (data && job && job?.returnvalue) {
         const previousMarkdown = job.returnvalue.markdown!;
         const currentMarkdown = document.markdown!;
@@ -93,15 +107,15 @@ export async function deriveDiff(meta: Meta, document: Document): Promise<Docume
             visibility: meta.internalOptions.urlInvisibleInCurrentCrawl ? "hidden" : "visible",
         }
         
-        if (meta.options.changeTrackingOptions?.modes?.includes("git-diff") && changeStatus === "changed") {
+        if (changeTrackingFormat?.modes?.includes("git-diff") && changeStatus === "changed") {
             const diffText = gitDiff(previousMarkdown, currentMarkdown, {
                 color: false,
                 wordDiff: false
             });
-            meta.logger.debug("Diff text", { diffText });
+            // meta.logger.debug("Diff text", { diffText });
             if (diffText) {
                 const diffStructured = parseDiff(diffText);
-                meta.logger.debug("Diff structured", { diffStructured });
+                // meta.logger.debug("Diff structured", { diffStructured });
                 document.changeTracking.diff = {
                     text: diffText,
                     json: {
@@ -146,13 +160,12 @@ export async function deriveDiff(meta: Meta, document: Document): Promise<Docume
             }
         }
         
-        if (meta.options.changeTrackingOptions?.modes?.includes("json") && 
-            meta.options.changeTrackingOptions && changeStatus === "changed") {
+        if (changeTrackingFormat?.modes?.includes("json") && changeStatus === "changed") {
             try {
-                const previousData = meta.options.changeTrackingOptions.schema ? 
+                const previousData = changeTrackingFormat?.schema ? 
                     await extractDataWithSchema(previousMarkdown, meta) : null;
                 
-                const currentData = meta.options.changeTrackingOptions.schema ? 
+                const currentData = changeTrackingFormat?.schema ? 
                     await extractDataWithSchema(currentMarkdown, meta) : null;
                 
                 if (previousData && currentData) {
@@ -163,10 +176,9 @@ export async function deriveDiff(meta: Meta, document: Document): Promise<Docume
                             method: "deriveDiff/generateCompletions",
                         }),
                         options: {
-                            mode: "llm",
                             systemPrompt: "Analyze the differences between the previous and current content and provide a structured summary of the changes.",
-                            schema: meta.options.changeTrackingOptions.schema,
-                            prompt: meta.options.changeTrackingOptions.prompt,
+                            schema: changeTrackingFormat?.schema,
+                            prompt: changeTrackingFormat?.prompt,
                             temperature: 0
                         },
                         markdown: `Previous Content:\n${previousMarkdown}\n\nCurrent Content:\n${currentMarkdown}`,
@@ -177,6 +189,11 @@ export async function deriveDiff(meta: Meta, document: Document): Promise<Docume
                                 module: "diff",
                                 method: "deriveDiff",
                             },
+                        },
+                        metadata: {
+                            teamId: meta.internalOptions.teamId,
+                            functionId: "deriveDiff",
+                            scrapeId: meta.id,
                         },
                     });
 

@@ -772,7 +772,7 @@
                   },
                   "allowBackwardLinks": {
                     "type": "boolean",
-                    "description": "Enables the crawler to navigate from a specific URL to previously linked pages.",
+                    "description": "Allows the crawler to follow internal links to sibling or parent URLs, not just child paths.\n\nfalse: Only crawls deeper (child) URLs.\n→ e.g. /features/feature-1 → /features/feature-1/tips ✅\n→ Won't follow /pricing or / ❌\n\ntrue: Crawls any internal links, including siblings and parents.\n→ e.g. /features/feature-1 → /pricing, /, etc. ✅\n\nUse true for broader internal coverage beyond nested paths.",
                     "default": false
                   },
                   "allowExternalLinks": {
@@ -925,7 +925,7 @@
                   "includeSubdomains": {
                     "type": "boolean",
                     "description": "Include subdomains of the website",
-                    "default": false
+                    "default": true
                   },
                   "limit": {
                     "type": "integer",
@@ -1036,18 +1036,7 @@
                   },
                   "schema": {
                     "type": "object",
-                    "description": "Schema to define the structure of the extracted data",
-                    "properties": {
-                      "property1": {
-                        "type": "string",
-                        "description": "Description of property1"
-                      },
-                      "property2": {
-                        "type": "integer",
-                        "description": "Description of property2"
-                      }
-                    },
-                    "required": ["property1", "property2"]
+                    "description": "Schema to define the structure of the extracted data. Must conform to [JSON Schema](https://json-schema.org/)."
                   },
                   "enableWebSearch": {
                     "type": "boolean",
@@ -1071,6 +1060,11 @@
                   },
                   "scrapeOptions": {
                     "$ref": "#/components/schemas/ScrapeOptions"
+                  },
+                  "ignoreInvalidURLs": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "If invalid URLs are specified in the urls array, they will be ignored. Instead of them failing the entire request, an extract using the remaining valid URLs will be performed, and the invalid URLs will be returned in the invalidURLs field of the response."
                   }
                 },
                 "required": ["urls"]
@@ -1160,7 +1154,129 @@
         }
       }
     },
-
+    "/crawl/active": {
+      "get": {
+        "summary": "Get all active crawls for the authenticated team",
+        "operationId": "getActiveCrawls",
+        "tags": ["Crawling"],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": true
+                    },
+                    "crawls": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "format": "uuid",
+                            "description": "The unique identifier of the crawl"
+                          },
+                          "teamId": {
+                            "type": "string",
+                            "description": "The ID of the team that owns the crawl"
+                          },
+                          "url": {
+                            "type": "string",
+                            "format": "uri",
+                            "description": "The origin URL of the crawl"
+                          },
+                          "options": {
+                            "type": "object",
+                            "description": "The crawler options used for this crawl",
+                            "properties": {
+                              "scrapeOptions": {
+                                "$ref": "#/components/schemas/ScrapeOptions"
+                              }
+                            }
+                          }
+                        },
+                        "required": ["id", "teamId", "url", "status", "options"]
+                      }
+                    }
+                  },
+                  "required": ["success", "data"]
+                }
+              }
+            }
+          },
+          "402": {
+            "description": "Payment required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": false
+                    },
+                    "error": {
+                      "type": "string",
+                      "example": "Payment required to access this resource."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many requests",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": false
+                    },
+                    "error": {
+                      "type": "string",
+                      "example": "Request rate limit exceeded. Please wait and try again later."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": false
+                    },
+                    "error": {
+                      "type": "string",
+                      "example": "An unexpected error occurred on the server."
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/deep-research": {
       "post": {
         "summary": "Start a deep research operation on a query",
@@ -1225,7 +1341,7 @@
                     "properties": {
                       "schema": {
                         "type": "object",
-                        "description": "The schema to use for the JSON output"
+                        "description": "The schema to use for the JSON output. Must conform to [JSON Schema](https://json-schema.org/)."
                       },
                       "systemPrompt": {
                         "type": "string",
@@ -1611,22 +1727,12 @@
                     "type": "integer",
                     "description": "Maximum number of results to return",
                     "default": 5,
-                    "maximum": 50,
+                    "maximum": 100,
                     "minimum": 1
                   },
                   "tbs": {
                     "type": "string",
                     "description": "Time-based search parameter"
-                  },
-                  "lang": {
-                    "type": "string",
-                    "description": "Language code for search results",
-                    "default": "en"
-                  },
-                  "country": {
-                    "type": "string",
-                    "description": "Country code for search results",
-                    "default": "us"
                   },
                   "location": {
                     "type": "string",
@@ -1636,6 +1742,11 @@
                     "type": "integer",
                     "description": "Timeout in milliseconds",
                     "default": 60000
+                  },
+                  "ignoreInvalidURLs": {
+                    "type": "boolean",
+                    "description": "Excludes URLs from the search results that are invalid for other Firecrawl endpoints. This helps reduce errors if you are piping data from search into other Firecrawl API endpoints.",
+                    "default": false
                   },
                   "scrapeOptions": {
                     "type": "object",
@@ -1652,7 +1763,7 @@
                             "links",
                             "screenshot",
                             "screenshot@fullPage",
-                            "extract"
+                            "json"
                           ]
                         },
                         "description": "Formats to include in the output",
@@ -2014,6 +2125,11 @@
             },
             "description": "Tags to exclude from the output."
           },
+          "maxAge": {
+            "type": "integer",
+            "description": "Returns a cached version of the page if it is younger than this age in milliseconds. If a cached version of the page is older than this value, the page will be scraped. If you do not need extremely fresh data, enabling this can speed up your scrapes by 500%. Defaults to 0, which disables caching.",
+            "default": 0
+          },
           "headers": {
             "type": "object",
             "description": "Headers to send with the request. Can be used to send cookies, user-agent, etc."
@@ -2038,13 +2154,18 @@
             "description": "Timeout in milliseconds for the request",
             "default": 30000
           },
+          "parsePDF": {
+            "type": "boolean",
+            "description": "Controls how PDF files are processed during scraping. When true, the PDF content is extracted and converted to markdown format, with billing based on the number of pages (1 credit per page). When false, the PDF file is returned in base64 encoding with a flat rate of 1 credit total.",
+            "default": true
+          },
           "jsonOptions": {
             "type": "object",
-            "description": "Extract object",
+            "description": "JSON options object",
             "properties": {
               "schema": {
                 "type": "object",
-                "description": "The schema to use for the extraction (Optional)"
+                "description": "The schema to use for the extraction (Optional). Must conform to [JSON Schema](https://json-schema.org/)."
               },
               "systemPrompt": {
                 "type": "string",
@@ -2243,8 +2364,8 @@
           },
           "proxy": {
             "type": "string",
-            "enum": ["basic", "stealth"],
-            "description": "Specifies the type of proxy to use.\n\n - **basic**: Proxies for scraping sites with none to basic anti-bot solutions. Fast and usually works.\n - **stealth**: Stealth proxies for scraping sites with advanced anti-bot solutions. Slower, but more reliable on certain sites. Starting May 8th, stealth will cost 5 credits per request.\n\nIf you do not specify a proxy, Firecrawl will default to basic."
+            "enum": ["basic", "stealth", "auto"],
+            "description": "Specifies the type of proxy to use.\n\n - **basic**: Proxies for scraping sites with none to basic anti-bot solutions. Fast and usually works.\n - **stealth**: Stealth proxies for scraping sites with advanced anti-bot solutions. Slower, but more reliable on certain sites. Costs up to 5 credits per request.\n - **auto**: Firecrawl will automatically retry scraping with stealth proxies if the basic proxy fails. If the retry with stealth is successful, 5 credits will be billed for the scrape. If the first attempt with basic is successful, only the regular cost will be billed.\n\nIf you do not specify a proxy, Firecrawl will default to basic."
           },
           "changeTrackingOptions": {
             "type": "object",
@@ -2260,13 +2381,24 @@
               },
               "schema": {
                 "type": "object",
-                "description": "Schema for JSON extraction when using 'json' mode. Defines the structure of data to extract and compare."
+                "description": "Schema for JSON extraction when using 'json' mode. Defines the structure of data to extract and compare. Must conform to [JSON Schema](https://json-schema.org/)."
               },
               "prompt": {
                 "type": "string",
                 "description": "Prompt to use for change tracking when using 'json' mode. If not provided, the default prompt will be used."
+              },
+              "tag": {
+                "type": "string",
+                "nullable": true,
+                "default": null,
+                "description": "Tag to use for change tracking. Tags can separate change tracking history into separate \"branches\", where change tracking with a specific tagwill only compare to scrapes made in the same tag. If not provided, the default tag (null) will be used."
               }
             }
+          },
+          "storeInCache": {
+            "type": "boolean",
+            "description": "If true, the page will be stored in the Firecrawl index and cache. Setting this to false is useful if your scraping activity may have data protection concerns. Using some parameters associated with sensitive scraping (actions, headers) will force this parameter to be false.",
+            "default": true
           }
         }
       },
@@ -2712,6 +2844,14 @@
           },
           "id": {
             "type": "string"
+          },
+          "invalidURLs": {
+            "type": "array",
+            "nullable": true,
+            "items": {
+              "type": "string"
+            },
+            "description": "If ignoreInvalidURLs is true, this is an array containing the invalid URLs that were specified in the request. If there were no invalid URLs, this will be an empty array. If ignoreInvalidURLs is false, this field will be undefined."
           }
         }
       },

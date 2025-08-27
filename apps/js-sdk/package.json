@@ -11,7 +11,7 @@
   "author": "",
   "license": "MIT",
   "dependencies": {
-    "@mendable/firecrawl-js": "1.7.1",
+    "@mendable/firecrawl-js": "^3.2.0",
     "axios": "^1.6.8",
     "firecrawl": "^1.2.0",
     "ts-node": "^10.9.2",

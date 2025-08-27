@@ -1,9 +1,9 @@
 name: firecrawl
 
 x-common-service: &common-service
-  # NOTE: If you want to build the service locally,
+  # NOTE: If you don't want to build the service locally,
   # uncomment the build: statement and comment out the image: statement
-  # image: ghcr.io/mendableai/firecrawl
+  # image: ghcr.io/firecrawl/firecrawl
   build: apps/api
 
   ulimits:
@@ -46,6 +46,9 @@ x-common-env: &common-env
 
 services:
   playwright-service:
+    # NOTE: If you don't want to build the service locally,
+    # uncomment the build: statement and comment out the image: statement
+    # image: ghcr.io/firecrawl/playwright-service:latest
     build: apps/playwright-service-ts
     environment:
       PORT: 3000
@@ -63,6 +66,7 @@ services:
       HOST: "0.0.0.0"
       PORT: ${INTERNAL_PORT:-3002}
       FLY_PROCESS_GROUP: app
+      ENV: local
     depends_on:
       - redis
       - playwright-service
@@ -75,6 +79,7 @@ services:
     environment:
       <<: *common-env
       FLY_PROCESS_GROUP: worker
+      ENV: local
     depends_on:
       - redis
       - playwright-service

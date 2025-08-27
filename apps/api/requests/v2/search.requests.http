@@ -1,0 +1,35 @@
+# Pick your baseUrl here:
+@baseUrl = http://localhost:3002
+# @baseUrl = https://api.firecrawl.dev
+
+
+### Search - Simple string array format
+# @name searchSimple
+POST {{baseUrl}}/v2/search HTTP/1.1
+Authorization: Bearer {{$dotenv TEST_API_KEY}}
+content-type: application/json
+
+{
+  "query": "firecrawl",
+  "sources": ["web", "images", "news"],
+  "limit": 5
+}
+
+### Search - Object array format (with custom parameters per source)
+# @name searchAdvanced
+POST {{baseUrl}}/v2/search HTTP/1.1
+Authorization: Bearer {{$dotenv TEST_API_KEY}}
+content-type: application/json
+
+{
+  "query": "firecrawl",
+  "sources": [
+    { 
+      "type": "web"
+    },
+    {
+      "type": "images"
+    }
+  ],
+  "limit": 5
+}

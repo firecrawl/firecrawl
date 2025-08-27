@@ -5,7 +5,7 @@ import { EngineError } from "../../error";
 import { Writable } from "stream";
 import { v4 as uuid } from "uuid";
 import * as undici from "undici";
-import { makeSecureDispatcher } from "./safeFetch";
+import { secureDispatcher } from "./safeFetch";
 
 export async function fetchFileToBuffer(
   url: string,
@@ -17,7 +17,7 @@ export async function fetchFileToBuffer(
   const response = await undici.fetch(url, {
     ...init,
     redirect: "follow",
-    dispatcher: await makeSecureDispatcher(url),
+    dispatcher: secureDispatcher,
   });
   return {
     response,
@@ -40,7 +40,7 @@ export async function downloadFile(
   const response = await undici.fetch(url, {
     ...init,
     redirect: "follow",
-    dispatcher: await makeSecureDispatcher(url),
+    dispatcher: secureDispatcher,
   });
 
   // This should never happen in the current state of JS/Undici (2024), but let's check anyways.

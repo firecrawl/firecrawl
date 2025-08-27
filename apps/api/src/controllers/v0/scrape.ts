@@ -6,7 +6,6 @@ import {
 } from "../../services/billing/credit_billing";
 import { authenticateUser } from "../auth";
 import { RateLimiterMode } from "../../types";
-import { logJob } from "../../services/logging/log_job";
 import {
   fromLegacyCombo,
   TeamFlags,
@@ -22,7 +21,8 @@ import {
   defaultOrigin,
 } from "../../lib/default-values";
 import { addScrapeJob, waitForJob } from "../../services/queue-jobs";
-import { getScrapeQueue, redisConnection } from "../../services/queue-service";
+import { getScrapeQueue } from "../../services/queue-service";
+import { redisEvictConnection } from "../../../src/services/redis";
 import { v4 as uuidv4 } from "uuid";
 import { logger } from "../../lib/logger";
 import * as Sentry from "@sentry/node";
@@ -32,6 +32,8 @@ import { ZodError } from "zod";
 import { Document as V0Document } from "./../../lib/entities";
 import { BLOCKLISTED_URL_MESSAGE } from "../../lib/strings";
 import { getJobFromGCS } from "../../lib/gcs-jobs";
+import { fromV0Combo } from "../v2/types";
+import { ScrapeJobTimeoutError } from "../../lib/error";
 
 export async function scrapeHelper(
   jobId: string,
@@ -63,7 +65,7 @@ export async function scrapeHelper(
 
   const jobPriority = await getJobPriority({ team_id, basePriority: 10 });
 
-  const { scrapeOptions, internalOptions } = fromLegacyCombo(
+  const { scrapeOptions, internalOptions } = fromV0Combo(
     pageOptions,
     extractorOptions,
     timeout,
@@ -81,7 +83,10 @@ export async function scrapeHelper(
       scrapeOptions,
       internalOptions,
       origin: req.body.origin ?? defaultOrigin,
+      integration: req.body.integration,
       is_scrape: true,
+      startTime: Date.now(),
+      zeroDataRetention: false, // not supported on v0
     },
     {},
     jobId,
@@ -90,47 +95,33 @@ export async function scrapeHelper(
 
   let doc;
 
-  const err = await Sentry.startSpan(
-    {
-      name: "Wait for job to finish",
-      op: "bullmq.wait",
-      attributes: { job: jobId },
-    },
-    async (span) => {
-      try {
-        doc = await waitForJob(jobId, timeout);
-      } catch (e) {
-        if (
-          e instanceof Error &&
-          (e.message.startsWith("Job wait") || e.message === "timeout")
-        ) {
-          span.setAttribute("timedOut", true);
-          return {
-            success: false,
-            error: "Request timed out",
-            returnCode: 408,
-          };
-        } else if (
-          typeof e === "string" &&
-          (e.includes("Error generating completions: ") ||
-            e.includes("Invalid schema for function") ||
-            e.includes(
-              "LLM extraction did not match the extraction schema you provided.",
-            ))
-        ) {
-          return {
-            success: false,
-            error: e,
-            returnCode: 500,
-          };
-        } else {
-          throw e;
-        }
-      }
-      span.setAttribute("result", JSON.stringify(doc));
-      return null;
-    },
-  );
+  try {
+    doc = await waitForJob(jobId, timeout);
+  } catch (e) {
+    if (e instanceof ScrapeJobTimeoutError) {
+      return {
+        success: false,
+        error: e.message,
+        returnCode: 408,
+      };
+    } else if (
+      typeof e === "string" &&
+      (e.includes("Error generating completions: ") ||
+        e.includes("Invalid schema for function") ||
+        e.includes(
+          "LLM extraction did not match the extraction schema you provided.",
+        ))
+    ) {
+      return {
+        success: false,
+        error: e,
+        returnCode: 500,
+      };
+    } else {
+      throw e;
+    }
+  }
+  const err = null;
 
   if (err !== null) {
     return err;
@@ -185,8 +176,17 @@ export async function scrapeController(req: Request, res: Response) {
 
     const { team_id, chunk } = auth;
 
-    redisConnection.sadd("teams_using_v0", team_id)
+    if (chunk?.flags?.forceZDR) {
+      return res.status(400).json({ error: "Your team has zero data retention enabled. This is not supported on the v0 API. Please update your code to use the v1 API." });
+    }
+
+    const jobId = uuidv4();
+
+    redisEvictConnection.sadd("teams_using_v0", team_id)
       .catch(error => logger.error("Failed to add team to teams_using_v0", { error, team_id }));
+
+    redisEvictConnection.sadd("teams_using_v0:" + team_id, "scrape:" + jobId)
+      .catch(error => logger.error("Failed to add team to teams_using_v0 (2)", { error, team_id }));
 
     const crawlerOptions = req.body.crawlerOptions ?? {};
     const pageOptions = { ...defaultPageOptions, ...req.body.pageOptions };
@@ -231,8 +231,6 @@ export async function scrapeController(req: Request, res: Response) {
           "Error checking team credits. Please contact help@firecrawl.com for help.",
       });
     }
-
-    const jobId = uuidv4();
 
     const startTime = new Date().getTime();
     const result = await scrapeHelper(

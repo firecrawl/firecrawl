@@ -1,7 +1,11 @@
 package main
 
+/*
+#include <stdlib.h>
+*/
+import "C"
 import (
-	"C"
+	"unsafe"
 	// "log"
 
 	md "github.com/tomkosm/html-to-markdown"
@@ -18,6 +22,11 @@ func ConvertHTMLToMarkdown(html *C.char) *C.char {
 		// log.Fatal(err)
 	}
 	return C.CString(markdown)
+}
+
+//export FreeCString
+func FreeCString(s *C.char) {
+	C.free(unsafe.Pointer(s))
 }
 
 func main() {

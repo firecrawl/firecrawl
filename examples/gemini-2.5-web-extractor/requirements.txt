@@ -1,4 +1,4 @@
 python-dotenv==1.0.0
 google-generativeai==0.3.2
-requests==2.31.0
+requests==2.32.4
 serpapi==0.1.5 

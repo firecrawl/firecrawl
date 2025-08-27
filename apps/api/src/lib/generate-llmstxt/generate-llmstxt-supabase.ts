@@ -1,6 +1,6 @@
 import { supabase_service } from "../../services/supabase";
 import { logger } from "../logger";
-import { normalizeUrlOnlyHostname } from "../canonical-url";
+import { normalizeUrl, normalizeUrlOnlyHostname } from "../canonical-url";
 
 interface LlmsTextCache {
   origin_url: string;
@@ -41,7 +41,7 @@ export async function getLlmsTextFromCache(
       return null;
     }
 
-    return data;
+    return data
   } catch (error) {
     logger.error("Failed to fetch LLMs text from cache", { error, originUrl });
     return null;

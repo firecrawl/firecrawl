@@ -4,10 +4,9 @@ import {
   MapDocument,
   mapRequestSchema,
   RequestWithAuth,
-  scrapeOptions,
   TeamFlags,
-  TimeoutSignal,
 } from "./types";
+import { scrapeOptions } from "../v2/types";
 import { crawlToCrawler, StoredCrawl } from "../../lib/crawl-redis";
 import { MapResponse, MapRequest } from "./types";
 import { configDotenv } from "dotenv";
@@ -23,8 +22,8 @@ import { logJob } from "../../services/logging/log_job";
 import { performCosineSimilarity } from "../../lib/map-cosine";
 import { logger } from "../../lib/logger";
 import Redis from "ioredis";
-import { querySitemapIndex } from "../../scraper/WebScraper/sitemap-index";
-import { getIndexQueue } from "../../services/queue-service";
+import { generateURLSplits, queryIndexAtDomainSplitLevel, queryIndexAtSplitLevel } from "../../services/index";
+import { MapTimeoutError } from "../../lib/error";
 
 configDotenv();
 const redis = new Redis(process.env.REDIS_URL!);
@@ -43,6 +42,28 @@ interface MapResult {
   mapResults: MapDocument[];
 }
 
+async function queryIndex(url: string, limit: number, useIndex: boolean, includeSubdomains: boolean): Promise<string[]> {
+  if (!useIndex) {
+    return [];
+  }
+
+  const urlSplits = generateURLSplits(url);
+  if (urlSplits.length === 1) {
+    const urlObj = new URL(url);
+    const hostname = urlObj.hostname;
+
+    // TEMP: this should be altered on June 15th 2025 7AM PT - mogery
+    const [domainLinks, splitLinks] = await Promise.all([
+      includeSubdomains ? queryIndexAtDomainSplitLevel(hostname, limit, 14 * 24 * 60 * 60 * 1000) : [],
+      queryIndexAtSplitLevel(url, limit, 14 * 24 * 60 * 60 * 1000),
+    ]);
+
+    return Array.from(new Set([...domainLinks, ...splitLinks]));
+  } else {
+    return await queryIndexAtSplitLevel(url, limit);
+  }
+}
+
 export async function getMapResults({
   url,
   search,
@@ -58,6 +79,8 @@ export async function getMapResults({
   mock,
   filterByPath = true,
   flags,
+  useIndex = true,
+  timeout,
 }: {
   url: string;
   search?: string;
@@ -73,10 +96,14 @@ export async function getMapResults({
   mock?: string;
   filterByPath?: boolean;
   flags: TeamFlags;
+  useIndex?: boolean;
+  timeout?: number;
 }): Promise<MapResult> {
   const id = uuidv4();
   let links: string[] = [url];
   let mapResults: MapDocument[] = [];
+
+  const zeroDataRetention = flags?.forceZDR ?? false;
 
   const sc: StoredCrawl = {
     originUrl: url,
@@ -108,7 +135,7 @@ export async function getMapResults({
       },
       true,
       true,
-      30000,
+      timeout ?? 30000,
       abort,
       mock,
     );
@@ -161,23 +188,25 @@ export async function getMapResults({
       );
       allResults = await Promise.all(pagePromises);
 
-      await redis.set(cacheKey, JSON.stringify(allResults), "EX", 48 * 60 * 60); // Cache for 48 hours
+      if (!zeroDataRetention) {
+        await redis.set(cacheKey, JSON.stringify(allResults), "EX", 48 * 60 * 60); // Cache for 48 hours
+      }
     }
 
     // Parallelize sitemap index query with search results
-    const [sitemapIndexResult, ...searchResults] = await Promise.all([
-      querySitemapIndex(url, abort),
+    const [indexResults, ...searchResults] = await Promise.all([
+      queryIndex(url, limit, useIndex, includeSubdomains),
       ...(cachedResult ? [] : pagePromises),
     ]);
 
-    const twoDaysAgo = new Date();
-    twoDaysAgo.setDate(twoDaysAgo.getDate() - 2);
+    if (indexResults.length > 0) {
+      links.push(...indexResults);
+    }
 
-    // If sitemap is not ignored and either we have few URLs (<100) or the data is stale (>2 days old), fetch fresh sitemap
+    // If sitemap is not ignored, fetch sitemap
+    // This will attempt to find it in the index at first, or fetch a fresh one if it's older than 2 days
     if (
-      !ignoreSitemap &&
-      (sitemapIndexResult.urls.length < 100 ||
-        new Date(sitemapIndexResult.lastUpdated) < twoDaysAgo)
+      !ignoreSitemap
     ) {
       try {
         await crawler.tryGetSitemap(
@@ -186,7 +215,7 @@ export async function getMapResults({
           },
           true,
           false,
-          30000,
+          timeout ?? 30000,
           abort,
         );
       } catch (e) {
@@ -222,9 +251,6 @@ export async function getMapResults({
       }
     }
 
-    // Add sitemap-index URLs
-    links.push(...sitemapIndexResult.urls);
-
     // Perform cosine similarity between the search query and the list of links
     if (search) {
       const searchQuery = search.toLowerCase();
@@ -234,7 +260,7 @@ export async function getMapResults({
     links = links
       .map((x) => {
         try {
-          return checkAndUpdateURLForMap(x).url.trim();
+          return checkAndUpdateURLForMap(x, crawlerOptions.ignoreQueryParameters ?? true).url.trim();
         } catch (_) {
           return null;
         }
@@ -280,19 +306,6 @@ export async function getMapResults({
     ? links
     : links.slice(0, limit);
 
-  //
-
-  await getIndexQueue().add(
-    id,
-    {
-      originUrl: url,
-      visitedUrls: linksToReturn,
-    },
-    {
-      priority: 10,
-    },
-  );
-
   return {
     success: true,
     links: linksToReturn,
@@ -307,7 +320,18 @@ export async function mapController(
   req: RequestWithAuth<{}, MapResponse, MapRequest>,
   res: Response<MapResponse>,
 ) {
+  const originalRequest = req.body;
   req.body = mapRequestSchema.parse(req.body);
+  
+  if (req.acuc?.flags?.forceZDR) {
+    return res.status(400).json({ success: false, error: "Your team has zero data retention enabled. This is not supported on map. Please contact support@firecrawl.com to unblock this feature." });
+  }
+
+  logger.info("Map request", {
+    request: req.body,
+    originalRequest,
+    teamId: req.auth.team_id,
+  });
 
   let result: Awaited<ReturnType<typeof getMapResults>>;
   const abort = new AbortController();
@@ -326,19 +350,22 @@ export async function mapController(
         mock: req.body.useMock,
         filterByPath: req.body.filterByPath !== false,
         flags: req.acuc?.flags ?? null,
+        useIndex: req.body.useIndex,
+        timeout: req.body.timeout,
       }),
       ...(req.body.timeout !== undefined ? [
         new Promise((resolve, reject) => setTimeout(() => {
-          abort.abort(new TimeoutSignal());
-          reject(new TimeoutSignal());
+          abort.abort(new MapTimeoutError());
+          reject(new MapTimeoutError());
         }, req.body.timeout))
       ] : []),
     ]) as any;
   } catch (error) {
-    if (error instanceof TimeoutSignal || error === "timeout") {
+    if (error instanceof MapTimeoutError) {
       return res.status(408).json({
         success: false,
-        error: "Request timed out",
+        code: error.code,
+        error: error.message,
       });
     } else {
       throw error;
@@ -366,7 +393,10 @@ export async function mapController(
     crawlerOptions: {},
     scrapeOptions: {},
     origin: req.body.origin ?? "api",
+    integration: req.body.integration,
     num_tokens: 0,
+    credits_billed: 1,
+    zeroDataRetention: false, // not supported
   });
 
   const response = {

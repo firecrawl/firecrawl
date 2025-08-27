@@ -3,14 +3,15 @@ import {
   AuthCreditUsageChunk,
   BaseScrapeOptions,
   ScrapeOptions,
-  Document as V1Document,
+  Document as V2Document,
   webhookSchema,
-} from "./controllers/v1/types";
+  TeamFlags,
+} from "./controllers/v2/types";
 import { ExtractorOptions, Document } from "./lib/entities";
 import { InternalOptions } from "./scraper/scrapeURL";
 import type { CostTracking } from "./lib/extract/extraction-service";
 
-type Mode = "crawl" | "single_urls" | "sitemap";
+type Mode = "crawl" | "single_urls" | "sitemap" | "kickoff";
 
 export { Mode };
 
@@ -44,9 +45,21 @@ export interface WebScraperOptions {
   sitemapped?: boolean;
   webhook?: z.infer<typeof webhookSchema>;
   v1?: boolean;
+  integration?: string | null;
+
+  /**
+   * Disables billing on the worker side.
+   */
   is_scrape?: boolean;
+
   isCrawlSourceScrape?: boolean;
   from_extract?: boolean;
+  startTime?: number;
+
+  zeroDataRetention: boolean;
+  sentry?: any;
+  is_extract?: boolean;
+  concurrencyLimited?: boolean;
 }
 
 export interface RunWebScraperParams {
@@ -54,8 +67,6 @@ export interface RunWebScraperParams {
   mode: Mode;
   scrapeOptions: ScrapeOptions;
   internalOptions?: InternalOptions;
-  // onSuccess: (result: V1Document, mode: string) => void;
-  // onError: (error: Error) => void;
   team_id: string;
   bull_job_id: string;
   priority?: number;
@@ -72,7 +83,7 @@ export type RunWebScraperResult =
     }
   | {
       success: true;
-      document: V1Document;
+      document: V2Document;
     };
 
 export interface FirecrawlJob {
@@ -88,12 +99,19 @@ export interface FirecrawlJob {
   crawlerOptions?: any;
   scrapeOptions?: any;
   origin: string;
+  integration?: string | null;
   num_tokens?: number;
   retry?: boolean;
   crawl_id?: string;
   tokens_billed?: number;
   sources?: Record<string, string[]>;
   cost_tracking?: CostTracking;
+  pdf_num_pages?: number;
+  credits_billed?: number | null;
+  change_tracking_tag?: string | null;
+  dr_clean_by?: string | null;
+
+  zeroDataRetention: boolean;
 }
 
 export interface FirecrawlScrapeResponse {

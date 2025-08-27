@@ -1,3 +1,4 @@
+import type { Logger } from "winston";
 import { supabase_rr_service, supabase_service } from "../services/supabase";
 import { logger } from "./logger";
 import * as Sentry from "@sentry/node";
@@ -9,6 +10,24 @@ import * as Sentry from "@sentry/node";
  */
 export const supabaseGetJobById = async (jobId: string) => {
   const { data, error } = await supabase_rr_service
+    .from("firecrawl_jobs")
+    .select("*")
+    .eq("job_id", jobId)
+    .single();
+
+  if (error) {
+    return null;
+  }
+
+  if (!data) {
+    return null;
+  }
+
+  return data;
+};
+
+export const supabaseGetJobByIdDirect = async (jobId: string) => {
+  const { data, error } = await supabase_service
     .from("firecrawl_jobs")
     .select("*")
     .eq("job_id", jobId)
@@ -73,7 +92,7 @@ export const supabaseGetJobsByCrawlId = async (crawlId: string) => {
   return data;
 };
 
-export const supabaseGetJobByIdOnlyData = async (jobId: string) => {
+export const supabaseGetJobByIdOnlyData = async (jobId: string, logger?: Logger) => {
   const { data, error } = await supabase_rr_service
     .from("firecrawl_jobs")
     .select("team_id")
@@ -81,6 +100,9 @@ export const supabaseGetJobByIdOnlyData = async (jobId: string) => {
     .single();
 
   if (error) {
+    if (logger) {
+      logger.error("Error in supabaseGetJobByIdOnlyData", { error });
+    }
     return null;
   }
 

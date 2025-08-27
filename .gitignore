@@ -41,3 +41,7 @@ apps/js-sdk/firecrawl/dist
 llm-links.txt
 mapped-links.txt
 gke-key.json
+
+CLAUDE.local.md
+
+*.egg-info/

@@ -254,7 +254,7 @@ if __name__ == "__main__":
     save_firecrawl_news_data()
 ```
 
-The complete scraper script is available in [our GitHub repository](https://github.com/mendableai/firecrawl/blob/main/examples/hacker_news_scraper/firecrawl_scraper.py). For reference, we also provide [a BeautifulSoup implementation of the same scraper](https://github.com/mendableai/firecrawl/blob/main/examples/hacker_news_scraper/bs4_scraper.py).
+The complete scraper script is available in [our GitHub repository](https://github.com/firecrawl/firecrawl/blob/main/examples/hacker_news_scraper/firecrawl_scraper.py). For reference, we also provide [a BeautifulSoup implementation of the same scraper](https://github.com/firecrawl/firecrawl/blob/main/examples/hacker_news_scraper/bs4_scraper.py).
 
 ## Local Web Scraping Automation Methods
 

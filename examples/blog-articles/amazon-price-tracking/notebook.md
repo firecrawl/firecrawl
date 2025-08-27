@@ -1215,7 +1215,7 @@ Congratulations for making it to the end of this extremely long tutorial! We've 
 
 However, the project is far from perfect. Since we took a top-down approach to building this app, our project code is scattered across multiple files and often doesn't follow programming best practices. For this reason, I've recreated the same project in a much more sophisticated manner with production-level features. [This new version on GitHub](https://github.com/BexTuychiev/automated-price-tracking) implements proper database session management, faster operations and overall smoother user experience. Also, this version includes buttons for removing products from the database and visiting them through the app.
 
-If you decide to stick with the basic version, you can find the full project code and notebook in [the official Firecrawl GitHub repository's example projects](https://github.com/mendableai/firecrawl/tree/main/examples/automated_price_tracking). I also recommend that you [deploy your Streamlit app to Streamlit Cloud](https://share.streamlit.io) so that you have a functional app accessible everywhere you go.
+If you decide to stick with the basic version, you can find the full project code and notebook in [the official Firecrawl GitHub repository's example projects](https://github.com/firecrawl/firecrawl/tree/main/examples/automated_price_tracking). I also recommend that you [deploy your Streamlit app to Streamlit Cloud](https://share.streamlit.io) so that you have a functional app accessible everywhere you go.
 
 Here are some further improvements you might consider for the app:
 

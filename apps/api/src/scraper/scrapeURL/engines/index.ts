@@ -1,26 +1,34 @@
 import { ScrapeActionContent } from "../../../lib/entities";
 import { Meta } from "..";
-import { scrapeDOCX } from "./docx";
+import { docxMaxReasonableTime, scrapeDOCX } from "./docx";
 import {
+  fireEngineMaxReasonableTime,
   scrapeURLWithFireEngineChromeCDP,
   scrapeURLWithFireEnginePlaywright,
   scrapeURLWithFireEngineTLSClient,
 } from "./fire-engine";
-import { scrapePDF } from "./pdf";
-import { scrapeURLWithFetch } from "./fetch";
-import { scrapeURLWithPlaywright } from "./playwright";
-import { scrapeCache } from "./cache";
+import { pdfMaxReasonableTime, scrapePDF } from "./pdf";
+import { fetchMaxReasonableTime, scrapeURLWithFetch } from "./fetch";
+import { playwrightMaxReasonableTime, scrapeURLWithPlaywright } from "./playwright";
+import { indexMaxReasonableTime, scrapeURLWithIndex } from "./index/index";
+import { useIndex } from "../../../services";
+import { hasFormatOfType } from "../../../lib/format-utils";
 
 export type Engine =
   | "fire-engine;chrome-cdp"
   | "fire-engine(retry);chrome-cdp"
+  | "fire-engine;chrome-cdp;stealth"
+  | "fire-engine(retry);chrome-cdp;stealth"
   | "fire-engine;playwright"
+  | "fire-engine;playwright;stealth"
   | "fire-engine;tlsclient"
+  | "fire-engine;tlsclient;stealth"
   | "playwright"
   | "fetch"
   | "pdf"
   | "docx"
-  | "cache";
+  | "index"
+  | "index;documents";
 
 const useFireEngine =
   process.env.FIRE_ENGINE_BETA_URL !== "" &&
@@ -28,18 +36,19 @@ const useFireEngine =
 const usePlaywright =
   process.env.PLAYWRIGHT_MICROSERVICE_URL !== "" &&
   process.env.PLAYWRIGHT_MICROSERVICE_URL !== undefined;
-const useCache =
-  process.env.CACHE_REDIS_URL !== "" &&
-  process.env.CACHE_REDIS_URL !== undefined;
 
 export const engines: Engine[] = [
-  ...(useCache ? ["cache" as const] : []),
+  ...(useIndex ? ["index" as const, "index;documents" as const] : []),
   ...(useFireEngine
     ? [
         "fire-engine;chrome-cdp" as const,
+        "fire-engine;chrome-cdp;stealth" as const,
         "fire-engine(retry);chrome-cdp" as const,
+        "fire-engine(retry);chrome-cdp;stealth" as const,
         "fire-engine;playwright" as const,
+        "fire-engine;playwright;stealth" as const,
         "fire-engine;tlsclient" as const,
+        "fire-engine;tlsclient;stealth" as const,
       ]
     : []),
   ...(usePlaywright ? ["playwright" as const] : []),
@@ -61,6 +70,7 @@ export const featureFlags = [
   "skipTlsVerification",
   "useFastMode",
   "stealthProxy",
+  "disableAdblock",
 ] as const;
 
 export type FeatureFlag = (typeof featureFlags)[number];
@@ -82,6 +92,7 @@ export const featureFlagOptions: {
   mobile: { priority: 10 },
   skipTlsVerification: { priority: 10 },
   stealthProxy: { priority: 20 },
+  disableAdblock: { priority: 10 },
 } as const;
 
 export type EngineScrapeResult = {
@@ -100,24 +111,58 @@ export type EngineScrapeResult = {
       type: string;
       value: unknown
     }[];
+    pdfs: string[];
   };
+
+  numPages?: number;
+
+  cacheInfo?: {
+    created_at: Date;
+  };
+  
+  contentType?: string;
+
+  proxyUsed: "basic" | "stealth";
 };
 
 const engineHandlers: {
   [E in Engine]: (
     meta: Meta,
-    timeToRun: number | undefined,
   ) => Promise<EngineScrapeResult>;
 } = {
-  cache: scrapeCache,
+  index: scrapeURLWithIndex,
+  "index;documents": scrapeURLWithIndex,
   "fire-engine;chrome-cdp": scrapeURLWithFireEngineChromeCDP,
   "fire-engine(retry);chrome-cdp": scrapeURLWithFireEngineChromeCDP,
+  "fire-engine;chrome-cdp;stealth": scrapeURLWithFireEngineChromeCDP,
+  "fire-engine(retry);chrome-cdp;stealth": scrapeURLWithFireEngineChromeCDP,
   "fire-engine;playwright": scrapeURLWithFireEnginePlaywright,
+  "fire-engine;playwright;stealth": scrapeURLWithFireEnginePlaywright,
   "fire-engine;tlsclient": scrapeURLWithFireEngineTLSClient,
+  "fire-engine;tlsclient;stealth": scrapeURLWithFireEngineTLSClient,
   playwright: scrapeURLWithPlaywright,
   fetch: scrapeURLWithFetch,
   pdf: scrapePDF,
   docx: scrapeDOCX,
+};
+
+const engineMRTs: {
+  [E in Engine]: (meta: Meta) => number;
+} = {
+  "index": indexMaxReasonableTime,
+  "index;documents": indexMaxReasonableTime,
+  "fire-engine;chrome-cdp": (meta) => fireEngineMaxReasonableTime(meta, "chrome-cdp"),
+  "fire-engine(retry);chrome-cdp": (meta) => fireEngineMaxReasonableTime(meta, "chrome-cdp"),
+  "fire-engine;chrome-cdp;stealth": (meta) => fireEngineMaxReasonableTime(meta, "chrome-cdp"),
+  "fire-engine(retry);chrome-cdp;stealth": (meta) => fireEngineMaxReasonableTime(meta, "chrome-cdp"),
+  "fire-engine;playwright": (meta) => fireEngineMaxReasonableTime(meta, "playwright"),
+  "fire-engine;playwright;stealth": (meta) => fireEngineMaxReasonableTime(meta, "playwright"),
+  "fire-engine;tlsclient": (meta) => fireEngineMaxReasonableTime(meta, "tlsclient"),
+  "fire-engine;tlsclient;stealth": (meta) => fireEngineMaxReasonableTime(meta, "tlsclient"),
+  playwright: playwrightMaxReasonableTime,
+  fetch: fetchMaxReasonableTime,
+  pdf: pdfMaxReasonableTime,
+  docx: docxMaxReasonableTime,
 };
 
 export const engineOptions: {
@@ -126,26 +171,27 @@ export const engineOptions: {
     features: { [F in FeatureFlag]: boolean };
 
     // This defines the order of engines in general. The engine with the highest quality will be used the most.
-    // Negative quality numbers are reserved for specialty engines, e.g. PDF and DOCX
+    // Negative quality numbers are reserved for specialty engines, e.g. PDF, DOCX, stealth proxies
     quality: number;
   };
 } = {
-  cache: {
+  index: {
     features: {
       actions: false,
       waitFor: true,
-      screenshot: false,
-      "screenshot@fullScreen": false,
-      pdf: false, // TODO: figure this out
-      docx: false, // TODO: figure this out
+      screenshot: true,
+      "screenshot@fullScreen": true,
+      pdf: false,
+      docx: false,
       atsv: false,
-      location: false,
-      mobile: false,
-      skipTlsVerification: false,
-      useFastMode: false,
+      mobile: true,
+      location: true,
+      skipTlsVerification: true,
+      useFastMode: true,
       stealthProxy: false,
+      disableAdblock: true,
     },
-    quality: 1000, // cache should always be tried first
+    quality: 1000, // index should always be tried first
   },
   "fire-engine;chrome-cdp": {
     features: {
@@ -160,7 +206,8 @@ export const engineOptions: {
       mobile: true,
       skipTlsVerification: true,
       useFastMode: false,
-      stealthProxy: true,
+      stealthProxy: false,
+      disableAdblock: false,
     },
     quality: 50,
   },
@@ -177,9 +224,64 @@ export const engineOptions: {
       mobile: true,
       skipTlsVerification: true,
       useFastMode: false,
-      stealthProxy: true,
+      stealthProxy: false,
+      disableAdblock: false,
     },
     quality: 45,
+  },
+  "index;documents": {
+    features: {
+      actions: false,
+      waitFor: true,
+      screenshot: true,
+      "screenshot@fullScreen": true,
+      pdf: true,
+      docx: true,
+      atsv: false,
+      location: true,
+      mobile: true,
+      skipTlsVerification: true,
+      useFastMode: true,
+      stealthProxy: false,
+      disableAdblock: false,
+    },
+    quality: -1,
+  },
+  "fire-engine;chrome-cdp;stealth": {
+    features: {
+      actions: true,
+      waitFor: true, // through actions transform
+      screenshot: true, // through actions transform
+      "screenshot@fullScreen": true, // through actions transform
+      pdf: false,
+      docx: false,
+      atsv: false,
+      location: true,
+      mobile: true,
+      skipTlsVerification: true,
+      useFastMode: false,
+      stealthProxy: true,
+      disableAdblock: false,
+    },
+    quality: -2,
+  },
+  "fire-engine(retry);chrome-cdp;stealth": {
+    features: {
+      actions: true,
+      waitFor: true, // through actions transform
+      screenshot: true, // through actions transform
+      "screenshot@fullScreen": true, // through actions transform
+      pdf: false,
+      docx: false,
+      atsv: false,
+      location: true,
+      mobile: true,
+      skipTlsVerification: true,
+      useFastMode: false,
+      stealthProxy: true,
+      disableAdblock: false,
+    },
+    quality: -5,
   },
   "fire-engine;playwright": {
     features: {
@@ -194,9 +296,28 @@ export const engineOptions: {
       mobile: false,
       skipTlsVerification: false,
       useFastMode: false,
-      stealthProxy: true,
+      stealthProxy: false,
+      disableAdblock: true,
     },
     quality: 40,
+  },
+  "fire-engine;playwright;stealth": {
+    features: {
+      actions: false,
+      waitFor: true,
+      screenshot: true,
+      "screenshot@fullScreen": true,
+      pdf: false,
+      docx: false,
+      atsv: false,
+      location: false,
+      mobile: false,
+      skipTlsVerification: false,
+      useFastMode: false,
+      stealthProxy: true,
+      disableAdblock: true,
+    },
+    quality: -10,
   },
   playwright: {
     features: {
@@ -209,9 +330,10 @@ export const engineOptions: {
       atsv: false,
       location: false,
       mobile: false,
-      skipTlsVerification: false,
+      skipTlsVerification: true,
       useFastMode: false,
       stealthProxy: false,
+      disableAdblock: false,
     },
     quality: 20,
   },
@@ -226,11 +348,30 @@ export const engineOptions: {
       atsv: true,
       location: true,
       mobile: false,
-      skipTlsVerification: false,
+      skipTlsVerification: true,
       useFastMode: true,
-      stealthProxy: true,
+      stealthProxy: false,
+      disableAdblock: false,
     },
     quality: 10,
+  },
+  "fire-engine;tlsclient;stealth": {
+    features: {
+      actions: false,
+      waitFor: false,
+      screenshot: false,
+      "screenshot@fullScreen": false,
+      pdf: false,
+      docx: false,
+      atsv: true,
+      location: true,
+      mobile: false,
+      skipTlsVerification: true,
+      useFastMode: true,
+      stealthProxy: true,
+      disableAdblock: false,
+    },
+    quality: -15,
   },
   fetch: {
     features: {
@@ -243,9 +384,10 @@ export const engineOptions: {
       atsv: false,
       location: false,
       mobile: false,
-      skipTlsVerification: false,
+      skipTlsVerification: true,
       useFastMode: true,
       stealthProxy: false,
+      disableAdblock: false,
     },
     quality: 5,
   },
@@ -263,8 +405,9 @@ export const engineOptions: {
       skipTlsVerification: false,
       useFastMode: true,
       stealthProxy: true, // kinda...
+      disableAdblock: true,
     },
-    quality: -10,
+    quality: -20,
   },
   docx: {
     features: {
@@ -280,8 +423,9 @@ export const engineOptions: {
       skipTlsVerification: false,
       useFastMode: true,
       stealthProxy: true, // kinda...
+      disableAdblock: true,
     },
-    quality: -10,
+    quality: -20,
   },
 };
 
@@ -293,17 +437,36 @@ export function buildFallbackList(meta: Meta): {
     ...engines,
     
     // enable fire-engine in self-hosted testing environment when mocks are supplied
-    ...((!useFireEngine && meta.mock !== null) ? ["fire-engine;chrome-cdp", "fire-engine(retry);chrome-cdp", "fire-engine;playwright", "fire-engine;tlsclient"] as Engine[] : [])
+    ...((!useFireEngine && meta.mock !== null) ? ["fire-engine;chrome-cdp", "fire-engine(retry);chrome-cdp", "fire-engine;chrome-cdp;stealth", "fire-engine(retry);chrome-cdp;stealth", "fire-engine;playwright", "fire-engine;tlsclient", "fire-engine;playwright;stealth", "fire-engine;tlsclient;stealth"] as Engine[] : [])
   ];
 
-  if (meta.internalOptions.useCache !== true) {
-    const cacheIndex = _engines.indexOf("cache");
-    if (cacheIndex !== -1) {
-      _engines.splice(cacheIndex, 1);
+  const shouldUseIndex =
+    useIndex
+    && process.env.FIRECRAWL_INDEX_WRITE_ONLY !== "true"
+    && meta.options.waitFor === 0
+    && !hasFormatOfType(meta.options.formats, "changeTracking")
+    && meta.options.maxAge !== 0
+    && (
+      meta.options.headers === undefined
+      || Object.keys(meta.options.headers).length === 0
+    )
+    && (
+      meta.options.actions === undefined
+      || meta.options.actions.length === 0
+    )
+    && meta.options.proxy !== "stealth";
+  
+  if (!shouldUseIndex) {
+    const indexIndex = _engines.indexOf("index");
+    if (indexIndex !== -1) {
+      _engines.splice(indexIndex, 1);
     }
-  } else {
-    meta.logger.debug("Cache engine enabled by useCache option");
+    const indexDocumentsIndex = _engines.indexOf("index;documents");
+    if (indexDocumentsIndex !== -1) {
+      _engines.splice(indexDocumentsIndex, 1);
+    }
   }
+  
   const prioritySum = [...meta.featureFlags].reduce(
     (a, x) => a + featureFlagOptions[x].priority,
     0,
@@ -342,24 +505,6 @@ export function buildFallbackList(meta: Meta): {
 
     if (supportScore >= priorityThreshold) {
       selectedEngines.push({ engine, supportScore, unsupportedFeatures });
-      meta.logger.debug(`Engine ${engine} meets feature priority threshold`, {
-        supportScore,
-        prioritySum,
-        priorityThreshold,
-        featureFlags: [...meta.featureFlags],
-        unsupportedFeatures,
-      });
-    } else {
-      meta.logger.debug(
-        `Engine ${engine} does not meet feature priority threshold`,
-        {
-          supportScore,
-          prioritySum,
-          priorityThreshold,
-          featureFlags: [...meta.featureFlags],
-          unsupportedFeatures,
-        },
-      );
     }
   }
 
@@ -377,13 +522,16 @@ export function buildFallbackList(meta: Meta): {
     );
   }
 
+  meta.logger.info("Selected engines", {
+    selectedEngines,
+  });
+
   return selectedEngines;
 }
 
 export async function scrapeURLWithEngine(
   meta: Meta,
   engine: Engine,
-  timeToRun: number | undefined,
 ): Promise<EngineScrapeResult> {
   const fn = engineHandlers[engine];
   const logger = meta.logger.child({
@@ -395,5 +543,15 @@ export async function scrapeURLWithEngine(
     logger,
   };
 
-  return await fn(_meta, timeToRun);
+  return await fn(_meta);
+}
+
+export function getEngineMaxReasonableTime(meta: Meta, engine: Engine): number {
+  const mrt = engineMRTs[engine];
+  // shan't happen - mogery
+  if (mrt === undefined) {
+    meta.logger.warn("No MRT for engine", { engine });
+    return 30000;
+  }
+  return mrt(meta);
 }

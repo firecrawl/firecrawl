@@ -4,7 +4,6 @@ import { isUrlBlocked } from "../../scraper/WebScraper/utils/blocklist";
 import { logger } from "../logger";
 import { CohereClient } from "cohere-ai";
 import { extractConfig } from "./config";
-import { searchSimilarPages } from "./index/pinecone";
 import { generateCompletions } from "../../scraper/scrapeURL/transformers/llmExtract";
 import { buildRerankerUserPrompt } from "./build-prompts";
 import { buildRerankerSystemPrompt } from "./build-prompts";
@@ -58,6 +57,7 @@ export async function rerankLinks(
   searchQuery: string,
   urlTraces: URLTrace[],
   flags: TeamFlags,
+  metadata: { teamId: string, extractId?: string }
 ): Promise<MapDocument[]> {
   // console.log("Going to rerank links");
   const mappedLinksRerank = mappedLinks.map(
@@ -68,6 +68,7 @@ export async function rerankLinks(
     mappedLinksRerank,
     mappedLinks.map((l) => l.url),
     searchQuery,
+    metadata,
   );
 
   // First try with high threshold
@@ -183,6 +184,7 @@ export type RerankerOptions = {
   multiEntityKeys: string[];
   keyIndicators: string[];
   costTracking: CostTracking;
+  metadata: { teamId: string, functionId?: string, extractId?: string };
 };
 
 export async function rerankLinksWithLLM(
@@ -196,6 +198,7 @@ export async function rerankLinksWithLLM(
     reasoning,
     multiEntityKeys,
     keyIndicators,
+    metadata,
   } = options;
   const chunkSize = 5000;
   const chunks: MapDocument[][] = [];
@@ -299,15 +302,14 @@ export async function rerankLinksWithLLM(
           let completion: any;
           try {
             const completionPromise = generateCompletions({
-              model: getModel("gemini-2.5-pro-preview-03-25", "vertex"),
-              retryModel: getModel("gemini-2.5-pro-preview-03-25", "google"),
+              model: getModel("gemini-2.5-pro", "vertex"),
+              retryModel: getModel("gemini-2.5-pro", "google"),
               logger: logger.child({
                 method: "rerankLinksWithLLM",
                 chunk: chunkIndex + 1,
                 retry,
               }),
               options: {
-                mode: "llm",
                 systemPrompt: systemPrompt,
                 prompt: buildRerankerUserPrompt(searchQuery),
                 schema: schema,
@@ -327,6 +329,10 @@ export async function rerankLinksWithLLM(
                   module: "extract",
                   method: "rerankLinksWithLLM",
                 },
+              },
+              metadata: {
+                ...metadata,
+                functionId: metadata.functionId ? (metadata.functionId + "/rerankLinksWithLLM") : "rerankLinksWithLLM",
               },
             });
 

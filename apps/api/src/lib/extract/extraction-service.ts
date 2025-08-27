@@ -1,10 +1,10 @@
 import {
   Document,
   ExtractRequest,
-  isAgentExtractModelValid,
   TokenUsage,
   URLTrace,
-} from "../../controllers/v1/types";
+} from "../../controllers/v2/types";
+import { isAgentExtractModelValid } from "../../controllers/v1/types";
 import { logger as _logger } from "../logger";
 import { generateBasicCompletion, processUrl } from "./url-processor";
 import { scrapeDocument } from "./document-scraper";
@@ -37,6 +37,9 @@ import { normalizeUrl } from "../canonical-url";
 import { search } from "../../search";
 import { buildRephraseToSerpPrompt } from "./build-prompts";
 import { getACUCTeam } from "../../controllers/auth";
+import { isUrlBlocked } from "../../scraper/WebScraper/utils/blocklist";
+import { langfuse } from "../../services/langfuse";
+
 interface ExtractServiceOptions {
   request: ExtractRequest;
   teamId: string;
@@ -148,6 +151,16 @@ export async function performExtraction(
     teamId,
   });
 
+  langfuse.trace({
+    id: "extract:" + extractId,
+    name: "performExtraction",
+    metadata: {
+      teamId,
+      extractId,
+      model: "fire-1",
+    },
+  });
+
   try {
 
     // If no URLs are provided, generate URLs from the prompt
@@ -158,10 +171,12 @@ export async function performExtraction(
       const rephrasedPrompt = await generateBasicCompletion(
         buildRephraseToSerpPrompt(request.prompt),
         costTracking,
+        { teamId, extractId },
       );
       let rptxt = rephrasedPrompt?.text.replace('"', "").replace("'", "") || "";
       const searchResults = await search({
         query: rptxt,
+        logger,
         num_results: 10,
       });
 
@@ -185,10 +200,12 @@ export async function performExtraction(
         url: request.urls?.join(", ") || "",
         scrapeOptions: request,
         origin: request.origin ?? "api",
+        integration: request.integration,
         num_tokens: 0,
         tokens_billed,
         sources,
         cost_tracking: costTracking,
+        zeroDataRetention: false, // not supported
       });
 
       await billTeam(teamId, subId, tokens_billed, logger, true).catch((error) => {
@@ -241,7 +258,11 @@ export async function performExtraction(
 
     let reqSchema = request.schema;
     if (!reqSchema && request.prompt) {
-      const schemaGenRes = await generateSchemaFromPrompt(request.prompt, logger, costTracking);
+      const schemaGenRes = await generateSchemaFromPrompt(request.prompt, logger, costTracking, {
+        teamId,
+        functionId: "performExtraction/generateRequestSchema",
+        extractId,
+      });
       reqSchema = schemaGenRes.extract;
 
 
@@ -274,7 +295,11 @@ export async function performExtraction(
       reasoning,
       keyIndicators,
       tokenUsage: schemaAnalysisTokenUsage,
-    } = await analyzeSchemaAndPrompt(urls, reqSchema, request.prompt ?? "", logger, costTracking);
+    } = await analyzeSchemaAndPrompt(urls, reqSchema, request.prompt ?? "", logger, costTracking, {
+      teamId,
+      functionId: "performExtraction",
+      extractId,
+    });
 
     logger.debug("Analyzed schema.", {
       isMultiEntity,
@@ -307,6 +332,7 @@ export async function performExtraction(
           reasoning,
           multiEntityKeys,
           keyIndicators,
+          extractId,
         },
         urlTraces,
         (links: string[]) => {
@@ -403,8 +429,9 @@ export async function performExtraction(
             {
               url,
               teamId,
-              origin: request.origin || "api",
+              origin: "extract",
               timeout,
+              flags: acuc?.flags ?? null,
             },
             urlTraces,
             logger.child({
@@ -506,6 +533,11 @@ export async function performExtraction(
               extractId,
               sessionId,
               costTracking,
+              metadata: {
+                teamId,
+                functionId: "performExtraction/multiEntity",
+                extractId,
+              },
             }, logger);
 
             // Race between timeout and completion
@@ -680,10 +712,12 @@ export async function performExtraction(
           url: request.urls?.join(", ") || "",
           scrapeOptions: request,
           origin: request.origin ?? "api",
+          integration: request.integration,
           num_tokens: 0,
           tokens_billed,
           sources,
           cost_tracking: costTracking,
+          zeroDataRetention: false, // not supported
         });
         await billTeam(teamId, subId, tokens_billed, logger, true).catch((error) => {
           logger.error(
@@ -736,8 +770,9 @@ export async function performExtraction(
             {
               url,
               teamId,
-              origin: request.origin || "api",
+              origin: "extract",
               timeout,
+              flags: acuc?.flags ?? null,
             },
             urlTraces,
             logger.child({
@@ -787,10 +822,12 @@ export async function performExtraction(
           url: request.urls?.join(", ") || "",
           scrapeOptions: request,
           origin: request.origin ?? "api",
+          integration: request.integration,
           num_tokens: 0,
           tokens_billed,
           sources,
           cost_tracking: costTracking,
+          zeroDataRetention: false, // not supported
         });
         await billTeam(teamId, subId, tokens_billed, logger, true).catch((error) => {
           logger.error(
@@ -827,10 +864,12 @@ export async function performExtraction(
           url: request.urls?.join(", ") || "",
           scrapeOptions: request,
           origin: request.origin ?? "api",
+          integration: request.integration,
           num_tokens: 0,
           tokens_billed,
           sources,
           cost_tracking: costTracking,
+          zeroDataRetention: false, // not supported
         });
         return {
           success: false,
@@ -874,6 +913,11 @@ export async function performExtraction(
         extractId,
         sessionId: thisSessionId,
         costTracking,
+        metadata: {
+          teamId,
+          functionId: "performExtraction",
+          extractId,
+        },
       });
       logger.debug("Done generating singleAnswer completions.");
 
@@ -1011,15 +1055,18 @@ export async function performExtraction(
       url: request.urls?.join(", ") || "",
       scrapeOptions: request,
       origin: request.origin ?? "api",
+      integration: request.integration,
       num_tokens: totalTokensUsed,
       tokens_billed: tokensToBill,
       sources,
       cost_tracking: costTracking,
+      zeroDataRetention: false, // not supported
     }).then(() => {
       updateExtract(extractId, {
         status: "completed",
         llmUsage,
         sources,
+        tokensBilled: tokensToBill,
         // costTracking,
       }).catch((error) => {
         logger.error(
@@ -1079,10 +1126,12 @@ export async function performExtraction(
       url: request.urls?.join(", ") || "",
       scrapeOptions: request,
       origin: request.origin ?? "api",
+      integration: request.integration,
       num_tokens: 0,
       tokens_billed,
       sources,
       cost_tracking: costTracking,
+      zeroDataRetention: false, // not supported
     });
     
     throw error;

@@ -3,11 +3,12 @@ kind: ConfigMap
 metadata:
   name: firecrawl-config
 data:
-  NUM_WORKERS_PER_QUEUE: "8"
-  PORT: "3002"
   HOST: "0.0.0.0"
   REDIS_URL: "redis://redis:6379"
   REDIS_RATE_LIMIT_URL: "redis://redis:6379"
   PLAYWRIGHT_MICROSERVICE_URL: "http://playwright-service:3000"
   USE_DB_AUTHENTICATION: "false"
-  HDX_NODE_BETA_MODE: "1"
+  SENTRY_ENVIRONMENT: "production"
+  ENV: "production"
+  LOGGING_LEVEL: "DEBUG"
+  IS_KUBERNETES: "true"

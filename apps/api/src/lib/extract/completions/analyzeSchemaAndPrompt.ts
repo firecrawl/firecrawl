@@ -8,7 +8,6 @@ import {
   buildAnalyzeSchemaPrompt,
   buildAnalyzeSchemaUserPrompt,
 } from "../build-prompts";
-import { jsonSchema } from "ai";
 import { getModel } from "../../../lib/generic-ai";
 import { Logger } from "winston";
 import { CostTracking } from "../extraction-service";
@@ -18,6 +17,7 @@ export async function analyzeSchemaAndPrompt(
   prompt: string,
   logger: Logger,
   costTracking: CostTracking,
+  metadata: { teamId: string, functionId?: string, extractId?: string, scrapeId?: string, deepResearchId?: string },
 ): Promise<{
   isMultiEntity: boolean;
   multiEntityKeys: string[];
@@ -26,7 +26,10 @@ export async function analyzeSchemaAndPrompt(
   tokenUsage: TokenUsage;
 }> {
   if (!schema) {
-    const genRes = await generateSchemaFromPrompt(prompt, logger, costTracking);
+    const genRes = await generateSchemaFromPrompt(prompt, logger, costTracking, {
+      ...metadata,
+      functionId: metadata.functionId ? (metadata.functionId + "/analyzeSchemaAndPrompt") : "analyzeSchemaAndPrompt",
+    });
     schema = genRes.extract;
   }
 
@@ -50,7 +53,6 @@ export async function analyzeSchemaAndPrompt(
     const { extract: result, totalUsage } = await generateCompletions({
       logger,
       options: {
-        mode: "llm",
         schema: checkSchema,
         prompt: buildAnalyzeSchemaUserPrompt(schemaString, prompt, urls),
         systemPrompt: buildAnalyzeSchemaPrompt(),
@@ -59,10 +61,14 @@ export async function analyzeSchemaAndPrompt(
       model,
       costTrackingOptions: {
         costTracking,
-        metadata: {
+        metadata: { 
           module: "extract",
           method: "analyzeSchemaAndPrompt",
         },
+      },
+      metadata: {
+        ...metadata,
+        functionId: metadata.functionId ? (metadata.functionId + "/analyzeSchemaAndPrompt") : "analyzeSchemaAndPrompt",
       },
     });
 

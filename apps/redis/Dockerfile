@@ -1,4 +1,4 @@
-ARG REDIS_VERSION=7.2.5
+ARG REDIS_VERSION=8.0.3
 FROM bitnami/redis:${REDIS_VERSION}
 
 COPY start-redis-server.sh /usr/bin/start-redis-server.sh

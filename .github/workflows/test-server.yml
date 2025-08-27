@@ -4,37 +4,46 @@ on:
   pull_request:
     branches:
       - main
-    paths:
-      - apps/api/**
-  # schedule:
-  #   - cron: '0 */4 * * *'
+      - nsc/v2
 
 env:
   BULL_AUTH_KEY: ${{ secrets.BULL_AUTH_KEY }}
-  HOST: ${{ secrets.HOST }}
   POSTHOG_API_KEY: ${{ secrets.POSTHOG_API_KEY }}
   POSTHOG_HOST: ${{ secrets.POSTHOG_HOST }}
   OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-  PORT: ${{ secrets.PORT }}
   REDIS_URL: ${{ secrets.REDIS_URL }}
   SUPABASE_ANON_TOKEN: ${{ secrets.SUPABASE_ANON_TOKEN }}
   SUPABASE_SERVICE_TOKEN: ${{ secrets.SUPABASE_SERVICE_TOKEN }}
   SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
   SUPABASE_REPLICA_URL: ${{ secrets.SUPABASE_REPLICA_URL }}
+  INDEX_SUPABASE_SERVICE_TOKEN: ${{ secrets.INDEX_SUPABASE_SERVICE_TOKEN }}
+  INDEX_SUPABASE_ANON_TOKEN: ${{ secrets.INDEX_SUPABASE_ANON_TOKEN }}
+  INDEX_SUPABASE_URL: ${{ secrets.INDEX_SUPABASE_URL }}
   TEST_API_KEY: ${{ secrets.TEST_API_KEY }}
+  TEST_TEAM_ID: ${{ secrets.TEST_TEAM_ID }}
+  TEST_API_KEY_CONCURRENCY: ${{ secrets.TEST_API_KEY_CONCURRENCY }}
+  TEST_TEAM_ID_CONCURRENCY: ${{ secrets.TEST_TEAM_ID_CONCURRENCY }}
+  TEST_API_KEY_ZDR: ${{ secrets.TEST_API_KEY_ZDR }}
+  TEST_TEAM_ID_ZDR: ${{ secrets.TEST_TEAM_ID_ZDR }}
   FIRE_ENGINE_BETA_URL: ${{ secrets.FIRE_ENGINE_BETA_URL }}
+  FIRE_ENGINE_STAGING_URL: ${{ secrets.FIRE_ENGINE_STAGING_URL }}
   USE_DB_AUTHENTICATION: true
   SERPER_API_KEY: ${{ secrets.SERPER_API_KEY }}
   ENV: ${{ secrets.ENV }}
   RUNPOD_MU_POD_ID: ${{ secrets.RUNPOD_MU_POD_ID }}
+  RUNPOD_MUV2_POD_ID: ${{ secrets.RUNPOD_MUV2_POD_ID }}
   RUNPOD_MU_API_KEY: ${{ secrets.RUNPOD_MU_API_KEY }}
   GCS_CREDENTIALS: ${{ secrets.GCS_CREDENTIALS }}
   GCS_BUCKET_NAME: ${{ secrets.GCS_BUCKET_NAME }}
+  GCS_INDEX_BUCKET_NAME: ${{ secrets.GCS_INDEX_BUCKET_NAME }}
   GOOGLE_GENERATIVE_AI_API_KEY: ${{ secrets.GOOGLE_GENERATIVE_AI_API_KEY }}
   GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
   ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
   VERTEX_CREDENTIALS: ${{ secrets.VERTEX_CREDENTIALS }}
   USE_GO_MARKDOWN_PARSER: true
+  SENTRY_ENVIRONMENT: dev
+  IDMUX_URL: ${{ secrets.IDMUX_URL }}
+  LOG_ENCRYPTION_KEY: ${{ secrets.LOG_ENCRYPTION_KEY }}
 
 jobs:
   test:
@@ -53,6 +62,7 @@ jobs:
           oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
           oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
           tags: tag:ci
+          use-cache: 'true'
       - name: Install pnpm
         uses: pnpm/action-setup@v4
         with:
@@ -69,28 +79,54 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.19'
+          go-version: '1.24'
           cache-dependency-path: ./apps/api/sharedLibs/go-html-to-md/go.sum
+      - name: Set up Rust
+        uses: actions-rust-lang/setup-rust-toolchain@v1
       - name: Build go-html-to-md
         run: |
           go mod tidy
           go build -o html-to-markdown.so -buildmode=c-shared html-to-markdown.go
           chmod +x html-to-markdown.so
         working-directory: ./apps/api/sharedLibs/go-html-to-md
+      - name: Build html-transformer
+        run: |
+          cargo build --release
+          chmod +x target/release/libhtml_transformer.so
+        working-directory: ./apps/api/sharedLibs/html-transformer
+      - name: Build pdf-parser
+        run: |
+          cargo build --release
+          chmod +x target/release/libpdf_parser.so
+        working-directory: ./apps/api/sharedLibs/pdf-parser
+      - name: Build crawler
+        run: |
+          cargo build --release
+          chmod +x target/release/libcrawler.so
+        working-directory: ./apps/api/sharedLibs/crawler
+      - name: Build the application
+        run: npm run build
+        working-directory: ./apps/api
       - name: Start the application
-        run: npm start > api.log 2>&1 &
+        run: npm run start:production:nobuild > api.log 2>&1 &
+        env:
+          PORT: 3002
+          HOST: 0.0.0.0
         working-directory: ./apps/api
         id: start_app
       - name: Start worker
-        run: npm run workers > worker.log 2>&1 &
+        run: npm run worker:production > worker.log 2>&1 &
+        env:
+          PORT: 3005
+          HOST: 0.0.0.0
         working-directory: ./apps/api
         id: start_workers
       - name: Start index worker
-        run: npm run index-worker &
+        run: npm run index-worker:production > index-worker.log 2>&1 &
         working-directory: ./apps/api
         id: start_index_worker
       - name: Wait for API
-        run: pnpx wait-on tcp:3002 -t 15s
+        run: pnpx wait-on tcp:3002 -t 60s
       - name: Run snippet tests
         run: |
           npm run test:snips
@@ -98,10 +134,25 @@ jobs:
       - name: Kill instances
         if: always()
         run: pkill -9 node
-      # - uses: actions/upload-artifact@v4
-      #   if: always()
-      #   with:
-      #     name: Logs
-      #     path: |
-      #       ./apps/api/api.log
-      #       ./apps/api/worker.log
+      - name: Create logs directory
+        if: always()
+        run: mkdir -p logs
+      - name: Copy log files
+        if: always()
+        run: |
+          cp ./apps/api/api.log logs/ || true
+          cp ./apps/api/worker.log logs/ || true
+          cp ./apps/api/index-worker.log logs/ || true
+      - name: Zip and encrypt logs
+        if: always()
+        run: |
+          cd logs
+          zip -r logs.zip ./*
+          echo "${{ secrets.LOG_ENCRYPTION_KEY }}" | gpg --batch --yes --passphrase-fd 0 -c logs.zip
+          rm logs.zip
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: Encrypted Logs
+          path: logs/logs.zip.gpg
+          retention-days: 5

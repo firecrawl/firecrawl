@@ -12,23 +12,34 @@ spec:
       labels:
         app: api
     spec:
+      terminationGracePeriodSeconds: 180
       imagePullSecrets:
         - name: docker-registry-secret
       containers:
         - name: api
-          image: ghcr.io/winkk-dev/firecrawl:latest
+          image: ghcr.io/firecrawl/firecrawl:latest
           imagePullPolicy: Always
-          args: [ "pnpm", "run", "start:production" ]
+          command: [ "node" ]
+          args: [ "--max-old-space-size=6144", "dist/src/index.js" ]
           ports:
             - containerPort: 3002
           env:
             - name: FLY_PROCESS_GROUP
               value: "app"
+            - name: PORT
+              value: "3002"
           envFrom:
             - configMapRef:
                 name: firecrawl-config
             - secretRef:
                 name: firecrawl-secret
+          resources:
+            requests:
+              memory: "4G"
+              cpu: "2000m"
+            limits:
+              memory: "6G"
+              cpu: "2000m"
           livenessProbe:
             httpGet:
               path: /v0/health/liveness

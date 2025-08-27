@@ -25,6 +25,7 @@ If applicable, add screenshots or copies of the command line output to help expl
 
 **Environment (please complete the following information):**
 - OS: [e.g. macOS, Linux, Windows]
+- Deployment Type: [Cloud (firecrawl.dev) / Self-hosted]
 - Firecrawl Version: [e.g. 1.2.3]
 - Node.js Version: [e.g. 14.x]
 

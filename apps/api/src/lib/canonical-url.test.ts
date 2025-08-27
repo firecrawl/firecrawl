@@ -36,6 +36,18 @@ describe("normalizeUrlOnlyHostname", () => {
     const expected = "not a valid url";
     expect(normalizeUrlOnlyHostname(url)).toBe(expected);
   });
+
+  it("should handle URLs with subdomains", () => {
+    const url = "https://blog.example.com";
+    const expected = "blog.example.com";
+    expect(normalizeUrlOnlyHostname(url)).toBe(expected);
+  });
+
+  it("should handle URLs with multiple subdomains", () => {
+    const url = "https://dev.blog.example.com";
+    const expected = "dev.blog.example.com"; 
+    expect(normalizeUrlOnlyHostname(url)).toBe(expected);
+  });
 });
 
 describe("normalizeUrl", () => {

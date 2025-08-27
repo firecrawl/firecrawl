@@ -16,7 +16,7 @@ describe("performRanking", () => {
 
     const searchQuery = "cats training";
 
-    const result = await performRanking(linksWithContext, links, searchQuery);
+    const result = await performRanking(linksWithContext, links, searchQuery, { teamId: "test-suite" });
 
     // Should return array of objects with link, linkWithContext, score, originalIndex
     expect(result).toBeInstanceOf(Array);
@@ -43,7 +43,7 @@ describe("performRanking", () => {
   });
 
   it("should handle empty inputs", async () => {
-    const result = await performRanking([], [], "");
+    const result = await performRanking([], [], "", { teamId: "test-suite" });
     expect(result).toEqual([]);
   });
 
@@ -57,7 +57,7 @@ describe("performRanking", () => {
 
     const searchQuery = "test";
 
-    const result = await performRanking(linksWithContext, links, searchQuery);
+    const result = await performRanking(linksWithContext, links, searchQuery, { teamId: "test-suite" });
 
     // If scores are equal, original order should be maintained
     expect(result[0].originalIndex).toBeLessThan(result[1].originalIndex);

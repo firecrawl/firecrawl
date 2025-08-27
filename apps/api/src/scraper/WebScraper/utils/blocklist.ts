@@ -92,8 +92,14 @@ const allowedKeywords = [
   "://ads.tiktok.com",
   "://tiktok.com/business",
   "://developers.facebook.com",
+  "://developers.meta.com",
   "://facebook.com/ads/library",
   "://www.facebook.com/ads/library",
+  "://meta.com/experiences",
+  "://www.meta.com/experiences",
+  "://creditcards.aa.com",
+  "://aa.org",
+  "://www.aa.org",
 ];
 
 export function decryptedBlocklist(list: string[]): string[] {
@@ -104,7 +110,7 @@ export function decryptedBlocklist(list: string[]): string[] {
 
 export function isUrlBlocked(url: string, flags: TeamFlags): boolean {
   const lowerCaseUrl = url.trim().toLowerCase();
-  
+
   let blockedlist = decryptedBlocklist(urlBlocklist);
 
   if (flags?.unblockedDomains) {

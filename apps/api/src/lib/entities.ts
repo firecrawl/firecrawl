@@ -1,4 +1,4 @@
-import type { Document as V1Document } from "../controllers/v1/types";
+import type { Document as V1Document, Action } from "../controllers/v1/types";
 
 export interface Progress {
   current: number;
@@ -11,42 +11,6 @@ export interface Progress {
   currentDocumentUrl?: string;
   currentDocument?: Document;
 }
-
-export type Action =
-  | {
-      type: "wait";
-      milliseconds?: number;
-      selector?: string;
-    }
-  | {
-      type: "click";
-      selector: string;
-      all?: boolean;
-    }
-  | {
-      type: "screenshot";
-      fullPage?: boolean;
-    }
-  | {
-      type: "write";
-      text: string;
-    }
-  | {
-      type: "press";
-      key: string;
-    }
-  | {
-      type: "scroll";
-      direction?: "up" | "down";
-      selector?: string;
-    }
-  | {
-      type: "scrape";
-    }
-  | {
-      type: "executeJavascript";
-      script: string;
-    };
 
 export type PageOptions = {
   includeMarkdown?: boolean;
@@ -185,6 +149,55 @@ export class SearchResult {
   toString(): string {
     return `SearchResult(url=${this.url}, title=${this.title}, description=${this.description})`;
   }
+}
+
+export interface ImageSearchResult {
+  title?: string;
+  imageUrl?: string;
+  imageWidth?: number;
+  imageHeight?: number;
+  url?: string;
+  position?: number;
+}
+
+export interface NewsSearchResult {
+  title?: string;
+  url?: string;
+  snippet?: string;
+  date?: string;
+  imageUrl?: string;
+  position?: number;
+  category?: string;
+  // Scraped content fields
+  markdown?: string;
+  html?: string;
+  rawHtml?: string;
+  links?: string[];
+  screenshot?: string;
+  metadata?: Record<string, any>;
+}
+
+export interface WebSearchResult {
+  url: string;
+  title: string;
+  description: string;
+  position?: number;
+  category?: string;
+  // Scraped content fields
+  markdown?: string;
+  html?: string;
+  rawHtml?: string;
+  links?: string[];
+  screenshot?: string;
+  metadata?: Record<string, any>;
+}
+
+export type SearchResultType = 'web' | 'images' | 'news';
+
+export interface SearchV2Response {
+  web?: WebSearchResult[];
+  images?: ImageSearchResult[];
+  news?: NewsSearchResult[];
 }
 
 export interface ScrapeActionContent {
