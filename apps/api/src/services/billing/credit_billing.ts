@@ -98,12 +98,19 @@ export async function supaCheckTeamCredits(
     throw new Error("NULL ACUC passed to supaCheckTeamCredits");
   }
 
+  const remainingCredits = chunk.price_should_be_graceful
+    ? chunk.remaining_credits + chunk.price_credits
+    : chunk.remaining_credits;
+
   const creditsWillBeUsed = chunk.adjusted_credits_used + credits;
 
   // In case chunk.price_credits is undefined, set it to a large number to avoid mistakes
-  const totalPriceCredits = chunk.total_credits_sum ?? 100000000;
+  const totalPriceCredits = chunk.price_should_be_graceful
+    ? (chunk.total_credits_sum ?? 100000000) + chunk.price_credits
+    : chunk.total_credits_sum ?? 100000000;
+  
   // Removal of + credits
-  const creditUsagePercentage = chunk.adjusted_credits_used / totalPriceCredits;
+  const creditUsagePercentage = chunk.adjusted_credits_used / (chunk.total_credits_sum ?? 100000000);
 
   let isAutoRechargeEnabled = false,
     autoRechargeThreshold = 1000;
@@ -143,31 +150,28 @@ export async function supaCheckTeamCredits(
       return {
         success: true,
         message: autoChargeResult.message,
-        remainingCredits: autoChargeResult.remainingCredits,
+        remainingCredits: chunk.price_should_be_graceful ? autoChargeResult.remainingCredits + chunk.price_credits : autoChargeResult.remainingCredits,
         chunk: autoChargeResult.chunk,
+      };
+    } else if (chunk.price_should_be_graceful) {
+      return {
+        success: true,
+        message: "Auto-recharge failed, but price should be graceful",
+        remainingCredits,
+        chunk,
       };
     }
   }
 
-  // Compare the adjusted total credits used with the credits allowed by the plan
-  if (creditsWillBeUsed > totalPriceCredits) {
-    // Only notify if their actual credits (not what they will use) used is greater than the total price credits
-    if (chunk.adjusted_credits_used > totalPriceCredits) {
-      sendNotification(
-        team_id,
-        NotificationType.LIMIT_REACHED,
-        chunk.sub_current_period_start,
-        chunk.sub_current_period_end,
-        chunk,
-      );
-    }
-    return {
-      success: false,
-      message:
-        "Insufficient credits to perform this request. For more credits, you can upgrade your plan at https://firecrawl.dev/pricing.",
-      remainingCredits: chunk.remaining_credits,
+  // Only notify if their actual credits (not what they will use) used is greater than the total price credits
+  if (chunk.adjusted_credits_used > (chunk.total_credits_sum ?? 100000000)) {
+    sendNotification(
+      team_id,
+      NotificationType.LIMIT_REACHED,
+      chunk.sub_current_period_start,
+      chunk.sub_current_period_end,
       chunk,
-    };
+    );
   } else if (creditUsagePercentage >= 0.8 && creditUsagePercentage < 1) {
     // Send email notification for approaching credit limit
     sendNotification(
@@ -177,6 +181,17 @@ export async function supaCheckTeamCredits(
       chunk.sub_current_period_end,
       chunk,
     );
+  }
+
+  // Compare the adjusted total credits used with the credits allowed by the plan (and graceful)
+  if (creditsWillBeUsed > totalPriceCredits) {
+    return {
+      success: false,
+      message:
+        "Insufficient credits to perform this request. For more credits, you can upgrade your plan at https://firecrawl.dev/pricing.",
+      remainingCredits,
+      chunk,
+    };
   }
 
   return {

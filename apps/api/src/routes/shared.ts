@@ -15,6 +15,7 @@ import { isUrlBlocked } from "../scraper/WebScraper/utils/blocklist";
 import { logger } from "../lib/logger";
 import { BLOCKLISTED_URL_MESSAGE } from "../lib/strings";
 import { addDomainFrequencyJob } from "../services";
+import * as geoip from "geoip-country";
 
 export function checkCreditsMiddleware(
   _minimum?: number,
@@ -24,7 +25,10 @@ export function checkCreditsMiddleware(
     (async () => {
       if (!minimum && req.body) {
         minimum =
-          (req.body as any)?.limit ?? (req.body as any)?.urls?.length ?? 1;
+          Number((req.body as any)?.limit ?? (req.body as any)?.urls?.length ?? 1);
+        if (isNaN(minimum) || !isFinite(minimum) || minimum <= 0) {
+          minimum = undefined;
+        }
       }
       const { success, remainingCredits, chunk } = await checkTeamCredits(
         req.acuc,
@@ -175,6 +179,55 @@ export function blocklistMiddleware(
       });
     }
   }
+  next();
+}
+
+export function countryCheck(
+  req: RequestWithAuth<any, any, any>,
+  res: Response,
+  next: NextFunction
+) {
+  const couldBeRestricted = req.body
+    && (
+      req.body.actions
+      || (req.body.headers && typeof req.body.headers === "object" && Object.keys(req.body.headers).length > 0)
+      || req.body.agent
+      || req.body.jsonOptions?.agent
+      || req.body.extract?.agent
+      || req.body.scrapeOptions?.actions
+      || (req.body.scrapeOptions?.headers && typeof req.body.scrapeOptions.headers === "object" && Object.keys(req.body.scrapeOptions.headers).length > 0)
+      || req.body.scrapeOptions?.agent
+      || req.body.scrapeOptions?.jsonOptions?.agent
+      || req.body.scrapeOptions?.extract?.agent
+    );
+  
+  if (!couldBeRestricted) {
+    return next();
+  }
+  
+  const _ip = req.headers["x-forwarded-for"] || req.socket.remoteAddress || "";
+  const ip = Array.isArray(_ip) ? _ip[0] : _ip.split(",")[0];
+
+  if (!ip) {
+    logger.warn("IP address not found, unable to check country");
+    return next();
+  }
+
+  const country = geoip.lookup(ip);
+  if (!country || !country.country) {
+    logger.warn("IP address country data not found", { ip });
+    return next();
+  }
+
+  const restricted = process.env.RESTRICTED_COUNTRIES?.split(",") ?? [];
+  if (restricted.includes(country.country)) {
+    logger.warn("Denied access to restricted country", { ip, country: country.country, teamId: req.auth.team_id });
+    return res.status(403).json({
+      success: false,
+      error: "Use of headers, actions, and the FIRE-1 agent is not allowed by default in your country. Please contact us at help@firecrawl.com",
+    });
+  }
+
   next();
 }
 

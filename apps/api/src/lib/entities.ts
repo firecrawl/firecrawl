@@ -167,6 +167,7 @@ export interface NewsSearchResult {
   date?: string;
   imageUrl?: string;
   position?: number;
+  category?: string;
   // Scraped content fields
   markdown?: string;
   html?: string;
@@ -181,6 +182,7 @@ export interface WebSearchResult {
   title: string;
   description: string;
   position?: number;
+  category?: string;
   // Scraped content fields
   markdown?: string;
   html?: string;

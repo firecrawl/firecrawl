@@ -108,6 +108,7 @@
     "express": "^4.21.2",
     "express-rate-limit": "^7.3.1",
     "express-ws": "^5.0.2",
+    "geoip-country": "^5.0.202508192342",
     "git-diff": "^2.0.6",
     "glob": "^10.4.2",
     "gpt3-tokenizer": "^1.1.5",

@@ -199,7 +199,7 @@ describe("Billing tests", () => {
             const rc1 = (await creditUsage(identity)).remainingCredits;
 
             const results = await search({
-                query: "firecrawl",
+                query: "coconut",
                 scrapeOptions: {
                     formats: ["markdown"],
                 },
@@ -221,7 +221,7 @@ describe("Billing tests", () => {
             const rc1 = (await creditUsage(identity)).remainingCredits;
 
             const results = await search({
-                query: "firecrawl filetype:pdf",
+                query: "coconut filetype:pdf",
                 scrapeOptions: {
                     formats: ["markdown"],
                     parsers: ["pdf"],
@@ -246,7 +246,7 @@ describe("Billing tests", () => {
             const rc1 = (await creditUsage(identity)).remainingCredits;
 
             const results = await search({
-                query: "firecrawl filetype:pdf",
+                query: "coconut filetype:pdf",
                 scrapeOptions: {
                     formats: ["markdown"],
                     parsers: [],

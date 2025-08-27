@@ -829,6 +829,7 @@ export type Document = {
   html?: string;
   rawHtml?: string;
   links?: string[];
+  images?: string[];
   screenshot?: string;
   extract?: any;
   json?: any;
@@ -1079,6 +1080,7 @@ export type AuthCreditUsageChunk = {
   sub_user_id: string | null;
   price_id: string | null;
   price_credits: number; // credit limit with assoicated price, or free_credits (500) if free plan
+  price_should_be_graceful: boolean;
   credits_used: number;
   coupon_credits: number; // do not rely on this number to be up to date after calling a billTeam
   adjusted_credits_used: number; // credits this period minus coupons used

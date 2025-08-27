@@ -121,6 +121,39 @@ describe("v2.scrape e2e", () => {
     }
   }, 90_000);
 
+  test("images format: extract all images from webpage", async () => {
+    if (!client) throw new Error();
+    const doc = await client.scrape("https://firecrawl.dev", {
+      formats: ["images"],
+    });
+    expect(doc.images).toBeTruthy();
+    expect(Array.isArray(doc.images)).toBe(true);
+    expect(doc.images.length).toBeGreaterThan(0);
+    // Should find firecrawl logo/branding images
+    expect(doc.images.some(img => img.includes("firecrawl") || img.includes("logo"))).toBe(true);
+  }, 60_000);
+
+  test("images format: works with multiple formats", async () => {
+    if (!client) throw new Error();
+    const doc = await client.scrape("https://github.com", {
+      formats: ["markdown", "links", "images"],
+    });
+    expect(doc.markdown).toBeTruthy();
+    expect(doc.links).toBeTruthy();
+    expect(doc.images).toBeTruthy();
+    expect(Array.isArray(doc.images)).toBe(true);
+    expect(doc.images.length).toBeGreaterThan(0);
+    
+    // Images should find things not available in links format
+    const imageExtensions = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.svg', '.ico'];
+    const linkImages = doc.links?.filter(link => 
+      imageExtensions.some(ext => link.toLowerCase().includes(ext))
+    ) || [];
+    
+    // Should discover additional images beyond those with obvious extensions
+    expect(doc.images.length).toBeGreaterThanOrEqual(linkImages.length);
+  }, 60_000);
+
   test("invalid url should throw", async () => {
     if (!client) throw new Error();
     await expect(client.scrape("")).rejects.toThrow("URL cannot be empty");

@@ -121,6 +121,17 @@ def _validate_search_request(request: SearchRequest) -> SearchRequest:
                 if source.type not in valid_sources:
                     raise ValueError(f"Invalid source type: {source.type}. Valid types: {valid_sources}")
     
+    # Validate categories (if provided)
+    if request.categories is not None:
+        valid_categories = {"github", "research"}
+        for category in request.categories:
+            if isinstance(category, str):
+                if category not in valid_categories:
+                    raise ValueError(f"Invalid category type: {category}. Valid types: {valid_categories}")
+            elif hasattr(category, 'type'):
+                if category.type not in valid_categories:
+                    raise ValueError(f"Invalid category type: {category.type}. Valid types: {valid_categories}")
+    
     # Validate location (if provided)
     if request.location is not None:
         if not isinstance(request.location, str) or len(request.location.strip()) == 0:

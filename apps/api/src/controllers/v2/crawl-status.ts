@@ -302,7 +302,7 @@ export async function crawlStatusController(
     outputBulkB = {
       data: scrapes,
       next: (outputBulkA.total ?? 0) > (start + iteratedOver)
-        ? `${process.env.ENV === "local" ? req.protocol : "https"}://${req.get("host")}/v1/${isBatch ? "batch/scrape" : "crawl"}/${req.params.jobId}?skip=${start + iteratedOver}${req.query.limit ? `&limit=${req.query.limit}` : ""}`
+        ? `${process.env.ENV === "local" ? req.protocol : "https"}://${req.get("host")}/v2/${isBatch ? "batch/scrape" : "crawl"}/${req.params.jobId}?skip=${start + iteratedOver}${req.query.limit ? `&limit=${req.query.limit}` : ""}`
         : undefined,
     };
   } else {
@@ -348,7 +348,7 @@ export async function crawlStatusController(
     outputBulkB = {
       data: scrapes,
       next: (outputBulkA.total ?? 0) > (start + iteratedOver)
-        ? `${process.env.ENV === "local" ? req.protocol : "https"}://${req.get("host")}/v1/${isBatch ? "batch/scrape" : "crawl"}/${req.params.jobId}?skip=${start + iteratedOver}${req.query.limit ? `&limit=${req.query.limit}` : ""}`
+        ? `${process.env.ENV === "local" ? req.protocol : "https"}://${req.get("host")}/v2/${isBatch ? "batch/scrape" : "crawl"}/${req.params.jobId}?skip=${start + iteratedOver}${req.query.limit ? `&limit=${req.query.limit}` : ""}`
         : undefined,
     };
   }

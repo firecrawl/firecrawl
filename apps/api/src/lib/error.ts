@@ -12,6 +12,7 @@ export type ErrorCodes =
     "SCRAPE_PDF_ANTIBOT_ERROR" |
     "SCRAPE_UNSUPPORTED_FILE_ERROR" |
     "SCRAPE_ACTION_ERROR" |
+    "SCRAPE_RACED_REDIRECT_ERROR" |
     "BAD_REQUEST_INVALID_JSON" |
     "BAD_REQUEST";
 
@@ -86,6 +87,22 @@ export class MapTimeoutError extends TransportableError {
 
     static deserialize(_code: ErrorCodes, data: ReturnType<typeof this.prototype.serialize>) {
         const x = new MapTimeoutError();
+        x.stack = data.stack;
+        return x;
+    }
+}
+
+export class RacedRedirectError extends TransportableError {
+    constructor() {
+        super("SCRAPE_RACED_REDIRECT_ERROR", "Raced redirect error");
+    }
+
+    serialize() {
+        return super.serialize();
+    }
+
+    static deserialize(_: ErrorCodes, data: ReturnType<typeof this.prototype.serialize>) {
+        const x = new RacedRedirectError();
         x.stack = data.stack;
         return x;
     }

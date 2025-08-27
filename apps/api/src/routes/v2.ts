@@ -22,6 +22,7 @@ import {
   authMiddleware,
   checkCreditsMiddleware,
   blocklistMiddleware,
+  countryCheck,
   idempotencyMiddleware,
   wrap,
 } from "./shared";
@@ -33,6 +34,7 @@ export const v2Router = express.Router();
 v2Router.post(
   "/search",
   authMiddleware(RateLimiterMode.Search),
+  countryCheck,
   checkCreditsMiddleware(),
   blocklistMiddleware,
   wrap(searchController),
@@ -41,7 +43,8 @@ v2Router.post(
 v2Router.post(
   "/scrape",
   authMiddleware(RateLimiterMode.Scrape),
-  checkCreditsMiddleware(),
+  countryCheck,
+  checkCreditsMiddleware(1),
   blocklistMiddleware,
   wrap(scrapeController),
 );
@@ -55,6 +58,7 @@ v2Router.get(
 v2Router.post(
   "/batch/scrape",
   authMiddleware(RateLimiterMode.Scrape),
+  countryCheck,
   checkCreditsMiddleware(),
   blocklistMiddleware,
   wrap(batchScrapeController),
@@ -63,7 +67,7 @@ v2Router.post(
 v2Router.post(
   "/map",
   authMiddleware(RateLimiterMode.Map),
-  checkCreditsMiddleware(),
+  checkCreditsMiddleware(1),
   blocklistMiddleware,
   wrap(mapController),
 );
@@ -71,6 +75,7 @@ v2Router.post(
 v2Router.post(
   "/crawl",
   authMiddleware(RateLimiterMode.Crawl),
+  countryCheck,
   checkCreditsMiddleware(),
   blocklistMiddleware,
   idempotencyMiddleware,
@@ -131,7 +136,8 @@ v2Router.get(
 v2Router.post(
   "/extract",
   authMiddleware(RateLimiterMode.Extract),
-  checkCreditsMiddleware(),
+  countryCheck,
+  checkCreditsMiddleware(1),
   blocklistMiddleware,
   wrap(extractController),
 );

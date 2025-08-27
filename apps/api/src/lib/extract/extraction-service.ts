@@ -176,6 +176,7 @@ export async function performExtraction(
       let rptxt = rephrasedPrompt?.text.replace('"', "").replace("'", "") || "";
       const searchResults = await search({
         query: rptxt,
+        logger,
         num_results: 10,
       });
 

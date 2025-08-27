@@ -13,8 +13,11 @@ export * from "./v2/types";
 export { default as FirecrawlAppV1 } from "./v1";
 
 import V1 from "./v1";
-import { FirecrawlClient as V2 } from "./v2/client";
+import { FirecrawlClient as V2, type FirecrawlClientOptions } from "./v2/client";
 import type { FirecrawlAppConfig } from "./v1";
+
+// Re-export v2 client options for convenience
+export type { FirecrawlClientOptions } from "./v2/client";
 
 /** Unified client: extends v2 and adds `.v1` for backward compatibility. */
 export class Firecrawl extends V2 {
@@ -23,9 +26,12 @@ export class Firecrawl extends V2 {
   private _v1Opts: FirecrawlAppConfig;
 
   /** @param opts API credentials and base URL. */
-  constructor(opts: FirecrawlAppConfig = {}) {
-    super(opts as any);
-    this._v1Opts = opts;
+  constructor(opts: FirecrawlClientOptions = {}) {
+    super(opts);
+    this._v1Opts = {
+      apiKey: opts.apiKey,
+      apiUrl: opts.apiUrl,
+    };
   }
 
   /** Access the legacy v1 client (instantiated on first access). */

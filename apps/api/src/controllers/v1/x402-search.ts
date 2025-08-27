@@ -45,6 +45,7 @@ export async function searchAndScrapeX402SearchResult(
   try {
     const searchResults = await search({
       query,
+      logger,
       num_results: 5,
     });
 
@@ -238,6 +239,7 @@ export async function x402SearchController(
 
     let searchResults = await search({
       query: req.body.query,
+      logger,
       advanced: false,
       num_results: num_results_buffer,
       tbs: req.body.tbs,

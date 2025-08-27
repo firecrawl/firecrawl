@@ -9,11 +9,18 @@ describe("v2 utils: validation", () => {
     expect(() => ensureValidFormats(formats)).toThrow(/json format must be an object/i);
   });
 
-  test("ensureValidFormats: json format requires prompt and schema", () => {
-    const bad1: FormatOption[] = [{ type: "json", prompt: "p" } as any];
-    const bad2: FormatOption[] = [{ type: "json", schema: {} } as any];
-    expect(() => ensureValidFormats(bad1)).toThrow(/requires 'prompt' and 'schema'/i);
-    expect(() => ensureValidFormats(bad2)).toThrow(/requires 'prompt' and 'schema'/i);
+  test("ensureValidFormats: json format requires prompt or schema", () => {
+    // Valid cases - should not throw
+    const valid1: FormatOption[] = [{ type: "json", prompt: "p" } as any];
+    const valid2: FormatOption[] = [{ type: "json", schema: {} } as any];
+    const valid3: FormatOption[] = [{ type: "json", prompt: "p", schema: {} } as any];
+    expect(() => ensureValidFormats(valid1)).not.toThrow();
+    expect(() => ensureValidFormats(valid2)).not.toThrow();
+    expect(() => ensureValidFormats(valid3)).not.toThrow();
+
+    // Invalid case - should throw when both are missing
+    const bad: FormatOption[] = [{ type: "json" } as any];
+    expect(() => ensureValidFormats(bad)).toThrow(/requires either 'prompt' or 'schema'/i);
   });
 
   test("ensureValidFormats: converts zod schema to JSON schema", () => {

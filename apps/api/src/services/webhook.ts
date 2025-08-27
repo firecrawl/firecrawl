@@ -1,4 +1,5 @@
-import axios, { AxiosError } from "axios";
+import undici from "undici";
+import { secureDispatcher } from "../scraper/scrapeURL/engines/utils/safeFetch";
 import { logger as _logger, logger } from "../lib/logger";
 import { supabase_rr_service, supabase_service } from "./supabase";
 import { WebhookEventType } from "../types";
@@ -6,7 +7,6 @@ import { configDotenv } from "dotenv";
 import { z } from "zod";
 import { webhookSchema } from "../controllers/v1/types";
 import { redisEvictConnection } from "./redis";
-import { index_supabase_service } from ".";
 configDotenv();
 
 const WEBHOOK_INSERT_QUEUE_KEY = "webhook-insert-queue";
@@ -172,9 +172,13 @@ export const callWebhook = async ({
 
     if (awaitWebhook) {
       try {
-        const res = await axios.post(
-          webhookUrl.url,
-          {
+        const res = await undici.fetch(webhookUrl.url, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            ...webhookUrl.headers,
+          },
+          body: JSON.stringify({
             success: !v1
               ? data.success
               : eventType === "crawl.page"
@@ -189,15 +193,13 @@ export const callWebhook = async ({
                 ? data?.error || undefined
                 : undefined,
             metadata: webhookUrl.metadata || undefined,
-          },
-          {
-            headers: {
-              "Content-Type": "application/json",
-              ...webhookUrl.headers,
-            },
-            timeout: v1 ? 10000 : 30000, // 10 seconds timeout (v1)
-          },
-        );
+          }),
+          dispatcher: secureDispatcher,
+          signal: AbortSignal.timeout(v1 ? 10000 : 30000), // 10 seconds timeout (v1)
+        });
+        if (!res.ok) {
+          throw { status: res.status };
+        }
         logWebhook({
           success: res.status >= 200 && res.status < 300,
           teamId,
@@ -222,37 +224,38 @@ export const callWebhook = async ({
           url: webhookUrl.url,
           event: eventType,
           error: error instanceof Error ? error.message : (typeof error === "string" ? error : undefined),
-          statusCode: error instanceof AxiosError ? error.response?.status : undefined,
+          statusCode: typeof (error as any)?.status === "number" ? (error as any).status : undefined,
         });
       }
     } else {
-      axios
-        .post(
-          webhookUrl.url,
-          {
-            success: !v1
+      undici.fetch(webhookUrl.url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...webhookUrl.headers,
+        },
+        body: JSON.stringify({
+          success: !v1
+            ? data.success
+            : eventType === "crawl.page"
               ? data.success
-              : eventType === "crawl.page"
-                ? data.success
-                : true,
-            type: eventType,
-            [v1 ? "id" : "jobId"]: crawlId,
-            data: dataToSend,
-            error: !v1
+              : true,
+          type: eventType,
+          [v1 ? "id" : "jobId"]: crawlId,
+          data: dataToSend,
+          error: !v1
+            ? data?.error || undefined
+            : eventType === "crawl.page"
               ? data?.error || undefined
-              : eventType === "crawl.page"
-                ? data?.error || undefined
-                : undefined,
-            metadata: webhookUrl.metadata || undefined,
-          },
-          {
-            headers: {
-              "Content-Type": "application/json",
-              ...webhookUrl.headers,
-            },
-          },
-        )
+              : undefined,
+          metadata: webhookUrl.metadata || undefined,
+        }),
+        dispatcher: secureDispatcher,
+      })
         .then((res) => {
+          if (!res.ok) {
+            throw { status: res.status };
+          }
           logWebhook({
             success: res.status >= 200 && res.status < 300,
             teamId,
@@ -278,7 +281,7 @@ export const callWebhook = async ({
             url: webhookUrl.url,
             event: eventType,
             error: error instanceof Error ? error.message : (typeof error === "string" ? error : undefined),
-            statusCode: error instanceof AxiosError ? error.response?.status : undefined,
+            statusCode: typeof (error as any)?.status === "number" ? (error as any).status : undefined,
           });
         });
     }

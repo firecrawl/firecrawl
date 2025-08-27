@@ -13,6 +13,7 @@ from .types import (
     SearchRequest,
     SearchData,
     SourceOption,
+    CategoryOption,
     CrawlRequest,
     CrawlResponse,
     CrawlJob,
@@ -171,6 +172,7 @@ class FirecrawlClient:
         query: str,
         *,
         sources: Optional[List[SourceOption]] = None,
+        categories: Optional[List[CategoryOption]] = None,
         limit: Optional[int] = None,
         tbs: Optional[str] = None,
         location: Optional[str] = None,
@@ -195,6 +197,7 @@ class FirecrawlClient:
         request = SearchRequest(
             query=query,
             sources=sources,
+            categories=categories,
             limit=limit,
             tbs=tbs,
             location=location,

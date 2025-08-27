@@ -61,6 +61,9 @@ export async function crawlErrorsController(
     res.status(200).json({
       errors: (await getJobs(failedJobIDs)).map((x) => {
         const error = deserializeTransportableError(x.failedReason) as TransportableError | null;
+        if (error?.code === "SCRAPE_RACED_REDIRECT_ERROR") {
+          return null;
+        }
         return {
           id: x.id,
           timestamp:
@@ -75,7 +78,7 @@ export async function crawlErrorsController(
             error: x.failedReason,
           }),
         };
-      }),
+      }).filter((x) => x !== null),
       robotsBlocked: await redisEvictConnection.smembers(
         "crawl:" + req.params.jobId + ":robots_blocked",
       ),

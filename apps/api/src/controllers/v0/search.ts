@@ -60,11 +60,12 @@ export async function searchHelper(
   const num_results_buffer = Math.floor(num_results * 1.5);
 
   let res = await search({
-    query: query,
-    advanced: advanced,
+    query,
+    logger,
+    advanced,
     num_results: num_results_buffer,
-    tbs: tbs,
-    filter: filter,
+    tbs,
+    filter,
     lang: searchOptions.lang ?? "en",
     country: searchOptions.country ?? "us",
     location: searchOptions.location,

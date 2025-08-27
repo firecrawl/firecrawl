@@ -24,7 +24,7 @@ class TestCrawlRequestPreparation:
             url="https://example.com",
             limit=10,
             max_discovery_depth=3,
-            ignore_sitemap=True,
+            sitemap="skip",
             crawl_entire_domain=False,
             allow_external_links=True
         )
@@ -39,8 +39,8 @@ class TestCrawlRequestPreparation:
         assert data["limit"] == 10
         assert "maxDiscoveryDepth" in data
         assert data["maxDiscoveryDepth"] == 3
-        assert "ignoreSitemap" in data
-        assert data["ignoreSitemap"] is True
+        assert "sitemap" in data
+        assert data["sitemap"] == "skip"
         assert "crawlEntireDomain" in data
         assert data["crawlEntireDomain"] is False
         assert "allowExternalLinks" in data
@@ -106,7 +106,7 @@ class TestCrawlRequestPreparation:
             include_paths=["/blog/*", "/docs/*"],
             exclude_paths=["/admin/*"],
             max_discovery_depth=3,
-            ignore_sitemap=False,
+            sitemap="include",
             limit=100,
             crawl_entire_domain=True,
             allow_external_links=False,
@@ -126,8 +126,8 @@ class TestCrawlRequestPreparation:
         assert data["excludePaths"] == ["/admin/*"]
         assert "maxDiscoveryDepth" in data
         assert data["maxDiscoveryDepth"] == 3
-        assert "ignoreSitemap" in data
-        assert data["ignoreSitemap"] is False
+        assert "sitemap" in data
+        assert data["sitemap"] == "include"
         assert "limit" in data
         assert data["limit"] == 100
         assert "crawlEntireDomain" in data

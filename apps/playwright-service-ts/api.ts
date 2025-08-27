@@ -55,7 +55,6 @@ const initializeBrowser = async () => {
       '--disable-accelerated-2d-canvas',
       '--no-first-run',
       '--no-zygote',
-      '--single-process',
       '--disable-gpu'
     ]
   });
@@ -141,8 +140,8 @@ const scrapePage = async (page: Page, url: string, waitUntil: 'load' | 'networki
   let ct: string | undefined = undefined;
   if (response) {
     headers = await response.allHeaders();
-    ct = Object.entries(headers).find(x => x[0].toLowerCase() === "content-type")?.[1];
-    if (ct && (ct[1].includes("application/json") || ct[1].includes("text/plain"))) {
+    ct = Object.entries(headers).find(([key]) => key.toLowerCase() === "content-type")?.[1];
+    if (ct && (ct.toLowerCase().includes("application/json") || ct.toLowerCase().includes("text/plain"))) {
       content = (await response.body()).toString("utf8"); // TODO: determine real encoding
     }
   }

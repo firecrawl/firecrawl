@@ -5,5 +5,5 @@ pytest-asyncio
 python-dotenv
 websockets
 nest-asyncio
-pydantic
+pydantic>=2.0
 aiohttp

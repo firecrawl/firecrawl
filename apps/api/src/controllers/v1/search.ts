@@ -48,6 +48,7 @@ export async function searchAndScrapeSearchResult(
   try {
     const searchResults = await search({
       query,
+      logger,
       num_results: 5,
     });
 
@@ -242,6 +243,7 @@ export async function searchController(
 
     let searchResults = await search({
       query: req.body.query,
+      logger,
       advanced: false,
       num_results: num_results_buffer,
       tbs: req.body.tbs,

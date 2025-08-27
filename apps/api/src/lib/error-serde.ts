@@ -1,4 +1,4 @@
-import { ErrorCodes, MapTimeoutError, ScrapeJobTimeoutError, TransportableError, UnknownError } from "./error";
+import { ErrorCodes, MapTimeoutError, RacedRedirectError, ScrapeJobTimeoutError, TransportableError, UnknownError } from "./error";
 import { ActionError, DNSResolutionError, UnsupportedFileError, PDFAntibotError, PDFInsufficientTimeError, NoEnginesLeftError, ZDRViolationError, PDFPrefetchFailed, SiteError, SSLError } from "../scraper/scrapeURL/error";
 
 // TODO: figure out correct typing for this
@@ -16,6 +16,7 @@ const errorMap: Record<ErrorCodes, any> = {
     "SCRAPE_PDF_ANTIBOT_ERROR": PDFAntibotError,
     "SCRAPE_UNSUPPORTED_FILE_ERROR": UnsupportedFileError,
     "SCRAPE_ACTION_ERROR": ActionError,
+    "SCRAPE_RACED_REDIRECT_ERROR": RacedRedirectError,
 
     // Zod errors
     "BAD_REQUEST": null,

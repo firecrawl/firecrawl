@@ -14,7 +14,7 @@ class TestAsyncCrawlRequestPreparation:
             include_paths=["/docs/*"],
             exclude_paths=["/admin/*"],
             max_discovery_depth=2,
-            ignore_sitemap=True,
+            sitemap="skip",
             ignore_query_parameters=True,
             crawl_entire_domain=True,
             allow_external_links=False,
@@ -26,7 +26,7 @@ class TestAsyncCrawlRequestPreparation:
         assert payload["includePaths"] == ["/docs/*"]
         assert payload["excludePaths"] == ["/admin/*"]
         assert payload["maxDiscoveryDepth"] == 2
-        assert payload["ignoreSitemap"] is True
+        assert payload["sitemap"] == "skip"
         assert payload["ignoreQueryParameters"] is True
         assert payload["crawlEntireDomain"] is True
         assert payload["allowExternalLinks"] is False

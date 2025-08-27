@@ -108,6 +108,7 @@ import { langfuse } from "../../../services/langfuse";
       const rephrasedPrompt = await generateBasicCompletion_FO(buildRephraseToSerpPrompt_F0(request.prompt), { teamId, extractId });
       const searchResults = await search({
         query:  rephrasedPrompt.replace('"', "").replace("'", ""),
+        logger,
         num_results: 10,
       });
   

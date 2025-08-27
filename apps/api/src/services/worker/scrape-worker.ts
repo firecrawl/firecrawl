@@ -49,18 +49,12 @@ import { finishCrawlIfNeeded } from "./crawl-logic";
 import { LangfuseExporter } from "langfuse-vercel";
 import { getNodeAutoInstrumentations } from "@opentelemetry/auto-instrumentations-node";
 import { NodeSDK } from "@opentelemetry/sdk-node";
-import { ScrapeJobTimeoutError, TransportableError, UnknownError } from "../../lib/error";
+import { RacedRedirectError, ScrapeJobTimeoutError, TransportableError, UnknownError } from "../../lib/error";
 import { serializeTransportableError } from "../../lib/error-serde";
 import { BatchSpanProcessor } from "@opentelemetry/sdk-trace-node";
 import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-grpc";
 import { resourceFromAttributes } from "@opentelemetry/resources";
 import { ATTR_SERVICE_NAME } from "@opentelemetry/semantic-conventions";
-
-class RacedRedirectError extends Error {
-    constructor() {
-        super("Raced redirect error");
-    }
-}
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 

@@ -33,7 +33,7 @@ setup(
         'websockets',
         'asyncio',
         'nest-asyncio',
-        'pydantic',
+        'pydantic>=2.0',
         'aiohttp'
     ],
     python_requires=">=3.8",

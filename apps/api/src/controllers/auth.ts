@@ -93,6 +93,7 @@ const mockPreviewACUC: (team_id: string, is_extract: boolean) => AuthCreditUsage
     scrapeAgentPreview: 5,
   },
   price_credits: 99999999,
+  price_should_be_graceful: false,
   credits_used: 0,
   coupon_credits: 99999999,
   adjusted_credits_used: 0,
@@ -128,6 +129,7 @@ const mockACUC: () => AuthCreditUsageChunk = () => ({
     scrapeAgentPreview: 99999999,
   },
   price_credits: 99999999,
+  price_should_be_graceful: false,
   credits_used: 0,
   coupon_credits: 99999999,
   adjusted_credits_used: 0,
@@ -183,7 +185,7 @@ export async function getACUC(
       const client =
         Math.random() > (2/3) ? supabase_rr_service : supabase_service;
       ({ data, error } = await client.rpc(
-        "auth_credit_usage_chunk_32",
+        "auth_credit_usage_chunk_33",
         { input_key: api_key, i_is_extract: isExtract, tally_untallied_credits: true },
         { get: true },
       ));
@@ -304,7 +306,7 @@ export async function getACUCTeam(
       const client =
         Math.random() > (2/3) ? supabase_rr_service : supabase_service;
       ({ data, error } = await client.rpc(
-        "auth_credit_usage_chunk_32_from_team",
+        "auth_credit_usage_chunk_33_from_team",
         { input_team: team_id, i_is_extract: isExtract, tally_untallied_credits: true },
         { get: true },
       ));

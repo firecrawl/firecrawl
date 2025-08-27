@@ -21,7 +21,7 @@ describe("Search tests", () => {
 
   it.concurrent("works with scrape", async () => {
     const res = await search({
-      query: "firecrawl",
+      query: "coconut",
       limit: 5,
       scrapeOptions: {
         formats: ["markdown"],

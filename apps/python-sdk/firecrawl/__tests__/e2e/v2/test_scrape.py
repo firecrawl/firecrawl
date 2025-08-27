@@ -152,3 +152,39 @@ class TestScrapeE2E:
             store_in_cache=False,
         )
         assert isinstance(doc, Document)
+
+    def test_scrape_images_format(self):
+        """Test images format extraction."""
+        doc = self.client.scrape(
+            "https://firecrawl.dev",
+            formats=["images"]
+        )
+        assert isinstance(doc, Document)
+        assert doc.images is not None
+        assert isinstance(doc.images, list)
+        assert len(doc.images) > 0
+        # Should find firecrawl logo/branding images
+        assert any("firecrawl" in img.lower() or "logo" in img.lower() for img in doc.images)
+
+    def test_scrape_images_with_multiple_formats(self):
+        """Test images format works with other formats."""
+        doc = self.client.scrape(
+            "https://github.com",
+            formats=["markdown", "links", "images"]
+        )
+        assert isinstance(doc, Document)
+        assert doc.markdown is not None
+        assert doc.links is not None  
+        assert doc.images is not None
+        assert isinstance(doc.images, list)
+        assert len(doc.images) > 0
+        
+        # Images should find content not available in links format
+        image_extensions = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.svg', '.ico']
+        link_images = [
+            link for link in (doc.links or [])
+            if any(ext in link.lower() for ext in image_extensions)
+        ]
+        
+        # Should discover additional images beyond those with obvious extensions
+        assert len(doc.images) >= len(link_images)

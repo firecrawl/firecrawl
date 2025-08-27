@@ -51,7 +51,7 @@ export async function getLinksFromSitemap(
           forceEngine: [
             ...(maxAge > 0 ? ["index" as const] : []),
             "fetch",
-            ...((mode === "fire-engine" && useFireEngine) ? ["fire-engine;tlsclient" as const] : []),
+            ...((mode === "fire-engine" && useFireEngine) ? ["fire-engine;tlsclient" as const, "fire-engine;tlsclient;stealth" as const] : []),
           ],
           v0DisableJsDom: true,
           externalAbort: abort ? {

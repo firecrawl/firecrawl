@@ -443,7 +443,7 @@ async function scrapeURLLoop(meta: Meta): Promise<ScrapeUrlResponse> {
               throw error.error;
             }
           } else {
-            meta.logger.warn("An unexpected error happened while scraping with " + engine + ".", { error });
+            meta.logger.warn("An unexpected error happened while scraping with " + error.engine + ".", { error });
           }
 
           // Filter out the failed engine
@@ -455,6 +455,8 @@ async function scrapeURLLoop(meta: Meta): Promise<ScrapeUrlResponse> {
           }
 
           // Otherwise, just keep racing
+        } else if (error instanceof AddFeatureError || error instanceof RemoveFeatureError) {
+          throw error;
         } else if (error instanceof WaterfallNextEngineSignal) {
           // It's time to waterfall the next engine
           break;
@@ -628,7 +630,7 @@ export async function scrapeURL(
       } catch (error) {
         if (
           error instanceof AddFeatureError &&
-          meta.internalOptions.forceEngine === undefined
+          (meta.internalOptions.forceEngine === undefined || Array.isArray(meta.internalOptions.forceEngine))
         ) {
           meta.logger.debug(
             "More feature flags requested by scraper: adding " +
@@ -643,7 +645,7 @@ export async function scrapeURL(
           }
         } else if (
           error instanceof RemoveFeatureError &&
-          meta.internalOptions.forceEngine === undefined
+          (meta.internalOptions.forceEngine === undefined || Array.isArray(meta.internalOptions.forceEngine))
         ) {
           meta.logger.debug(
             "Incorrect feature flags reported by scraper: removing " +

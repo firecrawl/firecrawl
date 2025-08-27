@@ -28,6 +28,7 @@ import {
   authMiddleware,
   checkCreditsMiddleware,
   blocklistMiddleware,
+  countryCheck,
   idempotencyMiddleware,
   wrap,
 } from "./shared";
@@ -60,6 +61,7 @@ v1Router.use(
 v1Router.post(
   "/scrape",
   authMiddleware(RateLimiterMode.Scrape),
+  countryCheck,
   checkCreditsMiddleware(1),
   blocklistMiddleware,
   wrap(scrapeController),
@@ -68,6 +70,7 @@ v1Router.post(
 v1Router.post(
   "/crawl",
   authMiddleware(RateLimiterMode.Crawl),
+  countryCheck,
   checkCreditsMiddleware(),
   blocklistMiddleware,
   idempotencyMiddleware,
@@ -77,6 +80,7 @@ v1Router.post(
 v1Router.post(
   "/batch/scrape",
   authMiddleware(RateLimiterMode.Scrape),
+  countryCheck,
   checkCreditsMiddleware(),
   blocklistMiddleware,
   idempotencyMiddleware,
@@ -86,6 +90,7 @@ v1Router.post(
 v1Router.post(
   "/search",
   authMiddleware(RateLimiterMode.Search),
+  countryCheck,
   checkCreditsMiddleware(),
   wrap(searchController),
 );
@@ -153,6 +158,7 @@ v1Router.ws("/crawl/:jobId", crawlStatusWSController);
 v1Router.post(
   "/extract",
   authMiddleware(RateLimiterMode.Extract),
+  countryCheck,
   checkCreditsMiddleware(1),
   wrap(extractController),
 );
@@ -166,6 +172,7 @@ v1Router.get(
 v1Router.post(
   "/llmstxt",
   authMiddleware(RateLimiterMode.Scrape),
+  countryCheck,
   blocklistMiddleware,
   wrap(generateLLMsTextController),
 );
@@ -179,6 +186,7 @@ v1Router.get(
 v1Router.post(
   "/deep-research",
   authMiddleware(RateLimiterMode.Crawl),
+  countryCheck,
   checkCreditsMiddleware(1),
   wrap(deepResearchController),
 );
@@ -229,5 +237,6 @@ v1Router.get(
 v1Router.post(
   "/x402/search",
   authMiddleware(RateLimiterMode.Search),
+  countryCheck,
   wrap(x402SearchController),
 );

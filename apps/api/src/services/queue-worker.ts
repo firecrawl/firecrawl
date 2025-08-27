@@ -49,6 +49,7 @@ import { ATTR_SERVICE_NAME } from "@opentelemetry/semantic-conventions";
 import { resourceFromAttributes } from "@opentelemetry/resources";
 import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-grpc";
 import { BullMQOtel } from "bullmq-otel";
+import { pathToFileURL } from "url";
 
 configDotenv();
 
@@ -355,9 +356,23 @@ process.on("SIGTERM", () => {
 
 let cantAcceptConnectionCount = 0;
 
+/**
+ * Converts a file path to a proper URL for cross-platform compatibility.
+ * On Windows, absolute paths need to be converted to file:// URLs for ESM imports.
+ * @param filePath - The file path to convert
+ * @returns A properly formatted path/URL for the current platform
+ */
+function getWorkerPath(filePath: string): string | URL {
+  if (process.platform === 'win32' && path.isAbsolute(filePath)) {
+    // On Windows, convert absolute paths to file:// URLs for ESM compatibility
+    return pathToFileURL(filePath);
+  }
+  return filePath;
+}
+
 const separateWorkerFun = (
   queue: Queue,
-  path: string,
+  workerPath: string,
 ): Worker => {
   // Extract memory size from --max-old-space-size flag if present
   const maxOldSpaceSize = process.env.SCRAPE_WORKER_MAX_OLD_SPACE_SIZE || process.execArgv
@@ -368,7 +383,10 @@ const separateWorkerFun = (
   const filteredExecArgv = process.execArgv
     .filter(arg => !arg.startsWith('--max-old-space-size'));
 
-  const worker = new Worker(queue.name, path, {
+  // Convert path to proper format for the current platform
+  const platformWorkerPath = getWorkerPath(workerPath);
+
+  const worker = new Worker(queue.name, platformWorkerPath, {
     connection: getRedisConnection(),
     lockDuration: 60 * 1000, // 60 seconds
     stalledInterval: 60 * 1000, // 60 seconds
