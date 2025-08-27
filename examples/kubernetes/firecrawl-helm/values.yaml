@@ -1,13 +1,13 @@
 replicaCount: 1
 
 image:
-  repository: ghcr.io/mendableai/firecrawl
+  repository: ghcr.io/firecrawl/firecrawl
   tag: "latest"
   pullPolicy: Always
   dockerSecretEnabled: true
 
 playwright:
-  repository: ghcr.io/mendableai/playwright-service
+  repository: ghcr.io/firecrawl/playwright-service
   tag: "latest"
   pullPolicy: Always
 
