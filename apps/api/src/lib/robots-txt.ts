@@ -21,28 +21,25 @@ export async function fetchRobotsTxt(
     signal: abort,
     dispatcher: getSecureDispatcher(skipTlsVerification),
   });
+
   if (!response.ok) {
     throw new Error(
       `Failed to fetch robots.txt: ${response.status} ${response.statusText}`,
     );
   }
 
-  const data = await response.text();
-
-  const contentType =
-    (Object.entries(response.headers).find(
-      (x) => x[0].toLowerCase() === "content-type",
-    ) ?? [])[1] ?? "";
+  const content = await response.text();
+  const contentType = response.headers.get("content-type") || "";
 
   if (
-    (contentType.includes("text/html") && data.trim().startsWith("<")) ||
+    (contentType.includes("text/html") && content.trim().startsWith("<")) ||
     contentType.includes("application/json") ||
     contentType.includes("application/xml")
   ) {
     return "";
   }
 
-  return data;
+  return content;
 }
 
 export function createRobotsChecker(
