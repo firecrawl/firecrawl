@@ -142,7 +142,7 @@
     "resend": "^3.4.0",
     "robots-parser": "^3.0.1",
     "stripe": "^16.1.0",
-    "supabase": "^1.77.9",
+    "supabase": "^2.39.2",
     "systeminformation": "^5.22.11",
     "tldts": "^6.1.75",
     "tough-cookie": "^4.1.4",
