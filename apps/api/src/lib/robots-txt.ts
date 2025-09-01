@@ -1,8 +1,7 @@
 import robotsParser, { Robot } from "robots-parser";
-import axios from "axios";
-import { axiosTimeout } from "./timeout";
-import https from "https";
+import * as undici from "undici";
 import { Logger } from "winston";
+import { getSecureDispatcher } from "../scraper/scrapeURL/engines/utils/safeFetch";
 
 export interface RobotsTxtChecker {
   robotsTxtUrl: string;
@@ -18,30 +17,32 @@ export async function fetchRobotsTxt(
   const urlObj = new URL(url);
   const robotsTxtUrl = `${urlObj.protocol}//${urlObj.host}/robots.txt`;
 
-  let extraArgs: any = {};
-  if (skipTlsVerification) {
-    extraArgs.httpsAgent = new https.Agent({
-      rejectUnauthorized: false,
-    });
+  const response = await undici.fetch(robotsTxtUrl, {
+    signal: abort,
+    dispatcher: getSecureDispatcher(skipTlsVerification),
+  });
+  if (!response.ok) {
+    throw new Error(
+      `Failed to fetch robots.txt: ${response.status} ${response.statusText}`,
+    );
   }
 
-  const response = await axios.get(robotsTxtUrl, {
-    timeout: axiosTimeout,
-    signal: abort,
-    ...extraArgs,
-  });
+  const data = await response.text();
 
-  const contentType = (Object.entries(response.headers).find(
-    (x) => x[0].toLowerCase() === "content-type",
-  ) ?? [])[1] ?? "";
+  const contentType =
+    (Object.entries(response.headers).find(
+      (x) => x[0].toLowerCase() === "content-type",
+    ) ?? [])[1] ?? "";
 
-  if ((contentType.includes("text/html") && response.data.trim().startsWith("<")) || 
-      contentType.includes("application/json") ||
-      contentType.includes("application/xml")) {
+  if (
+    (contentType.includes("text/html") && data.trim().startsWith("<")) ||
+    contentType.includes("application/json") ||
+    contentType.includes("application/xml")
+  ) {
     return "";
   }
 
-  return response.data;
+  return data;
 }
 
 export function createRobotsChecker(
@@ -67,7 +68,7 @@ export function isUrlAllowedByRobots(
 
   for (const userAgent of userAgents) {
     let isAllowed = robots.isAllowed(url, userAgent);
-    
+
     // Handle null/undefined responses - default to true (allowed)
     if (isAllowed === null || isAllowed === undefined) {
       isAllowed = true;
@@ -82,11 +83,11 @@ export function isUrlAllowedByRobots(
     if (isAllowed && !url.endsWith("/")) {
       const urlWithSlash = url + "/";
       let isAllowedWithSlash = robots.isAllowed(urlWithSlash, userAgent);
-      
+
       if (isAllowedWithSlash == null) {
         isAllowedWithSlash = true;
       }
-      
+
       // If the trailing slash version is explicitly disallowed, block it
       if (isAllowedWithSlash === false) {
         isAllowed = false;

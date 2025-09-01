@@ -41,35 +41,34 @@ function isIPv6Private(ipv6) {
   return new Address6(ipv6).getScope() !== "Global";
 }
 
-export function makeSecureDispatcher(
-  skipTlsVerification: boolean = false,
-) {
+export function makeSecureDispatcher(skipTlsVerification: boolean) {
   const agentOpts: undici.Agent.Options = {
     maxRedirections: 5000,
   };
 
   const baseAgent = process.env.PROXY_SERVER
     ? new undici.ProxyAgent({
-      uri: process.env.PROXY_SERVER.includes("://") ? process.env.PROXY_SERVER : ("http://" + process.env.PROXY_SERVER),
-      token: process.env.PROXY_USERNAME
-        ? `Basic ${Buffer.from(process.env.PROXY_USERNAME + ":" + (process.env.PROXY_PASSWORD ?? "")).toString("base64")}`
-        : undefined,
-      requestTls: {
-        rejectUnauthorized: !skipTlsVerification, // Only bypass SSL verification if explicitly requested
-      },
-      ...agentOpts,
-    })
+        uri: process.env.PROXY_SERVER.includes("://")
+          ? process.env.PROXY_SERVER
+          : "http://" + process.env.PROXY_SERVER,
+        token: process.env.PROXY_USERNAME
+          ? `Basic ${Buffer.from(process.env.PROXY_USERNAME + ":" + (process.env.PROXY_PASSWORD ?? "")).toString("base64")}`
+          : undefined,
+        requestTls: {
+          rejectUnauthorized: !skipTlsVerification, // Only bypass SSL verification if explicitly requested
+        },
+        ...agentOpts,
+      })
     : new undici.Agent({
-      connect: {
-        rejectUnauthorized: !skipTlsVerification, // Only bypass SSL verification if explicitly requested
-      },
-      ...agentOpts,
-    });
+        connect: {
+          rejectUnauthorized: !skipTlsVerification, // Only bypass SSL verification if explicitly requested
+        },
+        ...agentOpts,
+      });
 
   const cookieJar = new CookieJar();
 
-  const agent = baseAgent
-    .compose(cookie({ jar: cookieJar }));
+  const agent = baseAgent.compose(cookie({ jar: cookieJar }));
 
   agent.on("connect", (_, targets) => {
     const client: undici.Client = targets.slice(-1)[0] as undici.Client;
@@ -92,5 +91,8 @@ export function makeSecureDispatcher(
   return agent;
 }
 
-export const secureDispatcher = makeSecureDispatcher(false);
-export const secureDispatcherSkipTlsVerification = makeSecureDispatcher(true);
+const secureDispatcher = makeSecureDispatcher(false);
+const secureDispatcherSkipTlsVerification = makeSecureDispatcher(true);
+
+export const getSecureDispatcher = (skipTlsVerification: boolean = false) =>
+  skipTlsVerification ? secureDispatcherSkipTlsVerification : secureDispatcher;

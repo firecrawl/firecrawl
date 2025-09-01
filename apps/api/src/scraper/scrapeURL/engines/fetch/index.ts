@@ -4,9 +4,8 @@ import { Meta } from "../..";
 import { SSLError } from "../../error";
 import { specialtyScrapeCheck } from "../utils/specialtyHandler";
 import {
+  getSecureDispatcher,
   InsecureConnectionError,
-  secureDispatcher,
-  secureDispatcherSkipTlsVerification,
 } from "../utils/safeFetch";
 import { MockState, saveMock } from "../../lib/mock";
 import { TextDecoder } from "util";
@@ -26,7 +25,7 @@ export async function scrapeURLWithFetch(
 
   let response: {
     url: string;
-    body: string,
+    body: string;
     status: number;
     headers: [string, string][];
   };
@@ -53,7 +52,7 @@ export async function scrapeURLWithFetch(
   } else {
     try {
       const x = await undici.fetch(meta.rewrittenUrl ?? meta.url, {
-        dispatcher: meta.options.skipTlsVerification ? secureDispatcherSkipTlsVerification : secureDispatcher,
+        dispatcher: getSecureDispatcher(meta.options.skipTlsVerification),
         redirect: "follow",
         headers: meta.options.headers,
         signal: meta.abort.asSignal(),
@@ -61,13 +60,18 @@ export async function scrapeURLWithFetch(
 
       const buf = Buffer.from(await x.arrayBuffer());
       let text = buf.toString("utf8");
-      const charset = (text.match(/<meta\b[^>]*charset\s*=\s*["']?([^"'\s\/>]+)/i) ?? [])[1]
+      const charset = (text.match(
+        /<meta\b[^>]*charset\s*=\s*["']?([^"'\s\/>]+)/i,
+      ) ?? [])[1];
       try {
         if (charset) {
           text = new TextDecoder(charset.trim()).decode(buf);
         }
       } catch (error) {
-        meta.logger.warn("Failed to re-parse with correct charset", { charset, error })
+        meta.logger.warn("Failed to re-parse with correct charset", {
+          charset,
+          error,
+        });
       }
 
       response = {
@@ -78,10 +82,7 @@ export async function scrapeURLWithFetch(
       };
 
       if (meta.mock === null) {
-        await saveMock(
-          mockOptions,
-          response,
-        );
+        await saveMock(mockOptions, response);
       }
     } catch (error) {
       if (
@@ -89,7 +90,12 @@ export async function scrapeURLWithFetch(
         error.cause instanceof InsecureConnectionError
       ) {
         throw error.cause;
-      } else if (error instanceof Error && error.message === "fetch failed" && error.cause && (error.cause as any).code === "CERT_HAS_EXPIRED") {
+      } else if (
+        error instanceof Error &&
+        error.message === "fetch failed" &&
+        error.cause &&
+        (error.cause as any).code === "CERT_HAS_EXPIRED"
+      ) {
         throw new SSLError(meta.options.skipTlsVerification);
       } else {
         throw error;
@@ -106,9 +112,9 @@ export async function scrapeURLWithFetch(
     url: response.url,
     html: response.body,
     statusCode: response.status,
-    contentType: (response.headers.find(
-      (x) => x[0].toLowerCase() === "content-type",
-    ) ?? [])[1] ?? undefined,
+    contentType:
+      (response.headers.find((x) => x[0].toLowerCase() === "content-type") ??
+        [])[1] ?? undefined,
 
     proxyUsed: "basic",
   };

@@ -1,17 +1,19 @@
-import axios, { AxiosError } from "axios";
+import { AxiosError } from "axios";
 import { load } from "cheerio"; // rustified
 import { URL } from "url";
 import { getLinksFromSitemap } from "./sitemap";
 import robotsParser, { Robot } from "robots-parser";
 import psl from "psl";
 import { getURLDepth } from "./utils/maxDepthUtils";
-import { axiosTimeout } from "../../lib/timeout";
 import { logger as _logger } from "../../lib/logger";
-import https from "https";
 import { redisEvictConnection } from "../../services/redis";
 import { extractLinks } from "../../lib/html-transformer";
 import { filterLinks } from "../../lib/crawler";
-import { fetchRobotsTxt, createRobotsChecker, isUrlAllowedByRobots } from "../../lib/robots-txt";
+import {
+  fetchRobotsTxt,
+  createRobotsChecker,
+  isUrlAllowedByRobots,
+} from "../../lib/robots-txt";
 import { ScrapeJobTimeoutError } from "../../lib/error";
 
 export const SITEMAP_LIMIT = 100;
@@ -32,7 +34,7 @@ export enum DenialReason {
   BACKWARD_CRAWLING = "URL cannot be crawled unless crawlEntireDomain is set to true",
   SOCIAL_MEDIA = "URL is a social media or email link",
   EXTERNAL_LINK = "External URL not allowed",
-  SECTION_LINK = "URL contains section anchor (#)"
+  SECTION_LINK = "URL contains section anchor (#)",
 }
 
 export interface FilterLinksResult {
@@ -122,7 +124,11 @@ export class WebCrawler {
     this.ignoreRobotsTxt = ignoreRobotsTxt ?? false;
     this.regexOnFullURL = regexOnFullURL ?? false;
     this.zeroDataRetention = zeroDataRetention ?? false;
-    this.logger = _logger.child({ crawlId: this.jobId, module: "WebCrawler", zeroDataRetention: this.zeroDataRetention });
+    this.logger = _logger.child({
+      crawlId: this.jobId,
+      module: "WebCrawler",
+      zeroDataRetention: this.zeroDataRetention,
+    });
     this.maxDiscoveryDepth = maxDiscoveryDepth;
     this.currentDiscoveryDepth = currentDiscoveryDepth ?? 0;
   }
@@ -136,8 +142,11 @@ export class WebCrawler {
     const denialReasons = new Map<string, string>();
 
     if (this.currentDiscoveryDepth === this.maxDiscoveryDepth) {
-      this.logger.debug("Max discovery depth hit, filtering off all links", { currentDiscoveryDepth: this.currentDiscoveryDepth, maxDiscoveryDepth: this.maxDiscoveryDepth });
-      sitemapLinks.forEach(link => {
+      this.logger.debug("Max discovery depth hit, filtering off all links", {
+        currentDiscoveryDepth: this.currentDiscoveryDepth,
+        maxDiscoveryDepth: this.maxDiscoveryDepth,
+      });
+      sitemapLinks.forEach((link) => {
         denialReasons.set(link, "Maximum discovery depth reached");
       });
       return { links: [], denialReasons };
@@ -275,7 +284,9 @@ export class WebCrawler {
             !normalizedLink.pathname.startsWith(normalizedInitialUrl.pathname)
           ) {
             if (process.env.FIRECRAWL_DEBUG_FILTER_LINKS) {
-              this.logger.debug(`${link} BACKWARDS FAIL ${normalizedLink.pathname} ${normalizedInitialUrl.pathname}`);
+              this.logger.debug(
+                `${link} BACKWARDS FAIL ${normalizedLink.pathname} ${normalizedInitialUrl.pathname}`,
+              );
             }
             denialReasons.set(link, DenialReason.BACKWARD_CRAWLING);
             return false;
@@ -284,7 +295,9 @@ export class WebCrawler {
 
         const isAllowed = this.ignoreRobotsTxt
           ? true
-          : ((this.robots.isAllowed(link, "FireCrawlAgent") || this.robots.isAllowed(link, "FirecrawlAgent")) ?? true);
+          : ((this.robots.isAllowed(link, "FireCrawlAgent") ||
+              this.robots.isAllowed(link, "FirecrawlAgent")) ??
+            true);
         // Check if the link is disallowed by robots.txt
         if (!isAllowed) {
           this.logger.debug(`Link disallowed by robots.txt: ${link}`, {
@@ -316,7 +329,10 @@ export class WebCrawler {
     return { links: filteredLinks, denialReasons };
   }
 
-  public async getRobotsTxt(skipTlsVerification = false, abort?: AbortSignal): Promise<string> {
+  public async getRobotsTxt(
+    skipTlsVerification = false,
+    abort?: AbortSignal,
+  ): Promise<string> {
     return fetchRobotsTxt(this.initialUrl, skipTlsVerification, abort);
   }
 
@@ -325,7 +341,9 @@ export class WebCrawler {
     const checker = createRobotsChecker(this.initialUrl, txt);
     this.robots = checker.robots;
     this.robotsTxtUrl = checker.robotsTxtUrl;
-    const delay = this.robots.getCrawlDelay("FireCrawlAgent") || this.robots.getCrawlDelay("FirecrawlAgent");
+    const delay =
+      this.robots.getCrawlDelay("FireCrawlAgent") ||
+      this.robots.getCrawlDelay("FirecrawlAgent");
     this.robotsCrawlDelay = delay !== undefined ? delay : null;
   }
 
@@ -360,7 +378,9 @@ export class WebCrawler {
         return await urlsHandler(urls);
       } else {
         let filteredLinksResult = await this.filterLinks(
-          [...new Set(urls)].filter(x => this.filterURL(x, this.initialUrl).allowed),
+          [...new Set(urls)].filter(
+            (x) => this.filterURL(x, this.initialUrl).allowed,
+          ),
           leftOfLimit,
           this.maxCrawledDepth,
           fromMap,
@@ -396,15 +416,23 @@ export class WebCrawler {
 
     // Allow sitemaps to be cached for 48 hours if they are requested from /map
     // - mogery
-    const maxAge = (fromMap && !onlySitemap) ? 48 * 60 * 60 * 1000 : 0;
+    const maxAge = fromMap && !onlySitemap ? 48 * 60 * 60 * 1000 : 0;
 
     try {
       let count = (await Promise.race([
         Promise.all([
-          this.tryFetchSitemapLinks(this.initialUrl, _urlsHandler, abort, mock, maxAge),
+          this.tryFetchSitemapLinks(
+            this.initialUrl,
+            _urlsHandler,
+            abort,
+            mock,
+            maxAge,
+          ),
           ...this.robots
             .getSitemaps()
-            .map((x) => this.tryFetchSitemapLinks(x, _urlsHandler, abort, mock, maxAge)),
+            .map((x) =>
+              this.tryFetchSitemapLinks(x, _urlsHandler, abort, mock, maxAge),
+            ),
         ]).then((results) => results.reduce((a, x) => a + x, 0)),
         timeoutPromise,
       ])) as number;
@@ -560,18 +588,28 @@ export class WebCrawler {
 
   public async extractLinksFromHTML(html: string, url: string) {
     try {
-      return [...new Set((await this.extractLinksFromHTMLRust(html, url)).map(x => {
-        try {
-          return new URL(x, url).href
-        } catch (e) {
-          return null;
-        }
-      }).filter(x => x !== null) as string[])];
+      return [
+        ...new Set(
+          (await this.extractLinksFromHTMLRust(html, url))
+            .map((x) => {
+              try {
+                return new URL(x, url).href;
+              } catch (e) {
+                return null;
+              }
+            })
+            .filter((x) => x !== null) as string[],
+        ),
+      ];
     } catch (error) {
-      this.logger.warn("Failed to call html-transformer! Falling back to cheerio...", {
-        error,
-        module: "scrapeURL", method: "extractMetadata"
-      });
+      this.logger.warn(
+        "Failed to call html-transformer! Falling back to cheerio...",
+        {
+          error,
+          module: "scrapeURL",
+          method: "extractMetadata",
+        },
+      );
     }
 
     return this.extractLinksFromHTMLCheerio(html, url);
@@ -581,9 +619,7 @@ export class WebCrawler {
     url: string,
     ignoreRobotsTxt: boolean = false,
   ): boolean {
-    return ignoreRobotsTxt
-      ? true
-      : isUrlAllowedByRobots(url, this.robots);
+    return ignoreRobotsTxt ? true : isUrlAllowedByRobots(url, this.robots);
   }
 
   private matchesExcludes(url: string, onlyDomains: boolean = false): boolean {
@@ -636,13 +672,13 @@ export class WebCrawler {
     if (!link.includes("#")) {
       return true;
     }
-    
+
     // Check if the hash fragment looks like a route (contains forward slashes and has substantial content)
     const hashPart = link.split("#")[1];
     if (hashPart && hashPart.length > 1 && hashPart.includes("/")) {
       return true;
     }
-    
+
     return false;
   }
 
@@ -660,14 +696,14 @@ export class WebCrawler {
     try {
       const linkUrl = new URL(link, this.baseUrl);
       const baseUrl = new URL(this.baseUrl);
-      
+
       const linkParsed = psl.parse(linkUrl.hostname);
       const baseParsed = psl.parse(baseUrl.hostname);
-      
+
       if (!linkParsed?.domain || !baseParsed?.domain) {
         return false;
       }
-      
+
       return linkParsed.domain === baseParsed.domain;
     } catch (error) {
       return false;
@@ -749,7 +785,13 @@ export class WebCrawler {
     // Try to get sitemap from the provided URL first
     try {
       sitemapCount = await getLinksFromSitemap(
-        { sitemapUrl, urlsHandler, mode: "fire-engine", maxAge, zeroDataRetention: this.zeroDataRetention },
+        {
+          sitemapUrl,
+          urlsHandler,
+          mode: "fire-engine",
+          maxAge,
+          zeroDataRetention: this.zeroDataRetention,
+        },
         this.logger,
         this.jobId,
         this.sitemapsHit,
@@ -792,7 +834,7 @@ export class WebCrawler {
                     try {
                       const linkUrl = new URL(link);
                       return linkUrl.hostname.endsWith(hostname);
-                    } catch { }
+                    } catch {}
                   }),
                 );
               },
@@ -834,7 +876,13 @@ export class WebCrawler {
       const baseUrlSitemap = `${this.baseUrl}/sitemap.xml`;
       try {
         sitemapCount += await getLinksFromSitemap(
-          { sitemapUrl: baseUrlSitemap, urlsHandler, mode: "fire-engine", maxAge, zeroDataRetention: this.zeroDataRetention },
+          {
+            sitemapUrl: baseUrlSitemap,
+            urlsHandler,
+            mode: "fire-engine",
+            maxAge,
+            zeroDataRetention: this.zeroDataRetention,
+          },
           this.logger,
           this.jobId,
           this.sitemapsHit,
@@ -854,7 +902,13 @@ export class WebCrawler {
             // ignore 404
           } else {
             sitemapCount += await getLinksFromSitemap(
-              { sitemapUrl: baseUrlSitemap, urlsHandler, mode: "fire-engine", maxAge, zeroDataRetention: this.zeroDataRetention },
+              {
+                sitemapUrl: baseUrlSitemap,
+                urlsHandler,
+                mode: "fire-engine",
+                maxAge,
+                zeroDataRetention: this.zeroDataRetention,
+              },
               this.logger,
               this.jobId,
               this.sitemapsHit,
@@ -867,7 +921,10 @@ export class WebCrawler {
     }
 
     if (this.sitemapsHit.size >= SITEMAP_LIMIT) {
-      this.logger.warn("Sitemap limit hit!", { crawlId: this.jobId, url: this.baseUrl });
+      this.logger.warn("Sitemap limit hit!", {
+        crawlId: this.jobId,
+        url: this.baseUrl,
+      });
     }
 
     return sitemapCount;
