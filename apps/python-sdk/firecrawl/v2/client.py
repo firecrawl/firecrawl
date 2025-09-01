@@ -5,7 +5,9 @@ This module provides the main client class that orchestrates all v2 functionalit
 """
 
 import os
+import ipaddress
 from typing import Optional, List, Dict, Any, Callable, Union, Literal
+from urllib.parse import urlparse
 from .types import (
     ClientConfig,
     ScrapeOptions,
@@ -50,6 +52,40 @@ from .methods import usage as usage_methods
 from .methods import extract as extract_module
 from .watcher import Watcher
 
+
+def _is_local_host(api_url: str) -> bool:
+    """
+    Check if the given URL points to a local host.
+    
+    Args:
+        api_url: The URL to check
+        
+    Returns:
+        True if the URL points to a local host (localhost, loopback IP, or unspecified IP)
+    """
+    if not api_url:
+        return False
+    
+    # urlparse treats "localhost:8000" as path unless scheme present
+    parsed = urlparse(api_url if api_url.startswith(("http://", "https://")) else f"http://{api_url}")
+    host = parsed.hostname
+    
+    if not host:
+        return False
+    
+    host = host.rstrip(".").lower()
+    
+    if host == "localhost":
+        return True
+    
+    try:
+        ip = ipaddress.ip_address(host)
+        # loopback (127.0.0.0/8, ::1) or unspecified (0.0.0.0)
+        return ip.is_loopback or ip.is_unspecified
+    except ValueError:
+        return False
+
+
 class FirecrawlClient:
     """
     Main Firecrawl v2 API client.
@@ -78,7 +114,10 @@ class FirecrawlClient:
         if api_key is None:
             api_key = os.getenv("FIRECRAWL_API_KEY")
         
-        if not api_key:
+        # Allow local connections without API key
+        is_local = _is_local_host(api_url)
+        
+        if not api_key and not is_local:
             raise ValueError(
                 "API key is required. Set FIRECRAWL_API_KEY environment variable "
                 "or pass api_key parameter."

@@ -599,8 +599,6 @@ class SearchRequest(BaseModel):
         
         return normalized_categories
 
-    # NOTE: parsers validation does not belong on SearchRequest; it is part of ScrapeOptions.
-
 class LinkResult(BaseModel):
     """A generic link result with optional metadata (used by search and map)."""
     url: str
@@ -672,7 +670,7 @@ class ActiveCrawlsResponse(BaseModel):
 # Configuration types
 class ClientConfig(BaseModel):
     """Configuration for the Firecrawl client."""
-    api_key: str
+    api_key: Optional[str] = None
     api_url: str = "https://api.firecrawl.dev"
     timeout: Optional[float] = None
     max_retries: int = 3
