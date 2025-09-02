@@ -269,9 +269,6 @@ importers:
       stripe:
         specifier: ^16.1.0
         version: 16.1.0
-      supabase:
-        specifier: ^2.39.2
-        version: 2.39.2
       systeminformation:
         specifier: ^5.22.11
         version: 5.27.7
@@ -366,6 +363,9 @@ importers:
       prettier:
         specifier: ^3.4.2
         version: 3.4.2
+      supabase:
+        specifier: ^2.39.2
+        version: 2.39.2
       supertest:
         specifier: ^6.3.3
         version: 6.3.4
@@ -4825,8 +4825,8 @@ packages:
     resolution: {integrity: sha512-qOOzS1cBTWYF4BH8fVePDBOO9iptMnGUEZwNc/cMWnTV2nVLZ7VoNWEPHkYczZA0pdoA7dl6e7FL659nX9S2aw==}
     engines: {node: '>=16 || 14 >=14.17'}
 
-  minizlib@3.0.1:
-    resolution: {integrity: sha512-umcy022ILvb5/3Djuu8LWeqUa8D68JaBzlttKeMWen48SjabqS3iY5w/vzeMzMUNhLDifyhbOwKDSznB1vvrwg==}
+  minizlib@3.0.2:
+    resolution: {integrity: sha512-oG62iEk+CYt5Xj2YqI5Xi9xWUeZhDI8jjQmC5oThVH5JGCTgIjr7ciJDzC7MBzYd//WvR1OTmP5Q38Q8ShQtVA==}
     engines: {node: '>= 18'}
 
   mipd@0.0.7:
@@ -5435,11 +5435,6 @@ packages:
   retry@0.13.1:
     resolution: {integrity: sha512-XQBQ3I8W1Cge0Seh+6gjj03LbmRFWuoszgK9ooCpwYIrhhoO80pfq4cUkU5DkknwfOfFteRwlZ56PYOGYyFWdg==}
     engines: {node: '>= 4'}
-
-  rimraf@5.0.7:
-    resolution: {integrity: sha512-nV6YcJo5wbLW77m+8KjH8aB/7/rxQy9SZ0HY5shnwULfS+9nmTtVXAJET5NdZmCzA4fPI/Hm1wo/Po/4mopOdg==}
-    engines: {node: '>=14.18'}
-    hasBin: true
 
   robots-parser@3.0.1:
     resolution: {integrity: sha512-s+pyvQeIKIZ0dx5iJiQk1tPLJAWln39+MI5jtM8wnyws+G5azk+dMnMX0qfbqNetKKNgcWWOdi0sfm+FbQbgdQ==}
@@ -13013,10 +13008,9 @@ snapshots:
 
   minipass@7.1.2: {}
 
-  minizlib@3.0.1:
+  minizlib@3.0.2:
     dependencies:
       minipass: 7.1.2
-      rimraf: 5.0.7
 
   mipd@0.0.7(typescript@5.8.3):
     optionalDependencies:
@@ -13633,10 +13627,6 @@ snapshots:
 
   retry@0.13.1: {}
 
-  rimraf@5.0.7:
-    dependencies:
-      glob: 10.4.2
-
   robots-parser@3.0.1: {}
 
   rpc-websockets@9.1.3:
@@ -13984,7 +13974,7 @@ snapshots:
       '@isaacs/fs-minipass': 4.0.1
       chownr: 3.0.0
       minipass: 7.1.2
-      minizlib: 3.0.1
+      minizlib: 3.0.2
       mkdirp: 3.0.1
       yallist: 5.0.0
 
