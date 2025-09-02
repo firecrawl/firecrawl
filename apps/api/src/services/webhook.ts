@@ -239,9 +239,11 @@ export const callWebhook = async ({
 
     const payloadString = JSON.stringify(payload);
 
+    const trueHeaders = Object.fromEntries(Object.entries(webhookUrl.headers).filter(([key]) => key.toLowerCase() !== "x-firecrawl-signature"));
+
     const headers: Record<string, string> = {
       "Content-Type": "application/json",
-      ...webhookUrl.headers,
+      ...trueHeaders,
     };
 
     if (hmacSecret) {
