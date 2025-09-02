@@ -26,7 +26,8 @@
     "run-example": "npx ts-node src/example.ts",
     "deploy:fly": "flyctl deploy --build-secret SENTRY_AUTH_TOKEN=$(dotenv -p SENTRY_AUTH_TOKEN) --depot=false",
     "deploy:fly:staging": "fly deploy -c fly.staging.toml --depot=false",
-    "sentry:sourcemaps": "sentry-cli sourcemaps inject --org caleb-peffer --project firecrawl-scraper-js ./dist && sentry-cli sourcemaps upload --org caleb-peffer --project firecrawl-scraper-js ./dist"
+    "sentry:sourcemaps": "sentry-cli sourcemaps inject --org caleb-peffer --project firecrawl-scraper-js ./dist && sentry-cli sourcemaps upload --org caleb-peffer --project firecrawl-scraper-js ./dist",
+    "prepare": "cd ../.. && husky ./apps/api/.husky"
   },
   "author": "",
   "license": "ISC",
@@ -44,8 +45,10 @@
     "@types/pdf-parse": "^1.1.4",
     "@types/supertest": "^6.0.2",
     "@types/tough-cookie": "^4.0.5",
+    "husky": "^9.1.7",
     "jest": "^29.6.3",
     "jest-fetch-mock": "^3.0.3",
+    "lint-staged": "^16.1.6",
     "supabase": "^2.39.2",
     "supertest": "^6.3.3",
     "ts-jest": "^29.1.1",
@@ -135,6 +138,7 @@
     "pdf-parse": "^1.1.1",
     "pos": "^0.4.2",
     "posthog-node": "^4.0.1",
+    "prettier": "^3.6.2",
     "psl": "^1.15.0",
     "rate-limiter-flexible": "2.4.2",
     "redlock": "5.0.0-beta.2",
@@ -172,5 +176,8 @@
     "overrides": {
       "brace-expansion@>=2.0.0 <=2.0.1": "2.0.2"
     }
+  },
+  "lint-staged": {
+    "*.{js,jsx,ts,tsx,json,css,md}": "prettier --write"
   }
 }
