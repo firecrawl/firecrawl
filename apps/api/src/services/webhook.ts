@@ -7,7 +7,10 @@ import { z } from "zod";
 import { webhookSchema } from "../controllers/v1/types";
 import { redisEvictConnection } from "./redis";
 import { createHmac } from "crypto";
-import { getSecureDispatcher, isIPPrivate } from "../scraper/scrapeURL/engines/utils/safeFetch";
+import {
+  getSecureDispatcher,
+  isIPPrivate,
+} from "../scraper/scrapeURL/engines/utils/safeFetch";
 configDotenv();
 
 const WEBHOOK_INSERT_QUEUE_KEY = "webhook-insert-queue";
@@ -249,11 +252,9 @@ export const callWebhook = async ({
 
     const payloadString = JSON.stringify(payload);
 
-    const trueHeaders = Object.fromEntries(Object.entries(webhookUrl.headers).filter(([key]) => key.toLowerCase() !== "x-firecrawl-signature"));
-
     const headers: Record<string, string> = {
       "Content-Type": "application/json",
-      ...trueHeaders,
+      ...webhookUrl.headers,
     };
 
     if (hmacSecret) {
@@ -261,7 +262,7 @@ export const callWebhook = async ({
       headers["X-Firecrawl-Signature"] = `sha256=${signature}`;
     }
 
-    if (awaitWebhook) {
+    const executeWebhookRequest = async () => {
       try {
         const res = await undici.fetch(webhookUrl.url, {
           method: "POST",
@@ -270,9 +271,11 @@ export const callWebhook = async ({
           dispatcher: getSecureDispatcher(),
           signal: AbortSignal.timeout(v1 ? 10000 : 30000), // 10 seconds timeout (v1)
         });
+
         if (!res.ok) {
           throw { status: res.status };
         }
+
         logWebhook({
           success: res.status >= 200 && res.status < 300,
           teamId,
@@ -282,10 +285,13 @@ export const callWebhook = async ({
           event: eventType,
           statusCode: res.status,
         });
+
+        return res;
       } catch (error) {
         logger.error(`Failed to send webhook`, {
           error,
         });
+
         logWebhook({
           success: false,
           teamId,
@@ -304,53 +310,17 @@ export const callWebhook = async ({
               ? (error as any).status
               : undefined,
         });
+
+        throw error;
       }
+    };
+
+    if (awaitWebhook) {
+      await executeWebhookRequest();
     } else {
-      undici
-        .fetch(webhookUrl.url, {
-          method: "POST",
-          headers,
-          body: payloadString,
-          dispatcher: getSecureDispatcher(),
-          signal: AbortSignal.timeout(v1 ? 10000 : 30000), // 10 seconds timeout (v1)
-        })
-        .then((res) => {
-          if (!res.ok) {
-            throw { status: res.status };
-          }
-          logWebhook({
-            success: res.status >= 200 && res.status < 300,
-            teamId,
-            crawlId,
-            scrapeId,
-            url: webhookUrl.url,
-            event: eventType,
-            statusCode: res.status,
-          });
-        })
-        .catch((error) => {
-          logger.error(`Failed to send webhook`, {
-            error,
-          });
-          logWebhook({
-            success: false,
-            teamId,
-            crawlId,
-            scrapeId,
-            url: webhookUrl.url,
-            event: eventType,
-            error:
-              error instanceof Error
-                ? error.message
-                : typeof error === "string"
-                  ? error
-                  : undefined,
-            statusCode:
-              typeof (error as any)?.status === "number"
-                ? (error as any).status
-                : undefined,
-          });
-        });
+      executeWebhookRequest().catch(() => {
+        // already logged in executeWebhookRequest
+      });
     }
   } catch (error) {
     logger.warn(`Error sending webhook`, {
