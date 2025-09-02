@@ -8,7 +8,7 @@ describe("Robots.txt tests", () => {
   let checker: ReturnType<typeof createRobotsChecker>;
 
   beforeAll(async () => {
-    robotsTxt = await fetchRobotsTxt(robotsUrl);
+    robotsTxt = (await fetchRobotsTxt(robotsUrl)).content;
     checker = createRobotsChecker(siteUrl, robotsTxt);
   }, scrapeTimeout);
 

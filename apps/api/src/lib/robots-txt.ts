@@ -13,7 +13,7 @@ export async function fetchRobotsTxt(
   url: string,
   skipTlsVerification: boolean = false,
   abort?: AbortSignal,
-): Promise<string> {
+): Promise<{ content: string; url: string }> {
   const urlObj = new URL(url);
   const robotsTxtUrl = `${urlObj.protocol}//${urlObj.host}/robots.txt`;
 
@@ -36,10 +36,11 @@ export async function fetchRobotsTxt(
     contentType.includes("application/json") ||
     contentType.includes("application/xml")
   ) {
-    return "";
+    return { content: "", url: response.url };
   }
 
-  return content;
+  // return URL in case we've been redirected
+  return { content, url: response.url };
 }
 
 export function createRobotsChecker(
@@ -107,7 +108,11 @@ export async function checkRobotsTxt(
   abort?: AbortSignal,
 ): Promise<boolean> {
   try {
-    const robotsTxt = await fetchRobotsTxt(url, skipTlsVerification, abort);
+    const { content: robotsTxt } = await fetchRobotsTxt(
+      url,
+      skipTlsVerification,
+      abort,
+    );
     const checker = createRobotsChecker(url, robotsTxt);
     return isUrlAllowedByRobots(url, checker.robots);
   } catch (error) {

@@ -340,7 +340,7 @@ export class WebCrawler {
         skipTlsVerification,
       });
 
-      const robotsTxt = await fetchRobotsTxt(
+      const { content: robotsTxt, url } = await fetchRobotsTxt(
         this.initialUrl,
         skipTlsVerification,
         abort,
@@ -351,6 +351,7 @@ export class WebCrawler {
         initialUrl: this.initialUrl,
         robotsTxtLength: robotsTxt.length,
         hasContent: robotsTxt.length > 0,
+        finalUrl: url,
       });
 
       return robotsTxt;
