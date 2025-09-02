@@ -1,15 +1,5 @@
 import { createRobotsChecker, fetchRobotsTxt } from "../../../lib/robots-txt";
-import { scrapeTimeout, idmux, Identity } from "./lib";
-
-let identity: Identity;
-
-beforeAll(async () => {
-  identity = await idmux({
-    name: "robots-txt",
-    concurrency: 100,
-    credits: 1000000,
-  });
-}, 10000);
+import { scrapeTimeout } from "./lib";
 
 describe("Robots.txt tests", () => {
   const robotsUrl = "https://www.google.com/robots.txt";
