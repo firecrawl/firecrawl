@@ -15,6 +15,8 @@ import {
   isUrlAllowedByRobots,
 } from "../../lib/robots-txt";
 import { ScrapeJobTimeoutError } from "../../lib/error";
+import { Logger } from "winston";
+import { ScrapeOptions } from "../../controllers/v2/types";
 
 export const SITEMAP_LIMIT = 100;
 
@@ -67,6 +69,7 @@ export class WebCrawler {
   private maxDiscoveryDepth: number | undefined;
   private currentDiscoveryDepth: number;
   private zeroDataRetention: boolean;
+  private location?: ScrapeOptions["location"];
 
   constructor({
     jobId,
@@ -86,6 +89,7 @@ export class WebCrawler {
     maxDiscoveryDepth,
     currentDiscoveryDepth,
     zeroDataRetention,
+    location,
   }: {
     jobId: string;
     initialUrl: string;
@@ -104,6 +108,7 @@ export class WebCrawler {
     maxDiscoveryDepth?: number;
     currentDiscoveryDepth?: number;
     zeroDataRetention?: boolean;
+    location?: ScrapeOptions["location"];
   }) {
     this.jobId = jobId;
     this.initialUrl = initialUrl;
@@ -131,6 +136,7 @@ export class WebCrawler {
     });
     this.maxDiscoveryDepth = maxDiscoveryDepth;
     this.currentDiscoveryDepth = currentDiscoveryDepth ?? 0;
+    this.location = location;
   }
 
   public async filterLinks(
@@ -341,8 +347,13 @@ export class WebCrawler {
       });
 
       const { content: robotsTxt, url } = await fetchRobotsTxt(
-        this.initialUrl,
-        skipTlsVerification,
+        {
+          url: this.robotsTxtUrl,
+          zeroDataRetention: this.zeroDataRetention,
+          location: this.location,
+        },
+        this.jobId,
+        this.logger,
         abort,
       );
 
@@ -844,6 +855,7 @@ export class WebCrawler {
           mode: "fire-engine",
           maxAge,
           zeroDataRetention: this.zeroDataRetention,
+          location: this.location,
         },
         this.logger,
         this.jobId,
@@ -894,6 +906,7 @@ export class WebCrawler {
               mode: "fire-engine",
               maxAge,
               zeroDataRetention: this.zeroDataRetention,
+              location: this.location,
             },
             this.logger,
             this.jobId,
@@ -935,6 +948,7 @@ export class WebCrawler {
             mode: "fire-engine",
             maxAge,
             zeroDataRetention: this.zeroDataRetention,
+            location: this.location,
           },
           this.logger,
           this.jobId,
@@ -961,6 +975,7 @@ export class WebCrawler {
                 mode: "fire-engine",
                 maxAge,
                 zeroDataRetention: this.zeroDataRetention,
+                location: this.location,
               },
               this.logger,
               this.jobId,

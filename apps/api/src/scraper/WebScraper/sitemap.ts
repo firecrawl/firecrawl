@@ -6,6 +6,7 @@ import type { Logger } from "winston";
 import { CostTracking } from "../../lib/extract/extraction-service";
 import { parseSitemapXml, processSitemap } from "../../lib/crawler";
 import { ScrapeJobTimeoutError } from "../../lib/error";
+import { ScrapeOptions } from "../../controllers/v1/types";
 const useFireEngine =
   process.env.FIRE_ENGINE_BETA_URL !== "" &&
   process.env.FIRE_ENGINE_BETA_URL !== undefined;
@@ -17,12 +18,14 @@ export async function getLinksFromSitemap(
     mode = "axios",
     maxAge = 0,
     zeroDataRetention,
+    location,
   }: {
     sitemapUrl: string;
     urlsHandler(urls: string[]): unknown;
     mode?: "axios" | "fire-engine";
     maxAge?: number;
     zeroDataRetention: boolean;
+    location?: ScrapeOptions["location"];
   },
   logger: Logger,
   crawlId: string,
@@ -47,7 +50,12 @@ export async function getLinksFromSitemap(
       const response = await scrapeURL(
         "sitemap;" + crawlId,
         sitemapUrl,
-        scrapeOptions.parse({ formats: ["rawHtml"], useMock: mock, maxAge }),
+        scrapeOptions.parse({
+          formats: ["rawHtml"],
+          useMock: mock,
+          maxAge,
+          ...(location ? { location } : {}),
+        }),
         {
           forceEngine: [
             ...(maxAge > 0 ? ["index" as const] : []),
@@ -145,7 +153,7 @@ export async function getLinksFromSitemap(
 
         const sitemapPromises: Promise<number>[] = sitemapUrls.map(sitemapUrl =>
           getLinksFromSitemap(
-            { sitemapUrl, urlsHandler, mode, zeroDataRetention },
+            { sitemapUrl, urlsHandler, mode, zeroDataRetention, location },
             logger,
             crawlId,
             sitemapsHit,
@@ -169,7 +177,13 @@ export async function getLinksFromSitemap(
         if (xmlSitemaps.length > 0) {
           const sitemapPromises = xmlSitemaps.map(sitemapUrl =>
             getLinksFromSitemap(
-              { sitemapUrl: sitemapUrl, urlsHandler, mode, zeroDataRetention },
+              {
+                sitemapUrl: sitemapUrl,
+                urlsHandler,
+                mode,
+                zeroDataRetention,
+                location,
+              },
               logger,
               crawlId,
               sitemapsHit,
@@ -209,7 +223,7 @@ export async function getLinksFromSitemap(
         const sitemapPromises: Promise<number>[] = instruction.urls.map(
           sitemapUrl =>
             getLinksFromSitemap(
-              { sitemapUrl, urlsHandler, mode, zeroDataRetention },
+              { sitemapUrl, urlsHandler, mode, zeroDataRetention, location },
               logger,
               crawlId,
               sitemapsHit,

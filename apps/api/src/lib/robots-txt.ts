@@ -1,7 +1,12 @@
 import robotsParser, { Robot } from "robots-parser";
-import * as undici from "undici";
 import { Logger } from "winston";
-import { getSecureDispatcher } from "../scraper/scrapeURL/engines/utils/safeFetch";
+import { ScrapeOptions, scrapeOptions } from "../controllers/v2/types";
+import { CostTracking } from "./extract/extraction-service";
+import { scrapeURL } from "../scraper/scrapeURL";
+
+const useFireEngine =
+  process.env.FIRE_ENGINE_BETA_URL !== "" &&
+  process.env.FIRE_ENGINE_BETA_URL !== undefined;
 
 export interface RobotsTxtChecker {
   robotsTxtUrl: string;
@@ -10,37 +15,78 @@ export interface RobotsTxtChecker {
 }
 
 export async function fetchRobotsTxt(
-  url: string,
-  skipTlsVerification: boolean = false,
+  {
+    url,
+    zeroDataRetention = false,
+    location,
+  }: {
+    url: string;
+    zeroDataRetention?: boolean;
+    location?: ScrapeOptions["location"];
+  },
+  scrapeId: string,
+  logger: Logger,
   abort?: AbortSignal,
 ): Promise<{ content: string; url: string }> {
   const urlObj = new URL(url);
   const robotsTxtUrl = `${urlObj.protocol}//${urlObj.host}/robots.txt`;
 
-  const response = await undici.fetch(robotsTxtUrl, {
-    signal: abort,
-    dispatcher: getSecureDispatcher(skipTlsVerification),
-  });
-
-  if (!response.ok) {
-    throw new Error(
-      `Failed to fetch robots.txt: ${response.status} ${response.statusText}`,
-    );
-  }
-
-  const content = await response.text();
-  const contentType = response.headers.get("content-type") || "";
+  let content: string = "";
+  const response = await scrapeURL(
+    "robots-txt;" + scrapeId,
+    robotsTxtUrl,
+    scrapeOptions.parse({
+      formats: ["rawHtml"],
+      ...(location ? { location } : {}),
+    }),
+    {
+      forceEngine: [
+        // no index here as we want the latest version of robots.txt for e.g. scraping rules
+        ...(location && useFireEngine
+          ? [
+              "fire-engine;tlsclient" as const,
+              "fire-engine;tlsclient;stealth" as const,
+            ]
+          : []),
+        "fetch",
+      ],
+      externalAbort: abort
+        ? {
+            signal: abort,
+            tier: "external",
+            throwable() {
+              return new Error("Robots.txt fetch aborted");
+            },
+          }
+        : undefined,
+      teamId: "robots-txt",
+      zeroDataRetention,
+    },
+    new CostTracking(),
+  );
 
   if (
-    (contentType.includes("text/html") && content.trim().startsWith("<")) ||
-    contentType.includes("application/json") ||
-    contentType.includes("application/xml")
+    response.success &&
+    response.document.metadata.statusCode >= 200 &&
+    response.document.metadata.statusCode < 300
   ) {
-    return { content: "", url: response.url };
+    content = response.document.rawHtml!;
+  } else {
+    logger.error(`Request failed for robots.txt fetch`, {
+      method: "fetchRobotsTxt",
+      sitemapUrl: robotsTxtUrl,
+      error: response.success
+        ? response.document.metadata.statusCode
+        : response.error,
+    });
+    return { content: "", url: robotsTxtUrl };
   }
 
   // return URL in case we've been redirected
-  return { content, url: response.url };
+  return {
+    content: content,
+    url: response.document.metadata.url || robotsTxtUrl,
+  };
 }
 
 export function createRobotsChecker(
@@ -103,14 +149,21 @@ export function isUrlAllowedByRobots(
 
 export async function checkRobotsTxt(
   url: string,
-  skipTlsVerification: boolean = false,
-  logger?: Logger,
+  scrapeId: string,
+  logger: Logger,
   abort?: AbortSignal,
 ): Promise<boolean> {
+  // if url is robots.txt, always allow (prevents infinite loop from scrapeURL when checkRobotsOnScrape is enabled)
+  const urlObj = new URL(url);
+  if (urlObj.pathname === "/robots.txt") {
+    return true;
+  }
+
   try {
     const { content: robotsTxt } = await fetchRobotsTxt(
-      url,
-      skipTlsVerification,
+      { url },
+      scrapeId,
+      logger,
       abort,
     );
     const checker = createRobotsChecker(url, robotsTxt);
