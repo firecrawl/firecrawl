@@ -798,7 +798,7 @@ describe("Scrape tests", () => {
         }, identity);
 
         expect(response.markdown).toContain("PDF Test File");
-        expect(response.metadata.title).toBe(" PDF Test Page");
+        expect(response.metadata.title).toBe("PDF Test Page");
         expect(response.metadata.numPages).toBe(1);
       }, scrapeTimeout);
 

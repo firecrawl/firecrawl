@@ -1,5 +1,4 @@
 import undici from "undici";
-import { secureDispatcher } from "../scraper/scrapeURL/engines/utils/safeFetch";
 import { logger as _logger, logger } from "../lib/logger";
 import { supabase_rr_service, supabase_service } from "./supabase";
 import { WebhookEventType } from "../types";
@@ -8,6 +7,7 @@ import { z } from "zod";
 import { webhookSchema } from "../controllers/v1/types";
 import { redisEvictConnection } from "./redis";
 import { createHmac } from "crypto";
+import { getSecureDispatcher, isIPPrivate } from "../scraper/scrapeURL/engines/utils/safeFetch";
 configDotenv();
 
 const WEBHOOK_INSERT_QUEUE_KEY = "webhook-insert-queue";
@@ -200,6 +200,16 @@ export const callWebhook = async ({
       return null;
     }
 
+    // check if the webhook URL is a private IP address *before* making the request
+    // the dispatcher also performs a check once connected, however this prevents unnecessary connections
+    const webhookHost = new URL(webhookUrl.url).hostname;
+    if (isIPPrivate(webhookHost)) {
+      logger.warn("Aborting webhook call to private IP address", {
+        url: webhookUrl.url,
+      });
+      return null;
+    }
+
     let dataToSend: any[] = [];
     if (
       data &&
@@ -257,7 +267,7 @@ export const callWebhook = async ({
           method: "POST",
           headers,
           body: payloadString,
-          dispatcher: secureDispatcher,
+          dispatcher: getSecureDispatcher(),
           signal: AbortSignal.timeout(v1 ? 10000 : 30000), // 10 seconds timeout (v1)
         });
         if (!res.ok) {
@@ -301,7 +311,8 @@ export const callWebhook = async ({
           method: "POST",
           headers,
           body: payloadString,
-          dispatcher: secureDispatcher,
+          dispatcher: getSecureDispatcher(),
+          signal: AbortSignal.timeout(v1 ? 10000 : 30000), // 10 seconds timeout (v1)
         })
         .then((res) => {
           if (!res.ok) {
