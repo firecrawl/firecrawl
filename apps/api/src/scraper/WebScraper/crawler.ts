@@ -333,7 +333,35 @@ export class WebCrawler {
     skipTlsVerification = false,
     abort?: AbortSignal,
   ): Promise<string> {
-    return fetchRobotsTxt(this.initialUrl, skipTlsVerification, abort);
+    try {
+      this.logger.debug("Attempting to fetch robots.txt", {
+        method: "getRobotsTxt",
+        initialUrl: this.initialUrl,
+        skipTlsVerification,
+      });
+
+      const robotsTxt = await fetchRobotsTxt(
+        this.initialUrl,
+        skipTlsVerification,
+        abort,
+      );
+
+      this.logger.debug("Successfully fetched robots.txt", {
+        method: "getRobotsTxt",
+        initialUrl: this.initialUrl,
+        robotsTxtLength: robotsTxt.length,
+        hasContent: robotsTxt.length > 0,
+      });
+
+      return robotsTxt;
+    } catch (error) {
+      this.logger.debug("Failed to fetch robots.txt", {
+        method: "getRobotsTxt",
+        initialUrl: this.initialUrl,
+        error: error.message,
+      });
+      throw error;
+    }
   }
 
   public importRobotsTxt(txt: string) {
@@ -345,6 +373,16 @@ export class WebCrawler {
       this.robots.getCrawlDelay("FireCrawlAgent") ||
       this.robots.getCrawlDelay("FirecrawlAgent");
     this.robotsCrawlDelay = delay !== undefined ? delay : null;
+
+    const sitemaps = this.robots.getSitemaps();
+    this.logger.debug("Processed robots.txt", {
+      method: "importRobotsTxt",
+      robotsTxtUrl: this.robotsTxtUrl,
+      robotsTxtLength: txt.length,
+      sitemapsFound: sitemaps.length,
+      sitemaps: sitemaps,
+      crawlDelay: this.robotsCrawlDelay,
+    });
   }
 
   public getRobotsCrawlDelay(): number | null {
@@ -419,6 +457,15 @@ export class WebCrawler {
     const maxAge = fromMap && !onlySitemap ? 48 * 60 * 60 * 1000 : 0;
 
     try {
+      const robotsSitemaps = this.robots.getSitemaps();
+      this.logger.debug("Attempting to fetch sitemap links", {
+        method: "tryGetSitemap",
+        initialUrl: this.initialUrl,
+        robotsSitemapsCount: robotsSitemaps.length,
+        robotsSitemaps: robotsSitemaps,
+        hasRobotsTxt: this.robotsTxt.length > 0,
+      });
+
       let count = (await Promise.race([
         Promise.all([
           this.tryFetchSitemapLinks(
@@ -428,11 +475,9 @@ export class WebCrawler {
             mock,
             maxAge,
           ),
-          ...this.robots
-            .getSitemaps()
-            .map(x =>
-              this.tryFetchSitemapLinks(x, _urlsHandler, abort, mock, maxAge),
-            ),
+          ...robotsSitemaps.map(x =>
+            this.tryFetchSitemapLinks(x, _urlsHandler, abort, mock, maxAge),
+          ),
         ]).then(results => results.reduce((a, x) => a + x, 0)),
         timeoutPromise,
       ])) as number;
@@ -780,6 +825,13 @@ export class WebCrawler {
       ? url
       : `${url}${url.endsWith("/") ? "" : "/"}sitemap.xml`;
 
+    this.logger.debug("Trying to fetch sitemap links", {
+      method: "tryFetchSitemapLinks",
+      originalUrl: url,
+      sitemapUrl,
+      isXmlUrl: url.endsWith(".xml"),
+    });
+
     let sitemapCount: number = 0;
 
     // Try to get sitemap from the provided URL first
@@ -926,6 +978,14 @@ export class WebCrawler {
         url: this.baseUrl,
       });
     }
+
+    this.logger.debug("Finished trying to fetch sitemap links", {
+      method: "tryFetchSitemapLinks",
+      originalUrl: url,
+      sitemapUrl,
+      linksFound: sitemapCount,
+      totalSitemapsHit: this.sitemapsHit.size,
+    });
 
     return sitemapCount;
   }
