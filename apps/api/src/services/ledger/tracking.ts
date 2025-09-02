@@ -37,7 +37,11 @@ export async function trackEvent<T extends EventDefinitionSlug>(
 
       // Cache the result for 24 hours (1440 minutes)
       if (!definitionError && providerDefinition) {
-        await setValue(cacheKey, JSON.stringify(providerDefinition), 600 * 60 * 24);
+        await setValue(
+          cacheKey,
+          JSON.stringify(providerDefinition),
+          600 * 60 * 24,
+        );
       }
     }
 

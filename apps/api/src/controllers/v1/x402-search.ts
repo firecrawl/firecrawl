@@ -49,7 +49,7 @@ async function scrapeX402SearchResult(
     team_id: options.teamId,
     basePriority: 10,
   });
-  
+
   const costTracking = new CostTracking();
 
   const zeroDataRetention = flags?.forceZDR ?? false;
@@ -65,7 +65,11 @@ async function scrapeX402SearchResult(
       origin: options.origin,
       zeroDataRetention,
     });
-    const { scrapeOptions, internalOptions } = fromV1ScrapeOptions(options.scrapeOptions, options.timeout, options.teamId);
+    const { scrapeOptions, internalOptions } = fromV1ScrapeOptions(
+      options.scrapeOptions,
+      options.timeout,
+      options.teamId,
+    );
     await addScrapeJob(
       {
         url: searchResult.url,
@@ -73,9 +77,17 @@ async function scrapeX402SearchResult(
         team_id: options.teamId,
         scrapeOptions: {
           ...scrapeOptions,
-          maxAge: scrapeOptions.maxAge === 0 ? 3 * 24 * 60 * 60 * 1000 : scrapeOptions.maxAge,
+          maxAge:
+            scrapeOptions.maxAge === 0
+              ? 3 * 24 * 60 * 60 * 1000
+              : scrapeOptions.maxAge,
         },
-        internalOptions: { ...internalOptions, teamId: options.teamId, bypassBilling: true, zeroDataRetention },
+        internalOptions: {
+          ...internalOptions,
+          teamId: options.teamId,
+          bypassBilling: true,
+          zeroDataRetention,
+        },
         origin: options.origin,
         is_scrape: true,
         startTime: Date.now(),
@@ -89,8 +101,8 @@ async function scrapeX402SearchResult(
     );
 
     const doc: Document = await waitForJob(jobId, options.timeout);
-    
-            logger.info("Scrape job [x402] completed", {
+
+    logger.info("Scrape job [x402] completed", {
       scrapeId: jobId,
       url: searchResult.url,
       teamId: options.teamId,
@@ -107,14 +119,16 @@ async function scrapeX402SearchResult(
 
     let costTracking: ReturnType<typeof CostTracking.prototype.toJSON>;
     if (process.env.USE_DB_AUTHENTICATION === "true") {
-      const { data: costTrackingResponse, error: costTrackingError } = await supabase_service.from("firecrawl_jobs")
-        .select("cost_tracking")
-        .eq("job_id", jobId);
-      
+      const { data: costTrackingResponse, error: costTrackingError } =
+        await supabase_service
+          .from("firecrawl_jobs")
+          .select("cost_tracking")
+          .eq("job_id", jobId);
+
       if (costTrackingError) {
         throw costTrackingError;
       }
-      
+
       costTracking = costTrackingResponse?.[0]?.cost_tracking;
     } else {
       costTracking = new CostTracking().toJSON();
@@ -135,7 +149,7 @@ async function scrapeX402SearchResult(
     if (error?.message?.includes("Could not scrape url")) {
       statusCode = 403;
     }
-    
+
     const document: Document = {
       title: searchResult.title,
       description: searchResult.description,
@@ -156,7 +170,7 @@ async function scrapeX402SearchResult(
 
 export async function x402SearchController(
   req: RequestWithAuth<{}, SearchResponse, SearchRequest>,
-  res: Response<SearchResponse & { request?: any; }>,
+  res: Response<SearchResponse & { request?: any }>,
 ) {
   const jobId = uuidv4();
   let logger = _logger.child({
@@ -166,21 +180,27 @@ export async function x402SearchController(
     method: "x402SearchController",
     zeroDataRetention: req.acuc?.flags?.forceZDR,
   });
-  
+
   if (req.acuc?.flags?.forceZDR) {
-    return res.status(400).json({ success: false, error: "Your team has zero data retention enabled. This is not supported on x402/search. Please contact support@firecrawl.com to unblock this feature." });
+    return res.status(400).json({
+      success: false,
+      error:
+        "Your team has zero data retention enabled. This is not supported on x402/search. Please contact support@firecrawl.com to unblock this feature.",
+    });
   }
-  
+
   let responseData: SearchResponse = {
     success: true,
     data: [],
   };
   const startTime = new Date().getTime();
-  const isSearchPreview = process.env.SEARCH_PREVIEW_TOKEN !== undefined && process.env.SEARCH_PREVIEW_TOKEN === req.body.__searchPreviewToken;
-  
+  const isSearchPreview =
+    process.env.SEARCH_PREVIEW_TOKEN !== undefined &&
+    process.env.SEARCH_PREVIEW_TOKEN === req.body.__searchPreviewToken;
+
   try {
     req.body = searchRequestSchema.parse(req.body);
-    
+
     // IMPORTANT NOTE: Force results to be at most 10 even if a larger limit is requested
     const MAX_RESULTS = 10;
     if (req.body.limit > MAX_RESULTS) {
@@ -213,11 +233,11 @@ export async function x402SearchController(
 
     if (req.body.ignoreInvalidURLs) {
       searchResults = searchResults.filter(
-        (result) => !isUrlBlocked(result.url, req.acuc?.flags ?? null),
+        result => !isUrlBlocked(result.url, req.acuc?.flags ?? null),
       );
     }
 
-          logger.info("Searching [x402] completed", {
+    logger.info("Searching [x402] completed", {
       num_results: searchResults.length,
     });
 
@@ -233,14 +253,14 @@ export async function x402SearchController(
       !req.body.scrapeOptions.formats ||
       req.body.scrapeOptions.formats.length === 0
     ) {
-      responseData.data = searchResults.map((r) => ({
+      responseData.data = searchResults.map(r => ({
         url: r.url,
         title: r.title,
         description: r.description,
       })) as Document[];
     } else {
       logger.info("Scraping search [x402] results");
-      const scrapePromises = searchResults.map((result) =>
+      const scrapePromises = searchResults.map(result =>
         scrapeX402SearchResult(
           result,
           {
@@ -264,7 +284,7 @@ export async function x402SearchController(
 
       const docs = docsWithCostTracking.map(item => item.document);
       const filteredDocs = docs.filter(
-        (doc) =>
+        doc =>
           doc.serpResults || (doc.markdown && doc.markdown.trim().length > 0),
       );
 
@@ -330,4 +350,4 @@ export async function x402SearchController(
       error: error.message,
     });
   }
-} 
+}

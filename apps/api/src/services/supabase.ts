@@ -51,44 +51,38 @@ const serv = new SupabaseService();
 
 // Using a Proxy to handle dynamic access to the Supabase client or service methods.
 // This approach ensures that if Supabase is not configured, any attempt to use it will result in a clear error.
-export const supabase_service: SupabaseClient = new Proxy(
-  serv,
-  {
-    get: function (target, prop, receiver) {
-      const client = target.getClient();
-      // If the Supabase client is not initialized, intercept property access to provide meaningful error feedback.
-      if (client === null) {
-        return () => {
-          throw new Error("Supabase client is not configured.");
-        };
-      }
-      // Direct access to SupabaseService properties takes precedence.
-      if (prop in target) {
-        return Reflect.get(target, prop, receiver);
-      }
-      // Otherwise, delegate access to the Supabase client.
-      return Reflect.get(client, prop, receiver);
-    },
+export const supabase_service: SupabaseClient = new Proxy(serv, {
+  get: function (target, prop, receiver) {
+    const client = target.getClient();
+    // If the Supabase client is not initialized, intercept property access to provide meaningful error feedback.
+    if (client === null) {
+      return () => {
+        throw new Error("Supabase client is not configured.");
+      };
+    }
+    // Direct access to SupabaseService properties takes precedence.
+    if (prop in target) {
+      return Reflect.get(target, prop, receiver);
+    }
+    // Otherwise, delegate access to the Supabase client.
+    return Reflect.get(client, prop, receiver);
   },
-) as unknown as SupabaseClient;
+}) as unknown as SupabaseClient;
 
-export const supabase_rr_service: SupabaseClient = new Proxy(
-  serv,
-  {
-    get: function (target, prop, receiver) {
-      const client = target.getRRClient();
-      // If the Supabase client is not initialized, intercept property access to provide meaningful error feedback.
-      if (client === null) {
-        return () => {
-          throw new Error("Supabase RR client is not configured.");
-        };
-      }
-      // Direct access to SupabaseService properties takes precedence.
-      if (prop in target) {
-        return Reflect.get(target, prop, receiver);
-      }
-      // Otherwise, delegate access to the Supabase client.
-      return Reflect.get(client, prop, receiver);
-    },
+export const supabase_rr_service: SupabaseClient = new Proxy(serv, {
+  get: function (target, prop, receiver) {
+    const client = target.getRRClient();
+    // If the Supabase client is not initialized, intercept property access to provide meaningful error feedback.
+    if (client === null) {
+      return () => {
+        throw new Error("Supabase RR client is not configured.");
+      };
+    }
+    // Direct access to SupabaseService properties takes precedence.
+    if (prop in target) {
+      return Reflect.get(target, prop, receiver);
+    }
+    // Otherwise, delegate access to the Supabase client.
+    return Reflect.get(client, prop, receiver);
   },
-) as unknown as SupabaseClient;
+}) as unknown as SupabaseClient;

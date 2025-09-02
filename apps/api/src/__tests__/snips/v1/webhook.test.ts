@@ -49,7 +49,7 @@
 
 //         // wait to settle the webhook calls
 //         await new Promise(resolve => setTimeout(resolve, 1000));
-        
+
 //         server.close();
 
 //         let hasStarted = false;
@@ -134,5 +134,5 @@
 // });
 
 it("mock test", () => {
-    expect(true).toBe(true);
+  expect(true).toBe(true);
 });

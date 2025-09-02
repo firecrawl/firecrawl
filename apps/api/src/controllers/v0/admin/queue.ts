@@ -31,7 +31,7 @@ export async function cleanBefore24hCompleteJobsController(
     ).flat();
     const before24hJobs =
       completedJobs.filter(
-        (job) =>
+        job =>
           job.finishedOn !== undefined &&
           job.finishedOn < Date.now() - 24 * 60 * 60 * 1000,
       ) || [];
@@ -117,7 +117,7 @@ export async function autoscalerController(req: Request, res: Response) {
 
     // Only worker machines
     const activeMachines = machines.filter(
-      (machine) =>
+      machine =>
         (machine.state === "started" ||
           machine.state === "starting" ||
           machine.state === "replacing") &&

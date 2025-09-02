@@ -47,7 +47,7 @@ type Message = ErrorMessage | CatchupMessage | DoneMessage | DocumentMessage;
 function send(ws: WebSocket, msg: Message) {
   if (ws.readyState === 1) {
     return new Promise((resolve, reject) => {
-      ws.send(JSON.stringify(msg), (err) => {
+      ws.send(JSON.stringify(msg), err => {
         if (err) reject(err);
         else resolve(null);
       });
@@ -86,23 +86,20 @@ async function crawlStatusWS(
       return close(ws, 1000, { type: "done" });
     }
 
-    const notDoneJobIDs = jobIDs.filter((x) => !doneJobIDs.includes(x));
+    const notDoneJobIDs = jobIDs.filter(x => !doneJobIDs.includes(x));
 
     const queue = getScrapeQueue();
 
     const jobStatuses = await Promise.all(
-      notDoneJobIDs.map(async (x) => [
-        x,
-        await queue.getJobState(x),
-      ]),
+      notDoneJobIDs.map(async x => [x, await queue.getJobState(x)]),
     );
     const newlyDoneJobIDs: string[] = jobStatuses
-      .filter((x) => x[1] === "completed" || x[1] === "failed")
-      .map((x) => x[0]);
+      .filter(x => x[1] === "completed" || x[1] === "failed")
+      .map(x => x[0]);
 
     const newlyDoneJobs: Job[] = (
-      await Promise.all(newlyDoneJobIDs.map((x) => getJob(x)))
-    ).filter((x) => x !== undefined) as Job[];
+      await Promise.all(newlyDoneJobIDs.map(x => getJob(x)))
+    ).filter(x => x !== undefined) as Job[];
 
     for (const job of newlyDoneJobs) {
       if (job.returnvalue) {
@@ -128,13 +125,11 @@ async function crawlStatusWS(
   const queue = getScrapeQueue();
 
   let jobStatuses = await Promise.all(
-    jobIDs.map(
-      async (x) => [x, await queue.getJobState(x)] as const,
-    ),
+    jobIDs.map(async x => [x, await queue.getJobState(x)] as const),
   );
 
   const throttledJobsSet = await getConcurrencyLimitedJobs(req.auth.team_id);
-  
+
   const validJobStatuses: [string, JobState | "unknown"][] = [];
   const validJobIDs: string[] = [];
 
@@ -142,10 +137,7 @@ async function crawlStatusWS(
     if (throttledJobsSet.has(id)) {
       validJobStatuses.push([id, "prioritized"]);
       validJobIDs.push(id);
-    } else if (
-      status !== "failed" &&
-      status !== "unknown"
-    ) {
+    } else if (status !== "failed" && status !== "unknown") {
       validJobStatuses.push([id, status]);
       validJobIDs.push(id);
     }
@@ -154,14 +146,14 @@ async function crawlStatusWS(
   const status: Exclude<CrawlStatusResponse, ErrorResponse>["status"] =
     sc.cancelled
       ? "cancelled"
-      : validJobStatuses.every((x) => x[1] === "completed")
+      : validJobStatuses.every(x => x[1] === "completed")
         ? "completed"
         : "scraping";
 
   jobIDs = validJobIDs; // Use validJobIDs instead of jobIDs for further processing
 
   const doneJobs = await getJobs(doneJobIDs);
-  const data = doneJobs.map((x) => x.returnvalue);
+  const data = doneJobs.map(x => x.returnvalue);
 
   await send(ws, {
     type: "catchup",

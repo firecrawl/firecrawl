@@ -13,12 +13,12 @@ describe("SourceTracker", () => {
       const extractionResults = [
         {
           extract: { products: [{ name: "Product 1", price: 10 }] },
-          url: "http://example1.com"
+          url: "http://example1.com",
         },
         {
           extract: { products: [{ name: "Product 2", price: 20 }] },
-          url: "http://example2.com"
-        }
+          url: "http://example2.com",
+        },
       ];
 
       const schema = {
@@ -30,19 +30,19 @@ describe("SourceTracker", () => {
               type: "object",
               properties: {
                 name: { type: "string" },
-                price: { type: "number" }
-              }
-            }
-          }
-        }
+                price: { type: "number" },
+              },
+            },
+          },
+        },
       };
 
       const result = sourceTracker.transformResults(extractionResults, schema);
       expect(result).toEqual({
         products: [
           { name: "Product 1", price: 10 },
-          { name: "Product 2", price: 20 }
-        ]
+          { name: "Product 2", price: 20 },
+        ],
       });
     });
 
@@ -56,20 +56,26 @@ describe("SourceTracker", () => {
             items: {
               type: "object",
               properties: {
-                id: { type: "number" }
-              }
-            }
-          }
-        }
+                id: { type: "number" },
+              },
+            },
+          },
+        },
       };
 
       const extractionResults1 = [
         { extract: { items: [{ id: 1 }] }, url: "url1" },
-        { extract: { items: [{ id: 2 }] }, url: "url2" }
+        { extract: { items: [{ id: 2 }] }, url: "url2" },
       ];
 
-      const originalResult1 = transformArrayToObject(schema1, extractionResults1.map(r => r.extract));
-      const newResult1 = sourceTracker.transformResults(extractionResults1, schema1);
+      const originalResult1 = transformArrayToObject(
+        schema1,
+        extractionResults1.map(r => r.extract),
+      );
+      const newResult1 = sourceTracker.transformResults(
+        extractionResults1,
+        schema1,
+      );
       expect(newResult1).toEqual(originalResult1);
 
       // Test case 2: Nested objects with arrays
@@ -87,41 +93,43 @@ describe("SourceTracker", () => {
                     id: { type: "number" },
                     variants: {
                       type: "array",
-                      items: { type: "string" }
-                    }
-                  }
-                }
-              }
-            }
-          }
-        }
+                      items: { type: "string" },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
       };
 
       const extractionResults2 = [
         {
           extract: {
             data: {
-              products: [
-                { id: 1, variants: ["a", "b"] }
-              ]
-            }
+              products: [{ id: 1, variants: ["a", "b"] }],
+            },
           },
-          url: "url1"
+          url: "url1",
         },
         {
           extract: {
             data: {
-              products: [
-                { id: 2, variants: ["c", "d"] }
-              ]
-            }
+              products: [{ id: 2, variants: ["c", "d"] }],
+            },
           },
-          url: "url2"
-        }
+          url: "url2",
+        },
       ];
 
-      const originalResult2 = transformArrayToObject(schema2, extractionResults2.map(r => r.extract));
-      const newResult2 = sourceTracker.transformResults(extractionResults2, schema2);
+      const originalResult2 = transformArrayToObject(
+        schema2,
+        extractionResults2.map(r => r.extract),
+      );
+      const newResult2 = sourceTracker.transformResults(
+        extractionResults2,
+        schema2,
+      );
       expect(newResult2).toEqual(originalResult2);
 
       // Test case 3: Empty arrays
@@ -135,17 +143,23 @@ describe("SourceTracker", () => {
         type: "object",
         properties: {
           name: { type: "string" },
-          count: { type: "number" }
-        }
+          count: { type: "number" },
+        },
       };
 
       const extractionResults4 = [
         { extract: { name: "test1", count: 1 }, url: "url1" },
-        { extract: { name: "test2", count: 2 }, url: "url2" }
+        { extract: { name: "test2", count: 2 }, url: "url2" },
       ];
 
-      const originalResult4 = transformArrayToObject(schema4, extractionResults4.map(r => r.extract));
-      const newResult4 = sourceTracker.transformResults(extractionResults4, schema4);
+      const originalResult4 = transformArrayToObject(
+        schema4,
+        extractionResults4.map(r => r.extract),
+      );
+      const newResult4 = sourceTracker.transformResults(
+        extractionResults4,
+        schema4,
+      );
       expect(newResult4).toEqual(originalResult4);
     });
   });
@@ -155,13 +169,19 @@ describe("SourceTracker", () => {
       // Setup initial data with mergeable items (same name, complementary fields)
       const extractionResults = [
         {
-          extract: { products: [{ name: "Product 1", price: 10, description: null }] },
-          url: "http://example1.com"
+          extract: {
+            products: [{ name: "Product 1", price: 10, description: null }],
+          },
+          url: "http://example1.com",
         },
         {
-          extract: { products: [{ name: "Product 1", price: null, description: "Great product" }] },
-          url: "http://example2.com"
-        }
+          extract: {
+            products: [
+              { name: "Product 1", price: null, description: "Great product" },
+            ],
+          },
+          url: "http://example2.com",
+        },
       ];
 
       const schema = {
@@ -174,29 +194,32 @@ describe("SourceTracker", () => {
               properties: {
                 name: { type: "string" },
                 price: { type: "number" },
-                description: { type: "string" }
-              }
-            }
-          }
-        }
+                description: { type: "string" },
+              },
+            },
+          },
+        },
       };
 
       // Transform results first
-      const multiEntityResult = sourceTracker.transformResults(extractionResults, schema);
+      const multiEntityResult = sourceTracker.transformResults(
+        extractionResults,
+        schema,
+      );
       sourceTracker.trackPreDeduplicationSources(multiEntityResult);
 
       // Test source mapping with a merged item that matches both sources
       const sources = sourceTracker.mapSourcesToFinalItems(
         {
           products: [
-            { name: "Product 1", price: 10, description: "Great product" }
-          ]
+            { name: "Product 1", price: 10, description: "Great product" },
+          ],
         },
-        ["products"]
+        ["products"],
       );
 
       expect(sources).toEqual({
-        "products[0]": ["http://example1.com", "http://example2.com"]
+        "products[0]": ["http://example1.com", "http://example2.com"],
       });
     });
 
@@ -208,7 +231,7 @@ describe("SourceTracker", () => {
     it("should handle non-array properties", () => {
       const sources = sourceTracker.mapSourcesToFinalItems(
         { nonArray: "value" } as any,
-        ["nonArray"]
+        ["nonArray"],
       );
       expect(sources).toEqual({});
     });
@@ -219,12 +242,12 @@ describe("SourceTracker", () => {
       const extractionResults = [
         {
           extract: { products: [{ id: 1, name: "Product 1" }] },
-          url: "http://example1.com"
+          url: "http://example1.com",
         },
         {
           extract: { products: [{ id: 1, name: "Product 1" }] },
-          url: "http://example2.com"
-        }
+          url: "http://example2.com",
+        },
       ];
 
       const schema = {
@@ -236,27 +259,30 @@ describe("SourceTracker", () => {
               type: "object",
               properties: {
                 id: { type: "number" },
-                name: { type: "string" }
-              }
-            }
-          }
-        }
+                name: { type: "string" },
+              },
+            },
+          },
+        },
       };
 
-      const multiEntityResult = sourceTracker.transformResults(extractionResults, schema);
+      const multiEntityResult = sourceTracker.transformResults(
+        extractionResults,
+        schema,
+      );
       sourceTracker.trackPreDeduplicationSources(multiEntityResult);
 
       // Test source mapping after deduplication
       const sources = sourceTracker.mapSourcesToFinalItems(
         {
-          products: [{ id: 1, name: "Product 1" }]
+          products: [{ id: 1, name: "Product 1" }],
         },
-        ["products"]
+        ["products"],
       );
 
       expect(sources).toEqual({
-        "products[0]": ["http://example1.com", "http://example2.com"]
+        "products[0]": ["http://example1.com", "http://example2.com"],
       });
     });
   });
-}); 
+});

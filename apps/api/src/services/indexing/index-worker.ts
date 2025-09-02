@@ -9,12 +9,26 @@ import {
   getPrecrawlQueue,
   precrawlQueueName,
 } from "../queue-service";
-import { processBillingBatch, queueBillingOperation, startBillingBatchProcessing } from "../billing/batch_billing";
+import {
+  processBillingBatch,
+  queueBillingOperation,
+  startBillingBatchProcessing,
+} from "../billing/batch_billing";
 import systemMonitor from "../system-monitor";
 import { v4 as uuidv4 } from "uuid";
-import { index_supabase_service, processIndexInsertJobs, processIndexRFInsertJobs, processOMCEJobs, processDomainFrequencyJobs } from "..";
+import {
+  index_supabase_service,
+  processIndexInsertJobs,
+  processIndexRFInsertJobs,
+  processOMCEJobs,
+  processDomainFrequencyJobs,
+} from "..";
 import { processWebhookInsertJobs } from "../webhook";
-import { scrapeOptions as scrapeOptionsSchema, crawlRequestSchema, toV0CrawlerOptions } from "../../controllers/v2/types";
+import {
+  scrapeOptions as scrapeOptionsSchema,
+  crawlRequestSchema,
+  toV0CrawlerOptions,
+} from "../../controllers/v2/types";
 import { StoredCrawl, crawlToCrawler, saveCrawl } from "../../lib/crawl-redis";
 import { _addScrapeJobToBullMQ } from "../queue-jobs";
 import { BullMQOtel } from "bullmq-otel";
@@ -61,20 +75,27 @@ const processBillingJobInternal = async (token: string, job: Job) => {
       await processBillingBatch();
     } else if (job.name === "bill_team") {
       // This is an individual billing operation that should be queued for batch processing
-      const { team_id, subscription_id, credits, is_extract, api_key_id } = job.data;
-      
+      const { team_id, subscription_id, credits, is_extract, api_key_id } =
+        job.data;
+
       logger.info(`Adding team ${team_id} billing operation to batch queue`, {
         credits,
         is_extract,
         originating_job_id: job.data.originating_job_id,
       });
-      
-      // Add to the REDIS batch queue 
-      await queueBillingOperation(team_id, subscription_id, credits, api_key_id ?? null, is_extract);
+
+      // Add to the REDIS batch queue
+      await queueBillingOperation(
+        team_id,
+        subscription_id,
+        credits,
+        api_key_id ?? null,
+        is_extract,
+      );
     } else {
       logger.warn(`Unknown billing job type: ${job.name}`);
     }
-    
+
     await job.moveToCompleted({ success: true }, token, false);
   } catch (error) {
     logger.error("Error processing billing job", { error });
@@ -103,9 +124,14 @@ const processPrecrawlJobInternal = async (token: string, job: Job) => {
 
   try {
     const budget = 100000;
-    const { data, error } = await index_supabase_service.rpc("precrawl_get_top_domains", {
-      i_newer_than: new Date(Date.now() - 1000 * 60 * 60 * 24 * 7).toISOString(),
-    });
+    const { data, error } = await index_supabase_service.rpc(
+      "precrawl_get_top_domains",
+      {
+        i_newer_than: new Date(
+          Date.now() - 1000 * 60 * 60 * 24 * 7,
+        ).toISOString(),
+      },
+    );
 
     if (error) {
       logger.error("Error getting top domains", { error });
@@ -122,9 +148,14 @@ const processPrecrawlJobInternal = async (token: string, job: Job) => {
 
         const url = urlObj.toString();
 
-        const limit = Math.round(item.count / total_hits * budget);
+        const limit = Math.round((item.count / total_hits) * budget);
 
-        logger.info("Running pre-crawl", { url, limit, hits: item.count, budget });
+        logger.info("Running pre-crawl", {
+          url,
+          limit,
+          hits: item.count,
+          budget,
+        });
 
         const crawlerOptions = {
           ...crawlRequestSchema.parse({ url, limit }),
@@ -132,7 +163,7 @@ const processPrecrawlJobInternal = async (token: string, job: Job) => {
           scrapeOptions: undefined,
         };
         const scrapeOptions = scrapeOptionsSchema.parse({});
-      
+
         const sc: StoredCrawl = {
           originUrl: url,
           crawlerOptions: toV0CrawlerOptions(crawlerOptions),
@@ -140,7 +171,9 @@ const processPrecrawlJobInternal = async (token: string, job: Job) => {
           internalOptions: {
             disableSmartWaitCache: true,
             teamId,
-            saveScrapeResultToGCS: process.env.GCS_FIRE_ENGINE_BUCKET_NAME ? true : false,
+            saveScrapeResultToGCS: process.env.GCS_FIRE_ENGINE_BUCKET_NAME
+              ? true
+              : false,
             zeroDataRetention: true,
           }, // NOTE: smart wait disabled for crawls to ensure contentful scrape, speed does not matter
           team_id: teamId,
@@ -150,11 +183,13 @@ const processPrecrawlJobInternal = async (token: string, job: Job) => {
         };
 
         const crawlId = uuidv4();
-      
+
         const crawler = crawlToCrawler(crawlId, sc, null);
-      
+
         try {
-          sc.robots = await crawler.getRobotsTxt(scrapeOptions.skipTlsVerification);
+          sc.robots = await crawler.getRobotsTxt(
+            scrapeOptions.skipTlsVerification,
+          );
           const robotsCrawlDelay = crawler.getRobotsCrawlDelay();
           if (robotsCrawlDelay !== null && !sc.crawlerOptions.delay) {
             sc.crawlerOptions.delay = robotsCrawlDelay;
@@ -164,9 +199,9 @@ const processPrecrawlJobInternal = async (token: string, job: Job) => {
             error: e,
           });
         }
-      
+
         await saveCrawl(crawlId, sc);
-      
+
         await _addScrapeJobToBullMQ(
           {
             url: url,
@@ -188,7 +223,9 @@ const processPrecrawlJobInternal = async (token: string, job: Job) => {
           10,
         );
       } catch (e) {
-        logger.error("Error processing one cycle of the precrawl job", { error: e });
+        logger.error("Error processing one cycle of the precrawl job", {
+          error: e,
+        });
       }
     }
 
@@ -216,7 +253,10 @@ process.on("SIGTERM", () => {
 let cantAcceptConnectionCount = 0;
 
 // Generic worker function that can process different job types
-const workerFun = async (queue: Queue, jobProcessor: (token: string, job: Job) => Promise<any>) => {
+const workerFun = async (
+  queue: Queue,
+  jobProcessor: (token: string, job: Job) => Promise<any>,
+) => {
   const logger = _logger.child({ module: "index-worker", method: "workerFun" });
 
   const worker = new Worker(queue.name, null, {
@@ -252,7 +292,7 @@ const workerFun = async (queue: Queue, jobProcessor: (token: string, job: Job) =
         });
       }
 
-      await new Promise((resolve) =>
+      await new Promise(resolve =>
         setTimeout(resolve, cantAcceptConnectionInterval),
       );
       continue;
@@ -272,9 +312,9 @@ const workerFun = async (queue: Queue, jobProcessor: (token: string, job: Job) =
         runningJobs.delete(job.id);
       }
 
-      await new Promise((resolve) => setTimeout(resolve, gotJobInterval));
+      await new Promise(resolve => setTimeout(resolve, gotJobInterval));
     } else {
-      await new Promise((resolve) =>
+      await new Promise(resolve =>
         setTimeout(resolve, connectionMonitorInterval),
       );
     }
@@ -282,7 +322,7 @@ const workerFun = async (queue: Queue, jobProcessor: (token: string, job: Job) =
 
   logger.info("Worker loop ended. Waiting for running jobs to finish...");
   while (runningJobs.size > 0) {
-    await new Promise((resolve) => setTimeout(resolve, 500));
+    await new Promise(resolve => setTimeout(resolve, 500));
   }
   logger.info("All jobs finished. Worker exiting!");
   process.exit(0);
@@ -297,16 +337,21 @@ const DOMAIN_FREQUENCY_INTERVAL = 10000;
 (async () => {
   // Start billing worker and batch processing
   startBillingBatchProcessing();
-  const billingWorkerPromise = workerFun(getBillingQueue(), processBillingJobInternal);
+  const billingWorkerPromise = workerFun(
+    getBillingQueue(),
+    processBillingJobInternal,
+  );
   const precrawlWorkerPromise = process.env.PRECRAWL_TEAM_ID
     ? workerFun(getPrecrawlQueue(), processPrecrawlJobInternal)
-    : (async () => { logger.warn("PRECRAWL_TEAM_ID not set, skipping precrawl worker"); })();
+    : (async () => {
+        logger.warn("PRECRAWL_TEAM_ID not set, skipping precrawl worker");
+      })();
 
   const indexInserterInterval = setInterval(async () => {
     if (isShuttingDown) {
       return;
     }
-    
+
     await processIndexInsertJobs();
   }, INDEX_INSERT_INTERVAL);
 

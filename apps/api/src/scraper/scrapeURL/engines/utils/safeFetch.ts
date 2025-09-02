@@ -50,7 +50,7 @@ export function makeSecureDispatcher(skipTlsVerification: boolean) {
   agent.on("connect", (_, targets) => {
     const client: undici.Client = targets.slice(-1)[0] as undici.Client;
     const socketSymbol = Object.getOwnPropertySymbols(client).find(
-      (x) => x.description === "socket",
+      x => x.description === "socket",
     )!;
     const socket: Socket | TLSSocket = (client as any)[socketSymbol];
 

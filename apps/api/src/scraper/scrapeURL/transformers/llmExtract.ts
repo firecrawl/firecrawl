@@ -76,15 +76,15 @@ function normalizeSchema(x: any): any {
   }
 
   if (x && x.anyOf) {
-    x.anyOf = x.anyOf.map((x) => normalizeSchema(x));
+    x.anyOf = x.anyOf.map(x => normalizeSchema(x));
   }
 
   if (x && x.oneOf) {
-    x.oneOf = x.oneOf.map((x) => normalizeSchema(x));
+    x.oneOf = x.oneOf.map(x => normalizeSchema(x));
   }
 
   if (x && x.allOf) {
-    x.allOf = x.allOf.map((x) => normalizeSchema(x));
+    x.allOf = x.allOf.map(x => normalizeSchema(x));
   }
 
   if (x && x.not) {
@@ -201,9 +201,7 @@ export function calculateCost(
   };
   let modelCost = modelCosts[model] || { input_cost: 0, output_cost: 0 };
   //gemini-2.5-pro-exp-03-25 pricing
-  if (
-    model.includes("gemini-2.5-pro")
-  ) {
+  if (model.includes("gemini-2.5-pro")) {
     let inputCost = 0;
     let outputCost = 0;
     if (inputTokens <= 200000) {
@@ -240,7 +238,14 @@ export type GenerateCompletionsOptions = {
     costTracking: CostTracking;
     metadata: Record<string, any>;
   };
-  metadata: { teamId: string, functionId?: string, extractId?: string, scrapeId?: string, deepResearchId?: string, llmsTxtId?: string };
+  metadata: {
+    teamId: string;
+    functionId?: string;
+    extractId?: string;
+    scrapeId?: string;
+    deepResearchId?: string;
+    llmsTxtId?: string;
+  };
 };
 export async function generateCompletions({
   logger,
@@ -294,18 +299,40 @@ export async function generateCompletions({
                 scrapeId: metadata.scrapeId ?? "unspecified",
                 deepResearchId: metadata.deepResearchId ?? "unspecified",
                 llmsTxtId: metadata.llmsTxtId ?? "unspecified",
-              }
-            }
+              },
+            },
           },
           experimental_telemetry: {
             isEnabled: true,
-            functionId: metadata.functionId ? (metadata.functionId + "/generateText") : "generateText",
+            functionId: metadata.functionId
+              ? metadata.functionId + "/generateText"
+              : "generateText",
             metadata: {
               teamId: metadata.teamId,
-              ...(metadata.extractId ? { langfuseTraceId: "extract:" + metadata.extractId, extractId: metadata.extractId } : {}),
-              ...(metadata.scrapeId ? { langfuseTraceId: "scrape:" + metadata.scrapeId, scrapeId: metadata.scrapeId } : {}),
-              ...(metadata.deepResearchId ? { langfuseTraceId: "deepResearch:" + metadata.deepResearchId, deepResearchId: metadata.deepResearchId } : {}),
-              ...(metadata.llmsTxtId ? { langfuseTraceId: "llmsTxt:" + metadata.llmsTxtId, llmsTxtId: metadata.llmsTxtId } : {}),
+              ...(metadata.extractId
+                ? {
+                    langfuseTraceId: "extract:" + metadata.extractId,
+                    extractId: metadata.extractId,
+                  }
+                : {}),
+              ...(metadata.scrapeId
+                ? {
+                    langfuseTraceId: "scrape:" + metadata.scrapeId,
+                    scrapeId: metadata.scrapeId,
+                  }
+                : {}),
+              ...(metadata.deepResearchId
+                ? {
+                    langfuseTraceId: "deepResearch:" + metadata.deepResearchId,
+                    deepResearchId: metadata.deepResearchId,
+                  }
+                : {}),
+              ...(metadata.llmsTxtId
+                ? {
+                    langfuseTraceId: "llmsTxt:" + metadata.llmsTxtId,
+                    llmsTxtId: metadata.llmsTxtId,
+                  }
+                : {}),
             },
           },
         });
@@ -325,7 +352,7 @@ export async function generateCompletions({
           tokens: {
             input: result.usage?.promptTokens ?? 0,
             output: result.usage?.completionTokens ?? 0,
-          }
+          },
         });
 
         extract = result.text;
@@ -337,7 +364,9 @@ export async function generateCompletions({
           totalUsage: {
             promptTokens: result.usage?.promptTokens ?? 0,
             completionTokens: result.usage?.completionTokens ?? 0,
-            totalTokens: result.usage?.promptTokens ?? 0 + (result.usage?.completionTokens ?? 0),
+            totalTokens:
+              result.usage?.promptTokens ??
+              0 + (result.usage?.completionTokens ?? 0),
           },
           model: currentModel.modelId,
         };
@@ -369,19 +398,42 @@ export async function generateCompletions({
                     scrapeId: metadata.scrapeId ?? "unspecified",
                     deepResearchId: metadata.deepResearchId ?? "unspecified",
                     llmsTxtId: metadata.llmsTxtId ?? "unspecified",
-                  }
-                }
+                  },
+                },
               },
               experimental_telemetry: {
                 isEnabled: true,
-                functionId: metadata.functionId ? (metadata.functionId + "/generateText") : "generateText",
+                functionId: metadata.functionId
+                  ? metadata.functionId + "/generateText"
+                  : "generateText",
                 metadata: {
                   teamId: metadata.teamId,
-                  ...(metadata.extractId ? { langfuseTraceId: "extract:" + metadata.extractId, extractId: metadata.extractId } : {}),
-                  ...(metadata.scrapeId ? { langfuseTraceId: "scrape:" + metadata.scrapeId, scrapeId: metadata.scrapeId } : {}),
-                  ...(metadata.deepResearchId ? { langfuseTraceId: "deepResearch:" + metadata.deepResearchId, deepResearchId: metadata.deepResearchId } : {}),
-                  ...(metadata.llmsTxtId ? { langfuseTraceId: "llmsTxt:" + metadata.llmsTxtId, llmsTxtId: metadata.llmsTxtId } : {}),
-                }
+                  ...(metadata.extractId
+                    ? {
+                        langfuseTraceId: "extract:" + metadata.extractId,
+                        extractId: metadata.extractId,
+                      }
+                    : {}),
+                  ...(metadata.scrapeId
+                    ? {
+                        langfuseTraceId: "scrape:" + metadata.scrapeId,
+                        scrapeId: metadata.scrapeId,
+                      }
+                    : {}),
+                  ...(metadata.deepResearchId
+                    ? {
+                        langfuseTraceId:
+                          "deepResearch:" + metadata.deepResearchId,
+                        deepResearchId: metadata.deepResearchId,
+                      }
+                    : {}),
+                  ...(metadata.llmsTxtId
+                    ? {
+                        langfuseTraceId: "llmsTxt:" + metadata.llmsTxtId,
+                        llmsTxtId: metadata.llmsTxtId,
+                      }
+                    : {}),
+                },
               },
             });
 
@@ -402,7 +454,7 @@ export async function generateCompletions({
               tokens: {
                 input: result.usage?.promptTokens ?? 0,
                 output: result.usage?.completionTokens ?? 0,
-              }
+              },
             });
 
             return {
@@ -412,7 +464,9 @@ export async function generateCompletions({
               totalUsage: {
                 promptTokens: result.usage?.promptTokens ?? 0,
                 completionTokens: result.usage?.completionTokens ?? 0,
-                totalTokens: result.usage?.promptTokens ?? 0 + (result.usage?.completionTokens ?? 0),
+                totalTokens:
+                  result.usage?.promptTokens ??
+                  0 + (result.usage?.completionTokens ?? 0),
               },
               model: currentModel.modelId,
             };
@@ -465,7 +519,11 @@ export async function generateCompletions({
     const repairConfig = {
       experimental_repairText: async ({ text, error }) => {
         // AI may output a markdown JSON code block. Remove it - mogery
-        logger.debug("Repairing text", { textType: typeof text, textPeek: JSON.stringify(text).slice(0, 100) + "...", error });
+        logger.debug("Repairing text", {
+          textType: typeof text,
+          textPeek: JSON.stringify(text).slice(0, 100) + "...",
+          error,
+        });
 
         if (typeof text === "string" && text.trim().startsWith("```")) {
           if (text.trim().startsWith("```json")) {
@@ -484,7 +542,9 @@ export async function generateCompletions({
             logger.debug("Repaired text with string manipulation");
             return text;
           } catch (e) {
-            logger.error("Even after repairing, failed to parse JSON", { error: e });
+            logger.error("Even after repairing, failed to parse JSON", {
+              error: e,
+            });
           }
         }
 
@@ -506,18 +566,41 @@ export async function generateCompletions({
                   scrapeId: metadata.scrapeId ?? "unspecified",
                   deepResearchId: metadata.deepResearchId ?? "unspecified",
                   llmsTxtId: metadata.llmsTxtId ?? "unspecified",
-                }
-              }
+                },
+              },
             },
             experimental_telemetry: {
               isEnabled: true,
-              functionId: metadata.functionId ? (metadata.functionId + "/repairText") : "repairText",
+              functionId: metadata.functionId
+                ? metadata.functionId + "/repairText"
+                : "repairText",
               metadata: {
                 teamId: metadata.teamId,
-                ...(metadata.extractId ? { langfuseTraceId: "extract:" + metadata.extractId, extractId: metadata.extractId } : {}),
-                ...(metadata.scrapeId ? { langfuseTraceId: "scrape:" + metadata.scrapeId, scrapeId: metadata.scrapeId } : {}),
-                ...(metadata.deepResearchId ? { langfuseTraceId: "deepResearch:" + metadata.deepResearchId, deepResearchId: metadata.deepResearchId } : {}),
-                ...(metadata.llmsTxtId ? { langfuseTraceId: "llmsTxt:" + metadata.llmsTxtId, llmsTxtId: metadata.llmsTxtId } : {}),
+                ...(metadata.extractId
+                  ? {
+                      langfuseTraceId: "extract:" + metadata.extractId,
+                      extractId: metadata.extractId,
+                    }
+                  : {}),
+                ...(metadata.scrapeId
+                  ? {
+                      langfuseTraceId: "scrape:" + metadata.scrapeId,
+                      scrapeId: metadata.scrapeId,
+                    }
+                  : {}),
+                ...(metadata.deepResearchId
+                  ? {
+                      langfuseTraceId:
+                        "deepResearch:" + metadata.deepResearchId,
+                      deepResearchId: metadata.deepResearchId,
+                    }
+                  : {}),
+                ...(metadata.llmsTxtId
+                  ? {
+                      langfuseTraceId: "llmsTxt:" + metadata.llmsTxtId,
+                      llmsTxtId: metadata.llmsTxtId,
+                    }
+                  : {}),
               },
             },
           });
@@ -564,8 +647,8 @@ export async function generateCompletions({
             scrapeId: metadata.scrapeId ?? "unspecified",
             deepResearchId: metadata.deepResearchId ?? "unspecified",
             llmsTxtId: metadata.llmsTxtId ?? "unspecified",
-          }
-        }
+          },
+        },
       },
       system: options.systemPrompt,
       ...(schema && {
@@ -584,12 +667,32 @@ export async function generateCompletions({
         functionId: metadata.functionId,
         metadata: {
           teamId: metadata.teamId,
-          ...(metadata.extractId ? { langfuseTraceId: "extract:" + metadata.extractId, extractId: metadata.extractId } : {}),
-          ...(metadata.scrapeId ? { langfuseTraceId: "scrape:" + metadata.scrapeId, scrapeId: metadata.scrapeId } : {}),
-          ...(metadata.deepResearchId ? { langfuseTraceId: "deepResearch:" + metadata.deepResearchId, deepResearchId: metadata.deepResearchId } : {}),
-          ...(metadata.llmsTxtId ? { langfuseTraceId: "llmsTxt:" + metadata.llmsTxtId, llmsTxtId: metadata.llmsTxtId } : {}),
-        }
-      }
+          ...(metadata.extractId
+            ? {
+                langfuseTraceId: "extract:" + metadata.extractId,
+                extractId: metadata.extractId,
+              }
+            : {}),
+          ...(metadata.scrapeId
+            ? {
+                langfuseTraceId: "scrape:" + metadata.scrapeId,
+                scrapeId: metadata.scrapeId,
+              }
+            : {}),
+          ...(metadata.deepResearchId
+            ? {
+                langfuseTraceId: "deepResearch:" + metadata.deepResearchId,
+                deepResearchId: metadata.deepResearchId,
+              }
+            : {}),
+          ...(metadata.llmsTxtId
+            ? {
+                langfuseTraceId: "llmsTxt:" + metadata.llmsTxtId,
+                llmsTxtId: metadata.llmsTxtId,
+              }
+            : {}),
+        },
+      },
     } satisfies Parameters<typeof generateObject>[0];
 
     // const now = new Date().getTime();
@@ -598,11 +701,15 @@ export async function generateCompletions({
     //   JSON.stringify(generateObjectConfig, null, 2),
     // );
 
-    logger.debug("Generating object...", { generateObjectConfig: {
-      ...generateObjectConfig,
-      prompt: generateObjectConfig.prompt.slice(0, 100) + "...",
-      system: generateObjectConfig.system?.slice(0, 100) + "...",
-    }, model, retryModel });
+    logger.debug("Generating object...", {
+      generateObjectConfig: {
+        ...generateObjectConfig,
+        prompt: generateObjectConfig.prompt.slice(0, 100) + "...",
+        system: generateObjectConfig.system?.slice(0, 100) + "...",
+      },
+      model,
+      retryModel,
+    });
 
     let result: { object: any; usage: TokenUsage } | undefined;
     try {
@@ -748,19 +855,23 @@ export async function performLLMExtract(
   document: Document,
 ): Promise<Document> {
   const jsonFormat = hasFormatOfType(meta.options.formats, "json");
-  
+
   // Debug logging for v1 format investigation
   if (meta.internalOptions.v1OriginalFormat) {
     meta.logger.debug("performLLMExtract v1 format debug", {
       v1OriginalFormat: meta.internalOptions.v1OriginalFormat,
       hasJsonFormat: !!jsonFormat,
-      formats: meta.options.formats.map(f => typeof f === "object" ? f.type : f)
+      formats: meta.options.formats.map(f =>
+        typeof f === "object" ? f.type : f,
+      ),
     });
   }
-  
+
   if (jsonFormat) {
     if (meta.internalOptions.zeroDataRetention) {
-      document.warning = "JSON mode is not supported with zero data retention." + (document.warning ? " " + document.warning : "")
+      document.warning =
+        "JSON mode is not supported with zero data retention." +
+        (document.warning ? " " + document.warning : "");
       return document;
     }
 
@@ -783,13 +894,15 @@ export async function performLLMExtract(
       // model: getModel("gemini-2.5-pro-preview-03-25", "vertex"),
       // model: getModel("gpt-4o-mini", "openai"),
       // retryModel: getModel("gpt-4o", "openai"),
-      ...(process.env.VERTEX_CREDENTIALS ? ({
-        model: getModel("gemini-2.5-flash-lite", "vertex"),
-        retryModel: getModel("gpt-4o-mini", "openai")
-      }) : ({
-        model: getModel("gpt-4o-mini", "openai"),
-        retryModel: getModel("gpt-4o", "openai"),
-      })),
+      ...(process.env.VERTEX_CREDENTIALS
+        ? {
+            model: getModel("gemini-2.5-flash-lite", "vertex"),
+            retryModel: getModel("gpt-4o-mini", "openai"),
+          }
+        : {
+            model: getModel("gpt-4o-mini", "openai"),
+            retryModel: getModel("gpt-4o", "openai"),
+          }),
       costTrackingOptions: {
         costTracking: meta.costTracking,
         metadata: {
@@ -808,7 +921,9 @@ export async function performLLMExtract(
       await extractData({
         extractOptions: generationOptions,
         urls: [meta.rewrittenUrl ?? meta.url],
-        useAgent: isAgentExtractModelValid(meta.internalOptions.v1JSONAgent?.model),
+        useAgent: isAgentExtractModelValid(
+          meta.internalOptions.v1JSONAgent?.model,
+        ),
         scrapeId: meta.id,
         metadata: {
           teamId: meta.internalOptions.teamId,
@@ -817,7 +932,8 @@ export async function performLLMExtract(
       });
 
     if (warning) {
-      document.warning = warning + (document.warning ? " " + document.warning : "");
+      document.warning =
+        warning + (document.warning ? " " + document.warning : "");
     }
 
     // IMPORTANT: here it only get's the last page!!!
@@ -900,10 +1016,14 @@ export async function performLLMExtract(
     meta.logger.debug("Assigning extracted data", {
       v1OriginalFormat: meta.internalOptions.v1OriginalFormat,
       hasExtractedData: !!extractedData,
-      assigningTo: meta.internalOptions.v1OriginalFormat === "extract" ? "extract" : 
-                   meta.internalOptions.v1OriginalFormat === "json" ? "json" : "json (default)"
+      assigningTo:
+        meta.internalOptions.v1OriginalFormat === "extract"
+          ? "extract"
+          : meta.internalOptions.v1OriginalFormat === "json"
+            ? "json"
+            : "json (default)",
     });
-    
+
     if (meta.internalOptions.v1OriginalFormat === "extract") {
       document.extract = extractedData;
     } else if (meta.internalOptions.v1OriginalFormat === "json") {
@@ -924,7 +1044,9 @@ export async function performSummary(
 ): Promise<Document> {
   if (hasFormatOfType(meta.options.formats, "summary")) {
     if (meta.internalOptions.zeroDataRetention) {
-      document.warning = "Summary mode is not supported with zero data retention." + (document.warning ? " " + document.warning : "")
+      document.warning =
+        "Summary mode is not supported with zero data retention." +
+        (document.warning ? " " + document.warning : "");
       return document;
     }
 
@@ -933,7 +1055,8 @@ export async function performSummary(
         method: "performSummary/generateCompletions",
       }),
       options: {
-        systemPrompt: "You are a content summarization expert. Analyze the provided content and create a concise, informative summary that captures the key points, main ideas, and essential information. Focus on clarity and brevity while maintaining accuracy.",
+        systemPrompt:
+          "You are a content summarization expert. Analyze the provided content and create a concise, informative summary that captures the key points, main ideas, and essential information. Focus on clarity and brevity while maintaining accuracy.",
         prompt: "Summarize the main content and key points from this page.",
         schema: {
           type: "object",
@@ -943,7 +1066,7 @@ export async function performSummary(
             },
           },
           required: ["summary"],
-        }
+        },
       },
       markdown: document.markdown,
       previousWarning: document.warning,
@@ -960,18 +1083,15 @@ export async function performSummary(
         teamId: meta.internalOptions.teamId,
         functionId: "performSummary",
         scrapeId: meta.id,
-      }
+      },
     };
 
-    const {
-      extract,
-      warning,
-      totalUsage,
-      model,
-    } = await generateCompletions(generationOptions);
+    const { extract, warning, totalUsage, model } =
+      await generateCompletions(generationOptions);
 
     if (warning) {
-      document.warning = warning + (document.warning ? " " + document.warning : "");
+      document.warning =
+        warning + (document.warning ? " " + document.warning : "");
     }
 
     meta.logger.info("LLM summary generation token usage", {
@@ -1037,7 +1157,12 @@ export async function generateSchemaFromPrompt(
   prompt: string,
   logger: Logger,
   costTracking: CostTracking,
-  metadata: { teamId: string, functionId?: string, extractId?: string, scrapeId?: string },
+  metadata: {
+    teamId: string;
+    functionId?: string;
+    extractId?: string;
+    scrapeId?: string;
+  },
 ): Promise<{ extract: any }> {
   const model = getModel("gpt-4o", "openai");
   const retryModel = getModel("gpt-4o-mini", "openai");
@@ -1091,7 +1216,9 @@ Return a valid JSON schema object with properties that would capture the informa
         },
         metadata: {
           ...metadata,
-          functionId: metadata.functionId ? (metadata.functionId + "/generateSchemaFromPrompt") : "generateSchemaFromPrompt",
+          functionId: metadata.functionId
+            ? metadata.functionId + "/generateSchemaFromPrompt"
+            : "generateSchemaFromPrompt",
         },
       });
 
@@ -1113,7 +1240,7 @@ export async function generateCrawlerOptionsFromPrompt(
   prompt: string,
   logger: Logger,
   costTracking: CostTracking,
-  metadata: { teamId: string, crawlId?: string },
+  metadata: { teamId: string; crawlId?: string },
 ): Promise<{ extract: any }> {
   const model = getModel("gpt-4o", "openai");
   const retryModel = getModel("gpt-4o-mini", "openai");
@@ -1159,7 +1286,7 @@ Return a JSON object with only the relevant options for the user's request. Don'
         metadata: {
           ...metadata,
           functionId: "generateCrawlerOptionsFromPrompt",
-        }
+        },
       });
 
       return { extract };

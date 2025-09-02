@@ -1,15 +1,9 @@
 import { Job } from "bullmq";
-import {
-  WebScraperOptions,
-  RunWebScraperParams,
-} from "../types";
+import { WebScraperOptions, RunWebScraperParams } from "../types";
 import { supabase_service } from "../services/supabase";
 import { logger as _logger } from "../lib/logger";
 import { configDotenv } from "dotenv";
-import {
-  scrapeURL,
-  ScrapeUrlResponse,
-} from "../scraper/scrapeURL";
+import { scrapeURL, ScrapeUrlResponse } from "../scraper/scrapeURL";
 import { CostTracking } from "../lib/extract/extraction-service";
 configDotenv();
 
@@ -27,7 +21,9 @@ export async function startWebScraperPipeline({
       ...job.data.scrapeOptions,
       ...(job.data.crawl_id
         ? {
-            formats: job.data.scrapeOptions.formats.concat([{ type: "rawHtml" }]),
+            formats: job.data.scrapeOptions.formats.concat([
+              { type: "rawHtml" },
+            ]),
           }
         : {}),
     },
@@ -41,7 +37,8 @@ export async function startWebScraperPipeline({
     priority: job.opts.priority,
     is_scrape: job.data.is_scrape ?? false,
     is_crawl: !!(job.data.crawl_id && job.data.crawlerOptions !== null),
-    urlInvisibleInCurrentCrawl: job.data.crawlerOptions?.urlInvisibleInCurrentCrawl ?? false,
+    urlInvisibleInCurrentCrawl:
+      job.data.crawlerOptions?.urlInvisibleInCurrentCrawl ?? false,
     costTracking,
   });
 }
@@ -88,12 +85,18 @@ export async function runWebScraper({
 
     try {
       logger.info("running scrapeURL...");
-      response = await scrapeURL(bull_job_id, url, scrapeOptions, {
-        priority,
-        ...internalOptions,
-        urlInvisibleInCurrentCrawl,
-        teamId: internalOptions?.teamId ?? team_id,
-      }, costTracking);
+      response = await scrapeURL(
+        bull_job_id,
+        url,
+        scrapeOptions,
+        {
+          priority,
+          ...internalOptions,
+          urlInvisibleInCurrentCrawl,
+          teamId: internalOptions?.teamId ?? team_id,
+        },
+        costTracking,
+      );
       if (!response.success) {
         if (response.error instanceof Error) {
           throw response.error;
@@ -170,11 +173,7 @@ export async function runWebScraper({
   }
 }
 
-const saveJob = async (
-  job: Job,
-  result: any,
-  mode: string,
-) => {
+const saveJob = async (job: Job, result: any, mode: string) => {
   try {
     const useDbAuthentication = process.env.USE_DB_AUTHENTICATION === "true";
     if (useDbAuthentication) {

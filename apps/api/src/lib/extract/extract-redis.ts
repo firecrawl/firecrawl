@@ -60,10 +60,16 @@ export async function saveExtract(id: string, extract: StoredExtract) {
       finishedAt: step.finishedAt,
       error: step.error,
       // Only store first 20 discovered links per step
-      discoveredLinks: step.discoveredLinks?.slice(0, STEPS_MAX_DISCOVERED_LINKS)
-    }))
+      discoveredLinks: step.discoveredLinks?.slice(
+        0,
+        STEPS_MAX_DISCOVERED_LINKS,
+      ),
+    })),
   };
-  await redisEvictConnection.set("extract:" + id, JSON.stringify(minimalExtract));
+  await redisEvictConnection.set(
+    "extract:" + id,
+    JSON.stringify(minimalExtract),
+  );
   await redisEvictConnection.expire("extract:" + id, EXTRACT_TTL);
 }
 
@@ -88,11 +94,17 @@ export async function updateExtract(
 
   // Limit links in steps to 20 instead of 100 to reduce memory usage
   if (extract.steps) {
-    extract.steps = extract.steps.map((step) => {
-      if (step.discoveredLinks && step.discoveredLinks.length > STEPS_MAX_DISCOVERED_LINKS) {
+    extract.steps = extract.steps.map(step => {
+      if (
+        step.discoveredLinks &&
+        step.discoveredLinks.length > STEPS_MAX_DISCOVERED_LINKS
+      ) {
         return {
           ...step,
-          discoveredLinks: step.discoveredLinks.slice(0, STEPS_MAX_DISCOVERED_LINKS),
+          discoveredLinks: step.discoveredLinks.slice(
+            0,
+            STEPS_MAX_DISCOVERED_LINKS,
+          ),
         };
       }
       return step;
@@ -107,13 +119,19 @@ export async function updateExtract(
       startedAt: step.startedAt,
       finishedAt: step.finishedAt,
       error: step.error,
-      discoveredLinks: step.discoveredLinks?.slice(0, STEPS_MAX_DISCOVERED_LINKS)
-    }))
+      discoveredLinks: step.discoveredLinks?.slice(
+        0,
+        STEPS_MAX_DISCOVERED_LINKS,
+      ),
+    })),
   };
 
-  console.log(minimalExtract.sessionIds)
+  console.log(minimalExtract.sessionIds);
 
-  await redisEvictConnection.set("extract:" + id, JSON.stringify(minimalExtract));
+  await redisEvictConnection.set(
+    "extract:" + id,
+    JSON.stringify(minimalExtract),
+  );
   await redisEvictConnection.expire("extract:" + id, EXTRACT_TTL);
 }
 

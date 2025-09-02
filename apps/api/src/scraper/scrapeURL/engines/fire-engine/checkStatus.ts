@@ -10,7 +10,7 @@ import {
   SSLError,
   UnsupportedFileError,
   DNSResolutionError,
-  FEPageLoadFailed
+  FEPageLoadFailed,
 } from "../../error";
 import { MockState } from "../../lib/mock";
 import { fireEngineStagingURL, fireEngineURL } from "./scrape";
@@ -47,43 +47,46 @@ const successSchema = z.object({
     })
     .array()
     .optional(),
-  actionResults: z.union([
-    z.object({
-      idx: z.number(),
-      type: z.literal("screenshot"),
-      result: z.object({
-        path: z.string(),
-      }),
-    }),
-    z.object({
-      idx: z.number(),
-      type: z.literal("scrape"),
-      result: z.union([
-        z.object({
-          url: z.string(),
-          html: z.string(),
+  actionResults: z
+    .union([
+      z.object({
+        idx: z.number(),
+        type: z.literal("screenshot"),
+        result: z.object({
+          path: z.string(),
         }),
-        z.object({
-          url: z.string(),
-          accessibility: z.string(),
+      }),
+      z.object({
+        idx: z.number(),
+        type: z.literal("scrape"),
+        result: z.union([
+          z.object({
+            url: z.string(),
+            html: z.string(),
+          }),
+          z.object({
+            url: z.string(),
+            accessibility: z.string(),
+          }),
+        ]),
+      }),
+      z.object({
+        idx: z.number(),
+        type: z.literal("executeJavascript"),
+        result: z.object({
+          return: z.string(),
         }),
-      ]),
-    }),
-    z.object({
-      idx: z.number(),
-      type: z.literal("executeJavascript"),
-      result: z.object({
-        return: z.string(),
       }),
-    }),
-    z.object({
-      idx: z.number(),
-      type: z.literal("pdf"),
-      result: z.object({
-        link: z.string(),
+      z.object({
+        idx: z.number(),
+        type: z.literal("pdf"),
+        result: z.object({
+          link: z.string(),
+        }),
       }),
-    }),
-  ]).array().optional(),
+    ])
+    .array()
+    .optional(),
 
   // chrome-cdp only -- file download handler
   file: z
@@ -146,7 +149,7 @@ export async function fireEngineCheckStatus(
 
   // Fire-engine now saves the content to GCS
   if (!status.content && status.docUrl) {
-    const doc = await getDocFromGCS(status.docUrl.split('/').pop() ?? "");
+    const doc = await getDocFromGCS(status.docUrl.split("/").pop() ?? "");
     if (doc) {
       status = { ...status, ...doc };
       delete status.docUrl;
@@ -170,7 +173,11 @@ export async function fireEngineCheckStatus(
     ) {
       const code = status.error.split("Chrome error: ")[1];
 
-      if (code.includes("ERR_CERT_") || code.includes("ERR_SSL_") || code.includes("ERR_BAD_SSL_")) {
+      if (
+        code.includes("ERR_CERT_") ||
+        code.includes("ERR_SSL_") ||
+        code.includes("ERR_BAD_SSL_")
+      ) {
         throw new SSLError(meta.options.skipTlsVerification);
       } else {
         throw new SiteError(code);
@@ -179,7 +186,9 @@ export async function fireEngineCheckStatus(
       typeof status.error === "string" &&
       status.error.includes("Dns resolution error for hostname: ")
     ) {
-      throw new DNSResolutionError(status.error.split("Dns resolution error for hostname: ")[1]);
+      throw new DNSResolutionError(
+        status.error.split("Dns resolution error for hostname: ")[1],
+      );
     } else if (
       typeof status.error === "string" &&
       status.error.includes("File size exceeds")
@@ -196,7 +205,8 @@ export async function fireEngineCheckStatus(
     } else if (
       typeof status.error === "string" &&
       // TODO: improve this later
-      (status.error.includes("Element") || status.error.includes("Javascript execution failed"))
+      (status.error.includes("Element") ||
+        status.error.includes("Javascript execution failed"))
     ) {
       throw new ActionError(status.error.split("Error: ")[1]);
     } else {

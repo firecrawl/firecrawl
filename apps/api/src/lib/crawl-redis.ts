@@ -32,7 +32,10 @@ export async function saveCrawl(id: string, crawl: StoredCrawl) {
   await redisEvictConnection.expire("crawl:" + id, 24 * 60 * 60);
 
   await redisEvictConnection.sadd("crawls_by_team_id:" + crawl.team_id, id);
-  await redisEvictConnection.expire("crawls_by_team_id:" + crawl.team_id, 24 * 60 * 60);
+  await redisEvictConnection.expire(
+    "crawls_by_team_id:" + crawl.team_id,
+    24 * 60 * 60,
+  );
 }
 
 export async function getCrawlsByTeamId(team_id: string): Promise<string[]> {
@@ -58,7 +61,11 @@ export async function getCrawlExpiry(id: string): Promise<Date> {
   return d;
 }
 
-export async function addCrawlJob(id: string, job_id: string, __logger: Logger = _logger) {
+export async function addCrawlJob(
+  id: string,
+  job_id: string,
+  __logger: Logger = _logger,
+) {
   __logger.debug("Adding crawl job " + job_id + " to Redis...", {
     jobId: job_id,
     module: "crawl-redis",
@@ -68,10 +75,17 @@ export async function addCrawlJob(id: string, job_id: string, __logger: Logger =
   await redisEvictConnection.sadd("crawl:" + id + ":jobs", job_id);
   await redisEvictConnection.expire("crawl:" + id + ":jobs", 24 * 60 * 60);
   await redisEvictConnection.sadd("crawl:" + id + ":jobs_qualified", job_id);
-  await redisEvictConnection.expire("crawl:" + id + ":jobs_qualified", 24 * 60 * 60);
+  await redisEvictConnection.expire(
+    "crawl:" + id + ":jobs_qualified",
+    24 * 60 * 60,
+  );
 }
 
-export async function addCrawlJobs(id: string, job_ids: string[], __logger: Logger = _logger) {
+export async function addCrawlJobs(
+  id: string,
+  job_ids: string[],
+  __logger: Logger = _logger,
+) {
   if (job_ids.length === 0) return true;
 
   __logger.debug("Adding crawl jobs to Redis...", {
@@ -82,8 +96,14 @@ export async function addCrawlJobs(id: string, job_ids: string[], __logger: Logg
   });
   await redisEvictConnection.sadd("crawl:" + id + ":jobs", ...job_ids);
   await redisEvictConnection.expire("crawl:" + id + ":jobs", 24 * 60 * 60);
-  await redisEvictConnection.sadd("crawl:" + id + ":jobs_qualified", ...job_ids);
-  await redisEvictConnection.expire("crawl:" + id + ":jobs_qualified", 24 * 60 * 60);
+  await redisEvictConnection.sadd(
+    "crawl:" + id + ":jobs_qualified",
+    ...job_ids,
+  );
+  await redisEvictConnection.expire(
+    "crawl:" + id + ":jobs_qualified",
+    24 * 60 * 60,
+  );
 }
 
 export async function addCrawlJobDone(
@@ -99,13 +119,14 @@ export async function addCrawlJobDone(
     crawlId: id,
   });
   await redisEvictConnection.sadd("crawl:" + id + ":jobs_done", job_id);
-  await redisEvictConnection.expire(
-    "crawl:" + id + ":jobs_done",
-    24 * 60 * 60,
-  );
+  await redisEvictConnection.expire("crawl:" + id + ":jobs_done", 24 * 60 * 60);
 
   if (success) {
-    await redisEvictConnection.zadd("crawl:" + id + ":jobs_donez_ordered", Date.now(), job_id);
+    await redisEvictConnection.zadd(
+      "crawl:" + id + ":jobs_donez_ordered",
+      Date.now(),
+      job_id,
+    );
   } else {
     // in case it's already been pushed, make sure it's removed
     await redisEvictConnection.zrem(
@@ -120,9 +141,19 @@ export async function addCrawlJobDone(
   );
 }
 
-export async function getDoneJobsOrderedLength(id: string, until: number = Infinity): Promise<number> {
-  await redisEvictConnection.expire("crawl:" + id + ":jobs_donez_ordered", 24 * 60 * 60);
-  return await redisEvictConnection.zcount("crawl:" + id + ":jobs_donez_ordered", -Infinity, until);
+export async function getDoneJobsOrderedLength(
+  id: string,
+  until: number = Infinity,
+): Promise<number> {
+  await redisEvictConnection.expire(
+    "crawl:" + id + ":jobs_donez_ordered",
+    24 * 60 * 60,
+  );
+  return await redisEvictConnection.zcount(
+    "crawl:" + id + ":jobs_donez_ordered",
+    -Infinity,
+    until,
+  );
 }
 
 export async function getDoneJobsOrdered(
@@ -130,7 +161,10 @@ export async function getDoneJobsOrdered(
   start = 0,
   end = -1,
 ): Promise<string[]> {
-  await redisEvictConnection.expire("crawl:" + id + ":jobs_donez_ordered", 24 * 60 * 60);
+  await redisEvictConnection.expire(
+    "crawl:" + id + ":jobs_donez_ordered",
+    24 * 60 * 60,
+  );
   return await redisEvictConnection.zrange(
     "crawl:" + id + ":jobs_donez_ordered",
     start,
@@ -138,8 +172,16 @@ export async function getDoneJobsOrdered(
   );
 }
 
-export async function getDoneJobsOrderedUntil(id: string, until: number = Infinity, start = 0, count = -1): Promise<string[]> {
-  await redisEvictConnection.expire("crawl:" + id + ":jobs_donez_ordered", 24 * 60 * 60);
+export async function getDoneJobsOrderedUntil(
+  id: string,
+  until: number = Infinity,
+  start = 0,
+  count = -1,
+): Promise<string[]> {
+  await redisEvictConnection.expire(
+    "crawl:" + id + ":jobs_donez_ordered",
+    24 * 60 * 60,
+  );
   return await redisEvictConnection.zrangebyscore(
     "crawl:" + id + ":jobs_donez_ordered",
     -Infinity,
@@ -148,7 +190,10 @@ export async function getDoneJobsOrderedUntil(id: string, until: number = Infini
 }
 
 export async function isCrawlFinished(id: string) {
-  await redisEvictConnection.expire("crawl:" + id + ":kickoff:finish", 24 * 60 * 60);
+  await redisEvictConnection.expire(
+    "crawl:" + id + ":kickoff:finish",
+    24 * 60 * 60,
+  );
   return (
     (await redisEvictConnection.scard("crawl:" + id + ":jobs_done")) ===
       (await redisEvictConnection.scard("crawl:" + id + ":jobs")) &&
@@ -157,7 +202,10 @@ export async function isCrawlFinished(id: string) {
 }
 
 export async function isCrawlKickoffFinished(id: string) {
-  await redisEvictConnection.expire("crawl:" + id + ":kickoff:finish", 24 * 60 * 60);
+  await redisEvictConnection.expire(
+    "crawl:" + id + ":kickoff:finish",
+    24 * 60 * 60,
+  );
   return (
     (await redisEvictConnection.get("crawl:" + id + ":kickoff:finish")) !== null
   );
@@ -183,8 +231,14 @@ export async function finishCrawlPre(id: string, __logger: Logger = _logger) {
       method: "finishCrawlPre",
       crawlId: id,
     });
-    const set = await redisEvictConnection.setnx("crawl:" + id + ":finished_pre", "yes");
-    await redisEvictConnection.expire("crawl:" + id + ":finished_pre", 24 * 60 * 60);
+    const set = await redisEvictConnection.setnx(
+      "crawl:" + id + ":finished_pre",
+      "yes",
+    );
+    await redisEvictConnection.expire(
+      "crawl:" + id + ":finished_pre",
+      24 * 60 * 60,
+    );
     return set === 1;
   }
 }
@@ -206,11 +260,14 @@ export async function finishCrawl(id: string, __logger: Logger = _logger) {
   });
   await redisEvictConnection.set("crawl:" + id + ":finish", "yes");
   await redisEvictConnection.expire("crawl:" + id + ":finish", 24 * 60 * 60);
-  
+
   const crawl = await getCrawl(id);
   if (crawl && crawl.team_id) {
     await redisEvictConnection.srem("crawls_by_team_id:" + crawl.team_id, id);
-    await redisEvictConnection.expire("crawls_by_team_id:" + crawl.team_id, 24 * 60 * 60);
+    await redisEvictConnection.expire(
+      "crawls_by_team_id:" + crawl.team_id,
+      24 * 60 * 60,
+    );
   }
 
   // Clear visited sets to save memory
@@ -270,7 +327,7 @@ export function generateURLPermutations(url: string | URL): URL[] {
   let permutations = [urlWithWWW, urlWithoutWWW];
 
   // Construct more versions for http/https
-  permutations = permutations.flatMap((urlO) => {
+  permutations = permutations.flatMap(urlO => {
     if (!["http:", "https:"].includes(urlO.protocol)) {
       return [urlO];
     }
@@ -284,24 +341,41 @@ export function generateURLPermutations(url: string | URL): URL[] {
   });
 
   // Construct more versions for index.html/index.php
-  permutations = permutations.flatMap((urlO) => {
+  permutations = permutations.flatMap(urlO => {
     const urlWithHTML = new URL(urlO);
     const urlWithPHP = new URL(urlO);
     const urlWithBare = new URL(urlO);
     const urlWithSlash = new URL(urlO);
 
     if (urlO.pathname.endsWith("/")) {
-      urlWithBare.pathname = urlWithBare.pathname.length === 1 ? urlWithBare.pathname : urlWithBare.pathname.slice(0, -1);
+      urlWithBare.pathname =
+        urlWithBare.pathname.length === 1
+          ? urlWithBare.pathname
+          : urlWithBare.pathname.slice(0, -1);
       urlWithHTML.pathname += "index.html";
       urlWithPHP.pathname += "index.php";
     } else if (urlO.pathname.endsWith("/index.html")) {
-      urlWithPHP.pathname = urlWithPHP.pathname.slice(0, -"index.html".length) + "index.php";
-      urlWithSlash.pathname = urlWithSlash.pathname.slice(0, -"index.html".length);
-      urlWithBare.pathname = urlWithBare.pathname.slice(0, -"/index.html".length);
+      urlWithPHP.pathname =
+        urlWithPHP.pathname.slice(0, -"index.html".length) + "index.php";
+      urlWithSlash.pathname = urlWithSlash.pathname.slice(
+        0,
+        -"index.html".length,
+      );
+      urlWithBare.pathname = urlWithBare.pathname.slice(
+        0,
+        -"/index.html".length,
+      );
     } else if (urlO.pathname.endsWith("/index.php")) {
-      urlWithHTML.pathname = urlWithHTML.pathname.slice(0, -"index.php".length) + "index.html";
-      urlWithSlash.pathname = urlWithSlash.pathname.slice(0, -"index.php".length);
-      urlWithBare.pathname = urlWithBare.pathname.slice(0, -"/index.php".length);
+      urlWithHTML.pathname =
+        urlWithHTML.pathname.slice(0, -"index.php".length) + "index.html";
+      urlWithSlash.pathname = urlWithSlash.pathname.slice(
+        0,
+        -"index.php".length,
+      );
+      urlWithBare.pathname = urlWithBare.pathname.slice(
+        0,
+        -"/index.php".length,
+      );
     } else {
       urlWithSlash.pathname += "/";
       urlWithHTML.pathname += "/index.html";
@@ -320,7 +394,7 @@ export async function lockURL(
   url: string,
 ): Promise<boolean> {
   url = normalizeURL(url, sc);
-  
+
   if (typeof sc.crawlerOptions?.limit === "number") {
     if (
       (await redisEvictConnection.scard("crawl:" + id + ":visited_unique")) >=
@@ -332,10 +406,14 @@ export async function lockURL(
 
   let res: boolean;
   if (!sc.crawlerOptions?.deduplicateSimilarURLs) {
-    res = (await redisEvictConnection.sadd("crawl:" + id + ":visited", url)) !== 0;
+    res =
+      (await redisEvictConnection.sadd("crawl:" + id + ":visited", url)) !== 0;
   } else {
     const permutation = generateURLPermutations(url)[0].href;
-    const x = await redisEvictConnection.sadd("crawl:" + id + ":visited", permutation);
+    const x = await redisEvictConnection.sadd(
+      "crawl:" + id + ":visited",
+      permutation,
+    );
     res = x !== 0;
   }
 
@@ -361,7 +439,7 @@ export async function lockURLs(
 ): Promise<boolean> {
   if (urls.length === 0) return true;
 
-  urls = urls.map((url) => normalizeURL(url, sc));
+  urls = urls.map(url => normalizeURL(url, sc));
   const logger = __logger.child({
     crawlId: id,
     module: "crawl-redis",
@@ -379,10 +457,15 @@ export async function lockURLs(
 
   let res: boolean;
   if (!sc.crawlerOptions?.deduplicateSimilarURLs) {
-    const x = await redisEvictConnection.sadd("crawl:" + id + ":visited", ...urls);
+    const x = await redisEvictConnection.sadd(
+      "crawl:" + id + ":visited",
+      ...urls,
+    );
     res = x === urls.length;
   } else {
-    const allPermutations = urls.map(url => generateURLPermutations(url)[0].href);
+    const allPermutations = urls.map(
+      url => generateURLPermutations(url)[0].href,
+    );
     logger.debug("Adding " + allPermutations.length + " URL permutations...");
     const x = await redisEvictConnection.sadd(
       "crawl:" + id + ":visited",
@@ -424,8 +507,12 @@ export function crawlToCrawler(
     jobId: id,
     initialUrl: sc.originUrl!,
     baseUrl: newBase ? new URL(newBase).origin : undefined,
-    includes: (sc.crawlerOptions?.includes ?? []).filter(x => x.trim().length > 0),
-    excludes: (sc.crawlerOptions?.excludes ?? []).filter(x => x.trim().length > 0),
+    includes: (sc.crawlerOptions?.includes ?? []).filter(
+      x => x.trim().length > 0,
+    ),
+    excludes: (sc.crawlerOptions?.excludes ?? []).filter(
+      x => x.trim().length > 0,
+    ),
     maxCrawledLinks: sc.crawlerOptions?.maxCrawledLinks ?? 1000,
     maxCrawledDepth: getAdjustedMaxDepth(
       sc.originUrl!,
@@ -437,7 +524,8 @@ export function crawlToCrawler(
     allowExternalContentLinks:
       sc.crawlerOptions?.allowExternalContentLinks ?? false,
     allowSubdomains: sc.crawlerOptions?.allowSubdomains ?? false,
-    ignoreRobotsTxt: teamFlags?.ignoreRobots ?? sc.crawlerOptions?.ignoreRobotsTxt ?? false,
+    ignoreRobotsTxt:
+      teamFlags?.ignoreRobots ?? sc.crawlerOptions?.ignoreRobotsTxt ?? false,
     regexOnFullURL: sc.crawlerOptions?.regexOnFullURL ?? false,
     maxDiscoveryDepth: sc.crawlerOptions?.maxDiscoveryDepth,
     currentDiscoveryDepth: crawlerOptions?.currentDiscoveryDepth ?? 0,

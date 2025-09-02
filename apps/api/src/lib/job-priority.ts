@@ -43,7 +43,12 @@ export async function getJobPriority({
   }
 
   try {
-    const acuc = await getACUCTeam(team_id, false, true, from_extract ? RateLimiterMode.Extract : RateLimiterMode.Crawl);
+    const acuc = await getACUCTeam(
+      team_id,
+      false,
+      true,
+      from_extract ? RateLimiterMode.Extract : RateLimiterMode.Crawl,
+    );
 
     const setKey = SET_KEY_PREFIX + team_id;
 
@@ -64,9 +69,7 @@ export async function getJobPriority({
       );
     }
   } catch (e) {
-    logger.error(
-      `Get job priority failed: ${team_id}, ${basePriority}`,
-    );
+    logger.error(`Get job priority failed: ${team_id}, ${basePriority}`);
     return basePriority;
   }
 }

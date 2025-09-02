@@ -1,15 +1,9 @@
 import { ExtractorOptions, PageOptions } from "./../../lib/entities";
 import { Request, Response } from "express";
-import {
-  checkTeamCredits,
-} from "../../services/billing/credit_billing";
+import { checkTeamCredits } from "../../services/billing/credit_billing";
 import { authenticateUser } from "../auth";
 import { RateLimiterMode } from "../../types";
-import {
-  TeamFlags,
-  toLegacyDocument,
-  url as urlSchema,
-} from "../v1/types";
+import { TeamFlags, toLegacyDocument, url as urlSchema } from "../v1/types";
 import { isUrlBlocked } from "../../scraper/WebScraper/utils/blocklist"; // Import the isUrlBlocked function
 import {
   defaultPageOptions,
@@ -69,7 +63,10 @@ async function scrapeHelper(
     team_id,
   );
 
-  internalOptions.saveScrapeResultToGCS = process.env.GCS_FIRE_ENGINE_BUCKET_NAME ? true : false;
+  internalOptions.saveScrapeResultToGCS = process.env
+    .GCS_FIRE_ENGINE_BUCKET_NAME
+    ? true
+    : false;
 
   await addScrapeJob(
     {
@@ -173,16 +170,29 @@ export async function scrapeController(req: Request, res: Response) {
     const { team_id, chunk } = auth;
 
     if (chunk?.flags?.forceZDR) {
-      return res.status(400).json({ error: "Your team has zero data retention enabled. This is not supported on the v0 API. Please update your code to use the v1 API." });
+      return res.status(400).json({
+        error:
+          "Your team has zero data retention enabled. This is not supported on the v0 API. Please update your code to use the v1 API.",
+      });
     }
 
     const jobId = uuidv4();
 
-    redisEvictConnection.sadd("teams_using_v0", team_id)
-      .catch(error => logger.error("Failed to add team to teams_using_v0", { error, team_id }));
+    redisEvictConnection.sadd("teams_using_v0", team_id).catch(error =>
+      logger.error("Failed to add team to teams_using_v0", {
+        error,
+        team_id,
+      }),
+    );
 
-    redisEvictConnection.sadd("teams_using_v0:" + team_id, "scrape:" + jobId)
-      .catch(error => logger.error("Failed to add team to teams_using_v0 (2)", { error, team_id }));
+    redisEvictConnection
+      .sadd("teams_using_v0:" + team_id, "scrape:" + jobId)
+      .catch(error =>
+        logger.error("Failed to add team to teams_using_v0 (2)", {
+          error,
+          team_id,
+        }),
+      );
 
     const crawlerOptions = req.body.crawlerOptions ?? {};
     const pageOptions = { ...defaultPageOptions, ...req.body.pageOptions };

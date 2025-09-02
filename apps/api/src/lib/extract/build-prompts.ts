@@ -118,7 +118,6 @@ export function buildBatchExtractPrompt(prompt: string): string {
   return `Today is: ${new Date().toISOString()}\n${prompt}`;
 }
 
-
 export function buildRephraseToSerpPrompt(prompt: string): string {
   return `Rephrase the following prompt to be suitable for a search engine results page (SERP) query. Make sure the rephrased prompt is concise and focused on retrieving relevant search results:
 

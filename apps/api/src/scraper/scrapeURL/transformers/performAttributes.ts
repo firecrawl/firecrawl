@@ -24,7 +24,10 @@ export async function performAttributes(
 
   if (attributesFormat.selectors && attributesFormat.selectors.length > 0) {
     try {
-      const attributes = await extractAttributes(document.html, attributesFormat.selectors);
+      const attributes = await extractAttributes(
+        document.html,
+        attributesFormat.selectors,
+      );
 
       if (attributes.length > 0) {
         document.attributes = attributes;
@@ -34,14 +37,14 @@ export async function performAttributes(
           attributes: attributes.map(d => ({
             selector: d.selector,
             attribute: d.attribute,
-            valuesCount: d.values.length
-          }))
+            valuesCount: d.values.length,
+          })),
         });
       }
     } catch (error) {
       meta.logger.error("Failed to extract attributes", {
         error,
-        url: meta.url
+        url: meta.url,
       });
     }
   }

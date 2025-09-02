@@ -57,7 +57,7 @@ function mergeArrays(arr1: any[], arr2: any[]): any[] {
   return combined.filter((item, index) => {
     const stringified = JSON.stringify(item);
     return (
-      combined.findIndex((other) => JSON.stringify(other) === stringified) ===
+      combined.findIndex(other => JSON.stringify(other) === stringified) ===
       index
     );
   });
@@ -113,7 +113,7 @@ export function mergeNullValObjs_F0(objArray: { [key: string]: any[] }): {
     if (Array.isArray(objArray[key])) {
       // If array contains only primitive values, return as is
       if (
-        objArray[key].every((item) => typeof item !== "object" || item === null)
+        objArray[key].every(item => typeof item !== "object" || item === null)
       ) {
         result[key] = [...objArray[key]];
         continue;

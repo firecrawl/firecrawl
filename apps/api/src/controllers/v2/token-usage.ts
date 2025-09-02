@@ -18,7 +18,14 @@ export async function tokenUsageController(
   req: RequestWithAuth,
   res: Response<TokenUsageResponse | ErrorResponse>,
 ): Promise<void> {
-  const chunk = req.acuc ?? await getACUCTeam(req.auth.team_id, false, false, RateLimiterMode.Extract);
+  const chunk =
+    req.acuc ??
+    (await getACUCTeam(
+      req.auth.team_id,
+      false,
+      false,
+      RateLimiterMode.Extract,
+    ));
 
   if (!chunk) {
     res.status(404).json({

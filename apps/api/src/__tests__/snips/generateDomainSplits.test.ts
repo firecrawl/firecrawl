@@ -37,7 +37,10 @@ describe("generateDomainSplits", () => {
   });
 
   it("should handle complex subdomain structures with fake domain", () => {
-    const result = generateDomainSplits("api.v1.service.example.com", "sub.test.org");
+    const result = generateDomainSplits(
+      "api.v1.service.example.com",
+      "sub.test.org",
+    );
     expect(result).toEqual(["test.org", "sub.test.org"]);
   });
 });

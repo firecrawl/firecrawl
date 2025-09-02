@@ -8,8 +8,8 @@ import {
 import { Logger } from "winston";
 import { logger } from "../../../lib/logger";
 import { modelPrices } from "../../../lib/extract/usage/model-prices";
-import { generateObject, generateText, LanguageModel } from 'ai';
-import { jsonSchema } from 'ai';
+import { generateObject, generateText, LanguageModel } from "ai";
+import { jsonSchema } from "ai";
 import { getModel } from "../../../lib/generic-ai";
 import { z } from "zod";
 
@@ -53,15 +53,15 @@ function normalizeSchema(x: any): any {
   }
 
   if (x && x.anyOf) {
-    x.anyOf = x.anyOf.map((x) => normalizeSchema(x));
+    x.anyOf = x.anyOf.map(x => normalizeSchema(x));
   }
 
   if (x && x.oneOf) {
-    x.oneOf = x.oneOf.map((x) => normalizeSchema(x));
+    x.oneOf = x.oneOf.map(x => normalizeSchema(x));
   }
 
   if (x && x.allOf) {
-    x.allOf = x.allOf.map((x) => normalizeSchema(x));
+    x.allOf = x.allOf.map(x => normalizeSchema(x));
   }
 
   if (x && x.not) {
@@ -72,7 +72,10 @@ function normalizeSchema(x: any): any {
     return {
       ...x,
       properties: Object.fromEntries(
-        Object.entries(x.properties || {}).map(([k, v]) => [k, normalizeSchema(v)]),
+        Object.entries(x.properties || {}).map(([k, v]) => [
+          k,
+          normalizeSchema(v),
+        ]),
       ),
       required: Object.keys(x.properties || {}),
       additionalProperties: false,
@@ -87,21 +90,24 @@ function normalizeSchema(x: any): any {
   }
 }
 
-
-
 interface TrimResult {
   text: string;
   numTokens: number;
   warning?: string;
 }
 
-export function trimToTokenLimit_F0(text: string, maxTokens: number, modelId: string="gpt-4o", previousWarning?: string): TrimResult {
+export function trimToTokenLimit_F0(
+  text: string,
+  maxTokens: number,
+  modelId: string = "gpt-4o",
+  previousWarning?: string,
+): TrimResult {
   try {
     const encoder = encoding_for_model(modelId as TiktokenModel);
     try {
       const tokens = encoder.encode(text);
       const numTokens = tokens.length;
-      
+
       if (numTokens <= maxTokens) {
         return { text, numTokens };
       }
@@ -109,7 +115,7 @@ export function trimToTokenLimit_F0(text: string, maxTokens: number, modelId: st
       const modifier = 3;
       // Start with 3 chars per token estimation
       let currentText = text.slice(0, Math.floor(maxTokens * modifier) - 1);
-      
+
       // Keep trimming until we're under the token limit
       while (true) {
         const currentTokens = encoder.encode(currentText);
@@ -118,14 +124,18 @@ export function trimToTokenLimit_F0(text: string, maxTokens: number, modelId: st
           return {
             text: currentText,
             numTokens: currentTokens.length,
-            warning: previousWarning ? `${warning} ${previousWarning}` : warning
+            warning: previousWarning
+              ? `${warning} ${previousWarning}`
+              : warning,
           };
         }
         const overflow = currentTokens.length * modifier - maxTokens - 1;
         // If still over limit, remove another chunk
-        currentText = currentText.slice(0, Math.floor(currentText.length - overflow));
+        currentText = currentText.slice(
+          0,
+          Math.floor(currentText.length - overflow),
+        );
       }
-
     } catch (e) {
       throw e;
     } finally {
@@ -136,13 +146,13 @@ export function trimToTokenLimit_F0(text: string, maxTokens: number, modelId: st
     const estimatedCharsPerToken = 2.8;
     const safeLength = maxTokens * estimatedCharsPerToken;
     const trimmedText = text.slice(0, Math.floor(safeLength));
-    
+
     const warning = `Failed to derive number of LLM tokens the extraction might use -- the input has been automatically trimmed to the maximum number of tokens (${maxTokens}) we support.`;
-    
+
     return {
       text: trimmedText,
       numTokens: maxTokens, // We assume we hit the max in this fallback case
-      warning: previousWarning ? `${warning} ${previousWarning}` : warning
+      warning: previousWarning ? `${warning} ${previousWarning}` : warning,
     };
   }
 }
@@ -157,14 +167,19 @@ export async function generateCompletions_F0({
   mode = "object",
   metadata,
 }: {
-  model?: LanguageModel; 
+  model?: LanguageModel;
   logger: Logger;
   options: ExtractOptions;
   markdown?: string;
   previousWarning?: string;
   isExtractEndpoint?: boolean;
   mode?: "object" | "no-object";
-  metadata: { teamId: string, functionId?: string, extractId?: string, scrapeId?: string };
+  metadata: {
+    teamId: string;
+    functionId?: string;
+    extractId?: string;
+    scrapeId?: string;
+  };
 }): Promise<{
   extract: any;
   numTokens: number;
@@ -184,20 +199,25 @@ export async function generateCompletions_F0({
   const maxTokensSafe = Math.floor(maxInputTokens * 0.8);
 
   // Use the new trimming function
-  const { text: trimmedMarkdown, numTokens, warning: trimWarning } = trimToTokenLimit_F0(
+  const {
+    text: trimmedMarkdown,
+    numTokens,
+    warning: trimWarning,
+  } = trimToTokenLimit_F0(
     markdown,
     maxTokensSafe,
     model.modelId,
-    previousWarning
+    previousWarning,
   );
 
   markdown = trimmedMarkdown;
   warning = trimWarning;
 
   try {
-    const prompt = options.prompt !== undefined
-      ? `Transform the following content into structured JSON output based on the provided schema and this user request: ${options.prompt}. If schema is provided, strictly follow it.\n\n${markdown}`
-      : `Transform the following content into structured JSON output based on the provided schema if any.\n\n${markdown}`;
+    const prompt =
+      options.prompt !== undefined
+        ? `Transform the following content into structured JSON output based on the provided schema and this user request: ${options.prompt}. If schema is provided, strictly follow it.\n\n${markdown}`
+        : `Transform the following content into structured JSON output based on the provided schema if any.\n\n${markdown}`;
 
     if (mode === "no-object") {
       const result = await generateText({
@@ -212,22 +232,32 @@ export async function generateCompletions_F0({
               extractId: metadata.extractId ?? "unspecified",
               scrapeId: metadata.scrapeId ?? "unspecified",
               teamId: metadata.teamId,
-            }
-          }
+            },
+          },
         },
         experimental_telemetry: {
           isEnabled: true,
           functionId: metadata.functionId,
           metadata: {
             teamId: metadata.teamId,
-            ...(metadata.extractId ? { langfuseTraceId: "extract:" + metadata.extractId, extractId: metadata.extractId } : {}),
-            ...(metadata.scrapeId ? { langfuseTraceId: "scrape:" + metadata.scrapeId, scrapeId: metadata.scrapeId } : {}),
-          }
-        }
+            ...(metadata.extractId
+              ? {
+                  langfuseTraceId: "extract:" + metadata.extractId,
+                  extractId: metadata.extractId,
+                }
+              : {}),
+            ...(metadata.scrapeId
+              ? {
+                  langfuseTraceId: "scrape:" + metadata.scrapeId,
+                  scrapeId: metadata.scrapeId,
+                }
+              : {}),
+          },
+        },
       });
 
       extract = result.text;
-      
+
       return {
         extract,
         warning,
@@ -298,7 +328,8 @@ export async function generateCompletions_F0({
         const { text: fixedText } = await generateText({
           model: model,
           prompt: `Fix this JSON that had the following error: ${error}\n\nOriginal text:\n${text}\n\nReturn only the fixed JSON, no explanation.`,
-          system: "You are a JSON repair expert. Your only job is to fix malformed JSON and return valid JSON that matches the original structure and intent as closely as possible. Do not include any explanation or commentary - only return the fixed JSON. Do not return it in a Markdown code block, just plain JSON.",
+          system:
+            "You are a JSON repair expert. Your only job is to fix malformed JSON and return valid JSON that matches the original structure and intent as closely as possible. Do not include any explanation or commentary - only return the fixed JSON. Do not return it in a Markdown code block, just plain JSON.",
           providerOptions: {
             google: {
               labels: {
@@ -306,21 +337,31 @@ export async function generateCompletions_F0({
                 extractId: metadata.extractId ?? "unspecified",
                 scrapeId: metadata.scrapeId ?? "unspecified",
                 teamId: metadata.teamId,
-              }
-            }
+              },
+            },
           },
           experimental_telemetry: {
             isEnabled: true,
             functionId: metadata.functionId,
             metadata: {
               teamId: metadata.teamId,
-              ...(metadata.extractId ? { langfuseTraceId: "extract:" + metadata.extractId, extractId: metadata.extractId } : {}),
-              ...(metadata.scrapeId ? { langfuseTraceId: "scrape:" + metadata.scrapeId, scrapeId: metadata.scrapeId } : {}),
-            }
-          }
+              ...(metadata.extractId
+                ? {
+                    langfuseTraceId: "extract:" + metadata.extractId,
+                    extractId: metadata.extractId,
+                  }
+                : {}),
+              ...(metadata.scrapeId
+                ? {
+                    langfuseTraceId: "scrape:" + metadata.scrapeId,
+                    scrapeId: metadata.scrapeId,
+                  }
+                : {}),
+            },
+          },
         });
         return fixedText;
-      }
+      },
     };
 
     const generateObjectConfig = {
@@ -328,13 +369,15 @@ export async function generateCompletions_F0({
       prompt: prompt,
       temperature: options.temperature ?? 0,
       system: options.systemPrompt,
-      ...(schema && { schema: schema instanceof z.ZodType ? schema : jsonSchema(schema) }),
-      ...(!schema && { output: 'no-schema' as const }),
+      ...(schema && {
+        schema: schema instanceof z.ZodType ? schema : jsonSchema(schema),
+      }),
+      ...(!schema && { output: "no-schema" as const }),
       ...repairConfig,
       ...(!schema && {
         onError: (error: Error) => {
           console.error(error);
-        }
+        },
       }),
       providerOptions: {
         google: {
@@ -343,18 +386,28 @@ export async function generateCompletions_F0({
             extractId: metadata.extractId ?? "unspecified",
             scrapeId: metadata.scrapeId ?? "unspecified",
             teamId: metadata.teamId,
-          }
-        }
+          },
+        },
       },
       experimental_telemetry: {
         isEnabled: true,
         functionId: metadata.functionId,
         metadata: {
           teamId: metadata.teamId,
-          ...(metadata.extractId ? { langfuseTraceId: "extract:" + metadata.extractId, extractId: metadata.extractId } : {}),
-          ...(metadata.scrapeId ? { langfuseTraceId: "scrape:" + metadata.scrapeId, scrapeId: metadata.scrapeId } : {}),
-        }
-      }
+          ...(metadata.extractId
+            ? {
+                langfuseTraceId: "extract:" + metadata.extractId,
+                extractId: metadata.extractId,
+              }
+            : {}),
+          ...(metadata.scrapeId
+            ? {
+                langfuseTraceId: "scrape:" + metadata.scrapeId,
+                scrapeId: metadata.scrapeId,
+              }
+            : {}),
+        },
+      },
     } satisfies Parameters<typeof generateObject>[0];
 
     const result = await generateObject(generateObjectConfig);
@@ -386,7 +439,7 @@ export async function generateCompletions_F0({
       model: model.modelId,
     };
   } catch (error) {
-    if (error.message?.includes('refused')) {
+    if (error.message?.includes("refused")) {
       throw new LLMRefusalError(error.message);
     }
     throw error;
@@ -397,7 +450,7 @@ export function removeDefaultProperty_F0(schema: any): any {
   if (typeof schema !== "object" || schema === null) return schema;
 
   const rest = { ...schema };
-  
+
   // unsupported global keys
   delete rest.default;
 
@@ -439,7 +492,10 @@ export function removeDefaultProperty_F0(schema: any): any {
   return rest;
 }
 
-export async function generateSchemaFromPrompt_F0(prompt: string, metadata: { teamId: string, functionId?: string, extractId?: string }): Promise<any> {
+export async function generateSchemaFromPrompt_F0(
+  prompt: string,
+  metadata: { teamId: string; functionId?: string; extractId?: string },
+): Promise<any> {
   const model = getModel("gpt-4o");
   const temperatures = [0, 0.1, 0.3]; // Different temperatures to try
   let lastError: Error | null = null;
@@ -479,17 +535,18 @@ DO NOT USE FORMATS.
 Keep it simple. Don't create too many properties, just the ones that are needed. Don't invent properties.
 Return a valid JSON schema object with properties that would capture the information requested in the prompt.`,
           prompt: `Generate a JSON schema for extracting the following information: ${prompt}`,
-          temperature: temp 
+          temperature: temp,
         },
         markdown: prompt,
         metadata: {
           ...metadata,
-          functionId: metadata.functionId ? (metadata.functionId + "/generateSchemaFromPrompt_F0") : "generateSchemaFromPrompt_F0",
+          functionId: metadata.functionId
+            ? metadata.functionId + "/generateSchemaFromPrompt_F0"
+            : "generateSchemaFromPrompt_F0",
         },
       });
 
       return extract;
-
     } catch (error) {
       lastError = error as Error;
       logger.warn(`Failed attempt with temperature ${temp}: ${error.message}`);

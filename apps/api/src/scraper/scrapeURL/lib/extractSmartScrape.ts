@@ -10,7 +10,10 @@ import { parseMarkdown } from "../../../lib/html-to-markdown";
 import { getModel } from "../../../lib/generic-ai";
 import { TokenUsage } from "../../../controllers/v1/types";
 import type { SmartScrapeResult } from "./smartScrape";
-import { CostLimitExceededError, CostTracking } from "../../../lib/extract/extraction-service";
+import {
+  CostLimitExceededError,
+  CostTracking,
+} from "../../../lib/extract/extraction-service";
 const commonSmartScrapeProperties = {
   shouldUseSmartscrape: {
     type: "boolean",
@@ -182,12 +185,12 @@ export function prepareSmartScrapeSchema(
 
 // Resolve all $defs references in the schema
 const resolveRefs = (obj: any, defs: any): any => {
-  if (!obj || typeof obj !== 'object') return obj;
+  if (!obj || typeof obj !== "object") return obj;
 
-  if (obj.$ref && typeof obj.$ref === 'string') {
+  if (obj.$ref && typeof obj.$ref === "string") {
     // Handle $ref references
-    const refPath = obj.$ref.split('/');
-    if (refPath[0] === '#' && refPath[1] === '$defs') {
+    const refPath = obj.$ref.split("/");
+    if (refPath[0] === "#" && refPath[1] === "$defs") {
       const defName = refPath[refPath.length - 1];
       return resolveRefs({ ...defs[defName] }, defs);
     }
@@ -201,7 +204,7 @@ const resolveRefs = (obj: any, defs: any): any => {
   // Handle objects
   const resolved: any = {};
   for (const [key, value] of Object.entries(obj)) {
-    if (key === '$defs') continue;
+    if (key === "$defs") continue;
     resolved[key] = resolveRefs(value, defs);
   }
   return resolved;
@@ -222,7 +225,7 @@ export async function extractData({
   extractId?: string;
   sessionId?: string;
   scrapeId?: string;
-  metadata: { teamId: string, functionId?: string };
+  metadata: { teamId: string; functionId?: string };
 }): Promise<{
   extractedDataArray: any[];
   warning: any;
@@ -235,12 +238,19 @@ export async function extractData({
   // TODO: remove the "required" fields here!! it breaks o3-mini
 
   if (!schema && extractOptions.options.prompt) {
-    const genRes = await generateSchemaFromPrompt(extractOptions.options.prompt, logger, extractOptions.costTrackingOptions.costTracking, {
-      ...metadata,
-      extractId,
-      scrapeId,
-      functionId: metadata.functionId ? (metadata.functionId + "/extractData") : "extractData",
-    });
+    const genRes = await generateSchemaFromPrompt(
+      extractOptions.options.prompt,
+      logger,
+      extractOptions.costTrackingOptions.costTracking,
+      {
+        ...metadata,
+        extractId,
+        scrapeId,
+        functionId: metadata.functionId
+          ? metadata.functionId + "/extractData"
+          : "extractData",
+      },
+    );
     schema = genRes.extract;
   }
 
@@ -281,7 +291,7 @@ export async function extractData({
         metadata: {
           module: "scrapeURL",
           method: "extractData",
-          description: "Check if using smartScrape is needed for this case"
+          description: "Check if using smartScrape is needed for this case",
         },
       },
     });
@@ -292,11 +302,10 @@ export async function extractData({
     if (error instanceof CostLimitExceededError) {
       throw error;
     }
-    
-    logger.error(
-      "failed during extractSmartScrape.ts:generateCompletions",
-      { error },
-    );
+
+    logger.error("failed during extractSmartScrape.ts:generateCompletions", {
+      error,
+    });
     // console.log("failed during extractSmartScrape.ts:generateCompletions", error);
   }
 
@@ -312,7 +321,7 @@ export async function extractData({
       url: urls,
       prompt: extract?.smartscrape_prompt,
       providedExtractId: extractId,
-    })
+    });
 
     if (useAgent && extract?.shouldUseSmartscrape) {
       let smartscrapeResults: SmartScrapeResult[];
@@ -331,15 +340,18 @@ export async function extractData({
         const pages = extract?.smartscrapePages ?? [];
         //do it async promiseall instead
         if (pages.length > 100) {
-          logger.warn("Smart scrape pages limit exceeded, only first 100 pages will be scraped", {
-            pagesLength: pages.length,
-            extractId,
-            scrapeId,
-          });
+          logger.warn(
+            "Smart scrape pages limit exceeded, only first 100 pages will be scraped",
+            {
+              pagesLength: pages.length,
+              extractId,
+              scrapeId,
+            },
+          );
         }
 
         smartscrapeResults = await Promise.all(
-          pages.slice(0, 100).map(async (page) => {
+          pages.slice(0, 100).map(async page => {
             return await smartScrape({
               url: urls[page.page_index],
               prompt: page.smartscrape_prompt,
@@ -354,17 +366,17 @@ export async function extractData({
       // console.log("smartscrapeResults", smartscrapeResults);
 
       const scrapedPages = smartscrapeResults.map(
-        (result) => result.scrapedPages,
+        result => result.scrapedPages,
       );
       // console.log("scrapedPages", scrapedPages);
-      const htmls = scrapedPages.flat().map((page) => page.html);
+      const htmls = scrapedPages.flat().map(page => page.html);
       // console.log("htmls", htmls);
       const markdowns = await Promise.all(
-        htmls.map(async (html) => await parseMarkdown(html)),
+        htmls.map(async html => await parseMarkdown(html)),
       );
       // console.log("markdowns", markdowns);
       extractedData = await Promise.all(
-        markdowns.map(async (markdown) => {
+        markdowns.map(async markdown => {
           const newExtractOptions = {
             ...extractOptions,
             markdown: markdown,
@@ -379,8 +391,7 @@ export async function extractData({
               },
             },
           };
-          const { extract } =
-            await generateCompletions(newExtractOptions);
+          const { extract } = await generateCompletions(newExtractOptions);
           return extract;
         }),
       );
@@ -394,7 +405,8 @@ export async function extractData({
     console.error(">>>>>>>extractSmartScrape.ts error>>>>>\n", error);
     if (error instanceof Error && error.message === "Cost limit exceeded") {
       costLimitExceededTokenUsage = (error as any).cause.tokenUsage;
-      warning = "Smart scrape cost limit exceeded." + (warning ? " " + warning : "")
+      warning =
+        "Smart scrape cost limit exceeded." + (warning ? " " + warning : "");
     } else {
       throw error;
     }

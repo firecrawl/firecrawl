@@ -4,7 +4,7 @@ export async function mixSchemaObjects_F0(
   finalSchema: any,
   singleAnswerResult: any,
   multiEntityResult: any,
-  logger?: Logger
+  logger?: Logger,
 ) {
   const finalResult: any = {};
   logger?.debug("Mixing schema objects.");

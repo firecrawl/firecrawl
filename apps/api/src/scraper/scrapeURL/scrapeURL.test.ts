@@ -466,10 +466,16 @@ describe("Standalone scrapeURL tests", () => {
 
   test.concurrent.each(new Array(100).fill(0).map((_, i) => i))(
     "Concurrent scrape #%i",
-    async (i) => {
+    async i => {
       const url = "https://www.scrapethissite.com/?i=" + i;
       const id = "test:concurrent:" + url;
-      const out = await scrapeURL(id, url, scrapeOptions.parse({}), { teamId: "test" }, new CostTracking());
+      const out = await scrapeURL(
+        id,
+        url,
+        scrapeOptions.parse({}),
+        { teamId: "test" },
+        new CostTracking(),
+      );
 
       const replacer = (key: string, value: any) => {
         if (value instanceof Error) {

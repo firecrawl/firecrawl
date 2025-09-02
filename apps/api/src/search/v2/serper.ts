@@ -35,18 +35,18 @@ export async function serper_search(
     },
     data: data,
   };
-  
+
   try {
     const response = await axios(config);
     if (response && response.data && Array.isArray(response.data.organic)) {
-      const webResults: WebSearchResult[] = response.data.organic.map((a) => ({
+      const webResults: WebSearchResult[] = response.data.organic.map(a => ({
         url: a.link,
         title: a.title,
         description: a.snippet,
       }));
-      
+
       return {
-        web: webResults
+        web: webResults,
       };
     } else {
       return {};

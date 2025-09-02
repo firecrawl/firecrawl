@@ -1,10 +1,6 @@
 import { Response } from "express";
 import { z } from "zod";
-import {
-  ErrorResponse,
-  RequestWithAuth,
-  crawlRequestSchema,
-} from "./types";
+import { ErrorResponse, RequestWithAuth, crawlRequestSchema } from "./types";
 import { logger as _logger } from "../../lib/logger";
 import { generateCrawlerOptionsFromPrompt } from "../../scraper/scrapeURL/transformers/llmExtract";
 import { CostTracking } from "../../lib/extract/extraction-service";
@@ -16,29 +12,37 @@ const crawlParamsPreviewRequestSchema = z.object({
   prompt: z.string().max(10000),
 });
 
-type CrawlParamsPreviewRequest = z.infer<typeof crawlParamsPreviewRequestSchema>;
+type CrawlParamsPreviewRequest = z.infer<
+  typeof crawlParamsPreviewRequestSchema
+>;
 
-type CrawlParamsPreviewResponse = {
-  success: true;
-  data?: {
-    url: string;
-    includePaths?: string[];
-    excludePaths?: string[];
-    maxDepth?: number;
-    maxDiscoveryDepth?: number;
-    crawlEntireDomain?: boolean;
-    allowExternalLinks?: boolean;
-    allowSubdomains?: boolean;
-    sitemap?: "skip" | "include";
-    ignoreQueryParameters?: boolean;
-    deduplicateSimilarURLs?: boolean;
-    delay?: number;
-    limit?: number;
-  };
-} | ErrorResponse;
+type CrawlParamsPreviewResponse =
+  | {
+      success: true;
+      data?: {
+        url: string;
+        includePaths?: string[];
+        excludePaths?: string[];
+        maxDepth?: number;
+        maxDiscoveryDepth?: number;
+        crawlEntireDomain?: boolean;
+        allowExternalLinks?: boolean;
+        allowSubdomains?: boolean;
+        sitemap?: "skip" | "include";
+        ignoreQueryParameters?: boolean;
+        deduplicateSimilarURLs?: boolean;
+        delay?: number;
+        limit?: number;
+      };
+    }
+  | ErrorResponse;
 
 export async function crawlParamsPreviewController(
-  req: RequestWithAuth<{}, CrawlParamsPreviewResponse, CrawlParamsPreviewRequest>,
+  req: RequestWithAuth<
+    {},
+    CrawlParamsPreviewResponse,
+    CrawlParamsPreviewRequest
+  >,
   res: Response<CrawlParamsPreviewResponse>,
 ) {
   const logger = _logger.child({
@@ -62,7 +66,7 @@ export async function crawlParamsPreviewController(
       parsedBody.prompt,
       logger,
       costTracking,
-      { teamId: req.auth.team_id }
+      { teamId: req.auth.team_id },
     );
 
     const generatedOptions = extract || {};
@@ -89,13 +93,14 @@ export async function crawlParamsPreviewController(
       success: true,
       data: responseData,
     });
-
   } catch (error) {
     if (error instanceof z.ZodError) {
       return res.status(400).json({
         success: false,
         code: "BAD_REQUEST",
-        error: "Invalid request parameters: " + error.errors.map(e => e.message).join(", "),
+        error:
+          "Invalid request parameters: " +
+          error.errors.map(e => e.message).join(", "),
       });
     }
 
@@ -106,7 +111,8 @@ export async function crawlParamsPreviewController(
 
     return res.status(400).json({
       success: false,
-      error: "Failed to process natural language prompt. Please try rephrasing.",
+      error:
+        "Failed to process natural language prompt. Please try rephrasing.",
     });
   }
 }

@@ -62,7 +62,6 @@ describe("E2E Tests for API Routes", () => {
       expect(response.body.error).toContain(BLOCKLISTED_URL_MESSAGE);
     });
 
-
     it.concurrent(
       "should return a successful response with a valid API key",
       async () => {
@@ -179,7 +178,7 @@ describe("E2E Tests for API Routes", () => {
           .set("Authorization", `Bearer ${process.env.TEST_API_KEY}`)
           .set("Content-Type", "application/json")
           .send({ url: "https://arxiv.org/pdf/astro-ph/9301001.pdf" });
-        await new Promise((r) => setTimeout(r, 6000));
+        await new Promise(r => setTimeout(r, 6000));
 
         expect(response.statusCode).toBe(200);
         expect(response.body).toHaveProperty("data");
@@ -202,7 +201,7 @@ describe("E2E Tests for API Routes", () => {
           .set("Authorization", `Bearer ${process.env.TEST_API_KEY}`)
           .set("Content-Type", "application/json")
           .send({ url: "https://arxiv.org/pdf/astro-ph/9301001" });
-        await new Promise((r) => setTimeout(r, 6000));
+        await new Promise(r => setTimeout(r, 6000));
 
         expect(response.statusCode).toBe(200);
         expect(response.body).toHaveProperty("data");
@@ -228,7 +227,7 @@ describe("E2E Tests for API Routes", () => {
             url: "https://arxiv.org/pdf/astro-ph/9301001.pdf",
             pageOptions: { parsePDF: false },
           });
-        await new Promise((r) => setTimeout(r, 6000));
+        await new Promise(r => setTimeout(r, 6000));
 
         expect(response.statusCode).toBe(200);
         expect(response.body).toHaveProperty("data");
@@ -319,7 +318,7 @@ describe("E2E Tests for API Routes", () => {
           .set("Authorization", `Bearer ${process.env.TEST_API_KEY}`)
           .set("Content-Type", "application/json")
           .send({ url: "https://httpstat.us/400" });
-        await new Promise((r) => setTimeout(r, 5000));
+        await new Promise(r => setTimeout(r, 5000));
 
         expect(response.statusCode).toBe(200);
         expect(response.body).toHaveProperty("data");
@@ -341,7 +340,7 @@ describe("E2E Tests for API Routes", () => {
           .set("Authorization", `Bearer ${process.env.TEST_API_KEY}`)
           .set("Content-Type", "application/json")
           .send({ url: "https://httpstat.us/401" });
-        await new Promise((r) => setTimeout(r, 5000));
+        await new Promise(r => setTimeout(r, 5000));
 
         expect(response.statusCode).toBe(200);
         expect(response.body).toHaveProperty("data");
@@ -364,7 +363,7 @@ describe("E2E Tests for API Routes", () => {
           .set("Content-Type", "application/json")
           .send({ url: "https://httpstat.us/403" });
 
-        await new Promise((r) => setTimeout(r, 5000));
+        await new Promise(r => setTimeout(r, 5000));
         expect(response.statusCode).toBe(200);
         expect(response.body).toHaveProperty("data");
         expect(response.body.data).toHaveProperty("content");
@@ -385,7 +384,7 @@ describe("E2E Tests for API Routes", () => {
           .set("Authorization", `Bearer ${process.env.TEST_API_KEY}`)
           .set("Content-Type", "application/json")
           .send({ url: "https://httpstat.us/404" });
-        await new Promise((r) => setTimeout(r, 5000));
+        await new Promise(r => setTimeout(r, 5000));
 
         expect(response.statusCode).toBe(200);
         expect(response.body).toHaveProperty("data");
@@ -407,7 +406,7 @@ describe("E2E Tests for API Routes", () => {
           .set("Authorization", `Bearer ${process.env.TEST_API_KEY}`)
           .set("Content-Type", "application/json")
           .send({ url: "https://httpstat.us/405" });
-        await new Promise((r) => setTimeout(r, 5000));
+        await new Promise(r => setTimeout(r, 5000));
 
         expect(response.statusCode).toBe(200);
         expect(response.body).toHaveProperty("data");
@@ -429,7 +428,7 @@ describe("E2E Tests for API Routes", () => {
           .set("Authorization", `Bearer ${process.env.TEST_API_KEY}`)
           .set("Content-Type", "application/json")
           .send({ url: "https://httpstat.us/500" });
-        await new Promise((r) => setTimeout(r, 5000));
+        await new Promise(r => setTimeout(r, 5000));
 
         expect(response.statusCode).toBe(200);
         expect(response.body).toHaveProperty("data");
@@ -544,7 +543,7 @@ describe("E2E Tests for API Routes", () => {
           isFinished = response.body.status === "completed";
 
           if (!isFinished) {
-            await new Promise((resolve) => setTimeout(resolve, 1000)); // Wait for 1 second before checking again
+            await new Promise(resolve => setTimeout(resolve, 1000)); // Wait for 1 second before checking again
           }
         }
 
@@ -604,7 +603,7 @@ describe("E2E Tests for API Routes", () => {
           isFinished = response.body.status === "completed";
 
           if (!isFinished) {
-            await new Promise((resolve) => setTimeout(resolve, 1000)); // Wait for 1 second before checking again
+            await new Promise(resolve => setTimeout(resolve, 1000)); // Wait for 1 second before checking again
           }
         }
 
@@ -646,7 +645,7 @@ describe("E2E Tests for API Routes", () => {
           isFinished = response.body.status === "completed";
 
           if (!isFinished) {
-            await new Promise((resolve) => setTimeout(resolve, 1000)); // Wait for 1 second before checking again
+            await new Promise(resolve => setTimeout(resolve, 1000)); // Wait for 1 second before checking again
           }
         }
 
@@ -699,7 +698,7 @@ describe("E2E Tests for API Routes", () => {
           expect(statusCheckResponse.statusCode).toBe(200);
           isCompleted = statusCheckResponse.body.status === "completed";
           if (!isCompleted) {
-            await new Promise((resolve) => setTimeout(resolve, 1000)); // Wait for 1 second before checking again
+            await new Promise(resolve => setTimeout(resolve, 1000)); // Wait for 1 second before checking again
           }
         }
         const completedResponse = await request(TEST_URL)
@@ -767,7 +766,7 @@ describe("E2E Tests for API Routes", () => {
           expect(statusCheckResponse.statusCode).toBe(200);
           isCompleted = statusCheckResponse.body.status === "completed";
           if (!isCompleted) {
-            await new Promise((resolve) => setTimeout(resolve, 1000)); // Wait for 1 second before checking again
+            await new Promise(resolve => setTimeout(resolve, 1000)); // Wait for 1 second before checking again
           }
         }
         const completedResponse = await request(TEST_URL)
@@ -829,7 +828,7 @@ describe("E2E Tests for API Routes", () => {
           expect(statusCheckResponse.statusCode).toBe(200);
           isCompleted = statusCheckResponse.body.status === "completed";
           if (!isCompleted) {
-            await new Promise((resolve) => setTimeout(resolve, 1000)); // Wait for 1 second before checking again
+            await new Promise(resolve => setTimeout(resolve, 1000)); // Wait for 1 second before checking again
           }
         }
         const completedResponse = await request(TEST_URL)
@@ -941,7 +940,7 @@ describe("E2E Tests for API Routes", () => {
           expect(statusCheckResponse.statusCode).toBe(200);
           isCompleted = statusCheckResponse.body.status === "completed";
           if (!isCompleted) {
-            await new Promise((resolve) => setTimeout(resolve, 1000)); // Wait for 1 second before checking again
+            await new Promise(resolve => setTimeout(resolve, 1000)); // Wait for 1 second before checking again
           }
         }
 
@@ -1011,7 +1010,7 @@ describe("E2E Tests for API Routes", () => {
             crawlData = statusResponse.body.data;
           }
           if (crawlStatus !== "completed") {
-            await new Promise((resolve) => setTimeout(resolve, 1000)); // Wait for 1 second before checking again
+            await new Promise(resolve => setTimeout(resolve, 1000)); // Wait for 1 second before checking again
           }
         }
         expect(crawlData.length).toBeGreaterThan(0);
@@ -1165,7 +1164,7 @@ describe("E2E Tests for API Routes", () => {
             isCompleted = true;
             completedResponse = response;
           } else {
-            await new Promise((r) => setTimeout(r, 1000)); // Wait for 1 second before checking again
+            await new Promise(r => setTimeout(r, 1000)); // Wait for 1 second before checking again
           }
         }
         expect(completedResponse.body).toHaveProperty("status");
@@ -1183,7 +1182,7 @@ describe("E2E Tests for API Routes", () => {
         ).toBeUndefined();
 
         const childrenLinks = completedResponse.body.data.filter(
-          (doc) =>
+          doc =>
             doc.metadata &&
             doc.metadata.sourceURL &&
             doc.metadata.sourceURL.includes("mendable.ai/blog"),
@@ -1231,7 +1230,7 @@ describe("E2E Tests for API Routes", () => {
             isCompleted = true;
             completedResponse = response;
           } else {
-            await new Promise((r) => setTimeout(r, 1000)); // Wait for 1 second before checking again
+            await new Promise(r => setTimeout(r, 1000)); // Wait for 1 second before checking again
           }
         }
         expect(completedResponse.body.status).toBe("completed");
@@ -1292,7 +1291,7 @@ describe("E2E Tests for API Routes", () => {
             isFinished = true;
             completedResponse = response;
           } else {
-            await new Promise((r) => setTimeout(r, 1000)); // Wait for 1 second before checking again
+            await new Promise(r => setTimeout(r, 1000)); // Wait for 1 second before checking again
           }
         }
 
@@ -1346,7 +1345,7 @@ describe("E2E Tests for API Routes", () => {
           isFinished = true;
           completedResponse = response;
         } else {
-          await new Promise((r) => setTimeout(r, 1000)); // Wait for 1 second before checking again
+          await new Promise(r => setTimeout(r, 1000)); // Wait for 1 second before checking again
         }
       }
 
@@ -1363,7 +1362,7 @@ describe("E2E Tests for API Routes", () => {
       expect(completedResponse.body.data[0].metadata.pageStatusCode).toBe(200);
       expect(completedResponse.body.data[0].metadata.pageError).toBeUndefined();
 
-      const onlyChildrenLinks = completedResponse.body.data.filter((doc) => {
+      const onlyChildrenLinks = completedResponse.body.data.filter(doc => {
         return (
           doc.metadata &&
           doc.metadata.sourceURL &&
@@ -1389,7 +1388,7 @@ describe("E2E Tests for API Routes", () => {
 
       expect(crawlResponse.statusCode).toBe(200);
 
-      await new Promise((r) => setTimeout(r, 20000));
+      await new Promise(r => setTimeout(r, 20000));
 
       const responseCancel = await request(TEST_URL)
         .delete(`/v0/crawl/cancel/${crawlResponse.body.jobId}`)
@@ -1398,7 +1397,7 @@ describe("E2E Tests for API Routes", () => {
       expect(responseCancel.body).toHaveProperty("status");
       expect(responseCancel.body.status).toBe("cancelled");
 
-      await new Promise((r) => setTimeout(r, 10000));
+      await new Promise(r => setTimeout(r, 10000));
       const completedResponse = await request(TEST_URL)
         .get(`/v0/crawl/status/${crawlResponse.body.jobId}`)
         .set("Authorization", `Bearer ${process.env.TEST_API_KEY}`);
@@ -1611,7 +1610,7 @@ describe("E2E Tests for API Routes", () => {
           isFinished = statusResponse.body.status === "completed";
 
           if (!isFinished) {
-            await new Promise((resolve) => setTimeout(resolve, 1000)); // Wait for 1 second before checking again
+            await new Promise(resolve => setTimeout(resolve, 1000)); // Wait for 1 second before checking again
           }
         }
 

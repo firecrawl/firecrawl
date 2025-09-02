@@ -45,7 +45,7 @@ describe("normalizeUrlOnlyHostname", () => {
 
   it("should handle URLs with multiple subdomains", () => {
     const url = "https://dev.blog.example.com";
-    const expected = "dev.blog.example.com"; 
+    const expected = "dev.blog.example.com";
     expect(normalizeUrlOnlyHostname(url)).toBe(expected);
   });
 });

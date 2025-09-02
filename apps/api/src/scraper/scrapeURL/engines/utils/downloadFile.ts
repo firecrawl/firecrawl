@@ -51,7 +51,7 @@ export async function downloadFile(
   response.body.pipeTo(Writable.toWeb(tempFileWrite));
   await new Promise((resolve, reject) => {
     tempFileWrite.on("finish", () => resolve(null));
-    tempFileWrite.on("error", (error) => {
+    tempFileWrite.on("error", error => {
       reject(
         new EngineError("Failed to write to temp file", { cause: { error } }),
       );

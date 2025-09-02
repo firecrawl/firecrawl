@@ -1,6 +1,6 @@
-declare module 'parse-diff' {
+declare module "parse-diff" {
   interface NormalChange {
-    type: 'normal';
+    type: "normal";
     normal: true;
     ln1: number;
     ln2: number;
@@ -8,14 +8,14 @@ declare module 'parse-diff' {
   }
 
   interface AddChange {
-    type: 'add';
+    type: "add";
     add: true;
     ln: number;
     content: string;
   }
 
   interface DeleteChange {
-    type: 'del';
+    type: "del";
     del: true;
     ln: number;
     content: string;

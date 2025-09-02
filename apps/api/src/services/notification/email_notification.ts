@@ -166,8 +166,12 @@ async function sendLedgerEvent(
   if (notificationType === NotificationType.CONCURRENCY_LIMIT_REACHED) {
     trackEvent("concurrent-browser-limit-reached", {
       team_id,
-    }).catch((error) => {
-      logger.warn("Error tracking event", { module: "email_notification", method: "sendLedgerEvent", error });
+    }).catch(error => {
+      logger.warn("Error tracking event", {
+        module: "email_notification",
+        method: "sendLedgerEvent",
+        error,
+      });
     });
   }
 }
@@ -235,8 +239,12 @@ async function sendNotificationInternal(
       );
 
       if (is_ledger_enabled) {
-        sendLedgerEvent(team_id, notificationType).catch((error) => {
-          logger.warn("Error sending ledger event", { module: "email_notification", method: "sendEmail", error });
+        sendLedgerEvent(team_id, notificationType).catch(error => {
+          logger.warn("Error sending ledger event", {
+            module: "email_notification",
+            method: "sendEmail",
+            error,
+          });
         });
       }
       // get the emails from the user with the team_id
@@ -272,7 +280,7 @@ async function sendNotificationInternal(
           `${getNotificationString(notificationType)}: Team ${team_id}, with email ${emails[0].email}. Number of credits used: ${chunk.adjusted_credits_used} | Number of credits in the plan: ${chunk.price_credits}`,
           false,
           process.env.SLACK_ADMIN_WEBHOOK_URL,
-        ).catch((error) => {
+        ).catch(error => {
           logger.debug(`Error sending slack notification: ${error}`);
         });
       }
@@ -371,8 +379,12 @@ export async function sendNotificationWithCustomDays(
       }
 
       if (is_ledger_enabled) {
-        sendLedgerEvent(team_id, notificationType).catch((error) => {
-          logger.warn("Error sending ledger event", { module: "email_notification", method: "sendEmail", error });
+        sendLedgerEvent(team_id, notificationType).catch(error => {
+          logger.warn("Error sending ledger event", {
+            module: "email_notification",
+            method: "sendEmail",
+            error,
+          });
         });
       }
 
@@ -402,7 +414,7 @@ export async function sendNotificationWithCustomDays(
           `${getNotificationString(notificationType)}: Team ${team_id}, with email ${emails[0].email}.`,
           false,
           process.env.SLACK_ADMIN_WEBHOOK_URL,
-        ).catch((error) => {
+        ).catch(error => {
           logger.debug(`Error sending slack notification: ${error}`);
         });
       }
@@ -416,5 +428,11 @@ export async function sendNotificationWithCustomDays(
       return { success: true };
     },
     undefined,
-  )(team_id, notificationType, daysBetweenEmails, bypassRecentChecks, is_ledger_enabled );
+  )(
+    team_id,
+    notificationType,
+    daysBetweenEmails,
+    bypassRecentChecks,
+    is_ledger_enabled,
+  );
 }

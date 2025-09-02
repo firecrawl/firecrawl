@@ -1,4 +1,6 @@
-export function deduplicateObjectsArray_F0(objArray: { [key: string]: any[] }): {
+export function deduplicateObjectsArray_F0(objArray: {
+  [key: string]: any[];
+}): {
   [key: string]: any[];
 } {
   const deduplicatedObjArray: { [key: string]: any[] } = {};
@@ -6,7 +8,7 @@ export function deduplicateObjectsArray_F0(objArray: { [key: string]: any[] }): 
   for (const key in objArray) {
     if (Array.isArray(objArray[key])) {
       const seen = new Set();
-      deduplicatedObjArray[key] = objArray[key].filter((item) => {
+      deduplicatedObjArray[key] = objArray[key].filter(item => {
         // Create a unique identifier for each item based on its properties
         const identifier = JSON.stringify(item);
 

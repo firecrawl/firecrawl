@@ -192,7 +192,7 @@ export interface WebSearchResult {
   metadata?: Record<string, any>;
 }
 
-export type SearchResultType = 'web' | 'images' | 'news';
+export type SearchResultType = "web" | "images" | "news";
 
 export interface SearchV2Response {
   web?: WebSearchResult[];

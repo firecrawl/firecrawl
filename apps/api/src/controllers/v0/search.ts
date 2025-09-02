@@ -83,16 +83,18 @@ export async function searchHelper(
   );
 
   if (justSearch) {
-    billTeam(team_id, subscription_id, res.length, api_key_id, logger).catch((error) => {
-      logger.error(
-        `Failed to bill team ${team_id} for ${res.length} credits: ${error}`,
-      );
-      // Optionally, you could notify an admin or add to a retry queue here
-    });
+    billTeam(team_id, subscription_id, res.length, api_key_id, logger).catch(
+      error => {
+        logger.error(
+          `Failed to bill team ${team_id} for ${res.length} credits: ${error}`,
+        );
+        // Optionally, you could notify an admin or add to a retry queue here
+      },
+    );
     return { success: true, data: res, returnCode: 200 };
   }
 
-  res = res.filter((r) => !isUrlBlocked(r.url, flags));
+  res = res.filter(r => !isUrlBlocked(r.url, flags));
   if (res.length > num_results) {
     res = res.slice(0, num_results);
   }
@@ -105,7 +107,7 @@ export async function searchHelper(
 
   // filter out social media links
 
-  const jobDatas = res.map((x) => {
+  const jobDatas = res.map(x => {
     const url = x.url;
     const uuid = uuidv4();
     return {
@@ -133,17 +135,15 @@ export async function searchHelper(
   }
 
   const docs = (
-    await Promise.all(
-      jobDatas.map((x) => waitForJob(x.opts.jobId, 60000)),
-    )
-  ).map((x) => toLegacyDocument(x, internalOptions));
+    await Promise.all(jobDatas.map(x => waitForJob(x.opts.jobId, 60000)))
+  ).map(x => toLegacyDocument(x, internalOptions));
 
   if (docs.length === 0) {
     return { success: true, error: "No search results found", returnCode: 200 };
   }
 
   const sq = getScrapeQueue();
-  await Promise.all(jobDatas.map((x) => sq.remove(x.opts.jobId)));
+  await Promise.all(jobDatas.map(x => sq.remove(x.opts.jobId)));
 
   // make sure doc.content is not empty
   const filteredDocs = docs.filter(
@@ -176,16 +176,29 @@ export async function searchController(req: Request, res: Response) {
     const { team_id, chunk } = auth;
 
     if (chunk?.flags?.forceZDR) {
-      return res.status(400).json({ error: "Your team has zero data retention enabled. This is not supported on the v0 API. Please update your code to use the v1 API." });
+      return res.status(400).json({
+        error:
+          "Your team has zero data retention enabled. This is not supported on the v0 API. Please update your code to use the v1 API.",
+      });
     }
 
     const jobId = uuidv4();
 
-    redisEvictConnection.sadd("teams_using_v0", team_id)
-      .catch(error => logger.error("Failed to add team to teams_using_v0", { error, team_id }));
-    
-    redisEvictConnection.sadd("teams_using_v0:" + team_id, "search:" + jobId)
-      .catch(error => logger.error("Failed to add team to teams_using_v0 (2)", { error, team_id }));
+    redisEvictConnection.sadd("teams_using_v0", team_id).catch(error =>
+      logger.error("Failed to add team to teams_using_v0", {
+        error,
+        team_id,
+      }),
+    );
+
+    redisEvictConnection
+      .sadd("teams_using_v0:" + team_id, "search:" + jobId)
+      .catch(error =>
+        logger.error("Failed to add team to teams_using_v0 (2)", {
+          error,
+          team_id,
+        }),
+      );
 
     const crawlerOptions = req.body.crawlerOptions ?? {};
     const pageOptions = req.body.pageOptions ?? {
@@ -234,7 +247,12 @@ export async function searchController(req: Request, res: Response) {
       team_id: team_id,
       mode: "search",
       url: req.body.query,
-      scrapeOptions: fromLegacyScrapeOptions(req.body.pageOptions, undefined, 60000, team_id),
+      scrapeOptions: fromLegacyScrapeOptions(
+        req.body.pageOptions,
+        undefined,
+        60000,
+        team_id,
+      ),
       crawlerOptions: crawlerOptions,
       origin,
       integration: req.body.integration,

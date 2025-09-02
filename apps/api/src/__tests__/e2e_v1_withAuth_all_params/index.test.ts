@@ -318,7 +318,7 @@ describe("E2E Tests for v1 API Routes", () => {
         .set("Authorization", `Bearer ${process.env.TEST_API_KEY}`)
         .set("Content-Type", "application/json")
         .send({ url: "https://arxiv.org/pdf/astro-ph/9301001.pdf" });
-      await new Promise((r) => setTimeout(r, 6000));
+      await new Promise(r => setTimeout(r, 6000));
 
       expect(response.statusCode).toBe(200);
       expect(response.body).toHaveProperty("data");
@@ -341,7 +341,7 @@ describe("E2E Tests for v1 API Routes", () => {
           url: "https://arxiv.org/pdf/astro-ph/9301001.pdf",
           parsePDF: false,
         });
-      await new Promise((r) => setTimeout(r, 6000));
+      await new Promise(r => setTimeout(r, 6000));
 
       expect(responseNoParsePDF.statusCode).toBe(200);
       expect(responseNoParsePDF.body).toHaveProperty("data");

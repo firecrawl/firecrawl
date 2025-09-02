@@ -22,11 +22,13 @@ export async function crawlController(
   if (req.body.zeroDataRetention && !req.acuc?.flags?.allowZDR) {
     return res.status(400).json({
       success: false,
-      error: "Zero data retention is enabled for this team. If you're interested in ZDR, please contact support@firecrawl.com",
+      error:
+        "Zero data retention is enabled for this team. If you're interested in ZDR, please contact support@firecrawl.com",
     });
   }
 
-  const zeroDataRetention = req.acuc?.flags?.forceZDR || req.body.zeroDataRetention;
+  const zeroDataRetention =
+    req.acuc?.flags?.forceZDR || req.body.zeroDataRetention;
 
   const id = uuidv4();
   const logger = _logger.child({
@@ -54,7 +56,11 @@ export async function crawlController(
     url: undefined,
     scrapeOptions: undefined,
   };
-  const { scrapeOptions, internalOptions } = fromV1ScrapeOptions(req.body.scrapeOptions, req.body.scrapeOptions.timeout, req.auth.team_id);
+  const { scrapeOptions, internalOptions } = fromV1ScrapeOptions(
+    req.body.scrapeOptions,
+    req.body.scrapeOptions.timeout,
+    req.auth.team_id,
+  );
 
   // TODO: @rafa, is this right? copied from v0
   if (Array.isArray(crawlerOptions.includePaths)) {
@@ -93,12 +99,19 @@ export async function crawlController(
       ...internalOptions,
       disableSmartWaitCache: true,
       teamId: req.auth.team_id,
-      saveScrapeResultToGCS: process.env.GCS_FIRE_ENGINE_BUCKET_NAME ? true : false,
+      saveScrapeResultToGCS: process.env.GCS_FIRE_ENGINE_BUCKET_NAME
+        ? true
+        : false,
       zeroDataRetention,
     }, // NOTE: smart wait disabled for crawls to ensure contentful scrape, speed does not matter
     team_id: req.auth.team_id,
     createdAt: Date.now(),
-    maxConcurrency: req.body.maxConcurrency !== undefined ? (req.acuc?.concurrency !== undefined ? Math.min(req.body.maxConcurrency, req.acuc.concurrency) : req.body.maxConcurrency) : undefined,
+    maxConcurrency:
+      req.body.maxConcurrency !== undefined
+        ? req.acuc?.concurrency !== undefined
+          ? Math.min(req.body.maxConcurrency, req.acuc.concurrency)
+          : req.body.maxConcurrency
+        : undefined,
     zeroDataRetention,
   };
 

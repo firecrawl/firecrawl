@@ -45,7 +45,7 @@ export async function rerankDocuments(
 
   return rerank.results
     .sort((a, b) => b.relevanceScore - a.relevanceScore)
-    .map((x) => ({
+    .map(x => ({
       document: x.document,
       index: x.index,
       relevanceScore: x.relevanceScore,
@@ -57,16 +57,16 @@ export async function rerankLinks(
   searchQuery: string,
   urlTraces: URLTrace[],
   flags: TeamFlags,
-  metadata: { teamId: string, extractId?: string }
+  metadata: { teamId: string; extractId?: string },
 ): Promise<MapDocument[]> {
   // console.log("Going to rerank links");
   const mappedLinksRerank = mappedLinks.map(
-    (x) => `url: ${x.url}, title: ${x.title}, description: ${x.description}`,
+    x => `url: ${x.url}, title: ${x.title}, description: ${x.description}`,
   );
 
   const linksAndScores = await performRanking(
     mappedLinksRerank,
-    mappedLinks.map((l) => l.url),
+    mappedLinks.map(l => l.url),
     searchQuery,
     metadata,
   );
@@ -99,21 +99,23 @@ export async function rerankLinks(
       filteredLinks = linksAndScores
         .sort((a, b) => b.score - a.score)
         .slice(0, extractConfig.RERANKING.MIN_REQUIRED_LINKS)
-        .map((x) => mappedLinks.find((link) => link.url === x.link))
+        .map(x => mappedLinks.find(link => link.url === x.link))
         .filter(
           (x): x is MapDocument =>
-            x !== undefined && x.url !== undefined && !isUrlBlocked(x.url, flags),
+            x !== undefined &&
+            x.url !== undefined &&
+            !isUrlBlocked(x.url, flags),
         );
     }
   }
 
   // Update URL traces with relevance scores and mark filtered out URLs
-  linksAndScores.forEach((score) => {
-    const trace = urlTraces.find((t) => t.url === score.link);
+  linksAndScores.forEach(score => {
+    const trace = urlTraces.find(t => t.url === score.link);
     if (trace) {
       trace.relevanceScore = score.score;
       // If URL didn't make it through filtering, mark it as filtered out
-      if (!filteredLinks.some((link) => link.url === score.link)) {
+      if (!filteredLinks.some(link => link.url === score.link)) {
         trace.warning = `Relevance score ${score.score} below threshold`;
         trace.usedInCompletion = false;
       }
@@ -126,8 +128,8 @@ export async function rerankLinks(
   );
 
   // Mark URLs that will be used in completion
-  rankedLinks.forEach((link) => {
-    const trace = urlTraces.find((t) => t.url === link.url);
+  rankedLinks.forEach(link => {
+    const trace = urlTraces.find(t => t.url === link.url);
     if (trace) {
       trace.usedInCompletion = true;
     }
@@ -136,8 +138,8 @@ export async function rerankLinks(
   // Mark URLs that were dropped due to ranking limit
   filteredLinks
     .slice(extractConfig.RERANKING.MAX_RANKING_LIMIT_FOR_RELEVANCE)
-    .forEach((link) => {
-      const trace = urlTraces.find((t) => t.url === link.url);
+    .forEach(link => {
+      const trace = urlTraces.find(t => t.url === link.url);
       if (trace) {
         trace.warning = "Excluded due to ranking limit";
         trace.usedInCompletion = false;
@@ -161,8 +163,8 @@ function filterAndProcessLinks(
   flags: TeamFlags,
 ): MapDocument[] {
   return linksAndScores
-    .filter((x) => x.score > threshold)
-    .map((x) => mappedLinks.find((link) => link.url === x.link))
+    .filter(x => x.score > threshold)
+    .map(x => mappedLinks.find(link => link.url === x.link))
     .filter(
       (x): x is MapDocument =>
         x !== undefined && x.url !== undefined && !isUrlBlocked(x.url, flags),
@@ -184,7 +186,7 @@ export type RerankerOptions = {
   multiEntityKeys: string[];
   keyIndicators: string[];
   costTracking: CostTracking;
-  metadata: { teamId: string, functionId?: string, extractId?: string };
+  metadata: { teamId: string; functionId?: string; extractId?: string };
 };
 
 export async function rerankLinksWithLLM(
@@ -249,7 +251,7 @@ export async function rerankLinksWithLLM(
 
       const linksContent = chunk
         .map(
-          (link) =>
+          link =>
             `URL: ${link.url}${link.title ? `\nTitle: ${link.title}` : ""}${link.description ? `\nDescription: ${link.description}` : ""}`,
         )
         .join("\n\n");
@@ -261,7 +263,7 @@ export async function rerankLinksWithLLM(
 
       for (let retry = 0; retry <= MAX_RETRIES; retry++) {
         try {
-          const timeoutPromise = new Promise<null>((resolve) => {
+          const timeoutPromise = new Promise<null>(resolve => {
             setTimeout(() => resolve(null), TIMEOUT_MS);
           });
 
@@ -332,7 +334,9 @@ export async function rerankLinksWithLLM(
               },
               metadata: {
                 ...metadata,
-                functionId: metadata.functionId ? (metadata.functionId + "/rerankLinksWithLLM") : "rerankLinksWithLLM",
+                functionId: metadata.functionId
+                  ? metadata.functionId + "/rerankLinksWithLLM"
+                  : "rerankLinksWithLLM",
               },
             });
 
@@ -388,12 +392,12 @@ export async function rerankLinksWithLLM(
 
   // Map back to MapDocument format, keeping ALL links for testing
   const relevantLinks = flattenedResults
-    .map((result) => {
+    .map(result => {
       if (
         result.relevanceScore >
         (isMultiEntity ? THRESHOLD_FOR_MULTIENTITY : THRESHOLD_FOR_SINGLEPAGE)
       ) {
-        const link = links.find((link) => link.url === result.url);
+        const link = links.find(link => link.url === result.url);
         if (link) {
           return {
             ...link,

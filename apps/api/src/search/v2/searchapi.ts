@@ -47,14 +47,16 @@ export async function searchapi_search(
     const data = response.data;
 
     if (data && Array.isArray(data.organic_results)) {
-      const webResults: WebSearchResult[] = data.organic_results.map((a: any) => ({
-        url: a.link,
-        title: a.title,
-        description: a.snippet,
-      }));
-      
+      const webResults: WebSearchResult[] = data.organic_results.map(
+        (a: any) => ({
+          url: a.link,
+          title: a.title,
+          description: a.snippet,
+        }),
+      );
+
       return {
-        web: webResults
+        web: webResults,
       };
     } else {
       return {};

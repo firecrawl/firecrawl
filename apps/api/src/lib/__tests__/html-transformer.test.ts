@@ -430,7 +430,7 @@ describe("HTML Transformer", () => {
       };
 
       const result = await transformHtml(options);
-      console.log(result)
+      console.log(result);
       expect(result).toContain("https://example.com/fullurl");
       expect(result).toContain("http://example.net/fullurl");
       expect(result).toContain("https://example.com/pathurl");

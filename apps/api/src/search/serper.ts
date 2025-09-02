@@ -37,7 +37,7 @@ export async function serper_search(
   };
   const response = await axios(config);
   if (response && response.data && Array.isArray(response.data.organic)) {
-    return response.data.organic.map((a) => ({
+    return response.data.organic.map(a => ({
       url: a.link,
       title: a.title,
       description: a.snippet,

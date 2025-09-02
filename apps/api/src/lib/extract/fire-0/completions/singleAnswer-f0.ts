@@ -16,7 +16,12 @@ export async function singleAnswerCompletion_F0({
   links: string[];
   prompt: string;
   systemPrompt: string;
-  metadata: { teamId: string, functionId?: string, extractId?: string, scrapeId?: string };
+  metadata: {
+    teamId: string;
+    functionId?: string;
+    extractId?: string;
+    scrapeId?: string;
+  };
 }): Promise<{
   extract: any;
   tokenUsage: TokenUsage;
@@ -33,16 +38,20 @@ export async function singleAnswerCompletion_F0({
       prompt: "Today is: " + new Date().toISOString() + "\n" + prompt,
       schema: rSchema,
     },
-    markdown: singleAnswerDocs.map((x) => buildDocument_F0(x)).join("\n"),
+    markdown: singleAnswerDocs.map(x => buildDocument_F0(x)).join("\n"),
     isExtractEndpoint: true,
     metadata: {
       ...metadata,
-      functionId: metadata.functionId ? (metadata.functionId + "/singleAnswerCompletion_F0") : "singleAnswerCompletion_F0",
-    }
+      functionId: metadata.functionId
+        ? metadata.functionId + "/singleAnswerCompletion_F0"
+        : "singleAnswerCompletion_F0",
+    },
   });
-  return { 
-    extract: completion.extract, 
+  return {
+    extract: completion.extract,
     tokenUsage: completion.totalUsage,
-    sources: singleAnswerDocs.map(doc => doc.metadata.url || doc.metadata.sourceURL || "")
+    sources: singleAnswerDocs.map(
+      doc => doc.metadata.url || doc.metadata.sourceURL || "",
+    ),
   };
 }

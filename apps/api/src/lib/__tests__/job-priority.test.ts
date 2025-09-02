@@ -4,7 +4,7 @@ import {
   deleteJobPriority,
 } from "../job-priority";
 import { redisEvictConnection } from "../../services/redis";
-import {  } from "../../types";
+import {} from "../../types";
 
 jest.mock("../../services/queue-service", () => ({
   redisConnection: {
@@ -126,7 +126,9 @@ describe("Job Priority Tests", () => {
 
     // Check if the set has been removed (scard should return 0)
     (redisEvictConnection.scard as jest.Mock).mockResolvedValue(0);
-    const setSize = await redisEvictConnection.scard(`limit_team_id:${team_id}`);
+    const setSize = await redisEvictConnection.scard(
+      `limit_team_id:${team_id}`,
+    );
     expect(setSize).toBe(0);
 
     jest.useRealTimers();

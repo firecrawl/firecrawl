@@ -6,7 +6,15 @@ import { Action } from "../../../../controllers/v1/types";
 import { robustFetch } from "../../lib/fetch";
 import { MockState } from "../../lib/mock";
 import { getDocFromGCS } from "../../../../lib/gcs-jobs";
-import { ActionError, DNSResolutionError, EngineError, FEPageLoadFailed, SSLError, SiteError, UnsupportedFileError } from "../../error";
+import {
+  ActionError,
+  DNSResolutionError,
+  EngineError,
+  FEPageLoadFailed,
+  SSLError,
+  SiteError,
+  UnsupportedFileError,
+} from "../../error";
 import { Meta } from "../..";
 
 export type FireEngineScrapeRequestCommon = {
@@ -88,43 +96,46 @@ const successSchema = z.object({
     })
     .array()
     .optional(),
-  actionResults: z.union([
-    z.object({
-      idx: z.number(),
-      type: z.literal("screenshot"),
-      result: z.object({
-        path: z.string(),
-      }),
-    }),
-    z.object({
-      idx: z.number(),
-      type: z.literal("scrape"),
-      result: z.union([
-        z.object({
-          url: z.string(),
-          html: z.string(),
+  actionResults: z
+    .union([
+      z.object({
+        idx: z.number(),
+        type: z.literal("screenshot"),
+        result: z.object({
+          path: z.string(),
         }),
-        z.object({
-          url: z.string(),
-          accessibility: z.string(),
+      }),
+      z.object({
+        idx: z.number(),
+        type: z.literal("scrape"),
+        result: z.union([
+          z.object({
+            url: z.string(),
+            html: z.string(),
+          }),
+          z.object({
+            url: z.string(),
+            accessibility: z.string(),
+          }),
+        ]),
+      }),
+      z.object({
+        idx: z.number(),
+        type: z.literal("executeJavascript"),
+        result: z.object({
+          return: z.string(),
         }),
-      ]),
-    }),
-    z.object({
-      idx: z.number(),
-      type: z.literal("executeJavascript"),
-      result: z.object({
-        return: z.string(),
       }),
-    }),
-    z.object({
-      idx: z.number(),
-      type: z.literal("pdf"),
-      result: z.object({
-        link: z.string(),
+      z.object({
+        idx: z.number(),
+        type: z.literal("pdf"),
+        result: z.object({
+          link: z.string(),
+        }),
       }),
-    }),
-  ]).array().optional(),
+    ])
+    .array()
+    .optional(),
 
   // chrome-cdp only -- file download handler
   file: z
@@ -154,8 +165,10 @@ const failedSchema = z.object({
   error: z.string(),
 });
 
-export const fireEngineURL = process.env.FIRE_ENGINE_BETA_URL ?? "<mock-fire-engine-url>";
-export const fireEngineStagingURL = process.env.FIRE_ENGINE_STAGING_URL ?? "<mock-fire-engine-url>";
+export const fireEngineURL =
+  process.env.FIRE_ENGINE_BETA_URL ?? "<mock-fire-engine-url>";
+export const fireEngineStagingURL =
+  process.env.FIRE_ENGINE_STAGING_URL ?? "<mock-fire-engine-url>";
 
 export async function fireEngineScrape<
   Engine extends
@@ -183,7 +196,7 @@ export async function fireEngineScrape<
 
   // Fire-engine now saves the content to GCS
   if (!status.content && status.docUrl) {
-    const doc = await getDocFromGCS(status.docUrl.split('/').pop() ?? "");
+    const doc = await getDocFromGCS(status.docUrl.split("/").pop() ?? "");
     if (doc) {
       status = { ...status, ...doc };
       delete status.docUrl;
@@ -200,14 +213,21 @@ export async function fireEngineScrape<
   } else if (processingParse.success) {
     return processingParse.data;
   } else if (failedParse.success) {
-    logger.debug("Scrape job failed", { status, jobId: failedParse.data.jobId });
+    logger.debug("Scrape job failed", {
+      status,
+      jobId: failedParse.data.jobId,
+    });
     if (
       typeof status.error === "string" &&
       status.error.includes("Chrome error: ")
     ) {
       const code = status.error.split("Chrome error: ")[1];
 
-      if (code.includes("ERR_CERT_") || code.includes("ERR_SSL_") || code.includes("ERR_BAD_SSL_")) {
+      if (
+        code.includes("ERR_CERT_") ||
+        code.includes("ERR_SSL_") ||
+        code.includes("ERR_BAD_SSL_")
+      ) {
         throw new SSLError(meta.options.skipTlsVerification);
       } else {
         throw new SiteError(code);
@@ -216,7 +236,9 @@ export async function fireEngineScrape<
       typeof status.error === "string" &&
       status.error.includes("Dns resolution error for hostname: ")
     ) {
-      throw new DNSResolutionError(status.error.split("Dns resolution error for hostname: ")[1]);
+      throw new DNSResolutionError(
+        status.error.split("Dns resolution error for hostname: ")[1],
+      );
     } else if (
       typeof status.error === "string" &&
       status.error.includes("File size exceeds")
@@ -228,12 +250,16 @@ export async function fireEngineScrape<
       typeof status.error === "string" &&
       status.error.includes("failed to finish without timing out")
     ) {
-      logger.warn("CDP timed out while loading the page", { status, jobId: failedParse.data.jobId });
+      logger.warn("CDP timed out while loading the page", {
+        status,
+        jobId: failedParse.data.jobId,
+      });
       throw new FEPageLoadFailed();
     } else if (
       typeof status.error === "string" &&
       // TODO: improve this later
-      (status.error.includes("Element") || status.error.includes("Javascript execution failed"))
+      (status.error.includes("Element") ||
+        status.error.includes("Javascript execution failed"))
     ) {
       throw new ActionError(status.error.split("Error: ")[1]);
     } else {

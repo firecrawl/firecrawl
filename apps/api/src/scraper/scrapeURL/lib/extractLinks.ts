@@ -1,11 +1,18 @@
 // TODO: refactor
 import { load } from "cheerio"; // rustified
 import { logger } from "../../../lib/logger";
-import { extractLinks as _extractLinks, extractBaseHref as _extractBaseHref } from "../../../lib/html-transformer";
+import {
+  extractLinks as _extractLinks,
+  extractBaseHref as _extractBaseHref,
+} from "../../../lib/html-transformer";
 
-function resolveUrlWithBaseHref(href: string, baseUrl: string, baseHref: string): string {
+function resolveUrlWithBaseHref(
+  href: string,
+  baseUrl: string,
+  baseHref: string,
+): string {
   let resolutionBase = baseUrl;
-  
+
   if (baseHref) {
     try {
       new URL(baseHref);
@@ -18,14 +25,14 @@ function resolveUrlWithBaseHref(href: string, baseUrl: string, baseHref: string)
       }
     }
   }
-  
+
   try {
     if (href.startsWith("http://") || href.startsWith("https://")) {
       return href;
     } else if (href.startsWith("mailto:")) {
       return href;
     } else if (href.startsWith("#")) {
-      return '';
+      return "";
     } else {
       return new URL(href, resolutionBase).href;
     }
@@ -34,11 +41,14 @@ function resolveUrlWithBaseHref(href: string, baseUrl: string, baseHref: string)
       `Failed to construct URL for href: ${href} with base: ${resolutionBase}`,
       { error },
     );
-    return '';
+    return "";
   }
 }
 
-async function extractLinksRust(html: string, baseUrl: string): Promise<string[]> {
+async function extractLinksRust(
+  html: string,
+  baseUrl: string,
+): Promise<string[]> {
   const hrefs = await _extractLinks(html);
   const baseHref = await _extractBaseHref(html, baseUrl);
   const links: string[] = [];
@@ -54,18 +64,22 @@ async function extractLinksRust(html: string, baseUrl: string): Promise<string[]
   return [...new Set(links)];
 }
 
-export async function extractLinks(html: string, baseUrl: string): Promise<string[]> {
+export async function extractLinks(
+  html: string,
+  baseUrl: string,
+): Promise<string[]> {
   try {
     return await extractLinksRust(html, baseUrl);
   } catch (error) {
     logger.warn("Failed to call html-transformer! Falling back to cheerio...", {
       error,
-      module: "scrapeURL", method: "extractLinks"
+      module: "scrapeURL",
+      method: "extractLinks",
     });
   }
 
   const $ = load(html);
-  const baseHref = $('base[href]').first().attr('href') || '';
+  const baseHref = $("base[href]").first().attr("href") || "";
   const links: string[] = [];
 
   $("a").each((_, element) => {

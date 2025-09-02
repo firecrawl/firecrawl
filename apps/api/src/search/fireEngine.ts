@@ -5,7 +5,6 @@ import { logger } from "../lib/logger";
 
 dotenv.config();
 
-
 export async function fire_engine_search(
   q: string,
   options: {
@@ -82,7 +81,9 @@ export async function fireEngineMap(
     });
 
     if (!process.env.FIRE_ENGINE_BETA_URL) {
-      logger.warn("(v1/map Beta) Results might differ from cloud offering currently.");
+      logger.warn(
+        "(v1/map Beta) Results might differ from cloud offering currently.",
+      );
       return [];
     }
 

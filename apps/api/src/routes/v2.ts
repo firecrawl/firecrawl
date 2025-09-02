@@ -151,7 +151,6 @@ v2Router.get(
   wrap(extractStatusController),
 );
 
-
 v2Router.get(
   "/team/credit-usage",
   authMiddleware(RateLimiterMode.CrawlStatus),

@@ -11,7 +11,7 @@ export async function addBillingBatchJob() {
   try {
     const jobId = uuidv4();
     logger.info("Adding billing batch job to queue", { jobId });
-    
+
     await getBillingQueue().add(
       "process-batch",
       {
@@ -20,16 +20,16 @@ export async function addBillingBatchJob() {
       {
         jobId,
         priority: 10,
-      }
+      },
     );
-    
+
     return { success: true, jobId };
   } catch (error) {
     logger.error("Error adding billing batch job", { error });
     Sentry.captureException(error, {
       data: {
-        operation: "add_billing_batch_job"
-      }
+        operation: "add_billing_batch_job",
+      },
     });
     return { success: false, error };
   }
@@ -46,4 +46,4 @@ export async function triggerImmediateBillingProcess() {
     logger.error("Error triggering immediate billing process", { error });
     return { success: false, error };
   }
-} 
+}

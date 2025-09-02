@@ -26,11 +26,24 @@ export async function billTeam(
 ) {
   // Maintain the withAuth wrapper for authentication
   return withAuth(
-    async (team_id: string, subscription_id: string | null | undefined, credits: number, api_key_id: number | null, logger: Logger | undefined, is_extract: boolean) => {
+    async (
+      team_id: string,
+      subscription_id: string | null | undefined,
+      credits: number,
+      api_key_id: number | null,
+      logger: Logger | undefined,
+      is_extract: boolean,
+    ) => {
       // Within the authenticated context, queue the billing operation
-      return queueBillingOperation(team_id, subscription_id, credits, api_key_id, is_extract);
-    }, 
-    { success: true, message: "No DB, bypassed." }
+      return queueBillingOperation(
+        team_id,
+        subscription_id,
+        credits,
+        api_key_id,
+        is_extract,
+      );
+    },
+    { success: true, message: "No DB, bypassed." },
   )(team_id, subscription_id, credits, api_key_id, logger, is_extract);
 }
 
@@ -52,8 +65,16 @@ export async function supaBillTeam(
     credits,
   });
 
-  _logger.warn("supaBillTeam was called directly. This function is deprecated and should only be called from batch_billing.ts");
-  queueBillingOperation(team_id, subscription_id, credits, api_key_id, is_extract).catch((err) => {
+  _logger.warn(
+    "supaBillTeam was called directly. This function is deprecated and should only be called from batch_billing.ts",
+  );
+  queueBillingOperation(
+    team_id,
+    subscription_id,
+    credits,
+    api_key_id,
+    is_extract,
+  ).catch(err => {
     _logger.error("Error queuing billing operation", { err });
     Sentry.captureException(err);
   });
@@ -109,10 +130,11 @@ export async function supaCheckTeamCredits(
   // In case chunk.price_credits is undefined, set it to a large number to avoid mistakes
   const totalPriceCredits = chunk.price_should_be_graceful
     ? (chunk.total_credits_sum ?? 100000000) + chunk.price_credits
-    : chunk.total_credits_sum ?? 100000000;
-  
+    : (chunk.total_credits_sum ?? 100000000);
+
   // Removal of + credits
-  const creditUsagePercentage = chunk.adjusted_credits_used / (chunk.total_credits_sum ?? 100000000);
+  const creditUsagePercentage =
+    chunk.adjusted_credits_used / (chunk.total_credits_sum ?? 100000000);
 
   let isAutoRechargeEnabled = false,
     autoRechargeThreshold = 1000;
@@ -152,7 +174,9 @@ export async function supaCheckTeamCredits(
       return {
         success: true,
         message: autoChargeResult.message,
-        remainingCredits: chunk.price_should_be_graceful ? autoChargeResult.remainingCredits + chunk.price_credits : autoChargeResult.remainingCredits,
+        remainingCredits: chunk.price_should_be_graceful
+          ? autoChargeResult.remainingCredits + chunk.price_credits
+          : autoChargeResult.remainingCredits,
         chunk: autoChargeResult.chunk,
       };
     } else if (chunk.price_should_be_graceful) {

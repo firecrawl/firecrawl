@@ -11,13 +11,15 @@ export async function extractMetadataRust(
 
   return {
     ...fromRust,
-    ...(fromRust.favicon ? {
-      favicon: new URL(fromRust.favicon, meta.rewrittenUrl ?? meta.url).href
-    } : {}),
+    ...(fromRust.favicon
+      ? {
+          favicon: new URL(fromRust.favicon, meta.rewrittenUrl ?? meta.url)
+            .href,
+        }
+      : {}),
     scrapeId: meta.id,
   };
 }
-
 
 export async function extractMetadata(
   meta: Meta,
@@ -26,10 +28,14 @@ export async function extractMetadata(
   try {
     return await extractMetadataRust(meta, html);
   } catch (error) {
-    meta.logger.warn("Failed to call html-transformer! Falling back to cheerio...", {
-      error,
-      module: "scrapeURL", method: "extractMetadata"
-    });
+    meta.logger.warn(
+      "Failed to call html-transformer! Falling back to cheerio...",
+      {
+        error,
+        module: "scrapeURL",
+        method: "extractMetadata",
+      },
+    );
   }
 
   let title: string | undefined = undefined;
@@ -133,7 +139,10 @@ export async function extractMetadata(
       // Extract all meta tags for custom metadata
       soup("meta").each((i, elem) => {
         try {
-          const name = soup(elem).attr("name") || soup(elem).attr("property") || soup(elem).attr("itemprop");
+          const name =
+            soup(elem).attr("name") ||
+            soup(elem).attr("property") ||
+            soup(elem).attr("itemprop");
           const content = soup(elem).attr("content");
 
           if (name && content) {
@@ -141,8 +150,8 @@ export async function extractMetadata(
               if (customMetadata[name] === undefined) {
                 customMetadata[name] = content;
               } else {
-                customMetadata[name] = Array.isArray(customMetadata[name]) 
-                  ? [...customMetadata[name] as string[], content].join(", ") 
+                customMetadata[name] = Array.isArray(customMetadata[name])
+                  ? [...(customMetadata[name] as string[]), content].join(", ")
                   : `${customMetadata[name]}, ${content}`;
               }
             } else {
@@ -151,7 +160,10 @@ export async function extractMetadata(
               } else if (Array.isArray(customMetadata[name])) {
                 (customMetadata[name] as string[]).push(content);
               } else {
-                customMetadata[name] = [customMetadata[name] as string, content];
+                customMetadata[name] = [
+                  customMetadata[name] as string,
+                  content,
+                ];
               }
             }
           }

@@ -53,9 +53,9 @@ describe("isUrlBlocked function", () => {
   });
 
   test("Blocks exact domain with and without protocol", () => {
-    expect(isUrlBlocked(decryptAES("KZfBtpwjOpdSoqacRbz7og==", hashKey), null)).toBe(
-      true,
-    );
+    expect(
+      isUrlBlocked(decryptAES("KZfBtpwjOpdSoqacRbz7og==", hashKey), null),
+    ).toBe(true);
     expect(
       isUrlBlocked(
         decryptAES("TemsdmaA9kBK9cVJTaAmZksAh4WcS5779jwuGJ26ows=", hashKey),
@@ -98,15 +98,15 @@ describe("isUrlBlocked function", () => {
   });
 
   test("Blocks different TLDs (BLOCKED-DOMAIN.pt, BLOCKED-DOMAIN.io)", () => {
-    expect(isUrlBlocked(decryptAES("vUMeqQdqk7ajwczYBr6prA==", hashKey), null)).toBe(
-      true,
-    );
-    expect(isUrlBlocked(decryptAES("WOjW9VwGwrPu846jDo6VQg==", hashKey), null)).toBe(
-      true,
-    );
-    expect(isUrlBlocked(decryptAES("Ti3vVa6sRew3wyTZ7a/Yag==", hashKey), null)).toBe(
-      true,
-    );
+    expect(
+      isUrlBlocked(decryptAES("vUMeqQdqk7ajwczYBr6prA==", hashKey), null),
+    ).toBe(true);
+    expect(
+      isUrlBlocked(decryptAES("WOjW9VwGwrPu846jDo6VQg==", hashKey), null),
+    ).toBe(true);
+    expect(
+      isUrlBlocked(decryptAES("Ti3vVa6sRew3wyTZ7a/Yag==", hashKey), null),
+    ).toBe(true);
     expect(
       isUrlBlocked(
         decryptAES("0pCVMPgc7+IMrLjIA5lFV5cYWcOWC5LGWwvlbCW2GH4=", hashKey),
@@ -121,18 +121,18 @@ describe("isUrlBlocked function", () => {
   });
 
   test("Blocks other domains from the blocklist", () => {
-    expect(isUrlBlocked(decryptAES("e3HFXLVgxhaVoadYpwb2BA==", hashKey), null)).toBe(
-      true,
-    );
-    expect(isUrlBlocked(decryptAES("XS61fAjZb5JfAWsyzzOoCQ==", hashKey), null)).toBe(
-      true,
-    );
-    expect(isUrlBlocked(decryptAES("Indtl4yxJMHCKBGF4KABCQ==", hashKey), null)).toBe(
-      true,
-    );
-    expect(isUrlBlocked(decryptAES("86ZDUI7vmp4MvNq3fvZrGQ==", hashKey), null)).toBe(
-      true,
-    );
+    expect(
+      isUrlBlocked(decryptAES("e3HFXLVgxhaVoadYpwb2BA==", hashKey), null),
+    ).toBe(true);
+    expect(
+      isUrlBlocked(decryptAES("XS61fAjZb5JfAWsyzzOoCQ==", hashKey), null),
+    ).toBe(true);
+    expect(
+      isUrlBlocked(decryptAES("Indtl4yxJMHCKBGF4KABCQ==", hashKey), null),
+    ).toBe(true);
+    expect(
+      isUrlBlocked(decryptAES("86ZDUI7vmp4MvNq3fvZrGQ==", hashKey), null),
+    ).toBe(true);
   });
 
   test("Allows allowed keywords URLs [developers.*, library.*, ads.*]", () => {
@@ -162,14 +162,16 @@ describe("isUrlBlocked function", () => {
   test("Should return false if the URL is invalid", () => {
     expect(isUrlBlocked("randomstring", null)).toBe(false);
     expect(isUrlBlocked("htp://bad.url", null)).toBe(false);
-      expect(isUrlBlocked("", null)).toBe(false);
+    expect(isUrlBlocked("", null)).toBe(false);
   });
 
   test("Should respect flags", () => {
     const decryptedDomain = decryptAES("e3HFXLVgxhaVoadYpwb2BA==", hashKey);
 
-    expect(isUrlBlocked(decryptedDomain, {
-      unblockedDomains: [decryptedDomain],
-    })).toBe(false);
+    expect(
+      isUrlBlocked(decryptedDomain, {
+        unblockedDomains: [decryptedDomain],
+      }),
+    ).toBe(false);
   });
 });

@@ -21,7 +21,7 @@ export type AttributeSelector = {
  */
 export async function extractAttributes(
   html: string,
-  selectors: AttributeSelector[]
+  selectors: AttributeSelector[],
 ): Promise<AttributeResult[]> {
   if (!selectors || selectors.length === 0) {
     return [];
@@ -37,17 +37,20 @@ export async function extractAttributes(
       sampleResults: results.slice(0, 2).map(r => ({
         selector: r.selector,
         attribute: r.attribute,
-        valuesCount: r.values.length
-      }))
+        valuesCount: r.values.length,
+      })),
     });
 
     return results;
   } catch (error) {
-    logger.warn("Failed to extract attributes with Rust, falling back to Cheerio", {
-      error,
-      module: "scrapeURL",
-      method: "extractAttributes"
-    });
+    logger.warn(
+      "Failed to extract attributes with Rust, falling back to Cheerio",
+      {
+        error,
+        module: "scrapeURL",
+        method: "extractAttributes",
+      },
+    );
   }
 
   // Fallback to Cheerio implementation
@@ -67,7 +70,7 @@ export async function extractAttributes(
         let attrValue = $(element).attr(attribute);
 
         // If not found and attribute doesn't start with 'data-', try with 'data-' prefix
-        if (!attrValue && !attribute.startsWith('data-')) {
+        if (!attrValue && !attribute.startsWith("data-")) {
           attrValue = $(element).attr(`data-${attribute}`);
         }
 
@@ -79,21 +82,21 @@ export async function extractAttributes(
       results.push({
         selector,
         attribute,
-        values
+        values,
       });
 
       logger.debug("Attribute extraction via Cheerio fallback", {
         selector,
         attribute,
         valuesCount: values.length,
-        sample: values.slice(0, 3)
+        sample: values.slice(0, 3),
       });
     }
   } catch (error) {
     logger.error("Failed to extract attributes with Cheerio fallback", {
       error,
       module: "scrapeURL",
-      method: "extractAttributes"
+      method: "extractAttributes",
     });
   }
 

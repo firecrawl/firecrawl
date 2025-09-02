@@ -140,7 +140,7 @@ async function performFireEngineScrape<
       }
     }
 
-    await new Promise((resolve) => setTimeout(resolve, 500));
+    await new Promise(resolve => setTimeout(resolve, 500));
   } else {
     status = scrape as FireEngineCheckStatusSuccess;
   }
@@ -153,9 +153,10 @@ async function performFireEngineScrape<
     status,
   );
 
-  const contentType = (Object.entries(status.responseHeaders ?? {}).find(
-    (x) => x[0].toLowerCase() === "content-type",
-  ) ?? [])[1] ?? "";
+  const contentType =
+    (Object.entries(status.responseHeaders ?? {}).find(
+      x => x[0].toLowerCase() === "content-type",
+    ) ?? [])[1] ?? "";
 
   if (contentType.includes("application/json")) {
     status.content = await getInnerJSON(status.content);
@@ -187,9 +188,10 @@ export async function scrapeURLWithFireEngineChromeCDP(
     // Transform waitFor option into an action (unsupported by chrome-cdp)
     ...(meta.options.waitFor !== 0
       ? [
-          { 
+          {
             type: "wait" as const,
-            milliseconds: meta.options.waitFor > 30000 ? 30000 : meta.options.waitFor,
+            milliseconds:
+              meta.options.waitFor > 30000 ? 30000 : meta.options.waitFor,
           },
         ]
       : []),
@@ -202,9 +204,15 @@ export async function scrapeURLWithFireEngineChromeCDP(
       ? [
           {
             type: "screenshot" as const,
-            fullPage: hasFormatOfType(meta.options.formats, "screenshot")?.fullPage || false,
-            ...(hasFormatOfType(meta.options.formats, "screenshot")?.viewport ? 
-              { viewport: hasFormatOfType(meta.options.formats, "screenshot")!.viewport } : {}),
+            fullPage:
+              hasFormatOfType(meta.options.formats, "screenshot")?.fullPage ||
+              false,
+            ...(hasFormatOfType(meta.options.formats, "screenshot")?.viewport
+              ? {
+                  viewport: hasFormatOfType(meta.options.formats, "screenshot")!
+                    .viewport,
+                }
+              : {}),
           },
         ]
       : []),
@@ -233,7 +241,9 @@ export async function scrapeURLWithFireEngineChromeCDP(
     timeout: meta.abort.scrapeTimeout() ?? 300000,
     disableSmartWaitCache: meta.internalOptions.disableSmartWaitCache,
     mobileProxy: meta.featureFlags.has("stealthProxy"),
-    saveScrapeResultToGCS: !meta.internalOptions.zeroDataRetention && meta.internalOptions.saveScrapeResultToGCS,
+    saveScrapeResultToGCS:
+      !meta.internalOptions.zeroDataRetention &&
+      meta.internalOptions.saveScrapeResultToGCS,
     zeroDataRetention: meta.internalOptions.zeroDataRetention,
   };
 
@@ -278,9 +288,10 @@ export async function scrapeURLWithFireEngineChromeCDP(
     error: response.pageError,
     statusCode: response.pageStatusCode,
 
-    contentType: (Object.entries(response.responseHeaders ?? {}).find(
-      (x) => x[0].toLowerCase() === "content-type",
-    ) ?? [])[1] ?? undefined,
+    contentType:
+      (Object.entries(response.responseHeaders ?? {}).find(
+        x => x[0].toLowerCase() === "content-type",
+      ) ?? [])[1] ?? undefined,
 
     screenshot: response.screenshot,
     ...(actions.length > 0
@@ -288,8 +299,14 @@ export async function scrapeURLWithFireEngineChromeCDP(
           actions: {
             screenshots: response.screenshots ?? [],
             scrapes: response.actionContent ?? [],
-            javascriptReturns: (response.actionResults ?? []).filter(x => x.type === "executeJavascript").map(x => JSON.parse((x.result as any as { return: string }).return)),
-            pdfs: (response.actionResults ?? []).filter(x => x.type === "pdf").map(x => x.result.link),
+            javascriptReturns: (response.actionResults ?? [])
+              .filter(x => x.type === "executeJavascript")
+              .map(x =>
+                JSON.parse((x.result as any as { return: string }).return),
+              ),
+            pdfs: (response.actionResults ?? [])
+              .filter(x => x.type === "pdf")
+              .map(x => x.result.link),
           },
         }
       : {}),
@@ -311,15 +328,19 @@ export async function scrapeURLWithFireEnginePlaywright(
 
     headers: meta.options.headers,
     priority: meta.internalOptions.priority,
-    screenshot: hasFormatOfType(meta.options.formats, "screenshot") !== undefined,
-    fullPageScreenshot: hasFormatOfType(meta.options.formats, "screenshot")?.fullPage,
+    screenshot:
+      hasFormatOfType(meta.options.formats, "screenshot") !== undefined,
+    fullPageScreenshot: hasFormatOfType(meta.options.formats, "screenshot")
+      ?.fullPage,
     wait: meta.options.waitFor,
     geolocation: meta.options.location,
     blockAds: meta.options.blockAds,
     mobileProxy: meta.featureFlags.has("stealthProxy"),
 
     timeout: meta.abort.scrapeTimeout() ?? 300000,
-    saveScrapeResultToGCS: !meta.internalOptions.zeroDataRetention && meta.internalOptions.saveScrapeResultToGCS,
+    saveScrapeResultToGCS:
+      !meta.internalOptions.zeroDataRetention &&
+      meta.internalOptions.saveScrapeResultToGCS,
     zeroDataRetention: meta.internalOptions.zeroDataRetention,
   };
 
@@ -348,9 +369,10 @@ export async function scrapeURLWithFireEnginePlaywright(
     error: response.pageError,
     statusCode: response.pageStatusCode,
 
-    contentType: (Object.entries(response.responseHeaders ?? {}).find(
-      (x) => x[0].toLowerCase() === "content-type",
-    ) ?? [])[1] ?? undefined,
+    contentType:
+      (Object.entries(response.responseHeaders ?? {}).find(
+        x => x[0].toLowerCase() === "content-type",
+      ) ?? [])[1] ?? undefined,
 
     ...(response.screenshots !== undefined && response.screenshots.length > 0
       ? {
@@ -380,7 +402,9 @@ export async function scrapeURLWithFireEngineTLSClient(
     mobileProxy: meta.featureFlags.has("stealthProxy"),
 
     timeout: meta.abort.scrapeTimeout() ?? 300000,
-    saveScrapeResultToGCS: !meta.internalOptions.zeroDataRetention && meta.internalOptions.saveScrapeResultToGCS,
+    saveScrapeResultToGCS:
+      !meta.internalOptions.zeroDataRetention &&
+      meta.internalOptions.saveScrapeResultToGCS,
     zeroDataRetention: meta.internalOptions.zeroDataRetention,
   };
 
@@ -409,25 +433,31 @@ export async function scrapeURLWithFireEngineTLSClient(
     error: response.pageError,
     statusCode: response.pageStatusCode,
 
-    contentType: (Object.entries(response.responseHeaders ?? {}).find(
-      (x) => x[0].toLowerCase() === "content-type",
-    ) ?? [])[1] ?? undefined,
+    contentType:
+      (Object.entries(response.responseHeaders ?? {}).find(
+        x => x[0].toLowerCase() === "content-type",
+      ) ?? [])[1] ?? undefined,
 
     proxyUsed: response.usedMobileProxy ? "stealth" : "basic",
   };
 }
 
-export function fireEngineMaxReasonableTime(meta: Meta, engine: "chrome-cdp" | "playwright" | "tlsclient"): number {
+export function fireEngineMaxReasonableTime(
+  meta: Meta,
+  engine: "chrome-cdp" | "playwright" | "tlsclient",
+): number {
   if (engine === "tlsclient") {
     return 15000;
   } else if (engine === "playwright") {
     return (meta.options.waitFor ?? 0) + 30000;
   } else {
-    return (meta.options.waitFor ?? 0)
-      + (meta.options.actions?.reduce(
-          (a, x) => (x.type === "wait" ? (x.milliseconds ?? 2500) + a : 250 + a),
-          0
-        ) ?? 0)
-      + 30000;
+    return (
+      (meta.options.waitFor ?? 0) +
+      (meta.options.actions?.reduce(
+        (a, x) => (x.type === "wait" ? (x.milliseconds ?? 2500) + a : 250 + a),
+        0,
+      ) ?? 0) +
+      30000
+    );
   }
 }

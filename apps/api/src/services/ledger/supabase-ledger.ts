@@ -13,7 +13,7 @@ class SupabaseLedgerService {
     const supabaseReplicaUrl = process.env.SUPABASE_REPLICA_URL;
     const supabaseServiceToken = process.env.SUPABASE_SERVICE_TOKEN;
     const useDbAuthentication = process.env.USE_DB_AUTHENTICATION === "true";
-    
+
     // Only initialize the Supabase client if both URL and Service Token are provided.
     if (!useDbAuthentication) {
       // Warn the user that Authentication is disabled by setting the client to null
@@ -61,9 +61,8 @@ const ledgerServ = new SupabaseLedgerService();
 
 // Using a Proxy to handle dynamic access to the Supabase ledger client or service methods.
 // This approach ensures that if Supabase is not configured, any attempt to use it will result in a clear error.
-export const supabase_ledger_service: SupabaseClient<any, "ledger", any> = new Proxy(
-  ledgerServ,
-  {
+export const supabase_ledger_service: SupabaseClient<any, "ledger", any> =
+  new Proxy(ledgerServ, {
     get: function (target, prop, receiver) {
       const client = target.getClient();
       // If the Supabase client is not initialized, intercept property access to provide meaningful error feedback.
@@ -79,5 +78,4 @@ export const supabase_ledger_service: SupabaseClient<any, "ledger", any> = new P
       // Otherwise, delegate access to the Supabase client.
       return Reflect.get(client, prop, receiver);
     },
-  },
-) as unknown as SupabaseClient<any, "ledger", any>;
+  }) as unknown as SupabaseClient<any, "ledger", any>;

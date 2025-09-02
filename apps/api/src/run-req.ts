@@ -64,7 +64,7 @@ async function getContent(result: Result): Promise<boolean> {
       console.error("Error getting content:", error);
     }
     const randomSleep = Math.floor(Math.random() * 15000) + 5000;
-    await new Promise((resolve) => setTimeout(resolve, randomSleep)); // Reduce sleep time to 1.5 seconds
+    await new Promise(resolve => setTimeout(resolve, randomSleep)); // Reduce sleep time to 1.5 seconds
     attempts++;
   }
   // Set result as null if timed out
@@ -95,7 +95,7 @@ async function processResults(results: Result[]): Promise<void> {
       // Save the result to the file
       try {
         // Save job id along with the start_url
-        const resultWithJobId = results.map((r) => ({
+        const resultWithJobId = results.map(r => ({
           start_url: r.start_url,
           job_id: r.job_id,
         }));
@@ -136,14 +136,14 @@ async function processResults(results: Result[]): Promise<void> {
   // await Promise.all(queue.map(result => processSingleResult(result)));
   for (let i = 0; i < results.length; i += 100) {
     const batch = results.slice(i, i + 100);
-    Promise.all(batch.map((result) => processSingleResult(result)))
+    Promise.all(batch.map(result => processSingleResult(result)))
       .then(() => {
         console.log(`Processed ${i + 100} results.`);
       })
-      .catch((error) => {
+      .catch(error => {
         console.error(`Error processing batch starting at index ${i}:`, error);
       });
-    await new Promise((resolve) => setTimeout(resolve, 60 * 1000)); // Wait for 1 minute
+    await new Promise(resolve => setTimeout(resolve, 60 * 1000)); // Wait for 1 minute
   }
 }
 
@@ -167,7 +167,7 @@ async function main() {
     .then(() => {
       console.log("All results processed.");
     })
-    .catch((error) => {
+    .catch(error => {
       console.error("Error processing results:", error);
     });
 }

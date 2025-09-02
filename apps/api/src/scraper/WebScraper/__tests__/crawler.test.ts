@@ -17,7 +17,7 @@ describe("WebCrawler", () => {
 
   beforeEach(() => {
     // Setup default mocks
-    mockAxios.get.mockImplementation((url) => {
+    mockAxios.get.mockImplementation(url => {
       if (url.includes("robots.txt")) {
         return Promise.resolve({ data: "User-agent: *\nAllow: /" });
       } else if (url.includes("sitemap.xml")) {

@@ -53,7 +53,7 @@ import { pathToFileURL } from "url";
 
 configDotenv();
 
-const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
 const jobLockExtendInterval =
   Number(process.env.JOB_LOCK_EXTEND_INTERVAL) || 10000;
@@ -72,19 +72,30 @@ const runningJobs: Set<string> = new Set();
 cacheableLookup.install(http.globalAgent);
 cacheableLookup.install(https.globalAgent);
 
-const shouldOtel = process.env.LANGFUSE_PUBLIC_KEY || process.env.OTEL_EXPORTER_OTLP_ENDPOINT;
-const otelSdk = shouldOtel ? new NodeSDK({
-  resource: resourceFromAttributes({
-    [ATTR_SERVICE_NAME]: "firecrawl-worker",
-  }),
-  spanProcessors: [
-    ...(process.env.LANGFUSE_PUBLIC_KEY ? [new BatchSpanProcessor(new LangfuseExporter())] : []),
-    ...(process.env.OTEL_EXPORTER_OTLP_ENDPOINT ? [new BatchSpanProcessor(new OTLPTraceExporter({
-      url: process.env.OTEL_EXPORTER_OTLP_ENDPOINT,
-    }))] : []),
-  ],
-  instrumentations: [getNodeAutoInstrumentations()],
-}) : null;
+const shouldOtel =
+  process.env.LANGFUSE_PUBLIC_KEY || process.env.OTEL_EXPORTER_OTLP_ENDPOINT;
+const otelSdk = shouldOtel
+  ? new NodeSDK({
+      resource: resourceFromAttributes({
+        [ATTR_SERVICE_NAME]: "firecrawl-worker",
+      }),
+      spanProcessors: [
+        ...(process.env.LANGFUSE_PUBLIC_KEY
+          ? [new BatchSpanProcessor(new LangfuseExporter())]
+          : []),
+        ...(process.env.OTEL_EXPORTER_OTLP_ENDPOINT
+          ? [
+              new BatchSpanProcessor(
+                new OTLPTraceExporter({
+                  url: process.env.OTEL_EXPORTER_OTLP_ENDPOINT,
+                }),
+              ),
+            ]
+          : []),
+      ],
+      instrumentations: [getNodeAutoInstrumentations()],
+    })
+  : null;
 
 if (otelSdk) {
   otelSdk.start();
@@ -367,25 +378,25 @@ let cantAcceptConnectionCount = 0;
  * @returns A properly formatted path/URL for the current platform
  */
 function getWorkerPath(filePath: string): string | URL {
-  if (process.platform === 'win32' && path.isAbsolute(filePath)) {
+  if (process.platform === "win32" && path.isAbsolute(filePath)) {
     // On Windows, convert absolute paths to file:// URLs for ESM compatibility
     return pathToFileURL(filePath);
   }
   return filePath;
 }
 
-const separateWorkerFun = (
-  queue: Queue,
-  workerPath: string,
-): Worker => {
+const separateWorkerFun = (queue: Queue, workerPath: string): Worker => {
   // Extract memory size from --max-old-space-size flag if present
-  const maxOldSpaceSize = process.env.SCRAPE_WORKER_MAX_OLD_SPACE_SIZE || process.execArgv
-    .find(arg => arg.startsWith('--max-old-space-size='))
-    ?.split('=')[1];
+  const maxOldSpaceSize =
+    process.env.SCRAPE_WORKER_MAX_OLD_SPACE_SIZE ||
+    process.execArgv
+      .find(arg => arg.startsWith("--max-old-space-size="))
+      ?.split("=")[1];
 
   // Filter out the invalid flag for worker threads
-  const filteredExecArgv = process.execArgv
-    .filter(arg => !arg.startsWith('--max-old-space-size'));
+  const filteredExecArgv = process.execArgv.filter(
+    arg => !arg.startsWith("--max-old-space-size"),
+  );
 
   // Convert path to proper format for the current platform
   const platformWorkerPath = getWorkerPath(workerPath);
@@ -398,15 +409,17 @@ const separateWorkerFun = (
     concurrency: 8,
     useWorkerThreads: false,
     workerForkOptions: {
-      execArgv: filteredExecArgv.concat(maxOldSpaceSize ? (
-        ['--max-old-space-size=' + maxOldSpaceSize]
-      ) : []),
+      execArgv: filteredExecArgv.concat(
+        maxOldSpaceSize ? ["--max-old-space-size=" + maxOldSpaceSize] : [],
+      ),
     },
     workerThreadsOptions: {
       execArgv: filteredExecArgv,
-      resourceLimits: maxOldSpaceSize ? {
-        maxOldGenerationSizeMb: parseInt(maxOldSpaceSize)
-      } : undefined
+      resourceLimits: maxOldSpaceSize
+        ? {
+            maxOldGenerationSizeMb: parseInt(maxOldSpaceSize),
+          }
+        : undefined,
     },
     telemetry: new BullMQOtel("firecrawl-bullmq"),
   });
@@ -514,7 +527,8 @@ app.get("/liveness", (req, res) => {
       .then(() => {
         currentLiveness = true;
         res.status(200).json({ ok: true });
-      }).catch(e => {
+      })
+      .catch(e => {
         _logger.error("WORKER NETWORKING CHECK FAILED", { error: e });
         currentLiveness = false;
         res.status(500).json({ ok: false });
@@ -531,12 +545,22 @@ app.listen(workerPort, () => {
 });
 
 (async () => {
-  async function failedListener(args: { jobId: string; failedReason: string; prev?: string | undefined; }) {
+  async function failedListener(args: {
+    jobId: string;
+    failedReason: string;
+    prev?: string | undefined;
+  }) {
     const job = await getScrapeQueue().getJob(args.jobId);
 
     if (job && job.data.crawl_id) {
-      await redisEvictConnection.srem("crawl:" + job.data.crawl_id + ":jobs_qualified", args.jobId);
-      await redisEvictConnection.expire("crawl:" + job.data.crawl_id + ":jobs_qualified", 24 * 60 * 60);
+      await redisEvictConnection.srem(
+        "crawl:" + job.data.crawl_id + ":jobs_qualified",
+        args.jobId,
+      );
+      await redisEvictConnection.expire(
+        "crawl:" + job.data.crawl_id + ":jobs_qualified",
+        24 * 60 * 60,
+      );
     }
 
     if (args.failedReason === "job stalled more than allowable limit") {
@@ -551,7 +575,13 @@ app.listen(workerPort, () => {
         return;
       }
 
-      let logger = _logger.child({ jobId: args.jobId, scrapeId: args.jobId, module: "queue-worker", method: "failedListener", zeroDataRetention: job?.data.zeroDataRetention });
+      let logger = _logger.child({
+        jobId: args.jobId,
+        scrapeId: args.jobId,
+        module: "queue-worker",
+        method: "failedListener",
+        zeroDataRetention: job?.data.zeroDataRetention,
+      });
       if (job && job.data.crawl_id) {
         logger = logger.child({ crawlId: job.data.crawl_id });
         logger.warn("Job stalled more than allowable limit");
@@ -581,7 +611,9 @@ app.listen(workerPort, () => {
     }
   }
 
-  const scrapeQueueEvents = new QueueEvents(scrapeQueueName, { connection: getRedisConnection() });
+  const scrapeQueueEvents = new QueueEvents(scrapeQueueName, {
+    connection: getRedisConnection(),
+  });
   scrapeQueueEvents.on("failed", failedListener);
 
   const results = await Promise.all([
@@ -596,22 +628,22 @@ app.listen(workerPort, () => {
 
   console.log("All workers exited. Waiting for all jobs to finish...");
 
-  const workerResults = results.filter((x) => x instanceof Worker);
-  await Promise.all(workerResults.map((x) => x.close()));
+  const workerResults = results.filter(x => x instanceof Worker);
+  await Promise.all(workerResults.map(x => x.close()));
 
   while (runningJobs.size > 0) {
-    await new Promise((resolve) => setTimeout(resolve, 500));
+    await new Promise(resolve => setTimeout(resolve, 500));
   }
 
   setInterval(async () => {
     _logger.debug("Currently running jobs", {
       jobs: (
         await Promise.all(
-          [...runningJobs].map(async (jobId) => {
+          [...runningJobs].map(async jobId => {
             return await getScrapeQueue().getJob(jobId);
           }),
         )
-      ).filter((x) => x && !x.data?.zeroDataRetention),
+      ).filter(x => x && !x.data?.zeroDataRetention),
     });
   }, 1000);
 

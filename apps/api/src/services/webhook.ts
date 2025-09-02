@@ -55,7 +55,7 @@ async function getWebhookInsertJobs(): Promise<any[]> {
       WEBHOOK_INSERT_QUEUE_KEY,
       WEBHOOK_INSERT_BATCH_SIZE,
     )) ?? [];
-  return jobs.map((x) => JSON.parse(x));
+  return jobs.map(x => JSON.parse(x));
 }
 
 export async function processWebhookInsertJobs() {

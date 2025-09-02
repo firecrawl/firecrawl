@@ -42,16 +42,29 @@ export async function crawlController(req: Request, res: Response) {
     const { team_id, chunk } = auth;
 
     if (chunk?.flags?.forceZDR) {
-      return res.status(400).json({ error: "Your team has zero data retention enabled. This is not supported on the v0 API. Please update your code to use the v1 API." });
+      return res.status(400).json({
+        error:
+          "Your team has zero data retention enabled. This is not supported on the v0 API. Please update your code to use the v1 API.",
+      });
     }
 
     const id = uuidv4();
 
-    redisEvictConnection.sadd("teams_using_v0", team_id)
-      .catch(error => logger.error("Failed to add team to teams_using_v0", { error, team_id }));
-    
-    redisEvictConnection.sadd("teams_using_v0:" + team_id, "crawl:" + id)
-      .catch(error => logger.error("Failed to add team to teams_using_v0 (2)", { error, team_id }));
+    redisEvictConnection.sadd("teams_using_v0", team_id).catch(error =>
+      logger.error("Failed to add team to teams_using_v0", {
+        error,
+        team_id,
+      }),
+    );
+
+    redisEvictConnection
+      .sadd("teams_using_v0:" + team_id, "crawl:" + id)
+      .catch(error =>
+        logger.error("Failed to add team to teams_using_v0 (2)", {
+          error,
+          team_id,
+        }),
+      );
 
     if (req.headers["x-idempotency-key"]) {
       const isIdempotencyValid = await validateIdempotencyKey(req);
@@ -163,10 +176,13 @@ export async function crawlController(req: Request, res: Response) {
       pageOptions,
       undefined,
       undefined,
-      team_id
+      team_id,
     );
     internalOptions.disableSmartWaitCache = true; // NOTE: smart wait disabled for crawls to ensure contentful scrape, speed does not matter
-    internalOptions.saveScrapeResultToGCS = process.env.GCS_FIRE_ENGINE_BUCKET_NAME ? true : false;
+    internalOptions.saveScrapeResultToGCS = process.env
+      .GCS_FIRE_ENGINE_BUCKET_NAME
+      ? true
+      : false;
     delete (scrapeOptions as any).timeout;
 
     const sc: StoredCrawl = {
@@ -190,14 +206,14 @@ export async function crawlController(req: Request, res: Response) {
 
     const sitemap = sc.crawlerOptions.ignoreSitemap
       ? 0
-      : await crawler.tryGetSitemap(async (urls) => {
+      : await crawler.tryGetSitemap(async urls => {
           if (urls.length === 0) return;
 
           let jobPriority = await getJobPriority({
             team_id,
             basePriority: 21,
           });
-          const jobs = urls.map((url) => {
+          const jobs = urls.map(url => {
             const uuid = uuidv4();
             return {
               name: uuid,
@@ -225,12 +241,12 @@ export async function crawlController(req: Request, res: Response) {
           await lockURLs(
             id,
             sc,
-            jobs.map((x) => x.data.url),
+            jobs.map(x => x.data.url),
             logger,
           );
           await addCrawlJobs(
             id,
-            jobs.map((x) => x.opts.jobId),
+            jobs.map(x => x.opts.jobId),
             logger,
           );
           for (const job of jobs) {

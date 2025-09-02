@@ -32,7 +32,7 @@ export async function isEnterpriseTeamCreatedAfterRateLimitChange(
   }
 
   const isEnterprise = data.find(
-    (sub) => sub.prices?.products?.is_enterprise === true,
+    sub => sub.prices?.products?.is_enterprise === true,
   );
 
   return !!isEnterprise;

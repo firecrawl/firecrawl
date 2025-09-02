@@ -41,6 +41,6 @@ export function getRateLimiter(
 ): RateLimiterRedis {
   return createRateLimiter(
     `${mode}`,
-    (rate_limits?.[mode] ?? fallbackRateLimits?.[mode] ?? 500),
+    rate_limits?.[mode] ?? fallbackRateLimits?.[mode] ?? 500,
   );
 }

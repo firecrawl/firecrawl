@@ -48,7 +48,7 @@ export type Format =
   | "changeTracking";
 
 export const url = z.preprocess(
-  (x) => {
+  x => {
     if (!protocolIncluded(x as string)) {
       x = `http://${x}`;
     }
@@ -70,13 +70,13 @@ export const url = z.preprocess(
     .url()
     .regex(/^https?:\/\//i, "URL uses unsupported protocol")
     .refine(
-      (x) =>
+      x =>
         /(\.[a-zA-Z0-9-\u0400-\u04FF\u0500-\u052F\u2DE0-\u2DFF\uA640-\uA69F]{2,}|\.xn--[a-zA-Z0-9-]{1,})(:\d+)?([\/?#]|$)/i.test(
           x,
         ),
       "URL must have a valid top-level domain or be a valid path",
     )
-    .refine((x) => {
+    .refine(x => {
       try {
         checkUrl(x as string);
         return true;
@@ -120,7 +120,7 @@ export const actionSchema = z.union([
       selector: z.string().optional(),
     })
     .refine(
-      (data) =>
+      data =>
         (data.milliseconds !== undefined || data.selector !== undefined) &&
         !(data.milliseconds !== undefined && data.selector !== undefined),
       {
@@ -190,12 +190,11 @@ export type Action = z.infer<typeof actionSchema>;
 
 export const actionsSchema = z
   .array(actionSchema)
-  .refine((actions) => actions.length <= MAX_ACTIONS, {
+  .refine(actions => actions.length <= MAX_ACTIONS, {
     message: `Number of actions cannot exceed ${MAX_ACTIONS}`,
   })
   .refine(
-    (actions) =>
-      calculateTotalWaitTime(actions) <= ACTIONS_MAX_WAIT_TIME * 1000,
+    actions => calculateTotalWaitTime(actions) <= ACTIONS_MAX_WAIT_TIME * 1000,
     {
       message: `Total wait time (waitFor + wait actions) cannot exceed ${ACTIONS_MAX_WAIT_TIME} seconds`,
     },
@@ -290,7 +289,7 @@ export type Parsers = z.infer<typeof parsersSchema>;
 
 export function shouldParsePDF(parsers?: Parsers): boolean {
   if (!parsers) return true;
-  return parsers.some((parser) => {
+  return parsers.some(parser => {
     if (parser === "pdf") return true;
     if (typeof parser === "object" && parser !== null && "type" in parser) {
       return (parser as any).type === "pdf";
@@ -301,7 +300,7 @@ export function shouldParsePDF(parsers?: Parsers): boolean {
 
 export function getPDFMaxPages(parsers?: Parsers): number | undefined {
   if (!parsers) return undefined;
-  const pdfParser = parsers.find((parser) => {
+  const pdfParser = parsers.find(parser => {
     if (typeof parser === "object" && parser !== null && "type" in parser) {
       return (parser as any).type === "pdf";
     }
@@ -314,7 +313,7 @@ export function getPDFMaxPages(parsers?: Parsers): number | undefined {
 }
 
 function transformIframeSelector(selector: string): string {
-  return selector.replace(/(?:^|[\s,])iframe(?=\s|$|[.#\[:,])/g, (match) => {
+  return selector.replace(/(?:^|[\s,])iframe(?=\s|$|[.#\[:,])/g, match => {
     const prefix = match.match(/^[\s,]/)?.[0] || "";
     return prefix + 'div[data-original-tag="iframe"]';
   });
@@ -324,9 +323,9 @@ const baseScrapeOptions = z
   .object({
     formats: z
       .preprocess(
-        (val) => {
+        val => {
           if (!Array.isArray(val)) return val;
-          return val.map((format) => {
+          return val.map(format => {
             if (typeof format === "string") {
               return { type: format };
             }
@@ -350,24 +349,24 @@ const baseScrapeOptions = z
           .optional()
           .default([{ type: "markdown" }]),
       )
-      .refine((x) => {
-        return x.filter((f) => f.type === "screenshot").length <= 1;
+      .refine(x => {
+        return x.filter(f => f.type === "screenshot").length <= 1;
       }, "You may only specify one screenshot format")
-      .refine((x) => {
-        const hasChangeTracking = x.find((f) => f.type === "changeTracking");
-        const hasMarkdown = x.find((f) => f.type === "markdown");
+      .refine(x => {
+        const hasChangeTracking = x.find(f => f.type === "changeTracking");
+        const hasMarkdown = x.find(f => f.type === "markdown");
         return !hasChangeTracking || hasMarkdown;
       }, "The changeTracking format requires the markdown format to be specified as well"),
     headers: z.record(z.string(), z.string()).optional(),
     includeTags: z
       .string()
       .array()
-      .transform((tags) => tags.map(transformIframeSelector))
+      .transform(tags => tags.map(transformIframeSelector))
       .optional(),
     excludeTags: z
       .string()
       .array()
-      .transform((tags) => tags.map(transformIframeSelector))
+      .transform(tags => tags.map(transformIframeSelector))
       .optional(),
     onlyMainContent: z.boolean().default(true),
     timeout: z.number().int().positive().finite().safe().optional(),
@@ -389,7 +388,7 @@ const baseScrapeOptions = z
           .string()
           .optional()
           .refine(
-            (val) =>
+            val =>
               !val ||
               Object.keys(countries).includes(val.toUpperCase()) ||
               val === "US-generic",
@@ -398,7 +397,7 @@ const baseScrapeOptions = z
                 "Invalid country code. Please use a valid ISO 3166-1 alpha-2 country code.",
             },
           )
-          .transform((val) => (val ? val.toUpperCase() : "US-generic")),
+          .transform(val => (val ? val.toUpperCase() : "US-generic")),
         languages: z.string().array().optional(),
       })
       .optional(),
@@ -418,7 +417,7 @@ const baseScrapeOptions = z
   })
   .strict(strictMessage);
 
-const waitForRefine = (obj) => {
+const waitForRefine = obj => {
   if (obj.waitFor && obj.timeout) {
     if (typeof obj.timeout !== "number" || obj.timeout <= 0) {
       return false;
@@ -431,10 +430,10 @@ const waitForRefineOpts = {
   message: "waitFor must not exceed half of timeout",
   path: ["waitFor"],
 };
-const extractTransform = (obj) => {
+const extractTransform = obj => {
   // Handle timeout
   if (
-    obj.formats.find((x) => typeof x === "object" && x.type === "json") &&
+    obj.formats.find(x => typeof x === "object" && x.type === "json") &&
     obj.timeout === 30000
   ) {
     obj = { ...obj, timeout: 60000 };
@@ -464,7 +463,7 @@ const extractTransform = (obj) => {
 export const scrapeOptions = baseScrapeOptions
   .strict(strictMessage)
   .refine(
-    (obj) => {
+    obj => {
       if (!obj.actions) return true;
       return (
         calculateTotalWaitTime(obj.actions, obj.waitFor) <=
@@ -496,7 +495,7 @@ export const extractOptions = z
       .any()
       .optional()
       .refine(
-        (val) => {
+        val => {
           if (!val) return true; // Allow undefined schema
           try {
             const validate = ajv.compile(val);
@@ -521,7 +520,7 @@ export const extractOptions = z
     integration: z
       .nativeEnum(IntegrationEnum)
       .optional()
-      .transform((val) => val || null),
+      .transform(val => val || null),
     urlTrace: z.boolean().default(false),
     timeout: z.number().int().positive().finite().safe().optional(),
     agent: agentOptionsExtract.optional(),
@@ -538,18 +537,18 @@ export const extractOptions = z
     ignoreInvalidURLs: z.boolean().default(true),
   })
   .strict(strictMessage)
-  .refine((obj) => obj.urls || obj.prompt, {
+  .refine(obj => obj.urls || obj.prompt, {
     message: "Either 'urls' or 'prompt' must be provided.",
   })
-  .transform((obj) => ({
+  .transform(obj => ({
     ...obj,
     allowExternalLinks: obj.allowExternalLinks || obj.enableWebSearch,
   }))
   .refine(
-    (x) => (x.scrapeOptions ? waitForRefine(x.scrapeOptions) : true),
+    x => (x.scrapeOptions ? waitForRefine(x.scrapeOptions) : true),
     waitForRefineOpts,
   )
-  .transform((x) => ({
+  .transform(x => ({
     ...x,
     scrapeOptions: x.scrapeOptions
       ? extractTransform(x.scrapeOptions)
@@ -568,7 +567,7 @@ export const scrapeRequestSchema = baseScrapeOptions
     integration: z
       .nativeEnum(IntegrationEnum)
       .optional()
-      .transform((val) => val || null),
+      .transform(val => val || null),
     zeroDataRetention: z.boolean().optional(),
   })
   .strict(strictMessage)
@@ -580,7 +579,7 @@ export type ScrapeRequestInput = z.input<typeof scrapeRequestSchema>;
 
 const BLACKLISTED_WEBHOOK_HEADERS = ["x-firecrawl-signature"];
 export const webhookSchema = z.preprocess(
-  (x) => {
+  x => {
     if (typeof x === "string") {
       return { url: x };
     } else {
@@ -598,11 +597,11 @@ export const webhookSchema = z.preprocess(
     })
     .strict(strictMessage)
     .refine(
-      (obj) => {
-        const blacklistedLower = BLACKLISTED_WEBHOOK_HEADERS.map((h) =>
+      obj => {
+        const blacklistedLower = BLACKLISTED_WEBHOOK_HEADERS.map(h =>
           h.toLowerCase(),
         );
-        return !Object.keys(obj.headers).some((key) =>
+        return !Object.keys(obj.headers).some(key =>
           blacklistedLower.includes(key.toLowerCase()),
         );
       },
@@ -617,7 +616,7 @@ export const batchScrapeRequestSchema = baseScrapeOptions
     integration: z
       .nativeEnum(IntegrationEnum)
       .optional()
-      .transform((val) => val || null),
+      .transform(val => val || null),
     webhook: webhookSchema.optional(),
     appendToId: z.string().uuid().optional(),
     ignoreInvalidURLs: z.boolean().default(true),
@@ -635,7 +634,7 @@ export const batchScrapeRequestSchemaNoURLValidation = baseScrapeOptions
     integration: z
       .nativeEnum(IntegrationEnum)
       .optional()
-      .transform((val) => val || null),
+      .transform(val => val || null),
     webhook: webhookSchema.optional(),
     appendToId: z.string().uuid().optional(),
     ignoreInvalidURLs: z.boolean().default(true),
@@ -686,7 +685,7 @@ export const crawlRequestSchema = crawlerOptions
     integration: z
       .nativeEnum(IntegrationEnum)
       .optional()
-      .transform((val) => val || null),
+      .transform(val => val || null),
     scrapeOptions: baseScrapeOptions.default({}),
     webhook: webhookSchema.optional(),
     limit: z.number().default(10000),
@@ -695,8 +694,8 @@ export const crawlRequestSchema = crawlerOptions
     prompt: z.string().max(10000).optional(),
   })
   .strict(strictMessage)
-  .refine((x) => waitForRefine(x.scrapeOptions), waitForRefineOpts)
-  .transform((x) => {
+  .refine(x => waitForRefine(x.scrapeOptions), waitForRefineOpts)
+  .transform(x => {
     return {
       ...x,
       scrapeOptions: extractTransform(x.scrapeOptions),
@@ -728,7 +727,7 @@ export const mapRequestSchema = crawlerOptions
     integration: z
       .nativeEnum(IntegrationEnum)
       .optional()
-      .transform((val) => val || null),
+      .transform(val => val || null),
     includeSubdomains: z.boolean().default(true),
     ignoreQueryParameters: z.boolean().default(true),
     search: z.string().optional(),
@@ -1153,7 +1152,7 @@ export function fromV0ScrapeOptions(
             }
           : null,
         "links",
-      ].filter((x) => x !== null),
+      ].filter(x => x !== null),
       waitFor: pageOptions.waitFor,
       headers: pageOptions.headers,
       includeTags:
@@ -1239,7 +1238,7 @@ export function fromV1ScrapeOptions(
         : {}),
       location: v1ScrapeOptions.location ?? v1ScrapeOptions.geolocation,
       formats: v1ScrapeOptions.formats
-        .map((x) => {
+        .map(x => {
           // json and extract is standardized down to extract fmt in v1 -- fine to take one and dismiss the other
           if (x === "extract") {
             const opts = v1ScrapeOptions.jsonOptions || v1ScrapeOptions.extract;
@@ -1277,7 +1276,7 @@ export function fromV1ScrapeOptions(
             return x;
           }
         })
-        .filter((x) => x !== null),
+        .filter(x => x !== null),
       parsers:
         v1ScrapeOptions.parsePDF !== undefined
           ? v1ScrapeOptions.parsePDF
@@ -1436,7 +1435,7 @@ export const searchRequestSchema = z
     integration: z
       .nativeEnum(IntegrationEnum)
       .optional()
-      .transform((val) => val || null),
+      .transform(val => val || null),
     timeout: z.number().int().positive().finite().safe().default(60000),
     ignoreInvalidURLs: z.boolean().optional().default(false),
     asyncScraping: z.boolean().optional().default(false),
@@ -1445,9 +1444,9 @@ export const searchRequestSchema = z
       .extend({
         formats: z
           .preprocess(
-            (val) => {
+            val => {
               if (!Array.isArray(val)) return val;
-              return val.map((format) => {
+              return val.map(format => {
                 if (typeof format === "string") {
                   return { type: format };
                 }
@@ -1469,8 +1468,8 @@ export const searchRequestSchema = z
               .optional()
               .default([]),
           )
-          .refine((x) => {
-            return x.filter((f) => f.type === "screenshot").length <= 1;
+          .refine(x => {
+            return x.filter(f => f.type === "screenshot").length <= 1;
           }, "You may only specify one screenshot format"),
       })
       .default({}),
@@ -1478,15 +1477,15 @@ export const searchRequestSchema = z
   .strict(
     "Unrecognized key in body -- please review the v1 API documentation for request body changes",
   )
-  .refine((x) => waitForRefine(x.scrapeOptions), waitForRefineOpts)
-  .transform((x) => {
+  .refine(x => waitForRefine(x.scrapeOptions), waitForRefineOpts)
+  .transform(x => {
     // Transform string array sources to object format
     let sources = x.sources;
     if (sources && Array.isArray(sources) && sources.length > 0) {
       // Check if it's a string array by checking the first element
       if (typeof sources[0] === "string") {
         // It's a string array, transform to object array
-        sources = (sources as string[]).map((s) => {
+        sources = (sources as string[]).map(s => {
           switch (s) {
             case "web":
               return {
@@ -1524,7 +1523,7 @@ export const searchRequestSchema = z
       // Check if it's a string array by checking the first element
       if (typeof categories[0] === "string") {
         // It's a string array, transform to object array
-        categories = (categories as string[]).map((c) => {
+        categories = (categories as string[]).map(c => {
           switch (c) {
             case "github":
               return {

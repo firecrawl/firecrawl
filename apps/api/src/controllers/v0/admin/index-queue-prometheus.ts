@@ -1,5 +1,9 @@
 import type { Request, Response } from "express";
-import { getIndexInsertQueueLength, getIndexRFInsertQueueLength, getOMCEQueueLength } from "../../../services";
+import {
+  getIndexInsertQueueLength,
+  getIndexRFInsertQueueLength,
+  getOMCEQueueLength,
+} from "../../../services";
 import { getWebhookInsertQueueLength } from "../../../services/webhook";
 
 export async function indexQueuePrometheus(req: Request, res: Response) {

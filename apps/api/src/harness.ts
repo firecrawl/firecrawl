@@ -4,7 +4,7 @@ import { basename } from "path";
 import { HTML_TO_MARKDOWN_PATH } from "./natives";
 
 function waitForPort(port: number, host: string): Promise<void> {
-  return new Promise((resolve) => {
+  return new Promise(resolve => {
     const checkPort = () => {
       const socket = new net.Socket();
 
@@ -44,7 +44,7 @@ function execForward(fancyName: string, command: string): Promise<void> {
     const child = exec(command);
     let stdoutBuffer = "";
     let stderrBuffer = "";
-    child.stdout?.on("data", (data) => {
+    child.stdout?.on("data", data => {
       stdoutBuffer += data;
       while (stdoutBuffer.includes("\n")) {
         const split = stdoutBuffer.split("\n");
@@ -53,7 +53,7 @@ function execForward(fancyName: string, command: string): Promise<void> {
         process.stdout.write(`[${fancyName}] ${line}\n`);
       }
     });
-    child.stderr?.on("data", (data) => {
+    child.stderr?.on("data", data => {
       stderrBuffer += data;
       while (stderrBuffer.includes("\n")) {
         const split = stderrBuffer.split("\n");
@@ -62,7 +62,7 @@ function execForward(fancyName: string, command: string): Promise<void> {
         process.stderr.write(`[${fancyName}] ${line}\n`);
       }
     });
-    child.on("close", (code) => {
+    child.on("close", code => {
       if (code !== 0) {
         reject(
           new Error(
@@ -125,7 +125,7 @@ function execForward(fancyName: string, command: string): Promise<void> {
   try {
     await Promise.race([
       waitForPort(3002, "localhost"),
-      new Promise((reject) =>
+      new Promise(reject =>
         setTimeout(() => reject(new Error("API did not start in time")), 10000),
       ),
     ]);

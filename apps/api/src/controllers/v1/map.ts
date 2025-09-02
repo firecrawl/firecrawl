@@ -22,7 +22,11 @@ import { logJob } from "../../services/logging/log_job";
 import { performCosineSimilarity } from "../../lib/map-cosine";
 import { logger } from "../../lib/logger";
 import Redis from "ioredis";
-import { generateURLSplits, queryIndexAtDomainSplitLevel, queryIndexAtSplitLevel } from "../../services/index";
+import {
+  generateURLSplits,
+  queryIndexAtDomainSplitLevel,
+  queryIndexAtSplitLevel,
+} from "../../services/index";
 import { MapTimeoutError } from "../../lib/error";
 
 configDotenv();
@@ -40,7 +44,12 @@ interface MapResult {
   mapResults: MapDocument[];
 }
 
-async function queryIndex(url: string, limit: number, useIndex: boolean, includeSubdomains: boolean): Promise<string[]> {
+async function queryIndex(
+  url: string,
+  limit: number,
+  useIndex: boolean,
+  includeSubdomains: boolean,
+): Promise<string[]> {
   if (!useIndex) {
     return [];
   }
@@ -52,7 +61,13 @@ async function queryIndex(url: string, limit: number, useIndex: boolean, include
 
     // TEMP: this should be altered on June 15th 2025 7AM PT - mogery
     const [domainLinks, splitLinks] = await Promise.all([
-      includeSubdomains ? queryIndexAtDomainSplitLevel(hostname, limit, 14 * 24 * 60 * 60 * 1000) : [],
+      includeSubdomains
+        ? queryIndexAtDomainSplitLevel(
+            hostname,
+            limit,
+            14 * 24 * 60 * 60 * 1000,
+          )
+        : [],
       queryIndexAtSplitLevel(url, limit, 14 * 24 * 60 * 60 * 1000),
     ]);
 
@@ -126,8 +141,8 @@ export async function getMapResults({
   // If sitemapOnly is true, only get links from sitemap
   if (crawlerOptions.sitemapOnly) {
     const sitemap = await crawler.tryGetSitemap(
-      (urls) => {
-        urls.forEach((x) => {
+      urls => {
+        urls.forEach(x => {
           links.push(x);
         });
       },
@@ -140,14 +155,14 @@ export async function getMapResults({
     if (sitemap > 0) {
       links = links
         .slice(1)
-        .map((x) => {
+        .map(x => {
           try {
             return checkAndUpdateURLForMap(x).url.trim();
           } catch (_) {
             return null;
           }
         })
-        .filter((x) => x !== null) as string[];
+        .filter(x => x !== null) as string[];
       // links = links.slice(1, limit); // don't slice, unnecessary
     }
   } else {
@@ -175,10 +190,14 @@ export async function getMapResults({
       allResults = JSON.parse(cachedResult);
     } else {
       const fetchPage = async (page: number) => {
-        return fireEngineMap(mapUrl, {
-          numResults: resultsPerPage,
-          page: page,
-        }, abort);
+        return fireEngineMap(
+          mapUrl,
+          {
+            numResults: resultsPerPage,
+            page: page,
+          },
+          abort,
+        );
       };
 
       pagePromises = Array.from({ length: maxPages }, (_, i) =>
@@ -187,7 +206,12 @@ export async function getMapResults({
       allResults = await Promise.all(pagePromises);
 
       if (!zeroDataRetention) {
-        await redis.set(cacheKey, JSON.stringify(allResults), "EX", 48 * 60 * 60); // Cache for 48 hours
+        await redis.set(
+          cacheKey,
+          JSON.stringify(allResults),
+          "EX",
+          48 * 60 * 60,
+        ); // Cache for 48 hours
       }
     }
 
@@ -203,12 +227,10 @@ export async function getMapResults({
 
     // If sitemap is not ignored, fetch sitemap
     // This will attempt to find it in the index at first, or fetch a fresh one if it's older than 2 days
-    if (
-      !ignoreSitemap
-    ) {
+    if (!ignoreSitemap) {
       try {
         await crawler.tryGetSitemap(
-          (urls) => {
+          urls => {
             links.push(...urls);
           },
           true,
@@ -227,7 +249,7 @@ export async function getMapResults({
 
     mapResults = allResults
       .flat()
-      .filter((result) => result !== null && result !== undefined);
+      .filter(result => result !== null && result !== undefined);
 
     const minumumCutoff = Math.min(MAX_MAP_LIMIT, limit);
     if (mapResults.length > minumumCutoff) {
@@ -239,11 +261,11 @@ export async function getMapResults({
         // Ensure all map results are first, maintaining their order
         links = [
           mapResults[0].url,
-          ...mapResults.slice(1).map((x) => x.url),
+          ...mapResults.slice(1).map(x => x.url),
           ...links,
         ];
       } else {
-        mapResults.map((x) => {
+        mapResults.map(x => {
           links.push(x.url);
         });
       }
@@ -256,21 +278,24 @@ export async function getMapResults({
     }
 
     links = links
-      .map((x) => {
+      .map(x => {
         try {
-          return checkAndUpdateURLForMap(x, crawlerOptions.ignoreQueryParameters ?? true).url.trim();
+          return checkAndUpdateURLForMap(
+            x,
+            crawlerOptions.ignoreQueryParameters ?? true,
+          ).url.trim();
         } catch (_) {
           return null;
         }
       })
-      .filter((x) => x !== null) as string[];
+      .filter(x => x !== null) as string[];
 
     // allows for subdomains to be included
-    links = links.filter((x) => isSameDomain(x, url));
+    links = links.filter(x => isSameDomain(x, url));
 
     // if includeSubdomains is false, filter out subdomains
     if (!includeSubdomains) {
-      links = links.filter((x) => isSameSubdomain(x, url));
+      links = links.filter(x => isSameSubdomain(x, url));
     }
 
     // Filter by path if enabled
@@ -280,7 +305,7 @@ export async function getMapResults({
         const urlPath = urlObj.pathname;
         // Only apply path filtering if the URL has a significant path (not just '/' or empty)
         // This means we only filter by path if the user has not selected a root domain
-        if (urlPath && urlPath !== '/' && urlPath.length > 1) {
+        if (urlPath && urlPath !== "/" && urlPath.length > 1) {
           links = links.filter(link => {
             try {
               const linkObj = new URL(link);
@@ -292,7 +317,9 @@ export async function getMapResults({
         }
       } catch (e) {
         // If URL parsing fails, continue without path filtering
-        logger.warn(`Failed to parse URL for path filtering: ${url}`, { error: e });
+        logger.warn(`Failed to parse URL for path filtering: ${url}`, {
+          error: e,
+        });
       }
     }
 
@@ -320,9 +347,13 @@ export async function mapController(
 ) {
   const originalRequest = req.body;
   req.body = mapRequestSchema.parse(req.body);
-  
+
   if (req.acuc?.flags?.forceZDR) {
-    return res.status(400).json({ success: false, error: "Your team has zero data retention enabled. This is not supported on map. Please contact support@firecrawl.com to unblock this feature." });
+    return res.status(400).json({
+      success: false,
+      error:
+        "Your team has zero data retention enabled. This is not supported on map. Please contact support@firecrawl.com to unblock this feature.",
+    });
   }
 
   logger.info("Map request", {
@@ -334,7 +365,7 @@ export async function mapController(
   let result: Awaited<ReturnType<typeof getMapResults>>;
   const abort = new AbortController();
   try {
-    result = await Promise.race([
+    result = (await Promise.race([
       getMapResults({
         url: req.body.url,
         search: req.body.search,
@@ -351,13 +382,17 @@ export async function mapController(
         useIndex: req.body.useIndex,
         timeout: req.body.timeout,
       }),
-      ...(req.body.timeout !== undefined ? [
-        new Promise((resolve, reject) => setTimeout(() => {
-          abort.abort(new MapTimeoutError());
-          reject(new MapTimeoutError());
-        }, req.body.timeout))
-      ] : []),
-    ]) as any;
+      ...(req.body.timeout !== undefined
+        ? [
+            new Promise((resolve, reject) =>
+              setTimeout(() => {
+                abort.abort(new MapTimeoutError());
+                reject(new MapTimeoutError());
+              }, req.body.timeout),
+            ),
+          ]
+        : []),
+    ])) as any;
   } catch (error) {
     if (error instanceof MapTimeoutError) {
       return res.status(408).json({
@@ -371,7 +406,12 @@ export async function mapController(
   }
 
   // Bill the team
-  billTeam(req.auth.team_id, req.acuc?.sub_id, 1, req.acuc?.api_key_id ?? null).catch((error) => {
+  billTeam(
+    req.auth.team_id,
+    req.acuc?.sub_id,
+    1,
+    req.acuc?.api_key_id ?? null,
+  ).catch(error => {
     logger.error(
       `Failed to bill team ${req.auth.team_id} for 1 credit: ${error}`,
     );

@@ -4,31 +4,53 @@ import { RequestWithAuth } from "./types";
 import { AuthCreditUsageChunkFromTeam } from "../v1/types";
 import { Response } from "express";
 import { redisEvictConnection } from "../../services/redis";
-import { cleanOldConcurrencyLimitedJobs, cleanOldConcurrencyLimitEntries, getConcurrencyLimitActiveJobsCount, getConcurrencyQueueJobsCount } from "../../lib/concurrency-limit";
+import {
+  cleanOldConcurrencyLimitedJobs,
+  cleanOldConcurrencyLimitEntries,
+  getConcurrencyLimitActiveJobsCount,
+  getConcurrencyQueueJobsCount,
+} from "../../lib/concurrency-limit";
 
 export type QueueStatusResponse = {
-    success: boolean;
-    jobsInQueue: number;
-    activeJobsInQueue: number;
-    waitingJobsInQueue: number;
-    maxConcurrency: number;
-    mostRecentSuccess: string | null;
-}
+  success: boolean;
+  jobsInQueue: number;
+  activeJobsInQueue: number;
+  waitingJobsInQueue: number;
+  maxConcurrency: number;
+  mostRecentSuccess: string | null;
+};
 
-export async function queueStatusController(req: RequestWithAuth<{}, undefined, QueueStatusResponse>, res: Response<QueueStatusResponse>) {
-    let otherACUC: AuthCreditUsageChunkFromTeam | null = null;
+export async function queueStatusController(
+  req: RequestWithAuth<{}, undefined, QueueStatusResponse>,
+  res: Response<QueueStatusResponse>,
+) {
+  let otherACUC: AuthCreditUsageChunkFromTeam | null = null;
   if (!req.acuc?.is_extract) {
-    otherACUC = await getACUCTeam(req.auth.team_id, false, true, RateLimiterMode.Extract);
+    otherACUC = await getACUCTeam(
+      req.auth.team_id,
+      false,
+      true,
+      RateLimiterMode.Extract,
+    );
   } else {
-    otherACUC = await getACUCTeam(req.auth.team_id, false, true, RateLimiterMode.Crawl);
+    otherACUC = await getACUCTeam(
+      req.auth.team_id,
+      false,
+      true,
+      RateLimiterMode.Crawl,
+    );
   }
 
   await cleanOldConcurrencyLimitEntries(req.auth.team_id);
-  const activeJobsOfTeam = await getConcurrencyLimitActiveJobsCount(req.auth.team_id);
+  const activeJobsOfTeam = await getConcurrencyLimitActiveJobsCount(
+    req.auth.team_id,
+  );
   await cleanOldConcurrencyLimitedJobs(req.auth.team_id);
   const queuedJobsOfTeam = await getConcurrencyQueueJobsCount(req.auth.team_id);
 
-  const mostRecentSuccess = await redisEvictConnection.get("most-recent-success:" + req.auth.team_id);
+  const mostRecentSuccess = await redisEvictConnection.get(
+    "most-recent-success:" + req.auth.team_id,
+  );
 
   return res.status(200).json({
     success: true,
@@ -36,8 +58,13 @@ export async function queueStatusController(req: RequestWithAuth<{}, undefined, 
     jobsInQueue: activeJobsOfTeam + queuedJobsOfTeam,
     activeJobsInQueue: activeJobsOfTeam,
     waitingJobsInQueue: queuedJobsOfTeam,
-    maxConcurrency: Math.max(req.acuc?.concurrency ?? 1, otherACUC?.concurrency ?? 1),
+    maxConcurrency: Math.max(
+      req.acuc?.concurrency ?? 1,
+      otherACUC?.concurrency ?? 1,
+    ),
 
-    mostRecentSuccess: mostRecentSuccess ? new Date(mostRecentSuccess).toISOString() : null,
+    mostRecentSuccess: mostRecentSuccess
+      ? new Date(mostRecentSuccess).toISOString()
+      : null,
   });
 }

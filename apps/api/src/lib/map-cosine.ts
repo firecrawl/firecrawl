@@ -19,7 +19,7 @@ export function performCosineSimilarity(links: string[], searchQuery: string) {
     // Function to convert text to vector
     const textToVector = (text: string): number[] => {
       const words = searchQuery.toLowerCase().split(/\W+/);
-      return words.map((word) => {
+      return words.map(word => {
         const count = (text.toLowerCase().match(new RegExp(word, "g")) || [])
           .length;
         return count / text.length;
@@ -27,7 +27,7 @@ export function performCosineSimilarity(links: string[], searchQuery: string) {
     };
 
     // Calculate similarity scores
-    const similarityScores = links.map((link) => {
+    const similarityScores = links.map(link => {
       const linkVector = textToVector(link);
       const searchVector = textToVector(searchQuery);
       return cosineSimilarity(linkVector, searchVector);
@@ -38,7 +38,7 @@ export function performCosineSimilarity(links: string[], searchQuery: string) {
       .map((link, index) => ({ link, score: similarityScores[index] }))
       .sort((a, b) => b.score - a.score);
 
-    links = a.map((item) => item.link);
+    links = a.map(item => item.link);
     return links;
   } catch (error) {
     logger.error(`Error performing cosine similarity: ${error}`);
@@ -46,7 +46,10 @@ export function performCosineSimilarity(links: string[], searchQuery: string) {
   }
 }
 
-export function performCosineSimilarityV2(links: MapDocument[], searchQuery: string) {
+export function performCosineSimilarityV2(
+  links: MapDocument[],
+  searchQuery: string,
+) {
   try {
     // Function to calculate cosine similarity
     const cosineSimilarity = (vec1: number[], vec2: number[]): number => {
@@ -64,7 +67,7 @@ export function performCosineSimilarityV2(links: MapDocument[], searchQuery: str
     // Function to convert text to vector
     const textToVector = (text: string): number[] => {
       const words = searchQuery.toLowerCase().split(/\W+/);
-      return words.map((word) => {
+      return words.map(word => {
         const count = (text.toLowerCase().match(new RegExp(word, "g")) || [])
           .length;
         return count / text.length;
@@ -72,7 +75,7 @@ export function performCosineSimilarityV2(links: MapDocument[], searchQuery: str
     };
 
     // Calculate similarity scores
-    const similarityScores = links.map((link) => {
+    const similarityScores = links.map(link => {
       const linkVector = textToVector(link.url); // TODO: we can use title/description here as well!
       const searchVector = textToVector(searchQuery);
       return cosineSimilarity(linkVector, searchVector);
@@ -83,11 +86,10 @@ export function performCosineSimilarityV2(links: MapDocument[], searchQuery: str
       .map((link, index) => ({ link, score: similarityScores[index] }))
       .sort((a, b) => b.score - a.score);
 
-    links = a.map((item) => item.link);
+    links = a.map(item => item.link);
     return links;
   } catch (error) {
     logger.error(`Error performing cosine similarity: ${error}`);
     return links;
   }
 }
-

@@ -146,7 +146,7 @@ export class WebCrawler {
         currentDiscoveryDepth: this.currentDiscoveryDepth,
         maxDiscoveryDepth: this.maxDiscoveryDepth,
       });
-      sitemapLinks.forEach((link) => {
+      sitemapLinks.forEach(link => {
         denialReasons.set(link, "Maximum discovery depth reached");
       });
       return { links: [], denialReasons };
@@ -199,7 +199,7 @@ export class WebCrawler {
     }
 
     const filteredLinks = sitemapLinks
-      .filter((link) => {
+      .filter(link => {
         let url: URL;
         try {
           url = new URL(link.trim(), this.baseUrl);
@@ -229,7 +229,7 @@ export class WebCrawler {
         // Check if the link should be excluded
         if (this.excludes.length > 0 && this.excludes[0] !== "") {
           if (
-            this.excludes.some((excludePattern) =>
+            this.excludes.some(excludePattern =>
               new RegExp(excludePattern).test(excincPath),
             )
           ) {
@@ -244,7 +244,7 @@ export class WebCrawler {
         // Check if the link matches the include patterns, if any are specified
         if (this.includes.length > 0 && this.includes[0] !== "") {
           if (
-            !this.includes.some((includePattern) =>
+            !this.includes.some(includePattern =>
               new RegExp(includePattern).test(excincPath),
             )
           ) {
@@ -379,7 +379,7 @@ export class WebCrawler {
       } else {
         let filteredLinksResult = await this.filterLinks(
           [...new Set(urls)].filter(
-            (x) => this.filterURL(x, this.initialUrl).allowed,
+            x => this.filterURL(x, this.initialUrl).allowed,
           ),
           leftOfLimit,
           this.maxCrawledDepth,
@@ -430,10 +430,10 @@ export class WebCrawler {
           ),
           ...this.robots
             .getSitemaps()
-            .map((x) =>
+            .map(x =>
               this.tryFetchSitemapLinks(x, _urlsHandler, abort, mock, maxAge),
             ),
-        ]).then((results) => results.reduce((a, x) => a + x, 0)),
+        ]).then(results => results.reduce((a, x) => a + x, 0)),
         timeoutPromise,
       ])) as number;
 
@@ -591,14 +591,14 @@ export class WebCrawler {
       return [
         ...new Set(
           (await this.extractLinksFromHTMLRust(html, url))
-            .map((x) => {
+            .map(x => {
               try {
                 return new URL(x, url).href;
               } catch (e) {
                 return null;
               }
             })
-            .filter((x) => x !== null) as string[],
+            .filter(x => x !== null) as string[],
         ),
       ];
     } catch (error) {
@@ -623,10 +623,10 @@ export class WebCrawler {
   }
 
   private matchesExcludes(url: string, onlyDomains: boolean = false): boolean {
-    return this.excludes.some((pattern) => {
+    return this.excludes.some(pattern => {
       if (onlyDomains) return this.matchesExcludesExternalDomains(url);
 
-      return this.excludes.some((pattern) => new RegExp(pattern).test(url));
+      return this.excludes.some(pattern => new RegExp(pattern).test(url));
     });
   }
 
@@ -662,7 +662,7 @@ export class WebCrawler {
       url
         .split("/")
         .slice(3)
-        .filter((subArray) => subArray.length > 0).length,
+        .filter(subArray => subArray.length > 0).length,
     );
   }
 
@@ -743,7 +743,7 @@ export class WebCrawler {
 
     try {
       const urlWithoutQuery = url.split("?")[0].toLowerCase();
-      return fileExtensions.some((ext) => urlWithoutQuery.endsWith(ext));
+      return fileExtensions.some(ext => urlWithoutQuery.endsWith(ext));
     } catch (error) {
       this.logger.error(`Error processing URL in isFile`, {
         method: "isFile",
@@ -766,7 +766,7 @@ export class WebCrawler {
       "discord.gg",
       "discord.com",
     ];
-    return socialMediaOrEmail.some((ext) => url.includes(ext));
+    return socialMediaOrEmail.some(ext => url.includes(ext));
   }
 
   private async tryFetchSitemapLinks(
@@ -830,7 +830,7 @@ export class WebCrawler {
               sitemapUrl: mainDomainSitemapUrl,
               urlsHandler(urls) {
                 return urlsHandler(
-                  urls.filter((link) => {
+                  urls.filter(link => {
                     try {
                       const linkUrl = new URL(link);
                       return linkUrl.hostname.endsWith(hostname);

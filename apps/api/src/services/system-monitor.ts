@@ -147,7 +147,7 @@ class SystemMonitor {
   private parseCpuList(cpuList: string): number[] {
     const ranges = cpuList.split(",");
     const cpus: number[] = [];
-    ranges.forEach((range) => {
+    ranges.forEach(range => {
       const [startStr, endStr] = range.split("-");
       const start = parseInt(startStr, 10);
       const end = endStr !== undefined ? parseInt(endStr, 10) : start;

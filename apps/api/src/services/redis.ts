@@ -3,7 +3,7 @@ import { redisRateLimitClient } from "./rate-limiter";
 import { logger } from "../lib/logger";
 
 // Listen to 'error' events to the Redis connection
-redisRateLimitClient.on("error", (error) => {
+redisRateLimitClient.on("error", error => {
   try {
     if (error.message === "ECONNRESET") {
       logger.error("Connection to Redis Session Rate Limit Store timed out.");
@@ -14,7 +14,7 @@ redisRateLimitClient.on("error", (error) => {
 });
 
 // Listen to 'reconnecting' event to Redis
-redisRateLimitClient.on("reconnecting", (err) => {
+redisRateLimitClient.on("reconnecting", err => {
   try {
     if (redisRateLimitClient.status === "reconnecting")
       logger.info("Reconnecting to Redis Session Rate Limit Store...");
@@ -23,7 +23,7 @@ redisRateLimitClient.on("reconnecting", (err) => {
 });
 
 // Listen to the 'connect' event to Redis
-redisRateLimitClient.on("connect", (err) => {
+redisRateLimitClient.on("connect", err => {
   try {
     if (!err) logger.info("Connected to Redis Session Rate Limit Store!");
   } catch (error) {}
@@ -71,5 +71,6 @@ const deleteKey = async (key: string) => {
 
 export { setValue, getValue, deleteKey };
 
-const redisEvictURL = process.env.REDIS_EVICT_URL ?? process.env.REDIS_RATE_LIMIT_URL;
+const redisEvictURL =
+  process.env.REDIS_EVICT_URL ?? process.env.REDIS_RATE_LIMIT_URL;
 export const redisEvictConnection = new IORedis(redisEvictURL!);

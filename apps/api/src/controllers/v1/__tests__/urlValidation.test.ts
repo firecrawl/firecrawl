@@ -53,26 +53,39 @@ describe("URL Schema Validation", () => {
   });
 
   it("should accept URLs with international domain names", () => {
-    expect(() => url.parse("http://xn--1lqv92a901a.xn--ses554g/")).not.toThrow();
+    expect(() =>
+      url.parse("http://xn--1lqv92a901a.xn--ses554g/"),
+    ).not.toThrow();
   });
 
   it("should accept various IDN domains with different scripts", () => {
     expect(() => url.parse("http://xn--fsq.xn--0zwm56d")).not.toThrow();
     expect(() => url.parse("https://xn--mgbh0fb.xn--kgbechtv")).not.toThrow();
     expect(() => url.parse("http://xn--e1afmkfd.xn--p1ai")).not.toThrow();
-    expect(() => url.parse("https://xn--wgbl6a.xn--mgberp4a5d4ar")).not.toThrow();
+    expect(() =>
+      url.parse("https://xn--wgbl6a.xn--mgberp4a5d4ar"),
+    ).not.toThrow();
   });
 
   it("should accept IDN domains with paths and query parameters", () => {
-    expect(() => url.parse("http://xn--1lqv92a901a.xn--ses554g/path/to/page")).not.toThrow();
-    expect(() => url.parse("https://xn--fsq.xn--0zwm56d/search?q=test")).not.toThrow();
-    expect(() => url.parse("http://xn--mgbh0fb.xn--kgbechtv/page#section")).not.toThrow();
+    expect(() =>
+      url.parse("http://xn--1lqv92a901a.xn--ses554g/path/to/page"),
+    ).not.toThrow();
+    expect(() =>
+      url.parse("https://xn--fsq.xn--0zwm56d/search?q=test"),
+    ).not.toThrow();
+    expect(() =>
+      url.parse("http://xn--mgbh0fb.xn--kgbechtv/page#section"),
+    ).not.toThrow();
   });
 
   it("should accept IDN subdomains", () => {
-    expect(() => url.parse("http://sub.xn--1lqv92a901a.xn--ses554g")).not.toThrow();
+    expect(() =>
+      url.parse("http://sub.xn--1lqv92a901a.xn--ses554g"),
+    ).not.toThrow();
     expect(() => url.parse("https://www.xn--fsq.xn--0zwm56d")).not.toThrow();
-    expect(() => url.parse("http://api.xn--mgbh0fb.xn--kgbechtv")).not.toThrow();
+    expect(() =>
+      url.parse("http://api.xn--mgbh0fb.xn--kgbechtv"),
+    ).not.toThrow();
   });
-
 });

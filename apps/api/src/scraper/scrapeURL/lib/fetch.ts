@@ -64,7 +64,7 @@ export async function robustFetch<
   useCacheableLookup = true,
 }: RobustFetchParams<Schema>): Promise<Output> {
   abort?.throwIfAborted();
-  
+
   const params = {
     url,
     logger,
@@ -82,15 +82,17 @@ export async function robustFetch<
   // omit pdf file content from logs
   const logParams = {
     ...params,
-    body: body?.input ? {
-      ...body,
-      input: {
-        ...body.input,
-        file_content: undefined,
-      },
-    } : body,
+    body: body?.input
+      ? {
+          ...body,
+          input: {
+            ...body.input,
+            file_content: undefined,
+          },
+        }
+      : body,
     logger: undefined,
-  }
+  };
 
   let response: {
     status: number;
@@ -142,7 +144,11 @@ export async function robustFetch<
             mock,
           });
         } else {
-          logger.debug("Request failed", { params: logParams, error, requestId });
+          logger.debug("Request failed", {
+            params: logParams,
+            error,
+            requestId,
+          });
           throw new Error("Request failed", {
             cause: {
               params,
@@ -177,12 +183,9 @@ export async function robustFetch<
       let trueUrl = request.url.startsWith(fireEngineURL)
         ? request.url.replace(fireEngineURL, "<fire-engine>")
         : request.url;
-      
+
       let out = trueUrl + ";" + request.method;
-      if (
-        trueUrl.startsWith("<fire-engine>") &&
-        request.method === "POST"
-      ) {
+      if (trueUrl.startsWith("<fire-engine>") && request.method === "POST") {
         out += "f-e;" + request.body?.engine + ";" + request.body?.url;
       }
       return out;
@@ -190,7 +193,7 @@ export async function robustFetch<
 
     const thisId = makeRequestTypeId(params);
     const matchingMocks = mock.requests
-      .filter((x) => makeRequestTypeId(x.options) === thisId)
+      .filter(x => makeRequestTypeId(x.options) === thisId)
       .sort((a, b) => a.time - b.time);
     const nextI = mock.tracker[thisId] ?? 0;
     mock.tracker[thisId] = nextI + 1;
@@ -209,10 +212,14 @@ export async function robustFetch<
     if (tryCount > 1) {
       logger.debug(
         "Request sent failure status, trying " + (tryCount - 1) + " more times",
-        { params: logParams, response: { status: response.status, body: response.body }, requestId },
+        {
+          params: logParams,
+          response: { status: response.status, body: response.body },
+          requestId,
+        },
       );
       if (tryCooldown !== undefined) {
-        await new Promise((resolve) =>
+        await new Promise(resolve =>
           setTimeout(() => resolve(null), tryCooldown),
         );
       }

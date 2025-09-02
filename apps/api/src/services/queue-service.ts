@@ -24,8 +24,7 @@ export function getRedisConnection(): IORedis {
     });
     redisConnection.on("connect", () => logger.info("Redis connected"));
     redisConnection.on("reconnecting", () => logger.warn("Redis reconnecting"));
-    redisConnection.on("error", (err) => logger.warn("Redis error", { err }));
-
+    redisConnection.on("error", err => logger.warn("Redis error", { err }));
   }
   return redisConnection;
 }
@@ -105,18 +104,21 @@ export function getGenerateLlmsTxtQueue() {
 
 export function getDeepResearchQueue() {
   if (!deepResearchQueue) {
-    deepResearchQueue = new Queue<DeepResearchServiceOptions>(deepResearchQueueName, {
-      connection: getRedisConnection(),
-      defaultJobOptions: {
-        removeOnComplete: {
-          age: 90000, // 25 hours
+    deepResearchQueue = new Queue<DeepResearchServiceOptions>(
+      deepResearchQueueName,
+      {
+        connection: getRedisConnection(),
+        defaultJobOptions: {
+          removeOnComplete: {
+            age: 90000, // 25 hours
+          },
+          removeOnFail: {
+            age: 90000, // 25 hours
+          },
         },
-        removeOnFail: {
-          age: 90000, // 25 hours
-        },
+        telemetry: new BullMQOtel("firecrawl-bullmq"),
       },
-      telemetry: new BullMQOtel("firecrawl-bullmq"),
-    });
+    );
   }
   return deepResearchQueue;
 }

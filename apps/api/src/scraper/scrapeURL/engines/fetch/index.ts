@@ -37,7 +37,7 @@ export async function scrapeURLWithFetch(
 
     const thisId = makeRequestTypeId(mockOptions);
     const matchingMocks = meta.mock.requests
-      .filter((x) => makeRequestTypeId(x.options) === thisId)
+      .filter(x => makeRequestTypeId(x.options) === thisId)
       .sort((a, b) => a.time - b.time);
     const nextI = meta.mock.tracker[thisId] ?? 0;
     meta.mock.tracker[thisId] = nextI + 1;
@@ -113,7 +113,7 @@ export async function scrapeURLWithFetch(
     html: response.body,
     statusCode: response.status,
     contentType:
-      (response.headers.find((x) => x[0].toLowerCase() === "content-type") ??
+      (response.headers.find(x => x[0].toLowerCase() === "content-type") ??
         [])[1] ?? undefined,
 
     proxyUsed: "basic",

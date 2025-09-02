@@ -16,7 +16,9 @@ describe("performRanking", () => {
 
     const searchQuery = "cats training";
 
-    const result = await performRanking(linksWithContext, links, searchQuery, { teamId: "test-suite" });
+    const result = await performRanking(linksWithContext, links, searchQuery, {
+      teamId: "test-suite",
+    });
 
     // Should return array of objects with link, linkWithContext, score, originalIndex
     expect(result).toBeInstanceOf(Array);
@@ -26,7 +28,7 @@ describe("performRanking", () => {
     expect(result[0].link).toBe("https://example.com/cats");
 
     // Each result should have required properties
-    result.forEach((item) => {
+    result.forEach(item => {
       expect(item).toHaveProperty("link");
       expect(item).toHaveProperty("linkWithContext");
       expect(item).toHaveProperty("score");
@@ -57,7 +59,9 @@ describe("performRanking", () => {
 
     const searchQuery = "test";
 
-    const result = await performRanking(linksWithContext, links, searchQuery, { teamId: "test-suite" });
+    const result = await performRanking(linksWithContext, links, searchQuery, {
+      teamId: "test-suite",
+    });
 
     // If scores are equal, original order should be maintained
     expect(result[0].originalIndex).toBeLessThan(result[1].originalIndex);

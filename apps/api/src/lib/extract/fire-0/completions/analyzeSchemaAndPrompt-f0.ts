@@ -15,7 +15,7 @@ export async function analyzeSchemaAndPrompt_F0(
   urls: string[],
   schema: any,
   prompt: string,
-  metadata: { teamId: string, extractId?: string }
+  metadata: { teamId: string; extractId?: string },
 ): Promise<{
   isMultiEntity: boolean;
   multiEntityKeys: string[];
@@ -39,7 +39,7 @@ export async function analyzeSchemaAndPrompt_F0(
       keyIndicators: z.array(z.string()),
     })
     .refine(
-      (x) => !x.isMultiEntity || x.multiEntityKeys.length > 0,
+      x => !x.isMultiEntity || x.multiEntityKeys.length > 0,
       "isMultiEntity was true, but no multiEntityKeys",
     );
 

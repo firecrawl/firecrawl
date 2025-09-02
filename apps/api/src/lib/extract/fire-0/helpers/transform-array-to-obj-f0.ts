@@ -65,7 +65,7 @@ export function transformArrayToObject_F0(
 
   // Initialize the array in the transformed result
   let currentLevel = transformedResult;
-  arrayKeyParts.forEach((part) => {
+  arrayKeyParts.forEach(part => {
     if (!currentLevel[part]) {
       currentLevel[part] = {};
     }
@@ -75,12 +75,12 @@ export function transformArrayToObject_F0(
 
   // Helper function to check if an object is already in the array
   function isDuplicateObject(array: any[], obj: any): boolean {
-    return array.some((existingItem) => isEqual(existingItem, obj));
+    return array.some(existingItem => isEqual(existingItem, obj));
   }
 
   // Helper function to validate if an object follows the schema
   function isValidObject(obj: any, schema: any): boolean {
-    return Object.keys(schema.properties).every((key) => {
+    return Object.keys(schema.properties).every(key => {
       return (
         obj.hasOwnProperty(key) &&
         typeof obj[key] === schema.properties[key].type
@@ -89,9 +89,9 @@ export function transformArrayToObject_F0(
   }
 
   // Iterate over each item in the arrayData
-  arrayData.forEach((item) => {
+  arrayData.forEach(item => {
     let currentItem = item;
-    arrayKeyParts.forEach((part) => {
+    arrayKeyParts.forEach(part => {
       if (currentItem[part]) {
         currentItem = currentItem[part];
       }

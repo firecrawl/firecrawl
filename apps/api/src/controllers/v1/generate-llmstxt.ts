@@ -9,10 +9,12 @@ import { getGenerateLlmsTxtQueue } from "../../services/queue-service";
 import * as Sentry from "@sentry/node";
 import { saveGeneratedLlmsTxt } from "../../lib/generate-llmstxt/generate-llmstxt-redis";
 
-export type GenerateLLMsTextResponse = ErrorResponse | {
-  success: boolean;
-  id: string;
-};
+export type GenerateLLMsTextResponse =
+  | ErrorResponse
+  | {
+      success: boolean;
+      id: string;
+    };
 
 /**
  * Initiates a text generation job based on the provided URL.
@@ -25,7 +27,11 @@ export async function generateLLMsTextController(
   res: Response<GenerateLLMsTextResponse>,
 ) {
   if (req.acuc?.flags?.forceZDR) {
-    return res.status(400).json({ success: false, error: "Your team has zero data retention enabled. This is not supported on llmstxt. Please contact support@firecrawl.com to unblock this feature." });
+    return res.status(400).json({
+      success: false,
+      error:
+        "Your team has zero data retention enabled. This is not supported on llmstxt. Please contact support@firecrawl.com to unblock this feature.",
+    });
   }
 
   req.body = generateLLMsTextRequestSchema.parse(req.body);

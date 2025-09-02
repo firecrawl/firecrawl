@@ -6,14 +6,20 @@ import os from "os";
 import { writeFile } from "fs/promises";
 import { Meta } from "../..";
 
-async function feResToPdfPrefetch(logger: Logger, feRes: FireEngineCheckStatusSuccess | undefined): Promise<Meta["pdfPrefetch"]> {
+async function feResToPdfPrefetch(
+  logger: Logger,
+  feRes: FireEngineCheckStatusSuccess | undefined,
+): Promise<Meta["pdfPrefetch"]> {
   if (!feRes?.file) {
     logger.warn("No file in pdf prefetch");
     return null;
   }
 
-  const filePath = path.join(os.tmpdir(), `tempFile-${crypto.randomUUID()}.pdf`);
-  await writeFile(filePath, Buffer.from(feRes.file.content, "base64"))
+  const filePath = path.join(
+    os.tmpdir(),
+    `tempFile-${crypto.randomUUID()}.pdf`,
+  );
+  await writeFile(filePath, Buffer.from(feRes.file.content, "base64"));
 
   return {
     status: feRes.pageStatusCode,
@@ -29,7 +35,7 @@ export async function specialtyScrapeCheck(
   feRes?: FireEngineCheckStatusSuccess,
 ) {
   const contentType = (Object.entries(headers ?? {}).find(
-    (x) => x[0].toLowerCase() === "content-type",
+    x => x[0].toLowerCase() === "content-type",
   ) ?? [])[1];
 
   if (contentType === undefined) {
@@ -39,7 +45,9 @@ export async function specialtyScrapeCheck(
   } else if (
     contentType === "application/pdf" ||
     contentType.startsWith("application/pdf;") ||
-    (contentType === "application/octet-stream" && (feRes?.file?.content.startsWith("JVBERi0") || feRes?.content.startsWith("%PDF-")))
+    (contentType === "application/octet-stream" &&
+      (feRes?.file?.content.startsWith("JVBERi0") ||
+        feRes?.content.startsWith("%PDF-")))
   ) {
     // .pdf
     throw new AddFeatureError(["pdf"], await feResToPdfPrefetch(logger, feRes));

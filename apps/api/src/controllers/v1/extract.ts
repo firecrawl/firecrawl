@@ -25,7 +25,7 @@ export async function oldExtract(
   // TODO: Remove this once all teams have transitioned to the new system
   try {
     let result;
-    const model = req.body.agent?.model
+    const model = req.body.agent?.model;
     if (req.body.agent && model && model.toLowerCase().includes("fire-1")) {
       result = await performExtraction(extractId, {
         request: req.body,
@@ -66,10 +66,17 @@ export async function extractController(
   req.body = extractRequestSchema.parse(req.body);
 
   if (req.acuc?.flags?.forceZDR) {
-    return res.status(400).json({ success: false, error: "Your team has zero data retention enabled. This is not supported on extract. Please contact support@firecrawl.com to unblock this feature." });
+    return res.status(400).json({
+      success: false,
+      error:
+        "Your team has zero data retention enabled. This is not supported on extract. Please contact support@firecrawl.com to unblock this feature.",
+    });
   }
 
-  const invalidURLs: string[] = req.body.urls?.filter((url: string) => isUrlBlocked(url, req.acuc?.flags ?? null)) ?? [];
+  const invalidURLs: string[] =
+    req.body.urls?.filter((url: string) =>
+      isUrlBlocked(url, req.acuc?.flags ?? null),
+    ) ?? [];
 
   if (invalidURLs.length > 0 && !req.body.ignoreInvalidURLs) {
     if (!res.headersSent) {
@@ -93,7 +100,11 @@ export async function extractController(
   });
 
   const scrapeOptions = req.body.scrapeOptions
-    ? fromV1ScrapeOptions(req.body.scrapeOptions, req.body.scrapeOptions.timeout, req.auth.team_id).scrapeOptions
+    ? fromV1ScrapeOptions(
+        req.body.scrapeOptions,
+        req.body.scrapeOptions.timeout,
+        req.auth.team_id,
+      ).scrapeOptions
     : undefined;
 
   const jobData = {
@@ -138,8 +149,10 @@ export async function extractController(
     success: true,
     id: extractId,
     urlTrace: [],
-    ...(invalidURLs.length > 0 && req.body.ignoreInvalidURLs ? {
-      invalidURLs,
-    } : {}),
+    ...(invalidURLs.length > 0 && req.body.ignoreInvalidURLs
+      ? {
+          invalidURLs,
+        }
+      : {}),
   });
 }

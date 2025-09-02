@@ -54,7 +54,7 @@ export async function searchAndScrapeSearchResult(
     });
 
     const documentsWithCostTracking = await Promise.all(
-      searchResults.map((result) =>
+      searchResults.map(result =>
         scrapeSearchResult(
           {
             url: result.url,
@@ -93,7 +93,7 @@ async function scrapeSearchResult(
     team_id: options.teamId,
     basePriority: 10,
   });
-  
+
   const costTracking = new CostTracking();
 
   const zeroDataRetention = flags?.forceZDR ?? false;
@@ -109,8 +109,12 @@ async function scrapeSearchResult(
       origin: options.origin,
       zeroDataRetention,
     });
-    
-    const { scrapeOptions, internalOptions } = fromV1ScrapeOptions(options.scrapeOptions, options.timeout, options.teamId);
+
+    const { scrapeOptions, internalOptions } = fromV1ScrapeOptions(
+      options.scrapeOptions,
+      options.timeout,
+      options.teamId,
+    );
 
     await addScrapeJob(
       {
@@ -119,9 +123,17 @@ async function scrapeSearchResult(
         team_id: options.teamId,
         scrapeOptions: {
           ...scrapeOptions,
-          maxAge: scrapeOptions.maxAge === 0 ? 3 * 24 * 60 * 60 * 1000 : scrapeOptions.maxAge,
+          maxAge:
+            scrapeOptions.maxAge === 0
+              ? 3 * 24 * 60 * 60 * 1000
+              : scrapeOptions.maxAge,
         },
-        internalOptions: { ...internalOptions, teamId: options.teamId, bypassBilling: true, zeroDataRetention },
+        internalOptions: {
+          ...internalOptions,
+          teamId: options.teamId,
+          bypassBilling: true,
+          zeroDataRetention,
+        },
         origin: options.origin,
         is_scrape: true,
         startTime: Date.now(),
@@ -135,7 +147,7 @@ async function scrapeSearchResult(
     );
 
     const doc: Document = await waitForJob(jobId, options.timeout);
-    
+
     logger.info("Scrape job completed", {
       scrapeId: jobId,
       url: searchResult.url,
@@ -153,15 +165,19 @@ async function scrapeSearchResult(
 
     let costTracking: ReturnType<typeof CostTracking.prototype.toJSON>;
     if (process.env.USE_DB_AUTHENTICATION === "true") {
-      const { data: costTrackingResponse, error: costTrackingError } = await supabase_service.from("firecrawl_jobs")
-        .select("cost_tracking")
-        .eq("job_id", jobId);
-      
+      const { data: costTrackingResponse, error: costTrackingError } =
+        await supabase_service
+          .from("firecrawl_jobs")
+          .select("cost_tracking")
+          .eq("job_id", jobId);
+
       if (costTrackingError) {
-        logger.error("Error getting cost tracking", { error: costTrackingError });
+        logger.error("Error getting cost tracking", {
+          error: costTrackingError,
+        });
         throw costTrackingError;
       }
-      
+
       costTracking = costTrackingResponse?.[0]?.cost_tracking;
     } else {
       costTracking = new CostTracking().toJSON();
@@ -182,7 +198,7 @@ async function scrapeSearchResult(
     if (error?.message?.includes("Could not scrape url")) {
       statusCode = 403;
     }
-    
+
     const document: Document = {
       title: searchResult.title,
       description: searchResult.description,
@@ -216,7 +232,11 @@ export async function searchController(
   });
 
   if (req.acuc?.flags?.forceZDR) {
-    return res.status(400).json({ success: false, error: "Your team has zero data retention enabled. This is not supported on search. Please contact support@firecrawl.com to unblock this feature." });
+    return res.status(400).json({
+      success: false,
+      error:
+        "Your team has zero data retention enabled. This is not supported on search. Please contact support@firecrawl.com to unblock this feature.",
+    });
   }
 
   let responseData: SearchResponse = {
@@ -224,8 +244,10 @@ export async function searchController(
     data: [],
   };
   const startTime = new Date().getTime();
-  const isSearchPreview = process.env.SEARCH_PREVIEW_TOKEN !== undefined && process.env.SEARCH_PREVIEW_TOKEN === req.body.__searchPreviewToken;
-  
+  const isSearchPreview =
+    process.env.SEARCH_PREVIEW_TOKEN !== undefined &&
+    process.env.SEARCH_PREVIEW_TOKEN === req.body.__searchPreviewToken;
+
   let credits_billed = 0;
   let allDocsWithCostTracking: DocumentWithCostTracking[] = [];
 
@@ -258,7 +280,7 @@ export async function searchController(
 
     if (req.body.ignoreInvalidURLs) {
       searchResults = searchResults.filter(
-        (result) => !isUrlBlocked(result.url, req.acuc?.flags ?? null),
+        result => !isUrlBlocked(result.url, req.acuc?.flags ?? null),
       );
     }
 
@@ -278,7 +300,7 @@ export async function searchController(
       !req.body.scrapeOptions.formats ||
       req.body.scrapeOptions.formats.length === 0
     ) {
-      responseData.data = searchResults.map((r) => ({
+      responseData.data = searchResults.map(r => ({
         url: r.url,
         title: r.title,
         description: r.description,
@@ -286,7 +308,7 @@ export async function searchController(
       credits_billed = responseData.data.length;
     } else {
       logger.info("Scraping search results");
-      const scrapePromises = searchResults.map((result) =>
+      const scrapePromises = searchResults.map(result =>
         scrapeSearchResult(
           result,
           {
@@ -310,7 +332,7 @@ export async function searchController(
 
       const docs = docsWithCostTracking.map(item => item.document);
       const filteredDocs = docs.filter(
-        (doc) =>
+        doc =>
           doc.serpResults || (doc.markdown && doc.markdown.trim().length > 0),
       );
 
@@ -326,18 +348,30 @@ export async function searchController(
       }
 
       const finalDocsForBilling = responseData.data;
-      
-      const creditPromises = finalDocsForBilling.map(async (finalDoc) => {
-        const matchingDocWithCost = docsWithCostTracking.find(item => 
-          item.document.metadata && finalDoc.metadata && item.document.metadata.scrapeId === finalDoc.metadata.scrapeId
+
+      const creditPromises = finalDocsForBilling.map(async finalDoc => {
+        const matchingDocWithCost = docsWithCostTracking.find(
+          item =>
+            item.document.metadata &&
+            finalDoc.metadata &&
+            item.document.metadata.scrapeId === finalDoc.metadata.scrapeId,
         );
-        
+
         if (matchingDocWithCost) {
-          const { scrapeOptions, internalOptions } = fromV1ScrapeOptions(req.body.scrapeOptions, req.body.timeout, req.auth.team_id);
+          const { scrapeOptions, internalOptions } = fromV1ScrapeOptions(
+            req.body.scrapeOptions,
+            req.body.timeout,
+            req.auth.team_id,
+          );
           return await calculateCreditsToBeBilled(
             scrapeOptions,
-            { ...internalOptions, teamId: req.auth.team_id, bypassBilling: true, zeroDataRetention: false },
-            matchingDocWithCost.document, 
+            {
+              ...internalOptions,
+              teamId: req.auth.team_id,
+              bypassBilling: true,
+              zeroDataRetention: false,
+            },
+            matchingDocWithCost.document,
             matchingDocWithCost.costTracking,
             req.acuc?.flags ?? null,
           );
@@ -345,10 +379,13 @@ export async function searchController(
           return 1;
         }
       });
-      
+
       try {
         const individualCredits = await Promise.all(creditPromises);
-        credits_billed = individualCredits.reduce((sum, credit) => sum + credit, 0);
+        credits_billed = individualCredits.reduce(
+          (sum, credit) => sum + credit,
+          0,
+        );
       } catch (error) {
         logger.error("Error calculating credits for billing", { error });
         credits_billed = responseData.data.length;
@@ -364,7 +401,7 @@ export async function searchController(
         req.acuc?.sub_id ?? undefined,
         credits_billed,
         req.acuc?.api_key_id ?? null,
-      ).catch((error) => {
+      ).catch(error => {
         logger.error(
           `Failed to bill team ${req.auth.team_id} for ${responseData.data.length} credits: ${error}`,
         );

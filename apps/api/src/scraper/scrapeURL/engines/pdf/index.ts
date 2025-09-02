@@ -17,9 +17,15 @@ import { readFile, unlink } from "node:fs/promises";
 import path from "node:path";
 import type { Response } from "undici";
 import { getPDFMetadata } from "../../../../lib/pdf-parser";
-import { getPdfResultFromCache, savePdfResultToCache } from "../../../../lib/gcs-pdf-cache";
+import {
+  getPdfResultFromCache,
+  savePdfResultToCache,
+} from "../../../../lib/gcs-pdf-cache";
 import { AbortManagerThrownError } from "../../lib/abortManager";
-import { shouldParsePDF, getPDFMaxPages } from "../../../../controllers/v2/types";
+import {
+  shouldParsePDF,
+  getPDFMaxPages,
+} from "../../../../controllers/v2/types";
 
 type PDFProcessorResult = { html: string; markdown?: string };
 
@@ -54,8 +60,6 @@ async function scrapePDFWithRunPodMU(
   }
 
   meta.abort.throwIfAborted();
-
-
 
   meta.logger.info("Max Pdf pages", {
     tempFilePath,
@@ -100,7 +104,7 @@ async function scrapePDFWithRunPodMU(
   if (status === "IN_QUEUE" || status === "IN_PROGRESS") {
     do {
       meta.abort.throwIfAborted();
-      await new Promise((resolve) => setTimeout(resolve, 2500));
+      await new Promise(resolve => setTimeout(resolve, 2500));
       meta.abort.throwIfAborted();
       const podStatus = await robustFetch({
         url: `https://api.runpod.ai/v2/${process.env.RUNPOD_MU_POD_ID}/status/${podStart.id}`,
@@ -169,12 +173,10 @@ async function scrapePDFWithParsePDF(
   };
 }
 
-export async function scrapePDF(
-  meta: Meta,
-): Promise<EngineScrapeResult> {
+export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
   const shouldParse = shouldParsePDF(meta.options.parsers);
   const maxPages = getPDFMaxPages(meta.options.parsers);
-  
+
   if (!shouldParse) {
     if (meta.pdfPrefetch !== undefined && meta.pdfPrefetch !== null) {
       const content = (await readFile(meta.pdfPrefetch.filePath)).toString(
@@ -239,9 +241,14 @@ export async function scrapePDF(
   }
 
   const pdfMetadata = await getPDFMetadata(tempFilePath);
-  const effectivePageCount = maxPages ? Math.min(pdfMetadata.numPages, maxPages) : pdfMetadata.numPages;
+  const effectivePageCount = maxPages
+    ? Math.min(pdfMetadata.numPages, maxPages)
+    : pdfMetadata.numPages;
 
-  if (effectivePageCount * MILLISECONDS_PER_PAGE > (meta.abort.scrapeTimeout() ?? Infinity)) {
+  if (
+    effectivePageCount * MILLISECONDS_PER_PAGE >
+    (meta.abort.scrapeTimeout() ?? Infinity)
+  ) {
     throw new PDFInsufficientTimeError(
       effectivePageCount,
       effectivePageCount * MILLISECONDS_PER_PAGE + 5000,

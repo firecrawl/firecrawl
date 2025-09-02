@@ -26,10 +26,17 @@ export async function extractController(
   req.body = extractRequestSchema.parse(req.body);
 
   if (req.acuc?.flags?.forceZDR) {
-    return res.status(400).json({ success: false, error: "Your team has zero data retention enabled. This is not supported on extract. Please contact support@firecrawl.com to unblock this feature." });
+    return res.status(400).json({
+      success: false,
+      error:
+        "Your team has zero data retention enabled. This is not supported on extract. Please contact support@firecrawl.com to unblock this feature.",
+    });
   }
 
-  const invalidURLs: string[] = req.body.urls?.filter((url: string) => isUrlBlocked(url, req.acuc?.flags ?? null)) ?? [];
+  const invalidURLs: string[] =
+    req.body.urls?.filter((url: string) =>
+      isUrlBlocked(url, req.acuc?.flags ?? null),
+    ) ?? [];
 
   if (invalidURLs.length > 0 && !req.body.ignoreInvalidURLs) {
     if (!res.headersSent) {
@@ -80,8 +87,10 @@ export async function extractController(
     success: true,
     id: extractId,
     urlTrace: [],
-    ...(invalidURLs.length > 0 && req.body.ignoreInvalidURLs ? {
-      invalidURLs,
-    } : {}),
+    ...(invalidURLs.length > 0 && req.body.ignoreInvalidURLs
+      ? {
+          invalidURLs,
+        }
+      : {}),
   });
 }

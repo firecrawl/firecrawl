@@ -4,7 +4,7 @@
  */
 
 export interface CategoryInput {
-  type: 'github' | 'research';
+  type: "github" | "research";
   sites?: string[];
 }
 
@@ -30,7 +30,7 @@ const DEFAULT_RESEARCH_SITES = [
   "sciencedirect.com",
   "plos.org",
   "biorxiv.org",
-  "medrxiv.org"
+  "medrxiv.org",
 ];
 
 /**
@@ -41,26 +41,26 @@ const DEFAULT_RESEARCH_SITES = [
  */
 export function buildSearchQuery(
   baseQuery: string,
-  categories?: CategoryOption[]
+  categories?: CategoryOption[],
 ): QueryBuilderResult {
   const categoryMap = new Map<string, string>();
-  
+
   if (!categories || categories.length === 0) {
     return {
       query: baseQuery,
-      categoryMap
+      categoryMap,
     };
   }
 
   const siteFilters: string[] = [];
-  
+
   for (const category of categories) {
-    if (typeof category === 'string') {
+    if (typeof category === "string") {
       // Simple string format
-      if (category === 'github') {
+      if (category === "github") {
         siteFilters.push("site:github.com");
         categoryMap.set("github.com", "github");
-      } else if (category === 'research') {
+      } else if (category === "research") {
         // Use default research sites
         for (const site of DEFAULT_RESEARCH_SITES) {
           siteFilters.push(`site:${site}`);
@@ -69,10 +69,10 @@ export function buildSearchQuery(
       }
     } else {
       // Object format with options
-      if (category.type === 'github') {
+      if (category.type === "github") {
         siteFilters.push("site:github.com");
         categoryMap.set("github.com", "github");
-      } else if (category.type === 'research') {
+      } else if (category.type === "research") {
         // Use custom sites if provided, otherwise defaults
         const sites = category.sites || DEFAULT_RESEARCH_SITES;
         for (const site of sites) {
@@ -82,16 +82,16 @@ export function buildSearchQuery(
       }
     }
   }
-  
+
   // Build the OR filter for sites
   let categoryFilter = "";
   if (siteFilters.length > 0) {
     categoryFilter = " (" + siteFilters.join(" OR ") + ")";
   }
-  
+
   return {
     query: baseQuery + categoryFilter,
-    categoryMap
+    categoryMap,
   };
 }
 
@@ -103,27 +103,30 @@ export function buildSearchQuery(
  */
 export function getCategoryFromUrl(
   url: string,
-  categoryMap: Map<string, string>
+  categoryMap: Map<string, string>,
 ): string | undefined {
   try {
     const urlObj = new URL(url);
     const hostname = urlObj.hostname.toLowerCase();
-    
+
     // Direct match for GitHub
-    if (hostname === 'github.com' || hostname.endsWith('.github.com')) {
-      return 'github';
+    if (hostname === "github.com" || hostname.endsWith(".github.com")) {
+      return "github";
     }
-    
+
     // Check against category map for other sites
     for (const [site, category] of categoryMap.entries()) {
-      if (hostname === site.toLowerCase() || hostname.endsWith('.' + site.toLowerCase())) {
+      if (
+        hostname === site.toLowerCase() ||
+        hostname.endsWith("." + site.toLowerCase())
+      ) {
         return category;
       }
     }
   } catch (e) {
     // Invalid URL, skip
   }
-  
+
   return undefined;
 }
 

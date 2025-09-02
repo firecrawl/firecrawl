@@ -42,7 +42,7 @@ export type Format =
   | "changeTracking";
 
 export const url = z.preprocess(
-  (x) => {
+  x => {
     if (!protocolIncluded(x as string)) {
       x = `http://${x}`;
     }
@@ -64,13 +64,13 @@ export const url = z.preprocess(
     .url()
     .regex(/^https?:\/\//i, "URL uses unsupported protocol")
     .refine(
-      (x) =>
+      x =>
         /(\.[a-zA-Z0-9-\u0400-\u04FF\u0500-\u052F\u2DE0-\u2DFF\uA640-\uA69F]{2,}|\.xn--[a-zA-Z0-9-]{1,})(:\d+)?([\/?#]|$)/i.test(
           x,
         ),
       "URL must have a valid top-level domain or be a valid path",
     )
-    .refine((x) => {
+    .refine(x => {
       try {
         checkUrl(x as string);
         return true;
@@ -103,7 +103,7 @@ export const extractOptions = z
       .any()
       .optional()
       .refine(
-        (val) => {
+        val => {
           if (!val) return true; // Allow undefined schema
           try {
             const validate = ajv.compile(val);
@@ -121,7 +121,7 @@ export const extractOptions = z
     temperature: z.number().optional(),
   })
   .strict(strictMessage)
-  .transform((data) => ({
+  .transform(data => ({
     ...data,
     systemPrompt:
       "Based on the information on the page, extract all the information from the schema in JSON format. Try to extract all the fields even those that might not be marked as required.",
@@ -134,7 +134,7 @@ export const extractOptionsWithAgent = z
       .any()
       .optional()
       .refine(
-        (val) => {
+        val => {
           if (!val) return true; // Allow undefined schema
           try {
             const validate = ajv.compile(val);
@@ -158,7 +158,7 @@ export const extractOptionsWithAgent = z
       .optional(),
   })
   .strict(strictMessage)
-  .transform((data) => ({
+  .transform(data => ({
     ...data,
     systemPrompt: isAgentExtractModelValid(data.agent?.model)
       ? `You are an expert web data extractor. Your task is to analyze the provided markdown content from a web page and generate a JSON object based *strictly* on the provided schema.
@@ -210,7 +210,7 @@ export const actionSchema = z.union([
       selector: z.string().optional(),
     })
     .refine(
-      (data) =>
+      data =>
         (data.milliseconds !== undefined || data.selector !== undefined) &&
         !(data.milliseconds !== undefined && data.selector !== undefined),
       {
@@ -274,19 +274,18 @@ export type Action = z.infer<typeof actionSchema>;
 
 export const actionsSchema = z
   .array(actionSchema)
-  .refine((actions) => actions.length <= MAX_ACTIONS, {
+  .refine(actions => actions.length <= MAX_ACTIONS, {
     message: `Number of actions cannot exceed ${MAX_ACTIONS}`,
   })
   .refine(
-    (actions) =>
-      calculateTotalWaitTime(actions) <= ACTIONS_MAX_WAIT_TIME * 1000,
+    actions => calculateTotalWaitTime(actions) <= ACTIONS_MAX_WAIT_TIME * 1000,
     {
       message: `Total wait time (waitFor + wait actions) cannot exceed ${ACTIONS_MAX_WAIT_TIME} seconds`,
     },
   );
 
 function transformIframeSelector(selector: string): string {
-  return selector.replace(/(?:^|[\s,])iframe(?=\s|$|[.#\[:,])/g, (match) => {
+  return selector.replace(/(?:^|[\s,])iframe(?=\s|$|[.#\[:,])/g, match => {
     const prefix = match.match(/^[\s,]/)?.[0] || "";
     return prefix + 'div[data-original-tag="iframe"]';
   });
@@ -311,23 +310,23 @@ const baseScrapeOptions = z
       .optional()
       .default(["markdown"])
       .refine(
-        (x) => !(x.includes("screenshot") && x.includes("screenshot@fullPage")),
+        x => !(x.includes("screenshot") && x.includes("screenshot@fullPage")),
         "You may only specify either screenshot or screenshot@fullPage",
       )
       .refine(
-        (x) => !x.includes("changeTracking") || x.includes("markdown"),
+        x => !x.includes("changeTracking") || x.includes("markdown"),
         "The changeTracking format requires the markdown format to be specified as well",
       ),
     headers: z.record(z.string(), z.string()).optional(),
     includeTags: z
       .string()
       .array()
-      .transform((tags) => tags.map(transformIframeSelector))
+      .transform(tags => tags.map(transformIframeSelector))
       .optional(),
     excludeTags: z
       .string()
       .array()
-      .transform((tags) => tags.map(transformIframeSelector))
+      .transform(tags => tags.map(transformIframeSelector))
       .optional(),
     onlyMainContent: z.boolean().default(true),
     timeout: z.number().int().positive().finite().safe().optional(),
@@ -350,7 +349,7 @@ const baseScrapeOptions = z
           .any()
           .optional()
           .refine(
-            (val) => {
+            val => {
               if (!val) return true; // Allow undefined schema
               try {
                 const validate = ajv.compile(val);
@@ -377,7 +376,7 @@ const baseScrapeOptions = z
           .string()
           .optional()
           .refine(
-            (val) =>
+            val =>
               !val ||
               Object.keys(countries).includes(val.toUpperCase()) ||
               val === "US-generic",
@@ -386,7 +385,7 @@ const baseScrapeOptions = z
                 "Invalid country code. Please use a valid ISO 3166-1 alpha-2 country code.",
             },
           )
-          .transform((val) => (val ? val.toUpperCase() : "US-generic")),
+          .transform(val => (val ? val.toUpperCase() : "US-generic")),
         languages: z.string().array().optional(),
       })
       .optional(),
@@ -398,13 +397,13 @@ const baseScrapeOptions = z
           .string()
           .optional()
           .refine(
-            (val) => !val || Object.keys(countries).includes(val.toUpperCase()),
+            val => !val || Object.keys(countries).includes(val.toUpperCase()),
             {
               message:
                 "Invalid country code. Please use a valid ISO 3166-1 alpha-2 country code.",
             },
           )
-          .transform((val) => (val ? val.toUpperCase() : "US-generic")),
+          .transform(val => (val ? val.toUpperCase() : "US-generic")),
         languages: z.string().array().optional(),
       })
       .optional(),
@@ -424,7 +423,7 @@ const baseScrapeOptions = z
   })
   .strict(strictMessage);
 
-const fire1Refine = (obj) => {
+const fire1Refine = obj => {
   if (
     obj.agent?.model?.toLowerCase() === "fire-1" &&
     obj.jsonOptions?.agent?.model?.toLowerCase() === "fire-1"
@@ -437,7 +436,7 @@ const fire1RefineOpts = {
   message:
     "You may only specify the FIRE-1 model in agent or jsonOptions.agent, but not both.",
 };
-const waitForRefine = (obj) => {
+const waitForRefine = obj => {
   if (obj.waitFor && obj.timeout) {
     if (typeof obj.timeout !== "number" || obj.timeout <= 0) {
       return false;
@@ -450,7 +449,7 @@ const waitForRefineOpts = {
   message: "waitFor must not exceed half of timeout",
   path: ["waitFor"],
 };
-const extractRefine = (obj) => {
+const extractRefine = obj => {
   const hasExtractFormat = obj.formats?.includes("extract");
   const hasExtractOptions = obj.extract !== undefined;
   const hasJsonFormat = obj.formats?.includes("json");
@@ -529,7 +528,7 @@ export const scrapeOptions = baseScrapeOptions
   })
   .strict(strictMessage)
   .refine(
-    (obj) => {
+    obj => {
       if (!obj.actions) return true;
       return (
         calculateTotalWaitTime(obj.actions, obj.waitFor) <=
@@ -543,7 +542,7 @@ export const scrapeOptions = baseScrapeOptions
   .refine(extractRefine, extractRefineOpts)
   .refine(fire1Refine, fire1RefineOpts)
   .refine(waitForRefine, waitForRefineOpts)
-  .transform((obj) => {
+  .transform(obj => {
     return extractTransform(obj) as typeof obj;
   });
 
@@ -574,7 +573,7 @@ export const extractV1Options = z
       .any()
       .optional()
       .refine(
-        (val) => {
+        val => {
           if (!val) return true; // Allow undefined schema
           try {
             const validate = ajv.compile(val);
@@ -599,7 +598,7 @@ export const extractV1Options = z
     integration: z
       .nativeEnum(IntegrationEnum)
       .optional()
-      .transform((val) => val || null),
+      .transform(val => val || null),
     urlTrace: z.boolean().default(false),
     timeout: z.number().int().positive().finite().safe().default(60000),
     __experimental_streamSteps: z.boolean().default(false),
@@ -616,26 +615,26 @@ export const extractV1Options = z
     ignoreInvalidURLs: z.boolean().default(false),
   })
   .strict(strictMessage)
-  .refine((obj) => obj.urls || obj.prompt, {
+  .refine(obj => obj.urls || obj.prompt, {
     message: "Either 'urls' or 'prompt' must be provided.",
   })
-  .transform((obj) => ({
+  .transform(obj => ({
     ...obj,
     allowExternalLinks: obj.allowExternalLinks || obj.enableWebSearch,
   }))
   .refine(
-    (x) => (x.scrapeOptions ? extractRefine(x.scrapeOptions) : true),
+    x => (x.scrapeOptions ? extractRefine(x.scrapeOptions) : true),
     extractRefineOpts,
   )
   .refine(
-    (x) => (x.scrapeOptions ? fire1Refine(x.scrapeOptions) : true),
+    x => (x.scrapeOptions ? fire1Refine(x.scrapeOptions) : true),
     fire1RefineOpts,
   )
   .refine(
-    (x) => (x.scrapeOptions ? waitForRefine(x.scrapeOptions) : true),
+    x => (x.scrapeOptions ? waitForRefine(x.scrapeOptions) : true),
     waitForRefineOpts,
   )
-  .transform((x) => ({
+  .transform(x => ({
     ...x,
     scrapeOptions: x.scrapeOptions
       ? extractTransform(x.scrapeOptions)
@@ -665,7 +664,7 @@ export const scrapeRequestSchema = baseScrapeOptions
     integration: z
       .nativeEnum(IntegrationEnum)
       .optional()
-      .transform((val) => val || null),
+      .transform(val => val || null),
     timeout: z.number().int().positive().finite().safe().default(30000),
     zeroDataRetention: z.boolean().optional(),
   })
@@ -673,7 +672,7 @@ export const scrapeRequestSchema = baseScrapeOptions
   .refine(extractRefine, extractRefineOpts)
   .refine(fire1Refine, fire1RefineOpts)
   .refine(waitForRefine, waitForRefineOpts)
-  .transform((obj) => {
+  .transform(obj => {
     return extractTransform(obj) as typeof obj;
   });
 
@@ -682,7 +681,7 @@ export type ScrapeRequestInput = z.input<typeof scrapeRequestSchema>;
 
 const BLACKLISTED_WEBHOOK_HEADERS = ["x-firecrawl-signature"];
 export const webhookSchema = z.preprocess(
-  (x) => {
+  x => {
     if (typeof x === "string") {
       return { url: x };
     } else {
@@ -700,11 +699,11 @@ export const webhookSchema = z.preprocess(
     })
     .strict(strictMessage)
     .refine(
-      (obj) => {
-        const blacklistedLower = BLACKLISTED_WEBHOOK_HEADERS.map((h) =>
+      obj => {
+        const blacklistedLower = BLACKLISTED_WEBHOOK_HEADERS.map(h =>
           h.toLowerCase(),
         );
-        return !Object.keys(obj.headers).some((key) =>
+        return !Object.keys(obj.headers).some(key =>
           blacklistedLower.includes(key.toLowerCase()),
         );
       },
@@ -719,7 +718,7 @@ export const batchScrapeRequestSchema = baseScrapeOptions
     integration: z
       .nativeEnum(IntegrationEnum)
       .optional()
-      .transform((val) => val || null),
+      .transform(val => val || null),
     webhook: webhookSchema.optional(),
     appendToId: z.string().uuid().optional(),
     ignoreInvalidURLs: z.boolean().default(false),
@@ -730,7 +729,7 @@ export const batchScrapeRequestSchema = baseScrapeOptions
   .refine(extractRefine, extractRefineOpts)
   .refine(fire1Refine, fire1RefineOpts)
   .refine(waitForRefine, waitForRefineOpts)
-  .transform((obj) => extractTransform(obj) as typeof obj);
+  .transform(obj => extractTransform(obj) as typeof obj);
 
 export const batchScrapeRequestSchemaNoURLValidation = baseScrapeOptions
   .extend({
@@ -739,7 +738,7 @@ export const batchScrapeRequestSchemaNoURLValidation = baseScrapeOptions
     integration: z
       .nativeEnum(IntegrationEnum)
       .optional()
-      .transform((val) => val || null),
+      .transform(val => val || null),
     webhook: webhookSchema.optional(),
     appendToId: z.string().uuid().optional(),
     ignoreInvalidURLs: z.boolean().default(false),
@@ -750,7 +749,7 @@ export const batchScrapeRequestSchemaNoURLValidation = baseScrapeOptions
   .refine(extractRefine, extractRefineOpts)
   .refine(fire1Refine, fire1RefineOpts)
   .refine(waitForRefine, waitForRefineOpts)
-  .transform((obj) => extractTransform(obj) as typeof obj);
+  .transform(obj => extractTransform(obj) as typeof obj);
 
 export type BatchScrapeRequest = z.infer<typeof batchScrapeRequestSchema>;
 export type BatchScrapeRequestInput = z.input<typeof batchScrapeRequestSchema>;
@@ -795,7 +794,7 @@ export const crawlRequestSchema = crawlerOptions
     integration: z
       .nativeEnum(IntegrationEnum)
       .optional()
-      .transform((val) => val || null),
+      .transform(val => val || null),
     scrapeOptions: baseScrapeOptions.default({}),
     webhook: webhookSchema.optional(),
     limit: z.number().default(10000),
@@ -803,11 +802,11 @@ export const crawlRequestSchema = crawlerOptions
     zeroDataRetention: z.boolean().optional(),
   })
   .strict(strictMessage)
-  .refine((x) => extractRefine(x.scrapeOptions), extractRefineOpts)
-  .refine((x) => fire1Refine(x.scrapeOptions), fire1RefineOpts)
-  .refine((x) => waitForRefine(x.scrapeOptions), waitForRefineOpts)
+  .refine(x => extractRefine(x.scrapeOptions), extractRefineOpts)
+  .refine(x => fire1Refine(x.scrapeOptions), fire1RefineOpts)
+  .refine(x => waitForRefine(x.scrapeOptions), waitForRefineOpts)
   .refine(
-    (data) => {
+    data => {
       try {
         const urlDepth = getURLDepth(data.url);
         return urlDepth <= data.maxDepth;
@@ -820,7 +819,7 @@ export const crawlRequestSchema = crawlerOptions
       path: ["url"],
     },
   )
-  .transform((x) => {
+  .transform(x => {
     if (x.crawlEntireDomain !== undefined) {
       x.allowBackwardLinks = x.crawlEntireDomain;
     }
@@ -856,7 +855,7 @@ export const mapRequestSchema = crawlerOptions
     integration: z
       .nativeEnum(IntegrationEnum)
       .optional()
-      .transform((val) => val || null),
+      .transform(val => val || null),
     includeSubdomains: z.boolean().default(true),
     search: z.string().optional(),
     ignoreQueryParameters: z.boolean().default(true),
@@ -1324,7 +1323,7 @@ export function fromLegacyScrapeOptions(
           ? ("extract" as const)
           : null,
         "links",
-      ].filter((x) => x !== null),
+      ].filter(x => x !== null),
       waitFor: pageOptions.waitFor,
       headers: pageOptions.headers,
       includeTags:
@@ -1432,7 +1431,7 @@ export const searchRequestSchema = z
     integration: z
       .nativeEnum(IntegrationEnum)
       .optional()
-      .transform((val) => val || null),
+      .transform(val => val || null),
     timeout: z.number().int().positive().finite().safe().default(60000),
     ignoreInvalidURLs: z.boolean().optional().default(false),
     __searchPreviewToken: z.string().optional(),
@@ -1458,10 +1457,10 @@ export const searchRequestSchema = z
   .strict(
     "Unrecognized key in body -- please review the v1 API documentation for request body changes",
   )
-  .refine((x) => extractRefine(x.scrapeOptions), extractRefineOpts)
-  .refine((x) => fire1Refine(x.scrapeOptions), fire1RefineOpts)
-  .refine((x) => waitForRefine(x.scrapeOptions), waitForRefineOpts)
-  .transform((x) => ({
+  .refine(x => extractRefine(x.scrapeOptions), extractRefineOpts)
+  .refine(x => fire1Refine(x.scrapeOptions), fire1RefineOpts)
+  .refine(x => waitForRefine(x.scrapeOptions), waitForRefineOpts)
+  .transform(x => ({
     ...x,
     scrapeOptions: extractTransform(x.scrapeOptions),
   }));

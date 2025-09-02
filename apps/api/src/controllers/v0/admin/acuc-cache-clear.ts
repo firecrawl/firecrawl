@@ -12,7 +12,7 @@ export async function acucCacheClearController(req: Request, res: Response) {
       .select("*")
       .eq("team_id", team_id);
 
-    await Promise.all((keys.data ?? []).map((x) => clearACUC(x.key)));
+    await Promise.all((keys.data ?? []).map(x => clearACUC(x.key)));
     await clearACUCTeam(team_id);
 
     logger.info(`ACUC cache cleared for team ${team_id}`);

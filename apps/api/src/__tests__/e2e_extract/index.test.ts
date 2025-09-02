@@ -315,7 +315,9 @@ describe("E2E Tests for Extract API Routes", () => {
         .set("Authorization", `Bearer ${process.env.TEST_API_KEY}`)
         .set("Content-Type", "application/json")
         .send({
-          urls: ["https://firecrawl-e2e-test-git-main-rafaelsideguides-projects.vercel.app/"],
+          urls: [
+            "https://firecrawl-e2e-test-git-main-rafaelsideguides-projects.vercel.app/",
+          ],
           prompt: "What is the content right after the #content-1 id?",
           schema: {
             type: "object",
@@ -326,14 +328,16 @@ describe("E2E Tests for Extract API Routes", () => {
           },
           scrapeOptions: {
             waitFor: 6000,
-          }
+          },
         });
 
       expect(response.statusCode).toBe(200);
       expect(response.body).toHaveProperty("data");
       expect(typeof response.body.data).toBe("object");
       expect(response.body.data?.content).toBeDefined();
-      expect(response.body.data?.content).toBe("Content loaded after 5 seconds!");
+      expect(response.body.data?.content).toBe(
+        "Content loaded after 5 seconds!",
+      );
     },
     60000,
   );

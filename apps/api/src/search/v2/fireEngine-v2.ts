@@ -1,5 +1,9 @@
 import dotenv from "dotenv";
-import { SearchResult, SearchV2Response, SearchResultType } from "../../lib/entities";
+import {
+  SearchResult,
+  SearchV2Response,
+  SearchResultType,
+} from "../../lib/entities";
 import * as Sentry from "@sentry/node";
 import { logger } from "../../lib/logger";
 
@@ -28,22 +32,25 @@ export async function fire_engine_search_v2(
       tbs: options.tbs,
       numResults: options.numResults,
       page: options.page ?? 1,
-      type: options.type || 'web',
+      type: options.type || "web",
     });
 
     if (!process.env.FIRE_ENGINE_BETA_URL) {
       return {};
     }
 
-    const response = await fetch(`${process.env.FIRE_ENGINE_BETA_URL}/v2/search`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "X-Disable-Cache": "true",
+    const response = await fetch(
+      `${process.env.FIRE_ENGINE_BETA_URL}/v2/search`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Disable-Cache": "true",
+        },
+        body: data,
+        signal: abort,
       },
-      body: data,
-      signal: abort,
-    });
+    );
 
     if (response.ok) {
       const responseData = await response.json();
@@ -74,14 +81,16 @@ export async function fire_engine_search(
   abort?: AbortSignal,
 ): Promise<SearchResult[]> {
   const result = await fire_engine_search_v2(q, options, abort);
-  
+
   // Handle backward compatibility - convert to SearchResult array
   if (Array.isArray(result)) {
     return result;
   } else if (result.web) {
-    return result.web.map(item => new SearchResult(item.url, item.title, item.description));
+    return result.web.map(
+      item => new SearchResult(item.url, item.title, item.description),
+    );
   }
-  
+
   return [];
 }
 
@@ -110,7 +119,9 @@ export async function fireEngineMap(
     });
 
     if (!process.env.FIRE_ENGINE_BETA_URL) {
-      logger.warn("(v1/map Beta) Results might differ from cloud offering currently.");
+      logger.warn(
+        "(v1/map Beta) Results might differ from cloud offering currently.",
+      );
       return [];
     }
 

@@ -46,16 +46,23 @@ export const v1Router = express.Router();
 // x402 payments protocol - https://github.com/coinbase/x402
 v1Router.use(
   paymentMiddleware(
-    process.env.X402_PAY_TO_ADDRESS as `0x${string}` || "0x0000000000000000000000000000000000000000",
+    (process.env.X402_PAY_TO_ADDRESS as `0x${string}`) ||
+      "0x0000000000000000000000000000000000000000",
     {
       "POST /x402/search": {
         price: process.env.X402_ENDPOINT_PRICE_USD as string,
-        network: process.env.X402_NETWORK as "base-sepolia" | "base" | "avalanche-fuji" | "avalanche" | "iotex",
+        network: process.env.X402_NETWORK as
+          | "base-sepolia"
+          | "base"
+          | "avalanche-fuji"
+          | "avalanche"
+          | "iotex",
         config: {
-          description: "The search endpoint combines web search (SERP) with Firecrawl's scraping capabilities to return full page content for any query. Requires micropayment via X402 protocol",
+          description:
+            "The search endpoint combines web search (SERP) with Firecrawl's scraping capabilities to return full page content for any query. Requires micropayment via X402 protocol",
           mimeType: "application/json",
           maxTimeoutSeconds: 120,
-        }
+        },
       },
     },
   ),

@@ -11,7 +11,7 @@ export async function redisHealthController(req: Request, res: Response) {
       } catch (error) {
         if (attempt === retries) throw error;
         logger.warn(`Attempt ${attempt} failed: ${error.message}. Retrying...`);
-        await new Promise((resolve) => setTimeout(resolve, 2000)); // Wait 2 seconds before retrying
+        await new Promise(resolve => setTimeout(resolve, 2000)); // Wait 2 seconds before retrying
       }
     }
   };

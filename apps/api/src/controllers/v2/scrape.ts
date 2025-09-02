@@ -24,11 +24,13 @@ export async function scrapeController(
   if (req.body.zeroDataRetention && !req.acuc?.flags?.allowZDR) {
     return res.status(400).json({
       success: false,
-      error: "Zero data retention is enabled for this team. If you're interested in ZDR, please contact support@firecrawl.com",
+      error:
+        "Zero data retention is enabled for this team. If you're interested in ZDR, please contact support@firecrawl.com",
     });
   }
 
-  const zeroDataRetention = req.acuc?.flags?.forceZDR || req.body.zeroDataRetention;
+  const zeroDataRetention =
+    req.acuc?.flags?.forceZDR || req.body.zeroDataRetention;
 
   const logger = _logger.child({
     method: "scrapeController",
@@ -38,7 +40,7 @@ export async function scrapeController(
     team_id: req.auth.team_id,
     zeroDataRetention,
   });
- 
+
   logger.debug("Scrape " + jobId + " starting", {
     scrapeId: jobId,
     request: req.body,
@@ -57,8 +59,10 @@ export async function scrapeController(
     basePriority: 10,
   });
 
-  const isDirectToBullMQ = process.env.SEARCH_PREVIEW_TOKEN !== undefined && process.env.SEARCH_PREVIEW_TOKEN === req.body.__searchPreviewToken;
-  
+  const isDirectToBullMQ =
+    process.env.SEARCH_PREVIEW_TOKEN !== undefined &&
+    process.env.SEARCH_PREVIEW_TOKEN === req.body.__searchPreviewToken;
+
   await addScrapeJob(
     {
       url: req.body.url,
@@ -66,13 +70,17 @@ export async function scrapeController(
       team_id: req.auth.team_id,
       scrapeOptions: {
         ...req.body,
-        ...(req.body.__experimental_cache ? {
-          maxAge: req.body.maxAge ?? 4 * 60 * 60 * 1000, // 4 hours
-        } : {}),
+        ...(req.body.__experimental_cache
+          ? {
+              maxAge: req.body.maxAge ?? 4 * 60 * 60 * 1000, // 4 hours
+            }
+          : {}),
       },
       internalOptions: {
         teamId: req.auth.team_id,
-        saveScrapeResultToGCS: process.env.GCS_FIRE_ENGINE_BUCKET_NAME ? true : false,
+        saveScrapeResultToGCS: process.env.GCS_FIRE_ENGINE_BUCKET_NAME
+          ? true
+          : false,
         unnormalizedSourceURL: preNormalizedBody.url,
         bypassBilling: isDirectToBullMQ,
         zeroDataRetention,
@@ -99,7 +107,10 @@ export async function scrapeController(
 
   let doc: Document;
   try {
-    doc = await waitForJob(jobId, (timeout !== undefined) ? timeout + totalWait : null);
+    doc = await waitForJob(
+      jobId,
+      timeout !== undefined ? timeout + totalWait : null,
+    );
   } catch (e) {
     logger.error(`Error in scrapeController`, {
       startTime,
@@ -125,7 +136,7 @@ export async function scrapeController(
   }
 
   await getScrapeQueue().remove(jobId);
-  
+
   if (!hasFormatOfType(req.body.formats, "rawHtml")) {
     if (doc && doc.rawHtml) {
       delete doc.rawHtml;

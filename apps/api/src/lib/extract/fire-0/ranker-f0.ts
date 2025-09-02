@@ -4,17 +4,25 @@ import { getEmbeddingModel } from "../../../lib/generic-ai";
 
 configDotenv();
 
-async function getEmbedding(text: string, metadata: { teamId: string, extractId?: string }) {
+async function getEmbedding(
+  text: string,
+  metadata: { teamId: string; extractId?: string },
+) {
   const { embedding } = await embed({
     model: getEmbeddingModel("text-embedding-3-small"),
     value: text,
     experimental_telemetry: {
       isEnabled: true,
       metadata: {
-        ...(metadata.extractId ? { langfuseTraceId: "extract:" + metadata.extractId, extractId: metadata.extractId } : {}),
+        ...(metadata.extractId
+          ? {
+              langfuseTraceId: "extract:" + metadata.extractId,
+              extractId: metadata.extractId,
+            }
+          : {}),
         teamId: metadata.teamId,
-      }
-    }
+      },
+    },
   });
 
   return embedding;
@@ -31,7 +39,7 @@ const cosineSimilarity = (vec1: number[], vec2: number[]): number => {
 // Function to convert text to vector
 const textToVector = (searchQuery: string, text: string): number[] => {
   const words = searchQuery.toLowerCase().split(/\W+/);
-  return words.map((word) => {
+  return words.map(word => {
     const count = (text.toLowerCase().match(new RegExp(word, "g")) || [])
       .length;
     return count / text.length;
@@ -42,7 +50,7 @@ async function performRanking_F0(
   linksWithContext: string[],
   links: string[],
   searchQuery: string,
-  metadata: { teamId: string, extractId?: string }
+  metadata: { teamId: string; extractId?: string },
 ) {
   try {
     // Handle invalid inputs
@@ -60,7 +68,7 @@ async function performRanking_F0(
     const linksAndScores = await Promise.all(
       linksWithContext.map((linkWithContext, index) =>
         getEmbedding(linkWithContext, metadata)
-          .then((linkEmbedding) => {
+          .then(linkEmbedding => {
             const score = cosineSimilarity(queryEmbedding, linkEmbedding);
             return {
               link: links[index],

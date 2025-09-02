@@ -6,10 +6,10 @@ export async function spreadSchemas_F0(
   multiEntitySchema: any;
 }> {
   let singleAnswerSchema = { ...schema, properties: { ...schema.properties } };
-  let multiEntitySchema: any = { 
-    type: "object", 
+  let multiEntitySchema: any = {
+    type: "object",
     properties: {},
-    ...(schema.required ? { required: [] } : {})
+    ...(schema.required ? { required: [] } : {}),
   };
 
   // Helper function to check if a property path exists in schema
@@ -28,19 +28,22 @@ export async function spreadSchemas_F0(
 
   // Helper function to get the root property of a dot path
   const getRootProperty = (path: string): string => {
-    return path.split('.')[0];
+    return path.split(".")[0];
   };
 
-  keys.forEach((key) => {
+  keys.forEach(key => {
     const rootProperty = getRootProperty(key);
     if (singleAnswerSchema.properties[rootProperty]) {
-      multiEntitySchema.properties[rootProperty] = singleAnswerSchema.properties[rootProperty];
+      multiEntitySchema.properties[rootProperty] =
+        singleAnswerSchema.properties[rootProperty];
       delete singleAnswerSchema.properties[rootProperty];
-      
+
       // Move required field if it exists
       if (schema.required?.includes(rootProperty)) {
         multiEntitySchema.required.push(rootProperty);
-        singleAnswerSchema.required = schema.required.filter((k: string) => k !== rootProperty);
+        singleAnswerSchema.required = schema.required.filter(
+          (k: string) => k !== rootProperty,
+        );
       }
     }
   });

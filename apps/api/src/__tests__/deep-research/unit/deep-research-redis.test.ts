@@ -42,11 +42,11 @@ describe("Deep Research Redis Operations", () => {
 
       expect(redisEvictConnection.set).toHaveBeenCalledWith(
         "deep-research:test-id",
-        JSON.stringify(mockResearch)
+        JSON.stringify(mockResearch),
       );
       expect(redisEvictConnection.expire).toHaveBeenCalledWith(
         "deep-research:test-id",
-        6 * 60 * 60
+        6 * 60 * 60,
       );
     });
   });
@@ -54,12 +54,14 @@ describe("Deep Research Redis Operations", () => {
   describe("getDeepResearch", () => {
     it("should retrieve research data from Redis", async () => {
       (redisEvictConnection.get as jest.Mock).mockResolvedValue(
-        JSON.stringify(mockResearch)
+        JSON.stringify(mockResearch),
       );
 
       const result = await getDeepResearch("test-id");
       expect(result).toEqual(mockResearch);
-      expect(redisEvictConnection.get).toHaveBeenCalledWith("deep-research:test-id");
+      expect(redisEvictConnection.get).toHaveBeenCalledWith(
+        "deep-research:test-id",
+      );
     });
 
     it("should return null when research not found", async () => {
@@ -73,7 +75,7 @@ describe("Deep Research Redis Operations", () => {
   describe("updateDeepResearch", () => {
     it("should update existing research with new data", async () => {
       (redisEvictConnection.get as jest.Mock).mockResolvedValue(
-        JSON.stringify(mockResearch)
+        JSON.stringify(mockResearch),
       );
 
       const update = {
@@ -100,11 +102,11 @@ describe("Deep Research Redis Operations", () => {
 
       expect(redisEvictConnection.set).toHaveBeenCalledWith(
         "deep-research:test-id",
-        JSON.stringify(expectedUpdate)
+        JSON.stringify(expectedUpdate),
       );
       expect(redisEvictConnection.expire).toHaveBeenCalledWith(
         "deep-research:test-id",
-        6 * 60 * 60
+        6 * 60 * 60,
       );
     });
 
@@ -124,12 +126,12 @@ describe("Deep Research Redis Operations", () => {
       (redisEvictConnection.pttl as jest.Mock).mockResolvedValue(mockTTL);
 
       const result = await getDeepResearchExpiry("test-id");
-      
+
       expect(result).toBeInstanceOf(Date);
       expect(result.getTime()).toBeCloseTo(
         new Date().getTime() + mockTTL,
-        -2 // Allow 100ms precision
+        -2, // Allow 100ms precision
       );
     });
   });
-}); 
+});

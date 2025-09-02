@@ -186,7 +186,7 @@ describe("E2E Tests for API Routes with No Authentication", () => {
       expect(response.body.status).toBe("active");
 
       // wait for 30 seconds
-      await new Promise((r) => setTimeout(r, 30000));
+      await new Promise(r => setTimeout(r, 30000));
 
       const completedResponse = await request(TEST_URL).get(
         `/v0/crawl/status/${crawlResponse.body.jobId}`,

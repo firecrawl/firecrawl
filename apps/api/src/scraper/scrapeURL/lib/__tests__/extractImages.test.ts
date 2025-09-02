@@ -1,9 +1,9 @@
-import { extractImages } from '../extractImages';
+import { extractImages } from "../extractImages";
 
-describe('extractImages', () => {
-  const baseUrl = 'https://example.com/page.html';
+describe("extractImages", () => {
+  const baseUrl = "https://example.com/page.html";
 
-  it('should extract images from img tags', async () => {
+  it("should extract images from img tags", async () => {
     const html = `
       <html>
         <body>
@@ -13,16 +13,16 @@ describe('extractImages', () => {
         </body>
       </html>
     `;
-    
+
     const images = await extractImages(html, baseUrl);
-    
-    expect(images).toContain('https://example.com/image1.jpg');
-    expect(images).toContain('https://example.com/images/image2.png');
-    expect(images).toContain('https://external.com/image3.gif');
+
+    expect(images).toContain("https://example.com/image1.jpg");
+    expect(images).toContain("https://example.com/images/image2.png");
+    expect(images).toContain("https://external.com/image3.gif");
     expect(images).toHaveLength(3);
   });
 
-  it('should extract lazy-loaded images from data-src', async () => {
+  it("should extract lazy-loaded images from data-src", async () => {
     const html = `
       <html>
         <body>
@@ -31,15 +31,15 @@ describe('extractImages', () => {
         </body>
       </html>
     `;
-    
+
     const images = await extractImages(html, baseUrl);
-    
-    expect(images).toContain('https://example.com/lazy-image.webp');
-    expect(images).toContain('https://example.com/regular.jpg');
-    expect(images).toContain('https://example.com/ignored.jpg');
+
+    expect(images).toContain("https://example.com/lazy-image.webp");
+    expect(images).toContain("https://example.com/regular.jpg");
+    expect(images).toContain("https://example.com/ignored.jpg");
   });
 
-  it('should extract images from srcset', async () => {
+  it("should extract images from srcset", async () => {
     const html = `
       <html>
         <body>
@@ -47,16 +47,16 @@ describe('extractImages', () => {
         </body>
       </html>
     `;
-    
+
     const images = await extractImages(html, baseUrl);
-    
-    expect(images).toContain('https://example.com/small.jpg');
-    expect(images).toContain('https://example.com/medium.jpg');
-    expect(images).toContain('https://example.com/large.jpg');
+
+    expect(images).toContain("https://example.com/small.jpg");
+    expect(images).toContain("https://example.com/medium.jpg");
+    expect(images).toContain("https://example.com/large.jpg");
     expect(images).toHaveLength(3);
   });
 
-  it('should extract images from picture elements', async () => {
+  it("should extract images from picture elements", async () => {
     const html = `
       <html>
         <body>
@@ -68,15 +68,15 @@ describe('extractImages', () => {
         </body>
       </html>
     `;
-    
+
     const images = await extractImages(html, baseUrl);
-    
-    expect(images).toContain('https://example.com/image.avif');
-    expect(images).toContain('https://example.com/image.webp');
-    expect(images).toContain('https://example.com/image.jpg');
+
+    expect(images).toContain("https://example.com/image.avif");
+    expect(images).toContain("https://example.com/image.webp");
+    expect(images).toContain("https://example.com/image.jpg");
   });
 
-  it('should extract images from meta tags', async () => {
+  it("should extract images from meta tags", async () => {
     const html = `
       <html>
         <head>
@@ -87,16 +87,16 @@ describe('extractImages', () => {
         </head>
       </html>
     `;
-    
+
     const images = await extractImages(html, baseUrl);
-    
-    expect(images).toContain('https://example.com/og-image.jpg');
-    expect(images).toContain('https://example.com/og-image-secure.jpg');
-    expect(images).toContain('https://example.com/twitter-image.png');
-    expect(images).toContain('https://example.com/schema-image.jpg');
+
+    expect(images).toContain("https://example.com/og-image.jpg");
+    expect(images).toContain("https://example.com/og-image-secure.jpg");
+    expect(images).toContain("https://example.com/twitter-image.png");
+    expect(images).toContain("https://example.com/schema-image.jpg");
   });
 
-  it('should extract images from link tags', async () => {
+  it("should extract images from link tags", async () => {
     const html = `
       <html>
         <head>
@@ -106,15 +106,15 @@ describe('extractImages', () => {
         </head>
       </html>
     `;
-    
+
     const images = await extractImages(html, baseUrl);
-    
-    expect(images).toContain('https://example.com/favicon.ico');
-    expect(images).toContain('https://example.com/apple-touch-icon.png');
-    expect(images).toContain('https://example.com/link-image.jpg');
+
+    expect(images).toContain("https://example.com/favicon.ico");
+    expect(images).toContain("https://example.com/apple-touch-icon.png");
+    expect(images).toContain("https://example.com/link-image.jpg");
   });
 
-  it('should extract background images from inline styles', async () => {
+  it("should extract background images from inline styles", async () => {
     const html = `
       <html>
         <body>
@@ -124,15 +124,15 @@ describe('extractImages', () => {
         </body>
       </html>
     `;
-    
+
     const images = await extractImages(html, baseUrl);
-    
-    expect(images).toContain('https://example.com/background1.jpg');
-    expect(images).toContain('https://example.com/images/background2.png');
-    expect(images).toContain('https://example.com/background3.gif');
+
+    expect(images).toContain("https://example.com/background1.jpg");
+    expect(images).toContain("https://example.com/images/background2.png");
+    expect(images).toContain("https://example.com/background3.gif");
   });
 
-  it('should extract video poster images', async () => {
+  it("should extract video poster images", async () => {
     const html = `
       <html>
         <body>
@@ -141,14 +141,14 @@ describe('extractImages', () => {
         </body>
       </html>
     `;
-    
+
     const images = await extractImages(html, baseUrl);
-    
-    expect(images).toContain('https://example.com/video-poster.jpg');
-    expect(images).toContain('https://example.com/videos/poster.png');
+
+    expect(images).toContain("https://example.com/video-poster.jpg");
+    expect(images).toContain("https://example.com/videos/poster.png");
   });
 
-  it('should handle protocol-relative URLs', async () => {
+  it("should handle protocol-relative URLs", async () => {
     const html = `
       <html>
         <body>
@@ -156,13 +156,13 @@ describe('extractImages', () => {
         </body>
       </html>
     `;
-    
+
     const images = await extractImages(html, baseUrl);
-    
-    expect(images).toContain('https://cdn.example.com/image.jpg');
+
+    expect(images).toContain("https://cdn.example.com/image.jpg");
   });
 
-  it('should handle data URIs', async () => {
+  it("should handle data URIs", async () => {
     const html = `
       <html>
         <body>
@@ -170,13 +170,13 @@ describe('extractImages', () => {
         </body>
       </html>
     `;
-    
+
     const images = await extractImages(html, baseUrl);
-    
-    expect(images).toContain('data:image/png;base64,iVBORw0KGgoAAAANS...');
+
+    expect(images).toContain("data:image/png;base64,iVBORw0KGgoAAAANS...");
   });
 
-  it('should respect base tag', async () => {
+  it("should respect base tag", async () => {
     const html = `
       <html>
         <head>
@@ -187,13 +187,13 @@ describe('extractImages', () => {
         </body>
       </html>
     `;
-    
+
     const images = await extractImages(html, baseUrl);
-    
-    expect(images).toContain('https://different.com/base/image.jpg');
+
+    expect(images).toContain("https://different.com/base/image.jpg");
   });
 
-  it('should remove duplicates', async () => {
+  it("should remove duplicates", async () => {
     const html = `
       <html>
         <body>
@@ -203,14 +203,16 @@ describe('extractImages', () => {
         </body>
       </html>
     `;
-    
+
     const images = await extractImages(html, baseUrl);
-    
-    const duplicateCount = images.filter(img => img.includes('duplicate.jpg')).length;
+
+    const duplicateCount = images.filter(img =>
+      img.includes("duplicate.jpg"),
+    ).length;
     expect(duplicateCount).toBe(1);
   });
 
-  it('should handle invalid URLs gracefully', async () => {
+  it("should handle invalid URLs gracefully", async () => {
     const html = `
       <html>
         <body>
@@ -221,10 +223,10 @@ describe('extractImages', () => {
         </body>
       </html>
     `;
-    
+
     const images = await extractImages(html, baseUrl);
-    
-    expect(images).toContain('https://example.com/valid.jpg');
+
+    expect(images).toContain("https://example.com/valid.jpg");
     expect(images).not.toContain("javascript:alert('xss')");
     expect(images).toHaveLength(1);
   });

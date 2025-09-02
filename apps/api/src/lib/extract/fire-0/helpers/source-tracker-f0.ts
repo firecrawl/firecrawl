@@ -22,14 +22,18 @@ export class SourceTracker_F0 {
   /**
    * Transform raw extraction results into a format that preserves source information
    */
-  transformResults_F0(extractionResults: { extract: any; url: string }[], schema: any, withTransform: boolean = true) {
+  transformResults_F0(
+    extractionResults: { extract: any; url: string }[],
+    schema: any,
+    withTransform: boolean = true,
+  ) {
     // Handle array outputs
     if (Array.isArray(extractionResults[0]?.extract)) {
       this.transformedResults = extractionResults.map(result => ({
         transformed: result.extract,
-        url: result.url
+        url: result.url,
       }));
-      
+
       if (withTransform) {
         // Combine all extracts to match original behavior
         const combinedExtracts = extractionResults.map(r => r.extract).flat();
@@ -41,7 +45,7 @@ export class SourceTracker_F0 {
     // Handle object outputs (original behavior)
     this.transformedResults = extractionResults.map(result => ({
       transformed: transformArrayToObject_F0(schema, [result.extract]),
-      url: result.url
+      url: result.url,
     }));
 
     if (withTransform) {
@@ -55,18 +59,21 @@ export class SourceTracker_F0 {
   /**
    * Track sources for each item before deduplication
    */
-  trackPreDeduplicationSources_F0(multiEntityResult: { [key: string]: any[] } | any[]) {
+  trackPreDeduplicationSources_F0(
+    multiEntityResult: { [key: string]: any[] } | any[],
+  ) {
     try {
       if (Array.isArray(multiEntityResult)) {
         // Handle array outputs
         multiEntityResult.forEach((item: any) => {
           const itemKey = JSON.stringify(item);
           const matchingSources = this.transformedResults
-            .filter(result => 
-              Array.isArray(result.transformed) && 
-              result.transformed.some((resultItem: any) => 
-                JSON.stringify(resultItem) === itemKey
-              )
+            .filter(
+              result =>
+                Array.isArray(result.transformed) &&
+                result.transformed.some(
+                  (resultItem: any) => JSON.stringify(resultItem) === itemKey,
+                ),
             )
             .map(result => result.url);
           this.preDedupeSourceMap.set(itemKey, matchingSources);
@@ -77,10 +84,10 @@ export class SourceTracker_F0 {
           multiEntityResult[key].forEach((item: any) => {
             const itemKey = JSON.stringify(item);
             const matchingSources = this.transformedResults
-              .filter(result => 
-                result.transformed[key]?.some((resultItem: any) => 
-                  JSON.stringify(resultItem) === itemKey
-                )
+              .filter(result =>
+                result.transformed[key]?.some(
+                  (resultItem: any) => JSON.stringify(resultItem) === itemKey,
+                ),
               )
               .map(result => result.url);
             this.preDedupeSourceMap.set(itemKey, matchingSources);
@@ -97,7 +104,7 @@ export class SourceTracker_F0 {
    */
   mapSourcesToFinalItems_F0(
     multiEntityResult: { [key: string]: any[] } | any[],
-    multiEntityKeys: string[]
+    multiEntityKeys: string[],
   ): Record<string, string[]> {
     try {
       const sources: Record<string, string[]> = {};
@@ -148,4 +155,4 @@ export class SourceTracker_F0 {
       return {};
     }
   }
-} 
+}

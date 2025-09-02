@@ -30,7 +30,12 @@ export async function singleAnswerCompletion({
   extractId: string;
   sessionId: string;
   costTracking: CostTracking;
-  metadata: { teamId: string, functionId?: string, extractId?: string, scrapeId?: string };
+  metadata: {
+    teamId: string;
+    functionId?: string;
+    extractId?: string;
+    scrapeId?: string;
+  };
 }): Promise<{
   extract: any;
   tokenUsage: TokenUsage;
@@ -47,8 +52,8 @@ export async function singleAnswerCompletion({
       systemPrompt:
         (systemPrompt ? `${systemPrompt}\n` : "") +
         "Always prioritize using the provided content to answer the question. Do not make up an answer. Do not hallucinate. In case you can't find the information and the string is required, instead of 'N/A' or 'Not speficied', return an empty string: '', if it's not a string and you can't find the information, return null. Be concise and follow the schema always if provided.",
-        prompt: docsPrompt,
-        schema: rSchema,
+      prompt: docsPrompt,
+      schema: rSchema,
     },
     markdown: `${singleAnswerDocs.map((x, i) => `[START_PAGE (ID: ${i})]` + buildDocument(x)).join("\n")} [END_PAGE]\n`,
     isExtractEndpoint: true,
@@ -63,19 +68,25 @@ export async function singleAnswerCompletion({
     },
     metadata: {
       ...metadata,
-      functionId: metadata.functionId ? (metadata.functionId + "/singleAnswerCompletion") : "singleAnswerCompletion",
+      functionId: metadata.functionId
+        ? metadata.functionId + "/singleAnswerCompletion"
+        : "singleAnswerCompletion",
     },
   };
-    
+
   const { extractedDataArray, warning } = await extractData({
     extractOptions: generationOptions,
-    urls: singleAnswerDocs.map(doc => doc.metadata.url || doc.metadata.sourceURL || ""),
+    urls: singleAnswerDocs.map(
+      doc => doc.metadata.url || doc.metadata.sourceURL || "",
+    ),
     useAgent,
     extractId,
     sessionId,
     metadata: {
       ...metadata,
-      functionId: metadata.functionId ? (metadata.functionId + "/singleAnswerCompletion") : "singleAnswerCompletion",
+      functionId: metadata.functionId
+        ? metadata.functionId + "/singleAnswerCompletion"
+        : "singleAnswerCompletion",
     },
   });
 
@@ -88,7 +99,7 @@ export async function singleAnswerCompletion({
       model: "gemini-2.5-pro",
     },
     sources: singleAnswerDocs.map(
-      (doc) => doc.metadata.url || doc.metadata.sourceURL || "",
+      doc => doc.metadata.url || doc.metadata.sourceURL || "",
     ),
   };
 
@@ -114,7 +125,7 @@ export async function singleAnswerCompletion({
     extract: completion.extract,
     tokenUsage: completion.tokenUsage,
     sources: singleAnswerDocs.map(
-      (doc) => doc.metadata.url || doc.metadata.sourceURL || "",
+      doc => doc.metadata.url || doc.metadata.sourceURL || "",
     ),
   };
 }

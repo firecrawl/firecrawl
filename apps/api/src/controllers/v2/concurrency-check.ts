@@ -23,9 +23,19 @@ export async function concurrencyCheckController(
 
   let otherACUC: AuthCreditUsageChunkFromTeam | null = null;
   if (!req.acuc.is_extract) {
-    otherACUC = await getACUCTeam(req.auth.team_id, false, true, RateLimiterMode.Extract);
+    otherACUC = await getACUCTeam(
+      req.auth.team_id,
+      false,
+      true,
+      RateLimiterMode.Extract,
+    );
   } else {
-    otherACUC = await getACUCTeam(req.auth.team_id, false, true, RateLimiterMode.Crawl);
+    otherACUC = await getACUCTeam(
+      req.auth.team_id,
+      false,
+      true,
+      RateLimiterMode.Crawl,
+    );
   }
 
   const concurrencyLimiterKey = "concurrency-limiter:" + req.auth.team_id;

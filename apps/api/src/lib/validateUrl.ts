@@ -126,7 +126,10 @@ export function isSameSubdomain(url: string, baseUrl: string) {
   return domain1 === domain2 && subdomain1 === subdomain2;
 }
 
-export const checkAndUpdateURLForMap = (url: string, ignoreQueryParameters: boolean = false) => {
+export const checkAndUpdateURLForMap = (
+  url: string,
+  ignoreQueryParameters: boolean = false,
+) => {
   if (!protocolIncluded(url)) {
     url = `http://${url}`;
   }

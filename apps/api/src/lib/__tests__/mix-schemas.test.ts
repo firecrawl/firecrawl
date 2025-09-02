@@ -1026,7 +1026,7 @@ describe("mixSchemaObjects function", () => {
 
   it("should handle empty objects correctly (id: 30)", async () => {
     const originalSchema = {
-      type: "object", 
+      type: "object",
       properties: {
         business_details: {
           type: "object",
@@ -1035,11 +1035,11 @@ describe("mixSchemaObjects function", () => {
             years_in_operation: { type: "string" },
             services_offered: {
               type: "array",
-              items: { type: "string" }
+              items: { type: "string" },
             },
-            experience_highlights: { type: "string" }
+            experience_highlights: { type: "string" },
           },
-          required: ["name"]
+          required: ["name"],
         },
         management: {
           type: "object",
@@ -1047,26 +1047,26 @@ describe("mixSchemaObjects function", () => {
             owner_name: { type: "string" },
             credentials: {
               type: "array",
-              items: { type: "string" }
-            }
-          }
+              items: { type: "string" },
+            },
+          },
         },
         contact_information: {
           type: "object",
           properties: {
             address: { type: "string" },
-            phone: { type: "string" }
-          }
+            phone: { type: "string" },
+          },
         },
         reputation: {
           type: "object",
           properties: {
             client_feedback: { type: "string" },
-            operational_quality: { type: "string" }
-          }
-        }
+            operational_quality: { type: "string" },
+          },
+        },
       },
-      required: ["business_details"]
+      required: ["business_details"],
     };
 
     const singleAnswerResult = {
@@ -1075,31 +1075,32 @@ describe("mixSchemaObjects function", () => {
         years_in_operation: "12 years",
         services_offered: [
           "Recovery equipment for military",
-          "Vehicle mobility solutions", 
-          "Product development for military vehicles"
+          "Vehicle mobility solutions",
+          "Product development for military vehicles",
         ],
-        experience_highlights: "More than 12 years of combined experience overseas on over 25 active combat deployments."
+        experience_highlights:
+          "More than 12 years of combined experience overseas on over 25 active combat deployments.",
       },
       management: {
         owner_name: "",
-        credentials: []
+        credentials: [],
       },
       contact_information: {
         address: "659 Shell Drive, Spring Lake, NC 28390",
-        phone: "910-638-7836"
+        phone: "910-638-7836",
       },
       reputation: {
         client_feedback: "",
-        operational_quality: ""
-      }
+        operational_quality: "",
+      },
     };
 
     const multiEntityResult = {};
 
     const finalResult = await mixSchemaObjects(
       originalSchema,
-      singleAnswerResult, 
-      {}
+      singleAnswerResult,
+      {},
     );
 
     expect(finalResult).toEqual(singleAnswerResult);
@@ -1116,11 +1117,11 @@ describe("mixSchemaObjects function", () => {
             years_in_operation: { type: "string" },
             services_offered: {
               type: "array",
-              items: { type: "string" }
+              items: { type: "string" },
             },
-            experience_highlights: { type: "string" }
+            experience_highlights: { type: "string" },
           },
-          required: ["name"]
+          required: ["name"],
         },
         management: {
           type: "object",
@@ -1128,26 +1129,26 @@ describe("mixSchemaObjects function", () => {
             owner_name: { type: "string" },
             credentials: {
               type: "array",
-              items: { type: "string" }
-            }
-          }
+              items: { type: "string" },
+            },
+          },
         },
         contact_information: {
-          type: "object", 
+          type: "object",
           properties: {
             address: { type: "string" },
-            phone: { type: "string" }
-          }
+            phone: { type: "string" },
+          },
         },
         reputation: {
           type: "object",
           properties: {
             client_feedback: { type: "string" },
-            operational_quality: { type: "string" }
-          }
-        }
+            operational_quality: { type: "string" },
+          },
+        },
       },
-      required: ["business_details"]
+      required: ["business_details"],
     };
 
     const singleAnswerResult = {
@@ -1157,25 +1158,30 @@ describe("mixSchemaObjects function", () => {
         services_offered: [
           "Recovery equipment for military",
           "Vehicle mobility solutions",
-          "Product development for military vehicles"
+          "Product development for military vehicles",
         ],
-        experience_highlights: "More than 12 years of combined experience overseas on over 25 active combat deployments."
+        experience_highlights:
+          "More than 12 years of combined experience overseas on over 25 active combat deployments.",
       },
       management: {
         owner_name: "",
-        credentials: []
+        credentials: [],
       },
       contact_information: {
         address: "659 Shell Drive, Spring Lake, NC 28390",
-        phone: "910-638-7836"
+        phone: "910-638-7836",
       },
       reputation: {
         client_feedback: "",
-        operational_quality: ""
-      }
+        operational_quality: "",
+      },
     };
 
-    const finalResult = await mixSchemaObjects(originalSchema, singleAnswerResult, {});
+    const finalResult = await mixSchemaObjects(
+      originalSchema,
+      singleAnswerResult,
+      {},
+    );
 
     expect(finalResult).toEqual(singleAnswerResult);
   });

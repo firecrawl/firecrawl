@@ -46,7 +46,6 @@ describe("removeDefaultProperty", () => {
   });
 });
 
-
 describe("trimToTokenLimit", () => {
   const mockEncode = jest.fn();
   const mockFree = jest.fn();
@@ -65,11 +64,11 @@ describe("trimToTokenLimit", () => {
     mockEncode.mockReturnValue(new Array(5)); // Simulate 5 tokens
 
     const result = trimToTokenLimit(text, 10, "gpt-4o");
-    
+
     expect(result).toEqual({
       text,
       numTokens: 5,
-      warning: undefined
+      warning: undefined,
     });
     expect(mockEncode).toHaveBeenCalledWith(text);
     expect(mockFree).toHaveBeenCalled();
@@ -82,7 +81,7 @@ describe("trimToTokenLimit", () => {
       .mockReturnValueOnce(new Array(8)); // Second call for trimmed text
 
     const result = trimToTokenLimit(text, 10, "gpt-4o");
-    
+
     expect(result.text.length).toBeLessThan(text.length);
     expect(result.numTokens).toBe(8);
     expect(result.warning).toContain("automatically trimmed");
@@ -98,7 +97,7 @@ describe("trimToTokenLimit", () => {
       .mockReturnValueOnce(new Array(8));
 
     const result = trimToTokenLimit(text, 10, "gpt-4o", previousWarning);
-    
+
     expect(result.warning).toContain("automatically trimmed");
     expect(result.warning).toContain(previousWarning);
   });
@@ -110,7 +109,7 @@ describe("trimToTokenLimit", () => {
     });
 
     const result = trimToTokenLimit(text, 10, "gpt-4o");
-    
+
     expect(result.text.length).toBeLessThanOrEqual(30); // 10 tokens * 3 chars per token
     expect(result.numTokens).toBe(10);
     expect(result.warning).toContain("Failed to derive number of LLM tokens");
@@ -121,11 +120,11 @@ describe("trimToTokenLimit", () => {
     mockEncode.mockReturnValue([]);
 
     const result = trimToTokenLimit(text, 10, "gpt-4o");
-    
+
     expect(result).toEqual({
       text: "",
       numTokens: 0,
-      warning: undefined
+      warning: undefined,
     });
     expect(mockFree).toHaveBeenCalled();
   });
@@ -137,7 +136,7 @@ describe("trimToTokenLimit", () => {
       .mockReturnValueOnce(new Array(127000)); // Second check shows it's within limit after trim
 
     const result = trimToTokenLimit(text, 128000, "gpt-4o");
-    
+
     expect(result.text.length).toBeLessThan(text.length);
     expect(result.numTokens).toBe(127000);
     expect(result.warning).toContain("automatically trimmed");
@@ -152,7 +151,7 @@ describe("trimToTokenLimit", () => {
       .mockReturnValueOnce(new Array(32000)); // Second check shows it's within context limit after trim
 
     const result = trimToTokenLimit(text, 32000, "gpt-4o");
-    
+
     expect(result.text.length).toBeLessThan(text.length);
     expect(result.numTokens).toBe(32000);
     expect(result.warning).toContain("automatically trimmed");
@@ -165,7 +164,7 @@ describe("trimToTokenLimit", () => {
     mockEncode.mockReturnValue(new Array(5)); // 5 tokens
 
     const result = trimToTokenLimit(text, 10, "gpt-4o");
-    
+
     expect(result.text).toBe(text);
     expect(result.numTokens).toBe(5);
     expect(result.warning).toBeUndefined();
@@ -180,7 +179,7 @@ describe("trimToTokenLimit", () => {
       .mockReturnValueOnce(new Array(50));
 
     const result = trimToTokenLimit(text, 50, "gpt-4o", previousWarning);
-    
+
     expect(result.warning).toContain("automatically trimmed");
     expect(result.warning).toContain(previousWarning);
     expect(mockFree).toHaveBeenCalled();
@@ -193,7 +192,7 @@ describe("trimToTokenLimit", () => {
     });
 
     const result = trimToTokenLimit(text, 10, "gpt-4o");
-    
+
     expect(result.text.length).toBeLessThanOrEqual(30); // 10 tokens * 3 chars
     expect(result.warning).toContain("Failed to derive number of LLM tokens");
     expect(mockFree).not.toHaveBeenCalled();
@@ -206,7 +205,7 @@ describe("trimToTokenLimit", () => {
     });
 
     const result = trimToTokenLimit(text, 10, "gpt-4o");
-    
+
     expect(result.text.length).toBeLessThanOrEqual(30);
     expect(result.warning).toContain("Failed to derive number of LLM tokens");
     expect(mockFree).toHaveBeenCalled();
@@ -219,7 +218,7 @@ describe("trimToTokenLimit", () => {
       .mockReturnValueOnce(new Array(3));
 
     const result = trimToTokenLimit(text, 3, "gpt-4o");
-    
+
     expect(result.text.length).toBeLessThan(text.length);
     expect(result.numTokens).toBe(3);
     expect(result.warning).toContain("automatically trimmed");
@@ -233,7 +232,7 @@ describe("trimToTokenLimit", () => {
       .mockReturnValueOnce(new Array(4));
 
     const result = trimToTokenLimit(text, 4, "gpt-4o");
-    
+
     expect(result.text.length).toBeLessThan(text.length);
     expect(result.numTokens).toBe(4);
     expect(result.warning).toContain("automatically trimmed");
@@ -249,7 +248,7 @@ describe("trimToTokenLimit", () => {
       .mockReturnValueOnce(new Array(50));
 
     const result = trimToTokenLimit(text, 50, "gpt-4o");
-    
+
     expect(result.text.length).toBeLessThan(text.length);
     expect(result.numTokens).toBe(50);
     expect(result.warning).toContain("automatically trimmed");
@@ -262,12 +261,10 @@ describe("trimToTokenLimit", () => {
     mockEncode.mockReturnValue(new Array(10));
 
     const result = trimToTokenLimit(text, 10, "gpt-4o");
-    
+
     expect(result.text).toBe(text);
     expect(result.numTokens).toBe(10);
     expect(result.warning).toBeUndefined();
     expect(mockFree).toHaveBeenCalled();
   });
-
-  
 });

@@ -48,10 +48,10 @@ export async function search({
         location,
         type,
       });
-      
+
       return results;
     }
-    
+
     if (process.env.SERPER_API_KEY) {
       logger.info("Using serper search");
       const results = await serper_search(query, {
@@ -88,7 +88,7 @@ export async function search({
       });
       if (results.web && results.web.length > 0) return results;
     }
-    
+
     logger.info("Using google search");
     const googleResults = await googleSearch(
       query,
@@ -103,7 +103,7 @@ export async function search({
       timeout,
     );
     if (googleResults.web && googleResults.web.length > 0) return googleResults;
-    
+
     // Fallback to empty response
     return {};
   } catch (error) {

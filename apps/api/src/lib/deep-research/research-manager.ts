@@ -56,7 +56,7 @@ export class ResearchStateManager {
   }
 
   async addActivity(activities: DeepResearchActivity[]): Promise<void> {
-    if (activities.some((activity) => activity.status === "complete")) {
+    if (activities.some(activity => activity.status === "complete")) {
       this.completedSteps++;
     }
 
@@ -154,7 +154,7 @@ export class ResearchLLMService {
     topic: string,
     findings: DeepResearchFinding[] = [],
     costTracking: CostTracking,
-    metadata: { teamId: string, functionId?: string, deepResearchId?: string },
+    metadata: { teamId: string; functionId?: string; deepResearchId?: string },
   ): Promise<{ query: string; researchGoal: string }[]> {
     const { extract } = await generateCompletions({
       logger: this.logger.child({
@@ -187,7 +187,7 @@ export class ResearchLLMService {
           },
         },
         prompt: `Generate a list of 3-5 search queries to deeply research this topic: "${topic}"
-          ${findings.length > 0 ? `\nBased on these previous findings, generate more specific queries:\n${trimToTokenLimit(findings.map((f) => `- ${f.text}`).join("\n"), 10000).text}` : ""}
+          ${findings.length > 0 ? `\nBased on these previous findings, generate more specific queries:\n${trimToTokenLimit(findings.map(f => `- ${f.text}`).join("\n"), 10000).text}` : ""}
           
           Each query should be specific and focused on a particular aspect.
           Build upon previous findings when available.
@@ -205,7 +205,9 @@ export class ResearchLLMService {
       },
       metadata: {
         ...metadata,
-        functionId: metadata.functionId ? (metadata.functionId + "/generateSearchQueries") : "generateSearchQueries",
+        functionId: metadata.functionId
+          ? metadata.functionId + "/generateSearchQueries"
+          : "generateSearchQueries",
       },
     });
 
@@ -218,7 +220,7 @@ export class ResearchLLMService {
     timeRemaining: number,
     systemPrompt: string,
     costTracking: CostTracking,
-    metadata: { teamId: string, functionId?: string, deepResearchId?: string },
+    metadata: { teamId: string; functionId?: string; deepResearchId?: string },
   ): Promise<AnalysisResult | null> {
     try {
       const timeRemainingMinutes =
@@ -251,7 +253,7 @@ export class ResearchLLMService {
           prompt: trimToTokenLimit(
             `You are researching: ${currentTopic}
               You have ${timeRemainingMinutes} minutes remaining to complete the research but you don't need to use all of it.
-              Current findings: ${findings.map((f) => `[From ${f.source}]: ${f.text}`).join("\n")}
+              Current findings: ${findings.map(f => `[From ${f.source}]: ${f.text}`).join("\n")}
               What has been learned? What gaps remain, if any? What specific aspects should be investigated next if any?
               If you need to search for more information inside the same topic pick a sub-topic by including a nextSearchTopic -which should be highly related to the original topic/users'query.
               Important: If less than 1 minute remains, set shouldContinue to false to allow time for final synthesis.
@@ -269,7 +271,9 @@ export class ResearchLLMService {
         },
         metadata: {
           ...metadata,
-          functionId: metadata.functionId ? (metadata.functionId + "/analyzeAndPlan") : "analyzeAndPlan",
+          functionId: metadata.functionId
+            ? metadata.functionId + "/analyzeAndPlan"
+            : "analyzeAndPlan",
         },
       });
 
@@ -286,7 +290,7 @@ export class ResearchLLMService {
     summaries: string[],
     analysisPrompt: string,
     costTracking: CostTracking,
-    metadata: { teamId: string, functionId?: string, deepResearchId?: string },
+    metadata: { teamId: string; functionId?: string; deepResearchId?: string },
     formats?: string[],
     jsonOptions?: ExtractOptions,
   ): Promise<any> {
@@ -313,13 +317,13 @@ export class ResearchLLMService {
             new Date().toISOString().split("T")[0],
         prompt: trimToTokenLimit(
           analysisPrompt
-            ? `${analysisPrompt}\n\nResearch data:\n${findings.map((f) => `[From ${f.source}]: ${f.text}`).join("\n")}`
+            ? `${analysisPrompt}\n\nResearch data:\n${findings.map(f => `[From ${f.source}]: ${f.text}`).join("\n")}`
             : formats.includes("json")
-              ? `Analyze the following research data on "${topic}" and structure the output according to the provided schema: Schema: ${JSON.stringify(jsonOptions?.schema)}\n\nFindings:\n\n${findings.map((f) => `[From ${f.source}]: ${f.text}`).join("\n")}`
+              ? `Analyze the following research data on "${topic}" and structure the output according to the provided schema: Schema: ${JSON.stringify(jsonOptions?.schema)}\n\nFindings:\n\n${findings.map(f => `[From ${f.source}]: ${f.text}`).join("\n")}`
               : `Create a comprehensive research report on "${topic}" based on the collected findings and analysis.
   
                 Research data:
-                ${findings.map((f) => `[From ${f.source}]: ${f.text}`).join("\n")}
+                ${findings.map(f => `[From ${f.source}]: ${f.text}`).join("\n")}
     
                 Requirements:
                 - Format the report in Markdown with proper headers and sections
@@ -348,7 +352,9 @@ export class ResearchLLMService {
       },
       metadata: {
         ...metadata,
-        functionId: metadata.functionId ? (metadata.functionId + "/generateFinalAnalysis") : "generateFinalAnalysis",
+        functionId: metadata.functionId
+          ? metadata.functionId + "/generateFinalAnalysis"
+          : "generateFinalAnalysis",
       },
     });
 

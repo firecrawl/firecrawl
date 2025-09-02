@@ -59,7 +59,6 @@ adminRouter.get(
   wrap(zdrcleanerController),
 );
 
-
 adminRouter.get(
   `/admin/${process.env.BULL_AUTH_KEY}/index-queue-prometheus`,
   wrap(indexQueuePrometheus),

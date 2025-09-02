@@ -25,7 +25,12 @@ type BatchExtractOptions = {
   extractId?: string;
   sessionId?: string;
   costTracking: CostTracking;
-  metadata: { teamId: string, functionId?: string, extractId?: string, scrapeId?: string };
+  metadata: {
+    teamId: string;
+    functionId?: string;
+    extractId?: string;
+    scrapeId?: string;
+  };
 };
 
 /**
@@ -37,7 +42,10 @@ type BatchExtractOptions = {
  * @param doc - The document to extract information from
  * @returns The completion promise
  */
-export async function batchExtractPromise(options: BatchExtractOptions, logger: Logger): Promise<{
+export async function batchExtractPromise(
+  options: BatchExtractOptions,
+  logger: Logger,
+): Promise<{
   extract: any; // array of extracted data
   numTokens: number;
   totalUsage: TokenUsage;
@@ -87,18 +95,20 @@ export async function batchExtractPromise(options: BatchExtractOptions, logger: 
     },
     metadata: {
       ...metadata,
-      functionId: metadata.functionId ? (metadata.functionId + "/batchExtractPromise") : "batchExtractPromise",
+      functionId: metadata.functionId
+        ? metadata.functionId + "/batchExtractPromise"
+        : "batchExtractPromise",
     },
   };
 
   let extractedDataArray: any[] = [];
   let warning: string | undefined;
-  let smCost = 0, oCost = 0, smCallCount = 0, oCallCount = 0;
+  let smCost = 0,
+    oCost = 0,
+    smCallCount = 0,
+    oCallCount = 0;
   try {
-    const {
-      extractedDataArray: e,
-      warning: w,
-    } = await extractData({
+    const { extractedDataArray: e, warning: w } = await extractData({
       extractOptions: generationOptions,
       urls: [doc.metadata.sourceURL || doc.metadata.url || ""],
       useAgent,
@@ -106,7 +116,9 @@ export async function batchExtractPromise(options: BatchExtractOptions, logger: 
       sessionId,
       metadata: {
         ...metadata,
-        functionId: metadata.functionId ? (metadata.functionId + "/batchExtractPromise") : "batchExtractPromise",
+        functionId: metadata.functionId
+          ? metadata.functionId + "/batchExtractPromise"
+          : "batchExtractPromise",
       },
     });
     extractedDataArray = e;

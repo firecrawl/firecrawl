@@ -17,7 +17,9 @@ export async function creditUsageController(
   req: RequestWithAuth,
   res: Response<CreditUsageResponse | ErrorResponse>,
 ): Promise<void> {
-  const chunk = req.acuc ?? await getACUCTeam(req.auth.team_id, false, false, RateLimiterMode.Scrape);
+  const chunk =
+    req.acuc ??
+    (await getACUCTeam(req.auth.team_id, false, false, RateLimiterMode.Scrape));
 
   if (!chunk) {
     res.status(404).json({

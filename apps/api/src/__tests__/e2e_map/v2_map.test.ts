@@ -21,19 +21,19 @@ describe("E2E Tests for Map V2 API Routes", () => {
       expect(response.body).toHaveProperty("success", true);
       expect(response.body).toHaveProperty("web");
       expect(Array.isArray(response.body.web)).toBe(true);
-      
+
       if (response.body.web.length > 0) {
         const firstResult = response.body.web[0];
         expect(firstResult).toHaveProperty("url");
         expect(firstResult).toHaveProperty("title");
         expect(firstResult).toHaveProperty("description");
       }
-      
+
       // Check metadata
       expect(response.body).toHaveProperty("metadata");
       expect(response.body.metadata).toHaveProperty("totalCount");
       expect(response.body.metadata).toHaveProperty("hasMore");
-      
+
       // Check backwards compatibility
       expect(response.body).toHaveProperty("links");
       expect(Array.isArray(response.body.links)).toBe(true);
@@ -122,4 +122,4 @@ describe("E2E Tests for Map V2 API Routes", () => {
     },
     10000,
   );
-}); 
+});

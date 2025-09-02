@@ -1,4 +1,10 @@
-import { Document, ScrapeOptions, TeamFlags, URLTrace, scrapeOptions as scrapeOptionsSchema } from "../../../controllers/v2/types";
+import {
+  Document,
+  ScrapeOptions,
+  TeamFlags,
+  URLTrace,
+  scrapeOptions as scrapeOptionsSchema,
+} from "../../../controllers/v2/types";
 import { getScrapeQueue } from "../../../services/queue-service";
 import { waitForJob } from "../../../services/queue-jobs";
 import { addScrapeJob } from "../../../services/queue-jobs";
@@ -22,7 +28,7 @@ export async function scrapeDocument_F0(
   logger: Logger,
   internalScrapeOptions: Partial<ScrapeOptions> = { onlyMainContent: false },
 ): Promise<Document | null> {
-  const trace = urlTraces.find((t) => t.url === options.url);
+  const trace = urlTraces.find(t => t.url === options.url);
   if (trace) {
     trace.status = "scraped";
     trace.timing.scrapedAt = new Date().toISOString();
@@ -98,7 +104,7 @@ export async function scrapeDocument_F0(
         logger.debug("Scrape finished!");
         return x;
       }
-      
+
       throw timeoutError;
     }
   } catch (error) {

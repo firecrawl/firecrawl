@@ -3,55 +3,63 @@ import { ErrorResponse, RequestWithAuth } from "./types";
 import { supabase_rr_service } from "../../services/supabase";
 
 interface TokenUsageHistoricalResponse {
-    success: true;
-    periods: {
-        startDate: string | null;
-        endDate: string | null;
-        apiKey?: string;
-        tokensUsed: number;
-    }[];
+  success: true;
+  periods: {
+    startDate: string | null;
+    endDate: string | null;
+    apiKey?: string;
+    tokensUsed: number;
+  }[];
 }
 
 export async function tokenUsageHistoricalController(
-    req: RequestWithAuth,
-    res: Response<TokenUsageHistoricalResponse | ErrorResponse>,
+  req: RequestWithAuth,
+  res: Response<TokenUsageHistoricalResponse | ErrorResponse>,
 ): Promise<void> {
-    const byApiKey = req.query.byApiKey === "true";
+  const byApiKey = req.query.byApiKey === "true";
 
-    const { data, error } = await supabase_rr_service.rpc("get_historical_credit_usage_by_api_key_1", {
-        v_team_id: req.auth.team_id,
-        v_is_extract: true,
-    }, { get: true });
+  const { data, error } = await supabase_rr_service.rpc(
+    "get_historical_credit_usage_by_api_key_1",
+    {
+      v_team_id: req.auth.team_id,
+      v_is_extract: true,
+    },
+    { get: true },
+  );
 
-    if (error || !data) {
-        throw error ?? new Error("Failed to get historical token usage");
-    }
+  if (error || !data) {
+    throw error ?? new Error("Failed to get historical token usage");
+  }
 
-    let periods = data.map((period) => ({
-        startDate: period.start_ts,
-        endDate: period.end_ts,
-        apiKey: period.api_key_name,
-        tokensUsed: period.amount,
-    }));
+  let periods = data.map(period => ({
+    startDate: period.start_ts,
+    endDate: period.end_ts,
+    apiKey: period.api_key_name,
+    tokensUsed: period.amount,
+  }));
 
-    if (!byApiKey) {
-        periods = periods.reduce((acc, period) => {
-            let preexisting = acc.find((p) => p.startDate === period.startDate && p.endDate === period.endDate);
-            if (preexisting) {
-                preexisting.tokensUsed += period.tokensUsed;
-            } else {
-                let newPeriod = { ...period };
-                delete newPeriod.apiKey;
-                acc.push(newPeriod);
-            }
-            return acc;
-        }, []);
-    }
+  if (!byApiKey) {
+    periods = periods.reduce((acc, period) => {
+      let preexisting = acc.find(
+        p => p.startDate === period.startDate && p.endDate === period.endDate,
+      );
+      if (preexisting) {
+        preexisting.tokensUsed += period.tokensUsed;
+      } else {
+        let newPeriod = { ...period };
+        delete newPeriod.apiKey;
+        acc.push(newPeriod);
+      }
+      return acc;
+    }, []);
+  }
 
-    periods.sort((a, b) => new Date(a.startDate).getTime() - new Date(b.startDate).getTime());
+  periods.sort(
+    (a, b) => new Date(a.startDate).getTime() - new Date(b.startDate).getTime(),
+  );
 
-    res.json({
-        success: true,
-        periods,
-    });
+  res.json({
+    success: true,
+    periods,
+  });
 }

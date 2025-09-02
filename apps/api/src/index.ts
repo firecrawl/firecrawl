@@ -20,7 +20,11 @@ import http from "node:http";
 import https from "node:https";
 import { v1Router } from "./routes/v1";
 import expressWs from "express-ws";
-import { ErrorResponse, RequestWithMaybeACUC, ResponseWithSentry } from "./controllers/v1/types";
+import {
+  ErrorResponse,
+  RequestWithMaybeACUC,
+  ResponseWithSentry,
+} from "./controllers/v1/types";
 import { ZodError } from "zod";
 import { v4 as uuidv4 } from "uuid";
 import { RateLimiterMode } from "./types";
@@ -37,7 +41,7 @@ import { BatchSpanProcessor } from "@opentelemetry/sdk-trace-node";
 import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-grpc";
 
 const { createBullBoard } = require("@bull-board/api");
-const { BullMQAdapter } = require('@bull-board/api/bullMQAdapter');
+const { BullMQAdapter } = require("@bull-board/api/bullMQAdapter");
 const { ExpressAdapter } = require("@bull-board/express");
 
 const numCPUs = process.env.ENV === "local" ? 2 : os.cpus().length;
@@ -51,21 +55,32 @@ logger.info("Network info dump", {
 cacheableLookup.install(http.globalAgent);
 cacheableLookup.install(https.globalAgent);
 
-const shouldOtel = process.env.LANGFUSE_PUBLIC_KEY || process.env.OTEL_EXPORTER_OTLP_ENDPOINT;
-const otelSdk = shouldOtel ? new NodeSDK({
-  resource: resourceFromAttributes({
-    [ATTR_SERVICE_NAME]: "firecrawl-app",
-  }),
-  spanProcessors: [
-    ...(process.env.LANGFUSE_PUBLIC_KEY ? [new BatchSpanProcessor(new LangfuseExporter())] : []),
-    ...(process.env.OTEL_EXPORTER_OTLP_ENDPOINT ? [new BatchSpanProcessor(new OTLPTraceExporter({
-      url: process.env.OTEL_EXPORTER_OTLP_ENDPOINT,
-    }))] : []),
-  ],
-  instrumentations: [getNodeAutoInstrumentations()],
-}) : null;
-    
-if (otelSdk) {   
+const shouldOtel =
+  process.env.LANGFUSE_PUBLIC_KEY || process.env.OTEL_EXPORTER_OTLP_ENDPOINT;
+const otelSdk = shouldOtel
+  ? new NodeSDK({
+      resource: resourceFromAttributes({
+        [ATTR_SERVICE_NAME]: "firecrawl-app",
+      }),
+      spanProcessors: [
+        ...(process.env.LANGFUSE_PUBLIC_KEY
+          ? [new BatchSpanProcessor(new LangfuseExporter())]
+          : []),
+        ...(process.env.OTEL_EXPORTER_OTLP_ENDPOINT
+          ? [
+              new BatchSpanProcessor(
+                new OTLPTraceExporter({
+                  url: process.env.OTEL_EXPORTER_OTLP_ENDPOINT,
+                }),
+              ),
+            ]
+          : []),
+      ],
+      instrumentations: [getNodeAutoInstrumentations()],
+    })
+  : null;
+
+if (otelSdk) {
   otelSdk.start();
 }
 
@@ -127,7 +142,7 @@ const HOST = process.env.HOST ?? "localhost";
 function startServer(port = DEFAULT_PORT) {
   // Attach WebSocket proxy to the Express app
   attachWsProxy(app);
-  
+
   const server = app.listen(Number(port), HOST, () => {
     logger.info(`Worker ${process.pid} listening on port ${port}`);
   });
@@ -137,7 +152,7 @@ function startServer(port = DEFAULT_PORT) {
     if (process.env.IS_KUBERNETES === "true") {
       // Account for GCE load balancer drain timeout
       logger.info("Waiting 60s for GCE load balancer drain timeout");
-      await new Promise((resolve) => setTimeout(resolve, 60000));
+      await new Promise(resolve => setTimeout(resolve, 60000));
     }
     server.close(() => {
       logger.info("Server closed.");
@@ -246,14 +261,17 @@ app.use(
     if (err instanceof ZodError) {
       if (
         Array.isArray(err.errors) &&
-        err.errors.find((x) => x.message === "URL uses unsupported protocol")
+        err.errors.find(x => x.message === "URL uses unsupported protocol")
       ) {
         logger.warn("Unsupported protocol error: " + JSON.stringify(req.body));
       }
 
-      res
-        .status(400)
-        .json({ success: false, code: "BAD_REQUEST", error: "Bad Request", details: err.errors });
+      res.status(400).json({
+        success: false,
+        code: "BAD_REQUEST",
+        error: "Bad Request",
+        details: err.errors,
+      });
     } else {
       next(err);
     }
@@ -275,20 +293,25 @@ app.use(
       err.status === 400 &&
       "body" in err
     ) {
-      return res
-        .status(400)
-        .json({ success: false, code: "BAD_REQUEST_INVALID_JSON", error: "Bad request, malformed JSON" });
+      return res.status(400).json({
+        success: false,
+        code: "BAD_REQUEST_INVALID_JSON",
+        error: "Bad request, malformed JSON",
+      });
     }
 
     const id = res.sentry ?? uuidv4();
 
     logger.error(
-      "Error occurred in request! (" +
-        req.path +
-        ") -- ID " +
-        id +
-        " -- ",
-    { error: err, errorId: id, path: req.path, teamId: req.acuc?.team_id, team_id: req.acuc?.team_id });
+      "Error occurred in request! (" + req.path + ") -- ID " + id + " -- ",
+      {
+        error: err,
+        errorId: id,
+        path: req.path,
+        teamId: req.acuc?.team_id,
+        team_id: req.acuc?.team_id,
+      },
+    );
     res.status(500).json({
       success: false,
       code: "UNKNOWN_ERROR",
@@ -308,4 +331,4 @@ logger.info(`Worker ${process.pid} started`);
 // sq.on("paused", j => ScrapeEvents.logJobEvent(j, "paused"));
 // sq.on("resumed", j => ScrapeEvents.logJobEvent(j, "resumed"));
 // sq.on("removed", j => ScrapeEvents.logJobEvent(j, "removed"));
-// 
+//

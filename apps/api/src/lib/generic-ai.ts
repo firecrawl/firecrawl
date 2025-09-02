@@ -24,8 +24,8 @@ const defaultProvider: Provider = process.env.OLLAMA_BASE_URL
 
 const providerList: Record<Provider, any> = {
   openai: createOpenAI({
-      apiKey: process.env.OPENAI_API_KEY,
-      baseURL: process.env.OPENAI_BASE_URL,
+    apiKey: process.env.OPENAI_API_KEY,
+    baseURL: process.env.OPENAI_BASE_URL,
   }), //OPENAI_API_KEY
   ollama: createOllama({
     baseURL: process.env.OLLAMA_BASE_URL,
@@ -41,19 +41,22 @@ const providerList: Record<Provider, any> = {
   vertex: createVertex({
     project: "firecrawl",
     //https://github.com/vercel/ai/issues/6644 bug
-    baseURL:"https://aiplatform.googleapis.com/v1/projects/firecrawl/locations/global/publishers/google",
+    baseURL:
+      "https://aiplatform.googleapis.com/v1/projects/firecrawl/locations/global/publishers/google",
     location: "global",
-    googleAuthOptions: process.env.VERTEX_CREDENTIALS ? {
-      credentials: JSON.parse(atob(process.env.VERTEX_CREDENTIALS)),
-    } : {
-      keyFile: "./gke-key.json",
-    },
+    googleAuthOptions: process.env.VERTEX_CREDENTIALS
+      ? {
+          credentials: JSON.parse(atob(process.env.VERTEX_CREDENTIALS)),
+        }
+      : {
+          keyFile: "./gke-key.json",
+        },
   }),
 };
 
 export function getModel(name: string, provider: Provider = defaultProvider) {
-  if(name === "gemini-2.5-pro"){
-    name = "gemini-2.5-pro"
+  if (name === "gemini-2.5-pro") {
+    name = "gemini-2.5-pro";
   }
   return process.env.MODEL_NAME
     ? providerList[provider](process.env.MODEL_NAME)

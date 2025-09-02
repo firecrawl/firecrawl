@@ -43,12 +43,12 @@ interface MapResult {
 }
 
 function dedupeMapDocumentArray(documents: MapDocument[]): MapDocument[] {
-  let urlSet = new Set<string>(documents.map((x) => x.url));
+  let urlSet = new Set<string>(documents.map(x => x.url));
 
   let newDocuments: MapDocument[] = [
-    ...Array.from(urlSet).map((x) => {
-      let localDocs = documents.filter((y) => y.url === x);
-      return localDocs.find((x) => x.title !== undefined) || localDocs[0];
+    ...Array.from(urlSet).map(x => {
+      let localDocs = documents.filter(y => y.url === x);
+      return localDocs.find(x => x.title !== undefined) || localDocs[0];
     }),
   ];
 
@@ -140,8 +140,8 @@ export async function getMapResults({
   // If sitemapOnly is true, only get links from sitemap
   if (crawlerOptions.sitemap === "only") {
     const sitemap = await crawler.tryGetSitemap(
-      (urls) => {
-        urls.forEach((x) => {
+      urls => {
+        urls.forEach(x => {
           mapResults.push({
             url: x,
           });
@@ -156,7 +156,7 @@ export async function getMapResults({
     if (sitemap > 0) {
       mapResults = mapResults
         .slice(1)
-        .map((x) => {
+        .map(x => {
           try {
             return {
               ...x,
@@ -166,7 +166,7 @@ export async function getMapResults({
             return null;
           }
         })
-        .filter((x) => x !== null) as MapDocument[];
+        .filter(x => x !== null) as MapDocument[];
     }
   } else {
     let urlWithoutWww = url.replace("www.", "");
@@ -231,9 +231,9 @@ export async function getMapResults({
     if (crawlerOptions.sitemap === "include") {
       try {
         await crawler.tryGetSitemap(
-          (urls) => {
+          urls => {
             mapResults.push(
-              ...urls.map((x) => ({
+              ...urls.map(x => ({
                 url: x,
               })),
             );
@@ -252,7 +252,7 @@ export async function getMapResults({
       mapResults = searchResults
         .flat()
         .map<MapDocument>(
-          (x) =>
+          x =>
             ({
               url: x.url,
               title: x.title,
@@ -262,7 +262,7 @@ export async function getMapResults({
         .concat(mapResults);
     } else {
       mapResults = mapResults.concat(
-        searchResults.flat().map((x) => ({
+        searchResults.flat().map(x => ({
           url: x.url,
           title: x.title,
           description: x.description,
@@ -281,7 +281,7 @@ export async function getMapResults({
     }
 
     mapResults = mapResults
-      .map((x) => {
+      .map(x => {
         try {
           return {
             ...x,
@@ -294,14 +294,14 @@ export async function getMapResults({
           return null;
         }
       })
-      .filter((x) => x !== null) as MapDocument[];
+      .filter(x => x !== null) as MapDocument[];
 
     // allows for subdomains to be included
-    mapResults = mapResults.filter((x) => isSameDomain(x.url, url));
+    mapResults = mapResults.filter(x => isSameDomain(x.url, url));
 
     // if includeSubdomains is false, filter out subdomains
     if (!includeSubdomains) {
-      mapResults = mapResults.filter((x) => isSameSubdomain(x.url, url));
+      mapResults = mapResults.filter(x => isSameSubdomain(x.url, url));
     }
 
     // Filter by path if enabled
@@ -312,7 +312,7 @@ export async function getMapResults({
         // Only apply path filtering if the URL has a significant path (not just '/' or empty)
         // This means we only filter by path if the user has not selected a root domain
         if (urlPath && urlPath !== "/" && urlPath.length > 1) {
-          mapResults = mapResults.filter((x) => {
+          mapResults = mapResults.filter(x => {
             try {
               const linkObj = new URL(x.url);
               return linkObj.pathname.startsWith(urlPath);
@@ -405,7 +405,7 @@ export async function mapController(
     req.acuc?.sub_id ?? undefined,
     1,
     req.acuc?.api_key_id ?? null,
-  ).catch((error) => {
+  ).catch(error => {
     logger.error(
       `Failed to bill team ${req.auth.team_id} for 1 credit: ${error}`,
     );

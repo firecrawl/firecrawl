@@ -6,10 +6,14 @@ import { getExtractQueue } from "../../services/queue-service";
 import { ExtractResult } from "../../lib/extract/extraction-service";
 import { supabaseGetJobByIdDirect } from "../../lib/supabase-jobs";
 
-export async function getExtractJob(id: string): Promise<PseudoJob<ExtractResult> | null> {
+export async function getExtractJob(
+  id: string,
+): Promise<PseudoJob<ExtractResult> | null> {
   const [bullJob, dbJob] = await Promise.all([
     getExtractQueue().getJob(id),
-    (process.env.USE_DB_AUTHENTICATION === "true" ? supabaseGetJobByIdDirect(id) : null) as Promise<DBJob | null>,
+    (process.env.USE_DB_AUTHENTICATION === "true"
+      ? supabaseGetJobByIdDirect(id)
+      : null) as Promise<DBJob | null>,
   ]);
 
   if (!bullJob && !dbJob) return null;
@@ -18,15 +22,20 @@ export async function getExtractJob(id: string): Promise<PseudoJob<ExtractResult
 
   const job: PseudoJob<any> = {
     id,
-    getState: dbJob ? (() => dbJob.success ? "completed" : "failed") : (() => bullJob!.getState()),
+    getState: dbJob
+      ? () => (dbJob.success ? "completed" : "failed")
+      : () => bullJob!.getState(),
     returnvalue: data,
     data: {
       scrapeOptions: bullJob ? bullJob.data.scrapeOptions : dbJob!.page_options,
       teamId: bullJob ? bullJob.data.teamId : dbJob!.team_id,
     },
-    timestamp: bullJob ? bullJob.timestamp : new Date(dbJob!.date_added).valueOf(),
-    failedReason: (bullJob ? bullJob.failedReason : dbJob!.message) || undefined,
-  }
+    timestamp: bullJob
+      ? bullJob.timestamp
+      : new Date(dbJob!.date_added).valueOf(),
+    failedReason:
+      (bullJob ? bullJob.failedReason : dbJob!.message) || undefined,
+  };
 
   return job;
 }
@@ -50,7 +59,10 @@ export async function extractStatusController(
 
   if (!extract || extract.status === "completed") {
     const jobData = await getExtractJob(req.params.jobId);
-    if ((!jobData && !extract) || (jobData && jobData.data.teamId !== req.auth.team_id)) {
+    if (
+      (!jobData && !extract) ||
+      (jobData && jobData.data.teamId !== req.auth.team_id)
+    ) {
       return res.status(404).json({
         success: false,
         error: "Extract job not found",

@@ -3,7 +3,10 @@ import { logger as _logger } from "../../../lib/logger";
 import { robustFetch } from "./fetch";
 import fs from "fs/promises";
 import { configDotenv } from "dotenv";
-import { CostLimitExceededError, CostTracking } from "../../../lib/extract/extraction-service";
+import {
+  CostLimitExceededError,
+  CostTracking,
+} from "../../../lib/extract/extraction-service";
 configDotenv();
 
 // Define schemas outside the function scope
@@ -54,13 +57,13 @@ export async function smartScrape({
   beforeSubmission,
   costTracking,
 }: {
-  url: string,
-  prompt: string,
-  sessionId?: string,
-  extractId?: string,
-  scrapeId?: string,
-  beforeSubmission?: () => unknown,
-  costTracking: CostTracking,
+  url: string;
+  prompt: string;
+  sessionId?: string;
+  extractId?: string;
+  scrapeId?: string;
+  beforeSubmission?: () => unknown;
+  costTracking: CostTracking;
 }): Promise<SmartScrapeResult> {
   let logger = _logger.child({
     method: "smartScrape",
@@ -120,7 +123,9 @@ export async function smartScrape({
       errorResponse.error
     ) {
       if ((errorResponse as any).tokenUsage) {
-        logger.info("Failed smart scrape cost $" + (errorResponse as any).tokenUsage);
+        logger.info(
+          "Failed smart scrape cost $" + (errorResponse as any).tokenUsage,
+        );
         costTracking.addCall({
           type: "smartScrape",
           cost: (errorResponse as any).tokenUsage,
@@ -172,7 +177,12 @@ export async function smartScrape({
       throw error;
     }
 
-    if (error instanceof Error && error.message === "Request sent failure status" && error.cause && (error.cause as any).response) {
+    if (
+      error instanceof Error &&
+      error.message === "Request sent failure status" &&
+      error.cause &&
+      (error.cause as any).response
+    ) {
       const response = (error.cause as any).response;
       try {
         const json = JSON.parse(response.body);
@@ -228,7 +238,7 @@ export async function smartScrape({
     };
 
     logger.error("Smart scrape request failed", {
-      error: errorInfo
+      error: errorInfo,
     });
 
     // Rethrowing the error to be handled by the caller

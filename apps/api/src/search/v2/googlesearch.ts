@@ -1,17 +1,18 @@
 import axios from "axios";
-import { JSDOM } from 'jsdom';
+import { JSDOM } from "jsdom";
 import { SearchV2Response, WebSearchResult } from "../../lib/entities";
 import { logger } from "../../lib/logger";
-import https from 'https';
+import https from "https";
 
-const getRandomInt = (min: number, max: number): number => Math.floor(Math.random() * (max - min + 1)) + min;
+const getRandomInt = (min: number, max: number): number =>
+  Math.floor(Math.random() * (max - min + 1)) + min;
 
 export function get_useragent(): string {
-    const lynx_version = `Lynx/${getRandomInt(2, 3)}.${getRandomInt(8, 9)}.${getRandomInt(0, 2)}`;
-    const libwww_version = `libwww-FM/${getRandomInt(2, 3)}.${getRandomInt(13, 15)}`;
-    const ssl_mm_version = `SSL-MM/${getRandomInt(1, 2)}.${getRandomInt(3, 5)}`;
-    const openssl_version = `OpenSSL/${getRandomInt(1, 3)}.${getRandomInt(0, 4)}.${getRandomInt(0, 9)}`;
-    return `${lynx_version} ${libwww_version} ${ssl_mm_version} ${openssl_version}`;
+  const lynx_version = `Lynx/${getRandomInt(2, 3)}.${getRandomInt(8, 9)}.${getRandomInt(0, 2)}`;
+  const libwww_version = `libwww-FM/${getRandomInt(2, 3)}.${getRandomInt(13, 15)}`;
+  const ssl_mm_version = `SSL-MM/${getRandomInt(1, 2)}.${getRandomInt(3, 5)}`;
+  const openssl_version = `OpenSSL/${getRandomInt(1, 3)}.${getRandomInt(0, 4)}.${getRandomInt(0, 9)}`;
+  return `${lynx_version} ${libwww_version} ${ssl_mm_version} ${openssl_version}`;
 }
 
 async function _req(
@@ -27,7 +28,7 @@ async function _req(
 ) {
   const params = {
     q: term,
-    num: results+2, // Number of results to return
+    num: results + 2, // Number of results to return
     hl: lang,
     gl: country,
     safe: "active",
@@ -44,22 +45,22 @@ async function _req(
     const resp = await axios.get("https://www.google.com/search", {
       headers: {
         "User-Agent": agent,
-          "Accept": "*/*"
+        Accept: "*/*",
       },
       params: params,
       proxy: proxies,
       timeout: timeout,
       httpsAgent: new https.Agent({
-        rejectUnauthorized: true 
+        rejectUnauthorized: true,
       }),
-      withCredentials: true
+      withCredentials: true,
     });
     return resp;
   } catch (error) {
     if (error.response && error.response.status === 429) {
       logger.warn("Google Search: Too many requests, try again later.", {
-          status: error.response.status,
-          statusText: error.response.statusText
+        status: error.response.status,
+        statusText: error.response.statusText,
       });
       throw new Error("Google Search: Too many requests, try again later.");
     }
@@ -123,33 +124,37 @@ export async function googleSearch(
       }
 
       for (const result of result_block) {
-          const link_tag = result.querySelector("a[href].fuLhoc.ZWRArf") as HTMLAnchorElement;
-          const title_tag = link_tag ? link_tag.querySelector("span.CVA68e") : null;
-          const description_tag = result.querySelector("span.FrIlee span.fYyStc");
+        const link_tag = result.querySelector(
+          "a[href].fuLhoc.ZWRArf",
+        ) as HTMLAnchorElement;
+        const title_tag = link_tag
+          ? link_tag.querySelector("span.CVA68e")
+          : null;
+        const description_tag = result.querySelector("span.FrIlee span.fYyStc");
 
-          if (link_tag && title_tag && description_tag) {
-              const link = decodeURIComponent(link_tag.href.split("&")[0].replace("/url?q=", ""));
-              if (fetched_links.has(link) && unique) continue;
-              fetched_links.add(link);
-              const title = title_tag.textContent || "";
-              const description = description_tag.textContent || "";
-              fetched_results++;
-              new_results++;
-              if (link && title && description) {
-                start += 1
-                results.push({
-                  url: link,
-                  title: title,
-                  description: description
-                });
-              }
-              if (fetched_results >= num_results) break;
+        if (link_tag && title_tag && description_tag) {
+          const link = decodeURIComponent(
+            link_tag.href.split("&")[0].replace("/url?q=", ""),
+          );
+          if (fetched_links.has(link) && unique) continue;
+          fetched_links.add(link);
+          const title = title_tag.textContent || "";
+          const description = description_tag.textContent || "";
+          fetched_results++;
+          new_results++;
+          if (link && title && description) {
+            start += 1;
+            results.push({
+              url: link,
+              title: title,
+              description: description,
+            });
           }
+          if (fetched_results >= num_results) break;
+        }
       }
 
-      await new Promise((resolve) =>
-        setTimeout(resolve, sleep_interval * 1000),
-      );
+      await new Promise(resolve => setTimeout(resolve, sleep_interval * 1000));
     } catch (error) {
       if (error.message === "Too many requests") {
         logger.warn("Too many requests, breaking the loop");

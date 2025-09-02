@@ -23,11 +23,13 @@ export async function crawlController(
   if (req.body.zeroDataRetention && !req.acuc?.flags?.allowZDR) {
     return res.status(400).json({
       success: false,
-      error: "Zero data retention is enabled for this team. If you're interested in ZDR, please contact support@firecrawl.com",
+      error:
+        "Zero data retention is enabled for this team. If you're interested in ZDR, please contact support@firecrawl.com",
     });
   }
 
-  const zeroDataRetention = req.acuc?.flags?.forceZDR || req.body.zeroDataRetention;
+  const zeroDataRetention =
+    req.acuc?.flags?.forceZDR || req.body.zeroDataRetention;
 
   const id = uuidv4();
   const logger = _logger.child({
@@ -57,7 +59,7 @@ export async function crawlController(
     prompt: undefined,
   };
   const scrapeOptions = req.body.scrapeOptions;
-  
+
   let promptGeneratedOptions = {};
   if (req.body.prompt) {
     try {
@@ -66,7 +68,7 @@ export async function crawlController(
         req.body.prompt,
         logger,
         costTracking,
-        { teamId: req.auth.team_id, crawlId: id }
+        { teamId: req.auth.team_id, crawlId: id },
       );
       promptGeneratedOptions = extract || {};
       logger.debug("Generated crawler options from prompt", {
@@ -81,7 +83,8 @@ export async function crawlController(
       });
       return res.status(400).json({
         success: false,
-        error: "Failed to process natural language prompt. Please try rephrasing or use explicit crawler options.",
+        error:
+          "Failed to process natural language prompt. Please try rephrasing or use explicit crawler options.",
       });
     }
   }
@@ -93,8 +96,15 @@ export async function crawlController(
   // This prevents empty defaults like [] from overwriting meaningful prompt-generated values.
   const finalCrawlerOptions: any = { ...crawlerOptions };
   for (const [key, value] of Object.entries(promptGeneratedOptions)) {
-    const userProvided = Object.prototype.hasOwnProperty.call(preNormalizedBody, key);
-    if (!userProvided || preNormalizedBody[key] === undefined || preNormalizedBody[key] === null) {
+    const userProvided = Object.prototype.hasOwnProperty.call(
+      preNormalizedBody,
+      key,
+    );
+    if (
+      !userProvided ||
+      preNormalizedBody[key] === undefined ||
+      preNormalizedBody[key] === null
+    ) {
       finalCrawlerOptions[key] = value;
     }
   }
@@ -120,7 +130,10 @@ export async function crawlController(
   }
 
   const originalLimit = finalCrawlerOptions.limit;
-  finalCrawlerOptions.limit = Math.min(remainingCredits, finalCrawlerOptions.limit);
+  finalCrawlerOptions.limit = Math.min(
+    remainingCredits,
+    finalCrawlerOptions.limit,
+  );
   logger.debug("Determined limit: " + finalCrawlerOptions.limit, {
     remainingCredits,
     bodyLimit: originalLimit,
@@ -134,12 +147,19 @@ export async function crawlController(
     internalOptions: {
       disableSmartWaitCache: true,
       teamId: req.auth.team_id,
-      saveScrapeResultToGCS: process.env.GCS_FIRE_ENGINE_BUCKET_NAME ? true : false,
+      saveScrapeResultToGCS: process.env.GCS_FIRE_ENGINE_BUCKET_NAME
+        ? true
+        : false,
       zeroDataRetention,
     },
     team_id: req.auth.team_id,
     createdAt: Date.now(),
-    maxConcurrency: req.body.maxConcurrency !== undefined ? (req.acuc?.concurrency !== undefined ? Math.min(req.body.maxConcurrency, req.acuc.concurrency) : req.body.maxConcurrency) : undefined,
+    maxConcurrency:
+      req.body.maxConcurrency !== undefined
+        ? req.acuc?.concurrency !== undefined
+          ? Math.min(req.body.maxConcurrency, req.acuc.concurrency)
+          : req.body.maxConcurrency
+        : undefined,
     zeroDataRetention,
   };
 
@@ -186,9 +206,9 @@ export async function crawlController(
     success: true,
     id,
     url: `${protocol}://${req.get("host")}/v2/crawl/${id}`,
-    ...(req.body.prompt && { 
+    ...(req.body.prompt && {
       promptGeneratedOptions: promptGeneratedOptions,
-      finalCrawlerOptions: finalCrawlerOptions 
+      finalCrawlerOptions: finalCrawlerOptions,
     }),
   });
 }
