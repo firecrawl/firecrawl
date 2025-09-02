@@ -26,7 +26,7 @@ export enum IntegrationEnum {
   MAKE = "make",
   FLOWISE = "flowise",
   METAGPT = "metagpt",
-  RELEVANCEAI = 'relevanceai',
+  RELEVANCEAI = "relevanceai",
 }
 
 export type Format =
@@ -77,15 +77,16 @@ export const url = z.preprocess(
       } catch (_) {
         return false;
       }
-    }, "Invalid URL")
+    }, "Invalid URL"),
   // .refine((x) => !isUrlBlocked(x as string), BLOCKLISTED_URL_MESSAGE),
 );
 
 const strictMessage =
   "Unrecognized key in body -- please review the v1 API documentation for request body changes";
 
-export const agentExtractModelValue = 'fire-1'
-export const isAgentExtractModelValid = (x: string | undefined) => x?.toLowerCase() === agentExtractModelValue;
+export const agentExtractModelValue = "fire-1";
+export const isAgentExtractModelValid = (x: string | undefined) =>
+  x?.toLowerCase() === agentExtractModelValue;
 
 export const agentOptionsExtract = z
   .object({
@@ -115,17 +116,15 @@ export const extractOptions = z
           message: "Invalid JSON schema.",
         },
       ),
-    systemPrompt: z
-      .string()
-      .max(10000)
-      .default(""),
+    systemPrompt: z.string().max(10000).default(""),
     prompt: z.string().max(10000).optional(),
     temperature: z.number().optional(),
   })
   .strict(strictMessage)
   .transform((data) => ({
     ...data,
-    systemPrompt: "Based on the information on the page, extract all the information from the schema in JSON format. Try to extract all the fields even those that might not be marked as required."
+    systemPrompt:
+      "Based on the information on the page, extract all the information from the schema in JSON format. Try to extract all the fields even those that might not be marked as required.",
   }));
 
 export const extractOptionsWithAgent = z
@@ -148,10 +147,7 @@ export const extractOptionsWithAgent = z
           message: "Invalid JSON schema.",
         },
       ),
-    systemPrompt: z
-      .string()
-      .max(10000)
-      .default(""),
+    systemPrompt: z.string().max(10000).default(""),
     prompt: z.string().max(10000).optional(),
     temperature: z.number().optional(),
     agent: z
@@ -179,7 +175,7 @@ Key Instructions:
     *   If the content requires user interaction or pagination to be fully accessible, set \`shouldUseSmartscrape\` to \`true\` in your response and provide a clear \`reasoning\` and \`prompt\` for the SmartScrape tool.
     *   If the content is simply JavaScript rendered but doesn't require interaction, set \`shouldUseSmartscrape\` to \`false\`.
 5.  **Output Format:** Your final output MUST be a single, valid JSON object conforming precisely to the schema. Do not include any explanatory text outside the JSON structure.`
-      : "Based on the information on the page, extract all the information from the schema in JSON format. Try to extract all the fields even those that might not be marked as required."
+      : "Based on the information on the page, extract all the information from the schema in JSON format. Try to extract all the fields even those that might not be marked as required.",
   }));
 
 export type ExtractOptions = z.infer<typeof extractOptions>;
@@ -206,60 +202,73 @@ function calculateTotalWaitTime(
   return waitFor + actionWaitTime;
 }
 
-export const actionSchema = z
-  .union([
-    z
-      .object({
-        type: z.literal("wait"),
-        milliseconds: z.number().int().positive().finite().optional(),
-        selector: z.string().optional(),
-      })
-      .refine(
-        (data) =>
-          (data.milliseconds !== undefined || data.selector !== undefined) &&
-          !(data.milliseconds !== undefined && data.selector !== undefined),
-        {
-          message:
-            "Either 'milliseconds' or 'selector' must be provided, but not both.",
-        },
-      ),
-    z.object({
-      type: z.literal("click"),
-      selector: z.string(),
-      all: z.boolean().default(false),
-    }),
-    z.object({
-      type: z.literal("screenshot"),
-      fullPage: z.boolean().default(false),
-      quality: z.number().min(1).max(100).optional(),
-    }),
-    z.object({
-      type: z.literal("write"),
-      text: z.string(),
-    }),
-    z.object({
-      type: z.literal("press"),
-      key: z.string(),
-    }),
-    z.object({
-      type: z.literal("scroll"),
-      direction: z.enum(["up", "down"]).optional().default("down"),
+export const actionSchema = z.union([
+  z
+    .object({
+      type: z.literal("wait"),
+      milliseconds: z.number().int().positive().finite().optional(),
       selector: z.string().optional(),
-    }),
-    z.object({
-      type: z.literal("scrape"),
-    }),
-    z.object({
-      type: z.literal("executeJavascript"),
-      script: z.string(),
-    }),
-    z.object({
-      type: z.literal("pdf"),
-      landscape: z.boolean().default(false),
-      scale: z.number().default(1),
-      format: z.enum(['A0', 'A1', 'A2', 'A3', 'A4', 'A5', 'A6', 'Letter', 'Legal', 'Tabloid', 'Ledger']).default("Letter"),
-    }),
-  ]);
+    })
+    .refine(
+      (data) =>
+        (data.milliseconds !== undefined || data.selector !== undefined) &&
+        !(data.milliseconds !== undefined && data.selector !== undefined),
+      {
+        message:
+          "Either 'milliseconds' or 'selector' must be provided, but not both.",
+      },
+    ),
+  z.object({
+    type: z.literal("click"),
+    selector: z.string(),
+    all: z.boolean().default(false),
+  }),
+  z.object({
+    type: z.literal("screenshot"),
+    fullPage: z.boolean().default(false),
+    quality: z.number().min(1).max(100).optional(),
+  }),
+  z.object({
+    type: z.literal("write"),
+    text: z.string(),
+  }),
+  z.object({
+    type: z.literal("press"),
+    key: z.string(),
+  }),
+  z.object({
+    type: z.literal("scroll"),
+    direction: z.enum(["up", "down"]).optional().default("down"),
+    selector: z.string().optional(),
+  }),
+  z.object({
+    type: z.literal("scrape"),
+  }),
+  z.object({
+    type: z.literal("executeJavascript"),
+    script: z.string(),
+  }),
+  z.object({
+    type: z.literal("pdf"),
+    landscape: z.boolean().default(false),
+    scale: z.number().default(1),
+    format: z
+      .enum([
+        "A0",
+        "A1",
+        "A2",
+        "A3",
+        "A4",
+        "A5",
+        "A6",
+        "Letter",
+        "Legal",
+        "Tabloid",
+        "Ledger",
+      ])
+      .default("Letter"),
+  }),
+]);
 
 export type Action = z.infer<typeof actionSchema>;
 
@@ -278,7 +287,7 @@ export const actionsSchema = z
 
 function transformIframeSelector(selector: string): string {
   return selector.replace(/(?:^|[\s,])iframe(?=\s|$|[.#\[:,])/g, (match) => {
-    const prefix = match.match(/^[\s,]/)?.[0] || '';
+    const prefix = match.match(/^[\s,]/)?.[0] || "";
     return prefix + 'div[data-original-tag="iframe"]';
   });
 }
@@ -310,11 +319,15 @@ const baseScrapeOptions = z
         "The changeTracking format requires the markdown format to be specified as well",
       ),
     headers: z.record(z.string(), z.string()).optional(),
-    includeTags: z.string().array()
-      .transform(tags => tags.map(transformIframeSelector))
+    includeTags: z
+      .string()
+      .array()
+      .transform((tags) => tags.map(transformIframeSelector))
       .optional(),
-    excludeTags: z.string().array()
-      .transform(tags => tags.map(transformIframeSelector))
+    excludeTags: z
+      .string()
+      .array()
+      .transform((tags) => tags.map(transformIframeSelector))
       .optional(),
     onlyMainContent: z.boolean().default(true),
     timeout: z.number().int().positive().finite().safe().optional(),
@@ -412,17 +425,21 @@ const baseScrapeOptions = z
   .strict(strictMessage);
 
 const fire1Refine = (obj) => {
-  if (obj.agent?.model?.toLowerCase() === "fire-1" && obj.jsonOptions?.agent?.model?.toLowerCase() === "fire-1") {
+  if (
+    obj.agent?.model?.toLowerCase() === "fire-1" &&
+    obj.jsonOptions?.agent?.model?.toLowerCase() === "fire-1"
+  ) {
     return false;
   }
   return true;
-}
+};
 const fire1RefineOpts = {
-  message: "You may only specify the FIRE-1 model in agent or jsonOptions.agent, but not both.",
+  message:
+    "You may only specify the FIRE-1 model in agent or jsonOptions.agent, but not both.",
 };
 const waitForRefine = (obj) => {
   if (obj.waitFor && obj.timeout) {
-    if (typeof obj.timeout !== 'number' || obj.timeout <= 0) {
+    if (typeof obj.timeout !== "number" || obj.timeout <= 0) {
       return false;
     }
     return obj.waitFor <= obj.timeout / 2;
@@ -460,7 +477,10 @@ const extractTransform = (obj: ScrapeOptions) => {
     obj = { ...obj, timeout: 60000 };
   }
 
-  if (obj.formats?.includes("changeTracking") && (obj.waitFor === undefined || obj.waitFor < 5000)) {
+  if (
+    obj.formats?.includes("changeTracking") &&
+    (obj.waitFor === undefined || obj.waitFor < 5000)
+  ) {
     obj = { ...obj, waitFor: 5000 };
   }
 
@@ -472,7 +492,10 @@ const extractTransform = (obj: ScrapeOptions) => {
     obj = { ...obj, timeout: 300000 };
   }
 
-  if ((obj.proxy === "stealth" || obj.proxy === "auto") && obj.timeout === 30000) {
+  if (
+    (obj.proxy === "stealth" || obj.proxy === "auto") &&
+    obj.timeout === 30000
+  ) {
     obj = { ...obj, timeout: 120000 };
   }
 
@@ -520,21 +543,21 @@ export const scrapeOptions = baseScrapeOptions
   .refine(extractRefine, extractRefineOpts)
   .refine(fire1Refine, fire1RefineOpts)
   .refine(waitForRefine, waitForRefineOpts)
-  .transform(obj => {
+  .transform((obj) => {
     return extractTransform(obj) as typeof obj;
   });
 
 export type BaseScrapeOptions = z.infer<typeof baseScrapeOptions>;
 
 export type ScrapeOptions = BaseScrapeOptions & {
-  extract?: z.infer<typeof extractOptionsWithAgent>,
-  jsonOptions?: z.infer<typeof extractOptionsWithAgent>,
+  extract?: z.infer<typeof extractOptionsWithAgent>;
+  jsonOptions?: z.infer<typeof extractOptionsWithAgent>;
   agent?: {
-    model: string,
-    prompt: string,
-    sessionId?: string,
-    waitBeforeClosingMs?: number,
-  },
+    model: string;
+    prompt: string;
+    sessionId?: string;
+    waitBeforeClosingMs?: number;
+  };
 };
 
 const ajv = new Ajv();
@@ -569,9 +592,14 @@ export const extractV1Options = z
     includeSubdomains: z.boolean().default(true),
     allowExternalLinks: z.boolean().default(false),
     enableWebSearch: z.boolean().default(false),
-    scrapeOptions: baseScrapeOptions.default({ onlyMainContent: false }).optional(),
+    scrapeOptions: baseScrapeOptions
+      .default({ onlyMainContent: false })
+      .optional(),
     origin: z.string().optional().default("api"),
-    integration: z.nativeEnum(IntegrationEnum).optional().transform(val => val || null),
+    integration: z
+      .nativeEnum(IntegrationEnum)
+      .optional()
+      .transform((val) => val || null),
     urlTrace: z.boolean().default(false),
     timeout: z.number().int().positive().finite().safe().default(60000),
     __experimental_streamSteps: z.boolean().default(false),
@@ -634,7 +662,10 @@ export const scrapeRequestSchema = baseScrapeOptions
     extract: extractOptionsWithAgent.optional(),
     jsonOptions: extractOptionsWithAgent.optional(),
     origin: z.string().optional().default("api"),
-    integration: z.nativeEnum(IntegrationEnum).optional().transform(val => val || null),
+    integration: z
+      .nativeEnum(IntegrationEnum)
+      .optional()
+      .transform((val) => val || null),
     timeout: z.number().int().positive().finite().safe().default(30000),
     zeroDataRetention: z.boolean().optional(),
   })
@@ -649,6 +680,7 @@ export const scrapeRequestSchema = baseScrapeOptions
 export type ScrapeRequest = z.infer<typeof scrapeRequestSchema>;
 export type ScrapeRequestInput = z.input<typeof scrapeRequestSchema>;
 
+const BLACKLISTED_WEBHOOK_HEADERS = ["x-firecrawl-signature"];
 export const webhookSchema = z.preprocess(
   (x) => {
     if (typeof x === "string") {
@@ -666,14 +698,28 @@ export const webhookSchema = z.preprocess(
         .array(z.enum(["completed", "failed", "page", "started"]))
         .default(["completed", "failed", "page", "started"]),
     })
-    .strict(strictMessage),
+    .strict(strictMessage)
+    .refine(
+      (obj) => {
+        const blacklistedLower = BLACKLISTED_WEBHOOK_HEADERS.map((h) =>
+          h.toLowerCase(),
+        );
+        return !Object.keys(obj.headers).some((key) =>
+          blacklistedLower.includes(key.toLowerCase()),
+        );
+      },
+      `The following headers are not allowed: ${BLACKLISTED_WEBHOOK_HEADERS.join(", ")}`,
+    ),
 );
 
 export const batchScrapeRequestSchema = baseScrapeOptions
   .extend({
     urls: url.array(),
     origin: z.string().optional().default("api"),
-    integration: z.nativeEnum(IntegrationEnum).optional().transform(val => val || null),
+    integration: z
+      .nativeEnum(IntegrationEnum)
+      .optional()
+      .transform((val) => val || null),
     webhook: webhookSchema.optional(),
     appendToId: z.string().uuid().optional(),
     ignoreInvalidURLs: z.boolean().default(false),
@@ -690,7 +736,10 @@ export const batchScrapeRequestSchemaNoURLValidation = baseScrapeOptions
   .extend({
     urls: z.string().array(),
     origin: z.string().optional().default("api"),
-    integration: z.nativeEnum(IntegrationEnum).optional().transform(val => val || null),
+    integration: z
+      .nativeEnum(IntegrationEnum)
+      .optional()
+      .transform((val) => val || null),
     webhook: webhookSchema.optional(),
     appendToId: z.string().uuid().optional(),
     ignoreInvalidURLs: z.boolean().default(false),
@@ -743,7 +792,10 @@ export const crawlRequestSchema = crawlerOptions
   .extend({
     url,
     origin: z.string().optional().default("api"),
-    integration: z.nativeEnum(IntegrationEnum).optional().transform(val => val || null),
+    integration: z
+      .nativeEnum(IntegrationEnum)
+      .optional()
+      .transform((val) => val || null),
     scrapeOptions: baseScrapeOptions.default({}),
     webhook: webhookSchema.optional(),
     limit: z.number().default(10000),
@@ -765,8 +817,8 @@ export const crawlRequestSchema = crawlerOptions
     },
     {
       message: "URL depth exceeds the specified maxDepth",
-      path: ["url"]
-    }
+      path: ["url"],
+    },
   )
   .transform((x) => {
     if (x.crawlEntireDomain !== undefined) {
@@ -801,7 +853,10 @@ export const mapRequestSchema = crawlerOptions
   .extend({
     url,
     origin: z.string().optional().default("api"),
-    integration: z.nativeEnum(IntegrationEnum).optional().transform(val => val || null),
+    integration: z
+      .nativeEnum(IntegrationEnum)
+      .optional()
+      .transform((val) => val || null),
     includeSubdomains: z.boolean().default(true),
     search: z.string().optional(),
     ignoreQueryParameters: z.boolean().default(true),
@@ -871,7 +926,7 @@ export type Document = {
       };
     };
     json?: any;
-  }
+  };
   metadata: {
     title?: string;
     description?: string;
@@ -933,11 +988,11 @@ export type ErrorResponse = {
 export type ScrapeResponse =
   | ErrorResponse
   | {
-    success: true;
-    warning?: string;
-    data: Document;
-    scrape_id?: string;
-  };
+      success: true;
+      warning?: string;
+      data: Document;
+      scrape_id?: string;
+    };
 
 export interface ScrapeResponseRequestTest {
   statusCode: number;
@@ -988,28 +1043,28 @@ export interface ExtractResponseRequestTest {
 export type CrawlResponse =
   | ErrorResponse
   | {
-    success: true;
-    id: string;
-    url: string;
-  };
+      success: true;
+      id: string;
+      url: string;
+    };
 
 export type BatchScrapeResponse =
   | ErrorResponse
   | {
-    success: true;
-    id: string;
-    url: string;
-    invalidURLs?: string[];
-  };
+      success: true;
+      id: string;
+      url: string;
+      invalidURLs?: string[];
+    };
 
 // Note: This type has been transitioned to v2/types.ts (see MapV2Response) while maintaining backwards compatibility
 export type MapResponse =
   | ErrorResponse
   | {
-    success: true;
-    links: string[];
-    scrape_id?: string;
-  };
+      success: true;
+      links: string[];
+      scrape_id?: string;
+    };
 
 export type CrawlStatusParams = {
   jobId: string;
@@ -1022,48 +1077,48 @@ export type ConcurrencyCheckParams = {
 export type ConcurrencyCheckResponse =
   | ErrorResponse
   | {
-    success: true;
-    concurrency: number;
-    maxConcurrency: number;
-  };
+      success: true;
+      concurrency: number;
+      maxConcurrency: number;
+    };
 
 export type CrawlStatusResponse =
   | ErrorResponse
   | {
-    success: true;
-    status: "scraping" | "completed" | "failed" | "cancelled";
-    completed: number;
-    total: number;
-    creditsUsed: number;
-    expiresAt: string;
-    next?: string;
-    data: Document[];
-  };
+      success: true;
+      status: "scraping" | "completed" | "failed" | "cancelled";
+      completed: number;
+      total: number;
+      creditsUsed: number;
+      expiresAt: string;
+      next?: string;
+      data: Document[];
+    };
 
 export type OngoingCrawlsResponse =
   | ErrorResponse
   | {
-    success: true;
-    crawls: {
-      id: string;
-      teamId: string;
-      url: string;
-      created_at: string;
-      options: CrawlerOptions;
-    }[];
-  };
+      success: true;
+      crawls: {
+        id: string;
+        teamId: string;
+        url: string;
+        created_at: string;
+        options: CrawlerOptions;
+      }[];
+    };
 
 export type CrawlErrorsResponse =
   | ErrorResponse
   | {
-    errors: {
-      id: string;
-      timestamp?: string;
-      url: string;
-      error: string;
-    }[];
-    robotsBlocked: string[];
-  };
+      errors: {
+        id: string;
+        timestamp?: string;
+        url: string;
+        error: string;
+      }[];
+      robotsBlocked: string[];
+    };
 
 type AuthObject = {
   team_id: string;
@@ -1123,7 +1178,10 @@ export type TeamFlags = {
   crawlTtlHours?: number;
 } | null;
 
-export type AuthCreditUsageChunkFromTeam = Omit<AuthCreditUsageChunk, "api_key">;
+export type AuthCreditUsageChunkFromTeam = Omit<
+  AuthCreditUsageChunk,
+  "api_key"
+>;
 
 export interface RequestWithMaybeACUC<
   ReqParams = {},
@@ -1204,10 +1262,13 @@ export function toNewCrawlerOptions(x: any): CrawlerOptions {
     regexOnFullURL: x.regexOnFullURL,
     maxDiscoveryDepth: x.maxDiscoveryDepth,
     delay: x.delay,
-  }
+  };
 }
 
-export function fromLegacyCrawlerOptions(x: any, teamId: string): {
+export function fromLegacyCrawlerOptions(
+  x: any,
+  teamId: string,
+): {
   crawlOptions: CrawlerOptions;
   internalOptions: InternalOptions;
 } {
@@ -1259,7 +1320,7 @@ export function fromLegacyScrapeOptions(
           ? ("screenshot@fullPage" as const)
           : null,
         extractorOptions !== undefined &&
-          extractorOptions.mode.includes("llm-extraction")
+        extractorOptions.mode.includes("llm-extraction")
           ? ("extract" as const)
           : null,
         "links",
@@ -1283,12 +1344,12 @@ export function fromLegacyScrapeOptions(
       removeBase64Images: pageOptions.removeBase64Images,
       extract:
         extractorOptions !== undefined &&
-          extractorOptions.mode.includes("llm-extraction")
+        extractorOptions.mode.includes("llm-extraction")
           ? {
-            systemPrompt: extractorOptions.extractionPrompt,
-            prompt: extractorOptions.userPrompt,
-            schema: extractorOptions.extractionSchema,
-          }
+              systemPrompt: extractorOptions.extractionPrompt,
+              prompt: extractorOptions.userPrompt,
+              schema: extractorOptions.extractionSchema,
+            }
           : undefined,
       mobile: pageOptions.mobile,
       fastMode: pageOptions.useFastMode,
@@ -1315,7 +1376,10 @@ export function fromLegacyCombo(
     timeout,
     teamId,
   );
-  const { internalOptions: i2 } = fromLegacyCrawlerOptions(crawlerOptions, teamId);
+  const { internalOptions: i2 } = fromLegacyCrawlerOptions(
+    crawlerOptions,
+    teamId,
+  );
   return { scrapeOptions, internalOptions: Object.assign(i1, i2) };
 }
 
@@ -1365,7 +1429,10 @@ export const searchRequestSchema = z
     country: z.string().optional().default("us"),
     location: z.string().optional(),
     origin: z.string().optional().default("api"),
-    integration: z.nativeEnum(IntegrationEnum).optional().transform(val => val || null),
+    integration: z
+      .nativeEnum(IntegrationEnum)
+      .optional()
+      .transform((val) => val || null),
     timeout: z.number().int().positive().finite().safe().default(60000),
     ignoreInvalidURLs: z.boolean().optional().default(false),
     __searchPreviewToken: z.string().optional(),
@@ -1405,10 +1472,10 @@ export type SearchRequestInput = z.input<typeof searchRequestSchema>;
 export type SearchResponse =
   | ErrorResponse
   | {
-    success: true;
-    warning?: string;
-    data: Document[];
-  };
+      success: true;
+      warning?: string;
+      data: Document[];
+    };
 
 export type TokenUsage = {
   promptTokens: number;
