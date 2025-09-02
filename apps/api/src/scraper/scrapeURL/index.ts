@@ -666,7 +666,6 @@ export async function scrapeURL(
     internalOptions,
     costTracking,
   );
-  console.log("Meta object built:", meta);
 
   meta.logger.info("scrapeURL entered");
 
