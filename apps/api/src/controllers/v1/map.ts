@@ -6,7 +6,7 @@ import {
   RequestWithAuth,
   TeamFlags,
 } from "./types";
-import { scrapeOptions } from "../v2/types";
+import { scrapeOptions, ScrapeOptions } from "../v2/types";
 import { crawlToCrawler, StoredCrawl } from "../../lib/crawl-redis";
 import { MapResponse, MapRequest, MAX_MAP_LIMIT } from "./types";
 import { configDotenv } from "dotenv";
@@ -94,6 +94,7 @@ export async function getMapResults({
   flags,
   useIndex = true,
   timeout,
+  location,
 }: {
   url: string;
   search?: string;
@@ -111,6 +112,7 @@ export async function getMapResults({
   flags: TeamFlags;
   useIndex?: boolean;
   timeout?: number;
+  location?: ScrapeOptions["location"];
 }): Promise<MapResult> {
   const id = uuidv4();
   let links: string[] = [url];
@@ -125,7 +127,9 @@ export async function getMapResults({
       limit: crawlerOptions.sitemapOnly ? 10000000 : limit,
       scrapeOptions: undefined,
     },
-    scrapeOptions: scrapeOptions.parse({}),
+    scrapeOptions: scrapeOptions.parse({
+      ...(location ? { location } : {}),
+    }),
     internalOptions: { teamId },
     team_id: teamId,
     createdAt: Date.now(),
@@ -381,6 +385,7 @@ export async function mapController(
         flags: req.acuc?.flags ?? null,
         useIndex: req.body.useIndex,
         timeout: req.body.timeout,
+        location: req.body.location,
       }),
       ...(req.body.timeout !== undefined
         ? [

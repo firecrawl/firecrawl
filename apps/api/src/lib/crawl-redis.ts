@@ -530,6 +530,7 @@ export function crawlToCrawler(
     maxDiscoveryDepth: sc.crawlerOptions?.maxDiscoveryDepth,
     currentDiscoveryDepth: crawlerOptions?.currentDiscoveryDepth ?? 0,
     zeroDataRetention: (teamFlags?.forceZDR || sc.zeroDataRetention) ?? false,
+    location: sc.scrapeOptions?.location,
   });
 
   if (sc.robots !== undefined) {

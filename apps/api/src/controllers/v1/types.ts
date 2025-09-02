@@ -866,6 +866,25 @@ export const mapRequestSchema = crawlerOptions
     useMock: z.string().optional(),
     filterByPath: z.boolean().default(true),
     useIndex: z.boolean().default(true),
+    location: z
+      .object({
+        country: z
+          .string()
+          .optional()
+          .refine(
+            val =>
+              !val ||
+              Object.keys(countries).includes(val.toUpperCase()) ||
+              val === "US-generic",
+            {
+              message:
+                "Invalid country code. Please use a valid ISO 3166-1 alpha-2 country code.",
+            },
+          )
+          .transform(val => (val ? val.toUpperCase() : "US-generic")),
+        languages: z.string().array().optional(),
+      })
+      .optional(),
   })
   .strict(strictMessage);
 

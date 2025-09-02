@@ -4,6 +4,7 @@ import {
   mapRequestSchema,
   RequestWithAuth,
   scrapeOptions,
+  ScrapeOptions,
   TeamFlags,
   MapRequest,
   MapDocument,
@@ -96,6 +97,7 @@ export async function getMapResults({
   filterByPath = true,
   flags,
   useIndex = true,
+  location,
 }: {
   url: string;
   search?: string;
@@ -111,6 +113,7 @@ export async function getMapResults({
   filterByPath?: boolean;
   flags: TeamFlags;
   useIndex?: boolean;
+  location?: ScrapeOptions["location"];
 }): Promise<MapResult> {
   const id = uuidv4();
   let mapResults: MapDocument[] = [];
@@ -123,7 +126,9 @@ export async function getMapResults({
       limit: crawlerOptions.sitemapOnly ? 10000000 : limit,
       scrapeOptions: undefined,
     },
-    scrapeOptions: scrapeOptions.parse({}),
+    scrapeOptions: scrapeOptions.parse({
+      ...(location ? { location } : {}),
+    }),
     internalOptions: { teamId },
     team_id: teamId,
     createdAt: Date.now(),
@@ -375,6 +380,7 @@ export async function mapController(
         filterByPath: req.body.filterByPath !== false,
         flags: req.acuc?.flags ?? null,
         useIndex: req.body.useIndex,
+        location: req.body.location,
       }),
       ...(req.body.timeout !== undefined
         ? [
