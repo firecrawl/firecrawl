@@ -31,7 +31,8 @@ fn _get_pdf_metadata(path: &str) -> Result<PDFMetadata, String> {
                 .map(|s| String::from_utf8_lossy(s).to_string())
                 .ok()
             )
-        );
+        )
+        .map(|x| x.trim_matches(|x| char::is_whitespace(x) || x == '\0').to_string());
     
     Ok(PDFMetadata { num_pages, title })
 }
