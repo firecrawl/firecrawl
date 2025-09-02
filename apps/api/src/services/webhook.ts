@@ -6,7 +6,7 @@ import { configDotenv } from "dotenv";
 import { z } from "zod";
 import { webhookSchema } from "../controllers/v1/types";
 import { redisEvictConnection } from "./redis";
-import { getSecureDispatcher } from "../scraper/scrapeURL/engines/utils/safeFetch";
+import { getSecureDispatcher, isIPPrivate } from "../scraper/scrapeURL/engines/utils/safeFetch";
 configDotenv();
 
 const WEBHOOK_INSERT_QUEUE_KEY = "webhook-insert-queue";
@@ -165,6 +165,16 @@ export const callWebhook = async ({
     });
 
     if (!webhookUrl) {
+      return null;
+    }
+
+    // check if the webhook URL is a private IP address *before* making the request
+    // the dispatcher also performs a check once connected, however this prevents unnecessary connections
+    const webhookHost = new URL(webhookUrl.url).hostname;
+    if (isIPPrivate(webhookHost)) {
+      logger.warn("Aborting webhook call to private IP address", {
+        url: webhookUrl.url,
+      });
       return null;
     }
 

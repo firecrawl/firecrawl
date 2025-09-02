@@ -114,7 +114,7 @@
     "gpt3-tokenizer": "^1.1.5",
     "http-cookie-agent": "^7.0.1",
     "ioredis": "^5.6.1",
-    "ip-address": "^10.0.1",
+    "ipaddr.js": "^2.2.0",
     "joplin-turndown-plugin-gfm": "^1.0.12",
     "jsdom": "^26.0.0",
     "json-schema-to-zod": "^2.3.0",
