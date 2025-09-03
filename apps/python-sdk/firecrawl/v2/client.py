@@ -443,7 +443,7 @@ class FirecrawlClient:
             sitemap=sitemap if sitemap is not None else "include",
             timeout=timeout,
             location=location
-        ) if any(v is not None for v in [search, include_subdomains, limit, sitemap, timeout]) else None
+        ) if any(v is not None for v in [search, include_subdomains, limit, sitemap, timeout, location]) else None
 
         return map_module.map(self.http_client, url, options)
     
