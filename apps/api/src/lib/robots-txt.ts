@@ -85,7 +85,7 @@ export async function fetchRobotsTxt(
   } else {
     logger.error(`Request failed for robots.txt fetch`, {
       method: "fetchRobotsTxt",
-      sitemapUrl: robotsTxtUrl,
+      robotsTxtUrl,
       error: response.success
         ? response.document.metadata.statusCode
         : response.error,
