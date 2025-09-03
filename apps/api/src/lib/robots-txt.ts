@@ -3,6 +3,7 @@ import { Logger } from "winston";
 import { ScrapeOptions, scrapeOptions } from "../controllers/v2/types";
 import { CostTracking } from "./extract/extraction-service";
 import { scrapeURL } from "../scraper/scrapeURL";
+import { Engine } from "../scraper/scrapeURL/engines";
 
 const useFireEngine =
   process.env.FIRE_ENGINE_BETA_URL !== "" &&
@@ -31,6 +32,24 @@ export async function fetchRobotsTxt(
   const urlObj = new URL(url);
   const robotsTxtUrl = `${urlObj.protocol}//${urlObj.host}/robots.txt`;
 
+  const shouldPrioritizeFireEngine = location && useFireEngine;
+
+  const forceEngine: Engine[] = [
+    ...(shouldPrioritizeFireEngine
+      ? [
+          "fire-engine;tlsclient" as const,
+          "fire-engine;tlsclient;stealth" as const,
+        ]
+      : []),
+    "fetch",
+    ...(!shouldPrioritizeFireEngine && useFireEngine
+      ? [
+          "fire-engine;tlsclient" as const,
+          "fire-engine;tlsclient;stealth" as const,
+        ]
+      : []),
+  ];
+
   let content: string = "";
   const response = await scrapeURL(
     "robots-txt;" + scrapeId,
@@ -40,16 +59,8 @@ export async function fetchRobotsTxt(
       ...(location ? { location } : {}),
     }),
     {
-      forceEngine: [
-        // no index here as we want the latest version of robots.txt for e.g. scraping rules
-        ...(location && useFireEngine
-          ? [
-              "fire-engine;tlsclient" as const,
-              "fire-engine;tlsclient;stealth" as const,
-            ]
-          : []),
-        "fetch",
-      ],
+      forceEngine,
+      v0DisableJsDom: true,
       externalAbort: abort
         ? {
             signal: abort,
