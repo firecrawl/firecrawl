@@ -18,11 +18,11 @@ export interface RobotsTxtChecker {
 export async function fetchRobotsTxt(
   {
     url,
-    zeroDataRetention = false,
+    zeroDataRetention,
     location,
   }: {
     url: string;
-    zeroDataRetention?: boolean;
+    zeroDataRetention: boolean;
     location?: ScrapeOptions["location"];
   },
   scrapeId: string,
@@ -159,7 +159,7 @@ export function isUrlAllowedByRobots(
 }
 
 export async function checkRobotsTxt(
-  url: string,
+  { url, zeroDataRetention }: { url: string; zeroDataRetention: boolean },
   scrapeId: string,
   logger: Logger,
   abort?: AbortSignal,
@@ -172,7 +172,7 @@ export async function checkRobotsTxt(
 
   try {
     const { content: robotsTxt } = await fetchRobotsTxt(
-      { url },
+      { url, zeroDataRetention },
       scrapeId,
       logger,
       abort,

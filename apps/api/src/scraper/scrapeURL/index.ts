@@ -680,7 +680,10 @@ export async function scrapeURL(
     });
     const urlToCheck = meta.rewrittenUrl || meta.url;
     const isAllowed = await checkRobotsTxt(
-      urlToCheck,
+      {
+        url: urlToCheck,
+        zeroDataRetention: internalOptions.zeroDataRetention || false,
+      },
       id,
       meta.logger,
       meta.abort.asSignal(),

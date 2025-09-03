@@ -12,7 +12,11 @@ describe("Robots.txt tests", () => {
       error: jest.fn(),
     } as any;
     robotsTxt = (
-      await fetchRobotsTxt({ url: robotsUrl }, "test-scrape", logger)
+      await fetchRobotsTxt(
+        { url: robotsUrl, zeroDataRetention: true },
+        "test-scrape",
+        logger,
+      )
     ).content;
     checker = createRobotsChecker(siteUrl, robotsTxt);
   }, scrapeTimeout);
