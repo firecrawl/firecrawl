@@ -6,7 +6,7 @@ import type { Logger } from "winston";
 import { CostTracking } from "../../lib/cost-tracking";
 import { parseSitemapXml, processSitemap } from "../../lib/crawler";
 import { ScrapeJobTimeoutError } from "../../lib/error";
-import { ScrapeOptions } from "../../controllers/v1/types";
+import type { ScrapeOptions } from "../../controllers/v2/types";
 import { Engine } from "../scrapeURL/engines";
 const useFireEngine =
   process.env.FIRE_ENGINE_BETA_URL !== "" &&
