@@ -157,34 +157,3 @@ export function isUrlAllowedByRobots(
 
   return false;
 }
-
-export async function checkRobotsTxt(
-  { url, zeroDataRetention }: { url: string; zeroDataRetention: boolean },
-  scrapeId: string,
-  logger: Logger,
-  abort?: AbortSignal,
-): Promise<boolean> {
-  // if url is robots.txt, always allow (prevents infinite loop from scrapeURL when checkRobotsOnScrape is enabled)
-  const urlObj = new URL(url);
-  if (urlObj.pathname === "/robots.txt") {
-    return true;
-  }
-
-  try {
-    const { content: robotsTxt } = await fetchRobotsTxt(
-      { url, zeroDataRetention },
-      scrapeId,
-      logger,
-      abort,
-    );
-    const checker = createRobotsChecker(url, robotsTxt);
-    return isUrlAllowedByRobots(url, checker.robots);
-  } catch (error) {
-    // If we can't fetch robots.txt, assume it's allowed
-    logger?.debug("Failed to fetch robots.txt, allowing scrape", {
-      error,
-      url,
-    });
-    return true;
-  }
-}

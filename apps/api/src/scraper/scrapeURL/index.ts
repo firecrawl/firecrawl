@@ -52,7 +52,11 @@ import {
   normalizeURLForIndex,
   useIndex,
 } from "../../services/index";
-import { checkRobotsTxt } from "../../lib/robots-txt";
+import {
+  fetchRobotsTxt,
+  createRobotsChecker,
+  isUrlAllowedByRobots,
+} from "../../lib/robots-txt";
 import {
   AbortInstance,
   AbortManager,
@@ -674,27 +678,41 @@ export async function scrapeURL(
   }
 
   if (internalOptions.teamFlags?.checkRobotsOnScrape) {
-    meta.logger.info("Checking robots.txt", {
-      checkRobotsOnScrape: internalOptions.teamFlags?.checkRobotsOnScrape,
-      url: meta.rewrittenUrl || meta.url,
-    });
     const urlToCheck = meta.rewrittenUrl || meta.url;
-    const isAllowed = await checkRobotsTxt(
-      {
-        url: urlToCheck,
-        zeroDataRetention: internalOptions.zeroDataRetention || false,
-      },
-      id,
-      meta.logger,
-      meta.abort.asSignal(),
-    );
+    meta.logger.info("Checking robots.txt", { url: urlToCheck });
 
-    if (!isAllowed) {
-      meta.logger.info("URL blocked by robots.txt", { url: urlToCheck });
-      return {
-        success: false,
-        error: new Error("URL blocked by robots.txt"),
-      };
+    const urlObj = new URL(urlToCheck);
+    const isRobotsTxtPath = urlObj.pathname === "/robots.txt";
+
+    if (!isRobotsTxtPath) {
+      try {
+        const { content: robotsTxt } = await fetchRobotsTxt(
+          {
+            url: urlToCheck,
+            zeroDataRetention: internalOptions.zeroDataRetention || false,
+            location: options.location,
+          },
+          id,
+          meta.logger,
+          meta.abort.asSignal(),
+        );
+
+        const checker = createRobotsChecker(urlToCheck, robotsTxt);
+        const isAllowed = isUrlAllowedByRobots(urlToCheck, checker.robots);
+
+        if (!isAllowed) {
+          meta.logger.info("URL blocked by robots.txt", { url: urlToCheck });
+          return {
+            success: false,
+            error: new Error("URL blocked by robots.txt"),
+          };
+        }
+      } catch (error) {
+        meta.logger.debug("Failed to fetch robots.txt, allowing scrape", {
+          error,
+          url: urlToCheck,
+        });
+      }
     }
   }
 
