@@ -3,7 +3,7 @@ import { z } from "zod";
 import { ErrorResponse, RequestWithAuth, crawlRequestSchema } from "./types";
 import { logger as _logger } from "../../lib/logger";
 import { generateCrawlerOptionsFromPrompt } from "../../scraper/scrapeURL/transformers/llmExtract";
-import { CostTracking } from "../../lib/extract/extraction-service";
+import { CostTracking } from "../../lib/cost-tracking";
 
 // Define the request schema for params preview
 // Only url and prompt are required/relevant for preview

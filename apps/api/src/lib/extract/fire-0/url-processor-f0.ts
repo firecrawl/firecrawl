@@ -12,7 +12,7 @@ import { extractConfig } from "../config";
 import type { Logger } from "winston";
 import { generateText } from "ai";
 import { getModel } from "../../generic-ai";
-import { CostTracking } from "../extraction-service";
+import { CostTracking } from "../../cost-tracking";
 import { getACUCTeam } from "../../../controllers/auth";
 
 export async function generateBasicCompletion_FO(

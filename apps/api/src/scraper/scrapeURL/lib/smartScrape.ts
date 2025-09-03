@@ -6,7 +6,7 @@ import { configDotenv } from "dotenv";
 import {
   CostLimitExceededError,
   CostTracking,
-} from "../../../lib/extract/extraction-service";
+} from "../../../lib/cost-tracking";
 configDotenv();
 
 // Define schemas outside the function scope

@@ -5,7 +5,7 @@ import {
   TeamFlags,
   shouldParsePDF,
 } from "../controllers/v2/types";
-import { CostTracking } from "./extract/extraction-service";
+import { CostTracking } from "./cost-tracking";
 import { hasFormatOfType } from "./format-utils";
 
 const creditsPerPDFPage = 1;

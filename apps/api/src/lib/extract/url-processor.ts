@@ -9,7 +9,7 @@ import type { Logger } from "winston";
 import { generateText } from "ai";
 import { getModel } from "../generic-ai";
 import { calculateCost } from "../../scraper/scrapeURL/transformers/llmExtract";
-import type { CostTracking } from "./extraction-service";
+import type { CostTracking } from "../cost-tracking";
 
 export async function generateBasicCompletion(
   prompt: string,

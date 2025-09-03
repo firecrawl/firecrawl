@@ -12,7 +12,7 @@ import {
 import { ExtractOptions } from "../../controllers/v1/types";
 
 import { getModel } from "../generic-ai";
-import { CostTracking } from "../extract/extraction-service";
+import { CostTracking } from "../cost-tracking";
 interface AnalysisResult {
   gaps: string[];
   nextSteps: string[];

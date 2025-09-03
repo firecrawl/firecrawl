@@ -13,7 +13,7 @@ import {
   buildRerankerSystemPrompt_F0,
   buildRerankerUserPrompt_F0,
 } from "./build-prompts-f0";
-import { CostTracking } from "../extraction-service";
+import { CostTracking } from "../../cost-tracking";
 const cohere = new CohereClient({
   token: process.env.COHERE_API_KEY,
 });

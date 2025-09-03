@@ -10,7 +10,7 @@ import {
 } from "../build-prompts";
 import { getModel } from "../../../lib/generic-ai";
 import { Logger } from "winston";
-import { CostTracking } from "../extraction-service";
+import { CostTracking } from "../../cost-tracking";
 export async function analyzeSchemaAndPrompt(
   urls: string[],
   schema: any,

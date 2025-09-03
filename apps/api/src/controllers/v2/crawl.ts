@@ -11,7 +11,7 @@ import { crawlToCrawler, saveCrawl, StoredCrawl } from "../../lib/crawl-redis";
 import { _addScrapeJobToBullMQ } from "../../services/queue-jobs";
 import { logger as _logger } from "../../lib/logger";
 import { generateCrawlerOptionsFromPrompt } from "../../scraper/scrapeURL/transformers/llmExtract";
-import { CostTracking } from "../../lib/extract/extraction-service";
+import { CostTracking } from "../../lib/cost-tracking";
 
 export async function crawlController(
   req: RequestWithAuth<{}, CrawlResponse, CrawlRequest>,

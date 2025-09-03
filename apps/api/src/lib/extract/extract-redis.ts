@@ -1,6 +1,6 @@
 import { redisEvictConnection } from "../../services/redis";
 import { logger as _logger } from "../logger";
-import { CostTracking } from "./extraction-service";
+import { CostTracking } from "../cost-tracking";
 
 export enum ExtractStep {
   INITIAL = "initial",

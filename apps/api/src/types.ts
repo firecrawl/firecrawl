@@ -9,7 +9,7 @@ import {
 import { AuthCreditUsageChunk } from "./controllers/v1/types";
 import { ExtractorOptions, Document } from "./lib/entities";
 import { InternalOptions } from "./scraper/scrapeURL";
-import type { CostTracking } from "./lib/extract/extraction-service";
+import type { CostTracking } from "./lib/cost-tracking";
 
 type Mode = "crawl" | "single_urls" | "sitemap" | "kickoff";
 

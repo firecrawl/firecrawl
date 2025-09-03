@@ -4,7 +4,7 @@ import { supabase_service } from "../services/supabase";
 import { logger as _logger } from "../lib/logger";
 import { configDotenv } from "dotenv";
 import { scrapeURL, ScrapeUrlResponse } from "../scraper/scrapeURL";
-import { CostTracking } from "../lib/extract/extraction-service";
+import { CostTracking } from "../lib/cost-tracking";
 configDotenv();
 
 export async function startWebScraperPipeline({

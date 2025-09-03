@@ -43,7 +43,7 @@ import { executeTransformers } from "./transformers";
 import { LLMRefusalError } from "./transformers/llmExtract";
 import { urlSpecificParams } from "./lib/urlSpecificParams";
 import { loadMock, MockState } from "./lib/mock";
-import { CostTracking } from "../../lib/extract/extraction-service";
+import { CostTracking } from "../../lib/cost-tracking";
 import {
   addIndexRFInsertJob,
   generateDomainSplits,

@@ -20,7 +20,7 @@ import { isUrlBlocked } from "../../scraper/WebScraper/utils/blocklist";
 import * as Sentry from "@sentry/node";
 import { logger as _logger } from "../../lib/logger";
 import type { Logger } from "winston";
-import { CostTracking } from "../../lib/extract/extraction-service";
+import { CostTracking } from "../../lib/cost-tracking";
 import { calculateCreditsToBeBilled } from "../../lib/scrape-billing";
 import { supabase_service } from "../../services/supabase";
 import { SearchResult, SearchV2Response } from "../../lib/entities";

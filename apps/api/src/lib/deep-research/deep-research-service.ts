@@ -5,7 +5,7 @@ import { ResearchLLMService, ResearchStateManager } from "./research-manager";
 import { logJob } from "../../services/logging/log_job";
 import { billTeam } from "../../services/billing/credit_billing";
 import { ExtractOptions } from "../../controllers/v1/types";
-import { CostTracking } from "../extract/extraction-service";
+import { CostTracking } from "../cost-tracking";
 import { getACUCTeam } from "../../controllers/auth";
 export interface DeepResearchServiceOptions {
   researchId: string;

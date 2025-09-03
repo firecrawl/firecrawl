@@ -11,7 +11,7 @@ import { billTeam } from "../../services/billing/credit_billing";
 import { logJob } from "../../services/logging/log_job";
 import { getModel } from "../generic-ai";
 import { generateCompletions } from "../../scraper/scrapeURL/transformers/llmExtract";
-import { CostTracking } from "../extract/extraction-service";
+import { CostTracking } from "../cost-tracking";
 import { getACUCTeam } from "../../controllers/auth";
 interface GenerateLLMsTextServiceOptions {
   generationId: string;

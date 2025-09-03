@@ -1,6 +1,6 @@
 import { TokenUsage } from "../../../controllers/v1/types";
 import { logger } from "../../../lib/logger";
-import { CostTracking } from "../extraction-service";
+import { CostTracking } from "../../cost-tracking";
 import { modelPrices } from "./model-prices";
 
 interface ModelPricing {

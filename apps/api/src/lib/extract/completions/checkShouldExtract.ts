@@ -7,7 +7,7 @@ import {
   buildShouldExtractUserPrompt,
 } from "../build-prompts";
 import { getModel } from "../../../lib/generic-ai";
-import { CostTracking } from "../extraction-service";
+import { CostTracking } from "../../cost-tracking";
 
 export async function checkShouldExtract(
   prompt: string,

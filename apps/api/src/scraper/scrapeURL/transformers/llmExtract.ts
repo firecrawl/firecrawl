@@ -22,7 +22,7 @@ import { z } from "zod";
 import fs from "fs/promises";
 import Ajv from "ajv";
 import { extractData } from "../lib/extractSmartScrape";
-import { CostTracking } from "../../../lib/extract/extraction-service";
+import { CostTracking } from "../../../lib/cost-tracking";
 import { isAgentExtractModelValid } from "../../../controllers/v1/types";
 import { hasFormatOfType } from "../../../lib/format-utils";
 // TODO: fix this, it's horrible

@@ -13,7 +13,7 @@ import type { SmartScrapeResult } from "./smartScrape";
 import {
   CostLimitExceededError,
   CostTracking,
-} from "../../../lib/extract/extraction-service";
+} from "../../../lib/cost-tracking";
 const commonSmartScrapeProperties = {
   shouldUseSmartscrape: {
     type: "boolean",

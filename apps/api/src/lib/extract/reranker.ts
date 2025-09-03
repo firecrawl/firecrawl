@@ -10,7 +10,7 @@ import { buildRerankerSystemPrompt } from "./build-prompts";
 import { dumpToFile } from "./helpers/dump-to-file";
 import { getModel } from "../generic-ai";
 import fs from "fs/promises";
-import { CostTracking } from "./extraction-service";
+import { CostTracking } from "../cost-tracking";
 
 const THRESHOLD_FOR_SINGLEPAGE = 0.6;
 const THRESHOLD_FOR_MULTIENTITY = 0.45;

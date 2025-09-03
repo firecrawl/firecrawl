@@ -3,7 +3,7 @@ import { WebCrawler, SITEMAP_LIMIT } from "./crawler";
 import { scrapeURL } from "../scrapeURL";
 import { scrapeOptions } from "../../controllers/v2/types";
 import type { Logger } from "winston";
-import { CostTracking } from "../../lib/extract/extraction-service";
+import { CostTracking } from "../../lib/cost-tracking";
 import { parseSitemapXml, processSitemap } from "../../lib/crawler";
 import { ScrapeJobTimeoutError } from "../../lib/error";
 import { ScrapeOptions } from "../../controllers/v1/types";
