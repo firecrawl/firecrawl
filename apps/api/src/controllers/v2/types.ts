@@ -319,6 +319,26 @@ function transformIframeSelector(selector: string): string {
   });
 }
 
+const locationSchema = z
+  .object({
+    country: z
+      .string()
+      .optional()
+      .refine(
+        val =>
+          !val ||
+          Object.keys(countries).includes(val.toUpperCase()) ||
+          val === "US-generic",
+        {
+          message:
+            "Invalid country code. Use a valid ISO 3166-1 alpha-2 country code.",
+        },
+      )
+      .transform(val => (val ? val.toUpperCase() : "US-generic")),
+    languages: z.string().array().optional(),
+  })
+  .optional();
+
 const baseScrapeOptions = z
   .object({
     formats: z
@@ -382,25 +402,7 @@ const baseScrapeOptions = z
     parsers: parsersSchema.optional(),
     actions: actionsSchema.optional(),
 
-    location: z
-      .object({
-        country: z
-          .string()
-          .optional()
-          .refine(
-            val =>
-              !val ||
-              Object.keys(countries).includes(val.toUpperCase()) ||
-              val === "US-generic",
-            {
-              message:
-                "Invalid country code. Please use a valid ISO 3166-1 alpha-2 country code.",
-            },
-          )
-          .transform(val => (val ? val.toUpperCase() : "US-generic")),
-        languages: z.string().array().optional(),
-      })
-      .optional(),
+    location: locationSchema,
 
     skipTlsVerification: z.boolean().default(true),
     removeBase64Images: z.boolean().default(true),
@@ -737,25 +739,7 @@ export const mapRequestSchema = crawlerOptions
     useMock: z.string().optional(),
     filterByPath: z.boolean().default(true),
     useIndex: z.boolean().default(true),
-    location: z
-      .object({
-        country: z
-          .string()
-          .optional()
-          .refine(
-            val =>
-              !val ||
-              Object.keys(countries).includes(val.toUpperCase()) ||
-              val === "US-generic",
-            {
-              message:
-                "Invalid country code. Please use a valid ISO 3166-1 alpha-2 country code.",
-            },
-          )
-          .transform(val => (val ? val.toUpperCase() : "US-generic")),
-        languages: z.string().array().optional(),
-      })
-      .optional(),
+    location: locationSchema,
   })
   .strict(strictMessage);
 
