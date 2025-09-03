@@ -3,6 +3,17 @@ use serde::{Deserialize, Serialize};
 use crate::{FirecrawlApp, FirecrawlError, API_VERSION};
 
 #[serde_with::skip_serializing_none]
+#[derive(Deserialize, Serialize, Debug, Default, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct Location {
+    /// Country code (ISO 3166-1 alpha-2)
+    pub country: Option<String>,
+    
+    /// List of language codes
+    pub languages: Option<Vec<String>>,
+}
+
+#[serde_with::skip_serializing_none]
 #[derive(Deserialize, Serialize, Debug, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct MapOptions {
@@ -17,6 +28,9 @@ pub struct MapOptions {
 
     /// Maximum number of links to return (default: `5000`)
     pub limit: Option<u32>,
+
+    /// Location configuration for proxy location
+    pub location: Option<Location>,
 }
 
 #[derive(Deserialize, Serialize, Debug, Default)]

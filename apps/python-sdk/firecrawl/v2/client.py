@@ -421,6 +421,7 @@ class FirecrawlClient:
         limit: Optional[int] = None,
         sitemap: Optional[Literal["only", "include", "skip"]] = None,
         timeout: Optional[int] = None,
+        location: Optional[Location] = None,
     ) -> MapData:
         """Map a URL and return discovered links.
 
@@ -441,6 +442,7 @@ class FirecrawlClient:
             limit=limit,
             sitemap=sitemap if sitemap is not None else "include",
             timeout=timeout,
+            location=location
         ) if any(v is not None for v in [search, include_subdomains, limit, sitemap, timeout]) else None
 
         return map_module.map(self.http_client, url, options)

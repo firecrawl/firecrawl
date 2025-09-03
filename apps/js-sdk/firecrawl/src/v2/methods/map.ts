@@ -11,6 +11,7 @@ function prepareMapPayload(url: string, options?: MapOptions): Record<string, un
     if (options.includeSubdomains != null) payload.includeSubdomains = options.includeSubdomains;
     if (options.limit != null) payload.limit = options.limit;
     if (options.timeout != null) payload.timeout = options.timeout;
+    if (options.location != null) payload.location = options.location;
   }
   return payload;
 }

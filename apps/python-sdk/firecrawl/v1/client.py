@@ -309,6 +309,7 @@ class V1MapParams(pydantic.BaseModel):
     limit: Optional[int] = None
     timeout: Optional[int] = 30000
     useIndex: Optional[bool] = None
+    location: Optional[V1LocationConfig] = None
 
 class V1MapResponse(pydantic.BaseModel):
     """Response from mapping operations."""
@@ -1333,6 +1334,7 @@ class V1FirecrawlApp:
             limit: Optional[int] = None,
             timeout: Optional[int] = 30000,
             use_index: Optional[bool] = None,
+            location: Optional[V1LocationConfig] = None,
             **kwargs) -> V1MapResponse:
         """
         Map and discover links from a URL.
@@ -1377,6 +1379,8 @@ class V1FirecrawlApp:
             map_params['timeout'] = timeout
         if use_index is not None:
             map_params['useIndex'] = use_index
+        if location is not None:
+            map_params['location'] = location.dict(by_alias=True, exclude_none=True)
         
         # Add any additional kwargs
         map_params.update(kwargs)
@@ -3910,6 +3914,7 @@ class AsyncV1FirecrawlApp(V1FirecrawlApp):
         sitemap_only: Optional[bool] = None,
         limit: Optional[int] = None,
         timeout: Optional[int] = 30000,
+        location: Optional[V1LocationConfig] = None,
         params: Optional[V1MapParams] = None) -> V1MapResponse:
         """
         Asynchronously map and discover links from a URL.
@@ -3952,6 +3957,8 @@ class AsyncV1FirecrawlApp(V1FirecrawlApp):
             map_params['limit'] = limit
         if timeout is not None:
             map_params['timeout'] = timeout
+        if location is not None:
+            map_params['location'] = location.dict(by_alias=True, exclude_none=True)
 
         # Create final params object
         final_params = V1MapParams(**map_params)

@@ -103,6 +103,14 @@ export interface FirecrawlDocument<T = any, ActionsSchema extends (ActionsResult
 }
 
 /**
+ * Location configuration for proxy location
+ */
+export interface LocationConfig {
+  country?: string;
+  languages?: string[];
+}
+
+/**
  * Parameters for scraping operations.
  * Defines the options and configurations available for scraping web content.
  */
@@ -114,10 +122,7 @@ export interface CrawlScrapeOptions {
   onlyMainContent?: boolean;
   waitFor?: number;
   timeout?: number;
-  location?: {
-    country?: string;
-    languages?: string[];
-  };
+  location?: LocationConfig;
   mobile?: boolean;
   skipTlsVerification?: boolean;
   removeBase64Images?: boolean;
@@ -300,6 +305,7 @@ export interface MapParams {
   limit?: number;
   timeout?: number;
   useIndex?: boolean;
+  location?: LocationConfig;
 }
 
 /**

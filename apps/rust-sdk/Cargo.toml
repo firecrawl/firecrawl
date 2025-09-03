@@ -1,7 +1,7 @@
 [package]
 name = "firecrawl"
 author= "Mendable.ai"
-version = "1.2.1"
+version = "1.2.2"
 edition = "2021"
 license = "MIT"
 homepage = "https://www.firecrawl.dev/"

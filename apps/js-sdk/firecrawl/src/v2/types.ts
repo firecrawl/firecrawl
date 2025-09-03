@@ -319,6 +319,7 @@ export interface MapOptions {
   includeSubdomains?: boolean;
   limit?: number;
   timeout?: number;
+  location?: LocationConfig;
 }
 
 export interface ExtractResponse {

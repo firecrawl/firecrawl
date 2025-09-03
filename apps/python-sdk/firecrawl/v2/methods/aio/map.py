@@ -20,6 +20,8 @@ def _prepare_map_request(url: str, options: Optional[MapOptions] = None) -> Dict
             data["limit"] = options.limit
         if options.timeout is not None:
             data["timeout"] = options.timeout
+        if options.location is not None:
+            data["location"] = options.location.model_dump(exclude_none=True)
         payload.update(data)
     return payload
 
