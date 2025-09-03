@@ -1,9 +1,9 @@
 import robotsParser, { Robot } from "robots-parser";
 import { Logger } from "winston";
 import { ScrapeOptions, scrapeOptions } from "../controllers/v2/types";
-import { CostTracking } from "./extract/extraction-service";
 import { scrapeURL } from "../scraper/scrapeURL";
 import { Engine } from "../scraper/scrapeURL/engines";
+import { CostTracking } from "./cost-tracking";
 
 const useFireEngine =
   process.env.FIRE_ENGINE_BETA_URL !== "" &&
