@@ -48,36 +48,20 @@
     "format:rs": "cargo fmt",
     "lint": "oxlint .",
     "prepublishOnly": "napi prepublish -t npm",
-    "test": "ava",
     "version": "napi version"
   },
   "devDependencies": {
-    "@emnapi/core": "^1.4.5",
-    "@emnapi/runtime": "^1.4.5",
-    "@napi-rs/cli": "^3.0.3",
+    "@emnapi/core": "^1.5.0",
+    "@emnapi/runtime": "^1.5.0",
+    "@napi-rs/cli": "^3.1.5",
     "@oxc-node/core": "^0.0.32",
     "@taplo/cli": "^0.7.0",
     "@tybys/wasm-util": "^0.10.0",
-    "ava": "^6.4.1",
-    "chalk": "^5.4.1",
+    "chalk": "^5.6.0",
     "npm-run-all2": "^8.0.4",
-    "oxlint": "^1.8.0",
+    "oxlint": "^1.14.0",
     "prettier": "^3.6.2",
-    "typescript": "^5.8.3"
-  },
-  "ava": {
-    "extensions": {
-      "ts": "module"
-    },
-    "timeout": "2m",
-    "workerThreads": false,
-    "environmentVariables": {
-      "OXC_TSCONFIG_PATH": "./__test__/tsconfig.json"
-    },
-    "nodeArguments": [
-      "--import",
-      "@oxc-node/core/register"
-    ]
+    "typescript": "^5.9.2"
   },
   "prettier": {
     "printWidth": 120,
@@ -86,5 +70,5 @@
     "singleQuote": true,
     "arrowParens": "always"
   },
-  "packageManager": "yarn@4.9.4"
+  "packageManager": "pnpm@10.15.1"
 }
