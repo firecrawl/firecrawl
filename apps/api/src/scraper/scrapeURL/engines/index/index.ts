@@ -246,6 +246,7 @@ export async function scrapeURLWithIndex(
     .from("index")
     .select("id, created_at, status")
     .eq("url_hash", urlHash)
+    .is("invalidated_at", null)
     .gte("created_at", new Date(Date.now() - maxAge).toISOString())
     .eq("is_mobile", meta.options.mobile)
     .eq("block_ads", meta.options.blockAds);
