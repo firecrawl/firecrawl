@@ -7,7 +7,7 @@ import { redisEvictConnection } from "./redis";
 import type { Logger } from "winston";
 import psl from "psl";
 import { MapDocument } from "../controllers/v2/types";
-import { PDFMetadata } from "../lib/pdf-parser";
+import { PdfMetadata } from "@mendable/firecrawl-rs";
 import { storage } from "../lib/gcs-jobs";
 configDotenv();
 
@@ -148,7 +148,7 @@ export async function saveIndexToGCS(
     statusCode: number;
     error?: string;
     screenshot?: string;
-    pdfMetadata?: PDFMetadata;
+    pdfMetadata?: PdfMetadata;
     contentType?: string;
   },
 ): Promise<void> {

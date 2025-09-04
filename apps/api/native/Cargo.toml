@@ -1,0 +1,30 @@
+
+[package]
+authors = ["Firecrawl"]
+edition = "2021"
+name = "firecrawl_rs"
+version = "0.1.0"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+kuchikiki = "0.8.2"
+lol_html = "2.6.0"
+lopdf = "0.38.0"
+napi = { version = "3.0.0", features = ["serde-json"] }
+napi-derive = "3.0.0"
+nodesig = { git = "https://github.com/firecrawl/nodesig" }
+regex = "1.11.2"
+roxmltree = "0.20.0"
+serde = { version = "1.0.219", features = ["derive"] }
+serde_json = "1.0.143"
+texting_robots = "0.2.2"
+url = "2.5.7"
+
+[build-dependencies]
+napi-build = "2"
+
+[profile.release]
+lto = true
+strip = "symbols"

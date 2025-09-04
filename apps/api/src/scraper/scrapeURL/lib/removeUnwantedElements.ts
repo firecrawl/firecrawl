@@ -2,7 +2,7 @@
 
 import { AnyNode, Cheerio, load } from "cheerio"; // rustified
 import { ScrapeOptions } from "../../../controllers/v2/types";
-import { transformHtml } from "../../../lib/html-transformer";
+import { transformHtml } from "@mendable/firecrawl-rs";
 import { logger } from "../../../lib/logger";
 import { queryOMCESignatures } from "../../../services/index";
 
@@ -91,14 +91,14 @@ export const htmlTransform = async (
     return await transformHtml({
       html,
       url,
-      include_tags: (scrapeOptions.includeTags ?? [])
+      includeTags: (scrapeOptions.includeTags ?? [])
         .map(x => x.trim())
         .filter(x => x.length !== 0),
-      exclude_tags: (scrapeOptions.excludeTags ?? [])
+      excludeTags: (scrapeOptions.excludeTags ?? [])
         .map(x => x.trim())
         .filter(x => x.length !== 0),
-      only_main_content: scrapeOptions.onlyMainContent,
-      omce_signatures: omce_signatures,
+      onlyMainContent: scrapeOptions.onlyMainContent,
+      omceSignatures: omce_signatures,
     });
   } catch (error) {
     logger.warn("Failed to call html-transformer! Falling back to cheerio...", {

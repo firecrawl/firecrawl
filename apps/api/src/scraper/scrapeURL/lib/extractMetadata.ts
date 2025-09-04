@@ -1,7 +1,7 @@
 import { load } from "cheerio"; // rustified
 import { Document } from "../../../controllers/v1/types";
 import { Meta } from "..";
-import { extractMetadata as _extractMetadata } from "../../../lib/html-transformer";
+import { extractMetadata as _extractMetadata } from "@mendable/firecrawl-rs";
 
 export async function extractMetadataRust(
   meta: Meta,

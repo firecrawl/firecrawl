@@ -1,6 +1,6 @@
 import { load } from "cheerio";
 import { logger } from "../../../lib/logger";
-import { extractAttributesRust } from "../../../lib/html-transformer";
+import { extractAttributes as _extractAttributes } from "@mendable/firecrawl-rs";
 
 export type AttributeResult = {
   selector: string;
@@ -29,7 +29,7 @@ export async function extractAttributes(
 
   // Try Rust implementation first (faster, non-blocking)
   try {
-    const results = await extractAttributesRust(html, selectors);
+    const results = await _extractAttributes(html, { selectors });
 
     logger.debug("Attribute extraction via Rust", {
       selectorsCount: selectors.length,

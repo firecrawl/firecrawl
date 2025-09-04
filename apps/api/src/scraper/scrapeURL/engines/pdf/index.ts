@@ -16,7 +16,6 @@ import {
 import { readFile, unlink } from "node:fs/promises";
 import path from "node:path";
 import type { Response } from "undici";
-import { getPDFMetadata } from "../../../../lib/pdf-parser";
 import {
   getPdfResultFromCache,
   savePdfResultToCache,
@@ -26,6 +25,7 @@ import {
   shouldParsePDF,
   getPDFMaxPages,
 } from "../../../../controllers/v2/types";
+import { getPdfMetadata } from "@mendable/firecrawl-rs";
 
 type PDFProcessorResult = { html: string; markdown?: string };
 
@@ -240,7 +240,7 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
     }
   }
 
-  const pdfMetadata = await getPDFMetadata(tempFilePath);
+  const pdfMetadata = await getPdfMetadata(tempFilePath);
   const effectivePageCount = maxPages
     ? Math.min(pdfMetadata.numPages, maxPages)
     : pdfMetadata.numPages;

@@ -64,7 +64,6 @@ import {
   AbortManagerThrownError,
 } from "./lib/abortManager";
 import { ScrapeJobTimeoutError } from "../../lib/error";
-import { transformHtml } from "../../lib/html-transformer";
 import { htmlTransform } from "./lib/removeUnwantedElements";
 
 export type ScrapeUrlResponse =

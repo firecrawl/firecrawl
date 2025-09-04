@@ -55,7 +55,8 @@
     "ts-node": "^10.9.1",
     "tsc-watch": "^7.1.1",
     "tsx": "^4.20.3",
-    "typescript": "^5.8.3"
+    "typescript": "^5.8.3",
+    "@mendable/firecrawl-rs": "workspace:*"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^1.2.4",

@@ -7,8 +7,7 @@ import psl from "psl";
 import { getURLDepth } from "./utils/maxDepthUtils";
 import { logger as _logger } from "../../lib/logger";
 import { redisEvictConnection } from "../../services/redis";
-import { extractLinks } from "../../lib/html-transformer";
-import { filterLinks } from "../../lib/crawler";
+import { extractLinks } from "@mendable/firecrawl-rs";
 import {
   fetchRobotsTxt,
   createRobotsChecker,
@@ -17,6 +16,7 @@ import {
 import { ScrapeJobTimeoutError } from "../../lib/error";
 import { Logger } from "winston";
 import { ScrapeOptions } from "../../controllers/v2/types";
+import { filterLinks } from "@mendable/firecrawl-rs";
 
 export const SITEMAP_LIMIT = 100;
 
@@ -167,19 +167,19 @@ export class WebCrawler {
       const res = await filterLinks({
         links: sitemapLinks,
         limit: isFinite(limit) ? limit : undefined,
-        max_depth: maxDepth,
-        base_url: this.baseUrl,
-        initial_url: this.initialUrl,
-        regex_on_full_url: this.regexOnFullURL,
+        maxDepth: maxDepth,
+        baseUrl: this.baseUrl,
+        initialUrl: this.initialUrl,
+        regexOnFullUrl: this.regexOnFullURL,
         excludes: this.excludes,
         includes: this.includes,
-        allow_backward_crawling: this.allowBackwardCrawling,
-        ignore_robots_txt: this.ignoreRobotsTxt,
-        robots_txt: this.robotsTxt,
+        allowBackwardCrawling: this.allowBackwardCrawling,
+        ignoreRobotsTxt: this.ignoreRobotsTxt,
+        robotsTxt: this.robotsTxt,
       });
 
       const fancyDenialReasons = new Map<string, string>();
-      res.denial_reasons.forEach((value, key) => {
+      Object.entries(res.denialReasons).forEach(([key, value]) => {
         fancyDenialReasons.set(key, DenialReason[value]);
       });
 

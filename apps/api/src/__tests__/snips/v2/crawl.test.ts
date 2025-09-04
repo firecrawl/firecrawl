@@ -9,7 +9,7 @@ import {
   scrapeTimeout,
 } from "./lib";
 import { describe, it, expect } from "@jest/globals";
-import { filterLinks } from "../../../lib/crawler";
+import { filterLinks } from "@mendable/firecrawl-rs";
 
 let identity: Identity;
 
@@ -400,23 +400,23 @@ describe("Robots.txt FFI Integration tests", () => {
           "https://example.com/disallowed",
         ],
         limit: 10,
-        max_depth: 10,
-        base_url: "https://example.com",
-        initial_url: "https://example.com",
-        regex_on_full_url: false,
+        maxDepth: 10,
+        baseUrl: "https://example.com",
+        initialUrl: "https://example.com",
+        regexOnFullUrl: false,
         excludes: [],
         includes: [],
-        allow_backward_crawling: true,
-        ignore_robots_txt: false,
-        robots_txt: "User-agent: *\nDisallow: /disallowed",
+        allowBackwardCrawling: true,
+        ignoreRobotsTxt: false,
+        robotsTxt: "User-agent: *\nDisallow: /disallowed",
       });
 
       expect(result.links).toHaveLength(1);
       expect(result.links[0]).toBe("https://example.com/allowed");
-      expect(result.denial_reasons.has("https://example.com/disallowed")).toBe(
+      expect("https://example.com/disallowed" in result.denialReasons).toBe(
         true,
       );
-      expect(result.denial_reasons.get("https://example.com/disallowed")).toBe(
+      expect(result.denialReasons["https://example.com/disallowed"]).toBe(
         "ROBOTS_TXT",
       );
     },
@@ -429,15 +429,15 @@ describe("Robots.txt FFI Integration tests", () => {
       const result = await filterLinks({
         links: ["https://example.com/test"],
         limit: 10,
-        max_depth: 10,
-        base_url: "https://example.com",
-        initial_url: "https://example.com",
-        regex_on_full_url: false,
+        maxDepth: 10,
+        baseUrl: "https://example.com",
+        initialUrl: "https://example.com",
+        regexOnFullUrl: false,
         excludes: [],
         includes: [],
-        allow_backward_crawling: true,
-        ignore_robots_txt: false,
-        robots_txt:
+        allowBackwardCrawling: true,
+        ignoreRobotsTxt: false,
+        robotsTxt:
           "Invalid robots.txt content with \x00 null bytes and malformed syntax",
       });
 
@@ -455,15 +455,15 @@ describe("Robots.txt FFI Integration tests", () => {
       const result = await filterLinks({
         links: ["https://example.com/allowed"],
         limit: 10,
-        max_depth: 10,
-        base_url: "https://example.com",
-        initial_url: "https://example.com",
-        regex_on_full_url: false,
+        maxDepth: 10,
+        baseUrl: "https://example.com",
+        initialUrl: "https://example.com",
+        regexOnFullUrl: false,
         excludes: [],
         includes: [],
-        allow_backward_crawling: true,
-        ignore_robots_txt: false,
-        robots_txt: nonUtf8Content,
+        allowBackwardCrawling: true,
+        ignoreRobotsTxt: false,
+        robotsTxt: nonUtf8Content,
       });
 
       expect(result.links).toHaveLength(1);
@@ -479,15 +479,15 @@ describe("Robots.txt FFI Integration tests", () => {
       const result = await filterLinks({
         links: ["https://example.com/safe"],
         limit: 10,
-        max_depth: 10,
-        base_url: "https://example.com",
-        initial_url: "https://example.com",
-        regex_on_full_url: false,
+        maxDepth: 10,
+        baseUrl: "https://example.com",
+        initialUrl: "https://example.com",
+        regexOnFullUrl: false,
         excludes: [],
         includes: [],
-        allow_backward_crawling: true,
-        ignore_robots_txt: false,
-        robots_txt: problematicContent,
+        allowBackwardCrawling: true,
+        ignoreRobotsTxt: false,
+        robotsTxt: problematicContent,
       });
 
       expect(result.links).toHaveLength(1);

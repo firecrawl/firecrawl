@@ -18,21 +18,6 @@ function createNativePath(subPath: string, filename: string): string {
   return join(process.cwd(), "sharedLibs", subPath, fullFilename);
 }
 
-export const HTML_TRANSFORMER_PATH = createNativePath(
-  "html-transformer/target/release",
-  "html_transformer",
-);
-
-export const PDF_PARSER_PATH = createNativePath(
-  "pdf-parser/target/release",
-  "pdf_parser",
-);
-
-export const CRAWLER_PATH = createNativePath(
-  "crawler/target/release",
-  "crawler",
-);
-
 export const HTML_TO_MARKDOWN_PATH = createNativePath(
   "go-html-to-md",
   "html-to-markdown",

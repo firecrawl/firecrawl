@@ -4,10 +4,10 @@ import { scrapeURL } from "../scrapeURL";
 import { scrapeOptions } from "../../controllers/v2/types";
 import type { Logger } from "winston";
 import { CostTracking } from "../../lib/cost-tracking";
-import { parseSitemapXml, processSitemap } from "../../lib/crawler";
 import { ScrapeJobTimeoutError } from "../../lib/error";
 import type { ScrapeOptions } from "../../controllers/v2/types";
 import { Engine } from "../scrapeURL/engines";
+import { parseSitemapXml, processSitemap } from "@mendable/firecrawl-rs";
 const useFireEngine =
   process.env.FIRE_ENGINE_BETA_URL !== "" &&
   process.env.FIRE_ENGINE_BETA_URL !== undefined;

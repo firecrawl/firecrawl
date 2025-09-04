@@ -4,7 +4,7 @@ import { logger } from "../../../lib/logger";
 import {
   extractLinks as _extractLinks,
   extractBaseHref as _extractBaseHref,
-} from "../../../lib/html-transformer";
+} from "@mendable/firecrawl-rs";
 
 function resolveUrlWithBaseHref(
   href: string,

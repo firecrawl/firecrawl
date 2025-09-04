@@ -27,7 +27,7 @@ import * as Sentry from "@sentry/node";
 import { specialtyScrapeCheck } from "../utils/specialtyHandler";
 import { fireEngineDelete } from "./delete";
 import { MockState } from "../../lib/mock";
-import { getInnerJSON } from "../../../../lib/html-transformer";
+import { getInnerJson } from "@mendable/firecrawl-rs";
 import { hasFormatOfType } from "../../../../lib/format-utils";
 import { Action } from "../../../../controllers/v1/types";
 import { AbortManagerThrownError } from "../../lib/abortManager";
@@ -161,7 +161,7 @@ async function performFireEngineScrape<
     ) ?? [])[1] ?? "";
 
   if (contentType.includes("application/json")) {
-    status.content = await getInnerJSON(status.content);
+    status.content = await getInnerJson(status.content);
   }
 
   if (status.file) {
