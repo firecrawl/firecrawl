@@ -19,7 +19,7 @@ async function feResToPdfPrefetch(
     os.tmpdir(),
     `tempFile-${crypto.randomUUID()}.pdf`,
   );
-  await writeFile(filePath, Buffer.from(feRes.file.content, "base64"));
+  await writeFile(filePath, Buffer.from(feRes.file.content, "base64"));;
 
   return {
     status: feRes.pageStatusCode,
