@@ -19,11 +19,11 @@ jobs:
     name: Run tests
     strategy:
       matrix:
-        ai: ["openai", "no-ai"]
-        search: ["searxng", "google"]
-        engine: ["playwright", "fetch"]
+        ai: ['openai', 'no-ai']
+        search: ['searxng', 'google']
+        engine: ['playwright', 'fetch']
         # proxy: ["proxy", "no-proxy"]
-        proxy: ["proxy"]
+        proxy: ['proxy']
       fail-fast: false
     runs-on: ubuntu-latest
     services:
@@ -47,8 +47,8 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: "20"
-          cache: "pnpm"
+          node-version: '20'
+          cache: 'pnpm'
           cache-dependency-path: './apps/api/pnpm-lock.yaml'
       - name: Install dependencies
         run: pnpm install
@@ -73,21 +73,6 @@ jobs:
           go build -o libhtml-to-markdown.so -buildmode=c-shared html-to-markdown.go
           chmod +x libhtml-to-markdown.so
         working-directory: ./apps/api/sharedLibs/go-html-to-md
-      - name: Build html-transformer
-        run: |
-          cargo build --release
-          chmod +x target/release/libhtml_transformer.so
-        working-directory: ./apps/api/sharedLibs/html-transformer
-      - name: Build pdf-parser
-        run: |
-          cargo build --release
-          chmod +x target/release/libpdf_parser.so
-        working-directory: ./apps/api/sharedLibs/pdf-parser
-      - name: Build crawler
-        run: |
-          cargo build --release
-          chmod +x target/release/libcrawler.so
-        working-directory: ./apps/api/sharedLibs/crawler
       - name: Set up SearXNG
         if: matrix.search == 'searxng'
         run: |
@@ -98,28 +83,28 @@ jobs:
             formats: [html, json, csv]
           server:
             secret_key: 'fcsecret'" > searxng/settings.yml
-          
+
           docker run -d -p 3434:8080 -v "${PWD}/searxng:/etc/searxng" --name searxng searxng/searxng
           pnpx wait-on tcp:3434 -t 30s
         working-directory: ./
       - name: Build the application
-        run: npm run build
+        run: pnpm run build
         working-directory: ./apps/api
       - name: Start server
-        run: npm run start:production:nobuild > api.log 2>&1 &
+        run: pnpm run start:production:nobuild > api.log 2>&1 &
         env:
           PORT: 3002
           HOST: 0.0.0.0
         working-directory: ./apps/api
       - name: Start worker
-        run: npm run worker:production > worker.log 2>&1 &
+        run: pnpm run worker:production > worker.log 2>&1 &
         env:
           PORT: 3005
           HOST: 0.0.0.0
         working-directory: ./apps/api
       - name: Start playwright
         if: matrix.engine == 'playwright'
-        run: npm run dev > playwright.log 2>&1 &
+        run: pnpm run dev > playwright.log 2>&1 &
         working-directory: ./apps/playwright-service-ts
         env:
           PORT: 3003
