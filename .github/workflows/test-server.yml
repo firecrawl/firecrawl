@@ -82,8 +82,6 @@ jobs:
         with:
           go-version: '1.24'
           cache-dependency-path: ./apps/api/sharedLibs/go-html-to-md/go.sum
-      - name: Set up Rust
-        uses: actions-rust-lang/setup-rust-toolchain@v1
       - name: Build go-html-to-md
         run: |
           go mod tidy
