@@ -1,64 +1,77 @@
+# syntax=docker/dockerfile:1
 FROM node:22-slim AS base
 
 ENV PNPM_HOME="/pnpm"
 ENV PATH="$PNPM_HOME:$PATH"
+ENV CI=true
 
 RUN corepack enable
-COPY . /app
-WORKDIR /app
 
-FROM base AS prod-deps
-RUN --mount=type=cache,id=pnpm,target=/pnpm/store pnpm install --prod --frozen-lockfile --ignore-scripts
+# Build Go shared library
+FROM golang:1.24 AS go-build
+WORKDIR /app
+COPY sharedLibs/go-html-to-md ./sharedLibs/go-html-to-md
+
+RUN cd sharedLibs/go-html-to-md && \
+    go mod download && \
+    go build -o libhtml-to-markdown.so -buildmode=c-shared html-to-markdown.go
 
 FROM base AS build
-RUN --mount=type=cache,id=pnpm,target=/pnpm/store pnpm install && pnpm run build
+WORKDIR /app
 
-# Install Go
-FROM golang:1.24 AS go-base
-COPY sharedLibs/go-html-to-md /app/sharedLibs/go-html-to-md
-
-# Install Go dependencies and build parser lib
-RUN cd /app/sharedLibs/go-html-to-md && \
-    go mod download && \
-    go build -o libhtml-to-markdown.so -buildmode=c-shared html-to-markdown.go && \
-    chmod +x libhtml-to-markdown.so
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    curl \
+    build-essential \
+    pkg-config \
+    && rm -rf /var/lib/apt/lists/*
 
 # Install Rust
-FROM rust:1-slim AS rust-base
-COPY sharedLibs/html-transformer /app/sharedLibs/html-transformer
-COPY sharedLibs/pdf-parser /app/sharedLibs/pdf-parser
-COPY sharedLibs/crawler /app/sharedLibs/crawler
+ENV RUSTUP_HOME=/usr/local/rustup \
+    CARGO_HOME=/usr/local/cargo \
+    PATH=/usr/local/cargo/bin:$PATH
 
-# Install Rust dependencies and build transformer lib
-RUN cd /app/sharedLibs/html-transformer && \
-    cargo build --release --locked && \
-    chmod +x target/release/libhtml_transformer.so
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --no-modify-path \
+    && chmod -R a+w $RUSTUP_HOME $CARGO_HOME
 
-# Install Rust dependencies and build PDF parser lib
-RUN cd /app/sharedLibs/pdf-parser && \
-    cargo build --release --locked && \
-    chmod +x target/release/libpdf_parser.so
+# Copy source files
+COPY pnpm-lock.yaml pnpm-workspace.yaml package.json ./
+COPY . .
 
-# Install Rust dependencies and build crawler lib
-RUN cd /app/sharedLibs/crawler && \
-    cargo build --release --locked && \
-    chmod +x target/release/libcrawler.so
+# Install dependencies
+RUN --mount=type=cache,id=pnpm,target=/pnpm/store \
+    --mount=type=cache,target=/usr/local/cargo/registry \
+    --mount=type=cache,target=/app/native/target \
+    pnpm install --frozen-lockfile
 
-FROM base
-COPY --from=build /app/dist /app/dist
-COPY --from=prod-deps /app/node_modules /app/node_modules
-COPY --from=go-base /app/sharedLibs/go-html-to-md/libhtml-to-markdown.so /app/sharedLibs/go-html-to-md/libhtml-to-markdown.so
-COPY --from=rust-base /app/sharedLibs/html-transformer/target/release/libhtml_transformer.so /app/sharedLibs/html-transformer/target/release/libhtml_transformer.so
-COPY --from=rust-base /app/sharedLibs/pdf-parser/target/release/libpdf_parser.so /app/sharedLibs/pdf-parser/target/release/libpdf_parser.so
-COPY --from=rust-base /app/sharedLibs/crawler/target/release/libcrawler.so /app/sharedLibs/crawler/target/release/libcrawler.so
+# Build the application
+RUN pnpm run build
 
-# Install git
-RUN apt-get update && apt-get install -y git procps && rm -rf /var/lib/apt/lists/*
+# Remove dev dependencies
+RUN pnpm prune --prod --ignore-scripts
 
-# Start the server by default, this can be overwritten at runtime
+# Runtime stage
+FROM base AS runtime
+
+# Install runtime dependencies
+RUN apt-get update && apt-get install -y \
+    git \
+    procps \
+    && rm -rf /var/lib/apt/lists/*
+
 EXPOSE 8080
+WORKDIR /app
 
-# Make sure the entrypoint script has the correct line endings
-RUN sed -i 's/\r$//' /app/docker-entrypoint.sh
+# Copy built application
+COPY --from=build /app/node_modules ./node_modules
+COPY --from=build /app/dist ./dist
+COPY --from=build /app/native ./native
 
-ENTRYPOINT "/app/docker-entrypoint.sh"
+# Copy Go shared library
+COPY --from=go-build /app/sharedLibs/go-html-to-md/libhtml-to-markdown.so ./sharedLibs/go-html-to-md/
+
+# Copy and prepare entrypoint
+COPY docker-entrypoint.sh ./
+RUN sed -i 's/\r$//' ./docker-entrypoint.sh && chmod +x ./docker-entrypoint.sh
+
+ENTRYPOINT ["./docker-entrypoint.sh"]

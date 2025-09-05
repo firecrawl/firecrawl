@@ -55,8 +55,7 @@
     "ts-node": "^10.9.1",
     "tsc-watch": "^7.1.1",
     "tsx": "^4.20.3",
-    "typescript": "^5.8.3",
-    "@mendable/firecrawl-rs": "workspace:*"
+    "typescript": "^5.8.3"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^1.2.4",
@@ -160,7 +159,8 @@
     "ws": "^8.18.0",
     "x402-express": "^0.5.3",
     "xml2js": "^0.6.2",
-    "zod": "^3.24.2"
+    "zod": "^3.24.2",
+    "@mendable/firecrawl-rs": "workspace:*"
   },
   "nodemonConfig": {
     "ignore": [
@@ -180,5 +180,6 @@
   },
   "lint-staged": {
     "*.{js,jsx,ts,tsx,json,css,md}": "prettier --write"
-  }
+  },
+  "packageManager": "pnpm@10.15.1"
 }

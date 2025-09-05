@@ -48,7 +48,8 @@
     "format:rs": "cargo fmt",
     "lint": "oxlint .",
     "prepublishOnly": "napi prepublish -t npm",
-    "version": "napi version"
+    "version": "napi version",
+    "install": "pnpm build"
   },
   "devDependencies": {
     "@emnapi/core": "^1.5.0",
@@ -69,6 +70,5 @@
     "trailingComma": "all",
     "singleQuote": true,
     "arrowParens": "always"
-  },
-  "packageManager": "pnpm@10.15.1"
+  }
 }

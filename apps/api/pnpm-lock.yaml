@@ -3,6 +3,7 @@ lockfileVersion: '9.0'
 settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
+  injectWorkspacePackages: true
 
 overrides:
   brace-expansion@>=2.0.0 <=2.0.1: 2.0.2
@@ -56,6 +57,9 @@ importers:
       '@google-cloud/storage':
         specifier: ^7.16.0
         version: 7.16.0(encoding@0.1.13)
+      '@mendable/firecrawl-rs':
+        specifier: workspace:*
+        version: link:native
       '@nangohq/node':
         specifier: ^0.40.8
         version: 0.40.8
@@ -321,9 +325,6 @@ importers:
       '@jest/globals':
         specifier: ^29.7.0
         version: 29.7.0
-      '@mendable/firecrawl-rs':
-        specifier: workspace:*
-        version: link:native
       '@tsconfig/recommended':
         specifier: ^1.0.3
         version: 1.0.6

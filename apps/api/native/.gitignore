@@ -1,7 +1,3 @@
-
-# Created by https://www.toptal.com/developers/gitignore/api/node
-# Edit at https://www.toptal.com/developers/gitignore?templates=node
-
 ### Node ###
 # Logs
 logs
@@ -111,20 +107,14 @@ dist
 # Stores VSCode versions used for testing VSCode extensions
 .vscode-test
 
-# End of https://www.toptal.com/developers/gitignore/api/node
-
-
-#Added by cargo
-
+# Rust
 /target
 Cargo.lock
 
 *.node
 .pnp.*
-.yarn/*
-!.yarn/patches
-!.yarn/plugins
-!.yarn/releases
-!.yarn/sdks
-!.yarn/versions
 /npm
+
+index.js
+index.d.ts
+browser.js
