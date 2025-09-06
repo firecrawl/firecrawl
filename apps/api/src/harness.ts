@@ -40,9 +40,15 @@ if (process.argv.length < 3) {
 
 const command = process.argv.slice(2);
 
-function execForward(fancyName: string, command: string): Promise<void> {
+function execForward(
+  fancyName: string,
+  command: string,
+  env: Record<string, string> = {},
+): Promise<void> {
   return new Promise((resolve, reject) => {
-    const child = exec(command);
+    const child = exec(command, {
+      env: { ...process.env, ...env },
+    });
     let stdoutBuffer = "";
     let stderrBuffer = "";
     child.stdout?.on("data", data => {
@@ -92,18 +98,6 @@ function execForward(fancyName: string, command: string): Promise<void> {
           console.log("=== Skipping install and build, using built files...");
         }
       })(),
-      execForward(
-        "sharedLibs/crawler@build",
-        "cd sharedLibs/crawler && cargo build --release",
-      ),
-      execForward(
-        "sharedLibs/html-transformer@build",
-        "cd sharedLibs/html-transformer && cargo build --release",
-      ),
-      execForward(
-        "sharedLibs/pdf-parser@build",
-        "cd sharedLibs/pdf-parser && cargo build --release",
-      ),
       (async () => {
         const install = execForward(
           "sharedLibs/go-html-to-md@install",
@@ -134,14 +128,18 @@ function execForward(fancyName: string, command: string): Promise<void> {
       ? "node dist/src/services/queue-worker.js"
       : "pnpm worker:production",
   );
-  const nuqWorkers = new Array(5)
-    .fill(0)
-    .map((_, i) =>
-      execForward(
-        `nuq-worker-${i}`,
-        `NUQ_WORKER_PORT=${3006 + i} NUQ_REDUCE_NOISE=true ${process.argv[2] === "--start-docker" ? "node dist/src/services/worker/nuq-worker.js" : "pnpm nuq-worker:production"}`,
-      ),
-    );
+  const nuqWorkers = new Array(5).fill(0).map((_, i) =>
+    execForward(
+      `nuq-worker-${i}`,
+      process.argv[2] === "--start-docker"
+        ? "node dist/src/services/worker/nuq-worker.js"
+        : "pnpm nuq-worker:production",
+      {
+        NUQ_WORKER_PORT: String(3006 + i),
+        NUQ_REDUCE_NOISE: "true",
+      },
+    ),
+  );
   const indexWorker =
     process.env.USE_DB_AUTHENTICATION === "true"
       ? execForward(
