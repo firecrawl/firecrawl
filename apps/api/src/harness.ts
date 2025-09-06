@@ -299,7 +299,9 @@ function printUsage() {
 async function main() {
   process.on("SIGINT", gracefulShutdown);
   process.on("SIGTERM", gracefulShutdown);
-  process.on("exit", gracefulShutdown);
+  process.on("beforeExit", () => {
+    void gracefulShutdown();
+  });
 
   try {
     if (process.argv.length < 3) {
