@@ -1,120 +1,209 @@
 import "dotenv/config";
-import { exec } from "child_process";
+import { type ChildProcess, spawn } from "child_process";
 import * as net from "net";
 import { basename } from "path";
 import { HTML_TO_MARKDOWN_PATH } from "./natives";
 
-function waitForPort(port: number, host: string): Promise<void> {
-  return new Promise(resolve => {
+const childProcesses = new Set<ChildProcess>();
+
+interface ProcessResult {
+  promise: Promise<void>;
+  process: ChildProcess;
+}
+
+function waitForPort(
+  port: number,
+  host: string,
+  timeoutMs = 10000,
+): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      reject(
+        new Error(
+          `Port ${port} did not become available within ${timeoutMs}ms`,
+        ),
+      );
+    }, timeoutMs);
+
     const checkPort = () => {
       const socket = new net.Socket();
-
       const onError = () => {
         socket.destroy();
-        setTimeout(checkPort, 1000); // Try again in 1 second
+        setTimeout(checkPort, 1000);
       };
-
       socket.once("error", onError);
-
+      socket.setTimeout(1000);
       socket.connect(port, host, () => {
         socket.destroy();
+        clearTimeout(timeout);
         resolve();
       });
     };
-
     checkPort();
   });
 }
 
-if (process.argv.length < 3) {
-  console.error("Usage: pnpm harness <command...>");
-  console.error();
-  console.error(
-    "The harness ensures that the dependencies are up to date, everything is built, and the API and Worker are running, before running a command that would require the above.",
-  );
-  console.error(
-    "It also tears down the API and Worker after the command is run.",
-  );
-  process.exit(1);
-}
-
-const command = process.argv.slice(2);
-
 function execForward(
-  fancyName: string,
-  command: string,
+  name: string,
+  command: string | string[],
   env: Record<string, string> = {},
-): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const child = exec(command, {
+): ProcessResult {
+  let child: ChildProcess;
+
+  if (typeof command === "string") {
+    const isWindows = process.platform === "win32";
+    if (isWindows) {
+      child = spawn("cmd", ["/c", command], {
+        env: { ...process.env, ...env },
+        shell: false,
+      });
+    } else {
+      child = spawn("sh", ["-c", command], {
+        env: { ...process.env, ...env },
+        shell: false,
+      });
+    }
+  } else {
+    const [cmd, ...args] = command;
+    child = spawn(cmd, args, {
       env: { ...process.env, ...env },
+      shell: false,
     });
+  }
+
+  childProcesses.add(child);
+
+  const promise = new Promise<void>((resolve, reject) => {
     let stdoutBuffer = "";
     let stderrBuffer = "";
-    child.stdout?.on("data", data => {
-      stdoutBuffer += data;
-      while (stdoutBuffer.includes("\n")) {
-        const split = stdoutBuffer.split("\n");
-        const line = split[0];
-        stdoutBuffer = split.slice(1).join("\n");
-        process.stdout.write(`[${fancyName}] ${line}\n`);
+
+    const processOutput = (data: string, isError = false) => {
+      const buffer = isError ? stderrBuffer : stdoutBuffer;
+      const newBuffer = buffer + data;
+      const lines = newBuffer.split("\n");
+      const completeLines = lines.slice(0, -1);
+      const remainingBuffer = lines[lines.length - 1];
+
+      completeLines.forEach(line => {
+        const output = isError ? process.stderr : process.stdout;
+        output.write(`[${name}] ${line}\n`);
+      });
+
+      if (isError) {
+        stderrBuffer = remainingBuffer;
+      } else {
+        stdoutBuffer = remainingBuffer;
       }
-    });
-    child.stderr?.on("data", data => {
-      stderrBuffer += data;
-      while (stderrBuffer.includes("\n")) {
-        const split = stderrBuffer.split("\n");
-        const line = split[0];
-        stderrBuffer = split.slice(1).join("\n");
-        process.stderr.write(`[${fancyName}] ${line}\n`);
-      }
-    });
+    };
+
+    child.stdout?.on("data", data => processOutput(data.toString(), false));
+    child.stderr?.on("data", data => processOutput(data.toString(), true));
+
     child.on("close", code => {
+      childProcesses.delete(child);
       if (code !== 0) {
-        reject(
-          new Error(
-            `Command ${JSON.stringify(command)} failed with code ${code}`,
-          ),
-        );
+        reject(new Error(`${name} failed with exit code ${code}`));
       } else {
         resolve();
       }
     });
+
+    child.on("error", error => {
+      childProcesses.delete(child);
+      reject(new Error(`${name} failed to start: ${error.message}`));
+    });
+  });
+
+  return { promise, process: child };
+}
+
+function terminateProcess(proc: any): Promise<void> {
+  return new Promise(resolve => {
+    if (!proc || proc.killed || proc.exitCode !== null) {
+      resolve();
+      return;
+    }
+
+    let resolved = false;
+    const resolveOnce = () => {
+      if (!resolved) {
+        resolved = true;
+        resolve();
+      }
+    };
+
+    proc.on("close", resolveOnce);
+    proc.on("exit", resolveOnce);
+    proc.on("error", resolveOnce);
+
+    try {
+      proc.kill("SIGTERM");
+    } catch (error) {
+      resolveOnce();
+      return;
+    }
+
+    setTimeout(() => {
+      if (!proc.killed && proc.exitCode === null) {
+        try {
+          proc.kill("SIGKILL");
+        } catch (error) {
+          // process already dead
+        }
+      }
+      resolveOnce();
+    }, 5000);
   });
 }
 
-(async () => {
-  if (process.argv[2] !== "--start-docker") {
-    console.log("=== Installing dependencies and building all components...");
-    await Promise.all([
-      (async () => {
-        if (process.argv[2] !== "--start-built") {
-          const install = execForward("api@install", "pnpm install");
-          await install;
+async function gracefulShutdown() {
+  console.log("=== Shutting down all processes...");
+  const terminationPromises = Array.from(childProcesses).map(terminateProcess);
+  await Promise.all(terminationPromises);
+  console.log("=== All processes terminated");
+}
 
-          const build = execForward("api@build", "pnpm build");
-          await build;
-        } else {
-          console.log("=== Skipping install and build, using built files...");
-        }
-      })(),
-      (async () => {
-        const install = execForward(
-          "sharedLibs/go-html-to-md@install",
-          "cd sharedLibs/go-html-to-md && go mod tidy",
-        );
-        await install;
+async function buildDependencies() {
+  console.log("=== Installing dependencies and building components...");
 
-        const build = execForward(
-          "sharedLibs/go-html-to-md@build",
-          `cd sharedLibs/go-html-to-md && go build -o ${basename(HTML_TO_MARKDOWN_PATH)} -buildmode=c-shared html-to-markdown.go`,
-        );
-        await build;
-      })(),
-    ]);
-  }
+  const tasks = [
+    (async () => {
+      if (process.argv[2] !== "--start-built") {
+        console.log("Installing API dependencies...");
+        const install = execForward("api@install", "pnpm install");
+        await install.promise;
 
-  console.log("=== Starting API, Worker, and Index Worker...");
+        console.log("Building API...");
+        const build = execForward("api@build", "pnpm build");
+        await build.promise;
+      } else {
+        console.log("Skipping API install and build...");
+      }
+    })(),
+
+    (async () => {
+      console.log("Installing Go dependencies...");
+      const install = execForward(
+        "go-html-to-md@install",
+        "cd sharedLibs/go-html-to-md && go mod tidy",
+      );
+      await install.promise;
+
+      console.log("Building Go module...");
+      const build = execForward(
+        "go-html-to-md@build",
+        `cd sharedLibs/go-html-to-md && go build -o ${basename(HTML_TO_MARKDOWN_PATH)} -buildmode=c-shared html-to-markdown.go`,
+      );
+      await build.promise;
+    })(),
+  ];
+
+  await Promise.all(tasks);
+  console.log("=== Build completed successfully");
+}
+
+async function startServices() {
+  console.log("=== Starting services...");
 
   const api = execForward(
     "api",
@@ -128,7 +217,8 @@ function execForward(
       ? "node dist/src/services/queue-worker.js"
       : "pnpm worker:production",
   );
-  const nuqWorkers = new Array(5).fill(0).map((_, i) =>
+
+  const nuqWorkers = Array.from({ length: 5 }, (_, i) =>
     execForward(
       `nuq-worker-${i}`,
       process.argv[2] === "--start-docker"
@@ -140,6 +230,7 @@ function execForward(
       },
     ),
   );
+
   const indexWorker =
     process.env.USE_DB_AUTHENTICATION === "true"
       ? execForward(
@@ -150,58 +241,108 @@ function execForward(
         )
       : null;
 
+  console.log("Waiting for API to start...");
+  await waitForPort(3002, "localhost");
+  console.log("=== API is ready");
+
+  return {
+    api: api.promise,
+    worker: worker.promise,
+    nuqWorkers: nuqWorkers.map(w => w.promise),
+    indexWorker: indexWorker?.promise,
+  };
+}
+
+async function runCommand(command: string[], services: any) {
+  console.log(`=== Running command: ${command.join(" ")}`);
+
+  const cmd = execForward("command", command);
+
+  await Promise.race([
+    cmd.promise,
+    services.api,
+    services.worker,
+    ...services.nuqWorkers,
+    ...(services.indexWorker ? [services.indexWorker] : []),
+  ]);
+}
+
+async function waitForTermination(services: any) {
+  console.log("=== All services running. Press Ctrl+C to stop...");
+
+  await Promise.race([
+    new Promise<void>(resolve => {
+      process.on("SIGINT", resolve);
+      process.on("SIGTERM", resolve);
+    }),
+    services.api,
+    services.worker,
+    ...services.nuqWorkers,
+    ...(services.indexWorker ? [services.indexWorker] : []),
+  ]);
+}
+
+function printUsage() {
+  console.error("Usage: pnpm harness <command...>");
+  console.error();
+  console.error("Special commands:");
+  console.error("  --start        Start services and wait for termination");
+  console.error("  --start-built  Start services without rebuilding");
+  console.error("  --start-docker Start services (skip build completely)");
+  console.error();
+  console.error(
+    "The harness ensures dependencies are installed, everything is built,",
+  );
+  console.error("and services are running before executing your command.");
+}
+
+async function main() {
+  process.on("SIGINT", gracefulShutdown);
+  process.on("SIGTERM", gracefulShutdown);
+  process.on("exit", gracefulShutdown);
+
   try {
-    await Promise.race([
-      waitForPort(3002, "localhost"),
-      new Promise(reject =>
-        setTimeout(() => reject(new Error("API did not start in time")), 10000),
-      ),
-    ]);
+    if (process.argv.length < 3) {
+      printUsage();
+      process.exit(1);
+    }
 
-    if (
-      process.argv[2] === "--start" ||
-      process.argv[2] === "--start-built" ||
-      process.argv[2] === "--start-docker"
-    ) {
-      console.log(
-        "=== Everything is up and running, waiting for termination or failure...",
-      );
-      await Promise.race([
-        new Promise(resolve => {
-          process.on("SIGINT", resolve);
-          process.on("SIGTERM", resolve);
-        }),
-        api,
-        worker,
-        ...nuqWorkers,
-        ...(indexWorker ? [indexWorker] : []),
-      ]);
+    const command = process.argv.slice(2);
+    const isStartCommand = [
+      "--start",
+      "--start-built",
+      "--start-docker",
+    ].includes(command[0]);
+
+    if (command[0] !== "--start-docker") {
+      await buildDependencies();
+    }
+
+    const services = await startServices();
+
+    if (isStartCommand) {
+      await waitForTermination(services);
     } else {
-      console.log("=== Running command...");
-      const cmd = execForward("command", command.join(" "));
-      await Promise.race([
-        cmd,
-        api,
-        worker,
-        ...nuqWorkers,
-        ...(indexWorker ? [indexWorker] : []),
-      ]);
+      await runCommand(command, services);
     }
+  } catch (error) {
+    console.error("=== Error occurred:");
+    console.error(error);
+    process.exit(1);
   } finally {
-    console.log("=== Tearing down API, Worker, and Index Worker...");
-    exec("pkill -f 'queue-worker.js'");
-    exec("pkill -f 'index.js'");
-    if (indexWorker) {
-      exec("pkill -f 'index-worker.js'");
-    }
-    exec("pkill -f 'nuq-worker.js'");
-    await Promise.all([
-      api,
-      worker,
-      ...nuqWorkers,
-      ...(indexWorker ? [indexWorker] : []),
-    ]);
+    await gracefulShutdown();
+    console.log("=== Goodbye!");
   }
+}
 
-  console.log("=== Goodbye!");
-})();
+process.on("unhandledRejection", async (reason, promise) => {
+  console.error("Unhandled Rejection at:", promise, "reason:", reason);
+  await gracefulShutdown();
+  process.exit(1);
+});
+
+main().catch(async error => {
+  console.error("Fatal error in main:", error);
+  await gracefulShutdown();
+  process.exit(1);
+});
