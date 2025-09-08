@@ -505,7 +505,7 @@ class V1FirecrawlApp:
         Initialize the V1FirecrawlApp instance with API key, API URL.
 
         Args:
-            api_key (Optional[str]): API key for authenticating with the Firecrawl API.
+            api_key (Optional[str]): API key (or set ``FIRECRAWL_API_KEY``)
             api_url (Optional[str]): Base URL for the Firecrawl API.
         """
         self.api_key = api_key or os.getenv('FIRECRAWL_API_KEY')

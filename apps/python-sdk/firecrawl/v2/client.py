@@ -71,7 +71,7 @@ class FirecrawlClient:
         Initialize the Firecrawl client.
         
         Args:
-            api_key: (Optional[str]): API key for authenticating with the Firecrawl API.
+            api_key: (Optional[str]): API key (or set ``FIRECRAWL_API_KEY``)
             api_url: Base URL for the Firecrawl API
             timeout: Request timeout in seconds
             max_retries: Maximum number of retries for failed requests
