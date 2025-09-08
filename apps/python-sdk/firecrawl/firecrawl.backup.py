@@ -23,6 +23,7 @@ import websockets
 import aiohttp
 import asyncio
 from pydantic import Field
+from urllib.parse import urlparse
 
 
 def get_version():
@@ -448,7 +449,7 @@ class FirecrawlApp:
         self.api_url = api_url or os.getenv('FIRECRAWL_API_URL', 'https://api.firecrawl.dev')
         
         # Only require API key when using cloud service
-        if 'api.firecrawl.dev' in self.api_url and self.api_key is None:
+        if not self.api_key and urlparse(self.api_url).hostname == "api.firecrawl.dev":
             logger.warning("No API key provided for cloud service")
             raise ValueError('No API key provided')
             

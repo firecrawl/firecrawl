@@ -5,6 +5,7 @@ This module provides the main client class that orchestrates all v2 functionalit
 """
 
 import os
+from urllib.parse import urlparse
 from typing import Optional, List, Dict, Any, Callable, Union, Literal
 from .types import (
     ClientConfig,
@@ -79,7 +80,7 @@ class FirecrawlClient:
         if api_key is None:
             api_key = os.getenv("FIRECRAWL_API_KEY")
 
-        if 'api.firecrawl.dev' in api_url and not api_key:
+        if not api_key and urlparse(api_url).hostname == "api.firecrawl.dev":
             raise ValueError(
                 "API key is required. Set FIRECRAWL_API_KEY environment variable "
                 "or pass api_key parameter."

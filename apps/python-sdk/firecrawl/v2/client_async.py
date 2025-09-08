@@ -4,6 +4,7 @@ Async v2 client mirroring the regular client surface using true async HTTP trans
 
 import os
 import asyncio
+from urllib.parse import urlparse
 from typing import Optional, List, Dict, Any, Union, Callable, Literal
 from .types import (
     ScrapeOptions,
@@ -51,7 +52,7 @@ class AsyncFirecrawlClient:
         if api_key is None:
             api_key = os.getenv("FIRECRAWL_API_KEY")
         
-        if 'api.firecrawl.dev' in api_url and not api_key:
+        if not api_key and urlparse(api_url).hostname == "api.firecrawl.dev":
             raise ValueError("API key is required. Set FIRECRAWL_API_KEY or pass api_key.")
         
         self.http_client = HttpClient(api_key, api_url)
