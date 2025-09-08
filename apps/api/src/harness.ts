@@ -11,6 +11,107 @@ interface ProcessResult {
   process: ChildProcess;
 }
 
+const colors = {
+  reset: "\x1b[0m",
+  bold: "\x1b[1m",
+  dim: "\x1b[2m",
+  red: "\x1b[31m",
+  green: "\x1b[32m",
+  yellow: "\x1b[33m",
+  blue: "\x1b[34m",
+  magenta: "\x1b[35m",
+  cyan: "\x1b[36m",
+  gray: "\x1b[90m",
+  white: "\x1b[37m",
+};
+
+const processGroupColors: Record<string, string> = {
+  api: colors.green,
+  worker: colors.blue,
+  nuq: colors.cyan,
+  index: colors.magenta,
+  go: colors.yellow,
+  command: colors.white,
+};
+
+function getProcessGroup(name: string): string {
+  let group = name;
+  if (name.includes("@")) {
+    group = name.split("@")[0];
+  } else if (name.includes("-")) {
+    group = name.split("-")[0];
+  }
+  return group;
+}
+
+function getProcessColor(name: string): string {
+  const group = getProcessGroup(name);
+  return processGroupColors[group] || colors.gray;
+}
+
+function formatDuration(nanoseconds: bigint): string {
+  const milliseconds = Number(nanoseconds) / 1e6;
+  if (milliseconds < 1000) {
+    return `${milliseconds.toFixed(0)}ms`;
+  }
+  const seconds = milliseconds / 1000;
+  if (seconds < 60) {
+    return `${seconds.toFixed(1)}s`;
+  }
+  const minutes = Math.floor(seconds / 60);
+  const remainingSeconds = seconds - minutes * 60;
+  return `${minutes}m ${remainingSeconds.toFixed(0)}s`;
+}
+
+const logger = {
+  section(message: string) {
+    console.log(
+      `\n${colors.bold}${colors.blue}━━ ${message} ━━${colors.reset}\n`,
+    );
+  },
+
+  info(message: string) {
+    console.log(message);
+  },
+
+  success(message: string) {
+    console.log(`${colors.green}✓${colors.reset} ${message}`);
+  },
+
+  warn(message: string) {
+    console.log(`${colors.yellow}!${colors.reset} ${message}`);
+  },
+
+  error(message: string) {
+    console.error(`${colors.red}✗${colors.reset} ${message}`);
+  },
+
+  processStart(name: string, command: string) {
+    const color = getProcessColor(name);
+    console.log(
+      `${colors.gray}>${colors.reset} ${color}${colors.bold}${name}${colors.reset} ${colors.dim}${command}${colors.reset}`,
+    );
+  },
+
+  processEnd(name: string, exitCode: number | null, duration: bigint) {
+    const color = getProcessColor(name);
+    const symbol = exitCode === 0 ? "●" : "✗";
+    const symbolColor = exitCode === 0 ? colors.green : colors.red;
+    const timing = `${colors.dim}${formatDuration(duration)}${colors.reset}`;
+    const codeInfo =
+      exitCode !== 0 ? ` ${colors.red}(${exitCode})${colors.reset}` : "";
+    console.log(
+      `${symbolColor}${symbol}${colors.reset} ${color}${colors.bold}${name}${colors.reset} ${timing}${codeInfo}`,
+    );
+  },
+
+  processOutput(name: string, line: string) {
+    const color = getProcessColor(name);
+    const label = `${color}${name.padEnd(12)}${colors.reset}`;
+    console.log(`${label} ${line}`);
+  },
+};
+
 function waitForPort(
   port: number,
   host: string,
@@ -29,7 +130,7 @@ function waitForPort(
       const socket = new net.Socket();
       const onError = () => {
         socket.destroy();
-        setTimeout(checkPort, 1000);
+        setTimeout(checkPort, 250);
       };
       socket.once("error", onError);
       socket.setTimeout(1000);
@@ -49,8 +150,10 @@ function execForward(
   env: Record<string, string> = {},
 ): ProcessResult {
   let child: ChildProcess;
+  let displayCommand = "";
 
   if (typeof command === "string") {
+    displayCommand = command;
     const isWindows = process.platform === "win32";
     if (isWindows) {
       child = spawn("cmd", ["/c", command], {
@@ -65,28 +168,33 @@ function execForward(
     }
   } else {
     const [cmd, ...args] = command;
+    displayCommand = [cmd, ...args].join(" ");
     child = spawn(cmd, args, {
       env: { ...process.env, ...env },
       shell: false,
     });
   }
 
+  logger.processStart(name, displayCommand);
   childProcesses.add(child);
 
+  const startTime = process.hrtime.bigint();
   const promise = new Promise<void>((resolve, reject) => {
     let stdoutBuffer = "";
     let stderrBuffer = "";
 
     const processOutput = (data: string, isError = false) => {
       const buffer = isError ? stderrBuffer : stdoutBuffer;
-      const newBuffer = buffer + data;
+      const newBuffer =
+        buffer + data.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
       const lines = newBuffer.split("\n");
       const completeLines = lines.slice(0, -1);
       const remainingBuffer = lines[lines.length - 1];
 
       completeLines.forEach(line => {
-        const output = isError ? process.stderr : process.stdout;
-        output.write(`[${name}] ${line}\n`);
+        if (line.trim()) {
+          logger.processOutput(name, line);
+        }
       });
 
       if (isError) {
@@ -101,6 +209,7 @@ function execForward(
 
     child.on("close", code => {
       childProcesses.delete(child);
+      logger.processEnd(name, code, process.hrtime.bigint() - startTime);
       if (code !== 0) {
         reject(new Error(`${name} failed with exit code ${code}`));
       } else {
@@ -110,6 +219,7 @@ function execForward(
 
     child.on("error", error => {
       childProcesses.delete(child);
+      logger.processEnd(name, -1, process.hrtime.bigint() - startTime);
       reject(new Error(`${name} failed to start: ${error.message}`));
     });
   });
@@ -138,7 +248,7 @@ function terminateProcess(proc: any): Promise<void> {
 
     try {
       proc.kill("SIGTERM");
-    } catch (error) {
+    } catch {
       resolveOnce();
       return;
     }
@@ -147,49 +257,51 @@ function terminateProcess(proc: any): Promise<void> {
       if (!proc.killed && proc.exitCode === null) {
         try {
           proc.kill("SIGKILL");
-        } catch (error) {
-          // process already dead
-        }
+        } catch {}
       }
       resolveOnce();
     }, 5000);
   });
 }
 
+let shuttingDown = false;
 async function gracefulShutdown() {
-  console.log("=== Shutting down all processes...");
+  if (shuttingDown) return;
+  shuttingDown = true;
+
+  logger.section("Shutting down");
   const terminationPromises = Array.from(childProcesses).map(terminateProcess);
   await Promise.all(terminationPromises);
-  console.log("=== All processes terminated");
+  logger.success("All processes terminated");
 }
 
 async function buildDependencies() {
-  console.log("=== Installing dependencies and building components...");
+  logger.section("Build");
 
   const tasks = [
     (async () => {
       if (process.argv[2] !== "--start-built") {
-        console.log("Installing API dependencies...");
+        logger.info("Installing API dependencies");
         const install = execForward("api@install", "pnpm install");
         await install.promise;
 
-        console.log("Building API...");
+        logger.info("Building API");
         const build = execForward("api@build", "pnpm build");
         await build.promise;
       } else {
-        console.log("Skipping API install and build...");
+        logger.warn("Skipping API install and build");
       }
     })(),
 
     (async () => {
-      console.log("Installing Go dependencies...");
+      logger.info("Installing Go dependencies");
       const install = execForward(
         "go-html-to-md@install",
         "cd sharedLibs/go-html-to-md && go mod tidy",
       );
       await install.promise;
 
-      console.log("Building Go module...");
+      logger.info("Building Go module");
       const build = execForward(
         "go-html-to-md@build",
         `cd sharedLibs/go-html-to-md && go build -o ${basename(HTML_TO_MARKDOWN_PATH)} -buildmode=c-shared html-to-markdown.go`,
@@ -199,11 +311,11 @@ async function buildDependencies() {
   ];
 
   await Promise.all(tasks);
-  console.log("=== Build completed successfully");
+  logger.success("Build completed");
 }
 
 async function startServices() {
-  console.log("=== Starting services...");
+  logger.section("Starting services");
 
   const api = execForward(
     "api",
@@ -211,6 +323,7 @@ async function startServices() {
       ? "node dist/src/index.js"
       : "pnpm server:production:nobuild",
   );
+
   const worker = execForward(
     "worker",
     process.argv[2] === "--start-docker"
@@ -241,9 +354,9 @@ async function startServices() {
         )
       : null;
 
-  console.log("Waiting for API to start...");
+  logger.info("Waiting for API on localhost:3002");
   await waitForPort(3002, "localhost");
-  console.log("=== API is ready");
+  logger.success("API is ready");
 
   return {
     api: api.promise,
@@ -254,10 +367,8 @@ async function startServices() {
 }
 
 async function runCommand(command: string[], services: any) {
-  console.log(`=== Running command: ${command.join(" ")}`);
-
+  logger.section(`Running: ${command.join(" ")}`);
   const cmd = execForward("command", command);
-
   await Promise.race([
     cmd.promise,
     services.api,
@@ -268,8 +379,7 @@ async function runCommand(command: string[], services: any) {
 }
 
 async function waitForTermination(services: any) {
-  console.log("=== All services running. Press Ctrl+C to stop...");
-
+  logger.info("All services running. Press Ctrl+C to stop");
   await Promise.race([
     new Promise<void>(resolve => {
       process.on("SIGINT", resolve);
@@ -283,25 +393,22 @@ async function waitForTermination(services: any) {
 }
 
 function printUsage() {
-  console.error("Usage: pnpm harness <command...>");
-  console.error();
-  console.error("Special commands:");
-  console.error("  --start        Start services and wait for termination");
-  console.error("  --start-built  Start services without rebuilding");
-  console.error("  --start-docker Start services (skip build completely)");
-  console.error();
   console.error(
-    "The harness ensures dependencies are installed, everything is built,",
+    `${colors.bold}Usage:${colors.reset} pnpm harness <command...>\n`,
   );
-  console.error("and services are running before executing your command.");
+  console.error(`${colors.bold}Special commands:${colors.reset}`);
+  console.error(`  --start        Start services and wait for termination`);
+  console.error(`  --start-built  Start services without rebuilding`);
+  console.error(`  --start-docker Start services (skip build completely)\n`);
+  console.error(
+    `The harness ensures dependencies are installed, everything is built,`,
+  );
+  console.error(`and services are running before executing your command.`);
 }
 
 async function main() {
   process.on("SIGINT", gracefulShutdown);
   process.on("SIGTERM", gracefulShutdown);
-  process.on("beforeExit", () => {
-    void gracefulShutdown();
-  });
 
   try {
     if (process.argv.length < 3) {
@@ -327,24 +434,26 @@ async function main() {
     } else {
       await runCommand(command, services);
     }
-  } catch (error) {
-    console.error("=== Error occurred:");
-    console.error(error);
+  } catch (error: any) {
+    logger.error("Fatal error occurred");
+    console.error(error?.stack || error?.message || error);
     process.exit(1);
   } finally {
     await gracefulShutdown();
-    console.log("=== Goodbye!");
+    logger.info("Goodbye!");
   }
 }
 
 process.on("unhandledRejection", async (reason, promise) => {
-  console.error("Unhandled Rejection at:", promise, "reason:", reason);
+  logger.error("Unhandled rejection");
+  console.error(reason);
   await gracefulShutdown();
   process.exit(1);
 });
 
 main().catch(async error => {
-  console.error("Fatal error in main:", error);
+  logger.error("Fatal error in main");
+  console.error(error?.stack || error?.message || error);
   await gracefulShutdown();
   process.exit(1);
 });
