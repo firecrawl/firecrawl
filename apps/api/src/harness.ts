@@ -38,7 +38,8 @@ function getProcessGroup(name: string): string {
   let group = name;
   if (name.includes("@")) {
     group = name.split("@")[0];
-  } else if (name.includes("-")) {
+  }
+  if (name.includes("-")) {
     group = name.split("-")[0];
   }
   return group;
