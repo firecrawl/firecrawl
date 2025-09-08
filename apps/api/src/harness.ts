@@ -89,7 +89,7 @@ const logger = {
   processStart(name: string, command: string) {
     const color = getProcessColor(name);
     console.log(
-      `${colors.gray}>${colors.reset} ${color}${colors.bold}${name}${colors.reset} ${colors.dim}${command}${colors.reset}`,
+      `${color}>${colors.reset} ${color}${colors.bold}${name}${colors.reset} ${colors.dim}${command}${colors.reset}`,
     );
   },
 
