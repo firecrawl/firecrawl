@@ -13,7 +13,7 @@ version = get_version()
 class HttpClient:
     """HTTP client with retry logic and error handling."""
     
-    def __init__(self, api_key: str, api_url: str):
+    def __init__(self, api_key: Optional[str], api_url: str):
         self.api_key = api_key
         self.api_url = api_url
 
@@ -43,8 +43,10 @@ class HttpClient:
         """Prepare headers for API requests."""
         headers = {
             'Content-Type': 'application/json',
-            'Authorization': f'Bearer {self.api_key}',
         }
+        
+        if self.api_key:
+            headers['Authorization'] = f'Bearer {self.api_key}'
         
         if idempotency_key:
             headers['x-idempotency-key'] = idempotency_key

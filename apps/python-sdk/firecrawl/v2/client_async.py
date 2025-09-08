@@ -50,8 +50,10 @@ class AsyncFirecrawlClient:
     def __init__(self, api_key: Optional[str] = None, api_url: str = "https://api.firecrawl.dev"):
         if api_key is None:
             api_key = os.getenv("FIRECRAWL_API_KEY")
-        if not api_key:
+        
+        if 'api.firecrawl.dev' in api_url and not api_key:
             raise ValueError("API key is required. Set FIRECRAWL_API_KEY or pass api_key.")
+        
         self.http_client = HttpClient(api_key, api_url)
         self.async_http_client = AsyncHttpClient(api_key, api_url)
 

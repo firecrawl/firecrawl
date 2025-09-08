@@ -70,7 +70,7 @@ class FirecrawlClient:
         Initialize the Firecrawl client.
         
         Args:
-            api_key: Firecrawl API key (or set FIRECRAWL_API_KEY env var)
+            api_key: (Optional[str]): API key for authenticating with the Firecrawl API.
             api_url: Base URL for the Firecrawl API
             timeout: Request timeout in seconds
             max_retries: Maximum number of retries for failed requests
@@ -78,8 +78,8 @@ class FirecrawlClient:
         """
         if api_key is None:
             api_key = os.getenv("FIRECRAWL_API_KEY")
-        
-        if not api_key:
+
+        if 'api.firecrawl.dev' in api_url and not api_key:
             raise ValueError(
                 "API key is required. Set FIRECRAWL_API_KEY environment variable "
                 "or pass api_key parameter."

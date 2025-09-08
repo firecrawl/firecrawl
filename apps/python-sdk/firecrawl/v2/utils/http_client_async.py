@@ -6,15 +6,17 @@ version = get_version()
 
 
 class AsyncHttpClient:
-    def __init__(self, api_key: str, api_url: str):
+    def __init__(self, api_key: Optional[str], api_url: str):
         self.api_key = api_key
         self.api_url = api_url
+        
+        headers = {"Content-Type": "application/json"}
+        if api_key:
+            headers["Authorization"] = f"Bearer {api_key}"
+            
         self._client = httpx.AsyncClient(
             base_url=api_url,
-            headers={
-                "Authorization": f"Bearer {api_key}",
-                "Content-Type": "application/json",
-            },
+            headers=headers,
             limits=httpx.Limits(max_keepalive_connections=0),
         )
 

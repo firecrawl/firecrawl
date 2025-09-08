@@ -162,11 +162,11 @@ class Firecrawl:
     keeping a feature-frozen v1 available for incremental migration.
     """
     
-    def __init__(self, api_key: str = None, api_url: str = "https://api.firecrawl.dev"):
+    def __init__(self, api_key: Optional[str] = None, api_url: str = "https://api.firecrawl.dev"):
         """Initialize the unified client.
 
         Args:
-            api_key: Firecrawl API key (or set ``FIRECRAWL_API_KEY``)
+            api_key: (Optional[str]): API key for authenticating with the Firecrawl API.
             api_url: Base API URL (defaults to production)
         """
         self.api_key = api_key
@@ -213,7 +213,7 @@ class Firecrawl:
 class AsyncFirecrawl:
     """Async unified Firecrawl client (v2 by default, v1 under ``.v1``)."""
 
-    def __init__(self, api_key: str = None, api_url: str = "https://api.firecrawl.dev"):
+    def __init__(self, api_key: Optional[str] = None, api_url: str = "https://api.firecrawl.dev"):
         self.api_key = api_key
         self.api_url = api_url
         

@@ -2905,7 +2905,7 @@ class AsyncV1FirecrawlApp(V1FirecrawlApp):
     Provides non-blocking alternatives to all V1FirecrawlApp operations.
     """
 
-    def __init__(self, api_key: str, api_url: str = "https://api.firecrawl.dev"):
+    def __init__(self, api_key: Optional[str] = None, api_url: str = "https://api.firecrawl.dev"):
         # Reuse V1 helpers (_prepare_headers, _validate_kwargs, _ensure_schema_dict, _get_error_message)
         super().__init__(api_key=api_key, api_url=api_url)
 
