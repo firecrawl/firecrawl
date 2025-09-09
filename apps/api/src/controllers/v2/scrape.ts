@@ -148,6 +148,7 @@ export async function scrapeController(
   return res.status(200).json({
     success: true,
     data: doc,
+    id: origin?.includes("website") ? jobId : undefined,
     scrape_id: origin?.includes("website") ? jobId : undefined,
   });
 }

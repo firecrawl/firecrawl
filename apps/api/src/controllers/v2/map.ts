@@ -39,6 +39,7 @@ const MAX_FIRE_ENGINE_RESULTS = 500;
 
 interface MapResult {
   success: boolean;
+  id: string;
   job_id: string;
   time_taken: number;
   mapResults: MapDocument[];
@@ -343,6 +344,7 @@ async function getMapResults({
   return {
     success: true,
     mapResults,
+    id,
     job_id: id,
     time_taken: (new Date().getTime() - Date.now()) / 1000,
   };
@@ -448,6 +450,7 @@ export async function mapController(
 
   const response = {
     success: true as const,
+    id: result.id,
     links: result.mapResults,
   };
 

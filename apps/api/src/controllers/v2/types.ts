@@ -788,6 +788,7 @@ export type ScrapeResponse =
       success: true;
       warning?: string;
       data: Document;
+      id: string;
       scrape_id?: string;
     };
 
@@ -854,6 +855,7 @@ export type MapResponse =
   | ErrorResponse
   | {
       success: true;
+      id: string;
       links?: MapDocument[];
     };
 
@@ -1415,18 +1417,21 @@ export type SearchResponse =
       success: true;
       warning?: string;
       data: Document[];
+      id: string;
       creditsUsed: number;
     }
   | {
       success: true;
       warning?: string;
       data: import("../../lib/entities").SearchV2Response;
+      id: string;
       creditsUsed: number;
     }
   | {
       success: true;
       warning?: string;
       data: import("../../lib/entities").SearchV2Response;
+      id: string;
       scrapeIds: {
         web?: string[];
         news?: string[];

@@ -516,6 +516,7 @@ export async function searchController(
         return res.status(200).json({
           success: true,
           data: searchResponse,
+          id: jobId,
           scrapeIds,
           creditsUsed: credits_billed,
         });
@@ -660,6 +661,7 @@ export async function searchController(
     return res.status(200).json({
       success: true,
       data: searchResponse,
+      id: jobId,
       creditsUsed: credits_billed,
     });
   } catch (error) {
