@@ -31,6 +31,7 @@ import {
   getCategoryFromUrl,
   CategoryOption,
 } from "../../lib/search-query-builder";
+import { sanitizeDescription, isGoogleMissingDescription } from "../../search/v2/utils/description-sanitizer";
 
 interface DocumentWithCostTracking {
   document: Document;
@@ -268,6 +269,22 @@ export async function searchController(
       searchResponse.web = searchResponse.web.filter(
         result => !isUrlBlocked(result.url, req.acuc?.flags ?? null),
       );
+    }
+
+    if (searchResponse.web && searchResponse.web.length > 0) {
+      searchResponse.web.forEach((result, index) => {
+        if (result.description && isGoogleMissingDescription(result.description)) {
+          logger.warn("Detected unusual Google 'Missing:' description, applying sanitization", {
+            url: result.url,
+            title: result.title,
+            originalDescription: result.description,
+            query: searchQuery,
+            resultIndex: index
+          });
+
+          result.description = sanitizeDescription(result.description, result.url, result.title);
+        }
+      });
     }
 
     // Add category labels to web results
