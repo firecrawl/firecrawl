@@ -160,9 +160,6 @@ const processingSchema = z.object({
 });
 
 const failedSchema = z.object({
-  jobId: z.string(),
-  state: z.literal("failed"),
-  processing: z.literal(false),
   error: z.string(),
 });
 
@@ -217,7 +214,6 @@ export async function fireEngineScrape<
   } else if (failedParse.success) {
     logger.debug("Scrape job failed", {
       status,
-      jobId: failedParse.data.jobId,
     });
     if (
       typeof status.error === "string" &&
@@ -254,7 +250,6 @@ export async function fireEngineScrape<
     ) {
       logger.warn("CDP timed out while loading the page", {
         status,
-        jobId: failedParse.data.jobId,
       });
       throw new FEPageLoadFailed();
     } else if (
@@ -273,7 +268,6 @@ export async function fireEngineScrape<
       throw new EngineError("Scrape job failed", {
         cause: {
           status,
-          jobId: failedParse.data.jobId,
         },
       });
     }
