@@ -67,6 +67,7 @@ jobs:
       PROXY_USERNAME: ${{ matrix.proxy == 'proxy' && secrets.PROXY_USERNAME || '' }}
       PROXY_PASSWORD: ${{ matrix.proxy == 'proxy' && secrets.PROXY_PASSWORD || '' }}
       NUQ_DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
+      TEST_SUITE_SELF_HOSTED: true
       NUQ_REDUCE_NOISE: true
       HOST: 0.0.0.0
     steps:
