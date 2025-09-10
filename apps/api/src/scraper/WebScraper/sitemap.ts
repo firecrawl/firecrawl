@@ -8,9 +8,15 @@ import { ScrapeJobTimeoutError } from "../../lib/error";
 import type { ScrapeOptions } from "../../controllers/v2/types";
 import { Engine } from "../scrapeURL/engines";
 import { parseSitemapXml, processSitemap } from "@mendable/firecrawl-rs";
+import { gunzip } from "node:zlib";
+import { promisify } from "node:util";
+import { fetchFileToBuffer } from "../scrapeURL/engines/utils/downloadFile";
+
 const useFireEngine =
   process.env.FIRE_ENGINE_BETA_URL !== "" &&
   process.env.FIRE_ENGINE_BETA_URL !== undefined;
+
+const gunzipAsync = promisify(gunzip);
 
 export async function getLinksFromSitemap(
   {
@@ -46,86 +52,101 @@ export async function getLinksFromSitemap(
   sitemapsHit.add(sitemapUrl);
 
   try {
-    let content: string = "";
-    try {
-      const shouldPrioritizeFireEngine =
-        location && mode === "fire-engine" && useFireEngine;
+    let content = "";
 
-      const forceEngine: Engine[] = [
-        ...(maxAge > 0 ? ["index" as const] : []),
-        ...(shouldPrioritizeFireEngine
-          ? [
-              "fire-engine;tlsclient" as const,
-              "fire-engine;tlsclient;stealth" as const,
-            ]
-          : []),
-        "fetch",
-        ...(!shouldPrioritizeFireEngine &&
-        mode === "fire-engine" &&
-        useFireEngine
-          ? [
-              "fire-engine;tlsclient" as const,
-              "fire-engine;tlsclient;stealth" as const,
-            ]
-          : []),
-      ];
-
-      const response = await scrapeURL(
-        "sitemap;" + crawlId,
-        sitemapUrl,
-        scrapeOptions.parse({
-          formats: ["rawHtml"],
-          useMock: mock,
-          maxAge,
-          ...(location ? { location } : {}),
-        }),
-        {
-          forceEngine,
-          v0DisableJsDom: true,
-          externalAbort: abort
-            ? {
-                signal: abort,
-                tier: "external",
-                throwable() {
-                  return new Error("Sitemap fetch aborted");
-                },
-              }
-            : undefined,
-          teamId: "sitemap",
-          zeroDataRetention,
-        },
-        new CostTracking(),
-      );
-
-      if (
-        response.success &&
-        response.document.metadata.statusCode >= 200 &&
-        response.document.metadata.statusCode < 300
-      ) {
-        content = response.document.rawHtml!;
-      } else {
-        logger.error(`Request failed for sitemap fetch`, {
-          method: "getLinksFromSitemap",
-          mode,
-          sitemapUrl,
-          error: response.success
-            ? response.document.metadata.statusCode
-            : response.error,
-        });
-        return 0;
-      }
-    } catch (error) {
-      if (error instanceof ScrapeJobTimeoutError) {
-        throw error;
-      } else {
-        logger.error(`Request failed for sitemap fetch`, {
-          method: "getLinksFromSitemap",
-          mode,
+    const isGzip = sitemapUrl.toLowerCase().endsWith(".gz");
+    if (isGzip) {
+      try {
+        const { buffer } = await fetchFileToBuffer(sitemapUrl);
+        const decompressed = await gunzipAsync(buffer);
+        content = decompressed.toString("utf-8");
+      } catch (error) {
+        logger.error("Failed to download/decompress gzip sitemap", {
           sitemapUrl,
           error,
         });
-
         return 0;
+      }
+    } else {
+      try {
+        const shouldPrioritizeFireEngine =
+          location && mode === "fire-engine" && useFireEngine;
+
+        const forceEngine: Engine[] = [
+          ...(maxAge > 0 ? ["index" as const] : []),
+          ...(shouldPrioritizeFireEngine
+            ? [
+                "fire-engine;tlsclient" as const,
+                "fire-engine;tlsclient;stealth" as const,
+              ]
+            : []),
+          "fetch",
+          ...(!shouldPrioritizeFireEngine &&
+          mode === "fire-engine" &&
+          useFireEngine
+            ? [
+                "fire-engine;tlsclient" as const,
+                "fire-engine;tlsclient;stealth" as const,
+              ]
+            : []),
+        ];
+
+        const response = await scrapeURL(
+          "sitemap;" + crawlId,
+          sitemapUrl,
+          scrapeOptions.parse({
+            formats: ["rawHtml"],
+            useMock: mock,
+            maxAge,
+            ...(location ? { location } : {}),
+          }),
+          {
+            forceEngine,
+            v0DisableJsDom: true,
+            externalAbort: abort
+              ? {
+                  signal: abort,
+                  tier: "external",
+                  throwable() {
+                    return new Error("Sitemap fetch aborted");
+                  },
+                }
+              : undefined,
+            teamId: "sitemap",
+            zeroDataRetention,
+          },
+          new CostTracking(),
+        );
+
+        if (
+          response.success &&
+          response.document.metadata.statusCode >= 200 &&
+          response.document.metadata.statusCode < 300
+        ) {
+          content = response.document.rawHtml!;
+        } else {
+          logger.error(`Request failed for sitemap fetch`, {
+            method: "getLinksFromSitemap",
+            mode,
+            sitemapUrl,
+            error: response.success
+              ? response.document.metadata.statusCode
+              : response.error,
+          });
+          return 0;
+        }
+      } catch (error) {
+        if (error instanceof ScrapeJobTimeoutError) {
+          throw error;
+        } else {
+          logger.error(`Request failed for sitemap fetch`, {
+            method: "getLinksFromSitemap",
+            mode,
+            sitemapUrl,
+            error,
+          });
+          return 0;
+        }
       }
     }
 
@@ -184,7 +205,8 @@ export async function getLinksFromSitemap(
             url =>
               url.loc &&
               url.loc.length > 0 &&
-              url.loc[0].trim().toLowerCase().endsWith(".xml"),
+              (url.loc[0].trim().toLowerCase().endsWith(".xml") ||
+                url.loc[0].trim().toLowerCase().endsWith(".xml.gz")),
           )
           .map(url => url.loc[0].trim());
 
@@ -217,6 +239,7 @@ export async function getLinksFromSitemap(
               url.loc &&
               url.loc.length > 0 &&
               !url.loc[0].trim().toLowerCase().endsWith(".xml") &&
+              !url.loc[0].trim().toLowerCase().endsWith(".xml.gz") &&
               !WebCrawler.prototype.isFile(url.loc[0].trim()),
           )
           .map(url => url.loc[0].trim());
@@ -246,7 +269,7 @@ export async function getLinksFromSitemap(
             ),
         );
         const results = await Promise.all(sitemapPromises);
-        count += results.reduce((a, x) => a + x);
+        count += results.reduce((a, x) => a + x, 0);
       } else if (instruction.action === "process") {
         count += instruction.urls.length;
         const h = urlsHandler(instruction.urls);

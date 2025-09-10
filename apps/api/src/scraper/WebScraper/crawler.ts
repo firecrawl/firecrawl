@@ -14,7 +14,6 @@ import {
   isUrlAllowedByRobots,
 } from "../../lib/robots-txt";
 import { ScrapeJobTimeoutError } from "../../lib/error";
-import { Logger } from "winston";
 import { ScrapeOptions } from "../../controllers/v2/types";
 import { filterLinks } from "@mendable/firecrawl-rs";
 
@@ -833,15 +832,17 @@ export class WebCrawler {
     mock?: string,
     maxAge?: number,
   ): Promise<number> {
-    const sitemapUrl = url.endsWith(".xml")
-      ? url
-      : `${url}${url.endsWith("/") ? "" : "/"}sitemap.xml`;
+    const sitemapUrl =
+      url.endsWith(".xml") || url.endsWith(".xml.gz")
+        ? url
+        : `${url}${url.endsWith("/") ? "" : "/"}sitemap.xml`;
 
     this.logger.debug("Trying to fetch sitemap links", {
       method: "tryFetchSitemapLinks",
       originalUrl: url,
       sitemapUrl,
       isXmlUrl: url.endsWith(".xml"),
+      isGzUrl: url.endsWith(".xml.gz"),
     });
 
     let sitemapCount: number = 0;
