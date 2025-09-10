@@ -28,6 +28,7 @@ export async function scrapeController(
     return res.status(403).json({
       success: false,
       error: permissions.error,
+      id: jobId,
     });
   }
 
@@ -128,11 +129,13 @@ export async function scrapeController(
         success: false,
         code: e.code,
         error: e.message,
+        id: jobId,
       });
     } else {
       return res.status(500).json({
         success: false,
         error: `(Internal server error) - ${e && e.message ? e.message : e}`,
+        id: jobId,
       });
     }
   }

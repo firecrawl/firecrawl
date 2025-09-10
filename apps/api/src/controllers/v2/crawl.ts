@@ -18,6 +18,7 @@ export async function crawlController(
   req: RequestWithAuth<{}, CrawlResponse, CrawlRequest>,
   res: Response<CrawlResponse>,
 ) {
+  const id = uuidv4();
   const preNormalizedBody = req.body;
   req.body = crawlRequestSchema.parse(req.body);
 
@@ -26,13 +27,12 @@ export async function crawlController(
     return res.status(403).json({
       success: false,
       error: permissions.error,
+      id,
     });
   }
 
   const zeroDataRetention =
     req.acuc?.flags?.forceZDR || req.body.zeroDataRetention;
-
-  const id = uuidv4();
   const logger = _logger.child({
     crawlId: id,
     module: "api/v2",
@@ -86,6 +86,7 @@ export async function crawlController(
         success: false,
         error:
           "Failed to process natural language prompt. Please try rephrasing or use explicit crawler options.",
+        id,
       });
     }
   }
@@ -115,7 +116,7 @@ export async function crawlController(
       try {
         new RegExp(x);
       } catch (e) {
-        return res.status(400).json({ success: false, error: e.message });
+        return res.status(400).json({ success: false, error: e.message, id });
       }
     }
   }
@@ -125,7 +126,7 @@ export async function crawlController(
       try {
         new RegExp(x);
       } catch (e) {
-        return res.status(400).json({ success: false, error: e.message });
+        return res.status(400).json({ success: false, error: e.message, id });
       }
     }
   }

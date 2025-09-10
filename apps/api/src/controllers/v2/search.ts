@@ -215,6 +215,7 @@ export async function searchController(
       success: false,
       error:
         "Your team has zero data retention enabled. This is not supported on search. Please contact support@firecrawl.com to unblock this feature.",
+      id: jobId,
     });
   }
 
@@ -671,6 +672,7 @@ export async function searchController(
         success: false,
         error: "Invalid request body",
         details: error.errors,
+        id: jobId,
       });
     }
 
@@ -679,6 +681,7 @@ export async function searchController(
         success: false,
         code: error.code,
         error: error.message,
+        id: jobId,
       });
     }
 
@@ -687,6 +690,7 @@ export async function searchController(
     return res.status(500).json({
       success: false,
       error: error.message,
+      id: jobId,
     });
   }
 }

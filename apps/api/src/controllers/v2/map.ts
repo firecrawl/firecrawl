@@ -100,6 +100,7 @@ async function getMapResults({
   flags,
   useIndex = true,
   location,
+  id,
 }: {
   url: string;
   search?: string;
@@ -116,8 +117,8 @@ async function getMapResults({
   flags: TeamFlags;
   useIndex?: boolean;
   location?: ScrapeOptions["location"];
+  id: string;
 }): Promise<MapResult> {
-  const id = uuidv4();
   let mapResults: MapDocument[] = [];
   const zeroDataRetention = flags?.forceZDR ?? false;
 
@@ -354,6 +355,7 @@ export async function mapController(
   req: RequestWithAuth<{}, MapResponse, MapRequest>,
   res: Response<MapResponse>,
 ) {
+  const jobId = uuidv4();
   const originalRequest = req.body;
   req.body = mapRequestSchema.parse(req.body);
 
@@ -362,6 +364,7 @@ export async function mapController(
     return res.status(403).json({
       success: false,
       error: permissions.error,
+      id: jobId,
     });
   }
 
@@ -369,6 +372,7 @@ export async function mapController(
     request: req.body,
     originalRequest,
     teamId: req.auth.team_id,
+    jobId,
   });
 
   let result: Awaited<ReturnType<typeof getMapResults>>;
@@ -376,6 +380,7 @@ export async function mapController(
   try {
     result = (await Promise.race([
       getMapResults({
+        id: jobId,
         url: req.body.url,
         search: req.body.search,
         limit: req.body.limit,
@@ -410,6 +415,7 @@ export async function mapController(
         success: false,
         code: error.code,
         error: error.message,
+        id: jobId,
       });
     } else {
       throw error;

@@ -780,6 +780,7 @@ export type ErrorResponse = {
   code?: ErrorCodes;
   error: string;
   details?: any;
+  id?: string;
 };
 
 export type ScrapeResponse =
