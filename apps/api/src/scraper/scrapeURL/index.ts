@@ -491,8 +491,12 @@ async function scrapeURLLoop(meta: Meta): Promise<ScrapeUrlResponse> {
                 meta.abort.throwIfAborted();
 
                 // Fallback error if above doesn't throw
+                const usingDefaultTimeout =
+                  meta.abort.scrapeTimeout() === undefined;
                 throw new ScrapeJobTimeoutError(
-                  "Scrape timed out due to maximum length of 5 minutes",
+                  usingDefaultTimeout
+                    ? "Scrape timed out due to maximum length of 5 minutes"
+                    : "Scrape timed out",
                 );
               } catch (error) {
                 reject(error);
