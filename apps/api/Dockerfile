@@ -5,6 +5,7 @@ ENV PNPM_HOME="/pnpm"
 ENV PATH="$PNPM_HOME:$PATH"
 ENV CI=true
 
+ENV COREPACK_NPM_REGISTRY=https://registry.npmmirror.com
 RUN corepack enable
 
 # Build Go shared library
@@ -25,6 +26,12 @@ RUN apt-get update && apt-get install -y \
     build-essential \
     pkg-config \
     && rm -rf /var/lib/apt/lists/*
+
+ENV GO_VERSION=1.24.0
+RUN curl -fsSL "https://go.dev/dl/go${GO_VERSION}.linux-amd64.tar.gz" -o go.tar.gz \
+    && tar -C /usr/local -xzf go.tar.gz \
+    && rm go.tar.gz
+ENV PATH="/usr/local/go/bin:${PATH}"
 
 # Install Rust
 ENV RUSTUP_HOME=/usr/local/rustup \

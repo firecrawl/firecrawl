@@ -1,5 +1,3 @@
-name: firecrawl
-
 x-common-service: &common-service
   # NOTE: If you don't want to build the service locally,
   # uncomment the build: statement and comment out the image: statement
@@ -61,7 +59,17 @@ services:
       - backend
 
   api:
-    <<: *common-service
+    build:
+      context: apps/api
+      target: build
+    ulimits:
+      nofile:
+        soft: 65535
+        hard: 65535
+    networks:
+      - backend
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     environment:
       <<: *common-env
       HOST: "0.0.0.0"
@@ -73,7 +81,9 @@ services:
       - playwright-service
     ports:
       - "${PORT:-3002}:${INTERNAL_PORT:-3002}"
-    command: node dist/src/harness.js --start-docker
+    volumes:
+      - ./apps/api:/app
+    command: pnpm dev
 
   redis:
     # NOTE: If you want to use Valkey (open source) instead of Redis (source available),
