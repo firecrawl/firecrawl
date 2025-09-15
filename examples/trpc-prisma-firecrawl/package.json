@@ -1,0 +1,40 @@
+{
+  "name": "trpc-prisma-firecrawl-example",
+  "version": "1.0.0",
+  "description": "Example integration of tRPC, Prisma, and Firecrawl for web scraping",
+  "main": "dist/index.js",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "db:generate": "prisma generate",
+    "db:push": "prisma db push",
+    "db:studio": "prisma studio"
+  },
+  "keywords": [
+    "trpc",
+    "prisma",
+    "firecrawl",
+    "web-scraping",
+    "typescript"
+  ],
+  "author": "Firecrawl Team",
+  "license": "MIT",
+  "dependencies": {
+    "@mendable/firecrawl-js": "^4.3.4",
+    "@prisma/client": "^6.16.1",
+    "@trpc/client": "^11.5.1",
+    "@trpc/server": "^11.5.1",
+    "cors": "^2.8.5",
+    "express": "^5.1.0",
+    "zod": "^4.1.8"
+  },
+  "devDependencies": {
+    "@types/cors": "^2.8.19",
+    "@types/express": "^5.0.3",
+    "@types/node": "^24.4.0",
+    "prisma": "^6.16.1",
+    "tsx": "^4.20.5",
+    "typescript": "^5.9.2"
+  }
+}
