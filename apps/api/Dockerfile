@@ -38,6 +38,10 @@ RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --no
 COPY pnpm-lock.yaml pnpm-workspace.yaml package.json ./
 COPY . .
 
+# While building Firecrawl via Docker Compose on Linux ARM64 (Node 22), the build failed due to `node-gyp` not finding Python. Adding `python3`, `make`, and `g++` fixes this by ensuring native addons (e.g., libpq) can be compiled correctly.
+RUN apt-get update && apt-get install -y python3 make g++ && rm -rf /var/lib/apt/lists/*
+
+
 # Install dependencies
 RUN --mount=type=cache,id=pnpm,target=/pnpm/store \
     --mount=type=cache,target=/usr/local/cargo/registry \
