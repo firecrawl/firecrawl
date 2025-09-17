@@ -357,6 +357,11 @@ const baseScrapeOptions = z
       .array()
       .transform(tags => tags.map(transformIframeSelector))
       .optional(),
+    unwrapTags: z
+      .string()
+      .array()
+      .transform(tags => tags.map(transformIframeSelector))
+      .optional(),
     onlyMainContent: z.boolean().default(true),
     timeout: z.number().int().positive().finite().safe().optional(),
     waitFor: z

@@ -266,46 +266,62 @@ describe("HTML Transformer", () => {
   describe("transformHtml", () => {
     it("should transform HTML content according to options", async () => {
       const options: TransformHtmlOptions = {
-        html: "<div><p>Test</p><span>Remove me</span></div>",
+        html: '<div><p>Test</p><span>Remove me</span><code><a href="https://unwrapped.com/">Unwrap me</a></code></div>',
         url: "https://example.com",
-        includeTags: ["p"],
+        includeTags: ["p", "a"],
         excludeTags: ["span"],
+        unwrapTags: ["code"],
         onlyMainContent: true,
       };
 
       const result = await transformHtml(options);
       expect(result).toContain("<p>");
       expect(result).not.toContain("<span>");
+      expect(result).not.toContain("<code>");
+      expect(result).toContain(
+        '<a href="https://unwrapped.com/">Unwrap me</a>',
+      );
     });
 
     it("should handle complex content filtering", async () => {
       const options: TransformHtmlOptions = {
         html: `
-          <div class="wrapper">
-            <header>
-              <nav>Navigation</nav>
-            </header>
-            <main>
-              <article>
-                <h1>Title</h1>
-                <p>Important content</p>
-                <div class="ads">Advertisement</div>
-                <aside>Sidebar</aside>
-                <div class="social-share">Share buttons</div>
-              </article>
-            </main>
-            <footer>Footer content</footer>
-          </div>
-        `,
+        <div class="wrapper">
+        <header>
+          <nav>Navigation</nav>
+        </header>
+        <main>
+          <article>
+          <h1>Title</h1>
+          <p>Important <strong>bold</strong> content</p>
+          <div class="ads">Advertisement</div>
+          <aside>Sidebar</aside>
+          <div class="social-share">Share buttons</div>
+          <code><a href="https://example.com/link">Wrapped Link</a></code>
+          <em><span>Nested unwrap</span></em>
+          </article>
+        </main>
+        <footer>Footer content</footer>
+        </div>
+      `,
         url: "https://example.com",
-        includeTags: ["article", "h1", "p"],
+        includeTags: ["article", "h1", "p", "a", "strong", "span"],
         excludeTags: ["nav", "aside", "footer", ".ads", ".social-share"],
+        unwrapTags: ["code", "em"],
         onlyMainContent: true,
       };
 
       const result = await transformHtml(options);
       expect(result).toContain("<h1>Title</h1>");
-      expect(result).toContain("<p>Important content</p>");
+      expect(result).toContain(
+        "<p>Important <strong>bold</strong> content</p>",
+      );
+      expect(result).toContain(
+        '<a href="https://example.com/link">Wrapped Link</a>',
+      );
+      expect(result).toContain("Nested unwrap");
+      expect(result).not.toContain("<code>");
+      expect(result).not.toContain("<em>");
       expect(result).not.toContain("Navigation");
       expect(result).not.toContain("Advertisement");
       expect(result).not.toContain("Share buttons");
@@ -329,6 +345,7 @@ describe("HTML Transformer", () => {
         url: "https://example.com",
         includeTags: ["article", "p", "ul", "li"],
         excludeTags: [],
+        unwrapTags: [],
         onlyMainContent: true,
       };
 
@@ -344,6 +361,7 @@ describe("HTML Transformer", () => {
         url: "https://example.com",
         includeTags: [],
         excludeTags: [],
+        unwrapTags: [],
         onlyMainContent: false,
       };
 
@@ -357,6 +375,7 @@ describe("HTML Transformer", () => {
         url: "https://example.com",
         includeTags: [],
         excludeTags: [],
+        unwrapTags: [],
         onlyMainContent: false,
       };
 
@@ -378,6 +397,7 @@ describe("HTML Transformer", () => {
         url: "https://example.com",
         includeTags: ["p"],
         excludeTags: ["script", "style", "noscript"],
+        unwrapTags: [],
         onlyMainContent: true,
       };
 
@@ -401,6 +421,7 @@ describe("HTML Transformer", () => {
         url: "https://example.com",
         includeTags: ["p"],
         excludeTags: [],
+        unwrapTags: [],
         onlyMainContent: true,
       };
 
@@ -427,11 +448,11 @@ describe("HTML Transformer", () => {
         url: "https://example.com",
         includeTags: [],
         excludeTags: [],
+        unwrapTags: [],
         onlyMainContent: true,
       };
 
       const result = await transformHtml(options);
-      console.log(result);
       expect(result).toContain("https://example.com/fullurl");
       expect(result).toContain("http://example.net/fullurl");
       expect(result).toContain("https://example.com/pathurl");

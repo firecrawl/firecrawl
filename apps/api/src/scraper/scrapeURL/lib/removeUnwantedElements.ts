@@ -97,6 +97,9 @@ export const htmlTransform = async (
       excludeTags: (scrapeOptions.excludeTags ?? [])
         .map(x => x.trim())
         .filter(x => x.length !== 0),
+      unwrapTags: (scrapeOptions.unwrapTags ?? [])
+        .map(x => x.trim())
+        .filter(x => x.length !== 0),
       onlyMainContent: scrapeOptions.onlyMainContent,
       omceSignatures: omce_signatures,
     });
@@ -127,6 +130,29 @@ export const htmlTransform = async (
   }
 
   soup("script, style, noscript, meta, head").remove();
+
+  if (
+    scrapeOptions.unwrapTags &&
+    scrapeOptions.unwrapTags.filter(x => x.trim().length !== 0).length > 0
+  ) {
+    scrapeOptions.unwrapTags.forEach(tag => {
+      const selector = tag.trim();
+      if (selector.length === 0) {
+        return;
+      }
+
+      soup(selector)
+        .toArray()
+        .forEach(element => {
+          const $element = soup(element);
+          const children = $element.contents().toArray();
+          children.forEach(child => {
+            $element.before(child);
+          });
+          $element.remove();
+        });
+    });
+  }
 
   if (
     scrapeOptions.excludeTags &&

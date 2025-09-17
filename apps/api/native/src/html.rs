@@ -339,6 +339,8 @@ pub struct TransformHtmlOptions {
   pub include_tags: Vec<String>,
   #[serde(default)]
   pub exclude_tags: Vec<String>,
+  #[serde(default)]
+  pub unwrap_tags: Vec<String>,
   pub only_main_content: bool,
   pub omce_signatures: Option<Vec<String>>,
 }
@@ -389,6 +391,32 @@ fn _transform_html_inner(opts: TransformHtmlOptions) -> Result<String, Box<dyn s
   }
   while let Ok(x) = document.select_first("script") {
     x.as_node().detach();
+  }
+
+  for selector in opts.unwrap_tags.iter() {
+    let nodes: Vec<_> = document
+      .select(selector)
+      .map_err(|_| "Failed to select unwrap tags")?
+      .collect();
+
+    for node in nodes {
+      let Some(parent) = node.as_node().parent() else {
+        continue;
+      };
+
+      let next_sibling = node.as_node().next_sibling();
+      let children: Vec<_> = node.as_node().children().collect();
+
+      for child in children {
+        if let Some(ref sibling) = next_sibling {
+          sibling.insert_before(child);
+        } else {
+          parent.append(child);
+        }
+      }
+
+      node.as_node().detach();
+    }
   }
 
   // OMCE first
