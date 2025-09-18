@@ -9,10 +9,11 @@ If you're contributing, note that the process is similar to other open source re
 First, start by installing dependencies:
 
 1. node.js [instructions](https://nodejs.org/en/learn/getting-started/how-to-install-nodejs)
-2. pnpm [instructions](https://pnpm.io/installation)
-3. redis [instructions](https://redis.io/docs/latest/operate/oss_and_stack/install/install-redis/)
-4. postgresql
-5. Docker (optional) (for running postgres)
+2. rust [instructions](https://www.rust-lang.org/tools/install)
+3. pnpm [instructions](https://pnpm.io/installation)
+4. redis [instructions](https://redis.io/docs/latest/operate/oss_and_stack/install/install-redis/)
+5. postgresql
+6. Docker (optional) (for running postgres)
 
 You need to set up the PostgreSQL database by running the SQL file at `apps/nuq-postgres/nuq.sql`. Easiest way is to use the docker image inside `apps/nuq-postgres`. With Docker running, build the image:
 
