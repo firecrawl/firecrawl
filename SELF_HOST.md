@@ -8,7 +8,86 @@ If you're contributing, note that the process is similar to other open-source re
 
 If you have any questions or would like help getting on board, join our Discord community [here](https://discord.gg/gSmWdAkdwd) for more information or submit an issue on Github [here](https://github.com/firecrawl/firecrawl/issues/new/choose)!
 
-## Why?
+## System overview
+
+### Architecture at a glance
+
+```mermaid
+graph TB
+  subgraph "apps/api"
+    API[HTTP API]
+    Worker[Background Workers]
+    API -->|enqueue jobs| Worker
+  end
+
+  subgraph "Data Stores"
+    NuQ[(NuQ Postgres Queue)]
+    Redis[(Redis)]
+  end
+
+  subgraph "External Services"
+    Playwright[Playwright Microservice]
+    FireEngine[Fire Engine SaaS<br/>optional]
+  end
+
+  subgraph "External Systems"
+    TargetSites[Target Websites]
+    CustomerSystems[Customer Webhooks/Storage]
+  end
+
+  User[Client SDKs / direct API calls]
+  User -->|HTTP requests| API
+  API -->|return results| User
+
+  API <-->|cache, rate limits,<br/>crawl state| Redis
+  API -->|queue scrape/crawl jobs| NuQ
+  Worker -->|poll jobs| NuQ
+
+  API <-->|delegate search| FireEngine
+
+  Worker -->|render JS pages| Playwright
+  Playwright -->|return HTML| Worker
+
+  Worker <-->|scrape content| TargetSites
+  Worker -->|deliver results| CustomerSystems
+```
+
+Firecrawl is composed of several services and supporting packages:
+
+| Component | Location | Purpose | Why it matters |
+| --- | --- | --- | --- |
+| **API & worker runtime** | `apps/api` | Express API, background workers, billing, rate limiting, admin UI | This container is the brain of the system. It exposes the REST API, normalises requests, enqueues jobs, and hosts workers that actually crawl/scrape and trigger webhooks. |
+| **Playwright microservice** | `apps/playwright-service-ts` | Headless Chromium renderer with a thin HTTP wrapper | Handles JS-heavy pages or sites that require full-browser execution. API workers call it when they detect dynamic content. |
+| **NuQ queue database** | `apps/nuq-postgres` | Postgres schema + pg_cron jobs backing the "NuQ" queue | Provides durable job storage so scrape/crawl work survives container restarts. Workers poll it for new work and mark results. |
+| **Redis** | `apps/redis` (or external) | Backing store for BullMQ, rate limits, crawl state, caching | Powers concurrency control, crawl bookkeeping, and the Bull queue used for billing & notifications. |
+| **External search providers** | `FIRE_ENGINE_BETA_URL`, SearXNG, Serper, SearchAPI | Optional upstreams for `/search` and `/map` endpoints | Firecrawl can call Mendable's Fire Engine, a self-hosted SearXNG, or other APIs. If none are configured the API falls back to first-party scraping. |
+| **SDKs** | `apps/js-sdk`, `apps/python-sdk`, `apps/rust-sdk` | Language clients mirroring the REST interface | Useful for local development and testing your self-hosted deployment. |
+| **UX / docs** | `apps/ui`, `apps/www`, `img/` | Cloud dashboard and marketing docs | Not required for self-hosting but helpful to understand the product's UX goals. |
+
+### Key request flows
+
+**Search flow**
+
+1. Client calls `/v2/search`.
+2. API optionally delegates to Fire Engine or another configured search provider, then normalises and ranks the results.
+3. If the request includes `scrapeOptions`, the API enqueues follow-up scrape jobs in NuQ so workers can enrich each result (e.g., convert to Markdown) before returning.
+
+**Scrape / crawl flow**
+
+1. Client calls `/v1` or `/v2` `scrape`, `crawl`, `map`, or `extract`.
+2. API validates options, manages per-team concurrency in Redis, and stores the job in NuQ.
+3. Workers pull jobs, decide between lightweight HTTP fetches or Playwright renders, apply parsers (Markdown, JSON, PDF, etc.), and stream progress back via Redis/GCS when enabled.
+4. Results are written to cache, billed via the BullMQ queue, and optionally pushed to customer webhooks or Supabase/GCS storage.
+
+### Optional & supporting subsystems
+
+- **Supabase** – provides authentication, API key storage, and analytics when `USE_DB_AUTHENTICATION=true` (cloud-only today for write access).
+- **Google Cloud Storage (GCS)** – used to archive scrape payloads when `GCS_FIRE_ENGINE_BUCKET_NAME` is set.
+- **OpenTelemetry / PostHog / Slack** – observability hooks (`POSTHOG_*`, `SLACK_WEBHOOK_URL`) that the API can publish to if configured.
+- **Proxy layer** – configure `PROXY_SERVER`, `PROXY_USERNAME`, `PROXY_PASSWORD` to route all outbound scraping traffic through your proxy provider.
+- **Fire Engine** – Mendable's managed anti-bot and search infrastructure. Self-hosted deployments typically operate without it; leaving `FIRE_ENGINE_BETA_URL` unset simply disables those integrations.
+
+## Why self-host?
 
 Self-hosting Firecrawl is particularly beneficial for organizations with stringent security policies that require data to remain within controlled environments. Here are some key reasons to consider self-hosting:
 
@@ -31,12 +110,12 @@ Self-hosting Firecrawl is ideal for those who need full control over their scrap
 
 - Docker [instructions](https://docs.docker.com/get-docker/)
 
-
 2. Set environment variables
 
 Create an `.env` in the root directory using the template below.
 
 `.env:`
+
 ```
 # ===== Required ENVS ======
 PORT=3002
@@ -116,17 +195,17 @@ BULL_AUTH_KEY=CHANGEME
 # MAX_RAM=0.8
 ```
 
-3.  Build and run the Docker containers:
-    
+3. Build and run the Docker containers:
+
     ```bash
     docker compose build
     docker compose up
     ```
 
     If you encounter an error, make sure you're using `docker compose` and not `docker-compose`.
-    
+
     This will run a local instance of Firecrawl which can be accessed at `http://localhost:3002`.
-    
+
     You should be able to see the Bull Queue Manager UI on `http://localhost:3002/admin/CHANGEME/queues`.
 
 5. *(Optional)* Test the API
@@ -139,7 +218,7 @@ If you’d like to test the crawl endpoint, you can run this:
       -d '{
         "url": "https://firecrawl.dev"
       }'
-  ```   
+  ```
 
 ## Troubleshooting
 
@@ -152,6 +231,7 @@ This section provides solutions to common issues you might encounter while setti
 ### Supabase client is not configured
 
 **Symptom:**
+
 ```bash
 [YYYY-MM-DDTHH:MM:SS.SSSz]ERROR - Attempted to access Supabase client when it's not configured.
 [YYYY-MM-DDTHH:MM:SS.SSSz]ERROR - Error inserting scrape event: Error: Supabase client is not configured.
@@ -163,6 +243,7 @@ This error occurs because the Supabase client setup is not completed. You should
 ### You're bypassing authentication
 
 **Symptom:**
+
 ```bash
 [YYYY-MM-DDTHH:MM:SS.SSSz]WARN - You're bypassing authentication
 ```
@@ -177,6 +258,7 @@ Docker containers exit unexpectedly or fail to start.
 
 **Solution:**
 Check the Docker logs for any error messages using the command:
+
 ```bash
 docker logs [container_name]
 ```
@@ -190,6 +272,7 @@ docker logs [container_name]
 Errors related to connecting to Redis, such as timeouts or "Connection refused".
 
 **Solution:**
+
 - Ensure that the Redis service is up and running in your Docker environment.
 - Verify that the REDIS_URL and REDIS_RATE_LIMIT_URL in your .env file point to the correct Redis instance, ensure that it points to the same URL in the `docker-compose.yaml` file (`redis://redis:6379`)
 - Check network settings and firewall rules that may block the connection to the Redis port.
@@ -200,6 +283,7 @@ Errors related to connecting to Redis, such as timeouts or "Connection refused".
 API requests to the Firecrawl instance timeout or return no response.
 
 **Solution:**
+
 - Ensure that the Firecrawl service is running by checking the Docker container status.
 - Verify that the PORT and HOST settings in your .env file are correct and that no other service is using the same port.
 - Check the network configuration to ensure that the host is accessible from the client making the API request.
