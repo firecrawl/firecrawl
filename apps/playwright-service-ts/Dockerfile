@@ -9,7 +9,7 @@ COPY . .
 ENV PLAYWRIGHT_BROWSERS_PATH=/tmp/.cache
 
 # Install Playwright dependencies
-RUN npx playwright install --with-deps
+RUN npx playwright install chromium --with-deps
 
 RUN npm run build
 
