@@ -1,4 +1,5 @@
 import express from "express";
+import type { Request, Response, NextFunction } from "express";
 import { crawlController } from "../controllers/v1/crawl";
 // import { crawlStatusController } from "../../src/controllers/v1/crawl-status";
 import { scrapeController } from "../../src/controllers/v1/scrape";
@@ -41,6 +42,35 @@ import { facilitator } from "@coinbase/x402";
 expressWs(express());
 
 export const v1Router = express.Router();
+
+// Ensure any `{ error: Error }` payloads serialize meaningfully (avoid `{}`)
+v1Router.use(
+  "/x402",
+  (req: Request, res: Response, next: NextFunction): void => {
+    const originalJson = res.json.bind(res);
+    res.json = (body: any) => {
+      try {
+        if (body && typeof body === "object" && "error" in body) {
+          const errVal = (body as any).error;
+          if (errVal instanceof Error) {
+            (body as any).error = errVal.message || String(errVal);
+          } else if (
+            errVal &&
+            typeof errVal === "object" &&
+            Object.keys(errVal).length === 0 &&
+            (errVal as any).message
+          ) {
+            (body as any).error = (errVal as any).message;
+          }
+        }
+      } catch {
+        // no-op; fall back to original body
+      }
+      return originalJson(body);
+    };
+    next();
+  },
+);
 
 // Configure payment middleware to enable micropayment-protected endpoints
 // This middleware handles payment verification and processing for premium API features
@@ -106,6 +136,27 @@ v1Router.use(
     },
     facilitator,
   ),
+);
+
+// Centralized error handler for X402 routes to surface meaningful messages
+v1Router.use(
+  "/x402",
+  (
+    err: any,
+    req: Request,
+    res: Response,
+    next: NextFunction,
+  ): void => {
+    if (res.headersSent) return next(err);
+    const status = err?.statusCode || err?.status || 400;
+    const message =
+      (typeof err === "string" && err) ||
+      err?.message ||
+      err?.error ||
+      "Payment validation failed";
+    const code = err?.code || err?.errorCode;
+    res.status(status).json({ success: false, error: message, code });
+  },
 );
 
 v1Router.post(

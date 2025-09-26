@@ -345,10 +345,17 @@ export async function x402SearchController(
     }
 
     Sentry.captureException(error);
-    logger.error("Unhandled error occurred in search [x402]", { error });
-    return res.status(500).json({
+    const status = (error as any)?.statusCode || (error as any)?.status || 500;
+    const message =
+      (typeof error === "string" && error) ||
+      (error as any)?.message ||
+      (error as any)?.error ||
+      "Unknown error occurred";
+    logger.error("Unhandled error occurred in search [x402]", { message });
+    return res.status(status).json({
       success: false,
-      error: error.message,
+      error: message,
+      code: (error as any)?.code || (error as any)?.errorCode,
     });
   }
 }
