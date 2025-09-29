@@ -473,6 +473,69 @@ export async function batchScrapeWithConcurrencyTracking(
 }
 
 // =========================================
+// Extract API
+// =========================================
+
+async function extractStart(body: ExtractRequestInput, identity: Identity) {
+  return await request(TEST_URL)
+    .post("/v2/extract")
+    .set("Authorization", `Bearer ${identity.apiKey}`)
+    .set("Content-Type", "application/json")
+    .send(body);
+}
+
+async function extractStatus(id: string, identity: Identity) {
+  return await request(TEST_URL)
+    .get("/v2/extract/" + encodeURIComponent(id))
+    .set("Authorization", `Bearer ${identity.apiKey}`)
+    .send();
+}
+
+function expectExtractStartToSucceed(
+  response: Awaited<ReturnType<typeof extractStart>>,
+) {
+  expect(response.statusCode).toBe(200);
+  expect(response.body.success).toBe(true);
+  expect(typeof response.body.id).toBe("string");
+}
+
+function expectExtractToSucceed(
+  response: Awaited<ReturnType<typeof extractStatus>>,
+) {
+  expect(response.statusCode).toBe(200);
+  expect(response.body.success).toBe(true);
+  expect(typeof response.body.status).toBe("string");
+  expect(response.body.status).toBe("completed");
+  expect(response.body).toHaveProperty("data");
+}
+
+export async function extract(
+  body: ExtractRequestInput,
+  identity: Identity,
+): Promise<ExtractResponse> {
+  const es = await extractStart(body, identity);
+  expectExtractStartToSucceed(es);
+
+  let x;
+
+  do {
+    x = await extractStatus(es.body.id, identity);
+    expect(x.statusCode).toBe(200);
+    expect(typeof x.body.status).toBe("string");
+  } while (x.body.status === "processing");
+
+  expectExtractToSucceed(x);
+  return x.body;
+}
+
+export async function extractRaw(
+  body: ExtractRequestInput,
+  identity: Identity,
+) {
+  return await extractStart(body, identity);
+}
+
+// =========================================
 // ZDR API
 // =========================================
 
