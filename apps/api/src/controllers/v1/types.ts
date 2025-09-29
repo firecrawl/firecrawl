@@ -84,6 +84,8 @@ function normalizeSchemaForOpenAI(schema: any): any {
   function normalizeObject(obj: any): any {
     if (typeof obj !== "object" || obj === null) return obj;
 
+    if (Array.isArray(obj)) return obj;
+
     if (visited.has(obj)) return obj;
     visited.add(obj);
 
