@@ -125,7 +125,7 @@ v1Router.post(
   "/crawl",
   authMiddleware(RateLimiterMode.Crawl),
   countryCheck,
-  checkCreditsMiddleware(),
+  checkCreditsMiddleware(1),
   blocklistMiddleware,
   idempotencyMiddleware,
   wrap(crawlController),
