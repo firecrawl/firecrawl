@@ -71,7 +71,7 @@ export class WebhookSender {
     const webhookHost = new URL(this.config.url).hostname;
     if (
       isIPPrivate(webhookHost) &&
-      !Boolean(process.env.ALLOW_LOCAL_WEBHOOKS)
+      process.env.ALLOW_LOCAL_WEBHOOKS !== "true"
     ) {
       this.logger.warn("Aborting webhook call to private IP address", {
         webhookUrl: this.config.url,
