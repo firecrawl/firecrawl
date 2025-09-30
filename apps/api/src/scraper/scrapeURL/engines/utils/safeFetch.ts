@@ -54,7 +54,11 @@ function makeSecureDispatcher(skipTlsVerification: boolean) {
     )!;
     const socket: Socket | TLSSocket = (client as any)[socketSymbol];
 
-    if (socket.remoteAddress && isIPPrivate(socket.remoteAddress)) {
+    if (
+      socket.remoteAddress &&
+      isIPPrivate(socket.remoteAddress) &&
+      !process.env.SELF_HOSTED_WEBHOOK_URL
+    ) {
       socket.destroy(new InsecureConnectionError());
     }
   });
