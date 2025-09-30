@@ -114,6 +114,9 @@ BULL_AUTH_KEY=CHANGEME
 # Maximum RAM usage threshold (0.0-1.0). Worker will reject new jobs when memory usage exceeds this value.
 # Default: 0.8 (80%)
 # MAX_RAM=0.8
+
+# Set if you'd like to allow local webhooks to be sent to your self-hosted instance
+# ALLOW_LOCAL_WEBHOOKS=true
 ```
 
 3.  Build and run the Docker containers:

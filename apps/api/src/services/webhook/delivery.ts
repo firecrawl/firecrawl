@@ -69,7 +69,10 @@ export class WebhookSender {
 
   private async deliver(payload: any, scrapeId?: string): Promise<void> {
     const webhookHost = new URL(this.config.url).hostname;
-    if (isIPPrivate(webhookHost) && !process.env.SELF_HOSTED_WEBHOOK_URL) {
+    if (
+      isIPPrivate(webhookHost) &&
+      !Boolean(process.env.ALLOW_LOCAL_WEBHOOKS)
+    ) {
       this.logger.warn("Aborting webhook call to private IP address", {
         webhookUrl: this.config.url,
       });

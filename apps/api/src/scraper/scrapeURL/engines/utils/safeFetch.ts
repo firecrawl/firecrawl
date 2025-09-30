@@ -57,7 +57,7 @@ function makeSecureDispatcher(skipTlsVerification: boolean) {
     if (
       socket.remoteAddress &&
       isIPPrivate(socket.remoteAddress) &&
-      !process.env.SELF_HOSTED_WEBHOOK_URL
+      !Boolean(process.env.ALLOW_LOCAL_WEBHOOKS)
     ) {
       socket.destroy(new InsecureConnectionError());
     }
