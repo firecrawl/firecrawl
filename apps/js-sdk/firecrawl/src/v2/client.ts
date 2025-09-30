@@ -72,6 +72,7 @@ export interface FirecrawlClientOptions {
 /**
  * Firecrawl v2 client. Provides typed access to all v2 endpoints and utilities.
  */
+
 export class FirecrawlClient {
   private readonly http: HttpClient;
 
@@ -80,11 +81,15 @@ export class FirecrawlClient {
    * @param options Transport configuration (API key, base URL, timeouts, retries).
    */
   constructor(options: FirecrawlClientOptions = {}) {
+    const defaultApiUrl = "https://api.firecrawl.dev";
+
     const apiKey = options.apiKey ?? process.env.FIRECRAWL_API_KEY ?? "";
-    const apiUrl = (options.apiUrl ?? process.env.FIRECRAWL_API_URL ?? "https://api.firecrawl.dev").replace(/\/$/, "");
-    if (!apiKey) {
+    const apiUrl = (options.apiUrl ?? process.env.FIRECRAWL_API_URL ?? defaultApiUrl).replace(/\/$/, "");
+
+    if (apiUrl !== defaultApiUrl && !apiKey) {
       throw new Error("API key is required. Set FIRECRAWL_API_KEY env or pass apiKey.");
     }
+
     this.http = new HttpClient({
       apiKey,
       apiUrl,
