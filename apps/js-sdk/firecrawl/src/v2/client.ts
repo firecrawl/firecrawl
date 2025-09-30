@@ -81,12 +81,12 @@ export class FirecrawlClient {
    * @param options Transport configuration (API key, base URL, timeouts, retries).
    */
   constructor(options: FirecrawlClientOptions = {}) {
-    const defaultApiUrl = "https://api.firecrawl.dev";
+    const cloudApiUrl = "https://api.firecrawl.dev";
 
     const apiKey = options.apiKey ?? process.env.FIRECRAWL_API_KEY ?? "";
-    const apiUrl = (options.apiUrl ?? process.env.FIRECRAWL_API_URL ?? defaultApiUrl).replace(/\/$/, "");
+    const apiUrl = (options.apiUrl ?? process.env.FIRECRAWL_API_URL ?? cloudApiUrl).replace(/\/$/, "");
 
-    if (apiUrl !== defaultApiUrl && !apiKey) {
+    if (apiUrl !== cloudApiUrl && !apiKey) {
       throw new Error("API key is required. Set FIRECRAWL_API_KEY env or pass apiKey.");
     }
 
