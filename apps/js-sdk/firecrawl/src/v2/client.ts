@@ -76,17 +76,19 @@ export interface FirecrawlClientOptions {
 export class FirecrawlClient {
   private readonly http: HttpClient;
 
+  private isCloudService(url: string): boolean {
+    return url.includes('api.firecrawl.dev');
+  }
+
   /**
    * Create a v2 client.
    * @param options Transport configuration (API key, base URL, timeouts, retries).
    */
   constructor(options: FirecrawlClientOptions = {}) {
-    const cloudApiUrl = "https://api.firecrawl.dev";
-
     const apiKey = options.apiKey ?? process.env.FIRECRAWL_API_KEY ?? "";
-    const apiUrl = (options.apiUrl ?? process.env.FIRECRAWL_API_URL ?? cloudApiUrl).replace(/\/$/, "");
+    const apiUrl = (options.apiUrl ?? process.env.FIRECRAWL_API_URL ?? "https://api.firecrawl.dev").replace(/\/$/, "");
 
-    if (apiUrl === cloudApiUrl && !apiKey) {
+    if (this.isCloudService(apiUrl) && !apiKey) {
       throw new Error("API key is required for the cloud API. Set FIRECRAWL_API_KEY env or pass apiKey.");
     }
 
