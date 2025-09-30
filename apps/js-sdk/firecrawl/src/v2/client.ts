@@ -86,8 +86,8 @@ export class FirecrawlClient {
     const apiKey = options.apiKey ?? process.env.FIRECRAWL_API_KEY ?? "";
     const apiUrl = (options.apiUrl ?? process.env.FIRECRAWL_API_URL ?? cloudApiUrl).replace(/\/$/, "");
 
-    if (apiUrl !== cloudApiUrl && !apiKey) {
-      throw new Error("API key is required. Set FIRECRAWL_API_KEY env or pass apiKey.");
+    if (apiUrl === cloudApiUrl && !apiKey) {
+      throw new Error("API key is required for the cloud API. Set FIRECRAWL_API_KEY env or pass apiKey.");
     }
 
     this.http = new HttpClient({
