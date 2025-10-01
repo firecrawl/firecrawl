@@ -349,7 +349,7 @@ export async function crawlStatusController(
   if (process.env.USE_DB_AUTHENTICATION === "true" && !isPreviewTeam) {
     // new DB-based path
     const { data, error } = await supabase_service.rpc(
-      "crawl_status_1",
+      "crawl_status_2",
       {
         i_team_id: req.auth.team_id,
         i_crawl_id: req.params.jobId,
