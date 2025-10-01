@@ -79,6 +79,11 @@ function normalizeSchemaForOpenAI(schema: any): any {
 
     const normalized = { ...obj };
 
+    // handle $ref recursion - preserve as-is for OpenAI compatibility
+    if (normalized.hasOwnProperty("$ref")) {
+      return normalized;
+    }
+
     if (
       normalized.type === "object" &&
       normalized.hasOwnProperty("properties") &&
@@ -111,7 +116,11 @@ function normalizeSchemaForOpenAI(schema: any): any {
     }
 
     for (const [key, value] of Object.entries(normalized)) {
-      if (typeof value === "object" && value !== null) {
+      if (
+        typeof value === "object" &&
+        value !== null &&
+        !value.hasOwnProperty("$ref")
+      ) {
         normalized[key] = normalizeObject(value);
       }
     }
@@ -135,6 +144,10 @@ function validateSchemaForOpenAI(schema: any): boolean {
     if (visited.has(obj)) return false;
     visited.add(obj);
 
+    if (obj.hasOwnProperty("$ref")) {
+      return false;
+    }
+
     if (
       obj.type === "object" &&
       !obj.hasOwnProperty("properties") &&
@@ -145,7 +158,11 @@ function validateSchemaForOpenAI(schema: any): boolean {
     }
 
     for (const value of Object.values(obj)) {
-      if (typeof value === "object" && value !== null) {
+      if (
+        typeof value === "object" &&
+        value !== null &&
+        !value.hasOwnProperty("$ref")
+      ) {
         if (hasInvalidStructure(value)) return true;
       }
     }
@@ -156,7 +173,7 @@ function validateSchemaForOpenAI(schema: any): boolean {
 }
 
 const OPENAI_SCHEMA_ERROR_MESSAGE =
-  "Schema contains invalid structure for OpenAI: object type with no 'properties' defined but 'additionalProperties: true' (schema-less dictionary not supported by OpenAI). Please define specific properties for your object.";
+  "Schema contains invalid structure for OpenAI: object type with no 'properties' defined but 'additionalProperties: true' (schema-less dictionary not supported by OpenAI). Please define specific properties for your object. Note: Recursive schemas using '$ref' are supported.";
 
 const ACTIONS_MAX_WAIT_TIME = 60;
 const MAX_ACTIONS = 50;
