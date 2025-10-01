@@ -5,7 +5,7 @@ Search functionality for Firecrawl v2 API.
 import re
 from typing import Dict, Any, Union, List, TypeVar, Type
 from ..types import SearchRequest, SearchData, Document, SearchResultWeb, SearchResultNews, SearchResultImages
-from ..utils.normalize import normalize_document_input
+from ..utils.normalize import normalize_document_input, _map_search_result_keys
 from ..utils import HttpClient, handle_response_error, validate_scrape_options, prepare_scrape_options
 
 T = TypeVar("T")
@@ -73,9 +73,20 @@ def _transform_array(arr: List[Any], result_type: Type[T]) -> List[Union[T, 'Doc
             ):
                 results.append(Document(**normalize_document_input(item)))
             else:
-                results.append(result_type(**item))
+                result_type_name = None
+                if result_type == SearchResultImages:
+                    result_type_name = "images"
+                elif result_type == SearchResultNews:
+                    result_type_name = "news"
+                elif result_type == SearchResultWeb:
+                    result_type_name = "web"
+
+                if result_type_name:
+                    normalized_item = _map_search_result_keys(item, result_type_name)
+                    results.append(result_type(**normalized_item))
+                else:
+                    results.append(result_type(**item))
         else:
-            # For non-dict items, assume it's a URL and wrap in result_type
             results.append(result_type(url=item))
     return results
 
