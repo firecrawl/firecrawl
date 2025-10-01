@@ -332,8 +332,8 @@ def wait_for_crawl_completion(
     while True:
         crawl_job = get_crawl_status(client, job_id)
         
-        # Check if job is complete
-        if crawl_job.status in ["completed", "failed"]:
+        # Check if job is complete (including cancelled)
+        if crawl_job.status in ["completed", "failed", "cancelled"]:
             return crawl_job
         
         # Check timeout

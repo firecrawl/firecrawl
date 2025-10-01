@@ -348,7 +348,7 @@ class CrawlResponse(BaseModel):
 
 class CrawlJob(BaseModel):
     """Crawl job status and progress data."""
-    status: Literal["scraping", "completed", "failed"]
+    status: Literal["scraping", "completed", "failed", "cancelled"]
     total: int = 0
     completed: int = 0
     credits_used: int = 0
