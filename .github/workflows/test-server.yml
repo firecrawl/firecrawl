@@ -69,6 +69,7 @@ jobs:
       NUQ_DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
       TEST_SUITE_SELF_HOSTED: true
       HOST: 0.0.0.0
+      REDIS_RATE_LIMIT_URL: redis://127.0.0.1:6379
     steps:
       - uses: actions/checkout@v5
       - name: Run Docker Postgres
@@ -130,6 +131,8 @@ jobs:
       - name: Wait for playwright
         if: matrix.engine == 'playwright'
         run: pnpx wait-on tcp:3003 -t 15s
+      - name: Wait for Redis
+        run: pnpx wait-on tcp:6379 -t 30s
       - name: Start the application and run snippet tests
         run: pnpm harness pnpm test:snips
         working-directory: ./apps/api
@@ -168,6 +171,7 @@ jobs:
       BULL_AUTH_KEY: ${{ secrets.BULL_AUTH_KEY }}
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
       REDIS_URL: ${{ secrets.REDIS_URL }}
+      REDIS_RATE_LIMIT_URL: ${{ secrets.REDIS_URL }}
       SUPABASE_ANON_TOKEN: ${{ secrets.SUPABASE_ANON_TOKEN }}
       SUPABASE_SERVICE_TOKEN: ${{ secrets.SUPABASE_SERVICE_TOKEN }}
       SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
@@ -243,6 +247,9 @@ jobs:
       - name: Build the application and run snippet tests
         run: pnpm harness pnpm test:snips
         working-directory: ./apps/api
+      - name: Wait for Redis
+        if: always()
+        run: pnpx wait-on tcp:6379 -t 30s
       - name: Create logs directory
         if: always()
         run: |
