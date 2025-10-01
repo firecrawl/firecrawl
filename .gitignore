@@ -45,3 +45,5 @@ gke-key.json
 CLAUDE.local.md
 
 *.egg-info/
+# local SDK venv
+apps/python-sdk/.venv/
