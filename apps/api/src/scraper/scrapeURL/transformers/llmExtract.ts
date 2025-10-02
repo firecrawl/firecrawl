@@ -259,7 +259,7 @@ export async function generateCompletions({
   markdown,
   previousWarning,
   isExtractEndpoint,
-  model = getModel("gpt-4o-mini", "openai"),
+  model = getModel("gpt-4o", "openai"),
   mode = "object",
   providerOptions,
   retryModel = getModel("claude-3-5-sonnet-20240620", "anthropic"),
@@ -897,7 +897,7 @@ export async function performLLMExtract(
       options: jsonFormat,
       markdown: document.markdown,
       previousWarning: document.warning,
-      model: getModel("gpt-4o-mini", "openai"),
+      model: getModel("gpt-4o", "openai"),
       retryModel: getModel("gpt-4o", "openai"),
       costTrackingOptions: {
         costTracking: meta.costTracking,

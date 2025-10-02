@@ -72,16 +72,37 @@ function normalizeSchemaForOpenAI(schema: any): any {
 
   function normalizeObject(obj: any): any {
     if (typeof obj !== "object" || obj === null) return obj;
-    if (Array.isArray(obj)) return obj;
+    if (Array.isArray(obj)) {
+      return obj.map(item => normalizeObject(item));
+    }
 
     if (visited.has(obj)) return obj;
     visited.add(obj);
 
     const normalized = { ...obj };
 
-    // handle $ref recursion - preserve as-is for OpenAI compatibility
+    // Handle $ref recursion - preserve as-is for OpenAI compatibility
     if (normalized.hasOwnProperty("$ref")) {
       return normalized;
+    }
+
+    if (normalized.hasOwnProperty("$defs")) {
+      const { $defs, ...rest } = normalized;
+      const processedRest = {};
+
+      for (const [key, value] of Object.entries(rest)) {
+        if (
+          typeof value === "object" &&
+          value !== null &&
+          !value.hasOwnProperty("$ref")
+        ) {
+          processedRest[key] = normalizeObject(value);
+        } else {
+          processedRest[key] = value;
+        }
+      }
+
+      return { ...processedRest, $defs };
     }
 
     if (
