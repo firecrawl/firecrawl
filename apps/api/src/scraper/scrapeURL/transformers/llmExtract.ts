@@ -930,6 +930,8 @@ export async function performLLMExtract(
 
     // let generationOptions = { ...originalOptions }; // Start with original options
 
+    const modelSelection = selectModelForSchema(jsonFormat.schema);
+
     const generationOptions: GenerateCompletionsOptions = {
       logger: meta.logger.child({
         method: "performLLMExtract/generateCompletions",
@@ -937,11 +939,8 @@ export async function performLLMExtract(
       options: jsonFormat,
       markdown: document.markdown,
       previousWarning: document.warning,
-      model: (() => {
-        const selection = selectModelForSchema(jsonFormat.schema);
-        return getModel(selection.modelName, "openai");
-      })(),
-      retryModel: getModel("gpt-4o", "openai"), // Always use premium model for retries
+      model: getModel(modelSelection.modelName, "openai"),
+      retryModel: getModel("gpt-4o", "openai"),
       costTrackingOptions: {
         costTracking: meta.costTracking,
         metadata: {
