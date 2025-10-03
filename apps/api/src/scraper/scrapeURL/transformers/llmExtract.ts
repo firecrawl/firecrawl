@@ -25,6 +25,46 @@ import { extractData } from "../lib/extractSmartScrape";
 import { CostTracking } from "../../../lib/cost-tracking";
 import { isAgentExtractModelValid } from "../../../controllers/v1/types";
 import { hasFormatOfType } from "../../../lib/format-utils";
+
+// Smart model selection based on schema
+function detectRecursiveSchema(schema: any): boolean {
+  if (!schema || typeof schema !== "object") return false;
+
+  const schemaString = JSON.stringify(schema);
+  const hasRefs =
+    schemaString.includes('"$ref"') ||
+    schemaString.includes("#/$defs/") ||
+    schemaString.includes("#/definitions/");
+  const hasDefs = !!(schema.$defs || schema.definitions);
+
+  return hasRefs || hasDefs;
+}
+
+function selectModelForSchema(schema?: any): {
+  modelName: string;
+  reason: string;
+} {
+  if (!schema) {
+    return { modelName: "gpt-4o-mini", reason: "no_schema" };
+  }
+
+  const isRecursive = detectRecursiveSchema(schema);
+
+  if (isRecursive) {
+    logger.info(`Model: gpt-4o | hasRef: true`);
+    return {
+      modelName: "gpt-4o",
+      reason: "recursive_schema_detected",
+    };
+  }
+
+  logger.info(`Model: gpt-4o-mini | hasRef: false`);
+  return {
+    modelName: "gpt-4o-mini",
+    reason: "simple_schema",
+  };
+}
+
 // TODO: fix this, it's horrible
 type LanguageModelV1ProviderMetadata = {
   anthropic?: {
@@ -259,7 +299,7 @@ export async function generateCompletions({
   markdown,
   previousWarning,
   isExtractEndpoint,
-  model = getModel("gpt-4o", "openai"),
+  model = getModel("gpt-4o-mini", "openai"), // Default model, will be overridden by smart selection
   mode = "object",
   providerOptions,
   retryModel = getModel("claude-3-5-sonnet-20240620", "anthropic"),
@@ -897,8 +937,11 @@ export async function performLLMExtract(
       options: jsonFormat,
       markdown: document.markdown,
       previousWarning: document.warning,
-      model: getModel("gpt-4o", "openai"),
-      retryModel: getModel("gpt-4o", "openai"),
+      model: (() => {
+        const selection = selectModelForSchema(jsonFormat.schema);
+        return getModel(selection.modelName, "openai");
+      })(),
+      retryModel: getModel("gpt-4o", "openai"), // Always use premium model for retries
       costTrackingOptions: {
         costTracking: meta.costTracking,
         metadata: {
@@ -1089,8 +1132,17 @@ export async function performSummary(
       },
       markdown: trimOutput.text,
       previousWarning: document.warning,
-      model: getModel("gpt-4o-mini", "openai"),
-      retryModel: getModel("gpt-4o", "openai"),
+      model: (() => {
+        // Summary always uses simple schema, so will use gpt-4o-mini
+        const inlineSchema = {
+          type: "object",
+          properties: { summary: { type: "string" } },
+          required: ["summary"],
+        };
+        const selection = selectModelForSchema(inlineSchema);
+        return getModel(selection.modelName, "openai");
+      })(),
+      retryModel: getModel("gpt-4o", "openai"), // Always use premium model for retries
       costTrackingOptions: {
         costTracking: meta.costTracking,
         metadata: {
