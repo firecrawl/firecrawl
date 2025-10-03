@@ -194,7 +194,6 @@ const resolveRefs = (
 ): any => {
   if (!obj || typeof obj !== "object" || depth > 10) return obj;
 
-  // Emergency safeguard: if we detect any recursive patterns, abort immediately
   const objString = JSON.stringify(obj);
   if (objString.includes("#/$defs/") && objString.includes('"$ref"')) {
     console.warn(
@@ -203,7 +202,7 @@ const resolveRefs = (
     return obj;
   }
 
-  // Prevent infinite recursion by checking if we've already processed this object
+  // Prevent infinite recursion
   if (visited.has(obj)) return obj;
   visited.add(obj);
 
@@ -279,9 +278,6 @@ export async function extractData({
 
   if (schema) {
     const defs = schema.$defs || {};
-
-    // Always skip reference resolution if we detect any $defs or $ref patterns
-    // This is a safe approach that avoids infinite recursion entirely
     const schemaString = JSON.stringify(schema);
     const hasAnyRefs =
       schema.$defs ||
@@ -297,7 +293,6 @@ export async function extractData({
           hasRefPathInString: schemaString.includes("#/$defs/"),
         },
       );
-      // Don't call resolveRefs at all when we detect recursive patterns
     } else {
       logger.info("No recursive references detected, resolving refs", {
         schema,

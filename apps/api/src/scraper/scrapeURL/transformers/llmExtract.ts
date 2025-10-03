@@ -299,7 +299,7 @@ export async function generateCompletions({
   markdown,
   previousWarning,
   isExtractEndpoint,
-  model = getModel("gpt-4o-mini", "openai"), // Default model, will be overridden by smart selection
+  model = getModel("gpt-4o-mini", "openai"),
   mode = "object",
   providerOptions,
   retryModel = getModel("claude-3-5-sonnet-20240620", "anthropic"),
@@ -1132,7 +1132,6 @@ export async function performSummary(
       markdown: trimOutput.text,
       previousWarning: document.warning,
       model: (() => {
-        // Summary always uses simple schema, so will use gpt-4o-mini
         const inlineSchema = {
           type: "object",
           properties: { summary: { type: "string" } },
@@ -1141,7 +1140,7 @@ export async function performSummary(
         const selection = selectModelForSchema(inlineSchema);
         return getModel(selection.modelName, "openai");
       })(),
-      retryModel: getModel("gpt-4o", "openai"), // Always use premium model for retries
+      retryModel: getModel("gpt-4o", "openai"),
       costTrackingOptions: {
         costTracking: meta.costTracking,
         metadata: {
