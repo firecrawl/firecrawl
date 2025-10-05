@@ -2,10 +2,7 @@ import "dotenv/config";
 import { shutdownOtel } from "../otel";
 import "./sentry";
 import * as Sentry from "@sentry/node";
-import {
-  getExtractQueue,
-  getRedisConnection,
-} from "./queue-service";
+import { getExtractQueue, getRedisConnection } from "./queue-service";
 import { Job, Queue, Worker } from "bullmq";
 import { logger as _logger } from "../lib/logger";
 import systemMonitor from "./system-monitor";
@@ -289,7 +286,7 @@ app.get("/liveness", (req, res) => {
   }
 });
 
-const workerPort = process.env.EXTRACT_WORKER_PORT || process.env.PORT || 3005;
+const workerPort = Number(process.env.EXTRACT_WORKER_PORT ?? "3004");
 app.listen(workerPort, () => {
   _logger.info(`Liveness endpoint is running on port ${workerPort}`);
 });
@@ -300,9 +297,7 @@ app.listen(workerPort, () => {
     process.exit(1);
   });
 
-  await Promise.all([
-    workerFun(getExtractQueue(), processExtractJobInternal),
-  ]);
+  await Promise.all([workerFun(getExtractQueue(), processExtractJobInternal)]);
 
   console.log("All workers exited. Waiting for all jobs to finish...");
 

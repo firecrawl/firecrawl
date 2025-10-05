@@ -343,6 +343,8 @@ function startServices(command?: string[]): Services {
     },
   );
 
+  const extractWorkerPort = process.env.EXTRACT_WORKER_PORT ?? "3004";
+
   const extractWorker = execForward(
     "extract-worker",
     process.argv[2] === "--start-docker"
@@ -351,7 +353,7 @@ function startServices(command?: string[]): Services {
     {
       NUQ_REDUCE_NOISE: "true",
       NUQ_POD_NAME: "extract-worker",
-      NUQ_WORKER_PORT: String(3005),
+      EXTRACT_WORKER_PORT: extractWorkerPort,
     },
   );
 
