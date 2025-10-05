@@ -343,7 +343,7 @@ function startServices(command?: string[]): Services {
     },
   );
 
-  const extractWorkerPort = process.env.EXTRACT_WORKER_PORT ?? "3004";
+  const extractWorkerPort = process.env.EXTRACT_WORKER_PORT ?? "3005";
 
   const extractWorker = execForward(
     "extract-worker",
