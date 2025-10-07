@@ -131,6 +131,7 @@ export type EngineScrapeResult = {
   postprocessorsUsed?: string[];
 
   proxyUsed: "basic" | "stealth";
+  json?: any;
 };
 
 const engineHandlers: {

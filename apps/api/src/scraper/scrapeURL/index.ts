@@ -691,8 +691,13 @@ async function scrapeURLLoop(meta: Meta): Promise<ScrapeUrlResponse> {
       }
     }
 
+    const wantsJson =
+      hasFormatOfType(meta.options.formats, "json") !== undefined ||
+      meta.internalOptions.v1OriginalFormat === "json";
+
     let document: Document = {
       markdown: engineResult.markdown,
+      json: wantsJson ? engineResult.json : undefined,
       rawHtml: engineResult.html,
       screenshot: engineResult.screenshot,
       actions: engineResult.actions,
