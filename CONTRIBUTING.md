@@ -51,6 +51,12 @@ USE_DB_AUTHENTICATION=false
 ## Using the PostgreSQL for queuing -- change if credentials, host, or DB is different
 NUQ_DATABASE_URL=postgres://postgres:postgres@localhost:5433/postgres
 
+# ===== Worker ports (must all be unique) ======
+WORKER_PORT=3003
+EXTRACT_WORKER_PORT=3004
+NUQ_WORKER_PORT=3005
+NUQ_PREFETCH_WORKER_PORT=3006
+
 # ===== Optional ENVS ======
 
 # Supabase Setup (used to support DB authentication, advanced logging, etc.)
