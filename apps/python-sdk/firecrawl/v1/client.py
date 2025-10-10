@@ -629,12 +629,12 @@ class V1FirecrawlApp:
         if extract is not None:
             extract = self._ensure_schema_dict(extract)
             if isinstance(extract, dict) and "schema" in extract:
-                extract = self._process_schema_with_validation(extract)
+                extract["schema"] = self._ensure_schema_dict(extract["schema"])
             scrape_params['extract'] = extract if isinstance(extract, dict) else extract.dict(by_alias=True, exclude_none=True)
         if json_options is not None:
             json_options = self._ensure_schema_dict(json_options)
             if isinstance(json_options, dict) and "schema" in json_options:
-                json_options = self._process_schema_with_validation(json_options)
+                json_options["schema"] = self._ensure_schema_dict(json_options["schema"])
             scrape_params['jsonOptions'] = json_options if isinstance(json_options, dict) else json_options.dict(by_alias=True, exclude_none=True)
         if actions:
             scrape_params['actions'] = [action if isinstance(action, dict) else action.dict(by_alias=True, exclude_none=True) for action in actions]
@@ -1522,12 +1522,12 @@ class V1FirecrawlApp:
         if extract is not None:
             extract = self._ensure_schema_dict(extract)
             if isinstance(extract, dict) and "schema" in extract:
-                extract = self._process_schema_with_validation(extract)
+                extract["schema"] = self._ensure_schema_dict(extract["schema"])
             scrape_params['extract'] = extract if isinstance(extract, dict) else extract.dict(by_alias=True, exclude_none=True)
         if json_options is not None:
             json_options = self._ensure_schema_dict(json_options)
             if isinstance(json_options, dict) and "schema" in json_options:
-                json_options = self._process_schema_with_validation(json_options)
+                json_options["schema"] = self._ensure_schema_dict(json_options["schema"])
             scrape_params['jsonOptions'] = json_options if isinstance(json_options, dict) else json_options.dict(by_alias=True, exclude_none=True)
         if actions:
             scrape_params['actions'] = [action if isinstance(action, dict) else action.dict(by_alias=True, exclude_none=True) for action in actions]
@@ -1548,9 +1548,9 @@ class V1FirecrawlApp:
         params_dict['origin'] = f"python-sdk@{version}"
 
         if 'extract' in params_dict and params_dict['extract'] and 'schema' in params_dict['extract']:
-            params_dict['extract'] = self._process_schema_with_validation(params_dict['extract'])
+            params_dict['extract']['schema'] = self._ensure_schema_dict(params_dict['extract']['schema'])
         if 'jsonOptions' in params_dict and params_dict['jsonOptions'] and 'schema' in params_dict['jsonOptions']:
-            params_dict['jsonOptions'] = self._process_schema_with_validation(params_dict['jsonOptions'])
+            params_dict['jsonOptions']['schema'] = self._ensure_schema_dict(params_dict['jsonOptions']['schema'])
 
         # Make request
         headers = self._prepare_headers(idempotency_key)
@@ -1663,12 +1663,12 @@ class V1FirecrawlApp:
         if extract is not None:
             extract = self._ensure_schema_dict(extract)
             if isinstance(extract, dict) and "schema" in extract:
-                extract = self._process_schema_with_validation(extract)
+                extract["schema"] = self._ensure_schema_dict(extract["schema"])
             scrape_params['extract'] = extract if isinstance(extract, dict) else extract.dict(by_alias=True, exclude_none=True)
         if json_options is not None:
             json_options = self._ensure_schema_dict(json_options)
             if isinstance(json_options, dict) and "schema" in json_options:
-                json_options = self._process_schema_with_validation(json_options)
+                json_options["schema"] = self._ensure_schema_dict(json_options["schema"])
             scrape_params['jsonOptions'] = json_options if isinstance(json_options, dict) else json_options.dict(by_alias=True, exclude_none=True)
         if actions:
             scrape_params['actions'] = [action if isinstance(action, dict) else action.dict(by_alias=True, exclude_none=True) for action in actions]
@@ -1689,9 +1689,9 @@ class V1FirecrawlApp:
         params_dict['origin'] = f"python-sdk@{version}"
 
         if 'extract' in params_dict and params_dict['extract'] and 'schema' in params_dict['extract']:
-            params_dict['extract'] = self._process_schema_with_validation(params_dict['extract'])
+            params_dict['extract']['schema'] = self._ensure_schema_dict(params_dict['extract']['schema'])
         if 'jsonOptions' in params_dict and params_dict['jsonOptions'] and 'schema' in params_dict['jsonOptions']:
-            params_dict['jsonOptions'] = self._process_schema_with_validation(params_dict['jsonOptions'])
+            params_dict['jsonOptions']['schema'] = self._ensure_schema_dict(params_dict['jsonOptions']['schema'])
 
         # Make request
         headers = self._prepare_headers(idempotency_key)
@@ -1799,12 +1799,12 @@ class V1FirecrawlApp:
         if extract is not None:
             extract = self._ensure_schema_dict(extract)
             if isinstance(extract, dict) and "schema" in extract:
-                extract = self._process_schema_with_validation(extract)
+                extract["schema"] = self._ensure_schema_dict(extract["schema"])
             scrape_params['extract'] = extract if isinstance(extract, dict) else extract.dict(by_alias=True, exclude_none=True)
         if json_options is not None:
             json_options = self._ensure_schema_dict(json_options)
             if isinstance(json_options, dict) and "schema" in json_options:
-                json_options = self._process_schema_with_validation(json_options)
+                json_options["schema"] = self._ensure_schema_dict(json_options["schema"])
             scrape_params['jsonOptions'] = json_options if isinstance(json_options, dict) else json_options.dict(by_alias=True, exclude_none=True)
         if actions:
             scrape_params['actions'] = [action if isinstance(action, dict) else action.dict(by_alias=True, exclude_none=True) for action in actions]
@@ -1825,9 +1825,9 @@ class V1FirecrawlApp:
         params_dict['origin'] = f"python-sdk@{version}"
 
         if 'extract' in params_dict and params_dict['extract'] and 'schema' in params_dict['extract']:
-            params_dict['extract'] = self._process_schema_with_validation(params_dict['extract'])
+            params_dict['extract']['schema'] = self._ensure_schema_dict(params_dict['extract']['schema'])
         if 'jsonOptions' in params_dict and params_dict['jsonOptions'] and 'schema' in params_dict['jsonOptions']:
-            params_dict['jsonOptions'] = self._process_schema_with_validation(params_dict['jsonOptions'])
+            params_dict['jsonOptions']['schema'] = self._ensure_schema_dict(params_dict['jsonOptions']['schema'])
 
         # Make request
         headers = self._prepare_headers(idempotency_key)
@@ -2863,9 +2863,10 @@ class V1FirecrawlApp:
                 visited.discard(obj_id)
                 return result
 
+            # Only remove additionalProperties when it's explicitly True
             if (normalized.get("type") == "object" and 
                 "properties" in normalized and 
-                "additionalProperties" in normalized):
+                normalized.get("additionalProperties") is True):
                 del normalized["additionalProperties"]
 
             if (normalized.get("type") == "object" and 
@@ -2882,9 +2883,13 @@ class V1FirecrawlApp:
                 else:
                     del normalized["required"]
 
+            # Handle nested schemas including arrays (anyOf/oneOf/items)
             for key, value in list(normalized.items()):
                 if isinstance(value, dict) and "$ref" not in value:
                     normalized[key] = normalize_object(value)
+                elif isinstance(value, list):
+                    # Handle arrays that might contain schema objects
+                    normalized[key] = [normalize_object(item) if isinstance(item, dict) else item for item in value]
 
             visited.discard(obj_id)
             return normalized
@@ -2926,11 +2931,19 @@ class V1FirecrawlApp:
                 visited.discard(obj_id)
                 return True
 
+            # Check both direct dict values and arrays for nested schemas
             for value in obj.values():
                 if isinstance(value, dict) and "$ref" not in value:
                     if has_invalid_structure(value):
                         visited.discard(obj_id)
                         return True
+                elif isinstance(value, list):
+                    # Check items in arrays (anyOf/oneOf/items)
+                    for item in value:
+                        if isinstance(item, dict) and "$ref" not in item:
+                            if has_invalid_structure(item):
+                                visited.discard(obj_id)
+                                return True
 
             visited.discard(obj_id)
             return False
@@ -3003,6 +3016,7 @@ class V1FirecrawlApp:
                 
             schema_container[schema_key] = schema
         return schema_container
+
 
 class V1CrawlWatcher:
     """
@@ -3444,12 +3458,12 @@ class AsyncV1FirecrawlApp(V1FirecrawlApp):
         if extract is not None:
             extract = self._ensure_schema_dict(extract)
             if isinstance(extract, dict) and "schema" in extract:
-                extract = self._process_schema_with_validation(extract)
+                extract["schema"] = self._ensure_schema_dict(extract["schema"])
             scrape_params['extract'] = extract if isinstance(extract, dict) else extract.dict(by_alias=True, exclude_none=True)
         if json_options is not None:
             json_options = self._ensure_schema_dict(json_options)
             if isinstance(json_options, dict) and "schema" in json_options:
-                json_options = self._process_schema_with_validation(json_options)
+                json_options["schema"] = self._ensure_schema_dict(json_options["schema"])
             scrape_params['jsonOptions'] = json_options if isinstance(json_options, dict) else json_options.dict(by_alias=True, exclude_none=True)
         if actions:
             scrape_params['actions'] = [action if isinstance(action, dict) else action.dict(by_alias=True, exclude_none=True) for action in actions]
@@ -3570,12 +3584,12 @@ class AsyncV1FirecrawlApp(V1FirecrawlApp):
         if extract is not None:
             extract = self._ensure_schema_dict(extract)
             if isinstance(extract, dict) and "schema" in extract:
-                extract = self._process_schema_with_validation(extract)
+                extract["schema"] = self._ensure_schema_dict(extract["schema"])
             scrape_params['extract'] = extract if isinstance(extract, dict) else extract.dict(by_alias=True, exclude_none=True)
         if json_options is not None:
             json_options = self._ensure_schema_dict(json_options)
             if isinstance(json_options, dict) and "schema" in json_options:
-                json_options = self._process_schema_with_validation(json_options)
+                json_options["schema"] = self._ensure_schema_dict(json_options["schema"])
             scrape_params['jsonOptions'] = json_options if isinstance(json_options, dict) else json_options.dict(by_alias=True, exclude_none=True)
         if actions is not None:
             scrape_params['actions'] = [action.dict(by_alias=True, exclude_none=True) for action in actions]
@@ -3592,9 +3606,9 @@ class AsyncV1FirecrawlApp(V1FirecrawlApp):
         params_dict['origin'] = f"python-sdk@{version}"
 
         if 'extract' in params_dict and params_dict['extract'] and 'schema' in params_dict['extract']:
-            params_dict['extract'] = self._process_schema_with_validation(params_dict['extract'])
+            params_dict['extract']['schema'] = self._ensure_schema_dict(params_dict['extract']['schema'])
         if 'jsonOptions' in params_dict and params_dict['jsonOptions'] and 'schema' in params_dict['jsonOptions']:
-            params_dict['jsonOptions'] = self._process_schema_with_validation(params_dict['jsonOptions'])
+            params_dict['jsonOptions']['schema'] = self._ensure_schema_dict(params_dict['jsonOptions']['schema'])
 
         # Make request
         headers = self._prepare_headers(idempotency_key)
@@ -3710,12 +3724,12 @@ class AsyncV1FirecrawlApp(V1FirecrawlApp):
         if extract is not None:
             extract = self._ensure_schema_dict(extract)
             if isinstance(extract, dict) and "schema" in extract:
-                extract = self._process_schema_with_validation(extract)
+                extract["schema"] = self._ensure_schema_dict(extract["schema"])
             scrape_params['extract'] = extract if isinstance(extract, dict) else extract.dict(by_alias=True, exclude_none=True)
         if json_options is not None:
             json_options = self._ensure_schema_dict(json_options)
             if isinstance(json_options, dict) and "schema" in json_options:
-                json_options = self._process_schema_with_validation(json_options)
+                json_options["schema"] = self._ensure_schema_dict(json_options["schema"])
             scrape_params['jsonOptions'] = json_options if isinstance(json_options, dict) else json_options.dict(by_alias=True, exclude_none=True)
         if actions:
             scrape_params['actions'] = [action if isinstance(action, dict) else action.dict(by_alias=True, exclude_none=True) for action in actions]
@@ -3734,9 +3748,9 @@ class AsyncV1FirecrawlApp(V1FirecrawlApp):
         params_dict['origin'] = f"python-sdk@{version}"
 
         if 'extract' in params_dict and params_dict['extract'] and 'schema' in params_dict['extract']:
-            params_dict['extract'] = self._process_schema_with_validation(params_dict['extract'])
+            params_dict['extract']['schema'] = self._ensure_schema_dict(params_dict['extract']['schema'])
         if 'jsonOptions' in params_dict and params_dict['jsonOptions'] and 'schema' in params_dict['jsonOptions']:
-            params_dict['jsonOptions'] = self._process_schema_with_validation(params_dict['jsonOptions'])
+            params_dict['jsonOptions']['schema'] = self._ensure_schema_dict(params_dict['jsonOptions']['schema'])
 
         # Make request
         headers = self._prepare_headers(idempotency_key)

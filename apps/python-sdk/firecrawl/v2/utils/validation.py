@@ -2,7 +2,7 @@
 Shared validation functions for Firecrawl v2 API.
 """
 
-from typing import Optional, Dict, Any, List, WeakSet
+from typing import Optional, Dict, Any, List
 from ..types import ScrapeOptions, ScrapeFormats
 
 
@@ -72,7 +72,7 @@ def normalize_schema_for_openai(schema: Any) -> Any:
 
         if (normalized.get("type") == "object" and 
             "properties" in normalized and 
-            "additionalProperties" in normalized):
+            normalized.get("additionalProperties") is True):
             del normalized["additionalProperties"]
 
         if (normalized.get("type") == "object" and 
@@ -92,6 +92,8 @@ def normalize_schema_for_openai(schema: Any) -> Any:
         for key, value in list(normalized.items()):
             if isinstance(value, dict) and "$ref" not in value:
                 normalized[key] = normalize_object(value)
+            elif isinstance(value, list):
+                normalized[key] = [normalize_object(item) if isinstance(item, dict) else item for item in value]
 
         visited.discard(obj_id)
         return normalized
@@ -139,6 +141,12 @@ def validate_schema_for_openai(schema: Any) -> bool:
                 if has_invalid_structure(value):
                     visited.discard(obj_id)
                     return True
+            elif isinstance(value, list):
+                for item in value:
+                    if isinstance(item, dict) and "$ref" not in item:
+                        if has_invalid_structure(item):
+                            visited.discard(obj_id)
+                            return True
 
         visited.discard(obj_id)
         return False
