@@ -2,7 +2,7 @@
 Shared validation functions for Firecrawl v2 API.
 """
 
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, Any, List, WeakSet
 from ..types import ScrapeOptions, ScrapeFormats
 
 
@@ -22,6 +22,179 @@ def _convert_format_string(format_str: str) -> str:
         "screenshot_full_page": "screenshot@fullPage"
     }
     return format_mapping.get(format_str, format_str)
+
+
+def normalize_schema_for_openai(schema: Any) -> Any:
+    """
+    Normalize a schema for OpenAI compatibility by handling recursive references.
+    
+    Args:
+        schema: Schema to normalize
+        
+    Returns:
+        Normalized schema
+    """
+    if not schema or not isinstance(schema, dict):
+        return schema
+
+    visited = set()
+
+    def normalize_object(obj: Any) -> Any:
+        if not isinstance(obj, dict):
+            if isinstance(obj, list):
+                return [normalize_object(item) for item in obj]
+            return obj
+
+        obj_id = id(obj)
+        if obj_id in visited:
+            return obj
+        visited.add(obj_id)
+
+        normalized = dict(obj)
+
+        # Handle $ref and $defs recursion
+        if "$ref" in normalized:
+            return normalized
+
+        if "$defs" in normalized:
+            defs = normalized.pop("$defs")
+            processed_rest = {}
+            
+            for key, value in normalized.items():
+                if (isinstance(value, dict) and "$ref" not in value):
+                    processed_rest[key] = normalize_object(value)
+                else:
+                    processed_rest[key] = value
+            
+            result = {**processed_rest, "$defs": defs}
+            visited.discard(obj_id)
+            return result
+
+        if (normalized.get("type") == "object" and 
+            "properties" in normalized and 
+            "additionalProperties" in normalized):
+            del normalized["additionalProperties"]
+
+        if (normalized.get("type") == "object" and 
+            "required" in normalized and 
+            "properties" in normalized):
+            if (isinstance(normalized["required"], list) and 
+                isinstance(normalized["properties"], dict)):
+                valid_required = [field for field in normalized["required"] 
+                               if field in normalized["properties"]]
+                if valid_required:
+                    normalized["required"] = valid_required
+                else:
+                    del normalized["required"]
+            else:
+                del normalized["required"]
+
+        for key, value in list(normalized.items()):
+            if isinstance(value, dict) and "$ref" not in value:
+                normalized[key] = normalize_object(value)
+
+        visited.discard(obj_id)
+        return normalized
+
+    return normalize_object(schema)
+
+
+def validate_schema_for_openai(schema: Any) -> bool:
+    """
+    Validate schema for OpenAI compatibility.
+    
+    Args:
+        schema: Schema to validate
+        
+    Returns:
+        True if schema is valid, False otherwise
+    """
+    if not schema or not isinstance(schema, dict):
+        return True
+
+    visited = set()
+
+    def has_invalid_structure(obj: Any) -> bool:
+        if not isinstance(obj, dict):
+            return False
+
+        obj_id = id(obj)
+        if obj_id in visited:
+            return False
+        visited.add(obj_id)
+
+        if "$ref" in obj:
+            visited.discard(obj_id)
+            return False
+
+        if (obj.get("type") == "object" and 
+            "properties" not in obj and 
+            "patternProperties" not in obj and 
+            obj.get("additionalProperties") is True):
+            visited.discard(obj_id)
+            return True
+
+        for value in obj.values():
+            if isinstance(value, dict) and "$ref" not in value:
+                if has_invalid_structure(value):
+                    visited.discard(obj_id)
+                    return True
+
+        visited.discard(obj_id)
+        return False
+
+    return not has_invalid_structure(schema)
+
+
+OPENAI_SCHEMA_ERROR_MESSAGE = (
+    "Schema contains invalid structure for OpenAI: object type with no 'properties' defined "
+    "but 'additionalProperties: true' (schema-less dictionary not supported by OpenAI). "
+    "Please define specific properties for your object. Note: Recursive schemas using '$ref' are supported."
+)
+
+
+def detect_recursive_schema(schema: Any) -> bool:
+    """
+    Detect if a schema contains recursive references.
+    
+    Args:
+        schema: Schema to analyze
+        
+    Returns:
+        True if schema has recursive patterns, False otherwise
+    """
+    if not schema or not isinstance(schema, dict):
+        return False
+
+    import json
+    schema_string = json.dumps(schema)
+    has_refs = (
+        '"$ref"' in schema_string or
+        "#/$defs/" in schema_string or
+        "#/definitions/" in schema_string
+    )
+    has_defs = bool(schema.get("$defs") or schema.get("definitions"))
+    
+    return has_refs or has_defs
+
+
+def select_model_for_schema(schema: Any = None) -> Dict[str, str]:
+    """
+    Select appropriate model based on schema complexity.
+    
+    Args:
+        schema: Schema to analyze
+        
+    Returns:
+        Dict with modelName and reason
+    """
+    if not schema:
+        return {"modelName": "gpt-4o-mini", "reason": "no_schema"}
+    
+    if detect_recursive_schema(schema):
+        return {"modelName": "gpt-4o", "reason": "recursive_schema_detected"}
+    
+    return {"modelName": "gpt-4o-mini", "reason": "simple_schema"}
 
 
 def _normalize_schema(schema: Any) -> Optional[Dict[str, Any]]:
@@ -83,7 +256,17 @@ def _validate_json_format(format_obj: Any) -> Dict[str, Any]:
     if schema is not None:
         normalized_schema = _normalize_schema(schema)
         if normalized_schema is not None:
-            normalized['schema'] = normalized_schema
+            # Apply OpenAI normalization and validation
+            openai_normalized_schema = normalize_schema_for_openai(normalized_schema)
+            if not validate_schema_for_openai(openai_normalized_schema):
+                raise ValueError(OPENAI_SCHEMA_ERROR_MESSAGE)
+            
+            # Add model selection info for reference (non-intrusive)
+            model_selection = select_model_for_schema(openai_normalized_schema)
+            if '_model_info' not in normalized:
+                normalized['_model_info'] = model_selection
+            
+            normalized['schema'] = openai_normalized_schema
     return normalized
 
 
