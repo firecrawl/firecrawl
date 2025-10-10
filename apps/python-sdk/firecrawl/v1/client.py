@@ -2859,7 +2859,7 @@ class V1FirecrawlApp:
                     else:
                         processed_rest[key] = value
                 
-                result = {**processed_rest, "$defs": defs}
+                result = {**processed_rest, "$defs": {k: normalize_object(v) for k, v in defs.items()}}
                 visited.discard(obj_id)
                 return result
 
