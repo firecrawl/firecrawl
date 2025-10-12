@@ -53,5 +53,3 @@ $$);
 SELECT cron.schedule('nuq_queue_scrape_reindex', '0 9 * * *', $$
   REINDEX TABLE CONCURRENTLY nuq.queue_scrape;
 $$);
-
-ALTER TABLE nuq.queue_scrape ADD COLUMN listen_channel_id text;
