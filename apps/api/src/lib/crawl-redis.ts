@@ -71,7 +71,6 @@ export async function getCrawl(id: string): Promise<StoredCrawl | null> {
       return null;
     }
 
-    await redisEvictConnection.expire("crawl:" + id, 24 * 60 * 60);
     const crawl = JSON.parse(x);
 
     setSpanAttributes(span, {
