@@ -22,6 +22,7 @@ import { performCosineSimilarityV2 } from "./map-cosine";
 import { Logger } from "winston";
 import { logger } from "./logger";
 
+// Max Links that "Smart /map" can return
 const MAX_FIRE_ENGINE_RESULTS = 500;
 const MAX_MAP_LIMIT = 1000;
 
