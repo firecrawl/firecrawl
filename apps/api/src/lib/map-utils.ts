@@ -20,10 +20,15 @@ import {
 } from "../services/index";
 import { performCosineSimilarityV2 } from "./map-cosine";
 import { Logger } from "winston";
+import { logger } from "./logger";
 
-// Max Links that "Smart /map" can return
 const MAX_FIRE_ENGINE_RESULTS = 500;
 const MAX_MAP_LIMIT = 1000;
+
+const isFireEngineAvailable = () => {
+  return process.env.FIRE_ENGINE_BETA_URL !== "" && 
+         process.env.FIRE_ENGINE_BETA_URL !== undefined;
+};
 
 export interface MapResult {
   success: boolean;
@@ -268,6 +273,38 @@ export async function getMapResults({
           description: x.description,
         })),
       );
+    }
+
+    if (!isFireEngineAvailable() && searchResults.flat().length === 0 && crawlerOptions.sitemap === "skip") {
+      logger.debug("FireEngine not available, fall back to sitemap", {
+        url: url,
+        originalSitemapOption: crawlerOptions.sitemap,
+        searchResultsLength: searchResults.flat().length
+      });
+      try {
+        await crawler.tryGetSitemap(
+          urls => {
+            mapResults.push(
+              ...urls.map(x => ({
+                url: x,
+              })),
+            );
+          },
+          true,
+          false,
+          crawlerOptions.timeout ?? 30000,
+          abort,
+        );
+        logger.debug("Sitemap fallback completed", { 
+          url: url,
+          sitemapResultsCount: mapResults.length 
+        });
+      } catch (e) {
+        logger.debug("Sitemap fallback failed", { 
+          url: url,
+          error: (e as any)?.message ?? e 
+        });
+      }
     }
 
     const minimumCutoff = Math.min(MAX_MAP_LIMIT, limit);
