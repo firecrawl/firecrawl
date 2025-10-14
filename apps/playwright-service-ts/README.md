@@ -1,14 +1,16 @@
 # Playwright Scrape API
 
-This is a simple web scraping service built with Express and Playwright.
+This is a web scraping service built with Express and Playwright, enhanced with anti-detection capabilities.
 
 ## Features
 
 - Scrapes HTML content from specified URLs.
+- **Anti-fingerprinting & stealth mode** to bypass anti-bot systems (Cloudflare, etc.)
 - Blocks requests to known ad-serving domains.
 - Blocks media files to reduce bandwidth usage.
 - Uses random user-agent strings to avoid detection.
 - Strategy to ensure the page is fully rendered.
+- Masks automation indicators (navigator.webdriver, chrome runtime, etc.)
 
 ## Install
 ```bash

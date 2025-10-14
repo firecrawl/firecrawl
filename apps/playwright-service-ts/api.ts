@@ -1,6 +1,8 @@
 import express, { Request, Response } from 'express';
 import bodyParser from 'body-parser';
-import { chromium, Browser, BrowserContext, Route, Request as PlaywrightRequest, Page } from 'playwright';
+import { Browser, BrowserContext, Route, Request as PlaywrightRequest, Page } from 'playwright';
+import { chromium } from 'playwright-extra';
+import StealthPlugin from 'puppeteer-extra-plugin-stealth';
 import dotenv from 'dotenv';
 import UserAgent from 'user-agents';
 import { getError } from './helpers/get_error';
@@ -45,6 +47,9 @@ interface UrlModel {
 
 let browser: Browser;
 
+// Add stealth plugin to playwright
+chromium.use(StealthPlugin());
+
 const initializeBrowser = async () => {
   browser = await chromium.launch({
     headless: true,
@@ -55,7 +60,12 @@ const initializeBrowser = async () => {
       '--disable-accelerated-2d-canvas',
       '--no-first-run',
       '--no-zygote',
-      '--disable-gpu'
+      '--disable-gpu',
+      // Additional anti-detection args
+      '--disable-blink-features=AutomationControlled',
+      '--disable-features=IsolateOrigins,site-per-process',
+      '--disable-web-security',
+      '--disable-features=VizDisplayCompositor'
     ]
   });
 };
@@ -68,6 +78,13 @@ const createContext = async (skipTlsVerification: boolean = false) => {
     userAgent,
     viewport,
     ignoreHTTPSErrors: skipTlsVerification,
+    // Additional anti-detection context options
+    locale: 'en-US',
+    timezoneId: 'America/New_York',
+    permissions: [],
+    extraHTTPHeaders: {
+      'Accept-Language': 'en-US,en;q=0.9',
+    },
   };
 
   if (PROXY_SERVER && PROXY_USERNAME && PROXY_PASSWORD) {
@@ -205,6 +222,37 @@ app.post('/scrape', async (req: Request, res: Response) => {
 
   const requestContext = await createContext(skip_tls_verification);
   const page = await requestContext.newPage();
+
+  // Additional anti-detection page setup
+  await page.evaluateOnNewDocument(() => {
+    // Override the navigator.webdriver property
+    Object.defineProperty(navigator, 'webdriver', {
+      get: () => undefined,
+    });
+    
+    // Override the navigator.plugins to make it look more realistic
+    Object.defineProperty(navigator, 'plugins', {
+      get: () => [1, 2, 3, 4, 5],
+    });
+    
+    // Override the navigator.languages to make it more realistic
+    Object.defineProperty(navigator, 'languages', {
+      get: () => ['en-US', 'en'],
+    });
+    
+    // Mock chrome runtime
+    (window as any).chrome = {
+      runtime: {},
+    };
+    
+    // Override permissions
+    const originalQuery = window.navigator.permissions.query;
+    window.navigator.permissions.query = (parameters: any) => (
+      parameters.name === 'notifications' ?
+        Promise.resolve({ state: Notification.permission } as PermissionStatus) :
+        originalQuery(parameters)
+    );
+  });
 
   // Set headers if provided
   if (headers) {
