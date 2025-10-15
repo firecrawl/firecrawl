@@ -1,17 +1,17 @@
-import type { ZodTypeAny } from "zod";
+import type { ZodTypeAny } from 'zod';
 // Public types for Firecrawl JS/TS SDK v2 (camelCase only)
 
 export type FormatString =
-  | "markdown"
-  | "html"
-  | "rawHtml"
-  | "links"
-  | "images"
-  | "screenshot"
-  | "summary"
-  | "changeTracking"
-  | "json"
-  | "attributes";
+  | 'markdown'
+  | 'html'
+  | 'rawHtml'
+  | 'links'
+  | 'images'
+  | 'screenshot'
+  | 'summary'
+  | 'changeTracking'
+  | 'json'
+  | 'attributes';
 
 export interface Viewport {
   width: number;
@@ -23,27 +23,27 @@ export interface Format {
 }
 
 export interface JsonFormat extends Format {
-  type: "json";
+  type: 'json';
   prompt?: string;
   schema?: Record<string, unknown> | ZodTypeAny;
 }
 
 export interface ScreenshotFormat {
-  type: "screenshot";
+  type: 'screenshot';
   fullPage?: boolean;
   quality?: number;
   viewport?: Viewport | { width: number; height: number };
 }
 
 export interface ChangeTrackingFormat extends Format {
-  type: "changeTracking";
-  modes: ("git-diff" | "json")[];
+  type: 'changeTracking';
+  modes: ('git-diff' | 'json')[];
   schema?: Record<string, unknown>;
   prompt?: string;
   tag?: string;
 }
 export interface AttributesFormat extends Format {
-  type: "attributes";
+  type: 'attributes';
   selectors: Array<{
     selector: string;
     attribute: string;
@@ -64,51 +64,62 @@ export interface LocationConfig {
 }
 
 export interface WaitAction {
-  type: "wait";
+  type: 'wait';
   milliseconds?: number;
   selector?: string;
 }
 
 export interface ScreenshotAction {
-  type: "screenshot";
+  type: 'screenshot';
   fullPage?: boolean;
   quality?: number;
   viewport?: Viewport | { width: number; height: number };
 }
 
 export interface ClickAction {
-  type: "click";
+  type: 'click';
   selector: string;
 }
 
 export interface WriteAction {
-  type: "write";
+  type: 'write';
   text: string;
 }
 
 export interface PressAction {
-  type: "press";
+  type: 'press';
   key: string;
 }
 
 export interface ScrollAction {
-  type: "scroll";
-  direction: "up" | "down";
+  type: 'scroll';
+  direction: 'up' | 'down';
   selector?: string;
 }
 
 export interface ScrapeAction {
-  type: "scrape";
+  type: 'scrape';
 }
 
 export interface ExecuteJavascriptAction {
-  type: "executeJavascript";
+  type: 'executeJavascript';
   script: string;
 }
 
 export interface PDFAction {
-  type: "pdf";
-  format?: "A0" | "A1" | "A2" | "A3" | "A4" | "A5" | "A6" | "Letter" | "Legal" | "Tabloid" | "Ledger";
+  type: 'pdf';
+  format?:
+    | 'A0'
+    | 'A1'
+    | 'A2'
+    | 'A3'
+    | 'A4'
+    | 'A5'
+    | 'A6'
+    | 'Letter'
+    | 'Legal'
+    | 'Tabloid'
+    | 'Ledger';
   landscape?: boolean;
   scale?: number;
 }
@@ -133,7 +144,7 @@ export interface ScrapeOptions {
   timeout?: number;
   waitFor?: number;
   mobile?: boolean;
-  parsers?: Array<string | { type: "pdf"; maxPages?: number }>;
+  parsers?: Array<string | { type: 'pdf'; maxPages?: number }>;
   actions?: ActionOption[];
   location?: LocationConfig;
   skipTlsVerification?: boolean;
@@ -141,7 +152,7 @@ export interface ScrapeOptions {
   fastMode?: boolean;
   useMock?: string;
   blockAds?: boolean;
-  proxy?: "basic" | "stealth" | "auto" | string;
+  proxy?: 'basic' | 'stealth' | 'auto' | string;
   maxAge?: number;
   storeInCache?: boolean;
   integration?: string;
@@ -151,22 +162,62 @@ export interface WebhookConfig {
   url: string;
   headers?: Record<string, string>;
   metadata?: Record<string, string>;
-  events?: Array<"completed" | "failed" | "page" | "started">;
+  events?: Array<'completed' | 'failed' | 'page' | 'started'>;
 }
 
 export interface DocumentMetadata {
+  // Common metadata fields
   title?: string;
   description?: string;
+  url?: string;
   language?: string;
   keywords?: string | string[];
   robots?: string;
+
+  // OpenGraph and social metadata
   ogTitle?: string;
   ogDescription?: string;
   ogUrl?: string;
   ogImage?: string;
+  ogAudio?: string;
+  ogDeterminer?: string;
+  ogLocale?: string;
+  ogLocaleAlternate?: string[];
+  ogSiteName?: string;
+  ogVideo?: string;
+
+  // Dublin Core and other site metadata
+  favicon?: string;
+  dcTermsCreated?: string;
+  dcDateCreated?: string;
+  dcDate?: string;
+  dcTermsType?: string;
+  dcType?: string;
+  dcTermsAudience?: string;
+  dcTermsSubject?: string;
+  dcSubject?: string;
+  dcDescription?: string;
+  dcTermsKeywords?: string;
+
+  modifiedTime?: string;
+  publishedTime?: string;
+  articleTag?: string;
+  articleSection?: string;
+
+  // Response-level metadata
   sourceURL?: string;
   statusCode?: number;
+  scrapeId?: string;
+  numPages?: number;
+  contentType?: string;
+  proxyUsed?: 'basic' | 'stealth';
+  cacheState?: 'hit' | 'miss';
+  cachedAt?: string;
+  creditsUsed?: number;
+
+  // Error information
   error?: string;
+
   [key: string]: unknown;
 }
 
@@ -235,13 +286,15 @@ export interface SearchData {
 }
 
 export interface CategoryOption {
-  type: "github" | "research";
+  type: 'github' | 'research' | 'pdf';
 }
 
 export interface SearchRequest {
   query: string;
-  sources?: Array<"web" | "news" | "images" | { type: "web" | "news" | "images" }>;
-  categories?: Array<"github" | "research" | CategoryOption>;
+  sources?: Array<
+    'web' | 'news' | 'images' | { type: 'web' | 'news' | 'images' }
+  >;
+  categories?: Array<'github' | 'research' | 'pdf' | CategoryOption>;
   limit?: number;
   tbs?: string;
   location?: string;
@@ -256,7 +309,7 @@ export interface CrawlOptions {
   excludePaths?: string[] | null;
   includePaths?: string[] | null;
   maxDiscoveryDepth?: number | null;
-  sitemap?: "skip" | "include";
+  sitemap?: 'skip' | 'include';
   ignoreQueryParameters?: boolean;
   limit?: number | null;
   crawlEntireDomain?: boolean;
@@ -276,7 +329,7 @@ export interface CrawlResponse {
 }
 
 export interface CrawlJob {
-  status: "scraping" | "completed" | "failed" | "cancelled";
+  status: 'scraping' | 'completed' | 'failed' | 'cancelled';
   total: number;
   completed: number;
   creditsUsed?: number;
@@ -303,7 +356,7 @@ export interface BatchScrapeResponse {
 }
 
 export interface BatchScrapeJob {
-  status: "scraping" | "completed" | "failed" | "cancelled";
+  status: 'scraping' | 'completed' | 'failed' | 'cancelled';
   completed: number;
   total: number;
   creditsUsed?: number;
@@ -318,7 +371,7 @@ export interface MapData {
 
 export interface MapOptions {
   search?: string;
-  sitemap?: "only" | "include" | "skip";
+  sitemap?: 'only' | 'include' | 'skip';
   includeSubdomains?: boolean;
   limit?: number;
   timeout?: number;
@@ -329,7 +382,7 @@ export interface MapOptions {
 export interface ExtractResponse {
   success?: boolean;
   id?: string;
-  status?: "processing" | "completed" | "failed" | "cancelled";
+  status?: 'processing' | 'completed' | 'failed' | 'cancelled';
   data?: unknown;
   error?: string;
   warning?: string;
@@ -338,7 +391,7 @@ export interface ExtractResponse {
 }
 
 export interface AgentOptions {
-  model: "FIRE-1";
+  model: 'FIRE-1';
 }
 
 export interface ConcurrencyCheck {
@@ -418,9 +471,14 @@ export class SdkError extends Error {
   status?: number;
   code?: string;
   details?: unknown;
-  constructor(message: string, status?: number, code?: string, details?: unknown) {
+  constructor(
+    message: string,
+    status?: number,
+    code?: string,
+    details?: unknown
+  ) {
     super(message);
-    this.name = "FirecrawlSdkError";
+    this.name = 'FirecrawlSdkError';
     this.status = status;
     this.code = code;
     this.details = details;

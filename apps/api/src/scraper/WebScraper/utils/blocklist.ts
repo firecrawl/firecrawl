@@ -28,8 +28,13 @@ export async function initializeBlocklist() {
     .from("blocklist")
     .select("*")
     .single();
-  if (error || !data) {
-    throw new Error("Error getting blocklist");
+
+  if (error) {
+    throw new Error(`Error getting blocklist: ${error.message}`);
+  }
+
+  if (!data) {
+    throw new Error("Error getting blocklist: No data returned from database");
   }
   blob = data.data;
 }

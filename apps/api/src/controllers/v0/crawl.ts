@@ -20,6 +20,7 @@ import {
   finishCrawlKickoff,
   lockURL,
   lockURLs,
+  markCrawlActive,
   saveCrawl,
   StoredCrawl,
 } from "../../../src/lib/crawl-redis";
@@ -203,6 +204,8 @@ export async function crawlController(req: Request, res: Response) {
     } catch (_) {}
 
     await saveCrawl(id, sc);
+
+    await markCrawlActive(id);
 
     await finishCrawlKickoff(id);
 

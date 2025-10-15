@@ -13,6 +13,7 @@ import {
   finishCrawlKickoff,
   getCrawl,
   lockURLs,
+  markCrawlActive,
   saveCrawl,
   StoredCrawl,
 } from "../../lib/crawl-redis";
@@ -95,6 +96,13 @@ export async function batchScrapeController(
     }
   }
 
+  if (urls.length === 0) {
+    return res.status(400).json({
+      success: false,
+      error: "No valid URLs provided",
+    });
+  }
+
   logger.debug("Batch scrape " + id + " starting", {
     urlsLength: urls.length,
     appendToId: req.body.appendToId,
@@ -129,6 +137,7 @@ export async function batchScrapeController(
 
   if (!req.body.appendToId) {
     await saveCrawl(id, sc);
+    await markCrawlActive(id);
   }
 
   let jobPriority = 20;

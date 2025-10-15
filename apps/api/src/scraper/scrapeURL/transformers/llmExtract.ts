@@ -25,6 +25,46 @@ import { extractData } from "../lib/extractSmartScrape";
 import { CostTracking } from "../../../lib/cost-tracking";
 import { isAgentExtractModelValid } from "../../../controllers/v1/types";
 import { hasFormatOfType } from "../../../lib/format-utils";
+
+// Smart model selection based on schema
+function detectRecursiveSchema(schema: any): boolean {
+  if (!schema || typeof schema !== "object") return false;
+
+  const schemaString = JSON.stringify(schema);
+  const hasRefs =
+    schemaString.includes('"$ref"') ||
+    schemaString.includes("#/$defs/") ||
+    schemaString.includes("#/definitions/");
+  const hasDefs = !!(schema.$defs || schema.definitions);
+
+  return hasRefs || hasDefs;
+}
+
+function selectModelForSchema(schema?: any): {
+  modelName: string;
+  reason: string;
+} {
+  if (!schema) {
+    return { modelName: "gpt-4o-mini", reason: "no_schema" };
+  }
+
+  const isRecursive = detectRecursiveSchema(schema);
+
+  if (isRecursive) {
+    logger.info(`Model: gpt-4o | hasRef: true`);
+    return {
+      modelName: "gpt-4o",
+      reason: "recursive_schema_detected",
+    };
+  }
+
+  logger.info(`Model: gpt-4o-mini | hasRef: false`);
+  return {
+    modelName: "gpt-4o-mini",
+    reason: "simple_schema",
+  };
+}
+
 // TODO: fix this, it's horrible
 type LanguageModelV1ProviderMetadata = {
   anthropic?: {
@@ -890,6 +930,8 @@ export async function performLLMExtract(
 
     // let generationOptions = { ...originalOptions }; // Start with original options
 
+    const modelSelection = selectModelForSchema(jsonFormat.schema);
+
     const generationOptions: GenerateCompletionsOptions = {
       logger: meta.logger.child({
         method: "performLLMExtract/generateCompletions",
@@ -897,7 +939,7 @@ export async function performLLMExtract(
       options: jsonFormat,
       markdown: document.markdown,
       previousWarning: document.warning,
-      model: getModel("gpt-4o-mini", "openai"),
+      model: getModel(modelSelection.modelName, "openai"),
       retryModel: getModel("gpt-4o", "openai"),
       costTrackingOptions: {
         costTracking: meta.costTracking,
@@ -1089,7 +1131,15 @@ export async function performSummary(
       },
       markdown: trimOutput.text,
       previousWarning: document.warning,
-      model: getModel("gpt-4o-mini", "openai"),
+      model: (() => {
+        const inlineSchema = {
+          type: "object",
+          properties: { summary: { type: "string" } },
+          required: ["summary"],
+        };
+        const selection = selectModelForSchema(inlineSchema);
+        return getModel(selection.modelName, "openai");
+      })(),
       retryModel: getModel("gpt-4o", "openai"),
       costTrackingOptions: {
         costTracking: meta.costTracking,

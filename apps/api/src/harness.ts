@@ -8,6 +8,10 @@ import { createWriteStream } from "fs";
 const childProcesses = new Set<ChildProcess>();
 const stopping = new WeakSet<ChildProcess>(); // processes we're intentionally stopping
 
+let IS_DEV = false;
+let restartSignal: AbortController | null = null;
+let shuttingDown = false;
+
 interface ProcessResult {
   promise: Promise<void>;
   process: ChildProcess;
@@ -18,6 +22,7 @@ interface Services {
   worker?: ProcessResult;
   nuqWorkers: ProcessResult[];
   nuqPrefetchWorker?: ProcessResult;
+  extractWorker?: ProcessResult;
   indexWorker?: ProcessResult;
   command?: ProcessResult;
 }
@@ -39,8 +44,9 @@ const colors = {
 const processGroupColors: Record<string, string> = {
   api: colors.green,
   worker: colors.blue,
+  extract: colors.magenta,
   nuq: colors.cyan,
-  index: colors.magenta,
+  index: colors.yellow,
   go: colors.yellow,
   command: colors.white,
 };
@@ -69,8 +75,10 @@ function formatDuration(nanoseconds: bigint): string {
 
 const stream = createWriteStream("firecrawl.log");
 
-// Get the port from environment variable, defaulting to 3002
 const PORT = process.env.PORT ?? "3002";
+const WORKER_PORT = process.env.WORKER_PORT ?? "3005";
+const EXTRACT_WORKER_PORT = process.env.EXTRACT_WORKER_PORT ?? "3004";
+const NUQ_WORKER_START_PORT = Number(process.env.NUQ_WORKER_START_PORT ?? "3006");
 
 const logger = {
   section(message: string) {
@@ -79,7 +87,7 @@ const logger = {
     );
   },
   info(message: string) {
-    console.log(message);
+    console.log(`${colors.blue}ℹ${colors.reset} ${message}`);
   },
   success(message: string) {
     console.log(`${colors.green}✓${colors.reset} ${message}`);
@@ -87,13 +95,17 @@ const logger = {
   warn(message: string) {
     console.log(`${colors.yellow}!${colors.reset} ${message}`);
   },
-  error(message: string) {
-    console.error(`${colors.red}✗${colors.reset} ${message}`);
+  error(message: string, error?: any) {
+    if (error) {
+      console.error(`${colors.red}✗${colors.reset} ${message}`, error);
+    } else {
+      console.error(`${colors.red}✗${colors.reset} ${message}`);
+    }
   },
   processStart(name: string, command: string) {
     const color = getProcessColor(name);
     console.log(
-      `${color}>${colors.reset} ${color}${colors.bold}${name}${colors.reset} ${colors.dim}${command}${colors.reset}`,
+      `${color}>${colors.reset} ${color}${colors.bold}${name.padEnd(14)}${colors.reset} ${colors.dim}${command}${colors.reset}`,
     );
   },
   processEnd(name: string, exitCode: number | null, duration: bigint) {
@@ -104,48 +116,76 @@ const logger = {
     const codeInfo =
       exitCode !== 0 ? ` ${colors.red}(${exitCode})${colors.reset}` : "";
     console.log(
-      `${symbolColor}${symbol}${colors.reset} ${color}${colors.bold}${name}${colors.reset} ${timing}${codeInfo}`,
+      `${symbolColor}${symbol}${colors.reset} ${color}${colors.bold}${name.padEnd(14)}${colors.reset} ${timing}${codeInfo}`,
     );
   },
   processOutput(name: string, line: string, isReduceNoise: boolean) {
     const color = getProcessColor(name);
-    const label = `${color}${name.padEnd(12)}${colors.reset}`;
     if (!(line.includes("[nuq/metrics:") && isReduceNoise)) {
+      const label = `${color}${colors.bold}${name.padEnd(14)}${colors.reset}`;
       console.log(`${label} ${line}`);
     }
-    stream.write(`${name.padEnd(12)} ${line}\n`);
+    stream.write(`${name.padEnd(14)} ${line}\n`);
   },
 };
 
 function waitForPort(
   port: number,
   host: string,
-  timeoutMs = 30000,
+  options: { signal?: AbortSignal; timeoutMs?: number } = {},
 ): Promise<void> {
   return new Promise((resolve, reject) => {
-    const timeout = setTimeout(() => {
-      reject(
-        new Error(
-          `Port ${port} did not become available within ${timeoutMs}ms`,
-        ),
-      );
-    }, timeoutMs);
+    const { signal, timeoutMs = 30000 } = options;
 
-    const checkPort = () => {
-      const socket = new net.Socket();
-      const onError = () => {
-        socket.destroy();
-        setTimeout(checkPort, 250);
-      };
-      socket.once("error", onError);
-      socket.setTimeout(1000);
-      socket.connect(port, host, () => {
-        socket.destroy();
-        clearTimeout(timeout);
-        resolve();
-      });
+    let settled = false;
+    let retryTimer: NodeJS.Timeout | null = null;
+    let socket: net.Socket | null = null;
+
+    const done = (err?: Error) => {
+      if (settled) return;
+      settled = true;
+
+      if (retryTimer) clearTimeout(retryTimer);
+      if (socket) socket.destroy();
+      if (overallTimer) clearTimeout(overallTimer);
+
+      signal?.removeEventListener("abort", onAbort);
+      err ? reject(err) : resolve();
     };
-    checkPort();
+
+    const abortError = () => {
+      const e = new Error("Aborted");
+      (e as any).name = "AbortError";
+      return e;
+    };
+    const onAbort = () => done(abortError());
+
+    const overallTimer = setTimeout(
+      () =>
+        done(
+          new Error(
+            `Port ${port} did not become available within ${timeoutMs}ms`,
+          ),
+        ),
+      timeoutMs,
+    );
+
+    if (signal?.aborted) return done(abortError());
+    signal?.addEventListener("abort", onAbort, { once: true });
+
+    const check = () => {
+      if (settled) return;
+      socket = new net.Socket();
+      const retry = () => {
+        socket?.destroy();
+        if (!settled) retryTimer = setTimeout(check, 250);
+      };
+      socket.once("error", retry);
+      socket.setTimeout(1000, retry);
+      socket.connect(port, host, () => done());
+    };
+
+    check();
   });
 }
 
@@ -235,7 +275,7 @@ function execForward(
   return { promise, process: child };
 }
 
-function terminateProcess(proc: ChildProcess): Promise<void> {
+function terminateProcess(proc: ChildProcess, force: boolean): Promise<void> {
   return new Promise(resolve => {
     if (!proc || proc.killed || proc.exitCode !== null) {
       resolve();
@@ -244,15 +284,22 @@ function terminateProcess(proc: ChildProcess): Promise<void> {
 
     stopping.add(proc);
 
+    let killTimeout: NodeJS.Timeout | null = null;
+
     let resolved = false;
     const cleanup = () => {
       if (!resolved) {
         resolved = true;
         resolve();
       }
+
+      if (killTimeout) {
+        clearTimeout(killTimeout);
+        killTimeout = null;
+      }
     };
 
-    proc.once("exit", cleanup);
+    proc.once("close", cleanup);
     proc.once("error", cleanup);
 
     const isWindows = process.platform === "win32";
@@ -269,8 +316,28 @@ function terminateProcess(proc: ChildProcess): Promise<void> {
     } else if (proc.pid) {
       try {
         process.kill(-proc.pid, "SIGTERM");
-      } catch {
+      } catch (e) {
         proc.kill("SIGTERM");
+      }
+
+      // for the old workers, if they are mid-job it will wait for them to finish
+      // for dev mode for now we can just kill them (jobs will be picked up again if required)
+      if (force && IS_DEV) {
+        killTimeout = setTimeout(() => {
+          if (proc.pid) {
+            logger.warn(
+              `Process ${proc.pid} did not exit in time, forcing termination`,
+            );
+
+            try {
+              process.kill(-proc.pid, "SIGKILL");
+            } catch {
+              try {
+                proc.kill("SIGKILL");
+              } catch {}
+            }
+          }
+        }, 5000);
       }
     }
   });
@@ -328,6 +395,7 @@ function startServices(command?: string[]): Services {
       : "pnpm server:production:nobuild",
     {
       NUQ_REDUCE_NOISE: "true",
+      NUQ_POD_NAME: "api",
     },
   );
 
@@ -338,6 +406,20 @@ function startServices(command?: string[]): Services {
       : "pnpm worker:production",
     {
       NUQ_REDUCE_NOISE: "true",
+      NUQ_POD_NAME: "worker",
+      WORKER_PORT: WORKER_PORT,
+    },
+  );
+
+  const extractWorker = execForward(
+    "extract-worker",
+    process.argv[2] === "--start-docker"
+      ? "node --import ./dist/src/otel.js dist/src/services/extract-worker.js"
+      : "pnpm extract-worker:production",
+    {
+      NUQ_REDUCE_NOISE: "true",
+      NUQ_POD_NAME: "extract-worker",
+      EXTRACT_WORKER_PORT: EXTRACT_WORKER_PORT,
     },
   );
 
@@ -348,8 +430,9 @@ function startServices(command?: string[]): Services {
         ? "node --import ./dist/src/otel.js dist/src/services/worker/nuq-worker.js"
         : "pnpm nuq-worker:production",
       {
-        NUQ_WORKER_PORT: String(3006 + i),
+        NUQ_WORKER_PORT: String(NUQ_WORKER_START_PORT + i),
         NUQ_REDUCE_NOISE: "true",
+        NUQ_POD_NAME: `nuq-worker-${i}`,
       },
     ),
   );
@@ -363,6 +446,7 @@ function startServices(command?: string[]): Services {
         {
           NUQ_PREFETCH_WORKER_PORT: String(3011),
           NUQ_REDUCE_NOISE: "true",
+          NUQ_POD_NAME: "nuq-prefetch-worker",
         },
       )
     : undefined;
@@ -376,6 +460,7 @@ function startServices(command?: string[]): Services {
             : "pnpm index-worker:production",
           {
             NUQ_REDUCE_NOISE: "true",
+            NUQ_POD_NAME: "index-worker",
           },
         )
       : undefined;
@@ -391,59 +476,105 @@ function startServices(command?: string[]): Services {
     nuqWorkers,
     nuqPrefetchWorker,
     indexWorker,
+    extractWorker,
     command: commandProcess,
   };
 }
 
-async function stopServices(services: Services) {
-  const stopPromises = [
-    services.api && terminateProcess(services.api.process),
-    services.worker && terminateProcess(services.worker.process),
-    ...services.nuqWorkers.map(w => terminateProcess(w.process)),
-    services.nuqPrefetchWorker &&
-      terminateProcess(services.nuqPrefetchWorker.process),
-    services.indexWorker && terminateProcess(services.indexWorker.process),
-    services.command && terminateProcess(services.command.process),
-  ].filter(Boolean);
+async function stopDevelopmentServices(services: Services) {
+  logger.section("Stopping services");
 
-  await Promise.all(stopPromises);
+  const processesToStop: ChildProcess[] = [
+    services.api?.process,
+    services.worker?.process,
+    ...services.nuqWorkers.map(w => w.process),
+    services.nuqPrefetchWorker?.process,
+    services.indexWorker?.process,
+    services.extractWorker?.process,
+    services.command?.process,
+  ].filter((p): p is ChildProcess => !!p);
+
+  await Promise.race([
+    await Promise.all(
+      processesToStop.map(proc => terminateProcess(proc, true)),
+    ).catch(e => {
+      logger.error("Error while stopping processes", e);
+    }),
+  ]);
 }
 
 async function runDevMode(): Promise<void> {
   let currentServices: Services | null = null;
-  let isFirstStart = true;
+
+  let started = false;
+  let restarting = false;
+  let pending = false;
 
   const { TscWatchClient } = await import("tsc-watch");
-
   const watch = new TscWatchClient();
+
+  const restartServices = async () => {
+    if (shuttingDown) return;
+
+    pending = true;
+    restartSignal?.abort();
+
+    if (restarting) return;
+    restarting = true;
+
+    try {
+      while (pending) {
+        pending = false;
+
+        if (currentServices) {
+          await stopDevelopmentServices(currentServices);
+          currentServices = null;
+        }
+
+        if (shuttingDown) return;
+
+        currentServices = startServices();
+
+        restartSignal?.abort();
+        restartSignal = new AbortController();
+
+        try {
+          await waitForPort(Number(PORT), "localhost", {
+            signal: restartSignal?.signal,
+          });
+        } catch (e) {
+          if (e?.name !== "AbortError") throw e;
+          if (shuttingDown) return;
+
+          logger.section(
+            "Recompilation triggering during restart, trying again...",
+          );
+          continue;
+        }
+
+        logger.success("All services started");
+        started = true;
+      }
+    } finally {
+      restarting = false;
+    }
+  };
 
   watch.on("started", () => {
     logger.info("TypeScript compilation started");
+    pending = true;
+    restartSignal?.abort();
   });
 
   watch.on("first_success", async () => {
     logger.success("Initial compilation complete");
-
-    currentServices = startServices();
-
-    logger.info(`Waiting for API on localhost:${PORT}`);
-    await waitForPort(Number(PORT), "localhost");
-    logger.success("API is ready");
-
-    isFirstStart = false;
+    await restartServices();
   });
 
   watch.on("success", async () => {
-    if (!isFirstStart && currentServices) {
+    if (started) {
       logger.info("Recompilation complete - restarting services");
-
-      await stopServices(currentServices);
-      logger.info("Services stopped");
-
-      currentServices = startServices();
-
-      await waitForPort(Number(PORT), "localhost");
-      logger.success("Services restarted");
+      await restartServices();
     }
   });
 
@@ -455,12 +586,18 @@ async function runDevMode(): Promise<void> {
   watch.start("--project", ".");
 
   await new Promise<void>(resolve => {
-    process.on("SIGINT", resolve);
-    process.on("SIGTERM", resolve);
+    const stop = () => {
+      process.off("SIGINT", stop);
+      process.off("SIGTERM", stop);
+      resolve();
+    };
+    process.once("SIGINT", stop);
+    process.once("SIGTERM", stop);
   });
 
+  restartSignal?.abort();
   if (currentServices) {
-    await stopServices(currentServices);
+    await stopDevelopmentServices(currentServices);
   }
   watch.kill();
 }
@@ -488,6 +625,7 @@ async function waitForTermination(services: Services): Promise<void> {
   if (services.api) promises.push(services.api.promise);
   if (services.worker) promises.push(services.worker.promise);
   if (services.indexWorker) promises.push(services.indexWorker.promise);
+  if (services.extractWorker) promises.push(services.extractWorker.promise);
   if (services.nuqPrefetchWorker)
     promises.push(services.nuqPrefetchWorker.promise);
 
@@ -496,13 +634,16 @@ async function waitForTermination(services: Services): Promise<void> {
   await Promise.race(promises);
 }
 
-let shuttingDown = false;
 async function gracefulShutdown() {
   if (shuttingDown) return;
   shuttingDown = true;
+  restartSignal?.abort();
 
   logger.section("Shutting down");
-  const terminationPromises = Array.from(childProcesses).map(terminateProcess);
+  const forceTerminate = IS_DEV;
+  const terminationPromises = Array.from(childProcesses).map(proc =>
+    terminateProcess(proc, forceTerminate),
+  );
   await Promise.all(terminationPromises);
   logger.success("All processes terminated");
 }
@@ -530,13 +671,13 @@ async function main() {
     }
 
     const command = process.argv.slice(2);
-    const isDev = command[0] === "--start";
+    IS_DEV = command[0] === "--start";
 
     if (command[0] !== "--start-docker") {
       await installDependencies();
     }
 
-    if (isDev) {
+    if (IS_DEV) {
       await runDevMode();
     } else {
       await runProductionMode(command);
@@ -548,6 +689,7 @@ async function main() {
   } finally {
     await gracefulShutdown();
     logger.info("Goodbye!");
+    process.exit(0);
   }
 }
 

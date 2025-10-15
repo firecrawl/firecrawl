@@ -1,9 +1,10 @@
 import { Response } from "express";
 import { z } from "zod";
-import { ErrorResponse, RequestWithAuth, crawlRequestSchema } from "./types";
+import { ErrorResponse, RequestWithAuth } from "./types";
 import { logger as _logger } from "../../lib/logger";
 import { generateCrawlerOptionsFromPrompt } from "../../scraper/scrapeURL/transformers/llmExtract";
 import { CostTracking } from "../../lib/cost-tracking";
+import { buildPromptWithWebsiteStructure } from "../../lib/map-utils";
 
 // Define the request schema for params preview
 // Only url and prompt are required/relevant for preview
@@ -60,10 +61,25 @@ export async function crawlParamsPreviewController(
       prompt: parsedBody.prompt,
     });
 
-    // Generate crawler options from prompt
+    // Build enhanced prompt with website structure
+    const { prompt: enhancedPrompt, websiteUrls } =
+      await buildPromptWithWebsiteStructure({
+        basePrompt: parsedBody.prompt,
+        url: parsedBody.url,
+        teamId: req.auth.team_id,
+        flags: req.acuc?.flags ?? null,
+        logger,
+        limit: 50,
+        includeSubdomains: true,
+        allowExternalLinks: false,
+        useIndex: true,
+        maxFireEngineResults: 500,
+      });
+
+    // Generate crawler options from enhanced prompt
     const costTracking = new CostTracking();
     const { extract } = await generateCrawlerOptionsFromPrompt(
-      parsedBody.prompt,
+      enhancedPrompt,
       logger,
       costTracking,
       { teamId: req.auth.team_id },
@@ -71,8 +87,9 @@ export async function crawlParamsPreviewController(
 
     const generatedOptions = extract || {};
 
-    logger.debug("Generated crawler options from prompt", {
-      prompt: parsedBody.prompt,
+    logger.debug("Generated crawler options from enhanced prompt", {
+      originalPrompt: parsedBody.prompt,
+      websiteUrlCount: websiteUrls.length,
       generatedOptions: generatedOptions,
     });
 

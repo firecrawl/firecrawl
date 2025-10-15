@@ -40,13 +40,13 @@ describe("Scraping Checkup (E2E)", () => {
       const startTime = new Date().getTime();
       const date = new Date();
       const logsDir = `logs/${date.getMonth() + 1}-${date.getDate()}-${date.getFullYear()}`;
-      
+
       let errorLogFileName = `${logsDir}/run.log_${new Date().toTimeString().split(' ')[0]}`;
       const errorLog: WebsiteScrapeError[] = [];
-      
+
       for (let i = 0; i < websitesData.length; i += batchSize) {
         // Introducing delay to respect the rate limit of 15 requests per minute
-        await new Promise(resolve => setTimeout(resolve, 10000)); 
+        await new Promise(resolve => setTimeout(resolve, 10000));
 
         const batch = websitesData.slice(i, i + batchSize);
         const batchPromise = Promise.all(
@@ -80,7 +80,7 @@ describe("Scraping Checkup (E2E)", () => {
               });
 
               const prompt = `Based on this markdown extracted from a website html page, ${websiteData.prompt} Just say 'yes' or 'no' to the question.\nWebsite markdown: ${scrapedContent.body.data.markdown}\n`;
-              
+
               let msg = null;
               const maxRetries = 3;
               let attempts = 0;
@@ -122,7 +122,7 @@ describe("Scraping Checkup (E2E)", () => {
               const actualOutput = (msg.choices[0].message.content ?? "").toLowerCase()
               const expectedOutput = websiteData.expected_output.toLowerCase();
 
-              const numTokens = numTokensFromString(prompt,"gpt-4") + numTokensFromString(actualOutput,"gpt-4");
+              const numTokens = numTokensFromString(prompt, "gpt-4") + numTokensFromString(actualOutput, "gpt-4");
 
               totalTokens += numTokens;
               if (actualOutput.includes(expectedOutput)) {
@@ -174,14 +174,14 @@ describe("Scraping Checkup (E2E)", () => {
       console.log(`Total time taken: ${totalTimeTaken} miliseconds`);
 
       await logErrors(errorLog, timeTaken, totalTokens, score, websitesData.length);
-      
+
       if (process.env.ENV === "local" && errorLog.length > 0) {
-        if (!fs.existsSync(logsDir)){
+        if (!fs.existsSync(logsDir)) {
           fs.mkdirSync(logsDir, { recursive: true });
         }
         fs.writeFileSync(errorLogFileName, JSON.stringify(errorLog, null, 2));
       }
-        
+
 
       expect(score).toBeGreaterThanOrEqual(70);
     }, 350000); // 150 seconds timeout

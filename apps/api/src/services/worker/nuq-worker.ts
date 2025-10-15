@@ -43,7 +43,7 @@ import { initializeBlocklist } from "../../scraper/WebScraper/utils/blocklist";
   process.on("SIGINT", shutdown);
   process.on("SIGTERM", shutdown);
 
-  let noJobTimeout = 500;
+  let noJobTimeout = 1500;
 
   while (!isShuttingDown) {
     const job = await scrapeQueue.getJobToProcess();

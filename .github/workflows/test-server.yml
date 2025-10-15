@@ -164,6 +164,10 @@ jobs:
         image: redis
         ports:
           - 6379:6379
+      rabbitmq:
+        image: rabbitmq
+        ports:
+          - 5672:5672
     env:
       BULL_AUTH_KEY: ${{ secrets.BULL_AUTH_KEY }}
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
@@ -202,6 +206,7 @@ jobs:
       IDMUX_URL: ${{ secrets.IDMUX_URL }}
       LOG_ENCRYPTION_KEY: ${{ secrets.LOG_ENCRYPTION_KEY }}
       NUQ_DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
+      NUQ_RABBITMQ_URL: amqp://localhost:5672
       HOST: 0.0.0.0
     steps:
       - uses: actions/checkout@v5

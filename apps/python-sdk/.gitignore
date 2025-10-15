@@ -2,3 +2,5 @@ bin
 build
 include
 lib
+# local venv
+apps/python-sdk/.venv/

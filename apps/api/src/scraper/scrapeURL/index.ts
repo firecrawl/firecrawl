@@ -306,6 +306,8 @@ export type InternalOptions = {
   v1JSONAgent?: Exclude<ScrapeOptionsV1["jsonOptions"], undefined>["agent"];
   v1JSONSystemPrompt?: string;
   v1OriginalFormat?: "extract" | "json"; // Track original v1 format for backward compatibility
+
+  isPreCrawl?: boolean; // Whether this scrape is part of a precrawl job
 };
 
 type EngineScrapeResultWithContext = {
@@ -794,6 +796,12 @@ export async function scrapeURL(
       });
     }
 
+    if (internalOptions.isPreCrawl === true) {
+      setSpanAttributes(span, {
+        "scrape.is_precrawl": true,
+      });
+    }
+
     if (internalOptions.teamFlags?.checkRobotsOnScrape) {
       await withSpan("scrape.robots_check", async robotsSpan => {
         const urlToCheck = meta.rewrittenUrl || meta.url;
@@ -866,7 +874,8 @@ export async function scrapeURL(
       useIndex &&
       meta.options.storeInCache &&
       !meta.internalOptions.zeroDataRetention &&
-      internalOptions.teamId !== process.env.PRECRAWL_TEAM_ID;
+      internalOptions.teamId !== process.env.PRECRAWL_TEAM_ID &&
+      meta.internalOptions.isPreCrawl !== true; // sitemap crawls override teamId but keep the isPreCrawl flag
     if (shouldRecordFrequency) {
       (async () => {
         try {

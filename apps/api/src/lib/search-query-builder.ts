@@ -4,7 +4,7 @@
  */
 
 interface CategoryInput {
-  type: "github" | "research";
+  type: "github" | "research" | "pdf";
   sites?: string[];
 }
 
@@ -53,6 +53,7 @@ export function buildSearchQuery(
   }
 
   const siteFilters: string[] = [];
+  let hasPdfFilter = false;
 
   for (const category of categories) {
     if (typeof category === "string") {
@@ -66,6 +67,9 @@ export function buildSearchQuery(
           siteFilters.push(`site:${site}`);
           categoryMap.set(site, "research");
         }
+      } else if (category === "pdf") {
+        hasPdfFilter = true;
+        categoryMap.set("__pdf__", "pdf");
       }
     } else {
       // Object format with options
@@ -79,6 +83,9 @@ export function buildSearchQuery(
           siteFilters.push(`site:${site}`);
           categoryMap.set(site, "research");
         }
+      } else if (category.type === "pdf") {
+        hasPdfFilter = true;
+        categoryMap.set("__pdf__", "pdf");
       }
     }
   }
@@ -87,6 +94,11 @@ export function buildSearchQuery(
   let categoryFilter = "";
   if (siteFilters.length > 0) {
     categoryFilter = " (" + siteFilters.join(" OR ") + ")";
+  }
+
+  // Add filetype:pdf filter if PDF category is requested
+  if (hasPdfFilter) {
+    categoryFilter += " filetype:pdf";
   }
 
   return {
@@ -108,6 +120,12 @@ export function getCategoryFromUrl(
   try {
     const urlObj = new URL(url);
     const hostname = urlObj.hostname.toLowerCase();
+    const pathname = urlObj.pathname.toLowerCase();
+
+    // Check if URL points to a PDF file
+    if (pathname.endsWith(".pdf") && categoryMap.has("__pdf__")) {
+      return "pdf";
+    }
 
     // Direct match for GitHub
     if (hostname === "github.com" || hostname.endsWith(".github.com")) {
@@ -116,6 +134,8 @@ export function getCategoryFromUrl(
 
     // Check against category map for other sites
     for (const [site, category] of categoryMap.entries()) {
+      if (site === "__pdf__") continue; // Skip the special PDF marker
+      
       if (
         hostname === site.toLowerCase() ||
         hostname.endsWith("." + site.toLowerCase())

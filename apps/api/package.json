@@ -26,6 +26,8 @@
     "nuq-worker:production": "node --import ./dist/src/otel.js dist/src/services/worker/nuq-worker.js",
     "nuq-prefetch-worker": "tsc-watch --onSuccess \"node --import ./dist/src/otel.js dist/src/services/worker/nuq-prefetch-worker.js\"",
     "nuq-prefetch-worker:production": "node --import ./dist/src/otel.js dist/src/services/worker/nuq-prefetch-worker.js",
+    "extract-worker": "tsc-watch --onSuccess \"node --import ./dist/src/otel.js dist/src/services/extract-worker.js\"",
+    "extract-worker:production": "node --import ./dist/src/otel.js dist/src/services/extract-worker.js",
     "index-worker": "tsc-watch --onSuccess \"node --import ./dist/src/otel.js dist/src/services/indexing/index-worker.js\"",
     "index-worker:production": "node --import ./dist/src/otel.js dist/src/services/indexing/index-worker.js",
     "mongo-docker": "docker run -d -p 2717:27017 -v ./mongo-data:/data/db --name mongodb mongo:latest",
@@ -69,12 +71,13 @@
     "@ai-sdk/fireworks": "^0.2.4",
     "@ai-sdk/google": "^1.2.3",
     "@ai-sdk/google-vertex": "^2.2.15",
+    "@pinecone-database/pinecone": "^6.1.2",
     "@ai-sdk/groq": "^1.2.1",
     "@ai-sdk/openai": "^1.3.12",
     "@apidevtools/json-schema-ref-parser": "^11.7.3",
     "@bull-board/api": "^6.11.2",
     "@bull-board/express": "^6.11.2",
-    "@coinbase/x402": "^0.6.4",
+    "@coinbase/x402": "^0.6.6",
     "@dqbd/tiktoken": "^1.0.22",
     "@google-cloud/bigquery": "^8.1.1",
     "@google-cloud/storage": "^7.16.0",
@@ -137,7 +140,7 @@
     "uuid": "^10.0.0",
     "winston": "^3.14.2",
     "ws": "^8.18.0",
-    "x402-express": "^0.6.1",
+    "x402-express": "^0.6.5",
     "xml2js": "^0.6.2",
     "zod": "^3.24.2"
   },
@@ -149,7 +152,12 @@
     ]
   },
   "pnpm": {
+    "allowScripts": {
+      "@coinbase/x402": true,
+      "oxc-resolver": true
+    },
     "onlyBuiltDependencies": [
+      "@coinbase/x402",
       "@mendable/firecrawl-rs",
       "@sentry-internal/node-cpu-profiler",
       "@sentry/cli",
@@ -160,13 +168,15 @@
       "koffi",
       "libpq",
       "msgpackr-extract",
+      "oxc-resolver",
       "protobufjs",
       "supabase",
       "utf-8-validate",
       "wordpos"
     ],
     "overrides": {
-      "brace-expansion@>=2.0.0 <=2.0.1": "2.0.2"
+      "brace-expansion@>=2.0.0 <=2.0.1": "2.0.2",
+      "debug": ">=4.4.3"
     }
   },
   "lint-staged": {

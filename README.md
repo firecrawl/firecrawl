@@ -43,6 +43,8 @@ _This repository is in development, and we’re still integrating custom modules
 
 [Firecrawl](https://firecrawl.dev?ref=github) is an API service that takes a URL, crawls it, and converts it into clean markdown or structured data. We crawl all accessible subpages and give you clean data for each. No sitemap required. Check out our [documentation](https://docs.firecrawl.dev).
 
+Looking for our MCP? Check out the [repo here](https://github.com/firecrawl/firecrawl-mcp-server).
+
 _Pst. hey, you, join our stargazers :)_
 
 <a href="https://github.com/firecrawl/firecrawl">

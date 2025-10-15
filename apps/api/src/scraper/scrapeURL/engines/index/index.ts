@@ -45,6 +45,11 @@ export async function sendDocumentToIndex(meta: Meta, document: Document) {
     return document;
   }
 
+  // Generate indexId synchronously and set it on document immediately
+  // so it's available to other transformers (e.g., search index)
+  const indexId = crypto.randomUUID();
+  document.metadata.indexId = indexId;
+
   (async () => {
     try {
       const normalizedURL = normalizeURLForIndex(meta.url);
@@ -59,8 +64,6 @@ export async function sendDocumentToIndex(meta: Meta, document: Document) {
       const fakeDomain = meta.options.__experimental_omceDomain;
       const domainSplits = generateDomainSplits(hostname, fakeDomain);
       const domainSplitsHash = domainSplits.map(split => hashURL(split));
-
-      const indexId = crypto.randomUUID();
 
       try {
         await saveIndexToGCS(indexId, {
@@ -138,6 +141,7 @@ export async function sendDocumentToIndex(meta: Meta, document: Document) {
           location_country: meta.options.location?.country ?? null,
           location_languages: meta.options.location?.languages ?? null,
           status: document.metadata.statusCode,
+          is_precrawl: meta.internalOptions.isPreCrawl === true,
           ...urlSplitsHash.slice(0, 10).reduce(
             (a, x, i) => ({
               ...a,
@@ -306,6 +310,9 @@ export async function scrapeURLWithIndex(
     meta.logger.child({ module: "index", method: "getIndexFromGCS" }),
   );
   if (!doc) {
+    meta.logger.warn("Index document not found in GCS", {
+      indexDocumentId: id,
+    });
     throw new EngineError("Document not found in GCS");
   }
 

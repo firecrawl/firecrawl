@@ -350,6 +350,11 @@ export async function mapController(
   req: RequestWithAuth<{}, MapResponse, MapRequest>,
   res: Response<MapResponse>,
 ) {
+  // Get timing data from middleware (includes all middleware processing time)
+  const middlewareStartTime =
+    (req as any).requestTiming?.startTime || new Date().getTime();
+  const controllerStartTime = new Date().getTime();
+
   const originalRequest = req.body;
   req.body = mapRequestSchema.parse(req.body);
 
@@ -368,6 +373,8 @@ export async function mapController(
       error: permissions.error,
     });
   }
+
+  const middlewareTime = controllerStartTime - middlewareStartTime;
 
   logger.info("Map request", {
     request: req.body,
@@ -449,6 +456,22 @@ export async function mapController(
     num_tokens: 0,
     credits_billed: 1,
     zeroDataRetention: false, // not supported
+  });
+
+  // Log final timing information
+  const totalRequestTime = new Date().getTime() - middlewareStartTime;
+  const controllerTime = new Date().getTime() - controllerStartTime;
+
+  logger.info("Request metrics", {
+    version: "v1",
+    jobId: result.job_id,
+    mode: "map",
+    middlewareStartTime,
+    controllerStartTime,
+    middlewareTime,
+    controllerTime,
+    totalRequestTime,
+    linksCount: result.links.length,
   });
 
   const response = {

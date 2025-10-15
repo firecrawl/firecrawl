@@ -36,7 +36,7 @@ describe('FirecrawlApp E2E Tests', () => {
   test.concurrent('should throw error for blocklisted URL on scrape', async () => {
     const app = new FirecrawlApp({ apiKey: TEST_API_KEY, apiUrl: API_URL });
     const blocklistedUrl = "https://facebook.com/fake-test";
-    await expect(app.scrapeUrl(blocklistedUrl)).rejects.toThrow("This website is no longer supported");
+    await expect(app.scrapeUrl(blocklistedUrl)).rejects.toThrow("This website is not currently supported");
   });
 
   test.concurrent('should return successful response for valid scrape', async () => {
@@ -52,13 +52,13 @@ describe('FirecrawlApp E2E Tests', () => {
     const app = new FirecrawlApp({ apiKey: TEST_API_KEY, apiUrl: API_URL });
     const response = await app.scrapeUrl(
       'https://roastmywebsite.ai', {
-        formats: ['markdown', 'html', 'rawHtml', 'screenshot', 'links'],
-        headers: { "x-key": "test" },
-        includeTags: ['h1'],
-        excludeTags: ['h2'],
-        onlyMainContent: true,
-        timeout: 30000,
-        waitFor: 1000
+      formats: ['markdown', 'html', 'rawHtml', 'screenshot', 'links'],
+      headers: { "x-key": "test" },
+      includeTags: ['h1'],
+      excludeTags: ['h2'],
+      onlyMainContent: true,
+      timeout: 30000,
+      waitFor: 1000
     });
 
     if (!response.success) {
@@ -70,7 +70,7 @@ describe('FirecrawlApp E2E Tests', () => {
     const app = new FirecrawlApp({ apiKey: TEST_API_KEY, apiUrl: API_URL });
     const response = await app.scrapeUrl(
       'https://roastmywebsite.ai', {
-        formats: ['screenshot@fullPage'],
+      formats: ['screenshot@fullPage'],
     });
     if (!response.success) {
       throw new Error(response.error);
@@ -149,7 +149,7 @@ describe('FirecrawlApp E2E Tests', () => {
     }
   }, 60000); // 60 seconds timeout
 
-  test.concurrent('should return successful response for crawl with options and wait for completion', async () => {    
+  test.concurrent('should return successful response for crawl with options and wait for completion', async () => {
     const app = new FirecrawlApp({ apiKey: TEST_API_KEY, apiUrl: API_URL });
     const response = await app.crawlUrl('https://roastmywebsite.ai', {
       excludePaths: ['blog/*'],
@@ -192,7 +192,7 @@ describe('FirecrawlApp E2E Tests', () => {
 
   test.concurrent('should check crawl status', async () => {
     const app = new FirecrawlApp({ apiKey: TEST_API_KEY, apiUrl: API_URL });
-    const response = await app.asyncCrawlUrl('https://firecrawl.dev', { limit: 20, scrapeOptions: { formats: ['markdown', 'html', 'rawHtml', 'screenshot', 'links']}} as CrawlParams) as CrawlResponse;
+    const response = await app.asyncCrawlUrl('https://firecrawl.dev', { limit: 20, scrapeOptions: { formats: ['markdown', 'html', 'rawHtml', 'screenshot', 'links'] } } as CrawlParams) as CrawlResponse;
     expect(response).not.toBeNull();
     expect(response.id).toBeDefined();
 
@@ -250,16 +250,16 @@ describe('FirecrawlApp E2E Tests', () => {
   });
 
   test.concurrent('should return successful response for valid map', async () => {
-    const app = new FirecrawlApp({ apiKey: TEST_API_KEY, apiUrl: API_URL });    const response = await app.mapUrl('https://roastmywebsite.ai') as MapResponse;
+    const app = new FirecrawlApp({ apiKey: TEST_API_KEY, apiUrl: API_URL }); const response = await app.mapUrl('https://roastmywebsite.ai') as MapResponse;
     expect(response).not.toBeNull();
-    
+
     expect(response.links?.length).toBeGreaterThan(0);
     expect(response.links?.[0]).toContain("https://");
     const filteredLinks = response.links?.filter((link: string) => link.includes("roastmywebsite.ai"));
     expect(filteredLinks?.length).toBeGreaterThan(0);
   }, 30000); // 30 seconds timeout
 
-  
+
 
   test('should search with string query', async () => {
     const app = new FirecrawlApp({ apiUrl: API_URL, apiKey: TEST_API_KEY });

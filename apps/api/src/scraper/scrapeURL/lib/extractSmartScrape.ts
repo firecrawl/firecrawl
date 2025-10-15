@@ -120,29 +120,114 @@ function prepareSmartScrapeSchema(
   return { schemaToUse: wrappedSchema };
 }
 
+const hasRecursiveRefs = (schema: any, defs: any): boolean => {
+  if (!defs || typeof defs !== "object") return false;
+
+  for (const [defName, defValue] of Object.entries(defs)) {
+    if (containsRecursiveRef(defValue, defName, defs)) {
+      return true;
+    }
+  }
+
+  return false;
+};
+
+const containsRecursiveRef = (
+  obj: any,
+  targetDefName: string,
+  defs: any,
+  visited = new Set(),
+): boolean => {
+  if (!obj || typeof obj !== "object") return false;
+
+  const objKey = JSON.stringify(obj);
+  if (visited.has(objKey)) return false;
+  visited.add(objKey);
+
+  if (obj.$ref && typeof obj.$ref === "string") {
+    const refPath = obj.$ref.split("/");
+    if (refPath[0] === "#" && refPath[1] === "$defs") {
+      const defName = refPath[refPath.length - 1];
+      if (defName === targetDefName) {
+        visited.delete(objKey);
+        return true;
+      }
+      if (defs[defName]) {
+        const isRecursive = containsRecursiveRef(
+          defs[defName],
+          targetDefName,
+          defs,
+          visited,
+        );
+        visited.delete(objKey);
+        return isRecursive;
+      }
+    }
+  }
+
+  if (Array.isArray(obj)) {
+    for (const item of obj) {
+      if (containsRecursiveRef(item, targetDefName, defs, visited)) {
+        visited.delete(objKey);
+        return true;
+      }
+    }
+  } else {
+    for (const value of Object.values(obj)) {
+      if (containsRecursiveRef(value, targetDefName, defs, visited)) {
+        visited.delete(objKey);
+        return true;
+      }
+    }
+  }
+
+  visited.delete(objKey);
+  return false;
+};
+
 // Resolve all $defs references in the schema
-const resolveRefs = (obj: any, defs: any): any => {
-  if (!obj || typeof obj !== "object") return obj;
+const resolveRefs = (
+  obj: any,
+  defs: any,
+  visited = new WeakSet(),
+  depth = 0,
+): any => {
+  if (!obj || typeof obj !== "object" || depth > 10) return obj;
+
+  const objString = JSON.stringify(obj);
+  if (objString.includes("#/$defs/") && objString.includes('"$ref"')) {
+    console.warn(
+      "resolveRefs: Detected recursive schema pattern, aborting to prevent infinite recursion",
+    );
+    return obj;
+  }
+
+  // Prevent infinite recursion
+  if (visited.has(obj)) return obj;
+  visited.add(obj);
 
   if (obj.$ref && typeof obj.$ref === "string") {
     // Handle $ref references
     const refPath = obj.$ref.split("/");
     if (refPath[0] === "#" && refPath[1] === "$defs") {
       const defName = refPath[refPath.length - 1];
-      return resolveRefs({ ...defs[defName] }, defs);
+      if (defs[defName]) {
+        return resolveRefs({ ...defs[defName] }, defs, visited, depth + 1);
+      }
     }
+    return obj; // Return original if ref can't be resolved
   }
 
   // Handle arrays
   if (Array.isArray(obj)) {
-    return obj.map(item => resolveRefs(item, defs));
+    return obj.map(item => resolveRefs(item, defs, visited, depth + 1));
   }
 
   // Handle objects
   const resolved: any = {};
   for (const [key, value] of Object.entries(obj)) {
     if (key === "$defs") continue;
-    resolved[key] = resolveRefs(value, defs);
+    resolved[key] = resolveRefs(value, defs, visited, depth + 1);
   }
   return resolved;
 };
@@ -193,11 +278,31 @@ export async function extractData({
 
   if (schema) {
     const defs = schema.$defs || {};
-    schema = resolveRefs(schema, defs);
-    delete schema.$defs;
-    logger.info("Resolved schema refs", {
-      schema,
-    });
+    const schemaString = JSON.stringify(schema);
+    const hasAnyRefs =
+      schema.$defs ||
+      schemaString.includes('"$ref"') ||
+      schemaString.includes("#/$defs/");
+
+    if (hasAnyRefs) {
+      logger.info(
+        "Detected schema with references, preserving as-is to avoid recursion",
+        {
+          hasDefsProperty: !!schema.$defs,
+          hasRefInString: schemaString.includes('"$ref"'),
+          hasRefPathInString: schemaString.includes("#/$defs/"),
+        },
+      );
+    } else {
+      logger.info("No recursive references detected, resolving refs", {
+        schema,
+      });
+      schema = resolveRefs(schema, defs);
+      delete schema.$defs;
+      logger.info("Resolved schema refs", {
+        schema,
+      });
+    }
   }
 
   const { schemaToUse } = prepareSmartScrapeSchema(schema, logger, isSingleUrl);

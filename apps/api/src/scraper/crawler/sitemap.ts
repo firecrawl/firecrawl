@@ -20,6 +20,7 @@ type SitemapScrapeOptions = {
   location: ScrapeOptions["location"];
   crawlId: string;
   logger?: Logger;
+  isPreCrawl?: boolean;
 };
 
 type SitemapData = {
@@ -77,6 +78,7 @@ async function getSitemapXML(options: SitemapScrapeOptions): Promise<string> {
       teamId: "sitemap",
       zeroDataRetention: options.zeroDataRetention,
       crawlId: options.crawlId,
+      isPreCrawl: options.isPreCrawl,
     },
     new CostTracking(),
   );

@@ -1,5 +1,5 @@
 import { isSelfHosted } from "./deployment";
 
 export const BLOCKLISTED_URL_MESSAGE = isSelfHosted()
-  ? "This website is no longer supported. Please check your server configuration and logs for more details."
-  : "This website is no longer supported, please reach out to help@firecrawl.com for more info on how to activate it on your account.";
+  ? "This website is not currently supported. Please check your server configuration and logs for more details."
+  : "This website is not currently supported. If you are part of an enterprise, please reach out to help@firecrawl.com to discuss the possibility of getting it activated on your account.";

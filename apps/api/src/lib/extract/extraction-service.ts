@@ -50,6 +50,7 @@ interface ExtractServiceOptions {
   cacheKey?: string;
   agent?: boolean;
   apiKeyId: number | null;
+  createdAt?: number;
 }
 
 export interface ExtractResult {
@@ -78,6 +79,9 @@ export async function performExtraction(
   options: ExtractServiceOptions,
 ): Promise<ExtractResult> {
   const { request, teamId, subId, apiKeyId } = options;
+  const createdAt = options.createdAt
+    ? new Date(options.createdAt)
+    : new Date();
   const urlTraces: URLTrace[] = [];
   let docsMap: Map<string, Document> = new Map();
   let singleAnswerCompletions: completions | null = null;
@@ -98,6 +102,7 @@ export async function performExtraction(
   const logger = _logger.child({
     module: "extract",
     method: "performExtraction",
+    extractModel: "fire-1",
     extractId,
     teamId,
   });
@@ -134,7 +139,7 @@ export async function performExtraction(
         message: "No search results found",
         num_docs: 1,
         docs: [],
-        time_taken: (new Date().getTime() - Date.now()) / 1000,
+        time_taken: (new Date().getTime() - createdAt.getTime()) / 1000,
         team_id: teamId,
         mode: "extract",
         url: request.urls?.join(", ") || "",
@@ -680,7 +685,7 @@ export async function performExtraction(
               : "Failed to transform array to object",
           num_docs: 1,
           docs: [],
-          time_taken: (new Date().getTime() - Date.now()) / 1000,
+          time_taken: (new Date().getTime() - createdAt.getTime()) / 1000,
           team_id: teamId,
           mode: "extract",
           url: request.urls?.join(", ") || "",
@@ -797,7 +802,7 @@ export async function performExtraction(
           message: error.message,
           num_docs: 1,
           docs: [],
-          time_taken: (new Date().getTime() - Date.now()) / 1000,
+          time_taken: (new Date().getTime() - createdAt.getTime()) / 1000,
           team_id: teamId,
           mode: "extract",
           url: request.urls?.join(", ") || "",
@@ -855,7 +860,7 @@ export async function performExtraction(
           message: errorMessage,
           num_docs: 1,
           docs: [],
-          time_taken: (new Date().getTime() - Date.now()) / 1000,
+          time_taken: (new Date().getTime() - createdAt.getTime()) / 1000,
           team_id: teamId,
           mode: "extract",
           url: request.urls?.join(", ") || "",
@@ -1049,7 +1054,7 @@ export async function performExtraction(
       message: "Extract completed",
       num_docs: 1,
       docs: finalResult ?? {},
-      time_taken: (new Date().getTime() - Date.now()) / 1000,
+      time_taken: (new Date().getTime() - createdAt.getTime()) / 1000,
       team_id: teamId,
       mode: "extract",
       url: request.urls?.join(", ") || "",
@@ -1127,7 +1132,7 @@ export async function performExtraction(
             : "An unexpected error occurred",
       num_docs: 1,
       docs: [],
-      time_taken: (new Date().getTime() - Date.now()) / 1000,
+      time_taken: (new Date().getTime() - createdAt.getTime()) / 1000,
       team_id: teamId,
       mode: "extract",
       url: request.urls?.join(", ") || "",

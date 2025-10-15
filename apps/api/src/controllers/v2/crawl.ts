@@ -7,18 +7,29 @@ import {
   RequestWithAuth,
   toV0CrawlerOptions,
 } from "./types";
-import { crawlToCrawler, saveCrawl, StoredCrawl } from "../../lib/crawl-redis";
+import {
+  crawlToCrawler,
+  saveCrawl,
+  StoredCrawl,
+  markCrawlActive,
+} from "../../lib/crawl-redis";
 import { _addScrapeJobToBullMQ } from "../../services/queue-jobs";
 import { logger as _logger } from "../../lib/logger";
 import { generateCrawlerOptionsFromPrompt } from "../../scraper/scrapeURL/transformers/llmExtract";
 import { CostTracking } from "../../lib/cost-tracking";
 import { checkPermissions } from "../../lib/permissions";
+import { buildPromptWithWebsiteStructure } from "../../lib/map-utils";
+import { modifyCrawlUrl } from "../../utils/url-utils";
 
 export async function crawlController(
   req: RequestWithAuth<{}, CrawlResponse, CrawlRequest>,
   res: Response<CrawlResponse>,
 ) {
   const preNormalizedBody = req.body;
+
+  // Check for URL modification before parsing
+  const urlModificationInfo = modifyCrawlUrl(preNormalizedBody.url);
+
   req.body = crawlRequestSchema.parse(req.body);
 
   const permissions = checkPermissions(req.body, req.acuc?.flags);
@@ -64,9 +75,22 @@ export async function crawlController(
   let promptGeneratedOptions = {};
   if (req.body.prompt) {
     try {
+      // Enhance prompt with discovered site URLs (up to 120) to improve option generation
+      const { prompt: enhancedPrompt } = await buildPromptWithWebsiteStructure({
+        basePrompt: req.body.prompt,
+        url: req.body.url,
+        teamId: req.auth.team_id,
+        flags: req.acuc?.flags ?? null,
+        logger,
+        limit: 50,
+        includeSubdomains: false,
+        allowExternalLinks: false,
+        useIndex: true,
+        maxFireEngineResults: 500,
+      });
       const costTracking = new CostTracking();
       const { extract } = await generateCrawlerOptionsFromPrompt(
-        req.body.prompt,
+        enhancedPrompt,
         logger,
         costTracking,
         { teamId: req.auth.team_id, crawlId: id },
@@ -168,10 +192,10 @@ export async function crawlController(
 
   try {
     sc.robots = await crawler.getRobotsTxt(scrapeOptions.skipTlsVerification);
-    const robotsCrawlDelay = crawler.getRobotsCrawlDelay();
-    if (robotsCrawlDelay !== null && !sc.crawlerOptions.delay) {
-      sc.crawlerOptions.delay = robotsCrawlDelay;
-    }
+    // const robotsCrawlDelay = crawler.getRobotsCrawlDelay();
+    // if (robotsCrawlDelay !== null && !sc.crawlerOptions.delay) {
+    //   sc.crawlerOptions.delay = robotsCrawlDelay;
+    // }
   } catch (e) {
     logger.debug("Failed to get robots.txt (this is probably fine!)", {
       error: e,
@@ -179,6 +203,8 @@ export async function crawlController(
   }
 
   await saveCrawl(id, sc);
+
+  await markCrawlActive(id);
 
   await _addScrapeJobToBullMQ(
     {
@@ -205,6 +231,9 @@ export async function crawlController(
     success: true,
     id,
     url: `${protocol}://${req.get("host")}/v2/crawl/${id}`,
+    ...(urlModificationInfo.wasModified && {
+      warning: `The URL you provided included a '/*' suffix, which has been removed to ensure a more targeted and efficient crawl.`,
+    }),
     ...(req.body.prompt && {
       promptGeneratedOptions: promptGeneratedOptions,
       finalCrawlerOptions: finalCrawlerOptions,

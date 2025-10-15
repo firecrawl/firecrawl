@@ -328,65 +328,7 @@ export async function crawlStatusController(
     next: string | undefined;
   };
 
-  if (process.env.USE_DB_AUTHENTICATION === "true") {
-    // new DB-based path
-    const { data, error } = await supabase_service.rpc(
-      "crawl_status_1",
-      {
-        i_team_id: req.auth.team_id,
-        i_crawl_id: req.params.jobId,
-        i_start: start,
-        i_end: end ?? start + 100,
-      },
-      { get: true },
-    );
-
-    if (error || !data) {
-      logger.error("Error getting crawl status from DB", { error });
-      throw new Error("Error getting crawl status from DB", { cause: error });
-    }
-
-    const scrapeIds = data?.map(x => x.id) ?? [];
-    let scrapes: Document[] = [];
-    let iteratedOver = 0;
-    let bytes = 0;
-    const bytesLimit = 10485760; // 10 MiB in bytes
-
-    const scrapeBlobs = await Promise.all(
-      scrapeIds.map(async x => [x, (await getJobFromGCS(x))?.[0]]),
-    );
-
-    for (const [id, scrape] of scrapeBlobs) {
-      if (scrape) {
-        scrapes.push(scrape);
-        bytes += JSON.stringify(scrape).length;
-      } else {
-        logger.warn("Job was considered done, but returnvalue is undefined!", {
-          jobId: id,
-          returnvalue: scrape,
-        });
-      }
-
-      iteratedOver++;
-
-      if (bytes > bytesLimit) {
-        break;
-      }
-    }
-
-    if (bytes > bytesLimit && scrapes.length !== 1) {
-      scrapes.splice(scrapes.length - 1, 1);
-      iteratedOver--;
-    }
-
-    outputBulkB = {
-      data: scrapes,
-      next:
-        (outputBulkA.total ?? 0) > start + iteratedOver
-          ? `${process.env.ENV === "local" ? req.protocol : "https"}://${req.get("host")}/v1/${isBatch ? "batch/scrape" : "crawl"}/${req.params.jobId}?skip=${start + iteratedOver}${req.query.limit ? `&limit=${req.query.limit}` : ""}`
-          : undefined,
-    };
-  } else {
+  if (sc || process.env.USE_DB_AUTHENTICATION !== "true") {
     // old BullMQ-based path
     const doneJobs = await getDoneJobsOrderedUntil(
       req.params.jobId,
@@ -430,6 +372,64 @@ export async function crawlStatusController(
           break;
         }
       }
+
+      if (bytes > bytesLimit) {
+        break;
+      }
+    }
+
+    if (bytes > bytesLimit && scrapes.length !== 1) {
+      scrapes.splice(scrapes.length - 1, 1);
+      iteratedOver--;
+    }
+
+    outputBulkB = {
+      data: scrapes,
+      next:
+        (outputBulkA.total ?? 0) > start + iteratedOver
+          ? `${process.env.ENV === "local" ? req.protocol : "https"}://${req.get("host")}/v1/${isBatch ? "batch/scrape" : "crawl"}/${req.params.jobId}?skip=${start + iteratedOver}${req.query.limit ? `&limit=${req.query.limit}` : ""}`
+          : undefined,
+    };
+  } else {
+    // new DB-based path
+    const { data, error } = await supabase_service.rpc(
+      "crawl_status_1",
+      {
+        i_team_id: req.auth.team_id,
+        i_crawl_id: req.params.jobId,
+        i_start: start,
+        i_end: end ?? start + 100,
+      },
+      { get: true },
+    );
+
+    if (error || !data) {
+      logger.error("Error getting crawl status from DB", { error });
+      throw new Error("Error getting crawl status from DB", { cause: error });
+    }
+
+    const scrapeIds = data?.map(x => x.id) ?? [];
+    let scrapes: Document[] = [];
+    let iteratedOver = 0;
+    let bytes = 0;
+    const bytesLimit = 10485760; // 10 MiB in bytes
+
+    const scrapeBlobs = await Promise.all(
+      scrapeIds.map(async x => [x, (await getJobFromGCS(x))?.[0]]),
+    );
+
+    for (const [id, scrape] of scrapeBlobs) {
+      if (scrape) {
+        scrapes.push(scrape);
+        bytes += JSON.stringify(scrape).length;
+      } else {
+        logger.warn("Job was considered done, but returnvalue is undefined!", {
+          jobId: id,
+          returnvalue: scrape,
+        });
+      }
+
+      iteratedOver++;
 
       if (bytes > bytesLimit) {
         break;

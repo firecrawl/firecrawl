@@ -2,23 +2,23 @@ import "dotenv/config";
 import { shutdownOtel } from "../otel";
 import "./sentry";
 import * as Sentry from "@sentry/node";
-import {
-  getDeepResearchQueue,
-  getGenerateLlmsTxtQueue,
-  getRedisConnection,
-} from "./queue-service";
+import { getExtractQueue, getRedisConnection } from "./queue-service";
 import { Job, Queue, Worker } from "bullmq";
 import { logger as _logger } from "../lib/logger";
 import systemMonitor from "./system-monitor";
 import { v4 as uuidv4 } from "uuid";
 import { configDotenv } from "dotenv";
-import { updateDeepResearch } from "../lib/deep-research/deep-research-redis";
-import { performDeepResearch } from "../lib/deep-research/deep-research-service";
-import { performGenerateLlmsTxt } from "../lib/generate-llmstxt/generate-llmstxt-service";
-import { updateGeneratedLlmsTxt } from "../lib/generate-llmstxt/generate-llmstxt-redis";
+import {
+  ExtractResult,
+  performExtraction,
+} from "../lib/extract/extraction-service";
+import { updateExtract } from "../lib/extract/extract-redis";
+import { performExtraction_F0 } from "../lib/extract/fire-0/extraction-service-f0";
+import { createWebhookSender, WebhookEvent } from "./webhook";
 import Express from "express";
 import { robustFetch } from "../scraper/scrapeURL/lib/fetch";
 import { BullMQOtel } from "bullmq-otel";
+import { getErrorContactMessage } from "../lib/deployment";
 import { initializeBlocklist } from "../scraper/WebScraper/utils/blocklist";
 
 configDotenv();
@@ -38,15 +38,15 @@ const gotJobInterval = Number(process.env.CONNECTION_MONITOR_INTERVAL) || 20;
 
 const runningJobs: Set<string> = new Set();
 
-const processDeepResearchJobInternal = async (
+const processExtractJobInternal = async (
   token: string,
   job: Job & { id: string },
 ) => {
   const logger = _logger.child({
-    module: "deep-research-worker",
+    module: "extract-worker",
     method: "processJobInternal",
     jobId: job.id,
-    researchId: job.data.researchId,
+    extractId: job.data.extractId,
     teamId: job.data?.teamId ?? undefined,
   });
 
@@ -55,40 +55,76 @@ const processDeepResearchJobInternal = async (
     await job.extendLock(token, jobLockExtensionTime);
   }, jobLockExtendInterval);
 
-  try {
-    console.log(
-      "[Deep Research] Starting deep research: ",
-      job.data.researchId,
-    );
-    const result = await performDeepResearch({
-      researchId: job.data.researchId,
-      teamId: job.data.teamId,
-      query: job.data.request.query,
-      maxDepth: job.data.request.maxDepth,
-      timeLimit: job.data.request.timeLimit,
-      subId: job.data.subId,
-      maxUrls: job.data.request.maxUrls,
-      analysisPrompt: job.data.request.analysisPrompt,
-      systemPrompt: job.data.request.systemPrompt,
-      formats: job.data.request.formats,
-      jsonOptions: job.data.request.jsonOptions,
-      apiKeyId: job.data.apiKeyId,
-    });
+  const sender = await createWebhookSender({
+    teamId: job.data.teamId,
+    jobId: job.data.extractId,
+    webhook: job.data.request.webhook,
+    v0: false,
+  });
 
-    if (result.success) {
-      // Move job to completed state in Redis and update research status
+  try {
+    if (sender) {
+      sender.send(WebhookEvent.EXTRACT_STARTED, {
+        success: true,
+      });
+    }
+
+    let result: ExtractResult | null = null;
+
+    const model = job.data.request.agent?.model;
+    if (
+      job.data.request.agent &&
+      model &&
+      model.toLowerCase().includes("fire-1")
+    ) {
+      result = await performExtraction(job.data.extractId, {
+        request: job.data.request,
+        teamId: job.data.teamId,
+        subId: job.data.subId,
+        apiKeyId: job.data.apiKeyId,
+      });
+    } else {
+      result = await performExtraction_F0(job.data.extractId, {
+        request: job.data.request,
+        teamId: job.data.teamId,
+        subId: job.data.subId,
+        apiKeyId: job.data.apiKeyId,
+      });
+    }
+    // result = await performExtraction_F0(job.data.extractId, {
+    //   request: job.data.request,
+    //   teamId: job.data.teamId,
+    //   subId: job.data.subId,
+    // });
+
+    if (result && result.success) {
+      // Move job to completed state in Redis
       await job.moveToCompleted(result, token, false);
+
+      if (sender) {
+        sender.send(WebhookEvent.EXTRACT_COMPLETED, {
+          success: true,
+          data: [result],
+        });
+      }
+
       return result;
     } else {
-      // If the deep research failed but didn't throw an error
-      const error = new Error("Deep research failed without specific error");
-      await updateDeepResearch(job.data.researchId, {
-        status: "failed",
-        error: error.message,
-      });
-      await job.moveToFailed(error, token, false);
+      // throw new Error(result.error || "Unknown error during extraction");
 
-      return { success: false, error: error.message };
+      await job.moveToCompleted(result, token, false);
+      await updateExtract(job.data.extractId, {
+        error: result?.error ?? getErrorContactMessage(job.data.extractId),
+      });
+
+      if (sender) {
+        sender.send(WebhookEvent.EXTRACT_FAILED, {
+          success: false,
+          error: result?.error ?? getErrorContactMessage(job.data.extractId),
+        });
+      }
+
+      return result;
     }
   } catch (error) {
     logger.error(`🚫 Job errored ${job.id} - ${error}`, { error });
@@ -103,89 +139,27 @@ const processDeepResearchJobInternal = async (
       // Move job to failed state in Redis
       await job.moveToFailed(error, token, false);
     } catch (e) {
-      logger.error("Failed to move job to failed state in Redis", { error });
+      logger.log("Failed to move job to failed state in Redis", { error });
     }
 
-    await updateDeepResearch(job.data.researchId, {
+    await updateExtract(job.data.extractId, {
       status: "failed",
-      error: error.message || "Unknown error occurred",
+      error: error.error ?? error ?? getErrorContactMessage(job.data.extractId),
     });
 
-    return { success: false, error: error.message || "Unknown error occurred" };
-  } finally {
-    clearInterval(extendLockInterval);
-  }
-};
-
-const processGenerateLlmsTxtJobInternal = async (
-  token: string,
-  job: Job & { id: string },
-) => {
-  const logger = _logger.child({
-    module: "generate-llmstxt-worker",
-    method: "processJobInternal",
-    jobId: job.id,
-    generateId: job.data.generateId,
-    teamId: job.data?.teamId ?? undefined,
-  });
-
-  const extendLockInterval = setInterval(async () => {
-    logger.info(`🔄 Worker extending lock on job ${job.id}`);
-    await job.extendLock(token, jobLockExtensionTime);
-  }, jobLockExtendInterval);
-
-  try {
-    const result = await performGenerateLlmsTxt({
-      generationId: job.data.generationId,
-      teamId: job.data.teamId,
-      url: job.data.request.url,
-      maxUrls: job.data.request.maxUrls,
-      showFullText: job.data.request.showFullText,
-      subId: job.data.subId,
-      cache: job.data.request.cache,
-      apiKeyId: job.data.apiKeyId,
-    });
-
-    if (result.success) {
-      await job.moveToCompleted(result, token, false);
-      await updateGeneratedLlmsTxt(job.data.generateId, {
-        status: "completed",
-        generatedText: result.data.generatedText,
-        fullText: result.data.fullText,
+    if (sender) {
+      sender.send(WebhookEvent.EXTRACT_FAILED, {
+        success: false,
+        error:
+          (error as any)?.message ?? getErrorContactMessage(job.data.extractId),
       });
-      return result;
-    } else {
-      const error = new Error(
-        "LLMs text generation failed without specific error",
-      );
-      await job.moveToFailed(error, token, false);
-      await updateGeneratedLlmsTxt(job.data.generateId, {
-        status: "failed",
-        error: error.message,
-      });
-      return { success: false, error: error.message };
-    }
-  } catch (error) {
-    logger.error(`🚫 Job errored ${job.id} - ${error}`, { error });
-
-    Sentry.captureException(error, {
-      data: {
-        job: job.id,
-      },
-    });
-
-    try {
-      await job.moveToFailed(error, token, false);
-    } catch (e) {
-      logger.error("Failed to move job to failed state in Redis", { error });
     }
 
-    await updateGeneratedLlmsTxt(job.data.generateId, {
-      status: "failed",
-      error: error.message || "Unknown error occurred",
-    });
-
-    return { success: false, error: error.message || "Unknown error occurred" };
+    return {
+      success: false,
+      error: error.error ?? error ?? getErrorContactMessage(job.data.extractId),
+    };
+    // throw error;
   } finally {
     clearInterval(extendLockInterval);
   }
@@ -312,7 +286,7 @@ app.get("/liveness", (req, res) => {
   }
 });
 
-const workerPort = process.env.WORKER_PORT || process.env.PORT || 3005;
+const workerPort = process.env.EXTRACT_WORKER_PORT || process.env.PORT || 3005;
 app.listen(workerPort, () => {
   _logger.info(`Liveness endpoint is running on port ${workerPort}`);
 });
@@ -323,10 +297,7 @@ app.listen(workerPort, () => {
     process.exit(1);
   });
 
-  await Promise.all([
-    workerFun(getDeepResearchQueue(), processDeepResearchJobInternal),
-    workerFun(getGenerateLlmsTxtQueue(), processGenerateLlmsTxtJobInternal),
-  ]);
+  await Promise.all([workerFun(getExtractQueue(), processExtractJobInternal)]);
 
   _logger.info("All workers exited. Waiting for all jobs to finish...");
 

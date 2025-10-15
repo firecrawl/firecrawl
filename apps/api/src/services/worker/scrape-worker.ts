@@ -25,6 +25,7 @@ import {
   saveCrawl,
   StoredCrawl,
 } from "../../lib/crawl-redis";
+import { redisEvictConnection } from "../redis";
 import {
   _addScrapeJobToBullMQ,
   addScrapeJob,
@@ -39,7 +40,6 @@ import { createWebhookSender, WebhookEvent } from "../webhook";
 import { CustomError } from "../../lib/custom-error";
 import { startWebScraperPipeline } from "../../main/runWebScraper";
 import { CostTracking } from "../../lib/cost-tracking";
-import { redisEvictConnection } from "../redis";
 import { normalizeUrlOnlyHostname } from "../../lib/canonical-url";
 import { isUrlBlocked } from "../../scraper/WebScraper/utils/blocklist";
 import { BLOCKLISTED_URL_MESSAGE } from "../../lib/strings";
@@ -333,6 +333,20 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
           logger.debug("Discovered " + links.links.length + " links...", {
             linksLength: links.links.length,
           });
+
+          // Store robots blocked URLs in Redis set
+          for (const [url, reason] of links.denialReasons) {
+            if (reason === "URL blocked by robots.txt") {
+              await redisEvictConnection.sadd(
+                "crawl:" + job.data.crawl_id + ":robots_blocked",
+                url,
+              );
+              await redisEvictConnection.expire(
+                "crawl:" + job.data.crawl_id + ":robots_blocked",
+                24 * 60 * 60,
+              );
+            }
+          }
 
           for (const link of links.links) {
             if (await lockURL(job.data.crawl_id, sc, link)) {
@@ -960,6 +974,7 @@ async function processKickoffSitemapJob(job: NuQJob<ScrapeJobKickoffSitemap>) {
       location: job.data.location,
       crawlId: job.data.crawl_id,
       logger,
+      isPreCrawl: sc.internalOptions?.isPreCrawl ?? false,
     });
 
     const passingURLs = (

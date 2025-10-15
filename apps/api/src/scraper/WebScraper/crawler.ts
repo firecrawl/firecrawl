@@ -3,7 +3,6 @@ import { load } from "cheerio"; // rustified
 import { URL } from "url";
 import { getLinksFromSitemap } from "./sitemap";
 import robotsParser, { Robot } from "robots-parser";
-import psl from "psl";
 import { getURLDepth } from "./utils/maxDepthUtils";
 import { logger as _logger } from "../../lib/logger";
 import { redisEvictConnection } from "../../services/redis";

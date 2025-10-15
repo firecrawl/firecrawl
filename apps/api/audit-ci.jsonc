@@ -5,6 +5,7 @@
         "GHSA-33vc-wfww-vjfv|ai>jsondiffpatch", // we don't care about the HTML coming out of jsondiffpatch
         "GHSA-3gc7-fjrx-p6mg|@coinbase/x402>@coinbase/cdp-sdk>@solana/spl-token>@solana/buffer-layout-utils>bigint-buffer", // never gets called in our code paths
         "GHSA-qj3p-xc97-xw74|@coinbase/x402>x402>wagmi>@wagmi/connectors>@metamask/sdk", // we don't use the Metamask SDK in the browser
-        "GHSA-qj3p-xc97-xw74|@coinbase/x402>x402>wagmi>@wagmi/connectors>@metamask/sdk>@metamask/sdk-communication-layer" // we don't use the Metamask SDK in the browser
+        "GHSA-qj3p-xc97-xw74|@coinbase/x402>x402>wagmi>@wagmi/connectors>@metamask/sdk>@metamask/sdk-communication-layer", // we don't use the Metamask SDK in the browser
+        "GHSA-ffrw-9mx8-89p8|@coinbase/x402>x402>wagmi>@wagmi/connectors>@walletconnect/ethereum-provider>@reown/appkit>@reown/appkit-utils>@walletconnect/logger>pino>fast-redact" // unused
     ]
 }

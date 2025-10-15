@@ -190,4 +190,20 @@ describe("Search tests", () => {
     },
     60000,
   );
+
+  it.concurrent(
+    "country defaults to undefined when location is set",
+    async () => {
+      const res = await search(
+        {
+          query: "firecrawl",
+          location: "San Francisco",
+        },
+        identity,
+      );
+      expect(res.web).toBeDefined();
+      expect(res.web?.length).toBeGreaterThan(0);
+    },
+    60000,
+  );
 });

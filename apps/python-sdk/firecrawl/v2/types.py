@@ -186,7 +186,13 @@ class Source(BaseModel):
 SourceOption = Union[str, Source]
 
 class Category(BaseModel):
-    """Configuration for a search category."""
+    """Configuration for a search category.
+    
+    Supported categories:
+    - "github": Filter results to GitHub repositories
+    - "research": Filter results to research papers and academic sites
+    - "pdf": Filter results to PDF files (adds filetype:pdf to search)
+    """
     type: str
 
 CategoryOption = Union[str, Category]
@@ -348,7 +354,7 @@ class CrawlResponse(BaseModel):
 
 class CrawlJob(BaseModel):
     """Crawl job status and progress data."""
-    status: Literal["scraping", "completed", "failed"]
+    status: Literal["scraping", "completed", "failed", "cancelled"]
     total: int = 0
     completed: int = 0
     credits_used: int = 0

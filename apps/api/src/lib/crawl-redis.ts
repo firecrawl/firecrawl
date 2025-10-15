@@ -49,6 +49,10 @@ export async function saveCrawl(id: string, crawl: StoredCrawl) {
   });
 }
 
+export async function markCrawlActive(id: string) {
+  await redisEvictConnection.sadd("active_crawls", id);
+}
+
 export async function getCrawlsByTeamId(team_id: string): Promise<string[]> {
   return await redisEvictConnection.smembers("crawls_by_team_id:" + team_id);
 }
@@ -221,6 +225,9 @@ export async function getDoneJobsOrderedUntil(
     "crawl:" + id + ":jobs_donez_ordered",
     -Infinity,
     until,
+    "LIMIT",
+    start,
+    count,
   );
 }
 
@@ -294,6 +301,8 @@ export async function finishCrawl(id: string, __logger: Logger = _logger) {
   });
   await redisEvictConnection.set("crawl:" + id + ":finish", "yes");
   await redisEvictConnection.expire("crawl:" + id + ":finish", 24 * 60 * 60);
+
+  await redisEvictConnection.srem("active_crawls", id);
 
   const crawl = await getCrawl(id);
   if (crawl && crawl.team_id) {
