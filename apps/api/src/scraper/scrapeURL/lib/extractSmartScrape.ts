@@ -292,15 +292,18 @@ export async function extractData({
       
       try {
         const resolvedSchema = resolveRefs(schema, defs);
-        
-        if (resolvedSchema !== schema || !schemaString.includes('"$ref"')) {
+
+        const resolvedString = JSON.stringify(resolvedSchema);
+        const hasRemainingRefs = resolvedString.includes('"$ref"') || resolvedString.includes("#/$defs/");
+
+        if (!hasRemainingRefs) {
           schema = resolvedSchema;
-          delete schema.$defs;
+          if (schema && typeof schema === "object" && schema.$defs) delete schema.$defs;
           logger.info("Successfully resolved schema refs", {
             schema,
           });
         } else {
-          logger.info("Reference resolution was skipped due to recursion detection, preserving original schema");
+          logger.info("Reference resolution was skipped or incomplete (remaining $ref detected), preserving original schema");
         }
       } catch (error) {
         logger.warn("Failed to resolve schema refs, preserving original schema", { error });

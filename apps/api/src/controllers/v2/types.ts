@@ -111,7 +111,7 @@ function normalizeSchemaForOpenAI(schema: any): any {
       }
 
       const normalizedDefs = Object.fromEntries(
-        Object.entries($defs).map(([key, value]) => [
+        Object.entries($defs ?? {}).map(([key, value]) => [
           key,
           normalizeObject(value)
         ])
