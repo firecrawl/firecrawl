@@ -194,16 +194,12 @@ const resolveRefs = (
 ): any => {
   if (!obj || typeof obj !== "object" || depth > 10) return obj;
 
-  const objString = JSON.stringify(obj);
-  if (objString.includes("#/$defs/") && objString.includes('"$ref"')) {
+  if (visited.has(obj)) {
     console.warn(
-      "resolveRefs: Detected recursive schema pattern, aborting to prevent infinite recursion",
+      "resolveRefs: Detected circular reference, aborting to prevent infinite recursion",
     );
     return obj;
   }
-
-  // Prevent infinite recursion
-  if (visited.has(obj)) return obj;
   visited.add(obj);
 
   if (obj.$ref && typeof obj.$ref === "string") {
@@ -286,13 +282,29 @@ export async function extractData({
 
     if (hasAnyRefs) {
       logger.info(
-        "Detected schema with references, preserving as-is to avoid recursion",
+        "Detected schema with references, attempting to resolve refs",
         {
           hasDefsProperty: !!schema.$defs,
           hasRefInString: schemaString.includes('"$ref"'),
           hasRefPathInString: schemaString.includes("#/$defs/"),
         },
       );
+      
+      try {
+        const resolvedSchema = resolveRefs(schema, defs);
+        
+        if (resolvedSchema !== schema || !schemaString.includes('"$ref"')) {
+          schema = resolvedSchema;
+          delete schema.$defs;
+          logger.info("Successfully resolved schema refs", {
+            schema,
+          });
+        } else {
+          logger.info("Reference resolution was skipped due to recursion detection, preserving original schema");
+        }
+      } catch (error) {
+        logger.warn("Failed to resolve schema refs, preserving original schema", { error });
+      }
     } else {
       logger.info("No recursive references detected, resolving refs", {
         schema,

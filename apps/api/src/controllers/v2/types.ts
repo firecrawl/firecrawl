@@ -110,7 +110,14 @@ function normalizeSchemaForOpenAI(schema: any): any {
         }
       }
 
-      return { ...processedRest, $defs };
+      const normalizedDefs = Object.fromEntries(
+        Object.entries($defs).map(([key, value]) => [
+          key,
+          normalizeObject(value)
+        ])
+      );
+
+      return { ...processedRest, $defs: normalizedDefs };
     }
 
     if (
