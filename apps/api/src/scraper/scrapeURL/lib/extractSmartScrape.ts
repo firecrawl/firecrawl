@@ -195,7 +195,7 @@ const resolveRefs = (
   if (!obj || typeof obj !== "object" || depth > 10) return obj;
 
   if (visited.has(obj)) {
-    console.warn(
+    logger.warn(
       "resolveRefs: Detected circular reference, aborting to prevent infinite recursion",
     );
     return obj;
