@@ -78,7 +78,11 @@ const stream = createWriteStream("firecrawl.log");
 const PORT = process.env.PORT ?? "3002";
 const WORKER_PORT = process.env.WORKER_PORT ?? "3005";
 const EXTRACT_WORKER_PORT = process.env.EXTRACT_WORKER_PORT ?? "3004";
-const NUQ_WORKER_START_PORT = Number(process.env.NUQ_WORKER_START_PORT ?? "3006");
+const NUQ_WORKER_START_PORT = Number(
+  process.env.NUQ_WORKER_START_PORT ?? "3006",
+);
+const NUQ_WORKER_COUNT = Number(process.env.NUQ_WORKER_COUNT ?? "5");
+const NUQ_PREFETCH_WORKER_PORT = NUQ_WORKER_START_PORT + NUQ_WORKER_COUNT;
 
 const logger = {
   section(message: string) {
@@ -121,7 +125,10 @@ const logger = {
   },
   processOutput(name: string, line: string, isReduceNoise: boolean) {
     const color = getProcessColor(name);
-    if (!(line.includes("[nuq/metrics:") && isReduceNoise)) {
+    if (
+      !(line.includes("[nuq/metrics:") && isReduceNoise) &&
+      (!isReduceNoise || !line.includes("request completed"))
+    ) {
       const label = `${color}${colors.bold}${name.padEnd(14)}${colors.reset}`;
       console.log(`${label} ${line}`);
     }
@@ -423,7 +430,7 @@ function startServices(command?: string[]): Services {
     },
   );
 
-  const nuqWorkers = Array.from({ length: 5 }, (_, i) =>
+  const nuqWorkers = Array.from({ length: NUQ_WORKER_COUNT }, (_, i) =>
     execForward(
       `nuq-worker-${i}`,
       process.argv[2] === "--start-docker"
@@ -444,7 +451,7 @@ function startServices(command?: string[]): Services {
           ? "node --import ./dist/src/otel.js dist/src/services/worker/nuq-prefetch-worker.js"
           : "pnpm nuq-prefetch-worker:production",
         {
-          NUQ_PREFETCH_WORKER_PORT: String(3011),
+          NUQ_PREFETCH_WORKER_PORT: String(NUQ_PREFETCH_WORKER_PORT),
           NUQ_REDUCE_NOISE: "true",
           NUQ_POD_NAME: "nuq-prefetch-worker",
         },

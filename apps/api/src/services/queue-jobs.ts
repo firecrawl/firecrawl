@@ -185,10 +185,20 @@ async function addScrapeJobRaw(
 
     webScraperOptions.concurrencyLimited = true;
 
-    await _addScrapeJobToConcurrencyQueue(webScraperOptions, jobId, priority, listenable);
+    await _addScrapeJobToConcurrencyQueue(
+      webScraperOptions,
+      jobId,
+      priority,
+      listenable,
+    );
     return null;
   } else {
-    return await _addScrapeJobToBullMQ(webScraperOptions, jobId, priority, listenable);
+    return await _addScrapeJobToBullMQ(
+      webScraperOptions,
+      jobId,
+      priority,
+      listenable,
+    );
   }
 }
 

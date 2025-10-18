@@ -1,8 +1,14 @@
-import axios, { AxiosProxyConfig } from "axios";
+import * as undici from "undici";
 import { JSDOM } from "jsdom";
 import { SearchV2Response, WebSearchResult } from "../../lib/entities";
 import { logger } from "../../lib/logger";
-import https from "https";
+import { getSecureDispatcher } from "../../scraper/scrapeURL/engines/utils/safeFetch";
+
+class DDGAntiBotError extends Error {
+  constructor() {
+    super("Blocked by DuckDuckGo Anti-Bot measures");
+  }
+}
 
 const USER_AGENTS = [
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
@@ -36,6 +42,11 @@ function extractResults(
   document: Document,
   seenUrls: Set<string>,
 ): WebSearchResult[] {
+  const anomalyModal = document.querySelector(".anomaly-modal__modal");
+  if (anomalyModal) {
+    throw new DDGAntiBotError();
+  }
+
   const results: WebSearchResult[] = [];
   const blocks = Array.from(document.querySelectorAll(".result.web-result"));
 
@@ -97,22 +108,8 @@ export async function ddgSearch(
     country = "us",
     location,
     tbs,
-    proxy,
     timeout = 5000,
   } = options;
-
-  let proxies: AxiosProxyConfig | false = false;
-  if (proxy) {
-    const url = new URL(proxy);
-    proxies = {
-      protocol: url.protocol.slice(0, -1) as "http" | "https",
-      host: url.hostname,
-      port: parseInt(url.port) || (url.protocol === "https:" ? 443 : 80),
-      ...(url.username && {
-        auth: { username: url.username, password: url.password },
-      }),
-    };
-  }
 
   try {
     const userAgent =
@@ -135,13 +132,36 @@ export async function ddgSearch(
     let isFirstPage = true;
     let nextPageData: URLSearchParams | null = params;
 
+    let antiBotRetries = 0;
     while (results.length < num_results && nextPageData) {
-      let response;
+      const timeoutSignal = AbortSignal.timeout(timeout);
 
-      if (isFirstPage) {
-        response = await axios.get(
-          `https://html.duckduckgo.com/html?${params.toString()}`,
-          {
+      try {
+        let response: undici.Response;
+
+        if (isFirstPage) {
+          response = await undici.fetch(
+            `https://html.duckduckgo.com/html?${params.toString()}`,
+            {
+              dispatcher: getSecureDispatcher(false),
+              redirect: "follow",
+              headers: {
+                "User-Agent": userAgent,
+                Accept:
+                  "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+                "Accept-Language": "en-US,en;q=0.5",
+                "Accept-Encoding": "gzip, deflate, br",
+                "Upgrade-Insecure-Requests": "1",
+              },
+              signal: timeoutSignal,
+            },
+          );
+        } else {
+          response = await undici.fetch(`https://html.duckduckgo.com/html`, {
+            method: "POST",
+            body: nextPageData.toString(),
+            dispatcher: getSecureDispatcher(false),
+            redirect: "follow",
             headers: {
               "User-Agent": userAgent,
               Accept:
@@ -150,42 +170,41 @@ export async function ddgSearch(
               "Accept-Encoding": "gzip, deflate, br",
               "Upgrade-Insecure-Requests": "1",
             },
-            proxy: proxies,
-            timeout,
-            httpsAgent: new https.Agent({ rejectUnauthorized: true }),
-          },
-        );
+            signal: timeoutSignal,
+          });
+        }
+
+        const buf = Buffer.from(await response.arrayBuffer());
+        const dom = new JSDOM(buf.toString("utf8"));
+        const doc = dom.window.document;
+
+        const newResults = extractResults(doc, seenUrls);
+
         isFirstPage = false;
-      } else {
-        response = await axios.post(
-          "https://html.duckduckgo.com/html/",
-          nextPageData.toString(),
-          {
-            headers: {
-              "User-Agent": userAgent,
-              Accept:
-                "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-              "Accept-Language": "en-US,en;q=0.5",
-              "Accept-Encoding": "gzip, deflate, br",
-              "Content-Type": "application/x-www-form-urlencoded",
+        antiBotRetries = 0;
+
+        results.push(...newResults);
+
+        if (newResults.length === 0) break;
+
+        nextPageData = getNextPageData(doc);
+      } catch (error: any) {
+        if (error instanceof DDGAntiBotError) {
+          if (antiBotRetries++ > 3) {
+            throw error;
+          }
+
+          logger.warn(
+            "DuckDuckGo: Encountered anti-bot measures, retrying...",
+            {
+              attempt: antiBotRetries,
+              term,
             },
-            proxy: proxies,
-            timeout,
-            httpsAgent: new https.Agent({ rejectUnauthorized: true }),
-          },
-        );
+          );
+        } else {
+          throw error;
+        }
       }
-
-      const dom = new JSDOM(response.data);
-      const doc = dom.window.document;
-
-      const newResults = extractResults(doc, seenUrls);
-      results.push(...newResults);
-
-      if (newResults.length === 0) break;
-
-      nextPageData = getNextPageData(doc);
-
       await new Promise(r => setTimeout(r, 1000));
     }
 
@@ -196,6 +215,11 @@ export async function ddgSearch(
 
     return { web: results.slice(0, num_results) };
   } catch (error: any) {
+    if (error instanceof DDGAntiBotError) {
+      logger.error("DuckDuckGo: Blocked by anti-bot measures", { term });
+      throw new Error("DuckDuckGo: Blocked by anti-bot measures.");
+    }
+
     if (error.response?.status === 429) {
       logger.warn("DuckDuckGo: Too many requests, try again later.", {
         status: error.response.status,

@@ -608,6 +608,10 @@ async function scrapeURLLoop(meta: Meta): Promise<ScrapeUrlResponse> {
               } else {
                 throw error.error;
               }
+            } else if (error.error instanceof EngineUnsuccessfulError) {
+              meta.logger.warn("Engine " + error.engine + " was unsuccessful", {
+                error: error.error,
+              });
             } else {
               meta.logger.warn(
                 "An unexpected error happened while scraping with " +
@@ -665,7 +669,7 @@ async function scrapeURLLoop(meta: Meta): Promise<ScrapeUrlResponse> {
 
     snipeAbortController.abort();
 
-    if (result === null) {
+    if (!result) {
       setSpanAttributes(span, {
         "engine.no_engines_left": true,
         "engine.engines_attempted": enginesAttempted.join(","),
@@ -948,6 +952,7 @@ export async function scrapeURL(
       });
     }
 
+    const attemptedFeatures = new Set<FeatureFlag>();
     try {
       let result: ScrapeUrlResponse;
       while (true) {
@@ -960,14 +965,37 @@ export async function scrapeURL(
             (meta.internalOptions.forceEngine === undefined ||
               Array.isArray(meta.internalOptions.forceEngine))
           ) {
+            const added = error.featureFlags.some(flag => {
+              if (attemptedFeatures.has(flag)) {
+                return false;
+              }
+
+              attemptedFeatures.add(flag);
+              return true;
+            });
+
+            if (!added) {
+              meta.logger.error(
+                "Feature flag loop caught, aborting job with NoEnginesLeftError",
+                {
+                  error,
+                },
+              );
+              throw new NoEnginesLeftError([]);
+            }
+
             meta.logger.debug(
               "More feature flags requested by scraper: adding " +
                 error.featureFlags.join(", "),
               { error, existingFlags: meta.featureFlags },
             );
+
             meta.featureFlags = new Set(
-              [...meta.featureFlags].concat(error.featureFlags),
+              [...meta.featureFlags].concat(
+                error.featureFlags.filter(flag => !attemptedFeatures.has(flag)),
+              ),
             );
+
             if (error.pdfPrefetch) {
               meta.pdfPrefetch = error.pdfPrefetch;
             }

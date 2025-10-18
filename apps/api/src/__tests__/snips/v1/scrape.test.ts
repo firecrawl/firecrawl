@@ -65,7 +65,7 @@ describe("Scrape tests", () => {
 
         expect(raw.statusCode).toBe(400);
         expect(raw.body.success).toBe(false);
-        expect(raw.body.error).toBe("Bad Request");
+        expect(raw.body.error).toBe("waitFor must not exceed half of timeout");
         expect(raw.body.details).toBeDefined();
         expect(JSON.stringify(raw.body.details)).toContain(
           "waitFor must not exceed half of timeout",
@@ -88,7 +88,7 @@ describe("Scrape tests", () => {
 
         expect(raw.statusCode).toBe(400);
         expect(raw.body.success).toBe(false);
-        expect(raw.body.error).toBe("Bad Request");
+        expect(raw.body.error).toBe("waitFor must not exceed half of timeout");
         expect(raw.body.details).toBeDefined();
         expect(JSON.stringify(raw.body.details)).toContain(
           "waitFor must not exceed half of timeout",
@@ -111,7 +111,7 @@ describe("Scrape tests", () => {
 
         expect(raw.statusCode).toBe(400);
         expect(raw.body.success).toBe(false);
-        expect(raw.body.error).toBe("Bad Request");
+        expect(raw.body.error).toBe("waitFor must not exceed half of timeout");
         expect(raw.body.details).toBeDefined();
         expect(JSON.stringify(raw.body.details)).toContain(
           "waitFor must not exceed half of timeout",
@@ -147,19 +147,23 @@ describe("Scrape tests", () => {
     scrapeTimeout,
   );
 
-  it.concurrent("links format works", async () => {
-    const response = await scrape(
-      {
-        url: "https://firecrawl.dev",
-        formats: ["links"],
-        timeout: scrapeTimeout,
-      },
-      identity,
-    );
+  it.concurrent(
+    "links format works",
+    async () => {
+      const response = await scrape(
+        {
+          url: "https://firecrawl.dev",
+          formats: ["links"],
+          timeout: scrapeTimeout,
+        },
+        identity,
+      );
 
-    expect(response.links).toBeDefined();
-    expect(response.links?.length).toBeGreaterThan(0);
-  });
+      expect(response.links).toBeDefined();
+      expect(response.links?.length).toBeGreaterThan(0);
+    },
+    scrapeTimeout,
+  );
 
   if (process.env.TEST_SUITE_SELF_HOSTED && process.env.PROXY_SERVER) {
     it.concurrent(
@@ -268,7 +272,7 @@ describe("Scrape tests", () => {
       scrapeTimeout,
     );
 
-    describe("Ad blocking (f-e dependant)", () => {
+    describe("Ad blocking (f-e dependent)", () => {
       it.concurrent(
         "blocking ads works",
         async () => {
@@ -1133,7 +1137,7 @@ describe("Scrape tests", () => {
       );
     });
 
-    describe("Location API (f-e dependant)", () => {
+    describe("Location API (f-e dependent)", () => {
       it.concurrent(
         "works without specifying an explicit location",
         async () => {
@@ -1166,7 +1170,7 @@ describe("Scrape tests", () => {
       );
     });
 
-    describe("Screenshot (f-e dependant)", () => {
+    describe("Screenshot (f-e dependent)", () => {
       it.concurrent(
         "screenshot format works",
         async () => {
@@ -1202,7 +1206,7 @@ describe("Scrape tests", () => {
       );
     });
 
-    describe("PDF generation (f-e dependant)", () => {
+    describe("PDF generation (f-e dependent)", () => {
       it.concurrent(
         "works",
         async () => {
@@ -1224,7 +1228,7 @@ describe("Scrape tests", () => {
       );
     });
 
-    describe("Proxy API (f-e dependant)", () => {
+    describe("Proxy API (f-e dependent)", () => {
       it.concurrent(
         "undefined works",
         async () => {
@@ -1298,7 +1302,7 @@ describe("Scrape tests", () => {
       // }, scrapeTimeout * 2);
     });
 
-    describe("PDF (f-e dependant)", () => {
+    describe("PDF (f-e dependent)", () => {
       it.concurrent(
         "works",
         async () => {
@@ -1624,6 +1628,7 @@ describe("Scrape tests", () => {
                 },
                 additionalProperties: true,
               },
+              origin: "api-sdk",
             },
             identity,
           );
@@ -1692,32 +1697,34 @@ describe("Scrape tests", () => {
         scrapeTimeout,
       );
 
-      it(
-        "should normalize changeTracking with additionalProperties in schema",
-        async () => {
-          const identity = await idmux({ name: "schema-validation-test" });
+      if (!process.env.TEST_SUITE_SELF_HOSTED) {
+        it(
+          "should normalize changeTracking with additionalProperties in schema",
+          async () => {
+            const identity = await idmux({ name: "schema-validation-test" });
 
-          const response = await scrapeRaw(
-            {
-              url: "https://example.com",
-              formats: ["markdown", "changeTracking"],
-              changeTrackingOptions: {
-                schema: {
-                  type: "object",
-                  properties: {
-                    changes: { type: "string" },
+            const response = await scrapeRaw(
+              {
+                url: "https://example.com",
+                formats: ["markdown", "changeTracking"],
+                changeTrackingOptions: {
+                  schema: {
+                    type: "object",
+                    properties: {
+                      changes: { type: "string" },
+                    },
+                    additionalProperties: true,
                   },
-                  additionalProperties: true,
                 },
               },
-            },
-            identity,
-          );
+              identity,
+            );
 
-          expect(response.statusCode).toBe(200);
-        },
-        scrapeTimeout,
-      );
+            expect(response.statusCode).toBe(200);
+          },
+          scrapeTimeout,
+        );
+      }
 
       it(
         "should reject schema-less dictionary (no properties but additionalProperties: true)",

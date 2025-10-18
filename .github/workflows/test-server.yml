@@ -68,6 +68,7 @@ jobs:
       PROXY_PASSWORD: ${{ matrix.proxy == 'proxy' && secrets.PROXY_PASSWORD || '' }}
       NUQ_DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
       TEST_SUITE_SELF_HOSTED: true
+      USE_GO_MARKDOWN_PARSER: true
       HOST: 0.0.0.0
     steps:
       - uses: actions/checkout@v5

@@ -6,7 +6,7 @@ const config: Config = {
   testEnvironment: "node",
   testPathIgnorePatterns: ["<rootDir>/dist/"],
   forceExit: true,
-  detectOpenHandles: true,
+  // detectOpenHandles: true, // temp disabled due to rust lib
   openHandlesTimeout: 120000,
   watchAll: false,
 };

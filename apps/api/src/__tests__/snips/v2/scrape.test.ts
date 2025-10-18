@@ -66,7 +66,7 @@ describe("Scrape tests", () => {
 
         expect(raw.statusCode).toBe(400);
         expect(raw.body.success).toBe(false);
-        expect(raw.body.error).toBe("Bad Request");
+        expect(raw.body.error).toBe("waitFor must not exceed half of timeout");
         expect(raw.body.details).toBeDefined();
         expect(JSON.stringify(raw.body.details)).toContain(
           "waitFor must not exceed half of timeout",
@@ -89,7 +89,7 @@ describe("Scrape tests", () => {
 
         expect(raw.statusCode).toBe(400);
         expect(raw.body.success).toBe(false);
-        expect(raw.body.error).toBe("Bad Request");
+        expect(raw.body.error).toBe("waitFor must not exceed half of timeout");
         expect(raw.body.details).toBeDefined();
         expect(JSON.stringify(raw.body.details)).toContain(
           "waitFor must not exceed half of timeout",
@@ -112,7 +112,7 @@ describe("Scrape tests", () => {
 
         expect(raw.statusCode).toBe(400);
         expect(raw.body.success).toBe(false);
-        expect(raw.body.error).toBe("Bad Request");
+        expect(raw.body.error).toBe("waitFor must not exceed half of timeout");
         expect(raw.body.details).toBeDefined();
         expect(JSON.stringify(raw.body.details)).toContain(
           "waitFor must not exceed half of timeout",
@@ -146,66 +146,80 @@ describe("Scrape tests", () => {
     scrapeTimeout,
   );
 
-  it.concurrent("links format works", async () => {
-    const response = await scrape(
-      {
-        url: "https://firecrawl.dev",
-        formats: ["links"],
-      },
-      identity,
-    );
+  it.concurrent(
+    "links format works",
+    async () => {
+      const response = await scrape(
+        {
+          url: "https://firecrawl.dev",
+          formats: ["links"],
+        },
+        identity,
+      );
 
-    expect(response.links).toBeDefined();
-    expect(response.links?.length).toBeGreaterThan(0);
-  });
+      expect(response.links).toBeDefined();
+      expect(response.links?.length).toBeGreaterThan(0);
+    },
+    scrapeTimeout,
+  );
 
-  it.concurrent("images format works", async () => {
-    const response = await scrape(
-      {
-        url: "https://firecrawl.dev",
-        formats: ["images"],
-      },
-      identity,
-    );
+  it.concurrent(
+    "images format works",
+    async () => {
+      const response = await scrape(
+        {
+          url: "https://firecrawl.dev",
+          formats: ["images"],
+        },
+        identity,
+      );
 
-    expect(response.images).toBeDefined();
-    expect(response.images?.length).toBeGreaterThan(0);
-    // Firecrawl website should have at least the logo
-    expect(response.images?.some(img => img.includes("firecrawl"))).toBe(true);
-  });
+      expect(response.images).toBeDefined();
+      expect(response.images?.length).toBeGreaterThan(0);
+      // Firecrawl website should have at least the logo
+      expect(response.images?.some(img => img.includes("firecrawl"))).toBe(
+        true,
+      );
+    },
+    scrapeTimeout,
+  );
 
-  it.concurrent("images format works with multiple formats", async () => {
-    const response = await scrape(
-      {
-        url: "https://firecrawl.dev",
-        formats: ["markdown", "links", "images"],
-      },
-      identity,
-    );
+  it.concurrent(
+    "images format works with multiple formats",
+    async () => {
+      const response = await scrape(
+        {
+          url: "https://firecrawl.dev",
+          formats: ["markdown", "links", "images"],
+        },
+        identity,
+      );
 
-    expect(response.markdown).toBeDefined();
-    expect(response.links).toBeDefined();
-    expect(response.images).toBeDefined();
-    expect(response.images?.length).toBeGreaterThan(0);
+      expect(response.markdown).toBeDefined();
+      expect(response.links).toBeDefined();
+      expect(response.images).toBeDefined();
+      expect(response.images?.length).toBeGreaterThan(0);
 
-    // Images should include things that aren't in links
-    const imageExtensions = [
-      ".jpg",
-      ".jpeg",
-      ".png",
-      ".gif",
-      ".webp",
-      ".svg",
-      ".ico",
-    ];
-    const linkImages =
-      response.links?.filter(link =>
-        imageExtensions.some(ext => link.toLowerCase().includes(ext)),
-      ) || [];
+      // Images should include things that aren't in links
+      const imageExtensions = [
+        ".jpg",
+        ".jpeg",
+        ".png",
+        ".gif",
+        ".webp",
+        ".svg",
+        ".ico",
+      ];
+      const linkImages =
+        response.links?.filter(link =>
+          imageExtensions.some(ext => link.toLowerCase().includes(ext)),
+        ) || [];
 
-    // Should have found more images than just those with obvious extensions in links
-    expect(response.images?.length).toBeGreaterThanOrEqual(linkImages.length);
-  });
+      // Should have found more images than just those with obvious extensions in links
+      expect(response.images?.length).toBeGreaterThanOrEqual(linkImages.length);
+    },
+    scrapeTimeout,
+  );
 
   if (process.env.TEST_SUITE_SELF_HOSTED && process.env.PROXY_SERVER) {
     it.concurrent(
@@ -309,7 +323,7 @@ describe("Scrape tests", () => {
       scrapeTimeout,
     );
 
-    describe("Ad blocking (f-e dependant)", () => {
+    describe("Ad blocking (f-e dependent)", () => {
       it.concurrent(
         "blocking ads works",
         async () => {
@@ -958,18 +972,18 @@ describe("Scrape tests", () => {
             expect(response.changeTracking?.json).toBeDefined();
             if (response.changeTracking?.json.pricing) {
               expect(response.changeTracking?.json.pricing).toHaveProperty(
-                "old",
+                "previous",
               );
               expect(response.changeTracking?.json.pricing).toHaveProperty(
-                "new",
+                "current",
               );
             }
             if (response.changeTracking?.json.features) {
               expect(response.changeTracking?.json.features).toHaveProperty(
-                "old",
+                "previous",
               );
               expect(response.changeTracking?.json.features).toHaveProperty(
-                "new",
+                "current",
               );
             }
           }
@@ -1059,7 +1073,7 @@ describe("Scrape tests", () => {
       );
     });
 
-    describe("Location API (f-e dependant)", () => {
+    describe("Location API (f-e dependent)", () => {
       it.concurrent(
         "works without specifying an explicit location",
         async () => {
@@ -1090,7 +1104,7 @@ describe("Scrape tests", () => {
       );
     });
 
-    describe("Screenshot (f-e dependant)", () => {
+    describe("Screenshot (f-e dependent)", () => {
       it.concurrent(
         "screenshot format works",
         async () => {
@@ -1124,7 +1138,7 @@ describe("Scrape tests", () => {
       );
     });
 
-    describe("PDF generation (f-e dependant)", () => {
+    describe("PDF generation (f-e dependent)", () => {
       it.concurrent(
         "works",
         async () => {
@@ -1145,7 +1159,7 @@ describe("Scrape tests", () => {
       );
     });
 
-    describe("Proxy API (f-e dependant)", () => {
+    describe("Proxy API (f-e dependent)", () => {
       it.concurrent(
         "undefined works",
         async () => {
@@ -1214,7 +1228,7 @@ describe("Scrape tests", () => {
       // }, scrapeTimeout * 2);
     });
 
-    describe("PDF (f-e dependant)", () => {
+    describe("PDF (f-e dependent)", () => {
       it.concurrent(
         "works",
         async () => {
@@ -1299,23 +1313,25 @@ describe("Scrape tests", () => {
       );
     });
 
-    describe("YouTube (f-e dependant)", () => {
-      it.concurrent(
-        "scrapes YouTube videos and transcripts",
-        async () => {
-          const response = await scrape(
-            {
-              url: "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
-              formats: ["markdown"],
-            },
-            identity,
-          );
+    describe("YouTube (f-e dependent)", () => {
+      if (!process.env.TEST_SUITE_SELF_HOSTED) {
+        it.concurrent(
+          "scrapes YouTube videos and transcripts",
+          async () => {
+            const response = await scrape(
+              {
+                url: "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+                formats: ["markdown"],
+              },
+              identity,
+            );
 
-          expect(response.markdown).toContain("Rick Astley");
-          expect(response.markdown).toContain("Never gonna let you down");
-        },
-        scrapeTimeout,
-      );
+            expect(response.markdown).toContain("Rick Astley");
+            expect(response.markdown).toContain("Never gonna let you down");
+          },
+          scrapeTimeout,
+        );
+      }
     });
   }
 
@@ -1775,35 +1791,37 @@ describe("attributes format", () => {
         scrapeTimeout,
       );
 
-      it(
-        "should normalize changeTracking format with additionalProperties",
-        async () => {
-          const identity = await idmux({ name: "schema-validation-test" });
+      if (!process.env.TEST_SUITE_SELF_HOSTED) {
+        it(
+          "should normalize changeTracking format with additionalProperties",
+          async () => {
+            const identity = await idmux({ name: "schema-validation-test" });
 
-          const response = await scrapeRaw(
-            {
-              url: "https://example.com",
-              formats: [
-                { type: "markdown" },
-                {
-                  type: "changeTracking",
-                  schema: {
-                    type: "object",
-                    properties: {
-                      changes: { type: "string" },
+            const response = await scrapeRaw(
+              {
+                url: "https://example.com",
+                formats: [
+                  { type: "markdown" },
+                  {
+                    type: "changeTracking",
+                    schema: {
+                      type: "object",
+                      properties: {
+                        changes: { type: "string" },
+                      },
+                      additionalProperties: false,
                     },
-                    additionalProperties: false,
                   },
-                },
-              ],
-            },
-            identity,
-          );
+                ],
+              },
+              identity,
+            );
 
-          expect(response.statusCode).toBe(200);
-        },
-        scrapeTimeout,
-      );
+            expect(response.statusCode).toBe(200);
+          },
+          scrapeTimeout,
+        );
+      }
 
       it(
         "should accept valid schema without additionalProperties",

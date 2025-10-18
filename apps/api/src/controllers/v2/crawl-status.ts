@@ -373,6 +373,8 @@ export async function crawlStatusController(
             scrapes.push(job.returnvalue);
             bytes += JSON.stringify(job.returnvalue).length;
           } else {
+            // TODO: there seems to be a race condition here for self-hosted instances,
+            // the job is marked as completed in redis before the returnvalue is synchronized to nuq
             logger.warn(
               "Job was considered done, but returnvalue is undefined!",
               {
@@ -488,7 +490,8 @@ export async function crawlStatusController(
   }
 
   // Check if we should warn about base domain for crawl results
-  const resultCount = outputBulkA.completed ?? outputBulkA.total ?? outputBulkB.data.length;
+  const resultCount =
+    outputBulkA.completed ?? outputBulkA.total ?? outputBulkB.data.length;
   const currentStatus = outputBulkA.status ?? "scraping";
   if (!warning && currentStatus !== "scraping" && resultCount <= 1) {
     // Get the original crawl URL and options from stored crawl data

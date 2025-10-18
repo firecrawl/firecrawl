@@ -338,10 +338,7 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
           // Store robots blocked URLs in Redis set
           for (const [url, reason] of links.denialReasons) {
             if (reason === "URL blocked by robots.txt") {
-              await recordRobotsBlocked(
-                job.data.crawl_id,
-                url
-              );
+              await recordRobotsBlocked(job.data.crawl_id, url);
             }
           }
 
@@ -552,15 +549,12 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
         error instanceof Error &&
         error.message === "URL blocked by robots.txt"
       ) {
-        await recordRobotsBlocked(
-          job.data.crawl_id,
-          job.data.url,
-        );
+        await recordRobotsBlocked(job.data.crawl_id, job.data.url);
       }
     } catch (e) {
       logger.debug("Failed to record top-level robots block", { e });
     }
-    
+
     if (job.data.crawl_id) {
       const sc = (await getCrawl(job.data.crawl_id)) as StoredCrawl;
 

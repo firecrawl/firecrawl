@@ -2,6 +2,7 @@ import { search, idmux, Identity } from "./lib";
 
 let identity: Identity;
 
+// NOTE: search tests are flaky when it comes to DDG due to anti-bot currently
 beforeAll(async () => {
   identity = await idmux({
     name: "search",

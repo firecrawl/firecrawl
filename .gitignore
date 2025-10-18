@@ -18,7 +18,7 @@ apps/test-suite/load-test-results/test-run-report.json
 
 apps/playwright-service-ts/node_modules/
 apps/playwright-service-ts/package-lock.json
-
+apps/playwright-service-ts/playwright.log
 
 /examples/o1_web_crawler/venv
 *.pyc
@@ -49,3 +49,5 @@ CLAUDE.local.md
 apps/python-sdk/.venv/
 
 /apps/api/running-docs/
+
+searxng/

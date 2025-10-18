@@ -2,6 +2,7 @@ import { search, idmux, Identity } from "./lib";
 
 let identity: Identity;
 
+// NOTE: search tests are flaky when it comes to DDG due to anti-bot currently
 beforeAll(async () => {
   identity = await idmux({
     name: "search",
@@ -48,57 +49,59 @@ describe("Search tests", () => {
     125000,
   );
 
-  it.concurrent(
-    "works for news",
-    async () => {
-      const res = await search(
-        {
-          query: "firecrawl",
-          sources: ["news"],
-        },
-        identity,
-      );
-      expect(res.news).toBeDefined();
-      expect(res.news?.length).toBeGreaterThan(0);
-    },
-    60000,
-  );
+  if (!process.env.TEST_SUITE_SELF_HOSTED) {
+    it.concurrent(
+      "works for news",
+      async () => {
+        const res = await search(
+          {
+            query: "firecrawl",
+            sources: ["news"],
+          },
+          identity,
+        );
+        expect(res.news).toBeDefined();
+        expect(res.news?.length).toBeGreaterThan(0);
+      },
+      60000,
+    );
 
-  it.concurrent(
-    "works for images",
-    async () => {
-      const res = await search(
-        {
-          query: "firecrawl",
-          sources: ["images"],
-        },
-        identity,
-      );
-      expect(res.images).toBeDefined();
-      expect(res.images?.length).toBeGreaterThan(0);
-    },
-    60000,
-  );
+    it.concurrent(
+      "works for images",
+      async () => {
+        const res = await search(
+          {
+            query: "firecrawl",
+            sources: ["images"],
+          },
+          identity,
+        );
+        expect(res.images).toBeDefined();
+        expect(res.images?.length).toBeGreaterThan(0);
+      },
+      60000,
+    );
 
-  it.concurrent(
-    "works for multiple sources",
-    async () => {
-      const res = await search(
-        {
-          query: "firecrawl",
-          sources: ["web", "news", "images"],
-        },
-        identity,
-      );
-      expect(res.web).toBeDefined();
-      expect(res.web?.length).toBeGreaterThan(0);
-      expect(res.news).toBeDefined();
-      expect(res.news?.length).toBeGreaterThan(0);
-      expect(res.images).toBeDefined();
-      expect(res.images?.length).toBeGreaterThan(0);
-    },
-    60000,
-  );
+    it.concurrent(
+      "works for multiple sources",
+      async () => {
+        const res = await search(
+          {
+            query: "firecrawl",
+            sources: ["web", "news", "images"],
+          },
+          identity,
+        );
+        expect(res.web).toBeDefined();
+        expect(res.web?.length).toBeGreaterThan(0);
+        expect(res.news).toBeDefined();
+        expect(res.news?.length).toBeGreaterThan(0);
+        expect(res.images).toBeDefined();
+        expect(res.images?.length).toBeGreaterThan(0);
+      },
+      60000,
+    );
+  }
 
   it.concurrent(
     "respects limit for web",
@@ -117,23 +120,25 @@ describe("Search tests", () => {
     60000,
   );
 
-  it.concurrent(
-    "respects limit for news",
-    async () => {
-      const res = await search(
-        {
-          query: "firecrawl",
-          sources: ["news"],
-          limit: 2,
-        },
-        identity,
-      );
-      expect(res.news).toBeDefined();
-      expect(res.news?.length).toBeGreaterThan(0);
-      expect(res.news?.length).toBeLessThanOrEqual(2);
-    },
-    60000,
-  );
+  if (!process.env.TEST_SUITE_SELF_HOSTED) {
+    it.concurrent(
+      "respects limit for news",
+      async () => {
+        const res = await search(
+          {
+            query: "firecrawl",
+            sources: ["news"],
+            limit: 2,
+          },
+          identity,
+        );
+        expect(res.news).toBeDefined();
+        expect(res.news?.length).toBeGreaterThan(0);
+        expect(res.news?.length).toBeLessThanOrEqual(2);
+      },
+      60000,
+    );
+  }
 
   it.concurrent(
     "respects limit for above 10",
@@ -152,44 +157,46 @@ describe("Search tests", () => {
     60000,
   );
 
-  it.concurrent(
-    "respects limit for above 10 images",
-    async () => {
-      const res = await search(
-        {
-          query: "firecrawl",
-          sources: ["images"],
-          limit: 20,
-        },
-        identity,
-      );
-      expect(res.images).toBeDefined();
-      expect(res.images?.length).toBeGreaterThan(0);
-      expect(res.images?.length).toBeLessThanOrEqual(20);
-    },
-    60000,
-  );
+  if (!process.env.TEST_SUITE_SELF_HOSTED) {
+    it.concurrent(
+      "respects limit for above 10 images",
+      async () => {
+        const res = await search(
+          {
+            query: "firecrawl",
+            sources: ["images"],
+            limit: 20,
+          },
+          identity,
+        );
+        expect(res.images).toBeDefined();
+        expect(res.images?.length).toBeGreaterThan(0);
+        expect(res.images?.length).toBeLessThanOrEqual(20);
+      },
+      60000,
+    );
 
-  it.concurrent(
-    "respects limit for above 10 multiple sources",
-    async () => {
-      const res = await search(
-        {
-          query: "firecrawl",
-          sources: ["web", "news"],
-          limit: 20,
-        },
-        identity,
-      );
-      expect(res.web).toBeDefined();
-      expect(res.web?.length).toBeGreaterThan(0);
-      expect(res.web?.length).toBeLessThanOrEqual(20);
-      expect(res.news).toBeDefined();
-      expect(res.news?.length).toBeGreaterThan(0);
-      expect(res.news?.length).toBeLessThanOrEqual(20);
-    },
-    60000,
-  );
+    it.concurrent(
+      "respects limit for above 10 multiple sources",
+      async () => {
+        const res = await search(
+          {
+            query: "firecrawl",
+            sources: ["web", "news"],
+            limit: 20,
+          },
+          identity,
+        );
+        expect(res.web).toBeDefined();
+        expect(res.web?.length).toBeGreaterThan(0);
+        expect(res.web?.length).toBeLessThanOrEqual(20);
+        expect(res.news).toBeDefined();
+        expect(res.news?.length).toBeGreaterThan(0);
+        expect(res.news?.length).toBeLessThanOrEqual(20);
+      },
+      60000,
+    );
+  }
 
   it.concurrent(
     "country defaults to undefined when location is set",

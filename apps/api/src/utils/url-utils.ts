@@ -12,7 +12,7 @@ export function modifyCrawlUrl(url: string): {
   wasModified: boolean;
   originalUrl: string;
 } {
-  if (url.endsWith("/*")) {
+  if (url?.endsWith("/*")) {
     return {
       url: url.slice(0, -2),
       wasModified: true,
