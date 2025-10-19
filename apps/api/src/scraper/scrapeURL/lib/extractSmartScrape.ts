@@ -189,6 +189,7 @@ const containsRecursiveRef = (
 const resolveRefs = (
   obj: any,
   defs: any,
+  logger: Logger,
   visited = new WeakSet(),
   depth = 0,
 ): any => {
@@ -208,7 +209,7 @@ const resolveRefs = (
     if (refPath[0] === "#" && refPath[1] === "$defs") {
       const defName = refPath[refPath.length - 1];
       if (defs[defName]) {
-        return resolveRefs({ ...defs[defName] }, defs, visited, depth + 1);
+        return resolveRefs({ ...defs[defName] }, defs, logger, visited, depth + 1);
       }
     }
     return obj; // Return original if ref can't be resolved
@@ -216,14 +217,14 @@ const resolveRefs = (
 
   // Handle arrays
   if (Array.isArray(obj)) {
-    return obj.map(item => resolveRefs(item, defs, visited, depth + 1));
+    return obj.map(item => resolveRefs(item, defs, logger, visited, depth + 1));
   }
 
   // Handle objects
   const resolved: any = {};
   for (const [key, value] of Object.entries(obj)) {
     if (key === "$defs") continue;
-    resolved[key] = resolveRefs(value, defs, visited, depth + 1);
+    resolved[key] = resolveRefs(value, defs, logger, visited, depth + 1);
   }
   return resolved;
 };
@@ -291,7 +292,7 @@ export async function extractData({
       );
       
       try {
-        const resolvedSchema = resolveRefs(schema, defs);
+        const resolvedSchema = resolveRefs(schema, defs, logger);
 
         const resolvedString = JSON.stringify(resolvedSchema);
         const hasRemainingRefs = resolvedString.includes('"$ref"') || resolvedString.includes("#/$defs/");
@@ -312,7 +313,7 @@ export async function extractData({
       logger.info("No recursive references detected, resolving refs", {
         schema,
       });
-      schema = resolveRefs(schema, defs);
+      schema = resolveRefs(schema, defs, logger);
       delete schema.$defs;
       logger.info("Resolved schema refs", {
         schema,
