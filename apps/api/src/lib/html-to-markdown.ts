@@ -6,10 +6,36 @@ import dotenv from "dotenv";
 import { logger } from "./logger";
 import { stat } from "fs/promises";
 import { HTML_TO_MARKDOWN_PATH } from "../natives";
+import { load } from "cheerio";
 dotenv.config();
 
-// TODO: add a timeout to the Go parser
+function preprocessCodeBlocks(html: string): string {
+  const $ = load(html);
 
+  $('pre code').each((i, elem) => {
+    const codeElem = $(elem);
+    const table = codeElem.find('table.code-block-line-group');
+
+    if (table.length > 0) {
+      const lines: string[] = [];
+      table.find('tr.code-block-line').each((j, row) => {
+        const contentCell = $(row).find('.code-block-line-content');
+        if (contentCell.length > 0) {
+          const lineText = contentCell.text();
+          lines.push(lineText);
+        }
+      });
+
+      const codeText = lines.join('\n');
+      codeElem.empty();
+      codeElem.text(codeText);
+    }
+  });
+
+  return $.html();
+}
+
+// TODO: add a timeout to the Go parser
 class GoMarkdownConverter {
   private static instance: GoMarkdownConverter;
   private convert: any;
@@ -87,6 +113,8 @@ export async function parseMarkdown(
   // Fallback to TurndownService if Go parser fails or is not enabled
   var TurndownService = require("turndown");
   var turndownPluginGfm = require("joplin-turndown-plugin-gfm");
+
+  html = preprocessCodeBlocks(html);
 
   const turndownService = new TurndownService();
   turndownService.addRule("inlineLink", {
