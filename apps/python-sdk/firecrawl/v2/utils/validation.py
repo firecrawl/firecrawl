@@ -52,8 +52,9 @@ def normalize_schema_for_openai(schema: Any) -> Any:
 
         normalized = dict(obj)
 
-        # Handle $ref and $defs recursion
+        # Handle $ref recursion
         if "$ref" in normalized:
+            visited.discard(obj_id)
             return normalized
 
         if "$defs" in normalized:
@@ -61,12 +62,16 @@ def normalize_schema_for_openai(schema: Any) -> Any:
             processed_rest = {}
             
             for key, value in normalized.items():
-                if (isinstance(value, dict) and "$ref" not in value):
+                if isinstance(value, dict) and "$ref" not in value:
                     processed_rest[key] = normalize_object(value)
                 else:
                     processed_rest[key] = value
             
-            result = {**processed_rest, "$defs": defs}
+            normalized_defs = {}
+            for key, value in defs.items():
+                normalized_defs[key] = normalize_object(value)
+            
+            result = {**processed_rest, "$defs": normalized_defs}
             visited.discard(obj_id)
             return result
 
@@ -159,6 +164,128 @@ OPENAI_SCHEMA_ERROR_MESSAGE = (
     "but 'additionalProperties: true' (schema-less dictionary not supported by OpenAI). "
     "Please define specific properties for your object. Note: Recursive schemas using '$ref' are supported."
 )
+
+
+def _contains_recursive_ref(obj: Any, target_def_name: str, defs: Dict[str, Any], visited: Optional[set] = None) -> bool:
+    """
+    Check if an object contains a recursive reference to a specific definition.
+    
+    Args:
+        obj: Object to check
+        target_def_name: Name of the definition to check for recursion
+        defs: Dictionary of definitions
+        visited: Set of visited object keys to detect cycles
+        
+    Returns:
+        True if recursive reference is found, False otherwise
+    """
+    if not obj or not isinstance(obj, (dict, list)):
+        return False
+    
+    if visited is None:
+        visited = set()
+    
+    import json
+    obj_key = json.dumps(obj, sort_keys=True, default=str)
+    if obj_key in visited:
+        return False
+    visited.add(obj_key)
+    
+    try:
+        if isinstance(obj, dict):
+            if "$ref" in obj and isinstance(obj["$ref"], str):
+                ref_path = obj["$ref"].split("/")
+                if len(ref_path) >= 3 and ref_path[0] == "#" and ref_path[1] == "$defs":
+                    def_name = ref_path[-1]
+                    if def_name == target_def_name:
+                        return True
+                    if def_name in defs:
+                        return _contains_recursive_ref(defs[def_name], target_def_name, defs, visited)
+            
+            for value in obj.values():
+                if _contains_recursive_ref(value, target_def_name, defs, visited):
+                    return True
+        
+        elif isinstance(obj, list):
+            for item in obj:
+                if _contains_recursive_ref(item, target_def_name, defs, visited):
+                    return True
+    
+    finally:
+        visited.discard(obj_key)
+    
+    return False
+
+
+def _check_for_circular_defs(defs: Dict[str, Any]) -> bool:
+    """
+    Check if $defs contain circular references.
+    
+    Args:
+        defs: Dictionary of definitions to check
+        
+    Returns:
+        True if circular references are found, False otherwise
+    """
+    if not defs:
+        return False
+    
+    for def_name, def_value in defs.items():
+        if _contains_recursive_ref(def_value, def_name, defs):
+            return True
+    
+    return False
+
+
+def resolve_refs(obj: Any, defs: Dict[str, Any], visited: Optional[set] = None, depth: int = 0) -> Any:
+    """
+    Resolve $ref references in a JSON schema object.
+    
+    Args:
+        obj: Object to resolve references in
+        defs: Dictionary of definitions
+        visited: Set to track visited objects and prevent infinite recursion
+        depth: Current recursion depth
+        
+    Returns:
+        Object with resolved references
+    """
+    if not obj or not isinstance(obj, (dict, list)) or depth > 10:
+        return obj
+    
+    if visited is None:
+        visited = set()
+    
+    obj_id = id(obj)
+    if obj_id in visited:
+        return obj
+    
+    visited.add(obj_id)
+    
+    try:
+        if isinstance(obj, dict):
+            if "$ref" in obj and isinstance(obj["$ref"], str):
+                ref_path = obj["$ref"].split("/")
+                if len(ref_path) >= 3 and ref_path[0] == "#" and ref_path[1] == "$defs":
+                    def_name = ref_path[-1]
+                    if def_name in defs:
+                        return resolve_refs(dict(defs[def_name]), defs, visited, depth + 1)
+                return obj
+            
+            resolved = {}
+            for key, value in obj.items():
+                if key == "$defs":
+                    continue  
+                resolved[key] = resolve_refs(value, defs, visited, depth + 1)
+            return resolved
+        
+        elif isinstance(obj, list):
+            return [resolve_refs(item, defs, visited, depth + 1) for item in obj]
+        
+    finally:
+        visited.discard(obj_id)
+    
+    return obj
 
 
 def detect_recursive_schema(schema: Any) -> bool:
@@ -264,6 +391,41 @@ def _validate_json_format(format_obj: Any) -> Dict[str, Any]:
     if schema is not None:
         normalized_schema = _normalize_schema(schema)
         if normalized_schema is not None:
+            # Handle schema reference resolution similar to TypeScript implementation
+            if isinstance(normalized_schema, dict):
+                defs = normalized_schema.get("$defs", {})
+                import json
+                schema_string = json.dumps(normalized_schema)
+                has_any_refs = (
+                    normalized_schema.get("$defs") or
+                    '"$ref"' in schema_string or
+                    "#/$defs/" in schema_string
+                )
+                
+                if has_any_refs:
+                    try:
+                        resolved_schema = resolve_refs(normalized_schema, defs)
+                        resolved_string = json.dumps(resolved_schema)
+                        has_remaining_refs = '"$ref"' in resolved_string or "#/$defs/" in resolved_string
+                        
+                        if not has_remaining_refs:
+                            normalized_schema = resolved_schema
+                            # Remove $defs after successful resolution
+                            if isinstance(normalized_schema, dict) and "$defs" in normalized_schema:
+                                del normalized_schema["$defs"]
+                        # If refs remain, preserve original schema
+                    except Exception:
+                        # Failed to resolve refs, preserve original schema
+                        pass
+                else:
+                    # No recursive references detected, resolve refs anyway
+                    try:
+                        normalized_schema = resolve_refs(normalized_schema, defs)
+                        if isinstance(normalized_schema, dict) and "$defs" in normalized_schema:
+                            del normalized_schema["$defs"]
+                    except Exception:
+                        pass
+            
             # Apply OpenAI normalization and validation
             openai_normalized_schema = normalize_schema_for_openai(normalized_schema)
             if not validate_schema_for_openai(openai_normalized_schema):
