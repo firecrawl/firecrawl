@@ -25,6 +25,7 @@ uuid = { version = "^1.10", features = ["v4"] }
 tokio = { version = "^1", features = ["full"] }
 futures = "0.3.31"
 schemars = "0.8.22"
+tracing = ">=0.1.0,<0.2.0"
 
 [dev-dependencies]
 clippy = "^0.0.302"

@@ -84,8 +84,7 @@ impl FirecrawlApp {
                 serde_json::from_str::<Value>(&response_json)
                     .map_err(|e| FirecrawlError::ResponseParseError(e))
                     .inspect(|data| {
-                        #[cfg(debug_assertions)]
-                        println!("Response JSON: {:#?}", data);
+                        tracing::debug!("Response JSON: {:#?}", data);
                     })
             })
             .and_then(|response_value| {
