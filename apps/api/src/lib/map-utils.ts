@@ -24,7 +24,6 @@ import { Logger } from "winston";
 
 // Max Links that "Smart /map" can return
 const MAX_FIRE_ENGINE_RESULTS = 500;
-//const MAX_MAP_LIMIT = 1000;
 
 export interface MapResult {
   success: boolean;
