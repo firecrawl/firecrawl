@@ -359,6 +359,12 @@ async function scrapeURLLoopIter(
       factors: { isLongEnough, isGoodStatusCode, hasNoPageError },
     });
     return engineResult;
+  } else if (isGoodStatusCode && hasNoPageError) {
+    // Empty content with good status code is a successful scrape of an empty page
+    meta.logger.info("Scrape via " + engine + " deemed successful (empty page).", {
+      factors: { isLongEnough, isGoodStatusCode, hasNoPageError },
+    });
+    return engineResult;
   } else {
     throw new EngineUnsuccessfulError(engine);
   }

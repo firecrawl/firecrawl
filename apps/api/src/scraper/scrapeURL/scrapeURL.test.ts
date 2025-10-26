@@ -281,6 +281,28 @@ describe("Standalone scrapeURL tests", () => {
         expect(out.document.metadata.error).toBeUndefined();
       }
     }, 30000);
+
+    it("Scrape of an empty page with 200 status code", async () => {
+      const out = await scrapeURL(
+        "test:scrape-empty-page",
+        "data:text/html,<html><head><title>Empty Page</title></head><body></body></html>",
+        scrapeOptions.parse({}),
+        { forceEngine, teamId: "test" },
+        new CostTracking(),
+      );
+
+      // expect(out.logs.length).toBeGreaterThan(0);
+      expect(out.success).toBe(true);
+      if (out.success) {
+        expect(out.document.warning).toBeUndefined();
+        expect(out.document).toHaveProperty("markdown");
+        expect(out.document).toHaveProperty("metadata");
+        expect(out.document.markdown?.trim() || "").toBe(""); // Empty content
+        expect(out.document.metadata.statusCode).toBe(200);
+        expect(out.document.metadata.error).toBeUndefined();
+        expect(out.document.metadata.title).toBe("Empty Page");
+      }
+    }, 30000);
   });
 
   describe.each(testEnginesScreenshot)(
