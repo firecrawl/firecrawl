@@ -1,11 +1,8 @@
 name: firecrawl
 
 x-common-service: &common-service
-  # NOTE: If you don't want to build the service locally,
-  # uncomment the build: statement and comment out the image: statement
   # image: ghcr.io/firecrawl/firecrawl
   build: apps/api
-
   ulimits:
     nofile:
       soft: 65535
@@ -16,16 +13,17 @@ x-common-service: &common-service
     - "host.docker.internal:host-gateway"
 
 x-common-env: &common-env
-  REDIS_URL: ${REDIS_URL:-redis://redis:6379}
-  REDIS_RATE_LIMIT_URL: ${REDIS_URL:-redis://redis:6379}
+  # 内部网络访问，不对外暴露
+  REDIS_URL: ${REDIS_URL:-redis://:${REDIS_PASSWORD}@redis:6379}
+  REDIS_RATE_LIMIT_URL: ${REDIS_RATE_LIMIT_URL:-redis://:${REDIS_PASSWORD}@redis:6379}
   PLAYWRIGHT_MICROSERVICE_URL: ${PLAYWRIGHT_MICROSERVICE_URL:-http://playwright-service:3000/scrape}
-  NUQ_DATABASE_URL: postgres://postgres:postgres@nuq-postgres:5432/postgres
+  NUQ_DATABASE_URL: postgres://postgres:${POSTGRES_PASSWORD}@nuq-postgres:5432/postgres
   USE_DB_AUTHENTICATION: ${USE_DB_AUTHENTICATION}
   OPENAI_API_KEY: ${OPENAI_API_KEY}
   OPENAI_BASE_URL: ${OPENAI_BASE_URL}
   MODEL_NAME: ${MODEL_NAME}
-  MODEL_EMBEDDING_NAME: ${MODEL_EMBEDDING_NAME} 
-  OLLAMA_BASE_URL: ${OLLAMA_BASE_URL} 
+  MODEL_EMBEDDING_NAME: ${MODEL_EMBEDDING_NAME}
+  OLLAMA_BASE_URL: ${OLLAMA_BASE_URL}
   SLACK_WEBHOOK_URL: ${SLACK_WEBHOOK_URL}
   BULL_AUTH_KEY: ${BULL_AUTH_KEY}
   TEST_API_KEY: ${TEST_API_KEY}
@@ -47,8 +45,6 @@ x-common-env: &common-env
 
 services:
   playwright-service:
-    # NOTE: If you don't want to build the service locally,
-    # uncomment the build: statement and comment out the image: statement
     # image: ghcr.io/firecrawl/playwright-service:latest
     build: apps/playwright-service-ts
     environment:
@@ -72,31 +68,29 @@ services:
     depends_on:
       - redis
       - playwright-service
+      - nuq-postgres
     ports:
       - "${PORT:-3002}:${INTERNAL_PORT:-3002}"
     command: node dist/src/harness.js --start-docker
 
   redis:
-    # NOTE: If you want to use Valkey (open source) instead of Redis (source available),
-    # uncomment the Valkey statement and comment out the Redis statement.
-    # Using Valkey with Firecrawl is untested and not guaranteed to work. Use with caution.
     image: redis:alpine
-    # image: valkey/valkey:alpine
-
+    command: ["redis-server","--bind","127.0.0.1,redis","--appendonly","yes","--requirepass","${REDIS_PASSWORD}"]
     networks:
       - backend
-    command: redis-server --bind 0.0.0.0
-  
+    # 不对外暴露端口，服务通过 backend 网络访问
+
   nuq-postgres:
     build: apps/nuq-postgres
     environment:
       POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: postgres
     networks:
       - backend
-    ports:
-      - "5432:5432"
+    # 不对外暴露端口，如需宿主本机维护可改为仅回环:
+    # ports:
+    #   - "127.0.0.1:5432:5432"
 
 networks:
   backend:
