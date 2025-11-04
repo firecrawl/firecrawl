@@ -6,110 +6,137 @@
 
 **Các thông báo dành cho hệ đại học chính quy.**
 
-[Thông báo nghỉ học Lớp:OOPT1.D15](https://daa.uit.edu.vn/thongbao/thong-bao-nghi-hoc-lopoopt1d15)
+[Thông Báo ĐKHP- Quy Định ĐKHP](https://daa.uit.edu.vn/thongbao/thong-bao-dkhp-quy-dinh-dkhp)
 
-----------------------------------------------------------------------------------------------------
+----------------------------------------------------------------------------------------------
 
-T6, 09/11/2012 - 10:44
+T2, 10/12/2012 - 08:17
 
-PĐT Thông báo  Lớp:OOPT1.D15 nghỉ học ngày 16/11/2012 do Giảng  viên đi công tác, lịch học bù GV thông báo sau.
+PĐT Thông báo ĐKHP- Quy Định ĐKHP , yêu cầu sinh viên đọc kỹ để giúp cho việc ĐKHP đúng và đạt kết quả tốt nhất.
 
-*   [Xem thêm về Thông báo nghỉ học Lớp:OOPT1.D15](https://daa.uit.edu.vn/thongbao/thong-bao-nghi-hoc-lopoopt1d15 "Thông báo nghỉ học Lớp:OOPT1.D15")
+*   [Xem thêm về Thông Báo ĐKHP- Quy Định ĐKHP](https://daa.uit.edu.vn/thongbao/thong-bao-dkhp-quy-dinh-dkhp "Thông Báo ĐKHP- Quy Định ĐKHP")
     
 
-[Thông báo nghỉ lớp IS207.D12 - Môn phát triển ứng dung Web ( Khoa HTTT)](https://daa.uit.edu.vn/thongbao/thong-bao-nghi-lop-is207d12-mon-phat-trien-ung-dung-web-khoa-httt)
+[Thông Báo Kế Hoạch Đào Tạo HK 2 2012-2013](https://daa.uit.edu.vn/thongbao/thong-bao-ke-hoach-dao-tao-hk-2-2012-2013)
 
------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+-----------------------------------------------------------------------------------------------------------------------
 
-T6, 02/11/2012 - 09:17
+T5, 06/12/2012 - 10:08
 
-PDT thông báo nghỉ học  lớp IS207.D12 - môn Phát triển ứng dụng Web   
-**thứ năm (ngày 08/11/2012).**
+PĐT thông báo Kế hoạch Đào tạo học kỳ 2, Thời Khóa biểu học kỳ 2(dự kiến).  
+Đề nghị sinh viên xem thời khóa biểu và lên kế hoạch học tập học kỳ 2 để chuẩn bị cho đợt đăng ký học phần học kỳ 2 năm học 2012-2013.
 
-*   [Xem thêm về Thông báo nghỉ lớp IS207.D12 - Môn phát triển ứng dung Web ( Khoa HTTT)](https://daa.uit.edu.vn/thongbao/thong-bao-nghi-lop-is207d12-mon-phat-trien-ung-dung-web-khoa-httt "Thông báo nghỉ lớp IS207.D12 - Môn phát triển ứng dung Web ( Khoa HTTT)")
+*   [Xem thêm về Thông Báo Kế Hoạch Đào Tạo HK 2 2012-2013](https://daa.uit.edu.vn/thongbao/thong-bao-ke-hoach-dao-tao-hk-2-2012-2013 "Thông Báo Kế Hoạch Đào Tạo HK 2 2012-2013")
     
 
-*   [Xem thêm về Lịch thực hành Khoa Khoa học máy tính (02-11-2012)](https://daa.uit.edu.vn/thongbao/lich-thuc-hanh-khoa-khoa-hoc-may-tinh-02-11-2012 "Lịch thực hành Khoa Khoa học máy tính (02-11-2012)")
+[Công ty Renesas tuyển dụng sinh viên tốt nghiệp](https://daa.uit.edu.vn/thongbao/cong-ty-renesas-tuyen-dung-sinh-vien-tot-nghiep)
+
+-----------------------------------------------------------------------------------------------------------------------------------
+
+T4, 05/12/2012 - 14:47
+
+   
+**Renesas Design Vietnam Co., Ltd. announces:**  
+           **\+ Recruitment:** 10 Analog Design Engineers  
+           **\+ Target candidates:** Engineers/ University students graduating in 2012 or up to March 2013 with major in: **Electronics, Telecoms & Computer Engineering**  
+           **\+ Expected written test:** 08h00, Sunday, December 23, 2012 at RVC office building  
+           **\+ Register for written test at:**  
+
+*   [Xem thêm về Công ty Renesas tuyển dụng sinh viên tốt nghiệp](https://daa.uit.edu.vn/thongbao/cong-ty-renesas-tuyen-dung-sinh-vien-tot-nghiep "Công ty Renesas tuyển dụng sinh viên tốt nghiệp")
     
 
-[Danh sách nợ học phí sinh viên xét tốt nghiệp đợt 2 2012](https://daa.uit.edu.vn/thongbao/danh-sach-no-hoc-phi-sinh-vien-xet-tot-nghiep-dot-2-2012)
+[Thời gian ĐKHP: (điều chỉnh):](https://daa.uit.edu.vn/thongbao/thoi-gian-dkhp-dieu-chinh)
 
------------------------------------------------------------------------------------------------------------------------------------------------------
+-------------------------------------------------------------------------------------------
 
-T6, 02/11/2012 - 09:09
+T4, 05/12/2012 - 07:50
 
-Sinh vien xem file dinh kem  
+Thời gian ĐKHP: (điều chỉnh): bắt đầu từ ngày 10/12/2012 đến hết ngày 23/12/2012.
+
+*   [Xem thêm về Thời gian ĐKHP: (điều chỉnh):](https://daa.uit.edu.vn/thongbao/thoi-gian-dkhp-dieu-chinh "Thời gian ĐKHP: (điều chỉnh):")
+    
+
+[Khoa HTTT xin gửi lịch thi kết thúc HK I năm học 2012-2013](https://daa.uit.edu.vn/thongbao/khoa-httt-xin-gui-lich-thi-ket-thuc-hk-i-nam-hoc-2012-2013)
+
+---------------------------------------------------------------------------------------------------------------------------------------------------------
+
+T3, 04/12/2012 - 09:49
+
+Khoa HTTT xin gửi lịch thi kết thúc HK I năm học 2012-2013, đây là lịch thi tương đối hoàn chỉnh, chỉ có 1 số môn tô màu vàng là chưa chắc chắn, nếu có thay đổi khoa sẽ gửi thông báo sau.
+
+*   [Xem thêm về Khoa HTTT xin gửi lịch thi kết thúc HK I năm học 2012-2013](https://daa.uit.edu.vn/thongbao/khoa-httt-xin-gui-lich-thi-ket-thuc-hk-i-nam-hoc-2012-2013 "Khoa HTTT xin gửi lịch thi kết thúc HK I năm học 2012-2013")
+    
+
+[Thi kết thúc môn học Cơ sở dữ liệu lớp DBSS1.D13 và lớp DBSS1.D14 (học vào thứ 3 và thứ 4, lớp Cô Thuỷ)](https://daa.uit.edu.vn/thongbao/thi-ket-thuc-mon-hoc-co-so-du-lieu-lop-dbss1d13-va-lop-dbss1d14-hoc-vao-thu-3-va-thu-4-lop)
+
+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+T3, 04/12/2012 - 09:42
+
+   
+   
+Lớp DBSS1.D13 sẽ thi kết thúc môn học vào thứ 3 ngày 11/12/2012  
+Thi lý thuyết: 8h00 P.304  
+Thực hành: 13h00 Phòng Lab THCB2
+
+Lớp DBSS1.D14 sẽ thi kết thúc môn CSDL vào thứ 4 ngày 12/12/2012
+
+Thi thực hành: 8h00 Phòng Lab THCB2  
+Thi lý thuyết: 13h00 Phòng 304
+
+   
  
 
-*   [Xem thêm về Danh sách nợ học phí sinh viên xét tốt nghiệp đợt 2 2012](https://daa.uit.edu.vn/thongbao/danh-sach-no-hoc-phi-sinh-vien-xet-tot-nghiep-dot-2-2012 "Danh sách nợ học phí sinh viên xét tốt nghiệp đợt 2 2012")
+*   [Xem thêm về Thi kết thúc môn học Cơ sở dữ liệu lớp DBSS1.D13 và lớp DBSS1.D14 (học vào thứ 3 và thứ 4, lớp Cô Thuỷ)](https://daa.uit.edu.vn/thongbao/thi-ket-thuc-mon-hoc-co-so-du-lieu-lop-dbss1d13-va-lop-dbss1d14-hoc-vao-thu-3-va-thu-4-lop "Thi kết thúc môn học Cơ sở dữ liệu lớp DBSS1.D13 và lớp DBSS1.D14 (học vào thứ 3 và thứ 4, lớp Cô Thuỷ)")
     
 
-[Thông báo của phòng Kế hoạch tài chính](https://daa.uit.edu.vn/thongbao/thong-bao-cua-phong-ke-hoach-tai-chinh)
+[Thông báo nghỉ học Hệ điều hành OSYS1.D16 ngày 05/12/2012](https://daa.uit.edu.vn/thongbao/thong-bao-nghi-hoc-he-dieu-hanh-osys1d16-ngay-05122012)
 
------------------------------------------------------------------------------------------------------------------
+----------------------------------------------------------------------------------------------------------------------------------------------------
 
-T2, 29/10/2012 - 10:42
+T3, 04/12/2012 - 09:39
 
-Chi tiết trong file đính kèm
+Lớp Hệ điều hành OSYS1.D16 do thầy Thiều Xuân Khánh phụ trách giảng dạy tại phòng 108, nghỉ học thứ 4 ngày 05/12/2012 do thầy thi biên chế. tuần sau lớp học bình thưởng.
 
-*   [Xem thêm về Thông báo của phòng Kế hoạch tài chính](https://daa.uit.edu.vn/thongbao/thong-bao-cua-phong-ke-hoach-tai-chinh "Thông báo của phòng Kế hoạch tài chính")
+*   [Xem thêm về Thông báo nghỉ học Hệ điều hành OSYS1.D16 ngày 05/12/2012](https://daa.uit.edu.vn/thongbao/thong-bao-nghi-hoc-he-dieu-hanh-osys1d16-ngay-05122012 "Thông báo nghỉ học Hệ điều hành OSYS1.D16 ngày 05/12/2012")
     
 
-[Lịch thực hành Khoa Khoa học máy tính (29-10-2012)](https://daa.uit.edu.vn/thongbao/lich-thuc-hanh-khoa-khoa-hoc-may-tinh-29-10-2012)
+[Phòng Đào tạo Thông báo:Nhận giấy CNTN tạm thời](https://daa.uit.edu.vn/thongbao/phong-dao-tao-thong-baonhan-giay-cntn-tam-thoi)
 
----------------------------------------------------------------------------------------------------------------------------------------
+----------------------------------------------------------------------------------------------------------------------------------
 
-T2, 29/10/2012 - 10:00
+T6, 23/11/2012 - 08:34
 
-Lịch thực hành CSC01
+Phòng Đào tạo thông báo: Sinh viên có tên trong danh sách công nhận tốt nghiệp đợt 2 năm 2012 liên hệ Phòng Đào tạo để nhận giấy chứng nhận tốt nghiệp (CNTN) tạm thời.
 
-*   [Xem thêm về Lịch thực hành Khoa Khoa học máy tính (29-10-2012)](https://daa.uit.edu.vn/thongbao/lich-thuc-hanh-khoa-khoa-hoc-may-tinh-29-10-2012 "Lịch thực hành Khoa Khoa học máy tính (29-10-2012)")
+Lưu ý:  - Khi nhận giấy CNTN tạm thời, Sinh viên mang theo Chứng minh thư và biên lai đóng tiền Lệ phí xét và tổ chức lễ Tốt nghiệp. Những trường hợp nhận dùm: mang theo Chứng minh thư của sinh viên và của người đại diện nhận.
+
+            - Lệ phí xét và tổ chức lễ tốt nghiệp là 275.000 đồng, đóng trực tiếp tại phòng KH - TC.
+
+*   [Xem thêm về Phòng Đào tạo Thông báo:Nhận giấy CNTN tạm thời](https://daa.uit.edu.vn/thongbao/phong-dao-tao-thong-baonhan-giay-cntn-tam-thoi "Phòng Đào tạo Thông báo:Nhận giấy CNTN tạm thời")
     
 
-[Kết quả khảo sát sinh viên chính quy về môn học HKII năm học 2011-2012](https://daa.uit.edu.vn/thongbao/ket-qua-khao-sat-sinh-vien-chinh-quy-ve-mon-hoc-hkii-nam-hoc-2011-2012)
+[Thông Báo Danh Sách Tốt Nghiệp Đợt 2](https://daa.uit.edu.vn/thongbao/thong-bao-danh-sach-tot-nghiep-dot-2)
 
----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+-------------------------------------------------------------------------------------------------------------
 
-T6, 26/10/2012 - 11:12
+T2, 19/11/2012 - 09:15
 
-Thực hiện Quyết định số 01/QĐ-ĐHCNTT-TTPCĐBCL ngày 07/3/2012 của Hiệu trưởng Trường Đại học Công nghệ thông tin ban hành Quy định tạm thời về việc lấy ý hiến phản hồi của các bên liên quan về hoạt động đào tạo; Thông báo số 01/TB-TTPCĐBCL ngày 19/3/2012 của Hiệu trưởng Trường ĐH CNTT về việc lấy ý kiến phản hồi của sinh viên về môn học, Phòng Thanh tra - Pháp chế - Đảm bảo chất lượng (TT-PC-ĐBCL) đã tiến hành khảo sát lấy ý kiến phản hồi của 4020 lượt sinh viên chính quy về 61 môn học với 61giảng viên.
+PĐT thông báo danh sách tốt nghiệp đợt 2(file đính kèm)  
+ 
 
-*   [Xem thêm về Kết quả khảo sát sinh viên chính quy về môn học HKII năm học 2011-2012](https://daa.uit.edu.vn/thongbao/ket-qua-khao-sat-sinh-vien-chinh-quy-ve-mon-hoc-hkii-nam-hoc-2011-2012 "Kết quả khảo sát sinh viên chính quy về môn học HKII năm học 2011-2012")
+*   [Xem thêm về Thông Báo Danh Sách Tốt Nghiệp Đợt 2](https://daa.uit.edu.vn/thongbao/thong-bao-danh-sach-tot-nghiep-dot-2 "Thông Báo Danh Sách Tốt Nghiệp Đợt 2")
     
 
-[Điểm HK hè bổ sung](https://daa.uit.edu.vn/thongbao/diem-hk-he-bo-sung)
+[Thông Báo Điều chỉnh thời gian bắt đầu học học kỳ 2 năm học 2012-2013](https://daa.uit.edu.vn/thongbao/thong-bao-dieu-chinh-thoi-gian-bat-dau-hoc-hoc-ky-2-nam-hoc-2012-2013)
 
--------------------------------------------------------------------------
+-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
-T5, 25/10/2012 - 08:34
+T6, 16/11/2012 - 09:14
 
-Sinh viên xem chi tiết trong file đính kèm.
+PĐT thông báo thời gian bắt đầu học học kỳ 2 bắt đầu ngày 25/02/2013 .
 
-*   [Xem thêm về Điểm HK hè bổ sung](https://daa.uit.edu.vn/thongbao/diem-hk-he-bo-sung "Điểm HK hè bổ sung")
-    
-
-[Thông báo phúc khảo các môn hoc HK hè](https://daa.uit.edu.vn/thongbao/thong-bao-phuc-khao-cac-mon-hoc-hk-he)
-
----------------------------------------------------------------------------------------------------------------
-
-T2, 22/10/2012 - 10:00
-
-Sinh viên xem chi tiết trong file đính kèm.  
-
-*   [Xem thêm về Thông báo phúc khảo các môn hoc HK hè](https://daa.uit.edu.vn/thongbao/thong-bao-phuc-khao-cac-mon-hoc-hk-he "Thông báo phúc khảo các môn hoc HK hè")
-    
-
-[Thông báo nghỉ học môn ĐSTT\_LIA01.D13](https://daa.uit.edu.vn/thongbao/thong-bao-nghi-hoc-mon-dsttlia01d13)
-
---------------------------------------------------------------------------------------------------------------
-
-T2, 22/10/2012 - 00:00
-
- Lớp Đại số tuyến tính\_LIA01.D13 sẽ nghỉ học vào chiều nay 22/10/2012.  
-     Lý do: Giảng viên Dương Ngọc Hảo bận đi họp.  
-     Lịch học bù sẽ thông báo sau.
-
-*   [Xem thêm về Thông báo nghỉ học môn ĐSTT\_LIA01.D13](https://daa.uit.edu.vn/thongbao/thong-bao-nghi-hoc-mon-dsttlia01d13 "Thông báo nghỉ học môn ĐSTT_LIA01.D13")
+*   [Xem thêm về Thông Báo Điều chỉnh thời gian bắt đầu học học kỳ 2 năm học 2012-2013](https://daa.uit.edu.vn/thongbao/thong-bao-dieu-chinh-thoi-gian-bat-dau-hoc-hoc-ky-2-nam-hoc-2012-2013 "Thông Báo Điều chỉnh thời gian bắt đầu học học kỳ 2 năm học 2012-2013")
     
 
 Trang
@@ -140,4 +167,7 @@ Trang
 *   …
 *   [sau ›](https://daa.uit.edu.vn/thongbaochinhquy?page=1916 "Đến trang kế sau")
     
-*   [cuối »](https://daa.uit.edu.vn/thongbaochinhquy?page=1923 "Đến trang cuối cùng")
+*   [cuối »](https://daa.uit.edu.vn/thongbaochinhquy?page=1925 "Đến trang cuối cùng")
+    
+
+Back to top

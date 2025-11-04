@@ -6,132 +6,133 @@
 
 **Các thông báo dành cho hệ đại học chính quy.**
 
-[Thông báo TKB chính thức HK1 năm 2012-2013](https://daa.uit.edu.vn/thongbao/thong-bao-tkb-chinh-thuc-hk1-nam-2012-2013)
+[Kế hoạch tuần SHCĐ đầu năm dành cho SV khóa 4,5,6](https://daa.uit.edu.vn/thongbao/ke-hoach-tuan-shcd-dau-nam-danh-cho-sv-khoa-456)
 
--------------------------------------------------------------------------------------------------------------------------
+-------------------------------------------------------------------------------------------------------------------------------------
 
-T5, 13/09/2012 - 11:14
+T5, 04/10/2012 - 00:00
 
-PĐT gửi thời khóa biểu, danh sách lớp mở chính thức cho hoc kỳ 1 năm học 2012-2013  
-sinh viên xem chi tiết trong files đính kèm.
-
-*   [Xem thêm về Thông báo TKB chính thức HK1 năm 2012-2013](https://daa.uit.edu.vn/thongbao/thong-bao-tkb-chinh-thuc-hk1-nam-2012-2013 "Thông báo TKB chính thức HK1 năm 2012-2013")
-    
-
-[Thông báo nghỉ học và học bù của GV Lê Hoài Nghĩa (Khoa KTMT)](https://daa.uit.edu.vn/thongbao/thong-bao-nghi-hoc-va-hoc-bu-cua-gv-le-hoai-nghia-khoa-ktmt)
-
--------------------------------------------------------------------------------------------------------------------------------------------------------------
-
-T4, 12/09/2012 - 09:47
-
-Phòng Đào tạo Đại học thông báo lịch nghỉ và học bù một số môn của Giảng viên Lê Hoài Nghĩa, khoa Kỹ thuật Máy tính giảng dạy. Sinh viên xem chi tiết trong file đính kèm.
-
-*   [Xem thêm về Thông báo nghỉ học và học bù của GV Lê Hoài Nghĩa (Khoa KTMT)](https://daa.uit.edu.vn/thongbao/thong-bao-nghi-hoc-va-hoc-bu-cua-gv-le-hoai-nghia-khoa-ktmt "Thông báo nghỉ học và học bù của GV Lê Hoài Nghĩa (Khoa KTMT)")
-    
-
-[Thông Báo Nghỉ Học Lớp IS106.D11; Lớp: IS106.D12;lớp DBSS1.D11; DBSS1.D12 (phòng101- ca 3,4)](https://daa.uit.edu.vn/node/6)
-
-------------------------------------------------------------------------------------------------------------------------------
-
-T6, 07/09/2012 - 00:00
-
-PĐT Thông báo:  
-\- Thầy Nguyễn Đình Thuân : nghỉ vào ngày thứ 2 (10/09/2012) lớp IS106.D11 và IS106.D12 môn Khai thác dữ liệu ( Sáng + chiều)
-
-\- Thầy Huỳnh Hữu Việt : nghỉ vào 2 ngày thứ 2,3(10&11/09/2012) lớp DBSS1.D11(phòng 302- ca 1,2). DBSS1.D12 (phòng101- ca 3,4)
-
-*   [Xem thêm về Thông Báo Nghỉ Học Lớp IS106.D11; Lớp: IS106.D12;lớp DBSS1.D11; DBSS1.D12 (phòng101- ca 3,4)](https://daa.uit.edu.vn/node/6 "Thông Báo Nghỉ Học Lớp IS106.D11; Lớp: IS106.D12;lớp DBSS1.D11; DBSS1.D12 (phòng101- ca 3,4)")
-    
-
-[DS thi xếp lớp Anh văn khóa 07\_đợt 2](https://daa.uit.edu.vn/node/7)
-
------------------------------------------------------------------------
-
-T5, 06/09/2012 - 15:43
-
-  Phòng Đào tạo Đại học thông báo danh sách thi xếp lớp Anh văn khóa 07\_ Đợt 2 trong file đính kèm.  
-       Thời gian: 7h30ph ngày 07/9/2012.  
-Files đính kèm : [DS THI XEP LOP ANH VAN KHOA 07\_ DOT 2.xls](http://daa.uit.edu.vn/Data/UploadedFiles/DS%20THI%20XEP%20LOP%20ANH%20VAN%20KHOA%2007_%20DOT%202.xls)
+Sinh viên xem chi tiết trong file đính kèm.  
  
 
-*   [Xem thêm về DS thi xếp lớp Anh văn khóa 07\_đợt 2](https://daa.uit.edu.vn/node/7 "DS thi xếp lớp Anh văn khóa 07_đợt 2")
+*   [Xem thêm về Kế hoạch tuần SHCĐ đầu năm dành cho SV khóa 4,5,6](https://daa.uit.edu.vn/thongbao/ke-hoach-tuan-shcd-dau-nam-danh-cho-sv-khoa-456 "Kế hoạch tuần SHCĐ đầu năm dành cho SV khóa 4,5,6")
     
 
-[Thông báo nhập lớp CE313.D11 + CE314.B0B](https://daa.uit.edu.vn/thongbao/thong-bao-nhap-lop-ce313d11-ce314b0b)
+[Điểm học kỳ II ( NĂM 2011 - 2012 ) mới cập nhật](https://daa.uit.edu.vn/thongbao/diem-hoc-ky-ii-nam-2011-2012-moi-cap-nhat)
 
------------------------------------------------------------------------------------------------------------------
+-----------------------------------------------------------------------------------------------------------------------------
 
-T5, 06/09/2012 - 08:08
+T4, 03/10/2012 - 00:00
 
-PĐT Thông báo, theo yêu cầu của khoa KTMT, nhập lớp Lớp CE313.D11+CE314.B0B, học chiều thứ 5
+Sinh viên xem chi tiết trong file đính kèm  
+ 
 
-*   [Xem thêm về Thông báo nhập lớp CE313.D11 + CE314.B0B](https://daa.uit.edu.vn/thongbao/thong-bao-nhap-lop-ce313d11-ce314b0b "Thông báo nhập lớp CE313.D11 + CE314.B0B")
+*   [Xem thêm về Điểm học kỳ II ( NĂM 2011 - 2012 ) mới cập nhật](https://daa.uit.edu.vn/thongbao/diem-hoc-ky-ii-nam-2011-2012-moi-cap-nhat "Điểm học kỳ II ( NĂM 2011 - 2012 ) mới cập nhật")
     
 
-[Thời khóa biểu HKI năm 2012-2013 ( mới cập nhật)](https://daa.uit.edu.vn/thongbao/thoi-khoa-bieu-hki-nam-2012-2013-moi-cap-nhat)
+[Thông báo điều chỉnh giờ học thực hành Hệ điều hành](https://daa.uit.edu.vn/thongbao/thong-bao-dieu-chinh-gio-hoc-thuc-hanh-he-dieu-hanh)
+
+-------------------------------------------------------------------------------------------------------------------------------------------
+
+T3, 02/10/2012 - 16:11
+
+Để thuận tiện cho việc học thực hành phù hợp với lý thuyết, các lớp Thực hành học đều đặn hàng tuần cũng sẽ chuyển thành học cách tuần, cụ thể như sau: 
+
+\- OSYS1.D11.1,OSYS1.D11.2, OSYS1.D12.2,OSYS1.D16.2, OSYS1.D15.1, OSYS1.D15.2: học cách tuần (thống nhất học các tuần lẻ của Học kỳ, tuần hiện tại là tuần lẻ: tuần 5(từ ngày 01 - 05/10)).
+
+\- OSYS1.D12.1, OSYS1.D14.1,OSYS1.D13.2, OSYS1.D14.2 ( học cách tuần, học các tuần lẻ).
+
+\-  OSYS1.D13.1, OSYS1.D17.2, OSYS1.D16.1,OSYS1.D17.1( học cách tuần, học các tuần chẵn).
+
+*   [Xem thêm về Thông báo điều chỉnh giờ học thực hành Hệ điều hành](https://daa.uit.edu.vn/thongbao/thong-bao-dieu-chinh-gio-hoc-thuc-hanh-he-dieu-hanh "Thông báo điều chỉnh giờ học thực hành Hệ điều hành")
+    
+
+[Thông báo nghỉ học một số môn của GV Lê Hoài Nghĩa](https://daa.uit.edu.vn/thongbao/thong-bao-nghi-hoc-mot-so-mon-cua-gv-le-hoai-nghia)
+
+-----------------------------------------------------------------------------------------------------------------------------------------
+
+T3, 02/10/2012 - 16:00
+
+Phòng Đào tạo Đại học thông báo nghỉ học hai lớp: CE103.D12 & CE103.D11. Sinh viên xem chi tiết trong file đính kèm.
+
+*   [Xem thêm về Thông báo nghỉ học một số môn của GV Lê Hoài Nghĩa](https://daa.uit.edu.vn/thongbao/thong-bao-nghi-hoc-mot-so-mon-cua-gv-le-hoai-nghia "Thông báo nghỉ học một số môn của GV Lê Hoài Nghĩa")
+    
+
+[Giải thưởng sinh viên nghiên cứu khoa học - EUREKA lần XIV 2012](https://daa.uit.edu.vn/thongbao/giai-thuong-sinh-vien-nghien-cuu-khoa-hoc-eureka-lan-xiv-2012)
+
+-----------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+T6, 28/09/2012 - 09:35
+
+Trung tâm phát triển khoa học và công nghệ trẻ TP.HCM phát động cuộc thi “Giải thưởng sinh viên nghiên cứu khoa học Euréka lần thứ 14”.  
+Các công trình, đề tài nghiên cứu dự thi phải có tính mới, tính sáng tạo và có khả năng ứng dụng cao. Sinh viên tham gia theo hình thức cá nhân và nhóm (không quá 5 sinh viên/nhóm). Nộp công trình, đề tài tham gia giải thưởng tại số 1 Phạm Ngọc Thạch, Q.1 từ nay đến ngày 6.10.  
+[Xem thông tin chi tiết tại đây](http://eureka.khoahoctre.com.vn/welcome/gioithieu)
+
+*   [Xem thêm về Giải thưởng sinh viên nghiên cứu khoa học - EUREKA lần XIV 2012](https://daa.uit.edu.vn/thongbao/giai-thuong-sinh-vien-nghien-cuu-khoa-hoc-eureka-lan-xiv-2012 "Giải thưởng sinh viên nghiên cứu khoa học - EUREKA lần XIV 2012")
+    
+
+[Thời khóa biểu & danh sách lớp của khóa 7](https://daa.uit.edu.vn/thongbao/thoi-khoa-bieu-danh-sach-lop-cua-khoa-7)
+
+---------------------------------------------------------------------------------------------------------------------
+
+T5, 27/09/2012 - 15:45
+
+Sinh viên khóa 07 xem chi tiết trong các file đính kèm. Khóa 07 bắt đầu học từ ngày 01/10/2012 ( thứ Hai tuần sau)
+
+*   [Xem thêm về Thời khóa biểu & danh sách lớp của khóa 7](https://daa.uit.edu.vn/thongbao/thoi-khoa-bieu-danh-sach-lop-cua-khoa-7 "Thời khóa biểu & danh sách lớp của khóa 7")
+    
+
+[Nghỉ học môn OSYS1.D16 ngày 26/09/2012](https://daa.uit.edu.vn/thongbao/nghi-hoc-mon-osys1d16-ngay-26092012)
+
+--------------------------------------------------------------------------------------------------------------
+
+T4, 26/09/2012 - 13:51
+
+Sáng thứ Tư  (ngày 26/9/2012), lớp Hệ điều hành (OSYS1.D16), học phòng 101, tiết 123 do giảng viên Thiều Xuân Khánh giảng dạy được nghỉ.
+
+*   [Xem thêm về Nghỉ học môn OSYS1.D16 ngày 26/09/2012](https://daa.uit.edu.vn/thongbao/nghi-hoc-mon-osys1d16-ngay-26092012 "Nghỉ học môn OSYS1.D16 ngày 26/09/2012")
+    
+
+[Thông báo nghỉ học lớp IS201.D12 ngày 21/09/2012](https://daa.uit.edu.vn/thongbao/thong-bao-nghi-hoc-lop-is201d12-ngay-21092012)
 
 ----------------------------------------------------------------------------------------------------------------------------------
 
-T5, 06/09/2012 - 00:00
+T6, 21/09/2012 - 13:50
 
-PĐT thông báo TKB mới cập nhật một số lớp đề nghị mở, còn một số lớp đề nghị mở đang chờ phân công giảng viên, PĐT sẽ thông báo sau.
+Sáng thứ Sáu mai (thứ Sáu 21/9/2012) lớpPhân tích thiết kế hệ thống thông tin (mã lớp IS201.D12) học tại Giảng đường 2,  do giảng viên Đinh Khắc Quyền giảng dạy được nghỉ.  
+         Lý do: giảng viên có giấy triệu tập họp
 
-*   [Xem thêm về Thời khóa biểu HKI năm 2012-2013 ( mới cập nhật)](https://daa.uit.edu.vn/thongbao/thoi-khoa-bieu-hki-nam-2012-2013-moi-cap-nhat "Thời khóa biểu HKI năm 2012-2013 ( mới cập nhật)")
+*   [Xem thêm về Thông báo nghỉ học lớp IS201.D12 ngày 21/09/2012](https://daa.uit.edu.vn/thongbao/thong-bao-nghi-hoc-lop-is201d12-ngay-21092012 "Thông báo nghỉ học lớp IS201.D12 ngày 21/09/2012")
     
 
-[Thông báo nghỉ học các lớp sau](https://daa.uit.edu.vn/thongbao/thong-bao-nghi-hoc-cac-lop-sau)
+[DS lớp MAT01.15](https://daa.uit.edu.vn/thongbao/ds-lop-mat0115)
 
--------------------------------------------------------------------------------------------------
+------------------------------------------------------------------
 
-T4, 05/09/2012 - 14:01
+T6, 21/09/2012 - 13:43
 
-Để tạo điều kiện cho sinh viên K7 học sinh hoạt đầu khóa tại giảng đường 1;2;3 PĐT thông báo các lớp sau nghỉ học tuần học đầu tiên (tuần khai giảng) tuần sau học lại bình thường;  
-Lớp:SMET2.D11   
-Lớp:NT101.D11   
-Lớp:NT110.D11   
-Lớp:IS201.D12   
-Lớp:NT106.D11   
-Lớp:MAT04.D11   
-Lớp:MAT04.D12   
-Lớp:NT104.D11
+Phòng Đào tạo thông báo: lớp MAT01.D15 vẫn được mở và học bình thường như thời gian ghi trong TKB.  
+Sinh viên xem chi tiết trong file đính kèm.
 
-*   [Xem thêm về Thông báo nghỉ học các lớp sau](https://daa.uit.edu.vn/thongbao/thong-bao-nghi-hoc-cac-lop-sau "Thông báo nghỉ học các lớp sau")
+*   [Xem thêm về DS lớp MAT01.15](https://daa.uit.edu.vn/thongbao/ds-lop-mat0115 "DS lớp MAT01.15")
     
 
-[Thông báo v/v chấm phúc trả bài thi của các môn trong HK2 năm 2011-2012 như sau:](https://daa.uit.edu.vn/thongbao/thong-bao-vv-cham-phuc-tra-bai-thi-cua-cac-mon-trong-hk2-nam-2011-2012-nhu-sau)
+[Thông báo kiểm tra Anh văn đầu vào Chương trình tiên tiến 2012 đợt 1](https://daa.uit.edu.vn/thongbao/thong-bao-kiem-tra-anh-van-dau-vao-chuong-trinh-tien-tien-2012-dot-1)
 
----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
-T4, 05/09/2012 - 14:00
+T5, 20/09/2012 - 10:13
 
-Sau khi công bố điểm thi các môn học của Học kỳ 2 năm học 2011-2012 cho toàn thể sinh viên, Phòng Đào tạo Đại học thông báo đến sinh viên kế hoạch chấm phúc tra bài thi của các môn trong Học Kỳ 2 năm học 2011-2012 như sau:  
-Từ ngày 06/09/2012 đến 20/09/2012 : Phòng Đào tạo/Khoa /Bộ môn nhận đơn phúc tra bài thi kết thúc học kỳ của sinh viên đối với các môn học thuộc sự quản lý của mình và tổ chức việc phúc tra.  
-Lưu ý:   
-1\. Phòng Đào tạo/Khoa /Bộ môn không nhận chấm phúc tra các môn thí nghiệm, thực hành, giáo dục thể chất.  
+Các sinh viên đăng ký xét tuyển vào CTTT - Đợt 1 ([danh sách](https://daa.uit.edu.vn/sites/daa/files/files/Danh_sach_xet_tuyen_CTTT_Dot_1.pdf)
+) sẽ kiểm tra Anh văn đầu vào.  
+Thời gian: bắt đầu thi 8h30 thứ bảy ngày 22/09/2012  
+Địa điểm: phòng học CTTT (tòa nhà thư viên - giảng đường)
 
-*   [Xem thêm về Thông báo v/v chấm phúc trả bài thi của các môn trong HK2 năm 2011-2012 như sau:](https://daa.uit.edu.vn/thongbao/thong-bao-vv-cham-phuc-tra-bai-thi-cua-cac-mon-trong-hk2-nam-2011-2012-nhu-sau "Thông báo v/v chấm phúc trả bài thi của các môn trong HK2 năm 2011-2012 như sau:")
-    
+Lưu ý: - SV có mặt trước giờ thi 30 phút.  
+           - Mang theo CMND hoặc thẻ SV (nếu có)  
+           - Đề thi dạng Toefl paper test gồm 4 phần (vocabulary, grammar, reading, listening) trong 2h30phút
 
-[Thông báo nghỉ học](https://daa.uit.edu.vn/thongbao/thong-bao-nghi-hoc)
-
--------------------------------------------------------------------------
-
-T4, 05/09/2012 - 14:00
-
-Lớp Hệ điều hành OSYS1.D15 do thầy Hà Lê Hoài Trung đảm nhiệm giảng dạy nghỉ học sáng thứ 5. Tuần sau, lớp học bình thường.
-
-*   [Xem thêm về Thông báo nghỉ học](https://daa.uit.edu.vn/thongbao/thong-bao-nghi-hoc "Thông báo nghỉ học")
-    
-
-[Thông báo điểm cập nhật HK2 2011-2012](https://daa.uit.edu.vn/thongbao/thong-bao-diem-cap-nhat-hk2-2011-2012)
-
----------------------------------------------------------------------------------------------------------------
-
-T4, 05/09/2012 - 13:59
-
-PDT Gửi Bảng điểm mới cập nhật ( fine đính kèm)
-
-*   [Xem thêm về Thông báo điểm cập nhật HK2 2011-2012](https://daa.uit.edu.vn/thongbao/thong-bao-diem-cap-nhat-hk2-2011-2012 "Thông báo điểm cập nhật HK2 2011-2012")
+*   [Xem thêm về Thông báo kiểm tra Anh văn đầu vào Chương trình tiên tiến 2012 đợt 1](https://daa.uit.edu.vn/thongbao/thong-bao-kiem-tra-anh-van-dau-vao-chuong-trinh-tien-tien-2012-dot-1 "Thông báo kiểm tra Anh văn đầu vào Chương trình tiên tiến 2012 đợt 1")
     
 
 Trang
@@ -159,6 +160,7 @@ Trang
     
 *   [1924](https://daa.uit.edu.vn/thongbaochinhquy?page=1923 "Đến trang 1924")
     
+*   …
 *   [sau ›](https://daa.uit.edu.vn/thongbaochinhquy?page=1920 "Đến trang kế sau")
     
-*   [cuối »](https://daa.uit.edu.vn/thongbaochinhquy?page=1923 "Đến trang cuối cùng")
+*   [cuối »](https://daa.uit.edu.vn/thongbaochinhquy?page=1925 "Đến trang cuối cùng")

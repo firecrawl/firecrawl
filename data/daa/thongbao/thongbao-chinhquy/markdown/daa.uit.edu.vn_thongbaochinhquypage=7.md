@@ -6,194 +6,194 @@
 
 **Các thông báo dành cho hệ đại học chính quy.**
 
-[Thông báo lịch học HT2 Marketing điện tử (EC204.Q12.1) ngày 14/11/2025](https://daa.uit.edu.vn/node/36860)
+[Thông báo nghỉ lớp Kinh tế chính trị Mác – Lênin (SS008.Q15) ngày 30/10/2025](https://daa.uit.edu.vn/node/36879)
 
-------------------------------------------------------------------------------------------------------------
+------------------------------------------------------------------------------------------------------------------
 
-T5, 23/10/2025 - 08:53
+T5, 23/10/2025 - 14:38
 
-CBGD : **Văn Đức Sơn Hà**  
-Khoa/ Bộ môn : **HTTT**  
-Môn học : **Marketing điện tử (EC204)**  
-Lớp : **EC204.Q12.1**  
-Phòng : **B1.10**  
-Thời gian :  
-\- Tiết bắt đầu : **4**  
-\- Tiết kết thúc : **5**  
-Thứ : **6 , ngày 14/11/2025**
-
-*   [Xem thêm về Thông báo lịch học HT2 Marketing điện tử (EC204.Q12.1) ngày 14/11/2025](https://daa.uit.edu.vn/node/36860 "Thông báo lịch học HT2 Marketing điện tử (EC204.Q12.1) ngày 14/11/2025")
-    
-
-[Thông báo lịch học HT2 Quản trị quan hệ khách hàng và nhà cung cấp (EC213.Q12.1) ngày 12/11/2025](https://daa.uit.edu.vn/node/36859)
-
---------------------------------------------------------------------------------------------------------------------------------------
-
-T5, 23/10/2025 - 08:51
-
-CBGD : **Văn Đức Sơn Hà**  
-Khoa/ Bộ môn : **HTTT**  
-Môn học : **Quản trị quan hệ khách hàng và nhà cung cấp (EC213)**  
-Lớp : **EC213.Q12.1**  
-Phòng : **B4.10**  
-Thời gian :  
-\- Tiết bắt đầu : **4**  
-\- Tiết kết thúc : **5**  
-Thứ : **4 , ngày 12/11/2025**
-
-*   [Xem thêm về Thông báo lịch học HT2 Quản trị quan hệ khách hàng và nhà cung cấp (EC213.Q12.1) ngày 12/11/2025](https://daa.uit.edu.vn/node/36859 "Thông báo lịch học HT2 Quản trị quan hệ khách hàng và nhà cung cấp (EC213.Q12.1) ngày 12/11/2025")
-    
-
-[Thông báo nghỉ lớp Đại số tuyến tính (MA003.Q12) ngày 22/11/2025](https://daa.uit.edu.vn/node/36858)
-
-------------------------------------------------------------------------------------------------------
-
-T5, 23/10/2025 - 08:49
-
-CBGD : **Nguyễn Thành Nghĩa**  
-Khoa/ Bộ môn : **BMTL**  
-Môn học : **Đại số tuyến tính (MA003)**  
-Lớp : **MA003.Q12**  
+CBGD : **Trần Thị Hoài Thương**  
+Khoa/ Bộ môn : **P.DTDH**  
+Môn học : **Kinh tế chính trị Mác – Lênin (SS008)**  
+Lớp : **SS008.Q15**  
 Phòng :  
 Thời gian :  
 \- Tiết bắt đầu : **6**  
-\- Tiết kết thúc : **9**  
-Thứ : **7 , ngày 22/11/2025**
+\- Tiết kết thúc : **7**  
+Thứ : **5 , ngày 30/10/2025**
 
-*   [Xem thêm về Thông báo nghỉ lớp Đại số tuyến tính (MA003.Q12) ngày 22/11/2025](https://daa.uit.edu.vn/node/36858 "Thông báo nghỉ lớp Đại số tuyến tính (MA003.Q12) ngày 22/11/2025")
+*   [Xem thêm về Thông báo nghỉ lớp Kinh tế chính trị Mác – Lênin (SS008.Q15) ngày 30/10/2025](https://daa.uit.edu.vn/node/36879 "Thông báo nghỉ lớp Kinh tế chính trị Mác – Lênin (SS008.Q15) ngày 30/10/2025")
     
 
-[Thông báo lịch học HT2 Quản trị quan hệ khách hàng và nhà cung cấp (EC213.Q11.1) ngày 13/11/2025](https://daa.uit.edu.vn/node/36857)
+[Thông báo lịch học HT2 Phát triển kỹ năng lập trình Game ứng dụng trong thực tế (SE116.Q11.1) ngày 24/12/2025](https://daa.uit.edu.vn/node/36878)
 
---------------------------------------------------------------------------------------------------------------------------------------
+---------------------------------------------------------------------------------------------------------------------------------------------------
 
-T5, 23/10/2025 - 08:43
+T5, 23/10/2025 - 14:14
 
-CBGD : **Văn Đức Sơn Hà**  
-Khoa/ Bộ môn : **HTTT**  
-Môn học : **Quản trị quan hệ khách hàng và nhà cung cấp (EC213)**  
-Lớp : **EC213.Q11.1**  
-Phòng : **C311**  
+CBGD : **Đặng Việt Dũng**  
+Khoa/ Bộ môn : **CNPM**  
+Môn học : **Phát triển kỹ năng lập trình Game ứng dụng trong thực tế (SE116)**  
+Lớp : **SE116.Q11.1**  
+Phòng : **B3.12**  
 Thời gian :  
-\- Tiết bắt đầu : **4**  
-\- Tiết kết thúc : **5**  
-Thứ : **5 , ngày 13/11/2025**
+\- Tiết bắt đầu : **9**  
+\- Tiết kết thúc : **10**  
+Thứ : **4 , ngày 24/12/2025**
 
-*   [Xem thêm về Thông báo lịch học HT2 Quản trị quan hệ khách hàng và nhà cung cấp (EC213.Q11.1) ngày 13/11/2025](https://daa.uit.edu.vn/node/36857 "Thông báo lịch học HT2 Quản trị quan hệ khách hàng và nhà cung cấp (EC213.Q11.1) ngày 13/11/2025")
+*   [Xem thêm về Thông báo lịch học HT2 Phát triển kỹ năng lập trình Game ứng dụng trong thực tế (SE116.Q11.1) ngày 24/12/2025](https://daa.uit.edu.vn/node/36878 "Thông báo lịch học HT2 Phát triển kỹ năng lập trình Game ứng dụng trong thực tế (SE116.Q11.1) ngày 24/12/2025")
     
 
-[Thông báo lịch học HT2 Marketing điện tử (EC204.Q11.1) ngày 12/11/2025](https://daa.uit.edu.vn/node/36856)
+[Thông báo nghỉ lớp Cơ chế hoạt động của mã độc (NT230.Q12.ANTT.1) ngày 24/10/2025](https://daa.uit.edu.vn/node/36877)
 
-------------------------------------------------------------------------------------------------------------
+-----------------------------------------------------------------------------------------------------------------------
 
-T5, 23/10/2025 - 08:34
+T5, 23/10/2025 - 14:07
 
-CBGD : **Văn Đức Sơn Hà**  
-Khoa/ Bộ môn : **HTTT**  
-Môn học : **Marketing điện tử (EC204)**  
-Lớp : **EC204.Q11.1**  
-Phòng : **B1.16**  
-Thời gian :  
-\- Tiết bắt đầu : **4**  
-\- Tiết kết thúc : **5**  
-Thứ : **4 , ngày 12/11/2025**
-
-*   [Xem thêm về Thông báo lịch học HT2 Marketing điện tử (EC204.Q11.1) ngày 12/11/2025](https://daa.uit.edu.vn/node/36856 "Thông báo lịch học HT2 Marketing điện tử (EC204.Q11.1) ngày 12/11/2025")
-    
-
-[Thông báo lịch học HT2 Hoạch định nguồn lực doanh nghiệp (IS336.Q11.1) ngày 10/12/2025](https://daa.uit.edu.vn/node/36855)
-
-----------------------------------------------------------------------------------------------------------------------------
-
-T5, 23/10/2025 - 08:14
-
-CBGD : **Văn Đức Sơn Hà**  
-Khoa/ Bộ môn : **HTTT**  
-Môn học : **Hoạch định nguồn lực doanh nghiệp (IS336)**  
-Lớp : **IS336.Q11.1**  
-Phòng : **B1.16**  
-Thời gian :  
-\- Tiết bắt đầu : **1**  
-\- Tiết kết thúc : **5**  
-Thứ : **4 , ngày 10/12/2025**
-
-*   [Xem thêm về Thông báo lịch học HT2 Hoạch định nguồn lực doanh nghiệp (IS336.Q11.1) ngày 10/12/2025](https://daa.uit.edu.vn/node/36855 "Thông báo lịch học HT2 Hoạch định nguồn lực doanh nghiệp (IS336.Q11.1) ngày 10/12/2025")
-    
-
-[Thông báo lịch học HT2 Hoạch định nguồn lực doanh nghiệp (IS336.Q11.1) ngày 03/12/2025](https://daa.uit.edu.vn/node/36854)
-
-----------------------------------------------------------------------------------------------------------------------------
-
-T5, 23/10/2025 - 08:07
-
-CBGD : **Văn Đức Sơn Hà**  
-Khoa/ Bộ môn : **HTTT**  
-Môn học : **Hoạch định nguồn lực doanh nghiệp (IS336)**  
-Lớp : **IS336.Q11.1**  
-Phòng : **B1.16**  
-Thời gian :  
-\- Tiết bắt đầu : **1**  
-\- Tiết kết thúc : **5**  
-Thứ : **4 , ngày 03/12/2025**
-
-*   [Xem thêm về Thông báo lịch học HT2 Hoạch định nguồn lực doanh nghiệp (IS336.Q11.1) ngày 03/12/2025](https://daa.uit.edu.vn/node/36854 "Thông báo lịch học HT2 Hoạch định nguồn lực doanh nghiệp (IS336.Q11.1) ngày 03/12/2025")
-    
-
-[Thông báo lịch học HT2 Quản trị quan hệ khách hàng và nhà cung cấp (EC213.Q12.1) ngày 29/10/2025](https://daa.uit.edu.vn/node/36853)
-
---------------------------------------------------------------------------------------------------------------------------------------
-
-T5, 23/10/2025 - 08:02
-
-CBGD : **Văn Đức Sơn Hà**  
-Khoa/ Bộ môn : **HTTT**  
-Môn học : **Quản trị quan hệ khách hàng và nhà cung cấp (EC213)**  
-Lớp : **EC213.Q12.1**  
-Phòng : **B1.10**  
-Thời gian :  
-\- Tiết bắt đầu : **4**  
-\- Tiết kết thúc : **5**  
-Thứ : **4 , ngày 29/10/2025**
-
-*   [Xem thêm về Thông báo lịch học HT2 Quản trị quan hệ khách hàng và nhà cung cấp (EC213.Q12.1) ngày 29/10/2025](https://daa.uit.edu.vn/node/36853 "Thông báo lịch học HT2 Quản trị quan hệ khách hàng và nhà cung cấp (EC213.Q12.1) ngày 29/10/2025")
-    
-
-[Thông báo lịch học HT2 Marketing điện tử (EC204.Q12.1) ngày 31/10/2025](https://daa.uit.edu.vn/node/36852)
-
-------------------------------------------------------------------------------------------------------------
-
-T5, 23/10/2025 - 07:50
-
-CBGD : **Văn Đức Sơn Hà**  
-Khoa/ Bộ môn : **HTTT**  
-Môn học : **Marketing điện tử (EC204)**  
-Lớp : **EC204.Q12.1**  
-Phòng : **B1.10**  
-Thời gian :  
-\- Tiết bắt đầu : **4**  
-\- Tiết kết thúc : **5**  
-Thứ : **6 , ngày 31/10/2025**
-
-*   [Xem thêm về Thông báo lịch học HT2 Marketing điện tử (EC204.Q12.1) ngày 31/10/2025](https://daa.uit.edu.vn/node/36852 "Thông báo lịch học HT2 Marketing điện tử (EC204.Q12.1) ngày 31/10/2025")
-    
-
-[Thông báo nghỉ lớp Thương mại xã hội (EC403.Q11) ngày 23/10/2025](https://daa.uit.edu.vn/node/36851)
-
-------------------------------------------------------------------------------------------------------
-
-T4, 22/10/2025 - 23:58
-
-CBGD : **Nguyễn Minh Hằng**  
-Khoa/ Bộ môn : **HTTT**  
-Môn học : **Thương mại xã hội (EC403)**  
-Lớp : **EC403.Q11**  
+CBGD : **Nguyễn Hữu Quyền**  
+Khoa/ Bộ môn : **MMT&TT**  
+Môn học : **Cơ chế hoạt động của mã độc (NT230)**  
+Lớp : **NT230.Q12.ANTT.1**  
 Phòng :  
 Thời gian :  
-\- Tiết bắt đầu : **2**  
-\- Tiết kết thúc : **5**  
-Thứ : **5 , ngày 23/10/2025**
+\- Tiết bắt đầu : **6**  
+\- Tiết kết thúc : **10**  
+Thứ : **6 , ngày 24/10/2025**
 
-*   [Xem thêm về Thông báo nghỉ lớp Thương mại xã hội (EC403.Q11) ngày 23/10/2025](https://daa.uit.edu.vn/node/36851 "Thông báo nghỉ lớp Thương mại xã hội (EC403.Q11) ngày 23/10/2025")
+*   [Xem thêm về Thông báo nghỉ lớp Cơ chế hoạt động của mã độc (NT230.Q12.ANTT.1) ngày 24/10/2025](https://daa.uit.edu.vn/node/36877 "Thông báo nghỉ lớp Cơ chế hoạt động của mã độc (NT230.Q12.ANTT.1) ngày 24/10/2025")
+    
+
+[Thông báo lịch học HT2 Phát triển kỹ năng lập trình Game ứng dụng trong thực tế (SE116.Q11.1) ngày 17/12/2025](https://daa.uit.edu.vn/node/36876)
+
+---------------------------------------------------------------------------------------------------------------------------------------------------
+
+T5, 23/10/2025 - 11:23
+
+CBGD : **Đặng Việt Dũng**  
+Khoa/ Bộ môn : **CNPM**  
+Môn học : **Phát triển kỹ năng lập trình Game ứng dụng trong thực tế (SE116)**  
+Lớp : **SE116.Q11.1**  
+Phòng : **B3.12**  
+Thời gian :  
+\- Tiết bắt đầu : **9**  
+\- Tiết kết thúc : **10**  
+Thứ : **4 , ngày 17/12/2025**
+
+*   [Xem thêm về Thông báo lịch học HT2 Phát triển kỹ năng lập trình Game ứng dụng trong thực tế (SE116.Q11.1) ngày 17/12/2025](https://daa.uit.edu.vn/node/36876 "Thông báo lịch học HT2 Phát triển kỹ năng lập trình Game ứng dụng trong thực tế (SE116.Q11.1) ngày 17/12/2025")
+    
+
+[Thông báo lịch học HT2 Phát triển kỹ năng lập trình Game ứng dụng trong thực tế (SE116.Q11.1) ngày 10/12/2025](https://daa.uit.edu.vn/node/36875)
+
+---------------------------------------------------------------------------------------------------------------------------------------------------
+
+T5, 23/10/2025 - 11:22
+
+CBGD : **Đặng Việt Dũng**  
+Khoa/ Bộ môn : **CNPM**  
+Môn học : **Phát triển kỹ năng lập trình Game ứng dụng trong thực tế (SE116)**  
+Lớp : **SE116.Q11.1**  
+Phòng : **B3.12**  
+Thời gian :  
+\- Tiết bắt đầu : **9**  
+\- Tiết kết thúc : **10**  
+Thứ : **4 , ngày 10/12/2025**
+
+*   [Xem thêm về Thông báo lịch học HT2 Phát triển kỹ năng lập trình Game ứng dụng trong thực tế (SE116.Q11.1) ngày 10/12/2025](https://daa.uit.edu.vn/node/36875 "Thông báo lịch học HT2 Phát triển kỹ năng lập trình Game ứng dụng trong thực tế (SE116.Q11.1) ngày 10/12/2025")
+    
+
+[Thông báo lịch học HT2 Phát triển kỹ năng lập trình Game ứng dụng trong thực tế (SE116.Q11.1) ngày 03/12/2025](https://daa.uit.edu.vn/node/36874)
+
+---------------------------------------------------------------------------------------------------------------------------------------------------
+
+T5, 23/10/2025 - 11:21
+
+CBGD : **Đặng Việt Dũng**  
+Khoa/ Bộ môn : **CNPM**  
+Môn học : **Phát triển kỹ năng lập trình Game ứng dụng trong thực tế (SE116)**  
+Lớp : **SE116.Q11.1**  
+Phòng : **B3.12**  
+Thời gian :  
+\- Tiết bắt đầu : **9**  
+\- Tiết kết thúc : **10**  
+Thứ : **4 , ngày 03/12/2025**
+
+*   [Xem thêm về Thông báo lịch học HT2 Phát triển kỹ năng lập trình Game ứng dụng trong thực tế (SE116.Q11.1) ngày 03/12/2025](https://daa.uit.edu.vn/node/36874 "Thông báo lịch học HT2 Phát triển kỹ năng lập trình Game ứng dụng trong thực tế (SE116.Q11.1) ngày 03/12/2025")
+    
+
+[Thông báo lịch học HT2 Phát triển kỹ năng lập trình Game ứng dụng trong thực tế (SE116.Q11.1) ngày 26/11/2025](https://daa.uit.edu.vn/node/36873)
+
+---------------------------------------------------------------------------------------------------------------------------------------------------
+
+T5, 23/10/2025 - 11:20
+
+CBGD : **Đặng Việt Dũng**  
+Khoa/ Bộ môn : **CNPM**  
+Môn học : **Phát triển kỹ năng lập trình Game ứng dụng trong thực tế (SE116)**  
+Lớp : **SE116.Q11.1**  
+Phòng : **B3.12**  
+Thời gian :  
+\- Tiết bắt đầu : **9**  
+\- Tiết kết thúc : **10**  
+Thứ : **4 , ngày 26/11/2025**
+
+*   [Xem thêm về Thông báo lịch học HT2 Phát triển kỹ năng lập trình Game ứng dụng trong thực tế (SE116.Q11.1) ngày 26/11/2025](https://daa.uit.edu.vn/node/36873 "Thông báo lịch học HT2 Phát triển kỹ năng lập trình Game ứng dụng trong thực tế (SE116.Q11.1) ngày 26/11/2025")
+    
+
+[Thông báo lịch học HT2 Phát triển kỹ năng lập trình Game ứng dụng trong thực tế (SE116.Q11.1) ngày 19/11/2025](https://daa.uit.edu.vn/node/36872)
+
+---------------------------------------------------------------------------------------------------------------------------------------------------
+
+T5, 23/10/2025 - 11:18
+
+CBGD : **Đặng Việt Dũng**  
+Khoa/ Bộ môn : **CNPM**  
+Môn học : **Phát triển kỹ năng lập trình Game ứng dụng trong thực tế (SE116)**  
+Lớp : **SE116.Q11.1**  
+Phòng : **B3.12**  
+Thời gian :  
+\- Tiết bắt đầu : **9**  
+\- Tiết kết thúc : **10**  
+Thứ : **4 , ngày 19/11/2025**
+
+*   [Xem thêm về Thông báo lịch học HT2 Phát triển kỹ năng lập trình Game ứng dụng trong thực tế (SE116.Q11.1) ngày 19/11/2025](https://daa.uit.edu.vn/node/36872 "Thông báo lịch học HT2 Phát triển kỹ năng lập trình Game ứng dụng trong thực tế (SE116.Q11.1) ngày 19/11/2025")
+    
+
+[Thông báo lịch học HT2 Phát triển kỹ năng lập trình Game ứng dụng trong thực tế (SE116.Q11.1) ngày 12/11/2025](https://daa.uit.edu.vn/node/36871)
+
+---------------------------------------------------------------------------------------------------------------------------------------------------
+
+T5, 23/10/2025 - 11:16
+
+CBGD : **Đặng Việt Dũng**  
+Khoa/ Bộ môn : **CNPM**  
+Môn học : **Phát triển kỹ năng lập trình Game ứng dụng trong thực tế (SE116)**  
+Lớp : **SE116.Q11.1**  
+Phòng : **B3.12**  
+Thời gian :  
+\- Tiết bắt đầu : **9**  
+\- Tiết kết thúc : **10**  
+Thứ : **4 , ngày 12/11/2025**
+
+*   [Xem thêm về Thông báo lịch học HT2 Phát triển kỹ năng lập trình Game ứng dụng trong thực tế (SE116.Q11.1) ngày 12/11/2025](https://daa.uit.edu.vn/node/36871 "Thông báo lịch học HT2 Phát triển kỹ năng lập trình Game ứng dụng trong thực tế (SE116.Q11.1) ngày 12/11/2025")
+    
+
+[Thông báo lịch học HT2 Phát triển kỹ năng lập trình Game ứng dụng trong thực tế (SE116.Q11.1) ngày 29/10/2025](https://daa.uit.edu.vn/node/36870)
+
+---------------------------------------------------------------------------------------------------------------------------------------------------
+
+T5, 23/10/2025 - 11:15
+
+CBGD : **Đặng Việt Dũng**  
+Khoa/ Bộ môn : **CNPM**  
+Môn học : **Phát triển kỹ năng lập trình Game ứng dụng trong thực tế (SE116)**  
+Lớp : **SE116.Q11.1**  
+Phòng : **B3.12**  
+Thời gian :  
+\- Tiết bắt đầu : **9**  
+\- Tiết kết thúc : **10**  
+Thứ : **4 , ngày 29/10/2025**
+
+*   [Xem thêm về Thông báo lịch học HT2 Phát triển kỹ năng lập trình Game ứng dụng trong thực tế (SE116.Q11.1) ngày 29/10/2025](https://daa.uit.edu.vn/node/36870 "Thông báo lịch học HT2 Phát triển kỹ năng lập trình Game ứng dụng trong thực tế (SE116.Q11.1) ngày 29/10/2025")
     
 
 Trang
@@ -224,4 +224,7 @@ Trang
 *   …
 *   [sau ›](https://daa.uit.edu.vn/thongbaochinhquy?page=8 "Đến trang kế sau")
     
-*   [cuối »](https://daa.uit.edu.vn/thongbaochinhquy?page=1923 "Đến trang cuối cùng")
+*   [cuối »](https://daa.uit.edu.vn/thongbaochinhquy?page=1925 "Đến trang cuối cùng")
+    
+
+Back to top

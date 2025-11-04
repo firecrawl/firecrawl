@@ -6,118 +6,105 @@
 
 **Các thông báo dành cho hệ đại học chính quy.**
 
-[Thông báo lớp NT106](https://daa.uit.edu.vn/thongbao/thong-bao-lop-nt106)
+[Thời khóa biểu HKI năm 2012-2013](https://daa.uit.edu.vn/thongbao/thoi-khoa-bieu-hki-nam-2012-2013)
 
----------------------------------------------------------------------------
+-----------------------------------------------------------------------------------------------------
 
-T2, 18/06/2012 - 08:43
+T6, 31/08/2012 - 18:07
 
-PĐT thông báo Lớp NT106 Bắt đầu học ngày 20/6/2012 chiều thư 4 và chiều thứ năm phòng 304
+Sinh viên xem chi tiết trong file đính kèm.  
+     Ngày khai giảng năm học 2012 - 2013: 04/9/2012.  
+     Ngày bắt đầu học: 05/9/2012
 
-*   [Xem thêm về Thông báo lớp NT106](https://daa.uit.edu.vn/thongbao/thong-bao-lop-nt106 "Thông báo lớp NT106")
+*   [Xem thêm về Thời khóa biểu HKI năm 2012-2013](https://daa.uit.edu.vn/thongbao/thoi-khoa-bieu-hki-nam-2012-2013 "Thời khóa biểu HKI năm 2012-2013")
     
 
-[Thông báo không mở lớp OSYS1](https://daa.uit.edu.vn/thongbao/thong-bao-khong-mo-lop-osys1)
+[DS sinh viên khóa 7 thi xếp lớp Anh văn](https://daa.uit.edu.vn/thongbao/ds-sinh-vien-khoa-7-thi-xep-lop-anh-van)
 
----------------------------------------------------------------------------------------------
+-------------------------------------------------------------------------------------------------------------------
 
-T6, 15/06/2012 - 13:46
+T6, 31/08/2012 - 17:37
 
-PĐT Thông Báo không mở lớp OSYS1 trong học kỳ hè 2011-2012   
-lý do thiếu Giảng Viên giảng dạy.  
-các bạn sinh viên đề nghị mở lớp này sẽ phải đăng ký lại vào học kỳ sau.
+Sinh viên xem danh sách phòng thi, giờ thi trong file đính kèm
 
-*   [Xem thêm về Thông báo không mở lớp OSYS1](https://daa.uit.edu.vn/thongbao/thong-bao-khong-mo-lop-osys1 "Thông báo không mở lớp OSYS1")
+*   [Xem thêm về DS sinh viên khóa 7 thi xếp lớp Anh văn](https://daa.uit.edu.vn/thongbao/ds-sinh-vien-khoa-7-thi-xep-lop-anh-van "DS sinh viên khóa 7 thi xếp lớp Anh văn")
     
 
-[Thông báo học hè - TKB 2011-2012](https://daa.uit.edu.vn/thongbao/thong-bao-hoc-he-tkb-2011-2012)
+[Thông báo v/v kiểm tra Anh văn đầu khóa 2012](https://daa.uit.edu.vn/thongbao/thong-bao-vv-kiem-tra-anh-van-dau-khoa-2012)
 
----------------------------------------------------------------------------------------------------
+----------------------------------------------------------------------------------------------------------------------------
 
-T6, 15/06/2012 - 13:45
+T5, 30/08/2012 - 11:59
 
-PĐT thông báo tkb hè 2011-2012 (file đính kèm)   
-thời gian hoc kì hè bắt đầu từ ngày 18/06/2012.  
-Lớp:HCMT1.C31 Bắt đầu học chiều ngày 19/06/2012( chiều thứ 3)
-
-*   [Xem thêm về Thông báo học hè - TKB 2011-2012](https://daa.uit.edu.vn/thongbao/thong-bao-hoc-he-tkb-2011-2012 "Thông báo học hè - TKB 2011-2012")
-    
-
-[Thông báo kế hoạch học giáo dục quốc phòng trong học kỳ hè](https://daa.uit.edu.vn/thongbao/thong-bao-ke-hoach-hoc-giao-duc-quoc-phong-trong-hoc-ky-he)
-
----------------------------------------------------------------------------------------------------------------------------------------------------------
-
-T5, 07/06/2012 - 11:01
-
-kế hoạch học Giáo dục quốc phòng trong học kỳ hè:  
-\- Đăng ký từ 02/07/2012 đến 13/07/2012 (Sinh viên đến Trung tâm Giáo dục Quốc phòng đăng ký).  
-\- Bắt đầu học từ 23/07/2012.
-
-*   [Xem thêm về Thông báo kế hoạch học giáo dục quốc phòng trong học kỳ hè](https://daa.uit.edu.vn/thongbao/thong-bao-ke-hoach-hoc-giao-duc-quoc-phong-trong-hoc-ky-he "Thông báo kế hoạch học giáo dục quốc phòng trong học kỳ hè")
-    
-
-[Thông báo nộp bái thu hoạch các lớp : SMET2.C21; LỚP:SMET2.C22; LỚP:SMET2.C23; LỚP:SMET2.C11; LỚP: SMET2.C12. ; LỚP:CS101.C21](https://daa.uit.edu.vn/thongbao/thong-bao-nop-bai-thu-hoach-cac-lop-smet2c21-lopsmet2c22-lopsmet2c23-lopsmet2c11-lop)
-
-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-
-T5, 07/06/2012 - 11:01
-
-Phòng ĐT thông báo ngày 25 tháng 6 năm 2012 sinh viên học những lớp trên nộp bài thu hoạch tại Giảng đường 1 tòa nhà thư viện giảng đường vào lúc 8h30 đến 11h 00. Hết thời gian trên PĐT không giải quyết mọi trường hợp ngoại lệ.
-
-*   [Xem thêm về Thông báo nộp bái thu hoạch các lớp : SMET2.C21; LỚP:SMET2.C22; LỚP:SMET2.C23; LỚP:SMET2.C11; LỚP: SMET2.C12. ; LỚP:CS101.C21](https://daa.uit.edu.vn/thongbao/thong-bao-nop-bai-thu-hoach-cac-lop-smet2c21-lopsmet2c22-lopsmet2c23-lopsmet2c11-lop "Thông báo nộp bái thu hoạch các lớp : SMET2.C21; LỚP:SMET2.C22; LỚP:SMET2.C23; LỚP:SMET2.C11; LỚP: SMET2.C12. ; LỚP:CS101.C21")
-    
-
-[Nhận giấy báo thi tuyển đại học](https://daa.uit.edu.vn/thongbao/nhan-giay-bao-thi-tuyen-dai-hoc)
-
----------------------------------------------------------------------------------------------------
-
-T2, 04/06/2012 - 11:00
-
-Phòng Đào tạo Đại học trường ĐH Công nghệ Thông tin thông báo các thí sinh đã nộp hồ sơ tuyển sinh Đại học tại trường ĐH Công nghệ Thông tin (mã hồ sơ 99), liên hệ lấy giấy báo thi trực tiếp tại phòng Đào tạo Đại học (phòng 102  - tòa nhà mới), từ ngày 06/6 đến ngày 08/6/2012. Sau thời hạn trên, trường sẽ gửi giấy báo thi qua đường bưu điện theo địa chỉ thí sinh ghi trong bì thư nộp cho trường.  
-  Khi lên nhận giấy báo thi mang theo phiếu số 2 và biên lai lệ phí thu hồ sơ.
-
-*   [Xem thêm về Nhận giấy báo thi tuyển đại học](https://daa.uit.edu.vn/thongbao/nhan-giay-bao-thi-tuyen-dai-hoc "Nhận giấy báo thi tuyển đại học")
-    
-
-[Những lưu ý với sinh viên tham gia lễ tốt nghiệp ngày 08/06/2012](https://daa.uit.edu.vn/thongbao/nhung-luu-y-voi-sinh-vien-tham-gia-le-tot-nghiep-ngay-08062012)
-
--------------------------------------------------------------------------------------------------------------------------------------------------------------------
-
-CN, 03/06/2012 - 10:52
-
-**07 giờ 30** **ngày 08 tháng 6 năm 2012**, sinh viên bắt buộc tập trung tại hội trường để nghe dặn dò trước khi bắt đầu lễ.  
-Kể từ 08 giờ 00, sinh viên không được di chuyển, ngồi tại chỗ theo sơ đồ trong suốt quá trình lễ, trừ trường hợp lên nhận bằng và được sự điều động của Ban tổ chức lễ. Sinh viên đến trễ không được tham gia chương trình lễ.  
-Các bạn [xem chi tiết thông tin tại đây](https://daa.uit.edu.vn/sites/daa/files/files/Luu%20y%20sinh%20vien%20tham%20gia%20le.pdf)
+Tất cả sinh viên trúng tuyển khóa 2012 (kể cả sinh viên đã có chứng chỉ Anh văn) đều phải tham dự kỳ kiểm tra tiếng Anh đầu khóa vào lúc 13h00 ngày 04/9/2012 tại trường.  
+   
+Sinh viên xem nội dung kiểm tra AV đầu khóa [tại đây](https://daa.uit.edu.vn/sites/daa/files/files/Noi_dung_kiem_tra_AV_dau_khoa.pdf)
 .  
+Ngoài ra, sau lễ khai giảng sáng ngày 04/9, Cô Nguyễn Thị Tuyết Vinh - trưởng bộ môn Anh văn sẽ phổ biến các vấn đề liên quan và các khóa học anh văn bắt đầu triển khai từ năm học này.  
 
-*   [Xem thêm về Những lưu ý với sinh viên tham gia lễ tốt nghiệp ngày 08/06/2012](https://daa.uit.edu.vn/thongbao/nhung-luu-y-voi-sinh-vien-tham-gia-le-tot-nghiep-ngay-08062012 "Những lưu ý với sinh viên tham gia lễ tốt nghiệp ngày 08/06/2012")
+*   [Xem thêm về Thông báo v/v kiểm tra Anh văn đầu khóa 2012](https://daa.uit.edu.vn/thongbao/thong-bao-vv-kiem-tra-anh-van-dau-khoa-2012 "Thông báo v/v kiểm tra Anh văn đầu khóa 2012")
     
 
-[Thời gian điều chỉnh ĐKHP](https://daa.uit.edu.vn/thongbao/thoi-gian-dieu-chinh-dkhp)
+[Kết quả ĐKHP học kỳ I năm 2012-2013](https://daa.uit.edu.vn/thongbao/ket-qua-dkhp-hoc-ky-i-nam-2012-2013)
 
----------------------------------------------------------------------------------------
+-----------------------------------------------------------------------------------------------------------
 
-T5, 31/05/2012 - 10:21
+T3, 28/08/2012 - 18:09
 
-Phòng Đào tạo Đại học thông báo thời hạn điều chỉnh đăng ký học phần học kỳ hè (giai đoạn điều chỉnh môn học) sẽ kéo dài đến hết ngày 04/6/2012.
+Phòng Đào tạo Đại học thông báo Kết quả ĐKHP học kỳ I năm 2012 - 2013. Sinh viên xem chi tiết trong file đính kèm.  
+      Lưu ý: Những sinh viên có tên trong danh sách các lớp  hủy, đề nghị rút thên khỏi danh sách lớp đó và có thể đăng ký học môn mới ở những lớp được mở mà chưa đủ số lượng tối đa.
 
-*   [Xem thêm về Thời gian điều chỉnh ĐKHP](https://daa.uit.edu.vn/thongbao/thoi-gian-dieu-chinh-dkhp "Thời gian điều chỉnh ĐKHP")
+*   [Xem thêm về Kết quả ĐKHP học kỳ I năm 2012-2013](https://daa.uit.edu.vn/thongbao/ket-qua-dkhp-hoc-ky-i-nam-2012-2013 "Kết quả ĐKHP học kỳ I năm 2012-2013")
     
 
-*   [Xem thêm về Lịch thi HKII 2011-2012](https://daa.uit.edu.vn/thongbao/lich-thi-hkii-2011-2012 "Lịch thi HKII 2011-2012")
+[Điểm HKII năm 2011-2012 của một số môn ( bổ sung)](https://daa.uit.edu.vn/thongbao/diem-hkii-nam-2011-2012-cua-mot-so-mon-bo-sung)
+
+------------------------------------------------------------------------------------------------------------------------------------
+
+T3, 28/08/2012 - 15:40
+
+Phòng Đào tạo thông báo điểm một số môn trong học kỳ II năm 2011 - 2012.Sinh viên xem chi tiết trong file đính kèm.
+
+*   [Xem thêm về Điểm HKII năm 2011-2012 của một số môn ( bổ sung)](https://daa.uit.edu.vn/thongbao/diem-hkii-nam-2011-2012-cua-mot-so-mon-bo-sung "Điểm HKII năm 2011-2012 của một số môn ( bổ sung)")
     
 
-[Thông báo v/v tổ chức lễ tốt nghiệp đại học hệ chính quy đợt 1 năm 2012](https://daa.uit.edu.vn/thongbao/thong-bao-vv-chuc-le-tot-nghiep-dai-hoc-he-chinh-quy-dot-1-nam-2012)
+[Thay đổi ngày thi thực hành Khoa KHMT](https://daa.uit.edu.vn/thongbao/thay-doi-ngay-thi-thuc-hanh-khoa-khmt)
 
--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+---------------------------------------------------------------------------------------------------------------
 
-T3, 29/05/2012 - 23:08
+T3, 28/08/2012 - 15:38
 
-Thực hiện kế hoạch số 02 /KH-ĐHCNTT-CTSV ngày 29 tháng 5 năm 2012 về việc tổ chức Lễ tốt nghiệp Đại học hệ chính quy đợt 1 năm 2012, nay Phòng Công tác sinh viên thông báo kế hoạch tổ chức cụ thể như sau:  
-Xem chi tiết [thông báo tại đây](https://daa.uit.edu.vn/sites/daa/files/files/Thong%20Bao%20Le%20Tot%20Nghiep%20Dot%201%20-%202012.pdf)
-.
+Do ngày mai 29/08, trường bị cúp điện nên các lớp thi thực hành ngày 29/08/2012 sẽ đổi sang thi ngày 05/09/2012
 
-*   [Xem thêm về Thông báo v/v tổ chức lễ tốt nghiệp đại học hệ chính quy đợt 1 năm 2012](https://daa.uit.edu.vn/thongbao/thong-bao-vv-chuc-le-tot-nghiep-dai-hoc-he-chinh-quy-dot-1-nam-2012 "Thông báo v/v tổ chức lễ tốt nghiệp đại học hệ chính quy đợt 1 năm 2012")
+*   [Xem thêm về Thay đổi ngày thi thực hành Khoa KHMT](https://daa.uit.edu.vn/thongbao/thay-doi-ngay-thi-thuc-hanh-khoa-khmt "Thay đổi ngày thi thực hành Khoa KHMT")
+    
+
+*   [Xem thêm về Lịch thi học kỳ hè khoa KHMT](https://daa.uit.edu.vn/thongbao/lich-thi-hoc-ky-he-khoa-khmt "Lịch thi học kỳ hè khoa KHMT")
+    
+
+[Thông báo ngưng đăng ký học phần HKI 2012-2013](https://daa.uit.edu.vn/thongbao/thong-bao-ngung-dang-ky-hoc-phan-hki-2012-2013)
+
+---------------------------------------------------------------------------------------------------------------------------------
+
+T5, 16/08/2012 - 09:25
+
+PĐT thông báo tạm ngưng chương trình ĐKHP ngày 16/8/2012. SV sẽ tiếp tục đăng ký học phần từ ngày 17/8/2012. Thời hạn đăng kỳ học phần đợt 1 được gia hạn đến hết ngày 26/8/2012.
+
+*   [Xem thêm về Thông báo ngưng đăng ký học phần HKI 2012-2013](https://daa.uit.edu.vn/thongbao/thong-bao-ngung-dang-ky-hoc-phan-hki-2012-2013 "Thông báo ngưng đăng ký học phần HKI 2012-2013")
+    
+
+*   [Xem thêm về Tuyển sinh cử nhân tài năng khóa 05](https://daa.uit.edu.vn/thongbao/tuyen-sinh-cu-nhan-tai-nang-khoa-05 "Tuyển sinh cử nhân tài năng khóa 05")
+    
+
+[Thông báo lịch lớp:NT106.C31](https://daa.uit.edu.vn/thongbao/thong-bao-lich-lopnt106c31)
+
+-------------------------------------------------------------------------------------------
+
+T6, 27/07/2012 - 09:41
+
+PĐT Thông báo Lớp:NT106.C31 thi ngày 29/08/2012 Phòng Thi 107 ca 1 giờ thi 8h00
+
+*   [Xem thêm về Thông báo lịch lớp:NT106.C31](https://daa.uit.edu.vn/thongbao/thong-bao-lich-lopnt106c31 "Thông báo lịch lớp:NT106.C31")
     
 
 Trang
@@ -128,10 +115,6 @@ Trang
 *   [‹ trước](https://daa.uit.edu.vn/thongbaochinhquy?page=1921 "Đến trang kế trước")
     
 *   …
-*   [1916](https://daa.uit.edu.vn/thongbaochinhquy?page=1915 "Đến trang 1916")
-    
-*   [1917](https://daa.uit.edu.vn/thongbaochinhquy?page=1916 "Đến trang 1917")
-    
 *   [1918](https://daa.uit.edu.vn/thongbaochinhquy?page=1917 "Đến trang 1918")
     
 *   [1919](https://daa.uit.edu.vn/thongbaochinhquy?page=1918 "Đến trang 1919")
@@ -145,6 +128,10 @@ Trang
 *   1923
 *   [1924](https://daa.uit.edu.vn/thongbaochinhquy?page=1923 "Đến trang 1924")
     
+*   [1925](https://daa.uit.edu.vn/thongbaochinhquy?page=1924 "Đến trang 1925")
+    
+*   [1926](https://daa.uit.edu.vn/thongbaochinhquy?page=1925 "Đến trang 1926")
+    
 *   [sau ›](https://daa.uit.edu.vn/thongbaochinhquy?page=1923 "Đến trang kế sau")
     
-*   [cuối »](https://daa.uit.edu.vn/thongbaochinhquy?page=1923 "Đến trang cuối cùng")
+*   [cuối »](https://daa.uit.edu.vn/thongbaochinhquy?page=1925 "Đến trang cuối cùng")

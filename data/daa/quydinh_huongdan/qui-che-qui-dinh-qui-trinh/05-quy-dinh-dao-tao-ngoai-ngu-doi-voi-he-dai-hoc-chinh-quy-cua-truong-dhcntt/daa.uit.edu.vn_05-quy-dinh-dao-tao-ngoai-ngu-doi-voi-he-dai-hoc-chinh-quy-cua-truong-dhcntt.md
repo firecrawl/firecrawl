@@ -69,6 +69,3 @@ Trang
 *   [sau ›](https://daa.uit.edu.vn/05-quy-dinh-dao-tao-ngoai-ngu-doi-voi-he-dai-hoc-chinh-quy-cua-truong-dhcntt?page=1 "Đến trang kế sau")
     
 *   [cuối »](https://daa.uit.edu.vn/05-quy-dinh-dao-tao-ngoai-ngu-doi-voi-he-dai-hoc-chinh-quy-cua-truong-dhcntt?page=8 "Đến trang cuối cùng")
-    
-
-Back to top

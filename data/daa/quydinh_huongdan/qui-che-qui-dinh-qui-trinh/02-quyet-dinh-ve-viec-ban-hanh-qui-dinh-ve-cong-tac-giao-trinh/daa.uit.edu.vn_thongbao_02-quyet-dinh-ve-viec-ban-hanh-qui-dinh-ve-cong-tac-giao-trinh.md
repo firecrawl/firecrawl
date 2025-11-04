@@ -45,6 +45,3 @@ Trang
 *   [sau ›](https://daa.uit.edu.vn/thongbao/02-quyet-dinh-ve-viec-ban-hanh-qui-dinh-ve-cong-tac-giao-trinh?page=1 "Đến trang kế sau")
     
 *   [cuối »](https://daa.uit.edu.vn/thongbao/02-quyet-dinh-ve-viec-ban-hanh-qui-dinh-ve-cong-tac-giao-trinh?page=8 "Đến trang cuối cùng")
-    
-
-Back to top

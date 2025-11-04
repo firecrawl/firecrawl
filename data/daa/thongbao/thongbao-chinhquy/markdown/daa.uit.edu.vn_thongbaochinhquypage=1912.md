@@ -6,142 +6,127 @@
 
 **Các thông báo dành cho hệ đại học chính quy.**
 
-[Thông Báo Thi Lớp AEP 03:04:05](https://daa.uit.edu.vn/thongbao/thong-bao-thi-lop-aep-030405)
+[Thông Báo Lịch Thi Thực Hành Khoa KHMT](https://daa.uit.edu.vn/thongbao/thong-bao-lich-thi-thuc-hanh-khoa-khmt)
 
------------------------------------------------------------------------------------------------
+---------------------------------------------------------------------------------------------------------------------
 
-T3, 18/12/2012 - 09:57
+T3, 15/01/2013 - 14:51
 
-PDT thông báo thi AEP 03:04:05 ngày 25/1/2013 ca 2 ;9h30 tại phong 301
+Lịch thi thực hành khoa KHMT (file đính kèm)
 
-*   [Xem thêm về Thông Báo Thi Lớp AEP 03:04:05](https://daa.uit.edu.vn/thongbao/thong-bao-thi-lop-aep-030405 "Thông Báo Thi Lớp AEP 03:04:05")
+*   [Xem thêm về Thông Báo Lịch Thi Thực Hành Khoa KHMT](https://daa.uit.edu.vn/thongbao/thong-bao-lich-thi-thuc-hanh-khoa-khmt "Thông Báo Lịch Thi Thực Hành Khoa KHMT")
     
 
-[Thông Báo Mở Lớp CARC1 Kiến trúc Máy tính](https://daa.uit.edu.vn/thongbao/thong-bao-mo-lop-carc1-kien-truc-may-tinh)
+[Thông Báo Lịch Thi Anh Văn (K7)](https://daa.uit.edu.vn/thongbao/thong-bao-lich-thi-anh-van-k7)
 
------------------------------------------------------------------------------------------------------------------------
+---------------------------------------------------------------------------------------------------
 
-T2, 17/12/2012 - 14:53
+T3, 15/01/2013 - 14:45
 
-PDT thông báo mở lớp Kiến trúc Máy tính (CARC1) theo đề nghị của sinh viên.  
-Những sinh viên ở lớp này bắt buộc phải đăng ký lại trên DAA . Nếu kết thúc Đăng ký học phần lớp này có số đăng ký <30  sinh viên thì sẽ bị hủy.
+Bộ môn Anh văn thông báo lịch thi (k7) file đính kèm.
 
-*   [Xem thêm về Thông Báo Mở Lớp CARC1 Kiến trúc Máy tính](https://daa.uit.edu.vn/thongbao/thong-bao-mo-lop-carc1-kien-truc-may-tinh "Thông Báo Mở Lớp CARC1 Kiến trúc Máy tính")
+*   [Xem thêm về Thông Báo Lịch Thi Anh Văn (K7)](https://daa.uit.edu.vn/thongbao/thong-bao-lich-thi-anh-van-k7 "Thông Báo Lịch Thi Anh Văn  (K7)")
     
 
-[Thông báo sinh viên nộp thiếu học phí học kỳ 1 NH 2012-2013](https://daa.uit.edu.vn/thongbao/thong-bao-sinh-vien-nop-thieu-hoc-phi-hoc-ky-1-nh-2012-2013)
-
------------------------------------------------------------------------------------------------------------------------------------------------------------
-
-CN, 16/12/2012 - 21:37
-
-Sinh viên từ khóa 6 trở về trước chưa nộp hoặc nộp thiếu học phí học kỳ 1, năm học 2012-2013 xem chi tiết thông báo trong file đính kèm.
-
-*   [Xem thêm về Thông báo sinh viên nộp thiếu học phí học kỳ 1 NH 2012-2013](https://daa.uit.edu.vn/thongbao/thong-bao-sinh-vien-nop-thieu-hoc-phi-hoc-ky-1-nh-2012-2013 "Thông báo sinh viên nộp thiếu học phí học kỳ 1 NH 2012-2013")
-    
-
-[Thông báo nộp học phí bổ sung HK1 của sinh viên khóa 7](https://daa.uit.edu.vn/thongbao/thong-bao-nop-hoc-phi-bo-sung-hk1-cua-sinh-vien-khoa-7)
-
--------------------------------------------------------------------------------------------------------------------------------------------------
-
-CN, 16/12/2012 - 21:31
-
-Sinh viên xem chi tiêt trong các file đính kèm.
-
-*   [Xem thêm về Thông báo nộp học phí bổ sung HK1 của sinh viên khóa 7](https://daa.uit.edu.vn/thongbao/thong-bao-nop-hoc-phi-bo-sung-hk1-cua-sinh-vien-khoa-7 "Thông báo nộp học phí bổ sung HK1 của sinh viên khóa 7")
-    
-
-[Thông Báo Học Giáo Dục Quốc Phòng](https://daa.uit.edu.vn/thongbao/thong-bao-hoc-giao-duc-quoc-phong)
-
--------------------------------------------------------------------------------------------------------
-
-T5, 13/12/2012 - 08:07
-
-PDT thông báo học GDQP ( file đính kèm)
-
-*   [Xem thêm về Thông Báo Học Giáo Dục Quốc Phòng](https://daa.uit.edu.vn/thongbao/thong-bao-hoc-giao-duc-quoc-phong "Thông Báo Học Giáo Dục Quốc Phòng")
-    
-
-[Thông Báo Điều chỉnh ĐKHP](https://daa.uit.edu.vn/thongbao/thong-bao-dieu-chinh-dkhp)
-
----------------------------------------------------------------------------------------
-
-T4, 12/12/2012 - 14:51
-
-Những sv đã đăng ký các lớp LT của Khoa HTTT ISxxx.D22 cập nhật lại ĐKHP của mình để thỏa lớp TH tương ứng, nếu sau thời hạn đăng ký mà vẫn còn trùng thì sẽ bị hủy lớp trùng.
-
-*   [Xem thêm về Thông Báo Điều chỉnh ĐKHP](https://daa.uit.edu.vn/thongbao/thong-bao-dieu-chinh-dkhp "Thông Báo Điều chỉnh ĐKHP")
-    
-
-[Thông Báo Danh sách phòng thi](https://daa.uit.edu.vn/thongbao/thong-bao-danh-sach-phong-thi)
-
------------------------------------------------------------------------------------------------
-
-T4, 12/12/2012 - 14:48
-
-PĐT Thông báo phòng thi các khóa (file đính kèm) đề nghị sinh viên đi đúng giờ và phòng thi.
-
-*   [Xem thêm về Thông Báo Danh sách phòng thi](https://daa.uit.edu.vn/thongbao/thong-bao-danh-sach-phong-thi "Thông Báo Danh sách phòng thi ")
-    
-
-[Thông báo lịch thi học kỳ 1 bộ môn Anh văn](https://daa.uit.edu.vn/thongbao/thong-bao-lich-thi-hoc-ky-1-bo-mon-anh-van)
+[Thông báo Điều chỉnh đăng ký môn học CNTN](https://daa.uit.edu.vn/thongbao/thong-bao-dieu-chinh-dang-ky-mon-hoc-cntn)
 
 -------------------------------------------------------------------------------------------------------------------------
 
-T4, 12/12/2012 - 13:42
+T3, 15/01/2013 - 10:14
 
-1\. Ngày 15/012013 khóa 6:
+Môn CS101 Nguyên lý ngôn ngữ lập trình (3TC) sẽ đổi thành CS111 Nguyên lý và phương pháp lập trình (4TC).  
+PĐT thông báo hủy lớp CS101.D21.CNTN sinh vên đăng ký lại vào lớp:CS111.D21.CNTN Nguyên lý và phương pháp lập trình (4TC)
 
-Ca 1 : AV4 D11 /  AV1 D11 / AV3 D12 / AV3 D13 / AV3 D14
-
-Ca 2: AV4 D12 / AV2 D11 /  AV3 D16 / AV3 D17
-
-2\. Ngày thi 18/01/2013 Khóa 7
-
-Ca 1 : AVBT D11 / AVBT D12 / AV 1 D11 / AV1 D12 / AV1 D13
-
-Cà 2 : AV2 D11 / AV2 D12 / AV1 D14 / AV1 D15 / AV1 D16
-
-Ca 3 : AV 1 D17 / AV1 D18 / AV1 D19 / AV1 D110
-
-Ca 4 : AV 1 D111 / AV 1 D112 / Av1 D113 / AV1 D114 
-
-*   [Xem thêm về Thông báo lịch thi học kỳ 1 bộ môn Anh văn](https://daa.uit.edu.vn/thongbao/thong-bao-lich-thi-hoc-ky-1-bo-mon-anh-van "Thông báo lịch thi học kỳ 1 bộ môn Anh văn")
+*   [Xem thêm về Thông báo Điều chỉnh đăng ký môn học CNTN](https://daa.uit.edu.vn/thongbao/thong-bao-dieu-chinh-dang-ky-mon-hoc-cntn "Thông báo Điều chỉnh đăng ký môn học CNTN")
     
 
-[THÔNG BÁO VỀ VIỆC CHUYỂN NGÀNH CHO SINH VIÊN](https://daa.uit.edu.vn/thongbao/thong-bao-ve-viec-chuyen-nganh-cho-sinh-vien)
+[Thống Báo ĐKHP CNTN](https://daa.uit.edu.vn/thongbao/thong-bao-dkhp-cntn)
 
------------------------------------------------------------------------------------------------------------------------------
+-----------------------------------------------------------------------------
 
-T3, 11/12/2012 - 15:06
+T2, 14/01/2013 - 14:02
 
-Sinh viên xem chi tiết trong file đính kèm.
+PĐT thông báo ngày 20/1/2013 kết thúc đăng ký học phần của sinh viên CNTN
 
-*   [Xem thêm về THÔNG BÁO VỀ VIỆC CHUYỂN NGÀNH CHO SINH VIÊN](https://daa.uit.edu.vn/thongbao/thong-bao-ve-viec-chuyen-nganh-cho-sinh-vien "THÔNG BÁO VỀ VIỆC CHUYỂN NGÀNH CHO SINH VIÊN")
+*   [Xem thêm về Thống Báo ĐKHP CNTN](https://daa.uit.edu.vn/thongbao/thong-bao-dkhp-cntn "Thống Báo ĐKHP CNTN")
     
 
-[Thông báo Lịch Thi Học Kỳ 1, 2012-2013](https://daa.uit.edu.vn/thongbao/thong-bao-lich-thi-hoc-ky-1-2012-2013)
+[Thông Báo Đăng Ký Học Phần Của Cử Nhân Tài Năng](https://daa.uit.edu.vn/thongbao/thong-bao-dang-ky-hoc-phan-cua-cu-nhan-tai-nang)
 
-----------------------------------------------------------------------------------------------------------------
+-----------------------------------------------------------------------------------------------------------------------------------
 
-T2, 10/12/2012 - 14:40
+T5, 10/01/2013 - 16:02
 
-PDT thông báo lịch thi (điều chỉnh)  
-Sinh viên xem lịch thi,
+PĐT thông báo sinh viên học lớp CNTN đăng ký học phần tại web daa,  
+Riêng CNTN khóa 7 còn các môn sau sẽ đăng ký học chung với Chính quy:  
+1\. Nhập môn Mạch số hoặc Vật lý kỹ thuật  
+2\. Giải tích 2  
+3\. Anh văn 2  
+4\. GDTC 2  
+Sinh viên tham khảo lịch học CNTN trong file đính kem
 
-1\. Xem kỹ danh sách lớp và phòng thi 
+*   [Xem thêm về Thông Báo Đăng Ký Học Phần Của Cử Nhân Tài Năng](https://daa.uit.edu.vn/thongbao/thong-bao-dang-ky-hoc-phan-cua-cu-nhan-tai-nang "Thông Báo Đăng Ký Học Phần Của Cử Nhân Tài Năng")
+    
 
-2\. SV có thẻ mới được vào phòng thi
+[Thông báo làm thẻ ATM miễn phí cho sinh viên](https://daa.uit.edu.vn/thongbao/thong-bao-lam-atm-mien-phi-cho-sinh-vien)
 
-3\. Có mặt trước phòng thi 15 phút
+-------------------------------------------------------------------------------------------------------------------------
 
-4\. Tuân thủ các qui định về thi cử
+T2, 07/01/2013 - 23:05
 
-   
-   
- 
+Thông báo về việc làm thẻ ATM miễn phí cho sinh viên đại học chính qui tại Ngân hàng BIDV và ACB.  
+Vui lòng xem chi tiết trong các file đính kèm.
 
-*   [Xem thêm về Thông báo Lịch Thi Học Kỳ 1, 2012-2013](https://daa.uit.edu.vn/thongbao/thong-bao-lich-thi-hoc-ky-1-2012-2013 "Thông báo Lịch Thi Học Kỳ 1, 2012-2013")
+*   [Xem thêm về Thông báo làm thẻ ATM miễn phí cho sinh viên](https://daa.uit.edu.vn/thongbao/thong-bao-lam-atm-mien-phi-cho-sinh-vien "Thông báo làm thẻ ATM miễn phí cho sinh viên")
+    
+
+[Thông Báo đăng ký lớp thực hành khoa MMT&TT học kỳ -2012-2013](https://daa.uit.edu.vn/thongbao/thong-bao-dang-ky-lop-thuc-hanh-khoa-mmttt-hoc-ky-2012-2013)
+
+-------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+T6, 04/01/2013 - 15:31
+
+PĐT thông báo sinh viên đăng ký các lớp thực hành của khoa MMT&TT trên mục ĐKHP tại daa.
+
+*   [Xem thêm về Thông Báo đăng ký lớp thực hành khoa MMT&TT học kỳ -2012-2013](https://daa.uit.edu.vn/thongbao/thong-bao-dang-ky-lop-thuc-hanh-khoa-mmttt-hoc-ky-2012-2013 "Thông Báo đăng ký lớp thực hành khoa MMT&TT học kỳ -2012-2013")
+    
+
+[Thông Báo Mở Thêm Lớp CNET.D26](https://daa.uit.edu.vn/thongbao/thong-bao-mo-them-lop-cnetd26)
+
+------------------------------------------------------------------------------------------------
+
+T6, 04/01/2013 - 12:23
+
+Khoa MMT& TT Thông Báo Mở Thêm Lớp CNET.D26 hiện đã cho đăng ký trên daa, sinh viên có nhu cầu học thì đăng ký tại daa .
+
+*   [Xem thêm về Thông Báo Mở Thêm Lớp CNET.D26](https://daa.uit.edu.vn/thongbao/thong-bao-mo-them-lop-cnetd26 "Thông Báo Mở Thêm Lớp CNET.D26")
+    
+
+[Thông báo v/v đăng ký học phần của SV hệ Tài năng](https://daa.uit.edu.vn/thongbao/thong-bao-vv-dang-ky-hoc-phan-cua-sv-he-tai-nang)
+
+--------------------------------------------------------------------------------------------------------------------------------------
+
+T3, 01/01/2013 - 12:43
+
+**THÔNG BÁO**
+
+**Về việc đăng ký học phần của SV các lớp tài năng**
+
+**Khoa học máy tính và An ninh thông tin**  
+Từ học kỳ 2 năm học 2012 – 2013, SV các lớp tài năng Khoa học máy tính và An ninh thông tin phải đăng ký học phần (ĐKHP) trên hệ thống ĐKHP của phòng Đào tạo Đại học. Việc ĐKHP của SV hệ tài năng là bắt buộc, được dùng làm căn cứ để tính học phí và ghi nhận kết quả môn học.
+
+*   [Xem thêm về Thông báo v/v đăng ký học phần của SV hệ Tài năng](https://daa.uit.edu.vn/thongbao/thong-bao-vv-dang-ky-hoc-phan-cua-sv-he-tai-nang "Thông báo v/v đăng ký học phần của SV hệ Tài năng")
+    
+
+[Thông báo thời gian tổ chức lễ tốt nghiệp đợt 2-2012.](https://daa.uit.edu.vn/thongbao/thong-bao-thoi-gian-chuc-le-tot-nghiep-dot-2-2012)
+
+-------------------------------------------------------------------------------------------------------------------------------------------
+
+T4, 26/12/2012 - 16:06
+
+Phòng CTSV thông báo thời gian tổ chức lễ tốt nghiệp đợt 2-2012.(file đính kèm)
+
+*   [Xem thêm về Thông báo thời gian tổ chức lễ tốt nghiệp đợt 2-2012.](https://daa.uit.edu.vn/thongbao/thong-bao-thoi-gian-chuc-le-tot-nghiep-dot-2-2012 "Thông báo thời gian tổ chức lễ tốt nghiệp đợt 2-2012. ")
     
 
 Trang
@@ -172,4 +157,4 @@ Trang
 *   …
 *   [sau ›](https://daa.uit.edu.vn/thongbaochinhquy?page=1913 "Đến trang kế sau")
     
-*   [cuối »](https://daa.uit.edu.vn/thongbaochinhquy?page=1923 "Đến trang cuối cùng")
+*   [cuối »](https://daa.uit.edu.vn/thongbaochinhquy?page=1925 "Đến trang cuối cùng")

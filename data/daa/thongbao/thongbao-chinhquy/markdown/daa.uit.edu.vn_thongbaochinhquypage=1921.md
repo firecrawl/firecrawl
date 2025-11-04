@@ -6,109 +6,131 @@
 
 **Các thông báo dành cho hệ đại học chính quy.**
 
-[Thông báo lịch lớp:NT106.C31](https://daa.uit.edu.vn/thongbao/thong-bao-lich-lopnt106c31)
-
--------------------------------------------------------------------------------------------
-
-T6, 27/07/2012 - 09:41
-
-PĐT Thông báo Lớp:NT106.C31 thi ngày 29/08/2012 Phòng Thi 107 ca 1 giờ thi 8h00
-
-*   [Xem thêm về Thông báo lịch lớp:NT106.C31](https://daa.uit.edu.vn/thongbao/thong-bao-lich-lopnt106c31 "Thông báo lịch lớp:NT106.C31")
-    
-
-[Điểm HKII của một số môn](https://daa.uit.edu.vn/thongbao/diem-hkii-cua-mot-so-mon)
-
--------------------------------------------------------------------------------------
-
-T4, 25/07/2012 - 15:33
-
-Phòng Đào tạo thông báo điểm một số môn trong học kỳ II năm 2011 - 2012. Sinh viên xem chi tiết trong file đính kèm.
-
-*   [Xem thêm về Điểm HKII của một số môn](https://daa.uit.edu.vn/thongbao/diem-hkii-cua-mot-so-mon "Điểm HKII của một số môn")
-    
-
-[Thông báo nghỉ học thực hành môn CSDL chiều thứ 4](https://daa.uit.edu.vn/thongbao/thong-bao-nghi-hoc-thuc-hanh-mon-csdl-chieu-thu-4)
-
----------------------------------------------------------------------------------------------------------------------------------------
-
-T2, 23/07/2012 - 09:01
-
-PĐT thông báo nghỉ học Thực hành môn CSDL chiều thứ 4 của Thầy Huỳnh Hữu Việt ( lớp Học kỳ hè). Lịch học hè sẽ thông báo sau.
-
-*   [Xem thêm về Thông báo nghỉ học thực hành môn CSDL chiều thứ 4](https://daa.uit.edu.vn/thongbao/thong-bao-nghi-hoc-thuc-hanh-mon-csdl-chieu-thu-4 "Thông báo nghỉ học thực hành môn CSDL chiều thứ 4")
-    
-
-*   [Xem thêm về Thông báo thu HP hè 2011-2012 và KLTN đợt 2 - 2012](https://daa.uit.edu.vn/thongbao/thong-bao-thu-hp-he-2011-2012-va-kltn-dot-2-2012 "Thông báo thu HP hè 2011-2012 và KLTN đợt 2 - 2012")
-    
-
-[Thông báo nghỉ học lớp:CSC01.C33+C34+C35](https://daa.uit.edu.vn/thongbao/thong-bao-nghi-hoc-lopcsc01c33c34c35)
-
------------------------------------------------------------------------------------------------------------------
-
-T4, 11/07/2012 - 13:27
-
-PDT thông báo :Lớp:CSC01.C33+C34+C35 nghỉ học ngày 12/07/2010 do GV:Mai Tiến Dũng đi công tác , tuần sau học lại bình thường.
-
-*   [Xem thêm về Thông báo nghỉ học lớp:CSC01.C33+C34+C35](https://daa.uit.edu.vn/thongbao/thong-bao-nghi-hoc-lopcsc01c33c34c35 "Thông báo nghỉ học lớp:CSC01.C33+C34+C35")
-    
-
-[Thông báo lịch thi hè - phòng thi hè 2011-2012](https://daa.uit.edu.vn/thongbao/thong-bao-lich-thi-he-phong-thi-he-2011-2012)
-
--------------------------------------------------------------------------------------------------------------------------------
-
-T4, 11/07/2012 - 11:09
-
-PĐT thông báo lịch thi, phòng thi kết thúc học phần học kỳ hè 2011-2012. Đề nghị sinh viên kiểm tra và xem lịch thi phòng thi cho đúng để thi kết thúc môn học đạt kết quả tốt.  
-Nếu có điều chỉnh sai sót Sinh viên liên hệ PĐT trước ngày 30/7/2012.
-
-*   [Xem thêm về Thông báo lịch thi hè - phòng thi hè 2011-2012](https://daa.uit.edu.vn/thongbao/thong-bao-lich-thi-he-phong-thi-he-2011-2012 "Thông báo lịch thi hè - phòng thi hè 2011-2012")
-    
-
-[Thông báo khoa HTTT lịch học thực hành môn CSDL trong HK hè như sau](https://daa.uit.edu.vn/thongbao/thong-bao-khoa-httt-lich-hoc-thuc-hanh-mon-csdl-trong-hk-he-nhu-sau)
-
----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-
-T6, 06/07/2012 - 00:00
-
-2 lớp CSDL ( DBSS1.....) của cô Đỗ Thị Minh Phụng giảng dạy sẽ bắt đầu học thực hành vào ngày 11/06/2012 ( ngày 13/06/2012 sẽ nghỉ vì trường đi du lịch hè), sau đó sẽ học vào các ngày thứ 4 & thứ 6 hàng tuần, lớp thực hành sẽ do GV Huỳnh Hữu Việt giảng dạy.
-
-*   [Xem thêm về Thông báo khoa HTTT lịch học thực hành môn CSDL trong HK hè như sau](https://daa.uit.edu.vn/thongbao/thong-bao-khoa-httt-lich-hoc-thuc-hanh-mon-csdl-trong-hk-he-nhu-sau "Thông báo khoa HTTT lịch học thực hành môn CSDL trong HK hè như sau")
-    
-
-[Thông báo danh sách lớp - danh sách đóng học phí hè 2011-2012](https://daa.uit.edu.vn/thongbao/thong-bao-danh-sach-lop-danh-sach-dong-hoc-phi-he-2011-2012)
+[Thông báo nghỉ học và học bù của GV Lê Hoài Nghĩa (Khoa KTMT)](https://daa.uit.edu.vn/thongbao/thong-bao-nghi-hoc-va-hoc-bu-cua-gv-le-hoai-nghia-khoa-ktmt)
 
 -------------------------------------------------------------------------------------------------------------------------------------------------------------
 
-T3, 26/06/2012 - 08:39
+T4, 12/09/2012 - 09:47
 
-PĐT Thông Báo Danh Sách Lớp-Danh Sách Đóng Học Phí hè 2011-2012 đề nghị sinh viên kiểm tra lại danh sách lớp, danh sách đóng học phí, nếu có điều chỉnh Sinh Viên liên hệ PDT (P.102) từ ngày thông báo đến hết ngày 02/7/2012.  
-Sau ngày 02/7/2012 PĐT chuyển danh sách đóng học phí đến phòng Kế Hoạch Tài Chính để phục vụ công tác thu học phí hè vì vậy mọi yêu cầu điều chỉnh của sinh viên sẽ không được giải quyết.
+Phòng Đào tạo Đại học thông báo lịch nghỉ và học bù một số môn của Giảng viên Lê Hoài Nghĩa, khoa Kỹ thuật Máy tính giảng dạy. Sinh viên xem chi tiết trong file đính kèm.
 
-*   [Xem thêm về Thông báo danh sách lớp - danh sách đóng học phí hè 2011-2012](https://daa.uit.edu.vn/thongbao/thong-bao-danh-sach-lop-danh-sach-dong-hoc-phi-he-2011-2012 "Thông báo danh sách lớp - danh sách đóng học phí hè 2011-2012")
+*   [Xem thêm về Thông báo nghỉ học và học bù của GV Lê Hoài Nghĩa (Khoa KTMT)](https://daa.uit.edu.vn/thongbao/thong-bao-nghi-hoc-va-hoc-bu-cua-gv-le-hoai-nghia-khoa-ktmt "Thông báo nghỉ học và học bù của GV Lê Hoài Nghĩa (Khoa KTMT)")
     
 
-[Điểm các môn lý luận chính trị học tại trung tâm lý luận chính trị](https://daa.uit.edu.vn/thongbao/diem-cac-mon-ly-luan-chinh-tri-hoc-tai-trung-tam-ly-luan-chinh-tri)
+[Thông Báo Nghỉ Học Lớp IS106.D11; Lớp: IS106.D12;lớp DBSS1.D11; DBSS1.D12 (phòng101- ca 3,4)](https://daa.uit.edu.vn/node/6)
 
--------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+------------------------------------------------------------------------------------------------------------------------------
 
-T3, 26/06/2012 - 08:37
+T6, 07/09/2012 - 00:00
 
-Trung tâm Lý luận Chính trị thông báo điểm các môn Chính trị của sinh viên Khóa 01 & Khóa 02 học lại tại Trung tâm Lý luận Chính trị. Sinh viên xem chi tiết trong file đính kèm.
+PĐT Thông báo:  
+\- Thầy Nguyễn Đình Thuân : nghỉ vào ngày thứ 2 (10/09/2012) lớp IS106.D11 và IS106.D12 môn Khai thác dữ liệu ( Sáng + chiều)
 
-*   [Xem thêm về Điểm các môn lý luận chính trị học tại trung tâm lý luận chính trị](https://daa.uit.edu.vn/thongbao/diem-cac-mon-ly-luan-chinh-tri-hoc-tai-trung-tam-ly-luan-chinh-tri "Điểm các môn lý luận chính trị học tại trung tâm lý luận chính trị")
+\- Thầy Huỳnh Hữu Việt : nghỉ vào 2 ngày thứ 2,3(10&11/09/2012) lớp DBSS1.D11(phòng 302- ca 1,2). DBSS1.D12 (phòng101- ca 3,4)
+
+*   [Xem thêm về Thông Báo Nghỉ Học Lớp IS106.D11; Lớp: IS106.D12;lớp DBSS1.D11; DBSS1.D12 (phòng101- ca 3,4)](https://daa.uit.edu.vn/node/6 "Thông Báo Nghỉ Học Lớp IS106.D11; Lớp: IS106.D12;lớp DBSS1.D11; DBSS1.D12 (phòng101- ca 3,4)")
     
 
-[Thông báo mở lớp CARC1.C31](https://daa.uit.edu.vn/thongbao/thong-bao-mo-lop-carc1c31)
+[DS thi xếp lớp Anh văn khóa 07\_đợt 2](https://daa.uit.edu.vn/node/7)
 
-----------------------------------------------------------------------------------------
+-----------------------------------------------------------------------
 
-T3, 19/06/2012 - 14:42
+T5, 06/09/2012 - 15:43
 
-PDT thông báo Lớp:CARC1.C31 bắt đầu học ngày 25/06/2012  
-học phòng 108.(sáng-chiều).
+  Phòng Đào tạo Đại học thông báo danh sách thi xếp lớp Anh văn khóa 07\_ Đợt 2 trong file đính kèm.  
+       Thời gian: 7h30ph ngày 07/9/2012.  
+Files đính kèm : [DS THI XEP LOP ANH VAN KHOA 07\_ DOT 2.xls](http://daa.uit.edu.vn/Data/UploadedFiles/DS%20THI%20XEP%20LOP%20ANH%20VAN%20KHOA%2007_%20DOT%202.xls)
+ 
 
-*   [Xem thêm về Thông báo mở lớp CARC1.C31](https://daa.uit.edu.vn/thongbao/thong-bao-mo-lop-carc1c31 "Thông báo mở lớp CARC1.C31")
+*   [Xem thêm về DS thi xếp lớp Anh văn khóa 07\_đợt 2](https://daa.uit.edu.vn/node/7 "DS thi xếp lớp Anh văn khóa 07_đợt 2")
+    
+
+[Thông báo nhập lớp CE313.D11 + CE314.B0B](https://daa.uit.edu.vn/thongbao/thong-bao-nhap-lop-ce313d11-ce314b0b)
+
+-----------------------------------------------------------------------------------------------------------------
+
+T5, 06/09/2012 - 08:08
+
+PĐT Thông báo, theo yêu cầu của khoa KTMT, nhập lớp Lớp CE313.D11+CE314.B0B, học chiều thứ 5
+
+*   [Xem thêm về Thông báo nhập lớp CE313.D11 + CE314.B0B](https://daa.uit.edu.vn/thongbao/thong-bao-nhap-lop-ce313d11-ce314b0b "Thông báo nhập lớp CE313.D11 + CE314.B0B")
+    
+
+[Thời khóa biểu HKI năm 2012-2013 ( mới cập nhật)](https://daa.uit.edu.vn/thongbao/thoi-khoa-bieu-hki-nam-2012-2013-moi-cap-nhat)
+
+----------------------------------------------------------------------------------------------------------------------------------
+
+T5, 06/09/2012 - 00:00
+
+PĐT thông báo TKB mới cập nhật một số lớp đề nghị mở, còn một số lớp đề nghị mở đang chờ phân công giảng viên, PĐT sẽ thông báo sau.
+
+*   [Xem thêm về Thời khóa biểu HKI năm 2012-2013 ( mới cập nhật)](https://daa.uit.edu.vn/thongbao/thoi-khoa-bieu-hki-nam-2012-2013-moi-cap-nhat "Thời khóa biểu HKI năm 2012-2013 ( mới cập nhật)")
+    
+
+[Thông báo nghỉ học các lớp sau](https://daa.uit.edu.vn/thongbao/thong-bao-nghi-hoc-cac-lop-sau)
+
+-------------------------------------------------------------------------------------------------
+
+T4, 05/09/2012 - 14:01
+
+Để tạo điều kiện cho sinh viên K7 học sinh hoạt đầu khóa tại giảng đường 1;2;3 PĐT thông báo các lớp sau nghỉ học tuần học đầu tiên (tuần khai giảng) tuần sau học lại bình thường;  
+Lớp:SMET2.D11   
+Lớp:NT101.D11   
+Lớp:NT110.D11   
+Lớp:IS201.D12   
+Lớp:NT106.D11   
+Lớp:MAT04.D11   
+Lớp:MAT04.D12   
+Lớp:NT104.D11
+
+*   [Xem thêm về Thông báo nghỉ học các lớp sau](https://daa.uit.edu.vn/thongbao/thong-bao-nghi-hoc-cac-lop-sau "Thông báo nghỉ học các lớp sau")
+    
+
+[Thông báo v/v chấm phúc trả bài thi của các môn trong HK2 năm 2011-2012 như sau:](https://daa.uit.edu.vn/thongbao/thong-bao-vv-cham-phuc-tra-bai-thi-cua-cac-mon-trong-hk2-nam-2011-2012-nhu-sau)
+
+---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+T4, 05/09/2012 - 14:00
+
+Sau khi công bố điểm thi các môn học của Học kỳ 2 năm học 2011-2012 cho toàn thể sinh viên, Phòng Đào tạo Đại học thông báo đến sinh viên kế hoạch chấm phúc tra bài thi của các môn trong Học Kỳ 2 năm học 2011-2012 như sau:  
+Từ ngày 06/09/2012 đến 20/09/2012 : Phòng Đào tạo/Khoa /Bộ môn nhận đơn phúc tra bài thi kết thúc học kỳ của sinh viên đối với các môn học thuộc sự quản lý của mình và tổ chức việc phúc tra.  
+Lưu ý:   
+1\. Phòng Đào tạo/Khoa /Bộ môn không nhận chấm phúc tra các môn thí nghiệm, thực hành, giáo dục thể chất.  
+
+*   [Xem thêm về Thông báo v/v chấm phúc trả bài thi của các môn trong HK2 năm 2011-2012 như sau:](https://daa.uit.edu.vn/thongbao/thong-bao-vv-cham-phuc-tra-bai-thi-cua-cac-mon-trong-hk2-nam-2011-2012-nhu-sau "Thông báo v/v chấm phúc trả bài thi của các môn trong HK2 năm 2011-2012 như sau:")
+    
+
+[Thông báo nghỉ học](https://daa.uit.edu.vn/thongbao/thong-bao-nghi-hoc)
+
+-------------------------------------------------------------------------
+
+T4, 05/09/2012 - 14:00
+
+Lớp Hệ điều hành OSYS1.D15 do thầy Hà Lê Hoài Trung đảm nhiệm giảng dạy nghỉ học sáng thứ 5. Tuần sau, lớp học bình thường.
+
+*   [Xem thêm về Thông báo nghỉ học](https://daa.uit.edu.vn/thongbao/thong-bao-nghi-hoc "Thông báo nghỉ học")
+    
+
+[Thông báo điểm cập nhật HK2 2011-2012](https://daa.uit.edu.vn/thongbao/thong-bao-diem-cap-nhat-hk2-2011-2012)
+
+---------------------------------------------------------------------------------------------------------------
+
+T4, 05/09/2012 - 13:59
+
+PDT Gửi Bảng điểm mới cập nhật ( fine đính kèm)
+
+*   [Xem thêm về Thông báo điểm cập nhật HK2 2011-2012](https://daa.uit.edu.vn/thongbao/thong-bao-diem-cap-nhat-hk2-2011-2012 "Thông báo điểm cập nhật HK2 2011-2012")
+    
+
+[Thông báo nghỉ học lớp:OSYS1.D17](https://daa.uit.edu.vn/thongbao/thong-bao-nghi-hoc-loposys1d17)
+
+---------------------------------------------------------------------------------------------------
+
+T4, 05/09/2012 - 13:50
+
+Thông Báo Nghỉ Học Lớp:OSYS1.D17 Ngày 8/9/2012 do GV bận công việc, lịch học bù GV thông báo sau.
+
+*   [Xem thêm về Thông báo nghỉ học lớp:OSYS1.D17](https://daa.uit.edu.vn/thongbao/thong-bao-nghi-hoc-loposys1d17 "Thông báo nghỉ học lớp:OSYS1.D17")
     
 
 Trang
@@ -119,10 +141,6 @@ Trang
 *   [‹ trước](https://daa.uit.edu.vn/thongbaochinhquy?page=1920 "Đến trang kế trước")
     
 *   …
-*   [1916](https://daa.uit.edu.vn/thongbaochinhquy?page=1915 "Đến trang 1916")
-    
-*   [1917](https://daa.uit.edu.vn/thongbaochinhquy?page=1916 "Đến trang 1917")
-    
 *   [1918](https://daa.uit.edu.vn/thongbaochinhquy?page=1917 "Đến trang 1918")
     
 *   [1919](https://daa.uit.edu.vn/thongbaochinhquy?page=1918 "Đến trang 1919")
@@ -136,6 +154,10 @@ Trang
     
 *   [1924](https://daa.uit.edu.vn/thongbaochinhquy?page=1923 "Đến trang 1924")
     
+*   [1925](https://daa.uit.edu.vn/thongbaochinhquy?page=1924 "Đến trang 1925")
+    
+*   [1926](https://daa.uit.edu.vn/thongbaochinhquy?page=1925 "Đến trang 1926")
+    
 *   [sau ›](https://daa.uit.edu.vn/thongbaochinhquy?page=1922 "Đến trang kế sau")
     
-*   [cuối »](https://daa.uit.edu.vn/thongbaochinhquy?page=1923 "Đến trang cuối cùng")
+*   [cuối »](https://daa.uit.edu.vn/thongbaochinhquy?page=1925 "Đến trang cuối cùng")

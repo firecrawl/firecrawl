@@ -48,6 +48,3 @@ Khu phố 34, Phường Linh Xuân, Thành phố Hồ Chí Minh.
 *   Điện thoại: (08) 37251993 Ext: 113 (Hệ từ xa qua mạng),112 (Hệ chính quy)
     
 *   Email: [phongdaotaodh@uit.edu.vn](mailto:phongdaotaodh@uit.edu.vn)
-    
-
-Back to top

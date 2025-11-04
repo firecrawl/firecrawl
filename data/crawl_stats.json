@@ -1,27 +1,27 @@
 {
   "summary": {
-    "total_pages": 1278,
-    "success_count": 1278,
+    "total_pages": 126,
+    "success_count": 126,
     "error_count": 0,
     "skipped_count": 0,
     "success_rate": 100.0,
-    "total_size_mb": 25.34
+    "total_size_mb": 2.92
   },
   "performance": {
-    "duration_seconds": 8161.52,
-    "duration_minutes": 136.03,
-    "pages_per_minute": 9.4,
-    "mb_per_minute": 0.19
+    "duration_seconds": 279.05,
+    "duration_minutes": 4.65,
+    "pages_per_minute": 27.09,
+    "mb_per_minute": 0.63
   },
   "seeds": {
     "https://daa.uit.edu.vn/content/cong-thong-tin-dao-tao": {
       "pages": 1,
-      "size_mb": 0.008279800415039062,
+      "size_mb": 0.008168220520019531,
       "errors": 0
     },
     "https://tuyensinh.uit.edu.vn/nganh-dao-tao": {
       "pages": 14,
-      "size_mb": 0.25202465057373047,
+      "size_mb": 0.26955604553222656,
       "errors": 0
     },
     "https://daa.uit.edu.vn/content/chuc-nang-nhiem-vu-cua-phong-dao-tao-dai-hoc": {
@@ -30,186 +30,11 @@
       "errors": 0
     },
     "https://daa.uit.edu.vn/thongbaochinhquy": {
-      "pages": 98,
-      "size_mb": 2.2284975051879883,
-      "errors": 0
-    },
-    "https://daa.uit.edu.vn/thongbaotuxa": {
-      "pages": 2,
-      "size_mb": 0.04857158660888672,
-      "errors": 0
-    },
-    "https://daa.uit.edu.vn/qui-che-qui-dinh-qui-trinh": {
-      "pages": 40,
-      "size_mb": 0.4063138961791992,
-      "errors": 0
-    },
-    "https://daa.uit.edu.vn/quy-che-quy-dinh-dao-tao-dai-hoc-cua-dhqg-hcm": {
-      "pages": 47,
-      "size_mb": 0.6486034393310547,
-      "errors": 0
-    },
-    "https://daa.uit.edu.vn/quy-che-quy-dinh-dao-tao-dai-hoc-cua-bo-gddt": {
-      "pages": 45,
-      "size_mb": 0.5822267532348633,
-      "errors": 0
-    },
-    "https://daa.uit.edu.vn/content/quy-dinh-dao-tao-ngan-han": {
-      "pages": 1,
-      "size_mb": 0.0027942657470703125,
-      "errors": 0
-    },
-    "https://daa.uit.edu.vn/content/quy-trinh-danh-cho-can-bo-giang-day": {
-      "pages": 1,
-      "size_mb": 0.01867961883544922,
-      "errors": 0
-    },
-    "https://daa.uit.edu.vn/thongbao/huong-dan-tra-cuu-va-xac-minh-van-bang-tot-nghiep-dai-hoc": {
-      "pages": 500,
-      "size_mb": 5.8556013107299805,
-      "errors": 0
-    },
-    "https://daa.uit.edu.vn/content/huong-dan-sinh-vien-dai-hoc-he-chinh-quy-thuc-hien-cac-quy-dinh-ve-chuan-qua-trinh-va-chuan": {
-      "pages": 1,
-      "size_mb": 0.10008525848388672,
-      "errors": 0
-    },
-    "https://daa.uit.edu.vn/thongbao/huong-dan-trien-khai-day-va-hoc-qua-mang-trong-thoi-gian-phong-chong-dich-covid-19": {
-      "pages": 501,
-      "size_mb": 14.579903602600098,
-      "errors": 0
-    },
-    "https://daa.uit.edu.vn/kehoachnam": {
-      "pages": 1,
-      "size_mb": 0.0038824081420898438,
-      "errors": 0
-    },
-    "https://daa.uit.edu.vn/cqui/ctdt-khoa-2025": {
-      "pages": 1,
-      "size_mb": 0.011157989501953125,
-      "errors": 0
-    },
-    "https://daa.uit.edu.vn/cqui/ctdt-khoa-2024": {
-      "pages": 1,
-      "size_mb": 0.0016956329345703125,
-      "errors": 0
-    },
-    "https://daa.uit.edu.vn/cqui/ctdt-khoa-2023": {
-      "pages": 1,
-      "size_mb": 0.0016956329345703125,
-      "errors": 0
-    },
-    "https://daa.uit.edu.vn/cqui/ctdt-khoa-2022": {
-      "pages": 1,
-      "size_mb": 0.0016956329345703125,
-      "errors": 0
-    },
-    "https://daa.uit.edu.vn/cqui/ctdt-khoa-2021": {
-      "pages": 1,
-      "size_mb": 0.0018024444580078125,
-      "errors": 0
-    },
-    "https://daa.uit.edu.vn/cqui/ctdt-khoa-2020": {
-      "pages": 1,
-      "size_mb": 0.0016956329345703125,
-      "errors": 0
-    },
-    "https://daa.uit.edu.vn/cqui/ctdt-khoa-2019": {
-      "pages": 1,
-      "size_mb": 0.0016956329345703125,
-      "errors": 0
-    },
-    "https://daa.uit.edu.vn/cqui/ctdt-khoa-2018": {
-      "pages": 1,
-      "size_mb": 0.0016956329345703125,
-      "errors": 0
-    },
-    "https://daa.uit.edu.vn/cqui/ctdt-khoa-2017": {
-      "pages": 1,
-      "size_mb": 0.0016956329345703125,
-      "errors": 0
-    },
-    "https://daa.uit.edu.vn/cqui/ctdt-khoa-2016": {
-      "pages": 1,
-      "size_mb": 0.0016956329345703125,
-      "errors": 0
-    },
-    "https://daa.uit.edu.vn/cqui/ctdt-khoa-2015": {
-      "pages": 1,
-      "size_mb": 0.0016956329345703125,
-      "errors": 0
-    },
-    "https://daa.uit.edu.vn/cqui/ctdt-khoa-2014": {
-      "pages": 1,
-      "size_mb": 0.0016956329345703125,
-      "errors": 0
-    },
-    "https://daa.uit.edu.vn/cqui/ctdt-khoa-2013": {
-      "pages": 1,
-      "size_mb": 0.0018024444580078125,
-      "errors": 0
-    },
-    "https://daa.uit.edu.vn/cqui/ctdt-khoa-2012": {
-      "pages": 1,
-      "size_mb": 0.0018024444580078125,
-      "errors": 0
-    },
-    "https://daa.uit.edu.vn/content/chuong-trinh-dao-tao-cu": {
-      "pages": 1,
-      "size_mb": 0.01187896728515625,
-      "errors": 0
-    },
-    "https://daa.uit.edu.vn/content/bang-tom-tat-mon-hoc": {
-      "pages": 1,
-      "size_mb": 0.5141229629516602,
-      "errors": 0
-    },
-    "https://daa.uit.edu.vn/tu-xa/ctdt-khoa-2024": {
-      "pages": 1,
-      "size_mb": 0.0059986114501953125,
-      "errors": 0
-    },
-    "https://daa.uit.edu.vn/tu-xa/ctdt-khoa-2023": {
-      "pages": 1,
-      "size_mb": 0.0040378570556640625,
-      "errors": 0
-    },
-    "https://daa.uit.edu.vn/tu-xa/ctdt-khoa-2022": {
-      "pages": 1,
-      "size_mb": 0.0040378570556640625,
-      "errors": 0
-    },
-    "https://daa.uit.edu.vn/tu-xa/ctdt-khoa-2021": {
-      "pages": 1,
-      "size_mb": 0.002254486083984375,
-      "errors": 0
-    },
-    "https://daa.uit.edu.vn/tu-xa/ctdt-khoa-2020": {
-      "pages": 1,
-      "size_mb": 0.003826141357421875,
-      "errors": 0
-    },
-    "https://daa.uit.edu.vn/tu-xa/ctdt-khoa-2019": {
-      "pages": 1,
-      "size_mb": 0.003826141357421875,
-      "errors": 0
-    },
-    "https://daa.uit.edu.vn/tu-xa/ctdt-khoa-2018": {
-      "pages": 1,
-      "size_mb": 0.003826141357421875,
-      "errors": 0
-    },
-    "https://daa.uit.edu.vn/tu-xa/ctdt-khoa-2013": {
-      "pages": 1,
-      "size_mb": 0.0034914016723632812,
-      "errors": 0
-    },
-    "https://daa.uit.edu.vn/tu-xa/ctdt-khoa-2008": {
-      "pages": 1,
-      "size_mb": 0.003826141357421875,
+      "pages": 110,
+      "size_mb": 2.633932113647461,
       "errors": 0
     }
   },
   "errors_by_category": {},
-  "timestamp": "2025-10-30T15:14:12.994265"
+  "timestamp": "2025-11-04T07:23:06.881371"
 }

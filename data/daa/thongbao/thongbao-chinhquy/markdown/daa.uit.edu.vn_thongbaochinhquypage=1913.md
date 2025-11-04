@@ -6,129 +6,133 @@
 
 **Các thông báo dành cho hệ đại học chính quy.**
 
-*   [Xem thêm về Chuong trinh dao tao 3 hoc ky dau cho khoa 07](https://daa.uit.edu.vn/thongbao/chuong-trinh-dao-tao-3-hoc-ky-dau-cho-khoa-07 "Chuong trinh dao tao 3 hoc ky dau cho khoa 07")
+[Thông báo nhận học bổng khuyến khích học tập HK2 NH 2011-2012](https://daa.uit.edu.vn/thongbao/thong-bao-nhan-hoc-bong-khuyen-khich-hoc-tap-hk2-nh-2011-2012)
+
+---------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+T4, 26/12/2012 - 10:28
+
+*   [Xem thêm về Thông báo nhận học bổng khuyến khích học tập HK2 NH 2011-2012](https://daa.uit.edu.vn/thongbao/thong-bao-nhan-hoc-bong-khuyen-khich-hoc-tap-hk2-nh-2011-2012 "Thông báo nhận học bổng khuyến khích học tập HK2 NH 2011-2012")
     
 
-[Thông Báo ĐKHP- Quy Định ĐKHP](https://daa.uit.edu.vn/thongbao/thong-bao-dkhp-quy-dinh-dkhp)
+[THÔNG BÁO NGHỈ TẾT DƯƠNG LỊCH 2013](https://daa.uit.edu.vn/thongbao/thong-bao-nghi-tet-duong-lich-2013)
 
-----------------------------------------------------------------------------------------------
+---------------------------------------------------------------------------------------------------------
 
-T2, 10/12/2012 - 08:17
+T4, 26/12/2012 - 08:42
 
-PĐT Thông báo ĐKHP- Quy Định ĐKHP , yêu cầu sinh viên đọc kỹ để giúp cho việc ĐKHP đúng và đạt kết quả tốt nhất.
+   
+         Căn cứ thông báo của UBND TP.HCM về việc nghỉ Tết Dương lịch, Nhà Trường thông báo đến toàn thể **sinh viên** của Trường được nghỉ Tết Dương lịch năm 2013 trong 04 ngày: từ ngày 29/12/2012 đến hết ngày 01/01/2013.
 
-*   [Xem thêm về Thông Báo ĐKHP- Quy Định ĐKHP](https://daa.uit.edu.vn/thongbao/thong-bao-dkhp-quy-dinh-dkhp "Thông Báo ĐKHP- Quy Định ĐKHP")
+   
+   
+   
+   
+   
+ 
+
+*   [Xem thêm về THÔNG BÁO NGHỈ TẾT DƯƠNG LỊCH 2013](https://daa.uit.edu.vn/thongbao/thong-bao-nghi-tet-duong-lich-2013 "THÔNG BÁO NGHỈ TẾT DƯƠNG LỊCH 2013")
     
 
-[Thông Báo Kế Hoạch Đào Tạo HK 2 2012-2013](https://daa.uit.edu.vn/thongbao/thong-bao-ke-hoach-dao-tao-hk-2-2012-2013)
+[Thông báo về việc bổ sung lịch thi cuối kỳ I năm học 2012 - 2013.(MMT&TT)](https://daa.uit.edu.vn/thongbao/thong-bao-ve-viec-bo-sung-lich-thi-cuoi-ky-i-nam-hoc-2012-2013mmttt)
 
------------------------------------------------------------------------------------------------------------------------
+---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
-T5, 06/12/2012 - 10:08
+T3, 25/12/2012 - 16:08
 
-PĐT thông báo Kế hoạch Đào tạo học kỳ 2, Thời Khóa biểu học kỳ 2(dự kiến).  
-Đề nghị sinh viên xem thời khóa biểu và lên kế hoạch học tập học kỳ 2 để chuẩn bị cho đợt đăng ký học phần học kỳ 2 năm học 2012-2013.
+Thông báo về việc bổ sung lịch thi cuối kỳ I năm học 2012 - 2013.  
+Do theo quy định mới phải có bài thi cuối kỳ tất cả các môn, nên Khoa bổ sung lịch thi thêm 02 môn, cụ thể như sau:  
+ **1\. Môn Thương Mại Điện Tử và Triển Khai Ứng Dụng**  
+\- Thời gian: 8g00 đến 9h30 ngày 02/01/2013  
+\- Địa điểm: Giảng đường 1  
+**2\. Môn Phương Pháp Luận Sáng Tạo Khoa Học**  
+\- Thời gian: 8g00 đến 9h30 ngày 12/01/2013  
+\- Địa điểm: Giảng đường 1, Giảng đường 2  
+\- Hình thức thi: Đề đóng  
+Sinh viên lưu ý để sắp xếp ôn tập và thi tốt.  
 
-*   [Xem thêm về Thông Báo Kế Hoạch Đào Tạo HK 2 2012-2013](https://daa.uit.edu.vn/thongbao/thong-bao-ke-hoach-dao-tao-hk-2-2012-2013 "Thông Báo Kế Hoạch Đào Tạo HK 2 2012-2013")
+*   [Xem thêm về Thông báo về việc bổ sung lịch thi cuối kỳ I năm học 2012 - 2013.(MMT&TT)](https://daa.uit.edu.vn/thongbao/thong-bao-ve-viec-bo-sung-lich-thi-cuoi-ky-i-nam-hoc-2012-2013mmttt "Thông báo về việc bổ sung lịch thi cuối kỳ I năm học 2012 - 2013.(MMT&TT)")
     
 
-[Công ty Renesas tuyển dụng sinh viên tốt nghiệp](https://daa.uit.edu.vn/thongbao/cong-ty-renesas-tuyen-dung-sinh-vien-tot-nghiep)
+[Thông Báo Sinh Viên Được Cấp Chứng Chỉ GDQP](https://daa.uit.edu.vn/thongbao/thong-bao-sinh-vien-duoc-cap-chung-chi-gdqp)
+
+---------------------------------------------------------------------------------------------------------------------------
+
+T3, 25/12/2012 - 09:07
+
+PDT Thông Báo Sinh Viên Được Cấp Chứng Chỉ GDQP ( file đính kèm)
+
+*   [Xem thêm về Thông Báo Sinh Viên Được Cấp Chứng Chỉ GDQP](https://daa.uit.edu.vn/thongbao/thong-bao-sinh-vien-duoc-cap-chung-chi-gdqp "Thông Báo Sinh Viên Được Cấp Chứng Chỉ GDQP")
+    
+
+[Thông báo phát áo phục vụ Lễ TN CNCQ đợt 2 2012](https://daa.uit.edu.vn/thongbao/thong-bao-phat-ao-phuc-vu-le-tn-cncq-dot-2-2012)
 
 -----------------------------------------------------------------------------------------------------------------------------------
 
-T4, 05/12/2012 - 14:47
+T2, 24/12/2012 - 16:13
 
-   
-**Renesas Design Vietnam Co., Ltd. announces:**  
-           **\+ Recruitment:** 10 Analog Design Engineers  
-           **\+ Target candidates:** Engineers/ University students graduating in 2012 or up to March 2013 with major in: **Electronics, Telecoms & Computer Engineering**  
-           **\+ Expected written test:** 08h00, Sunday, December 23, 2012 at RVC office building  
-           **\+ Register for written test at:**  
+Xem file đính kèm
 
-*   [Xem thêm về Công ty Renesas tuyển dụng sinh viên tốt nghiệp](https://daa.uit.edu.vn/thongbao/cong-ty-renesas-tuyen-dung-sinh-vien-tot-nghiep "Công ty Renesas tuyển dụng sinh viên tốt nghiệp")
+*   [Xem thêm về Thông báo phát áo phục vụ Lễ TN CNCQ đợt 2 2012](https://daa.uit.edu.vn/thongbao/thong-bao-phat-ao-phuc-vu-le-tn-cncq-dot-2-2012 "Thông báo phát áo phục vụ Lễ TN CNCQ đợt 2 2012")
     
 
-[Thời gian ĐKHP: (điều chỉnh):](https://daa.uit.edu.vn/thongbao/thoi-gian-dkhp-dieu-chinh)
+[THÔNG BÁO VỀ MÔN GIÁO DỤC THỂ CHẤT](https://daa.uit.edu.vn/thongbao/thong-bao-ve-mon-giao-duc-chat)
 
--------------------------------------------------------------------------------------------
+-----------------------------------------------------------------------------------------------------
 
-T4, 05/12/2012 - 07:50
+T5, 20/12/2012 - 14:48
 
-Thời gian ĐKHP: (điều chỉnh): bắt đầu từ ngày 10/12/2012 đến hết ngày 23/12/2012.
+THÔNG BÁO NÀY CHỈ ÁP DỤNG CHO SINH VIÊN TỪ KHÓA 01 ĐẾN KHÓA 06
 
-*   [Xem thêm về Thời gian ĐKHP: (điều chỉnh):](https://daa.uit.edu.vn/thongbao/thoi-gian-dkhp-dieu-chinh "Thời gian ĐKHP: (điều chỉnh):")
+1\. Những sinh viên đã đăng ký học lại môn GDTC1\_ PEDU1 trong học kỳ I năm học 2012-2013 (đã đăng ký cho Cô Thoa hoặc giảng viên của trung tâm TDTT) đề nghị đăng ký lại tại phòng Đào tạo đại học đến hết ngày 28/12/2012 để giải quyết vấn đề học phí và cập nhật điểm.
+
+*   [Xem thêm về THÔNG BÁO VỀ MÔN GIÁO DỤC THỂ CHẤT](https://daa.uit.edu.vn/thongbao/thong-bao-ve-mon-giao-duc-chat "THÔNG BÁO VỀ MÔN GIÁO DỤC THỂ CHẤT")
     
 
-[Khoa HTTT xin gửi lịch thi kết thúc HK I năm học 2012-2013](https://daa.uit.edu.vn/thongbao/khoa-httt-xin-gui-lich-thi-ket-thuc-hk-i-nam-hoc-2012-2013)
+[Thông Báo Mở Lớp Nhập môn quản trị doanh nghiệp (ITEM1)](https://daa.uit.edu.vn/thongbao/thong-bao-mo-lop-nhap-mon-quan-tri-doanh-nghiep-item1)
 
----------------------------------------------------------------------------------------------------------------------------------------------------------
+-------------------------------------------------------------------------------------------------------------------------------------------------
 
-T3, 04/12/2012 - 09:49
+T5, 20/12/2012 - 14:00
 
-Khoa HTTT xin gửi lịch thi kết thúc HK I năm học 2012-2013, đây là lịch thi tương đối hoàn chỉnh, chỉ có 1 số môn tô màu vàng là chưa chắc chắn, nếu có thay đổi khoa sẽ gửi thông báo sau.
+PDT thông báo mở lớp Nhập môn quản trị doanh nghiệp (ITEM1) theo đề nghị của sinh viên.  
+Những sinh viên ở lớp này bắt buộc phải đăng ký lại trên DAA . Nếu kết thúc Đăng ký học phần lớp này có số đăng ký <30  sinh viên thì sẽ bị hủy.
 
-*   [Xem thêm về Khoa HTTT xin gửi lịch thi kết thúc HK I năm học 2012-2013](https://daa.uit.edu.vn/thongbao/khoa-httt-xin-gui-lich-thi-ket-thuc-hk-i-nam-hoc-2012-2013 "Khoa HTTT xin gửi lịch thi kết thúc HK I năm học 2012-2013")
+*   [Xem thêm về Thông Báo Mở Lớp Nhập môn quản trị doanh nghiệp (ITEM1)](https://daa.uit.edu.vn/thongbao/thong-bao-mo-lop-nhap-mon-quan-tri-doanh-nghiep-item1 "Thông Báo Mở Lớp Nhập môn quản trị doanh nghiệp (ITEM1)")
     
 
-[Thi kết thúc môn học Cơ sở dữ liệu lớp DBSS1.D13 và lớp DBSS1.D14 (học vào thứ 3 và thứ 4, lớp Cô Thuỷ)](https://daa.uit.edu.vn/thongbao/thi-ket-thuc-mon-hoc-co-so-du-lieu-lop-dbss1d13-va-lop-dbss1d14-hoc-vao-thu-3-va-thu-4-lop)
+[THÔNG BÁO ĐKHP HỌC KỲ II NĂM 2012-2013\_NEW (CÓ BỔ SUNG)](https://daa.uit.edu.vn/thongbao/thong-bao-dkhp-hoc-ky-ii-nam-2012-2013new-co-bo-sung)
 
---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+-------------------------------------------------------------------------------------------------------------------------------------------------
 
-T3, 04/12/2012 - 09:42
+T4, 19/12/2012 - 09:16
 
-   
-   
-Lớp DBSS1.D13 sẽ thi kết thúc môn học vào thứ 3 ngày 11/12/2012  
-Thi lý thuyết: 8h00 P.304  
-Thực hành: 13h00 Phòng Lab THCB2
+Sinh viên xem chi tiết trong file đính kèm.
 
-Lớp DBSS1.D14 sẽ thi kết thúc môn CSDL vào thứ 4 ngày 12/12/2012
-
-Thi thực hành: 8h00 Phòng Lab THCB2  
-Thi lý thuyết: 13h00 Phòng 304
-
-   
- 
-
-*   [Xem thêm về Thi kết thúc môn học Cơ sở dữ liệu lớp DBSS1.D13 và lớp DBSS1.D14 (học vào thứ 3 và thứ 4, lớp Cô Thuỷ)](https://daa.uit.edu.vn/thongbao/thi-ket-thuc-mon-hoc-co-so-du-lieu-lop-dbss1d13-va-lop-dbss1d14-hoc-vao-thu-3-va-thu-4-lop "Thi kết thúc môn học Cơ sở dữ liệu lớp DBSS1.D13 và lớp DBSS1.D14 (học vào thứ 3 và thứ 4, lớp Cô Thuỷ)")
+*   [Xem thêm về THÔNG BÁO ĐKHP HỌC KỲ II NĂM 2012-2013\_NEW (CÓ BỔ SUNG)](https://daa.uit.edu.vn/thongbao/thong-bao-dkhp-hoc-ky-ii-nam-2012-2013new-co-bo-sung "THÔNG BÁO ĐKHP HỌC KỲ II NĂM 2012-2013_NEW (CÓ BỔ SUNG)")
     
 
-[Thông báo nghỉ học Hệ điều hành OSYS1.D16 ngày 05/12/2012](https://daa.uit.edu.vn/thongbao/thong-bao-nghi-hoc-he-dieu-hanh-osys1d16-ngay-05122012)
+[Kế hoạch tổ chức lễ tốt nghiệp đợt 2 năm 2012](https://daa.uit.edu.vn/thongbao/ke-hoach-chuc-le-tot-nghiep-dot-2-nam-2012)
 
-----------------------------------------------------------------------------------------------------------------------------------------------------
+----------------------------------------------------------------------------------------------------------------------------
 
-T3, 04/12/2012 - 09:39
+T3, 18/12/2012 - 21:35
 
-Lớp Hệ điều hành OSYS1.D16 do thầy Thiều Xuân Khánh phụ trách giảng dạy tại phòng 108, nghỉ học thứ 4 ngày 05/12/2012 do thầy thi biên chế. tuần sau lớp học bình thưởng.
+Thực hiện ý kiến chỉ đạo của Ban Giám hiệu, phòng Công tác sinh viên phối hợp Đoàn thanh niên chuẩn bị kế hoạch tổ chức Lễ Tốt nghiệp cho sinh viên chính quy đợt 2 năm 2012.  
+Xem chi tiết trong file đính kèm.
 
-*   [Xem thêm về Thông báo nghỉ học Hệ điều hành OSYS1.D16 ngày 05/12/2012](https://daa.uit.edu.vn/thongbao/thong-bao-nghi-hoc-he-dieu-hanh-osys1d16-ngay-05122012 "Thông báo nghỉ học Hệ điều hành OSYS1.D16 ngày 05/12/2012")
+*   [Xem thêm về Kế hoạch tổ chức lễ tốt nghiệp đợt 2 năm 2012](https://daa.uit.edu.vn/thongbao/ke-hoach-chuc-le-tot-nghiep-dot-2-nam-2012 "Kế hoạch tổ chức lễ tốt nghiệp đợt 2 năm 2012")
     
 
-[Phòng Đào tạo Thông báo:Nhận giấy CNTN tạm thời](https://daa.uit.edu.vn/thongbao/phong-dao-tao-thong-baonhan-giay-cntn-tam-thoi)
+[Thông Báo Thi Lớp AEP 03:04:05](https://daa.uit.edu.vn/thongbao/thong-bao-thi-lop-aep-030405)
 
-----------------------------------------------------------------------------------------------------------------------------------
+-----------------------------------------------------------------------------------------------
 
-T6, 23/11/2012 - 08:34
+T3, 18/12/2012 - 09:57
 
-Phòng Đào tạo thông báo: Sinh viên có tên trong danh sách công nhận tốt nghiệp đợt 2 năm 2012 liên hệ Phòng Đào tạo để nhận giấy chứng nhận tốt nghiệp (CNTN) tạm thời.
+PDT thông báo thi AEP 03:04:05 ngày 25/1/2013 ca 2 ;9h30 tại phong 301
 
-Lưu ý:  - Khi nhận giấy CNTN tạm thời, Sinh viên mang theo Chứng minh thư và biên lai đóng tiền Lệ phí xét và tổ chức lễ Tốt nghiệp. Những trường hợp nhận dùm: mang theo Chứng minh thư của sinh viên và của người đại diện nhận.
-
-            - Lệ phí xét và tổ chức lễ tốt nghiệp là 275.000 đồng, đóng trực tiếp tại phòng KH - TC.
-
-*   [Xem thêm về Phòng Đào tạo Thông báo:Nhận giấy CNTN tạm thời](https://daa.uit.edu.vn/thongbao/phong-dao-tao-thong-baonhan-giay-cntn-tam-thoi "Phòng Đào tạo Thông báo:Nhận giấy CNTN tạm thời")
-    
-
-[Thông Báo Danh Sách Tốt Nghiệp Đợt 2](https://daa.uit.edu.vn/thongbao/thong-bao-danh-sach-tot-nghiep-dot-2)
-
--------------------------------------------------------------------------------------------------------------
-
-T2, 19/11/2012 - 09:15
-
-PĐT thông báo danh sách tốt nghiệp đợt 2(file đính kèm)  
- 
-
-*   [Xem thêm về Thông Báo Danh Sách Tốt Nghiệp Đợt 2](https://daa.uit.edu.vn/thongbao/thong-bao-danh-sach-tot-nghiep-dot-2 "Thông Báo Danh Sách Tốt Nghiệp Đợt 2")
+*   [Xem thêm về Thông Báo Thi Lớp AEP 03:04:05](https://daa.uit.edu.vn/thongbao/thong-bao-thi-lop-aep-030405 "Thông Báo Thi Lớp AEP 03:04:05")
     
 
 Trang
@@ -159,4 +163,4 @@ Trang
 *   …
 *   [sau ›](https://daa.uit.edu.vn/thongbaochinhquy?page=1914 "Đến trang kế sau")
     
-*   [cuối »](https://daa.uit.edu.vn/thongbaochinhquy?page=1923 "Đến trang cuối cùng")
+*   [cuối »](https://daa.uit.edu.vn/thongbaochinhquy?page=1925 "Đến trang cuối cùng")

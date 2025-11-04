@@ -94,17 +94,7 @@ Họ và tên \*
 
 Email nhận thông tin \* 
 
-Ngành bạn quan tâm \*
-
-*   Ngành Khoa học Máy tính
-    
-    [](https://tuyensinh.uit.edu.vn/nganh-dao-tao/nganh-khoa-hoc-may-tinh#)
-    
-*   Ngành bạn quan tâm \* 
-
-*   Không tìm thấy kết quả
-
-Ngành Công nghệ Thông tinNgành Hệ thống Thông tin Ngành Khoa học Máy tínhNgành Kỹ thuật Phần mềmNgành Kỹ thuật Máy tínhNgành Mạng máy tính & Truyền thông Dữ liệuNgành An toàn Thông tinNgành Thương mại Điện tửNgành Khoa học Dữ liệuNgành Trí tuệ Nhân tạoNgành Thiết kế Vi mạchNgành Truyền thông Đa phương tiện
+Ngành bạn quan tâm \* Ngành Công nghệ Thông tinNgành Hệ thống Thông tin Ngành Khoa học Máy tínhNgành Kỹ thuật Phần mềmNgành Kỹ thuật Máy tínhNgành Mạng máy tính & Truyền thông Dữ liệuNgành An toàn Thông tinNgành Thương mại Điện tửNgành Khoa học Dữ liệuNgành Trí tuệ Nhân tạoNgành Thiết kế Vi mạchNgành Truyền thông Đa phương tiện
 
      
 

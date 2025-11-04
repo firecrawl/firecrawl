@@ -13,16 +13,16 @@ Các file đính kèm: 
 Bài viết liên quan
 ------------------
 
-*   [Thông báo nghỉ lớp Deep Learning trong khoa học dữ liệu (DS201.Q11.2) ngày 31/10/2025](https://daa.uit.edu.vn/node/36927)
-     (30-10-2025)
-*   [Thông báo lịch học HT2 Công nghệ Web và ứng dụng (SE347.Q13.1) ngày 12/11/2025](https://daa.uit.edu.vn/node/36926)
-     (30-10-2025)
-*   [Thông báo nghỉ lớp Đại số tuyến tính (MA003.Q126) ngày 31/10/2025](https://daa.uit.edu.vn/node/36925)
-     (30-10-2025)
-*   [Thông báo nghỉ lớp Lập trình hướng đối tượng (IT002.Q14) ngày 30/10/2025](https://daa.uit.edu.vn/node/36924)
-     (30-10-2025)
-*   [Thông báo nghỉ lớp Đại số tuyến tính (MA003.Q110) ngày 30/10/2025](https://daa.uit.edu.vn/node/36923)
-     (29-10-2025)
+*   [Thông báo lịch học HT2 Các kĩ thuật học sâu và ứng dụng (CS431.Q12.1) ngày 15/11/2025](https://daa.uit.edu.vn/node/36948)
+     (03-11-2025)
+*   [Thông báo học bù Nhập môn lập trình (IT001.Q116.2) ngày 21/11/2025](https://daa.uit.edu.vn/node/36947)
+     (03-11-2025)
+*   [Thông báo học bù Nhập môn lập trình (IT001.Q112.2) ngày 18/11/2025](https://daa.uit.edu.vn/node/36946)
+     (03-11-2025)
+*   [Thông báo lịch học HT2 Nhập môn ứng dụng di động (SE114.Q11.1) ngày 11/11/2025](https://daa.uit.edu.vn/node/36945)
+     (03-11-2025)
+*   [Thông báo lịch học HT2 Lập trình kịch bản tự động hóa cho quản trị và bảo mật mạng (NT542.Q11.1) ngày 19/12/2025](https://daa.uit.edu.vn/node/36944)
+     (03-11-2025)
 
 Trang
 -----
@@ -47,4 +47,4 @@ Trang
 *   …
 *   [sau ›](https://daa.uit.edu.vn/01-quyet-dinh-ve-viec-ban-hanh-quy-che-dao-tao-theo-hoc-che-tin-chi?page=1 "Đến trang kế sau")
     
-*   [cuối »](https://daa.uit.edu.vn/01-quyet-dinh-ve-viec-ban-hanh-quy-che-dao-tao-theo-hoc-che-tin-chi?page=3871 "Đến trang cuối cùng")
+*   [cuối »](https://daa.uit.edu.vn/01-quyet-dinh-ve-viec-ban-hanh-quy-che-dao-tao-theo-hoc-che-tin-chi?page=3875 "Đến trang cuối cùng")

@@ -411,6 +411,10 @@ def get_content_folder(url: str, title: str = "") -> str:
                 return f"daa/chuongtrinh_daotao/he-tuxa/khoa-{year}"
         return "daa/chuongtrinh_daotao/he-tuxa/khac"
     
+    # Đề án mở ngành
+    elif any(x in text for x in ["de-mo-nganh", "loai-bai-viet/de-mo-nganh"]):
+        return "daa/de-mo-nganh"
+    
     else:
         return "daa/khac/chua-phan-loai"
 
@@ -624,6 +628,139 @@ def parse_numbered_list_from_html(html: str, base_url: str) -> List[str]:
     
     return found_urls
 
+def parse_de_mo_nganh_list_from_html(html: str, base_url: str) -> List[str]:
+    """
+    Parse "đề án mở ngành" (project proposal) list from HTML content.
+    Similar to numbered docs, extracts detail links but without strict numbering requirement.
+    Returns list of detail URLs found in this listing page.
+    
+    Pattern: <a href="/...">Tên đề án...</a> or similar article links
+    """
+    if not html:
+        return []
+    
+    # For de-mo-nganh, we look for article/content links (similar to regulations listing)
+    # Pattern: <a href="...">Article Title</a> with title > 10 chars
+    # Also find links to actual content pages (not just navigation)
+    pattern = r'<a[^>]+href=["\']([^"\']+)["\'][^>]*>([^<]+)</a>'
+    
+    matches = re.findall(pattern, html, re.IGNORECASE)
+    
+    found_urls = []
+    seen_urls = set()
+    
+    for href, title_text in matches:
+        # Build full URL
+        full_url = urljoin(base_url, href)
+        
+        # Skip navigation/footer links
+        skip_keywords = ["sidebar", "footer", "menu", "skip", "home", "back", "login", "search", "tag"]
+        if any(kw in full_url.lower() for kw in skip_keywords):
+            continue
+        
+        # Skip if already processed
+        if full_url in seen_urls:
+            continue
+        
+        # Skip if URL is same as base (listing page itself)
+        if full_url == base_url.rstrip('/'):
+            continue
+        
+        seen_urls.add(full_url)
+        
+        # Clean and filter title
+        title_clean = title_text.strip()
+        title_clean = re.sub(r'\s+', ' ', title_clean)
+        title_clean = title_clean.rstrip('.,;:')[:200]
+        
+        # Only include links with meaningful titles (> 10 chars)
+        if len(title_clean) < 10:
+            continue
+        
+        # Check if URL looks like a detail page (contains content/article keywords)
+        if any(keyword in full_url.lower() for keyword in ["content", "node", "de-mo-nganh", "/2024/", "/2025/"]):
+            found_urls.append(full_url)
+            logger.info(f"Cached de-mo-nganh detail: {full_url} -> {title_clean}")
+    
+    if found_urls:
+        logger.info(f"Found {len(found_urls)} de-mo-nganh detail pages from {base_url}")
+    
+    return found_urls
+
+def trim_markdown_content(markdown: str) -> str:
+    """Trim markdown to main content only: remove navigation, skip-to links, and summarize large tables"""
+    if not markdown:
+        return markdown
+    
+    lines = markdown.split('\n')
+    trimmed_lines = []
+    in_table = False
+    table_lines = []
+    skip_related_section = False
+    
+    for line in lines:
+        stripped = line.strip()
+        
+        # Skip empty lines at the beginning
+        if not trimmed_lines and not stripped:
+            continue
+        
+        # Skip navigation/skip-to links (including variations)
+        if stripped.lower().startswith('[skip'):
+            continue
+        if any(kw in stripped.lower() for kw in ["skip to", "skip navigation", "skip link"]):
+            continue
+        
+        # Skip related information sections
+        if any(kw in stripped.lower() for kw in ["related information", "thông tin liên quan", "liên quan", "related link"]):
+            skip_related_section = True
+            continue
+        
+        # End related section when we hit next heading or content
+        if skip_related_section and stripped and stripped.startswith('#'):
+            skip_related_section = False
+        elif skip_related_section:
+            continue
+        
+        # Detect table start (markdown table lines start with |)
+        if '|' in line and not in_table:
+            in_table = True
+            table_lines = [line]
+        elif in_table:
+            if '|' in line:
+                table_lines.append(line)
+            else:
+                # Table ended, decide whether to include it
+                in_table = False
+                # Include table only if not too large (> 30 rows = skip/summarize)
+                if len(table_lines) <= 30:
+                    trimmed_lines.extend(table_lines)
+                else:
+                    # For large tables, add a summary and skip inline content
+                    col_count = len([c for c in table_lines[0].split('|') if c.strip()])
+                    trimmed_lines.append(f"_[Bảng lớn: {len(table_lines)} dòng, {col_count} cột - bỏ qua để tiết kiệm dung lượng]_\n")
+                table_lines = []
+                # Add the non-table line that ended this table
+                if stripped:
+                    trimmed_lines.append(line)
+        else:
+            trimmed_lines.append(line)
+    
+    # Handle table at end of file
+    if in_table and table_lines:
+        if len(table_lines) <= 30:
+            trimmed_lines.extend(table_lines)
+        else:
+            col_count = len([c for c in table_lines[0].split('|') if c.strip()])
+            trimmed_lines.append(f"_[Bảng lớn: {len(table_lines)} dòng, {col_count} cột - bỏ qua để tiết kiệm dung lượng]_")
+    
+    result = '\n'.join(trimmed_lines)
+    # Clean up excessive newlines (more than 3 in a row)
+    while '\n\n\n\n' in result:
+        result = result.replace('\n\n\n\n', '\n\n\n')
+    
+    return result.strip()
+
 def save_content(url: str, data: Dict[str, Any]):
     global CURRENT_SEED_URL, NUMBERED_DOCS_CACHE
     
@@ -705,14 +842,18 @@ def save_content(url: str, data: Dict[str, Any]):
     
     if data.get("markdown"):
         md_file = markdown_dir / f"{safe_name}.md"
+        markdown_content = data["markdown"]
+        # Trim markdown to main content only
+        markdown_content = trim_markdown_content(markdown_content)
         with open(md_file, "w", encoding="utf-8") as f:
-            f.write(data["markdown"])
+            f.write(markdown_content)
         total_size += md_file.stat().st_size
         logger.info(f"Saved Markdown [{content_folder}]: {md_file.name}")
         log_crawled_file(md_file, url)  # Log to crawled.txt
     
     # Update stats
-    crawl_stats.add_page(CURRENT_SEED_URL, total_size, success=True)
+    if CURRENT_SEED_URL:
+        crawl_stats.add_page(CURRENT_SEED_URL, total_size, success=True)
     
     metadata = {
         "title": data.get("metadata", {}).get("title", ""),
@@ -770,8 +911,8 @@ def crawl_single_seed(app: FirecrawlApp, seed_url: str, cfg: Dict[str, Any], cra
     global CURRENT_SEED_URL
     CURRENT_SEED_URL = seed_url
     
-    max_retries = 3
-    retry_delay = 5
+    max_retries = 5  # Increased from 3 to handle rate limiting better
+    retry_delay = 10  # Increased from 5 to give server more time
     result = {"seed_url": seed_url, "success": False, "pages": 0, "errors": 0}
     
     for attempt in range(max_retries):
@@ -785,6 +926,9 @@ def crawl_single_seed(app: FirecrawlApp, seed_url: str, cfg: Dict[str, Any], cra
                     "formats": ["markdown", "html"],
                     "waitFor": 1000,
                     "timeout": 30000,
+                    "headers": {
+                        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+                    }
                 }
             }
             
@@ -818,6 +962,10 @@ def crawl_single_seed(app: FirecrawlApp, seed_url: str, cfg: Dict[str, Any], cra
                         html_content = page.get("html", "")
                         if "quydinh_huongdan" in get_content_folder(page_url, page.get("metadata", {}).get("title", "")):
                             new_detail_urls = parse_numbered_list_from_html(html_content, page_url)
+                            detail_urls_found.extend(new_detail_urls)
+                        elif "de-mo-nganh" in get_content_folder(page_url, page.get("metadata", {}).get("title", "")):
+                            # For "đề án" pages, extract detail links (similar to numbered docs)
+                            new_detail_urls = parse_de_mo_nganh_list_from_html(html_content, page_url)
                             detail_urls_found.extend(new_detail_urls)
                         
                         save_content(page_url, page)

@@ -6,108 +6,158 @@
 
 **Các thông báo dành cho hệ đại học chính quy.**
 
-[THÔNG BÁO HỌC BÙ LỚP THỰC HÀNH NT307.D21.2 NGÀY 06/06/2013](https://daa.uit.edu.vn/thongbao/thong-bao-hoc-bu-lop-thuc-hanh-nt307d212-ngay-06062013)
+[Thông Báo Về Việc Khoa CNPM Không Mở lớp Trong HK Hè 2012-2013](https://daa.uit.edu.vn/thongbao/thong-bao-ve-viec-khoa-cnpm-khong-mo-lop-trong-hk-he-2012-2013)
 
------------------------------------------------------------------------------------------------------------------------------------------------------
+-----------------------------------------------------------------------------------------------------------------------------------------------------------------
 
-T6, 31/05/2013 - 08:18
+T5, 06/06/2013 - 08:54
 
-CBGD : **Trần Hồng Nghi**
+PDT Thông Báo Khoa CNPM Không Mở lớp Trong HK Hè 2012-2013.
 
-Khoa/ Bộ môn : **MMT&TT**
-
-Môn học : **NT307**
-
-Lớp : **NT307.D21.2**
-
-Sĩ số : **35**
-
-Thời gian : Tiết bắt đầu : **6**
-
-Tiết kết thúc : **9**
-
-Thứ : **5** Ngày : **2013-06-06**
-
-Phòng : **Lab\_MMT**
-
-Máy chiếu :
-
-Ghi chú : **Phòng lab khoa MMT**
-
-*   [Xem thêm về THÔNG BÁO HỌC BÙ LỚP THỰC HÀNH NT307.D21.2 NGÀY 06/06/2013](https://daa.uit.edu.vn/thongbao/thong-bao-hoc-bu-lop-thuc-hanh-nt307d212-ngay-06062013 "THÔNG BÁO HỌC BÙ LỚP THỰC HÀNH NT307.D21.2 NGÀY 06/06/2013")
+*   [Xem thêm về Thông Báo Về Việc Khoa CNPM Không Mở lớp Trong HK Hè 2012-2013](https://daa.uit.edu.vn/thongbao/thong-bao-ve-viec-khoa-cnpm-khong-mo-lop-trong-hk-he-2012-2013 "Thông Báo Về Việc Khoa CNPM Không Mở lớp Trong HK Hè 2012-2013")
     
 
-[THÔNG BÁO HỌC BÙ LỚP SE325.D21 NGÀY 08/06/2013](https://daa.uit.edu.vn/thongbao/thong-bao-hoc-bu-lop-se325d21-ngay-08062013)
+[THÔNG BÁO HỌC BÙ LỚP CE302.D21 NGÀY 08/06/2013](https://daa.uit.edu.vn/thongbao/thong-bao-hoc-bu-lop-ce302d21-ngay-08062013)
 
 ------------------------------------------------------------------------------------------------------------------------------
 
-T5, 30/05/2013 - 15:23
+T4, 05/06/2013 - 09:18
 
-CBGD : **Nguyễn Trác Thức**
+CBGD : **Đinh Đức Anh Vũ**
 
-Khoa/ Bộ môn : **CNPM**
+Khoa/ Bộ môn : **KTMT**
 
-Môn học : **SE325**
+Môn học : **CE302**
 
-Lớp : **SE325.D21**
+Lớp : **CE302.D21**
 
-Sĩ số : **52**
+Sĩ số : **75**
 
-Thời gian : Tiết bắt đầu : **6**
+Thời gian : Tiết bắt đầu : **1**
 
-Tiết kết thúc : **8**
+Tiết kết thúc : **4**
 
-Thứ : **7** Ngày : **08-06-2013**
+Thứ : **7** Ngày : **2013-06-08**
 
-Phòng : **C301**
+Phòng : **C107**
 
-*   [Xem thêm về THÔNG BÁO HỌC BÙ LỚP SE325.D21 NGÀY 08/06/2013](https://daa.uit.edu.vn/thongbao/thong-bao-hoc-bu-lop-se325d21-ngay-08062013 "THÔNG BÁO HỌC BÙ LỚP SE325.D21 NGÀY 08/06/2013")
+*   [Xem thêm về THÔNG BÁO HỌC BÙ LỚP CE302.D21 NGÀY 08/06/2013](https://daa.uit.edu.vn/thongbao/thong-bao-hoc-bu-lop-ce302d21-ngay-08062013 "THÔNG BÁO HỌC BÙ LỚP CE302.D21 NGÀY 08/06/2013")
     
 
-*   [Xem thêm về DIEM THI GIUA KY KHOA KTMT VA MMT](https://daa.uit.edu.vn/thongbao/diem-thi-giua-ky-khoa-ktmt-va-mmt "DIEM THI GIUA KY KHOA KTMT VA MMT")
+[Thông Báo Đóng Học Phí HK2-2012-2013](https://daa.uit.edu.vn/thongbao/thong-bao-dong-hoc-phi-hk2-2012-2013)
+
+-------------------------------------------------------------------------------------------------------------
+
+T4, 05/06/2013 - 08:15
+
+Phòng KH-TC kính gửi thông báo số 22/TB-ĐHCNTT-KHTC ngày 04/06/2013 về việc sinh viên Đại học chính quy chưa hoàn thành học phí Học kỳ 2 năm học 2012-2013.
+
+*   [Xem thêm về Thông Báo Đóng Học Phí HK2-2012-2013](https://daa.uit.edu.vn/thongbao/thong-bao-dong-hoc-phi-hk2-2012-2013 "Thông Báo Đóng Học Phí HK2-2012-2013")
     
 
-*   [Xem thêm về Bảng Điểm Giữa Kỳ Học Kỳ 2 TTLLCT](https://daa.uit.edu.vn/thongbao/bang-diem-giua-ky-hoc-ky-2-ttllct "Bảng Điểm Giữa Kỳ Học Kỳ 2 TTLLCT")
+[V/v Thông báo sinh viên chính quy chưa hoàn thành học phí HK2 2012-2013](https://daa.uit.edu.vn/thongbao/vv-thong-bao-sinh-vien-chinh-quy-chua-hoan-thanh-hoc-phi-hk2-2012-2013)
+
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+T3, 04/06/2013 - 16:16
+
+Kính chào các anh/chị,
+
+Phòng KH-TC kính gửi các anh/chị thông báo số 22/TB-ĐHCNTT-KHTC ngày 04/06/2013 về việc sinh viên Đại học chính quy chưa hoàn thành học phí Học kỳ 2 năm học 2012-2013.
+
+Phòng KH-TC
+
+*   [Xem thêm về V/v Thông báo sinh viên chính quy chưa hoàn thành học phí HK2 2012-2013](https://daa.uit.edu.vn/thongbao/vv-thong-bao-sinh-vien-chinh-quy-chua-hoan-thanh-hoc-phi-hk2-2012-2013 "V/v Thông báo sinh viên chính quy chưa hoàn thành học phí HK2 2012-2013")
     
 
-[THÔNG BÁO LỊCH DẠY BÙ MÔN TOÁN CỦA GIẢNG VIÊN LÊ HUỲNH MỸ VÂN](https://daa.uit.edu.vn/thongbao/thong-bao-lich-day-bu-mon-toan-cua-giang-vien-le-huynh-my-van)
+[HỌC BÙ MÔN MA001.D21](https://daa.uit.edu.vn/thongbao/hoc-bu-mon-ma001d21)
 
----------------------------------------------------------------------------------------------------------------------------------------------------------------
+----------------------------------------------------------------------------
 
-T4, 29/05/2013 - 15:55
+T3, 04/06/2013 - 15:49
 
-Phòng Đào tạo Đại học thông báo llịch dạy bù của GV Lê Huỳnh Mỹ Vân như sau:
+Phòng Đào tạo Đại học thông báo lịch học bù:  
+Môn: MA001.D21  
+GV: Dương Ngọc Hảo  
+Thời gian: tiết 6,7,8, ngày 15/6/2013  
+Phòng: C201
 
-1\. Lớp MA002.D24, dạy ngày 15/6, phòng C202, tiết 6,7,8.
-
-2\. Lớp MA002.D23, dạy ngày 08/6, phòng C202, tiết 6,7,8.
-
-3\. Lớp Ma001.D22, dạy ngày 01/6, phòng C201, tiết 6,7,8.
-
-*   [Xem thêm về THÔNG BÁO LỊCH DẠY BÙ MÔN TOÁN CỦA GIẢNG VIÊN LÊ HUỲNH MỸ VÂN](https://daa.uit.edu.vn/thongbao/thong-bao-lich-day-bu-mon-toan-cua-giang-vien-le-huynh-my-van "THÔNG BÁO LỊCH DẠY BÙ MÔN TOÁN CỦA GIẢNG VIÊN LÊ HUỲNH MỸ VÂN")
+*   [Xem thêm về HỌC BÙ MÔN MA001.D21](https://daa.uit.edu.vn/thongbao/hoc-bu-mon-ma001d21 "HỌC BÙ MÔN MA001.D21")
     
 
-[BẢNG ĐIỂM THI GIỮA KỲ KHOA HỆ THỐNG THÔNG TIN](https://daa.uit.edu.vn/thongbao/bang-diem-thi-giua-ky-khoa-he-thong-thong-tin)
+[ĐIỂM THI GIỮA KỲ LỚP AN NINH THÔNG TIN - MÔN ANH VĂN](https://daa.uit.edu.vn/thongbao/diem-thi-giua-ky-lop-ninh-thong-tin-mon-anh-van)
+
+----------------------------------------------------------------------------------------------------------------------------------------
+
+T3, 04/06/2013 - 13:45
+
+Sinh viên xem chi tiết trong file đính kèm.  
+ 
+
+*   [Xem thêm về ĐIỂM THI GIỮA KỲ LỚP AN NINH THÔNG TIN - MÔN ANH VĂN](https://daa.uit.edu.vn/thongbao/diem-thi-giua-ky-lop-ninh-thong-tin-mon-anh-van "ĐIỂM THI GIỮA KỲ LỚP AN NINH THÔNG TIN - MÔN ANH VĂN")
+    
+
+[CHƯƠNG TRÌNH ĐÀO TẠO 3 HỌC KỲ ĐẦU CỦA KHOÁ 07](https://daa.uit.edu.vn/thongbao/chuong-trinh-dao-tao-3-hoc-ky-dau-cua-khoa-07)
 
 -------------------------------------------------------------------------------------------------------------------------------
 
-T4, 29/05/2013 - 14:24
+T3, 04/06/2013 - 08:50
 
 Sinh viên xem chi tiết trong file đính kèm.
 
-*   [Xem thêm về BẢNG ĐIỂM THI GIỮA KỲ KHOA HỆ THỐNG THÔNG TIN](https://daa.uit.edu.vn/thongbao/bang-diem-thi-giua-ky-khoa-he-thong-thong-tin "BẢNG ĐIỂM THI GIỮA KỲ KHOA HỆ THỐNG THÔNG TIN")
+*   [Xem thêm về CHƯƠNG TRÌNH ĐÀO TẠO 3 HỌC KỲ ĐẦU CỦA KHOÁ 07](https://daa.uit.edu.vn/thongbao/chuong-trinh-dao-tao-3-hoc-ky-dau-cua-khoa-07 "CHƯƠNG TRÌNH ĐÀO TẠO 3 HỌC KỲ ĐẦU CỦA KHOÁ 07")
     
 
-*   [Xem thêm về BẢNG ĐIỂM GIỮA KỲ KHOA KỸ THUẬT MÁY TÍNH VÀ KHOA MẠNG MÁY TÍNH](https://daa.uit.edu.vn/thongbao/bang-diem-giua-ky-khoa-ky-thuat-may-tinh-va-khoa-mang-may-tinh "BẢNG ĐIỂM GIỮA KỲ KHOA KỸ THUẬT MÁY TÍNH VÀ KHOA MẠNG MÁY TÍNH ")
+[THÔNG BÁO HỌC BÙ LỚP CS110.D21 NGÀY 08/06/2013](https://daa.uit.edu.vn/thongbao/thong-bao-hoc-bu-lop-cs110d21-ngay-08062013)
+
+------------------------------------------------------------------------------------------------------------------------------
+
+T3, 04/06/2013 - 08:19
+
+CBGD : **Nguyễn Đình Hiển**
+
+Khoa/ Bộ môn : **KHMT**
+
+Môn học : **CS110**
+
+Lớp : **CS110.D21**
+
+Sĩ số : **40**
+
+Thời gian : Tiết bắt đầu : **1**
+
+Tiết kết thúc : **3**
+
+Thứ : **7** Ngày : **08-06-2013**
+
+Phòng : **C210**
+
+*   [Xem thêm về THÔNG BÁO HỌC BÙ LỚP CS110.D21 NGÀY 08/06/2013](https://daa.uit.edu.vn/thongbao/thong-bao-hoc-bu-lop-cs110d21-ngay-08062013 "THÔNG BÁO HỌC BÙ LỚP CS110.D21 NGÀY 08/06/2013")
     
 
-*   [Xem thêm về BẢNG ĐIỂM THI GIỮA KỲ KHOA KHMT HỌC KỲ II NĂM HỌC 2012 - 2013](https://daa.uit.edu.vn/thongbao/bang-diem-thi-giua-ky-khoa-khmt-hoc-ky-ii-nam-hoc-2012-2013 "BẢNG ĐIỂM THI GIỮA KỲ KHOA KHMT HỌC KỲ II NĂM HỌC 2012 - 2013")
+[THÔNG BÁO HỌC BÙ LỚP MA002.ANTT CỦA THẦY DƯƠNG TÔN ĐẢM NGÀY 8/6/2013 & 14/6/2013](https://daa.uit.edu.vn/thongbao/thong-bao-hoc-bu-lop-ma002antt-cua-thay-duong-ton-dam-ngay-862013-1462013)
+
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+T2, 03/06/2013 - 16:10
+
+Lớp **Giải tích 2 - mã lớp MA002.ANTT** của Thầy Dương Tôn Đảm học bù vào 02 ngày **8/6/2013 (Thứ bảy) và 14/6/2013 (Thứ Sáu).**  
+**Thời gian: Tiết 6-9 (13g - 16g30)**  
+**Phòng học: H101**  
+\-----------
+
+*   [Xem thêm về THÔNG BÁO HỌC BÙ LỚP MA002.ANTT CỦA THẦY DƯƠNG TÔN ĐẢM NGÀY 8/6/2013 & 14/6/2013](https://daa.uit.edu.vn/thongbao/thong-bao-hoc-bu-lop-ma002antt-cua-thay-duong-ton-dam-ngay-862013-1462013 "THÔNG BÁO HỌC BÙ LỚP MA002.ANTT CỦA THẦY DƯƠNG TÔN ĐẢM NGÀY 8/6/2013 & 14/6/2013")
     
 
-*   [Xem thêm về BẢNG ĐIỂM THI GIỮA KỲ KHOA CNPM HỌC KỲ II NĂM HỌC 2012 - 2013](https://daa.uit.edu.vn/thongbao/bang-diem-thi-giua-ky-khoa-cnpm-hoc-ky-ii-nam-hoc-2012-2013 "BẢNG ĐIỂM THI GIỮA KỲ KHOA CNPM HỌC KỲ II NĂM HỌC 2012 - 2013")
-    
+[BẢNG ĐIỂM GIỮA KỲ LỚP AN NINH THÔNG TIN](https://daa.uit.edu.vn/thongbao/bang-diem-giua-ky-lop-ninh-thong-tin)
 
-*   [Xem thêm về BẢNG ĐIỂM THI GIỮA KỲ BỘ MÔN ANH VĂN HỌC KỲ II NĂM HỌC 2012 - 2013](https://daa.uit.edu.vn/thongbao/bang-diem-thi-giua-ky-bo-mon-anh-van-hoc-ky-ii-nam-hoc-2012-2013 "BẢNG ĐIỂM THI GIỮA KỲ BỘ MÔN ANH VĂN HỌC KỲ II NĂM HỌC 2012 - 2013 ")
+----------------------------------------------------------------------------------------------------------------
+
+T2, 03/06/2013 - 16:06
+
+Sinh viên xem chi tiết trong file đính kèm.
+
+*   [Xem thêm về BẢNG ĐIỂM GIỮA KỲ LỚP AN NINH THÔNG TIN](https://daa.uit.edu.vn/thongbao/bang-diem-giua-ky-lop-ninh-thong-tin "BẢNG ĐIỂM GIỮA KỲ LỚP AN NINH THÔNG TIN")
     
 
 Trang
@@ -138,4 +188,4 @@ Trang
 *   …
 *   [sau ›](https://daa.uit.edu.vn/thongbaochinhquy?page=1896 "Đến trang kế sau")
     
-*   [cuối »](https://daa.uit.edu.vn/thongbaochinhquy?page=1923 "Đến trang cuối cùng")
+*   [cuối »](https://daa.uit.edu.vn/thongbaochinhquy?page=1925 "Đến trang cuối cùng")

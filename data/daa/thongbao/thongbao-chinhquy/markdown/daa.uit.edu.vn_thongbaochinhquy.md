@@ -6,6 +6,38 @@
 
 **Các thông báo dành cho hệ đại học chính quy.**
 
+[Tuyển sinh Khóa VII lớp học tiếng Nhật (miễn phí) và giới thiệu việc làm tại Nhật Bản - tài trợ bởi Huredee](https://daa.uit.edu.vn/tuyen-sinh-khoa-vii-lop-hoc-tieng-nhat-mien-phi-va-gioi-thieu-viec-lam-tai-nhat-ban-tai-tro-boi)
+
+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+T2, 03/11/2025 - 08:39
+
+Chào các bạn sinh viên!
+
+Trường Đại học CNTT ký kết hợp tác với tổ chức Huredee Nhật Bản từ năm 2018 để dạy tiếng Nhật (miễn phí) và giới thiệu việc làm tại Nhật Bản.
+
+Khóa VII năm 2025 được tuyển tối đa 30 sinh viên.
+
+*   [Xem thêm về Tuyển sinh Khóa VII lớp học tiếng Nhật (miễn phí) và giới thiệu việc làm tại Nhật Bản - tài trợ bởi Huredee](https://daa.uit.edu.vn/tuyen-sinh-khoa-vii-lop-hoc-tieng-nhat-mien-phi-va-gioi-thieu-viec-lam-tai-nhat-ban-tai-tro-boi "Tuyển sinh Khóa VII lớp học tiếng Nhật (miễn phí) và giới thiệu việc làm tại Nhật Bản - tài trợ bởi Huredee")
+    
+
+[Thông báo quy trình đăng ký Giấy giới thiệu](https://daa.uit.edu.vn/thong-bao-quy-trinh-dang-ky-giay-gioi-thieu)
+
+------------------------------------------------------------------------------------------------------------------
+
+T6, 31/10/2025 - 09:27
+
+Phòng Đào tạo Đại học thông báo quy trình đăng ký Giấy giới thiệu:
+
+1\. Sinh viên đăng ký Giấy giới thiệu tại: [https://student.uit.edu.vn/sinhvien/dangky-giaygioithieu](https://student.uit.edu.vn/sinhvien/dangky-giaygioithieu)
+
+   Giao diện khi sinh viên đăng ký như hình
+
+![](https://daa.uit.edu.vn/sites/daa/files/uploads/hinh_mau_2.jpg)
+
+*   [Xem thêm về Thông báo quy trình đăng ký Giấy giới thiệu](https://daa.uit.edu.vn/thong-bao-quy-trinh-dang-ky-giay-gioi-thieu "Thông báo quy trình đăng ký Giấy giới thiệu")
+    
+
 [Thông báo gia hạn khảo sát lấy ý kiến sinh viên về dịch vụ hỗ trợ năm 2025](https://daa.uit.edu.vn/thong-bao-gia-han-khao-sat-lay-y-kien-sinh-vien-ve-dich-vu-ho-tro-nam-2025)
 
 --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -54,118 +86,80 @@ Phòng KHTC
 *   [Xem thêm về Thông báo thu học phí học kỳ 1, năm học 2025-2026 - Khóa 2024 trở về trước](https://daa.uit.edu.vn/thong-bao-thu-hoc-phi-hoc-ky-1-nam-hoc-2025-2026-khoa-2024-tro-ve-truoc "Thông báo thu học phí học kỳ 1, năm học 2025-2026 - Khóa 2024 trở về trước")
     
 
-[Thông báo nghỉ lớp Deep Learning trong khoa học dữ liệu (DS201.Q11.2) ngày 31/10/2025](https://daa.uit.edu.vn/node/36927)
+[Thông báo lịch học HT2 Các kĩ thuật học sâu và ứng dụng (CS431.Q12.1) ngày 15/11/2025](https://daa.uit.edu.vn/node/36948)
 
 ---------------------------------------------------------------------------------------------------------------------------
 
-T5, 30/10/2025 - 16:34
+T2, 03/11/2025 - 16:33
 
-CBGD : **Nguyễn Hiếu Nghĩa**  
-Khoa/ Bộ môn : **KTTT**  
-Môn học : **Deep Learning trong khoa học dữ liệu (DS201)**  
-Lớp : **DS201.Q11.2**  
-Phòng :  
-Thời gian :  
-\- Tiết bắt đầu : **1**  
-\- Tiết kết thúc : **5**  
-Thứ : **6 , ngày 31/10/2025**
-
-*   [Xem thêm về Thông báo nghỉ lớp Deep Learning trong khoa học dữ liệu (DS201.Q11.2) ngày 31/10/2025](https://daa.uit.edu.vn/node/36927 "Thông báo nghỉ lớp Deep Learning trong khoa học dữ liệu (DS201.Q11.2) ngày 31/10/2025")
-    
-
-[Thông báo lịch học HT2 Công nghệ Web và ứng dụng (SE347.Q13.1) ngày 12/11/2025](https://daa.uit.edu.vn/node/36926)
-
---------------------------------------------------------------------------------------------------------------------
-
-T5, 30/10/2025 - 10:59
-
-CBGD : **Trần Anh Dũng**  
-Khoa/ Bộ môn : **CNPM**  
-Môn học : **Công nghệ Web và ứng dụng (SE347)**  
-Lớp : **SE347.Q13.1**  
-Phòng : **B1.10**  
-Thời gian :  
-\- Tiết bắt đầu : **4**  
-\- Tiết kết thúc : **5**  
-Thứ : **4 , ngày 12/11/2025**
-
-*   [Xem thêm về Thông báo lịch học HT2 Công nghệ Web và ứng dụng (SE347.Q13.1) ngày 12/11/2025](https://daa.uit.edu.vn/node/36926 "Thông báo lịch học HT2 Công nghệ Web và ứng dụng (SE347.Q13.1) ngày 12/11/2025")
-    
-
-[Thông báo nghỉ lớp Đại số tuyến tính (MA003.Q126) ngày 31/10/2025](https://daa.uit.edu.vn/node/36925)
-
--------------------------------------------------------------------------------------------------------
-
-T5, 30/10/2025 - 10:09
-
-CBGD : **Phùng Minh Đức**  
-Khoa/ Bộ môn : **BMTL**  
-Môn học : **Đại số tuyến tính (MA003)**  
-Lớp : **MA003.Q126**  
-Phòng :  
-Thời gian :  
-\- Tiết bắt đầu : **1**  
-\- Tiết kết thúc : **4**  
-Thứ : **6 , ngày 31/10/2025**
-
-*   [Xem thêm về Thông báo nghỉ lớp Đại số tuyến tính (MA003.Q126) ngày 31/10/2025](https://daa.uit.edu.vn/node/36925 "Thông báo nghỉ lớp Đại số tuyến tính (MA003.Q126) ngày 31/10/2025")
-    
-
-[Thông báo nghỉ lớp Lập trình hướng đối tượng (IT002.Q14) ngày 30/10/2025](https://daa.uit.edu.vn/node/36924)
-
---------------------------------------------------------------------------------------------------------------
-
-T5, 30/10/2025 - 07:21
-
-CBGD : **Đinh Nguyễn Anh Dũng**  
-Khoa/ Bộ môn : **CNPM**  
-Môn học : **Lập trình hướng đối tượng (IT002)**  
-Lớp : **IT002.Q14**  
-Phòng :  
+CBGD : **Chế Quang Huy**  
+Khoa/ Bộ môn : **KHMT**  
+Môn học : **Các kĩ thuật học sâu và ứng dụng (CS431)**  
+Lớp : **CS431.Q12.1**  
+Phòng : **B4.18**  
 Thời gian :  
 \- Tiết bắt đầu : **6**  
 \- Tiết kết thúc : **8**  
-Thứ : **5 , ngày 30/10/2025**
+Thứ : **7 , ngày 15/11/2025**
 
-*   [Xem thêm về Thông báo nghỉ lớp Lập trình hướng đối tượng (IT002.Q14) ngày 30/10/2025](https://daa.uit.edu.vn/node/36924 "Thông báo nghỉ lớp Lập trình hướng đối tượng (IT002.Q14) ngày 30/10/2025")
+*   [Xem thêm về Thông báo lịch học HT2 Các kĩ thuật học sâu và ứng dụng (CS431.Q12.1) ngày 15/11/2025](https://daa.uit.edu.vn/node/36948 "Thông báo lịch học HT2 Các kĩ thuật học sâu và ứng dụng (CS431.Q12.1) ngày 15/11/2025")
     
 
-[Thông báo nghỉ lớp Đại số tuyến tính (MA003.Q110) ngày 30/10/2025](https://daa.uit.edu.vn/node/36923)
+[Thông báo học bù Nhập môn lập trình (IT001.Q116.2) ngày 21/11/2025](https://daa.uit.edu.vn/node/36947)
 
--------------------------------------------------------------------------------------------------------
+--------------------------------------------------------------------------------------------------------
 
-T4, 29/10/2025 - 20:48
+T2, 03/11/2025 - 16:32
 
-CBGD : **Nguyễn Văn Hợi**  
-Khoa/ Bộ môn : **BMTL**  
-Môn học : **Đại số tuyến tính (MA003)**  
-Lớp : **MA003.Q110**  
-Phòng :  
+CBGD : **Lưu Đức Tuấn**  
+Khoa/ Bộ môn : **KHMT**  
+Môn học : **Nhập môn lập trình (IT001)**  
+Lớp : **IT001.Q116.2**  
+Phòng : **B5.04**  
 Thời gian :  
-\- Tiết bắt đầu : **1**  
-\- Tiết kết thúc : **4**  
-Thứ : **5 , ngày 30/10/2025**
+\- Tiết bắt đầu : **6**  
+\- Tiết kết thúc : **10**  
+Thứ : **6 , ngày 21/11/2025**
 
-*   [Xem thêm về Thông báo nghỉ lớp Đại số tuyến tính (MA003.Q110) ngày 30/10/2025](https://daa.uit.edu.vn/node/36923 "Thông báo nghỉ lớp Đại số tuyến tính (MA003.Q110) ngày 30/10/2025")
+*   [Xem thêm về Thông báo học bù Nhập môn lập trình (IT001.Q116.2) ngày 21/11/2025](https://daa.uit.edu.vn/node/36947 "Thông báo học bù Nhập môn lập trình (IT001.Q116.2) ngày 21/11/2025")
     
 
-[Thông báo nghỉ lớp Hoạch định nguồn lực doanh nghiệp (IS336.Q12) ngày 31/10/2025](https://daa.uit.edu.vn/node/36922)
+[Thông báo học bù Nhập môn lập trình (IT001.Q112.2) ngày 18/11/2025](https://daa.uit.edu.vn/node/36946)
 
-----------------------------------------------------------------------------------------------------------------------
+--------------------------------------------------------------------------------------------------------
 
-T4, 29/10/2025 - 11:38
+T2, 03/11/2025 - 16:31
 
-CBGD : **Huỳnh Đức Huy**  
-Khoa/ Bộ môn : **HTTT**  
-Môn học : **Hoạch định nguồn lực doanh nghiệp (IS336)**  
-Lớp : **IS336.Q12**  
-Phòng :  
+CBGD : **Lưu Đức Tuấn**  
+Khoa/ Bộ môn : **KHMT**  
+Môn học : **Nhập môn lập trình (IT001)**  
+Lớp : **IT001.Q112.2**  
+Phòng : **B2.06**  
 Thời gian :  
 \- Tiết bắt đầu : **1**  
-\- Tiết kết thúc : **4**  
-Thứ : **6 , ngày 31/10/2025**
+\- Tiết kết thúc : **5**  
+Thứ : **3 , ngày 18/11/2025**
 
-*   [Xem thêm về Thông báo nghỉ lớp Hoạch định nguồn lực doanh nghiệp (IS336.Q12) ngày 31/10/2025](https://daa.uit.edu.vn/node/36922 "Thông báo nghỉ lớp Hoạch định nguồn lực doanh nghiệp (IS336.Q12) ngày 31/10/2025")
+*   [Xem thêm về Thông báo học bù Nhập môn lập trình (IT001.Q112.2) ngày 18/11/2025](https://daa.uit.edu.vn/node/36946 "Thông báo học bù Nhập môn lập trình (IT001.Q112.2) ngày 18/11/2025")
+    
+
+[Thông báo lịch học HT2 Nhập môn ứng dụng di động (SE114.Q11.1) ngày 11/11/2025](https://daa.uit.edu.vn/node/36945)
+
+--------------------------------------------------------------------------------------------------------------------
+
+T2, 03/11/2025 - 15:49
+
+CBGD : **Nguyễn Tấn Toàn**  
+Khoa/ Bộ môn : **CNPM**  
+Môn học : **Nhập môn ứng dụng di động (SE114)**  
+Lớp : **SE114.Q11.1**  
+Phòng : **C309**  
+Thời gian :  
+\- Tiết bắt đầu : **9**  
+\- Tiết kết thúc : **10**  
+Thứ : **3 , ngày 11/11/2025**
+
+*   [Xem thêm về Thông báo lịch học HT2 Nhập môn ứng dụng di động (SE114.Q11.1) ngày 11/11/2025](https://daa.uit.edu.vn/node/36945 "Thông báo lịch học HT2 Nhập môn ứng dụng di động (SE114.Q11.1) ngày 11/11/2025")
     
 
 Trang
@@ -191,4 +185,4 @@ Trang
 *   …
 *   [sau ›](https://daa.uit.edu.vn/thongbaochinhquy?page=1 "Đến trang kế sau")
     
-*   [cuối »](https://daa.uit.edu.vn/thongbaochinhquy?page=1923 "Đến trang cuối cùng")
+*   [cuối »](https://daa.uit.edu.vn/thongbaochinhquy?page=1925 "Đến trang cuối cùng")

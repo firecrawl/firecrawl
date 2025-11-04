@@ -3933,3 +3933,434 @@
 2025-10-30 15:14:12,999 [INFO] Speed: 9.4 pages/min
 2025-10-30 15:14:13,000 [INFO] ================================================================================
 2025-10-30 15:14:13,000 [INFO] Next crawl in 24.0 hours
+2025-11-04 07:15:14,649 [INFO] ================================================================================
+2025-11-04 07:15:14,650 [INFO] UIT CRAWLER - FIRECRAWL SELF-HOSTED
+2025-11-04 07:15:14,651 [INFO] ================================================================================
+2025-11-04 07:15:14,652 [INFO] Firecrawl endpoint: http://api:3002
+2025-11-04 07:15:14,652 [INFO] Output directory: /data
+2025-11-04 07:15:14,652 [INFO] Schedule: Every 24.0 hours
+2025-11-04 07:15:14,653 [INFO] Run once mode: False
+2025-11-04 07:15:14,653 [INFO] ================================================================================
+2025-11-04 07:15:14,657 [INFO] Waiting for Firecrawl services to start...
+2025-11-04 07:15:14,658 [INFO] Attempting health check 1/30 to http://api:3002/v1
+2025-11-04 07:15:18,653 [INFO] RequestException: ConnectionError: HTTPConnectionPool(host='api', port=3002): Max retries exceeded with url: /v1 (Caused by NameResolut
+2025-11-04 07:15:18,654 [WARNING] Firecrawl not ready yet (1/30), waiting 10s...
+2025-11-04 07:15:28,654 [INFO] Attempting health check 2/30 to http://api:3002/v1
+2025-11-04 07:15:32,657 [INFO] RequestException: ConnectionError: HTTPConnectionPool(host='api', port=3002): Max retries exceeded with url: /v1 (Caused by NameResolut
+2025-11-04 07:15:32,657 [WARNING] Firecrawl not ready yet (2/30), waiting 10s...
+2025-11-04 07:15:42,654 [INFO] Attempting health check 3/30 to http://api:3002/v1
+2025-11-04 07:15:46,657 [INFO] RequestException: ConnectionError: HTTPConnectionPool(host='api', port=3002): Max retries exceeded with url: /v1 (Caused by NameResolut
+2025-11-04 07:15:46,658 [WARNING] Firecrawl not ready yet (3/30), waiting 10s...
+2025-11-04 07:15:56,659 [INFO] Attempting health check 4/30 to http://api:3002/v1
+2025-11-04 07:16:00,654 [INFO] RequestException: ConnectionError: HTTPConnectionPool(host='api', port=3002): Max retries exceeded with url: /v1 (Caused by NameResolut
+2025-11-04 07:16:00,654 [WARNING] Firecrawl not ready yet (4/30), waiting 10s...
+2025-11-04 07:16:10,650 [INFO] Attempting health check 5/30 to http://api:3002/v1
+2025-11-04 07:16:14,641 [INFO] RequestException: ConnectionError: HTTPConnectionPool(host='api', port=3002): Max retries exceeded with url: /v1 (Caused by NameResolut
+2025-11-04 07:16:14,641 [WARNING] Firecrawl not ready yet (5/30), waiting 10s...
+2025-11-04 07:16:24,641 [INFO] Attempting health check 6/30 to http://api:3002/v1
+2025-11-04 07:16:28,644 [INFO] RequestException: ConnectionError: HTTPConnectionPool(host='api', port=3002): Max retries exceeded with url: /v1 (Caused by NameResolut
+2025-11-04 07:16:28,644 [WARNING] Firecrawl not ready yet (6/30), waiting 10s...
+2025-11-04 07:16:38,642 [INFO] Attempting health check 7/30 to http://api:3002/v1
+2025-11-04 07:16:42,644 [INFO] RequestException: ConnectionError: HTTPConnectionPool(host='api', port=3002): Max retries exceeded with url: /v1 (Caused by NameResolut
+2025-11-04 07:16:42,644 [WARNING] Firecrawl not ready yet (7/30), waiting 10s...
+2025-11-04 07:18:17,789 [INFO] ================================================================================
+2025-11-04 07:18:17,789 [INFO] UIT CRAWLER - FIRECRAWL SELF-HOSTED
+2025-11-04 07:18:17,789 [INFO] ================================================================================
+2025-11-04 07:18:17,790 [INFO] Firecrawl endpoint: http://api:3002
+2025-11-04 07:18:17,790 [INFO] Output directory: /data
+2025-11-04 07:18:17,792 [INFO] Schedule: Every 24.0 hours
+2025-11-04 07:18:17,793 [INFO] Run once mode: False
+2025-11-04 07:18:17,793 [INFO] ================================================================================
+2025-11-04 07:18:17,798 [INFO] Waiting for Firecrawl services to start...
+2025-11-04 07:18:17,798 [INFO] Attempting health check 1/30 to http://api:3002/v1
+2025-11-04 07:18:17,804 [INFO] RequestException: ConnectionError: HTTPConnectionPool(host='api', port=3002): Max retries exceeded with url: /v1 (Caused by NewConnecti
+2025-11-04 07:18:17,805 [WARNING] Firecrawl not ready yet (1/30), waiting 10s...
+2025-11-04 07:18:27,805 [INFO] Attempting health check 2/30 to http://api:3002/v1
+2025-11-04 07:18:27,826 [INFO] Got response status: 404
+2025-11-04 07:18:27,826 [INFO] Connected to Firecrawl at http://api:3002
+2025-11-04 07:18:27,827 [INFO] Starting crawl with 44 seed URLs
+2025-11-04 07:18:27,827 [INFO] Loaded 0 URLs from cache
+2025-11-04 07:18:27,828 [INFO] Crawling 44 seeds (starting from index 0)
+2025-11-04 07:18:27,828 [INFO] Using 1 parallel workers
+2025-11-04 07:18:27,829 [INFO] Starting crawl for: https://daa.uit.edu.vn/content/cong-thong-tin-dao-tao (attempt 1/3)
+2025-11-04 07:19:23,333 [INFO] Crawled 1 pages from https://daa.uit.edu.vn/content/cong-thong-tin-dao-tao
+2025-11-04 07:19:23,352 [INFO] Saved HTML [daa/gioithieu/cong-thong-tin-dao-tao]: daa.uit.edu.vn_content_cong-thong-tin-dao-tao.html
+2025-11-04 07:19:23,359 [INFO] Saved Markdown [daa/gioithieu/cong-thong-tin-dao-tao]: daa.uit.edu.vn_content_cong-thong-tin-dao-tao.md
+2025-11-04 07:19:23,363 [INFO] Saved 1/1 pages, skipped 0 (cached) from https://daa.uit.edu.vn/content/cong-thong-tin-dao-tao
+2025-11-04 07:19:23,363 [INFO] Starting crawl for: https://tuyensinh.uit.edu.vn/nganh-dao-tao (attempt 1/3)
+2025-11-04 07:19:23,367 [INFO] Progress: 1/44 seeds completed
+2025-11-04 07:19:48,597 [INFO] Crawled 14 pages from https://tuyensinh.uit.edu.vn/nganh-dao-tao
+2025-11-04 07:19:48,613 [INFO] Saved HTML [daa/gioithieu/nganh-dao-tao]: tuyensinh.uit.edu.vn_nganh-dao-tao.html
+2025-11-04 07:19:48,618 [INFO] Saved Markdown [daa/gioithieu/nganh-dao-tao]: tuyensinh.uit.edu.vn_nganh-dao-tao.md
+2025-11-04 07:19:48,639 [INFO] Saved HTML [daa/gioithieu/nganh-dao-tao]: tuyensinh.uit.edu.vn_nganh-dao-tao_nganh-cong-nghe-thong-tin.html
+2025-11-04 07:19:48,645 [INFO] Saved Markdown [daa/gioithieu/nganh-dao-tao]: tuyensinh.uit.edu.vn_nganh-dao-tao_nganh-cong-nghe-thong-tin.md
+2025-11-04 07:19:48,667 [INFO] Saved HTML [daa/gioithieu/nganh-dao-tao]: tuyensinh.uit.edu.vn_nganh-dao-tao_nganh-ky-thuat-phan-mem.html
+2025-11-04 07:19:48,674 [INFO] Saved Markdown [daa/gioithieu/nganh-dao-tao]: tuyensinh.uit.edu.vn_nganh-dao-tao_nganh-ky-thuat-phan-mem.md
+2025-11-04 07:19:48,694 [INFO] Saved HTML [daa/gioithieu/nganh-dao-tao]: tuyensinh.uit.edu.vn_nganh-dao-tao_nganh-khoa-hoc-may-tinh.html
+2025-11-04 07:19:48,699 [INFO] Saved Markdown [daa/gioithieu/nganh-dao-tao]: tuyensinh.uit.edu.vn_nganh-dao-tao_nganh-khoa-hoc-may-tinh.md
+2025-11-04 07:19:48,717 [INFO] Saved HTML [daa/gioithieu/nganh-dao-tao]: tuyensinh.uit.edu.vn_nganh-dao-tao_nganh-ky-thuat-may-tinh.html
+2025-11-04 07:19:48,723 [INFO] Saved Markdown [daa/gioithieu/nganh-dao-tao]: tuyensinh.uit.edu.vn_nganh-dao-tao_nganh-ky-thuat-may-tinh.md
+2025-11-04 07:19:48,745 [INFO] Saved HTML [daa/gioithieu/nganh-dao-tao]: tuyensinh.uit.edu.vn_nganh-dao-tao_nganh-he-thong-thong-tin.html
+2025-11-04 07:19:48,750 [INFO] Saved Markdown [daa/gioithieu/nganh-dao-tao]: tuyensinh.uit.edu.vn_nganh-dao-tao_nganh-he-thong-thong-tin.md
+2025-11-04 07:19:48,772 [INFO] Saved HTML [daa/gioithieu/nganh-dao-tao]: tuyensinh.uit.edu.vn_nganh-dao-tao_nganh-tri-tue-nhan-tao.html
+2025-11-04 07:19:48,778 [INFO] Saved Markdown [daa/gioithieu/nganh-dao-tao]: tuyensinh.uit.edu.vn_nganh-dao-tao_nganh-tri-tue-nhan-tao.md
+2025-11-04 07:19:48,798 [INFO] Saved HTML [daa/gioithieu/nganh-dao-tao]: tuyensinh.uit.edu.vn_nganh-dao-tao_nganh-an-toan-thong-tin.html
+2025-11-04 07:19:48,803 [INFO] Saved Markdown [daa/gioithieu/nganh-dao-tao]: tuyensinh.uit.edu.vn_nganh-dao-tao_nganh-an-toan-thong-tin.md
+2025-11-04 07:19:48,824 [INFO] Saved HTML [daa/gioithieu/nganh-dao-tao]: tuyensinh.uit.edu.vn_nganh-dao-tao_nganh-thuong-mai-dien-tu.html
+2025-11-04 07:19:48,830 [INFO] Saved Markdown [daa/gioithieu/nganh-dao-tao]: tuyensinh.uit.edu.vn_nganh-dao-tao_nganh-thuong-mai-dien-tu.md
+2025-11-04 07:19:48,855 [INFO] Saved HTML [daa/gioithieu/nganh-dao-tao]: tuyensinh.uit.edu.vn_nganh-dao-tao_nganh-mang-may-tinh-truyen-thong-du-lieu.html
+2025-11-04 07:19:48,859 [INFO] Saved Markdown [daa/gioithieu/nganh-dao-tao]: tuyensinh.uit.edu.vn_nganh-dao-tao_nganh-mang-may-tinh-truyen-thong-du-lieu.md
+2025-11-04 07:19:48,883 [INFO] Saved HTML [daa/gioithieu/nganh-dao-tao]: tuyensinh.uit.edu.vn_nganh-dao-tao_nganh-khoa-hoc-du-lieu.html
+2025-11-04 07:19:48,888 [INFO] Saved Markdown [daa/gioithieu/nganh-dao-tao]: tuyensinh.uit.edu.vn_nganh-dao-tao_nganh-khoa-hoc-du-lieu.md
+2025-11-04 07:19:48,910 [INFO] Saved HTML [daa/gioithieu/nganh-dao-tao]: tuyensinh.uit.edu.vn_nganh-dao-tao_nganh-thiet-ke-vi-mach.html
+2025-11-04 07:19:48,915 [INFO] Saved Markdown [daa/gioithieu/nganh-dao-tao]: tuyensinh.uit.edu.vn_nganh-dao-tao_nganh-thiet-ke-vi-mach.md
+2025-11-04 07:19:48,933 [INFO] Saved HTML [daa/gioithieu/nganh-dao-tao]: tuyensinh.uit.edu.vn_nganh-dao-tao_nganh-truyen-thong-da-phuong-tien.html
+2025-11-04 07:19:48,937 [INFO] Saved Markdown [daa/gioithieu/nganh-dao-tao]: tuyensinh.uit.edu.vn_nganh-dao-tao_nganh-truyen-thong-da-phuong-tien.md
+2025-11-04 07:19:48,963 [INFO] Saved HTML [daa/gioithieu/nganh-dao-tao]: tuyensinh.uit.edu.vn_nganh-dao-tao_www.facebook.com_ngayhoikhoahttt.html
+2025-11-04 07:19:48,969 [INFO] Saved Markdown [daa/gioithieu/nganh-dao-tao]: tuyensinh.uit.edu.vn_nganh-dao-tao_www.facebook.com_ngayhoikhoahttt.md
+2025-11-04 07:19:48,974 [INFO] Saved 14/14 pages, skipped 0 (cached) from https://tuyensinh.uit.edu.vn/nganh-dao-tao
+2025-11-04 07:19:48,974 [INFO] Starting crawl for: https://daa.uit.edu.vn/content/chuc-nang-nhiem-vu-cua-phong-dao-tao-dai-hoc (attempt 1/3)
+2025-11-04 07:19:48,977 [INFO] Progress: 2/44 seeds completed
+2025-11-04 07:20:34,195 [INFO] Crawled 1 pages from https://daa.uit.edu.vn/content/chuc-nang-nhiem-vu-cua-phong-dao-tao-dai-hoc
+2025-11-04 07:20:34,215 [INFO] Saved HTML [daa/gioithieu/chuc-nang-nhiem-vu]: daa.uit.edu.vn_content_chuc-nang-nhiem-vu-cua-phong-dao-tao-dai-hoc.html
+2025-11-04 07:20:34,219 [INFO] Saved Markdown [daa/gioithieu/chuc-nang-nhiem-vu]: daa.uit.edu.vn_content_chuc-nang-nhiem-vu-cua-phong-dao-tao-dai-hoc.md
+2025-11-04 07:20:34,222 [INFO] Saved 1/1 pages, skipped 0 (cached) from https://daa.uit.edu.vn/content/chuc-nang-nhiem-vu-cua-phong-dao-tao-dai-hoc
+2025-11-04 07:20:34,222 [INFO] Starting crawl for: https://daa.uit.edu.vn/thongbaochinhquy (attempt 1/3)
+2025-11-04 07:20:34,224 [INFO] Progress: 3/44 seeds completed
+2025-11-04 07:22:20,405 [INFO] Crawled 110 pages from https://daa.uit.edu.vn/thongbaochinhquy
+2025-11-04 07:22:20,428 [INFO] Saved HTML [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy.html
+2025-11-04 07:22:20,435 [INFO] Saved Markdown [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy.md
+2025-11-04 07:22:20,456 [INFO] Saved HTML [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=1.html
+2025-11-04 07:22:20,461 [INFO] Saved Markdown [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=1.md
+2025-11-04 07:22:20,482 [INFO] Saved HTML [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=2.html
+2025-11-04 07:22:20,488 [INFO] Saved Markdown [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=2.md
+2025-11-04 07:22:20,507 [INFO] Saved HTML [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=3.html
+2025-11-04 07:22:20,513 [INFO] Saved Markdown [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=3.md
+2025-11-04 07:22:20,532 [INFO] Saved HTML [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=4.html
+2025-11-04 07:22:20,538 [INFO] Saved Markdown [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=4.md
+2025-11-04 07:22:20,561 [INFO] Saved HTML [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=5.html
+2025-11-04 07:22:20,567 [INFO] Saved Markdown [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=5.md
+2025-11-04 07:22:20,586 [INFO] Saved HTML [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=6.html
+2025-11-04 07:22:20,592 [INFO] Saved Markdown [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=6.md
+2025-11-04 07:22:20,613 [INFO] Saved HTML [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=7.html
+2025-11-04 07:22:20,618 [INFO] Saved Markdown [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=7.md
+2025-11-04 07:22:20,637 [INFO] Saved HTML [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=8.html
+2025-11-04 07:22:20,643 [INFO] Saved Markdown [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=8.md
+2025-11-04 07:22:20,662 [INFO] Saved HTML [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=1925.html
+2025-11-04 07:22:20,667 [INFO] Saved Markdown [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=1925.md
+2025-11-04 07:22:20,690 [INFO] Saved HTML [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=9.html
+2025-11-04 07:22:20,696 [INFO] Saved Markdown [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=9.md
+2025-11-04 07:22:20,719 [INFO] Saved HTML [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=10.html
+2025-11-04 07:22:20,725 [INFO] Saved Markdown [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=10.md
+2025-11-04 07:22:20,747 [INFO] Saved HTML [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=1924.html
+2025-11-04 07:22:21,064 [INFO] Downloaded [daa/thongbao/thongbao-chinhquy]: Luu%20y%20sinh%20vien%20tham%20gia%20le.pdf (0.57 MB)
+2025-11-04 07:22:21,278 [INFO] Downloaded [daa/thongbao/thongbao-chinhquy]: Thong%20Bao%20Le%20Tot%20Nghiep%20Dot%201%20-%202012.pdf (0.26 MB)
+2025-11-04 07:22:21,287 [INFO] Saved Markdown [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=1924.md
+2025-11-04 07:22:21,317 [INFO] Saved HTML [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=12.html
+2025-11-04 07:22:21,324 [INFO] Saved Markdown [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=12.md
+2025-11-04 07:22:21,344 [INFO] Saved HTML [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=11.html
+2025-11-04 07:22:21,349 [INFO] Saved Markdown [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=11.md
+2025-11-04 07:22:21,368 [INFO] Saved HTML [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=1918.html
+2025-11-04 07:22:22,794 [WARNING] Failed to download http://www.uit.edu.vn/images/ThongBao-DaoTao/201210/DANH_SACH_SV_NOP_TIEN_BHYT-BHTN_DOT_2.pdf: 404 Client Error: Not Found for url: https://www.uit.edu.vn/images/ThongBao-DaoTao/201210/DANH_SACH_SV_NOP_TIEN_BHYT-BHTN_DOT_2.pdf
+2025-11-04 07:22:23,076 [INFO] Downloaded [daa/thongbao/thongbao-chinhquy]: DANH_SACH_SV_NOP_TIEN_BHYT-BHTN_DOT_2.pdf (0.18 MB)
+2025-11-04 07:22:23,085 [INFO] Saved Markdown [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=1918.md
+2025-11-04 07:22:23,114 [INFO] Saved HTML [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=1917.html
+2025-11-04 07:22:23,119 [INFO] Saved Markdown [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=1917.md
+2025-11-04 07:22:23,142 [INFO] Saved HTML [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=1919.html
+2025-11-04 07:22:23,380 [INFO] Downloaded [daa/thongbao/thongbao-chinhquy]: Danh_sach_xet_tuyen_CTTT_Dot_1.pdf (0.22 MB)
+2025-11-04 07:22:23,388 [INFO] Saved Markdown [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=1919.md
+2025-11-04 07:22:23,418 [INFO] Saved HTML [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=1920.html
+2025-11-04 07:22:23,425 [INFO] Saved Markdown [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=1920.md
+2025-11-04 07:22:23,444 [INFO] Saved HTML [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=13.html
+2025-11-04 07:22:23,449 [INFO] Saved Markdown [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=13.md
+2025-11-04 07:22:23,472 [INFO] Saved HTML [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=1921.html
+2025-11-04 07:22:23,477 [INFO] Saved Markdown [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=1921.md
+2025-11-04 07:22:23,498 [INFO] Saved HTML [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=1922.html
+2025-11-04 07:22:23,674 [INFO] Downloaded [daa/thongbao/thongbao-chinhquy]: Noi_dung_kiem_tra_AV_dau_khoa.pdf (0.15 MB)
+2025-11-04 07:22:23,683 [INFO] Saved Markdown [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=1922.md
+2025-11-04 07:22:23,714 [INFO] Saved HTML [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=1923.html
+2025-11-04 07:22:23,718 [INFO] Saved Markdown [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=1923.md
+2025-11-04 07:22:23,741 [INFO] Saved HTML [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=16.html
+2025-11-04 07:22:23,746 [INFO] Saved Markdown [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=16.md
+2025-11-04 07:22:23,770 [INFO] Saved HTML [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=15.html
+2025-11-04 07:22:23,776 [INFO] Saved Markdown [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=15.md
+2025-11-04 07:22:23,799 [INFO] Saved HTML [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=1914.html
+2025-11-04 07:22:23,806 [INFO] Saved Markdown [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=1914.md
+2025-11-04 07:22:23,830 [INFO] Saved HTML [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=14.html
+2025-11-04 07:22:23,836 [INFO] Saved Markdown [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=14.md
+2025-11-04 07:22:23,859 [INFO] Saved HTML [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=1916.html
+2025-11-04 07:22:23,865 [INFO] Saved Markdown [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=1916.md
+2025-11-04 07:22:23,889 [INFO] Saved HTML [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=1913.html
+2025-11-04 07:22:23,896 [INFO] Saved Markdown [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=1913.md
+2025-11-04 07:22:23,918 [INFO] Saved HTML [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=17.html
+2025-11-04 07:22:23,924 [INFO] Saved Markdown [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=17.md
+2025-11-04 07:22:23,946 [INFO] Saved HTML [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=1915.html
+2025-11-04 07:22:23,951 [INFO] Saved Markdown [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=1915.md
+2025-11-04 07:22:23,973 [INFO] Saved HTML [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=1910.html
+2025-11-04 07:22:23,978 [INFO] Saved Markdown [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=1910.md
+2025-11-04 07:22:23,998 [INFO] Saved HTML [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=20.html
+2025-11-04 07:22:24,005 [INFO] Saved Markdown [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=20.md
+2025-11-04 07:22:24,026 [INFO] Saved HTML [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=19.html
+2025-11-04 07:22:24,032 [INFO] Saved Markdown [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=19.md
+2025-11-04 07:22:24,053 [INFO] Saved HTML [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=18.html
+2025-11-04 07:22:24,058 [INFO] Saved Markdown [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=18.md
+2025-11-04 07:22:24,079 [INFO] Saved HTML [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=1909.html
+2025-11-04 07:22:24,086 [INFO] Saved Markdown [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=1909.md
+2025-11-04 07:22:24,109 [INFO] Saved HTML [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=1912.html
+2025-11-04 07:22:24,116 [INFO] Saved Markdown [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=1912.md
+2025-11-04 07:22:24,136 [INFO] Saved HTML [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=1911.html
+2025-11-04 07:22:24,142 [INFO] Saved Markdown [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=1911.md
+2025-11-04 07:22:24,163 [INFO] Saved HTML [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=21.html
+2025-11-04 07:22:24,167 [INFO] Saved Markdown [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=21.md
+2025-11-04 07:22:24,188 [INFO] Saved HTML [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=1906.html
+2025-11-04 07:22:24,194 [INFO] Saved Markdown [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=1906.md
+2025-11-04 07:22:24,214 [INFO] Saved HTML [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=22.html
+2025-11-04 07:22:24,218 [INFO] Saved Markdown [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=22.md
+2025-11-04 07:22:24,238 [INFO] Saved HTML [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=1907.html
+2025-11-04 07:22:24,243 [INFO] Saved Markdown [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=1907.md
+2025-11-04 07:22:24,263 [INFO] Saved HTML [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=23.html
+2025-11-04 07:22:24,267 [INFO] Saved Markdown [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=23.md
+2025-11-04 07:22:24,287 [INFO] Saved HTML [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=1908.html
+2025-11-04 07:22:24,292 [INFO] Saved Markdown [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=1908.md
+2025-11-04 07:22:24,313 [INFO] Saved HTML [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=24.html
+2025-11-04 07:22:24,317 [INFO] Saved Markdown [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=24.md
+2025-11-04 07:22:24,338 [INFO] Saved HTML [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=1905.html
+2025-11-04 07:22:24,343 [INFO] Saved Markdown [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=1905.md
+2025-11-04 07:22:24,382 [INFO] Saved HTML [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=25.html
+2025-11-04 07:22:24,387 [INFO] Saved Markdown [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=25.md
+2025-11-04 07:22:24,407 [INFO] Saved HTML [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=1902.html
+2025-11-04 07:22:24,413 [INFO] Saved Markdown [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=1902.md
+2025-11-04 07:22:24,437 [INFO] Saved HTML [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=1903.html
+2025-11-04 07:22:24,444 [INFO] Saved Markdown [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=1903.md
+2025-11-04 07:22:24,468 [INFO] Saved HTML [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=1904.html
+2025-11-04 07:22:24,474 [INFO] Saved Markdown [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=1904.md
+2025-11-04 07:22:24,494 [INFO] Saved HTML [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=1901.html
+2025-11-04 07:22:24,498 [INFO] Saved Markdown [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=1901.md
+2025-11-04 07:22:24,519 [INFO] Saved HTML [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=26.html
+2025-11-04 07:22:24,525 [INFO] Saved Markdown [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=26.md
+2025-11-04 07:22:24,544 [INFO] Saved HTML [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=27.html
+2025-11-04 07:22:24,549 [INFO] Saved Markdown [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=27.md
+2025-11-04 07:22:24,574 [INFO] Saved HTML [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=29.html
+2025-11-04 07:22:24,579 [INFO] Saved Markdown [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=29.md
+2025-11-04 07:22:24,604 [INFO] Saved HTML [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=28.html
+2025-11-04 07:22:24,608 [INFO] Saved Markdown [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=28.md
+2025-11-04 07:22:24,634 [INFO] Saved HTML [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=1898.html
+2025-11-04 07:22:24,638 [INFO] Saved Markdown [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=1898.md
+2025-11-04 07:22:24,666 [INFO] Saved HTML [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=1899.html
+2025-11-04 07:22:24,672 [INFO] Saved Markdown [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=1899.md
+2025-11-04 07:22:24,694 [INFO] Saved HTML [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=1900.html
+2025-11-04 07:22:24,699 [INFO] Saved Markdown [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=1900.md
+2025-11-04 07:22:24,725 [INFO] Saved HTML [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=1897.html
+2025-11-04 07:22:24,729 [INFO] Saved Markdown [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=1897.md
+2025-11-04 07:22:24,754 [INFO] Saved HTML [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=1895.html
+2025-11-04 07:22:24,760 [INFO] Saved Markdown [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=1895.md
+2025-11-04 07:22:24,781 [INFO] Saved HTML [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=1896.html
+2025-11-04 07:22:24,786 [INFO] Saved Markdown [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=1896.md
+2025-11-04 07:22:24,812 [INFO] Saved HTML [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=1894.html
+2025-11-04 07:22:24,817 [INFO] Saved Markdown [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=1894.md
+2025-11-04 07:22:24,843 [INFO] Saved HTML [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=1893.html
+2025-11-04 07:22:24,849 [INFO] Saved Markdown [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=1893.md
+2025-11-04 07:22:24,874 [INFO] Saved HTML [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=1891.html
+2025-11-04 07:22:24,880 [INFO] Saved Markdown [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=1891.md
+2025-11-04 07:22:24,905 [INFO] Saved HTML [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=1890.html
+2025-11-04 07:22:24,909 [INFO] Saved Markdown [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=1890.md
+2025-11-04 07:22:24,938 [INFO] Saved HTML [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=1892.html
+2025-11-04 07:22:24,944 [INFO] Saved Markdown [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=1892.md
+2025-11-04 07:22:24,966 [INFO] Saved HTML [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=1887.html
+2025-11-04 07:22:24,973 [INFO] Saved Markdown [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=1887.md
+2025-11-04 07:22:24,997 [INFO] Saved HTML [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=1889.html
+2025-11-04 07:22:25,004 [INFO] Saved Markdown [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=1889.md
+2025-11-04 07:22:25,029 [INFO] Saved HTML [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=1888.html
+2025-11-04 07:22:25,035 [INFO] Saved Markdown [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=1888.md
+2025-11-04 07:22:25,059 [INFO] Saved HTML [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=1886.html
+2025-11-04 07:22:25,065 [INFO] Saved Markdown [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=1886.md
+2025-11-04 07:22:25,090 [INFO] Saved HTML [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=1884.html
+2025-11-04 07:22:25,096 [INFO] Saved Markdown [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=1884.md
+2025-11-04 07:22:25,122 [INFO] Saved HTML [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=1885.html
+2025-11-04 07:22:25,127 [INFO] Saved Markdown [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=1885.md
+2025-11-04 07:22:25,153 [INFO] Saved HTML [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=1883.html
+2025-11-04 07:22:25,158 [INFO] Saved Markdown [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=1883.md
+2025-11-04 07:22:25,179 [INFO] Saved HTML [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=1882.html
+2025-11-04 07:22:25,185 [INFO] Saved Markdown [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=1882.md
+2025-11-04 07:22:25,210 [INFO] Saved HTML [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=1880.html
+2025-11-04 07:22:25,216 [INFO] Saved Markdown [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=1880.md
+2025-11-04 07:22:25,241 [INFO] Saved HTML [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=1881.html
+2025-11-04 07:22:25,416 [INFO] Downloaded [daa/thongbao/thongbao-chinhquy]: dkANTT_TS2013_0.doc (0.03 MB)
+2025-11-04 07:22:25,426 [INFO] Saved Markdown [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=1881.md
+2025-11-04 07:22:25,456 [INFO] Saved HTML [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=1878.html
+2025-11-04 07:22:25,462 [INFO] Saved Markdown [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=1878.md
+2025-11-04 07:22:25,489 [INFO] Saved HTML [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=1879.html
+2025-11-04 07:22:25,494 [INFO] Saved Markdown [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=1879.md
+2025-11-04 07:22:25,516 [INFO] Saved HTML [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=1877.html
+2025-11-04 07:22:25,523 [INFO] Saved Markdown [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=1877.md
+2025-11-04 07:22:25,546 [INFO] Saved HTML [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=1874.html
+2025-11-04 07:22:25,553 [INFO] Saved Markdown [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=1874.md
+2025-11-04 07:22:25,576 [INFO] Saved HTML [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=1876.html
+2025-11-04 07:22:25,583 [INFO] Saved Markdown [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=1876.md
+2025-11-04 07:22:25,605 [INFO] Saved HTML [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=1875.html
+2025-11-04 07:22:25,609 [INFO] Saved Markdown [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=1875.md
+2025-11-04 07:22:25,634 [INFO] Saved HTML [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=1873.html
+2025-11-04 07:22:25,639 [INFO] Saved Markdown [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=1873.md
+2025-11-04 07:22:25,667 [INFO] Saved HTML [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=1871.html
+2025-11-04 07:22:25,673 [INFO] Saved Markdown [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=1871.md
+2025-11-04 07:22:25,699 [INFO] Saved HTML [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=1870.html
+2025-11-04 07:22:25,704 [INFO] Saved Markdown [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=1870.md
+2025-11-04 07:22:25,729 [INFO] Saved HTML [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=1872.html
+2025-11-04 07:22:25,735 [INFO] Saved Markdown [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=1872.md
+2025-11-04 07:22:25,765 [INFO] Saved HTML [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=1869.html
+2025-11-04 07:22:25,770 [INFO] Saved Markdown [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=1869.md
+2025-11-04 07:22:25,793 [INFO] Saved HTML [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=1868.html
+2025-11-04 07:22:25,799 [INFO] Saved Markdown [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=1868.md
+2025-11-04 07:22:25,824 [INFO] Saved HTML [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=1866.html
+2025-11-04 07:22:25,829 [INFO] Saved Markdown [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=1866.md
+2025-11-04 07:22:25,855 [INFO] Saved HTML [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=1867.html
+2025-11-04 07:22:25,859 [INFO] Saved Markdown [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=1867.md
+2025-11-04 07:22:25,887 [INFO] Saved HTML [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=1864.html
+2025-11-04 07:22:25,895 [INFO] Saved Markdown [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=1864.md
+2025-11-04 07:22:25,925 [INFO] Saved HTML [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=1865.html
+2025-11-04 07:22:25,933 [INFO] Saved Markdown [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=1865.md
+2025-11-04 07:22:25,959 [INFO] Saved HTML [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=1863.html
+2025-11-04 07:22:25,966 [INFO] Saved Markdown [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=1863.md
+2025-11-04 07:22:25,994 [INFO] Saved HTML [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=1862.html
+2025-11-04 07:22:26,001 [INFO] Saved Markdown [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=1862.md
+2025-11-04 07:22:26,024 [INFO] Saved HTML [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=1858.html
+2025-11-04 07:22:26,028 [INFO] Saved Markdown [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=1858.md
+2025-11-04 07:22:26,052 [INFO] Saved HTML [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=1861.html
+2025-11-04 07:22:26,057 [INFO] Saved Markdown [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=1861.md
+2025-11-04 07:22:26,084 [INFO] Saved HTML [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=1860.html
+2025-11-04 07:22:26,088 [INFO] Saved Markdown [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=1860.md
+2025-11-04 07:22:26,115 [INFO] Saved HTML [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=1859.html
+2025-11-04 07:22:26,119 [INFO] Saved Markdown [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=1859.md
+2025-11-04 07:22:26,146 [INFO] Saved HTML [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=1856.html
+2025-11-04 07:22:26,153 [INFO] Saved Markdown [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=1856.md
+2025-11-04 07:22:26,180 [INFO] Saved HTML [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=1855.html
+2025-11-04 07:22:26,185 [INFO] Saved Markdown [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=1855.md
+2025-11-04 07:22:26,210 [INFO] Saved HTML [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=1854.html
+2025-11-04 07:22:26,217 [INFO] Saved Markdown [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=1854.md
+2025-11-04 07:22:26,239 [INFO] Saved HTML [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=1857.html
+2025-11-04 07:22:26,245 [INFO] Saved Markdown [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=1857.md
+2025-11-04 07:22:26,315 [INFO] Saved HTML [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=1852.html
+2025-11-04 07:22:26,343 [INFO] Saved Markdown [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=1852.md
+2025-11-04 07:22:26,465 [INFO] Saved HTML [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=1851.html
+2025-11-04 07:22:26,474 [INFO] Saved Markdown [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=1851.md
+2025-11-04 07:22:26,504 [INFO] Saved HTML [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=1853.html
+2025-11-04 07:22:26,514 [INFO] Saved Markdown [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=1853.md
+2025-11-04 07:22:26,542 [INFO] Saved HTML [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=1850.html
+2025-11-04 07:22:26,549 [INFO] Saved Markdown [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=1850.md
+2025-11-04 07:22:26,583 [INFO] Saved HTML [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=1847.html
+2025-11-04 07:22:26,591 [INFO] Saved Markdown [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=1847.md
+2025-11-04 07:22:26,623 [INFO] Saved HTML [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=1848.html
+2025-11-04 07:22:26,630 [INFO] Saved Markdown [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=1848.md
+2025-11-04 07:22:26,655 [INFO] Saved HTML [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=1849.html
+2025-11-04 07:22:26,661 [INFO] Saved Markdown [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=1849.md
+2025-11-04 07:22:26,682 [INFO] Saved HTML [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=1846.html
+2025-11-04 07:22:26,687 [INFO] Saved Markdown [daa/thongbao/thongbao-chinhquy]: daa.uit.edu.vn_thongbaochinhquy?page=1846.md
+2025-11-04 07:22:26,691 [INFO] Saved 110/110 pages, skipped 0 (cached) from https://daa.uit.edu.vn/thongbaochinhquy
+2025-11-04 07:22:26,692 [INFO] Starting crawl for: https://daa.uit.edu.vn/thong-bao-vb2 (attempt 1/3)
+2025-11-04 07:22:26,695 [INFO] Progress: 4/44 seeds completed
+2025-11-04 07:23:06,878 [INFO] Crawled 0 pages from https://daa.uit.edu.vn/thong-bao-vb2
+2025-11-04 07:23:06,879 [INFO] Saved 0/0 pages, skipped 0 (cached) from https://daa.uit.edu.vn/thong-bao-vb2
+2025-11-04 07:23:06,879 [INFO] Starting crawl for: https://daa.uit.edu.vn/thongbaotuxa (attempt 1/3)
+2025-11-04 07:23:06,881 [INFO] Progress: 5/44 seeds completed
+2025-11-04 07:23:06,883 [INFO] Statistics saved to /data/crawl_stats.json
+2025-11-04 07:23:52,073 [INFO] Crawled 2 pages from https://daa.uit.edu.vn/thongbaotuxa
+2025-11-04 07:23:52,092 [INFO] Saved HTML [daa/thongbao/thongbao-tuxa]: daa.uit.edu.vn_thongbaotuxa.html
+2025-11-04 07:23:52,100 [INFO] Saved Markdown [daa/thongbao/thongbao-tuxa]: daa.uit.edu.vn_thongbaotuxa.md
+2025-11-04 07:23:52,127 [INFO] Saved HTML [daa/thongbao/thongbao-tuxa]: daa.uit.edu.vn_thongbaotuxa?page=1.html
+2025-11-04 07:23:52,134 [INFO] Saved Markdown [daa/thongbao/thongbao-tuxa]: daa.uit.edu.vn_thongbaotuxa?page=1.md
+2025-11-04 07:23:52,137 [INFO] Saved 2/2 pages, skipped 0 (cached) from https://daa.uit.edu.vn/thongbaotuxa
+2025-11-04 07:23:52,137 [INFO] Starting crawl for: https://daa.uit.edu.vn/qui-che-qui-dinh-qui-trinh (attempt 1/3)
+2025-11-04 07:23:52,141 [INFO] Progress: 6/44 seeds completed
+2025-11-04 07:24:37,360 [INFO] Crawled 2 pages from https://daa.uit.edu.vn/qui-che-qui-dinh-qui-trinh
+2025-11-04 07:24:37,361 [INFO] Found 38 potential numbered items in https://daa.uit.edu.vn/qui-che-qui-dinh-qui-trinh
+2025-11-04 07:24:37,361 [INFO] Cached numbered doc: https://daa.uit.edu.vn/01-quyet-dinh-ve-viec-ban-hanh-quy-che-dao-tao-theo-hoc-che-tin-chi -> 01. Quyết định về việc ban hành Quy chế đào tạo theo học chế tín chỉ
+2025-11-04 07:24:37,361 [INFO] Cached numbered doc: https://daa.uit.edu.vn/thongbao/02-quyet-dinh-ve-viec-ban-hanh-qui-dinh-ve-cong-tac-giao-trinh -> 02. Quyết định về việc ban hành Qui định về công tác giáo trình
+2025-11-04 07:24:37,362 [INFO] Cached numbered doc: https://daa.uit.edu.vn/03-quyet-dinh-ve-viec-ban-hanh-quy-che-van-bang-chung-chi -> 03. Quyết định về việc ban hành Quy chế văn bằng chứng chỉ
+2025-11-04 07:24:37,362 [INFO] Cached numbered doc: https://daa.uit.edu.vn/thongbao/04-quyet-dinh-ve-viec-ban-hanh-quy-dinh-ve-he-tai-nang -> 04. Quyết định về việc ban hành Quy định về hệ tài năng
+2025-11-04 07:24:37,362 [INFO] Cached numbered doc: https://daa.uit.edu.vn/05-quy-dinh-dao-tao-ngoai-ngu-doi-voi-he-dai-hoc-chinh-quy-cua-truong-dhcntt -> 05. Quy định đào tạo ngoại ngữ đối với hệ đại học chính quy của Trường ĐHCNTT
+2025-11-04 07:24:37,362 [INFO] Cached numbered doc: https://daa.uit.edu.vn/06-quyet-dinh-ve-viec-ban-hanh-quy-dinh-ve-khoa-luan-tot-nghiep-cho-sv-he-cq -> 06. Quyết định về việc ban hành Quy định về khóa luận tốt nghiệp cho SV hệ CQ
+2025-11-04 07:24:37,362 [INFO] Cached numbered doc: https://daa.uit.edu.vn/07-quyet-dinh-ve-viec-ban-hanh-quy-dinh-chuc-thi-tap-trung-cac-mon-hoc-he-dhcq -> 07. Quyết định về việc ban hành Quy định tổ chức thi tập trung các môn học hệ ĐHCQ
+2025-11-04 07:24:37,363 [INFO] Cached numbered doc: https://daa.uit.edu.vn/thongbao/08-quyet-dinh-ve-viec-ban-hanh-quy-trinh-bao-nghi-day-day-bu -> 08. Quyết định về việc ban hành Quy trình báo nghỉ dạy, dạy bù
+2025-11-04 07:24:37,363 [INFO] Cached numbered doc: https://daa.uit.edu.vn/09-quyet-dinh-ve-viec-ban-hanh-quy-che-dao-tao-cho-sinh-vien-he-dao-tao-tu-xa-trinh-do-dai-hoc -> 09. Quyết định về việc ban hành Quy chế đào tạo cho sinh viên hệ đào tạo từ xa trình độ đại học
+2025-11-04 07:24:37,363 [INFO] Cached numbered doc: https://daa.uit.edu.vn/thongbao/10-quyet-dinh-ve-viec-ban-hanh-quy-trinh-danh-gia-cap-nhat-ctdt-trinh-do-dhsdh -> 10. Quyết định về việc ban hành Quy trình đánh giá, cập nhật CTĐT trình độ ĐHSĐH
+2025-11-04 07:24:37,363 [INFO] Cached numbered doc: https://daa.uit.edu.vn/thongbao/11-quyet-dinh-ve-viec-ban-hanh-quy-dinh-ve-viec-mo-nganh-dao-tao -> 11. Quyết định về việc ban hành Quy định về việc mở ngành đào tạo
+2025-11-04 07:24:37,363 [INFO] Cached numbered doc: https://daa.uit.edu.vn/thongbao/12-quyet-dinh-ve-viec-ban-hanh-quy-dinh-ve-dao-tao-chuong-trinh-chat-luong-cao -> 12. Quyết định về việc ban hành Quy định về đào tạo chương trình Chất lượng cao
+2025-11-04 07:24:37,363 [INFO] Cached numbered doc: https://daa.uit.edu.vn/thongbao/14-qui-dinh-cach-dat-ma-mon-hoc -> 14. Qui định cách đặt mã môn học
+2025-11-04 07:24:37,364 [INFO] Cached numbered doc: https://daa.uit.edu.vn/15-qui-dinh-ve-giang-vien-giang-vien-va-tro-giang-mon-hoc -> 15. Qui định về giảng viên giảng viên và trợ giảng môn học
+2025-11-04 07:24:37,364 [INFO] Cached numbered doc: https://daa.uit.edu.vn/thongbao/16-thoi-diem-va-muc-thu-hoc-phi-gia-han-doi-voi-sinh-vien-he-dai-hoc-chinh-quy -> 16. Thời điểm và mức thu học phí gia hạn đối với sinh viên hệ đại học chính quy
+2025-11-04 07:24:37,364 [INFO] Cached numbered doc: https://daa.uit.edu.vn/thongbao/17-quy-dinh-ve-chinh-sach-ho-tro-cong-bo-khoa-hoc -> 17. Quy định về chính sách hỗ trợ công bố khoa học
+2025-11-04 07:24:37,364 [INFO] Cached numbered doc: https://daa.uit.edu.vn/thongbao/18-quy-trinh-phan-cong-can-bo-coi-thi-cho-cac-dot-thi-tap-trung-he-dai-hoc-chinh-quy -> 18. Quy trình phân công cán bộ coi thi cho các đợt thi tập trung hệ đại học chính quy
+2025-11-04 07:24:37,364 [INFO] Cached numbered doc: https://daa.uit.edu.vn/thongbao/19-quy-trinh-nop-khoa-luan-tot-nghiep-sau-khi-bao-ve-truoc-hoi-dong-bao-ve-khoa-luan-tot -> 19. Quy trình nộp khoá luận tốt nghiệp sau khi bảo vệ trước Hội đồng bảo vệ khoá luận tốt nghiệp
+2025-11-04 07:24:37,364 [INFO] Cached numbered doc: https://daa.uit.edu.vn/thongbao/20-quy-dinh-chuong-trinh-tien-tien -> 20. Quy định chương trình tiên tiến
+2025-11-04 07:24:37,365 [INFO] Cached numbered doc: https://daa.uit.edu.vn/thongbao/21-huong-dan-thang-phan-loai-nhan-thuc-ky-nang-thai-do-su-dung-tai-truong-dai-hoc-cong-nghe -> 21. Hướng dẫn Thang phân loại nhận thức, kỹ năng, thái độ sử dụng tại Trường Đại học Công nghệ Thông tin
+2025-11-04 07:24:37,365 [INFO] Cached numbered doc: https://daa.uit.edu.vn/thongbao/22-quy-dinh-ve-viec-chuc-day-hoc-ngoai-gio-hanh-chinh-doi-voi-cac-hoc-phan-trong-chuong -> 22. Quy định về việc tổ chức dạy – học ngoài giờ hành chính đối với các học phần trong chương trình đào tạo đại học chính quy
+2025-11-04 07:24:37,365 [INFO] Cached numbered doc: https://daa.uit.edu.vn/thongbao/23-quy-dinh-tam-thoi-ve-dao-tao-lien-thong-tu-trinh-do-dai-hoc-len-trinh-do-thac-si-he -> 23. Quy định tạm thời về đào tạo liên thông từ trình độ đại học lên trình độ thạc sĩ hệ chính quy
+2025-11-04 07:24:37,365 [INFO] Cached numbered doc: https://daa.uit.edu.vn/thongbao/24-quyet-dinh-ve-viec-ban-hanh-quy-dinh-day-va-hoc-theo-phuong-thuc-truc-tuyen-va-phuong -> 24. Quyết định về việc ban hành quy định dạy và học theo phương thức trực tuyến và phương thức kết hợp
+2025-11-04 07:24:37,365 [INFO] Cached numbered doc: https://daa.uit.edu.vn/thongbao/25-quy-dinh-chuc-danh-gia-ket-qua-hoc-tap-theo-hinh-thuc-truc-tuyen -> 25. Quy định tổ chức đánh giá kết quả học tập theo hình thức trực tuyến
+2025-11-04 07:24:37,366 [INFO] Cached numbered doc: https://daa.uit.edu.vn/thongbao/26-quy-dinh-moi-giang-vien-thinh-giang-tu-doanh-nghiep -> 26. Quy định mời giảng viên thỉnh giảng từ doanh nghiệp
+2025-11-04 07:24:37,366 [INFO] Cached numbered doc: https://daa.uit.edu.vn/27-huong-dan-dang-ky-hoc-phan-cho-sinh-vien -> 27. Hướng dẫn đăng ký học phần cho sinh viên
+2025-11-04 07:24:37,366 [INFO] Cached numbered doc: https://daa.uit.edu.vn/28-quy-dinh-dao-tao-song-nganh-trinh-do-dai-hoc-he-chinh-quy -> 28. Quy định đào tạo song ngành trình độ đại học hệ chính quy
+2025-11-04 07:24:37,366 [INFO] Cached numbered doc: https://daa.uit.edu.vn/29-quy-dinh-ve-do-tot-nghiep-tai-doanh-nghiep -> 29. Quy định về đồ án tốt nghiệp tại doanh nghiệp
+2025-11-04 07:24:37,367 [INFO] Cached numbered doc: https://daa.uit.edu.vn/30-huong-dan-chuyen-doi-he-thong-tin-chi-sang-he-thong-tich-luy-va-chuyen-doi-tin-chi-cua-chau-au -> 30. Hướng dẫn chuyển đổi hệ thống tín chỉ sang Hệ thống tích lũy và chuyển đổi tín chỉ của Châu Âu
+2025-11-04 07:24:37,367 [INFO] Cached numbered doc: https://daa.uit.edu.vn/31-quy-che-tuyen-sinh-dai-hoc-chinh-quy -> 31. Quy chế tuyển sinh đại học chính quy
+2025-11-04 07:24:37,367 [INFO] Cached numbered doc: https://daa.uit.edu.vn/32-quy-trinh-canh-bao-sinh-vien-he-dai-hoc-chinh-quy-ve-ket-qua-dang-ky-hoc-phan-va-ket-qua-hoc-tap -> 32. Quy trình cảnh báo sinh viên hệ đại học chính quy về kết quả đăng ký học phần và kết quả học tập
+2025-11-04 07:24:37,367 [INFO] Cached numbered doc: https://daa.uit.edu.vn/33-quy-che-tuyen-sinh-hinh-thuc-dao-tao-tu-xa-trinh-do-dai-hoc -> 33. Quy chế tuyển sinh hình thức đào tạo từ xa trình độ đại học
+2025-11-04 07:24:37,367 [INFO] Cached numbered doc: https://daa.uit.edu.vn/34-quy-trinh-chuyen-sinh-vien-tu-hinh-thuc-dao-tao-chinh-quy-sang-hinh-thuc-dao-tao-tu-xa -> 34. Quy trình chuyển sinh viên từ hình thức đào tạo chính quy sang hình thức đào tạo từ xa
+2025-11-04 07:24:37,368 [INFO] Cached numbered doc: https://daa.uit.edu.vn/35-quy-trinh-cong-nhan-tin-chi-trong-dao-tao-dai-hoc-cua-truong-dai-hoc-cong-nghe-thong-tin -> 35. Quy trình công nhận tín chỉ trong đào tạo đại học của Trường Đại học Công nghệ Thông tin
+2025-11-04 07:24:37,368 [INFO] Cached numbered doc: https://daa.uit.edu.vn/36-quy-dinh-ve-do-tot-nghiep -> 36. Quy định về Đồ án tốt nghiệp
+2025-11-04 07:24:37,368 [INFO] Cached numbered doc: https://daa.uit.edu.vn/37-ban-hanh-quy-dinh-chuc-quan-ly-chuong-trinh-lien-ket-dao-tao-voi-nuoc-ngoai-trinh-do-dai-hoc-tai -> 37. Ban hành quy định tổ chức, quản lý chương trình liên kết đào tạo với nước ngoài trình độ đại học tại Trường ĐHCNTT
+2025-11-04 07:24:37,368 [INFO] Cached numbered doc: https://daa.uit.edu.vn/38-quy-trinh-xu-ly-hoc-vu-sinh-vien-dai-hoc-chinh-quy -> 38. Quy trình xử lý học vụ sinh viên đại học chính quy
+2025-11-04 07:24:37,368 [INFO] Cached numbered doc: https://daa.uit.edu.vn/39quy-dinh-ve-liem-chinh-hoc-thuat-tai-truong-dai-hoc-cong-nghe-thong-tin -> 39. Quy định về Liêm chính học thuật tại Trường Đại học Công nghệ Thông tin
+2025-11-04 07:24:37,369 [INFO] Successfully cached 38 numbered docs from https://daa.uit.edu.vn/qui-che-qui-dinh-qui-trinh
+2025-11-04 07:24:37,384 [INFO] Saved HTML [daa/quydinh_huongdan/qui-che-qui-dinh-qui-trinh]: daa.uit.edu.vn_qui-che-qui-dinh-qui-trinh.html
+2025-11-04 07:24:37,390 [INFO] Saved Markdown [daa/quydinh_huongdan/qui-che-qui-dinh-qui-trinh]: daa.uit.edu.vn_qui-che-qui-dinh-qui-trinh.md
+2025-11-04 07:24:37,418 [INFO] Saved HTML [daa/quydinh_huongdan/qui-che-qui-dinh-qui-trinh]: daa.uit.edu.vn_qui-che-qui-dinh-qui-trinh?page=1.html
+2025-11-04 07:24:37,424 [INFO] Saved Markdown [daa/quydinh_huongdan/qui-che-qui-dinh-qui-trinh]: daa.uit.edu.vn_qui-che-qui-dinh-qui-trinh?page=1.md
+2025-11-04 07:24:37,428 [INFO] Saved 2/2 pages, skipped 0 (cached) from https://daa.uit.edu.vn/qui-che-qui-dinh-qui-trinh
+2025-11-04 07:24:37,428 [INFO] Found 38 new numbered detail pages to crawl from https://daa.uit.edu.vn/qui-che-qui-dinh-qui-trinh
+2025-11-04 07:24:37,428 [INFO] Crawling numbered detail: https://daa.uit.edu.vn/01-quyet-dinh-ve-viec-ban-hanh-quy-che-dao-tao-theo-hoc-che-tin-chi
+2025-11-04 07:25:19,761 [INFO] Using cached numbered doc: 01-quyet-dinh-ve-viec-ban-hanh-quy-che-dao-tao-theo-hoc-che-tin-chi in qui-che-qui-dinh-qui-trinh
+2025-11-04 07:25:19,782 [INFO] Saved HTML [daa/quydinh_huongdan/qui-che-qui-dinh-qui-trinh/01-quyet-dinh-ve-viec-ban-hanh-quy-che-dao-tao-theo-hoc-che-tin-chi]: daa.uit.edu.vn_01-quyet-dinh-ve-viec-ban-hanh-quy-che-dao-tao-theo-hoc-che-tin-chi.html
+2025-11-04 07:25:19,924 [INFO] Downloaded [daa/quydinh_huongdan/qui-che-qui-dinh-qui-trinh/01-quyet-dinh-ve-viec-ban-hanh-quy-che-dao-tao-theo-hoc-che-tin-chi]: 790-qd-dhcntt_28-9-22_quy_che_dao_tao.pdf (0.52 MB)
+2025-11-04 07:25:20,012 [INFO] Downloaded [daa/quydinh_huongdan/qui-che-qui-dinh-qui-trinh/01-quyet-dinh-ve-viec-ban-hanh-quy-che-dao-tao-theo-hoc-che-tin-chi]: 1393-qd-dhcntt_29-12-2023_cap_nhat_quy_che_dao_tao_theo_hoc_che_tin_chi_cho_he_dai_hoc_chinh_quy.pdf (0.29 MB)
+2025-11-04 07:25:20,022 [INFO] Saved Markdown [daa/quydinh_huongdan/qui-che-qui-dinh-qui-trinh/01-quyet-dinh-ve-viec-ban-hanh-quy-che-dao-tao-theo-hoc-che-tin-chi]: daa.uit.edu.vn_01-quyet-dinh-ve-viec-ban-hanh-quy-che-dao-tao-theo-hoc-che-tin-chi.md
+2025-11-04 07:25:20,034 [INFO] ✓ Saved numbered detail: https://daa.uit.edu.vn/01-quyet-dinh-ve-viec-ban-hanh-quy-che-dao-tao-theo-hoc-che-tin-chi
+2025-11-04 07:25:22,035 [INFO] Crawling numbered detail: https://daa.uit.edu.vn/thongbao/02-quyet-dinh-ve-viec-ban-hanh-qui-dinh-ve-cong-tac-giao-trinh
+2025-11-04 07:26:04,318 [INFO] Using cached numbered doc: 02-quyet-dinh-ve-viec-ban-hanh-qui-dinh-ve-cong-tac-giao-trinh in qui-che-qui-dinh-qui-trinh
+2025-11-04 07:26:04,324 [INFO] Saved HTML [daa/quydinh_huongdan/qui-che-qui-dinh-qui-trinh/02-quyet-dinh-ve-viec-ban-hanh-qui-dinh-ve-cong-tac-giao-trinh]: daa.uit.edu.vn_thongbao_02-quyet-dinh-ve-viec-ban-hanh-qui-dinh-ve-cong-tac-giao-trinh.html
+2025-11-04 07:26:04,877 [INFO] Downloaded [daa/quydinh_huongdan/qui-che-qui-dinh-qui-trinh/02-quyet-dinh-ve-viec-ban-hanh-qui-dinh-ve-cong-tac-giao-trinh]: 53_qd_dhcntt_19_2_2019_quy_che_cong_tac_giao_trinh.pdf (5.43 MB)
+2025-11-04 07:26:04,887 [INFO] Saved Markdown [daa/quydinh_huongdan/qui-che-qui-dinh-qui-trinh/02-quyet-dinh-ve-viec-ban-hanh-qui-dinh-ve-cong-tac-giao-trinh]: daa.uit.edu.vn_thongbao_02-quyet-dinh-ve-viec-ban-hanh-qui-dinh-ve-cong-tac-giao-trinh.md
+2025-11-04 07:26:04,898 [INFO] ✓ Saved numbered detail: https://daa.uit.edu.vn/thongbao/02-quyet-dinh-ve-viec-ban-hanh-qui-dinh-ve-cong-tac-giao-trinh
+2025-11-04 07:26:06,896 [INFO] Crawling numbered detail: https://daa.uit.edu.vn/03-quyet-dinh-ve-viec-ban-hanh-quy-che-van-bang-chung-chi
+2025-11-04 07:26:49,220 [INFO] Using cached numbered doc: 03-quyet-dinh-ve-viec-ban-hanh-quy-che-van-bang-chung-chi in qui-che-qui-dinh-qui-trinh
+2025-11-04 07:26:49,229 [INFO] Saved HTML [daa/quydinh_huongdan/qui-che-qui-dinh-qui-trinh/03-quyet-dinh-ve-viec-ban-hanh-quy-che-van-bang-chung-chi]: daa.uit.edu.vn_03-quyet-dinh-ve-viec-ban-hanh-quy-che-van-bang-chung-chi.html
+2025-11-04 07:26:49,562 [INFO] Downloaded [daa/quydinh_huongdan/qui-che-qui-dinh-qui-trinh/03-quyet-dinh-ve-viec-ban-hanh-quy-che-van-bang-chung-chi]: 172-qd-dhcntt_08-3-2023_quy_che_van_bang_chung_chi.pdf (2.41 MB)
+2025-11-04 07:26:49,767 [INFO] Downloaded [daa/quydinh_huongdan/qui-che-qui-dinh-qui-trinh/03-quyet-dinh-ve-viec-ban-hanh-quy-che-van-bang-chung-chi]: 1192-tb-dhcntt_25-10-2024_tu_ngu_su_dung_in_tren_plvb_bd_gxn_0.pdf (0.99 MB)
+2025-11-04 07:26:49,905 [INFO] Downloaded [daa/quydinh_huongdan/qui-che-qui-dinh-qui-trinh/03-quyet-dinh-ve-viec-ban-hanh-quy-che-van-bang-chung-chi]: 133-qd-dhcntt_17-02-2025_cap_nhat_bo_sung_mau_plvb_tot_nghiep_dh_ths.pdf (1.08 MB)
+2025-11-04 07:26:49,913 [INFO] Saved Markdown [daa/quydinh_huongdan/qui-che-qui-dinh-qui-trinh/03-quyet-dinh-ve-viec-ban-hanh-quy-che-van-bang-chung-chi]: daa.uit.edu.vn_03-quyet-dinh-ve-viec-ban-hanh-quy-che-van-bang-chung-chi.md
+2025-11-04 07:26:49,925 [INFO] ✓ Saved numbered detail: https://daa.uit.edu.vn/03-quyet-dinh-ve-viec-ban-hanh-quy-che-van-bang-chung-chi
+2025-11-04 07:26:51,926 [INFO] Crawling numbered detail: https://daa.uit.edu.vn/thongbao/04-quyet-dinh-ve-viec-ban-hanh-quy-dinh-ve-he-tai-nang
+2025-11-04 07:27:34,196 [INFO] Using cached numbered doc: 04-quyet-dinh-ve-viec-ban-hanh-quy-dinh-ve-he-tai-nang in qui-che-qui-dinh-qui-trinh
+2025-11-04 07:27:34,202 [INFO] Saved HTML [daa/quydinh_huongdan/qui-che-qui-dinh-qui-trinh/04-quyet-dinh-ve-viec-ban-hanh-quy-dinh-ve-he-tai-nang]: daa.uit.edu.vn_thongbao_04-quyet-dinh-ve-viec-ban-hanh-quy-dinh-ve-he-tai-nang.html
+2025-11-04 07:27:34,605 [INFO] Downloaded [daa/quydinh_huongdan/qui-che-qui-dinh-qui-trinh/04-quyet-dinh-ve-viec-ban-hanh-quy-dinh-ve-he-tai-nang]: 131-qd-dhcntt_08-03-2022_quy_dinh_dao_tao_chuong_trinh_tai_nang.pdf (2.92 MB)
+2025-11-04 07:27:34,613 [INFO] Saved Markdown [daa/quydinh_huongdan/qui-che-qui-dinh-qui-trinh/04-quyet-dinh-ve-viec-ban-hanh-quy-dinh-ve-he-tai-nang]: daa.uit.edu.vn_thongbao_04-quyet-dinh-ve-viec-ban-hanh-quy-dinh-ve-he-tai-nang.md
+2025-11-04 07:27:34,626 [INFO] ✓ Saved numbered detail: https://daa.uit.edu.vn/thongbao/04-quyet-dinh-ve-viec-ban-hanh-quy-dinh-ve-he-tai-nang
+2025-11-04 07:27:36,625 [INFO] Crawling numbered detail: https://daa.uit.edu.vn/05-quy-dinh-dao-tao-ngoai-ngu-doi-voi-he-dai-hoc-chinh-quy-cua-truong-dhcntt
+2025-11-04 07:28:18,990 [INFO] Using cached numbered doc: 05-quy-dinh-dao-tao-ngoai-ngu-doi-voi-he-dai-hoc-chinh-quy-cua-truong-dhcntt in qui-che-qui-dinh-qui-trinh
+2025-11-04 07:28:18,998 [INFO] Saved HTML [daa/quydinh_huongdan/qui-che-qui-dinh-qui-trinh/05-quy-dinh-dao-tao-ngoai-ngu-doi-voi-he-dai-hoc-chinh-quy-cua-truong-dhcntt]: daa.uit.edu.vn_05-quy-dinh-dao-tao-ngoai-ngu-doi-voi-he-dai-hoc-chinh-quy-cua-truong-dhcntt.html
+2025-11-04 07:28:19,064 [INFO] Downloaded [daa/quydinh_huongdan/qui-che-qui-dinh-qui-trinh/05-quy-dinh-dao-tao-ngoai-ngu-doi-voi-he-dai-hoc-chinh-quy-cua-truong-dhcntt]: 147-qd-dhcntt-dtdh_31-07-2013_quyet_dinh_ve_viec_ban_hanh_chuan_dau_ra_tieng_anh_cho_sv_he_cq_2006-2014_0_0.pdf (0.16 MB)
+2025-11-04 07:28:19,172 [INFO] Downloaded [daa/quydinh_huongdan/qui-che-qui-dinh-qui-trinh/05-quy-dinh-dao-tao-ngoai-ngu-doi-voi-he-dai-hoc-chinh-quy-cua-truong-dhcntt]: 125-qd-dhcntt-dtdh_18-09-2015_quyet_dinh_ban_hanh_qui_dinh_tam_thoi_day_va_hoc_tieng_anh_khoa_2015_0.pdf (0.40 MB)
+2025-11-04 07:28:19,272 [INFO] Downloaded [daa/quydinh_huongdan/qui-che-qui-dinh-qui-trinh/05-quy-dinh-dao-tao-ngoai-ngu-doi-voi-he-dai-hoc-chinh-quy-cua-truong-dhcntt]: 128-qd-dhcntt-dtdh_30-8-2016_ban_hanh_qd_day_va_hoc_nn_doi_voi_he_dai_hoc_cq_cua_truong_dhcntt_khoa_2016.pdf (0.45 MB)
+2025-11-04 07:28:19,353 [INFO] Downloaded [daa/quydinh_huongdan/qui-che-qui-dinh-qui-trinh/05-quy-dinh-dao-tao-ngoai-ngu-doi-voi-he-dai-hoc-chinh-quy-cua-truong-dhcntt]: 141-qd-dhcntt16-3-2018quy_dinh_dao_tao_ngoai_ngu_doi_voi_he_dh_chinh_quy_cua_truong_dhcntt_ap_dung_tu_khoa_2017_0.pdf (0.21 MB)
+2025-11-04 07:28:19,438 [INFO] Downloaded [daa/quydinh_huongdan/qui-che-qui-dinh-qui-trinh/05-quy-dinh-dao-tao-ngoai-ngu-doi-voi-he-dai-hoc-chinh-quy-cua-truong-dhcntt]: 108-qd-dhcntt15-3-2019_sua_doi_bo_sung_quy_dinh_dao_tao_ngoai_ngu_doi_voi_he_dh_chinh_quy_qui_dinh_141_0.pdf (0.35 MB)
+2025-11-04 07:28:19,604 [INFO] Downloaded [daa/quydinh_huongdan/qui-che-qui-dinh-qui-trinh/05-quy-dinh-dao-tao-ngoai-ngu-doi-voi-he-dai-hoc-chinh-quy-cua-truong-dhcntt]: 35-tb-dhcntt_21-5-2019_cong_nhan_chung_chi_tieng_nhat_nat-test_cho_chuan_qua_trinh_0_0.pdf (0.98 MB)
+2025-11-04 07:28:19,681 [INFO] Downloaded [daa/quydinh_huongdan/qui-che-qui-dinh-qui-trinh/05-quy-dinh-dao-tao-ngoai-ngu-doi-voi-he-dai-hoc-chinh-quy-cua-truong-dhcntt]: 547-qd-dhcntt_30-8-2019_qui_dinh_dao_tao_ngoai_ngu_doi_voi_he_chinh_qui_khoa_2019_0_0.pdf (0.21 MB)
+2025-11-04 07:28:19,753 [INFO] Downloaded [daa/quydinh_huongdan/qui-che-qui-dinh-qui-trinh/05-quy-dinh-dao-tao-ngoai-ngu-doi-voi-he-dai-hoc-chinh-quy-cua-truong-dhcntt]: 101-tb-dhcntt_29-12-2021_thong_bao_su_dung_ket_qua_thi_vpet_0_0.pdf (0.19 MB)
+2025-11-04 07:28:19,845 [INFO] Downloaded [daa/quydinh_huongdan/qui-che-qui-dinh-qui-trinh/05-quy-dinh-dao-tao-ngoai-ngu-doi-voi-he-dai-hoc-chinh-quy-cua-truong-dhcntt]: 119-tb-dhcntt_19-9-2022_thong_bao_ngung_su_dung_chung_chi_vpet_toeic_bach_khoa_va_phoi_van_bang_moi_0_0.pdf (0.40 MB)
+2025-11-04 07:28:20,264 [INFO] Downloaded [daa/quydinh_huongdan/qui-che-qui-dinh-qui-trinh/05-quy-dinh-dao-tao-ngoai-ngu-doi-voi-he-dai-hoc-chinh-quy-cua-truong-dhcntt]: 828_qd-dhcntt_04-10-2022_quy_dinh_dao_tao_ngoai_ngu_doi_voi_he_chinh_qui_khoa_2022_0_0.pdf (3.27 MB)
+2025-11-04 07:28:20,355 [INFO] Downloaded [daa/quydinh_huongdan/qui-che-qui-dinh-qui-trinh/05-quy-dinh-dao-tao-ngoai-ngu-doi-voi-he-dai-hoc-chinh-quy-cua-truong-dhcntt]: 153-tb-dhcntt13-12-2022_ngung_su_dung_ket_qua_bai_thi_nn_qt_ielts_indicator_va_toefl_ibt_home_edition_0.pdf (0.28 MB)
+2025-11-04 07:28:20,455 [INFO] Downloaded [daa/quydinh_huongdan/qui-che-qui-dinh-qui-trinh/05-quy-dinh-dao-tao-ngoai-ngu-doi-voi-he-dai-hoc-chinh-quy-cua-truong-dhcntt]: 364-qd-dhcntt_22-04-2024_sua_doi_quy_dinh_dao_tao_ngoai_ngu.pdf (0.64 MB)
+2025-11-04 07:28:20,531 [INFO] Downloaded [daa/quydinh_huongdan/qui-che-qui-dinh-qui-trinh/05-quy-dinh-dao-tao-ngoai-ngu-doi-voi-he-dai-hoc-chinh-quy-cua-truong-dhcntt]: 560-qd-dhcntt_5-6-2024_sua_doi_quy_dinh_dao_tao_ngoai_ngu_doi_voi_he_dai_hoc_chinh_quy.pdf (0.23 MB)
+2025-11-04 07:28:20,540 [INFO] Saved Markdown [daa/quydinh_huongdan/qui-che-qui-dinh-qui-trinh/05-quy-dinh-dao-tao-ngoai-ngu-doi-voi-he-dai-hoc-chinh-quy-cua-truong-dhcntt]: daa.uit.edu.vn_05-quy-dinh-dao-tao-ngoai-ngu-doi-voi-he-dai-hoc-chinh-quy-cua-truong-dhcntt.md
+2025-11-04 07:28:20,551 [INFO] ✓ Saved numbered detail: https://daa.uit.edu.vn/05-quy-dinh-dao-tao-ngoai-ngu-doi-voi-he-dai-hoc-chinh-quy-cua-truong-dhcntt
+2025-11-04 07:28:22,552 [INFO] Crawling numbered detail: https://daa.uit.edu.vn/06-quyet-dinh-ve-viec-ban-hanh-quy-dinh-ve-khoa-luan-tot-nghiep-cho-sv-he-cq
