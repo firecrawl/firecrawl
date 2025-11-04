@@ -954,7 +954,7 @@ export async function scrapeURL(
     }
 
     try {
-      let result: ScrapeUrlResponse
+      let result: ScrapeUrlResponse;
       let pdfRetries = 0;
       let documentRetries = 0;
       const MAX_RETRIES = parseInt(process.env.SCRAPE_MAX_RETRIES || "3", 10);
