@@ -123,6 +123,7 @@
     "openai": "^5.20.2",
     "parse-diff": "^0.11.1",
     "pdf-parse": "^1.1.1",
+    "pdf-parse-fixed": "^1.1.1",
     "pg": "^8.16.3",
     "posthog-node": "^4.0.1",
     "prettier": "^3.6.2",

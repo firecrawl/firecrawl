@@ -10,6 +10,7 @@ import { uploadScreenshot } from "./uploadScreenshot";
 import { removeBase64Images } from "./removeBase64Images";
 import { performAgent } from "./agent";
 import { performAttributes } from "./performAttributes";
+import { detectEmbeddedPDFs } from "./detectEmbeddedPDFs";
 
 import { deriveDiff } from "./diff";
 import { useIndex, useSearchIndex } from "../../../services/index";
@@ -372,7 +373,15 @@ function coerceFieldsToFormats(meta: Meta, document: Document): Document {
   }
 
   if (meta.options.actions === undefined || meta.options.actions.length === 0) {
-    delete document.actions;
+    // Keep actions if we detected embedded PDFs, even if no actions were requested
+    if (document.actions?.pdfs && document.actions.pdfs.length > 0) {
+      // Keep only the pdfs field, remove other action results
+      document.actions = {
+        pdfs: document.actions.pdfs,
+      };
+    } else {
+      delete document.actions;
+    }
   } else if (document.actions) {
     // Check if all action arrays are empty
     const hasScreenshots =
@@ -398,6 +407,7 @@ const transformerStack: Transformer[] = [
   deriveMarkdownFromHTML,
   deriveLinksFromHTML,
   deriveImagesFromHTML,
+  detectEmbeddedPDFs, // Detect embedded PDFs in HTML
   deriveBrandingFromActions,
   deriveMetadataFromRawHTML,
   uploadScreenshot,
