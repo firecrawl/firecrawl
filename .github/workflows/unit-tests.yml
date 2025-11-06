@@ -1,0 +1,170 @@
+name: Unit Tests
+
+on:
+  pull_request:
+    branches:
+      - main
+  push:
+    branches:
+      - main
+
+concurrency:
+  group: unit-tests-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  unit-tests:
+    name: Run Unit Tests
+    runs-on: ubuntu-latest
+    services:
+      redis:
+        image: redis
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      REDIS_URL: redis://localhost:6379
+      NUQ_DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
+      USE_GO_MARKDOWN_PARSER: true
+      HOST: 0.0.0.0
+      TEST_SUITE_SELF_HOSTED: true
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Configure pnpm store
+        run: |
+          pnpm config set store-dir ~/.pnpm-store
+          mkdir -p ~/.pnpm-store
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: apps/api/pnpm-lock.yaml
+
+      - name: Fetch dependencies
+        run: pnpm fetch
+        working-directory: apps/api
+
+      - name: Restore native lib cache
+        id: napi_restore
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            apps/api/native/*.node
+            apps/api/native/index.js
+            apps/api/native/index.d.ts
+          key: ${{ runner.os }}-napi-${{ hashFiles('apps/api/native/Cargo.toml', 'apps/api/native/package.json', 'apps/api/native/src/**') }}
+
+      - name: Build native lib
+        if: steps.napi_restore.outputs.cache-hit != 'true'
+        run: pnpm install
+        working-directory: apps/api/native
+
+      - name: Cache native lib
+        if: steps.napi_restore.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            apps/api/native/*.node
+            apps/api/native/index.js
+            apps/api/native/index.d.ts
+          key: ${{ steps.napi_restore.outputs.cache-primary-key }}
+
+      - name: Setup Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: 1.24
+          cache-dependency-path: apps/api/sharedLibs/go-html-to-md/go.sum
+
+      - name: Restore Go lib cache
+        id: golib_restore
+        uses: actions/cache/restore@v4
+        with:
+          path: apps/api/sharedLibs/go-html-to-md/libhtml-to-markdown.so
+          key: ${{ runner.os }}-golib-${{ hashFiles('apps/api/sharedLibs/go-html-to-md/go.sum', 'apps/api/sharedLibs/go-html-to-md/*.go') }}
+
+      - name: Build Go lib
+        if: steps.golib_restore.outputs.cache-hit != 'true'
+        run: |
+          cd apps/api/sharedLibs/go-html-to-md
+          go mod tidy
+          go build -o libhtml-to-markdown.so -buildmode=c-shared html-to-markdown.go
+
+      - name: Cache Go lib
+        if: steps.golib_restore.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: apps/api/sharedLibs/go-html-to-md/libhtml-to-markdown.so
+          key: ${{ steps.golib_restore.outputs.cache-primary-key }}
+
+      - name: Install API dependencies
+        run: pnpm install --frozen-lockfile --ignore-scripts
+        working-directory: apps/api
+        env:
+          npm_config_ignore_scripts: "true"
+
+      - name: Setup NuQ PostgreSQL schema
+        run: |
+          docker build -t firecrawl/nuq-postgres:latest ./apps/nuq-postgres
+          docker run -d -p 5433:5432 -e POSTGRES_USER=postgres -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=postgres --name nuq-postgres firecrawl/nuq-postgres:latest
+          sleep 5
+        env:
+          NUQ_DATABASE_URL: postgres://postgres:postgres@localhost:5433/postgres
+
+      - name: Run unit tests
+        run: pnpm harness pnpm test:snips
+        working-directory: apps/api
+        env:
+          npm_config_ignore_scripts: "true"
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: apps/api/coverage/
+          retention-days: 7
+          if-no-files-found: ignore
+
+      - name: Copy logs
+        if: always()
+        run: |
+          mkdir -p logs
+          if [ -f ./apps/api/firecrawl.log ]; then
+            cp ./apps/api/firecrawl.log logs/firecrawl.log
+          fi
+
+      - name: Upload logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: unit-test-logs
+          path: logs/
+          retention-days: 7
+          if-no-files-found: ignore
