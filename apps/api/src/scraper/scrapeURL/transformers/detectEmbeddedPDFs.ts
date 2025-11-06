@@ -134,7 +134,11 @@ export async function detectEmbeddedPDFs(
 function resolveUrl(url: string, baseUrl: string): string {
   try {
     // If URL is already absolute, return it
-    if (url.startsWith("http://") || url.startsWith("https://")) {
+    if (
+      url.startsWith("http://") ||
+      url.startsWith("https://") ||
+      url.startsWith("data:")
+    ) {
       return url;
     }
 
