@@ -26,19 +26,6 @@ jobs:
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
-      postgres:
-        image: postgres:15
-        env:
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: postgres
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
     env:
       REDIS_URL: redis://localhost:6379
       NUQ_DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
@@ -132,10 +119,20 @@ jobs:
       - name: Setup NuQ PostgreSQL schema
         run: |
           docker build -t firecrawl/nuq-postgres:latest ./apps/nuq-postgres
-          docker run -d -p 5433:5432 -e POSTGRES_USER=postgres -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=postgres --name nuq-postgres firecrawl/nuq-postgres:latest
-          sleep 5
-        env:
-          NUQ_DATABASE_URL: postgres://postgres:postgres@localhost:5433/postgres
+          docker run -d -p 5432:5432 -e POSTGRES_USER=postgres -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=postgres --name postgres firecrawl/nuq-postgres:latest
+
+      - name: Wait for PostgreSQL
+        run: |
+          for i in {1..30}; do
+            if docker exec postgres pg_isready -U postgres > /dev/null 2>&1; then
+              echo "PostgreSQL is ready"
+              exit 0
+            fi
+            echo "Waiting for PostgreSQL... ($i/30)"
+            sleep 1
+          done
+          echo "PostgreSQL failed to become ready"
+          exit 1
 
       - name: Run unit tests
         run: pnpm harness pnpm test:snips
