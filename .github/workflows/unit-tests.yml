@@ -32,6 +32,8 @@ jobs:
       USE_GO_MARKDOWN_PARSER: true
       HOST: 0.0.0.0
       TEST_SUITE_SELF_HOSTED: true
+      TEST_SUITE_WEBSITE: http://127.0.0.1:4321
+      ALLOW_LOCAL_WEBHOOKS: true
 
     steps:
       - name: Checkout code
@@ -115,6 +117,17 @@ jobs:
         working-directory: apps/api
         env:
           npm_config_ignore_scripts: "true"
+
+      - name: Install test site dependencies
+        run: pnpm install --frozen-lockfile
+        working-directory: apps/test-site
+
+      - name: Build and serve test site
+        run: |
+          pnpm build
+          pnpm preview --port 4321 --strictPort --host 127.0.0.1 > test-site.log 2>&1 &
+          pnpx wait-on tcp:4321 -t 20s
+        working-directory: apps/test-site
 
       - name: Setup NuQ PostgreSQL schema
         run: |
