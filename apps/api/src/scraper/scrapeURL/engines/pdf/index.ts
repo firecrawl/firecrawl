@@ -297,125 +297,139 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
           headers: meta.options.headers,
         });
 
-  if ((response as any).headers) {
-    // if downloadFile was used
-    const r: Response = response as any;
-    const ct = r.headers.get("Content-Type");
-    if (ct && !ct.includes("application/pdf")) {
-      // if downloaded file wasn't a PDF
-      if (meta.pdfPrefetch === undefined) {
-        // for non-PDF URLs, this is expected, not anti-bot
-        if (!meta.featureFlags.has("pdf")) {
-          throw new EngineUnsuccessfulError("pdf");
+  try {
+    if ((response as any).headers) {
+      // if downloadFile was used
+      const r: Response = response as any;
+      const ct = r.headers.get("Content-Type");
+      if (ct && !ct.includes("application/pdf")) {
+        // if downloaded file wasn't a PDF
+        if (meta.pdfPrefetch === undefined) {
+          // for non-PDF URLs, this is expected, not anti-bot
+          if (!meta.featureFlags.has("pdf")) {
+            throw new EngineUnsuccessfulError("pdf");
+          } else {
+            throw new PDFAntibotError();
+          }
         } else {
-          throw new PDFAntibotError();
+          throw new PDFPrefetchFailed();
         }
-      } else {
-        throw new PDFPrefetchFailed();
       }
     }
-  }
 
-  const pdfMetadata = await getPdfMetadata(tempFilePath);
-  const effectivePageCount = maxPages
-    ? Math.min(pdfMetadata.numPages, maxPages)
-    : pdfMetadata.numPages;
+    const pdfMetadata = await getPdfMetadata(tempFilePath);
+    const effectivePageCount = maxPages
+      ? Math.min(pdfMetadata.numPages, maxPages)
+      : pdfMetadata.numPages;
 
-  if (
-    effectivePageCount * MILLISECONDS_PER_PAGE >
-    (meta.abort.scrapeTimeout() ?? Infinity)
-  ) {
-    throw new PDFInsufficientTimeError(
-      effectivePageCount,
-      effectivePageCount * MILLISECONDS_PER_PAGE + 5000,
-    );
-  }
+    if (
+      effectivePageCount * MILLISECONDS_PER_PAGE >
+      (meta.abort.scrapeTimeout() ?? Infinity)
+    ) {
+      throw new PDFInsufficientTimeError(
+        effectivePageCount,
+        effectivePageCount * MILLISECONDS_PER_PAGE + 5000,
+      );
+    }
 
-  let result: PDFProcessorResult | null = null;
+    let result: PDFProcessorResult | null = null;
 
-  const base64Content = (await readFile(tempFilePath)).toString("base64");
+    const base64Content = (await readFile(tempFilePath)).toString("base64");
 
-  // First try RunPod MU if conditions are met
-  if (
-    base64Content.length < MAX_FILE_SIZE &&
-    process.env.RUNPOD_MU_API_KEY &&
-    process.env.RUNPOD_MU_POD_ID
-  ) {
-    const muV1StartedAt = Date.now();
-    try {
-      result = await scrapePDFWithRunPodMU(
+    // First try RunPod MU if conditions are met
+    if (
+      base64Content.length < MAX_FILE_SIZE &&
+      process.env.RUNPOD_MU_API_KEY &&
+      process.env.RUNPOD_MU_POD_ID
+    ) {
+      const muV1StartedAt = Date.now();
+      try {
+        result = await scrapePDFWithRunPodMU(
+          {
+            ...meta,
+            logger: meta.logger.child({
+              method: "scrapePDF/scrapePDFWithRunPodMU",
+            }),
+          },
+          tempFilePath,
+          base64Content,
+          maxPages,
+        );
+        const muV1DurationMs = Date.now() - muV1StartedAt;
+        meta.logger
+          .child({ method: "scrapePDF/MUv1Experiment" })
+          .info("MU v1 completed", {
+            durationMs: muV1DurationMs,
+            url: meta.rewrittenUrl ?? meta.url,
+            pages: effectivePageCount,
+            success: true,
+          });
+      } catch (error) {
+        if (
+          error instanceof RemoveFeatureError ||
+          error instanceof AbortManagerThrownError
+        ) {
+          throw error;
+        }
+        meta.logger.warn(
+          "RunPod MU failed to parse PDF (could be due to timeout) -- falling back to parse-pdf",
+          { error },
+        );
+        Sentry.captureException(error);
+        const muV1DurationMs = Date.now() - muV1StartedAt;
+        meta.logger
+          .child({ method: "scrapePDF/MUv1Experiment" })
+          .info("MU v1 failed", {
+            durationMs: muV1DurationMs,
+            url: meta.rewrittenUrl ?? meta.url,
+            pages: effectivePageCount,
+            success: false,
+          });
+      }
+    }
+
+    // If RunPod MU failed or wasn't attempted, use PdfParse
+    if (!result) {
+      result = await scrapePDFWithParsePDF(
         {
           ...meta,
           logger: meta.logger.child({
-            method: "scrapePDF/scrapePDFWithRunPodMU",
+            method: "scrapePDF/scrapePDFWithParsePDF",
           }),
         },
         tempFilePath,
-        base64Content,
-        maxPages,
       );
-      const muV1DurationMs = Date.now() - muV1StartedAt;
-      meta.logger
-        .child({ method: "scrapePDF/MUv1Experiment" })
-        .info("MU v1 completed", {
-          durationMs: muV1DurationMs,
-          url: meta.rewrittenUrl ?? meta.url,
-          pages: effectivePageCount,
-          success: true,
+    }
+
+    return {
+      url: response.url ?? meta.rewrittenUrl ?? meta.url,
+      statusCode: response.status,
+      html: result?.html ?? "",
+      markdown: result?.markdown ?? "",
+      pdfMetadata: {
+        // Rust parser gets the metadata incorrectly, so we overwrite the page count here with the effective page count
+        // TODO: fix this later
+        numPages: effectivePageCount,
+        title: pdfMetadata.title,
+      },
+
+      proxyUsed: "basic",
+    };
+  } finally {
+    // Clean up temporary file - ensures cleanup happens regardless of success or failure
+    // Unlike document engine, PDF engine always works with temp files (both prefetch and downloadFile paths)
+    if (tempFilePath) {
+      try {
+        await unlink(tempFilePath);
+      } catch (error) {
+        // Ignore errors when cleaning up temp files (e.g., file already deleted or doesn't exist)
+        meta.logger?.warn("Failed to clean up temporary PDF file", {
+          error,
+          tempFilePath,
         });
-    } catch (error) {
-      if (
-        error instanceof RemoveFeatureError ||
-        error instanceof AbortManagerThrownError
-      ) {
-        throw error;
       }
-      meta.logger.warn(
-        "RunPod MU failed to parse PDF (could be due to timeout) -- falling back to parse-pdf",
-        { error },
-      );
-      Sentry.captureException(error);
-      const muV1DurationMs = Date.now() - muV1StartedAt;
-      meta.logger
-        .child({ method: "scrapePDF/MUv1Experiment" })
-        .info("MU v1 failed", {
-          durationMs: muV1DurationMs,
-          url: meta.rewrittenUrl ?? meta.url,
-          pages: effectivePageCount,
-          success: false,
-        });
     }
   }
-
-  // If RunPod MU failed or wasn't attempted, use PdfParse
-  if (!result) {
-    result = await scrapePDFWithParsePDF(
-      {
-        ...meta,
-        logger: meta.logger.child({
-          method: "scrapePDF/scrapePDFWithParsePDF",
-        }),
-      },
-      tempFilePath,
-    );
-  }
-
-  await unlink(tempFilePath);
-
-  return {
-    url: response.url ?? meta.rewrittenUrl ?? meta.url,
-    statusCode: response.status,
-    html: result?.html ?? "",
-    markdown: result?.markdown ?? "",
-    pdfMetadata: {
-      // Rust parser gets the metadata incorrectly, so we overwrite the page count here with the effective page count
-      // TODO: fix this later
-      numPages: effectivePageCount,
-      title: pdfMetadata.title,
-    },
-
-    proxyUsed: "basic",
-  };
 }
 
 export function pdfMaxReasonableTime(meta: Meta): number {

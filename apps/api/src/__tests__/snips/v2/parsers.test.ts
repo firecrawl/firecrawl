@@ -4,6 +4,8 @@ import {
   TEST_SUITE_WEBSITE,
 } from "../lib";
 import { scrape, scrapeRaw, scrapeTimeout, idmux, Identity } from "./lib";
+import { promises as fs } from "fs";
+import os from "os";
 
 let identity: Identity;
 
@@ -18,6 +20,34 @@ beforeAll(async () => {
 describeIf(ALLOW_TEST_SUITE_WEBSITE)("Parsers parameter tests", () => {
   const pdfUrl = `${TEST_SUITE_WEBSITE}/example.pdf`;
   const htmlUrl = TEST_SUITE_WEBSITE;
+  const fakePdfHtmlUrl = `${TEST_SUITE_WEBSITE}/not-a-pdf.pdf`;
+
+  async function listTempFilesForScrape(scrapeId: string): Promise<string[]> {
+    if (!scrapeId) {
+      throw new Error("scrapeId is required to inspect temp files");
+    }
+    const files = await fs.readdir(os.tmpdir());
+    return files.filter(file => file.startsWith(`tempFile-${scrapeId}`));
+  }
+
+  async function expectTempFilesCleaned(
+    scrapeId: string,
+    attempts = 5,
+    delayMs = 300,
+  ): Promise<void> {
+    for (let i = 0; i < attempts; i++) {
+      const leaked = await listTempFilesForScrape(scrapeId);
+      if (leaked.length === 0) {
+        return;
+      }
+      if (i < attempts - 1) {
+        await new Promise(resolve => setTimeout(resolve, delayMs));
+      }
+    }
+
+    const leaked = await listTempFilesForScrape(scrapeId);
+    expect(leaked).toEqual([]);
+  }
 
   describe("Array format", () => {
     it.concurrent(
@@ -311,6 +341,71 @@ describeIf(ALLOW_TEST_SUITE_WEBSITE)("Parsers parameter tests", () => {
         expect(response.metadata.numPages).toBe(1);
       },
       scrapeTimeout * 2,
+    );
+  });
+
+  describe("Temp file cleanup (memory leak regression)", () => {
+    it.concurrent(
+      "cleans up temp files after successful PDF parse",
+      async () => {
+        const response = await scrape(
+          {
+            url: pdfUrl,
+            parsers: ["pdf"],
+          },
+          identity,
+        );
+
+        expect(response.markdown).toBeDefined();
+        expect(response.markdown).toContain("PDF Test File");
+        expect(response.metadata.scrapeId).toBeDefined();
+
+        await expectTempFilesCleaned(response.metadata.scrapeId!);
+      },
+      scrapeTimeout * 2,
+    );
+
+    it.concurrent(
+      "cleans up temp files after PDF parse failure (non-PDF content)",
+      async () => {
+        const response = await scrape(
+          {
+            url: fakePdfHtmlUrl,
+            parsers: ["pdf"],
+          },
+          identity,
+        );
+
+        expect(response.markdown).toBeDefined();
+        expect(response.metadata.scrapeId).toBeDefined();
+
+        await expectTempFilesCleaned(response.metadata.scrapeId!);
+      },
+      scrapeTimeout * 2,
+    );
+
+    it.concurrent(
+      "cleans up temp files after multiple PDF operations",
+      async () => {
+        const scrapeIds: string[] = [];
+
+        for (let i = 0; i < 3; i++) {
+          const response = await scrape(
+            {
+              url: i === 1 ? fakePdfHtmlUrl : pdfUrl,
+              parsers: ["pdf"],
+            },
+            identity,
+          );
+          expect(response.metadata.scrapeId).toBeDefined();
+          scrapeIds.push(response.metadata.scrapeId!);
+        }
+
+        await Promise.all(
+          scrapeIds.map(scrapeId => expectTempFilesCleaned(scrapeId, 8, 250)),
+        );
+      },
+      scrapeTimeout * 6,
     );
   });
 });
