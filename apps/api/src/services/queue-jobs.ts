@@ -22,6 +22,57 @@ import { deserializeTransportableError } from "../lib/error-serde";
 import { abTestJob } from "./ab-test";
 import { NuQJob, scrapeQueue } from "./worker/nuq";
 import { serializeTraceContext } from "../lib/otel-tracer";
+import { ScrapeJobCancelledError } from "../scraper/scrapeURL/error";
+import { isScrapeJobCancelled } from "./job-cancellation";
+
+const scrapeCancellationPollInterval =
+  Number(process.env.SCRAPE_CANCELLATION_POLL_INTERVAL_MS) || 1000;
+
+function createCancellationPromise(jobId: string, logger: Logger) {
+  let stopped = false;
+  let timer: NodeJS.Timeout | null = null;
+
+  const promise = new Promise<never>((_, reject) => {
+    const poll = async () => {
+      if (stopped) {
+        return;
+      }
+
+      try {
+        if (await isScrapeJobCancelled(jobId)) {
+          stopped = true;
+          logger.info("Scrape job cancellation detected (waitForJob)", {
+            module: "scrape/cancellation",
+            source: "api_waiter",
+            jobId,
+          });
+          return reject(new ScrapeJobCancelledError());
+        }
+      } catch (error) {
+        logger.debug("Cancellation poll failed", {
+          module: "scrape/cancellation",
+          source: "api_waiter",
+          jobId,
+          error,
+        });
+      }
+
+      timer = setTimeout(poll, scrapeCancellationPollInterval);
+    };
+
+    poll();
+  });
+
+  return {
+    promise,
+    stop() {
+      stopped = true;
+      if (timer) {
+        clearTimeout(timer);
+      }
+    },
+  };
+}
 
 /**
  * Checks if a job is a crawl or batch scrape based on its options
@@ -524,6 +575,7 @@ export async function waitForJob(
   const isConcurrencyLimited = !!(typeof job === "string");
 
   let doc: Document | null = null;
+  const cancellationWatcher = createCancellationPromise(jobId, logger);
   try {
     doc = await Promise.race(
       [
@@ -546,6 +598,7 @@ export async function waitForJob(
               }, timeout);
             })
           : null,
+        cancellationWatcher.promise,
       ].filter(x => x !== null),
     );
   } catch (e) {
@@ -561,6 +614,8 @@ export async function waitForJob(
     } else {
       throw e;
     }
+  } finally {
+    cancellationWatcher.stop();
   }
   logger.debug("Got job");
 

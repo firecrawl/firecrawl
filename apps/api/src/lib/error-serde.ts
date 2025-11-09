@@ -20,6 +20,8 @@ import {
   SiteError,
   SSLError,
   ProxySelectionError,
+  ScrapeJobCancelledError,
+  ScrapeRetryLimitError,
 } from "../scraper/scrapeURL/error";
 
 // TODO: figure out correct typing for this
@@ -33,6 +35,8 @@ const errorMap: Record<ErrorCodes, any> = {
   SCRAPE_PROXY_SELECTION_ERROR: ProxySelectionError,
   SCRAPE_PDF_PREFETCH_FAILED: PDFPrefetchFailed,
   SCRAPE_DOCUMENT_PREFETCH_FAILED: DocumentPrefetchFailed,
+  SCRAPE_JOB_CANCELLED: ScrapeJobCancelledError,
+  SCRAPE_RETRY_LIMIT: ScrapeRetryLimitError,
   SCRAPE_ZDR_VIOLATION_ERROR: ZDRViolationError,
   SCRAPE_DNS_RESOLUTION_ERROR: DNSResolutionError,
   SCRAPE_PDF_INSUFFICIENT_TIME_ERROR: PDFInsufficientTimeError,

@@ -1,6 +1,7 @@
 import "dotenv/config";
 import { logger as _logger } from "../../lib/logger";
 import { processJobInternal } from "./scrape-worker";
+import { finalizeJobWithRetry } from "./job-finalizer";
 import { scrapeQueue, nuqGetLocalMetrics, nuqHealthCheck } from "./nuq";
 import Express from "express";
 import { _ } from "ajv";
@@ -48,6 +49,8 @@ import { initializeEngineForcing } from "../../scraper/WebScraper/utils/engine-f
   process.on("SIGTERM", shutdown);
 
   let noJobTimeout = 1500;
+  const stallAlertThreshold =
+    Number(process.env.NUQ_STALL_ALERT_THRESHOLD) || 7;
 
   while (!isShuttingDown) {
     const job = await scrapeQueue.getJobToProcess();
@@ -70,6 +73,14 @@ import { initializeEngineForcing } from "../../scraper/WebScraper/utils/engine-f
     });
 
     logger.info("Acquired job");
+
+    if (typeof job.stalls === "number" && job.stalls >= stallAlertThreshold) {
+      logger.warn("Job has high stall count", {
+        jobId: job.id,
+        stalls: job.stalls,
+        threshold: stallAlertThreshold,
+      });
+    }
 
     const lockRenewInterval = setInterval(async () => {
       logger.info("Renewing lock");
@@ -94,31 +105,30 @@ import { initializeEngineForcing } from "../../scraper/WebScraper/utils/engine-f
     clearInterval(lockRenewInterval);
 
     if (processResult.ok) {
-      if (
-        !(await scrapeQueue.jobFinish(
-          job.id,
-          job.lock!,
-          processResult.data,
-          logger,
-        ))
-      ) {
-        logger.warn("Could not update job status");
-      }
+      await finalizeJobWithRetry(
+        "finish",
+        () =>
+          scrapeQueue.jobFinish(job.id, job.lock!, processResult.data, logger),
+        job.id,
+        logger,
+      );
     } else {
-      if (
-        !(await scrapeQueue.jobFail(
-          job.id,
-          job.lock!,
-          processResult.error instanceof Error
-            ? processResult.error.message
-            : typeof processResult.error === "string"
-              ? processResult.error
-              : JSON.stringify(processResult.error),
-          logger,
-        ))
-      ) {
-        logger.warn("Could not update job status");
-      }
+      await finalizeJobWithRetry(
+        "fail",
+        () =>
+          scrapeQueue.jobFail(
+            job.id,
+            job.lock!,
+            processResult.error instanceof Error
+              ? processResult.error.message
+              : typeof processResult.error === "string"
+                ? processResult.error
+                : JSON.stringify(processResult.error),
+            logger,
+          ),
+        job.id,
+        logger,
+      );
     }
   }
 

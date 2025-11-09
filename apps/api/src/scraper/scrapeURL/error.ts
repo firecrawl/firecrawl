@@ -398,3 +398,69 @@ export class WaterfallNextEngineSignal extends Error {
     super("Waterfall next engine");
   }
 }
+
+export class ScrapeJobCancelledError extends TransportableError {
+  constructor() {
+    super(
+      "SCRAPE_JOB_CANCELLED",
+      "Scrape job was cancelled before completion.",
+    );
+  }
+
+  serialize() {
+    return super.serialize();
+  }
+
+  static deserialize(
+    _: ErrorCodes,
+    data: ReturnType<typeof this.prototype.serialize>,
+  ) {
+    const x = new ScrapeJobCancelledError();
+    x.stack = data.stack;
+    return x;
+  }
+}
+
+export type ScrapeRetryLimitReason =
+  | "global"
+  | "feature_toggle"
+  | "feature_removal"
+  | "pdf_antibot"
+  | "document_antibot";
+
+export type ScrapeRetryStats = {
+  totalAttempts: number;
+  addFeatureAttempts: number;
+  removeFeatureAttempts: number;
+  pdfAntibotAttempts: number;
+  documentAntibotAttempts: number;
+};
+
+export class ScrapeRetryLimitError extends TransportableError {
+  constructor(
+    public reason: ScrapeRetryLimitReason,
+    public stats: ScrapeRetryStats,
+  ) {
+    super(
+      "SCRAPE_RETRY_LIMIT",
+      `Scrape aborted after exceeding retry limit (${reason}).`,
+    );
+  }
+
+  serialize() {
+    return {
+      ...super.serialize(),
+      reason: this.reason,
+      stats: this.stats,
+    };
+  }
+
+  static deserialize(
+    _: ErrorCodes,
+    data: ReturnType<typeof this.prototype.serialize>,
+  ) {
+    const x = new ScrapeRetryLimitError(data.reason, data.stats);
+    x.stack = data.stack;
+    return x;
+  }
+}

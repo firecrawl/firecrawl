@@ -41,6 +41,7 @@ import { search } from "../../search";
 import { buildRephraseToSerpPrompt } from "./build-prompts";
 import { getACUCTeam } from "../../controllers/auth";
 import { CostLimitExceededError, CostTracking } from "../cost-tracking";
+import { ScrapeJobCancelledError } from "../../scraper/scrapeURL/error";
 
 interface ExtractServiceOptions {
   request: ExtractRequest;
@@ -51,6 +52,7 @@ interface ExtractServiceOptions {
   agent?: boolean;
   apiKeyId: number | null;
   createdAt?: number;
+  abortSignal?: AbortSignal;
 }
 
 export interface ExtractResult {
@@ -405,6 +407,7 @@ export async function performExtraction(
               timeout,
               flags: acuc?.flags ?? null,
               apiKeyId,
+              abortSignal: options.abortSignal,
             },
             urlTraces,
             logger.child({
@@ -759,6 +762,7 @@ export async function performExtraction(
               timeout,
               flags: acuc?.flags ?? null,
               apiKeyId,
+              abortSignal: options.abortSignal,
             },
             urlTraces,
             logger.child({
@@ -1113,6 +1117,9 @@ export async function performExtraction(
       sources,
     };
   } catch (error) {
+    if (error instanceof ScrapeJobCancelledError) {
+      throw error;
+    }
     const tokens_billed = 300 + calculateThinkingCost(costTracking);
     await billTeam(teamId, subId, tokens_billed, apiKeyId, logger, true).catch(
       error => {

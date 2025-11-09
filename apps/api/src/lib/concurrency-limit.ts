@@ -54,7 +54,10 @@ export async function pushConcurrencyLimitActiveJob(
   await redisEvictConnection.zadd(constructKey(team_id), now + timeout, id);
 }
 
-async function removeConcurrencyLimitActiveJob(team_id: string, id: string) {
+export async function removeConcurrencyLimitActiveJob(
+  team_id: string,
+  id: string,
+) {
   await redisEvictConnection.zrem(constructKey(team_id), id);
 }
 
@@ -93,6 +96,29 @@ export async function getConcurrencyLimitedJobs(team_id: string) {
       x => JSON.parse(x).id,
     ),
   );
+}
+
+export async function removeConcurrencyLimitedJob(
+  team_id: string,
+  jobId: string,
+) {
+  const queueKey = constructQueueKey(team_id);
+  const members = await redisEvictConnection.zrange(queueKey, 0, -1);
+
+  for (const member of members) {
+    try {
+      const parsed = JSON.parse(member);
+      if (parsed?.id === jobId) {
+        await redisEvictConnection.zrem(queueKey, member);
+        break;
+      }
+    } catch (error) {
+      logger.debug("Failed to parse concurrency queue member", {
+        error,
+        member,
+      });
+    }
+  }
 }
 
 export async function getConcurrencyQueueJobsCount(
@@ -140,7 +166,7 @@ export async function pushCrawlConcurrencyLimitActiveJob(
   );
 }
 
-async function removeCrawlConcurrencyLimitActiveJob(
+export async function removeCrawlConcurrencyLimitActiveJob(
   crawl_id: string,
   id: string,
 ) {

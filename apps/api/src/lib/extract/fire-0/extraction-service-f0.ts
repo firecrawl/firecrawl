@@ -39,6 +39,7 @@ import {
 } from "./usage/llm-cost-f0";
 import { SourceTracker_F0 } from "./helpers/source-tracker-f0";
 import { getACUCTeam } from "../../../controllers/auth";
+import { ScrapeJobCancelledError } from "../../../scraper/scrapeURL/error";
 
 interface ExtractServiceOptions {
   request: ExtractRequest;
@@ -48,6 +49,7 @@ interface ExtractServiceOptions {
   cacheKey?: string;
   apiKeyId: number | null;
   createdAt?: number;
+  abortSignal?: AbortSignal;
 }
 
 interface ExtractResult {
@@ -160,6 +162,9 @@ export async function performExtraction_F0(
         }
       }
     } catch (error) {
+      if (error instanceof ScrapeJobCancelledError) {
+        throw error;
+      }
       logger.error("Error loading cached docs", { error });
     }
   }
@@ -370,6 +375,7 @@ export async function performExtraction_F0(
             timeout,
             flags: acuc?.flags ?? null,
             apiKeyId,
+            abortSignal: options.abortSignal,
           },
           urlTraces,
           logger.child({
@@ -668,6 +674,7 @@ export async function performExtraction_F0(
             timeout,
             flags: acuc?.flags ?? null,
             apiKeyId,
+            abortSignal: options.abortSignal,
           },
           urlTraces,
           logger.child({

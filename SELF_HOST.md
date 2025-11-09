@@ -80,6 +80,26 @@ USE_DB_AUTHENTICATION=false
 
 ## === Other ===
 
+## === Scrape reliability / cancellation ===
+# Caps how many times the scraper will retry across all engines before failing the job (helps avoid infinite loops)
+# SCRAPE_MAX_ATTEMPTS=6
+# Maximum times we will add/remove feature flags during a single scrape
+# SCRAPE_MAX_FEATURE_TOGGLES=3
+# SCRAPE_MAX_FEATURE_REMOVALS=3
+# Maximum PDF/document anti-bot prefetch retries
+# SCRAPE_MAX_PDF_PREFETCHES=2
+# SCRAPE_MAX_DOCUMENT_PREFETCHES=2
+# Poll interval (ms) for cancellation checks in workers/API waiters (lower = faster aborts, higher = less Redis load)
+# SCRAPE_CANCELLATION_POLL_INTERVAL_MS=1000
+# Warn in worker logs when NuQ detects a job with high stall counts (helps Ops catch stuck jobs early)
+# NUQ_STALL_ALERT_THRESHOLD=7
+# Emit alerts when NuQ jobFinish/jobFail retries exhaust (default threshold follows max attempts)
+# NUQ_FINALIZE_RETRY_ALERT_THRESHOLD=3
+
+### Monitoring signals
+- `scrape/cancellation` logs fire whenever API waiters, services, or workers observe a cancelled job. Alert when the rate spikes or when a single source reports repeated cancellations—it's usually a sign of flaky clients or webhook misconfigurations. Jobs cancelled for `client_disconnect` reasons are non-billable by default.
+- `nuq/finalize` logs report every retry of `jobFinish`/`jobFail` plus threshold breaches. Alert on error-level entries to catch database/write issues before NuQ stalls grow.
+
 # Supabase Setup (used to support DB authentication, advanced logging, etc.)
 # SUPABASE_ANON_TOKEN=
 # SUPABASE_URL=

@@ -11,6 +11,8 @@ import { getJobPriority } from "../../job-priority";
 import type { Logger } from "winston";
 import { isUrlBlocked } from "../../../scraper/WebScraper/utils/blocklist";
 import { scrapeQueue } from "../../../services/worker/nuq";
+import { cancelScrapeJob } from "../../../services/job-cancellation";
+import { ScrapeJobCancelledError } from "../../../scraper/scrapeURL/error";
 
 interface ScrapeDocumentOptions {
   url: string;
@@ -20,6 +22,7 @@ interface ScrapeDocumentOptions {
   isSingleUrl?: boolean;
   flags: TeamFlags | null;
   apiKeyId: number | null;
+  abortSignal?: AbortSignal;
 }
 
 export async function scrapeDocument_F0(
@@ -39,6 +42,10 @@ export async function scrapeDocument_F0(
   }
 
   async function attemptScrape(timeout: number) {
+    if (options.abortSignal?.aborted) {
+      throw new ScrapeJobCancelledError();
+    }
+
     const jobId = crypto.randomUUID();
     const jobPriority = await getJobPriority({
       team_id: options.teamId,
@@ -74,23 +81,49 @@ export async function scrapeDocument_F0(
       true,
     );
 
-    const doc = await waitForJob(jobId, timeout, false, logger);
-    try {
-      await scrapeQueue.removeJob(jobId, logger);
-    } catch (error) {
-      logger.warn("Error removing job from queue", { error, scrapeId: jobId });
-    }
-
-    if (trace) {
-      trace.timing.completedAt = new Date().toISOString();
-      trace.contentStats = {
-        rawContentLength: doc.markdown?.length || 0,
-        processedContentLength: doc.markdown?.length || 0,
-        tokensUsed: 0,
+    let abortListener: (() => void) | undefined;
+    if (options.abortSignal) {
+      abortListener = () => {
+        cancelScrapeJob({
+          jobId,
+          teamId: options.teamId,
+          reason: "extract_cancelled",
+          logger,
+        }).catch(error => {
+          logger.debug("Failed to cancel scrape job", { error, jobId });
+        });
       };
+      options.abortSignal.addEventListener("abort", abortListener, {
+        once: true,
+      });
     }
 
-    return doc;
+    try {
+      const doc = await waitForJob(jobId, timeout, false, logger);
+      try {
+        await scrapeQueue.removeJob(jobId, logger);
+      } catch (error) {
+        logger.warn("Error removing job from queue", {
+          error,
+          scrapeId: jobId,
+        });
+      }
+
+      if (trace) {
+        trace.timing.completedAt = new Date().toISOString();
+        trace.contentStats = {
+          rawContentLength: doc.markdown?.length || 0,
+          processedContentLength: doc.markdown?.length || 0,
+          tokensUsed: 0,
+        };
+      }
+
+      return doc;
+    } finally {
+      if (abortListener && options.abortSignal) {
+        options.abortSignal.removeEventListener("abort", abortListener);
+      }
+    }
   }
 
   try {
@@ -100,6 +133,10 @@ export async function scrapeDocument_F0(
       logger.debug("Scrape finished!");
       return x;
     } catch (timeoutError) {
+      if (timeoutError instanceof ScrapeJobCancelledError) {
+        throw timeoutError;
+      }
+
       logger.warn("Scrape failed.", { error: timeoutError });
 
       if (options.isSingleUrl) {
@@ -113,6 +150,14 @@ export async function scrapeDocument_F0(
       throw timeoutError;
     }
   } catch (error) {
+    if (error instanceof ScrapeJobCancelledError) {
+      if (trace) {
+        trace.status = "cancelled";
+        trace.error = error.message;
+      }
+      throw error;
+    }
+
     logger.error(`error in scrapeDocument`, { error });
     if (trace) {
       trace.status = "error";

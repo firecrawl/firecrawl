@@ -36,6 +36,7 @@ export type NuQJob<Data = any, ReturnValue = any> = {
   lock?: string;
   ownerId?: string;
   groupId?: string;
+  stalls?: number;
 };
 
 type NuQJobOptions = {
@@ -356,6 +357,7 @@ class NuQ<JobData = any, JobReturnValue = any> {
     "lock",
     "owner_id",
     "group_id",
+    "stalls",
   ];
 
   private readonly jobBacklogReturning = [
@@ -386,6 +388,7 @@ class NuQ<JobData = any, JobReturnValue = any> {
       lock: row.lock ?? undefined,
       ownerId: row.owner_id ?? undefined,
       groupId: row.group_id ?? undefined,
+      stalls: row.stalls ?? undefined,
     };
   }
 

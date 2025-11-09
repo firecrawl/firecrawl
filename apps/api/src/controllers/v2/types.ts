@@ -973,7 +973,7 @@ export type ScrapeResponse =
 
 export interface URLTrace {
   url: string;
-  status: "mapped" | "scraped" | "error";
+  status: "mapped" | "scraped" | "error" | "cancelled";
   timing: {
     discoveredAt: string;
     scrapedAt?: string;

@@ -15,6 +15,7 @@ import { TransportableError } from "../../lib/error";
 import { scrapeQueue } from "../../services/worker/nuq";
 import { checkPermissions } from "../../lib/permissions";
 import { withSpan, setSpanAttributes, SpanKind } from "../../lib/otel-tracer";
+import { cancelScrapeJob } from "../../services/job-cancellation";
 
 export async function scrapeController(
   req: RequestWithAuth<{}, ScrapeResponse, ScrapeRequest>,
@@ -86,184 +87,241 @@ export async function scrapeController(
 
       const middlewareTime = controllerStartTime - middlewareStartTime;
 
-      logger.debug("Scrape " + jobId + " starting", {
-        version: "v2",
-        scrapeId: jobId,
-        request: req.body,
-        originalRequest: preNormalizedBody,
-        account: req.account,
-      });
+      let responseSent = false;
+      let clientDisconnected = false;
 
-      setSpanAttributes(span, {
-        "scrape.zero_data_retention": zeroDataRetention,
-        "scrape.origin": req.body.origin,
-        "scrape.timeout": req.body.timeout,
-      });
+      const cleanupConnectionHandlers = () => {
+        if (typeof req.off === "function") {
+          req.off("close", handleDisconnect);
+          req.off("aborted", handleDisconnect);
+        } else {
+          req.removeListener("close", handleDisconnect);
+          req.removeListener("aborted", handleDisconnect);
+        }
+      };
 
-      const origin = req.body.origin;
-      const timeout = req.body.timeout;
-
-      const isDirectToBullMQ =
-        process.env.SEARCH_PREVIEW_TOKEN !== undefined &&
-        process.env.SEARCH_PREVIEW_TOKEN === req.body.__searchPreviewToken;
-
-      const jobPriority = await getJobPriority({
-        team_id: req.auth.team_id,
-        basePriority: 10,
-      });
-
-      // Job enqueuing span
-      const job = await withSpan(
-        "api.scrape.enqueue_job",
-        async enqueueSpan => {
-          const result = await addScrapeJob(
-            {
-              url: req.body.url,
-              mode: "single_urls",
-              team_id: req.auth.team_id,
-              scrapeOptions: {
-                ...req.body,
-                ...(req.body.__experimental_cache
-                  ? {
-                      maxAge: req.body.maxAge ?? 4 * 60 * 60 * 1000, // 4 hours
-                    }
-                  : {}),
-              },
-              internalOptions: {
-                teamId: req.auth.team_id,
-                saveScrapeResultToGCS: process.env.GCS_FIRE_ENGINE_BUCKET_NAME
-                  ? true
-                  : false,
-                unnormalizedSourceURL: preNormalizedBody.url,
-                bypassBilling: isDirectToBullMQ,
-                zeroDataRetention,
-                teamFlags: req.acuc?.flags ?? null,
-              },
-              origin,
-              integration: req.body.integration,
-              startTime: controllerStartTime,
-              zeroDataRetention,
-              apiKeyId: req.acuc?.api_key_id ?? null,
-            },
-            jobId,
-            jobPriority,
-            isDirectToBullMQ,
-            true,
-          );
-
-          setSpanAttributes(enqueueSpan, {
-            "job.priority": jobPriority,
-            "job.direct_to_bullmq": isDirectToBullMQ,
-          });
-
-          return result;
-        },
-      );
-
-      const totalWait =
-        (req.body.waitFor ?? 0) +
-        (req.body.actions ?? []).reduce(
-          (a, x) => (x.type === "wait" ? (x.milliseconds ?? 0) : 0) + a,
-          0,
-        );
-
-      let doc: Document;
-      try {
-        // Wait for job completion span
-        doc = await withSpan("api.scrape.wait_for_job", async waitSpan => {
-          setSpanAttributes(waitSpan, {
-            "wait.timeout": timeout !== undefined ? timeout + totalWait : null,
-            "wait.job_id": jobId,
-          });
-
-          const result = await waitForJob(
-            job ?? jobId,
-            timeout !== undefined ? timeout + totalWait : null,
-            zeroDataRetention,
-            logger,
-          );
-
-          setSpanAttributes(waitSpan, {
-            "wait.success": true,
-          });
-
-          return result;
+      const handleDisconnect = () => {
+        if (responseSent || clientDisconnected) {
+          return;
+        }
+        clientDisconnected = true;
+        logger.warn("Client disconnected; cancelling scrape job", {
+          jobId,
         });
-      } catch (e) {
-        logger.error(`Error in scrapeController`, {
+        cancelScrapeJob({
+          jobId,
+          teamId: req.auth.team_id,
+          reason: "client_disconnect",
+          logger,
+        }).catch(error => {
+          logger.warn("Failed to cancel job after disconnect", {
+            error,
+            jobId,
+          });
+        });
+      };
+
+      req.on("close", handleDisconnect);
+      req.on("aborted", handleDisconnect);
+
+      try {
+        logger.debug("Scrape " + jobId + " starting", {
           version: "v2",
-          error: e,
+          scrapeId: jobId,
+          request: req.body,
+          originalRequest: preNormalizedBody,
+          account: req.account,
         });
 
         setSpanAttributes(span, {
-          "scrape.error": e instanceof Error ? e.message : String(e),
-          "scrape.error_type":
-            e instanceof TransportableError ? e.code : "unknown",
+          "scrape.zero_data_retention": zeroDataRetention,
+          "scrape.origin": req.body.origin,
+          "scrape.timeout": req.body.timeout,
         });
 
-        if (zeroDataRetention) {
-          await scrapeQueue.removeJob(jobId, logger);
-        }
+        const origin = req.body.origin;
+        const timeout = req.body.timeout;
 
-        if (e instanceof TransportableError) {
-          const statusCode = e.code === "SCRAPE_TIMEOUT" ? 408 : 500;
+        const isDirectToBullMQ =
+          process.env.SEARCH_PREVIEW_TOKEN !== undefined &&
+          process.env.SEARCH_PREVIEW_TOKEN === req.body.__searchPreviewToken;
+
+        const jobPriority = await getJobPriority({
+          team_id: req.auth.team_id,
+          basePriority: 10,
+        });
+
+        // Job enqueuing span
+        const job = await withSpan(
+          "api.scrape.enqueue_job",
+          async enqueueSpan => {
+            const result = await addScrapeJob(
+              {
+                url: req.body.url,
+                mode: "single_urls",
+                team_id: req.auth.team_id,
+                scrapeOptions: {
+                  ...req.body,
+                  ...(req.body.__experimental_cache
+                    ? {
+                        maxAge: req.body.maxAge ?? 4 * 60 * 60 * 1000, // 4 hours
+                      }
+                    : {}),
+                },
+                internalOptions: {
+                  teamId: req.auth.team_id,
+                  saveScrapeResultToGCS: process.env.GCS_FIRE_ENGINE_BUCKET_NAME
+                    ? true
+                    : false,
+                  unnormalizedSourceURL: preNormalizedBody.url,
+                  bypassBilling: isDirectToBullMQ,
+                  zeroDataRetention,
+                  teamFlags: req.acuc?.flags ?? null,
+                },
+                origin,
+                integration: req.body.integration,
+                startTime: controllerStartTime,
+                zeroDataRetention,
+                apiKeyId: req.acuc?.api_key_id ?? null,
+              },
+              jobId,
+              jobPriority,
+              isDirectToBullMQ,
+              true,
+            );
+
+            setSpanAttributes(enqueueSpan, {
+              "job.priority": jobPriority,
+              "job.direct_to_bullmq": isDirectToBullMQ,
+            });
+
+            return result;
+          },
+        );
+
+        const totalWait =
+          (req.body.waitFor ?? 0) +
+          (req.body.actions ?? []).reduce(
+            (a, x) => (x.type === "wait" ? (x.milliseconds ?? 0) : 0) + a,
+            0,
+          );
+
+        let doc: Document;
+        try {
+          doc = await withSpan("api.scrape.wait_for_job", async waitSpan => {
+            setSpanAttributes(waitSpan, {
+              "wait.timeout":
+                timeout !== undefined ? timeout + totalWait : null,
+              "wait.job_id": jobId,
+            });
+
+            const result = await waitForJob(
+              job ?? jobId,
+              timeout !== undefined ? timeout + totalWait : null,
+              zeroDataRetention,
+              logger,
+            );
+
+            setSpanAttributes(waitSpan, {
+              "wait.success": true,
+            });
+
+            return result;
+          });
+        } catch (e) {
+          logger.error(`Error in scrapeController`, {
+            version: "v2",
+            error: e,
+          });
+
+          if (clientDisconnected) {
+            return;
+          }
+
           setSpanAttributes(span, {
-            "scrape.status_code": statusCode,
+            "scrape.error": e instanceof Error ? e.message : String(e),
+            "scrape.error_type":
+              e instanceof TransportableError ? e.code : "unknown",
           });
-          return res.status(statusCode).json({
-            success: false,
-            code: e.code,
-            error: e.message,
-          });
-        } else {
-          setSpanAttributes(span, {
-            "scrape.status_code": 500,
-          });
-          return res.status(500).json({
-            success: false,
-            error: `(Internal server error) - ${e && e.message ? e.message : e}`,
-          });
+
+          if (zeroDataRetention) {
+            await scrapeQueue.removeJob(jobId, logger);
+          }
+
+          if (e instanceof TransportableError) {
+            const statusCode =
+              e.code === "SCRAPE_TIMEOUT"
+                ? 408
+                : e.code === "SCRAPE_JOB_CANCELLED"
+                  ? 499
+                  : 500;
+            setSpanAttributes(span, {
+              "scrape.status_code": statusCode,
+            });
+            responseSent = true;
+            return res.status(statusCode).json({
+              success: false,
+              code: e.code,
+              error: e.message,
+            });
+          } else {
+            setSpanAttributes(span, {
+              "scrape.status_code": 500,
+            });
+            responseSent = true;
+            return res.status(500).json({
+              success: false,
+              error: `(Internal server error) - ${e && e.message ? e.message : e}`,
+            });
+          }
         }
-      }
 
-      await scrapeQueue.removeJob(jobId, logger);
-
-      if (!hasFormatOfType(req.body.formats, "rawHtml")) {
-        if (doc && doc.rawHtml) {
-          delete doc.rawHtml;
+        if (clientDisconnected) {
+          return;
         }
+
+        await scrapeQueue.removeJob(jobId, logger);
+
+        if (!hasFormatOfType(req.body.formats, "rawHtml")) {
+          if (doc && doc.rawHtml) {
+            delete doc.rawHtml;
+          }
+        }
+
+        const totalRequestTime = new Date().getTime() - middlewareStartTime;
+        const controllerTime = new Date().getTime() - controllerStartTime;
+
+        // Set final span attributes
+        setSpanAttributes(span, {
+          "scrape.success": true,
+          "scrape.status_code": 200,
+          "scrape.total_request_time_ms": totalRequestTime,
+          "scrape.controller_time_ms": controllerTime,
+          "scrape.document.status_code": doc?.metadata?.statusCode,
+          "scrape.document.content_type": doc?.metadata?.contentType,
+          "scrape.document.error": doc?.metadata?.error,
+        });
+
+        logger.info("Request metrics", {
+          version: "v2",
+          scrapeId: jobId,
+          mode: "scrape",
+          middlewareStartTime,
+          controllerStartTime,
+          middlewareTime,
+          controllerTime,
+          totalRequestTime,
+        });
+
+        responseSent = true;
+        return res.status(200).json({
+          success: true,
+          data: doc,
+          scrape_id: origin?.includes("website") ? jobId : undefined,
+        });
+      } finally {
+        cleanupConnectionHandlers();
       }
-
-      const totalRequestTime = new Date().getTime() - middlewareStartTime;
-      const controllerTime = new Date().getTime() - controllerStartTime;
-
-      // Set final span attributes
-      setSpanAttributes(span, {
-        "scrape.success": true,
-        "scrape.status_code": 200,
-        "scrape.total_request_time_ms": totalRequestTime,
-        "scrape.controller_time_ms": controllerTime,
-        "scrape.document.status_code": doc?.metadata?.statusCode,
-        "scrape.document.content_type": doc?.metadata?.contentType,
-        "scrape.document.error": doc?.metadata?.error,
-      });
-
-      logger.info("Request metrics", {
-        version: "v2",
-        scrapeId: jobId,
-        mode: "scrape",
-        middlewareStartTime,
-        controllerStartTime,
-        middlewareTime,
-        controllerTime,
-        totalRequestTime,
-      });
-
-      return res.status(200).json({
-        success: true,
-        data: doc,
-        scrape_id: origin?.includes("website") ? jobId : undefined,
-      });
     },
     {
       attributes: {

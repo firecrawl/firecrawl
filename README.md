@@ -152,7 +152,11 @@ curl -X GET https://api.firecrawl.dev/v2/crawl/123-456-789 \
 
 ### Scraping
 
-Used to scrape a URL and get its content in the specified formats.
+Used to scrape a URL and get its content in the specified formats. Synchronous requests automatically cancel the queued job if the HTTP client disconnects, and the scraper enforces bounded retry limits (see the `SCRAPE_MAX_*` env vars in `SELF_HOST.md`) so anti-bot fallbacks can’t loop forever.
+
+> **Reliability note:** Synchronous `/v2/scrape` requests automatically cancel their queued job if the HTTP client disconnects. If a caller remains connected long enough to receive the cancellation, the API responds with HTTP `499` (`SCRAPE_JOB_CANCELLED`). The Redis polling cadence for cancellation detection is tunable via `SCRAPE_CANCELLATION_POLL_INTERVAL_MS`. Scrape engines also enforce bounded retry limits (configurable via the `SCRAPE_MAX_*` environment variables documented in `SELF_HOST.md`) so anti-bot fallbacks can’t loop forever.
+
+> **Ops telemetry:** Structured logs labeled `module: "scrape/cancellation"` (sources `api_waiter`, `worker`, `service`) fire whenever a job is cancelled or the flag is observed downstream, making it easy to alert on unusual cancel rates. Logs with `module: "nuq/finalize"` report every `jobFinish`/`jobFail` retry and threshold breach—wire alerts there to catch noisy finalizers before they back up the queue. Cancelled scrapes/extracts are treated as non-billable.
 
 ```bash
 curl -X POST https://api.firecrawl.dev/v2/scrape \

@@ -18,8 +18,9 @@ import { isUrlBlocked } from "../../scraper/WebScraper/utils/blocklist";
 import { logger as _logger } from "../../lib/logger";
 import { fromV1ScrapeOptions } from "../v2/types";
 import { createWebhookSender, WebhookEvent } from "../../services/webhook";
+import { ScrapeJobCancelledError } from "../../scraper/scrapeURL/error";
 
-async function oldExtract(
+export async function oldExtract(
   req: RequestWithAuth<{}, ExtractResponse, ExtractRequest>,
   res: Response<ExtractResponse>,
   extractId: string,
@@ -36,6 +37,56 @@ async function oldExtract(
 
   sender?.send(WebhookEvent.EXTRACT_STARTED, { success: true });
 
+  const abortController = new AbortController();
+  let clientDisconnected = false;
+  let responseSent = false;
+  let webhookCompleted = false;
+
+  const cleanupConnectionHandlers = () => {
+    if (typeof req.off === "function") {
+      req.off("close", handleDisconnect);
+      req.off("aborted", handleDisconnect);
+    } else {
+      req.removeListener("close", handleDisconnect);
+      req.removeListener("aborted", handleDisconnect);
+    }
+  };
+
+  const handleDisconnect = () => {
+    if (clientDisconnected) {
+      return;
+    }
+    clientDisconnected = true;
+    _logger.warn("Client disconnected during legacy extract", {
+      extractId,
+      teamId: req.auth.team_id,
+    });
+    abortController.abort();
+  };
+
+  const notifyFailure = (message: string) => {
+    if (!webhookCompleted && sender) {
+      sender.send(WebhookEvent.EXTRACT_FAILED, {
+        success: false,
+        error: message,
+      });
+      webhookCompleted = true;
+    }
+  };
+
+  const notifySuccess = (result: ExtractResult) => {
+    if (!webhookCompleted && sender) {
+      sender.send(WebhookEvent.EXTRACT_COMPLETED, {
+        success: true,
+        data: [result],
+      });
+      webhookCompleted = true;
+    }
+  };
+
+  req.on("close", handleDisconnect);
+  req.on("aborted", handleDisconnect);
+
   try {
     let result: ExtractResult;
     const model = req.body.agent?.model;
@@ -45,6 +96,7 @@ async function oldExtract(
         teamId: req.auth.team_id,
         subId: req.acuc?.sub_id ?? undefined,
         apiKeyId: req.acuc?.api_key_id ?? null,
+        abortSignal: abortController.signal,
       });
     } else {
       result = await performExtraction_F0(extractId, {
@@ -52,34 +104,43 @@ async function oldExtract(
         teamId: req.auth.team_id,
         subId: req.acuc?.sub_id ?? undefined,
         apiKeyId: req.acuc?.api_key_id ?? null,
+        abortSignal: abortController.signal,
       });
     }
 
-    if (sender) {
-      if (result.success) {
-        sender.send(WebhookEvent.EXTRACT_COMPLETED, {
-          success: true,
-          data: [result],
-        });
-      } else {
-        sender.send(WebhookEvent.EXTRACT_FAILED, {
-          success: false,
-          error: result.error ?? "Unknown error",
-        });
-      }
+    if (clientDisconnected) {
+      notifyFailure("Client disconnected");
+      return;
     }
 
+    notifySuccess(result);
+    responseSent = true;
     return res.status(200).json(result);
   } catch (error) {
-    sender?.send(WebhookEvent.EXTRACT_FAILED, {
-      success: false,
-      error: error instanceof Error ? error.message : "Unknown error",
-    });
+    if (error instanceof ScrapeJobCancelledError || clientDisconnected) {
+      notifyFailure("Client disconnected");
+      if (!responseSent && !res.headersSent) {
+        responseSent = true;
+        return res.status(499).json({
+          success: false,
+          error: "Client disconnected",
+        });
+      }
+      return;
+    }
 
-    return res.status(500).json({
-      success: false,
-      error: error instanceof Error ? error.message : "Unknown error",
-    });
+    const message = error instanceof Error ? error.message : "Unknown error";
+    notifyFailure(message);
+
+    if (!responseSent) {
+      responseSent = true;
+      return res.status(500).json({
+        success: false,
+        error: message,
+      });
+    }
+  } finally {
+    cleanupConnectionHandlers();
   }
 }
 /**

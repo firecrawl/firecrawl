@@ -4,14 +4,17 @@ import { configDotenv } from "dotenv";
 import { scrapeURL, ScrapeUrlResponse } from "../scraper/scrapeURL";
 import type { NuQJob } from "../services/worker/nuq";
 import { CostTracking } from "../lib/cost-tracking";
+import { AbortInstance } from "../scraper/scrapeURL/lib/abortManager";
 configDotenv();
 
 export async function startWebScraperPipeline({
   job,
   costTracking,
+  cancellationAbort,
 }: {
   job: NuQJob<ScrapeJobSingleUrls>;
   costTracking: CostTracking;
+  cancellationAbort?: AbortInstance;
 }) {
   return await runWebScraper({
     url: job.data.url,
@@ -29,6 +32,8 @@ export async function startWebScraperPipeline({
       crawlId: job.data.crawl_id,
       teamId: job.data.team_id,
       ...job.data.internalOptions,
+      externalAbort:
+        cancellationAbort ?? job.data.internalOptions?.externalAbort,
     },
     team_id: job.data.team_id,
     bull_job_id: job.id,

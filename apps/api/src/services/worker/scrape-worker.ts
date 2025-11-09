@@ -71,6 +71,8 @@ import {
   withSpan,
   setSpanAttributes,
 } from "../../lib/otel-tracer";
+import { ScrapeJobCancelledError } from "../../scraper/scrapeURL/error";
+import { createJobCancellationWatcher } from "./job-cancellation-watcher";
 
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
@@ -80,7 +82,6 @@ const jobLockExtendInterval =
   Number(process.env.JOB_LOCK_EXTEND_INTERVAL) || 10000;
 const jobLockExtensionTime =
   Number(process.env.JOB_LOCK_EXTENSION_TIME) || 60000;
-
 cacheableLookup.install(http.globalAgent);
 cacheableLookup.install(https.globalAgent);
 
@@ -166,6 +167,7 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
     : undefined;
 
   const costTracking = new CostTracking();
+  const cancellationWatcher = createJobCancellationWatcher(job.id, logger);
 
   try {
     if (remainingTime !== undefined && remainingTime < 0) {
@@ -182,10 +184,13 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
       }
     }
 
+    await cancellationWatcher.throwIfCancelled();
+
     const pipeline = await Promise.race([
       startWebScraperPipeline({
         job,
         costTracking,
+        cancellationAbort: cancellationWatcher.abortInstance,
       }),
       ...(remainingTime !== undefined
         ? [
@@ -196,6 +201,8 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
           ]
         : []),
     ]);
+
+    await cancellationWatcher.throwIfCancelled();
 
     try {
       signal?.throwIfAborted();
@@ -689,6 +696,8 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
       job.data.internalOptions?.bypassBilling ?? false,
     );
     return data;
+  } finally {
+    cancellationWatcher.stop();
   }
 }
 
