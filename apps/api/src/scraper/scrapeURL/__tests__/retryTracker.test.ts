@@ -88,6 +88,7 @@ describe("ScrapeRetryTracker", () => {
       logger,
     );
     tracker.record("document_antibot", new Error("first"));
+    expect.assertions(3);
     try {
       tracker.record("document_antibot", new Error("second"));
     } catch (error) {

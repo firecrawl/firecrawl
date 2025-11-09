@@ -96,9 +96,9 @@ USE_DB_AUTHENTICATION=false
 # Emit alerts when NuQ jobFinish/jobFail retries exhaust (default threshold follows max attempts)
 # NUQ_FINALIZE_RETRY_ALERT_THRESHOLD=3
 
-### Monitoring signals
-- `scrape/cancellation` logs fire whenever API waiters, services, or workers observe a cancelled job. Alert when the rate spikes or when a single source reports repeated cancellations—it's usually a sign of flaky clients or webhook misconfigurations. Jobs cancelled for `client_disconnect` reasons are non-billable by default.
-- `nuq/finalize` logs report every retry of `jobFinish`/`jobFail` plus threshold breaches. Alert on error-level entries to catch database/write issues before NuQ stalls grow.
+# Monitoring signals
+# - `scrape/cancellation` logs fire whenever API waiters, services, or workers observe a cancelled job. Alert when the rate spikes or when a single source reports repeated cancellations—it's usually a sign of flaky clients or webhook misconfigurations. Jobs cancelled for `client_disconnect` reasons are non-billable by default.
+# - `nuq/finalize` logs report every retry of `jobFinish`/`jobFail` plus threshold breaches. Alert on error-level entries to catch database/write issues before NuQ stalls grow.
 
 # Supabase Setup (used to support DB authentication, advanced logging, etc.)
 # SUPABASE_ANON_TOKEN=

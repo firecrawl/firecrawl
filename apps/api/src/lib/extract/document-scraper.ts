@@ -11,8 +11,8 @@ import { getJobPriority } from "../job-priority";
 import type { Logger } from "winston";
 import { isUrlBlocked } from "../../scraper/WebScraper/utils/blocklist";
 import { scrapeQueue } from "../../services/worker/nuq";
-import { cancelScrapeJob } from "../../services/job-cancellation";
 import { ScrapeJobCancelledError } from "../../scraper/scrapeURL/error";
+import { bindScrapeJobCancellation } from "./helpers/cancellable-scrape";
 
 interface ScrapeDocumentOptions {
   url: string;
@@ -82,21 +82,17 @@ export async function scrapeDocument(
       true,
     );
 
-    let abortListener: (() => void) | undefined;
-    if (options.abortSignal) {
-      abortListener = () => {
-        cancelScrapeJob({
-          jobId,
-          teamId: options.teamId,
-          reason: "extract_cancelled",
-          logger,
-        }).catch(error => {
-          logger.debug("Failed to cancel scrape job", { error, jobId });
-        });
-      };
-      options.abortSignal.addEventListener("abort", abortListener, {
-        once: true,
-      });
+    const cleanupAbort = bindScrapeJobCancellation({
+      abortSignal: options.abortSignal,
+      jobId,
+      teamId: options.teamId,
+      reason: "extract_cancelled",
+      logger,
+    });
+
+    if (options.abortSignal?.aborted) {
+      cleanupAbort();
+      throw new ScrapeJobCancelledError();
     }
 
     try {
@@ -121,9 +117,7 @@ export async function scrapeDocument(
 
       return doc;
     } finally {
-      if (abortListener && options.abortSignal) {
-        options.abortSignal.removeEventListener("abort", abortListener);
-      }
+      cleanupAbort();
     }
   }
 

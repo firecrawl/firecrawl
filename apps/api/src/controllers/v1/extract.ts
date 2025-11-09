@@ -113,7 +113,12 @@ export async function oldExtract(
       return;
     }
 
-    notifySuccess(result);
+    if (result.success) {
+      notifySuccess(result);
+    } else {
+      notifyFailure(result.error ?? "Unknown error");
+    }
+
     responseSent = true;
     return res.status(200).json(result);
   } catch (error) {
