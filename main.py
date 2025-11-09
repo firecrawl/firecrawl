@@ -1,4 +1,4 @@
-import os
+﻿import os
 import json
 import logging
 import time
@@ -32,9 +32,14 @@ STATS_FILE = OUTPUT_DIR / "crawl_stats.json"
 
 # Cache for numbered document URLs mapping
 NUMBERED_DOCS_CACHE = {}
-# In-memory cache mirroring the file-backed crawled URLs cache. This is
-# used to avoid re-processing URLs discovered/saved during the same run.
+ 
 CRAWLED_URLS_SET = set()
+# Content deduplication cache: maps MD5 hash to first URL that had this content
+CONTENT_HASH_CACHE = {}
+# File to persist content hashes across runs
+CONTENT_HASH_FILE = OUTPUT_DIR / "content_hashes.json"
+# Current seed URL being crawled (for folder organization)
+CURRENT_SEED_URL = None
 
 LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
 logging.basicConfig(
@@ -390,30 +395,228 @@ def get_content_folder(url: str, title: str = "") -> str:
         return "daa/kehoachnam"
     
     # Chương trình đào tạo - Hệ chính quy
-    elif "/cqui/" in text or "ctdt-khoa-" in text and "chinh-quy" in text:
+    # Check for ANY cu-nhan, chuong-trinh, or ky-su program pages FIRST
+    # IMPORTANT: Exclude hệ từ xa (those have "tu-xa" or "hinh-thuc-dao-tao-tu-xa" in URL/text)
+    elif (("/cu-nhan-" in url or "/chuong-trinh-" in url or "/ky-su-" in url) and 
+          "tu-xa" not in url.lower() and 
+          "hinh-thuc-dao-tao-tu-xa" not in text.lower() and
+          "qua-mang" not in url.lower()):
+        # For CTDT program pages: use SEED year (folder) instead of URL year
+        # This ensures all programs from a seed go into same folder
+        year_folder = "khac"
+        
+        # Try to get year from CURRENT_SEED_URL first (seed being crawled)
+        if CURRENT_SEED_URL:
+            seed_year_match = re.search(r'ctdt-khoa-(\d{4})', CURRENT_SEED_URL)
+            if seed_year_match:
+                seed_year = seed_year_match.group(1)
+                year_folder = f"khoa_{seed_year}"
+        
+        # Fallback to URL year if seed year not found
+        if year_folder == "khac":
+            for year in range(2008, 2026):
+                if f"khoa-{year}" in text or f"{year}" in text:
+                    year_folder = f"khoa_{year}"
+                    break
+        
+        # Extract program/major name from URL path
+        # Strategy: Extract full URL path after /content/, then clean it
+        # Examples:
+        # - /content/cu-nhan-nganh-cong-nghe-thong-tin-ap-dung-tu-khoa-19-2024 → cong-nghe-thong-tin
+        # - /content/chuong-trinh-tien-tien-nganh-he-thong-thong-tin-ap-dung-tu-khoa-18-2023 → he-thong-thong-tin
+        # - /content/cu-nhan-nganh-mang-may-tinh-va-toan-thong-tin-chuong-trinh-lien-ket-voi... → mang-may-tinh-va-an-toan-thong-tin
+        
+        url_path_match = re.search(r'/content/([^/?#]+)', url)
+        if url_path_match:
+            full_path = url_path_match.group(1).lower()
+            
+            # Mapping chuẩn: URL pattern → Folder name (17 programs theo danh sách chuẩn)
+            # Pattern matching: kiểm tra keywords trong URL để xác định program
+            
+            # Special cases: Song ngành và Chương trình đặc biệt
+            if 'song-nganh' in full_path and 'thuong-mai' in full_path:
+                major_name = 'songnganhthuongmaidientu'
+            elif 'tien-tien' in full_path and 'he-thong-thong-tin' in full_path:
+                major_name = 'chuongtrinhtientienhethongthongtin'
+            
+            # Birmingham City programs
+            elif 'birmingham' in full_path:
+                if 'mang-may-tinh' in full_path or ('mang' in full_path and 'an' in full_path):
+                    major_name = 'mangmaytinhvaantoanthongtinbirminghamcity'
+                else:  # Khoa học Máy tính Birmingham
+                    major_name = 'khoahocmaytinhbirminghamcity'
+            
+            # Newcastle program
+            elif 'newcastle' in full_path or ('ky-thuat-he-thong-may-tinh' in full_path and 'lien-ket' in full_path):
+                major_name = 'kythuathethongmaytinhnewcastle'
+            
+            # Regular programs - extract core name
+            elif 'khoa-hoc-du-lieu' in full_path:
+                major_name = 'khoahocdulieu'
+            elif 'an-toan-thong-tin' in full_path or 'toan-thong-tin' in full_path:
+                major_name = 'antoanthongtin'
+            elif 'thuong-mai-dien-tu' in full_path:
+                major_name = 'thuongmaidientu'
+            elif 'mang-may-tinh' in full_path and 'truyen-thong-du-lieu' in full_path:
+                major_name = 'mangmaytinhvatruyenthongdulieu'
+            elif 'truyen-thong-da-phuong-tien' in full_path:
+                major_name = 'truyenthongdaphuongtien'
+            elif 'thiet-ke-vi-mach' in full_path:
+                major_name = 'thietkevimach'
+            elif 'ky-thuat-may-tinh' in full_path:
+                major_name = 'kythuatmaytinh'
+            elif 'tri-tue-nhan-tao' in full_path:
+                major_name = 'trituenhantao'
+            elif 'ky-thuat-phan-mem' in full_path:
+                major_name = 'kythuatphanmem'
+            elif 'khoa-hoc-may-tinh' in full_path:
+                major_name = 'khoahocmaytinh'
+            elif 'he-thong-thong-tin' in full_path:
+                major_name = 'hethongthongtin'
+            elif 'cong-nghe-thong-tin' in full_path:
+                major_name = 'congnghethongtin'
+            else:
+                # Fallback: extract name and clean
+                cleaned = full_path
+                for prefix in ['cu-nhan-khoa-hoc-nganh-', 'cu-nhan-nganh-', 'chuong-trinh-tien-tien-nganh-', 'chuong-trinh-dao-tao-song-nganh-nganh-']:
+                    if cleaned.startswith(prefix):
+                        cleaned = cleaned[len(prefix):]
+                        break
+                for marker in ['ap-dung-tu', 'chuong-trinh-lien-ket', 'hinh-thuc']:
+                    if marker in cleaned:
+                        cleaned = cleaned.split(marker)[0].rstrip('-')
+                        break
+                major_name = cleaned.replace('-', '')
+            
+            return f"daa/chuongtrinh_daotao/he-chinhquy/{year_folder}/{major_name}"
+        
+        return f"daa/chuongtrinh_daotao/he-chinhquy/{year_folder}"
+    
+    # Then check for CTDT index pages (these should stay at khoa-YYYY level, not in subfolders)
+    elif "/chuong-trinh-dao-tao/" in text or "/cqui/" in text or ("ctdt-khoa-" in text and "chinh-quy" in text):
         # Extract year from URL
-        for year in range(2012, 2026):
+        year_folder = "khac"
+        for year in range(2011, 2026):
             if f"khoa-{year}" in text:
-                return f"daa/chuongtrinh_daotao/he-chinhquy/khoa-{year}"
-        return "daa/chuongtrinh_daotao/he-chinhquy/khac"
+                year_folder = f"khoa_{year}"
+                break
+        
+        return f"daa/chuongtrinh_daotao/he-chinhquy/{year_folder}"
+    
+    # Chương trình đào tạo cũ - simplified routing, just categorize files
     elif any(x in text for x in ["chuong-trinh-dao-tao-cu", "ctdt-cu"]):
-        return "daa/chuongtrinh_daotao/he-chinhquy/ctdt-cu"
+        return "daa/chuongtrinh_daotao/chuongtrinhdaotaocu"
+    
     elif any(x in text for x in ["danh-muc-mon-hoc-dai-hoc", "danh-muc-mon-hoc"]):
         return "daa/chuongtrinh_daotao/he-chinhquy/danh-muc-mon-hoc"
     elif any(x in text for x in ["bang-tom-tat-mon-hoc", "tom-tat-mon-hoc"]):
         return "daa/chuongtrinh_daotao/he-chinhquy/bang-tom-tat-mon-hoc"
     
     # Chương trình đào tạo - Hệ từ xa
-    elif "/tu-xa/" in text or "tuxa" in text:
-        # Extract year from URL
-        for year in range(2008, 2025):
-            if f"khoa-{year}" in text:
-                return f"daa/chuongtrinh_daotao/he-tuxa/khoa-{year}"
-        return "daa/chuongtrinh_daotao/he-tuxa/khac"
+    # Check for tu-xa in URL OR keywords indicating tu-xa programs
+    elif ("/tu-xa/" in url or "tuxa" in url or 
+          "hinh-thuc-dao-tao-tu-xa" in text.lower() or 
+          "qua-mang" in url.lower()):
+        # For programs: use SEED year instead of URL year
+        year_folder = "khac"
+        
+        # Try to get year from CURRENT_SEED_URL first
+        if CURRENT_SEED_URL and "/tu-xa/" in CURRENT_SEED_URL:
+            seed_year_match = re.search(r'ctdt-khoa-(\d{4})', CURRENT_SEED_URL)
+            if seed_year_match:
+                seed_year = seed_year_match.group(1)
+                year_folder = f"khoa_{seed_year}"  # Changed to underscore for consistency
+        
+        # Fallback to URL year if seed year not found
+        if year_folder == "khac":
+            for year in range(2008, 2026):
+                if f"khoa-{year}" in text:
+                    year_folder = f"khoa_{year}"  # Changed to underscore
+                    break
+        
+        # Check if this is a program page (has /content/ in URL)
+        if "/content/" in url and "cu-nhan" in url.lower():
+            # Extract program name using keyword mapping (6 programs for he-tuxa)
+            program_match = re.search(r'/content/([^/?#]+)', url)
+            if program_match:
+                full_path = program_match.group(1).lower()
+                
+                # Keyword-based mapping for 6 he-tuxa programs
+                # Order matters: check most specific patterns first
+                
+                # 1. Trí tuệ nhân tạo - Văn bằng 2
+                if 'tri-tue' in full_path and 'van-bang' in full_path:
+                    program_name = 'trituenhantaovanbang2'
+                # 2. Trí tuệ nhân tạo - Liên thông
+                elif 'tri-tue' in full_path and 'lien-thong' in full_path:
+                    program_name = 'trituenhantaolienthong'
+                # 3. Trí tuệ nhân tạo - Thường (must check after văn bằng 2 and liên thông)
+                elif 'tri-tue' in full_path:
+                    program_name = 'trituenhantao'
+                # 4. CNTT - Văn bằng 2 (without ngành in pattern)
+                elif 'van-bang' in full_path and ('cong-nghe' in full_path or 'cntt' in full_path):
+                    program_name = 'congnghethongtinvanbang2'
+                # 5. CNTT - Liên thông (without ngành in pattern)
+                elif 'lien-thong' in full_path and ('cong-nghe' in full_path or 'cntt' in full_path):
+                    program_name = 'congnghethongtinlienthong'
+                # 6. CNTT - Thường (must check after văn bằng 2 and liên thông)
+                elif 'cong-nghe-thong-tin' in full_path or 'cntt' in full_path:
+                    program_name = 'congnghethongtin'
+                else:
+                    # Fallback: clean the path
+                    cleaned_path = full_path
+                    for prefix in ['cu-nhan-van-bang-', 'cu-nhan-lien-thong-', 'cu-nhan-nganh-', 'cu-nhan-']:
+                        if cleaned_path.startswith(prefix):
+                            cleaned_path = cleaned_path[len(prefix):]
+                            break
+                    for marker in ['hinh-thuc-dao-tao', 'qua-mang', 'khoa-']:
+                        if marker in cleaned_path:
+                            cleaned_path = cleaned_path.split(marker)[0].rstrip('-')
+                            break
+                    program_name = cleaned_path.replace('-', '')
+                
+                return f"daa/chuongtrinh_daotao/he-tuxa/{year_folder}/{program_name}"
+        
+        return f"daa/chuongtrinh_daotao/he-tuxa/{year_folder}"
     
-    # Đề án mở ngành
+    # Đề án mở ngành - phân loại giống quy định hướng dẫn (numbered docs)
     elif any(x in text for x in ["de-mo-nganh", "loai-bai-viet/de-mo-nganh"]):
-        return "daa/de-mo-nganh"
+        # For detail pages, extract number and create folder like: daa/chuongtrinh_daotao/he-chinhquy/dean/1-tri-tue-nhan-tao/
+        # Check if URL is a detail page (not the listing page) by checking if it's in cache
+        if url in NUMBERED_DOCS_CACHE:
+            # Get index and title from cache (set during parsing)
+            cache_data = NUMBERED_DOCS_CACHE.get(url)
+            
+            # Check if cache is tuple (new format for de-mo-nganh) or string (old format)
+            if isinstance(cache_data, tuple) and len(cache_data) == 2:
+                doc_index, cached_title = cache_data
+                # Use cached title if current title is empty
+                major_title = title or cached_title
+            else:
+                # Fallback for old format
+                doc_index = cache_data if isinstance(cache_data, str) else str(cache_data)
+                major_title = title
+            
+            # Extract major name: "Đề án mở ngành Trí tuệ nhân tạo" -> "Trí tuệ nhân tạo"
+            major_title = title
+            for prefix in ["Đề án mở ngành", "đề án mở ngành", "De an mo nganh", "Đề án"]:
+                if prefix in major_title:
+                    major_title = major_title.replace(prefix, "").strip()
+            
+            # Convert to slug using unicodedata: "Trí tuệ nhân tạo" -> "tri-tue-nhan-tao"
+            major_slug = unicodedata.normalize('NFKD', major_title.lower())
+            major_slug = major_slug.encode('ascii', 'ignore').decode('ascii')
+            major_slug = re.sub(r'[^\w\s-]', '', major_slug)
+            major_slug = re.sub(r'[-\s]+', '-', major_slug)
+            major_slug = major_slug.strip('-')[:100]
+            
+            if major_slug:
+                # Create folder: {index}-{major_slug} under he-chinhquy
+                folder_name = f"{doc_index}-{major_slug}"
+                return f"daa/chuongtrinh_daotao/dean/{folder_name}"
+        
+        # For listing page
+        return "daa/chuongtrinh_daotao/dean"
     
     else:
         return "daa/khac/chua-phan-loai"
@@ -631,32 +834,29 @@ def parse_numbered_list_from_html(html: str, base_url: str) -> List[str]:
 def parse_de_mo_nganh_list_from_html(html: str, base_url: str) -> List[str]:
     """
     Parse "đề án mở ngành" (project proposal) list from HTML content.
-    Similar to numbered docs, extracts detail links but without strict numbering requirement.
+    Extracts detail links with ordering information.
     Returns list of detail URLs found in this listing page.
     
-    Pattern: <a href="/...">Tên đề án...</a> or similar article links
+    Pattern: Links to proposal pages, preserving order from page
     """
+    global NUMBERED_DOCS_CACHE
+    
     if not html:
         return []
     
-    # For de-mo-nganh, we look for article/content links (similar to regulations listing)
-    # Pattern: <a href="...">Article Title</a> with title > 10 chars
-    # Also find links to actual content pages (not just navigation)
-    pattern = r'<a[^>]+href=["\']([^"\']+)["\'][^>]*>([^<]+)</a>'
+    # For de-mo-nganh, look for links that start with "de-mo-nganh" or "de-song-nganh" in URL
+    # Pattern: <a href="...de-mo-nganh...">Title</a> or <a href="...de-song-nganh...">Title</a>
+    pattern = r'<a[^>]+href=["\']([^"\']*(?:de-mo-nganh|de-song-nganh)[^"\']*)["\'][^>]*>([^<]+)</a>'
     
     matches = re.findall(pattern, html, re.IGNORECASE)
     
     found_urls = []
     seen_urls = set()
+    index = 1  # For numbering
     
     for href, title_text in matches:
         # Build full URL
         full_url = urljoin(base_url, href)
-        
-        # Skip navigation/footer links
-        skip_keywords = ["sidebar", "footer", "menu", "skip", "home", "back", "login", "search", "tag"]
-        if any(kw in full_url.lower() for kw in skip_keywords):
-            continue
         
         # Skip if already processed
         if full_url in seen_urls:
@@ -668,27 +868,126 @@ def parse_de_mo_nganh_list_from_html(html: str, base_url: str) -> List[str]:
         
         seen_urls.add(full_url)
         
-        # Clean and filter title
+        # Clean title
         title_clean = title_text.strip()
         title_clean = re.sub(r'\s+', ' ', title_clean)
         title_clean = title_clean.rstrip('.,;:')[:200]
         
-        # Only include links with meaningful titles (> 10 chars)
-        if len(title_clean) < 10:
-            continue
+        # Include all detail URLs (de-mo-nganh URLs don't always have /content/ or /node/)
+        # Just ensure it's not the listing page itself (already checked above)
+        found_urls.append(full_url)
         
-        # Check if URL looks like a detail page (contains content/article keywords)
-        if any(keyword in full_url.lower() for keyword in ["content", "node", "de-mo-nganh", "/2024/", "/2025/"]):
-            found_urls.append(full_url)
-            logger.info(f"Cached de-mo-nganh detail: {full_url} -> {title_clean}")
+        # Store index and title in cache for later use in get_content_folder()
+        # Use tuple format: (index, title) to distinguish from quydinh_huongdan cache format
+        NUMBERED_DOCS_CACHE[full_url] = (str(index), title_clean)
+        
+        logger.info(f"Found de-mo-nganh detail #{index}: {full_url} -> {title_clean}")
+        index += 1
     
     if found_urls:
         logger.info(f"Found {len(found_urls)} de-mo-nganh detail pages from {base_url}")
     
     return found_urls
 
+def parse_ctdt_program_links_from_html(html: str, base_url: str) -> List[str]:
+    """
+    Parse program links from CTDT index pages (ctdt-khoa-YYYY).
+    Extracts all /content/cu-nhan-nganh-*, /content/chuong-trinh-*, and /content/ky-su-* links
+    
+    Example HTML patterns from CTDT pages:
+    <a href="/content/cu-nhan-nganh-cong-nghe-thong-tin-ap-dung-tu-khoa-19-2024">Cử nhân ngành...</a>
+    <a href="/content/chuong-trinh-tien-tien-nganh-...">Chương trình tiên tiến...</a>
+    <a href="/content/ky-su-va-cu-nhan-nganh-ky-thuat-may-tinh-...">Kỹ sư và cử nhân...</a>
+    """
+    if not html:
+        return []
+    
+    # Pattern to find all program links: cu-nhan (any), chuong-trinh (any), ky-su (any)
+    # More flexible pattern to catch: cu-nhan-nganh, cu-nhan-khoa-hoc-nganh, chuong-trinh-*, ky-su-*, etc.
+    pattern = r'<a[^>]+href=["\']([^"\']*(?:cu-nhan-|chuong-trinh-|ky-su-)[^"\']*)["\'][^>]*>([^<]+)</a>'
+    
+    matches = re.findall(pattern, html, re.IGNORECASE)
+    
+    if matches:
+        logger.info(f"Found {len(matches)} program links in {base_url}")
+    
+    found_urls = []
+    seen_urls = set()
+    
+    for href, title_text in matches:
+        if not href or href in seen_urls:
+            continue
+        seen_urls.add(href)
+        
+        # Build full URL
+        full_url = urljoin(base_url, href)
+        
+        # Filter: only include /content/ URLs (program pages)
+        # This catches: cu-nhan-nganh, cu-nhan-khoa-hoc-nganh, chuong-trinh-*, ky-su-*, etc.
+        if '/content/' in full_url and ('cu-nhan-' in full_url.lower() or 'chuong-trinh-' in full_url.lower() or 'ky-su-' in full_url.lower()):
+            found_urls.append(full_url)
+            logger.info(f"Found CTDT program: {full_url}")
+    
+    if found_urls:
+        logger.info(f"Successfully found {len(found_urls)} program links from {base_url}")
+    
+    return found_urls
+
+def load_content_hash_cache():
+    """Load content hash cache from disk"""
+    global CONTENT_HASH_CACHE
+    if CONTENT_HASH_FILE.exists():
+        try:
+            with open(CONTENT_HASH_FILE, "r", encoding="utf-8") as f:
+                CONTENT_HASH_CACHE = json.load(f)
+            logger.info(f"Loaded {len(CONTENT_HASH_CACHE)} content hashes from cache")
+        except Exception as e:
+            logger.warning(f"Failed to load content hash cache: {e}")
+            CONTENT_HASH_CACHE = {}
+
+def save_content_hash_cache():
+    """Save content hash cache to disk"""
+    try:
+        CONTENT_HASH_FILE.parent.mkdir(parents=True, exist_ok=True)
+        with open(CONTENT_HASH_FILE, "w", encoding="utf-8") as f:
+            json.dump(CONTENT_HASH_CACHE, f)
+    except Exception as e:
+        logger.warning(f"Failed to save content hash cache: {e}")
+
+def is_duplicate_content(content: str, url: str) -> bool:
+    """Check if content is duplicate based on MD5 hash. Returns True if duplicate."""
+    if not content:
+        return False
+    
+    # For program pages (cu-nhan-nganh), include year in hash to allow same content across different years
+    # Example: CTĐT khóa 2023 = khóa 2024 → should save BOTH (different years)
+    hash_key = content.strip()
+    if "/cu-nhan-nganh-" in url or "/chuong-trinh-" in url:
+        # Extract year from URL to make hash unique per year
+        year_match = re.search(r'khoa-(\d{2})-(\d{4})', url)
+        if year_match:
+            year = year_match.group(2)  # e.g., "2024"
+            hash_key = f"{year}:{content.strip()}"
+    
+    # Normalize content: strip whitespace and normalize unicode
+    normalized = unicodedata.normalize('NFKD', hash_key)
+    content_hash = hashlib.md5(normalized.encode('utf-8')).hexdigest()
+    
+    # Check if we've seen this hash before
+    if content_hash in CONTENT_HASH_CACHE:
+        original_url = CONTENT_HASH_CACHE[content_hash]
+        if original_url != url:
+            logger.info(f"Skipping duplicate content: {url} (identical to {original_url})")
+            return True
+    else:
+        # First time seeing this content
+        CONTENT_HASH_CACHE[content_hash] = url
+        save_content_hash_cache()
+    
+    return False
+
 def trim_markdown_content(markdown: str) -> str:
-    """Trim markdown to main content only: remove navigation, skip-to links, and summarize large tables"""
+    """Trim markdown to main content only: remove navigation, skip-to links, footer, and summarize large tables"""
     if not markdown:
         return markdown
     
@@ -697,12 +996,28 @@ def trim_markdown_content(markdown: str) -> str:
     in_table = False
     table_lines = []
     skip_related_section = False
+    in_footer = False
     
-    for line in lines:
+    for i, line in enumerate(lines):
         stripped = line.strip()
         
         # Skip empty lines at the beginning
         if not trimmed_lines and not stripped:
+            continue
+        
+        # Detect footer start - only real footer patterns (strict matching)
+        # Must have specific address/contact info, not just generic keywords
+        if any(pattern in stripped.lower() for pattern in [
+            "© 20", "copyright ©", "all rights reserved",
+            "facebook.com/", "youtube.com/", "zalo.me/",
+            "khu phố 6", "linh trung", "thủ đức",  # UIT specific address
+            "điện thoại: ", "email: ", "fax: ",  # Must have colon (contact info format)
+        ]):
+            in_footer = True
+            continue
+        
+        # Skip content after footer detected
+        if in_footer:
             continue
         
         # Skip navigation/skip-to links (including variations)
@@ -711,15 +1026,39 @@ def trim_markdown_content(markdown: str) -> str:
         if any(kw in stripped.lower() for kw in ["skip to", "skip navigation", "skip link"]):
             continue
         
-        # Skip related information sections
-        if any(kw in stripped.lower() for kw in ["related information", "thông tin liên quan", "liên quan", "related link"]):
+        # Detect "Bài viết liên quan" section - skip everything after this heading
+        # Support both markdown heading (# Text) and underline heading (Text\n---)
+        is_markdown_heading = stripped.startswith('#')
+        is_underline_heading = stripped and len(stripped) > 3 and all(c == '-' for c in stripped)
+        is_heading = is_markdown_heading or is_underline_heading
+        
+        # Also check if CURRENT line is a heading keyword and NEXT line is underline (2-line heading pattern)
+        is_two_line_heading = False
+        if i + 1 < len(lines):
+            next_line_stripped = lines[i + 1].strip()
+            if next_line_stripped and all(c == '-' for c in next_line_stripped) and len(next_line_stripped) > 3:
+                # Next line is underline, check if current line is a keyword
+                if any(pattern in stripped.lower() for pattern in [
+                    "bài viết liên quan", "related articles", "related posts", "trang"
+                ]):
+                    is_two_line_heading = True
+        
+        if (is_heading or is_two_line_heading) and any(pattern in stripped.lower() for pattern in [
+            "bài viết liên quan",
+            "related articles",
+            "related posts",
+            "trang",  # Pagination section
+        ]):
             skip_related_section = True
             continue
         
-        # End related section when we hit next heading or content
-        if skip_related_section and stripped and stripped.startswith('#'):
-            skip_related_section = False
-        elif skip_related_section:
+        # Also skip "Back to top" links (exact match at line start)
+        if stripped.lower() in ["back to top", "quay lại đầu trang", "lên đầu trang"]:
+            skip_related_section = True
+            continue
+        
+        # Skip pagination links and related content
+        if skip_related_section:
             continue
         
         # Detect table start (markdown table lines start with |)
@@ -761,26 +1100,45 @@ def trim_markdown_content(markdown: str) -> str:
     
     return result.strip()
 
-def save_content(url: str, data: Dict[str, Any]):
+def save_content(url: str, data: Dict[str, Any], skip_global_cache: bool = False):
+    """
+    Save content to disk. 
+    
+    Args:
+        url: URL of the content
+        data: Page data from Firecrawl
+        skip_global_cache: If True, don't add to global CRAWLED_URLS_SET (for CTDT programs that need re-crawl per year)
+    """
     global CURRENT_SEED_URL, NUMBERED_DOCS_CACHE
     
     title = data.get("metadata", {}).get("title", "")
     content_folder = get_content_folder(url, title)
     
-    mark_url_crawled(url)
+    if not skip_global_cache:
+        mark_url_crawled(url)
     
     html_content = data.get("html", "")
     
     # Check if this URL is in the numbered docs cache (from listing page)
     numbered_info = None
     if url in NUMBERED_DOCS_CACHE:
-        number, doc_title, nhom_lon = NUMBERED_DOCS_CACHE[url]
-        # Use slugified title (no diacritics, with hyphens)
-        doc_title_slug = slugify_vietnamese(doc_title)
-        numbered_folder = f"{number}-{doc_title_slug}"
-        content_folder = f"daa/quydinh_huongdan/{nhom_lon}/{numbered_folder}"
-        numbered_info = (number, doc_title)
-        logger.info(f"Using cached numbered doc: {numbered_folder} in {nhom_lon}")
+        cache_data = NUMBERED_DOCS_CACHE[url]
+        
+        # Check if this is de-mo-nganh (tuple with 2 elements) or quydinh_huongdan (tuple with 3 elements)
+        if isinstance(cache_data, tuple):
+            if len(cache_data) == 2:
+                # This is de-mo-nganh - content_folder already set correctly by get_content_folder()
+                # No need to override content_folder here
+                pass
+            elif len(cache_data) == 3:
+                # This is quydinh_huongdan - override content_folder
+                number, doc_title, nhom_lon = cache_data
+                # Use slugified title (no diacritics, with hyphens)
+                doc_title_slug = slugify_vietnamese(doc_title)
+                numbered_folder = f"{number}-{doc_title_slug}"
+                content_folder = f"daa/quydinh_huongdan/{nhom_lon}/{numbered_folder}"
+                numbered_info = (number, doc_title)
+                logger.info(f"Using cached numbered doc: {numbered_folder} in {nhom_lon}")
     
     # Otherwise, try to detect from current page content
     elif "quydinh_huongdan" in content_folder:
@@ -823,6 +1181,14 @@ def save_content(url: str, data: Dict[str, Any]):
     safe_name = url.replace("https://", "").replace("http://", "")
     safe_name = safe_name.replace("/", "_").replace(":", "_")[:200]
     
+    # Check for duplicate content BEFORE saving anything
+    if data.get("markdown"):
+        markdown_content = data["markdown"]
+        if is_duplicate_content(markdown_content, url):
+            crawl_stats.add_skipped()
+            logger.info(f"Skipping all files (duplicate detected): {url}")
+            return  # Skip saving duplicate content (HTML, MD, PDFs)
+    
     total_size = 0
     
     if data.get("html"):
@@ -843,6 +1209,7 @@ def save_content(url: str, data: Dict[str, Any]):
     if data.get("markdown"):
         md_file = markdown_dir / f"{safe_name}.md"
         markdown_content = data["markdown"]
+        
         # Trim markdown to main content only
         markdown_content = trim_markdown_content(markdown_content)
         with open(md_file, "w", encoding="utf-8") as f:
@@ -960,13 +1327,27 @@ def crawl_single_seed(app: FirecrawlApp, seed_url: str, cfg: Dict[str, Any], cra
                         
                         # Before saving, check if this is a listing page with numbered docs
                         html_content = page.get("html", "")
-                        if "quydinh_huongdan" in get_content_folder(page_url, page.get("metadata", {}).get("title", "")):
+                        page_title = page.get("metadata", {}).get("title", "")
+                        content_folder_check = get_content_folder(page_url, page_title)
+                        logger.debug(f"Checking page: {page_url} → folder: {content_folder_check}")
+                        
+                        if "quydinh_huongdan" in content_folder_check:
                             new_detail_urls = parse_numbered_list_from_html(html_content, page_url)
                             detail_urls_found.extend(new_detail_urls)
-                        elif "de-mo-nganh" in get_content_folder(page_url, page.get("metadata", {}).get("title", "")):
+                        elif "dean" in content_folder_check:
                             # For "đề án" pages, extract detail links (similar to numbered docs)
                             new_detail_urls = parse_de_mo_nganh_list_from_html(html_content, page_url)
                             detail_urls_found.extend(new_detail_urls)
+                        elif "chuongtrinh_daotao/he-chinhquy" in content_folder_check:
+                            # For CTDT index pages (ctdt-khoa-YYYY), extract program links
+                            new_detail_urls = parse_ctdt_program_links_from_html(html_content, page_url)
+                            detail_urls_found.extend(new_detail_urls)
+                            logger.info(f"Extracted {len(new_detail_urls)} program URLs from index page")
+                        elif "chuongtrinh_daotao/he-tuxa" in content_folder_check:
+                            # For TU XA index pages, extract program links (same function works)
+                            new_detail_urls = parse_ctdt_program_links_from_html(html_content, page_url)
+                            detail_urls_found.extend(new_detail_urls)
+                            logger.info(f"Extracted {len(new_detail_urls)} tu-xa program URLs from index page")
                         
                         save_content(page_url, page)
                         success_count += 1
@@ -982,11 +1363,61 @@ def crawl_single_seed(app: FirecrawlApp, seed_url: str, cfg: Dict[str, Any], cra
                 
                 # After processing listing page, crawl detail URLs found in this seed
                 if detail_urls_found:
-                    # Filter out already crawled URLs
-                    detail_urls_to_crawl = [url for url in detail_urls_found if url not in crawled_urls and url not in CRAWLED_URLS_SET]
+                    # For CTDT programs, DON'T filter by URL - we need to crawl them for each year's folder structure
+                    sample_url = detail_urls_found[0]
+                    is_ctdt_program = "/content/" in sample_url and ("cu-nhan-" in sample_url or "chuong-trinh-" in sample_url or "ky-su-" in sample_url)
+                    
+                    if is_ctdt_program:
+                        # CTDT programs must be crawled for each year to create proper folder structure
+                        detail_urls_to_crawl = detail_urls_found
+                        logger.info(f"Found {len(detail_urls_to_crawl)} CTDT program pages to crawl from {seed_url}")
+                    else:
+                        # For other types (like numbered docs), filter out already crawled URLs
+                        detail_urls_to_crawl = [url for url in detail_urls_found if url not in crawled_urls and url not in CRAWLED_URLS_SET]
+                    
                     if detail_urls_to_crawl:
-                        logger.info(f"Found {len(detail_urls_to_crawl)} new numbered detail pages to crawl from {seed_url}")
-                        crawl_numbered_details(app, detail_urls_to_crawl, cfg, crawled_urls)
+                        if is_ctdt_program:
+                            # These are CTDT program detail pages - crawl each as a mini seed with proper depth
+                            for program_url in detail_urls_to_crawl:
+                                try:
+                                    logger.info(f"Crawling CTDT program: {program_url}")
+                                    
+                                    # Crawl program page with depth 2 (program page + any subpages like curriculum details)
+                                    program_crawl_params = {
+                                        "limit": 10,  # Some programs may have subpages
+                                        "maxDepth": 2,
+                                        "scrapeOptions": {
+                                            "formats": ["markdown", "html"],
+                                            "waitFor": 1000,
+                                            "timeout": 30000,
+                                        }
+                                    }
+                                    
+                                    program_result = app.crawl_url(program_url, params=program_crawl_params, poll_interval=2)
+                                    
+                                    if program_result.get("success"):
+                                        program_data = program_result.get("data", [])
+                                        program_saved = 0
+                                        for program_page in program_data:
+                                            program_page_url = program_page.get("metadata", {}).get("sourceURL", program_url)
+                                            # Always save CTDT program pages - different years need different folder structures
+                                            # Check against per-seed crawled_urls only to avoid duplicates within same seed
+                                            if program_page_url not in crawled_urls:
+                                                save_content(program_page_url, program_page, skip_global_cache=True)
+                                                program_saved += 1
+                                        logger.info(f"✓ Saved {program_saved} pages from CTDT program: {program_url}")
+                                    else:
+                                        error_msg = program_result.get('error', 'Unknown error')
+                                        logger.error(f"Failed to crawl CTDT program {program_url}: {error_msg}")
+                                    
+                                    time.sleep(int(os.environ.get("DELAY_BETWEEN_REQUESTS", "2")))
+                                    
+                                except Exception as e:
+                                    logger.error(f"Error crawling CTDT program {program_url}: {e}")
+                        else:
+                            # These are numbered docs or de-mo-nganh docs - use the existing function
+                            logger.info(f"Found {len(detail_urls_to_crawl)} numbered detail pages to crawl from {seed_url}")
+                            crawl_numbered_details(app, detail_urls_to_crawl, cfg, crawled_urls)
                 
                 break
             else:
@@ -1120,6 +1551,9 @@ def crawl_once():
         
         global crawl_stats
         crawl_stats = CrawlStats()
+        
+        # Load content deduplication cache
+        load_content_hash_cache()
         
         crawl_with_firecrawl(app, seed_urls, cfg)
         

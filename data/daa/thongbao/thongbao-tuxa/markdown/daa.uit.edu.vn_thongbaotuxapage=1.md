@@ -1,6 +1,3 @@
-[Skip to content](https://daa.uit.edu.vn/thongbaotuxa?page=1#main)
- [Skip to navigation](https://daa.uit.edu.vn/thongbaotuxa?page=1#main-nav)
-
 Đào Tạo Từ Xa
 =============
 
@@ -85,15 +82,3 @@ Phòng Đào tạo Đại học
  
 
 *   [Xem thêm về THÔNG BÁO VỀ VIỆC CÔNG NHẬN TỐT NGHIỆP CỦA SINH VIÊN TẠI CHI NHÁNH TRUNG TÂM PHÁT TRIỂN CÔNG NGHỆ THÔNG TIN](https://daa.uit.edu.vn/thongbao/thong-bao-ve-viec-cong-nhan-tot-nghiep-cua-sinh-vien-tai-chi-nhanh-trung-tam-phat-trien "THÔNG BÁO VỀ VIỆC CÔNG NHẬN TỐT NGHIỆP CỦA SINH VIÊN TẠI CHI NHÁNH TRUNG TÂM PHÁT TRIỂN CÔNG NGHỆ THÔNG TIN")
-    
-
-Trang
------
-
-*   [« đầu](https://daa.uit.edu.vn/thongbaotuxa "Đến trang đầu tiên")
-    
-*   [‹ trước](https://daa.uit.edu.vn/thongbaotuxa "Đến trang kế trước")
-    
-*   [1](https://daa.uit.edu.vn/thongbaotuxa "Đến trang 1")
-    
-*   2

@@ -1,167 +1,132 @@
-[Skip to content](https://daa.uit.edu.vn/thongbaochinhquy?page=1914#main)
- [Skip to navigation](https://daa.uit.edu.vn/thongbaochinhquy?page=1914#main-nav)
-
 Đại Học Chính Quy
 =================
 
 **Các thông báo dành cho hệ đại học chính quy.**
 
-[Thông Báo Mở Lớp CARC1 Kiến trúc Máy tính](https://daa.uit.edu.vn/thongbao/thong-bao-mo-lop-carc1-kien-truc-may-tinh)
+[Thông báo thời gian tổ chức lễ tốt nghiệp đợt 2-2012.](https://daa.uit.edu.vn/thongbao/thong-bao-thoi-gian-chuc-le-tot-nghiep-dot-2-2012)
 
------------------------------------------------------------------------------------------------------------------------
+-------------------------------------------------------------------------------------------------------------------------------------------
 
-T2, 17/12/2012 - 14:53
+T4, 26/12/2012 - 16:06
 
-PDT thông báo mở lớp Kiến trúc Máy tính (CARC1) theo đề nghị của sinh viên.  
-Những sinh viên ở lớp này bắt buộc phải đăng ký lại trên DAA . Nếu kết thúc Đăng ký học phần lớp này có số đăng ký <30  sinh viên thì sẽ bị hủy.
+Phòng CTSV thông báo thời gian tổ chức lễ tốt nghiệp đợt 2-2012.(file đính kèm)
 
-*   [Xem thêm về Thông Báo Mở Lớp CARC1 Kiến trúc Máy tính](https://daa.uit.edu.vn/thongbao/thong-bao-mo-lop-carc1-kien-truc-may-tinh "Thông Báo Mở Lớp CARC1 Kiến trúc Máy tính")
+*   [Xem thêm về Thông báo thời gian tổ chức lễ tốt nghiệp đợt 2-2012.](https://daa.uit.edu.vn/thongbao/thong-bao-thoi-gian-chuc-le-tot-nghiep-dot-2-2012 "Thông báo thời gian tổ chức lễ tốt nghiệp đợt 2-2012. ")
     
 
-[Thông báo sinh viên nộp thiếu học phí học kỳ 1 NH 2012-2013](https://daa.uit.edu.vn/thongbao/thong-bao-sinh-vien-nop-thieu-hoc-phi-hoc-ky-1-nh-2012-2013)
+[Thông báo nhận học bổng khuyến khích học tập HK2 NH 2011-2012](https://daa.uit.edu.vn/thongbao/thong-bao-nhan-hoc-bong-khuyen-khich-hoc-tap-hk2-nh-2011-2012)
 
------------------------------------------------------------------------------------------------------------------------------------------------------------
+---------------------------------------------------------------------------------------------------------------------------------------------------------------
 
-CN, 16/12/2012 - 21:37
+T4, 26/12/2012 - 10:28
 
-Sinh viên từ khóa 6 trở về trước chưa nộp hoặc nộp thiếu học phí học kỳ 1, năm học 2012-2013 xem chi tiết thông báo trong file đính kèm.
-
-*   [Xem thêm về Thông báo sinh viên nộp thiếu học phí học kỳ 1 NH 2012-2013](https://daa.uit.edu.vn/thongbao/thong-bao-sinh-vien-nop-thieu-hoc-phi-hoc-ky-1-nh-2012-2013 "Thông báo sinh viên nộp thiếu học phí học kỳ 1 NH 2012-2013")
+*   [Xem thêm về Thông báo nhận học bổng khuyến khích học tập HK2 NH 2011-2012](https://daa.uit.edu.vn/thongbao/thong-bao-nhan-hoc-bong-khuyen-khich-hoc-tap-hk2-nh-2011-2012 "Thông báo nhận học bổng khuyến khích học tập HK2 NH 2011-2012")
     
 
-[Thông báo nộp học phí bổ sung HK1 của sinh viên khóa 7](https://daa.uit.edu.vn/thongbao/thong-bao-nop-hoc-phi-bo-sung-hk1-cua-sinh-vien-khoa-7)
+[THÔNG BÁO NGHỈ TẾT DƯƠNG LỊCH 2013](https://daa.uit.edu.vn/thongbao/thong-bao-nghi-tet-duong-lich-2013)
 
--------------------------------------------------------------------------------------------------------------------------------------------------
+---------------------------------------------------------------------------------------------------------
 
-CN, 16/12/2012 - 21:31
+T4, 26/12/2012 - 08:42
 
-Sinh viên xem chi tiêt trong các file đính kèm.
+   
+         Căn cứ thông báo của UBND TP.HCM về việc nghỉ Tết Dương lịch, Nhà Trường thông báo đến toàn thể **sinh viên** của Trường được nghỉ Tết Dương lịch năm 2013 trong 04 ngày: từ ngày 29/12/2012 đến hết ngày 01/01/2013.
 
-*   [Xem thêm về Thông báo nộp học phí bổ sung HK1 của sinh viên khóa 7](https://daa.uit.edu.vn/thongbao/thong-bao-nop-hoc-phi-bo-sung-hk1-cua-sinh-vien-khoa-7 "Thông báo nộp học phí bổ sung HK1 của sinh viên khóa 7")
-    
-
-[Thông Báo Học Giáo Dục Quốc Phòng](https://daa.uit.edu.vn/thongbao/thong-bao-hoc-giao-duc-quoc-phong)
-
--------------------------------------------------------------------------------------------------------
-
-T5, 13/12/2012 - 08:07
-
-PDT thông báo học GDQP ( file đính kèm)
-
-*   [Xem thêm về Thông Báo Học Giáo Dục Quốc Phòng](https://daa.uit.edu.vn/thongbao/thong-bao-hoc-giao-duc-quoc-phong "Thông Báo Học Giáo Dục Quốc Phòng")
-    
-
-[Thông Báo Điều chỉnh ĐKHP](https://daa.uit.edu.vn/thongbao/thong-bao-dieu-chinh-dkhp)
-
----------------------------------------------------------------------------------------
-
-T4, 12/12/2012 - 14:51
-
-Những sv đã đăng ký các lớp LT của Khoa HTTT ISxxx.D22 cập nhật lại ĐKHP của mình để thỏa lớp TH tương ứng, nếu sau thời hạn đăng ký mà vẫn còn trùng thì sẽ bị hủy lớp trùng.
-
-*   [Xem thêm về Thông Báo Điều chỉnh ĐKHP](https://daa.uit.edu.vn/thongbao/thong-bao-dieu-chinh-dkhp "Thông Báo Điều chỉnh ĐKHP")
-    
-
-[Thông Báo Danh sách phòng thi](https://daa.uit.edu.vn/thongbao/thong-bao-danh-sach-phong-thi)
-
------------------------------------------------------------------------------------------------
-
-T4, 12/12/2012 - 14:48
-
-PĐT Thông báo phòng thi các khóa (file đính kèm) đề nghị sinh viên đi đúng giờ và phòng thi.
-
-*   [Xem thêm về Thông Báo Danh sách phòng thi](https://daa.uit.edu.vn/thongbao/thong-bao-danh-sach-phong-thi "Thông Báo Danh sách phòng thi ")
-    
-
-[Thông báo lịch thi học kỳ 1 bộ môn Anh văn](https://daa.uit.edu.vn/thongbao/thong-bao-lich-thi-hoc-ky-1-bo-mon-anh-van)
-
--------------------------------------------------------------------------------------------------------------------------
-
-T4, 12/12/2012 - 13:42
-
-1\. Ngày 15/012013 khóa 6:
-
-Ca 1 : AV4 D11 /  AV1 D11 / AV3 D12 / AV3 D13 / AV3 D14
-
-Ca 2: AV4 D12 / AV2 D11 /  AV3 D16 / AV3 D17
-
-2\. Ngày thi 18/01/2013 Khóa 7
-
-Ca 1 : AVBT D11 / AVBT D12 / AV 1 D11 / AV1 D12 / AV1 D13
-
-Cà 2 : AV2 D11 / AV2 D12 / AV1 D14 / AV1 D15 / AV1 D16
-
-Ca 3 : AV 1 D17 / AV1 D18 / AV1 D19 / AV1 D110
-
-Ca 4 : AV 1 D111 / AV 1 D112 / Av1 D113 / AV1 D114 
-
-*   [Xem thêm về Thông báo lịch thi học kỳ 1 bộ môn Anh văn](https://daa.uit.edu.vn/thongbao/thong-bao-lich-thi-hoc-ky-1-bo-mon-anh-van "Thông báo lịch thi học kỳ 1 bộ môn Anh văn")
-    
-
-[THÔNG BÁO VỀ VIỆC CHUYỂN NGÀNH CHO SINH VIÊN](https://daa.uit.edu.vn/thongbao/thong-bao-ve-viec-chuyen-nganh-cho-sinh-vien)
-
------------------------------------------------------------------------------------------------------------------------------
-
-T3, 11/12/2012 - 15:06
-
-Sinh viên xem chi tiết trong file đính kèm.
-
-*   [Xem thêm về THÔNG BÁO VỀ VIỆC CHUYỂN NGÀNH CHO SINH VIÊN](https://daa.uit.edu.vn/thongbao/thong-bao-ve-viec-chuyen-nganh-cho-sinh-vien "THÔNG BÁO VỀ VIỆC CHUYỂN NGÀNH CHO SINH VIÊN")
-    
-
-[Thông báo Lịch Thi Học Kỳ 1, 2012-2013](https://daa.uit.edu.vn/thongbao/thong-bao-lich-thi-hoc-ky-1-2012-2013)
-
-----------------------------------------------------------------------------------------------------------------
-
-T2, 10/12/2012 - 14:40
-
-PDT thông báo lịch thi (điều chỉnh)  
-Sinh viên xem lịch thi,
-
-1\. Xem kỹ danh sách lớp và phòng thi 
-
-2\. SV có thẻ mới được vào phòng thi
-
-3\. Có mặt trước phòng thi 15 phút
-
-4\. Tuân thủ các qui định về thi cử
-
+   
+   
+   
    
    
  
 
-*   [Xem thêm về Thông báo Lịch Thi Học Kỳ 1, 2012-2013](https://daa.uit.edu.vn/thongbao/thong-bao-lich-thi-hoc-ky-1-2012-2013 "Thông báo Lịch Thi Học Kỳ 1, 2012-2013")
+*   [Xem thêm về THÔNG BÁO NGHỈ TẾT DƯƠNG LỊCH 2013](https://daa.uit.edu.vn/thongbao/thong-bao-nghi-tet-duong-lich-2013 "THÔNG BÁO NGHỈ TẾT DƯƠNG LỊCH 2013")
     
 
-*   [Xem thêm về Chuong trinh dao tao 3 hoc ky dau cho khoa 07](https://daa.uit.edu.vn/thongbao/chuong-trinh-dao-tao-3-hoc-ky-dau-cho-khoa-07 "Chuong trinh dao tao 3 hoc ky dau cho khoa 07")
+[Thông báo về việc bổ sung lịch thi cuối kỳ I năm học 2012 - 2013.(MMT&TT)](https://daa.uit.edu.vn/thongbao/thong-bao-ve-viec-bo-sung-lich-thi-cuoi-ky-i-nam-hoc-2012-2013mmttt)
+
+---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+T3, 25/12/2012 - 16:08
+
+Thông báo về việc bổ sung lịch thi cuối kỳ I năm học 2012 - 2013.  
+Do theo quy định mới phải có bài thi cuối kỳ tất cả các môn, nên Khoa bổ sung lịch thi thêm 02 môn, cụ thể như sau:  
+ **1\. Môn Thương Mại Điện Tử và Triển Khai Ứng Dụng**  
+\- Thời gian: 8g00 đến 9h30 ngày 02/01/2013  
+\- Địa điểm: Giảng đường 1  
+**2\. Môn Phương Pháp Luận Sáng Tạo Khoa Học**  
+\- Thời gian: 8g00 đến 9h30 ngày 12/01/2013  
+\- Địa điểm: Giảng đường 1, Giảng đường 2  
+\- Hình thức thi: Đề đóng  
+Sinh viên lưu ý để sắp xếp ôn tập và thi tốt.  
+
+*   [Xem thêm về Thông báo về việc bổ sung lịch thi cuối kỳ I năm học 2012 - 2013.(MMT&TT)](https://daa.uit.edu.vn/thongbao/thong-bao-ve-viec-bo-sung-lich-thi-cuoi-ky-i-nam-hoc-2012-2013mmttt "Thông báo về việc bổ sung lịch thi cuối kỳ I năm học 2012 - 2013.(MMT&TT)")
     
 
-Trang
------
+[Thông Báo Sinh Viên Được Cấp Chứng Chỉ GDQP](https://daa.uit.edu.vn/thongbao/thong-bao-sinh-vien-duoc-cap-chung-chi-gdqp)
 
-*   [« đầu](https://daa.uit.edu.vn/thongbaochinhquy "Đến trang đầu tiên")
+---------------------------------------------------------------------------------------------------------------------------
+
+T3, 25/12/2012 - 09:07
+
+PDT Thông Báo Sinh Viên Được Cấp Chứng Chỉ GDQP ( file đính kèm)
+
+*   [Xem thêm về Thông Báo Sinh Viên Được Cấp Chứng Chỉ GDQP](https://daa.uit.edu.vn/thongbao/thong-bao-sinh-vien-duoc-cap-chung-chi-gdqp "Thông Báo Sinh Viên Được Cấp Chứng Chỉ GDQP")
     
-*   [‹ trước](https://daa.uit.edu.vn/thongbaochinhquy?page=1913 "Đến trang kế trước")
+
+[Thông báo phát áo phục vụ Lễ TN CNCQ đợt 2 2012](https://daa.uit.edu.vn/thongbao/thong-bao-phat-ao-phuc-vu-le-tn-cncq-dot-2-2012)
+
+-----------------------------------------------------------------------------------------------------------------------------------
+
+T2, 24/12/2012 - 16:13
+
+Xem file đính kèm
+
+*   [Xem thêm về Thông báo phát áo phục vụ Lễ TN CNCQ đợt 2 2012](https://daa.uit.edu.vn/thongbao/thong-bao-phat-ao-phuc-vu-le-tn-cncq-dot-2-2012 "Thông báo phát áo phục vụ Lễ TN CNCQ đợt 2 2012")
     
-*   …
-*   [1911](https://daa.uit.edu.vn/thongbaochinhquy?page=1910 "Đến trang 1911")
+
+[THÔNG BÁO VỀ MÔN GIÁO DỤC THỂ CHẤT](https://daa.uit.edu.vn/thongbao/thong-bao-ve-mon-giao-duc-chat)
+
+-----------------------------------------------------------------------------------------------------
+
+T5, 20/12/2012 - 14:48
+
+THÔNG BÁO NÀY CHỈ ÁP DỤNG CHO SINH VIÊN TỪ KHÓA 01 ĐẾN KHÓA 06
+
+1\. Những sinh viên đã đăng ký học lại môn GDTC1\_ PEDU1 trong học kỳ I năm học 2012-2013 (đã đăng ký cho Cô Thoa hoặc giảng viên của trung tâm TDTT) đề nghị đăng ký lại tại phòng Đào tạo đại học đến hết ngày 28/12/2012 để giải quyết vấn đề học phí và cập nhật điểm.
+
+*   [Xem thêm về THÔNG BÁO VỀ MÔN GIÁO DỤC THỂ CHẤT](https://daa.uit.edu.vn/thongbao/thong-bao-ve-mon-giao-duc-chat "THÔNG BÁO VỀ MÔN GIÁO DỤC THỂ CHẤT")
     
-*   [1912](https://daa.uit.edu.vn/thongbaochinhquy?page=1911 "Đến trang 1912")
+
+[Thông Báo Mở Lớp Nhập môn quản trị doanh nghiệp (ITEM1)](https://daa.uit.edu.vn/thongbao/thong-bao-mo-lop-nhap-mon-quan-tri-doanh-nghiep-item1)
+
+-------------------------------------------------------------------------------------------------------------------------------------------------
+
+T5, 20/12/2012 - 14:00
+
+PDT thông báo mở lớp Nhập môn quản trị doanh nghiệp (ITEM1) theo đề nghị của sinh viên.  
+Những sinh viên ở lớp này bắt buộc phải đăng ký lại trên DAA . Nếu kết thúc Đăng ký học phần lớp này có số đăng ký <30  sinh viên thì sẽ bị hủy.
+
+*   [Xem thêm về Thông Báo Mở Lớp Nhập môn quản trị doanh nghiệp (ITEM1)](https://daa.uit.edu.vn/thongbao/thong-bao-mo-lop-nhap-mon-quan-tri-doanh-nghiep-item1 "Thông Báo Mở Lớp Nhập môn quản trị doanh nghiệp (ITEM1)")
     
-*   [1913](https://daa.uit.edu.vn/thongbaochinhquy?page=1912 "Đến trang 1913")
+
+[THÔNG BÁO ĐKHP HỌC KỲ II NĂM 2012-2013\_NEW (CÓ BỔ SUNG)](https://daa.uit.edu.vn/thongbao/thong-bao-dkhp-hoc-ky-ii-nam-2012-2013new-co-bo-sung)
+
+-------------------------------------------------------------------------------------------------------------------------------------------------
+
+T4, 19/12/2012 - 09:16
+
+Sinh viên xem chi tiết trong file đính kèm.
+
+*   [Xem thêm về THÔNG BÁO ĐKHP HỌC KỲ II NĂM 2012-2013\_NEW (CÓ BỔ SUNG)](https://daa.uit.edu.vn/thongbao/thong-bao-dkhp-hoc-ky-ii-nam-2012-2013new-co-bo-sung "THÔNG BÁO ĐKHP HỌC KỲ II NĂM 2012-2013_NEW (CÓ BỔ SUNG)")
     
-*   [1914](https://daa.uit.edu.vn/thongbaochinhquy?page=1913 "Đến trang 1914")
-    
-*   1915
-*   [1916](https://daa.uit.edu.vn/thongbaochinhquy?page=1915 "Đến trang 1916")
-    
-*   [1917](https://daa.uit.edu.vn/thongbaochinhquy?page=1916 "Đến trang 1917")
-    
-*   [1918](https://daa.uit.edu.vn/thongbaochinhquy?page=1917 "Đến trang 1918")
-    
-*   [1919](https://daa.uit.edu.vn/thongbaochinhquy?page=1918 "Đến trang 1919")
-    
-*   …
-*   [sau ›](https://daa.uit.edu.vn/thongbaochinhquy?page=1915 "Đến trang kế sau")
-    
-*   [cuối »](https://daa.uit.edu.vn/thongbaochinhquy?page=1925 "Đến trang cuối cùng")
+
+[Kế hoạch tổ chức lễ tốt nghiệp đợt 2 năm 2012](https://daa.uit.edu.vn/thongbao/ke-hoach-chuc-le-tot-nghiep-dot-2-nam-2012)
+
+----------------------------------------------------------------------------------------------------------------------------
+
+T3, 18/12/2012 - 21:35
+
+Thực hiện ý kiến chỉ đạo của Ban Giám hiệu, phòng Công tác sinh viên phối hợp Đoàn thanh niên chuẩn bị kế hoạch tổ chức Lễ Tốt nghiệp cho sinh viên chính quy đợt 2 năm 2012.  
+Xem chi tiết trong file đính kèm.
+
+*   [Xem thêm về Kế hoạch tổ chức lễ tốt nghiệp đợt 2 năm 2012](https://daa.uit.edu.vn/thongbao/ke-hoach-chuc-le-tot-nghiep-dot-2-nam-2012 "Kế hoạch tổ chức lễ tốt nghiệp đợt 2 năm 2012")

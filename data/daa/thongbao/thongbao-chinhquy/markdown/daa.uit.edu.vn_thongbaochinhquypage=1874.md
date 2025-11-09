@@ -1,190 +1,145 @@
-[Skip to content](https://daa.uit.edu.vn/thongbaochinhquy?page=1874#main)
- [Skip to navigation](https://daa.uit.edu.vn/thongbaochinhquy?page=1874#main-nav)
-
 Đại Học Chính Quy
 =================
 
 **Các thông báo dành cho hệ đại học chính quy.**
 
-[THÔNG BÁO NGHỈ HỌC LỚP IT001.E11.2 NGÀY 17/10/2013](https://daa.uit.edu.vn/thongbao/thong-bao-nghi-hoc-lop-it001e112-ngay-17102013)
+[Thông báo thu học phí bổ sung Khóa 8 HK1 năm học 2013-2014](https://daa.uit.edu.vn/thongbao/thong-bao-thu-hoc-phi-bo-sung-khoa-8-hk1-nam-hoc-2013-2014)
 
--------------------------------------------------------------------------------------------------------------------------------------
+---------------------------------------------------------------------------------------------------------------------------------------------------------
 
-T5, 10/10/2013 - 11:25
+T6, 11/10/2013 - 10:07
 
-CBGD : **Hồ Long Vân**
+Phòng Kế hoạch - Tài chính thông báo thu học phí bổ sung Khóa 8 HK1 NH 2013-2014 như sau:  
+ 
 
-Khoa/ Bộ môn : **KHMT**
+\- Thu bổ sung một tín chỉ học phí môn “Giáo dục thể chất – Mã môn PE001”.
 
-Môn học : **IT001**
+\- Thu bổ sung học phí môn anh văn.
 
-Lớp : **IT001.E11.2**
+\- Sinh viên xem thông tin học phí tại: [http://daa.uit.edu.vn/sinhvien/lookup/hocphi](http://daa.uit.edu.vn/sinhvien/lookup/hocphi)
 
-Phòng : **A120(PM CTTT)**
+\- Thời gian nộp: từ ngày ra thông báo đến hết ngày 15/11/2013.
 
-Thời gian : Tiết bắt đầu : **6**
-
-Tiết kết thúc : **8**
-
-Thứ : **5** Ngày : **17/10/2013**
-
-*   [Xem thêm về THÔNG BÁO NGHỈ HỌC LỚP IT001.E11.2 NGÀY 17/10/2013](https://daa.uit.edu.vn/thongbao/thong-bao-nghi-hoc-lop-it001e112-ngay-17102013 "THÔNG BÁO NGHỈ HỌC LỚP IT001.E11.2 NGÀY 17/10/2013")
+*   [Xem thêm về Thông báo thu học phí bổ sung Khóa 8 HK1 năm học 2013-2014](https://daa.uit.edu.vn/thongbao/thong-bao-thu-hoc-phi-bo-sung-khoa-8-hk1-nam-hoc-2013-2014 "Thông báo thu học phí bổ sung Khóa 8 HK1 năm học 2013-2014")
     
 
-[THÔNG BÁO NGHỈ HỌC LỚP MA003.E12](https://daa.uit.edu.vn/thongbao/thong-bao-nghi-hoc-lop-ma003e12)
+[THÔNG BÁO NGHỈ HỌC LỚP IT002.E11.1](https://daa.uit.edu.vn/thongbao/thong-bao-nghi-hoc-lop-it002e111)
+
+-------------------------------------------------------------------------------------------------------
+
+T6, 11/10/2013 - 10:05
+
+Phòng Đào tạo Đại học thông báo nghỉ học lớp IT002.E11.1 ( GV Nguyễn Vĩnh Kha, Phòng C111, tiết 1-3) vào ngày thứ Sáu 11/10/2013
+
+*   [Xem thêm về THÔNG BÁO NGHỈ HỌC LỚP IT002.E11.1](https://daa.uit.edu.vn/thongbao/thong-bao-nghi-hoc-lop-it002e111 "THÔNG BÁO NGHỈ HỌC LỚP IT002.E11.1")
+    
+
+[THÔNG BÁO NGHỈ HỌC LỚP WINP1.E14.1](https://daa.uit.edu.vn/thongbao/thong-bao-nghi-hoc-lop-winp1e141)
+
+-------------------------------------------------------------------------------------------------------
+
+T6, 11/10/2013 - 10:02
+
+Phòng Đào tạo Đại học thông báo nghỉ học lớp WINP1.E14.1 ( GV Nguyễn Vĩnh Kha, Phòng C310, tiết 6-8) vào ngày thứ Sáu 11/10/2013
+
+*   [Xem thêm về THÔNG BÁO NGHỈ HỌC LỚP WINP1.E14.1](https://daa.uit.edu.vn/thongbao/thong-bao-nghi-hoc-lop-winp1e141 "THÔNG BÁO NGHỈ HỌC LỚP WINP1.E14.1")
+    
+
+[THÔNG BÁO NGHỈ HỌC LỚP WINP1.E13](https://daa.uit.edu.vn/thongbao/thong-bao-nghi-hoc-lop-winp1e13)
 
 ----------------------------------------------------------------------------------------------------
 
-T5, 10/10/2013 - 09:11
+T6, 11/10/2013 - 09:48
 
-Phòng Đào tạo Đại học thông báo lớp MA003.E12 của GV Hà Mạnh Linh nghỉ học tiết 1,2,3 ngày thứ Năm 10/10/2013
+Phòng Đào tạo Đại học thông báo nghỉ học lớp WINP1.E13 ( GV Cáp Phạm Đình Thăng, phòng C114, tiết 1-3) vào ngày thứ Sáu ngày 11/10/2013
 
-*   [Xem thêm về THÔNG BÁO NGHỈ HỌC LỚP MA003.E12](https://daa.uit.edu.vn/thongbao/thong-bao-nghi-hoc-lop-ma003e12 "THÔNG BÁO NGHỈ HỌC LỚP MA003.E12")
+*   [Xem thêm về THÔNG BÁO NGHỈ HỌC LỚP WINP1.E13](https://daa.uit.edu.vn/thongbao/thong-bao-nghi-hoc-lop-winp1e13 "THÔNG BÁO NGHỈ HỌC LỚP WINP1.E13")
     
 
-[THÔNG BÁO CHƯƠNG TRÌNH TEAM BUILDING 2013 DÀNH CHO SINH VIÊN CHƯƠNG TRÌNH TIÊN TIẾN VÀ CHẤT LƯỢNG CAO](https://daa.uit.edu.vn/thongbao/thong-bao-chuong-trinh-team-building-2013-danh-cho-sinh-vien-chuong-trinh-tien-tien-va-chat)
+[THÔNG BÁO NGHỈ HỌC LỚP ENBT.E11 VÀ ENBT.E12](https://daa.uit.edu.vn/thongbao/thong-bao-nghi-hoc-lop-enbte11-va-enbte12)
 
--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+-------------------------------------------------------------------------------------------------------------------------
 
-T4, 09/10/2013 - 23:39
+T6, 11/10/2013 - 09:37
 
-          Chào đón Tân sinh viên Chương trình Tiên tiến và Chất lượng cao khoá 2013, Ban Điều hành Chương trình Tiên tiến tổ chức **Chương trình Team Building 2013 với tên gọi "Nhiệm vụ bất khả thi: Đập tan thách thức, chúng tôi là sinh viên Đại học Công nghệ Thông tin".**  
-          Hãy tham gia và cùng đồng hành với chúng tôi, thông qua chương trình các bạn sẽ có cơ hội nâng cao kỹ năng sống, làm quen và giao lưu với nhau, tạo sự đoàn kết trong cộng đồng Chương trình Tiên tiến và Chất lượng cao.  
+Phòng Đào tạo Đại học thông báo nghỉ học lớp ENBT.E11( GV Hồ Thị Minh Phượng, phòng C108, tiết 1-4) và ENBT.E12 (GV Nguyễn Thị Diểm Thúy, phòng C215, tiết 1-4) vào ngày thứ Bảy 12/10/2013
 
-*   [Xem thêm về THÔNG BÁO CHƯƠNG TRÌNH TEAM BUILDING 2013 DÀNH CHO SINH VIÊN CHƯƠNG TRÌNH TIÊN TIẾN VÀ CHẤT LƯỢNG CAO](https://daa.uit.edu.vn/thongbao/thong-bao-chuong-trinh-team-building-2013-danh-cho-sinh-vien-chuong-trinh-tien-tien-va-chat "THÔNG BÁO CHƯƠNG TRÌNH TEAM BUILDING 2013 DÀNH CHO SINH VIÊN CHƯƠNG TRÌNH TIÊN TIẾN VÀ CHẤT LƯỢNG CAO")
+*   [Xem thêm về THÔNG BÁO NGHỈ HỌC LỚP ENBT.E11 VÀ ENBT.E12](https://daa.uit.edu.vn/thongbao/thong-bao-nghi-hoc-lop-enbte11-va-enbte12 "THÔNG BÁO NGHỈ HỌC LỚP ENBT.E11 VÀ ENBT.E12")
     
 
-[THÔNG BÁO NGHỈ LỚP CE102.E12 NGÀY 12/10/2013](https://daa.uit.edu.vn/thongbao/thong-bao-nghi-lop-ce102e12-ngay-12102013)
+[THÔNG BÁO NGHỈ HỌC LỚP MA003.E13](https://daa.uit.edu.vn/thongbao/thong-bao-nghi-hoc-lop-ma003e13)
 
---------------------------------------------------------------------------------------------------------------------------
+----------------------------------------------------------------------------------------------------
 
-T4, 09/10/2013 - 07:59
+T6, 11/10/2013 - 08:48
 
-CBGD : **Nguyễn Thanh Sang**
+Phòng Đào tạo Đại học thông báo nghỉ học lớp MA003.E13 của GV Hà Mạnh Linh, vào tiết 1,2,3 tại GĐ3 ngày thứ Sáu 11/10/2013.
+
+*   [Xem thêm về THÔNG BÁO NGHỈ HỌC LỚP MA003.E13](https://daa.uit.edu.vn/thongbao/thong-bao-nghi-hoc-lop-ma003e13 "THÔNG BÁO NGHỈ HỌC LỚP MA003.E13")
+    
+
+[QUYẾT ĐỊNH 215 VỀ VIỆC SINH VIÊN TRÚNG TUYỂN VÀO HỆ CHƯƠNG TRÌNH TÀI NĂNG KHOA HỌC MÁY TÍNH KHOÁ 6](https://daa.uit.edu.vn/thongbao/quyet-dinh-215-ve-viec-sinh-vien-trung-tuyen-vao-he-chuong-trinh-tai-nang-khoa-hoc-may-tinh)
+
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+T6, 11/10/2013 - 00:24
+
+Sinh viên xem **Quyết định 215/QĐ-ĐHCNTT-ĐTĐH ngày 26/9/2013 của Hiệu trưởng Trường Đại học Công nghệ Thông tin về việc sinh viên trúng tuyển vào Hệ Cử nhân Tài năng ngành Khoa học Máy tính khoá 6.**  
+Sinh viên có tên trong Quyết định đã được cập nhật lại Thời khoá biểu. Thông tin chi tiết sinh viên xem trên trang web daa của Phòng ĐTĐH.  
+Danh sách các môn học, thời khoá biểu và lịch sinh hoạt lớp, sinh viên liên hệ cố vấn học tập của Khoa Khoa học Máy tính.  
+Chuyên viên-Nguyễn lai Hồng Ân
+
+*   [Xem thêm về QUYẾT ĐỊNH 215 VỀ VIỆC SINH VIÊN TRÚNG TUYỂN VÀO HỆ CHƯƠNG TRÌNH TÀI NĂNG KHOA HỌC MÁY TÍNH KHOÁ 6](https://daa.uit.edu.vn/thongbao/quyet-dinh-215-ve-viec-sinh-vien-trung-tuyen-vao-he-chuong-trinh-tai-nang-khoa-hoc-may-tinh "QUYẾT ĐỊNH 215 VỀ VIỆC SINH VIÊN TRÚNG TUYỂN VÀO HỆ CHƯƠNG TRÌNH TÀI NĂNG KHOA HỌC MÁY TÍNH KHOÁ 6")
+    
+
+[THÔNG BÁO HẠN NỘP LỆ PHÍ THAM GIA TEAM BUILDING 2013](https://daa.uit.edu.vn/thongbao/thong-bao-han-nop-le-phi-tham-gia-team-building-2013)
+
+---------------------------------------------------------------------------------------------------------------------------------------------
+
+T5, 10/10/2013 - 15:36
+
+Ban Điều hành Chương trình Tiên tiến và Chất lượng cao thông báo về Chương trình Team building 2013 như sau:  
+Đối tượng: Tất cả sinh viên Chương trình Tiên tiến và Chất lượng cao.  
+Thời gian: 19-20/10/2013 (Thứ 7 và chủ nhật).  
+Địa điểm: Khu du lịch Hồ Tràm \_Bà Rịa-Vũng Tàu.
+
+Lệ phí: 400.000VNĐ (Sinh viên đã được Nhà trường hỗ trợ 700.000VNĐ)
+
+*   [Xem thêm về THÔNG BÁO HẠN NỘP LỆ PHÍ THAM GIA TEAM BUILDING 2013](https://daa.uit.edu.vn/thongbao/thong-bao-han-nop-le-phi-tham-gia-team-building-2013 "THÔNG BÁO HẠN NỘP LỆ PHÍ THAM GIA TEAM BUILDING 2013")
+    
+
+[THÔNG BÁO NGHỈ LỚP CE105.E11.2 NGÀY 11/10/2013](https://daa.uit.edu.vn/thongbao/thong-bao-nghi-lop-ce105e112-ngay-11102013)
+
+-----------------------------------------------------------------------------------------------------------------------------
+
+T5, 10/10/2013 - 15:12
+
+CBGD : **Nguyễn Đặng Nhân**
 
 Khoa/ Bộ môn : **KTMT**
 
-Môn học : **CE102**
+Môn học : **CE105**
 
-Lớp : **CE102.E12**
+Lớp : **CE105.E11.2**
 
-Phòng : **C308**
+Phòng : **C310(PM3)**
 
-Thời gian : Tiết bắt đầu : **6**
+Thời gian : Tiết bắt đầu : **1**
 
-Tiết kết thúc : **8**
+Tiết kết thúc : **3**
 
-Thứ : **7** Ngày : **12/10/2013**
+Thứ : **6** Ngày : **11/10/2013**
 
-*   [Xem thêm về THÔNG BÁO NGHỈ LỚP CE102.E12 NGÀY 12/10/2013](https://daa.uit.edu.vn/thongbao/thong-bao-nghi-lop-ce102e12-ngay-12102013 "THÔNG BÁO NGHỈ LỚP CE102.E12 NGÀY 12/10/2013")
+*   [Xem thêm về THÔNG BÁO NGHỈ LỚP CE105.E11.2 NGÀY 11/10/2013](https://daa.uit.edu.vn/thongbao/thong-bao-nghi-lop-ce105e112-ngay-11102013 "THÔNG BÁO NGHỈ LỚP CE105.E11.2 NGÀY 11/10/2013")
     
 
-[Thông báo học bù lớp EN003.E11.ANTT ngày 09/10/2013.](https://daa.uit.edu.vn/thongbao/thong-bao-hoc-bu-lop-en003e11antt-ngay-09102013)
+[QUYẾT ĐỊNH 227/QĐ-ĐHCNTT-ĐTĐH VỀ VIỆC SINH VIÊN ĐÃ TRÚNG TUYỂN CHƯƠNG TRÌNH TIÊN TIẾN - TÀI NĂNG VÀ CHẤT LƯỢNG CAO NĂM 2013 ĐƯỢC CHUYỂN QUA LỚP CHÍNH QUY ĐẠI TRÀ](https://daa.uit.edu.vn/thongbao/quyet-dinh-227qd-dhcntt-dtdh-ve-viec-sinh-vien-da-trung-tuyen-chuong-trinh-tien-tien-tai)
 
-----------------------------------------------------------------------------------------------------------------------------------------
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
-T3, 08/10/2013 - 15:30
+T5, 10/10/2013 - 14:45
 
-Lớp EN003.E11.ANTT của Cô Nguyễn Thị Tuyết Vinh học bù ngày 09/10/2013 theo thông tin cụ thể như sau:
-
-**Lớp EN003.E11.ANTT - Anh văn 3**
-
-**Ngày học bù: Thứ Tư, ngày 09/10/2013**
-
-**Tiết: 1234**
-
-**Phòng học: C214**
-
+Sinh viên xem Quyết định 227/QĐ-ĐHCNTT-ĐTĐH ngày 10/10/2013 của Hiệu trưởng Trường Đại học Công nghệ Thông tin về việc sinh viên đã trúng tuyển Chương trình Tiên tiến, Tài năng và Chất lượng cao năm 2013 được chuyển qua lớp chính quy đại trà. (Quyết định đính kèm)  
 CV. Nguyễn Lai Hồng Ân
 
-*   [Xem thêm về Thông báo học bù lớp EN003.E11.ANTT ngày 09/10/2013.](https://daa.uit.edu.vn/thongbao/thong-bao-hoc-bu-lop-en003e11antt-ngay-09102013 "Thông báo học bù lớp EN003.E11.ANTT ngày 09/10/2013.")
-    
-
-[THÔNG BÁO HUỶ CÁC LỚP HỌC BÙ CỦA GV ĐỖ DUY THANH - KHOA HTTT](https://daa.uit.edu.vn/thongbao/thong-bao-huy-cac-lop-hoc-bu-cua-gv-do-duy-thanh-khoa-httt)
-
------------------------------------------------------------------------------------------------------------------------------------------------------------
-
-T3, 08/10/2013 - 14:43
-
-    Phòng Đào tạo Đại học thông báo các lớp học bù của GV Đỗ Duy Thanh khoa HTTT **vào hai ngày thứ Hai 14/10/2013 và thứ Ba 15/10/2013 sẽ không học như đã**  thông báo do trùng với lịch thi giữa kỳ.  
-   Lịch học bù sẽ thông báo sau.  
- 
-
-*   [Xem thêm về THÔNG BÁO HUỶ CÁC LỚP HỌC BÙ CỦA GV ĐỖ DUY THANH - KHOA HTTT](https://daa.uit.edu.vn/thongbao/thong-bao-huy-cac-lop-hoc-bu-cua-gv-do-duy-thanh-khoa-httt "THÔNG BÁO HUỶ CÁC LỚP HỌC BÙ CỦA GV ĐỖ DUY THANH - KHOA HTTT")
-    
-
-[Khảo sát lấy ý kiến phản hồi của sinh viên sắp tốt nghiệp về khóa học qua mạng Internet](https://daa.uit.edu.vn/thongbao/khao-sat-lay-y-kien-phan-hoi-cua-sinh-vien-sap-tot-nghiep-ve-khoa-hoc-qua-mang-internet)
-
--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-
-T3, 08/10/2013 - 14:42
-
-Thực hiện theo Quyết định số 01/QĐ-ĐHCNTT-TT-PC-ĐBCL ngày 07/03/2012 của Hiệu trưởng Trường Đại học Công nghệ Thông tin về việc lấy ý kiến phản hồi của các bên liên quan về hoạt động đào tạo; Quy định tạm thời về việc lấy ý kiến phản hồi từ Sinh viên tốt nghiệp về khóa học, Phòng Thanh tra - Pháp chế - Đảm bảo chất lượng sẽ tiến hành lấy ý kiến phản hồi của sinh viên sắp tốt nghiệp về khóa học bằng hình thức khảo sát trực tuyến, cụ thể như sau:
-
-*   [Xem thêm về Khảo sát lấy ý kiến phản hồi của sinh viên sắp tốt nghiệp về khóa học qua mạng Internet](https://daa.uit.edu.vn/thongbao/khao-sat-lay-y-kien-phan-hoi-cua-sinh-vien-sap-tot-nghiep-ve-khoa-hoc-qua-mang-internet "Khảo sát lấy ý kiến phản hồi của sinh viên sắp tốt nghiệp về khóa học qua mạng Internet")
-    
-
-[Thông báo sinh viên CLC-TN-TT khoá 8 nhận thẻ sinh viên](https://daa.uit.edu.vn/thongbao/thong-bao-sinh-vien-clc-tn-tt-khoa-8-nhan-sinh-vien)
-
------------------------------------------------------------------------------------------------------------------------------------------------
-
-T3, 08/10/2013 - 09:32
-
-Sinh viên CLC-TN-TT khoá 8 có tên trong danh sách sau vui lòng đến Phòng Đào tạo Đại học (P.102 - Toà nhà A) - gặp Cô Hồng Ân để nhận thẻ sinh viên. (sinh viên xem file đính kèm)  
-CV. Nguyễn Lai Hồng Ân
-
-*   [Xem thêm về Thông báo sinh viên CLC-TN-TT khoá 8 nhận thẻ sinh viên](https://daa.uit.edu.vn/thongbao/thong-bao-sinh-vien-clc-tn-tt-khoa-8-nhan-sinh-vien "Thông báo sinh viên CLC-TN-TT khoá 8 nhận thẻ sinh viên")
-    
-
-[Lớp IT001.E15.3 đổi phòng học](https://daa.uit.edu.vn/thongbao/lop-it001e153-doi-phong-hoc)
-
----------------------------------------------------------------------------------------------
-
-T2, 07/10/2013 - 10:56
-
-Do trùng phòng thực hành nên **lớp IT001.E15.3** do Cô Nguyễn Bích Vân dạy vào sáng thứ ba, tiết 123, phòng máy C202 sẽ **chuyển sang phòng máy C111 (phòng máy 4) cùng buổi kể từ ngày 08/10/2013.**
-
-*   [Xem thêm về Lớp IT001.E15.3 đổi phòng học](https://daa.uit.edu.vn/thongbao/lop-it001e153-doi-phong-hoc "Lớp IT001.E15.3 đổi phòng học")
-    
-
-[Thông báo nghỉ học lớp IS301.E11](https://daa.uit.edu.vn/thongbao/thong-bao-nghi-hoc-lop-is301e11)
-
-----------------------------------------------------------------------------------------------------
-
-T2, 07/10/2013 - 09:33
-
-Phòng Đào tạo Đại học thông báo lớp IS301.E11 của thầy Đỗ Duy Thanh nghỉ học vào tiết thứ 6 ngày 07/10/2013. Lịch học bù PĐTĐH sẽ thông báo sau.  
- 
-
-*   [Xem thêm về Thông báo nghỉ học lớp IS301.E11](https://daa.uit.edu.vn/thongbao/thong-bao-nghi-hoc-lop-is301e11 "Thông báo nghỉ học lớp IS301.E11")
-    
-
-Trang
------
-
-*   [« đầu](https://daa.uit.edu.vn/thongbaochinhquy "Đến trang đầu tiên")
-    
-*   [‹ trước](https://daa.uit.edu.vn/thongbaochinhquy?page=1873 "Đến trang kế trước")
-    
-*   …
-*   [1871](https://daa.uit.edu.vn/thongbaochinhquy?page=1870 "Đến trang 1871")
-    
-*   [1872](https://daa.uit.edu.vn/thongbaochinhquy?page=1871 "Đến trang 1872")
-    
-*   [1873](https://daa.uit.edu.vn/thongbaochinhquy?page=1872 "Đến trang 1873")
-    
-*   [1874](https://daa.uit.edu.vn/thongbaochinhquy?page=1873 "Đến trang 1874")
-    
-*   1875
-*   [1876](https://daa.uit.edu.vn/thongbaochinhquy?page=1875 "Đến trang 1876")
-    
-*   [1877](https://daa.uit.edu.vn/thongbaochinhquy?page=1876 "Đến trang 1877")
-    
-*   [1878](https://daa.uit.edu.vn/thongbaochinhquy?page=1877 "Đến trang 1878")
-    
-*   [1879](https://daa.uit.edu.vn/thongbaochinhquy?page=1878 "Đến trang 1879")
-    
-*   …
-*   [sau ›](https://daa.uit.edu.vn/thongbaochinhquy?page=1875 "Đến trang kế sau")
-    
-*   [cuối »](https://daa.uit.edu.vn/thongbaochinhquy?page=1925 "Đến trang cuối cùng")
+*   [Xem thêm về QUYẾT ĐỊNH 227/QĐ-ĐHCNTT-ĐTĐH VỀ VIỆC SINH VIÊN ĐÃ TRÚNG TUYỂN CHƯƠNG TRÌNH TIÊN TIẾN - TÀI NĂNG VÀ CHẤT LƯỢNG CAO NĂM 2013 ĐƯỢC CHUYỂN QUA LỚP CHÍNH QUY ĐẠI TRÀ](https://daa.uit.edu.vn/thongbao/quyet-dinh-227qd-dhcntt-dtdh-ve-viec-sinh-vien-da-trung-tuyen-chuong-trinh-tien-tien-tai "QUYẾT ĐỊNH 227/QĐ-ĐHCNTT-ĐTĐH VỀ VIỆC SINH VIÊN ĐÃ TRÚNG TUYỂN CHƯƠNG TRÌNH TIÊN TIẾN - TÀI NĂNG VÀ CHẤT LƯỢNG CAO NĂM 2013 ĐƯỢC CHUYỂN QUA LỚP CHÍNH QUY ĐẠI TRÀ")

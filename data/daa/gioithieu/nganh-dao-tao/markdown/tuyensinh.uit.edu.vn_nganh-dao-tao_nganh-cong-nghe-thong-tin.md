@@ -1,6 +1,3 @@
-[Skip to content](https://tuyensinh.uit.edu.vn/nganh-dao-tao/nganh-cong-nghe-thong-tin#main)
- [Skip to navigation](https://tuyensinh.uit.edu.vn/nganh-dao-tao/nganh-cong-nghe-thong-tin#main-nav)
-
 Ngành Công nghệ Thông tin
 =========================
 
@@ -82,7 +79,3 @@ Ngành bạn quan tâm \*
 *   Không tìm thấy kết quả
 
 Ngành Công nghệ Thông tinNgành Hệ thống Thông tin Ngành Khoa học Máy tínhNgành Kỹ thuật Phần mềmNgành Kỹ thuật Máy tínhNgành Mạng máy tính & Truyền thông Dữ liệuNgành An toàn Thông tinNgành Thương mại Điện tửNgành Khoa học Dữ liệuNgành Trí tuệ Nhân tạoNgành Thiết kế Vi mạchNgành Truyền thông Đa phương tiện
-
-     
-
-Back to top

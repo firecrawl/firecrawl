@@ -1,297 +1,192 @@
-[Skip to content](https://daa.uit.edu.vn/thongbaochinhquy?page=1862#main)
- [Skip to navigation](https://daa.uit.edu.vn/thongbaochinhquy?page=1862#main-nav)
-
 Đại Học Chính Quy
 =================
 
 **Các thông báo dành cho hệ đại học chính quy.**
 
-[Thông báo học bù lớp IT001.E16.1 ngày 23/11/2013](https://daa.uit.edu.vn/thongbao/thong-bao-hoc-bu-lop-it001e161-ngay-23112013)
+[Thông báo nghỉ học lớp ENGL1113.E11.CTTT ngày 18/11/2013](https://daa.uit.edu.vn/thongbao/thong-bao-nghi-hoc-lop-engl1113e11cttt-ngay-18112013)
 
----------------------------------------------------------------------------------------------------------------------------------
+-------------------------------------------------------------------------------------------------------------------------------------------------
 
-T4, 13/11/2013 - 08:25
+T7, 16/11/2013 - 14:41
 
-CBGD : **Nguyễn Thị Ngọc Diễm**
+Lớp ENGL1113.E11.CTTT ngày 18/11/2013.  
+CBGD : Nguyễn Thị Tuyết Vinh  
+Khoa/ Bộ môn : Anh văn  
+Môn học : Tiếng Anh 1  
+Lớp : ENGL1113.E11.CTTT  
+Phòng : A106  
+Thời gian : Tiết bắt đầu : 6  
+Tiết kết thúc : 9  
+Thứ : 2 -  Ngày : 18/11/2013  
+Lý do: GV họp tại ĐHQG-HCM
+
+*   [Xem thêm về Thông báo nghỉ học lớp ENGL1113.E11.CTTT ngày 18/11/2013](https://daa.uit.edu.vn/thongbao/thong-bao-nghi-hoc-lop-engl1113e11cttt-ngay-18112013 "Thông báo nghỉ học lớp ENGL1113.E11.CTTT ngày 18/11/2013")
+    
+
+[Thông báo thay đổi phòng thi của Chương trình tiên tiến và Chất lượng cao Kỹ thuật Máy tính vào ngày 16 & 23 /11/2013](https://daa.uit.edu.vn/thongbao/thong-bao-thay-doi-phong-thi-cua-chuong-trinh-tien-tien-va-chat-luong-cao-ky-thuat-may-tinh)
+
+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+T7, 16/11/2013 - 12:32
+
+Sinh viên Chương trình tiên tiến và Chất lượng cao Kỹ thuật Máy tính chú ý việc thay đổi phòng thi C101 và C104 vào ngày thứ 7, 16&23/11/2013. **Các phòng thi tại đây vào ngày thứ 7 sẽ chuyển sang phòng như sau: C101-> C201 và C104 -> C301. (file đính kèm)**  
+CV. Nguyễn Lai Hồng Ân 
+
+*   [Xem thêm về Thông báo thay đổi phòng thi của Chương trình tiên tiến và Chất lượng cao Kỹ thuật Máy tính vào ngày 16 & 23 /11/2013](https://daa.uit.edu.vn/thongbao/thong-bao-thay-doi-phong-thi-cua-chuong-trinh-tien-tien-va-chat-luong-cao-ky-thuat-may-tinh "Thông báo thay đổi phòng thi của Chương trình tiên tiến và Chất lượng cao Kỹ thuật Máy tính vào ngày 16 & 23 /11/2013")
+    
+
+[Thông báo lớp EN001.E11.ANTT đổi phòng học ngày 18/11/2013](https://daa.uit.edu.vn/thongbao/thong-bao-lop-en001e11antt-doi-phong-hoc-ngay-18112013)
+
+-----------------------------------------------------------------------------------------------------------------------------------------------------
+
+T7, 16/11/2013 - 10:35
+
+Lớp EN001.E11.ANTT của Cô Nguyễn Thị Thảo Quỳnh học phòng A106 **sẽ đổi sang học phòng C106 vào ngày 18/11/2013 (Sáng thứ Hai).**  
+Lý do: Tổ chức tổng kết và trao giải Hội thao SV năm 2013  
+Thân báo.  
+CV. Nguyễn Lai Hồng Ân
+
+*   [Xem thêm về Thông báo lớp EN001.E11.ANTT đổi phòng học ngày 18/11/2013](https://daa.uit.edu.vn/thongbao/thong-bao-lop-en001e11antt-doi-phong-hoc-ngay-18112013 "Thông báo lớp EN001.E11.ANTT đổi phòng học ngày 18/11/2013")
+    
+
+[Tổ chức sự kiện "Đêm nhạc Phú Quang"](https://daa.uit.edu.vn/thongbao/chuc-su-kien-dem-nhac-phu-quang)
+
+--------------------------------------------------------------------------------------------------------
+
+T6, 15/11/2013 - 21:41
+
+          Chào mừmg kỷ niệm 31 năm ngày Nhà giáo Việt Nam 20/11/1982-20/11/2013 Đại học Quốc gia Hồ Chí Minh (ĐHQG-HCM) phối hợp với nhà tài trợ Mobiphone tổ chức chương trình ca nhac **"Về lại phố xưa"** với những tác phẩm trữ tình sâu lắng của nhạc sỹ Phú Quang , thời gian: **lúc 18:00 ngày 20/11/2013** tại **Khu B Ký túc xá ĐHQG-HCM**. Chương trình ca nhạc này phục vụ miễn phí cho đối tượng giảng viên, sinh viên ĐHQG-HCM và một số cư dân lân cận.  
+   
+
+*   [Xem thêm về Tổ chức sự kiện "Đêm nhạc Phú Quang"](https://daa.uit.edu.vn/thongbao/chuc-su-kien-dem-nhac-phu-quang "Tổ chức sự kiện "Đêm nhạc Phú Quang"")
+    
+
+[Thông báo nghỉ học lớp CS323.E11 ngày 19/11/2013](https://daa.uit.edu.vn/thongbao/thong-bao-nghi-hoc-lop-cs323e11-ngay-19112013)
+
+----------------------------------------------------------------------------------------------------------------------------------
+
+T6, 15/11/2013 - 15:05
+
+CBGD : **Nguyễn Tuấn Đăng**
 
 Khoa/ Bộ môn : **KHMT**
 
-Môn học : **IT001**
+Môn học : **CS323**
 
-Lớp : **IT001.E16.1**
+Lớp : **CS323.E11**
 
-Sĩ số : **27**
+Phòng : **C205**
 
 Thời gian : Tiết bắt đầu : **6**
 
 Tiết kết thúc : **8**
 
-Thứ : **7** Ngày : **23/11/2013**
+Thứ : **3** Ngày : **19/11/2013**
 
-Phòng : **C212(PM HTTT)**
-
-Máy chiếu : **Cần máy chiếu**
-
-Ghi chú :
-
-*   [Xem thêm về Thông báo học bù lớp IT001.E16.1 ngày 23/11/2013](https://daa.uit.edu.vn/thongbao/thong-bao-hoc-bu-lop-it001e161-ngay-23112013 "Thông báo học bù lớp IT001.E16.1 ngày 23/11/2013")
+*   [Xem thêm về Thông báo nghỉ học lớp CS323.E11 ngày 19/11/2013](https://daa.uit.edu.vn/thongbao/thong-bao-nghi-hoc-lop-cs323e11-ngay-19112013 "Thông báo nghỉ học lớp CS323.E11 ngày 19/11/2013")
     
 
-[Thông báo học bù lớp IT001.E111.1 ngày 22/11/2013](https://daa.uit.edu.vn/thongbao/thong-bao-hoc-bu-lop-it001e1111-ngay-22112013)
+[Thông báo học bù lớp IT001.E11.CNTN ngày 25/11/2013](https://daa.uit.edu.vn/thongbao/thong-bao-hoc-bu-lop-it001e11cntn-ngay-25112013)
 
------------------------------------------------------------------------------------------------------------------------------------
+---------------------------------------------------------------------------------------------------------------------------------------
 
-T4, 13/11/2013 - 08:23
+T5, 14/11/2013 - 17:05
 
-BGD : **Nguyễn Thị Ngọc Diễm**
+CBGD : Nguyễn Lưu Thuỳ Ngân  
+Khoa/ Bộ môn : KHMT  
+Môn học : IT001  
+Lớp :  IT001.E11.CNTN  
+Sĩ số : 46  
+Thời gian : Tiết bắt đầu : 2  
+Tiết kết thúc : 4  
+Thứ : 2 Ngày : 25/11/2013  
+Phòng : C201  
+\-----------------------------------
 
-Khoa/ Bộ môn : **KHMT**
+*   [Xem thêm về Thông báo học bù lớp IT001.E11.CNTN ngày 25/11/2013](https://daa.uit.edu.vn/thongbao/thong-bao-hoc-bu-lop-it001e11cntn-ngay-25112013 "Thông báo học bù lớp IT001.E11.CNTN ngày 25/11/2013")
+    
 
-Môn học : **IT001**
+[Thông báo nghỉ học lớp CS3423.E11.CTTT.1 ngày 14/11/2013 (Chiều thứ sáu)](https://daa.uit.edu.vn/thongbao/thong-bao-nghi-hoc-lop-cs3423e11cttt1-ngay-14112013-chieu-thu-sau)
 
-Lớp : **IT001.E111.1**
+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
-Sĩ số : **35**
+T5, 14/11/2013 - 14:33
+
+Lớp **CS3423.E11.CTTT.1** của GV. **Lê Hữu Khôi Nguyên** thông báo nghỉ học.  
+Ngày: **14/11/2013** (Chiều thứ sáu)  
+Tiết : 2345  
+Phòng: **A120(PM CTTT)**  
+Lý do: **Bận sắp xếp giấy tờ cao học**  
+Lịch học bù sẽ thông báo sau.  
+CV. Nguyễn Lai Hồng Ân
+
+*   [Xem thêm về Thông báo nghỉ học lớp CS3423.E11.CTTT.1 ngày 14/11/2013 (Chiều thứ sáu)](https://daa.uit.edu.vn/thongbao/thong-bao-nghi-hoc-lop-cs3423e11cttt1-ngay-14112013-chieu-thu-sau "Thông báo nghỉ học lớp CS3423.E11.CTTT.1 ngày 14/11/2013 (Chiều thứ sáu)")
+    
+
+[Thông báo lớp IT001.E11.CNTN nghỉ học ngày 15/11/2013](https://daa.uit.edu.vn/thongbao/thong-bao-lop-it001e11cntn-nghi-hoc-ngay-15112013)
+
+-------------------------------------------------------------------------------------------------------------------------------------------
+
+T5, 14/11/2013 - 14:25
+
+Lớp **IT001.E11.CNTN** của GV. Nguyễn Lưu Thùy Ngân thông báo nghỉ học.  
+Ngày: 15/11/2013 (Chiều thứ sáu)  
+Thời gian : Tiết bắt đầu : 6 - Tiết kết thúc : 8  
+Phòng: A106  
+Lý do : Bận họp  
+Lịch học bù sẽ thông báo sau.  
+CV. Nguyễn Lai Hồng Ân
+
+*   [Xem thêm về Thông báo lớp IT001.E11.CNTN nghỉ học ngày 15/11/2013](https://daa.uit.edu.vn/thongbao/thong-bao-lop-it001e11cntn-nghi-hoc-ngay-15112013 "Thông báo lớp IT001.E11.CNTN nghỉ học ngày 15/11/2013")
+    
+
+[Thông báo học bù lớp SE344.E11 ngày 20/11/2013](https://daa.uit.edu.vn/thongbao/thong-bao-hoc-bu-lop-se344e11-ngay-20112013)
+
+------------------------------------------------------------------------------------------------------------------------------
+
+T5, 14/11/2013 - 14:09
+
+CBGD : **Cáp Phạm Đình Thăng**
+
+Khoa/ Bộ môn : **CNPM**
+
+Môn học : **SE344**
+
+Lớp : **SE344.E11**
+
+Sĩ số : **64**
 
 Thời gian : Tiết bắt đầu : **1**
 
 Tiết kết thúc : **3**
 
-Thứ : **6** Ngày : **22/11/2013**
+Thứ : **4** Ngày : **20/11/2013**
 
-Phòng : **C309(PM2)**
+Phòng : **C308**
 
-Máy chiếu : **Cần máy chiếu**
-
-*   [Xem thêm về Thông báo học bù lớp IT001.E111.1 ngày 22/11/2013](https://daa.uit.edu.vn/thongbao/thong-bao-hoc-bu-lop-it001e1111-ngay-22112013 "Thông báo học bù lớp IT001.E111.1 ngày 22/11/2013")
+*   [Xem thêm về Thông báo học bù lớp SE344.E11 ngày 20/11/2013](https://daa.uit.edu.vn/thongbao/thong-bao-hoc-bu-lop-se344e11-ngay-20112013 "Thông báo học bù lớp SE344.E11 ngày 20/11/2013")
     
 
-[Thông báo học bù lớp IT006.E11.ANTT ngày 16/11/2013](https://daa.uit.edu.vn/thongbao/thong-bao-hoc-bu-lop-it006e11antt-ngay-16112013)
+[Thông báo nghỉ lớp NT103.E12.1 ngày 14/11/2013](https://daa.uit.edu.vn/thongbao/thong-bao-nghi-lop-nt103e121-ngay-14112013)
 
----------------------------------------------------------------------------------------------------------------------------------------
+-----------------------------------------------------------------------------------------------------------------------------
 
-T3, 12/11/2013 - 10:40
+T5, 14/11/2013 - 09:39
 
-Sinh viên lớp ANTN2012 chú ý thông báo học bù:
+CBGD : **Trần Mạnh Hùng**
 
-Lớp: IT006.E11.ANTT
+Khoa/ Bộ môn : **MMT&TT**
 
-Ngày: 16/11/2013 (Sáng thứ bảy)
+Môn học : **NT103**
 
-Tiết: 345 (từ 09:00 đến 11:30)
+Lớp : **NT103.E12.1**
 
-Phòng: C101
+Phòng : **C209(PM MMT)**
 
-GV: Đinh Đức Anh Vũ
+Thời gian : Tiết bắt đầu : **1**
 
-Thân báo
+Tiết kết thúc : **3**
 
-CV. Nguyễn Lai Hồng Ân
+Thứ : **5** Ngày : **14/11/2013**
 
-*   [Xem thêm về Thông báo học bù lớp IT006.E11.ANTT ngày 16/11/2013](https://daa.uit.edu.vn/thongbao/thong-bao-hoc-bu-lop-it006e11antt-ngay-16112013 "Thông báo học bù lớp IT006.E11.ANTT ngày 16/11/2013")
-    
-
-[THÔNG BÁO NGHỈ HỌC MÔN IT004.E18 & IT004.E18.1](https://daa.uit.edu.vn/thongbao/thong-bao-nghi-hoc-mon-it004e18-it004e181)
-
-----------------------------------------------------------------------------------------------------------------------------
-
-T3, 12/11/2013 - 10:09
-
-Phòng Đào tạo Đại học thông báo nghỉ học lớp IT004.E18 và IT004.E18.1 vào chiều nay 12/11/2013.  
-Lý do: GV Vũ MInh sang bận tham gia tập huấn CDIO
-
-*   [Xem thêm về THÔNG BÁO NGHỈ HỌC MÔN IT004.E18 & IT004.E18.1](https://daa.uit.edu.vn/thongbao/thong-bao-nghi-hoc-mon-it004e18-it004e181 "THÔNG BÁO NGHỈ HỌC MÔN IT004.E18 & IT004.E18.1")
-    
-
-[Thông báo học bù lớp ITEM1.E14 ngày 19/11/2013](https://daa.uit.edu.vn/thongbao/thong-bao-hoc-bu-lop-item1e14-ngay-19112013)
-
-------------------------------------------------------------------------------------------------------------------------------
-
-T3, 12/11/2013 - 10:01
-
-CBGD : **Đỗ Duy Thanh**
-
-Khoa/ Bộ môn : **HTTT**
-
-Môn học : **ITEM1**
-
-Lớp : **ITEM1.E14**
-
-Sĩ số : **52**
-
-Thời gian : Tiết bắt đầu : **9**
-
-Tiết kết thúc : **10**
-
-Thứ : **3** Ngày : **19/11/2013**
-
-Phòng : **C214**
-
-Máy chiếu : **Cần máy chiếu**
-
-*   [Xem thêm về Thông báo học bù lớp ITEM1.E14 ngày 19/11/2013](https://daa.uit.edu.vn/thongbao/thong-bao-hoc-bu-lop-item1e14-ngay-19112013 "Thông báo học bù lớp ITEM1.E14 ngày 19/11/2013")
-    
-
-[Thông báo học bù lớp ITEM1.E13 ngày 18/11/2013](https://daa.uit.edu.vn/thongbao/thong-bao-hoc-bu-lop-item1e13-ngay-18112013)
-
-------------------------------------------------------------------------------------------------------------------------------
-
-T3, 12/11/2013 - 09:59
-
-CBGD : **Đỗ Duy Thanh**
-
-Khoa/ Bộ môn : **HTTT**
-
-Môn học : **ITEM1**
-
-Lớp : **ITEM1.E13**
-
-Sĩ số : **49**
-
-Thời gian : Tiết bắt đầu : **9**
-
-Tiết kết thúc : **10**
-
-Thứ : **2** Ngày : **18/11/2013**
-
-Phòng : **C214**
-
-Máy chiếu : **Cần máy chiếu**
-
-*   [Xem thêm về Thông báo học bù lớp ITEM1.E13 ngày 18/11/2013](https://daa.uit.edu.vn/thongbao/thong-bao-hoc-bu-lop-item1e13-ngay-18112013 "Thông báo học bù lớp ITEM1.E13 ngày 18/11/2013")
-    
-
-[Thông báo học bù lớp ITEM1.E11 ngày 18/11/2013](https://daa.uit.edu.vn/thongbao/thong-bao-hoc-bu-lop-item1e11-ngay-18112013)
-
-------------------------------------------------------------------------------------------------------------------------------
-
-T3, 12/11/2013 - 09:56
-
-CBGD : **Đỗ Duy Thanh**
-
-Khoa/ Bộ môn : **HTTT**
-
-Môn học : **ITEM1**
-
-Lớp : **ITEM1.E11**
-
-Sĩ số : **49**
-
-Thời gian : Tiết bắt đầu : **4**
-
-Tiết kết thúc : **5**
-
-Thứ : **2** Ngày : **18/11/2013**
-
-Phòng : **C208**
-
-Máy chiếu : **Cần máy chiếu**
-
-*   [Xem thêm về Thông báo học bù lớp ITEM1.E11 ngày 18/11/2013](https://daa.uit.edu.vn/thongbao/thong-bao-hoc-bu-lop-item1e11-ngay-18112013 "Thông báo học bù lớp ITEM1.E11 ngày 18/11/2013")
-    
-
-[Thông báo học bù lớp ITEM1.E12 ngày 19/11/2013](https://daa.uit.edu.vn/thongbao/thong-bao-hoc-bu-lop-item1e12-ngay-19112013)
-
-------------------------------------------------------------------------------------------------------------------------------
-
-T3, 12/11/2013 - 09:53
-
-CBGD : **Đỗ Duy Thanh**
-
-Khoa/ Bộ môn : **HTTT**
-
-Môn học : **ITEM1**
-
-Lớp : **ITEM1.E12**
-
-Sĩ số : **52**
-
-Thời gian : Tiết bắt đầu : **4**
-
-Tiết kết thúc : **5**
-
-Thứ : **3** Ngày : **19/11/2013**
-
-Phòng : **C208**
-
-Máy chiếu : **Cần máy chiếu**
-
-*   [Xem thêm về Thông báo học bù lớp ITEM1.E12 ngày 19/11/2013](https://daa.uit.edu.vn/thongbao/thong-bao-hoc-bu-lop-item1e12-ngay-19112013 "Thông báo học bù lớp ITEM1.E12 ngày 19/11/2013")
-    
-
-[Thông báo học bù lớp IS301.E11 ngày 19/11/2013](https://daa.uit.edu.vn/thongbao/thong-bao-hoc-bu-lop-is301e11-ngay-19112013)
-
-------------------------------------------------------------------------------------------------------------------------------
-
-T3, 12/11/2013 - 09:47
-
-CBGD : **Đỗ Duy Thanh**
-
-Khoa/ Bộ môn : **HTTT**
-
-Môn học : **IS301**
-
-Lớp : **IS301.E11**
-
-Sĩ số : **70**
-
-Thời gian : Tiết bắt đầu : **6**
-
-Tiết kết thúc : **8**
-
-Thứ : **3** Ngày : **19/11/2013**
-
-Phòng : **C113**
-
-Máy chiếu : **Cần máy chiếu**
-
-Ghi chú :
-
-*   [Xem thêm về Thông báo học bù lớp IS301.E11 ngày 19/11/2013](https://daa.uit.edu.vn/thongbao/thong-bao-hoc-bu-lop-is301e11-ngay-19112013 "Thông báo học bù lớp IS301.E11 ngày 19/11/2013")
-    
-
-[Thông báo học bù lớp CS515.E11.CNTN](https://daa.uit.edu.vn/thongbao/thong-bao-hoc-bu-lop-cs515e11cntn)
-
----------------------------------------------------------------------------------------------------------
-
-T3, 12/11/2013 - 08:28
-
-GV. Phạm Thi Vương phụ trách lớp **CS515.E11.CNTN** thông báo học bù vào **chiều thứ 6  (15/11/2013)**.  
-**Tiết: 678**  
-**Phòng: C101 - Toà nhà C**  
-CV. Nguyễn Lai Hồng Ân  
-   
- 
-
-*   [Xem thêm về Thông báo học bù lớp CS515.E11.CNTN](https://daa.uit.edu.vn/thongbao/thong-bao-hoc-bu-lop-cs515e11cntn "Thông báo học bù lớp CS515.E11.CNTN")
-    
-
-Trang
------
-
-*   [« đầu](https://daa.uit.edu.vn/thongbaochinhquy "Đến trang đầu tiên")
-    
-*   [‹ trước](https://daa.uit.edu.vn/thongbaochinhquy?page=1861 "Đến trang kế trước")
-    
-*   …
-*   [1859](https://daa.uit.edu.vn/thongbaochinhquy?page=1858 "Đến trang 1859")
-    
-*   [1860](https://daa.uit.edu.vn/thongbaochinhquy?page=1859 "Đến trang 1860")
-    
-*   [1861](https://daa.uit.edu.vn/thongbaochinhquy?page=1860 "Đến trang 1861")
-    
-*   [1862](https://daa.uit.edu.vn/thongbaochinhquy?page=1861 "Đến trang 1862")
-    
-*   1863
-*   [1864](https://daa.uit.edu.vn/thongbaochinhquy?page=1863 "Đến trang 1864")
-    
-*   [1865](https://daa.uit.edu.vn/thongbaochinhquy?page=1864 "Đến trang 1865")
-    
-*   [1866](https://daa.uit.edu.vn/thongbaochinhquy?page=1865 "Đến trang 1866")
-    
-*   [1867](https://daa.uit.edu.vn/thongbaochinhquy?page=1866 "Đến trang 1867")
-    
-*   …
-*   [sau ›](https://daa.uit.edu.vn/thongbaochinhquy?page=1863 "Đến trang kế sau")
-    
-*   [cuối »](https://daa.uit.edu.vn/thongbaochinhquy?page=1925 "Đến trang cuối cùng")
+*   [Xem thêm về Thông báo nghỉ lớp NT103.E12.1 ngày 14/11/2013](https://daa.uit.edu.vn/thongbao/thong-bao-nghi-lop-nt103e121-ngay-14112013 "Thông báo nghỉ lớp NT103.E12.1 ngày 14/11/2013")

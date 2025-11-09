@@ -1,226 +1,193 @@
-[Skip to content](https://daa.uit.edu.vn/thongbaochinhquy?page=1#main)
- [Skip to navigation](https://daa.uit.edu.vn/thongbaochinhquy?page=1#main-nav)
-
 Đại Học Chính Quy
 =================
 
 **Các thông báo dành cho hệ đại học chính quy.**
 
-[Thông báo lịch học HT2 Lập trình kịch bản tự động hóa cho quản trị và bảo mật mạng (NT542.Q11.1) ngày 19/12/2025](https://daa.uit.edu.vn/node/36944)
+[Thông báo nghỉ lớp Cấu trúc dữ liệu và giải thuật (IT003.Q12) ngày 11/11/2025](https://daa.uit.edu.vn/node/36960)
 
-------------------------------------------------------------------------------------------------------------------------------------------------------
+-------------------------------------------------------------------------------------------------------------------
 
-T2, 03/11/2025 - 10:31
+T7, 08/11/2025 - 11:21
 
-CBGD : **Văn Thiên Luân**  
-Khoa/ Bộ môn : **MMT&TT**  
-Môn học : **Lập trình kịch bản tự động hóa cho quản trị và bảo mật mạng (NT542)**  
-Lớp : **NT542.Q11.1**  
-Phòng : **B1.06**  
-Thời gian :  
-\- Tiết bắt đầu : **2**  
-\- Tiết kết thúc : **4**  
-Thứ : **6 , ngày 19/12/2025**
-
-*   [Xem thêm về Thông báo lịch học HT2 Lập trình kịch bản tự động hóa cho quản trị và bảo mật mạng (NT542.Q11.1) ngày 19/12/2025](https://daa.uit.edu.vn/node/36944 "Thông báo lịch học HT2 Lập trình kịch bản tự động hóa cho quản trị và bảo mật mạng (NT542.Q11.1) ngày 19/12/2025")
-    
-
-[Thông báo lịch học HT2 Lập trình kịch bản tự động hóa cho quản trị và bảo mật mạng (NT542.Q11.1) ngày 12/12/2025](https://daa.uit.edu.vn/node/36943)
-
-------------------------------------------------------------------------------------------------------------------------------------------------------
-
-T2, 03/11/2025 - 10:30
-
-CBGD : **Văn Thiên Luân**  
-Khoa/ Bộ môn : **MMT&TT**  
-Môn học : **Lập trình kịch bản tự động hóa cho quản trị và bảo mật mạng (NT542)**  
-Lớp : **NT542.Q11.1**  
-Phòng : **B1.06**  
-Thời gian :  
-\- Tiết bắt đầu : **2**  
-\- Tiết kết thúc : **4**  
-Thứ : **6 , ngày 12/12/2025**
-
-*   [Xem thêm về Thông báo lịch học HT2 Lập trình kịch bản tự động hóa cho quản trị và bảo mật mạng (NT542.Q11.1) ngày 12/12/2025](https://daa.uit.edu.vn/node/36943 "Thông báo lịch học HT2 Lập trình kịch bản tự động hóa cho quản trị và bảo mật mạng (NT542.Q11.1) ngày 12/12/2025")
-    
-
-[Thông báo lịch học HT2 Lập trình kịch bản tự động hóa cho quản trị và bảo mật mạng (NT542.Q11.1) ngày 05/12/2025](https://daa.uit.edu.vn/node/36942)
-
-------------------------------------------------------------------------------------------------------------------------------------------------------
-
-T2, 03/11/2025 - 10:29
-
-CBGD : **Văn Thiên Luân**  
-Khoa/ Bộ môn : **MMT&TT**  
-Môn học : **Lập trình kịch bản tự động hóa cho quản trị và bảo mật mạng (NT542)**  
-Lớp : **NT542.Q11.1**  
-Phòng : **B1.06**  
-Thời gian :  
-\- Tiết bắt đầu : **2**  
-\- Tiết kết thúc : **4**  
-Thứ : **6 , ngày 05/12/2025**
-
-*   [Xem thêm về Thông báo lịch học HT2 Lập trình kịch bản tự động hóa cho quản trị và bảo mật mạng (NT542.Q11.1) ngày 05/12/2025](https://daa.uit.edu.vn/node/36942 "Thông báo lịch học HT2 Lập trình kịch bản tự động hóa cho quản trị và bảo mật mạng (NT542.Q11.1) ngày 05/12/2025")
-    
-
-[Thông báo học bù Lập trình kịch bản tự động hóa cho quản trị và bảo mật mạng (NT542.Q11) ngày 28/11/2025](https://daa.uit.edu.vn/node/36941)
-
-----------------------------------------------------------------------------------------------------------------------------------------------
-
-T2, 03/11/2025 - 10:28
-
-CBGD : **Văn Thiên Luân**  
-Khoa/ Bộ môn : **MMT&TT**  
-Môn học : **Lập trình kịch bản tự động hóa cho quản trị và bảo mật mạng (NT542)**  
-Lớp : **NT542.Q11**  
-Phòng : **B1.06**  
-Thời gian :  
-\- Tiết bắt đầu : **2**  
-\- Tiết kết thúc : **4**  
-Thứ : **6 , ngày 28/11/2025**
-
-*   [Xem thêm về Thông báo học bù Lập trình kịch bản tự động hóa cho quản trị và bảo mật mạng (NT542.Q11) ngày 28/11/2025](https://daa.uit.edu.vn/node/36941 "Thông báo học bù Lập trình kịch bản tự động hóa cho quản trị và bảo mật mạng (NT542.Q11) ngày 28/11/2025")
-    
-
-[Thông báo học bù Quản trị doanh nghiệp công nghệ thông tin (IE231.Q11) ngày 05/12/2025](https://daa.uit.edu.vn/node/36938)
-
-----------------------------------------------------------------------------------------------------------------------------
-
-T2, 03/11/2025 - 07:10
-
-CBGD : **Hồ Thị Thanh Thảo**  
-Khoa/ Bộ môn : **KTTT**  
-Môn học : **Quản trị doanh nghiệp công nghệ thông tin (IE231)**  
-Lớp : **IE231.Q11**  
-Phòng : **B1.02**  
-Thời gian :  
-\- Tiết bắt đầu : **6**  
-\- Tiết kết thúc : **10**  
-Thứ : **6 , ngày 05/12/2025**
-
-*   [Xem thêm về Thông báo học bù Quản trị doanh nghiệp công nghệ thông tin (IE231.Q11) ngày 05/12/2025](https://daa.uit.edu.vn/node/36938 "Thông báo học bù Quản trị doanh nghiệp công nghệ thông tin (IE231.Q11) ngày 05/12/2025")
-    
-
-[Thông báo nghỉ lớp Anh văn 1 (ENG01.Q17) ngày 01/11/2025](https://daa.uit.edu.vn/node/36937)
-
-----------------------------------------------------------------------------------------------
-
-T7, 01/11/2025 - 07:47
-
-CBGD : **Nguyễn Trang Nhung**  
-Khoa/ Bộ môn : **TTNN**  
-Môn học : **Anh văn 1 (ENG01)**  
-Lớp : **ENG01.Q17**  
+CBGD : **Dương Việt Hằng**  
+Khoa/ Bộ môn : **KHMT**  
+Môn học : **Cấu trúc dữ liệu và giải thuật (IT003)**  
+Lớp : **IT003.Q12**  
 Phòng :  
 Thời gian :  
 \- Tiết bắt đầu : **6**  
 \- Tiết kết thúc : **8**  
-Thứ : **7 , ngày 01/11/2025**
+Thứ : **3 , ngày 11/11/2025**
 
-*   [Xem thêm về Thông báo nghỉ lớp Anh văn 1 (ENG01.Q17) ngày 01/11/2025](https://daa.uit.edu.vn/node/36937 "Thông báo nghỉ lớp Anh văn 1 (ENG01.Q17) ngày 01/11/2025")
+*   [Xem thêm về Thông báo nghỉ lớp Cấu trúc dữ liệu và giải thuật (IT003.Q12) ngày 11/11/2025](https://daa.uit.edu.vn/node/36960 "Thông báo nghỉ lớp Cấu trúc dữ liệu và giải thuật (IT003.Q12) ngày 11/11/2025")
     
 
-[Thông báo nghỉ lớp Anh văn 1 (ENG01.Q110) ngày 01/11/2025](https://daa.uit.edu.vn/node/36936)
+[Thông báo nghỉ lớp Nhập môn lập trình (IT001.Q15) ngày 11/11/2025](https://daa.uit.edu.vn/node/36959)
 
------------------------------------------------------------------------------------------------
+-------------------------------------------------------------------------------------------------------
 
-T7, 01/11/2025 - 07:46
+T7, 08/11/2025 - 11:20
 
-CBGD : **Nguyễn Trang Nhung**  
-Khoa/ Bộ môn : **TTNN**  
-Môn học : **Anh văn 1 (ENG01)**  
-Lớp : **ENG01.Q110**  
+CBGD : **Dương Việt Hằng**  
+Khoa/ Bộ môn : **KHMT**  
+Môn học : **Nhập môn lập trình (IT001)**  
+Lớp : **IT001.Q15**  
 Phòng :  
 Thời gian :  
-\- Tiết bắt đầu : **4**  
+\- Tiết bắt đầu : **1**  
+\- Tiết kết thúc : **3**  
+Thứ : **3 , ngày 11/11/2025**
+
+*   [Xem thêm về Thông báo nghỉ lớp Nhập môn lập trình (IT001.Q15) ngày 11/11/2025](https://daa.uit.edu.vn/node/36959 "Thông báo nghỉ lớp Nhập môn lập trình (IT001.Q15) ngày 11/11/2025")
+    
+
+[Thông báo nghỉ lớp Toán cho Khoa học máy tính (CS115.Q11) ngày 12/11/2025](https://daa.uit.edu.vn/node/36958)
+
+---------------------------------------------------------------------------------------------------------------
+
+T7, 08/11/2025 - 11:18
+
+CBGD : **Dương Việt Hằng**  
+Khoa/ Bộ môn : **KHMT**  
+Môn học : **Toán cho Khoa học máy tính (CS115)**  
+Lớp : **CS115.Q11**  
+Phòng :  
+Thời gian :  
+\- Tiết bắt đầu : **1**  
+\- Tiết kết thúc : **4**  
+Thứ : **4 , ngày 12/11/2025**
+
+*   [Xem thêm về Thông báo nghỉ lớp Toán cho Khoa học máy tính (CS115.Q11) ngày 12/11/2025](https://daa.uit.edu.vn/node/36958 "Thông báo nghỉ lớp Toán cho Khoa học máy tính (CS115.Q11) ngày 12/11/2025")
+    
+
+[Thông báo nghỉ lớp Hệ điều hành (IT007.Q110) ngày 13/11/2025](https://daa.uit.edu.vn/node/36955)
+
+--------------------------------------------------------------------------------------------------
+
+T6, 07/11/2025 - 08:14
+
+CBGD : **Đỗ Trí Nhựt**  
+Khoa/ Bộ môn : **KTMT**  
+Môn học : **Hệ điều hành (IT007)**  
+Lớp : **IT007.Q110**  
+Phòng :  
+Thời gian :  
+\- Tiết bắt đầu : **6**  
+\- Tiết kết thúc : **9**  
+Thứ : **5 , ngày 13/11/2025**
+
+*   [Xem thêm về Thông báo nghỉ lớp Hệ điều hành (IT007.Q110) ngày 13/11/2025](https://daa.uit.edu.vn/node/36955 "Thông báo nghỉ lớp Hệ điều hành (IT007.Q110) ngày 13/11/2025")
+    
+
+[Thông báo nghỉ lớp Quản lý thông tin (IE103.Q11.VB2) ngày 08/11/2025](https://daa.uit.edu.vn/node/36954)
+
+----------------------------------------------------------------------------------------------------------
+
+T6, 07/11/2025 - 06:00
+
+CBGD : **Phạm Nguyễn Phúc Toàn**  
+Khoa/ Bộ môn : **KTTT**  
+Môn học : **Quản lý thông tin (IE103)**  
+Lớp : **IE103.Q11.VB2**  
+Phòng :  
+Thời gian :  
+\- Tiết bắt đầu : **2**  
 \- Tiết kết thúc : **5**  
-Thứ : **7 , ngày 01/11/2025**
+Thứ : **7 , ngày 08/11/2025**
 
-*   [Xem thêm về Thông báo nghỉ lớp Anh văn 1 (ENG01.Q110) ngày 01/11/2025](https://daa.uit.edu.vn/node/36936 "Thông báo nghỉ lớp Anh văn 1 (ENG01.Q110) ngày 01/11/2025")
+*   [Xem thêm về Thông báo nghỉ lớp Quản lý thông tin (IE103.Q11.VB2) ngày 08/11/2025](https://daa.uit.edu.vn/node/36954 "Thông báo nghỉ lớp Quản lý thông tin (IE103.Q11.VB2) ngày 08/11/2025")
     
 
-[Thông báo lịch học HT2 Phương pháp Phát triển phần mềm hướng đối tượng (SE100.Q12.1) ngày 17/11/2025](https://daa.uit.edu.vn/node/36935)
+[Thông báo nghỉ lớp Quản lý thông tin (IE103.Q11.VB2) ngày 07/11/2025](https://daa.uit.edu.vn/node/36953)
 
-------------------------------------------------------------------------------------------------------------------------------------------
+----------------------------------------------------------------------------------------------------------
 
-T6, 31/10/2025 - 16:18
+T6, 07/11/2025 - 05:59
 
-CBGD : **Lê Thanh Trọng**  
-Khoa/ Bộ môn : **CNPM**  
-Môn học : **Phương pháp Phát triển phần mềm hướng đối tượng (SE100)**  
-Lớp : **SE100.Q12.1**  
-Phòng : **C309**  
+CBGD : **Phạm Nguyễn Phúc Toàn**  
+Khoa/ Bộ môn : **KTTT**  
+Môn học : **Quản lý thông tin (IE103)**  
+Lớp : **IE103.Q11.VB2**  
+Phòng :  
 Thời gian :  
-\- Tiết bắt đầu : **6**  
-\- Tiết kết thúc : **10**  
-Thứ : **2 , ngày 17/11/2025**
+\- Tiết bắt đầu : **1**  
+\- Tiết kết thúc : **2**  
+Thứ : **6 , ngày 07/11/2025**
 
-*   [Xem thêm về Thông báo lịch học HT2 Phương pháp Phát triển phần mềm hướng đối tượng (SE100.Q12.1) ngày 17/11/2025](https://daa.uit.edu.vn/node/36935 "Thông báo lịch học HT2 Phương pháp Phát triển phần mềm hướng đối tượng (SE100.Q12.1) ngày 17/11/2025")
+*   [Xem thêm về Thông báo nghỉ lớp Quản lý thông tin (IE103.Q11.VB2) ngày 07/11/2025](https://daa.uit.edu.vn/node/36953 "Thông báo nghỉ lớp Quản lý thông tin (IE103.Q11.VB2) ngày 07/11/2025")
     
 
-[Thông báo lịch học HT2 Phương pháp Phát triển phần mềm hướng đối tượng (SE100.Q11.1) ngày 20/11/2025](https://daa.uit.edu.vn/node/36934)
+[Thông báo nghỉ lớp Nhập môn Công nghệ phần mềm (SE104.Q11) ngày 07/11/2025](https://daa.uit.edu.vn/node/36952)
 
-------------------------------------------------------------------------------------------------------------------------------------------
+----------------------------------------------------------------------------------------------------------------
 
-T6, 31/10/2025 - 16:17
+T6, 07/11/2025 - 01:03
 
-CBGD : **Lê Thanh Trọng**  
+CBGD : **Huỳnh Ngọc Tín**  
 Khoa/ Bộ môn : **CNPM**  
-Môn học : **Phương pháp Phát triển phần mềm hướng đối tượng (SE100)**  
-Lớp : **SE100.Q11.1**  
-Phòng : **C309**  
+Môn học : **Nhập môn Công nghệ phần mềm (SE104)**  
+Lớp : **SE104.Q11**  
+Phòng :  
 Thời gian :  
-\- Tiết bắt đầu : **6**  
-\- Tiết kết thúc : **10**  
-Thứ : **5 , ngày 20/11/2025**
+\- Tiết bắt đầu : **2**  
+\- Tiết kết thúc : **5**  
+Thứ : **6 , ngày 07/11/2025**
 
-*   [Xem thêm về Thông báo lịch học HT2 Phương pháp Phát triển phần mềm hướng đối tượng (SE100.Q11.1) ngày 20/11/2025](https://daa.uit.edu.vn/node/36934 "Thông báo lịch học HT2 Phương pháp Phát triển phần mềm hướng đối tượng (SE100.Q11.1) ngày 20/11/2025")
+*   [Xem thêm về Thông báo nghỉ lớp Nhập môn Công nghệ phần mềm (SE104.Q11) ngày 07/11/2025](https://daa.uit.edu.vn/node/36952 "Thông báo nghỉ lớp Nhập môn Công nghệ phần mềm (SE104.Q11) ngày 07/11/2025")
     
 
-[Thông báo lịch học HT2 Hoạch định nguồn lực doanh nghiệp (IS336.Q13.1) ngày 31/12/2025](https://daa.uit.edu.vn/node/36933)
+[Thông báo nghỉ lớp Cơ sở dữ liệu (IT004.Q14.2) ngày 10/11/2025](https://daa.uit.edu.vn/node/36951)
 
-----------------------------------------------------------------------------------------------------------------------------
+----------------------------------------------------------------------------------------------------
 
-T6, 31/10/2025 - 15:39
+T5, 06/11/2025 - 18:46
 
-CBGD : **Lê Võ Đình Kha**  
+CBGD : **Nguyễn Hồ Duy Trí**  
 Khoa/ Bộ môn : **HTTT**  
-Môn học : **Hoạch định nguồn lực doanh nghiệp (IS336)**  
-Lớp : **IS336.Q13.1**  
-Phòng : **B1.20**  
+Môn học : **Cơ sở dữ liệu (IT004)**  
+Lớp : **IT004.Q14.2**  
+Phòng :  
 Thời gian :  
 \- Tiết bắt đầu : **1**  
 \- Tiết kết thúc : **5**  
-Thứ : **4 , ngày 31/12/2025**
+Thứ : **2 , ngày 10/11/2025**
 
-*   [Xem thêm về Thông báo lịch học HT2 Hoạch định nguồn lực doanh nghiệp (IS336.Q13.1) ngày 31/12/2025](https://daa.uit.edu.vn/node/36933 "Thông báo lịch học HT2 Hoạch định nguồn lực doanh nghiệp (IS336.Q13.1) ngày 31/12/2025")
+*   [Xem thêm về Thông báo nghỉ lớp Cơ sở dữ liệu (IT004.Q14.2) ngày 10/11/2025](https://daa.uit.edu.vn/node/36951 "Thông báo nghỉ lớp Cơ sở dữ liệu (IT004.Q14.2) ngày 10/11/2025")
     
 
-Trang
------
+[Thông báo lịch học HT2 Các kĩ thuật học sâu và ứng dụng (CS431.Q12.1) ngày 15/11/2025](https://daa.uit.edu.vn/node/36948)
 
-*   [« đầu](https://daa.uit.edu.vn/thongbaochinhquy "Đến trang đầu tiên")
+---------------------------------------------------------------------------------------------------------------------------
+
+T2, 03/11/2025 - 16:33
+
+CBGD : **Chế Quang Huy**  
+Khoa/ Bộ môn : **KHMT**  
+Môn học : **Các kĩ thuật học sâu và ứng dụng (CS431)**  
+Lớp : **CS431.Q12.1**  
+Phòng : **B4.18**  
+Thời gian :  
+\- Tiết bắt đầu : **6**  
+\- Tiết kết thúc : **8**  
+Thứ : **7 , ngày 15/11/2025**
+
+*   [Xem thêm về Thông báo lịch học HT2 Các kĩ thuật học sâu và ứng dụng (CS431.Q12.1) ngày 15/11/2025](https://daa.uit.edu.vn/node/36948 "Thông báo lịch học HT2 Các kĩ thuật học sâu và ứng dụng (CS431.Q12.1) ngày 15/11/2025")
     
-*   [‹ trước](https://daa.uit.edu.vn/thongbaochinhquy "Đến trang kế trước")
-    
-*   [1](https://daa.uit.edu.vn/thongbaochinhquy "Đến trang 1")
-    
-*   2
-*   [3](https://daa.uit.edu.vn/thongbaochinhquy?page=2 "Đến trang 3")
-    
-*   [4](https://daa.uit.edu.vn/thongbaochinhquy?page=3 "Đến trang 4")
-    
-*   [5](https://daa.uit.edu.vn/thongbaochinhquy?page=4 "Đến trang 5")
-    
-*   [6](https://daa.uit.edu.vn/thongbaochinhquy?page=5 "Đến trang 6")
-    
-*   [7](https://daa.uit.edu.vn/thongbaochinhquy?page=6 "Đến trang 7")
-    
-*   [8](https://daa.uit.edu.vn/thongbaochinhquy?page=7 "Đến trang 8")
-    
-*   [9](https://daa.uit.edu.vn/thongbaochinhquy?page=8 "Đến trang 9")
-    
-*   …
-*   [sau ›](https://daa.uit.edu.vn/thongbaochinhquy?page=2 "Đến trang kế sau")
-    
-*   [cuối »](https://daa.uit.edu.vn/thongbaochinhquy?page=1925 "Đến trang cuối cùng")
+
+[Thông báo học bù Nhập môn lập trình (IT001.Q116.2) ngày 21/11/2025](https://daa.uit.edu.vn/node/36947)
+
+--------------------------------------------------------------------------------------------------------
+
+T2, 03/11/2025 - 16:32
+
+CBGD : **Lưu Đức Tuấn**  
+Khoa/ Bộ môn : **KHMT**  
+Môn học : **Nhập môn lập trình (IT001)**  
+Lớp : **IT001.Q116.2**  
+Phòng : **B5.04**  
+Thời gian :  
+\- Tiết bắt đầu : **6**  
+\- Tiết kết thúc : **10**  
+Thứ : **6 , ngày 21/11/2025**
+
+*   [Xem thêm về Thông báo học bù Nhập môn lập trình (IT001.Q116.2) ngày 21/11/2025](https://daa.uit.edu.vn/node/36947 "Thông báo học bù Nhập môn lập trình (IT001.Q116.2) ngày 21/11/2025")

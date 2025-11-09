@@ -1,6 +1,3 @@
-[Skip to content](https://daa.uit.edu.vn/content/chuc-nang-nhiem-vu-cua-phong-dao-tao-dai-hoc#main)
- [Skip to navigation](https://daa.uit.edu.vn/content/chuc-nang-nhiem-vu-cua-phong-dao-tao-dai-hoc#main-nav)
-
 Chức năng, nhiệm vụ của Phòng Đào tạo Đại học
 =============================================
 

@@ -1,181 +1,195 @@
-[Skip to content](https://daa.uit.edu.vn/thongbaochinhquy?page=1894#main)
- [Skip to navigation](https://daa.uit.edu.vn/thongbaochinhquy?page=1894#main-nav)
-
 Đại Học Chính Quy
 =================
 
 **Các thông báo dành cho hệ đại học chính quy.**
 
-[THÔNG BÁO NGHỈ LỚP NT113.D21 NGÀY 12/6/2013](https://daa.uit.edu.vn/thongbao/thong-bao-nghi-lop-nt113d21-ngay-1262013)
+[Thông Báo Lịch Thi (Điều chỉnh) Và Danh Sách Phòng Thi Cuối Kỳ 2012-2013](https://daa.uit.edu.vn/thongbao/thong-bao-lich-thi-dieu-chinh-va-danh-sach-phong-thi-cuoi-ky-2012-2013)
 
-------------------------------------------------------------------------------------------------------------------------
+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
-T3, 11/06/2013 - 09:54
+T3, 18/06/2013 - 14:27
 
-CBGD : **Vũ Trí Dũng**
+PĐT thông báo lịch thi và danh sách phòng thi, đề nghị Sinh viên kiểm tra thông tin lịch thi, phòng thi và đi thi đúng giờ đúng phòng thi.  
+Chú ý:   - Sinh viên chưa hoàn thành nghĩa vụ học phí do phòng Kế hoạch Tài chính (KHTC) thông báo sẽ không có tên trong danh sách phòng thi.  
+             - Sinh viên đóng học phí bổ sung trong thời gian gia hạn học phí của Phòng (KHTC) mà chưa có tên trong danh sách phòng thi, đề nghị Sinh viên liên hệ PĐT lấy giấy cho phép vào phòng thi, khi đi nhớ mang theo Biên Lai thu học phí Học kỳ 2, thời hạn cuối ngày 21/06/2013.  
 
-Khoa/ Bộ môn : **MMT&TT**
-
-Môn học : **NT113**
-
-Lớp : **NT113.D21**
-
-Phòng : **C106**
-
-Thời gian : Tiết bắt đầu : **4**
-
-Tiết kết thúc : **5**
-
-Thứ : **4** Ngày : **2013-06-12**
-
-*   [Xem thêm về THÔNG BÁO NGHỈ LỚP NT113.D21 NGÀY 12/6/2013](https://daa.uit.edu.vn/thongbao/thong-bao-nghi-lop-nt113d21-ngay-1262013 "THÔNG BÁO NGHỈ LỚP NT113.D21 NGÀY 12/6/2013")
+*   [Xem thêm về Thông Báo Lịch Thi (Điều chỉnh) Và Danh Sách Phòng Thi Cuối Kỳ 2012-2013](https://daa.uit.edu.vn/thongbao/thong-bao-lich-thi-dieu-chinh-va-danh-sach-phong-thi-cuoi-ky-2012-2013 "Thông Báo Lịch Thi (Điều chỉnh) Và Danh Sách Phòng Thi Cuối Kỳ 2012-2013")
     
 
-[Thông Báo Trạng Thái Đăng Ký Học Phần Học Kỳ Hè 2012-2013](https://daa.uit.edu.vn/thongbao/thong-bao-trang-thai-dang-ky-hoc-phan-hoc-ky-he-2012-2013)
+[Thông Báo Kết Quả Đăng Ký Học Kỳ Hè 2012-2013](https://daa.uit.edu.vn/thongbao/thong-bao-ket-qua-dang-ky-hoc-ky-he-2012-2013)
 
--------------------------------------------------------------------------------------------------------------------------------------------------------
+-------------------------------------------------------------------------------------------------------------------------------
 
-T2, 10/06/2013 - 14:19
+T3, 18/06/2013 - 09:49
 
-Hiện nay đã hết hạn ĐKHP hè (đợt đăng ký chính), Phòng Đào Tạo thông báo danh sách lớp mở, lớp hủy, và lớp chờ đăng ký thêm. **Thời gian hiệu chỉnh ĐKHP từ ngày 11/6 đến ngày 16/6/2013.**  
-Lưu ý:  
-\- Sinh viên rút tên trong danh sách lớp hủy và đăng ký vào những lớp chờ đăng ký thêm, lớp chưa đủ số lượng.  
-\- Những lớp có tín chỉ thực hành, nhưng SV chỉ ĐK lí thuyết mà không ĐK thực hành sẽ bị hủy ĐK lý thuyết.  
+PĐT thông báo kết quả ĐKHP học kỳ hè 2012-2013 (file đính kèm)
 
-*   [Xem thêm về Thông Báo Trạng Thái Đăng Ký Học Phần Học Kỳ Hè 2012-2013](https://daa.uit.edu.vn/thongbao/thong-bao-trang-thai-dang-ky-hoc-phan-hoc-ky-he-2012-2013 "Thông Báo Trạng Thái Đăng Ký Học Phần Học Kỳ Hè 2012-2013")
+*   [Xem thêm về Thông Báo Kết Quả Đăng Ký Học Kỳ Hè 2012-2013](https://daa.uit.edu.vn/thongbao/thong-bao-ket-qua-dang-ky-hoc-ky-he-2012-2013 "Thông Báo Kết Quả Đăng Ký Học Kỳ Hè 2012-2013")
     
 
-[LỊCH HỌC BÙ MÔN IS105.D22](https://daa.uit.edu.vn/thongbao/lich-hoc-bu-mon-is105d22)
-
---------------------------------------------------------------------------------------
-
-T2, 10/06/2013 - 11:11
-
-Phòng Đào tạo thông báo lịch học bù môn IS105.D22 , GV Nguyễn Thị Kim Phụng như sau:  
-Thời gian: tiết 6,7,8; thứ Năm, ngày 13/6/2013  
-Phòng: C107
-
-*   [Xem thêm về LỊCH HỌC BÙ MÔN IS105.D22](https://daa.uit.edu.vn/thongbao/lich-hoc-bu-mon-is105d22 "LỊCH HỌC BÙ MÔN IS105.D22")
-    
-
-[DSSV QUÁ HẠN ĐÀO TẠO VÀ ĐƯỢC GIA HẠN ĐÀO TẠO\_KHOÁ 01](https://daa.uit.edu.vn/thongbao/dssv-qua-han-dao-tao-va-duoc-gia-han-dao-taokhoa-01)
-
----------------------------------------------------------------------------------------------------------------------------------------------
-
-T2, 10/06/2013 - 10:59
-
-Sinh viên xem chi tiết trong file đính kèm.
-
-*   [Xem thêm về DSSV QUÁ HẠN ĐÀO TẠO VÀ ĐƯỢC GIA HẠN ĐÀO TẠO\_KHOÁ 01](https://daa.uit.edu.vn/thongbao/dssv-qua-han-dao-tao-va-duoc-gia-han-dao-taokhoa-01 "DSSV QUÁ HẠN ĐÀO TẠO VÀ ĐƯỢC GIA HẠN ĐÀO TẠO_KHOÁ 01")
-    
-
-[DSSV BẢO LƯU, CHUYỂN TRƯỜNG\_(BỔ SUNG) HKII NĂM 2012-2013](https://daa.uit.edu.vn/thongbao/dssv-bao-luu-chuyen-truongbo-sung-hkii-nam-2012-2013)
-
---------------------------------------------------------------------------------------------------------------------------------------------------
-
-T2, 10/06/2013 - 10:56
-
-Sinh viên xem chi tiết trong các file đính kèm.
-
-*   [Xem thêm về DSSV BẢO LƯU, CHUYỂN TRƯỜNG\_(BỔ SUNG) HKII NĂM 2012-2013](https://daa.uit.edu.vn/thongbao/dssv-bao-luu-chuyen-truongbo-sung-hkii-nam-2012-2013 "DSSV BẢO LƯU, CHUYỂN TRƯỜNG_(BỔ SUNG) HKII NĂM 2012-2013")
-    
-
-[Thông Báo Học Bù Lớp PHIL1.D22](https://daa.uit.edu.vn/thongbao/thong-bao-hoc-bu-lop-phil1d22)
+[THÔNG BÁO HỌC BÙ MÔN IS205.D21](https://daa.uit.edu.vn/thongbao/thong-bao-hoc-bu-mon-is205d21)
 
 ------------------------------------------------------------------------------------------------
 
-T6, 07/06/2013 - 15:03
+T2, 17/06/2013 - 16:09
 
-Lớp:PHIL1.D22 Những NLCB CN Mac-LêNin GV: Mạch Thị Khánh Trinh, học bù thứ 3 ngày 11/6/2013 tiết 1-5 tại phòng C212
+Phòng Đào tạo Đại học thông báo lịch học bù môn IS205.D21, GV Nguyễn Đình Loan Phương  
+Thời gian: thứ Ba 18/6/2013, tiết 6,7,8  
+Phòng C201
 
-*   [Xem thêm về Thông Báo Học Bù Lớp PHIL1.D22](https://daa.uit.edu.vn/thongbao/thong-bao-hoc-bu-lop-phil1d22 "Thông Báo Học Bù Lớp PHIL1.D22")
+*   [Xem thêm về THÔNG BÁO HỌC BÙ MÔN IS205.D21](https://daa.uit.edu.vn/thongbao/thong-bao-hoc-bu-mon-is205d21 "THÔNG BÁO HỌC BÙ MÔN IS205.D21")
     
 
-[THÔNG BÁO HỌC BÙ LỚP CS222.D21.CNTN](https://daa.uit.edu.vn/thongbao/thong-bao-hoc-bu-lop-cs222d21cntn)
+[LỊCH HỌC BÙ LỚP IT003.D21.ANTT](https://daa.uit.edu.vn/thongbao/lich-hoc-bu-lop-it003d21antt)
 
----------------------------------------------------------------------------------------------------------
+-----------------------------------------------------------------------------------------------
 
-T6, 07/06/2013 - 09:45
+T6, 14/06/2013 - 16:04
 
-Thông báo học bù:   
-\- Lớp: CS222.D21.CNTN   
-\- Giảng viên: Nguyễn Tuấn Đăng  
-\- Thời gian: Ngày 20/06/2013 (Thứ Năm)  
-\- Tiết: 6-8  
-\- Phòng học: H201  
-\-----------------------------------------------------
+Thông báo lớp IT003.D21.ANTT của Thầy Mai Xuân Hùng học bù :  
+**Ngày tháng: 19/6/2013 (Thứ 4)**  
+**Tiết: 7-8-9**  
+**Phòng học: H301**  
+\---------P.ĐTĐH---------
 
-*   [Xem thêm về THÔNG BÁO HỌC BÙ LỚP CS222.D21.CNTN](https://daa.uit.edu.vn/thongbao/thong-bao-hoc-bu-lop-cs222d21cntn "THÔNG BÁO HỌC BÙ LỚP CS222.D21.CNTN")
+*   [Xem thêm về LỊCH HỌC BÙ LỚP IT003.D21.ANTT](https://daa.uit.edu.vn/thongbao/lich-hoc-bu-lop-it003d21antt "LỊCH HỌC BÙ LỚP IT003.D21.ANTT")
     
 
-[THÔNG BÁO HỌC BÙ LỚP CS323.D21.CNTN](https://daa.uit.edu.vn/thongbao/thong-bao-hoc-bu-lop-cs323d21cntn)
+[Thông báo gửi các học viên lớp KTV của trung tâm Điện tử và KTMT](https://daa.uit.edu.vn/thongbao/thong-bao-gui-cac-hoc-vien-lop-ktv-cua-trung-tam-dien-tu-va-ktmt)
 
----------------------------------------------------------------------------------------------------------
+---------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
-T6, 07/06/2013 - 09:44
+T4, 12/06/2013 - 15:40
 
-Thông báo học bù:   
-\- Lớp: CS323.D21.CNTN  
-\- Giảng viên: Nguyễn Tuấn Đăng  
-\- Thời gian: Ngày 11/06/2013  
-\- Tiết: 6-9  
-\- Phòng học: H201  
-\-----------------------------------------------------
+Phòng ĐTSĐH-KHCN&QHĐN đăng thông báo số 16/TB-ĐHCNTT-KHCN, ngày 10/06/2013 (trong file đính kèm) gửi các học viên lớp trung tâm Điện tử và KTMT của trường ĐH CNTT, mời các học viên tham gia lớp chương trình liên kết đào tạo Kỹ thuật viên giữa trung tâm Điện tử và KTMT thuộc trường ĐH CNTT với công ty TNHH Đào tạo Phát Triển Công Nghệ BKIT, An Giang và thuộc đối tượng sau:  
+1\. Các học viên đã nhận bằng Kỹ thuật viên do trường ĐH CNTT cấp nhưng có thông tin cá nhân trên bằng không chính xác liên hệ với Trường ĐH CNTT để chỉnh sửa thông tin theo quy định hiện hành;  
 
-*   [Xem thêm về THÔNG BÁO HỌC BÙ LỚP CS323.D21.CNTN](https://daa.uit.edu.vn/thongbao/thong-bao-hoc-bu-lop-cs323d21cntn "THÔNG BÁO HỌC BÙ LỚP CS323.D21.CNTN")
+*   [Xem thêm về Thông báo gửi các học viên lớp KTV của trung tâm Điện tử và KTMT](https://daa.uit.edu.vn/thongbao/thong-bao-gui-cac-hoc-vien-lop-ktv-cua-trung-tam-dien-tu-va-ktmt "Thông báo gửi các học viên lớp KTV của trung tâm Điện tử và KTMT")
     
 
-[THÔNG BÁO VỀ THỜI GIAN PHÁT BẰNG TỐT NGHIỆP ĐỢT 1 NĂM 2013](https://daa.uit.edu.vn/thongbao/thong-bao-ve-thoi-gian-phat-bang-tot-nghiep-dot-1-nam-2013)
+[THÔNG BÁO LỊCH HỌC BÙ MÔN IS103.D22](https://daa.uit.edu.vn/thongbao/thong-bao-lich-hoc-bu-mon-is103d22)
 
----------------------------------------------------------------------------------------------------------------------------------------------------------
+----------------------------------------------------------------------------------------------------------
 
-T5, 06/06/2013 - 21:40
+T4, 12/06/2013 - 10:33
 
-Phòng Đào tạo Đại học bắt đầu phát bằng tốt nghiệp đợt 1 năm 2013 vào lúc 11 giờ 00 phút ngày 08/6/2013, tại Thư viện trường ĐHCNTT.  
-Lưu ý: 1. Sinh viên nhận bằng mang theo Chứng minh thư (CMND) hoặc giấy tờ tuỳ thân khác có dán ảnh.  
-2\. Nếu sinh viên nhờ người khác đến nhận bằng bắt buộc phải có giấy Uỷ quyền ghi rõ những thông tin cá nhân của người Uỷ quyền, của người được Uỷ quyền và có xác nhận của địa phương. Người đến nhận bằng thay mang theo Chứng minh thư (CMND) hoặc giấy tờ tuỳ thân khác có dán ảnh.
+Phòng Đào tạo Đại học thông báo lịch học bù môn IS103.D22; GV Thái Bảo Trân như sau:  
+Thời gian: tiết 1,2,3; thứ Hai, ngày 17/6/2013 tại phòng C211.
 
-*   [Xem thêm về THÔNG BÁO VỀ THỜI GIAN PHÁT BẰNG TỐT NGHIỆP ĐỢT 1 NĂM 2013](https://daa.uit.edu.vn/thongbao/thong-bao-ve-thoi-gian-phat-bang-tot-nghiep-dot-1-nam-2013 "THÔNG BÁO VỀ THỜI GIAN PHÁT BẰNG TỐT NGHIỆP ĐỢT 1 NĂM 2013")
-    
-
-[Thông Báo Lịch Thi Cuối Học Kỳ 2 2012-2013 (điều chỉnh)](https://daa.uit.edu.vn/thongbao/thong-bao-lich-thi-cuoi-hoc-ky-2-2012-2013-dieu-chinh)
-
--------------------------------------------------------------------------------------------------------------------------------------------------
-
-T5, 06/06/2013 - 10:38
-
-Phòng Đào Tạo thông báo lịch thi cuối kỳ,(file đính kèm)  
-\- Đề nghị sinh viên xem và kiểm tra lịch thi để chuẩn bị cho kỳ có kết quả tốt nhất, mọi thắc mắc về lịch thi SV liên hệ PĐT trước ngày 15/6/2013.
-
-*   [Xem thêm về Thông Báo Lịch Thi Cuối Học Kỳ 2 2012-2013 (điều chỉnh)](https://daa.uit.edu.vn/thongbao/thong-bao-lich-thi-cuoi-hoc-ky-2-2012-2013-dieu-chinh "Thông Báo Lịch Thi Cuối Học Kỳ 2 2012-2013 (điều chỉnh)")
+*   [Xem thêm về THÔNG BÁO LỊCH HỌC BÙ MÔN IS103.D22](https://daa.uit.edu.vn/thongbao/thong-bao-lich-hoc-bu-mon-is103d22 "THÔNG BÁO LỊCH HỌC BÙ MÔN IS103.D22")
     
 
-Trang
------
+[THÔNG BÁO HỌC BÙ LỚP WINP1.D27 NGÀY 18/06/2013](https://daa.uit.edu.vn/thongbao/thong-bao-hoc-bu-lop-winp1d27-ngay-18062013)
 
-*   [« đầu](https://daa.uit.edu.vn/thongbaochinhquy "Đến trang đầu tiên")
+------------------------------------------------------------------------------------------------------------------------------
+
+T4, 12/06/2013 - 08:28
+
+CBGD : **Phạm Thi Vương**
+
+Khoa/ Bộ môn : **CNPM**
+
+Môn học : **WINP1**
+
+Lớp : **WINP1.D27**
+
+Sĩ số : **101**
+
+Thời gian : Tiết bắt đầu : **1**
+
+Tiết kết thúc : **3**
+
+Thứ : **3** Ngày : **2013-06-18**
+
+Phòng : **C107**
+
+Máy chiếu :
+
+*   [Xem thêm về THÔNG BÁO HỌC BÙ LỚP WINP1.D27 NGÀY 18/06/2013](https://daa.uit.edu.vn/thongbao/thong-bao-hoc-bu-lop-winp1d27-ngay-18062013 "THÔNG BÁO HỌC BÙ LỚP WINP1.D27 NGÀY 18/06/2013")
     
-*   [‹ trước](https://daa.uit.edu.vn/thongbaochinhquy?page=1893 "Đến trang kế trước")
+
+[THÔNG BÁO HỌC BÙ LỚP CS226.D21 NGÀY 17/06/2013](https://daa.uit.edu.vn/thongbao/thong-bao-hoc-bu-lop-cs226d21-ngay-17062013)
+
+------------------------------------------------------------------------------------------------------------------------------
+
+T4, 12/06/2013 - 08:26
+
+CBGD : **Nguyễn Tuấn Đăng**
+
+Khoa/ Bộ môn : **KHMT**
+
+Môn học : **CS226**
+
+Lớp : **CS226.D21**
+
+Sĩ số : **47**
+
+Thời gian : Tiết bắt đầu : **1**
+
+Tiết kết thúc : **4**
+
+Thứ : **2** Ngày : **2013-06-17**
+
+Phòng : **GĐ2**
+
+Máy chiếu : **1**
+
+*   [Xem thêm về THÔNG BÁO HỌC BÙ LỚP CS226.D21 NGÀY 17/06/2013](https://daa.uit.edu.vn/thongbao/thong-bao-hoc-bu-lop-cs226d21-ngay-17062013 "THÔNG BÁO HỌC BÙ LỚP CS226.D21 NGÀY 17/06/2013")
     
-*   …
-*   [1891](https://daa.uit.edu.vn/thongbaochinhquy?page=1890 "Đến trang 1891")
+
+[THÔNG BÁO HỌC BÙ LỚP CS107.D21 NGÀY 15/06/2013](https://daa.uit.edu.vn/thongbao/thong-bao-hoc-bu-lop-cs107d21-ngay-15062013)
+
+------------------------------------------------------------------------------------------------------------------------------
+
+T4, 12/06/2013 - 08:12
+
+CBGD : **Huỳnh Thị Thanh Thương**
+
+Khoa/ Bộ môn : **KHMT**
+
+Môn học : **CS107**
+
+Lớp : **CS107.D21**
+
+Sĩ số : **63**
+
+Thời gian : Tiết bắt đầu : **1**
+
+Tiết kết thúc : **4**
+
+Thứ : **7** Ngày : **2013-06-15**
+
+Phòng : **C302**
+
+Máy chiếu : **1**
+
+*   [Xem thêm về THÔNG BÁO HỌC BÙ LỚP CS107.D21 NGÀY 15/06/2013](https://daa.uit.edu.vn/thongbao/thong-bao-hoc-bu-lop-cs107d21-ngay-15062013 "THÔNG BÁO HỌC BÙ LỚP CS107.D21 NGÀY 15/06/2013")
     
-*   [1892](https://daa.uit.edu.vn/thongbaochinhquy?page=1891 "Đến trang 1892")
-    
-*   [1893](https://daa.uit.edu.vn/thongbaochinhquy?page=1892 "Đến trang 1893")
-    
-*   [1894](https://daa.uit.edu.vn/thongbaochinhquy?page=1893 "Đến trang 1894")
-    
-*   1895
-*   [1896](https://daa.uit.edu.vn/thongbaochinhquy?page=1895 "Đến trang 1896")
-    
-*   [1897](https://daa.uit.edu.vn/thongbaochinhquy?page=1896 "Đến trang 1897")
-    
-*   [1898](https://daa.uit.edu.vn/thongbaochinhquy?page=1897 "Đến trang 1898")
-    
-*   [1899](https://daa.uit.edu.vn/thongbaochinhquy?page=1898 "Đến trang 1899")
-    
-*   …
-*   [sau ›](https://daa.uit.edu.vn/thongbaochinhquy?page=1895 "Đến trang kế sau")
-    
-*   [cuối »](https://daa.uit.edu.vn/thongbaochinhquy?page=1925 "Đến trang cuối cùng")
+
+[THÔNG BÁO HỌC BÙ LỚP WINP1.D21 NGÀY 18/06/2013](https://daa.uit.edu.vn/thongbao/thong-bao-hoc-bu-lop-winp1d21-ngay-18062013)
+
+------------------------------------------------------------------------------------------------------------------------------
+
+T4, 12/06/2013 - 08:07
+
+CBGD : **Phạm Thi Vương**
+
+Khoa/ Bộ môn : **CNPM**
+
+Môn học : **WINP1**
+
+Lớp : **WINP1.D21**
+
+Sĩ số : **97**
+
+Thời gian : Tiết bắt đầu : **6**
+
+Tiết kết thúc : **8**
+
+Thứ : **2** Ngày : **2013-06-18**
+
+Phòng : **C106**
+
+Máy chiếu : **1**
+
+*   [Xem thêm về THÔNG BÁO HỌC BÙ LỚP WINP1.D21 NGÀY 18/06/2013](https://daa.uit.edu.vn/thongbao/thong-bao-hoc-bu-lop-winp1d21-ngay-18062013 "THÔNG BÁO HỌC BÙ LỚP WINP1.D21 NGÀY 18/06/2013")

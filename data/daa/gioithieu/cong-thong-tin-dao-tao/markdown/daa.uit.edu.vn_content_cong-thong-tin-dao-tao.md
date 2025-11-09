@@ -1,6 +1,3 @@
-[Skip to content](https://daa.uit.edu.vn/content/cong-thong-tin-dao-tao#main)
- [Skip to navigation](https://daa.uit.edu.vn/content/cong-thong-tin-dao-tao#main-nav)
-
 Cổng thông tin đào tạo
 ======================
 
@@ -44,7 +41,3 @@ Nội dung trang web này được quản lý bởi Phòng Đào tạo Đại h�
 Phòng A120, Trường Đại học Công nghệ Thông tin
 
 Khu phố 34, Phường Linh Xuân, Thành phố Hồ Chí Minh.
-
-*   Điện thoại: (08) 37251993 Ext: 113 (Hệ từ xa qua mạng),112 (Hệ chính quy)
-    
-*   Email: [phongdaotaodh@uit.edu.vn](mailto:phongdaotaodh@uit.edu.vn)

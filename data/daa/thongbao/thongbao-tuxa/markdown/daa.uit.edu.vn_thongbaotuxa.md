@@ -1,6 +1,3 @@
-[Skip to content](https://daa.uit.edu.vn/thongbaotuxa#main)
- [Skip to navigation](https://daa.uit.edu.vn/thongbaotuxa#main-nav)
-
 Đào Tạo Từ Xa
 =============
 
@@ -132,17 +129,3 @@ T4, 11/06/2014 - 10:35
 Phòng Đào tạo Đại học thông báo kết quả thi tốt nghiệp hệ cử nhân công nghệ thông tin từ xa qua mạng đợt 2 năm 2014 (18/5/2014) theo file đính kèm.
 
 *   [Xem thêm về Kết quả thi tốt nghiệp TXQM đợt 2 năm 2014](https://daa.uit.edu.vn/thongbao/ket-qua-thi-tot-nghiep-txqm-dot-2-nam-2014 "Kết quả thi tốt nghiệp TXQM đợt 2 năm 2014")
-    
-
-Trang
------
-
-*   1
-*   [2](https://daa.uit.edu.vn/thongbaotuxa?page=1 "Đến trang 2")
-    
-*   [sau ›](https://daa.uit.edu.vn/thongbaotuxa?page=1 "Đến trang kế sau")
-    
-*   [cuối »](https://daa.uit.edu.vn/thongbaotuxa?page=1 "Đến trang cuối cùng")
-    
-
-Back to top

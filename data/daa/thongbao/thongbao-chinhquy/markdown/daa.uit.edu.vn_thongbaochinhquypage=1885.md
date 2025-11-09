@@ -1,157 +1,163 @@
-[Skip to content](https://daa.uit.edu.vn/thongbaochinhquy?page=1885#main)
- [Skip to navigation](https://daa.uit.edu.vn/thongbaochinhquy?page=1885#main-nav)
-
 Đại Học Chính Quy
 =================
 
 **Các thông báo dành cho hệ đại học chính quy.**
 
-[THÔNG BÁO NGHỈ HỌC LỚP CS106.E11](https://daa.uit.edu.vn/thongbao/thong-bao-nghi-hoc-lop-cs106e11)
+[THÔNG BÁO NGHỈ HỌC LỚP HỆ ĐIỀU HÀNH OSYS1.E11](https://daa.uit.edu.vn/thongbao/thong-bao-nghi-hoc-lop-he-dieu-hanh-osys1e11)
 
-----------------------------------------------------------------------------------------------------
+------------------------------------------------------------------------------------------------------------------------------
 
-T2, 26/08/2013 - 08:40
+T5, 29/08/2013 - 08:33
 
-LỚP CS106.E11 NGHỈ HỌC NGÀY 26/08/2013.
+CBGD: TS.Vũ Đức Lung  
+Lớp: OSYS1.E11  
+Phòng: C305  
+Thời gian: Tiết 1 đến tiết 3  
+Ngày nghỉ: 30/8/2013
 
-*   [Xem thêm về THÔNG BÁO NGHỈ HỌC LỚP CS106.E11](https://daa.uit.edu.vn/thongbao/thong-bao-nghi-hoc-lop-cs106e11 "THÔNG BÁO NGHỈ HỌC LỚP CS106.E11")
+*   [Xem thêm về THÔNG BÁO NGHỈ HỌC LỚP HỆ ĐIỀU HÀNH OSYS1.E11](https://daa.uit.edu.vn/thongbao/thong-bao-nghi-hoc-lop-he-dieu-hanh-osys1e11 "THÔNG BÁO NGHỈ HỌC LỚP HỆ ĐIỀU HÀNH OSYS1.E11")
     
 
-[Thông Báo Đổi Phòng Học (Cập nhật)](https://daa.uit.edu.vn/thongbao/thong-bao-doi-phong-hoc-cap-nhat)
+[THÔNG BÁO NGHỈ LỚP NT105.E12 NGÀY 31/08/2013](https://daa.uit.edu.vn/thongbao/thong-bao-nghi-lop-nt105e12-ngay-31082013)
 
--------------------------------------------------------------------------------------------------------
+--------------------------------------------------------------------------------------------------------------------------
 
-T2, 26/08/2013 - 08:17
+T4, 28/08/2013 - 15:47
 
-Do các GĐ phải phục vụ học chính trị đầu khóa Sinh viên K8.  
-Ban QLCS chuyển các lớp GĐ 1 sang phòng C308, GĐ3 sang C311 từ ngày 26-8-2013 đến ngày 6-9-2013.Sau ngày 6-9-2013 TKB học lại bình thường.
+CBGD : Nguyễn Duy  
+Khoa/ Bộ môn : MMT&TT  
+Môn học : NT105  
+Lớp : NT105.E12  
+Phòng : C107  
+Thời gian : Tiết bắt đầu : 1 Tiết kết thúc : 3  
+Thứ : 7 Ngày : 2013-08-31
 
-*   [Xem thêm về Thông Báo Đổi Phòng Học (Cập nhật)](https://daa.uit.edu.vn/thongbao/thong-bao-doi-phong-hoc-cap-nhat "Thông Báo Đổi Phòng Học (Cập nhật)")
+*   [Xem thêm về THÔNG BÁO NGHỈ LỚP NT105.E12 NGÀY 31/08/2013](https://daa.uit.edu.vn/thongbao/thong-bao-nghi-lop-nt105e12-ngay-31082013 "THÔNG BÁO NGHỈ LỚP NT105.E12 NGÀY 31/08/2013")
     
 
-[THÔNG BÁO NGHỈ HỌC LỚP CS323.E11 NGÀY 27/08/2013](https://daa.uit.edu.vn/thongbao/thong-bao-nghi-hoc-lop-cs323e11-ngay-27082013)
+[Thông Báo Lịch Thi Anh Văn Xếp Lớp K8](https://daa.uit.edu.vn/thongbao/thong-bao-lich-thi-anh-van-xep-lop-k8)
 
-----------------------------------------------------------------------------------------------------------------------------------
+---------------------------------------------------------------------------------------------------------------
 
-CN, 25/08/2013 - 07:53
+T4, 28/08/2013 - 12:15
 
-LỚP CS323.E11 NGHỈ HỌC NGÀY 27/08/2013.
+PĐT thông báo Lịch thi và Danh sách phòng thi xếp lớp Anh Văn K8,  
+Đề nghị các bạn Sinh viên K8 cập nhật thông tin thi xếp lớp để đi thi đúng giờ, phòng thi quy định.  
+Các bạn sinh viên K8 làm thủ tục nhập học sau chưa có tên trong danh sách phòng thi vẫn phải đi thi theo lịch( Sinh viên khoa nào thi theo lịch thi của khoa đó).  
+và điền tên vào danh sách phòng thi.
 
-*   [Xem thêm về THÔNG BÁO NGHỈ HỌC LỚP CS323.E11 NGÀY 27/08/2013](https://daa.uit.edu.vn/thongbao/thong-bao-nghi-hoc-lop-cs323e11-ngay-27082013 "THÔNG BÁO NGHỈ HỌC LỚP CS323.E11 NGÀY 27/08/2013")
+*   [Xem thêm về Thông Báo Lịch Thi Anh Văn Xếp Lớp K8](https://daa.uit.edu.vn/thongbao/thong-bao-lich-thi-anh-van-xep-lop-k8 "Thông Báo Lịch Thi Anh Văn Xếp Lớp K8")
     
 
-[THÔNG BÁO NGHỈ HỌC LỚP CS111.E11 NGÀY 29/08](https://daa.uit.edu.vn/thongbao/thong-bao-nghi-hoc-lop-cs111e11-ngay-2908)
+[THÔNG BÁO NGHỈ HỌC LỚP EN003.E13 VÀ EN003.E18](https://daa.uit.edu.vn/thongbao/thong-bao-nghi-hoc-lop-en003e13-va-en003e18)
 
--------------------------------------------------------------------------------------------------------------------------
+-----------------------------------------------------------------------------------------------------------------------------
 
-T6, 23/08/2013 - 14:45
+T3, 27/08/2013 - 14:02
 
-LỚP CS111.E11 NGHỈ HỌC NGÀY 29/08
+CBGD: Tất Dương Khánh Linh  
+Lớp: EN003.E13  
+Phòng:C208  
+Thời gian: Tiết 1 đến tiết 4  
+Ngày nghỉ: 28/8/2013
 
-*   [Xem thêm về THÔNG BÁO NGHỈ HỌC LỚP CS111.E11 NGÀY 29/08](https://daa.uit.edu.vn/thongbao/thong-bao-nghi-hoc-lop-cs111e11-ngay-2908 "THÔNG BÁO NGHỈ HỌC LỚP CS111.E11 NGÀY 29/08")
+CBGD: Nguyễn Thị Tiểu Hà  
+Lớp: EN003.E18  
+Phòng: C208  
+Thời gian: Tiết 6 đến tiết 9  
+Ngày nghỉ: 30/8/2013
+
+*   [Xem thêm về THÔNG BÁO NGHỈ HỌC LỚP EN003.E13 VÀ EN003.E18](https://daa.uit.edu.vn/thongbao/thong-bao-nghi-hoc-lop-en003e13-va-en003e18 "THÔNG BÁO NGHỈ HỌC LỚP EN003.E13 VÀ EN003.E18")
     
 
-[THÔNG BÁO NGHỈ HỌC LỚP SE103.E12 NGÀY 30/08 VÀ 06/09](https://daa.uit.edu.vn/thongbao/thong-bao-nghi-hoc-lop-se103e12-ngay-3008-va-0609)
+[THÔNG BÁO NGHỈ LỚP CE302.E11 NGÀY 03/09/2013](https://daa.uit.edu.vn/thongbao/thong-bao-nghi-lop-ce302e11-ngay-03092013)
 
-------------------------------------------------------------------------------------------------------------------------------------------
+--------------------------------------------------------------------------------------------------------------------------
 
-T6, 23/08/2013 - 14:44
+T3, 27/08/2013 - 13:54
 
-LỚP SE103.E12 NGHỈ HỌC NGÀY 30/08 VÀ 06/09
+CBGD : Nguyễn Thanh Sang  
+Khoa/ Bộ môn : KTMT  
+Môn học : CE302  
+Lớp : CE302.E11  
+Phòng : C216  
+Thời gian : Tiết bắt đầu : 1 Tiết kết thúc : 2  
+Thứ : 3 Ngày : 2013-09-03
 
-*   [Xem thêm về THÔNG BÁO NGHỈ HỌC LỚP SE103.E12 NGÀY 30/08 VÀ 06/09](https://daa.uit.edu.vn/thongbao/thong-bao-nghi-hoc-lop-se103e12-ngay-3008-va-0609 "THÔNG BÁO NGHỈ HỌC LỚP SE103.E12 NGÀY 30/08 VÀ 06/09")
+*   [Xem thêm về THÔNG BÁO NGHỈ LỚP CE302.E11 NGÀY 03/09/2013](https://daa.uit.edu.vn/thongbao/thong-bao-nghi-lop-ce302e11-ngay-03092013 "THÔNG BÁO NGHỈ LỚP CE302.E11 NGÀY 03/09/2013")
     
 
-[THÔNG BÁO NGHỈ HỌC LỚP SE103.E11 NGÀY 29/08 VÀ 05/09](https://daa.uit.edu.vn/thongbao/thong-bao-nghi-hoc-lop-se103e11-ngay-2908-va-0509)
+[DANH SÁCH SINH VIÊN ĐƯỢC CHUYỂN NGÀNH](https://daa.uit.edu.vn/thongbao/danh-sach-sinh-vien-duoc-chuyen-nganh)
 
-------------------------------------------------------------------------------------------------------------------------------------------
+---------------------------------------------------------------------------------------------------------------
 
-T6, 23/08/2013 - 14:43
+T3, 27/08/2013 - 09:14
 
-LỚP SE103.E11 NGHỈ HỌC NGÀY 29/08 VÀ 05/09.
+Sinh viên xem danh sách đính kèm
 
-*   [Xem thêm về THÔNG BÁO NGHỈ HỌC LỚP SE103.E11 NGÀY 29/08 VÀ 05/09](https://daa.uit.edu.vn/thongbao/thong-bao-nghi-hoc-lop-se103e11-ngay-2908-va-0509 "THÔNG BÁO NGHỈ HỌC LỚP SE103.E11 NGÀY 29/08 VÀ 05/09")
+*   [Xem thêm về DANH SÁCH SINH VIÊN ĐƯỢC CHUYỂN NGÀNH](https://daa.uit.edu.vn/thongbao/danh-sach-sinh-vien-duoc-chuyen-nganh "DANH SÁCH SINH VIÊN ĐƯỢC CHUYỂN NGÀNH ")
     
 
-[THÔNG BÁO NGHỈ HỌC LỚP IS107.E11](https://daa.uit.edu.vn/thongbao/thong-bao-nghi-hoc-lop-is107e11)
+[Thông báo v/v Làm thẻ ATM miễn phí cho sinh viên tại ngân hàng ACB và BIDV.](https://daa.uit.edu.vn/thongbao/thong-bao-vv-lam-atm-mien-phi-cho-sinh-vien-tai-ngan-hang-acb-va-bidv)
 
-----------------------------------------------------------------------------------------------------
+-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
-T6, 23/08/2013 - 11:21
+T3, 27/08/2013 - 09:08
 
-Phòng Đào tạo thông báo lớp Hệ thống Thông tin kế toán IS107.E11 của GV Đinh Khắc Quyền nghỉ học vào sáng thứ Hai 26/8/2013, phòng C216, tiết 1,2,3.  
-Lý do: GV đi công tác.  
-Lịch học bù sẽ thông báo sau.
+Thông báo v/v Làm thẻ ATM miễn phí cho sinh viên tại ngân hàng ACB và BIDV.
 
-*   [Xem thêm về THÔNG BÁO NGHỈ HỌC LỚP IS107.E11](https://daa.uit.edu.vn/thongbao/thong-bao-nghi-hoc-lop-is107e11 "THÔNG BÁO NGHỈ HỌC LỚP IS107.E11")
+*   [Xem thêm về Thông báo v/v Làm thẻ ATM miễn phí cho sinh viên tại ngân hàng ACB và BIDV.](https://daa.uit.edu.vn/thongbao/thong-bao-vv-lam-atm-mien-phi-cho-sinh-vien-tai-ngan-hang-acb-va-bidv "Thông báo v/v Làm thẻ ATM miễn phí cho sinh viên tại ngân hàng ACB và BIDV.")
     
 
-[Thông Báo TKB Học Kỳ 1 Năm Học 2013-2014](https://daa.uit.edu.vn/thongbao/thong-bao-tkb-hoc-ky-1-nam-hoc-2013-2014)
+["Thông báo xét tuyển Cử nhân tài năng ngành Khoa học máy tính khoá 06.](https://daa.uit.edu.vn/thongbao/thong-bao-xet-tuyen-cu-nhan-tai-nang-nganh-khoa-hoc-may-tinh-khoa-06)
 
----------------------------------------------------------------------------------------------------------------------
+-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
-T5, 22/08/2013 - 14:30
+T2, 26/08/2013 - 14:51
 
-PDT thông báo thời khóa biểu học kỳ 1 năm học 2013-2014 đề nghị sinh viên cập nhật thông tin để học tâp tốt.
+"Thông báo xét tuyển Cử nhân tài năng ngành Khoa học máy tính khoá 06.  
+Chi tiết xin xem tại cs.uit.edu.vn"
 
-*   [Xem thêm về Thông Báo TKB Học Kỳ 1 Năm Học 2013-2014](https://daa.uit.edu.vn/thongbao/thong-bao-tkb-hoc-ky-1-nam-hoc-2013-2014 "Thông Báo TKB Học Kỳ 1 Năm Học 2013-2014")
+*   [Xem thêm về "Thông báo xét tuyển Cử nhân tài năng ngành Khoa học máy tính khoá 06.](https://daa.uit.edu.vn/thongbao/thong-bao-xet-tuyen-cu-nhan-tai-nang-nganh-khoa-hoc-may-tinh-khoa-06 ""Thông báo xét tuyển Cử nhân tài năng ngành Khoa học máy tính khoá 06.")
     
 
-[THÔNG BÁO NGHỈ HỌC - Sinh viên lớp HCMT1.E11 và lớp HCMT1.E12](https://daa.uit.edu.vn/thongbao/thong-bao-nghi-hoc-sinh-vien-lop-hcmt1e11-va-lop-hcmt1e12)
+[THÔNG BAO NGHỈ HỌC LỚP CE109.E11 và CE109.E12](https://daa.uit.edu.vn/thongbao/thong-bao-nghi-hoc-lop-ce109e11-va-ce109e12)
 
------------------------------------------------------------------------------------------------------------------------------------------------------------------
+-----------------------------------------------------------------------------------------------------------------------------
 
-T5, 22/08/2013 - 10:30
+T2, 26/08/2013 - 14:33
 
-THÔNG BÁO NGHỈ HỌC  
-Kính gửi:- Sinh viên lớp HCMT1.E11 và lớp HCMT1.E12
+CBGD : Lương Ngọc Khánh
 
-Trung tâm Lý luận Chính trị trân trọng thông báo đến toàn thể Sinh viên lớp HCMT1.E11 và lớp HCMT1.E12 (Phòng học: G Đ 3) sẽ nghỉ học môn Tư tưởng Hồ Chí Minh vào sáng ngày 26/8/2013 và ngày 28/8/2013 (sáng thứ 2 và sáng thứ tư).
+Khoa/ Bộ môn : KTMT
 
-Trân trọng cảm ơn.  
-PHÒNG ĐÀO TẠO - TRUNG TÂM LÝ LUẬN CHÍNH TRỊ
+Môn học : CE109 - LẬP TRÌNH NHÚNG CĂN BẢN
 
-*   [Xem thêm về THÔNG BÁO NGHỈ HỌC - Sinh viên lớp HCMT1.E11 và lớp HCMT1.E12](https://daa.uit.edu.vn/thongbao/thong-bao-nghi-hoc-sinh-vien-lop-hcmt1e11-va-lop-hcmt1e12 "THÔNG BÁO NGHỈ HỌC  - Sinh viên lớp HCMT1.E11 và lớp HCMT1.E12")
+Lớp : CE109.E11
+
+Phòng : C206
+
+Thời gian : Tiết bắt đầu : 6 Tiết kết thúc : 7
+
+Thứ : 4 Ngày : 28/8/2013
+
+Lớp : CE109.E12
+
+Phòng : C205
+
+Thời gian : Tiết bắt đầu : 4 Tiết kết thúc : 4
+
+Thứ : 6 Ngày : 30/8/2013
+
+*   [Xem thêm về THÔNG BAO NGHỈ HỌC LỚP CE109.E11 và CE109.E12](https://daa.uit.edu.vn/thongbao/thong-bao-nghi-hoc-lop-ce109e11-va-ce109e12 "THÔNG BAO NGHỈ HỌC LỚP CE109.E11 và CE109.E12")
     
 
-[Thông Báo Lịch Thi & Phòng Thi Cuối Học Kỳ Hè 2013-2014(cập nhật 1)](https://daa.uit.edu.vn/thongbao/thong-bao-lich-thi-phong-thi-cuoi-hoc-ky-he-2013-2014cap-nhat-1)
+[Thông Báo Quyết Định Thu Học Phí](https://daa.uit.edu.vn/thongbao/thong-bao-quyet-dinh-thu-hoc-phi)
 
------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+-----------------------------------------------------------------------------------------------------
 
-T5, 22/08/2013 - 10:15
+T2, 26/08/2013 - 12:01
 
-PĐT thông báo lịch thi(có điều chỉnh)& danh sách phòng thi.  
-đề nghị sinh viên cập nhật lịch thi,và chuẩn bị kế hoạch thi, để kỳ thi đạt kết quả tốt.
+Phòng Kế hoạch Tài chính thông báo các quyết định thu học phí, đề nghị sinh viên cập nhật thông tin để chuẩn bị đóng học phí học kỳ 1 năm học 2013-2014.
 
-*   [Xem thêm về Thông Báo Lịch Thi & Phòng Thi Cuối Học Kỳ Hè 2013-2014(cập nhật 1)](https://daa.uit.edu.vn/thongbao/thong-bao-lich-thi-phong-thi-cuoi-hoc-ky-he-2013-2014cap-nhat-1 "Thông Báo Lịch Thi & Phòng Thi Cuối Học Kỳ Hè 2013-2014(cập nhật 1)")
-    
-
-Trang
------
-
-*   [« đầu](https://daa.uit.edu.vn/thongbaochinhquy "Đến trang đầu tiên")
-    
-*   [‹ trước](https://daa.uit.edu.vn/thongbaochinhquy?page=1884 "Đến trang kế trước")
-    
-*   …
-*   [1882](https://daa.uit.edu.vn/thongbaochinhquy?page=1881 "Đến trang 1882")
-    
-*   [1883](https://daa.uit.edu.vn/thongbaochinhquy?page=1882 "Đến trang 1883")
-    
-*   [1884](https://daa.uit.edu.vn/thongbaochinhquy?page=1883 "Đến trang 1884")
-    
-*   [1885](https://daa.uit.edu.vn/thongbaochinhquy?page=1884 "Đến trang 1885")
-    
-*   1886
-*   [1887](https://daa.uit.edu.vn/thongbaochinhquy?page=1886 "Đến trang 1887")
-    
-*   [1888](https://daa.uit.edu.vn/thongbaochinhquy?page=1887 "Đến trang 1888")
-    
-*   [1889](https://daa.uit.edu.vn/thongbaochinhquy?page=1888 "Đến trang 1889")
-    
-*   [1890](https://daa.uit.edu.vn/thongbaochinhquy?page=1889 "Đến trang 1890")
-    
-*   …
-*   [sau ›](https://daa.uit.edu.vn/thongbaochinhquy?page=1886 "Đến trang kế sau")
-    
-*   [cuối »](https://daa.uit.edu.vn/thongbaochinhquy?page=1925 "Đến trang cuối cùng")
+*   [Xem thêm về Thông Báo Quyết Định Thu Học Phí](https://daa.uit.edu.vn/thongbao/thong-bao-quyet-dinh-thu-hoc-phi "Thông Báo Quyết Định Thu Học Phí")

@@ -1,230 +1,187 @@
-[Skip to content](https://daa.uit.edu.vn/thongbaochinhquy?page=1858#main)
- [Skip to navigation](https://daa.uit.edu.vn/thongbaochinhquy?page=1858#main-nav)
-
 Đại Học Chính Quy
 =================
 
 **Các thông báo dành cho hệ đại học chính quy.**
 
-[Chương trình đào tạo nhân viên kiểm thử ( Tester ) tại Công ty CSC Việt Nam](https://daa.uit.edu.vn/thongbao/chuong-trinh-dao-tao-nhan-vien-kiem-thu-tester-tai-cong-ty-csc-viet-nam)
+[Thông báo lớp EN001.E18 không đổi lịch học](https://daa.uit.edu.vn/thongbao/thong-bao-lop-en001e18-khong-doi-lich-hoc)
 
----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+------------------------------------------------------------------------------------------------------------------------
 
-T2, 25/11/2013 - 11:14
+T3, 26/11/2013 - 17:14
 
-Thời gian đào tạo: từ **ngày 9 tháng 12 năm 2013 đến 17 tháng 01 năm 2014 (Thứ Hai đến Thứ Sáu)**
+Chào các bạn học lớp Anh văn 1 - mã lớp EN001.E18 do Cô Nguyễn Thị Lan Hương phụ trách học vào chiều thứ 5 hàng tuần. Theo thông báo mới đây, lớp học dự định sẽ chuyển lên buổi sáng học, nhưng do có một số bạn phản hồi bị trùng lịch học nên lớp học này không thể chuyển thời gian học được.  
+Phòng ĐTĐH thông báo các bạn lớp Anh văn 1 - EN001.E18 tuần này, ngày  28/11/2013 vẫn học vào chiều thứ 5, tiết 6789, tại phòng học C213.  
+Mong các bạn thông cảm.  
+ 
 
-Đối tượng: Sinh viên **chuyên ngành Công nghệ Thông tin**.
-
-Điều kiện: Các bạn vừa **mới tốt nghiệp trường Đại học Công nghệ Thông tin, sinh viên Trường năm 3,4 hoặc có từ 2 năm kinh nghiệm trở xuống.**
-
-Thời hạn nộp hồ sơ đăng ký: **Hạn chót ngày 05/12/2013**
-
-Thông tin chi tiết, vui lòng xem file đính kèm.
-
-*   [Xem thêm về Chương trình đào tạo nhân viên kiểm thử ( Tester ) tại Công ty CSC Việt Nam](https://daa.uit.edu.vn/thongbao/chuong-trinh-dao-tao-nhan-vien-kiem-thu-tester-tai-cong-ty-csc-viet-nam "Chương trình đào tạo nhân viên kiểm thử ( Tester ) tại Công ty CSC Việt Nam")
+*   [Xem thêm về Thông báo lớp EN001.E18 không đổi lịch học](https://daa.uit.edu.vn/thongbao/thong-bao-lop-en001e18-khong-doi-lich-hoc "Thông báo lớp EN001.E18 không đổi lịch học")
     
 
-[THÔNG BÁO HỌC BÙ MÔN IS104.E11](https://daa.uit.edu.vn/thongbao/thong-bao-hoc-bu-mon-is104e11)
+[Thông báo lớp IT006.E11.ANTT nghỉ học ngày 28/11/2013 (Thứ Năm), học bù vào ngày 30/11/2013](https://daa.uit.edu.vn/thongbao/thong-bao-lop-it006e11antt-nghi-hoc-ngay-28112013-thu-nam-hoc-bu-vao-ngay-30112013)
 
-------------------------------------------------------------------------------------------------
+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
-T2, 25/11/2013 - 11:03
+T3, 26/11/2013 - 16:56
 
-    Phòng Đào tạo Đại học thông báo:  
-        Học bù môn Cơ sở dữ liệu phân tán IS104.E11 của GV Đỗ Phúc học bù vào tiết 6,7,8 ngày thứ Tư 27/11/2013  
-   tại phòng C216.  
+Lớp An ninh Tài năng 2012 xem thông báo ngghỉ học và học bù môn  IT006.E11.ANTT.  
+**Lịch nghỉ học:**   
+CBGD: Đinh Đức Anh Vũ  
+Khoa/ Bộ môn: KTMT  
+Môn học: Kiến trúc máy tính  
+Lớp: **IT006.E11.ANTT**  
+Phòng: **C301**  
+Thời gian: Tiết bắt đầu: 1 - Tiết kết thúc: 3  
+Thứ: 5 Ngày: **28/11/2013**  
+Lý do: **Bận họp**  
    
-  
+**Lịch học bù:**   
+CBGD : Đinh Đức Anh Vũ  
+Khoa/ Bộ môn : KTMT  
+Môn học : Kiến trúc máy tính  
 
-*   [Xem thêm về THÔNG BÁO HỌC BÙ MÔN IS104.E11](https://daa.uit.edu.vn/thongbao/thong-bao-hoc-bu-mon-is104e11 "THÔNG BÁO HỌC BÙ MÔN IS104.E11")
+*   [Xem thêm về Thông báo lớp IT006.E11.ANTT nghỉ học ngày 28/11/2013 (Thứ Năm), học bù vào ngày 30/11/2013](https://daa.uit.edu.vn/thongbao/thong-bao-lop-it006e11antt-nghi-hoc-ngay-28112013-thu-nam-hoc-bu-vao-ngay-30112013 "Thông báo lớp IT006.E11.ANTT nghỉ học ngày 28/11/2013 (Thứ Năm), học bù vào ngày 30/11/2013")
     
 
-[Thông Báo Đổi Phòng Học Lớp SS001 .E14](https://daa.uit.edu.vn/thongbao/thong-bao-doi-phong-hoc-lop-ss001-e14)
+[Thông Báo Danh Sách Sinh Viên Được Công Nhận Tốt Nghiệp Đợt 2 Năm 2013 Còn Nợ Học Phí.](https://daa.uit.edu.vn/thongbao/thong-bao-danh-sach-sinh-vien-duoc-cong-nhan-tot-nghiep-dot-2-nam-2013-con-no-hoc-phi)
 
-----------------------------------------------------------------------------------------------------------------
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
-T2, 25/11/2013 - 09:16
+T3, 26/11/2013 - 13:19
 
-Do nhu cầu Giảng đường 1 phục vụ hội nghị thông tin thời sự của VP.Đảng Ủy vào sáng thứ 6 ngày 29/11/2013, nên Ban QLCS đề nghị chuyển lớp SS001. E14 sang GĐ2 vào cùng thời điểm trên.
+Danh sách sinh viên được công nhận Tốt nghiệp Đợt 2 năm 2013 còn nợ học phí
 
-*   [Xem thêm về Thông Báo Đổi Phòng Học Lớp SS001 .E14](https://daa.uit.edu.vn/thongbao/thong-bao-doi-phong-hoc-lop-ss001-e14 "Thông Báo Đổi Phòng Học Lớp SS001 .E14")
+*   [Xem thêm về Thông Báo Danh Sách Sinh Viên Được Công Nhận Tốt Nghiệp Đợt 2 Năm 2013 Còn Nợ Học Phí.](https://daa.uit.edu.vn/thongbao/thong-bao-danh-sach-sinh-vien-duoc-cong-nhan-tot-nghiep-dot-2-nam-2013-con-no-hoc-phi "Thông Báo Danh Sách Sinh Viên Được Công Nhận Tốt Nghiệp Đợt 2 Năm 2013 Còn Nợ Học Phí.")
     
 
-[Thông Báo Gặp SV: Huỳnh Bá lập - 13520434 SV: Phùng Ngọc An - 13520003](https://daa.uit.edu.vn/thongbao/thong-bao-gap-sv-huynh-ba-lap-13520434-sv-phung-ngoc-13520003)
+[Thông báo Thời khoá biểu lớp Tiếng Anh tăng cường](https://daa.uit.edu.vn/thongbao/thong-bao-thoi-khoa-bieu-lop-tieng-anh-tang-cuong)
 
-------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+---------------------------------------------------------------------------------------------------------------------------------------
 
-T2, 25/11/2013 - 09:12
+T3, 26/11/2013 - 09:58
 
-SV: Huỳnh Bá lập - 13520434  
-SV: Phùng Ngọc An - 13520003  
-Liên hệ P.CTSV (A.101) nhận thẻ sinh viên.
+Chào các bạn sinh viên,   
+Cô Ân thông báo về việc thay đổi giờ học lớp tiếng Anh tăng cường của Đề án NNQG 2020, cụ thể các lớp học vào buổi sáng sẽ bắt đầu lúc 07:30, kết thúc lúc 10:30, các lớp học vào buổi chiều sẽ bắt đầu lúc 13:00 và kết thúc lúc 16:00.  
+\*\*\*Lớp TATC 2 do Cô Nguyễn Thị Lan Hương tuần này 28/11/2013 không học, nhưng lớp của Cô Nguyễn Thị Tuyết Vinh dạy vào thứ 6 (29/11/2013) tại phòng máy CTTT A120 thì vẫn học bình thường  
+Chi tiết xem file đính kèm.
 
-*   [Xem thêm về Thông Báo Gặp SV: Huỳnh Bá lập - 13520434 SV: Phùng Ngọc An - 13520003](https://daa.uit.edu.vn/thongbao/thong-bao-gap-sv-huynh-ba-lap-13520434-sv-phung-ngoc-13520003 "Thông Báo Gặp SV: Huỳnh Bá lập - 13520434 SV: Phùng Ngọc An - 13520003")
+Thân chào.  
+Cô Ân  
+ 
+
+*   [Xem thêm về Thông báo Thời khoá biểu lớp Tiếng Anh tăng cường](https://daa.uit.edu.vn/thongbao/thong-bao-thoi-khoa-bieu-lop-tieng-anh-tang-cuong "Thông báo Thời khoá biểu lớp Tiếng Anh tăng cường")
     
 
-[Thông báo nghỉ học lớp IT001.E11.ANTT - Ngày 27/11/2013](https://daa.uit.edu.vn/thongbao/thong-bao-nghi-hoc-lop-it001e11antt-ngay-27112013)
+[Thông báo học bù lớp IS404.E11 ngày 04/12/2013](https://daa.uit.edu.vn/thongbao/thong-bao-hoc-bu-lop-is404e11-ngay-04122013)
 
----------------------------------------------------------------------------------------------------------------------------------------------
+------------------------------------------------------------------------------------------------------------------------------
 
-T2, 25/11/2013 - 09:11
+T3, 26/11/2013 - 08:57
 
-CBGD : Nguyễn Văn Toàn  
-Khoa/ Bộ môn : **MMT&TT**  
-Môn học : Nhập môn lập trình  
-Lớp : **IT001.E11.ANTT**  
-Phòng : **C201**  
-Thời gian : Tiết bắt đầu : 1  
-Tiết kết thúc : 3  
-Thứ : 4 Ngày : **27/11/2013**
+CBGD : **Nguyễn Thị Kim Phụng**
 
-*   [Xem thêm về Thông báo nghỉ học lớp IT001.E11.ANTT - Ngày 27/11/2013](https://daa.uit.edu.vn/thongbao/thong-bao-nghi-hoc-lop-it001e11antt-ngay-27112013 "Thông báo nghỉ học lớp IT001.E11.ANTT - Ngày 27/11/2013")
+Khoa/ Bộ môn : **HTTT**
+
+Môn học : **IS404**
+
+Lớp : **IS404.E11**
+
+Sĩ số : **63**
+
+Thời gian : Tiết bắt đầu : **6**
+
+Tiết kết thúc : **8**
+
+Thứ : **4** Ngày : **04/12/2013**
+
+Phòng : **C205**
+
+Máy chiếu : **Cần máy chiếu**
+
+*   [Xem thêm về Thông báo học bù lớp IS404.E11 ngày 04/12/2013](https://daa.uit.edu.vn/thongbao/thong-bao-hoc-bu-lop-is404e11-ngay-04122013 "Thông báo học bù lớp IS404.E11 ngày 04/12/2013")
     
 
-[Thông báo nghỉ học lớp CS106.E11 ngày 25/11/2013](https://daa.uit.edu.vn/thongbao/thong-bao-nghi-hoc-lop-cs106e11-ngay-25112013)
+[Thông báo nghỉ học lớp IS203.E11.1 ngày 29/11/2013](https://daa.uit.edu.vn/thongbao/thong-bao-nghi-hoc-lop-is203e111-ngay-29112013)
 
-----------------------------------------------------------------------------------------------------------------------------------
+-------------------------------------------------------------------------------------------------------------------------------------
 
-T2, 25/11/2013 - 08:33
+T3, 26/11/2013 - 08:46
 
-CBGD : **Huỳnh Thị Thanh Thương**
+CBGD : **Nguyễn Thành Hiệp**
 
-Khoa/ Bộ môn : **KHMT**
+Khoa/ Bộ môn : **HTTT**
 
-Môn học : **CS106**
+Môn học : **IS203**
 
-Lớp : **CS106.E11**
+Lớp : **IS203.E11.1**
 
-Phòng : **C308**
+Phòng : **C307(PM1)**
 
-Thời gian : Tiết bắt đầu : **6**
+Thời gian : Tiết bắt đầu : **4**
 
-Tiết kết thúc : **9**
+Tiết kết thúc : **5**
 
-Thứ : **2** Ngày : **25/11/2013**
+Thứ : **6** Ngày : **29/11/2013**
 
-*   [Xem thêm về Thông báo nghỉ học lớp CS106.E11 ngày 25/11/2013](https://daa.uit.edu.vn/thongbao/thong-bao-nghi-hoc-lop-cs106e11-ngay-25112013 "Thông báo nghỉ học lớp CS106.E11 ngày 25/11/2013")
+CBGD Thay thế (Nếu có) : **Không có.**
+
+Lý do : **Tham dự Hội thảo xây dựng chuẩn kỹ năng nhân lực CNTT**
+
+*   [Xem thêm về Thông báo nghỉ học lớp IS203.E11.1 ngày 29/11/2013](https://daa.uit.edu.vn/thongbao/thong-bao-nghi-hoc-lop-is203e111-ngay-29112013 "Thông báo nghỉ học lớp IS203.E11.1 ngày 29/11/2013")
     
 
-[Thông báo nghỉ lớp IT006.E13 ngày 27/11/2013](https://daa.uit.edu.vn/thongbao/thong-bao-nghi-lop-it006e13-ngay-27112013)
+[Thông báo nghỉ học lớp IS203.E12.1 ngày 28/11/2013](https://daa.uit.edu.vn/thongbao/thong-bao-nghi-hoc-lop-is203e121-ngay-28112013)
 
---------------------------------------------------------------------------------------------------------------------------
+-------------------------------------------------------------------------------------------------------------------------------------
 
-T2, 25/11/2013 - 08:03
+T3, 26/11/2013 - 08:44
 
-CBGD : **Vũ Đức Lung**
+CBGD : **Nguyễn Thành Hiệp**
 
-Khoa/ Bộ môn : **KTMT**
+Khoa/ Bộ môn : **HTTT**
 
-Môn học : **IT006**
+Môn học : **IS203**
 
-Lớp : **IT006.E13**
+Lớp : **IS203.E12.1**
 
-Phòng : **C306**
+Phòng : **C212(PM HTTT)**
 
-Thời gian : Tiết bắt đầu : **1**
+Thời gian : Tiết bắt đầu : **4**
 
-Tiết kết thúc : **3**
+Tiết kết thúc : **5**
 
-Thứ : **4** Ngày : **27/11/2013**
+Thứ : **5** Ngày : **28/11/2013**
 
-*   [Xem thêm về Thông báo nghỉ lớp IT006.E13 ngày 27/11/2013](https://daa.uit.edu.vn/thongbao/thong-bao-nghi-lop-it006e13-ngay-27112013 "Thông báo nghỉ lớp IT006.E13 ngày 27/11/2013")
+CBGD Thay thế (Nếu có) : **Không có.**
+
+Lý do : **Tham gia tập huấn kỹ năng đối ngoại**
+
+*   [Xem thêm về Thông báo nghỉ học lớp IS203.E12.1 ngày 28/11/2013](https://daa.uit.edu.vn/thongbao/thong-bao-nghi-hoc-lop-is203e121-ngay-28112013 "Thông báo nghỉ học lớp IS203.E12.1 ngày 28/11/2013")
     
 
-[Thông báo học bù lớp IT001.E16.1 ngày 30/11/2013](https://daa.uit.edu.vn/thongbao/thong-bao-hoc-bu-lop-it001e161-ngay-30112013)
-
----------------------------------------------------------------------------------------------------------------------------------
-
-T6, 22/11/2013 - 10:34
-
-CBGD : **Nguyễn Thị Ngọc Diễm**
-
-Khoa/ Bộ môn : **KHMT**
-
-Môn học : **IT001**
-
-Lớp : **IT001.E16.1**
-
-Sĩ số : **27**
-
-Thời gian : Tiết bắt đầu : **6**
-
-Tiết kết thúc : **8**
-
-Thứ : **7** Ngày : **30/11/2013**
-
-Phòng : **C110(PM CNTN)**
-
-*   [Xem thêm về Thông báo học bù lớp IT001.E16.1 ngày 30/11/2013](https://daa.uit.edu.vn/thongbao/thong-bao-hoc-bu-lop-it001e161-ngay-30112013 "Thông báo học bù lớp IT001.E16.1 ngày 30/11/2013")
+*   [Xem thêm về DANH SÁCH SINH VIÊN ĐƯỢC CÔNG NHẬN TỐT NGHIỆP ĐỢT 2 NĂM 2013](https://daa.uit.edu.vn/thongbao/danh-sach-sinh-vien-duoc-cong-nhan-tot-nghiep-dot-2-nam-2013 "DANH SÁCH SINH VIÊN ĐƯỢC CÔNG NHẬN TỐT NGHIỆP ĐỢT 2 NĂM 2013")
     
 
-[Thông báo học bù lớp IT001.E13.1 ngày 29/11/2013](https://daa.uit.edu.vn/thongbao/thong-bao-hoc-bu-lop-it001e131-ngay-29112013)
+[THÔNG BÁO GIA HẠN THỜI GIAN THU HỌC PHÍ HK1 2013-2014](https://daa.uit.edu.vn/thongbao/thong-bao-gia-han-thoi-gian-thu-hoc-phi-hk1-2013-2014)
 
----------------------------------------------------------------------------------------------------------------------------------
+-----------------------------------------------------------------------------------------------------------------------------------------------
 
-T6, 22/11/2013 - 10:32
+T2, 25/11/2013 - 13:55
 
-CBGD : **Nguyễn Thị Ngọc Diễm**
+Thông báo về việc gia hạn thời gian thu học phí HK1 2013-2014 Hệ Đào tạo Đại học chính quy.
 
-Khoa/ Bộ môn : **KHMT**
-
-Môn học : **IT001**
-
-Lớp : **IT001.E13.1**
-
-Sĩ số : **23**
-
-Thời gian : Tiết bắt đầu : **6**
-
-Tiết kết thúc : **8**
-
-Thứ : **6** Ngày : **29/11/2013**
-
-Phòng : **C110(PM CNTN)**
-
-*   [Xem thêm về Thông báo học bù lớp IT001.E13.1 ngày 29/11/2013](https://daa.uit.edu.vn/thongbao/thong-bao-hoc-bu-lop-it001e131-ngay-29112013 "Thông báo học bù lớp IT001.E13.1 ngày 29/11/2013")
+*   [Xem thêm về THÔNG BÁO GIA HẠN THỜI GIAN THU HỌC PHÍ HK1 2013-2014](https://daa.uit.edu.vn/thongbao/thong-bao-gia-han-thoi-gian-thu-hoc-phi-hk1-2013-2014 "THÔNG BÁO GIA HẠN THỜI GIAN THU HỌC PHÍ HK1 2013-2014")
     
 
-[THÔNG BÁO NGHỈ HỌC LỚP IS251.E11](https://daa.uit.edu.vn/thongbao/thong-bao-nghi-hoc-lop-is251e11)
+[Thông báo lớp EN001.E18 đổi lịch học](https://daa.uit.edu.vn/thongbao/thong-bao-lop-en001e18-doi-lich-hoc)
 
-----------------------------------------------------------------------------------------------------
+------------------------------------------------------------------------------------------------------------
 
-T6, 22/11/2013 - 08:35
+T2, 25/11/2013 - 12:32
 
-    Phòng Đào tạo Đại học thông báo:  
-    Môn IS251.E11 của GV Cao Thị Kim Tuyến, nghỉ học ngày thứ Ba 26/11/2013.  
-   Lý do: GV tham dự Hôi nghị tại Nha Trang.
-
-*   [Xem thêm về THÔNG BÁO NGHỈ HỌC LỚP IS251.E11](https://daa.uit.edu.vn/thongbao/thong-bao-nghi-hoc-lop-is251e11 "THÔNG BÁO NGHỈ HỌC LỚP IS251.E11")
-    
-
-Trang
------
-
-*   [« đầu](https://daa.uit.edu.vn/thongbaochinhquy "Đến trang đầu tiên")
-    
-*   [‹ trước](https://daa.uit.edu.vn/thongbaochinhquy?page=1857 "Đến trang kế trước")
-    
-*   …
-*   [1855](https://daa.uit.edu.vn/thongbaochinhquy?page=1854 "Đến trang 1855")
-    
-*   [1856](https://daa.uit.edu.vn/thongbaochinhquy?page=1855 "Đến trang 1856")
-    
-*   [1857](https://daa.uit.edu.vn/thongbaochinhquy?page=1856 "Đến trang 1857")
-    
-*   [1858](https://daa.uit.edu.vn/thongbaochinhquy?page=1857 "Đến trang 1858")
-    
-*   1859
-*   [1860](https://daa.uit.edu.vn/thongbaochinhquy?page=1859 "Đến trang 1860")
-    
-*   [1861](https://daa.uit.edu.vn/thongbaochinhquy?page=1860 "Đến trang 1861")
-    
-*   [1862](https://daa.uit.edu.vn/thongbaochinhquy?page=1861 "Đến trang 1862")
-    
-*   [1863](https://daa.uit.edu.vn/thongbaochinhquy?page=1862 "Đến trang 1863")
-    
-*   …
-*   [sau ›](https://daa.uit.edu.vn/thongbaochinhquy?page=1859 "Đến trang kế sau")
-    
-*   [cuối »](https://daa.uit.edu.vn/thongbaochinhquy?page=1925 "Đến trang cuối cùng")
+Lớp Anh văn 1 - mã lớp EN001.E18 - Giảng viên Nguyễn Thị Lan Hương phụ trách dự kiến sẽ thay đổi lịch học bắt đầu từ ngày 28/11/2013 đến kết thúc môn.  
+**Lịch học mới:**  
+**Lớp: EN001.E18**  
+**Giảng viên: Nguyễn Thị Lan Hương**  
+**Ngày: Thứ 5**  
+**Tiết: 1234**  
+**Phòng: A106**

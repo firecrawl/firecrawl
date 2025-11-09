@@ -1,6 +1,3 @@
-[Skip to content](https://tuyensinh.uit.edu.vn/nganh-dao-tao#main)
- [Skip to navigation](https://tuyensinh.uit.edu.vn/nganh-dao-tao#main-nav)
-
 Ngành đào tạo
 =============
 
@@ -60,6 +57,3 @@ Chương trình đào tạo luôn cập nhật, bám sát thực tiễn, lấy n
 [Ngành Truyền thông Đa phương tiện](https://tuyensinh.uit.edu.vn/tong-quan-nganh-truyen-thong-da-phuong-tien)
 
 *   [__&bnsp;__Nhận thông tin](https://tuyensinh.uit.edu.vn/node/3967?width=700&height=700&inline=false)
-    
-
-Back to top

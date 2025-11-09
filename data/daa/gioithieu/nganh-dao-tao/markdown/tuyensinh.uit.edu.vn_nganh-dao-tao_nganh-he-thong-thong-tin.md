@@ -1,6 +1,3 @@
-[Skip to content](https://tuyensinh.uit.edu.vn/nganh-dao-tao/nganh-he-thong-thong-tin#main)
- [Skip to navigation](https://tuyensinh.uit.edu.vn/nganh-dao-tao/nganh-he-thong-thong-tin#main-nav)
-
 Ngành Hệ thống Thông tin
 ========================
 
@@ -95,36 +92,4 @@ Và còn rất nhiều các doanh nghiệp khác mà sinh viên khoa Hệ Thốn
 
 ![Doanh nghiệp sinh viên khoa Hệ Thống Thông Tin làm việc](https://tuyensinh.uit.edu.vn/sites/default/files/uploads/future_work.png)
 
-[**Website khoa HTTT**](http://httt.uit.edu.vn/) [![](https://tuyensinh.uit.edu.vn/sites/default/files/uploads/click_here.png)](http://httt.uit.edu.vn/)   
-[**Fanpage khoa HTTT**](http://www.facebook.com/ngayhoikhoahttt)
- [![](https://tuyensinh.uit.edu.vn/sites/default/files/uploads/click_here.png)](https://tuyensinh.uit.edu.vn/nganh-dao-tao/www.facebook.com/ngayhoikhoahttt)   
-[**Ngành Hệ Thống Thông Tin Quản Lý** ![](https://tuyensinh.uit.edu.vn/sites/default/files/uploads/click_here.png)](https://tuyensinh.uit.edu.vn/tong-quan-nganh-he-thong-thong-tin-quan-ly-thuong-mai-dien-tu#htttql) 
-
-**\=>> [Xem thêm CHƯƠNG TRÌNH TIÊN TIẾN ngành Hệ thống thông tin](https://oep.uit.edu.vn/vi/chuong-trinh-tien-tien)
-**
-
-**\=>> Xem thêm chương trình đào tạo ngành Hệ thống thông tin tại UIT, [TẠI ĐÂY](https://daa.uit.edu.vn/content/ky-su-nganh-he-thong-thong-tin-ap-dung-tu-khoa-12-2017)
-**
-
-Đăng ký nhận thông tin
-----------------------
-
-Họ và tên \* 
-
-Email nhận thông tin \* 
-
-Ngành bạn quan tâm \*
-
-*   Ngành Hệ thống Thông tin
-    
-    [](https://tuyensinh.uit.edu.vn/nganh-dao-tao/nganh-he-thong-thong-tin#)
-    
-*   Ngành bạn quan tâm \* 
-
-*   Không tìm thấy kết quả
-
-Ngành Công nghệ Thông tinNgành Hệ thống Thông tin Ngành Khoa học Máy tínhNgành Kỹ thuật Phần mềmNgành Kỹ thuật Máy tínhNgành Mạng máy tính & Truyền thông Dữ liệuNgành An toàn Thông tinNgành Thương mại Điện tửNgành Khoa học Dữ liệuNgành Trí tuệ Nhân tạoNgành Thiết kế Vi mạchNgành Truyền thông Đa phương tiện
-
-     
-
-Back to top
+[**Website khoa HTTT**](http://httt.uit.edu.vn/) [![](https://tuyensinh.uit.edu.vn/sites/default/files/uploads/click_here.png)](http://httt.uit.edu.vn/)

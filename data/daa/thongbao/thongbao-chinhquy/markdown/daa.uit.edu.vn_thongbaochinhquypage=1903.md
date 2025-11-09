@@ -1,151 +1,189 @@
-[Skip to content](https://daa.uit.edu.vn/thongbaochinhquy?page=1903#main)
- [Skip to navigation](https://daa.uit.edu.vn/thongbaochinhquy?page=1903#main-nav)
-
 Đại Học Chính Quy
 =================
 
 **Các thông báo dành cho hệ đại học chính quy.**
 
-[THÔNG BÁO NGHỈ LỄ 30/4 & 01/5](https://daa.uit.edu.vn/thongbao/thong-bao-nghi-le-304-015)
+[THÔNG BÁO NGHỈ LỚP CE107.D21 NGÀY 15/5/2013](https://daa.uit.edu.vn/thongbao/thong-bao-nghi-lop-ce107d21-ngay-1552013)
 
--------------------------------------------------------------------------------------------
+------------------------------------------------------------------------------------------------------------------------
 
-T6, 26/04/2013 - 14:18
+T3, 14/05/2013 - 08:52
 
-Sinh viên xem chi tiết về việc nghỉ Lễ trong thông báo đính kèm.
+CBGD : **Lương Ngọc Khánh**
 
-*   [Xem thêm về THÔNG BÁO NGHỈ LỄ 30/4 & 01/5](https://daa.uit.edu.vn/thongbao/thong-bao-nghi-le-304-015 "THÔNG BÁO NGHỈ LỄ 30/4 & 01/5")
+Khoa/ Bộ môn : **KTMT**
+
+Môn học : **CE107**
+
+Lớp : **CE107.D21**
+
+Phòng : **C101**
+
+Thời gian : Tiết bắt đầu : **1**
+
+Tiết kết thúc : **3**
+
+Thứ : **4** Ngày : **15-5-2013**
+
+*   [Xem thêm về THÔNG BÁO NGHỈ LỚP CE107.D21 NGÀY 15/5/2013](https://daa.uit.edu.vn/thongbao/thong-bao-nghi-lop-ce107d21-ngay-1552013 "THÔNG BÁO NGHỈ LỚP CE107.D21 NGÀY 15/5/2013")
     
 
-[Thông Báo Lớp HCMT1.D24 (môn Tư Tưởng Hồ Chí Minh)](https://daa.uit.edu.vn/thongbao/thong-bao-lop-hcmt1d24-mon-tu-tuong-ho-chi-minh)
+[THÔNG BÁO NGHỈ LỚP CARC1.D22 NGÀY 15/5/2013](https://daa.uit.edu.vn/thongbao/thong-bao-nghi-lop-carc1d22-ngay-1552013)
 
---------------------------------------------------------------------------------------------------------------------------------------
+------------------------------------------------------------------------------------------------------------------------
 
-T6, 26/04/2013 - 09:45
+T3, 14/05/2013 - 08:49
 
-Trung tâm Lý luận chính trị thông báo Lớp HCMT1.D24 nghỉ học để đi Bảo tàng.
+CBGD : **Lương Ngọc Khánh**
 
-Lớp HCMT1.D24 (môn Tư Tưởng Hồ Chí Minh) Tiết 67, chiều thứ 5 Phòng 307
+Khoa/ Bộ môn : **KTMT**
 
-do Giảng viên Phạm Thị Thu Hương phụ trách sẽ đi bảo tàng Hồ Chí Minh vào ngày 02/05/2013.
+Môn học : **CARC1**
 
-*   [Xem thêm về Thông Báo Lớp HCMT1.D24 (môn Tư Tưởng Hồ Chí Minh)](https://daa.uit.edu.vn/thongbao/thong-bao-lop-hcmt1d24-mon-tu-tuong-ho-chi-minh "Thông Báo Lớp HCMT1.D24 (môn Tư Tưởng Hồ Chí Minh)")
+Lớp : **CARC1.D22**
+
+Phòng : **C308**
+
+Thời gian : Tiết bắt đầu : **6**
+
+Tiết kết thúc : **8**
+
+Thứ : **4** Ngày : **15-5-2013**
+
+*   [Xem thêm về THÔNG BÁO NGHỈ LỚP CARC1.D22 NGÀY 15/5/2013](https://daa.uit.edu.vn/thongbao/thong-bao-nghi-lop-carc1d22-ngay-1552013 "THÔNG BÁO NGHỈ LỚP CARC1.D22 NGÀY 15/5/2013")
     
 
-[Thông Báo Đăng Ký Học Những Môn LLCT](https://daa.uit.edu.vn/thongbao/thong-bao-dang-ky-hoc-nhung-mon-llct)
-
--------------------------------------------------------------------------------------------------------------
-
-T5, 25/04/2013 - 09:43
-
-PDT Thông báo, về việc tổ chức Lớp học trả nợ các môn lí luận chính trị (thông tin chi tiết trong file đính kèm)
-
-*   [Xem thêm về Thông Báo Đăng Ký Học Những Môn LLCT](https://daa.uit.edu.vn/thongbao/thong-bao-dang-ky-hoc-nhung-mon-llct "Thông Báo Đăng Ký  Học Những Môn LLCT")
-    
-
-[THÔNG BÁO HỌC BÙ LỚP CS102.D21 NGÀY 11/05/2013](https://daa.uit.edu.vn/thongbao/thong-bao-hoc-bu-lop-cs102d21-ngay-11052013)
-
-------------------------------------------------------------------------------------------------------------------------------
-
-T4, 24/04/2013 - 15:34
-
-LỚP CS102.D21 HỌC BÙ NGÀY 11/05/2013 TIẾT 6 -->8, PHÒNG 302.
-
-*   [Xem thêm về THÔNG BÁO HỌC BÙ LỚP CS102.D21 NGÀY 11/05/2013](https://daa.uit.edu.vn/thongbao/thong-bao-hoc-bu-lop-cs102d21-ngay-11052013 "THÔNG BÁO HỌC BÙ LỚP CS102.D21 NGÀY 11/05/2013")
-    
-
-[HỌC BÙ LỚP CS211.D21 NGÀY 11/05/2013](https://daa.uit.edu.vn/thongbao/hoc-bu-lop-cs211d21-ngay-11052013)
-
-----------------------------------------------------------------------------------------------------------
-
-T4, 24/04/2013 - 15:33
-
-LỚP CS211.D21 HỌC BÙ NGÀY 11/05/2013, TIẾT 1 -->3, PHÒNG 302
-
-*   [Xem thêm về HỌC BÙ LỚP CS211.D21 NGÀY 11/05/2013](https://daa.uit.edu.vn/thongbao/hoc-bu-lop-cs211d21-ngay-11052013 "HỌC BÙ LỚP CS211.D21 NGÀY 11/05/2013")
-    
-
-[THÔNG BÁO HỌC BÙ LỚP IT002.D22 NGÀY 04/05/2013](https://daa.uit.edu.vn/thongbao/thong-bao-hoc-bu-lop-it002d22-ngay-04052013)
-
-------------------------------------------------------------------------------------------------------------------------------
-
-T4, 24/04/2013 - 15:31
-
-LỚP IT002.D22 HỌC BÙ VÀO NGÀY 04/05/2013, TIẾT 06 -->8, PHÒNG 202.
-
-*   [Xem thêm về THÔNG BÁO HỌC BÙ LỚP IT002.D22 NGÀY 04/05/2013](https://daa.uit.edu.vn/thongbao/thong-bao-hoc-bu-lop-it002d22-ngay-04052013 "THÔNG BÁO HỌC BÙ LỚP IT002.D22 NGÀY 04/05/2013")
-    
-
-[QĐ TẠM DỪNG HỌC TẬP & XIN THÔI HỌC (HKII NĂM HỌC 2012-2013)](https://daa.uit.edu.vn/thongbao/qd-tam-dung-hoc-tap-xin-thoi-hoc-hkii-nam-hoc-2012-2013)
-
--------------------------------------------------------------------------------------------------------------------------------------------------------
-
-T3, 23/04/2013 - 10:10
-
-Sinh viên xem chi tiết trong file đính kèm.
-
-*   [Xem thêm về QĐ TẠM DỪNG HỌC TẬP & XIN THÔI HỌC (HKII NĂM HỌC 2012-2013)](https://daa.uit.edu.vn/thongbao/qd-tam-dung-hoc-tap-xin-thoi-hoc-hkii-nam-hoc-2012-2013 "QĐ TẠM DỪNG HỌC TẬP & XIN THÔI HỌC (HKII NĂM HỌC 2012-2013)")
-    
-
-[QUYẾT ĐỊNH VỀ VIỆC XỬ LÝ HỌC VỤ NĂM HỌC 2011-2012](https://daa.uit.edu.vn/thongbao/quyet-dinh-ve-viec-xu-ly-hoc-vu-nam-hoc-2011-2012)
-
----------------------------------------------------------------------------------------------------------------------------------------
-
-T3, 23/04/2013 - 09:54
-
-Sinh viên xem chi tiết trong các file đính kèm.
-
-*   [Xem thêm về QUYẾT ĐỊNH VỀ VIỆC XỬ LÝ HỌC VỤ NĂM HỌC 2011-2012](https://daa.uit.edu.vn/thongbao/quyet-dinh-ve-viec-xu-ly-hoc-vu-nam-hoc-2011-2012 "QUYẾT ĐỊNH VỀ VIỆC XỬ LÝ HỌC VỤ NĂM HỌC 2011-2012")
-    
-
-[Thông Báo Nghỉ Học Lớp: HCMT1.D21](https://daa.uit.edu.vn/thongbao/thong-bao-nghi-hoc-lop-hcmt1d21)
-
------------------------------------------------------------------------------------------------------
-
-T5, 18/04/2013 - 10:36
-
-PDT thông báo  Lớp: HCMT1.D21 học phòng 304 tiết 1-2 **nghỉ học ngày 16/05/2013.**
-
-*   [Xem thêm về Thông Báo Nghỉ Học Lớp: HCMT1.D21](https://daa.uit.edu.vn/thongbao/thong-bao-nghi-hoc-lop-hcmt1d21 "Thông Báo Nghỉ Học Lớp: HCMT1.D21")
-    
-
-[THÔNG BÁO NGHỈ HỌC LỚP WINP1.D26 NGÀY 18/04/2013](https://daa.uit.edu.vn/thongbao/thong-bao-nghi-hoc-lop-winp1d26-ngay-18042013)
+[THÔNG BÁO NGHỈ HỌC LỚP CS107.D21 NGÀY 10/05/2013](https://daa.uit.edu.vn/thongbao/thong-bao-nghi-hoc-lop-cs107d21-ngay-10052013)
 
 ----------------------------------------------------------------------------------------------------------------------------------
 
-T5, 18/04/2013 - 10:07
+T5, 09/05/2013 - 15:33
 
-MÔN: LẬP TRÌNH TRÊN MÔI TRƯỜNG WINDOWS. LỚP: WINP1.D26 PHÒNG 108 NGHỈ HỌC NGÀY 18/04/2013
+BGD : **Huỳnh Thị Thanh Thương**
 
-*   [Xem thêm về THÔNG BÁO NGHỈ HỌC LỚP WINP1.D26 NGÀY 18/04/2013](https://daa.uit.edu.vn/thongbao/thong-bao-nghi-hoc-lop-winp1d26-ngay-18042013 "THÔNG BÁO NGHỈ HỌC LỚP WINP1.D26 NGÀY 18/04/2013")
+Khoa/ Bộ môn : **KHMT**
+
+Môn học : **CS107**
+
+Lớp : **CS107.D21**
+
+Phòng : **C106**
+
+Thời gian : Tiết bắt đầu : **6**
+
+Tiết kết thúc : **9**
+
+Thứ : **6** Ngày :10-05-2013
+
+*   [Xem thêm về THÔNG BÁO NGHỈ HỌC LỚP CS107.D21 NGÀY 10/05/2013](https://daa.uit.edu.vn/thongbao/thong-bao-nghi-hoc-lop-cs107d21-ngay-10052013 "THÔNG BÁO NGHỈ HỌC LỚP CS107.D21 NGÀY 10/05/2013")
     
 
-Trang
------
+[THÔNG BÁO NGHỈ HỌC LỚP IT003.D29 NGÀY 10/05/2013](https://daa.uit.edu.vn/thongbao/thong-bao-nghi-hoc-lop-it003d29-ngay-10052013)
 
-*   [« đầu](https://daa.uit.edu.vn/thongbaochinhquy "Đến trang đầu tiên")
+----------------------------------------------------------------------------------------------------------------------------------
+
+T5, 09/05/2013 - 15:32
+
+CBGD : **Huỳnh Thị Thanh Thương**
+
+Khoa/ Bộ môn : **KHMT**
+
+Môn học : **IT003**
+
+Lớp : **IT003.D29**
+
+Phòng : **C201**
+
+Thời gian : Tiết bắt đầu : **1**
+
+Tiết kết thúc : **3**
+
+Thứ : **6** Ngày : **10-05-2013**
+
+*   [Xem thêm về THÔNG BÁO NGHỈ HỌC LỚP IT003.D29 NGÀY 10/05/2013](https://daa.uit.edu.vn/thongbao/thong-bao-nghi-hoc-lop-it003d29-ngay-10052013 "THÔNG BÁO NGHỈ HỌC LỚP IT003.D29 NGÀY 10/05/2013")
     
-*   [‹ trước](https://daa.uit.edu.vn/thongbaochinhquy?page=1902 "Đến trang kế trước")
+
+[THÔNG BÁO NGHỈ LỚP NT113.D22 NGÀY 14/5/2013](https://daa.uit.edu.vn/thongbao/thong-bao-nghi-lop-nt113d22-ngay-1452013)
+
+------------------------------------------------------------------------------------------------------------------------
+
+T5, 09/05/2013 - 15:30
+
+CBGD : **Trần Mạnh Hùng**
+
+Khoa/ Bộ môn : **MMT&TT**
+
+Môn học : **NT113**
+
+Lớp : **NT113.D22**
+
+Phòng : **C108**
+
+Thời gian : Tiết bắt đầu : **1**
+
+Tiết kết thúc : **2**
+
+Thứ : **3** Ngày : **2013-05-14**
+
+*   [Xem thêm về THÔNG BÁO NGHỈ LỚP NT113.D22 NGÀY 14/5/2013](https://daa.uit.edu.vn/thongbao/thong-bao-nghi-lop-nt113d22-ngay-1452013 "THÔNG BÁO NGHỈ LỚP NT113.D22 NGÀY 14/5/2013")
     
-*   …
-*   [1900](https://daa.uit.edu.vn/thongbaochinhquy?page=1899 "Đến trang 1900")
+
+[THÔNG BÁO NGHỈ HỌC LỚP MA002.D26, SÁNG THỨ TƯ, NGÀY 08/5/2013](https://daa.uit.edu.vn/thongbao/thong-bao-nghi-hoc-lop-ma002d26-sang-thu-tu-ngay-0852013)
+
+----------------------------------------------------------------------------------------------------------------------------------------------------------
+
+T3, 07/05/2013 - 15:11
+
+Phòng Đào tạo thông báo: Lớp Giải tích 2, (MA002.D26), nghỉ học vào sáng mai thứ Tư, ngày 08/5/2013.  
+Lý do: Giảng viên Lê Hoàng Tuấn bận việc.  
+Lịch dạy bù giảng viên sẽ thông báo sau.
+
+*   [Xem thêm về THÔNG BÁO NGHỈ HỌC LỚP MA002.D26, SÁNG THỨ TƯ, NGÀY 08/5/2013](https://daa.uit.edu.vn/thongbao/thong-bao-nghi-hoc-lop-ma002d26-sang-thu-tu-ngay-0852013 "THÔNG BÁO NGHỈ HỌC LỚP MA002.D26, SÁNG THỨ TƯ, NGÀY 08/5/2013")
     
-*   [1901](https://daa.uit.edu.vn/thongbaochinhquy?page=1900 "Đến trang 1901")
+
+[THÔNG BÁO NGHỈ VÀ DẠY BÙ KHOA MẠNG MÁY TÍNH (LỚP NT102 VÀ NT107)](https://daa.uit.edu.vn/thongbao/thong-bao-nghi-va-day-bu-khoa-mang-may-tinh-lop-nt102-va-nt107)
+
+-------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+T3, 07/05/2013 - 15:09
+
+1\. Giảng viên Ngô Hán Chiêu, lớp NT102.D21, nghỉ thứ 5 ngày 9/5/2013 tiết 1-3 và bù vào thứ 4 ngày 8/5/2013 từ tiết 6-8.
+
+2\. Giảng viên Đàm Quang Hồng Hải, lớp NT107.D21, nghỉ thứ 4 ngày 8/5/2013 từ tiết 6-8 và bù vào thứ 5 ngày 9/5/2013 từ tiết 1-3.
+
+*   [Xem thêm về THÔNG BÁO NGHỈ VÀ DẠY BÙ KHOA MẠNG MÁY TÍNH (LỚP NT102 VÀ NT107)](https://daa.uit.edu.vn/thongbao/thong-bao-nghi-va-day-bu-khoa-mang-may-tinh-lop-nt102-va-nt107 "THÔNG BÁO NGHỈ VÀ DẠY BÙ KHOA MẠNG MÁY TÍNH (LỚP NT102 VÀ NT107)")
     
-*   [1902](https://daa.uit.edu.vn/thongbaochinhquy?page=1901 "Đến trang 1902")
+
+[THÔNG BÁO HỌC LỚP ENG01.D21 NGÀY 11/05/2013](https://daa.uit.edu.vn/thongbao/thong-bao-hoc-lop-eng01d21-ngay-11052013)
+
+------------------------------------------------------------------------------------------------------------------------
+
+T3, 07/05/2013 - 10:43
+
+DO CÓ SỰ THAY ĐỔI, GV SẮP XẾP ĐƯỢC NÊN SÁNG 11/05/2013 LỚP ENG01.D21 VẪN HỌC BÌNH THƯỜNG TỪ TIẾT 1 --> 4, PHÒNG 204.
+
+*   [Xem thêm về THÔNG BÁO HỌC LỚP ENG01.D21 NGÀY 11/05/2013](https://daa.uit.edu.vn/thongbao/thong-bao-hoc-lop-eng01d21-ngay-11052013 "THÔNG BÁO HỌC LỚP ENG01.D21 NGÀY 11/05/2013")
     
-*   [1903](https://daa.uit.edu.vn/thongbaochinhquy?page=1902 "Đến trang 1903")
+
+[Thông Báo Lấy Thông Tin Mở Lớp Cho Học Hè 2012-2013](https://daa.uit.edu.vn/thongbao/thong-bao-lay-thong-tin-mo-lop-cho-hoc-he-2012-2013)
+
+-------------------------------------------------------------------------------------------------------------------------------------------
+
+T6, 03/05/2013 - 15:38
+
+Để đáp ứng nhu cầu học tập của Sinh viên trong học kỳ hè, PĐT thông báo Sinh viên đăng nhập [http://daa.uit.edu.vn/sinhvien/khaosat](http://daa.uit.edu.vn/sinhvien/khaosat)
+, đề nghị mở lớp có nhu cầu học tập. Kết quả khảo sát sẽ được dùng để P. ĐTĐH xem xét mở môn học **cho SV đăng ký học lại, cải thiện** trong HK hè 2012 – 2013.  
+Thời gian lấy thông tin khảo sát từ ngày ra thông báo đến hết ngày 12/05/2013.  
+
+*   [Xem thêm về Thông Báo Lấy Thông Tin Mở Lớp Cho Học Hè 2012-2013](https://daa.uit.edu.vn/thongbao/thong-bao-lay-thong-tin-mo-lop-cho-hoc-he-2012-2013 "Thông Báo Lấy Thông Tin Mở Lớp Cho Học Hè 2012-2013")
     
-*   1904
-*   [1905](https://daa.uit.edu.vn/thongbaochinhquy?page=1904 "Đến trang 1905")
-    
-*   [1906](https://daa.uit.edu.vn/thongbaochinhquy?page=1905 "Đến trang 1906")
-    
-*   [1907](https://daa.uit.edu.vn/thongbaochinhquy?page=1906 "Đến trang 1907")
-    
-*   [1908](https://daa.uit.edu.vn/thongbaochinhquy?page=1907 "Đến trang 1908")
-    
-*   …
-*   [sau ›](https://daa.uit.edu.vn/thongbaochinhquy?page=1904 "Đến trang kế sau")
-    
-*   [cuối »](https://daa.uit.edu.vn/thongbaochinhquy?page=1925 "Đến trang cuối cùng")
+
+[DANH SÁCH SINH VIÊN KHOA CÔNG NGHỆ PHẦN MỀM, KHOA HỌC MÁY TÍNH XÉT TỐT NGHIỆP ĐỢT 1 NĂM 2013](https://daa.uit.edu.vn/thongbao/danh-sach-sinh-vien-khoa-cong-nghe-phan-mem-khoa-hoc-may-tinh-xet-tot-nghiep-dot-1-nam-2013)
+
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+T6, 03/05/2013 - 09:18
+
+Các bạn sinh viên xem thông tin trong file đính kèm. Chú ý **ngày sinh** và **nơi sinh** để không bị sai sót khi in bằng.
+
+*   [Xem thêm về DANH SÁCH SINH VIÊN KHOA CÔNG NGHỆ PHẦN MỀM, KHOA HỌC MÁY TÍNH XÉT TỐT NGHIỆP ĐỢT 1 NĂM 2013](https://daa.uit.edu.vn/thongbao/danh-sach-sinh-vien-khoa-cong-nghe-phan-mem-khoa-hoc-may-tinh-xet-tot-nghiep-dot-1-nam-2013 "DANH SÁCH SINH VIÊN KHOA CÔNG NGHỆ PHẦN MỀM, KHOA HỌC MÁY TÍNH XÉT TỐT NGHIỆP ĐỢT 1 NĂM 2013")

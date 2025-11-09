@@ -1,230 +1,193 @@
-[Skip to content](https://daa.uit.edu.vn/thongbaochinhquy?page=6#main)
- [Skip to navigation](https://daa.uit.edu.vn/thongbaochinhquy?page=6#main-nav)
-
 Đại Học Chính Quy
 =================
 
 **Các thông báo dành cho hệ đại học chính quy.**
 
-[Thông báo lịch học HT2 An toàn dữ liệu, khôi phục thông tin sau sự cố (NT212.Q11.ANTT.2) ngày 01/11/2025](https://daa.uit.edu.vn/node/36889)
+[Thông báo lịch học HT2 Ngữ nghĩa học tính toán (CS229.Q11.1) ngày 13/11/2025](https://daa.uit.edu.vn/node/36900)
 
-----------------------------------------------------------------------------------------------------------------------------------------------
+------------------------------------------------------------------------------------------------------------------
 
-T6, 24/10/2025 - 14:30
+T2, 27/10/2025 - 09:20
 
-CBGD : **Ngô Khánh Khoa**  
-Khoa/ Bộ môn : **MMT&TT**  
-Môn học : **An toàn dữ liệu, khôi phục thông tin sau sự cố (NT212)**  
-Lớp : **NT212.Q11.ANTT.2**  
-Phòng : **A315**  
+CBGD : **Nguyễn Trọng Chỉnh**  
+Khoa/ Bộ môn : **KHMT**  
+Môn học : **Ngữ nghĩa học tính toán (CS229)**  
+Lớp : **CS229.Q11.1**  
+Phòng : **C308**  
 Thời gian :  
-\- Tiết bắt đầu : **6**  
-\- Tiết kết thúc : **9**  
-Thứ : **7 , ngày 01/11/2025**
+\- Tiết bắt đầu : **4**  
+\- Tiết kết thúc : **4**  
+Thứ : **5 , ngày 13/11/2025**
 
-*   [Xem thêm về Thông báo lịch học HT2 An toàn dữ liệu, khôi phục thông tin sau sự cố (NT212.Q11.ANTT.2) ngày 01/11/2025](https://daa.uit.edu.vn/node/36889 "Thông báo lịch học HT2 An toàn dữ liệu, khôi phục thông tin sau sự cố (NT212.Q11.ANTT.2) ngày 01/11/2025")
+*   [Xem thêm về Thông báo lịch học HT2 Ngữ nghĩa học tính toán (CS229.Q11.1) ngày 13/11/2025](https://daa.uit.edu.vn/node/36900 "Thông báo lịch học HT2 Ngữ nghĩa học tính toán (CS229.Q11.1) ngày 13/11/2025")
     
 
-[Thông báo lịch học HT2 An toàn dữ liệu, khôi phục thông tin sau sự cố (NT212.Q11.ANTT.1) ngày 30/10/2025](https://daa.uit.edu.vn/node/36888)
+[Thông báo lịch học HT2 Truy xuất thông tin (CS419.Q11.1) ngày 12/11/2025](https://daa.uit.edu.vn/node/36899)
 
-----------------------------------------------------------------------------------------------------------------------------------------------
+--------------------------------------------------------------------------------------------------------------
 
-T6, 24/10/2025 - 14:28
+T2, 27/10/2025 - 09:14
 
-CBGD : **Ngô Khánh Khoa**  
-Khoa/ Bộ môn : **MMT&TT**  
-Môn học : **An toàn dữ liệu, khôi phục thông tin sau sự cố (NT212)**  
-Lớp : **NT212.Q11.ANTT.1**  
-Phòng : **B1.04**  
+CBGD : **Nguyễn Trọng Chỉnh**  
+Khoa/ Bộ môn : **KHMT**  
+Môn học : **Truy xuất thông tin (CS419)**  
+Lớp : **CS419.Q11.1**  
+Phòng : **C102**  
+Thời gian :  
+\- Tiết bắt đầu : **4**  
+\- Tiết kết thúc : **4**  
+Thứ : **4 , ngày 12/11/2025**
+
+*   [Xem thêm về Thông báo lịch học HT2 Truy xuất thông tin (CS419.Q11.1) ngày 12/11/2025](https://daa.uit.edu.vn/node/36899 "Thông báo lịch học HT2 Truy xuất thông tin (CS419.Q11.1) ngày 12/11/2025")
+    
+
+[Thông báo lịch học HT2 Xử lý ngôn ngữ tự nhiên (CS221.Q11.1) ngày 11/11/2025](https://daa.uit.edu.vn/node/36898)
+
+------------------------------------------------------------------------------------------------------------------
+
+T2, 27/10/2025 - 09:11
+
+CBGD : **Nguyễn Trọng Chỉnh**  
+Khoa/ Bộ môn : **KHMT**  
+Môn học : **Xử lý ngôn ngữ tự nhiên (CS221)**  
+Lớp : **CS221.Q11.1**  
+Phòng : **C213**  
+Thời gian :  
+\- Tiết bắt đầu : **4**  
+\- Tiết kết thúc : **4**  
+Thứ : **3 , ngày 11/11/2025**
+
+*   [Xem thêm về Thông báo lịch học HT2 Xử lý ngôn ngữ tự nhiên (CS221.Q11.1) ngày 11/11/2025](https://daa.uit.edu.vn/node/36898 "Thông báo lịch học HT2 Xử lý ngôn ngữ tự nhiên (CS221.Q11.1) ngày 11/11/2025")
+    
+
+[Thông báo lịch học HT2 Xử lý ngôn ngữ tự nhiên (CS221.Q13.1) ngày 01/11/2025](https://daa.uit.edu.vn/node/36897)
+
+------------------------------------------------------------------------------------------------------------------
+
+T2, 27/10/2025 - 09:08
+
+CBGD : **Nguyễn Trọng Chỉnh**  
+Khoa/ Bộ môn : **KHMT**  
+Môn học : **Xử lý ngôn ngữ tự nhiên (CS221)**  
+Lớp : **CS221.Q13.1**  
+Phòng : **B5.12**  
+Thời gian :  
+\- Tiết bắt đầu : **4**  
+\- Tiết kết thúc : **4**  
+Thứ : **7 , ngày 01/11/2025**
+
+*   [Xem thêm về Thông báo lịch học HT2 Xử lý ngôn ngữ tự nhiên (CS221.Q13.1) ngày 01/11/2025](https://daa.uit.edu.vn/node/36897 "Thông báo lịch học HT2 Xử lý ngôn ngữ tự nhiên (CS221.Q13.1) ngày 01/11/2025")
+    
+
+[Thông báo lịch học HT2 Ngữ nghĩa học tính toán (CS229.Q11.1) ngày 30/10/2025](https://daa.uit.edu.vn/node/36896)
+
+------------------------------------------------------------------------------------------------------------------
+
+T2, 27/10/2025 - 09:06
+
+CBGD : **Nguyễn Trọng Chỉnh**  
+Khoa/ Bộ môn : **KHMT**  
+Môn học : **Ngữ nghĩa học tính toán (CS229)**  
+Lớp : **CS229.Q11.1**  
+Phòng : **C308**  
+Thời gian :  
+\- Tiết bắt đầu : **4**  
+\- Tiết kết thúc : **4**  
+Thứ : **5 , ngày 30/10/2025**
+
+*   [Xem thêm về Thông báo lịch học HT2 Ngữ nghĩa học tính toán (CS229.Q11.1) ngày 30/10/2025](https://daa.uit.edu.vn/node/36896 "Thông báo lịch học HT2 Ngữ nghĩa học tính toán (CS229.Q11.1) ngày 30/10/2025")
+    
+
+[Thông báo nghỉ lớp Cơ sở dữ liệu (IT004.Q13.2) ngày 27/10/2025](https://daa.uit.edu.vn/node/36895)
+
+----------------------------------------------------------------------------------------------------
+
+T2, 27/10/2025 - 09:04
+
+CBGD : **Trương Minh Châu**  
+Khoa/ Bộ môn : **HTTT**  
+Môn học : **Cơ sở dữ liệu (IT004)**  
+Lớp : **IT004.Q13.2**  
+Phòng :  
+Thời gian :  
+\- Tiết bắt đầu : **6**  
+\- Tiết kết thúc : **10**  
+Thứ : **2 , ngày 27/10/2025**
+
+*   [Xem thêm về Thông báo nghỉ lớp Cơ sở dữ liệu (IT004.Q13.2) ngày 27/10/2025](https://daa.uit.edu.vn/node/36895 "Thông báo nghỉ lớp Cơ sở dữ liệu (IT004.Q13.2) ngày 27/10/2025")
+    
+
+[Thông báo học bù Seminar các vấn đề hiện đại của CNPM (SE400.Q11) ngày 30/10/2025](https://daa.uit.edu.vn/node/36894)
+
+-----------------------------------------------------------------------------------------------------------------------
+
+T2, 27/10/2025 - 07:51
+
+CBGD : **Huỳnh Minh Đức**  
+Khoa/ Bộ môn : **CNPM**  
+Môn học : **Seminar các vấn đề hiện đại của CNPM (SE400)**  
+Lớp : **SE400.Q11**  
+Phòng : **B6.10**  
 Thời gian :  
 \- Tiết bắt đầu : **6**  
 \- Tiết kết thúc : **9**  
 Thứ : **5 , ngày 30/10/2025**
 
-*   [Xem thêm về Thông báo lịch học HT2 An toàn dữ liệu, khôi phục thông tin sau sự cố (NT212.Q11.ANTT.1) ngày 30/10/2025](https://daa.uit.edu.vn/node/36888 "Thông báo lịch học HT2 An toàn dữ liệu, khôi phục thông tin sau sự cố (NT212.Q11.ANTT.1) ngày 30/10/2025")
+*   [Xem thêm về Thông báo học bù Seminar các vấn đề hiện đại của CNPM (SE400.Q11) ngày 30/10/2025](https://daa.uit.edu.vn/node/36894 "Thông báo học bù Seminar các vấn đề hiện đại của CNPM (SE400.Q11) ngày 30/10/2025")
     
 
-[Thông báo lịch học HT2 Thiết kế Mạng (NT113.Q11.1) ngày 06/12/2025](https://daa.uit.edu.vn/node/36887)
+[Thông báo nghỉ lớp Nhập môn lập trình (IT001.Q13.2) ngày 27/10/2025](https://daa.uit.edu.vn/node/36893)
 
---------------------------------------------------------------------------------------------------------
+---------------------------------------------------------------------------------------------------------
 
-T6, 24/10/2025 - 14:24
+T2, 27/10/2025 - 06:26
 
-CBGD : **Bùi Thanh Bình**  
-Khoa/ Bộ môn : **MMT&TT**  
-Môn học : **Thiết kế Mạng (NT113)**  
-Lớp : **NT113.Q11.1**  
-Phòng : **C302**  
-Thời gian :  
-\- Tiết bắt đầu : **2**  
-\- Tiết kết thúc : **5**  
-Thứ : **7 , ngày 06/12/2025**
-
-*   [Xem thêm về Thông báo lịch học HT2 Thiết kế Mạng (NT113.Q11.1) ngày 06/12/2025](https://daa.uit.edu.vn/node/36887 "Thông báo lịch học HT2 Thiết kế Mạng (NT113.Q11.1) ngày 06/12/2025")
-    
-
-[Thông báo lịch học HT2 Thiết kế Mạng (NT113.Q11.1) ngày 29/11/2025](https://daa.uit.edu.vn/node/36886)
-
---------------------------------------------------------------------------------------------------------
-
-T6, 24/10/2025 - 14:05
-
-CBGD : **Bùi Thanh Bình**  
-Khoa/ Bộ môn : **MMT&TT**  
-Môn học : **Thiết kế Mạng (NT113)**  
-Lớp : **NT113.Q11.1**  
-Phòng : **C302**  
+CBGD : **Lê Trần Trọng Khiêm**  
+Khoa/ Bộ môn : **KHMT**  
+Môn học : **Nhập môn lập trình (IT001)**  
+Lớp : **IT001.Q13.2**  
+Phòng :  
 Thời gian :  
 \- Tiết bắt đầu : **1**  
 \- Tiết kết thúc : **5**  
-Thứ : **7 , ngày 29/11/2025**
+Thứ : **2 , ngày 27/10/2025**
 
-*   [Xem thêm về Thông báo lịch học HT2 Thiết kế Mạng (NT113.Q11.1) ngày 29/11/2025](https://daa.uit.edu.vn/node/36886 "Thông báo lịch học HT2 Thiết kế Mạng (NT113.Q11.1) ngày 29/11/2025")
+*   [Xem thêm về Thông báo nghỉ lớp Nhập môn lập trình (IT001.Q13.2) ngày 27/10/2025](https://daa.uit.edu.vn/node/36893 "Thông báo nghỉ lớp Nhập môn lập trình (IT001.Q13.2) ngày 27/10/2025")
     
 
-[Thông báo học bù Kinh tế chính trị Mác – Lênin (SS008.Q16) ngày 01/11/2025](https://daa.uit.edu.vn/node/36885)
+[Thông báo nghỉ lớp Giới thiệu ngành Công nghệ Thông tin (IE005.Q12) ngày 28/10/2025](https://daa.uit.edu.vn/node/36892)
 
-----------------------------------------------------------------------------------------------------------------
+-------------------------------------------------------------------------------------------------------------------------
 
-T6, 24/10/2025 - 14:02
+T7, 25/10/2025 - 17:11
 
-CBGD : **Trần Thị Hoài Thương**  
-Khoa/ Bộ môn : **P.DTDH**  
-Môn học : **Kinh tế chính trị Mác – Lênin (SS008)**  
-Lớp : **SS008.Q16**  
-Phòng : **B4.20**  
-Thời gian :  
-\- Tiết bắt đầu : **8**  
-\- Tiết kết thúc : **9**  
-Thứ : **7 , ngày 01/11/2025**
-
-*   [Xem thêm về Thông báo học bù Kinh tế chính trị Mác – Lênin (SS008.Q16) ngày 01/11/2025](https://daa.uit.edu.vn/node/36885 "Thông báo học bù Kinh tế chính trị Mác – Lênin (SS008.Q16) ngày 01/11/2025")
-    
-
-[Thông báo học bù Kinh tế chính trị Mác – Lênin (SS008.Q15) ngày 01/11/2025](https://daa.uit.edu.vn/node/36884)
-
-----------------------------------------------------------------------------------------------------------------
-
-T6, 24/10/2025 - 13:52
-
-CBGD : **Trần Thị Hoài Thương**  
-Khoa/ Bộ môn : **P.DTDH**  
-Môn học : **Kinh tế chính trị Mác – Lênin (SS008)**  
-Lớp : **SS008.Q15**  
-Phòng : **B3.14**  
-Thời gian :  
-\- Tiết bắt đầu : **6**  
-\- Tiết kết thúc : **7**  
-Thứ : **7 , ngày 01/11/2025**
-
-*   [Xem thêm về Thông báo học bù Kinh tế chính trị Mác – Lênin (SS008.Q15) ngày 01/11/2025](https://daa.uit.edu.vn/node/36884 "Thông báo học bù Kinh tế chính trị Mác – Lênin (SS008.Q15) ngày 01/11/2025")
-    
-
-[Thông báo học bù Đại số tuyến tính (MA003.Q12) ngày 06/12/2025](https://daa.uit.edu.vn/node/36883)
-
-----------------------------------------------------------------------------------------------------
-
-T6, 24/10/2025 - 13:51
-
-CBGD : **Nguyễn Thành Nghĩa**  
-Khoa/ Bộ môn : **BMTL**  
-Môn học : **Đại số tuyến tính (MA003)**  
-Lớp : **MA003.Q12**  
-Phòng : **B1.18**  
-Thời gian :  
-\- Tiết bắt đầu : **6**  
-\- Tiết kết thúc : **9**  
-Thứ : **7 , ngày 06/12/2025**
-
-*   [Xem thêm về Thông báo học bù Đại số tuyến tính (MA003.Q12) ngày 06/12/2025](https://daa.uit.edu.vn/node/36883 "Thông báo học bù Đại số tuyến tính (MA003.Q12) ngày 06/12/2025")
-    
-
-[Thông báo nghỉ lớp Công nghệ Java (IE303.Q11.VB2) ngày 25/10/2025](https://daa.uit.edu.vn/node/36882)
-
--------------------------------------------------------------------------------------------------------
-
-T6, 24/10/2025 - 13:23
-
-CBGD : **Nguyễn Thành Luân**  
+CBGD : **Nguyễn Gia Tuấn Anh**  
 Khoa/ Bộ môn : **KTTT**  
-Môn học : **Công nghệ Java (IE303)**  
-Lớp : **IE303.Q11.VB2**  
+Môn học : **Giới thiệu ngành Công nghệ Thông tin (IE005)**  
+Lớp : **IE005.Q12**  
+Phòng :  
+Thời gian :  
+\- Tiết bắt đầu : **1**  
+\- Tiết kết thúc : **3**  
+Thứ : **3 , ngày 28/10/2025**
+
+*   [Xem thêm về Thông báo nghỉ lớp Giới thiệu ngành Công nghệ Thông tin (IE005.Q12) ngày 28/10/2025](https://daa.uit.edu.vn/node/36892 "Thông báo nghỉ lớp Giới thiệu ngành Công nghệ Thông tin (IE005.Q12) ngày 28/10/2025")
+    
+
+[Thông báo nghỉ lớp Giải tích (MA006.Q112) ngày 25/10/2025](https://daa.uit.edu.vn/node/36891)
+
+-----------------------------------------------------------------------------------------------
+
+T6, 24/10/2025 - 23:05
+
+CBGD : **Mai Thành Long**  
+Khoa/ Bộ môn : **BMTL**  
+Môn học : **Giải tích (MA006)**  
+Lớp : **MA006.Q112**  
 Phòng :  
 Thời gian :  
 \- Tiết bắt đầu : **6**  
 \- Tiết kết thúc : **9**  
 Thứ : **7 , ngày 25/10/2025**
 
-*   [Xem thêm về Thông báo nghỉ lớp Công nghệ Java (IE303.Q11.VB2) ngày 25/10/2025](https://daa.uit.edu.vn/node/36882 "Thông báo nghỉ lớp Công nghệ Java (IE303.Q11.VB2) ngày 25/10/2025")
-    
-
-[Thông báo nghỉ lớp Pháp luật đại cương (SS006.Q111) ngày 24/10/2025](https://daa.uit.edu.vn/node/36881)
-
----------------------------------------------------------------------------------------------------------
-
-T6, 24/10/2025 - 12:08
-
-CBGD : **Nguyễn Thị Vy Quý**  
-Khoa/ Bộ môn : **P.DTDH**  
-Môn học : **Pháp luật đại cương (SS006)**  
-Lớp : **SS006.Q111**  
-Phòng :  
-Thời gian :  
-\- Tiết bắt đầu : **6**  
-\- Tiết kết thúc : **8**  
-Thứ : **6 , ngày 24/10/2025**
-
-*   [Xem thêm về Thông báo nghỉ lớp Pháp luật đại cương (SS006.Q111) ngày 24/10/2025](https://daa.uit.edu.vn/node/36881 "Thông báo nghỉ lớp Pháp luật đại cương (SS006.Q111) ngày 24/10/2025")
-    
-
-[Thông báo nghỉ lớp Kinh tế chính trị Mác – Lênin (SS008.Q16) ngày 30/10/2025](https://daa.uit.edu.vn/node/36880)
-
-------------------------------------------------------------------------------------------------------------------
-
-T5, 23/10/2025 - 14:40
-
-CBGD : **Trần Thị Hoài Thương**  
-Khoa/ Bộ môn : **P.DTDH**  
-Môn học : **Kinh tế chính trị Mác – Lênin (SS008)**  
-Lớp : **SS008.Q16**  
-Phòng :  
-Thời gian :  
-\- Tiết bắt đầu : **8**  
-\- Tiết kết thúc : **9**  
-Thứ : **5 , ngày 30/10/2025**
-
-*   [Xem thêm về Thông báo nghỉ lớp Kinh tế chính trị Mác – Lênin (SS008.Q16) ngày 30/10/2025](https://daa.uit.edu.vn/node/36880 "Thông báo nghỉ lớp Kinh tế chính trị Mác – Lênin (SS008.Q16) ngày 30/10/2025")
-    
-
-Trang
------
-
-*   [« đầu](https://daa.uit.edu.vn/thongbaochinhquy "Đến trang đầu tiên")
-    
-*   [‹ trước](https://daa.uit.edu.vn/thongbaochinhquy?page=5 "Đến trang kế trước")
-    
-*   …
-*   [3](https://daa.uit.edu.vn/thongbaochinhquy?page=2 "Đến trang 3")
-    
-*   [4](https://daa.uit.edu.vn/thongbaochinhquy?page=3 "Đến trang 4")
-    
-*   [5](https://daa.uit.edu.vn/thongbaochinhquy?page=4 "Đến trang 5")
-    
-*   [6](https://daa.uit.edu.vn/thongbaochinhquy?page=5 "Đến trang 6")
-    
-*   7
-*   [8](https://daa.uit.edu.vn/thongbaochinhquy?page=7 "Đến trang 8")
-    
-*   [9](https://daa.uit.edu.vn/thongbaochinhquy?page=8 "Đến trang 9")
-    
-*   [10](https://daa.uit.edu.vn/thongbaochinhquy?page=9 "Đến trang 10")
-    
-*   [11](https://daa.uit.edu.vn/thongbaochinhquy?page=10 "Đến trang 11")
-    
-*   …
-*   [sau ›](https://daa.uit.edu.vn/thongbaochinhquy?page=7 "Đến trang kế sau")
-    
-*   [cuối »](https://daa.uit.edu.vn/thongbaochinhquy?page=1925 "Đến trang cuối cùng")
-    
-
-Back to top
+*   [Xem thêm về Thông báo nghỉ lớp Giải tích (MA006.Q112) ngày 25/10/2025](https://daa.uit.edu.vn/node/36891 "Thông báo nghỉ lớp Giải tích (MA006.Q112) ngày 25/10/2025")

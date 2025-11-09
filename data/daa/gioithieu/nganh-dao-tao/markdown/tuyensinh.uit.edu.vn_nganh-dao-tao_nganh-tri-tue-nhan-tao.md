@@ -1,6 +1,3 @@
-[Skip to content](https://tuyensinh.uit.edu.vn/nganh-dao-tao/nganh-tri-tue-nhan-tao#main)
- [Skip to navigation](https://tuyensinh.uit.edu.vn/nganh-dao-tao/nganh-tri-tue-nhan-tao#main-nav)
-
 Ngành Trí tuệ Nhân tạo
 ======================
 

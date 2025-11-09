@@ -1,151 +1,150 @@
-[Skip to content](https://daa.uit.edu.vn/thongbaochinhquy?page=1887#main)
- [Skip to navigation](https://daa.uit.edu.vn/thongbaochinhquy?page=1887#main-nav)
-
 Đại Học Chính Quy
 =================
 
 **Các thông báo dành cho hệ đại học chính quy.**
 
-[THÔNG BÁO HỌC BÙ LỚP MA001.D32](https://daa.uit.edu.vn/thongbao/thong-bao-hoc-bu-lop-ma001d32)
+[Thông Báo Lịch Thi & Phòng Thi Cuối Học Kỳ Hè 2013-2014(cập nhật 1)](https://daa.uit.edu.vn/thongbao/thong-bao-lich-thi-phong-thi-cuoi-hoc-ky-he-2013-2014cap-nhat-1)
 
-------------------------------------------------------------------------------------------------
+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
-T4, 14/08/2013 - 11:21
+T5, 22/08/2013 - 10:15
 
-Phòng Đào tạo Đại học thông báo lịch học bù lớp MA001.D32, GV Hà Mạnh Linh như sau:  
-Thời gian: tiết 6,7,8 ngày thứ Hai 19/8/2013 tại phòng C107.
+PĐT thông báo lịch thi(có điều chỉnh)& danh sách phòng thi.  
+đề nghị sinh viên cập nhật lịch thi,và chuẩn bị kế hoạch thi, để kỳ thi đạt kết quả tốt.
 
-*   [Xem thêm về THÔNG BÁO HỌC BÙ LỚP MA001.D32](https://daa.uit.edu.vn/thongbao/thong-bao-hoc-bu-lop-ma001d32 "THÔNG BÁO HỌC BÙ LỚP MA001.D32")
+*   [Xem thêm về Thông Báo Lịch Thi & Phòng Thi Cuối Học Kỳ Hè 2013-2014(cập nhật 1)](https://daa.uit.edu.vn/thongbao/thong-bao-lich-thi-phong-thi-cuoi-hoc-ky-he-2013-2014cap-nhat-1 "Thông Báo Lịch Thi & Phòng Thi Cuối Học Kỳ Hè 2013-2014(cập nhật 1)")
     
 
-[THÔNG BÁO HỌC BÙ LỚP STA01.D32 & MA003.D31](https://daa.uit.edu.vn/thongbao/thong-bao-hoc-bu-lop-sta01d32-ma003d31)
+[Danh Sách Sinh Viên Chưa Hoàn Thành HP HK 3 Năm học 2012-2013 Đến Hết Ngày 21/08/2013.](https://daa.uit.edu.vn/thongbao/danh-sach-sinh-vien-chua-hoan-thanh-hp-hk-3-nam-hoc-2012-2013-den-het-ngay-21082013)
 
----------------------------------------------------------------------------------------------------------------------
+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
-T4, 14/08/2013 - 10:55
+T5, 22/08/2013 - 07:58
 
-Phòng Đào tạo Đại học thông báo lịch học bù các lớp của GV Lê Hoàng Tuấn như sau:
+Phòng Kế hoach -Tài chính thông báo danh sách sinh viên chưa hoàn thành HP HK 3 Năm học 2012-2013 đến hết ngày 21/08/2013.(file đính kèn)
 
-1.Lớp STA01.D32, học bù tiết 1,2,3 vào sáng thứ Tư (21/8/2013) và sáng thứ Sáu (23/8/2013) tại phòng C101.
-
-2.Lớp MA003.D31, học bù tiết 1,2,3 váo sáng thứ Năm (15/8/2013 & 22/8/2013) tại phòng C213.
-
-*   [Xem thêm về THÔNG BÁO HỌC BÙ LỚP STA01.D32 & MA003.D31](https://daa.uit.edu.vn/thongbao/thong-bao-hoc-bu-lop-sta01d32-ma003d31 "THÔNG BÁO HỌC BÙ LỚP STA01.D32 & MA003.D31")
+*   [Xem thêm về Danh Sách Sinh Viên Chưa Hoàn Thành HP HK 3 Năm học 2012-2013 Đến Hết Ngày 21/08/2013.](https://daa.uit.edu.vn/thongbao/danh-sach-sinh-vien-chua-hoan-thanh-hp-hk-3-nam-hoc-2012-2013-den-het-ngay-21082013 "Danh Sách Sinh Viên Chưa Hoàn Thành HP HK 3 Năm học 2012-2013 Đến Hết Ngày 21/08/2013.")
     
 
-[Thông Báo Tuần Sinh Họat Sinh Viên Đầu Năm 2013-2014](https://daa.uit.edu.vn/thongbao/thong-bao-tuan-sinh-hoat-sinh-vien-dau-nam-2013-2014)
+[KHOA KTMT THÔNG BÁO TỚI SV CHƯA KÝ TÊN TRONG BẢNG ĐIỂM TH HK2(2012-2013)](https://daa.uit.edu.vn/thongbao/khoa-ktmt-thong-bao-toi-sv-chua-ky-ten-trong-bang-diem-th-hk22012-2013)
 
----------------------------------------------------------------------------------------------------------------------------------------------
+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
-T4, 14/08/2013 - 10:50
+T4, 21/08/2013 - 11:39
 
-Thông báo tuần sinh hoạt sinh viên đầu năm (file đính kèm)
+KHOA KTMT THÔNG BÁO TỚI SV CHƯA KÝ TÊN TRONG
 
-*   [Xem thêm về Thông Báo Tuần Sinh Họat Sinh Viên Đầu Năm 2013-2014](https://daa.uit.edu.vn/thongbao/thong-bao-tuan-sinh-hoat-sinh-vien-dau-nam-2013-2014 "Thông Báo Tuần Sinh Họat Sinh Viên Đầu Năm 2013-2014")
+BẢNG ĐIỂM TH HK2(2012-2013)
+
+Khoa KTMT máy tính đề nghị các bạn sinh viên có tên trong DS bên dưới lên Văn phòng Khoa KTMT để ký tên vào DS điểm thi Thực hành học kỳ 2 năm học 2012-2013.
+
+Địa điểm: Phòng A327
+
+Thời gian: Từ thứ 5 ngày 22/8/2013 đến hết thứ 6 ngày 06/9/2013 (Khoa không làm việc thứ 7, CN và các ngày lễ)
+
+Sáng từ 8g00 đến 11g00
+
+Chiều từ 13g30 đến 16g00
+
+Khi lên ký tên SV mang theo thẻ sinh viên hoặc CMND.
+
+*   [Xem thêm về KHOA KTMT THÔNG BÁO TỚI SV CHƯA KÝ TÊN TRONG BẢNG ĐIỂM TH HK2(2012-2013)](https://daa.uit.edu.vn/thongbao/khoa-ktmt-thong-bao-toi-sv-chua-ky-ten-trong-bang-diem-th-hk22012-2013 "KHOA KTMT THÔNG BÁO TỚI SV CHƯA KÝ TÊN TRONG  BẢNG ĐIỂM TH HK2(2012-2013)")
     
 
-[Thông Báo Lịch Thi Cuối Kỳ Hè 2012-2013](https://daa.uit.edu.vn/thongbao/thong-bao-lich-thi-cuoi-ky-he-2012-2013)
+[Thông Báo Kết Quả Đăng Ký Học Phần HK1-2013-2014](https://daa.uit.edu.vn/thongbao/thong-bao-ket-qua-dang-ky-hoc-phan-hk1-2013-2014)
 
--------------------------------------------------------------------------------------------------------------------
+-------------------------------------------------------------------------------------------------------------------------------------
 
-T3, 13/08/2013 - 14:40
+T3, 20/08/2013 - 15:54
 
-PĐT thông báo lịch thi cuối kỳ - Học kỳ hè năm học 2012-2013 (file đính kèm)  
-Đề nghị sinh viên kiểm tra lịch thi,sắp xếp kế hoạch để chuẩn bị cho thi cuối kỳ có kết quả tốt.  
-Mọi thắc mắc về lịch thi Sinh Viên liên hệ PĐT trước ngày 20/8/2013.
+PĐT thông báo Kết Quả Đăng Ký Học Phần HK1-2013-2014 (TKB)(file đính kèm)  
+HK1-2013-2014 bắt đầu học từ ngày 26/8/2013, vì vậy PĐT đề nghị sinh viên kểm tra lại kết quả ĐKHP & TKB để chuẩn bị tốt cho học HK1-2013-2014.
 
-*   [Xem thêm về Thông Báo Lịch Thi Cuối Kỳ Hè 2012-2013](https://daa.uit.edu.vn/thongbao/thong-bao-lich-thi-cuoi-ky-he-2012-2013 "Thông Báo Lịch Thi Cuối Kỳ Hè 2012-2013")
+*   [Xem thêm về Thông Báo Kết Quả Đăng Ký Học Phần HK1-2013-2014](https://daa.uit.edu.vn/thongbao/thong-bao-ket-qua-dang-ky-hoc-phan-hk1-2013-2014 "Thông Báo Kết Quả Đăng Ký Học Phần HK1-2013-2014")
     
 
-[THÔNG BÁO NGHỈ HỌC LỚP ENG04.D31](https://daa.uit.edu.vn/thongbao/thong-bao-nghi-hoc-lop-eng04d31)
+[THÔNG BÁO NGHỈ HỌC LỚP VCPL1. E 12](https://daa.uit.edu.vn/thongbao/thong-bao-nghi-hoc-lop-vcpl1-e-12)
 
-----------------------------------------------------------------------------------------------------
+-----------------------------------------------------------------------------------------------------------
 
-T2, 12/08/2013 - 15:43
+T3, 20/08/2013 - 14:55
 
-GVGD: Nguyễn Thị Thảo Quỳnh  
-Lớp: ENG04.D31  
-Tiết học: 1-4 và 6-9  
-Ngày nghỉ: Thứ 5 ngày 15/8/13  
-Ngày bù : Thứ 4 ngày 21/8/13  
-Phòng học bù: C213
+THÔNG BÁO NGHỈ HỌC  
+Kính gửi: - Sinh viên lớp VCPL1. E 12
 
-*   [Xem thêm về THÔNG BÁO NGHỈ HỌC LỚP ENG04.D31](https://daa.uit.edu.vn/thongbao/thong-bao-nghi-hoc-lop-eng04d31 "THÔNG BÁO NGHỈ HỌC LỚP ENG04.D31")
+Trung tâm Lý luận Chính trị trân trọng thông báo đến toàn thể Sinh viên lớp:VCPL1. E.12 (Phòng học: GĐ3) sẽ nghỉ học môn Đường lối cách mạng của Đảng cộng sản Việt Nam vào chiều thứ tư, ngày 28/8/2013.Thứ tư tuần sau sinh viên đi học bình thường.  
+Kính nhờ phòng Đào tạo, trường Đại học Công nghệ thông tin thông báo cho sinh viên.  
+Trân trọng cảm ơn.  
+PHÒNG ĐÀO TẠO - TRUNG TÂM LÝ LUẬN CHÍNH TRỊ
+
+*   [Xem thêm về THÔNG BÁO NGHỈ HỌC LỚP VCPL1. E 12](https://daa.uit.edu.vn/thongbao/thong-bao-nghi-hoc-lop-vcpl1-e-12 "THÔNG BÁO NGHỈ HỌC LỚP VCPL1. E 12")
     
 
-[THÔNG BÁO HỌC BÙ LỚP CSC01.D31.2 NGÀY 19,20/8](https://daa.uit.edu.vn/thongbao/thong-bao-hoc-bu-lop-csc01d312-ngay-19208)
+[Thông Báo Đổi Phòng Học](https://daa.uit.edu.vn/thongbao/thong-bao-doi-phong-hoc-0)
 
----------------------------------------------------------------------------------------------------------------------------
+-------------------------------------------------------------------------------------
 
-T2, 12/08/2013 - 09:29
+T2, 19/08/2013 - 14:39
 
-LỚP CSC01.D31 HỌC BÙ TIẾT 1 --> 3 NGÀY 19/08/2013 PHÒNG C307, TIẾT 6 -->8 NGÀY 19/08/2013 PHÒNG C309.TIẾT 6 --> 8 NGÀY 20/08/2013 PHÒNG C307.
+Hiện nay phòng QTTB đang hoàn thành khối lượng công việc sửa chữa tòa nhà C.  
+Đo đó, để đảm bảo phòng cho phòng QTTB hoàn tất công việc. Ban QLCS sẽ thay đổi một số phòng học tương ứng như sau:(căn cứ vào TKB chính thức và các lớp học bù ).  
+C107->C112  
+C113->C114  
+C205->C206  
+C215->C214  
+C213->C216  
+C305->C306  
+C311->C312  
+Đề nghị sinh viên cập nhật để đi học đúng phòng.
 
-*   [Xem thêm về THÔNG BÁO HỌC BÙ LỚP CSC01.D31.2 NGÀY 19,20/8](https://daa.uit.edu.vn/thongbao/thong-bao-hoc-bu-lop-csc01d312-ngay-19208 "THÔNG BÁO HỌC BÙ LỚP CSC01.D31.2 NGÀY 19,20/8")
+*   [Xem thêm về Thông Báo Đổi Phòng Học](https://daa.uit.edu.vn/thongbao/thong-bao-doi-phong-hoc-0 "Thông Báo Đổi Phòng Học")
     
 
-*   [Xem thêm về THÔNG BÁO QUYẾT ĐỊNH BỔ SUNG GIA HẠN ĐÀO TẠO](https://daa.uit.edu.vn/thongbao/thong-bao-quyet-dinh-bo-sung-gia-han-dao-tao "THÔNG BÁO QUYẾT ĐỊNH BỔ SUNG GIA HẠN ĐÀO TẠO ")
+[Thông Báo Không Mở Thêm Lớp IT002 (lập trình hướng đối tượng)](https://daa.uit.edu.vn/thongbao/thong-bao-khong-mo-them-lop-it002-lap-trinh-huong-doi-tuong)
+
+-------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+T6, 16/08/2013 - 14:30
+
+PĐT thông báo sẽ không mở thêm lớp lập trình hướng đối tượng cho học kỳ 1 năm học 2013-2014 vì Khoa không có giảng viên giảng dạy. Những bạn sinh viên đề nghị đăng ký học lớp này không được chấp nhận.  
+Học kỳ hai năm học 2013-2014 khoa CNPM sẽ mở lớp lập trình hướng đối tượng cho sinh viên đăng ký.
+
+*   [Xem thêm về Thông Báo Không Mở Thêm Lớp IT002 (lập trình hướng đối tượng)](https://daa.uit.edu.vn/thongbao/thong-bao-khong-mo-them-lop-it002-lap-trinh-huong-doi-tuong "Thông Báo Không Mở Thêm Lớp IT002 (lập trình hướng đối tượng)")
     
 
-[THÔNG BÁO HỌC BÙ LỚP CSC01.D31 NGÀY 12/08/2013](https://daa.uit.edu.vn/thongbao/thong-bao-hoc-bu-lop-csc01d31-ngay-12082013)
+[Thông báo về việc kiểm tra điểm môn Mạng máy tính (CNET1)](https://daa.uit.edu.vn/thongbao/thong-bao-ve-viec-kiem-tra-diem-mon-mang-may-tinh-cnet1)
 
-------------------------------------------------------------------------------------------------------------------------------
+-----------------------------------------------------------------------------------------------------------------------------------------------------
 
-T5, 08/08/2013 - 14:25
+T6, 16/08/2013 - 13:39
 
-LỚP CSC01.D31 HỌC BÙ TIẾT 6-->8 NGÀY 12/08/2013, TẠI PHÒNG C113.
+Khoa mạng máy tính và Truyền thông thông báo cho tất cả các sinh viên đã đăng ký học môn Mạng máy tính (CNET1) HK 2 năm 2012-2013, vào hệ thống xem điểm của DAA để kiểm tra điểm thi của mình, nễu có gì thắc mắc về điểm môn Mạng máy tính. liên hệ Văn phòng khoa MMT&TT trong 2 ngày Thứ 3,4 (ngày 20,21/8) để giải quyết.  
+Sau khoảng thời gian trên Khoa không giải quyết bất kỳ ngoại lệ nào.
 
-*   [Xem thêm về THÔNG BÁO HỌC BÙ LỚP CSC01.D31 NGÀY 12/08/2013](https://daa.uit.edu.vn/thongbao/thong-bao-hoc-bu-lop-csc01d31-ngay-12082013 "THÔNG BÁO HỌC BÙ LỚP CSC01.D31 NGÀY 12/08/2013")
+VP. Khoa MMT&TT
+
+*   [Xem thêm về Thông báo về việc kiểm tra điểm môn Mạng máy tính (CNET1)](https://daa.uit.edu.vn/thongbao/thong-bao-ve-viec-kiem-tra-diem-mon-mang-may-tinh-cnet1 "Thông báo về việc kiểm tra điểm môn Mạng máy tính (CNET1)")
     
 
-[THÔNG BÁO VỀ VIỆC BAN HÀNH CHUẨN ĐẦU RA TIẾNG ANH CHO SV HỆ ĐẠI HỌC CHÍNH QUY](https://daa.uit.edu.vn/thongbao/thong-bao-ve-viec-ban-hanh-chuan-dau-ra-tieng-anh-cho-sv-he-dai-hoc-chinh-quy)
+[Thông Báo Tăng Số Lượng Lớp SMET2.E11](https://daa.uit.edu.vn/thongbao/thong-bao-tang-so-luong-lop-smet2e11)
 
------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+--------------------------------------------------------------------------------------------------------------
 
-T3, 06/08/2013 - 13:21
+T6, 16/08/2013 - 09:40
 
-Quyết định về việc ban hành chuẩn đầu ra tiếng Anh cho SV hệ đại học chính quy
+PĐT đã tăng số lượng cho lớp SMET2.E11 để sinh viên ĐKHP,các sinh viên đề nghị mở lớp này gấp rút đăng ký và kết quả đăng ký được tính theo kết quả đăng ký trên daa.
 
-*   [Xem thêm về THÔNG BÁO VỀ VIỆC BAN HÀNH CHUẨN ĐẦU RA TIẾNG ANH CHO SV HỆ ĐẠI HỌC CHÍNH QUY](https://daa.uit.edu.vn/thongbao/thong-bao-ve-viec-ban-hanh-chuan-dau-ra-tieng-anh-cho-sv-he-dai-hoc-chinh-quy "THÔNG BÁO VỀ VIỆC BAN HÀNH CHUẨN ĐẦU RA TIẾNG ANH CHO SV HỆ ĐẠI HỌC CHÍNH QUY")
-    
-
-[Thông Báo đổi phòng học Học kỳ hè 2012-2013](https://daa.uit.edu.vn/thongbao/thong-bao-doi-phong-hoc-hoc-ky-he-2012-2013)
-
----------------------------------------------------------------------------------------------------------------------------
-
-T3, 06/08/2013 - 11:22
-
-Nhà trường có kế hoạch sửa chữa tòa nhà C vào ngày 7/8/2013 nên các lớp học tại tòa nhà C được cập nhật lại TKB trong (file đính kèm) Đề nghị SV cập nhật lại TKB HK hè 2012-2013.
-
-*   [Xem thêm về Thông Báo đổi phòng học Học kỳ hè 2012-2013](https://daa.uit.edu.vn/thongbao/thong-bao-doi-phong-hoc-hoc-ky-he-2012-2013 "Thông Báo đổi phòng học Học kỳ hè 2012-2013")
+*   [Xem thêm về Thông Báo Tăng Số Lượng Lớp SMET2.E11](https://daa.uit.edu.vn/thongbao/thong-bao-tang-so-luong-lop-smet2e11 "Thông Báo Tăng Số Lượng Lớp SMET2.E11 ")
     
 
-Trang
------
+[Thông Báo Mở Thêm Lớp MA005.E11 (Xác suất thống kê)](https://daa.uit.edu.vn/thongbao/thong-bao-mo-them-lop-ma005e11-xac-suat-thong-ke)
 
-*   [« đầu](https://daa.uit.edu.vn/thongbaochinhquy "Đến trang đầu tiên")
-    
-*   [‹ trước](https://daa.uit.edu.vn/thongbaochinhquy?page=1886 "Đến trang kế trước")
-    
-*   …
-*   [1884](https://daa.uit.edu.vn/thongbaochinhquy?page=1883 "Đến trang 1884")
-    
-*   [1885](https://daa.uit.edu.vn/thongbaochinhquy?page=1884 "Đến trang 1885")
-    
-*   [1886](https://daa.uit.edu.vn/thongbaochinhquy?page=1885 "Đến trang 1886")
-    
-*   [1887](https://daa.uit.edu.vn/thongbaochinhquy?page=1886 "Đến trang 1887")
-    
-*   1888
-*   [1889](https://daa.uit.edu.vn/thongbaochinhquy?page=1888 "Đến trang 1889")
-    
-*   [1890](https://daa.uit.edu.vn/thongbaochinhquy?page=1889 "Đến trang 1890")
-    
-*   [1891](https://daa.uit.edu.vn/thongbaochinhquy?page=1890 "Đến trang 1891")
-    
-*   [1892](https://daa.uit.edu.vn/thongbaochinhquy?page=1891 "Đến trang 1892")
-    
-*   …
-*   [sau ›](https://daa.uit.edu.vn/thongbaochinhquy?page=1888 "Đến trang kế sau")
-    
-*   [cuối »](https://daa.uit.edu.vn/thongbaochinhquy?page=1925 "Đến trang cuối cùng")
+----------------------------------------------------------------------------------------------------------------------------------------
+
+T5, 15/08/2013 - 09:40
+
+PĐT thông báo mở MA005.E11 cho sinh viên đề nghị mở thêm, hạn cho đăng ký lớp này theo hạn Điều chỉnh ĐKHP.  
+Hết hạn nếu số lượng đăng ký không đủ mở PĐT sẽ hủy lớp này. Những Sinh viên có tên trong đơn đề nghị mở lớp phải đăng ký lại và kết quả đăng ký trên web:[http://daa.uit.edu.vn](http://daa.uit.edu.vn/)
+ mới là kết quả chính thức.
+
+*   [Xem thêm về Thông Báo Mở Thêm Lớp MA005.E11 (Xác suất thống kê)](https://daa.uit.edu.vn/thongbao/thong-bao-mo-them-lop-ma005e11-xac-suat-thong-ke "Thông Báo Mở Thêm Lớp MA005.E11 (Xác suất thống kê)")

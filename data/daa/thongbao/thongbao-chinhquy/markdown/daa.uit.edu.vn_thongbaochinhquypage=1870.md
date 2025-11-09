@@ -1,168 +1,150 @@
-[Skip to content](https://daa.uit.edu.vn/thongbaochinhquy?page=1870#main)
- [Skip to navigation](https://daa.uit.edu.vn/thongbaochinhquy?page=1870#main-nav)
-
 Đại Học Chính Quy
 =================
 
 **Các thông báo dành cho hệ đại học chính quy.**
 
-[Thông báo nghỉ học lớp IT001.E11.1 ngày 04/11/2013](https://daa.uit.edu.vn/thongbao/thong-bao-nghi-hoc-lop-it001e111-ngay-04112013)
+[Thông báo nghỉ lớp CE202.E11 ngày 28/10/2013](https://daa.uit.edu.vn/thongbao/thong-bao-nghi-lop-ce202e11-ngay-28102013)
 
--------------------------------------------------------------------------------------------------------------------------------------
+--------------------------------------------------------------------------------------------------------------------------
 
-T6, 25/10/2013 - 08:09
+T2, 28/10/2013 - 15:16
 
-BGD : Nguyễn Trí Phúc Khoa/ Bộ môn : KHMT  
-Môn học : IT001 Lớp : IT001.E110.1 Phòng : C302(PM  
-Thời gian : Tiết bắt đầu : 1 Tiết kết thúc : 3 Thứ : 2 Ngày : 04/11/2013
+CBGD : **Thiều Xuân Khánh**
 
-*   [Xem thêm về Thông báo nghỉ học lớp IT001.E11.1 ngày 04/11/2013](https://daa.uit.edu.vn/thongbao/thong-bao-nghi-hoc-lop-it001e111-ngay-04112013 "Thông báo nghỉ học lớp IT001.E11.1 ngày 04/11/2013")
+Khoa/ Bộ môn : **KTMT**
+
+Môn học : **CE202**
+
+Lớp : **CE202.E11**
+
+Phòng : **C206**
+
+Thời gian : Tiết bắt đầu : **6**
+
+Tiết kết thúc : **8**
+
+Thứ : **2** Ngày : **28/10/2013**
+
+*   [Xem thêm về Thông báo nghỉ lớp CE202.E11 ngày 28/10/2013](https://daa.uit.edu.vn/thongbao/thong-bao-nghi-lop-ce202e11-ngay-28102013 "Thông báo nghỉ lớp CE202.E11 ngày 28/10/2013")
     
 
-[Thông báo học bù lớp OSYS1.E11.1 ngày 1/11/2013](https://daa.uit.edu.vn/thongbao/thong-bao-hoc-bu-lop-osys1e111-ngay-1112013)
+[Thông BáoSinh viên điều Chỉnh Ngày Sinh, Nơi Khám Bệnh Ban Đầu (BHYT)](https://daa.uit.edu.vn/thongbao/thong-baosinh-vien-dieu-chinh-ngay-sinh-noi-kham-benh-ban-dau-bhyt)
 
--------------------------------------------------------------------------------------------------------------------------------
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
-T5, 24/10/2013 - 09:13
+T2, 28/10/2013 - 15:13
 
-CBGD : Phan Đình Duy Khoa/ Bộ môn : KTMT  
-Môn học : OSYS1 Lớp : OSYS1.E11.1 Sĩ số : 50  
-Thời gian : Tiết bắt đầu : 4 Tiết kết thúc : 5 Thứ : 6 Ngày : 01/11/2013  
-Phòng : C309(PM2)
+Sinh viên điều chỉnh ngày sinh, nơi khám bệnh ban đầu vui lòng nộp lại thẻ BHYT cho chị Vi Phòng CTSV , (phòng A.101) đến 16h30 ngày 29/10/2013. Sau thời gian trên nếu bạn nào chưa nộp thẻ BHYT thì sẽ không được giải quyết.  
+Lưu ý: sinh viên xem file đinh kèm, trong đó có 2 sheet.
 
-*   [Xem thêm về Thông báo học bù lớp OSYS1.E11.1 ngày 1/11/2013](https://daa.uit.edu.vn/thongbao/thong-bao-hoc-bu-lop-osys1e111-ngay-1112013 "Thông báo học bù lớp OSYS1.E11.1 ngày 1/11/2013")
+*   [Xem thêm về Thông BáoSinh viên điều Chỉnh Ngày Sinh, Nơi Khám Bệnh Ban Đầu (BHYT)](https://daa.uit.edu.vn/thongbao/thong-baosinh-vien-dieu-chinh-ngay-sinh-noi-kham-benh-ban-dau-bhyt "Thông BáoSinh viên điều Chỉnh Ngày Sinh, Nơi Khám Bệnh Ban Đầu (BHYT)")
     
 
-[Thông báo học bù lớp CS311.E11](https://daa.uit.edu.vn/thongbao/thong-bao-hoc-bu-lop-cs311e11)
+[DANH SÁCH ĐỀ NGHỊ KỶ LUẬT HỌC VỤ NĂM HỌC 2012 - 2013](https://daa.uit.edu.vn/thongbao/danh-sach-de-nghi-ky-luat-hoc-vu-nam-hoc-2012-2013)
 
-------------------------------------------------------------------------------------------------
+-------------------------------------------------------------------------------------------------------------------------------------------
 
-T5, 24/10/2013 - 08:09
+T2, 28/10/2013 - 11:43
 
-CBGD : Nguyễn Đình Hiển Khoa/ Bộ môn : KHMT  
-Môn học : CS311 Lớp : CS311.E11  
-Thời gian : Tiết bắt đầu : 4 Tiết kết thúc : 5 Thứ : 3 Ngày : 29/10/2013  
-Phòng : C206
+      Phòng Đào tạo Đại học thông báo Danh sách sinh viên dự kiến bị xử lý học vụ năm học 2012 - 2013 trong file đính kèm.  
+      Sinh viên có thắc mắc, đề nghị liên hệ trực tiếp Phòng Đào tạo Đại học từ ngày ra thống báo đến ngày 06/11/2013.  
+ 
 
-*   [Xem thêm về Thông báo học bù lớp CS311.E11](https://daa.uit.edu.vn/thongbao/thong-bao-hoc-bu-lop-cs311e11 "Thông báo học bù lớp CS311.E11")
+*   [Xem thêm về DANH SÁCH ĐỀ NGHỊ KỶ LUẬT HỌC VỤ NĂM HỌC 2012 - 2013](https://daa.uit.edu.vn/thongbao/danh-sach-de-nghi-ky-luat-hoc-vu-nam-hoc-2012-2013 "DANH SÁCH ĐỀ NGHỊ KỶ LUẬT HỌC VỤ NĂM HỌC 2012 - 2013")
     
 
-[Thông báo nghỉ lớp OSYS1.E11.1 ngày 02/11/2013](https://daa.uit.edu.vn/thongbao/thong-bao-nghi-lop-osys1e111-ngay-02112013)
+[Ngày hội giáo dục Australia 2013](https://daa.uit.edu.vn/thongbao/ngay-hoi-giao-duc-australia-2013)
 
------------------------------------------------------------------------------------------------------------------------------
+-----------------------------------------------------------------------------------------------------
 
-T5, 24/10/2013 - 08:08
+T2, 28/10/2013 - 09:37
 
-CBGD : Phan Đình Duy Khoa/ Bộ môn : KTMT  
-Môn học : OSYS1 Lớp : OSYS1.E11.1 Phòng : C307(PM1)  
-Thời gian : Tiết bắt đầu : 1 Tiết kết thúc : 3 Thứ : 7 Ngày : 02/11/2013
+Lãnh sự Quán Úc sẽ tổ chức **Ngày Hội Giáo Dục Australia 2013.**    
+Thời gian:**9:30 - 16:00, Chủ nhật 10/11/2013**  
+Địa điểm: **Khách Sạn Sheraton - 88 Đồng Khởi, Quận 1**  
+Nội dung của Ngày Hội Giáo dục Australia (Úc):  
+\- Gặp đại diện của 51 Trường Trung Học, Cao Đẳng và Đại Học của Úc tìm hiểu thông tin về các khóa học và chương trình học bổng.    
+\- Giao lưu với cựu du học sinh về việc sinh sống và học tập tại Úc cũng như điều kiện visa và học bổng Chính phủ Úc.  
+   
 
-*   [Xem thêm về Thông báo nghỉ lớp OSYS1.E11.1 ngày 02/11/2013](https://daa.uit.edu.vn/thongbao/thong-bao-nghi-lop-osys1e111-ngay-02112013 "Thông báo nghỉ lớp OSYS1.E11.1 ngày 02/11/2013")
+*   [Xem thêm về Ngày hội giáo dục Australia 2013](https://daa.uit.edu.vn/thongbao/ngay-hoi-giao-duc-australia-2013 "Ngày hội giáo dục Australia 2013")
     
 
-[DANH SÁCH DỰ KIẾN TỐT NGHIỆP ĐỢT 2 NĂM 2013](https://daa.uit.edu.vn/thongbao/danh-sach-du-kien-tot-nghiep-dot-2-nam-2013)
+[Thông báo lớp IT001.E11.CLC.KTMT.1 đổi phòng học](https://daa.uit.edu.vn/thongbao/thong-bao-lop-it001e11clcktmt1-doi-phong-hoc)
 
----------------------------------------------------------------------------------------------------------------------------
+---------------------------------------------------------------------------------------------------------------------------------
 
-T4, 23/10/2013 - 11:24
+T7, 26/10/2013 - 09:04
 
-Phòng Đào tạo Đại học thông báo danh sách sinh viên dự kiến tốt nghiệp đợt 2 năm 2013 trong file đính kèm. Sinh viên có tên trong danh sách xem rõ các thông tin có liên quan về : Ngày tháng năm sinh; Nơi sinh; Số tín chỉ tích luỹ (Số TCTL); Điểm trung bình chung, Điểm rèn luyện; Tiền Giấy xác nhận; Tiền sách Thư viện; và nợ các chứng chỉ GDQP, Anh văn...  
-1\. Sinh viên nợ tiền GXN; thư viện và thắc mắc về điểm rèn luyện: liên hệ phòng CTSV;  
-
-*   [Xem thêm về DANH SÁCH DỰ KIẾN TỐT NGHIỆP ĐỢT 2 NĂM 2013](https://daa.uit.edu.vn/thongbao/danh-sach-du-kien-tot-nghiep-dot-2-nam-2013 "DANH SÁCH DỰ KIẾN TỐT NGHIỆP ĐỢT 2 NĂM 2013")
-    
-
-[Thông báo về việc mở lớp ôn tập và tổ chức thi đối với môn CƠ SỞ LẬP TRÌNH](https://daa.uit.edu.vn/thongbao/thong-bao-ve-viec-mo-lop-tap-va-chuc-thi-doi-voi-mon-co-so-lap-trinh)
-
------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-
-T3, 22/10/2013 - 08:54
-
-Nhằm tạo điều kiện cho Sinh viên khóa 2006 và 2007 của Khoa Khoa học máy tính còn nợ môn Cơ sở lập trình (Mã môn CS103), đây là môn học không còn mở từ năm học 2012-2013, Phòng Đào tạo Đại học dự kiến mở lớp ôn tập và tổ chức thi đối với môn Cơ sở lập trình. Các sinh viên có tên trong danh sách đính kèm có thể đăng ký môn này tại phòng Đào tạo từ 21/10/13 đến ngày 25/10/13. Thời gian học sẽ được thông báo sau.  
-Trân trọng
-
-*   [Xem thêm về Thông báo về việc mở lớp ôn tập và tổ chức thi đối với môn CƠ SỞ LẬP TRÌNH](https://daa.uit.edu.vn/thongbao/thong-bao-ve-viec-mo-lop-tap-va-chuc-thi-doi-voi-mon-co-so-lap-trinh "Thông báo về việc mở lớp ôn tập và tổ chức thi đối với môn CƠ SỞ LẬP TRÌNH")
-    
-
-[Thông báo học bù lớp IT001.E11.CLC.KTMT](https://daa.uit.edu.vn/thongbao/thong-bao-hoc-bu-lop-it001e11clcktmt)
-
-----------------------------------------------------------------------------------------------------------------
-
-T3, 22/10/2013 - 08:20
-
-Sinh viên lớp IT001.E11.CLC.KTMT của Giảng viên Nguyễn Tuấn Đăng học bù ngày 02/11/2013.  
-Tiết: 1-3  
-Ngày: 02/11/2013 (Thứ Bảy)  
-Phòng: C104  
+Sinh viên lưu ý lớp IT001.E11.CLC.KTMT.1 do GV. Hồ Ngọc Diễm phụ trách:  
+\- Đổi phòng học thực hành từ phòng A213 sang phòng học A120 kể từ ngày 31/10/2013 (Thứ Năm).  
+\- Chuyển từ tiết 8910 lên tiết 678.  
+Thân báo.  
 CV. Nguyễn Lai Hồng Ân
 
-*   [Xem thêm về Thông báo học bù lớp IT001.E11.CLC.KTMT](https://daa.uit.edu.vn/thongbao/thong-bao-hoc-bu-lop-it001e11clcktmt "Thông báo học bù lớp IT001.E11.CLC.KTMT")
+*   [Xem thêm về Thông báo lớp IT001.E11.CLC.KTMT.1 đổi phòng học](https://daa.uit.edu.vn/thongbao/thong-bao-lop-it001e11clcktmt1-doi-phong-hoc "Thông báo lớp IT001.E11.CLC.KTMT.1 đổi phòng học")
     
 
-[Thông báo học bù lớp CS226.E11.CNTN](https://daa.uit.edu.vn/thongbao/thong-bao-hoc-bu-lop-cs226e11cntn)
-
----------------------------------------------------------------------------------------------------------
-
-T3, 22/10/2013 - 08:18
-
-Sinh viên lớp CS226.E11.CNTN của Giảng viên Nguyễn Tuấn Đăng học bù ngày 31/10/2013.  
-Tiết: 1-3  
-Ngày: 31/10/2013 (Thứ Năm)  
-Phòng: C104  
-CV. Nguyễn Lai Hồng Ân
-
-*   [Xem thêm về Thông báo học bù lớp CS226.E11.CNTN](https://daa.uit.edu.vn/thongbao/thong-bao-hoc-bu-lop-cs226e11cntn "Thông báo học bù lớp CS226.E11.CNTN")
-    
-
-[THÔNG BÁO LỊCH KIỂM TRA GIỮA KÌ KHÓA 8](https://daa.uit.edu.vn/thongbao/thong-bao-lich-kiem-tra-giua-ki-khoa-8)
+[Thông báo lớp IS207.E12.1 đổi phòng học](https://daa.uit.edu.vn/thongbao/thong-bao-lop-is207e121-doi-phong-hoc)
 
 -----------------------------------------------------------------------------------------------------------------
 
-T3, 22/10/2013 - 08:11
+T7, 26/10/2013 - 09:03
 
-PĐT Thông báo Lịch kiểm tra Giữa kỳ & Danh Sách Phòng Kiểm Tra, Sinh viên Khóa 8, mọi thắc mắc về lịch thi Sinh viên liên hệ PĐT trước ngày 11/11/2013.
+Sinh viên lưu ý lớp IS207.E12.1 do GV. Nguyễn Tiến Long phụ trách đổi phòng học thực hành từ phòng A213 sang phòng học C212 kể từ ngày 31/10/2013 (Thứ Năm).  
+Thân báo.  
+CV. Nguyễn Lai Hồng Ân
 
-*   [Xem thêm về THÔNG BÁO LỊCH KIỂM TRA GIỮA KÌ KHÓA 8](https://daa.uit.edu.vn/thongbao/thong-bao-lich-kiem-tra-giua-ki-khoa-8 "THÔNG BÁO LỊCH KIỂM TRA GIỮA KÌ KHÓA 8")
-    
-
-[Phòng Công tác Sinh viên Thông báo](https://daa.uit.edu.vn/thongbao/phong-cong-tac-sinh-vien-thong-bao)
-
----------------------------------------------------------------------------------------------------------
-
-T2, 21/10/2013 - 10:59
-
-Sinh viên vui lòng nhận thẻ BHYT đợt 1 năm học 2013-2014 tại Phòng CTSV (A.101)  
-Từ ngày 21/10/2013 đến 16 giờ 30 ngày 25/10/2013.
-
-*   [Xem thêm về Phòng Công tác Sinh viên Thông báo](https://daa.uit.edu.vn/thongbao/phong-cong-tac-sinh-vien-thong-bao "Phòng Công tác Sinh viên Thông báo")
+*   [Xem thêm về Thông báo lớp IS207.E12.1 đổi phòng học](https://daa.uit.edu.vn/thongbao/thong-bao-lop-is207e121-doi-phong-hoc "Thông báo lớp IS207.E12.1 đổi phòng học")
     
 
-Trang
------
+[Thông báo lớp IT001.E11.2 đổi phòng học](https://daa.uit.edu.vn/thongbao/thong-bao-lop-it001e112-doi-phong-hoc)
 
-*   [« đầu](https://daa.uit.edu.vn/thongbaochinhquy "Đến trang đầu tiên")
+-----------------------------------------------------------------------------------------------------------------
+
+T7, 26/10/2013 - 08:58
+
+Sinh viên lưu ý lớp lớp IT001.E11.2 do GV. Hồ Long Vân phụ trách sẽ thay đổi phòng học thực hành từ phòng A120 sang phòng học A213 kể từ ngày 31/10/2013 (Thứ Năm).  
+Thân báo.  
+CV. Nguyễn Lai Hồng Ân
+
+*   [Xem thêm về Thông báo lớp IT001.E11.2 đổi phòng học](https://daa.uit.edu.vn/thongbao/thong-bao-lop-it001e112-doi-phong-hoc "Thông báo lớp IT001.E11.2 đổi phòng học")
     
-*   [‹ trước](https://daa.uit.edu.vn/thongbaochinhquy?page=1869 "Đến trang kế trước")
+
+[Thông báo lớp IT001.E111.1 đổi phòng học](https://daa.uit.edu.vn/thongbao/thong-bao-lop-it001e1111-doi-phong-hoc)
+
+-------------------------------------------------------------------------------------------------------------------
+
+T7, 26/10/2013 - 08:52
+
+Sinh viên lưu ý lớp IT001.E111.1 do GV. Nguyễn Thị Ngọc Diễm đổi phòng học thực hành từ phòng A120 sang phòng học A213 kể từ ngày 29/10/2013 (Thứ Ba).  
+Thân báo.  
+CV. Nguyễn Lai Hồng Ân
+
+*   [Xem thêm về Thông báo lớp IT001.E111.1 đổi phòng học](https://daa.uit.edu.vn/thongbao/thong-bao-lop-it001e1111-doi-phong-hoc "Thông báo lớp IT001.E111.1 đổi phòng học")
     
-*   …
-*   [1867](https://daa.uit.edu.vn/thongbaochinhquy?page=1866 "Đến trang 1867")
+
+[KẾT QUẢ KỲ KIỂM TRA TIẾNG ANH ĐẦU VÀO LỚP TIẾNG ANH TĂNG CƯỜNG THI NGÀY 12/9/2013](https://daa.uit.edu.vn/thongbao/ket-qua-ky-kiem-tra-tieng-anh-dau-vao-lop-tieng-anh-tang-cuong-thi-ngay-1292013)
+
+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+T7, 26/10/2013 - 08:03
+
+Sinh viên xem kết quả kiểm tra tiếng Anh đầu vào lớp tiếng Anh tăng cường thi ngày 12/9/2013. (file đính kèm)  
+Thông tin lớp học sẽ thông báo sớm đến các bạn vào tuần sau (28/10/2013).  
+BĐH Đề án NNQG 2020
+
+*   [Xem thêm về KẾT QUẢ KỲ KIỂM TRA TIẾNG ANH ĐẦU VÀO LỚP TIẾNG ANH TĂNG CƯỜNG THI NGÀY 12/9/2013](https://daa.uit.edu.vn/thongbao/ket-qua-ky-kiem-tra-tieng-anh-dau-vao-lop-tieng-anh-tang-cuong-thi-ngay-1292013 "KẾT QUẢ KỲ KIỂM TRA TIẾNG ANH ĐẦU VÀO LỚP TIẾNG ANH TĂNG CƯỜNG THI NGÀY 12/9/2013")
     
-*   [1868](https://daa.uit.edu.vn/thongbaochinhquy?page=1867 "Đến trang 1868")
-    
-*   [1869](https://daa.uit.edu.vn/thongbaochinhquy?page=1868 "Đến trang 1869")
-    
-*   [1870](https://daa.uit.edu.vn/thongbaochinhquy?page=1869 "Đến trang 1870")
-    
-*   1871
-*   [1872](https://daa.uit.edu.vn/thongbaochinhquy?page=1871 "Đến trang 1872")
-    
-*   [1873](https://daa.uit.edu.vn/thongbaochinhquy?page=1872 "Đến trang 1873")
-    
-*   [1874](https://daa.uit.edu.vn/thongbaochinhquy?page=1873 "Đến trang 1874")
-    
-*   [1875](https://daa.uit.edu.vn/thongbaochinhquy?page=1874 "Đến trang 1875")
-    
-*   …
-*   [sau ›](https://daa.uit.edu.vn/thongbaochinhquy?page=1871 "Đến trang kế sau")
-    
-*   [cuối »](https://daa.uit.edu.vn/thongbaochinhquy?page=1925 "Đến trang cuối cùng")
+
+[Thông báo nghỉ học lớp IT001.E12.1 ngày 31/10/2013](https://daa.uit.edu.vn/thongbao/thong-bao-nghi-hoc-lop-it001e121-ngay-31102013)
+
+-------------------------------------------------------------------------------------------------------------------------------------
+
+T6, 25/10/2013 - 08:12
+
+CBGD : Nguyễn Trí Phúc Khoa/ Bộ môn : KHMT  
+Môn học : IT001 Lớp : IT001.E12.1 Phòng : C202(PM CLC1)  
+Thời gian : Tiết bắt đầu : 6 Tiết kết thúc : 8 Thứ : 5 Ngày : 31/10/2013
+
+*   [Xem thêm về Thông báo nghỉ học lớp IT001.E12.1 ngày 31/10/2013](https://daa.uit.edu.vn/thongbao/thong-bao-nghi-hoc-lop-it001e121-ngay-31102013 "Thông báo nghỉ học lớp IT001.E12.1 ngày 31/10/2013")

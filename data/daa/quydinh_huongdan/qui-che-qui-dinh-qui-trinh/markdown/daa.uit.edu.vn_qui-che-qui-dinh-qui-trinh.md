@@ -1,6 +1,3 @@
-[Skip to content](https://daa.uit.edu.vn/qui-che-qui-dinh-qui-trinh#main)
- [Skip to navigation](https://daa.uit.edu.vn/qui-che-qui-dinh-qui-trinh#main-nav)
-
 Văn bản nội bộ
 ==============
 
@@ -83,17 +80,3 @@ Văn bản nội bộ
 *   [Biểu mẫu khóa luận tốt nghiệp dành cho Sinh viên](https://daa.uit.edu.vn/bieu-mau-khoa-luan-tot-nghiep-danh-cho-sinh-vien)
     
 *   [Quy chế, Quy định đào tạo đại học của Bộ GDĐT](https://daa.uit.edu.vn/quy-che-quy-dinh-dao-tao-dai-hoc-cua-bo-gddt)
-    
-
-Trang
------
-
-*   1
-*   [2](https://daa.uit.edu.vn/qui-che-qui-dinh-qui-trinh?page=1 "Đến trang 2")
-    
-*   [sau ›](https://daa.uit.edu.vn/qui-che-qui-dinh-qui-trinh?page=1 "Đến trang kế sau")
-    
-*   [cuối »](https://daa.uit.edu.vn/qui-che-qui-dinh-qui-trinh?page=1 "Đến trang cuối cùng")
-    
-
-Back to top

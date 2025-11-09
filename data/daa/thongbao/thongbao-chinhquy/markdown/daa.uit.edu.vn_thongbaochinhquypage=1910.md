@@ -1,177 +1,136 @@
-[Skip to content](https://daa.uit.edu.vn/thongbaochinhquy?page=1910#main)
- [Skip to navigation](https://daa.uit.edu.vn/thongbaochinhquy?page=1910#main-nav)
-
 Đại Học Chính Quy
 =================
 
 **Các thông báo dành cho hệ đại học chính quy.**
 
-[Thông Báo Nghỉ Học Lớp:NT107.D21](https://daa.uit.edu.vn/thongbao/thong-bao-nghi-hoc-lopnt107d21)
+[Thông Báo Mở Lớp ENG03.D23( cho sinh viên khóa 3;4;5;6.)](https://daa.uit.edu.vn/thongbao/thong-bao-mo-lop-eng03d23-cho-sinh-vien-khoa-3456)
 
--------------------------------------------------------------------------------------------------------
+--------------------------------------------------------------------------------------------------------------------------------------------------
 
-T4, 06/03/2013 - 09:18
+T5, 14/03/2013 - 15:22
 
-PDT thông báo Lớp:NT107.D21 nghỉ học ngày 7/3/2013, bắt đầu tiết 1 kết thúc tiết 3 ( Giảng viên bận họp) . Lịch học bù Giảng viên thông báo sau.
+1\. PĐT Thông báo mở Lớp ENG03.D23 theo yêu cầu của bộ môn Anh văn, và đề nghị mở của sinh viên. PĐT thông báo lớp **ENG03.D23 học sáng thứ 2 và chiều thứ 7 tại phòng học 206.**  
+2\. Trong danh sách đề nghị mở có 60 Sinh viên đăng ký, nhưng khi duyệt đăng ký của sinh viên chỉ còn 27 sinh viên có trong danh sách lớp này, còn lại 23 sinh viên bị trùng lịch học nên không được cập nhật vào danh sách Lớp ENG03.D23.(File đính kèm).  
+3.Ngày bắt đầu học Lớp ENG03.D23 là ngày 18/03/2013.
 
-*   [Xem thêm về Thông Báo Nghỉ Học Lớp:NT107.D21](https://daa.uit.edu.vn/thongbao/thong-bao-nghi-hoc-lopnt107d21 "Thông Báo Nghỉ Học Lớp:NT107.D21")
+*   [Xem thêm về Thông Báo Mở Lớp ENG03.D23( cho sinh viên khóa 3;4;5;6.)](https://daa.uit.edu.vn/thongbao/thong-bao-mo-lop-eng03d23-cho-sinh-vien-khoa-3456 "Thông Báo Mở Lớp ENG03.D23( cho sinh viên khóa 3;4;5;6.)")
     
 
-[Thông báo nhận thẻ ATM của Ngân Hàng ACB](https://daa.uit.edu.vn/thongbao/thong-bao-nhan-atm-cua-ngan-hang-acb)
+[THÔNG BÁO NGHỈ HỌC LỚP SE106.D22 NGÀY 18/03/2013](https://daa.uit.edu.vn/thongbao/thong-bao-nghi-hoc-lop-se106d22-ngay-18032013)
 
------------------------------------------------------------------------------------------------------------------
+----------------------------------------------------------------------------------------------------------------------------------
 
-T3, 05/03/2013 - 14:49
+T5, 14/03/2013 - 15:21
 
-Mời các em sinh viên nhận thẻ ATM của ngân hàng ACB:
+LỚP SE106.D22 PHÒNG 301 (TIẾT 6 --> 9)  NGHỈ HỌC NGÀY 18/03/2013 DO G  
+V CÓ VIỆC BẬN.
 
-Địa điểm:  **Phòng H106 - Giảng đường C** 
-
-Thời gian: **Thứ tư** - Ngày **06/03/2013**    Từ **14h đến 16h**  
-   
-Trân trọng,
-
-Phòng Kế hoạch - Tài chính
-
-*   [Xem thêm về Thông báo nhận thẻ ATM của Ngân Hàng ACB](https://daa.uit.edu.vn/thongbao/thong-bao-nhan-atm-cua-ngan-hang-acb "Thông báo nhận thẻ ATM của Ngân Hàng ACB")
+*   [Xem thêm về THÔNG BÁO NGHỈ HỌC LỚP SE106.D22 NGÀY 18/03/2013](https://daa.uit.edu.vn/thongbao/thong-bao-nghi-hoc-lop-se106d22-ngay-18032013 "THÔNG BÁO NGHỈ HỌC LỚP SE106.D22 NGÀY 18/03/2013")
     
 
-[Thông Báo Đăng Ký Các Môn Chuyên Đề Tốt Nghiệp Thay Thế Khóa LuậnTốt Nghiệp](https://daa.uit.edu.vn/thongbao/thong-bao-dang-ky-cac-mon-chuyen-de-tot-nghiep-thay-khoa-luantot-nghiep)
+[Thông Báo Nghỉ Học Lớp:MAT02.ANTT Giải tích 2 : Giảng Viên Dương Tôn Đảm (14/3/2013)](https://daa.uit.edu.vn/thongbao/thong-bao-nghi-hoc-lopmat02antt-giai-tich-2-giang-vien-duong-ton-dam-1432013)
 
----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
-T3, 05/03/2013 - 10:43
+T5, 14/03/2013 - 11:06
 
-Phòng Đào tạo thông báo: những Sinh viên không đủ điều kiện làm KLTN của khóa 3, và những Sinh viên chưa tốt nghiệp , khóa 2; đăng ký những môn chuyên đề thay thế Khóa luận Tốt nghiêp,Sinh viên Đang ký tại web DAA, (điều kiện làm KLTN được quy định rõ trong quy chế đào tạo). **Đề nghị sinh viên  liên hệ trực tiếp tại Khoa để biết rõ thông tin trước khi đăng ký**, thời gian đăng ký từ ngày ra thông báo đến ngày 18/03/2013.  
-   
-Mọi thắc mắc về kỹ thuật ĐKHP Sinh viên liên hệ địa chỉ mail: [khuongnd@uit.edu.vn](mailto:khuongnd@uit.edu.vn)
+PĐT Thông báo Lớp:MAT02.ANTT Giải tích 2 : Giảng Viên Dương Tôn Đảm học tiết 6-8 phòng H101 nghỉ học ngày 14/03/2013. Lịch học bù Giảng viên thông báo sau.
 
-*   [Xem thêm về Thông Báo Đăng Ký Các Môn Chuyên Đề Tốt Nghiệp Thay Thế Khóa LuậnTốt Nghiệp](https://daa.uit.edu.vn/thongbao/thong-bao-dang-ky-cac-mon-chuyen-de-tot-nghiep-thay-khoa-luantot-nghiep "Thông Báo Đăng Ký Các Môn Chuyên Đề Tốt Nghiệp Thay Thế Khóa LuậnTốt Nghiệp")
+*   [Xem thêm về Thông Báo Nghỉ Học Lớp:MAT02.ANTT Giải tích 2 : Giảng Viên Dương Tôn Đảm (14/3/2013)](https://daa.uit.edu.vn/thongbao/thong-bao-nghi-hoc-lopmat02antt-giai-tich-2-giang-vien-duong-ton-dam-1432013 "Thông Báo Nghỉ Học Lớp:MAT02.ANTT Giải tích 2 : Giảng Viên Dương Tôn Đảm (14/3/2013)")
     
 
-[Thông Báo chuyển Phòng Học](https://daa.uit.edu.vn/thongbao/thong-bao-chuyen-phong-hoc)
+[Thông Báo Nghỉ Học Lớp;HCMT1.D21 (11/4/2013) & Lịch Học Bù](https://daa.uit.edu.vn/thongbao/thong-bao-nghi-hoc-lophcmt1d21-1142013-lich-hoc-bu)
 
----------------------------------------------------------------------------------------------
+--------------------------------------------------------------------------------------------------------------------------------------------------------
 
-T5, 28/02/2013 - 16:04
+T5, 14/03/2013 - 09:49
 
-PDT Thông báo đến quý Thầy cô- Sinh viên về việc chuyển Phòng học như sau:  
-1\. Lớp NT403.D21 Nguyễn Anh Tuấn chuyển từ phòng 106 sang phòng 101.  
-2.Lớp ITEW1.D25 Nguyễn Đình Thuân chuyển từ GĐ1 sang GĐ3.  
-3.Lớp CS222.D21.CNTN Nguyễn Tuấn Đăng học chiều thứ 5 phòng H201 chuyển sang sáng thứ 3 phòng H201.  
-Thời gian : Bắt đầu từ thứ 2 ngày 4/03/2013.  
- 
+PDT Thông báo Lớp;HCMT1.D21 học phòng 304 Giảng viên: Đoàn Phạm Quỳnh Như Như học tiết 1-2 **nghỉ học ngày 11/4/2013**. Lịch học bù tiết 4-5 ngày 21/3/2013 phòng 304.
 
-*   [Xem thêm về Thông Báo chuyển Phòng Học](https://daa.uit.edu.vn/thongbao/thong-bao-chuyen-phong-hoc "Thông Báo chuyển Phòng Học")
+*   [Xem thêm về Thông Báo Nghỉ Học Lớp;HCMT1.D21 (11/4/2013) & Lịch Học Bù](https://daa.uit.edu.vn/thongbao/thong-bao-nghi-hoc-lophcmt1d21-1142013-lich-hoc-bu "Thông Báo Nghỉ Học Lớp;HCMT1.D21 (11/4/2013) & Lịch Học Bù")
     
 
-[Thông báo tới SV đã đăng ký vào 2 lớp: CE301.D21 và CE114.D21](https://daa.uit.edu.vn/thongbao/thong-bao-toi-sv-da-dang-ky-vao-2-lop-ce301d21-va-ce114d21)
+[THÔNG BÁO LỊCH NGHỈ & HỌC BÙ MÔN HỆ QUẢN TRỊ CSDL( IS103.D21), GV: ĐỖ THỊ MINH PHỤNG](https://daa.uit.edu.vn/thongbao/thong-bao-lich-nghi-hoc-bu-mon-he-quan-tri-csdl-is103d21-gv-do-thi-minh-phung)
 
-------------------------------------------------------------------------------------------------------------------------------------------------------------
+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
-T3, 26/02/2013 - 09:52
+T4, 13/03/2013 - 11:06
 
-Sau đợt đăng ký học phần, số lượng sinh viên đăng ký vào 2 lớp Hệ thống chứng thực số CE301.D21 và Lập trình trên thiết bị di động CE114.D21 như sau:  
-  - Lớp : CE301.D21 có tổng số: 21 SV đăng ký  
-  - Lớp : CE114.D21 có tổng số: 23 SV đăng ký  
-_Theo quy định đào tạo của trường, những lớp học chuyên nghành phải có tối thiểu 30 SV  mới tiến hành mở lớp, nên DS 2 lớp học này nằm trong mục: Lớp chờ mở và đã không có trong DS lớp bị hủy tại thông báo của phòng đào tạo._   
-Để khắc phục tình hình này, Phòng đào tạo đã đồng ý:  
+Phòng Đào tạo Đại học gửi lịch nghỉ & học bù:
 
-*   [Xem thêm về Thông báo tới SV đã đăng ký vào 2 lớp: CE301.D21 và CE114.D21](https://daa.uit.edu.vn/thongbao/thong-bao-toi-sv-da-dang-ky-vao-2-lop-ce301d21-va-ce114d21 "Thông báo tới SV đã đăng ký vào 2 lớp: CE301.D21 và CE114.D21 ")
+Môn: Hệ quản trị cơ sở dữ liệu
+
+Lớp: IS103.D21
+
+Giảng viên: Đỗ Thị Minh Phụng
+
+Phòng 210; Tiết 1,2,3
+
+Nghỉ học ngày: 11/3/2013 (Lý do: Tham gia tập huấn CDIO);
+
+                       18/3/2013 (Lý do: Báo cáo bài báo tại hội nghị ACIIDS 2013 - Malaysia)
+
+Học bù ngày:    25/3/2013 & 01/4/2013 & 08/4/2013
+
+Phòng 210, tiết 4,5    
+
+*   [Xem thêm về THÔNG BÁO LỊCH NGHỈ & HỌC BÙ MÔN HỆ QUẢN TRỊ CSDL( IS103.D21), GV: ĐỖ THỊ MINH PHỤNG](https://daa.uit.edu.vn/thongbao/thong-bao-lich-nghi-hoc-bu-mon-he-quan-tri-csdl-is103d21-gv-do-thi-minh-phung "THÔNG BÁO LỊCH NGHỈ & HỌC BÙ MÔN HỆ QUẢN TRỊ CSDL( IS103.D21), GV: ĐỖ THỊ MINH PHỤNG")
     
 
-[Thông Báo Nghỉ Học Lớp:BDSS1.D23](https://daa.uit.edu.vn/thongbao/thong-bao-nghi-hoc-lopbdss1d23)
+[Thông Báo Nghỉ Học Lớp:NT307.D21.1](https://daa.uit.edu.vn/thongbao/thong-bao-nghi-hoc-lopnt307d211)
 
--------------------------------------------------------------------------------------------------------
+----------------------------------------------------------------------------------------------------------
 
-T3, 26/02/2013 - 09:37
+T3, 12/03/2013 - 13:53
 
-Lớp:BDSS1.D23 học phòng 212 ca 123 nghỉ học ngày 27/2/2013 lý Ddo nghỉ học : Giảng viên Bận họp, lịch học bù giảng viên thông báo sau.
+PDT thông báo lớp::NT307.D21.1 học Lap MMT tiết 6-9 nghỉ học ngày 13/3/2013, lịch học bù thông báo sau.
 
-*   [Xem thêm về Thông Báo Nghỉ Học Lớp:BDSS1.D23](https://daa.uit.edu.vn/thongbao/thong-bao-nghi-hoc-lopbdss1d23 "Thông Báo Nghỉ Học Lớp:BDSS1.D23")
+*   [Xem thêm về Thông Báo Nghỉ Học Lớp:NT307.D21.1](https://daa.uit.edu.vn/thongbao/thong-bao-nghi-hoc-lopnt307d211 "Thông Báo Nghỉ  Học Lớp:NT307.D21.1")
     
 
-[Thời Gian Học GDTC](https://daa.uit.edu.vn/thongbao/thoi-gian-hoc-gdtc)
+[Thông Báo Nghỉ Học Lớp:NT109.D21.1](https://daa.uit.edu.vn/thongbao/thong-bao-nghi-hoc-lopnt109d211)
 
----------------------------------------------------------------------------
+----------------------------------------------------------------------------------------------------------
 
-T3, 26/02/2013 - 09:05
+T3, 12/03/2013 - 10:12
 
-PDT thông báo Danh sách lớp - Lịch học các lớp GDTC. Các lớp GDTC bắt đầu học từ **thứ 2 ngày 4 thàng 3 năm 2013**. Toàn bộ sinh viên học tại Trung tâm GDTC Trường Đại Học Thể Dục Thể Thao mọi thắc mắc về học tập, Sinh viên liên hệ cô Hà Thị Kim Thoa (dc mail:**[thoahtk@uit.edu.vn](mailto:thoahtk@uit.edu.vn)
-**).  
- 
+PĐT thông báo  Lớp:NT109.D21.1 học Phòng THCB1 tiết 6-9  nghỉ học ngày 12/3/2013. Giảng viên bận họp, lịch học bù thông báo sau.
 
-*   [Xem thêm về Thời Gian Học GDTC](https://daa.uit.edu.vn/thongbao/thoi-gian-hoc-gdtc "Thời Gian Học GDTC")
+*   [Xem thêm về Thông Báo Nghỉ Học Lớp:NT109.D21.1](https://daa.uit.edu.vn/thongbao/thong-bao-nghi-hoc-lopnt109d211 "Thông Báo Nghỉ Học Lớp:NT109.D21.1")
     
 
-[Thông Báo Điều Chỉnh Lịch Học Lớp:ENG02.D26 Anh văn 2](https://daa.uit.edu.vn/thongbao/thong-bao-dieu-chinh-lich-hoc-lopeng02d26-anh-van-2)
+[Thông Báo Hưỡng Dẫn Đăng Ký Các Môn Chuyên Đề Tốt Nghiệp Thay Thế Khóa LuậnTốt Nghiệp](https://daa.uit.edu.vn/thongbao/thong-bao-huong-dan-dang-ky-cac-mon-chuyen-de-tot-nghiep-thay-khoa-luantot-nghiep)
 
----------------------------------------------------------------------------------------------------------------------------------------------------
+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
-T2, 25/02/2013 - 10:04
+T3, 12/03/2013 - 09:53
 
-Lịch học mới của Lớp:ENG02.D26 Anh văn 2, học chiều thứ 3 phòng 209.
+1\. Sinh viên đăng ký Các Môn Chuyên Đề Tốt Nghiệp Thay Thế Khóa LuậnTốt Nghiệp tại **[http://daa.uit.edu.vn](http://daa.uit.edu.vn/)
+.**  
+2\. Sinh viên đăng ký Các Môn Chuyên Đề Tốt Nghiệp Thay Thế Khóa LuậnTốt Nghiệp bị trùng lịch học với những lớp đã đăng ký, nếu muốnn đăng ký môn chuyên đề yêu cầu **lên hệ phòng Đào tạo** xin điều chỉnh đăng ký học phần phù hợp để tiếp tục đăng ký những môn chuyên đề.  
 
-*   [Xem thêm về Thông Báo Điều Chỉnh Lịch Học Lớp:ENG02.D26 Anh văn 2](https://daa.uit.edu.vn/thongbao/thong-bao-dieu-chinh-lich-hoc-lopeng02d26-anh-van-2 "Thông Báo Điều Chỉnh Lịch Học  Lớp:ENG02.D26 Anh văn 2")
+*   [Xem thêm về Thông Báo Hưỡng Dẫn Đăng Ký Các Môn Chuyên Đề Tốt Nghiệp Thay Thế Khóa LuậnTốt Nghiệp](https://daa.uit.edu.vn/thongbao/thong-bao-huong-dan-dang-ky-cac-mon-chuyen-de-tot-nghiep-thay-khoa-luantot-nghiep "Thông Báo Hưỡng Dẫn Đăng Ký Các Môn Chuyên Đề Tốt Nghiệp Thay Thế Khóa LuậnTốt Nghiệp ")
     
 
-[THAY ĐỔI PHÒNG HỌC](https://daa.uit.edu.vn/thongbao/thay-doi-phong-hoc)
+[Thời khóa biểu các lớp Thực hành HK2 - 2012 - 2013](https://daa.uit.edu.vn/thongbao/thoi-khoa-bieu-cac-lop-thuc-hanh-hk2-2012-2013)
 
--------------------------------------------------------------------------
+-------------------------------------------------------------------------------------------------------------------------------------
 
-T4, 20/02/2013 - 09:42
+CN, 10/03/2013 - 09:26
 
-       Do hiện nay phòng học **PM1** đang bị xuống cấp nên một số lớp trong TKB hiện tại học tại phòng này sẽ chuyển sang các phòng học khác, như sau:
+Phòng đào tạo thông báo thời khóa biểu các lớp Thực hành HK2 - 2012 - 2013, xem chi tiết torng file đính kèm.
 
-    1. Lớp MA002.D21 (Giải tích 1), GV Hà Mạnh Linh dạy vào sáng thứ Hai (tiết 1,2,3): chuyển sang phòng 107.
-
-    2. Lớp PHY01.D21 (Vật lý đại cương A1), GV Phan Hoàng Chương dạy vào chiều thứ Hai (tiết 6,7,8): chuyển sang phòng 212.
-
-    3. Lớp PHY02.D21 (Vật lý đại cương A2), GV Phan Hoàng Chương dạy vào sáng thứ Ba (tiết 1,2,3): chuyển sang phòng 308.
-
-*   [Xem thêm về THAY ĐỔI PHÒNG HỌC](https://daa.uit.edu.vn/thongbao/thay-doi-phong-hoc "THAY ĐỔI PHÒNG HỌC")
+*   [Xem thêm về Thời khóa biểu các lớp Thực hành HK2 - 2012 - 2013](https://daa.uit.edu.vn/thongbao/thoi-khoa-bieu-cac-lop-thuc-hanh-hk2-2012-2013 "Thời khóa biểu các lớp Thực hành HK2 - 2012 - 2013")
     
 
-[Thời khóa biểu lý thuyết HK2 năm học 2012 - 2013](https://daa.uit.edu.vn/thongbao/thoi-khoa-bieu-ly-thuyet-hk2-nam-hoc-2012-2013)
+[Thông Báo Nghỉ Học Lớp;MA002.D23; MA001.D22; MA002.D24](https://daa.uit.edu.vn/thongbao/thong-bao-nghi-hoc-lopma002d23-ma001d22-ma002d24)
 
------------------------------------------------------------------------------------------------------------------------------------
+-----------------------------------------------------------------------------------------------------------------------------------------------
 
-T7, 09/02/2013 - 08:08
+T6, 08/03/2013 - 15:26
 
-Sinh viên xem TKB lý thuyết HK2 trong file đính kèm  
-Thời gian học:  
-\- Bắt đầu: 25/02/2013, kết thúc: 15/06/2013  
-\- Thi lý thuyết giữa kỳ: tuần lễ 22/04/2013.
+PDT thông báo.  
+1;  Lớp;MA002.D23 giảng viên Lê Huỳnh Mỹ Vân học GD1 tiết bắt đầu 6 kết thúc 8 **nghỉ học thứ 3 ngày 12/03/2013** lý do giảng viên bận họp, lịch học bù thông báo sau.  
+2;Lớp;MA001.D22 giảng viên Lê Huỳnh Mỹ Vân học phòng 304 tiết bắt đầu 6 kết thúc 8 **nghỉ học thứ 4 ngày 13/03/2013** lý do giảng viên bận họp, lịch học bù thông báo sau.  
 
-*   [Xem thêm về Thời khóa biểu lý thuyết HK2 năm học 2012 - 2013](https://daa.uit.edu.vn/thongbao/thoi-khoa-bieu-ly-thuyet-hk2-nam-hoc-2012-2013 "Thời khóa biểu lý thuyết HK2 năm học 2012 - 2013")
-    
-
-Trang
------
-
-*   [« đầu](https://daa.uit.edu.vn/thongbaochinhquy "Đến trang đầu tiên")
-    
-*   [‹ trước](https://daa.uit.edu.vn/thongbaochinhquy?page=1909 "Đến trang kế trước")
-    
-*   …
-*   [1907](https://daa.uit.edu.vn/thongbaochinhquy?page=1906 "Đến trang 1907")
-    
-*   [1908](https://daa.uit.edu.vn/thongbaochinhquy?page=1907 "Đến trang 1908")
-    
-*   [1909](https://daa.uit.edu.vn/thongbaochinhquy?page=1908 "Đến trang 1909")
-    
-*   [1910](https://daa.uit.edu.vn/thongbaochinhquy?page=1909 "Đến trang 1910")
-    
-*   1911
-*   [1912](https://daa.uit.edu.vn/thongbaochinhquy?page=1911 "Đến trang 1912")
-    
-*   [1913](https://daa.uit.edu.vn/thongbaochinhquy?page=1912 "Đến trang 1913")
-    
-*   [1914](https://daa.uit.edu.vn/thongbaochinhquy?page=1913 "Đến trang 1914")
-    
-*   [1915](https://daa.uit.edu.vn/thongbaochinhquy?page=1914 "Đến trang 1915")
-    
-*   …
-*   [sau ›](https://daa.uit.edu.vn/thongbaochinhquy?page=1911 "Đến trang kế sau")
-    
-*   [cuối »](https://daa.uit.edu.vn/thongbaochinhquy?page=1925 "Đến trang cuối cùng")
+*   [Xem thêm về Thông Báo Nghỉ Học Lớp;MA002.D23; MA001.D22; MA002.D24](https://daa.uit.edu.vn/thongbao/thong-bao-nghi-hoc-lopma002d23-ma001d22-ma002d24 "Thông Báo Nghỉ Học Lớp;MA002.D23; MA001.D22; MA002.D24")

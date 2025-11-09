@@ -1,159 +1,151 @@
-[Skip to content](https://daa.uit.edu.vn/thongbaochinhquy?page=1890#main)
- [Skip to navigation](https://daa.uit.edu.vn/thongbaochinhquy?page=1890#main-nav)
-
 Đại Học Chính Quy
 =================
 
 **Các thông báo dành cho hệ đại học chính quy.**
 
-[THÔNG BÁO NGHỈ HỌC LỚP MA002.D32](https://daa.uit.edu.vn/thongbao/thong-bao-nghi-hoc-lop-ma002d32)
+[Thông báo v/v mua Bảo hiểm Y tế .](https://daa.uit.edu.vn/thongbao/thong-bao-vv-mua-bao-hiem-y-te)
 
 ----------------------------------------------------------------------------------------------------
 
-T6, 19/07/2013 - 09:11
+T3, 30/07/2013 - 08:57
 
-Phòng Đào tạo thông báo:  
-Lớp Giải tích 2 MA002.D32, học phòng C312, tiết 6,7,8 , do GV Lê Hoàng Tuấn dạy nghỉ học chiều nay thứ Sáu 19/7/2013.
+Thông báo v/v mua Bảo hiểm Y tế và Đăng ký nơi khám chữa bệnh ban đầu cho tất cả sinh viên hệ đào tạo chính quy của nhà trường.(File đính kèm)
 
-*   [Xem thêm về THÔNG BÁO NGHỈ HỌC LỚP MA002.D32](https://daa.uit.edu.vn/thongbao/thong-bao-nghi-hoc-lop-ma002d32 "THÔNG BÁO NGHỈ HỌC LỚP MA002.D32")
+*   [Xem thêm về Thông báo v/v mua Bảo hiểm Y tế .](https://daa.uit.edu.vn/thongbao/thong-bao-vv-mua-bao-hiem-y-te "Thông báo v/v mua Bảo hiểm Y tế .")
     
 
-[THÔNG BÁO NGHỈ HỌC LỚP CSC01.D31](https://daa.uit.edu.vn/thongbao/thong-bao-nghi-hoc-lop-csc01d31)
-
-----------------------------------------------------------------------------------------------------
-
-T3, 16/07/2013 - 09:48
-
-LỚP CSC01.D31 NGHỈ HỌC NGÀY  02/08/2013,08/08/2013,09/08/2013.
-
-*   [Xem thêm về THÔNG BÁO NGHỈ HỌC LỚP CSC01.D31](https://daa.uit.edu.vn/thongbao/thong-bao-nghi-hoc-lop-csc01d31 "THÔNG BÁO NGHỈ HỌC LỚP CSC01.D31 ")
-    
-
-[THÔNG BÁO NGHỈ HỌC LỚP DSAL1.D31.1](https://daa.uit.edu.vn/thongbao/thong-bao-nghi-hoc-lop-dsal1d311)
-
--------------------------------------------------------------------------------------------------------
-
-T3, 16/07/2013 - 09:44
-
-Lớp DSAL1.D31.1 Nghỉ học ngày 17/07/2013 và ngày 18/07/2013.
-
-*   [Xem thêm về THÔNG BÁO NGHỈ HỌC LỚP DSAL1.D31.1](https://daa.uit.edu.vn/thongbao/thong-bao-nghi-hoc-lop-dsal1d311 "THÔNG BÁO NGHỈ HỌC LỚP DSAL1.D31.1")
-    
-
-[THÔNG BÁO NGHỈ HỌC LỚP MA001.D32](https://daa.uit.edu.vn/thongbao/thong-bao-nghi-hoc-lop-ma001d32)
-
-----------------------------------------------------------------------------------------------------
-
-T3, 16/07/2013 - 09:32
-
-Phòng Đào tạo thông báo:  
-Lớp Giải tích 1 MA001.D32, do GV Hà Mạnh Linh dạy phòng C312, tiết 1,2,3, nghỉ học sáng nay: thứ Ba nagỳ 16/7/2013
-
-*   [Xem thêm về THÔNG BÁO NGHỈ HỌC LỚP MA001.D32](https://daa.uit.edu.vn/thongbao/thong-bao-nghi-hoc-lop-ma001d32 "THÔNG BÁO NGHỈ HỌC LỚP MA001.D32")
-    
-
-[University of Tsukuba - Announcement of Japanese Language & Culture Course](https://daa.uit.edu.vn/thongbao/university-tsukuba-announcement-japanese-language-culture-course)
-
--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-
-T3, 16/07/2013 - 09:14
-
-Phòng ĐTSĐH-KHCN&QHĐN có nhận được thông báo của Đại học Tsukuba- Nhật Bản về việc  Khóa học "Tiếng Nhật và Văn hóa Nhật Bản" được tổ chức tại Thành phố Hồ Chí Minh:
-
-Thời gian: Từ ngày 1/8/2013 đến ngày 10/8/2013
-
-Đối tượng: Dành cho sinh viên đại học và học viên cao học sẽ vào học tại Đại học Tsukuba và các đại học khác tại Nhật Bản từ tháng 9/2013.
-
-Học phí: Miễn phí.
-
-*   [Xem thêm về University of Tsukuba - Announcement of Japanese Language & Culture Course](https://daa.uit.edu.vn/thongbao/university-tsukuba-announcement-japanese-language-culture-course "University of Tsukuba - Announcement of Japanese Language & Culture Course")
-    
-
-[THÔNG BÁO NGHỈ HỌC LỚP STA01.D32](https://daa.uit.edu.vn/thongbao/thong-bao-nghi-hoc-lop-sta01d32)
-
-----------------------------------------------------------------------------------------------------
-
-T3, 16/07/2013 - 09:10
-
-Phòng Đào tạo thông báo:  
-Lớp Xác suất thống kê STA01.D32 do GV Lê Hoàng Tuấn dạy phòng C308, tiết 6,7,8 nghỉ học chiều nay 16/7/2013
-
-*   [Xem thêm về THÔNG BÁO NGHỈ HỌC LỚP STA01.D32](https://daa.uit.edu.vn/thongbao/thong-bao-nghi-hoc-lop-sta01d32 "THÔNG BÁO NGHỈ HỌC LỚP STA01.D32")
-    
-
-[Thông Báo Thay Đồi Lịch Học Lớp:DBSS1.D31](https://daa.uit.edu.vn/thongbao/thong-bao-thay-doi-lich-hoc-lopdbss1d31)
-
----------------------------------------------------------------------------------------------------------------------
-
-T2, 15/07/2013 - 12:35
-
-PDT thông báo lịch học mới của Lớp:DBSS1.D31 học sáng thứ 2 tiết 123 & sáng thứ 3 tiết 123 tại phòng C205.  
-Lớp:DBSS1.D31.1 học chiều thứ tư tiết 678  phòng C309 & Chiều thứ 5 tiết 678 phòng C303.  
-   
- 
-
-*   [Xem thêm về Thông Báo Thay Đồi Lịch Học Lớp:DBSS1.D31](https://daa.uit.edu.vn/thongbao/thong-bao-thay-doi-lich-hoc-lopdbss1d31 " Thông Báo Thay Đồi Lịch Học Lớp:DBSS1.D31")
-    
-
-[THÔNG BÁO HỌC BÙ LỚP CS407.D21 NGÀY 17/07/2013](https://daa.uit.edu.vn/thongbao/thong-bao-hoc-bu-lop-cs407d21-ngay-17072013)
+[THÔNG BÁO HỌC BÙ LỚP IT001.D31 NGÀY 03/08/2013](https://daa.uit.edu.vn/thongbao/thong-bao-hoc-bu-lop-it001d31-ngay-03082013)
 
 ------------------------------------------------------------------------------------------------------------------------------
 
-T2, 15/07/2013 - 08:53
+T2, 29/07/2013 - 13:26
 
-Lớp CS407.D21 học bù ngày 17/07/2013, Tiết 1 --> 4, Phòng C206.
+CBGD : **Trương Hải Bằng**
 
-*   [Xem thêm về THÔNG BÁO HỌC BÙ LỚP CS407.D21 NGÀY 17/07/2013](https://daa.uit.edu.vn/thongbao/thong-bao-hoc-bu-lop-cs407d21-ngay-17072013 "THÔNG BÁO HỌC BÙ LỚP CS407.D21 NGÀY 17/07/2013")
+Khoa/ Bộ môn : **KHMT**
+
+Môn học : **IT001**
+
+Lớp : **IT001.D31**
+
+Sĩ số : **128**
+
+Thời gian : Tiết bắt đầu : **6**
+
+Tiết kết thúc : **8**
+
+Thứ : **7** Ngày : **03/08/2013**
+
+Phòng : **C107**
+
+*   [Xem thêm về THÔNG BÁO HỌC BÙ LỚP IT001.D31 NGÀY 03/08/2013](https://daa.uit.edu.vn/thongbao/thong-bao-hoc-bu-lop-it001d31-ngay-03082013 "THÔNG BÁO HỌC BÙ LỚP IT001.D31 NGÀY 03/08/2013")
     
 
-[Thông Báo Nghỉ Học Lớp MAT01.D31](https://daa.uit.edu.vn/thongbao/thong-bao-nghi-hoc-lop-mat01d31)
+[Thông Báo Lịch Thi Giữa Học Kỳ Hè 2012-3012& Danh Sách Phòng Thi (Cập nhật)](https://daa.uit.edu.vn/thongbao/thong-bao-lich-thi-giua-hoc-ky-he-2012-3012-danh-sach-phong-thi-cap-nhat)
 
-----------------------------------------------------------------------------------------------------
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
-T6, 12/07/2013 - 10:42
+T6, 26/07/2013 - 15:02
 
-Lớp MAT01.D31 Toán cao cấp A1GV:  Dương Tôn Đảm giảng dạy chiều thứ 5 tại GD2 nghỉ học ngày 12/7/2013, lịch học bù GV thông báo sau.
+PĐT cập nhật lịch thi và danh sách phòng thi giữa kỳ, đề nghị sinh viên kiểm tra lịch thi, danh sách phòng thi để đảm bảo thi cử có kết quả tốt.
 
-*   [Xem thêm về Thông Báo Nghỉ Học Lớp MAT01.D31](https://daa.uit.edu.vn/thongbao/thong-bao-nghi-hoc-lop-mat01d31 "Thông Báo Nghỉ Học Lớp MAT01.D31 ")
-    
-
-[Thông Báo Lich Thi Các Lớp Chuyên Đề](https://daa.uit.edu.vn/thongbao/thong-bao-lich-thi-cac-lop-chuyen-de)
-
--------------------------------------------------------------------------------------------------------------
-
-T6, 12/07/2013 - 08:22
-
-PĐT thông báo báo lịch thi các lớp chuyên đề &  danh sách phòng thi đề nghị sinh viên cập nhật thông tin để có kế hoạch thi cử tốt.
-
-*   [Xem thêm về Thông Báo Lich Thi Các Lớp Chuyên Đề](https://daa.uit.edu.vn/thongbao/thong-bao-lich-thi-cac-lop-chuyen-de "Thông Báo Lich Thi Các Lớp Chuyên Đề")
+*   [Xem thêm về Thông Báo Lịch Thi Giữa Học Kỳ Hè 2012-3012& Danh Sách Phòng Thi (Cập nhật)](https://daa.uit.edu.vn/thongbao/thong-bao-lich-thi-giua-hoc-ky-he-2012-3012-danh-sach-phong-thi-cap-nhat "Thông Báo Lịch Thi Giữa Học Kỳ Hè  2012-3012& Danh Sách Phòng Thi (Cập nhật)")
     
 
-Trang
------
+[THÔNG BÁO NGHỈ LỚP CE313.D31 NGÀY 05/08/2013](https://daa.uit.edu.vn/thongbao/thong-bao-nghi-lop-ce313d31-ngay-05082013)
 
-*   [« đầu](https://daa.uit.edu.vn/thongbaochinhquy "Đến trang đầu tiên")
+--------------------------------------------------------------------------------------------------------------------------
+
+T6, 26/07/2013 - 14:13
+
+CBGD : **Thiều Xuân Khánh**
+
+Khoa/ Bộ môn : **KTMT**
+
+Môn học : **CE313**
+
+Lớp : **CE313.D31**
+
+Phòng : **C106**
+
+Thời gian : Tiết bắt đầu : **6**
+
+Tiết kết thúc : **9**
+
+Thứ : **2** Ngày : **2013-08-05**
+
+*   [Xem thêm về THÔNG BÁO NGHỈ LỚP CE313.D31 NGÀY 05/08/2013](https://daa.uit.edu.vn/thongbao/thong-bao-nghi-lop-ce313d31-ngay-05082013 "THÔNG BÁO NGHỈ LỚP CE313.D31 NGÀY 05/08/2013")
     
-*   [‹ trước](https://daa.uit.edu.vn/thongbaochinhquy?page=1889 "Đến trang kế trước")
+
+[Khảo sát sinh viên về văn bằng đối với ngành CNTT](https://daa.uit.edu.vn/thongbao/khao-sat-sinh-vien-ve-van-bang-doi-voi-nganh-cntt)
+
+---------------------------------------------------------------------------------------------------------------------------------------
+
+T5, 25/07/2013 - 22:42
+
+Nhằm lấy ý kiến phản hồi của sinh viên về văn bằng đối với ngành CNTT để phục vụ cho công tác nâng cao chất lượng đào tạo nhằm đáp ứng yêu cầu của thị trường lao động.
+
+Rất mong các bạn sinh viên bỏ chút thời gian (tầm vài giây) thực hiện khảo sát này (khảo sát sẽ đóng sau ngày 31/07/2013). Link khảo sát có trong mục Sinh viên -> [Danh sách khảo sát](http://daa.uit.edu.vn/sinhvien/phieukhaosat)
+ (phải đăng nhập).
+
+*   [Xem thêm về Khảo sát sinh viên về văn bằng đối với ngành CNTT](https://daa.uit.edu.vn/thongbao/khao-sat-sinh-vien-ve-van-bang-doi-voi-nganh-cntt "Khảo sát sinh viên về văn bằng đối với ngành CNTT")
     
-*   …
-*   [1887](https://daa.uit.edu.vn/thongbaochinhquy?page=1886 "Đến trang 1887")
+
+[Thông Báo Thi Lớp Chuyên Đề Chuyên đề Điện toán đám mây:Chuyên đề Kho dữ liệu và OLAP](https://daa.uit.edu.vn/thongbao/thong-bao-thi-lop-chuyen-de-chuyen-de-dien-toan-dam-maychuyen-de-kho-du-lieu-va-olap)
+
+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+T4, 24/07/2013 - 13:30
+
+Khoa HTTT Thông báo
+
+1\. Chuyên đề Điện toán đám mây (Cloud Computing), thi ngày 1/8/2013 tại Phòng C.102, ca thi: 2.
+
+2. Chuyên đề Kho dữ liệu và OLAP thi ngày 2/8/2013 tại Phòng C.102, ca thi: 2
+
+*   [Xem thêm về Thông Báo Thi Lớp Chuyên Đề Chuyên đề Điện toán đám mây:Chuyên đề Kho dữ liệu và OLAP](https://daa.uit.edu.vn/thongbao/thong-bao-thi-lop-chuyen-de-chuyen-de-dien-toan-dam-maychuyen-de-kho-du-lieu-va-olap "Thông Báo Thi Lớp Chuyên Đề Chuyên đề Điện toán đám mây:Chuyên đề Kho dữ liệu và OLAP")
     
-*   [1888](https://daa.uit.edu.vn/thongbaochinhquy?page=1887 "Đến trang 1888")
+
+[Thông Báo Trả Đơn Đề Nghị ĐKHP & Hủy ĐKHP HK Hè 2012-2013](https://daa.uit.edu.vn/thongbao/thong-bao-tra-don-de-nghi-dkhp-huy-dkhp-hk-he-2012-2013)
+
+-----------------------------------------------------------------------------------------------------------------------------------------------------
+
+T4, 24/07/2013 - 08:23
+
+PĐT thông báo đến những sv đã nộp đơn xin DKHP và hủy DKHP học kỳ hè năm học 2013-2013 liên hệ PDT để nhận lại  kết quả DKHP và đơn của mình.
+
+*   [Xem thêm về Thông Báo Trả Đơn Đề Nghị ĐKHP & Hủy ĐKHP HK Hè 2012-2013](https://daa.uit.edu.vn/thongbao/thong-bao-tra-don-de-nghi-dkhp-huy-dkhp-hk-he-2012-2013 "Thông Báo Trả Đơn Đề Nghị ĐKHP & Hủy ĐKHP HK Hè 2012-2013")
     
-*   [1889](https://daa.uit.edu.vn/thongbaochinhquy?page=1888 "Đến trang 1889")
+
+[THÔNG BÁO HỌC BÙ LỚP DSAL1.D31 NGÀY 26/07/2013](https://daa.uit.edu.vn/thongbao/thong-bao-hoc-bu-lop-dsal1d31-ngay-26072013)
+
+------------------------------------------------------------------------------------------------------------------------------
+
+T3, 23/07/2013 - 10:55
+
+LỚP DSAL1.D31 HỌC BÙ NGÀY 26/07/2013 TẠI PHÒNG C206 TIẾT 1 --> 3
+
+*   [Xem thêm về THÔNG BÁO HỌC BÙ LỚP DSAL1.D31 NGÀY 26/07/2013](https://daa.uit.edu.vn/thongbao/thong-bao-hoc-bu-lop-dsal1d31-ngay-26072013 "THÔNG BÁO HỌC BÙ LỚP DSAL1.D31 NGÀY 26/07/2013")
     
-*   [1890](https://daa.uit.edu.vn/thongbaochinhquy?page=1889 "Đến trang 1890")
+
+[V/V THU HỌC PHÍ HK3 NĂM HỌC 2012-2013 HỆ ĐÀO TẠO CHÍNH QUY](https://daa.uit.edu.vn/thongbao/vv-thu-hoc-phi-hk3-nam-hoc-2012-2013-he-dao-tao-chinh-quy)
+
+--------------------------------------------------------------------------------------------------------------------------------------------------------
+
+T3, 23/07/2013 - 09:14
+
+Phòng Kế Hoạch - Tài Chính thông báo về việc tính học phí hệ Đào tạo Đại học chính quy Học kỳ 3 năm 2012-2013 như sau: _xem thông tin chi tiết thông báo trong file đính kèm_
+
+*   [Xem thêm về V/V THU HỌC PHÍ HK3 NĂM HỌC 2012-2013 HỆ ĐÀO TẠO CHÍNH QUY](https://daa.uit.edu.vn/thongbao/vv-thu-hoc-phi-hk3-nam-hoc-2012-2013-he-dao-tao-chinh-quy "V/V THU HỌC PHÍ HK3 NĂM HỌC 2012-2013 HỆ ĐÀO TẠO CHÍNH QUY")
     
-*   1891
-*   [1892](https://daa.uit.edu.vn/thongbaochinhquy?page=1891 "Đến trang 1892")
-    
-*   [1893](https://daa.uit.edu.vn/thongbaochinhquy?page=1892 "Đến trang 1893")
-    
-*   [1894](https://daa.uit.edu.vn/thongbaochinhquy?page=1893 "Đến trang 1894")
-    
-*   [1895](https://daa.uit.edu.vn/thongbaochinhquy?page=1894 "Đến trang 1895")
-    
-*   …
-*   [sau ›](https://daa.uit.edu.vn/thongbaochinhquy?page=1891 "Đến trang kế sau")
-    
-*   [cuối »](https://daa.uit.edu.vn/thongbaochinhquy?page=1925 "Đến trang cuối cùng")
+
+[THÔNG BÁO THU HỌC PHÍ HK HÈ NĂM HỌC 2012-2013 HỆ ĐÀO TẠO CHÍNH QUY](https://daa.uit.edu.vn/thongbao/thong-bao-thu-hoc-phi-hk-he-nam-hoc-2012-2013-he-dao-tao-chinh-quy)
+
+-------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+T2, 22/07/2013 - 16:18
+
+THÔNG BÁO 31/TB-ĐHCNTT-KHTC (V/V THU HỌC PHÍ HK3 NĂM HỌC 2012-2013 HỆ ĐÀO TẠO CHÍNH QUY) (file đính kèm).  
+ 
+
+*   [Xem thêm về THÔNG BÁO THU HỌC PHÍ HK HÈ NĂM HỌC 2012-2013 HỆ ĐÀO TẠO CHÍNH QUY](https://daa.uit.edu.vn/thongbao/thong-bao-thu-hoc-phi-hk-he-nam-hoc-2012-2013-he-dao-tao-chinh-quy "THÔNG BÁO THU HỌC PHÍ HK HÈ NĂM HỌC 2012-2013 HỆ ĐÀO TẠO CHÍNH QUY")
