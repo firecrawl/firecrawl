@@ -115,6 +115,7 @@ const processExtractJobInternal = async (
 
       await job.moveToCompleted(result, token, false);
       await updateExtract(job.data.extractId, {
+        status: "failed",
         error: result?.error ?? getErrorContactMessage(job.data.extractId),
       });
 
