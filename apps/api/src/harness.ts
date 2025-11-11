@@ -104,6 +104,12 @@ const POSTGRES_USER = process.env.POSTGRES_USER ?? "postgres";
 const POSTGRES_PASSWORD = process.env.POSTGRES_PASSWORD ?? "postgres";
 const POSTGRES_DB = process.env.POSTGRES_DB ?? "postgres";
 
+// Shell escape helper to prevent command injection
+function shellEscape(arg: string): string {
+  // Wrap in single quotes and escape any single quotes within
+  return `'${arg.replace(/'/g, "'\\''")}'`;
+}
+
 const logger = {
   section(message: string) {
     console.log(
@@ -444,7 +450,7 @@ async function startNuqPostgresContainer(
   logger.info(`Starting PostgreSQL container: ${containerName}`);
   const start = execForward(
     `${runtime}@start`,
-    `${runtime} run -d --name ${containerName} -p 5432:5432 -e POSTGRES_PASSWORD=${POSTGRES_PASSWORD} -e POSTGRES_USER=${POSTGRES_USER} -e POSTGRES_DB=${POSTGRES_DB} firecrawl-nuq-postgres:latest`,
+    `${runtime} run -d --name ${containerName} -p 5432:5432 -e POSTGRES_PASSWORD=${shellEscape(POSTGRES_PASSWORD)} -e POSTGRES_USER=${shellEscape(POSTGRES_USER)} -e POSTGRES_DB=${shellEscape(POSTGRES_DB)} firecrawl-nuq-postgres:latest`,
   );
   await start.promise;
   logger.success(`PostgreSQL container started: ${containerName}`);
@@ -518,7 +524,7 @@ async function setupNuqPostgres(): Promise<Services["nuqPostgres"]> {
   await waitForPostgres("localhost", 5432);
 
   // Set environment variables for the services
-  const dbUrl = `postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@localhost:5432/${POSTGRES_DB}`;
+  const dbUrl = `postgresql://${encodeURIComponent(POSTGRES_USER)}:${encodeURIComponent(POSTGRES_PASSWORD)}@localhost:5432/${encodeURIComponent(POSTGRES_DB)}`;
   process.env.NUQ_DATABASE_URL = dbUrl;
   process.env.NUQ_DATABASE_URL_LISTEN = dbUrl;
 
