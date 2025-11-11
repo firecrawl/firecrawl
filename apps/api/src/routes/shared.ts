@@ -110,7 +110,7 @@ export function authMiddleware(
         // Use the URL from the request body if available
         const urlToTrack = (req.body as any)?.url;
         if (urlToTrack) {
-          await addDomainFrequencyJob(urlToTrack);
+          // await addDomainFrequencyJob(urlToTrack);
         }
       } catch (error) {
         // Log error without meta.logger since it's not available in this context

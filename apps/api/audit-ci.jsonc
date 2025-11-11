@@ -8,6 +8,7 @@
         "GHSA-qj3p-xc97-xw74|@coinbase/x402>x402>wagmi>@wagmi/connectors>@metamask/sdk>@metamask/sdk-communication-layer", // we don't use the Metamask SDK in the browser
         "GHSA-ffrw-9mx8-89p8|@coinbase/x402>x402>wagmi>@wagmi/connectors>@walletconnect/ethereum-provider>@reown/appkit>@reown/appkit-utils>@walletconnect/logger>pino>fast-redact", // unused
         "GHSA-m732-5p4w-x69g|@coinbase/x402>x402>wagmi>@wagmi/connectors>porto>hono", // we don't use hono
-        "GHSA-q7jf-gf43-6x6p|@coinbase/x402>x402>wagmi>@wagmi/connectors>porto>hono" // we don't use hono
+        "GHSA-q7jf-gf43-6x6p|@coinbase/x402>x402>wagmi>@wagmi/connectors>porto>hono", // we don't use hono
+        "GHSA-rwvc-j5jr-mgvh|ai" // file upload vulnerability - not exposed in our usage
     ]
 }
