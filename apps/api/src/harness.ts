@@ -99,6 +99,11 @@ const NUQ_WORKER_START_PORT = Number(
 const NUQ_WORKER_COUNT = Number(process.env.NUQ_WORKER_COUNT ?? "5");
 const NUQ_PREFETCH_WORKER_PORT = NUQ_WORKER_START_PORT + NUQ_WORKER_COUNT;
 
+// PostgreSQL credentials (with defaults for backward compatibility)
+const POSTGRES_USER = process.env.POSTGRES_USER ?? "postgres";
+const POSTGRES_PASSWORD = process.env.POSTGRES_PASSWORD ?? "postgres";
+const POSTGRES_DB = process.env.POSTGRES_DB ?? "postgres";
+
 const logger = {
   section(message: string) {
     console.log(
@@ -439,7 +444,7 @@ async function startNuqPostgresContainer(
   logger.info(`Starting PostgreSQL container: ${containerName}`);
   const start = execForward(
     `${runtime}@start`,
-    `${runtime} run -d --name ${containerName} -p 5432:5432 -e POSTGRES_PASSWORD=postgres -e POSTGRES_USER=postgres -e POSTGRES_DB=postgres firecrawl-nuq-postgres:latest`,
+    `${runtime} run -d --name ${containerName} -p 5432:5432 -e POSTGRES_PASSWORD=${POSTGRES_PASSWORD} -e POSTGRES_USER=${POSTGRES_USER} -e POSTGRES_DB=${POSTGRES_DB} firecrawl-nuq-postgres:latest`,
   );
   await start.promise;
   logger.success(`PostgreSQL container started: ${containerName}`);
@@ -460,9 +465,9 @@ async function waitForPostgres(
       const client = new Client({
         host,
         port,
-        user: "postgres",
-        password: "postgres",
-        database: "postgres",
+        user: POSTGRES_USER,
+        password: POSTGRES_PASSWORD,
+        database: POSTGRES_DB,
         connectionTimeoutMillis: 2000,
       });
 
@@ -513,7 +518,7 @@ async function setupNuqPostgres(): Promise<Services["nuqPostgres"]> {
   await waitForPostgres("localhost", 5432);
 
   // Set environment variables for the services
-  const dbUrl = "postgresql://postgres:postgres@localhost:5432/postgres";
+  const dbUrl = `postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@localhost:5432/${POSTGRES_DB}`;
   process.env.NUQ_DATABASE_URL = dbUrl;
   process.env.NUQ_DATABASE_URL_LISTEN = dbUrl;
 
