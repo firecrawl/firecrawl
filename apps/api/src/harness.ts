@@ -103,6 +103,8 @@ const NUQ_PREFETCH_WORKER_PORT = NUQ_WORKER_START_PORT + NUQ_WORKER_COUNT;
 const POSTGRES_USER = process.env.POSTGRES_USER ?? "postgres";
 const POSTGRES_PASSWORD = process.env.POSTGRES_PASSWORD ?? "postgres";
 const POSTGRES_DB = process.env.POSTGRES_DB ?? "postgres";
+const POSTGRES_HOST = process.env.POSTGRES_HOST ?? "localhost";
+const POSTGRES_PORT = process.env.POSTGRES_PORT ?? "5432";
 
 // Shell escape helper to prevent command injection
 function shellEscape(arg: string): string {
@@ -493,11 +495,28 @@ async function waitForPostgres(
 }
 
 async function setupNuqPostgres(): Promise<Services["nuqPostgres"]> {
+  // If NUQ_DATABASE_URL is already set, respect it (user's explicit choice)
   if (process.env.NUQ_DATABASE_URL) {
     logger.info("NUQ_DATABASE_URL is set, skipping container management");
     return undefined;
   }
 
+  // Check if we're running in docker-compose (POSTGRES_HOST is set and not localhost)
+  const isDockerCompose = POSTGRES_HOST !== "localhost";
+
+  if (isDockerCompose) {
+    // Running in docker-compose: construct URL with proper encoding
+    logger.section("Setting up NUQ PostgreSQL connection for docker-compose");
+    const dbUrl = `postgresql://${encodeURIComponent(POSTGRES_USER)}:${encodeURIComponent(POSTGRES_PASSWORD)}@${POSTGRES_HOST}:${POSTGRES_PORT}/${encodeURIComponent(POSTGRES_DB)}`;
+    process.env.NUQ_DATABASE_URL = dbUrl;
+    process.env.NUQ_DATABASE_URL_LISTEN = dbUrl;
+    logger.success(
+      "NUQ PostgreSQL connection configured with encoded credentials",
+    );
+    return undefined;
+  }
+
+  // Running locally: manage container
   logger.section("Setting up NUQ PostgreSQL container");
 
   const runtime = await detectContainerRuntime();
@@ -523,7 +542,7 @@ async function setupNuqPostgres(): Promise<Services["nuqPostgres"]> {
   // Wait for PostgreSQL to be ready
   await waitForPostgres("localhost", 5432);
 
-  // Set environment variables for the services
+  // Set environment variables for the services with proper encoding
   const dbUrl = `postgresql://${encodeURIComponent(POSTGRES_USER)}:${encodeURIComponent(POSTGRES_PASSWORD)}@localhost:5432/${encodeURIComponent(POSTGRES_DB)}`;
   process.env.NUQ_DATABASE_URL = dbUrl;
   process.env.NUQ_DATABASE_URL_LISTEN = dbUrl;
