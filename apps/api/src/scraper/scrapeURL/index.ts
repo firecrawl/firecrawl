@@ -964,6 +964,10 @@ export async function scrapeURL(
     }
 
     try {
+      // temporary fix until new scrapeURL system
+      let documentReattempted = false;
+      let pdfReattempted = false;
+
       let result: ScrapeUrlResponse;
       while (true) {
         try {
@@ -975,6 +979,7 @@ export async function scrapeURL(
             (meta.internalOptions.forceEngine === undefined ||
               Array.isArray(meta.internalOptions.forceEngine))
           ) {
+            // note: we might want to reattempt check here too
             meta.logger.debug(
               "More feature flags requested by scraper: adding " +
                 error.featureFlags.join(", "),
@@ -1014,12 +1019,20 @@ export async function scrapeURL(
               );
               throw error;
             } else {
-              meta.logger.debug(
-                "PDF was blocked by anti-bot, prefetching with chrome-cdp",
-              );
-              meta.featureFlags = new Set(
-                [...meta.featureFlags].filter(x => x !== "pdf"),
-              );
+              if (!pdfReattempted) {
+                meta.logger.debug(
+                  "PDF was blocked by anti-bot, prefetching with chrome-cdp",
+                );
+
+                pdfReattempted = true;
+                meta.featureFlags = new Set(
+                  [...meta.featureFlags].filter(x => x !== "pdf"),
+                );
+              } else {
+                meta.logger.debug(
+                  "PDF was blocked by anti-bot, skipping as it was already attempted",
+                );
+              }
             }
           } else if (
             error instanceof DocumentAntibotError &&
@@ -1031,12 +1044,20 @@ export async function scrapeURL(
               );
               throw error;
             } else {
-              meta.logger.debug(
-                "Document was blocked by anti-bot, prefetching with chrome-cdp",
-              );
-              meta.featureFlags = new Set(
-                [...meta.featureFlags].filter(x => x !== "document"),
-              );
+              if (!documentReattempted) {
+                meta.logger.debug(
+                  "Document was blocked by anti-bot, prefetching with chrome-cdp",
+                );
+
+                documentReattempted = true;
+                meta.featureFlags = new Set(
+                  [...meta.featureFlags].filter(x => x !== "document"),
+                );
+              } else {
+                meta.logger.debug(
+                  "Document was blocked by anti-bot, skipping as it was already attempted",
+                );
+              }
             }
           } else {
             throw error;

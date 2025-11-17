@@ -499,6 +499,14 @@ class V1FirecrawlApp:
     This is used by the unified client to provide version-specific access
     through app.v1.method_name() patterns.
     """
+    
+    # OpenAI schema validation error message
+    OPENAI_SCHEMA_ERROR_MESSAGE = (
+        "Schema contains invalid structure for OpenAI: object type with no 'properties' defined "
+        "but 'additionalProperties: true' (schema-less dictionary not supported by OpenAI). "
+        "Please define specific properties for your object. Note: Recursive schemas using '$ref' are supported."
+    )
+    
     def __init__(self, api_key: Optional[str] = None, api_url: Optional[str] = None) -> None:
         """
         Initialize the V1FirecrawlApp instance with API key, API URL.
@@ -2807,6 +2815,359 @@ class V1FirecrawlApp:
         if isinstance(schema, (list, tuple)):
             return [self._ensure_schema_dict(v) for v in schema]
         return schema
+
+    def _contains_recursive_ref(self, obj, target_def_name, defs, visited=None):
+        """
+        Check if an object contains a recursive reference to a specific definition.
+        
+        Args:
+            obj: Object to check
+            target_def_name: Name of the definition to check for recursion
+            defs: Dictionary of definitions
+            visited: Set of visited object keys to detect cycles
+            
+        Returns:
+            True if recursive reference is found, False otherwise
+        """
+        if not obj or not isinstance(obj, (dict, list)):
+            return False
+        
+        if visited is None:
+            visited = set()
+        
+        import json
+        obj_key = json.dumps(obj, sort_keys=True, default=str)
+        if obj_key in visited:
+            return False
+        visited.add(obj_key)
+        
+        try:
+            if isinstance(obj, dict):
+                if "$ref" in obj and isinstance(obj["$ref"], str):
+                    ref_path = obj["$ref"].split("/")
+                    if len(ref_path) >= 3 and ref_path[0] == "#" and ref_path[1] == "$defs":
+                        def_name = ref_path[-1]
+                        if def_name == target_def_name:
+                            return True
+                        if def_name in defs:
+                            return self._contains_recursive_ref(defs[def_name], target_def_name, defs, visited)
+                
+                for value in obj.values():
+                    if self._contains_recursive_ref(value, target_def_name, defs, visited):
+                        return True
+            
+            elif isinstance(obj, list):
+                for item in obj:
+                    if self._contains_recursive_ref(item, target_def_name, defs, visited):
+                        return True
+        
+        finally:
+            visited.discard(obj_key)
+        
+        return False
+
+    def _check_for_circular_defs(self, defs):
+        """
+        Check if $defs contain circular references.
+        
+        Args:
+            defs: Dictionary of definitions to check
+            
+        Returns:
+            True if circular references are found, False otherwise
+        """
+        if not defs:
+            return False
+        
+        for def_name, def_value in defs.items():
+            if self._contains_recursive_ref(def_value, def_name, defs):
+                return True
+        
+        return False
+
+    def _resolve_refs(self, obj, defs, visited=None, depth=0):
+        """
+        Resolve $ref references in a JSON schema object.
+        
+        Args:
+            obj: Object to resolve references in
+            defs: Dictionary of definitions
+            visited: Set to track visited objects and prevent infinite recursion
+            depth: Current recursion depth
+            
+        Returns:
+            Object with resolved references
+        """
+        if not obj or not isinstance(obj, (dict, list)) or depth > 10:
+            return obj
+        
+        if visited is None:
+            visited = set()
+        
+        obj_id = id(obj)
+        if obj_id in visited:
+            return obj
+        
+        visited.add(obj_id)
+        
+        try:
+            if isinstance(obj, dict):
+                if "$ref" in obj and isinstance(obj["$ref"], str):
+                    ref_path = obj["$ref"].split("/")
+                    if len(ref_path) >= 3 and ref_path[0] == "#" and ref_path[1] == "$defs":
+                        def_name = ref_path[-1]
+                        if def_name in defs:
+                            return self._resolve_refs(dict(defs[def_name]), defs, visited, depth + 1)
+                    return obj
+                
+                resolved = {}
+                for key, value in obj.items():
+                    if key == "$defs":
+                        continue
+                    resolved[key] = self._resolve_refs(value, defs, visited, depth + 1)
+                return resolved
+            
+            elif isinstance(obj, list):
+                return [self._resolve_refs(item, defs, visited, depth + 1) for item in obj]
+            
+        finally:
+            visited.discard(obj_id)
+        
+        return obj
+
+    def _normalize_schema_for_openai(self, schema):
+        """
+        Normalize a schema for OpenAI compatibility by handling recursive references.
+        
+        Args:
+            schema: Schema to normalize
+            
+        Returns:
+            Normalized schema
+        """
+        if not schema or not isinstance(schema, dict):
+            return schema
+
+        visited = set()
+
+        def normalize_object(obj):
+            if not isinstance(obj, dict):
+                if isinstance(obj, list):
+                    return [normalize_object(item) for item in obj]
+                return obj
+
+            # Create a unique key for this object to track visitation
+            obj_id = id(obj)
+            if obj_id in visited:
+                return obj
+            visited.add(obj_id)
+
+            normalized = dict(obj)
+
+            # Handle $ref recursion - preserve as-is for OpenAI compatibility
+            if "$ref" in normalized:
+                visited.discard(obj_id)
+                return normalized
+
+            if "$defs" in normalized:
+                defs = normalized.pop("$defs")
+                processed_rest = {}
+                
+                for key, value in normalized.items():
+                    if (isinstance(value, dict) and "$ref" not in value):
+                        processed_rest[key] = normalize_object(value)
+                    else:
+                        processed_rest[key] = value
+                
+                result = {**processed_rest, "$defs": {k: normalize_object(v) for k, v in defs.items()}}
+                visited.discard(obj_id)
+                return result
+
+            # Only remove additionalProperties when it's explicitly True
+            if (normalized.get("type") == "object" and 
+                "properties" in normalized and 
+                normalized.get("additionalProperties") is True):
+                del normalized["additionalProperties"]
+
+            if (normalized.get("type") == "object" and 
+                "required" in normalized and 
+                "properties" in normalized):
+                if (isinstance(normalized["required"], list) and 
+                    isinstance(normalized["properties"], dict)):
+                    valid_required = [field for field in normalized["required"] 
+                                   if field in normalized["properties"]]
+                    if valid_required:
+                        normalized["required"] = valid_required
+                    else:
+                        del normalized["required"]
+                else:
+                    del normalized["required"]
+
+            # Handle nested schemas including arrays (anyOf/oneOf/items)
+            for key, value in list(normalized.items()):
+                if isinstance(value, dict) and "$ref" not in value:
+                    normalized[key] = normalize_object(value)
+                elif isinstance(value, list):
+                    # Handle arrays that might contain schema objects
+                    normalized[key] = [normalize_object(item) if isinstance(item, dict) else item for item in value]
+
+            visited.discard(obj_id)
+            return normalized
+
+        return normalize_object(schema)
+
+    def _validate_schema_for_openai(self, schema):
+        """
+        Validate schema for OpenAI compatibility.
+        
+        Args:
+            schema: Schema to validate
+            
+        Returns:
+            True if schema is valid, False otherwise
+        """
+        if not schema or not isinstance(schema, dict):
+            return True
+
+        visited = set()
+
+        def has_invalid_structure(obj):
+            if not isinstance(obj, dict):
+                return False
+
+            obj_id = id(obj)
+            if obj_id in visited:
+                return False
+            visited.add(obj_id)
+
+            if "$ref" in obj:
+                visited.discard(obj_id)
+                return False
+
+            if (obj.get("type") == "object" and 
+                "properties" not in obj and 
+                "patternProperties" not in obj and 
+                obj.get("additionalProperties") is True):
+                visited.discard(obj_id)
+                return True
+
+            # Check both direct dict values and arrays for nested schemas
+            for value in obj.values():
+                if isinstance(value, dict) and "$ref" not in value:
+                    if has_invalid_structure(value):
+                        visited.discard(obj_id)
+                        return True
+                elif isinstance(value, list):
+                    # Check items in arrays (anyOf/oneOf/items)
+                    for item in value:
+                        if isinstance(item, dict) and "$ref" not in item:
+                            if has_invalid_structure(item):
+                                visited.discard(obj_id)
+                                return True
+
+            visited.discard(obj_id)
+            return False
+
+        return not has_invalid_structure(schema)
+    
+    def _detect_recursive_schema(self, schema):
+        """
+        Detect if a schema contains recursive references.
+        
+        Args:
+            schema: Schema to analyze
+            
+        Returns:
+            True if schema has recursive patterns, False otherwise
+        """
+        if not schema or not isinstance(schema, dict):
+            return False
+
+        import json
+        schema_string = json.dumps(schema)
+        has_refs = (
+            '"$ref"' in schema_string or
+            "#/$defs/" in schema_string or
+            "#/definitions/" in schema_string
+        )
+        has_defs = bool(schema.get("$defs") or schema.get("definitions"))
+        
+        return has_refs or has_defs
+
+    def _select_model_for_schema(self, schema=None):
+        """
+        Select appropriate model based on schema complexity.
+        
+        Args:
+            schema: Schema to analyze
+            
+        Returns:
+            Dict with modelName and reason
+        """
+        if not schema:
+            return {"modelName": "gpt-4o-mini", "reason": "no_schema"}
+        
+        if self._detect_recursive_schema(schema):
+            return {"modelName": "gpt-4o", "reason": "recursive_schema_detected"}
+        
+        return {"modelName": "gpt-4o-mini", "reason": "simple_schema"}
+    
+    def _process_schema_with_validation(self, schema_container, schema_key="schema"):
+        """
+        Process and validate a schema container (like extract or json_options).
+        
+        Args:
+            schema_container: Dict containing schema
+            schema_key: Key where schema is stored (default: "schema")
+            
+        Returns:
+            Processed schema container
+        """
+        if isinstance(schema_container, dict) and schema_key in schema_container:
+            schema = self._ensure_schema_dict(schema_container[schema_key])
+            
+            # Handle schema reference resolution similar to TypeScript implementation
+            if schema and isinstance(schema, dict):
+                defs = schema.get("$defs", {})
+                import json
+                schema_string = json.dumps(schema)
+                has_any_refs = (
+                    schema.get("$defs") or
+                    '"$ref"' in schema_string or
+                    "#/$defs/" in schema_string
+                )
+                
+                if has_any_refs:
+                    try:
+                        resolved_schema = self._resolve_refs(schema, defs)
+                        resolved_string = json.dumps(resolved_schema)
+                        has_remaining_refs = '"$ref"' in resolved_string or "#/$defs/" in resolved_string
+                        
+                        if not has_remaining_refs:
+                            schema = resolved_schema
+                            # Remove $defs after successful resolution
+                            if isinstance(schema, dict) and "$defs" in schema:
+                                del schema["$defs"]
+                        # If refs remain, preserve original schema
+                    except Exception:
+                        # Failed to resolve refs, preserve original schema
+                        pass
+                else:
+                    # No recursive references detected, resolve refs anyway
+                    try:
+                        schema = self._resolve_refs(schema, defs)
+                        if isinstance(schema, dict) and "$defs" in schema:
+                            del schema["$defs"]
+                    except Exception:
+                        pass
+            
+            schema = self._normalize_schema_for_openai(schema)
+            if not self._validate_schema_for_openai(schema):
+                raise ValueError(self.OPENAI_SCHEMA_ERROR_MESSAGE)
+                
+            schema_container[schema_key] = schema
+        return schema_container
+
 
 class V1CrawlWatcher:
     """

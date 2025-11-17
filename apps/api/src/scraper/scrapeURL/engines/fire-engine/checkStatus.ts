@@ -115,6 +115,7 @@ const processingSchema = z.object({
     "waiting-children",
     "unknown",
     "prioritized",
+    "pending",
   ]),
   processing: z.boolean(),
 });

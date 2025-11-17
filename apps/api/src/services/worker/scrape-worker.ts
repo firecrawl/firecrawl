@@ -90,6 +90,7 @@ async function billScrapeJob(
   logger: Logger,
   costTracking: CostTracking,
   flags: TeamFlags,
+  error?: Error | null,
 ) {
   let creditsToBeBilled: number | null = null;
 
@@ -100,6 +101,7 @@ async function billScrapeJob(
       document,
       costTracking,
       flags,
+      error,
     );
 
     if (
@@ -658,6 +660,7 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
       logger,
       costTracking,
       (await getACUCTeam(job.data.team_id))?.flags ?? null,
+      error instanceof Error ? error : null,
     );
 
     logger.debug("Logging job to DB...");

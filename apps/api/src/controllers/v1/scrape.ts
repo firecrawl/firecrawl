@@ -136,6 +136,15 @@ export async function scrapeController(
     }
 
     if (e instanceof TransportableError) {
+      // DNS resolution errors should return 200 with success: false
+      if (e.code === "SCRAPE_DNS_RESOLUTION_ERROR") {
+        return res.status(200).json({
+          success: false,
+          code: e.code,
+          error: e.message,
+        });
+      }
+
       return res.status(e.code === "SCRAPE_TIMEOUT" ? 408 : 500).json({
         success: false,
         code: e.code,

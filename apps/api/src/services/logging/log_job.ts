@@ -11,6 +11,7 @@ import {
   createJobLoggerContext,
 } from "../../lib/job-transform";
 import { withSpan, setSpanAttributes } from "../../lib/otel-tracer";
+import { hasFormatOfType } from "../../lib/format-utils";
 configDotenv();
 
 export async function logJob(
@@ -156,6 +157,57 @@ export async function logJob(
           logger.debug("Job logged successfully!");
         }
       });
+    }
+
+    // Insert into change_tracking_scrapes table if conditions are met
+    if (
+      job.success &&
+      (job.mode === "scrape" || job.mode === "single_urls") &&
+      job.url &&
+      !zeroDataRetention
+    ) {
+      const hasMarkdown = hasFormatOfType(job.scrapeOptions?.formats, "markdown");
+      const hasChangeTracking = hasFormatOfType(job.scrapeOptions?.formats, "changeTracking");
+      
+      // Insert if markdown format exists (either standalone or as part of change tracking)
+      if (hasMarkdown || hasChangeTracking) {
+        await withSpan("firecrawl-log-job-change-tracking-insert", async span => {
+          setSpanAttributes(span, {
+            "log_job.operation": "change_tracking_insert",
+            "job.id": job.job_id,
+            "job.team_id": job.team_id,
+            "job.url": job.url,
+            "job.change_tracking_tag": job.change_tracking_tag ?? undefined,
+          });
+
+          try {
+            const { error } = await supabase_service.rpc("change_tracking_insert_scrape", {
+              p_team_id: job.team_id,
+              p_url: job.url,
+              p_job_id: job.job_id,
+              p_change_tracking_tag: job.change_tracking_tag ?? null,
+              p_date_added: new Date().toISOString(),
+            });
+
+            if (error) {
+              setSpanAttributes(span, { "change_tracking.insert_successful": false });
+              logger.warn("Error inserting into change_tracking_scrapes", {
+                error,
+                jobId: job.job_id,
+              });
+            } else {
+              setSpanAttributes(span, { "change_tracking.insert_successful": true });
+              logger.debug("Change tracking record inserted successfully!");
+            }
+          } catch (error) {
+            setSpanAttributes(span, { "change_tracking.insert_successful": false });
+            logger.warn("Exception while inserting into change_tracking_scrapes", {
+              error,
+              jobId: job.job_id,
+            });
+          }
+        });
+      }
     }
 
     // if (process.env.POSTHOG_API_KEY && !job.crawl_id) {

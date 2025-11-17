@@ -112,3 +112,27 @@ def normalize_document_input(doc: Dict[str, Any]) -> Dict[str, Any]:
     return normalized
 
 
+def _map_search_result_keys(result: Dict[str, Any], result_type: str) -> Dict[str, Any]:
+    if result_type == "images":
+        mapping = {
+            "imageUrl": "image_url",
+            "imageWidth": "image_width",
+            "imageHeight": "image_height",
+        }
+    elif result_type == "news":
+        mapping = {
+            "imageUrl": "image_url",
+        }
+    elif result_type == "web":
+        mapping = {}
+    else:
+        mapping = {}
+
+    out: Dict[str, Any] = {}
+    for k, v in result.items():
+        snake = mapping.get(k, k)
+        out[snake] = v
+
+    return out
+
+
