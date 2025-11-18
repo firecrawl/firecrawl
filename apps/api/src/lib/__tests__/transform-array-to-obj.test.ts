@@ -18,7 +18,7 @@ const originalSchema = {
 };
 
 describe("transformArrayToObject function", () => {
-  it("shoud transform array to object (id: 26)", async () => {
+  it("should transform array to object (id: 26)", async () => {
     const res1 = {
       products: [
         {
