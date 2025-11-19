@@ -407,13 +407,76 @@ async function scrapeURLLoopIter(
   // NOTE: TODO: what to do when status code is bad is tough...
   // we cannot just rely on text because error messages can be brief and not hit the limit
   // should we just use all the fallbacks and pick the one with the longest text? - mogery
-  if (isLongEnough || !isGoodStatusCode) {
+  // Empty content with good status code is a valid result (e.g., blank pages)
+  // Only treat as unsuccessful if there are actual errors or bad status codes
+  if (isLongEnough || (isGoodStatusCode && hasNoPageError)) {
     meta.logger.info("Scrape via " + engine + " deemed successful.", {
       factors: { isLongEnough, isGoodStatusCode, hasNoPageError },
     });
     return engineResult;
   } else {
     throw new EngineUnsuccessfulError(engine);
+  }
+  // Empty content with good status code is a valid result (e.g., blank pages)
+  // Only treat as unsuccessful if there are actual errors or bad status codes
+  if (isLongEnough || (isGoodStatusCode && hasNoPageError)) {
+    meta.logger.info("Scrape via " + engine + " deemed successful.", {
+      factors: { isLongEnough, isGoodStatusCode, hasNoPageError },
+    });
+    return engineResult;
+  } else {
+    throw new EngineUnsuccessfulError(engine);
+  }
+  // Empty content with good status code is a valid result (e.g., blank pages)
+  // Only treat as unsuccessful if there are actual errors or bad status codes
+  if (isLongEnough || (isGoodStatusCode && hasNoPageError)) {
+    meta.logger.info("Scrape via " + engine + " deemed successful.", {
+      factors: { isLongEnough, isGoodStatusCode, hasNoPageError },
+    });
+    return engineResult;
+  } else {
+    throw new EngineUnsuccessfulError(engine);
+  }
+  // Empty content with good status code is a valid result (e.g., blank pages)
+  // Only treat as unsuccessful if there are actual errors or bad status codes
+  if (isLongEnough || (isGoodStatusCode && hasNoPageError)) {
+    meta.logger.info("Scrape via " + engine + " deemed successful.", {
+      factors: { isLongEnough, isGoodStatusCode, hasNoPageError },
+    });
+    return engineResult;
+  } else {
+    throw new EngineUnsuccessfulError(engine);
+  }
+  // Empty content with good status code is a valid result (e.g., blank pages)
+  // Only treat as unsuccessful if there are actual errors or bad status codes
+  if (isLongEnough || (isGoodStatusCode && hasNoPageError)) {
+    meta.logger.info("Scrape via " + engine + " deemed successful.", {
+      factors: { isLongEnough, isGoodStatusCode, hasNoPageError },
+    });
+    return engineResult;
+  } else {
+    throw new EngineUnsuccessfulError(engine);
+  }
+  // Empty content with good status code is a valid result (e.g., blank pages)
+  // Only treat as unsuccessful if there are actual errors or bad status codes
+  if (isLongEnough || (isGoodStatusCode && hasNoPageError)) {
+    meta.logger.info("Scrape via " + engine + " deemed successful.", {
+      factors: { isLongEnough, isGoodStatusCode, hasNoPageError },
+    });
+    return engineResult;
+  } else {
+    throw new EngineUnsuccessfulError(engine);
+  }
+  // Empty content with good status code is a valid result (e.g., blank pages)
+  // Only treat as unsuccessful if there are actual errors or bad status codes
+  if (isLongEnough || (isGoodStatusCode && hasNoPageError)) {
+    meta.logger.info("Scrape via " + engine + " deemed successful.", {
+      factors: { isLongEnough, isGoodStatusCode, hasNoPageError },
+    });
+    return engineResult;
+  } else {
+    throw new EngineUnsuccessfulError(engine);
+  }
   }
 }
 
