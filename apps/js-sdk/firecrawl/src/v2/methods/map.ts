@@ -9,6 +9,7 @@ function prepareMapPayload(url: string, options?: MapOptions): Record<string, un
     if (options.sitemap != null) payload.sitemap = options.sitemap;
     if (options.search != null) payload.search = options.search;
     if (options.includeSubdomains != null) payload.includeSubdomains = options.includeSubdomains;
+    if (options.ignoreQueryParameters != null) payload.ignoreQueryParameters = options.ignoreQueryParameters;
     if (options.limit != null) payload.limit = options.limit;
     if (options.timeout != null) payload.timeout = options.timeout;
     if (options.integration != null && options.integration.trim()) payload.integration = options.integration.trim();

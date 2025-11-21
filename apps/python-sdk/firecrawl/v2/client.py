@@ -440,6 +440,7 @@ class FirecrawlClient:
         *,
         search: Optional[str] = None,
         include_subdomains: Optional[bool] = None,
+        ignore_query_parameters: Optional[bool] = None,
         limit: Optional[int] = None,
         sitemap: Optional[Literal["only", "include", "skip"]] = None,
         timeout: Optional[int] = None,
@@ -452,6 +453,7 @@ class FirecrawlClient:
             url: Root URL to explore
             search: Optional substring filter for discovered links
             include_subdomains: Whether to include subdomains
+            ignore_query_parameters: Whether to ignore query parameters when mapping
             limit: Maximum number of links to return
             sitemap: Sitemap usage mode ("only" | "include" | "skip")
             timeout: Request timeout in milliseconds
@@ -462,12 +464,13 @@ class FirecrawlClient:
         options = MapOptions(
             search=search,
             include_subdomains=include_subdomains,
+            ignore_query_parameters=ignore_query_parameters,
             limit=limit,
             sitemap=sitemap if sitemap is not None else "include",
             timeout=timeout,
             integration=integration,
             location=location
-        ) if any(v is not None for v in [search, include_subdomains, limit, sitemap, timeout, integration, location]) else None
+        ) if any(v is not None for v in [search, include_subdomains, ignore_query_parameters, limit, sitemap, timeout, integration, location]) else None
 
         return map_module.map(self.http_client, url, options)
     
