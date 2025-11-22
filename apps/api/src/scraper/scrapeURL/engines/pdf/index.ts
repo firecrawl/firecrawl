@@ -299,13 +299,15 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
     }
   }
 
-  const { response, tempFilePath } =
+  const downloadResult =
     meta.pdfPrefetch !== undefined && meta.pdfPrefetch !== null
-      ? { response: meta.pdfPrefetch, tempFilePath: meta.pdfPrefetch.filePath }
+      ? { response: meta.pdfPrefetch, tempFilePath: meta.pdfPrefetch.filePath, cleanup: async () => {} }
       : await downloadFile(meta.id, meta.rewrittenUrl ?? meta.url, {
           headers: meta.options.headers,
           signal: meta.abort.asSignal(),
         });
+  
+  const { response, tempFilePath, cleanup } = downloadResult;
 
   if ((response as any).headers) {
     // if downloadFile was used
@@ -410,22 +412,33 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
     );
   }
 
-  await unlink(tempFilePath);
+  try {
+    return {
+      url: response.url ?? meta.rewrittenUrl ?? meta.url,
+      statusCode: response.status,
+      html: result?.html ?? "",
+      markdown: result?.markdown ?? "",
+      pdfMetadata: {
+        // Rust parser gets the metadata incorrectly, so we overwrite the page count here with the effective page count
+        // TODO: fix this later
+        numPages: effectivePageCount,
+        title: pdfMetadata.title,
+      },
 
-  return {
-    url: response.url ?? meta.rewrittenUrl ?? meta.url,
-    statusCode: response.status,
-    html: result?.html ?? "",
-    markdown: result?.markdown ?? "",
-    pdfMetadata: {
-      // Rust parser gets the metadata incorrectly, so we overwrite the page count here with the effective page count
-      // TODO: fix this later
-      numPages: effectivePageCount,
-      title: pdfMetadata.title,
-    },
-
-    proxyUsed: "basic",
-  };
+      proxyUsed: "basic",
+    };
+  } finally {
+    // Always cleanup temp file, whether from downloadFile or prefetch
+    if (meta.pdfPrefetch !== undefined && meta.pdfPrefetch !== null) {
+      try {
+        await unlink(tempFilePath);
+      } catch (error) {
+        // Ignore cleanup errors for prefetch files
+      }
+    } else {
+      await cleanup();
+    }
+  }
 }
 
 export function pdfMaxReasonableTime(meta: Meta): number {
