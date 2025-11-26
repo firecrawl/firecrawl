@@ -398,18 +398,30 @@ class SearchResultNews(BaseModel):
   url: Optional[str] = None
   snippet: Optional[str] = None
   date: Optional[str] = None
-  image_url: Optional[str] = None
+  # API returns camelCase: imageUrl
+  image_url: Optional[str] = Field(default=None, alias="imageUrl")
   position: Optional[int] = None
   category: Optional[str] = None
 
 class SearchResultImages(BaseModel):
   """An image search result with URL, title, image URL, image width, image height, and position."""
   title: Optional[str] = None
-  image_url: Optional[str] = None
-  image_width: Optional[int] = None
-  image_height: Optional[int] = None
+  # API returns camelCase: imageUrl, imageWidth, imageHeight
+  image_url: Optional[str] = Field(default=None, alias="imageUrl")
+  image_width: Optional[int] = Field(default=None, alias="imageWidth")
+  image_height: Optional[int] = Field(default=None, alias="imageHeight")
   url: Optional[str] = None
   position: Optional[int] = None
+
+  @field_validator('image_width', 'image_height', mode='before')
+  @classmethod
+  def _coerce_dimensions_to_int(cls, v):
+    if isinstance(v, str):
+      try:
+        return int(v)
+      except ValueError:
+        return v
+    return v
 
 class SearchData(BaseModel):
   """Search results grouped by source type."""
