@@ -39,6 +39,7 @@ import { BullMQOtel } from "bullmq-otel";
 import { withSpan, setSpanAttributes } from "../../lib/otel-tracer";
 import { crawlGroup } from "../worker/nuq";
 import { getACUCTeam } from "../../controllers/auth";
+import { supabase_service } from "../supabase";
 
 const workerLockDuration = Number(process.env.WORKER_LOCK_DURATION) || 60000;
 const workerStalledCheckInterval =
@@ -646,6 +647,44 @@ const workerFun = async (
   process.exit(0);
 };
 
+async function tallyBilling() {
+  const logger = _logger.child({
+    module: "index-worker",
+    method: "tallyBilling",
+  });
+  // get up to 100 teams and remove them from set
+  const billedTeams = await getRedisConnection().srandmember(
+    "billed_teams",
+    100,
+  );
+
+  if (!billedTeams || billedTeams.length === 0) {
+    logger.debug("No billed teams to process");
+    return;
+  }
+
+  await getRedisConnection().srem("billed_teams", billedTeams);
+  logger.info("Starting to update tallies", {
+    billedTeams: billedTeams.length,
+  });
+
+  for (const teamId of billedTeams) {
+    logger.info("Updating tally for team", { teamId });
+
+    const { error } = await supabase_service.rpc("update_tally_5_team", {
+      i_team_id: teamId,
+    });
+
+    if (error) {
+      logger.warn("Failed to update tally for team", { teamId, error });
+    } else {
+      logger.info("Updated tally for team", { teamId });
+    }
+  }
+
+  logger.info("Finished updating tallies");
+}
+
 const INDEX_INSERT_INTERVAL = 3000;
 const WEBHOOK_INSERT_INTERVAL = 15000;
 const OMCE_INSERT_INTERVAL = 5000;
@@ -734,6 +773,16 @@ const DOMAIN_FREQUENCY_INTERVAL = 10000;
     );
   }, DOMAIN_FREQUENCY_INTERVAL);
 
+  const billingTallyInterval = setInterval(
+    async () => {
+      if (isShuttingDown) {
+        return;
+      }
+      await tallyBilling();
+    },
+    5 * 60 * 1000,
+  );
+
   // Search indexing is now handled by separate search service
   // The search service has its own worker that processes the queue
   // This worker no longer needs to process search index jobs
@@ -763,6 +812,7 @@ const DOMAIN_FREQUENCY_INTERVAL = 10000;
   clearInterval(indexRFInserterInterval);
   clearInterval(omceInserterInterval);
   clearInterval(domainFrequencyInterval);
+  clearInterval(billingTallyInterval);
 
   logger.info("All workers shut down, exiting process");
 })();

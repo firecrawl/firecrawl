@@ -143,6 +143,7 @@ export class WebCrawler {
     limit: number,
     maxDepth: number,
     fromMap: boolean = false,
+    skipRobots: boolean = false,
   ): Promise<FilterLinksResult> {
     const denialReasons = new Map<string, string>();
 
@@ -173,7 +174,7 @@ export class WebCrawler {
         excludes: this.excludes,
         includes: this.includes,
         allowBackwardCrawling: this.allowBackwardCrawling,
-        ignoreRobotsTxt: this.ignoreRobotsTxt,
+        ignoreRobotsTxt: this.ignoreRobotsTxt || skipRobots,
         robotsTxt: this.robotsTxt,
         allowExternalContentLinks: this.allowExternalContentLinks,
         allowSubdomains: this.allowSubdomains,
@@ -318,11 +319,12 @@ export class WebCrawler {
           }
         }
 
-        const isAllowed = this.ignoreRobotsTxt
-          ? true
-          : ((this.robots.isAllowed(link, "FireCrawlAgent") ||
-              this.robots.isAllowed(link, "FirecrawlAgent")) ??
-            true);
+        const isAllowed =
+          this.ignoreRobotsTxt || skipRobots
+            ? true
+            : ((this.robots.isAllowed(link, "FireCrawlAgent") ||
+                this.robots.isAllowed(link, "FirecrawlAgent")) ??
+              true);
         // Check if the link is disallowed by robots.txt
         if (!isAllowed) {
           this.logger.debug(`Link disallowed by robots.txt: ${link}`, {
@@ -450,6 +452,7 @@ export class WebCrawler {
           [...new Set(urls)],
           leftOfLimit,
           this.maxCrawledDepth,
+          fromMap,
           fromMap,
         );
         let filteredLinks = filteredLinksResult.links;

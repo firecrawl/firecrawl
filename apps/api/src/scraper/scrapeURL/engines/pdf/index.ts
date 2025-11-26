@@ -266,10 +266,14 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
         proxyUsed: meta.pdfPrefetch.proxyUsed,
       };
     } else {
-      const file = await fetchFileToBuffer(meta.rewrittenUrl ?? meta.url, {
-        headers: meta.options.headers,
-        signal: meta.abort.asSignal(),
-      });
+      const file = await fetchFileToBuffer(
+        meta.rewrittenUrl ?? meta.url,
+        meta.options.skipTlsVerification,
+        {
+          headers: meta.options.headers,
+          signal: meta.abort.asSignal(),
+        },
+      );
 
       const ct = file.response.headers.get("Content-Type");
       if (ct && !ct.includes("application/pdf")) {
@@ -302,10 +306,15 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
   const { response, tempFilePath } =
     meta.pdfPrefetch !== undefined && meta.pdfPrefetch !== null
       ? { response: meta.pdfPrefetch, tempFilePath: meta.pdfPrefetch.filePath }
-      : await downloadFile(meta.id, meta.rewrittenUrl ?? meta.url, {
-          headers: meta.options.headers,
-          signal: meta.abort.asSignal(),
-        });
+      : await downloadFile(
+          meta.id,
+          meta.rewrittenUrl ?? meta.url,
+          meta.options.skipTlsVerification,
+          {
+            headers: meta.options.headers,
+            signal: meta.abort.asSignal(),
+          },
+        );
 
   if ((response as any).headers) {
     // if downloadFile was used

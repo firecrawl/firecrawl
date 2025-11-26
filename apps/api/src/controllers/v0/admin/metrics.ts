@@ -38,6 +38,11 @@ ${Object.entries(metrics)
       `concurrency_limit_queue_job_count{team_id="${key}"} ${value}`,
   )
   .join("\n")}
+
+# HELP billed_teams_count The number of teams that have been billed but not yet tallied
+# TYPE billed_teams_count gauge
+billed_teams_count ${await getRedisConnection().scard("billed_teams")}
+
 ${nuqGetLocalMetrics()}
 ${semaphoreMetrics}`);
 }

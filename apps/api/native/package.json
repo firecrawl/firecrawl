@@ -53,7 +53,7 @@
   },
   "devDependencies": {
     "@emnapi/runtime": "^1.5.0",
-    "@napi-rs/cli": "^3.1.5",
+    "@napi-rs/cli": "^3.4.1",
     "@taplo/cli": "^0.7.0",
     "npm-run-all2": "^8.0.4",
     "oxlint": "^1.14.0",

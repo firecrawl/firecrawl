@@ -26,6 +26,10 @@ def main():
     print("scrape:", doc.markdown)
     # doc.metadata_dict is a dict, doc.metadata_typed is a DocumentMetadata object
     print(doc.metadata_dict.get("source_url"))
+    print('metadata_dict.get("title"):', doc.metadata_dict.get("title"))
+    print("metadata_typed.title:", doc.metadata_typed.title)
+    print("metadata.title", doc.metadata.title if doc.metadata else None)
+
 
     # Crawl (waits until terminal state)
     crawl_job = firecrawl.crawl("https://docs.firecrawl.dev", limit=3, poll_interval=1, timeout=120)
@@ -47,4 +51,4 @@ def main():
     print("map links:", len(getattr(map_response, "links", []) or []))
 
 if __name__ == "__main__":
-    main() 
+    main()

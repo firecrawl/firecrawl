@@ -37,7 +37,7 @@
   },
   "homepage": "https://github.com/firecrawl/firecrawl#readme",
   "devDependencies": {
-    "@jest/globals": "^30.0.5",
+    "@jest/globals": "^30.2.0",
     "@types/dotenv": "^8.2.0",
     "@types/jest": "^30.0.0",
     "@types/mocha": "^10.0.6",
@@ -45,8 +45,8 @@
     "@types/uuid": "^9.0.8",
     "@types/ws": "^8.18.1",
     "dotenv": "^16.4.5",
-    "jest": "^30.0.5",
-    "ts-jest": "^29.4.0",
+    "jest": "^30.2.0",
+    "ts-jest": "^29.4.5",
     "tsup": "^8.5.0",
     "typescript": "^5.4.5",
     "uuid": "^9.0.1"
@@ -67,7 +67,9 @@
     "overrides": {
       "@babel/helpers@<7.26.10": ">=7.26.10",
       "brace-expansion@>=1.0.0 <=1.1.11": ">=1.1.12",
-      "brace-expansion@>=2.0.0 <=2.0.1": ">=2.0.2"
+      "brace-expansion@>=2.0.0 <=2.0.1": ">=2.0.2",
+      "js-yaml@<3.14.2": ">=3.14.2",
+      "glob@>=10.2.0 <10.5.0": ">=10.5.0"
     }
   }
 }

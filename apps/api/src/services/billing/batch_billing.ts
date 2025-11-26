@@ -319,6 +319,8 @@ async function supaBillTeam(
     return { success: false, error };
   }
 
+  await getRedisConnection().sadd("billed_teams", team_id);
+
   // Update cached ACUC to reflect the new credit usage
   (async () => {
     for (const apiKey of (data ?? []).map(x => x.api_key)) {

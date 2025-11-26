@@ -1,3 +1,6 @@
+import * as undici from "undici";
+import { getSecureDispatcher } from "../scraper/scrapeURL/engines/utils/safeFetch";
+
 export const protocolIncluded = (url: string) => {
   // if :// not in the start of the url assume http (maybe https?)
   // regex checks if :// appears before any .
@@ -188,4 +191,36 @@ export function removeDuplicateUrls(urls: string[]): string[] {
   }
 
   return [...new Set(Array.from(urlMap.values()))];
+}
+
+export async function resolveRedirects(
+  url: string,
+  abort?: AbortSignal,
+): Promise<string> {
+  const targetUrl = protocolIncluded(url) ? url : `http://${url}`;
+
+  const methods = ["HEAD", "GET"] as const;
+
+  for (const method of methods) {
+    const signal = abort
+      ? AbortSignal.any([abort, AbortSignal.timeout(2000)])
+      : AbortSignal.timeout(2000);
+
+    try {
+      const response = await undici.fetch(targetUrl, {
+        method,
+        redirect: "follow",
+        dispatcher: getSecureDispatcher(false),
+        signal,
+      });
+
+      return response.url;
+    } catch (error) {
+      if (abort?.aborted) {
+        throw error;
+      }
+    }
+  }
+
+  return targetUrl;
 }

@@ -108,10 +108,14 @@ export async function scrapeDocument(meta: Meta): Promise<EngineScrapeResult> {
     proxyUsed = meta.documentPrefetch.proxyUsed;
   } else {
     // Fetch the document normally
-    const result = await fetchFileToBuffer(meta.rewrittenUrl ?? meta.url, {
-      headers: meta.options.headers,
-      signal: meta.abort.asSignal(),
-    });
+    const result = await fetchFileToBuffer(
+      meta.rewrittenUrl ?? meta.url,
+      meta.options.skipTlsVerification,
+      {
+        headers: meta.options.headers,
+        signal: meta.abort.asSignal(),
+      },
+    );
     response = result.response;
     buffer = result.buffer;
 
@@ -141,14 +145,18 @@ export async function scrapeDocument(meta: Meta): Promise<EngineScrapeResult> {
     };
   } finally {
     // Clean up temporary file if it was created by prefetch
-    if (tempFilePath && meta.documentPrefetch !== undefined && meta.documentPrefetch !== null) {
+    if (
+      tempFilePath &&
+      meta.documentPrefetch !== undefined &&
+      meta.documentPrefetch !== null
+    ) {
       try {
         await unlink(tempFilePath);
       } catch (error) {
         // Ignore errors when cleaning up temp files
-        meta.logger?.warn("Failed to clean up temporary document file", { 
-          error, 
-          tempFilePath 
+        meta.logger?.warn("Failed to clean up temporary document file", {
+          error,
+          tempFilePath,
         });
       }
     }

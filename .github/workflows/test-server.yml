@@ -257,7 +257,6 @@ jobs:
   #     FIRE_ENGINE_BETA_URL: ${{ secrets.FIRE_ENGINE_BETA_URL }}
   #     FIRE_ENGINE_STAGING_URL: ${{ secrets.FIRE_ENGINE_STAGING_URL }}
   #     USE_DB_AUTHENTICATION: true
-  #     SERPER_API_KEY: ${{ secrets.SERPER_API_KEY }}
   #     ENV: ${{ secrets.ENV }}
   #     RUNPOD_MU_POD_ID: ${{ secrets.RUNPOD_MU_POD_ID }}
   #     RUNPOD_MUV2_POD_ID: ${{ secrets.RUNPOD_MUV2_POD_ID }}

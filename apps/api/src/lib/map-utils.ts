@@ -11,6 +11,7 @@ import {
   checkAndUpdateURLForMap,
   isSameDomain,
   isSameSubdomain,
+  resolveRedirects,
 } from "./validateUrl";
 import { fireEngineMap } from "../search/fireEngine";
 import { redisEvictConnection } from "../services/redis";
@@ -110,6 +111,16 @@ export async function getMapResults({
   maxFireEngineResults?: number;
 }): Promise<MapResult> {
   const functionStartTime = Date.now();
+
+  const resolvedUrl = await resolveRedirects(url, abort);
+
+  // If the resolved URL is on a different domain, replace the hostname
+  if (!isSameDomain(url, resolvedUrl)) {
+    const urlObj = new URL(url);
+    urlObj.hostname = new URL(resolvedUrl).hostname;
+
+    url = urlObj.toString();
+  }
 
   const id = uuidv4();
   let mapResults: MapDocument[] = [];

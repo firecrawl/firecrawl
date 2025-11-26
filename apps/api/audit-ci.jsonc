@@ -9,6 +9,9 @@
         "GHSA-ffrw-9mx8-89p8|@coinbase/x402>x402>wagmi>@wagmi/connectors>@walletconnect/ethereum-provider>@reown/appkit>@reown/appkit-utils>@walletconnect/logger>pino>fast-redact", // unused
         "GHSA-m732-5p4w-x69g|@coinbase/x402>x402>wagmi>@wagmi/connectors>porto>hono", // we don't use hono
         "GHSA-q7jf-gf43-6x6p|@coinbase/x402>x402>wagmi>@wagmi/connectors>porto>hono", // we don't use hono
-        "GHSA-rwvc-j5jr-mgvh|ai" // file upload vulnerability - not exposed in our usage
+        "GHSA-rwvc-j5jr-mgvh|ai", // file upload vulnerability - not exposed in our usage
+        "GHSA-5j98-mcp5-4vw2|jest>@jest/core>@jest/reporters>glob", // we do not use the glob CLI
+        "GHSA-mh29-5h37-fv8m|@jest/globals>@jest/expect>jest-snapshot>@jest/transform>babel-plugin-istanbul>@istanbuljs/load-nyc-config>js-yaml", // not impacted by this
+        "GHSA-mh29-5h37-fv8m|native>@napi-rs/cli>js-yaml" // not impacted by this
     ]
 }
