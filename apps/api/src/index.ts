@@ -41,7 +41,7 @@ const { createBullBoard } = require("@bull-board/api");
 const { BullMQAdapter } = require("@bull-board/api/bullMQAdapter");
 const { ExpressAdapter } = require("@bull-board/express");
 
-const numCPUs = process.env.ENV === "local" ? 2 : os.cpus().length;
+const numCPUs = process.env.ENV === "local" ? 2 : os.availableParallelism();
 logger.info(`Number of CPUs: ${numCPUs} available`);
 
 logger.info("Network info dump", {
