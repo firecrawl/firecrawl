@@ -89,6 +89,7 @@ export async function downloadFile(
 }> {
   const tempFilePath = path.join(os.tmpdir(), `tempFile-${id}--${uuid()}`);
   const tempFileWrite = createWriteStream(tempFilePath);
+  let shouldCleanup = false;
 
   // TODO: maybe we could use tlsclient for this? for proxying
   try {
@@ -118,8 +119,21 @@ export async function downloadFile(
       tempFilePath,
     };
   } catch (e) {
+    // Mark for cleanup on error (caller handles cleanup on success)
+    shouldCleanup = true;
     throw mapUndiciError(url, skipTlsVerification, e);
   } finally {
     tempFileWrite.close();
+    // Clean up temp file on error (caller handles cleanup on success)
+    if (shouldCleanup) {
+      try {
+        await fs.unlink(tempFilePath);
+      } catch (cleanupError: any) {
+        // Ignore cleanup errors - file may not exist or already deleted
+        if (cleanupError.code !== "ENOENT") {
+          // Silently ignore other cleanup errors
+        }
+      }
+    }
   }
 }
