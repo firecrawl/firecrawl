@@ -14,6 +14,13 @@ x-common-service: &common-service
     - backend
   extra_hosts:
     - "host.docker.internal:host-gateway"
+  # Configure logging to prevent disk space issues
+  logging:
+    driver: "json-file"
+    options:
+      max-size: "10m"
+      max-file: "3"
+      compress: "true"
 
 x-common-env: &common-env
   REDIS_URL: ${REDIS_URL:-redis://redis:6379}
@@ -57,6 +64,16 @@ services:
       BLOCK_MEDIA: ${BLOCK_MEDIA}
     networks:
       - backend
+    # Configure logging to prevent disk space issues
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+        compress: "true"
+    # Use tmpfs for Playwright cache to prevent disk accumulation
+    tmpfs:
+      - /tmp/.cache:noexec,nosuid,size=1g
 
   api:
     <<: *common-service
@@ -84,6 +101,13 @@ services:
     networks:
       - backend
     command: redis-server --bind 0.0.0.0
+    # Configure logging to prevent disk space issues
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "5m"
+        max-file: "2"
+        compress: "true"
   
   nuq-postgres:
     build: apps/nuq-postgres
@@ -95,6 +119,13 @@ services:
       - backend
     ports:
       - "5432:5432"
+    # Configure logging to prevent disk space issues
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+        compress: "true"
 
 networks:
   backend:

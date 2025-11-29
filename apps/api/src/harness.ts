@@ -3,7 +3,6 @@ import { type ChildProcess, spawn } from "child_process";
 import * as net from "net";
 import { basename, join } from "path";
 import { HTML_TO_MARKDOWN_PATH } from "./natives";
-import { createWriteStream } from "fs";
 
 const childProcesses = new Set<ChildProcess>();
 const stopping = new WeakSet<ChildProcess>(); // processes we're intentionally stopping
@@ -88,8 +87,6 @@ function formatDuration(nanoseconds: bigint): string {
   return `${minutes}m ${remainingSeconds.toFixed(0)}s`;
 }
 
-const stream = createWriteStream("firecrawl.log");
-
 const PORT = process.env.PORT ?? "3002";
 const WORKER_PORT = process.env.WORKER_PORT ?? "3005";
 const EXTRACT_WORKER_PORT = process.env.EXTRACT_WORKER_PORT ?? "3004";
@@ -144,7 +141,6 @@ const logger = {
       const label = `${color}${colors.bold}${name.padEnd(14)}${colors.reset}`;
       console.log(`${label} ${line}`);
     }
-    stream.write(`${name.padEnd(14)} ${line}\n`);
   },
 };
 
