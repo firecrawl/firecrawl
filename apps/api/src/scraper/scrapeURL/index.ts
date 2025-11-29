@@ -1197,7 +1197,7 @@ export async function scrapeURL(
         error.message.includes("Invalid schema for response_format")
       ) {
         errorType = "LLMSchemaError";
-        // TODO: seperate into custom error
+        // TODO: separate into custom error
         meta.logger.warn("scrapeURL: LLM schema error", { error });
         // TODO: results?
       } else if (error instanceof SiteError) {
