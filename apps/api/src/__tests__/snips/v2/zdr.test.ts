@@ -40,27 +40,30 @@ const logIgnoreList = [
 
 async function getLogs() {
   const winstonLogFiles = ["firecrawl-app.log", "firecrawl-worker.log"];
-  let logFile: string | null = null;
+  const existingLogFiles: string[] = [];
 
   for (const file of winstonLogFiles) {
     try {
       await stat(file);
-      logFile = file;
-      break;
+      existingLogFiles.push(file);
     } catch {
       continue;
     }
   }
 
-  if (!logFile) {
+  if (existingLogFiles.length === 0) {
     console.warn(
       "No log file found (checked firecrawl-app.log, firecrawl-worker.log)",
     );
     return [];
   }
 
-  const logs = await readFile(logFile, "utf8");
-  return logs
+  const allLogs = await Promise.all(
+    existingLogFiles.map(file => readFile(file, "utf8")),
+  );
+
+  return allLogs
+    .join("\n")
     .split("\n")
     .filter(x => x.trim().length > 0)
     .map(line => {
