@@ -12,6 +12,7 @@ import { Writable } from "stream";
 import { v4 as uuid } from "uuid";
 import * as undici from "undici";
 import { getSecureDispatcher } from "./safeFetch";
+import { logger } from "../../../../lib/logger";
 
 const mapUndiciError = (url: string, skipTlsVerification: boolean, e: any) => {
   const code = e?.code ?? e?.cause?.code ?? e?.errno ?? e?.name;
@@ -124,15 +125,14 @@ export async function downloadFile(
     throw mapUndiciError(url, skipTlsVerification, e);
   } finally {
     tempFileWrite.close();
-    // Clean up temp file on error (caller handles cleanup on success)
     if (shouldCleanup) {
       try {
         await fs.unlink(tempFilePath);
       } catch (cleanupError: any) {
-        // Ignore cleanup errors - file may not exist or already deleted
-        if (cleanupError.code !== "ENOENT") {
-          // Silently ignore other cleanup errors
-        }
+        logger.warn("Failed to clean up temporary file", {
+          error: cleanupError,
+          tempFilePath,
+        });
       }
     }
   }
