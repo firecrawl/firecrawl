@@ -39,8 +39,6 @@ const logIgnoreList = [
 ];
 
 async function getLogs() {
-  // Check for Winston log files (firecrawl-app.log or firecrawl-worker.log)
-  // Fallback to harness log file (firecrawl.log) for backwards compatibility
   const winstonLogFiles = ["firecrawl-app.log", "firecrawl-worker.log"];
   let logFile: string | null = null;
 
@@ -50,21 +48,15 @@ async function getLogs() {
       logFile = file;
       break;
     } catch {
-      // Try next file
+      continue;
     }
   }
 
-  // Fallback to harness log file
   if (!logFile) {
-    try {
-      await stat("firecrawl.log");
-      logFile = "firecrawl.log";
-    } catch (e) {
-      console.warn(
-        "No log file found (checked firecrawl-app.log, firecrawl-worker.log, firecrawl.log)",
-      );
-      return [];
-    }
+    console.warn(
+      "No log file found (checked firecrawl-app.log, firecrawl-worker.log)",
+    );
+    return [];
   }
 
   const logs = await readFile(logFile, "utf8");
@@ -73,12 +65,9 @@ async function getLogs() {
     .filter(x => x.trim().length > 0)
     .map(line => {
       try {
-        // Parse Winston JSON log format
         const logEntry = JSON.parse(line);
-        // Extract message and format similar to harness format for compatibility
         return logEntry.message || line;
       } catch {
-        // Fallback to plain text if not JSON (backwards compatibility with harness format)
         return line;
       }
     })
