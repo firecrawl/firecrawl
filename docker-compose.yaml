@@ -14,7 +14,6 @@ x-common-service: &common-service
     - backend
   extra_hosts:
     - "host.docker.internal:host-gateway"
-  # Configure logging to prevent disk space issues
   logging:
     driver: "json-file"
     options:
@@ -64,14 +63,12 @@ services:
       BLOCK_MEDIA: ${BLOCK_MEDIA}
     networks:
       - backend
-    # Configure logging to prevent disk space issues
     logging:
       driver: "json-file"
       options:
         max-size: "10m"
         max-file: "3"
         compress: "true"
-    # Use tmpfs for Playwright cache to prevent disk accumulation
     tmpfs:
       - /tmp/.cache:noexec,nosuid,size=1g
 
@@ -101,7 +98,6 @@ services:
     networks:
       - backend
     command: redis-server --bind 0.0.0.0
-    # Configure logging to prevent disk space issues
     logging:
       driver: "json-file"
       options:
@@ -119,7 +115,6 @@ services:
       - backend
     ports:
       - "5432:5432"
-    # Configure logging to prevent disk space issues
     logging:
       driver: "json-file"
       options:
