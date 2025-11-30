@@ -47,7 +47,7 @@ Looking for our MCP? Check out the [repo here](https://github.com/firecrawl/fire
 
 _Pst. hey, you, join our stargazers :)_
 
-<a href="https://github.com/firecrawl/firecrawl">
+<a href="https://github.com/firecrawl/firecrawl/stargazers">
   <img src="https://img.shields.io/github/stars/firecrawl/firecrawl.svg?style=social&label=Star&maxAge=2592000" alt="GitHub stars">
 </a>
 
