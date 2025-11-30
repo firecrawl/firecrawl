@@ -1668,3 +1668,94 @@ const generateLLMsTextRequestSchema = z.object({
 });
 
 type GenerateLLMsTextRequest = z.infer<typeof generateLLMsTextRequestSchema>;
+
+// =========================================
+// API Request Schema and Types
+// =========================================
+
+const httpMethodSchema = z.enum([
+  "GET",
+  "POST",
+  "PUT",
+  "DELETE",
+  "PATCH",
+  "HEAD",
+  "OPTIONS",
+]);
+
+export type HttpMethod = z.infer<typeof httpMethodSchema>;
+
+export const apiRequestSchema = z
+  .object({
+    url: URL.describe("The URL to make the request to"),
+    method: httpMethodSchema.default("GET").describe("HTTP method to use"),
+    body: z
+      .union([z.string(), z.record(z.any())])
+      .optional()
+      .describe("Request body (string or JSON object, for POST/PUT/PATCH)"),
+    headers: z
+      .record(z.string(), z.string())
+      .optional()
+      .describe("Custom request headers"),
+    params: z
+      .record(z.string(), z.string())
+      .optional()
+      .describe("Query parameters to append to URL"),
+    timeout: z
+      .number()
+      .int()
+      .positive()
+      .finite()
+      .safe()
+      .default(30000)
+      .describe("Request timeout in milliseconds"),
+    skipTlsVerification: z
+      .boolean()
+      .optional()
+      .describe("Skip TLS certificate verification"),
+    origin: z.string().optional().default("api"),
+    zeroDataRetention: z.boolean().optional(),
+  })
+  .strict(strictMessage)
+  .refine(
+    data => {
+      // Body is only allowed for methods that typically have a body
+      if (
+        data.body !== undefined &&
+        !["POST", "PUT", "PATCH"].includes(data.method)
+      ) {
+        return false;
+      }
+      return true;
+    },
+    {
+      message: "Request body is only allowed for POST, PUT, and PATCH methods",
+      path: ["body"],
+    },
+  );
+
+export type ApiRequest = z.infer<typeof apiRequestSchema>;
+export type ApiRequestInput = z.input<typeof apiRequestSchema>;
+
+export type ApiRequestDocument = {
+  statusCode: number;
+  headers: Record<string, string>;
+  body: string;
+  url: string;
+  timing: {
+    total: number;
+  };
+  metadata: {
+    sourceURL: string;
+    method: HttpMethod;
+    contentType?: string;
+  };
+};
+
+export type ApiRequestResponse =
+  | ErrorResponse
+  | {
+      success: true;
+      data: ApiRequestDocument;
+      request_id?: string;
+    };

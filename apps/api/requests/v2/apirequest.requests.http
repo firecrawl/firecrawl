@@ -1,0 +1,121 @@
+### GET request
+POST http://localhost:3002/v2/apirequest
+Authorization: Bearer fc-YOUR_API_KEY
+Content-Type: application/json
+
+{
+  "url": "https://httpbin.org/get",
+  "method": "GET"
+}
+
+### GET request with query params
+POST http://localhost:3002/v2/apirequest
+Authorization: Bearer fc-YOUR_API_KEY
+Content-Type: application/json
+
+{
+  "url": "https://httpbin.org/get",
+  "method": "GET",
+  "params": {
+    "foo": "bar",
+    "baz": "qux"
+  }
+}
+
+### GET request with custom headers
+POST http://localhost:3002/v2/apirequest
+Authorization: Bearer fc-YOUR_API_KEY
+Content-Type: application/json
+
+{
+  "url": "https://httpbin.org/headers",
+  "method": "GET",
+  "headers": {
+    "X-Custom-Header": "test-value"
+  }
+}
+
+### POST request with JSON body
+POST http://localhost:3002/v2/apirequest
+Authorization: Bearer fc-YOUR_API_KEY
+Content-Type: application/json
+
+{
+  "url": "https://httpbin.org/post",
+  "method": "POST",
+  "body": {
+    "name": "test",
+    "value": 123
+  }
+}
+
+### POST request with string body
+POST http://localhost:3002/v2/apirequest
+Authorization: Bearer fc-YOUR_API_KEY
+Content-Type: application/json
+
+{
+  "url": "https://httpbin.org/post",
+  "method": "POST",
+  "body": "Hello, World!",
+  "headers": {
+    "Content-Type": "text/plain"
+  }
+}
+
+### PUT request
+POST http://localhost:3002/v2/apirequest
+Authorization: Bearer fc-YOUR_API_KEY
+Content-Type: application/json
+
+{
+  "url": "https://httpbin.org/put",
+  "method": "PUT",
+  "body": {
+    "updated": true
+  }
+}
+
+### DELETE request
+POST http://localhost:3002/v2/apirequest
+Authorization: Bearer fc-YOUR_API_KEY
+Content-Type: application/json
+
+{
+  "url": "https://httpbin.org/delete",
+  "method": "DELETE"
+}
+
+### PATCH request
+POST http://localhost:3002/v2/apirequest
+Authorization: Bearer fc-YOUR_API_KEY
+Content-Type: application/json
+
+{
+  "url": "https://httpbin.org/patch",
+  "method": "PATCH",
+  "body": {
+    "patched": true
+  }
+}
+
+### HEAD request
+POST http://localhost:3002/v2/apirequest
+Authorization: Bearer fc-YOUR_API_KEY
+Content-Type: application/json
+
+{
+  "url": "https://httpbin.org/get",
+  "method": "HEAD"
+}
+
+### Request with custom timeout
+POST http://localhost:3002/v2/apirequest
+Authorization: Bearer fc-YOUR_API_KEY
+Content-Type: application/json
+
+{
+  "url": "https://httpbin.org/delay/2",
+  "method": "GET",
+  "timeout": 5000
+}

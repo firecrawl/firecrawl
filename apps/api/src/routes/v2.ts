@@ -12,6 +12,8 @@ import { mapController } from "../controllers/v2/map";
 import { crawlErrorsController } from "../controllers/v2/crawl-errors";
 import { ongoingCrawlsController } from "../controllers/v2/crawl-ongoing";
 import { scrapeStatusController } from "../controllers/v2/scrape-status";
+import { apiRequestController } from "../controllers/v2/apirequest";
+import { apiRequestStatusController } from "../controllers/v2/apirequest-status";
 import { creditUsageController } from "../controllers/v2/credit-usage";
 import { tokenUsageController } from "../controllers/v2/token-usage";
 import { crawlCancelController } from "../controllers/v2/crawl-cancel";
@@ -178,6 +180,21 @@ v2Router.get(
   "/scrape/:jobId",
   authMiddleware(RateLimiterMode.CrawlStatus),
   wrap(scrapeStatusController),
+);
+
+v2Router.post(
+  "/apirequest",
+  authMiddleware(RateLimiterMode.Scrape),
+  countryCheck,
+  checkCreditsMiddleware(1),
+  blocklistMiddleware,
+  wrap(apiRequestController),
+);
+
+v2Router.get(
+  "/apirequest/:jobId",
+  authMiddleware(RateLimiterMode.CrawlStatus),
+  wrap(apiRequestStatusController),
 );
 
 v2Router.post(

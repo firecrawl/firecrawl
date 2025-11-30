@@ -12,6 +12,8 @@ import {
   MapRequestInput,
   BatchScrapeRequestInput,
   SearchRequestInput,
+  ApiRequestInput,
+  ApiRequestDocument,
 } from "../../../controllers/v2/types";
 import request from "supertest";
 import {
@@ -551,4 +553,80 @@ export async function zdrcleaner(teamId: string) {
 
   expect(res.statusCode).toBe(200);
   expect(res.body.ok).toBe(true);
+}
+
+// =========================================
+// API Request API
+// =========================================
+
+export async function apiRequestRaw(body: ApiRequestInput, identity: Identity) {
+  return await request(TEST_API_URL)
+    .post("/v2/apirequest")
+    .set("Authorization", `Bearer ${identity.apiKey}`)
+    .set("Content-Type", "application/json")
+    .send(body);
+}
+
+function expectApiRequestToSucceed(
+  response: Awaited<ReturnType<typeof apiRequestRaw>>,
+) {
+  if (response.statusCode !== 200) {
+    console.warn(
+      "API Request did not succeed",
+      JSON.stringify(response.body, null, 2),
+    );
+  }
+
+  expect(response.statusCode).toBe(200);
+  expect(response.body.success).toBe(true);
+  expect(typeof response.body.data).toBe("object");
+}
+
+function expectApiRequestToFail(
+  response: Awaited<ReturnType<typeof apiRequestRaw>>,
+) {
+  expect(response.statusCode).not.toBe(200);
+  expect(response.body.success).toBe(false);
+  expect(typeof response.body.error).toBe("string");
+}
+
+export async function apiRequest(
+  body: ApiRequestInput,
+  identity: Identity,
+): Promise<ApiRequestDocument> {
+  const raw = await apiRequestRaw(body, identity);
+  expectApiRequestToSucceed(raw);
+  return raw.body.data;
+}
+
+export async function apiRequestWithFailure(
+  body: ApiRequestInput,
+  identity: Identity,
+): Promise<{
+  success: false;
+  error: string;
+}> {
+  const raw = await apiRequestRaw(body, identity);
+  expectApiRequestToFail(raw);
+  return raw.body;
+}
+
+export async function apiRequestStatusRaw(jobId: string, identity: Identity) {
+  return await request(TEST_API_URL)
+    .get("/v2/apirequest/" + encodeURIComponent(jobId))
+    .set("Authorization", `Bearer ${identity.apiKey}`)
+    .send();
+}
+
+export async function apiRequestStatus(
+  jobId: string,
+  identity: Identity,
+): Promise<ApiRequestDocument> {
+  const raw = await apiRequestStatusRaw(jobId, identity);
+  expect(raw.statusCode).toBe(200);
+  expect(raw.body.success).toBe(true);
+  expect(typeof raw.body.data).toBe("object");
+  expect(raw.body.data).not.toBeNull();
+  expect(raw.body.data).toBeDefined();
+  return raw.body.data;
 }
