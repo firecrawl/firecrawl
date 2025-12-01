@@ -44,6 +44,7 @@ jobs:
       NUQ_DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
       USE_GO_MARKDOWN_PARSER: true
       ALLOW_LOCAL_WEBHOOKS: true
+      FIRECRAWL_LOG_TO_FILE: true
     steps:
       - uses: actions/checkout@v5
 
