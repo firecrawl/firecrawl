@@ -196,7 +196,16 @@ jobs:
         working-directory: apps/api
         env:
           npm_config_ignore_scripts: "true" # required currently to prevent re-building cached native lib
-      
+
+      - name: Publish test report
+        if: always()
+        uses: dorny/test-reporter@v1
+        with:
+          name: API Tests (${{ matrix.engine }}, ${{ matrix.proxy }}, ${{ matrix.search }}, ${{ matrix.ai }})
+          path: apps/api/test-results/junit.xml
+          reporter: jest-junit
+          fail-on-error: false
+
       - name: Copy log files
         if: always()
         run: |
