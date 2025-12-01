@@ -201,11 +201,10 @@ jobs:
         if: always()
         uses: dorny/test-reporter@v1
         with:
-          name: API Tests (${{ matrix.engine }}, ${{ matrix.proxy }}, ${{ matrix.search }}, ${{ matrix.ai }})
+          name: Test Report (${{ matrix.engine }}, ${{ matrix.proxy }}, ${{ matrix.search }}, ${{ matrix.ai }})
           path: apps/api/test-results/junit.xml
           reporter: jest-junit
-          fail-on-error: false
-          github-token: ${{ secrets.GITHUB_TOKEN }}
+          fail-on-error: true
 
       - name: Copy log files
         if: always()
