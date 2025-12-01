@@ -38,11 +38,11 @@ importers:
         specifier: ^15.1.2
         version: 15.1.2(@types/json-schema@7.0.15)
       '@bull-board/api':
-        specifier: ^6.11.2
-        version: 6.11.2(@bull-board/ui@6.11.2)
+        specifier: ^6.14.0
+        version: 6.14.2(@bull-board/ui@6.14.2)
       '@bull-board/express':
-        specifier: ^6.11.2
-        version: 6.11.2
+        specifier: ^6.14.0
+        version: 6.14.2
       '@coinbase/x402':
         specifier: ^0.6.6
         version: 0.6.6(@solana/sysvars@2.3.0(fastestsmallesttextencoderdecoder@1.0.22)(typescript@5.8.3))(@tanstack/query-core@5.83.1)(@tanstack/react-query@5.84.1(react@18.3.1))(bufferutil@4.0.9)(encoding@0.1.13)(fastestsmallesttextencoderdecoder@1.0.22)(ioredis@5.6.1)(react@18.3.1)(typescript@5.8.3)(utf-8-validate@5.0.10)(ws@8.18.0(bufferutil@4.0.9)(utf-8-validate@5.0.10))
@@ -682,16 +682,16 @@ packages:
   '@bcoe/v8-coverage@0.2.3':
     resolution: {integrity: sha512-0hYQ8SB4Db5zvZB4axdMHGwEaQjkZzFjQiN9LVYvIFB2nSUHW9tYpxWriPrWDASIxiaXax83REcLxuSdnGPZtw==}
 
-  '@bull-board/api@6.11.2':
-    resolution: {integrity: sha512-0WNfPkLu9AiW7pRMO1qeVHbQpwOiTdjXI1DJ99tJBrgeDWQ8gr/fFjny7nchk+eM0PVJsRHpQl695hyhWLX1Lg==}
+  '@bull-board/api@6.14.2':
+    resolution: {integrity: sha512-UzkvN/wM+1qS73BS43a75LYkRzpBpCCUKlaGq0hp3dM5MNmdF1mx7LMGYgXPt91gqF8j4jq9Y/zCpC3Sqs3RLQ==}
     peerDependencies:
-      '@bull-board/ui': 6.11.2
+      '@bull-board/ui': 6.14.2
 
-  '@bull-board/express@6.11.2':
-    resolution: {integrity: sha512-TCuWyvPN0vwn5NR5W9MdWPyZeUlfZUyDhRTUNNXtwK5gaHJX5zxAfixIqEt5XED3cquqp2R/9Uj3VUU3F//28w==}
+  '@bull-board/express@6.14.2':
+    resolution: {integrity: sha512-nghb4MpYDodYZpeiZvI9tXFDHqiAXE8FhrLOFDkuQL0GBhw0gEOuGSISjdKrnFDAW72LWVq0XfGKWYD8V5nF0w==}
 
-  '@bull-board/ui@6.11.2':
-    resolution: {integrity: sha512-c44pHD5xhq8ywihtex5FPJmxC5rFLqSv9M+Hv5i5lvz6OV3wfMlgEJIDOVeBHTvnxW3HYb4J0+Wy+d27vqlhyQ==}
+  '@bull-board/ui@6.14.2':
+    resolution: {integrity: sha512-OTCsBbMAhYoB2NJc6FxkkREWWPUFvEhL2Az1gAKpdNOBqup4CsKj7eBK3rcWSRLZ4LnaOaPK8E8tiogkhrRuOA==}
 
   '@coinbase/cdp-sdk@1.33.0':
     resolution: {integrity: sha512-DqgPk/JednX4Tpi1a0EP7zEYi2EH9rsFULIkb8BbjuUUldTh4VCSp624JC3k6b2IJlibRD7oFHVnEAz2+ykSnw==}
@@ -7602,23 +7602,23 @@ snapshots:
 
   '@bcoe/v8-coverage@0.2.3': {}
 
-  '@bull-board/api@6.11.2(@bull-board/ui@6.11.2)':
+  '@bull-board/api@6.14.2(@bull-board/ui@6.14.2)':
     dependencies:
-      '@bull-board/ui': 6.11.2
+      '@bull-board/ui': 6.14.2
       redis-info: 3.1.0
 
-  '@bull-board/express@6.11.2':
+  '@bull-board/express@6.14.2':
     dependencies:
-      '@bull-board/api': 6.11.2(@bull-board/ui@6.11.2)
-      '@bull-board/ui': 6.11.2
+      '@bull-board/api': 6.14.2(@bull-board/ui@6.14.2)
+      '@bull-board/ui': 6.14.2
       ejs: 3.1.10
       express: 4.21.2
     transitivePeerDependencies:
       - supports-color
 
-  '@bull-board/ui@6.11.2':
+  '@bull-board/ui@6.14.2':
     dependencies:
-      '@bull-board/api': 6.11.2(@bull-board/ui@6.11.2)
+      '@bull-board/api': 6.14.2(@bull-board/ui@6.14.2)
 
   '@coinbase/cdp-sdk@1.33.0(bufferutil@4.0.9)(encoding@0.1.13)(fastestsmallesttextencoderdecoder@1.0.22)(typescript@5.8.3)(utf-8-validate@5.0.10)':
     dependencies:
