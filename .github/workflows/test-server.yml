@@ -9,6 +9,11 @@ concurrency:
   group: ci=${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+permissions:
+  contents: read
+  checks: write
+  pull-requests: write
+
 jobs:
   self-host:
     name: Self-hosted environment tests
@@ -205,6 +210,7 @@ jobs:
           path: apps/api/test-results/junit.xml
           reporter: jest-junit
           fail-on-error: false
+          github-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Copy log files
         if: always()
