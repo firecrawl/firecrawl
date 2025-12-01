@@ -65,7 +65,7 @@ async function getLogs() {
   return allLogs
     .join("\n")
     .split("\n")
-    .filter(x => x.trim().length > 0)
+
     .map(line => {
       try {
         const logEntry = JSON.parse(line);
