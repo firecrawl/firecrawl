@@ -201,7 +201,8 @@ jobs:
         if: always()
         run: |
           mkdir -p logs
-          cp ./apps/api/firecrawl.log logs/firecrawl.log
+          cp ./apps/api/firecrawl-app.log logs/firecrawl.log
+          cp ./apps/api/firecrawl-worker.log logs/firecrawl-worker.log
 
       - name: Copy SearXNG logs
         if: always() && matrix.search == 'searxng'
