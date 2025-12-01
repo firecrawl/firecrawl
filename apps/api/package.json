@@ -178,7 +178,8 @@
     ],
     "overrides": {
       "brace-expansion@>=2.0.0 <=2.0.1": "2.0.2",
-      "debug": ">=4.4.3"
+      "debug": ">=4.4.3",
+      "express@>=4.0.0 <4.22.0": "4.22.0"
     }
   },
   "lint-staged": {
