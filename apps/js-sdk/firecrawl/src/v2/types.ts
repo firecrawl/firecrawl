@@ -155,6 +155,7 @@ export interface ScrapeOptions {
   blockAds?: boolean;
   proxy?: 'basic' | 'stealth' | 'auto' | string;
   maxAge?: number;
+  minAge?: number;
   storeInCache?: boolean;
   integration?: string;
 }
@@ -466,6 +467,7 @@ export interface CrawlResponse {
 }
 
 export interface CrawlJob {
+  id: string;
   status: 'scraping' | 'completed' | 'failed' | 'cancelled';
   total: number;
   completed: number;
@@ -493,6 +495,7 @@ export interface BatchScrapeResponse {
 }
 
 export interface BatchScrapeJob {
+  id: string;
   status: 'scraping' | 'completed' | 'failed' | 'cancelled';
   completed: number;
   total: number;
@@ -510,6 +513,7 @@ export interface MapOptions {
   search?: string;
   sitemap?: 'only' | 'include' | 'skip';
   includeSubdomains?: boolean;
+  ignoreQueryParameters?: boolean;
   limit?: number;
   timeout?: number;
   integration?: string;

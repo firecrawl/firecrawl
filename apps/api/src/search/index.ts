@@ -1,6 +1,4 @@
 import { SearchResult } from "../../src/lib/entities";
-import { searchapi_search } from "./searchapi";
-import { serper_search } from "./serper";
 import { searxng_search } from "./searxng";
 import { fire_engine_search } from "./fireEngine";
 import { Logger } from "winston";
@@ -45,30 +43,6 @@ export async function search({
         location,
       });
       return results;
-    }
-    if (process.env.SERPER_API_KEY) {
-      logger.info("Using serper search");
-      const results = await serper_search(query, {
-        num_results,
-        tbs,
-        filter,
-        lang,
-        country,
-        location,
-      });
-      if (results.length > 0) return results;
-    }
-    if (process.env.SEARCHAPI_API_KEY) {
-      logger.info("Using searchapi search");
-      const results = await searchapi_search(query, {
-        num_results,
-        tbs,
-        filter,
-        lang,
-        country,
-        location,
-      });
-      if (results.length > 0) return results;
     }
     if (process.env.SEARXNG_ENDPOINT) {
       logger.info("Using searxng search");

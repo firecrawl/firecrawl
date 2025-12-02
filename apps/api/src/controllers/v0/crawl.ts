@@ -11,7 +11,7 @@ import {
   defaultCrawlerOptions,
   defaultOrigin,
 } from "../../../src/lib/default-values";
-import { v4 as uuidv4 } from "uuid";
+import { v7 as uuidv7 } from "uuid";
 import { logger } from "../../../src/lib/logger";
 import {
   addCrawlJob,
@@ -51,7 +51,7 @@ export async function crawlController(req: Request, res: Response) {
       });
     }
 
-    const id = uuidv4();
+    const id = uuidv7();
 
     redisEvictConnection.sadd("teams_using_v0", team_id).catch(error =>
       logger.error("Failed to add team to teams_using_v0", {
@@ -151,7 +151,7 @@ export async function crawlController(req: Request, res: Response) {
     //   try {
     //     const a = new WebScraperDataProvider();
     //     await a.setOptions({
-    //       jobId: uuidv4(),
+    //       jobId: uuidv7(),
     //       mode: "single_urls",
     //       urls: [url],
     //       crawlerOptions: { ...crawlerOptions, returnOnlyUrls: true },
@@ -226,7 +226,7 @@ export async function crawlController(req: Request, res: Response) {
             basePriority: 21,
           });
           const jobs = urls.map(url => {
-            const uuid = uuidv4();
+            const uuid = uuidv7();
             return {
               jobId: uuid,
               data: {
@@ -270,7 +270,7 @@ export async function crawlController(req: Request, res: Response) {
       // Not needed, first one should be 15.
       // const jobPriority = await getJobPriority({team_id, basePriority: 10})
 
-      const jobId = uuidv4();
+      const jobId = uuidv7();
       await addScrapeJob(
         {
           url,

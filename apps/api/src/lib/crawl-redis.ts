@@ -308,7 +308,11 @@ export function normalizeURL(url: string, sc: StoredCrawl): string {
     urlO.search = "";
   }
   // allow hash-based routes
-  if (!urlO.hash || urlO.hash.length <= 2 || !urlO.hash.startsWith("#/")) {
+  if (
+    !urlO.hash ||
+    urlO.hash.length <= 2 ||
+    (!urlO.hash.startsWith("#/") && !urlO.hash.startsWith("#!/"))
+  ) {
     urlO.hash = "";
   }
   return urlO.href;

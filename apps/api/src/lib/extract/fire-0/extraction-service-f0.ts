@@ -439,8 +439,9 @@ export async function performExtraction_F0(
           ajv.compile(multiEntitySchema);
 
           // Wrap in timeout promise
+          let timeoutHandle: NodeJS.Timeout;
           const timeoutPromise = new Promise(resolve => {
-            setTimeout(() => resolve(null), timeoutCompletion);
+            timeoutHandle = setTimeout(() => resolve(null), timeoutCompletion);
           });
 
           // Check if page should be extracted before proceeding
@@ -504,7 +505,9 @@ export async function performExtraction_F0(
           const multiEntityCompletion = (await Promise.race([
             completionPromise,
             timeoutPromise,
-          ])) as Awaited<ReturnType<typeof generateCompletions_F0>>;
+          ]).finally(() => {
+            clearTimeout(timeoutHandle);
+          })) as Awaited<ReturnType<typeof generateCompletions_F0>>;
 
           // Track multi-entity extraction tokens
           if (multiEntityCompletion) {

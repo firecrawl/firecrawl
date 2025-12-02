@@ -9,7 +9,7 @@ import {
   TeamFlags,
 } from "./types";
 import { billTeam } from "../../services/billing/credit_billing";
-import { v4 as uuidv4 } from "uuid";
+import { v7 as uuidv7 } from "uuid";
 import { addScrapeJob, waitForJob } from "../../services/queue-jobs";
 import { logJob } from "../../services/logging/log_job";
 import { search } from "../../search";
@@ -86,7 +86,7 @@ async function scrapeSearchResult(
   directToBullMQ: boolean = false,
   isSearchPreview: boolean = false,
 ): Promise<DocumentWithCostTracking> {
-  const jobId = uuidv4();
+  const jobId = uuidv7();
 
   const costTracking = new CostTracking();
 
@@ -229,7 +229,7 @@ export async function searchController(
     (req as any).requestTiming?.startTime || new Date().getTime();
   const controllerStartTime = new Date().getTime();
 
-  const jobId = uuidv4();
+  const jobId = uuidv7();
   let logger = _logger.child({
     jobId,
     teamId: req.auth.team_id,

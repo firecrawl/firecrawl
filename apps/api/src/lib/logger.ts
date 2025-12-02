@@ -59,13 +59,14 @@ export const logger = winston.createLogger({
             filename:
               "firecrawl-" +
               (process.argv[1].includes("worker") ? "worker" : "app") +
-              "-" +
-              crypto.randomUUID() +
               ".log",
             format: winston.format.combine(
               zeroDataRetentionFilter,
               winston.format.json(),
             ),
+            maxsize: 10 * 1024 * 1024,
+            maxFiles: 3,
+            tailable: true,
           }),
         ]
       : []),

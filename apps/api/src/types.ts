@@ -17,6 +17,7 @@ type ScrapeJobCommon = {
   team_id: string;
   zeroDataRetention: boolean;
   traceContext?: SerializedTraceContext;
+  skipNuq?: boolean;
 };
 
 export type ScrapeJobData = ScrapeJobCommon &

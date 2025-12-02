@@ -8,7 +8,7 @@ import {
   ScrapeOptions,
   TeamFlags,
 } from "./types";
-import { v4 as uuidv4 } from "uuid";
+import { v7 as uuidv7 } from "uuid";
 import { addScrapeJob, waitForJob } from "../../services/queue-jobs";
 import { logJob } from "../../services/logging/log_job";
 import { search } from "../../search/v2";
@@ -55,7 +55,7 @@ async function startX420ScrapeJob(
   directToBullMQ: boolean = false,
   isSearchPreview: boolean = false,
 ): Promise<string> {
-  const jobId = uuidv4();
+  const jobId = uuidv7();
 
   const zeroDataRetention = flags?.forceZDR ?? false;
 
@@ -199,7 +199,7 @@ export async function x402SearchController(
   req: RequestWithAuth<{}, SearchResponse, SearchRequest>,
   res: Response<SearchResponse>,
 ) {
-  const jobId = uuidv4();
+  const jobId = uuidv7();
   let logger = _logger.child({
     jobId,
     teamId: req.auth.team_id,

@@ -1,15 +1,16 @@
 import { BrandingProfile } from "../../types/branding";
-import { ButtonSnapshot } from "./types";
+import { ButtonSnapshot, BrandingLLMInput } from "./types";
 import { parse, rgb } from "culori";
 
-type BrandingLLMInput = {
-  jsAnalysis: BrandingProfile;
-  buttons: ButtonSnapshot[];
-  url: string;
-};
-
 export function buildBrandingPrompt(input: BrandingLLMInput): string {
-  const { jsAnalysis, buttons, url } = input;
+  const {
+    jsAnalysis,
+    buttons,
+    logoCandidates,
+    brandName,
+    backgroundCandidates,
+    url,
+  } = input;
 
   let prompt = `Analyze the branding of this website: ${url}\n\n`;
 
@@ -167,6 +168,73 @@ export function buildBrandingPrompt(input: BrandingLLMInput): string {
     });
   }
 
+  // Add logo candidates section (optimized - compact format)
+  if (logoCandidates && logoCandidates.length > 0) {
+    prompt += `\n## Logo Candidates (${logoCandidates.length}):\n`;
+
+    if (brandName) {
+      prompt += `Brand: "${brandName}" - Use this to match logos visually.\n\n`;
+    }
+
+    // Compact format: index, location, visible, alt, indicators, href, truncated URL
+    logoCandidates.forEach((candidate, idx) => {
+      const indicators: string[] = [];
+      if (candidate.indicators.inHeader) indicators.push("header");
+      if (candidate.indicators.altMatch) indicators.push("alt=logo");
+      if (candidate.indicators.srcMatch) indicators.push("url=logo");
+      if (candidate.indicators.classMatch) indicators.push("class=logo");
+      if (candidate.indicators.hrefMatch) indicators.push("href=home");
+
+      const urlPreview =
+        candidate.src.length > 80
+          ? candidate.src.substring(0, 80) + "..."
+          : candidate.src;
+
+      const hrefInfo = candidate.href ? ` | href:${candidate.href}` : "";
+
+      prompt += `#${idx}: ${candidate.location} | ${candidate.isVisible ? "visible" : "hidden"} | ${candidate.isSvg ? "SVG" : "IMG"} | alt:"${candidate.alt || ""}" | [${indicators.join(", ")}]${hrefInfo} | ${urlPreview}\n`;
+    });
+
+    prompt += `\n**CRITICAL LOGO SELECTION RULES:**\n`;
+    prompt += `1. **Brand Name Match**: The logo MUST visually represent or match the brand name "${brandName || "unknown"}"\n`;
+    prompt += `   - If you see text/logos that say DIFFERENT brand names, those are CUSTOMER/PARTNER logos - SKIP THEM\n`;
+    prompt += `   - Only select logos that match "${brandName || "the website's main brand"}"\n`;
+    prompt += `2. **Location**: Prefer logos in header/navbar (highest priority)\n`;
+    prompt += `3. **Href Indicator**: Logos that link to "/" (homepage) are VERY LIKELY the main brand logo\n`;
+    prompt += `   - href="/" or href="/home" indicates homepage logo - STRONG indicator\n`;
+    prompt += `   - Logos with hrefMatch indicator are prioritized\n`;
+    prompt += `4. **Visibility**: Prefer visible logos (not hidden by dark/light mode)\n`;
+    prompt += `5. **AVOID**:\n`;
+    prompt += `   - Customer/client logos (different brand names)\n`;
+    prompt += `   - Partner logos (different brand names)\n`;
+    prompt += `   - Testimonial logos (usually in testimonials/case studies sections)\n`;
+    prompt += `   - GitHub stars/social media icons\n`;
+    prompt += `   - Logos in footer (unless no header logo exists)\n`;
+    prompt += `   - Logos in "customers", "partners", "clients", "case studies" sections\n`;
+    prompt += `6. **Use Screenshot**: Look at the screenshot to visually identify which logo is the MAIN brand logo at the top of the page\n`;
+    prompt += `   - The logo in the header/navbar is almost always the brand logo\n`;
+    prompt += `   - If multiple logos exist, choose the one that matches "${brandName || "the website brand"}"\n\n`;
+  }
+
+  // Add background color candidates section
+  if (backgroundCandidates && backgroundCandidates.length > 0) {
+    prompt += `\n## Background Color Candidates (${backgroundCandidates.length}):\n`;
+    prompt += `Multiple background colors were detected. Use the screenshot to identify which is the actual page background:\n\n`;
+
+    backgroundCandidates.forEach((candidate, idx) => {
+      const areaInfo = candidate.area
+        ? ` | area: ${Math.round(candidate.area)}px²`
+        : "";
+      prompt += `#${idx}: ${candidate.color} | source: ${candidate.source} | priority: ${candidate.priority}${areaInfo}\n`;
+    });
+
+    prompt += `\n**Selection Rules:** Use the screenshot to visually identify the main page background. Consider:\n`;
+    prompt += `- Color scheme (dark mode should have dark background, light mode should have light background)\n`;
+    prompt += `- Most visible/largest area in the screenshot\n`;
+    prompt += `- Higher priority sources (body/html > CSS vars > containers)\n`;
+    prompt += `- Return the hex color in the colorRoles.backgroundColor field\n\n`;
+  }
+
   // Add specific questions
   prompt += `\n## Your Task:\n`;
   prompt += `1. **PRIMARY Button**: Identify which button (by index 0-${buttons.length - 1}) is the main call-to-action.\n`;
@@ -213,6 +281,22 @@ export function buildBrandingPrompt(input: BrandingLLMInput): string {
   prompt += `   - Filter out generics and CSS variables\n`;
   prompt += `   - Prioritize by frequency (shown in usage count)\n`;
   prompt += `   - Assign appropriate roles (heading, body, monospace, display)\n\n`;
+
+  if (logoCandidates && logoCandidates.length > 0) {
+    prompt += `7. **Logo Selection**: Identify the best brand logo from the ${logoCandidates.length} candidates provided above.\n`;
+    prompt += `   - **CRITICAL**: The logo MUST match the brand name "${brandName || "unknown"}"\n`;
+    prompt += `   - **REJECT** any logo that shows a DIFFERENT brand name - those are customer/partner logos\n`;
+    prompt += `   - Use the screenshot to visually identify which logo appears at the top of the page\n`;
+    prompt += `   - The logo should visually represent "${brandName || "the website's main brand"}"\n`;
+    prompt += `   - Prefer visible logos in header/navbar locations (these are almost always the brand logo)\n`;
+    prompt += `   - **AVOID**:\n`;
+    prompt += `     * Customer/client logos (show different company names)\n`;
+    prompt += `     * Partner logos (show different company names)\n`;
+    prompt += `     * Logos in footer, testimonials, case studies, partners sections\n`;
+    prompt += `     * GitHub stars, social media icons, badges\n`;
+    prompt += `   - Return the logo INDEX (0-${logoCandidates.length - 1}) and explain your reasoning\n`;
+    prompt += `   - **If you see a logo with a different brand name than "${brandName || "the website brand"}", it's NOT the brand logo - return -1 if no suitable logo matches the brand\n\n`;
+  }
 
   prompt += `## VALIDATION CHECKLIST - VERIFY BEFORE RESPONDING:\n`;
   prompt += `Before finalizing your answer, check:\n`;

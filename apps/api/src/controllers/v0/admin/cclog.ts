@@ -1,4 +1,4 @@
-import { redisEvictConnection } from "../../../services/redis";
+import { getRedisConnection } from "../../../services/queue-service";
 import { supabase_service } from "../../../services/supabase";
 import { logger as _logger } from "../../../lib/logger";
 import { Request, Response } from "express";
@@ -10,7 +10,7 @@ async function cclog() {
 
   let cursor = 0;
   do {
-    const result = await redisEvictConnection.scan(
+    const result = await getRedisConnection().scan(
       cursor,
       "MATCH",
       "concurrency-limiter:*",
@@ -31,7 +31,7 @@ async function cclog() {
 
       for (const x of usable) {
         const at = new Date();
-        const concurrency = await redisEvictConnection.zrangebyscore(
+        const concurrency = await getRedisConnection().zrangebyscore(
           x,
           Date.now(),
           Infinity,

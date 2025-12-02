@@ -13,7 +13,7 @@ import {
 } from "../../lib/default-values";
 import { addScrapeJob, waitForJob } from "../../services/queue-jobs";
 import { redisEvictConnection } from "../../../src/services/redis";
-import { v4 as uuidv4 } from "uuid";
+import { v7 as uuidv7 } from "uuid";
 import { logger } from "../../lib/logger";
 import * as Sentry from "@sentry/node";
 import { getJobPriority } from "../../lib/job-priority";
@@ -176,7 +176,7 @@ export async function scrapeController(req: Request, res: Response) {
       });
     }
 
-    const jobId = uuidv4();
+    const jobId = uuidv7();
 
     redisEvictConnection.sadd("teams_using_v0", team_id).catch(error =>
       logger.error("Failed to add team to teams_using_v0", {

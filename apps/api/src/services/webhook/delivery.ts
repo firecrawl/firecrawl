@@ -98,13 +98,23 @@ export class WebhookSender {
       headers["X-Firecrawl-Signature"] = `sha256=${hmac.digest("hex")}`;
     }
 
+    const abortController = new AbortController();
+    const timeoutHandle = setTimeout(
+      () => {
+        if (abortController) {
+          abortController.abort();
+        }
+      },
+      this.context.v0 ? 30000 : 10000,
+    );
+
     try {
       const res = await undici.fetch(this.config.url, {
         method: "POST",
         headers,
         body: payloadString,
         dispatcher: getSecureDispatcher(),
-        signal: AbortSignal.timeout(this.context.v0 ? 30000 : 10000),
+        signal: abortController.signal,
       });
 
       if (!res.ok) {
@@ -146,6 +156,8 @@ export class WebhookSender {
       });
 
       throw error;
+    } finally {
+      if (timeoutHandle) clearTimeout(timeoutHandle);
     }
   }
 

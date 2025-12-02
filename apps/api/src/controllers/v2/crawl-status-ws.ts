@@ -8,7 +8,7 @@ import {
   RequestWithAuth,
 } from "./types";
 import { WebSocket } from "ws";
-import { v4 as uuidv4 } from "uuid";
+import { v7 as uuidv7 } from "uuid";
 import { logger } from "../../lib/logger";
 import {
   getCrawl,
@@ -193,7 +193,7 @@ export async function crawlStatusWSController(
   } catch (err) {
     Sentry.captureException(err);
 
-    const id = uuidv4();
+    const id = uuidv7();
     let verbose = JSON.stringify(err);
     if (verbose === "{}") {
       if (err instanceof Error) {

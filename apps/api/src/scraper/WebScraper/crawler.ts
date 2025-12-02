@@ -143,6 +143,7 @@ export class WebCrawler {
     limit: number,
     maxDepth: number,
     fromMap: boolean = false,
+    skipRobots: boolean = false,
   ): Promise<FilterLinksResult> {
     const denialReasons = new Map<string, string>();
 
@@ -173,7 +174,7 @@ export class WebCrawler {
         excludes: this.excludes,
         includes: this.includes,
         allowBackwardCrawling: this.allowBackwardCrawling,
-        ignoreRobotsTxt: this.ignoreRobotsTxt,
+        ignoreRobotsTxt: this.ignoreRobotsTxt || skipRobots,
         robotsTxt: this.robotsTxt,
         allowExternalContentLinks: this.allowExternalContentLinks,
         allowSubdomains: this.allowSubdomains,
@@ -318,11 +319,12 @@ export class WebCrawler {
           }
         }
 
-        const isAllowed = this.ignoreRobotsTxt
-          ? true
-          : ((this.robots.isAllowed(link, "FireCrawlAgent") ||
-              this.robots.isAllowed(link, "FirecrawlAgent")) ??
-            true);
+        const isAllowed =
+          this.ignoreRobotsTxt || skipRobots
+            ? true
+            : ((this.robots.isAllowed(link, "FireCrawlAgent") ||
+                this.robots.isAllowed(link, "FirecrawlAgent")) ??
+              true);
         // Check if the link is disallowed by robots.txt
         if (!isAllowed) {
           this.logger.debug(`Link disallowed by robots.txt: ${link}`, {
@@ -451,6 +453,7 @@ export class WebCrawler {
           leftOfLimit,
           this.maxCrawledDepth,
           fromMap,
+          fromMap,
         );
         let filteredLinks = filteredLinksResult.links;
         leftOfLimit -= filteredLinks.length;
@@ -483,8 +486,12 @@ export class WebCrawler {
       }
     };
 
+    let timeoutHandle: NodeJS.Timeout;
     const timeoutPromise = new Promise((_, reject) => {
-      setTimeout(() => reject(new Error("Sitemap fetch timeout")), timeout);
+      timeoutHandle = setTimeout(
+        () => reject(new Error("Sitemap fetch timeout")),
+        timeout,
+      );
     });
 
     // Allow sitemaps to be cached for 48 hours if they are requested from /map
@@ -515,7 +522,9 @@ export class WebCrawler {
           ),
         ]).then(results => results.reduce((a, x) => a + x, 0)),
         timeoutPromise,
-      ])) as number;
+      ]).finally(() => {
+        clearTimeout(timeoutHandle);
+      })) as number;
 
       if (count > 0) {
         if (

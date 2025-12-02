@@ -1,4 +1,8 @@
 {
     "$schema": "https://github.com/IBM/audit-ci/raw/main/docs/schema.json",
-    "low": true
+    "low": true,
+    "allowlist": [
+        "GHSA-5j98-mcp5-4vw2|artillery>artillery-plugin-apdex>tap>@tapjs/fixture>rimraf>glob", // not impacted by this
+        "GHSA-mh29-5h37-fv8m|@jest/globals>@jest/expect>jest-snapshot>@jest/transform>babel-plugin-istanbul>@istanbuljs/load-nyc-config>js-yaml" // not impacted by this
+    ]
 }

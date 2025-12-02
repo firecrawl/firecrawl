@@ -14,7 +14,7 @@ kuchikiki = "0.8.2"
 lol_html = "2.6.0"
 lopdf = "0.38.0"
 maud = "0.27.0"
-napi = { version = "3.0.0", features = ["serde-json"] }
+napi = { version = "3.0.0", features = ["serde-json", "tokio_rt"] }
 napi-derive = "3.0.0"
 nodesig = { git = "https://github.com/firecrawl/nodesig" }
 psl = "2.1.140"
@@ -26,6 +26,7 @@ texting_robots = "0.2.2"
 url = "2.5.7"
 zip = "5.0.0"
 calamine = "0.26"
+tokio = "1.48.0"
 
 [build-dependencies]
 napi-build = "2"

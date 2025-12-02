@@ -1,4 +1,6 @@
 import "dotenv/config";
+import "../sentry";
+import { setSentryServiceTag } from "../sentry";
 import { logger as _logger } from "../../lib/logger";
 import { processJobInternal } from "./scrape-worker";
 import { scrapeQueue, nuqGetLocalMetrics, nuqHealthCheck } from "./nuq";
@@ -8,6 +10,8 @@ import { initializeBlocklist } from "../../scraper/WebScraper/utils/blocklist";
 import { initializeEngineForcing } from "../../scraper/WebScraper/utils/engine-forcing";
 
 (async () => {
+  setSentryServiceTag("nuq-worker");
+
   try {
     await initializeBlocklist();
     initializeEngineForcing();

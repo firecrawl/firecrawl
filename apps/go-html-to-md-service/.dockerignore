@@ -1,0 +1,27 @@
+# Ignore build artifacts
+*.dylib
+*.so
+*.dll
+*.exe
+
+# Ignore test files
+*_test.go
+
+# Ignore documentation
+README.md
+*.md
+
+# Ignore git
+.git
+.gitignore
+
+# Ignore IDE files
+.vscode
+.idea
+*.swp
+*.swo
+
+# Ignore temporary files
+*.tmp
+*.log
+

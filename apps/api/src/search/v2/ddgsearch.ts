@@ -134,7 +134,12 @@ export async function ddgSearch(
 
     let antiBotRetries = 0;
     while (results.length < num_results && nextPageData) {
-      const timeoutSignal = AbortSignal.timeout(timeout);
+      const abortController = new AbortController();
+      const timeoutHandle = setTimeout(() => {
+        if (abortController) {
+          abortController.abort();
+        }
+      }, timeout);
 
       try {
         let response: undici.Response;
@@ -153,7 +158,7 @@ export async function ddgSearch(
                 "Accept-Encoding": "gzip, deflate, br",
                 "Upgrade-Insecure-Requests": "1",
               },
-              signal: timeoutSignal,
+              signal: abortController.signal,
             },
           );
         } else {
@@ -170,7 +175,7 @@ export async function ddgSearch(
               "Accept-Encoding": "gzip, deflate, br",
               "Upgrade-Insecure-Requests": "1",
             },
-            signal: timeoutSignal,
+            signal: abortController.signal,
           });
         }
 
@@ -204,7 +209,10 @@ export async function ddgSearch(
         } else {
           throw error;
         }
+      } finally {
+        if (timeoutHandle) clearTimeout(timeoutHandle);
       }
+
       await new Promise(r => setTimeout(r, 1000));
     }
 

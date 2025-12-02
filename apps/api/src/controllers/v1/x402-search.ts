@@ -8,7 +8,7 @@ import {
   ScrapeOptions,
   TeamFlags,
 } from "./types";
-import { v4 as uuidv4 } from "uuid";
+import { v7 as uuidv7 } from "uuid";
 import { addScrapeJob, waitForJob } from "../../services/queue-jobs";
 import { logJob } from "../../services/logging/log_job";
 import { search } from "../../search";
@@ -43,7 +43,7 @@ async function scrapeX402SearchResult(
   directToBullMQ: boolean = false,
   isSearchPreview: boolean = false,
 ): Promise<DocumentWithCostTracking> {
-  const jobId = uuidv4();
+  const jobId = uuidv7();
 
   const costTracking = new CostTracking();
 
@@ -174,7 +174,7 @@ export async function x402SearchController(
   req: RequestWithAuth<{}, SearchResponse, SearchRequest>,
   res: Response<SearchResponse & { request?: any }>,
 ) {
-  const jobId = uuidv4();
+  const jobId = uuidv7();
   let logger = _logger.child({
     jobId,
     teamId: req.auth.team_id,

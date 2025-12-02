@@ -92,6 +92,28 @@ export const brandingEnhancementSchema = z.object({
     .describe(
       "Top 5 cleaned fonts (remove obfuscation, fallbacks, generics, CSS vars)",
     ),
+
+  // Logo selection - LLM picks the best logo from candidates
+  logoSelection: z
+    .object({
+      selectedLogoIndex: z
+        .number()
+        .describe(
+          "Index of the selected logo in the provided candidates list (0-based), or -1 if none found",
+        )
+        .optional(),
+      selectedLogoReasoning: z
+        .string()
+        .describe("Why this logo was selected as the brand logo")
+        .optional(),
+      confidence: z
+        .number()
+        .min(0)
+        .max(1)
+        .describe("Confidence in logo selection (0-1)")
+        .optional(),
+    })
+    .optional(),
 });
 
 export type BrandingEnhancement = z.infer<typeof brandingEnhancementSchema>;

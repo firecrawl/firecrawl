@@ -1,6 +1,7 @@
 import "dotenv/config";
 import { shutdownOtel } from "./otel";
 import "./services/sentry";
+import { setSentryServiceTag } from "./services/sentry";
 import * as Sentry from "@sentry/node";
 import express, { NextFunction, Request, Response } from "express";
 import bodyParser from "body-parser";
@@ -26,7 +27,7 @@ import {
   ResponseWithSentry,
 } from "./controllers/v1/types";
 import { ZodError } from "zod";
-import { v4 as uuidv4 } from "uuid";
+import { v7 as uuidv7 } from "uuid";
 import { attachWsProxy } from "./services/agentLivecastWS";
 import { cacheableLookup } from "./scraper/scrapeURL/lib/cacheableLookup";
 import { v2Router } from "./routes/v2";
@@ -59,6 +60,8 @@ const app = ws.app;
 
 global.isProduction = process.env.IS_PRODUCTION === "true";
 
+setSentryServiceTag("api");
+
 app.use(bodyParser.urlencoded({ extended: true }));
 app.use(bodyParser.json({ limit: "10mb" }));
 
@@ -89,13 +92,12 @@ app.use(
   serverAdapter.getRouter(),
 );
 
-app.get("/", (req, res) => {
-  res.send("SCRAPERS-JS: Hello, world! K8s!");
+app.get("/", (_, res) => {
+  res.redirect("https://docs.firecrawl.dev/api-reference/v2-introduction");
 });
 
-//write a simple test function
-app.get("/test", async (req, res) => {
-  res.send("Hello, world!");
+app.get("/e2e-test", (_, res) => {
+  res.status(200).send("OK");
 });
 
 // register router
@@ -215,7 +217,7 @@ app.use(
       });
     }
 
-    const id = res.sentry ?? uuidv4();
+    const id = res.sentry ?? uuidv7();
 
     logger.error(
       "Error occurred in request! (" + req.path + ") -- ID " + id + " -- ",

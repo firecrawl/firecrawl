@@ -9,7 +9,7 @@ import { logJob } from "../../services/logging/log_job";
 import { PageOptions, SearchOptions } from "../../lib/entities";
 import { search } from "../../search";
 import { isUrlBlocked } from "../../scraper/WebScraper/utils/blocklist";
-import { v4 as uuidv4 } from "uuid";
+import { v7 as uuidv7 } from "uuid";
 import { logger } from "../../lib/logger";
 import { redisEvictConnection } from "../../../src/services/redis";
 import { addScrapeJob, waitForJob } from "../../services/queue-jobs";
@@ -106,7 +106,7 @@ async function searchHelper(
 
   const jobDatas = res.map(x => {
     const url = x.url;
-    const uuid = uuidv4();
+    const uuid = uuidv7();
     return {
       jobId: uuid,
       data: {
@@ -175,7 +175,7 @@ export async function searchController(req: Request, res: Response) {
       });
     }
 
-    const jobId = uuidv4();
+    const jobId = uuidv7();
 
     redisEvictConnection.sadd("teams_using_v0", team_id).catch(error =>
       logger.error("Failed to add team to teams_using_v0", {

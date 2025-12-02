@@ -96,6 +96,13 @@ BULL_AUTH_KEY=CHANGEME
 # REDIS_URL=redis://redis:6379
 # REDIS_RATE_LIMIT_URL=redis://redis:6379
 
+## === PostgreSQL Database Configuration ===
+# Configure PostgreSQL credentials. These should match the credentials used by the nuq-postgres container.
+# If you change these, ensure all three are set consistently.
+# POSTGRES_USER=postgres
+# POSTGRES_PASSWORD=postgres
+# POSTGRES_DB=postgres
+
 # Set if you have a llamaparse key you'd like to use to parse pdfs
 # LLAMAPARSE_API_KEY=
 

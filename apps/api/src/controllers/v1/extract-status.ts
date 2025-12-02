@@ -116,7 +116,13 @@ export async function extractStatusController(
     success: status === "failed" ? false : true,
     data,
     status,
-    error: extract?.error ?? undefined,
+    error: (() => {
+      if (typeof extract?.error === "string") return extract.error;
+      if (extract?.error && typeof extract.error === "object") {
+        return typeof extract.error.message === "string" ? extract.error.message : (typeof extract.error.error === "string" ? extract.error.error : JSON.stringify(extract.error));
+      }
+      return undefined;
+    })(),
     expiresAt: (await getExtractExpiry(req.params.jobId)).toISOString(),
     steps: extract?.showSteps ? extract.steps : undefined,
     llmUsage: extract?.showLLMUsage ? extract.llmUsage : undefined,

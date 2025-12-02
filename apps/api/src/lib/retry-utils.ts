@@ -54,7 +54,7 @@ export async function attemptRequest<T>(
  * Abortable sleep function that resolves immediately if the signal is aborted
  */
 function abortableSleep(ms: number, signal?: AbortSignal): Promise<void> {
-  return new Promise((resolve, reject) => {
+  return new Promise(resolve => {
     if (signal?.aborted) {
       resolve();
       return;

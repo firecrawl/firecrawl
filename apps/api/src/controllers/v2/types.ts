@@ -553,6 +553,7 @@ const baseScrapeOptions = z
     blockAds: z.boolean().default(true),
     proxy: z.enum(["basic", "stealth", "auto"]).default("auto"),
     maxAge: z.number().int().gte(0).safe().optional(),
+    minAge: z.number().int().gte(0).safe().optional(),
     storeInCache: z.boolean().default(true),
     // @deprecated
     __searchPreviewToken: z.string().optional(),
@@ -1453,7 +1454,7 @@ export const searchRequestSchema = z
       .safe()
       .max(100)
       .optional()
-      .default(5),
+      .default(10),
     tbs: z.string().optional(),
     filter: z.string().optional(),
     sources: z

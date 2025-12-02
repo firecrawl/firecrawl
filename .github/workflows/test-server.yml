@@ -44,6 +44,7 @@ jobs:
       NUQ_DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
       USE_GO_MARKDOWN_PARSER: true
       ALLOW_LOCAL_WEBHOOKS: true
+      FIRECRAWL_LOG_TO_FILE: true
     steps:
       - uses: actions/checkout@v5
 
@@ -196,12 +197,22 @@ jobs:
         working-directory: apps/api
         env:
           npm_config_ignore_scripts: "true" # required currently to prevent re-building cached native lib
-      
+
+      - name: Publish test report
+        if: always()
+        uses: dorny/test-reporter@v1
+        with:
+          name: Test Report (${{ matrix.engine }}, ${{ matrix.proxy }}, ${{ matrix.search }}, ${{ matrix.ai }})
+          path: apps/api/test-results/junit.xml
+          reporter: jest-junit
+          fail-on-error: true
+
       - name: Copy log files
         if: always()
         run: |
           mkdir -p logs
-          cp ./apps/api/firecrawl.log logs/firecrawl.log
+          cp ./apps/api/firecrawl-app.log logs/firecrawl.log || true
+          cp ./apps/api/firecrawl-worker.log logs/firecrawl-worker.log || true
 
       - name: Copy SearXNG logs
         if: always() && matrix.search == 'searxng'
@@ -257,7 +268,6 @@ jobs:
   #     FIRE_ENGINE_BETA_URL: ${{ secrets.FIRE_ENGINE_BETA_URL }}
   #     FIRE_ENGINE_STAGING_URL: ${{ secrets.FIRE_ENGINE_STAGING_URL }}
   #     USE_DB_AUTHENTICATION: true
-  #     SERPER_API_KEY: ${{ secrets.SERPER_API_KEY }}
   #     ENV: ${{ secrets.ENV }}
   #     RUNPOD_MU_POD_ID: ${{ secrets.RUNPOD_MU_POD_ID }}
   #     RUNPOD_MUV2_POD_ID: ${{ secrets.RUNPOD_MUV2_POD_ID }}

@@ -1,6 +1,7 @@
 import "dotenv/config";
 import { shutdownOtel } from "../otel";
 import "./sentry";
+import { setSentryServiceTag } from "./sentry";
 import * as Sentry from "@sentry/node";
 import {
   getDeepResearchQueue,
@@ -10,7 +11,7 @@ import {
 import { Job, Queue, Worker } from "bullmq";
 import { logger as _logger } from "../lib/logger";
 import systemMonitor from "./system-monitor";
-import { v4 as uuidv4 } from "uuid";
+import { v7 as uuidv7 } from "uuid";
 import { configDotenv } from "dotenv";
 import { updateDeepResearch } from "../lib/deep-research/deep-research-redis";
 import { performDeepResearch } from "../lib/deep-research/deep-research-service";
@@ -24,6 +25,7 @@ import { initializeEngineForcing } from "../scraper/WebScraper/utils/engine-forc
 import { crawlFinishedQueue, NuQJob, scrapeQueue } from "./worker/nuq";
 import { finishCrawlSuper } from "./worker/crawl-logic";
 import { getCrawl } from "../lib/crawl-redis";
+import { TransportableError } from "../lib/error";
 
 configDotenv();
 
@@ -97,11 +99,14 @@ const processDeepResearchJobInternal = async (
   } catch (error) {
     logger.error(`🚫 Job errored ${job.id} - ${error}`, { error });
 
-    Sentry.captureException(error, {
-      data: {
-        job: job.id,
-      },
-    });
+    // Filter out TransportableErrors (flow control)
+    if (!(error instanceof TransportableError)) {
+      Sentry.captureException(error, {
+        data: {
+          job: job.id,
+        },
+      });
+    }
 
     try {
       // Move job to failed state in Redis
@@ -172,11 +177,14 @@ const processGenerateLlmsTxtJobInternal = async (
   } catch (error) {
     logger.error(`🚫 Job errored ${job.id} - ${error}`, { error });
 
-    Sentry.captureException(error, {
-      data: {
-        job: job.id,
-      },
-    });
+    // Filter out TransportableErrors (flow control)
+    if (!(error instanceof TransportableError)) {
+      Sentry.captureException(error, {
+        data: {
+          job: job.id,
+        },
+      });
+    }
 
     try {
       await job.moveToFailed(error, token, false);
@@ -263,7 +271,7 @@ const workerFun = async (
       _logger.info("No longer accepting new jobs. SIGINT");
       break;
     }
-    const token = uuidv4();
+    const token = uuidv7();
     const canAcceptConnection = await monitor.acceptConnection();
     if (!canAcceptConnection) {
       console.log("Can't accept connection due to RAM/CPU load");
@@ -439,6 +447,8 @@ app.listen(workerPort, () => {
 });
 
 (async () => {
+  setSentryServiceTag("queue-worker");
+
   await initializeBlocklist().catch(e => {
     _logger.error("Failed to initialize blocklist", { error: e });
     process.exit(1);

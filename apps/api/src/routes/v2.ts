@@ -46,117 +46,117 @@ v2Router.use(requestTimingMiddleware("v2"));
 // Configure payment middleware to enable micropayment-protected endpoints
 // This middleware handles payment verification and processing for premium API features
 // x402 payments protocol - https://github.com/coinbase/x402
-v2Router.use(
-  paymentMiddleware(
-    (process.env.X402_PAY_TO_ADDRESS as `0x${string}`) ||
-      "0x0000000000000000000000000000000000000000",
-    {
-      "POST /x402/search": {
-        price: process.env.X402_ENDPOINT_PRICE_USD as string,
-        network: process.env.X402_NETWORK as
-          | "base-sepolia"
-          | "base"
-          | "avalanche-fuji"
-          | "avalanche"
-          | "iotex",
-        config: {
-          discoverable: true,
-          description:
-            "The search endpoint combines web search (SERP) with Firecrawl's scraping capabilities to return full page content for any query. Requires micropayment via X402 protocol",
-          mimeType: "application/json",
-          maxTimeoutSeconds: 120,
-          inputSchema: {
-            body: {
-              query: {
-                type: "string",
-                description: "Search query to find relevant web pages",
-                required: true,
-              },
-              sources: {
-                type: "array",
-                description: "Sources to search (web, news, images)",
-                required: false,
-              },
-              limit: {
-                type: "number",
-                description: "Maximum number of results to return (max 10)",
-                required: false,
-              },
-              scrapeOptions: {
-                type: "object",
-                description: "Options for scraping the found pages",
-                required: false,
-              },
-              asyncScraping: {
-                type: "boolean",
-                description: "Whether to return job IDs for async scraping",
-                required: false,
-              },
-            },
-          },
-          outputSchema: {
-            type: "object",
-            properties: {
-              success: { type: "boolean" },
-              data: {
-                type: "object",
-                properties: {
-                  web: {
-                    type: "array",
-                    items: {
-                      type: "object",
-                      properties: {
-                        url: { type: "string" },
-                        title: { type: "string" },
-                        description: { type: "string" },
-                        markdown: { type: "string" },
-                      },
-                    },
-                  },
-                  news: {
-                    type: "array",
-                    items: {
-                      type: "object",
-                      properties: {
-                        url: { type: "string" },
-                        title: { type: "string" },
-                        snippet: { type: "string" },
-                        markdown: { type: "string" },
-                      },
-                    },
-                  },
-                  images: {
-                    type: "array",
-                    items: {
-                      type: "object",
-                      properties: {
-                        url: { type: "string" },
-                        title: { type: "string" },
-                        markdown: { type: "string" },
-                      },
-                    },
-                  },
-                },
-              },
-              scrapeIds: {
-                type: "object",
-                description:
-                  "Job IDs for async scraping (if asyncScraping is true)",
-                properties: {
-                  web: { type: "array", items: { type: "string" } },
-                  news: { type: "array", items: { type: "string" } },
-                  images: { type: "array", items: { type: "string" } },
-                },
-              },
-              creditsUsed: { type: "number" },
-            },
-          },
-        },
-      },
-    },
-    facilitator,
-  ),
-);
+// v2Router.use(
+//   paymentMiddleware(
+//     (process.env.X402_PAY_TO_ADDRESS as `0x${string}`) ||
+//       "0x0000000000000000000000000000000000000000",
+//     {
+//       "POST /x402/search": {
+//         price: process.env.X402_ENDPOINT_PRICE_USD as string,
+//         network: process.env.X402_NETWORK as
+//           | "base-sepolia"
+//           | "base"
+//           | "avalanche-fuji"
+//           | "avalanche"
+//           | "iotex",
+//         config: {
+//           discoverable: true,
+//           description:
+//             "The search endpoint combines web search (SERP) with Firecrawl's scraping capabilities to return full page content for any query. Requires micropayment via X402 protocol",
+//           mimeType: "application/json",
+//           maxTimeoutSeconds: 120,
+//           inputSchema: {
+//             body: {
+//               query: {
+//                 type: "string",
+//                 description: "Search query to find relevant web pages",
+//                 required: true,
+//               },
+//               sources: {
+//                 type: "array",
+//                 description: "Sources to search (web, news, images)",
+//                 required: false,
+//               },
+//               limit: {
+//                 type: "number",
+//                 description: "Maximum number of results to return (max 10)",
+//                 required: false,
+//               },
+//               scrapeOptions: {
+//                 type: "object",
+//                 description: "Options for scraping the found pages",
+//                 required: false,
+//               },
+//               asyncScraping: {
+//                 type: "boolean",
+//                 description: "Whether to return job IDs for async scraping",
+//                 required: false,
+//               },
+//             },
+//           },
+//           outputSchema: {
+//             type: "object",
+//             properties: {
+//               success: { type: "boolean" },
+//               data: {
+//                 type: "object",
+//                 properties: {
+//                   web: {
+//                     type: "array",
+//                     items: {
+//                       type: "object",
+//                       properties: {
+//                         url: { type: "string" },
+//                         title: { type: "string" },
+//                         description: { type: "string" },
+//                         markdown: { type: "string" },
+//                       },
+//                     },
+//                   },
+//                   news: {
+//                     type: "array",
+//                     items: {
+//                       type: "object",
+//                       properties: {
+//                         url: { type: "string" },
+//                         title: { type: "string" },
+//                         snippet: { type: "string" },
+//                         markdown: { type: "string" },
+//                       },
+//                     },
+//                   },
+//                   images: {
+//                     type: "array",
+//                     items: {
+//                       type: "object",
+//                       properties: {
+//                         url: { type: "string" },
+//                         title: { type: "string" },
+//                         markdown: { type: "string" },
+//                       },
+//                     },
+//                   },
+//                 },
+//               },
+//               scrapeIds: {
+//                 type: "object",
+//                 description:
+//                   "Job IDs for async scraping (if asyncScraping is true)",
+//                 properties: {
+//                   web: { type: "array", items: { type: "string" } },
+//                   news: { type: "array", items: { type: "string" } },
+//                   images: { type: "array", items: { type: "string" } },
+//                 },
+//               },
+//               creditsUsed: { type: "number" },
+//             },
+//           },
+//         },
+//       },
+//     },
+//     facilitator,
+//   ),
+// );
 
 v2Router.post(
   "/search",
@@ -270,6 +270,12 @@ v2Router.delete(
 );
 
 v2Router.get(
+  "/batch/scrape/:jobId/errors",
+  authMiddleware(RateLimiterMode.CrawlStatus),
+  wrap(crawlErrorsController),
+);
+
+v2Router.get(
   "/crawl/:jobId/errors",
   authMiddleware(RateLimiterMode.CrawlStatus),
   validateJobIdParam,
@@ -333,5 +339,114 @@ v2Router.post(
   authMiddleware(RateLimiterMode.Search),
   countryCheck,
   blocklistMiddleware,
+  paymentMiddleware(
+    (process.env.X402_PAY_TO_ADDRESS as `0x${string}`) ||
+      "0x0000000000000000000000000000000000000000",
+    {
+      "POST /x402/search": {
+        price: process.env.X402_ENDPOINT_PRICE_USD as string,
+        network: process.env.X402_NETWORK as
+          | "base-sepolia"
+          | "base"
+          | "avalanche-fuji"
+          | "avalanche"
+          | "iotex",
+        config: {
+          discoverable: true,
+          description:
+            "The search endpoint combines web search (SERP) with Firecrawl's scraping capabilities to return full page content for any query. Requires micropayment via X402 protocol",
+          mimeType: "application/json",
+          maxTimeoutSeconds: 120,
+          inputSchema: {
+            body: {
+              query: {
+                type: "string",
+                description: "Search query to find relevant web pages",
+                required: true,
+              },
+              sources: {
+                type: "array",
+                description: "Sources to search (web, news, images)",
+                required: false,
+              },
+              limit: {
+                type: "number",
+                description: "Maximum number of results to return (max 10)",
+                required: false,
+              },
+              scrapeOptions: {
+                type: "object",
+                description: "Options for scraping the found pages",
+                required: false,
+              },
+              asyncScraping: {
+                type: "boolean",
+                description: "Whether to return job IDs for async scraping",
+                required: false,
+              },
+            },
+          },
+          outputSchema: {
+            type: "object",
+            properties: {
+              success: { type: "boolean" },
+              data: {
+                type: "object",
+                properties: {
+                  web: {
+                    type: "array",
+                    items: {
+                      type: "object",
+                      properties: {
+                        url: { type: "string" },
+                        title: { type: "string" },
+                        description: { type: "string" },
+                        markdown: { type: "string" },
+                      },
+                    },
+                  },
+                  news: {
+                    type: "array",
+                    items: {
+                      type: "object",
+                      properties: {
+                        url: { type: "string" },
+                        title: { type: "string" },
+                        snippet: { type: "string" },
+                        markdown: { type: "string" },
+                      },
+                    },
+                  },
+                  images: {
+                    type: "array",
+                    items: {
+                      type: "object",
+                      properties: {
+                        url: { type: "string" },
+                        title: { type: "string" },
+                        markdown: { type: "string" },
+                      },
+                    },
+                  },
+                },
+              },
+              scrapeIds: {
+                type: "object",
+                description:
+                  "Job IDs for async scraping (if asyncScraping is true)",
+                properties: {
+                  web: { type: "array", items: { type: "string" } },
+                  news: { type: "array", items: { type: "string" } },
+                  images: { type: "array", items: { type: "string" } },
+                },
+              },
+              creditsUsed: { type: "number" },
+            },
+          },
+        },
+      },
+    },
+    facilitator,
+  ),
   wrap(x402SearchController),
 );

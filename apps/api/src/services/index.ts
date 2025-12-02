@@ -209,7 +209,15 @@ export const useSearchIndex =
 
 export function normalizeURLForIndex(url: string): string {
   const urlObj = new URL(url);
-  urlObj.hash = "";
+
+  if (
+    !urlObj.hash ||
+    urlObj.hash.length <= 2 ||
+    (!urlObj.hash.startsWith("#/") && !urlObj.hash.startsWith("#!/"))
+  ) {
+    urlObj.hash = "";
+  }
+
   urlObj.protocol = "https";
 
   if (urlObj.port === "80" || urlObj.port === "443") {

@@ -1,5 +1,6 @@
 import "dotenv/config";
 import "../sentry";
+import { setSentryServiceTag } from "../sentry";
 import * as Sentry from "@sentry/node";
 import { Job, Queue, Worker } from "bullmq";
 import { logger as _logger, logger } from "../../lib/logger";
@@ -15,7 +16,7 @@ import {
   startBillingBatchProcessing,
 } from "../billing/batch_billing";
 import systemMonitor from "../system-monitor";
-import { v4 as uuidv4 } from "uuid";
+import { v7 as uuidv7 } from "uuid";
 import {
   index_supabase_service,
   processIndexInsertJobs,
@@ -39,6 +40,7 @@ import { BullMQOtel } from "bullmq-otel";
 import { withSpan, setSpanAttributes } from "../../lib/otel-tracer";
 import { crawlGroup } from "../worker/nuq";
 import { getACUCTeam } from "../../controllers/auth";
+import { supabase_service } from "../supabase";
 
 const workerLockDuration = Number(process.env.WORKER_LOCK_DURATION) || 60000;
 const workerStalledCheckInterval =
@@ -455,7 +457,12 @@ const processPrecrawlJob = async (token: string, job: Job) => {
               scrapeOptions: undefined, // same here
             };
 
-            const scrapeOptions = scrapeOptionsSchema.parse({});
+            const scrapeOptions = scrapeOptionsSchema.parse({
+              formats: ["rawHtml"],
+              maxAge: 0,
+              storeInCache: true,
+              onlyMainContent: false,
+            });
             const sc: StoredCrawl = {
               originUrl: url,
               crawlerOptions: toV0CrawlerOptions(crawlerOptions),
@@ -465,7 +472,7 @@ const processPrecrawlJob = async (token: string, job: Job) => {
                 teamId,
                 saveScrapeResultToGCS:
                   !!process.env.GCS_FIRE_ENGINE_BUCKET_NAME,
-                zeroDataRetention: true, // is this meant to be true?
+                zeroDataRetention: false,
                 isPreCrawl: true, // NOTE: must be added to internal options for indexing, if not it will be treated as a normal scrape in the index
               },
               team_id: teamId,
@@ -474,23 +481,7 @@ const processPrecrawlJob = async (token: string, job: Job) => {
               zeroDataRetention: false,
             };
 
-            const crawlId = uuidv4();
-
-            // robots disabled for now
-            // const crawler = crawlToCrawler(crawlId, sc, null);
-            // try {
-            //   sc.robots = await crawler.getRobotsTxt(
-            //     scrapeOptions.skipTlsVerification,
-            //   );
-            //   const robotsCrawlDelay = crawler.getRobotsCrawlDelay();
-            //   if (robotsCrawlDelay !== null && !sc.crawlerOptions.delay) {
-            //     sc.crawlerOptions.delay = robotsCrawlDelay;
-            //   }
-            // } catch (e) {
-            //   logger.debug("Failed to get robots.txt (this is probably fine!)", {
-            //     error: e,
-            //   });
-            // }
+            const crawlId = uuidv7();
 
             await crawlGroup.addGroup(
               crawlId,
@@ -596,7 +587,7 @@ const workerFun = async (
       break;
     }
 
-    const token = uuidv4();
+    const token = uuidv7();
     const canAcceptConnection = await monitor.acceptConnection();
 
     if (!canAcceptConnection) {
@@ -646,6 +637,44 @@ const workerFun = async (
   process.exit(0);
 };
 
+async function tallyBilling() {
+  const logger = _logger.child({
+    module: "index-worker",
+    method: "tallyBilling",
+  });
+  // get up to 100 teams and remove them from set
+  const billedTeams = await getRedisConnection().srandmember(
+    "billed_teams",
+    100,
+  );
+
+  if (!billedTeams || billedTeams.length === 0) {
+    logger.debug("No billed teams to process");
+    return;
+  }
+
+  await getRedisConnection().srem("billed_teams", billedTeams);
+  logger.info("Starting to update tallies", {
+    billedTeams: billedTeams.length,
+  });
+
+  for (const teamId of billedTeams) {
+    logger.info("Updating tally for team", { teamId });
+
+    const { error } = await supabase_service.rpc("update_tally_5_team", {
+      i_team_id: teamId,
+    });
+
+    if (error) {
+      logger.warn("Failed to update tally for team", { teamId, error });
+    } else {
+      logger.info("Updated tally for team", { teamId });
+    }
+  }
+
+  logger.info("Finished updating tallies");
+}
+
 const INDEX_INSERT_INTERVAL = 3000;
 const WEBHOOK_INSERT_INTERVAL = 15000;
 const OMCE_INSERT_INTERVAL = 5000;
@@ -655,6 +684,8 @@ const DOMAIN_FREQUENCY_INTERVAL = 10000;
 
 // Start the workers
 (async () => {
+  setSentryServiceTag("index-worker");
+
   // Start billing worker and batch processing
   startBillingBatchProcessing();
   const billingWorkerPromise = workerFun(
@@ -734,6 +765,16 @@ const DOMAIN_FREQUENCY_INTERVAL = 10000;
     );
   }, DOMAIN_FREQUENCY_INTERVAL);
 
+  const billingTallyInterval = setInterval(
+    async () => {
+      if (isShuttingDown) {
+        return;
+      }
+      await tallyBilling();
+    },
+    5 * 60 * 1000,
+  );
+
   // Search indexing is now handled by separate search service
   // The search service has its own worker that processes the queue
   // This worker no longer needs to process search index jobs
@@ -763,6 +804,7 @@ const DOMAIN_FREQUENCY_INTERVAL = 10000;
   clearInterval(indexRFInserterInterval);
   clearInterval(omceInserterInterval);
   clearInterval(domainFrequencyInterval);
+  clearInterval(billingTallyInterval);
 
   logger.info("All workers shut down, exiting process");
 })();

@@ -492,9 +492,9 @@ export async function performExtraction(
             ajv.compile(multiEntitySchema);
 
             // Wrap in timeout promise
-            const timeoutPromise = new Promise(resolve => {
-              setTimeout(() => resolve(null), timeoutCompletion);
-            });
+            // const timeoutPromise = new Promise(resolve => {
+            //   setTimeout(() => resolve(null), timeoutCompletion);
+            // });
 
             const completionPromise = batchExtractPromise(
               {

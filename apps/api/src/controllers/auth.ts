@@ -1,7 +1,11 @@
 import { parseApi } from "../lib/parseApi";
 import { getRateLimiter } from "../services/rate-limiter";
 import { AuthResponse, NotificationType, RateLimiterMode } from "../types";
-import { supabase_rr_service, supabase_service } from "../services/supabase";
+import {
+  supabase_acuc_only_service,
+  supabase_rr_service,
+  supabase_service,
+} from "../services/supabase";
 import { withAuth } from "../lib/withAuth";
 import { RateLimiterRedis } from "rate-limiter-flexible";
 import { sendNotification } from "../services/notification/email_notification";
@@ -12,20 +16,7 @@ import { setValue } from "../services/redis";
 import { validate } from "uuid";
 import * as Sentry from "@sentry/node";
 import { AuthCreditUsageChunk, AuthCreditUsageChunkFromTeam } from "./v1/types";
-// const { data, error } = await supabase_service
-//     .from('api_keys')
-//     .select(`
-//       key,
-//       team_id,
-//       teams (
-//         subscriptions (
-//           price_id
-//         )
-//       )
-//     `)
-//     .eq('key', normalizedApi)
-//     .limit(1)
-//     .single();
+
 function normalizedApiIsUuid(potentialUuid: string): boolean {
   // Check if the string is a valid UUID
   return validate(potentialUuid);
@@ -166,7 +157,10 @@ export async function getACUC(
     return acuc;
   }
 
-  if (process.env.USE_DB_AUTHENTICATION !== "true") {
+  if (
+    process.env.USE_DB_AUTHENTICATION !== "true" &&
+    !process.env.SUPABASE_ACUC_URL
+  ) {
     const acuc = mockACUC();
     acuc.is_extract = isExtract;
     return acuc;
@@ -187,8 +181,11 @@ export async function getACUC(
     let retries = 0;
     const maxRetries = 5;
     while (retries < maxRetries) {
-      const client =
-        Math.random() > 2 / 3 ? supabase_rr_service : supabase_service;
+      const client = !!process.env.SUPABASE_ACUC_URL
+        ? supabase_acuc_only_service
+        : Math.random() > 2 / 3
+          ? supabase_rr_service
+          : supabase_service;
       ({ data, error } = await client.rpc(
         "auth_credit_usage_chunk_36",
         {
@@ -292,7 +289,10 @@ export async function getACUCTeam(
     return acuc;
   }
 
-  if (process.env.USE_DB_AUTHENTICATION !== "true") {
+  if (
+    process.env.USE_DB_AUTHENTICATION !== "true" &&
+    !process.env.SUPABASE_ACUC_URL
+  ) {
     const acuc = mockACUC();
     acuc.is_extract = isExtract;
     return acuc;
@@ -314,8 +314,11 @@ export async function getACUCTeam(
     const maxRetries = 5;
 
     while (retries < maxRetries) {
-      const client =
-        Math.random() > 2 / 3 ? supabase_rr_service : supabase_service;
+      const client = !!process.env.SUPABASE_ACUC_URL
+        ? supabase_acuc_only_service
+        : Math.random() > 2 / 3
+          ? supabase_rr_service
+          : supabase_service;
       ({ data, error } = await client.rpc(
         "auth_credit_usage_chunk_36_from_team",
         {
@@ -393,6 +396,10 @@ export async function authenticateUser(
   res,
   mode?: RateLimiterMode,
 ): Promise<AuthResponse> {
+  if (!!process.env.SUPABASE_ACUC_URL) {
+    return supaAuthenticateUser(req, res, mode);
+  }
+
   return withAuth(supaAuthenticateUser, {
     success: true,
     chunk: null,

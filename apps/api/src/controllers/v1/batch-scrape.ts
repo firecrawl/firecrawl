@@ -1,5 +1,5 @@
 import { Response } from "express";
-import { v4 as uuidv4 } from "uuid";
+import { v7 as uuidv7 } from "uuid";
 import {
   BatchScrapeRequest,
   batchScrapeRequestSchema,
@@ -49,7 +49,7 @@ export async function batchScrapeController(
   const zeroDataRetention =
     req.acuc?.flags?.forceZDR || req.body.zeroDataRetention;
 
-  const id = req.body.appendToId ?? uuidv4();
+  const id = req.body.appendToId ?? uuidv7();
   const logger = _logger.child({
     crawlId: id,
     batchScrapeId: id,
@@ -160,7 +160,7 @@ export async function batchScrapeController(
   logger.debug("Using job priority " + jobPriority, { jobPriority });
 
   const jobs = urls.map(x => ({
-    jobId: uuidv4(),
+    jobId: uuidv7(),
     data: {
       url: x,
       mode: "single_urls" as const,

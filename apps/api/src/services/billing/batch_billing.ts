@@ -8,7 +8,7 @@ import { setCachedACUC, setCachedACUCTeam } from "../../controllers/auth";
 // Configuration constants
 const BATCH_KEY = "billing_batch";
 const BATCH_LOCK_KEY = "billing_batch_lock";
-const BATCH_SIZE = 1000; // Batch size for processing
+const BATCH_SIZE = 5000; // Batch size for processing
 const BATCH_TIMEOUT = 15000; // 15 seconds processing interval
 const LOCK_TIMEOUT = 30000; // 30 seconds lock timeout
 
@@ -318,6 +318,8 @@ async function supaBillTeam(
     _logger.error("Failed to bill team.", { error });
     return { success: false, error };
   }
+
+  await getRedisConnection().sadd("billed_teams", team_id);
 
   // Update cached ACUC to reflect the new credit usage
   (async () => {

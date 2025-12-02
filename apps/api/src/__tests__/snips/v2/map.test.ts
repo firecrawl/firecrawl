@@ -124,4 +124,25 @@ describe("Map tests", () => {
     },
     60000,
   );
+
+  concurrentIf(ALLOW_TEST_SUITE_WEBSITE)(
+    "handles redirects correctly",
+    async () => {
+      const response = await map(
+        {
+          url: "http://firecrawl.com",
+          limit: 5,
+        },
+        identity,
+      );
+
+      expect(response.statusCode).toBe(200);
+      expect(response.body.success).toBe(true);
+      expect(response.body.links.length).toBeGreaterThan(0);
+      expect(
+        response.body.links.every(link => link.url.includes("firecrawl.dev")),
+      ).toBe(true);
+    },
+    60000,
+  );
 });

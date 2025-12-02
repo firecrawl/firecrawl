@@ -8,6 +8,7 @@ import { processSitemap } from "@mendable/firecrawl-rs";
 import { fetchFileToBuffer } from "../scrapeURL/engines/utils/downloadFile";
 import { gunzip } from "node:zlib";
 import { promisify } from "node:util";
+import { SitemapError } from "../../lib/error";
 
 const useFireEngine =
   process.env.FIRE_ENGINE_BETA_URL !== "" &&
@@ -90,11 +91,12 @@ async function getSitemapXML(options: SitemapScrapeOptions): Promise<string> {
   ) {
     return response.document.rawHtml!;
   } else if (!response.success) {
-    throw new Error("Failed to scrape sitemap", { cause: response.error });
+    throw new SitemapError("Failed to scrape sitemap", response.error);
   } else {
-    throw new Error("Failed to scrape sitemap", {
-      cause: response.document.metadata.statusCode,
-    });
+    throw new SitemapError(
+      "Failed to scrape sitemap",
+      response.document.metadata.statusCode,
+    );
   }
 }
 
@@ -118,7 +120,20 @@ export async function scrapeSitemap(
 
   logger.info("Processing sitemap");
 
-  const instructions = await processSitemap(xml);
+  let instructions;
+  try {
+    instructions = await processSitemap(xml);
+  } catch (error) {
+    // Wrap XML parsing errors (user's broken sitemap) in SitemapError
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    if (
+      errorMessage.includes("XML parsing error") ||
+      errorMessage.includes("Parse sitemap error")
+    ) {
+      throw new SitemapError(errorMessage, error);
+    }
+    throw error;
+  }
 
   const sitemapData: SitemapData = {
     urls: [],

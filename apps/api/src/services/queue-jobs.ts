@@ -1,4 +1,4 @@
-import { v4 as uuidv4 } from "uuid";
+import { v7 as uuidv7 } from "uuid";
 import { NotificationType, RateLimiterMode, ScrapeJobData } from "../types";
 import {
   cleanOldConcurrencyLimitEntries,
@@ -316,7 +316,7 @@ async function addScrapeJobRaw(
 
 export async function addScrapeJob(
   webScraperOptions: ScrapeJobData,
-  jobId: string = uuidv4(),
+  jobId: string = uuidv7(),
   priority: number = 0,
   directToBullMQ: boolean = false,
   listenable: boolean = false,
@@ -523,6 +523,7 @@ export async function waitForJob(
   const jobId = typeof job == "string" ? job : job.id;
   const isConcurrencyLimited = !!(typeof job === "string");
 
+  let timeoutHandle: NodeJS.Timeout | null = null;
   let doc: Document | null = null;
   try {
     doc = await Promise.race(
@@ -534,7 +535,7 @@ export async function waitForJob(
         ),
         timeout !== null
           ? new Promise<Document>((_resolve, reject) => {
-              setTimeout(() => {
+              timeoutHandle = setTimeout(() => {
                 reject(
                   new ScrapeJobTimeoutError(
                     "Scrape timed out" +
@@ -561,7 +562,12 @@ export async function waitForJob(
     } else {
       throw e;
     }
+  } finally {
+    if (timeoutHandle) {
+      clearTimeout(timeoutHandle);
+    }
   }
+
   logger.debug("Got job");
 
   if (!doc) {

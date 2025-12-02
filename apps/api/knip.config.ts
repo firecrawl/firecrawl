@@ -7,8 +7,15 @@ const config: KnipConfig = {
       project: ["src/**/*.ts"],
     },
   },
-  ignore: ["native/**"],
-  ignoreDependencies: ["openai"],
+  ignore: [
+    "native/**",
+    "src/services/search-index-db.ts", // WIP
+    "src/lib/search-index-client.ts", // WIP
+  ],
+  ignoreDependencies: [
+    "openai",
+    "@pinecone-database/pinecone", // WIP
+  ],
 };
 
 export default config;

@@ -220,9 +220,16 @@ export async function robustFetch<
         },
       );
       if (tryCooldown !== undefined) {
-        await new Promise(resolve =>
-          setTimeout(() => resolve(null), tryCooldown),
-        );
+        let timeoutHandle: NodeJS.Timeout | null = null;
+        try {
+          await new Promise<null>(resolve => {
+            timeoutHandle = setTimeout(() => resolve(null), tryCooldown);
+          });
+        } finally {
+          if (timeoutHandle) {
+            clearTimeout(timeoutHandle);
+          }
+        }
       }
       return await robustFetch({
         ...params,

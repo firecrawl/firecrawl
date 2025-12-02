@@ -455,6 +455,30 @@ class NuQ<JobData = any, JobReturnValue = any> {
     }
   }
 
+  public async getJobsFromBacklog(
+    ids: string[],
+    _logger: Logger = logger,
+  ): Promise<NuQJob<JobData, JobReturnValue>[]> {
+    if (ids.length === 0) return [];
+
+    const start = Date.now();
+    try {
+      return (
+        await nuqPool.query(
+          `SELECT ${this.jobBacklogReturning.join(", ")} FROM ${this.queueName}_backlog WHERE ${this.queueName}_backlog.id = ANY($1::uuid[]);`,
+          [ids],
+        )
+      ).rows.map(row => this.rowToJob(row, true)!);
+    } finally {
+      _logger.info("nuqGetJobsFromBacklog metrics", {
+        module: "nuq/metrics",
+        method: "nuqGetJobsFromBacklog",
+        duration: Date.now() - start,
+        scrapeIds: ids.length,
+      });
+    }
+  }
+
   public async getJobsWithStatus(
     ids: string[],
     status: NuQJobStatus,
@@ -559,6 +583,47 @@ class NuQ<JobData = any, JobReturnValue = any> {
         method: "nuqGetGroupNumericStats",
         duration: Date.now() - start,
         crawlId: groupId,
+      });
+    }
+  }
+
+  public async getBackloggedOwnerIDs(
+    _logger: Logger = logger,
+  ): Promise<string[]> {
+    const start = Date.now();
+    try {
+      return (
+        await nuqPool.query(
+          `SELECT DISTINCT owner_id FROM ${this.queueName}_backlog;`,
+        )
+      ).rows.map(row => row.owner_id);
+    } finally {
+      _logger.info("nuqGetBackloggedOwnerIDs metrics", {
+        module: "nuq/metrics",
+        method: "nuqGetBackloggedOwnerIDs",
+        duration: Date.now() - start,
+      });
+    }
+  }
+
+  public async getBackloggedJobIDsOfOnwer(
+    ownerId: string,
+    _logger: Logger = logger,
+  ): Promise<string[]> {
+    const start = Date.now();
+    try {
+      return (
+        await nuqPool.query(
+          `SELECT id FROM ${this.queueName}_backlog WHERE owner_id = $1;`,
+          [ownerId],
+        )
+      ).rows.map(row => row.id);
+    } finally {
+      _logger.info("nuqGetBackloggedJobIDsOfOnwer metrics", {
+        module: "nuq/metrics",
+        method: "nuqGetBackloggedJobIDsOfOnwer",
+        duration: Date.now() - start,
+        ownerId,
       });
     }
   }

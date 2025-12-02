@@ -274,6 +274,28 @@ export class IndexMissError extends Error {
   }
 }
 
+export class NoCachedDataError extends TransportableError {
+  constructor() {
+    super(
+      "SCRAPE_NO_CACHED_DATA",
+      "No cached data available that meets the specified age requirements.",
+    );
+  }
+
+  serialize() {
+    return super.serialize();
+  }
+
+  static deserialize(
+    _: ErrorCodes,
+    data: ReturnType<typeof this.prototype.serialize>,
+  ) {
+    const x = new NoCachedDataError();
+    x.stack = data.stack;
+    return x;
+  }
+}
+
 export class ZDRViolationError extends TransportableError {
   constructor(public feature: string) {
     super(

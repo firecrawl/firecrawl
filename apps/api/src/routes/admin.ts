@@ -13,6 +13,7 @@ import {
 } from "../controllers/v0/admin/metrics";
 import { crawlCheckController } from "../controllers/v0/admin/crawl-check";
 import { realtimeSearchController } from "../controllers/v2/f-search";
+import { concurrencyQueueBackfillController } from "../controllers/v0/admin/concurrency-queue-backfill";
 
 export const adminRouter = express.Router();
 
@@ -69,4 +70,9 @@ adminRouter.get(
 adminRouter.post(
   `/admin/${process.env.BULL_AUTH_KEY}/fsearch`,
   wrap(realtimeSearchController),
+);
+
+adminRouter.post(
+  `/admin/${process.env.BULL_AUTH_KEY}/concurrency-queue-backfill`,
+  wrap(concurrencyQueueBackfillController),
 );

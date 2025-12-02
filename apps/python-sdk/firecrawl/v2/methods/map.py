@@ -23,6 +23,8 @@ def _prepare_map_request(url: str, options: Optional[MapOptions] = None) -> Dict
             data["search"] = options.search
         if options.include_subdomains is not None:
             data["includeSubdomains"] = options.include_subdomains
+        if options.ignore_query_parameters is not None:
+            data["ignoreQueryParameters"] = options.ignore_query_parameters
         if options.limit is not None:
             data["limit"] = options.limit
         if options.timeout is not None:

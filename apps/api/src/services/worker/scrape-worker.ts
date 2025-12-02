@@ -10,7 +10,7 @@ import {
 } from "../../lib/concurrency-limit";
 import { addJobPriority, deleteJobPriority } from "../../lib/job-priority";
 import { cacheableLookup } from "../../scraper/scrapeURL/lib/cacheableLookup";
-import { v4 as uuidv4 } from "uuid";
+import { v7 as uuidv7 } from "uuid";
 import {
   addCrawlJob,
   addCrawlJobs,
@@ -51,6 +51,7 @@ import { calculateCreditsToBeBilled } from "../../lib/scrape-billing";
 import { getBillingQueue } from "../queue-service";
 import type { Logger } from "winston";
 import {
+  CrawlDenialError,
   RacedRedirectError,
   ScrapeJobTimeoutError,
   TransportableError,
@@ -71,8 +72,7 @@ import {
   withSpan,
   setSpanAttributes,
 } from "../../lib/otel-tracer";
-
-const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+import { ScrapeUrlResponse } from "../../scraper/scrapeURL";
 
 configDotenv();
 
@@ -81,8 +81,10 @@ const jobLockExtendInterval =
 const jobLockExtensionTime =
   Number(process.env.JOB_LOCK_EXTENSION_TIME) || 60000;
 
-cacheableLookup.install(http.globalAgent);
-cacheableLookup.install(https.globalAgent);
+if (require.main === module) {
+  cacheableLookup.install(http.globalAgent);
+  cacheableLookup.install(https.globalAgent);
+}
 
 async function billScrapeJob(
   job: NuQJob<any>,
@@ -90,6 +92,7 @@ async function billScrapeJob(
   logger: Logger,
   costTracking: CostTracking,
   flags: TeamFlags,
+  error?: Error | null,
 ) {
   let creditsToBeBilled: number | null = null;
 
@@ -100,6 +103,7 @@ async function billScrapeJob(
       document,
       costTracking,
       flags,
+      error,
     );
 
     if (
@@ -107,7 +111,7 @@ async function billScrapeJob(
       process.env.USE_DB_AUTHENTICATION === "true"
     ) {
       try {
-        const billingJobId = uuidv4();
+        const billingJobId = uuidv7();
         logger.debug(
           `Adding billing job to queue for team ${job.data.team_id}`,
           {
@@ -167,13 +171,23 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
 
   const costTracking = new CostTracking();
 
+  const abortController = new AbortController();
+  const abortTimeoutHandle =
+    remainingTime !== undefined
+      ? setTimeout(
+          () =>
+            abortController.abort(
+              new ScrapeJobTimeoutError("Scrape timed out"),
+            ),
+          remainingTime,
+        )
+      : undefined;
+  const signal = abortController.signal;
+
   try {
     if (remainingTime !== undefined && remainingTime < 0) {
       throw new ScrapeJobTimeoutError("Scrape timed out");
     }
-    const signal = remainingTime
-      ? AbortSignal.timeout(remainingTime)
-      : undefined;
 
     if (job.data.crawl_id) {
       const sc = (await getCrawl(job.data.crawl_id)) as StoredCrawl;
@@ -182,20 +196,31 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
       }
     }
 
-    const pipeline = await Promise.race([
-      startWebScraperPipeline({
-        job,
-        costTracking,
-      }),
-      ...(remainingTime !== undefined
-        ? [
-            (async () => {
-              await sleep(remainingTime);
-              throw new ScrapeJobTimeoutError("Scrape timed out");
-            })(),
-          ]
-        : []),
-    ]);
+    let pipeline: ScrapeUrlResponse | null = null;
+    let timeoutHandle: NodeJS.Timeout | null = null;
+    try {
+      pipeline = await Promise.race([
+        startWebScraperPipeline({
+          job,
+          costTracking,
+        }),
+        ...(remainingTime !== undefined
+          ? [
+              (async () => {
+                await new Promise(resolve => {
+                  timeoutHandle = setTimeout(resolve, remainingTime);
+                });
+
+                throw new ScrapeJobTimeoutError("Scrape timed out");
+              })(),
+            ]
+          : []),
+      ]);
+    } finally {
+      if (timeoutHandle) {
+        clearTimeout(timeoutHandle);
+      }
+    }
 
     try {
       signal?.throwIfAborted();
@@ -261,7 +286,7 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
           const reason =
             filterResult.denialReason ||
             "Redirected target URL is not allowed by crawlOptions";
-          throw new Error(reason);
+          throw new CrawlDenialError(reason);
         }
 
         // Only re-set originUrl if it's different from the current hostname
@@ -284,7 +309,7 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
             (await getACUCTeam(job.data.team_id))?.flags ?? null,
           )
         ) {
-          throw new Error(BLOCKLISTED_URL_MESSAGE); // TODO: make this its own error type that is ignored by error tracking
+          throw new CrawlDenialError(BLOCKLISTED_URL_MESSAGE); // TODO: make this its own error type that is ignored by error tracking
         }
 
         const p1 = generateURLPermutations(normalizeURL(doc.metadata.url, sc));
@@ -348,7 +373,7 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
                 team_id: sc.team_id,
                 basePriority: job.data.crawl_id ? 20 : 10,
               });
-              const jobId = uuidv4();
+              const jobId = uuidv7();
 
               logger.debug(
                 "Determined job priority " +
@@ -408,7 +433,7 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
               const reason =
                 filterResult.denialReasons.get(url) ||
                 "Source URL is not allowed by crawl configuration";
-              throw new Error(reason);
+              throw new CrawlDenialError(reason);
             }
           }
         }
@@ -543,8 +568,8 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
       if (
         job.data.crawl_id &&
         job.data.crawlerOptions !== null &&
-        error instanceof Error &&
-        error.message === "URL blocked by robots.txt"
+        error instanceof CrawlDenialError &&
+        error.reason === "URL blocked by robots.txt"
       ) {
         await recordRobotsBlocked(job.data.crawl_id, job.data.url);
       }
@@ -582,11 +607,14 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
     } else {
       logger.error(`🐂 Job errored ${job.id} - ${error}`, { error });
 
-      Sentry.captureException(error, {
-        data: {
-          job: job.id,
-        },
-      });
+      // Filter out TransportableErrors (flow control)
+      if (!(error instanceof TransportableError)) {
+        Sentry.captureException(error, {
+          data: {
+            job: job.id,
+          },
+        });
+      }
 
       if (error instanceof CustomError) {
         // Here we handle the error, then save the failed job
@@ -658,6 +686,7 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
       logger,
       costTracking,
       (await getACUCTeam(job.data.team_id))?.flags ?? null,
+      error instanceof Error ? error : null,
     );
 
     logger.debug("Logging job to DB...");
@@ -689,6 +718,8 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
       job.data.internalOptions?.bypassBilling ?? false,
     );
     return data;
+  } finally {
+    if (abortTimeoutHandle) clearTimeout(abortTimeoutHandle);
   }
 }
 
@@ -752,7 +783,7 @@ async function addKickoffSitemapJob(
     return;
   }
 
-  const jobId = uuidv4();
+  const jobId = uuidv7();
   await _addScrapeJobToBullMQ(
     {
       mode: "kickoff_sitemap" as const,
@@ -801,7 +832,7 @@ async function processKickoffJob(job: NuQJob<ScrapeJobKickoff>) {
 
     logger.debug("Locking URL...");
     await lockURL(job.data.crawl_id, sc, job.data.url);
-    const jobId = uuidv4();
+    const jobId = uuidv7();
     logger.debug("Adding scrape job to Redis...", { jobId });
     await addScrapeJob(
       {
@@ -887,7 +918,7 @@ async function processKickoffJob(job: NuQJob<ScrapeJobKickoff>) {
       logger.debug("Using job priority " + jobPriority, { jobPriority });
 
       const jobs = indexLinks.map(url => {
-        const uuid = uuidv4();
+        const uuid = uuidv7();
         return {
           jobId: uuid,
           data: {
@@ -1013,7 +1044,7 @@ async function processKickoffSitemapJob(job: NuQJob<ScrapeJobKickoffSitemap>) {
             job.data.zeroDataRetention || (sc.zeroDataRetention ?? false),
           apiKeyId: job.data.apiKeyId,
         } satisfies ScrapeJobSingleUrls,
-        jobId: uuidv4(),
+        jobId: uuidv7(),
         priority: jobPriority,
       }));
 
@@ -1094,7 +1125,11 @@ async function processJobWithTracing(job: NuQJob<ScrapeJobData>, logger: any) {
   try {
     try {
       let extendLockInterval: NodeJS.Timeout | null = null;
-      if (job.data?.mode !== "kickoff" && job.data?.team_id) {
+      if (
+        job.data?.mode !== "kickoff" &&
+        job.data?.team_id &&
+        !job.data.skipNuq
+      ) {
         extendLockInterval = setInterval(async () => {
           await pushConcurrencyLimitActiveJob(
             job.data.team_id,
@@ -1141,7 +1176,7 @@ async function processJobWithTracing(job: NuQJob<ScrapeJobData>, logger: any) {
             }
 
             try {
-              if (process.env.GCS_BUCKET_NAME) {
+              if (process.env.GCS_BUCKET_NAME && !job.data.skipNuq) {
                 logger.debug("Job succeeded -- putting null in Redis");
                 return null;
               } else {
@@ -1160,15 +1195,26 @@ async function processJobWithTracing(job: NuQJob<ScrapeJobData>, logger: any) {
         }
       }
     } finally {
-      await concurrentJobDone(job);
+      if (!job.data.skipNuq) {
+        await concurrentJobDone(job);
+      }
     }
   } catch (error) {
     logger.warn("Job failed", { error });
-    Sentry.captureException(error);
-    if (error instanceof TransportableError) {
-      throw new Error(serializeTransportableError(error));
+
+    // Filter out TransportableErrors (flow control)
+    if (!(error instanceof TransportableError)) {
+      Sentry.captureException(error);
+    }
+
+    if (job.data.skipNuq) {
+      throw error;
     } else {
-      throw new Error(serializeTransportableError(new UnknownError(error)));
+      if (error instanceof TransportableError) {
+        throw new Error(serializeTransportableError(error));
+      } else {
+        throw new Error(serializeTransportableError(new UnknownError(error)));
+      }
     }
   }
 }

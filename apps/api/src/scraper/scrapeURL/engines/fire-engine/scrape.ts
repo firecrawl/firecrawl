@@ -73,6 +73,8 @@ export type FireEngineScrapeRequestTLSClient = {
 };
 
 const successSchema = z.object({
+  jobId: z.string().optional(), // only defined if we are deferring deletion
+
   timeTaken: z.number(),
   content: z.string(),
   url: z.string().optional(),

@@ -28,15 +28,21 @@ export function abTestJob(webScraperOptions: ScrapeJobData) {
       webScraperOptions.internalOptions?.v1Agent === undefined &&
       webScraperOptions.internalOptions?.v1JSONAgent === undefined;
     if (shouldABTest) {
+      let timeout = Math.min(
+        60000,
+        (webScraperOptions.scrapeOptions.timeout ?? 30000) + 10000,
+      );
+
       (async () => {
+        const abortController = new AbortController();
+        const timeoutHandle = setTimeout(() => {
+          if (abortController) {
+            abortController.abort();
+          }
+        }, timeout);
+
         try {
           abLogger.info("A/B-testing scrapeURL to staging");
-          const abort = AbortSignal.timeout(
-            Math.min(
-              60000,
-              (webScraperOptions.scrapeOptions.timeout ?? 30000) + 10000,
-            ),
-          );
           await robustFetch({
             url: `http://${abHostEnv}/v2/scrape`,
             method: "POST",
@@ -50,11 +56,13 @@ export function abTestJob(webScraperOptions: ScrapeJobData) {
             tryCount: 1,
             ignoreResponse: true,
             mock: null,
-            abort,
+            abort: abortController.signal,
           });
           abLogger.info("A/B-testing scrapeURL (staging) request sent");
         } catch (error) {
           abLogger.warn("A/B-testing scrapeURL (staging) failed", { error });
+        } finally {
+          if (timeoutHandle) clearTimeout(timeoutHandle);
         }
       })();
     }
@@ -84,12 +92,18 @@ export function abTestFireEngine(
       Math.random() <= abRate &&
       abHostEnv;
     if (shouldABTest) {
+      let timeout = Math.min(60000, (feRequest.timeout ?? 30000) + 10000);
+
       (async () => {
+        const abortController = new AbortController();
+        const timeoutHandle = setTimeout(() => {
+          if (abortController) {
+            abortController.abort();
+          }
+        }, timeout);
+
         try {
           abLogger.info("A/B-testing scrapeURL to staging");
-          const abort = AbortSignal.timeout(
-            Math.min(60000, (feRequest.timeout ?? 30000) + 10000),
-          );
           await robustFetch({
             url: `http://${abHostEnv}/scrape`,
             method: "POST",
@@ -98,11 +112,13 @@ export function abTestFireEngine(
             tryCount: 1,
             ignoreResponse: true,
             mock: null,
-            abort,
+            abort: abortController.signal,
           });
           abLogger.info("A/B-testing scrapeURL (staging) request sent");
         } catch (error) {
           abLogger.warn("A/B-testing scrapeURL (staging) failed", { error });
+        } finally {
+          if (timeoutHandle) clearTimeout(timeoutHandle);
         }
       })();
     }

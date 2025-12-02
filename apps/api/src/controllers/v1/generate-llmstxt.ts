@@ -1,3 +1,4 @@
+import { v7 as uuidv7 } from "uuid";
 import { Response } from "express";
 import {
   ErrorResponse,
@@ -36,7 +37,7 @@ export async function generateLLMsTextController(
 
   req.body = generateLLMsTextRequestSchema.parse(req.body);
 
-  const generationId = crypto.randomUUID();
+  const generationId = uuidv7();
   const jobData = {
     request: req.body,
     teamId: req.auth.team_id,
