@@ -42,6 +42,7 @@ export async function fire_engine_search_v2(
     numResults: number;
     page?: number;
     type?: SearchResultType | SearchResultType[];
+    retry?: boolean;
   },
   abort?: AbortSignal,
 ): Promise<SearchV2Response> {
@@ -67,12 +68,20 @@ export async function fire_engine_search_v2(
   const url = `${process.env.FIRE_ENGINE_BETA_URL}/v2/search`;
   const data = JSON.stringify(payload);
 
-  const result = await executeWithRetry<SearchV2Response>(
-    () => attemptRequest<SearchV2Response>(url, data, abort),
-    (response): response is SearchV2Response =>
-      response !== null && hasCompleteResults(response, requestedTypes),
-    abort,
-  );
+  const retry = options.retry ?? true;
+
+  if (retry) {
+    const result = await executeWithRetry<SearchV2Response>(
+      () => attemptRequest<SearchV2Response>(url, data, abort),
+      (response): response is SearchV2Response =>
+        response !== null && hasCompleteResults(response, requestedTypes),
+      abort,
+    );
+
+    return result ?? {};
+  }
+
+  const result = await attemptRequest<SearchV2Response>(url, data, abort);
 
   return result ?? {};
 }

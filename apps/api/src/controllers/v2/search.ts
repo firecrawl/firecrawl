@@ -267,6 +267,7 @@ export async function searchController(
       country: req.body.country,
       location: req.body.location,
       type: searchTypes,
+      retry: req.body.retry,
     })) as SearchV2Response;
 
     // Add category labels to web results
