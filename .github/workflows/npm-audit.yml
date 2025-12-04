@@ -6,7 +6,7 @@ on:
       - main
 
 jobs:
-  audit:
+  audit-api:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -18,26 +18,74 @@ jobs:
         run: |
           pnpm dlx audit-ci@^7 --directory apps/api --config apps/api/audit-ci.jsonc
 
+  audit-playwright-service:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
       - name: Audit Playwright Service Packages
         run: |
           pnpm dlx audit-ci@^7 --directory apps/playwright-service-ts --config apps/playwright-service-ts/audit-ci.jsonc
 
+  audit-js-sdk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
       - name: Audit JavaScript SDK Packages
         run: |
           pnpm dlx audit-ci@^7 --directory apps/js-sdk --config apps/js-sdk/audit-ci.jsonc
 
+  audit-js-sdk-firecrawl:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
       - name: Audit JavaScript SDK Firecrawl Packages
         run: |
           pnpm dlx audit-ci@^7 --directory apps/js-sdk/firecrawl --config apps/js-sdk/firecrawl/audit-ci.jsonc
 
+  audit-test-suite:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
       - name: Audit Test Suite Packages
         run: |
           pnpm dlx audit-ci@^7 --directory apps/test-suite --config apps/test-suite/audit-ci.jsonc
 
+  audit-ingestion-ui:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
       - name: Audit Ingestion UI Packages
         run: |
           pnpm dlx audit-ci@^7 --directory apps/ui/ingestion-ui --config apps/ui/ingestion-ui/audit-ci.jsonc
 
+  audit-test-site:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
       - name: Audit Test Site Packages
         run: |
           pnpm dlx audit-ci@^7 --directory apps/test-site --config apps/test-site/audit-ci.jsonc
