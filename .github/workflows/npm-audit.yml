@@ -14,12 +14,30 @@ jobs:
         uses: pnpm/action-setup@v4
         with:
           version: 10
-      - name: Audit NPM Packages
+      - name: Audit API Packages
         run: |
           pnpm dlx audit-ci@^7 --directory apps/api --config apps/api/audit-ci.jsonc
+
+      - name: Audit Playwright Service Packages
+        run: |
           pnpm dlx audit-ci@^7 --directory apps/playwright-service-ts --config apps/playwright-service-ts/audit-ci.jsonc
+
+      - name: Audit JavaScript SDK Packages
+        run: |
           pnpm dlx audit-ci@^7 --directory apps/js-sdk --config apps/js-sdk/audit-ci.jsonc
+
+      - name: Audit JavaScript SDK Firecrawl Packages
+        run: |
           pnpm dlx audit-ci@^7 --directory apps/js-sdk/firecrawl --config apps/js-sdk/firecrawl/audit-ci.jsonc
+
+      - name: Audit Test Suite Packages
+        run: |
           pnpm dlx audit-ci@^7 --directory apps/test-suite --config apps/test-suite/audit-ci.jsonc
+
+      - name: Audit Ingestion UI Packages
+        run: |
           pnpm dlx audit-ci@^7 --directory apps/ui/ingestion-ui --config apps/ui/ingestion-ui/audit-ci.jsonc
+
+      - name: Audit Test Site Packages
+        run: |
           pnpm dlx audit-ci@^7 --directory apps/test-site --config apps/test-site/audit-ci.jsonc
