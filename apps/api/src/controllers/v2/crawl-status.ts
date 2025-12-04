@@ -252,7 +252,7 @@ export async function crawlStatusController(
 
   const doneJobs = await scrapeQueue.getCrawlJobsForListing(
     req.params.jobId,
-    end !== undefined ? end - start : 100,
+    end !== undefined ? end - start + 1 : 100,
     start,
     logger.child({ zeroDataRetention }),
   );
