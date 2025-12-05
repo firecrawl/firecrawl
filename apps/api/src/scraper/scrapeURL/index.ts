@@ -208,6 +208,10 @@ function rewriteUrl(url: string): string | undefined {
     url.startsWith("https://docs.google.com/document/d/") ||
     url.startsWith("http://docs.google.com/document/d/")
   ) {
+    // Skip rewriting for published documents (/d/e/) - they're already public HTML pages
+    if (url.includes("/document/d/e/")) {
+      return undefined;
+    }
     const id = url.match(/\/document\/d\/([-\w]+)/)?.[1];
     if (id) {
       return `https://docs.google.com/document/d/${id}/export?format=pdf`;
@@ -216,6 +220,10 @@ function rewriteUrl(url: string): string | undefined {
     url.startsWith("https://docs.google.com/presentation/d/") ||
     url.startsWith("http://docs.google.com/presentation/d/")
   ) {
+    // Skip rewriting for published presentations (/d/e/) - they're already public HTML pages
+    if (url.includes("/presentation/d/e/")) {
+      return undefined;
+    }
     const id = url.match(/\/presentation\/d\/([-\w]+)/)?.[1];
     if (id) {
       return `https://docs.google.com/presentation/d/${id}/export?format=pdf`;
