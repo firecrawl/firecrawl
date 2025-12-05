@@ -18,12 +18,12 @@ export function isIPPrivate(address: string): boolean {
   return addr.range() !== "unicast";
 }
 
-function makeSecureDispatcher(skipTlsVerification: boolean) {
+function createBaseAgent(skipTlsVerification: boolean) {
   const agentOpts: undici.Agent.Options = {
     maxRedirections: 5000,
   };
 
-  const baseAgent = process.env.PROXY_SERVER
+  return process.env.PROXY_SERVER
     ? new undici.ProxyAgent({
         uri: process.env.PROXY_SERVER.includes("://")
           ? process.env.PROXY_SERVER
@@ -42,11 +42,9 @@ function makeSecureDispatcher(skipTlsVerification: boolean) {
         },
         ...agentOpts,
       });
+}
 
-  const cookieJar = new CookieJar();
-
-  const agent = baseAgent.compose(cookie({ jar: cookieJar }));
-
+function attachSecurityCheck(agent: undici.Dispatcher) {
   agent.on("connect", (_, targets) => {
     const client: undici.Client = targets.slice(-1)[0] as undici.Client;
     const socketSymbol = Object.getOwnPropertySymbols(client).find(
@@ -62,12 +60,37 @@ function makeSecureDispatcher(skipTlsVerification: boolean) {
       socket.destroy(new InsecureConnectionError());
     }
   });
+}
 
+// Dispatcher WITH cookie handling (for scraping - needs cookies for auth flows)
+function makeSecureDispatcher(skipTlsVerification: boolean) {
+  const baseAgent = createBaseAgent(skipTlsVerification);
+  const cookieJar = new CookieJar();
+  const agent = baseAgent.compose(cookie({ jar: cookieJar }));
+  attachSecurityCheck(agent);
+  return agent;
+}
+
+// Dispatcher WITHOUT cookie handling (for webhooks - avoids empty cookie header bug)
+function makeSecureDispatcherNoCookies(skipTlsVerification: boolean) {
+  const agent = createBaseAgent(skipTlsVerification);
+  attachSecurityCheck(agent);
   return agent;
 }
 
 const secureDispatcher = makeSecureDispatcher(false);
 const secureDispatcherSkipTlsVerification = makeSecureDispatcher(true);
+const secureDispatcherNoCookies = makeSecureDispatcherNoCookies(false);
+const secureDispatcherNoCookiesSkipTlsVerification =
+  makeSecureDispatcherNoCookies(true);
 
 export const getSecureDispatcher = (skipTlsVerification: boolean = false) =>
   skipTlsVerification ? secureDispatcherSkipTlsVerification : secureDispatcher;
+
+// Use this for webhook delivery to avoid sending empty cookie headers
+export const getSecureDispatcherNoCookies = (
+  skipTlsVerification: boolean = false,
+) =>
+  skipTlsVerification
+    ? secureDispatcherNoCookiesSkipTlsVerification
+    : secureDispatcherNoCookies;
