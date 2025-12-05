@@ -37,6 +37,10 @@ export function rewriteUrl(url: string): string | undefined {
     url.startsWith("https://docs.google.com/spreadsheets/d/") ||
     url.startsWith("http://docs.google.com/spreadsheets/d/")
   ) {
+    // Skip rewriting for published spreadsheets (/d/e/) - they're already public HTML pages
+    if (url.includes("/spreadsheets/d/e/")) {
+      return undefined;
+    }
     const id = url.match(/\/spreadsheets\/d\/([-\w]+)/)?.[1];
     if (id) {
       return `https://docs.google.com/spreadsheets/d/${id}/gviz/tq?tqx=out:html`;

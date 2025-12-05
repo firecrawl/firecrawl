@@ -63,6 +63,12 @@ describe("rewriteUrl", () => {
         "https://docs.google.com/spreadsheets/d/1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms/gviz/tq?tqx=out:html",
       );
     });
+
+    it("should NOT rewrite published Google Sheets URLs (/d/e/)", () => {
+      const url =
+        "https://docs.google.com/spreadsheets/d/e/2PACX-1vSomePublishId/pubhtml";
+      expect(rewriteUrl(url)).toBeUndefined();
+    });
   });
 
   describe("Google Drive", () => {
