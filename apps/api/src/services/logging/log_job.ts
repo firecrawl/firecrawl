@@ -3,6 +3,7 @@ import { config } from "../../config";
 import "dotenv/config";
 import { logger as _logger } from "../../lib/logger";
 import { configDotenv } from "dotenv";
+import * as Sentry from "@sentry/node";
 import {
   saveDeepResearchToGCS,
   saveExtractToGCS,
@@ -18,6 +19,17 @@ import type { Logger } from "winston";
 configDotenv();
 
 const previewTeamId = "3adefd26-77ec-5968-8dcf-c94b5630d1de";
+
+/**
+ * Sanitize string fields by removing null bytes (\u0000)
+ * PostgreSQL doesn't allow null bytes in text fields
+ * This can come from user-provided data like URLs, origin, integration fields
+ */
+function sanitizeString(value: string | null | undefined): string | null {
+  if (value === null || value === undefined) return null;
+
+  return value.replace(/\u0000/g, "");
+}
 
 async function robustInsert(
   table: string,
@@ -36,13 +48,15 @@ async function robustInsert(
   if (force) {
     let i = 0,
       done = false;
+    let lastError: any = null;
     while (i++ <= 10) {
       try {
         const { error } = await supabase_service.from(table).insert(data);
         if (error) {
+          lastError = error;
           logger.error(
             "Error inserting into database due to Supabase error, trying again",
-            { error, table },
+            { error, table, attempt: i },
           );
           await new Promise(resolve => setTimeout(resolve, 75));
         } else {
@@ -50,9 +64,10 @@ async function robustInsert(
           break;
         }
       } catch (error) {
+        lastError = error;
         logger.error(
           "Error inserting into database due to unknown error, trying again",
-          { error, table },
+          { error, table, attempt: i },
         );
         await new Promise(resolve => setTimeout(resolve, 75));
       }
@@ -63,7 +78,24 @@ async function robustInsert(
     } else {
       logger.error("Failed to insert into database after 10 attempts", {
         table,
+        lastError,
       });
+      // Report to Sentry with context
+      Sentry.captureException(
+        lastError || new Error("Database insert failed after 10 attempts"),
+        {
+          tags: {
+            table,
+            operation: "robustInsert",
+          },
+          extra: {
+            table,
+            data: JSON.stringify(data).substring(0, 500), // Limit size
+            attempts: 10,
+            lastError: lastError ? JSON.stringify(lastError) : null,
+          },
+        },
+      );
     }
   } else {
     try {
@@ -73,6 +105,19 @@ async function robustInsert(
           error,
           table,
         });
+        // Report to Sentry
+        Sentry.captureException(error, {
+          tags: {
+            table,
+            operation: "robustInsert",
+            force: "false",
+          },
+          extra: {
+            table,
+            error: JSON.stringify(error),
+            data: JSON.stringify(data).substring(0, 500), // Limit size
+          },
+        });
       } else {
         logger.info("Inserted into database successfully", { table });
       }
@@ -80,6 +125,18 @@ async function robustInsert(
       logger.error("Error inserting into database due to unknown error", {
         error,
         table,
+      });
+      // Report to Sentry
+      Sentry.captureException(error, {
+        tags: {
+          table,
+          operation: "robustInsert",
+          force: "false",
+        },
+        extra: {
+          table,
+          data: JSON.stringify(data).substring(0, 500), // Limit size
+        },
       });
     }
   }
@@ -114,6 +171,13 @@ export async function logRequest(request: LoggedRequest) {
     zeroDataRetention: request.zeroDataRetention,
   });
 
+  // Sanitize user-provided fields (most likely sources of null bytes)
+  const sanitizedOrigin = sanitizeString(request.origin);
+  const sanitizedIntegration = sanitizeString(request.integration ?? null);
+  const sanitizedTargetHint = request.zeroDataRetention
+    ? "<redacted due to zero data retention>"
+    : sanitizeString(request.target_hint);
+
   await robustInsert(
     "requests",
     {
@@ -124,11 +188,9 @@ export async function logRequest(request: LoggedRequest) {
         request.team_id === "preview" || request.team_id?.startsWith("preview_")
           ? previewTeamId
           : request.team_id,
-      origin: request.origin,
-      integration: request.integration ?? null,
-      target_hint: request.zeroDataRetention
-        ? "<redacted due to zero data retention>"
-        : request.target_hint,
+      origin: sanitizedOrigin,
+      integration: sanitizedIntegration,
+      target_hint: sanitizedTargetHint,
       dr_clean_by: request.zeroDataRetention
         ? new Date(Date.now() + 24 * 60 * 60 * 1000)
         : null,
