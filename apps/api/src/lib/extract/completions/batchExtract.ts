@@ -85,7 +85,7 @@ export async function batchExtractPromise(
     markdown: buildDocument(doc),
     isExtractEndpoint: true,
     model: getModel("gpt-4o-mini", "openai"),
-    retryModel: getModel("gpt-4o", "openai"),
+    retryModel: getModel("gpt-4.1", "openai"),
     costTrackingOptions: {
       costTracking: options.costTracking,
       metadata: {
