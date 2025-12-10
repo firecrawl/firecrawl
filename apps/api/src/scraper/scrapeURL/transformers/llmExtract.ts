@@ -51,9 +51,9 @@ function selectModelForSchema(schema?: any): {
   const isRecursive = detectRecursiveSchema(schema);
 
   if (isRecursive) {
-    logger.info(`Model: gpt-4o-mini | hasRef: true`);
+    logger.info(`Model: gpt-4.1 | hasRef: true`);
     return {
-      modelName: "gpt-4o-mini",
+      modelName: "gpt-4.1",
       reason: "recursive_schema_detected",
     };
   }
@@ -303,7 +303,7 @@ export async function generateCompletions({
   model = getModel("gpt-4o-mini", "openai"),
   mode = "object",
   providerOptions,
-  retryModel = getModel("gpt-4o", "openai"),
+  retryModel = getModel("gpt-4.1", "openai"),
   costTrackingOptions,
   metadata,
 }: GenerateCompletionsOptions): Promise<{
@@ -976,7 +976,7 @@ export async function performLLMExtract(
       markdown: document.markdown,
       previousWarning: document.warning,
       model: getModel(modelSelection.modelName, "openai"),
-      retryModel: getModel("gpt-4o", "openai"),
+      retryModel: getModel("gpt-4.1", "openai"),
       costTrackingOptions: {
         costTracking: meta.costTracking,
         metadata: {
@@ -1176,7 +1176,7 @@ export async function performSummary(
         const selection = selectModelForSchema(inlineSchema);
         return getModel(selection.modelName, "openai");
       })(),
-      retryModel: getModel("gpt-4o", "openai"),
+      retryModel: getModel("gpt-4.1", "openai"),
       costTrackingOptions: {
         costTracking: meta.costTracking,
         metadata: {
@@ -1275,7 +1275,7 @@ export async function generateSchemaFromPrompt(
   },
 ): Promise<{ extract: any }> {
   const model = getModel("gpt-4o-mini", "openai");
-  const retryModel = getModel("gpt-4o", "openai");
+  const retryModel = getModel("gpt-4.1", "openai");
   const temperatures = [0, 0.1, 0.3]; // Different temperatures to try
   let lastError: Error | null = null;
 
@@ -1353,7 +1353,7 @@ export async function generateCrawlerOptionsFromPrompt(
   metadata: { teamId: string; crawlId?: string },
 ): Promise<{ extract: any }> {
   const model = getModel("gpt-4o-mini", "openai");
-  const retryModel = getModel("gpt-4o", "openai");
+  const retryModel = getModel("gpt-4.1", "openai");
   const temperatures = [0, 0.1, 0.3];
   let lastError: Error | null = null;
 

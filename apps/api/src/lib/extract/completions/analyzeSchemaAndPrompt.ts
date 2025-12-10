@@ -48,7 +48,7 @@ export async function analyzeSchemaAndPrompt(
 
   const schemaString = JSON.stringify(schema);
 
-  const model = getModel("gpt-4o", "openai");
+  const model = getModel("gpt-4.1", "openai");
 
   const checkSchema = z
     .object({

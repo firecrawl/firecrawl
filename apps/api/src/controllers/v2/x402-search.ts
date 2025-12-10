@@ -14,7 +14,6 @@ import { addScrapeJob, waitForJob } from "../../services/queue-jobs";
 import { logSearch, logRequest } from "../../services/logging/log_job";
 import { search } from "../../search/v2";
 import { isUrlBlocked } from "../../scraper/WebScraper/utils/blocklist";
-import * as Sentry from "@sentry/node";
 import { logger as _logger } from "../../lib/logger";
 import type { Logger } from "winston";
 import { getJobPriority } from "../../lib/job-priority";
@@ -29,6 +28,10 @@ import {
   getCategoryFromUrl,
   CategoryOption,
 } from "../../lib/search-query-builder";
+import {
+  applyZdrScope,
+  captureExceptionWithZdrCheck,
+} from "../../services/sentry";
 
 interface DocumentWithCostTracking {
   document: Document;
@@ -58,7 +61,8 @@ async function startX420ScrapeJob(
 ): Promise<string> {
   const jobId = uuidv7();
 
-  const zeroDataRetention = flags?.forceZDR || false;
+  const zeroDataRetention = flags?.forceZDR ?? false;
+  applyZdrScope(zeroDataRetention);
 
   logger.info("Adding scrape job [x402]", {
     scrapeId: jobId,
@@ -639,7 +643,9 @@ export async function x402SearchController(
       });
     }
 
-    Sentry.captureException(error);
+    captureExceptionWithZdrCheck(error, {
+      extra: { zeroDataRetention: false },
+    });
     logger.error("Unhandled error occurred in search [x402]", { error });
     return res.status(500).json({
       success: false,

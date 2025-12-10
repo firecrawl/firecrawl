@@ -1,6 +1,7 @@
 import { configDotenv } from "dotenv";
 import { config } from "../../config";
 import * as Sentry from "@sentry/node";
+import { applyZdrScope, captureExceptionWithZdrCheck } from "../sentry";
 import http from "http";
 import https from "https";
 
@@ -145,7 +146,9 @@ async function billScrapeJob(
           `Failed to add billing job to queue for team ${job.data.team_id} for ${creditsToBeBilled} credits`,
           { error },
         );
-        Sentry.captureException(error);
+        captureExceptionWithZdrCheck(error, {
+          extra: { zeroDataRetention: job.data.zeroDataRetention ?? false },
+        });
         return creditsToBeBilled;
       }
     }
@@ -164,6 +167,7 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
     teamId: job.data?.team_id ?? undefined,
     zeroDataRetention: job.data?.zeroDataRetention ?? false,
   });
+  applyZdrScope(job.data?.zeroDataRetention);
   logger.info(`🐂 Worker taking job ${job.id}`, { url: job.data.url });
   const start = job.data.startTime ?? Date.now();
   const remainingTime = job.data.scrapeOptions.timeout
@@ -599,10 +603,11 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
 
       // Filter out TransportableErrors (flow control)
       if (!(error instanceof TransportableError)) {
-        Sentry.captureException(error, {
+        captureExceptionWithZdrCheck(error, {
           data: {
             job: job.id,
           },
+          extra: { zeroDataRetention: job.data.zeroDataRetention ?? false },
         });
       }
 
@@ -1192,7 +1197,9 @@ async function processJobWithTracing(job: NuQJob<ScrapeJobData>, logger: any) {
 
     // Filter out TransportableErrors (flow control)
     if (!(error instanceof TransportableError)) {
-      Sentry.captureException(error);
+      captureExceptionWithZdrCheck(error, {
+        extra: { zeroDataRetention: job.data.zeroDataRetention ?? false },
+      });
     }
 
     if (job.data.skipNuq) {

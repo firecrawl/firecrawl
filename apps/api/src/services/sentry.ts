@@ -2,6 +2,22 @@ import * as Sentry from "@sentry/node";
 import { logger } from "../lib/logger";
 import { config } from "../config";
 
+type CaptureContext = {
+  tags?: Record<string, string>;
+  extra?: Record<string, any>;
+  level?: Sentry.SeverityLevel;
+  fingerprint?: string[];
+  contexts?: Record<string, any>;
+  user?: {
+    id?: string;
+    username?: string;
+    email?: string;
+    ip_address?: string;
+    [key: string]: any;
+  };
+  [key: string]: any;
+};
+
 if (config.SENTRY_DSN) {
   logger.info("Setting up Sentry...");
 
@@ -24,6 +40,16 @@ if (config.SENTRY_DSN) {
     serverName: config.NUQ_POD_NAME,
     environment: config.SENTRY_ENVIRONMENT,
     beforeSend(event, hint) {
+      const zeroDataRetention =
+        event.tags?.zeroDataRetention === "true" ||
+        event.tags?.zero_data_retention === "true" ||
+        event.extra?.zeroDataRetention === true ||
+        event.extra?.zero_data_retention === true;
+
+      if (zeroDataRetention) {
+        return null;
+      }
+
       const error = hint?.originalException;
 
       if (error && typeof error === "object") {
@@ -59,6 +85,34 @@ if (config.SENTRY_DSN) {
       return event;
     },
   });
+}
+
+export function captureExceptionWithZdrCheck(
+  error: any,
+  context?: (CaptureContext & { zeroDataRetention?: boolean }) | null,
+) {
+  const zeroDataRetention =
+    context?.zeroDataRetention ??
+    (context?.extra as any)?.zeroDataRetention ??
+    (context?.data as any)?.zeroDataRetention;
+
+  if (zeroDataRetention) {
+    return;
+  }
+
+  const { zeroDataRetention: _zdr, ...sentryContext } = context || {};
+
+  return Sentry.captureException(error, sentryContext);
+}
+
+export function applyZdrScope(zeroDataRetention?: boolean) {
+  if (!zeroDataRetention) {
+    return;
+  }
+
+  const scope = Sentry.getCurrentScope();
+  scope.setTag("zeroDataRetention", "true");
+  scope.setExtra("zeroDataRetention", true);
 }
 
 /**

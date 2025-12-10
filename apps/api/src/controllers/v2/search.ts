@@ -15,7 +15,6 @@ import { addScrapeJob, waitForJob } from "../../services/queue-jobs";
 import { logSearch, logRequest } from "../../services/logging/log_job";
 import { search } from "../../search/v2";
 import { isUrlBlocked } from "../../scraper/WebScraper/utils/blocklist";
-import * as Sentry from "@sentry/node";
 import { logger as _logger } from "../../lib/logger";
 import type { Logger } from "winston";
 import { getJobPriority } from "../../lib/job-priority";
@@ -31,6 +30,10 @@ import {
   getCategoryFromUrl,
   CategoryOption,
 } from "../../lib/search-query-builder";
+import {
+  applyZdrScope,
+  captureExceptionWithZdrCheck,
+} from "../../services/sentry";
 
 interface DocumentWithCostTracking {
   document: Document;
@@ -242,6 +245,8 @@ export async function searchController(
 
   let credits_billed = 0;
 
+  let zeroDataRetention = false;
+
   try {
     req.body = searchRequestSchema.parse(req.body);
 
@@ -254,6 +259,8 @@ export async function searchController(
     const isZDR = req.body.enterprise?.includes("zdr");
     const isAnon = req.body.enterprise?.includes("anon");
     const isZDROrAnon = isZDR || isAnon;
+    zeroDataRetention = isZDROrAnon ?? false;
+    applyZdrScope(isZDROrAnon ?? false);
 
     await logRequest({
       id: jobId,
@@ -756,7 +763,9 @@ export async function searchController(
       });
     }
 
-    Sentry.captureException(error);
+    captureExceptionWithZdrCheck(error, {
+      extra: { zeroDataRetention },
+    });
     logger.error("Unhandled error occurred in search", {
       version: "v2",
       error,

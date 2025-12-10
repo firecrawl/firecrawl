@@ -2,6 +2,7 @@ import { Logger } from "winston";
 import { config } from "../../config";
 import * as Sentry from "@sentry/node";
 import { withSpan, setSpanAttributes } from "../../lib/otel-tracer";
+import { captureExceptionWithZdrCheck } from "../../services/sentry";
 
 import {
   type Document,
@@ -1213,7 +1214,11 @@ export async function scrapeURL(
         errorType = "AbortManagerThrownError";
         throw error.inner;
       } else {
-        Sentry.captureException(error);
+        captureExceptionWithZdrCheck(error, {
+          extra: {
+            zeroDataRetention: internalOptions.zeroDataRetention ?? false,
+          },
+        });
         meta.logger.error("scrapeURL: Unexpected error happened", { error });
         // TODO: results?
       }

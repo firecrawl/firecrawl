@@ -14,7 +14,6 @@ import { addScrapeJob, waitForJob } from "../../services/queue-jobs";
 import { logSearch, logRequest } from "../../services/logging/log_job";
 import { search } from "../../search";
 import { isUrlBlocked } from "../../scraper/WebScraper/utils/blocklist";
-import * as Sentry from "@sentry/node";
 import { BLOCKLISTED_URL_MESSAGE } from "../../lib/strings";
 import { logger as _logger } from "../../lib/logger";
 import type { Logger } from "winston";
@@ -23,6 +22,10 @@ import { supabase_service } from "../../services/supabase";
 import { fromV1ScrapeOptions } from "../v2/types";
 import { ScrapeJobTimeoutError } from "../../lib/error";
 import { scrapeQueue } from "../../services/worker/nuq";
+import {
+  applyZdrScope,
+  captureExceptionWithZdrCheck,
+} from "../../services/sentry";
 import { getJobPriority } from "../../lib/job-priority";
 
 interface DocumentWithCostTracking {
@@ -48,7 +51,8 @@ async function scrapeX402SearchResult(
 
   const costTracking = new CostTracking();
 
-  const zeroDataRetention = flags?.forceZDR || false;
+  const zeroDataRetention = flags?.forceZDR ?? false;
+  applyZdrScope(zeroDataRetention);
 
   try {
     if (isUrlBlocked(searchResult.url, flags)) {
@@ -351,7 +355,9 @@ export async function x402SearchController(
       });
     }
 
-    Sentry.captureException(error);
+    captureExceptionWithZdrCheck(error, {
+      extra: { zeroDataRetention: false },
+    });
     logger.error("Unhandled error occurred in search [x402]", { error });
     return res.status(500).json({
       success: false,
