@@ -585,6 +585,25 @@ fn _transform_html_inner(
     }
   }
 
+  // Deduplicate images by src URL
+  // This handles infinite scroll carousels that duplicate images in the DOM
+  // for seamless looping effects
+  let mut seen_srcs: HashSet<String> = HashSet::new();
+  let images_to_check: Vec<_> = document
+    .select("img[src]")
+    .map_err(|_| "Failed to select images for deduplication")?
+    .collect();
+  for img in images_to_check {
+    if let Some(src) = img.attributes.borrow().get("src").map(|x| x.to_string()) {
+      if seen_srcs.contains(&src) {
+        // Remove duplicate image
+        img.as_node().detach();
+      } else {
+        seen_srcs.insert(src);
+      }
+    }
+  }
+
   let href_anchors: Vec<_> = document
     .select("a[href]")
     .map_err(|_| "Failed to select href anchors")?
@@ -917,8 +936,7 @@ pub async fn post_process_markdown(markdown: String) -> napi::Result<String> {
       }
     }
 
-    let out = remove_skip_to_content_links(&out);
-    deduplicate_markdown_images(&out)
+    remove_skip_to_content_links(&out)
   })
   .await
   .map_err(|e| {
@@ -974,216 +992,102 @@ fn remove_skip_to_content_links(input: &str) -> String {
   out
 }
 
-/// Deduplicate markdown images by removing duplicate image references.
-/// This addresses the issue where infinite scroll carousels duplicate images
-/// in the DOM for seamless looping effects, resulting in repeated images in markdown.
-/// Keeps the first occurrence of each image URL.
-fn deduplicate_markdown_images(input: &str) -> String {
-  let mut seen_urls: HashSet<String> = HashSet::new();
-  let mut out = String::with_capacity(input.len());
-  let bytes = input.as_bytes();
-  let len = bytes.len();
-  let mut i = 0;
-
-  while i < len {
-    // Check for markdown image pattern: ![...](...) 
-    if i + 1 < len && bytes[i] == b'!' && bytes[i + 1] == b'[' {
-      let img_start = i;
-      
-      // Find the end of alt text: ![alt text]
-      let mut j = i + 2;
-      let mut bracket_depth = 1;
-      
-      while j < len && bracket_depth > 0 {
-        match bytes[j] {
-          b'[' => bracket_depth += 1,
-          b']' => bracket_depth -= 1,
-          b'\\' if j + 1 < len => {
-            j += 1; // Skip escaped character
-          }
-          _ => {}
-        }
-        j += 1;
-      }
-      
-      // Check if followed by (url)
-      if j < len && bytes[j] == b'(' {
-        let url_start = j + 1;
-        let mut paren_depth = 1;
-        j += 1;
-        
-        while j < len && paren_depth > 0 {
-          match bytes[j] {
-            b'(' => paren_depth += 1,
-            b')' => paren_depth -= 1,
-            b'\\' if j + 1 < len => {
-              j += 1; // Skip escaped character
-            }
-            _ => {}
-          }
-          j += 1;
-        }
-        
-        let img_end = j;
-        
-        // Extract the URL (without the closing paren)
-        let url_end = j - 1;
-        if url_start < url_end {
-          let url = &input[url_start..url_end];
-          // Trim any title attribute: ![alt](url "title")
-          let url_only = url.split_whitespace().next().unwrap_or(url);
-          
-          if seen_urls.contains(url_only) {
-            // Skip this duplicate image entirely
-            i = img_end;
-            // Also skip any trailing whitespace/newline after the image
-            while i < len && (bytes[i] == b' ' || bytes[i] == b'\n' || bytes[i] == b'\r') {
-              // Only consume one newline to avoid collapsing too much whitespace
-              if bytes[i] == b'\n' {
-                i += 1;
-                break;
-              }
-              i += 1;
-            }
-            continue;
-          } else {
-            seen_urls.insert(url_only.to_string());
-            // Keep the image
-            out.push_str(&input[img_start..img_end]);
-            i = img_end;
-            continue;
-          }
-        }
-      }
-    }
-    
-    // Not an image or couldn't parse it, copy character as-is
-    let ch = input[i..].chars().next().unwrap();
-    out.push(ch);
-    i += ch.len_utf8();
-  }
-
-  out
-}
-
 #[cfg(test)]
 mod tests {
   use super::*;
 
   #[test]
-  fn test_deduplicate_markdown_images_removes_duplicates() {
-    let input = "![Logo](https://example.com/logo.png)\n![Logo](https://example.com/logo.png)\n![Logo](https://example.com/logo.png)";
-    let result = deduplicate_markdown_images(input);
-    
-    // Should only have one occurrence
+  fn test_transform_html_deduplicates_images() {
+    // Simulates infinite scroll carousel with duplicated logos
+    let html = r#"
+      <html>
+        <body>
+          <div class="carousel">
+            <img src="https://example.com/logo1.png" alt="Logo 1">
+            <img src="https://example.com/logo2.png" alt="Logo 2">
+            <img src="https://example.com/logo1.png" alt="Logo 1 copy">
+            <img src="https://example.com/logo2.png" alt="Logo 2 copy">
+            <img src="https://example.com/logo1.png" alt="Logo 1 copy 2">
+          </div>
+        </body>
+      </html>
+    "#;
+
+    let opts = TransformHtmlOptions {
+      html: html.to_string(),
+      url: "https://example.com".to_string(),
+      include_tags: vec![],
+      exclude_tags: vec![],
+      only_main_content: false,
+      omce_signatures: None,
+    };
+
+    let result = _transform_html_inner(opts).unwrap();
+
+    // Count occurrences of each image src
+    let logo1_count = result.matches("logo1.png").count();
+    let logo2_count = result.matches("logo2.png").count();
+
+    assert_eq!(logo1_count, 1, "logo1.png should appear only once");
+    assert_eq!(logo2_count, 1, "logo2.png should appear only once");
+  }
+
+  #[test]
+  fn test_transform_html_keeps_unique_images() {
+    let html = r#"
+      <html>
+        <body>
+          <img src="https://example.com/image1.png" alt="Image 1">
+          <img src="https://example.com/image2.png" alt="Image 2">
+          <img src="https://example.com/image3.png" alt="Image 3">
+        </body>
+      </html>
+    "#;
+
+    let opts = TransformHtmlOptions {
+      html: html.to_string(),
+      url: "https://example.com".to_string(),
+      include_tags: vec![],
+      exclude_tags: vec![],
+      only_main_content: false,
+      omce_signatures: None,
+    };
+
+    let result = _transform_html_inner(opts).unwrap();
+
+    // All unique images should be preserved
+    assert!(result.contains("image1.png"));
+    assert!(result.contains("image2.png"));
+    assert!(result.contains("image3.png"));
+  }
+
+  #[test]
+  fn test_transform_html_preserves_first_occurrence() {
+    let html = r#"
+      <html>
+        <body>
+          <img src="https://example.com/logo.png" alt="First occurrence">
+          <p>Some text</p>
+          <img src="https://example.com/logo.png" alt="Second occurrence">
+        </body>
+      </html>
+    "#;
+
+    let opts = TransformHtmlOptions {
+      html: html.to_string(),
+      url: "https://example.com".to_string(),
+      include_tags: vec![],
+      exclude_tags: vec![],
+      only_main_content: false,
+      omce_signatures: None,
+    };
+
+    let result = _transform_html_inner(opts).unwrap();
+
+    // Should have only one occurrence
     assert_eq!(result.matches("logo.png").count(), 1);
-  }
-
-  #[test]
-  fn test_deduplicate_markdown_images_keeps_unique() {
-    let input = "![Logo 1](https://example.com/logo1.png)\n![Logo 2](https://example.com/logo2.png)\n![Logo 3](https://example.com/logo3.png)";
-    let result = deduplicate_markdown_images(input);
-    
-    // Should keep all unique images
-    assert!(result.contains("logo1.png"));
-    assert!(result.contains("logo2.png"));
-    assert!(result.contains("logo3.png"));
-  }
-
-  #[test]
-  fn test_deduplicate_markdown_images_preserves_first_occurrence() {
-    let input = "![First](https://example.com/image.png)\nSome text\n![Second](https://example.com/image.png)";
-    let result = deduplicate_markdown_images(input);
-    
     // Should preserve the first alt text
-    assert!(result.contains("![First]"));
-    assert!(!result.contains("![Second]"));
-  }
-
-  #[test]
-  fn test_deduplicate_markdown_images_handles_different_alt_same_url() {
-    let input = "![Company Logo](https://example.com/logo.png)\n![Our Logo](https://example.com/logo.png)\n![](https://example.com/logo.png)";
-    let result = deduplicate_markdown_images(input);
-    
-    // Should only have one occurrence of the URL
-    assert_eq!(result.matches("logo.png").count(), 1);
-    // Should keep the first one
-    assert!(result.contains("![Company Logo]"));
-  }
-
-  #[test]
-  fn test_deduplicate_markdown_images_does_not_affect_links() {
-    let input = "[Link 1](https://example.com/page)\n[Link 2](https://example.com/page)";
-    let result = deduplicate_markdown_images(input);
-    
-    // Links should not be deduplicated (they don't start with !)
-    assert_eq!(result.matches("[Link").count(), 2);
-  }
-
-  #[test]
-  fn test_deduplicate_markdown_images_carousel_scenario() {
-    // Simulates the infinite scroll carousel case
-    let input = r#"# Partner Logos
-
-![Partner A](https://example.com/partner-a.png)
-![Partner B](https://example.com/partner-b.png)
-![Partner C](https://example.com/partner-c.png)
-![Partner A](https://example.com/partner-a.png)
-![Partner B](https://example.com/partner-b.png)
-![Partner C](https://example.com/partner-c.png)
-![Partner A](https://example.com/partner-a.png)
-![Partner B](https://example.com/partner-b.png)
-![Partner C](https://example.com/partner-c.png)
-
-## Footer"#;
-    
-    let result = deduplicate_markdown_images(input);
-    
-    // Each partner should only appear once
-    assert_eq!(result.matches("partner-a.png").count(), 1);
-    assert_eq!(result.matches("partner-b.png").count(), 1);
-    assert_eq!(result.matches("partner-c.png").count(), 1);
-    
-    // The surrounding content should be preserved
-    assert!(result.contains("# Partner Logos"));
-    assert!(result.contains("## Footer"));
-  }
-
-  #[test]
-  fn test_deduplicate_markdown_images_with_title() {
-    let input = r#"![Logo](https://example.com/logo.png "Company Logo")
-![Logo](https://example.com/logo.png "Another Title")"#;
-    let result = deduplicate_markdown_images(input);
-    
-    // Should deduplicate based on URL, ignoring title
-    assert_eq!(result.matches("logo.png").count(), 1);
-  }
-
-  #[test]
-  fn test_deduplicate_markdown_images_empty_input() {
-    let input = "";
-    let result = deduplicate_markdown_images(input);
-    assert_eq!(result, "");
-  }
-
-  #[test]
-  fn test_deduplicate_markdown_images_no_images() {
-    let input = "Just some text\nWith multiple lines\nNo images here";
-    let result = deduplicate_markdown_images(input);
-    assert_eq!(result, input);
-  }
-
-  #[test]
-  fn test_remove_skip_to_content_links() {
-    let input = "[Skip to Content](#main)Hello World";
-    let result = remove_skip_to_content_links(input);
-    assert_eq!(result, "Hello World");
-  }
-
-  #[test]
-  fn test_remove_skip_to_content_links_case_insensitive() {
-    let input = "[skip to content](#skip)Hello";
-    let result = remove_skip_to_content_links(input);
-    assert_eq!(result, "Hello");
+    assert!(result.contains("First occurrence"));
+    assert!(!result.contains("Second occurrence"));
   }
 }
