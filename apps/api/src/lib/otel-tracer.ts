@@ -1,73 +1,71 @@
-import {
-  trace,
-  context,
-  SpanStatusCode,
-  Span,
-  SpanKind,
-  Attributes,
-  propagation,
-} from "@opentelemetry/api";
-// import { Logger } from 'winston';
+import * as Sentry from "@sentry/node";
+import type { Span } from "@sentry/node";
+import type { SpanAttributeValue, SpanAttributes } from "@sentry/core";
 
-const tracer = trace.getTracer("firecrawl-api", "1.0.0");
+export enum SpanKind {
+  INTERNAL = 0,
+  SERVER = 1,
+  CLIENT = 2,
+  PRODUCER = 3,
+  CONSUMER = 4,
+}
 
-export { SpanKind };
+const SPAN_STATUS_OK = 1;
+const SPAN_STATUS_ERROR = 2;
 
-// Trace context propagation utilities
 export interface SerializedTraceContext {
-  traceParent?: string;
-  traceState?: string;
+  sentryTrace?: string;
+  baggage?: string;
 }
 
 export function serializeTraceContext(): SerializedTraceContext {
-  const carrier: Record<string, string> = {};
-  propagation.inject(context.active(), carrier);
+  const traceData = Sentry.getTraceData();
 
   return {
-    traceParent: carrier.traceparent,
-    traceState: carrier.tracestate,
+    sentryTrace: traceData["sentry-trace"],
+    baggage: traceData["baggage"],
   };
 }
-
-function deserializeTraceContext(serialized: SerializedTraceContext): any {
-  if (!serialized.traceParent) {
-    return context.active();
-  }
-
-  const carrier: Record<string, string> = {
-    traceparent: serialized.traceParent,
-  };
-
-  if (serialized.traceState) {
-    carrier.tracestate = serialized.traceState;
-  }
-
-  return propagation.extract(context.active(), carrier);
-}
-
-// export function withTraceContext<T>(serializedContext: SerializedTraceContext, fn: () => T): T {
-//   const ctx = deserializeTraceContext(serializedContext);
-//   return context.with(ctx, fn);
-// }
 
 export async function withTraceContextAsync<T>(
   serializedContext: SerializedTraceContext,
   fn: () => Promise<T>,
 ): Promise<T> {
-  const ctx = deserializeTraceContext(serializedContext);
-  return context.with(ctx, fn);
+  if (!serializedContext.sentryTrace) {
+    return fn();
+  }
+
+  return Sentry.continueTrace(
+    {
+      sentryTrace: serializedContext.sentryTrace,
+      baggage: serializedContext.baggage,
+    },
+    fn,
+  );
 }
+
+type Attributes = SpanAttributes;
 
 interface SpanOptions {
   attributes?: Attributes;
   kind?: SpanKind;
+  op?: string;
 }
 
-function startSpan(name: string, options?: SpanOptions): Span {
-  return tracer.startSpan(name, {
-    attributes: options?.attributes,
-    kind: options?.kind || SpanKind.INTERNAL,
-  });
+function spanKindToOp(kind?: SpanKind): string | undefined {
+  switch (kind) {
+    case SpanKind.SERVER:
+      return "http.server";
+    case SpanKind.CLIENT:
+      return "http.client";
+    case SpanKind.PRODUCER:
+      return "queue.publish";
+    case SpanKind.CONSUMER:
+      return "queue.process";
+    case SpanKind.INTERNAL:
+    default:
+      return undefined;
+  }
 }
 
 export async function withSpan<T>(
@@ -75,99 +73,39 @@ export async function withSpan<T>(
   fn: (span: Span) => Promise<T>,
   options?: SpanOptions,
 ): Promise<T> {
-  const span = startSpan(name, options);
+  const op = options?.op || spanKindToOp(options?.kind);
 
-  try {
-    const result = await context.with(
-      trace.setSpan(context.active(), span),
-      () => fn(span),
-    );
-    span.setStatus({ code: SpanStatusCode.OK });
-    return result;
-  } catch (error) {
-    span.setStatus({
-      code: SpanStatusCode.ERROR,
-      message: error instanceof Error ? error.message : String(error),
-    });
+  return Sentry.startSpan(
+    {
+      name,
+      op,
+      attributes: options?.attributes,
+    },
+    async span => {
+      try {
+        const result = await fn(span);
+        span.setStatus({ code: SPAN_STATUS_OK });
+        return result;
+      } catch (error) {
+        span.setStatus({
+          code: SPAN_STATUS_ERROR,
+          message: error instanceof Error ? error.message : String(error),
+        });
 
-    if (error instanceof Error) {
-      span.recordException(error);
-    }
+        if (error instanceof Error) {
+          Sentry.captureException(error);
+        }
 
-    throw error;
-  } finally {
-    span.end();
-  }
+        throw error;
+      }
+    },
+  );
 }
-
-// export function withSpanSync<T>(
-//   name: string,
-//   fn: (span: Span) => T,
-//   options?: SpanOptions
-// ): T {
-//   const span = startSpan(name, options);
-
-//   try {
-//     const result = context.with(
-//       trace.setSpan(context.active(), span),
-//       () => fn(span)
-//     );
-//     span.setStatus({ code: SpanStatusCode.OK });
-//     return result;
-//   } catch (error) {
-//     span.setStatus({
-//       code: SpanStatusCode.ERROR,
-//       message: error instanceof Error ? error.message : String(error),
-//     });
-
-//     if (error instanceof Error) {
-//       span.recordException(error);
-//     }
-
-//     throw error;
-//   } finally {
-//     span.end();
-//   }
-// }
 
 export function setSpanAttributes(span: Span, attributes: Attributes): void {
   Object.entries(attributes).forEach(([key, value]) => {
     if (value !== undefined && value !== null) {
-      span.setAttribute(key, value);
+      span.setAttribute(key, value as SpanAttributeValue);
     }
   });
 }
-
-// export function setSpanError(span: Span, error: Error | unknown, logger?: Logger): void {
-//   const errorMessage = error instanceof Error ? error.message : String(error);
-
-//   span.setStatus({
-//     code: SpanStatusCode.ERROR,
-//     message: errorMessage,
-//   });
-
-//   if (error instanceof Error) {
-//     span.recordException(error);
-//     span.setAttributes({
-//       'error.type': error.constructor.name,
-//       'error.message': error.message,
-//       'error.stack': error.stack,
-//     });
-//   }
-
-//   if (logger) {
-//     logger.error('Span error recorded', { error, spanName: span.spanContext().traceId });
-//   }
-// }
-
-// export function getActiveSpan(): Span | undefined {
-//   return trace.getActiveSpan();
-// }
-
-// export function createChildSpan(name: string, parentSpan?: Span, options?: SpanOptions): Span {
-//   const ctx = parentSpan
-//     ? trace.setSpan(context.active(), parentSpan)
-//     : context.active();
-
-//   return context.with(ctx, () => startSpan(name, options));
-// }

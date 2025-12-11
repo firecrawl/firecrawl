@@ -1,3 +1,5 @@
+import { v7 as uuidv7 } from "uuid";
+import { config } from "../../config";
 import {
   Document,
   ScrapeOptions,
@@ -20,6 +22,7 @@ interface ScrapeDocumentOptions {
   isSingleUrl?: boolean;
   flags: TeamFlags | null;
   apiKeyId: number | null;
+  requestId?: string;
 }
 
 export async function scrapeDocument(
@@ -39,7 +42,7 @@ export async function scrapeDocument(
   }
 
   async function attemptScrape(timeout: number) {
-    const jobId = crypto.randomUUID();
+    const jobId = uuidv7();
     const jobPriority = await getJobPriority({
       team_id: options.teamId,
       basePriority: 10,
@@ -57,7 +60,7 @@ export async function scrapeDocument(
         }),
         internalOptions: {
           teamId: options.teamId,
-          saveScrapeResultToGCS: process.env.GCS_FIRE_ENGINE_BUCKET_NAME
+          saveScrapeResultToGCS: config.GCS_FIRE_ENGINE_BUCKET_NAME
             ? true
             : false,
           bypassBilling: true,
@@ -68,6 +71,7 @@ export async function scrapeDocument(
         startTime: Date.now(),
         zeroDataRetention: false, // not supported
         apiKeyId: options.apiKeyId,
+        requestId: options.requestId,
       },
       jobId,
       jobPriority,

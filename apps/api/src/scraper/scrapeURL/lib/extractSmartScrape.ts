@@ -209,7 +209,13 @@ const resolveRefs = (
     if (refPath[0] === "#" && refPath[1] === "$defs") {
       const defName = refPath[refPath.length - 1];
       if (defs[defName]) {
-        return resolveRefs({ ...defs[defName] }, defs, logger, visited, depth + 1);
+        return resolveRefs(
+          { ...defs[defName] },
+          defs,
+          logger,
+          visited,
+          depth + 1,
+        );
       }
     }
     return obj; // Return original if ref can't be resolved
@@ -290,24 +296,32 @@ export async function extractData({
           hasRefPathInString: schemaString.includes("#/$defs/"),
         },
       );
-      
+
       try {
         const resolvedSchema = resolveRefs(schema, defs, logger);
 
         const resolvedString = JSON.stringify(resolvedSchema);
-        const hasRemainingRefs = resolvedString.includes('"$ref"') || resolvedString.includes("#/$defs/");
+        const hasRemainingRefs =
+          resolvedString.includes('"$ref"') ||
+          resolvedString.includes("#/$defs/");
 
         if (!hasRemainingRefs) {
           schema = resolvedSchema;
-          if (schema && typeof schema === "object" && schema.$defs) delete schema.$defs;
+          if (schema && typeof schema === "object" && schema.$defs)
+            delete schema.$defs;
           logger.info("Successfully resolved schema refs", {
             schema,
           });
         } else {
-          logger.info("Reference resolution was skipped or incomplete (remaining $ref detected), preserving original schema");
+          logger.info(
+            "Reference resolution was skipped or incomplete (remaining $ref detected), preserving original schema",
+          );
         }
       } catch (error) {
-        logger.warn("Failed to resolve schema refs, preserving original schema", { error });
+        logger.warn(
+          "Failed to resolve schema refs, preserving original schema",
+          { error },
+        );
       }
     } else {
       logger.info("No recursive references detected, resolving refs", {
@@ -438,8 +452,8 @@ export async function extractData({
           const newExtractOptions = {
             ...extractOptions,
             markdown: markdown,
-            model: getModel("gemini-2.5-pro", "vertex"),
-            retryModel: getModel("gemini-2.5-pro", "google"),
+            model: getModel("gpt-4o-mini", "openai"),
+            retryModel: getModel("gpt-4.1", "openai"),
             costTrackingOptions: {
               costTracking: extractOptions.costTrackingOptions.costTracking,
               metadata: {

@@ -8,7 +8,7 @@ import {
   saveLlmsTextToCache,
 } from "./generate-llmstxt-supabase";
 import { billTeam } from "../../services/billing/credit_billing";
-import { logJob } from "../../services/logging/log_job";
+import { logLlmsTxt } from "../../services/logging/log_job";
 import { getModel } from "../generic-ai";
 import { generateCompletions } from "../../scraper/scrapeURL/transformers/llmExtract";
 import { CostTracking } from "../cost-tracking";
@@ -166,6 +166,7 @@ export async function performGenerateLlmsTxt(
                 isSingleUrl: true,
                 flags: acuc?.flags ?? null,
                 apiKeyId,
+                requestId: generationId,
               },
               [],
               logger,
@@ -249,24 +250,20 @@ export async function performGenerateLlmsTxt(
     });
 
     // Log job with token usage and sources
-    await logJob({
-      job_id: generationId,
-      success: true,
-      message: "LLMs text generation completed",
-      num_docs: urls.length,
-      docs: [{ llmstxt: llmstxt, llmsfulltxt: llmsFulltxt }],
-      time_taken: (Date.now() - startTime) / 1000,
+    await logLlmsTxt({
+      id: generationId,
+      request_id: generationId,
+      url,
       team_id: teamId,
-      mode: "llmstxt",
-      url: url,
-      scrapeOptions: options,
-      origin: "api",
-      num_tokens: 0,
-      tokens_billed: 0,
-      sources: {},
-      cost_tracking: costTracking,
-      credits_billed: urls.length,
-      zeroDataRetention: false,
+      options: {
+        maxUrls: maxUrls,
+        showFullText: showFullText,
+        cache: cache,
+      },
+      num_urls: urls.length,
+      cost_tracking: costTracking.toJSON(),
+      credits_cost: urls.length,
+      result: { llmstxt, llmsfulltxt: llmsFulltxt },
     });
 
     // Bill team for usage

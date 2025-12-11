@@ -49,3 +49,7 @@ CLAUDE.local.md
 apps/python-sdk/.venv/
 
 /apps/api/running-docs/
+
+
+/apps/go-html-to-md-service/.gomodcache/
+target/

@@ -40,6 +40,7 @@ type StoredExtract = {
   };
   sessionIds?: string[];
   tokensBilled?: number;
+  creditsBilled?: number;
   zeroDataRetention?: boolean;
 };
 

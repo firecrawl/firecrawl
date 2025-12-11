@@ -1,9 +1,10 @@
 import { logger } from "./logger";
+import { config } from "../config";
 import crypto from "crypto";
 import { storage } from "./gcs-jobs";
 
-const credentials = process.env.GCS_CREDENTIALS
-  ? JSON.parse(atob(process.env.GCS_CREDENTIALS))
+const credentials = config.GCS_CREDENTIALS
+  ? JSON.parse(atob(config.GCS_CREDENTIALS))
   : undefined;
 const PDF_CACHE_PREFIX = "pdf-cache-v2/";
 
@@ -23,12 +24,12 @@ export async function savePdfResultToCache(
   result: { markdown: string; html: string },
 ): Promise<string | null> {
   try {
-    if (!process.env.GCS_BUCKET_NAME) {
+    if (!config.GCS_BUCKET_NAME) {
       return null;
     }
 
     const cacheKey = createPdfCacheKey(pdfContent);
-    const bucket = storage.bucket(process.env.GCS_BUCKET_NAME);
+    const bucket = storage.bucket(config.GCS_BUCKET_NAME);
     const blob = bucket.file(`${PDF_CACHE_PREFIX}${cacheKey}.json`);
 
     for (let i = 0; i < 3; i++) {
@@ -79,12 +80,12 @@ export async function getPdfResultFromCache(
   pdfContent: string,
 ): Promise<{ markdown: string; html: string } | null> {
   try {
-    if (!process.env.GCS_BUCKET_NAME) {
+    if (!config.GCS_BUCKET_NAME) {
       return null;
     }
 
     const cacheKey = createPdfCacheKey(pdfContent);
-    const bucket = storage.bucket(process.env.GCS_BUCKET_NAME);
+    const bucket = storage.bucket(config.GCS_BUCKET_NAME);
     const blob = bucket.file(`${PDF_CACHE_PREFIX}${cacheKey}.json`);
 
     const [exists] = await blob.exists();

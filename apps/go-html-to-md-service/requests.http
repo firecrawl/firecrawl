@@ -1,0 +1,224 @@
+### HTML to Markdown Service - API Tests
+### Use the REST Client extension in VS Code or IntelliJ to run these requests
+
+@baseUrl = http://localhost:8080
+
+### Health Check
+GET {{baseUrl}}/health
+
+###
+
+### Service Info
+GET {{baseUrl}}/
+
+###
+
+### Test 1: Simple HTML Conversion
+POST {{baseUrl}}/convert
+Content-Type: application/json
+
+{
+  "html": "<h1>Hello World</h1>"
+}
+
+###
+
+### Test 2: Paragraph with Bold and Italic
+POST {{baseUrl}}/convert
+Content-Type: application/json
+
+{
+  "html": "<p>This is a <strong>bold</strong> and <em>italic</em> test.</p>"
+}
+
+###
+
+### Test 3: Unordered List
+POST {{baseUrl}}/convert
+Content-Type: application/json
+
+{
+  "html": "<ul><li>First item</li><li>Second item</li><li>Third item</li></ul>"
+}
+
+###
+
+### Test 4: Ordered List
+POST {{baseUrl}}/convert
+Content-Type: application/json
+
+{
+  "html": "<ol><li>Step 1</li><li>Step 2</li><li>Step 3</li></ol>"
+}
+
+###
+
+### Test 5: Code Block with Language
+POST {{baseUrl}}/convert
+Content-Type: application/json
+
+{
+  "html": "<pre><code class=\"language-javascript\">function hello() {\n  console.log('Hello, World!');\n}</code></pre>"
+}
+
+###
+
+### Test 6: Inline Code
+POST {{baseUrl}}/convert
+Content-Type: application/json
+
+{
+  "html": "<p>Use the <code>console.log()</code> function to debug.</p>"
+}
+
+###
+
+### Test 7: Links and Anchors
+POST {{baseUrl}}/convert
+Content-Type: application/json
+
+{
+  "html": "<p>Visit <a href=\"https://example.com\">our website</a> for more information.</p>"
+}
+
+###
+
+### Test 8: Images
+POST {{baseUrl}}/convert
+Content-Type: application/json
+
+{
+  "html": "<img src=\"https://example.com/image.jpg\" alt=\"Example Image\">"
+}
+
+###
+
+### Test 9: Table
+POST {{baseUrl}}/convert
+Content-Type: application/json
+
+{
+  "html": "<table><thead><tr><th>Name</th><th>Age</th><th>City</th></tr></thead><tbody><tr><td>John</td><td>30</td><td>New York</td></tr><tr><td>Jane</td><td>25</td><td>London</td></tr></tbody></table>"
+}
+
+###
+
+### Test 10: Blockquote
+POST {{baseUrl}}/convert
+Content-Type: application/json
+
+{
+  "html": "<blockquote><p>This is a blockquote.</p></blockquote>"
+}
+
+###
+
+### Test 11: Horizontal Rule
+POST {{baseUrl}}/convert
+Content-Type: application/json
+
+{
+  "html": "<p>Before</p><hr><p>After</p>"
+}
+
+###
+
+### Test 12: Nested Structure
+POST {{baseUrl}}/convert
+Content-Type: application/json
+
+{
+  "html": "<div><h1>Title</h1><p>Paragraph with <strong>bold</strong> text.</p><ul><li>Item 1</li><li>Item 2</li></ul></div>"
+}
+
+###
+
+### Test 13: Complex Document
+POST {{baseUrl}}/convert
+Content-Type: application/json
+
+{
+  "html": "<article><header><h1>Article Title</h1><p class=\"meta\">By Author Name</p></header><section><h2>Introduction</h2><p>This is the introduction with <strong>bold</strong> and <em>italic</em> text.</p><pre><code class=\"language-python\">def hello():\n    print('Hello, World!')</code></pre></section><section><h2>Conclusion</h2><p>Visit <a href=\"https://example.com\">example.com</a> for more.</p></section></article>"
+}
+
+###
+
+### Test 14: Strikethrough (GitHub Flavored Markdown)
+POST {{baseUrl}}/convert
+Content-Type: application/json
+
+{
+  "html": "<p>This is <del>deleted</del> text.</p>"
+}
+
+###
+
+### Test 15: Task List (GitHub Flavored Markdown)
+POST {{baseUrl}}/convert
+Content-Type: application/json
+
+{
+  "html": "<ul><li><input type=\"checkbox\" checked> Completed task</li><li><input type=\"checkbox\"> Incomplete task</li></ul>"
+}
+
+###
+
+### Test 16: Code Block with Multiple Languages
+POST {{baseUrl}}/convert
+Content-Type: application/json
+
+{
+  "html": "<div><pre><code class=\"language-javascript\">console.log('JS');</code></pre><pre><code class=\"language-python\">print('Python')</code></pre><pre><code class=\"language-go\">fmt.Println(\"Go\")</code></pre></div>"
+}
+
+###
+
+### Test 17: Mixed Content
+POST {{baseUrl}}/convert
+Content-Type: application/json
+
+{
+  "html": "<div><h2>Tutorial</h2><p>First, install the package:</p><pre><code class=\"language-bash\">npm install package-name</code></pre><p>Then use it in your code:</p><pre><code class=\"language-javascript\">const pkg = require('package-name');</code></pre><p>For more info, see <a href=\"https://docs.example.com\">the docs</a>.</p></div>"
+}
+
+###
+
+### Error Test 1: Empty HTML
+POST {{baseUrl}}/convert
+Content-Type: application/json
+
+{
+  "html": ""
+}
+
+###
+
+### Error Test 2: Invalid JSON
+POST {{baseUrl}}/convert
+Content-Type: application/json
+
+{invalid json}
+
+###
+
+### Error Test 3: Missing HTML Field
+POST {{baseUrl}}/convert
+Content-Type: application/json
+
+{
+  "notHtml": "<p>Test</p>"
+}
+
+###
+
+### Performance Test: Large HTML (1000 paragraphs)
+# Warning: This may take a few seconds
+POST {{baseUrl}}/convert
+Content-Type: application/json
+
+{
+  "html": "<div><h1>Large Document</h1><p>Paragraph 1</p><p>Paragraph 2</p><p>Paragraph 3</p><p>Paragraph 4</p><p>Paragraph 5</p><p>Paragraph 6</p><p>Paragraph 7</p><p>Paragraph 8</p><p>Paragraph 9</p><p>Paragraph 10</p><h2>Section</h2><p>More content here with <strong>bold</strong> and <em>italic</em> text.</p><ul><li>Item 1</li><li>Item 2</li><li>Item 3</li></ul><pre><code class=\"language-javascript\">console.log('code');</code></pre></div>"
+}
+
+###
+

@@ -4,7 +4,6 @@ import {
   getGeneratedLlmsTxt,
   getGeneratedLlmsTxtExpiry,
 } from "../../lib/generate-llmstxt/generate-llmstxt-redis";
-import { supabaseGetJobsById } from "../../lib/supabase-jobs";
 
 export async function generateLLMsTextStatusController(
   req: RequestWithAuth<{ jobId: string }, any, any>,

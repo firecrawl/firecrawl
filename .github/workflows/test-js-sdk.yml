@@ -25,6 +25,9 @@ jobs:
       - name: Install dependencies
         run: npm install
         working-directory: ./apps/js-sdk/firecrawl
+      - name: Build
+        run: npm run build
+        working-directory: ./apps/js-sdk/firecrawl
       - name: Run tests
         run: npm run test
         working-directory: ./apps/js-sdk/firecrawl

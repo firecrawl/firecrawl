@@ -208,7 +208,7 @@ class TestSearchRequestModel:
         request = SearchRequest(query="test")
         assert request.limit == 5
         assert request.ignore_invalid_urls is None  # No default in model
-        assert request.timeout == 60000
+        assert request.timeout == 300000
         assert request.sources is None
         assert request.tbs is None
         assert request.location is None

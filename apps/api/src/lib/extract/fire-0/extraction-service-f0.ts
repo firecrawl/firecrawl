@@ -7,7 +7,7 @@ import {
 import { logger as _logger } from "../../logger";
 import { scrapeDocument_F0 } from "./document-scraper-f0";
 import { billTeam } from "../../../services/billing/credit_billing";
-import { logJob } from "../../../services/logging/log_job";
+import { logExtract } from "../../../services/logging/log_job";
 import { spreadSchemas_F0 } from "./helpers/spread-schemas-f0";
 import Ajv from "ajv";
 const ajv = new Ajv();
@@ -35,6 +35,7 @@ import { mixSchemaObjects_F0 } from "./helpers/mix-schema-objs-f0";
 import { singleAnswerCompletion_F0 } from "./completions/singleAnswer-f0";
 import {
   calculateFinalResultCost_F0,
+  estimateCost_F0,
   estimateTotalCost_F0,
 } from "./usage/llm-cost-f0";
 import { SourceTracker_F0 } from "./helpers/source-tracker-f0";
@@ -119,23 +120,16 @@ export async function performExtraction_F0(
     logger.error("No search results found", {
       query: request.prompt,
     });
-    logJob({
-      job_id: extractId,
-      success: false,
-      message: "No search results found",
-      num_docs: 1,
-      docs: [],
-      time_taken: (new Date().getTime() - createdAt.getTime()) / 1000,
+    logExtract({
+      id: extractId,
+      request_id: extractId,
+      urls: request.urls || [],
       team_id: teamId,
-      mode: "extract",
-      url: request.urls?.join(", ") || "",
-      scrapeOptions: request,
-      origin: request.origin ?? "api",
-      integration: request.integration,
-      num_tokens: 0,
-      tokens_billed: 0,
-      sources,
-      zeroDataRetention: false, // not supported
+      options: request,
+      model_kind: "fire-0",
+      credits_cost: 0,
+      is_successful: false,
+      error: "No search results found",
     });
     return {
       success: false,
@@ -227,23 +221,16 @@ export async function performExtraction_F0(
     logger.error("0 links! Bailing.", {
       linkCount: links.length,
     });
-    logJob({
-      job_id: extractId,
-      success: false,
-      message: "No valid URLs found to scrape",
-      num_docs: 1,
-      docs: [],
-      time_taken: (new Date().getTime() - createdAt.getTime()) / 1000,
+    logExtract({
+      id: extractId,
+      request_id: extractId,
+      urls: request.urls || [],
       team_id: teamId,
-      mode: "extract",
-      url: request.urls?.join(", ") || "",
-      scrapeOptions: request,
-      origin: request.origin ?? "api",
-      integration: request.integration,
-      num_tokens: 0,
-      tokens_billed: 0,
-      sources,
-      zeroDataRetention: false, // not supported
+      options: request,
+      credits_cost: 0,
+      is_successful: false,
+      error: "No valid URLs found to scrape",
+      model_kind: "fire-0",
     });
     return {
       success: false,
@@ -370,6 +357,7 @@ export async function performExtraction_F0(
             timeout,
             flags: acuc?.flags ?? null,
             apiKeyId,
+            requestId: extractId,
           },
           urlTraces,
           logger.child({
@@ -439,8 +427,9 @@ export async function performExtraction_F0(
           ajv.compile(multiEntitySchema);
 
           // Wrap in timeout promise
+          let timeoutHandle: NodeJS.Timeout;
           const timeoutPromise = new Promise(resolve => {
-            setTimeout(() => resolve(null), timeoutCompletion);
+            timeoutHandle = setTimeout(() => resolve(null), timeoutCompletion);
           });
 
           // Check if page should be extracted before proceeding
@@ -504,7 +493,9 @@ export async function performExtraction_F0(
           const multiEntityCompletion = (await Promise.race([
             completionPromise,
             timeoutPromise,
-          ])) as Awaited<ReturnType<typeof generateCompletions_F0>>;
+          ]).finally(() => {
+            clearTimeout(timeoutHandle);
+          })) as Awaited<ReturnType<typeof generateCompletions_F0>>;
 
           // Track multi-entity extraction tokens
           if (multiEntityCompletion) {
@@ -603,23 +594,16 @@ export async function performExtraction_F0(
       Object.assign(sources, multiEntitySources);
     } catch (error) {
       logger.error(`Failed to transform array to object`, { error });
-      logJob({
-        job_id: extractId,
-        success: false,
-        message: "Failed to transform array to object",
-        num_docs: 1,
-        docs: [],
-        time_taken: (new Date().getTime() - createdAt.getTime()) / 1000,
+      logExtract({
+        id: extractId,
+        request_id: extractId,
+        urls: request.urls || [],
         team_id: teamId,
-        mode: "extract",
-        url: request.urls?.join(", ") || "",
-        scrapeOptions: request,
-        origin: request.origin ?? "api",
-        integration: request.integration,
-        num_tokens: 0,
-        tokens_billed: 0,
-        sources,
-        zeroDataRetention: false, // not supported
+        options: request,
+        credits_cost: 0,
+        is_successful: false,
+        error: "Failed to transform array to object",
+        model_kind: "fire-0",
       });
       return {
         success: false,
@@ -668,6 +652,7 @@ export async function performExtraction_F0(
             timeout,
             flags: acuc?.flags ?? null,
             apiKeyId,
+            requestId: extractId,
           },
           urlTraces,
           logger.child({
@@ -701,23 +686,16 @@ export async function performExtraction_F0(
       logger.debug("Scrapes finished.", { docCount: validResults.length });
     } catch (error) {
       logger.error("Failed to scrape documents", { error });
-      logJob({
-        job_id: extractId,
-        success: false,
-        message: "Failed to scrape documents",
-        num_docs: 1,
-        docs: [],
-        time_taken: (new Date().getTime() - createdAt.getTime()) / 1000,
+      logExtract({
+        id: extractId,
+        request_id: extractId,
+        urls: request.urls || [],
         team_id: teamId,
-        mode: "extract",
-        url: request.urls?.join(", ") || "",
-        scrapeOptions: request,
-        origin: request.origin ?? "api",
-        integration: request.integration,
-        num_tokens: 0,
-        tokens_billed: 0,
-        sources,
-        zeroDataRetention: false, // not supported
+        options: request,
+        model_kind: "fire-0",
+        credits_cost: 0,
+        is_successful: false,
+        error: "Failed to scrape documents",
       });
       return {
         success: false,
@@ -731,23 +709,16 @@ export async function performExtraction_F0(
     if (docsMap.size == 0) {
       // All urls are invalid
       logger.error("All provided URLs are invalid!");
-      logJob({
-        job_id: extractId,
-        success: false,
-        message: "All provided URLs are invalid",
-        num_docs: 1,
-        docs: [],
-        time_taken: (new Date().getTime() - createdAt.getTime()) / 1000,
+      logExtract({
+        id: extractId,
+        request_id: extractId,
+        urls: request.urls || [],
         team_id: teamId,
-        mode: "extract",
-        url: request.urls?.join(", ") || "",
-        scrapeOptions: request,
-        origin: request.origin ?? "api",
-        integration: request.integration,
-        num_tokens: 0,
-        tokens_billed: 0,
-        sources,
-        zeroDataRetention: false, // not supported
+        options: request,
+        model_kind: "fire-0",
+        credits_cost: 0,
+        is_successful: false,
+        error: "All provided URLs are invalid",
       });
       return {
         success: false,
@@ -895,43 +866,78 @@ export async function performExtraction_F0(
     tokensToBill = 1;
   }
 
+  const creditsToBill = Math.ceil(tokensToBill / 15);
+
   // Bill team for usage
-  billTeam(teamId, subId, tokensToBill, apiKeyId, logger, true).catch(error => {
+  billTeam(teamId, subId, creditsToBill, apiKeyId, logger).catch(error => {
     logger.error(
-      `Failed to bill team ${teamId} for ${tokensToBill} tokens: ${error}`,
+      `Failed to bill team ${teamId} for ${creditsToBill} credits: ${error}`,
     );
   });
 
-  // Log job with token usage and sources
-  logJob({
-    job_id: extractId,
-    success: true,
-    message: "Extract completed",
-    num_docs: 1,
-    docs: finalResult ?? {},
-    time_taken: (new Date().getTime() - createdAt.getTime()) / 1000,
-    team_id: teamId,
-    mode: "extract",
-    url: request.urls?.join(", ") || "",
-    scrapeOptions: request,
-    origin: request.origin ?? "api",
-    integration: request.integration,
-    num_tokens: totalTokensUsed,
-    tokens_billed: tokensToBill,
+  logger.debug("Logging extract to database", {
+    extractId,
+    llmUsage,
     sources,
-    zeroDataRetention: false, // not supported
-  }).then(() => {
-    updateExtract(extractId, {
-      status: "completed",
-      llmUsage,
-      sources,
-      tokensBilled: tokensToBill,
-    }).catch(error => {
-      logger.error(
-        `Failed to update extract ${extractId} status to completed: ${error}`,
-      );
-    });
+    tokensBilled: tokensToBill,
+    creditsBilled: creditsToBill,
   });
+
+  // Log job with token usage and sources
+  logExtract({
+    id: extractId,
+    request_id: extractId,
+    urls: request.urls || [],
+    team_id: teamId,
+    options: request,
+    model_kind: "fire-0",
+    credits_cost: creditsToBill,
+    is_successful: true,
+    result: finalResult ?? {},
+    cost_tracking: {
+      calls: tokenUsage.map(usage => ({
+        type: "other",
+        cost: estimateCost_F0(usage),
+        model: usage.model ?? "",
+        metadata: {},
+        stack: "",
+        tokens: {
+          input: usage.promptTokens,
+          output: usage.completionTokens,
+        },
+      })),
+      smartScrapeCallCount: 0,
+      smartScrapeCost: 0,
+      otherCallCount: tokenUsage.length,
+      otherCost: llmUsage,
+      totalCost: llmUsage,
+    },
+  })
+    .then(() => {
+      logger.debug("Updating extract status to completed", {
+        extractId,
+        llmUsage,
+        sources,
+        tokensBilled: tokensToBill,
+        creditsBilled: creditsToBill,
+      });
+
+      updateExtract(extractId, {
+        status: "completed",
+        llmUsage,
+        sources,
+        tokensBilled: tokensToBill,
+        creditsBilled: creditsToBill,
+      }).catch(error => {
+        logger.error("Failed to update extract status to completed", {
+          extractId,
+          error,
+        });
+      });
+    })
+    .catch(error => {
+      logger.error("Failed to log extract to database", { extractId, error });
+    });
 
   logger.debug("Done!");
 

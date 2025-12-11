@@ -1,4 +1,5 @@
 import express from "express";
+import { config } from "../config";
 import { Request, Response } from "express";
 import {
   getTopDomains,
@@ -12,7 +13,7 @@ const domainFrequencyRouter = express.Router();
 
 // Get top domains by frequency
 domainFrequencyRouter.get(
-  `/domain-frequency/${process.env.BULL_AUTH_KEY}/top`,
+  `/domain-frequency/${config.BULL_AUTH_KEY}/top`,
   async (req: Request, res: Response) => {
     try {
       const limit = parseInt(req.query.limit as string) || 100;
@@ -34,7 +35,7 @@ domainFrequencyRouter.get(
 
 // Get frequency for a specific domain
 domainFrequencyRouter.get(
-  `/domain-frequency/${process.env.BULL_AUTH_KEY}/domain/:domain`,
+  `/domain-frequency/${config.BULL_AUTH_KEY}/domain/:domain`,
   async (req: Request, res: Response) => {
     try {
       const { domain } = req.params;
@@ -70,7 +71,7 @@ domainFrequencyRouter.get(
 
 // Get overall statistics
 domainFrequencyRouter.get(
-  `/domain-frequency/${process.env.BULL_AUTH_KEY}/stats`,
+  `/domain-frequency/${config.BULL_AUTH_KEY}/stats`,
   async (req: Request, res: Response) => {
     try {
       const [stats, queueLength] = await Promise.all([

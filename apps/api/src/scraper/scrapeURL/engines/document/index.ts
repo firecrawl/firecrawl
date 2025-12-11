@@ -88,42 +88,46 @@ export async function scrapeDocument(meta: Meta): Promise<EngineScrapeResult> {
   let proxyUsed: "basic" | "stealth" = "basic";
   let tempFilePath: string | null = null;
 
-  if (meta.documentPrefetch !== undefined && meta.documentPrefetch !== null) {
-    // Use prefetched document
-    tempFilePath = meta.documentPrefetch.filePath;
-    buffer = await readFile(tempFilePath);
-
-    // Create a mock response object with content-type from prefetch
-    const headers = new Headers();
-    if (meta.documentPrefetch.contentType) {
-      headers.set("Content-Type", meta.documentPrefetch.contentType);
-    }
-
-    response = {
-      url: meta.documentPrefetch.url ?? meta.rewrittenUrl ?? meta.url,
-      status: meta.documentPrefetch.status,
-      headers,
-    } as Response;
-
-    proxyUsed = meta.documentPrefetch.proxyUsed;
-  } else {
-    // Fetch the document normally
-    const result = await fetchFileToBuffer(meta.rewrittenUrl ?? meta.url, {
-      headers: meta.options.headers,
-      signal: meta.abort.asSignal(),
-    });
-    response = result.response;
-    buffer = result.buffer;
-
-    // Validate content type only when fetching directly (not using prefetch)
-    const ct = response.headers.get("Content-Type");
-    if (ct && !isValidDocumentContentType(ct)) {
-      // if downloaded file wasn't a valid document, throw antibot error
-      throw new DocumentAntibotError();
-    }
-  }
-
   try {
+    if (meta.documentPrefetch !== undefined && meta.documentPrefetch !== null) {
+      // Use prefetched document
+      tempFilePath = meta.documentPrefetch.filePath;
+      buffer = await readFile(tempFilePath);
+
+      // Create a mock response object with content-type from prefetch
+      const headers = new Headers();
+      if (meta.documentPrefetch.contentType) {
+        headers.set("Content-Type", meta.documentPrefetch.contentType);
+      }
+
+      response = {
+        url: meta.documentPrefetch.url ?? meta.rewrittenUrl ?? meta.url,
+        status: meta.documentPrefetch.status,
+        headers,
+      } as Response;
+
+      proxyUsed = meta.documentPrefetch.proxyUsed;
+    } else {
+      // Fetch the document normally
+      const result = await fetchFileToBuffer(
+        meta.rewrittenUrl ?? meta.url,
+        meta.options.skipTlsVerification,
+        {
+          headers: meta.options.headers,
+          signal: meta.abort.asSignal(),
+        },
+      );
+      response = result.response;
+      buffer = result.buffer;
+
+      // Validate content type only when fetching directly (not using prefetch)
+      const ct = response.headers.get("Content-Type");
+      if (ct && !isValidDocumentContentType(ct)) {
+        // if downloaded file wasn't a valid document, throw antibot error
+        throw new DocumentAntibotError();
+      }
+    }
+
     const documentType =
       getDocumentTypeFromContentType(response.headers.get("content-type")) ??
       getDocumentTypeFromUrl(response.url);
@@ -141,14 +145,14 @@ export async function scrapeDocument(meta: Meta): Promise<EngineScrapeResult> {
     };
   } finally {
     // Clean up temporary file if it was created by prefetch
-    if (tempFilePath && meta.documentPrefetch !== undefined && meta.documentPrefetch !== null) {
+    if (tempFilePath) {
       try {
         await unlink(tempFilePath);
       } catch (error) {
         // Ignore errors when cleaning up temp files
-        meta.logger?.warn("Failed to clean up temporary document file", { 
-          error, 
-          tempFilePath 
+        meta.logger?.warn("Failed to clean up temporary document file", {
+          error,
+          tempFilePath,
         });
       }
     }

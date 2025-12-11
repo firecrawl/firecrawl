@@ -1,4 +1,5 @@
 import { configDotenv } from "dotenv";
+import { config } from "../config";
 import { logger } from "../lib/logger";
 import type { Request } from "express";
 import WSWebSocket from "ws";
@@ -26,7 +27,7 @@ export function attachWsProxy(app: any) {
       const url = new URL(req.url ?? "", "http://placeholder/");
       const sessionIdParam = url.searchParams.get("userProvidedId") || "";
 
-      const workerWsUrl = `${process.env.FIRE_ENGINE_BETA_URL?.replace("http", "ws")}?userProvidedId=${sessionIdParam}`;
+      const workerWsUrl = `${config.FIRE_ENGINE_BETA_URL?.replace("http", "ws")}?userProvidedId=${sessionIdParam}`;
       console.log(workerWsUrl);
       const wsWorker = new WebSocket(workerWsUrl);
 

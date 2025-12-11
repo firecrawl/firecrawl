@@ -1,12 +1,21 @@
 import { Response } from "express";
+import { config } from "../../config";
 import { RequestWithAuth } from "./types";
 import { getExtract, getExtractExpiry } from "../../lib/extract/extract-redis";
-import { DBJob } from "./crawl-status";
 import { getExtractQueue } from "../../services/queue-service";
 import { ExtractResult } from "../../lib/extract/extraction-service";
-import { supabaseGetJobByIdDirect } from "../../lib/supabase-jobs";
+import { supabaseGetExtractByIdDirect } from "../../lib/supabase-jobs";
 import { JobState } from "bullmq";
 import { logger as _logger } from "../../lib/logger";
+
+type DBExtract = {
+  id: string;
+  success: boolean;
+  options: any;
+  created_at: any;
+  error: string | null;
+  team_id: string;
+};
 
 type ExtractPseudoJob<T> = {
   id: string;
@@ -23,32 +32,33 @@ type ExtractPseudoJob<T> = {
 async function getExtractJob(
   id: string,
 ): Promise<ExtractPseudoJob<ExtractResult> | null> {
-  const [bullJob, dbJob] = await Promise.all([
+  const [bullJob, dbExtract] = await Promise.all([
     getExtractQueue().getJob(id),
-    (process.env.USE_DB_AUTHENTICATION === "true"
-      ? supabaseGetJobByIdDirect(id)
-      : null) as Promise<DBJob | null>,
+    (config.USE_DB_AUTHENTICATION
+      ? supabaseGetExtractByIdDirect(id)
+      : null) as Promise<DBExtract | null>,
   ]);
 
-  if (!bullJob && !dbJob) return null;
+  if (!bullJob && !dbExtract) return null;
 
-  const data = dbJob?.docs ?? bullJob?.returnvalue?.data;
+  // Extract results are stored in GCS, not in the DB
+  const data = bullJob?.returnvalue?.data;
 
   const job: ExtractPseudoJob<any> = {
     id,
-    getState: dbJob
-      ? () => (dbJob.success ? "completed" : "failed")
+    getState: dbExtract
+      ? () => (dbExtract.success ? "completed" : "failed")
       : () => bullJob!.getState(),
     returnvalue: data,
     data: {
-      scrapeOptions: bullJob ? bullJob.data.scrapeOptions : dbJob!.page_options,
-      teamId: bullJob ? bullJob.data.teamId : dbJob!.team_id,
+      scrapeOptions: bullJob ? bullJob.data.scrapeOptions : dbExtract!.options,
+      teamId: bullJob ? bullJob.data.teamId : dbExtract!.team_id,
     },
     timestamp: bullJob
       ? bullJob.timestamp
-      : new Date(dbJob!.date_added).valueOf(),
+      : new Date(dbExtract!.created_at).valueOf(),
     failedReason:
-      (bullJob ? bullJob.failedReason : dbJob!.message) || undefined,
+      (bullJob ? bullJob.failedReason : dbExtract!.error) || undefined,
   };
 
   return job;
@@ -116,7 +126,17 @@ export async function extractStatusController(
     success: status === "failed" ? false : true,
     data,
     status,
-    error: extract?.error ?? undefined,
+    error: (() => {
+      if (typeof extract?.error === "string") return extract.error;
+      if (extract?.error && typeof extract.error === "object") {
+        return typeof extract.error.message === "string"
+          ? extract.error.message
+          : typeof extract.error.error === "string"
+            ? extract.error.error
+            : JSON.stringify(extract.error);
+      }
+      return undefined;
+    })(),
     expiresAt: (await getExtractExpiry(req.params.jobId)).toISOString(),
     steps: extract?.showSteps ? extract.steps : undefined,
     llmUsage: extract?.showLLMUsage ? extract.llmUsage : undefined,
@@ -124,5 +144,6 @@ export async function extractStatusController(
     costTracking: extract?.showCostTracking ? extract.costTracking : undefined,
     sessionIds: extract?.sessionIds ? extract.sessionIds : undefined,
     tokensUsed: extract?.tokensBilled ? extract.tokensBilled : undefined,
+    creditsUsed: extract?.creditsBilled ? extract.creditsBilled : undefined,
   });
 }

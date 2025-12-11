@@ -10,9 +10,6 @@ import { getValue, setValue } from "../redis";
 import { queueBillingOperation } from "./batch_billing";
 import type { Logger } from "winston";
 
-// Deprecated, done via rpc
-const FREE_CREDITS = 500;
-
 /**
  * If you do not know the subscription_id in the current context, pass subscription_id as undefined.
  */
@@ -22,7 +19,6 @@ export async function billTeam(
   credits: number,
   api_key_id: number | null,
   logger?: Logger,
-  is_extract: boolean = false,
 ) {
   // Maintain the withAuth wrapper for authentication
   return withAuth(
@@ -32,7 +28,6 @@ export async function billTeam(
       credits: number,
       api_key_id: number | null,
       logger: Logger | undefined,
-      is_extract: boolean,
     ) => {
       // Within the authenticated context, queue the billing operation
       return queueBillingOperation(
@@ -40,11 +35,11 @@ export async function billTeam(
         subscription_id,
         credits,
         api_key_id,
-        is_extract,
+        false,
       );
     },
     { success: true, message: "No DB, bypassed." },
-  )(team_id, subscription_id, credits, api_key_id, logger, is_extract);
+  )(team_id, subscription_id, credits, api_key_id, logger);
 }
 
 type CheckTeamCreditsResponse = {

@@ -16,7 +16,9 @@ import {
   Identity,
   idmux,
   scrapeTimeout,
+  TEST_API_URL,
 } from "./lib";
+import request from "./lib";
 import { describe, it, expect } from "@jest/globals";
 
 let identity: Identity;
@@ -460,4 +462,46 @@ describe("Crawl tests", () => {
     },
     10 * scrapeTimeout,
   );
+
+  describe("UUID validation", () => {
+    it.concurrent(
+      "should reject invalid UUID 'None' for crawl status",
+      async () => {
+        const response = await request(TEST_API_URL)
+          .get("/v2/crawl/None")
+          .set("Authorization", `Bearer ${identity.apiKey}`)
+          .send();
+
+        expect(response.statusCode).toBe(400);
+        expect(response.body.success).toBe(false);
+        expect(response.body.error).toBe(
+          "Invalid job ID format. Job ID must be a valid UUID.",
+        );
+      },
+    );
+
+    it.concurrent("should reject malformed UUID for crawl cancel", async () => {
+      const response = await request(TEST_API_URL)
+        .delete("/v2/crawl/not-a-uuid")
+        .set("Authorization", `Bearer ${identity.apiKey}`)
+        .send();
+
+      expect(response.statusCode).toBe(400);
+      expect(response.body.error).toBe(
+        "Invalid job ID format. Job ID must be a valid UUID.",
+      );
+    });
+
+    it.concurrent("should reject invalid UUID for crawl errors", async () => {
+      const response = await request(TEST_API_URL)
+        .get("/v2/crawl/invalid-id/errors")
+        .set("Authorization", `Bearer ${identity.apiKey}`)
+        .send();
+
+      expect(response.statusCode).toBe(400);
+      expect(response.body.error).toBe(
+        "Invalid job ID format. Job ID must be a valid UUID.",
+      );
+    });
+  });
 });

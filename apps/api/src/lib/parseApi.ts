@@ -12,3 +12,11 @@ export function parseApi(api: string) {
     .replace(/(.{8})(.{4})(.{4})(.{4})(.{12})/, "$1-$2-$3-$4-$5");
   return uuid;
 }
+
+export function apiKeyToFcApiKey(apiKey: string | null | undefined) {
+  if (!apiKey) {
+    return null;
+  }
+  const uuidWithoutDashes = apiKey.replace(/-/g, "");
+  return `fc-${uuidWithoutDashes}`;
+}

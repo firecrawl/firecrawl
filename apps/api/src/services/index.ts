@@ -10,6 +10,7 @@ import { MapDocument } from "../controllers/v2/types";
 import { PdfMetadata } from "@mendable/firecrawl-rs";
 import { storage } from "../lib/gcs-jobs";
 import { withSpan, setSpanAttributes } from "../lib/otel-tracer";
+import { config } from "../config";
 configDotenv();
 
 // SupabaseService class initializes the Supabase client conditionally based on environment variables.
@@ -17,8 +18,8 @@ class IndexSupabaseService {
   private client: SupabaseClient | null = null;
 
   constructor() {
-    const supabaseUrl = process.env.INDEX_SUPABASE_URL;
-    const supabaseServiceToken = process.env.INDEX_SUPABASE_SERVICE_TOKEN;
+    const supabaseUrl = config.INDEX_SUPABASE_URL;
+    const supabaseServiceToken = config.INDEX_SUPABASE_SERVICE_TOKEN;
     // Only initialize the Supabase client if both URL and Service Token are provided.
     if (!supabaseUrl || !supabaseServiceToken) {
       // Warn the user that Authentication is disabled by setting the client to null
@@ -57,8 +58,8 @@ export const index_supabase_service: SupabaseClient = new Proxy(serv, {
   },
 }) as unknown as SupabaseClient;
 
-const credentials = process.env.GCS_CREDENTIALS
-  ? JSON.parse(atob(process.env.GCS_CREDENTIALS))
+const credentials = config.GCS_CREDENTIALS
+  ? JSON.parse(atob(config.GCS_CREDENTIALS))
   : undefined;
 
 export async function getIndexFromGCS(
@@ -72,12 +73,12 @@ export async function getIndexFromGCS(
         "index.url": url,
       });
 
-      if (!process.env.GCS_INDEX_BUCKET_NAME) {
+      if (!config.GCS_INDEX_BUCKET_NAME) {
         setSpanAttributes(span, { "gcs.index_bucket_configured": false });
         return null;
       }
 
-      const bucket = storage.bucket(process.env.GCS_INDEX_BUCKET_NAME);
+      const bucket = storage.bucket(config.GCS_INDEX_BUCKET_NAME);
       const blob = bucket.file(`${url}`);
       const [blobContent] = await blob.download();
       const parsed = JSON.parse(blobContent.toString());
@@ -106,7 +107,7 @@ export async function getIndexFromGCS(
           ) {
             logger?.info("Re-signing screenshot URL");
             const [url] = await storage
-              .bucket(process.env.GCS_MEDIA_BUCKET_NAME!)
+              .bucket(config.GCS_MEDIA_BUCKET_NAME!)
               .file(decodeURIComponent(screenshotUrl.pathname.split("/")[2]))
               .getSignedUrl({
                 action: "read",
@@ -169,12 +170,12 @@ export async function saveIndexToGCS(
       "index.has_error": !!doc.error,
     });
 
-    if (!process.env.GCS_INDEX_BUCKET_NAME) {
+    if (!config.GCS_INDEX_BUCKET_NAME) {
       setSpanAttributes(span, { "gcs.index_bucket_configured": false });
       return;
     }
 
-    const bucket = storage.bucket(process.env.GCS_INDEX_BUCKET_NAME);
+    const bucket = storage.bucket(config.GCS_INDEX_BUCKET_NAME);
     const blob = bucket.file(`${id}.json`);
 
     for (let i = 0; i < 3; i++) {
@@ -200,16 +201,23 @@ export async function saveIndexToGCS(
 }
 
 export const useIndex =
-  process.env.INDEX_SUPABASE_URL !== "" &&
-  process.env.INDEX_SUPABASE_URL !== undefined;
+  config.INDEX_SUPABASE_URL !== "" && config.INDEX_SUPABASE_URL !== undefined;
 
 export const useSearchIndex =
-  process.env.SEARCH_INDEX_SUPABASE_URL !== "" &&
-  process.env.SEARCH_INDEX_SUPABASE_URL !== undefined;
+  config.SEARCH_INDEX_SUPABASE_URL !== "" &&
+  config.SEARCH_INDEX_SUPABASE_URL !== undefined;
 
 export function normalizeURLForIndex(url: string): string {
   const urlObj = new URL(url);
-  urlObj.hash = "";
+
+  if (
+    !urlObj.hash ||
+    urlObj.hash.length <= 2 ||
+    (!urlObj.hash.startsWith("#/") && !urlObj.hash.startsWith("#!/"))
+  ) {
+    urlObj.hash = "";
+  }
+
   urlObj.protocol = "https";
 
   if (urlObj.port === "80" || urlObj.port === "443") {
@@ -656,7 +664,7 @@ export async function queryIndexAtSplitLevel(
   limit: number,
   maxAge = 2 * 24 * 60 * 60 * 1000,
 ): Promise<string[]> {
-  if (!useIndex || process.env.FIRECRAWL_INDEX_WRITE_ONLY === "true") {
+  if (!useIndex || config.FIRECRAWL_INDEX_WRITE_ONLY) {
     return [];
   }
 
@@ -709,7 +717,7 @@ export async function queryIndexAtDomainSplitLevel(
   limit: number,
   maxAge = 2 * 24 * 60 * 60 * 1000,
 ): Promise<string[]> {
-  if (!useIndex || process.env.FIRECRAWL_INDEX_WRITE_ONLY === "true") {
+  if (!useIndex || config.FIRECRAWL_INDEX_WRITE_ONLY) {
     return [];
   }
 
@@ -761,7 +769,7 @@ export async function queryOMCESignatures(
   hostname: string,
   maxAge = 2 * 24 * 60 * 60 * 1000,
 ): Promise<string[]> {
-  if (!useIndex || process.env.FIRECRAWL_INDEX_WRITE_ONLY === "true") {
+  if (!useIndex || config.FIRECRAWL_INDEX_WRITE_ONLY) {
     return [];
   }
 
@@ -788,11 +796,59 @@ export async function queryOMCESignatures(
   return data?.[0]?.signatures ?? [];
 }
 
+export async function queryEngpickerVerdict(
+  hostname: string,
+): Promise<"TlsClientOk" | "ChromeCdpRequired" | "Uncertain" | "Unknown"> {
+  if (!useIndex || config.FIRECRAWL_INDEX_WRITE_ONLY) {
+    return "Unknown";
+  }
+
+  const domainSplitsHash = generateDomainSplits(hostname).map(x => hashURL(x));
+
+  const level = domainSplitsHash.length - 1;
+  if (domainSplitsHash.length === 0) {
+    return "Unknown";
+  }
+
+  // 250ms max time taken
+
+  const res: { data: any; error: any } = await Promise.any([
+    index_supabase_service.rpc("query_engpicker_verdict", {
+      i_domain_hash: domainSplitsHash[level],
+    }),
+    new Promise<{
+      data: {
+        verdict: "TlsClientOk" | "ChromeCdpRequired" | "Uncertain" | "Unknown";
+      }[];
+      error: any;
+    }>(resolve =>
+      setTimeout(
+        () =>
+          resolve({
+            data: [{ verdict: "Unknown" }],
+            error: "Took longer than 250ms",
+          }),
+        250,
+      ),
+    ),
+  ]);
+
+  if (res.error) {
+    _logger.warn("Error querying index (engpicker)", {
+      error: res.error,
+      hostname,
+    });
+    return "Unknown";
+  }
+
+  return res.data?.[0]?.verdict ?? "Unknown";
+}
+
 export async function queryIndexAtSplitLevelWithMeta(
   url: string,
   limit: number,
 ): Promise<MapDocument[]> {
-  if (!useIndex || process.env.FIRECRAWL_INDEX_WRITE_ONLY === "true") {
+  if (!useIndex || config.FIRECRAWL_INDEX_WRITE_ONLY) {
     return [];
   }
 
@@ -852,7 +908,7 @@ export async function queryIndexAtDomainSplitLevelWithMeta(
   hostname: string,
   limit: number,
 ): Promise<MapDocument[]> {
-  if (!useIndex || process.env.FIRECRAWL_INDEX_WRITE_ONLY === "true") {
+  if (!useIndex || config.FIRECRAWL_INDEX_WRITE_ONLY) {
     return [];
   }
 
@@ -920,7 +976,7 @@ export async function queryDomainsForPrecrawl(
   maxDomains = 50,
   logger: Logger = _logger,
 ): Promise<DomainPriority[]> {
-  if (!useIndex || process.env.FIRECRAWL_INDEX_WRITE_ONLY === "true") {
+  if (!useIndex || config.FIRECRAWL_INDEX_WRITE_ONLY) {
     return [];
   }
 

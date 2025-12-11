@@ -20,7 +20,7 @@ export async function generateBasicCompletion_FO(
   metadata: { teamId: string; extractId?: string },
 ) {
   const { text } = await generateText({
-    model: getModel("gpt-4o"),
+    model: getModel("gpt-4o-mini"),
     prompt: prompt,
     temperature: 0,
     providerOptions: {

@@ -1,3 +1,4 @@
+import { config } from "../config";
 // import {
 //   getRateLimiter,
 //   serverRateLimiter,
@@ -10,7 +11,7 @@
 //   beforeAll(async () => {
 //     try {
 //       await redisRateLimitClient.connect();
-//       // if (process.env.REDIS_RATE_LIMIT_URL === "redis://localhost:6379") {
+//       // if (config.REDIS_RATE_LIMIT_URL === "redis://localhost:6379") {
 //       //   console.log("Erasing all keys");
 //       //   // erase all the keys that start with "test-prefix"
 //       //   const keys = await redisRateLimitClient.keys("test-prefix:*");
@@ -23,7 +24,7 @@
 
 //   afterAll(async () => {
 //     try {
-//       // if (process.env.REDIS_RATE_LIMIT_URL === "redis://localhost:6379") {
+//       // if (config.REDIS_RATE_LIMIT_URL === "redis://localhost:6379") {
 //       await redisRateLimitClient.disconnect();
 //       // }
 //     } catch (error) {}

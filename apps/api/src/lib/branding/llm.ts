@@ -33,6 +33,13 @@ export async function enhanceBrandingWithLLM(
         },
       ],
       temperature: 0.1,
+      experimental_telemetry: {
+        isEnabled: true,
+        functionId: "enhanceBrandingWithLLM",
+        metadata: {
+          teamId: input.teamId || "unknown",
+        },
+      },
     });
 
     return result.object;

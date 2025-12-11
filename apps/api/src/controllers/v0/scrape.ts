@@ -2,7 +2,7 @@ import { ExtractorOptions, PageOptions } from "./../../lib/entities";
 import { Request, Response } from "express";
 import { checkTeamCredits } from "../../services/billing/credit_billing";
 import { authenticateUser } from "../auth";
-import { RateLimiterMode } from "../../types";
+import { RateLimiterMode, AuthResponse } from "../../types";
 import { TeamFlags, toLegacyDocument, url as urlSchema } from "../v1/types";
 import { isUrlBlocked } from "../../scraper/WebScraper/utils/blocklist"; // Import the isUrlBlocked function
 import {
@@ -13,7 +13,7 @@ import {
 } from "../../lib/default-values";
 import { addScrapeJob, waitForJob } from "../../services/queue-jobs";
 import { redisEvictConnection } from "../../../src/services/redis";
-import { v4 as uuidv4 } from "uuid";
+import { v7 as uuidv7 } from "uuid";
 import { logger } from "../../lib/logger";
 import * as Sentry from "@sentry/node";
 import { getJobPriority } from "../../lib/job-priority";
@@ -24,6 +24,7 @@ import { fromV0Combo } from "../v2/types";
 import { ScrapeJobTimeoutError } from "../../lib/error";
 import { scrapeQueue } from "../../services/worker/nuq";
 import { getErrorContactMessage } from "../../lib/deployment";
+import { logRequest } from "../../services/logging/log_job";
 
 async function scrapeHelper(
   jobId: string,
@@ -41,7 +42,21 @@ async function scrapeHelper(
   data?: V0Document | { url: string };
   returnCode: number;
 }> {
-  const url = urlSchema.parse(req.body.url);
+  let url: string;
+  try {
+    url = urlSchema.parse(req.body.url);
+  } catch (error) {
+    if (error instanceof ZodError) {
+      const errorMessage =
+        error.issues
+          .map(issue => issue.message)
+          .filter((msg, idx, arr) => arr.indexOf(msg) === idx)
+          .join("; ") || "Invalid URL";
+
+      return { success: false, error: errorMessage, returnCode: 400 };
+    }
+    throw error;
+  }
   if (typeof url !== "string") {
     return { success: false, error: "Url is required", returnCode: 400 };
   }
@@ -176,7 +191,19 @@ export async function scrapeController(req: Request, res: Response) {
       });
     }
 
-    const jobId = uuidv4();
+    const jobId = uuidv7();
+
+    await logRequest({
+      id: jobId,
+      kind: "scrape",
+      api_version: "v0",
+      team_id,
+      origin: req.body.origin ?? "api",
+      integration: req.body.integration,
+      target_hint: req.body.url ?? "",
+      zeroDataRetention: false, // not supported on v0
+      api_key_id: chunk?.api_key_id ?? null,
+    });
 
     redisEvictConnection.sadd("teams_using_v0", team_id).catch(error =>
       logger.error("Failed to add team to teams_using_v0", {

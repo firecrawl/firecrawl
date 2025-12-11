@@ -1,5 +1,5 @@
 import pytest
-from firecrawl.v2.types import JsonFormat, ScrapeOptions
+from firecrawl.v2.types import JsonFormat, ScrapeOptions, PDFParser
 from firecrawl.v2.utils.validation import validate_scrape_options, prepare_scrape_options
 
 
@@ -288,3 +288,24 @@ class TestPrepareScrapeOptions:
         assert "block_ads" not in result
         assert "store_in_cache" not in result
         assert "max_age" not in result 
+
+    def test_prepare_parsers_max_pages_dict(self):
+        """Ensure parser dicts convert max_pages to maxPages."""
+        options = ScrapeOptions(
+            parsers=[{"type": "pdf", "max_pages": 3}]
+        )
+
+        result = prepare_scrape_options(options)
+
+        assert "parsers" in result
+        assert result["parsers"][0]["maxPages"] == 3
+        assert "max_pages" not in result["parsers"][0]
+
+    def test_prepare_parsers_max_pages_model(self):
+        """Ensure parser models convert max_pages to maxPages."""
+        parser = PDFParser(max_pages=5)
+        options = ScrapeOptions(parsers=[parser])
+
+        result = prepare_scrape_options(options)
+
+        assert result["parsers"][0]["maxPages"] == 5

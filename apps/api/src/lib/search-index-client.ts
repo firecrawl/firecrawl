@@ -6,6 +6,7 @@
  */
 
 import { logger as _logger } from "./logger";
+import { config } from "../config";
 import type { Logger } from "winston";
 
 interface SearchIndexClientConfig {
@@ -86,10 +87,7 @@ export class SearchIndexClient {
    * Check if search index service is enabled
    */
   static isEnabled(): boolean {
-    return !!(
-      process.env.SEARCH_SERVICE_URL &&
-      process.env.ENABLE_SEARCH_INDEX === "true"
-    );
+    return !!(config.SEARCH_SERVICE_URL && config.ENABLE_SEARCH_INDEX);
   }
 
   /**
@@ -321,8 +319,8 @@ export function getSearchIndexClient(): SearchIndexClient | null {
   }
 
   if (!searchIndexClient) {
-    const baseUrl = process.env.SEARCH_SERVICE_URL!;
-    const apiSecret = process.env.SEARCH_SERVICE_API_SECRET;
+    const baseUrl = config.SEARCH_SERVICE_URL!;
+    const apiSecret = config.SEARCH_SERVICE_API_SECRET;
 
     searchIndexClient = new SearchIndexClient({
       baseUrl,

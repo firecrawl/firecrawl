@@ -275,4 +275,4 @@ class TestCrawlE2E:
         assert params_data is not None
         assert params_data.limit is not None or params_data.include_paths is not None or params_data.max_discovery_depth is not None 
         assert 'blog/.*' in params_data.include_paths
-        assert 'documentation/.*' in params_data.include_paths
+        assert 'docs/.*' in params_data.include_paths

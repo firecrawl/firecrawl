@@ -1,10 +1,11 @@
 import { logger } from "../../../lib/logger";
+import { config } from "../../../config";
 import * as Sentry from "@sentry/node";
 import { Request, Response } from "express";
 
 export async function checkFireEngine(req: Request, res: Response) {
   try {
-    if (!process.env.FIRE_ENGINE_BETA_URL) {
+    if (!config.FIRE_ENGINE_BETA_URL) {
       logger.warn("Fire engine beta URL not configured");
       return res.status(500).json({
         success: false,
@@ -20,21 +21,18 @@ export async function checkFireEngine(req: Request, res: Response) {
 
     for (const url of urls) {
       try {
-        const response = await fetch(
-          `${process.env.FIRE_ENGINE_BETA_URL}/scrape`,
-          {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              "X-Disable-Cache": "true",
-            },
-            body: JSON.stringify({
-              url,
-              engine: "chrome-cdp",
-            }),
-            signal: controller.signal,
+        const response = await fetch(`${config.FIRE_ENGINE_BETA_URL}/scrape`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "X-Disable-Cache": "true",
           },
-        );
+          body: JSON.stringify({
+            url,
+            engine: "chrome-cdp",
+          }),
+          signal: controller.signal,
+        });
 
         clearTimeout(timeout);
 

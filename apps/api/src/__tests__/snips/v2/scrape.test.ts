@@ -1,3 +1,4 @@
+import { config } from "../../../config";
 import {
   createTestIdUrl,
   describeIf,
@@ -21,7 +22,9 @@ import {
   Identity,
   scrapeRaw,
   extractRaw,
+  TEST_API_URL,
 } from "./lib";
+import request from "./lib";
 import crypto from "crypto";
 
 const CHANGE_TRACKING_TEST_URL = `${TEST_SUITE_WEBSITE}?testId=${crypto.randomUUID()}`;
@@ -234,7 +237,7 @@ describe("Scrape tests", () => {
       );
 
       expect(response.markdown?.trim()).toContain(
-        process.env.PROXY_SERVER!.split("://").slice(-1)[0].split(":")[0],
+        config.PROXY_SERVER!.split("://").slice(-1)[0].split(":")[0],
       );
     },
     scrapeTimeout,
@@ -253,7 +256,7 @@ describe("Scrape tests", () => {
       );
 
       expect(response.markdown?.trim()).toContain(
-        process.env.PROXY_SERVER!.split("://").slice(-1)[0].split(":")[0],
+        config.PROXY_SERVER!.split("://").slice(-1)[0].split(":")[0],
       );
     },
     scrapeTimeout,
@@ -1508,12 +1511,9 @@ describe("Scrape tests", () => {
                   type: "json",
                   prompt: "Extract company info as JSON",
                   schema: {
-                    prompt: "Extract company info as JSON",
-                    schema: {
-                      type: "object",
-                      properties: {
-                        name: { type: "string" },
-                      },
+                    type: "object",
+                    properties: {
+                      name: { type: "string" },
                     },
                   },
                 },
@@ -1908,6 +1908,40 @@ describe("Attribute formats", () => {
         expect(response.statusCode).toBe(200);
       },
       scrapeTimeout,
+    );
+  });
+
+  describe("UUID validation", () => {
+    it.concurrent(
+      "should reject invalid UUID 'None' for scrape status",
+      async () => {
+        const response = await request(TEST_API_URL)
+          .get("/v2/scrape/None")
+          .set("Authorization", `Bearer ${identity.apiKey}`)
+          .send();
+
+        expect(response.statusCode).toBe(400);
+        expect(response.body.success).toBe(false);
+        expect(response.body.error).toBe(
+          "Invalid job ID format. Job ID must be a valid UUID.",
+        );
+      },
+    );
+
+    it.concurrent(
+      "should reject malformed UUID for scrape status",
+      async () => {
+        const response = await request(TEST_API_URL)
+          .get("/v2/scrape/not-a-valid-uuid")
+          .set("Authorization", `Bearer ${identity.apiKey}`)
+          .send();
+
+        expect(response.statusCode).toBe(400);
+        expect(response.body.success).toBe(false);
+        expect(response.body.error).toBe(
+          "Invalid job ID format. Job ID must be a valid UUID.",
+        );
+      },
     );
   });
 });

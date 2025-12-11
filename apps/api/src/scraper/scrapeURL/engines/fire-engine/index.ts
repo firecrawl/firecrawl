@@ -92,7 +92,9 @@ async function performFireEngineScrape<
             mock,
             undefined,
             production,
-          );
+          ).catch(e => {
+            logger.error("Failed to delete job from Fire Engine", { error: e });
+          });
           throw new Error("Error limit hit. See e.cause.errors for errors.", {
             cause: { errors },
           });
@@ -132,7 +134,11 @@ async function performFireEngineScrape<
               mock,
               undefined,
               production,
-            );
+            ).catch(e => {
+              logger.error("Failed to delete job from Fire Engine", {
+                error: e,
+              });
+            });
             logger.debug("Fire-engine scrape job failed.", {
               error,
               jobId: (scrape as any).jobId,
@@ -148,7 +154,11 @@ async function performFireEngineScrape<
               mock,
               undefined,
               production,
-            );
+            ).catch(e => {
+              logger.error("Failed to delete job from Fire Engine", {
+                error: e,
+              });
+            });
             throw error;
           } else {
             errors.push(error);
@@ -159,9 +169,9 @@ async function performFireEngineScrape<
             Sentry.captureException(error);
           }
         }
-      }
 
-      await new Promise(resolve => setTimeout(resolve, 500));
+        await new Promise(resolve => setTimeout(resolve, 500));
+      }
     } else {
       status = scrape as FireEngineCheckStatusSuccess;
     }
@@ -197,7 +207,9 @@ async function performFireEngineScrape<
       mock,
       undefined,
       production,
-    );
+    ).catch(e => {
+      logger.error("Failed to delete job from Fire Engine", { error: e });
+    });
 
     setSpanAttributes(span, {
       "fire-engine.poll_count": pollCount,
@@ -399,6 +411,7 @@ export async function scrapeURLWithFireEngineChromeCDP(
 
       proxyUsed: response.usedMobileProxy ? "stealth" : "basic",
       youtubeTranscriptContent: response.youtubeTranscriptContent,
+      timezone: response.timezone,
     };
   });
 }
@@ -475,6 +488,7 @@ export async function scrapeURLWithFireEnginePlaywright(
         : {}),
 
       proxyUsed: response.usedMobileProxy ? "stealth" : "basic",
+      timezone: response.timezone,
     };
   });
 }
@@ -540,6 +554,7 @@ export async function scrapeURLWithFireEngineTLSClient(
         ) ?? [])[1] ?? undefined,
 
       proxyUsed: response.usedMobileProxy ? "stealth" : "basic",
+      timezone: response.timezone,
     };
   });
 }

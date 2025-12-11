@@ -345,9 +345,6 @@ def validate_batch_urls(urls: List[str]) -> List[str]:
     if not urls:
         raise ValueError("URLs list cannot be empty")
     
-    if len(urls) > 1000:  # Assuming API limit
-        raise ValueError("Too many URLs (maximum 1000)")
-    
     validated_urls = []
     for url in urls:
         if not url or not isinstance(url, str):

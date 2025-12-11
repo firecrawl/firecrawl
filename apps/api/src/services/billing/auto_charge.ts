@@ -1,5 +1,6 @@
 // Import necessary dependencies and types
 import { AuthCreditUsageChunk } from "../../controllers/v1/types";
+import { config } from "../../config";
 import { clearACUC, clearACUCTeam, getACUC } from "../../controllers/auth";
 import { redlock } from "../redlock";
 import { supabase_rr_service, supabase_service } from "../supabase";
@@ -102,6 +103,35 @@ async function _autoChargeScale(
           updatedChunk &&
           updatedChunk.remaining_credits < autoRechargeThreshold
         ) {
+          const { data: price, error: priceError } = await supabase_service
+            .from("prices")
+            .select("*")
+            .eq("id", chunk.price_associated_auto_recharge_price_id)
+            .single();
+          if (priceError || !price) {
+            logger.error("Error fetching price", {
+              error: priceError,
+              priceId:
+                chunk.price_associated_auto_recharge_price_id === undefined
+                  ? "undefined"
+                  : JSON.stringify(
+                    chunk.price_associated_auto_recharge_price_id,
+                  ),
+            });
+            return {
+              success: false,
+              message: "Error fetching price",
+              remainingCredits:
+                updatedChunk?.remaining_credits ?? chunk.remaining_credits,
+              chunk: updatedChunk ?? chunk,
+            };
+          }
+
+          const invoiceOnly = Boolean(
+            (price.metadata as { invoice?: boolean } | null | undefined)
+              ?.invoice,
+          );
+
           // Check for recharges this month
 
           const currentMonth = new Date();
@@ -127,7 +157,9 @@ async function _autoChargeScale(
                 updatedChunk?.remaining_credits ?? chunk.remaining_credits,
               chunk: updatedChunk ?? chunk,
             };
-          } else if (rechargesThisMonth.length >= 4) {
+          } else if (
+            rechargesThisMonth.length >= (price.exp_pack_max_per_month ?? 4)
+          ) {
             logger.warn("Auto-recharge failed: too many recharges this month");
             return {
               success: false,
@@ -138,30 +170,6 @@ async function _autoChargeScale(
             };
           } else {
             // Actually re-charge
-
-            const { data: price, error: priceError } = await supabase_service
-              .from("prices")
-              .select("*")
-              .eq("id", chunk.price_associated_auto_recharge_price_id)
-              .single();
-            if (priceError || !price) {
-              logger.error("Error fetching price", {
-                error: priceError,
-                priceId:
-                  chunk.price_associated_auto_recharge_price_id === undefined
-                    ? "undefined"
-                    : JSON.stringify(
-                        chunk.price_associated_auto_recharge_price_id,
-                      ),
-              });
-              return {
-                success: false,
-                message: "Error fetching price",
-                remainingCredits:
-                  updatedChunk?.remaining_credits ?? chunk.remaining_credits,
-                chunk: updatedChunk ?? chunk,
-              };
-            }
 
             if (!chunk.sub_user_id) {
               logger.error("No sub_user_id found in chunk");
@@ -221,6 +229,7 @@ async function _autoChargeScale(
               customer.stripe_customer_id,
               chunk.price_associated_auto_recharge_price_id,
               chunk.sub_id,
+              invoiceOnly,
             );
             if (!subscription) {
               logger.error("Failed to create subscription");
@@ -260,13 +269,13 @@ async function _autoChargeScale(
                 canceled_at: null,
                 current_period_start: subscription.current_period_start
                   ? new Date(
-                      subscription.current_period_start * 1000,
-                    ).toISOString()
+                    subscription.current_period_start * 1000,
+                  ).toISOString()
                   : null,
                 current_period_end: subscription.current_period_end
                   ? new Date(
-                      subscription.current_period_end * 1000,
-                    ).toISOString()
+                    subscription.current_period_end * 1000,
+                  ).toISOString()
                   : null,
                 created: subscription.created
                   ? new Date(subscription.created * 1000).toISOString()
@@ -326,15 +335,17 @@ async function _autoChargeScale(
               chunk.sub_current_period_end,
               chunk,
               true,
+              false,
+              { autoRechargeCredits: price.credits },
             );
 
             logger.info("Scale auto-recharge successful");
 
-            if (process.env.SLACK_ADMIN_WEBHOOK_URL) {
+            if (config.SLACK_ADMIN_WEBHOOK_URL) {
               sendSlackWebhook(
                 `💰 Auto-recharge successful on team ${chunk.team_id} for ${price.credits} credits (total auto-recharges this month: ${rechargesThisMonth.length + 1}).`,
                 false,
-                process.env.SLACK_ADMIN_WEBHOOK_URL,
+                config.SLACK_ADMIN_WEBHOOK_URL,
               ).catch(error => {
                 logger.debug(`Error sending slack notification: ${error}`);
               });
@@ -565,6 +576,8 @@ async function _autoChargeSelfServe(
                   chunk.sub_current_period_end,
                   chunk,
                   true,
+                  false,
+                  { autoRechargeCredits: AUTO_RECHARGE_CREDITS },
                 );
 
                 // Reset ACUC cache to reflect the new credit balance
@@ -576,7 +589,7 @@ async function _autoChargeSelfServe(
                   paymentStatus: paymentStatus.return_status,
                 });
 
-                if (process.env.SLACK_ADMIN_WEBHOOK_URL) {
+                if (config.SLACK_ADMIN_WEBHOOK_URL) {
                   const webhookCooldownKey = `webhook_cooldown_${chunk.team_id}`;
                   const isInCooldown = await getValue(webhookCooldownKey);
 
@@ -584,7 +597,7 @@ async function _autoChargeSelfServe(
                     sendSlackWebhook(
                       `Auto-recharge: Team ${chunk.team_id}. ${AUTO_RECHARGE_CREDITS} credits added. Payment status: ${paymentStatus.return_status}.`,
                       false,
-                      process.env.SLACK_ADMIN_WEBHOOK_URL,
+                      config.SLACK_ADMIN_WEBHOOK_URL,
                     ).catch(error => {
                       logger.debug(
                         `Error sending slack notification: ${error}`,

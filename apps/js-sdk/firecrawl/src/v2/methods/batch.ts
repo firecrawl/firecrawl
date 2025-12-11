@@ -62,6 +62,7 @@ export async function getBatchScrapeStatus(
     const auto = pagination?.autoPaginate ?? true;
     if (!auto || !body.next) {
       return {
+        id: jobId,
         status: body.status,
         completed: body.completed ?? 0,
         total: body.total ?? 0,
@@ -74,6 +75,7 @@ export async function getBatchScrapeStatus(
 
     const aggregated = await fetchAllPages(http, body.next, initialDocs, pagination);
     return {
+      id: jobId,
       status: body.status,
       completed: body.completed ?? 0,
       total: body.total ?? 0,

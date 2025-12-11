@@ -1,4 +1,5 @@
 import { ScrapeActionContent } from "../../../lib/entities";
+import { config } from "../../../config";
 import { Meta } from "..";
 import { documentMaxReasonableTime, scrapeDocument } from "./document";
 import {
@@ -14,7 +15,7 @@ import {
   scrapeURLWithPlaywright,
 } from "./playwright";
 import { indexMaxReasonableTime, scrapeURLWithIndex } from "./index/index";
-import { useIndex } from "../../../services";
+import { queryEngpickerVerdict, useIndex } from "../../../services";
 import { hasFormatOfType } from "../../../lib/format-utils";
 import { getPDFMaxPages } from "../../../controllers/v2/types";
 import { PdfMetadata } from "@mendable/firecrawl-rs";
@@ -37,11 +38,11 @@ export type Engine =
   | "index;documents";
 
 const useFireEngine =
-  process.env.FIRE_ENGINE_BETA_URL !== "" &&
-  process.env.FIRE_ENGINE_BETA_URL !== undefined;
+  config.FIRE_ENGINE_BETA_URL !== "" &&
+  config.FIRE_ENGINE_BETA_URL !== undefined;
 const usePlaywright =
-  process.env.PLAYWRIGHT_MICROSERVICE_URL !== "" &&
-  process.env.PLAYWRIGHT_MICROSERVICE_URL !== undefined;
+  config.PLAYWRIGHT_MICROSERVICE_URL !== "" &&
+  config.PLAYWRIGHT_MICROSERVICE_URL !== undefined;
 
 const engines: Engine[] = [
   ...(useIndex ? ["index" as const, "index;documents" as const] : []),
@@ -136,6 +137,7 @@ export type EngineScrapeResult = {
   postprocessorsUsed?: string[];
 
   proxyUsed: "basic" | "stealth";
+  timezone?: string;
 };
 
 const engineHandlers: {
@@ -465,7 +467,7 @@ const engineOptions: {
 export function shouldUseIndex(meta: Meta) {
   return (
     useIndex &&
-    process.env.FIRECRAWL_INDEX_WRITE_ONLY !== "true" &&
+    config.FIRECRAWL_INDEX_WRITE_ONLY !== true &&
     !hasFormatOfType(meta.options.formats, "changeTracking") &&
     !hasFormatOfType(meta.options.formats, "branding") &&
     // Skip index if a non-default PDF maxPages is specified
@@ -478,10 +480,18 @@ export function shouldUseIndex(meta: Meta) {
   );
 }
 
-export function buildFallbackList(meta: Meta): {
-  engine: Engine;
-  unsupportedFeatures: Set<FeatureFlag>;
-}[] {
+export async function buildFallbackList(meta: Meta): Promise<
+  {
+    engine: Engine;
+    unsupportedFeatures: Set<FeatureFlag>;
+  }[]
+> {
+  const shouldPrioritizeTlsClient = meta.options.__experimental_engpicker
+    ? (await queryEngpickerVerdict(
+        meta.options.__experimental_omceDomain ?? new URL(meta.url).hostname,
+      )) === "TlsClientOk"
+    : false;
+
   const _engines: Engine[] = [
     ...engines,
 
@@ -562,10 +572,24 @@ export function buildFallbackList(meta: Meta): {
 
   if (meta.internalOptions.forceEngine === undefined) {
     // retain force engine order
+    // THIS SUCKS BUT IT WORKS
+    const getEffectiveQuality = (engine: Engine) => {
+      let quality = engineOptions[engine].quality;
+      // When engpicker says TlsClientOk, prioritize tlsclient over CDP/CDPRetry
+      if (shouldPrioritizeTlsClient) {
+        if (engine === "fire-engine;tlsclient") {
+          quality += 50; // Boost to 60, above CDP (50) but below index (1000)
+        } else if (engine === "fire-engine;tlsclient;stealth") {
+          quality += 14; // Boost to -1, stays negative but above chrome-cdp;stealth (-2)
+        }
+      }
+      return quality;
+    };
+
     selectedEngines.sort(
       (a, b) =>
         b.supportScore - a.supportScore ||
-        engineOptions[b.engine].quality - engineOptions[a.engine].quality,
+        getEffectiveQuality(b.engine) - getEffectiveQuality(a.engine),
     );
   }
 
@@ -596,9 +620,16 @@ export async function scrapeURLWithEngine(
     method: fn.name ?? "scrapeURLWithEngine",
     engine,
   });
+
+  const featureFlags = new Set(meta.featureFlags);
+  if (engineOptions[engine].features.stealthProxy) {
+    featureFlags.add("stealthProxy");
+  }
+
   const _meta = {
     ...meta,
     logger,
+    featureFlags,
   };
 
   return await fn(_meta);

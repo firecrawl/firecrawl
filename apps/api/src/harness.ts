@@ -1,9 +1,8 @@
-import "dotenv/config";
+import { config } from "./config";
 import { type ChildProcess, spawn } from "child_process";
 import * as net from "net";
 import { basename, join } from "path";
 import { HTML_TO_MARKDOWN_PATH } from "./natives";
-import { createWriteStream } from "fs";
 
 const childProcesses = new Set<ChildProcess>();
 const stopping = new WeakSet<ChildProcess>(); // processes we're intentionally stopping
@@ -88,16 +87,25 @@ function formatDuration(nanoseconds: bigint): string {
   return `${minutes}m ${remainingSeconds.toFixed(0)}s`;
 }
 
-const stream = createWriteStream("firecrawl.log");
-
-const PORT = process.env.PORT ?? "3002";
-const WORKER_PORT = process.env.WORKER_PORT ?? "3005";
-const EXTRACT_WORKER_PORT = process.env.EXTRACT_WORKER_PORT ?? "3004";
-const NUQ_WORKER_START_PORT = Number(
-  process.env.NUQ_WORKER_START_PORT ?? "3006",
-);
-const NUQ_WORKER_COUNT = Number(process.env.NUQ_WORKER_COUNT ?? "5");
+const PORT = config.PORT;
+const WORKER_PORT = config.WORKER_PORT;
+const EXTRACT_WORKER_PORT = config.EXTRACT_WORKER_PORT;
+const NUQ_WORKER_START_PORT = config.NUQ_WORKER_START_PORT;
+const NUQ_WORKER_COUNT = config.NUQ_WORKER_COUNT;
 const NUQ_PREFETCH_WORKER_PORT = NUQ_WORKER_START_PORT + NUQ_WORKER_COUNT;
+
+// PostgreSQL credentials (with defaults for backward compatibility)
+const POSTGRES_USER = config.POSTGRES_USER;
+const POSTGRES_PASSWORD = config.POSTGRES_PASSWORD;
+const POSTGRES_DB = config.POSTGRES_DB;
+const POSTGRES_HOST = config.POSTGRES_HOST;
+const POSTGRES_PORT = config.POSTGRES_PORT;
+
+// Shell escape helper to prevent command injection
+function shellEscape(arg: string): string {
+  // Wrap in single quotes and escape any single quotes within
+  return `'${arg.replace(/'/g, "'\\''")}'`;
+}
 
 const logger = {
   section(message: string) {
@@ -144,7 +152,6 @@ const logger = {
       const label = `${color}${colors.bold}${name.padEnd(14)}${colors.reset}`;
       console.log(`${label} ${line}`);
     }
-    stream.write(`${name.padEnd(14)} ${line}\n`);
   },
 };
 
@@ -439,7 +446,7 @@ async function startNuqPostgresContainer(
   logger.info(`Starting PostgreSQL container: ${containerName}`);
   const start = execForward(
     `${runtime}@start`,
-    `${runtime} run -d --name ${containerName} -p 5432:5432 -e POSTGRES_PASSWORD=postgres -e POSTGRES_USER=postgres -e POSTGRES_DB=postgres firecrawl-nuq-postgres:latest`,
+    `${runtime} run -d --name ${containerName} -p 5432:5432 -e POSTGRES_PASSWORD=${shellEscape(POSTGRES_PASSWORD)} -e POSTGRES_USER=${shellEscape(POSTGRES_USER)} -e POSTGRES_DB=${shellEscape(POSTGRES_DB)} firecrawl-nuq-postgres:latest`,
   );
   await start.promise;
   logger.success(`PostgreSQL container started: ${containerName}`);
@@ -460,9 +467,9 @@ async function waitForPostgres(
       const client = new Client({
         host,
         port,
-        user: "postgres",
-        password: "postgres",
-        database: "postgres",
+        user: POSTGRES_USER,
+        password: POSTGRES_PASSWORD,
+        database: POSTGRES_DB,
         connectionTimeoutMillis: 2000,
       });
 
@@ -482,11 +489,30 @@ async function waitForPostgres(
 }
 
 async function setupNuqPostgres(): Promise<Services["nuqPostgres"]> {
-  if (process.env.NUQ_DATABASE_URL) {
+  // If NUQ_DATABASE_URL is already set, respect it (user's explicit choice)
+  if (config.NUQ_DATABASE_URL) {
     logger.info("NUQ_DATABASE_URL is set, skipping container management");
     return undefined;
   }
 
+  // Check if we're running in docker-compose (POSTGRES_HOST is set and not localhost)
+  const isDockerCompose = POSTGRES_HOST !== "localhost";
+
+  if (isDockerCompose) {
+    // Running in docker-compose: construct URL with proper encoding
+    logger.section("Setting up NUQ PostgreSQL connection for docker-compose");
+    const dbUrl = `postgresql://${encodeURIComponent(POSTGRES_USER)}:${encodeURIComponent(POSTGRES_PASSWORD)}@${POSTGRES_HOST}:${POSTGRES_PORT}/${encodeURIComponent(POSTGRES_DB)}`;
+    config.NUQ_DATABASE_URL = dbUrl;
+    config.NUQ_DATABASE_URL_LISTEN = dbUrl;
+    process.env.NUQ_DATABASE_URL = dbUrl;
+    process.env.NUQ_DATABASE_URL_LISTEN = dbUrl;
+    logger.success(
+      "NUQ PostgreSQL connection configured with encoded credentials",
+    );
+    return undefined;
+  }
+
+  // Running locally: manage container
   logger.section("Setting up NUQ PostgreSQL container");
 
   const runtime = await detectContainerRuntime();
@@ -512,8 +538,10 @@ async function setupNuqPostgres(): Promise<Services["nuqPostgres"]> {
   // Wait for PostgreSQL to be ready
   await waitForPostgres("localhost", 5432);
 
-  // Set environment variables for the services
-  const dbUrl = "postgresql://postgres:postgres@localhost:5432/postgres";
+  // Set environment variables for the services with proper encoding
+  const dbUrl = `postgresql://${encodeURIComponent(POSTGRES_USER)}:${encodeURIComponent(POSTGRES_PASSWORD)}@localhost:5432/${encodeURIComponent(POSTGRES_DB)}`;
+  config.NUQ_DATABASE_URL = dbUrl;
+  config.NUQ_DATABASE_URL_LISTEN = dbUrl;
   process.env.NUQ_DATABASE_URL = dbUrl;
   process.env.NUQ_DATABASE_URL_LISTEN = dbUrl;
 
@@ -581,7 +609,7 @@ async function startServices(command?: string[]): Promise<Services> {
   const api = execForward(
     "api",
     process.argv[2] === "--start-docker"
-      ? "node --import ./dist/src/otel.js dist/src/index.js"
+      ? "node dist/src/index.js"
       : "pnpm server:production:nobuild",
     {
       NUQ_REDUCE_NOISE: "true",
@@ -592,24 +620,24 @@ async function startServices(command?: string[]): Promise<Services> {
   const worker = execForward(
     "worker",
     process.argv[2] === "--start-docker"
-      ? "node --import ./dist/src/otel.js dist/src/services/queue-worker.js"
+      ? "node dist/src/services/queue-worker.js"
       : "pnpm worker:production",
     {
       NUQ_REDUCE_NOISE: "true",
       NUQ_POD_NAME: "worker",
-      WORKER_PORT: WORKER_PORT,
+      WORKER_PORT: String(WORKER_PORT),
     },
   );
 
   const extractWorker = execForward(
     "extract-worker",
     process.argv[2] === "--start-docker"
-      ? "node --import ./dist/src/otel.js dist/src/services/extract-worker.js"
+      ? "node dist/src/services/extract-worker.js"
       : "pnpm extract-worker:production",
     {
       NUQ_REDUCE_NOISE: "true",
       NUQ_POD_NAME: "extract-worker",
-      EXTRACT_WORKER_PORT: EXTRACT_WORKER_PORT,
+      EXTRACT_WORKER_PORT: String(EXTRACT_WORKER_PORT),
     },
   );
 
@@ -617,7 +645,7 @@ async function startServices(command?: string[]): Promise<Services> {
     execForward(
       `nuq-worker-${i}`,
       process.argv[2] === "--start-docker"
-        ? "node --import ./dist/src/otel.js dist/src/services/worker/nuq-worker.js"
+        ? "node dist/src/services/worker/nuq-worker.js"
         : "pnpm nuq-worker:production",
       {
         NUQ_WORKER_PORT: String(NUQ_WORKER_START_PORT + i),
@@ -627,11 +655,11 @@ async function startServices(command?: string[]): Promise<Services> {
     ),
   );
 
-  const nuqPrefetchWorker = process.env.NUQ_RABBITMQ_URL
+  const nuqPrefetchWorker = config.NUQ_RABBITMQ_URL
     ? execForward(
         "nuq-prefetch-worker",
         process.argv[2] === "--start-docker"
-          ? "node --import ./dist/src/otel.js dist/src/services/worker/nuq-prefetch-worker.js"
+          ? "node dist/src/services/worker/nuq-prefetch-worker.js"
           : "pnpm nuq-prefetch-worker:production",
         {
           NUQ_PREFETCH_WORKER_PORT: String(NUQ_PREFETCH_WORKER_PORT),
@@ -642,19 +670,18 @@ async function startServices(command?: string[]): Promise<Services> {
       )
     : undefined;
 
-  const indexWorker =
-    process.env.USE_DB_AUTHENTICATION === "true"
-      ? execForward(
-          "index-worker",
-          process.argv[2] === "--start-docker"
-            ? "node --import ./dist/src/otel.js dist/src/services/indexing/index-worker.js"
-            : "pnpm index-worker:production",
-          {
-            NUQ_REDUCE_NOISE: "true",
-            NUQ_POD_NAME: "index-worker",
-          },
-        )
-      : undefined;
+  const indexWorker = config.USE_DB_AUTHENTICATION
+    ? execForward(
+        "index-worker",
+        process.argv[2] === "--start-docker"
+          ? "node dist/src/services/indexing/index-worker.js"
+          : "pnpm index-worker:production",
+        {
+          NUQ_REDUCE_NOISE: "true",
+          NUQ_POD_NAME: "index-worker",
+        },
+      )
+    : undefined;
 
   // tests hammer the API instantly, so we need to ensure it's running before launching tests
   if (

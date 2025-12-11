@@ -13,3 +13,5 @@ dump.rdb
 .env.*
 
 firecrawl.log
+
+test-results/

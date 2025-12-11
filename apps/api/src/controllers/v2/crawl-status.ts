@@ -1,4 +1,5 @@
 import { Response } from "express";
+import { config } from "../../config";
 import {
   CrawlStatusParams,
   CrawlStatusResponse,
@@ -14,8 +15,8 @@ import {
   isCrawlKickoffFinished,
 } from "../../lib/crawl-redis";
 import {
-  supabaseGetJobById,
-  supabaseGetJobsById,
+  supabaseGetScrapeById,
+  supabaseGetScrapesById,
 } from "../../lib/supabase-jobs";
 import { configDotenv } from "dotenv";
 import { logger } from "../../lib/logger";
@@ -44,12 +45,12 @@ export type PseudoJob<T> = {
   failedReason?: string;
 };
 
-export type DBJob = {
-  docs: any;
+type DBScrape = {
+  id: string;
   success: boolean;
-  page_options: any;
-  date_added: any;
-  message: string | null;
+  options: any;
+  created_at: any;
+  error: string | null;
   team_id: string;
 };
 
@@ -57,26 +58,24 @@ export async function getJob(
   id: string,
   _logger = logger,
 ): Promise<PseudoJob<any> | null> {
-  const [nuqJob, dbJob, gcsJob] = await Promise.all([
+  const [nuqJob, dbScrape, gcsJob] = await Promise.all([
     scrapeQueue.getJob(
       id,
       _logger,
     ) as Promise<NuQJob<ScrapeJobSingleUrls> | null>,
-    (process.env.USE_DB_AUTHENTICATION === "true"
-      ? supabaseGetJobById(id)
-      : null) as Promise<DBJob | null>,
-    (process.env.GCS_BUCKET_NAME ? getJobFromGCS(id) : null) as Promise<
-      any | null
-    >,
+    (config.USE_DB_AUTHENTICATION
+      ? supabaseGetScrapeById(id)
+      : null) as Promise<DBScrape | null>,
+    (config.GCS_BUCKET_NAME ? getJobFromGCS(id) : null) as Promise<any | null>,
   ]);
 
-  if (!nuqJob && !dbJob) return null;
+  if (!nuqJob && !dbScrape) return null;
 
   if (nuqJob && nuqJob.data.mode !== "single_urls") {
     return null;
   }
 
-  const data = gcsJob ?? dbJob?.docs ?? nuqJob?.returnvalue;
+  const data = gcsJob ?? nuqJob?.returnvalue;
   if (gcsJob === null && data) {
     _logger.warn("GCS Job not found", {
       jobId: id,
@@ -85,15 +84,19 @@ export async function getJob(
 
   const job: PseudoJob<any> = {
     id,
-    status: dbJob ? (dbJob.success ? "completed" : "failed") : nuqJob!.status,
+    status: dbScrape
+      ? dbScrape.success
+        ? "completed"
+        : "failed"
+      : nuqJob!.status,
     returnvalue: Array.isArray(data) ? data[0] : data,
     data: {
-      scrapeOptions: nuqJob ? nuqJob.data.scrapeOptions : dbJob!.page_options,
+      scrapeOptions: nuqJob ? nuqJob.data.scrapeOptions : dbScrape!.options,
     },
     timestamp: nuqJob
       ? nuqJob.createdAt.valueOf()
-      : new Date(dbJob!.date_added).valueOf(),
-    failedReason: (nuqJob ? nuqJob.failedReason : dbJob!.message) || undefined,
+      : new Date(dbScrape!.created_at).valueOf(),
+    failedReason: (nuqJob ? nuqJob.failedReason : dbScrape!.error) || undefined,
   };
 
   return job;
@@ -103,12 +106,10 @@ export async function getJobs(
   ids: string[],
   _logger = logger,
 ): Promise<PseudoJob<any>[]> {
-  const [nuqJobs, dbJobs, gcsJobs] = await Promise.all([
+  const [nuqJobs, dbScrapes, gcsJobs] = await Promise.all([
     scrapeQueue.getJobs(ids, _logger) as Promise<NuQJob<ScrapeJobSingleUrls>[]>,
-    process.env.USE_DB_AUTHENTICATION === "true"
-      ? supabaseGetJobsById(ids)
-      : [],
-    process.env.GCS_BUCKET_NAME
+    config.USE_DB_AUTHENTICATION ? supabaseGetScrapesById(ids) : [],
+    config.GCS_BUCKET_NAME
       ? (Promise.all(
           ids.map(async x => ({ id: x, job: await getJobFromGCS(x) })),
         ).then(x => x.filter(x => x.job)) as Promise<
@@ -118,15 +119,15 @@ export async function getJobs(
   ]);
 
   const nuqJobMap = new Map<string, NuQJob<any, any>>();
-  const dbJobMap = new Map<string, DBJob>();
+  const dbScrapeMap = new Map<string, DBScrape>();
   const gcsJobMap = new Map<string, any>();
 
   for (const job of nuqJobs) {
     nuqJobMap.set(job.id, job);
   }
 
-  for (const job of dbJobs) {
-    dbJobMap.set(job.job_id, job);
+  for (const scrape of dbScrapes) {
+    dbScrapeMap.set(scrape.id, scrape);
   }
 
   for (const job of gcsJobs) {
@@ -137,12 +138,12 @@ export async function getJobs(
 
   for (const id of ids) {
     const nuqJob = nuqJobMap.get(id);
-    const dbJob = dbJobMap.get(id);
+    const dbScrape = dbScrapeMap.get(id);
     const gcsJob = gcsJobMap.get(id);
 
-    if (!nuqJob && !dbJob) continue;
+    if (!nuqJob && !dbScrape) continue;
 
-    const data = gcsJob ?? dbJob?.docs ?? nuqJob?.returnvalue;
+    const data = gcsJob ?? nuqJob?.returnvalue;
     if (gcsJob === null && data) {
       logger.warn("GCS Job not found", {
         jobId: id,
@@ -151,16 +152,20 @@ export async function getJobs(
 
     const job: PseudoJob<any> = {
       id,
-      status: dbJob ? (dbJob.success ? "completed" : "failed") : nuqJob!.status,
+      status: dbScrape
+        ? dbScrape.success
+          ? "completed"
+          : "failed"
+        : nuqJob!.status,
       returnvalue: Array.isArray(data) ? data[0] : data,
       data: {
-        scrapeOptions: nuqJob ? nuqJob.data.scrapeOptions : dbJob!.page_options,
+        scrapeOptions: nuqJob ? nuqJob.data.scrapeOptions : dbScrape!.options,
       },
       timestamp: nuqJob
         ? nuqJob.createdAt.valueOf()
-        : new Date(dbJob!.date_added).valueOf(),
+        : new Date(dbScrape!.created_at).valueOf(),
       failedReason:
-        (nuqJob ? nuqJob.failedReason : dbJob!.message) || undefined,
+        (nuqJob ? nuqJob.failedReason : dbScrape!.error) || undefined,
     };
 
     jobs.push(job);
@@ -174,7 +179,15 @@ export async function crawlStatusController(
   res: Response<CrawlStatusResponse>,
   isBatch = false,
 ) {
-  const isPreviewTeam = req.auth.team_id?.startsWith("preview");
+  const uuidReg =
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  if (!req.params.jobId || !uuidReg.test(req.params.jobId)) {
+    return res.status(400).json({
+      success: false,
+      error: "Invalid job ID",
+    });
+  }
+
   const start =
     typeof req.query.skip === "string" ? parseInt(req.query.skip, 10) : 0;
   const end =
@@ -202,16 +215,15 @@ export async function crawlStatusController(
     logger.child({ zeroDataRetention }),
   );
 
-  const creditsRpc =
-    process.env.USE_DB_AUTHENTICATION === "true"
-      ? await supabase_service.rpc(
-          "credits_billed_by_crawl_id_1",
-          {
-            i_crawl_id: req.params.jobId,
-          },
-          { get: true },
-        )
-      : null;
+  const creditsRpc = config.USE_DB_AUTHENTICATION
+    ? await supabase_service.rpc(
+        "credits_billed_by_crawl_id_2",
+        {
+          i_crawl_id: req.params.jobId,
+        },
+        { get: true },
+      )
+    : null;
 
   let outputBulkA: {
     status?: "completed" | "scraping" | "cancelled";
@@ -236,7 +248,7 @@ export async function crawlStatusController(
 
   const doneJobs = await scrapeQueue.getCrawlJobsForListing(
     req.params.jobId,
-    end !== undefined ? end - start : 100,
+    end !== undefined ? end - start + 1 : 100,
     start,
     logger.child({ zeroDataRetention }),
   );
@@ -282,7 +294,7 @@ export async function crawlStatusController(
     next:
       (outputBulkA.total ?? 0) > start + iteratedOver ||
       outputBulkA.status !== "completed"
-        ? `${process.env.ENV === "local" ? req.protocol : "https"}://${req.get("host")}/v1/${isBatch ? "batch/scrape" : "crawl"}/${req.params.jobId}?skip=${start + iteratedOver}${req.query.limit ? `&limit=${req.query.limit}` : ""}`
+        ? `${req.protocol}://${req.get("host")}/v1/${isBatch ? "batch/scrape" : "crawl"}/${req.params.jobId}?skip=${start + iteratedOver}${req.query.limit ? `&limit=${req.query.limit}` : ""}`
         : undefined,
   };
 

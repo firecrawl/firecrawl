@@ -1,5 +1,6 @@
 import { Response } from "express";
-import { v4 as uuidv4 } from "uuid";
+import { config } from "../../config";
+import { v7 as uuidv7 } from "uuid";
 import {
   BatchScrapeRequest,
   batchScrapeRequestSchema,
@@ -26,6 +27,7 @@ import { BLOCKLISTED_URL_MESSAGE } from "../../lib/strings";
 import { isUrlBlocked } from "../../scraper/WebScraper/utils/blocklist";
 import { checkPermissions } from "../../lib/permissions";
 import { crawlGroup } from "../../services/worker/nuq";
+import { logRequest } from "../../services/logging/log_job";
 
 export async function batchScrapeController(
   req: RequestWithAuth<{}, BatchScrapeResponse, BatchScrapeRequest>,
@@ -47,9 +49,9 @@ export async function batchScrapeController(
   }
 
   const zeroDataRetention =
-    req.acuc?.flags?.forceZDR || req.body.zeroDataRetention;
+    req.acuc?.flags?.forceZDR || (req.body.zeroDataRetention ?? false);
 
-  const id = req.body.appendToId ?? uuidv4();
+  const id = req.body.appendToId ?? uuidv7();
   const logger = _logger.child({
     crawlId: id,
     batchScrapeId: id,
@@ -110,6 +112,20 @@ export async function batchScrapeController(
     account: req.account,
   });
 
+  if (!req.body.appendToId) {
+    await logRequest({
+      id,
+      kind: "batch_scrape",
+      api_version: "v2",
+      team_id: req.auth.team_id,
+      origin: req.body.origin ?? "api",
+      integration: req.body.integration,
+      target_hint: urls[0] ?? "",
+      zeroDataRetention: zeroDataRetention || false,
+      api_key_id: req.acuc?.api_key_id ?? null,
+    });
+  }
+
   const sc: StoredCrawl = req.body.appendToId
     ? ((await getCrawl(req.body.appendToId)) as StoredCrawl)
     : {
@@ -118,7 +134,7 @@ export async function batchScrapeController(
         internalOptions: {
           disableSmartWaitCache: true,
           teamId: req.auth.team_id,
-          saveScrapeResultToGCS: process.env.GCS_FIRE_ENGINE_BUCKET_NAME
+          saveScrapeResultToGCS: config.GCS_FIRE_ENGINE_BUCKET_NAME
             ? true
             : false,
           zeroDataRetention,
@@ -157,7 +173,7 @@ export async function batchScrapeController(
   delete (scrapeOptions as any).appendToId;
 
   const jobs = urls.map(x => ({
-    jobId: uuidv4(),
+    jobId: uuidv7(),
     data: {
       url: x,
       mode: "single_urls" as const,
@@ -208,7 +224,7 @@ export async function batchScrapeController(
     await sender?.send(WebhookEvent.BATCH_SCRAPE_STARTED, { success: true });
   }
 
-  const protocol = process.env.ENV === "local" ? req.protocol : "https";
+  const protocol = req.protocol;
 
   return res.status(200).json({
     success: true,

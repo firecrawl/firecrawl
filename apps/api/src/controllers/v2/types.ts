@@ -1,7 +1,9 @@
 import { Request, Response } from "express";
+import { config } from "../../config";
 import { z } from "zod";
 import { protocolIncluded, checkUrl } from "../../lib/validateUrl";
 import { countries } from "../../lib/validate-country";
+import { includesFormat } from "../../lib/format-utils";
 import {
   ExtractorOptions,
   PageOptions,
@@ -42,14 +44,10 @@ const BASE_URL_SCHEMA = z.preprocess(
     return x;
   },
   z
-    .string()
     .url()
     .regex(/^https?:\/\//i, "URL uses unsupported protocol")
     .refine(x => {
-      if (
-        process.env.TEST_SUITE_SELF_HOSTED === "true" &&
-        process.env.ALLOW_LOCAL_WEBHOOKS === "true"
-      ) {
+      if (config.TEST_SUITE_SELF_HOSTED && config.ALLOW_LOCAL_WEBHOOKS) {
         if (
           /^https?:\/\/(localhost|127\.0\.0\.1|10\.\d{1,3}\.\d{1,3}\.\d{1,3}|192\.168\.\d{1,3}\.\d{1,3}|172\.(1[6-9]|2\d|3[0-1])\.\d{1,3}\.\d{1,3})(:\d+)?([\/?#]|$)/i.test(
             x as string,
@@ -81,6 +79,17 @@ const CRAWL_URL = BASE_URL_SCHEMA.transform(url => modifyCrawlUrl(url));
 
 const strictMessage =
   "Unrecognized key in body -- please review the v2 API documentation for request body changes";
+
+// Helper function to add strict validation
+// In zod v4, .strict() doesn't accept arguments
+// The custom error message is handled in the error handler (see src/index.ts)
+// We use a type assertion to preserve the input type so optional fields with defaults remain optional
+// The 'as any' is necessary because zod v4's .strict() changes type inference in a way that makes
+// optional fields with defaults appear required, even though they're not at runtime
+function strictWithMessage<T extends z.ZodObject<any>>(schema: T): T {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return schema.strict() as any as T;
+}
 
 function normalizeSchemaForOpenAI(schema: any): any {
   if (!schema || typeof schema !== "object") {
@@ -248,7 +257,7 @@ const actionSchema = z.union([
   z
     .object({
       type: z.literal("wait"),
-      milliseconds: z.number().int().positive().finite().optional(),
+      milliseconds: z.int().positive().finite().optional(),
       selector: z.string().optional(),
     })
     .refine(
@@ -256,23 +265,23 @@ const actionSchema = z.union([
         (data.milliseconds !== undefined || data.selector !== undefined) &&
         !(data.milliseconds !== undefined && data.selector !== undefined),
       {
-        message:
+        error:
           "Either 'milliseconds' or 'selector' must be provided, but not both.",
       },
     ),
   z.object({
     type: z.literal("click"),
     selector: z.string(),
-    all: z.boolean().default(false),
+    all: z.boolean().prefault(false),
   }),
   z.object({
     type: z.literal("screenshot"),
-    fullPage: z.boolean().default(false),
+    fullPage: z.boolean().prefault(false),
     quality: z.number().min(1).max(100).optional(),
     viewport: z
       .object({
-        width: z.number().int().positive().finite().max(7680), // 8K resolution width
-        height: z.number().int().positive().finite().max(4320), // 8K resolution height
+        width: z.int().positive().finite().max(7680), // 8K resolution width
+        height: z.int().positive().finite().max(4320), // 8K resolution height
       })
       .optional(),
   }),
@@ -286,7 +295,7 @@ const actionSchema = z.union([
   }),
   z.object({
     type: z.literal("scroll"),
-    direction: z.enum(["up", "down"]).optional().default("down"),
+    direction: z.enum(["up", "down"]).optional().prefault("down"),
     selector: z.string().optional(),
   }),
   z.object({
@@ -298,8 +307,8 @@ const actionSchema = z.union([
   }),
   z.object({
     type: z.literal("pdf"),
-    landscape: z.boolean().default(false),
-    scale: z.number().default(1),
+    landscape: z.boolean().prefault(false),
+    scale: z.number().prefault(1),
     format: z
       .enum([
         "A0",
@@ -314,7 +323,7 @@ const actionSchema = z.union([
         "Tabloid",
         "Ledger",
       ])
-      .default("Letter"),
+      .prefault("Letter"),
   }),
 ]);
 
@@ -330,37 +339,33 @@ const actionsSchema = z
     },
   );
 
-const jsonFormatWithOptions = z
-  .object({
-    type: z.literal("json"),
-    schema: z
-      .any()
-      .optional()
-      .transform(val => normalizeSchemaForOpenAI(val))
-      .refine(val => validateSchemaForOpenAI(val), {
-        message: OPENAI_SCHEMA_ERROR_MESSAGE,
-      }),
-    prompt: z.string().max(10000).optional(),
-  })
-  .strict();
+const jsonFormatWithOptions = z.strictObject({
+  type: z.literal("json"),
+  schema: z
+    .any()
+    .optional()
+    .transform(val => normalizeSchemaForOpenAI(val))
+    .refine(val => validateSchemaForOpenAI(val), {
+      message: OPENAI_SCHEMA_ERROR_MESSAGE,
+    }),
+  prompt: z.string().max(10000).optional(),
+});
 
 export type JsonFormatWithOptions = z.output<typeof jsonFormatWithOptions>;
 
-const changeTrackingFormatWithOptions = z
-  .object({
-    type: z.literal("changeTracking"),
-    prompt: z.string().optional(),
-    schema: z
-      .any()
-      .optional()
-      .transform(val => normalizeSchemaForOpenAI(val))
-      .refine(val => validateSchemaForOpenAI(val), {
-        message: OPENAI_SCHEMA_ERROR_MESSAGE,
-      }),
-    modes: z.enum(["json", "git-diff"]).array().optional().default([]),
-    tag: z.string().or(z.null()).default(null),
-  })
-  .strict();
+const changeTrackingFormatWithOptions = z.strictObject({
+  type: z.literal("changeTracking"),
+  prompt: z.string().optional(),
+  schema: z
+    .any()
+    .optional()
+    .transform(val => normalizeSchemaForOpenAI(val))
+    .refine(val => validateSchemaForOpenAI(val), {
+      message: OPENAI_SCHEMA_ERROR_MESSAGE,
+    }),
+  modes: z.enum(["json", "git-diff"]).array().optional().prefault([]),
+  tag: z.string().or(z.null()).prefault(null),
+});
 
 type ChangeTrackingFormatWithOptions = z.output<
   typeof changeTrackingFormatWithOptions
@@ -368,35 +373,33 @@ type ChangeTrackingFormatWithOptions = z.output<
 
 const screenshotFormatWithOptions = z.object({
   type: z.literal("screenshot"),
-  fullPage: z.boolean().default(false),
+  fullPage: z.boolean().prefault(false),
   quality: z.number().min(1).max(100).optional(),
   viewport: z
     .object({
-      width: z.number().int().positive().finite().max(7680), // 8K resolution width
-      height: z.number().int().positive().finite().max(4320), // 8K resolution height
+      width: z.int().positive().finite().max(7680), // 8K resolution width
+      height: z.int().positive().finite().max(4320), // 8K resolution height
     })
     .optional(),
 });
 
 type ScreenshotFormatWithOptions = z.output<typeof screenshotFormatWithOptions>;
 
-const attributesFormatWithOptions = z
-  .object({
-    type: z.literal("attributes"),
-    selectors: z
-      .array(
-        z.object({
-          selector: z.string().describe("CSS selector to find elements"),
-          attribute: z
-            .string()
-            .describe(
-              "Attribute name to extract (e.g., 'data-vehicle-name' or 'id')",
-            ),
-        }),
-      )
-      .describe("Extract specific attributes from elements"),
-  })
-  .strict();
+const attributesFormatWithOptions = z.strictObject({
+  type: z.literal("attributes"),
+  selectors: z
+    .array(
+      z.strictObject({
+        selector: z.string().describe("CSS selector to find elements"),
+        attribute: z
+          .string()
+          .describe(
+            "Attribute name to extract (e.g., 'data-vehicle-name' or 'id')",
+          ),
+      }),
+    )
+    .describe("Extract specific attributes from elements"),
+});
 
 type AttributesFormatWithOptions = z.output<typeof attributesFormatWithOptions>;
 
@@ -413,16 +416,14 @@ export type FormatObject =
   | AttributesFormatWithOptions
   | { type: "branding" };
 
-const pdfParserWithOptions = z
-  .object({
-    type: z.literal("pdf"),
-    maxPages: z.number().int().positive().finite().max(10000).optional(),
-  })
-  .strict();
+const pdfParserWithOptions = z.strictObject({
+  type: z.literal("pdf"),
+  maxPages: z.int().positive().finite().max(10000).optional(),
+});
 
 const parsersSchema = z
   .array(z.union([z.literal("pdf"), pdfParserWithOptions]))
-  .default(["pdf"]);
+  .prefault(["pdf"]);
 
 type Parsers = z.infer<typeof parsersSchema>;
 
@@ -480,89 +481,84 @@ const locationSchema = z
   })
   .optional();
 
-const baseScrapeOptions = z
-  .object({
-    formats: z
-      .preprocess(
-        val => {
-          if (!Array.isArray(val)) return val;
-          return val.map(format => {
-            if (typeof format === "string") {
-              return { type: format };
-            }
-            return format;
-          });
-        },
-        z
-          .union([
-            z.object({ type: z.literal("markdown") }),
-            z.object({ type: z.literal("html") }),
-            z.object({ type: z.literal("rawHtml") }),
-            z.object({ type: z.literal("links") }),
-            z.object({ type: z.literal("images") }),
-            z.object({ type: z.literal("summary") }),
-            jsonFormatWithOptions,
-            changeTrackingFormatWithOptions,
-            screenshotFormatWithOptions,
-            attributesFormatWithOptions,
-            z.object({ type: z.literal("branding") }),
-          ])
-          .array()
-          .optional()
-          .default([{ type: "markdown" }]),
-      )
-      .refine(x => {
-        return x.filter(f => f.type === "screenshot").length <= 1;
-      }, "You may only specify one screenshot format")
-      .refine(x => {
-        const hasChangeTracking = x.find(f => f.type === "changeTracking");
-        const hasMarkdown = x.find(f => f.type === "markdown");
-        return !hasChangeTracking || hasMarkdown;
-      }, "The changeTracking format requires the markdown format to be specified as well"),
-    headers: z.record(z.string(), z.string()).optional(),
-    includeTags: z
-      .string()
-      .array()
-      .transform(tags => tags.map(transformIframeSelector))
-      .optional(),
-    excludeTags: z
-      .string()
-      .array()
-      .transform(tags => tags.map(transformIframeSelector))
-      .optional(),
-    onlyMainContent: z.boolean().default(true),
-    timeout: z.number().int().positive().finite().safe().optional(),
-    waitFor: z
-      .number()
-      .int()
-      .nonnegative()
-      .finite()
-      .safe()
-      .max(60000)
-      .default(0),
-    mobile: z.boolean().default(false),
-    parsers: parsersSchema.optional(),
-    actions: actionsSchema.optional(),
+const baseScrapeOptions = z.strictObject({
+  formats: z
+    .preprocess(
+      val => {
+        if (!Array.isArray(val)) return val;
+        return val.map(format => {
+          if (typeof format === "string") {
+            return { type: format };
+          }
+          return format;
+        });
+      },
+      z
+        .union([
+          z.strictObject({ type: z.literal("markdown") }),
+          z.strictObject({ type: z.literal("html") }),
+          z.strictObject({ type: z.literal("rawHtml") }),
+          z.strictObject({ type: z.literal("links") }),
+          z.strictObject({ type: z.literal("images") }),
+          z.strictObject({ type: z.literal("summary") }),
+          jsonFormatWithOptions,
+          changeTrackingFormatWithOptions,
+          screenshotFormatWithOptions,
+          attributesFormatWithOptions,
+          z.strictObject({ type: z.literal("branding") }),
+        ])
+        .array()
+        .optional()
+        .prefault([{ type: "markdown" }]),
+    )
+    .refine(x => {
+      return x.filter(f => f.type === "screenshot").length <= 1;
+    }, "You may only specify one screenshot format")
+    .refine(x => {
+      const hasChangeTracking = x.find(f => f.type === "changeTracking");
+      const hasMarkdown = x.find(f => f.type === "markdown");
+      return !hasChangeTracking || hasMarkdown;
+    }, "The changeTracking format requires the markdown format to be specified as well"),
+  headers: z.record(z.string(), z.string()).optional(),
+  includeTags: z
+    .string()
+    .array()
+    .transform(tags => tags.map(transformIframeSelector))
+    .optional(),
+  excludeTags: z
+    .string()
+    .array()
+    .transform(tags => tags.map(transformIframeSelector))
+    .optional(),
+  onlyMainContent: z.boolean().prefault(true),
+  timeout: z.int().positive().finite().optional(),
+  waitFor: z.int().nonnegative().finite().max(60000).prefault(0),
+  mobile: z.boolean().prefault(false),
+  parsers: parsersSchema.optional(),
+  actions: actionsSchema.optional(),
 
-    location: locationSchema,
+  location: locationSchema,
 
-    skipTlsVerification: z.boolean().optional(),
-    removeBase64Images: z.boolean().default(true),
-    fastMode: z.boolean().default(false),
-    useMock: z.string().optional(),
-    blockAds: z.boolean().default(true),
-    proxy: z.enum(["basic", "stealth", "auto"]).default("auto"),
-    maxAge: z.number().int().gte(0).safe().optional(),
-    storeInCache: z.boolean().default(true),
-    // @deprecated
-    __searchPreviewToken: z.string().optional(),
-    __experimental_omce: z.boolean().default(false).optional(),
-    __experimental_omceDomain: z.string().optional(),
-  })
-  .strict(strictMessage);
+  skipTlsVerification: z.boolean().optional(),
+  removeBase64Images: z.boolean().prefault(true),
+  fastMode: z.boolean().prefault(false),
+  useMock: z.string().optional(),
+  blockAds: z.boolean().prefault(true),
+  proxy: z.enum(["basic", "stealth", "auto"]).prefault("auto"),
+  maxAge: z.int().gte(0).optional(),
+  minAge: z.int().gte(0).optional(),
+  storeInCache: z.boolean().prefault(true),
+  // @deprecated
+  __searchPreviewToken: z.string().optional(),
+  __experimental_omce: z.boolean().prefault(false).optional(),
+  __experimental_omceDomain: z.string().optional(),
+  __experimental_engpicker: z.boolean().prefault(false).optional(),
+});
 
-const waitForRefine = obj => {
-  if (obj.waitFor && obj.timeout) {
+type ScrapeOptionsBase = z.infer<typeof baseScrapeOptions>;
+
+const waitForRefine = (obj?: ScrapeOptionsBase): boolean => {
+  if (obj && obj.waitFor && obj.timeout) {
     if (typeof obj.timeout !== "number" || obj.timeout <= 0) {
       return false;
     }
@@ -574,38 +570,58 @@ const waitForRefineOpts = {
   message: "waitFor must not exceed half of timeout",
   path: ["waitFor"],
 };
-const extractTransform = obj => {
+
+// Base transform function that handles both nullable and non-nullable cases
+// Uses generic type to preserve all fields from extended schemas
+const extractTransformImpl = <T extends ScrapeOptionsBase | undefined>(
+  obj: T,
+): T extends undefined ? undefined : T => {
+  if (!obj) return obj as T extends undefined ? undefined : T;
   // Handle timeout
+  let result = { ...obj };
   if (
     obj.formats.find(x => typeof x === "object" && x.type === "json") &&
     obj.timeout === 30000
   ) {
-    obj = { ...obj, timeout: 60000 };
+    result = { ...result, timeout: 60000 };
   }
 
-  if (
-    obj.formats?.includes("changeTracking") &&
-    (obj.waitFor === undefined || obj.waitFor < 5000)
-  ) {
-    obj = { ...obj, waitFor: 5000 };
+  const changeTracking = obj.formats?.find(
+    x => typeof x === "object" && x.type === "changeTracking",
+  );
+
+  if (changeTracking && (obj.waitFor === undefined || obj.waitFor < 5000)) {
+    result = { ...result, waitFor: 5000 };
   }
 
-  if (obj.formats?.includes("changeTracking") && obj.timeout === 30000) {
-    obj = { ...obj, timeout: 60000 };
+  if (changeTracking && obj.timeout === 30000) {
+    result = { ...result, timeout: 60000 };
   }
 
   if (
     (obj.proxy === "stealth" || obj.proxy === "auto") &&
     obj.timeout === 30000
   ) {
-    obj = { ...obj, timeout: 120000 };
+    result = { ...result, timeout: 120000 };
   }
 
-  return obj;
+  return result as T extends undefined ? undefined : T;
 };
 
-export const scrapeOptions = baseScrapeOptions
-  .strict(strictMessage)
+// Type-safe wrapper for nullable cases (used in optional scrapeOptions)
+const extractTransform = (
+  obj?: ScrapeOptionsBase,
+): ScrapeOptionsBase | undefined => {
+  return extractTransformImpl(obj);
+};
+
+// Type-safe wrapper for non-nullable cases (used in required scrapeOptions schema)
+// This ensures TypeScript knows the output is always ScrapeOptionsBase, not undefined
+const extractTransformRequired = <T extends ScrapeOptionsBase>(obj: T): T => {
+  return extractTransformImpl(obj)! as T;
+};
+
+export const scrapeOptions = strictWithMessage(baseScrapeOptions)
   .refine(
     obj => {
       if (!obj.actions) return true;
@@ -619,7 +635,7 @@ export const scrapeOptions = baseScrapeOptions
     },
   )
   .refine(waitForRefine, waitForRefineOpts)
-  .transform(extractTransform);
+  .transform(extractTransformRequired);
 
 export type BaseScrapeOptions = z.infer<typeof baseScrapeOptions>;
 
@@ -628,7 +644,7 @@ export type ScrapeOptions = BaseScrapeOptions;
 const ajv = new Ajv();
 
 const extractOptions = z
-  .object({
+  .strictObject({
     urls: URL.array()
       .max(10, "Maximum of 10 URLs allowed per request while in beta.")
       .optional(),
@@ -648,42 +664,39 @@ const extractOptions = z
           }
         },
         {
-          message: "Invalid JSON schema.",
+          error: "Invalid JSON schema.",
         },
       )
       .transform(val => normalizeSchemaForOpenAI(val))
       .refine(val => validateSchemaForOpenAI(val), {
         message: OPENAI_SCHEMA_ERROR_MESSAGE,
       }),
-    limit: z.number().int().positive().finite().safe().optional(),
-    ignoreSitemap: z.boolean().default(false),
-    includeSubdomains: z.boolean().default(true),
-    allowExternalLinks: z.boolean().default(false),
-    enableWebSearch: z.boolean().default(false),
-    scrapeOptions: baseScrapeOptions
-      .default({ onlyMainContent: false })
-      .optional(),
-    origin: z.string().optional().default("api"),
+    limit: z.int().positive().finite().optional(),
+    ignoreSitemap: z.boolean().prefault(false),
+    includeSubdomains: z.boolean().prefault(true),
+    allowExternalLinks: z.boolean().prefault(false),
+    enableWebSearch: z.boolean().prefault(false),
+    scrapeOptions: baseScrapeOptions.optional(),
+    origin: z.string().optional().prefault("api"),
     integration: integrationSchema.optional().transform(val => val || null),
-    urlTrace: z.boolean().default(false),
-    timeout: z.number().int().positive().finite().safe().optional(),
+    urlTrace: z.boolean().prefault(false),
+    timeout: z.int().positive().finite().optional(),
     agent: agentOptionsExtract.optional(),
-    __experimental_streamSteps: z.boolean().default(false),
-    __experimental_llmUsage: z.boolean().default(false),
-    __experimental_showSources: z.boolean().default(false),
-    showSources: z.boolean().default(false),
+    __experimental_streamSteps: z.boolean().prefault(false),
+    __experimental_llmUsage: z.boolean().prefault(false),
+    __experimental_showSources: z.boolean().prefault(false),
+    showSources: z.boolean().prefault(false),
     __experimental_cacheKey: z.string().optional(),
     __experimental_cacheMode: z
       .enum(["direct", "save", "load"])
-      .default("direct")
+      .prefault("direct")
       .optional(),
-    __experimental_showCostTracking: z.boolean().default(false),
-    ignoreInvalidURLs: z.boolean().default(true),
+    __experimental_showCostTracking: z.boolean().prefault(false),
+    ignoreInvalidURLs: z.boolean().prefault(true),
     webhook: webhookSchema.optional(),
   })
-  .strict(strictMessage)
   .refine(obj => obj.urls || obj.prompt, {
-    message: "Either 'urls' or 'prompt' must be provided.",
+    error: "Either 'urls' or 'prompt' must be provided.",
   })
   .transform(obj => ({
     ...obj,
@@ -695,79 +708,108 @@ const extractOptions = z
   )
   .transform(x => ({
     ...x,
-    scrapeOptions: x.scrapeOptions
-      ? extractTransform(x.scrapeOptions)
-      : x.scrapeOptions,
+    scrapeOptions: extractTransform(x.scrapeOptions),
   }));
 
 export const extractRequestSchema = extractOptions;
 export type ExtractRequest = z.infer<typeof extractRequestSchema>;
 export type ExtractRequestInput = z.input<typeof extractRequestSchema>;
 
-export const scrapeRequestSchema = baseScrapeOptions
-  .extend({
-    url: URL,
-    origin: z.string().optional().default("api"),
-    integration: integrationSchema.optional().transform(val => val || null),
-    zeroDataRetention: z.boolean().optional(),
-  })
-  .strict(strictMessage)
+const scrapeRequestSchemaBase = baseScrapeOptions.extend({
+  url: URL,
+  origin: z.string().optional().prefault("api"),
+  integration: integrationSchema.optional().transform(val => val || null),
+  zeroDataRetention: z.boolean().optional(),
+});
+
+export const scrapeRequestSchema = strictWithMessage(scrapeRequestSchemaBase)
   .refine(waitForRefine, waitForRefineOpts)
-  .transform(extractTransform);
+  .transform(extractTransformRequired);
 
 export type ScrapeRequest = z.infer<typeof scrapeRequestSchema>;
-export type ScrapeRequestInput = z.input<typeof scrapeRequestSchema>;
+// Use z.input on the base schema before strict() to preserve optional fields with defaults
+// This is needed because zod v4's .strict() changes type inference for optional fields
+// We explicitly make formats optional since it has .prefault() which should make it optional
+export type ScrapeRequestInput = Omit<
+  z.input<typeof baseScrapeOptions>,
+  "formats"
+> & {
+  formats?: z.input<typeof baseScrapeOptions>["formats"];
+} & {
+  url: z.input<typeof URL>;
+  origin?: string;
+  integration?: z.input<typeof integrationSchema> | null;
+  zeroDataRetention?: boolean;
+};
 
-export const batchScrapeRequestSchema = baseScrapeOptions
-  .extend({
-    urls: URL.array().min(1),
-    origin: z.string().optional().default("api"),
-    integration: integrationSchema.optional().transform(val => val || null),
-    webhook: webhookSchema.optional(),
-    appendToId: z.string().uuid().optional(),
-    ignoreInvalidURLs: z.boolean().default(true),
-    maxConcurrency: z.number().positive().int().optional(),
-    zeroDataRetention: z.boolean().optional(),
-  })
-  .strict(strictMessage)
-  .refine(waitForRefine, waitForRefineOpts)
-  .transform(extractTransform);
+const batchScrapeRequestSchemaBase = baseScrapeOptions.extend({
+  urls: URL.array().min(1),
+  origin: z.string().optional().prefault("api"),
+  integration: integrationSchema.optional().transform(val => val || null),
+  webhook: webhookSchema.optional(),
+  appendToId: z.uuid().optional(),
+  ignoreInvalidURLs: z.boolean().prefault(true),
+  maxConcurrency: z.int().positive().optional(),
+  zeroDataRetention: z.boolean().optional(),
+});
 
-export const batchScrapeRequestSchemaNoURLValidation = baseScrapeOptions
-  .extend({
-    urls: z.string().array().min(1),
-    origin: z.string().optional().default("api"),
-    integration: integrationSchema.optional().transform(val => val || null),
-    webhook: webhookSchema.optional(),
-    appendToId: z.string().uuid().optional(),
-    ignoreInvalidURLs: z.boolean().default(true),
-    maxConcurrency: z.number().positive().int().optional(),
-    zeroDataRetention: z.boolean().optional(),
-  })
-  .strict(strictMessage)
+export const batchScrapeRequestSchema = strictWithMessage(
+  batchScrapeRequestSchemaBase,
+)
   .refine(waitForRefine, waitForRefineOpts)
-  .transform(extractTransform);
+  .transform(extractTransformRequired);
+
+const batchScrapeRequestSchemaNoURLValidationBase = baseScrapeOptions.extend({
+  urls: z.string().array().min(1),
+  origin: z.string().optional().prefault("api"),
+  integration: integrationSchema.optional().transform(val => val || null),
+  webhook: webhookSchema.optional(),
+  appendToId: z.uuid().optional(),
+  ignoreInvalidURLs: z.boolean().prefault(true),
+  maxConcurrency: z.int().positive().optional(),
+  zeroDataRetention: z.boolean().optional(),
+});
+
+export const batchScrapeRequestSchemaNoURLValidation = strictWithMessage(
+  batchScrapeRequestSchemaNoURLValidationBase,
+)
+  .refine(waitForRefine, waitForRefineOpts)
+  .transform(extractTransformRequired);
 
 export type BatchScrapeRequest = z.infer<typeof batchScrapeRequestSchema>;
-export type BatchScrapeRequestInput = z.input<typeof batchScrapeRequestSchema>;
+// Use z.input on the base schema before strict() to preserve optional fields with defaults
+// We explicitly make formats optional since it has .prefault() which should make it optional
+export type BatchScrapeRequestInput = Omit<
+  z.input<typeof baseScrapeOptions>,
+  "formats"
+> & {
+  formats?: z.input<typeof baseScrapeOptions>["formats"];
+} & {
+  urls: z.input<typeof URL>[];
+  origin?: string;
+  integration?: z.input<typeof integrationSchema> | null;
+  webhook?: z.input<typeof webhookSchema>;
+  appendToId?: string;
+  ignoreInvalidURLs?: boolean;
+  maxConcurrency?: number;
+  zeroDataRetention?: boolean;
+};
 
-const crawlerOptions = z
-  .object({
-    includePaths: z.string().array().default([]),
-    excludePaths: z.string().array().default([]),
-    maxDiscoveryDepth: z.number().optional(),
-    limit: z.number().default(10000), // default?
-    crawlEntireDomain: z.boolean().optional(),
-    allowExternalLinks: z.boolean().default(false),
-    allowSubdomains: z.boolean().default(false),
-    ignoreRobotsTxt: z.boolean().default(false),
-    sitemap: z.enum(["skip", "include"]).default("include"),
-    deduplicateSimilarURLs: z.boolean().default(true),
-    ignoreQueryParameters: z.boolean().default(false),
-    regexOnFullURL: z.boolean().default(false),
-    delay: z.number().positive().optional(),
-  })
-  .strict(strictMessage);
+export const crawlerOptions = z.strictObject({
+  includePaths: z.string().array().prefault([]),
+  excludePaths: z.string().array().prefault([]),
+  maxDiscoveryDepth: z.number().optional(),
+  limit: z.number().prefault(10000), // default?
+  crawlEntireDomain: z.boolean().optional(),
+  allowExternalLinks: z.boolean().prefault(false),
+  allowSubdomains: z.boolean().prefault(false),
+  ignoreRobotsTxt: z.boolean().prefault(false),
+  sitemap: z.enum(["skip", "include"]).prefault("include"),
+  deduplicateSimilarURLs: z.boolean().prefault(true),
+  ignoreQueryParameters: z.boolean().prefault(false),
+  regexOnFullURL: z.boolean().prefault(false),
+  delay: z.number().positive().optional(),
+});
 
 // export type CrawlerOptions = {
 //   includePaths?: string[];
@@ -781,25 +823,26 @@ const crawlerOptions = z
 
 type CrawlerOptions = z.infer<typeof crawlerOptions>;
 
-export const crawlRequestSchema = crawlerOptions
-  .extend({
-    url: CRAWL_URL,
-    origin: z.string().optional().default("api"),
-    integration: integrationSchema.optional().transform(val => val || null),
-    scrapeOptions: baseScrapeOptions.default({}),
-    webhook: webhookSchema.optional(),
-    limit: z.number().default(10000),
-    maxConcurrency: z.number().positive().int().optional(),
-    zeroDataRetention: z.boolean().optional(),
-    prompt: z.string().max(10000).optional(),
-  })
-  .strict(strictMessage)
+const crawlRequestSchemaBase = crawlerOptions.extend({
+  url: CRAWL_URL,
+  origin: z.string().optional().prefault("api"),
+  integration: integrationSchema.optional().transform(val => val || null),
+  scrapeOptions: baseScrapeOptions.prefault(() => baseScrapeOptions.parse({})),
+  webhook: webhookSchema.optional(),
+  limit: z.number().prefault(10000),
+  maxConcurrency: z.int().positive().optional(),
+  zeroDataRetention: z.boolean().optional(),
+  prompt: z.string().max(10000).optional(),
+});
+
+export const crawlRequestSchema = strictWithMessage(crawlRequestSchemaBase)
   .refine(x => waitForRefine(x.scrapeOptions), waitForRefineOpts)
   .transform(x => {
+    const scrapeOptionsValue = x.scrapeOptions ?? baseScrapeOptions.parse({});
     return {
       ...x,
       url: x.url.url, // Extract the actual URL from the CRAWL_URL result
-      scrapeOptions: extractTransform(x.scrapeOptions),
+      scrapeOptions: extractTransformRequired(scrapeOptionsValue),
     };
   });
 
@@ -820,24 +863,25 @@ export type CrawlRequestInput = z.input<typeof crawlRequestSchema>;
 
 export const MAX_MAP_LIMIT = 100000;
 
-export const mapRequestSchema = crawlerOptions
+const mapRequestSchemaBase = crawlerOptions
   .omit({ sitemap: true, ignoreQueryParameters: true })
   .extend({
     url: URL,
-    origin: z.string().optional().default("api"),
+    origin: z.string().optional().prefault("api"),
     integration: integrationSchema.optional().transform(val => val || null),
-    includeSubdomains: z.boolean().default(true),
-    ignoreQueryParameters: z.boolean().default(true),
+    includeSubdomains: z.boolean().prefault(true),
+    ignoreQueryParameters: z.boolean().prefault(true),
     search: z.string().optional(),
-    sitemap: z.enum(["only", "include", "skip"]).default("include"),
-    limit: z.number().min(1).max(MAX_MAP_LIMIT).default(5000),
+    sitemap: z.enum(["only", "include", "skip"]).prefault("include"),
+    limit: z.number().min(1).max(MAX_MAP_LIMIT).prefault(5000),
     timeout: z.number().positive().finite().optional(),
     useMock: z.string().optional(),
-    filterByPath: z.boolean().default(true),
-    useIndex: z.boolean().default(true),
+    filterByPath: z.boolean().prefault(true),
+    useIndex: z.boolean().prefault(true),
     location: locationSchema,
-  })
-  .strict(strictMessage);
+  });
+
+export const mapRequestSchema = strictWithMessage(mapRequestSchemaBase);
 
 // export type MapRequest = {
 //   url: string;
@@ -940,12 +984,15 @@ export type Document = {
     error?: string;
     numPages?: number;
     contentType?: string;
+    timezone?: string;
     proxyUsed: "basic" | "stealth";
     cacheState?: "hit" | "miss";
     cachedAt?: string;
     creditsUsed?: number;
     postprocessorsUsed?: string[];
     indexId?: string; // ID used to store the document in the index (GCS)
+    concurrencyLimited?: boolean;
+    concurrencyQueueDurationMs?: number;
     // [key: string]: string | string[] | number | { smartScrape: number; other: number; total: number } | undefined;
   };
   serpResults?: {
@@ -1003,6 +1050,7 @@ export interface ExtractResponse {
     [key: string]: string[];
   };
   tokensUsed?: number;
+  creditsUsed?: number;
 }
 
 export type CrawlResponse =
@@ -1301,9 +1349,9 @@ export function fromV1ScrapeOptions(
   // Check json first since when user specifies "json", both "json" and "extract" are present
   // When user specifies "extract", only "extract" is present
   let v1OriginalFormat: "extract" | "json" | undefined;
-  if (v1ScrapeOptions.formats.includes("json")) {
+  if (includesFormat(v1ScrapeOptions.formats as any, "json")) {
     v1OriginalFormat = "json";
-  } else if (v1ScrapeOptions.formats.includes("extract")) {
+  } else if (includesFormat(v1ScrapeOptions.formats as any, "extract")) {
     v1OriginalFormat = "extract";
   }
 
@@ -1337,7 +1385,9 @@ export function fromV1ScrapeOptions(
                 schema: opts.schema,
                 prompt: opts.prompt,
               };
-              return v1ScrapeOptions.formats.includes("extract") ? null : fmt;
+              return includesFormat(v1ScrapeOptions.formats as any, "extract")
+                ? null
+                : fmt;
             }
             return null;
           } else if (x === "changeTracking") {
@@ -1400,60 +1450,40 @@ export function fromV0Combo(
 // These allow fine-grained control over each search source type
 // Similar to how scrape formats work with jsonFormatWithOptions, etc.
 
-const webSearchSourceOptions = z
-  .object({
-    type: z.literal("web"),
-    tbs: z.string().optional(), // Time-based search (e.g., "qdr:d" for past day)
-    filter: z.string().optional(), // Search filter
-    lang: z.string().optional(), // Language override for this source
-    country: z.string().optional(), // Country override for this source
-    location: z.string().optional(), // Location override for this source
-  })
-  .strict();
+const webSearchSourceOptions = z.strictObject({
+  type: z.literal("web"),
+  tbs: z.string().optional(), // Time-based search (e.g., "qdr:d" for past day)
+  filter: z.string().optional(), // Search filter
+  lang: z.string().optional(), // Language override for this source
+  country: z.string().optional(), // Country override for this source
+  location: z.string().optional(), // Location override for this source
+});
 
-const imagesSearchSourceOptions = z
-  .object({
-    type: z.literal("images"),
-  })
-  .strict();
+const imagesSearchSourceOptions = z.strictObject({
+  type: z.literal("images"),
+});
 
-const newsSearchSourceOptions = z
-  .object({
-    type: z.literal("news"),
-  })
-  .strict();
+const newsSearchSourceOptions = z.strictObject({
+  type: z.literal("news"),
+});
 
 // Category source type definitions
-const githubCategoryOptions = z
-  .object({
-    type: z.literal("github"),
-  })
-  .strict();
+const githubCategoryOptions = z.strictObject({
+  type: z.literal("github"),
+});
 
-const researchCategoryOptions = z
-  .object({
-    type: z.literal("research"),
-  })
-  .strict();
+const researchCategoryOptions = z.strictObject({
+  type: z.literal("research"),
+});
 
-const pdfCategoryOptions = z
-  .object({
-    type: z.literal("pdf"),
-  })
-  .strict();
+const pdfCategoryOptions = z.strictObject({
+  type: z.literal("pdf"),
+});
 
 export const searchRequestSchema = z
-  .object({
+  .strictObject({
     query: z.string(),
-    limit: z
-      .number()
-      .int()
-      .positive()
-      .finite()
-      .safe()
-      .max(100)
-      .optional()
-      .default(5),
+    limit: z.int().positive().finite().max(100).optional().prefault(10),
     tbs: z.string().optional(),
     filter: z.string().optional(),
     sources: z
@@ -1470,7 +1500,7 @@ export const searchRequestSchema = z
         ),
       ])
       .optional()
-      .default(["web"]),
+      .prefault(["web"]),
     categories: z
       .union([
         // Array of strings (simple format)
@@ -1485,14 +1515,15 @@ export const searchRequestSchema = z
         ),
       ])
       .optional(),
-    lang: z.string().optional().default("en"),
+    lang: z.string().optional().prefault("en"),
+    enterprise: z.array(z.enum(["default", "anon", "zdr"])).optional(),
     country: z.string().optional(),
     location: z.string().optional(),
-    origin: z.string().optional().default("api"),
+    origin: z.string().optional().prefault("api"),
     integration: integrationSchema.optional().transform(val => val || null),
-    timeout: z.number().int().positive().finite().safe().default(60000),
-    ignoreInvalidURLs: z.boolean().optional().default(false),
-    asyncScraping: z.boolean().optional().default(false),
+    timeout: z.int().positive().finite().prefault(60000),
+    ignoreInvalidURLs: z.boolean().optional().prefault(false),
+    asyncScraping: z.boolean().optional().prefault(false),
     __searchPreviewToken: z.string().optional(),
     scrapeOptions: baseScrapeOptions
       .extend({
@@ -1509,28 +1540,25 @@ export const searchRequestSchema = z
             },
             z
               .union([
-                z.object({ type: z.literal("markdown") }),
-                z.object({ type: z.literal("html") }),
-                z.object({ type: z.literal("rawHtml") }),
-                z.object({ type: z.literal("links") }),
-                z.object({ type: z.literal("images") }),
-                z.object({ type: z.literal("summary") }),
+                z.strictObject({ type: z.literal("markdown") }),
+                z.strictObject({ type: z.literal("html") }),
+                z.strictObject({ type: z.literal("rawHtml") }),
+                z.strictObject({ type: z.literal("links") }),
+                z.strictObject({ type: z.literal("images") }),
+                z.strictObject({ type: z.literal("summary") }),
                 jsonFormatWithOptions,
                 screenshotFormatWithOptions,
               ])
               .array()
               .optional()
-              .default([]),
+              .prefault([]),
           )
           .refine(x => {
             return x.filter(f => f.type === "screenshot").length <= 1;
           }, "You may only specify one screenshot format"),
       })
-      .default({}),
+      .optional(),
   })
-  .strict(
-    "Unrecognized key in body -- please review the v1 API documentation for request body changes",
-  )
   .refine(x => waitForRefine(x.scrapeOptions), waitForRefineOpts)
   .transform(x => {
     const country =
@@ -1654,15 +1682,15 @@ const generateLLMsTextRequestSchema = z.object({
     .number()
     .min(1)
     .max(5000)
-    .default(10)
+    .prefault(10)
     .describe("Maximum number of URLs to process"),
   showFullText: z
     .boolean()
-    .default(false)
+    .prefault(false)
     .describe("Whether to show the full LLMs-full.txt in the response"),
   cache: z
     .boolean()
-    .default(true)
+    .prefault(true)
     .describe("Whether to use cached content if available"),
   __experimental_stream: z.boolean().optional(),
 });

@@ -6,8 +6,47 @@ export function mergeBrandingResults(
   js: BrandingProfile,
   llm: BrandingEnhancement,
   buttonSnapshots: ButtonSnapshot[],
+  logoCandidates?: Array<{
+    src: string;
+    alt: string;
+    isSvg: boolean;
+    isVisible: boolean;
+    location: "header" | "body";
+    position: { top: number; left: number; width: number; height: number };
+    indicators: {
+      inHeader: boolean;
+      altMatch: boolean;
+      srcMatch: boolean;
+      classMatch: boolean;
+    };
+    source: string;
+  }>,
 ): BrandingProfile {
   const merged: BrandingProfile = { ...js };
+
+  // Use LLM-selected logo if available
+  if (
+    llm.logoSelection &&
+    llm.logoSelection.selectedLogoIndex !== undefined &&
+    llm.logoSelection.selectedLogoIndex >= 0 &&
+    logoCandidates &&
+    logoCandidates.length > 0 &&
+    llm.logoSelection.selectedLogoIndex < logoCandidates.length
+  ) {
+    const selectedLogo = logoCandidates[llm.logoSelection.selectedLogoIndex];
+    if (selectedLogo) {
+      // Initialize images object if it doesn't exist
+      if (!merged.images) {
+        merged.images = {};
+      }
+      merged.images.logo = selectedLogo.src;
+      (merged as any).__llm_logo_reasoning = {
+        selectedIndex: llm.logoSelection.selectedLogoIndex,
+        reasoning: llm.logoSelection.selectedLogoReasoning,
+        confidence: llm.logoSelection.confidence,
+      };
+    }
+  }
 
   if (buttonSnapshots.length > 0) {
     const primaryIdx = llm.buttonClassification.primaryButtonIndex;
@@ -69,6 +108,17 @@ export function mergeBrandingResults(
       background: llm.colorRoles.backgroundColor || merged.colors?.background,
       textPrimary: llm.colorRoles.textPrimary || merged.colors?.textPrimary,
     };
+
+    // Add LLM-selected colors to debug output
+    if ((merged as any).__debug_colors) {
+      (merged as any).__debug_colors.llmSelectedColors = {
+        primary: llm.colorRoles.primaryColor,
+        accent: llm.colorRoles.accentColor,
+        background: llm.colorRoles.backgroundColor,
+        textPrimary: llm.colorRoles.textPrimary,
+        confidence: llm.colorRoles.confidence,
+      };
+    }
   }
 
   if (llm.personality) {

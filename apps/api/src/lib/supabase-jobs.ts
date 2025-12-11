@@ -3,34 +3,20 @@ import { supabase_rr_service, supabase_service } from "../services/supabase";
 import { logger } from "./logger";
 import * as Sentry from "@sentry/node";
 
+// ============================================================================
+// NEW TABLES: scrapes, requests, crawls, etc.
+// ============================================================================
+
 /**
- * Get a single firecrawl_job by ID
- * @param jobId ID of Job
- * @returns {any | null} Job
+ * Get a single scrape by ID from the new scrapes table
+ * @param scrapeId ID of Scrape
+ * @returns Scrape data or null
  */
-export const supabaseGetJobById = async (jobId: string) => {
+export const supabaseGetScrapeById = async (scrapeId: string) => {
   const { data, error } = await supabase_rr_service
-    .from("firecrawl_jobs")
+    .from("scrapes")
     .select("*")
-    .eq("job_id", jobId)
-    .single();
-
-  if (error) {
-    return null;
-  }
-
-  if (!data) {
-    return null;
-  }
-
-  return data;
-};
-
-export const supabaseGetJobByIdDirect = async (jobId: string) => {
-  const { data, error } = await supabase_service
-    .from("firecrawl_jobs")
-    .select("*")
-    .eq("job_id", jobId)
+    .eq("id", scrapeId)
     .single();
 
   if (error) {
@@ -45,18 +31,18 @@ export const supabaseGetJobByIdDirect = async (jobId: string) => {
 };
 
 /**
- * Get multiple firecrawl_jobs by ID. Use this if you're not requesting a lot (50+) of jobs at once.
- * @param jobIds IDs of Jobs
- * @returns {any[]} Jobs
+ * Get multiple scrapes by ID from the new scrapes table
+ * @param scrapeIds IDs of Scrapes
+ * @returns Scrape data array
  */
-export const supabaseGetJobsById = async (jobIds: string[]) => {
+export const supabaseGetScrapesById = async (scrapeIds: string[]) => {
   const { data, error } = await supabase_rr_service
-    .from("firecrawl_jobs")
+    .from("scrapes")
     .select()
-    .in("job_id", jobIds);
+    .in("id", scrapeIds);
 
   if (error) {
-    logger.error(`Error in supabaseGetJobsById: ${error}`);
+    logger.error(`Error in supabaseGetScrapesById: ${error}`);
     Sentry.captureException(error);
     return [];
   }
@@ -69,18 +55,18 @@ export const supabaseGetJobsById = async (jobIds: string[]) => {
 };
 
 /**
- * Get multiple firecrawl_jobs by crawl ID. Use this if you need a lot of jobs at once.
- * @param crawlId ID of crawl
- * @returns {any[]} Jobs
+ * Get multiple scrapes by request ID (crawl/batch scrape ID) from the new scrapes table
+ * @param requestId ID of the parent request (crawl or batch scrape)
+ * @returns Scrape data array
  */
-export const supabaseGetJobsByCrawlId = async (crawlId: string) => {
+export const supabaseGetScrapesByRequestId = async (requestId: string) => {
   const { data, error } = await supabase_rr_service
-    .from("firecrawl_jobs")
+    .from("scrapes")
     .select()
-    .eq("crawl_id", crawlId);
+    .eq("request_id", requestId);
 
   if (error) {
-    logger.error(`Error in supabaseGetJobsByCrawlId: ${error}`);
+    logger.error(`Error in supabaseGetScrapesByRequestId: ${error}`);
     Sentry.captureException(error);
     return [];
   }
@@ -92,20 +78,44 @@ export const supabaseGetJobsByCrawlId = async (crawlId: string) => {
   return data;
 };
 
-export const supabaseGetJobByIdOnlyData = async (
-  jobId: string,
+/**
+ * Get only team_id from a scrape by ID (lightweight query)
+ * @param scrapeId ID of Scrape
+ * @param logger Optional logger for error reporting
+ * @returns Object with team_id or null
+ */
+export const supabaseGetScrapeByIdOnlyData = async (
+  scrapeId: string,
   logger?: Logger,
 ) => {
   const { data, error } = await supabase_rr_service
-    .from("firecrawl_jobs")
+    .from("scrapes")
     .select("team_id")
-    .eq("job_id", jobId)
+    .eq("id", scrapeId)
     .single();
 
   if (error) {
     if (logger) {
-      logger.error("Error in supabaseGetJobByIdOnlyData", { error });
+      logger.error("Error in supabaseGetScrapeByIdOnlyData", { error });
     }
+    return null;
+  }
+
+  if (!data) {
+    return null;
+  }
+
+  return data;
+};
+
+export const supabaseGetExtractByIdDirect = async (extractId: string) => {
+  const { data, error } = await supabase_service
+    .from("extracts")
+    .select("*")
+    .eq("id", extractId)
+    .single();
+
+  if (error) {
     return null;
   }
 

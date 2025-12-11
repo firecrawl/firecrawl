@@ -1,8 +1,9 @@
 import undici from "undici";
+import { config } from "../../config";
 import { createHmac } from "crypto";
 import { logger as _logger, logger } from "../../lib/logger";
 import {
-  getSecureDispatcher,
+  getSecureDispatcherNoCookies,
   isIPPrivate,
 } from "../../scraper/scrapeURL/engines/utils/safeFetch";
 import { WebhookConfig, WebhookEvent, WebhookEventDataMap } from "./types";
@@ -62,17 +63,21 @@ export class WebhookSender {
   }
 
   private shouldSendEvent(event: WebhookEvent): boolean {
-    if (!this.config.events?.length) return true;
+    if (config.DISABLE_WEBHOOK_DELIVERY) {
+      return false;
+    }
+
+    if (!this.config.events?.length) {
+      return true;
+    }
+
     const subType = event.split(".")[1];
     return this.config.events.includes(subType as any);
   }
 
   private async deliver(payload: any, scrapeId?: string): Promise<void> {
     const webhookHost = new URL(this.config.url).hostname;
-    if (
-      isIPPrivate(webhookHost) &&
-      process.env.ALLOW_LOCAL_WEBHOOKS !== "true"
-    ) {
+    if (isIPPrivate(webhookHost) && config.ALLOW_LOCAL_WEBHOOKS !== true) {
       this.logger.warn("Aborting webhook call to private IP address", {
         webhookUrl: this.config.url,
       });
@@ -91,13 +96,23 @@ export class WebhookSender {
       headers["X-Firecrawl-Signature"] = `sha256=${hmac.digest("hex")}`;
     }
 
+    const abortController = new AbortController();
+    const timeoutHandle = setTimeout(
+      () => {
+        if (abortController) {
+          abortController.abort();
+        }
+      },
+      this.context.v0 ? 30000 : 10000,
+    );
+
     try {
       const res = await undici.fetch(this.config.url, {
         method: "POST",
         headers,
         body: payloadString,
-        dispatcher: getSecureDispatcher(),
-        signal: AbortSignal.timeout(this.context.v0 ? 30000 : 10000),
+        dispatcher: getSecureDispatcherNoCookies(),
+        signal: abortController.signal,
       });
 
       if (!res.ok) {
@@ -139,6 +154,8 @@ export class WebhookSender {
       });
 
       throw error;
+    } finally {
+      if (timeoutHandle) clearTimeout(timeoutHandle);
     }
   }
 

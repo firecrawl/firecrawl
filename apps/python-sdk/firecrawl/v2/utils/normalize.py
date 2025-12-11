@@ -48,6 +48,8 @@ def _map_metadata_keys(md: Dict[str, Any]) -> Dict[str, Any]:
         "cacheState": "cache_state",
         "cachedAt": "cached_at",
         "creditsUsed": "credits_used",
+        "concurrencyLimited": "concurrency_limited",
+        "concurrencyQueueDurationMs": "concurrency_queue_duration_ms",
     }
 
     out: Dict[str, Any] = {}
@@ -62,19 +64,7 @@ def _map_metadata_keys(md: Dict[str, Any]) -> Dict[str, Any]:
         except ValueError:
             pass
 
-    # Generic rule: if a value is a list, join with ", " for string-like fields,
-    # except for explicit fields we preserve as lists.
-    preserve_list_fields: List[str] = [
-        "og_locale_alternate",
-    ]
-    for f, val in list(out.items()):
-        if isinstance(val, list) and f not in preserve_list_fields:
-            try:
-                out[f] = ", ".join(str(x) for x in val)
-            except Exception:
-                # Fallback: keep original list if join fails
-                pass
-
+    # Preserve list values for unknown keys; only lightweight coercions above
     return out
 
 
@@ -83,6 +73,7 @@ def normalize_document_input(doc: Dict[str, Any]) -> Dict[str, Any]:
     Normalize a raw Document dict from the API into the Python SDK's expected shape:
     - Convert top-level keys rawHtml->raw_html, changeTracking->change_tracking
     - Convert metadata keys from camelCase to snake_case
+    - Convert branding.colorScheme to branding.color_scheme
     """
     normalized = dict(doc)
 
@@ -95,13 +86,40 @@ def normalize_document_input(doc: Dict[str, Any]) -> Dict[str, Any]:
     md = normalized.get("metadata")
     if isinstance(md, dict):
         mapped = _map_metadata_keys(md)
-        # Construct a concrete DocumentMetadata so downstream has a typed object
+        # Construct a typed DocumentMetadata; extras allowed/preserved
         try:
-            normalized["metadata"] = DocumentMetadata(**mapped)
+            normalized["metadata"] = DocumentMetadata.model_validate(mapped)
         except Exception:
-            # Fallback to mapped dict if model construction fails for any reason
             normalized["metadata"] = mapped
+
+    # Normalize branding top-level camelCase keys
+    branding = normalized.get("branding")
+    if isinstance(branding, dict):
+        if "colorScheme" in branding and "color_scheme" not in branding:
+            branding["color_scheme"] = branding.pop("colorScheme")
 
     return normalized
 
 
+def _map_search_result_keys(result: Dict[str, Any], result_type: str) -> Dict[str, Any]:
+    if result_type == "images":
+        mapping = {
+            "imageUrl": "image_url",
+            "imageWidth": "image_width",
+            "imageHeight": "image_height",
+        }
+    elif result_type == "news":
+        mapping = {
+            "imageUrl": "image_url",
+        }
+    elif result_type == "web":
+        mapping = {}
+    else:
+        mapping = {}
+
+    out: Dict[str, Any] = {}
+    for k, v in result.items():
+        snake = mapping.get(k, k)
+        out[snake] = v
+
+    return out

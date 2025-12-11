@@ -7,16 +7,24 @@ async function extractMetadataRust(
   meta: Meta,
   html: string,
 ): Promise<Partial<Document["metadata"]>> {
-  const fromRust = await _extractMetadata(html);
+  const { favicon: _favicon, ...fromRust } = await _extractMetadata(html);
+
+  let favicon: string | undefined = undefined;
+
+  if (_favicon) {
+    try {
+      favicon = new URL(_favicon, meta.rewrittenUrl ?? meta.url).href;
+    } catch (error) {
+      meta.logger.debug("Failed to resolve favicon URL", {
+        favicon: _favicon,
+        error,
+      });
+    }
+  }
 
   return {
     ...fromRust,
-    ...(fromRust.favicon
-      ? {
-          favicon: new URL(fromRust.favicon, meta.rewrittenUrl ?? meta.url)
-            .href,
-        }
-      : {}),
+    favicon,
     scrapeId: meta.id,
   };
 }

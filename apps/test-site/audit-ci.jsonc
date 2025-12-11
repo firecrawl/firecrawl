@@ -1,4 +1,7 @@
 {
     "$schema": "https://github.com/IBM/audit-ci/raw/main/docs/schema.json",
-    "low": true
+    "low": true,
+    "allowlist": [
+        "GHSA-4fh9-h7wg-q85m|@astrojs/mdx>@astrojs/markdown-remark>remark-rehype>mdast-util-to-hast" // not impacted by this
+    ]
 }

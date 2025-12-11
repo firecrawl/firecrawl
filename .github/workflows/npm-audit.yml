@@ -14,12 +14,65 @@ jobs:
         uses: pnpm/action-setup@v4
         with:
           version: 10
-      - name: Audit NPM Packages
+      
+      - name: Audit API Packages
+        id: audit-api
+        continue-on-error: true
         run: |
           pnpm dlx audit-ci@^7 --directory apps/api --config apps/api/audit-ci.jsonc
+
+      - name: Audit Playwright Service Packages
+        id: audit-playwright-service
+        continue-on-error: true
+        run: |
           pnpm dlx audit-ci@^7 --directory apps/playwright-service-ts --config apps/playwright-service-ts/audit-ci.jsonc
+
+      - name: Audit JavaScript SDK Packages
+        id: audit-js-sdk
+        continue-on-error: true
+        run: |
           pnpm dlx audit-ci@^7 --directory apps/js-sdk --config apps/js-sdk/audit-ci.jsonc
+
+      - name: Audit JavaScript SDK Firecrawl Packages
+        id: audit-js-sdk-firecrawl
+        continue-on-error: true
+        run: |
           pnpm dlx audit-ci@^7 --directory apps/js-sdk/firecrawl --config apps/js-sdk/firecrawl/audit-ci.jsonc
+
+      - name: Audit Test Suite Packages
+        id: audit-test-suite
+        continue-on-error: true
+        run: |
           pnpm dlx audit-ci@^7 --directory apps/test-suite --config apps/test-suite/audit-ci.jsonc
+
+      - name: Audit Ingestion UI Packages
+        id: audit-ingestion-ui
+        continue-on-error: true
+        run: |
           pnpm dlx audit-ci@^7 --directory apps/ui/ingestion-ui --config apps/ui/ingestion-ui/audit-ci.jsonc
+
+      - name: Audit Test Site Packages
+        id: audit-test-site
+        continue-on-error: true
+        run: |
           pnpm dlx audit-ci@^7 --directory apps/test-site --config apps/test-site/audit-ci.jsonc
+
+      - name: Report audit failures
+        if: always()
+        run: |
+          FAILED_AUDITS=()
+          [ "${{ steps.audit-api.outcome }}" == "failure" ] && FAILED_AUDITS+=("API")
+          [ "${{ steps.audit-playwright-service.outcome }}" == "failure" ] && FAILED_AUDITS+=("Playwright Service")
+          [ "${{ steps.audit-js-sdk.outcome }}" == "failure" ] && FAILED_AUDITS+=("JavaScript SDK")
+          [ "${{ steps.audit-js-sdk-firecrawl.outcome }}" == "failure" ] && FAILED_AUDITS+=("JavaScript SDK Firecrawl")
+          [ "${{ steps.audit-test-suite.outcome }}" == "failure" ] && FAILED_AUDITS+=("Test Suite")
+          [ "${{ steps.audit-ingestion-ui.outcome }}" == "failure" ] && FAILED_AUDITS+=("Ingestion UI")
+          [ "${{ steps.audit-test-site.outcome }}" == "failure" ] && FAILED_AUDITS+=("Test Site")
+          
+          if [ ${#FAILED_AUDITS[@]} -gt 0 ]; then
+            echo "❌ The following audits failed:"
+            printf '  - %s\n' "${FAILED_AUDITS[@]}"
+            exit 1
+          else
+            echo "✅ All audits passed"
+          fi

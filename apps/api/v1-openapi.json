@@ -2505,6 +2505,10 @@
                     "type": "integer",
                     "description": "The status code of the page"
                   },
+                  "timezone": {
+                    "type": "string",
+                    "description": "Timezone inferred by the scraping engine, when available"
+                  },
                   "error": {
                     "type": "string",
                     "nullable": true,
@@ -2704,6 +2708,10 @@
                       "type": "integer",
                       "description": "The status code of the page"
                     },
+                    "timezone": {
+                      "type": "string",
+                      "description": "Timezone inferred by the scraping engine, when available"
+                    },
                     "error": {
                       "type": "string",
                       "nullable": true,
@@ -2836,6 +2844,10 @@
                     "statusCode": {
                       "type": "integer",
                       "description": "The status code of the page"
+                    },
+                    "timezone": {
+                      "type": "string",
+                      "description": "Timezone inferred by the scraping engine, when available"
                     },
                     "error": {
                       "type": "string",

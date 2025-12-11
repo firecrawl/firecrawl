@@ -17,6 +17,8 @@ type ScrapeJobCommon = {
   team_id: string;
   zeroDataRetention: boolean;
   traceContext?: SerializedTraceContext;
+  skipNuq?: boolean;
+  requestId?: string;
 };
 
 export type ScrapeJobData = ScrapeJobCommon &
@@ -99,34 +101,6 @@ export interface RunWebScraperParams {
   is_crawl?: boolean;
   urlInvisibleInCurrentCrawl?: boolean;
   costTracking: CostTracking;
-}
-
-export interface FirecrawlJob {
-  job_id?: string;
-  success: boolean;
-  message?: string;
-  num_docs: number;
-  docs: any[];
-  time_taken: number;
-  team_id: string;
-  mode: string;
-  url: string;
-  crawlerOptions?: any;
-  scrapeOptions?: any;
-  origin: string;
-  integration?: string | null;
-  num_tokens?: number;
-  retry?: boolean;
-  crawl_id?: string;
-  tokens_billed?: number;
-  sources?: Record<string, string[]>;
-  cost_tracking?: CostTracking;
-  pdf_num_pages?: number;
-  credits_billed?: number | null;
-  change_tracking_tag?: string | null;
-  dr_clean_by?: string | null;
-
-  zeroDataRetention: boolean;
 }
 
 export interface FirecrawlScrapeResponse {

@@ -4,13 +4,15 @@ from ...utils.http_client_async import AsyncHttpClient
 from ...utils.validation import prepare_scrape_options
 from ...utils.error_handler import handle_response_error
 from ...utils.normalize import normalize_document_input
+from ...methods.batch import validate_batch_urls
 import time
-
 
 def _prepare(urls: List[str], *, options: Optional[ScrapeOptions] = None, **kwargs) -> Dict[str, Any]:
     if not urls:
         raise ValueError("URLs list cannot be empty")
-    payload: Dict[str, Any] = {"urls": [u.strip() for u in urls]}
+
+    validated_urls = validate_batch_urls([u.strip() if isinstance(u, str) else u for u in urls])
+    payload: Dict[str, Any] = {"urls": validated_urls}
     if options:
         opts = prepare_scrape_options(options)
         if opts:

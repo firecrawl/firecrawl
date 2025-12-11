@@ -1,4 +1,5 @@
 import * as undici from "undici";
+import { config } from "../../config";
 import { JSDOM } from "jsdom";
 import { SearchV2Response, WebSearchResult } from "../../lib/entities";
 import { logger } from "../../lib/logger";
@@ -134,7 +135,12 @@ export async function ddgSearch(
 
     let antiBotRetries = 0;
     while (results.length < num_results && nextPageData) {
-      const timeoutSignal = AbortSignal.timeout(timeout);
+      const abortController = new AbortController();
+      const timeoutHandle = setTimeout(() => {
+        if (abortController) {
+          abortController.abort();
+        }
+      }, timeout);
 
       try {
         let response: undici.Response;
@@ -153,7 +159,7 @@ export async function ddgSearch(
                 "Accept-Encoding": "gzip, deflate, br",
                 "Upgrade-Insecure-Requests": "1",
               },
-              signal: timeoutSignal,
+              signal: abortController.signal,
             },
           );
         } else {
@@ -170,7 +176,7 @@ export async function ddgSearch(
               "Accept-Encoding": "gzip, deflate, br",
               "Upgrade-Insecure-Requests": "1",
             },
-            signal: timeoutSignal,
+            signal: abortController.signal,
           });
         }
 
@@ -204,7 +210,10 @@ export async function ddgSearch(
         } else {
           throw error;
         }
+      } finally {
+        if (timeoutHandle) clearTimeout(timeoutHandle);
       }
+
       await new Promise(r => setTimeout(r, 1000));
     }
 
@@ -216,7 +225,7 @@ export async function ddgSearch(
     return { web: results.slice(0, num_results) };
   } catch (error: any) {
     if (error instanceof DDGAntiBotError) {
-      if (process.env.TEST_SUITE_SELF_HOSTED) {
+      if (config.TEST_SUITE_SELF_HOSTED) {
         logger.warn(
           "DuckDuckGo: Blocked by anti-bot measures, returning dummy page for test suite...",
           { term },

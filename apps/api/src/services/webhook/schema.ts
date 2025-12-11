@@ -5,17 +5,14 @@ const BLACKLISTED_WEBHOOK_HEADERS = ["x-firecrawl-signature"];
 export const webhookSchema = z.preprocess(
   x => (typeof x === "string" ? { url: x } : x),
   z
-    .object({
-      url: z.string().url(),
-      headers: z.record(z.string(), z.string()).default({}),
-      metadata: z.record(z.string(), z.string()).default({}),
+    .strictObject({
+      url: z.url(),
+      headers: z.record(z.string(), z.string()).prefault({}),
+      metadata: z.record(z.string(), z.string()).prefault({}),
       events: z
         .array(z.enum(["completed", "failed", "page", "started"]))
-        .default(["completed", "failed", "page", "started"]),
+        .prefault(["completed", "failed", "page", "started"]),
     })
-    .strict(
-      "Unrecognized key in webhook object. Review the API documentation for webhook configuration changes.",
-    )
     .refine(
       obj => {
         const blacklistedLower = BLACKLISTED_WEBHOOK_HEADERS.map(h =>

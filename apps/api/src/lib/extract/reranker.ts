@@ -100,9 +100,9 @@ export async function rerankLinksWithLLM(
 
       for (let retry = 0; retry <= MAX_RETRIES; retry++) {
         try {
-          const timeoutPromise = new Promise<null>(resolve => {
-            setTimeout(() => resolve(null), TIMEOUT_MS);
-          });
+          // const timeoutPromise = new Promise<null>(resolve => {
+          //   setTimeout(() => resolve(null), TIMEOUT_MS);
+          // });
 
           const systemPrompt = `You are analyzing URLs for ${isMultiEntity ? "collecting multiple items" : "specific information"}.
           The user's query is: ${searchQuery}

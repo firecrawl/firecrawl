@@ -1,6 +1,7 @@
 import { ScrapeJobData } from "../types";
 import { logger as _logger } from "../lib/logger";
 import { robustFetch } from "../scraper/scrapeURL/lib/fetch";
+import { config } from "../config";
 import {
   FireEngineScrapeRequestChromeCDP,
   FireEngineScrapeRequestCommon,
@@ -12,10 +13,9 @@ export function abTestJob(webScraperOptions: ScrapeJobData) {
   // Global A/B test: mirror request to staging /v1/scrape based on SCRAPEURL_AB_RATE
   const abLogger = _logger.child({ method: "ABTestToStaging" });
   try {
-    const abRateEnv = process.env.SCRAPEURL_AB_RATE;
-    const abHostEnv = process.env.SCRAPEURL_AB_HOST;
-    const shouldExtendMaxAge =
-      process.env.SCRAPEURL_AB_EXTEND_MAXAGE === "true";
+    const abRateEnv = config.SCRAPEURL_AB_RATE;
+    const abHostEnv = config.SCRAPEURL_AB_HOST;
+    const shouldExtendMaxAge = config.SCRAPEURL_AB_EXTEND_MAXAGE;
     const abRate =
       abRateEnv !== undefined ? Math.max(0, Math.min(1, Number(abRateEnv))) : 0;
     const shouldABTest =
@@ -28,15 +28,21 @@ export function abTestJob(webScraperOptions: ScrapeJobData) {
       webScraperOptions.internalOptions?.v1Agent === undefined &&
       webScraperOptions.internalOptions?.v1JSONAgent === undefined;
     if (shouldABTest) {
+      let timeout = Math.min(
+        60000,
+        (webScraperOptions.scrapeOptions.timeout ?? 30000) + 10000,
+      );
+
       (async () => {
+        const abortController = new AbortController();
+        const timeoutHandle = setTimeout(() => {
+          if (abortController) {
+            abortController.abort();
+          }
+        }, timeout);
+
         try {
           abLogger.info("A/B-testing scrapeURL to staging");
-          const abort = AbortSignal.timeout(
-            Math.min(
-              60000,
-              (webScraperOptions.scrapeOptions.timeout ?? 30000) + 10000,
-            ),
-          );
           await robustFetch({
             url: `http://${abHostEnv}/v2/scrape`,
             method: "POST",
@@ -50,11 +56,13 @@ export function abTestJob(webScraperOptions: ScrapeJobData) {
             tryCount: 1,
             ignoreResponse: true,
             mock: null,
-            abort,
+            abort: abortController.signal,
           });
           abLogger.info("A/B-testing scrapeURL (staging) request sent");
         } catch (error) {
           abLogger.warn("A/B-testing scrapeURL (staging) failed", { error });
+        } finally {
+          if (timeoutHandle) clearTimeout(timeoutHandle);
         }
       })();
     }
@@ -74,8 +82,8 @@ export function abTestFireEngine(
   // Global A/B test: mirror request to staging fire-engine based on SCRAPEURL_AB_RATE
   const abLogger = _logger.child({ method: "ABTestToStaging" });
   try {
-    const abRateEnv = process.env.FIRE_ENGINE_AB_RATE;
-    const abHostEnv = process.env.FIRE_ENGINE_AB_HOST;
+    const abRateEnv = config.FIRE_ENGINE_AB_RATE;
+    const abHostEnv = config.FIRE_ENGINE_AB_HOST;
     const abRate =
       abRateEnv !== undefined ? Math.max(0, Math.min(1, Number(abRateEnv))) : 0;
     const shouldABTest =
@@ -84,12 +92,18 @@ export function abTestFireEngine(
       Math.random() <= abRate &&
       abHostEnv;
     if (shouldABTest) {
+      let timeout = Math.min(60000, (feRequest.timeout ?? 30000) + 10000);
+
       (async () => {
+        const abortController = new AbortController();
+        const timeoutHandle = setTimeout(() => {
+          if (abortController) {
+            abortController.abort();
+          }
+        }, timeout);
+
         try {
           abLogger.info("A/B-testing scrapeURL to staging");
-          const abort = AbortSignal.timeout(
-            Math.min(60000, (feRequest.timeout ?? 30000) + 10000),
-          );
           await robustFetch({
             url: `http://${abHostEnv}/scrape`,
             method: "POST",
@@ -98,11 +112,13 @@ export function abTestFireEngine(
             tryCount: 1,
             ignoreResponse: true,
             mock: null,
-            abort,
+            abort: abortController.signal,
           });
           abLogger.info("A/B-testing scrapeURL (staging) request sent");
         } catch (error) {
           abLogger.warn("A/B-testing scrapeURL (staging) failed", { error });
+        } finally {
+          if (timeoutHandle) clearTimeout(timeoutHandle);
         }
       })();
     }

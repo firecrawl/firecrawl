@@ -1,4 +1,4 @@
-import dotenv from "dotenv";
+import { config } from "../../config";
 import {
   SearchResult,
   SearchV2Response,
@@ -8,11 +8,9 @@ import * as Sentry from "@sentry/node";
 import { logger } from "../../lib/logger";
 import { executeWithRetry, attemptRequest } from "../../lib/retry-utils";
 
-dotenv.config();
-
 const useFireEngine =
-  process.env.FIRE_ENGINE_BETA_URL !== "" &&
-  process.env.FIRE_ENGINE_BETA_URL !== undefined;
+  config.FIRE_ENGINE_BETA_URL !== "" &&
+  config.FIRE_ENGINE_BETA_URL !== undefined;
 
 function normalizeSearchTypes(
   type?: SearchResultType | SearchResultType[],
@@ -21,11 +19,17 @@ function normalizeSearchTypes(
   return Array.isArray(type) ? type : [type];
 }
 
-function hasCompleteResults(
+/**
+ * Checks if the response has at least one requested type with results.
+ * This allows partial results to be returned when some sources have data
+ * but others don't, instead of requiring all sources to have results.
+ */
+function hasAnyResults(
   response: SearchV2Response,
   requestedTypes: SearchResultType[],
 ): boolean {
-  return requestedTypes.every(type => {
+  if (!response || Object.keys(response).length === 0) return false;
+  return requestedTypes.some(type => {
     const results = response[type];
     return Array.isArray(results) && results.length > 0;
   });
@@ -42,6 +46,7 @@ export async function fire_engine_search_v2(
     numResults: number;
     page?: number;
     type?: SearchResultType | SearchResultType[];
+    enterprise?: ("default" | "anon" | "zdr")[];
   },
   abort?: AbortSignal,
 ): Promise<SearchV2Response> {
@@ -61,16 +66,17 @@ export async function fire_engine_search_v2(
     numResults: options.numResults,
     page: options.page ?? 1,
     type: options.type || "web",
+    enterprise: options.enterprise,
   };
 
   const requestedTypes = normalizeSearchTypes(options.type);
-  const url = `${process.env.FIRE_ENGINE_BETA_URL}/v2/search`;
+  const url = `${config.FIRE_ENGINE_BETA_URL}/v2/search`;
   const data = JSON.stringify(payload);
 
   const result = await executeWithRetry<SearchV2Response>(
     () => attemptRequest<SearchV2Response>(url, data, abort),
     (response): response is SearchV2Response =>
-      response !== null && hasCompleteResults(response, requestedTypes),
+      response !== null && hasAnyResults(response, requestedTypes),
     abort,
   );
 

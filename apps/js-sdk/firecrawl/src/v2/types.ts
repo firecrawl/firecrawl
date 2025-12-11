@@ -11,7 +11,8 @@ export type FormatString =
   | 'summary'
   | 'changeTracking'
   | 'json'
-  | 'attributes';
+  | 'attributes'
+  | 'branding';
 
 export interface Viewport {
   width: number;
@@ -154,6 +155,7 @@ export interface ScrapeOptions {
   blockAds?: boolean;
   proxy?: 'basic' | 'stealth' | 'auto' | string;
   maxAge?: number;
+  minAge?: number;
   storeInCache?: boolean;
   integration?: string;
 }
@@ -163,6 +165,141 @@ export interface WebhookConfig {
   headers?: Record<string, string>;
   metadata?: Record<string, string>;
   events?: Array<'completed' | 'failed' | 'page' | 'started'>;
+}
+
+export interface BrandingProfile {
+  colorScheme?: 'light' | 'dark';
+  logo?: string | null;
+  fonts?: Array<{
+    family: string;
+    [key: string]: unknown;
+  }>;
+  colors?: {
+    primary?: string;
+    secondary?: string;
+    accent?: string;
+    background?: string;
+    textPrimary?: string;
+    textSecondary?: string;
+    link?: string;
+    success?: string;
+    warning?: string;
+    error?: string;
+    [key: string]: string | undefined;
+  };
+  typography?: {
+    fontFamilies?: {
+      primary?: string;
+      heading?: string;
+      code?: string;
+      [key: string]: string | undefined;
+    };
+    fontStacks?: {
+      primary?: string[];
+      heading?: string[];
+      body?: string[];
+      paragraph?: string[];
+      [key: string]: string[] | undefined;
+    };
+    fontSizes?: {
+      h1?: string;
+      h2?: string;
+      h3?: string;
+      body?: string;
+      small?: string;
+      [key: string]: string | undefined;
+    };
+    lineHeights?: {
+      heading?: number;
+      body?: number;
+      [key: string]: number | undefined;
+    };
+    fontWeights?: {
+      light?: number;
+      regular?: number;
+      medium?: number;
+      bold?: number;
+      [key: string]: number | undefined;
+    };
+  };
+  spacing?: {
+    baseUnit?: number;
+    padding?: Record<string, number>;
+    margins?: Record<string, number>;
+    gridGutter?: number;
+    borderRadius?: string;
+    [key: string]: number | string | Record<string, number> | undefined;
+  };
+  components?: {
+    buttonPrimary?: {
+      background?: string;
+      textColor?: string;
+      borderColor?: string;
+      borderRadius?: string;
+      [key: string]: string | undefined;
+    };
+    buttonSecondary?: {
+      background?: string;
+      textColor?: string;
+      borderColor?: string;
+      borderRadius?: string;
+      [key: string]: string | undefined;
+    };
+    input?: {
+      borderColor?: string;
+      focusBorderColor?: string;
+      borderRadius?: string;
+      [key: string]: string | undefined;
+    };
+    [key: string]: unknown;
+  };
+  icons?: {
+    style?: string;
+    primaryColor?: string;
+    [key: string]: string | undefined;
+  };
+  images?: {
+    logo?: string | null;
+    favicon?: string | null;
+    ogImage?: string | null;
+    [key: string]: string | null | undefined;
+  };
+  animations?: {
+    transitionDuration?: string;
+    easing?: string;
+    [key: string]: string | undefined;
+  };
+  layout?: {
+    grid?: {
+      columns?: number;
+      maxWidth?: string;
+      [key: string]: number | string | undefined;
+    };
+    headerHeight?: string;
+    footerHeight?: string;
+    [key: string]:
+      | number
+      | string
+      | Record<string, number | string | undefined>
+      | undefined;
+  };
+  tone?: {
+    voice?: string;
+    emojiUsage?: string;
+    [key: string]: string | undefined;
+  };
+  personality?: {
+    tone:
+      | 'professional'
+      | 'playful'
+      | 'modern'
+      | 'traditional'
+      | 'minimalist'
+      | 'bold';
+    energy: 'low' | 'medium' | 'high';
+    targetAudience: string;
+  };
+  [key: string]: unknown;
 }
 
 export interface DocumentMetadata {
@@ -210,10 +347,13 @@ export interface DocumentMetadata {
   scrapeId?: string;
   numPages?: number;
   contentType?: string;
+  timezone?: string;
   proxyUsed?: 'basic' | 'stealth';
   cacheState?: 'hit' | 'miss';
   cachedAt?: string;
   creditsUsed?: number;
+  concurrencyLimited?: boolean;
+  concurrencyQueueDurationMs?: number;
 
   // Error information
   error?: string;
@@ -239,6 +379,7 @@ export interface Document {
   actions?: Record<string, unknown>;
   warning?: string;
   changeTracking?: Record<string, unknown>;
+  branding?: BrandingProfile;
 }
 
 // Pagination configuration for auto-fetching pages from v2 endpoints that return a `next` URL
@@ -329,6 +470,7 @@ export interface CrawlResponse {
 }
 
 export interface CrawlJob {
+  id: string;
   status: 'scraping' | 'completed' | 'failed' | 'cancelled';
   total: number;
   completed: number;
@@ -356,6 +498,7 @@ export interface BatchScrapeResponse {
 }
 
 export interface BatchScrapeJob {
+  id: string;
   status: 'scraping' | 'completed' | 'failed' | 'cancelled';
   completed: number;
   total: number;
@@ -373,6 +516,7 @@ export interface MapOptions {
   search?: string;
   sitemap?: 'only' | 'include' | 'skip';
   includeSubdomains?: boolean;
+  ignoreQueryParameters?: boolean;
   limit?: number;
   timeout?: number;
   integration?: string;
@@ -388,6 +532,7 @@ export interface ExtractResponse {
   warning?: string;
   sources?: Record<string, unknown>;
   expiresAt?: string;
+  creditsUsed?: number;
 }
 
 export interface AgentOptions {

@@ -8,11 +8,44 @@ export type AbortInstance = {
 export class AbortManager {
   private aborts: AbortInstance[] = [];
   private mappedController: AbortController | null = null;
+  private listeners: Array<{ signal: AbortSignal; handler: () => void }> = [];
 
   constructor(...instances: (AbortInstance | undefined | null)[]) {
     this.aborts = instances.filter(
       x => x !== undefined && x !== null,
     ) as AbortInstance[];
+  }
+
+  dispose() {
+    for (const { signal, handler } of this.listeners) {
+      signal.removeEventListener("abort", handler);
+    }
+
+    this.listeners = [];
+    this.aborts = [];
+    this.mappedController = null;
+  }
+
+  private resolveInner(abort: AbortInstance): any {
+    try {
+      return abort.throwable();
+    } catch (err) {
+      return err;
+    }
+  }
+
+  private register(abort: AbortInstance) {
+    const handler = () => {
+      if (!this.mappedController) return;
+
+      const inner = this.resolveInner(abort);
+      const reason = new AbortManagerThrownError(abort.tier, inner);
+
+      this.mappedController.abort(reason);
+    };
+
+    abort.signal.addEventListener("abort", handler);
+    this.listeners.push({ signal: abort.signal, handler });
   }
 
   add(...instances: (AbortInstance | undefined | null)[]) {
@@ -23,11 +56,7 @@ export class AbortManager {
 
     if (this.mappedController !== null) {
       for (const abort of pureInstances) {
-        abort.signal.addEventListener("abort", () => {
-          this.mappedController?.abort(
-            new AbortManagerThrownError(abort.tier, abort.throwable()),
-          );
-        });
+        this.register(abort);
       }
     }
   }
@@ -49,7 +78,8 @@ export class AbortManager {
   throwIfAborted(): void {
     for (const abort of this.aborts) {
       if (abort.signal.aborted) {
-        throw new AbortManagerThrownError(abort.tier, abort.throwable());
+        const inner = this.resolveInner(abort);
+        throw new AbortManagerThrownError(abort.tier, inner);
       }
     }
   }
@@ -58,11 +88,7 @@ export class AbortManager {
     this.mappedController = new AbortController();
 
     for (const abort of this.aborts) {
-      abort.signal.addEventListener("abort", () => {
-        this.mappedController?.abort(
-          new AbortManagerThrownError(abort.tier, abort.throwable()),
-        );
-      });
+      this.register(abort);
     }
   }
 

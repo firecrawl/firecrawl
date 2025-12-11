@@ -23,7 +23,7 @@ export class HttpClient {
     this.backoffFactor = options.backoffFactor ?? 0.5;
     this.instance = axios.create({
       baseURL: this.apiUrl,
-      timeout: options.timeoutMs ?? 60000,
+      timeout: options.timeoutMs ?? 300000,
       headers: {
         "Content-Type": "application/json",
         Authorization: `Bearer ${this.apiKey}`,

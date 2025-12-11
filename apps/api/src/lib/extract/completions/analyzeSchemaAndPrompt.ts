@@ -48,12 +48,12 @@ export async function analyzeSchemaAndPrompt(
 
   const schemaString = JSON.stringify(schema);
 
-  const model = getModel("gpt-4o", "openai");
+  const model = getModel("gpt-4.1", "openai");
 
   const checkSchema = z
     .object({
       isMultiEntity: z.boolean(),
-      multiEntityKeys: z.array(z.string()).optional().default([]),
+      multiEntityKeys: z.array(z.string()).optional().prefault([]),
       reasoning: z.string(),
       keyIndicators: z.array(z.string()),
     })

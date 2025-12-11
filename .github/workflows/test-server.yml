@@ -10,46 +10,6 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  audit:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v5
-      - name: Install pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: 10
-      - name: Audit NPM Packages
-        run: |
-          pnpm dlx audit-ci@^7 --directory apps/api --config apps/api/audit-ci.jsonc
-          pnpm dlx audit-ci@^7 --directory apps/playwright-service-ts --config apps/playwright-service-ts/audit-ci.jsonc
-          pnpm dlx audit-ci@^7 --directory apps/test-site --config apps/test-site/audit-ci.jsonc
-
-  # Job seems unused, remove once confirmed
-  # build-images:
-  #   name: Build images
-  #   runs-on: big-runner
-  #   needs: audit
-  #   steps:
-  #     - uses: actions/checkout@v5
-  #     - name: Set up Docker Buildx
-  #       uses: docker/setup-buildx-action@v3
-  #     - name: Build API image
-  #       run: |
-  #         docker buildx build \
-  #           -t firecrawl/firecrawl:latest \
-  #           --cache-from type=gha \
-  #           --cache-to type=gha,mode=max \
-  #           --load \
-  #           ./apps/api
-  #     - name: Build Playwright image
-  #       run: |
-  #         docker buildx build \
-  #           -t firecrawl/playwright-service:latest \
-  #           --cache-from type=gha \
-  #           --cache-to type=gha,mode=max \
-  #           --load \
-  #           ./apps/playwright-service-ts
-
   self-host:
     name: Self-hosted environment tests
     strategy:
@@ -66,7 +26,6 @@ jobs:
         # search: ["searxng", "google"]
         # ai: ["openai", "no-ai"]
     runs-on: big-runner
-    needs: audit
     services:
       redis:
         image: redis
@@ -75,7 +34,7 @@ jobs:
     env:
       HOST: 0.0.0.0
       TEST_SUITE_SELF_HOSTED: true
-      TEST_SUITE_WEBSITE: ${{ matrix.proxy == 'no-proxy' && 'http://127.0.0.1:4321' || '' }}
+      TEST_SUITE_WEBSITE: http://127.0.0.1:4321
       OPENAI_API_KEY: ${{ matrix.ai == 'openai' && secrets.OPENAI_API_KEY || '' }}
       SEARXNG_ENDPOINT: ${{ matrix.search == 'searxng' && 'http://localhost:3434' || '' }}
       PLAYWRIGHT_MICROSERVICE_URL: ${{ matrix.engine == 'playwright' && 'http://localhost:3003/scrape' || '' }}
@@ -85,6 +44,7 @@ jobs:
       NUQ_DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
       USE_GO_MARKDOWN_PARSER: true
       ALLOW_LOCAL_WEBHOOKS: true
+      FIRECRAWL_LOG_TO_FILE: true
     steps:
       - uses: actions/checkout@v5
 
@@ -237,12 +197,22 @@ jobs:
         working-directory: apps/api
         env:
           npm_config_ignore_scripts: "true" # required currently to prevent re-building cached native lib
-      
+
+      - name: Publish test report
+        if: always()
+        uses: dorny/test-reporter@v1
+        with:
+          name: Test Report (${{ matrix.engine }}, ${{ matrix.proxy }}, ${{ matrix.search }}, ${{ matrix.ai }})
+          path: apps/api/test-results/junit.xml
+          reporter: jest-junit
+          fail-on-error: true
+
       - name: Copy log files
         if: always()
         run: |
           mkdir -p logs
-          cp ./apps/api/firecrawl.log logs/firecrawl.log
+          cp ./apps/api/firecrawl-app.log logs/firecrawl.log || true
+          cp ./apps/api/firecrawl-worker.log logs/firecrawl-worker.log || true
 
       - name: Copy SearXNG logs
         if: always() && matrix.search == 'searxng'
@@ -268,7 +238,6 @@ jobs:
   # prod-test:
   #   name: Production environment tests
   #   runs-on: big-runner
-  #   needs: audit
   #   services:
   #     redis:
   #       image: redis
@@ -298,7 +267,6 @@ jobs:
   #     FIRE_ENGINE_BETA_URL: ${{ secrets.FIRE_ENGINE_BETA_URL }}
   #     FIRE_ENGINE_STAGING_URL: ${{ secrets.FIRE_ENGINE_STAGING_URL }}
   #     USE_DB_AUTHENTICATION: true
-  #     SERPER_API_KEY: ${{ secrets.SERPER_API_KEY }}
   #     ENV: ${{ secrets.ENV }}
   #     RUNPOD_MU_POD_ID: ${{ secrets.RUNPOD_MU_POD_ID }}
   #     RUNPOD_MUV2_POD_ID: ${{ secrets.RUNPOD_MUV2_POD_ID }}

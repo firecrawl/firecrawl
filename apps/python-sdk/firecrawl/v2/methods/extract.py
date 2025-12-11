@@ -53,6 +53,17 @@ def _prepare_extract_request(
     return body
 
 
+def _normalize_extract_response_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
+    out = dict(payload)
+    if "expiresAt" in out and "expires_at" not in out:
+        out["expires_at"] = out["expiresAt"]
+    if "creditsUsed" in out and "credits_used" not in out:
+        out["credits_used"] = out["creditsUsed"]
+    if "tokensUsed" in out and "tokens_used" not in out:
+        out["tokens_used"] = out["tokensUsed"]
+    return out
+
+
 def start_extract(
     client: HttpClient,
     urls: Optional[List[str]],
@@ -84,14 +95,16 @@ def start_extract(
     resp = client.post("/v2/extract", body)
     if not resp.ok:
         handle_response_error(resp, "extract")
-    return ExtractResponse(**resp.json())
+    payload = _normalize_extract_response_payload(resp.json())
+    return ExtractResponse(**payload)
 
 
 def get_extract_status(client: HttpClient, job_id: str) -> ExtractResponse:
     resp = client.get(f"/v2/extract/{job_id}")
     if not resp.ok:
         handle_response_error(resp, "extract-status")
-    return ExtractResponse(**resp.json())
+    payload = _normalize_extract_response_payload(resp.json())
+    return ExtractResponse(**payload)
 
 
 def wait_extract(

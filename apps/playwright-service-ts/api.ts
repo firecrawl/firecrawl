@@ -13,10 +13,50 @@ const port = process.env.PORT || 3003;
 app.use(bodyParser.json());
 
 const BLOCK_MEDIA = (process.env.BLOCK_MEDIA || 'False').toUpperCase() === 'TRUE';
+const MAX_CONCURRENT_PAGES = Math.max(1, Number.parseInt(process.env.MAX_CONCURRENT_PAGES ?? '10', 10) || 10);
 
 const PROXY_SERVER = process.env.PROXY_SERVER || null;
 const PROXY_USERNAME = process.env.PROXY_USERNAME || null;
 const PROXY_PASSWORD = process.env.PROXY_PASSWORD || null;
+class Semaphore {
+  private permits: number;
+  private queue: (() => void)[] = [];
+
+  constructor(permits: number) {
+    this.permits = permits;
+  }
+
+  async acquire(): Promise<void> {
+    if (this.permits > 0) {
+      this.permits--;
+      return Promise.resolve();
+    }
+
+    return new Promise<void>((resolve) => {
+      this.queue.push(resolve);
+    });
+  }
+
+  release(): void {
+    this.permits++;
+    if (this.queue.length > 0) {
+      const nextResolve = this.queue.shift();
+      if (nextResolve) {
+        this.permits--;
+        nextResolve();
+      }
+    }
+  }
+
+  getAvailablePermits(): number {
+    return this.permits;
+  }
+
+  getQueueLength(): number {
+    return this.queue.length;
+  }
+}
+const pageSemaphore = new Semaphore(MAX_CONCURRENT_PAGES);
 
 const AD_SERVING_DOMAINS = [
   'doubleclick.net',
@@ -165,12 +205,16 @@ app.get('/health', async (req: Request, res: Response) => {
     await testPage.close();
     await testContext.close();
     
-    res.status(200).json({ status: 'healthy' });
+    res.status(200).json({ 
+      status: 'healthy',
+      maxConcurrentPages: MAX_CONCURRENT_PAGES,
+      activePages: MAX_CONCURRENT_PAGES - pageSemaphore.getAvailablePermits()
+    });
   } catch (error) {
     console.error('Health check failed:', error);
     res.status(503).json({ 
       status: 'unhealthy', 
-      error: error instanceof Error ? error.message : 'Unknown error occurred' 
+      error: error instanceof Error ? error.message : 'Unknown error occurred'
     });
   }
 });
@@ -203,48 +247,43 @@ app.post('/scrape', async (req: Request, res: Response) => {
     await initializeBrowser();
   }
 
-  const requestContext = await createContext(skip_tls_verification);
-  const page = await requestContext.newPage();
+  await pageSemaphore.acquire();
+  
+  let requestContext: BrowserContext | null = null;
+  let page: Page | null = null;
 
-  // Set headers if provided
-  if (headers) {
-    await page.setExtraHTTPHeaders(headers);
-  }
-
-  let result: Awaited<ReturnType<typeof scrapePage>>;
   try {
-    // Strategy 1: Normal
-    console.log('Attempting strategy 1: Normal load');
-    result = await scrapePage(page, url, 'load', wait_after_load, timeout, check_selector);
-  } catch (error) {
-    console.log('Strategy 1 failed, attempting strategy 2: Wait until networkidle');
-    try {
-      // Strategy 2: Wait until networkidle
-      result = await scrapePage(page, url, 'networkidle', wait_after_load, timeout, check_selector);
-    } catch (finalError) {
-      await page.close();
-      await requestContext.close();
-      return res.status(500).json({ error: 'An error occurred while fetching the page.' });
+    requestContext = await createContext(skip_tls_verification);
+    page = await requestContext.newPage();
+
+    if (headers) {
+      await page.setExtraHTTPHeaders(headers);
     }
+
+    const result = await scrapePage(page, url, 'load', wait_after_load, timeout, check_selector);
+    const pageError = result.status !== 200 ? getError(result.status) : undefined;
+
+    if (!pageError) {
+      console.log(`✅ Scrape successful!`);
+    } else {
+      console.log(`🚨 Scrape failed with status code: ${result.status} ${pageError}`);
+    }
+
+    res.json({
+      content: result.content,
+      pageStatusCode: result.status,
+      contentType: result.contentType,
+      ...(pageError && { pageError })
+    });
+
+  } catch (error) {
+    console.error('Scrape error:', error);
+    res.status(500).json({ error: 'An error occurred while fetching the page.' });
+  } finally {
+    if (page) await page.close();
+    if (requestContext) await requestContext.close();
+    pageSemaphore.release();
   }
-
-  const pageError = result.status !== 200 ? getError(result.status) : undefined;
-
-  if (!pageError) {
-    console.log(`✅ Scrape successful!`);
-  } else {
-    console.log(`🚨 Scrape failed with status code: ${result.status} ${pageError}`);
-  }
-
-  await page.close();
-  await requestContext.close();
-
-  res.json({
-    content: result.content,
-    pageStatusCode: result.status,
-    contentType: result.contentType,
-    ...(pageError && { pageError })
-  });
 });
 
 app.listen(port, () => {

@@ -1,4 +1,5 @@
 import robotsParser, { Robot } from "robots-parser";
+import { config } from "../config";
 import { Logger } from "winston";
 import { ScrapeOptions, scrapeOptions } from "../controllers/v2/types";
 import { scrapeURL } from "../scraper/scrapeURL";
@@ -6,8 +7,8 @@ import { Engine } from "../scraper/scrapeURL/engines";
 import { CostTracking } from "./cost-tracking";
 
 const useFireEngine =
-  process.env.FIRE_ENGINE_BETA_URL !== "" &&
-  process.env.FIRE_ENGINE_BETA_URL !== undefined;
+  config.FIRE_ENGINE_BETA_URL !== "" &&
+  config.FIRE_ENGINE_BETA_URL !== undefined;
 
 interface RobotsTxtChecker {
   robotsTxtUrl: string;
@@ -84,6 +85,11 @@ export async function fetchRobotsTxt(
   ) {
     content = response.document.rawHtml!;
   } else {
+    if (response.success && response.document.metadata.statusCode === 404) {
+      logger.warn("Robots.txt not found", { robotsTxtUrl }); // should probably index 404 robots.txt
+      return { content: "", url: robotsTxtUrl };
+    }
+
     logger.error(`Request failed for robots.txt fetch`, {
       method: "fetchRobotsTxt",
       robotsTxtUrl,

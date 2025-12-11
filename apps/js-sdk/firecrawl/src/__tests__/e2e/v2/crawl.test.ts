@@ -45,6 +45,9 @@ describe("v2.crawl e2e", () => {
     const status = await client.getCrawlStatus(start.id);
     expect(["scraping", "completed", "failed", "cancelled"]).toContain(status.status);
     expect(status.completed).toBeGreaterThanOrEqual(0);
+    // Verify status includes id field
+    expect(status.id).toBeDefined();
+    expect(status.id).toBe(start.id);
     // next/expiresAt may be null/undefined depending on state; check shape
     expect(Array.isArray(status.data)).toBe(true);
   }, 120_000);
@@ -110,6 +113,20 @@ describe("v2.crawl e2e", () => {
     expect(job.completed).toBeGreaterThanOrEqual(0);
     expect(job.total).toBeGreaterThanOrEqual(0);
     expect(Array.isArray(job.data)).toBe(true);
+  }, 180_000);
+
+  test("crawl with wait returns job id for error retrieval", async () => {
+    if (!client) throw new Error();
+    const job = await client.crawl("https://docs.firecrawl.dev", { limit: 3, maxDiscoveryDepth: 2, pollInterval: 1, timeout: 120 });
+    // Verify job has id field
+    expect(job.id).toBeDefined();
+    expect(typeof job.id).toBe("string");
+    // Verify we can use the id to retrieve errors
+    const errors = await client.getCrawlErrors(job.id!);
+    expect(errors).toHaveProperty("errors");
+    expect(errors).toHaveProperty("robotsBlocked");
+    expect(Array.isArray(errors.errors)).toBe(true);
+    expect(Array.isArray(errors.robotsBlocked)).toBe(true);
   }, 180_000);
 
   test("crawl with prompt and wait", async () => {

@@ -1,6 +1,5 @@
 import { SearchResult } from "../../src/lib/entities";
-import { searchapi_search } from "./searchapi";
-import { serper_search } from "./serper";
+import { config } from "../config";
 import { searxng_search } from "./searxng";
 import { fire_engine_search } from "./fireEngine";
 import { Logger } from "winston";
@@ -34,7 +33,7 @@ export async function search({
   timeout?: number;
 }): Promise<SearchResult[]> {
   try {
-    if (process.env.FIRE_ENGINE_BETA_URL) {
+    if (config.FIRE_ENGINE_BETA_URL) {
       logger.info("Using fire engine search");
       const results = await fire_engine_search(query, {
         numResults: num_results,
@@ -46,31 +45,7 @@ export async function search({
       });
       return results;
     }
-    if (process.env.SERPER_API_KEY) {
-      logger.info("Using serper search");
-      const results = await serper_search(query, {
-        num_results,
-        tbs,
-        filter,
-        lang,
-        country,
-        location,
-      });
-      if (results.length > 0) return results;
-    }
-    if (process.env.SEARCHAPI_API_KEY) {
-      logger.info("Using searchapi search");
-      const results = await searchapi_search(query, {
-        num_results,
-        tbs,
-        filter,
-        lang,
-        country,
-        location,
-      });
-      if (results.length > 0) return results;
-    }
-    if (process.env.SEARXNG_ENDPOINT) {
+    if (config.SEARXNG_ENDPOINT) {
       logger.info("Using searxng search");
       const results = await searxng_search(query, {
         num_results,

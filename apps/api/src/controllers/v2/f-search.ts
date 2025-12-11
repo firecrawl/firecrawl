@@ -11,9 +11,12 @@ import {
 // Validation schemas
 const searchRequestSchema = z.object({
   query: z.string().min(1).max(500),
-  limit: z.number().int().min(1).max(100).optional().default(50),
-  offset: z.number().int().min(0).optional().default(0),
-  mode: z.enum(["hybrid", "keyword", "semantic", "bm25"]).optional().default("hybrid"),
+  limit: z.int().min(1).max(100).optional().prefault(50),
+  offset: z.int().min(0).optional().prefault(0),
+  mode: z
+    .enum(["hybrid", "keyword", "semantic", "bm25"])
+    .optional()
+    .prefault("hybrid"),
   filters: z
     .object({
       domain: z.string().optional(),
@@ -23,18 +26,18 @@ const searchRequestSchema = z.object({
       language: z.string().optional(),
     })
     .optional()
-    .default({}),
+    .prefault({}),
 });
 
 const searchChunksRequestSchema = z.object({
   query: z.string().min(1).max(500),
-  limit: z.number().int().min(1).max(50).optional().default(20),
+  limit: z.int().min(1).max(50).optional().prefault(20),
   filters: z
     .object({
       domain: z.string().optional(),
     })
     .optional()
-    .default({}),
+    .prefault({}),
 });
 
 export async function realtimeSearchController(
@@ -55,7 +58,7 @@ export async function realtimeSearchController(
       res.status(400).json({
         success: false,
         error: "Invalid request parameters",
-        details: validationResult.error.errors,
+        details: validationResult.error.issues,
       });
       return;
     }
@@ -71,7 +74,7 @@ export async function realtimeSearchController(
 
     // Get search index client
     const client = getSearchIndexClient();
-    
+
     if (!client) {
       res.status(503).json({
         success: false,

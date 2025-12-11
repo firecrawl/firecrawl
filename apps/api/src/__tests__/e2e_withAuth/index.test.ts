@@ -1,16 +1,15 @@
 import request from "supertest";
-import dotenv from "dotenv";
+import { config } from "../../config";
 
-dotenv.config();
 const TEST_URL = "http://127.0.0.1:3002";
 
 describe("E2E Tests for v0 API Routes", () => {
   beforeAll(() => {
-    process.env.USE_DB_AUTHENTICATION = "true";
+    config.USE_DB_AUTHENTICATION = true;
   });
 
   afterAll(() => {
-    delete process.env.USE_DB_AUTHENTICATION;
+    delete config.USE_DB_AUTHENTICATION;
   });
 
   describe("GET /is-production", () => {
@@ -44,7 +43,7 @@ describe("E2E Tests for v0 API Routes", () => {
       async () => {
         const response: any = await request(TEST_URL)
           .post("/v0/scrape")
-          .set("Authorization", `Bearer ${process.env.TEST_API_KEY}`)
+          .set("Authorization", `Bearer ${config.TEST_API_KEY}`)
           .set("Content-Type", "application/json")
           .send({ url: "https://roastmywebsite.ai" });
         expect(response.statusCode).toBe(200);
@@ -88,7 +87,7 @@ describe("E2E Tests for v0 API Routes", () => {
       async () => {
         const response: any = await request(TEST_URL)
           .post("/v0/scrape")
-          .set("Authorization", `Bearer ${process.env.TEST_API_KEY}`)
+          .set("Authorization", `Bearer ${config.TEST_API_KEY}`)
           .set("Content-Type", "application/json")
           .send({
             url: "https://roastmywebsite.ai",
@@ -114,7 +113,7 @@ describe("E2E Tests for v0 API Routes", () => {
       async () => {
         const response: any = await request(TEST_URL)
           .post("/v0/scrape")
-          .set("Authorization", `Bearer ${process.env.TEST_API_KEY}`)
+          .set("Authorization", `Bearer ${config.TEST_API_KEY}`)
           .set("Content-Type", "application/json")
           .send({ url: "https://arxiv.org/pdf/astro-ph/9301001.pdf" });
         await new Promise(r => setTimeout(r, 6000));
@@ -137,7 +136,7 @@ describe("E2E Tests for v0 API Routes", () => {
       async () => {
         const response: any = await request(TEST_URL)
           .post("/v0/scrape")
-          .set("Authorization", `Bearer ${process.env.TEST_API_KEY}`)
+          .set("Authorization", `Bearer ${config.TEST_API_KEY}`)
           .set("Content-Type", "application/json")
           .send({ url: "https://arxiv.org/pdf/astro-ph/9301001" });
         await new Promise(r => setTimeout(r, 6000));
@@ -160,7 +159,7 @@ describe("E2E Tests for v0 API Routes", () => {
       async () => {
         const responseWithoutRemoveTags: any = await request(TEST_URL)
           .post("/v0/scrape")
-          .set("Authorization", `Bearer ${process.env.TEST_API_KEY}`)
+          .set("Authorization", `Bearer ${config.TEST_API_KEY}`)
           .set("Content-Type", "application/json")
           .send({ url: "https://www.scrapethissite.com/" });
         expect(responseWithoutRemoveTags.statusCode).toBe(200);
@@ -184,7 +183,7 @@ describe("E2E Tests for v0 API Routes", () => {
 
         const response: any = await request(TEST_URL)
           .post("/v0/scrape")
-          .set("Authorization", `Bearer ${process.env.TEST_API_KEY}`)
+          .set("Authorization", `Bearer ${config.TEST_API_KEY}`)
           .set("Content-Type", "application/json")
           .send({
             url: "https://www.scrapethissite.com/",
@@ -209,7 +208,7 @@ describe("E2E Tests for v0 API Routes", () => {
       async () => {
         const response: any = await request(TEST_URL)
           .post("/v0/scrape")
-          .set("Authorization", `Bearer ${process.env.TEST_API_KEY}`)
+          .set("Authorization", `Bearer ${config.TEST_API_KEY}`)
           .set("Content-Type", "application/json")
           .send({ url: "https://httpstat.us/400" });
         await new Promise(r => setTimeout(r, 5000));
@@ -231,7 +230,7 @@ describe("E2E Tests for v0 API Routes", () => {
       async () => {
         const response: any = await request(TEST_URL)
           .post("/v0/scrape")
-          .set("Authorization", `Bearer ${process.env.TEST_API_KEY}`)
+          .set("Authorization", `Bearer ${config.TEST_API_KEY}`)
           .set("Content-Type", "application/json")
           .send({ url: "https://httpstat.us/401" });
         await new Promise(r => setTimeout(r, 5000));
@@ -253,7 +252,7 @@ describe("E2E Tests for v0 API Routes", () => {
       async () => {
         const response: any = await request(TEST_URL)
           .post("/v0/scrape")
-          .set("Authorization", `Bearer ${process.env.TEST_API_KEY}`)
+          .set("Authorization", `Bearer ${config.TEST_API_KEY}`)
           .set("Content-Type", "application/json")
           .send({ url: "https://httpstat.us/403" });
 
@@ -275,7 +274,7 @@ describe("E2E Tests for v0 API Routes", () => {
       async () => {
         const response: any = await request(TEST_URL)
           .post("/v0/scrape")
-          .set("Authorization", `Bearer ${process.env.TEST_API_KEY}`)
+          .set("Authorization", `Bearer ${config.TEST_API_KEY}`)
           .set("Content-Type", "application/json")
           .send({ url: "https://httpstat.us/404" });
         await new Promise(r => setTimeout(r, 5000));
@@ -294,7 +293,7 @@ describe("E2E Tests for v0 API Routes", () => {
       async () => {
         const response = await request(TEST_URL)
           .post("/v0/scrape")
-          .set("Authorization", `Bearer ${process.env.TEST_API_KEY}`)
+          .set("Authorization", `Bearer ${config.TEST_API_KEY}`)
           .set("Content-Type", "application/json")
           .send({ url: "https://httpstat.us/405" });
         await new Promise(r => setTimeout(r, 5000));
@@ -313,7 +312,7 @@ describe("E2E Tests for v0 API Routes", () => {
       async () => {
         const response: any = await request(TEST_URL)
           .post("/v0/scrape")
-          .set("Authorization", `Bearer ${process.env.TEST_API_KEY}`)
+          .set("Authorization", `Bearer ${config.TEST_API_KEY}`)
           .set("Content-Type", "application/json")
           .send({ url: "https://httpstat.us/500" });
         await new Promise(r => setTimeout(r, 5000));
@@ -351,7 +350,7 @@ describe("E2E Tests for v0 API Routes", () => {
       async () => {
         const response: any = await request(TEST_URL)
           .post("/v0/crawl")
-          .set("Authorization", `Bearer ${process.env.TEST_API_KEY}`)
+          .set("Authorization", `Bearer ${config.TEST_API_KEY}`)
           .set("Content-Type", "application/json")
           .send({ url: "https://firecrawl.dev" });
         expect(response.statusCode).toBe(200);
@@ -367,7 +366,7 @@ describe("E2E Tests for v0 API Routes", () => {
       async () => {
         const crawlResponse: any = await request(TEST_URL)
           .post("/v0/crawl")
-          .set("Authorization", `Bearer ${process.env.TEST_API_KEY}`)
+          .set("Authorization", `Bearer ${config.TEST_API_KEY}`)
           .set("Content-Type", "application/json")
           .send({
             url: "https://mendable.ai",
@@ -383,7 +382,7 @@ describe("E2E Tests for v0 API Routes", () => {
         while (!isFinished) {
           response = await request(TEST_URL)
             .get(`/v0/crawl/status/${crawlResponse.body.jobId}`)
-            .set("Authorization", `Bearer ${process.env.TEST_API_KEY}`);
+            .set("Authorization", `Bearer ${config.TEST_API_KEY}`);
 
           expect(response.statusCode).toBe(200);
           expect(response.body).toHaveProperty("status");
@@ -397,7 +396,7 @@ describe("E2E Tests for v0 API Routes", () => {
         await new Promise(resolve => setTimeout(resolve, 1000)); // wait for data to be saved on the database
         const completedResponse = await request(TEST_URL)
           .get(`/v0/crawl/status/${crawlResponse.body.jobId}`)
-          .set("Authorization", `Bearer ${process.env.TEST_API_KEY}`);
+          .set("Authorization", `Bearer ${config.TEST_API_KEY}`);
 
         const urls = completedResponse.body.data.map(
           (item: any) => item.metadata?.sourceURL,
@@ -430,7 +429,7 @@ describe("E2E Tests for v0 API Routes", () => {
       async () => {
         const crawlResponse: any = await request(TEST_URL)
           .post("/v0/crawl")
-          .set("Authorization", `Bearer ${process.env.TEST_API_KEY}`)
+          .set("Authorization", `Bearer ${config.TEST_API_KEY}`)
           .set("Content-Type", "application/json")
           .send({
             url: "https://mendable.ai",
@@ -446,7 +445,7 @@ describe("E2E Tests for v0 API Routes", () => {
         while (!isFinished) {
           response = await request(TEST_URL)
             .get(`/v0/crawl/status/${crawlResponse.body.jobId}`)
-            .set("Authorization", `Bearer ${process.env.TEST_API_KEY}`);
+            .set("Authorization", `Bearer ${config.TEST_API_KEY}`);
 
           expect(response.statusCode).toBe(200);
           expect(response.body).toHaveProperty("status");
@@ -460,7 +459,7 @@ describe("E2E Tests for v0 API Routes", () => {
         await new Promise(resolve => setTimeout(resolve, 1000)); // wait for data to be saved on the database
         const completedResponse: any = await request(TEST_URL)
           .get(`/v0/crawl/status/${crawlResponse.body.jobId}`)
-          .set("Authorization", `Bearer ${process.env.TEST_API_KEY}`);
+          .set("Authorization", `Bearer ${config.TEST_API_KEY}`);
 
         const urls = completedResponse.body.data.map(
           (item: any) => item.metadata?.sourceURL,
@@ -478,7 +477,7 @@ describe("E2E Tests for v0 API Routes", () => {
       async () => {
         const crawlResponse: any = await request(TEST_URL)
           .post("/v0/crawl")
-          .set("Authorization", `Bearer ${process.env.TEST_API_KEY}`)
+          .set("Authorization", `Bearer ${config.TEST_API_KEY}`)
           .set("Content-Type", "application/json")
           .send({
             url: "https://www.scrapethissite.com",
@@ -488,7 +487,7 @@ describe("E2E Tests for v0 API Routes", () => {
 
         const response: any = await request(TEST_URL)
           .get(`/v0/crawl/status/${crawlResponse.body.jobId}`)
-          .set("Authorization", `Bearer ${process.env.TEST_API_KEY}`);
+          .set("Authorization", `Bearer ${config.TEST_API_KEY}`);
         expect(response.statusCode).toBe(200);
         expect(response.body).toHaveProperty("status");
         expect(["active", "waiting"]).toContain(response.body.status);
@@ -497,7 +496,7 @@ describe("E2E Tests for v0 API Routes", () => {
         while (!isCompleted) {
           const statusCheckResponse = await request(TEST_URL)
             .get(`/v0/crawl/status/${crawlResponse.body.jobId}`)
-            .set("Authorization", `Bearer ${process.env.TEST_API_KEY}`);
+            .set("Authorization", `Bearer ${config.TEST_API_KEY}`);
           expect(statusCheckResponse.statusCode).toBe(200);
           isCompleted = statusCheckResponse.body.status === "completed";
           if (!isCompleted) {
@@ -506,7 +505,7 @@ describe("E2E Tests for v0 API Routes", () => {
         }
         const completedResponse: any = await request(TEST_URL)
           .get(`/v0/crawl/status/${crawlResponse.body.jobId}`)
-          .set("Authorization", `Bearer ${process.env.TEST_API_KEY}`);
+          .set("Authorization", `Bearer ${config.TEST_API_KEY}`);
 
         expect(completedResponse.statusCode).toBe(200);
         expect(completedResponse.body).toHaveProperty("status");
@@ -567,7 +566,7 @@ describe("E2E Tests for v0 API Routes", () => {
       async () => {
         const response: any = await request(TEST_URL)
           .post("/v0/scrape")
-          .set("Authorization", `Bearer ${process.env.TEST_API_KEY}`)
+          .set("Authorization", `Bearer ${config.TEST_API_KEY}`)
           .set("Content-Type", "application/json")
           .send({ url: "https://firecrawl.dev", timeout: 1000 });
 
@@ -600,7 +599,7 @@ describe("E2E Tests for v0 API Routes", () => {
       async () => {
         const response = await request(TEST_URL)
           .post("/v0/search")
-          .set("Authorization", `Bearer ${process.env.TEST_API_KEY}`)
+          .set("Authorization", `Bearer ${config.TEST_API_KEY}`)
           .set("Content-Type", "application/json")
           .send({ query: "test" });
         expect(response.statusCode).toBe(200);
@@ -633,7 +632,7 @@ describe("E2E Tests for v0 API Routes", () => {
       async () => {
         const response = await request(TEST_URL)
           .get("/v0/crawl/status/invalidJobId")
-          .set("Authorization", `Bearer ${process.env.TEST_API_KEY}`);
+          .set("Authorization", `Bearer ${config.TEST_API_KEY}`);
         expect(response.statusCode).toBe(404);
       },
     );
@@ -643,7 +642,7 @@ describe("E2E Tests for v0 API Routes", () => {
       async () => {
         const crawlResponse = await request(TEST_URL)
           .post("/v0/crawl")
-          .set("Authorization", `Bearer ${process.env.TEST_API_KEY}`)
+          .set("Authorization", `Bearer ${config.TEST_API_KEY}`)
           .set("Content-Type", "application/json")
           .send({ url: "https://firecrawl.dev/blog" });
         expect(crawlResponse.statusCode).toBe(200);
@@ -653,7 +652,7 @@ describe("E2E Tests for v0 API Routes", () => {
         while (!isCompleted) {
           const response = await request(TEST_URL)
             .get(`/v0/crawl/status/${crawlResponse.body.jobId}`)
-            .set("Authorization", `Bearer ${process.env.TEST_API_KEY}`);
+            .set("Authorization", `Bearer ${config.TEST_API_KEY}`);
           expect(response.statusCode).toBe(200);
           expect(response.body).toHaveProperty("status");
 
@@ -667,7 +666,7 @@ describe("E2E Tests for v0 API Routes", () => {
         await new Promise(resolve => setTimeout(resolve, 1000)); // wait for data to be saved on the database
         const completedResponse = await request(TEST_URL)
           .get(`/v0/crawl/status/${crawlResponse.body.jobId}`)
-          .set("Authorization", `Bearer ${process.env.TEST_API_KEY}`);
+          .set("Authorization", `Bearer ${config.TEST_API_KEY}`);
 
         expect(completedResponse.body).toHaveProperty("status");
         expect(completedResponse.body.status).toBe("completed");
@@ -699,7 +698,7 @@ describe("E2E Tests for v0 API Routes", () => {
     // it.concurrent('should return a successful response for a valid crawl job with PDF files without explicit .pdf extension ', async () => {
     //   const crawlResponse = await request(TEST_URL)
     //     .post('/v0/crawl')
-    //     .set('Authorization', `Bearer ${process.env.TEST_API_KEY}`)
+    //     .set('Authorization', `Bearer ${config.TEST_API_KEY}`)
     //     .set('Content-Type', 'application/json')
     //     .send({ url: 'https://arxiv.org/list/astro-ph/1993-01',
     //       crawlerOptions: {
@@ -714,7 +713,7 @@ describe("E2E Tests for v0 API Routes", () => {
     //   while (!isCompleted) {
     //     const response = await request(TEST_URL)
     //       .get(`/v0/crawl/status/${crawlResponse.body.jobId}`)
-    //       .set('Authorization', `Bearer ${process.env.TEST_API_KEY}`);
+    //       .set('Authorization', `Bearer ${config.TEST_API_KEY}`);
     //     expect(response.statusCode).toBe(200);
     //     expect(response.body).toHaveProperty('status');
 
@@ -746,7 +745,7 @@ describe("E2E Tests for v0 API Routes", () => {
       async () => {
         const crawlResponse = await request(TEST_URL)
           .post("/v0/crawl")
-          .set("Authorization", `Bearer ${process.env.TEST_API_KEY}`)
+          .set("Authorization", `Bearer ${config.TEST_API_KEY}`)
           .set("Content-Type", "application/json")
           .send({
             url: "https://docs.tatum.io",
@@ -759,7 +758,7 @@ describe("E2E Tests for v0 API Routes", () => {
 
         const responseCancel = await request(TEST_URL)
           .delete(`/v0/crawl/cancel/${crawlResponse.body.jobId}`)
-          .set("Authorization", `Bearer ${process.env.TEST_API_KEY}`);
+          .set("Authorization", `Bearer ${config.TEST_API_KEY}`);
         expect(responseCancel.statusCode).toBe(200);
         expect(responseCancel.body).toHaveProperty("status");
         expect(responseCancel.body.status).toBe("cancelled");
@@ -767,7 +766,7 @@ describe("E2E Tests for v0 API Routes", () => {
         await new Promise(r => setTimeout(r, 10000));
         const completedResponse = await request(TEST_URL)
           .get(`/v0/crawl/status/${crawlResponse.body.jobId}`)
-          .set("Authorization", `Bearer ${process.env.TEST_API_KEY}`)
+          .set("Authorization", `Bearer ${config.TEST_API_KEY}`)
           .maxResponseSize(4000000000);
 
         expect(completedResponse.statusCode).toBe(200);
@@ -811,7 +810,7 @@ describe("E2E Tests for v0 API Routes", () => {
       async () => {
         const response = await request(TEST_URL)
           .post("/v0/scrape")
-          .set("Authorization", `Bearer ${process.env.TEST_API_KEY}`)
+          .set("Authorization", `Bearer ${config.TEST_API_KEY}`)
           .set("Content-Type", "application/json")
           .send({
             url: "https://mendable.ai",

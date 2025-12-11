@@ -19,6 +19,7 @@ import {
 import { Meta } from "../..";
 import { abTestFireEngine } from "../../../../services/ab-test";
 
+import { config } from "../../../../config";
 export type FireEngineScrapeRequestCommon = {
   url: string;
 
@@ -73,6 +74,8 @@ export type FireEngineScrapeRequestTLSClient = {
 };
 
 const successSchema = z.object({
+  jobId: z.string().optional(), // only defined if we are deferring deletion
+
   timeTaken: z.number(),
   content: z.string(),
   url: z.string().optional(),
@@ -152,6 +155,7 @@ const successSchema = z.object({
 
   usedMobileProxy: z.boolean().optional(),
   youtubeTranscriptContent: z.any().optional(),
+  timezone: z.string().optional(),
 });
 
 type FireEngineCheckStatusSuccess = z.infer<typeof successSchema>;
@@ -166,9 +170,9 @@ const failedSchema = z.object({
 });
 
 export const fireEngineURL =
-  process.env.FIRE_ENGINE_BETA_URL ?? "<mock-fire-engine-url>";
+  config.FIRE_ENGINE_BETA_URL ?? "<mock-fire-engine-url>";
 export const fireEngineStagingURL =
-  process.env.FIRE_ENGINE_STAGING_URL ?? "<mock-fire-engine-url>";
+  config.FIRE_ENGINE_STAGING_URL ?? "<mock-fire-engine-url>";
 
 export async function fireEngineScrape<
   Engine extends

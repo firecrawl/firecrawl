@@ -1,4 +1,5 @@
 import { supabase_service } from "../../services/supabase";
+import { config } from "../../config";
 import { logger } from "../logger";
 import { normalizeUrl, normalizeUrlOnlyHostname } from "../canonical-url";
 
@@ -13,7 +14,7 @@ export async function getLlmsTextFromCache(
   url: string,
   maxUrls: number,
 ): Promise<LlmsTextCache | null> {
-  if (process.env.USE_DB_AUTHENTICATION !== "true") {
+  if (config.USE_DB_AUTHENTICATION !== true) {
     return null;
   }
 
@@ -54,7 +55,7 @@ export async function saveLlmsTextToCache(
   llmstxt_full: string,
   maxUrls: number,
 ): Promise<void> {
-  if (process.env.USE_DB_AUTHENTICATION !== "true") {
+  if (config.USE_DB_AUTHENTICATION !== true) {
     return;
   }
 

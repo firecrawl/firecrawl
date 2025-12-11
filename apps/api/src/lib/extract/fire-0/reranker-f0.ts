@@ -78,8 +78,9 @@ export async function rerankLinksWithLLM_F0(
 
       for (let retry = 0; retry <= MAX_RETRIES; retry++) {
         try {
+          let timeoutHandle: NodeJS.Timeout;
           const timeoutPromise = new Promise<null>(resolve => {
-            setTimeout(() => resolve(null), TIMEOUT_MS);
+            timeoutHandle = setTimeout(() => resolve(null), TIMEOUT_MS);
           });
 
           // dumpToFile(new Date().toISOString(),[buildRerankerSystemPrompt(), buildRerankerUserPrompt(searchQuery), schema, linksContent])
@@ -114,7 +115,9 @@ export async function rerankLinksWithLLM_F0(
           const completion = await Promise.race([
             completionPromise,
             timeoutPromise,
-          ]);
+          ]).finally(() => {
+            clearTimeout(timeoutHandle);
+          });
 
           if (!completion) {
             // console.log(`Chunk ${chunkIndex + 1}: Timeout on attempt ${retry + 1}`);
