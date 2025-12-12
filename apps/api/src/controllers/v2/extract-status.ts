@@ -10,7 +10,7 @@ import { logger as _logger } from "../../lib/logger";
 
 type DBExtract = {
   id: string;
-  success: boolean;
+  is_successful: boolean;
   options: any;
   created_at: any;
   error: string | null;
@@ -48,7 +48,7 @@ async function getExtractJob(
     id,
     getState: bullJob
       ? bullJob.getState.bind(bullJob)
-      : () => (dbExtract!.success ? "completed" : "failed"),
+      : () => (dbExtract!.is_successful ? "completed" : "failed"),
     returnvalue: data,
     data: {
       scrapeOptions: bullJob ? bullJob.data.scrapeOptions : dbExtract!.options,

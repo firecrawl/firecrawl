@@ -10,7 +10,7 @@ import { logger as _logger } from "../../lib/logger";
 
 type DBExtract = {
   id: string;
-  success: boolean;
+  is_successful: boolean;
   options: any;
   created_at: any;
   error: string | null;
@@ -47,7 +47,7 @@ async function getExtractJob(
   const job: ExtractPseudoJob<any> = {
     id,
     getState: dbExtract
-      ? () => (dbExtract.success ? "completed" : "failed")
+      ? () => (dbExtract.is_successful ? "completed" : "failed")
       : () => bullJob!.getState(),
     returnvalue: data,
     data: {
