@@ -883,61 +883,61 @@ export async function performExtraction_F0(
     creditsBilled: creditsToBill,
   });
 
-  // Log job with token usage and sources
-  logExtract({
-    id: extractId,
-    request_id: extractId,
-    urls: request.urls || [],
-    team_id: teamId,
-    options: request,
-    model_kind: "fire-0",
-    credits_cost: creditsToBill,
-    is_successful: true,
-    result: finalResult ?? {},
-    cost_tracking: {
-      calls: tokenUsage.map(usage => ({
-        type: "other",
-        cost: estimateCost_F0(usage),
-        model: usage.model ?? "",
-        metadata: {},
-        stack: "",
-        tokens: {
-          input: usage.promptTokens,
-          output: usage.completionTokens,
-        },
-      })),
-      smartScrapeCallCount: 0,
-      smartScrapeCost: 0,
-      otherCallCount: tokenUsage.length,
-      otherCost: llmUsage,
-      totalCost: llmUsage,
-    },
-  })
-    .then(() => {
-      logger.debug("Updating extract status to completed", {
-        extractId,
-        llmUsage,
-        sources,
-        tokensBilled: tokensToBill,
-        creditsBilled: creditsToBill,
-      });
-
-      updateExtract(extractId, {
-        status: "completed",
-        llmUsage,
-        sources,
-        tokensBilled: tokensToBill,
-        creditsBilled: creditsToBill,
-      }).catch(error => {
-        logger.error("Failed to update extract status to completed", {
-          extractId,
-          error,
-        });
-      });
-    })
-    .catch(error => {
-      logger.error("Failed to log extract to database", { extractId, error });
+  // Await logging and status update to ensure they complete before returning
+  // This fixes the race condition where status endpoint sees "processing"
+  // even after extraction completes
+  try {
+    await logExtract({
+      id: extractId,
+      request_id: extractId,
+      urls: request.urls || [],
+      team_id: teamId,
+      options: request,
+      model_kind: "fire-0",
+      credits_cost: creditsToBill,
+      is_successful: true,
+      result: finalResult ?? {},
+      cost_tracking: {
+        calls: tokenUsage.map(usage => ({
+          type: "other",
+          cost: estimateCost_F0(usage),
+          model: usage.model ?? "",
+          metadata: {},
+          stack: "",
+          tokens: {
+            input: usage.promptTokens,
+            output: usage.completionTokens,
+          },
+        })),
+        smartScrapeCallCount: 0,
+        smartScrapeCost: 0,
+        otherCallCount: tokenUsage.length,
+        otherCost: llmUsage,
+        totalCost: llmUsage,
+      },
     });
+
+    logger.debug("Updating extract status to completed", {
+      extractId,
+      llmUsage,
+      sources,
+      tokensBilled: tokensToBill,
+      creditsBilled: creditsToBill,
+    });
+
+    await updateExtract(extractId, {
+      status: "completed",
+      llmUsage,
+      sources,
+      tokensBilled: tokensToBill,
+      creditsBilled: creditsToBill,
+    });
+  } catch (error) {
+    logger.error("Failed to log extract or update status", {
+      extractId,
+      error,
+    });
+  }
 
   logger.debug("Done!");
 

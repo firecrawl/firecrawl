@@ -88,7 +88,13 @@ export async function extractStatusController(
 
   let data: ExtractResult | [] = [];
 
-  if (!extract || extract.status === "completed") {
+  // Fix: Also check BullMQ/DB when Redis says "processing" to handle race conditions
+  // where the job completed but Redis status update hasn't happened yet
+  if (
+    !extract ||
+    extract.status === "completed" ||
+    extract.status === "processing"
+  ) {
     const jobData = await getExtractJob(req.params.jobId);
     if (
       (!jobData && !extract) ||

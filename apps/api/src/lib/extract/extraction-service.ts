@@ -1012,46 +1012,45 @@ export async function performExtraction(
       tokensBilled: tokensToBill,
       creditsBilled: creditsToBill,
     });
-    logExtract({
-      id: extractId,
-      request_id: extractId,
-      urls: request.urls || [],
-      team_id: teamId,
-      options: request,
-      credits_cost: creditsToBill,
-      is_successful: true,
-      result: finalResult ?? {},
-      model_kind: "fire-1",
-      cost_tracking: costTracking.toJSON(),
-    })
-      .then(() => {
-        logger.debug("Updating extract status to completed", {
-          extractId,
-          llmUsage,
-          sources,
-          tokensBilled: tokensToBill,
-          creditsBilled: creditsToBill,
-        });
-        updateExtract(extractId, {
-          status: "completed",
-          llmUsage,
-          sources,
-          tokensBilled: tokensToBill,
-          creditsBilled: creditsToBill,
-          // costTracking,
-        }).catch(error => {
-          logger.error("Failed to update extract status to completed", {
-            extractId,
-            error,
-          });
-        });
-      })
-      .catch(error => {
-        logger.error(
-          "Failed to log extract to database",
-          { extractId, error },
-        );
+
+    // Await logging and status update to ensure they complete before returning
+    // This fixes the race condition where status endpoint sees "processing"
+    // even after extraction completes
+    try {
+      await logExtract({
+        id: extractId,
+        request_id: extractId,
+        urls: request.urls || [],
+        team_id: teamId,
+        options: request,
+        credits_cost: creditsToBill,
+        is_successful: true,
+        result: finalResult ?? {},
+        model_kind: "fire-1",
+        cost_tracking: costTracking.toJSON(),
       });
+
+      logger.debug("Updating extract status to completed", {
+        extractId,
+        llmUsage,
+        sources,
+        tokensBilled: tokensToBill,
+        creditsBilled: creditsToBill,
+      });
+
+      await updateExtract(extractId, {
+        status: "completed",
+        llmUsage,
+        sources,
+        tokensBilled: tokensToBill,
+        creditsBilled: creditsToBill,
+      });
+    } catch (error) {
+      logger.error("Failed to log extract or update status", {
+        extractId,
+        error,
+      });
+    }
 
     logger.debug("Done!");
 

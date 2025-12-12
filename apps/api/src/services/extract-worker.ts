@@ -111,7 +111,10 @@ const processExtractJobInternal = async (
       // throw new Error(result.error || "Unknown error during extraction");
 
       await job.moveToCompleted(result, token, false);
+      // Fix: Always set status to "failed" when extraction returns success: false
+      // This ensures the status endpoint doesn't show "processing" indefinitely
       await updateExtract(job.data.extractId, {
+        status: "failed",
         error: result?.error ?? getErrorContactMessage(job.data.extractId),
       });
 
