@@ -62,6 +62,8 @@ interface ExtractResult {
   llmUsage?: number;
   totalUrlsScraped?: number;
   sources?: Record<string, string[]>;
+  tokensBilled?: number;
+  creditsBilled?: number;
 }
 
 type completions = {
@@ -120,7 +122,7 @@ export async function performExtraction_F0(
     logger.error("No search results found", {
       query: request.prompt,
     });
-    logExtract({
+    await logExtract({
       id: extractId,
       request_id: extractId,
       urls: request.urls || [],
@@ -221,7 +223,7 @@ export async function performExtraction_F0(
     logger.error("0 links! Bailing.", {
       linkCount: links.length,
     });
-    logExtract({
+    await logExtract({
       id: extractId,
       request_id: extractId,
       urls: request.urls || [],
@@ -594,7 +596,7 @@ export async function performExtraction_F0(
       Object.assign(sources, multiEntitySources);
     } catch (error) {
       logger.error(`Failed to transform array to object`, { error });
-      logExtract({
+      await logExtract({
         id: extractId,
         request_id: extractId,
         urls: request.urls || [],
@@ -686,7 +688,7 @@ export async function performExtraction_F0(
       logger.debug("Scrapes finished.", { docCount: validResults.length });
     } catch (error) {
       logger.error("Failed to scrape documents", { error });
-      logExtract({
+      await logExtract({
         id: extractId,
         request_id: extractId,
         urls: request.urls || [],
@@ -709,7 +711,7 @@ export async function performExtraction_F0(
     if (docsMap.size == 0) {
       // All urls are invalid
       logger.error("All provided URLs are invalid!");
-      logExtract({
+      await logExtract({
         id: extractId,
         request_id: extractId,
         urls: request.urls || [],
@@ -884,7 +886,7 @@ export async function performExtraction_F0(
   });
 
   // Log job with token usage and sources
-  logExtract({
+  await logExtract({
     id: extractId,
     request_id: extractId,
     urls: request.urls || [],
@@ -922,17 +924,13 @@ export async function performExtraction_F0(
         creditsBilled: creditsToBill,
       });
 
-      updateExtract(extractId, {
-        status: "completed",
+      // Redis status update moved to worker for consistent ordering
+      logger.debug("Extract completed successfully", {
+        extractId,
         llmUsage,
         sources,
         tokensBilled: tokensToBill,
         creditsBilled: creditsToBill,
-      }).catch(error => {
-        logger.error("Failed to update extract status to completed", {
-          extractId,
-          error,
-        });
       });
     })
     .catch(error => {
@@ -965,5 +963,7 @@ export async function performExtraction_F0(
     llmUsage,
     totalUrlsScraped,
     sources,
+    tokensBilled: tokensToBill,
+    creditsBilled: creditsToBill,
   };
 }

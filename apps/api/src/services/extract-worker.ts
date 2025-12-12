@@ -96,7 +96,14 @@ const processExtractJobInternal = async (
     // });
 
     if (result && result.success) {
-      // Move job to completed state in Redis
+      await updateExtract(job.data.extractId, {
+        status: "completed",
+        llmUsage: result.llmUsage,
+        sources: result.sources,
+        tokensBilled: result.tokensBilled,
+        creditsBilled: result.creditsBilled,
+      });
+
       await job.moveToCompleted(result, token, false);
 
       if (sender) {
@@ -108,12 +115,12 @@ const processExtractJobInternal = async (
 
       return result;
     } else {
-      // throw new Error(result.error || "Unknown error during extraction");
-
-      await job.moveToCompleted(result, token, false);
       await updateExtract(job.data.extractId, {
+        status: "failed",
         error: result?.error ?? getErrorContactMessage(job.data.extractId),
       });
+
+      await job.moveToCompleted(result, token, false);
 
       if (sender) {
         sender.send(WebhookEvent.EXTRACT_FAILED, {
@@ -136,17 +143,16 @@ const processExtractJobInternal = async (
       });
     }
 
-    try {
-      // Move job to failed state in Redis
-      await job.moveToFailed(error, token, false);
-    } catch (e) {
-      logger.log("Failed to move job to failed state in Redis", { error });
-    }
-
     await updateExtract(job.data.extractId, {
       status: "failed",
       error: error.error ?? error ?? getErrorContactMessage(job.data.extractId),
     });
+
+    try {
+      await job.moveToFailed(error, token, false);
+    } catch (e) {
+      logger.log("Failed to move job to failed state in BullMQ", { error });
+    }
 
     if (sender) {
       sender.send(WebhookEvent.EXTRACT_FAILED, {

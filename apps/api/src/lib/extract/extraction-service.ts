@@ -64,6 +64,8 @@ export interface ExtractResult {
   llmUsage?: number;
   totalUrlsScraped?: number;
   sources?: Record<string, string[]>;
+  tokensBilled?: number;
+  creditsBilled?: number;
 }
 
 type completions = {
@@ -134,7 +136,7 @@ export async function performExtraction(
 
       const tokens_billed = 300 + calculateThinkingCost(costTracking);
       const creditsToBill = Math.ceil(tokens_billed / 15);
-      logExtract({
+      await logExtract({
         id: extractId,
         request_id: extractId,
         urls: request.urls || [],
@@ -667,7 +669,7 @@ export async function performExtraction(
         });
         const tokens_billed = 300 + calculateThinkingCost(costTracking);
         const creditsToBill = Math.ceil(tokens_billed / 15);
-        logExtract({
+        await logExtract({
           id: extractId,
           request_id: extractId,
           urls: request.urls || [],
@@ -774,7 +776,7 @@ export async function performExtraction(
       } catch (error) {
         const tokens_billed = 300 + calculateThinkingCost(costTracking);
         const creditsToBill = Math.ceil(tokens_billed / 15);
-        logExtract({
+        await logExtract({
           id: extractId,
           request_id: extractId,
           urls: request.urls || [],
@@ -816,7 +818,7 @@ export async function performExtraction(
             );
           },
         );
-        logExtract({
+        await logExtract({
           id: extractId,
           request_id: extractId,
           urls: request.urls || [],
@@ -1012,7 +1014,7 @@ export async function performExtraction(
       tokensBilled: tokensToBill,
       creditsBilled: creditsToBill,
     });
-    logExtract({
+    await logExtract({
       id: extractId,
       request_id: extractId,
       urls: request.urls || [],
@@ -1025,32 +1027,16 @@ export async function performExtraction(
       cost_tracking: costTracking.toJSON(),
     })
       .then(() => {
-        logger.debug("Updating extract status to completed", {
+        logger.debug("Extract completed successfully", {
           extractId,
           llmUsage,
           sources,
           tokensBilled: tokensToBill,
           creditsBilled: creditsToBill,
         });
-        updateExtract(extractId, {
-          status: "completed",
-          llmUsage,
-          sources,
-          tokensBilled: tokensToBill,
-          creditsBilled: creditsToBill,
-          // costTracking,
-        }).catch(error => {
-          logger.error("Failed to update extract status to completed", {
-            extractId,
-            error,
-          });
-        });
       })
       .catch(error => {
-        logger.error(
-          "Failed to log extract to database",
-          { extractId, error },
-        );
+        logger.error("Failed to log extract to database", { extractId, error });
       });
 
     logger.debug("Done!");
@@ -1084,6 +1070,8 @@ export async function performExtraction(
       llmUsage,
       totalUrlsScraped,
       sources,
+      tokensBilled: tokensToBill,
+      creditsBilled: creditsToBill,
     };
   } catch (error) {
     const tokens_billed = 300 + calculateThinkingCost(costTracking);
