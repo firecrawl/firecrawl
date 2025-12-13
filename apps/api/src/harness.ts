@@ -383,6 +383,16 @@ async function detectContainerRuntime(): Promise<string | null> {
   return null;
 }
 
+async function isGoAvailable(): Promise<boolean> {
+  try {
+    const check = execForward("go@check", "go version");
+    await check.promise;
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 async function isContainerRunning(
   runtime: string,
   containerName: string,
@@ -580,19 +590,40 @@ async function installDependencies() {
     })(),
 
     (async () => {
-      logger.info("Installing Go dependencies");
-      const install = execForward(
-        "go@install",
-        "cd sharedLibs/go-html-to-md && go mod tidy",
-      );
-      await install.promise;
+      const goAvailable = await isGoAvailable();
+      if (!goAvailable) {
+        logger.warn(
+          "Go is not installed. Skipping Go HTML-to-Markdown parser build.",
+        );
+        logger.warn("The system will use the JavaScript-based parser instead.");
+        logger.warn(
+          "To enable the Go parser, install Go: https://go.dev/doc/install",
+        );
+        return;
+      }
 
-      logger.info("Building Go module");
-      const build = execForward(
-        "go@build",
-        `cd sharedLibs/go-html-to-md && go build -o ${basename(HTML_TO_MARKDOWN_PATH)} -buildmode=c-shared html-to-markdown.go`,
-      );
-      await build.promise;
+      logger.info("Installing Go dependencies");
+      try {
+        const install = execForward(
+          "go@install",
+          "cd sharedLibs/go-html-to-md && go mod tidy",
+        );
+        await install.promise;
+
+        logger.info("Building Go module");
+        const build = execForward(
+          "go@build",
+          `cd sharedLibs/go-html-to-md && go build -o ${basename(HTML_TO_MARKDOWN_PATH)} -buildmode=c-shared html-to-markdown.go`,
+        );
+        await build.promise;
+      } catch (error) {
+        logger.warn(
+          "Failed to build Go HTML-to-Markdown parser. Falling back to JavaScript parser.",
+        );
+        logger.warn(
+          "The system will continue to work, but using the JavaScript-based parser.",
+        );
+      }
     })(),
   ];
 

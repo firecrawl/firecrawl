@@ -14,6 +14,7 @@ First, start by installing dependencies:
 4. redis [instructions](https://redis.io/docs/latest/operate/oss_and_stack/install/install-redis/)
 5. postgresql
 6. Docker (optional) (for running postgres)
+7. Go (optional) (for HTML-to-Markdown parser - falls back to JavaScript parser if not installed)
 
 You need to set up the PostgreSQL database by running the SQL file at `apps/nuq-postgres/nuq.sql`. Easiest way is to use the docker image inside `apps/nuq-postgres`. With Docker running, build the image:
 
@@ -138,3 +139,6 @@ This will start Redis, the API server, and workers automatically in the correct 
 ## Tests:
 
 The best way to do this is run the test with `npm run test:snips`.
+
+```
+
