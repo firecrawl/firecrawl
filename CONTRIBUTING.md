@@ -139,6 +139,3 @@ This will start Redis, the API server, and workers automatically in the correct 
 ## Tests:
 
 The best way to do this is run the test with `npm run test:snips`.
-
-```
-
