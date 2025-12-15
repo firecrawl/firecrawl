@@ -5,6 +5,7 @@ import {
   AddFeatureError,
   RemoveFeatureError,
 } from "../scraper/scrapeURL/error";
+import { AbortManagerThrownError } from "../scraper/scrapeURL/lib/abortManager";
 
 type CaptureContext = {
   tags?: Record<string, string>;
@@ -59,7 +60,8 @@ if (config.SENTRY_DSN) {
       if (error && typeof error === "object") {
         if (
           error instanceof AddFeatureError ||
-          error instanceof RemoveFeatureError
+          error instanceof RemoveFeatureError ||
+          error instanceof AbortManagerThrownError
         ) {
           return null;
         }
