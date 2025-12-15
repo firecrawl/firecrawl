@@ -20,7 +20,6 @@ import { generateCrawlerOptionsFromPrompt } from "../../scraper/scrapeURL/transf
 import { CostTracking } from "../../lib/cost-tracking";
 import { checkPermissions } from "../../lib/permissions";
 import { buildPromptWithWebsiteStructure } from "../../lib/map-utils";
-import { modifyCrawlUrl } from "../../utils/url-utils";
 import { crawlGroup } from "../../services/worker/nuq";
 import { logRequest } from "../../services/logging/log_job";
 
@@ -29,10 +28,6 @@ export async function crawlController(
   res: Response<CrawlResponse>,
 ) {
   const preNormalizedBody = req.body;
-
-  // Check for URL modification before parsing
-  const urlModificationInfo = modifyCrawlUrl(preNormalizedBody.url);
-
   req.body = crawlRequestSchema.parse(req.body);
 
   const permissions = checkPermissions(req.body, req.acuc?.flags);
@@ -250,9 +245,6 @@ export async function crawlController(
     success: true,
     id,
     url: `${protocol}://${req.get("host")}/v2/crawl/${id}`,
-    ...(urlModificationInfo.wasModified && {
-      warning: `The URL you provided included a '/*' suffix, which has been removed to ensure a more targeted and efficient crawl.`,
-    }),
     ...(req.body.prompt && {
       promptGeneratedOptions: promptGeneratedOptions,
       finalCrawlerOptions: finalCrawlerOptions,

@@ -21,11 +21,10 @@ import { ErrorCodes } from "../../lib/error";
 import Ajv from "ajv";
 import { integrationSchema } from "../../utils/integration";
 import { webhookSchema } from "../../services/webhook/schema";
-import { modifyCrawlUrl } from "../../utils/url-utils";
 import { BrandingProfile } from "../../types/branding";
 
 // Base URL schema with common validation logic
-const BASE_URL_SCHEMA = z.preprocess(
+const URL = z.preprocess(
   x => {
     if (!protocolIncluded(x as string)) {
       x = `http://${x}`;
@@ -70,12 +69,6 @@ const BASE_URL_SCHEMA = z.preprocess(
     }, "Invalid URL"),
   // .refine((x) => !isUrlBlocked(x as string), BLOCKLISTED_URL_MESSAGE),
 );
-
-// Standard URL schema
-export const URL = BASE_URL_SCHEMA;
-
-// Crawl URL schema with modification handling
-const CRAWL_URL = BASE_URL_SCHEMA.transform(url => modifyCrawlUrl(url));
 
 const strictMessage =
   "Unrecognized key in body -- please review the v2 API documentation for request body changes";
@@ -851,7 +844,7 @@ export const crawlerOptions = z.strictObject({
 type CrawlerOptions = z.infer<typeof crawlerOptions>;
 
 const crawlRequestSchemaBase = crawlerOptions.extend({
-  url: CRAWL_URL,
+  url: URL,
   origin: z.string().optional().prefault("api"),
   integration: integrationSchema.optional().transform(val => val || null),
   scrapeOptions: baseScrapeOptions.prefault(() => baseScrapeOptions.parse({})),
@@ -868,7 +861,7 @@ export const crawlRequestSchema = strictWithMessage(crawlRequestSchemaBase)
     const scrapeOptionsValue = x.scrapeOptions ?? baseScrapeOptions.parse({});
     return {
       ...x,
-      url: x.url.url, // Extract the actual URL from the CRAWL_URL result
+      url: x.url,
       scrapeOptions: extractTransformRequired(scrapeOptionsValue),
     };
   });
@@ -1104,7 +1097,6 @@ export type CrawlResponse =
       success: true;
       id: string;
       url: string;
-      warning?: string;
     };
 
 export type BatchScrapeResponse =
