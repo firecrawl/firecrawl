@@ -57,7 +57,6 @@ if (config.SENTRY_DSN) {
       const error = hint?.originalException;
 
       if (error && typeof error === "object") {
-        // Filter out AddFeatureError and RemoveFeatureError
         if (
           error instanceof AddFeatureError ||
           error instanceof RemoveFeatureError
@@ -65,7 +64,16 @@ if (config.SENTRY_DSN) {
           return null;
         }
 
-        const errorCode = "code" in error ? String(error.code) : "";
+        // We sometimes rethrow TransportableErrors across process boundaries as a
+        // plain Error with message like `${code}|${json}` (see error-serde.ts).
+        // In that case, `error.code` is missing, so extract it from the message.
+        const errorCodeFromField = "code" in error ? String(error.code) : "";
+        const errorMessage =
+          error instanceof Error ? String(error.message || "") : "";
+        const errorCodeFromMessage =
+          errorCodeFromField ||
+          (errorMessage.includes("|") ? errorMessage.split("|", 1)[0] : "");
+        const errorCode = errorCodeFromMessage;
 
         const transportableErrorCodes = [
           "SCRAPE_ALL_ENGINES_FAILED",
