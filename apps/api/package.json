@@ -128,7 +128,7 @@
     "response-time": "^2.3.4",
     "robots-parser": "^3.0.1",
     "stripe": "^16.1.0",
-    "systeminformation": "^5.27.8",
+    "systeminformation": "^5.27.14",
     "tldts": "^6.1.75",
     "tough-cookie": "^4.1.4",
     "turndown": "^7.1.3",
