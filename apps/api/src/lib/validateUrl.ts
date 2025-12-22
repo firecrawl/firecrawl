@@ -41,6 +41,10 @@ export const checkAndUpdateURL = (url: string) => {
     typedUrlObj.username = "";
     typedUrlObj.password = "";
     url = typedUrlObj.toString();
+    // Remove trailing slash again if toString() added it back
+    if (url.endsWith("/")) {
+      url = url.slice(0, -1);
+    }
   }
 
   return { urlObj: typedUrlObj, url: url };
@@ -166,6 +170,10 @@ export const checkAndUpdateURLForMap = (
     typedUrlObj.username = "";
     typedUrlObj.password = "";
     url = typedUrlObj.toString();
+    // Remove trailing slash again if it was added by toString()
+    if (url.endsWith("/")) {
+      url = url.slice(0, -1);
+    }
   }
 
   // remove any query params
