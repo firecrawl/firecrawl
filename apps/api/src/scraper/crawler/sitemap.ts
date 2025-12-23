@@ -14,7 +14,7 @@ import { gunzip } from "node:zlib";
 import { promisify } from "node:util";
 import { SitemapError } from "../../lib/error";
 import { useIndex } from "../../services";
-import { extractXmlFromHtmlWrapper } from "../WebScraper/sitemap";
+import { extractXmlFromHtmlWrapper } from "../WebScraper/utils/xml-utils";
 
 const useFireEngine =
   config.FIRE_ENGINE_BETA_URL !== "" &&

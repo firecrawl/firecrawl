@@ -1,43 +1,4 @@
-// Test the extractXmlFromHtmlWrapper function in isolation
-// We inline the function here to avoid importing the full sitemap module
-// which has complex dependencies that Jest can't handle
-
-/**
- * Extracts raw XML from HTML-wrapped content that browsers generate when rendering XML files.
- */
-function extractXmlFromHtmlWrapper(content: string): string {
-  // Only process if content looks like HTML-wrapped XML
-  if (
-    content.includes("webkit-xml-viewer-source-xml") ||
-    (content.startsWith("<!--?xml") && content.includes("<html"))
-  ) {
-    // Try to extract from WebKit XML viewer div
-    const webkitMatch = content.match(
-      /<div[^>]*id=["']webkit-xml-viewer-source-xml["'][^>]*>([\s\S]*?)<\/div>/i,
-    );
-    if (webkitMatch && webkitMatch[1]) {
-      const extracted = webkitMatch[1].trim();
-      if (
-        extracted.includes("<urlset") ||
-        extracted.includes("<sitemapindex")
-      ) {
-        return extracted;
-      }
-    }
-
-    // Fallback: extract urlset or sitemapindex directly via regex
-    const urlsetMatch = content.match(/<urlset[\s\S]*?<\/urlset>/i);
-    if (urlsetMatch) return urlsetMatch[0];
-
-    const sitemapIndexMatch = content.match(
-      /<sitemapindex[\s\S]*?<\/sitemapindex>/i,
-    );
-    if (sitemapIndexMatch) return sitemapIndexMatch[0];
-  }
-
-  // Return original content if not HTML-wrapped
-  return content;
-}
+import { extractXmlFromHtmlWrapper } from "../utils/xml-utils";
 
 describe("extractXmlFromHtmlWrapper", () => {
   describe("when content is raw XML", () => {
