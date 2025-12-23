@@ -14,6 +14,7 @@ import { gunzip } from "node:zlib";
 import { promisify } from "node:util";
 import { SitemapError } from "../../lib/error";
 import { useIndex } from "../../services";
+import { extractXmlFromHtmlWrapper } from "../WebScraper/sitemap";
 
 const useFireEngine =
   config.FIRE_ENGINE_BETA_URL !== "" &&
@@ -127,7 +128,10 @@ export async function scrapeSitemap(
     location: options.location,
   });
 
-  const xml = await getSitemapXML(options);
+  let xml = await getSitemapXML(options);
+
+  // Extract raw XML from HTML wrapper if browser engines rendered the XML as HTML
+  xml = extractXmlFromHtmlWrapper(xml);
 
   logger.info("Processing sitemap");
 
