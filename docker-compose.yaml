@@ -95,9 +95,12 @@ services:
       NUQ_RABBITMQ_URL: amqp://rabbitmq:5672
       ENV: local
     depends_on:
-      - redis
-      - playwright-service
-      - rabbitmq
+      redis:
+        condition: service_started
+      playwright-service:
+        condition: service_started
+      rabbitmq:
+        condition: service_healthy
     ports:
       - "${PORT:-3002}:${INTERNAL_PORT:-3002}"
     command: node dist/src/harness.js --start-docker
@@ -129,6 +132,12 @@ services:
     networks:
       - backend
     command: rabbitmq-server
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "check_running"]
+      interval: 5s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
     logging:
       driver: "json-file"
       options:
