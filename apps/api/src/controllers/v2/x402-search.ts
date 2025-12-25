@@ -27,8 +27,7 @@ import {
   buildSearchQuery,
   getCategoryFromUrl,
   CategoryOption,
-  parseImageSizeFilter,
-  filterImagesBySize,
+  applyLargerOperatorFilter,
 } from "../../lib/search-query-builder";
 import {
   applyZdrScope,
@@ -308,23 +307,18 @@ export async function x402SearchController(
     // Apply larger: operator filtering to image results
     // The larger: operator is not always honored by upstream providers,
     // so we post-filter results to ensure they meet the minimum size criteria
-    const imageSizeFilter = parseImageSizeFilter(req.body.query);
-    if (
-      imageSizeFilter &&
-      searchResponse.images &&
-      searchResponse.images.length > 0
-    ) {
+    if (searchResponse.images && searchResponse.images.length > 0) {
       const originalCount = searchResponse.images.length;
-      searchResponse.images = filterImagesBySize(
+      searchResponse.images = applyLargerOperatorFilter(
+        req.body.query,
         searchResponse.images,
-        imageSizeFilter,
       );
-      logger.info("Applied larger: image size filter [x402]", {
-        originalCount,
-        filteredCount: searchResponse.images.length,
-        minWidth: imageSizeFilter.minWidth,
-        minHeight: imageSizeFilter.minHeight,
-      });
+      if (searchResponse.images.length !== originalCount) {
+        logger.info("Applied larger: image size filter [x402]", {
+          originalCount,
+          filteredCount: searchResponse.images.length,
+        });
+      }
     }
 
     // Apply limit to each result type separately
