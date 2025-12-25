@@ -28,6 +28,8 @@ import {
   buildSearchQuery,
   getCategoryFromUrl,
   CategoryOption,
+  parseImageSizeFilter,
+  filterImagesBySize,
 } from "../../lib/search-query-builder";
 import {
   applyZdrScope,
@@ -341,6 +343,28 @@ export async function searchController(
           ? getCategoryFromUrl(result.url, categoryMap)
           : undefined,
       }));
+    }
+
+    // Apply larger: operator filtering to image results
+    // The larger: operator is not always honored by upstream providers,
+    // so we post-filter results to ensure they meet the minimum size criteria
+    const imageSizeFilter = parseImageSizeFilter(req.body.query);
+    if (
+      imageSizeFilter &&
+      searchResponse.images &&
+      searchResponse.images.length > 0
+    ) {
+      const originalCount = searchResponse.images.length;
+      searchResponse.images = filterImagesBySize(
+        searchResponse.images,
+        imageSizeFilter,
+      );
+      logger.info("Applied larger: image size filter", {
+        originalCount,
+        filteredCount: searchResponse.images.length,
+        minWidth: imageSizeFilter.minWidth,
+        minHeight: imageSizeFilter.minHeight,
+      });
     }
 
     // Apply limit to each result type separately

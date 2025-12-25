@@ -135,7 +135,7 @@ export function getCategoryFromUrl(
     // Check against category map for other sites
     for (const [site, category] of categoryMap.entries()) {
       if (site === "__pdf__") continue; // Skip the special PDF marker
-      
+
       if (
         hostname === site.toLowerCase() ||
         hostname.endsWith("." + site.toLowerCase())
@@ -155,4 +155,90 @@ export function getCategoryFromUrl(
  */
 export function getDefaultResearchSites(): string[] {
   return [...DEFAULT_RESEARCH_SITES];
+}
+
+/**
+ * Image size filter extracted from query
+ */
+interface ImageSizeFilter {
+  minWidth: number;
+  minHeight: number;
+}
+
+/**
+ * Parses the larger: operator from a search query to extract minimum image dimensions.
+ * The larger: operator is a Google image search operator that should filter images
+ * to only those larger than the specified dimensions, but it's not always honored
+ * by the upstream provider. This function extracts the dimensions so we can
+ * post-filter results on our side.
+ *
+ * @param query The search query that may contain larger:WxH
+ * @returns The extracted minimum dimensions, or null if no larger: operator found
+ *
+ * @example
+ * parseImageSizeFilter("mountain wallpaper larger:1920x1080")
+ * // Returns: { minWidth: 1920, minHeight: 1080 }
+ *
+ * parseImageSizeFilter("sunset photos")
+ * // Returns: null
+ */
+export function parseImageSizeFilter(query: string): ImageSizeFilter | null {
+  // Match larger:WIDTHxHEIGHT pattern (case-insensitive)
+  const largerMatch = query.match(/larger:(\d+)x(\d+)/i);
+
+  if (largerMatch) {
+    const width = parseInt(largerMatch[1], 10);
+    const height = parseInt(largerMatch[2], 10);
+
+    if (!isNaN(width) && !isNaN(height) && width > 0 && height > 0) {
+      return { minWidth: width, minHeight: height };
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Image search result with dimensions
+ */
+interface ImageResultWithDimensions {
+  imageWidth?: number;
+  imageHeight?: number;
+  [key: string]: any;
+}
+
+/**
+ * Filters image results to only include those that meet the minimum size criteria.
+ * This is used to enforce the larger: operator which may not be honored by the
+ * upstream search provider.
+ *
+ * @param images Array of image search results
+ * @param filter The minimum size filter to apply
+ * @returns Filtered array of images that meet the minimum dimensions
+ *
+ * @example
+ * const images = [
+ *   { title: "Large", imageWidth: 3000, imageHeight: 2000 },
+ *   { title: "Small", imageWidth: 500, imageHeight: 333 },
+ *   { title: "Exact", imageWidth: 1920, imageHeight: 1080 }
+ * ];
+ * filterImagesBySize(images, { minWidth: 1920, minHeight: 1080 })
+ * // Returns: [{ title: "Large", ... }, { title: "Exact", ... }]
+ */
+export function filterImagesBySize<T extends ImageResultWithDimensions>(
+  images: T[],
+  filter: ImageSizeFilter,
+): T[] {
+  return images.filter(image => {
+    // If dimensions are missing, we can't verify size - exclude the image
+    if (image.imageWidth === undefined || image.imageHeight === undefined) {
+      return false;
+    }
+
+    // Image must be at least as large as the minimum in BOTH dimensions
+    return (
+      image.imageWidth >= filter.minWidth &&
+      image.imageHeight >= filter.minHeight
+    );
+  });
 }
