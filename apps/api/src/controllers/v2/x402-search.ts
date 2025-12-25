@@ -309,14 +309,17 @@ export async function x402SearchController(
     // so we post-filter results to ensure they meet the minimum size criteria
     if (searchResponse.images && searchResponse.images.length > 0) {
       const originalCount = searchResponse.images.length;
-      searchResponse.images = applyLargerOperatorFilter(
+      const filterResult = applyLargerOperatorFilter(
         req.body.query,
         searchResponse.images,
       );
-      if (searchResponse.images.length !== originalCount) {
+      searchResponse.images = filterResult.images;
+      if (filterResult.applied) {
         logger.info("Applied larger: image size filter [x402]", {
           originalCount,
-          filteredCount: searchResponse.images.length,
+          filteredCount: filterResult.images.length,
+          minWidth: filterResult.minWidth,
+          minHeight: filterResult.minHeight,
         });
       }
     }

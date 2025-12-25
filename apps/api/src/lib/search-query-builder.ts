@@ -167,6 +167,16 @@ interface ImageResultWithDimensions {
 }
 
 /**
+ * Result of applying the larger: operator filter
+ */
+interface LargerOperatorFilterResult<T> {
+  images: T[];
+  applied: boolean;
+  minWidth?: number;
+  minHeight?: number;
+}
+
+/**
  * Applies the larger: operator filter to image search results.
  *
  * The larger: operator is a Google image search operator that should filter images
@@ -176,7 +186,7 @@ interface ImageResultWithDimensions {
  *
  * @param query The search query that may contain larger:WxH
  * @param images Array of image search results to filter
- * @returns Filtered array of images (unchanged if no larger: operator in query)
+ * @returns Object with filtered images and metadata about the filter applied
  *
  * @example
  * const images = [
@@ -185,30 +195,30 @@ interface ImageResultWithDimensions {
  *   { title: "Exact", imageWidth: 1920, imageHeight: 1080 }
  * ];
  * applyLargerOperatorFilter("wallpaper larger:1920x1080", images)
- * // Returns: [{ title: "Large", ... }, { title: "Exact", ... }]
+ * // Returns: { images: [...], applied: true, minWidth: 1920, minHeight: 1080 }
  *
  * applyLargerOperatorFilter("wallpaper", images)
- * // Returns: all 3 images unchanged (no larger: operator)
+ * // Returns: { images: [...], applied: false }
  */
 export function applyLargerOperatorFilter<T extends ImageResultWithDimensions>(
   query: string,
   images: T[],
-): T[] {
+): LargerOperatorFilterResult<T> {
   // Match larger:WIDTHxHEIGHT pattern (case-insensitive)
   const largerMatch = query.match(/larger:(\d+)x(\d+)/i);
 
   if (!largerMatch) {
-    return images;
+    return { images, applied: false };
   }
 
   const minWidth = parseInt(largerMatch[1], 10);
   const minHeight = parseInt(largerMatch[2], 10);
 
   if (isNaN(minWidth) || isNaN(minHeight) || minWidth <= 0 || minHeight <= 0) {
-    return images;
+    return { images, applied: false };
   }
 
-  return images.filter(image => {
+  const filtered = images.filter(image => {
     // If dimensions are missing, we can't verify size - exclude the image
     if (image.imageWidth === undefined || image.imageHeight === undefined) {
       return false;
@@ -217,4 +227,6 @@ export function applyLargerOperatorFilter<T extends ImageResultWithDimensions>(
     // Image must be at least as large as the minimum in BOTH dimensions
     return image.imageWidth >= minWidth && image.imageHeight >= minHeight;
   });
+
+  return { images: filtered, applied: true, minWidth, minHeight };
 }
