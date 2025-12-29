@@ -22,6 +22,11 @@ function createBaseAgent(skipTlsVerification: boolean) {
   const agentOpts: undici.Agent.Options = {
     maxRedirections: 5000,
   };
+  if (!process.env.PROXY_SERVER && process.env.USE_DB_AUTHENTICATION === "true") {
+    throw new Error(
+      "PROXY_SERVER is not set and USE_DB_AUTHENTICATION is true",
+    );
+  }
 
   return config.PROXY_SERVER
     ? new undici.ProxyAgent({
