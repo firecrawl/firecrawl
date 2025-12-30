@@ -5,7 +5,15 @@ import {
   TEST_PRODUCTION,
   TEST_SUITE_WEBSITE,
 } from "../lib";
-import { batchScrape, scrapeTimeout, idmux, Identity } from "./lib";
+import {
+  batchScrape,
+  batchScrapeStart,
+  batchScrapeStatusWithParams,
+  expectBatchScrapeStartToSucceed,
+  scrapeTimeout,
+  idmux,
+  Identity,
+} from "./lib";
 
 let identity: Identity;
 
@@ -46,6 +54,33 @@ describe("Batch scrape tests", () => {
       );
 
       expect(response.data[0].metadata.sourceURL).toBe(url);
+    },
+    scrapeTimeout,
+  );
+
+  concurrentIf(ALLOW_TEST_SUITE_WEBSITE)(
+    "skip_data query parameter omits data field",
+    async () => {
+      // Start a batch scrape
+      const bss = await batchScrapeStart(
+        { urls: [TEST_SUITE_WEBSITE] },
+        identity,
+      );
+      expectBatchScrapeStartToSucceed(bss);
+
+      // Check status with skip_data=true
+      const response = await batchScrapeStatusWithParams(
+        bss.body.id,
+        identity,
+        { skip_data: "true" },
+      );
+
+      expect(response.statusCode).toBe(200);
+      expect(response.body.success).toBe(true);
+      expect(response.body).not.toHaveProperty("data");
+      expect(response.body).toHaveProperty("status");
+      expect(response.body).toHaveProperty("completed");
+      expect(response.body).toHaveProperty("total");
     },
     scrapeTimeout,
   );

@@ -220,7 +220,11 @@ async function crawlErrors(
 export async function crawl(
   body: CrawlRequestInput,
   identity: Identity,
-): Promise<Exclude<CrawlStatusResponse & { id: string }, ErrorResponse>> {
+): Promise<
+  Exclude<CrawlStatusResponse & { id: string }, ErrorResponse> & {
+    data: Document[];
+  }
+> {
   const cs = await crawlStart(body, identity);
   expectCrawlStartToSucceed(cs);
 
@@ -249,7 +253,7 @@ export async function crawl(
 // Batch Scrape API
 // =========================================
 
-async function batchScrapeStart(
+export async function batchScrapeStart(
   body: BatchScrapeRequestInput,
   identity: Identity,
 ) {
@@ -267,7 +271,23 @@ async function batchScrapeStatus(id: string, identity: Identity) {
     .send();
 }
 
-function expectBatchScrapeStartToSucceed(
+export async function batchScrapeStatusWithParams(
+  id: string,
+  identity: Identity,
+  queryParams?: Record<string, string>,
+) {
+  let req = request(TEST_API_URL)
+    .get("/v1/batch/scrape/" + encodeURIComponent(id))
+    .set("Authorization", `Bearer ${identity.apiKey}`);
+
+  if (queryParams) {
+    req = req.query(queryParams);
+  }
+
+  return await req.send();
+}
+
+export function expectBatchScrapeStartToSucceed(
   response: Awaited<ReturnType<typeof batchScrapeStart>>,
 ) {
   if (response.statusCode !== 200) {
@@ -306,7 +326,9 @@ function expectBatchScrapeToSucceed(
 export async function batchScrape(
   body: BatchScrapeRequestInput,
   identity: Identity,
-): Promise<Exclude<CrawlStatusResponse, ErrorResponse> & { id: string }> {
+): Promise<
+  Exclude<CrawlStatusResponse, ErrorResponse> & { id: string; data: Document[] }
+> {
   const bss = await batchScrapeStart(body, identity);
   expectBatchScrapeStartToSucceed(bss);
 
