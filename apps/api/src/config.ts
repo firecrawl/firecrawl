@@ -184,6 +184,7 @@ const configSchema = z.object({
   SENTRY_TRACE_SAMPLE_RATE: z.coerce.number().default(0.01),
   SENTRY_ERROR_SAMPLE_RATE: z.coerce.number().default(0.05),
   SENTRY_ENVIRONMENT: z.string().default("production"),
+  SENTRY_RELEASE: z.string().optional(),
   NUQ_POD_NAME: z.string().default("main"),
 
   // Miscellaneous

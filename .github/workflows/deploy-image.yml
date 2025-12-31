@@ -20,6 +20,8 @@ jobs:
         steps:
           - name: 'Checkout GitHub Action'
             uses: actions/checkout@main
+            with:
+              fetch-depth: 0  # Fetch full git history for commit SHA
 
           - name: 'Set up Docker Buildx'
             uses: docker/setup-buildx-action@v3
@@ -36,6 +38,14 @@ jobs:
             with:
               context: ./apps/api
               push: true
-              tags: ghcr.io/firecrawl/firecrawl:latest
+              tags: |
+                ghcr.io/firecrawl/firecrawl:latest
+                ghcr.io/firecrawl/firecrawl:${{ github.sha }}
               cache-from: type=registry,ref=ghcr.io/firecrawl/firecrawl:buildcache
               cache-to: type=registry,ref=ghcr.io/firecrawl/firecrawl:buildcache,mode=max
+              build-args: |
+                COMMIT_SHA=${{ github.sha }}
+              secrets: |
+                SENTRY_AUTH_TOKEN=${{ secrets.SENTRY_AUTH_TOKEN }}
+                SENTRY_ORG=${{ secrets.SENTRY_ORG }}
+                SENTRY_PROJECT=${{ secrets.SENTRY_PROJECT }}

@@ -7,15 +7,12 @@ const config: KnipConfig = {
       project: ["src/**/*.ts"],
     },
   },
-  ignore: [
-    "native/**",
-    "src/services/search-index-db.ts", // WIP
-    "src/lib/search-index-client.ts", // WIP
-  ],
+  ignore: ["native/**"],
   ignoreDependencies: [
     "openai",
     "undici-types",
-    "@pinecone-database/pinecone", // WIP
+
+    "@sentry/cli", // Used in scripts/upload-sentry-sourcemaps.sh
   ],
 };
 

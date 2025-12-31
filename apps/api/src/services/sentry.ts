@@ -46,6 +46,7 @@ if (config.SENTRY_DSN) {
     sampleRate: config.SENTRY_ERROR_SAMPLE_RATE,
     serverName: config.NUQ_POD_NAME,
     environment: config.SENTRY_ENVIRONMENT,
+    release: config.SENTRY_RELEASE,
     beforeSend(event, hint) {
       const zeroDataRetention =
         event.tags?.zeroDataRetention === "true" ||

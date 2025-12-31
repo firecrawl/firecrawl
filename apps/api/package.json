@@ -14,6 +14,7 @@
     "start:dev": "tsc-watch --onSuccess \"node dist/src/index.js\"",
     "build": "tsc",
     "build:nosentry": "tsc",
+    "build:with-sentry": "tsc && npm run sentry:sourcemaps",
     "test": "jest --testPathIgnorePatterns=\"src/__tests__/e2e_noAuth/*\"",
     "test:local-no-auth": "jest --testPathIgnorePatterns=\"src/__tests__/e2e_withAuth/*\"",
     "test:full": "jest --testPathIgnorePatterns=\"(src/__tests__/e2e_noAuth|src/__tests__/e2e_withAuth)\"",
@@ -33,7 +34,7 @@
     "mongo-docker": "docker run -d -p 2717:27017 -v ./mongo-data:/data/db --name mongodb mongo:latest",
     "mongo-docker-console": "docker exec -it mongodb mongosh",
     "run-example": "npx ts-node src/example.ts",
-    "sentry:sourcemaps": "sentry-cli sourcemaps inject --org caleb-peffer --project firecrawl-scraper-js ./dist && sentry-cli sourcemaps upload --org caleb-peffer --project firecrawl-scraper-js ./dist",
+    "sentry:sourcemaps": "bash scripts/upload-sentry-sourcemaps.sh",
     "prepare": "cd ../.. && husky ./apps/api/.husky",
     "knip": "knip"
   },
