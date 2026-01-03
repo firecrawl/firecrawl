@@ -614,8 +614,9 @@ async function setupNuqRabbitMQ(): Promise<Services["nuqRabbitMQ"]> {
     return undefined;
   }
 
-  // Check if we're running in docker-compose (POSTGRES_HOST is set and not localhost)
-  const isDockerCompose = POSTGRES_HOST !== "localhost";
+  // Check if we're running in docker-compose (NUQ_DATABASE_URL is set, which indicates docker-compose)
+  // This is more reliable than checking POSTGRES_HOST, which defaults to "localhost"
+  const isDockerCompose = !!config.NUQ_DATABASE_URL;
 
   if (isDockerCompose) {
     // Running in docker-compose: RabbitMQ should be configured externally
