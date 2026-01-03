@@ -503,8 +503,10 @@ async function setupNuqPostgres(): Promise<Services["nuqPostgres"]> {
     return undefined;
   }
 
-  // Check if we're running in docker-compose (POSTGRES_HOST is set and not localhost)
-  const isDockerCompose = POSTGRES_HOST !== "localhost";
+  // Check if we're running in docker-compose
+  // If POSTGRES_HOST is explicitly set to something other than localhost, we're likely in docker-compose
+  // However, we also check if POSTGRES_HOST is set in env (not using default) as a more reliable indicator
+  const isDockerCompose = POSTGRES_HOST !== "localhost" && process.env.POSTGRES_HOST !== undefined;
 
   if (isDockerCompose) {
     // Running in docker-compose: construct URL with proper encoding
