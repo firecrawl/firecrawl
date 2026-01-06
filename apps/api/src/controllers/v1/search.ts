@@ -28,6 +28,7 @@ import {
   applyZdrScope,
   captureExceptionWithZdrCheck,
 } from "../../services/sentry";
+import { sanitizeDocumentForResponse } from "../../lib/sanitize-metadata";
 
 interface DocumentWithCostTracking {
   document: Document;
@@ -359,7 +360,9 @@ export async function searchController(
         num_docs: docsWithCostTracking.length,
       });
 
-      const docs = docsWithCostTracking.map(item => item.document);
+      const docs = docsWithCostTracking.map(item =>
+        sanitizeDocumentForResponse(item.document),
+      );
       const filteredDocs = docs.filter(
         doc =>
           doc.serpResults || (doc.markdown && doc.markdown.trim().length > 0),

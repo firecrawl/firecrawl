@@ -33,6 +33,7 @@ import {
   applyZdrScope,
   captureExceptionWithZdrCheck,
 } from "../../services/sentry";
+import { sanitizeDocumentForResponse } from "../../lib/sanitize-metadata";
 
 interface DocumentWithCostTracking {
   document: Document;
@@ -630,7 +631,7 @@ export async function searchController(
             const doc = resultsMap.get(item.url);
             return {
               ...item, // Preserve ALL original fields
-              ...doc, // Override/add scraped content
+              ...(doc ? sanitizeDocumentForResponse(doc) : undefined), // Override/add scraped content
             };
           });
         }
@@ -641,7 +642,7 @@ export async function searchController(
             const doc = item.url ? resultsMap.get(item.url) : undefined;
             return {
               ...item, // Preserve ALL original fields
-              ...doc, // Override/add scraped content
+              ...(doc ? sanitizeDocumentForResponse(doc) : undefined), // Override/add scraped content
             };
           });
         }
@@ -652,7 +653,7 @@ export async function searchController(
             const doc = item.url ? resultsMap.get(item.url) : undefined;
             return {
               ...item, // Preserve ALL original fields
-              ...doc, // Override/add scraped content
+              ...(doc ? sanitizeDocumentForResponse(doc) : undefined), // Override/add scraped content
             };
           });
         }

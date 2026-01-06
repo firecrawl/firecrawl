@@ -20,6 +20,7 @@ import { ScrapeJobData } from "../../types";
 import { teamConcurrencySemaphore } from "../../services/worker/team-semaphore";
 import { getJobPriority } from "../../lib/job-priority";
 import { logRequest } from "../../services/logging/log_job";
+import { sanitizeDocumentForResponse } from "../../lib/sanitize-metadata";
 
 export async function scrapeController(
   req: RequestWithAuth<{}, ScrapeResponse, ScrapeRequest>,
@@ -372,12 +373,13 @@ export async function scrapeController(
         concurrencyQueueDurationMs: lockTime || undefined,
       });
 
+      const sanitizedDoc = sanitizeDocumentForResponse(doc!);
       return res.status(200).json({
         success: true,
         data: {
-          ...doc!,
+          ...sanitizedDoc,
           metadata: {
-            ...doc!.metadata,
+            ...sanitizedDoc.metadata,
             concurrencyLimited,
             concurrencyQueueDurationMs: concurrencyLimited
               ? lockTime || 0
