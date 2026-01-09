@@ -292,6 +292,22 @@ fn _extract_metadata(
     }
   }
 
+  // Backfill title from og:title, twitter:title, or meta[name="title"] if primary extraction failed
+  if !out.contains_key("title") {
+    let fallback_title = out
+      .get("ogTitle")
+      .or_else(|| out.get("og:title"))
+      .or_else(|| out.get("twitter:title"))
+      .and_then(|v| match v {
+        Value::String(s) if !s.is_empty() => Some(s.clone()),
+        _ => None,
+      });
+
+    if let Some(title) = fallback_title {
+      out.insert("title".to_string(), Value::String(title));
+    }
+  }
+
   Ok(out)
 }
 
