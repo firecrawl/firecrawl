@@ -18,6 +18,14 @@ let nuqRabbitMQContainer: {
   containerName: string;
   containerRuntime: string;
 } | null = null;
+let fdbContainer: {
+  containerName: string;
+  containerRuntime: string;
+} | null = null;
+let fdbQueueServiceContainer: {
+  containerName: string;
+  containerRuntime: string;
+} | null = null;
 
 // Get the monorepo root (apps/api/dist/src -> ../../../..)
 // __dirname is available in CommonJS (which this compiles to)
@@ -42,6 +50,10 @@ interface Services {
     containerRuntime: string;
   };
   nuqRabbitMQ?: {
+    containerName: string;
+    containerRuntime: string;
+  };
+  fdb?: {
     containerName: string;
     containerRuntime: string;
   };
@@ -71,6 +83,7 @@ const processGroupColors: Record<string, string> = {
   command: colors.white,
   docker: colors.blue,
   podman: colors.blue,
+  fdb: colors.magenta,
 };
 
 function getProcessGroup(name: string): string {
@@ -666,6 +679,203 @@ async function setupNuqRabbitMQ(): Promise<Services["nuqRabbitMQ"]> {
   return containerInfo;
 }
 
+async function setupFDB(): Promise<Services["fdb"]> {
+  // If FDB_QUEUE_SERVICE_URL is already set, respect it (user's explicit choice)
+  if (config.FDB_QUEUE_SERVICE_URL) {
+    logger.info("FDB_QUEUE_SERVICE_URL is set, skipping container management");
+    return undefined;
+  }
+
+  // Check if we're running in docker-compose (POSTGRES_HOST is set and not localhost)
+  const isDockerCompose = POSTGRES_HOST !== "localhost";
+
+  if (isDockerCompose) {
+    logger.info("Running in docker-compose, skipping FDB container management");
+    return undefined;
+  }
+
+  // Running locally: manage containers
+  logger.section("Setting up FoundationDB and FDB Queue Service containers");
+
+  const runtime = await detectContainerRuntime();
+  if (!runtime) {
+    throw new Error(
+      "Neither Docker nor Podman found. Please install Docker/Podman or set FDB_QUEUE_SERVICE_URL manually.",
+    );
+  }
+
+  logger.success(`Using container runtime: ${runtime}`);
+
+  const fdbContainerName = "firecrawl-fdb";
+  const fdbQueueServiceContainerName = "firecrawl-fdb-queue-service";
+
+  // Stop and remove any existing containers
+  await stopAndRemoveContainer(runtime, fdbContainerName);
+  await stopAndRemoveContainer(runtime, fdbQueueServiceContainerName);
+
+  // Start the FDB container
+  logger.info(`Starting FoundationDB container: ${fdbContainerName}`);
+  const startFdb = execForward(
+    `${runtime}@start-fdb`,
+    `${runtime} run -d --name ${fdbContainerName} -p 4500:4500 foundationdb/foundationdb:7.3.69`,
+  );
+  await startFdb.promise;
+  logger.success(`FoundationDB container started`);
+
+  // Wait for FDB container to initialize, then configure the cluster
+  await new Promise(resolve => setTimeout(resolve, 2000));
+
+  // Initialize the FDB cluster
+  logger.info("Initializing FoundationDB cluster...");
+  try {
+    const init = execForward(
+      `fdb@init`,
+      `${runtime} exec ${fdbContainerName} fdbcli --exec "configure new single memory" -C /var/fdb/fdb.cluster`,
+    );
+    await init.promise;
+    logger.success("FoundationDB cluster initialized");
+  } catch {
+    logger.info("FDB cluster may already be configured, continuing...");
+  }
+
+  // Wait for FDB to be available
+  logger.info("Waiting for FoundationDB to be ready...");
+  const fdbStart = Date.now();
+  while (Date.now() - fdbStart < config.HARNESS_STARTUP_TIMEOUT_MS) {
+    try {
+      const result = await new Promise<string>((resolve, reject) => {
+        const child = require("child_process").spawn(
+          runtime,
+          [
+            "exec",
+            fdbContainerName,
+            "fdbcli",
+            "--exec",
+            "status minimal",
+            "-C",
+            "/var/fdb/fdb.cluster",
+          ],
+          { stdio: ["inherit", "pipe", "pipe"] },
+        );
+        let stdout = "";
+        child.stdout.on("data", (data: Buffer) => {
+          stdout += data.toString();
+        });
+        child.on("close", (code: number) =>
+          code === 0 ? resolve(stdout) : reject(new Error(`exit ${code}`)),
+        );
+      });
+      if (result.includes("The database is available")) {
+        logger.success("FoundationDB is ready");
+        break;
+      }
+    } catch {
+      // Not ready yet
+    }
+    await new Promise(resolve => setTimeout(resolve, 1000));
+  }
+
+  // Get cluster file and write it for the FDB Queue Service
+  const fs = await import("fs");
+  const os = await import("os");
+  const path = await import("path");
+  const clusterFilePath = path.join(os.tmpdir(), "firecrawl-fdb.cluster");
+
+  const clusterFileContent = await new Promise<string>((resolve, reject) => {
+    const child = require("child_process").spawn(
+      runtime,
+      ["exec", fdbContainerName, "cat", "/var/fdb/fdb.cluster"],
+      { stdio: ["inherit", "pipe", "pipe"] },
+    );
+    let stdout = "";
+    child.stdout.on("data", (data: Buffer) => {
+      stdout += data.toString();
+    });
+    child.on("close", (code: number) =>
+      code === 0 ? resolve(stdout.trim()) : reject(new Error(`exit ${code}`)),
+    );
+  });
+
+  // Rewrite for Docker networking
+  const rewrittenClusterFile = clusterFileContent.replace(
+    /@[\d.]+:4500/,
+    "@host.docker.internal:4500",
+  );
+  fs.writeFileSync(clusterFilePath, rewrittenClusterFile + "\n");
+  logger.info(`Cluster file written to ${clusterFilePath}`);
+
+  // Build and start the FDB Queue Service
+  const fdbQueueServicePath = join(MONOREPO_ROOT, "apps", "fdb-queue-service");
+  const fdbQueueServiceImageName = "firecrawl-fdb-queue-service:latest";
+  const fdbQueueServicePort = 3100;
+
+  if (fs.existsSync(join(fdbQueueServicePath, "Cargo.toml"))) {
+    logger.info("Building FDB Queue Service image...");
+    const build = execForward(
+      `fdb@build-service`,
+      `${runtime} build -t ${fdbQueueServiceImageName} ${shellEscape(fdbQueueServicePath)}`,
+    );
+    await build.promise;
+    logger.success("FDB Queue Service image built");
+  }
+
+  logger.info(
+    `Starting FDB Queue Service container: ${fdbQueueServiceContainerName}`,
+  );
+  const startService = execForward(
+    `${runtime}@start-fdb-queue-service`,
+    `${runtime} run -d --name ${fdbQueueServiceContainerName} -p ${fdbQueueServicePort}:${fdbQueueServicePort} -v ${shellEscape(clusterFilePath)}:/etc/foundationdb/fdb.cluster:ro -e FDB_CLUSTER_FILE=/etc/foundationdb/fdb.cluster -e PORT=${fdbQueueServicePort} ${fdbQueueServiceImageName}`,
+  );
+  await startService.promise;
+
+  // Wait for the FDB Queue Service to be ready
+  logger.info("Waiting for FDB Queue Service to be ready...");
+  for (let i = 0; i < 30; i++) {
+    try {
+      const response = await fetch(
+        `http://localhost:${fdbQueueServicePort}/health`,
+      );
+      if (response.ok) {
+        const health = (await response.json()) as {
+          status: string;
+          fdbConnected: boolean;
+        };
+        if (health.fdbConnected) {
+          logger.success("FDB Queue Service is ready");
+          break;
+        }
+      }
+    } catch {
+      // Not ready yet
+    }
+    if (i === 29) {
+      throw new Error("FDB Queue Service did not become ready in time");
+    }
+    await new Promise(resolve => setTimeout(resolve, 1000));
+  }
+
+  // Set environment variable
+  const serviceUrl = `http://localhost:${fdbQueueServicePort}`;
+  config.FDB_QUEUE_SERVICE_URL = serviceUrl;
+  process.env.FDB_QUEUE_SERVICE_URL = serviceUrl;
+
+  logger.success("FDB Queue Service is ready");
+
+  const containerInfo = {
+    containerName: fdbContainerName,
+    containerRuntime: runtime,
+  };
+
+  // Store globally for graceful shutdown
+  fdbContainer = containerInfo;
+  fdbQueueServiceContainer = {
+    containerName: fdbQueueServiceContainerName,
+    containerRuntime: runtime,
+  };
+
+  return containerInfo;
+}
+
 async function installDependencies() {
   logger.section("Installing dependencies");
 
@@ -714,6 +924,9 @@ async function startServices(command?: string[]): Promise<Services> {
 
   // Setup NUQ RabbitMQ container if needed
   const nuqRabbitMQ = await setupNuqRabbitMQ();
+
+  // Setup FDB containers if needed
+  const fdb = await setupFDB();
 
   logger.section("Starting services");
 
@@ -818,6 +1031,7 @@ async function startServices(command?: string[]): Promise<Services> {
     command: commandProcess,
     nuqPostgres,
     nuqRabbitMQ,
+    fdb,
   };
 }
 
@@ -860,6 +1074,24 @@ async function stopDevelopmentServices(services: Services) {
       services.nuqRabbitMQ.containerName,
     );
     logger.success("NUQ RabbitMQ container stopped");
+  }
+
+  // Stop and remove FDB containers if they were started by harness
+  if (services.fdb) {
+    if (fdbQueueServiceContainer) {
+      logger.info("Stopping FDB Queue Service container");
+      await stopAndRemoveContainer(
+        fdbQueueServiceContainer.containerRuntime,
+        fdbQueueServiceContainer.containerName,
+      );
+      logger.success("FDB Queue Service container stopped");
+    }
+    logger.info("Stopping FoundationDB container");
+    await stopAndRemoveContainer(
+      services.fdb.containerRuntime,
+      services.fdb.containerName,
+    );
+    logger.success("FoundationDB container stopped");
   }
 }
 
@@ -1033,6 +1265,27 @@ async function gracefulShutdown() {
     );
     logger.success("NUQ RabbitMQ container stopped");
     nuqRabbitMQContainer = null;
+  }
+
+  // Stop and remove FDB containers if they were started by harness
+  if (fdbQueueServiceContainer) {
+    logger.info("Stopping FDB Queue Service container");
+    await stopAndRemoveContainer(
+      fdbQueueServiceContainer.containerRuntime,
+      fdbQueueServiceContainer.containerName,
+    );
+    logger.success("FDB Queue Service container stopped");
+    fdbQueueServiceContainer = null;
+  }
+
+  if (fdbContainer) {
+    logger.info("Stopping FoundationDB container");
+    await stopAndRemoveContainer(
+      fdbContainer.containerRuntime,
+      fdbContainer.containerName,
+    );
+    logger.success("FoundationDB container stopped");
+    fdbContainer = null;
   }
 
   logger.success("All processes terminated");

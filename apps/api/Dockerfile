@@ -58,6 +58,7 @@ FROM base AS runtime
 RUN apt-get update && apt-get install -y \
     git \
     procps \
+    curl \
     && rm -rf /var/lib/apt/lists/*
 
 EXPOSE 8080

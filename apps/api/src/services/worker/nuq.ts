@@ -6,6 +6,7 @@ import { withSpan, setSpanAttributes } from "../../lib/otel-tracer";
 import amqp from "amqplib";
 import { v5 as uuidv5, validate as isUUID } from "uuid";
 import { config } from "../../config";
+import { getCrawlQueueCount, isFDBConfigured } from "../fdb-queue-client";
 
 // === Basics
 
@@ -506,30 +507,6 @@ class NuQ<JobData = any, JobReturnValue = any> {
     }
   }
 
-  public async getJobsFromBacklog(
-    ids: string[],
-    _logger: Logger = logger,
-  ): Promise<NuQJob<JobData, JobReturnValue>[]> {
-    if (ids.length === 0) return [];
-
-    const start = Date.now();
-    try {
-      return (
-        await nuqPool.query(
-          `SELECT ${this.jobBacklogReturning.join(", ")} FROM ${this.queueName}_backlog WHERE ${this.queueName}_backlog.id = ANY($1::uuid[]);`,
-          [ids],
-        )
-      ).rows.map(row => this.rowToJob(row, true)!);
-    } finally {
-      _logger.info("nuqGetJobsFromBacklog metrics", {
-        module: "nuq/metrics",
-        method: "nuqGetJobsFromBacklog",
-        duration: Date.now() - start,
-        scrapeIds: ids.length,
-      });
-    }
-  }
-
   public async getJobsWithStatus(
     ids: string[],
     status: NuQJobStatus,
@@ -609,7 +586,8 @@ class NuQ<JobData = any, JobReturnValue = any> {
   ): Promise<Record<NuQJobStatus, number>> {
     const start = Date.now();
     try {
-      return Object.fromEntries(
+      // Query PG for queued/active/completed/failed counts
+      const pgStats = Object.fromEntries(
         (
           await nuqPool.query(
             `
@@ -618,63 +596,35 @@ class NuQ<JobData = any, JobReturnValue = any> {
               WHERE ${this.queueName}.group_id = $1
               AND ${this.queueName}.data->>'mode' = 'single_urls'
               GROUP BY ${this.queueName}.status
-              UNION ALL
-              SELECT 'backlog'::text as status, COUNT(*) as count
-              FROM ${this.queueName}_backlog
-              WHERE ${this.queueName}_backlog.group_id = $1
-              AND ${this.queueName}_backlog.data->>'mode' = 'single_urls'
             `,
             [groupId],
           )
         ).rows.map(row => [row.status, parseInt(row.count, 10)]),
-      );
+      ) as Record<NuQJobStatus, number>;
+
+      // Get backlog count from FDB
+      let backlogCount = 0;
+      if (isFDBConfigured()) {
+        try {
+          backlogCount = await getCrawlQueueCount(groupId);
+        } catch (err) {
+          _logger.warn("Failed to get FDB backlog count", {
+            error: err,
+            groupId,
+          });
+        }
+      }
+
+      return {
+        ...pgStats,
+        backlog: backlogCount,
+      };
     } finally {
       _logger.info("nuqGetGroupNumericStats metrics", {
         module: "nuq/metrics",
         method: "nuqGetGroupNumericStats",
         duration: Date.now() - start,
         crawlId: groupId,
-      });
-    }
-  }
-
-  public async getBackloggedOwnerIDs(
-    _logger: Logger = logger,
-  ): Promise<string[]> {
-    const start = Date.now();
-    try {
-      return (
-        await nuqPool.query(
-          `SELECT DISTINCT owner_id FROM ${this.queueName}_backlog;`,
-        )
-      ).rows.map(row => row.owner_id);
-    } finally {
-      _logger.info("nuqGetBackloggedOwnerIDs metrics", {
-        module: "nuq/metrics",
-        method: "nuqGetBackloggedOwnerIDs",
-        duration: Date.now() - start,
-      });
-    }
-  }
-
-  public async getBackloggedJobIDsOfOnwer(
-    ownerId: string,
-    _logger: Logger = logger,
-  ): Promise<string[]> {
-    const start = Date.now();
-    try {
-      return (
-        await nuqPool.query(
-          `SELECT id FROM ${this.queueName}_backlog WHERE owner_id = $1;`,
-          [ownerId],
-        )
-      ).rows.map(row => row.id);
-    } finally {
-      _logger.info("nuqGetBackloggedJobIDsOfOnwer metrics", {
-        module: "nuq/metrics",
-        method: "nuqGetBackloggedJobIDsOfOnwer",
-        duration: Date.now() - start,
-        ownerId,
       });
     }
   }
@@ -1022,67 +972,6 @@ class NuQ<JobData = any, JobReturnValue = any> {
           method: "nuqAddJobs",
           duration,
           jobsCount: jobs.length,
-        });
-      }
-    });
-  }
-
-  public async promoteJobFromBacklogOrAdd(
-    id: string,
-    data: JobData,
-    options: NuQJobOptions,
-  ): Promise<NuQJob<JobData, JobReturnValue> | null> {
-    return withSpan("nuq.promoteJobFromBacklogOrAdd", async span => {
-      setSpanAttributes(span, {
-        "nuq.queue_name": this.queueName,
-        "nuq.job_id": id,
-        "nuq.priority": options.priority ?? 0,
-        "nuq.zero_data_retention": (data as any)?.zeroDataRetention ?? false,
-        "nuq.listenable": options.listenable ?? false,
-      });
-
-      const start = Date.now();
-      try {
-        const result = this.rowToJob(
-          (
-            await nuqPool.query(
-              `
-                WITH ins AS (
-                  INSERT INTO ${this.queueName} (id, data, created_at, priority, listen_channel_id, owner_id, group_id)
-                  SELECT b.id, b.data, b.created_at, b.priority, b.listen_channel_id, b.owner_id, b.group_id
-                  FROM ${this.queueName}_backlog b
-                  WHERE b.id = $1
-                  LIMIT 1
-                  ON CONFLICT (id) DO NOTHING
-                  RETURNING ${this.jobReturning.join(", ")}
-                ), del AS (
-                  DELETE FROM ${this.queueName}_backlog
-                  WHERE id = $1
-                )
-                SELECT * FROM ins
-              `,
-              [id],
-            )
-          ).rows[0],
-        );
-
-        if (!result) {
-          return await this.addJobIfNotExists(id, data, {
-            ...options,
-            backlogged: false,
-          });
-        }
-
-        return result;
-      } finally {
-        const duration = Date.now() - start;
-        setSpanAttributes(span, {
-          "nuq.duration_ms": duration,
-        });
-        logger.info("nuqPromoteJobFromBacklogOrAdd metrics", {
-          module: "nuq/metrics",
-          method: "nuqPromoteJobFromBacklogOrAdd",
-          duration,
         });
       }
     });

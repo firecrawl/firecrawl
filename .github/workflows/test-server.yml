@@ -47,6 +47,7 @@ jobs:
       PROXY_PASSWORD: ${{ matrix.proxy == 'proxy' && secrets.PROXY_PASSWORD || '' }}
       NUQ_DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
       NUQ_RABBITMQ_URL: amqp://localhost:5672
+      FDB_QUEUE_SERVICE_URL: http://localhost:3100
       USE_GO_MARKDOWN_PARSER: true
       ALLOW_LOCAL_WEBHOOKS: true
       FIRECRAWL_LOG_TO_FILE: true
@@ -68,7 +69,7 @@ jobs:
             apps/api/pnpm-lock.yaml
             apps/test-site/pnpm-lock.yaml
             apps/playwright-service-ts/pnpm-lock.yaml
-      
+
       - run: pnpm fetch
         working-directory: apps/api
       - run: pnpm fetch
@@ -197,6 +198,71 @@ jobs:
           docker build -t firecrawl/nuq-postgres:latest ./apps/nuq-postgres
           docker run -d -p 5432:5432 -e POSTGRES_USER=postgres -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=postgres --name postgres firecrawl/nuq-postgres:latest
 
+      - name: Start FoundationDB server
+        run: |
+          # Start FDB container
+          docker run -d --name foundationdb -p 4500:4500 foundationdb/foundationdb:7.3.69
+
+          # Wait for container to start
+          sleep 3
+
+          # Initialize FDB as a single-node memory cluster
+          docker exec foundationdb fdbcli --exec "configure new single memory" -C /var/fdb/fdb.cluster || true
+
+          # Wait for initialization
+          sleep 2
+
+          # Get the cluster file from the container
+          FDB_CLUSTER_CONTENT=$(docker exec foundationdb cat /var/fdb/fdb.cluster)
+          echo "Original cluster file: $FDB_CLUSTER_CONTENT"
+
+          # Replace the container IP with host.docker.internal for container-to-container access
+          FDB_CLUSTER_DOCKER=$(echo "$FDB_CLUSTER_CONTENT" | sed 's/@[0-9.]*:4500/@host.docker.internal:4500/')
+          echo "Docker cluster file: $FDB_CLUSTER_DOCKER"
+
+          # Write the cluster file for the queue service container
+          echo "$FDB_CLUSTER_DOCKER" > /tmp/fdb.cluster
+
+          # Wait for FDB to be available (with retries)
+          for i in {1..30}; do
+            if docker exec foundationdb fdbcli --exec "status minimal" -C /var/fdb/fdb.cluster 2>&1 | grep -q "The database is available"; then
+              echo "FoundationDB is ready!"
+              break
+            fi
+            echo "Waiting for FoundationDB... (attempt $i/30)"
+            sleep 2
+          done
+
+          # Verify FDB is working
+          docker exec foundationdb fdbcli --exec "status" -C /var/fdb/fdb.cluster
+
+      - name: Start FDB Queue Service
+        run: |
+          # Build the FDB queue service image
+          docker build -t firecrawl-fdb-queue-service:latest ./apps/fdb-queue-service
+
+          # Run the queue service container
+          docker run -d --name fdb-queue-service \
+            -p 3100:3100 \
+            --add-host=host.docker.internal:host-gateway \
+            -v /tmp/fdb.cluster:/etc/foundationdb/fdb.cluster:ro \
+            -e FDB_CLUSTER_FILE=/etc/foundationdb/fdb.cluster \
+            -e PORT=3100 \
+            firecrawl-fdb-queue-service:latest
+
+          # Wait for the queue service to be healthy
+          for i in {1..30}; do
+            if curl -s http://localhost:3100/health | grep -q '"fdbConnected":true'; then
+              echo "FDB Queue Service is ready!"
+              break
+            fi
+            echo "Waiting for FDB Queue Service... (attempt $i/30)"
+            sleep 2
+          done
+
+          # Verify service health
+          curl -s http://localhost:3100/health
+
       - name: Run tests
         run: pnpm harness pnpm test:snips
         working-directory: apps/api
@@ -223,6 +289,14 @@ jobs:
         if: always() && matrix.search == 'searxng'
         run: docker logs searxng > logs/searxng.log && docker kill searxng
 
+      - name: Copy FoundationDB logs
+        if: always()
+        run: docker logs foundationdb > logs/foundationdb.log 2>&1 && docker kill foundationdb || true
+
+      - name: Copy FDB Queue Service logs
+        if: always()
+        run: docker logs fdb-queue-service > logs/fdb-queue-service.log 2>&1 && docker kill fdb-queue-service || true
+
       - name: Copy Playwright logs
         if: always() && matrix.engine == 'playwright'
         run: cp ./apps/playwright-service-ts/playwright.log logs/playwright.log
@@ -240,168 +314,217 @@ jobs:
           path: logs/logs.zip
 
   # temp disabled
-  # prod-test:
-  #   name: Production environment tests
-  #   runs-on: big-runner
-  #   services:
-  #     redis:
-  #       image: redis
-  #       ports:
-  #         - 6379:6379
-  #     rabbitmq:
-  #       image: rabbitmq
-  #       ports:
-  #         - 5672:5672
-  #   env:
-  #     BULL_AUTH_KEY: ${{ secrets.BULL_AUTH_KEY }}
-  #     OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-  #     REDIS_URL: ${{ secrets.REDIS_URL }}
-  #     SUPABASE_ANON_TOKEN: ${{ secrets.SUPABASE_ANON_TOKEN }}
-  #     SUPABASE_SERVICE_TOKEN: ${{ secrets.SUPABASE_SERVICE_TOKEN }}
-  #     SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-  #     SUPABASE_REPLICA_URL: ${{ secrets.SUPABASE_REPLICA_URL }}
-  #     INDEX_SUPABASE_SERVICE_TOKEN: ${{ secrets.INDEX_SUPABASE_SERVICE_TOKEN }}
-  #     INDEX_SUPABASE_ANON_TOKEN: ${{ secrets.INDEX_SUPABASE_ANON_TOKEN }}
-  #     INDEX_SUPABASE_URL: ${{ secrets.INDEX_SUPABASE_URL }}
-  #     TEST_API_KEY: ${{ secrets.TEST_API_KEY }}
-  #     TEST_TEAM_ID: ${{ secrets.TEST_TEAM_ID }}
-  #     TEST_API_KEY_CONCURRENCY: ${{ secrets.TEST_API_KEY_CONCURRENCY }}
-  #     TEST_TEAM_ID_CONCURRENCY: ${{ secrets.TEST_TEAM_ID_CONCURRENCY }}
-  #     TEST_API_KEY_ZDR: ${{ secrets.TEST_API_KEY_ZDR }}
-  #     TEST_TEAM_ID_ZDR: ${{ secrets.TEST_TEAM_ID_ZDR }}
-  #     FIRE_ENGINE_BETA_URL: ${{ secrets.FIRE_ENGINE_BETA_URL }}
-  #     FIRE_ENGINE_STAGING_URL: ${{ secrets.FIRE_ENGINE_STAGING_URL }}
-  #     USE_DB_AUTHENTICATION: true
-  #     ENV: ${{ secrets.ENV }}
-  #     RUNPOD_MU_POD_ID: ${{ secrets.RUNPOD_MU_POD_ID }}
-  #     RUNPOD_MUV2_POD_ID: ${{ secrets.RUNPOD_MUV2_POD_ID }}
-  #     RUNPOD_MU_API_KEY: ${{ secrets.RUNPOD_MU_API_KEY }}
-  #     GCS_CREDENTIALS: ${{ secrets.GCS_CREDENTIALS }}
-  #     GCS_BUCKET_NAME: ${{ secrets.GCS_BUCKET_NAME }}
-  #     GCS_INDEX_BUCKET_NAME: ${{ secrets.GCS_INDEX_BUCKET_NAME }}
-  #     GCS_MEDIA_BUCKET_NAME: ${{ secrets.GCS_MEDIA_BUCKET_NAME }}
-  #     GOOGLE_GENERATIVE_AI_API_KEY: ${{ secrets.GOOGLE_GENERATIVE_AI_API_KEY }}
-  #     GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
-  #     ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-  #     VERTEX_CREDENTIALS: ${{ secrets.VERTEX_CREDENTIALS }}
-  #     USE_GO_MARKDOWN_PARSER: true
-  #     SENTRY_ENVIRONMENT: dev
-  #     IDMUX_URL: ${{ secrets.IDMUX_URL }}
-  #     LOG_ENCRYPTION_KEY: ${{ secrets.LOG_ENCRYPTION_KEY }}
-  #     TEST_SUITE_WEBSITE: ${{ secrets.TEST_SUITE_WEBSITE }}
-  #     NUQ_DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
-  #     NUQ_RABBITMQ_URL: amqp://localhost:5672
-  #     HOST: 0.0.0.0
-  #   steps:
-  #     - uses: actions/checkout@v5
+  prod-test:
+    name: Production environment tests
+    runs-on: big-runner
+    services:
+      redis:
+        image: redis
+        ports:
+          - 6379:6379
+      rabbitmq:
+        image: rabbitmq
+        ports:
+          - 5672:5672
+    env:
+      BULL_AUTH_KEY: ${{ secrets.BULL_AUTH_KEY }}
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      REDIS_URL: ${{ secrets.REDIS_URL }}
+      SUPABASE_ANON_TOKEN: ${{ secrets.SUPABASE_ANON_TOKEN }}
+      SUPABASE_SERVICE_TOKEN: ${{ secrets.SUPABASE_SERVICE_TOKEN }}
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_REPLICA_URL: ${{ secrets.SUPABASE_REPLICA_URL }}
+      INDEX_SUPABASE_SERVICE_TOKEN: ${{ secrets.INDEX_SUPABASE_SERVICE_TOKEN }}
+      INDEX_SUPABASE_ANON_TOKEN: ${{ secrets.INDEX_SUPABASE_ANON_TOKEN }}
+      INDEX_SUPABASE_URL: ${{ secrets.INDEX_SUPABASE_URL }}
+      TEST_API_KEY: ${{ secrets.TEST_API_KEY }}
+      TEST_TEAM_ID: ${{ secrets.TEST_TEAM_ID }}
+      TEST_API_KEY_CONCURRENCY: ${{ secrets.TEST_API_KEY_CONCURRENCY }}
+      TEST_TEAM_ID_CONCURRENCY: ${{ secrets.TEST_TEAM_ID_CONCURRENCY }}
+      TEST_API_KEY_ZDR: ${{ secrets.TEST_API_KEY_ZDR }}
+      TEST_TEAM_ID_ZDR: ${{ secrets.TEST_TEAM_ID_ZDR }}
+      FIRE_ENGINE_BETA_URL: ${{ secrets.FIRE_ENGINE_BETA_URL }}
+      FIRE_ENGINE_STAGING_URL: ${{ secrets.FIRE_ENGINE_STAGING_URL }}
+      USE_DB_AUTHENTICATION: true
+      ENV: ${{ secrets.ENV }}
+      RUNPOD_MU_POD_ID: ${{ secrets.RUNPOD_MU_POD_ID }}
+      RUNPOD_MUV2_POD_ID: ${{ secrets.RUNPOD_MUV2_POD_ID }}
+      RUNPOD_MU_API_KEY: ${{ secrets.RUNPOD_MU_API_KEY }}
+      GCS_CREDENTIALS: ${{ secrets.GCS_CREDENTIALS }}
+      GCS_BUCKET_NAME: ${{ secrets.GCS_BUCKET_NAME }}
+      GCS_INDEX_BUCKET_NAME: ${{ secrets.GCS_INDEX_BUCKET_NAME }}
+      GCS_MEDIA_BUCKET_NAME: ${{ secrets.GCS_MEDIA_BUCKET_NAME }}
+      GOOGLE_GENERATIVE_AI_API_KEY: ${{ secrets.GOOGLE_GENERATIVE_AI_API_KEY }}
+      GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      VERTEX_CREDENTIALS: ${{ secrets.VERTEX_CREDENTIALS }}
+      USE_GO_MARKDOWN_PARSER: true
+      SENTRY_ENVIRONMENT: dev
+      IDMUX_URL: ${{ secrets.IDMUX_URL }}
+      LOG_ENCRYPTION_KEY: ${{ secrets.LOG_ENCRYPTION_KEY }}
+      TEST_SUITE_WEBSITE: ${{ secrets.TEST_SUITE_WEBSITE }}
+      NUQ_DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
+      NUQ_RABBITMQ_URL: amqp://localhost:5672
+      FDB_QUEUE_SERVICE_URL: http://localhost:3100
+      HOST: 0.0.0.0
+    steps:
+      - uses: actions/checkout@v5
 
-  #     - name: Tailscale
-  #       uses: tailscale/github-action@v4
-  #       with:
-  #         oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
-  #         oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
-  #         tags: tag:ci
-  #         use-cache: 'true'
+      - name: Tailscale
+        uses: tailscale/github-action@v4
+        with:
+          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
+          tags: tag:ci
+          use-cache: 'true'
 
-  #     - uses: pnpm/action-setup@v4
-  #       with:
-  #         version: 10
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
 
-  #     - run: pnpm config set store-dir ~/.pnpm-store
-  #     - run: mkdir -p ~/.pnpm-store
+      - run: pnpm config set store-dir ~/.pnpm-store
+      - run: mkdir -p ~/.pnpm-store
 
-  #     - uses: actions/setup-node@v6
-  #       with:
-  #         node-version: 22
-  #         cache: pnpm
-  #         cache-dependency-path: |
-  #           apps/api/pnpm-lock.yaml
-
-  #     - run: pnpm fetch
-  #       working-directory: apps/api
-
-  #     - name: Restore native lib
-  #       id: napi_restore
-  #       uses: actions/cache/restore@v4
-  #       with:
-  #         path: |
-  #           apps/api/native/*.node
-  #           apps/api/native/index.js
-  #           apps/api/native/index.d.ts
-  #         # note: this key is not ideal, need to find a better solution
-  #         key: ${{ runner.os }}-napi-${{ hashFiles('apps/api/native/Cargo.toml', 'apps/api/native/package.json', 'apps/api/native/src/**') }}
-
-  #     - name: Build native lib
-  #       if: steps.napi_restore.outputs.cache-hit != 'true'
-  #       run: pnpm install
-  #       working-directory: apps/api/native
-
-  #     - name: Cache native lib
-  #       if: steps.napi_restore.outputs.cache-hit != 'true'
-  #       uses: actions/cache/save@v4
-  #       with:
-  #         path: |
-  #           apps/api/native/*.node
-  #           apps/api/native/index.js
-  #           apps/api/native/index.d.ts
-  #         key: ${{ steps.napi_restore.outputs.cache-primary-key }}
-
-  #     - uses: actions/setup-go@v6
-  #       with:
-  #         go-version: 1.24
-  #         cache-dependency-path: apps/api/sharedLibs/go-html-to-md/go.sum
-
-  #     - name: Restore Go lib
-  #       id: golib_restore
-  #       uses: actions/cache/restore@v4
-  #       with:
-  #         path: apps/api/sharedLibs/go-html-to-md/libhtml-to-markdown.so
-  #         key: ${{ runner.os }}-golib-${{ hashFiles('apps/api/sharedLibs/go-html-to-md/go.sum', 'apps/api/sharedLibs/go-html-to-md/*.go') }}
-
-  #     - name: Build go-html-to-md
-  #       if: steps.golib_restore.outputs.cache-hit != 'true'
-  #       run: |
-  #         cd apps/api/sharedLibs/go-html-to-md
-  #         go mod tidy
-  #         go build -o libhtml-to-markdown.so -buildmode=c-shared html-to-markdown.go
-
-  #     - name: Cache Go lib
-  #       if: steps.golib_restore.outputs.cache-hit != 'true'
-  #       uses: actions/cache/save@v4
-  #       with:
-  #         path: apps/api/sharedLibs/go-html-to-md/libhtml-to-markdown.so
-  #         key: ${{ steps.golib_restore.outputs.cache-primary-key }}
-
-  #     - name: Install API dependencies
-  #       run: pnpm install --frozen-lockfile --ignore-scripts
-  #       working-directory: apps/api
-  #       env:
-  #         npm_config_ignore_scripts: "true"
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: |
+            apps/api/pnpm-lock.yaml
       
-  #     - name: Run Docker Postgres
-  #       run: |
-  #         docker build -t firecrawl/nuq-postgres:latest ./apps/nuq-postgres
-  #         docker run -d -p 5432:5432 -e POSTGRES_USER=postgres -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=postgres --name postgres firecrawl/nuq-postgres:latest
+      - run: pnpm fetch
+        working-directory: apps/api
 
-  #     - name: Run tests
-  #       run: pnpm harness pnpm test:snips
-  #       working-directory: apps/api
-  #       env:
-  #         npm_config_ignore_scripts: "true" # required currently to prevent re-building cached native lib
+      - name: Restore native lib
+        id: napi_restore
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            apps/api/native/*.node
+            apps/api/native/index.js
+            apps/api/native/index.d.ts
+          # note: this key is not ideal, need to find a better solution
+          key: ${{ runner.os }}-napi-${{ hashFiles('apps/api/native/Cargo.toml', 'apps/api/native/package.json', 'apps/api/native/src/**') }}
 
-  #     - name: Create logs directory
-  #       if: always()
-  #       run: |
-  #         mkdir -p logs
-  #         cp ./apps/api/firecrawl.log logs/firecrawl.log
-  #         cd logs
-  #         zip -r logs.zip ./*
-  #         echo "${{ secrets.LOG_ENCRYPTION_KEY }}" | gpg --batch --yes --passphrase-fd 0 -c logs.zip
-  #         rm logs.zip
+      - name: Build native lib
+        if: steps.napi_restore.outputs.cache-hit != 'true'
+        run: pnpm install
+        working-directory: apps/api/native
 
-  #     - uses: actions/upload-artifact@v4
-  #       if: always()
-  #       with:
-  #         name: Encrypted Logs
-  #         path: logs/logs.zip.gpg
-  #         retention-days: 5
+      - name: Cache native lib
+        if: steps.napi_restore.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            apps/api/native/*.node
+            apps/api/native/index.js
+            apps/api/native/index.d.ts
+          key: ${{ steps.napi_restore.outputs.cache-primary-key }}
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version: 1.24
+          cache-dependency-path: apps/api/sharedLibs/go-html-to-md/go.sum
+
+      - name: Restore Go lib
+        id: golib_restore
+        uses: actions/cache/restore@v4
+        with:
+          path: apps/api/sharedLibs/go-html-to-md/libhtml-to-markdown.so
+          key: ${{ runner.os }}-golib-${{ hashFiles('apps/api/sharedLibs/go-html-to-md/go.sum', 'apps/api/sharedLibs/go-html-to-md/*.go') }}
+
+      - name: Build go-html-to-md
+        if: steps.golib_restore.outputs.cache-hit != 'true'
+        run: |
+          cd apps/api/sharedLibs/go-html-to-md
+          go mod tidy
+          go build -o libhtml-to-markdown.so -buildmode=c-shared html-to-markdown.go
+
+      - name: Cache Go lib
+        if: steps.golib_restore.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: apps/api/sharedLibs/go-html-to-md/libhtml-to-markdown.so
+          key: ${{ steps.golib_restore.outputs.cache-primary-key }}
+
+      - name: Install API dependencies
+        run: pnpm install --frozen-lockfile --ignore-scripts
+        working-directory: apps/api
+        env:
+          npm_config_ignore_scripts: "true"
+      
+      - name: Run Docker Postgres
+        run: |
+          docker build -t firecrawl/nuq-postgres:latest ./apps/nuq-postgres
+          docker run -d -p 5432:5432 -e POSTGRES_USER=postgres -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=postgres --name postgres firecrawl/nuq-postgres:latest
+      
+      - name: Start FoundationDB server
+        run: |
+          # Start FDB container
+          docker run -d --name foundationdb -p 4500:4500 foundationdb/foundationdb:7.3.69
+
+          # Wait for container to start
+          sleep 3
+
+          # Initialize FDB as a single-node memory cluster
+          docker exec foundationdb fdbcli --exec "configure new single memory" -C /var/fdb/fdb.cluster || true
+
+          # Wait for initialization
+          sleep 2
+
+          # Get the cluster file from the container
+          FDB_CLUSTER_CONTENT=$(docker exec foundationdb cat /var/fdb/fdb.cluster)
+          echo "Original cluster file: $FDB_CLUSTER_CONTENT"
+
+          # Replace the container IP with host.docker.internal for container-to-container access
+          FDB_CLUSTER_DOCKER=$(echo "$FDB_CLUSTER_CONTENT" | sed 's/@[0-9.]*:4500/@host.docker.internal:4500/')
+          echo "Docker cluster file: $FDB_CLUSTER_DOCKER"
+
+          # Write the cluster file for the queue service container
+          echo "$FDB_CLUSTER_DOCKER" > /tmp/fdb.cluster
+
+          # Wait for FDB to be available (with retries)
+          for i in {1..30}; do
+            if docker exec foundationdb fdbcli --exec "status minimal" -C /var/fdb/fdb.cluster 2>&1 | grep -q "The database is available"; then
+              echo "FoundationDB is ready!"
+              break
+            fi
+            echo "Waiting for FoundationDB... (attempt $i/30)"
+            sleep 2
+          done
+
+          # Verify FDB is working
+          docker exec foundationdb fdbcli --exec "status" -C /var/fdb/fdb.cluster
+
+      - name: Start FDB Queue Service
+        run: |
+          # Build the FDB queue service image
+          docker build -t firecrawl-fdb-queue-service:latest ./apps/fdb-queue-service
+
+          # Run the queue service container
+          docker run -d --name fdb-queue-service \
+            -p 3100:3100 \
+            --add-host=host.docker.internal:host-gateway \
+            -v /tmp/fdb.cluster:/etc/foundationdb/fdb.cluster:ro \
+            -e FDB_CLUSTER_FILE=/etc/foundationdb/fdb.cluster \
+            -e PORT=3100 \
+            firecrawl-fdb-queue-service:latest
+
+          # Wait for the queue service to be healthy
+          for i in {1..30}; do
+            if curl -s http://localhost:3100/health | grep -q '"fdbConnected":true'; then
+              echo "FDB Queue Service is ready!"
+              break
+            fi
+            echo "Waiting for FDB Queue Service... (attempt $i/30)"
+            sleep 2
+          done
+
+          # Verify service health
+          curl -s http://localhost:3100/health
+
+      - name: Run concurrency tests
+        run: pnpm harness pnpm jest concurrency
+        working-directory: apps/api
+        env:
+          npm_config_ignore_scripts: "true" # required currently to prevent re-building cached native lib

@@ -25,6 +25,8 @@ import { crawlFinishedQueue, NuQJob, scrapeQueue } from "./worker/nuq";
 import { finishCrawlSuper } from "./worker/crawl-logic";
 import { getCrawl } from "../lib/crawl-redis";
 import { TransportableError } from "../lib/error";
+import { startNuqJanitorWorker } from "./worker/nuq-janitor-worker";
+import { initFDB } from "./fdb-queue-client";
 
 configDotenv();
 
@@ -451,6 +453,11 @@ app.listen(workerPort, () => {
   });
 
   initializeEngineForcing();
+
+  // Initialize FDB and start the NuQ janitor worker (replaces PG cron)
+  if (initFDB()) {
+    startNuqJanitorWorker();
+  }
 
   await Promise.all([
     workerFun(getDeepResearchQueue(), processDeepResearchJobInternal),

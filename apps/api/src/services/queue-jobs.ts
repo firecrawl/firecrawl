@@ -44,39 +44,39 @@ async function _addScrapeJobToConcurrencyQueue(
   priority: number = 0,
   listenable: boolean = false,
 ) {
-  await scrapeQueue.addJob(
-    jobId,
-    {
-      ...webScraperOptions,
-      concurrencyLimited: true,
-    },
-    {
+  // With FDB, we only store the job in the FDB concurrency queue.
+  // Jobs are NOT added to the PG backlog table anymore.
+  // When a slot opens up, the job is promoted from FDB to the main NuQ queue.
+  try {
+    await pushConcurrencyLimitedJob(
+      webScraperOptions.team_id,
+      {
+        id: jobId,
+        data: { ...webScraperOptions, concurrencyLimited: true },
+        priority,
+        listenable,
+      },
+      webScraperOptions.crawl_id
+        ? Infinity
+        : (webScraperOptions.scrapeOptions?.timeout ?? 60 * 1000),
+    );
+  } catch (error) {
+    // Log prominently with full job data for recovery if FDB fails
+    _logger.error("CRITICAL: Failed to add job to FDB concurrency queue", {
+      error,
+      jobId,
+      teamId: webScraperOptions.team_id,
+      crawlId: webScraperOptions.crawl_id,
       priority,
       listenable,
-      ownerId: webScraperOptions.team_id ?? undefined,
-      groupId: webScraperOptions.crawl_id ?? undefined,
-      backlogged: true,
-      backloggedTimesOutAt: webScraperOptions.crawl_id
-        ? undefined
-        : new Date(
-            Date.now() +
-              (webScraperOptions.scrapeOptions?.timeout ?? 60 * 1000),
-          ),
-    },
-  );
-
-  await pushConcurrencyLimitedJob(
-    webScraperOptions.team_id,
-    {
-      id: jobId,
-      data: webScraperOptions,
-      priority,
-      listenable,
-    },
-    webScraperOptions.crawl_id
-      ? Infinity
-      : (webScraperOptions.scrapeOptions?.timeout ?? 60 * 1000),
-  );
+      // Include enough data to manually recover the job if needed
+      jobData: JSON.stringify({
+        ...webScraperOptions,
+        concurrencyLimited: true,
+      }),
+    });
+    throw error; // Re-throw to propagate the error to the caller
+  }
 }
 
 async function _addScrapeJobsToConcurrencyQueue(
@@ -87,38 +87,39 @@ async function _addScrapeJobsToConcurrencyQueue(
     listenable?: boolean;
   }[],
 ) {
-  await scrapeQueue.addJobs(
-    jobs.map(job => ({
-      id: job.jobId,
-      data: job.data,
-      options: {
-        priority: job.priority,
-        listenable: job.listenable ?? false,
-        ownerId: job.data.team_id ?? undefined,
-        groupId: job.data.crawl_id ?? undefined,
-        backlogged: true,
-        backloggedTimesOutAt: job.data.crawl_id
-          ? undefined
-          : new Date(
-              Date.now() + (job.data.scrapeOptions?.timeout ?? 60 * 1000),
-            ),
-      },
-    })),
-  );
-
+  // With FDB, we only store jobs in the FDB concurrency queue.
+  // Jobs are NOT added to the PG backlog table anymore.
+  // When a slot opens up, jobs are promoted from FDB to the main NuQ queue.
   for (const job of jobs) {
-    await pushConcurrencyLimitedJob(
-      job.data.team_id,
-      {
-        id: job.jobId,
-        data: job.data,
+    try {
+      await pushConcurrencyLimitedJob(
+        job.data.team_id,
+        {
+          id: job.jobId,
+          data: { ...job.data, concurrencyLimited: true },
+          priority: job.priority,
+          listenable: job.listenable ?? false,
+        },
+        job.data.crawl_id
+          ? Infinity
+          : (job.data.scrapeOptions?.timeout ?? 60 * 1000),
+      );
+    } catch (error) {
+      // Log prominently with full job data for recovery if FDB fails
+      _logger.error("CRITICAL: Failed to add job to FDB concurrency queue", {
+        error,
+        jobId: job.jobId,
+        teamId: job.data.team_id,
+        crawlId: job.data.crawl_id,
         priority: job.priority,
-        listenable: job.listenable ?? false,
-      },
-      job.data.crawl_id
-        ? Infinity
-        : (job.data.scrapeOptions?.timeout ?? 60 * 1000),
-    );
+        listenable: job.listenable,
+        jobData: JSON.stringify({
+          ...job.data,
+          concurrencyLimited: true,
+        }),
+      });
+      throw error; // Re-throw to propagate the error to the caller
+    }
   }
 }
 

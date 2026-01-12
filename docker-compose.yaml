@@ -30,6 +30,7 @@ x-common-env: &common-env
   POSTGRES_DB: ${POSTGRES_DB:-postgres}
   POSTGRES_HOST: ${POSTGRES_HOST:-nuq-postgres}
   POSTGRES_PORT: ${POSTGRES_PORT:-5432}
+  FDB_QUEUE_SERVICE_URL: ${FDB_QUEUE_SERVICE_URL:-http://fdb-queue-service:3100}
   USE_DB_AUTHENTICATION: ${USE_DB_AUTHENTICATION:-false}
   NUM_WORKERS_PER_QUEUE: ${NUM_WORKERS_PER_QUEUE:-8}
   CRAWL_CONCURRENT_REQUESTS: ${CRAWL_CONCURRENT_REQUESTS:-10}
@@ -101,6 +102,8 @@ services:
         condition: service_started
       rabbitmq:
         condition: service_healthy
+      fdb-queue-service:
+        condition: service_healthy
     ports:
       - "${PORT:-3002}:${INTERNAL_PORT:-3002}"
     command: node dist/src/harness.js --start-docker
@@ -160,6 +163,56 @@ services:
         max-file: "3"
         compress: "true"
 
+  foundationdb:
+    image: foundationdb/foundationdb:7.3.69
+    networks:
+      - backend
+    volumes:
+      - fdb-data:/var/fdb/data
+      - fdb-cluster:/var/fdb
+    healthcheck:
+      test: ["CMD", "fdbcli", "--exec", "status minimal", "-C", "/var/fdb/fdb.cluster"]
+      interval: 5s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "5m"
+        max-file: "2"
+        compress: "true"
+
+  fdb-queue-service:
+    build: apps/fdb-queue-service
+    environment:
+      FDB_CLUSTER_FILE: /var/fdb/fdb.cluster
+      PORT: 3100
+      RUST_LOG: info
+    networks:
+      - backend
+    depends_on:
+      foundationdb:
+        condition: service_healthy
+    volumes:
+      - fdb-cluster:/var/fdb:ro
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3100/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "5m"
+        max-file: "2"
+        compress: "true"
+
 networks:
   backend:
     driver: bridge
+
+volumes:
+  fdb-data:
+  fdb-cluster:
