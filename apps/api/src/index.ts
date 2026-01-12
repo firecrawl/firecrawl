@@ -37,6 +37,10 @@ import { initializeBlocklist } from "./scraper/WebScraper/utils/blocklist";
 import { initializeEngineForcing } from "./scraper/WebScraper/utils/engine-forcing";
 import responseTime from "response-time";
 import { shutdownWebhookQueue } from "./services/webhook";
+import {
+  creditReservationCleanupMiddleware,
+  creditReservationErrorHandler,
+} from "./routes/shared";
 
 const { createBullBoard } = require("@bull-board/api");
 const { BullMQAdapter } = require("@bull-board/api/bullMQAdapter");
@@ -108,6 +112,9 @@ app.use("/v2", v2Router);
 app.use(adminRouter);
 app.use(domainFrequencyRouter);
 
+// Credit reservation cleanup - releases reservations on error responses (4xx/5xx)
+app.use(creditReservationCleanupMiddleware);
+
 const DEFAULT_PORT = config.PORT;
 const HOST = config.HOST;
 
@@ -164,6 +171,10 @@ if (require.main === module) {
 app.get("/is-production", (req, res) => {
   res.send({ isProduction: global.isProduction });
 });
+
+// Credit reservation error handler - releases reservations when errors are thrown
+// Must be before other error handlers to ensure cleanup happens
+app.use(creditReservationErrorHandler);
 
 app.use(
   (

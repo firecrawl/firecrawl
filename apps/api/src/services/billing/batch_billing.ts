@@ -4,7 +4,7 @@ import { getRedisConnection } from "../queue-service";
 import { supabase_service } from "../supabase";
 import * as Sentry from "@sentry/node";
 import { withAuth } from "../../lib/withAuth";
-import { setCachedACUC, setCachedACUCTeam } from "../../controllers/auth";
+import { setCachedACUC } from "../../controllers/auth";
 import { AuthCreditUsageChunk } from "../../controllers/v1/types";
 
 // Configuration constants
@@ -314,33 +314,12 @@ async function supaBillTeam(
 
   await getRedisConnection().sadd("billed_teams", team_id);
 
-  // Update cached ACUC to reflect the new credit usage
-  (async () => {
-    for (const apiKey of (data ?? []).map(x => x.api_key)) {
-      await setCachedACUC(apiKey, is_extract, acuc =>
-        acuc
-          ? {
-              ...acuc,
-              credits_used: acuc.credits_used + credits,
-              adjusted_credits_used: acuc.adjusted_credits_used + credits,
-              remaining_credits: acuc.remaining_credits - credits,
-            }
-          : null,
-      );
-      await setCachedACUCTeam(team_id, is_extract, acuc =>
-        acuc
-          ? {
-              ...acuc,
-              credits_used: acuc.credits_used + credits,
-              adjusted_credits_used: acuc.adjusted_credits_used + credits,
-              remaining_credits: acuc.remaining_credits - credits,
-            }
-          : null,
-      );
-    }
-  })().catch(error => {
-    _logger.error("Failed to update cached credits", { error, team_id });
-  });
+  // Note: We intentionally do NOT update the cached ACUC here.
+  // The cache is already updated optimistically in queueBillingOperation() when the
+  // billing operation is queued. Updating it again here would cause double-counting
+  // of credits_used, breaking the credit reservation mechanism.
+  // The database (bill_team_6 RPC) is the source of truth, and auth checks will
+  // refresh from the database when the cache expires or is invalidated.
 
   return { success: true, data };
 }

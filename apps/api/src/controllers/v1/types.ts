@@ -1265,7 +1265,7 @@ export type AuthCreditUsageChunkFromTeam = Omit<
   "api_key"
 >;
 
-export interface CreditReservationRef {
+interface CreditReservationRef {
   id: string;
   credits: number;
 }

@@ -12,7 +12,7 @@ const RESERVATION_TTL_SECONDS = 30 * 60;
 const RESERVATION_KEY_PREFIX = "credit_reservation:";
 const TEAM_RESERVATIONS_KEY_PREFIX = "team_reservations:";
 
-export interface CreditReservation {
+interface CreditReservation {
   id: string;
   team_id: string;
   api_key: string;
@@ -123,8 +123,8 @@ export async function finalizeReservation(
   try {
     const reservationData = await redis.get(reservationKey);
     if (!reservationData) {
-      // Reservation may have expired or already been finalized
-      logger.warn("Reservation not found for finalization", { reservationId });
+      // Reservation may have expired or already been finalized - this is expected
+      logger.debug("Reservation not found for finalization", { reservationId });
       return { success: true }; // Not an error - billing will proceed normally
     }
 
@@ -210,7 +210,8 @@ export async function releaseReservation(
   try {
     const reservationData = await redis.get(reservationKey);
     if (!reservationData) {
-      logger.warn("Reservation not found for release", { reservationId });
+      // Reservation may have expired or already been released - this is expected
+      logger.debug("Reservation not found for release", { reservationId });
       return { success: true };
     }
 
@@ -263,7 +264,7 @@ export async function releaseReservation(
 /**
  * Get active reservations for a team (for debugging/monitoring).
  */
-export async function getTeamReservations(
+async function getTeamReservations(
   team_id: string,
 ): Promise<CreditReservation[]> {
   const redis = getRedisConnection();
