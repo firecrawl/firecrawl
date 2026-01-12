@@ -21,11 +21,13 @@ export interface DeepResearchServiceOptions {
   jsonOptions: ExtractOptions;
   subId?: string;
   apiKeyId: number | null;
+  apiKey?: string;
+  reservationId?: string;
 }
 
 export async function performDeepResearch(options: DeepResearchServiceOptions) {
   const costTracking = new CostTracking();
-  const { researchId, teamId, timeLimit, subId, maxUrls, apiKeyId } = options;
+  const { researchId, teamId, timeLimit, subId, maxUrls, apiKeyId, apiKey, reservationId } = options;
   const startTime = Date.now();
   let currentTopic = options.query;
   let urlsAnalyzed = 0;
@@ -425,7 +427,7 @@ export async function performDeepResearch(options: DeepResearchServiceOptions) {
       json: finalAnalysisJson,
     });
     // Bill team for usage based on URLs analyzed
-    billTeam(teamId, subId, credits_billed, apiKeyId, logger).catch(error => {
+    billTeam(teamId, subId, credits_billed, apiKeyId, logger, apiKey, reservationId).catch(error => {
       logger.error(
         `Failed to bill team ${teamId} for ${urlsAnalyzed} URLs analyzed`,
         { teamId, count: urlsAnalyzed, error },

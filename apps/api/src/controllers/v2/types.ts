@@ -1251,12 +1251,18 @@ export type TeamFlags = {
   bypassCreditChecks?: boolean;
 } | null;
 
+interface CreditReservationRef {
+  id: string;
+  credits: number;
+}
+
 interface RequestWithMaybeACUC<
   ReqParams = {},
   ReqBody = undefined,
   ResBody = undefined,
 > extends Request<ReqParams, ReqBody, ResBody> {
   acuc?: AuthCreditUsageChunk;
+  creditReservation?: CreditReservationRef;
 }
 
 export interface RequestWithAuth<

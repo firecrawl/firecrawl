@@ -74,6 +74,8 @@ const processDeepResearchJobInternal = async (
       formats: job.data.request.formats,
       jsonOptions: job.data.request.jsonOptions,
       apiKeyId: job.data.apiKeyId,
+      apiKey: job.data.apiKey,
+      reservationId: job.data.reservationId,
     });
 
     if (result.success) {
@@ -148,6 +150,8 @@ const processGenerateLlmsTxtJobInternal = async (
       subId: job.data.subId,
       cache: job.data.request.cache,
       apiKeyId: job.data.apiKeyId,
+      apiKey: job.data.apiKey,
+      reservationId: job.data.reservationId,
     });
 
     if (result.success) {

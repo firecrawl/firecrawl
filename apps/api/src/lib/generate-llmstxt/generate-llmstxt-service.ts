@@ -17,6 +17,8 @@ interface GenerateLLMsTextServiceOptions {
   generationId: string;
   teamId: string;
   apiKeyId: number | null;
+  apiKey?: string;
+  reservationId?: string;
   url: string;
   maxUrls: number;
   showFullText: boolean;
@@ -74,6 +76,8 @@ export async function performGenerateLlmsTxt(
     cache = true,
     subId,
     apiKeyId,
+    apiKey,
+    reservationId,
   } = options;
   const startTime = Date.now();
   const logger = _logger.child({
@@ -267,7 +271,7 @@ export async function performGenerateLlmsTxt(
     });
 
     // Bill team for usage
-    billTeam(teamId, subId, urls.length, apiKeyId, logger).catch(error => {
+    billTeam(teamId, subId, urls.length, apiKeyId, logger, apiKey, reservationId).catch(error => {
       logger.error(`Failed to bill team ${teamId} for ${urls.length} urls`, {
         teamId,
         count: urls.length,

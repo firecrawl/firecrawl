@@ -61,6 +61,8 @@ async function oldExtract(
       teamId: req.auth.team_id,
       subId: req.acuc?.sub_id ?? undefined,
       apiKeyId: req.acuc?.api_key_id ?? null,
+      apiKey: req.acuc?.api_key,
+      reservationId: req.creditReservation?.id,
     });
 
     if (sender) {
@@ -171,6 +173,8 @@ export async function extractController(
     extractId,
     agent: req.body.agent,
     apiKeyId: req.acuc?.api_key_id ?? null,
+    apiKey: req.acuc?.api_key,
+    reservationId: req.creditReservation?.id,
     createdAt,
   };
 

@@ -48,6 +48,8 @@ interface ExtractServiceOptions {
   cacheMode?: "load" | "save" | "direct";
   cacheKey?: string;
   apiKeyId: number | null;
+  apiKey?: string;
+  reservationId?: string;
   createdAt?: number;
 }
 
@@ -78,7 +80,7 @@ export async function performExtraction_F0(
   extractId: string,
   options: ExtractServiceOptions,
 ): Promise<ExtractResult> {
-  const { request, teamId, subId, apiKeyId } = options;
+  const { request, teamId, subId, apiKeyId, apiKey, reservationId } = options;
   const createdAt = options.createdAt
     ? new Date(options.createdAt)
     : new Date();
@@ -871,7 +873,7 @@ export async function performExtraction_F0(
   const creditsToBill = Math.ceil(tokensToBill / 15);
 
   // Bill team for usage
-  billTeam(teamId, subId, creditsToBill, apiKeyId, logger).catch(error => {
+  billTeam(teamId, subId, creditsToBill, apiKeyId, logger, apiKey, reservationId).catch(error => {
     logger.error(
       `Failed to bill team ${teamId} for ${creditsToBill} credits: ${error}`,
     );

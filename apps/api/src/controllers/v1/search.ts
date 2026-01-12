@@ -389,6 +389,9 @@ export async function searchController(
         req.acuc?.sub_id ?? undefined,
         credits_billed,
         req.acuc?.api_key_id ?? null,
+        logger,
+        req.acuc?.api_key,
+        req.creditReservation?.id,
       ).catch(error => {
         logger.error(
           `Failed to bill team ${req.auth.team_id} for ${responseData.data.length} credits: ${error}`,
