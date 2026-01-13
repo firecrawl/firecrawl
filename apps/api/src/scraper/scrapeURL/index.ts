@@ -88,7 +88,7 @@ function getPositiveIntFromEnv(name: string, fallback: number): number {
   const raw = process.env[name];
   if (raw === undefined) return fallback;
   const asNumber = Number(raw);
-  return Number.isFinite(asNumber) && asNumber > 0 ? asNumber : fallback;
+  return Number.isFinite(asNumber) && Number.isInteger(asNumber) && asNumber > 0 ? asNumber : fallback;
 }
 
 const SCRAPE_MAX_ATTEMPTS = getPositiveIntFromEnv(
