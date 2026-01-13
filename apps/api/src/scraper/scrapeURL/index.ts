@@ -47,7 +47,9 @@ import {
   WaterfallNextEngineSignal,
   EngineUnsuccessfulError,
   ProxySelectionError,
+  ScrapeRetryLimitError,
 } from "./error";
+import { ScrapeRetryTracker } from "./retryTracker";
 import { executeTransformers } from "./transformers";
 import { LLMRefusalError } from "./transformers/llmExtract";
 import { urlSpecificParams } from "./lib/urlSpecificParams";
@@ -74,6 +76,41 @@ import {
 import { htmlTransform } from "./lib/removeUnwantedElements";
 import { postprocessors } from "./postprocessors";
 import { rewriteUrl } from "./lib/rewriteUrl";
+
+// Retry limit configuration - can be overridden via environment variables
+const DEFAULT_SCRAPE_MAX_ATTEMPTS = 6;
+const DEFAULT_SCRAPE_MAX_FEATURE_TOGGLES = 3;
+const DEFAULT_SCRAPE_MAX_FEATURE_REMOVALS = 3;
+const DEFAULT_SCRAPE_MAX_PDF_PREFETCHES = 2;
+const DEFAULT_SCRAPE_MAX_DOCUMENT_PREFETCHES = 2;
+
+function getPositiveIntFromEnv(name: string, fallback: number): number {
+  const raw = process.env[name];
+  if (raw === undefined) return fallback;
+  const asNumber = Number(raw);
+  return Number.isFinite(asNumber) && asNumber > 0 ? asNumber : fallback;
+}
+
+const SCRAPE_MAX_ATTEMPTS = getPositiveIntFromEnv(
+  "SCRAPE_MAX_ATTEMPTS",
+  DEFAULT_SCRAPE_MAX_ATTEMPTS,
+);
+const SCRAPE_MAX_FEATURE_TOGGLES = getPositiveIntFromEnv(
+  "SCRAPE_MAX_FEATURE_TOGGLES",
+  DEFAULT_SCRAPE_MAX_FEATURE_TOGGLES,
+);
+const SCRAPE_MAX_FEATURE_REMOVALS = getPositiveIntFromEnv(
+  "SCRAPE_MAX_FEATURE_REMOVALS",
+  DEFAULT_SCRAPE_MAX_FEATURE_REMOVALS,
+);
+const SCRAPE_MAX_PDF_PREFETCHES = getPositiveIntFromEnv(
+  "SCRAPE_MAX_PDF_PREFETCHES",
+  DEFAULT_SCRAPE_MAX_PDF_PREFETCHES,
+);
+const SCRAPE_MAX_DOCUMENT_PREFETCHES = getPositiveIntFromEnv(
+  "SCRAPE_MAX_DOCUMENT_PREFETCHES",
+  DEFAULT_SCRAPE_MAX_DOCUMENT_PREFETCHES,
+);
 
 export type ScrapeUrlResponse =
   | {
@@ -971,11 +1008,19 @@ export async function scrapeURL(
       });
     }
 
-    try {
-      // temporary fix until new scrapeURL system
-      let documentReattempted = false;
-      let pdfReattempted = false;
+    // Initialize retry tracker with configured limits
+    const retryTracker = new ScrapeRetryTracker(
+      {
+        maxAttempts: SCRAPE_MAX_ATTEMPTS,
+        maxFeatureToggles: SCRAPE_MAX_FEATURE_TOGGLES,
+        maxFeatureRemovals: SCRAPE_MAX_FEATURE_REMOVALS,
+        maxPdfPrefetches: SCRAPE_MAX_PDF_PREFETCHES,
+        maxDocumentPrefetches: SCRAPE_MAX_DOCUMENT_PREFETCHES,
+      },
+      meta.logger,
+    );
 
+    try {
       let result: ScrapeUrlResponse;
       while (true) {
         try {
@@ -987,7 +1032,7 @@ export async function scrapeURL(
             (meta.internalOptions.forceEngine === undefined ||
               Array.isArray(meta.internalOptions.forceEngine))
           ) {
-            // note: we might want to reattempt check here too
+            retryTracker.record("feature_toggle", error);
             meta.logger.debug(
               "More feature flags requested by scraper: adding " +
                 error.featureFlags.join(", "),
@@ -1007,6 +1052,7 @@ export async function scrapeURL(
             (meta.internalOptions.forceEngine === undefined ||
               Array.isArray(meta.internalOptions.forceEngine))
           ) {
+            retryTracker.record("feature_removal", error);
             meta.logger.debug(
               "Incorrect feature flags reported by scraper: removing " +
                 error.featureFlags.join(","),
@@ -1027,21 +1073,13 @@ export async function scrapeURL(
               );
               throw error;
             } else {
-              if (!pdfReattempted) {
-                meta.logger.debug(
-                  "PDF was blocked by anti-bot, prefetching with chrome-cdp",
-                );
-
-                pdfReattempted = true;
-                meta.featureFlags = new Set(
-                  [...meta.featureFlags].filter(x => x !== "pdf"),
-                );
-              } else {
-                meta.logger.debug(
-                  "PDF was blocked by anti-bot, skipping as it was already attempted",
-                );
-                throw error;
-              }
+              retryTracker.record("pdf_antibot", error);
+              meta.logger.debug(
+                "PDF was blocked by anti-bot, prefetching with chrome-cdp",
+              );
+              meta.featureFlags = new Set(
+                [...meta.featureFlags].filter(x => x !== "pdf"),
+              );
             }
           } else if (
             error instanceof DocumentAntibotError &&
@@ -1053,21 +1091,13 @@ export async function scrapeURL(
               );
               throw error;
             } else {
-              if (!documentReattempted) {
-                meta.logger.debug(
-                  "Document was blocked by anti-bot, prefetching with chrome-cdp",
-                );
-
-                documentReattempted = true;
-                meta.featureFlags = new Set(
-                  [...meta.featureFlags].filter(x => x !== "document"),
-                );
-              } else {
-                meta.logger.debug(
-                  "Document was blocked by anti-bot, skipping as it was already attempted",
-                );
-                throw error;
-              }
+              retryTracker.record("document_antibot", error);
+              meta.logger.debug(
+                "Document was blocked by anti-bot, prefetching with chrome-cdp",
+              );
+              meta.featureFlags = new Set(
+                [...meta.featureFlags].filter(x => x !== "document"),
+              );
             }
           } else {
             throw error;
@@ -1220,6 +1250,12 @@ export async function scrapeURL(
       } else if (error instanceof DNSResolutionError) {
         errorType = "DNSResolutionError";
         meta.logger.warn("scrapeURL: DNS resolution error", { error });
+      } else if (error instanceof ScrapeRetryLimitError) {
+        errorType = "ScrapeRetryLimitError";
+        meta.logger.warn("scrapeURL: Retry limit reached", {
+          error,
+          retryStats: error.stats,
+        });
       } else if (error instanceof AbortManagerThrownError) {
         errorType = "AbortManagerThrownError";
         throw error.inner;
