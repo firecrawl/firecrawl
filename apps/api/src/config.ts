@@ -96,6 +96,13 @@ const configSchema = z.object({
   SCRAPEURL_AB_EXTEND_MAXAGE: z.stringbool().optional(),
   SCRAPEURL_ENGINE_WATERFALL_DELAY_MS: z.coerce.number().default(0),
 
+  // Scrape Retry Limits
+  SCRAPE_MAX_ATTEMPTS: z.coerce.number().int().positive().default(6),
+  SCRAPE_MAX_FEATURE_TOGGLES: z.coerce.number().int().positive().default(3),
+  SCRAPE_MAX_FEATURE_REMOVALS: z.coerce.number().int().positive().default(3),
+  SCRAPE_MAX_PDF_PREFETCHES: z.coerce.number().int().positive().default(2),
+  SCRAPE_MAX_DOCUMENT_PREFETCHES: z.coerce.number().int().positive().default(2),
+
   // Search Services
   SEARXNG_ENDPOINT: z.string().optional(),
   SEARXNG_ENGINES: z.string().optional(),

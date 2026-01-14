@@ -77,41 +77,6 @@ import { htmlTransform } from "./lib/removeUnwantedElements";
 import { postprocessors } from "./postprocessors";
 import { rewriteUrl } from "./lib/rewriteUrl";
 
-// Retry limit configuration - can be overridden via environment variables
-const DEFAULT_SCRAPE_MAX_ATTEMPTS = 6;
-const DEFAULT_SCRAPE_MAX_FEATURE_TOGGLES = 3;
-const DEFAULT_SCRAPE_MAX_FEATURE_REMOVALS = 3;
-const DEFAULT_SCRAPE_MAX_PDF_PREFETCHES = 2;
-const DEFAULT_SCRAPE_MAX_DOCUMENT_PREFETCHES = 2;
-
-function getPositiveIntFromEnv(name: string, fallback: number): number {
-  const raw = process.env[name];
-  if (raw === undefined) return fallback;
-  const asNumber = Number(raw);
-  return Number.isFinite(asNumber) && Number.isInteger(asNumber) && asNumber > 0 ? asNumber : fallback;
-}
-
-const SCRAPE_MAX_ATTEMPTS = getPositiveIntFromEnv(
-  "SCRAPE_MAX_ATTEMPTS",
-  DEFAULT_SCRAPE_MAX_ATTEMPTS,
-);
-const SCRAPE_MAX_FEATURE_TOGGLES = getPositiveIntFromEnv(
-  "SCRAPE_MAX_FEATURE_TOGGLES",
-  DEFAULT_SCRAPE_MAX_FEATURE_TOGGLES,
-);
-const SCRAPE_MAX_FEATURE_REMOVALS = getPositiveIntFromEnv(
-  "SCRAPE_MAX_FEATURE_REMOVALS",
-  DEFAULT_SCRAPE_MAX_FEATURE_REMOVALS,
-);
-const SCRAPE_MAX_PDF_PREFETCHES = getPositiveIntFromEnv(
-  "SCRAPE_MAX_PDF_PREFETCHES",
-  DEFAULT_SCRAPE_MAX_PDF_PREFETCHES,
-);
-const SCRAPE_MAX_DOCUMENT_PREFETCHES = getPositiveIntFromEnv(
-  "SCRAPE_MAX_DOCUMENT_PREFETCHES",
-  DEFAULT_SCRAPE_MAX_DOCUMENT_PREFETCHES,
-);
-
 export type ScrapeUrlResponse =
   | {
       success: true;
@@ -1011,11 +976,11 @@ export async function scrapeURL(
     // Initialize retry tracker with configured limits
     const retryTracker = new ScrapeRetryTracker(
       {
-        maxAttempts: SCRAPE_MAX_ATTEMPTS,
-        maxFeatureToggles: SCRAPE_MAX_FEATURE_TOGGLES,
-        maxFeatureRemovals: SCRAPE_MAX_FEATURE_REMOVALS,
-        maxPdfPrefetches: SCRAPE_MAX_PDF_PREFETCHES,
-        maxDocumentPrefetches: SCRAPE_MAX_DOCUMENT_PREFETCHES,
+        maxAttempts: config.SCRAPE_MAX_ATTEMPTS,
+        maxFeatureToggles: config.SCRAPE_MAX_FEATURE_TOGGLES,
+        maxFeatureRemovals: config.SCRAPE_MAX_FEATURE_REMOVALS,
+        maxPdfPrefetches: config.SCRAPE_MAX_PDF_PREFETCHES,
+        maxDocumentPrefetches: config.SCRAPE_MAX_DOCUMENT_PREFETCHES,
       },
       meta.logger,
     );
