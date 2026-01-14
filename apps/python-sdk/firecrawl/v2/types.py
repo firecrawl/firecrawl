@@ -331,6 +331,17 @@ class WebhookData(BaseModel):
     error: Optional[str] = None
 
 
+class AgentWebhookConfig(BaseModel):
+    """Configuration for agent webhooks."""
+
+    url: str
+    headers: Optional[Dict[str, str]] = None
+    metadata: Optional[Dict[str, str]] = None
+    events: Optional[
+        List[Literal["started", "action", "completed", "failed", "cancelled"]]
+    ] = None
+
+
 class Source(BaseModel):
     """Configuration for a search source."""
 

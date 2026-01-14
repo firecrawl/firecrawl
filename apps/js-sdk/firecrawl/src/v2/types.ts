@@ -167,6 +167,13 @@ export interface WebhookConfig {
   events?: Array<'completed' | 'failed' | 'page' | 'started'>;
 }
 
+export interface AgentWebhookConfig {
+  url: string;
+  headers?: Record<string, string>;
+  metadata?: Record<string, string>;
+  events?: Array<'started' | 'action' | 'completed' | 'failed' | 'cancelled'>;
+}
+
 export interface BrandingProfile {
   colorScheme?: 'light' | 'dark';
   logo?: string | null;

@@ -38,6 +38,7 @@ from .types import (
     Location,
     PaginationConfig,
     AgentOptions,
+    AgentWebhookConfig,
 )
 from .utils.http_client import HttpClient
 from .utils.error_handler import FirecrawlError
@@ -764,6 +765,7 @@ class FirecrawlClient:
         integration: Optional[str] = None,
         max_credits: Optional[int] = None,
         strict_constrain_to_urls: Optional[bool] = None,
+        webhook: Optional[Union[str, AgentWebhookConfig]] = None,
     ):
         """Start an agent job (non-blocking).
 
@@ -773,6 +775,7 @@ class FirecrawlClient:
             schema: Target JSON schema for the output (dict or Pydantic BaseModel)
             integration: Integration tag/name
             max_credits: Maximum credits to use (optional)
+            webhook: Webhook URL or config for notifications (events: started, action, completed, failed, cancelled)
         Returns:
             Response payload with job id/status (poll with get_agent_status)
         """
@@ -784,6 +787,7 @@ class FirecrawlClient:
             integration=integration,
             max_credits=max_credits,
             strict_constrain_to_urls=strict_constrain_to_urls,
+            webhook=webhook,
         )
 
     def agent(
@@ -797,6 +801,7 @@ class FirecrawlClient:
         timeout: Optional[int] = None,
         max_credits: Optional[int] = None,
         strict_constrain_to_urls: Optional[bool] = None,
+        webhook: Optional[Union[str, AgentWebhookConfig]] = None,
     ):
         """Run an agent and wait until completion.
 
@@ -808,6 +813,7 @@ class FirecrawlClient:
             poll_interval: Seconds between status checks
             timeout: Maximum seconds to wait (None for no timeout)
             max_credits: Maximum credits to use (optional)
+            webhook: Webhook URL or config for notifications (events: started, action, completed, failed, cancelled)
         Returns:
             Final agent response when completed
         """
@@ -821,6 +827,7 @@ class FirecrawlClient:
             timeout=timeout,
             max_credits=max_credits,
             strict_constrain_to_urls=strict_constrain_to_urls,
+            webhook=webhook,
         )
 
     def get_agent_status(self, job_id: str):

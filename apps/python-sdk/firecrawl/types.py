@@ -78,8 +78,10 @@ from .v2.types import (
     JobStatus,
     
     # Webhook types
+    WebhookConfig,
     WebhookData,
-    
+    AgentWebhookConfig,
+
     # Configuration types
     ClientConfig,
     AgentOptions,
@@ -159,8 +161,10 @@ __all__ = [
     'JobStatus',
     
     # Webhook types
+    'WebhookConfig',
     'WebhookData',
-    
+    'AgentWebhookConfig',
+
     # Configuration types
     'ClientConfig',
     'AgentOptions',
