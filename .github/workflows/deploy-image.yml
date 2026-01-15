@@ -16,9 +16,9 @@ jobs:
       matrix:
         include:
           - platform: linux/amd64
-            runner: ubuntu-latest
+            runner: blacksmith-8vcpu-ubuntu-2404
           - platform: linux/arm64
-            runner: blacksmith-4vcpu-ubuntu-2404-arm
+            runner: blacksmith-8vcpu-ubuntu-2404-arm
     defaults:
       run:
         working-directory: './apps/api'
@@ -57,7 +57,7 @@ jobs:
           provenance: false
 
   manifest:
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: blacksmith-2vcpu-ubuntu-2404
     needs: build
     steps:
       - name: 'Login to GitHub Container Registry'
