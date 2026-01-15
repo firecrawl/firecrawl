@@ -36,4 +36,9 @@ describe("checkForMetaBlocking", () => {
         const html = '<html><head><meta name="FirecrawlAgent" content="noindex"></head><body>Blocked</body></html>';
         expect(checkForMetaBlocking(html, "MyCustomAgent")).toBe(true);
     });
+
+    it("should return true for mixed case tag name", () => {
+        const html = '<html><head><meta name="FiReCrAwLaGeNt" content="noindex"></head><body>Blocked</body></html>';
+        expect(checkForMetaBlocking(html)).toBe(true);
+    });
 });

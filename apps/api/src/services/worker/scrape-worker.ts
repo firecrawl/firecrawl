@@ -566,10 +566,11 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
         job.data.crawl_id &&
         job.data.crawlerOptions !== null &&
         error instanceof CrawlDenialError &&
-        (error.reason === "URL blocked by robots.txt" || error.reason === "URL blocked by meta tag")
+        error.reason === "URL blocked by robots.txt"
       ) {
         await recordRobotsBlocked(job.data.crawl_id, job.data.url);
       }
+      // TODO: record meta-tag blocks separately to avoid conflating causes
     } catch (e) {
       logger.debug("Failed to record top-level robots block", { e });
     }
