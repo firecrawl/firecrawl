@@ -1,6 +1,5 @@
 import { configDotenv } from "dotenv";
 import { config } from "../../config";
-import * as Sentry from "@sentry/node";
 import { applyZdrScope, captureExceptionWithZdrCheck } from "../sentry";
 import http from "http";
 import https from "https";
@@ -181,12 +180,12 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
   const abortTimeoutHandle =
     remainingTime !== undefined
       ? setTimeout(
-          () =>
-            abortController.abort(
-              new ScrapeJobTimeoutError("Scrape timed out"),
-            ),
-          remainingTime,
-        )
+        () =>
+          abortController.abort(
+            new ScrapeJobTimeoutError("Scrape timed out"),
+          ),
+        remainingTime,
+      )
       : undefined;
   const signal = abortController.signal;
 
@@ -212,14 +211,14 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
         }),
         ...(remainingTime !== undefined
           ? [
-              (async () => {
-                await new Promise(resolve => {
-                  timeoutHandle = setTimeout(resolve, remainingTime);
-                });
+            (async () => {
+              await new Promise(resolve => {
+                timeoutHandle = setTimeout(resolve, remainingTime);
+              });
 
-                throw new ScrapeJobTimeoutError("Scrape timed out");
-              })(),
-            ]
+              throw new ScrapeJobTimeoutError("Scrape timed out");
+            })(),
+          ]
           : []),
       ]);
     } finally {
@@ -288,7 +287,7 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
         doc.metadata.url !== undefined &&
         doc.metadata.sourceURL !== undefined &&
         normalizeURL(doc.metadata.url, sc) !==
-          normalizeURL(doc.metadata.sourceURL, sc) &&
+        normalizeURL(doc.metadata.sourceURL, sc) &&
         crawler // only on crawls, don't care on batch scrape
       ) {
         const filterResult = await crawler!.filterURL(
@@ -386,9 +385,9 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
 
               logger.debug(
                 "Determined job priority " +
-                  jobPriority +
-                  " for URL " +
-                  JSON.stringify(link),
+                jobPriority +
+                " for URL " +
+                JSON.stringify(link),
                 { jobPriority, url: link },
               );
 
@@ -567,7 +566,7 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
         job.data.crawl_id &&
         job.data.crawlerOptions !== null &&
         error instanceof CrawlDenialError &&
-        error.reason === "URL blocked by robots.txt"
+        (error.reason === "URL blocked by robots.txt" || error.reason === "URL blocked by meta tag")
       ) {
         await recordRobotsBlocked(job.data.crawl_id, job.data.url);
       }
@@ -1178,7 +1177,7 @@ async function processJobWithTracing(job: NuQJob<ScrapeJobData>, logger: any) {
                 logger.debug("Job succeeded -- putting result in Redis");
                 return result.document;
               }
-            } catch (e) {}
+            } catch (e) { }
           } else {
             throw (result as any).error;
           }

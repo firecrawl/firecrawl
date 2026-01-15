@@ -145,6 +145,7 @@ const configSchema = z.object({
   DISABLE_BLOCKLIST: z.stringbool().optional(),
   FORCED_ENGINE_DOMAINS: z.string().optional(),
   DEBUG_BRANDING: z.stringbool().optional(),
+  FIRECRAWL_USER_AGENT: z.string().optional(),
 
   // AI/ML
   MODEL_NAME: z.string().optional(),
