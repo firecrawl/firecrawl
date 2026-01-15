@@ -3,6 +3,7 @@ CREATE EXTENSION IF NOT EXISTS pg_cron;
 
 -- Checkpoint tuning: spread I/O to reduce stalls during heavy WAL activity
 -- These settings help prevent prefetch queries from returning 0 jobs during checkpoints
+ALTER SYSTEM SET checkpoint_timeout = '15min';
 ALTER SYSTEM SET checkpoint_completion_target = 0.95;
 ALTER SYSTEM SET max_wal_size = '4GB';
 ALTER SYSTEM SET bgwriter_lru_maxpages = 500;
