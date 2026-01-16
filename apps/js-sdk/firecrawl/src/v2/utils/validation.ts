@@ -1,6 +1,19 @@
 import { type FormatOption, type JsonFormat, type ScrapeOptions, type ScreenshotFormat, type ChangeTrackingFormat } from "../types";
 import { zodToJsonSchema } from "zod-to-json-schema";
 
+/**
+ * Detects if an object looks like a Zod schema's `.shape` property.
+ * When users mistakenly pass `schema.shape` instead of `schema`, the object
+ * will have Zod types as values but won't be a Zod schema itself.
+ */
+function looksLikeZodShape(obj: unknown): boolean {
+  if (!obj || typeof obj !== "object" || Array.isArray(obj)) return false;
+  const values = Object.values(obj);
+  if (values.length === 0) return false;
+  // Check if at least one value looks like a Zod type
+  return values.some((v: any) => v && typeof v === "object" && v._def && typeof v.safeParse === "function");
+}
+
 export function ensureValidFormats(formats?: FormatOption[]): void {
   if (!formats) return;
   for (const fmt of formats) {
@@ -24,6 +37,13 @@ export function ensureValidFormats(formats?: FormatOption[]): void {
         } catch {
           // If conversion fails, leave as-is; server-side may still handle, or request will fail explicitly
         }
+      } else if (looksLikeZodShape(maybeSchema)) {
+        // User likely passed schema.shape instead of the schema itself
+        throw new Error(
+          "json format schema appears to be a Zod schema's .shape property. " +
+          "Pass the Zod schema directly (e.g., `schema: MySchema`) instead of `schema: MySchema.shape`. " +
+          "The SDK will automatically convert Zod schemas to JSON Schema format."
+        );
       }
       continue;
     }
@@ -37,6 +57,12 @@ export function ensureValidFormats(formats?: FormatOption[]): void {
         } catch {
           // Best-effort conversion; if it fails, leave original value
         }
+      } else if (looksLikeZodShape(maybeSchema)) {
+        throw new Error(
+          "changeTracking format schema appears to be a Zod schema's .shape property. " +
+          "Pass the Zod schema directly (e.g., `schema: MySchema`) instead of `schema: MySchema.shape`. " +
+          "The SDK will automatically convert Zod schemas to JSON Schema format."
+        );
       }
       continue;
     }

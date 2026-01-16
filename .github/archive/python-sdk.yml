@@ -21,7 +21,7 @@ env:
 
 jobs:  
   build:  
-    runs-on: ubuntu-latest  
+    runs-on: blacksmith-4vcpu-ubuntu-2404  
     strategy:  
       matrix:  
         python-version: ["3.10"]

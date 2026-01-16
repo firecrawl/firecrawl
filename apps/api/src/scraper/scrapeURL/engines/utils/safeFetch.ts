@@ -2,6 +2,7 @@ import type { Socket } from "net";
 import { config } from "../../../../config";
 import type { TLSSocket } from "tls";
 import * as undici from "undici";
+import { interceptors } from "undici";
 import { CookieJar } from "tough-cookie";
 import { cookie } from "http-cookie-agent/undici";
 import IPAddr from "ipaddr.js";
@@ -19,11 +20,7 @@ export function isIPPrivate(address: string): boolean {
 }
 
 function createBaseAgent(skipTlsVerification: boolean) {
-  const agentOpts: undici.Agent.Options = {
-    maxRedirections: 5000,
-  };
-
-  return config.PROXY_SERVER
+  const baseAgent = config.PROXY_SERVER
     ? new undici.ProxyAgent({
         uri: config.PROXY_SERVER.includes("://")
           ? config.PROXY_SERVER
@@ -34,14 +31,15 @@ function createBaseAgent(skipTlsVerification: boolean) {
         requestTls: {
           rejectUnauthorized: !skipTlsVerification, // Only bypass SSL verification if explicitly requested
         },
-        ...agentOpts,
       })
     : new undici.Agent({
         connect: {
           rejectUnauthorized: !skipTlsVerification, // Only bypass SSL verification if explicitly requested
         },
-        ...agentOpts,
       });
+
+  // Add redirect interceptor for handling redirects
+  return baseAgent.compose(interceptors.redirect({ maxRedirections: 5000 }));
 }
 
 function attachSecurityCheck(agent: undici.Dispatcher) {

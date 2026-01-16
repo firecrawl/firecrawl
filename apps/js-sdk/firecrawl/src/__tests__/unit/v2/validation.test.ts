@@ -62,5 +62,23 @@ describe("v2 utils: validation", () => {
     expect(() => ensureValidScrapeOptions(options)).not.toThrow();
     expect(options.parsers).toEqual(before);
   });
+
+  test("ensureValidFormats: detects mistaken use of zod schema.shape", () => {
+    const schema = z.object({ title: z.string(), count: z.number() });
+    // User mistakenly passes schema.shape instead of schema
+    const formats: FormatOption[] = [
+      { type: "json", prompt: "extract", schema: schema.shape } as any,
+    ];
+    expect(() => ensureValidFormats(formats)).toThrow(/\.shape property/i);
+    expect(() => ensureValidFormats(formats)).toThrow(/Pass the Zod schema directly/i);
+  });
+
+  test("ensureValidFormats: detects mistaken use of zod schema.shape in changeTracking", () => {
+    const schema = z.object({ title: z.string() });
+    const formats: FormatOption[] = [
+      { type: "changeTracking", modes: ["json"], schema: schema.shape } as any,
+    ];
+    expect(() => ensureValidFormats(formats)).toThrow(/\.shape property/i);
+  });
 });
 

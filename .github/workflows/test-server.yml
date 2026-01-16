@@ -15,17 +15,17 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        engine: ["playwright", "fetch"] # unsure if we need both of these
-        proxy: ["proxy", "no-proxy"] # proxy / no-proxy run different tests, keep both
-        search: ["searxng"] # disabled google for now, should be fine with just Searxng
-        ai: ["openai"] # AI only should be fine, as it simply adds tests, if non-AI fails, AI will fail.
+        engine: ['playwright', 'fetch'] # unsure if we need both of these
+        proxy: ['proxy', 'no-proxy'] # proxy / no-proxy run different tests, keep both
+        search: ['searxng'] # disabled google for now, should be fine with just Searxng
+        ai: ['openai'] # AI only should be fine, as it simply adds tests, if non-AI fails, AI will fail.
 
         # legacy matrix:
         # engine: ["playwright", "fetch"]
         # proxy: ["proxy", "no-proxy"]
         # search: ["searxng", "google"]
         # ai: ["openai", "no-ai"]
-    runs-on: big-runner
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     services:
       redis:
         image: redis
@@ -68,7 +68,7 @@ jobs:
             apps/api/pnpm-lock.yaml
             apps/test-site/pnpm-lock.yaml
             apps/playwright-service-ts/pnpm-lock.yaml
-      
+
       - run: pnpm fetch
         working-directory: apps/api
       - run: pnpm fetch
@@ -165,12 +165,12 @@ jobs:
           docker run -d -p 3434:8080 -v "${PWD}/searxng:/etc/searxng" --name searxng searxng/searxng
           pnpx wait-on tcp:3434 -t 30s
         working-directory: ./
-        
+
       - name: Install API dependencies
         run: pnpm install --frozen-lockfile --ignore-scripts
         working-directory: apps/api
         env:
-          npm_config_ignore_scripts: "true"
+          npm_config_ignore_scripts: 'true'
 
       - name: Install test site dependencies
         run: pnpm install --frozen-lockfile
@@ -191,7 +191,7 @@ jobs:
         working-directory: ./apps/playwright-service-ts
         env:
           PORT: 3003
-        
+
       - name: Run Docker Postgres
         run: |
           docker build -t firecrawl/nuq-postgres:latest ./apps/nuq-postgres
@@ -201,7 +201,7 @@ jobs:
         run: pnpm harness pnpm test:snips
         working-directory: apps/api
         env:
-          npm_config_ignore_scripts: "true" # required currently to prevent re-building cached native lib
+          npm_config_ignore_scripts: 'true' # required currently to prevent re-building cached native lib
 
       - name: Publish test report
         if: always()
@@ -377,7 +377,7 @@ jobs:
   #       working-directory: apps/api
   #       env:
   #         npm_config_ignore_scripts: "true"
-      
+
   #     - name: Run Docker Postgres
   #       run: |
   #         docker build -t firecrawl/nuq-postgres:latest ./apps/nuq-postgres

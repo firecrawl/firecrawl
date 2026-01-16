@@ -13,7 +13,7 @@ env:
 jobs:
   test:
     name: Run tests
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     steps:
       - uses: actions/checkout@v5
       - name: Set up Node.js

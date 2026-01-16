@@ -16,7 +16,7 @@ on:
 
 jobs:
   run-eval-benchmark-prod:
-        runs-on: ubuntu-latest
+        runs-on: blacksmith-2vcpu-ubuntu-2404
         if: ${{ github.event.workflow_run.conclusion == 'success' || github.event_name == 'workflow_dispatch' }}
         steps:
           - name: Checkout repository

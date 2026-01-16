@@ -9,6 +9,8 @@
         "GHSA-mh29-5h37-fv8m|@jest/globals>@jest/expect>jest-snapshot>@jest/transform>babel-plugin-istanbul>@istanbuljs/load-nyc-config>js-yaml", // not impacted by this
         "GHSA-36hm-qxxp-pg3m|@coinbase/x402>x402>wagmi>@wagmi/connectors>@coinbase/wallet-sdk>preact", // we don't use preact in our code paths
         "GHSA-3vhc-576x-3qv4|@coinbase/x402>x402>wagmi>@wagmi/connectors>porto>hono", // we don't use hono
-        "GHSA-f67f-6cw9-8mq4|@coinbase/x402>x402>wagmi>@wagmi/connectors>porto>hono" // we don't use hono
+        "GHSA-f67f-6cw9-8mq4|@coinbase/x402>x402>wagmi>@wagmi/connectors>porto>hono", // we don't use hono
+        "GHSA-73rr-hh4g-fpgx|git-diff>diff", // dev dependency for diffs, not processing user-supplied patches
+        "GHSA-73rr-hh4g-fpgx|ts-node>diff" // dev dependency for TypeScript execution, not processing user-supplied patches
     ]
 }

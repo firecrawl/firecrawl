@@ -2,6 +2,8 @@
     "$schema": "https://github.com/IBM/audit-ci/raw/main/docs/schema.json",
     "low": true,
     "allowlist": [
-        "GHSA-4fh9-h7wg-q85m|@astrojs/mdx>@astrojs/markdown-remark>remark-rehype>mdast-util-to-hast" // not impacted by this
+        "GHSA-4fh9-h7wg-q85m|@astrojs/mdx>@astrojs/markdown-remark>remark-rehype>mdast-util-to-hast", // not impacted by this
+        "GHSA-73rr-hh4g-fpgx|astro>diff", // dev-only dependency - we don't parse untrusted patches
+        "GHSA-vw5p-8cq8-m7mv|astro>devalue" // build-time SSR hydration - no untrusted input
     ]
 }

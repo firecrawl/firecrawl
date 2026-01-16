@@ -16,8 +16,15 @@ import {
 } from "../../../../services";
 import { EngineError, IndexMissError, NoCachedDataError } from "../../error";
 import { shouldParsePDF } from "../../../../controllers/v2/types";
+import { hasFormatOfType } from "../../../../lib/format-utils";
 
 export async function sendDocumentToIndex(meta: Meta, document: Document) {
+  // Skip caching if screenshot format has custom viewport or quality settings
+  const screenshotFormat = hasFormatOfType(meta.options.formats, "screenshot");
+  const hasCustomScreenshotSettings =
+    screenshotFormat?.viewport !== undefined ||
+    screenshotFormat?.quality !== undefined;
+
   const shouldCache =
     meta.options.storeInCache &&
     !meta.internalOptions.zeroDataRetention &&
@@ -39,6 +46,7 @@ export async function sendDocumentToIndex(meta: Meta, document: Document) {
         meta.winnerEngine !== "fire-engine;tlsclient;stealth" &&
         meta.winnerEngine !== "fetch")) &&
     !meta.featureFlags.has("actions") &&
+    !hasCustomScreenshotSettings &&
     (meta.options.headers === undefined ||
       Object.keys(meta.options.headers).length === 0);
 

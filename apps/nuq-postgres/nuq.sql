@@ -3,10 +3,32 @@ CREATE EXTENSION IF NOT EXISTS pg_cron;
 
 -- Checkpoint tuning: spread I/O to reduce stalls during heavy WAL activity
 -- These settings help prevent prefetch queries from returning 0 jobs during checkpoints
-ALTER SYSTEM SET checkpoint_completion_target = 0.95;
-ALTER SYSTEM SET max_wal_size = '4GB';
-ALTER SYSTEM SET bgwriter_lru_maxpages = 500;
-ALTER SYSTEM SET bgwriter_delay = '100ms';
+
+-- Checkpoint settings: reduce frequency and spread I/O
+ALTER SYSTEM SET checkpoint_completion_target = 0.9;  -- Spread checkpoint I/O over 90% of interval
+ALTER SYSTEM SET checkpoint_timeout = '15min';         -- Longer intervals between time-based checkpoints
+ALTER SYSTEM SET max_wal_size = '16GB';                -- Much larger WAL before forced checkpoint (was 4GB)
+ALTER SYSTEM SET min_wal_size = '4GB';                 -- Keep WAL pre-allocated to avoid allocation stalls
+
+-- Aggressive background writer: pre-flush dirty pages to reduce checkpoint burst
+ALTER SYSTEM SET bgwriter_lru_maxpages = 1000;         -- Flush up to 1000 pages per round (was 500)
+ALTER SYSTEM SET bgwriter_lru_multiplier = 4.0;        -- More aggressive dirty page estimation
+ALTER SYSTEM SET bgwriter_delay = '50ms';              -- Run twice as often (was 100ms)
+ALTER SYSTEM SET bgwriter_flush_after = '512kB';       -- Force OS flush after 512kB written
+
+-- I/O concurrency for SSD/cloud storage (hyperdisk)
+ALTER SYSTEM SET effective_io_concurrency = 200;       -- Parallel I/O operations for prefetch
+ALTER SYSTEM SET maintenance_io_concurrency = 100;     -- I/O concurrency for maintenance ops
+
+-- WAL settings for better write performance
+ALTER SYSTEM SET wal_buffers = '64MB';                 -- Larger WAL buffer (default is too small)
+ALTER SYSTEM SET wal_writer_delay = '10ms';            -- Flush WAL more frequently to avoid bursts
+ALTER SYSTEM SET wal_writer_flush_after = '1MB';       -- Flush after 1MB of WAL
+
+-- Reduce fsync overhead
+ALTER SYSTEM SET commit_delay = 10;                    -- Microseconds to wait for group commit
+ALTER SYSTEM SET commit_siblings = 5;                  -- Min concurrent transactions for commit_delay
+
 SELECT pg_reload_conf();
 
 CREATE SCHEMA IF NOT EXISTS nuq;

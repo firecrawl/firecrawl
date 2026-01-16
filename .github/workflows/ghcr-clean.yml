@@ -6,7 +6,7 @@ on:
 jobs:
   delete-untagged-images:
     name: Delete Untagged Images
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-2vcpu-ubuntu-2404
     steps:
       - uses: bots-house/ghcr-delete-image-action@v1.1.0
         with:

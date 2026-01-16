@@ -1,4 +1,7 @@
 {
     "$schema": "https://github.com/IBM/audit-ci/raw/main/docs/schema.json",
-    "low": true
+    "low": true,
+    "allowlist": [
+        "GHSA-73rr-hh4g-fpgx|ts-node>diff" // dev dependency for TypeScript execution, not processing user-supplied patches
+    ]
 }
