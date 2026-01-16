@@ -100,10 +100,10 @@ export async function getJobs(ids: string[]): Promise<PseudoJob<any>[]> {
     config.USE_DB_AUTHENTICATION ? supabaseGetScrapesById(ids) : [],
     config.GCS_BUCKET_NAME
       ? (Promise.all(
-          ids.map(async x => ({ id: x, job: await getJobFromGCS(x) })),
-        ).then(x => x.filter(x => x.job)) as Promise<
-          { id: string; job: any | null }[]
-        >)
+        ids.map(async x => ({ id: x, job: await getJobFromGCS(x) })),
+      ).then(x => x.filter(x => x.job)) as Promise<
+        { id: string; job: any | null }[]
+      >)
       : [],
   ]);
 
@@ -182,7 +182,9 @@ export async function crawlStatusController(
   );
   const sc = await getCrawl(req.params.jobId);
 
-  if (!group || (!groupAnyJob && (!sc || sc.team_id !== req.auth.team_id))) {
+  // Check if we have at least one source of truth for the job
+  const scIsValid = sc && sc.team_id === req.auth.team_id;
+  if (!scIsValid && (!group || !groupAnyJob)) {
     return res.status(404).json({ success: false, error: "Job not found" });
   }
 
@@ -197,12 +199,12 @@ export async function crawlStatusController(
 
   const creditsRpc = config.USE_DB_AUTHENTICATION
     ? await supabase_service.rpc(
-        "credits_billed_by_crawl_id_2",
-        {
-          i_crawl_id: req.params.jobId,
-        },
-        { get: true },
-      )
+      "credits_billed_by_crawl_id_2",
+      {
+        i_crawl_id: req.params.jobId,
+      },
+      { get: true },
+    )
     : null;
 
   let outputBulkA: {
@@ -211,7 +213,7 @@ export async function crawlStatusController(
     total?: number;
     creditsUsed?: number;
   } = {
-    status: group.status === "active" ? "scraping" : group.status,
+    status: group?.status === "active" ? "scraping" : (group?.status ?? "scraping"),
     completed: numericStats.completed ?? 0,
     total:
       (numericStats.completed ?? 0) +
@@ -273,7 +275,7 @@ export async function crawlStatusController(
     data: scrapes,
     next:
       (outputBulkA.total ?? 0) > start + iteratedOver ||
-      outputBulkA.status !== "completed"
+        outputBulkA.status !== "completed"
         ? `${req.protocol}://${req.get("host")}/v1/${isBatch ? "batch/scrape" : "crawl"}/${req.params.jobId}?skip=${start + iteratedOver}${req.query.limit ? `&limit=${req.query.limit}` : ""}`
         : undefined,
   };
