@@ -147,13 +147,26 @@ async function deriveLinksFromHTML(
       );
     }
 
-    document.links = await extractLinks(
+    const htmlLinks = await extractLinks(
       document.html,
       document.metadata.url ??
         document.metadata.sourceURL ??
         meta.rewrittenUrl ??
         meta.url,
     );
+
+    // Merge with AJAX-discovered URLs (if any)
+    const allLinks = [...htmlLinks];
+    const discoveredUrls = (document as any)._discoveredUrls;
+    if (discoveredUrls?.length) {
+      allLinks.push(...discoveredUrls);
+    }
+
+    // Deduplicate
+    document.links = [...new Set(allLinks)];
+
+    // Clean up internal field
+    delete (document as any)._discoveredUrls;
   }
 
   return document;

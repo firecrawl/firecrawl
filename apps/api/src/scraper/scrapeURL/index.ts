@@ -809,6 +809,7 @@ async function scrapeURLLoop(meta: Meta): Promise<ScrapeUrlResponse> {
           : {}),
         postprocessorsUsed: engineResult.postprocessorsUsed,
       },
+      ...(engineResult.discoveredUrls && { _discoveredUrls: engineResult.discoveredUrls } as any),
     };
 
     if (result.unsupportedFeatures.size > 0) {

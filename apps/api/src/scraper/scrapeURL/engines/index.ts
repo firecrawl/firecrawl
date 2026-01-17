@@ -132,6 +132,7 @@ export type EngineScrapeResult = {
   };
 
   contentType?: string;
+  discoveredUrls?: string[];
 
   youtubeTranscriptContent?: any;
   postprocessorsUsed?: string[];
