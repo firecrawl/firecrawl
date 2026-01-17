@@ -4,10 +4,20 @@ import { EngineScrapeResult } from "..";
 import { Meta } from "../..";
 import { robustFetch } from "../../lib/fetch";
 import { getInnerJson } from "@mendable/firecrawl-rs";
+import {
+  buildProxyConfig,
+  mergeLocationHeaders,
+} from "../utils/safeFetch";
 
 export async function scrapeURLWithPlaywright(
   meta: Meta,
 ): Promise<EngineScrapeResult> {
+  const proxyConfig = buildProxyConfig(meta.options.location);
+  const headers = mergeLocationHeaders(
+    meta.options.headers,
+    meta.options.location,
+  );
+
   const response = await robustFetch({
     url: config.PLAYWRIGHT_MICROSERVICE_URL!,
     headers: {
@@ -17,8 +27,10 @@ export async function scrapeURLWithPlaywright(
       url: meta.rewrittenUrl ?? meta.url,
       wait_after_load: meta.options.waitFor,
       timeout: meta.abort.scrapeTimeout(),
-      headers: meta.options.headers,
+      headers,
       skip_tls_verification: meta.options.skipTlsVerification,
+      proxy: proxyConfig ?? undefined,
+      locale: meta.options.location?.languages?.[0],
     },
     method: "POST",
     logger: meta.logger.child("scrapeURLWithPlaywright/robustFetch"),

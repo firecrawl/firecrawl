@@ -341,6 +341,16 @@ describe("V2 Types Validation", () => {
       expect(result.location?.languages).toEqual(["en"]);
     });
 
+    it("should keep location undefined when empty", () => {
+      const input: ScrapeRequestInput = {
+        url: "https://example.com",
+        location: {},
+      };
+
+      const result = scrapeRequestSchema.parse(input);
+      expect(result.location).toBeUndefined();
+    });
+
     it("should reject location schema with invalid country code", () => {
       const input: ScrapeRequestInput = {
         url: "https://example.com",

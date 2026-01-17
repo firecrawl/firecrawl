@@ -4,8 +4,10 @@ import { Meta } from "../..";
 import { SSLError } from "../../error";
 import { specialtyScrapeCheck } from "../utils/specialtyHandler";
 import {
+  buildProxyConfig,
   getSecureDispatcher,
   InsecureConnectionError,
+  mergeLocationHeaders,
 } from "../utils/safeFetch";
 import { MockState, saveMock } from "../../lib/mock";
 import { TextDecoder } from "util";
@@ -51,10 +53,18 @@ export async function scrapeURLWithFetch(
     };
   } else {
     try {
+      const proxyConfig = buildProxyConfig(meta.options.location);
+      const headers = mergeLocationHeaders(
+        meta.options.headers,
+        meta.options.location,
+      );
       const x = await undici.fetch(meta.rewrittenUrl ?? meta.url, {
-        dispatcher: getSecureDispatcher(meta.options.skipTlsVerification),
+        dispatcher: getSecureDispatcher(
+          meta.options.skipTlsVerification,
+          proxyConfig,
+        ),
         redirect: "follow",
-        headers: meta.options.headers,
+        headers,
         signal: meta.abort.asSignal(),
       });
 

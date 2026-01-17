@@ -1060,7 +1060,7 @@ describe("Scrape tests", () => {
       );
     });
 
-    describe("Location API (f-e dependent)", () => {
+    describe("Location API (proxy-backed)", () => {
       it.concurrent(
         "works without specifying an explicit location",
         async () => {
@@ -1074,7 +1074,7 @@ describe("Scrape tests", () => {
         scrapeTimeout,
       );
 
-      it.concurrent(
+      concurrentIf(TEST_SELF_HOST && HAS_PROXY)(
         "works with country US",
         async () => {
           const response = await scrape(
@@ -1086,6 +1086,24 @@ describe("Scrape tests", () => {
           );
 
           expect(response.markdown).toContain("| Country | United States |");
+        },
+        scrapeTimeout,
+      );
+
+      concurrentIf(TEST_SELF_HOST && !HAS_PROXY)(
+        "warns when location cannot be applied",
+        async () => {
+          const response = await scrapeRaw(
+            {
+              url: "https://iplocation.com",
+              location: { country: "US" },
+            },
+            identity,
+          );
+
+          expect(response.statusCode).toBe(200);
+          expect(response.body.success).toBe(true);
+          expect(response.body.warning ?? "").toContain("location");
         },
         scrapeTimeout,
       );

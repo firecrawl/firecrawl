@@ -81,6 +81,12 @@ interface UrlModel {
   headers?: { [key: string]: string };
   check_selector?: string;
   skip_tls_verification?: boolean;
+  proxy?: {
+    server: string;
+    username?: string;
+    password?: string;
+  };
+  locale?: string;
 }
 
 let browser: Browser;
@@ -100,7 +106,14 @@ const initializeBrowser = async () => {
   });
 };
 
-const createContext = async (skipTlsVerification: boolean = false) => {
+const normalizeProxyServer = (server: string) =>
+  server.includes('://') ? server : `http://${server}`;
+
+const createContext = async (
+  skipTlsVerification: boolean = false,
+  proxy?: UrlModel['proxy'],
+  locale?: string,
+) => {
   const userAgent = new UserAgent().toString();
   const viewport = { width: 1280, height: 800 };
 
@@ -110,16 +123,25 @@ const createContext = async (skipTlsVerification: boolean = false) => {
     ignoreHTTPSErrors: skipTlsVerification,
   };
 
-  if (PROXY_SERVER && PROXY_USERNAME && PROXY_PASSWORD) {
+  const requestProxy = proxy ??
+    (PROXY_SERVER
+      ? {
+          server: PROXY_SERVER,
+          username: PROXY_USERNAME ?? undefined,
+          password: PROXY_PASSWORD ?? undefined,
+        }
+      : undefined);
+
+  if (requestProxy?.server) {
     contextOptions.proxy = {
-      server: PROXY_SERVER,
-      username: PROXY_USERNAME,
-      password: PROXY_PASSWORD,
+      server: normalizeProxyServer(requestProxy.server),
+      ...(requestProxy.username ? { username: requestProxy.username } : {}),
+      ...(requestProxy.password ? { password: requestProxy.password } : {}),
     };
-  } else if (PROXY_SERVER) {
-    contextOptions.proxy = {
-      server: PROXY_SERVER,
-    };
+  }
+
+  if (locale) {
+    contextOptions.locale = locale;
   }
 
   const newContext = await browser.newContext(contextOptions);
@@ -220,7 +242,16 @@ app.get('/health', async (req: Request, res: Response) => {
 });
 
 app.post('/scrape', async (req: Request, res: Response) => {
-  const { url, wait_after_load = 0, timeout = 15000, headers, check_selector, skip_tls_verification = false }: UrlModel = req.body;
+  const {
+    url,
+    wait_after_load = 0,
+    timeout = 15000,
+    headers,
+    check_selector,
+    skip_tls_verification = false,
+    proxy,
+    locale,
+  }: UrlModel = req.body;
 
   console.log(`================= Scrape Request =================`);
   console.log(`URL: ${url}`);
@@ -229,6 +260,8 @@ app.post('/scrape', async (req: Request, res: Response) => {
   console.log(`Headers: ${headers ? JSON.stringify(headers) : 'None'}`);
   console.log(`Check Selector: ${check_selector ? check_selector : 'None'}`);
   console.log(`Skip TLS Verification: ${skip_tls_verification}`);
+  console.log(`Proxy: ${proxy ? JSON.stringify(proxy) : 'None'}`);
+  console.log(`Locale: ${locale ?? 'None'}`);
   console.log(`==================================================`);
 
   if (!url) {
@@ -253,7 +286,7 @@ app.post('/scrape', async (req: Request, res: Response) => {
   let page: Page | null = null;
 
   try {
-    requestContext = await createContext(skip_tls_verification);
+    requestContext = await createContext(skip_tls_verification, proxy, locale);
     page = await requestContext.newPage();
 
     if (headers) {

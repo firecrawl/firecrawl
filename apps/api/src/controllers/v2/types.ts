@@ -471,12 +471,18 @@ const locationSchema = z
         "Invalid country code. Use a valid ISO 3166-1 alpha-2 country code.",
       )
       .transform(val => {
-        if (!val) return "us-generic";
+        if (!val) return undefined;
         return val.toLowerCase();
       }),
     languages: z.array(z.string()).optional(),
   })
-  .optional();
+  .optional()
+  .transform(val => {
+    if (!val) return undefined;
+    const hasCountry = !!val.country;
+    const hasLanguages = !!val.languages && val.languages.length > 0;
+    return hasCountry || hasLanguages ? val : undefined;
+  });
 
 const baseScrapeOptions = z.strictObject({
   formats: z

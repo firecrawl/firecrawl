@@ -20,6 +20,7 @@ import { hasFormatOfType } from "../../../lib/format-utils";
 import { getPDFMaxPages } from "../../../controllers/v2/types";
 import { PdfMetadata } from "@mendable/firecrawl-rs";
 import { BrandingProfile } from "../../../types/branding";
+import { isLocationSupportedByProxy } from "./utils/safeFetch";
 
 export type Engine =
   | "fire-engine;chrome-cdp"
@@ -575,6 +576,45 @@ export async function buildFallbackList(meta: Meta): Promise<
     selectedEngines = selectedEngines.filter(
       x => engineOptions[x.engine].quality > 0,
     );
+  }
+
+  const hasLocation = meta.featureFlags.has("location");
+  const locationSupported = isLocationSupportedByProxy(meta.options.location);
+  const locationOnlyLanguages =
+    !!meta.options.location &&
+    !meta.options.location.country &&
+    !!meta.options.location.languages?.length;
+
+  if (selectedEngines.length === 0 && hasLocation) {
+    for (const engine of currentEngines) {
+      const unsupportedFeatures = new Set(meta.featureFlags);
+      selectedEngines.push({ engine, supportScore: 0, unsupportedFeatures });
+    }
+  }
+
+  if (selectedEngines.length === 0) {
+    for (const engine of currentEngines) {
+      selectedEngines.push({
+        engine,
+        supportScore: 0,
+        unsupportedFeatures: new Set(meta.featureFlags),
+      });
+    }
+  }
+
+  if (
+    selectedEngines.length > 0 &&
+    hasLocation &&
+    !locationSupported &&
+    !locationOnlyLanguages
+  ) {
+    selectedEngines = selectedEngines.map(engine => ({
+      ...engine,
+      unsupportedFeatures: new Set([
+        ...engine.unsupportedFeatures,
+        "location",
+      ]),
+    }));
   }
 
   if (meta.internalOptions.forceEngine === undefined) {
