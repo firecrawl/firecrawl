@@ -150,6 +150,7 @@ export async function performDeepResearch(options: DeepResearchServiceOptions) {
               maxAge: 4 * 60 * 60 * 1000,
               storeInCache: true,
               proxy: "basic",
+              discoverAjax: false,
             },
             apiKeyId: apiKeyId,
             requestId: researchId,

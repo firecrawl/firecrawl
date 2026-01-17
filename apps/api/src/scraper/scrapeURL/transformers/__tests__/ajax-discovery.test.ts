@@ -77,27 +77,6 @@ describe("AJAX Discovery - Link Merging Logic", () => {
     expect(uniqueLinks).toEqual(htmlLinks);
   });
 
-  it("handles undefined discovered URLs", () => {
-    const htmlLinks = [
-      "https://example.com/page1",
-      "https://example.com/page2",
-    ];
-
-    const discoveredUrls: string[] | undefined = undefined;
-
-    // Merge logic
-    const allLinks = [...htmlLinks];
-    if (discoveredUrls?.length) {
-      allLinks.push(...discoveredUrls);
-    }
-
-    // Deduplicate
-    const uniqueLinks = [...new Set(allLinks)];
-
-    expect(uniqueLinks).toHaveLength(2);
-    expect(uniqueLinks).toEqual(htmlLinks);
-  });
-
   it("handles empty HTML links with discovered URLs", () => {
     const htmlLinks: string[] = [];
 

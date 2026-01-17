@@ -356,11 +356,27 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
             doc.metadata.url ?? doc.metadata.sourceURL ?? sc.originUrl!,
           );
 
+          // Extract links from HTML
+          const htmlLinks = await crawler.extractLinksFromHTML(
+            rawHtml ?? "",
+            doc.metadata?.url ?? doc.metadata?.sourceURL ?? sc.originUrl!,
+          );
+
+          // Merge with AJAX-discovered URLs (if any)
+          const discoveredUrls = (doc as any)._discoveredUrls as string[] | undefined;
+          const allExtractedLinks = discoveredUrls?.length
+            ? [...htmlLinks, ...discoveredUrls]
+            : htmlLinks;
+
+          if (discoveredUrls?.length) {
+            logger.debug("Merged " + discoveredUrls.length + " AJAX-discovered URLs with HTML links", {
+              discoveredUrlsCount: discoveredUrls.length,
+              htmlLinksCount: htmlLinks.length,
+            });
+          }
+
           const links = await crawler.filterLinks(
-            await crawler.extractLinksFromHTML(
-              rawHtml ?? "",
-              doc.metadata?.url ?? doc.metadata?.sourceURL ?? sc.originUrl!,
-            ),
+            allExtractedLinks,
             Infinity,
             sc.crawlerOptions?.maxDepth ?? 10,
           );
