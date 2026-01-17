@@ -83,7 +83,7 @@ describe("AJAX Discovery - Link Merging Logic", () => {
       "https://example.com/page2",
     ];
 
-    const discoveredUrls = undefined;
+    const discoveredUrls: string[] | undefined = undefined;
 
     // Merge logic
     const allLinks = [...htmlLinks];
