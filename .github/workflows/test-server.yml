@@ -51,7 +51,7 @@ jobs:
       ALLOW_LOCAL_WEBHOOKS: true
       FIRECRAWL_LOG_TO_FILE: true
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
 
       - uses: pnpm/action-setup@v4
         with:
@@ -293,7 +293,7 @@ jobs:
   #     NUQ_RABBITMQ_URL: amqp://localhost:5672
   #     HOST: 0.0.0.0
   #   steps:
-  #     - uses: actions/checkout@v5
+  #     - uses: actions/checkout@v6
 
   #     - name: Tailscale
   #       uses: tailscale/github-action@v4
