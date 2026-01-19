@@ -11,6 +11,10 @@ import { authenticateUser } from "../controllers/auth";
 import { createIdempotencyKey } from "../services/idempotency/create";
 import { validateIdempotencyKey } from "../services/idempotency/validate";
 import { checkTeamCredits } from "../services/billing/credit_billing";
+import {
+  reserveCredits,
+  releaseReservation,
+} from "../services/billing/credit_reservation";
 import { isUrlBlocked } from "../scraper/WebScraper/utils/blocklist";
 import { logger } from "../lib/logger";
 import { BLOCKLISTED_URL_MESSAGE } from "../lib/strings";
@@ -91,6 +95,22 @@ export function checkCreditsMiddleware(
             request: req.body,
           });
           (req.body as any).limit = remainingCredits;
+          // Still need to reserve the adjusted credits
+          const creditsToReserve = remainingCredits;
+          if (req.acuc?.api_key && creditsToReserve > 0) {
+            const reservation = await reserveCredits(
+              req.acuc.api_key,
+              req.auth.team_id,
+              creditsToReserve,
+              req.acuc?.is_extract ?? false,
+            );
+            if (reservation) {
+              req.creditReservation = {
+                id: reservation.id,
+                credits: reservation.credits,
+              };
+            }
+          }
           return next();
         }
 
@@ -124,6 +144,35 @@ export function checkCreditsMiddleware(
           });
         }
       }
+
+      // Reserve credits to prevent concurrent requests from exceeding limits
+      // This atomically decrements the cached credit balance
+      const creditsToReserve = minimum ?? 1;
+      if (req.acuc?.api_key && creditsToReserve > 0) {
+        const reservation = await reserveCredits(
+          req.acuc.api_key,
+          req.auth.team_id,
+          creditsToReserve,
+          req.acuc?.is_extract ?? false,
+        );
+        if (reservation) {
+          req.creditReservation = {
+            id: reservation.id,
+            credits: reservation.credits,
+          };
+          logger.debug("Reserved credits for request", {
+            reservationId: reservation.id,
+            credits: creditsToReserve,
+            teamId: req.auth.team_id,
+          });
+        } else {
+          logger.warn("Failed to reserve credits, proceeding without reservation", {
+            teamId: req.auth.team_id,
+            credits: creditsToReserve,
+          });
+        }
+      }
+
       next();
     })().catch(err => next(err));
   };
@@ -343,4 +392,58 @@ export function wrap(
   return (req, res, next) => {
     controller(req, res).catch(err => next(err));
   };
+}
+
+/**
+ * Middleware to release credit reservations when a request fails.
+ * Should be added as an error handler middleware.
+ */
+export function creditReservationErrorHandler(
+  err: Error,
+  req: RequestWithAuth,
+  res: Response,
+  next: NextFunction,
+) {
+  // Release the reservation if one exists and the request failed
+  if (req.creditReservation?.id) {
+    releaseReservation(req.creditReservation.id).catch(releaseError => {
+      logger.error("Failed to release credit reservation on error", {
+        reservationId: req.creditReservation?.id,
+        originalError: err.message,
+        releaseError,
+      });
+    });
+  }
+  next(err);
+}
+
+/**
+ * Middleware that sets up response listeners to release reservations
+ * if the response indicates an error (4xx, 5xx status codes).
+ * Call this early in the middleware chain, after authentication.
+ */
+export function creditReservationCleanupMiddleware(
+  req: RequestWithAuth,
+  res: Response,
+  next: NextFunction,
+) {
+  // Listen for response finish to check if we need to release reservation
+  res.on("finish", () => {
+    // If response was an error and we have a reservation that wasn't used
+    // Note: Successful requests should call billTeam which finalizes the reservation
+    if (
+      req.creditReservation?.id &&
+      res.statusCode >= 400 &&
+      res.statusCode < 600
+    ) {
+      releaseReservation(req.creditReservation.id).catch(error => {
+        logger.error("Failed to release credit reservation on error response", {
+          reservationId: req.creditReservation?.id,
+          statusCode: res.statusCode,
+          error,
+        });
+      });
+    }
+  });
+  next();
 }

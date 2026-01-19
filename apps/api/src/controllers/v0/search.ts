@@ -35,6 +35,8 @@ async function searchHelper(
   searchOptions: SearchOptions,
   flags: TeamFlags,
   api_key_id: number | null,
+  api_key?: string,
+  reservationId?: string,
 ): Promise<{
   success: boolean;
   error?: string;
@@ -80,7 +82,7 @@ async function searchHelper(
   );
 
   if (justSearch) {
-    billTeam(team_id, subscription_id, res.length, api_key_id, logger).catch(
+    billTeam(team_id, subscription_id, res.length, api_key_id, logger, api_key, reservationId).catch(
       error => {
         logger.error(
           `Failed to bill team ${team_id} for ${res.length} credits: ${error}`,
@@ -240,6 +242,8 @@ export async function searchController(req: Request, res: Response) {
       searchOptions,
       chunk?.flags ?? null,
       chunk?.api_key_id ?? null,
+      chunk?.api_key,
+      (req as any).creditReservation?.id,
     );
     const endTime = new Date().getTime();
     const timeTakenInSeconds = (endTime - startTime) / 1000;

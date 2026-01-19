@@ -57,6 +57,8 @@ const processExtractJob = async (
       teamId: data.teamId,
       subId: data.subId ?? undefined,
       apiKeyId: data.apiKeyId ?? null,
+      apiKey: data.apiKey,
+      reservationId: data.reservationId,
     });
 
     if (result && result.success) {

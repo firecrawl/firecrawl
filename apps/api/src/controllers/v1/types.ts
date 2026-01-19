@@ -1266,12 +1266,18 @@ export type AuthCreditUsageChunkFromTeam = Omit<
   "api_key"
 >;
 
+interface CreditReservationRef {
+  id: string;
+  credits: number;
+}
+
 export interface RequestWithMaybeACUC<
   ReqParams = {},
   ReqBody = undefined,
   ResBody = undefined,
 > extends Request<ReqParams, ReqBody, ResBody> {
   acuc?: AuthCreditUsageChunk;
+  creditReservation?: CreditReservationRef;
 }
 
 export interface RequestWithAuth<

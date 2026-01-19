@@ -8,6 +8,7 @@ import {
   saveLlmsTextToCache,
 } from "./generate-llmstxt-supabase";
 import { billTeam } from "../../services/billing/credit_billing";
+import { releaseReservation } from "../../services/billing/credit_reservation";
 import { logLlmsTxt } from "../../services/logging/log_job";
 import { getModel } from "../generic-ai";
 import { generateCompletions } from "../../scraper/scrapeURL/transformers/llmExtract";
@@ -17,6 +18,8 @@ interface GenerateLLMsTextServiceOptions {
   generationId: string;
   teamId: string;
   apiKeyId: number | null;
+  apiKey?: string;
+  reservationId?: string;
   url: string;
   maxUrls: number;
   showFullText: boolean;
@@ -74,6 +77,8 @@ export async function performGenerateLlmsTxt(
     cache = true,
     subId,
     apiKeyId,
+    apiKey,
+    reservationId,
   } = options;
   const startTime = Date.now();
   const logger = _logger.child({
@@ -95,6 +100,17 @@ export async function performGenerateLlmsTxt(
       : null;
     if (cachedResult) {
       logger.info("Found cached LLMs text", { url });
+
+      // Release the credit reservation since we're returning cached results
+      // and no credits will be consumed
+      if (reservationId) {
+        await releaseReservation(reservationId).catch(error => {
+          logger.warn("Failed to release reservation for cached result", {
+            reservationId,
+            error,
+          });
+        });
+      }
 
       // Limit pages and remove separators before returning
       const limitedFullText = limitPages(
@@ -267,7 +283,15 @@ export async function performGenerateLlmsTxt(
     });
 
     // Bill team for usage
-    billTeam(teamId, subId, urls.length, apiKeyId, logger).catch(error => {
+    billTeam(
+      teamId,
+      subId,
+      urls.length,
+      apiKeyId,
+      logger,
+      apiKey,
+      reservationId,
+    ).catch(error => {
       logger.error(`Failed to bill team ${teamId} for ${urls.length} urls`, {
         teamId,
         count: urls.length,
@@ -285,6 +309,19 @@ export async function performGenerateLlmsTxt(
     };
   } catch (error: any) {
     logger.error("Generate LLMs text error", { error });
+
+    // Release reserved credits on failure to prevent credit leaks
+    // This is especially important for background jobs where the HTTP
+    // middleware cleanup won't run
+    if (reservationId) {
+      await releaseReservation(reservationId).catch(releaseError => {
+        logger.error("Failed to release reservation on error", {
+          reservationId,
+          originalError: error.message,
+          releaseError,
+        });
+      });
+    }
 
     await updateGeneratedLlmsTxt(generationId, {
       status: "failed",

@@ -554,6 +554,9 @@ export async function searchController(
             req.acuc?.sub_id ?? undefined,
             credits_billed,
             req.acuc?.api_key_id ?? null,
+            logger,
+            req.acuc?.api_key,
+            req.creditReservation?.id,
           ).catch(error => {
             logger.error(
               `Failed to bill team ${req.acuc?.sub_id} for ${credits_billed} credits: ${error}`,
@@ -679,6 +682,9 @@ export async function searchController(
         req.acuc?.sub_id ?? undefined,
         credits_billed,
         req.acuc?.api_key_id ?? null,
+        logger,
+        req.acuc?.api_key,
+        req.creditReservation?.id,
       ).catch(error => {
         logger.error(
           `Failed to bill team ${req.acuc?.sub_id} for ${credits_billed} credits: ${error}`,

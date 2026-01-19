@@ -8,10 +8,13 @@ import { AuthCreditUsageChunk } from "../../controllers/v1/types";
 import { autoCharge } from "./auto_charge";
 import { getValue, setValue } from "../redis";
 import { queueBillingOperation } from "./batch_billing";
+import { finalizeReservation } from "./credit_reservation";
 import type { Logger } from "winston";
 
 /**
  * If you do not know the subscription_id in the current context, pass subscription_id as undefined.
+ * Pass api_key to enable optimistic cache updates for rate limiting concurrent requests.
+ * Pass reservationId if credits were pre-reserved at request start (to finalize the reservation).
  */
 export async function billTeam(
   team_id: string,
@@ -19,6 +22,8 @@ export async function billTeam(
   credits: number,
   api_key_id: number | null,
   logger?: Logger,
+  api_key?: string,
+  reservationId?: string,
 ) {
   // Maintain the withAuth wrapper for authentication
   return withAuth(
@@ -28,18 +33,36 @@ export async function billTeam(
       credits: number,
       api_key_id: number | null,
       logger: Logger | undefined,
+      api_key: string | undefined,
+      reservationId: string | undefined,
     ) => {
+      // If we have a reservation, finalize it (adjust for actual credits used)
+      // The reservation already updated the cache, so we just need to adjust the difference
+      if (reservationId) {
+        await finalizeReservation(reservationId, credits).catch(error => {
+          // Log but don't fail - the actual billing will still proceed
+          (logger ?? console).warn?.("Failed to finalize reservation", {
+            reservationId,
+            credits,
+            error,
+          });
+        });
+      }
+
       // Within the authenticated context, queue the billing operation
+      // Note: When reservation exists, cache is already updated, so api_key is not needed
+      // for optimistic update (it was done at reservation time)
       return queueBillingOperation(
         team_id,
         subscription_id,
         credits,
         api_key_id,
         false,
+        reservationId ? undefined : api_key, // Only update cache if no reservation
       );
     },
     { success: true, message: "No DB, bypassed." },
-  )(team_id, subscription_id, credits, api_key_id, logger);
+  )(team_id, subscription_id, credits, api_key_id, logger, api_key, reservationId);
 }
 
 type CheckTeamCreditsResponse = {

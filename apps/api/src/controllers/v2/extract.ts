@@ -105,6 +105,8 @@ export async function extractController(
   await addExtractJobToQueue(extractId, {
     ...jobData,
     apiKeyId: req.acuc?.api_key_id ?? undefined,
+    apiKey: req.acuc?.api_key,
+    reservationId: req.creditReservation?.id,
   });
 
   return res.status(200).json({
