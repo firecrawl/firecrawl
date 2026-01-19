@@ -135,7 +135,7 @@ export function getCategoryFromUrl(
     // Check against category map for other sites
     for (const [site, category] of categoryMap.entries()) {
       if (site === "__pdf__") continue; // Skip the special PDF marker
-      
+
       if (
         hostname === site.toLowerCase() ||
         hostname.endsWith("." + site.toLowerCase())
@@ -155,4 +155,78 @@ export function getCategoryFromUrl(
  */
 export function getDefaultResearchSites(): string[] {
   return [...DEFAULT_RESEARCH_SITES];
+}
+
+/**
+ * Image search result with dimensions
+ */
+interface ImageResultWithDimensions {
+  imageWidth?: number;
+  imageHeight?: number;
+  [key: string]: any;
+}
+
+/**
+ * Result of applying the larger: operator filter
+ */
+interface LargerOperatorFilterResult<T> {
+  images: T[];
+  applied: boolean;
+  minWidth?: number;
+  minHeight?: number;
+}
+
+/**
+ * Applies the larger: operator filter to image search results.
+ *
+ * The larger: operator is a Google image search operator that should filter images
+ * to only those larger than the specified dimensions, but it's not always honored
+ * by the upstream provider. This function parses the query and filters results
+ * to ensure they meet the minimum size criteria.
+ *
+ * @param query The search query that may contain larger:WxH
+ * @param images Array of image search results to filter
+ * @returns Object with filtered images and metadata about the filter applied
+ *
+ * @example
+ * const images = [
+ *   { title: "Large", imageWidth: 3000, imageHeight: 2000 },
+ *   { title: "Small", imageWidth: 500, imageHeight: 333 },
+ *   { title: "Exact", imageWidth: 1920, imageHeight: 1080 }
+ * ];
+ * applyLargerOperatorFilter("wallpaper larger:1920x1080", images)
+ * // Returns: { images: [...], applied: true, minWidth: 1920, minHeight: 1080 }
+ *
+ * applyLargerOperatorFilter("wallpaper", images)
+ * // Returns: { images: [...], applied: false }
+ */
+export function applyLargerOperatorFilter<T extends ImageResultWithDimensions>(
+  query: string,
+  images: T[],
+): LargerOperatorFilterResult<T> {
+  // Match larger:WIDTHxHEIGHT pattern (case-insensitive)
+  const largerMatch = query.match(/larger:(\d+)x(\d+)/i);
+
+  if (!largerMatch) {
+    return { images, applied: false };
+  }
+
+  const minWidth = parseInt(largerMatch[1], 10);
+  const minHeight = parseInt(largerMatch[2], 10);
+
+  if (isNaN(minWidth) || isNaN(minHeight) || minWidth <= 0 || minHeight <= 0) {
+    return { images, applied: false };
+  }
+
+  const filtered = images.filter(image => {
+    // If dimensions are missing, we can't verify size - exclude the image
+    if (image.imageWidth === undefined || image.imageHeight === undefined) {
+      return false;
+    }
+
+    // Image must be at least as large as the minimum in BOTH dimensions
+    return image.imageWidth >= minWidth && image.imageHeight >= minHeight;
+  });
+
+  return { images: filtered, applied: true, minWidth, minHeight };
 }
