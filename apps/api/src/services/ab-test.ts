@@ -8,50 +8,51 @@ import {
   FireEngineScrapeRequestPlaywright,
   FireEngineScrapeRequestTLSClient,
 } from "../scraper/scrapeURL/engines/fire-engine/scrape";
+import { getDocFromGCS } from "../lib/gcs-jobs";
 import { MirrorResult, FireEngineResponse } from "./ab-test-comparison";
 
 export function abTestJob(webScraperOptions: ScrapeJobData) {
-  // Global A/B test: mirror request to staging /v1/scrape based on SCRAPEURL_AB_RATE
   const abLogger = _logger.child({ method: "ABTestToStaging" });
   try {
-    const abRateEnv = config.SCRAPEURL_AB_RATE;
-    const abHostEnv = config.SCRAPEURL_AB_HOST;
-    const shouldExtendMaxAge = config.SCRAPEURL_AB_EXTEND_MAXAGE;
-    const abRate =
-      abRateEnv !== undefined ? Math.max(0, Math.min(1, Number(abRateEnv))) : 0;
+    const abRate = config.SCRAPEURL_AB_RATE
+      ? Math.max(0, Math.min(1, Number(config.SCRAPEURL_AB_RATE)))
+      : 0;
+
     const shouldABTest =
       webScraperOptions.mode === "single_urls" &&
       !webScraperOptions.zeroDataRetention &&
       !webScraperOptions.internalOptions?.zeroDataRetention &&
       abRate > 0 &&
       Math.random() <= abRate &&
-      abHostEnv &&
+      config.SCRAPEURL_AB_HOST &&
       webScraperOptions.internalOptions?.v1Agent === undefined &&
       webScraperOptions.internalOptions?.v1JSONAgent === undefined;
+
     if (shouldABTest) {
-      let timeout = Math.min(
+      const timeout = Math.min(
         60000,
         (webScraperOptions.scrapeOptions.timeout ?? 30000) + 10000,
       );
 
       (async () => {
         const abortController = new AbortController();
-        const timeoutHandle = setTimeout(() => {
-          if (abortController) {
-            abortController.abort();
-          }
-        }, timeout);
+        const timeoutHandle = setTimeout(
+          () => abortController.abort(),
+          timeout,
+        );
 
         try {
           abLogger.info("A/B-testing scrapeURL to staging");
           await robustFetch({
-            url: `http://${abHostEnv}/v2/scrape`,
+            url: `http://${config.SCRAPEURL_AB_HOST}/v2/scrape`,
             method: "POST",
             body: {
               url: webScraperOptions.url,
               ...webScraperOptions.scrapeOptions,
               origin: (webScraperOptions.scrapeOptions as any).origin ?? "api",
-              ...(shouldExtendMaxAge ? { maxAge: 900000000 } : {}),
+              ...(config.SCRAPEURL_AB_EXTEND_MAXAGE
+                ? { maxAge: 900000000 }
+                : {}),
             },
             logger: abLogger,
             tryCount: 1,
@@ -63,7 +64,7 @@ export function abTestJob(webScraperOptions: ScrapeJobData) {
         } catch (error) {
           abLogger.warn("A/B-testing scrapeURL (staging) failed", { error });
         } finally {
-          if (timeoutHandle) clearTimeout(timeoutHandle);
+          clearTimeout(timeoutHandle);
         }
       })();
     }
@@ -80,19 +81,17 @@ export function abTestFireEngine(
       | FireEngineScrapeRequestTLSClient
     ),
 ): { shouldCompare: boolean; mirrorPromise: Promise<MirrorResult> | null } {
-  const abLogger = _logger.child({ method: "ABTestToStaging" });
+  const abLogger = _logger.child({ method: "ABTestFireEngine" });
 
-  const abRateEnv = config.FIRE_ENGINE_AB_RATE;
-  const abUrlEnv = config.FIRE_ENGINE_AB_URL;
-  const compareEnabled = config.FIRE_ENGINE_AB_COMPARE_ENABLED;
-  const abRate =
-    abRateEnv !== undefined ? Math.max(0, Math.min(1, Number(abRateEnv))) : 0;
+  const abRate = config.FIRE_ENGINE_AB_RATE
+    ? Math.max(0, Math.min(1, Number(config.FIRE_ENGINE_AB_RATE)))
+    : 0;
 
   const shouldABTest =
     !feRequest.zeroDataRetention &&
     abRate > 0 &&
     Math.random() <= abRate &&
-    abUrlEnv;
+    config.FIRE_ENGINE_AB_URL;
 
   if (!shouldABTest) {
     return { shouldCompare: false, mirrorPromise: null };
@@ -103,15 +102,16 @@ export function abTestFireEngine(
 
   const mirrorPromise = (async (): Promise<MirrorResult> => {
     const abortController = new AbortController();
-    const timeoutHandle = setTimeout(() => {
-      abortController.abort();
-    }, timeout);
+    const timeoutHandle = setTimeout(() => abortController.abort(), timeout);
+    let jobId: string | undefined;
 
     try {
-      abLogger.info("A/B-testing scrapeURL to staging");
+      abLogger.info("A/B-testing fire-engine to staging", {
+        url: feRequest.url,
+      });
 
-      const response = await robustFetch({
-        url: `${abUrlEnv}/scrape`,
+      let response = await robustFetch({
+        url: `${config.FIRE_ENGINE_AB_URL}/scrape`,
         method: "POST",
         body: feRequest,
         logger: abLogger,
@@ -122,18 +122,27 @@ export function abTestFireEngine(
         abort: abortController.signal,
       });
 
-      abLogger.info("A/B-testing scrapeURL (staging) request completed");
+      jobId = response?.jobId;
 
-      // Extract the fields we need for comparison
+      if (!response.content && response.docUrl) {
+        const doc = await getDocFromGCS(response.docUrl.split("/").pop() ?? "");
+        if (doc) {
+          response = { ...response, ...doc };
+        }
+      }
+
+      abLogger.info("A/B-testing fire-engine (staging) request completed", {
+        url: feRequest.url,
+        hasContent: !!response?.content,
+      });
+
       const feResponse: FireEngineResponse | null =
         response &&
         typeof response.content === "string" &&
-        typeof response.pageStatusCode === "number" &&
-        typeof response.timeTaken === "number"
+        typeof response.pageStatusCode === "number"
           ? {
               content: response.content,
               pageStatusCode: response.pageStatusCode,
-              timeTaken: response.timeTaken,
             }
           : null;
 
@@ -143,7 +152,10 @@ export function abTestFireEngine(
         timeTaken: Date.now() - startTime,
       };
     } catch (error) {
-      abLogger.warn("A/B-testing scrapeURL (staging) failed", { error });
+      abLogger.warn("A/B-testing fire-engine (staging) failed", {
+        error,
+        url: feRequest.url,
+      });
       return {
         response: null,
         error: error as Error,
@@ -151,11 +163,26 @@ export function abTestFireEngine(
       };
     } finally {
       clearTimeout(timeoutHandle);
+
+      if (jobId && config.FIRE_ENGINE_AB_URL) {
+        robustFetch({
+          url: `${config.FIRE_ENGINE_AB_URL}/scrape/${jobId}`,
+          method: "DELETE",
+          headers: {},
+          logger: abLogger.child({ method: "abTestFireEngine/delete", jobId }),
+          mock: null,
+        }).catch(e => {
+          abLogger.warn("Failed to delete AB test job from fire-engine", {
+            error: e,
+            jobId,
+          });
+        });
+      }
     }
   })();
 
   return {
-    shouldCompare: compareEnabled,
+    shouldCompare: config.FIRE_ENGINE_AB_COMPARE_ENABLED,
     mirrorPromise,
   };
 }

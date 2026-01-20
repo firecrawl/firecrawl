@@ -227,7 +227,6 @@ export async function fireEngineScrape<
         {
           content: successParse.data.content,
           pageStatusCode: successParse.data.pageStatusCode,
-          timeTaken: successParse.data.timeTaken,
         },
         productionTimeTaken,
         abTest.mirrorPromise,
