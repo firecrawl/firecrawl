@@ -2,6 +2,7 @@ import { Logger } from "winston";
 
 const AB_LOG_PREFIX = "[FE_AB_COMPARE]";
 const MAX_CONTENT_SIZE = 1_000_000; // 1 MB
+const VARIANCE_THRESHOLD = 0.05; // 5% allowed variance
 
 export interface FireEngineResponse {
   content: string;
@@ -16,6 +17,21 @@ export interface MirrorResult {
 
 function normalizeContent(s: string): string {
   return s.replace(/\s+/g, " ").trim();
+}
+
+function calculateSimilarity(a: string, b: string): number {
+  if (a === b) return 1;
+  if (a.length === 0 || b.length === 0) return 0;
+
+  const maxLen = Math.max(a.length, b.length);
+  const minLen = Math.min(a.length, b.length);
+
+  let matches = 0;
+  for (let i = 0; i < minLen; i++) {
+    if (a[i] === b[i]) matches++;
+  }
+
+  return matches / maxLen;
 }
 
 export function scheduleABComparison(
@@ -54,15 +70,27 @@ export function scheduleABComparison(
 
       const prodNormalized = normalizeContent(productionResponse.content);
       const mirrorNormalized = normalizeContent(mirrorResult.response.content);
-      const identical = prodNormalized === mirrorNormalized;
 
-      if (identical) {
-        abLogger.info(`${AB_LOG_PREFIX} Content identical`, baseLogData);
+      const similarity = calculateSimilarity(prodNormalized, mirrorNormalized);
+      const withinVariance = similarity >= 1 - VARIANCE_THRESHOLD;
+
+      const timeDiff = mirrorResult.timeTaken - productionTimeTaken;
+      const timeDiffStr = timeDiff >= 0 ? `+${timeDiff}ms` : `${timeDiff}ms`;
+
+      if (withinVariance) {
+        abLogger.info(
+          `${AB_LOG_PREFIX} Content within variance (${timeDiffStr})`,
+          {
+            ...baseLogData,
+            similarity: `${(similarity * 100).toFixed(2)}%`,
+          },
+        );
       } else {
-        abLogger.warn(`${AB_LOG_PREFIX} Content mismatch`, {
+        abLogger.info(`${AB_LOG_PREFIX} Content mismatch (${timeDiffStr})`, {
           ...baseLogData,
-          prod_len: productionResponse.content.length,
-          mirror_len: mirrorResult.response.content.length,
+          prod_len: prodNormalized.length,
+          mirror_len: mirrorNormalized.length,
+          similarity: `${(similarity * 100).toFixed(2)}%`,
           prod_status: productionResponse.pageStatusCode,
           mirror_status: mirrorResult.response.pageStatusCode,
         });
