@@ -1120,6 +1120,20 @@ export async function scrapeURL(
                 throw error;
               }
             }
+          } else if (
+            error instanceof NoEnginesLeftError &&
+            meta.options.proxy === "auto" &&
+            !meta.featureFlags.has("stealthProxy") &&
+            (meta.internalOptions.forceEngine === undefined ||
+              Array.isArray(meta.internalOptions.forceEngine))
+          ) {
+            // When proxy="auto" and all basic proxy engines failed,
+            // retry with stealth proxy enabled
+            meta.logger.info(
+              "All engines failed with proxy=auto, retrying with stealthProxy",
+              { error, existingFlags: Array.from(meta.featureFlags) },
+            );
+            meta.featureFlags.add("stealthProxy");
           } else {
             throw error;
           }
