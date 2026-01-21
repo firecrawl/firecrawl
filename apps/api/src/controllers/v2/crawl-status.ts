@@ -194,6 +194,7 @@ export async function crawlStatusController(
     typeof req.query.limit === "string"
       ? start + parseInt(req.query.limit, 10) - 1
       : undefined;
+  const skipData = req.query.skip_data === "true";
 
   const group = await crawlGroup.getGroup(req.params.jobId);
   const groupAnyJob = await scrapeQueue.getGroupAnyJob(
@@ -242,61 +243,71 @@ export async function crawlStatusController(
   };
 
   let outputBulkB: {
-    data: Document[];
+    data?: Document[];
     next: string | undefined;
   };
 
-  const doneJobs = await scrapeQueue.getCrawlJobsForListing(
-    req.params.jobId,
-    end !== undefined ? end - start + 1 : 100,
-    start,
-    logger.child({ zeroDataRetention }),
-  );
+  if (skipData) {
+    // Skip data fetching entirely when skip_data=true
+    outputBulkB = {
+      next:
+        outputBulkA.status !== "completed"
+          ? `${req.protocol}://${req.get("host")}/v1/${isBatch ? "batch/scrape" : "crawl"}/${req.params.jobId}${req.query.limit ? `?limit=${req.query.limit}` : ""}`
+          : undefined,
+    };
+  } else {
+    const doneJobs = await scrapeQueue.getCrawlJobsForListing(
+      req.params.jobId,
+      end !== undefined ? end - start + 1 : 100,
+      start,
+      logger.child({ zeroDataRetention }),
+    );
 
-  let scrapes: Document[] = [];
-  let iteratedOver = 0;
-  let bytes = 0;
-  const bytesLimit = 10485760; // 10 MiB in bytes
+    let scrapes: Document[] = [];
+    let iteratedOver = 0;
+    let bytes = 0;
+    const bytesLimit = 10485760; // 10 MiB in bytes
 
-  const scrapeBlobs = await Promise.all(
-    doneJobs.map(
-      async x =>
-        [x.id, x.returnvalue ?? (await getJobFromGCS(x.id))?.[0]] as const,
-    ),
-  );
+    const scrapeBlobs = await Promise.all(
+      doneJobs.map(
+        async x =>
+          [x.id, x.returnvalue ?? (await getJobFromGCS(x.id))?.[0]] as const,
+      ),
+    );
 
-  for (const [id, scrape] of scrapeBlobs) {
-    if (scrape) {
-      scrapes.push(scrape);
-      bytes += JSON.stringify(scrape).length;
-    } else {
-      logger.warn("Job was considered done, but returnvalue is undefined!", {
-        jobId: id,
-        returnvalue: scrape,
-        zeroDataRetention,
-      });
+    for (const [id, scrape] of scrapeBlobs) {
+      if (scrape) {
+        scrapes.push(scrape);
+        bytes += JSON.stringify(scrape).length;
+      } else {
+        logger.warn("Job was considered done, but returnvalue is undefined!", {
+          jobId: id,
+          returnvalue: scrape,
+          zeroDataRetention,
+        });
+      }
+
+      iteratedOver++;
+
+      if (bytes > bytesLimit) {
+        break;
+      }
     }
 
-    iteratedOver++;
-
-    if (bytes > bytesLimit) {
-      break;
+    if (bytes > bytesLimit && scrapes.length !== 1) {
+      scrapes.splice(scrapes.length - 1, 1);
+      iteratedOver--;
     }
-  }
 
-  if (bytes > bytesLimit && scrapes.length !== 1) {
-    scrapes.splice(scrapes.length - 1, 1);
-    iteratedOver--;
+    outputBulkB = {
+      data: scrapes,
+      next:
+        (outputBulkA.total ?? 0) > start + iteratedOver ||
+        outputBulkA.status !== "completed"
+          ? `${req.protocol}://${req.get("host")}/v1/${isBatch ? "batch/scrape" : "crawl"}/${req.params.jobId}?skip=${start + iteratedOver}${req.query.limit ? `&limit=${req.query.limit}` : ""}`
+          : undefined,
+    };
   }
-
-  outputBulkB = {
-    data: scrapes,
-    next:
-      (outputBulkA.total ?? 0) > start + iteratedOver ||
-      outputBulkA.status !== "completed"
-        ? `${req.protocol}://${req.get("host")}/v1/${isBatch ? "batch/scrape" : "crawl"}/${req.params.jobId}?skip=${start + iteratedOver}${req.query.limit ? `&limit=${req.query.limit}` : ""}`
-        : undefined,
-  };
 
   // Check for robots.txt blocked URLs and add warning if found
   let warning: string | undefined;
@@ -321,7 +332,7 @@ export async function crawlStatusController(
 
   // Check if we should warn about base domain for crawl results
   const resultCount =
-    outputBulkA.completed ?? outputBulkA.total ?? outputBulkB.data.length;
+    outputBulkA.completed ?? outputBulkA.total ?? outputBulkB.data?.length ?? 0;
   const currentStatus = outputBulkA.status ?? "scraping";
   if (!warning && currentStatus !== "scraping" && resultCount <= 1) {
     // Get the original crawl URL and options from stored crawl data
@@ -347,7 +358,7 @@ export async function crawlStatusController(
     creditsUsed: outputBulkA.creditsUsed ?? 0,
     expiresAt: (await getCrawlExpiry(req.params.jobId)).toISOString(),
     next: outputBulkB.next,
-    data: outputBulkB.data,
+    ...(skipData ? {} : { data: outputBulkB.data ?? [] }),
     ...(warning && { warning }),
   });
 }

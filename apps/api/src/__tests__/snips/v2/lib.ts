@@ -222,7 +222,11 @@ export async function crawl(
   body: CrawlRequestInput,
   identity: Identity,
   shouldSucceed: boolean = true,
-): Promise<Exclude<CrawlStatusResponse & { id: string }, ErrorResponse>> {
+): Promise<
+  Exclude<CrawlStatusResponse & { id: string }, ErrorResponse> & {
+    data: Document[];
+  }
+> {
   const cs = await crawlStart(body, identity);
   expectCrawlStartToSucceed(cs);
 
@@ -311,7 +315,9 @@ function expectBatchScrapeToSucceed(
 export async function batchScrape(
   body: BatchScrapeRequestInput,
   identity: Identity,
-): Promise<Exclude<CrawlStatusResponse, ErrorResponse> & { id: string }> {
+): Promise<
+  Exclude<CrawlStatusResponse, ErrorResponse> & { id: string; data: Document[] }
+> {
   const bss = await batchScrapeStart(body, identity);
   expectBatchScrapeStartToSucceed(bss);
 
