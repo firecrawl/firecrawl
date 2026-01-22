@@ -556,6 +556,7 @@ export interface AgentStatusResponse {
   status: 'processing' | 'completed' | 'failed';
   error?: string;
   data?: unknown;
+  partial?: unknown;
   expiresAt: string;
   creditsUsed?: number;
 }

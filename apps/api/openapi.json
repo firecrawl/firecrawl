@@ -2941,10 +2941,18 @@
           "data": {
             "type": "object"
           },
+          "partial": {
+            "type": "object",
+            "description": "Partial results when the job fails early"
+          },
           "status": {
             "type": "string",
             "enum": ["completed", "processing", "failed", "cancelled"],
             "description": "The current status of the extract job"
+          },
+          "error": {
+            "type": "string",
+            "description": "Error message (only present when status is failed)"
           },
           "expiresAt": {
             "type": "string",

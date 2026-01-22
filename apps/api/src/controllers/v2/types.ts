@@ -1133,6 +1133,7 @@ export type AgentStatusResponse =
       status: "processing" | "completed" | "failed";
       error?: string;
       data?: any;
+      partial?: any;
       expiresAt: string;
       creditsUsed?: number;
     };

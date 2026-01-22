@@ -803,6 +803,7 @@ class AgentResponse(BaseModel):
     id: Optional[str] = None
     status: Optional[Literal["processing", "completed", "failed"]] = None
     data: Optional[Any] = None
+    partial: Optional[Any] = None
     error: Optional[str] = None
     expires_at: Optional[datetime] = None
     credits_used: Optional[int] = None
