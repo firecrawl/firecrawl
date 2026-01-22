@@ -23,7 +23,9 @@ import {
   shouldUseIndex,
 } from "./engines";
 import { parseMarkdown } from "../../lib/html-to-markdown";
+import { load } from "cheerio";
 import { hasFormatOfType } from "../../lib/format-utils";
+import { checkForMetaBlocking } from "./meta-utils";
 import {
   ActionError,
   AddFeatureError,
@@ -84,14 +86,14 @@ import { rewriteUrl } from "./lib/rewriteUrl";
 
 export type ScrapeUrlResponse =
   | {
-      success: true;
-      document: Document;
-      unsupportedFeatures?: Set<FeatureFlag>;
-    }
+    success: true;
+    document: Document;
+    unsupportedFeatures?: Set<FeatureFlag>;
+  }
   | {
-      success: false;
-      error: any;
-    };
+    success: false;
+    error: any;
+  };
 
 export type Meta = {
   id: string;
@@ -104,25 +106,25 @@ export type Meta = {
   featureFlags: Set<FeatureFlag>;
   mock: MockState | null;
   pdfPrefetch:
-    | {
-        filePath: string;
-        url?: string;
-        status: number;
-        proxyUsed: "basic" | "stealth";
-        contentType?: string;
-      }
-    | null
-    | undefined; // undefined: no prefetch yet, null: prefetch came back empty
+  | {
+    filePath: string;
+    url?: string;
+    status: number;
+    proxyUsed: "basic" | "stealth";
+    contentType?: string;
+  }
+  | null
+  | undefined; // undefined: no prefetch yet, null: prefetch came back empty
   documentPrefetch:
-    | {
-        filePath: string;
-        url?: string;
-        status: number;
-        proxyUsed: "basic" | "stealth";
-        contentType?: string;
-      }
-    | null
-    | undefined; // undefined: no prefetch yet, null: prefetch came back empty
+  | {
+    filePath: string;
+    url?: string;
+    status: number;
+    proxyUsed: "basic" | "stealth";
+    contentType?: string;
+  }
+  | null
+  | undefined; // undefined: no prefetch yet, null: prefetch came back empty
   costTracking: CostTracking;
   winnerEngine?: Engine;
   abortHandle?: NodeJS.Timeout;
@@ -254,12 +256,12 @@ async function buildMetaObject(
   const abortHandle =
     options.timeout !== undefined
       ? setTimeout(
-          () =>
-            abortController.abort(
-              new ScrapeJobTimeoutError("Scrape timed out"),
-            ),
-          options.timeout,
-        )
+        () =>
+          abortController.abort(
+            new ScrapeJobTimeoutError("Scrape timed out"),
+          ),
+        options.timeout,
+      )
       : undefined;
 
   return {
@@ -271,7 +273,7 @@ async function buildMetaObject(
       skipTlsVerification:
         options.skipTlsVerification ??
         ((options.headers && Object.keys(options.headers).length > 0) ||
-        (options.actions && options.actions.length > 0)
+          (options.actions && options.actions.length > 0)
           ? false
           : true),
     },
@@ -282,13 +284,13 @@ async function buildMetaObject(
       internalOptions.externalAbort,
       options.timeout !== undefined
         ? {
-            signal: abortController.signal,
-            tier: "scrape",
-            timesOutAt: new Date(Date.now() + options.timeout),
-            throwable() {
-              return new ScrapeJobTimeoutError("Scrape timed out");
-            },
-          }
+          signal: abortController.signal,
+          tier: "scrape",
+          timesOutAt: new Date(Date.now() + options.timeout),
+          throwable() {
+            return new ScrapeJobTimeoutError("Scrape timed out");
+          },
+        }
         : undefined,
     ),
     featureFlags: buildFeatureFlags(url, options, internalOptions),
@@ -353,6 +355,12 @@ async function scrapeURLLoopIter(
       },
       engine,
     );
+
+    // Check for meta name="FirecrawlAgent" content="noindex"
+    if (engineResult.html && checkForMetaBlocking(engineResult.html, config.FIRECRAWL_USER_AGENT)) {
+      meta.logger.info("Blocked by meta tag", { url: meta.url });
+      throw new CrawlDenialError("URL blocked by meta tag");
+    }
 
     const hasMarkdown = hasFormatOfType(meta.options.formats, "markdown");
     const hasChangeTracking = hasFormatOfType(
@@ -425,8 +433,8 @@ async function scrapeURLLoopIter(
     ) {
       meta.logger.info(
         "Scrape via " +
-          engine +
-          " deemed unsuccessful due to proxy inadequacy. Adding stealthProxy flag.",
+        engine +
+        " deemed unsuccessful due to proxy inadequacy. Adding stealthProxy flag.",
         {
           factors: { isLongEnough, isGoodStatusCode, hasNoPageError },
           statusCode: engineResult.statusCode,
@@ -468,6 +476,7 @@ class WrappedEngineError extends Error {
   }
 }
 
+// scrapeURLLoop
 async function scrapeURLLoop(meta: Meta): Promise<ScrapeUrlResponse> {
   return withSpan("scrape.engine_loop", async span => {
     meta.logger.info(
@@ -596,14 +605,14 @@ async function scrapeURLLoop(meta: Meta): Promise<ScrapeUrlResponse> {
             ...enginePromises.map(x => x.promise),
             ...(remainingEngines.length > 0
               ? [
-                  new Promise<EngineScrapeResultWithContext>((_, reject) => {
-                    timeouts.push(
-                      setTimeout(() => {
-                        reject(new WaterfallNextEngineSignal());
-                      }, waitUntilWaterfall),
-                    );
-                  }),
-                ]
+                new Promise<EngineScrapeResultWithContext>((_, reject) => {
+                  timeouts.push(
+                    setTimeout(() => {
+                      reject(new WaterfallNextEngineSignal());
+                    }, waitUntilWaterfall),
+                  );
+                }),
+              ]
               : []),
             new Promise<EngineScrapeResultWithContext>((_, reject) => {
               timeouts.push(
@@ -639,8 +648,8 @@ async function scrapeURLLoop(meta: Meta): Promise<ScrapeUrlResponse> {
             } else if (error.error instanceof IndexMissError) {
               meta.logger.warn(
                 "Engine " +
-                  error.engine +
-                  " could not find the page in the index.",
+                error.engine +
+                " could not find the page in the index.",
                 {
                   error: error.error,
                 },
@@ -682,8 +691,8 @@ async function scrapeURLLoop(meta: Meta): Promise<ScrapeUrlResponse> {
             } else {
               meta.logger.warn(
                 "An unexpected error happened while scraping with " +
-                  error.engine +
-                  ".",
+                error.engine +
+                ".",
                 { error },
               );
             }
@@ -816,12 +825,12 @@ async function scrapeURLLoop(meta: Meta): Promise<ScrapeUrlResponse> {
         )
           ? engineResult.cacheInfo
             ? {
-                cacheState: "hit",
-                cachedAt: engineResult.cacheInfo.created_at.toISOString(),
-              }
+              cacheState: "hit",
+              cachedAt: engineResult.cacheInfo.created_at.toISOString(),
+            }
             : {
-                cacheState: "miss",
-              }
+              cacheState: "miss",
+            }
           : {}),
         postprocessorsUsed: engineResult.postprocessorsUsed,
       },
@@ -1057,7 +1066,7 @@ export async function scrapeURL(
             // note: we might want to reattempt check here too
             meta.logger.debug(
               "More feature flags requested by scraper: adding " +
-                error.featureFlags.join(", "),
+              error.featureFlags.join(", "),
               { error, existingFlags: meta.featureFlags },
             );
             meta.featureFlags = new Set(
@@ -1076,7 +1085,7 @@ export async function scrapeURL(
           ) {
             meta.logger.debug(
               "Incorrect feature flags reported by scraper: removing " +
-                error.featureFlags.join(","),
+              error.featureFlags.join(","),
               { error, existingFlags: meta.featureFlags },
             );
             meta.featureFlags = new Set(
