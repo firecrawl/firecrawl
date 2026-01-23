@@ -44,9 +44,35 @@ async function _getSitemapXMLGZ(
   return decompressed.toString("utf-8");
 }
 
+function getStaleSeverity(elapsedMs: number): string | null {
+  if (elapsedMs >= 300000) return "CRITICAL";
+  if (elapsedMs >= 120000) return "HIGH";
+  if (elapsedMs >= 60000) return "MEDIUM";
+  if (elapsedMs >= 30000) return "LOW";
+  return null;
+}
+
 async function getSitemapXML(options: SitemapScrapeOptions): Promise<string> {
-  if (options.url.toLowerCase().endsWith(".gz")) {
-    return await _getSitemapXMLGZ(options);
+  const logger = (options.logger ?? _logger).child({
+    module: "sitemap",
+    method: "getSitemapXML",
+    crawlId: options.crawlId,
+    sitemapUrl: options.url,
+  });
+
+  const startTime = Date.now();
+  const isGzipped = options.url.toLowerCase().endsWith(".gz");
+
+  logger.debug("Fetching sitemap XML", {
+    maxAge: options.maxAge,
+    isGzipped,
+  });
+
+  if (isGzipped) {
+    const result = await _getSitemapXMLGZ(options);
+    const durationMs = Date.now() - startTime;
+    logger.debug("Gzipped sitemap fetched", { durationMs, xmlLength: result.length });
+    return result;
   }
 
   const isLocationSpecified =
@@ -75,45 +101,96 @@ async function getSitemapXML(options: SitemapScrapeOptions): Promise<string> {
       : []),
   ];
 
-  const response = await scrapeURL(
-    "sitemap;" + options.crawlId,
-    options.url,
-    scrapeOptions.parse({
-      formats: ["rawHtml"],
-      maxAge: options.maxAge,
-      ...(options.location ? { location: options.location } : {}),
-    }),
-    {
-      forceEngine,
-      v0DisableJsDom: true,
-      // externalAbort: options.abort,
-      teamId: "sitemap",
-      zeroDataRetention: options.zeroDataRetention,
-      crawlId: options.crawlId,
-      isPreCrawl: options.isPreCrawl,
-    },
-    new CostTracking(),
-  );
+  // Heartbeat interval to detect long-running sitemap fetches
+  let heartbeatCount = 0;
+  const heartbeatInterval = setInterval(() => {
+    heartbeatCount++;
+    const elapsedMs = Date.now() - startTime;
+    const elapsedSeconds = Math.round(elapsedMs / 1000);
+    const severity = getStaleSeverity(elapsedMs);
 
-  if (
-    response.success &&
-    response.document.metadata.statusCode >= 200 &&
-    response.document.metadata.statusCode < 300
-  ) {
-    return response.document.rawHtml!;
-  } else if (!response.success) {
-    throw new SitemapError("Failed to scrape sitemap", response.error);
-  } else {
-    throw new SitemapError(
-      "Failed to scrape sitemap",
-      response.document.metadata.statusCode,
+    if (severity) {
+      logger.warn("Sitemap fetch still in progress", {
+        elapsedSeconds,
+        elapsedMs,
+        severity,
+        heartbeatCount,
+      });
+    } else {
+      logger.info("Sitemap fetch heartbeat", {
+        elapsedSeconds,
+        elapsedMs,
+        heartbeatCount,
+      });
+    }
+  }, 15000);
+
+  try {
+    logger.debug("Calling scrapeURL for sitemap");
+
+    const response = await scrapeURL(
+      "sitemap;" + options.crawlId,
+      options.url,
+      scrapeOptions.parse({
+        formats: ["rawHtml"],
+        maxAge: options.maxAge,
+        ...(options.location ? { location: options.location } : {}),
+      }),
+      {
+        forceEngine,
+        v0DisableJsDom: true,
+        // externalAbort: options.abort,
+        teamId: "sitemap",
+        zeroDataRetention: options.zeroDataRetention,
+        crawlId: options.crawlId,
+        isPreCrawl: options.isPreCrawl,
+      },
+      new CostTracking(),
     );
+
+    const durationMs = Date.now() - startTime;
+
+    if (
+      response.success &&
+      response.document.metadata.statusCode >= 200 &&
+      response.document.metadata.statusCode < 300
+    ) {
+      logger.info("scrapeURL for sitemap completed", {
+        success: true,
+        durationMs,
+        statusCode: response.document.metadata.statusCode,
+        htmlLength: response.document.rawHtml?.length ?? 0,
+      });
+      return response.document.rawHtml!;
+    } else if (!response.success) {
+      logger.error("scrapeURL for sitemap failed", {
+        success: false,
+        durationMs,
+        error: response.error,
+      });
+      throw new SitemapError("Failed to scrape sitemap", response.error);
+    } else {
+      logger.error("scrapeURL for sitemap returned non-2xx status", {
+        success: false,
+        durationMs,
+        statusCode: response.document.metadata.statusCode,
+      });
+      throw new SitemapError(
+        "Failed to scrape sitemap",
+        response.document.metadata.statusCode,
+      );
+    }
+  } finally {
+    clearInterval(heartbeatInterval);
+    const totalDurationMs = Date.now() - startTime;
+    logger.debug("getSitemapXML completed", { totalDurationMs });
   }
 }
 
 export async function scrapeSitemap(
   options: SitemapScrapeOptions,
 ): Promise<SitemapData> {
+  const entryTime = Date.now();
   const logger = (options.logger ?? _logger).child({
     module: "crawler",
     method: "scrapeSitemap",
@@ -122,14 +199,22 @@ export async function scrapeSitemap(
     zeroDataRetention: options.zeroDataRetention,
   });
 
-  logger.info("Scraping sitemap", {
+  logger.info("Scraping sitemap - ENTRY", {
     maxAge: options.maxAge,
     location: options.location,
   });
 
+  const fetchStartTime = Date.now();
   const xml = await getSitemapXML(options);
+  const fetchDurationMs = Date.now() - fetchStartTime;
 
-  logger.info("Processing sitemap");
+  logger.info("Sitemap XML fetched", {
+    fetchDurationMs,
+    xmlLength: xml.length,
+  });
+
+  const parseStartTime = Date.now();
+  logger.debug("Processing sitemap XML");
 
   let instructions: SitemapProcessingResult;
   try {
@@ -146,6 +231,9 @@ export async function scrapeSitemap(
     throw error;
   }
 
+  const parseDurationMs = Date.now() - parseStartTime;
+  logger.debug("Sitemap XML parsed", { parseDurationMs });
+
   const sitemapData: SitemapData = {
     urls: [],
     sitemaps: [],
@@ -159,9 +247,13 @@ export async function scrapeSitemap(
     }
   }
 
-  logger.info("Processed sitemap", {
+  const totalDurationMs = Date.now() - entryTime;
+  logger.info("Processed sitemap - COMPLETE", {
     urls: sitemapData.urls.length,
     sitemaps: sitemapData.sitemaps.length,
+    fetchDurationMs,
+    parseDurationMs,
+    totalDurationMs,
   });
 
   return sitemapData;

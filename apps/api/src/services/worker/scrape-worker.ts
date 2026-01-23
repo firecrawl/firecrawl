@@ -984,13 +984,19 @@ async function processKickoffJob(job: NuQJob<ScrapeJobKickoff>) {
 }
 
 async function processKickoffSitemapJob(job: NuQJob<ScrapeJobKickoffSitemap>) {
+  const entryTime = Date.now();
   const logger = _logger.child({
     module: "queue-worker",
     method: "processKickoffSitemapJob",
     jobId: job.id,
     scrapeId: job.id,
     crawlId: job.data.crawl_id,
+    sitemapUrl: job.data.sitemapUrl,
     zeroDataRetention: job.data.zeroDataRetention ?? false,
+  });
+
+  logger.info("Processing kickoff sitemap job - ENTRY", {
+    sitemapUrl: job.data.sitemapUrl,
   });
 
   const sc = await getCrawl(job.data.crawl_id);
@@ -1007,6 +1013,9 @@ async function processKickoffSitemapJob(job: NuQJob<ScrapeJobKickoffSitemap>) {
       (await getACUCTeam(job.data.team_id))?.flags ?? null,
     );
 
+    logger.debug("Starting scrapeSitemap call");
+    const sitemapStartTime = Date.now();
+
     const results = await scrapeSitemap({
       url: job.data.sitemapUrl,
       maxAge: 48 * 60 * 60 * 1000,
@@ -1015,6 +1024,13 @@ async function processKickoffSitemapJob(job: NuQJob<ScrapeJobKickoffSitemap>) {
       crawlId: job.data.crawl_id,
       logger,
       isPreCrawl: sc.internalOptions?.isPreCrawl ?? false,
+    });
+
+    const sitemapDurationMs = Date.now() - sitemapStartTime;
+    logger.info("scrapeSitemap completed successfully", {
+      urlsFound: results.urls.length,
+      sitemapsFound: results.sitemaps.length,
+      sitemapDurationMs,
     });
 
     const passingURLs = (
@@ -1086,9 +1102,20 @@ async function processKickoffSitemapJob(job: NuQJob<ScrapeJobKickoffSitemap>) {
 
       logger.debug("Done queueing sitemap jobs!");
     }
+
+    const totalDurationMs = Date.now() - entryTime;
+    logger.info("Processing kickoff sitemap job - COMPLETE", {
+      sitemapUrl: job.data.sitemapUrl,
+      totalDurationMs,
+    });
     return { success: true };
   } catch (error) {
-    logger.error("An error occurred!", { error });
+    const errorDurationMs = Date.now() - entryTime;
+    logger.error("An error occurred!", {
+      error,
+      errorDurationMs,
+      sitemapUrl: job.data.sitemapUrl,
+    });
     return { success: false, error };
   } finally {
     await redisEvictConnection.sadd(
