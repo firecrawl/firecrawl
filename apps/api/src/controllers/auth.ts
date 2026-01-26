@@ -24,27 +24,78 @@ function normalizedApiIsUuid(potentialUuid: string): boolean {
   return validate(potentialUuid);
 }
 
-export async function setCachedACUC(
-  api_key: string,
-  is_extract: boolean,
-  acuc:
-    | AuthCreditUsageChunk
-    | null
-    | ((acuc: AuthCreditUsageChunk) => AuthCreditUsageChunk | null),
-) {
-  const cacheKeyACUC = `acuc_${api_key}_${is_extract ? "extract" : "scrape"}`;
+// ============================================================================
+// Generic ACUC Cache Infrastructure
+// ============================================================================
+// Internal functions that handle both api_key and team_id based cache operations.
+// The public API (setCachedACUC, getACUC, etc.) remains unchanged.
+
+type ACUCEntityType = "api_key" | "team";
+
+interface ACUCEntityConfig {
+  entityType: ACUCEntityType;
+  cacheKeyPrefix: string;
+  rpcFunctionName: string;
+  rpcInputParamName: string;
+}
+
+const API_KEY_CONFIG: ACUCEntityConfig = {
+  entityType: "api_key",
+  cacheKeyPrefix: "acuc",
+  rpcFunctionName: "auth_credit_usage_chunk_39",
+  rpcInputParamName: "input_key",
+};
+
+const TEAM_CONFIG: ACUCEntityConfig = {
+  entityType: "team",
+  cacheKeyPrefix: "acuc_team",
+  rpcFunctionName: "auth_credit_usage_chunk_39_from_team",
+  rpcInputParamName: "input_team",
+};
+
+function buildCacheKey(
+  entityConfig: ACUCEntityConfig,
+  entityId: string,
+  isExtract: boolean,
+): string {
+  return `${entityConfig.cacheKeyPrefix}_${entityId}_${isExtract ? "extract" : "scrape"}`;
+}
+
+function buildBaseCacheKey(
+  entityConfig: ACUCEntityConfig,
+  entityId: string,
+): string {
+  return `${entityConfig.cacheKeyPrefix}_${entityId}`;
+}
+
+function isExtractMode(mode?: RateLimiterMode): boolean {
+  return (
+    mode === RateLimiterMode.Extract ||
+    mode === RateLimiterMode.ExtractStatus ||
+    mode === RateLimiterMode.ExtractAgentPreview
+  );
+}
+
+async function setCachedACUCGeneric<T>(
+  entityConfig: ACUCEntityConfig,
+  entityId: string,
+  isExtract: boolean,
+  acuc: T | null | ((acuc: T) => T | null),
+): Promise<void> {
+  const cacheKeyACUC = buildCacheKey(entityConfig, entityId, isExtract);
   const redLockKey = `lock_${cacheKeyACUC}`;
 
   try {
     await redlock.using([redLockKey], 10000, {}, async signal => {
       if (typeof acuc === "function") {
-        acuc = acuc(JSON.parse((await getValue(cacheKeyACUC)) ?? "null"));
+        acuc = (acuc as (acuc: T) => T | null)(
+          JSON.parse((await getValue(cacheKeyACUC)) ?? "null"),
+        );
 
         if (acuc === null) {
           if (signal.aborted) {
             throw signal.error;
           }
-
           return;
         }
       }
@@ -60,6 +111,114 @@ export async function setCachedACUC(
     logger.error(`Error updating cached ACUC ${cacheKeyACUC}: ${error}`);
   }
 }
+
+async function getACUCGeneric<T extends AuthCreditUsageChunk>(
+  entityConfig: ACUCEntityConfig,
+  entityId: string,
+  cacheOnly: boolean,
+  useCache: boolean,
+  isExtract: boolean,
+  mockChecker: () => T | null,
+  setCacheFunc: (id: string, isExtract: boolean, chunk: T) => Promise<void>,
+): Promise<T | null> {
+  // Handle mock/bypass scenarios
+  const mockResult = mockChecker();
+  if (mockResult !== null) {
+    return mockResult;
+  }
+
+  const cacheKeyACUC = buildCacheKey(entityConfig, entityId, isExtract);
+
+  if (useCache) {
+    const cachedACUC = await getValue(cacheKeyACUC);
+    if (cachedACUC !== null) {
+      return JSON.parse(cachedACUC);
+    }
+  }
+
+  if (!cacheOnly) {
+    let data;
+    let error;
+    let retries = 0;
+    const maxRetries = 5;
+
+    while (retries < maxRetries) {
+      const client = !!config.SUPABASE_ACUC_URL
+        ? supabase_acuc_only_service
+        : Math.random() > 2 / 3
+          ? supabase_rr_service
+          : supabase_service;
+
+      const rpcParams: Record<string, unknown> = {
+        [entityConfig.rpcInputParamName]: entityId,
+        i_is_extract: isExtract,
+        tally_untallied_credits: true,
+      };
+
+      ({ data, error } = await client.rpc(
+        entityConfig.rpcFunctionName,
+        rpcParams,
+        { get: true },
+      ));
+
+      if (!error) {
+        break;
+      }
+
+      logger.warn(
+        `Failed to retrieve authentication and credit usage data after ${retries}, trying again...`,
+        { error },
+      );
+      retries++;
+      if (retries === maxRetries) {
+        throw new Error(
+          "Failed to retrieve authentication and credit usage data after 3 attempts: " +
+            JSON.stringify(error),
+        );
+      }
+
+      // Wait for a short time before retrying
+      await new Promise(resolve => setTimeout(resolve, 200));
+    }
+
+    const chunk: T | null =
+      data.length === 0 ? null : data[0].team_id === null ? null : data[0];
+
+    if (chunk) {
+      chunk.is_extract = isExtract;
+    }
+
+    // NOTE: Should we cache null chunks? - mogery
+    if (chunk !== null && useCache) {
+      setCacheFunc(entityId, isExtract, chunk);
+    }
+
+    return chunk;
+  } else {
+    return null;
+  }
+}
+
+async function clearACUCGeneric(
+  entityConfig: ACUCEntityConfig,
+  entityId: string,
+): Promise<void> {
+  // Delete cache for all rate limiter modes (extract and scrape)
+  const modes = [true, false];
+  await Promise.all(
+    modes.map(async mode => {
+      const cacheKey = buildCacheKey(entityConfig, entityId, mode);
+      await deleteKey(cacheKey);
+    }),
+  );
+
+  // Also clear the base cache key
+  await deleteKey(buildBaseCacheKey(entityConfig, entityId));
+}
+
+// ============================================================================
+// Mock Data Generators
+// ============================================================================
 
 const mockPreviewACUC: (
   team_id: string,
@@ -142,96 +301,59 @@ const mockACUC: () => AuthCreditUsageChunk = () => ({
   is_extract: false,
 });
 
+// ============================================================================
+// Public API - API Key Based Operations
+// ============================================================================
+
+export async function setCachedACUC(
+  api_key: string,
+  is_extract: boolean,
+  acuc:
+    | AuthCreditUsageChunk
+    | null
+    | ((acuc: AuthCreditUsageChunk) => AuthCreditUsageChunk | null),
+) {
+  return setCachedACUCGeneric(API_KEY_CONFIG, api_key, is_extract, acuc);
+}
+
 export async function getACUC(
   api_key: string,
   cacheOnly = false,
   useCache = true,
   mode?: RateLimiterMode,
 ): Promise<AuthCreditUsageChunk | null> {
-  let isExtract =
-    mode === RateLimiterMode.Extract ||
-    mode === RateLimiterMode.ExtractStatus ||
-    mode === RateLimiterMode.ExtractAgentPreview;
+  const isExtract = isExtractMode(mode);
 
-  if (api_key === config.PREVIEW_TOKEN) {
-    const acuc = mockPreviewACUC(api_key, isExtract);
-    acuc.is_extract = isExtract;
-    return acuc;
-  }
-
-  if (config.USE_DB_AUTHENTICATION !== true && !config.SUPABASE_ACUC_URL) {
-    const acuc = mockACUC();
-    acuc.is_extract = isExtract;
-    return acuc;
-  }
-
-  const cacheKeyACUC = `acuc_${api_key}_${isExtract ? "extract" : "scrape"}`;
-
-  if (useCache) {
-    const cachedACUC = await getValue(cacheKeyACUC);
-    if (cachedACUC !== null) {
-      return JSON.parse(cachedACUC);
-    }
-  }
-
-  if (!cacheOnly) {
-    let data;
-    let error;
-    let retries = 0;
-    const maxRetries = 5;
-    while (retries < maxRetries) {
-      const client = !!config.SUPABASE_ACUC_URL
-        ? supabase_acuc_only_service
-        : Math.random() > 2 / 3
-          ? supabase_rr_service
-          : supabase_service;
-      ({ data, error } = await client.rpc(
-        "auth_credit_usage_chunk_39",
-        {
-          input_key: api_key,
-          i_is_extract: isExtract,
-          tally_untallied_credits: true,
-        },
-        { get: true },
-      ));
-
-      if (!error) {
-        break;
+  return getACUCGeneric<AuthCreditUsageChunk>(
+    API_KEY_CONFIG,
+    api_key,
+    cacheOnly,
+    useCache,
+    isExtract,
+    () => {
+      if (api_key === config.PREVIEW_TOKEN) {
+        const acuc = mockPreviewACUC(api_key, isExtract);
+        acuc.is_extract = isExtract;
+        return acuc;
       }
-
-      logger.warn(
-        `Failed to retrieve authentication and credit usage data after ${retries}, trying again...`,
-        { error },
-      );
-      retries++;
-      if (retries === maxRetries) {
-        throw new Error(
-          "Failed to retrieve authentication and credit usage data after 3 attempts: " +
-            JSON.stringify(error),
-        );
+      if (config.USE_DB_AUTHENTICATION !== true && !config.SUPABASE_ACUC_URL) {
+        const acuc = mockACUC();
+        acuc.is_extract = isExtract;
+        return acuc;
       }
-
-      // Wait for a short time before retrying
-      await new Promise(resolve => setTimeout(resolve, 200));
-    }
-
-    const chunk: AuthCreditUsageChunk | null =
-      data.length === 0 ? null : data[0].team_id === null ? null : data[0];
-
-    if (chunk) {
-      chunk.is_extract = isExtract;
-    }
-
-    // NOTE: Should we cache null chunks? - mogery
-    if (chunk !== null && useCache) {
-      setCachedACUC(api_key, isExtract, chunk);
-    }
-
-    return chunk;
-  } else {
-    return null;
-  }
+      return null;
+    },
+    setCachedACUC,
+  );
 }
+
+export async function clearACUC(api_key: string): Promise<void> {
+  return clearACUCGeneric(API_KEY_CONFIG, api_key);
+}
+
+// ============================================================================
+// Public API - Team ID Based Operations
+// ============================================================================
 
 export async function setCachedACUCTeam(
   team_id: string,
@@ -243,33 +365,7 @@ export async function setCachedACUCTeam(
         acuc: AuthCreditUsageChunkFromTeam,
       ) => AuthCreditUsageChunkFromTeam | null),
 ) {
-  const cacheKeyACUC = `acuc_team_${team_id}_${is_extract ? "extract" : "scrape"}`;
-  const redLockKey = `lock_${cacheKeyACUC}`;
-
-  try {
-    await redlock.using([redLockKey], 10000, {}, async signal => {
-      if (typeof acuc === "function") {
-        acuc = acuc(JSON.parse((await getValue(cacheKeyACUC)) ?? "null"));
-
-        if (acuc === null) {
-          if (signal.aborted) {
-            throw signal.error;
-          }
-
-          return;
-        }
-      }
-
-      if (signal.aborted) {
-        throw signal.error;
-      }
-
-      // Cache for 10 minutes. - mogery
-      await setValue(cacheKeyACUC, JSON.stringify(acuc), 600, true);
-    });
-  } catch (error) {
-    logger.error(`Error updating cached ACUC ${cacheKeyACUC}: ${error}`);
-  }
+  return setCachedACUCGeneric(TEAM_CONFIG, team_id, is_extract, acuc);
 }
 
 export async function getACUCTeam(
@@ -278,117 +374,43 @@ export async function getACUCTeam(
   useCache = true,
   mode?: RateLimiterMode,
 ): Promise<AuthCreditUsageChunkFromTeam | null> {
-  let isExtract =
-    mode === RateLimiterMode.Extract ||
-    mode === RateLimiterMode.ExtractStatus ||
-    mode === RateLimiterMode.ExtractAgentPreview;
+  const isExtract = isExtractMode(mode);
 
-  if (team_id.startsWith("preview")) {
-    const acuc = mockPreviewACUC(team_id, isExtract);
-    return acuc;
-  }
-
-  if (config.USE_DB_AUTHENTICATION !== true && !config.SUPABASE_ACUC_URL) {
-    const acuc = mockACUC();
-    acuc.is_extract = isExtract;
-    return acuc;
-  }
-
-  const cacheKeyACUC = `acuc_team_${team_id}_${isExtract ? "extract" : "scrape"}`;
-
-  if (useCache) {
-    const cachedACUC = await getValue(cacheKeyACUC);
-    if (cachedACUC !== null) {
-      return JSON.parse(cachedACUC);
-    }
-  }
-
-  if (!cacheOnly) {
-    let data;
-    let error;
-    let retries = 0;
-    const maxRetries = 5;
-
-    while (retries < maxRetries) {
-      const client = !!config.SUPABASE_ACUC_URL
-        ? supabase_acuc_only_service
-        : Math.random() > 2 / 3
-          ? supabase_rr_service
-          : supabase_service;
-      ({ data, error } = await client.rpc(
-        "auth_credit_usage_chunk_39_from_team",
-        {
-          input_team: team_id,
-          i_is_extract: isExtract,
-          tally_untallied_credits: true,
-        },
-        { get: true },
-      ));
-
-      if (!error) {
-        break;
+  return getACUCGeneric<AuthCreditUsageChunk>(
+    TEAM_CONFIG,
+    team_id,
+    cacheOnly,
+    useCache,
+    isExtract,
+    () => {
+      if (team_id.startsWith("preview")) {
+        return mockPreviewACUC(team_id, isExtract);
       }
-
-      logger.warn(
-        `Failed to retrieve authentication and credit usage data after ${retries}, trying again...`,
-        { error },
-      );
-      retries++;
-      if (retries === maxRetries) {
-        throw new Error(
-          "Failed to retrieve authentication and credit usage data after 3 attempts: " +
-            JSON.stringify(error),
-        );
+      if (config.USE_DB_AUTHENTICATION !== true && !config.SUPABASE_ACUC_URL) {
+        const acuc = mockACUC();
+        acuc.is_extract = isExtract;
+        return acuc;
       }
-
-      // Wait for a short time before retrying
-      await new Promise(resolve => setTimeout(resolve, 200));
-    }
-
-    const chunk: AuthCreditUsageChunk | null =
-      data.length === 0 ? null : data[0].team_id === null ? null : data[0];
-
-    // NOTE: Should we cache null chunks? - mogery
-    if (chunk !== null && useCache) {
-      setCachedACUCTeam(team_id, isExtract, chunk);
-    }
-
-    return chunk ? { ...chunk, is_extract: isExtract } : null;
-  } else {
-    return null;
-  }
-}
-
-export async function clearACUC(api_key: string): Promise<void> {
-  // Delete cache for all rate limiter modes
-  const modes = [true, false];
-  await Promise.all(
-    modes.map(async mode => {
-      const cacheKey = `acuc_${api_key}_${mode ? "extract" : "scrape"}`;
-      await deleteKey(cacheKey);
-    }),
+      return null;
+    },
+    setCachedACUCTeam as (
+      id: string,
+      isExtract: boolean,
+      chunk: AuthCreditUsageChunk,
+    ) => Promise<void>,
   );
-
-  // Also clear the base cache key
-  await deleteKey(`acuc_${api_key}`);
 }
 
 export async function clearACUCTeam(team_id: string): Promise<void> {
-  // Delete cache for all rate limiter modes
-  const modes = [true, false];
-  await Promise.all(
-    modes.map(async mode => {
-      const cacheKey = `acuc_team_${team_id}_${mode ? "extract" : "scrape"}`;
-      await deleteKey(cacheKey);
-    }),
-  );
-
-  // Also clear the base cache key
-  await deleteKey(`acuc_team_${team_id}`);
+  await clearACUCGeneric(TEAM_CONFIG, team_id);
 
   // Add team to billed_teams set so tally gets updated too
   await getRedisConnection().sadd("billed_teams", team_id);
 }
+
+// ============================================================================
+// Authentication
+// ============================================================================
 
 export async function authenticateUser(
   req,
