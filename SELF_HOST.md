@@ -25,7 +25,27 @@ However, there are some limitations and additional responsibilities to be aware 
 
 Self-hosting Firecrawl is ideal for those who need full control over their scraping and data processing environments but comes with the trade-off of additional maintenance and configuration efforts.
 
-## Steps
+## Quick Start
+
+For a quick local setup, follow these minimal steps:
+
+1. **Install Docker** ([instructions](https://docs.docker.com/get-docker/))
+2. **Copy and configure environment file:**
+   ```bash
+   cp .env.example .env
+   ```
+   Edit `.env` and at minimum change `BULL_AUTH_KEY` from `CHANGEME` to a secure value.
+3. **Start Firecrawl:**
+   ```bash
+   docker compose build
+   docker compose up
+   ```
+4. **Access the API:** `http://localhost:3002`
+5. **Access the admin UI:** `http://localhost:3002/admin/{YOUR_BULL_AUTH_KEY}/queues`
+
+That's it! Firecrawl should now be running locally. See the detailed steps below for production deployments and advanced configuration.
+
+## Detailed Setup Steps
 
 1. First, start by installing the dependencies
 
@@ -34,101 +54,32 @@ Self-hosting Firecrawl is ideal for those who need full control over their scrap
 
 2. Set environment variables
 
-Create an `.env` in the root directory using the template below.
+Create an `.env` file in the root directory by copying the provided example:
 
-`.env:`
+```bash
+cp .env.example .env
 ```
-# ===== Required ENVS ======
-PORT=3002
-HOST=0.0.0.0
 
-# Note: PORT is used by both the main API server and worker liveness check endpoint
+Then edit `.env` and customize the values for your deployment. The `.env.example` file contains:
+- **Required settings**: PORT, HOST, and basic configuration
+- **Optional settings**: AI features, proxy configuration, performance tuning, and more
+- **Detailed comments**: Each setting includes helpful documentation
 
-# To turn on DB authentication, you need to set up Supabase.
-USE_DB_AUTHENTICATION=false
+**Quick start**: For local development, the default values in `.env.example` should work out of the box. You only need to customize:
+- `BULL_AUTH_KEY`: Change from `CHANGEME` to a secure value (especially if publicly accessible)
+- `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB`: Use strong credentials in production
+- `OPENAI_API_KEY`: If you want to enable AI features
 
-# ===== Optional ENVS ======
-
-## === AI features (JSON format on scrape, /extract API) ===
-# Provide your OpenAI API key here to enable AI features
-# OPENAI_API_KEY=
-
-# Experimental: Use Ollama
-# OLLAMA_BASE_URL=http://localhost:11434/api
-# MODEL_NAME=deepseek-r1:7b
-# MODEL_EMBEDDING_NAME=nomic-embed-text
-
-# Experimental: Use any OpenAI-compatible API
-# OPENAI_BASE_URL=https://example.com/v1
-# OPENAI_API_KEY=
-
-## === Proxy ===
-# PROXY_SERVER can be a full URL (e.g. http://0.1.2.3:1234) or just an IP and port combo (e.g. 0.1.2.3:1234)
-# Do not uncomment PROXY_USERNAME and PROXY_PASSWORD if your proxy is unauthenticated
-# PROXY_SERVER=
-# PROXY_USERNAME=
-# PROXY_PASSWORD=
-
-## === /search API ===
-# By default, the /search API will use Google search.
-
-# You can specify a SearXNG server with the JSON format enabled, if you'd like to use that instead of direct Google.
-# You can also customize the engines and categories parameters, but the defaults should also work just fine.
-# SEARXNG_ENDPOINT=http://your.searxng.server
-# SEARXNG_ENGINES=
-# SEARXNG_CATEGORIES=
-
-## === Other ===
-
-# Supabase Setup (used to support DB authentication, advanced logging, etc.)
-# SUPABASE_ANON_TOKEN=
-# SUPABASE_URL=
-# SUPABASE_SERVICE_TOKEN=
-
-# Use if you've set up authentication and want to test with a real API key
-# TEST_API_KEY=
-
-# This key lets you access the queue admin panel. Change this if your deployment is publicly accessible.
-BULL_AUTH_KEY=CHANGEME
-
-# This is now autoconfigured by the docker-compose.yaml. You shouldn't need to set it.
-# PLAYWRIGHT_MICROSERVICE_URL=http://playwright-service:3000/scrape
-# REDIS_URL=redis://redis:6379
-# REDIS_RATE_LIMIT_URL=redis://redis:6379
-
-## === PostgreSQL Database Configuration ===
-# Configure PostgreSQL credentials. These should match the credentials used by the nuq-postgres container.
-# If you change these, ensure all three are set consistently.
-# POSTGRES_USER=firecrawl
-# POSTGRES_PASSWORD=firecrawl_password
-# POSTGRES_DB=firecrawl
-
-# Set if you have a llamaparse key you'd like to use to parse pdfs
-# LLAMAPARSE_API_KEY=
-
-# Set if you'd like to send server health status messages to Slack
-# SLACK_WEBHOOK_URL=
-
-## === System Resource Configuration ===
-# Maximum CPU usage threshold (0.0-1.0). Worker will reject new jobs when CPU usage exceeds this value.
-# Default: 0.8 (80%)
-# MAX_CPU=0.8
-
-# Maximum RAM usage threshold (0.0-1.0). Worker will reject new jobs when memory usage exceeds this value.
-# Default: 0.8 (80%)
-# MAX_RAM=0.8
-
-# Set if you'd like to allow local webhooks to be sent to your self-hosted instance
-# ALLOW_LOCAL_WEBHOOKS=true
-```
+See the `.env.example` file for all available configuration options and detailed explanations.
 
 ### Security considerations
 
-- **Use strong PostgreSQL credentials.** The defaults in the `.env` template are for local development only. When deploying to a server, set `POSTGRES_USER`, `POSTGRES_PASSWORD`, and `POSTGRES_DB` to secure values and ensure they match the database service configuration.
+- **Use strong PostgreSQL credentials.** The defaults in `.env.example` are for local development only. When deploying to a server, set `POSTGRES_USER`, `POSTGRES_PASSWORD`, and `POSTGRES_DB` to secure values and ensure they match the database service configuration in `docker-compose.yaml`.
 - **Keep the database port internal.** The provided `docker-compose.yaml` does not expose PostgreSQL to the host or the internet. Avoid adding a `ports` mapping for `nuq-postgres` unless you are restricting access with a firewall. To access the database for maintenance, prefer using `docker compose exec nuq-postgres psql` or a temporary, firewalled tunnel.
-- **Protect the admin UI.** Set `BULL_AUTH_KEY` to a strong secret, especially on any deployment reachable from untrusted networks.
+- **Protect the admin UI.** Set `BULL_AUTH_KEY` to a strong secret, especially on any deployment reachable from untrusted networks. Never use the default `CHANGEME` value in production.
+- **Never commit `.env` files.** The `.env` file is already in `.gitignore`, but always double-check before committing sensitive credentials.
 
-3.  Build and run the Docker containers:
+3. Build and run the Docker containers:
 
     ```bash
     docker compose build
@@ -141,7 +92,7 @@ BULL_AUTH_KEY=CHANGEME
     
     You should be able to see the Bull Queue Manager UI on `http://localhost:3002/admin/CHANGEME/queues`.
 
-5. *(Optional)* Test the API
+4. *(Optional)* Test the API
 
 If you’d like to test the crawl endpoint, you can run this:
 
@@ -193,8 +144,9 @@ Check the Docker logs for any error messages using the command:
 docker logs [container_name]
 ```
 
-- Ensure all required environment variables are set correctly in the .env file.
-- Verify that all Docker services defined in docker-compose.yml are correctly configured and the necessary images are available.
+- Ensure all required environment variables are set correctly in the `.env` file. You can compare your `.env` with `.env.example` to ensure nothing is missing.
+- Verify that all Docker services defined in `docker-compose.yaml` are correctly configured and the necessary images are available.
+- Check that your `.env` file exists in the root directory and is properly formatted (no syntax errors).
 
 ### Connection issues with Redis
 
