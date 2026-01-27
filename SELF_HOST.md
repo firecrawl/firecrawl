@@ -80,6 +80,21 @@ USE_DB_AUTHENTICATION=false
 
 ## === Other ===
 
+## === Cache Backend Configuration (Redis/Valkey) ===
+# Firecrawl supports both Redis and Valkey as cache backends.
+# Valkey is an open-source Redis fork that is wire-compatible.
+# Simply use the same REDIS_URL for either backend.
+
+# Redis/Valkey connection URL
+# REDIS_URL=redis://localhost:6379
+
+# Separate URL for rate limiting (optional, defaults to REDIS_URL)
+# REDIS_RATE_LIMIT_URL=redis://localhost:6379
+
+# Legacy Redis URLs (still supported for backward compatibility)
+# REDIS_URL=redis://localhost:6379
+# REDIS_RATE_LIMIT_URL=redis://localhost:6379
+
 # Supabase Setup (used to support DB authentication, advanced logging, etc.)
 # SUPABASE_ANON_TOKEN=
 # SUPABASE_URL=
@@ -205,6 +220,30 @@ Errors related to connecting to Redis, such as timeouts or "Connection refused".
 - Ensure that the Redis service is up and running in your Docker environment.
 - Verify that the REDIS_URL and REDIS_RATE_LIMIT_URL in your .env file point to the correct Redis instance, ensure that it points to the same URL in the `docker-compose.yaml` file (`redis://redis:6379`)
 - Check network settings and firewall rules that may block the connection to the Redis port.
+
+### Using Valkey instead of Redis
+
+Firecrawl supports [Valkey](https://valkey.io/), an open-source Redis fork, as an alternative cache backend. Valkey is wire-compatible with Redis, so no code changes are required—just swap the Docker image.
+
+**To use Valkey:**
+
+1. In `docker-compose.yaml`, change the redis service image:
+```yaml
+redis:
+  # For Redis (default):
+  image: redis:alpine
+
+  # For Valkey (open-source):
+  # image: valkey/valkey:alpine
+```
+
+2. Restart your containers:
+```bash
+docker compose down
+docker compose up -d
+```
+
+That's it! Your existing `REDIS_URL` environment variable works unchanged with Valkey since both use the same `redis://` protocol.
 
 ### API endpoint does not respond
 

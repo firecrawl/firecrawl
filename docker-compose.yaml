@@ -118,13 +118,15 @@ services:
     mem_limit: 8G
     memswap_limit: 8G
 
+  # Redis/Valkey cache service
+  # Valkey is officially supported as a drop-in replacement for Redis.
+  # To use Valkey, simply swap images by commenting out redis:alpine and uncommenting valkey/valkey:alpine
+  # No other configuration changes are needed - both use the same REDIS_* environment variables.
+  # To run compatibility tests against it, see additional docs on cache-compatibility.test.ts
   redis:
-    # NOTE: If you want to use Valkey (open source) instead of Redis (source available),
-    # uncomment the Valkey statement and comment out the Redis statement.
-    # Using Valkey with Firecrawl is untested and not guaranteed to work. Use with caution.
     image: redis:alpine
+    # To use Valkey instead of Redis, comment the line above and uncomment below:
     # image: valkey/valkey:alpine
-
     networks:
       - backend
     command: redis-server --bind 0.0.0.0

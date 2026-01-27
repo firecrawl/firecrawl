@@ -28,6 +28,7 @@ jobs:
             search: searxng
             ai: openai
             nuq: fdb
+        cache: ['redis', 'valkey'] # Test both cache backends
 
         # legacy matrix:
         # engine: ["playwright", "fetch"]
@@ -37,7 +38,7 @@ jobs:
     runs-on: blacksmith-4vcpu-ubuntu-2404
     services:
       redis:
-        image: redis
+        image: ${{ matrix.cache == 'valkey' && 'valkey/valkey:alpine' || 'redis:alpine' }}
         ports:
           - 6379:6379
       rabbitmq:
@@ -409,7 +410,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: Logs (kubernetes, ${{ matrix.ai }}, ${{ matrix.search }}, ${{ matrix.engine }}, ${{ matrix.proxy }}, ${{ matrix.nuq }})
+          name: Logs (kubernetes, ${{ matrix.ai }}, ${{ matrix.search }}, ${{ matrix.engine }}, ${{ matrix.proxy }}, ${{ matrix.nuq }}, ${{ matrix.cache }})
           path: logs/logs.zip
 
   # temp disabled
