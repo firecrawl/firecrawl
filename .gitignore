@@ -7,6 +7,8 @@ dump.rdb
 /mongo-data
 apps/js-sdk/node_modules/
 
+apps/valkey-demo/node_modules/
+
 apps/api/.env.local
 
 apps/test-suite/node_modules/

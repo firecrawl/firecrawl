@@ -1,0 +1,61 @@
+# Valkey deployment for Firecrawl
+# Use this instead of redis.yaml if you want to use Valkey
+# Valkey is a drop-in replacement for Redis - no code changes needed
+#
+# To use: Replace `kubectl apply -f redis.yaml` with `kubectl apply -f valkey.yaml`
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redis  # Keep name as 'redis' for compatibility with existing configs
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: redis
+  template:
+    metadata:
+      labels:
+        app: redis
+    spec:
+      containers:
+      - name: valkey
+        image: valkey/valkey:7-alpine
+        command: [ "/bin/sh", "-c" ]
+        args:
+          - |
+            if [ -n "$REDIS_PASSWORD" ]; then
+              echo "Starting Valkey with authentication"
+              exec valkey-server --bind 0.0.0.0 --requirepass "$REDIS_PASSWORD"
+            else
+              echo "Starting Valkey without authentication"
+              exec valkey-server --bind 0.0.0.0
+            fi
+        env:
+          - name: REDIS_PASSWORD
+            valueFrom:
+              secretKeyRef:
+                name: firecrawl-secret
+                key: REDIS_PASSWORD
+                optional: true
+        ports:
+          - containerPort: 6379
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "100m"
+          limits:
+            memory: "1Gi"
+            cpu: "500m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis  # Keep name as 'redis' for compatibility with existing configs
+spec:
+  selector:
+    app: redis
+  ports:
+    - protocol: TCP
+      port: 6379
+      targetPort: 6379

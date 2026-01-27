@@ -1,0 +1,122 @@
+# Production Docker Compose for Firecrawl with Valkey
+# Usage: docker compose -f deploy/docker-compose.valkey.yaml up -d
+
+name: firecrawl-valkey
+
+services:
+  valkey:
+    image: valkey/valkey:7-alpine
+    restart: unless-stopped
+    command: >
+      valkey-server
+      --bind 0.0.0.0
+      --port 6379
+      --requirepass ${VALKEY_PASSWORD:-changeme}
+      --appendonly yes
+      --appendfsync everysec
+      --maxmemory ${VALKEY_MAXMEMORY:-2gb}
+      --maxmemory-policy allkeys-lru
+      --tcp-keepalive 300
+      --timeout 0
+    volumes:
+      - valkey-data:/data
+    networks:
+      - backend
+    ports:
+      - "${VALKEY_PORT:-6379}:6379"
+    healthcheck:
+      test: ["CMD", "valkey-cli", "-a", "${VALKEY_PASSWORD:-changeme}", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    deploy:
+      resources:
+        limits:
+          memory: 2.5G
+        reservations:
+          memory: 512M
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  api:
+    image: ghcr.io/firecrawl/firecrawl:latest
+    restart: unless-stopped
+    environment:
+      HOST: "0.0.0.0"
+      PORT: 3002
+      REDIS_URL: redis://:${VALKEY_PASSWORD:-changeme}@valkey:6379
+      REDIS_RATE_LIMIT_URL: redis://:${VALKEY_PASSWORD:-changeme}@valkey:6379
+      NUM_WORKERS_PER_QUEUE: ${NUM_WORKERS:-8}
+      PLAYWRIGHT_MICROSERVICE_URL: http://playwright-service:3000/scrape
+    depends_on:
+      valkey:
+        condition: service_healthy
+      playwright-service:
+        condition: service_started
+    networks:
+      - backend
+    ports:
+      - "${API_PORT:-3002}:3002"
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+        reservations:
+          memory: 1G
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  playwright-service:
+    image: ghcr.io/firecrawl/playwright-service:latest
+    restart: unless-stopped
+    environment:
+      PORT: 3000
+      MAX_CONCURRENT_PAGES: 10
+    networks:
+      - backend
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+        reservations:
+          memory: 512M
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # Optional: Valkey demo app
+  valkey-demo:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      FIRECRAWL_API_URL: http://api:3002
+      VALKEY_URL: redis://:${VALKEY_PASSWORD:-changeme}@valkey:6379
+      PORT: 3030
+    depends_on:
+      - api
+      - valkey
+    networks:
+      - backend
+    ports:
+      - "${DEMO_PORT:-3030}:3030"
+    profiles:
+      - demo
+
+volumes:
+  valkey-data:
+    driver: local
+
+networks:
+  backend:
+    driver: bridge

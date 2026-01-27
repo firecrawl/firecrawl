@@ -1,0 +1,309 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Firecrawl + Valkey GLIDE Demo</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { 
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #0f172a; color: #e2e8f0; line-height: 1.6;
+    }
+    .container { max-width: 1200px; margin: 0 auto; padding: 2rem; }
+    header { text-align: center; margin-bottom: 2rem; }
+    header h1 { font-size: 2rem; color: #38bdf8; margin-bottom: 0.5rem; }
+    header p { color: #94a3b8; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(350px, 1fr)); gap: 1.5rem; }
+    .card { background: #1e293b; border-radius: 12px; padding: 1.5rem; border: 1px solid #334155; }
+    .card h2 { color: #38bdf8; font-size: 1.1rem; margin-bottom: 1rem; display: flex; align-items: center; gap: 0.5rem; }
+    .card h2::before { content: ''; width: 8px; height: 8px; background: #38bdf8; border-radius: 50%; }
+    input, button { padding: 0.75rem 1rem; border-radius: 8px; border: none; font-size: 0.9rem; }
+    input { background: #0f172a; color: #e2e8f0; border: 1px solid #334155; width: 100%; margin-bottom: 0.75rem; }
+    input:focus { outline: none; border-color: #38bdf8; }
+    button { background: #38bdf8; color: #0f172a; cursor: pointer; font-weight: 600; transition: all 0.2s; }
+    button:hover { background: #0ea5e9; }
+    button:disabled { background: #475569; cursor: not-allowed; }
+    button.secondary { background: #334155; color: #e2e8f0; }
+    button.secondary:hover { background: #475569; }
+    .btn-row { display: flex; gap: 0.5rem; margin-top: 0.5rem; }
+    .btn-row button { flex: 1; }
+    .status { padding: 1rem; background: #0f172a; border-radius: 8px; margin-top: 1rem; font-family: monospace; font-size: 0.85rem; max-height: 200px; overflow-y: auto; }
+    .status.success { border-left: 3px solid #22c55e; }
+    .status.error { border-left: 3px solid #ef4444; }
+    .status.info { border-left: 3px solid #38bdf8; }
+    .meter { height: 8px; background: #334155; border-radius: 4px; overflow: hidden; margin: 0.5rem 0; }
+    .meter-fill { height: 100%; background: linear-gradient(90deg, #38bdf8, #22c55e); transition: width 0.3s; }
+    .stats { display: flex; gap: 1rem; margin-top: 1rem; }
+    .stat { flex: 1; text-align: center; padding: 0.75rem; background: #0f172a; border-radius: 8px; }
+    .stat-value { font-size: 1.5rem; font-weight: bold; color: #38bdf8; }
+    .stat-label { font-size: 0.75rem; color: #94a3b8; }
+    .tag { display: inline-block; padding: 0.25rem 0.5rem; background: #334155; border-radius: 4px; font-size: 0.75rem; margin-right: 0.5rem; }
+    .tag.success { background: #166534; color: #22c55e; }
+    .tag.error { background: #7f1d1d; color: #ef4444; }
+    .connection { position: fixed; top: 1rem; right: 1rem; padding: 0.5rem 1rem; border-radius: 20px; font-size: 0.8rem; }
+    .connection.connected { background: #166534; color: #22c55e; }
+    .connection.disconnected { background: #7f1d1d; color: #ef4444; }
+    textarea { width: 100%; min-height: 80px; background: #0f172a; color: #e2e8f0; border: 1px solid #334155; border-radius: 8px; padding: 0.75rem; font-family: inherit; resize: vertical; }
+  </style>
+</head>
+<body>
+  <div id="connection" class="connection disconnected">● Disconnected</div>
+  
+  <div class="container">
+    <header>
+      <h1>🔥 Firecrawl + Valkey GLIDE Demo</h1>
+      <p>Demonstrating caching, rate limiting, and batch operations</p>
+    </header>
+
+    <div class="grid">
+      <!-- Rate Limiting -->
+      <div class="card">
+        <h2>Rate Limiting</h2>
+        <input type="text" id="rateLimitId" placeholder="User/Client ID (e.g., user-123)" value="demo-user">
+        <div class="stats">
+          <div class="stat">
+            <div class="stat-value" id="remainingRequests">-</div>
+            <div class="stat-label">Remaining</div>
+          </div>
+          <div class="stat">
+            <div class="stat-value" id="maxRequests">10</div>
+            <div class="stat-label">Max/Window</div>
+          </div>
+        </div>
+        <div class="meter"><div class="meter-fill" id="rateMeter" style="width: 100%"></div></div>
+        <div class="btn-row">
+          <button onclick="checkRateLimit()">Make Request</button>
+          <button class="secondary" onclick="resetRateLimit()">Reset</button>
+        </div>
+        <div id="rateLimitStatus" class="status info" style="display:none"></div>
+      </div>
+
+      <!-- Scrape with Cache -->
+      <div class="card">
+        <h2>Scrape with Caching</h2>
+        <input type="url" id="scrapeUrl" placeholder="URL to scrape" value="https://example.com">
+        <div class="btn-row">
+          <button onclick="scrapeUrl()">Scrape</button>
+          <button class="secondary" onclick="clearCache()">Clear Cache</button>
+        </div>
+        <div class="stats">
+          <div class="stat">
+            <div class="stat-value" id="cacheKeys">-</div>
+            <div class="stat-label">Cached Items</div>
+          </div>
+          <div class="stat">
+            <div class="stat-value" id="cacheMemory">-</div>
+            <div class="stat-label">Memory</div>
+          </div>
+        </div>
+        <div id="scrapeStatus" class="status info" style="display:none"></div>
+      </div>
+
+      <!-- Batch Operations -->
+      <div class="card" style="grid-column: span 2;">
+        <h2>Batch Operations</h2>
+        <textarea id="batchUrls" placeholder="Enter URLs (one per line)">https://example.com
+https://example.org
+https://example.net</textarea>
+        <div class="btn-row" style="margin-top: 0.75rem;">
+          <button onclick="createBatch()">Create Batch</button>
+          <button class="secondary" onclick="processBatch()">Process</button>
+        </div>
+        <div class="stats">
+          <div class="stat">
+            <div class="stat-value" id="batchId">-</div>
+            <div class="stat-label">Current Batch</div>
+          </div>
+          <div class="stat">
+            <div class="stat-value" id="batchStatus">-</div>
+            <div class="stat-label">Status</div>
+          </div>
+          <div class="stat">
+            <div class="stat-value" id="batchProgress">0%</div>
+            <div class="stat-label">Progress</div>
+          </div>
+        </div>
+        <div class="meter"><div class="meter-fill" id="batchMeter" style="width: 0%"></div></div>
+        <div id="batchResults" class="status info" style="display:none"></div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const API = '';
+    let currentBatchId = null;
+
+    async function checkConnection() {
+      try {
+        const res = await fetch(`${API}/api/health`);
+        const data = await res.json();
+        const el = document.getElementById('connection');
+        if (data.status === 'ok') {
+          el.className = 'connection connected';
+          el.textContent = '● Connected to Valkey';
+          loadCacheStats();
+          loadRateLimitStatus();
+        } else {
+          throw new Error('Not connected');
+        }
+      } catch {
+        document.getElementById('connection').className = 'connection disconnected';
+        document.getElementById('connection').textContent = '● Disconnected';
+      }
+    }
+
+    async function loadRateLimitStatus() {
+      const id = document.getElementById('rateLimitId').value || 'demo-user';
+      try {
+        const res = await fetch(`${API}/api/rate-limit/${id}`);
+        const data = await res.json();
+        document.getElementById('remainingRequests').textContent = data.remaining;
+        document.getElementById('maxRequests').textContent = data.max;
+        document.getElementById('rateMeter').style.width = `${(data.remaining / data.max) * 100}%`;
+      } catch {}
+    }
+
+    async function checkRateLimit() {
+      const id = document.getElementById('rateLimitId').value || 'demo-user';
+      const statusEl = document.getElementById('rateLimitStatus');
+      try {
+        const res = await fetch(`${API}/api/rate-limit/${id}/check`, { method: 'POST' });
+        const data = await res.json();
+        statusEl.style.display = 'block';
+        statusEl.className = `status ${data.allowed ? 'success' : 'error'}`;
+        statusEl.textContent = data.allowed 
+          ? `✅ Request allowed (${data.remaining} remaining)`
+          : `❌ Rate limited (resets in ${Math.ceil((data.resetAt - Date.now()) / 1000)}s)`;
+        loadRateLimitStatus();
+      } catch (e) {
+        statusEl.style.display = 'block';
+        statusEl.className = 'status error';
+        statusEl.textContent = `Error: ${e.message}`;
+      }
+    }
+
+    async function resetRateLimit() {
+      const id = document.getElementById('rateLimitId').value || 'demo-user';
+      await fetch(`${API}/api/rate-limit/${id}/reset`, { method: 'POST' });
+      loadRateLimitStatus();
+      const statusEl = document.getElementById('rateLimitStatus');
+      statusEl.style.display = 'block';
+      statusEl.className = 'status success';
+      statusEl.textContent = '✅ Rate limit reset';
+    }
+
+    async function loadCacheStats() {
+      try {
+        const res = await fetch(`${API}/api/cache/stats`);
+        const data = await res.json();
+        document.getElementById('cacheKeys').textContent = data.keys;
+        document.getElementById('cacheMemory').textContent = data.memoryUsage;
+      } catch {}
+    }
+
+    async function scrapeUrl() {
+      const url = document.getElementById('scrapeUrl').value;
+      const statusEl = document.getElementById('scrapeStatus');
+      statusEl.style.display = 'block';
+      statusEl.className = 'status info';
+      statusEl.textContent = 'Scraping...';
+
+      try {
+        const res = await fetch(`${API}/api/scrape`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ url })
+        });
+        const data = await res.json();
+        statusEl.className = `status ${data.success ? 'success' : 'error'}`;
+        const cacheTag = data.fromCache ? '📦 FROM CACHE' : '🌐 FRESH';
+        if (data.success) {
+          const preview = data.data?.markdown?.slice(0, 300) || 'No content';
+          statusEl.textContent = `${cacheTag}\n\n${preview}...`;
+        } else {
+          statusEl.textContent = `❌ ${data.error || 'Scrape failed'}`;
+        }
+        loadCacheStats();
+      } catch (e) {
+        statusEl.className = 'status error';
+        statusEl.textContent = `Error: ${e.message}`;
+      }
+    }
+
+    async function clearCache() {
+      await fetch(`${API}/api/cache/clear`, { method: 'POST' });
+      loadCacheStats();
+      const statusEl = document.getElementById('scrapeStatus');
+      statusEl.style.display = 'block';
+      statusEl.className = 'status success';
+      statusEl.textContent = '✅ Cache cleared';
+    }
+
+    async function createBatch() {
+      const urls = document.getElementById('batchUrls').value.split('\n').filter(u => u.trim());
+      const resultsEl = document.getElementById('batchResults');
+      
+      try {
+        const res = await fetch(`${API}/api/batch`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ urls })
+        });
+        const data = await res.json();
+        currentBatchId = data.batchId;
+        document.getElementById('batchId').textContent = data.batchId.slice(-12);
+        document.getElementById('batchStatus').textContent = 'pending';
+        document.getElementById('batchProgress').textContent = '0%';
+        document.getElementById('batchMeter').style.width = '0%';
+        resultsEl.style.display = 'block';
+        resultsEl.className = 'status success';
+        resultsEl.textContent = `✅ Batch created: ${data.batchId}\n${urls.length} URLs queued`;
+      } catch (e) {
+        resultsEl.style.display = 'block';
+        resultsEl.className = 'status error';
+        resultsEl.textContent = `Error: ${e.message}`;
+      }
+    }
+
+    async function processBatch() {
+      if (!currentBatchId) {
+        alert('Create a batch first');
+        return;
+      }
+      
+      const resultsEl = document.getElementById('batchResults');
+      resultsEl.style.display = 'block';
+      resultsEl.className = 'status info';
+      resultsEl.textContent = 'Processing batch...';
+      document.getElementById('batchStatus').textContent = 'processing';
+
+      try {
+        const res = await fetch(`${API}/api/batch/${currentBatchId}/process`, { method: 'POST' });
+        const data = await res.json();
+        
+        document.getElementById('batchStatus').textContent = data.status;
+        document.getElementById('batchProgress').textContent = `${data.progress}%`;
+        document.getElementById('batchMeter').style.width = `${data.progress}%`;
+        
+        resultsEl.className = 'status success';
+        let output = `✅ Batch ${data.status}\nDuration: ${data.completedAt - data.createdAt}ms\n\nResults:\n`;
+        for (const [url, result] of Object.entries(data.results)) {
+          const icon = result.success ? '✅' : '❌';
+          output += `${icon} ${url}\n`;
+        }
+        resultsEl.textContent = output;
+        loadCacheStats();
+      } catch (e) {
+        resultsEl.className = 'status error';
+        resultsEl.textContent = `Error: ${e.message}`;
+      }
+    }
+
+    // Init
+    checkConnection();
+    setInterval(checkConnection, 10000);
+    document.getElementById('rateLimitId').addEventListener('change', loadRateLimitStatus);
+  </script>
+</body>
+</html>
