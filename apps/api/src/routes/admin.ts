@@ -18,6 +18,7 @@ import { integCreateUserController } from "../controllers/v0/admin/create-user";
 import { integValidateApiKeyController } from "../controllers/v0/admin/validate-api-key";
 import { integRotateApiKeyController } from "../controllers/v0/admin/rotate-api-key";
 import { crawlMonitorController } from "../controllers/v0/admin/crawl-monitor";
+import { bulkBanDomainsController } from "../controllers/v0/admin/bulk-ban-domains";
 import { RateLimiterMode } from "../types";
 
 export const adminRouter = express.Router();
@@ -79,6 +80,11 @@ adminRouter.post(
   authMiddleware(RateLimiterMode.Crawl),
   checkCreditsMiddleware(2),
   wrap(crawlMonitorController),
+);
+
+adminRouter.post(
+  `/admin/${config.BULL_AUTH_KEY}/bulk-ban-domains`,
+  wrap(bulkBanDomainsController),
 );
 
 adminRouter.post(
