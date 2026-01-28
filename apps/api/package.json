@@ -80,6 +80,7 @@
     "@apidevtools/json-schema-ref-parser": "^15.1.2",
     "@bull-board/api": "^6.14.0",
     "@bull-board/express": "^6.14.0",
+    "@clickhouse/client": "^1.16.0",
     "@coinbase/x402": "^0.6.6",
     "@dqbd/tiktoken": "^1.0.22",
     "@google-cloud/storage": "^7.16.0",

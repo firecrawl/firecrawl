@@ -50,6 +50,12 @@ const configSchema = z.object({
   NUQ_DATABASE_URL_LISTEN: z.string().optional(),
   NUQ_RABBITMQ_URL: z.string().optional(),
 
+  // ClickHouse
+  CLICKHOUSE_URL: z.string().optional(),
+  CLICKHOUSE_USERNAME: z.string().optional(),
+  CLICKHOUSE_PASSWORD: z.string().optional(),
+  CLICKHOUSE_DATABASE: z.string().optional(),
+
   // Supabase
   SUPABASE_URL: z.string().optional(),
   SUPABASE_ANON_TOKEN: z.string().optional(),
@@ -139,6 +145,7 @@ const configSchema = z.object({
   WEBHOOK_USE_RABBITMQ: z.stringbool().optional(),
 
   // Firecrawl Features
+  FIRECRAWL_FDW_ENABLED: z.stringbool().default(false),
   FIRECRAWL_DEBUG_FILTER_LINKS: z.stringbool().optional(),
   FIRECRAWL_LOG_TO_FILE: z.stringbool().optional(),
   FIRECRAWL_SAVE_MOCKS: z.stringbool().optional(),

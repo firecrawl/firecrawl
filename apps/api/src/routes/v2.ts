@@ -39,6 +39,8 @@ import { facilitator } from "@coinbase/x402";
 import { agentController } from "../controllers/v2/agent";
 import { agentStatusController } from "../controllers/v2/agent-status";
 import { agentCancelController } from "../controllers/v2/agent-cancel";
+import { fdwJobsController } from "../controllers/v2/fdw-jobs";
+import { fdwJobResultsController } from "../controllers/v2/fdw-job-results";
 
 expressWs(express());
 
@@ -323,6 +325,18 @@ v2Router.delete(
   authMiddleware(RateLimiterMode.ExtractStatus),
   validateJobIdParam,
   wrap(agentCancelController),
+);
+
+v2Router.get(
+  "/fdw/jobs",
+  authMiddleware(RateLimiterMode.CrawlStatus),
+  wrap(fdwJobsController),
+);
+
+v2Router.post(
+  "/fdw/job-results",
+  authMiddleware(RateLimiterMode.CrawlStatus),
+  wrap(fdwJobResultsController),
 );
 
 v2Router.get(

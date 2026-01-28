@@ -5,6 +5,9 @@
         "GHSA-3gc7-fjrx-p6mg|@coinbase/x402>@coinbase/cdp-sdk>@solana/spl-token>@solana/buffer-layout-utils>bigint-buffer", // never gets called in our code paths
         "GHSA-m732-5p4w-x69g|@coinbase/x402>x402>wagmi>@wagmi/connectors>porto>hono", // we don't use hono
         "GHSA-q7jf-gf43-6x6p|@coinbase/x402>x402>wagmi>@wagmi/connectors>porto>hono", // we don't use hono
+        "GHSA-6wqw-2p9w-4vw4|@coinbase/x402>x402>wagmi>@wagmi/connectors>porto>hono", // we don't use hono
+        "GHSA-r354-f388-2fhh|@coinbase/x402>x402>wagmi>@wagmi/connectors>porto>hono", // we don't use hono
+        "GHSA-w332-q679-j88p|@coinbase/x402>x402>wagmi>@wagmi/connectors>porto>hono", // we don't use hono
         "GHSA-5j98-mcp5-4vw2|jest>@jest/core>@jest/reporters>glob", // we do not use the glob CLI
         "GHSA-mh29-5h37-fv8m|@jest/globals>@jest/expect>jest-snapshot>@jest/transform>babel-plugin-istanbul>@istanbuljs/load-nyc-config>js-yaml", // not impacted by this
         "GHSA-36hm-qxxp-pg3m|@coinbase/x402>x402>wagmi>@wagmi/connectors>@coinbase/wallet-sdk>preact", // we don't use preact in our code paths

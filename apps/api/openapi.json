@@ -20,7 +20,9 @@
       "post": {
         "summary": "Scrape a single URL and optionally extract information using an LLM",
         "operationId": "scrapeAndExtractFromUrl",
-        "tags": ["Scraping"],
+        "tags": [
+          "Scraping"
+        ],
         "security": [
           {
             "bearerAuth": []
@@ -41,7 +43,9 @@
                         "description": "The URL to scrape"
                       }
                     },
-                    "required": ["url"]
+                    "required": [
+                      "url"
+                    ]
                   },
                   {
                     "$ref": "#/components/schemas/ScrapeOptions"
@@ -117,7 +121,9 @@
       "post": {
         "summary": "Scrape multiple URLs and optionally extract information using an LLM",
         "operationId": "scrapeAndExtractFromUrls",
-        "tags": ["Scraping"],
+        "tags": [
+          "Scraping"
+        ],
         "security": [
           {
             "bearerAuth": []
@@ -165,11 +171,18 @@
                             "description": "Type of events that should be sent to the webhook URL. (default: all)",
                             "items": {
                               "type": "string",
-                              "enum": ["completed", "page", "failed", "started"]
+                              "enum": [
+                                "completed",
+                                "page",
+                                "failed",
+                                "started"
+                              ]
                             }
                           }
                         },
-                        "required": ["url"]
+                        "required": [
+                          "url"
+                        ]
                       },
                       "ignoreInvalidURLs": {
                         "type": "boolean",
@@ -177,7 +190,9 @@
                         "description": "If invalid URLs are specified in the urls array, they will be ignored. Instead of them failing the entire request, a batch scrape using the remaining valid URLs will be created, and the invalid URLs will be returned in the invalidURLs field of the response."
                       }
                     },
-                    "required": ["urls"]
+                    "required": [
+                      "urls"
+                    ]
                   },
                   {
                     "$ref": "#/components/schemas/ScrapeOptions"
@@ -265,7 +280,9 @@
       "get": {
         "summary": "Get the status of a batch scrape job",
         "operationId": "getBatchScrapeStatus",
-        "tags": ["Scraping"],
+        "tags": [
+          "Scraping"
+        ],
         "security": [
           {
             "bearerAuth": []
@@ -335,7 +352,9 @@
       "delete": {
         "summary": "Cancel a batch scrape job",
         "operationId": "cancelBatchScrape",
-        "tags": ["Scraping"],
+        "tags": [
+          "Scraping"
+        ],
         "security": [
           {
             "bearerAuth": []
@@ -413,7 +432,9 @@
       "get": {
         "summary": "Get the errors of a batch scrape job",
         "operationId": "getBatchScrapeErrors",
-        "tags": ["Scraping"],
+        "tags": [
+          "Scraping"
+        ],
         "security": [
           {
             "bearerAuth": []
@@ -497,7 +518,9 @@
       "get": {
         "summary": "Get the status of a crawl job",
         "operationId": "getCrawlStatus",
-        "tags": ["Crawling"],
+        "tags": [
+          "Crawling"
+        ],
         "security": [
           {
             "bearerAuth": []
@@ -567,7 +590,9 @@
       "delete": {
         "summary": "Cancel a crawl job",
         "operationId": "cancelCrawl",
-        "tags": ["Crawling"],
+        "tags": [
+          "Crawling"
+        ],
         "security": [
           {
             "bearerAuth": []
@@ -583,7 +608,9 @@
                   "properties": {
                     "status": {
                       "type": "string",
-                      "enum": ["cancelled"],
+                      "enum": [
+                        "cancelled"
+                      ],
                       "example": "cancelled"
                     }
                   }
@@ -642,7 +669,9 @@
       "get": {
         "summary": "Get the errors of a crawl job",
         "operationId": "getCrawlErrors",
-        "tags": ["Crawling"],
+        "tags": [
+          "Crawling"
+        ],
         "security": [
           {
             "bearerAuth": []
@@ -714,7 +743,9 @@
       "post": {
         "summary": "Crawl multiple URLs based on options",
         "operationId": "crawlUrls",
-        "tags": ["Crawling"],
+        "tags": [
+          "Crawling"
+        ],
         "security": [
           {
             "bearerAuth": []
@@ -772,7 +803,7 @@
                   },
                   "allowBackwardLinks": {
                     "type": "boolean",
-                    "description": "Allows the crawler to follow internal links to sibling or parent URLs, not just child paths.\n\nfalse: Only crawls deeper (child) URLs.\n→ e.g. /features/feature-1 → /features/feature-1/tips ✅\n→ Won't follow /pricing or / ❌\n\ntrue: Crawls any internal links, including siblings and parents.\n→ e.g. /features/feature-1 → /pricing, /, etc. ✅\n\nUse true for broader internal coverage beyond nested paths.",
+                    "description": "Allows the crawler to follow internal links to sibling or parent URLs, not just child paths.\n\nfalse: Only crawls deeper (child) URLs.\n\u2192 e.g. /features/feature-1 \u2192 /features/feature-1/tips \u2705\n\u2192 Won't follow /pricing or / \u274c\n\ntrue: Crawls any internal links, including siblings and parents.\n\u2192 e.g. /features/feature-1 \u2192 /pricing, /, etc. \u2705\n\nUse true for broader internal coverage beyond nested paths.",
                     "default": false
                   },
                   "allowExternalLinks": {
@@ -809,17 +840,26 @@
                         "description": "Type of events that should be sent to the webhook URL. (default: all)",
                         "items": {
                           "type": "string",
-                          "enum": ["completed", "page", "failed", "started"]
+                          "enum": [
+                            "completed",
+                            "page",
+                            "failed",
+                            "started"
+                          ]
                         }
                       }
                     },
-                    "required": ["url"]
+                    "required": [
+                      "url"
+                    ]
                   },
                   "scrapeOptions": {
                     "$ref": "#/components/schemas/ScrapeOptions"
                   }
                 },
-                "required": ["url"]
+                "required": [
+                  "url"
+                ]
               }
             }
           }
@@ -890,7 +930,9 @@
       "post": {
         "summary": "Map multiple URLs based on options",
         "operationId": "mapUrls",
-        "tags": ["Mapping"],
+        "tags": [
+          "Mapping"
+        ],
         "security": [
           {
             "bearerAuth": []
@@ -938,7 +980,9 @@
                     "description": "Timeout in milliseconds. There is no timeout by default."
                   }
                 },
-                "required": ["url"]
+                "required": [
+                  "url"
+                ]
               }
             }
           }
@@ -1009,7 +1053,9 @@
       "post": {
         "summary": "Extract structured data from pages using LLMs",
         "operationId": "extractData",
-        "tags": ["Extraction"],
+        "tags": [
+          "Extraction"
+        ],
         "security": [
           {
             "bearerAuth": []
@@ -1067,7 +1113,9 @@
                     "description": "If invalid URLs are specified in the urls array, they will be ignored. Instead of them failing the entire request, an extract using the remaining valid URLs will be performed, and the invalid URLs will be returned in the invalidURLs field of the response."
                   }
                 },
-                "required": ["urls"]
+                "required": [
+                  "urls"
+                ]
               }
             }
           }
@@ -1134,7 +1182,9 @@
       "get": {
         "summary": "Get the status of an extract job",
         "operationId": "getExtractStatus",
-        "tags": ["Extraction"],
+        "tags": [
+          "Extraction"
+        ],
         "security": [
           {
             "bearerAuth": []
@@ -1158,7 +1208,9 @@
       "get": {
         "summary": "Get all active crawls for the authenticated team",
         "operationId": "getActiveCrawls",
-        "tags": ["Crawling"],
+        "tags": [
+          "Crawling"
+        ],
         "security": [
           {
             "bearerAuth": []
@@ -1205,11 +1257,20 @@
                             }
                           }
                         },
-                        "required": ["id", "teamId", "url", "status", "options"]
+                        "required": [
+                          "id",
+                          "teamId",
+                          "url",
+                          "status",
+                          "options"
+                        ]
                       }
                     }
                   },
-                  "required": ["success", "data"]
+                  "required": [
+                    "success",
+                    "data"
+                  ]
                 }
               }
             }
@@ -1281,7 +1342,9 @@
       "post": {
         "summary": "Start a deep research operation on a query",
         "operationId": "startDeepResearch",
-        "tags": ["Research"],
+        "tags": [
+          "Research"
+        ],
         "security": [
           {
             "bearerAuth": []
@@ -1331,8 +1394,14 @@
                     "type": "array",
                     "items": {
                       "type": "string",
-                      "enum": ["markdown", "json", "branding"],
-                      "default": ["markdown"]
+                      "enum": [
+                        "markdown",
+                        "json",
+                        "branding"
+                      ],
+                      "default": [
+                        "markdown"
+                      ]
                     }
                   },
                   "jsonOptions": {
@@ -1354,7 +1423,9 @@
                     }
                   }
                 },
-                "required": ["query"]
+                "required": [
+                  "query"
+                ]
               }
             }
           }
@@ -1420,7 +1491,9 @@
       "get": {
         "summary": "Get the status and results of a deep research operation",
         "operationId": "getDeepResearchStatus",
-        "tags": ["Research"],
+        "tags": [
+          "Research"
+        ],
         "security": [
           {
             "bearerAuth": []
@@ -1494,7 +1567,11 @@
                         },
                         "status": {
                           "type": "string",
-                          "enum": ["processing", "completed", "failed"]
+                          "enum": [
+                            "processing",
+                            "completed",
+                            "failed"
+                          ]
                         },
                         "error": {
                           "type": "string"
@@ -1546,7 +1623,9 @@
       "get": {
         "summary": "Get remaining credits for the authenticated team",
         "operationId": "getCreditUsage",
-        "tags": ["Billing"],
+        "tags": [
+          "Billing"
+        ],
         "security": [
           {
             "bearerAuth": []
@@ -1626,7 +1705,9 @@
       "get": {
         "summary": "Get remaining tokens for the authenticated team (Extract only)",
         "operationId": "getTokenUsage",
-        "tags": ["Billing"],
+        "tags": [
+          "Billing"
+        ],
         "security": [
           {
             "bearerAuth": []
@@ -1706,7 +1787,9 @@
       "post": {
         "summary": "Search and optionally scrape search results",
         "operationId": "searchAndScrape",
-        "tags": ["Search"],
+        "tags": [
+          "Search"
+        ],
         "security": [
           {
             "bearerAuth": []
@@ -1774,7 +1857,9 @@
                     "default": {}
                   }
                 },
-                "required": ["query"]
+                "required": [
+                  "query"
+                ]
               }
             }
           }
@@ -1915,7 +2000,9 @@
       "post": {
         "summary": "Generate LLMs.txt for a website",
         "operationId": "generateLLMsTxt",
-        "tags": ["LLMs.txt"],
+        "tags": [
+          "LLMs.txt"
+        ],
         "security": [
           {
             "bearerAuth": []
@@ -1944,7 +2031,9 @@
                     "default": false
                   }
                 },
-                "required": ["url"]
+                "required": [
+                  "url"
+                ]
               }
             }
           }
@@ -2010,7 +2099,9 @@
       "get": {
         "summary": "Get the status and results of an LLMs.txt generation job",
         "operationId": "getLLMsTxtStatus",
-        "tags": ["LLMs.txt"],
+        "tags": [
+          "LLMs.txt"
+        ],
         "security": [
           {
             "bearerAuth": []
@@ -2029,7 +2120,11 @@
                     },
                     "status": {
                       "type": "string",
-                      "enum": ["processing", "completed", "failed"]
+                      "enum": [
+                        "processing",
+                        "completed",
+                        "failed"
+                      ]
                     },
                     "data": {
                       "type": "object",
@@ -2076,6 +2171,332 @@
           }
         }
       }
+    },
+    "/fdw/jobs": {
+      "get": {
+        "summary": "List job activity logs for the FDW",
+        "operationId": "getFdwJobs",
+        "tags": [
+          "FDW"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "start_date",
+            "in": "query",
+            "description": "Start of the date range (ISO date or timestamp)",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "end_date",
+            "in": "query",
+            "description": "End of the date range (ISO date or timestamp)",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "mode",
+            "in": "query",
+            "description": "Filter by job type",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "scrape",
+                "crawl",
+                "batch_scrape",
+                "map",
+                "search",
+                "extract",
+                "agent",
+                "deep_research"
+              ]
+            }
+          },
+          {
+            "name": "search",
+            "in": "query",
+            "description": "Substring match on URL or query (UUID matches job_id)",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Maximum rows to return (default 100, max 500)",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 500
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "description": "Pagination offset (default 0)",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": true
+                    },
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "job_id": {
+                            "type": "string",
+                            "format": "uuid"
+                          },
+                          "mode": {
+                            "type": "string"
+                          },
+                          "created_at": {
+                            "type": "string"
+                          },
+                          "origin": {
+                            "type": "string",
+                            "nullable": true
+                          },
+                          "url_or_query": {
+                            "type": "string",
+                            "nullable": true
+                          },
+                          "success": {
+                            "type": "boolean",
+                            "nullable": true
+                          },
+                          "credits_billed": {
+                            "type": "number",
+                            "nullable": true
+                          },
+                          "num_docs": {
+                            "type": "integer",
+                            "nullable": true
+                          },
+                          "time_taken": {
+                            "type": "number",
+                            "nullable": true
+                          },
+                          "message": {
+                            "type": "string",
+                            "nullable": true
+                          },
+                          "error_count": {
+                            "type": "integer",
+                            "nullable": true
+                          },
+                          "agent_model": {
+                            "type": "string",
+                            "nullable": true
+                          },
+                          "scrape_options": {
+                            "type": "object",
+                            "nullable": true
+                          },
+                          "scrape_pdf_num_pages": {
+                            "type": "integer",
+                            "nullable": true
+                          },
+                          "api_key_id": {
+                            "type": "integer",
+                            "nullable": true
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": false
+                    },
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Feature disabled",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": false
+                    },
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/fdw/job-results": {
+      "post": {
+        "summary": "Fetch job result payloads for the FDW",
+        "operationId": "getFdwJobResults",
+        "tags": [
+          "FDW"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "job_ids": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "minItems": 1,
+                    "maxItems": 100
+                  }
+                },
+                "required": [
+                  "job_ids"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": true
+                    },
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "job_id": {
+                            "type": "string",
+                            "format": "uuid"
+                          },
+                          "mode": {
+                            "type": "string",
+                            "nullable": true
+                          },
+                          "result_json": {
+                            "type": "object",
+                            "nullable": true
+                          },
+                          "found": {
+                            "type": "boolean"
+                          },
+                          "error": {
+                            "type": "string",
+                            "nullable": true
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": false
+                    },
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Feature disabled",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": false
+                    },
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -2106,7 +2527,9 @@
               ]
             },
             "description": "Formats to include in the output.",
-            "default": ["markdown"]
+            "default": [
+              "markdown"
+            ]
           },
           "onlyMainContent": {
             "type": "boolean",
@@ -2190,7 +2613,9 @@
                   "properties": {
                     "type": {
                       "type": "string",
-                      "enum": ["wait"],
+                      "enum": [
+                        "wait"
+                      ],
                       "description": "Wait for a specified amount of milliseconds"
                     },
                     "milliseconds": {
@@ -2204,7 +2629,9 @@
                       "example": "#my-element"
                     }
                   },
-                  "required": ["type"]
+                  "required": [
+                    "type"
+                  ]
                 },
                 {
                   "type": "object",
@@ -2212,7 +2639,9 @@
                   "properties": {
                     "type": {
                       "type": "string",
-                      "enum": ["screenshot"],
+                      "enum": [
+                        "screenshot"
+                      ],
                       "description": "Take a screenshot. The links will be in the response's `actions.screenshots` array."
                     },
                     "fullPage": {
@@ -2221,7 +2650,9 @@
                       "default": false
                     }
                   },
-                  "required": ["type"]
+                  "required": [
+                    "type"
+                  ]
                 },
                 {
                   "type": "object",
@@ -2229,7 +2660,9 @@
                   "properties": {
                     "type": {
                       "type": "string",
-                      "enum": ["click"],
+                      "enum": [
+                        "click"
+                      ],
                       "description": "Click on an element"
                     },
                     "selector": {
@@ -2243,7 +2676,10 @@
                       "default": false
                     }
                   },
-                  "required": ["type", "selector"]
+                  "required": [
+                    "type",
+                    "selector"
+                  ]
                 },
                 {
                   "type": "object",
@@ -2251,7 +2687,9 @@
                   "properties": {
                     "type": {
                       "type": "string",
-                      "enum": ["write"],
+                      "enum": [
+                        "write"
+                      ],
                       "description": "Write text into an input field, text area, or contenteditable element. Note: You must first focus the element using a 'click' action before writing. The text will be typed character by character to simulate keyboard input."
                     },
                     "text": {
@@ -2260,7 +2698,10 @@
                       "example": "Hello, world!"
                     }
                   },
-                  "required": ["type", "text"]
+                  "required": [
+                    "type",
+                    "text"
+                  ]
                 },
                 {
                   "type": "object",
@@ -2269,7 +2710,9 @@
                   "properties": {
                     "type": {
                       "type": "string",
-                      "enum": ["press"],
+                      "enum": [
+                        "press"
+                      ],
                       "description": "Press a key on the page"
                     },
                     "key": {
@@ -2278,7 +2721,10 @@
                       "example": "Enter"
                     }
                   },
-                  "required": ["type", "key"]
+                  "required": [
+                    "type",
+                    "key"
+                  ]
                 },
                 {
                   "type": "object",
@@ -2286,12 +2732,17 @@
                   "properties": {
                     "type": {
                       "type": "string",
-                      "enum": ["scroll"],
+                      "enum": [
+                        "scroll"
+                      ],
                       "description": "Scroll the page or a specific element"
                     },
                     "direction": {
                       "type": "string",
-                      "enum": ["up", "down"],
+                      "enum": [
+                        "up",
+                        "down"
+                      ],
                       "description": "Direction to scroll",
                       "default": "down"
                     },
@@ -2301,7 +2752,9 @@
                       "example": "#my-element"
                     }
                   },
-                  "required": ["type"]
+                  "required": [
+                    "type"
+                  ]
                 },
                 {
                   "type": "object",
@@ -2309,11 +2762,15 @@
                   "properties": {
                     "type": {
                       "type": "string",
-                      "enum": ["scrape"],
+                      "enum": [
+                        "scrape"
+                      ],
                       "description": "Scrape the current page content, returns the url and the html."
                     }
                   },
-                  "required": ["type"]
+                  "required": [
+                    "type"
+                  ]
                 },
                 {
                   "type": "object",
@@ -2321,7 +2778,9 @@
                   "properties": {
                     "type": {
                       "type": "string",
-                      "enum": ["executeJavascript"],
+                      "enum": [
+                        "executeJavascript"
+                      ],
                       "description": "Execute JavaScript code on the page"
                     },
                     "script": {
@@ -2330,7 +2789,10 @@
                       "example": "document.querySelector('.button').click();"
                     }
                   },
-                  "required": ["type", "script"]
+                  "required": [
+                    "type",
+                    "script"
+                  ]
                 }
               ]
             }
@@ -2366,7 +2828,11 @@
           },
           "proxy": {
             "type": "string",
-            "enum": ["basic", "stealth", "auto"],
+            "enum": [
+              "basic",
+              "stealth",
+              "auto"
+            ],
             "description": "Specifies the type of proxy to use.\n\n - **basic**: Proxies for scraping sites with none to basic anti-bot solutions. Fast and usually works.\n - **stealth**: Stealth proxies for scraping sites with advanced anti-bot solutions. Slower, but more reliable on certain sites. Costs up to 5 credits per request.\n - **auto**: Firecrawl will automatically retry scraping with stealth proxies if the basic proxy fails. If the retry with stealth is successful, 5 credits will be billed for the scrape. If the first attempt with basic is successful, only the regular cost will be billed.\n\nIf you do not specify a proxy, Firecrawl will default to basic."
           },
           "changeTrackingOptions": {
@@ -2377,7 +2843,10 @@
                 "type": "array",
                 "items": {
                   "type": "string",
-                  "enum": ["git-diff", "json"]
+                  "enum": [
+                    "git-diff",
+                    "json"
+                  ]
                 },
                 "description": "The mode to use for change tracking. 'git-diff' provides a detailed diff, and 'json' compares extracted JSON data."
               },
@@ -2539,12 +3008,20 @@
                   },
                   "changeStatus": {
                     "type": "string",
-                    "enum": ["new", "same", "changed", "removed"],
+                    "enum": [
+                      "new",
+                      "same",
+                      "changed",
+                      "removed"
+                    ],
                     "description": "The result of the comparison between the two page versions. 'new' means this page did not exist before, 'same' means content has not changed, 'changed' means content has changed, 'removed' means the page was removed."
                   },
                   "visibility": {
                     "type": "string",
-                    "enum": ["visible", "hidden"],
+                    "enum": [
+                      "visible",
+                      "hidden"
+                    ],
                     "description": "The visibility of the current page/URL. 'visible' means the URL was discovered through an organic route (links or sitemap), 'hidden' means the URL was discovered through memory from previous crawls."
                   },
                   "diff": {
@@ -2943,7 +3420,12 @@
           },
           "status": {
             "type": "string",
-            "enum": ["completed", "processing", "failed", "cancelled"],
+            "enum": [
+              "completed",
+              "processing",
+              "failed",
+              "cancelled"
+            ],
             "description": "The current status of the extract job"
           },
           "expiresAt": {
