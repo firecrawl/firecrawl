@@ -685,6 +685,7 @@ const extractOptions = z
     __experimental_llmUsage: z.boolean().prefault(false),
     __experimental_showSources: z.boolean().prefault(false),
     showSources: z.boolean().prefault(false),
+    // These two below don't do anything anymore
     __experimental_cacheKey: z.string().optional(),
     __experimental_cacheMode: z
       .enum(["direct", "save", "load"])

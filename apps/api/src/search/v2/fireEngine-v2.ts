@@ -23,17 +23,19 @@ function normalizeSearchTypes(
  * Checks if the response has at least one requested type with results.
  * This allows partial results to be returned when some sources have data
  * but others don't, instead of requiring all sources to have results.
+ *
+ * MOGERY: temp removed to fix bug
  */
-function hasAnyResults(
-  response: SearchV2Response,
-  requestedTypes: SearchResultType[],
-): boolean {
-  if (!response || Object.keys(response).length === 0) return false;
-  return requestedTypes.some(type => {
-    const results = response[type];
-    return Array.isArray(results) && results.length > 0;
-  });
-}
+// function hasAnyResults(
+//   response: SearchV2Response,
+//   requestedTypes: SearchResultType[],
+// ): boolean {
+//   if (!response || Object.keys(response).length === 0) return false;
+//   return requestedTypes.some(type => {
+//     const results = response[type];
+//     return Array.isArray(results) && results.length > 0;
+//   });
+// }
 
 export async function fire_engine_search_v2(
   q: string,
@@ -75,8 +77,7 @@ export async function fire_engine_search_v2(
 
   const result = await executeWithRetry<SearchV2Response>(
     () => attemptRequest<SearchV2Response>(url, data, abort),
-    (response): response is SearchV2Response =>
-      response !== null && hasAnyResults(response, requestedTypes),
+    (response): response is SearchV2Response => response !== null,
     abort,
   );
 

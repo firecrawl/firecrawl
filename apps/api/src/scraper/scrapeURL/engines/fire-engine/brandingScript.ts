@@ -296,7 +296,9 @@ export const getBrandingScript = () => String.raw`
     pushQ('input, select, textarea, [class*="form-control"]', 25);
     pushQ("h1, h2, h3, p, a", 50);
 
-    return Array.from(picksSet).filter(Boolean);
+    const result = [...picksSet];
+    
+    return result.filter(Boolean);
   };
 
   const getStyleSnapshot = el => {

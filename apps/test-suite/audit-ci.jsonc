@@ -3,6 +3,7 @@
     "low": true,
     "allowlist": [
         "GHSA-mh29-5h37-fv8m|@jest/globals>@jest/expect>jest-snapshot>@jest/transform>babel-plugin-istanbul>@istanbuljs/load-nyc-config>js-yaml", // not impacted by this
+        "GHSA-mh29-5h37-fv8m|artillery>js-yaml", // test-only dependency - we control YAML input
         "GHSA-5j98-mcp5-4vw2|jest>@jest/core>@jest/reporters>glob", // we do not use the glob CLI
         "GHSA-6475-r3vj-m8vf|artillery>artillery-plugin-publish-metrics>@aws-sdk/client-cloudwatch>@smithy/config-resolver", // informational enhancement - we control region input
         "GHSA-73rr-hh4g-fpgx|jest>@jest/core>jest-config>ts-node>diff", // dev-only dependency - we don't parse untrusted patches

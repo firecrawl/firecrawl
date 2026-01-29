@@ -15,7 +15,6 @@ import { getErrorContactMessage } from "../../deployment";
 
 import { ExtractStep, updateExtract } from "../extract-redis";
 import { CUSTOM_U_TEAMS } from "../config";
-import { getCachedDocs, saveCachedDocs } from "../helpers/cached-docs";
 import { normalizeUrl } from "../../canonical-url";
 import { search } from "../../../search";
 import { buildRephraseToSerpPrompt_F0 } from "./build-prompts-f0";
@@ -141,24 +140,6 @@ export async function performExtraction_F0(
   }
 
   const urls = request.urls || ([] as string[]);
-
-  if (
-    request.__experimental_cacheMode == "load" &&
-    request.__experimental_cacheKey &&
-    urls
-  ) {
-    logger.debug("Loading cached docs...");
-    try {
-      const cache = await getCachedDocs(urls, request.__experimental_cacheKey);
-      for (const doc of cache) {
-        if (doc.metadata.url) {
-          docsMap.set(normalizeUrl(doc.metadata.url), doc);
-        }
-      }
-    } catch (error) {
-      logger.error("Error loading cached docs", { error });
-    }
-  }
 
   // Token tracking
   let tokenUsage: TokenUsage[] = [];
@@ -938,21 +919,6 @@ export async function performExtraction_F0(
     });
 
   logger.debug("Done!");
-
-  if (
-    request.__experimental_cacheMode == "save" &&
-    request.__experimental_cacheKey
-  ) {
-    logger.debug("Saving cached docs...");
-    try {
-      await saveCachedDocs(
-        [...docsMap.values()],
-        request.__experimental_cacheKey,
-      );
-    } catch (error) {
-      logger.error("Error saving cached docs", { error });
-    }
-  }
 
   return {
     success: true,

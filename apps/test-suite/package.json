@@ -3,33 +3,13 @@
   "version": "1.0.0",
   "description": "",
   "scripts": {
-    "test:suite": "npx jest --detectOpenHandles --forceExit --openHandlesTimeout=120000 --watchAll=false",
-    "test:load": "artillery run --output ./load-test-results/test-run-report.json load-test.yml",
-    "test:scrape": "npx jest --detectOpenHandles --forceExit --openHandlesTimeout=120000 --watchAll=false --testPathPattern=tests/scrape.test.ts",
-    "test:crawl": "npx jest --detectOpenHandles --forceExit --openHandlesTimeout=120000 --watchAll=false --testPathPattern=tests/crawl.test.ts",
-    "test:schema-validation": "npx jest --detectOpenHandles --forceExit --openHandlesTimeout=120000 --watchAll=false --testPathPattern=tests/schema-validation.test.ts"
+    "test:load": "artillery run --output ./load-test-results/test-run-report.json load-test.yml"
   },
   "author": "",
   "license": "ISC",
-  "dependencies": {
-    "@anthropic-ai/sdk": "^0.57.0",
-    "@dqbd/tiktoken": "^1.0.14",
-    "@supabase/supabase-js": "^2.43.1",
-    "axios": "^1.12.2",
-    "dotenv": "^16.4.5",
-    "jest": "^30.0.5",
-    "openai": "^5.10.2",
-    "playwright": "^1.56.1",
-    "supertest": "^7.1.4",
-    "ts-jest": "^29.4.0"
-  },
+  "dependencies": {},
   "devDependencies": {
-    "@jest/globals": "^30.0.5",
-    "@types/jest": "^30.0.0",
-    "@types/supertest": "^6.0.2",
-    "artillery": "^2.0.23",
-    "typescript": "^5.4.5",
-    "zod": "^3.24.1"
+    "artillery": "^2.0.23"
   },
   "pnpm": {
     "overrides": {
