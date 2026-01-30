@@ -4,14 +4,16 @@ New URL scraper for Firecrawl
 ## Signal flow
 ```mermaid
 flowchart TD;
-    scrapeURL-.->buildFallbackList;
-    buildFallbackList-.->scrapeURLWithEngine;
-    scrapeURLWithEngine-.->parseMarkdown;
-    parseMarkdown-.->wasScrapeSuccessful{{Was scrape successful?}};
-    wasScrapeSuccessful-."No".->areEnginesLeft{{Are there engines left to try?}};
-    areEnginesLeft-."Yes, try next engine".->scrapeURLWithEngine;
-    areEnginesLeft-."No".->NoEnginesLeftError[/NoEnginesLeftError/]
-    wasScrapeSuccessful-."Yes".->asd;
+    scrapeURL-->indexLookup{Use index?};
+    indexLookup-->|hit|cacheResult[/cached doc/];
+    indexLookup-->|miss|liveEngine[/single live engine/];
+    liveEngine-->engineResponse[engine response];
+    engineResponse-->specialtyCheck{PDF/Document?};
+    specialtyCheck-->|PDF|pdfParse[parse PDF];
+    specialtyCheck-->|Document|docParse[parse document];
+    specialtyCheck-->|HTML|transformers;
+    pdfParse-->transformers;
+    docParse-->transformers;
 ```
 
 ## Differences from `WebScraperDataProvider`

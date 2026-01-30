@@ -1,13 +1,7 @@
 import path from "path";
 import os from "os";
 import { createWriteStream, promises as fs } from "node:fs";
-import {
-  AddFeatureError,
-  DNSResolutionError,
-  EngineError,
-  SiteError,
-  SSLError,
-} from "../../error";
+import { DNSResolutionError, EngineError, SiteError, SSLError } from "../../error";
 import { Writable } from "stream";
 import { v7 as uuid } from "uuid";
 import * as undici from "undici";

@@ -12,8 +12,7 @@ The engine forcing is configured via the `FORCED_ENGINE_DOMAINS` environment var
 {
   "example.com": "playwright",
   "test.com": "fetch",
-  "*.subdomain.com": "fire-engine;chrome-cdp",
-  "google.com": ["fire-engine;chrome-cdp", "playwright"]
+  "*.subdomain.com": "fire-engine;chrome-cdp"
 }
 ```
 
@@ -22,26 +21,19 @@ The engine forcing is configured via the `FORCED_ENGINE_DOMAINS` environment var
 1. **Exact domain match**: `"example.com"` matches `example.com` and all its subdomains (`www.example.com`, `api.example.com`, etc.)
 2. **Wildcard pattern**: `"*.subdomain.com"` matches only subdomains of `subdomain.com` (e.g., `api.subdomain.com`, `www.subdomain.com`) but NOT the base domain itself
 3. **Single engine**: `"playwright"` forces a single engine
-4. **Multiple engines**: `["fire-engine;chrome-cdp", "playwright"]` provides a fallback list of engines to try in order
 
 ### Available Engines
 
 - `fire-engine;chrome-cdp` - Advanced browser with Chrome DevTools Protocol
-- `fire-engine;playwright` - Playwright-based browser automation
-- `fire-engine;tlsclient` - TLS fingerprinting for anti-bot bypass
-- `fire-engine;chrome-cdp;stealth` - Chrome CDP with stealth mode
-- `fire-engine;playwright;stealth` - Playwright with stealth mode
-- `fire-engine;tlsclient;stealth` - TLS client with stealth mode
 - `playwright` - Direct Playwright integration
 - `fetch` - Simple HTTP requests
-- `pdf` - PDF document parsing
-- `document` - Office document handling
+- `index` - Cache-only lookup (no live engine call)
 
 ## How It Works
 
 1. When a scrape request is made, the system checks if the URL matches any domain pattern in `FORCED_ENGINE_DOMAINS`
-2. If a match is found, the specified engine(s) are used instead of the default engine selection logic
-3. If no match is found, the normal engine selection waterfall is used
+2. If a match is found, the specified engine is used instead of the default engine selection logic
+3. If no match is found, the normal env-based engine selection is used
 4. The engine forcing only applies if `forceEngine` is not already set in the internal options
 
 ## Example Configuration
@@ -66,16 +58,15 @@ This uses the simple fetch engine for example.com and httpbin.org.
 
 ```bash
 export FORCED_ENGINE_DOMAINS='{
-  "google.com": ["fire-engine;chrome-cdp", "playwright"],
-  "*.cloudflare.com": "fire-engine;tlsclient;stealth",
+  "google.com": "fire-engine;chrome-cdp",
+  "*.cloudflare.com": "fire-engine;chrome-cdp",
   "wikipedia.org": "fetch"
 }'
 ```
 
 This configuration:
 
-- Uses fire-engine with Chrome CDP for Google, falling back to Playwright if needed
-- Uses fire-engine with TLS client in stealth mode for Cloudflare subdomains
+- Uses fire-engine with Chrome CDP for Google and Cloudflare subdomains
 - Uses simple fetch for Wikipedia
 
 ## Implementation Details
@@ -98,7 +89,7 @@ The engine forcing has the following precedence:
 
 1. If `forceEngine` is already set in `InternalOptions`, it takes precedence (engine forcing is skipped)
 2. If a URL matches an engine forcing pattern, that engine is used
-3. Otherwise, the normal engine selection waterfall is used
+3. Otherwise, the normal env-based engine selection is used
 
 ## Testing
 

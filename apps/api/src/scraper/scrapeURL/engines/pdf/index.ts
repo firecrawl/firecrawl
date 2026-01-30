@@ -7,17 +7,13 @@ import { z } from "zod";
 import * as Sentry from "@sentry/node";
 import escapeHtml from "escape-html";
 import PdfParse from "pdf-parse";
-import { downloadFile, fetchFileToBuffer } from "../utils/downloadFile";
+import { downloadFile } from "../utils/downloadFile";
 import {
-  PDFAntibotError,
   PDFInsufficientTimeError,
   PDFPrefetchFailed,
-  RemoveFeatureError,
-  EngineUnsuccessfulError,
 } from "../../error";
 import { readFile, unlink } from "node:fs/promises";
 import path from "node:path";
-import type { Response } from "undici";
 import {
   getPdfResultFromCache,
   savePdfResultToCache,
@@ -252,90 +248,55 @@ async function scrapePDFWithParsePDF(
 export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
   const shouldParse = shouldParsePDF(meta.options.parsers);
   const maxPages = getPDFMaxPages(meta.options.parsers);
+  let tempFilePath: string;
+  let responseUrl: string;
+  let statusCode: number;
+  let contentType: string | undefined;
+  let proxyUsed: "basic" | "stealth" = "basic";
 
-  if (!shouldParse) {
-    if (meta.pdfPrefetch !== undefined && meta.pdfPrefetch !== null) {
-      const content = (await readFile(meta.pdfPrefetch.filePath)).toString(
-        "base64",
-      );
-      return {
-        url: meta.pdfPrefetch.url ?? meta.rewrittenUrl ?? meta.url,
-        statusCode: meta.pdfPrefetch.status,
+  if (meta.pdfPrefetch !== undefined && meta.pdfPrefetch !== null) {
+    tempFilePath = meta.pdfPrefetch.filePath;
+    responseUrl = meta.pdfPrefetch.url ?? meta.rewrittenUrl ?? meta.url;
+    statusCode = meta.pdfPrefetch.status;
+    contentType = meta.pdfPrefetch.contentType;
+    proxyUsed = meta.pdfPrefetch.proxyUsed;
 
-        html: content,
-        markdown: content,
+    if (contentType && !contentType.includes("application/pdf")) {
+      throw new PDFPrefetchFailed();
+    }
+  } else {
+    const file = await downloadFile(
+      meta.id,
+      meta.rewrittenUrl ?? meta.url,
+      meta.options.skipTlsVerification,
+      {
+        headers: meta.options.headers,
+        signal: meta.abort.asSignal(),
+      },
+    );
 
-        proxyUsed: meta.pdfPrefetch.proxyUsed,
-      };
-    } else {
-      const file = await fetchFileToBuffer(
-        meta.rewrittenUrl ?? meta.url,
-        meta.options.skipTlsVerification,
-        {
-          headers: meta.options.headers,
-          signal: meta.abort.asSignal(),
-        },
-      );
+    tempFilePath = file.tempFilePath;
+    responseUrl = file.response.url;
+    statusCode = file.response.status;
+    contentType = file.response.headers.get("Content-Type") ?? undefined;
 
-      const ct = file.response.headers.get("Content-Type");
-      if (ct && !ct.includes("application/pdf")) {
-        // if downloaded file wasn't a PDF
-        if (meta.pdfPrefetch === undefined) {
-          // for non-PDF URLs, this is expected, not anti-bot
-          if (!meta.featureFlags.has("pdf")) {
-            throw new EngineUnsuccessfulError("pdf");
-          } else {
-            throw new PDFAntibotError();
-          }
-        } else {
-          throw new PDFPrefetchFailed();
-        }
-      }
-
-      const content = file.buffer.toString("base64");
-      return {
-        url: file.response.url,
-        statusCode: file.response.status,
-
-        html: content,
-        markdown: content,
-
-        proxyUsed: "basic",
-      };
+    if (contentType && !contentType.includes("application/pdf")) {
+      throw new PDFPrefetchFailed();
     }
   }
 
-  const { response, tempFilePath } =
-    meta.pdfPrefetch !== undefined && meta.pdfPrefetch !== null
-      ? { response: meta.pdfPrefetch, tempFilePath: meta.pdfPrefetch.filePath }
-      : await downloadFile(
-          meta.id,
-          meta.rewrittenUrl ?? meta.url,
-          meta.options.skipTlsVerification,
-          {
-            headers: meta.options.headers,
-            signal: meta.abort.asSignal(),
-          },
-        );
-
   try {
-    if ((response as any).headers) {
-      // if downloadFile was used
-      const r: Response = response as any;
-      const ct = r.headers.get("Content-Type");
-      if (ct && !ct.includes("application/pdf")) {
-        // if downloaded file wasn't a PDF
-        if (meta.pdfPrefetch === undefined) {
-          // for non-PDF URLs, this is expected, not anti-bot
-          if (!meta.featureFlags.has("pdf")) {
-            throw new EngineUnsuccessfulError("pdf");
-          } else {
-            throw new PDFAntibotError();
-          }
-        } else {
-          throw new PDFPrefetchFailed();
-        }
-      }
+    const base64Content = (await readFile(tempFilePath)).toString("base64");
+
+    if (!shouldParse) {
+      return {
+        url: responseUrl,
+        statusCode,
+        html: base64Content,
+        markdown: base64Content,
+        contentType,
+        proxyUsed,
+      };
     }
 
     const pdfMetadata = await getPdfMetadata(tempFilePath);
@@ -353,11 +314,8 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
       );
     }
 
-    let result: PDFProcessorResult | null = null;
+    let result: PDFProcessorResult;
 
-    const base64Content = (await readFile(tempFilePath)).toString("base64");
-
-    // First try RunPod MU if conditions are met
     if (
       base64Content.length < MAX_FILE_SIZE &&
       config.RUNPOD_MU_API_KEY &&
@@ -386,16 +344,10 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
             success: true,
           });
       } catch (error) {
-        if (
-          error instanceof RemoveFeatureError ||
-          error instanceof AbortManagerThrownError
-        ) {
+        if (error instanceof AbortManagerThrownError) {
           throw error;
         }
-        meta.logger.warn(
-          "RunPod MU failed to parse PDF (could be due to timeout) -- falling back to parse-pdf",
-          { error },
-        );
+        meta.logger.warn("RunPod MU failed to parse PDF", { error });
         Sentry.captureException(error);
         const muV1DurationMs = Date.now() - muV1StartedAt;
         meta.logger
@@ -406,11 +358,9 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
             pages: effectivePageCount,
             success: false,
           });
+        throw error;
       }
-    }
-
-    // If RunPod MU failed or wasn't attempted, use PdfParse
-    if (!result) {
+    } else {
       result = await scrapePDFWithParsePDF(
         {
           ...meta,
@@ -423,25 +373,23 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
     }
 
     return {
-      url: response.url ?? meta.rewrittenUrl ?? meta.url,
-      statusCode: response.status,
-      html: result?.html ?? "",
-      markdown: result?.markdown ?? "",
+      url: responseUrl,
+      statusCode,
+      html: result.html,
+      markdown: result.markdown,
       pdfMetadata: {
         // Rust parser gets the metadata incorrectly, so we overwrite the page count here with the effective page count
         // TODO: fix this later
         numPages: effectivePageCount,
         title: pdfMetadata.title,
       },
-
-      proxyUsed: "basic",
+      contentType,
+      proxyUsed,
     };
   } finally {
-    // Always clean up temp file after we're done with it
     try {
       await unlink(tempFilePath);
     } catch (error) {
-      // Ignore errors when cleaning up temp files
       meta.logger?.warn("Failed to clean up temporary PDF file", {
         error,
         tempFilePath,

@@ -2,7 +2,6 @@ import * as undici from "undici";
 import { EngineScrapeResult } from "..";
 import { Meta } from "../..";
 import { SSLError } from "../../error";
-import { specialtyScrapeCheck } from "../utils/specialtyHandler";
 import {
   getSecureDispatcher,
   InsecureConnectionError,
@@ -102,11 +101,6 @@ export async function scrapeURLWithFetch(
       }
     }
   }
-
-  await specialtyScrapeCheck(
-    meta.logger.child({ method: "scrapeURLWithFetch/specialtyScrapeCheck" }),
-    Object.fromEntries(response.headers as any),
-  );
 
   return {
     url: response.url,

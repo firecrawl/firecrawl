@@ -42,10 +42,10 @@ export const urlSpecificParams: Record<string, UrlSpecificParams> = {
   // },
   "digikey.com": {
     scrapeOptions: {},
-    internalOptions: { forceEngine: "fire-engine;tlsclient" },
+    internalOptions: { forceEngine: "fire-engine;chrome-cdp" },
   },
   "lorealparis.hu": {
     scrapeOptions: {},
-    internalOptions: { forceEngine: "fire-engine;tlsclient" },
+    internalOptions: { forceEngine: "fire-engine;chrome-cdp" },
   },
 };

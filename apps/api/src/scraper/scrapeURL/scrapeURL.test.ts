@@ -3,10 +3,12 @@ import "dotenv/config";
 import { config } from "../../config";
 config.ENV = "test";
 
-import { scrapeURL } from ".";
+import { scrapeURL, type Meta } from ".";
 import { scrapeOptions } from "../../controllers/v2/types";
-import { Engine } from "./engines";
+import { Engine, selectLiveEngine } from "./engines";
 import { CostTracking } from "../../lib/cost-tracking";
+import { logger as baseLogger } from "../../lib/logger";
+import { EngineError } from "./error";
 
 // Mock parseMarkdown but delegate to real implementation for other tests
 jest.mock("../../lib/html-to-markdown", () => {
@@ -19,22 +21,52 @@ jest.mock("../../lib/html-to-markdown", () => {
 
 import { parseMarkdown } from "../../lib/html-to-markdown";
 
-const testEngines: (Engine | undefined)[] = [
-  undefined,
-  "fire-engine;chrome-cdp",
-  "fire-engine;playwright",
-  "fire-engine;tlsclient",
-  "fetch",
-];
+const defaultForceEngine: Engine | undefined = undefined;
+const supportsScreenshots =
+  !process.env.TEST_SUITE_SELF_HOSTED &&
+  selectLiveEngine({ logger: baseLogger } as Meta) ===
+    "fire-engine;chrome-cdp";
+const describeScreenshots = supportsScreenshots ? describe : describe.skip;
+const supportsAi =
+  !process.env.TEST_SUITE_SELF_HOSTED ||
+  !!process.env.OPENAI_API_KEY ||
+  !!process.env.OLLAMA_BASE_URL;
+const describeAi = supportsAi ? describe : describe.skip;
 
-const testEnginesScreenshot: (Engine | undefined)[] = [
-  undefined,
-  "fire-engine;chrome-cdp",
-  "fire-engine;playwright",
-];
+describe("selectLiveEngine", () => {
+  const originalFireEngine = config.FIRE_ENGINE_BETA_URL;
+  const originalPlaywright = config.PLAYWRIGHT_MICROSERVICE_URL;
+
+  afterEach(() => {
+    config.FIRE_ENGINE_BETA_URL = originalFireEngine;
+    config.PLAYWRIGHT_MICROSERVICE_URL = originalPlaywright;
+  });
+
+  it("prefers fire-engine when configured", () => {
+    config.FIRE_ENGINE_BETA_URL = "https://fire-engine.test";
+    config.PLAYWRIGHT_MICROSERVICE_URL = "https://playwright.test";
+    const engine = selectLiveEngine({ logger: baseLogger } as Meta);
+    expect(engine).toBe("fire-engine;chrome-cdp");
+  });
+
+  it("uses playwright when fire-engine is absent", () => {
+    config.FIRE_ENGINE_BETA_URL = undefined;
+    config.PLAYWRIGHT_MICROSERVICE_URL = "https://playwright.test";
+    const engine = selectLiveEngine({ logger: baseLogger } as Meta);
+    expect(engine).toBe("playwright");
+  });
+
+  it("falls back to fetch when no engine is configured", () => {
+    config.FIRE_ENGINE_BETA_URL = undefined;
+    config.PLAYWRIGHT_MICROSERVICE_URL = undefined;
+    const engine = selectLiveEngine({ logger: baseLogger } as Meta);
+    expect(engine).toBe("fetch");
+  });
+});
 
 describe("Standalone scrapeURL tests", () => {
-  describe.each(testEngines)("Engine %s", (forceEngine: Engine | undefined) => {
+  describe("Default engine", () => {
+    const forceEngine = defaultForceEngine;
     it("Basic scrape", async () => {
       const out = await scrapeURL(
         "test:scrape-basic",
@@ -295,68 +327,67 @@ describe("Standalone scrapeURL tests", () => {
     }, 30000);
   });
 
-  describe.each(testEnginesScreenshot)(
-    "Screenshot on engine %s",
-    (forceEngine: Engine | undefined) => {
-      it("Scrape with screenshot", async () => {
-        const out = await scrapeURL(
-          "test:scrape-screenshot",
-          "https://www.scrapethissite.com/",
-          scrapeOptions.parse({
-            formats: ["screenshot"],
-          }),
-          { forceEngine, teamId: "test" },
-          new CostTracking(),
+  describeScreenshots("Screenshots", () => {
+    const forceEngine = defaultForceEngine;
+
+    it("Scrape with screenshot", async () => {
+      const out = await scrapeURL(
+        "test:scrape-screenshot",
+        "https://www.scrapethissite.com/",
+        scrapeOptions.parse({
+          formats: ["screenshot"],
+        }),
+        { forceEngine, teamId: "test" },
+        new CostTracking(),
+      );
+
+      // expect(out.logs.length).toBeGreaterThan(0);
+      expect(out.success).toBe(true);
+      if (out.success) {
+        expect(out.document.warning).toBeUndefined();
+        expect(out.document).toHaveProperty("screenshot");
+        expect(typeof out.document.screenshot).toBe("string");
+        expect(
+          out.document.screenshot!.startsWith(
+            "https://service.firecrawl.dev/storage/v1/object/public/media/",
+          ),
         );
+        // TODO: attempt to fetch screenshot
+        expect(out.document).toHaveProperty("metadata");
+        expect(out.document.metadata.statusCode).toBe(200);
+        expect(out.document.metadata.error).toBeUndefined();
+      }
+    }, 30000);
 
-        // expect(out.logs.length).toBeGreaterThan(0);
-        expect(out.success).toBe(true);
-        if (out.success) {
-          expect(out.document.warning).toBeUndefined();
-          expect(out.document).toHaveProperty("screenshot");
-          expect(typeof out.document.screenshot).toBe("string");
-          expect(
-            out.document.screenshot!.startsWith(
-              "https://service.firecrawl.dev/storage/v1/object/public/media/",
-            ),
-          );
-          // TODO: attempt to fetch screenshot
-          expect(out.document).toHaveProperty("metadata");
-          expect(out.document.metadata.statusCode).toBe(200);
-          expect(out.document.metadata.error).toBeUndefined();
-        }
-      }, 30000);
+    it("Scrape with full-page screenshot", async () => {
+      const out = await scrapeURL(
+        "test:scrape-screenshot-fullPage",
+        "https://www.scrapethissite.com/",
+        scrapeOptions.parse({
+          formats: ["screenshot@fullPage"],
+        }),
+        { forceEngine, teamId: "test" },
+        new CostTracking(),
+      );
 
-      it("Scrape with full-page screenshot", async () => {
-        const out = await scrapeURL(
-          "test:scrape-screenshot-fullPage",
-          "https://www.scrapethissite.com/",
-          scrapeOptions.parse({
-            formats: ["screenshot@fullPage"],
-          }),
-          { forceEngine, teamId: "test" },
-          new CostTracking(),
+      // expect(out.logs.length).toBeGreaterThan(0);
+      expect(out.success).toBe(true);
+      if (out.success) {
+        expect(out.document.warning).toBeUndefined();
+        expect(out.document).toHaveProperty("screenshot");
+        expect(typeof out.document.screenshot).toBe("string");
+        expect(
+          out.document.screenshot!.startsWith(
+            "https://service.firecrawl.dev/storage/v1/object/public/media/",
+          ),
         );
-
-        // expect(out.logs.length).toBeGreaterThan(0);
-        expect(out.success).toBe(true);
-        if (out.success) {
-          expect(out.document.warning).toBeUndefined();
-          expect(out.document).toHaveProperty("screenshot");
-          expect(typeof out.document.screenshot).toBe("string");
-          expect(
-            out.document.screenshot!.startsWith(
-              "https://service.firecrawl.dev/storage/v1/object/public/media/",
-            ),
-          );
-          // TODO: attempt to fetch screenshot
-          expect(out.document).toHaveProperty("metadata");
-          expect(out.document.metadata.statusCode).toBe(200);
-          expect(out.document.metadata.error).toBeUndefined();
-        }
-      }, 30000);
-    },
-  );
+        // TODO: attempt to fetch screenshot
+        expect(out.document).toHaveProperty("metadata");
+        expect(out.document.metadata.statusCode).toBe(200);
+        expect(out.document.metadata.error).toBeUndefined();
+      }
+    }, 30000);
+  });
 
   it("Scrape of a PDF file", async () => {
     const out = await scrapeURL(
@@ -425,81 +456,98 @@ describe("Standalone scrapeURL tests", () => {
     }
   }, 60000);
 
-  it("LLM extract with prompt and schema", async () => {
+  it("Rejects unsupported forceEngine", async () => {
     const out = await scrapeURL(
-      "test:llm-extract-prompt-schema",
-      "https://firecrawl.dev",
-      scrapeOptions.parse({
-        formats: ["extract"],
-        extract: {
-          prompt:
-            "Based on the information on the page, find what the company's mission is and whether it supports SSO, and whether it is open source",
-          schema: {
-            type: "object",
-            properties: {
-              company_mission: { type: "string" },
-              supports_sso: { type: "boolean" },
-              is_open_source: { type: "boolean" },
-            },
-            required: ["company_mission", "supports_sso", "is_open_source"],
-            additionalProperties: false,
-          },
-        },
-      }),
-      { teamId: "test" },
+      "test:force-engine-invalid",
+      "https://example.com",
+      scrapeOptions.parse({}),
+      { forceEngine: "tlsclient" as Engine, teamId: "test" },
       new CostTracking(),
     );
 
-    // expect(out.logs.length).toBeGreaterThan(0);
-    expect(out.success).toBe(true);
-    if (out.success) {
-      expect(out.document.warning).toBeUndefined();
-      expect(out.document).toHaveProperty("extract");
-      expect(out.document.extract).toHaveProperty("company_mission");
-      expect(out.document.extract).toHaveProperty("supports_sso");
-      expect(out.document.extract).toHaveProperty("is_open_source");
-      expect(typeof out.document.extract.company_mission).toBe("string");
-      expect(out.document.extract.supports_sso).toBe(false);
-      expect(out.document.extract.is_open_source).toBe(true);
+    expect(out.success).toBe(false);
+    if (!out.success) {
+      expect(out.error).toBeInstanceOf(EngineError);
     }
-  }, 120000);
+  }, 30000);
 
-  it("LLM extract with schema only", async () => {
-    const out = await scrapeURL(
-      "test:llm-extract-schema",
-      "https://firecrawl.dev",
-      scrapeOptions.parse({
-        formats: ["extract"],
-        extract: {
-          schema: {
-            type: "object",
-            properties: {
-              company_mission: { type: "string" },
-              supports_sso: { type: "boolean" },
-              is_open_source: { type: "boolean" },
+  describeAi("LLM extract", () => {
+    it("LLM extract with prompt and schema", async () => {
+      const out = await scrapeURL(
+        "test:llm-extract-prompt-schema",
+        "https://firecrawl.dev",
+        scrapeOptions.parse({
+          formats: ["extract"],
+          extract: {
+            prompt:
+              "Based on the information on the page, find what the company's mission is and whether it supports SSO, and whether it is open source",
+            schema: {
+              type: "object",
+              properties: {
+                company_mission: { type: "string" },
+                supports_sso: { type: "boolean" },
+                is_open_source: { type: "boolean" },
+              },
+              required: ["company_mission", "supports_sso", "is_open_source"],
+              additionalProperties: false,
             },
-            required: ["company_mission", "supports_sso", "is_open_source"],
-            additionalProperties: false,
           },
-        },
-      }),
-      { teamId: "test" },
-      new CostTracking(),
-    );
+        }),
+        { teamId: "test" },
+        new CostTracking(),
+      );
 
-    // expect(out.logs.length).toBeGreaterThan(0);
-    expect(out.success).toBe(true);
-    if (out.success) {
-      expect(out.document.warning).toBeUndefined();
-      expect(out.document).toHaveProperty("extract");
-      expect(out.document.extract).toHaveProperty("company_mission");
-      expect(out.document.extract).toHaveProperty("supports_sso");
-      expect(out.document.extract).toHaveProperty("is_open_source");
-      expect(typeof out.document.extract.company_mission).toBe("string");
-      expect(out.document.extract.supports_sso).toBe(false);
-      expect(out.document.extract.is_open_source).toBe(true);
-    }
-  }, 120000);
+      // expect(out.logs.length).toBeGreaterThan(0);
+      expect(out.success).toBe(true);
+      if (out.success) {
+        expect(out.document.warning).toBeUndefined();
+        expect(out.document).toHaveProperty("extract");
+        expect(out.document.extract).toHaveProperty("company_mission");
+        expect(out.document.extract).toHaveProperty("supports_sso");
+        expect(out.document.extract).toHaveProperty("is_open_source");
+        expect(typeof out.document.extract.company_mission).toBe("string");
+        expect(out.document.extract.supports_sso).toBe(false);
+        expect(out.document.extract.is_open_source).toBe(true);
+      }
+    }, 120000);
+
+    it("LLM extract with schema only", async () => {
+      const out = await scrapeURL(
+        "test:llm-extract-schema",
+        "https://firecrawl.dev",
+        scrapeOptions.parse({
+          formats: ["extract"],
+          extract: {
+            schema: {
+              type: "object",
+              properties: {
+                company_mission: { type: "string" },
+                supports_sso: { type: "boolean" },
+                is_open_source: { type: "boolean" },
+              },
+              required: ["company_mission", "supports_sso", "is_open_source"],
+              additionalProperties: false,
+            },
+          },
+        }),
+        { teamId: "test" },
+        new CostTracking(),
+      );
+
+      // expect(out.logs.length).toBeGreaterThan(0);
+      expect(out.success).toBe(true);
+      if (out.success) {
+        expect(out.document.warning).toBeUndefined();
+        expect(out.document).toHaveProperty("extract");
+        expect(out.document.extract).toHaveProperty("company_mission");
+        expect(out.document.extract).toHaveProperty("supports_sso");
+        expect(out.document.extract).toHaveProperty("is_open_source");
+        expect(typeof out.document.extract.company_mission).toBe("string");
+        expect(out.document.extract.supports_sso).toBe(false);
+        expect(out.document.extract.is_open_source).toBe(true);
+      }
+    }, 120000);
+  });
 
   test.concurrent.each(new Array(100).fill(0).map((_, i) => i))(
     "Concurrent scrape #%i",

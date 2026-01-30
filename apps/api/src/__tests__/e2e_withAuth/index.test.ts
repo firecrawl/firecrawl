@@ -2,6 +2,11 @@ import request from "supertest";
 import { config } from "../../config";
 
 const TEST_URL = "http://127.0.0.1:3002";
+const shouldTestActionsNotSupported =
+  !!config.TEST_SUITE_SELF_HOSTED && !config.FIRE_ENGINE_BETA_URL;
+const itConcurrentIfActionsNotSupported = shouldTestActionsNotSupported
+  ? it.concurrent
+  : it.skip;
 
 describe("E2E Tests for v0 API Routes", () => {
   beforeAll(() => {
@@ -81,6 +86,33 @@ describe("E2E Tests for v0 API Routes", () => {
       },
       30000,
     ); // 30 seconds timeout
+
+    itConcurrentIfActionsNotSupported(
+      "should reject actions when fire-engine is not configured",
+      async () => {
+        const response: any = await request(TEST_URL)
+          .post("/v0/scrape")
+          .set("Authorization", `Bearer ${config.TEST_API_KEY}`)
+          .set("Content-Type", "application/json")
+          .send({
+            url: "https://example.com",
+            pageOptions: {
+              actions: [
+                {
+                  type: "wait",
+                  milliseconds: 1000,
+                },
+              ],
+            },
+          });
+
+        expect(response.statusCode).toBe(500);
+        expect(response.body.error).toContain(
+          "Actions are not supported by this engine",
+        );
+      },
+      30000,
+    );
 
     it.concurrent(
       "should return a successful response with a valid API key and includeHtml set to true",

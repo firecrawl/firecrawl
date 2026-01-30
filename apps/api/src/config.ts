@@ -79,7 +79,6 @@ const configSchema = z.object({
   SCRAPEURL_AB_HOST: z.string().optional(),
   SCRAPEURL_AB_RATE: z.coerce.number().optional(),
   SCRAPEURL_AB_EXTEND_MAXAGE: z.stringbool().optional(),
-  SCRAPEURL_ENGINE_WATERFALL_DELAY_MS: z.coerce.number().default(0),
 
   // Search Services
   SEARXNG_ENDPOINT: z.string().optional(),

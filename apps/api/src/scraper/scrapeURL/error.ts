@@ -429,27 +429,3 @@ export class FEPageLoadFailed extends Error {
     );
   }
 }
-
-export class EngineSnipedError extends Error {
-  name = "EngineSnipedError";
-
-  constructor() {
-    super("Engine got sniped");
-  }
-}
-
-export class EngineUnsuccessfulError extends Error {
-  name = "EngineUnsuccessfulError";
-
-  constructor(engine: Engine) {
-    super(`Engine ${engine} was unsuccessful`);
-  }
-}
-
-export class WaterfallNextEngineSignal extends Error {
-  name = "WaterfallNextEngineSignal";
-
-  constructor() {
-    super("Waterfall next engine");
-  }
-}

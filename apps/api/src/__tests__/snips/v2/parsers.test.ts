@@ -17,6 +17,7 @@ beforeAll(async () => {
 
 describeIf(ALLOW_TEST_SUITE_WEBSITE)("Parsers parameter tests", () => {
   const pdfUrl = `${TEST_SUITE_WEBSITE}/example.pdf`;
+  const pdfNoExtUrl = `${TEST_SUITE_WEBSITE}/example-pdf`;
   const htmlUrl = TEST_SUITE_WEBSITE;
 
   describe("Array format", () => {
@@ -44,6 +45,41 @@ describeIf(ALLOW_TEST_SUITE_WEBSITE)("Parsers parameter tests", () => {
         const response = await scrape(
           {
             url: pdfUrl,
+            parsers: [],
+          },
+          identity,
+        );
+
+        expect(response.markdown).toBeDefined();
+        expect(response.markdown).toContain("JVBER"); // base64
+      },
+      scrapeTimeout * 2,
+    );
+
+    it.concurrent(
+      "accepts parsers: ['pdf'] and parses PDFs without extension",
+      async () => {
+        const response = await scrape(
+          {
+            url: pdfNoExtUrl,
+            parsers: ["pdf"],
+          },
+          identity,
+        );
+
+        expect(response.markdown).toBeDefined();
+        expect(response.markdown).toContain("PDF Test File");
+        expect(response.metadata.numPages).toBeGreaterThan(0);
+      },
+      scrapeTimeout * 2,
+    );
+
+    it.concurrent(
+      "accepts parsers: [] and returns extensionless PDFs in base64",
+      async () => {
+        const response = await scrape(
+          {
+            url: pdfNoExtUrl,
             parsers: [],
           },
           identity,

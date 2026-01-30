@@ -29,8 +29,10 @@ export async function sendDocumentToIndex(meta: Meta, document: Document) {
     meta.options.storeInCache &&
     !meta.internalOptions.zeroDataRetention &&
     meta.winnerEngine !== "index" &&
-    meta.winnerEngine !== "index;documents" &&
-    !(meta.winnerEngine === "pdf" && !shouldParsePDF(meta.options.parsers)) &&
+    !(
+      document.metadata.contentType?.includes("application/pdf") &&
+      !shouldParsePDF(meta.options.parsers)
+    ) &&
     !meta.options.parsers?.some(parser => {
       if (
         typeof parser === "object" &&
@@ -42,9 +44,7 @@ export async function sendDocumentToIndex(meta: Meta, document: Document) {
       return false;
     }) &&
     (meta.internalOptions.teamId === "sitemap" ||
-      (meta.winnerEngine !== "fire-engine;tlsclient" &&
-        meta.winnerEngine !== "fire-engine;tlsclient;stealth" &&
-        meta.winnerEngine !== "fetch")) &&
+      meta.winnerEngine !== "fetch") &&
     !meta.featureFlags.has("actions") &&
     !hasCustomScreenshotSettings &&
     (meta.options.headers === undefined ||

@@ -1,50 +1,80 @@
+import { config } from "../../config";
 import { parseMarkdown } from "../html-to-markdown";
+import { MarkdownConversionError } from "../error";
+import { convertHTMLToMarkdownWithHttpService } from "../html-to-markdown-client";
+
+jest.mock("../html-to-markdown-client", () => ({
+  convertHTMLToMarkdownWithHttpService: jest.fn(),
+}));
+
+jest.mock("@mendable/firecrawl-rs", () => ({
+  postProcessMarkdown: jest.fn((value: string) => value),
+}));
 
 describe("parseMarkdown", () => {
-  it("should correctly convert simple HTML to Markdown", async () => {
-    const html = "<p>Hello, world!</p>";
-    const expectedMarkdown = "Hello, world!";
-    await expect(parseMarkdown(html)).resolves.toBe(expectedMarkdown);
+  const originalServiceUrl = config.HTML_TO_MARKDOWN_SERVICE_URL;
+  const originalUseGo = config.USE_GO_MARKDOWN_PARSER;
+
+  afterEach(() => {
+    config.HTML_TO_MARKDOWN_SERVICE_URL = originalServiceUrl;
+    config.USE_GO_MARKDOWN_PARSER = originalUseGo;
+    jest.clearAllMocks();
   });
 
-  it("should convert complex HTML with nested elements to Markdown", async () => {
-    const html =
-      "<div><p>Hello <strong>bold</strong> world!</p><ul><li>List item</li></ul></div>";
-    const expectedMarkdown = "Hello **bold** world!\n\n- List item";
-    await expect(parseMarkdown(html)).resolves.toBe(expectedMarkdown);
+  it("uses the service when configured", async () => {
+    config.HTML_TO_MARKDOWN_SERVICE_URL = "https://markdown.test";
+    config.USE_GO_MARKDOWN_PARSER = false;
+    (convertHTMLToMarkdownWithHttpService as jest.Mock).mockResolvedValue(
+      "Hello, world!",
+    );
+
+    await expect(parseMarkdown("<p>Hello, world!</p>")).resolves.toBe(
+      "Hello, world!",
+    );
+    expect(convertHTMLToMarkdownWithHttpService).toHaveBeenCalledWith(
+      "<p>Hello, world!</p>",
+      expect.any(Object),
+    );
   });
 
-  it("should return empty string when input is empty", async () => {
-    const html = "";
-    const expectedMarkdown = "";
-    await expect(parseMarkdown(html)).resolves.toBe(expectedMarkdown);
+  it("returns empty string when input is empty", async () => {
+    config.HTML_TO_MARKDOWN_SERVICE_URL = "https://markdown.test";
+    (convertHTMLToMarkdownWithHttpService as jest.Mock).mockResolvedValue(
+      "should-not-be-used",
+    );
+
+    await expect(parseMarkdown("")).resolves.toBe("");
+    expect(convertHTMLToMarkdownWithHttpService).not.toHaveBeenCalled();
   });
 
-  it("should handle null input gracefully", async () => {
-    const html = null;
-    const expectedMarkdown = "";
-    await expect(parseMarkdown(html)).resolves.toBe(expectedMarkdown);
+  it("returns empty string when input is null", async () => {
+    config.HTML_TO_MARKDOWN_SERVICE_URL = "https://markdown.test";
+    (convertHTMLToMarkdownWithHttpService as jest.Mock).mockResolvedValue(
+      "should-not-be-used",
+    );
+
+    await expect(parseMarkdown(null)).resolves.toBe("");
+    expect(convertHTMLToMarkdownWithHttpService).not.toHaveBeenCalled();
   });
 
-  it("should handle various types of invalid HTML gracefully", async () => {
-    const invalidHtmls = [
-      { html: "<html><p>Unclosed tag", expected: "Unclosed tag" },
-      {
-        html: "<div><span>Missing closing div",
-        expected: "Missing closing div",
-      },
-      {
-        html: "<p><strong>Wrong nesting</em></strong></p>",
-        expected: "**Wrong nesting**",
-      },
-      {
-        html: '<a href="http://example.com">Link without closing tag',
-        expected: "[Link without closing tag](http://example.com)",
-      },
-    ];
+  it("throws when no parser is configured", async () => {
+    config.HTML_TO_MARKDOWN_SERVICE_URL = undefined;
+    config.USE_GO_MARKDOWN_PARSER = false;
 
-    for (const { html, expected } of invalidHtmls) {
-      await expect(parseMarkdown(html)).resolves.toBe(expected);
-    }
+    await expect(parseMarkdown("<p>Missing parser</p>")).rejects.toBeInstanceOf(
+      MarkdownConversionError,
+    );
+  });
+
+  it("throws MarkdownConversionError when the service fails", async () => {
+    config.HTML_TO_MARKDOWN_SERVICE_URL = "https://markdown.test";
+    config.USE_GO_MARKDOWN_PARSER = false;
+    (convertHTMLToMarkdownWithHttpService as jest.Mock).mockRejectedValue(
+      new Error("service down"),
+    );
+
+    await expect(parseMarkdown("<p>Fails</p>")).rejects.toBeInstanceOf(
+      MarkdownConversionError,
+    );
   });
 });

@@ -24,7 +24,6 @@ import {
   ProxySelectionError,
 } from "../../error";
 import * as Sentry from "@sentry/node";
-import { specialtyScrapeCheck } from "../utils/specialtyHandler";
 import { fireEngineDelete } from "./delete";
 import { MockState } from "../../lib/mock";
 import { getInnerJson } from "@mendable/firecrawl-rs";
@@ -176,14 +175,6 @@ async function performFireEngineScrape<
       status = scrape as FireEngineCheckStatusSuccess;
     }
 
-    await specialtyScrapeCheck(
-      logger.child({
-        method: "performFireEngineScrape/specialtyScrapeCheck",
-      }),
-      status.responseHeaders,
-      status,
-    );
-
     const contentType =
       (Object.entries(status.responseHeaders ?? {}).find(
         x => x[0].toLowerCase() === "content-type",
@@ -191,12 +182,6 @@ async function performFireEngineScrape<
 
     if (contentType.includes("application/json")) {
       status.content = await getInnerJson(status.content);
-    }
-
-    if (status.file) {
-      const content = status.file.content;
-      delete status.file;
-      status.content = Buffer.from(content, "base64").toString("utf8"); // TODO: handle other encodings via Content-Type tag
     }
 
     fireEngineDelete(
@@ -398,6 +383,7 @@ export async function scrapeURLWithFireEngineChromeCDP(
         (Object.entries(response.responseHeaders ?? {}).find(
           x => x[0].toLowerCase() === "content-type",
         ) ?? [])[1] ?? undefined,
+      binaryFile: response.file ?? undefined,
 
       screenshot: response.screenshot,
       ...(actions.length > 0
@@ -484,6 +470,7 @@ export async function scrapeURLWithFireEnginePlaywright(
         (Object.entries(response.responseHeaders ?? {}).find(
           x => x[0].toLowerCase() === "content-type",
         ) ?? [])[1] ?? undefined,
+      binaryFile: response.file ?? undefined,
 
       ...(response.screenshots !== undefined && response.screenshots.length > 0
         ? {
@@ -556,6 +543,7 @@ export async function scrapeURLWithFireEngineTLSClient(
         (Object.entries(response.responseHeaders ?? {}).find(
           x => x[0].toLowerCase() === "content-type",
         ) ?? [])[1] ?? undefined,
+      binaryFile: response.file ?? undefined,
 
       proxyUsed: response.usedMobileProxy ? "stealth" : "basic",
       timezone: response.timezone,

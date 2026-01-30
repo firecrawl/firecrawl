@@ -8,6 +8,7 @@ import { stat } from "fs/promises";
 import { HTML_TO_MARKDOWN_PATH } from "../natives";
 import { convertHTMLToMarkdownWithHttpService } from "./html-to-markdown-client";
 import { postProcessMarkdown } from "@mendable/firecrawl-rs";
+import { MarkdownConversionError } from "./error";
 
 // TODO: add a timeout to the Go parser
 
@@ -75,77 +76,53 @@ export async function parseMarkdown(
       markdownContent = await postProcessMarkdown(markdownContent);
       return markdownContent;
     } catch (error) {
-      contextLogger.error(
-        "Error converting HTML to Markdown with HTTP service, falling back to original parser",
-        { error },
-      );
-      Sentry.captureException(error, {
-        tags: {
-          fallback: "original_parser",
-          ...(requestId ? { request_id: requestId } : {}),
-        },
+      contextLogger.error("Error converting HTML to Markdown with HTTP service", {
+        error,
       });
-    }
-  }
-
-  try {
-    if (config.USE_GO_MARKDOWN_PARSER) {
-      const converter = await GoMarkdownConverter.getInstance();
-      let markdownContent = await converter.convertHTMLToMarkdown(html);
-      markdownContent = await postProcessMarkdown(markdownContent);
-      return markdownContent;
-    }
-  } catch (error) {
-    if (
-      !(error instanceof Error) ||
-      error.message !== "Go shared library not found"
-    ) {
       Sentry.captureException(error, {
         tags: {
           ...(requestId ? { request_id: requestId } : {}),
         },
       });
-      contextLogger.error(
-        `Error converting HTML to Markdown with Go parser: ${error}`,
-      );
-    } else {
-      contextLogger.warn(
-        "Tried to use Go parser, but it doesn't exist in the file system.",
-        { HTML_TO_MARKDOWN_PATH },
+      throw new MarkdownConversionError(
+        "HTML-to-Markdown service failed. Verify HTML_TO_MARKDOWN_SERVICE_URL is reachable.",
       );
     }
   }
 
-  // Fallback to TurndownService if Go parser fails or is not enabled
-  var TurndownService = require("turndown");
-  var turndownPluginGfm = require("joplin-turndown-plugin-gfm");
-
-  const turndownService = new TurndownService();
-  turndownService.addRule("inlineLink", {
-    filter: function (node, options) {
-      return (
-        options.linkStyle === "inlined" &&
-        node.nodeName === "A" &&
-        node.getAttribute("href")
-      );
-    },
-    replacement: function (content, node) {
-      var href = node.getAttribute("href").trim();
-      var title = node.title ? ' "' + node.title + '"' : "";
-      return "[" + content.trim() + "](" + href + title + ")\n";
-    },
-  });
-  var gfm = turndownPluginGfm.gfm;
-  turndownService.use(gfm);
+  if (!config.USE_GO_MARKDOWN_PARSER) {
+    throw new MarkdownConversionError(
+      "No HTML-to-Markdown parser configured. Enable the Go parser or set HTML_TO_MARKDOWN_SERVICE_URL.",
+    );
+  }
 
   try {
-    let markdownContent = await turndownService.turndown(html);
+    const converter = await GoMarkdownConverter.getInstance();
+    let markdownContent = await converter.convertHTMLToMarkdown(html);
     markdownContent = await postProcessMarkdown(markdownContent);
-
     return markdownContent;
   } catch (error) {
-    contextLogger.error("Error converting HTML to Markdown", { error });
-    return ""; // Optionally return an empty string or handle the error as needed
+    const message =
+      error instanceof Error ? error.message : "Unknown Go parser error";
+    if (message !== "Go shared library not found") {
+      Sentry.captureException(error, {
+        tags: {
+          ...(requestId ? { request_id: requestId } : {}),
+        },
+      });
+      contextLogger.error("Error converting HTML to Markdown with Go parser", {
+        error,
+      });
+    } else {
+      contextLogger.error("Go HTML-to-Markdown parser not found", {
+        HTML_TO_MARKDOWN_PATH,
+      });
+    }
+    throw new MarkdownConversionError(
+      message === "Go shared library not found"
+        ? "Go HTML-to-Markdown parser not found on disk."
+        : "Go HTML-to-Markdown parser failed.",
+    );
   }
 }
 

@@ -14,6 +14,8 @@ export type ErrorCodes =
   | "SCRAPE_PDF_ANTIBOT_ERROR"
   | "SCRAPE_DOCUMENT_ANTIBOT_ERROR"
   | "SCRAPE_UNSUPPORTED_FILE_ERROR"
+  | "SCRAPE_HTML_TRANSFORM_ERROR"
+  | "SCRAPE_MARKDOWN_CONVERSION_ERROR"
   | "SCRAPE_ACTION_ERROR"
   | "SCRAPE_RACED_REDIRECT_ERROR"
   | "SCRAPE_NO_CACHED_DATA"
@@ -198,6 +200,52 @@ export class ActionsNotSupportedError extends TransportableError {
     data: ReturnType<typeof this.prototype.serialize>,
   ) {
     const x = new ActionsNotSupportedError(data.message);
+    x.stack = data.stack;
+    return x;
+  }
+}
+
+export class HtmlTransformError extends TransportableError {
+  constructor(message?: string) {
+    super(
+      "SCRAPE_HTML_TRANSFORM_ERROR",
+      message ??
+        "Failed to transform HTML content during scraping. This usually means the native HTML transformer failed or is unavailable. Please retry, and if the issue persists, contact support or verify your deployment setup.",
+    );
+  }
+
+  serialize() {
+    return super.serialize();
+  }
+
+  static deserialize(
+    _: ErrorCodes,
+    data: ReturnType<typeof this.prototype.serialize>,
+  ) {
+    const x = new HtmlTransformError(data.message);
+    x.stack = data.stack;
+    return x;
+  }
+}
+
+export class MarkdownConversionError extends TransportableError {
+  constructor(message?: string) {
+    super(
+      "SCRAPE_MARKDOWN_CONVERSION_ERROR",
+      message ??
+        "Failed to convert HTML to Markdown. Configure HTML_TO_MARKDOWN_SERVICE_URL or enable the Go parser, and ensure the parser is available.",
+    );
+  }
+
+  serialize() {
+    return super.serialize();
+  }
+
+  static deserialize(
+    _: ErrorCodes,
+    data: ReturnType<typeof this.prototype.serialize>,
+  ) {
+    const x = new MarkdownConversionError(data.message);
     x.stack = data.stack;
     return x;
   }

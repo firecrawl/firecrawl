@@ -211,33 +211,33 @@ export async function processEngpickerJob() {
         evaluateURL(
           job.id + "-cdp-stealth",
           url,
-          "fire-engine;chrome-cdp;stealth",
+          "fire-engine;chrome-cdp",
           true,
           logger.child({
             method: "evaluateURL",
-            engine: "fire-engine;chrome-cdp;stealth",
+            engine: "fire-engine;chrome-cdp",
             stealth: true,
           }),
         ),
         evaluateURL(
-          job.id + "-tlsclient-basic",
+          job.id + "-fetch-basic",
           url,
-          "fire-engine;tlsclient",
+          "fetch",
           false,
           logger.child({
             method: "evaluateURL",
-            engine: "fire-engine;tlsclient",
+            engine: "fetch",
             stealth: false,
           }),
         ),
         evaluateURL(
-          job.id + "-tlsclient-stealth",
+          job.id + "-fetch-stealth",
           url,
-          "fire-engine;tlsclient;stealth",
+          "fetch",
           true,
           logger.child({
             method: "evaluateURL",
-            engine: "fire-engine;tlsclient;stealth",
+            engine: "fetch",
             stealth: true,
           }),
         ),
@@ -248,16 +248,16 @@ export async function processEngpickerJob() {
   // Transform results into format for native Levenshtein comparison
   const nativeInput: EngpickerUrlResult[] = results.map(result => {
     const cdpBasic = result.results.find(
-      r => r.engine === "fire-engine;chrome-cdp",
+      r => r.engine === "fire-engine;chrome-cdp" && !r.stealth,
     );
     const cdpStealth = result.results.find(
-      r => r.engine === "fire-engine;chrome-cdp;stealth",
+      r => r.engine === "fire-engine;chrome-cdp" && r.stealth,
     );
-    const tlsBasic = result.results.find(
-      r => r.engine === "fire-engine;tlsclient",
+    const fetchBasic = result.results.find(
+      r => r.engine === "fetch" && !r.stealth,
     );
-    const tlsStealth = result.results.find(
-      r => r.engine === "fire-engine;tlsclient;stealth",
+    const fetchStealth = result.results.find(
+      r => r.engine === "fetch" && r.stealth,
     );
 
     return {
@@ -266,16 +266,17 @@ export async function processEngpickerJob() {
       cdpBasicSuccess: cdpBasic?.result ?? false,
       cdpStealthMarkdown: cdpStealth?.markdown ?? undefined,
       cdpStealthSuccess: cdpStealth?.result ?? false,
-      tlsBasicMarkdown: tlsBasic?.markdown ?? undefined,
-      tlsBasicSuccess: tlsBasic?.result ?? false,
-      tlsStealthMarkdown: tlsStealth?.markdown ?? undefined,
-      tlsStealthSuccess: tlsStealth?.result ?? false,
+      // Using fetch results as the secondary engine for similarity checks.
+      tlsBasicMarkdown: fetchBasic?.markdown ?? undefined,
+      tlsBasicSuccess: fetchBasic?.result ?? false,
+      tlsStealthMarkdown: fetchStealth?.markdown ?? undefined,
+      tlsStealthSuccess: fetchStealth?.result ?? false,
     };
   });
 
   // Use native Rust implementation for fast Levenshtein comparison
-  const SIMILARITY_THRESHOLD = 0.85; // 85% similarity means tlsclient is good enough
-  const SUCCESS_RATE_THRESHOLD = 0.7; // 70% of comparable URLs must pass for tlsclient to be OK
+  const SIMILARITY_THRESHOLD = 0.85; // 85% similarity means the secondary engine is good enough
+  const SUCCESS_RATE_THRESHOLD = 0.7; // 70% of comparable URLs must pass for the secondary engine to be OK
   const CDP_FAILURE_THRESHOLD = 0.5; // If more than 50% of CDP scrapes failed, verdict is uncertain
   const verdictResult = await computeEngpickerVerdict(
     nativeInput,

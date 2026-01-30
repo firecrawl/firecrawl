@@ -7,7 +7,7 @@ import { config } from "../../../config";
 configDotenv();
 
 type EngineForcingMapping = {
-  [domain: string]: Engine | Engine[];
+  [domain: string]: Engine;
 };
 
 let engineMappings: EngineForcingMapping | null = null;
@@ -15,7 +15,7 @@ let engineMappings: EngineForcingMapping | null = null;
 /**
  * Initialize the engine forcing mappings from environment variable
  * Expected format: JSON object with domain patterns as keys and engines as values
- * Example: {"example.com": "playwright", "*.google.com": ["fire-engine;chrome-cdp", "playwright"]}
+ * Example: {"example.com": "playwright", "*.google.com": "fire-engine;chrome-cdp"}
  */
 export function initializeEngineForcing() {
   const envVar = config.FORCED_ENGINE_DOMAINS;
@@ -26,7 +26,25 @@ export function initializeEngineForcing() {
   }
 
   try {
-    engineMappings = JSON.parse(envVar);
+    const parsed = JSON.parse(envVar) as Record<string, unknown>;
+    engineMappings = {};
+
+    for (const [domain, engine] of Object.entries(parsed)) {
+      if (typeof engine !== "string") {
+        logger.warn("Ignoring invalid forced engine entry", { domain, engine });
+        continue;
+      }
+      if (
+        engine !== "fire-engine;chrome-cdp" &&
+        engine !== "playwright" &&
+        engine !== "fetch" &&
+        engine !== "index"
+      ) {
+        logger.warn("Ignoring unsupported forced engine", { domain, engine });
+        continue;
+      }
+      engineMappings[domain] = engine;
+    }
   } catch (error) {
     logger.error("Error parsing FORCED_ENGINE_DOMAINS environment variable", {
       error,
@@ -59,7 +77,7 @@ function domainMatchesPattern(domain: string, pattern: string): boolean {
  * @param url The URL to check
  * @returns The forced engine(s) if a match is found, undefined otherwise
  */
-export function getEngineForUrl(url: string): Engine | Engine[] | undefined {
+export function getEngineForUrl(url: string): Engine | undefined {
   if (engineMappings === null) {
     return undefined;
   }
