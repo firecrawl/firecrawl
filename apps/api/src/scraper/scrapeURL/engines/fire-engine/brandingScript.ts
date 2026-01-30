@@ -527,11 +527,26 @@ export const getBrandingScript = () => String.raw`
       if (imgSrc) {
         const ogImageSrc = document.querySelector('meta[property="og:image"]')?.getAttribute('content') || '';
         const twitterImageSrc = document.querySelector('meta[name="twitter:image"]')?.getAttribute('content') || '';
-        
-        if ((ogImageSrc && imgSrc.includes(ogImageSrc)) || 
-            (twitterImageSrc && imgSrc.includes(twitterImageSrc)) ||
-            (ogImageSrc && ogImageSrc.includes(imgSrc)) ||
-            (twitterImageSrc && twitterImageSrc.includes(imgSrc))) {
+
+        // Helper to get base URL (protocol + host + pathname) for comparison
+        // This avoids false positives when og:image contains logo URL as a query param
+        const getBaseUrl = (url) => {
+          try {
+            const parsed = new URL(url, window.location.origin);
+            return parsed.origin + parsed.pathname;
+          } catch (e) {
+            return url.split('?')[0];
+          }
+        };
+
+        const imgBaseUrl = getBaseUrl(imgSrc);
+        const ogBaseUrl = ogImageSrc ? getBaseUrl(ogImageSrc) : '';
+        const twitterBaseUrl = twitterImageSrc ? getBaseUrl(twitterImageSrc) : '';
+
+        // Only exclude if the image IS the og:image or twitter:image (same base URL)
+        // Don't exclude just because the og:image URL contains the logo URL as a query param
+        if ((ogBaseUrl && imgBaseUrl === ogBaseUrl) ||
+            (twitterBaseUrl && imgBaseUrl === twitterBaseUrl)) {
           return;
         }
       }
