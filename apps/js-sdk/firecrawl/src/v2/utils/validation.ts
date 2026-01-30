@@ -1,4 +1,12 @@
-import { type FormatOption, type JsonFormat, type ScrapeOptions, type ScreenshotFormat, type ChangeTrackingFormat } from "../types";
+import {
+  type ChangeTrackingFormat,
+  type FormatOption,
+  type JsonFormat,
+  type ParseFormatOption,
+  type ParseOptions,
+  type ScrapeOptions,
+  type ScreenshotFormat,
+} from "../types";
 import { isZodSchema, zodSchemaToJsonSchema, looksLikeZodShape } from "../../utils/zodSchemaToJson";
 
 export function ensureValidFormats(formats?: FormatOption[]): void {
@@ -62,3 +70,46 @@ export function ensureValidScrapeOptions(options?: ScrapeOptions): void {
   ensureValidFormats(options.formats);
 }
 
+const parseFormatTypes = new Set([
+  "markdown",
+  "html",
+  "rawHtml",
+  "links",
+  "images",
+  "summary",
+  "json",
+  "attributes",
+]);
+
+const parseOptionKeys = new Set([
+  "formats",
+  "includeTags",
+  "excludeTags",
+  "onlyMainContent",
+  "timeout",
+  "parsers",
+  "removeBase64Images",
+]);
+
+export function ensureValidParseFormats(formats?: ParseFormatOption[]): void {
+  if (!formats) return;
+  for (const fmt of formats) {
+    const type = typeof fmt === "string" ? fmt : fmt.type;
+    if (!parseFormatTypes.has(type)) {
+      throw new Error(`Unsupported parse format: ${type}`);
+    }
+  }
+  ensureValidFormats(formats as FormatOption[]);
+}
+
+export function ensureValidParseOptions(options?: ParseOptions): void {
+  if (!options) return;
+  const unknownKeys = Object.keys(options).filter(k => !parseOptionKeys.has(k));
+  if (unknownKeys.length) {
+    throw new Error(`Unsupported parse options: ${unknownKeys.join(", ")}`);
+  }
+  if (options.timeout != null && options.timeout <= 0) {
+    throw new Error("timeout must be positive");
+  }
+  ensureValidParseFormats(options.formats);
+}

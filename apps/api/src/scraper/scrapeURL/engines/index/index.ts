@@ -19,6 +19,10 @@ import { shouldParsePDF } from "../../../../controllers/v2/types";
 import { hasFormatOfType } from "../../../../lib/format-utils";
 
 export async function sendDocumentToIndex(meta: Meta, document: Document) {
+  if (meta.internalOptions.disableIndexing) {
+    return document;
+  }
+
   // Skip caching if screenshot format has custom viewport or quality settings
   const screenshotFormat = hasFormatOfType(meta.options.formats, "screenshot");
   const hasCustomScreenshotSettings =

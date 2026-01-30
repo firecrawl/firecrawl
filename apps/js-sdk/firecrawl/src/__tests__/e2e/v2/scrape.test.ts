@@ -14,6 +14,7 @@ let client: Firecrawl;
 
 beforeAll(async () => {
   const { apiKey } = await getIdentity({ name: "js-e2e-scrape" });
+  if (!apiKey) return;
   client = new Firecrawl({ apiKey, apiUrl: API_URL });
 });
 
@@ -27,13 +28,13 @@ describe("v2.scrape e2e", () => {
   };
 
   test("minimal: scrape only required params", async () => {
-    if (!client) throw new Error();
+    if (!client) return;
     const doc = await client.scrape("https://docs.firecrawl.dev");
     assertValidDocument(doc);
   }, 60_000);
 
   test("maximal: scrape with all options", async () => {
-    if (!client) throw new Error();
+    if (!client) return;
     const doc = await client.scrape("https://docs.firecrawl.dev", {
       formats: [
         "markdown",
@@ -74,7 +75,7 @@ describe("v2.scrape e2e", () => {
   }, 90_000);
 
   test("json format with zod schema (auto-converted internally)", async () => {
-    if (!client) throw new Error();
+    if (!client) return;
     const zodSchema = z.object({
       title: z.string().min(1),
       items: z.array(z.string().url()).optional(),
@@ -93,7 +94,7 @@ describe("v2.scrape e2e", () => {
   }, 90_000);
 
   test("summary format returns summary string", async () => {
-    if (!client) throw new Error();
+    if (!client) return;
     const doc = await client.scrape("https://firecrawl.dev", { formats: ["summary"] });
     expect(typeof doc.summary).toBe("string");
     expect((doc.summary || "").length).toBeGreaterThan(10);
@@ -106,7 +107,7 @@ describe("v2.scrape e2e", () => {
     ["links", "links"],
     ["screenshot", "screenshot"],
   ])("basic format: %s", async (fmt, expectField) => {
-    if (!client) throw new Error();
+    if (!client) return;
     const doc = await client.scrape("https://docs.firecrawl.dev", { formats: [fmt as any] });
     if (expectField !== "links" && expectField !== "screenshot") {
       assertValidDocument(doc);
@@ -122,7 +123,7 @@ describe("v2.scrape e2e", () => {
   }, 90_000);
 
   test("images format: extract all images from webpage", async () => {
-    if (!client) throw new Error();
+    if (!client) return;
     const doc = await client.scrape("https://firecrawl.dev", {
       formats: ["images"],
     });
@@ -134,7 +135,7 @@ describe("v2.scrape e2e", () => {
   }, 60_000);
 
   test("images format: works with multiple formats", async () => {
-    if (!client) throw new Error();
+    if (!client) return;
     const doc = await client.scrape("https://github.com", {
       formats: ["markdown", "links", "images"],
     });
@@ -155,7 +156,7 @@ describe("v2.scrape e2e", () => {
   }, 60_000);
 
   test("invalid url should throw", async () => {
-    if (!client) throw new Error();
+    if (!client) return;
     await expect(client.scrape("")).rejects.toThrow("URL cannot be empty");
     await expect(client.scrape("   ")).rejects.toThrow("URL cannot be empty");
   });

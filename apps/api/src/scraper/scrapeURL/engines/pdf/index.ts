@@ -265,6 +265,7 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
         html: content,
         markdown: content,
 
+        contentType: meta.pdfPrefetch.contentType ?? "application/pdf",
         proxyUsed: meta.pdfPrefetch.proxyUsed,
       };
     } else {
@@ -300,6 +301,7 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
         html: content,
         markdown: content,
 
+        contentType: ct ?? "application/pdf",
         proxyUsed: "basic",
       };
     }
@@ -422,6 +424,10 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
       );
     }
 
+    const responseContentType =
+      (response as any).headers?.get?.("Content-Type") ??
+      meta.pdfPrefetch?.contentType;
+
     return {
       url: response.url ?? meta.rewrittenUrl ?? meta.url,
       statusCode: response.status,
@@ -434,6 +440,7 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
         title: pdfMetadata.title,
       },
 
+      contentType: responseContentType ?? "application/pdf",
       proxyUsed: "basic",
     };
   } finally {

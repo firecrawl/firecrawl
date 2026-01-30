@@ -59,6 +59,26 @@ export type FormatOption =
   | ScreenshotFormat
   | AttributesFormat;
 
+export type ParseFormatString =
+  | 'markdown'
+  | 'html'
+  | 'rawHtml'
+  | 'links'
+  | 'images'
+  | 'summary'
+  | 'json'
+  | 'attributes';
+
+export interface ParseFormat {
+  type: ParseFormatString;
+}
+
+export type ParseFormatOption =
+  | ParseFormatString
+  | ParseFormat
+  | JsonFormat
+  | AttributesFormat;
+
 export interface LocationConfig {
   country?: string;
   languages?: string[];
@@ -158,6 +178,26 @@ export interface ScrapeOptions {
   minAge?: number;
   storeInCache?: boolean;
   integration?: string;
+}
+
+export interface ParseOptions {
+  formats?: ParseFormatOption[];
+  includeTags?: string[];
+  excludeTags?: string[];
+  onlyMainContent?: boolean;
+  timeout?: number;
+  parsers?: Array<string | { type: 'pdf'; maxPages?: number }>;
+  removeBase64Images?: boolean;
+}
+
+export type ParseFileInput = Blob | File | ArrayBuffer | Uint8Array;
+
+export interface ParseRequestParams {
+  filename?: string;
+  contentType?: string;
+  origin?: string;
+  integration?: string;
+  zeroDataRetention?: boolean;
 }
 
 export interface WebhookConfig {

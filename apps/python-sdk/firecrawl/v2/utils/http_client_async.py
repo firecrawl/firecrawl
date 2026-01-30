@@ -9,9 +9,7 @@ class AsyncHttpClient:
     def __init__(self, api_key: Optional[str], api_url: str):
         self.api_key = api_key
         self.api_url = api_url
-        headers = {
-            "Content-Type": "application/json",
-        }
+        headers: Dict[str, str] = {}
 
         if api_key:
             headers["Authorization"] = f"Bearer {api_key}"
@@ -43,6 +41,28 @@ class AsyncHttpClient:
         return await self._client.post(
             endpoint,
             json=payload,
+            headers={
+                "Content-Type": "application/json",
+                **self._headers(),
+                **(headers or {}),
+            },
+            timeout=timeout,
+        )
+
+    async def post_multipart(
+        self,
+        endpoint: str,
+        data: Dict[str, Any],
+        files: Dict[str, Any],
+        headers: Optional[Dict[str, str]] = None,
+        timeout: Optional[float] = None,
+    ) -> httpx.Response:
+        payload = dict(data)
+        payload["origin"] = f"python-sdk@{version}"
+        return await self._client.post(
+            endpoint,
+            data=payload,
+            files=files,
             headers={**self._headers(), **(headers or {})},
             timeout=timeout,
         )
@@ -66,4 +86,3 @@ class AsyncHttpClient:
         return await self._client.delete(
             endpoint, headers={**self._headers(), **(headers or {})}, timeout=timeout
         )
-

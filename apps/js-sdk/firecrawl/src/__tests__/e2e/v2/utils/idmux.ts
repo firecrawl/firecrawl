@@ -18,15 +18,19 @@ export function getApiUrl(): string {
   return process.env.TEST_URL ?? process.env.FIRECRAWL_API_URL ?? "https://api.firecrawl.dev";
 }
 
+function getFallbackIdentity(): Identity {
+  return {
+    apiKey: process.env.TEST_API_KEY ?? process.env.FIRECRAWL_API_KEY ?? "",
+    teamId: process.env.TEST_TEAM_ID ?? "",
+  };
+}
+
 export async function getIdentity(req: IdmuxRequest = {}): Promise<Identity> {
   if (cachedIdentity) return cachedIdentity;
 
   const idmuxUrl = process.env.IDMUX_URL;
   if (!idmuxUrl) {
-    const fallback: Identity = {
-      apiKey: process.env.TEST_API_KEY ?? process.env.FIRECRAWL_API_KEY ?? "",
-      teamId: process.env.TEST_TEAM_ID ?? "",
-    };
+    const fallback = getFallbackIdentity();
     cachedIdentity = fallback;
     return fallback;
   }
@@ -40,19 +44,29 @@ export async function getIdentity(req: IdmuxRequest = {}): Promise<Identity> {
     ...req,
   };
 
-  const res = await fetch(`${idmuxUrl}/`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
+  try {
+    const res = await fetch(`${idmuxUrl}/`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
 
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`idmux request failed: ${res.status} ${text}`);
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error(`idmux request failed: ${res.status} ${text}`);
+    }
+
+    const identity = (await res.json()) as Identity;
+    cachedIdentity = identity;
+    return identity;
+  } catch (error) {
+    const fallback = getFallbackIdentity();
+    if (!fallback.apiKey) {
+      console.warn("IDMUX unavailable and no API key configured; skipping e2e setup.");
+    } else {
+      console.warn("IDMUX unavailable; falling back to configured API key.");
+    }
+    cachedIdentity = fallback;
+    return fallback;
   }
-
-  const identity = (await res.json()) as Identity;
-  cachedIdentity = identity;
-  return identity;
 }
-

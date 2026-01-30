@@ -5,10 +5,11 @@ This module provides the main client class that orchestrates all v2 functionalit
 """
 
 import os
-from typing import Optional, List, Dict, Any, Callable, Union, Literal
+from typing import Optional, List, Dict, Any, Callable, Union, Literal, BinaryIO
 from .types import (
     ClientConfig,
     ScrapeOptions,
+    ParseOptions,
     Document,
     SearchRequest,
     SearchData,
@@ -51,6 +52,7 @@ from .methods import batch as batch_methods
 from .methods import usage as usage_methods
 from .methods import extract as extract_module
 from .methods import agent as agent_module
+from .methods import parse as parse_module
 from .watcher import Watcher
 
 class FirecrawlClient:
@@ -177,6 +179,65 @@ class FirecrawlClient:
             ).items() if v is not None}
         ) if any(v is not None for v in [formats, headers, include_tags, exclude_tags, only_main_content, timeout, wait_for, mobile, parsers, actions, location, skip_tls_verification, remove_base64_images, fast_mode, use_mock, block_ads, proxy, max_age, store_in_cache, integration]) else None
         return scrape_module.scrape(self.http_client, url, options)
+
+    def parse(
+        self,
+        file: Union[str, bytes, BinaryIO],
+        *,
+        formats: Optional[List['FormatOption']] = None,
+        include_tags: Optional[List[str]] = None,
+        exclude_tags: Optional[List[str]] = None,
+        only_main_content: Optional[bool] = None,
+        timeout: Optional[int] = None,
+        parsers: Optional[Union[List[str], List[Union[str, PDFParser]]]] = None,
+        remove_base64_images: Optional[bool] = None,
+        filename: Optional[str] = None,
+        content_type: Optional[str] = None,
+        origin: Optional[str] = None,
+        integration: Optional[str] = None,
+        zero_data_retention: Optional[bool] = None,
+    ) -> Document:
+        """
+        Parse a local file and return the document.
+        Args:
+            file: File path, bytes, or file-like object
+            formats: List of formats to extract
+            include_tags: List of tags to include
+            exclude_tags: List of tags to exclude
+            only_main_content: Whether to only extract the main content
+            timeout: Timeout in seconds
+            parsers: List of parsers to use (pdf only)
+            remove_base64_images: Whether to remove base64 images
+            filename: Optional filename override
+            content_type: Optional content type override
+            origin: Optional origin
+            integration: Optional integration
+            zero_data_retention: Optional zeroDataRetention flag
+        Returns:
+            Document
+        """
+        options = ParseOptions(
+            **{k: v for k, v in dict(
+                formats=formats,
+                include_tags=include_tags,
+                exclude_tags=exclude_tags,
+                only_main_content=only_main_content,
+                timeout=timeout,
+                parsers=parsers,
+                remove_base64_images=remove_base64_images,
+            ).items() if v is not None}
+        ) if any(v is not None for v in [formats, include_tags, exclude_tags, only_main_content, timeout, parsers, remove_base64_images]) else None
+
+        return parse_module.parse(
+            self.http_client,
+            file,
+            options,
+            filename=filename,
+            content_type=content_type,
+            origin=origin,
+            integration=integration,
+            zero_data_retention=zero_data_retention,
+        )
 
     def search(
         self,

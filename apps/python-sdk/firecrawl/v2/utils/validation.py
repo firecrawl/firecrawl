@@ -3,7 +3,7 @@ Shared validation functions for Firecrawl v2 API.
 """
 
 from typing import Optional, Dict, Any, List
-from ..types import ScrapeOptions, ScrapeFormats
+from ..types import ScrapeOptions, ScrapeFormats, ParseOptions
 
 
 def _convert_format_string(format_str: str) -> str:
@@ -689,4 +689,130 @@ def prepare_scrape_options(options: Optional[ScrapeOptions]) -> Optional[Dict[st
                 # For fields that don't need conversion, use as-is
                 scrape_data[key] = value
     
-    return scrape_data  
+    return scrape_data
+
+
+def validate_parse_options(options: Optional[ParseOptions]) -> Optional[ParseOptions]:
+    """
+    Validate and normalize parse options.
+
+    Args:
+        options: Parsing options to validate
+
+    Returns:
+        Validated options or None
+
+    Raises:
+        ValueError: If options are invalid
+    """
+    if options is None:
+        return None
+
+    if options.timeout is not None and options.timeout <= 0:
+        raise ValueError("Timeout must be positive")
+
+    return options
+
+
+def prepare_parse_options(options: Optional[ParseOptions]) -> Optional[Dict[str, Any]]:
+    """
+    Prepare ParseOptions for API submission with manual snake_case to camelCase conversion.
+
+    Args:
+        options: ParseOptions to prepare
+
+    Returns:
+        Dictionary ready for API submission or None if options is None
+    """
+    if options is None:
+        return None
+
+    validated_options = validate_parse_options(options)
+    if validated_options is None:
+        return None
+
+    options_data = validated_options.model_dump(exclude_none=True)
+    parse_data: Dict[str, Any] = {}
+
+    field_mappings = {
+        "include_tags": "includeTags",
+        "exclude_tags": "excludeTags",
+        "only_main_content": "onlyMainContent",
+        "remove_base64_images": "removeBase64Images",
+    }
+
+    for snake_case, camel_case in field_mappings.items():
+        if snake_case in options_data:
+            parse_data[camel_case] = options_data.pop(snake_case)
+
+    allowed_formats = {
+        "markdown",
+        "html",
+        "rawHtml",
+        "links",
+        "images",
+        "summary",
+        "json",
+        "attributes",
+    }
+
+    formats_value = options_data.pop("formats", None)
+    if formats_value is not None:
+        converted_formats: List[Any] = []
+        for fmt in formats_value:
+            if isinstance(fmt, str):
+                fmt_type = _convert_format_string(fmt)
+                if fmt_type == "json":
+                    raise ValueError(
+                        "json format must be an object with 'type', 'prompt', and 'schema' fields"
+                    )
+                if fmt_type not in allowed_formats:
+                    raise ValueError(f"Unsupported parse format: {fmt_type}")
+                converted_formats.append(fmt_type)
+            elif isinstance(fmt, dict):
+                fmt_type = _convert_format_string(fmt.get("type")) if fmt.get("type") else None
+                if fmt_type not in allowed_formats:
+                    raise ValueError(f"Unsupported parse format: {fmt_type}")
+                if fmt_type == "json":
+                    converted_formats.append(_validate_json_format({**fmt, "type": "json"}))
+                else:
+                    if fmt_type:
+                        fmt["type"] = fmt_type
+                    converted_formats.append(fmt)
+            elif hasattr(fmt, "type"):
+                fmt_type = _convert_format_string(fmt.type)
+                if fmt_type not in allowed_formats:
+                    raise ValueError(f"Unsupported parse format: {fmt_type}")
+                if fmt_type == "json":
+                    converted_formats.append(_validate_json_format(fmt.model_dump()))
+                else:
+                    converted_formats.append(fmt_type)
+            else:
+                converted_formats.append(fmt)
+
+        if converted_formats:
+            parse_data["formats"] = converted_formats
+
+    parsers_value = options_data.pop("parsers", None)
+    if parsers_value is not None:
+        converted_parsers = []
+        for parser in parsers_value:
+            if isinstance(parser, str):
+                converted_parsers.append(parser)
+            elif isinstance(parser, dict):
+                parser_data = dict(parser)
+                if "max_pages" in parser_data:
+                    parser_data["maxPages"] = parser_data.pop("max_pages")
+                converted_parsers.append(parser_data)
+            else:
+                parser_data = parser.model_dump(exclude_none=True)
+                if "max_pages" in parser_data:
+                    parser_data["maxPages"] = parser_data.pop("max_pages")
+                converted_parsers.append(parser_data)
+        parse_data["parsers"] = converted_parsers
+
+    for key, value in options_data.items():
+        if value is not None:
+            parse_data[key] = value
+
+    return parse_data

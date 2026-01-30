@@ -141,6 +141,7 @@ export async function scrapeDocument(meta: Meta): Promise<EngineScrapeResult> {
       url: response.url,
       statusCode: response.status,
       html,
+      contentType: response.headers.get("content-type") ?? undefined,
       proxyUsed,
     };
   } finally {

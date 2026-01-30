@@ -5,9 +5,10 @@ Async v2 client mirroring the regular client surface using true async HTTP trans
 import os
 import asyncio
 import time
-from typing import Optional, List, Dict, Any, Union, Callable, Literal
+from typing import Optional, List, Dict, Any, Union, Callable, Literal, BinaryIO
 from .types import (
     ScrapeOptions,
+    ParseOptions,
     CrawlRequest,
     WebhookConfig,
     AgentWebhookConfig,
@@ -37,6 +38,7 @@ from .types import (
 )
 from .utils.http_client import HttpClient
 from .utils.http_client_async import AsyncHttpClient
+from .methods.aio import parse as async_parse
 
 from .methods.aio import scrape as async_scrape  # type: ignore[attr-defined]
 from .methods.aio import batch as async_batch  # type: ignore[attr-defined]
@@ -70,6 +72,44 @@ class AsyncFirecrawlClient:
     ):
         options = ScrapeOptions(**{k: v for k, v in kwargs.items() if v is not None}) if kwargs else None
         return await async_scrape.scrape(self.async_http_client, url, options)
+
+    async def parse(
+        self,
+        file: Union[str, bytes, BinaryIO],
+        **kwargs,
+    ):
+        filename = kwargs.pop("filename", None)
+        content_type = kwargs.pop("content_type", None)
+        origin = kwargs.pop("origin", None)
+        integration = kwargs.pop("integration", None)
+        zero_data_retention = kwargs.pop("zero_data_retention", None)
+
+        options_fields = {
+            "formats": kwargs.pop("formats", None),
+            "include_tags": kwargs.pop("include_tags", None),
+            "exclude_tags": kwargs.pop("exclude_tags", None),
+            "only_main_content": kwargs.pop("only_main_content", None),
+            "timeout": kwargs.pop("timeout", None),
+            "parsers": kwargs.pop("parsers", None),
+            "remove_base64_images": kwargs.pop("remove_base64_images", None),
+        }
+
+        options = (
+            ParseOptions(**{k: v for k, v in options_fields.items() if v is not None})
+            if any(v is not None for v in options_fields.values())
+            else None
+        )
+
+        return await async_parse.parse(
+            self.async_http_client,
+            file,
+            options,
+            filename=filename,
+            content_type=content_type,
+            origin=origin,
+            integration=integration,
+            zero_data_retention=zero_data_retention,
+        )
 
     # Search
     async def search(

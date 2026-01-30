@@ -9,6 +9,7 @@ mod error;
 pub mod extract;
 pub mod llmstxt;
 pub mod map;
+pub mod parse;
 pub mod scrape;
 pub mod search;
 
@@ -23,6 +24,7 @@ pub struct FirecrawlApp {
 }
 
 pub(crate) const API_VERSION: &str = "/v1";
+pub(crate) const API_VERSION_V2: &str = "/v2";
 const CLOUD_API_URL: &str = "https://api.firecrawl.dev";
 
 impl FirecrawlApp {

@@ -544,6 +544,38 @@ class ScrapeOptions(BaseModel):
         )
 
 
+class ParseOptions(BaseModel):
+    """Options for parsing local files."""
+
+    formats: Optional[List[FormatOption]] = None
+    include_tags: Optional[List[str]] = None
+    exclude_tags: Optional[List[str]] = None
+    only_main_content: Optional[bool] = None
+    timeout: Optional[int] = None
+    parsers: Optional[Union[List[str], List[Union[str, "PDFParser"]]]] = None
+    remove_base64_images: Optional[bool] = None
+
+    @field_validator("formats")
+    @classmethod
+    def validate_formats(cls, v):
+        """Validate and normalize formats input."""
+        if v is None:
+            return v
+
+        normalized_formats = []
+        for format_item in v:
+            if isinstance(format_item, str):
+                normalized_formats.append(Format(type=format_item))
+            elif isinstance(format_item, dict):
+                normalized_formats.append(format_item)
+            elif isinstance(format_item, Format):
+                normalized_formats.append(format_item)
+            else:
+                raise ValueError(f"Invalid format format: {format_item}")
+
+        return normalized_formats
+
+
 class ScrapeRequest(BaseModel):
     """Request for scraping a single URL."""
 

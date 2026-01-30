@@ -77,6 +77,10 @@ export async function sendDocumentToSearchIndex(
   meta: Meta,
   document: Document,
 ): Promise<Document> {
+  if (meta.internalOptions.disableIndexing) {
+    return document;
+  }
+
   // Check if search indexing is enabled via the SEARCH_SERVICE_URL
   const searchIndexEnabled =
     config.ENABLE_SEARCH_INDEX && config.SEARCH_SERVICE_URL;

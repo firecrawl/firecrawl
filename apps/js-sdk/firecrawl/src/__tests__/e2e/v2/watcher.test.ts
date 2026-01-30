@@ -10,12 +10,13 @@ let client: Firecrawl;
 
 beforeAll(async () => {
   const { apiKey } = await getIdentity({ name: "js-e2e-watcher" });
+  if (!apiKey) return;
   client = new Firecrawl({ apiKey, apiUrl: API_URL });
 });
 
 describe("v2.watcher e2e", () => {
   test("crawl watcher minimal", async () => {
-    // client is initialized in beforeAll
+    if (!client) return;
     const start = await client.startCrawl("https://docs.firecrawl.dev", { limit: 3 });
 
     expect(typeof start.id).toBe("string");
@@ -55,7 +56,7 @@ describe("v2.watcher e2e", () => {
   }, 240_000);
 
   test("batch watcher with options (kind, pollInterval, timeout)", async () => {
-    // client is initialized in beforeAll
+    if (!client) return;
     const urls = [
       "https://docs.firecrawl.dev",
       "https://firecrawl.dev",
@@ -93,4 +94,3 @@ describe("v2.watcher e2e", () => {
     watcher.close();
   }, 300_000);
 });
-

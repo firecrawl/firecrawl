@@ -640,6 +640,63 @@ export type BaseScrapeOptions = z.infer<typeof baseScrapeOptions>;
 
 export type ScrapeOptions = BaseScrapeOptions;
 
+const parseFormats = z.preprocess(
+  val => {
+    if (!Array.isArray(val)) return val;
+    return val.map(format => {
+      if (typeof format === "string") {
+        return { type: format };
+      }
+      return format;
+    });
+  },
+  z
+    .union([
+      z.strictObject({ type: z.literal("markdown") }),
+      z.strictObject({ type: z.literal("html") }),
+      z.strictObject({ type: z.literal("rawHtml") }),
+      z.strictObject({ type: z.literal("links") }),
+      z.strictObject({ type: z.literal("images") }),
+      z.strictObject({ type: z.literal("summary") }),
+      jsonFormatWithOptions,
+      attributesFormatWithOptions,
+    ])
+    .array()
+    .optional()
+    .prefault([{ type: "markdown" }]),
+);
+
+const parseOptionsBase = z.strictObject({
+  formats: parseFormats,
+  includeTags: z
+    .string()
+    .array()
+    .transform(tags => tags.map(transformIframeSelector))
+    .optional(),
+  excludeTags: z
+    .string()
+    .array()
+    .transform(tags => tags.map(transformIframeSelector))
+    .optional(),
+  onlyMainContent: z.boolean().prefault(true),
+  timeout: z.int().positive().min(1000).optional(),
+  parsers: parsersSchema.optional(),
+  removeBase64Images: z.boolean().prefault(true),
+});
+
+export const parseOptionsSchema = strictWithMessage(parseOptionsBase);
+export type ParseOptions = z.infer<typeof parseOptionsSchema>;
+
+const parseRequestSchemaBase = z.strictObject({
+  options: parseOptionsBase.optional(),
+  origin: z.string().optional().prefault("api"),
+  integration: integrationSchema.optional().transform(val => val || null),
+  zeroDataRetention: z.boolean().optional(),
+});
+
+export const parseRequestSchema = strictWithMessage(parseRequestSchemaBase);
+export type ParseRequest = z.infer<typeof parseRequestSchema>;
+
 const ajv = new Ajv();
 const agentAjv = new Ajv();
 addFormats(agentAjv);

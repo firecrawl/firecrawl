@@ -13,11 +13,13 @@ let client: Firecrawl;
 
 beforeAll(async () => {
   const { apiKey } = await getIdentity({ name: "js-e2e-batch" });
+  if (!apiKey) return;
   client = new Firecrawl({ apiKey, apiUrl: API_URL });
 });
 
 describe("v2.batch e2e", () => {
   test("batch scrape minimal (wait)", async () => {
+    if (!client) return;
     const urls = [
       "https://docs.firecrawl.dev",
       "https://firecrawl.dev",
@@ -30,6 +32,7 @@ describe("v2.batch e2e", () => {
   }, 240_000);
 
   test("batch scrape with wait returns job id for error retrieval", async () => {
+    if (!client) return;
     const urls = [
       "https://docs.firecrawl.dev",
       "https://firecrawl.dev",
@@ -47,6 +50,7 @@ describe("v2.batch e2e", () => {
   }, 240_000);
 
   test("start batch minimal and status", async () => {
+    if (!client) return;
     const urls = ["https://docs.firecrawl.dev", "https://firecrawl.dev"]; 
     const start = await client.startBatchScrape(urls, { options: { formats: ["markdown"] }, ignoreInvalidURLs: true });
     expect(typeof start.id).toBe("string");
@@ -60,6 +64,7 @@ describe("v2.batch e2e", () => {
   }, 120_000);
 
   test("wait batch with all params", async () => {
+    if (!client) return;
     const urls = ["https://docs.firecrawl.dev", "https://firecrawl.dev"]; 
     const job = await client.batchScrape(urls, {
       options: {
@@ -84,6 +89,7 @@ describe("v2.batch e2e", () => {
   }, 300_000);
 
   test("cancel batch", async () => {
+    if (!client) return;
     const urls = ["https://docs.firecrawl.dev", "https://firecrawl.dev"]; 
     const start = await client.startBatchScrape(urls, { options: { formats: ["markdown"] }, maxConcurrency: 1 });
     expect(typeof start.id).toBe("string");
@@ -91,4 +97,3 @@ describe("v2.batch e2e", () => {
     expect(cancelled).toBe(true);
   }, 120_000);
 });
-

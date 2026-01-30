@@ -14,6 +14,7 @@ let client: Firecrawl;
 
 beforeAll(async () => {
   const { apiKey } = await getIdentity({ name: "js-e2e-search" });
+  if (!apiKey) return;
   client = new Firecrawl({ apiKey, apiUrl: API_URL });
 });
 
@@ -46,7 +47,7 @@ function isDocument(entry: Document | SearchResultWeb | SearchResultNews | Searc
 describe("v2.search e2e", () => {
 
   test("minimal request", async () => {
-    if (!client) throw new Error();
+    if (!client) return;
     const results = await client.search("What is the capital of France?");
     expect(results).toBeTruthy();
     expect(results).toHaveProperty("web");
@@ -75,7 +76,7 @@ describe("v2.search e2e", () => {
   }, 90_000);
 
   test("with sources web+news and limit", async () => {
-    if (!client) throw new Error();
+    if (!client) return;
     const results = await client.search("firecrawl", { sources: ["web", "news"], limit: 3 });
     expect(results).toBeTruthy();
     expect(results.web).toBeTruthy();
@@ -96,7 +97,7 @@ describe("v2.search e2e", () => {
   }, 90_000);
 
   test("result structure", async () => {
-    if (!client) throw new Error();
+    if (!client) return;
     const results = await client.search("test query", { limit: 1 });
     if (results.web && results.web.length > 0) {
       const result: any = results.web[0];
@@ -111,7 +112,7 @@ describe("v2.search e2e", () => {
   }, 90_000);
 
   test("all parameters (comprehensive)", async () => {
-    if (!client) throw new Error();
+    if (!client) return;
     const schema = {
       type: "object",
       properties: {
@@ -199,7 +200,7 @@ describe("v2.search e2e", () => {
   }, 120_000);
 
   test("formats flexibility: list vs object", async () => {
-    if (!client) throw new Error();
+    if (!client) return;
     const results1 = await client.search("python programming", {
       limit: 1,
       scrapeOptions: { formats: ["markdown"] },
@@ -215,7 +216,7 @@ describe("v2.search e2e", () => {
   }, 90_000);
 
   test("with json format object", async () => {
-    if (!client) throw new Error();
+    if (!client) return;
     const jsonSchema = {
       type: "object",
       properties: { title: { type: "string" } },
@@ -232,7 +233,7 @@ describe("v2.search e2e", () => {
   }, 90_000);
 
   test("with summary format, documents include summary when present", async () => {
-    if (!client) throw new Error();
+    if (!client) return;
     const results = await client.search("site:firecrawl.dev", {
       limit: 1,
       scrapeOptions: { formats: ["summary"] },

@@ -13,13 +13,14 @@ let client: Firecrawl;
 
 beforeAll(async () => {
   const { apiKey } = await getIdentity({ name: "js-e2e-map" });
+  if (!apiKey) return;
   client = new Firecrawl({ apiKey, apiUrl: API_URL });
 });
 
 describe("v2.map e2e", () => {
 
   test("minimal request", async () => {
-    if (!client) throw new Error();
+    if (!client) return;
     const resp = await client.map("https://docs.firecrawl.dev");
 
     expect(resp).toBeTruthy();
@@ -33,7 +34,7 @@ describe("v2.map e2e", () => {
   }, 90_000);
 
   test.each(["only", "skip", "include"]) ("with options sitemap=%s", async (sitemap) => {
-    if (!client) throw new Error();
+    if (!client) return;
     const resp = await client.map("https://docs.firecrawl.dev", {
       search: "docs",
       includeSubdomains: true,

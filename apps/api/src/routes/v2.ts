@@ -1,10 +1,14 @@
 import express from "express";
+import multer from "multer";
+import os from "node:os";
+import path from "node:path";
 import { config } from "../config";
 import { RateLimiterMode } from "../types";
 import expressWs from "express-ws";
 import { searchController } from "../controllers/v2/search";
 import { x402SearchController } from "../controllers/v2/x402-search";
 import { scrapeController } from "../controllers/v2/scrape";
+import { parseController } from "../controllers/v2/parse";
 import { batchScrapeController } from "../controllers/v2/batch-scrape";
 import { crawlController } from "../controllers/v2/crawl";
 import { crawlParamsPreviewController } from "../controllers/v2/crawl-params-preview";
@@ -39,10 +43,48 @@ import { facilitator } from "@coinbase/x402";
 import { agentController } from "../controllers/v2/agent";
 import { agentStatusController } from "../controllers/v2/agent-status";
 import { agentCancelController } from "../controllers/v2/agent-cancel";
+import { v7 as uuidv7 } from "uuid";
 
 expressWs(express());
 
 export const v2Router = express.Router();
+
+const MAX_PARSE_FILE_SIZE = 20 * 1024 * 1024;
+const parseUpload = multer({
+  storage: multer.diskStorage({
+    destination: os.tmpdir(),
+    filename: (_req, file, cb) => {
+      const safeName = path.basename(file.originalname || "file");
+      cb(null, `${uuidv7()}-${safeName}`);
+    },
+  }),
+  limits: {
+    fileSize: MAX_PARSE_FILE_SIZE,
+  },
+}).single("file");
+
+const parseUploadMiddleware: express.RequestHandler = (req, res, next) => {
+  parseUpload(req, res, err => {
+    if (!err) {
+      return next();
+    }
+    if (err instanceof multer.MulterError) {
+      if (err.code === "LIMIT_FILE_SIZE") {
+        return res.status(413).json({
+          success: false,
+          code: "PAYLOAD_TOO_LARGE",
+          error: "File size exceeds 20MB limit",
+        });
+      }
+      return res.status(400).json({
+        success: false,
+        code: "BAD_REQUEST",
+        error: err.message,
+      });
+    }
+    return next(err);
+  });
+};
 
 // Add timing middleware to all v2 routes
 v2Router.use(requestTimingMiddleware("v2"));
@@ -178,6 +220,15 @@ v2Router.post(
   checkCreditsMiddleware(1),
   blocklistMiddleware,
   wrap(scrapeController),
+);
+
+v2Router.post(
+  "/parse",
+  authMiddleware(RateLimiterMode.Scrape),
+  countryCheck,
+  checkCreditsMiddleware(1),
+  parseUploadMiddleware,
+  wrap(parseController),
 );
 
 v2Router.get(

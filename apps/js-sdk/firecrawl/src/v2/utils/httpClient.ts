@@ -25,7 +25,6 @@ export class HttpClient {
       baseURL: this.apiUrl,
       timeout: options.timeoutMs ?? 300000,
       headers: {
-        "Content-Type": "application/json",
         Authorization: `Bearer ${this.apiKey}`,
       },
       transitional: { clarifyTimeoutError: true },
@@ -50,15 +49,34 @@ export class HttpClient {
     for (let attempt = 0; attempt < this.maxRetries; attempt++) {
       try {
         const cfg: AxiosRequestConfig = { ...config };
+        const isForm = isFormData(cfg.data);
         // For POST/PUT, ensure origin is present in JSON body too
         if (cfg.method && ["post", "put", "patch"].includes(cfg.method.toLowerCase())) {
-          const data = (cfg.data ?? {}) as Record<string, unknown>;
-          cfg.data = { ...data, origin: typeof data.origin === "string" && data.origin.includes("mcp") ? data.origin : `js-sdk@${version}` };
-          
-          // If timeout is specified in the body, use it to override the request timeout
-          if (typeof data.timeout === "number") {
-            cfg.timeout = data.timeout + 5000;
+          if (isForm && cfg.data) {
+            const form = cfg.data as FormData;
+            const origin = form.get("origin");
+            if (typeof origin !== "string" || !origin.includes("mcp")) {
+              if (typeof (form as any).set === "function") {
+                (form as any).set("origin", `js-sdk@${version}`);
+              } else {
+                form.append("origin", `js-sdk@${version}`);
+              }
+            }
+          } else {
+            const data = (cfg.data ?? {}) as Record<string, unknown>;
+            cfg.data = { ...data, origin: typeof data.origin === "string" && data.origin.includes("mcp") ? data.origin : `js-sdk@${version}` };
+
+            // If timeout is specified in the body, use it to override the request timeout
+            if (typeof data.timeout === "number") {
+              cfg.timeout = data.timeout + 5000;
+            }
           }
+        }
+        if (!isForm) {
+          cfg.headers = {
+            "Content-Type": "application/json",
+            ...(cfg.headers || {}),
+          };
         }
         const res = await this.instance.request<T>(cfg);
         if (res.status === 502 && attempt < this.maxRetries - 1) {
@@ -87,6 +105,10 @@ export class HttpClient {
     return this.request<T>({ method: "post", url: endpoint, data: body, headers });
   }
 
+  postFormData<T = any>(endpoint: string, body: FormData, headers?: Record<string, string>) {
+    return this.request<T>({ method: "post", url: endpoint, data: body, headers });
+  }
+
   get<T = any>(endpoint: string, headers?: Record<string, string>) {
     return this.request<T>({ method: "get", url: endpoint, headers });
   }
@@ -102,3 +124,13 @@ export class HttpClient {
   }
 }
 
+function isFormData(value: unknown): value is FormData {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  if (typeof FormData !== "undefined" && value instanceof FormData) {
+    return true;
+  }
+  const candidate = value as { append?: unknown; get?: unknown };
+  return typeof candidate.append === "function" && typeof candidate.get === "function";
+}

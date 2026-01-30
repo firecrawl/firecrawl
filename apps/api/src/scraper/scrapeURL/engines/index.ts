@@ -8,6 +8,7 @@ import {
   scrapeURLWithFireEnginePlaywright,
   scrapeURLWithFireEngineTLSClient,
 } from "./fire-engine";
+import { localFileMaxReasonableTime, scrapeLocalFile } from "./local-file";
 import { pdfMaxReasonableTime, scrapePDF } from "./pdf";
 import { fetchMaxReasonableTime, scrapeURLWithFetch } from "./fetch";
 import {
@@ -34,6 +35,7 @@ export type Engine =
   | "fetch"
   | "pdf"
   | "document"
+  | "local-file"
   | "index"
   | "index;documents";
 
@@ -157,6 +159,7 @@ const engineHandlers: {
   fetch: scrapeURLWithFetch,
   pdf: scrapePDF,
   document: scrapeDocument,
+  "local-file": scrapeLocalFile,
 };
 
 const engineMRTs: {
@@ -184,6 +187,7 @@ const engineMRTs: {
   fetch: fetchMaxReasonableTime,
   pdf: pdfMaxReasonableTime,
   document: documentMaxReasonableTime,
+  "local-file": localFileMaxReasonableTime,
 };
 
 const engineOptions: {
@@ -461,6 +465,25 @@ const engineOptions: {
       disableAdblock: true,
     },
     quality: -20,
+  },
+  "local-file": {
+    features: {
+      actions: false,
+      waitFor: false,
+      screenshot: false,
+      "screenshot@fullScreen": false,
+      pdf: false,
+      document: false,
+      atsv: false,
+      mobile: false,
+      location: false,
+      skipTlsVerification: false,
+      useFastMode: false,
+      stealthProxy: false,
+      branding: false,
+      disableAdblock: false,
+    },
+    quality: -30,
   },
 };
 

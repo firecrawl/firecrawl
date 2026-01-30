@@ -1,5 +1,6 @@
 import { HttpClient } from "./utils/httpClient";
 import { scrape } from "./methods/scrape";
+import { parse as parseMethod } from "./methods/parse";
 import { search } from "./methods/search";
 import { map as mapMethod } from "./methods/map";
 import {
@@ -23,6 +24,9 @@ import { startAgent, getAgentStatus, cancelAgent, agent as agentWaiter } from ".
 import { getConcurrency, getCreditUsage, getQueueStatus, getTokenUsage, getCreditUsageHistorical, getTokenUsageHistorical } from "./methods/usage";
 import type {
   Document,
+  ParseFileInput,
+  ParseOptions,
+  ParseRequestParams,
   ScrapeOptions,
   SearchData,
   SearchRequest,
@@ -118,6 +122,20 @@ export class FirecrawlClient {
   async scrape(url: string, options?: ScrapeOptions): Promise<Document>;
   async scrape(url: string, options?: ScrapeOptions): Promise<Document> {
     return scrape(this.http, url, options);
+  }
+
+  /**
+   * Parse a local file via multipart upload.
+   * @param file File contents (Blob/File/ArrayBuffer/Uint8Array).
+   * @param options Parse options (formats, parsers, etc.).
+   * @param params Optional request metadata (filename, origin, integration).
+   */
+  async parse(
+    file: ParseFileInput,
+    options?: ParseOptions,
+    params?: ParseRequestParams,
+  ): Promise<Document> {
+    return parseMethod(this.http, file, options, params);
   }
 
   // Search
@@ -339,4 +357,3 @@ export class FirecrawlClient {
 }
 
 export default FirecrawlClient;
-

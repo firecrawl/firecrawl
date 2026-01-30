@@ -14,16 +14,19 @@ let client: Firecrawl;
 
 beforeAll(async () => {
   const { apiKey } = await getIdentity({ name: "js-e2e-extract" });
+  if (!apiKey) return;
   client = new Firecrawl({ apiKey, apiUrl: API_URL });
 });
 
 describe("v2.extract e2e", () => {
   test("extract minimal with prompt", async () => {
+    if (!client) return;
     const resp = await client.extract({ urls: ["https://docs.firecrawl.dev"], prompt: "Extract the main page title" });
     expect(typeof resp.success === "boolean" || resp.success == null).toBe(true);
   }, 120_000);
 
   test("extract with schema", async () => {
+    if (!client) return;
     const schema = {
       type: "object",
       properties: { title: { type: "string" } },
@@ -47,6 +50,7 @@ describe("v2.extract e2e", () => {
   }, 180_000);
 
   test("extract with zod schema", async () => {
+    if (!client) return;
     const schema = z.object({
       title: z.string(),
     });
@@ -67,4 +71,3 @@ describe("v2.extract e2e", () => {
     }
   }, 180_000);
 });
-

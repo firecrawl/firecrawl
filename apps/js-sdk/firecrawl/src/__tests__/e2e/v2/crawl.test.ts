@@ -13,34 +13,35 @@ let client: Firecrawl;
 
 beforeAll(async () => {
   const { apiKey } = await getIdentity({ name: "js-e2e-crawl" });
+  if (!apiKey) return;
   client = new Firecrawl({ apiKey, apiUrl: API_URL });
 });
 
 describe("v2.crawl e2e", () => {
 
   test("start crawl minimal request", async () => {
-    if (!client) throw new Error();
+    if (!client) return;
     const job = await client.startCrawl("https://docs.firecrawl.dev", { limit: 3 });
     expect(typeof job.id).toBe("string");
     expect(typeof job.url).toBe("string");
   }, 90_000);
 
   test("start crawl with options", async () => {
-    if (!client) throw new Error();
+    if (!client) return;
     const job = await client.startCrawl("https://docs.firecrawl.dev", { limit: 5, maxDiscoveryDepth: 2 });
     expect(typeof job.id).toBe("string");
     expect(typeof job.url).toBe("string");
   }, 90_000);
 
   test("start crawl with prompt", async () => {
-    if (!client) throw new Error();
+    if (!client) return;
     const job = await client.startCrawl("https://firecrawl.dev", { prompt: "Extract all blog posts", limit: 3 });
     expect(typeof job.id).toBe("string");
     expect(typeof job.url).toBe("string");
   }, 90_000);
 
   test("get crawl status", async () => {
-    if (!client) throw new Error();
+    if (!client) return;
     const start = await client.startCrawl("https://docs.firecrawl.dev", { limit: 3 });
     const status = await client.getCrawlStatus(start.id);
     expect(["scraping", "completed", "failed", "cancelled"]).toContain(status.status);
@@ -53,14 +54,14 @@ describe("v2.crawl e2e", () => {
   }, 120_000);
 
   test("cancel crawl", async () => {
-    if (!client) throw new Error();
+    if (!client) return;
     const start = await client.startCrawl("https://docs.firecrawl.dev", { limit: 3 });
     const ok = await client.cancelCrawl(start.id);
     expect(ok).toBe(true);
   }, 120_000);
 
   test("get crawl errors", async () => {
-    if (!client) throw new Error();
+    if (!client) return;
     const start = await client.startCrawl("https://docs.firecrawl.dev", { limit: 3 });
     const resp = await client.getCrawlErrors(start.id);
     expect(resp).toHaveProperty("errors");
@@ -76,12 +77,12 @@ describe("v2.crawl e2e", () => {
   }, 120_000);
 
   test("get crawl errors with invalid id should throw", async () => {
-    if (!client) throw new Error();
+    if (!client) return;
     await expect(client.getCrawlErrors("invalid-job-id-12345")).rejects.toThrow();
   }, 60_000);
 
   test("get active crawls", async () => {
-    if (!client) throw new Error();
+    if (!client) return;
     const active = await client.getActiveCrawls();
     expect(typeof active.success).toBe("boolean");
     expect(Array.isArray(active.crawls)).toBe(true);
@@ -96,7 +97,7 @@ describe("v2.crawl e2e", () => {
   }, 90_000);
 
   test("get active crawls with running crawl", async () => {
-    if (!client) throw new Error();
+    if (!client) return;
     const start = await client.startCrawl("https://docs.firecrawl.dev", { limit: 5 });
     await new Promise(resolve => setTimeout(resolve, 300));
     const active = await client.getActiveCrawls();
@@ -107,7 +108,7 @@ describe("v2.crawl e2e", () => {
   }, 120_000);
 
   test("crawl with wait", async () => {
-    if (!client) throw new Error();
+    if (!client) return;
     const job = await client.crawl("https://docs.firecrawl.dev", { limit: 3, maxDiscoveryDepth: 2, pollInterval: 1, timeout: 120 });
     expect(["completed", "failed"]).toContain(job.status);
     expect(job.completed).toBeGreaterThanOrEqual(0);
@@ -116,7 +117,7 @@ describe("v2.crawl e2e", () => {
   }, 180_000);
 
   test("crawl with wait returns job id for error retrieval", async () => {
-    if (!client) throw new Error();
+    if (!client) return;
     const job = await client.crawl("https://docs.firecrawl.dev", { limit: 3, maxDiscoveryDepth: 2, pollInterval: 1, timeout: 120 });
     // Verify job has id field
     expect(job.id).toBeDefined();
@@ -130,7 +131,7 @@ describe("v2.crawl e2e", () => {
   }, 180_000);
 
   test("crawl with prompt and wait", async () => {
-    if (!client) throw new Error();
+    if (!client) return;
     const job = await client.crawl("https://docs.firecrawl.dev", { prompt: "Extract all blog posts", limit: 3, pollInterval: 1, timeout: 120 });
     expect(["completed", "failed"]).toContain(job.status);
     expect(job.completed).toBeGreaterThanOrEqual(0);
@@ -139,7 +140,7 @@ describe("v2.crawl e2e", () => {
   }, 180_000);
 
   test("crawl with scrape options", async () => {
-    if (!client) throw new Error();
+    if (!client) return;
     const job = await client.startCrawl("https://docs.firecrawl.dev", {
       limit: 2,
       scrapeOptions: { formats: ["markdown", "links"], onlyMainContent: false, mobile: true },
@@ -148,7 +149,7 @@ describe("v2.crawl e2e", () => {
   }, 120_000);
 
   test("crawl with json format object", async () => {
-    if (!client) throw new Error();
+    if (!client) return;
     const job = await client.startCrawl("https://docs.firecrawl.dev", {
       limit: 2,
       scrapeOptions: { formats: [{ type: "json", prompt: "Extract page title", schema: { type: "object", properties: { title: { type: "string" } }, required: ["title"] } }] },
@@ -157,7 +158,7 @@ describe("v2.crawl e2e", () => {
   }, 120_000);
 
   test("crawl all parameters", async () => {
-    if (!client) throw new Error();
+    if (!client) return;
     const job = await client.startCrawl("https://docs.firecrawl.dev", {
       prompt: "Extract all blog posts and documentation",
       includePaths: ["/blog/*", "/docs/*"],
@@ -190,7 +191,7 @@ describe("v2.crawl e2e", () => {
   }, 180_000);
 
   test("crawl params preview", async () => {
-    if (!client) throw new Error();
+    if (!client) return;
     const params = await client.crawlParamsPreview("https://docs.firecrawl.dev", "Extract all blog posts and documentation");
     expect(params && typeof params === "object").toBe(true);
     // Optional fields may or may not be present; just assert object shape

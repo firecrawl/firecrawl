@@ -259,6 +259,36 @@ async function buildMetaObject(
         )
       : undefined;
 
+  const featureFlags = buildFeatureFlags(url, options, internalOptions);
+  const localFile = internalOptions.localFile;
+  const pdfPrefetch =
+    localFile?.kind === "pdf"
+      ? {
+          filePath: localFile.path,
+          url,
+          status: 200,
+          proxyUsed: "basic" as const,
+          contentType: localFile.contentType,
+        }
+      : undefined;
+  const documentPrefetch =
+    localFile?.kind === "document"
+      ? {
+          filePath: localFile.path,
+          url,
+          status: 200,
+          proxyUsed: "basic" as const,
+          contentType: localFile.contentType,
+        }
+      : undefined;
+
+  if (localFile?.kind === "pdf") {
+    featureFlags.add("pdf");
+  }
+  if (localFile?.kind === "document") {
+    featureFlags.add("document");
+  }
+
   return {
     id,
     url,
@@ -288,16 +318,25 @@ async function buildMetaObject(
           }
         : undefined,
     ),
-    featureFlags: buildFeatureFlags(url, options, internalOptions),
+    featureFlags,
     mock:
       options.useMock !== undefined
         ? await loadMock(options.useMock, _logger)
         : null,
-    pdfPrefetch: undefined,
-    documentPrefetch: undefined,
+    pdfPrefetch,
+    documentPrefetch,
     costTracking,
   };
 }
+
+export type LocalFileKind = "pdf" | "document" | "html" | "markdown" | "text";
+
+export type LocalFileInfo = {
+  path: string;
+  filename: string;
+  contentType: string;
+  kind: LocalFileKind;
+};
 
 export type InternalOptions = {
   teamId: string;
@@ -314,6 +353,8 @@ export type InternalOptions = {
   externalAbort?: AbortInstance;
   urlInvisibleInCurrentCrawl?: boolean;
   unnormalizedSourceURL?: string;
+  localFile?: LocalFileInfo;
+  disableIndexing?: boolean;
 
   saveScrapeResultToGCS?: boolean; // Passed along to fire-engine
   bypassBilling?: boolean;
