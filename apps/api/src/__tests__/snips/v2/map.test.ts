@@ -139,6 +139,17 @@ describe("Map tests", () => {
       expect(response.statusCode).toBe(200);
       expect(response.body.success).toBe(true);
       expect(response.body.links.length).toBeGreaterThan(0);
+
+      const nonFirecrawlLinks = response.body.links.filter(
+        link => !link.url.includes("firecrawl.dev"),
+      );
+      if (nonFirecrawlLinks.length > 0) {
+        console.log(
+          "Links not containing 'firecrawl.dev':",
+          JSON.stringify(nonFirecrawlLinks, null, 2),
+        );
+      }
+
       expect(
         response.body.links.every(link => link.url.includes("firecrawl.dev")),
       ).toBe(true);
