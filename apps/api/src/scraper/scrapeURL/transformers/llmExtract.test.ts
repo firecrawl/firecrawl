@@ -1,10 +1,30 @@
 import { removeDefaultProperty } from "./llmExtract";
 import { trimToTokenLimit } from "./llmExtract";
 import { performSummary } from "./llmExtract";
+import {
+  wrapSchemaWithCompletionCheck,
+  unwrapCompletionCheckResult,
+} from "./llmExtract";
 import { encoding_for_model } from "@dqbd/tiktoken";
+import {
+  countTokens,
+  splitContentIntoChunks,
+  detectSchemaType,
+} from "../../../lib/extract/helpers/chunking";
+import {
+  aggregateUsage,
+  mergeChunkResultsWithLLM,
+  ChunkResult,
+} from "../../../lib/extract/helpers/chunk-merger";
+import { generateObject } from "ai";
 
 jest.mock("@dqbd/tiktoken", () => ({
   encoding_for_model: jest.fn(),
+}));
+
+jest.mock("ai", () => ({
+  generateObject: jest.fn(),
+  jsonSchema: jest.fn(schema => schema),
 }));
 
 describe("removeDefaultProperty", () => {
@@ -319,5 +339,549 @@ describe("performSummary", () => {
     expect(result.warning).toContain(
       "Summary generation was skipped because the markdown content is empty",
     );
+  });
+});
+
+describe("countTokens", () => {
+  const mockEncode = jest.fn();
+  const mockFree = jest.fn();
+  const mockEncoder = {
+    encode: mockEncode,
+    free: mockFree,
+  };
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    (encoding_for_model as jest.Mock).mockReturnValue(mockEncoder);
+  });
+
+  it("should count tokens using tiktoken", () => {
+    mockEncode.mockReturnValue(new Array(10));
+    const result = countTokens("Hello world", "gpt-4o-mini");
+    expect(result).toBe(10);
+    expect(mockFree).toHaveBeenCalled();
+  });
+
+  it("should fallback to estimation when tiktoken fails", () => {
+    (encoding_for_model as jest.Mock).mockImplementation(() => {
+      throw new Error("Encoder error");
+    });
+    const text = "Hello world test"; // 16 chars
+    const result = countTokens(text, "gpt-4o-mini");
+    // Fallback uses text.length / 2.8
+    expect(result).toBe(Math.ceil(16 / 2.8));
+  });
+});
+
+describe("detectSchemaType", () => {
+  it("should detect array schema", () => {
+    const schema = { type: "array", items: { type: "object" } };
+    expect(detectSchemaType(schema)).toBe("array");
+  });
+
+  it("should detect object schema with explicit type", () => {
+    const schema = { type: "object", properties: { name: { type: "string" } } };
+    expect(detectSchemaType(schema)).toBe("object");
+  });
+
+  it("should detect object schema from properties", () => {
+    const schema = { properties: { name: { type: "string" } } };
+    expect(detectSchemaType(schema)).toBe("object");
+  });
+
+  it("should return unknown for null/undefined", () => {
+    expect(detectSchemaType(null)).toBe("unknown");
+    expect(detectSchemaType(undefined)).toBe("unknown");
+  });
+
+  it("should return unknown for unrecognized schema", () => {
+    const schema = { anyOf: [{ type: "string" }, { type: "number" }] };
+    expect(detectSchemaType(schema)).toBe("unknown");
+  });
+});
+
+describe("splitContentIntoChunks", () => {
+  const mockEncode = jest.fn();
+  const mockFree = jest.fn();
+  const mockEncoder = {
+    encode: mockEncode,
+    free: mockFree,
+  };
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    (encoding_for_model as jest.Mock).mockReturnValue(mockEncoder);
+  });
+
+  it("should return single chunk if content fits", () => {
+    mockEncode.mockReturnValue(new Array(100)); // 100 tokens
+    const content = "Short content";
+    const chunks = splitContentIntoChunks(content, {
+      maxTokensPerChunk: 1000,
+      overlapTokens: 100,
+      modelId: "gpt-4o-mini",
+    });
+
+    expect(chunks).toHaveLength(1);
+    expect(chunks[0].content).toBe(content);
+    expect(chunks[0].chunkIndex).toBe(0);
+    expect(chunks[0].totalChunks).toBe(1);
+  });
+
+  it("should split content into multiple chunks when exceeding limit", () => {
+    // First call: total tokens (high), subsequent calls: chunk tokens
+    mockEncode
+      .mockReturnValueOnce(new Array(500)) // Total content tokens
+      .mockReturnValueOnce(new Array(200)) // First chunk
+      .mockReturnValueOnce(new Array(200)) // Second chunk
+      .mockReturnValueOnce(new Array(150)); // Third chunk (remaining)
+
+    const content = "A".repeat(1500); // Long content
+    const chunks = splitContentIntoChunks(content, {
+      maxTokensPerChunk: 200,
+      overlapTokens: 50,
+      modelId: "gpt-4o-mini",
+    });
+
+    expect(chunks.length).toBeGreaterThan(1);
+    chunks.forEach((chunk, i) => {
+      expect(chunk.chunkIndex).toBe(i);
+      expect(chunk.totalChunks).toBe(chunks.length);
+    });
+  });
+
+  it("should set correct totalChunks on all chunks", () => {
+    mockEncode
+      .mockReturnValueOnce(new Array(300))
+      .mockReturnValueOnce(new Array(100))
+      .mockReturnValueOnce(new Array(100))
+      .mockReturnValueOnce(new Array(100));
+
+    const content = "Test content ".repeat(50);
+    const chunks = splitContentIntoChunks(content, {
+      maxTokensPerChunk: 100,
+      overlapTokens: 20,
+      modelId: "gpt-4o-mini",
+    });
+
+    const totalChunks = chunks.length;
+    chunks.forEach(chunk => {
+      expect(chunk.totalChunks).toBe(totalChunks);
+    });
+  });
+});
+
+describe("aggregateUsage", () => {
+  it("should sum token usage from multiple results", () => {
+    const usages = [
+      { promptTokens: 100, completionTokens: 50, totalTokens: 150 },
+      { promptTokens: 200, completionTokens: 100, totalTokens: 300 },
+      { promptTokens: 150, completionTokens: 75, totalTokens: 225 },
+    ];
+
+    const result = aggregateUsage(usages);
+
+    expect(result.promptTokens).toBe(450);
+    expect(result.completionTokens).toBe(225);
+    expect(result.totalTokens).toBe(675);
+  });
+
+  it("should handle empty array", () => {
+    const result = aggregateUsage([]);
+    expect(result.promptTokens).toBe(0);
+    expect(result.completionTokens).toBe(0);
+    expect(result.totalTokens).toBe(0);
+  });
+
+  it("should handle single usage", () => {
+    const usages = [
+      { promptTokens: 100, completionTokens: 50, totalTokens: 150 },
+    ];
+    const result = aggregateUsage(usages);
+
+    expect(result.promptTokens).toBe(100);
+    expect(result.completionTokens).toBe(50);
+    expect(result.totalTokens).toBe(150);
+  });
+
+  it("should handle undefined values", () => {
+    const usages = [
+      { promptTokens: 100, completionTokens: undefined, totalTokens: 100 },
+      { promptTokens: undefined, completionTokens: 50, totalTokens: 50 },
+    ] as any;
+
+    const result = aggregateUsage(usages);
+
+    expect(result.promptTokens).toBe(100);
+    expect(result.completionTokens).toBe(50);
+    expect(result.totalTokens).toBe(150);
+  });
+});
+
+describe("mergeChunkResultsWithLLM", () => {
+  const mockGenerateObject = generateObject as jest.Mock;
+  const mockLogger = {
+    info: jest.fn(),
+    warn: jest.fn(),
+    error: jest.fn(),
+    debug: jest.fn(),
+  } as any;
+  const mockCostTracking = {
+    addCall: jest.fn(),
+  };
+  const mockCalculateCost = jest.fn(() => 0.001);
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it("should return single result directly without LLM call", async () => {
+    const results: ChunkResult[] = [
+      {
+        chunkIndex: 0,
+        extract: { name: "test", value: 123 },
+        usage: { promptTokens: 100, completionTokens: 50, totalTokens: 150 },
+      },
+    ];
+
+    const result = await mergeChunkResultsWithLLM({
+      results,
+      originalSchema: {
+        type: "object",
+        properties: { name: { type: "string" } },
+      },
+      schemaType: "object",
+      model: { modelId: "gpt-4o-mini" } as any,
+      costTrackingOptions: {
+        costTracking: mockCostTracking as any,
+        metadata: {},
+      },
+      metadata: { teamId: "test-team" },
+      logger: mockLogger,
+      calculateCost: mockCalculateCost,
+    });
+
+    expect(result.mergedExtract).toEqual({ name: "test", value: 123 });
+    expect(mockGenerateObject).not.toHaveBeenCalled();
+  });
+
+  it("should merge array results using LLM", async () => {
+    const results: ChunkResult[] = [
+      {
+        chunkIndex: 0,
+        extract: [{ id: 1, name: "Item 1" }],
+        usage: { promptTokens: 100, completionTokens: 50, totalTokens: 150 },
+      },
+      {
+        chunkIndex: 1,
+        extract: [{ id: 2, name: "Item 2" }],
+        usage: { promptTokens: 100, completionTokens: 50, totalTokens: 150 },
+      },
+    ];
+
+    mockGenerateObject.mockResolvedValue({
+      object: {
+        items: [
+          { id: 1, name: "Item 1" },
+          { id: 2, name: "Item 2" },
+        ],
+      },
+      usage: { inputTokens: 200, outputTokens: 100 },
+    });
+
+    const result = await mergeChunkResultsWithLLM({
+      results,
+      originalSchema: { type: "array", items: { type: "object" } },
+      schemaType: "array",
+      model: { modelId: "gpt-4o-mini" } as any,
+      costTrackingOptions: {
+        costTracking: mockCostTracking as any,
+        metadata: {},
+      },
+      metadata: { teamId: "test-team" },
+      logger: mockLogger,
+      calculateCost: mockCalculateCost,
+    });
+
+    expect(mockGenerateObject).toHaveBeenCalled();
+    expect(result.mergedExtract).toEqual([
+      { id: 1, name: "Item 1" },
+      { id: 2, name: "Item 2" },
+    ]);
+    expect(result.mergeStrategy).toBe("llm_intelligent");
+    expect(mockCostTracking.addCall).toHaveBeenCalled();
+  });
+
+  it("should merge object results using LLM", async () => {
+    const results: ChunkResult[] = [
+      {
+        chunkIndex: 0,
+        extract: { title: "Page Title", description: null },
+        usage: { promptTokens: 100, completionTokens: 50, totalTokens: 150 },
+      },
+      {
+        chunkIndex: 1,
+        extract: { title: null, description: "Page description here" },
+        usage: { promptTokens: 100, completionTokens: 50, totalTokens: 150 },
+      },
+    ];
+
+    mockGenerateObject.mockResolvedValue({
+      object: { title: "Page Title", description: "Page description here" },
+      usage: { inputTokens: 200, outputTokens: 100 },
+    });
+
+    const result = await mergeChunkResultsWithLLM({
+      results,
+      originalSchema: {
+        type: "object",
+        properties: { title: { type: "string" } },
+      },
+      schemaType: "object",
+      model: { modelId: "gpt-4o-mini" } as any,
+      costTrackingOptions: {
+        costTracking: mockCostTracking as any,
+        metadata: {},
+      },
+      metadata: { teamId: "test-team" },
+      logger: mockLogger,
+      calculateCost: mockCalculateCost,
+    });
+
+    expect(mockGenerateObject).toHaveBeenCalled();
+    expect(result.mergedExtract).toEqual({
+      title: "Page Title",
+      description: "Page description here",
+    });
+    expect(result.mergeStrategy).toBe("llm_intelligent");
+  });
+
+  it("should fallback to simple merge when LLM fails for arrays", async () => {
+    const results: ChunkResult[] = [
+      {
+        chunkIndex: 0,
+        extract: [{ id: 1 }],
+        usage: { promptTokens: 100, completionTokens: 50, totalTokens: 150 },
+      },
+      {
+        chunkIndex: 1,
+        extract: [{ id: 2 }],
+        usage: { promptTokens: 100, completionTokens: 50, totalTokens: 150 },
+      },
+    ];
+
+    mockGenerateObject.mockRejectedValue(new Error("LLM API error"));
+
+    const result = await mergeChunkResultsWithLLM({
+      results,
+      originalSchema: { type: "array", items: { type: "object" } },
+      schemaType: "array",
+      model: { modelId: "gpt-4o-mini" } as any,
+      costTrackingOptions: {
+        costTracking: mockCostTracking as any,
+        metadata: {},
+      },
+      metadata: { teamId: "test-team" },
+      logger: mockLogger,
+      calculateCost: mockCalculateCost,
+    });
+
+    expect(result.mergeStrategy).toBe("array_concat");
+    expect(result.warning).toContain("LLM merge failed");
+    expect(result.mergedExtract).toEqual([{ id: 1 }, { id: 2 }]);
+  });
+
+  it("should fallback to simple merge when LLM fails for objects", async () => {
+    const results: ChunkResult[] = [
+      {
+        chunkIndex: 0,
+        extract: { a: 1, b: null },
+        usage: { promptTokens: 100, completionTokens: 50, totalTokens: 150 },
+      },
+      {
+        chunkIndex: 1,
+        extract: { a: null, b: 2 },
+        usage: { promptTokens: 100, completionTokens: 50, totalTokens: 150 },
+      },
+    ];
+
+    mockGenerateObject.mockRejectedValue(new Error("LLM API error"));
+
+    const result = await mergeChunkResultsWithLLM({
+      results,
+      originalSchema: { type: "object" },
+      schemaType: "object",
+      model: { modelId: "gpt-4o-mini" } as any,
+      costTrackingOptions: {
+        costTracking: mockCostTracking as any,
+        metadata: {},
+      },
+      metadata: { teamId: "test-team" },
+      logger: mockLogger,
+      calculateCost: mockCalculateCost,
+    });
+
+    expect(result.mergeStrategy).toBe("object_merge");
+    expect(result.warning).toContain("LLM merge failed");
+    expect(result.mergedExtract).toEqual({ a: 1, b: 2 });
+  });
+
+  it("should aggregate usage from all chunks plus merge", async () => {
+    const results: ChunkResult[] = [
+      {
+        chunkIndex: 0,
+        extract: [{ id: 1 }],
+        usage: { promptTokens: 100, completionTokens: 50, totalTokens: 150 },
+      },
+      {
+        chunkIndex: 1,
+        extract: [{ id: 2 }],
+        usage: { promptTokens: 200, completionTokens: 100, totalTokens: 300 },
+      },
+    ];
+
+    mockGenerateObject.mockResolvedValue({
+      object: { items: [{ id: 1 }, { id: 2 }] },
+      usage: { inputTokens: 50, outputTokens: 25 },
+    });
+
+    const result = await mergeChunkResultsWithLLM({
+      results,
+      originalSchema: { type: "array" },
+      schemaType: "array",
+      model: { modelId: "gpt-4o-mini" } as any,
+      costTrackingOptions: {
+        costTracking: mockCostTracking as any,
+        metadata: {},
+      },
+      metadata: { teamId: "test-team" },
+      logger: mockLogger,
+      calculateCost: mockCalculateCost,
+    });
+
+    // 100 + 200 + 50 = 350 prompt tokens
+    // 50 + 100 + 25 = 175 completion tokens
+    expect(result.usage.promptTokens).toBe(350);
+    expect(result.usage.completionTokens).toBe(175);
+  });
+});
+
+describe("wrapSchemaWithCompletionCheck", () => {
+  it("should wrap a simple object schema with extractionComplete", () => {
+    const schema = {
+      type: "object",
+      properties: {
+        name: { type: "string" },
+      },
+    };
+
+    const wrapped = wrapSchemaWithCompletionCheck(schema);
+
+    expect(wrapped.type).toBe("object");
+    expect(wrapped.properties.data).toEqual(schema);
+    expect(wrapped.properties.extractionComplete.type).toBe("boolean");
+    expect(wrapped.required).toContain("data");
+    expect(wrapped.required).toContain("extractionComplete");
+    expect(wrapped.additionalProperties).toBe(false);
+  });
+
+  it("should wrap an array schema with extractionComplete", () => {
+    const schema = {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          name: { type: "string" },
+        },
+      },
+    };
+
+    const wrapped = wrapSchemaWithCompletionCheck(schema);
+
+    expect(wrapped.properties.data).toEqual(schema);
+    expect(wrapped.properties.extractionComplete).toBeDefined();
+  });
+
+  it("should return null/undefined as-is", () => {
+    expect(wrapSchemaWithCompletionCheck(null)).toBeNull();
+    expect(wrapSchemaWithCompletionCheck(undefined)).toBeUndefined();
+  });
+
+  it("should return Zod schemas as-is", () => {
+    // Mock Zod type check - in actual test this would be a real Zod schema
+    const { z } = jest.requireActual("zod");
+    const zodSchema = z.object({ name: z.string() });
+
+    const result = wrapSchemaWithCompletionCheck(zodSchema);
+
+    // Should return the same Zod schema unchanged
+    expect(result).toBe(zodSchema);
+  });
+});
+
+describe("unwrapCompletionCheckResult", () => {
+  it("should unwrap a wrapped result with data and extractionComplete", () => {
+    const wrappedResult = {
+      data: { name: "Test", value: 123 },
+      extractionComplete: true,
+    };
+
+    const { data, extractionComplete } =
+      unwrapCompletionCheckResult(wrappedResult);
+
+    expect(data).toEqual({ name: "Test", value: 123 });
+    expect(extractionComplete).toBe(true);
+  });
+
+  it("should unwrap a result with incomplete extraction", () => {
+    const wrappedResult = {
+      data: [{ id: 1 }, { id: 2 }],
+      extractionComplete: false,
+    };
+
+    const { data, extractionComplete } =
+      unwrapCompletionCheckResult(wrappedResult);
+
+    expect(data).toEqual([{ id: 1 }, { id: 2 }]);
+    expect(extractionComplete).toBe(false);
+  });
+
+  it("should default extractionComplete to true if missing", () => {
+    const wrappedResult = {
+      data: { name: "Test" },
+    };
+
+    const { data, extractionComplete } =
+      unwrapCompletionCheckResult(wrappedResult);
+
+    expect(data).toEqual({ name: "Test" });
+    expect(extractionComplete).toBe(true);
+  });
+
+  it("should return raw result with extractionComplete true for unwrapped data", () => {
+    const rawResult = { name: "Test", value: 123 };
+
+    const { data, extractionComplete } = unwrapCompletionCheckResult(rawResult);
+
+    expect(data).toEqual({ name: "Test", value: 123 });
+    expect(extractionComplete).toBe(true);
+  });
+
+  it("should handle null result", () => {
+    const { data, extractionComplete } = unwrapCompletionCheckResult(null);
+
+    expect(data).toBeNull();
+    expect(extractionComplete).toBe(true);
+  });
+
+  it("should handle array result without wrapper", () => {
+    const arrayResult = [{ id: 1 }, { id: 2 }];
+
+    const { data, extractionComplete } =
+      unwrapCompletionCheckResult(arrayResult);
+
+    // Array without "data" property should be returned as-is
+    expect(data).toEqual([{ id: 1 }, { id: 2 }]);
+    expect(extractionComplete).toBe(true);
   });
 });

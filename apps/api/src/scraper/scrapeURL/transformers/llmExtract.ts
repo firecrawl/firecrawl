@@ -25,6 +25,64 @@ import { extractData } from "../lib/extractSmartScrape";
 import { CostTracking } from "../../../lib/cost-tracking";
 import { isAgentExtractModelValid } from "../../../controllers/v1/types";
 import { hasFormatOfType } from "../../../lib/format-utils";
+import {
+  countTokens,
+  splitContentIntoChunks,
+  detectSchemaType,
+  ContentChunk,
+  CHUNKING_DEFAULTS,
+} from "../../../lib/extract/helpers/chunking";
+import {
+  mergeChunkResultsWithLLM,
+  aggregateUsage,
+  ChunkResult,
+} from "../../../lib/extract/helpers/chunk-merger";
+
+// Wrap schema with extractionComplete field to detect incomplete extractions
+export function wrapSchemaWithCompletionCheck(schema: any): any {
+  if (!schema || schema instanceof z.ZodType) {
+    return schema;
+  }
+
+  return {
+    type: "object",
+    properties: {
+      data: schema,
+      extractionComplete: {
+        type: "boolean",
+        description:
+          "Set to false if there are MORE items/entries in the content that match the schema but were NOT included in your response. Set to true ONLY if you have extracted ALL matching data. For arrays: if you see 100 items but only extracted 10, set this to false.",
+      },
+      totalItemsInContent: {
+        type: "number",
+        description:
+          "Count the TOTAL number of items in the content that match the schema, even if you could not extract all of them. For example, if extracting restaurants and you see 150 restaurants listed but only extracted 10, set this to 150.",
+      },
+    },
+    required: ["data", "extractionComplete", "totalItemsInContent"],
+    additionalProperties: false,
+  };
+}
+
+// Unwrap the extraction result to get the original data
+export function unwrapCompletionCheckResult(result: any): {
+  data: any;
+  extractionComplete: boolean;
+  totalItemsInContent: number | null;
+} {
+  if (result && typeof result === "object" && "data" in result) {
+    return {
+      data: result.data,
+      extractionComplete: result.extractionComplete ?? true,
+      totalItemsInContent: result.totalItemsInContent ?? null,
+    };
+  }
+  return { data: result, extractionComplete: true, totalItemsInContent: null };
+}
+
+// Anti-hallucination prompt used in both main and chunking paths
+const ANTI_HALLUCINATION_PROMPT =
+  "Extract ONLY data that is explicitly present in the content. Do not invent, guess, or hallucinate any values. If data is not present, leave fields null or empty.";
 
 // Smart model selection based on schema
 function detectRecursiveSchema(schema: any): boolean {
@@ -44,6 +102,7 @@ function selectModelForSchema(schema?: any): {
   modelName: string;
   reason: string;
 } {
+  // Default to gpt-4o-mini for cost efficiency
   if (!schema) {
     return { modelName: "gpt-4o-mini", reason: "no_schema" };
   }
@@ -326,10 +385,17 @@ export async function generateCompletions({
   }
 
   try {
+    // Detect if schema expects an array - if so, emphasize extracting ALL items
+    const schemaType = detectSchemaType(options.schema);
+    const extractAllInstruction =
+      schemaType === "array"
+        ? " IMPORTANT: Extract ALL items/entries that match the schema from the content. Do not stop early or limit the number of results."
+        : "";
+
     const prompt =
       options.prompt !== undefined
-        ? `Transform the following content into structured JSON output based on the provided schema and this user request: ${options.prompt}. If schema is provided, strictly follow it.\n\n${markdown}`
-        : `Transform the following content into structured JSON output based on the provided schema if any.\n\n${markdown}`;
+        ? `Transform the following content into structured JSON output based on the provided schema and this user request: ${options.prompt}. If schema is provided, strictly follow it.${extractAllInstruction}\n\n${markdown}`
+        : `Transform the following content into structured JSON output based on the provided schema if any.${extractAllInstruction}\n\n${markdown}`;
 
     if (mode === "no-object") {
       try {
@@ -576,6 +642,52 @@ export async function generateCompletions({
       schema = normalizeSchema(schema);
     }
 
+    // Check if content exceeds token limits and needs chunking
+    const modelLimits = getModelLimits(modelId);
+    const contentTokens = countTokens(markdown, modelId);
+    const schemaTokens = schema
+      ? countTokens(JSON.stringify(schema), modelId)
+      : 0;
+    const promptOverhead = 2000; // tokens for prompt template and system message
+    const safetyBuffer = 1000;
+    const availableContentTokens =
+      modelLimits.maxInputTokens - schemaTokens - promptOverhead - safetyBuffer;
+
+    // If content exceeds input limits, use chunking
+    if (contentTokens > availableContentTokens) {
+      logger.info("Content exceeds token limit, using chunking strategy", {
+        contentTokens,
+        availableContentTokens,
+        modelId,
+        schemaTokens,
+      });
+
+      return await generateCompletionsWithChunking({
+        logger,
+        options,
+        markdown,
+        previousWarning,
+        model: currentModel,
+        retryModel,
+        costTrackingOptions,
+        metadata,
+        schema,
+        originalSchema: options.schema,
+        availableContentTokens,
+        modelId,
+        providerOptions,
+      });
+    }
+
+    // Wrap schema to detect incomplete extractions
+    const wrappedSchema = wrapSchemaWithCompletionCheck(schema);
+    const useCompletionCheck = wrappedSchema !== schema;
+
+    // Anti-hallucination system prompt addition
+    const enhancedSystemPrompt = options.systemPrompt
+      ? `${options.systemPrompt}\n\n${ANTI_HALLUCINATION_PROMPT}`
+      : ANTI_HALLUCINATION_PROMPT;
+
     const repairConfig = {
       experimental_repairText: async ({ text, error }) => {
         // AI may output a markdown JSON code block. Remove it - mogery
@@ -716,11 +828,14 @@ export async function generateCompletions({
           strictJsonSchema: true,
         },
       },
-      system: options.systemPrompt,
-      ...(schema && {
-        schema: schema instanceof z.ZodType ? schema : jsonSchema(schema),
+      system: enhancedSystemPrompt,
+      ...(wrappedSchema && {
+        schema:
+          wrappedSchema instanceof z.ZodType
+            ? wrappedSchema
+            : jsonSchema(wrappedSchema),
       }),
-      ...(!schema && { output: "no-schema" as const }),
+      ...(!wrappedSchema && { output: "no-schema" as const }),
       ...repairConfig,
       ...(!schema && {
         onError: (error: Error) => {
@@ -895,6 +1010,183 @@ export async function generateCompletions({
 
     extract = result?.object;
 
+    // Since generateObject doesn't provide token usage, we'll estimate it
+    if (!result) {
+      throw new Error("generateObject returned undefined result");
+    }
+    const promptTokens = result.usage?.inputTokens ?? 0;
+    const completionTokens = result.usage?.outputTokens ?? 0;
+
+    // Unwrap completion check result and warn if extraction is incomplete
+    const isArraySchema = detectSchemaType(options.schema) === "array";
+    const isLargeContent = contentTokens > 15000;
+
+    logger.info("Pre-warning check", {
+      useCompletionCheck,
+      isArraySchema,
+      isLargeContent,
+      contentTokens,
+      hasExtract: !!extract,
+    });
+
+    if (useCompletionCheck) {
+      const { data, extractionComplete, totalItemsInContent } =
+        unwrapCompletionCheckResult(extract);
+      extract = data;
+
+      // Count how many items were actually extracted
+      // Handle various wrapper structures: direct array, items wrapper, extractedData (smartscrape), nested arrays
+      const getExtractedCount = (obj: any): number => {
+        if (Array.isArray(obj)) return obj.length;
+        if (!obj || typeof obj !== "object") return 0;
+        // Check for items wrapper
+        if (Array.isArray(obj.items)) return obj.items.length;
+        // Check for smartscrape extractedData wrapper
+        if (obj.extractedData !== undefined)
+          return getExtractedCount(obj.extractedData);
+        // Check for first array property in object (e.g., { restaurants: [...] })
+        for (const value of Object.values(obj)) {
+          if (Array.isArray(value)) return value.length;
+        }
+        return 0;
+      };
+      const extractedCount = getExtractedCount(extract);
+
+      logger.info("Extraction completion check", {
+        extractionComplete,
+        totalItemsInContent,
+        extractedCount,
+        completionTokens,
+        maxOutputTokens: modelLimits.maxOutputTokens,
+        outputTokenRatio: (
+          completionTokens / modelLimits.maxOutputTokens
+        ).toFixed(2),
+        isArraySchema,
+        isLargeContent,
+      });
+
+      // Detect incomplete extraction:
+      // 1. LLM reports incomplete OR
+      // 2. totalItemsInContent > extractedCount (LLM counted more items than extracted)
+      const hasItemMismatch =
+        totalItemsInContent !== null &&
+        extractedCount > 0 &&
+        totalItemsInContent > extractedCount;
+      const isIncomplete = !extractionComplete || hasItemMismatch;
+
+      // High-output models that don't need retry (128K+ output tokens)
+      const highOutputModels = ["gpt-5", "gpt-5-mini", "o1", "o1-pro"];
+      const isHighOutputModel = highOutputModels.some(m => modelId.includes(m));
+
+      if (isIncomplete && !isHighOutputModel) {
+        logger.info("Incomplete extraction detected, retrying with gpt-5", {
+          extractionComplete,
+          totalItemsInContent,
+          extractedCount,
+          hasItemMismatch,
+          originalModel: modelId,
+        });
+
+        // Retry with gpt-5 which has 128K output tokens and better extraction
+        const retryModel = getModel("gpt-5", "openai");
+        const retryResult = await generateObject({
+          model: retryModel,
+          prompt: `${options.systemPrompt ? options.systemPrompt + "\n\n" : ""}${options.prompt ? options.prompt + "\n\n" : ""}${markdown}`,
+          system:
+            "Extract ONLY data that is explicitly present in the content. Do not invent, guess, or hallucinate any values. If data is not present, leave fields null or empty.",
+          schema: jsonSchema(wrappedSchema),
+          experimental_telemetry: {
+            isEnabled: true,
+            functionId: metadata.functionId
+              ? metadata.functionId + "/retry-high-output"
+              : "retry-high-output",
+            metadata: {
+              teamId: metadata.teamId,
+              ...(metadata.extractId ? { extractId: metadata.extractId } : {}),
+              ...(metadata.scrapeId ? { scrapeId: metadata.scrapeId } : {}),
+            },
+          },
+        });
+
+        // Track cost for retry
+        const retryModelId = "gpt-5";
+        costTrackingOptions.costTracking.addCall({
+          type: "other",
+          metadata: {
+            ...costTrackingOptions.metadata,
+            gcDetails: "retry-high-output",
+            originalModel: modelId,
+          },
+          model: retryModelId,
+          cost: calculateCost(
+            retryModelId,
+            retryResult.usage?.inputTokens ?? 0,
+            retryResult.usage?.outputTokens ?? 0,
+          ),
+          tokens: {
+            input: retryResult.usage?.inputTokens ?? 0,
+            output: retryResult.usage?.outputTokens ?? 0,
+          },
+        });
+
+        // Unwrap the retry result
+        const retryExtract = retryResult?.object;
+        const { data: retryData } = unwrapCompletionCheckResult(retryExtract);
+        extract = retryData;
+
+        const retryPromptTokens = retryResult.usage?.inputTokens ?? 0;
+        const retryCompletionTokens = retryResult.usage?.outputTokens ?? 0;
+
+        logger.info("Retry with gpt-5 completed", {
+          retryExtractedCount: getExtractedCount(extract),
+          retryPromptTokens,
+          retryCompletionTokens,
+        });
+
+        // Update usage to include both calls
+        return {
+          extract:
+            options.schema?.type === "array" &&
+            !schema?.required?.includes("items")
+              ? extract?.items
+              : extract,
+          warning: `Auto-upgraded to gpt-5 for complete extraction (extracted ${extractedCount} of ${totalItemsInContent} items with ${modelId}).`,
+          numTokens: promptTokens + retryPromptTokens,
+          totalUsage: {
+            promptTokens: promptTokens + retryPromptTokens,
+            completionTokens: completionTokens + retryCompletionTokens,
+            totalTokens:
+              promptTokens +
+              retryPromptTokens +
+              completionTokens +
+              retryCompletionTokens,
+          },
+          model: retryModelId,
+        };
+      }
+
+      // Fallback: just warn if already using high-output model or retry not needed
+      if (isIncomplete) {
+        let incompleteWarning: string;
+        if (hasItemMismatch) {
+          incompleteWarning = `Extracted ${extractedCount} of ${totalItemsInContent} items.`;
+        } else {
+          incompleteWarning = `Extraction may be incomplete.`;
+        }
+        warning = warning
+          ? `${warning} ${incompleteWarning}`
+          : incompleteWarning;
+
+        logger.warn("Incomplete extraction (high-output model already used)", {
+          extractionComplete,
+          totalItemsInContent,
+          extractedCount,
+          hasItemMismatch,
+          modelId,
+        });
+      }
+    }
+
     // If the users actually wants the items object, they can specify it as 'required' in the schema
     // otherwise, we just return the items array
     if (
@@ -904,13 +1196,6 @@ export async function generateCompletions({
     ) {
       extract = extract?.items;
     }
-
-    // Since generateObject doesn't provide token usage, we'll estimate it
-    if (!result) {
-      throw new Error("generateObject returned undefined result");
-    }
-    const promptTokens = result.usage?.inputTokens ?? 0;
-    const completionTokens = result.usage?.outputTokens ?? 0;
 
     return {
       extract,
@@ -935,6 +1220,239 @@ export async function generateCompletions({
     });
     throw lastError;
   }
+}
+
+interface GenerateCompletionsWithChunkingOptions {
+  logger: Logger;
+  options: GenerateCompletionsOptions["options"];
+  markdown: string;
+  previousWarning?: string;
+  model: LanguageModel;
+  retryModel: LanguageModel;
+  costTrackingOptions: GenerateCompletionsOptions["costTrackingOptions"];
+  metadata: GenerateCompletionsOptions["metadata"];
+  schema: any;
+  originalSchema: any;
+  availableContentTokens: number;
+  modelId: string;
+  providerOptions?: any;
+}
+
+/**
+ * Process large content by splitting into chunks, extracting from each, and merging results
+ */
+async function generateCompletionsWithChunking({
+  logger,
+  options,
+  markdown,
+  previousWarning,
+  model,
+  retryModel,
+  costTrackingOptions,
+  metadata,
+  schema,
+  originalSchema,
+  availableContentTokens,
+  modelId,
+  providerOptions,
+}: GenerateCompletionsWithChunkingOptions): Promise<{
+  extract: any;
+  numTokens: number;
+  warning: string | undefined;
+  totalUsage: TokenUsage;
+  model: string;
+}> {
+  // Split content into overlapping chunks
+  const chunks = splitContentIntoChunks(markdown, {
+    maxTokensPerChunk: availableContentTokens,
+    overlapTokens: CHUNKING_DEFAULTS.overlapTokens,
+    modelId,
+  });
+
+  logger.info("Split content into chunks for extraction", {
+    totalChunks: chunks.length,
+    chunkSizes: chunks.map(c => c.tokenCount),
+    originalTokens: countTokens(markdown, modelId),
+  });
+
+  // Anti-hallucination system prompt (same as main path)
+  const enhancedSystemPrompt = options.systemPrompt
+    ? `${options.systemPrompt}\n\n${ANTI_HALLUCINATION_PROMPT}`
+    : ANTI_HALLUCINATION_PROMPT;
+
+  // Process all chunks in parallel
+  const chunkPromises = chunks.map(async chunk => {
+    const chunkPrompt =
+      options.prompt !== undefined
+        ? `[Chunk ${chunk.chunkIndex + 1} of ${chunk.totalChunks}] Transform the following content into structured JSON output based on the provided schema and this user request: ${options.prompt}. If schema is provided, strictly follow it. Extract ALL relevant data from this chunk.\n\n${chunk.content}`
+        : `[Chunk ${chunk.chunkIndex + 1} of ${chunk.totalChunks}] Transform the following content into structured JSON output based on the provided schema if any. Extract ALL relevant data from this chunk.\n\n${chunk.content}`;
+
+    let retries = 0;
+    const maxRetries = CHUNKING_DEFAULTS.retryCount;
+
+    while (retries <= maxRetries) {
+      try {
+        const result = await generateObject({
+          model: retries === 0 ? model : retryModel,
+          prompt: chunkPrompt,
+          system: enhancedSystemPrompt,
+          schema: schema instanceof z.ZodType ? schema : jsonSchema(schema),
+          providerOptions: {
+            ...(providerOptions || {}),
+            google: {
+              labels: {
+                teamId: metadata.teamId,
+                functionId: metadata.functionId ?? "unspecified",
+                extractId: metadata.extractId ?? "unspecified",
+                scrapeId: metadata.scrapeId ?? "unspecified",
+              },
+            },
+            openai: {
+              strictJsonSchema: true,
+            },
+          },
+          experimental_telemetry: {
+            isEnabled: true,
+            functionId: metadata.functionId
+              ? `${metadata.functionId}/chunk-${chunk.chunkIndex}`
+              : `chunk-${chunk.chunkIndex}`,
+            metadata: {
+              teamId: metadata.teamId,
+              ...(metadata.extractId ? { extractId: metadata.extractId } : {}),
+              ...(metadata.scrapeId ? { scrapeId: metadata.scrapeId } : {}),
+            },
+          },
+        });
+
+        const usedModelId =
+          retries === 0
+            ? modelId
+            : typeof retryModel === "string"
+              ? retryModel
+              : retryModel.modelId;
+
+        costTrackingOptions.costTracking.addCall({
+          type: "other",
+          metadata: {
+            ...costTrackingOptions.metadata,
+            gcDetails: "chunked-extraction",
+            chunkIndex: chunk.chunkIndex,
+            totalChunks: chunk.totalChunks,
+          },
+          model: usedModelId,
+          cost: calculateCost(
+            usedModelId,
+            result.usage?.inputTokens ?? 0,
+            result.usage?.outputTokens ?? 0,
+          ),
+          tokens: {
+            input: result.usage?.inputTokens ?? 0,
+            output: result.usage?.outputTokens ?? 0,
+          },
+        });
+
+        // Handle the wrapped array case
+        let extract: any = result.object;
+        if (
+          originalSchema &&
+          originalSchema.type === "array" &&
+          extract?.items
+        ) {
+          extract = extract.items;
+        }
+
+        return {
+          chunkIndex: chunk.chunkIndex,
+          extract,
+          usage: {
+            promptTokens: result.usage?.inputTokens ?? 0,
+            completionTokens: result.usage?.outputTokens ?? 0,
+            totalTokens:
+              (result.usage?.inputTokens ?? 0) +
+              (result.usage?.outputTokens ?? 0),
+          },
+        } as ChunkResult;
+      } catch (error) {
+        retries++;
+        if (retries > maxRetries) {
+          logger.warn("Chunk extraction failed after retries", {
+            chunkIndex: chunk.chunkIndex,
+            error: (error as Error).message,
+            retries,
+          });
+          return {
+            chunkIndex: chunk.chunkIndex,
+            extract: null,
+            usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
+            error: error as Error,
+          } as ChunkResult;
+        }
+        logger.warn("Chunk extraction failed, retrying", {
+          chunkIndex: chunk.chunkIndex,
+          error: (error as Error).message,
+          retry: retries,
+        });
+      }
+    }
+
+    // Should not reach here, but TypeScript needs a return
+    return {
+      chunkIndex: chunk.chunkIndex,
+      extract: null,
+      usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
+      error: new Error("Unexpected error in chunk processing"),
+    } as ChunkResult;
+  });
+
+  const chunkResults = await Promise.all(chunkPromises);
+
+  // Filter successful results
+  const successfulResults = chunkResults.filter(r => !r.error);
+  const failedChunks = chunkResults.filter(r => r.error);
+
+  if (successfulResults.length === 0) {
+    throw new Error(
+      `All ${chunks.length} chunks failed extraction. First error: ${failedChunks[0]?.error?.message}`,
+    );
+  }
+
+  logger.info("Chunk extraction completed", {
+    successful: successfulResults.length,
+    failed: failedChunks.length,
+    totalChunks: chunks.length,
+  });
+
+  // Merge results using LLM
+  const schemaType = detectSchemaType(originalSchema);
+  const mergeResult = await mergeChunkResultsWithLLM({
+    results: successfulResults,
+    originalSchema: originalSchema,
+    schemaType,
+    model,
+    costTrackingOptions,
+    metadata,
+    logger,
+    calculateCost,
+  });
+
+  // Build warning message
+  let warningMsg = previousWarning || "";
+  warningMsg += `Content was split into ${chunks.length} chunks for extraction (${mergeResult.mergeStrategy}). `;
+  if (failedChunks.length > 0) {
+    warningMsg += `${failedChunks.length} chunk(s) failed to process. `;
+  }
+  if (mergeResult.warning) {
+    warningMsg += mergeResult.warning;
+  }
+  const warning: string | undefined = warningMsg.trim() || undefined;
+
+  return {
+    extract: mergeResult.mergedExtract,
+    numTokens: mergeResult.usage.promptTokens,
+    warning,
+    totalUsage: mergeResult.usage,
+    model: modelId,
+  };
 }
 
 export async function performLLMExtract(
