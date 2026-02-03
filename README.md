@@ -625,6 +625,13 @@ Firecrawl Cloud is available at [firecrawl.dev](https://firecrawl.dev) and offer
 
 ![Open Source vs Cloud Offering](https://raw.githubusercontent.com/firecrawl/firecrawl/main/img/open-source-cloud.png)
 
+## Star History 
+
+This chart tracks the star growth of the firecrawl
+
+[![Star History Chart](https://api.star-history.com/svg?repos=mendableai/firecrawl&type=Date)](https://star-history.com/#mendableai/firecrawl&Date)
+
+Click the image above to see the interactive version on Star History.
 
 ## Contributing
 
