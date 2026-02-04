@@ -14,13 +14,18 @@
     "@mendable/firecrawl-js": "^4.3.4",
     "axios": "^1.12.2",
     "firecrawl": "^4.3.4",
-    "ts-node": "^10.9.2",
-    "typescript": "^5.4.5",
     "uuid": "^10.0.0",
     "zod": "^3.23.8"
   },
   "devDependencies": {
     "@types/node": "^24.3.0",
-    "tsx": "^4.9.3"
+    "ts-node": "^10.9.2",
+    "tsx": "^4.9.3",
+    "typescript": "^5.4.5"
+  },
+  "pnpm": {
+    "overrides": {
+      "diff@>=4.0.0 <4.0.4": ">=4.0.4"
+    }
   }
 }

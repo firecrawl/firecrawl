@@ -4,6 +4,9 @@ settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
 
+overrides:
+  diff@>=4.0.0 <4.0.4: '>=4.0.4'
+
 importers:
 
   .:
@@ -17,12 +20,6 @@ importers:
       firecrawl:
         specifier: ^4.3.4
         version: 4.11.1
-      ts-node:
-        specifier: ^10.9.2
-        version: 10.9.2(@types/node@24.4.0)(typescript@5.9.2)
-      typescript:
-        specifier: ^5.4.5
-        version: 5.9.2
       uuid:
         specifier: ^10.0.0
         version: 10.0.0
@@ -33,9 +30,15 @@ importers:
       '@types/node':
         specifier: ^24.3.0
         version: 24.4.0
+      ts-node:
+        specifier: ^10.9.2
+        version: 10.9.2(@types/node@24.4.0)(typescript@5.9.2)
       tsx:
         specifier: ^4.9.3
         version: 4.20.5
+      typescript:
+        specifier: ^5.4.5
+        version: 5.9.2
 
 packages:
 
@@ -261,8 +264,8 @@ packages:
     resolution: {integrity: sha512-ZySD7Nf91aLB0RxL4KGrKHBXl7Eds1DAmEdcoVawXnLD7SDhpNgtuII2aAkg7a7QS41jxPSZ17p4VdGnMHk3MQ==}
     engines: {node: '>=0.4.0'}
 
-  diff@4.0.2:
-    resolution: {integrity: sha512-58lmxKSA4BNyLz+HHMUzlOEpg09FV+ev6ZMe3vJihgdxzgcwZ8VoEEPmALCZG9LmqfVoNMMKpttIYTVG6uDY7A==}
+  diff@8.0.3:
+    resolution: {integrity: sha512-qejHi7bcSD4hQAZE0tNAawRK1ZtafHDmMTMkrrIGgSLl7hTnQHmKCeB45xAcbfTqK2zowkM3j3bHt/4b/ARbYQ==}
     engines: {node: '>=0.3.1'}
 
   dunder-proto@1.0.1:
@@ -557,7 +560,7 @@ snapshots:
 
   delayed-stream@1.0.0: {}
 
-  diff@4.0.2: {}
+  diff@8.0.3: {}
 
   dunder-proto@1.0.1:
     dependencies:
@@ -693,7 +696,7 @@ snapshots:
       acorn-walk: 8.3.4
       arg: 4.1.3
       create-require: 1.1.1
-      diff: 4.0.2
+      diff: 8.0.3
       make-error: 1.3.6
       typescript: 5.9.2
       v8-compile-cache-lib: 3.0.1
