@@ -1,15 +1,4 @@
 {
     "$schema": "https://github.com/IBM/audit-ci/raw/main/docs/schema.json",
-    "low": true,
-    "allowlist": [
-        "GHSA-mh29-5h37-fv8m|@jest/globals>@jest/expect>jest-snapshot>@jest/transform>babel-plugin-istanbul>@istanbuljs/load-nyc-config>js-yaml", // not impacted by this
-        "GHSA-mh29-5h37-fv8m|artillery>js-yaml", // test-only dependency - we control YAML input
-        "GHSA-5j98-mcp5-4vw2|jest>@jest/core>@jest/reporters>glob", // we do not use the glob CLI
-        "GHSA-6475-r3vj-m8vf|artillery>artillery-plugin-publish-metrics>@aws-sdk/client-cloudwatch>@smithy/config-resolver", // informational enhancement - we control region input
-        "GHSA-73rr-hh4g-fpgx|jest>@jest/core>jest-config>ts-node>diff", // dev-only dependency - we don't parse untrusted patches
-        "GHSA-g9mf-h72j-4rw9|artillery>@artilleryio/int-commons>cheerio>undici", // test-only dependency - load testing doesn't connect to malicious servers
-        "GHSA-37qj-frw5-hhjh|artillery>@aws-sdk/client-cloudwatch-logs>@aws-sdk/core>@aws-sdk/xml-builder>fast-xml-parser", // test-only dependency - controlled XML input from AWS SDK
-        "GHSA-37qj-frw5-hhjh|artillery>@azure/storage-blob>@azure/core-xml>fast-xml-parser", // test-only dependency - controlled XML input from Azure SDK
-        "GHSA-37qj-frw5-hhjh|artillery>artillery-plugin-publish-metrics>@aws-sdk/client-cloudwatch>@aws-sdk/core>fast-xml-parser" // test-only dependency - controlled XML input from AWS SDK
-    ]
+    "low": true
 }
