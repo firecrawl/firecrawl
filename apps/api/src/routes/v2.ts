@@ -254,7 +254,7 @@ v2Router.delete(
 v2Router.ws(
   "/crawl/:jobId",
   ((ws: any, req: express.Request, next: (err?: unknown) => void) => {
-    if (!isValidJobId(req.params.jobId)) {
+    if (!isValidJobId(req.params.jobId as string)) {
       ws.close(1008, "Invalid job ID");
       return;
     }

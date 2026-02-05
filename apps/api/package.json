@@ -43,11 +43,10 @@
     "@jest/globals": "^30.2.0",
     "@sentry/core": "^10.28.0",
     "@types/amqplib": "^0.10.7",
-    "@types/body-parser": "^1.19.2",
     "@types/cors": "^2.8.13",
     "@types/culori": "^4.0.1",
     "@types/escape-html": "^1.0.4",
-    "@types/express": "^4.17.21",
+    "@types/express": "^5.0.6",
     "@types/express-ws": "^3.0.5",
     "@types/jest": "^30.0.0",
     "@types/lodash": "^4.17.14",
@@ -93,7 +92,6 @@
     "amqplib": "^0.10.9",
     "async-mutex": "^0.5.0",
     "axios": "^1.12.2",
-    "body-parser": "^1.20.3",
     "bullmq": "^5.56.7",
     "cacheable-lookup": "^6.1.0",
     "cheerio": "^1.0.0-rc.12",
@@ -102,7 +100,7 @@
     "dotenv": "^16.3.1",
     "esbuild": "^0.27.2",
     "escape-html": "^1.0.3",
-    "express": "4.22.0",
+    "express": "^5.2.1",
     "express-ws": "^5.0.2",
     "geoip-country": "^5.0.202510312342",
     "git-diff": "^2.0.6",
@@ -174,8 +172,7 @@
       "diff": "^8.0.3",
       "fast-xml-parser": "^5.3.4",
       "glob@>=10.2.0 <10.5.0": ">=10.5.0",
-      "js-yaml@<3.14.2": ">=3.14.2",
-      "qs@<6.14.1": ">=6.14.1"
+      "js-yaml@<3.14.2": ">=3.14.2"
     }
   },
   "lint-staged": {

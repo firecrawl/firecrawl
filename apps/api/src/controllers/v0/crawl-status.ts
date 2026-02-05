@@ -91,6 +91,7 @@ async function getJobs(
 
 export async function crawlStatusController(req: Request, res: Response) {
   try {
+    const jobId = req.params.jobId as string;
     const auth = await authenticateUser(req, res, RateLimiterMode.CrawlStatus);
     if (!auth.success) {
       return res.status(auth.status).json({ error: auth.error });
@@ -113,10 +114,7 @@ export async function crawlStatusController(req: Request, res: Response) {
     );
 
     redisEvictConnection
-      .sadd(
-        "teams_using_v0:" + team_id,
-        "crawl:" + req.params.jobId + ":status",
-      )
+      .sadd("teams_using_v0:" + team_id, "crawl:" + jobId + ":status")
       .catch(error =>
         logger.error("Failed to add team to teams_using_v0 (2)", {
           error,
@@ -124,7 +122,7 @@ export async function crawlStatusController(req: Request, res: Response) {
         }),
       );
 
-    const sc = await getCrawl(req.params.jobId);
+    const sc = await getCrawl(jobId);
     if (!sc) {
       return res.status(404).json({ error: "Job not found" });
     }
@@ -132,8 +130,8 @@ export async function crawlStatusController(req: Request, res: Response) {
     if (sc.team_id !== team_id) {
       return res.status(403).json({ error: "Forbidden" });
     }
-    let jobIDs = await getCrawlJobs(req.params.jobId);
-    let jobs = await getJobs(req.params.jobId, jobIDs);
+    let jobIDs = await getCrawlJobs(jobId);
+    let jobs = await getJobs(jobId, jobIDs);
     let jobStatuses = jobs.map(x => x.status);
 
     // Combine jobs and jobStatuses into a single array of objects

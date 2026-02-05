@@ -11,6 +11,7 @@ configDotenv();
 
 export async function crawlCancelController(req: Request, res: Response) {
   try {
+    const jobId = req.params.jobId as string;
     const auth = await authenticateUser(req, res, RateLimiterMode.CrawlStatus);
     if (!auth.success) {
       return res.status(auth.status).json({ error: auth.error });
@@ -33,10 +34,7 @@ export async function crawlCancelController(req: Request, res: Response) {
     );
 
     redisEvictConnection
-      .sadd(
-        "teams_using_v0:" + team_id,
-        "crawl:" + req.params.jobId + ":cancel",
-      )
+      .sadd("teams_using_v0:" + team_id, "crawl:" + jobId + ":cancel")
       .catch(error =>
         logger.error("Failed to add team to teams_using_v0 (2)", {
           error,
@@ -44,7 +42,7 @@ export async function crawlCancelController(req: Request, res: Response) {
         }),
       );
 
-    const sc = await getCrawl(req.params.jobId);
+    const sc = await getCrawl(jobId);
     if (!sc) {
       return res.status(404).json({ error: "Job not found" });
     }
@@ -54,7 +52,7 @@ export async function crawlCancelController(req: Request, res: Response) {
       return res.status(403).json({ error: "Unauthorized" });
     }
 
-    const group = await crawlGroup.getGroup(req.params.jobId);
+    const group = await crawlGroup.getGroup(jobId);
     if (!group) {
       return res.status(404).json({ error: "Job not found" });
     }
@@ -65,7 +63,7 @@ export async function crawlCancelController(req: Request, res: Response) {
 
     try {
       sc.cancelled = true;
-      await saveCrawl(req.params.jobId, sc);
+      await saveCrawl(jobId, sc);
     } catch (error) {
       logger.error(error);
     }

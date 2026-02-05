@@ -4,7 +4,6 @@ import "./services/sentry";
 import { setSentryServiceTag } from "./services/sentry";
 import * as Sentry from "@sentry/node";
 import express, { NextFunction, Request, Response } from "express";
-import bodyParser from "body-parser";
 import cors from "cors";
 import {
   getGenerateLlmsTxtQueue,
@@ -61,8 +60,8 @@ global.isProduction = config.IS_PRODUCTION;
 
 setSentryServiceTag("api");
 
-app.use(bodyParser.urlencoded({ extended: true }));
-app.use(bodyParser.json({ limit: "10mb" }));
+app.use(express.urlencoded({ extended: true }));
+app.use(express.json({ limit: "10mb" }));
 
 app.use(cors()); // Add this line to enable CORS
 
