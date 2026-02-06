@@ -24,6 +24,7 @@ import {
   SSLError,
   ProxySelectionError,
   NoCachedDataError,
+  PDFExportOnPDFUrlError,
 } from "../scraper/scrapeURL/error";
 
 // TODO: figure out correct typing for this
@@ -48,6 +49,7 @@ const errorMap: Record<ErrorCodes, any> = {
   SCRAPE_ACTIONS_NOT_SUPPORTED: ActionsNotSupportedError,
   SCRAPE_RACED_REDIRECT_ERROR: RacedRedirectError,
   SCRAPE_SITEMAP_ERROR: SitemapError,
+  SCRAPE_PDF_EXPORT_ON_PDF_URL: PDFExportOnPDFUrlError,
   CRAWL_DENIAL: CrawlDenialError,
 
   // Zod errors

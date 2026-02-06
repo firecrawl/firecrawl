@@ -430,6 +430,28 @@ export class FEPageLoadFailed extends Error {
   }
 }
 
+export class PDFExportOnPDFUrlError extends TransportableError {
+  constructor() {
+    super(
+      "SCRAPE_PDF_EXPORT_ON_PDF_URL",
+      'You are using the PDF export action (actions: [{ type: "pdf" }]) on a URL that is already a PDF file. PDF export is designed to convert HTML webpages to PDF format, not to process existing PDF files. To extract content from an existing PDF, use formats: ["markdown"] which will automatically parse the PDF and return its text content. Alternatively, use parsers: ["pdf"] to explicitly enable PDF parsing.',
+    );
+  }
+
+  serialize() {
+    return super.serialize();
+  }
+
+  static deserialize(
+    _: ErrorCodes,
+    data: ReturnType<typeof this.prototype.serialize>,
+  ) {
+    const x = new PDFExportOnPDFUrlError();
+    x.stack = data.stack;
+    return x;
+  }
+}
+
 export class EngineSnipedError extends Error {
   name = "EngineSnipedError";
 

@@ -47,6 +47,7 @@ import {
   WaterfallNextEngineSignal,
   EngineUnsuccessfulError,
   ProxySelectionError,
+  PDFExportOnPDFUrlError,
 } from "./error";
 import { executeTransformers } from "./transformers";
 import { LLMRefusalError } from "./transformers/llmExtract";
@@ -188,9 +189,17 @@ function buildFeatureFlags(
     lowerPath.includes(".xlsx/") ||
     lowerPath.includes(".xls/");
 
+  // Check for PDF URLs - includes both .pdf extension and common PDF URL patterns
+  // Many academic sites use URLs like /article/123/pdf or /document/pdf?id=456
+  const isPdfUrl =
+    lowerPath.endsWith(".pdf") ||
+    lowerPath.includes(".pdf/") ||
+    lowerPath.endsWith("/pdf") ||
+    lowerPath.includes("/pdf/");
+
   if (isDocument) {
     flags.add("document");
-  } else if (lowerPath.endsWith(".pdf") || lowerPath.includes(".pdf/")) {
+  } else if (isPdfUrl) {
     // Only add PDF flag if it's not a document
     flags.add("pdf");
   }
@@ -491,6 +500,16 @@ async function scrapeURLLoop(meta: Meta): Promise<ScrapeUrlResponse> {
       ) {
         throw new ZDRViolationError("pdf action");
       }
+    }
+
+    // Check if user is trying to use PDF export action on a URL that's already a PDF
+    // This is a user error - PDF export is for converting HTML to PDF, not for processing existing PDFs
+    if (
+      meta.featureFlags.has("pdf") &&
+      meta.options.actions &&
+      meta.options.actions.find(x => x.type === "pdf")
+    ) {
+      throw new PDFExportOnPDFUrlError();
     }
 
     // TODO: handle sitemap data, see WebScraper/index.ts:280
