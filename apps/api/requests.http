@@ -130,16 +130,3 @@ content-type: application/json
 # @name generateLlmsTxtStatus
 GET {{baseUrl}}/v1/llmstxt/{{generateLlmsTxtId}} HTTP/1.1
 Authorization: Bearer {{$dotenv TEST_API_KEY}}
-
-### Search with Wallet
-@paymentHeaderSearch = 'EXAMPLE-PAYMENT-HEADER'
-# @name searchWithWallet
-POST {{baseUrl}}/v1/x402/search HTTP/1.1
-Authorization: Bearer {{$dotenv TEST_API_KEY}}
-content-type: application/json
-X-Payment: {{paymentHeaderSearch}}
-
-{
-  "query": "Premier League fixtures for the 2025/26 season",
-  "limit": 2
-}

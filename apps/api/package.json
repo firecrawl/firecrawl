@@ -78,7 +78,6 @@
     "@apidevtools/json-schema-ref-parser": "^15.1.2",
     "@bull-board/api": "^6.14.0",
     "@bull-board/express": "^6.14.0",
-    "@x402/evm": "^2.2.0",
     "@dqbd/tiktoken": "^1.0.22",
     "@google-cloud/storage": "^7.18.0",
     "@mendable/firecrawl-rs": "workspace:*",
@@ -136,7 +135,6 @@
     "uuid": "^13.0.0",
     "winston": "^3.14.2",
     "ws": "^8.18.0",
-    "@x402/express": "^2.2.0",
     "xml2js": "^0.6.2",
     "zod": "4.1.12"
   },
