@@ -160,7 +160,11 @@ const scrapePage = async (
   if (response) {
     headers = await response.allHeaders();
     ct = Object.entries(headers).find(([k]) => k.toLowerCase() === 'content-type')?.[1];
-    if (ct && (ct.includes('application/json') || ct.includes('text/plain'))) {
+    if (
+      ct &&
+      (ct.toLowerCase().includes('application/json') ||
+      ct.toLowerCase().includes('text/plain'))
+    ) {
       content = (await response.body()).toString('utf8');
     }
   }
