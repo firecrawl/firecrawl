@@ -113,6 +113,7 @@ def _build_session(config: FirecrawlSourceConfig) -> requests.Session:
         total=config.max_retries,
         backoff_factor=1,
         status_forcelist=[429, 500, 502, 503, 504],
+        allowed_methods=["GET", "POST"],
     )
     session.mount("https://", HTTPAdapter(max_retries=retry))
     session.mount("http://", HTTPAdapter(max_retries=retry))
