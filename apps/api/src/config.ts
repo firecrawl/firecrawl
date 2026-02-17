@@ -183,6 +183,9 @@ const configSchema = z.object({
   RATE_LIMIT_TEST_API_KEY_SCRAPE: z.coerce.number().optional(),
   RATE_LIMIT_TEST_API_KEY_CRAWL: z.coerce.number().optional(),
 
+  // Concurrency Queue Limits
+  GLOBAL_CONCURRENCY_QUEUE_LIMIT: z.coerce.number().default(300000),
+
   // Testing
   TEST_API_KEY: z.string().optional(),
   TEST_API_URL: z.string().default("http://127.0.0.1:3002"),

@@ -5,6 +5,9 @@ import { getCrawl, StoredCrawl } from "./crawl-redis";
 import { logger } from "./logger";
 import { abTestJob } from "../services/ab-test";
 import { scrapeQueue, type NuQJob } from "../services/worker/nuq";
+import { config } from "../config";
+import { isSelfHosted } from "./deployment";
+import { GlobalQueueLimitExceededError } from "./error";
 
 const constructKey = (team_id: string) => "concurrency-limiter:" + team_id;
 const constructQueueKey = (team_id: string) =>
@@ -12,6 +15,27 @@ const constructQueueKey = (team_id: string) =>
 
 const constructCrawlKey = (crawl_id: string) =>
   "crawl-concurrency-limiter:" + crawl_id;
+
+// Lua script for atomic limit check and push
+// Returns: [success (0/1), current_count]
+const PUSH_WITH_LIMIT_CHECK_SCRIPT = `
+local queueKey = KEYS[1]
+local queuesSetKey = KEYS[2]
+local limit = tonumber(ARGV[1])
+local timeout = tonumber(ARGV[2])
+local jobJson = ARGV[3]
+
+local currentCount = redis.call('ZCARD', queueKey)
+
+if currentCount >= limit then
+  return {0, currentCount}
+end
+
+redis.call('ZADD', queueKey, timeout, jobJson)
+redis.call('SADD', queuesSetKey, queueKey)
+
+return {1, currentCount + 1}
+`;
 
 export async function cleanOldConcurrencyLimitEntries(
   team_id: string,
@@ -86,8 +110,34 @@ export async function pushConcurrencyLimitedJob(
   now: number = Date.now(),
 ) {
   const queueKey = constructQueueKey(team_id);
-  await getRedisConnection().zadd(queueKey, now + timeout, JSON.stringify(job));
-  await getRedisConnection().sadd("concurrency-limit-queues", queueKey);
+  const jobJson = JSON.stringify(job);
+  const expireAt = now + timeout;
+
+  // Skip limit check for self-hosted deployments
+  if (isSelfHosted()) {
+    await getRedisConnection().zadd(queueKey, expireAt, jobJson);
+    await getRedisConnection().sadd("concurrency-limit-queues", queueKey);
+    return;
+  }
+
+  const limit = config.GLOBAL_CONCURRENCY_QUEUE_LIMIT;
+
+  // Use Lua script for atomic operation
+  const result = (await getRedisConnection().eval(
+    PUSH_WITH_LIMIT_CHECK_SCRIPT,
+    2, // number of keys
+    queueKey,
+    "concurrency-limit-queues",
+    limit,
+    expireAt,
+    jobJson,
+  )) as [number, number];
+
+  const [success, currentCount] = result;
+
+  if (!success) {
+    throw new GlobalQueueLimitExceededError(currentCount, limit);
+  }
 }
 
 export async function getConcurrencyLimitedJobs(team_id: string) {
