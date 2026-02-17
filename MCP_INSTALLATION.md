@@ -30,6 +30,7 @@
   - [Augment Code](#augment-code)
   - [Kiro](#kiro)
   - [Qwen Code](#qwen-code)
+  - [Continue](#continue)
 - [CLI Tools](#cli-tools)
   - [GitHub Copilot CLI](#github-copilot-cli)
   - [GitHub Copilot Coding Agent](#github-copilot-coding-agent)
@@ -49,6 +50,8 @@
   - [Qodo Gen](#qodo-gen)
   - [Crush](#crush)
   - [Emdash](#emdash)
+  - [Factory](#factory)
+  - [Raycast](#raycast)
   - [Desktop Extension](#desktop-extension)
   - [Smithery](#smithery)
 - [Alternative Runtimes](#alternative-runtimes)
@@ -643,6 +646,67 @@ Add to `~/.qwen/settings.json` or `.qwen/settings.json` (project-level):
 
 ---
 
+### Continue
+
+> [Continue](https://continue.dev) is an open-source AI code assistant for VS Code and JetBrains. See [Continue MCP docs](https://docs.continue.dev/customize/deep-dives/mcp) for more details.
+
+> **Note:** MCP tools are only available in Continue's **Agent mode**.
+
+#### Option 1: JSON Configuration File
+
+Create a file at `.continue/mcpServers/firecrawl-mcp.json` in your workspace root:
+
+```json
+{
+  "mcpServers": {
+    "firecrawl-mcp": {
+      "command": "npx",
+      "args": ["-y", "firecrawl-mcp"],
+      "env": {
+        "FIRECRAWL_API_KEY": "YOUR_API_KEY"
+      }
+    }
+  }
+}
+```
+
+#### Option 2: YAML Configuration File
+
+Create a file at `.continue/mcpServers/firecrawl-mcp.yaml` in your workspace root:
+
+```yaml
+name: Firecrawl MCP Server
+version: 0.0.1
+schema: v1
+mcpServers:
+  - name: firecrawl-mcp
+    command: npx
+    args:
+      - "-y"
+      - "firecrawl-mcp"
+    env:
+      FIRECRAWL_API_KEY: YOUR_API_KEY
+```
+
+#### Option 3: Main Config File
+
+Add the `mcpServers` block directly to your Continue configuration:
+
+```yaml
+mcpServers:
+  - name: firecrawl-mcp
+    command: npx
+    args:
+      - "-y"
+      - "firecrawl-mcp"
+    env:
+      FIRECRAWL_API_KEY: YOUR_API_KEY
+```
+
+After configuration, switch to **Agent mode** in Continue, then type `@` and select **MCP** from the dropdown to use Firecrawl tools.
+
+---
+
 ## CLI Tools
 
 ### GitHub Copilot CLI
@@ -1040,6 +1104,54 @@ Add to your Emdash MCP configuration:
   }
 }
 ```
+
+---
+
+### Factory
+
+> Factory's droid supports MCP servers through its CLI. See [Factory MCP Documentation](https://docs.factory.ai/guides/mcp) for details.
+
+#### Using the droid CLI
+
+```bash
+droid mcp add firecrawl-mcp "npx -y firecrawl-mcp" --env FIRECRAWL_API_KEY=YOUR_API_KEY
+```
+
+#### Streamable HTTP (Remote)
+
+```bash
+droid mcp add firecrawl-mcp http://localhost:3000/mcp --type http
+```
+
+> **Note:** Start the Firecrawl MCP server in Streamable HTTP mode first (see [Streamable HTTP](#streamable-http-local-mode)).
+
+---
+
+### Raycast
+
+> Requires the [Raycast MCP extension](https://www.raycast.com/EvanZhouDev/mcp). See [Raycast MCP documentation](https://manual.raycast.com/model-context-protocol) for details.
+
+1. Install the **Model Context Protocol** extension from the Raycast Store
+2. Open Raycast and use the **Install Server** command
+3. Fill in the configuration form, or copy the JSON below before opening the command to auto-fill:
+
+```json
+{
+  "mcpServers": {
+    "firecrawl-mcp": {
+      "command": "npx",
+      "args": ["-y", "firecrawl-mcp"],
+      "env": {
+        "FIRECRAWL_API_KEY": "YOUR_API_KEY"
+      }
+    }
+  }
+}
+```
+
+After installation, you can `@`-mention the Firecrawl MCP server in Raycast AI Chat, AI Commands, and Presets.
+
+> **Note:** Raycast currently supports only the stdio transport. Ensure `npx` is available in your default shell's PATH.
 
 ---
 
