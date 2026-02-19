@@ -10,6 +10,7 @@ const config: KnipConfig = {
   ignore: [
     "native/**",
     "src/scraper/scrapeURL/engines/fire-engine/branding-script/**",
+    "src/lib/sandbox-client.ts",
   ],
   ignoreDependencies: ["openai", "undici-types"],
 };

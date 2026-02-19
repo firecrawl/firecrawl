@@ -13,7 +13,7 @@ function activeBrowserCountKey(teamId: string): string {
 
 type BrowserSessionStatus = "active" | "destroyed" | "error";
 
-export interface BrowserSessionRow {
+interface BrowserSessionRow {
   id: string;
   team_id: string;
   browser_id: string; // browser service sessionId
@@ -125,8 +125,13 @@ export async function getBrowserSessionByBrowserId(
 
   if (error) {
     if (error.code === "PGRST116") return null;
-    logger.error("Failed to get browser session by browser_id", { error, browserId });
-    throw new Error(`Failed to get browser session by browser_id: ${error.message}`);
+    logger.error("Failed to get browser session by browser_id", {
+      error,
+      browserId,
+    });
+    throw new Error(
+      `Failed to get browser session by browser_id: ${error.message}`,
+    );
   }
 
   return data as BrowserSessionRow;
@@ -138,7 +143,11 @@ export async function updateBrowserSessionStatus(
 ): Promise<void> {
   const { error } = await supabase_service
     .from(TABLE)
-    .update({ status, updated_at: new Date().toISOString(), deleted_at: status === "destroyed" ? new Date().toISOString() : null })
+    .update({
+      status,
+      updated_at: new Date().toISOString(),
+      deleted_at: status === "destroyed" ? new Date().toISOString() : null,
+    })
     .eq("id", id);
 
   if (error) {
@@ -152,7 +161,11 @@ export async function claimBrowserSessionDestroyed(
   const now = new Date().toISOString();
   const { data, error } = await supabase_service
     .from(TABLE)
-    .update({ status: "destroyed" as BrowserSessionStatus, updated_at: now, deleted_at: now })
+    .update({
+      status: "destroyed" as BrowserSessionStatus,
+      updated_at: now,
+      deleted_at: now,
+    })
     .eq("id", id)
     .eq("status", "active")
     .select("id");
@@ -175,7 +188,11 @@ export async function updateBrowserSessionCreditsUsed(
     .eq("id", id);
 
   if (error) {
-    logger.warn("Failed to update browser session credits_used", { error, id, creditsUsed });
+    logger.warn("Failed to update browser session credits_used", {
+      error,
+      id,
+      creditsUsed,
+    });
   }
 }
 
@@ -183,7 +200,9 @@ export async function updateBrowserSessionCreditsUsed(
 // Active session count (cached)
 // ---------------------------------------------------------------------------
 
-async function countActiveBrowserSessionsFromDb(teamId: string): Promise<number> {
+async function countActiveBrowserSessionsFromDb(
+  teamId: string,
+): Promise<number> {
   const { count, error } = await supabase_service
     .from(TABLE)
     .select("*", { count: "exact", head: true })
@@ -192,7 +211,9 @@ async function countActiveBrowserSessionsFromDb(teamId: string): Promise<number>
 
   if (error) {
     logger.error("Failed to count active browser sessions", { error, teamId });
-    throw new Error(`Failed to count active browser sessions: ${error.message}`);
+    throw new Error(
+      `Failed to count active browser sessions: ${error.message}`,
+    );
   }
 
   return count ?? 0;
@@ -202,7 +223,9 @@ async function countActiveBrowserSessionsFromDb(teamId: string): Promise<number>
  * Returns the number of active browser sessions for a team.
  * Uses a Redis cache with a short TTL to avoid hitting the DB on every request.
  */
-export async function getActiveBrowserSessionCount(teamId: string): Promise<number> {
+export async function getActiveBrowserSessionCount(
+  teamId: string,
+): Promise<number> {
   const cacheKey = activeBrowserCountKey(teamId);
 
   try {
@@ -229,7 +252,9 @@ export async function getActiveBrowserSessionCount(teamId: string): Promise<numb
  * Invalidate the cached active session count for a team.
  * Call after creating or destroying a session.
  */
-export async function invalidateActiveBrowserSessionCount(teamId: string): Promise<void> {
+export async function invalidateActiveBrowserSessionCount(
+  teamId: string,
+): Promise<void> {
   try {
     await deleteKey(activeBrowserCountKey(teamId));
   } catch {
