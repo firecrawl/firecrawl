@@ -7,6 +7,7 @@ export interface HttpClientOptions {
   timeoutMs?: number;
   maxRetries?: number;
   backoffFactor?: number; // seconds factor for 0.5, 1, 2...
+  headers?: Record<string, string>; // custom headers for self-hosted instances
 }
 
 export class HttpClient {
@@ -27,6 +28,7 @@ export class HttpClient {
       headers: {
         "Content-Type": "application/json",
         Authorization: `Bearer ${this.apiKey}`,
+        ...(options.headers || {}), // merge custom headers
       },
       transitional: { clarifyTimeoutError: true },
     });

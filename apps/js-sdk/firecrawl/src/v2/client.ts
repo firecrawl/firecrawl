@@ -80,6 +80,8 @@ export interface FirecrawlClientOptions {
   maxRetries?: number;
   /** Exponential backoff factor for retries (optional). */
   backoffFactor?: number;
+  /** Custom HTTP headers for self-hosted instances (optional). */
+  headers?: Record<string, string>;
 }
 
 /**
@@ -111,6 +113,7 @@ export class FirecrawlClient {
       timeoutMs: options.timeoutMs,
       maxRetries: options.maxRetries,
       backoffFactor: options.backoffFactor,
+      headers: options.headers,
     });
   }
 
