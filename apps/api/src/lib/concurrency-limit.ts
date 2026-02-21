@@ -15,6 +15,48 @@ const constructJobKey = (jobId: string) => "cq-job:" + jobId;
 const constructCrawlKey = (crawl_id: string) =>
   "crawl-concurrency-limiter:" + crawl_id;
 
+/**
+ * Check if a crawl has capacity for another job.
+ * Returns true if the crawl has no concurrency limit or is under the limit.
+ * On Redis errors, returns true to avoid blocking jobs (fail-open).
+ */
+async function checkCrawlHasCapacity(
+  crawlId: string | undefined,
+  crawlCache: Map<string, StoredCrawl>,
+): Promise<boolean> {
+  if (!crawlId) return true;
+
+  try {
+    const sc = crawlCache.get(crawlId) ?? (await getCrawl(crawlId));
+    if (sc !== null) {
+      crawlCache.set(crawlId, sc);
+    }
+
+    const maxCrawlConcurrency =
+      sc === null
+        ? null
+        : typeof sc.crawlerOptions?.delay === "number" &&
+            sc.crawlerOptions.delay > 0
+          ? 1
+          : (sc.maxConcurrency ?? null);
+
+    if (maxCrawlConcurrency === null) return true;
+
+    const currentActiveConcurrency = (
+      await getCrawlConcurrencyLimitActiveJobs(crawlId)
+    ).length;
+
+    return currentActiveConcurrency < maxCrawlConcurrency;
+  } catch (e) {
+    // Redis error - fail open to avoid blocking jobs
+    logger.warn("Redis error checking crawl capacity, allowing promotion", {
+      crawlId,
+      error: e,
+    });
+    return true;
+  }
+}
+
 export async function cleanOldConcurrencyLimitEntries(
   team_id: string,
   now: number = Date.now(),
@@ -306,6 +348,64 @@ async function getNextConcurrentJob(
         zeroDataRetention: finalJob.job.data?.zeroDataRetention,
         i,
       });
+    }
+  }
+
+  // Fallback: if Redis queue returned no eligible jobs, query NuQ backlog directly.
+  // This handles two cases:
+  // 1. Race condition where Redis scan missed eligible jobs due to timing
+  // 2. Redis data loss where the queue is empty but NuQ backlog has jobs
+  if (finalJob === null) {
+    try {
+      const backlogJobIds = await scrapeQueue.getBackloggedJobIDsOfOnwer(
+        teamId,
+        logger,
+      );
+
+      if (backlogJobIds.length > 0) {
+        const backlogJobs = await scrapeQueue.getJobsFromBacklog(
+          backlogJobIds,
+          logger,
+        );
+
+        for (const job of backlogJobs) {
+          // Check if crawl has capacity (fail-open on Redis errors)
+          const hasCapacity = await checkCrawlHasCapacity(
+            job.data?.crawl_id,
+            crawlCache,
+          );
+
+          if (hasCapacity) {
+            logger.info(
+              "Found eligible job in NuQ backlog fallback (Redis queue was empty)",
+              {
+                teamId,
+                jobId: job.id,
+                crawlId: job.data?.crawl_id,
+                zeroDataRetention: job.data?.zeroDataRetention,
+              },
+            );
+
+            return {
+              job: {
+                id: job.id,
+                data: job.data,
+                priority: job.priority,
+                listenable: job.listenChannelId !== undefined,
+              },
+              timeout: Infinity,
+            };
+          }
+        }
+      }
+    } catch (e) {
+      logger.warn(
+        "Error in NuQ backlog fallback, continuing without fallback",
+        {
+          teamId,
+          error: e,
+        },
+      );
     }
   }
 
