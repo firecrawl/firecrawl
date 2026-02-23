@@ -33,9 +33,9 @@ load_dotenv()
 # Configuration
 # ---------------------------------------------------------------------------
 
-FIRECRAWL_API_KEY = os.getenv("FIRECRAWL_API_KEY")
-RAGFLOW_API_KEY = os.getenv("RAGFLOW_API_KEY")
-RAGFLOW_BASE_URL = os.getenv("RAGFLOW_BASE_URL", "http://localhost:9380")
+FIRECRAWL_API_KEY = (os.getenv("FIRECRAWL_API_KEY") or "").strip()
+RAGFLOW_API_KEY = (os.getenv("RAGFLOW_API_KEY") or "").strip()
+RAGFLOW_BASE_URL = (os.getenv("RAGFLOW_BASE_URL") or "http://localhost:9380").strip().rstrip("/")
 
 MAX_RETRIES = 3
 RETRY_BACKOFF = 2  # seconds, doubles each retry
