@@ -167,60 +167,50 @@ async function removeCrawlConcurrencyLimitActiveJob(
  * @param teamId
  * @returns A job that can be run, or null if there are no more jobs to run.
  */
-async function getNextConcurrentJob(
-  teamId: string,
-  i = 0,
-): Promise<{
+async function getNextConcurrentJob(teamId: string): Promise<{
   job: ConcurrencyLimitedJob;
   timeout: number;
 } | null> {
-  let finalJobs: {
-    job: ConcurrencyLimitedJob;
-    _member: string;
-    timeout: number;
-  }[] = [];
-
   const crawlCache = new Map<string, StoredCrawl>();
   const queueKey = constructQueueKey(teamId);
   const redis = getRedisConnection();
-  let offset = 0;
+  const now = Date.now();
 
-  do {
-    const members = await redis.zrangebyscore(
-      queueKey,
-      Date.now(),
-      "+inf",
-      "LIMIT",
-      offset,
-      20,
-    );
+  // Jobs we popped but can't run due to crawl concurrency limits.
+  // We'll re-add them at the end so other callers can try them later.
+  const crawlBlocked: { member: string; score: number; jobData: string }[] = [];
 
-    if (members.length === 0) break;
-    offset += members.length;
+  try {
+    while (true) {
+      // ZPOPMIN atomically removes and returns the lowest-scored member.
+      // No two workers can ever get the same entry - eliminates the race.
+      const result = await redis.zpopmin(queueKey);
+      if (!result || result.length === 0) return null;
 
-    for (const member of members) {
-      const jobData = await redis.get(constructJobKey(member));
-      if (jobData === null) {
-        // TTL expired - remove orphaned sorted set entry
-        await redis.zrem(queueKey, member);
-        offset--;
+      const [member, scoreStr] = result as [string, string];
+      const score = parseFloat(scoreStr);
+
+      // Expired entry - discard
+      if (score < now) {
+        await redis.del(constructJobKey(member));
         continue;
       }
+
+      const jobData = await redis.get(constructJobKey(member));
+      if (jobData === null) {
+        // Job key TTL expired - orphaned sorted set entry, already removed by zpopmin
+        continue;
+      }
+
       const job: ConcurrencyLimitedJob = JSON.parse(jobData);
 
-      const res = {
-        job,
-        _member: member,
-        timeout: Infinity,
-      };
-
-      // If the job is associated with a crawl ID, we need to check if the crawl has a max concurrency limit
-      if (res.job.data.crawl_id) {
+      // Check crawl concurrency limit
+      if (job.data.crawl_id) {
         const sc =
-          crawlCache.get(res.job.data.crawl_id) ??
-          (await getCrawl(res.job.data.crawl_id));
+          crawlCache.get(job.data.crawl_id) ??
+          (await getCrawl(job.data.crawl_id));
         if (sc !== null) {
-          crawlCache.set(res.job.data.crawl_id, sc);
+          crawlCache.set(job.data.crawl_id, sc);
         }
 
         const maxCrawlConcurrency =
@@ -232,84 +222,36 @@ async function getNextConcurrentJob(
               : (sc.maxConcurrency ?? null);
 
         if (maxCrawlConcurrency !== null) {
-          // If the crawl has a max concurrency limit, we need to check if the crawl has reached the limit
           const currentActiveConcurrency = (
-            await getCrawlConcurrencyLimitActiveJobs(res.job.data.crawl_id)
+            await getCrawlConcurrencyLimitActiveJobs(job.data.crawl_id)
           ).length;
-          if (currentActiveConcurrency < maxCrawlConcurrency) {
-            // If we're under the max concurrency limit, we can run the job
-            finalJobs.push(res);
+          if (currentActiveConcurrency >= maxCrawlConcurrency) {
+            // Crawl is at its limit - hold this job aside to re-add later
+            crawlBlocked.push({ member, score, jobData });
+            continue;
           }
-        } else {
-          // If the crawl has no max concurrency limit, we can run the job
-          finalJobs.push(res);
         }
-      } else {
-        // If the job is not associated with a crawl ID, we can run the job
-        finalJobs.push(res);
-      }
-    }
-  } while (finalJobs.length === 0);
-
-  let finalJob: (typeof finalJobs)[number] | null = null;
-  if (finalJobs.length > 0) {
-    for (const job of finalJobs) {
-      const res = await getRedisConnection().zrem(
-        constructQueueKey(teamId),
-        job._member,
-      );
-      if (res !== 0) {
-        await getRedisConnection().del(constructJobKey(job._member));
-        finalJob = job;
-        break;
-      }
-    }
-
-    if (finalJob === null) {
-      // It's normal for this to happen, but if it happens too many times, we should log a warning
-      if (i > 100) {
-        logger.error(
-          "Failed to remove job from concurrency limit queue, hard bailing",
-          {
-            teamId,
-            jobIds: finalJobs.map(x => x.job.id),
-            zeroDataRetention: finalJobs.some(
-              x => x.job.data?.zeroDataRetention,
-            ),
-            i,
-          },
-        );
-        return null;
-      } else if (i > 15) {
-        logger.warn("Failed to remove job from concurrency limit queue", {
-          teamId,
-          jobIds: finalJobs.map(x => x.job.id),
-          zeroDataRetention: finalJobs.some(x => x.job.data?.zeroDataRetention),
-          i,
-        });
       }
 
-      return await new Promise((resolve, reject) =>
-        setTimeout(
-          () => {
-            getNextConcurrentJob(teamId, i + 1)
-              .then(resolve)
-              .catch(reject);
-          },
-          Math.floor(Math.random() * 300),
-        ),
-      ); // Stagger the workers off to break up the clump that causes the race condition
-    } else {
+      // We got a valid, eligible job
+      await redis.del(constructJobKey(member));
       logger.debug("Removed job from concurrency limit queue", {
         teamId,
-        jobId: finalJob.job.id,
-        zeroDataRetention: finalJob.job.data?.zeroDataRetention,
-        i,
+        jobId: job.id,
+        zeroDataRetention: job.data?.zeroDataRetention,
       });
+      return { job, timeout: Infinity };
+    }
+  } finally {
+    // Re-add crawl-blocked jobs so they can be picked up later
+    if (crawlBlocked.length > 0) {
+      const pipeline = redis.pipeline();
+      for (const { member, score } of crawlBlocked) {
+        pipeline.zadd(queueKey, score, member);
+      }
+      await pipeline.exec();
     }
   }
-
-  return finalJob;
 }
 
 /**
