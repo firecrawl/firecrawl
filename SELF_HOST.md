@@ -84,16 +84,14 @@ USE_DB_AUTHENTICATION=false
 # Firecrawl supports both Redis and Valkey as cache backends.
 # Valkey is an open-source Redis fork that is wire-compatible.
 # Simply use the same REDIS_URL for either backend.
-
-# Redis/Valkey connection URL
-# REDIS_URL=redis://localhost:6379
+#
+# When running with Docker Compose, the default is autoconfigured to redis://redis:6379
+# (using the Docker service hostname). You only need to set these if you're using an
+# external Redis/Valkey instance.
+# REDIS_URL=redis://redis:6379
 
 # Separate URL for rate limiting (optional, defaults to REDIS_URL)
-# REDIS_RATE_LIMIT_URL=redis://localhost:6379
-
-# Legacy Redis URLs (still supported for backward compatibility)
-# REDIS_URL=redis://localhost:6379
-# REDIS_RATE_LIMIT_URL=redis://localhost:6379
+# REDIS_RATE_LIMIT_URL=redis://redis:6379
 
 # Supabase Setup (used to support DB authentication, advanced logging, etc.)
 # SUPABASE_ANON_TOKEN=

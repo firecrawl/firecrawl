@@ -563,27 +563,31 @@ describeIfCI("Cache Compatibility Tests (Redis/Valkey)", () => {
         },
       );
 
-      const job = await queue.add("process-test", jobData);
-
-      // Wait for job to be processed
-      await new Promise<void>((resolve, reject) => {
+      // Set up event listeners before adding the job to avoid a race
+      // where the job completes before listeners are registered.
+      const jobProcessed = new Promise<void>((resolve, reject) => {
         const timeout = setTimeout(
           () => reject(new Error("Job processing timeout")),
           5000,
         );
         worker.on("completed", completedJob => {
-          if (completedJob.id === job.id) {
+          if (completedJob.id === job?.id) {
             clearTimeout(timeout);
             resolve();
           }
         });
         worker.on("failed", (failedJob, err) => {
-          if (failedJob?.id === job.id) {
+          if (failedJob?.id === job?.id) {
             clearTimeout(timeout);
             reject(err);
           }
         });
       });
+
+      const job = await queue.add("process-test", jobData);
+
+      // Wait for job to be processed
+      await jobProcessed;
 
       expect(processedData).toEqual(jobData);
     });
