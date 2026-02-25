@@ -17,6 +17,11 @@ const MAX_CONCURRENT_PAGES = Math.max(1, Number.parseInt(process.env.MAX_CONCURR
 const PROXY_SERVER = process.env.PROXY_SERVER || null;
 const PROXY_USERNAME = process.env.PROXY_USERNAME || null;
 const PROXY_PASSWORD = process.env.PROXY_PASSWORD || null;
+const CUSTOM_CERT_PEM_PATH = process.env.CUSTOM_CERT_PEM_PATH || null;
+const CUSTOM_CERT_KEY_PATH = process.env.CUSTOM_CERT_KEY_PATH || null;
+const CUSTOM_CERT_ORIGIN = process.env.CUSTOM_CERT_ORIGIN || null;
+const CUSTOM_CERT_PASSPHRASE = process.env.CUSTOM_CERT_PASSPHRASE || null;
+
 class Semaphore {
   private permits: number;
   private queue: (() => void)[] = [];
@@ -119,6 +124,18 @@ const createContext = async (skipTlsVerification: boolean = false) => {
     contextOptions.proxy = {
       server: PROXY_SERVER,
     };
+  }
+
+  if(CUSTOM_CERT_PEM_PATH && CUSTOM_CERT_KEY_PATH && CUSTOM_CERT_ORIGIN) {
+    const customCertificateConfig: any = {
+      origin: CUSTOM_CERT_ORIGIN,
+      certPath: CUSTOM_CERT_PEM_PATH,
+      keyPath: CUSTOM_CERT_KEY_PATH
+    }
+    if(CUSTOM_CERT_PASSPHRASE) {
+      customCertificateConfig.passphrase = CUSTOM_CERT_PASSPHRASE;
+    }
+    contextOptions.clientCertificates = [customCertificateConfig];
   }
 
   const newContext = await browser.newContext(contextOptions);

@@ -54,6 +54,10 @@ x-common-env: &common-env
   SEARXNG_ENDPOINT: ${SEARXNG_ENDPOINT}
   SEARXNG_ENGINES: ${SEARXNG_ENGINES}
   SEARXNG_CATEGORIES: ${SEARXNG_CATEGORIES}
+  CUSTOM_CERT_PEM_PATH: ${CUSTOM_CERT_PEM_PATH}
+  CUSTOM_CERT_KEY_PATH: ${CUSTOM_CERT_KEY_PATH}
+  CUSTOM_CERT_ORIGIN: ${CUSTOM_CERT_ORIGIN}
+  CUSTOM_CERT_PASSPHRASE: ${CUSTOM_CERT_PASSPHRASE}
 
 services:
   playwright-service:
@@ -69,6 +73,11 @@ services:
       BLOCK_MEDIA: ${BLOCK_MEDIA}
       # Configure maximum concurrent pages for Playwright browser instances
       MAX_CONCURRENT_PAGES: ${CRAWL_CONCURRENT_REQUESTS:-10}
+      # Configure custom certificate (easiest way is using docker volumes)
+      CUSTOM_CERT_PEM_PATH: ${CUSTOM_CERT_PEM_PATH}
+      CUSTOM_CERT_KEY_PATH: ${CUSTOM_CERT_KEY_PATH}
+      CUSTOM_CERT_ORIGIN: ${CUSTOM_CERT_ORIGIN}
+      CUSTOM_CERT_PASSPHRASE: ${CUSTOM_CERT_PASSPHRASE}
     networks:
       - backend
     # Resource limits for Docker Compose (not Swarm)
@@ -83,6 +92,9 @@ services:
         compress: "true"
     tmpfs:
       - /tmp/.cache:noexec,nosuid,size=1g
+    volumes:
+      - /to/my/custom-cert-pem-path/cert.pem:/custom-certs/cert.pem
+      - /to/my/custom-cert-key-path/key.pem:/custom-certs/key.pem
 
   api:
     <<: *common-service

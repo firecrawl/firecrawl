@@ -140,6 +140,12 @@ const configSchema = z.object({
   PROXY_USERNAME: z.string().optional(),
   PROXY_PASSWORD: z.string().optional(),
 
+  // Custom certificate
+  CUSTOM_CERT_PEM_PATH: z.string().optional(),
+  CUSTOM_CERT_KEY_PATH: z.string().optional(),
+  CUSTOM_CERT_ORIGIN: z.string().optional(),
+  CUSTOM_CERT_PASSPHRASE: z.string().optional(),
+
   // External Services
   PLAYWRIGHT_MICROSERVICE_URL: z.string().optional(),
   HTML_TO_MARKDOWN_SERVICE_URL: z.string().optional(),

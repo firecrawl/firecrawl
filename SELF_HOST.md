@@ -69,6 +69,14 @@ USE_DB_AUTHENTICATION=false
 # PROXY_USERNAME=
 # PROXY_PASSWORD=
 
+## === Custom certificate ===
+# Setup a custom certificate to access protected resources
+# CUSTOM_CERT_PEM_PATH =
+# CUSTOM_CERT_KEY_PATH =
+# CUSTOM_CERT_ORIGIN =
+# CUSTOM_CERT_PASSPHRASE =
+
+
 ## === /search API ===
 # By default, the /search API will use Google search.
 
