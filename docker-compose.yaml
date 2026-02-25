@@ -92,9 +92,10 @@ services:
         compress: "true"
     tmpfs:
       - /tmp/.cache:noexec,nosuid,size=1g
-    volumes:
-      - /to/my/custom-cert-pem-path/cert.pem:/custom-certs/cert.pem
-      - /to/my/custom-cert-key-path/key.pem:/custom-certs/key.pem
+    # Bind the custom certificate / key in volumes
+    # volumes:
+    #   - /to/my/custom-cert-pem-path/cert.pem:/custom-certs/cert.pem
+    #   - /to/my/custom-cert-key-path/key.pem:/custom-certs/key.pem
 
   api:
     <<: *common-service
