@@ -6,7 +6,7 @@ import { robustFetch } from "../../lib/fetch";
 import { z } from "zod";
 import * as Sentry from "@sentry/node";
 import escapeHtml from "escape-html";
-import PdfParse from "pdf-parse";
+import PdfParse from "pdf-parse-fixed";
 import { downloadFile, fetchFileToBuffer } from "../utils/downloadFile";
 import {
   PDFAntibotError,

@@ -173,6 +173,9 @@ importers:
       pdf-parse:
         specifier: ^1.1.1
         version: 1.1.1
+      pdf-parse-fixed:
+        specifier: ^1.1.1
+        version: 1.1.1
       pg:
         specifier: ^8.16.3
         version: 8.16.3(pg-native@3.5.2)
@@ -4735,6 +4738,10 @@ packages:
 
   pause-stream@0.0.11:
     resolution: {integrity: sha512-e3FBlXLmN/D1S+zHzanP4E/4Z60oFAa3O051qt1pxa7DEJWKAyil6upYVXCWadEnuoqa4Pkc9oUx9zsxYeRv8A==}
+
+  pdf-parse-fixed@1.1.1:
+    resolution: {integrity: sha512-SB7pixXtZOd+tf9eCPccaM8JCtv51FqPKoGKZW3AJ1HCJkb/v+prnPNW734ihxL/YbteCoZRuw4QTfJ3CuOk9g==}
+    engines: {node: '>=6.8.1'}
 
   pdf-parse@1.1.1:
     resolution: {integrity: sha512-v6ZJ/efsBpGrGGknjtq9J/oC8tZWq0KWL5vQrk2GlzLEQPUDB1ex+13Rmidl1neNN358Jn9EHZw5y07FFtaC7A==}
@@ -10615,6 +10622,13 @@ snapshots:
   pause-stream@0.0.11:
     dependencies:
       through: 2.3.8
+
+  pdf-parse-fixed@1.1.1:
+    dependencies:
+      debug: 4.4.3
+      node-ensure: 0.0.0
+    transitivePeerDependencies:
+      - supports-color
 
   pdf-parse@1.1.1:
     dependencies:
