@@ -563,6 +563,9 @@ describeIfCI("Cache Compatibility Tests (Redis/Valkey)", () => {
         },
       );
 
+      // Declare job before the listeners so the closures never hit a TDZ.
+      let job: Job | undefined;
+
       // Set up event listeners before adding the job to avoid a race
       // where the job completes before listeners are registered.
       const jobProcessed = new Promise<void>((resolve, reject) => {
@@ -584,7 +587,7 @@ describeIfCI("Cache Compatibility Tests (Redis/Valkey)", () => {
         });
       });
 
-      const job = await queue.add("process-test", jobData);
+      job = await queue.add("process-test", jobData);
 
       // Wait for job to be processed
       await jobProcessed;
