@@ -63,15 +63,18 @@ Choose your preferred environment below for specific configuration instructions.
 <details>
 <summary><b>3. Cursor</b></summary>
 
-1. Open Cursor and go to **Settings** -> **Features** -> **MCP**.
-2. Click **Add New MCP Server**.
-3. Fill in the details:
+1. **One-Click Install**: Click the button below to instantly install Firecrawl in Cursor:
+   [![Install MCP Server](https://cursor.com/deeplink/mcp-install-dark.svg)](https://cursor.com/en/install-mcp?name=Firecrawl&config=eyJjb21tYW5kIjogIm5weCIsICJhcmdzIjogWyIteSIsICJAZmlyZWNyYXdsL21jcC1zZXJ2ZXIiXSwgImVudiI6IHsiRklSRUNSQVdMX0FQSV9LRVkiOiAiWU9VUl9GSUlSRUNSQVdMX0FQSV9LRVkiIn19)
+
+2. **Manual Install**: Open Cursor and go to **Settings** -> **Features** -> **MCP**.
+3. Click **Add New MCP Server**.
+4. Fill in the details:
    - **Name**: `Firecrawl`
    - **Type**: `command`
    - **Command**: `npx -y @firecrawl/mcp-server`
-4. Add the environment variable:
+5. Add the environment variable:
    - Click **Add Env** and add `FIRECRAWL_API_KEY=YOUR_FIRECRAWL_API_KEY`.
-5. Click **Save**.
+6. Click **Save**.
 </details>
 
 <details>
@@ -342,6 +345,50 @@ firecrawl_tool = MCPTool(
    - Command: `npx`
    - Args: `-y @firecrawl/mcp-server`
    - Env: `FIRECRAWL_API_KEY=YOUR_FIRECRAWL_API_KEY`
+</details>
+
+<details>
+<summary><b>22. LibreChat</b></summary>
+
+1. Open your `librechat.yaml` configuration file.
+2. Add the following to the `mcpServers` section:
+```yaml
+mcpServers:
+  firecrawl:
+    command: "npx"
+    args: ["-y", "@firecrawl/mcp-server"]
+    env:
+      FIRECRAWL_API_KEY: "YOUR_FIRECRAWL_API_KEY"
+```
+3. Restart LibreChat.
+</details>
+
+<details>
+<summary><b>23. Dify</b></summary>
+
+1. Go to **Integrations** -> **MCP**.
+2. Add a new server with:
+   - Name: `Firecrawl`
+   - Type: `command`
+   - Command: `npx -y @firecrawl/mcp-server`
+   - Env: `FIRECRAWL_API_KEY=YOUR_FIRECRAWL_API_KEY`
+</details>
+
+<details>
+<summary><b>24. Flowise</b></summary>
+
+1. Use the **MCP Tool** in Flowise.
+2. Configure the tool with:
+   - Command: `npx`
+   - Args: `["-y", "@firecrawl/mcp-server"]`
+   - Env: `{"FIRECRAWL_API_KEY": "YOUR_FIRECRAWL_API_KEY"}`
+</details>
+
+<details>
+<summary><b>25. Puter</b></summary>
+
+1. Open Puter and use the MCP integration in the AI agent.
+2. Configure with the command: `npx -y @firecrawl/mcp-server`.
 </details>
 
 ---
