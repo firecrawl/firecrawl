@@ -64,7 +64,7 @@ Choose your preferred environment below for specific configuration instructions.
 <summary><b>3. Cursor</b></summary>
 
 1. **One-Click Install**: Click the button below to instantly install Firecrawl in Cursor:
-   [![Install MCP Server](https://cursor.com/deeplink/mcp-install-dark.svg)](https://cursor.com/en/install-mcp?name=Firecrawl&config=eyJjb21tYW5kIjogIm5weCIsICJhcmdzIjogWyIteSIsICJAZmlyZWNyYXdsL21jcC1zZXJ2ZXIiXSwgImVudiI6IHsiRklSRUNSQVdMX0FQSV9LRVkiOiAiWU9VUl9GSUlSRUNSQVdMX0FQSV9LRVkiIn19)
+   [![Install MCP Server](https://cursor.com/deeplink/mcp-install-dark.svg)](https://cursor.com/en/install-mcp?name=Firecrawl&config=eyJjb21tYW5kIjogIm5weCIsICJhcmdzIjogWyIteSIsICJAZmlyZWNyYXdsL21jcC1zZXJ2ZXIiXSwgImVudiI6IHsiRklSRUNSQVdMX0FQSV9LRVkiOiAiWU9VUl9GSVJFQ1JBV0xfQVBJX0tFWSJ9fQ==)
 
 2. **Manual Install**: Open Cursor and go to **Settings** -> **Features** -> **MCP**.
 3. Click **Add New MCP Server**.
