@@ -44,6 +44,7 @@ class FirecrawlSourceConfig:
         """Return a list of validation error strings (empty == valid)."""
         errors: List[str] = []
         api_key = (self.api_key or "").strip()
+        self.api_key = api_key
         if not api_key:
             errors.append("Firecrawl API key is required")
         elif not api_key.startswith("fc-"):
