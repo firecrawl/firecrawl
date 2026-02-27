@@ -217,8 +217,9 @@ async function drainQueue(
 
   let jobsPromoted = 0;
   let staleSkipped = 0;
+  let typeBlocked = 0;
 
-  while (staleSkipped < 100) {
+  while (staleSkipped + typeBlocked < 100) {
     if (
       crawlCount >= maxCrawlConcurrency &&
       extractCount >= maxExtractConcurrency
@@ -243,6 +244,7 @@ async function drainQueue(
         },
         nextJob.timeout === Infinity ? 172800000 : nextJob.timeout,
       );
+      typeBlocked++;
       continue;
     }
 
