@@ -1,7 +1,21 @@
 replicaCount: 1
 
-nuqWorker:
-  replicaCount: 5
+resources:
+  enabled: false
+
+api:
+  replicaCount: 1
+  resources:
+    requests:
+      memory: "4G"
+      cpu: "2000m"
+    limits:
+      memory: "6G"
+      cpu: "2000m"
+
+worker:
+  replicaCount: 1
+  port: 3005
   resources:
     requests:
       memory: "3G"
@@ -10,14 +24,50 @@ nuqWorker:
       memory: "4G"
       cpu: "1000m"
 
+extractWorker:
+  enabled: true
+  replicaCount: 1
+  port: 3004
+  resources:
+    requests:
+      memory: "2G"
+      cpu: "1000m"
+    limits:
+      memory: "3G"
+      cpu: "1000m"
+
+nuqWorker:
+  replicaCount: 5
+  port: 3006
+  resources:
+    requests:
+      memory: "3G"
+      cpu: "1000m"
+    limits:
+      memory: "4G"
+      cpu: "1000m"
+
+nuqPrefetchWorker:
+  enabled: true
+  replicaCount: 1
+  port: 3011
+  resources:
+    requests:
+      memory: "1G"
+      cpu: "500m"
+    limits:
+      memory: "2G"
+      cpu: "1000m"
+
 nuqPostgres:
   replicaCount: 1
   image:
-    repository: ghcr.io/firecrawl/nuq-postgres
+    repository: docker.io/winkkgmbh/nuq-postgres
     tag: latest
     pullPolicy: Always
   auth:
     username: postgres
+    password: password
     database: postgres
   resources:
     requests:
@@ -28,17 +78,32 @@ nuqPostgres:
       cpu: "500m"
   persistence:
     enabled: false
+    size: 10Gi
+    storageClass: ""
+
+rabbitmq:
+  enabled: true
+  image: rabbitmq:3-management
+  replicaCount: 1
+  resources:
+    requests:
+      memory: "512Mi"
+      cpu: "250m"
+    limits:
+      memory: "1Gi"
+      cpu: "500m"
 
 image:
-  repository: ghcr.io/firecrawl/firecrawl
+  repository: docker.io/winkkgmbh/firecrawl
   tag: "latest"
   pullPolicy: Always
-  dockerSecretEnabled: true
+  dockerSecretEnabled: false
 
 playwright:
-  repository: ghcr.io/firecrawl/playwright-service
+  repository: docker.io/winkkgmbh/firecrawl-playwright
   tag: "latest"
   pullPolicy: Always
+  replicaCount: 1
 
 redis:
   image: redis:alpine
@@ -54,20 +119,49 @@ service:
   redis:
     type: ClusterIP
     port: 6379
+  rabbitmq:
+    type: ClusterIP
+    port: 5672
+    managementPort: 15672
 
 config:
   NUM_WORKERS_PER_QUEUE: "8"
   PORT: "3002"
   HOST: "0.0.0.0"
-  REDIS_URL: "redis://redis:6379"
-  REDIS_RATE_LIMIT_URL: "redis://redis:6379"
-  PLAYWRIGHT_MICROSERVICE_URL: "http://playwright-service:3000"
+  WORKER_PORT: "3005"
+  EXTRACT_WORKER_PORT: "3004"
+  NUQ_WORKER_PORT: "3006"
+  NUQ_PREFETCH_WORKER_PORT: "3011"
+  NUQ_WORKER_COUNT: "5"
   USE_DB_AUTHENTICATION: "false"
-  HDX_NODE_BETA_MODE: "1"
-  NUQ_DATABASE_URL: "postgresql://postgres:password@nuq-postgres:5432/postgres"
+  IS_KUBERNETES: "true"
+  ENV: "production"
+  LOGGING_LEVEL: "INFO"
+  FIRECRAWL_APP_SCHEME: "http"
+  FIRECRAWL_APP_HOST: ""
+  FIRECRAWL_APP_PORT: ""
+  REDIS_URL: ""
+  REDIS_RATE_LIMIT_URL: ""
+  PLAYWRIGHT_MICROSERVICE_URL: ""
+  NUQ_DATABASE_URL: ""
+  NUQ_DATABASE_URL_LISTEN: ""
+  NUQ_RABBITMQ_URL: ""
+  OPENAI_BASE_URL: ""
+  MODEL_NAME: ""
+  MODEL_EMBEDDING_NAME: ""
+  OLLAMA_BASE_URL: ""
+  PROXY_SERVER: ""
+  PROXY_USERNAME: ""
+  SEARXNG_ENDPOINT: ""
+  SEARXNG_ENGINES: ""
+  SEARXNG_CATEGORIES: ""
+  SELF_HOSTED_WEBHOOK_URL: ""
+  extra: {}
 
 playwrightConfig:
   PORT: "3000"
+  BLOCK_MEDIA: ""
+  MAX_CONCURRENT_PAGES: "10"
 
 secret:
   OPENAI_API_KEY: ""
@@ -75,11 +169,14 @@ secret:
   LLAMAPARSE_API_KEY: ""
   BULL_AUTH_KEY: ""
   TEST_API_KEY: ""
-  SCRAPING_BEE_API_KEY: ""
-  STRIPE_PRICE_ID_STANDARD: ""
-  STRIPE_PRICE_ID_SCALE: ""
   FIRE_ENGINE_BETA_URL: ""
+  SUPABASE_ANON_TOKEN: ""
+  SUPABASE_URL: ""
+  SUPABASE_SERVICE_TOKEN: ""
+  PROXY_PASSWORD: ""
+  SELF_HOSTED_WEBHOOK_HMAC_SECRET: ""
   REDIS_PASSWORD: ""
+  extra: {}
 
 imagePullSecrets:
   - name: docker-registry-secret

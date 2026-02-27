@@ -5,7 +5,7 @@ metadata:
   labels:
     app: {{ include "firecrawl.name" . }}-playwright
 spec:
-  replicas: {{ .Values.replicaCount }}
+  replicas: {{ .Values.playwright.replicaCount | default .Values.replicaCount }}
   selector:
     matchLabels:
       app: {{ include "firecrawl.name" . }}-playwright
@@ -26,10 +26,14 @@ spec:
             - containerPort: {{ .Values.service.playwright.port }}
           envFrom:
             - configMapRef:
+                name: {{ include "firecrawl.fullname" . }}-config
+            - secretRef:
+                name: {{ include "firecrawl.fullname" . }}-secret
+            - configMapRef:
                 name: {{ include "firecrawl.fullname" . }}-playwright-config
           livenessProbe:
             httpGet:
-              path: /health/liveness
+              path: /health
               port: {{ .Values.service.playwright.port }}
             initialDelaySeconds: 30
             periodSeconds: 30
@@ -38,7 +42,7 @@ spec:
             failureThreshold: 3
           readinessProbe:
             httpGet:
-              path: /health/readiness
+              path: /health
               port: {{ .Values.service.playwright.port }}
             initialDelaySeconds: 30
             periodSeconds: 30

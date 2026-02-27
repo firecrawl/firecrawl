@@ -5,7 +5,7 @@ metadata:
   labels:
     app: {{ include "firecrawl.name" . }}-worker
 spec:
-  replicas: {{ .Values.replicaCount }}
+  replicas: {{ .Values.worker.replicaCount | default .Values.replicaCount }}
   selector:
     matchLabels:
       app: {{ include "firecrawl.name" . }}-worker
@@ -18,16 +18,39 @@ spec:
       imagePullSecrets:
         {{- toYaml .Values.imagePullSecrets | nindent 8 }}
       {{- end }}
+      terminationGracePeriodSeconds: 60
       containers:
         - name: worker
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
-          args: [ "pnpm", "run", "workers" ]
+          command: [ "node" ]
+          args: [ "--max-old-space-size=3072", "dist/src/services/queue-worker.js" ]
+          ports:
+            - containerPort: {{ .Values.worker.port | int }}
           env:
             - name: FLY_PROCESS_GROUP
               value: "worker"
+            - name: WORKER_PORT
+              value: {{ .Values.worker.port | quote }}
+            - name: NUQ_POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
           envFrom:
             - configMapRef:
                 name: {{ include "firecrawl.fullname" . }}-config
             - secretRef:
                 name: {{ include "firecrawl.fullname" . }}-secret
+          {{- if and .Values.resources.enabled .Values.worker.resources }}
+          resources:
+            {{- toYaml .Values.worker.resources | nindent 12 }}
+          {{- end }}
+          livenessProbe:
+            httpGet:
+              path: /liveness
+              port: {{ .Values.worker.port | int }}
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 5
+            successThreshold: 1
+            failureThreshold: 3

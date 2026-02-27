@@ -3,4 +3,6 @@ kind: ConfigMap
 metadata:
   name: {{ include "firecrawl.fullname" . }}-playwright-config
 data:
-  PORT: {{ .Values.playwrightConfig.PORT | quote }}
+  PORT: {{ default (printf "%v" .Values.service.playwright.port) .Values.playwrightConfig.PORT | quote }}
+  BLOCK_MEDIA: {{ .Values.playwrightConfig.BLOCK_MEDIA | quote }}
+  MAX_CONCURRENT_PAGES: {{ .Values.playwrightConfig.MAX_CONCURRENT_PAGES | quote }}

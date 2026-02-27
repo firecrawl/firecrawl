@@ -1,14 +1,50 @@
+{{- $fullname := include "firecrawl.fullname" . -}}
+{{- $redisDefault := printf "redis://%s-redis:%v" $fullname .Values.service.redis.port -}}
+{{- $playwrightDefault := printf "http://%s-playwright:%v/scrape" $fullname .Values.service.playwright.port -}}
+{{- $pgUser := default "postgres" .Values.nuqPostgres.auth.username -}}
+{{- $pgPassword := default "password" .Values.nuqPostgres.auth.password -}}
+{{- $pgDb := default "postgres" .Values.nuqPostgres.auth.database -}}
+{{- $nuqDbDefault := printf "postgresql://%s:%s@%s-nuq-postgres:5432/%s" $pgUser $pgPassword $fullname $pgDb -}}
+{{- $nuqDbUrl := default $nuqDbDefault .Values.config.NUQ_DATABASE_URL -}}
+{{- $rabbitMqDefault := printf "amqp://%s-rabbitmq:%v" $fullname .Values.service.rabbitmq.port -}}
+{{- $apiHostDefault := printf "%s-api" $fullname -}}
+{{- $apiPortDefault := printf "%v" .Values.service.api.port -}}
 apiVersion: v1
 kind: ConfigMap
 metadata:
   name: {{ include "firecrawl.fullname" . }}-config
 data:
   NUM_WORKERS_PER_QUEUE: {{ .Values.config.NUM_WORKERS_PER_QUEUE | quote }}
-  PORT: {{ .Values.config.PORT | quote }}
+  PORT: {{ default (printf "%v" .Values.service.api.port) .Values.config.PORT | quote }}
   HOST: {{ .Values.config.HOST | quote }}
-  REDIS_URL: {{ .Values.config.REDIS_URL | quote }}
-  REDIS_RATE_LIMIT_URL: {{ .Values.config.REDIS_RATE_LIMIT_URL | quote }}
-  PLAYWRIGHT_MICROSERVICE_URL: {{ .Values.config.PLAYWRIGHT_MICROSERVICE_URL | quote }}
+  WORKER_PORT: {{ default (printf "%v" .Values.worker.port) .Values.config.WORKER_PORT | quote }}
+  EXTRACT_WORKER_PORT: {{ default (printf "%v" .Values.extractWorker.port) .Values.config.EXTRACT_WORKER_PORT | quote }}
+  NUQ_WORKER_PORT: {{ default (printf "%v" .Values.nuqWorker.port) .Values.config.NUQ_WORKER_PORT | quote }}
+  NUQ_PREFETCH_WORKER_PORT: {{ default (printf "%v" .Values.nuqPrefetchWorker.port) .Values.config.NUQ_PREFETCH_WORKER_PORT | quote }}
+  NUQ_WORKER_COUNT: {{ default (printf "%v" .Values.nuqWorker.replicaCount) .Values.config.NUQ_WORKER_COUNT | quote }}
+  REDIS_URL: {{ default $redisDefault .Values.config.REDIS_URL | quote }}
+  REDIS_RATE_LIMIT_URL: {{ default $redisDefault .Values.config.REDIS_RATE_LIMIT_URL | quote }}
+  PLAYWRIGHT_MICROSERVICE_URL: {{ default $playwrightDefault .Values.config.PLAYWRIGHT_MICROSERVICE_URL | quote }}
+  NUQ_DATABASE_URL: {{ $nuqDbUrl | quote }}
+  NUQ_DATABASE_URL_LISTEN: {{ default $nuqDbUrl .Values.config.NUQ_DATABASE_URL_LISTEN | quote }}
+  NUQ_RABBITMQ_URL: {{ default $rabbitMqDefault .Values.config.NUQ_RABBITMQ_URL | quote }}
   USE_DB_AUTHENTICATION: {{ .Values.config.USE_DB_AUTHENTICATION | quote }}
-  HDX_NODE_BETA_MODE: {{ .Values.config.HDX_NODE_BETA_MODE | quote }}
-  NUQ_DATABASE_URL: {{ .Values.config.NUQ_DATABASE_URL | quote }}
+  IS_KUBERNETES: {{ .Values.config.IS_KUBERNETES | quote }}
+  ENV: {{ .Values.config.ENV | quote }}
+  LOGGING_LEVEL: {{ .Values.config.LOGGING_LEVEL | quote }}
+  FIRECRAWL_APP_SCHEME: {{ .Values.config.FIRECRAWL_APP_SCHEME | quote }}
+  FIRECRAWL_APP_HOST: {{ default $apiHostDefault .Values.config.FIRECRAWL_APP_HOST | quote }}
+  FIRECRAWL_APP_PORT: {{ default $apiPortDefault .Values.config.FIRECRAWL_APP_PORT | quote }}
+  OPENAI_BASE_URL: {{ .Values.config.OPENAI_BASE_URL | quote }}
+  MODEL_NAME: {{ .Values.config.MODEL_NAME | quote }}
+  MODEL_EMBEDDING_NAME: {{ .Values.config.MODEL_EMBEDDING_NAME | quote }}
+  OLLAMA_BASE_URL: {{ .Values.config.OLLAMA_BASE_URL | quote }}
+  PROXY_SERVER: {{ .Values.config.PROXY_SERVER | quote }}
+  PROXY_USERNAME: {{ .Values.config.PROXY_USERNAME | quote }}
+  SEARXNG_ENDPOINT: {{ .Values.config.SEARXNG_ENDPOINT | quote }}
+  SEARXNG_ENGINES: {{ .Values.config.SEARXNG_ENGINES | quote }}
+  SEARXNG_CATEGORIES: {{ .Values.config.SEARXNG_CATEGORIES | quote }}
+  SELF_HOSTED_WEBHOOK_URL: {{ .Values.config.SELF_HOSTED_WEBHOOK_URL | quote }}
+  {{- range $k, $v := .Values.config.extra }}
+  {{ $k }}: {{ $v | quote }}
+  {{- end }}

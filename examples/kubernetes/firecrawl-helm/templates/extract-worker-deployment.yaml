@@ -1,35 +1,38 @@
+{{- if .Values.extractWorker.enabled }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ include "firecrawl.fullname" . }}-api
+  name: {{ include "firecrawl.fullname" . }}-extract-worker
   labels:
-    app: {{ include "firecrawl.name" . }}-api
+    app: {{ include "firecrawl.name" . }}-extract-worker
 spec:
-  replicas: {{ .Values.api.replicaCount | default .Values.replicaCount }}
+  replicas: {{ .Values.extractWorker.replicaCount | default 1 }}
   selector:
     matchLabels:
-      app: {{ include "firecrawl.name" . }}-api
+      app: {{ include "firecrawl.name" . }}-extract-worker
   template:
     metadata:
       labels:
-        app: {{ include "firecrawl.name" . }}-api
+        app: {{ include "firecrawl.name" . }}-extract-worker
     spec:
       {{- if .Values.image.dockerSecretEnabled }}
       imagePullSecrets:
         {{- toYaml .Values.imagePullSecrets | nindent 8 }}
       {{- end }}
-      terminationGracePeriodSeconds: 180
+      terminationGracePeriodSeconds: 60
       containers:
-        - name: api
+        - name: extract-worker
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           command: [ "node" ]
-          args: [ "--max-old-space-size=6144", "dist/src/index.js" ]
+          args: [ "--max-old-space-size=3072", "dist/src/services/extract-worker.js" ]
           ports:
-            - containerPort: {{ .Values.service.api.port }}
+            - containerPort: {{ .Values.extractWorker.port | int }}
           env:
             - name: FLY_PROCESS_GROUP
-              value: "app"
+              value: "extract-worker"
+            - name: EXTRACT_WORKER_PORT
+              value: {{ .Values.extractWorker.port | quote }}
             - name: NUQ_POD_NAME
               valueFrom:
                 fieldRef:
@@ -39,25 +42,26 @@ spec:
                 name: {{ include "firecrawl.fullname" . }}-config
             - secretRef:
                 name: {{ include "firecrawl.fullname" . }}-secret
-          {{- if and .Values.resources.enabled .Values.api.resources }}
+          {{- if and .Values.resources.enabled .Values.extractWorker.resources }}
           resources:
-            {{- toYaml .Values.api.resources | nindent 12 }}
+            {{- toYaml .Values.extractWorker.resources | nindent 12 }}
           {{- end }}
           livenessProbe:
             httpGet:
-              path: /v0/health/liveness
-              port: {{ .Values.service.api.port }}
-            initialDelaySeconds: 30
-            periodSeconds: 30
+              path: /liveness
+              port: {{ .Values.extractWorker.port | int }}
+            initialDelaySeconds: 10
+            periodSeconds: 10
             timeoutSeconds: 5
             successThreshold: 1
             failureThreshold: 3
           readinessProbe:
             httpGet:
-              path: /v0/health/readiness
-              port: {{ .Values.service.api.port }}
-            initialDelaySeconds: 30
-            periodSeconds: 30
+              path: /health
+              port: {{ .Values.extractWorker.port | int }}
+            initialDelaySeconds: 10
+            periodSeconds: 10
             timeoutSeconds: 5
             successThreshold: 1
             failureThreshold: 3
+{{- end }}

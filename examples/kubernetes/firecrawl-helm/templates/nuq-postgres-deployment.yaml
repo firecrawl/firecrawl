@@ -26,7 +26,7 @@ spec:
             - name: POSTGRES_USER
               value: "{{ .Values.nuqPostgres.auth.username | default "postgres" }}"
             - name: POSTGRES_PASSWORD
-              value: "password"
+              value: "{{ .Values.nuqPostgres.auth.password | default "password" }}"
             - name: POSTGRES_DB
               value: "{{ .Values.nuqPostgres.auth.database | default "postgres" }}"
           ports:
@@ -34,17 +34,19 @@ spec:
           volumeMounts:
             - name: postgres-storage
               mountPath: /var/lib/postgresql/data
-          {{- if .Values.nuqPostgres.resources }}
+          {{- if .Values.resources.enabled }}
+            {{- if .Values.nuqPostgres.resources }}
           resources:
-            {{- toYaml .Values.nuqPostgres.resources | nindent 12 }}
-          {{- else }}
+              {{- toYaml .Values.nuqPostgres.resources | nindent 12 }}
+            {{- else }}
           resources:
-            requests:
-              memory: "512Mi"
-              cpu: "250m"
-            limits:
-              memory: "1Gi"
-              cpu: "500m"
+              requests:
+                memory: "512Mi"
+                cpu: "250m"
+              limits:
+                memory: "1Gi"
+                cpu: "500m"
+            {{- end }}
           {{- end }}
       volumes:
         - name: postgres-storage

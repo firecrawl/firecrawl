@@ -2,4 +2,4 @@ apiVersion: v2
 name: firecrawl
 description: A Helm chart for deploying the Firecrawl application
 type: application
-version: 0.1.0
+version: 0.2.0
