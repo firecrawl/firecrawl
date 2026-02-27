@@ -5,9 +5,12 @@ import { scrapeQueue, type NuQJob } from "../services/worker/nuq";
 import { RateLimiterMode, type ScrapeJobData } from "../types";
 import {
   getConcurrencyLimitActiveJobs,
+  getNextConcurrentJob,
   pushConcurrencyLimitActiveJob,
   pushConcurrencyLimitedJob,
   pushCrawlConcurrencyLimitActiveJob,
+  removeConcurrencyLimitActiveJob,
+  removeCrawlConcurrencyLimitActiveJob,
 } from "./concurrency-limit";
 import { getCrawl } from "./crawl-redis";
 import { logger as _logger } from "./logger";
@@ -192,6 +195,103 @@ async function reconcileTeam(
   return { jobsStarted, jobsRequeued };
 }
 
+async function drainQueue(
+  ownerId: string,
+  teamLogger: Logger,
+): Promise<{ jobsPromoted: number; staleSkipped: number }> {
+  const maxCrawlConcurrency =
+    (await getACUCTeam(ownerId, false, true, RateLimiterMode.Crawl))
+      ?.concurrency ?? 2;
+  const maxExtractConcurrency =
+    (await getACUCTeam(ownerId, false, true, RateLimiterMode.Extract))
+      ?.concurrency ?? 2;
+
+  const activeIds = await getConcurrencyLimitActiveJobs(ownerId);
+  const activeJobs = await scrapeQueue.getJobs(activeIds, teamLogger);
+  let crawlCount = 0;
+  let extractCount = 0;
+  for (const aj of activeJobs) {
+    if (isExtractJob(aj.data)) extractCount++;
+    else crawlCount++;
+  }
+
+  let jobsPromoted = 0;
+  let staleSkipped = 0;
+
+  while (staleSkipped < 100) {
+    if (
+      crawlCount >= maxCrawlConcurrency &&
+      extractCount >= maxExtractConcurrency
+    )
+      break;
+
+    const nextJob = await getNextConcurrentJob(ownerId);
+    if (nextJob === null) break;
+
+    const isExtract = isExtractJob(nextJob.job.data);
+    const typeLimit = isExtract ? maxExtractConcurrency : maxCrawlConcurrency;
+    const typeCount = isExtract ? extractCount : crawlCount;
+
+    if (typeCount >= typeLimit) {
+      await pushConcurrencyLimitedJob(
+        ownerId,
+        {
+          id: nextJob.job.id,
+          data: nextJob.job.data,
+          priority: nextJob.job.priority,
+          listenable: nextJob.job.listenable,
+        },
+        nextJob.timeout === Infinity ? 172800000 : nextJob.timeout,
+      );
+      continue;
+    }
+
+    await pushConcurrencyLimitActiveJob(ownerId, nextJob.job.id, 60 * 1000);
+    if (nextJob.job.data.crawl_id) {
+      await pushCrawlConcurrencyLimitActiveJob(
+        nextJob.job.data.crawl_id,
+        nextJob.job.id,
+        60 * 1000,
+      );
+    }
+
+    const promoted = await scrapeQueue.promoteJobFromBacklogOrAdd(
+      nextJob.job.id,
+      nextJob.job.data,
+      {
+        priority: nextJob.job.priority,
+        listenable: nextJob.job.listenable,
+        ownerId: nextJob.job.data.team_id ?? undefined,
+        groupId: nextJob.job.data.crawl_id ?? undefined,
+      },
+    );
+
+    if (promoted !== null) {
+      if (isExtract) extractCount++;
+      else crawlCount++;
+      jobsPromoted++;
+    } else {
+      await removeConcurrencyLimitActiveJob(ownerId, nextJob.job.id);
+      if (nextJob.job.data.crawl_id) {
+        await removeCrawlConcurrencyLimitActiveJob(
+          nextJob.job.data.crawl_id,
+          nextJob.job.id,
+        );
+      }
+      staleSkipped++;
+    }
+  }
+
+  if (staleSkipped >= 100) {
+    teamLogger.warn(
+      "Queue drain hit 100 stale entries without fully draining",
+      { ownerId },
+    );
+  }
+
+  return { jobsPromoted, staleSkipped };
+}
+
 export async function reconcileConcurrencyQueue(
   options: ReconcileOptions = {},
 ): Promise<ReconcileResult> {
@@ -200,11 +300,21 @@ export async function reconcileConcurrencyQueue(
     scopedTeamId: options.teamId,
   });
 
-  const owners = options.teamId
-    ? [options.teamId]
-    : await scrapeQueue.getBackloggedOwnerIDs(logger);
-
-  const ownerIds = owners.filter((x): x is string => typeof x === "string");
+  let ownerIds: string[];
+  if (options.teamId) {
+    ownerIds = [options.teamId];
+  } else {
+    const backlogOwners = (
+      await scrapeQueue.getBackloggedOwnerIDs(logger)
+    ).filter((x): x is string => typeof x === "string");
+    const queueKeys = await getRedisConnection().smembers(
+      "concurrency-limit-queues",
+    );
+    const queueOwners = queueKeys
+      .map(k => k.replace("concurrency-limit-queue:", ""))
+      .filter(id => id.length > 0);
+    ownerIds = [...new Set([...backlogOwners, ...queueOwners])];
+  }
 
   const result: ReconcileResult = {
     teamsScanned: ownerIds.length,
@@ -222,6 +332,15 @@ export async function reconcileConcurrencyQueue(
         result.teamsWithDrift++;
         result.jobsStarted += teamResult.jobsStarted;
         result.jobsRequeued += teamResult.jobsRequeued;
+      }
+
+      const drainResult = await drainQueue(ownerId, teamLogger);
+      if (drainResult.jobsPromoted > 0 || drainResult.staleSkipped > 0) {
+        result.jobsStarted += drainResult.jobsPromoted;
+        teamLogger.info("Queue drain promoted jobs", {
+          jobsPromoted: drainResult.jobsPromoted,
+          staleSkipped: drainResult.staleSkipped,
+        });
       }
     } catch (error) {
       teamLogger.error("Failed to reconcile team, skipping", { error });
