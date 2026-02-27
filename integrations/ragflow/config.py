@@ -43,9 +43,10 @@ class FirecrawlSourceConfig:
     def validate(self) -> List[str]:
         """Return a list of validation error strings (empty == valid)."""
         errors: List[str] = []
-        if not self.api_key:
+        api_key = (self.api_key or "").strip()
+        if not api_key:
             errors.append("Firecrawl API key is required")
-        if not self.api_key.startswith("fc-") and self.api_key:
+        elif not api_key.startswith("fc-"):
             errors.append("Firecrawl API key must start with 'fc-'")
         if not self.urls and self.mode == "scrape":
             errors.append("At least one URL is required for scrape mode")
