@@ -225,7 +225,12 @@ class FirecrawlConnector(LoadConnector, PollConnector):
             logger.error("Firecrawl scrape failed for %s: %s", url, exc)
             return None
 
-        body = resp.json()
+        try:
+            body = resp.json()
+        except ValueError as exc:
+            logger.error("Firecrawl scrape returned non-JSON for %s: %s", url, exc)
+            return None
+
         if not body.get("success"):
             logger.warning("Firecrawl returned success=false for %s: %s", url, body.get("error"))
             return None
@@ -262,7 +267,12 @@ class FirecrawlConnector(LoadConnector, PollConnector):
             logger.error("Failed to start Firecrawl crawl: %s", exc)
             return
 
-        body = resp.json()
+        try:
+            body = resp.json()
+        except ValueError as exc:
+            logger.error("Firecrawl crawl start returned non-JSON: %s", exc)
+            return
+
         if not body.get("success"):
             logger.error("Firecrawl crawl start failed: %s", body.get("error"))
             return
@@ -275,8 +285,16 @@ class FirecrawlConnector(LoadConnector, PollConnector):
         logger.info("Firecrawl crawl started, job_id=%s", job_id)
 
         # Poll until done
+        poll_started = time.time()
+        max_poll_seconds = max(10, self.config.timeout * 10)
+        poll_interval_seconds = 10
+
         while True:
-            time.sleep(10)
+            if time.time() - poll_started > max_poll_seconds:
+                logger.error("Crawl %s polling timed out after %ss", job_id, max_poll_seconds)
+                return
+
+            time.sleep(poll_interval_seconds)
             try:
                 status_resp = self._session.get(
                     f"{self.config.api_url}/v2/crawl/{job_id}",
@@ -287,7 +305,12 @@ class FirecrawlConnector(LoadConnector, PollConnector):
                 logger.error("Failed to poll crawl status: %s", exc)
                 return
 
-            status_body = status_resp.json()
+            try:
+                status_body = status_resp.json()
+            except ValueError as exc:
+                logger.error("Crawl %s status returned non-JSON: %s", job_id, exc)
+                return
+
             status = status_body.get("status", "unknown")
             logger.info("Crawl %s status: %s", job_id, status)
 
