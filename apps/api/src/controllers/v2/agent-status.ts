@@ -82,7 +82,16 @@ export async function agentStatusController(
         { i_crawl_id: req.params.jobId },
         { get: true },
       );
-      creditsUsed = creditsRpc?.data?.[0]?.credits_billed ?? 0;
+      if (creditsRpc.error) {
+        logger.warn("Supabase RPC error fetching credits for agent", {
+          error: creditsRpc.error,
+          method: "agentStatusController",
+          agentId: req.params.jobId,
+        });
+        creditsUsed = 0;
+      } else {
+        creditsUsed = creditsRpc.data?.[0]?.credits_billed ?? 0;
+      }
     } catch (error) {
       logger.warn("Failed to fetch running credits for agent", {
         error,
