@@ -6,7 +6,8 @@
   "scripts": {
     "start": "node dist/api.js",
     "build": "tsc",
-    "dev": "tsx api.ts"
+    "dev": "tsx api.ts",
+    "test": "jest"
   },
   "keywords": [],
   "author": "Jeff Pereira",
@@ -22,6 +23,9 @@
     "@types/node": "^22.15.30",
     "@types/user-agents": "^1.0.4",
     "tsx": "^4.21.0",
-    "typescript": "^5.9.3"
+    "typescript": "^5.9.3",
+    "jest": "^29.7.0",
+    "ts-jest": "^29.3.4",
+    "@types/jest": "^29.5.14"
   }
 }
