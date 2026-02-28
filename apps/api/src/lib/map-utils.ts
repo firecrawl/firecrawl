@@ -6,6 +6,7 @@ import {
   ScrapeOptions,
   MAX_MAP_LIMIT,
 } from "../controllers/v2/types";
+import { buildMapUrlQuery } from "./map-query";
 import { crawlToCrawler, StoredCrawl } from "./crawl-redis";
 import {
   checkAndUpdateURLForMap,
@@ -192,13 +193,7 @@ export async function getMapResults({
         .filter(x => x !== null) as MapDocument[];
     }
   } else {
-    let urlWithoutWww = url.replace("www.", "");
-    let mapUrl =
-      search && allowExternalLinks
-        ? `${search} ${urlWithoutWww}`
-        : search
-          ? `${search} site:${urlWithoutWww}`
-          : `site:${url}`;
+    const mapUrl = buildMapUrlQuery(url, search, allowExternalLinks);
 
     const resultsPerPage = 100;
     const maxPages = Math.ceil(
