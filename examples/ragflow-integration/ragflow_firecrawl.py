@@ -352,11 +352,13 @@ def main():
     parser.add_argument("--dataset", required=True, help="RAGFlow dataset name")
     args = parser.parse_args()
 
-    if not FIRECRAWL_API_KEY:
-        print("Error: FIRECRAWL_API_KEY is not set. See .env.example.", file=sys.stderr)
+    if not FIRECRAWL_API_KEY or not FIRECRAWL_API_KEY.strip():
+        print("Error: FIRECRAWL_API_KEY is not set or is blank. "
+              "See .env.example.", file=sys.stderr)
         sys.exit(1)
-    if not RAGFLOW_API_KEY:
-        print("Error: RAGFLOW_API_KEY is not set. See .env.example.", file=sys.stderr)
+    if not RAGFLOW_API_KEY or not RAGFLOW_API_KEY.strip():
+        print("Error: RAGFLOW_API_KEY is not set or is blank. "
+              "See .env.example.", file=sys.stderr)
         sys.exit(1)
 
     app = Firecrawl(api_key=FIRECRAWL_API_KEY)
