@@ -80,6 +80,7 @@ interface UrlModel {
   headers?: { [key: string]: string };
   check_selector?: string;
   skip_tls_verification?: boolean;
+  timezone?: string;
 }
 
 let browser: Browser;
@@ -99,7 +100,16 @@ const initializeBrowser = async () => {
   });
 };
 
-const createContext = async (skipTlsVerification: boolean = false) => {
+const isValidTimezone = (tz: string): boolean => {
+  try {
+    Intl.DateTimeFormat(undefined, { timeZone: tz });
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+const createContext = async (skipTlsVerification: boolean = false, timezone?: string) => {
   const userAgent = new UserAgent().toString();
   const viewport = { width: 1280, height: 800 };
 
@@ -107,6 +117,7 @@ const createContext = async (skipTlsVerification: boolean = false) => {
     userAgent,
     viewport,
     ignoreHTTPSErrors: skipTlsVerification,
+    ...(timezone && { timezoneId: timezone }), 
   };
 
   if (PROXY_SERVER && PROXY_USERNAME && PROXY_PASSWORD) {
@@ -219,8 +230,7 @@ app.get('/health', async (req: Request, res: Response) => {
 });
 
 app.post('/scrape', async (req: Request, res: Response) => {
-  const { url, wait_after_load = 0, timeout = 15000, headers, check_selector, skip_tls_verification = false }: UrlModel = req.body;
-
+  const { url, wait_after_load = 0, timeout = 15000, headers, check_selector, skip_tls_verification = false, timezone }: UrlModel = req.body;
   console.log(`================= Scrape Request =================`);
   console.log(`URL: ${url}`);
   console.log(`Wait After Load: ${wait_after_load}`);
@@ -228,6 +238,7 @@ app.post('/scrape', async (req: Request, res: Response) => {
   console.log(`Headers: ${headers ? JSON.stringify(headers) : 'None'}`);
   console.log(`Check Selector: ${check_selector ? check_selector : 'None'}`);
   console.log(`Skip TLS Verification: ${skip_tls_verification}`);
+  console.log(`Timezone: ${timezone ?? 'None (browser default)'}`);
   console.log(`==================================================`);
 
   if (!url) {
@@ -236,6 +247,10 @@ app.post('/scrape', async (req: Request, res: Response) => {
 
   if (!isValidUrl(url)) {
     return res.status(400).json({ error: 'Invalid URL' });
+  }
+
+  if (timezone && !isValidTimezone(timezone)) {
+      return res.status(400).json({ error: `Invalid timezone: '${timezone}'. Use IANA format e.g. 'America/New_York'` });
   }
 
   if (!PROXY_SERVER) {
@@ -252,7 +267,7 @@ app.post('/scrape', async (req: Request, res: Response) => {
   let page: Page | null = null;
 
   try {
-    requestContext = await createContext(skip_tls_verification);
+    requestContext = await createContext(skip_tls_verification, timezone);
     page = await requestContext.newPage();
 
     if (headers) {
@@ -261,7 +276,8 @@ app.post('/scrape', async (req: Request, res: Response) => {
 
     const result = await scrapePage(page, url, 'load', wait_after_load, timeout, check_selector);
     const pageError = result.status !== 200 ? getError(result.status) : undefined;
-
+    const actualTimezone = await page.evaluate(() =>
+      Intl.DateTimeFormat().resolvedOptions().timeZone);
     if (!pageError) {
       console.log(`✅ Scrape successful!`);
     } else {
@@ -272,6 +288,7 @@ app.post('/scrape', async (req: Request, res: Response) => {
       content: result.content,
       pageStatusCode: result.status,
       contentType: result.contentType,
+      timezone: actualTimezone,
       ...(pageError && { pageError })
     });
 
