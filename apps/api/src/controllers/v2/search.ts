@@ -36,14 +36,6 @@ export async function searchController(
     zeroDataRetention: req.acuc?.flags?.forceZDR,
   });
 
-  if (req.acuc?.flags?.forceZDR) {
-    return res.status(400).json({
-      success: false,
-      error:
-        "Your team has zero data retention enabled. This is not supported on search. Please contact support@firecrawl.com to unblock this feature.",
-    });
-  }
-
   const middlewareTime = controllerStartTime - middlewareStartTime;
   const isSearchPreview =
     config.SEARCH_PREVIEW_TOKEN !== undefined &&
@@ -73,17 +65,29 @@ export async function searchController(
     const shouldBill = req.body.__agentInterop?.shouldBill ?? true;
     const agentRequestId = req.body.__agentInterop?.requestId ?? null;
 
+    const forceZdr = req.acuc?.flags?.forceZDR ?? false;
+    const isZDR = req.body.enterprise?.includes("zdr");
+    const isAnon = req.body.enterprise?.includes("anon");
+    const isZDROrAnon = isZDR || isAnon;
+    const isAgentInteropZdr = !!req.body.__agentInterop && !!isZDR;
+
+    if (forceZdr && !isAgentInteropZdr) {
+      return res.status(400).json({
+        success: false,
+        error:
+          "Your team has zero data retention enabled. This is not supported on search. Please contact support@firecrawl.com to unblock this feature.",
+      });
+    }
+
+    zeroDataRetention = isZDROrAnon || forceZdr;
+    applyZdrScope(zeroDataRetention);
+
     logger = logger.child({
       version: "v2",
       query: req.body.query,
       origin: req.body.origin,
+      zeroDataRetention,
     });
-
-    const isZDR = req.body.enterprise?.includes("zdr");
-    const isAnon = req.body.enterprise?.includes("anon");
-    const isZDROrAnon = isZDR || isAnon;
-    zeroDataRetention = isZDROrAnon ?? false;
-    applyZdrScope(isZDROrAnon ?? false);
 
     if (!agentRequestId) {
       await logRequest({
@@ -94,7 +98,7 @@ export async function searchController(
         origin: req.body.origin ?? "api",
         integration: req.body.integration,
         target_hint: req.body.query,
-        zeroDataRetention: isZDROrAnon ?? false,
+        zeroDataRetention,
         api_key_id: req.acuc?.api_key_id ?? null,
       });
     }
@@ -121,7 +125,7 @@ export async function searchController(
         flags: req.acuc?.flags ?? null,
         requestId: agentRequestId ?? jobId,
         bypassBilling: !shouldBill,
-        zeroDataRetention: isZDROrAnon,
+        zeroDataRetention,
       },
       logger,
     );
@@ -156,7 +160,7 @@ export async function searchController(
         team_id: req.auth.team_id,
         options: req.body,
         credits_cost: shouldBill ? result.searchCredits : 0,
-        zeroDataRetention: isZDROrAnon ?? false,
+        zeroDataRetention,
       },
       false,
     );

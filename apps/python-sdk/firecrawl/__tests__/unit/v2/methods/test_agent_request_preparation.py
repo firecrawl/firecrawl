@@ -2,8 +2,8 @@
 Unit tests for agent request preparation.
 """
 
-import pytest
-from pydantic import BaseModel, Field
+import pytest  # type: ignore[import-not-found]
+from pydantic import BaseModel, Field  # type: ignore[import-not-found]
 from typing import List, Optional
 
 from firecrawl.v2.methods.agent import _prepare_agent_request
@@ -133,6 +133,17 @@ class TestAgentRequestPreparation:
         assert data["prompt"] == "Test prompt"
         assert data["maxCredits"] == 100
 
+    def test_request_with_zero_data_retention(self):
+        """Test request preparation with zero data retention."""
+        data = _prepare_agent_request(
+            None,
+            prompt="Test prompt",
+            zero_data_retention=True
+        )
+
+        assert data["prompt"] == "Test prompt"
+        assert data["zeroDataRetention"] is True
+
     def test_request_with_strict_constrain_to_urls(self):
         """Test request preparation with strict_constrain_to_urls."""
         data = _prepare_agent_request(
@@ -158,6 +169,7 @@ class TestAgentRequestPreparation:
             schema=schema,
             integration="test-integration",
             max_credits=50,
+            zero_data_retention=True,
             strict_constrain_to_urls=True
         )
         
@@ -166,6 +178,7 @@ class TestAgentRequestPreparation:
         assert data["schema"] == schema
         assert data["integration"] == "test-integration"
         assert data["maxCredits"] == 50
+        assert data["zeroDataRetention"] is True
         assert data["strictConstrainToURLs"] is True
 
     def test_request_with_empty_integration(self):
@@ -336,4 +349,3 @@ class TestAgentRequestPreparation:
         assert data["strictConstrainToURLs"] is True
         assert data["model"] == "spark-1-pro"
         assert data["webhook"]["url"] == "https://example.com/webhook"
-

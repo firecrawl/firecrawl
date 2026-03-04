@@ -73,6 +73,18 @@ export async function agentStatusController(
     data = await getJobFromGCS(agent.id);
   }
 
+  const zeroDataRetention =
+    !!agentRequest?.dr_clean_by ||
+    !!(agent as { options?: { zeroDataRetention?: boolean } } | null)?.options
+      ?.zeroDataRetention;
+
+  if (agent?.is_successful && zeroDataRetention && !data) {
+    return res.status(404).json({
+      success: false,
+      error: "Agent output not found",
+    });
+  }
+
   return res.status(200).json({
     success: true,
     status: !agent

@@ -2,10 +2,10 @@
 Unit tests for agent methods with mocked HTTP client.
 """
 
-import pytest
+import pytest  # type: ignore[import-not-found]
 import time
 from unittest.mock import Mock, patch
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field  # type: ignore[import-not-found]
 from typing import List, Optional
 
 from firecrawl.v2.methods.agent import (
@@ -74,6 +74,30 @@ class TestAgentMethods:
         assert isinstance(result, AgentResponse)
         assert result.id == self.job_id
         assert result.status == "processing"
+
+    def test_start_agent_with_zero_data_retention(self):
+        """Test starting an agent job with zero data retention."""
+        mock_response = Mock()
+        mock_response.ok = True
+        mock_response.json.return_value = {
+            "success": True,
+            "id": self.job_id,
+            "status": "processing"
+        }
+
+        self.mock_client.post.return_value = mock_response
+
+        result = start_agent(
+            self.mock_client,
+            None,
+            prompt="Find information about Firecrawl",
+            zero_data_retention=True
+        )
+
+        call_args = self.mock_client.post.call_args
+        body = call_args[0][1]
+        assert body["zeroDataRetention"] is True
+        assert result.id == self.job_id
 
     def test_start_agent_with_urls(self):
         """Test starting an agent job with URLs."""
@@ -182,6 +206,7 @@ class TestAgentMethods:
             schema=schema,
             integration="test-integration",
             max_credits=50,
+            zero_data_retention=True,
             strict_constrain_to_urls=True
         )
         
@@ -192,6 +217,7 @@ class TestAgentMethods:
         assert body["schema"] == schema
         assert body["integration"] == "test-integration"
         assert body["maxCredits"] == 50
+        assert body["zeroDataRetention"] is True
         assert body["strictConstrainToURLs"] is True
 
     def test_get_agent_status(self):
@@ -364,4 +390,3 @@ class TestAgentMethods:
         # Verify the exception has the correct status code
         assert exc_info.value.status_code == 400
         assert "agent" in str(exc_info.value).lower()
-

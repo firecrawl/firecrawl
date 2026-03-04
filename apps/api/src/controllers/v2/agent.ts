@@ -10,12 +10,29 @@ import { logger as _logger } from "../../lib/logger";
 import { logRequest } from "../../services/logging/log_job";
 import { config } from "../../config";
 import { supabase_service } from "../../services/supabase";
+import { checkPermissions } from "../../lib/permissions";
+import { applyZdrScope } from "../../services/sentry";
 
 export async function agentController(
   req: RequestWithAuth<{}, AgentResponse, AgentRequest>,
   res: Response<AgentResponse>,
 ) {
   const agentId = uuidv7();
+  const originalRequest = { ...req.body };
+  req.body = agentRequestSchema.parse(req.body);
+
+  const zeroDataRetention =
+    req.acuc?.flags?.forceZDR || (req.body.zeroDataRetention ?? false);
+  applyZdrScope(zeroDataRetention);
+
+  const permissions = checkPermissions({ zeroDataRetention }, req.acuc?.flags);
+  if (permissions.error) {
+    return res.status(403).json({
+      success: false,
+      error: permissions.error,
+    });
+  }
+
   const logger = _logger.child({
     agentId,
     extractId: agentId,
@@ -24,25 +41,14 @@ export async function agentController(
     team_id: req.auth.team_id,
     module: "api/v2",
     method: "agentController",
-    zeroDataRetention: req.acuc?.flags?.forceZDR,
+    zeroDataRetention,
   });
 
-  const originalRequest = { ...req.body };
-  req.body = agentRequestSchema.parse(req.body);
-
-  if (req.acuc?.flags?.forceZDR) {
-    return res.status(400).json({
-      success: false,
-      error:
-        "Your team has zero data retention enabled. This is not supported on extract. Please contact support@firecrawl.com to unblock this feature.",
-    });
-  }
-
-  _logger.info("Agent starting...", {
+  logger.info("Agent starting...", {
     request: req.body,
     originalRequest,
     subId: req.acuc?.sub_id,
-    zeroDataRetention: req.acuc?.flags?.forceZDR,
+    zeroDataRetention,
   });
 
   if (!config.EXTRACT_V3_BETA_URL) {
@@ -78,7 +84,7 @@ export async function agentController(
     origin: req.body.origin ?? "api",
     integration: req.body.integration,
     target_hint: req.body.urls?.[0] ?? req.body.prompt ?? "",
-    zeroDataRetention: false, // not supported for agent
+    zeroDataRetention,
     api_key_id: req.acuc?.api_key_id ?? null,
   });
 
@@ -100,6 +106,7 @@ export async function agentController(
         teamId: req.auth.team_id,
         isFreeRequest,
         maxCredits: req.body.maxCredits ?? undefined,
+        zeroDataRetention,
         strictConstrainToURLs: req.body.strictConstrainToURLs ?? undefined,
         webhook: req.body.webhook ?? undefined,
         model: req.body.model,

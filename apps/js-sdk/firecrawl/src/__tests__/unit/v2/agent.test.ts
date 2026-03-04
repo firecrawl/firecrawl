@@ -5,6 +5,7 @@ import { describe, test, expect } from "@jest/globals";
 // and verify the types are properly exported.
 
 import type { AgentWebhookConfig, AgentWebhookEvent } from "../../../v2/types";
+import { startAgent } from "../../../v2/methods/agent";
 
 describe("v2 types: Agent webhook types", () => {
   test("AgentWebhookConfig accepts string webhook", () => {
@@ -76,5 +77,21 @@ describe("v2 types: Agent webhook types", () => {
     expect(config.events).toContain("cancelled");
     // 'page' is a crawl-specific event, not valid for agent
     // This is enforced at the type level
+  });
+
+  test("startAgent passes zeroDataRetention", async () => {
+    const post = jest.fn().mockResolvedValue({
+      status: 200,
+      data: { success: true, id: "agent-123" },
+    });
+    const http = { post } as any;
+    await startAgent(http, {
+      prompt: "Test ZDR",
+      zeroDataRetention: true,
+    });
+    expect(post).toHaveBeenCalledWith(
+      "/v2/agent",
+      expect.objectContaining({ zeroDataRetention: true }),
+    );
   });
 });

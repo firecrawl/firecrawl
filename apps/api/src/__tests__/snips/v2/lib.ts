@@ -4,6 +4,8 @@ import {
   Document,
   ExtractRequestInput,
   ExtractResponse,
+  AgentRequest,
+  AgentStatusResponse,
   CrawlRequestInput,
   CrawlResponse,
   CrawlStatusResponse,
@@ -540,6 +542,70 @@ export async function extractRaw(
   identity: Identity,
 ) {
   return await extractStart(body, identity);
+}
+
+// =========================================
+// Agent API
+// =========================================
+
+export async function agentStart(body: AgentRequest, identity: Identity) {
+  return await request(TEST_API_URL)
+    .post("/v2/agent")
+    .set("Authorization", `Bearer ${identity.apiKey}`)
+    .set("Content-Type", "application/json")
+    .send(body);
+}
+
+function expectAgentStartToSucceed(
+  response: Awaited<ReturnType<typeof agentStart>>,
+) {
+  if (response.statusCode !== 200) {
+    console.warn(
+      "Agent start did not succeed",
+      JSON.stringify(response.body, null, 2),
+    );
+  }
+  expect(response.statusCode).toBe(200);
+  expect(response.body.success).toBe(true);
+  expect(typeof response.body.id).toBe("string");
+}
+
+export async function agentStatusRaw(jobId: string, identity: Identity) {
+  return await request(TEST_API_URL)
+    .get("/v2/agent/" + encodeURIComponent(jobId))
+    .set("Authorization", `Bearer ${identity.apiKey}`)
+    .send();
+}
+
+export async function agentStatus(
+  jobId: string,
+  identity: Identity,
+): Promise<AgentStatusResponse> {
+  const raw = await agentStatusRaw(jobId, identity);
+  expect(raw.statusCode).toBe(200);
+  return raw.body;
+}
+
+export async function agent(
+  body: AgentRequest,
+  identity: Identity,
+): Promise<AgentStatusResponse & { id: string }> {
+  const start = await agentStart(body, identity);
+  expectAgentStartToSucceed(start);
+
+  let status: Awaited<ReturnType<typeof agentStatusRaw>> | undefined;
+
+  do {
+    if (status) await pollSleep();
+    status = await agentStatusRaw(start.body.id, identity);
+    expect(status.statusCode).toBe(200);
+    expect(typeof status.body.status).toBe("string");
+  } while (status.body.status === "processing");
+
+  return {
+    ...status.body,
+    id: start.body.id,
+  };
 }
 
 // =========================================

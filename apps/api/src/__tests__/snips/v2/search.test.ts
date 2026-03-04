@@ -3,6 +3,7 @@ import {
   describeIf,
   HAS_PROXY,
   HAS_SEARCH,
+  itIf,
   TEST_PRODUCTION,
 } from "../lib";
 import { search, idmux, Identity } from "./lib";
@@ -31,6 +32,36 @@ describeIf(TEST_PRODUCTION || HAS_SEARCH || HAS_PROXY)("Search tests", () => {
       );
       expect(res.web).toBeDefined();
       expect(res.web?.length).toBeGreaterThan(0);
+    },
+    60000,
+  );
+
+  itIf(!!config.AGENT_INTEROP_SECRET)(
+    "allows force ZDR for agent interop",
+    async () => {
+      const zdrIdentity = await idmux({
+        name: "search/agent-interop-zdr",
+        credits: 10000,
+        flags: {
+          allowZDR: true,
+          forceZDR: true,
+        },
+      });
+
+      const res = await search(
+        {
+          query: "firecrawl",
+          enterprise: ["zdr"],
+          __agentInterop: {
+            auth: config.AGENT_INTEROP_SECRET!,
+            requestId: crypto.randomUUID(),
+            shouldBill: false,
+          },
+        },
+        zdrIdentity,
+      );
+
+      expect(res.web).toBeDefined();
     },
     60000,
   );
