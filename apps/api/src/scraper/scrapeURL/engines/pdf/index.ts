@@ -12,7 +12,6 @@ import {
   EngineUnsuccessfulError,
 } from "../../error";
 import { open, readFile, unlink } from "node:fs/promises";
-import type { Response } from "undici";
 import { AbortManagerThrownError } from "../../lib/abortManager";
 import {
   shouldParsePDF,
@@ -28,6 +27,7 @@ import { scrapePDFWithParsePDF } from "./pdfParse";
 import { captureExceptionWithZdrCheck } from "../../../../services/sentry";
 import { isPdfBuffer, PDF_SNIFF_WINDOW } from "./pdfUtils";
 import { comparePdfOutputs } from "./shadowComparison";
+import { shouldRemovePdfFeatureForContentType } from "./contentTypeHeuristics";
 
 /** Check if the PDF is eligible for Rust extraction, returning a rejection reason or null. */
 function getIneligibleReason(
@@ -70,6 +70,14 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
         },
       );
 
+      if (
+        shouldRemovePdfFeatureForContentType(
+          file.response.headers.get("content-type"),
+        )
+      ) {
+        throw new RemoveFeatureError(["pdf"]);
+      }
+
       if (!isPdfBuffer(file.buffer)) {
         // downloaded content isn't a valid PDF
         if (meta.pdfPrefetch === undefined) {
@@ -109,6 +117,14 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
             signal: meta.abort.asSignal(),
           },
         );
+
+  const contentType =
+    "headers" in response
+      ? response.headers.get("content-type")
+      : response.contentType;
+  if (shouldRemovePdfFeatureForContentType(contentType)) {
+    throw new RemoveFeatureError(["pdf"]);
+  }
 
   try {
     // Validate the downloaded file is actually a PDF by checking magic bytes
