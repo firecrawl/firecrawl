@@ -7,13 +7,10 @@ import { Job, Queue, Worker } from "bullmq";
 import { logger as _logger, logger } from "../../lib/logger";
 import {
   getRedisConnection,
-  getBillingQueue,
   getPrecrawlQueue,
   precrawlQueueName,
 } from "../queue-service";
 import {
-  processBillingBatch,
-  queueBillingOperation,
   startBillingBatchProcessing,
 } from "../billing/batch_billing";
 import systemMonitor from "../system-monitor";
@@ -53,66 +50,6 @@ const connectionMonitorInterval = config.CONNECTION_MONITOR_INTERVAL;
 const gotJobInterval = config.CONNECTION_MONITOR_INTERVAL;
 
 const runningJobs: Set<string> = new Set();
-
-// Create a processor for billing jobs
-const processBillingJobInternal = async (token: string, job: Job) => {
-  if (!job.id) {
-    throw new Error("Job has no ID");
-  }
-
-  const logger = _logger.child({
-    module: "billing-worker",
-    method: "processBillingJobInternal",
-    jobId: job.id,
-  });
-
-  const extendLockInterval = setInterval(async () => {
-    logger.info(`🔄 Worker extending lock on billing job ${job.id}`);
-    await job.extendLock(token, jobLockExtensionTime);
-  }, jobLockExtendInterval);
-
-  let err = null;
-  try {
-    // Check job type - it could be either a batch processing trigger or an individual billing operation
-    if (job.name === "process-batch") {
-      // Process the entire batch
-      logger.info("Received batch process trigger job");
-      await processBillingBatch();
-    } else if (job.name === "bill_team") {
-      // This is an individual billing operation that should be queued for batch processing
-      const { team_id, subscription_id, credits, is_extract, api_key_id } =
-        job.data;
-
-      logger.info(`Adding team ${team_id} billing operation to batch queue`, {
-        credits,
-        is_extract,
-        originating_job_id: job.data.originating_job_id,
-      });
-
-      // Add to the REDIS batch queue
-      await queueBillingOperation(
-        team_id,
-        subscription_id,
-        credits,
-        api_key_id ?? null,
-        is_extract,
-      );
-    } else {
-      logger.warn(`Unknown billing job type: ${job.name}`);
-    }
-
-    await job.moveToCompleted({ success: true }, token, false);
-  } catch (error) {
-    logger.error("Error processing billing job", { error });
-    Sentry.captureException(error);
-    err = error;
-    await job.moveToFailed(error, token, false);
-  } finally {
-    clearInterval(extendLockInterval);
-  }
-
-  return err;
-};
 
 // NOTE: current config is 100 domains with 250 urls per domain with estimated max budget of 10,000
 const processPrecrawlJob = async (token: string, job: Job) => {
@@ -692,12 +629,7 @@ const BROWSER_ACTIVITY_INSERT_INTERVAL = 10000;
 (async () => {
   setSentryServiceTag("index-worker");
 
-  // Start billing worker and batch processing
   startBillingBatchProcessing();
-  const billingWorkerPromise = workerFun(
-    getBillingQueue(),
-    processBillingJobInternal,
-  );
 
   const precrawlWorkerPromise = config.PRECRAWL_TEAM_ID
     ? workerFun(getPrecrawlQueue(), processPrecrawlJob)
@@ -793,7 +725,6 @@ const BROWSER_ACTIVITY_INSERT_INTERVAL = 10000;
 
   // Wait for all workers to complete (which should only happen on shutdown)
   await Promise.all([
-    billingWorkerPromise,
     precrawlWorkerPromise,
     engpickerPromise,
   ]);

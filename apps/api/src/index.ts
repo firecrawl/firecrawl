@@ -9,7 +9,6 @@ import cors from "cors";
 import {
   getGenerateLlmsTxtQueue,
   getDeepResearchQueue,
-  getBillingQueue,
   getPrecrawlQueue,
 } from "./services/queue-service";
 import { v0Router } from "./routes/v0";
@@ -82,7 +81,6 @@ const { addQueue, removeQueue, setQueues, replaceQueues } = createBullBoard({
   queues: [
     new BullMQAdapter(getGenerateLlmsTxtQueue()),
     new BullMQAdapter(getDeepResearchQueue()),
-    new BullMQAdapter(getBillingQueue()),
     new BullMQAdapter(getPrecrawlQueue()),
   ],
   serverAdapter: serverAdapter,

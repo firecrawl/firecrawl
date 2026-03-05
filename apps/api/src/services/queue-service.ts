@@ -9,7 +9,6 @@ let loggingQueue: Queue;
 let indexQueue: Queue;
 let deepResearchQueue: Queue;
 let generateLlmsTxtQueue: Queue;
-let billingQueue: Queue;
 let precrawlQueue: Queue;
 let redisConnection: IORedis;
 
@@ -27,7 +26,6 @@ export function getRedisConnection(): IORedis {
 
 const generateLlmsTxtQueueName = "{generateLlmsTxtQueue}";
 const deepResearchQueueName = "{deepResearchQueue}";
-const billingQueueName = "{billingQueue}";
 export const precrawlQueueName = "{precrawlQueue}";
 
 export async function addExtractJobToQueue(
@@ -72,23 +70,6 @@ export function getDeepResearchQueue() {
     );
   }
   return deepResearchQueue;
-}
-
-export function getBillingQueue() {
-  if (!billingQueue) {
-    billingQueue = new Queue(billingQueueName, {
-      connection: getRedisConnection(),
-      defaultJobOptions: {
-        removeOnComplete: {
-          age: 60, // 1 minute
-        },
-        removeOnFail: {
-          age: 3600, // 1 hour
-        },
-      },
-    });
-  }
-  return billingQueue;
 }
 
 export function getPrecrawlQueue() {

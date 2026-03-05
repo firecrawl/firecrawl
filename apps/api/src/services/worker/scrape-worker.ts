@@ -49,7 +49,7 @@ import { UNSUPPORTED_SITE_MESSAGE } from "../../lib/strings";
 import { generateURLSplits, queryIndexAtSplitLevel } from "../index";
 import { WebCrawler } from "../../scraper/WebScraper/crawler";
 import { calculateCreditsToBeBilled } from "../../lib/scrape-billing";
-import { getBillingQueue } from "../queue-service";
+import { queueBillingOperation } from "../billing/batch_billing";
 import type { Logger } from "winston";
 import {
   CrawlDenialError,
@@ -114,37 +114,25 @@ async function billScrapeJob(
       config.USE_DB_AUTHENTICATION
     ) {
       try {
-        const billingJobId = uuidv7();
         logger.debug(
-          `Adding billing job to queue for team ${job.data.team_id}`,
+          `Queueing billing for team ${job.data.team_id}`,
           {
-            billingJobId,
             credits: creditsToBeBilled,
             is_extract: false,
           },
         );
 
-        // Add directly to the billing queue - the billing worker will handle the rest
-        await getBillingQueue().add(
-          "bill_team",
-          {
-            team_id: job.data.team_id,
-            subscription_id: undefined,
-            credits: creditsToBeBilled,
-            is_extract: false,
-            timestamp: new Date().toISOString(),
-            originating_job_id: job.id,
-            api_key_id: job.data.apiKeyId,
-          },
-          {
-            jobId: billingJobId,
-            priority: 10,
-          },
+        await queueBillingOperation(
+          job.data.team_id,
+          undefined,
+          creditsToBeBilled,
+          job.data.apiKeyId ?? null,
+          false,
         );
         return creditsToBeBilled;
       } catch (error) {
         logger.error(
-          `Failed to add billing job to queue for team ${job.data.team_id} for ${creditsToBeBilled} credits`,
+          `Failed to queue billing for team ${job.data.team_id} for ${creditsToBeBilled} credits`,
           { error },
         );
         captureExceptionWithZdrCheck(error, {
