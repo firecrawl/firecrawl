@@ -43,7 +43,7 @@
 
 [**Firecrawl**](https://firecrawl.dev/?ref=github) is an API that scrapes, crawls, and extracts structured data from any website, powering AI agents and apps with real-time context from the web.
 
-Looking for our MCP? Check out the repo [here](https://github.com/firecrawl/firecrawl-mcp-server).
+Looking for our MCP? Check out our [MCP Installation Guide](./docs/mcp-installation.md) and the repo [here](https://github.com/firecrawl/firecrawl-mcp-server).
 
 *This repository is in development, and we're still integrating custom modules into the mono repo. It's not fully ready for self-hosted deployment yet, but you can run it locally.*
 
