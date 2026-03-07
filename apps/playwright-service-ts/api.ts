@@ -100,7 +100,7 @@ const initializeBrowser = async () => {
 };
 
 const createContext = async (skipTlsVerification: boolean = false, headers?: Record<string, string>) => {
-  const userAgent = headers?.['user-agent'] ?? new UserAgent().toString();
+  const userAgent = Object.entries(headers ?? {}).find(([key]) => key.toLowerCase() === 'user-agent')?.[1] ?? new UserAgent().toString();
   const viewport = { width: 1280, height: 800 };
 
   const contextOptions: any = {
