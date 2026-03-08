@@ -4,6 +4,7 @@ import { getVersion } from "./getVersion";
 export interface HttpClientOptions {
   apiKey: string;
   apiUrl: string;
+  headers?: Record<string, string>;
   timeoutMs?: number;
   maxRetries?: number;
   backoffFactor?: number; // seconds factor for 0.5, 1, 2...
@@ -27,6 +28,7 @@ export class HttpClient {
       headers: {
         "Content-Type": "application/json",
         Authorization: `Bearer ${this.apiKey}`,
+        ...options.headers,
       },
       transitional: { clarifyTimeoutError: true },
     });
@@ -54,7 +56,7 @@ export class HttpClient {
         if (cfg.method && ["post", "put", "patch"].includes(cfg.method.toLowerCase())) {
           const data = (cfg.data ?? {}) as Record<string, unknown>;
           cfg.data = { ...data, origin: typeof data.origin === "string" && data.origin.includes("mcp") ? data.origin : `js-sdk@${version}` };
-          
+
           // If timeout is specified in the body, use it to override the request timeout
           if (typeof data.timeout === "number") {
             cfg.timeout = data.timeout + 5000;

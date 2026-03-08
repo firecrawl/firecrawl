@@ -62,8 +62,8 @@ type ExtractJsonSchemaFromFormats<Formats> = Formats extends readonly any[]
 
 type InferredJsonFromOptions<Opts> = Opts extends { formats?: infer Fmts }
   ? ExtractJsonSchemaFromFormats<Fmts> extends zt.ZodTypeAny
-    ? zt.infer<ExtractJsonSchemaFromFormats<Fmts>>
-    : unknown
+  ? zt.infer<ExtractJsonSchemaFromFormats<Fmts>>
+  : unknown
   : unknown;
 
 /**
@@ -74,6 +74,8 @@ export interface FirecrawlClientOptions {
   apiKey?: string | null;
   /** API base URL (falls back to FIRECRAWL_API_URL or https://api.firecrawl.dev). */
   apiUrl?: string | null;
+  /** Custom headers to send with each request. */
+  headers?: Record<string, string>;
   /** Per-request timeout in milliseconds (optional). */
   timeoutMs?: number;
   /** Max automatic retries for transient failures (optional). */
@@ -108,6 +110,7 @@ export class FirecrawlClient {
     this.http = new HttpClient({
       apiKey,
       apiUrl,
+      headers: options.headers,
       timeoutMs: options.timeoutMs,
       maxRetries: options.maxRetries,
       backoffFactor: options.backoffFactor,
