@@ -27,6 +27,7 @@ import {
   NuQJob,
   NuQJobStatus,
   crawlGroup,
+  normalizeOwnerId,
 } from "../../services/worker/nuq";
 import { ScrapeJobSingleUrls } from "../../types";
 import { redisEvictConnection } from "../../../src/services/redis";
@@ -195,20 +196,49 @@ export async function crawlStatusController(
       ? start + parseInt(req.query.limit, 10) - 1
       : undefined;
 
-  const group = await crawlGroup.getGroup(req.params.jobId);
-  const groupAnyJob = await scrapeQueue.getGroupAnyJob(
-    req.params.jobId,
-    req.auth.team_id,
-  );
-  const sc = await getCrawl(req.params.jobId);
+  const jobId = req.params.jobId;
+  const [group, groupAnyJob, sc] = await Promise.all([
+    crawlGroup.getGroup(jobId),
+    scrapeQueue.getGroupAnyJob(jobId, req.auth.team_id),
+    getCrawl(jobId),
+  ]);
 
-  if (!group || (!groupAnyJob && (!sc || sc.team_id !== req.auth.team_id))) {
+  // Authorization (and existence) can come from multiple sources:
+  // - `sc` (Redis) is the most immediate for newly created crawls
+  // - `groupAnyJob` (NuQ) is useful when Redis state is missing/evicted
+  // - `group` (NuQ) allows access even before any single_urls jobs exist
+  const normalizedTeamOwnerId = normalizeOwnerId(req.auth.team_id);
+  const authorized =
+    (sc?.team_id === req.auth.team_id) ||
+    groupAnyJob !== null ||
+    (group !== null &&
+      normalizedTeamOwnerId !== null &&
+      group.ownerId === normalizedTeamOwnerId);
+
+  if (!authorized) {
     return res.status(404).json({ success: false, error: "Job not found" });
   }
 
   const zeroDataRetention = !!(
-    groupAnyJob?.data?.zeroDataRetention ?? sc?.zeroDataRetention
+    groupAnyJob?.data?.zeroDataRetention ?? sc?.zeroDataRetention ?? false
   );
+
+  let expiresAt: string;
+  if (sc) {
+    expiresAt = (await getCrawlExpiry(jobId)).toISOString();
+  } else if (group) {
+    const expiryDate =
+      group.expiresAt ?? new Date(group.createdAt.getTime() + group.ttl);
+    expiresAt = expiryDate.toISOString();
+  } else if (groupAnyJob) {
+    // Best-effort fallback: NuQ groups default to 24h TTL.
+    expiresAt = new Date(
+      groupAnyJob.createdAt.getTime() + 24 * 60 * 60 * 1000,
+    ).toISOString();
+  } else {
+    // Should be unreachable because `authorized` would be false, but keep safe.
+    expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+  }
 
   const numericStats = await scrapeQueue.getGroupNumericStats(
     req.params.jobId,
@@ -225,13 +255,14 @@ export async function crawlStatusController(
       )
     : null;
 
+  const groupStatus = group?.status ?? "active";
   let outputBulkA: {
     status?: "completed" | "scraping" | "cancelled";
     completed?: number;
     total?: number;
     creditsUsed?: number;
   } = {
-    status: group.status === "active" ? "scraping" : group.status,
+    status: groupStatus === "active" ? "scraping" : groupStatus,
     completed: numericStats.completed ?? 0,
     total:
       (numericStats.completed ?? 0) +
@@ -345,7 +376,7 @@ export async function crawlStatusController(
     completed: outputBulkA.completed ?? 0,
     total: outputBulkA.total ?? 0,
     creditsUsed: outputBulkA.creditsUsed ?? 0,
-    expiresAt: (await getCrawlExpiry(req.params.jobId)).toISOString(),
+    expiresAt,
     next: outputBulkB.next,
     data: outputBulkB.data,
     ...(warning && { warning }),
