@@ -19,6 +19,7 @@ import { ScrapeJobTimeoutError } from "../../lib/error";
 import { ScrapeOptions } from "../../controllers/v2/types";
 import { filterLinks, filterUrl } from "@mendable/firecrawl-rs";
 import { shouldUseJsRobotsFilterPath } from "../../lib/robots-runtime-policy";
+import { resolveCrawlerLink } from "./link-normalization";
 
 export const SITEMAP_LIMIT = 25;
 const SITEMAP_MAX_AGE = 7 * 24 * 60 * 60 * 1000;
@@ -299,13 +300,10 @@ export class WebCrawler {
 
     const filteredLinks = sitemapLinks
       .filter(link => {
-        let url: URL;
-        try {
-          url = new URL(link.trim(), this.baseUrl);
-        } catch (error) {
+        const url = resolveCrawlerLink(link, this.baseUrl);
+        if (!url) {
           this.logger.debug(`Error processing link: ${link}`, {
             link,
-            error,
             method: "filterLinks",
           });
           return false;
@@ -383,15 +381,7 @@ export class WebCrawler {
 
         // Normalize the initial URL and the link to account for www and non-www versions
         const normalizedInitialUrl = new URL(this.initialUrl);
-        let normalizedLink;
-        try {
-          normalizedLink = new URL(link);
-        } catch (_) {
-          if (config.FIRECRAWL_DEBUG_FILTER_LINKS) {
-            this.logger.debug(`${link} URL PARSE FAIL`);
-          }
-          return false;
-        }
+        const normalizedLink = url;
         const initialHostname = normalizedInitialUrl.hostname.replace(
           /^www\./,
           "",

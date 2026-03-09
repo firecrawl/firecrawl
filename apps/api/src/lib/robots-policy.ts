@@ -1,5 +1,6 @@
 import { CrawlDenialError } from "./error";
 import { getHeaderValueCaseInsensitive } from "./header-utils";
+import { AbortManagerThrownError } from "../scraper/scrapeURL/lib/abortManager";
 
 type FetchRobotsTxtResult = {
   content: string;
@@ -38,6 +39,20 @@ type VerifyScrapeRobotsAccessDeps = {
   isUrlAllowedByRobots(url: string, robots: unknown, userAgents: string[]): boolean;
   getRobotsUserAgents(userAgent?: string): string[];
 };
+
+function isRobotsVerificationAbortError(error: unknown): boolean {
+  if (error instanceof AbortManagerThrownError) {
+    return true;
+  }
+
+  if (!(error instanceof Error)) {
+    return false;
+  }
+
+  return (
+    error.name === "AbortError" || error.message === "Robots.txt fetch aborted"
+  );
+}
 
 export async function verifyScrapeRobotsAccess(
   {
@@ -95,6 +110,9 @@ export async function verifyScrapeRobotsAccess(
     }
   } catch (error) {
     if (error instanceof CrawlDenialError) {
+      throw error;
+    }
+    if (isRobotsVerificationAbortError(error)) {
       throw error;
     }
     if (robotsMode === "strict") {

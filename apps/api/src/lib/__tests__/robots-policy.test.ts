@@ -1,4 +1,5 @@
 import { verifyScrapeRobotsAccess } from "../robots-policy";
+import { AbortManagerThrownError } from "../../scraper/scrapeURL/lib/abortManager";
 
 describe("verifyScrapeRobotsAccess", () => {
   const logger = {
@@ -118,5 +119,31 @@ describe("verifyScrapeRobotsAccess", () => {
       "https://example.com/allowed",
       "",
     );
+  });
+
+  it("rethrows abort errors instead of allowing scrape in respect mode", async () => {
+    const abortError = new AbortManagerThrownError(
+      "external",
+      new Error("Robots.txt fetch aborted"),
+    );
+
+    await expect(
+      verifyScrapeRobotsAccess(
+        {
+          url: "https://example.com/allowed",
+          id: "test:robots-fetch-abort",
+          logger,
+          zeroDataRetention: false,
+        },
+        {
+          fetchRobotsTxt: jest.fn().mockRejectedValue(abortError),
+          createRobotsChecker: jest.fn(),
+          isUrlAllowedByRobots: jest.fn(),
+          getRobotsUserAgents: jest.fn(),
+        },
+      ),
+    ).rejects.toBe(abortError);
+
+    expect(logger.debug).not.toHaveBeenCalled();
   });
 });
