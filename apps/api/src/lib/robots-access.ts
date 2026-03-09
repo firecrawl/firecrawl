@@ -19,7 +19,11 @@ export function isUrlAllowedByRobotsForUserAgents(
     }
 
     if (isAllowed && !url.endsWith("/")) {
-      const urlWithSlash = url + "/";
+      const parsed = new URL(url);
+      if (!parsed.pathname.endsWith("/")) {
+        parsed.pathname += "/";
+      }
+      const urlWithSlash = parsed.toString();
       const isAllowedWithSlash = robots.isAllowed(urlWithSlash, userAgent);
       if (isAllowedWithSlash === false) {
         return false;

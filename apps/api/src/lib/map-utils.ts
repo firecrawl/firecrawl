@@ -22,6 +22,7 @@ import {
 } from "../services/index";
 import { performCosineSimilarityV2 } from "./map-cosine";
 import { Logger } from "winston";
+import { shouldFailClosedOnInitialRobotsFetch } from "./robots-runtime-policy";
 
 // Max Links that "Smart /map" can return
 const MAX_FIRE_ENGINE_RESULTS = 100;
@@ -155,7 +156,7 @@ export async function getMapResults({
     sc.robots = await crawler.getRobotsTxt(false, abort);
     crawler.importRobotsTxt(sc.robots);
   } catch (error) {
-    if (crawlerOptions?.robotsMode === "strict") {
+    if (shouldFailClosedOnInitialRobotsFetch(crawlerOptions?.robotsMode)) {
       throw error;
     }
     // Robots.txt fetch failed, continue without it
