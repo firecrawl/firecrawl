@@ -43,8 +43,11 @@ function normalizeHeadersAndRobots<
 >(obj: T): T {
   const headers = obj.headers ? { ...obj.headers } : {};
   const normalizedUserAgent = obj.userAgent?.trim();
+  const hasUserAgentHeader = Object.keys(headers).some(
+    key => key.toLowerCase() === "user-agent",
+  );
 
-  if (normalizedUserAgent && !headers["User-Agent"]) {
+  if (normalizedUserAgent && !hasUserAgentHeader) {
     headers["User-Agent"] = normalizedUserAgent;
   }
 
@@ -1372,6 +1375,7 @@ export function toLegacyCrawlerOptions(x: CrawlerOptions) {
     allowExternalContentLinks: x.allowExternalLinks,
     allowSubdomains: x.allowSubdomains,
     ignoreRobotsTxt: x.ignoreRobotsTxt,
+    robotsMode: x.robotsMode,
     ignoreSitemap: x.ignoreSitemap,
     deduplicateSimilarURLs: x.deduplicateSimilarURLs,
     ignoreQueryParameters: x.ignoreQueryParameters,
@@ -1393,6 +1397,7 @@ export function toNewCrawlerOptions(x: any): CrawlerOptions {
     allowExternalLinks: x.allowExternalContentLinks,
     allowSubdomains: x.allowSubdomains,
     ignoreRobotsTxt: x.ignoreRobotsTxt,
+    robotsMode: x.robotsMode,
     ignoreSitemap: x.ignoreSitemap,
     deduplicateSimilarURLs: x.deduplicateSimilarURLs,
     ignoreQueryParameters: x.ignoreQueryParameters,
@@ -1420,6 +1425,7 @@ function fromLegacyCrawlerOptions(
       allowExternalLinks: x.allowExternalContentLinks,
       allowSubdomains: x.allowSubdomains,
       ignoreRobotsTxt: x.ignoreRobotsTxt,
+      robotsMode: x.robotsMode,
       ignoreSitemap: x.ignoreSitemap,
       deduplicateSimilarURLs: x.deduplicateSimilarURLs,
       ignoreQueryParameters: x.ignoreQueryParameters,

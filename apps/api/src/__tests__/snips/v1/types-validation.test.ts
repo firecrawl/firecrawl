@@ -16,6 +16,8 @@ import {
   MapRequestInput,
   BatchScrapeRequest,
   BatchScrapeRequestInput,
+  toLegacyCrawlerOptions,
+  toNewCrawlerOptions,
 } from "../../../controllers/v1/types";
 
 describe("V1 Types Validation", () => {
@@ -340,6 +342,20 @@ describe("V1 Types Validation", () => {
       expect(result.headers?.["User-Agent"]).toBe("DebTestBot/1.0");
       expect(result.robotsMode).toBe("strict");
     });
+
+    it("should not duplicate user-agent headers when an existing lowercase header is present", () => {
+      const input: ScrapeRequestInput = {
+        url: "https://example.com",
+        headers: {
+          "user-agent": "ExistingBot/1.0",
+        },
+        userAgent: "DebTestBot/1.0",
+      };
+
+      const result = scrapeRequestSchema.parse(input);
+      expect(result.headers?.["user-agent"]).toBe("ExistingBot/1.0");
+      expect(result.headers?.["User-Agent"]).toBeUndefined();
+    });
   });
 
   describe("extractRequestSchema", () => {
@@ -508,6 +524,20 @@ describe("V1 Types Validation", () => {
       const result = crawlRequestSchema.parse(input);
       expect(result.ignoreRobotsTxt).toBe(true);
       expect(result.scrapeOptions.headers?.["User-Agent"]).toBe("DebTestBot/1.0");
+    });
+
+    it("should preserve robotsMode through legacy crawler option conversion helpers", () => {
+      const legacy = toLegacyCrawlerOptions({
+        robotsMode: "strict",
+        ignoreRobotsTxt: false,
+      } as any);
+      expect(legacy.robotsMode).toBe("strict");
+
+      const converted = toNewCrawlerOptions({
+        robotsMode: "strict",
+        ignoreRobotsTxt: false,
+      });
+      expect(converted.robotsMode).toBe("strict");
     });
 
     it("should reject URL depth exceeding maxDepth", () => {

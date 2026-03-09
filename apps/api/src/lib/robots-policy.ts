@@ -1,5 +1,5 @@
 import { CrawlDenialError } from "./error";
-import { ScrapeOptions } from "../controllers/v2/types";
+import { getHeaderValueCaseInsensitive } from "./header-utils";
 
 type FetchRobotsTxtResult = {
   content: string;
@@ -22,7 +22,7 @@ type VerifyScrapeRobotsAccessArgs = {
   robotsMode?: "ignore" | "respect" | "strict";
   cachedRobotsTxt?: string;
   zeroDataRetention: boolean;
-  location?: ScrapeOptions["location"];
+  location?: unknown;
   headers?: Record<string, string>;
   abort?: AbortSignal;
 };
@@ -31,7 +31,7 @@ type VerifyScrapeRobotsAccessDeps = {
   fetchRobotsTxt(args: {
     url: string;
     zeroDataRetention: boolean;
-    location?: ScrapeOptions["location"];
+    location?: unknown;
     headers?: Record<string, string>;
   }, scrapeId: string, logger: RobotsLogger, abort?: AbortSignal): Promise<FetchRobotsTxtResult>;
   createRobotsChecker(url: string, robotsTxt: string): RobotsChecker;
@@ -65,7 +65,7 @@ export async function verifyScrapeRobotsAccess(
   try {
     let robotsTxt = cachedRobotsTxt;
 
-    if (!robotsTxt) {
+    if (robotsTxt === undefined) {
       const response = await deps.fetchRobotsTxt(
         {
           url,
@@ -84,7 +84,9 @@ export async function verifyScrapeRobotsAccess(
     const isAllowed = deps.isUrlAllowedByRobots(
       url,
       checker.robots,
-      deps.getRobotsUserAgents(headers?.["User-Agent"]),
+      deps.getRobotsUserAgents(
+        getHeaderValueCaseInsensitive(headers, "user-agent"),
+      ),
     );
 
     if (!isAllowed) {

@@ -89,8 +89,11 @@ function normalizeHeadersAndRobots<
 >(obj: T): T {
   const headers = obj.headers ? { ...obj.headers } : {};
   const normalizedUserAgent = obj.userAgent?.trim();
+  const hasUserAgentHeader = Object.keys(headers).some(
+    key => key.toLowerCase() === "user-agent",
+  );
 
-  if (normalizedUserAgent && !headers["User-Agent"]) {
+  if (normalizedUserAgent && !hasUserAgentHeader) {
     headers["User-Agent"] = normalizedUserAgent;
   }
 
@@ -1338,6 +1341,7 @@ export function toV0CrawlerOptions(x: CrawlerOptions) {
     allowExternalContentLinks: x.allowExternalLinks,
     allowSubdomains: x.allowSubdomains,
     ignoreRobotsTxt: x.ignoreRobotsTxt,
+    robotsMode: x.robotsMode,
     ignoreSitemap: x.sitemap === "skip",
     sitemapOnly: x.sitemap === "only",
     deduplicateSimilarURLs: x.deduplicateSimilarURLs,
@@ -1358,6 +1362,7 @@ export function toV2CrawlerOptions(x: any): CrawlerOptions {
     allowExternalLinks: x.allowExternalContentLinks,
     allowSubdomains: x.allowSubdomains,
     ignoreRobotsTxt: x.ignoreRobotsTxt,
+    robotsMode: x.robotsMode,
     sitemap: x.sitemapOnly ? "only" : x.ignoreSitemap ? "skip" : "include",
     deduplicateSimilarURLs: x.deduplicateSimilarURLs,
     ignoreQueryParameters: x.ignoreQueryParameters,
@@ -1383,6 +1388,7 @@ function fromV0CrawlerOptions(
       allowExternalLinks: x.allowExternalContentLinks,
       allowSubdomains: x.allowSubdomains,
       ignoreRobotsTxt: x.ignoreRobotsTxt,
+      robotsMode: x.robotsMode,
       sitemap: x.sitemapOnly ? "only" : x.ignoreSitemap ? "skip" : "include",
       deduplicateSimilarURLs: x.deduplicateSimilarURLs,
       ignoreQueryParameters: x.ignoreQueryParameters,

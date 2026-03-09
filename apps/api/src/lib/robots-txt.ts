@@ -6,6 +6,7 @@ import { scrapeURL } from "../scraper/scrapeURL";
 import { Engine } from "../scraper/scrapeURL/engines";
 import { CostTracking } from "./cost-tracking";
 import { useIndex } from "../services";
+import { getHeaderValueCaseInsensitive } from "./header-utils";
 
 const ROBOTS_MAX_AGE = 1 * 24 * 60 * 60 * 1000;
 

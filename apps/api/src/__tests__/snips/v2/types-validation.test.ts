@@ -19,6 +19,7 @@ import {
   BatchScrapeRequestInput,
   SearchRequest,
   SearchRequestInput,
+  toV0CrawlerOptions,
   toV2CrawlerOptions,
 } from "../../../controllers/v2/types";
 
@@ -365,6 +366,20 @@ describe("V2 Types Validation", () => {
       expect(result.robotsMode).toBe("strict");
     });
 
+    it("should not duplicate user-agent headers when an existing lowercase header is present", () => {
+      const input: ScrapeRequestInput = {
+        url: "https://example.com",
+        headers: {
+          "user-agent": "ExistingBot/1.0",
+        },
+        userAgent: "DebTestBot/1.0",
+      };
+
+      const result = scrapeRequestSchema.parse(input);
+      expect(result.headers?.["user-agent"]).toBe("ExistingBot/1.0");
+      expect(result.headers?.["User-Agent"]).toBeUndefined();
+    });
+
     it("should reject location schema with invalid country code", () => {
       const input: ScrapeRequestInput = {
         url: "https://example.com",
@@ -668,6 +683,20 @@ describe("V2 Types Validation", () => {
       });
 
       expect(result.sitemap).toBe("only");
+    });
+
+    it("should preserve robotsMode through v0 crawler option conversion helpers", () => {
+      const legacy = toV0CrawlerOptions({
+        robotsMode: "strict",
+        ignoreRobotsTxt: false,
+      } as any);
+      expect(legacy.robotsMode).toBe("strict");
+
+      const converted = toV2CrawlerOptions({
+        robotsMode: "strict",
+        ignoreRobotsTxt: false,
+      });
+      expect(converted.robotsMode).toBe("strict");
     });
   });
 

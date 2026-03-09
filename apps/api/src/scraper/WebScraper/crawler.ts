@@ -14,6 +14,7 @@ import {
   getRobotsUserAgents,
   isUrlAllowedByRobots,
 } from "../../lib/robots-txt";
+import { getHeaderValueCaseInsensitive } from "../../lib/header-utils";
 import { ScrapeJobTimeoutError } from "../../lib/error";
 import { ScrapeOptions } from "../../controllers/v2/types";
 import { filterLinks, filterUrl } from "@mendable/firecrawl-rs";
@@ -405,7 +406,9 @@ export class WebCrawler {
             : isUrlAllowedByRobots(
                 link,
                 this.robots,
-                getRobotsUserAgents(this.headers?.["User-Agent"]),
+                getRobotsUserAgents(
+                  getHeaderValueCaseInsensitive(this.headers, "user-agent"),
+                ),
               );
         // Check if the link is disallowed by robots.txt
         if (!isAllowed) {
@@ -492,7 +495,9 @@ export class WebCrawler {
     const checker = createRobotsChecker(this.initialUrl, txt);
     this.robots = checker.robots;
     this.robotsTxtUrl = checker.robotsTxtUrl;
-    const delay = getRobotsUserAgents(this.headers?.["User-Agent"])
+    const delay = getRobotsUserAgents(
+      getHeaderValueCaseInsensitive(this.headers, "user-agent"),
+    )
       .map(userAgent => this.robots.getCrawlDelay(userAgent))
       .find(value => value !== undefined);
     this.robotsCrawlDelay = delay !== undefined ? delay : null;
@@ -752,7 +757,9 @@ export class WebCrawler {
       : isUrlAllowedByRobots(
           url,
           this.robots,
-          getRobotsUserAgents(this.headers?.["User-Agent"]),
+          getRobotsUserAgents(
+            getHeaderValueCaseInsensitive(this.headers, "user-agent"),
+          ),
         );
   }
 

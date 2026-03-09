@@ -87,4 +87,36 @@ describe("verifyScrapeRobotsAccess", () => {
       ["DebTestBot/1.0", "DebTestBot"],
     );
   });
+
+  it("treats an empty cached robots.txt as a cache hit", async () => {
+    const fetchRobotsTxt = jest.fn();
+    const createRobotsChecker = jest.fn().mockReturnValue({
+      robots: { source: "robots-parser" },
+    });
+    const isUrlAllowedByRobots = jest.fn().mockReturnValue(true);
+
+    await expect(
+      verifyScrapeRobotsAccess(
+        {
+          url: "https://example.com/allowed",
+          id: "test:cached-empty-robots",
+          logger,
+          cachedRobotsTxt: "",
+          zeroDataRetention: false,
+        },
+        {
+          fetchRobotsTxt,
+          createRobotsChecker,
+          isUrlAllowedByRobots,
+          getRobotsUserAgents: jest.fn().mockReturnValue(["FireCrawlAgent"]),
+        },
+      ),
+    ).resolves.toBeUndefined();
+
+    expect(fetchRobotsTxt).not.toHaveBeenCalled();
+    expect(createRobotsChecker).toHaveBeenCalledWith(
+      "https://example.com/allowed",
+      "",
+    );
+  });
 });
