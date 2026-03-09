@@ -109,6 +109,26 @@ describe('Firecrawl v2 Client Options', () => {
     ).toThrow('No API key provided');
   });
 
+  it('should reject non-string API keys for the cloud v1 client without throwing a TypeError', () => {
+    expect(
+      () =>
+        new FirecrawlAppV1({
+          apiKey: 42 as any,
+          apiUrl: 'https://api.firecrawl.dev',
+        }),
+    ).toThrow('No API key provided');
+  });
+
+  it('should reject non-string API keys for the cloud v2 client without throwing a TypeError', () => {
+    expect(
+      () =>
+        new Firecrawl({
+          apiKey: { token: 'abc' } as any,
+          apiUrl: 'https://api.firecrawl.dev',
+        }),
+    ).toThrow('API key is required for the cloud API');
+  });
+
   it('should not send an Authorization header to self-hosted v2 scrape endpoints', async () => {
     let seenAuthorization: string | string[] | undefined;
     let seenOrigin: unknown;

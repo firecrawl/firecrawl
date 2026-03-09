@@ -82,6 +82,10 @@ export interface FirecrawlClientOptions {
   backoffFactor?: number;
 }
 
+function normalizeApiKey(apiKey: unknown): string {
+  return typeof apiKey === "string" ? apiKey.trim() : "";
+}
+
 /**
  * Firecrawl v2 client. Provides typed access to all v2 endpoints and utilities.
  */
@@ -98,7 +102,9 @@ export class FirecrawlClient {
    * @param options Transport configuration (API key, base URL, timeouts, retries).
    */
   constructor(options: FirecrawlClientOptions = {}) {
-    const apiKey = (options.apiKey ?? process.env.FIRECRAWL_API_KEY ?? "").trim();
+    const apiKey = normalizeApiKey(
+      options.apiKey ?? process.env.FIRECRAWL_API_KEY ?? "",
+    );
     const apiUrl = (options.apiUrl ?? process.env.FIRECRAWL_API_URL ?? "https://api.firecrawl.dev").replace(/\/$/, "");
 
     if (this.isCloudService(apiUrl) && !apiKey) {

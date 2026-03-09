@@ -9,6 +9,10 @@ export interface HttpClientOptions {
   backoffFactor?: number; // seconds factor for 0.5, 1, 2...
 }
 
+function normalizeApiKey(apiKey: unknown): string {
+  return typeof apiKey === "string" ? apiKey.trim() : "";
+}
+
 export class HttpClient {
   private instance: AxiosInstance;
   private readonly apiKey: string;
@@ -17,7 +21,7 @@ export class HttpClient {
   private readonly backoffFactor: number;
 
   constructor(options: HttpClientOptions) {
-    this.apiKey = options.apiKey?.trim() ?? "";
+    this.apiKey = normalizeApiKey(options.apiKey);
     this.apiUrl = options.apiUrl.replace(/\/$/, "");
     this.maxRetries = options.maxRetries ?? 3;
     this.backoffFactor = options.backoffFactor ?? 0.5;

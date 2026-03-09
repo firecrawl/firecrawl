@@ -29,6 +29,10 @@ function buildAuthHeaders(
   return headers as AxiosRequestHeaders;
 }
 
+function normalizeApiKey(apiKey: unknown): string {
+  return typeof apiKey === "string" ? apiKey.trim() : "";
+}
+
 /**
  * Metadata for a Firecrawl document.
  * Includes various optional properties for document metadata.
@@ -701,7 +705,7 @@ export default class FirecrawlApp {
    */
   constructor({ apiKey = null, apiUrl = null }: FirecrawlAppConfig) {
     const baseUrl = apiUrl || "https://api.firecrawl.dev";
-    const normalizedApiKey = apiKey?.trim() ?? "";
+    const normalizedApiKey = normalizeApiKey(apiKey);
     
     if (this.isCloudService(baseUrl) && !normalizedApiKey) {
       throw new FirecrawlError("No API key provided", 401);
