@@ -754,6 +754,16 @@ describe("V2 Types Validation", () => {
       const result = mapRequestSchema.parse(input);
       expect(result.sitemap).toBe("only");
     });
+
+    it("should derive ignoreRobotsTxt from robotsMode for map requests", () => {
+      const result = mapRequestSchema.parse({
+        url: "https://example.com",
+        robotsMode: "ignore",
+      });
+
+      expect(result.robotsMode).toBe("ignore");
+      expect(result.ignoreRobotsTxt).toBe(true);
+    });
   });
 
   describe("batchScrapeRequestSchema", () => {

@@ -1005,7 +1005,9 @@ const mapRequestSchemaBase = crawlerOptions
     headers: z.record(z.string(), z.string()).optional(),
   });
 
-export const mapRequestSchema = strictWithMessage(mapRequestSchemaBase);
+export const mapRequestSchema = strictWithMessage(mapRequestSchemaBase).transform(
+  normalizeHeadersAndRobots,
+);
 
 // export type MapRequest = {
 //   url: string;

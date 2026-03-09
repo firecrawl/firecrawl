@@ -80,7 +80,10 @@ import { htmlTransform } from "./lib/removeUnwantedElements";
 import { postprocessors } from "./postprocessors";
 import { rewriteUrl } from "./lib/rewriteUrl";
 import { verifyScrapeRobotsAccess } from "../../lib/robots-policy";
-import { isRobotsVerificationAbortError } from "../../lib/robots-runtime-policy";
+import {
+  isRobotsVerificationAbortError,
+  shouldReturnFailedScrapeResponseForRobotsError,
+} from "../../lib/robots-runtime-policy";
 
 export type ScrapeUrlResponse =
   | {
@@ -991,7 +994,7 @@ export async function scrapeURL(
           }
         }
       }).catch(error => {
-        if (error.message === "URL blocked by robots.txt") {
+        if (shouldReturnFailedScrapeResponseForRobotsError(error)) {
           return {
             success: false,
             error,

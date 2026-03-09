@@ -615,6 +615,16 @@ describe("V1 Types Validation", () => {
       const result = mapRequestSchema.parse(input);
       expect(result.limit).toBe(10000);
     });
+
+    it("should derive ignoreRobotsTxt from robotsMode for map requests", () => {
+      const result = mapRequestSchema.parse({
+        url: "https://example.com",
+        robotsMode: "ignore",
+      });
+
+      expect(result.robotsMode).toBe("ignore");
+      expect(result.ignoreRobotsTxt).toBe(true);
+    });
   });
 
   describe("batchScrapeRequestSchema", () => {

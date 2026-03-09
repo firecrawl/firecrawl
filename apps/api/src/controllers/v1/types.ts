@@ -999,7 +999,9 @@ const mapRequestSchemaBase = crawlerOptions
     headers: z.record(z.string(), z.string()).optional(),
   });
 
-export const mapRequestSchema = mapRequestSchemaBase.strict();
+export const mapRequestSchema = mapRequestSchemaBase
+  .strict()
+  .transform(normalizeHeadersAndRobots);
 
 // export type MapRequest = {
 //   url: string;

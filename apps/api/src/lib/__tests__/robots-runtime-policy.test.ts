@@ -1,9 +1,11 @@
 import {
   isRobotsVerificationAbortError,
+  shouldReturnFailedScrapeResponseForRobotsError,
   shouldFailClosedOnInitialRobotsFetch,
   shouldUseJsRobotsFilterPath,
 } from "../robots-runtime-policy";
 import { AbortManagerThrownError } from "../../scraper/scrapeURL/lib/abortManager";
+import { CrawlDenialError } from "../error";
 
 describe("robots runtime policy helpers", () => {
   it("fails closed only for strict robots mode", () => {
@@ -67,5 +69,26 @@ describe("robots runtime policy helpers", () => {
     expect(isRobotsVerificationAbortError(new Error("robots fetch failed"))).toBe(
       false,
     );
+  });
+
+  it("marks blocked and strict verification robots errors as failed scrape responses", () => {
+    expect(
+      shouldReturnFailedScrapeResponseForRobotsError(
+        new CrawlDenialError("URL blocked by robots.txt"),
+      ),
+    ).toBe(true);
+    expect(
+      shouldReturnFailedScrapeResponseForRobotsError(
+        new CrawlDenialError("Failed to verify robots.txt in strict mode"),
+      ),
+    ).toBe(true);
+    expect(
+      shouldReturnFailedScrapeResponseForRobotsError(
+        new CrawlDenialError("some other crawl denial"),
+      ),
+    ).toBe(false);
+    expect(
+      shouldReturnFailedScrapeResponseForRobotsError(new Error("robots failed")),
+    ).toBe(false);
   });
 });
