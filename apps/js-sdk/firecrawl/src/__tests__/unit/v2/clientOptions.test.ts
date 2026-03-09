@@ -99,6 +99,16 @@ describe('Firecrawl v2 Client Options', () => {
     expect(headers.Authorization).toBeUndefined();
   });
 
+  it('should reject whitespace-only API keys for the cloud v1 client', () => {
+    expect(
+      () =>
+        new FirecrawlAppV1({
+          apiKey: '   ',
+          apiUrl: 'https://api.firecrawl.dev',
+        })
+    ).toThrow('No API key provided');
+  });
+
   it('should not send an Authorization header to self-hosted v2 scrape endpoints', async () => {
     let seenAuthorization: string | string[] | undefined;
     let seenOrigin: unknown;

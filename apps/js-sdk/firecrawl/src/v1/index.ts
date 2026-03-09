@@ -697,12 +697,13 @@ export default class FirecrawlApp {
    */
   constructor({ apiKey = null, apiUrl = null }: FirecrawlAppConfig) {
     const baseUrl = apiUrl || "https://api.firecrawl.dev";
+    const normalizedApiKey = apiKey?.trim() ?? "";
     
-    if (this.isCloudService(baseUrl) && typeof apiKey !== "string") {
+    if (this.isCloudService(baseUrl) && !normalizedApiKey) {
       throw new FirecrawlError("No API key provided", 401);
     }
 
-    this.apiKey = apiKey || '';
+    this.apiKey = normalizedApiKey;
     this.apiUrl = baseUrl;
     this.init();
   }
