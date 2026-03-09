@@ -2,7 +2,7 @@ import axios, { type AxiosInstance, type AxiosRequestConfig, type AxiosResponse 
 import { getVersion } from "./getVersion";
 
 export interface HttpClientOptions {
-  apiKey: string;
+  apiKey?: string | null;
   apiUrl: string;
   timeoutMs?: number;
   maxRetries?: number;
@@ -17,17 +17,20 @@ export class HttpClient {
   private readonly backoffFactor: number;
 
   constructor(options: HttpClientOptions) {
-    this.apiKey = options.apiKey;
+    this.apiKey = options.apiKey?.trim() ?? "";
     this.apiUrl = options.apiUrl.replace(/\/$/, "");
     this.maxRetries = options.maxRetries ?? 3;
     this.backoffFactor = options.backoffFactor ?? 0.5;
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+    };
+    if (this.apiKey) {
+      headers.Authorization = `Bearer ${this.apiKey}`;
+    }
     this.instance = axios.create({
       baseURL: this.apiUrl,
       timeout: options.timeoutMs ?? 300000,
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${this.apiKey}`,
-      },
+      headers,
       transitional: { clarifyTimeoutError: true },
     });
   }
@@ -101,4 +104,3 @@ export class HttpClient {
     return headers;
   }
 }
-

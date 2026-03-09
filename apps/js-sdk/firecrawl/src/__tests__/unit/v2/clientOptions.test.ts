@@ -1,4 +1,4 @@
-import { Firecrawl, type FirecrawlClientOptions } from '../../../index';
+import { Firecrawl, FirecrawlAppV1, type FirecrawlClientOptions } from '../../../index';
 
 describe('Firecrawl v2 Client Options', () => {
   it('should accept v2 options including timeoutMs, maxRetries, and backoffFactor', () => {
@@ -51,5 +51,28 @@ describe('Firecrawl v2 Client Options', () => {
 
     expect(options.timeoutMs).toBe(300);
     expect(options.apiKey).toBe('test-key');
+  });
+
+  it('should allow self-hosted v2 usage without an API key and omit auth headers', () => {
+    const client = new Firecrawl({
+      apiUrl: 'http://localhost:3002',
+    });
+
+    const transport = (client as any).http;
+    const defaults = transport.instance.defaults.headers;
+
+    expect(transport.getApiKey()).toBe('');
+    expect(defaults.Authorization).toBeUndefined();
+  });
+
+  it('should allow self-hosted v1 usage without an API key and omit auth headers', () => {
+    const client = new FirecrawlAppV1({
+      apiUrl: 'http://localhost:3002',
+    });
+
+    const headers = client.prepareHeaders();
+
+    expect(client.apiKey).toBe('');
+    expect(headers.Authorization).toBeUndefined();
   });
 });

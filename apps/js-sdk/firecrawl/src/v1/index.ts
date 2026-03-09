@@ -13,6 +13,22 @@ export interface FirecrawlAppConfig {
   apiUrl?: string | null;
 }
 
+function buildAuthHeaders(
+  apiKey: string,
+  extraHeaders: Record<string, string> = {}
+): AxiosRequestHeaders {
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+    ...extraHeaders,
+  };
+
+  if (apiKey) {
+    headers.Authorization = `Bearer ${apiKey}`;
+  }
+
+  return headers as AxiosRequestHeaders;
+}
+
 /**
  * Metadata for a Firecrawl document.
  * Includes various optional properties for document metadata.
@@ -701,10 +717,7 @@ export default class FirecrawlApp {
     url: string,
     params?: ScrapeParams<T, ActionsSchema>
   ): Promise<ScrapeResponse<zt.infer<T>, ActionsSchema extends Action[] ? ActionsResult : never> | ErrorResponse> {
-    const headers: AxiosRequestHeaders = {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${this.apiKey}`,
-    } as AxiosRequestHeaders;
+    const headers = buildAuthHeaders(this.apiKey);
     let jsonData: any = { url, ...params, origin: typeof (params as any).origin === "string" && (params as any).origin.includes("mcp") ? (params as any).origin : `js-sdk@${this.version}` };
     if (jsonData?.extract?.schema) {
       jsonData = {
@@ -759,10 +772,7 @@ export default class FirecrawlApp {
    * @returns The response from the search operation.
    */
   async search(query: string, params?: SearchParams | Record<string, any>): Promise<SearchResponse> {
-    const headers: AxiosRequestHeaders = {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${this.apiKey}`,
-    } as AxiosRequestHeaders;
+    const headers = buildAuthHeaders(this.apiKey);
 
     let jsonData: any = {
       query,
@@ -1398,11 +1408,7 @@ export default class FirecrawlApp {
    * @returns The prepared headers.
    */
   prepareHeaders(idempotencyKey?: string): AxiosRequestHeaders {
-    return {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${this.apiKey}`,
-      ...(idempotencyKey ? { "x-idempotency-key": idempotencyKey } : {}),
-    } as AxiosRequestHeaders & { "x-idempotency-key"?: string };
+    return buildAuthHeaders(this.apiKey, idempotencyKey ? { "x-idempotency-key": idempotencyKey } : {});
   }
 
   /**
