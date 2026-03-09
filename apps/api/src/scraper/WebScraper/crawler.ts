@@ -20,6 +20,7 @@ import { ScrapeOptions } from "../../controllers/v2/types";
 import { filterLinks, filterUrl } from "@mendable/firecrawl-rs";
 import { shouldUseJsRobotsFilterPath } from "../../lib/robots-runtime-policy";
 import { resolveCrawlerLink } from "./link-normalization";
+import { shouldDenyCrawlTarget } from "./crawl-target-policy";
 
 export const SITEMAP_LIMIT = 25;
 const SITEMAP_MAX_AGE = 7 * 24 * 60 * 60 * 1000;
@@ -382,17 +383,23 @@ export class WebCrawler {
         // Normalize the initial URL and the link to account for www and non-www versions
         const normalizedInitialUrl = new URL(this.initialUrl);
         const normalizedLink = url;
-        const initialHostname = normalizedInitialUrl.hostname.replace(
-          /^www\./,
-          "",
-        );
-        const linkHostname = normalizedLink.hostname.replace(/^www\./, "");
 
-        // Ensure the protocol and hostname match, and the path starts with the initial URL's path
-        // commented to able to handling external link on allowExternalContentLinks
-        // if (linkHostname !== initialHostname) {
-        //   return false;
-        // }
+        const crawlTargetDenial = shouldDenyCrawlTarget({
+          initialUrl: this.initialUrl,
+          targetUrl: urlStr,
+          allowExternalContentLinks: this.allowExternalContentLinks,
+          allowSubdomains: this.allowSubdomains,
+        });
+        if (crawlTargetDenial === "EXTERNAL_LINK") {
+          if (config.FIRECRAWL_DEBUG_FILTER_LINKS) {
+            this.logger.debug(`${link} EXTERNAL LINK FAIL`);
+          }
+          denialReasons.set(
+            link,
+            DenialReason.EXTERNAL_LINK,
+          );
+          return false;
+        }
 
         if (!this.allowBackwardCrawling) {
           if (

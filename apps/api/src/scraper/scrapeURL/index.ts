@@ -908,7 +908,7 @@ export async function scrapeURL(
     }
 
     if (internalOptions.teamFlags?.checkRobotsOnScrape) {
-      await withSpan("scrape.robots_check", async robotsSpan => {
+      const robotsCheckFailure = await withSpan("scrape.robots_check", async robotsSpan => {
         const robotsMode = options.robotsMode ?? "respect";
         if (robotsMode === "ignore") {
           setSpanAttributes(robotsSpan, {
@@ -996,12 +996,15 @@ export async function scrapeURL(
       }).catch(error => {
         if (shouldReturnFailedScrapeResponseForRobotsError(error)) {
           return {
-            success: false,
+            success: false as const,
             error,
           };
         }
         throw error;
       });
+      if (robotsCheckFailure) {
+        return robotsCheckFailure;
+      }
     }
 
     // Initialize retry tracker with configured limits
