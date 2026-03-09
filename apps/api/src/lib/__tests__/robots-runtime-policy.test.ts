@@ -1,7 +1,9 @@
 import {
+  isRobotsVerificationAbortError,
   shouldFailClosedOnInitialRobotsFetch,
   shouldUseJsRobotsFilterPath,
 } from "../robots-runtime-policy";
+import { AbortManagerThrownError } from "../../scraper/scrapeURL/lib/abortManager";
 
 describe("robots runtime policy helpers", () => {
   it("fails closed only for strict robots mode", () => {
@@ -43,5 +45,27 @@ describe("robots runtime policy helpers", () => {
         userAgent: undefined,
       }),
     ).toBe(false);
+  });
+
+  it("treats abort-shaped errors as cancellation signals", () => {
+    expect(
+      isRobotsVerificationAbortError(
+        new AbortManagerThrownError(
+          "external",
+          new Error("Robots.txt fetch aborted"),
+        ),
+      ),
+    ).toBe(true);
+    expect(
+      isRobotsVerificationAbortError(
+        Object.assign(new Error("request aborted"), { name: "AbortError" }),
+      ),
+    ).toBe(true);
+    expect(
+      isRobotsVerificationAbortError(new Error("Robots.txt fetch aborted")),
+    ).toBe(true);
+    expect(isRobotsVerificationAbortError(new Error("robots fetch failed"))).toBe(
+      false,
+    );
   });
 });

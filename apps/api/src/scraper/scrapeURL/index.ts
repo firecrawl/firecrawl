@@ -80,6 +80,7 @@ import { htmlTransform } from "./lib/removeUnwantedElements";
 import { postprocessors } from "./postprocessors";
 import { rewriteUrl } from "./lib/rewriteUrl";
 import { verifyScrapeRobotsAccess } from "../../lib/robots-policy";
+import { isRobotsVerificationAbortError } from "../../lib/robots-runtime-policy";
 
 export type ScrapeUrlResponse =
   | {
@@ -970,6 +971,9 @@ export async function scrapeURL(
               });
             }
             if (error instanceof CrawlDenialError) {
+              throw error;
+            }
+            if (isRobotsVerificationAbortError(error)) {
               throw error;
             }
             if (robotsMode === "strict") {

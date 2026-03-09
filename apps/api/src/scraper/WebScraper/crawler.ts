@@ -415,7 +415,7 @@ export class WebCrawler {
           this.ignoreRobotsTxt || skipRobots
             ? true
             : isUrlAllowedByRobots(
-                link,
+                urlStr,
                 this.robots,
                 getRobotsUserAgents(
                   getHeaderValueCaseInsensitive(this.headers, "user-agent"),

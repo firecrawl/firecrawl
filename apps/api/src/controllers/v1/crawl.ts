@@ -20,6 +20,7 @@ import { fromV1ScrapeOptions } from "../v2/types";
 import { checkPermissions } from "../../lib/permissions";
 import { crawlGroup } from "../../services/worker/nuq";
 import { logRequest } from "../../services/logging/log_job";
+import { shouldFailClosedOnInitialRobotsFetch } from "../../lib/robots-runtime-policy";
 
 export async function crawlController(
   req: RequestWithAuth<{}, CrawlResponse, CrawlRequest>,
@@ -146,7 +147,7 @@ export async function crawlController(
     //   sc.crawlerOptions.delay = robotsCrawlDelay;
     // }
   } catch (e) {
-    if (req.body.robotsMode === "strict") {
+    if (shouldFailClosedOnInitialRobotsFetch(crawlerOptions.robotsMode)) {
       throw e;
     }
     logger.debug("Failed to get robots.txt (this is probably fine!)", {
