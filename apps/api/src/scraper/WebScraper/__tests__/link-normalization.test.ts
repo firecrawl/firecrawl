@@ -26,4 +26,18 @@ describe("resolveCrawlerLink", () => {
     expect(resolveCrawlerLink("https://exa mple.com", "https://example.com"))
       .toBeNull();
   });
+
+  it("returns null for non-web schemes", () => {
+    expect(resolveCrawlerLink("mailto:test@example.com", "https://example.com"))
+      .toBeNull();
+    expect(resolveCrawlerLink("ftp://example.com/file.txt", "https://example.com"))
+      .toBeNull();
+  });
+
+  it("returns null for empty and fragment-only hrefs", () => {
+    expect(resolveCrawlerLink("", "https://example.com/docs")).toBeNull();
+    expect(resolveCrawlerLink("   ", "https://example.com/docs")).toBeNull();
+    expect(resolveCrawlerLink("#overview", "https://example.com/docs"))
+      .toBeNull();
+  });
 });
