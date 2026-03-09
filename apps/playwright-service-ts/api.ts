@@ -99,8 +99,8 @@ const initializeBrowser = async () => {
   });
 };
 
-const createContext = async (skipTlsVerification: boolean = false) => {
-  const userAgent = new UserAgent().toString();
+const createContext = async (skipTlsVerification: boolean = false, userAgentOverride?: string) => {
+  const userAgent = userAgentOverride || new UserAgent().toString();
   const viewport = { width: 1280, height: 800 };
 
   const contextOptions: any = {
@@ -247,12 +247,14 @@ app.post('/scrape', async (req: Request, res: Response) => {
   }
 
   await pageSemaphore.acquire();
-  
+
   let requestContext: BrowserContext | null = null;
   let page: Page | null = null;
 
   try {
-    requestContext = await createContext(skip_tls_verification);
+    // Extract user-agent from headers if provided
+    const userAgent = headers?.['user-agent'] || headers?.['User-Agent'];
+    requestContext = await createContext(skip_tls_verification, userAgent);
     page = await requestContext.newPage();
 
     if (headers) {
