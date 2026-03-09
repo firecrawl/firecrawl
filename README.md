@@ -204,6 +204,27 @@ doc = app.scrape(
 )
 ```
 
+### Robots and User-Agent Controls
+
+You can control how Firecrawl evaluates `robots.txt` and identify your crawler with a custom user agent.
+
+```bash
+curl -X POST 'https://api.firecrawl.dev/v2/scrape' \
+  -H 'Authorization: Bearer fc-YOUR_API_KEY' \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "url": "https://docs.firecrawl.dev",
+    "formats": ["markdown"],
+    "userAgent": "DebTestBot/1.0",
+    "robotsMode": "strict"
+  }'
+```
+
+`robotsMode` values:
+- `ignore`: skip `robots.txt` checks
+- `respect`: default behavior; respect `robots.txt` when it can be verified
+- `strict`: fail closed if `robots.txt` cannot be verified
+
 ---
 
 ## Search

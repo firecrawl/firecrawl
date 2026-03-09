@@ -62,6 +62,23 @@ const url = 'https://example.com';
 const scrapedData = await app.scrape(url);
 ```
 
+### Controlling robots behavior and user agent
+
+Use `robotsMode` to control how the API handles `robots.txt` and `userAgent` to identify your caller consistently.
+
+```js
+const scrapedData = await app.scrape('https://example.com', {
+  formats: ['markdown'],
+  userAgent: 'DebTestBot/1.0',
+  robotsMode: 'strict',
+});
+```
+
+`robotsMode` supports:
+- `ignore`: skip `robots.txt` checks
+- `respect`: default behavior; respect `robots.txt` when it can be verified
+- `strict`: fail closed if `robots.txt` cannot be verified
+
 ### Crawling a Website
 
 To crawl a website with error handling, use the `crawl` method. It takes the starting URL and optional parameters, including limits and per‑page `scrapeOptions`.

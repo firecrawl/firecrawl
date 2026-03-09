@@ -79,6 +79,7 @@ import {
 import { htmlTransform } from "./lib/removeUnwantedElements";
 import { postprocessors } from "./postprocessors";
 import { rewriteUrl } from "./lib/rewriteUrl";
+import { verifyScrapeRobotsAccess } from "../../lib/robots-policy";
 
 export type ScrapeUrlResponse =
   | {
@@ -933,42 +934,41 @@ export async function scrapeURL(
               robotsTxt = crawl?.robots;
             }
 
-            if (!robotsTxt) {
-              const { content } = await fetchRobotsTxt(
-                {
-                  url: urlToCheck,
-                  zeroDataRetention: internalOptions.zeroDataRetention || false,
-                  location: options.location,
-                  headers: options.headers,
-                },
+            await verifyScrapeRobotsAccess(
+              {
+                url: urlToCheck,
                 id,
-                meta.logger,
-                meta.abort.asSignal(),
-              );
-              robotsTxt = content;
-            }
-
-            const checker = createRobotsChecker(urlToCheck, robotsTxt);
-            const isAllowed = isUrlAllowedByRobots(
-              urlToCheck,
-              checker.robots,
-              getRobotsUserAgents(options.headers?.["User-Agent"]),
+                logger: meta.logger,
+                robotsMode,
+                cachedRobotsTxt: robotsTxt,
+                zeroDataRetention: internalOptions.zeroDataRetention || false,
+                location: options.location,
+                headers: options.headers,
+                abort: meta.abort.asSignal(),
+              },
+              {
+                fetchRobotsTxt,
+                createRobotsChecker,
+                isUrlAllowedByRobots,
+                getRobotsUserAgents,
+              },
             );
 
             setSpanAttributes(robotsSpan, {
-              "robots.allowed": isAllowed,
+              "robots.allowed": true,
             });
-
-            if (!isAllowed) {
-              meta.logger.info("URL blocked by robots.txt", {
-                url: urlToCheck,
+          } catch (error) {
+            if (
+              error instanceof CrawlDenialError &&
+              error.message === "URL blocked by robots.txt"
+            ) {
+              setSpanAttributes(robotsSpan, {
+                "robots.allowed": false,
               });
               setSpanAttributes(span, {
                 "scrape.blocked_by_robots": true,
               });
-              throw new CrawlDenialError("URL blocked by robots.txt");
             }
-          } catch (error) {
             if (error instanceof CrawlDenialError) {
               throw error;
             }
