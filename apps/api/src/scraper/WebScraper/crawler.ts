@@ -18,6 +18,7 @@ import { getHeaderValueCaseInsensitive } from "../../lib/header-utils";
 import { ScrapeJobTimeoutError } from "../../lib/error";
 import { ScrapeOptions } from "../../controllers/v2/types";
 import { filterLinks, filterUrl } from "@mendable/firecrawl-rs";
+import { shouldUseJsRobotsFilterPath } from "../../lib/robots-runtime-policy";
 
 export const SITEMAP_LIMIT = 25;
 const SITEMAP_MAX_AGE = 7 * 24 * 60 * 60 * 1000;
@@ -177,7 +178,18 @@ export class WebCrawler {
       return { links: sitemapLinks.slice(0, limit), denialReasons };
     }
 
-    try {
+    const robotsUserAgent = getHeaderValueCaseInsensitive(
+      this.headers,
+      "user-agent",
+    );
+    const shouldUseJsFiltering = shouldUseJsRobotsFilterPath({
+      ignoreRobotsTxt: this.ignoreRobotsTxt,
+      skipRobots,
+      userAgent: robotsUserAgent,
+    });
+
+    if (!shouldUseJsFiltering) {
+      try {
       const res = await filterLinks({
         links: sitemapLinks,
         limit: isFinite(limit) ? limit : undefined,
@@ -269,11 +281,20 @@ export class WebCrawler {
         links: res.links,
         denialReasons: fancyDenialReasons,
       };
-    } catch (error) {
-      this.logger.error("Error filtering links in Rust, falling back to JS", {
-        error,
-        method: "filterLinks",
-      });
+      } catch (error) {
+        this.logger.error("Error filtering links in Rust, falling back to JS", {
+          error,
+          method: "filterLinks",
+        });
+      }
+    } else {
+      this.logger.debug(
+        "Skipping Rust link filtering because robots checks require user-agent-aware evaluation",
+        {
+          method: "filterLinks",
+          userAgent: robotsUserAgent,
+        },
+      );
     }
 
     const filteredLinks = sitemapLinks
