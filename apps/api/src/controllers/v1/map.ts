@@ -149,7 +149,11 @@ export async function getMapResults({
   try {
     sc.robots = await crawler.getRobotsTxt(false, abort);
     crawler.importRobotsTxt(sc.robots);
-  } catch (_) {}
+  } catch (error) {
+    if (crawlerOptions?.robotsMode === "strict") {
+      throw error;
+    }
+  }
 
   // If sitemapOnly is true, only get links from sitemap
   if (crawlerOptions.sitemapOnly) {

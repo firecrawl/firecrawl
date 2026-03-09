@@ -139,6 +139,8 @@ export type ActionOption =
 export interface ScrapeOptions {
   formats?: FormatOption[];
   headers?: Record<string, string>;
+  userAgent?: string;
+  robotsMode?: 'ignore' | 'respect' | 'strict';
   includeTags?: string[];
   excludeTags?: string[];
   onlyMainContent?: boolean;
@@ -469,6 +471,8 @@ export interface CrawlOptions {
   crawlEntireDomain?: boolean;
   allowExternalLinks?: boolean;
   allowSubdomains?: boolean;
+  ignoreRobotsTxt?: boolean;
+  robotsMode?: 'ignore' | 'respect' | 'strict';
   delay?: number | null;
   maxConcurrency?: number | null;
   webhook?: string | WebhookConfig | null;

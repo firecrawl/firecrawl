@@ -11,6 +11,7 @@ import { extractLinks } from "@mendable/firecrawl-rs";
 import {
   fetchRobotsTxt,
   createRobotsChecker,
+  getRobotsUserAgents,
   isUrlAllowedByRobots,
 } from "../../lib/robots-txt";
 import { ScrapeJobTimeoutError } from "../../lib/error";
@@ -246,7 +247,10 @@ export class WebCrawler {
             break;
           default:
             // Use the static enum message for other cases
-            fancyDenialReasons.set(key, DenialReason[value]);
+            fancyDenialReasons.set(
+              key,
+              DenialReason[value as keyof typeof DenialReason],
+            );
         }
       });
 
@@ -398,9 +402,11 @@ export class WebCrawler {
         const isAllowed =
           this.ignoreRobotsTxt || skipRobots
             ? true
-            : ((this.robots.isAllowed(link, "FireCrawlAgent") ||
-                this.robots.isAllowed(link, "FirecrawlAgent")) ??
-              true);
+            : isUrlAllowedByRobots(
+                link,
+                this.robots,
+                getRobotsUserAgents(this.headers?.["User-Agent"]),
+              );
         // Check if the link is disallowed by robots.txt
         if (!isAllowed) {
           this.logger.debug(`Link disallowed by robots.txt: ${link}`, {
@@ -455,6 +461,7 @@ export class WebCrawler {
           url: this.robotsTxtUrl,
           zeroDataRetention: this.zeroDataRetention,
           location: this.location,
+          headers: this.headers,
         },
         this.jobId,
         this.logger,
@@ -485,9 +492,9 @@ export class WebCrawler {
     const checker = createRobotsChecker(this.initialUrl, txt);
     this.robots = checker.robots;
     this.robotsTxtUrl = checker.robotsTxtUrl;
-    const delay =
-      this.robots.getCrawlDelay("FireCrawlAgent") ||
-      this.robots.getCrawlDelay("FirecrawlAgent");
+    const delay = getRobotsUserAgents(this.headers?.["User-Agent"])
+      .map(userAgent => this.robots.getCrawlDelay(userAgent))
+      .find(value => value !== undefined);
     this.robotsCrawlDelay = delay !== undefined ? delay : null;
 
     const sitemaps = this.robots.getSitemaps();
@@ -740,7 +747,13 @@ export class WebCrawler {
     url: string,
     ignoreRobotsTxt: boolean = false,
   ): boolean {
-    return ignoreRobotsTxt ? true : isUrlAllowedByRobots(url, this.robots);
+    return ignoreRobotsTxt
+      ? true
+      : isUrlAllowedByRobots(
+          url,
+          this.robots,
+          getRobotsUserAgents(this.headers?.["User-Agent"]),
+        );
   }
 
   public isFile(url: string): boolean {

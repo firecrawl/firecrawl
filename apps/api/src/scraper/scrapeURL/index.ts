@@ -62,6 +62,7 @@ import { useIndex } from "../../services/index";
 import {
   fetchRobotsTxt,
   createRobotsChecker,
+  getRobotsUserAgents,
   isUrlAllowedByRobots,
 } from "../../lib/robots-txt";
 import { getCrawl } from "../../lib/crawl-redis";
@@ -903,6 +904,15 @@ export async function scrapeURL(
 
     if (internalOptions.teamFlags?.checkRobotsOnScrape) {
       await withSpan("scrape.robots_check", async robotsSpan => {
+        const robotsMode = options.robotsMode ?? "respect";
+        if (robotsMode === "ignore") {
+          setSpanAttributes(robotsSpan, {
+            "robots.mode": robotsMode,
+            "robots.ignored": true,
+          });
+          return;
+        }
+
         const urlToCheck = meta.rewrittenUrl || meta.url;
         meta.logger.info("Checking robots.txt", { url: urlToCheck });
 
@@ -912,6 +922,7 @@ export async function scrapeURL(
         setSpanAttributes(robotsSpan, {
           "robots.url": urlToCheck,
           "robots.is_robots_txt_path": isRobotsTxtPath,
+          "robots.mode": robotsMode,
         });
 
         if (!isRobotsTxtPath) {
@@ -928,6 +939,7 @@ export async function scrapeURL(
                   url: urlToCheck,
                   zeroDataRetention: internalOptions.zeroDataRetention || false,
                   location: options.location,
+                  headers: options.headers,
                 },
                 id,
                 meta.logger,
@@ -937,7 +949,11 @@ export async function scrapeURL(
             }
 
             const checker = createRobotsChecker(urlToCheck, robotsTxt);
-            const isAllowed = isUrlAllowedByRobots(urlToCheck, checker.robots);
+            const isAllowed = isUrlAllowedByRobots(
+              urlToCheck,
+              checker.robots,
+              getRobotsUserAgents(options.headers?.["User-Agent"]),
+            );
 
             setSpanAttributes(robotsSpan, {
               "robots.allowed": isAllowed,
@@ -955,6 +971,11 @@ export async function scrapeURL(
           } catch (error) {
             if (error instanceof CrawlDenialError) {
               throw error;
+            }
+            if (robotsMode === "strict") {
+              throw new CrawlDenialError(
+                "Failed to verify robots.txt in strict mode",
+              );
             }
             meta.logger.debug("Failed to fetch robots.txt, allowing scrape", {
               error,

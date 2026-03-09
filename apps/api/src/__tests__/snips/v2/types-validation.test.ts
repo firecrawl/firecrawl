@@ -353,6 +353,18 @@ describe("V2 Types Validation", () => {
       expect(result.location?.languages).toEqual(["en"]);
     });
 
+    it("should normalize userAgent into headers and preserve robotsMode", () => {
+      const input: ScrapeRequestInput = {
+        url: "https://example.com",
+        userAgent: "DebTestBot/1.0",
+        robotsMode: "strict",
+      };
+
+      const result = scrapeRequestSchema.parse(input);
+      expect(result.headers?.["User-Agent"]).toBe("DebTestBot/1.0");
+      expect(result.robotsMode).toBe("strict");
+    });
+
     it("should reject location schema with invalid country code", () => {
       const input: ScrapeRequestInput = {
         url: "https://example.com",
@@ -603,6 +615,21 @@ describe("V2 Types Validation", () => {
       expect(result.crawlEntireDomain).toBe(true);
       expect(result.sitemap).toBe("skip");
       expect(result.prompt).toBe("Extract blog posts");
+    });
+
+    it("should derive ignoreRobotsTxt from robotsMode on crawl requests", () => {
+      const input: CrawlRequestInput = {
+        url: "https://example.com",
+        robotsMode: "ignore",
+        scrapeOptions: {
+          userAgent: "DebTestBot/1.0",
+          formats: [{ type: "markdown" }],
+        },
+      };
+
+      const result = crawlRequestSchema.parse(input);
+      expect(result.ignoreRobotsTxt).toBe(true);
+      expect(result.scrapeOptions.headers?.["User-Agent"]).toBe("DebTestBot/1.0");
     });
 
     it("should apply default scrapeOptions when not provided", () => {

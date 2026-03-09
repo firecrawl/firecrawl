@@ -31,6 +31,35 @@ type Format =
   | "changeTracking"
   | "branding";
 
+type RobotsMode = "ignore" | "respect" | "strict";
+
+function normalizeHeadersAndRobots<
+  T extends {
+    headers?: Record<string, string>;
+    userAgent?: string;
+    ignoreRobotsTxt?: boolean;
+    robotsMode?: RobotsMode;
+  },
+>(obj: T): T {
+  const headers = obj.headers ? { ...obj.headers } : {};
+  const normalizedUserAgent = obj.userAgent?.trim();
+
+  if (normalizedUserAgent && !headers["User-Agent"]) {
+    headers["User-Agent"] = normalizedUserAgent;
+  }
+
+  return {
+    ...obj,
+    headers: Object.keys(headers).length > 0 ? headers : obj.headers,
+    ignoreRobotsTxt:
+      obj.robotsMode === "ignore"
+        ? true
+        : obj.robotsMode === "respect" || obj.robotsMode === "strict"
+          ? false
+          : obj.ignoreRobotsTxt,
+  };
+}
+
 export const url = z.preprocess(
   x => {
     if (!protocolIncluded(x as string)) {
@@ -442,6 +471,8 @@ const baseScrapeOptions = z.strictObject({
       "The changeTracking format requires the markdown format to be specified as well",
     ),
   headers: z.record(z.string(), z.string()).optional(),
+  userAgent: z.string().trim().min(1).optional(),
+  robotsMode: z.enum(["ignore", "respect", "strict"]).optional(),
   includeTags: z
     .string()
     .array()
@@ -549,6 +580,7 @@ const extractTransformRequired = <T extends ScrapeOptions>(obj: T): T => {
 };
 
 const extractTransform = (obj: ScrapeOptions) => {
+  obj = normalizeHeadersAndRobots(obj);
   // Handle timeout
   if (
     (includesFormat(obj.formats, "extract") ||
@@ -851,6 +883,7 @@ const crawlerOptions = z.strictObject({
   allowExternalLinks: z.boolean().prefault(false),
   allowSubdomains: z.boolean().prefault(false),
   ignoreRobotsTxt: z.boolean().prefault(false),
+  robotsMode: z.enum(["ignore", "respect", "strict"]).optional(),
   ignoreSitemap: z.boolean().prefault(false),
   deduplicateSimilarURLs: z.boolean().prefault(true),
   ignoreQueryParameters: z.boolean().prefault(false),
@@ -911,12 +944,15 @@ export const crawlRequestSchema = crawlRequestSchemaBase
     },
   )
   .transform(x => {
-    if (x.crawlEntireDomain !== undefined) {
-      x.allowBackwardLinks = x.crawlEntireDomain;
+    const normalizedCrawlerOptions = normalizeHeadersAndRobots(x);
+    if (normalizedCrawlerOptions.crawlEntireDomain !== undefined) {
+      normalizedCrawlerOptions.allowBackwardLinks =
+        normalizedCrawlerOptions.crawlEntireDomain;
     }
-    const scrapeOptionsValue = x.scrapeOptions ?? baseScrapeOptions.parse({});
+    const scrapeOptionsValue =
+      normalizedCrawlerOptions.scrapeOptions ?? baseScrapeOptions.parse({});
     return {
-      ...x,
+      ...normalizedCrawlerOptions,
       scrapeOptions: extractTransformRequired(scrapeOptionsValue),
     };
   });

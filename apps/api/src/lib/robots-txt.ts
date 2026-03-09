@@ -24,10 +24,12 @@ export async function fetchRobotsTxt(
     url,
     zeroDataRetention,
     location,
+    headers,
   }: {
     url: string;
     zeroDataRetention: boolean;
     location?: ScrapeOptions["location"];
+    headers?: Record<string, string>;
   },
   scrapeId: string,
   logger: Logger,
@@ -69,6 +71,7 @@ export async function fetchRobotsTxt(
       formats: ["rawHtml"],
       timeout: 8000,
       maxAge: ROBOTS_MAX_AGE,
+      ...(headers ? { headers } : {}),
       ...(location ? { location } : {}),
     }),
     {
@@ -132,10 +135,22 @@ export function createRobotsChecker(
   };
 }
 
+export function getRobotsUserAgents(userAgent?: string): string[] {
+  const normalized = userAgent?.trim();
+  if (!normalized) {
+    return ["FireCrawlAgent", "FirecrawlAgent"];
+  }
+
+  const derived = normalized.split("/")[0]?.trim();
+  return Array.from(
+    new Set([normalized, derived].filter((value): value is string => Boolean(value)))
+  );
+}
+
 export function isUrlAllowedByRobots(
   url: string,
   robots: Robot | null,
-  userAgents: string[] = ["FireCrawlAgent", "FirecrawlAgent"],
+  userAgents: string[] = getRobotsUserAgents(),
 ): boolean {
   if (!robots) return true;
 

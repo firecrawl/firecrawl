@@ -146,6 +146,9 @@ export async function crawlController(
     //   sc.crawlerOptions.delay = robotsCrawlDelay;
     // }
   } catch (e) {
+    if (req.body.robotsMode === "strict") {
+      throw e;
+    }
     logger.debug("Failed to get robots.txt (this is probably fine!)", {
       error: e,
     });

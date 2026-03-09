@@ -137,6 +137,8 @@ export interface LocationConfig {
 export interface CrawlScrapeOptions {
   formats?: ("markdown" | "html" | "rawHtml" | "content" | "links" | "screenshot" | "screenshot@fullPage" | "extract" | "json" | "changeTracking")[];
   headers?: Record<string, string>;
+  userAgent?: string;
+  robotsMode?: "ignore" | "respect" | "strict";
   includeTags?: string[];
   excludeTags?: string[];
   onlyMainContent?: boolean;
@@ -239,6 +241,8 @@ export interface CrawlParams {
   allowBackwardLinks?: boolean;
   crawlEntireDomain?: boolean;
   allowExternalLinks?: boolean;
+  ignoreRobotsTxt?: boolean;
+  robotsMode?: "ignore" | "respect" | "strict";
   ignoreSitemap?: boolean;
   scrapeOptions?: CrawlScrapeOptions;
   webhook?: string | {

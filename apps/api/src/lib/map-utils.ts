@@ -154,7 +154,10 @@ export async function getMapResults({
   try {
     sc.robots = await crawler.getRobotsTxt(false, abort);
     crawler.importRobotsTxt(sc.robots);
-  } catch (_) {
+  } catch (error) {
+    if (crawlerOptions?.robotsMode === "strict") {
+      throw error;
+    }
     // Robots.txt fetch failed, continue without it
   }
 

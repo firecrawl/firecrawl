@@ -328,6 +328,18 @@ describe("V1 Types Validation", () => {
       const result = scrapeRequestSchema.parse(input);
       expect(result.includeTags).toContain('div[data-original-tag="iframe"]');
     });
+
+    it("should normalize userAgent into headers and preserve robotsMode", () => {
+      const input: ScrapeRequestInput = {
+        url: "https://example.com",
+        userAgent: "DebTestBot/1.0",
+        robotsMode: "strict",
+      };
+
+      const result = scrapeRequestSchema.parse(input);
+      expect(result.headers?.["User-Agent"]).toBe("DebTestBot/1.0");
+      expect(result.robotsMode).toBe("strict");
+    });
   });
 
   describe("extractRequestSchema", () => {
@@ -481,6 +493,21 @@ describe("V1 Types Validation", () => {
       expect(result.maxDepth).toBe(5);
       expect(result.crawlEntireDomain).toBe(true);
       expect(result.allowBackwardLinks).toBe(true); // Should be transformed
+    });
+
+    it("should derive ignoreRobotsTxt from robotsMode on crawl requests", () => {
+      const input: CrawlRequestInput = {
+        url: "https://example.com",
+        robotsMode: "ignore",
+        scrapeOptions: {
+          userAgent: "DebTestBot/1.0",
+          formats: ["markdown"],
+        },
+      };
+
+      const result = crawlRequestSchema.parse(input);
+      expect(result.ignoreRobotsTxt).toBe(true);
+      expect(result.scrapeOptions.headers?.["User-Agent"]).toBe("DebTestBot/1.0");
     });
 
     it("should reject URL depth exceeding maxDepth", () => {
