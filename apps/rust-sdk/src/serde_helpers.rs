@@ -49,8 +49,7 @@ mod tests {
 
     #[test]
     fn test_array_value() {
-        let h: Helper =
-            serde_json::from_value(json!({"field": ["index", "follow"]})).unwrap();
+        let h: Helper = serde_json::from_value(json!({"field": ["index", "follow"]})).unwrap();
         assert_eq!(h.field, Some("index, follow".to_string()));
     }
 
@@ -74,15 +73,13 @@ mod tests {
 
     #[test]
     fn test_single_element_array() {
-        let h: Helper =
-            serde_json::from_value(json!({"field": ["noindex"]})).unwrap();
+        let h: Helper = serde_json::from_value(json!({"field": ["noindex"]})).unwrap();
         assert_eq!(h.field, Some("noindex".to_string()));
     }
 
     #[test]
     fn test_serialization_roundtrip() {
-        let h: Helper =
-            serde_json::from_value(json!({"field": "index, follow"})).unwrap();
+        let h: Helper = serde_json::from_value(json!({"field": "index, follow"})).unwrap();
         assert_eq!(h.field, Some("index, follow".to_string()));
     }
 }

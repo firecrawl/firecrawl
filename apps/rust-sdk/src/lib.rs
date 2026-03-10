@@ -42,11 +42,11 @@ pub mod crawl;
 pub mod document;
 pub mod error;
 pub mod extract;
-pub(crate) mod serde_helpers;
 pub mod llmstxt;
 pub mod map;
 pub mod scrape;
 pub mod search;
+pub(crate) mod serde_helpers;
 
 // v2 module (new API)
 pub mod v2;
