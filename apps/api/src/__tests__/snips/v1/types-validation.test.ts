@@ -772,12 +772,12 @@ describe("V1 Types Validation", () => {
       const input: ScrapeRequestInput = {
         url: "https://example.com",
         location: {
-          country: "us-generic",
+          country: "us-whitelist",
         },
       };
 
       const result = scrapeRequestSchema.parse(input);
-      expect(result.location?.country).toBe("us-generic");
+      expect(result.location?.country).toBe("us-whitelist");
     });
 
     it("should reject location schema with invalid country code", () => {

@@ -386,7 +386,7 @@ const actionsSchema = z
     },
   );
 
-const SPECIAL_COUNTRIES = ["us-generic", "us-whitelist"];
+const SPECIAL_COUNTRIES = ["us-whitelist"];
 
 const locationSchema = z
   .object({
@@ -401,7 +401,7 @@ const locationSchema = z
         "Invalid country code. Use a valid ISO 3166-1 alpha-2 country code.",
       )
       .transform(val => {
-        if (!val) return "us-generic";
+        if (!val) return "us";
         return val.toLowerCase();
       }),
     languages: z.array(z.string()).optional(),

@@ -50,7 +50,7 @@ async function getSitemapXML(options: SitemapScrapeOptions): Promise<string> {
   }
 
   const isLocationSpecified =
-    options.location && options.location.country !== "us-generic";
+    options.location && options.location.country !== "us";
 
   const forceEngine: Engine[] = [
     ...(options.maxAge > 0 && useIndex ? ["index" as const] : []),
