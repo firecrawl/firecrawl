@@ -21,6 +21,7 @@ interface ScrapeDocumentOptions {
   isSingleUrl?: boolean;
   flags: TeamFlags | null;
   apiKeyId: number | null;
+  requestId?: string;
 }
 
 export async function scrapeDocument_F0(
@@ -44,7 +45,6 @@ export async function scrapeDocument_F0(
     const jobPriority = await getJobPriority({
       team_id: options.teamId,
       basePriority: 10,
-      from_extract: true,
     });
 
     const scrapeOptions = scrapeOptionsSchema.parse({
@@ -68,6 +68,7 @@ export async function scrapeDocument_F0(
         startTime: Date.now(),
         zeroDataRetention: false, // not supported
         apiKeyId: options.apiKeyId,
+        requestId: options.requestId,
       },
       jobId,
       jobPriority,

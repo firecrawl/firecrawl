@@ -1,0 +1,51 @@
+name: Rust SDK Test Suite
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - apps/rust-sdk/**
+
+jobs:
+  test:
+    name: Build and Test
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            apps/rust-sdk/target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('apps/rust-sdk/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: Check formatting
+        working-directory: ./apps/rust-sdk
+        run: cargo fmt --check
+
+      - name: Build
+        working-directory: ./apps/rust-sdk
+        run: cargo build --all-targets
+
+      - name: Run clippy
+        working-directory: ./apps/rust-sdk
+        run: cargo clippy --all-targets -- -D warnings -A clippy::needless_borrows_for_generic_args -A clippy::redundant_closure -A clippy::large_enum_variant -A clippy::extra_unused_lifetimes
+
+      - name: Run unit tests (mocked)
+        working-directory: ./apps/rust-sdk
+        run: cargo test --lib
+
+      - name: Build examples
+        working-directory: ./apps/rust-sdk
+        run: cargo build --examples

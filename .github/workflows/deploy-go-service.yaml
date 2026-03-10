@@ -14,7 +14,7 @@ on:
 
 jobs:
   push-app-image:
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     defaults:
       run:
         working-directory: "./apps/go-html-to-md-service"
@@ -22,8 +22,8 @@ jobs:
       - name: "Checkout GitHub Action"
         uses: actions/checkout@main
 
-      - name: "Set up Docker Buildx"
-        uses: docker/setup-buildx-action@v3
+      - name: Setup Blacksmith Builder
+        uses: useblacksmith/setup-docker-builder@v1
 
       - name: "Login to GitHub Container Registry"
         uses: docker/login-action@v3
@@ -33,10 +33,8 @@ jobs:
           password: ${{secrets.GITHUB_TOKEN}}
 
       - name: "Build and Push Image"
-        uses: docker/build-push-action@v6
+        uses: useblacksmith/build-push-action@v2
         with:
           context: ./apps/go-html-to-md-service
           push: true
           tags: ghcr.io/firecrawl/go-html-to-md-service:latest
-          cache-from: type=registry,ref=ghcr.io/firecrawl/go-html-to-md-service:buildcache
-          cache-to: type=registry,ref=ghcr.io/firecrawl/go-html-to-md-service:buildcache,mode=max

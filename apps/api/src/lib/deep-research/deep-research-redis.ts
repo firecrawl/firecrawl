@@ -55,8 +55,9 @@ export async function saveDeepResearch(
   await redisEvictConnection.set(
     "deep-research:" + id,
     JSON.stringify(research),
+    "EX",
+    DEEP_RESEARCH_TTL,
   );
-  await redisEvictConnection.expire("deep-research:" + id, DEEP_RESEARCH_TTL);
 }
 
 export async function getDeepResearch(
@@ -97,8 +98,9 @@ export async function updateDeepResearch(
   await redisEvictConnection.set(
     "deep-research:" + id,
     JSON.stringify(updatedResearch),
+    "EX",
+    DEEP_RESEARCH_TTL,
   );
-  await redisEvictConnection.expire("deep-research:" + id, DEEP_RESEARCH_TTL);
 }
 
 export async function getDeepResearchExpiry(id: string): Promise<Date> {

@@ -7,19 +7,106 @@ on:
 
 jobs:
   audit:
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-2vcpu-ubuntu-2404
     steps:
       - uses: actions/checkout@v5
       - name: Install pnpm
         uses: pnpm/action-setup@v4
         with:
           version: 10
-      - name: Audit NPM Packages
+      
+      - name: Create audit output directory
+        run: mkdir -p /tmp/audit-outputs
+
+      - name: Audit API Packages
+        id: audit-api
+        continue-on-error: true
         run: |
-          pnpm dlx audit-ci@^7 --directory apps/api --config apps/api/audit-ci.jsonc
-          pnpm dlx audit-ci@^7 --directory apps/playwright-service-ts --config apps/playwright-service-ts/audit-ci.jsonc
-          pnpm dlx audit-ci@^7 --directory apps/js-sdk --config apps/js-sdk/audit-ci.jsonc
-          pnpm dlx audit-ci@^7 --directory apps/js-sdk/firecrawl --config apps/js-sdk/firecrawl/audit-ci.jsonc
-          pnpm dlx audit-ci@^7 --directory apps/test-suite --config apps/test-suite/audit-ci.jsonc
-          pnpm dlx audit-ci@^7 --directory apps/ui/ingestion-ui --config apps/ui/ingestion-ui/audit-ci.jsonc
-          pnpm dlx audit-ci@^7 --directory apps/test-site --config apps/test-site/audit-ci.jsonc
+          set -o pipefail
+          pnpm dlx audit-ci@^7 --directory apps/api --config apps/api/audit-ci.jsonc 2>&1 | tee /tmp/audit-outputs/api.txt
+
+      - name: Audit Playwright Service Packages
+        id: audit-playwright-service
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          pnpm dlx audit-ci@^7 --directory apps/playwright-service-ts --config apps/playwright-service-ts/audit-ci.jsonc 2>&1 | tee /tmp/audit-outputs/playwright-service.txt
+
+      - name: Audit JavaScript SDK Packages
+        id: audit-js-sdk
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          pnpm dlx audit-ci@^7 --directory apps/js-sdk --config apps/js-sdk/audit-ci.jsonc 2>&1 | tee /tmp/audit-outputs/js-sdk.txt
+
+      - name: Audit JavaScript SDK Firecrawl Packages
+        id: audit-js-sdk-firecrawl
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          pnpm dlx audit-ci@^7 --directory apps/js-sdk/firecrawl --config apps/js-sdk/firecrawl/audit-ci.jsonc 2>&1 | tee /tmp/audit-outputs/js-sdk-firecrawl.txt
+
+      - name: Audit Test Suite Packages
+        id: audit-test-suite
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          pnpm dlx audit-ci@^7 --directory apps/test-suite --config apps/test-suite/audit-ci.jsonc 2>&1 | tee /tmp/audit-outputs/test-suite.txt
+
+      - name: Audit Ingestion UI Packages
+        id: audit-ingestion-ui
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          pnpm dlx audit-ci@^7 --directory apps/ui/ingestion-ui --config apps/ui/ingestion-ui/audit-ci.jsonc 2>&1 | tee /tmp/audit-outputs/ingestion-ui.txt
+
+      - name: Audit Test Site Packages
+        id: audit-test-site
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          pnpm dlx audit-ci@^7 --directory apps/test-site --config apps/test-site/audit-ci.jsonc 2>&1 | tee /tmp/audit-outputs/test-site.txt
+
+      - name: Report audit failures
+        if: always()
+        run: |
+          declare -A AUDIT_FILES=(
+            ["API"]="api.txt"
+            ["Playwright Service"]="playwright-service.txt"
+            ["JavaScript SDK"]="js-sdk.txt"
+            ["JavaScript SDK Firecrawl"]="js-sdk-firecrawl.txt"
+            ["Test Suite"]="test-suite.txt"
+            ["Ingestion UI"]="ingestion-ui.txt"
+            ["Test Site"]="test-site.txt"
+          )
+
+          declare -A AUDIT_OUTCOMES=(
+            ["API"]="${{ steps.audit-api.outcome }}"
+            ["Playwright Service"]="${{ steps.audit-playwright-service.outcome }}"
+            ["JavaScript SDK"]="${{ steps.audit-js-sdk.outcome }}"
+            ["JavaScript SDK Firecrawl"]="${{ steps.audit-js-sdk-firecrawl.outcome }}"
+            ["Test Suite"]="${{ steps.audit-test-suite.outcome }}"
+            ["Ingestion UI"]="${{ steps.audit-ingestion-ui.outcome }}"
+            ["Test Site"]="${{ steps.audit-test-site.outcome }}"
+          )
+
+          FAILED=false
+          for name in "API" "Playwright Service" "JavaScript SDK" "JavaScript SDK Firecrawl" "Test Suite" "Ingestion UI" "Test Site"; do
+            if [ "${AUDIT_OUTCOMES[$name]}" == "failure" ]; then
+              FAILED=true
+              echo ""
+              echo "=========================================="
+              echo "❌ $name audit failed"
+              echo "=========================================="
+              if [ -f "/tmp/audit-outputs/${AUDIT_FILES[$name]}" ]; then
+                # Extract only the summary (from "Found vulnerable advisory paths:" to end)
+                sed -n '/Found vulnerable advisory paths:/,$p' "/tmp/audit-outputs/${AUDIT_FILES[$name]}" | sed 's/\x1b\[[0-9;]*m//g'
+              fi
+            fi
+          done
+
+          if [ "$FAILED" == "true" ]; then
+            exit 1
+          else
+            echo "✅ All audits passed"
+          fi

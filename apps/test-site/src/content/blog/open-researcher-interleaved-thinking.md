@@ -71,7 +71,7 @@ Is it perfect? No. Sometimes it takes longer routes than necessary. Sometimes th
 
 Open Researcher is open source. The core logic is surprisingly simple - most of the complexity is handled by the AI’s reasoning.
 
-Clone it: [github.com/mendableai/open-researcher](https://github.com/mendableai/open-researcher)
+Clone it: [github.com/firecrawl/open-researcher](https://github.com/firecrawl/open-researcher)
 
 Try it on your own research problems. The thinking blocks make it easy to debug when something goes wrong. You can see exactly why it made each decision.
 

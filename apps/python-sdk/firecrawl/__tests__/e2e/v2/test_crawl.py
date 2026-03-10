@@ -3,7 +3,7 @@ import time
 import os
 from dotenv import load_dotenv
 from firecrawl import Firecrawl
-from firecrawl.v2.types import ScrapeOptions
+from firecrawl.v2.types import ScrapeOptions, PaginationConfig
 
 load_dotenv()
 
@@ -65,6 +65,33 @@ class TestCrawlE2E:
         assert status_job.expires_at is not None
         assert status_job.next is None
         assert isinstance(status_job.data, list)
+
+    def test_get_crawl_status_page(self):
+        """Fetch a single crawl page using the next URL."""
+        start_job = self.client.start_crawl("https://docs.firecrawl.dev", limit=25)
+        assert start_job.id is not None
+
+        pagination_config = PaginationConfig(auto_paginate=False)
+        deadline = time.time() + 120
+        status_job = None
+        while time.time() < deadline:
+            status_job = self.client.get_crawl_status(
+                start_job.id,
+                pagination_config=pagination_config,
+            )
+            if status_job.next:
+                break
+            if status_job.status in ["completed", "failed", "cancelled"]:
+                break
+            time.sleep(2)
+
+        assert status_job is not None
+        if not status_job.next:
+            pytest.skip("Crawl completed without pagination; skipping page fetch.")
+
+        next_page = self.client.get_crawl_status_page(status_job.next)
+        assert isinstance(next_page.data, list)
+        assert next_page.status in ["scraping", "completed", "failed", "cancelled"]
 
     def test_cancel_crawl(self):
         """Test canceling a crawl."""
@@ -275,4 +302,4 @@ class TestCrawlE2E:
         assert params_data is not None
         assert params_data.limit is not None or params_data.include_paths is not None or params_data.max_discovery_depth is not None 
         assert 'blog/.*' in params_data.include_paths
-        assert 'documentation/.*' in params_data.include_paths
+        assert 'docs/.*' in params_data.include_paths

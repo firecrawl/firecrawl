@@ -1,4 +1,5 @@
 import { ScrapeActionContent } from "../../../lib/entities";
+import { config } from "../../../config";
 import { Meta } from "..";
 import { documentMaxReasonableTime, scrapeDocument } from "./document";
 import {
@@ -14,11 +15,12 @@ import {
   scrapeURLWithPlaywright,
 } from "./playwright";
 import { indexMaxReasonableTime, scrapeURLWithIndex } from "./index/index";
-import { useIndex } from "../../../services";
+import { queryEngpickerVerdict, useIndex } from "../../../services";
 import { hasFormatOfType } from "../../../lib/format-utils";
 import { getPDFMaxPages } from "../../../controllers/v2/types";
-import { PdfMetadata } from "@mendable/firecrawl-rs";
+import type { PdfMetadata } from "./pdf/types";
 import { BrandingProfile } from "../../../types/branding";
+import { BrandingNotSupportedError } from "../error";
 
 export type Engine =
   | "fire-engine;chrome-cdp"
@@ -37,11 +39,11 @@ export type Engine =
   | "index;documents";
 
 const useFireEngine =
-  process.env.FIRE_ENGINE_BETA_URL !== "" &&
-  process.env.FIRE_ENGINE_BETA_URL !== undefined;
+  config.FIRE_ENGINE_BETA_URL !== "" &&
+  config.FIRE_ENGINE_BETA_URL !== undefined;
 const usePlaywright =
-  process.env.PLAYWRIGHT_MICROSERVICE_URL !== "" &&
-  process.env.PLAYWRIGHT_MICROSERVICE_URL !== undefined;
+  config.PLAYWRIGHT_MICROSERVICE_URL !== "" &&
+  config.PLAYWRIGHT_MICROSERVICE_URL !== undefined;
 
 const engines: Engine[] = [
   ...(useIndex ? ["index" as const, "index;documents" as const] : []),
@@ -136,6 +138,7 @@ export type EngineScrapeResult = {
   postprocessorsUsed?: string[];
 
   proxyUsed: "basic" | "stealth";
+  timezone?: string;
 };
 
 const engineHandlers: {
@@ -463,13 +466,20 @@ const engineOptions: {
 };
 
 export function shouldUseIndex(meta: Meta) {
+  // Skip index if screenshot format has custom viewport or quality settings
+  const screenshotFormat = hasFormatOfType(meta.options.formats, "screenshot");
+  const hasCustomScreenshotSettings =
+    screenshotFormat?.viewport !== undefined ||
+    screenshotFormat?.quality !== undefined;
+
   return (
     useIndex &&
-    process.env.FIRECRAWL_INDEX_WRITE_ONLY !== "true" &&
+    config.FIRECRAWL_INDEX_WRITE_ONLY !== true &&
     !hasFormatOfType(meta.options.formats, "changeTracking") &&
     !hasFormatOfType(meta.options.formats, "branding") &&
     // Skip index if a non-default PDF maxPages is specified
     getPDFMaxPages(meta.options.parsers) === undefined &&
+    !hasCustomScreenshotSettings &&
     meta.options.maxAge !== 0 &&
     (meta.options.headers === undefined ||
       Object.keys(meta.options.headers).length === 0) &&
@@ -478,10 +488,18 @@ export function shouldUseIndex(meta: Meta) {
   );
 }
 
-export function buildFallbackList(meta: Meta): {
-  engine: Engine;
-  unsupportedFeatures: Set<FeatureFlag>;
-}[] {
+export async function buildFallbackList(meta: Meta): Promise<
+  {
+    engine: Engine;
+    unsupportedFeatures: Set<FeatureFlag>;
+  }[]
+> {
+  const shouldPrioritizeTlsClient = meta.options.__experimental_engpicker
+    ? (await queryEngpickerVerdict(
+        meta.options.__experimental_omceDomain ?? new URL(meta.url).hostname,
+      )) === "TlsClientOk"
+    : false;
+
   const _engines: Engine[] = [
     ...engines,
 
@@ -562,10 +580,24 @@ export function buildFallbackList(meta: Meta): {
 
   if (meta.internalOptions.forceEngine === undefined) {
     // retain force engine order
+    // THIS SUCKS BUT IT WORKS
+    const getEffectiveQuality = (engine: Engine) => {
+      let quality = engineOptions[engine].quality;
+      // When engpicker says TlsClientOk, prioritize tlsclient over CDP/CDPRetry
+      if (shouldPrioritizeTlsClient) {
+        if (engine === "fire-engine;tlsclient") {
+          quality += 50; // Boost to 60, above CDP (50) but below index (1000)
+        } else if (engine === "fire-engine;tlsclient;stealth") {
+          quality += 14; // Boost to -1, stays negative but above chrome-cdp;stealth (-2)
+        }
+      }
+      return quality;
+    };
+
     selectedEngines.sort(
       (a, b) =>
         b.supportScore - a.supportScore ||
-        engineOptions[b.engine].quality - engineOptions[a.engine].quality,
+        getEffectiveQuality(b.engine) - getEffectiveQuality(a.engine),
     );
   }
 
@@ -578,8 +610,17 @@ export function buildFallbackList(meta: Meta): {
       f => !f.unsupportedFeatures.has("branding"),
     );
     if (!hasCDPEngine) {
-      throw new Error(
-        "Branding extraction requires Chrome CDP (fire-engine). ",
+      if (meta.featureFlags.has("pdf")) {
+        throw new BrandingNotSupportedError(
+          "Branding extraction is only supported for HTML web pages. PDFs are not supported.",
+        );
+      } else if (meta.featureFlags.has("document")) {
+        throw new BrandingNotSupportedError(
+          "Branding extraction is only supported for HTML web pages. Documents (docx, xlsx, etc.) are not supported.",
+        );
+      }
+      throw new BrandingNotSupportedError(
+        "Branding extraction requires Chrome CDP (fire-engine).",
       );
     }
   }

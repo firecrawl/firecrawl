@@ -30,3 +30,4 @@ export {
   processWebhookInsertJobs,
 } from "./delivery";
 export { WebhookEvent } from "./types";
+export { shutdownWebhookQueue } from "./queue";

@@ -6,7 +6,9 @@
  */
 
 import axios, { AxiosInstance, AxiosError } from "axios";
+import { config } from "../config";
 import { logger } from "./logger";
+import type { Logger } from "winston";
 import * as Sentry from "@sentry/node";
 
 interface ConvertRequest {
@@ -20,41 +22,51 @@ interface ConvertResponse {
 
 interface ErrorResponse {
   error: string;
+  details?: string;
   success: boolean;
 }
 
 /**
  * Convert HTML to Markdown using direct axios call
  * @param html HTML string to convert
- * @param serviceUrl URL of the HTML to Markdown service (default: http://localhost:8080)
+ * @param context Optional context with logger and requestId
  * @returns Markdown string
  * @throws Error if conversion fails
  */
 export async function convertHTMLToMarkdownWithHttpService(
   html: string,
-  serviceUrl?: string,
+  context?: {
+    logger?: Logger;
+    requestId?: string;
+  },
 ): Promise<string> {
   if (!html || html.trim() === "") {
     return "";
   }
 
-  const url =
-    serviceUrl ||
-    process.env.HTML_TO_MARKDOWN_SERVICE_URL ||
-    "http://localhost:8080";
+  const contextLogger = context?.logger || logger;
+  const requestId = context?.requestId;
+  const url = config.HTML_TO_MARKDOWN_SERVICE_URL;
   const startTime = Date.now();
 
   try {
     const request: ConvertRequest = { html };
 
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+    };
+
+    // Add request ID header if available
+    if (requestId) {
+      headers["X-Request-ID"] = requestId;
+    }
+
     const response = await axios.post<ConvertResponse>(
       `${url}/convert`,
       request,
       {
-        timeout: 30000, // 30 second timeout
-        headers: {
-          "Content-Type": "application/json",
-        },
+        timeout: 60_000,
+        headers,
       },
     );
 
@@ -64,10 +76,11 @@ export async function convertHTMLToMarkdownWithHttpService(
       throw new Error("Conversion was not successful");
     }
 
-    logger.debug("HTML to Markdown conversion successful", {
+    contextLogger.debug("HTML to Markdown conversion successful", {
       duration_ms: duration,
       input_size: html.length,
       output_size: response.data.markdown.length,
+      ...(requestId ? { request_id: requestId } : {}),
     });
 
     return response.data.markdown;
@@ -79,10 +92,12 @@ export async function convertHTMLToMarkdownWithHttpService(
 
       const errorMessage =
         axiosError.response?.data?.error || axiosError.message;
+      const errorDetails = axiosError.response?.data?.details;
       const statusCode = axiosError.response?.status;
 
-      logger.error("HTML to Markdown conversion failed", {
+      contextLogger.error("HTML to Markdown conversion failed", {
         error: errorMessage,
+        details: errorDetails,
         statusCode,
         duration_ms: duration,
         serviceUrl: url,
@@ -93,20 +108,34 @@ export async function convertHTMLToMarkdownWithHttpService(
         tags: {
           service: "html-to-markdown",
           status_code: statusCode,
+          ...(requestId ? { request_id: requestId } : {}),
         },
         extra: {
           serviceUrl: url,
           errorMessage,
+          errorDetails,
           inputSize: html.length,
         },
       });
 
-      throw new Error(`HTML to Markdown conversion failed: ${errorMessage}`);
+      // Include details in error message if available
+      const fullErrorMessage = errorDetails
+        ? `HTML to Markdown conversion failed: ${errorMessage} - ${errorDetails}`
+        : `HTML to Markdown conversion failed: ${errorMessage}`;
+
+      throw new Error(fullErrorMessage);
     } else {
-      logger.error("Unexpected error during HTML to Markdown conversion", {
-        error,
+      contextLogger.error(
+        "Unexpected error during HTML to Markdown conversion",
+        {
+          error,
+        },
+      );
+      Sentry.captureException(error, {
+        tags: {
+          ...(requestId ? { request_id: requestId } : {}),
+        },
       });
-      Sentry.captureException(error);
       throw error;
     }
   }

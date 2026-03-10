@@ -11,7 +11,7 @@ import (
 )
 
 const (
-	maxRequestSize = 10 * 1024 * 1024 // 10MB max request size
+	maxRequestSize = 150 * 1024 * 1024 // 150MB max request size
 )
 
 // Handler manages HTTP request handling
@@ -92,6 +92,7 @@ type ConvertResponse struct {
 // ErrorResponse represents an error response
 type ErrorResponse struct {
 	Error   string `json:"error"`
+	Details string `json:"details,omitempty"`
 	Success bool   `json:"success"`
 }
 
@@ -99,41 +100,49 @@ type ErrorResponse struct {
 func (h *Handler) ConvertHTML(w http.ResponseWriter, r *http.Request) {
 	startTime := time.Now()
 
+	// Extract request ID from header for logging
+	requestID := r.Header.Get("X-Request-ID")
+	logger := log.Logger
+	if requestID != "" {
+		logger = log.With().Str("request_id", requestID).Logger()
+	}
+
 	// Limit request body size
 	r.Body = http.MaxBytesReader(w, r.Body, maxRequestSize)
 
 	// Read and decode request body
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
-		log.Error().Err(err).Msg("Failed to read request body")
-		h.sendError(w, "Failed to read request body", http.StatusBadRequest)
+		logger.Error().Err(err).Msg("Failed to read request body")
+		h.sendError(w, "Failed to read request body", err.Error(), http.StatusBadRequest)
 		return
 	}
 
 	var req ConvertRequest
 	if err := json.Unmarshal(body, &req); err != nil {
-		log.Error().Err(err).Msg("Failed to parse request body")
-		h.sendError(w, "Invalid JSON in request body", http.StatusBadRequest)
+		logger.Error().Err(err).Msg("Failed to parse request body")
+		h.sendError(w, "Invalid JSON in request body", err.Error(), http.StatusBadRequest)
 		return
 	}
 
 	// Validate input
 	if req.HTML == "" {
-		h.sendError(w, "HTML field is required", http.StatusBadRequest)
+		logger.Warn().Msg("Empty HTML field in request")
+		h.sendError(w, "HTML field is required", "The 'html' field cannot be empty", http.StatusBadRequest)
 		return
 	}
 
 	// Convert HTML to Markdown
 	markdown, err := h.converter.ConvertHTMLToMarkdown(req.HTML)
 	if err != nil {
-		log.Error().Err(err).Msg("Failed to convert HTML to Markdown")
-		h.sendError(w, "Failed to convert HTML to Markdown", http.StatusInternalServerError)
+		logger.Error().Err(err).Msg("Failed to convert HTML to Markdown")
+		h.sendError(w, "Failed to convert HTML to Markdown", err.Error(), http.StatusInternalServerError)
 		return
 	}
 
 	// Log metrics
 	duration := time.Since(startTime)
-	log.Info().
+	logger.Info().
 		Dur("duration_ms", duration).
 		Int("input_size", len(req.HTML)).
 		Int("output_size", len(markdown)).
@@ -151,9 +160,10 @@ func (h *Handler) ConvertHTML(w http.ResponseWriter, r *http.Request) {
 }
 
 // sendError sends an error response
-func (h *Handler) sendError(w http.ResponseWriter, message string, statusCode int) {
+func (h *Handler) sendError(w http.ResponseWriter, message string, details string, statusCode int) {
 	response := ErrorResponse{
 		Error:   message,
+		Details: details,
 		Success: false,
 	}
 
@@ -161,4 +171,3 @@ func (h *Handler) sendError(w http.ResponseWriter, message string, statusCode in
 	w.WriteHeader(statusCode)
 	json.NewEncoder(w).Encode(response)
 }
-

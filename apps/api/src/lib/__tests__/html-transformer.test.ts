@@ -261,6 +261,51 @@ describe("HTML Transformer", () => {
       const metadata = await extractMetadata(html);
       expect(metadata).toBeDefined();
     });
+
+    it("should backfill title from og:title when title tag is missing", async () => {
+      const html = `
+        <html>
+          <head>
+            <meta property="og:title" content="OpenGraph Title">
+            <meta name="description" content="Page description">
+          </head>
+          <body></body>
+        </html>
+      `;
+      const metadata = await extractMetadata(html);
+      expect(metadata.title).toBe("OpenGraph Title");
+      expect(metadata.ogTitle).toBe("OpenGraph Title");
+    });
+
+    it("should backfill title from twitter:title when title and og:title are missing", async () => {
+      const html = `
+        <html>
+          <head>
+            <meta name="twitter:title" content="Twitter Title">
+            <meta name="description" content="Page description">
+          </head>
+          <body></body>
+        </html>
+      `;
+      const metadata = await extractMetadata(html);
+      expect(metadata.title).toBe("Twitter Title");
+    });
+
+    it("should not backfill title when title tag exists", async () => {
+      const html = `
+        <html>
+          <head>
+            <title>Primary Title</title>
+            <meta property="og:title" content="OpenGraph Title">
+            <meta name="twitter:title" content="Twitter Title">
+          </head>
+          <body></body>
+        </html>
+      `;
+      const metadata = await extractMetadata(html);
+      expect(metadata.title).toBe("Primary Title");
+      expect(metadata.ogTitle).toBe("OpenGraph Title");
+    });
   });
 
   describe("transformHtml", () => {

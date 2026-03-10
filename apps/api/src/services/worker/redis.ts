@@ -1,4 +1,5 @@
 import IORedis, { Redis } from "ioredis";
+import { config } from "../../config";
 import { logger as _logger } from "../../lib/logger";
 
 const logger = _logger.child({ module: "nuq/redis" });
@@ -57,18 +58,55 @@ type ScriptHashes = {
 
 const scripts: ScriptHashes = {} as ScriptHashes;
 
-const redis = new IORedis(process.env.REDIS_URL!, {
+const redis = new IORedis(config.REDIS_URL!, {
   lazyConnect: true,
   maxRetriesPerRequest: null,
   enableReadyCheck: false,
+  enableAutoPipelining: true,
 });
 
 let initPromise: Promise<void> | null = null;
 
 export const ensureRedis = async () => {
   if (initPromise) return initPromise;
+
+  // If Redis is already connected/ready, just load scripts if needed
+  if (redis.status === "ready") {
+    initPromise = (async () => {
+      for (const [k, v] of Object.entries(luaScripts)) {
+        if (!scripts[k]) scripts[k] = {};
+        for (const [k2, v2] of Object.entries(v)) {
+          if (!scripts[k][k2]) {
+            const h = await redis.script("LOAD", v2);
+            scripts[k][k2] = h as string;
+          }
+        }
+      }
+    })();
+    return initPromise;
+  }
+
   initPromise = (async () => {
-    await redis.connect();
+    // Only call connect if in 'wait' state (not yet connected)
+    if (redis.status === "wait") {
+      await redis.connect();
+    } else if (redis.status === "connecting") {
+      // Already connecting, wait for it to complete
+      await new Promise<void>((resolve, reject) => {
+        const onReady = () => {
+          redis.off("error", onError);
+          resolve();
+        };
+        const onError = (err: Error) => {
+          redis.off("ready", onReady);
+          reject(err);
+        };
+        redis.once("ready", onReady);
+        redis.once("error", onError);
+      });
+    } else if (redis.status !== "ready") {
+      throw new Error(`Redis in unexpected state: ${redis.status}`);
+    }
 
     for (const [k, v] of Object.entries(luaScripts)) {
       scripts[k] = {};

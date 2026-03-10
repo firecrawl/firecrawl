@@ -1,22 +1,11 @@
-import os
 import asyncio
 import pytest
-from dotenv import load_dotenv
 from firecrawl import AsyncFirecrawl
 
 
-load_dotenv()
-
-if not os.getenv("API_KEY"):
-    raise ValueError("API_KEY is not set")
-
-if not os.getenv("API_URL"):
-    raise ValueError("API_URL is not set")
-
-
 @pytest.mark.asyncio
-async def test_async_batch_start_and_status():
-    client = AsyncFirecrawl(api_key=os.getenv("API_KEY"), api_url=os.getenv("API_URL"))
+async def test_async_batch_start_and_status(api_key, api_url):
+    client = AsyncFirecrawl(api_key=api_key, api_url=api_url)
     start = await client.start_batch_scrape([
         "https://docs.firecrawl.dev",
         "https://firecrawl.dev",
@@ -33,8 +22,8 @@ async def test_async_batch_start_and_status():
 
 
 @pytest.mark.asyncio
-async def test_async_batch_wait_minimal():
-    client = AsyncFirecrawl(api_key=os.getenv("API_KEY"), api_url=os.getenv("API_URL"))
+async def test_async_batch_wait_minimal(api_key, api_url):
+    client = AsyncFirecrawl(api_key=api_key, api_url=api_url)
     job = await client.batch_scrape([
         "https://docs.firecrawl.dev",
         "https://firecrawl.dev",
@@ -43,8 +32,8 @@ async def test_async_batch_wait_minimal():
 
 
 @pytest.mark.asyncio
-async def test_async_batch_wait_with_all_params():
-    client = AsyncFirecrawl(api_key=os.getenv("API_KEY"), api_url=os.getenv("API_URL"))
+async def test_async_batch_wait_with_all_params(api_key, api_url):
+    client = AsyncFirecrawl(api_key=api_key, api_url=api_url)
     json_schema = {"type": "object", "properties": {"title": {"type": "string"}}, "required": ["title"]}
     job = await client.batch_scrape(
         [
@@ -69,8 +58,8 @@ async def test_async_batch_wait_with_all_params():
 
 
 @pytest.mark.asyncio
-async def test_async_cancel_batch():
-    client = AsyncFirecrawl(api_key=os.getenv("API_KEY"), api_url=os.getenv("API_URL"))
+async def test_async_cancel_batch(api_key, api_url):
+    client = AsyncFirecrawl(api_key=api_key, api_url=api_url)
     start = await client.start_batch_scrape([
         "https://docs.firecrawl.dev",
         "https://firecrawl.dev",

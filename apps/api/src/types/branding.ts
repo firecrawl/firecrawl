@@ -67,20 +67,43 @@ export interface BrandingProfile {
       textColor?: string;
       borderColor?: string;
       borderRadius?: string;
-      [key: string]: string | undefined;
+      borderRadiusCorners?: {
+        topLeft?: string;
+        topRight?: string;
+        bottomRight?: string;
+        bottomLeft?: string;
+      };
+      shadow?: string;
+      [key: string]: string | object | undefined;
     };
     buttonSecondary?: {
       background?: string;
       textColor?: string;
       borderColor?: string;
       borderRadius?: string;
-      [key: string]: string | undefined;
+      borderRadiusCorners?: {
+        topLeft?: string;
+        topRight?: string;
+        bottomRight?: string;
+        bottomLeft?: string;
+      };
+      shadow?: string;
+      [key: string]: string | object | undefined;
     };
     input?: {
+      background?: string;
+      textColor?: string;
       borderColor?: string;
       focusBorderColor?: string;
       borderRadius?: string;
-      [key: string]: string | undefined;
+      borderRadiusCorners?: {
+        topLeft?: string;
+        topRight?: string;
+        bottomRight?: string;
+        bottomLeft?: string;
+      };
+      shadow?: string;
+      [key: string]: string | object | undefined;
     };
     [key: string]: unknown;
   };
@@ -91,6 +114,10 @@ export interface BrandingProfile {
   };
   images?: {
     logo?: string | null;
+    /** Logo link URL (parent <a href>) when logo is inside a link, e.g. homepage. */
+    logoHref?: string | null;
+    /** Logo alt text from <img alt> or parent <a aria-label>. */
+    logoAlt?: string | null;
     favicon?: string | null;
     ogImage?: string | null;
     [key: string]: string | null | undefined;
@@ -144,5 +171,49 @@ export interface BrandingProfile {
     };
     confidence: number;
   };
+  __llm_logo_reasoning?: {
+    selectedIndex: number;
+    reasoning: string;
+    confidence: number;
+    rejected?: boolean;
+  };
+  __llm_metadata?: {
+    logoSelection: {
+      llmCalled: boolean;
+      llmSucceeded: boolean;
+      finalSource: "llm" | "heuristic" | "fallback" | "none";
+      error?: string;
+      /** Exact AI response for logoSelection (before index mapping/heuristic), for debugging */
+      rawLogoSelection?: {
+        selectedLogoIndex: number;
+        selectedLogoReasoning?: string;
+        confidence: number;
+      };
+    };
+    buttonClassification: {
+      llmCalled: boolean;
+      llmSucceeded: boolean;
+      error?: string;
+    };
+  };
+  __logo_candidates?: Array<{
+    src: string;
+    alt: string;
+    ariaLabel?: string;
+    isSvg: boolean;
+    isVisible: boolean;
+    location: "header" | "body" | "footer";
+    position: { top: number; left: number; width: number; height: number };
+    indicators: {
+      inHeader: boolean;
+      altMatch: boolean;
+      srcMatch: boolean;
+      classMatch: boolean;
+      hrefMatch: boolean;
+    };
+    href?: string;
+    source: string;
+    logoSvgScore?: number;
+  }>;
   [key: string]: unknown;
 }

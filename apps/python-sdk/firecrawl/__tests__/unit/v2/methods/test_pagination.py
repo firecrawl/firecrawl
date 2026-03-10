@@ -14,10 +14,18 @@ from firecrawl.v2.types import (
     Document, 
     DocumentMetadata
 )
-from firecrawl.v2.methods.crawl import get_crawl_status, _fetch_all_pages
-from firecrawl.v2.methods.batch import get_batch_scrape_status, _fetch_all_batch_pages
-from firecrawl.v2.methods.aio.crawl import get_crawl_status as get_crawl_status_async, _fetch_all_pages_async
-from firecrawl.v2.methods.aio.batch import get_batch_scrape_status as get_batch_scrape_status_async, _fetch_all_batch_pages_async
+from firecrawl.v2.methods.crawl import get_crawl_status, get_crawl_status_page, _fetch_all_pages
+from firecrawl.v2.methods.batch import get_batch_scrape_status, get_batch_scrape_status_page, _fetch_all_batch_pages
+from firecrawl.v2.methods.aio.crawl import (
+    get_crawl_status as get_crawl_status_async,
+    get_crawl_status_page as get_crawl_status_page_async,
+    _fetch_all_pages_async,
+)
+from firecrawl.v2.methods.aio.batch import (
+    get_batch_scrape_status as get_batch_scrape_status_async,
+    get_batch_scrape_status_page as get_batch_scrape_status_page_async,
+    _fetch_all_batch_pages_async,
+)
 
 
 class TestPaginationConfig:
@@ -123,6 +131,59 @@ class TestCrawlPagination:
         self.mock_client.get.assert_called_with(
             f"/v2/crawl/{self.job_id}", timeout=timeout_seconds
         )
+
+    def test_get_crawl_status_page(self):
+        """Test get_crawl_status_page returns a single page."""
+        mock_response = Mock()
+        mock_response.ok = True
+        mock_response.json.return_value = {
+            "success": True,
+            "status": "completed",
+            "completed": 10,
+            "total": 20,
+            "creditsUsed": 5,
+            "expiresAt": "2024-01-01T00:00:00Z",
+            "next": "https://api.firecrawl.dev/v2/crawl/test-crawl-123?page=3",
+            "data": [self.sample_doc],
+        }
+
+        self.mock_client.get.return_value = mock_response
+        next_url = "https://api.firecrawl.dev/v2/crawl/test-crawl-123?page=2"
+
+        result = get_crawl_status_page(self.mock_client, next_url)
+
+        assert result.status == "completed"
+        assert result.next == "https://api.firecrawl.dev/v2/crawl/test-crawl-123?page=3"
+        assert len(result.data) == 1
+        self.mock_client.get.assert_called_with(next_url, timeout=None)
+
+    def test_get_crawl_status_page_propagates_request_timeout(self):
+        """Ensure request_timeout is forwarded to crawl status page requests."""
+        mock_response = Mock()
+        mock_response.ok = True
+        mock_response.json.return_value = {
+            "success": True,
+            "status": "completed",
+            "completed": 1,
+            "total": 1,
+            "creditsUsed": 1,
+            "expiresAt": "2024-01-01T00:00:00Z",
+            "next": None,
+            "data": [self.sample_doc],
+        }
+
+        self.mock_client.get.return_value = mock_response
+
+        next_url = "https://api.firecrawl.dev/v2/crawl/test-crawl-123?page=2"
+        timeout_seconds = 4.2
+        result = get_crawl_status_page(
+            self.mock_client,
+            next_url,
+            request_timeout=timeout_seconds,
+        )
+
+        assert result.status == "completed"
+        self.mock_client.get.assert_called_with(next_url, timeout=timeout_seconds)
     
     def test_get_crawl_status_with_pagination(self):
         """Test get_crawl_status with auto_paginate=True."""
@@ -326,6 +387,59 @@ class TestBatchScrapePagination:
         assert result.next == "https://api.firecrawl.dev/v2/batch/scrape/test-batch-123?page=2"
         assert len(result.data) == 1
         assert isinstance(result.data[0], Document)
+
+    def test_get_batch_scrape_status_page(self):
+        """Test get_batch_scrape_status_page returns a single page."""
+        mock_response = Mock()
+        mock_response.ok = True
+        mock_response.json.return_value = {
+            "success": True,
+            "status": "completed",
+            "completed": 10,
+            "total": 20,
+            "creditsUsed": 5,
+            "expiresAt": "2024-01-01T00:00:00Z",
+            "next": "https://api.firecrawl.dev/v2/batch/scrape/test-batch-123?page=3",
+            "data": [self.sample_doc],
+        }
+
+        self.mock_client.get.return_value = mock_response
+        next_url = "https://api.firecrawl.dev/v2/batch/scrape/test-batch-123?page=2"
+
+        result = get_batch_scrape_status_page(self.mock_client, next_url)
+
+        assert result.status == "completed"
+        assert result.next == "https://api.firecrawl.dev/v2/batch/scrape/test-batch-123?page=3"
+        assert len(result.data) == 1
+        self.mock_client.get.assert_called_with(next_url, timeout=None)
+
+    def test_get_batch_scrape_status_page_propagates_request_timeout(self):
+        """Ensure request_timeout is forwarded to batch status page requests."""
+        mock_response = Mock()
+        mock_response.ok = True
+        mock_response.json.return_value = {
+            "success": True,
+            "status": "completed",
+            "completed": 1,
+            "total": 1,
+            "creditsUsed": 1,
+            "expiresAt": "2024-01-01T00:00:00Z",
+            "next": None,
+            "data": [self.sample_doc],
+        }
+
+        self.mock_client.get.return_value = mock_response
+
+        next_url = "https://api.firecrawl.dev/v2/batch/scrape/test-batch-123?page=2"
+        timeout_seconds = 2.7
+        result = get_batch_scrape_status_page(
+            self.mock_client,
+            next_url,
+            request_timeout=timeout_seconds,
+        )
+
+        assert result.status == "completed"
+        self.mock_client.get.assert_called_with(next_url, timeout=timeout_seconds)
     
     def test_get_batch_scrape_status_with_pagination(self):
         """Test get_batch_scrape_status with auto_paginate=True."""
@@ -494,6 +608,61 @@ class TestAsyncPagination:
         )
 
     @pytest.mark.asyncio
+    async def test_get_crawl_status_page_async(self):
+        """Test async get_crawl_status_page returns a single page."""
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {
+            "success": True,
+            "status": "completed",
+            "completed": 10,
+            "total": 20,
+            "creditsUsed": 5,
+            "expiresAt": "2024-01-01T00:00:00Z",
+            "next": "https://api.firecrawl.dev/v2/crawl/test-async-123?page=3",
+            "data": [self.sample_doc],
+        }
+
+        self.mock_client.get.return_value = mock_response
+        next_url = "https://api.firecrawl.dev/v2/crawl/test-async-123?page=2"
+
+        result = await get_crawl_status_page_async(self.mock_client, next_url)
+
+        assert result.status == "completed"
+        assert result.next == "https://api.firecrawl.dev/v2/crawl/test-async-123?page=3"
+        assert len(result.data) == 1
+        self.mock_client.get.assert_awaited_with(next_url, timeout=None)
+
+    @pytest.mark.asyncio
+    async def test_get_crawl_status_page_async_propagates_request_timeout(self):
+        """Ensure async request_timeout is forwarded to crawl status page requests."""
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {
+            "success": True,
+            "status": "completed",
+            "completed": 1,
+            "total": 1,
+            "creditsUsed": 1,
+            "expiresAt": "2024-01-01T00:00:00Z",
+            "next": None,
+            "data": [self.sample_doc],
+        }
+
+        self.mock_client.get.return_value = mock_response
+
+        next_url = "https://api.firecrawl.dev/v2/crawl/test-async-123?page=2"
+        timeout_seconds = 6.1
+        result = await get_crawl_status_page_async(
+            self.mock_client,
+            next_url,
+            request_timeout=timeout_seconds,
+        )
+
+        assert result.status == "completed"
+        self.mock_client.get.assert_awaited_with(next_url, timeout=timeout_seconds)
+
+    @pytest.mark.asyncio
     async def test_get_batch_scrape_status_async_with_pagination(self):
         """Test async get_batch_scrape_status with pagination."""
         # Mock first page response
@@ -534,6 +703,61 @@ class TestAsyncPagination:
         assert result.next is None
         assert len(result.data) == 2
         assert self.mock_client.get.call_count == 2
+
+    @pytest.mark.asyncio
+    async def test_get_batch_scrape_status_page_async(self):
+        """Test async get_batch_scrape_status_page returns a single page."""
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {
+            "success": True,
+            "status": "completed",
+            "completed": 10,
+            "total": 20,
+            "creditsUsed": 5,
+            "expiresAt": "2024-01-01T00:00:00Z",
+            "next": "https://api.firecrawl.dev/v2/batch/scrape/test-async-123?page=3",
+            "data": [self.sample_doc],
+        }
+
+        self.mock_client.get.return_value = mock_response
+        next_url = "https://api.firecrawl.dev/v2/batch/scrape/test-async-123?page=2"
+
+        result = await get_batch_scrape_status_page_async(self.mock_client, next_url)
+
+        assert result.status == "completed"
+        assert result.next == "https://api.firecrawl.dev/v2/batch/scrape/test-async-123?page=3"
+        assert len(result.data) == 1
+        self.mock_client.get.assert_awaited_with(next_url, timeout=None)
+
+    @pytest.mark.asyncio
+    async def test_get_batch_scrape_status_page_async_propagates_request_timeout(self):
+        """Ensure async request_timeout is forwarded to batch status page requests."""
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {
+            "success": True,
+            "status": "completed",
+            "completed": 1,
+            "total": 1,
+            "creditsUsed": 1,
+            "expiresAt": "2024-01-01T00:00:00Z",
+            "next": None,
+            "data": [self.sample_doc],
+        }
+
+        self.mock_client.get.return_value = mock_response
+
+        next_url = "https://api.firecrawl.dev/v2/batch/scrape/test-async-123?page=2"
+        timeout_seconds = 4.4
+        result = await get_batch_scrape_status_page_async(
+            self.mock_client,
+            next_url,
+            request_timeout=timeout_seconds,
+        )
+
+        assert result.status == "completed"
+        self.mock_client.get.assert_awaited_with(next_url, timeout=timeout_seconds)
     
     @pytest.mark.asyncio
     async def test_fetch_all_pages_async_limits(self):

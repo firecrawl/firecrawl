@@ -13,22 +13,29 @@ env:
 jobs:
   publish:
     name: Publish
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-2vcpu-ubuntu-2404
     steps:
       - uses: actions/checkout@v5
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
           node-version: "20"
+          cache: "pnpm"
+          cache-dependency-path: './apps/js-sdk/firecrawl/pnpm-lock.yaml'
       - name: Authenticate
         run: echo "//registry.npmjs.org/:_authToken=${{ secrets.NPM_TOKEN }}" > ~/.npmrc
       - name: Publish
         run: |
-          npm install
-          npm run build
-          npm publish --access public
+          pnpm install
+          pnpm run build
+          pnpm publish --access public --no-git-checks
           sed -i 's/"name": "@mendable\/firecrawl-js"/"name": "@mendable\/firecrawl"/g' package.json
-          npm publish --access public
+          pnpm publish --access public --no-git-checks
           sed -i 's/"name": "@mendable\/firecrawl"/"name": "firecrawl"/g' package.json
-          npm publish --access public
+          sed -i '/"firecrawl":/d' package.json
+          pnpm publish --access public --no-git-checks
         working-directory: ./apps/js-sdk/firecrawl

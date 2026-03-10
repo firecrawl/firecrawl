@@ -1,3 +1,4 @@
+import { config } from "../../../config";
 import {
   createTestIdUrl,
   describeIf,
@@ -6,6 +7,7 @@ import {
   TEST_PRODUCTION,
   TEST_SELF_HOST,
   TEST_SUITE_WEBSITE,
+  HAS_FIRE_ENGINE,
   HAS_PLAYWRIGHT,
   HAS_PROXY,
   HAS_AI,
@@ -21,7 +23,9 @@ import {
   Identity,
   scrapeRaw,
   extractRaw,
+  TEST_API_URL,
 } from "./lib";
+import request from "./lib";
 import crypto from "crypto";
 
 const CHANGE_TRACKING_TEST_URL = `${TEST_SUITE_WEBSITE}?testId=${crypto.randomUUID()}`;
@@ -135,6 +139,22 @@ describe("Scrape tests", () => {
     );
   });
 
+  it.concurrent(
+    "returns 400 for invalid URL",
+    async () => {
+      const raw = await scrapeRaw(
+        {
+          url: "not-a-valid-url",
+        } as any,
+        identity,
+      );
+
+      expect(raw.statusCode).toBe(400);
+      expect(raw.body.success).toBe(false);
+    },
+    scrapeTimeout,
+  );
+
   // TEMP: domain broken
   // it.concurrent("works with Punycode domains", async () => {
   //   await scrape({
@@ -234,7 +254,7 @@ describe("Scrape tests", () => {
       );
 
       expect(response.markdown?.trim()).toContain(
-        process.env.PROXY_SERVER!.split("://").slice(-1)[0].split(":")[0],
+        config.PROXY_SERVER!.split("://").slice(-1)[0].split(":")[0],
       );
     },
     scrapeTimeout,
@@ -253,7 +273,7 @@ describe("Scrape tests", () => {
       );
 
       expect(response.markdown?.trim()).toContain(
-        process.env.PROXY_SERVER!.split("://").slice(-1)[0].split(":")[0],
+        config.PROXY_SERVER!.split("://").slice(-1)[0].split(":")[0],
       );
     },
     scrapeTimeout,
@@ -271,6 +291,30 @@ describe("Scrape tests", () => {
       );
 
       expect(response.markdown).toContain("Firecrawl");
+    },
+    scrapeTimeout,
+  );
+
+  itIf(TEST_SELF_HOST && !HAS_FIRE_ENGINE)(
+    "rejects actions when fire-engine is not configured",
+    async () => {
+      const raw = await scrapeRaw(
+        {
+          url: "https://example.com",
+          actions: [
+            {
+              type: "wait",
+              milliseconds: 1000,
+            },
+          ],
+        },
+        identity,
+      );
+
+      expect(raw.statusCode).toBe(400);
+      expect(raw.body.success).toBe(false);
+      expect(raw.body.code).toBe("SCRAPE_ACTIONS_NOT_SUPPORTED");
+      expect(raw.body.error).toContain("Actions are not supported");
     },
     scrapeTimeout,
   );
@@ -1508,12 +1552,9 @@ describe("Scrape tests", () => {
                   type: "json",
                   prompt: "Extract company info as JSON",
                   schema: {
-                    prompt: "Extract company info as JSON",
-                    schema: {
-                      type: "object",
-                      properties: {
-                        name: { type: "string" },
-                      },
+                    type: "object",
+                    properties: {
+                      name: { type: "string" },
                     },
                   },
                 },
@@ -1908,6 +1949,40 @@ describe("Attribute formats", () => {
         expect(response.statusCode).toBe(200);
       },
       scrapeTimeout,
+    );
+  });
+
+  describe("UUID validation", () => {
+    it.concurrent(
+      "should reject invalid UUID 'None' for scrape status",
+      async () => {
+        const response = await request(TEST_API_URL)
+          .get("/v2/scrape/None")
+          .set("Authorization", `Bearer ${identity.apiKey}`)
+          .send();
+
+        expect(response.statusCode).toBe(400);
+        expect(response.body.success).toBe(false);
+        expect(response.body.error).toBe(
+          "Invalid job ID format. Job ID must be a valid UUID.",
+        );
+      },
+    );
+
+    it.concurrent(
+      "should reject malformed UUID for scrape status",
+      async () => {
+        const response = await request(TEST_API_URL)
+          .get("/v2/scrape/not-a-valid-uuid")
+          .set("Authorization", `Bearer ${identity.apiKey}`)
+          .send();
+
+        expect(response.statusCode).toBe(400);
+        expect(response.body.success).toBe(false);
+        expect(response.body.error).toBe(
+          "Invalid job ID format. Job ID must be a valid UUID.",
+        );
+      },
     );
   });
 });

@@ -1,4 +1,5 @@
 import { Response } from "express";
+import { config } from "../../config";
 import { v7 as uuidv7 } from "uuid";
 import {
   BatchScrapeRequest,
@@ -22,10 +23,11 @@ import { getJobPriority } from "../../lib/job-priority";
 import { addScrapeJobs } from "../../services/queue-jobs";
 import { createWebhookSender, WebhookEvent } from "../../services/webhook";
 import { logger as _logger } from "../../lib/logger";
-import { BLOCKLISTED_URL_MESSAGE } from "../../lib/strings";
+import { UNSUPPORTED_SITE_MESSAGE } from "../../lib/strings";
 import { isUrlBlocked } from "../../scraper/WebScraper/utils/blocklist";
 import { checkPermissions } from "../../lib/permissions";
 import { crawlGroup } from "../../services/worker/nuq";
+import { logRequest } from "../../services/logging/log_job";
 
 export async function batchScrapeController(
   req: RequestWithAuth<{}, BatchScrapeResponse, BatchScrapeRequest>,
@@ -47,7 +49,23 @@ export async function batchScrapeController(
   }
 
   const zeroDataRetention =
-    req.acuc?.flags?.forceZDR || req.body.zeroDataRetention;
+    req.acuc?.flags?.forceZDR || (req.body.zeroDataRetention ?? false);
+
+  if (
+    req.body.__agentInterop &&
+    config.AGENT_INTEROP_SECRET &&
+    req.body.__agentInterop.auth !== config.AGENT_INTEROP_SECRET
+  ) {
+    return res.status(403).json({
+      success: false,
+      error: "Invalid agent interop.",
+    });
+  } else if (req.body.__agentInterop && !config.AGENT_INTEROP_SECRET) {
+    return res.status(403).json({
+      success: false,
+      error: "Agent interop is not enabled.",
+    });
+  }
 
   const id = req.body.appendToId ?? uuidv7();
   const logger = _logger.child({
@@ -91,7 +109,7 @@ export async function batchScrapeController(
       if (!res.headersSent) {
         return res.status(403).json({
           success: false,
-          error: BLOCKLISTED_URL_MESSAGE,
+          error: UNSUPPORTED_SITE_MESSAGE,
         });
       }
     }
@@ -110,6 +128,20 @@ export async function batchScrapeController(
     account: req.account,
   });
 
+  if (!req.body.appendToId && !req.body.__agentInterop) {
+    await logRequest({
+      id,
+      kind: "batch_scrape",
+      api_version: "v2",
+      team_id: req.auth.team_id,
+      origin: req.body.origin ?? "api",
+      integration: req.body.integration,
+      target_hint: urls[0] ?? "",
+      zeroDataRetention: zeroDataRetention || false,
+      api_key_id: req.acuc?.api_key_id ?? null,
+    });
+  }
+
   const sc: StoredCrawl = req.body.appendToId
     ? ((await getCrawl(req.body.appendToId)) as StoredCrawl)
     : {
@@ -118,16 +150,26 @@ export async function batchScrapeController(
         internalOptions: {
           disableSmartWaitCache: true,
           teamId: req.auth.team_id,
-          saveScrapeResultToGCS: process.env.GCS_FIRE_ENGINE_BUCKET_NAME
+          saveScrapeResultToGCS: config.GCS_FIRE_ENGINE_BUCKET_NAME
             ? true
             : false,
           zeroDataRetention,
+          bypassBilling: !(req.body.__agentInterop?.shouldBill ?? true),
         }, // NOTE: smart wait disabled for batch scrapes to ensure contentful scrape, speed does not matter
         team_id: req.auth.team_id,
         createdAt: Date.now(),
         maxConcurrency: req.body.maxConcurrency,
         zeroDataRetention,
       };
+
+  if (req.body.appendToId) {
+    if (!sc || sc.team_id !== req.auth.team_id) {
+      return res.status(404).json({
+        success: false,
+        error: "Job not found",
+      });
+    }
+  }
 
   if (!req.body.appendToId) {
     await crawlGroup.addGroup(
@@ -167,6 +209,8 @@ export async function batchScrapeController(
       origin: "api",
       integration: req.body.integration,
       crawl_id: id,
+      requestId: req.body.__agentInterop?.requestId ?? undefined,
+      bypassBilling: !(req.body.__agentInterop?.shouldBill ?? true),
       sitemapped: true,
       v1: true,
       webhook: req.body.webhook,

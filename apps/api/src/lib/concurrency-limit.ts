@@ -6,9 +6,26 @@ import { logger } from "./logger";
 import { abTestJob } from "../services/ab-test";
 import { scrapeQueue, type NuQJob } from "../services/worker/nuq";
 
+export class QueueFullError extends Error {
+  statusCode = 429;
+  constructor(queueSize: number, queueLimit: number) {
+    super(
+      `Queue limit reached: your team has ${queueSize} jobs queued (limit: ${queueLimit}). Please wait for existing jobs to complete before adding more, or upgrade your plan for a higher limit. For more info, see https://docs.firecrawl.dev/rate-limits#concurrent-browser-limits`,
+    );
+    this.name = "QueueFullError";
+  }
+}
+
+// min 50k, max 2M, 2000 per concurrent browser
+export function getTeamQueueLimit(concurrencyLimit: number): number {
+  return Math.min(Math.max(concurrencyLimit * 2000, 50_000), 2_000_000);
+}
+
 const constructKey = (team_id: string) => "concurrency-limiter:" + team_id;
 const constructQueueKey = (team_id: string) =>
   "concurrency-limit-queue:" + team_id;
+
+const constructJobKey = (jobId: string) => "cq-job:" + jobId;
 
 const constructCrawlKey = (crawl_id: string) =>
   "crawl-concurrency-limiter:" + crawl_id;
@@ -85,16 +102,44 @@ export async function pushConcurrencyLimitedJob(
   timeout: number,
   now: number = Date.now(),
 ) {
+  await pushConcurrencyLimitedJobs(team_id, [{ job, timeout }], now);
+}
+
+export async function pushConcurrencyLimitedJobs(
+  team_id: string,
+  jobs: { job: ConcurrencyLimitedJob; timeout: number }[],
+  now: number = Date.now(),
+) {
+  if (jobs.length === 0) {
+    return;
+  }
+
   const queueKey = constructQueueKey(team_id);
-  await getRedisConnection().zadd(queueKey, now + timeout, JSON.stringify(job));
-  await getRedisConnection().sadd("concurrency-limit-queues", queueKey);
+  const redis = getRedisConnection();
+  const pipeline = redis.pipeline();
+  const zaddArgs: (string | number)[] = [];
+
+  for (const { job, timeout } of jobs) {
+    const cappedTimeout = Number.isFinite(timeout)
+      ? Math.min(timeout, 172800000)
+      : 172800000; // cap at 48h, fallback for NaN/Infinity
+    pipeline.set(
+      constructJobKey(job.id),
+      JSON.stringify(job),
+      "PX",
+      cappedTimeout,
+    );
+    zaddArgs.push(now + cappedTimeout, job.id);
+  }
+
+  pipeline.zadd(queueKey, ...zaddArgs);
+  pipeline.sadd("concurrency-limit-queues", queueKey);
+  await pipeline.exec();
 }
 
 export async function getConcurrencyLimitedJobs(team_id: string) {
   return new Set(
-    (await getRedisConnection().zrange(constructQueueKey(team_id), 0, -1)).map(
-      x => JSON.parse(x).id,
-    ),
+    await getRedisConnection().zrange(constructQueueKey(team_id), 0, -1),
   );
 }
 
@@ -143,7 +188,7 @@ export async function pushCrawlConcurrencyLimitActiveJob(
   );
 }
 
-async function removeCrawlConcurrencyLimitActiveJob(
+export async function removeCrawlConcurrencyLimitActiveJob(
   crawl_id: string,
   id: string,
 ) {
@@ -158,47 +203,50 @@ async function removeCrawlConcurrencyLimitActiveJob(
  * @param teamId
  * @returns A job that can be run, or null if there are no more jobs to run.
  */
-async function getNextConcurrentJob(
-  teamId: string,
-  i = 0,
-): Promise<{
+export async function getNextConcurrentJob(teamId: string): Promise<{
   job: ConcurrencyLimitedJob;
   timeout: number;
 } | null> {
-  let finalJobs: {
-    job: ConcurrencyLimitedJob;
-    _member: string;
-    timeout: number;
-  }[] = [];
-
   const crawlCache = new Map<string, StoredCrawl>();
-  let cursor: string = "0";
+  const queueKey = constructQueueKey(teamId);
+  const redis = getRedisConnection();
+  const now = Date.now();
 
-  do {
-    const scanResult = await getRedisConnection().zscan(
-      constructQueueKey(teamId),
-      cursor,
-      "COUNT",
-      20,
-    );
-    cursor = scanResult[0];
-    const results = scanResult[1];
+  // Jobs we popped but can't run due to crawl concurrency limits.
+  // We'll re-add them at the end so other callers can try them later.
+  const crawlBlocked: { member: string; score: number; jobData: string }[] = [];
 
-    for (let i = 0; i < results.length; i += 2) {
-      const res = {
-        job: JSON.parse(results[i]),
-        _member: results[i],
-        timeout:
-          results[i + 1] === "inf" ? Infinity : parseFloat(results[i + 1]),
-      };
+  try {
+    while (true) {
+      // ZPOPMIN atomically removes and returns the lowest-scored member.
+      // No two workers can ever get the same entry.
+      const result = await redis.zpopmin(queueKey);
+      if (!result || result.length === 0) return null;
 
-      // If the job is associated with a crawl ID, we need to check if the crawl has a max concurrency limit
-      if (res.job.data.crawl_id) {
+      const [member, scoreStr] = result as [string, string];
+      const score = parseFloat(scoreStr);
+
+      // Expired entry - discard
+      if (score < now) {
+        await redis.del(constructJobKey(member));
+        continue;
+      }
+
+      const jobData = await redis.get(constructJobKey(member));
+      if (jobData === null) {
+        // Job key TTL expired - orphaned sorted set entry, already removed by zpopmin
+        continue;
+      }
+
+      const job: ConcurrencyLimitedJob = JSON.parse(jobData);
+
+      // Check crawl concurrency limit
+      if (job.data.crawl_id) {
         const sc =
-          crawlCache.get(res.job.data.crawl_id) ??
-          (await getCrawl(res.job.data.crawl_id));
+          crawlCache.get(job.data.crawl_id) ??
+          (await getCrawl(job.data.crawl_id));
         if (sc !== null) {
-          crawlCache.set(res.job.data.crawl_id, sc);
+          crawlCache.set(job.data.crawl_id, sc);
         }
 
         const maxCrawlConcurrency =
@@ -210,83 +258,36 @@ async function getNextConcurrentJob(
               : (sc.maxConcurrency ?? null);
 
         if (maxCrawlConcurrency !== null) {
-          // If the crawl has a max concurrency limit, we need to check if the crawl has reached the limit
           const currentActiveConcurrency = (
-            await getCrawlConcurrencyLimitActiveJobs(res.job.data.crawl_id)
+            await getCrawlConcurrencyLimitActiveJobs(job.data.crawl_id)
           ).length;
-          if (currentActiveConcurrency < maxCrawlConcurrency) {
-            // If we're under the max concurrency limit, we can run the job
-            finalJobs.push(res);
+          if (currentActiveConcurrency >= maxCrawlConcurrency) {
+            // Crawl is at its limit - hold this job aside to re-add later
+            crawlBlocked.push({ member, score, jobData });
+            continue;
           }
-        } else {
-          // If the crawl has no max concurrency limit, we can run the job
-          finalJobs.push(res);
         }
-      } else {
-        // If the job is not associated with a crawl ID, we can run the job
-        finalJobs.push(res);
-      }
-    }
-  } while (finalJobs.length === 0 && cursor !== "0");
-
-  let finalJob: (typeof finalJobs)[number] | null = null;
-  if (finalJobs.length > 0) {
-    for (const job of finalJobs) {
-      const res = await getRedisConnection().zrem(
-        constructQueueKey(teamId),
-        job._member,
-      );
-      if (res !== 0) {
-        finalJob = job;
-        break;
-      }
-    }
-
-    if (finalJob === null) {
-      // It's normal for this to happen, but if it happens too many times, we should log a warning
-      if (i > 100) {
-        logger.error(
-          "Failed to remove job from concurrency limit queue, hard bailing",
-          {
-            teamId,
-            jobIds: finalJobs.map(x => x.job.id),
-            zeroDataRetention: finalJobs.some(
-              x => x.job.data?.zeroDataRetention,
-            ),
-            i,
-          },
-        );
-        return null;
-      } else if (i > 15) {
-        logger.warn("Failed to remove job from concurrency limit queue", {
-          teamId,
-          jobIds: finalJobs.map(x => x.job.id),
-          zeroDataRetention: finalJobs.some(x => x.job.data?.zeroDataRetention),
-          i,
-        });
       }
 
-      return await new Promise((resolve, reject) =>
-        setTimeout(
-          () => {
-            getNextConcurrentJob(teamId, i + 1)
-              .then(resolve)
-              .catch(reject);
-          },
-          Math.floor(Math.random() * 300),
-        ),
-      ); // Stagger the workers off to break up the clump that causes the race condition
-    } else {
+      // We got a valid, eligible job
+      await redis.del(constructJobKey(member));
       logger.debug("Removed job from concurrency limit queue", {
         teamId,
-        jobId: finalJob.job.id,
-        zeroDataRetention: finalJob.job.data?.zeroDataRetention,
-        i,
+        jobId: job.id,
+        zeroDataRetention: job.data?.zeroDataRetention,
       });
+      return { job, timeout: Infinity };
+    }
+  } finally {
+    // Re-add crawl-blocked jobs so they can be picked up later
+    if (crawlBlocked.length > 0) {
+      const zaddArgs: (string | number)[] = [];
+      for (const { member, score } of crawlBlocked) {
+        zaddArgs.push(score, member);
+      }
+      await redis.zadd(queueKey, ...zaddArgs);
     }
   }
-
-  return finalJob;
 }
 
 /**
@@ -297,96 +298,105 @@ async function getNextConcurrentJob(
 export async function concurrentJobDone(job: NuQJob<any>) {
   if (job.id && job.data && job.data.team_id) {
     await removeConcurrencyLimitActiveJob(job.data.team_id, job.id);
+    await getRedisConnection().zrem(
+      constructQueueKey(job.data.team_id),
+      job.id,
+    );
+    await getRedisConnection().del(constructJobKey(job.id));
     await cleanOldConcurrencyLimitEntries(job.data.team_id);
+    await cleanOldConcurrencyLimitedJobs(job.data.team_id);
 
     if (job.data.crawl_id) {
       await removeCrawlConcurrencyLimitActiveJob(job.data.crawl_id, job.id);
       await cleanOldCrawlConcurrencyLimitEntries(job.data.crawl_id);
     }
 
-    let i = 0;
-    for (; i < 10; i++) {
-      const maxTeamConcurrency =
-        (
-          await getACUCTeam(
-            job.data.team_id,
-            false,
-            true,
-            job.data.is_extract
-              ? RateLimiterMode.Extract
-              : RateLimiterMode.Crawl,
-          )
-        )?.concurrency ?? 2;
+    const maxTeamConcurrency =
+      (
+        await getACUCTeam(
+          job.data.team_id,
+          false,
+          true,
+          job.data.is_extract ? RateLimiterMode.Extract : RateLimiterMode.Crawl,
+        )
+      )?.concurrency ?? 2;
+
+    let staleSkipped = 0;
+    while (staleSkipped < 100) {
       const currentActiveConcurrency = (
         await getConcurrencyLimitActiveJobs(job.data.team_id)
       ).length;
 
-      if (currentActiveConcurrency < maxTeamConcurrency) {
-        const nextJob = await getNextConcurrentJob(job.data.team_id);
-        if (nextJob !== null) {
-          await pushConcurrencyLimitActiveJob(
-            job.data.team_id,
-            nextJob.job.id,
-            60 * 1000,
+      if (currentActiveConcurrency >= maxTeamConcurrency) break;
+
+      const nextJob = await getNextConcurrentJob(job.data.team_id);
+      if (nextJob === null) break;
+
+      await pushConcurrencyLimitActiveJob(
+        job.data.team_id,
+        nextJob.job.id,
+        60 * 1000,
+      );
+
+      if (nextJob.job.data.crawl_id) {
+        await pushCrawlConcurrencyLimitActiveJob(
+          nextJob.job.data.crawl_id,
+          nextJob.job.id,
+          60 * 1000,
+        );
+
+        const sc = await getCrawl(nextJob.job.data.crawl_id);
+        if (sc !== null && typeof sc.crawlerOptions?.delay === "number") {
+          await new Promise(resolve =>
+            setTimeout(resolve, sc.crawlerOptions.delay * 1000),
           );
-
-          if (nextJob.job.data.crawl_id) {
-            await pushCrawlConcurrencyLimitActiveJob(
-              nextJob.job.data.crawl_id,
-              nextJob.job.id,
-              60 * 1000,
-            );
-
-            const sc = await getCrawl(nextJob.job.data.crawl_id);
-            if (sc !== null && typeof sc.crawlerOptions?.delay === "number") {
-              await new Promise(resolve =>
-                setTimeout(resolve, sc.crawlerOptions.delay * 1000),
-              );
-            }
-          }
-
-          abTestJob(nextJob.job.data);
-
-          const promotedSuccessfully =
-            (await scrapeQueue.promoteJobFromBacklogOrAdd(
-              nextJob.job.id,
-              nextJob.job.data,
-              {
-                priority: nextJob.job.priority,
-                listenable: nextJob.job.listenable,
-                ownerId: nextJob.job.data.team_id ?? undefined,
-                groupId: nextJob.job.data.crawl_id ?? undefined,
-              },
-            )) !== null;
-
-          if (promotedSuccessfully) {
-            logger.debug("Successfully promoted concurrent queued job", {
-              teamId: job.data.team_id,
-              jobId: nextJob.job.id,
-              zeroDataRetention: nextJob.job.data?.zeroDataRetention,
-            });
-            break;
-          } else {
-            logger.warn(
-              "Was unable to promote concurrent queued job as it already exists in the database",
-              {
-                teamId: job.data.team_id,
-                jobId: nextJob.job.id,
-                zeroDataRetention: nextJob.job.data?.zeroDataRetention,
-              },
-            );
-          }
-        } else {
-          break;
         }
-      } else {
+      }
+
+      abTestJob(nextJob.job.data);
+
+      const promotedSuccessfully =
+        (await scrapeQueue.promoteJobFromBacklogOrAdd(
+          nextJob.job.id,
+          nextJob.job.data,
+          {
+            priority: nextJob.job.priority,
+            listenable: nextJob.job.listenable,
+            ownerId: nextJob.job.data.team_id ?? undefined,
+            groupId: nextJob.job.data.crawl_id ?? undefined,
+          },
+        )) !== null;
+
+      if (promotedSuccessfully) {
+        logger.debug("Successfully promoted concurrent queued job", {
+          teamId: job.data.team_id,
+          jobId: nextJob.job.id,
+          zeroDataRetention: nextJob.job.data?.zeroDataRetention,
+        });
         break;
+      } else {
+        logger.warn(
+          "Was unable to promote concurrent queued job as it already exists in the database",
+          {
+            teamId: job.data.team_id,
+            jobId: nextJob.job.id,
+            zeroDataRetention: nextJob.job.data?.zeroDataRetention,
+          },
+        );
+        await removeConcurrencyLimitActiveJob(job.data.team_id, nextJob.job.id);
+        if (nextJob.job.data.crawl_id) {
+          await removeCrawlConcurrencyLimitActiveJob(
+            nextJob.job.data.crawl_id,
+            nextJob.job.id,
+          );
+        }
+        staleSkipped++;
       }
     }
 
-    if (i === 10) {
+    if (staleSkipped >= 100) {
       logger.warn(
-        "Failed to promote a concurrent job after 10 iterations, bailing!",
+        "Skipped 100 stale entries in concurrency queue without a successful promotion",
         {
           teamId: job.data.team_id,
         },

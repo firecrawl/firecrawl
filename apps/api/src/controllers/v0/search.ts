@@ -5,7 +5,7 @@ import {
 } from "../../services/billing/credit_billing";
 import { authenticateUser } from "../auth";
 import { RateLimiterMode, ScrapeJobSingleUrls } from "../../types";
-import { logJob } from "../../services/logging/log_job";
+import { logSearch, logRequest } from "../../services/logging/log_job";
 import { PageOptions, SearchOptions } from "../../lib/entities";
 import { search } from "../../search";
 import { isUrlBlocked } from "../../scraper/WebScraper/utils/blocklist";
@@ -119,6 +119,7 @@ async function searchHelper(
         zeroDataRetention: false, // not supported on v0
         apiKeyId: api_key_id,
         origin: req.body.origin ?? defaultOrigin,
+        requestId: jobId,
       } satisfies ScrapeJobSingleUrls,
     };
   });
@@ -177,6 +178,18 @@ export async function searchController(req: Request, res: Response) {
 
     const jobId = uuidv7();
 
+    await logRequest({
+      id: jobId,
+      kind: "search",
+      api_version: "v0",
+      team_id,
+      origin: req.body.origin ?? "api",
+      integration: req.body.integration,
+      target_hint: req.body.query ?? "",
+      zeroDataRetention: false, // not supported on v0
+      api_key_id: chunk?.api_key_id ?? null,
+    });
+
     redisEvictConnection.sadd("teams_using_v0", team_id).catch(error =>
       logger.error("Failed to add team to teams_using_v0", {
         error,
@@ -230,25 +243,20 @@ export async function searchController(req: Request, res: Response) {
     );
     const endTime = new Date().getTime();
     const timeTakenInSeconds = (endTime - startTime) / 1000;
-    logJob({
-      job_id: jobId,
-      success: result.success,
-      message: result.error,
-      num_docs: result.data ? result.data.length : 0,
-      docs: result.data,
+    await logSearch({
+      id: jobId,
+      request_id: jobId,
+      query: req.body.query,
+      num_results: result.data?.length ?? 0,
+      is_successful: result.success,
+      error: result.error,
+      results: result.data,
       time_taken: timeTakenInSeconds,
       team_id: team_id,
-      mode: "search",
-      url: req.body.query,
-      scrapeOptions: fromLegacyScrapeOptions(
-        req.body.pageOptions,
-        undefined,
-        60000,
-        team_id,
-      ),
-      crawlerOptions: crawlerOptions,
-      origin,
-      integration: req.body.integration,
+      options: searchOptions,
+      credits_cost: pageOptions.fetchPageContent
+        ? 0
+        : (result.data?.length ?? 0),
       zeroDataRetention: false, // not supported
     });
     return res.status(result.returnCode).json(result);

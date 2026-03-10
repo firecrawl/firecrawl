@@ -2,6 +2,8 @@ import { Logger } from "winston";
 import { Meta } from "../..";
 import {
   fireEngineScrape,
+  fireEngineURL,
+  fireEngineStagingURL,
   FireEngineScrapeRequestChromeCDP,
   FireEngineScrapeRequestCommon,
   FireEngineScrapeRequestPlaywright,
@@ -29,11 +31,16 @@ import { fireEngineDelete } from "./delete";
 import { MockState } from "../../lib/mock";
 import { getInnerJson } from "@mendable/firecrawl-rs";
 import { hasFormatOfType } from "../../../../lib/format-utils";
-import { Action } from "../../../../controllers/v1/types";
+import { InternalAction } from "../../../../controllers/v1/types";
 import { AbortManagerThrownError } from "../../lib/abortManager";
 import { youtubePostprocessor } from "../../postprocessors/youtube";
 import { withSpan, setSpanAttributes } from "../../../../lib/otel-tracer";
 import { getBrandingScript } from "./brandingScript";
+import { abTestFireEngine } from "../../../../services/ab-test";
+import { scheduleABComparison } from "../../../../services/ab-test-comparison";
+
+/** Default wait (ms) before running the branding script when user did not set waitFor. Lets the page settle so DOM/images are ready and reduces JS errors. */
+const BRANDING_DEFAULT_WAIT_MS = 2000;
 
 // This function does not take `Meta` on purpose. It may not access any
 // meta values to construct the request -- that must be done by the
@@ -55,6 +62,13 @@ async function performFireEngineScrape<
     const startTime = Date.now();
     let pollCount = 0;
 
+    let baseUrl = production ? fireEngineURL : fireEngineStagingURL;
+
+    const abTest = abTestFireEngine(request);
+    if (abTest.mode === "split") {
+      baseUrl = abTest.baseUrl;
+    }
+
     setSpanAttributes(span, {
       "fire-engine.url": request.url,
       "fire-engine.priority": request.priority,
@@ -65,6 +79,7 @@ async function performFireEngineScrape<
       "fire-engine.mobile": (request as any).mobile,
       "fire-engine.skip_tls": (request as any).skipTlsVerification,
       "fire-engine.production": production,
+      "fire-engine.ab_mode": abTest.mode,
     });
     const scrape = await fireEngineScrape(
       meta,
@@ -72,7 +87,7 @@ async function performFireEngineScrape<
       request,
       mock,
       abort,
-      production,
+      baseUrl,
     );
 
     let status: FireEngineCheckStatusSuccess | undefined = undefined;
@@ -91,7 +106,7 @@ async function performFireEngineScrape<
             (scrape as any).jobId,
             mock,
             undefined,
-            production,
+            baseUrl,
           ).catch(e => {
             logger.error("Failed to delete job from Fire Engine", { error: e });
           });
@@ -110,7 +125,7 @@ async function performFireEngineScrape<
             (scrape as any).jobId,
             mock,
             abort,
-            production,
+            baseUrl,
           );
         } catch (error) {
           if (error instanceof StillProcessingError) {
@@ -133,7 +148,7 @@ async function performFireEngineScrape<
               (scrape as any).jobId,
               mock,
               undefined,
-              production,
+              baseUrl,
             ).catch(e => {
               logger.error("Failed to delete job from Fire Engine", {
                 error: e,
@@ -153,7 +168,7 @@ async function performFireEngineScrape<
               (scrape as any).jobId,
               mock,
               undefined,
-              production,
+              baseUrl,
             ).catch(e => {
               logger.error("Failed to delete job from Fire Engine", {
                 error: e,
@@ -206,10 +221,23 @@ async function performFireEngineScrape<
       (scrape as any).jobId,
       mock,
       undefined,
-      production,
+      baseUrl,
     ).catch(e => {
       logger.error("Failed to delete job from Fire Engine", { error: e });
     });
+
+    if (abTest.mode === "mirror") {
+      scheduleABComparison(
+        meta.url,
+        {
+          content: status.content,
+          pageStatusCode: status.pageStatusCode,
+        },
+        Date.now() - startTime,
+        abTest.mirrorPromise,
+        logger,
+      );
+    }
 
     setSpanAttributes(span, {
       "fire-engine.poll_count": pollCount,
@@ -234,20 +262,30 @@ export async function scrapeURLWithFireEngineChromeCDP(
       "engine.url": meta.url,
       "engine.team_id": meta.internalOptions.teamId,
     });
-    const actions: Action[] = [
-      // Transform waitFor option into an action (unsupported by chrome-cdp)
-      ...(meta.options.waitFor !== 0
+    const hasBranding = hasFormatOfType(meta.options.formats, "branding");
+    const defaultWait = hasBranding ? BRANDING_DEFAULT_WAIT_MS : 0;
+    const effectiveWait =
+      meta.options.waitFor != null && meta.options.waitFor !== 0
+        ? meta.options.waitFor
+        : defaultWait;
+
+    const actions: InternalAction[] = [
+      // Transform waitFor option into an action (unsupported by chrome-cdp).
+      // When branding is requested and user didn't set waitFor, use a default wait so the page is ready and we avoid JS errors.
+      ...(effectiveWait > 0
         ? [
             {
               type: "wait" as const,
-              milliseconds:
-                meta.options.waitFor > 30000 ? 30000 : meta.options.waitFor,
+              milliseconds: effectiveWait > 30000 ? 30000 : effectiveWait,
             },
           ]
         : []),
 
       // Include specified actions
-      ...(meta.options.actions ?? []),
+      ...(meta.options.actions ?? []).map(action => {
+        const { metadata: _, ...rest } = action as InternalAction;
+        return rest;
+      }),
 
       // Transform screenshot format into an action (unsupported by chrome-cdp)
       ...(hasFormatOfType(meta.options.formats, "screenshot")
@@ -273,6 +311,7 @@ export async function scrapeURLWithFireEngineChromeCDP(
             {
               type: "executeJavascript" as const,
               script: getBrandingScript(),
+              metadata: { __firecrawl_internal: true },
             },
           ]
         : []),
@@ -293,6 +332,7 @@ export async function scrapeURLWithFireEngineChromeCDP(
     const request: FireEngineScrapeRequestCommon &
       FireEngineScrapeRequestChromeCDP = {
       url: meta.rewrittenUrl ?? meta.url,
+      scrapeId: meta.id,
       engine: "chrome-cdp",
       instantReturn: false,
       skipTlsVerification: meta.options.skipTlsVerification,
@@ -411,6 +451,7 @@ export async function scrapeURLWithFireEngineChromeCDP(
 
       proxyUsed: response.usedMobileProxy ? "stealth" : "basic",
       youtubeTranscriptContent: response.youtubeTranscriptContent,
+      timezone: response.timezone,
     };
   });
 }
@@ -429,6 +470,7 @@ export async function scrapeURLWithFireEnginePlaywright(
     const request: FireEngineScrapeRequestCommon &
       FireEngineScrapeRequestPlaywright = {
       url: meta.rewrittenUrl ?? meta.url,
+      scrapeId: meta.id,
       engine: "playwright",
       instantReturn: false,
 
@@ -487,6 +529,7 @@ export async function scrapeURLWithFireEnginePlaywright(
         : {}),
 
       proxyUsed: response.usedMobileProxy ? "stealth" : "basic",
+      timezone: response.timezone,
     };
   });
 }
@@ -503,6 +546,7 @@ export async function scrapeURLWithFireEngineTLSClient(
     const request: FireEngineScrapeRequestCommon &
       FireEngineScrapeRequestTLSClient = {
       url: meta.rewrittenUrl ?? meta.url,
+      scrapeId: meta.id,
       engine: "tlsclient",
       instantReturn: false,
 
@@ -552,6 +596,7 @@ export async function scrapeURLWithFireEngineTLSClient(
         ) ?? [])[1] ?? undefined,
 
       proxyUsed: response.usedMobileProxy ? "stealth" : "basic",
+      timezone: response.timezone,
     };
   });
 }
@@ -560,13 +605,20 @@ export function fireEngineMaxReasonableTime(
   meta: Meta,
   engine: "chrome-cdp" | "playwright" | "tlsclient",
 ): number {
+  const hasBranding = hasFormatOfType(meta.options.formats, "branding");
+  const defaultWait = hasBranding ? BRANDING_DEFAULT_WAIT_MS : 0;
+  const effectiveWait =
+    meta.options.waitFor != null && meta.options.waitFor !== 0
+      ? meta.options.waitFor
+      : defaultWait;
+
   if (engine === "tlsclient") {
     return 15000;
   } else if (engine === "playwright") {
     return (meta.options.waitFor ?? 0) + 30000;
   } else {
     return (
-      (meta.options.waitFor ?? 0) +
+      effectiveWait +
       (meta.options.actions?.reduce(
         (a, x) => (x.type === "wait" ? (x.milliseconds ?? 2500) + a : 250 + a),
         0,

@@ -1,4 +1,5 @@
 import { Response } from "express";
+import { config } from "../../config";
 import { v7 as uuidv7 } from "uuid";
 import {
   MapDocument,
@@ -18,7 +19,7 @@ import {
 } from "../../lib/validateUrl";
 import { fireEngineMap } from "../../search/fireEngine";
 import { billTeam } from "../../services/billing/credit_billing";
-import { logJob } from "../../services/logging/log_job";
+import { logMap, logRequest } from "../../services/logging/log_job";
 import { performCosineSimilarity } from "../../lib/map-cosine";
 import { logger } from "../../lib/logger";
 import Redis from "ioredis";
@@ -31,7 +32,7 @@ import { MapTimeoutError } from "../../lib/error";
 import { checkPermissions } from "../../lib/permissions";
 
 configDotenv();
-const redis = new Redis(process.env.REDIS_URL!);
+const redis = new Redis(config.REDIS_URL!);
 
 // Max Links that "Smart /map" can return
 const MAX_FIRE_ENGINE_RESULTS = 500;
@@ -94,8 +95,11 @@ export async function getMapResults({
   filterByPath = true,
   flags,
   useIndex = true,
+  ignoreCache = false,
   timeout,
   location,
+  headers,
+  id: providedId,
 }: {
   url: string;
   search?: string;
@@ -112,14 +116,17 @@ export async function getMapResults({
   filterByPath?: boolean;
   flags: TeamFlags;
   useIndex?: boolean;
+  ignoreCache?: boolean;
   timeout?: number;
   location?: ScrapeOptions["location"];
+  headers?: Record<string, string>;
+  id?: string;
 }): Promise<MapResult> {
-  const id = uuidv7();
+  const id = providedId ?? uuidv7();
   let links: string[] = [url];
   let mapResults: MapDocument[] = [];
 
-  const zeroDataRetention = flags?.forceZDR ?? false;
+  const zeroDataRetention = flags?.forceZDR || false;
 
   const sc: StoredCrawl = {
     originUrl: url,
@@ -130,6 +137,7 @@ export async function getMapResults({
     },
     scrapeOptions: scrapeOptions.parse({
       ...(location ? { location } : {}),
+      ...(headers ? { headers } : {}),
     }),
     internalOptions: { teamId },
     team_id: teamId,
@@ -156,6 +164,7 @@ export async function getMapResults({
       timeout ?? 30000,
       abort,
       mock,
+      ignoreCache ? 0 : undefined,
     );
     if (sitemap > 0) {
       links = links
@@ -186,7 +195,7 @@ export async function getMapResults({
     );
 
     const cacheKey = `fireEngineMap:${mapUrl}`;
-    const cachedResult = await redis.get(cacheKey);
+    const cachedResult = ignoreCache ? null : await redis.get(cacheKey);
 
     let allResults: any[] = [];
     let pagePromises: Promise<any>[] = [];
@@ -242,6 +251,8 @@ export async function getMapResults({
           false,
           timeout ?? 30000,
           abort,
+          undefined,
+          ignoreCache ? 0 : undefined,
         );
       } catch (e) {
         logger.warn("tryGetSitemap threw an error", { error: e });
@@ -376,10 +387,25 @@ export async function mapController(
 
   const middlewareTime = controllerStartTime - middlewareStartTime;
 
+  const mapId = uuidv7();
+
   logger.info("Map request", {
     request: req.body,
     originalRequest,
     teamId: req.auth.team_id,
+    mapId,
+  });
+
+  await logRequest({
+    id: mapId,
+    kind: "map",
+    api_version: "v1",
+    team_id: req.auth.team_id,
+    origin: req.body.origin ?? "api",
+    integration: req.body.integration,
+    target_hint: req.body.url,
+    zeroDataRetention: false, // not supported for map
+    api_key_id: req.acuc?.api_key_id ?? null,
   });
 
   let result: Awaited<ReturnType<typeof getMapResults>>;
@@ -402,8 +428,11 @@ export async function mapController(
         filterByPath: req.body.filterByPath !== false,
         flags: req.acuc?.flags ?? null,
         useIndex: req.body.useIndex,
+        ignoreCache: req.body.ignoreCache,
         timeout: req.body.timeout,
         location: req.body.location,
+        headers: req.body.headers,
+        id: mapId,
       }),
       ...(req.body.timeout !== undefined
         ? [
@@ -446,22 +475,23 @@ export async function mapController(
   });
 
   // Log the job
-  logJob({
-    job_id: result.job_id,
-    success: result.links.length > 0,
-    message: "Map completed",
-    num_docs: result.links.length,
-    docs: result.links,
-    time_taken: result.time_taken,
-    team_id: req.auth.team_id,
-    mode: "map",
+  logMap({
+    id: result.job_id,
+    request_id: result.job_id,
     url: req.body.url,
-    crawlerOptions: {},
-    scrapeOptions: {},
-    origin: req.body.origin ?? "api",
-    integration: req.body.integration,
-    num_tokens: 0,
-    credits_billed: 1,
+    team_id: req.auth.team_id,
+    options: {
+      search: req.body.search,
+      limit: req.body.limit,
+      ignoreSitemap: req.body.ignoreSitemap,
+      includeSubdomains: req.body.includeSubdomains,
+      filterByPath: req.body.filterByPath !== false,
+      useIndex: req.body.useIndex,
+      timeout: req.body.timeout,
+      location: req.body.location,
+    },
+    results: result.links,
+    credits_cost: 1,
     zeroDataRetention: false, // not supported
   });
 

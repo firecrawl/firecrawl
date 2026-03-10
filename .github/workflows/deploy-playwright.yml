@@ -1,34 +1,81 @@
 name: Deploy Playwright to GHCR
 
-env:
-  DOTNET_VERSION: '6.0.x'
-
 on:
   push:
     branches:
       - main
     paths:
       - apps/playwright-service-ts/**
+      - .github/workflows/deploy-playwright.yml
   workflow_dispatch:
 
 jobs:
-      push-app-image:
-        runs-on: ubuntu-latest
-        defaults:
-          run:
-            working-directory: './apps/playwright-service-ts'
-        steps:
-          - name: 'Checkout GitHub Action'
-            uses: actions/checkout@main
+  build:
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      matrix:
+        include:
+          - platform: linux/amd64
+            runner: blacksmith-4vcpu-ubuntu-2404
+          - platform: linux/arm64
+            runner: blacksmith-4vcpu-ubuntu-2404-arm
+    defaults:
+      run:
+        working-directory: './apps/playwright-service-ts'
+    steps:
+      - name: 'Checkout GitHub Action'
+        uses: actions/checkout@main
 
-          - name: 'Login to GitHub Container Registry'
-            uses: docker/login-action@v3
-            with:
-              registry: ghcr.io
-              username: ${{github.actor}}
-              password: ${{secrets.GITHUB_TOKEN}}
+      - name: Setup Blacksmith Builder
+        uses: useblacksmith/setup-docker-builder@v1
 
-          - name: 'Build Inventory Image'
-            run: |
-              docker build . --tag ghcr.io/firecrawl/playwright-service:latest
-              docker push ghcr.io/firecrawl/playwright-service:latest
+      - name: 'Login to GitHub Container Registry'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{github.actor}}
+          password: ${{secrets.GITHUB_TOKEN}}
+
+      - name: Lowercase Repo Owner
+        run: |
+          echo "REPO_OWNER=${GITHUB_REPOSITORY_OWNER,,}" >>${GITHUB_ENV}
+        env:
+          GITHUB_REPOSITORY_OWNER: '${{ github.repository_owner }}'
+
+      - name: Extract platform suffix
+        run: |
+          platform=${{ matrix.platform }}
+          echo "PLATFORM_SUFFIX=${platform//\//-}" >> $GITHUB_ENV
+
+      - name: 'Build and Push Image'
+        uses: useblacksmith/build-push-action@v2
+        with:
+          context: ./apps/playwright-service-ts
+          push: true
+          tags: ghcr.io/${{ env.REPO_OWNER }}/playwright-service:${{ env.PLATFORM_SUFFIX }}
+          platforms: ${{ matrix.platform }}
+          provenance: false
+
+  manifest:
+    runs-on: blacksmith-2vcpu-ubuntu-2404
+    needs: build
+    steps:
+      - name: 'Login to GitHub Container Registry'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{github.actor}}
+          password: ${{secrets.GITHUB_TOKEN}}
+
+      - name: Lowercase Repo Owner
+        run: |
+          echo "REPO_OWNER=${GITHUB_REPOSITORY_OWNER,,}" >>${GITHUB_ENV}
+        env:
+          GITHUB_REPOSITORY_OWNER: '${{ github.repository_owner }}'
+
+      - name: 'Create and Push Multi-Arch Manifest'
+        run: |
+          docker manifest create ghcr.io/${{ env.REPO_OWNER }}/playwright-service:latest \
+            ghcr.io/${{ env.REPO_OWNER }}/playwright-service:linux-amd64 \
+            ghcr.io/${{ env.REPO_OWNER }}/playwright-service:linux-arm64
+          docker manifest push ghcr.io/${{ env.REPO_OWNER }}/playwright-service:latest

@@ -6,10 +6,12 @@ import {
   type Document,
   type CrawlOptions,
   type PaginationConfig,
+  JobTimeoutError,
+  SdkError,
 } from "../types";
 import { HttpClient } from "../utils/httpClient";
 import { ensureValidScrapeOptions } from "../utils/validation";
-import { normalizeAxiosError, throwForBadResponse } from "../utils/errorHandler";
+import { normalizeAxiosError, throwForBadResponse, isRetryableError } from "../utils/errorHandler";
 import type { HttpClient as _Http } from "../utils/httpClient";
 import { fetchAllPages } from "../utils/pagination";
 
@@ -26,14 +28,17 @@ function prepareCrawlPayload(request: CrawlRequest): Record<string, unknown> {
   if (request.maxDiscoveryDepth != null) data.maxDiscoveryDepth = request.maxDiscoveryDepth;
   if (request.sitemap != null) data.sitemap = request.sitemap;
   if (request.ignoreQueryParameters != null) data.ignoreQueryParameters = request.ignoreQueryParameters;
+  if (request.deduplicateSimilarURLs != null) data.deduplicateSimilarURLs = request.deduplicateSimilarURLs;
   if (request.limit != null) data.limit = request.limit;
   if (request.crawlEntireDomain != null) data.crawlEntireDomain = request.crawlEntireDomain;
   if (request.allowExternalLinks != null) data.allowExternalLinks = request.allowExternalLinks;
   if (request.allowSubdomains != null) data.allowSubdomains = request.allowSubdomains;
   if (request.delay != null) data.delay = request.delay;
   if (request.maxConcurrency != null) data.maxConcurrency = request.maxConcurrency;
+  if (request.regexOnFullURL != null) data.regexOnFullURL = request.regexOnFullURL;
   if (request.webhook != null) data.webhook = request.webhook;
   if (request.integration != null && request.integration.trim()) data.integration = request.integration.trim();
+  if (request.origin) data.origin = request.origin;
   if (request.scrapeOptions) {
     ensureValidScrapeOptions(request.scrapeOptions);
     data.scrapeOptions = request.scrapeOptions;
@@ -114,12 +119,37 @@ export async function cancelCrawl(http: HttpClient, jobId: string): Promise<bool
 
 export async function waitForCrawlCompletion(http: HttpClient, jobId: string, pollInterval = 2, timeout?: number): Promise<CrawlJob> {
   const start = Date.now();
+  
   while (true) {
-    const status = await getCrawlStatus(http, jobId);
-    if (["completed", "failed", "cancelled"].includes(status.status)) return status;
-    if (timeout != null && Date.now() - start > timeout * 1000) {
-      throw new Error(`Crawl job ${jobId} did not complete within ${timeout} seconds`);
+    try {
+      const status = await getCrawlStatus(http, jobId);
+      
+      if (["completed", "failed", "cancelled"].includes(status.status)) {
+        return status;
+      }
+    } catch (err: any) {
+      // Don't retry on permanent errors (4xx) - re-throw immediately with jobId context
+      if (!isRetryableError(err)) {
+        // Create new error with jobId for better debugging (non-retryable errors like 404)
+        if (err instanceof SdkError) {
+          const errorWithJobId = new SdkError(
+            err.message,
+            err.status,
+            err.code,
+            err.details,
+            jobId
+          );
+          throw errorWithJobId;
+        }
+        throw err;
+      }
+      // Otherwise, retry after delay - error might be transient (network issue, timeout, 5xx, etc.)
     }
+
+    if (timeout != null && Date.now() - start > timeout * 1000) {
+      throw new JobTimeoutError(jobId, timeout, 'crawl');
+    }
+    
     await new Promise((r) => setTimeout(r, Math.max(1000, pollInterval * 1000)));
   }
 }

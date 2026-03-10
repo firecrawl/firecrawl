@@ -42,7 +42,7 @@ class TestCrawlParamsData:
         assert data.include_paths is None
         assert data.exclude_paths is None
         assert data.max_discovery_depth is None
-        assert data.ignore_sitemap is False
+        assert data.sitemap is None
         assert data.limit is None
         assert data.crawl_entire_domain is False
         assert data.allow_external_links is False

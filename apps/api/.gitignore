@@ -13,3 +13,9 @@ dump.rdb
 .env.*
 
 firecrawl.log
+
+test-results/
+
+# Branding script build artifacts (dev-only, generated at runtime)
+branding-script.pasteable.js
+bundle.generated.ts

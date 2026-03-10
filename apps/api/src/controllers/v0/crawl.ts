@@ -30,10 +30,11 @@ import * as Sentry from "@sentry/node";
 import { getJobPriority } from "../../lib/job-priority";
 import { url as urlSchema } from "../v1/types";
 import { ZodError } from "zod";
-import { BLOCKLISTED_URL_MESSAGE } from "../../lib/strings";
+import { UNSUPPORTED_SITE_MESSAGE } from "../../lib/strings";
 import { fromV0ScrapeOptions } from "../v2/types";
 import { isSelfHosted } from "../../lib/deployment";
 import { crawlGroup } from "../../services/worker/nuq";
+import { logRequest } from "../../services/logging/log_job";
 
 export async function crawlController(req: Request, res: Response) {
   try {
@@ -52,6 +53,18 @@ export async function crawlController(req: Request, res: Response) {
     }
 
     const id = uuidv7();
+
+    await logRequest({
+      id,
+      kind: "crawl",
+      api_version: "v0",
+      team_id,
+      origin: req.body.origin ?? "api",
+      integration: req.body.integration,
+      target_hint: req.body.url ?? "",
+      zeroDataRetention: false, // not supported on v0
+      api_key_id: chunk?.api_key_id ?? null,
+    });
 
     redisEvictConnection.sadd("teams_using_v0", team_id).catch(error =>
       logger.error("Failed to add team to teams_using_v0", {
@@ -143,7 +156,7 @@ export async function crawlController(req: Request, res: Response) {
 
     if (isUrlBlocked(url, auth.chunk?.flags ?? null)) {
       return res.status(403).json({
-        error: BLOCKLISTED_URL_MESSAGE,
+        error: UNSUPPORTED_SITE_MESSAGE,
       });
     }
 

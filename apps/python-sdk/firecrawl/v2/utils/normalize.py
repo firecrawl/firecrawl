@@ -48,6 +48,8 @@ def _map_metadata_keys(md: Dict[str, Any]) -> Dict[str, Any]:
         "cacheState": "cache_state",
         "cachedAt": "cached_at",
         "creditsUsed": "credits_used",
+        "concurrencyLimited": "concurrency_limited",
+        "concurrencyQueueDurationMs": "concurrency_queue_duration_ms",
     }
 
     out: Dict[str, Any] = {}

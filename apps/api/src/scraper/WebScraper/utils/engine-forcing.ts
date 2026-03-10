@@ -3,6 +3,7 @@ import { parse } from "tldts";
 import { Engine } from "../../scrapeURL/engines";
 import { logger } from "../../../lib/logger";
 
+import { config } from "../../../config";
 configDotenv();
 
 type EngineForcingMapping = {
@@ -17,7 +18,7 @@ let engineMappings: EngineForcingMapping | null = null;
  * Example: {"example.com": "playwright", "*.google.com": ["fire-engine;chrome-cdp", "playwright"]}
  */
 export function initializeEngineForcing() {
-  const envVar = process.env.FORCED_ENGINE_DOMAINS;
+  const envVar = config.FORCED_ENGINE_DOMAINS;
 
   if (!envVar || envVar.trim() === "") {
     engineMappings = {};

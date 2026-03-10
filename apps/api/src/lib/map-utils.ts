@@ -24,7 +24,7 @@ import { performCosineSimilarityV2 } from "./map-cosine";
 import { Logger } from "winston";
 
 // Max Links that "Smart /map" can return
-const MAX_FIRE_ENGINE_RESULTS = 500;
+const MAX_FIRE_ENGINE_RESULTS = 100;
 
 export interface MapResult {
   success: boolean;
@@ -90,8 +90,11 @@ export async function getMapResults({
   filterByPath = true,
   flags,
   useIndex = true,
+  ignoreCache = false,
   location,
+  headers,
   maxFireEngineResults = MAX_FIRE_ENGINE_RESULTS,
+  id: providedId,
 }: {
   url: string;
   search?: string;
@@ -107,8 +110,11 @@ export async function getMapResults({
   filterByPath?: boolean;
   flags: TeamFlags | null;
   useIndex?: boolean;
+  ignoreCache?: boolean;
   location?: ScrapeOptions["location"];
+  headers?: Record<string, string>;
   maxFireEngineResults?: number;
+  id?: string;
 }): Promise<MapResult> {
   const functionStartTime = Date.now();
 
@@ -122,9 +128,9 @@ export async function getMapResults({
     url = urlObj.toString();
   }
 
-  const id = uuidv7();
+  const id = providedId ?? uuidv7();
   let mapResults: MapDocument[] = [];
-  const zeroDataRetention = flags?.forceZDR ?? false;
+  const zeroDataRetention = flags?.forceZDR || false;
 
   const sc: StoredCrawl = {
     originUrl: url,
@@ -135,6 +141,7 @@ export async function getMapResults({
     },
     scrapeOptions: scrapeOptions.parse({
       ...(location ? { location } : {}),
+      ...(headers ? { headers } : {}),
     }),
     internalOptions: { teamId },
     team_id: teamId,
@@ -166,6 +173,7 @@ export async function getMapResults({
       crawlerOptions.timeout ?? 30000,
       abort,
       crawlerOptions.useMock,
+      ignoreCache ? 0 : undefined,
     );
 
     if (sitemap > 0) {
@@ -198,32 +206,39 @@ export async function getMapResults({
     );
 
     const cacheKey = `fireEngineMap:${mapUrl}`;
-    const cachedResult = await redisEvictConnection.get(cacheKey);
+    const cachedResult = ignoreCache
+      ? null
+      : await redisEvictConnection.get(cacheKey);
 
-    let pagePromises: (Promise<any> | any)[];
-
-    if (cachedResult) {
-      pagePromises = JSON.parse(cachedResult);
-    } else {
-      const fetchPage = async (page: number) => {
-        return await fireEngineMap(
-          mapUrl,
-          {
-            numResults: resultsPerPage,
-            page: page,
-          },
-          abort,
-        );
-      };
-
-      pagePromises = Array.from({ length: maxPages }, (_, i) =>
-        fetchPage(i + 1),
+    const fetchPage = async (page: number) => {
+      return await fireEngineMap(
+        mapUrl,
+        {
+          numResults: resultsPerPage,
+          page,
+        },
+        abort,
       );
-    }
+    };
+
+    const fetchAllPages = async (): Promise<any[]> => {
+      if (cachedResult) {
+        return JSON.parse(cachedResult);
+      }
+      // if page 1 has no results, don't fetch remaining pages
+      const page1Result = await fetchPage(1);
+      if (!page1Result || page1Result.length === 0 || maxPages === 1) {
+        return [page1Result];
+      }
+      const remainingPages = await Promise.all(
+        Array.from({ length: maxPages - 1 }, (_, i) => fetchPage(i + 2)),
+      );
+      return [page1Result, ...remainingPages];
+    };
 
     const [indexResults, searchResults] = await Promise.all([
       queryIndex(url, limit, useIndex, includeSubdomains),
-      Promise.all(pagePromises),
+      fetchAllPages(),
     ]);
 
     if (!zeroDataRetention) {
@@ -253,6 +268,8 @@ export async function getMapResults({
           false,
           crawlerOptions.timeout ?? 30000,
           abort,
+          undefined,
+          ignoreCache ? 0 : undefined,
         );
       } catch (e) {
         // Silently handle sitemap errors

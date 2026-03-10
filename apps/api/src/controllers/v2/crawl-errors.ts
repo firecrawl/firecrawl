@@ -1,4 +1,5 @@
 import { Response } from "express";
+import { config } from "../../config";
 import {
   CrawlErrorsResponse,
   CrawlStatusParams,
@@ -72,22 +73,23 @@ export async function crawlErrorsController(
         "crawl:" + req.params.jobId + ":robots_blocked",
       ),
     });
-  } else if (process.env.USE_DB_AUTHENTICATION === "true") {
-    const { data: crawlJobs, error: crawlJobError } = await supabase_rr_service
-      .from("firecrawl_jobs")
+  } else if (config.USE_DB_AUTHENTICATION) {
+    // Check the requests table for the crawl/batch scrape request
+    const { data: request, error: requestError } = await supabase_rr_service
+      .from("requests")
       .select("*")
-      .eq("job_id", req.params.jobId)
+      .eq("id", req.params.jobId)
       .limit(1)
       .throwOnError();
 
-    if (crawlJobError) {
-      _logger.error("Error getting crawl job", { error: crawlJobError });
-      throw crawlJobError;
+    if (requestError) {
+      _logger.error("Error getting request", { error: requestError });
+      throw requestError;
     }
 
-    const crawlJob = crawlJobs[0];
+    const requestData = request?.[0];
 
-    if (crawlJob && crawlJob.team_id !== req.auth.team_id) {
+    if (requestData && requestData.team_id !== req.auth.team_id) {
       return res.status(403).json({ success: false, error: "Forbidden" });
     }
 
@@ -95,50 +97,53 @@ export async function crawlErrorsController(
     const crawlTtlMs = crawlTtlHours * 60 * 60 * 1000;
 
     if (
-      crawlJob &&
-      new Date().valueOf() - new Date(crawlJob.date_added).valueOf() >
+      requestData &&
+      new Date().valueOf() - new Date(requestData.created_at).valueOf() >
         crawlTtlMs
     ) {
       return res.status(404).json({ success: false, error: "Job expired" });
     }
 
-    if (!crawlJobs || crawlJobs.length === 0) {
+    if (!request || request.length === 0) {
       return res.status(404).json({ success: false, error: "Job not found" });
     }
 
-    const { data: failedJobs, error: failedJobsError } =
+    // Get failed scrapes from the scrapes table
+    const { data: failedScrapes, error: failedScrapesError } =
       await supabase_rr_service
-        .from("firecrawl_jobs")
+        .from("scrapes")
         .select("*")
-        .eq("crawl_id", req.params.jobId)
+        .eq("request_id", req.params.jobId)
         .eq("team_id", req.auth.team_id)
         .eq("success", false)
         .throwOnError();
 
-    if (failedJobsError) {
-      _logger.error("Error getting failed jobs", { error: failedJobsError });
-      throw failedJobsError;
+    if (failedScrapesError) {
+      _logger.error("Error getting failed scrapes", {
+        error: failedScrapesError,
+      });
+      throw failedScrapesError;
     }
 
     res.status(200).json({
-      errors: (failedJobs || []).map(job => {
+      errors: (failedScrapes || []).map(scrape => {
         const error = deserializeTransportableError(
-          job.message,
+          scrape.error,
         ) as TransportableError | null;
         return {
-          id: job.job_id,
+          id: scrape.id,
           timestamp:
-            job.finishedOn !== undefined
-              ? new Date(job.finishedOn).toISOString()
+            scrape.created_at !== undefined
+              ? new Date(scrape.created_at).toISOString()
               : undefined,
-          url: job.url,
+          url: scrape.url,
           ...(error
             ? {
                 code: error.code,
                 error: error.message,
               }
             : {
-                error: job.message,
+                error: scrape.error,
               }),
         };
       }),

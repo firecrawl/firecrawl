@@ -1,4 +1,5 @@
 import * as undici from "undici";
+import { config } from "../../config";
 import { JSDOM } from "jsdom";
 import { SearchV2Response, WebSearchResult } from "../../lib/entities";
 import { logger } from "../../lib/logger";
@@ -224,7 +225,7 @@ export async function ddgSearch(
     return { web: results.slice(0, num_results) };
   } catch (error: any) {
     if (error instanceof DDGAntiBotError) {
-      if (process.env.TEST_SUITE_SELF_HOSTED) {
+      if (config.TEST_SUITE_SELF_HOSTED) {
         logger.warn(
           "DuckDuckGo: Blocked by anti-bot measures, returning dummy page for test suite...",
           { term },

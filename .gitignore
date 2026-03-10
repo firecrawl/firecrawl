@@ -53,3 +53,8 @@ apps/python-sdk/.venv/
 
 /apps/go-html-to-md-service/.gomodcache/
 target/
+
+.cursor/
+
+# local files
+_local/

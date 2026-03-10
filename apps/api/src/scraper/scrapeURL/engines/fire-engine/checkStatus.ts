@@ -14,7 +14,7 @@ import {
   ProxySelectionError,
 } from "../../error";
 import { MockState } from "../../lib/mock";
-import { fireEngineStagingURL, fireEngineURL } from "./scrape";
+import { fireEngineURL } from "./scrape";
 import { getDocFromGCS } from "../../../../lib/gcs-jobs";
 import { Meta } from "../..";
 
@@ -102,6 +102,7 @@ const successSchema = z.object({
 
   usedMobileProxy: z.boolean().optional(),
   youtubeTranscriptContent: z.any().optional(),
+  timezone: z.string().optional(),
 });
 
 export type FireEngineCheckStatusSuccess = z.infer<typeof successSchema>;
@@ -139,10 +140,10 @@ export async function fireEngineCheckStatus(
   jobId: string,
   mock: MockState | null,
   abort?: AbortSignal,
-  production = true,
+  baseUrl: string = fireEngineURL,
 ): Promise<FireEngineCheckStatusSuccess> {
   let status = await robustFetch({
-    url: `${production ? fireEngineURL : fireEngineStagingURL}/scrape/${jobId}`,
+    url: `${baseUrl}/scrape/${jobId}`,
     method: "GET",
     logger: logger.child({ method: "fireEngineCheckStatus/robustFetch" }),
     headers: {},
@@ -164,6 +165,14 @@ export async function fireEngineCheckStatus(
   const failedParse = failedSchema.safeParse(status);
 
   if (successParse.success) {
+    // Check if this is an unsupported media type error (e.g., binary file)
+    if (
+      successParse.data.pageStatusCode === 415 &&
+      successParse.data.pageError?.startsWith("Unsupported Media Type:")
+    ) {
+      throw new UnsupportedFileError(successParse.data.pageError);
+    }
+
     logger.debug("Scrape succeeded!", { jobId });
     return successParse.data;
   } else if (processingParse.success) {

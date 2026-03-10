@@ -15,26 +15,30 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        engine: ["playwright", "fetch"] # unsure if we need both of these
-        proxy: ["proxy", "no-proxy"] # proxy / no-proxy run different tests, keep both
-        search: ["searxng"] # disabled google for now, should be fine with just Searxng
-        ai: ["openai"] # AI only should be fine, as it simply adds tests, if non-AI fails, AI will fail.
+        engine: ['playwright', 'fetch'] # unsure if we need both of these
+        proxy: ['proxy', 'no-proxy'] # proxy / no-proxy run different tests, keep both
+        search: ['searxng'] # disabled google for now, should be fine with just Searxng
+        ai: ['openai'] # AI only should be fine, as it simply adds tests, if non-AI fails, AI will fail.
 
         # legacy matrix:
         # engine: ["playwright", "fetch"]
         # proxy: ["proxy", "no-proxy"]
         # search: ["searxng", "google"]
         # ai: ["openai", "no-ai"]
-    runs-on: big-runner
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     services:
       redis:
         image: redis
         ports:
           - 6379:6379
+      rabbitmq:
+        image: rabbitmq
+        ports:
+          - 5672:5672
     env:
       HOST: 0.0.0.0
       TEST_SUITE_SELF_HOSTED: true
-      TEST_SUITE_WEBSITE: ${{ matrix.proxy == 'no-proxy' && 'http://127.0.0.1:4321' || '' }}
+      TEST_SUITE_WEBSITE: http://127.0.0.1:4321
       OPENAI_API_KEY: ${{ matrix.ai == 'openai' && secrets.OPENAI_API_KEY || '' }}
       SEARXNG_ENDPOINT: ${{ matrix.search == 'searxng' && 'http://localhost:3434' || '' }}
       PLAYWRIGHT_MICROSERVICE_URL: ${{ matrix.engine == 'playwright' && 'http://localhost:3003/scrape' || '' }}
@@ -42,8 +46,10 @@ jobs:
       PROXY_USERNAME: ${{ matrix.proxy == 'proxy' && secrets.PROXY_USERNAME || '' }}
       PROXY_PASSWORD: ${{ matrix.proxy == 'proxy' && secrets.PROXY_PASSWORD || '' }}
       NUQ_DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
+      NUQ_RABBITMQ_URL: amqp://localhost:5672
       USE_GO_MARKDOWN_PARSER: true
       ALLOW_LOCAL_WEBHOOKS: true
+      FIRECRAWL_LOG_TO_FILE: true
     steps:
       - uses: actions/checkout@v5
 
@@ -62,7 +68,7 @@ jobs:
             apps/api/pnpm-lock.yaml
             apps/test-site/pnpm-lock.yaml
             apps/playwright-service-ts/pnpm-lock.yaml
-      
+
       - run: pnpm fetch
         working-directory: apps/api
       - run: pnpm fetch
@@ -99,6 +105,18 @@ jobs:
           go-version: 1.24
           cache-dependency-path: apps/api/sharedLibs/go-html-to-md/go.sum
 
+      - name: Verify go.sum is up to date (sharedLibs/go-html-to-md)
+        run: |
+          cd apps/api/sharedLibs/go-html-to-md
+          go mod tidy
+          git diff --exit-code go.mod go.sum || (echo "go.mod/go.sum is out of sync -- run 'go mod tidy' and commit" && exit 1)
+
+      - name: Verify go.sum is up to date (go-html-to-md-service)
+        run: |
+          cd apps/go-html-to-md-service
+          go mod tidy
+          git diff --exit-code go.mod go.sum || (echo "go.mod/go.sum is out of sync -- run 'go mod tidy' and commit" && exit 1)
+
       - name: Restore Go lib
         id: golib_restore
         uses: actions/cache/restore@v4
@@ -110,7 +128,6 @@ jobs:
         if: steps.golib_restore.outputs.cache-hit != 'true'
         run: |
           cd apps/api/sharedLibs/go-html-to-md
-          go mod tidy
           go build -o libhtml-to-markdown.so -buildmode=c-shared html-to-markdown.go
 
       - name: Cache Go lib
@@ -159,12 +176,12 @@ jobs:
           docker run -d -p 3434:8080 -v "${PWD}/searxng:/etc/searxng" --name searxng searxng/searxng
           pnpx wait-on tcp:3434 -t 30s
         working-directory: ./
-        
+
       - name: Install API dependencies
         run: pnpm install --frozen-lockfile --ignore-scripts
         working-directory: apps/api
         env:
-          npm_config_ignore_scripts: "true"
+          npm_config_ignore_scripts: 'true'
 
       - name: Install test site dependencies
         run: pnpm install --frozen-lockfile
@@ -185,7 +202,7 @@ jobs:
         working-directory: ./apps/playwright-service-ts
         env:
           PORT: 3003
-        
+
       - name: Run Docker Postgres
         run: |
           docker build -t firecrawl/nuq-postgres:latest ./apps/nuq-postgres
@@ -195,13 +212,23 @@ jobs:
         run: pnpm harness pnpm test:snips
         working-directory: apps/api
         env:
-          npm_config_ignore_scripts: "true" # required currently to prevent re-building cached native lib
-      
+          npm_config_ignore_scripts: 'true' # required currently to prevent re-building cached native lib
+
+      - name: Publish test report
+        if: always()
+        uses: dorny/test-reporter@v1
+        with:
+          name: Test Report (${{ matrix.engine }}, ${{ matrix.proxy }}, ${{ matrix.search }}, ${{ matrix.ai }})
+          path: apps/api/test-results/junit.xml
+          reporter: jest-junit
+          fail-on-error: true
+
       - name: Copy log files
         if: always()
         run: |
           mkdir -p logs
-          cp ./apps/api/firecrawl.log logs/firecrawl.log
+          cp ./apps/api/firecrawl-app.log logs/firecrawl.log || true
+          cp ./apps/api/firecrawl-worker.log logs/firecrawl-worker.log || true
 
       - name: Copy SearXNG logs
         if: always() && matrix.search == 'searxng'
@@ -227,7 +254,6 @@ jobs:
   # prod-test:
   #   name: Production environment tests
   #   runs-on: big-runner
-  #   needs: audit
   #   services:
   #     redis:
   #       image: redis
@@ -362,7 +388,7 @@ jobs:
   #       working-directory: apps/api
   #       env:
   #         npm_config_ignore_scripts: "true"
-      
+
   #     - name: Run Docker Postgres
   #       run: |
   #         docker build -t firecrawl/nuq-postgres:latest ./apps/nuq-postgres

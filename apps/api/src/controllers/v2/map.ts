@@ -4,11 +4,10 @@ import {
   RequestWithAuth,
   MapRequest,
   MapResponse,
-  MAX_MAP_LIMIT,
 } from "./types";
 import { configDotenv } from "dotenv";
 import { billTeam } from "../../services/billing/credit_billing";
-import { logJob } from "../../services/logging/log_job";
+import { logMap, logRequest } from "../../services/logging/log_job";
 import { logger as _logger } from "../../lib/logger";
 import { MapTimeoutError } from "../../lib/error";
 import { checkPermissions } from "../../lib/permissions";
@@ -47,10 +46,25 @@ export async function mapController(
 
   const middlewareTime = controllerStartTime - middlewareStartTime;
 
+  const mapId = uuidv7();
+
   logger.info("Map request", {
     request: req.body,
     originalRequest,
     teamId: req.auth.team_id,
+    mapId,
+  });
+
+  await logRequest({
+    id: mapId,
+    kind: "map",
+    api_version: "v2",
+    team_id: req.auth.team_id,
+    origin: req.body.origin ?? "api",
+    integration: req.body.integration,
+    target_hint: req.body.url,
+    zeroDataRetention: false, // not supported for map
+    api_key_id: req.acuc?.api_key_id ?? null,
   });
 
   let result: MapResult;
@@ -76,7 +90,10 @@ export async function mapController(
         filterByPath: req.body.filterByPath !== false,
         flags: req.acuc?.flags ?? null,
         useIndex: req.body.useIndex,
+        ignoreCache: req.body.ignoreCache,
         location: req.body.location,
+        headers: req.body.headers,
+        id: mapId,
       }),
       ...(req.body.timeout !== undefined
         ? [
@@ -118,36 +135,22 @@ export async function mapController(
     );
   });
 
-  // Log the job
-  const mapCrawlerOptions = {
-    search: req.body.search,
-    sitemap: req.body.sitemap,
-    includeSubdomains: req.body.includeSubdomains,
-    ignoreQueryParameters: req.body.ignoreQueryParameters,
-    limit: req.body.limit,
-    timeout: req.body.timeout,
-  };
-
-  const mapScrapeOptions = {
-    location: req.body.location,
-  };
-
-  logJob({
-    job_id: result.job_id,
-    success: result.mapResults.length > 0,
-    message: "Map completed",
-    num_docs: result.mapResults.length,
-    docs: result.mapResults,
-    time_taken: result.time_taken,
-    team_id: req.auth.team_id,
-    mode: "map",
+  logMap({
+    id: result.job_id,
+    request_id: result.job_id,
     url: req.body.url,
-    crawlerOptions: mapCrawlerOptions,
-    scrapeOptions: mapScrapeOptions,
-    origin: req.body.origin ?? "api",
-    integration: req.body.integration,
-    num_tokens: 0,
-    credits_billed: 1,
+    team_id: req.auth.team_id,
+    options: {
+      search: req.body.search,
+      sitemap: req.body.sitemap,
+      includeSubdomains: req.body.includeSubdomains,
+      ignoreQueryParameters: req.body.ignoreQueryParameters,
+      limit: req.body.limit,
+      timeout: req.body.timeout,
+      location: req.body.location,
+    },
+    results: result.mapResults,
+    credits_cost: 1,
     zeroDataRetention: false, // not supported
   }).catch(error => {
     logger.error(`Failed to log job for team ${req.auth.team_id}: ${error}`);

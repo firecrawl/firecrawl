@@ -117,9 +117,12 @@ class DocumentMetadata(BaseModel):
     num_pages: Optional[int] = None
     content_type: Optional[str] = None
     proxy_used: Optional[Literal["basic", "stealth"]] = None
+    timezone: Optional[str] = None
     cache_state: Optional[Literal["hit", "miss"]] = None
     cached_at: Optional[str] = None
     credits_used: Optional[int] = None
+    concurrency_limited: Optional[bool] = None
+    concurrency_queue_duration_ms: Optional[int] = None
 
     # Error information
     error: Optional[str] = None
@@ -191,6 +194,7 @@ class DocumentMetadata(BaseModel):
             "content_type",
             "cached_at",
             "error",
+            "timezone",
         }
         for k, v in list(data.items()):
             if isinstance(v, list) and k in single_str_fields:
@@ -227,7 +231,7 @@ class DocumentMetadata(BaseModel):
 class AgentOptions(BaseModel):
     """Configuration for the agent in extract operations."""
 
-    model: Literal["FIRE-1"] = "FIRE-1"
+    model: Literal["FIRE-1", "v3-beta"] = "FIRE-1"
 
 
 class AttributeResult(BaseModel):
@@ -314,6 +318,23 @@ class WebhookConfig(BaseModel):
     headers: Optional[Dict[str, str]] = None
     metadata: Optional[Dict[str, str]] = None
     events: Optional[List[Literal["completed", "failed", "page", "started"]]] = None
+
+
+class AgentWebhookConfig(BaseModel):
+    """Configuration for agent webhooks.
+
+    Agent webhooks support different events than crawl webhooks:
+    - started: When the agent job starts
+    - action: When the agent takes an action/step
+    - completed: When the job completes successfully
+    - failed: When the job fails
+    - cancelled: When the job is cancelled
+    """
+
+    url: str
+    headers: Optional[Dict[str, str]] = None
+    metadata: Optional[Dict[str, str]] = None
+    events: Optional[List[Literal["started", "action", "completed", "failed", "cancelled"]]] = None
 
 
 class WebhookData(BaseModel):
@@ -502,8 +523,9 @@ class ScrapeOptions(BaseModel):
     fast_mode: Optional[bool] = None
     use_mock: Optional[str] = None
     block_ads: Optional[bool] = None
-    proxy: Optional[Literal["basic", "stealth", "auto"]] = None
+    proxy: Optional[Literal["basic", "stealth", "enhanced", "auto"]] = None
     max_age: Optional[int] = None
+    min_age: Optional[int] = None
     store_in_cache: Optional[bool] = None
     integration: Optional[str] = None
 
@@ -550,8 +572,9 @@ class CrawlRequest(BaseModel):
     exclude_paths: Optional[List[str]] = None
     include_paths: Optional[List[str]] = None
     max_discovery_depth: Optional[int] = None
-    sitemap: Literal["skip", "include"] = "include"
+    sitemap: Literal["skip", "include", "only"] = "include"
     ignore_query_parameters: bool = False
+    deduplicate_similar_urls: bool = True
     limit: Optional[int] = None
     crawl_entire_domain: bool = False
     allow_external_links: bool = False
@@ -560,6 +583,7 @@ class CrawlRequest(BaseModel):
     max_concurrency: Optional[int] = None
     webhook: Optional[Union[str, WebhookConfig]] = None
     scrape_options: Optional[ScrapeOptions] = None
+    regex_on_full_url: bool = False
     zero_data_retention: bool = False
     integration: Optional[str] = None
 
@@ -642,8 +666,9 @@ class CrawlParamsData(BaseModel):
     include_paths: Optional[List[str]] = None
     exclude_paths: Optional[List[str]] = None
     max_discovery_depth: Optional[int] = None
-    ignore_sitemap: bool = False
+    sitemap: Optional[Literal["skip", "include", "only"]] = None
     ignore_query_parameters: bool = False
+    deduplicate_similar_urls: bool = True
     limit: Optional[int] = None
     crawl_entire_domain: bool = False
     allow_external_links: bool = False
@@ -770,6 +795,76 @@ class ExtractResponse(BaseModel):
     warning: Optional[str] = None
     sources: Optional[Dict[str, Any]] = None
     expires_at: Optional[datetime] = None
+    credits_used: Optional[int] = None
+    tokens_used: Optional[int] = None
+
+
+class AgentResponse(BaseModel):
+    """Response for agent operations (start/status/final)."""
+
+    success: Optional[bool] = None
+    id: Optional[str] = None
+    status: Optional[Literal["processing", "completed", "failed"]] = None
+    data: Optional[Any] = None
+    error: Optional[str] = None
+    model: Optional[Literal["spark-1-pro", "spark-1-mini"]] = None
+    expires_at: Optional[datetime] = None
+    credits_used: Optional[int] = None
+
+
+# Browser types
+class BrowserCreateResponse(BaseModel):
+    """Response from creating a browser session."""
+
+    success: bool
+    id: Optional[str] = None
+    cdp_url: Optional[str] = None
+    live_view_url: Optional[str] = None
+    interactive_live_view_url: Optional[str] = None
+    expires_at: Optional[str] = None
+    error: Optional[str] = None
+
+
+class BrowserExecuteResponse(BaseModel):
+    """Response from executing code in a browser session."""
+
+    success: bool
+    stdout: Optional[str] = None
+    result: Optional[str] = None
+    stderr: Optional[str] = None
+    exit_code: Optional[int] = None
+    killed: Optional[bool] = None
+    error: Optional[str] = None
+
+
+class BrowserDeleteResponse(BaseModel):
+    """Response from deleting a browser session."""
+
+    success: bool
+    session_duration_ms: Optional[int] = None
+    credits_billed: Optional[int] = None
+    error: Optional[str] = None
+
+
+class BrowserSession(BaseModel):
+    """Information about a browser session."""
+
+    id: str
+    status: str
+    cdp_url: str
+    live_view_url: str
+    interactive_live_view_url: Optional[str] = None
+    stream_web_view: bool
+    created_at: str
+    last_activity: str
+
+
+class BrowserListResponse(BaseModel):
+    """Response from listing browser sessions."""
+
+    success: bool
+    sessions: Optional[List["BrowserSession"]] = None
+    error: Optional[str] = None
 
 
 # Usage/limits types
@@ -922,9 +1017,10 @@ class PDFAction(BaseModel):
 
 
 class PDFParser(BaseModel):
-    """PDF parser configuration with optional page limit."""
+    """PDF parser configuration with optional page limit and processing mode."""
 
     type: Literal["pdf"] = "pdf"
+    mode: Optional[Literal["fast", "auto", "ocr"]] = None
     max_pages: Optional[int] = None
 
 
@@ -946,7 +1042,7 @@ class SearchRequest(BaseModel):
     tbs: Optional[str] = None
     location: Optional[str] = None
     ignore_invalid_urls: Optional[bool] = None
-    timeout: Optional[int] = 60000
+    timeout: Optional[int] = 300000
     scrape_options: Optional[ScrapeOptions] = None
     integration: Optional[str] = None
 

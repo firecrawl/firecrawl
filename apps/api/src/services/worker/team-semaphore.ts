@@ -23,7 +23,7 @@ const semaphoreHoldDuration = new Histogram({
   name: "noq_semaphore_hold_duration_seconds",
   help: "Semaphore hold time",
   buckets: [
-    0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 30, 60, 120, 180, 240, 300, 600,
+    0.5, 1, 1.5, 2, 2.5, 3, 3.5, 4, 5, 6, 7, 8, 10, 15, 20, 30, 60, 120, 300,
   ],
 });
 
@@ -76,11 +76,11 @@ async function acquireBlocking(
 
   do {
     if (options.signal.aborted) {
-      throw new ScrapeJobTimeoutError("Scrape timed out");
+      throw new ScrapeJobTimeoutError();
     }
 
     if (deadline < Date.now()) {
-      throw new ScrapeJobTimeoutError("Scrape timed out");
+      throw new ScrapeJobTimeoutError();
     }
 
     const [granted, _count, _removed] = await runScript<
@@ -183,7 +183,8 @@ async function withSemaphore<T>(
   timeoutMs: number,
   func: (limited: boolean) => Promise<T>,
 ): Promise<T> {
-  if (isSelfHosted() && limit <= 1) {
+  // Bypass concurrency limits for self-hosted deployments
+  if (isSelfHosted()) {
     _logger.debug(`Bypassing concurrency limit for ${teamId}`, {
       teamId,
       jobId: holderId,

@@ -53,10 +53,10 @@ Ready to discover and extract web data with one API call?
 - Read the [/search documentation](https://docs.firecrawl.dev/features/search)
 - Experiment in the [Playground](https://firecrawl.link/search-pg)
 - See /search [examples and templates](https://www.firecrawl.dev/templates)
-- Share your projects on [Discord](https://discord.com/invite/gSmWdAkdwd)
+- Share your projects on [Discord](https://discord.gg/firecrawl)
 
 That’s /search — the simplest way to discover and scrape web pages. Excited to see what you build with it!
 
 ---
 
-P.S. We’re no longer actively supporting our alpha endpoints /llmstxt and /deep-research starting June 30, 2025. Both will remain active but we just will not be pushing further updates. For an /llmstxt alternative, see this [Firecrawl example](https://github.com/mendableai/create-llmstxt-py). For deep research, check out our new Search API or our open source [Firesearch](https://github.com/mendableai/firesearch) project.
+P.S. We’re no longer actively supporting our alpha endpoints /llmstxt and /deep-research starting June 30, 2025. Both will remain active but we just will not be pushing further updates. For an /llmstxt alternative, see this [Firecrawl example](https://github.com/firecrawl/create-llmstxt-py). For deep research, check out our new Search API or our open source [Firesearch](https://github.com/firecrawl/firesearch) project.

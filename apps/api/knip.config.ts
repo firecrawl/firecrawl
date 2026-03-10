@@ -9,13 +9,9 @@ const config: KnipConfig = {
   },
   ignore: [
     "native/**",
-    "src/services/search-index-db.ts", // WIP
-    "src/lib/search-index-client.ts", // WIP
+    "src/scraper/scrapeURL/engines/fire-engine/branding-script/**",
   ],
-  ignoreDependencies: [
-    "openai",
-    "@pinecone-database/pinecone", // WIP
-  ],
+  ignoreDependencies: ["openai", "undici-types"],
 };
 
 export default config;

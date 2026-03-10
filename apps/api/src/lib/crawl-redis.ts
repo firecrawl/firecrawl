@@ -38,9 +38,12 @@ export async function saveCrawl(id: string, crawl: StoredCrawl) {
       zeroDataRetention: crawl.zeroDataRetention,
     });
 
-    await redisEvictConnection.set("crawl:" + id, JSON.stringify(crawl));
-    await redisEvictConnection.expire("crawl:" + id, 24 * 60 * 60);
-
+    await redisEvictConnection.set(
+      "crawl:" + id,
+      JSON.stringify(crawl),
+      "EX",
+      24 * 60 * 60,
+    );
     await redisEvictConnection.sadd("crawls_by_team_id:" + crawl.team_id, id);
     await redisEvictConnection.expire(
       "crawls_by_team_id:" + crawl.team_id,
@@ -114,13 +117,12 @@ export async function addCrawlJob(
       crawlId: id,
     });
 
-    await redisEvictConnection.sadd("crawl:" + id + ":jobs", job_id);
-    await redisEvictConnection.expire("crawl:" + id + ":jobs", 24 * 60 * 60);
-    await redisEvictConnection.sadd("crawl:" + id + ":jobs_qualified", job_id);
-    await redisEvictConnection.expire(
-      "crawl:" + id + ":jobs_qualified",
-      24 * 60 * 60,
-    );
+    const pipeline = redisEvictConnection.pipeline();
+    pipeline.sadd("crawl:" + id + ":jobs", job_id);
+    pipeline.expire("crawl:" + id + ":jobs", 24 * 60 * 60);
+    pipeline.sadd("crawl:" + id + ":jobs_qualified", job_id);
+    pipeline.expire("crawl:" + id + ":jobs_qualified", 24 * 60 * 60);
+    await pipeline.exec();
   });
 }
 
@@ -137,16 +139,12 @@ export async function addCrawlJobs(
     method: "addCrawlJobs",
     crawlId: id,
   });
-  await redisEvictConnection.sadd("crawl:" + id + ":jobs", ...job_ids);
-  await redisEvictConnection.expire("crawl:" + id + ":jobs", 24 * 60 * 60);
-  await redisEvictConnection.sadd(
-    "crawl:" + id + ":jobs_qualified",
-    ...job_ids,
-  );
-  await redisEvictConnection.expire(
-    "crawl:" + id + ":jobs_qualified",
-    24 * 60 * 60,
-  );
+  const pipeline = redisEvictConnection.pipeline();
+  pipeline.sadd("crawl:" + id + ":jobs", ...job_ids);
+  pipeline.expire("crawl:" + id + ":jobs", 24 * 60 * 60);
+  pipeline.sadd("crawl:" + id + ":jobs_qualified", ...job_ids);
+  pipeline.expire("crawl:" + id + ":jobs_qualified", 24 * 60 * 60);
+  await pipeline.exec();
 }
 
 export async function addCrawlJobDone(
@@ -161,27 +159,19 @@ export async function addCrawlJobDone(
     method: "addCrawlJobDone",
     crawlId: id,
   });
-  await redisEvictConnection.sadd("crawl:" + id + ":jobs_done", job_id);
-  await redisEvictConnection.expire("crawl:" + id + ":jobs_done", 24 * 60 * 60);
+  const pipeline = redisEvictConnection.pipeline();
+  pipeline.sadd("crawl:" + id + ":jobs_done", job_id);
+  pipeline.expire("crawl:" + id + ":jobs_done", 24 * 60 * 60);
 
   if (success) {
-    await redisEvictConnection.zadd(
-      "crawl:" + id + ":jobs_donez_ordered",
-      Date.now(),
-      job_id,
-    );
+    pipeline.zadd("crawl:" + id + ":jobs_donez_ordered", Date.now(), job_id);
   } else {
     // in case it's already been pushed, make sure it's removed
-    await redisEvictConnection.zrem(
-      "crawl:" + id + ":jobs_donez_ordered",
-      job_id,
-    );
+    pipeline.zrem("crawl:" + id + ":jobs_donez_ordered", job_id);
   }
 
-  await redisEvictConnection.expire(
-    "crawl:" + id + ":jobs_donez_ordered",
-    24 * 60 * 60,
-  );
+  pipeline.expire("crawl:" + id + ":jobs_donez_ordered", 24 * 60 * 60);
+  await pipeline.exec();
 }
 
 export async function getDoneJobsOrderedLength(
@@ -269,14 +259,32 @@ export async function finishCrawlKickoff(id: string) {
   );
 }
 
+export async function setCrawlError(id: string, error: string) {
+  await redisEvictConnection.set(
+    "crawl:" + id + ":error",
+    error,
+    "EX",
+    24 * 60 * 60,
+  );
+}
+
+export async function getCrawlError(id: string): Promise<string | null> {
+  return await redisEvictConnection.get("crawl:" + id + ":error");
+}
+
 export async function finishCrawl(id: string, __logger: Logger = _logger) {
   __logger.debug("Marking crawl as finished.", {
     module: "crawl-redis",
     method: "finishCrawl",
     crawlId: id,
   });
-  await redisEvictConnection.set("crawl:" + id + ":finish", "yes");
-  await redisEvictConnection.expire("crawl:" + id + ":finish", 24 * 60 * 60);
+
+  await redisEvictConnection.set(
+    "crawl:" + id + ":finish",
+    "yes",
+    "EX",
+    24 * 60 * 60,
+  );
 
   await redisEvictConnection.srem("active_crawls", id);
 
@@ -431,33 +439,26 @@ export async function lockURL(
       }
     }
 
-    let res: boolean;
+    const pipeline = redisEvictConnection.pipeline();
+
     if (!sc.crawlerOptions?.deduplicateSimilarURLs) {
-      res =
-        (await redisEvictConnection.sadd(
-          "crawl:" + id + ":visited",
-          normalizedUrl,
-        )) !== 0;
+      pipeline.sadd("crawl:" + id + ":visited", normalizedUrl);
     } else {
       const permutation = generateURLPermutations(normalizedUrl)[0].href;
-      const x = await redisEvictConnection.sadd(
-        "crawl:" + id + ":visited",
-        permutation,
-      );
-      res = x !== 0;
+      pipeline.sadd("crawl:" + id + ":visited", permutation);
     }
 
-    await redisEvictConnection.expire("crawl:" + id + ":visited", 24 * 60 * 60);
+    pipeline.expire("crawl:" + id + ":visited", 24 * 60 * 60);
+
+    const results = await pipeline.exec();
+    const saddResult = results?.[0]?.[1] as number;
+    const res = saddResult !== 0;
 
     if (res) {
-      await redisEvictConnection.sadd(
-        "crawl:" + id + ":visited_unique",
-        normalizedUrl,
-      );
-      await redisEvictConnection.expire(
-        "crawl:" + id + ":visited_unique",
-        24 * 60 * 60,
-      );
+      const uniquePipeline = redisEvictConnection.pipeline();
+      uniquePipeline.sadd("crawl:" + id + ":visited_unique", normalizedUrl);
+      uniquePipeline.expire("crawl:" + id + ":visited_unique", 24 * 60 * 60);
+      await uniquePipeline.exec();
     }
 
     setSpanAttributes(span, { "crawl.url_locked": res });
@@ -484,32 +485,26 @@ export async function lockURLs(
 
   // Add to visited_unique set
   logger.debug("Locking " + urls.length + " URLs...");
-  await redisEvictConnection.sadd("crawl:" + id + ":visited_unique", ...urls);
-  await redisEvictConnection.expire(
-    "crawl:" + id + ":visited_unique",
-    24 * 60 * 60,
-  );
 
-  let res: boolean;
+  const pipeline = redisEvictConnection.pipeline();
+  pipeline.sadd("crawl:" + id + ":visited_unique", ...urls);
+  pipeline.expire("crawl:" + id + ":visited_unique", 24 * 60 * 60);
+
   if (!sc.crawlerOptions?.deduplicateSimilarURLs) {
-    const x = await redisEvictConnection.sadd(
-      "crawl:" + id + ":visited",
-      ...urls,
-    );
-    res = x === urls.length;
+    pipeline.sadd("crawl:" + id + ":visited", ...urls);
   } else {
     const allPermutations = urls.map(
       url => generateURLPermutations(url)[0].href,
     );
     logger.debug("Adding " + allPermutations.length + " URL permutations...");
-    const x = await redisEvictConnection.sadd(
-      "crawl:" + id + ":visited",
-      ...allPermutations,
-    );
-    res = x === allPermutations.length;
+    pipeline.sadd("crawl:" + id + ":visited", ...allPermutations);
   }
 
-  await redisEvictConnection.expire("crawl:" + id + ":visited", 24 * 60 * 60);
+  pipeline.expire("crawl:" + id + ":visited", 24 * 60 * 60);
+
+  const results = await pipeline.exec();
+  const saddResult = results?.[2]?.[1] as number;
+  const res = saddResult === urls.length;
 
   logger.debug("lockURLs final result: " + res, { res });
   return res;
@@ -566,6 +561,7 @@ export function crawlToCrawler(
     currentDiscoveryDepth: crawlerOptions?.currentDiscoveryDepth ?? 0,
     zeroDataRetention: (teamFlags?.forceZDR || sc.zeroDataRetention) ?? false,
     location: sc.scrapeOptions?.location,
+    headers: sc.scrapeOptions?.headers,
   });
 
   if (sc.robots !== undefined) {

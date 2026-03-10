@@ -7,6 +7,10 @@ export async function acucCacheClearController(req: Request, res: Response) {
   try {
     const team_id: string = req.body.team_id;
 
+    if (!team_id) {
+      return res.status(400).json({ error: "team_id is required" });
+    }
+
     const keys = await supabase_service
       .from("api_keys")
       .select("*")

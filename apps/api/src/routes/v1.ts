@@ -1,4 +1,5 @@
 import express from "express";
+import { config } from "../config";
 import { crawlController } from "../controllers/v1/crawl";
 // import { crawlStatusController } from "../../src/controllers/v1/crawl-status";
 import { scrapeController } from "../../src/controllers/v1/scrape";
@@ -33,11 +34,15 @@ import {
   requestTimingMiddleware,
   wrap,
 } from "./shared";
-import { paymentMiddleware } from "x402-express";
 import { queueStatusController } from "../controllers/v1/queue-status";
 import { creditUsageHistoricalController } from "../controllers/v1/credit-usage-historical";
 import { tokenUsageHistoricalController } from "../controllers/v1/token-usage-historical";
-import { facilitator } from "@coinbase/x402";
+import {
+  paymentMiddleware,
+  getX402ResourceServer,
+  createX402RouteConfig,
+  isX402Enabled,
+} from "../lib/x402";
 
 expressWs(express());
 
@@ -51,12 +56,12 @@ v1Router.use(requestTimingMiddleware("v1"));
 // x402 payments protocol - https://github.com/coinbase/x402
 // v1Router.use(
 //   paymentMiddleware(
-//     (process.env.X402_PAY_TO_ADDRESS as `0x${string}`) ||
+//     (config.X402_PAY_TO_ADDRESS as `0x${string}`) ||
 //       "0x0000000000000000000000000000000000000000",
 //     {
 //       "POST /x402/search": {
-//         price: process.env.X402_ENDPOINT_PRICE_USD as string,
-//         network: process.env.X402_NETWORK as
+//         price: config.X402_ENDPOINT_PRICE_USD as string,
+//         network: config.X402_NETWORK as
 //           | "base-sepolia"
 //           | "base"
 //           | "avalanche-fuji"
@@ -213,7 +218,7 @@ v1Router.post(
   "/extract",
   authMiddleware(RateLimiterMode.Extract),
   countryCheck,
-  checkCreditsMiddleware(1),
+  checkCreditsMiddleware(20),
   wrap(extractController),
 );
 
@@ -306,69 +311,21 @@ v1Router.get(
   wrap(queueStatusController),
 );
 
-v1Router.post(
-  "/x402/search",
-  authMiddleware(RateLimiterMode.Search),
-  countryCheck,
-  paymentMiddleware(
-    (process.env.X402_PAY_TO_ADDRESS as `0x${string}`) ||
-      "0x0000000000000000000000000000000000000000",
-    {
-      "POST /x402/search": {
-        price: process.env.X402_ENDPOINT_PRICE_USD as string,
-        network: process.env.X402_NETWORK as
-          | "base-sepolia"
-          | "base"
-          | "avalanche-fuji"
-          | "avalanche"
-          | "iotex",
-        config: {
-          discoverable: true,
-          description:
-            "The search endpoint combines web search (SERP) with Firecrawl's scraping capabilities to return full page content for any query. Requires micropayment via X402 protocol",
-          mimeType: "application/json",
-          maxTimeoutSeconds: 120,
-          inputSchema: {
-            body: {
-              query: {
-                type: "string",
-                description: "Search query to find relevant web pages",
-                required: true,
-              },
-              limit: {
-                type: "number",
-                description: "Maximum number of results to return (max 10)",
-                required: false,
-              },
-              scrapeOptions: {
-                type: "object",
-                description: "Options for scraping the found pages",
-                required: false,
-              },
-            },
-          },
-          outputSchema: {
-            type: "object",
-            properties: {
-              success: { type: "boolean" },
-              data: {
-                type: "array",
-                items: {
-                  type: "object",
-                  properties: {
-                    url: { type: "string" },
-                    title: { type: "string" },
-                    description: { type: "string" },
-                    markdown: { type: "string" },
-                  },
-                },
-              },
-            },
-          },
-        },
-      },
-    },
-    facilitator,
-  ),
-  wrap(x402SearchController),
-);
+// Only register x402 routes if X402_PAY_TO_ADDRESS is configured
+if (isX402Enabled()) {
+  v1Router.post(
+    "/x402/search",
+    authMiddleware(RateLimiterMode.Search),
+    countryCheck,
+    paymentMiddleware(
+      createX402RouteConfig(
+        "POST /x402/search",
+        "The search endpoint combines web search (SERP) with Firecrawl's scraping capabilities to return full page content for any query. Requires micropayment via X402 protocol",
+        {},
+        {},
+      ),
+      getX402ResourceServer(),
+    ),
+    wrap(x402SearchController),
+  );
+}

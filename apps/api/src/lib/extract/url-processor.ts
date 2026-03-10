@@ -18,7 +18,7 @@ export async function generateBasicCompletion(
 ): Promise<{ text: string } | null> {
   try {
     const result = await generateText({
-      model: getModel("gpt-4o", "openai"),
+      model: getModel("gpt-4.1", "openai"),
       prompt: prompt,
       providerOptions: {
         anthropic: {
@@ -52,15 +52,15 @@ export async function generateBasicCompletion(
         module: "extract",
         method: "generateBasicCompletion",
       },
-      model: "openai/gpt-4o",
+      model: "openai/gpt-4.1",
       cost: calculateCost(
-        "openai/gpt-4o",
-        result.usage?.promptTokens ?? 0,
-        result.usage?.completionTokens ?? 0,
+        "openai/gpt-4.1",
+        result.usage?.inputTokens ?? 0,
+        result.usage?.outputTokens ?? 0,
       ),
       tokens: {
-        input: result.usage?.promptTokens ?? 0,
-        output: result.usage?.completionTokens ?? 0,
+        input: result.usage?.inputTokens ?? 0,
+        output: result.usage?.outputTokens ?? 0,
       },
     });
     return { text: result.text };
@@ -84,6 +84,7 @@ export async function generateBasicCompletion(
           },
           experimental_telemetry: {
             isEnabled: true,
+            functionId: "generateBasicCompletion/fallback",
             metadata: {
               ...(metadata.extractId
                 ? {
@@ -104,12 +105,12 @@ export async function generateBasicCompletion(
           model: "openai/gpt-4o-mini",
           cost: calculateCost(
             "openai/gpt-4o-mini",
-            result.usage?.promptTokens ?? 0,
-            result.usage?.completionTokens ?? 0,
+            result.usage?.inputTokens ?? 0,
+            result.usage?.outputTokens ?? 0,
           ),
           tokens: {
-            input: result.usage?.promptTokens ?? 0,
-            output: result.usage?.completionTokens ?? 0,
+            input: result.usage?.inputTokens ?? 0,
+            output: result.usage?.outputTokens ?? 0,
           },
         });
         return { text: result.text };

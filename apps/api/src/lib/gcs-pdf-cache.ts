@@ -1,10 +1,9 @@
+import { ApiError } from "@google-cloud/storage";
 import { logger } from "./logger";
+import { config } from "../config";
 import crypto from "crypto";
 import { storage } from "./gcs-jobs";
 
-const credentials = process.env.GCS_CREDENTIALS
-  ? JSON.parse(atob(process.env.GCS_CREDENTIALS))
-  : undefined;
 const PDF_CACHE_PREFIX = "pdf-cache-v2/";
 
 /**
@@ -23,12 +22,12 @@ export async function savePdfResultToCache(
   result: { markdown: string; html: string },
 ): Promise<string | null> {
   try {
-    if (!process.env.GCS_BUCKET_NAME) {
+    if (!config.GCS_BUCKET_NAME) {
       return null;
     }
 
     const cacheKey = createPdfCacheKey(pdfContent);
-    const bucket = storage.bucket(process.env.GCS_BUCKET_NAME);
+    const bucket = storage.bucket(config.GCS_BUCKET_NAME);
     const blob = bucket.file(`${PDF_CACHE_PREFIX}${cacheKey}.json`);
 
     for (let i = 0; i < 3; i++) {
@@ -79,21 +78,13 @@ export async function getPdfResultFromCache(
   pdfContent: string,
 ): Promise<{ markdown: string; html: string } | null> {
   try {
-    if (!process.env.GCS_BUCKET_NAME) {
+    if (!config.GCS_BUCKET_NAME) {
       return null;
     }
 
     const cacheKey = createPdfCacheKey(pdfContent);
-    const bucket = storage.bucket(process.env.GCS_BUCKET_NAME);
+    const bucket = storage.bucket(config.GCS_BUCKET_NAME);
     const blob = bucket.file(`${PDF_CACHE_PREFIX}${cacheKey}.json`);
-
-    const [exists] = await blob.exists();
-    if (!exists) {
-      logger.debug(`PDF RunPod result not found in GCS cache`, {
-        cacheKey,
-      });
-      return null;
-    }
 
     const [content] = await blob.download();
     const result = JSON.parse(content.toString());
@@ -106,6 +97,14 @@ export async function getPdfResultFromCache(
       ...result,
     };
   } catch (error) {
+    if (
+      error instanceof ApiError &&
+      error.code === 404 &&
+      error.message.includes("No such object:")
+    ) {
+      return null;
+    }
+
     logger.error(`Error retrieving PDF RunPod result from GCS cache`, {
       error,
     });

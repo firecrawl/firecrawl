@@ -9,9 +9,10 @@ import {
   SSLError,
 } from "../../error";
 import { Writable } from "stream";
-import { v4 as uuid } from "uuid";
+import { v7 as uuid } from "uuid";
 import * as undici from "undici";
 import { getSecureDispatcher } from "./safeFetch";
+import { logger } from "../../../../lib/logger";
 
 const mapUndiciError = (url: string, skipTlsVerification: boolean, e: any) => {
   const code = e?.code ?? e?.cause?.code ?? e?.errno ?? e?.name;
@@ -89,6 +90,7 @@ export async function downloadFile(
 }> {
   const tempFilePath = path.join(os.tmpdir(), `tempFile-${id}--${uuid()}`);
   const tempFileWrite = createWriteStream(tempFilePath);
+  let shouldCleanup = false;
 
   // TODO: maybe we could use tlsclient for this? for proxying
   try {
@@ -118,8 +120,20 @@ export async function downloadFile(
       tempFilePath,
     };
   } catch (e) {
+    // Mark for cleanup on error (caller handles cleanup on success)
+    shouldCleanup = true;
     throw mapUndiciError(url, skipTlsVerification, e);
   } finally {
     tempFileWrite.close();
+    if (shouldCleanup) {
+      try {
+        await fs.unlink(tempFilePath);
+      } catch (cleanupError: any) {
+        logger.warn("Failed to clean up temporary file", {
+          error: cleanupError,
+          tempFilePath,
+        });
+      }
+    }
   }
 }

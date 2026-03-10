@@ -668,7 +668,10 @@ def prepare_scrape_options(options: Optional[ScrapeOptions]) -> Optional[Dict[st
                     if isinstance(parser, str):
                         converted_parsers.append(parser)
                     elif isinstance(parser, dict):
-                        converted_parsers.append(parser)
+                        parser_data = dict(parser)
+                        if "max_pages" in parser_data:
+                            parser_data["maxPages"] = parser_data.pop("max_pages")
+                        converted_parsers.append(parser_data)
                     else:
                         parser_data = parser.model_dump(exclude_none=True)
                         # Convert snake_case to camelCase for API

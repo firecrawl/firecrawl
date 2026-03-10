@@ -18,6 +18,7 @@ type ScrapeJobCommon = {
   zeroDataRetention: boolean;
   traceContext?: SerializedTraceContext;
   skipNuq?: boolean;
+  requestId?: string;
 };
 
 export type ScrapeJobData = ScrapeJobCommon &
@@ -102,34 +103,6 @@ export interface RunWebScraperParams {
   costTracking: CostTracking;
 }
 
-export interface FirecrawlJob {
-  job_id?: string;
-  success: boolean;
-  message?: string;
-  num_docs: number;
-  docs: any[];
-  time_taken: number;
-  team_id: string;
-  mode: string;
-  url: string;
-  crawlerOptions?: any;
-  scrapeOptions?: any;
-  origin: string;
-  integration?: string | null;
-  num_tokens?: number;
-  retry?: boolean;
-  crawl_id?: string;
-  tokens_billed?: number;
-  sources?: Record<string, string[]>;
-  cost_tracking?: CostTracking;
-  pdf_num_pages?: number;
-  credits_billed?: number | null;
-  change_tracking_tag?: string | null;
-  dr_clean_by?: string | null;
-
-  zeroDataRetention: boolean;
-}
-
 export interface FirecrawlScrapeResponse {
   statusCode: number;
   body: {
@@ -168,6 +141,8 @@ export enum RateLimiterMode {
   Extract = "extract",
   ExtractStatus = "extractStatus",
   ExtractAgentPreview = "extractAgentPreview",
+  Browser = "browser",
+  BrowserExecute = "browserExecute",
 }
 
 export type AuthResponse =
@@ -191,4 +166,5 @@ export enum NotificationType {
   AUTO_RECHARGE_FAILED = "autoRechargeFailed",
   CONCURRENCY_LIMIT_REACHED = "concurrencyLimitReached",
   AUTO_RECHARGE_FREQUENT = "autoRechargeFrequent",
+  AGENT_SPONSOR_CONFIRM = "agentSponsorConfirm",
 }

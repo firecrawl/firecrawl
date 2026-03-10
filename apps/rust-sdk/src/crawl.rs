@@ -197,17 +197,6 @@ struct CrawlRequestBody {
     options: CrawlOptions,
 }
 
-#[derive(Deserialize, Serialize, Debug, Default)]
-#[serde(rename_all = "camelCase")]
-struct CrawlResponse {
-    /// This will always be `true` due to `FirecrawlApp::handle_response`.
-    /// No need to expose.
-    success: bool,
-
-    /// The resulting document.
-    data: Document,
-}
-
 #[derive(Deserialize, Serialize, Debug, PartialEq, Eq, Clone, Copy)]
 #[serde(rename_all = "camelCase")]
 pub enum CrawlStatusTypes {

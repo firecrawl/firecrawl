@@ -1,5 +1,5 @@
 import { describeIf, HAS_PROXY, HAS_SEARCH, TEST_PRODUCTION } from "../lib";
-import { search, idmux, Identity } from "./lib";
+import { search, searchRaw, idmux, Identity } from "./lib";
 
 let identity: Identity;
 
@@ -77,6 +77,23 @@ describeIf(TEST_PRODUCTION || HAS_SEARCH || HAS_PROXY)("Search tests", () => {
       );
       expect(res.length).toBeGreaterThan(0);
       expect(res.length).toBeLessThanOrEqual(20);
+    },
+    60000,
+  );
+
+  it.concurrent(
+    "returns 400 for limit over 100",
+    async () => {
+      const raw = await searchRaw(
+        {
+          query: "firecrawl",
+          limit: 200,
+        } as any,
+        identity,
+      );
+
+      expect(raw.statusCode).toBe(400);
+      expect(raw.body.success).toBe(false);
     },
     60000,
   );

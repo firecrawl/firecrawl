@@ -3,7 +3,73 @@ import type { BatchScrapeJob, CrawlJob, Document } from "./types";
 import type { HttpClient } from "./utils/httpClient";
 import { getBatchScrapeStatus } from "./methods/batch";
 import { getCrawlStatus } from "./methods/crawl";
-import { WebSocket as WS } from "ws";
+// Note: browsers/Deno expose globalThis.WebSocket, but many Node runtimes (<22.4 or without
+// experimental flags) do not. We lazily fall back to node:undici.
+
+type WebSocketConstructor = new (url: string, protocols?: string | string[]) => WebSocket;
+
+const hasGlobalWebSocket = (): WebSocketConstructor | undefined => {
+  if (typeof globalThis === "undefined") return undefined;
+  const candidate = (globalThis as any).WebSocket;
+  return typeof candidate === "function" ? (candidate as WebSocketConstructor) : undefined;
+};
+
+const isNodeRuntime = () => typeof process !== "undefined" && !!process.versions?.node;
+
+let cachedWebSocket: WebSocketConstructor | undefined;
+let loadPromise: Promise<WebSocketConstructor | undefined> | undefined;
+
+const loadNodeWebSocket = async (): Promise<WebSocketConstructor | undefined> => {
+  if (!isNodeRuntime()) return undefined;
+  try {
+    const undici = await import("node:undici");
+    const ctor = (undici as any).WebSocket ?? (undici as any).default?.WebSocket;
+    return typeof ctor === "function" ? (ctor as WebSocketConstructor) : undefined;
+  } catch {
+    return undefined;
+  }
+};
+
+const getWebSocketCtor = async (): Promise<WebSocketConstructor | undefined> => {
+  if (cachedWebSocket) return cachedWebSocket;
+  const globalWs = hasGlobalWebSocket();
+  if (globalWs) {
+    cachedWebSocket = globalWs;
+    return cachedWebSocket;
+  }
+  if (!loadPromise) {
+    loadPromise = loadNodeWebSocket();
+  }
+  cachedWebSocket = await loadPromise;
+  return cachedWebSocket;
+};
+
+const decoder = typeof TextDecoder !== "undefined" ? new TextDecoder() : undefined;
+
+const ensureUtf8String = (data: unknown): string | undefined => {
+  if (typeof data === "string") return data;
+
+  if (typeof Buffer !== "undefined" && Buffer.isBuffer(data)) {
+    return data.toString("utf8");
+  }
+
+  const convertView = (view: ArrayBufferView): string | undefined => {
+    if (typeof Buffer !== "undefined") {
+      return Buffer.from(view.buffer, view.byteOffset, view.byteLength).toString("utf8");
+    }
+    return decoder?.decode(view);
+  };
+
+  if (ArrayBuffer.isView(data)) {
+    return convertView(data);
+  }
+
+  if (data instanceof ArrayBuffer) {
+    return convertView(new Uint8Array(data));
+  }
+
+  return undefined;
+};
 
 type JobKind = "crawl" | "batch";
 
@@ -23,6 +89,7 @@ export class Watcher extends EventEmitter {
   private readonly timeout?: number;
   private ws?: WebSocket;
   private closed = false;
+  private readonly emittedDocumentKeys = new Set<string>();
 
   constructor(http: HttpClient, jobId: string, opts: WatcherOptions = {}) {
     super();
@@ -44,11 +111,14 @@ export class Watcher extends EventEmitter {
   async start(): Promise<void> {
     try {
       const url = this.buildWsUrl();
-      
-      if (typeof WebSocket !== 'undefined') {
-        this.ws = new WebSocket(url, this.http.getApiKey()) as any;
-      } else {
-        this.ws = new WS(url, this.http.getApiKey()) as any;
+      const wsCtor = await getWebSocketCtor();
+      if (!wsCtor) {
+        this.pollLoop();
+        return;
+      }
+      this.ws = new wsCtor(url, this.http.getApiKey()) as any;
+      if (this.ws && "binaryType" in this.ws) {
+        (this.ws as any).binaryType = "arraybuffer";
       }
       
       if (this.ws) {
@@ -64,8 +134,9 @@ export class Watcher extends EventEmitter {
     const timeoutMs = this.timeout ? this.timeout * 1000 : undefined;
     ws.onmessage = (ev: MessageEvent) => {
       try {
-        const body = typeof ev.data === "string" ? JSON.parse(ev.data) : null;
-        if (!body) return;
+        const raw = ensureUtf8String(ev.data);
+        if (!raw) return;
+        const body = JSON.parse(raw);
         const type = body.type as string | undefined;
         if (type === "error") {
           this.emit("error", { status: "failed", data: [], error: body.error, id: this.jobId });
@@ -85,6 +156,7 @@ export class Watcher extends EventEmitter {
         if (type === "done") {
           const payload = body.data || body;
           const data = (payload.data || []) as Document[];
+          if (data.length) this.emitDocuments(data);
           this.emit("done", { status: "completed", data, id: this.jobId });
           this.close();
           return;
@@ -105,8 +177,28 @@ export class Watcher extends EventEmitter {
     };
   }
 
+  private documentKey(doc: Document): string {
+    if (doc && typeof doc === "object") {
+      const explicitId = (doc as any).id ?? (doc as any).docId ?? (doc as any).url;
+      if (typeof explicitId === "string" && explicitId.length) {
+        return explicitId;
+      }
+    }
+    try {
+      return JSON.stringify(doc);
+    } catch {
+      return `${Date.now()}-${Math.random()}`;
+    }
+  }
+
   private emitDocuments(docs: Document[]) {
-    for (const doc of docs) this.emit("document", { ...(doc as any), id: this.jobId });
+    for (const doc of docs) {
+      if (!doc) continue;
+      const key = this.documentKey(doc);
+      if (this.emittedDocumentKeys.has(key)) continue;
+      this.emittedDocumentKeys.add(key);
+      this.emit("document", { ...(doc as any), id: this.jobId });
+    }
   }
 
   private emitSnapshot(payload: any) {
@@ -148,6 +240,7 @@ export class Watcher extends EventEmitter {
         const snap = this.kind === "crawl"
           ? await getCrawlStatus(this.http as any, this.jobId)
           : await getBatchScrapeStatus(this.http as any, this.jobId);
+        this.emitDocuments((snap.data || []) as Document[]);
         this.emit("snapshot", snap);
         if (["completed", "failed", "cancelled"].includes(snap.status)) {
           this.emit("done", { status: snap.status, data: snap.data, id: this.jobId });

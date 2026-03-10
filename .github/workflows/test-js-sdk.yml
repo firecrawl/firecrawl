@@ -8,26 +8,37 @@ on:
       - apps/js-sdk/firecrawl/**
 
 env:
-  TEST_API_KEY: ${{ secrets.TEST_API_KEY }}
+  IDMUX_URL: ${{ secrets.IDMUX_URL }}
 
 jobs:
   test:
     name: Run tests
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     steps:
       - uses: actions/checkout@v5
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
           node-version: "20"
-          cache: "npm"
-          cache-dependency-path: './apps/js-sdk/firecrawl/package-lock.json'
+          cache: "pnpm"
+          cache-dependency-path: './apps/js-sdk/firecrawl/pnpm-lock.yaml'
+      - name: Tailscale
+        uses: tailscale/github-action@v4
+        with:
+          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
+          tags: tag:ci
+          use-cache: 'true'
       - name: Install dependencies
-        run: npm install
+        run: pnpm install
         working-directory: ./apps/js-sdk/firecrawl
       - name: Build
-        run: npm run build
+        run: pnpm run build
         working-directory: ./apps/js-sdk/firecrawl
       - name: Run tests
-        run: npm run test
+        run: pnpm run test
         working-directory: ./apps/js-sdk/firecrawl

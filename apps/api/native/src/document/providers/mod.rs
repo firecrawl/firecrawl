@@ -1,6 +1,7 @@
 use crate::document::model::Document;
 use std::error::Error;
 
+pub mod doc;
 pub mod docx;
 pub mod factory;
 pub mod odt;

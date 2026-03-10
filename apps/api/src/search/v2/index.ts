@@ -1,4 +1,5 @@
 import { SearchV2Response, SearchResultType } from "../../lib/entities";
+import { config } from "../../config";
 import { fire_engine_search_v2 } from "./fireEngine-v2";
 import { searxng_search } from "./searxng";
 import { ddgSearch } from "./ddgsearch";
@@ -18,6 +19,7 @@ export async function search({
   sleep_interval = 0,
   timeout = 5000,
   type = undefined,
+  enterprise = undefined,
 }: {
   query: string;
   logger: Logger;
@@ -32,9 +34,10 @@ export async function search({
   sleep_interval?: number;
   timeout?: number;
   type?: SearchResultType | SearchResultType[];
+  enterprise?: ("default" | "anon" | "zdr")[];
 }): Promise<SearchV2Response> {
   try {
-    if (process.env.FIRE_ENGINE_BETA_URL) {
+    if (config.FIRE_ENGINE_BETA_URL) {
       logger.info("Using fire engine search");
       const results = await fire_engine_search_v2(query, {
         numResults: num_results,
@@ -44,12 +47,13 @@ export async function search({
         country,
         location,
         type,
+        enterprise,
       });
 
       return results;
     }
 
-    if (process.env.SEARXNG_ENDPOINT) {
+    if (config.SEARXNG_ENDPOINT) {
       logger.info("Using searxng search");
       const results = await searxng_search(query, {
         num_results,

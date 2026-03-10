@@ -1,35 +1,41 @@
 import request from "supertest";
-import dotenv from "dotenv";
-import { BLOCKLISTED_URL_MESSAGE } from "../../lib/strings";
+import { config } from "../../config";
+import { UNSUPPORTED_SITE_MESSAGE } from "../../lib/strings";
 const fs = require("fs");
 const path = require("path");
-
-dotenv.config();
 
 const TEST_URL = "http://127.0.0.1:3002";
 
 describe("E2E Tests for API Routes with No Authentication", () => {
-  let originalEnv: NodeJS.ProcessEnv;
+  let originalConfig: Partial<typeof config>;
 
-  // save original process.env
+  // save original config values
   beforeAll(() => {
-    originalEnv = { ...process.env };
-    process.env.USE_DB_AUTHENTICATION = "false";
-    process.env.SUPABASE_ANON_TOKEN = "";
-    process.env.SUPABASE_URL = "";
-    process.env.SUPABASE_SERVICE_TOKEN = "";
-    process.env.OPENAI_API_KEY = "";
-    process.env.BULL_AUTH_KEY = "";
-    process.env.PLAYWRIGHT_MICROSERVICE_URL = "";
-    process.env.LLAMAPARSE_API_KEY = "";
-    process.env.TEST_API_KEY = "";
-    process.env.POSTHOG_API_KEY = "";
-    process.env.POSTHOG_HOST = "";
+    originalConfig = {
+      USE_DB_AUTHENTICATION: config.USE_DB_AUTHENTICATION,
+      SUPABASE_ANON_TOKEN: config.SUPABASE_ANON_TOKEN,
+      SUPABASE_URL: config.SUPABASE_URL,
+      SUPABASE_SERVICE_TOKEN: config.SUPABASE_SERVICE_TOKEN,
+      OPENAI_API_KEY: config.OPENAI_API_KEY,
+      BULL_AUTH_KEY: config.BULL_AUTH_KEY,
+      PLAYWRIGHT_MICROSERVICE_URL: config.PLAYWRIGHT_MICROSERVICE_URL,
+      LLAMAPARSE_API_KEY: config.LLAMAPARSE_API_KEY,
+      TEST_API_KEY: config.TEST_API_KEY,
+    };
+    config.USE_DB_AUTHENTICATION = false;
+    config.SUPABASE_ANON_TOKEN = "";
+    config.SUPABASE_URL = "";
+    config.SUPABASE_SERVICE_TOKEN = "";
+    config.OPENAI_API_KEY = "";
+    config.BULL_AUTH_KEY = "";
+    config.PLAYWRIGHT_MICROSERVICE_URL = "";
+    config.LLAMAPARSE_API_KEY = "";
+    config.TEST_API_KEY = "";
   });
 
-  // restore original process.env
+  // restore original config values
   afterAll(() => {
-    process.env = originalEnv;
+    Object.assign(config, originalConfig);
   });
 
   describe("GET /e2e-test", () => {
@@ -46,14 +52,14 @@ describe("E2E Tests for API Routes with No Authentication", () => {
       expect(response.statusCode).not.toBe(401);
     });
 
-    it("should return an error for a blocklisted URL without requiring authorization", async () => {
-      const blocklistedUrl = "https://facebook.com/fake-test";
+    it("should return an error for a unsupported URL without requiring authorization", async () => {
+      const unsupportedUrl = "https://facebook.com/fake-test";
       const response = await request(TEST_URL)
         .post("/v0/scrape")
         .set("Content-Type", "application/json")
-        .send({ url: blocklistedUrl });
+        .send({ url: unsupportedUrl });
       expect(response.statusCode).toBe(403);
-      expect(response.body.error).toContain(BLOCKLISTED_URL_MESSAGE);
+      expect(response.body.error).toContain(UNSUPPORTED_SITE_MESSAGE);
     });
 
     it("should return a successful response", async () => {
@@ -71,14 +77,14 @@ describe("E2E Tests for API Routes with No Authentication", () => {
       expect(response.statusCode).not.toBe(401);
     });
 
-    it("should return an error for a blocklisted URL", async () => {
-      const blocklistedUrl = "https://twitter.com/fake-test";
+    it("should return an error for a unsupported URL", async () => {
+      const unsupportedUrl = "https://twitter.com/fake-test";
       const response = await request(TEST_URL)
         .post("/v0/crawl")
         .set("Content-Type", "application/json")
-        .send({ url: blocklistedUrl });
+        .send({ url: unsupportedUrl });
       expect(response.statusCode).toBe(403);
-      expect(response.body.error).toContain(BLOCKLISTED_URL_MESSAGE);
+      expect(response.body.error).toContain(UNSUPPORTED_SITE_MESSAGE);
     });
 
     it("should return a successful response", async () => {
@@ -100,14 +106,14 @@ describe("E2E Tests for API Routes with No Authentication", () => {
       expect(response.statusCode).not.toBe(401);
     });
 
-    it("should return an error for a blocklisted URL", async () => {
-      const blocklistedUrl = "https://instagram.com/fake-test";
+    it("should return an error for a unsupported URL", async () => {
+      const unsupportedUrl = "https://instagram.com/fake-test";
       const response = await request(TEST_URL)
         .post("/v0/crawlWebsitePreview")
         .set("Content-Type", "application/json")
-        .send({ url: blocklistedUrl });
+        .send({ url: unsupportedUrl });
       expect(response.statusCode).toBe(403);
-      expect(response.body.error).toContain(BLOCKLISTED_URL_MESSAGE);
+      expect(response.body.error).toContain(UNSUPPORTED_SITE_MESSAGE);
     });
 
     it("should return a successful response", async () => {

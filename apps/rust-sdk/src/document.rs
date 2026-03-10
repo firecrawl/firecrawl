@@ -1,6 +1,8 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+use crate::serde_helpers::deserialize_string_or_array;
+
 #[serde_with::skip_serializing_none]
 #[derive(Deserialize, Serialize, Debug, Default, Clone)]
 #[serde(rename_all = "camelCase")]
@@ -12,40 +14,68 @@ pub struct DocumentMetadata {
     pub error: Option<String>,
 
     // basic meta tags
+    #[serde(default, deserialize_with = "deserialize_string_or_array")]
     pub title: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_string_or_array")]
     pub description: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_string_or_array")]
     pub language: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_string_or_array")]
     pub keywords: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_string_or_array")]
     pub robots: Option<String>,
 
     // og: namespace
+    #[serde(default, deserialize_with = "deserialize_string_or_array")]
     pub og_title: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_string_or_array")]
     pub og_description: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_string_or_array")]
     pub og_url: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_string_or_array")]
     pub og_image: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_string_or_array")]
     pub og_audio: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_string_or_array")]
     pub og_determiner: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_string_or_array")]
     pub og_locale: Option<String>,
     pub og_locale_alternate: Option<Vec<String>>,
+    #[serde(default, deserialize_with = "deserialize_string_or_array")]
     pub og_site_name: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_string_or_array")]
     pub og_video: Option<String>,
 
     // article: namespace
+    #[serde(default, deserialize_with = "deserialize_string_or_array")]
     pub article_section: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_string_or_array")]
     pub article_tag: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_string_or_array")]
     pub published_time: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_string_or_array")]
     pub modified_time: Option<String>,
 
     // dc./dcterms. namespace
+    #[serde(default, deserialize_with = "deserialize_string_or_array")]
     pub dcterms_keywords: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_string_or_array")]
     pub dc_description: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_string_or_array")]
     pub dc_subject: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_string_or_array")]
     pub dcterms_subject: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_string_or_array")]
     pub dcterms_audience: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_string_or_array")]
     pub dc_type: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_string_or_array")]
     pub dcterms_type: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_string_or_array")]
     pub dc_date: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_string_or_array")]
     pub dc_date_created: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_string_or_array")]
     pub dcterms_created: Option<String>,
 }
 
@@ -82,4 +112,39 @@ pub struct Document {
     /// Can be present if `ScrapeFormats::Extract` is present in `ScrapeOptions.formats`.
     /// The warning message will contain any errors encountered during the extraction.
     pub warning: Option<String>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn test_full_document_with_array_metadata() {
+        let json = json!({
+            "markdown": "# Hello",
+            "metadata": {
+                "sourceURL": "https://example.com",
+                "statusCode": 200,
+                "title": "Example Page",
+                "description": ["A great page", "with multiple descriptions"],
+                "robots": ["index", "follow"],
+                "ogImage": ["https://img.jpg"],
+                "language": "en",
+                "keywords": ["rust", "sdk", "firecrawl"]
+            }
+        });
+        let doc: Document = serde_json::from_value(json).unwrap();
+        assert_eq!(doc.markdown, Some("# Hello".to_string()));
+        let meta = doc.metadata;
+        assert_eq!(meta.title, Some("Example Page".to_string()));
+        assert_eq!(
+            meta.description,
+            Some("A great page, with multiple descriptions".to_string())
+        );
+        assert_eq!(meta.robots, Some("index, follow".to_string()));
+        assert_eq!(meta.og_image, Some("https://img.jpg".to_string()));
+        assert_eq!(meta.language, Some("en".to_string()));
+        assert_eq!(meta.keywords, Some("rust, sdk, firecrawl".to_string()));
+    }
 }

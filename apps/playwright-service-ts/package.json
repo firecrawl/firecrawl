@@ -6,24 +6,22 @@
   "scripts": {
     "start": "node dist/api.js",
     "build": "tsc",
-    "dev": "ts-node api.ts"
+    "dev": "tsx api.ts"
   },
   "keywords": [],
   "author": "Jeff Pereira",
   "license": "ISC",
   "dependencies": {
-    "body-parser": "^1.20.2",
     "dotenv": "^16.4.5",
-    "express": "^4.19.2",
-    "playwright": "^1.55.1",
-    "user-agents": "^1.1.410"
+    "express": "^5.2.1",
+    "playwright": "^1.58.1",
+    "user-agents": "^1.1.669"
   },
   "devDependencies": {
-    "@types/body-parser": "^1.19.5",
-    "@types/express": "^4.17.21",
-    "@types/node": "^20.14.9",
+    "@types/express": "^5.0.6",
+    "@types/node": "^22.15.30",
     "@types/user-agents": "^1.0.4",
-    "ts-node": "^10.9.2",
-    "typescript": "^5.5.2"
+    "tsx": "^4.21.0",
+    "typescript": "^5.9.3"
   }
 }

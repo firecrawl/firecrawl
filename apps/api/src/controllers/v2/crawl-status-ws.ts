@@ -12,6 +12,7 @@ import { v7 as uuidv7 } from "uuid";
 import { logger } from "../../lib/logger";
 import {
   getCrawl,
+  getCrawlError,
   getCrawlExpiry,
   getCrawlJobs,
   getDoneJobsOrdered,
@@ -139,17 +140,42 @@ async function crawlStatusWS(
     }
   }
 
-  const status: Exclude<CrawlStatusResponse, ErrorResponse>["status"] =
+  // Check if the crawl failed during kickoff (e.g. queue full)
+  const crawlError = await getCrawlError(req.params.jobId);
+
+  let status: Exclude<CrawlStatusResponse, ErrorResponse>["status"] =
     sc.cancelled
       ? "cancelled"
       : validJobStatuses.every(x => x[1] === "completed")
         ? "completed"
         : "scraping";
 
+  if (crawlError && jobIDs.length === 0 && status === "completed") {
+    status = "failed";
+  }
+
   jobIDs = validJobIDs; // Use validJobIDs instead of jobIDs for further processing
 
   const doneJobs = await getJobs(doneJobIDs, logger);
   const data = doneJobs.map(x => x.returnvalue);
+
+  if (status === "failed" && crawlError) {
+    await send(ws, {
+      type: "catchup",
+      data: {
+        success: false,
+        error: crawlError,
+        status: "failed",
+        total: 0,
+        completed: 0,
+        creditsUsed: 0,
+        expiresAt: (await getCrawlExpiry(req.params.jobId)).toISOString(),
+        data: [],
+      },
+    });
+    finished = true;
+    return close(ws, 1000, { type: "done" });
+  }
 
   await send(ws, {
     type: "catchup",

@@ -1,16 +1,55 @@
+//! Firecrawl Rust SDK
+//!
+//! This SDK provides access to the Firecrawl API for web scraping and crawling.
+//!
+//! # Quick Start
+//!
+//! ## v1 API (existing)
+//!
+//! ```no_run
+//! use firecrawl::FirecrawlApp;
+//!
+//! #[tokio::main]
+//! async fn main() -> Result<(), Box<dyn std::error::Error>> {
+//!     let app = FirecrawlApp::new("your-api-key")?;
+//!     let document = app.scrape_url("https://example.com", None).await?;
+//!     println!("{:?}", document.markdown);
+//!     Ok(())
+//! }
+//! ```
+//!
+//! ## v2 API (new)
+//!
+//! ```no_run
+//! use firecrawl::v2::Client;
+//!
+//! #[tokio::main]
+//! async fn main() -> Result<(), Box<dyn std::error::Error>> {
+//!     let client = Client::new("your-api-key")?;
+//!     let document = client.scrape("https://example.com", None).await?;
+//!     println!("{:?}", document.markdown);
+//!     Ok(())
+//! }
+//! ```
+
 use reqwest::{Client, Response};
 use serde::de::DeserializeOwned;
 use serde_json::Value;
 
+// v1 modules (existing API)
 pub mod batch_scrape;
 pub mod crawl;
 pub mod document;
-mod error;
+pub mod error;
 pub mod extract;
 pub mod llmstxt;
 pub mod map;
 pub mod scrape;
 pub mod search;
+pub(crate) mod serde_helpers;
+
+// v2 module (new API)
+pub mod v2;
 
 use error::FirecrawlAPIError;
 pub use error::FirecrawlError;

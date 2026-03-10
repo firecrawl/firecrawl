@@ -23,8 +23,12 @@ export async function saveGeneratedLlmsTxt(
   data: GenerationData,
 ): Promise<void> {
   _logger.debug("Saving llmstxt generation " + id + " to Redis...");
-  await redisEvictConnection.set("generation:" + id, JSON.stringify(data));
-  await redisEvictConnection.expire("generation:" + id, GENERATION_TTL);
+  await redisEvictConnection.set(
+    "generation:" + id,
+    JSON.stringify(data),
+    "EX",
+    GENERATION_TTL,
+  );
 }
 
 export async function getGeneratedLlmsTxt(
@@ -49,8 +53,9 @@ export async function updateGeneratedLlmsTxt(
   await redisEvictConnection.set(
     "generation:" + id,
     JSON.stringify(updatedGeneration),
+    "EX",
+    GENERATION_TTL,
   );
-  await redisEvictConnection.expire("generation:" + id, GENERATION_TTL);
 }
 
 export async function getGeneratedLlmsTxtExpiry(id: string): Promise<Date> {

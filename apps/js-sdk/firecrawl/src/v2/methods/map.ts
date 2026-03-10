@@ -13,6 +13,7 @@ function prepareMapPayload(url: string, options?: MapOptions): Record<string, un
     if (options.limit != null) payload.limit = options.limit;
     if (options.timeout != null) payload.timeout = options.timeout;
     if (options.integration != null && options.integration.trim()) payload.integration = options.integration.trim();
+    if (options.origin) payload.origin = options.origin;
     if (options.location != null) payload.location = options.location;
   }
   return payload;

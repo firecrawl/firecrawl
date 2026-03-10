@@ -1,0 +1,69 @@
+name: Publish Java SDK
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - 'apps/java-sdk/**'
+
+jobs:
+  publish:
+    name: Publish to Maven Central
+    runs-on: blacksmith-2vcpu-ubuntu-2404
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: Install version check dependencies
+        run: pip install requests packaging
+
+      - name: Run version check script
+        id: version_check
+        run: |
+          VERSION_INCREMENTED=$(python .github/scripts/check_version_has_incremented.py java ./apps/java-sdk com.firecrawl:firecrawl-java)
+          echo "VERSION_INCREMENTED=$VERSION_INCREMENTED" >> $GITHUB_ENV
+
+      - name: Set up JDK 11
+        if: ${{ env.VERSION_INCREMENTED == 'true' }}
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '11'
+
+      - name: Cache Gradle packages
+        if: ${{ env.VERSION_INCREMENTED == 'true' }}
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: ${{ runner.os }}-gradle-${{ hashFiles('apps/java-sdk/**/*.gradle.kts', 'apps/java-sdk/gradle/wrapper/gradle-wrapper.properties') }}
+          restore-keys: |
+            ${{ runner.os }}-gradle-
+
+      - name: Grant execute permission for gradlew
+        if: ${{ env.VERSION_INCREMENTED == 'true' }}
+        working-directory: ./apps/java-sdk
+        run: chmod +x gradlew
+
+      - name: Build
+        if: ${{ env.VERSION_INCREMENTED == 'true' }}
+        working-directory: ./apps/java-sdk
+        run: ./gradlew build -x test
+
+      - name: Publish to Maven Central
+        if: ${{ env.VERSION_INCREMENTED == 'true' }}
+        working-directory: ./apps/java-sdk
+        env:
+          ORG_GRADLE_PROJECT_mavenCentralUsername: ${{ secrets.MAVEN_USERNAME }}
+          ORG_GRADLE_PROJECT_mavenCentralPassword: ${{ secrets.MAVEN_PASSWORD }}
+          ORG_GRADLE_PROJECT_signingInMemoryKey: ${{ secrets.GPG_SIGNING_KEY }}
+          ORG_GRADLE_PROJECT_signingInMemoryKeyPassword: ${{ secrets.GPG_SIGNING_PASSWORD }}
+        run: ./gradlew publishAndReleaseToMavenCentral --no-configuration-cache

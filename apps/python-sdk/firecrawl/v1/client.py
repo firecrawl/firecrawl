@@ -150,7 +150,7 @@ class V1ScrapeOptions(pydantic.BaseModel):
     skipTlsVerification: Optional[bool] = None
     removeBase64Images: Optional[bool] = None
     blockAds: Optional[bool] = None
-    proxy: Optional[Literal["basic", "stealth", "auto"]] = None
+    proxy: Optional[Literal["basic", "stealth", "enhanced", "auto"]] = None
     changeTrackingOptions: Optional[V1ChangeTrackingOptions] = None
     maxAge: Optional[int] = None
     storeInCache: Optional[bool] = None
@@ -339,6 +339,7 @@ class V1ExtractResponse(pydantic.BaseModel, Generic[T]):
     error: Optional[str] = None
     warning: Optional[str] = None
     sources: Optional[Dict[Any, Any]] = None
+    creditsUsed: Optional[int] = None
 
 class V1SearchParams(pydantic.BaseModel):
     query: str
@@ -541,7 +542,7 @@ class V1FirecrawlApp:
             skip_tls_verification: Optional[bool] = None,
             remove_base64_images: Optional[bool] = None,
             block_ads: Optional[bool] = None,
-            proxy: Optional[Literal["basic", "stealth", "auto"]] = None,
+            proxy: Optional[Literal["basic", "stealth", "enhanced", "auto"]] = None,
             parse_pdf: Optional[bool] = None,
             extract: Optional[V1JsonConfig] = None,
             json_options: Optional[V1JsonConfig] = None,
@@ -1440,7 +1441,7 @@ class V1FirecrawlApp:
         skip_tls_verification: Optional[bool] = None,
         remove_base64_images: Optional[bool] = None,
         block_ads: Optional[bool] = None,
-        proxy: Optional[Literal["basic", "stealth", "auto"]] = None,
+        proxy: Optional[Literal["basic", "stealth", "enhanced", "auto"]] = None,
         extract: Optional[V1JsonConfig] = None,
         json_options: Optional[V1JsonConfig] = None,
         actions: Optional[List[Union[V1WaitAction, V1ScreenshotAction, V1ClickAction, V1WriteAction, V1PressAction, V1ScrollAction, V1ScrapeAction, V1ExecuteJavascriptAction, V1PDFAction]]] = None,
@@ -1581,7 +1582,7 @@ class V1FirecrawlApp:
         skip_tls_verification: Optional[bool] = None,
         remove_base64_images: Optional[bool] = None,
         block_ads: Optional[bool] = None,
-        proxy: Optional[Literal["basic", "stealth", "auto"]] = None,
+        proxy: Optional[Literal["basic", "stealth", "enhanced", "auto"]] = None,
         extract: Optional[V1JsonConfig] = None,
         json_options: Optional[V1JsonConfig] = None,
         actions: Optional[List[Union[V1WaitAction, V1ScreenshotAction, V1ClickAction, V1WriteAction, V1PressAction, V1ScrollAction, V1ScrapeAction, V1ExecuteJavascriptAction, V1PDFAction]]] = None,
@@ -1721,7 +1722,7 @@ class V1FirecrawlApp:
         skip_tls_verification: Optional[bool] = None,
         remove_base64_images: Optional[bool] = None,
         block_ads: Optional[bool] = None,
-        proxy: Optional[Literal["basic", "stealth", "auto"]] = None,
+        proxy: Optional[Literal["basic", "stealth", "enhanced", "auto"]] = None,
         extract: Optional[V1JsonConfig] = None,
         json_options: Optional[V1JsonConfig] = None,
         actions: Optional[List[Union[V1WaitAction, V1ScreenshotAction, V1ClickAction, V1WriteAction, V1PressAction, V1ScrollAction, V1ScrapeAction, V1ExecuteJavascriptAction, V1PDFAction]]] = None,
@@ -1951,6 +1952,11 @@ class V1FirecrawlApp:
         """
         Extract structured information from URLs.
 
+        .. deprecated::
+            The extract endpoint is in maintenance mode and its use is discouraged.
+            Review https://docs.firecrawl.dev/developer-guides/usage-guides/choosing-the-data-extractor
+            to find a replacement.
+
         Args:
             urls (Optional[List[str]]): URLs to extract from
             prompt (Optional[str]): Custom extraction prompt
@@ -1971,6 +1977,14 @@ class V1FirecrawlApp:
         Raises:
             ValueError: If prompt/schema missing or extraction fails
         """
+        import warnings
+        warnings.warn(
+            "The extract endpoint is in maintenance mode and its use is discouraged. "
+            "Review https://docs.firecrawl.dev/developer-guides/usage-guides/choosing-the-data-extractor "
+            "to find a replacement.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         # Validate any additional kwargs
         self._validate_kwargs(kwargs, "extract")
         
@@ -2055,6 +2069,11 @@ class V1FirecrawlApp:
         """
         Retrieve the status of an extract job.
 
+        .. deprecated::
+            The extract endpoint is in maintenance mode and its use is discouraged.
+            Review https://docs.firecrawl.dev/developer-guides/usage-guides/choosing-the-data-extractor
+            to find a replacement.
+
         Args:
             job_id (str): The ID of the extract job.
 
@@ -2064,6 +2083,14 @@ class V1FirecrawlApp:
         Raises:
             ValueError: If there is an error retrieving the status.
         """
+        import warnings
+        warnings.warn(
+            "The extract endpoint is in maintenance mode and its use is discouraged. "
+            "Review https://docs.firecrawl.dev/developer-guides/usage-guides/choosing-the-data-extractor "
+            "to find a replacement.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         headers = self._prepare_headers()
         try:
             response = self._get_request(f'{self.api_url}/v1/extract/{job_id}', headers)
@@ -2091,6 +2118,11 @@ class V1FirecrawlApp:
         """
         Initiate an asynchronous extract job.
 
+        .. deprecated::
+            The extract endpoint is in maintenance mode and its use is discouraged.
+            Review https://docs.firecrawl.dev/developer-guides/usage-guides/choosing-the-data-extractor
+            to find a replacement.
+
         Args:
             urls (List[str]): URLs to extract information from
             prompt (Optional[str]): Custom extraction prompt
@@ -2111,6 +2143,14 @@ class V1FirecrawlApp:
         Raises:
             ValueError: If job initiation fails
         """
+        import warnings
+        warnings.warn(
+            "The extract endpoint is in maintenance mode and its use is discouraged. "
+            "Review https://docs.firecrawl.dev/developer-guides/usage-guides/choosing-the-data-extractor "
+            "to find a replacement.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         headers = self._prepare_headers()
         
         schema = schema
@@ -3522,7 +3562,7 @@ class AsyncV1FirecrawlApp(V1FirecrawlApp):
             skip_tls_verification: Optional[bool] = None,
             remove_base64_images: Optional[bool] = None,
             block_ads: Optional[bool] = None,
-            proxy: Optional[Literal["basic", "stealth", "auto"]] = None,
+            proxy: Optional[Literal["basic", "stealth", "enhanced", "auto"]] = None,
             parse_pdf: Optional[bool] = None,
             extract: Optional[V1JsonConfig] = None,
             json_options: Optional[V1JsonConfig] = None,
@@ -3656,7 +3696,7 @@ class AsyncV1FirecrawlApp(V1FirecrawlApp):
         skip_tls_verification: Optional[bool] = None,
         remove_base64_images: Optional[bool] = None,
         block_ads: Optional[bool] = None,
-        proxy: Optional[Literal["basic", "stealth", "auto"]] = None,
+        proxy: Optional[Literal["basic", "stealth", "enhanced", "auto"]] = None,
         extract: Optional[V1JsonConfig] = None,
         json_options: Optional[V1JsonConfig] = None,
         actions: Optional[List[Union[V1WaitAction, V1ScreenshotAction, V1ClickAction, V1WriteAction, V1PressAction, V1ScrollAction, V1ScrapeAction, V1ExecuteJavascriptAction, V1PDFAction]]] = None,
@@ -3795,7 +3835,7 @@ class AsyncV1FirecrawlApp(V1FirecrawlApp):
         skip_tls_verification: Optional[bool] = None,
         remove_base64_images: Optional[bool] = None,
         block_ads: Optional[bool] = None,
-        proxy: Optional[Literal["basic", "stealth", "auto"]] = None,
+        proxy: Optional[Literal["basic", "stealth", "enhanced", "auto"]] = None,
         extract: Optional[V1JsonConfig] = None,
         json_options: Optional[V1JsonConfig] = None,
         actions: Optional[List[Union[V1WaitAction, V1ScreenshotAction, V1ClickAction, V1WriteAction, V1PressAction, V1ScrollAction, V1ScrapeAction, V1ExecuteJavascriptAction, V1PDFAction]]] = None,
@@ -4357,6 +4397,11 @@ class AsyncV1FirecrawlApp(V1FirecrawlApp):
         """
         Asynchronously extract structured information from URLs.
 
+        .. deprecated::
+            The extract endpoint is in maintenance mode and its use is discouraged.
+            Review https://docs.firecrawl.dev/developer-guides/usage-guides/choosing-the-data-extractor
+            to find a replacement.
+
         Args:
             urls (Optional[List[str]]): URLs to extract from
             prompt (Optional[str]): Custom extraction prompt
@@ -4376,6 +4421,14 @@ class AsyncV1FirecrawlApp(V1FirecrawlApp):
         Raises:
           ValueError: If prompt/schema missing or extraction fails
         """
+        import warnings
+        warnings.warn(
+            "The extract endpoint is in maintenance mode and its use is discouraged. "
+            "Review https://docs.firecrawl.dev/developer-guides/usage-guides/choosing-the-data-extractor "
+            "to find a replacement.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         headers = self._prepare_headers()
 
         if not prompt and not schema:

@@ -1,4 +1,5 @@
 import { Response } from "express";
+import { config } from "../../config";
 import { v7 as uuidv7 } from "uuid";
 import {
   BatchScrapeRequest,
@@ -21,11 +22,12 @@ import { getJobPriority } from "../../lib/job-priority";
 import { addScrapeJobs } from "../../services/queue-jobs";
 import { createWebhookSender, WebhookEvent } from "../../services/webhook";
 import { logger as _logger } from "../../lib/logger";
-import { BLOCKLISTED_URL_MESSAGE } from "../../lib/strings";
+import { UNSUPPORTED_SITE_MESSAGE } from "../../lib/strings";
 import { isUrlBlocked } from "../../scraper/WebScraper/utils/blocklist";
 import { fromV1ScrapeOptions } from "../v2/types";
 import { checkPermissions } from "../../lib/permissions";
 import { crawlGroup } from "../../services/worker/nuq";
+import { logRequest } from "../../services/logging/log_job";
 
 export async function batchScrapeController(
   req: RequestWithAuth<{}, BatchScrapeResponse, BatchScrapeRequest>,
@@ -91,7 +93,7 @@ export async function batchScrapeController(
       if (!res.headersSent) {
         return res.status(403).json({
           success: false,
-          error: BLOCKLISTED_URL_MESSAGE,
+          error: UNSUPPORTED_SITE_MESSAGE,
         });
       }
     }
@@ -110,6 +112,20 @@ export async function batchScrapeController(
     account: req.account,
   });
 
+  if (!req.body.appendToId) {
+    await logRequest({
+      id,
+      kind: "batch_scrape",
+      api_version: "v1",
+      team_id: req.auth.team_id,
+      origin: req.body.origin ?? "api",
+      integration: req.body.integration,
+      target_hint: urls[0] ?? "",
+      zeroDataRetention: zeroDataRetention || false,
+      api_key_id: req.acuc?.api_key_id ?? null,
+    });
+  }
+
   const { scrapeOptions, internalOptions } = fromV1ScrapeOptions(
     req.body,
     req.body.timeout,
@@ -125,7 +141,7 @@ export async function batchScrapeController(
           ...internalOptions,
           disableSmartWaitCache: true,
           teamId: req.auth.team_id,
-          saveScrapeResultToGCS: process.env.GCS_FIRE_ENGINE_BUCKET_NAME
+          saveScrapeResultToGCS: config.GCS_FIRE_ENGINE_BUCKET_NAME
             ? true
             : false,
           zeroDataRetention,

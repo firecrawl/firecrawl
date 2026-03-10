@@ -1,4 +1,5 @@
 import { crawlController } from "../v0/crawl";
+import { config } from "../../config";
 import { Request, Response } from "express";
 import { authenticateUser } from "../auth"; // Ensure this import is correct
 import { createIdempotencyKey } from "../../services/idempotency/create";
@@ -21,7 +22,7 @@ describe("crawlController", () => {
     const req = {
       headers: {
         "x-idempotency-key": await uuidv7(),
-        Authorization: `Bearer ${process.env.TEST_API_KEY}`,
+        Authorization: `Bearer ${config.TEST_API_KEY}`,
       },
       body: {
         url: "https://mendable.ai",

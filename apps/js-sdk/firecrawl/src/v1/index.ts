@@ -1,6 +1,6 @@
 import axios, { type AxiosResponse, type AxiosRequestHeaders, AxiosError } from "axios";
 import * as zt from "zod";
-import { zodToJsonSchema } from "zod-to-json-schema";
+import { zodSchemaToJsonSchema } from "../utils/zodSchemaToJson";
 import { TypedEventTarget } from "typescript-event-target";
 
 /**
@@ -49,10 +49,14 @@ export interface FirecrawlDocumentMetadata {
   articleSection?: string;
   sourceURL?: string;
   statusCode?: number;
+  timezone?: string;
   error?: string;
   proxyUsed?: "basic" | "stealth";
   cacheState?: "miss" | "hit";
   cachedAt?: string;
+  creditsUsed?: number;
+  concurrencyLimited?: boolean;
+  concurrencyQueueDurationMs?: number;
   [key: string]: any; // Allows for additional metadata properties not explicitly defined.
 }
 
@@ -127,7 +131,7 @@ export interface CrawlScrapeOptions {
   skipTlsVerification?: boolean;
   removeBase64Images?: boolean;
   blockAds?: boolean;
-  proxy?: "basic" | "stealth" | "auto";
+  proxy?: "basic" | "stealth" | "enhanced" | "auto";
   storeInCache?: boolean;
   maxAge?: number;
   parsePDF?: boolean;
@@ -360,6 +364,7 @@ export interface ExtractResponse<LLMSchema extends zt.ZodSchema = any> {
   error?: string;
   warning?: string;
   sources?: string[];
+  creditsUsed?: number;
 }
 
 /**
@@ -702,36 +707,21 @@ export default class FirecrawlApp {
     } as AxiosRequestHeaders;
     let jsonData: any = { url, ...params, origin: typeof (params as any).origin === "string" && (params as any).origin.includes("mcp") ? (params as any).origin : `js-sdk@${this.version}` };
     if (jsonData?.extract?.schema) {
-      let schema = jsonData.extract.schema;
-
-      // Try parsing the schema as a Zod schema
-      try {
-        schema = zodToJsonSchema(schema);
-      } catch (error) {
-        
-      }
       jsonData = {
         ...jsonData,
         extract: {
           ...jsonData.extract,
-          schema: schema,
+          schema: zodSchemaToJsonSchema(jsonData.extract.schema),
         },
       };
     }
 
     if (jsonData?.jsonOptions?.schema) {
-      let schema = jsonData.jsonOptions.schema;
-      // Try parsing the schema as a Zod schema
-      try {
-        schema = zodToJsonSchema(schema);
-      } catch (error) {
-        
-      }
       jsonData = {
         ...jsonData,
         jsonOptions: {
           ...jsonData.jsonOptions,
-          schema: schema,
+          schema: zodSchemaToJsonSchema(jsonData.jsonOptions.schema),
         },
       };
     }
@@ -788,21 +778,13 @@ export default class FirecrawlApp {
     };
 
     if (jsonData?.scrapeOptions?.extract?.schema) {
-      let schema = jsonData.scrapeOptions.extract.schema;
-
-      // Try parsing the schema as a Zod schema
-      try {
-        schema = zodToJsonSchema(schema);
-      } catch (error) {
-        
-      }
       jsonData = {
         ...jsonData,
         scrapeOptions: {
           ...jsonData.scrapeOptions,
           extract: {
             ...jsonData.scrapeOptions.extract,
-            schema: schema,
+            schema: zodSchemaToJsonSchema(jsonData.scrapeOptions.extract.schema),
           },
         },
       };
@@ -1100,36 +1082,20 @@ export default class FirecrawlApp {
     const headers = this.prepareHeaders(idempotencyKey);
     let jsonData: any = { urls, webhook, ignoreInvalidURLs, maxConcurrency, ...params, origin: typeof (params as any).origin === "string" && (params as any).origin.includes("mcp") ? (params as any).origin : `js-sdk@${this.version}` };
     if (jsonData?.extract?.schema) {
-      let schema = jsonData.extract.schema;
-
-      // Try parsing the schema as a Zod schema
-      try {
-        schema = zodToJsonSchema(schema);
-      } catch (error) {
-        
-      }
       jsonData = {
         ...jsonData,
         extract: {
           ...jsonData.extract,
-          schema: schema,
+          schema: zodSchemaToJsonSchema(jsonData.extract.schema),
         },
       };
     }
     if (jsonData?.jsonOptions?.schema) {
-      let schema = jsonData.jsonOptions.schema;
-
-      // Try parsing the schema as a Zod schema
-      try {
-        schema = zodToJsonSchema(schema);
-      } catch (error) {
-        
-      }
       jsonData = {
         ...jsonData,
         jsonOptions: {
           ...jsonData.jsonOptions,
-          schema: schema,
+          schema: zodSchemaToJsonSchema(jsonData.jsonOptions.schema),
         },
       };
     }
@@ -1312,29 +1278,17 @@ export default class FirecrawlApp {
 
   /**
    * Extracts information from URLs using the Firecrawl API.
-   * Currently in Beta. Expect breaking changes on future minor versions.
    * @param urls - The URLs to extract information from. Optional if using other methods for data extraction.
    * @param params - Additional parameters for the extract request.
    * @returns The response from the extract operation.
+   * @deprecated The extract endpoint is in maintenance mode and its use is discouraged.
+   * Review https://docs.firecrawl.dev/developer-guides/usage-guides/choosing-the-data-extractor to find a replacement.
    */
   async extract<T extends zt.ZodSchema = any>(urls?: string[], params?: ExtractParams<T>): Promise<ExtractResponse<zt.infer<T>> | ErrorResponse> {
     const headers = this.prepareHeaders();
 
     let jsonData: { urls?: string[] } & ExtractParams<T> = { urls: urls,  ...params };
-    let jsonSchema: any;
-    try {
-      if (!params?.schema) {
-        jsonSchema = undefined;
-      } else {
-        try {
-          jsonSchema = zodToJsonSchema(params.schema as zt.ZodType);
-        } catch (_) {
-          jsonSchema = params.schema;
-        }
-      }
-    } catch (error: any) {
-      throw new FirecrawlError("Invalid schema. Schema must be either a valid Zod schema or JSON schema object.", 400);
-    }
+    const jsonSchema = params?.schema ? zodSchemaToJsonSchema(params.schema) : undefined;
     
     try {
       const response: AxiosResponse = await this.postRequest(
@@ -1384,6 +1338,8 @@ export default class FirecrawlApp {
    * @param params - Additional parameters for the extract request.
    * @param idempotencyKey - Optional idempotency key for the request.
    * @returns The response from the extract operation.
+   * @deprecated The extract endpoint is in maintenance mode and its use is discouraged.
+   * Review https://docs.firecrawl.dev/developer-guides/usage-guides/choosing-the-data-extractor to find a replacement.
    */
   async asyncExtract(
     urls: string[],
@@ -1391,22 +1347,8 @@ export default class FirecrawlApp {
     idempotencyKey?: string
   ): Promise<ExtractResponse | ErrorResponse> {
     const headers = this.prepareHeaders(idempotencyKey);
-    let jsonData: any = { urls, ...params };
-    let jsonSchema: any;
-
-    try {
-      if (!params?.schema) {
-        jsonSchema = undefined;
-      } else {
-        try {
-          jsonSchema = zodToJsonSchema(params.schema as zt.ZodType);
-        } catch (_) {
-          jsonSchema = params.schema;
-        }
-      }
-    } catch (error: any) {
-      throw new FirecrawlError("Invalid schema. Schema must be either a valid Zod schema or JSON schema object.", 400);
-    }
+    const jsonData: any = { urls, ...params };
+    const jsonSchema = params?.schema ? zodSchemaToJsonSchema(params.schema) : undefined;
 
     try {
       const response: AxiosResponse = await this.postRequest(
@@ -1430,6 +1372,8 @@ export default class FirecrawlApp {
    * Retrieves the status of an extract job.
    * @param jobId - The ID of the extract job.
    * @returns The status of the extract job.
+   * @deprecated The extract endpoint is in maintenance mode and its use is discouraged.
+   * Review https://docs.firecrawl.dev/developer-guides/usage-guides/choosing-the-data-extractor to find a replacement.
    */
   async getExtractStatus(jobId: string): Promise<any> {
     try {
@@ -1775,18 +1719,11 @@ export default class FirecrawlApp {
     let jsonData: any = { query, ...params, origin: typeof (params as any).origin === "string" && (params as any).origin.includes("mcp") ? (params as any).origin : `js-sdk@${this.version}` };
 
     if (jsonData?.jsonOptions?.schema) {
-      let schema = jsonData.jsonOptions.schema;
-      // Try parsing the schema as a Zod schema
-      try {
-        schema = zodToJsonSchema(schema);
-      } catch (error) {
-        // Ignore error if schema can't be parsed as Zod
-      }
       jsonData = {
         ...jsonData,
         jsonOptions: {
           ...jsonData.jsonOptions,
-          schema: schema,
+          schema: zodSchemaToJsonSchema(jsonData.jsonOptions.schema),
         },
       };
     }

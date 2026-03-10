@@ -19,6 +19,13 @@ import {
   batchScrape as batchWaiter,
 } from "./methods/batch";
 import { startExtract, getExtractStatus, extract as extractWaiter } from "./methods/extract";
+import { startAgent, getAgentStatus, cancelAgent, agent as agentWaiter } from "./methods/agent";
+import {
+  browser as browserMethod,
+  browserExecute,
+  deleteBrowser,
+  listBrowsers,
+} from "./methods/browser";
 import { getConcurrency, getCreditUsage, getQueueStatus, getTokenUsage, getCreditUsageHistorical, getTokenUsageHistorical } from "./methods/usage";
 import type {
   Document,
@@ -34,9 +41,15 @@ import type {
   BatchScrapeResponse,
   BatchScrapeJob,
   ExtractResponse,
+  AgentResponse,
+  AgentStatusResponse,
   CrawlOptions,
   BatchScrapeOptions,
   PaginationConfig,
+  BrowserCreateResponse,
+  BrowserExecuteResponse,
+  BrowserDeleteResponse,
+  BrowserListResponse,
 } from "./types";
 import { Watcher } from "./watcher";
 import type { WatcherOptions } from "./watcher";
@@ -242,6 +255,8 @@ export class FirecrawlClient {
    * Start an extract job (async).
    * @param args Extraction request (urls, schema or prompt, flags).
    * @returns Job id or processing state.
+   * @deprecated The extract endpoint is in maintenance mode and its use is discouraged.
+   * Review https://docs.firecrawl.dev/developer-guides/usage-guides/choosing-the-data-extractor to find a replacement.
    */
   async startExtract(args: Parameters<typeof startExtract>[1]): Promise<ExtractResponse> {
     return startExtract(this.http, args);
@@ -249,6 +264,8 @@ export class FirecrawlClient {
   /**
    * Get extract job status/data.
    * @param jobId Extract job id.
+   * @deprecated The extract endpoint is in maintenance mode and its use is discouraged.
+   * Review https://docs.firecrawl.dev/developer-guides/usage-guides/choosing-the-data-extractor to find a replacement.
    */
   async getExtractStatus(jobId: string): Promise<ExtractResponse> {
     return getExtractStatus(this.http, jobId);
@@ -257,9 +274,85 @@ export class FirecrawlClient {
    * Convenience waiter: start an extract and poll until it finishes.
    * @param args Extraction request plus waiter controls (pollInterval, timeout seconds).
    * @returns Final extract response.
+   * @deprecated The extract endpoint is in maintenance mode and its use is discouraged.
+   * Review https://docs.firecrawl.dev/developer-guides/usage-guides/choosing-the-data-extractor to find a replacement.
    */
   async extract(args: Parameters<typeof startExtract>[1] & { pollInterval?: number; timeout?: number }): Promise<ExtractResponse> {
     return extractWaiter(this.http, args);
+  }
+
+  // Agent
+  /**
+   * Start an agent job (async).
+   * @param args Agent request (urls, prompt, schema).
+   * @returns Job id or processing state.
+   */
+  async startAgent(args: Parameters<typeof startAgent>[1]): Promise<AgentResponse> {
+    return startAgent(this.http, args);
+  }
+  /**
+   * Get agent job status/data.
+   * @param jobId Agent job id.
+   */
+  async getAgentStatus(jobId: string): Promise<AgentStatusResponse> {
+    return getAgentStatus(this.http, jobId);
+  }
+  /**
+   * Convenience waiter: start an agent and poll until it finishes.
+   * @param args Agent request plus waiter controls (pollInterval, timeout seconds).
+   * @returns Final agent response.
+   */
+  async agent(args: Parameters<typeof startAgent>[1] & { pollInterval?: number; timeout?: number }): Promise<AgentStatusResponse> {
+    return agentWaiter(this.http, args);
+  }
+  /**
+   * Cancel an agent job.
+   * @param jobId Agent job id.
+   * @returns True if cancelled.
+   */
+  async cancelAgent(jobId: string): Promise<boolean> {
+    return cancelAgent(this.http, jobId);
+  }
+
+  // Browser
+  /**
+   * Create a new browser session.
+   * @param args Session options (ttl, activityTtl, streamWebView, profile).
+   * @returns Session id, CDP URL, live view URL, and expiration time.
+   */
+  async browser(
+    args: Parameters<typeof browserMethod>[1] = {}
+  ): Promise<BrowserCreateResponse> {
+    return browserMethod(this.http, args);
+  }
+  /**
+   * Execute code in a browser session.
+   * @param sessionId Browser session id.
+   * @param args Code, language ("python" | "node" | "bash"), and optional timeout.
+   * @returns Execution result including stdout, stderr, exitCode, and killed status.
+   */
+  async browserExecute(
+    sessionId: string,
+    args: Parameters<typeof browserExecute>[2]
+  ): Promise<BrowserExecuteResponse> {
+    return browserExecute(this.http, sessionId, args);
+  }
+  /**
+   * Delete a browser session.
+   * @param sessionId Browser session id.
+   */
+  async deleteBrowser(sessionId: string): Promise<BrowserDeleteResponse> {
+    return deleteBrowser(this.http, sessionId);
+  }
+  /**
+   * List browser sessions.
+   * @param args Optional filter (status: "active" | "destroyed").
+   * @returns List of browser sessions.
+   */
+  async listBrowsers(
+    args: Parameters<typeof listBrowsers>[1] = {}
+  ): Promise<BrowserListResponse> {
+    return listBrowsers(this.http, args);
   }
 
   // Usage

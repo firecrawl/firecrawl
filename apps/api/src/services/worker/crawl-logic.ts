@@ -1,4 +1,5 @@
 import { logger as _logger } from "../../lib/logger";
+import { config } from "../../config";
 import {
   finishCrawl,
   getCrawlJobs,
@@ -7,7 +8,7 @@ import {
 import { getCrawl } from "../../lib/crawl-redis";
 import { supabase_service } from "../supabase";
 import { getJobs } from "../../controllers/v1/crawl-status";
-import { logJob } from "../logging/log_job";
+import { logCrawl, logBatchScrape } from "../logging/log_job";
 import { createWebhookSender, WebhookEvent } from "../webhook/index";
 import type { NuQJob } from "./nuq";
 
@@ -57,26 +58,41 @@ export async function finishCrawlSuper(job: NuQJob<any>) {
       )
       .filter(x => x !== null);
 
-    await logJob(
-      {
-        job_id: crawlId,
-        success: jobStatus === "completed",
-        message: sc.cancelled ? "Cancelled" : undefined,
-        num_docs: fullDocs.length,
-        docs: [],
-        time_taken: (Date.now() - sc.createdAt) / 1000,
-        team_id: job.data.team_id,
-        mode: sc.crawlerOptions !== null ? "crawl" : "batch_scrape",
-        url: sc.originUrl!,
-        scrapeOptions: sc.scrapeOptions,
-        crawlerOptions: sc.crawlerOptions,
-        origin: sc.originUrl!,
-        integration: job.data.integration,
-        zeroDataRetention: job.data.zeroDataRetention,
-      },
-      false,
-      sc.internalOptions?.bypassBilling ?? false,
-    );
+    if (sc.crawlerOptions !== null) {
+      await logCrawl(
+        {
+          id: crawlId,
+          request_id: job.data.requestId ?? crawlId,
+          url: sc.originUrl!,
+          team_id: job.data.team_id,
+          options: sc.crawlerOptions,
+          num_docs: fullDocs.length,
+          credits_cost: fullDocs.reduce(
+            (acc, doc) => acc + (doc?.metadata?.creditsUsed ?? 0),
+            0,
+          ),
+          zeroDataRetention: sc.zeroDataRetention || job.data.zeroDataRetention,
+          cancelled: sc.cancelled ?? false,
+        },
+        false,
+      );
+    } else {
+      await logBatchScrape(
+        {
+          id: crawlId,
+          request_id: job.data.requestId ?? crawlId,
+          team_id: job.data.team_id,
+          num_docs: fullDocs.length,
+          credits_cost: fullDocs.reduce(
+            (acc, doc) => acc + (doc?.metadata?.creditsUsed ?? 0),
+            0,
+          ),
+          zeroDataRetention: sc.zeroDataRetention || job.data.zeroDataRetention,
+          cancelled: sc.cancelled ?? false,
+        },
+        false,
+      );
+    }
 
     // v0 web hooks, call when done with all the data
     if (!job.data.v1) {
@@ -110,13 +126,12 @@ export async function finishCrawlSuper(job: NuQJob<any>) {
     }
   } else {
     const num_docs = await getDoneJobsOrderedLength(crawlId);
-    const jobStatus = sc.cancelled ? "failed" : "completed";
 
     let credits_billed = null;
 
-    if (process.env.USE_DB_AUTHENTICATION === "true") {
+    if (config.USE_DB_AUTHENTICATION) {
       const creditsRpc = await supabase_service.rpc(
-        "credits_billed_by_crawl_id_1",
+        "credits_billed_by_crawl_id_2",
         {
           i_crawl_id: crawlId,
         },
@@ -131,29 +146,35 @@ export async function finishCrawlSuper(job: NuQJob<any>) {
       }
     }
 
-    await logJob(
-      {
-        job_id: crawlId,
-        success: jobStatus === "completed",
-        message: sc.cancelled ? "Cancelled" : undefined,
-        num_docs,
-        docs: [],
-        time_taken: (Date.now() - sc.createdAt) / 1000,
-        team_id: sc.team_id,
-        scrapeOptions: sc.scrapeOptions,
-        mode: sc.crawlerOptions !== null ? "crawl" : "batch_scrape",
-        url:
-          sc?.originUrl ??
-          (sc.crawlerOptions === null ? "Batch Scrape" : "Unknown"),
-        crawlerOptions: sc.crawlerOptions,
-        origin: job.data.origin,
-        integration: job.data.integration,
-        credits_billed,
-        zeroDataRetention: job.data.zeroDataRetention,
-      },
-      true,
-      sc.internalOptions?.bypassBilling ?? false,
-    );
+    if (sc.crawlerOptions !== null) {
+      await logCrawl(
+        {
+          id: crawlId,
+          request_id: job.data.requestId ?? crawlId,
+          url: sc.originUrl!,
+          team_id: job.data.team_id,
+          options: sc.crawlerOptions,
+          num_docs: num_docs,
+          credits_cost: credits_billed ?? 0,
+          zeroDataRetention: sc.zeroDataRetention || job.data.zeroDataRetention,
+          cancelled: sc.cancelled ?? false,
+        },
+        false,
+      );
+    } else {
+      await logBatchScrape(
+        {
+          id: crawlId,
+          request_id: job.data.requestId ?? crawlId,
+          team_id: job.data.team_id,
+          num_docs: num_docs,
+          credits_cost: credits_billed ?? 0,
+          zeroDataRetention: sc.zeroDataRetention || job.data.zeroDataRetention,
+          cancelled: sc.cancelled ?? false,
+        },
+        false,
+      );
+    }
 
     // v1 web hooks, call when done with no data, but with event completed
     if (job.data.v1 && job.data.webhook) {

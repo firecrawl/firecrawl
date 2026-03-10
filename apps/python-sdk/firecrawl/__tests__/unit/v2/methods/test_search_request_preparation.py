@@ -14,7 +14,7 @@ class TestSearchRequestPreparation:
         # Check basic fields
         assert data["query"] == "test query"
         assert data["limit"] == 5
-        assert data["timeout"] == 60000
+        assert data["timeout"] == 300000
         
         # Check that snake_case fields are not present
         assert "ignore_invalid_urls" not in data

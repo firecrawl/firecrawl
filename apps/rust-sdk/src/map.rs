@@ -8,7 +8,7 @@ use crate::{FirecrawlApp, FirecrawlError, API_VERSION};
 pub struct Location {
     /// Country code (ISO 3166-1 alpha-2)
     pub country: Option<String>,
-    
+
     /// List of language codes
     pub languages: Option<Vec<String>>,
 }

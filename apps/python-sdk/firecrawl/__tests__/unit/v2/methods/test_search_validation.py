@@ -79,44 +79,28 @@ class TestSearchValidation:
         with pytest.raises(ValueError, match="Location must be a non-empty string"):
             _validate_search_request(request)
 
-    def test_validate_invalid_tbs(self):
-        """Test validation of invalid tbs values."""
-        invalid_tbs_values = ["invalid", "qdr:x", "yesterday", "last_week"]
-
-        for invalid_tbs in invalid_tbs_values:
-            request = SearchRequest(query="test", tbs=invalid_tbs)
-            with pytest.raises(ValueError, match="Invalid tbs value"):
+    def test_validate_empty_tbs(self):
+        """Test validation rejects empty tbs values."""
+        for empty_tbs in ["", "   "]:
+            request = SearchRequest(query="test", tbs=empty_tbs)
+            with pytest.raises(ValueError, match="tbs must be a non-empty string"):
                 _validate_search_request(request)
 
-    def test_validate_custom_date_ranges(self):
-        """Test validation of custom date range formats."""
-        valid_custom_ranges = [
+    def test_validate_tbs_passthrough(self):
+        """Test that tbs values are passed through without strict validation."""
+        valid_tbs_values = [
+            "qdr:d",
+            "qdr:w",
+            "sbd:1",
+            "sbd:1,qdr:w",
+            "sbd:1,cdr:1,cd_min:1/1/2024,cd_max:12/31/2024",
             "cdr:1,cd_min:1/1/2024,cd_max:12/31/2024",
-            "cdr:1,cd_min:12/1/2024,cd_max:12/31/2024",
-            "cdr:1,cd_min:2/28/2023,cd_max:3/1/2023",
-            "cdr:1,cd_min:10/15/2023,cd_max:11/15/2023"
         ]
 
-        for valid_range in valid_custom_ranges:
-            request = SearchRequest(query="test", tbs=valid_range)
+        for tbs in valid_tbs_values:
+            request = SearchRequest(query="test", tbs=tbs)
             validated = _validate_search_request(request)
             assert validated == request
-
-    def test_validate_invalid_custom_date_ranges(self):
-        """Test validation of invalid custom date range formats."""
-        # Invalid custom date ranges
-        invalid_custom_ranges = [
-            "cdr:1,cd_min:2/28/2023",  # Missing cd_max
-            "cdr:1,cd_max:2/28/2023",  # Missing cd_min
-            "cdr:2,cd_min:1/1/2024,cd_max:12/31/2024",  # Wrong cdr value
-            "cdr:cd_min:1/1/2024,cd_max:12/31/2024",  # Missing :1
-            "custom:1,cd_min:1/1/2024,cd_max:12/31/2024"  # Wrong prefix
-        ]
-
-        for invalid_range in invalid_custom_ranges:
-            request = SearchRequest(query="test", tbs=invalid_range)
-            with pytest.raises(ValueError, match="Invalid"):
-                _validate_search_request(request)
 
     def test_validate_valid_requests(self):
         """Test that valid requests pass validation."""
@@ -208,7 +192,7 @@ class TestSearchRequestModel:
         request = SearchRequest(query="test")
         assert request.limit == 5
         assert request.ignore_invalid_urls is None  # No default in model
-        assert request.timeout == 60000
+        assert request.timeout == 300000
         assert request.sources is None
         assert request.tbs is None
         assert request.location is None

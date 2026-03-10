@@ -1,3 +1,4 @@
+import { config } from "../../../config";
 import {
   ScrapeRequestInput,
   Document,
@@ -24,7 +25,8 @@ import {
 import { SearchV2Response } from "../../../lib/entities";
 
 // Re-export shared utilities for backwards compatibility
-export { scrapeTimeout, indexCooldown, Identity, idmux };
+export { scrapeTimeout, indexCooldown, Identity, idmux, TEST_API_URL };
+export default request;
 
 const pollSleep = async () => new Promise(r => setTimeout(r, 50));
 
@@ -546,7 +548,7 @@ export async function extractRaw(
 
 export async function zdrcleaner(teamId: string) {
   const res = await request(TEST_API_URL)
-    .get(`/admin/${process.env.BULL_AUTH_KEY}/zdrcleaner`)
+    .get(`/admin/${config.BULL_AUTH_KEY}/zdrcleaner`)
     .query({ teamId });
 
   expect(res.statusCode).toBe(200);

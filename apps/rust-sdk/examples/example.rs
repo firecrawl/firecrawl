@@ -1,6 +1,6 @@
 use firecrawl::{
     crawl::CrawlOptions,
-    scrape::{ExtractOptions, ScrapeFormats, ScrapeOptions},
+    scrape::{JsonOptions, ScrapeFormats, ScrapeOptions},
     FirecrawlApp,
 };
 use serde_json::json;
@@ -62,8 +62,8 @@ async fn main() {
     });
 
     let llm_extraction_options = ScrapeOptions {
-        formats: vec![ScrapeFormats::Extract].into(),
-        extract: ExtractOptions {
+        formats: vec![ScrapeFormats::Json].into(),
+        json_options: JsonOptions {
             schema: json_schema.into(),
             ..Default::default()
         }

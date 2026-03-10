@@ -1,4 +1,4 @@
-import { supabaseGetJobByIdOnlyData } from "../../lib/supabase-jobs";
+import { supabaseGetScrapeByIdOnlyData } from "../../lib/supabase-jobs";
 import { getJob } from "./crawl-status";
 import { logger as _logger } from "../../lib/logger";
 
@@ -29,7 +29,7 @@ export async function scrapeStatusController(req: any, res: any) {
     });
   }
 
-  const job = await supabaseGetJobByIdOnlyData(req.params.jobId, logger);
+  const job = await supabaseGetScrapeByIdOnlyData(req.params.jobId, logger);
 
   if (!job) {
     return res.status(404).json({

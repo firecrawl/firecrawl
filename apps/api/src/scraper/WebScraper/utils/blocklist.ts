@@ -1,4 +1,5 @@
 import { configDotenv } from "dotenv";
+import { config } from "../../../config";
 import { parse } from "tldts";
 import { TeamFlags } from "../../../controllers/v1/types";
 import { supabase_rr_service } from "../../../services/supabase";
@@ -13,10 +14,7 @@ type BlocklistBlob = {
 let blob: BlocklistBlob | null = null;
 
 export async function initializeBlocklist() {
-  if (
-    process.env.USE_DB_AUTHENTICATION !== "true" ||
-    process.env.DISABLE_BLOCKLIST === "true"
-  ) {
+  if (config.USE_DB_AUTHENTICATION !== true || config.DISABLE_BLOCKLIST) {
     blob = {
       blocklist: [],
       allowedKeywords: [],
@@ -94,8 +92,10 @@ export function isUrlBlocked(url: string, flags: TeamFlags): boolean {
 
   // Block different TLDs of the same base domain
   const baseDomain = domain.split(".")[0]; // Extract the base domain (e.g., "facebook" from "facebook.com")
+
   if (
     publicSuffix &&
+    baseDomain.length > 2 &&
     blockedlist.some(
       blocked => blocked.startsWith(baseDomain + ".") && blocked !== domain,
     )

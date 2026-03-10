@@ -47,7 +47,7 @@ describe("Map tests", () => {
 
       expect(response.statusCode).toBe(408);
       expect(response.body.success).toBe(false);
-      expect(response.body.error).toBe("Map timed out");
+      expect(response.body.error).toContain("The map operation timed out");
     },
     10000,
   );

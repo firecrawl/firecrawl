@@ -2366,8 +2366,8 @@
           },
           "proxy": {
             "type": "string",
-            "enum": ["basic", "stealth", "auto"],
-            "description": "Specifies the type of proxy to use.\n\n - **basic**: Proxies for scraping sites with none to basic anti-bot solutions. Fast and usually works.\n - **stealth**: Stealth proxies for scraping sites with advanced anti-bot solutions. Slower, but more reliable on certain sites. Costs up to 5 credits per request.\n - **auto**: Firecrawl will automatically retry scraping with stealth proxies if the basic proxy fails. If the retry with stealth is successful, 5 credits will be billed for the scrape. If the first attempt with basic is successful, only the regular cost will be billed.\n\nIf you do not specify a proxy, Firecrawl will default to basic."
+            "enum": ["basic", "enhanced", "auto"],
+            "description": "Specifies the type of proxy to use.\n\n - **basic**: Proxies for scraping sites with none to basic anti-bot solutions. Fast and usually works.\n - **enhanced**: Enhanced proxies for scraping sites with advanced anti-bot solutions. Slower, but more reliable on certain sites. Costs up to 5 credits per request.\n - **auto**: Firecrawl will automatically retry scraping with enhanced proxies if the basic proxy fails. If the retry with enhanced is successful, 5 credits will be billed for the scrape. If the first attempt with basic is successful, only the regular cost will be billed.\n\nIf you do not specify a proxy, Firecrawl will default to basic."
           },
           "changeTrackingOptions": {
             "type": "object",
@@ -2504,6 +2504,10 @@
                   "statusCode": {
                     "type": "integer",
                     "description": "The status code of the page"
+                  },
+                  "timezone": {
+                    "type": "string",
+                    "description": "Timezone inferred by the scraping engine, when available"
                   },
                   "error": {
                     "type": "string",
@@ -2704,6 +2708,10 @@
                       "type": "integer",
                       "description": "The status code of the page"
                     },
+                    "timezone": {
+                      "type": "string",
+                      "description": "Timezone inferred by the scraping engine, when available"
+                    },
                     "error": {
                       "type": "string",
                       "nullable": true,
@@ -2836,6 +2844,10 @@
                     "statusCode": {
                       "type": "integer",
                       "description": "The status code of the page"
+                    },
+                    "timezone": {
+                      "type": "string",
+                      "description": "Timezone inferred by the scraping engine, when available"
                     },
                     "error": {
                       "type": "string",

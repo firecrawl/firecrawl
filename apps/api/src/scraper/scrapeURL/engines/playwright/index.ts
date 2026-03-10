@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { config } from "../../../../config";
 import { EngineScrapeResult } from "..";
 import { Meta } from "../..";
 import { robustFetch } from "../../lib/fetch";
@@ -8,7 +9,7 @@ export async function scrapeURLWithPlaywright(
   meta: Meta,
 ): Promise<EngineScrapeResult> {
   const response = await robustFetch({
-    url: process.env.PLAYWRIGHT_MICROSERVICE_URL!,
+    url: config.PLAYWRIGHT_MICROSERVICE_URL!,
     headers: {
       "Content-Type": "application/json",
     },

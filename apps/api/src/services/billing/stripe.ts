@@ -1,7 +1,8 @@
 import { logger } from "../../lib/logger";
+import { config } from "../../config";
 import Stripe from "stripe";
 
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY ?? "");
+const stripe = new Stripe(config.STRIPE_SECRET_KEY ?? "");
 
 async function getCustomerDefaultPaymentMethod(customerId: string) {
   const paymentMethods = await stripe.customers.listPaymentMethods(customerId, {
@@ -68,10 +69,12 @@ export async function createSubscription(
   customer_id: string,
   price_id: string,
   main_subscription_id: string,
+  invoiceOnly = false,
 ) {
-  const defaultPaymentMethod =
-    await getCustomerDefaultPaymentMethod(customer_id);
-  if (!defaultPaymentMethod) {
+  const defaultPaymentMethod = invoiceOnly
+    ? null
+    : await getCustomerDefaultPaymentMethod(customer_id);
+  if (!invoiceOnly && !defaultPaymentMethod) {
     logger.error("No default payment method found for customer", {
       team_id,
       customer_id,
@@ -152,15 +155,22 @@ export async function createSubscription(
   const subscription = await stripe.subscriptions.create({
     customer: customer_id,
     items: [{ price: price_id }],
-    off_session: true,
-    payment_settings: {
-      payment_method_types: [
-        (defaultPaymentMethod?.type as Stripe.SubscriptionCreateParams.PaymentSettings.PaymentMethodType) ??
-          "card",
-      ],
-    },
-    default_payment_method: defaultPaymentMethod.id,
-    collection_method: "charge_automatically",
+    ...(invoiceOnly
+      ? {
+          collection_method: "send_invoice",
+          days_until_due: 30,
+        }
+      : {
+          off_session: true,
+          payment_settings: {
+            payment_method_types: [
+              (defaultPaymentMethod?.type as Stripe.SubscriptionCreateParams.PaymentSettings.PaymentMethodType) ??
+                "card",
+            ],
+          },
+          default_payment_method: defaultPaymentMethod?.id,
+          collection_method: "charge_automatically",
+        }),
     metadata: {
       team_id,
       auto_recharge: "true",

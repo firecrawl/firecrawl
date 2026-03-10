@@ -1,4 +1,5 @@
 import { logger } from "../../lib/logger";
+import { config } from "../../config";
 import { getRedisConnection } from "../queue-service";
 import { supabase_service } from "../supabase";
 import * as Sentry from "@sentry/node";
@@ -241,7 +242,7 @@ export async function queueBillingOperation(
     // Should we add this?
     // I guess batch is fast enough that it's fine
 
-    // if (process.env.USE_DB_AUTHENTICATION === "true") {
+    // if (config.USE_DB_AUTHENTICATION) {
     //   (async () => {
     //     // Get API keys for this team to update in cache
     //     const { data } = await supabase_service

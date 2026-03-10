@@ -48,4 +48,4 @@ Ready to dive in?
 - Run a repo template with the “Run with Replit” button
 - Create your own templates and share with the community
 
-We can’t wait to see what you build and share! Join us on [Discord](https://discord.com/invite/gSmWdAkdwd) to discuss templates, share ideas, and connect with other Firecrawl users.
+We can’t wait to see what you build and share! Join us on [Discord](https://discord.gg/firecrawl) to discuss templates, share ideas, and connect with other Firecrawl users.

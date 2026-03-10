@@ -18,7 +18,8 @@ print(f"Total documents fetched: {len(crawl_result.data)}")
 print(f"Next URL: {crawl_result.next}")  # Should be None since auto-pagination is enabled
 
 # Example 2: Manual crawl with pagination control
-# Use this when you need to control how many pages to fetch or want to process results incrementally
+# Use this when you need to control how many pages to fetch or want to process results incrementally.
+# The next URL is opaque; pass it back to the SDK to fetch the next page.
 print("\n=== Example 2: Manual crawl with pagination control ===")
 crawl_job = firecrawl.start_crawl("https://example.com", limit=100)
 
@@ -27,6 +28,9 @@ pagination_config = PaginationConfig(auto_paginate=False)
 status = firecrawl.get_crawl_status(crawl_job.id, pagination_config=pagination_config)
 print(f"Documents from first page: {len(status.data)}")
 print(f"Next URL: {status.next}")  # Will show the next page URL
+if status.next:
+    next_page = firecrawl.get_crawl_status_page(status.next)
+    print(f"Documents from next page: {len(next_page.data)}")
 
 # Example 3: Limited pagination - fetch only 3 pages
 # Useful for controlling memory usage or processing time
@@ -68,11 +72,16 @@ batch_result = firecrawl.batch_scrape(urls)
 print(f"Batch scrape documents: {len(batch_result.data)}")
 
 # Example 8: Manual batch scrape with pagination control
-# Use this when you need to control how many pages to fetch or want to process results incrementally
+# Use this when you need to control how many pages to fetch or want to process results incrementally.
+# The next URL is opaque; pass it back to the SDK to fetch the next page.
 print("\n=== Example 8: Manual batch scrape with pagination control ===")
 batch_job = firecrawl.start_batch_scrape(urls)
-status = firecrawl.get_batch_scrape_status(batch_job.id)
+status = firecrawl.get_batch_scrape_status(batch_job.id, pagination_config=PaginationConfig(auto_paginate=False))
 print(f"Batch scrape documents: {len(status.data)}")
+print(f"Next URL: {status.next}")
+if status.next:
+    next_page = firecrawl.get_batch_scrape_status_page(status.next)
+    print(f"Batch scrape next page documents: {len(next_page.data)}")
 
 # Example 9: Async usage
 print("\n=== Example 9: Async pagination ===")
@@ -94,6 +103,9 @@ async def async_example():
         pagination_config=pagination_config
     )
     print(f"Async crawl with pagination: {len(status.data)}")
+    if status.next:
+        next_page = await async_client.get_crawl_status_page(status.next)
+        print(f"Async crawl next page documents: {len(next_page.data)}")
 
 # Run async example
 # asyncio.run(async_example())

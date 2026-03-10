@@ -4,8 +4,8 @@ github.com/andybalholm/cascadia v1.3.3 h1:AG2YHrzJIm4BZ19iwJ/DAua6Btl3IwJX+VI4kk
 github.com/andybalholm/cascadia v1.3.3/go.mod h1:xNd9bqTn98Ln4DwST8/nG+H0yuB8Hmgu1YHNnWw0GeA=
 github.com/coreos/go-systemd/v22 v22.5.0/go.mod h1:Y58oyj3AT4RCenI/lSvhwexgC+NSVTIJ3seZv2GcEnc=
 github.com/creack/pty v1.1.9/go.mod h1:oKZEueFk5CKHvIhNR5MUki03XCEU+Q6VDXinZuGJ33E=
-github.com/firecrawl/html-to-markdown v0.0.0-20250922154302-32a7ad4a22c3 h1:lzHIpN3DszdL8V2JRK03WleWIeW2ssVmiMAbg67ES/A=
-github.com/firecrawl/html-to-markdown v0.0.0-20250922154302-32a7ad4a22c3/go.mod h1:jngam+MdNp7FZkhSTlFsuA5hXY21X0+vuiGlpgo2n5o=
+github.com/firecrawl/html-to-markdown v0.0.0-20260305014655-0ec744e89d3c h1:EadFGDVcmkhrWfld8MVrnWFIoimCpRd9eUX/AwCiMRs=
+github.com/firecrawl/html-to-markdown v0.0.0-20260305014655-0ec744e89d3c/go.mod h1:jngam+MdNp7FZkhSTlFsuA5hXY21X0+vuiGlpgo2n5o=
 github.com/godbus/dbus/v5 v5.0.4/go.mod h1:xhWf0FNVPg57R7Z0UbKHbJfkEywrmjJnf7w5xrFpKfA=
 github.com/google/go-cmp v0.6.0/go.mod h1:17dUlkBOakJ0+DkrSSNjCkIjxS6bF9zb3elmeNGIjoY=
 github.com/gorilla/mux v1.8.1 h1:TuBL49tXwgrFYWhqrNgrUNEY92u81SPhu7sTdzQEiWY=

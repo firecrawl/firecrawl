@@ -8,6 +8,7 @@ import {
 import { CostTracking } from "./cost-tracking";
 import { hasFormatOfType } from "./format-utils";
 import { TransportableError } from "./error";
+import { FeatureFlag } from "../scraper/scrapeURL/engines";
 
 const creditsPerPDFPage = 1;
 const stealthProxyCostBonus = 4;
@@ -19,6 +20,7 @@ export async function calculateCreditsToBeBilled(
   costTracking: CostTracking | ReturnType<typeof CostTracking.prototype.toJSON>,
   flags: TeamFlags,
   error?: Error | null,
+  unsupportedFeatures?: Set<FeatureFlag>,
 ) {
   const costTrackingJSON: ReturnType<typeof CostTracking.prototype.toJSON> =
     costTracking instanceof CostTracking ? costTracking.toJSON() : costTracking;
@@ -77,7 +79,10 @@ export async function calculateCreditsToBeBilled(
     creditsToBeBilled += creditsPerPDFPage * (document.metadata.numPages - 1);
   }
 
-  if (document?.metadata?.proxyUsed === "stealth") {
+  if (
+    document?.metadata?.proxyUsed === "stealth" &&
+    !unsupportedFeatures?.has("stealthProxy") // if stealth proxy was unsupported, don't bill for it
+  ) {
     creditsToBeBilled += stealthProxyCostBonus;
   }
 

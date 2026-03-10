@@ -33,10 +33,10 @@ describe('FirecrawlApp E2E Tests', () => {
     }
   });
 
-  test.concurrent('should throw error for blocklisted URL on scrape', async () => {
+  test.concurrent('should throw error for unsupported URL on scrape', async () => {
     const app = new FirecrawlApp({ apiKey: TEST_API_KEY, apiUrl: API_URL });
-    const blocklistedUrl = "https://facebook.com/fake-test";
-    await expect(app.scrapeUrl(blocklistedUrl)).rejects.toThrow("This website is not currently supported");
+    const unsupportedUrl = "https://facebook.com/fake-test";
+    await expect(app.scrapeUrl(unsupportedUrl)).rejects.toThrow("do not support this site");
   });
 
   test.concurrent('should return successful response for valid scrape', async () => {
@@ -243,10 +243,10 @@ describe('FirecrawlApp E2E Tests', () => {
     }
   });
 
-  test.concurrent('should throw error for blocklisted URL on map', async () => {
+  test.concurrent('should throw error for unsupported URL on map', async () => {
     const app = new FirecrawlApp({ apiKey: TEST_API_KEY, apiUrl: API_URL });
-    const blocklistedUrl = "https://facebook.com/fake-test";
-    await expect(app.mapUrl(blocklistedUrl)).rejects.toThrow("403");
+    const unsupportedUrl = "https://facebook.com/fake-test";
+    await expect(app.mapUrl(unsupportedUrl)).rejects.toThrow("403");
   });
 
   test.concurrent('should return successful response for valid map', async () => {

@@ -2,7 +2,7 @@
  * E2E tests for v2 search (translated from Python tests)
  */
 import Firecrawl from "../../../index";
-import type { Document, SearchResult } from "../../../index";
+import type { Document, SearchResultWeb, SearchResultNews, SearchResultImages } from "../../../index";
 import { config } from "dotenv";
 import { getIdentity, getApiUrl } from "./utils/idmux";
 import { describe, test, expect, beforeAll } from "@jest/globals";
@@ -28,7 +28,7 @@ function collectTexts(entries: any[] | undefined): string[] {
   return texts;
 }
 
-function isDocument(entry: Document | SearchResult | undefined | null): entry is Document {
+function isDocument(entry: Document | SearchResultWeb | SearchResultNews | SearchResultImages | undefined | null): entry is Document {
   if (!entry) return false;
   const d = entry as Document;
   return (
@@ -86,10 +86,10 @@ describe("v2.search e2e", () => {
     expect(results.images == null).toBe(true);
 
     const webTitles = (results.web || [])
-      .filter((r): r is SearchResult => !isDocument(r))
+      .filter((r): r is SearchResultWeb => !isDocument(r))
       .map(r => (r.title || "").toString().toLowerCase());
     const webDescriptions = (results.web || [])
-      .filter((r): r is SearchResult => !isDocument(r))
+      .filter((r): r is SearchResultWeb => !isDocument(r))
       .map(r => (r.description || "").toString().toLowerCase());
     const allWebText = (webTitles.concat(webDescriptions)).join(" ");
     expect(allWebText.includes("firecrawl")).toBe(true);
@@ -183,7 +183,7 @@ describe("v2.search e2e", () => {
           expect(Boolean(result.markdown) || Boolean(result.html)).toBe(true);
         } else {
           expect(typeof result.url).toBe("string");
-          expect(result.url.startsWith("http")).toBe(true);
+          expect(result.url?.startsWith("http")).toBe(true);
         }
       }
     }
@@ -193,7 +193,7 @@ describe("v2.search e2e", () => {
     for (const result of results.images || []) {
       if (!isDocument(result)) {
         expect(typeof result.url).toBe("string");
-        expect(result.url.startsWith("http")).toBe(true);
+        expect(result.url?.startsWith("http")).toBe(true);
       }
     }
   }, 120_000);

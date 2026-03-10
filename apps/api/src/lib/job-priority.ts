@@ -32,7 +32,6 @@ export async function deleteJobPriority(team_id, job_id) {
 export async function getJobPriority({
   team_id,
   basePriority = 10,
-  from_extract = false,
 }: {
   team_id: string;
   basePriority?: number;
@@ -47,7 +46,7 @@ export async function getJobPriority({
       team_id,
       false,
       true,
-      from_extract ? RateLimiterMode.Extract : RateLimiterMode.Crawl,
+      RateLimiterMode.Scrape,
     );
 
     const setKey = SET_KEY_PREFIX + team_id;

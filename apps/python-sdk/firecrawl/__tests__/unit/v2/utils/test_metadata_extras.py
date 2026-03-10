@@ -63,6 +63,19 @@ class TestDocumentMetadataExtras:
         assert dumped["metadata"]["title"] == "Page"
         assert dumped["metadata"]["twitter:site"] == "@site"
 
+    def test_concurrency_fields_are_mapped(self):
+        raw = {
+            "markdown": "# Queue info",
+            "metadata": {
+                "concurrencyLimited": True,
+                "concurrencyQueueDurationMs": 1234,
+            },
+        }
+        doc = Document(**normalize_document_input(raw))
+        md = doc.metadata_typed
+        assert md.concurrency_limited is True
+        assert md.concurrency_queue_duration_ms == 1234
+
     def test_unknown_list_metadata_preserved(self):
         raw = {
             "markdown": "# Body",

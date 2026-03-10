@@ -1,9 +1,16 @@
 from typing import Any, Dict, List, Optional
 import asyncio
+import warnings
 
 from ...types import ExtractResponse, ScrapeOptions
 from ...utils.http_client_async import AsyncHttpClient
 from ...utils.validation import prepare_scrape_options
+
+_EXTRACT_DEPRECATION_MSG = (
+    "The extract endpoint is in maintenance mode and its use is discouraged. "
+    "Review https://docs.firecrawl.dev/developer-guides/usage-guides/choosing-the-data-extractor "
+    "to find a replacement."
+)
 
 
 def _prepare_extract_request(
@@ -59,6 +66,14 @@ async def start_extract(
     ignore_invalid_urls: Optional[bool] = None,
     integration: Optional[str] = None,
 ) -> ExtractResponse:
+    """Start an extract job (non-blocking, async).
+
+    .. deprecated::
+        The extract endpoint is in maintenance mode and its use is discouraged.
+        Review https://docs.firecrawl.dev/developer-guides/usage-guides/choosing-the-data-extractor
+        to find a replacement.
+    """
+    warnings.warn(_EXTRACT_DEPRECATION_MSG, DeprecationWarning, stacklevel=2)
     body = _prepare_extract_request(
         urls,
         prompt=prompt,
@@ -76,6 +91,14 @@ async def start_extract(
 
 
 async def get_extract_status(client: AsyncHttpClient, job_id: str) -> ExtractResponse:
+    """Get the current status of an extract job (async).
+
+    .. deprecated::
+        The extract endpoint is in maintenance mode and its use is discouraged.
+        Review https://docs.firecrawl.dev/developer-guides/usage-guides/choosing-the-data-extractor
+        to find a replacement.
+    """
+    warnings.warn(_EXTRACT_DEPRECATION_MSG, DeprecationWarning, stacklevel=2)
     resp = await client.get(f"/v2/extract/{job_id}")
     return ExtractResponse(**resp.json())
 
@@ -113,6 +136,14 @@ async def extract(
     timeout: Optional[int] = None,
     integration: Optional[str] = None,
 ) -> ExtractResponse:
+    """Extract structured data and wait until completion (async).
+
+    .. deprecated::
+        The extract endpoint is in maintenance mode and its use is discouraged.
+        Review https://docs.firecrawl.dev/developer-guides/usage-guides/choosing-the-data-extractor
+        to find a replacement.
+    """
+    warnings.warn(_EXTRACT_DEPRECATION_MSG, DeprecationWarning, stacklevel=2)
     started = await start_extract(
         client,
         urls,

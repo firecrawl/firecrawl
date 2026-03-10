@@ -1,4 +1,5 @@
 import crypto from "crypto";
+import { config } from "../../../../config";
 import { Document } from "../../../../controllers/v1/types";
 import { EngineScrapeResult } from "..";
 import { Meta } from "../..";
@@ -13,10 +14,17 @@ import {
   generateDomainSplits,
   addOMCEJob,
 } from "../../../../services";
-import { EngineError, IndexMissError } from "../../error";
+import { EngineError, IndexMissError, NoCachedDataError } from "../../error";
 import { shouldParsePDF } from "../../../../controllers/v2/types";
+import { hasFormatOfType } from "../../../../lib/format-utils";
 
 export async function sendDocumentToIndex(meta: Meta, document: Document) {
+  // Skip caching if screenshot format has custom viewport or quality settings
+  const screenshotFormat = hasFormatOfType(meta.options.formats, "screenshot");
+  const hasCustomScreenshotSettings =
+    screenshotFormat?.viewport !== undefined ||
+    screenshotFormat?.quality !== undefined;
+
   const shouldCache =
     meta.options.storeInCache &&
     !meta.internalOptions.zeroDataRetention &&
@@ -38,6 +46,7 @@ export async function sendDocumentToIndex(meta: Meta, document: Document) {
         meta.winnerEngine !== "fire-engine;tlsclient;stealth" &&
         meta.winnerEngine !== "fetch")) &&
     !meta.featureFlags.has("actions") &&
+    !hasCustomScreenshotSettings &&
     (meta.options.headers === undefined ||
       Object.keys(meta.options.headers).length === 0);
 
@@ -208,8 +217,8 @@ export async function scrapeURLWithIndex(
 
     if (
       domainSplitsHash.length === 0 ||
-      process.env.FIRECRAWL_INDEX_WRITE_ONLY === "true" ||
-      process.env.USE_DB_AUTHENTICATION !== "true"
+      config.FIRECRAWL_INDEX_WRITE_ONLY ||
+      config.USE_DB_AUTHENTICATION !== true
     ) {
       maxAge = 2 * 24 * 60 * 60 * 1000; // 2 days
     } else {
@@ -250,7 +259,7 @@ export async function scrapeURLWithIndex(
   const checkpoint1 = Date.now();
 
   const { data, error } = await index_supabase_service.rpc(
-    "index_get_recent_2",
+    "index_get_recent_3",
     {
       p_url_hash: urlHash,
       p_max_age_ms: maxAge,
@@ -266,6 +275,7 @@ export async function scrapeURLWithIndex(
           ? meta.options.location?.languages
           : null,
       p_wait_time_ms: meta.options.waitFor,
+      p_min_age_ms: meta.options.minAge ?? null,
     },
   );
 
@@ -303,6 +313,12 @@ export async function scrapeURLWithIndex(
       timingsMaxAge: checkpoint1 - startTime,
       timingsSupa: Date.now() - checkpoint1,
     });
+
+    // when minAge is specified, don't waterfall to other engines
+    if (meta.options.minAge !== undefined) {
+      throw new NoCachedDataError();
+    }
+
     throw new IndexMissError();
   }
 

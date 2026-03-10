@@ -72,7 +72,7 @@ Abhishek from Nexus said it perfectly when he noted that “Clean, comprehensive
 Thanks to every single one of you for being part of this journey.
 
 - Start using v2 today at [firecrawl.dev](https://firecrawl.dev)
-- See what we’re open sourcing at [github.com/mendableai/firecrawl](https://github.com/mendableai/firecrawl)
+- See what we’re open sourcing at [github.com/firecrawl/firecrawl](https://github.com/firecrawl/firecrawl)
 - Join our team at [firecrawl.dev/careers](https://firecrawl.dev/careers)
 
 We’re hiring engineers who understand distributed systems at scale, AI specialists who know what agents need, and developer advocates who can teach and inspire.

@@ -2,11 +2,12 @@ import { logger as _logger } from "../logger";
 import { updateDeepResearch } from "./deep-research-redis";
 import { searchAndScrapeSearchResult } from "../../controllers/v1/search";
 import { ResearchLLMService, ResearchStateManager } from "./research-manager";
-import { logJob } from "../../services/logging/log_job";
+import { logDeepResearch } from "../../services/logging/log_job";
 import { billTeam } from "../../services/billing/credit_billing";
 import { ExtractOptions } from "../../controllers/v1/types";
 import { CostTracking } from "../cost-tracking";
 import { getACUCTeam } from "../../controllers/auth";
+import { includesFormat } from "../format-utils";
 export interface DeepResearchServiceOptions {
   researchId: string;
   teamId: string;
@@ -151,6 +152,7 @@ export async function performDeepResearch(options: DeepResearchServiceOptions) {
               proxy: "basic",
             },
             apiKeyId: apiKeyId,
+            requestId: researchId,
           },
           logger,
           acuc?.flags ?? null,
@@ -354,7 +356,7 @@ export async function performDeepResearch(options: DeepResearchServiceOptions) {
 
     let finalAnalysis = "";
     let finalAnalysisJson = null;
-    if (options.formats.includes("json")) {
+    if (includesFormat(options.formats, "json")) {
       finalAnalysisJson = await llmService.generateFinalAnalysis(
         options.query,
         state.getFindings(),
@@ -370,7 +372,7 @@ export async function performDeepResearch(options: DeepResearchServiceOptions) {
         options.jsonOptions,
       );
     }
-    if (options.formats.includes("markdown")) {
+    if (includesFormat(options.formats, "markdown")) {
       finalAnalysis = await llmService.generateFinalAnalysis(
         options.query,
         state.getFindings(),
@@ -402,29 +404,20 @@ export async function performDeepResearch(options: DeepResearchServiceOptions) {
     const credits_billed = Math.min(urlsAnalyzed, options.maxUrls);
 
     // Log job with token usage and sources
-    await logJob({
-      job_id: researchId,
-      success: true,
-      message: "Research completed",
-      num_docs: 1,
-      docs: [
-        {
-          finalAnalysis: finalAnalysis,
-          sources: state.getSources(),
-          json: finalAnalysisJson,
-        },
-      ],
-      time_taken: (Date.now() - startTime) / 1000,
+    await logDeepResearch({
+      id: researchId,
+      request_id: researchId,
+      query: options.query,
       team_id: teamId,
-      mode: "deep-research",
-      url: options.query,
-      scrapeOptions: options,
-      origin: "api",
-      num_tokens: 0,
-      tokens_billed: 0,
-      cost_tracking: costTracking,
-      credits_billed,
-      zeroDataRetention: false, // not supported
+      options: options,
+      time_taken: (Date.now() - startTime) / 1000,
+      credits_cost: credits_billed,
+      cost_tracking: costTracking.toJSON(),
+      result: {
+        finalAnalysis: finalAnalysis,
+        sources: state.getSources(),
+        json: finalAnalysisJson,
+      },
     });
     await updateDeepResearch(researchId, {
       status: "completed",

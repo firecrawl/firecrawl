@@ -1,7 +1,8 @@
 import CacheableLookup from "cacheable-lookup";
 import dns from "dns";
 
+import { config } from "../../../config";
 export const cacheableLookup =
-  process.env.SENTRY_ENVIRONMENT === "dev"
+  config.SENTRY_ENVIRONMENT === "dev"
     ? { lookup: dns.lookup, install: () => {} }
     : new CacheableLookup({});

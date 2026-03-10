@@ -1,5 +1,5 @@
 import { type FormatOption, type JsonFormat, type ScrapeOptions, type ScreenshotFormat, type ChangeTrackingFormat } from "../types";
-import { zodToJsonSchema } from "zod-to-json-schema";
+import { isZodSchema, zodSchemaToJsonSchema, looksLikeZodShape } from "../../utils/zodSchemaToJson";
 
 export function ensureValidFormats(formats?: FormatOption[]): void {
   if (!formats) return;
@@ -15,28 +15,29 @@ export function ensureValidFormats(formats?: FormatOption[]): void {
       if (!j.prompt && !j.schema) {
         throw new Error("json format requires either 'prompt' or 'schema' (or both)");
       }
-      // Flexibility: allow passing a Zod schema. Convert to JSON schema internally.
-      const maybeSchema: any = j.schema as any;
-      const isZod = !!maybeSchema && (typeof maybeSchema.safeParse === "function" || typeof maybeSchema.parse === "function") && !!maybeSchema._def;
-      if (isZod) {
-        try {
-          (j as any).schema = zodToJsonSchema(maybeSchema);
-        } catch {
-          // If conversion fails, leave as-is; server-side may still handle, or request will fail explicitly
-        }
+      const maybeSchema = j.schema;
+      if (isZodSchema(maybeSchema)) {
+        (j as any).schema = zodSchemaToJsonSchema(maybeSchema);
+      } else if (looksLikeZodShape(maybeSchema)) {
+        throw new Error(
+          "json format schema appears to be a Zod schema's .shape property. " +
+          "Pass the Zod schema directly (e.g., `schema: MySchema`) instead of `schema: MySchema.shape`. " +
+          "The SDK will automatically convert Zod schemas to JSON Schema format."
+        );
       }
       continue;
     }
     if ((fmt as ChangeTrackingFormat).type === "changeTracking") {
       const ct = fmt as ChangeTrackingFormat;
-      const maybeSchema: any = ct.schema as any;
-      const isZod = !!maybeSchema && (typeof maybeSchema.safeParse === "function" || typeof maybeSchema.parse === "function") && !!maybeSchema._def;
-      if (isZod) {
-        try {
-          (ct as any).schema = zodToJsonSchema(maybeSchema);
-        } catch {
-          // Best-effort conversion; if it fails, leave original value
-        }
+      const maybeSchema = ct.schema;
+      if (isZodSchema(maybeSchema)) {
+        (ct as any).schema = zodSchemaToJsonSchema(maybeSchema);
+      } else if (looksLikeZodShape(maybeSchema)) {
+        throw new Error(
+          "changeTracking format schema appears to be a Zod schema's .shape property. " +
+          "Pass the Zod schema directly (e.g., `schema: MySchema`) instead of `schema: MySchema.shape`. " +
+          "The SDK will automatically convert Zod schemas to JSON Schema format."
+        );
       }
       continue;
     }

@@ -1,4 +1,5 @@
 import "dotenv/config";
+import { config } from "../../config";
 import "../sentry";
 import { setSentryServiceTag } from "../sentry";
 import * as Sentry from "@sentry/node";
@@ -20,15 +21,14 @@ import { v7 as uuidv7 } from "uuid";
 import {
   index_supabase_service,
   processIndexInsertJobs,
-  processIndexRFInsertJobs,
   processOMCEJobs,
-  processDomainFrequencyJobs,
   queryDomainsForPrecrawl,
 } from "..";
 import { getSearchIndexClient } from "../../lib/search-index-client";
 // Search indexing is now handled by the separate search service
 // import { processSearchIndexJobs } from "../../lib/search-index/queue";
 import { processWebhookInsertJobs } from "../webhook";
+import { processBrowserSessionActivityJobs } from "../../lib/browser-session-activity";
 import {
   scrapeOptions as scrapeOptionsSchema,
   crawlRequestSchema,
@@ -36,25 +36,21 @@ import {
 } from "../../controllers/v2/types";
 import { StoredCrawl, crawlToCrawler, saveCrawl } from "../../lib/crawl-redis";
 import { _addScrapeJobToBullMQ } from "../queue-jobs";
-import { BullMQOtel } from "bullmq-otel";
 import { withSpan, setSpanAttributes } from "../../lib/otel-tracer";
 import { crawlGroup } from "../worker/nuq";
 import { getACUCTeam } from "../../controllers/auth";
 import { supabase_service } from "../supabase";
+import { processEngpickerJob } from "../../lib/engpicker";
+import { logRequest } from "../logging/log_job";
 
-const workerLockDuration = Number(process.env.WORKER_LOCK_DURATION) || 60000;
-const workerStalledCheckInterval =
-  Number(process.env.WORKER_STALLED_CHECK_INTERVAL) || 30000;
-const jobLockExtendInterval =
-  Number(process.env.JOB_LOCK_EXTEND_INTERVAL) || 15000;
-const jobLockExtensionTime =
-  Number(process.env.JOB_LOCK_EXTENSION_TIME) || 60000;
+const workerLockDuration = config.WORKER_LOCK_DURATION;
+const workerStalledCheckInterval = config.WORKER_STALLED_CHECK_INTERVAL;
+const jobLockExtendInterval = config.JOB_LOCK_EXTEND_INTERVAL;
+const jobLockExtensionTime = config.JOB_LOCK_EXTENSION_TIME;
 
-const cantAcceptConnectionInterval =
-  Number(process.env.CANT_ACCEPT_CONNECTION_INTERVAL) || 2000;
-const connectionMonitorInterval =
-  Number(process.env.CONNECTION_MONITOR_INTERVAL) || 10;
-const gotJobInterval = Number(process.env.CONNECTION_MONITOR_INTERVAL) || 20;
+const cantAcceptConnectionInterval = config.CANT_ACCEPT_CONNECTION_INTERVAL;
+const connectionMonitorInterval = config.CONNECTION_MONITOR_INTERVAL;
+const gotJobInterval = config.CONNECTION_MONITOR_INTERVAL;
 
 const runningJobs: Set<string> = new Set();
 
@@ -138,19 +134,19 @@ const processPrecrawlJob = async (token: string, job: Job) => {
   // set to true to only run domain precrawl, no individual URLs or crawl jobs
   const DOMAIN_ONLY_RUN = false;
 
-  const MAX_PRE_CRAWL_BUDGET = 10000; // maximum number of pages to precrawl this job
+  const MAX_PRE_CRAWL_BUDGET = 25000; // maximum number of pages to precrawl this job
 
-  const MAX_PRE_CRAWL_DOMAINS = 100; // maximum number of domains to precrawl
-  const MIN_DOMAIN_PRIORITY = 2.0; // minimum priority score to consider a domain
+  const MAX_PRE_CRAWL_DOMAINS = 500; // maximum number of domains to precrawl
+  const MIN_DOMAIN_PRIORITY = 4.0; // minimum priority score to consider a domain
   const MIN_DOMAIN_EVENTS = 1000; // minimum number of events to consider a domain
 
   // number of domain hashes to query in parallel - keep relatively low for now (25 is good)
   const DOMAIN_URL_BATCH_SIZE = 25;
 
   const MIN_URLS_PER_DOMAIN = 10;
-  const MAX_URLS_PER_DOMAIN = 250;
+  const MAX_URLS_PER_DOMAIN = 50;
 
-  const teamId = process.env.PRECRAWL_TEAM_ID;
+  const teamId = config.PRECRAWL_TEAM_ID;
 
   try {
     await withSpan("precrawl.job", async span => {
@@ -451,13 +447,30 @@ const processPrecrawlJob = async (token: string, job: Job) => {
           try {
             const { url, budget: limit } = target;
 
+            const crawlId = uuidv7();
+            await logRequest({
+              id: crawlId,
+              kind: "crawl",
+              api_version: "v2",
+              team_id: teamId,
+              origin: "precrawl",
+              target_hint: url,
+              zeroDataRetention: false,
+              api_key_id: null,
+            });
+
             const crawlerOptions = {
               ...crawlRequestSchema.parse({ url, limit }),
               url: undefined, // unsure why this is needed but leaving for now
               scrapeOptions: undefined, // same here
             };
 
-            const scrapeOptions = scrapeOptionsSchema.parse({});
+            const scrapeOptions = scrapeOptionsSchema.parse({
+              formats: ["rawHtml"],
+              maxAge: 0,
+              storeInCache: true,
+              onlyMainContent: false,
+            });
             const sc: StoredCrawl = {
               originUrl: url,
               crawlerOptions: toV0CrawlerOptions(crawlerOptions),
@@ -465,9 +478,8 @@ const processPrecrawlJob = async (token: string, job: Job) => {
               internalOptions: {
                 disableSmartWaitCache: true, // NOTE: smart wait disabled for crawls to ensure contentful scrape, speed does not matter
                 teamId,
-                saveScrapeResultToGCS:
-                  !!process.env.GCS_FIRE_ENGINE_BUCKET_NAME,
-                zeroDataRetention: true, // is this meant to be true?
+                saveScrapeResultToGCS: !!config.GCS_FIRE_ENGINE_BUCKET_NAME,
+                zeroDataRetention: false,
                 isPreCrawl: true, // NOTE: must be added to internal options for indexing, if not it will be treated as a normal scrape in the index
               },
               team_id: teamId,
@@ -475,24 +487,6 @@ const processPrecrawlJob = async (token: string, job: Job) => {
               maxConcurrency: undefined,
               zeroDataRetention: false,
             };
-
-            const crawlId = uuidv7();
-
-            // robots disabled for now
-            // const crawler = crawlToCrawler(crawlId, sc, null);
-            // try {
-            //   sc.robots = await crawler.getRobotsTxt(
-            //     scrapeOptions.skipTlsVerification,
-            //   );
-            //   const robotsCrawlDelay = crawler.getRobotsCrawlDelay();
-            //   if (robotsCrawlDelay !== null && !sc.crawlerOptions.delay) {
-            //     sc.crawlerOptions.delay = robotsCrawlDelay;
-            //   }
-            // } catch (e) {
-            //   logger.debug("Failed to get robots.txt (this is probably fine!)", {
-            //     error: e,
-            //   });
-            // }
 
             await crawlGroup.addGroup(
               crawlId,
@@ -521,7 +515,7 @@ const processPrecrawlJob = async (token: string, job: Job) => {
                 zeroDataRetention: false,
                 apiKeyId: null,
               },
-              crypto.randomUUID(),
+              uuidv7(),
             );
 
             submittedCrawls++;
@@ -561,15 +555,17 @@ const processPrecrawlJob = async (token: string, job: Job) => {
 
 let isShuttingDown = false;
 
-process.on("SIGINT", () => {
-  logger.info("Received SIGINT. Shutting down gracefully...");
-  isShuttingDown = true;
-});
+if (require.main === module) {
+  process.on("SIGINT", () => {
+    logger.info("Received SIGINT. Shutting down gracefully...");
+    isShuttingDown = true;
+  });
 
-process.on("SIGTERM", () => {
-  logger.info("Received SIGTERM. Shutting down gracefully...");
-  isShuttingDown = true;
-});
+  process.on("SIGTERM", () => {
+    logger.info("Received SIGTERM. Shutting down gracefully...");
+    isShuttingDown = true;
+  });
+}
 
 let cantAcceptConnectionCount = 0;
 
@@ -585,7 +581,6 @@ const workerFun = async (
     lockDuration: workerLockDuration,
     stalledInterval: workerStalledCheckInterval,
     maxStalledCount: queue.name === precrawlQueueName ? 0 : 10,
-    telemetry: new BullMQOtel("firecrawl-bullmq"),
   });
 
   worker.startStalledCheckTimer();
@@ -672,7 +667,7 @@ async function tallyBilling() {
   for (const teamId of billedTeams) {
     logger.info("Updating tally for team", { teamId });
 
-    const { error } = await supabase_service.rpc("update_tally_5_team", {
+    const { error } = await supabase_service.rpc("update_tally_10_team", {
       i_team_id: teamId,
     });
 
@@ -689,7 +684,7 @@ async function tallyBilling() {
 const INDEX_INSERT_INTERVAL = 3000;
 const WEBHOOK_INSERT_INTERVAL = 15000;
 const OMCE_INSERT_INTERVAL = 5000;
-const DOMAIN_FREQUENCY_INTERVAL = 10000;
+const BROWSER_ACTIVITY_INSERT_INTERVAL = 10000;
 // Search indexing is now handled by separate search service, not this worker
 // const SEARCH_INDEX_INTERVAL = 10000;
 
@@ -704,7 +699,7 @@ const DOMAIN_FREQUENCY_INTERVAL = 10000;
     processBillingJobInternal,
   );
 
-  const precrawlWorkerPromise = process.env.PRECRAWL_TEAM_ID
+  const precrawlWorkerPromise = config.PRECRAWL_TEAM_ID
     ? workerFun(getPrecrawlQueue(), processPrecrawlJob)
     : (async () => {
         logger.warn("PRECRAWL_TEAM_ID not set, skipping precrawl worker");
@@ -731,21 +726,10 @@ const DOMAIN_FREQUENCY_INTERVAL = 10000;
     await processWebhookInsertJobs();
   }, WEBHOOK_INSERT_INTERVAL);
 
-  const indexRFInserterInterval = setInterval(async () => {
-    if (isShuttingDown) {
-      return;
-    }
-    await withSpan(
-      "firecrawl-index-worker-process-rf-insert-jobs",
-      async span => {
-        setSpanAttributes(span, {
-          "index.worker.operation": "process_rf_insert_jobs",
-          "index.worker.type": "scheduled",
-        });
-        await processIndexRFInsertJobs();
-      },
-    );
-  }, INDEX_INSERT_INTERVAL);
+  const browserActivityInterval = setInterval(async () => {
+    if (isShuttingDown) return;
+    await processBrowserSessionActivityJobs();
+  }, BROWSER_ACTIVITY_INSERT_INTERVAL);
 
   const omceInserterInterval = setInterval(async () => {
     if (isShuttingDown) {
@@ -760,22 +744,6 @@ const DOMAIN_FREQUENCY_INTERVAL = 10000;
     });
   }, OMCE_INSERT_INTERVAL);
 
-  const domainFrequencyInterval = setInterval(async () => {
-    if (isShuttingDown) {
-      return;
-    }
-    await withSpan(
-      "firecrawl-index-worker-process-domain-frequency-jobs",
-      async span => {
-        setSpanAttributes(span, {
-          "index.worker.operation": "process_domain_frequency_jobs",
-          "index.worker.type": "scheduled",
-        });
-        await processDomainFrequencyJobs();
-      },
-    );
-  }, DOMAIN_FREQUENCY_INTERVAL);
-
   const billingTallyInterval = setInterval(
     async () => {
       if (isShuttingDown) {
@@ -785,6 +753,22 @@ const DOMAIN_FREQUENCY_INTERVAL = 10000;
     },
     5 * 60 * 1000,
   );
+
+  const engpickerPromise = (async () => {
+    if (config.DISABLE_ENGPICKER) {
+      logger.info("Engpicker is disabled, skipping");
+      return;
+    }
+
+    while (!isShuttingDown) {
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      try {
+        await processEngpickerJob();
+      } catch (e) {
+        logger.error("Error processing engpicker job", { error: e });
+      }
+    }
+  })();
 
   // Search indexing is now handled by separate search service
   // The search service has its own worker that processes the queue
@@ -808,13 +792,16 @@ const DOMAIN_FREQUENCY_INTERVAL = 10000;
   }
 
   // Wait for all workers to complete (which should only happen on shutdown)
-  await Promise.all([billingWorkerPromise, precrawlWorkerPromise]);
+  await Promise.all([
+    billingWorkerPromise,
+    precrawlWorkerPromise,
+    engpickerPromise,
+  ]);
 
   clearInterval(indexInserterInterval);
   clearInterval(webhookInserterInterval);
-  clearInterval(indexRFInserterInterval);
+  clearInterval(browserActivityInterval);
   clearInterval(omceInserterInterval);
-  clearInterval(domainFrequencyInterval);
   clearInterval(billingTallyInterval);
 
   logger.info("All workers shut down, exiting process");

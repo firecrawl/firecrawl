@@ -13,9 +13,19 @@ version = get_version()
 class HttpClient:
     """HTTP client with retry logic and error handling."""
 
-    def __init__(self, api_key: Optional[str], api_url: str):
+    def __init__(
+        self,
+        api_key: Optional[str],
+        api_url: str,
+        timeout: Optional[float] = None,
+        max_retries: int = 3,
+        backoff_factor: float = 0.5,
+    ):
         self.api_key = api_key
         self.api_url = api_url
+        self.timeout = timeout
+        self.max_retries = max_retries
+        self.backoff_factor = backoff_factor
 
     def _build_url(self, endpoint: str) -> str:
         base = urlparse(self.api_url)
@@ -59,20 +69,27 @@ class HttpClient:
         data: Dict[str, Any],
         headers: Optional[Dict[str, str]] = None,
         timeout: Optional[float] = None,
-        retries: int = 3,
-        backoff_factor: float = 0.5
+        retries: Optional[int] = None,
+        backoff_factor: Optional[float] = None,
     ) -> requests.Response:
         """Make a POST request with retry logic."""
         if headers is None:
             headers = self._prepare_headers()
+        if timeout is None:
+            timeout = self.timeout
+        if retries is None:
+            retries = self.max_retries
+        if backoff_factor is None:
+            backoff_factor = self.backoff_factor
 
         data['origin'] = f'python-sdk@{version}'
-            
+
         url = self._build_url(endpoint)
-        
+
         last_exception = None
-        
-        for attempt in range(retries):
+        num_attempts = max(1, retries)
+
+        for attempt in range(num_attempts):
             try:
                 response = requests.post(
                     url,
@@ -82,18 +99,18 @@ class HttpClient:
                 )
 
                 if response.status_code == 502:
-                    if attempt < retries - 1:
+                    if attempt < num_attempts - 1:
                         time.sleep(backoff_factor * (2 ** attempt))
                         continue
-                
+
                 return response
-                
+
             except requests.RequestException as e:
                 last_exception = e
-                if attempt == retries - 1:
+                if attempt == num_attempts - 1:
                     raise e
                 time.sleep(backoff_factor * (2 ** attempt))
-        
+
         # This should never be reached due to the exception handling above
         raise last_exception or Exception("Unexpected error in POST request")
     
@@ -102,38 +119,45 @@ class HttpClient:
         endpoint: str,
         headers: Optional[Dict[str, str]] = None,
         timeout: Optional[float] = None,
-        retries: int = 3,
-        backoff_factor: float = 0.5
+        retries: Optional[int] = None,
+        backoff_factor: Optional[float] = None,
     ) -> requests.Response:
         """Make a GET request with retry logic."""
         if headers is None:
             headers = self._prepare_headers()
+        if timeout is None:
+            timeout = self.timeout
+        if retries is None:
+            retries = self.max_retries
+        if backoff_factor is None:
+            backoff_factor = self.backoff_factor
 
         url = self._build_url(endpoint)
-        
+
         last_exception = None
-        
-        for attempt in range(retries):
+        num_attempts = max(1, retries)
+
+        for attempt in range(num_attempts):
             try:
                 response = requests.get(
                     url,
                     headers=headers,
                     timeout=timeout
                 )
-                
+
                 if response.status_code == 502:
-                    if attempt < retries - 1:
+                    if attempt < num_attempts - 1:
                         time.sleep(backoff_factor * (2 ** attempt))
                         continue
-                
+
                 return response
-                
+
             except requests.RequestException as e:
                 last_exception = e
-                if attempt == retries - 1:
+                if attempt == num_attempts - 1:
                     raise e
                 time.sleep(backoff_factor * (2 ** attempt))
-        
+
         # This should never be reached due to the exception handling above
         raise last_exception or Exception("Unexpected error in GET request")
     
@@ -142,37 +166,44 @@ class HttpClient:
         endpoint: str,
         headers: Optional[Dict[str, str]] = None,
         timeout: Optional[float] = None,
-        retries: int = 3,
-        backoff_factor: float = 0.5
+        retries: Optional[int] = None,
+        backoff_factor: Optional[float] = None,
     ) -> requests.Response:
         """Make a DELETE request with retry logic."""
         if headers is None:
             headers = self._prepare_headers()
-            
+        if timeout is None:
+            timeout = self.timeout
+        if retries is None:
+            retries = self.max_retries
+        if backoff_factor is None:
+            backoff_factor = self.backoff_factor
+
         url = self._build_url(endpoint)
-        
+
         last_exception = None
-        
-        for attempt in range(retries):
+        num_attempts = max(1, retries)
+
+        for attempt in range(num_attempts):
             try:
                 response = requests.delete(
                     url,
                     headers=headers,
                     timeout=timeout
                 )
-                
+
                 if response.status_code == 502:
-                    if attempt < retries - 1:
+                    if attempt < num_attempts - 1:
                         time.sleep(backoff_factor * (2 ** attempt))
                         continue
-                
+
                 return response
-                
+
             except requests.RequestException as e:
                 last_exception = e
-                if attempt == retries - 1:
+                if attempt == num_attempts - 1:
                     raise e
                 time.sleep(backoff_factor * (2 ** attempt))
-        
+
         # This should never be reached due to the exception handling above
         raise last_exception or Exception("Unexpected error in DELETE request")

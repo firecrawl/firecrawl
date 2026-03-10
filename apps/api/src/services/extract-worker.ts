@@ -1,69 +1,51 @@
 import "dotenv/config";
-import { shutdownOtel } from "../otel";
+import { config } from "../config";
 import "./sentry";
 import { setSentryServiceTag } from "./sentry";
 import * as Sentry from "@sentry/node";
-import { getExtractQueue, getRedisConnection } from "./queue-service";
-import { Job, Queue, Worker } from "bullmq";
 import { logger as _logger } from "../lib/logger";
-import systemMonitor from "./system-monitor";
-import { v7 as uuidv7 } from "uuid";
 import { configDotenv } from "dotenv";
-import {
-  ExtractResult,
-  performExtraction,
-} from "../lib/extract/extraction-service";
+import { ExtractResult } from "../lib/extract/extraction-service";
 import { updateExtract } from "../lib/extract/extract-redis";
 import { performExtraction_F0 } from "../lib/extract/fire-0/extraction-service-f0";
 import { createWebhookSender, WebhookEvent } from "./webhook";
 import Express from "express";
-import { robustFetch } from "../scraper/scrapeURL/lib/fetch";
-import { BullMQOtel } from "bullmq-otel";
 import { getErrorContactMessage } from "../lib/deployment";
 import { TransportableError } from "../lib/error";
 import { initializeBlocklist } from "../scraper/WebScraper/utils/blocklist";
 import { initializeEngineForcing } from "../scraper/WebScraper/utils/engine-forcing";
+import {
+  consumeExtractJobs,
+  consumeExtractDLQ,
+  shutdownExtractQueue,
+  ExtractJobData,
+} from "./extract-queue";
+import { logExtract } from "./logging/log_job";
+import { jobDurationSeconds } from "../lib/job-metrics";
+import { register } from "prom-client";
 
 configDotenv();
 
-const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
-
-const jobLockExtendInterval =
-  Number(process.env.JOB_LOCK_EXTEND_INTERVAL) || 10000;
-const jobLockExtensionTime =
-  Number(process.env.JOB_LOCK_EXTENSION_TIME) || 60000;
-
-const cantAcceptConnectionInterval =
-  Number(process.env.CANT_ACCEPT_CONNECTION_INTERVAL) || 2000;
-const connectionMonitorInterval =
-  Number(process.env.CONNECTION_MONITOR_INTERVAL) || 10;
-const gotJobInterval = Number(process.env.CONNECTION_MONITOR_INTERVAL) || 20;
-
-const runningJobs: Set<string> = new Set();
-
-const processExtractJobInternal = async (
-  token: string,
-  job: Job & { id: string },
+const processExtractJob = async (
+  data: ExtractJobData,
+  ack: () => void,
+  nack: () => void,
 ) => {
   const logger = _logger.child({
     module: "extract-worker",
-    method: "processJobInternal",
-    jobId: job.id,
-    extractId: job.data.extractId,
-    teamId: job.data?.teamId ?? undefined,
+    method: "processExtractJob",
+    extractId: data.extractId,
+    teamId: data.teamId,
   });
-
-  const extendLockInterval = setInterval(async () => {
-    logger.info(`🔄 Worker extending lock on job ${job.id}`);
-    await job.extendLock(token, jobLockExtensionTime);
-  }, jobLockExtendInterval);
 
   const sender = await createWebhookSender({
-    teamId: job.data.teamId,
-    jobId: job.data.extractId,
-    webhook: job.data.request.webhook,
+    teamId: data.teamId,
+    jobId: data.extractId,
+    webhook: data.request.webhook,
     v0: false,
   });
+
+  const endJobTimer = jobDurationSeconds.startTimer({ type: "extract" });
 
   try {
     if (sender) {
@@ -74,35 +56,21 @@ const processExtractJobInternal = async (
 
     let result: ExtractResult | null = null;
 
-    const model = job.data.request.agent?.model;
-    if (
-      job.data.request.agent &&
-      model &&
-      model.toLowerCase().includes("fire-1")
-    ) {
-      result = await performExtraction(job.data.extractId, {
-        request: job.data.request,
-        teamId: job.data.teamId,
-        subId: job.data.subId,
-        apiKeyId: job.data.apiKeyId,
-      });
-    } else {
-      result = await performExtraction_F0(job.data.extractId, {
-        request: job.data.request,
-        teamId: job.data.teamId,
-        subId: job.data.subId,
-        apiKeyId: job.data.apiKeyId,
-      });
-    }
-    // result = await performExtraction_F0(job.data.extractId, {
-    //   request: job.data.request,
-    //   teamId: job.data.teamId,
-    //   subId: job.data.subId,
-    // });
+    result = await performExtraction_F0(data.extractId, {
+      request: data.request,
+      teamId: data.teamId,
+      subId: data.subId ?? undefined,
+      apiKeyId: data.apiKeyId ?? null,
+    });
 
     if (result && result.success) {
-      // Move job to completed state in Redis
-      await job.moveToCompleted(result, token, false);
+      await updateExtract(data.extractId, {
+        status: "completed",
+        llmUsage: result.llmUsage,
+        sources: result.sources,
+        tokensBilled: result.tokensBilled,
+        creditsBilled: result.creditsBilled,
+      });
 
       if (sender) {
         sender.send(WebhookEvent.EXTRACT_COMPLETED, {
@@ -111,191 +79,150 @@ const processExtractJobInternal = async (
         });
       }
 
-      return result;
+      endJobTimer({ status: "success" });
+      ack();
+      return;
     } else {
-      // throw new Error(result.error || "Unknown error during extraction");
-
-      await job.moveToCompleted(result, token, false);
-      await updateExtract(job.data.extractId, {
-        error: result?.error ?? getErrorContactMessage(job.data.extractId),
+      await updateExtract(data.extractId, {
+        status: "failed",
+        error: result?.error ?? getErrorContactMessage(data.extractId),
       });
 
       if (sender) {
         sender.send(WebhookEvent.EXTRACT_FAILED, {
           success: false,
-          error: result?.error ?? getErrorContactMessage(job.data.extractId),
+          error: result?.error ?? getErrorContactMessage(data.extractId),
         });
       }
 
-      return result;
+      endJobTimer({ status: "failed" });
+      ack();
+      return;
     }
   } catch (error) {
-    logger.error(`🚫 Job errored ${job.id} - ${error}`, { error });
+    endJobTimer({ status: "failed" });
+    logger.error(`🚫 Extract job errored ${data.extractId} - ${error}`, {
+      error,
+    });
 
     // Filter out TransportableErrors (flow control)
     if (!(error instanceof TransportableError)) {
       Sentry.captureException(error, {
         data: {
-          job: job.id,
+          extractId: data.extractId,
         },
       });
     }
 
-    try {
-      // Move job to failed state in Redis
-      await job.moveToFailed(error, token, false);
-    } catch (e) {
-      logger.log("Failed to move job to failed state in Redis", { error });
-    }
-
-    await updateExtract(job.data.extractId, {
+    await updateExtract(data.extractId, {
       status: "failed",
-      error: error.error ?? error ?? getErrorContactMessage(job.data.extractId),
+      error:
+        (error as any)?.error ??
+        (error as any)?.message ??
+        getErrorContactMessage(data.extractId),
     });
 
     if (sender) {
       sender.send(WebhookEvent.EXTRACT_FAILED, {
         success: false,
         error:
-          (error as any)?.message ?? getErrorContactMessage(job.data.extractId),
+          (error as any)?.message ?? getErrorContactMessage(data.extractId),
       });
     }
 
-    return {
-      success: false,
-      error: error.error ?? error ?? getErrorContactMessage(job.data.extractId),
-    };
-    // throw error;
-  } finally {
-    clearInterval(extendLockInterval);
+    // Ack the message even on error - we've handled it and updated the DB
+    // Only nack if we want to send to DLX (which we don't for handled errors)
+    ack();
   }
 };
 
-let isShuttingDown = false;
-let isWorkerStalled = false;
-
-process.on("SIGINT", () => {
-  _logger.debug("Received SIGINT. Shutting down gracefully...");
-  isShuttingDown = true;
-});
-
-process.on("SIGTERM", () => {
-  _logger.debug("Received SIGTERM. Shutting down gracefully...");
-  isShuttingDown = true;
-});
-
-let cantAcceptConnectionCount = 0;
-
-const workerFun = async (
-  queue: Queue,
-  processJobInternal: (token: string, job: Job) => Promise<any>,
-) => {
-  const logger = _logger.child({ module: "queue-worker", method: "workerFun" });
-
-  const worker = new Worker(queue.name, null, {
-    connection: getRedisConnection(),
-    lockDuration: 60 * 1000, // 60 seconds
-    stalledInterval: 60 * 1000, // 60 seconds
-    maxStalledCount: 10, // 10 times
-    telemetry: new BullMQOtel("firecrawl-bullmq"),
+const processDLQJob = async (data: ExtractJobData) => {
+  const logger = _logger.child({
+    module: "extract-dlq",
+    extractId: data.extractId,
+    teamId: data.teamId,
   });
 
-  worker.startStalledCheckTimer();
+  logger.error("Processing crashed extract job from DLQ");
 
-  const monitor = await systemMonitor;
+  // Update the extract status to failed in the database
+  await updateExtract(data.extractId, {
+    status: "failed",
+    error:
+      "Extract job crashed unexpectedly. Please try again or contact support if the issue persists.",
+  });
 
-  while (true) {
-    if (isShuttingDown) {
-      _logger.info("No longer accepting new jobs. SIGINT");
-      break;
-    }
-    const token = uuidv7();
-    const canAcceptConnection = await monitor.acceptConnection();
-    if (!canAcceptConnection) {
-      console.log("Can't accept connection due to RAM/CPU load");
-      logger.info("Can't accept connection due to RAM/CPU load");
-      cantAcceptConnectionCount++;
+  await logExtract({
+    id: data.extractId,
+    request_id: data.extractId,
+    urls: data.request.urls,
+    team_id: data.teamId,
+    options: data.request,
+    model_kind: data.request.agent?.model ?? "fire-0",
+    credits_cost: 0,
+    is_successful: false,
+    error:
+      "Extract job crashed unexpectedly. Please try again or contact support if the issue persists.",
+    cost_tracking: undefined,
+  });
 
-      isWorkerStalled = cantAcceptConnectionCount >= 25;
+  // Send webhook notification
+  const sender = await createWebhookSender({
+    teamId: data.teamId,
+    jobId: data.extractId,
+    webhook: data.request.webhook,
+    v0: false,
+  });
 
-      if (isWorkerStalled) {
-        logger.error("WORKER STALLED", {
-          cpuUsage: await monitor.checkCpuUsage(),
-          memoryUsage: await monitor.checkMemoryUsage(),
-        });
-      }
-
-      await sleep(cantAcceptConnectionInterval); // more sleep
-      continue;
-    } else if (!currentLiveness) {
-      logger.info("Not accepting jobs because the liveness check failed");
-
-      await sleep(cantAcceptConnectionInterval);
-      continue;
-    } else {
-      cantAcceptConnectionCount = 0;
-    }
-
-    const job = await worker.getNextJob(token);
-    if (job) {
-      if (job.id) {
-        runningJobs.add(job.id);
-      }
-
-      processJobInternal(token, job).finally(() => {
-        if (job.id) {
-          runningJobs.delete(job.id);
-        }
-      });
-
-      await sleep(gotJobInterval);
-    } else {
-      await sleep(connectionMonitorInterval);
-    }
+  if (sender) {
+    sender.send(WebhookEvent.EXTRACT_FAILED, {
+      success: false,
+      error:
+        "Extract job crashed unexpectedly. Please try again or contact support if the issue persists.",
+    });
   }
+
+  logger.info("DLQ job processed - extract marked as failed");
 };
 
-// Start all workers
+// Start the worker
 const app = Express();
 
-let currentLiveness: boolean = true;
-
+app.get("/health", (req, res) => {
+  res.status(200).json({ ok: true });
+});
 app.get("/liveness", (req, res) => {
-  _logger.info("Liveness endpoint hit");
-  if (process.env.USE_DB_AUTHENTICATION === "true") {
-    // networking check for Kubernetes environments
-    const host = process.env.FIRECRAWL_APP_HOST || "firecrawl-app-service";
-    const port = process.env.FIRECRAWL_APP_PORT || "3002";
-    const scheme = process.env.FIRECRAWL_APP_SCHEME || "http";
-
-    robustFetch({
-      url: `${scheme}://${host}:${port}`,
-      method: "GET",
-      mock: null,
-      logger: _logger,
-      abort: AbortSignal.timeout(5000),
-      ignoreResponse: true,
-      useCacheableLookup: false,
-    })
-      .then(() => {
-        currentLiveness = true;
-        res.status(200).json({ ok: true });
-      })
-      .catch(e => {
-        _logger.error("WORKER NETWORKING CHECK FAILED", { error: e });
-        currentLiveness = false;
-        res.status(500).json({ ok: false });
-      });
-  } else {
-    currentLiveness = true;
-    res.status(200).json({ ok: true });
-  }
+  res.status(200).json({ ok: true });
+});
+app.get("/metrics", async (_, res) => {
+  res.contentType("text/plain").send(await register.metrics());
 });
 
-const workerPort = process.env.EXTRACT_WORKER_PORT || process.env.PORT || 3005;
+const workerPort = config.EXTRACT_WORKER_PORT || config.PORT;
 app.listen(workerPort, () => {
-  _logger.info(`Liveness endpoint is running on port ${workerPort}`);
+  _logger.info(
+    `Extract worker health endpoint is running on port ${workerPort}`,
+  );
 });
+
+async function shutdown() {
+  _logger.info("Shutting down extract worker...");
+  await shutdownExtractQueue();
+  _logger.info("Extract worker shut down");
+  process.exit(0);
+}
+
+if (require.main === module) {
+  process.on("SIGINT", () => {
+    _logger.debug("Received SIGINT. Shutting down gracefully...");
+    shutdown();
+  });
+
+  process.on("SIGTERM", () => {
+    _logger.debug("Received SIGTERM. Shutting down gracefully...");
+    shutdown();
+  });
+}
 
 (async () => {
   setSentryServiceTag("extract-worker");
@@ -307,17 +234,13 @@ app.listen(workerPort, () => {
 
   initializeEngineForcing();
 
-  await Promise.all([workerFun(getExtractQueue(), processExtractJobInternal)]);
+  _logger.info("Starting extract worker with RabbitMQ...");
 
-  _logger.info("All workers exited. Waiting for all jobs to finish...");
+  // Start consuming from both the main queue and the DLQ
+  await Promise.all([
+    consumeExtractJobs(processExtractJob),
+    consumeExtractDLQ(processDLQJob),
+  ]);
 
-  while (runningJobs.size > 0) {
-    await new Promise(resolve => setTimeout(resolve, 500));
-  }
-
-  _logger.info("All jobs finished. Shutting down...");
-  shutdownOtel().finally(() => {
-    _logger.debug("OTEL shutdown");
-    process.exit(0);
-  });
+  _logger.info("Extract worker started, consuming from RabbitMQ");
 })();

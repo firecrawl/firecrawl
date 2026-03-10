@@ -29,5 +29,5 @@ We’ve added **HTTP Server-Side Events (SSE)** support to the MCP, making real-
 
 Check out our updated docs and MCP repo:
 
-- [Firecrawl MCP](https://github.com/mendableai/firecrawl-mcp-server)
+- [Firecrawl MCP](https://github.com/firecrawl/firecrawl-mcp-server)
 - [FIRE-1 Agent Info](https://docs.firecrawl.dev/agents/fire-1)

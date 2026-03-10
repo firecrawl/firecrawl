@@ -4,13 +4,38 @@ from ...utils.http_client_async import AsyncHttpClient
 from ...utils.validation import prepare_scrape_options
 from ...utils.error_handler import handle_response_error
 from ...utils.normalize import normalize_document_input
+from ...methods.batch import validate_batch_urls
 import time
 
+def _parse_batch_scrape_documents(data_list: Optional[List[Any]]) -> List[Document]:
+    documents: List[Document] = []
+    for doc in data_list or []:
+        if isinstance(doc, dict):
+            normalized = normalize_document_input(doc)
+            documents.append(Document(**normalized))
+    return documents
+
+
+def _parse_batch_scrape_status_response(body: Dict[str, Any]) -> Dict[str, Any]:
+    if not body.get("success"):
+        raise Exception(body.get("error", "Unknown error occurred"))
+
+    return {
+        "status": body.get("status"),
+        "completed": body.get("completed", 0),
+        "total": body.get("total", 0),
+        "credits_used": body.get("creditsUsed"),
+        "expires_at": body.get("expiresAt"),
+        "next": body.get("next"),
+        "data": _parse_batch_scrape_documents(body.get("data", []) or []),
+    }
 
 def _prepare(urls: List[str], *, options: Optional[ScrapeOptions] = None, **kwargs) -> Dict[str, Any]:
     if not urls:
         raise ValueError("URLs list cannot be empty")
-    payload: Dict[str, Any] = {"urls": [u.strip() for u in urls]}
+
+    validated_urls = validate_batch_urls([u.strip() if isinstance(u, str) else u for u in urls])
+    payload: Dict[str, Any] = {"urls": validated_urls}
     if options:
         opts = prepare_scrape_options(options)
         if opts:
@@ -66,32 +91,63 @@ async def get_batch_scrape_status(
     if response.status_code >= 400:
         handle_response_error(response, "get batch scrape status")
     body = response.json()
-    if not body.get("success"):
-        raise Exception(body.get("error", "Unknown error occurred"))
-    docs: List[Document] = []
-    for doc in body.get("data", []) or []:
-        if isinstance(doc, dict):
-            normalized = normalize_document_input(doc)
-            docs.append(Document(**normalized))
+    payload = _parse_batch_scrape_status_response(body)
+    docs = payload["data"]
     
     # Handle pagination if requested
     auto_paginate = pagination_config.auto_paginate if pagination_config else True
-    if auto_paginate and body.get("next"):
+    if auto_paginate and payload["next"]:
         docs = await _fetch_all_batch_pages_async(
             client, 
-            body.get("next"), 
+            payload["next"], 
             docs, 
             pagination_config
         )
     
     return BatchScrapeJob(
-        status=body.get("status"),
-        completed=body.get("completed", 0),
-        total=body.get("total", 0),
-        credits_used=body.get("creditsUsed"),
-        expires_at=body.get("expiresAt"),
-        next=body.get("next") if not auto_paginate else None,
+        status=payload["status"],
+        completed=payload["completed"],
+        total=payload["total"],
+        credits_used=payload["credits_used"],
+        expires_at=payload["expires_at"],
+        next=payload["next"] if not auto_paginate else None,
         data=docs,
+    )
+
+
+async def get_batch_scrape_status_page(
+    client: AsyncHttpClient,
+    next_url: str,
+    *,
+    request_timeout: Optional[float] = None,
+) -> BatchScrapeJob:
+    """
+    Fetch a single page of batch scrape results using the provided next URL.
+
+    Args:
+        client: Async HTTP client instance
+        next_url: Opaque next URL from a prior batch scrape status response
+        request_timeout: Timeout (in seconds) for the HTTP request
+
+    Returns:
+        BatchScrapeJob with the page data and next URL (if any)
+
+    Raises:
+        Exception: If the request fails or returns an error response
+    """
+    response = await client.get(next_url, timeout=request_timeout)
+    if response.status_code >= 400:
+        handle_response_error(response, "get batch scrape status page")
+    body = response.json()
+    payload = _parse_batch_scrape_status_response(body)
+    return BatchScrapeJob(
+        status=payload["status"],
+        completed=payload["completed"],
+        total=payload["total"],
+        credits_used=payload["credits_used"],
+        expires_at=payload["expires_at"],
+        next=payload["next"],
+        data=payload["data"],
     )
 
 
@@ -143,25 +199,24 @@ async def _fetch_all_batch_pages_async(
             break
         
         page_data = response.json()
-        
-        if not page_data.get("success"):
+        try:
+            page_payload = _parse_batch_scrape_status_response(page_data)
+        except Exception:
             break
         
         # Add documents from this page
-        for doc in page_data.get("data", []) or []:
-            if isinstance(doc, dict):
-                # Check max_results limit
-                if (max_results is not None) and (len(documents) >= max_results):
-                    break
-                normalized = normalize_document_input(doc)
-                documents.append(Document(**normalized))
+        for document in page_payload["data"]:
+            # Check max_results limit
+            if (max_results is not None) and (len(documents) >= max_results):
+                break
+            documents.append(document)
         
         # Check if we hit max_results limit
         if (max_results is not None) and (len(documents) >= max_results):
             break
         
         # Get next URL
-        current_url = page_data.get("next")
+        current_url = page_payload["next"]
         page_count += 1
     
     return documents
@@ -183,4 +238,3 @@ async def get_batch_scrape_errors(client: AsyncHttpClient, job_id: str) -> Dict[
     if not body.get("success"):
         raise Exception(body.get("error", "Unknown error occurred"))
     return body
-

@@ -1,6 +1,36 @@
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
 CREATE EXTENSION IF NOT EXISTS pg_cron;
 
+-- Checkpoint tuning: spread I/O to reduce stalls during heavy WAL activity
+-- These settings help prevent prefetch queries from returning 0 jobs during checkpoints
+
+-- Checkpoint settings: reduce frequency and spread I/O
+ALTER SYSTEM SET checkpoint_completion_target = 0.9;  -- Spread checkpoint I/O over 90% of interval
+ALTER SYSTEM SET checkpoint_timeout = '15min';         -- Longer intervals between time-based checkpoints
+ALTER SYSTEM SET max_wal_size = '16GB';                -- Much larger WAL before forced checkpoint (was 4GB)
+ALTER SYSTEM SET min_wal_size = '4GB';                 -- Keep WAL pre-allocated to avoid allocation stalls
+
+-- Aggressive background writer: pre-flush dirty pages to reduce checkpoint burst
+ALTER SYSTEM SET bgwriter_lru_maxpages = 1000;         -- Flush up to 1000 pages per round (was 500)
+ALTER SYSTEM SET bgwriter_lru_multiplier = 4.0;        -- More aggressive dirty page estimation
+ALTER SYSTEM SET bgwriter_delay = '50ms';              -- Run twice as often (was 100ms)
+ALTER SYSTEM SET bgwriter_flush_after = '512kB';       -- Force OS flush after 512kB written
+
+-- I/O concurrency for SSD/cloud storage (hyperdisk)
+ALTER SYSTEM SET effective_io_concurrency = 200;       -- Parallel I/O operations for prefetch
+ALTER SYSTEM SET maintenance_io_concurrency = 100;     -- I/O concurrency for maintenance ops
+
+-- WAL settings for better write performance
+ALTER SYSTEM SET wal_buffers = '64MB';                 -- Larger WAL buffer (default is too small)
+ALTER SYSTEM SET wal_writer_delay = '10ms';            -- Flush WAL more frequently to avoid bursts
+ALTER SYSTEM SET wal_writer_flush_after = '1MB';       -- Flush after 1MB of WAL
+
+-- Reduce fsync overhead
+ALTER SYSTEM SET commit_delay = 10;                    -- Microseconds to wait for group commit
+ALTER SYSTEM SET commit_siblings = 5;                  -- Min concurrent transactions for commit_delay
+
+SELECT pg_reload_conf();
+
 CREATE SCHEMA IF NOT EXISTS nuq;
 
 DO $$ BEGIN
@@ -36,8 +66,8 @@ CREATE TABLE IF NOT EXISTS nuq.queue_scrape (
 ALTER TABLE nuq.queue_scrape
 SET (autovacuum_vacuum_scale_factor = 0.01,
      autovacuum_analyze_scale_factor = 0.01,
-     autovacuum_vacuum_cost_limit = 2000,
-     autovacuum_vacuum_cost_delay = 2);
+     autovacuum_vacuum_cost_limit = 10000,
+     autovacuum_vacuum_cost_delay = 0);
 
 CREATE INDEX IF NOT EXISTS queue_scrape_active_locked_at_idx ON nuq.queue_scrape USING btree (locked_at) WHERE (status = 'active'::nuq.job_status);
 CREATE INDEX IF NOT EXISTS nuq_queue_scrape_queued_optimal_2_idx ON nuq.queue_scrape (priority ASC, created_at ASC, id) WHERE (status = 'queued'::nuq.job_status);
@@ -68,6 +98,9 @@ CREATE TABLE IF NOT EXISTS nuq.queue_scrape_backlog (
   times_out_at timestamptz,
   CONSTRAINT queue_scrape_backlog_pkey PRIMARY KEY (id)
 );
+
+-- For getBackloggedJobIDsOfOwner: query backlog by owner_id
+CREATE INDEX IF NOT EXISTS nuq_queue_scrape_backlog_owner_id_idx ON nuq.queue_scrape_backlog (owner_id);
 
 -- For getGroupNumericStats backlog query: query by group_id and data->>'mode' on backlog table
 CREATE INDEX IF NOT EXISTS nuq_queue_scrape_backlog_group_mode_idx ON nuq.queue_scrape_backlog (group_id) WHERE ((data->>'mode') = 'single_urls');
@@ -116,8 +149,8 @@ CREATE TABLE IF NOT EXISTS nuq.queue_crawl_finished (
 ALTER TABLE nuq.queue_crawl_finished
 SET (autovacuum_vacuum_scale_factor = 0.01,
      autovacuum_analyze_scale_factor = 0.01,
-     autovacuum_vacuum_cost_limit = 2000,
-     autovacuum_vacuum_cost_delay = 2);
+     autovacuum_vacuum_cost_limit = 10000,
+     autovacuum_vacuum_cost_delay = 0);
 
 CREATE INDEX IF NOT EXISTS queue_crawl_finished_active_locked_at_idx ON nuq.queue_crawl_finished USING btree (locked_at) WHERE (status = 'active'::nuq.job_status);
 CREATE INDEX IF NOT EXISTS nuq_queue_crawl_finished_queued_optimal_2_idx ON nuq.queue_crawl_finished (priority ASC, created_at ASC, id) WHERE (status = 'queued'::nuq.job_status);

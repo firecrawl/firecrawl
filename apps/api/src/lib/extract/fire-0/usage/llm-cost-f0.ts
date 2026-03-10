@@ -1,4 +1,5 @@
 import { TokenUsage } from "../../../../controllers/v1/types";
+import { config } from "../../../../config";
 import { logger } from "../../../../lib/logger";
 import { modelPrices } from "../../usage/model-prices";
 
@@ -23,10 +24,15 @@ export function estimateTotalCost_F0(tokenUsage: TokenUsage[]): number {
   }, 0);
 }
 
-function estimateCost_F0(tokenUsage: TokenUsage): number {
+export function estimateCost_F0(tokenUsage: TokenUsage): number {
   let totalCost = 0;
   try {
-    let model = tokenUsage.model ?? (process.env.MODEL_NAME || "gpt-4o-mini");
+    let model = tokenUsage.model ?? config.MODEL_NAME;
+    if (!model) {
+      logger.error("No model name provided");
+      return 0;
+    }
+
     const pricing = modelPrices[model] as ModelPricing;
 
     if (!pricing) {

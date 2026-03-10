@@ -1,0 +1,70 @@
+name: Java SDK Test Suite
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - apps/java-sdk/**
+      - .github/workflows/test-java-sdk.yml
+  push:
+    branches:
+      - main
+    paths:
+      - apps/java-sdk/**
+  workflow_dispatch:
+
+jobs:
+  build-and-test:
+    name: Build and Test
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      github.event_name == 'pull_request' ||
+      (github.event_name == 'push' && github.ref == 'refs/heads/main')
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 11
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "11"
+
+      - name: Cache Gradle packages
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: ${{ runner.os }}-gradle-${{ hashFiles('apps/java-sdk/**/*.gradle.kts', 'apps/java-sdk/gradle/wrapper/gradle-wrapper.properties') }}
+          restore-keys: |
+            ${{ runner.os }}-gradle-
+
+      - name: Grant execute permission for gradlew
+        working-directory: ./apps/java-sdk
+        run: chmod +x gradlew
+
+      - name: Build
+        working-directory: ./apps/java-sdk
+        run: ./gradlew build -x test
+
+      - name: Run unit tests
+        working-directory: ./apps/java-sdk
+        run: ./gradlew test
+
+      - name: Run E2E tests
+        if: env.FIRECRAWL_API_KEY != ''
+        working-directory: ./apps/java-sdk
+        env:
+          FIRECRAWL_API_KEY: ${{ secrets.FIRECRAWL_API_KEY }}
+        run: ./gradlew test
+
+      - name: Publish test report
+        if: always() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork == false)
+        uses: dorny/test-reporter@v1
+        with:
+          name: Java SDK Test Report
+          path: apps/java-sdk/build/test-results/test/*.xml
+          reporter: java-junit
+          fail-on-error: true

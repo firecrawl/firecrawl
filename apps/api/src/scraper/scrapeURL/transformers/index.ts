@@ -5,7 +5,11 @@ import { htmlTransform } from "../lib/removeUnwantedElements";
 import { extractLinks } from "../lib/extractLinks";
 import { extractImages } from "../lib/extractImages";
 import { extractMetadata } from "../lib/extractMetadata";
-import { performLLMExtract, performSummary } from "./llmExtract";
+import {
+  performLLMExtract,
+  performSummary,
+  performCleanContent,
+} from "./llmExtract";
 import { uploadScreenshot } from "./uploadScreenshot";
 import { removeBase64Images } from "./removeBase64Images";
 import { performAgent } from "./agent";
@@ -17,6 +21,8 @@ import { sendDocumentToIndex } from "../engines/index/index";
 import { sendDocumentToSearchIndex } from "./sendToSearchIndex";
 import { hasFormatOfType } from "../../../lib/format-utils";
 import { brandingTransformer } from "../../../lib/branding/transformer";
+import { indexerQueue } from "../../../services/indexing/indexer-queue";
+import { config } from "../../../config";
 
 type Transformer = (
   meta: Meta,
@@ -71,6 +77,37 @@ async function deriveMarkdownFromHTML(
     );
   }
 
+  // Only derive markdown if markdown format is requested or if formats that require markdown are requested:
+  // - changeTracking requires markdown
+  // - json format requires markdown (for LLM extraction)
+  // - summary format requires markdown (for summarization)
+  const hasMarkdown = hasFormatOfType(meta.options.formats, "markdown");
+  const hasChangeTracking = hasFormatOfType(
+    meta.options.formats,
+    "changeTracking",
+  );
+  const hasJson = hasFormatOfType(meta.options.formats, "json");
+  const hasSummary = hasFormatOfType(meta.options.formats, "summary");
+
+  if (
+    !hasMarkdown &&
+    !hasChangeTracking &&
+    !hasJson &&
+    !hasSummary &&
+    !meta.options.onlyCleanContent
+  ) {
+    return document;
+  }
+
+  // Skip markdown derivation if a postprocessor already set it
+  if (document.metadata.postprocessorsUsed?.length && document.markdown) {
+    meta.logger.debug(
+      "Skipping markdown derivation - postprocessor already set markdown",
+      { postprocessorsUsed: document.metadata.postprocessorsUsed },
+    );
+    return document;
+  }
+
   if (document.metadata.contentType?.includes("application/json")) {
     if (document.rawHtml === undefined) {
       throw new Error(
@@ -82,7 +119,12 @@ async function deriveMarkdownFromHTML(
     return document;
   }
 
-  document.markdown = await parseMarkdown(document.html);
+  // Use scrape ID or crawl ID as request_id for tracing
+  const requestId = meta.id || meta.internalOptions.crawlId;
+  document.markdown = await parseMarkdown(document.html, {
+    logger: meta.logger,
+    requestId,
+  });
 
   if (
     meta.options.onlyMainContent === true &&
@@ -101,7 +143,10 @@ async function deriveMarkdownFromHTML(
     };
 
     document = await deriveHTMLFromRawHTML(fallbackMeta, document);
-    document.markdown = await parseMarkdown(document.html);
+    document.markdown = await parseMarkdown(document.html, {
+      logger: meta.logger,
+      requestId,
+    });
 
     meta.logger.info("Fallback to full content extraction completed", {
       markdownLength: document.markdown?.length || 0,
@@ -115,21 +160,73 @@ async function deriveLinksFromHTML(
   meta: Meta,
   document: Document,
 ): Promise<Document> {
-  // Only derive if the formats has links
-  if (hasFormatOfType(meta.options.formats, "links")) {
-    if (document.html === undefined) {
-      throw new Error(
-        "html is undefined -- this transformer is being called out of order",
-      );
-    }
-
-    document.links = await extractLinks(
-      document.html,
-      document.metadata.url ??
-        document.metadata.sourceURL ??
-        meta.rewrittenUrl ??
-        meta.url,
+  if (document.html === undefined) {
+    throw new Error(
+      "html is undefined -- this transformer is being called out of order",
     );
+  }
+
+  const rate = config.INDEXER_TRAFFIC_SHARE
+    ? Math.max(0, Math.min(1, Number(config.INDEXER_TRAFFIC_SHARE)))
+    : 0;
+
+  const shouldForwardTraffic =
+    rate > 0 && Math.random() <= rate && !!config.INDEXER_RABBITMQ_URL;
+
+  const forwardToIndexer =
+    !!meta.internalOptions.teamId &&
+    !meta.internalOptions.teamId?.includes("robots-txt") &&
+    !meta.internalOptions.teamId?.includes("sitemap") &&
+    shouldForwardTraffic;
+
+  const requiresLinks = !!hasFormatOfType(meta.options.formats, "links");
+
+  if (!forwardToIndexer && !requiresLinks) {
+    return document;
+  }
+
+  document.links = await extractLinks(
+    document.html,
+    document.metadata.url ??
+      document.metadata.sourceURL ??
+      meta.rewrittenUrl ??
+      meta.url,
+  );
+
+  if (forwardToIndexer) {
+    try {
+      let linksDeduped: Set<string> = new Set();
+      if (!!document.links) {
+        linksDeduped = new Set([...document.links]);
+      }
+
+      indexerQueue
+        .sendToWorker({
+          id: meta.id,
+          type: "links",
+          discovery_url:
+            document.metadata.url ??
+            document.metadata.sourceURL ??
+            meta.rewrittenUrl ??
+            meta.url,
+          urls: [...linksDeduped],
+        })
+        .catch(error => {
+          meta.logger.error("Failed to queue links for indexing", {
+            error: (error as Error)?.message,
+            url: meta.url,
+          });
+        });
+    } catch (error) {
+      meta.logger.error("Failed to queue links for indexing", {
+        error: (error as Error)?.message,
+        url: meta.url,
+      });
+    }
+  }
+
+  if (!requiresLinks) {
+    delete document.links;
   }
 
   return document;
@@ -396,6 +493,7 @@ function coerceFieldsToFormats(meta: Meta, document: Document): Document {
 const transformerStack: Transformer[] = [
   deriveHTMLFromRawHTML,
   deriveMarkdownFromHTML,
+  performCleanContent,
   deriveLinksFromHTML,
   deriveImagesFromHTML,
   deriveBrandingFromActions,

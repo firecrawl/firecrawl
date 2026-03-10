@@ -1,8 +1,8 @@
 import { initializeEngineForcing, getEngineForUrl } from "../engine-forcing";
-
+import { config } from "../../../../config";
 describe("Engine Forcing", () => {
   beforeEach(() => {
-    delete process.env.FORCED_ENGINE_DOMAINS;
+    delete config.FORCED_ENGINE_DOMAINS;
   });
 
   describe("initializeEngineForcing", () => {
@@ -12,13 +12,13 @@ describe("Engine Forcing", () => {
     });
 
     it("should initialize with empty mappings when env var is empty", () => {
-      process.env.FORCED_ENGINE_DOMAINS = "";
+      config.FORCED_ENGINE_DOMAINS = "";
       initializeEngineForcing();
       expect(getEngineForUrl("https://example.com")).toBeUndefined();
     });
 
     it("should parse valid JSON mappings", () => {
-      process.env.FORCED_ENGINE_DOMAINS = JSON.stringify({
+      config.FORCED_ENGINE_DOMAINS = JSON.stringify({
         "example.com": "playwright",
       });
       initializeEngineForcing();
@@ -26,7 +26,7 @@ describe("Engine Forcing", () => {
     });
 
     it("should handle invalid JSON gracefully", () => {
-      process.env.FORCED_ENGINE_DOMAINS = "invalid json";
+      config.FORCED_ENGINE_DOMAINS = "invalid json";
       initializeEngineForcing();
       expect(getEngineForUrl("https://example.com")).toBeUndefined();
     });
@@ -34,7 +34,7 @@ describe("Engine Forcing", () => {
 
   describe("getEngineForUrl", () => {
     beforeEach(() => {
-      process.env.FORCED_ENGINE_DOMAINS = JSON.stringify({
+      config.FORCED_ENGINE_DOMAINS = JSON.stringify({
         "example.com": "playwright",
         "test.com": "fetch",
         "*.subdomain.com": "fire-engine;chrome-cdp",
@@ -93,7 +93,7 @@ describe("Engine Forcing", () => {
     });
 
     it("should throw error if not initialized", () => {
-      delete process.env.FORCED_ENGINE_DOMAINS;
+      delete config.FORCED_ENGINE_DOMAINS;
       expect(() => {
         const {
           getEngineForUrl: freshGetEngineForUrl,

@@ -3,8 +3,8 @@ github.com/PuerkitoBio/goquery v1.10.3/go.mod h1:tMUX0zDMHXYlAQk6p35XxQMqMweEKB7
 github.com/andybalholm/cascadia v1.3.3 h1:AG2YHrzJIm4BZ19iwJ/DAua6Btl3IwJX+VI4kktS1LM=
 github.com/andybalholm/cascadia v1.3.3/go.mod h1:xNd9bqTn98Ln4DwST8/nG+H0yuB8Hmgu1YHNnWw0GeA=
 github.com/creack/pty v1.1.9/go.mod h1:oKZEueFk5CKHvIhNR5MUki03XCEU+Q6VDXinZuGJ33E=
-github.com/firecrawl/html-to-markdown v0.0.0-20250922154302-32a7ad4a22c3 h1:lzHIpN3DszdL8V2JRK03WleWIeW2ssVmiMAbg67ES/A=
-github.com/firecrawl/html-to-markdown v0.0.0-20250922154302-32a7ad4a22c3/go.mod h1:jngam+MdNp7FZkhSTlFsuA5hXY21X0+vuiGlpgo2n5o=
+github.com/firecrawl/html-to-markdown v0.0.0-20260305014655-0ec744e89d3c h1:EadFGDVcmkhrWfld8MVrnWFIoimCpRd9eUX/AwCiMRs=
+github.com/firecrawl/html-to-markdown v0.0.0-20260305014655-0ec744e89d3c/go.mod h1:jngam+MdNp7FZkhSTlFsuA5hXY21X0+vuiGlpgo2n5o=
 github.com/google/go-cmp v0.6.0/go.mod h1:17dUlkBOakJ0+DkrSSNjCkIjxS6bF9zb3elmeNGIjoY=
 github.com/kr/pretty v0.1.0/go.mod h1:dAy3ld7l9f0ibDNOQOHHMYYIIbhfbHSm3C4ZsoJORNo=
 github.com/kr/pretty v0.2.1/go.mod h1:ipq/a2n7PKx3OHsz4KJII5eveXtPO4qwEXGdVfWzfnI=

@@ -13,13 +13,23 @@ import {
   crawl,
   crawlOngoing,
   crawlStart,
+  map,
   Identity,
   idmux,
   scrapeTimeout,
+  TEST_API_URL,
 } from "./lib";
+import request from "./lib";
 import { describe, it, expect } from "@jest/globals";
 
 let identity: Identity;
+
+const normalizeUrlForCompare = (value: string) => {
+  const url = new URL(value);
+  url.hash = "";
+  const href = url.href;
+  return href.endsWith("/") ? href.slice(0, -1) : href;
+};
 
 beforeAll(async () => {
   identity = await idmux({
@@ -63,6 +73,97 @@ describe("Crawl tests", () => {
       );
 
       expect(results.completed).toBeGreaterThan(0);
+    },
+    10 * scrapeTimeout,
+  );
+
+  concurrentIf(ALLOW_TEST_SUITE_WEBSITE)(
+    "works with sitemap: only",
+    async () => {
+      const results = await crawl(
+        {
+          url: base,
+          limit: 10,
+          sitemap: "only",
+        },
+        identity,
+      );
+
+      expect(results.completed).toBeGreaterThan(0);
+    },
+    10 * scrapeTimeout,
+  );
+
+  concurrentIf(ALLOW_TEST_SUITE_WEBSITE)(
+    "sitemap-only results are subset of map-only + start URL",
+    async () => {
+      const mapResponse = await map(
+        {
+          url: base,
+          sitemap: "only",
+          includeSubdomains: false,
+          ignoreQueryParameters: false,
+          limit: 500,
+        },
+        identity,
+      );
+
+      expect(mapResponse.statusCode).toBe(200);
+      expect(mapResponse.body.success).toBe(true);
+
+      const sitemapUrls = new Set(
+        mapResponse.body.links.map(link => normalizeUrlForCompare(link.url)),
+      );
+      const baseNormalized = normalizeUrlForCompare(base);
+
+      const results = await crawl(
+        {
+          url: base,
+          limit: 50,
+          sitemap: "only",
+        },
+        identity,
+      );
+
+      expect(results.success).toBe(true);
+      if (results.success) {
+        for (const page of results.data) {
+          const pageUrl =
+            page.metadata.url ?? page.metadata.sourceURL ?? base;
+          const normalized = normalizeUrlForCompare(pageUrl);
+          expect(
+            normalized === baseNormalized || sitemapUrls.has(normalized),
+          ).toBe(true);
+        }
+      }
+    },
+    10 * scrapeTimeout,
+  );
+
+  concurrentIf(TEST_PRODUCTION)(
+    "no sitemap found -> start URL only",
+    async () => {
+      const noSitemapUrl = "https://example.com";
+      const results = await crawl(
+        {
+          url: noSitemapUrl,
+          limit: 10,
+          sitemap: "only",
+        },
+        identity,
+      );
+
+      expect(results.success).toBe(true);
+      if (results.success) {
+        expect(results.data.length).toBe(1);
+        const pageUrl =
+          results.data[0].metadata.url ??
+          results.data[0].metadata.sourceURL ??
+          noSitemapUrl;
+        expect(normalizeUrlForCompare(pageUrl)).toBe(
+          normalizeUrlForCompare(noSitemapUrl),
+        );
+      }
     },
     10 * scrapeTimeout,
   );
@@ -460,4 +561,46 @@ describe("Crawl tests", () => {
     },
     10 * scrapeTimeout,
   );
+
+  describe("UUID validation", () => {
+    it.concurrent(
+      "should reject invalid UUID 'None' for crawl status",
+      async () => {
+        const response = await request(TEST_API_URL)
+          .get("/v2/crawl/None")
+          .set("Authorization", `Bearer ${identity.apiKey}`)
+          .send();
+
+        expect(response.statusCode).toBe(400);
+        expect(response.body.success).toBe(false);
+        expect(response.body.error).toBe(
+          "Invalid job ID format. Job ID must be a valid UUID.",
+        );
+      },
+    );
+
+    it.concurrent("should reject malformed UUID for crawl cancel", async () => {
+      const response = await request(TEST_API_URL)
+        .delete("/v2/crawl/not-a-uuid")
+        .set("Authorization", `Bearer ${identity.apiKey}`)
+        .send();
+
+      expect(response.statusCode).toBe(400);
+      expect(response.body.error).toBe(
+        "Invalid job ID format. Job ID must be a valid UUID.",
+      );
+    });
+
+    it.concurrent("should reject invalid UUID for crawl errors", async () => {
+      const response = await request(TEST_API_URL)
+        .get("/v2/crawl/invalid-id/errors")
+        .set("Authorization", `Bearer ${identity.apiKey}`)
+        .send();
+
+      expect(response.statusCode).toBe(400);
+      expect(response.body.error).toBe(
+        "Invalid job ID format. Job ID must be a valid UUID.",
+      );
+    });
+  });
 });

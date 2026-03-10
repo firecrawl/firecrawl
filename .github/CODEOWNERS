@@ -112,5 +112,9 @@
 # Tests
 /apps/api/src/__tests__/snips/*                 @mogery
 
+# Branding
+**/branding*                                    @abimaelmartell
+**/branding-script*                             @abimaelmartell
+
 # Examples
 /examples/*                                     @ericciarla @nickscamara

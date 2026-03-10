@@ -2,12 +2,13 @@
 // and it makes me sad. - mogery
 
 import { supabase_service } from "../../../services/supabase";
+import { config } from "../../../config";
 import { Meta } from "..";
 import { Document } from "../../../controllers/v1/types";
 
 export function uploadScreenshot(meta: Meta, document: Document): Document {
   if (
-    process.env.USE_DB_AUTHENTICATION === "true" &&
+    config.USE_DB_AUTHENTICATION &&
     document.screenshot !== undefined &&
     document.screenshot.startsWith("data:")
   ) {

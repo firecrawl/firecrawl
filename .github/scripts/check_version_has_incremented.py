@@ -8,10 +8,15 @@ Local version: 0.0.22
 Published version: 0.0.21
 true
 
-python .github/scripts/check_version_has_incremented.py python ./apps/python-sdk/firecrawl firecrawl-py 
+python .github/scripts/check_version_has_incremented.py python ./apps/python-sdk/firecrawl firecrawl-py
 Local version: 0.0.11
 Published version: 0.0.11
 false
+
+python .github/scripts/check_version_has_incremented.py java ./apps/java-sdk com.firecrawl:firecrawl-java
+Local version: 1.0.0
+Published version: 0.0.0  (0.0.0 means not yet published on Maven Central)
+true
 
 """
 import json
@@ -53,6 +58,30 @@ def get_npm_version(package_name: str) -> str:
     version = response.json()['version']
     return version.strip()
 
+def get_gradle_version(file_path: str) -> str:
+    """Extract version string from build.gradle.kts."""
+    build_file = Path(file_path).read_text()
+    version_match = re.search(r'^version\s*=\s*["\']([^"\']*)["\']', build_file, re.M)
+    if version_match:
+        return version_match.group(1).strip()
+    raise RuntimeError("Unable to find version string in build.gradle.kts.")
+
+def get_maven_central_version(package_name: str) -> str:
+    """Get latest version of Java package from Maven Central. package_name should be groupId:artifactId."""
+    group_id, artifact_id = package_name.split(":")
+    group_path = group_id.replace(".", "/")
+    url = f"https://repo1.maven.org/maven2/{group_path}/{artifact_id}/maven-metadata.xml"
+    response = requests.get(url)
+    if response.status_code == 404:
+        return "0.0.0"
+    response.raise_for_status()
+    version_match = re.search(r"<release>(.*?)</release>", response.text)
+    if not version_match:
+        version_match = re.search(r"<latest>(.*?)</latest>", response.text)
+    if version_match:
+        return version_match.group(1).strip()
+    return "0.0.0"
+
 # def get_rust_version(file_path: str) -> str:
 #     """Extract version string from Cargo.toml."""
 #     cargo_toml = toml.load(file_path)
@@ -87,6 +116,11 @@ if __name__ == "__main__":
         current_version = get_js_version(os.path.join(package_path, 'package.json'))
         # Get published version from npm
         published_version = get_npm_version(package_name)
+    elif package_type == "java":
+        # Get current version from build.gradle.kts
+        current_version = get_gradle_version(os.path.join(package_path, 'build.gradle.kts'))
+        # Get published version from Maven Central
+        published_version = get_maven_central_version(package_name)
     # if package_type == "rust":
     #     # Get current version from Cargo.toml
     #     current_version = get_rust_version(os.path.join(package_path, 'Cargo.toml'))
@@ -94,7 +128,7 @@ if __name__ == "__main__":
     #     published_version = get_crates_version(package_name)
 
     else:
-        raise ValueError("Invalid package type. Use 'python' or 'js'.")
+        raise ValueError("Invalid package type. Use 'python', 'js', or 'java'.")
 
     # Print versions for debugging
     # print(f"Local version: {current_version}")

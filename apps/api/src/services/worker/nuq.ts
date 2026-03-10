@@ -5,11 +5,12 @@ import { type ScrapeJobData } from "../../types";
 import { withSpan, setSpanAttributes } from "../../lib/otel-tracer";
 import amqp from "amqplib";
 import { v5 as uuidv5, validate as isUUID } from "uuid";
+import { config } from "../../config";
 
 // === Basics
 
 const nuqPool = new Pool({
-  connectionString: process.env.NUQ_DATABASE_URL, // may be a pgbouncer transaction pooler URL
+  connectionString: config.NUQ_DATABASE_URL, // may be a pgbouncer transaction pooler URL
   application_name: "nuq",
 });
 
@@ -63,7 +64,7 @@ function normalizeOwnerId(ownerId: string | undefined | null): string | null {
 
 class NuQ<JobData = any, JobReturnValue = any> {
   private listenChannelId: string =
-    (process.env.NUQ_POD_NAME ?? "main") + "-" + crypto.randomUUID();
+    config.NUQ_POD_NAME + "-" + crypto.randomUUID();
 
   constructor(
     public readonly queueName: string,
@@ -93,13 +94,13 @@ class NuQ<JobData = any, JobReturnValue = any> {
   private async startListener() {
     if (this.listener || this.shuttingDown || this.listenerStarting) return;
 
-    if (process.env.NUQ_RABBITMQ_URL) {
+    if (config.NUQ_RABBITMQ_URL) {
       this.listenerStarting = true;
 
       try {
-        const connection = await amqp.connect(process.env.NUQ_RABBITMQ_URL);
+        const connection = await amqp.connect(config.NUQ_RABBITMQ_URL);
         const channel = await connection.createChannel();
-        await channel.prefetch(1);
+        await channel.prefetch(5);
         const queue = await channel.assertQueue(
           this.queueName + ".listen." + this.listenChannelId,
           {
@@ -180,47 +181,75 @@ class NuQ<JobData = any, JobReturnValue = any> {
         },
       );
     } else {
-      this.listener = {
-        type: "postgres",
-        client: new Client({
-          connectionString:
-            process.env.NUQ_DATABASE_URL_LISTEN ?? process.env.NUQ_DATABASE_URL, // will always be a direct connection
-          application_name: "nuq_listener",
-        }),
-      };
+      this.listenerStarting = true;
 
-      this.listener.client.on("notification", msg => {
-        const tok = (msg.payload ?? "unknown|unknown").split("|");
-        if (tok[0] in this.listens) {
-          this.listens[tok[0]].forEach(listener =>
-            listener(tok[1] as "completed" | "failed"),
-          );
-          delete this.listens[tok[0]];
-        }
-      });
+      try {
+        this.listener = {
+          type: "postgres",
+          client: new Client({
+            connectionString:
+              config.NUQ_DATABASE_URL_LISTEN ?? config.NUQ_DATABASE_URL, // will always be a direct connection
+            application_name: "nuq_listener",
+          }),
+        };
 
-      this.listener.client.on("error", err =>
-        logger.error("Error in NuQ listener", { err, module: "nuq" }),
-      );
+        let reconnectTimeout: NodeJS.Timeout | null = null;
 
-      this.listener.client.on("end", () => {
-        logger.info("NuQ listener disconnected", { module: "nuq" });
-        this.listener = null;
-        setTimeout(
-          (() => {
-            this.startListener().catch(err =>
-              logger.error("Error in NuQ listener reconnect", {
-                err,
-                module: "nuq",
-              }),
+        this.listener.client.on("notification", msg => {
+          const tok = (msg.payload ?? "unknown|unknown").split("|");
+          if (tok[0] in this.listens) {
+            this.listens[tok[0]].forEach(listener =>
+              listener(tok[1] as "completed" | "failed"),
             );
-          }).bind(this),
-          250,
-        );
-      });
+            delete this.listens[tok[0]];
+          }
+        });
 
-      await this.listener.client.connect();
-      await this.listener.client.query(`LISTEN "${this.queueName}";`);
+        this.listener.client.on("error", err => {
+          logger.error("Error in NuQ listener", { err, module: "nuq" });
+          // Trigger cleanup and reconnection on error
+          if (this.listener && this.listener.type === "postgres") {
+            const nl = this.listener;
+            this.listener = null;
+            nl.client.end().catch(() => {});
+            if (reconnectTimeout) clearTimeout(reconnectTimeout);
+            reconnectTimeout = setTimeout(
+              (() => {
+                this.startListener().catch(err =>
+                  logger.error("Error in NuQ listener reconnect", {
+                    err,
+                    module: "nuq",
+                  }),
+                );
+              }).bind(this),
+              250,
+            );
+          }
+        });
+
+        this.listener.client.on("end", () => {
+          logger.info("NuQ listener disconnected", { module: "nuq" });
+          this.listener = null;
+
+          if (reconnectTimeout) clearTimeout(reconnectTimeout);
+          reconnectTimeout = setTimeout(
+            (() => {
+              this.startListener().catch(err =>
+                logger.error("Error in NuQ listener reconnect", {
+                  err,
+                  module: "nuq",
+                }),
+              );
+            }).bind(this),
+            250,
+          );
+        });
+
+        await this.listener.client.connect();
+        await this.listener.client.query(`LISTEN "${this.queueName}";`);
+      } finally {
+        this.listenerStarting = false;
+      }
     }
 
     (async () => {
@@ -263,37 +292,59 @@ class NuQ<JobData = any, JobReturnValue = any> {
     connection: amqp.ChannelModel;
     channel: amqp.Channel;
   } | null = null;
+  private senderStarting = false;
 
   private async startSender() {
-    if (this.sender || this.shuttingDown) return;
+    if (this.sender || this.shuttingDown || this.senderStarting) return;
+    this.senderStarting = true;
 
-    if (process.env.NUQ_RABBITMQ_URL) {
-      const connection = await amqp.connect(process.env.NUQ_RABBITMQ_URL);
-      const channel = await connection.createChannel();
-      await channel.assertQueue(this.queueName + ".prefetch", {
-        durable: true,
-        arguments: {
-          "x-queue-type": "quorum",
-          "x-max-length": 20000,
-        },
-      });
+    try {
+      if (config.NUQ_RABBITMQ_URL) {
+        const connection = await amqp.connect(config.NUQ_RABBITMQ_URL);
+        const channel = await connection.createChannel();
+        await channel.assertQueue(this.queueName + ".prefetch", {
+          durable: true,
+          arguments: {
+            "x-queue-type": "quorum",
+            "x-max-length": 20000,
+          },
+        });
 
-      this.sender = {
-        type: "rabbitmq",
-        connection,
-        channel,
-      };
+        this.sender = {
+          type: "rabbitmq",
+          connection,
+          channel,
+        };
 
-      channel.on("close", () => {
-        logger.info("NuQ sender channel closed", { module: "nuq/rabbitmq" });
-        connection.close().catch(() => {});
-        this.sender = null;
-      });
+        channel.on("close", () => {
+          logger.info("NuQ sender channel closed", { module: "nuq/rabbitmq" });
+          connection.close().catch(() => {});
+          this.sender = null;
+        });
 
-      connection.on("close", () => {
-        logger.info("NuQ sender connection closed", { module: "nuq/rabbitmq" });
-        this.sender = null;
-      });
+        channel.on("error", err => {
+          logger.error("NuQ sender channel error", {
+            module: "nuq/rabbitmq",
+            err,
+          });
+        });
+
+        connection.on("close", () => {
+          logger.info("NuQ sender connection closed", {
+            module: "nuq/rabbitmq",
+          });
+          this.sender = null;
+        });
+
+        connection.on("error", err => {
+          logger.error("NuQ sender connection error", {
+            module: "nuq/rabbitmq",
+            err,
+          });
+        });
+      }
+    } finally {
+      this.senderStarting = false;
     }
   }
 
@@ -332,7 +383,7 @@ class NuQ<JobData = any, JobReturnValue = any> {
         {
           correlationId: job.id,
           persistent: true,
-          expiration: "15000", // has to expire in 15s otherwise locks will fail to be acquired for jobs that got picked up late
+          expiration: "50000", // must be less than lock reaper timeout (1 min) to minimize dead zone where jobs are expired from RabbitMQ but still "active" in DB
         },
       );
       _logger.info("NuQ job prefetch sent", { module: "nuq/rabbitmq" });
@@ -606,7 +657,7 @@ class NuQ<JobData = any, JobReturnValue = any> {
     }
   }
 
-  public async getBackloggedJobIDsOfOnwer(
+  public async getBackloggedJobIDsOfOwner(
     ownerId: string,
     _logger: Logger = logger,
   ): Promise<string[]> {
@@ -619,9 +670,9 @@ class NuQ<JobData = any, JobReturnValue = any> {
         )
       ).rows.map(row => row.id);
     } finally {
-      _logger.info("nuqGetBackloggedJobIDsOfOnwer metrics", {
+      _logger.info("nuqGetBackloggedJobIDsOfOwner metrics", {
         module: "nuq/metrics",
-        method: "nuqGetBackloggedJobIDsOfOnwer",
+        method: "nuqGetBackloggedJobIDsOfOwner",
         duration: Date.now() - start,
         ownerId,
       });
@@ -1038,7 +1089,7 @@ class NuQ<JobData = any, JobReturnValue = any> {
   }
 
   private readonly nuqWaitMode =
-    process.env.NUQ_WAIT_MODE === "listen" || process.env.NUQ_RABBITMQ_URL
+    config.NUQ_WAIT_MODE === "listen" || config.NUQ_RABBITMQ_URL
       ? ("listen" as const)
       : ("poll" as const);
 
@@ -1194,18 +1245,27 @@ class NuQ<JobData = any, JobReturnValue = any> {
   public async getJobToProcess(): Promise<NuQJob<any, any> | null> {
     const start = Date.now();
     try {
-      if (process.env.NUQ_RABBITMQ_URL) {
+      if (config.NUQ_RABBITMQ_URL) {
         await this.startSender();
 
         if (this.sender) {
-          const job = await this.sender.channel.get(
-            this.queueName + ".prefetch",
-            { noAck: true },
-          );
-          if (job !== false) {
-            return this.rowToJob(JSON.parse(job.content.toString()));
-          } else {
-            return null;
+          try {
+            const job = await this.sender.channel.get(
+              this.queueName + ".prefetch",
+              { noAck: true },
+            );
+            if (job !== false) {
+              return this.rowToJob(JSON.parse(job.content.toString()));
+            } else {
+              return null;
+            }
+          } catch (err) {
+            logger.warn("NuQ sender get failed, falling back to postgres", {
+              module: "nuq/rabbitmq",
+              err,
+            });
+            // Reset sender so it can be re-established on next call
+            this.sender = null;
           }
         } else {
           logger.warn("NuQ sender not started, falling back to postgres", {
@@ -1281,11 +1341,11 @@ class NuQ<JobData = any, JobReturnValue = any> {
 
         if (success) {
           const job = result.rows[0];
-          if (this.nuqWaitMode === "listen" && !process.env.NUQ_RABBITMQ_URL) {
+          if (this.nuqWaitMode === "listen" && !config.NUQ_RABBITMQ_URL) {
             await nuqPool.query(`SELECT pg_notify('${this.queueName}', $1);`, [
               job.id + "|completed",
             ]);
-          } else if (process.env.NUQ_RABBITMQ_URL && job.listen_channel_id) {
+          } else if (config.NUQ_RABBITMQ_URL && job.listen_channel_id) {
             await this.sendJobEnd(
               job.id,
               "completed",
@@ -1339,11 +1399,11 @@ class NuQ<JobData = any, JobReturnValue = any> {
 
         if (success) {
           const job = result.rows[0];
-          if (this.nuqWaitMode === "listen" && !process.env.NUQ_RABBITMQ_URL) {
+          if (this.nuqWaitMode === "listen" && !config.NUQ_RABBITMQ_URL) {
             await nuqPool.query(`SELECT pg_notify('${this.queueName}', $1);`, [
               job.id + "|failed",
             ]);
-          } else if (process.env.NUQ_RABBITMQ_URL && job.listen_channel_id) {
+          } else if (config.NUQ_RABBITMQ_URL && job.listen_channel_id) {
             await this.sendJobEnd(
               job.id,
               "failed",

@@ -1,11 +1,11 @@
 import { supabase_service } from "../../../services/supabase";
 import { Document } from "../../../controllers/v1/types";
 import { Meta } from "../index";
-import { getJob } from "../../../controllers/v1/crawl-status";
 import gitDiff from "git-diff";
 import parseDiff from "parse-diff";
 import { generateCompletions } from "./llmExtract";
 import { hasFormatOfType } from "../../../lib/format-utils";
+import { getJobFromGCS } from "../../../lib/gcs-jobs";
 
 async function extractDataWithSchema(
   content: string,
@@ -113,11 +113,18 @@ export async function deriveDiff(
       | undefined
       | null = (res.data ?? [])[0] as any;
 
-    const job: {
-      returnvalue: Document;
-    } | null = data?.o_job_id ? await getJob(data.o_job_id) : null;
-    if (data && job && job?.returnvalue) {
-      const previousMarkdown = job.returnvalue.markdown!;
+    const rawJob = data?.o_job_id ? await getJobFromGCS(data.o_job_id) : null;
+    const job: Document | null = rawJob?.[0] ?? null;
+
+    meta.logger.debug("Change tracking debugging", {
+      isDataPresent: !!data,
+      data,
+      isRawJobPresent: !!rawJob,
+      isJobPresent: !!job,
+    });
+
+    if (data && job) {
+      const previousMarkdown = job.markdown!;
       const currentMarkdown = document.markdown!;
 
       const transformer = (x: string) =>

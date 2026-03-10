@@ -9,6 +9,8 @@
 export { FirecrawlClient } from "./v2/client";
 /** Public v2 request/response types. */
 export * from "./v2/types";
+/** Watcher class and options for crawl/batch job monitoring. */
+export { Watcher, type WatcherOptions } from "./v2/watcher";
 /** Legacy v1 client (feature‑frozen). */
 export { default as FirecrawlAppV1 } from "./v1";
 

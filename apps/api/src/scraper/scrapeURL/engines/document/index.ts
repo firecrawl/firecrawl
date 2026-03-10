@@ -12,8 +12,11 @@ function getDocumentTypeFromUrl(url: string): DocumentType {
   const urlLower = url.toLowerCase();
 
   // Check for extensions at the end or in the middle (e.g., file.xlsx/hash)
+  // Check .docx before .doc to avoid false matches
   if (urlLower.endsWith(".docx") || urlLower.includes(".docx/"))
     return DocumentType.Docx;
+  if (urlLower.endsWith(".doc") || urlLower.includes(".doc/"))
+    return DocumentType.Doc;
   if (urlLower.endsWith(".odt") || urlLower.includes(".odt/"))
     return DocumentType.Odt;
   if (urlLower.endsWith(".rtf") || urlLower.includes(".rtf/"))
@@ -36,13 +39,18 @@ function getDocumentTypeFromContentType(
 
   const ct = contentType.toLowerCase();
 
+  // Check for modern .docx format first (Office Open XML)
   if (
     ct.includes(
       "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-    ) ||
-    ct.includes("application/msword")
+    )
   ) {
     return DocumentType.Docx;
+  }
+
+  // Legacy .doc format (OLE2/CFB binary format)
+  if (ct.includes("application/msword")) {
+    return DocumentType.Doc;
   }
 
   if (ct.includes("application/vnd.oasis.opendocument.text")) {
@@ -88,46 +96,46 @@ export async function scrapeDocument(meta: Meta): Promise<EngineScrapeResult> {
   let proxyUsed: "basic" | "stealth" = "basic";
   let tempFilePath: string | null = null;
 
-  if (meta.documentPrefetch !== undefined && meta.documentPrefetch !== null) {
-    // Use prefetched document
-    tempFilePath = meta.documentPrefetch.filePath;
-    buffer = await readFile(tempFilePath);
-
-    // Create a mock response object with content-type from prefetch
-    const headers = new Headers();
-    if (meta.documentPrefetch.contentType) {
-      headers.set("Content-Type", meta.documentPrefetch.contentType);
-    }
-
-    response = {
-      url: meta.documentPrefetch.url ?? meta.rewrittenUrl ?? meta.url,
-      status: meta.documentPrefetch.status,
-      headers,
-    } as Response;
-
-    proxyUsed = meta.documentPrefetch.proxyUsed;
-  } else {
-    // Fetch the document normally
-    const result = await fetchFileToBuffer(
-      meta.rewrittenUrl ?? meta.url,
-      meta.options.skipTlsVerification,
-      {
-        headers: meta.options.headers,
-        signal: meta.abort.asSignal(),
-      },
-    );
-    response = result.response;
-    buffer = result.buffer;
-
-    // Validate content type only when fetching directly (not using prefetch)
-    const ct = response.headers.get("Content-Type");
-    if (ct && !isValidDocumentContentType(ct)) {
-      // if downloaded file wasn't a valid document, throw antibot error
-      throw new DocumentAntibotError();
-    }
-  }
-
   try {
+    if (meta.documentPrefetch !== undefined && meta.documentPrefetch !== null) {
+      // Use prefetched document
+      tempFilePath = meta.documentPrefetch.filePath;
+      buffer = await readFile(tempFilePath);
+
+      // Create a mock response object with content-type from prefetch
+      const headers = new Headers();
+      if (meta.documentPrefetch.contentType) {
+        headers.set("Content-Type", meta.documentPrefetch.contentType);
+      }
+
+      response = {
+        url: meta.documentPrefetch.url ?? meta.rewrittenUrl ?? meta.url,
+        status: meta.documentPrefetch.status,
+        headers,
+      } as Response;
+
+      proxyUsed = meta.documentPrefetch.proxyUsed;
+    } else {
+      // Fetch the document normally
+      const result = await fetchFileToBuffer(
+        meta.rewrittenUrl ?? meta.url,
+        meta.options.skipTlsVerification,
+        {
+          headers: meta.options.headers,
+          signal: meta.abort.asSignal(),
+        },
+      );
+      response = result.response;
+      buffer = result.buffer;
+
+      // Validate content type only when fetching directly (not using prefetch)
+      const ct = response.headers.get("Content-Type");
+      if (ct && !isValidDocumentContentType(ct)) {
+        // if downloaded file wasn't a valid document, throw antibot error
+        throw new DocumentAntibotError();
+      }
+    }
+
     const documentType =
       getDocumentTypeFromContentType(response.headers.get("content-type")) ??
       getDocumentTypeFromUrl(response.url);
@@ -145,11 +153,7 @@ export async function scrapeDocument(meta: Meta): Promise<EngineScrapeResult> {
     };
   } finally {
     // Clean up temporary file if it was created by prefetch
-    if (
-      tempFilePath &&
-      meta.documentPrefetch !== undefined &&
-      meta.documentPrefetch !== null
-    ) {
+    if (tempFilePath) {
       try {
         await unlink(tempFilePath);
       } catch (error) {

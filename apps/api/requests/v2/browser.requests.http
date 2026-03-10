@@ -1,0 +1,91 @@
+# Pick your baseUrl here:
+# @baseUrl = http://localhost:3002
+@baseUrl = https://api.firecrawl.dev
+
+### Create Browser Session (defaults)
+POST {{baseUrl}}/v2/browser HTTP/1.1
+Authorization: Bearer {{$dotenv TEST_API_KEY}}
+content-type: application/json
+
+{}
+
+### Create Browser Session (with options)
+POST {{baseUrl}}/v2/browser HTTP/1.1
+Authorization: Bearer {{$dotenv TEST_API_KEY}}
+content-type: application/json
+
+{
+  "ttlTotal": 600,
+  "ttlWithoutActivity": 120,
+  "streamWebView": false
+}
+
+### Create Browser Session (with webview streaming)
+POST {{baseUrl}}/v2/browser HTTP/1.1
+Authorization: Bearer {{$dotenv TEST_API_KEY}}
+content-type: application/json
+
+{
+  "ttlTotal": 300,
+  "streamWebView": true
+}
+
+### List Browser Sessions (all)
+GET {{baseUrl}}/v2/browser HTTP/1.1
+Authorization: Bearer {{$dotenv TEST_API_KEY}}
+
+### List Browser Sessions (active only)
+GET {{baseUrl}}/v2/browser?status=active HTTP/1.1
+Authorization: Bearer {{$dotenv TEST_API_KEY}}
+
+### Execute Code (Python) — replace sessionId with actual id from create response
+@sessionId = {{}}
+
+POST {{baseUrl}}/v2/browser/{{sessionId}}/execute HTTP/1.1
+Authorization: Bearer {{$dotenv TEST_API_KEY}}
+content-type: application/json
+
+{
+  "code": "await page.goto(\"https://example.com\")\nprint(await page.title())",
+  "language": "python"
+}
+
+
+### Execute Code (JS) — replace sessionId with actual id
+POST {{baseUrl}}/v2/browser/{{sessionId}}/execute HTTP/1.1
+Authorization: Bearer {{$dotenv TEST_API_KEY}}
+content-type: application/json
+
+{
+  "code": "await page.goto('https://example.com');\nconst title = await page.title();\nconsole.log(title);",
+  "language": "js"
+}
+
+### Execute Code — screenshot to base64
+POST {{baseUrl}}/v2/browser/{{sessionId}}/execute HTTP/1.1
+Authorization: Bearer {{$dotenv TEST_API_KEY}}
+content-type: application/json
+
+{
+  "code": "await page.goto(\"https://example.com\")\nscreenshot = await page.screenshot()\nimport base64\nprint(base64.b64encode(screenshot).decode()[:100])",
+  "language": "python"
+}
+
+### Execute Code — extract page content
+POST {{baseUrl}}/v2/browser/{{sessionId}}/execute HTTP/1.1
+Authorization: Bearer {{$dotenv TEST_API_KEY}}
+content-type: application/json
+
+{
+  "code": "await page.goto(\"https://news.ycombinator.com\")\ntitles = await page.query_selector_all(\".titleline > a\")\nfor t in titles[:5]:\n    print(await t.inner_text())",
+  "language": "python"
+}
+
+### Delete Browser Session — replace sessionId with actual id
+DELETE {{baseUrl}}/v2/browser/{{sessionId}} HTTP/1.1
+Authorization: Bearer {{$dotenv TEST_API_KEY}}
+content-type: application/json
+
+
+### WebSocket — webview stream (use a WS client, e.g. wscat)
+# wscat -c "ws://localhost:3002/v2/browser/{{sessionId}}" -H "Authorization: Bearer YOUR_API_KEY"

@@ -7,9 +7,10 @@ import { redisEvictConnection } from "./redis";
 import type { Logger } from "winston";
 import psl from "psl";
 import { MapDocument } from "../controllers/v2/types";
-import { PdfMetadata } from "@mendable/firecrawl-rs";
+import type { PdfMetadata } from "../scraper/scrapeURL/engines/pdf/types";
 import { storage } from "../lib/gcs-jobs";
 import { withSpan, setSpanAttributes } from "../lib/otel-tracer";
+import { config } from "../config";
 configDotenv();
 
 // SupabaseService class initializes the Supabase client conditionally based on environment variables.
@@ -17,8 +18,8 @@ class IndexSupabaseService {
   private client: SupabaseClient | null = null;
 
   constructor() {
-    const supabaseUrl = process.env.INDEX_SUPABASE_URL;
-    const supabaseServiceToken = process.env.INDEX_SUPABASE_SERVICE_TOKEN;
+    const supabaseUrl = config.INDEX_SUPABASE_URL;
+    const supabaseServiceToken = config.INDEX_SUPABASE_SERVICE_TOKEN;
     // Only initialize the Supabase client if both URL and Service Token are provided.
     if (!supabaseUrl || !supabaseServiceToken) {
       // Warn the user that Authentication is disabled by setting the client to null
@@ -57,10 +58,6 @@ export const index_supabase_service: SupabaseClient = new Proxy(serv, {
   },
 }) as unknown as SupabaseClient;
 
-const credentials = process.env.GCS_CREDENTIALS
-  ? JSON.parse(atob(process.env.GCS_CREDENTIALS))
-  : undefined;
-
 export async function getIndexFromGCS(
   url: string,
   logger?: Logger,
@@ -72,18 +69,18 @@ export async function getIndexFromGCS(
         "index.url": url,
       });
 
-      if (!process.env.GCS_INDEX_BUCKET_NAME) {
+      if (!config.GCS_INDEX_BUCKET_NAME) {
         setSpanAttributes(span, { "gcs.index_bucket_configured": false });
         return null;
       }
 
-      const bucket = storage.bucket(process.env.GCS_INDEX_BUCKET_NAME);
+      const bucket = storage.bucket(config.GCS_INDEX_BUCKET_NAME);
       const blob = bucket.file(`${url}`);
       const [blobContent] = await blob.download();
       const parsed = JSON.parse(blobContent.toString());
 
-      try {
-        if (typeof parsed.screenshot === "string") {
+      if (typeof parsed.screenshot === "string") {
+        try {
           const screenshotUrl = new URL(parsed.screenshot);
           let expiresAt =
             parseInt(screenshotUrl.searchParams.get("Expires") ?? "0", 10) *
@@ -105,26 +102,36 @@ export async function getIndexFromGCS(
             expiresAt < Date.now()
           ) {
             logger?.info("Re-signing screenshot URL");
-            const [url] = await storage
-              .bucket(process.env.GCS_MEDIA_BUCKET_NAME!)
-              .file(decodeURIComponent(screenshotUrl.pathname.split("/")[2]))
+            const filePath = decodeURIComponent(
+              screenshotUrl.pathname.split("/")[2],
+            );
+            const [newUrl] = await storage
+              .bucket(config.GCS_MEDIA_BUCKET_NAME!)
+              .file(filePath)
               .getSignedUrl({
                 action: "read",
-                expires: Date.now() + 1000 * 60 * 60 * 24 * 7, // 7 days
+                expires: Date.now() + 1000 * 60 * 60 * 24 * 7,
               });
-            parsed.screenshot = url;
+            parsed.screenshot = newUrl;
 
-            // Update the blob
-            await blob.save(JSON.stringify(parsed), {
-              contentType: "application/json",
-            });
+            // Persist the re-signed URL back to GCS in the background
+            blob
+              .save(JSON.stringify(parsed), {
+                contentType: "application/json",
+              })
+              .catch(error => {
+                logger?.warn("Error persisting re-signed screenshot URL", {
+                  error,
+                  url,
+                });
+              });
           }
+        } catch (error) {
+          logger?.warn("Error parsing screenshot URL for re-signing", {
+            error,
+            url,
+          });
         }
-      } catch (error) {
-        logger?.warn("Error re-signing screenshot URL", {
-          error,
-          url,
-        });
       }
 
       setSpanAttributes(span, { "index.document_found": true });
@@ -169,12 +176,12 @@ export async function saveIndexToGCS(
       "index.has_error": !!doc.error,
     });
 
-    if (!process.env.GCS_INDEX_BUCKET_NAME) {
+    if (!config.GCS_INDEX_BUCKET_NAME) {
       setSpanAttributes(span, { "gcs.index_bucket_configured": false });
       return;
     }
 
-    const bucket = storage.bucket(process.env.GCS_INDEX_BUCKET_NAME);
+    const bucket = storage.bucket(config.GCS_INDEX_BUCKET_NAME);
     const blob = bucket.file(`${id}.json`);
 
     for (let i = 0; i < 3; i++) {
@@ -200,12 +207,11 @@ export async function saveIndexToGCS(
 }
 
 export const useIndex =
-  process.env.INDEX_SUPABASE_URL !== "" &&
-  process.env.INDEX_SUPABASE_URL !== undefined;
+  config.INDEX_SUPABASE_URL !== "" && config.INDEX_SUPABASE_URL !== undefined;
 
 export const useSearchIndex =
-  process.env.SEARCH_INDEX_SUPABASE_URL !== "" &&
-  process.env.SEARCH_INDEX_SUPABASE_URL !== undefined;
+  config.SEARCH_INDEX_SUPABASE_URL !== "" &&
+  config.SEARCH_INDEX_SUPABASE_URL !== undefined;
 
 export function normalizeURLForIndex(url: string): string {
   const urlObj = new URL(url);
@@ -362,56 +368,6 @@ export async function getIndexInsertQueueLength(): Promise<number> {
   return (await redisEvictConnection.llen(INDEX_INSERT_QUEUE_KEY)) ?? 0;
 }
 
-const INDEX_RF_INSERT_QUEUE_KEY = "index-rf-insert-queue";
-const INDEX_RF_INSERT_BATCH_SIZE = 100;
-
-export async function addIndexRFInsertJob(data: any) {
-  await redisEvictConnection.rpush(
-    INDEX_RF_INSERT_QUEUE_KEY,
-    JSON.stringify(data),
-  );
-}
-
-async function getIndexRFInsertJobs(): Promise<any[]> {
-  const jobs =
-    (await redisEvictConnection.lpop(
-      INDEX_RF_INSERT_QUEUE_KEY,
-      INDEX_RF_INSERT_BATCH_SIZE,
-    )) ?? [];
-  return jobs.map(x => JSON.parse(x));
-}
-
-export async function processIndexRFInsertJobs() {
-  const jobs = await getIndexRFInsertJobs();
-  if (jobs.length === 0) {
-    return;
-  }
-  _logger.info(`Index RF inserter found jobs to insert`, {
-    jobCount: jobs.length,
-  });
-  try {
-    const { error } = await index_supabase_service
-      .from("request_frequency")
-      .insert(jobs);
-    if (error) {
-      _logger.error(`Index RF inserter failed to insert jobs`, {
-        error,
-        jobCount: jobs.length,
-      });
-    }
-    _logger.info(`Index RF inserter inserted jobs`, { jobCount: jobs.length });
-  } catch (error) {
-    _logger.error(`Index RF inserter failed to insert jobs`, {
-      error,
-      jobCount: jobs.length,
-    });
-  }
-}
-
-export async function getIndexRFInsertQueueLength(): Promise<number> {
-  return (await redisEvictConnection.llen(INDEX_RF_INSERT_QUEUE_KEY)) ?? 0;
-}
-
 const OMCE_JOB_QUEUE_KEY = "omce-job-queue";
 const OMCE_JOB_QUEUE_BATCH_SIZE = 100;
 
@@ -468,203 +424,12 @@ export async function getOMCEQueueLength(): Promise<number> {
   return (await redisEvictConnection.scard(OMCE_JOB_QUEUE_KEY)) ?? 0;
 }
 
-// Domain Frequency Tracking
-const DOMAIN_FREQUENCY_QUEUE_KEY = "domain-frequency-queue";
-const DOMAIN_FREQUENCY_BATCH_SIZE = 100;
-
-function extractDomainFromUrl(url: string): string | null {
-  try {
-    const urlObj = new URL(url);
-    // Remove www. prefix for consistency
-    let domain = urlObj.hostname;
-    if (domain.startsWith("www.")) {
-      domain = domain.slice(4);
-    }
-    return domain;
-  } catch (error) {
-    _logger.warn("Failed to extract domain from URL", { url, error });
-    return null;
-  }
-}
-
-export async function addDomainFrequencyJob(url: string) {
-  const domain = extractDomainFromUrl(url);
-  if (!domain) {
-    return;
-  }
-
-  await redisEvictConnection.rpush(DOMAIN_FREQUENCY_QUEUE_KEY, domain);
-}
-
-async function getDomainFrequencyJobs(): Promise<Map<string, number>> {
-  const domains =
-    (await redisEvictConnection.lpop(
-      DOMAIN_FREQUENCY_QUEUE_KEY,
-      DOMAIN_FREQUENCY_BATCH_SIZE,
-    )) ?? [];
-
-  // Aggregate domain counts in memory before batch insert
-  const domainCounts = new Map<string, number>();
-  for (const domain of domains) {
-    domainCounts.set(domain, (domainCounts.get(domain) || 0) + 1);
-  }
-
-  return domainCounts;
-}
-
-export async function processDomainFrequencyJobs() {
-  if (!useIndex) {
-    return;
-  }
-
-  const domainCounts = await getDomainFrequencyJobs();
-  if (domainCounts.size === 0) {
-    return;
-  }
-
-  _logger.info(`Domain frequency processor found domains to update`, {
-    domainCount: domainCounts.size,
-  });
-
-  try {
-    // Convert to array format for the stored procedure
-    const updates = Array.from(domainCounts.entries()).map(
-      ([domain, count]) => ({
-        domain,
-        count,
-      }),
-    );
-
-    // Use the upsert function for efficient batch update
-    const { error } = await index_supabase_service.rpc(
-      "upsert_domain_frequencies",
-      {
-        domain_updates: updates,
-      },
-    );
-
-    if (error) {
-      _logger.error(`Domain frequency processor failed to update domains`, {
-        error,
-        domainCount: domainCounts.size,
-      });
-      // Re-queue the domains on failure
-      for (const [domain, count] of domainCounts) {
-        for (let i = 0; i < count; i++) {
-          await redisEvictConnection.rpush(DOMAIN_FREQUENCY_QUEUE_KEY, domain);
-        }
-      }
-    } else {
-      _logger.info(`Domain frequency processor updated domains`, {
-        domainCount: domainCounts.size,
-      });
-    }
-  } catch (error) {
-    _logger.error(`Domain frequency processor failed to update domains`, {
-      error,
-      domainCount: domainCounts.size,
-    });
-    // Re-queue the domains on failure
-    for (const [domain, count] of domainCounts) {
-      for (let i = 0; i < count; i++) {
-        await redisEvictConnection.rpush(DOMAIN_FREQUENCY_QUEUE_KEY, domain);
-      }
-    }
-  }
-}
-
-export async function getDomainFrequencyQueueLength(): Promise<number> {
-  return (await redisEvictConnection.llen(DOMAIN_FREQUENCY_QUEUE_KEY)) ?? 0;
-}
-
-// Domain frequency query utilities
-export async function getTopDomains(
-  limit: number = 100,
-): Promise<Array<{ domain: string; frequency: number; last_updated: string }>> {
-  if (!useIndex) {
-    return [];
-  }
-
-  const { data, error } = await index_supabase_service
-    .from("domain_frequency")
-    .select("domain, frequency, last_updated")
-    .order("frequency", { ascending: false })
-    .limit(limit);
-
-  if (error) {
-    _logger.error("Failed to get top domains", { error });
-    return [];
-  }
-
-  return data ?? [];
-}
-
-export async function getDomainFrequency(
-  domain: string,
-): Promise<number | null> {
-  if (!useIndex) {
-    return null;
-  }
-
-  const { data, error } = await index_supabase_service
-    .from("domain_frequency")
-    .select("frequency")
-    .eq("domain", domain)
-    .single();
-
-  if (error) {
-    if (error.code !== "PGRST116") {
-      // Not found error
-      _logger.error("Failed to get domain frequency", { error, domain });
-    }
-    return null;
-  }
-
-  return data?.frequency ?? null;
-}
-
-export async function getDomainFrequencyStats(): Promise<{
-  totalDomains: number;
-  totalRequests: number;
-  avgRequestsPerDomain: number;
-} | null> {
-  if (!useIndex) {
-    return null;
-  }
-
-  const { data, error } = await index_supabase_service
-    .from("domain_frequency")
-    .select("frequency");
-
-  if (error) {
-    _logger.error("Failed to get domain frequency stats", { error });
-    return null;
-  }
-
-  if (!data || data.length === 0) {
-    return {
-      totalDomains: 0,
-      totalRequests: 0,
-      avgRequestsPerDomain: 0,
-    };
-  }
-
-  const totalRequests = data.reduce((sum, row) => sum + row.frequency, 0);
-  const totalDomains = data.length;
-
-  return {
-    totalDomains,
-    totalRequests,
-    avgRequestsPerDomain: Math.round(totalRequests / totalDomains),
-  };
-}
-
 export async function queryIndexAtSplitLevel(
   url: string,
   limit: number,
   maxAge = 2 * 24 * 60 * 60 * 1000,
 ): Promise<string[]> {
-  if (!useIndex || process.env.FIRECRAWL_INDEX_WRITE_ONLY === "true") {
+  if (!useIndex || config.FIRECRAWL_INDEX_WRITE_ONLY) {
     return [];
   }
 
@@ -717,7 +482,7 @@ export async function queryIndexAtDomainSplitLevel(
   limit: number,
   maxAge = 2 * 24 * 60 * 60 * 1000,
 ): Promise<string[]> {
-  if (!useIndex || process.env.FIRECRAWL_INDEX_WRITE_ONLY === "true") {
+  if (!useIndex || config.FIRECRAWL_INDEX_WRITE_ONLY) {
     return [];
   }
 
@@ -769,7 +534,7 @@ export async function queryOMCESignatures(
   hostname: string,
   maxAge = 2 * 24 * 60 * 60 * 1000,
 ): Promise<string[]> {
-  if (!useIndex || process.env.FIRECRAWL_INDEX_WRITE_ONLY === "true") {
+  if (!useIndex || config.FIRECRAWL_INDEX_WRITE_ONLY) {
     return [];
   }
 
@@ -796,11 +561,59 @@ export async function queryOMCESignatures(
   return data?.[0]?.signatures ?? [];
 }
 
+export async function queryEngpickerVerdict(
+  hostname: string,
+): Promise<"TlsClientOk" | "ChromeCdpRequired" | "Uncertain" | "Unknown"> {
+  if (!useIndex || config.FIRECRAWL_INDEX_WRITE_ONLY) {
+    return "Unknown";
+  }
+
+  const domainSplitsHash = generateDomainSplits(hostname).map(x => hashURL(x));
+
+  const level = domainSplitsHash.length - 1;
+  if (domainSplitsHash.length === 0) {
+    return "Unknown";
+  }
+
+  // 250ms max time taken
+
+  const res: { data: any; error: any } = await Promise.any([
+    index_supabase_service.rpc("query_engpicker_verdict", {
+      i_domain_hash: domainSplitsHash[level],
+    }),
+    new Promise<{
+      data: {
+        verdict: "TlsClientOk" | "ChromeCdpRequired" | "Uncertain" | "Unknown";
+      }[];
+      error: any;
+    }>(resolve =>
+      setTimeout(
+        () =>
+          resolve({
+            data: [{ verdict: "Unknown" }],
+            error: "Took longer than 250ms",
+          }),
+        250,
+      ),
+    ),
+  ]);
+
+  if (res.error) {
+    _logger.warn("Error querying index (engpicker)", {
+      error: res.error,
+      hostname,
+    });
+    return "Unknown";
+  }
+
+  return res.data?.[0]?.verdict ?? "Unknown";
+}
+
 export async function queryIndexAtSplitLevelWithMeta(
   url: string,
   limit: number,
 ): Promise<MapDocument[]> {
-  if (!useIndex || process.env.FIRECRAWL_INDEX_WRITE_ONLY === "true") {
+  if (!useIndex || config.FIRECRAWL_INDEX_WRITE_ONLY) {
     return [];
   }
 
@@ -860,7 +673,7 @@ export async function queryIndexAtDomainSplitLevelWithMeta(
   hostname: string,
   limit: number,
 ): Promise<MapDocument[]> {
-  if (!useIndex || process.env.FIRECRAWL_INDEX_WRITE_ONLY === "true") {
+  if (!useIndex || config.FIRECRAWL_INDEX_WRITE_ONLY) {
     return [];
   }
 
@@ -928,7 +741,7 @@ export async function queryDomainsForPrecrawl(
   maxDomains = 50,
   logger: Logger = _logger,
 ): Promise<DomainPriority[]> {
-  if (!useIndex || process.env.FIRECRAWL_INDEX_WRITE_ONLY === "true") {
+  if (!useIndex || config.FIRECRAWL_INDEX_WRITE_ONLY) {
     return [];
   }
 

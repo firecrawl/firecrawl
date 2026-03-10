@@ -145,7 +145,7 @@ export interface ScrapeOptions {
   timeout?: number;
   waitFor?: number;
   mobile?: boolean;
-  parsers?: Array<string | { type: 'pdf'; maxPages?: number }>;
+  parsers?: Array<string | { type: 'pdf'; mode?: 'fast' | 'auto' | 'ocr'; maxPages?: number }>;
   actions?: ActionOption[];
   location?: LocationConfig;
   skipTlsVerification?: boolean;
@@ -153,10 +153,12 @@ export interface ScrapeOptions {
   fastMode?: boolean;
   useMock?: string;
   blockAds?: boolean;
-  proxy?: 'basic' | 'stealth' | 'auto' | string;
+  proxy?: 'basic' | 'stealth' | 'enhanced' | 'auto' | string;
   maxAge?: number;
+  minAge?: number;
   storeInCache?: boolean;
   integration?: string;
+  origin?: string;
 }
 
 export interface WebhookConfig {
@@ -164,6 +166,16 @@ export interface WebhookConfig {
   headers?: Record<string, string>;
   metadata?: Record<string, string>;
   events?: Array<'completed' | 'failed' | 'page' | 'started'>;
+}
+
+// Agent webhook events differ from crawl: has 'action' and 'cancelled', no 'page'
+export type AgentWebhookEvent = 'started' | 'action' | 'completed' | 'failed' | 'cancelled';
+
+export interface AgentWebhookConfig {
+  url: string;
+  headers?: Record<string, string>;
+  metadata?: Record<string, string>;
+  events?: AgentWebhookEvent[];
 }
 
 export interface BrandingProfile {
@@ -346,10 +358,13 @@ export interface DocumentMetadata {
   scrapeId?: string;
   numPages?: number;
   contentType?: string;
+  timezone?: string;
   proxyUsed?: 'basic' | 'stealth';
   cacheState?: 'hit' | 'miss';
   cachedAt?: string;
   creditsUsed?: number;
+  concurrencyLimited?: boolean;
+  concurrencyQueueDurationMs?: number;
 
   // Error information
   error?: string;
@@ -439,6 +454,7 @@ export interface SearchRequest {
   timeout?: number; // ms
   scrapeOptions?: ScrapeOptions;
   integration?: string;
+  origin?: string;
 }
 
 export interface CrawlOptions {
@@ -446,8 +462,9 @@ export interface CrawlOptions {
   excludePaths?: string[] | null;
   includePaths?: string[] | null;
   maxDiscoveryDepth?: number | null;
-  sitemap?: 'skip' | 'include';
+  sitemap?: 'skip' | 'include' | 'only';
   ignoreQueryParameters?: boolean;
+  deduplicateSimilarURLs?: boolean;
   limit?: number | null;
   crawlEntireDomain?: boolean;
   allowExternalLinks?: boolean;
@@ -456,8 +473,10 @@ export interface CrawlOptions {
   maxConcurrency?: number | null;
   webhook?: string | WebhookConfig | null;
   scrapeOptions?: ScrapeOptions | null;
+  regexOnFullURL?: boolean;
   zeroDataRetention?: boolean;
   integration?: string;
+  origin?: string;
 }
 
 export interface CrawlResponse {
@@ -485,6 +504,7 @@ export interface BatchScrapeOptions {
   zeroDataRetention?: boolean;
   idempotencyKey?: string;
   integration?: string;
+  origin?: string;
 }
 
 export interface BatchScrapeResponse {
@@ -516,6 +536,7 @@ export interface MapOptions {
   limit?: number;
   timeout?: number;
   integration?: string;
+  origin?: string;
   location?: LocationConfig;
 }
 
@@ -528,10 +549,27 @@ export interface ExtractResponse {
   warning?: string;
   sources?: Record<string, unknown>;
   expiresAt?: string;
+  creditsUsed?: number;
+}
+
+export interface AgentResponse {
+  success: boolean;
+  id: string;
+  error?: string;
+}
+
+export interface AgentStatusResponse {
+  success: boolean;
+  status: 'processing' | 'completed' | 'failed';
+  error?: string;
+  data?: unknown;
+  model?: 'spark-1-pro' | 'spark-1-mini';
+  expiresAt: string;
+  creditsUsed?: number;
 }
 
 export interface AgentOptions {
-  model: 'FIRE-1';
+  model: 'FIRE-1' | 'v3-beta';
 }
 
 export interface ConcurrencyCheck {
@@ -611,17 +649,36 @@ export class SdkError extends Error {
   status?: number;
   code?: string;
   details?: unknown;
+  jobId?: string;
   constructor(
     message: string,
     status?: number,
     code?: string,
-    details?: unknown
+    details?: unknown,
+    jobId?: string
   ) {
     super(message);
     this.name = 'FirecrawlSdkError';
     this.status = status;
     this.code = code;
     this.details = details;
+    this.jobId = jobId;
+  }
+}
+
+export class JobTimeoutError extends SdkError {
+  timeoutSeconds: number;
+  constructor(jobId: string, timeoutSeconds: number, jobType: 'batch' | 'crawl' = 'batch') {
+    const jobTypeLabel = jobType === 'batch' ? 'batch scrape' : 'crawl';
+    super(
+      `${jobTypeLabel.charAt(0).toUpperCase() + jobTypeLabel.slice(1)} job ${jobId} did not complete within ${timeoutSeconds} seconds`,
+      undefined,
+      'JOB_TIMEOUT',
+      undefined,
+      jobId
+    );
+    this.name = 'JobTimeoutError';
+    this.timeoutSeconds = timeoutSeconds;
   }
 }
 
@@ -632,4 +689,49 @@ export interface QueueStatusResponse {
   waitingJobsInQueue: number;
   maxConcurrency: number;
   mostRecentSuccess: string | null;
+}
+
+// Browser types
+export interface BrowserCreateResponse {
+  success: boolean;
+  id?: string;
+  cdpUrl?: string;
+  liveViewUrl?: string;
+  interactiveLiveViewUrl?: string;
+  expiresAt?: string;
+  error?: string;
+}
+
+export interface BrowserExecuteResponse {
+  success: boolean;
+  stdout?: string;
+  result?: string;
+  stderr?: string;
+  exitCode?: number;
+  killed?: boolean;
+  error?: string;
+}
+
+export interface BrowserDeleteResponse {
+  success: boolean;
+  sessionDurationMs?: number;
+  creditsBilled?: number;
+  error?: string;
+}
+
+export interface BrowserSession {
+  id: string;
+  status: string;
+  cdpUrl: string;
+  liveViewUrl: string;
+  interactiveLiveViewUrl?: string;
+  streamWebView: boolean;
+  createdAt: string;
+  lastActivity: string;
+}
+
+export interface BrowserListResponse {
+  success: boolean;
+  sessions?: BrowserSession[];
+  error?: string;
 }

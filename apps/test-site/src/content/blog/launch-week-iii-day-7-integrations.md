@@ -14,7 +14,7 @@ Today is all about making Firecrawl work better with the tools you’re already 
 
 Firecrawl now supports integrations with 20+ platforms. Here are the main highlights:
 
-- **Discord Bot:** Trigger scrapes and receive structured results right inside your server. [Learn more](https://github.com/mendableai/firecrawl-discord-bot)
+- **Discord Bot:** Trigger scrapes and receive structured results right inside your server. [Learn more](https://github.com/firecrawl/firecrawl-discord-bot)
 - **Make Integration:** Visually build workflows powered by Firecrawl’s scraping and extraction. [Learn more](https://www.make.com/en/integrations/firecrawl)
 - **n8n Integration:** Connect Firecrawl to custom automation flows. [Learn more](https://n8n.io/)
 - **Langflow:** Seamlessly embed Firecrawl agents into Langflow pipelines. [Learn more](https://docs.langflow.org/)

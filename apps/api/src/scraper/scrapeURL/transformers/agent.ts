@@ -57,7 +57,11 @@ export async function performAgent(
       ].html;
 
     if (hasFormatOfType(meta.options.formats, "markdown")) {
-      const markdown = await parseMarkdown(html);
+      const requestId = meta.id || meta.internalOptions.crawlId;
+      const markdown = await parseMarkdown(html, {
+        logger: meta.logger,
+        requestId,
+      });
       document.markdown = markdown;
     }
     if (hasFormatOfType(meta.options.formats, "html")) {
