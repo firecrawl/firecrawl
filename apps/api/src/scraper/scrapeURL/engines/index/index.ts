@@ -381,16 +381,23 @@ export async function scrapeURLWithIndex(
     statusCode: doc.statusCode,
     error: doc.error,
     screenshot: doc.screenshot,
-    pdfMetadata:
-      doc.pdfMetadata ??
-      (doc.numPages !== undefined
+    pdfMetadata: doc.pdfMetadata
+      ? {
+          numPages: doc.pdfMetadata.numPages,
+          pagesProcessed:
+            doc.pdfMetadata.pagesProcessed ?? doc.pdfMetadata.numPages,
+          originalTotalPages:
+            doc.pdfMetadata.originalTotalPages ?? doc.pdfMetadata.numPages,
+          title: doc.pdfMetadata.title ?? undefined,
+        }
+      : doc.numPages !== undefined
         ? {
             // backwards-compatible shim when older cached docs use numPages
             numPages: doc.numPages,
             pagesProcessed: doc.numPages,
             originalTotalPages: doc.numPages,
           }
-        : undefined),
+        : undefined,
     contentType: doc.contentType,
 
     cacheInfo: {
