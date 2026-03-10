@@ -1,0 +1,74 @@
+name: Publish Rust SDK
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'apps/rust-sdk/**'
+
+jobs:
+  publish:
+    name: Publish to crates.io
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: Install Python dependencies
+        run: pip install requests packaging toml
+
+      - name: Run version check script
+        id: version_check
+        run: |
+          VERSION_INCREMENTED=$(python .github/scripts/check_version_has_incremented.py rust ./apps/rust-sdk firecrawl)
+          echo "VERSION_INCREMENTED=$VERSION_INCREMENTED" >> $GITHUB_ENV
+
+      - name: Install Rust toolchain
+        if: ${{ env.VERSION_INCREMENTED == 'true' }}
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+
+      - name: Cache cargo registry
+        if: ${{ env.VERSION_INCREMENTED == 'true' }}
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            apps/rust-sdk/target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('apps/rust-sdk/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: Check formatting
+        if: ${{ env.VERSION_INCREMENTED == 'true' }}
+        working-directory: ./apps/rust-sdk
+        run: cargo fmt --check
+
+      - name: Run clippy
+        if: ${{ env.VERSION_INCREMENTED == 'true' }}
+        working-directory: ./apps/rust-sdk
+        run: cargo clippy --all-targets -- -D warnings -A clippy::needless_borrows_for_generic_args -A clippy::redundant_closure -A clippy::large_enum_variant -A clippy::extra_unused_lifetimes
+
+      - name: Run unit tests
+        if: ${{ env.VERSION_INCREMENTED == 'true' }}
+        working-directory: ./apps/rust-sdk
+        run: cargo test --lib
+
+      - name: Dry-run publish
+        if: ${{ env.VERSION_INCREMENTED == 'true' }}
+        working-directory: ./apps/rust-sdk
+        run: cargo publish --dry-run
+
+      - name: Publish to crates.io
+        if: ${{ env.VERSION_INCREMENTED == 'true' }}
+        working-directory: ./apps/rust-sdk
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CRATES_IO_TOKEN }}
+        run: cargo publish
