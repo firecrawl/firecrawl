@@ -93,6 +93,9 @@ def get_rust_version(file_path: str) -> str:
 def get_crates_version(package_name: str) -> str:
     """Get latest version of Rust package from crates.io."""
     response = requests.get(f"https://crates.io/api/v1/crates/{package_name}")
+    if response.status_code == 404:
+        return "0.0.0"
+    response.raise_for_status()
     version = response.json()['crate']['newest_version']
     return version.strip()
 
