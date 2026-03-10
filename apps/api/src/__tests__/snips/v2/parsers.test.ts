@@ -123,6 +123,8 @@ describeIf(ALLOW_TEST_SUITE_WEBSITE)("Parsers parameter tests", () => {
         expect(response.markdown).toBeDefined();
         expect(response.markdown).toContain("PDF Test File");
         expect(response.metadata.numPages).toBe(1);
+        expect(response.metadata.pagesProcessed).toBe(1);
+        expect(response.metadata.originalTotalPages).toBeGreaterThanOrEqual(1);
       },
       scrapeTimeout * 2,
     );
@@ -142,6 +144,12 @@ describeIf(ALLOW_TEST_SUITE_WEBSITE)("Parsers parameter tests", () => {
         expect(response.markdown).toContain("PDF Test File");
         expect(response.metadata.numPages).toBeGreaterThan(0);
         expect(response.metadata.numPages).toBeLessThan(10000);
+        expect(response.metadata.pagesProcessed).toBe(
+          response.metadata.numPages,
+        );
+        expect(response.metadata.originalTotalPages).toBeGreaterThanOrEqual(
+          response.metadata.pagesProcessed ?? 0,
+        );
       },
       scrapeTimeout * 2,
     );
@@ -216,6 +224,8 @@ describeIf(ALLOW_TEST_SUITE_WEBSITE)("Parsers parameter tests", () => {
         expect(response.markdown).toBeDefined();
         expect(response.markdown).toContain("PDF Test File");
         expect(response.metadata.numPages).toBe(1);
+        expect(response.metadata.pagesProcessed).toBe(1);
+        expect(response.metadata.originalTotalPages).toBeGreaterThanOrEqual(1);
       },
       scrapeTimeout * 2,
     );

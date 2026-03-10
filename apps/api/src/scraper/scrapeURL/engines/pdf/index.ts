@@ -139,7 +139,8 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
     }
 
     let result: PDFProcessorResult | null = null;
-    let effectivePageCount: number = 0;
+    let pagesProcessed: number = 0;
+    let originalTotalPages: number | undefined;
     let metadataTitle: string | undefined;
     let rustMarkdownForShadow: string | undefined;
     let shadowPdfType: string | undefined;
@@ -168,9 +169,10 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
           mode,
         });
 
-        effectivePageCount = maxPages
-          ? Math.min(detection.pageCount, maxPages)
-          : detection.pageCount;
+        originalTotalPages = detection.pageCount;
+        pagesProcessed = maxPages
+          ? Math.min(originalTotalPages, maxPages)
+          : originalTotalPages;
         metadataTitle = detection.title ?? undefined;
       } catch (error) {
         logger.warn("detectPdf failed", {
@@ -204,9 +206,10 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
           mode,
         });
 
-        effectivePageCount = maxPages
-          ? Math.min(pdfResult.pageCount, maxPages)
-          : pdfResult.pageCount;
+        originalTotalPages = pdfResult.pageCount;
+        pagesProcessed = maxPages
+          ? Math.min(originalTotalPages, maxPages)
+          : originalTotalPages;
         metadataTitle = pdfResult.title ?? undefined;
 
         const ineligibleReason = getIneligibleReason(pdfResult);
@@ -270,7 +273,7 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
             url: meta.rewrittenUrl ?? meta.url,
           },
         });
-        // effectivePageCount stays 0 — skip time budget check
+        // pagesProcessed stays 0 — skip time budget check
       }
     }
 
@@ -278,13 +281,13 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
     // Rust extraction is fast enough that the constraint doesn't apply.
     if (
       !result &&
-      effectivePageCount > 0 &&
-      effectivePageCount * MILLISECONDS_PER_PAGE >
+      pagesProcessed > 0 &&
+      pagesProcessed * MILLISECONDS_PER_PAGE >
         (meta.abort.scrapeTimeout() ?? Infinity)
     ) {
       throw new PDFInsufficientTimeError(
-        effectivePageCount,
-        effectivePageCount * MILLISECONDS_PER_PAGE + 5000,
+        pagesProcessed,
+        pagesProcessed * MILLISECONDS_PER_PAGE + 5000,
       );
     }
 
@@ -311,7 +314,7 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
             tempFilePath,
             base64Content,
             maxPages,
-            effectivePageCount,
+            pagesProcessed,
           );
           const muV1DurationMs = Date.now() - muV1StartedAt;
           meta.logger
@@ -319,7 +322,7 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
             .info("MU v1 completed", {
               durationMs: muV1DurationMs,
               url: meta.rewrittenUrl ?? meta.url,
-              pages: effectivePageCount,
+              pages: pagesProcessed,
               success: true,
             });
 
@@ -341,7 +344,7 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
                 shadowLogger.info("shadow comparison complete", {
                   scrapeId: meta.id,
                   url: isZdr ? undefined : (meta.rewrittenUrl ?? meta.url),
-                  pageCount: effectivePageCount,
+                  pageCount: pagesProcessed,
                   pdfType: shadowPdfType,
                   confidence: shadowConfidence,
                   isComplex: shadowIsComplex,
@@ -379,7 +382,7 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
             .info("MU v1 failed", {
               durationMs: muV1DurationMs,
               url: meta.rewrittenUrl ?? meta.url,
-              pages: effectivePageCount,
+              pages: pagesProcessed,
               success: false,
             });
         }
@@ -405,7 +408,9 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
       html: result?.html ?? "",
       markdown: result?.markdown ?? "",
       pdfMetadata: {
-        numPages: effectivePageCount,
+        numPages: pagesProcessed,
+        pagesProcessed,
+        originalTotalPages,
         title: metadataTitle,
       },
 
