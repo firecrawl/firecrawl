@@ -22,6 +22,7 @@ import { checkPermissions } from "../../lib/permissions";
 import { buildPromptWithWebsiteStructure } from "../../lib/map-utils";
 import { crawlGroup } from "../../services/worker/nuq";
 import { logRequest } from "../../services/logging/log_job";
+import { shouldFailClosedOnInitialRobotsFetch } from "../../lib/robots-runtime-policy";
 
 export async function crawlController(
   req: RequestWithAuth<{}, CrawlResponse, CrawlRequest>,
@@ -205,6 +206,9 @@ export async function crawlController(
     //   sc.crawlerOptions.delay = robotsCrawlDelay;
     // }
   } catch (e) {
+    if (shouldFailClosedOnInitialRobotsFetch(finalCrawlerOptions.robotsMode)) {
+      throw e;
+    }
     logger.debug("Failed to get robots.txt (this is probably fine!)", {
       error: e,
     });

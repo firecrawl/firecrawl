@@ -6,6 +6,8 @@ import { scrapeURL } from "../scraper/scrapeURL";
 import { Engine } from "../scraper/scrapeURL/engines";
 import { CostTracking } from "./cost-tracking";
 import { useIndex } from "../services";
+import { getHeaderValueCaseInsensitive } from "./header-utils";
+import { isUrlAllowedByRobotsForUserAgents } from "./robots-access";
 
 const ROBOTS_MAX_AGE = 1 * 24 * 60 * 60 * 1000;
 
@@ -24,10 +26,12 @@ export async function fetchRobotsTxt(
     url,
     zeroDataRetention,
     location,
+    headers,
   }: {
     url: string;
     zeroDataRetention: boolean;
     location?: ScrapeOptions["location"];
+    headers?: Record<string, string>;
   },
   scrapeId: string,
   logger: Logger,
@@ -69,6 +73,7 @@ export async function fetchRobotsTxt(
       formats: ["rawHtml"],
       timeout: 8000,
       maxAge: ROBOTS_MAX_AGE,
+      ...(headers ? { headers } : {}),
       ...(location ? { location } : {}),
     }),
     {
@@ -132,46 +137,22 @@ export function createRobotsChecker(
   };
 }
 
+export function getRobotsUserAgents(userAgent?: string): string[] {
+  const normalized = userAgent?.trim();
+  if (!normalized) {
+    return ["FireCrawlAgent", "FirecrawlAgent"];
+  }
+
+  const derived = normalized.split("/")[0]?.trim();
+  return Array.from(
+    new Set([normalized, derived].filter((value): value is string => Boolean(value)))
+  );
+}
+
 export function isUrlAllowedByRobots(
   url: string,
   robots: Robot | null,
-  userAgents: string[] = ["FireCrawlAgent", "FirecrawlAgent"],
+  userAgents: string[] = getRobotsUserAgents(),
 ): boolean {
-  if (!robots) return true;
-
-  for (const userAgent of userAgents) {
-    let isAllowed = robots.isAllowed(url, userAgent);
-
-    // Handle null/undefined responses - default to true (allowed)
-    if (isAllowed === null || isAllowed === undefined) {
-      isAllowed = true;
-    }
-
-    if (isAllowed == null) {
-      isAllowed = true;
-    }
-
-    // Also check with trailing slash if URL doesn't have one
-    // This catches cases like "Disallow: /path/" when user requests "/path"
-    if (isAllowed && !url.endsWith("/")) {
-      const urlWithSlash = url + "/";
-      let isAllowedWithSlash = robots.isAllowed(urlWithSlash, userAgent);
-
-      if (isAllowedWithSlash == null) {
-        isAllowedWithSlash = true;
-      }
-
-      // If the trailing slash version is explicitly disallowed, block it
-      if (isAllowedWithSlash === false) {
-        isAllowed = false;
-      }
-    }
-
-    if (isAllowed) {
-      //   console.log("isAllowed: true, " + userAgent);
-      return true;
-    }
-  }
-
-  return false;
+  return isUrlAllowedByRobotsForUserAgents(url, robots, userAgents);
 }

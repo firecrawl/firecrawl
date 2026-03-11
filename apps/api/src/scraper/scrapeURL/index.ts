@@ -62,6 +62,7 @@ import { useIndex } from "../../services/index";
 import {
   fetchRobotsTxt,
   createRobotsChecker,
+  getRobotsUserAgents,
   isUrlAllowedByRobots,
 } from "../../lib/robots-txt";
 import { getCrawl } from "../../lib/crawl-redis";
@@ -78,6 +79,11 @@ import {
 import { htmlTransform } from "./lib/removeUnwantedElements";
 import { postprocessors } from "./postprocessors";
 import { rewriteUrl } from "./lib/rewriteUrl";
+import { verifyScrapeRobotsAccess } from "../../lib/robots-policy";
+import {
+  isRobotsVerificationAbortError,
+  shouldReturnFailedScrapeResponseForRobotsError,
+} from "../../lib/robots-runtime-policy";
 
 export type ScrapeUrlResponse =
   | {
@@ -903,7 +909,16 @@ export async function scrapeURL(
     }
 
     if (internalOptions.teamFlags?.checkRobotsOnScrape) {
-      await withSpan("scrape.robots_check", async robotsSpan => {
+      const robotsCheckFailure = await withSpan("scrape.robots_check", async robotsSpan => {
+        const robotsMode = options.robotsMode ?? "respect";
+        if (robotsMode === "ignore") {
+          setSpanAttributes(robotsSpan, {
+            "robots.mode": robotsMode,
+            "robots.ignored": true,
+          });
+          return;
+        }
+
         const urlToCheck = meta.rewrittenUrl || meta.url;
         meta.logger.info("Checking robots.txt", { url: urlToCheck });
 
@@ -913,6 +928,7 @@ export async function scrapeURL(
         setSpanAttributes(robotsSpan, {
           "robots.url": urlToCheck,
           "robots.is_robots_txt_path": isRobotsTxtPath,
+          "robots.mode": robotsMode,
         });
 
         if (!isRobotsTxtPath) {
@@ -923,39 +939,51 @@ export async function scrapeURL(
               robotsTxt = crawl?.robots;
             }
 
-            if (!robotsTxt) {
-              const { content } = await fetchRobotsTxt(
-                {
-                  url: urlToCheck,
-                  zeroDataRetention: internalOptions.zeroDataRetention || false,
-                  location: options.location,
-                },
+            await verifyScrapeRobotsAccess(
+              {
+                url: urlToCheck,
                 id,
-                meta.logger,
-                meta.abort.asSignal(),
-              );
-              robotsTxt = content;
-            }
-
-            const checker = createRobotsChecker(urlToCheck, robotsTxt);
-            const isAllowed = isUrlAllowedByRobots(urlToCheck, checker.robots);
+                logger: meta.logger,
+                robotsMode,
+                cachedRobotsTxt: robotsTxt,
+                zeroDataRetention: internalOptions.zeroDataRetention || false,
+                location: options.location,
+                headers: options.headers,
+                abort: meta.abort.asSignal(),
+              },
+              {
+                fetchRobotsTxt,
+                createRobotsChecker,
+                isUrlAllowedByRobots,
+                getRobotsUserAgents,
+              },
+            );
 
             setSpanAttributes(robotsSpan, {
-              "robots.allowed": isAllowed,
+              "robots.allowed": true,
             });
-
-            if (!isAllowed) {
-              meta.logger.info("URL blocked by robots.txt", {
-                url: urlToCheck,
+          } catch (error) {
+            if (
+              error instanceof CrawlDenialError &&
+              error.message === "URL blocked by robots.txt"
+            ) {
+              setSpanAttributes(robotsSpan, {
+                "robots.allowed": false,
               });
               setSpanAttributes(span, {
                 "scrape.blocked_by_robots": true,
               });
-              throw new CrawlDenialError("URL blocked by robots.txt");
             }
-          } catch (error) {
             if (error instanceof CrawlDenialError) {
               throw error;
+            }
+            if (isRobotsVerificationAbortError(error)) {
+              throw error;
+            }
+            if (robotsMode === "strict") {
+              throw new CrawlDenialError(
+                "Failed to verify robots.txt in strict mode",
+              );
             }
             meta.logger.debug("Failed to fetch robots.txt, allowing scrape", {
               error,
@@ -967,14 +995,17 @@ export async function scrapeURL(
           }
         }
       }).catch(error => {
-        if (error.message === "URL blocked by robots.txt") {
+        if (shouldReturnFailedScrapeResponseForRobotsError(error)) {
           return {
-            success: false,
+            success: false as const,
             error,
           };
         }
         throw error;
       });
+      if (robotsCheckFailure) {
+        return robotsCheckFailure;
+      }
     }
 
     // Initialize retry tracker with configured limits

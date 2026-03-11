@@ -12,7 +12,7 @@ npm install @mendable/firecrawl-js
 
 ## Usage
 
-1. Get an API key from [firecrawl.dev](https://firecrawl.dev)
+1. For the hosted Firecrawl API, get an API key from [firecrawl.dev](https://firecrawl.dev)
 2. Set the API key as an environment variable named `FIRECRAWL_API_KEY` or pass it as a parameter to the `FirecrawlApp` class.
 
 Here's an example of how to use the SDK with error handling:
@@ -37,6 +37,22 @@ const crawlResponse = await app.crawl('https://firecrawl.dev', {
 console.log(crawlResponse);
 ```
 
+### Using a self-hosted Firecrawl instance
+
+When pointing the SDK at a self-hosted Firecrawl API with authentication disabled, `apiKey` is optional.
+
+```js
+import Firecrawl from '@mendable/firecrawl-js';
+
+const app = new Firecrawl({
+  apiUrl: 'http://localhost:3002',
+});
+
+const scrapeResponse = await app.scrape('https://firecrawl.dev', {
+  formats: ['markdown'],
+});
+```
+
 ### Scraping a URL
 
 To scrape a single URL with error handling, use the `scrape` method. It takes the URL as a parameter and returns the scraped data.
@@ -45,6 +61,23 @@ To scrape a single URL with error handling, use the `scrape` method. It takes th
 const url = 'https://example.com';
 const scrapedData = await app.scrape(url);
 ```
+
+### Controlling robots behavior and user agent
+
+Use `robotsMode` to control how the API handles `robots.txt` and `userAgent` to identify your caller consistently.
+
+```js
+const scrapedData = await app.scrape('https://example.com', {
+  formats: ['markdown'],
+  userAgent: 'DebTestBot/1.0',
+  robotsMode: 'strict',
+});
+```
+
+`robotsMode` supports:
+- `ignore`: skip `robots.txt` checks
+- `respect`: default behavior; respect `robots.txt` when it can be verified
+- `strict`: fail closed if `robots.txt` cannot be verified
 
 ### Crawling a Website
 

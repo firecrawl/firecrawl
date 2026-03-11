@@ -11,11 +11,16 @@ import { extractLinks } from "@mendable/firecrawl-rs";
 import {
   fetchRobotsTxt,
   createRobotsChecker,
+  getRobotsUserAgents,
   isUrlAllowedByRobots,
 } from "../../lib/robots-txt";
+import { getHeaderValueCaseInsensitive } from "../../lib/header-utils";
 import { ScrapeJobTimeoutError } from "../../lib/error";
 import { ScrapeOptions } from "../../controllers/v2/types";
 import { filterLinks, filterUrl } from "@mendable/firecrawl-rs";
+import { shouldUseJsRobotsFilterPath } from "../../lib/robots-runtime-policy";
+import { resolveCrawlerLink } from "./link-normalization";
+import { shouldDenyCrawlTarget } from "./crawl-target-policy";
 
 export const SITEMAP_LIMIT = 25;
 const SITEMAP_MAX_AGE = 7 * 24 * 60 * 60 * 1000;
@@ -175,7 +180,18 @@ export class WebCrawler {
       return { links: sitemapLinks.slice(0, limit), denialReasons };
     }
 
-    try {
+    const robotsUserAgent = getHeaderValueCaseInsensitive(
+      this.headers,
+      "user-agent",
+    );
+    const shouldUseJsFiltering = shouldUseJsRobotsFilterPath({
+      ignoreRobotsTxt: this.ignoreRobotsTxt,
+      skipRobots,
+      userAgent: robotsUserAgent,
+    });
+
+    if (!shouldUseJsFiltering) {
+      try {
       const res = await filterLinks({
         links: sitemapLinks,
         limit: isFinite(limit) ? limit : undefined,
@@ -246,7 +262,10 @@ export class WebCrawler {
             break;
           default:
             // Use the static enum message for other cases
-            fancyDenialReasons.set(key, DenialReason[value]);
+            fancyDenialReasons.set(
+              key,
+              DenialReason[value as keyof typeof DenialReason],
+            );
         }
       });
 
@@ -264,22 +283,28 @@ export class WebCrawler {
         links: res.links,
         denialReasons: fancyDenialReasons,
       };
-    } catch (error) {
-      this.logger.error("Error filtering links in Rust, falling back to JS", {
-        error,
-        method: "filterLinks",
-      });
+      } catch (error) {
+        this.logger.error("Error filtering links in Rust, falling back to JS", {
+          error,
+          method: "filterLinks",
+        });
+      }
+    } else {
+      this.logger.debug(
+        "Skipping Rust link filtering because robots checks require user-agent-aware evaluation",
+        {
+          method: "filterLinks",
+          userAgent: robotsUserAgent,
+        },
+      );
     }
 
     const filteredLinks = sitemapLinks
       .filter(link => {
-        let url: URL;
-        try {
-          url = new URL(link.trim(), this.baseUrl);
-        } catch (error) {
+        const url = resolveCrawlerLink(link, this.baseUrl);
+        if (!url) {
           this.logger.debug(`Error processing link: ${link}`, {
             link,
-            error,
             method: "filterLinks",
           });
           return false;
@@ -357,26 +382,24 @@ export class WebCrawler {
 
         // Normalize the initial URL and the link to account for www and non-www versions
         const normalizedInitialUrl = new URL(this.initialUrl);
-        let normalizedLink;
-        try {
-          normalizedLink = new URL(link);
-        } catch (_) {
+        const normalizedLink = url;
+
+        const crawlTargetDenial = shouldDenyCrawlTarget({
+          initialUrl: this.initialUrl,
+          targetUrl: urlStr,
+          allowExternalContentLinks: this.allowExternalContentLinks,
+          allowSubdomains: this.allowSubdomains,
+        });
+        if (crawlTargetDenial === "EXTERNAL_LINK") {
           if (config.FIRECRAWL_DEBUG_FILTER_LINKS) {
-            this.logger.debug(`${link} URL PARSE FAIL`);
+            this.logger.debug(`${link} EXTERNAL LINK FAIL`);
           }
+          denialReasons.set(
+            link,
+            DenialReason.EXTERNAL_LINK,
+          );
           return false;
         }
-        const initialHostname = normalizedInitialUrl.hostname.replace(
-          /^www\./,
-          "",
-        );
-        const linkHostname = normalizedLink.hostname.replace(/^www\./, "");
-
-        // Ensure the protocol and hostname match, and the path starts with the initial URL's path
-        // commented to able to handling external link on allowExternalContentLinks
-        // if (linkHostname !== initialHostname) {
-        //   return false;
-        // }
 
         if (!this.allowBackwardCrawling) {
           if (
@@ -398,9 +421,13 @@ export class WebCrawler {
         const isAllowed =
           this.ignoreRobotsTxt || skipRobots
             ? true
-            : ((this.robots.isAllowed(link, "FireCrawlAgent") ||
-                this.robots.isAllowed(link, "FirecrawlAgent")) ??
-              true);
+            : isUrlAllowedByRobots(
+                urlStr,
+                this.robots,
+                getRobotsUserAgents(
+                  getHeaderValueCaseInsensitive(this.headers, "user-agent"),
+                ),
+              );
         // Check if the link is disallowed by robots.txt
         if (!isAllowed) {
           this.logger.debug(`Link disallowed by robots.txt: ${link}`, {
@@ -455,6 +482,7 @@ export class WebCrawler {
           url: this.robotsTxtUrl,
           zeroDataRetention: this.zeroDataRetention,
           location: this.location,
+          headers: this.headers,
         },
         this.jobId,
         this.logger,
@@ -485,9 +513,11 @@ export class WebCrawler {
     const checker = createRobotsChecker(this.initialUrl, txt);
     this.robots = checker.robots;
     this.robotsTxtUrl = checker.robotsTxtUrl;
-    const delay =
-      this.robots.getCrawlDelay("FireCrawlAgent") ||
-      this.robots.getCrawlDelay("FirecrawlAgent");
+    const delay = getRobotsUserAgents(
+      getHeaderValueCaseInsensitive(this.headers, "user-agent"),
+    )
+      .map(userAgent => this.robots.getCrawlDelay(userAgent))
+      .find(value => value !== undefined);
     this.robotsCrawlDelay = delay !== undefined ? delay : null;
 
     const sitemaps = this.robots.getSitemaps();
@@ -740,7 +770,15 @@ export class WebCrawler {
     url: string,
     ignoreRobotsTxt: boolean = false,
   ): boolean {
-    return ignoreRobotsTxt ? true : isUrlAllowedByRobots(url, this.robots);
+    return ignoreRobotsTxt
+      ? true
+      : isUrlAllowedByRobots(
+          url,
+          this.robots,
+          getRobotsUserAgents(
+            getHeaderValueCaseInsensitive(this.headers, "user-agent"),
+          ),
+        );
   }
 
   public isFile(url: string): boolean {

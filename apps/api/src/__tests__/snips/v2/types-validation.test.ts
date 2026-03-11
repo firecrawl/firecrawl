@@ -19,6 +19,7 @@ import {
   BatchScrapeRequestInput,
   SearchRequest,
   SearchRequestInput,
+  toV0CrawlerOptions,
   toV2CrawlerOptions,
 } from "../../../controllers/v2/types";
 
@@ -353,6 +354,32 @@ describe("V2 Types Validation", () => {
       expect(result.location?.languages).toEqual(["en"]);
     });
 
+    it("should normalize userAgent into headers and preserve robotsMode", () => {
+      const input: ScrapeRequestInput = {
+        url: "https://example.com",
+        userAgent: "DebTestBot/1.0",
+        robotsMode: "strict",
+      };
+
+      const result = scrapeRequestSchema.parse(input);
+      expect(result.headers?.["User-Agent"]).toBe("DebTestBot/1.0");
+      expect(result.robotsMode).toBe("strict");
+    });
+
+    it("should not duplicate user-agent headers when an existing lowercase header is present", () => {
+      const input: ScrapeRequestInput = {
+        url: "https://example.com",
+        headers: {
+          "user-agent": "ExistingBot/1.0",
+        },
+        userAgent: "DebTestBot/1.0",
+      };
+
+      const result = scrapeRequestSchema.parse(input);
+      expect(result.headers?.["user-agent"]).toBe("ExistingBot/1.0");
+      expect(result.headers?.["User-Agent"]).toBeUndefined();
+    });
+
     it("should reject location schema with invalid country code", () => {
       const input: ScrapeRequestInput = {
         url: "https://example.com",
@@ -605,6 +632,21 @@ describe("V2 Types Validation", () => {
       expect(result.prompt).toBe("Extract blog posts");
     });
 
+    it("should derive ignoreRobotsTxt from robotsMode on crawl requests", () => {
+      const input: CrawlRequestInput = {
+        url: "https://example.com",
+        robotsMode: "ignore",
+        scrapeOptions: {
+          userAgent: "DebTestBot/1.0",
+          formats: [{ type: "markdown" }],
+        },
+      };
+
+      const result = crawlRequestSchema.parse(input);
+      expect(result.ignoreRobotsTxt).toBe(true);
+      expect(result.scrapeOptions.headers?.["User-Agent"]).toBe("DebTestBot/1.0");
+    });
+
     it("should apply default scrapeOptions when not provided", () => {
       const input: CrawlRequestInput = {
         url: "https://example.com",
@@ -641,6 +683,20 @@ describe("V2 Types Validation", () => {
       });
 
       expect(result.sitemap).toBe("only");
+    });
+
+    it("should preserve robotsMode through v0 crawler option conversion helpers", () => {
+      const legacy = toV0CrawlerOptions({
+        robotsMode: "strict",
+        ignoreRobotsTxt: false,
+      } as any);
+      expect(legacy.robotsMode).toBe("strict");
+
+      const converted = toV2CrawlerOptions({
+        robotsMode: "strict",
+        ignoreRobotsTxt: false,
+      });
+      expect(converted.robotsMode).toBe("strict");
     });
   });
 
@@ -697,6 +753,16 @@ describe("V2 Types Validation", () => {
 
       const result = mapRequestSchema.parse(input);
       expect(result.sitemap).toBe("only");
+    });
+
+    it("should derive ignoreRobotsTxt from robotsMode for map requests", () => {
+      const result = mapRequestSchema.parse({
+        url: "https://example.com",
+        robotsMode: "ignore",
+      });
+
+      expect(result.robotsMode).toBe("ignore");
+      expect(result.ignoreRobotsTxt).toBe(true);
     });
   });
 

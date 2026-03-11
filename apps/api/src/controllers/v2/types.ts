@@ -77,6 +77,38 @@ export const URL = z.preprocess(
 const strictMessage =
   "Unrecognized key in body -- please review the v2 API documentation for request body changes";
 
+type RobotsMode = "ignore" | "respect" | "strict";
+
+function normalizeHeadersAndRobots<
+  T extends {
+    headers?: Record<string, string>;
+    userAgent?: string;
+    ignoreRobotsTxt?: boolean;
+    robotsMode?: RobotsMode;
+  },
+>(obj: T): T {
+  const headers = obj.headers ? { ...obj.headers } : {};
+  const normalizedUserAgent = obj.userAgent?.trim();
+  const hasUserAgentHeader = Object.keys(headers).some(
+    key => key.toLowerCase() === "user-agent",
+  );
+
+  if (normalizedUserAgent && !hasUserAgentHeader) {
+    headers["User-Agent"] = normalizedUserAgent;
+  }
+
+  return {
+    ...obj,
+    headers: Object.keys(headers).length > 0 ? headers : obj.headers,
+    ignoreRobotsTxt:
+      obj.robotsMode === "ignore"
+        ? true
+        : obj.robotsMode === "respect" || obj.robotsMode === "strict"
+          ? false
+          : obj.ignoreRobotsTxt,
+  };
+}
+
 // Helper function to add strict validation
 // In zod v4, .strict() doesn't accept arguments
 // The custom error message is handled in the error handler (see src/index.ts)
@@ -542,6 +574,8 @@ const baseScrapeOptions = z.strictObject({
       return !hasChangeTracking || hasMarkdown;
     }, "The changeTracking format requires the markdown format to be specified as well"),
   headers: z.record(z.string(), z.string()).optional(),
+  userAgent: z.string().trim().min(1).optional(),
+  robotsMode: z.enum(["ignore", "respect", "strict"]).optional(),
   includeTags: z
     .string()
     .array()
@@ -600,6 +634,7 @@ const extractTransformImpl = <T extends ScrapeOptionsBase | undefined>(
   obj: T,
 ): T extends undefined ? undefined : T => {
   if (!obj) return obj as T extends undefined ? undefined : T;
+  obj = normalizeHeadersAndRobots(obj);
   // Handle timeout
   let result = { ...obj };
   if (
@@ -660,7 +695,7 @@ export const scrapeOptions = strictWithMessage(baseScrapeOptions)
     },
   )
   .refine(waitForRefine, waitForRefineOpts)
-  .transform(extractTransformRequired);
+  .transform(obj => extractTransformRequired(normalizeHeadersAndRobots(obj)));
 
 export type BaseScrapeOptions = z.infer<typeof baseScrapeOptions>;
 
@@ -898,6 +933,7 @@ export const crawlerOptions = z.strictObject({
   allowExternalLinks: z.boolean().prefault(false),
   allowSubdomains: z.boolean().prefault(false),
   ignoreRobotsTxt: z.boolean().prefault(false),
+  robotsMode: z.enum(["ignore", "respect", "strict"]).optional(),
   sitemap: z.enum(["skip", "include", "only"]).prefault("include"),
   deduplicateSimilarURLs: z.boolean().prefault(true),
   ignoreQueryParameters: z.boolean().prefault(false),
@@ -933,8 +969,9 @@ export const crawlRequestSchema = strictWithMessage(crawlRequestSchemaBase)
   .refine(x => waitForRefine(x.scrapeOptions), waitForRefineOpts)
   .transform(x => {
     const scrapeOptionsValue = x.scrapeOptions ?? baseScrapeOptions.parse({});
+    const normalizedCrawlerOptions = normalizeHeadersAndRobots(x);
     return {
-      ...x,
+      ...normalizedCrawlerOptions,
       url: x.url,
       scrapeOptions: extractTransformRequired(scrapeOptionsValue),
     };
@@ -977,7 +1014,9 @@ const mapRequestSchemaBase = crawlerOptions
     headers: z.record(z.string(), z.string()).optional(),
   });
 
-export const mapRequestSchema = strictWithMessage(mapRequestSchemaBase);
+export const mapRequestSchema = strictWithMessage(mapRequestSchemaBase).transform(
+  normalizeHeadersAndRobots,
+);
 
 // export type MapRequest = {
 //   url: string;
@@ -1324,6 +1363,7 @@ export function toV0CrawlerOptions(x: CrawlerOptions) {
     allowExternalContentLinks: x.allowExternalLinks,
     allowSubdomains: x.allowSubdomains,
     ignoreRobotsTxt: x.ignoreRobotsTxt,
+    robotsMode: x.robotsMode,
     ignoreSitemap: x.sitemap === "skip",
     sitemapOnly: x.sitemap === "only",
     deduplicateSimilarURLs: x.deduplicateSimilarURLs,
@@ -1344,6 +1384,7 @@ export function toV2CrawlerOptions(x: any): CrawlerOptions {
     allowExternalLinks: x.allowExternalContentLinks,
     allowSubdomains: x.allowSubdomains,
     ignoreRobotsTxt: x.ignoreRobotsTxt,
+    robotsMode: x.robotsMode,
     sitemap: x.sitemapOnly ? "only" : x.ignoreSitemap ? "skip" : "include",
     deduplicateSimilarURLs: x.deduplicateSimilarURLs,
     ignoreQueryParameters: x.ignoreQueryParameters,
@@ -1369,6 +1410,7 @@ function fromV0CrawlerOptions(
       allowExternalLinks: x.allowExternalContentLinks,
       allowSubdomains: x.allowSubdomains,
       ignoreRobotsTxt: x.ignoreRobotsTxt,
+      robotsMode: x.robotsMode,
       sitemap: x.sitemapOnly ? "only" : x.ignoreSitemap ? "skip" : "include",
       deduplicateSimilarURLs: x.deduplicateSimilarURLs,
       ignoreQueryParameters: x.ignoreQueryParameters,
