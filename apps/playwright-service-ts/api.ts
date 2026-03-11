@@ -252,7 +252,9 @@ app.post('/scrape', async (req: Request, res: Response) => {
   let page: Page | null = null;
 
   try {
-    const customUserAgent = headers?.['user-agent'] || headers?.['User-Agent'];
+    const customUserAgent = headers
+      ? Object.entries(headers).find(([key]) => key.toLowerCase() === 'user-agent')?.[1]
+      : undefined;
     requestContext = await createContext(skip_tls_verification, customUserAgent);
     page = await requestContext.newPage();
 
