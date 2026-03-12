@@ -99,8 +99,8 @@ const initializeBrowser = async () => {
   });
 };
 
-const createContext = async (skipTlsVerification: boolean = false) => {
-  const userAgent = new UserAgent().toString();
+const createContext = async (skipTlsVerification: boolean = false, customUserAgent?: string) => {
+  const userAgent = customUserAgent || new UserAgent().toString();
   const viewport = { width: 1280, height: 800 };
 
   const contextOptions: any = {
@@ -252,11 +252,27 @@ app.post('/scrape', async (req: Request, res: Response) => {
   let page: Page | null = null;
 
   try {
-    requestContext = await createContext(skip_tls_verification);
+    // Extract user-agent from headers if provided (case-insensitive), as it needs to be set on the context
+    let customUserAgent: string | undefined;
+    let headersWithoutUA: Record<string, string> | undefined;
+    
+    if (headers) {
+      const headerEntries = Object.entries(headers);
+      const userAgentEntry = headerEntries.find(([key]) => key.toLowerCase() === 'user-agent');
+      customUserAgent = userAgentEntry?.[1];
+      
+      // Filter out user-agent header (case-insensitive) since it's set on the context
+      const filteredEntries = headerEntries.filter(([key]) => key.toLowerCase() !== 'user-agent');
+      if (filteredEntries.length > 0) {
+        headersWithoutUA = Object.fromEntries(filteredEntries);
+      }
+    }
+    
+    requestContext = await createContext(skip_tls_verification, customUserAgent);
     page = await requestContext.newPage();
 
-    if (headers) {
-      await page.setExtraHTTPHeaders(headers);
+    if (headersWithoutUA) {
+      await page.setExtraHTTPHeaders(headersWithoutUA);
     }
 
     const result = await scrapePage(page, url, 'load', wait_after_load, timeout, check_selector);
