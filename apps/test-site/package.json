@@ -24,6 +24,9 @@
     "onlyBuiltDependencies": [
       "esbuild",
       "sharp"
-    ]
+    ],
+    "overrides": {
+      "devalue": ">=5.6.4"
+    }
   }
 }
