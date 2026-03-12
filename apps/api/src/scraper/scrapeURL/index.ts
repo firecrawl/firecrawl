@@ -78,6 +78,7 @@ import {
 import { htmlTransform } from "./lib/removeUnwantedElements";
 import { postprocessors } from "./postprocessors";
 import { rewriteUrl } from "./lib/rewriteUrl";
+import { hasNoExtractableText } from "./emptyPage";
 
 export type ScrapeUrlResponse =
   | {
@@ -409,6 +410,10 @@ async function scrapeURLLoopIter(
       (engineResult.statusCode >= 200 && engineResult.statusCode < 300) ||
       engineResult.statusCode === 304;
     const hasNoPageError = engineResult.error === undefined;
+    const isExplicitlyEmptyPage =
+      isGoodStatusCode &&
+      hasNoPageError &&
+      hasNoExtractableText(engineResult.html);
     const isLikelyProxyError = [401, 403, 429].includes(
       engineResult.statusCode,
     );
@@ -423,7 +428,12 @@ async function scrapeURLLoopIter(
           engine +
           " deemed unsuccessful due to proxy inadequacy. Adding stealthProxy flag.",
         {
-          factors: { isLongEnough, isGoodStatusCode, hasNoPageError },
+          factors: {
+            isLongEnough,
+            isGoodStatusCode,
+            hasNoPageError,
+            isExplicitlyEmptyPage,
+          },
           statusCode: engineResult.statusCode,
           length: engineResult.html?.trim().length ?? 0,
         },
@@ -434,14 +444,24 @@ async function scrapeURLLoopIter(
     // NOTE: TODO: what to do when status code is bad is tough...
     // we cannot just rely on text because error messages can be brief and not hit the limit
     // should we just use all the fallbacks and pick the one with the longest text? - mogery
-    if (isLongEnough || !isGoodStatusCode) {
+    if (isLongEnough || isExplicitlyEmptyPage || !isGoodStatusCode) {
       meta.logger.info("Scrape via " + engine + " deemed successful.", {
-        factors: { isLongEnough, isGoodStatusCode, hasNoPageError },
+        factors: {
+          isLongEnough,
+          isGoodStatusCode,
+          hasNoPageError,
+          isExplicitlyEmptyPage,
+        },
       });
       return engineResult;
     } else {
       meta.logger.warn("Scrape via " + engine + " deemed unsuccessful.", {
-        factors: { isLongEnough, isGoodStatusCode, hasNoPageError },
+        factors: {
+          isLongEnough,
+          isGoodStatusCode,
+          hasNoPageError,
+          isExplicitlyEmptyPage,
+        },
         length: engineResult.html?.trim().length ?? 0,
       });
       throw new EngineUnsuccessfulError(engine);
