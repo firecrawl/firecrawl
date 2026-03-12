@@ -66,7 +66,7 @@ export async function extractStatusController(
           new Date(agent?.created_at ?? extractRequest.created_at).getTime() +
             1000 * 60 * 60 * 24,
         ).toISOString(),
-        creditsUsed: agent?.credits_cost,
+        creditsUsed: agent?.credits_cost ?? 0,
       });
     }
   }

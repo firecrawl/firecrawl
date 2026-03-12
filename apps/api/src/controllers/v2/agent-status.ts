@@ -87,6 +87,6 @@ export async function agentStatusController(
       new Date(agent?.created_at ?? agentRequest.created_at).getTime() +
         1000 * 60 * 60 * 24,
     ).toISOString(),
-    creditsUsed: agent?.credits_cost,
+    creditsUsed: agent?.credits_cost ?? 0,
   });
 }
