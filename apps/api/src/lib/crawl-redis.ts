@@ -312,6 +312,8 @@ export async function getCrawlQualifiedJobCount(id: string): Promise<number> {
 
 export function normalizeURL(url: string, sc: StoredCrawl): string {
   const urlO = new URL(url);
+  urlO.username = "";
+  urlO.password = "";
   if (sc && sc.crawlerOptions && sc.crawlerOptions.ignoreQueryParameters) {
     urlO.search = "";
   }
@@ -341,6 +343,8 @@ export function normalizeURL(url: string, sc: StoredCrawl): string {
 // - mogery
 export function generateURLPermutations(url: string | URL): URL[] {
   const urlO = new URL(url);
+  urlO.username = "";
+  urlO.password = "";
 
   // Construct two versions, one with www., one without
   const urlWithWWW = new URL(urlO);

@@ -6,6 +6,24 @@ import {
   extractBaseHref as _extractBaseHref,
 } from "@mendable/firecrawl-rs";
 
+function sanitizeResolvedHttpUrl(
+  url: string,
+  preserveOriginalWhenNoCredentials = false,
+): string {
+  const urlObject = new URL(url);
+  if (
+    preserveOriginalWhenNoCredentials &&
+    !urlObject.username &&
+    !urlObject.password
+  ) {
+    return url;
+  }
+
+  urlObject.username = "";
+  urlObject.password = "";
+  return urlObject.href;
+}
+
 function resolveUrlWithBaseHref(
   href: string,
   baseUrl: string,
@@ -28,13 +46,13 @@ function resolveUrlWithBaseHref(
 
   try {
     if (href.startsWith("http://") || href.startsWith("https://")) {
-      return href;
+      return sanitizeResolvedHttpUrl(href, true);
     } else if (href.startsWith("mailto:")) {
       return href;
     } else if (href.startsWith("#")) {
       return "";
     } else {
-      return new URL(href, resolutionBase).href;
+      return sanitizeResolvedHttpUrl(new URL(href, resolutionBase).href);
     }
   } catch (error) {
     logger.error(
