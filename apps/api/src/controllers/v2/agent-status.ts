@@ -26,6 +26,8 @@ export async function agentStatusController(
   const agent = await supabaseGetAgentByIdDirect(req.params.jobId);
 
   let model: "spark-1-pro" | "spark-1-mini";
+  let creditsUsed: number | undefined = agent?.credits_cost ?? undefined;
+
   if (agent) {
     model = (agent.options?.model ?? "spark-1-pro") as
       | "spark-1-pro"
@@ -53,9 +55,14 @@ export async function agentStatusController(
         });
         model = "spark-1-pro"; // fall back to this value
       } else {
-        model = ((await optionsRequest.json()).model ?? "spark-1-pro") as
+        const optionsData = await optionsRequest.json();
+        model = (optionsData.model ?? "spark-1-pro") as
           | "spark-1-pro"
           | "spark-1-mini";
+        // Get credits from external service if available
+        if (optionsData.creditsUsed !== undefined) {
+          creditsUsed = optionsData.creditsUsed;
+        }
       }
     } catch (error) {
       logger.warn("Failed to get agent request details", {
@@ -65,6 +72,37 @@ export async function agentStatusController(
         extractId: req.params.jobId,
       });
       model = "spark-1-pro"; // fall back to this value
+    }
+  }
+
+  // If agent exists but credits_cost is not set, try to get credits from external service
+  if (agent && creditsUsed === undefined && config.EXTRACT_V3_BETA_URL) {
+    try {
+      const optionsRequest = await fetch(
+        config.EXTRACT_V3_BETA_URL +
+          "/v2/extract/" +
+          req.params.jobId +
+          "/options",
+        {
+          headers: {
+            Authorization: `Bearer ${config.AGENT_INTEROP_SECRET}`,
+          },
+        },
+      );
+
+      if (optionsRequest.status === 200) {
+        const optionsData = await optionsRequest.json();
+        if (optionsData.creditsUsed !== undefined) {
+          creditsUsed = optionsData.creditsUsed;
+        }
+      }
+    } catch (error) {
+      logger.warn("Failed to get credits from external service", {
+        error,
+        method: "agentStatusController",
+        module: "api/v2",
+        extractId: req.params.jobId,
+      });
     }
   }
 
@@ -87,6 +125,6 @@ export async function agentStatusController(
       new Date(agent?.created_at ?? agentRequest.created_at).getTime() +
         1000 * 60 * 60 * 24,
     ).toISOString(),
-    creditsUsed: agent?.credits_cost,
+    creditsUsed,
   });
 }
