@@ -164,6 +164,7 @@ class TestAgent(unittest.TestCase):
             schema=schema,
             integration="test-integration",
             max_credits=50,
+            zero_data_retention=True,
             strict_constrain_to_urls=True,
             poll_interval=1,
             timeout=30
@@ -177,6 +178,7 @@ class TestAgent(unittest.TestCase):
         assert request_body["schema"] == schema
         assert request_body["integration"] == "test-integration"
         assert request_body["maxCredits"] == 50
+        assert request_body["zeroDataRetention"] is True
         assert request_body["strictConstrainToURLs"] is True
 
     @patch('firecrawl.v2.utils.http_client.requests.post')
@@ -274,4 +276,3 @@ class TestAgent(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
-

@@ -7,6 +7,7 @@ import {
   mapRequestSchema,
   batchScrapeRequestSchema,
   searchRequestSchema,
+  agentRequestSchema,
   ScrapeRequest,
   ScrapeRequestInput,
   ExtractRequest,
@@ -21,6 +22,7 @@ import {
   SearchRequestInput,
   toV2CrawlerOptions,
 } from "../../../controllers/v2/types";
+import { checkPermissions } from "../../../lib/permissions";
 
 describe("V2 Types Validation", () => {
   describe("scrapeRequestSchema", () => {
@@ -1107,6 +1109,32 @@ describe("V2 Types Validation", () => {
       };
 
       expect(() => scrapeRequestSchema.parse(input)).toThrow();
+    });
+  });
+
+  describe("agentRequestSchema", () => {
+    it("should accept zeroDataRetention flag", () => {
+      const input = {
+        prompt: "Find the company address.",
+        zeroDataRetention: true,
+      };
+
+      const result = agentRequestSchema.parse(input);
+      expect(result.prompt).toBe("Find the company address.");
+      expect(result.zeroDataRetention).toBe(true);
+    });
+  });
+
+  describe("checkPermissions", () => {
+    it("should reject ZDR when allowZDR is false", () => {
+      const result = checkPermissions(
+        { zeroDataRetention: true },
+        { allowZDR: false },
+      );
+
+      expect(result.error).toContain(
+        "Zero Data Retention (ZDR) is not enabled",
+      );
     });
   });
 });

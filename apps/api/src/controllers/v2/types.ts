@@ -777,6 +777,7 @@ export const agentRequestSchema = z.strictObject({
   origin: z.string().optional().prefault("api"),
   integration: integrationSchema.optional().transform(val => val || null),
   maxCredits: z.number().optional(),
+  zeroDataRetention: z.boolean().optional(),
   strictConstrainToURLs: z.boolean().optional(),
   webhook: agentWebhookSchema.optional(),
 

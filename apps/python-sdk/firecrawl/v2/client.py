@@ -859,6 +859,7 @@ class FirecrawlClient:
         schema: Optional[Any] = None,
         integration: Optional[str] = None,
         max_credits: Optional[int] = None,
+        zero_data_retention: Optional[bool] = None,
         strict_constrain_to_urls: Optional[bool] = None,
         model: Optional[Literal["spark-1-pro", "spark-1-mini"]] = None,
         webhook: Optional[Union[str, AgentWebhookConfig]] = None,
@@ -871,6 +872,7 @@ class FirecrawlClient:
             schema: Target JSON schema for the output (dict or Pydantic BaseModel)
             integration: Integration tag/name
             max_credits: Maximum credits to use (optional)
+            zero_data_retention: Enable zero data retention (optional)
             model: Model to use for the agent ("spark-1-pro" or "spark-1-mini")
             webhook: Webhook URL or configuration for notifications
         Returns:
@@ -883,6 +885,7 @@ class FirecrawlClient:
             schema=schema,
             integration=integration,
             max_credits=max_credits,
+            zero_data_retention=zero_data_retention,
             strict_constrain_to_urls=strict_constrain_to_urls,
             model=model,
             webhook=webhook,
@@ -898,6 +901,7 @@ class FirecrawlClient:
         poll_interval: int = 2,
         timeout: Optional[int] = None,
         max_credits: Optional[int] = None,
+        zero_data_retention: Optional[bool] = None,
         strict_constrain_to_urls: Optional[bool] = None,
         model: Optional[Literal["spark-1-pro", "spark-1-mini"]] = None,
         webhook: Optional[Union[str, AgentWebhookConfig]] = None,
@@ -912,6 +916,7 @@ class FirecrawlClient:
             poll_interval: Seconds between status checks
             timeout: Maximum seconds to wait (None for no timeout)
             max_credits: Maximum credits to use (optional)
+            zero_data_retention: Enable zero data retention (optional)
             model: Model to use for the agent ("spark-1-pro" or "spark-1-mini")
             webhook: Webhook URL or configuration for notifications
         Returns:
@@ -926,6 +931,7 @@ class FirecrawlClient:
             poll_interval=poll_interval,
             timeout=timeout,
             max_credits=max_credits,
+            zero_data_retention=zero_data_retention,
             strict_constrain_to_urls=strict_constrain_to_urls,
             model=model,
             webhook=webhook,

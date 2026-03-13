@@ -37,14 +37,6 @@ export async function searchController(
     zeroDataRetention: req.acuc?.flags?.forceZDR,
   });
 
-  if (req.acuc?.flags?.forceZDR) {
-    return res.status(400).json({
-      success: false,
-      error:
-        "Your team has zero data retention enabled. This is not supported on search. Please contact support@firecrawl.com to unblock this feature.",
-    });
-  }
-
   const middlewareTime = controllerStartTime - middlewareStartTime;
   const isSearchPreview =
     config.SEARCH_PREVIEW_TOKEN !== undefined &&
@@ -71,6 +63,21 @@ export async function searchController(
       });
     }
 
+    const isZDR = req.body.enterprise?.includes("zdr");
+    const isAnon = req.body.enterprise?.includes("anon");
+    const isZDROrAnon = isZDR || isAnon;
+
+    if (req.acuc?.flags?.forceZDR && !isZDR) {
+      return res.status(400).json({
+        success: false,
+        error:
+          "Your team has zero data retention enabled. This is not supported on search. Please contact support@firecrawl.com to unblock this feature.",
+      });
+    }
+
+    zeroDataRetention = isZDROrAnon ?? false;
+    applyZdrScope(isZDROrAnon ?? false);
+
     const shouldBill = req.body.__agentInterop?.shouldBill ?? true;
     const agentRequestId = req.body.__agentInterop?.requestId ?? null;
     const billing: BillingMetadata = req.body.__agentInterop
@@ -81,13 +88,8 @@ export async function searchController(
       version: "v2",
       query: req.body.query,
       origin: req.body.origin,
+      zeroDataRetention,
     });
-
-    const isZDR = req.body.enterprise?.includes("zdr");
-    const isAnon = req.body.enterprise?.includes("anon");
-    const isZDROrAnon = isZDR || isAnon;
-    zeroDataRetention = isZDROrAnon ?? false;
-    applyZdrScope(isZDROrAnon ?? false);
 
     if (!agentRequestId) {
       await logRequest({

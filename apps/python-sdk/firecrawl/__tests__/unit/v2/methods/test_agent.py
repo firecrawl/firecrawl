@@ -182,6 +182,7 @@ class TestAgentMethods:
             schema=schema,
             integration="test-integration",
             max_credits=50,
+            zero_data_retention=True,
             strict_constrain_to_urls=True
         )
         
@@ -192,6 +193,7 @@ class TestAgentMethods:
         assert body["schema"] == schema
         assert body["integration"] == "test-integration"
         assert body["maxCredits"] == 50
+        assert body["zeroDataRetention"] is True
         assert body["strictConstrainToURLs"] is True
 
     def test_get_agent_status(self):
@@ -364,4 +366,3 @@ class TestAgentMethods:
         # Verify the exception has the correct status code
         assert exc_info.value.status_code == 400
         assert "agent" in str(exc_info.value).lower()
-

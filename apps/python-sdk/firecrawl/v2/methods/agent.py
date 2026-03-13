@@ -14,6 +14,7 @@ def _prepare_agent_request(
     schema: Optional[Any] = None,
     integration: Optional[str] = None,
     max_credits: Optional[int] = None,
+    zero_data_retention: Optional[bool] = None,
     strict_constrain_to_urls: Optional[bool] = None,
     model: Optional[Literal["spark-1-pro", "spark-1-mini"]] = None,
     webhook: Optional[Union[str, AgentWebhookConfig]] = None,
@@ -35,6 +36,8 @@ def _prepare_agent_request(
         body["integration"] = str(integration).strip()
     if max_credits is not None and max_credits > 0:
         body["maxCredits"] = max_credits
+    if zero_data_retention is not None:
+        body["zeroDataRetention"] = zero_data_retention
     if strict_constrain_to_urls is not None and strict_constrain_to_urls:
         body["strictConstrainToURLs"] = strict_constrain_to_urls
     if model is not None:
@@ -64,6 +67,7 @@ def start_agent(
     schema: Optional[Any] = None,
     integration: Optional[str] = None,
     max_credits: Optional[int] = None,
+    zero_data_retention: Optional[bool] = None,
     strict_constrain_to_urls: Optional[bool] = None,
     model: Optional[Literal["spark-1-pro", "spark-1-mini"]] = None,
     webhook: Optional[Union[str, AgentWebhookConfig]] = None,
@@ -74,6 +78,7 @@ def start_agent(
         schema=schema,
         integration=integration,
         max_credits=max_credits,
+        zero_data_retention=zero_data_retention,
         strict_constrain_to_urls=strict_constrain_to_urls,
         model=model,
         webhook=webhook,
@@ -120,6 +125,7 @@ def agent(
     poll_interval: int = 2,
     timeout: Optional[int] = None,
     max_credits: Optional[int] = None,
+    zero_data_retention: Optional[bool] = None,
     strict_constrain_to_urls: Optional[bool] = None,
     model: Optional[Literal["spark-1-pro", "spark-1-mini"]] = None,
     webhook: Optional[Union[str, AgentWebhookConfig]] = None,
@@ -131,6 +137,7 @@ def agent(
         schema=schema,
         integration=integration,
         max_credits=max_credits,
+        zero_data_retention=zero_data_retention,
         strict_constrain_to_urls=strict_constrain_to_urls,
         model=model,
         webhook=webhook,
