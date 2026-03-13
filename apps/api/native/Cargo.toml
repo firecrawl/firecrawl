@@ -29,6 +29,7 @@ zip = "5.0.0"
 calamine = "0.26"
 cfb = "0.10"
 tokio = "1.48.0"
+simd-html-to-md = { git = "https://github.com/firecrawl/simd-html-to-md", rev = "a7c8861" }
 
 [build-dependencies]
 napi-build = "2"
