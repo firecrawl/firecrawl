@@ -435,6 +435,28 @@ def _validate_json_format(format_obj: Any) -> Dict[str, Any]:
     return normalized
 
 
+def _validate_query_format(format_obj: Any) -> Dict[str, Any]:
+    """
+    Validate and prepare query format object.
+
+    Args:
+        format_obj: Format object that should be query type
+
+    Returns:
+        Validated query format dict
+
+    Raises:
+        ValueError: If query format is missing required 'prompt' field
+    """
+    if not isinstance(format_obj, dict):
+        raise ValueError("query format must be an object with 'type' and 'prompt' fields")
+
+    if not isinstance(format_obj.get('prompt'), str) or not format_obj['prompt'].strip():
+        raise ValueError("query format requires a non-empty 'prompt' string")
+
+    return format_obj
+
+
 def validate_scrape_options(options: Optional[ScrapeOptions]) -> Optional[ScrapeOptions]:
     """
     Validate and normalize scrape options.
@@ -542,12 +564,16 @@ def prepare_scrape_options(options: Optional[ScrapeOptions]) -> Optional[Dict[st
                             if isinstance(fmt, str):
                                 if fmt == "json":
                                     raise ValueError("json format must be an object with 'type', 'prompt', and 'schema' fields")
+                                if fmt == "query":
+                                    raise ValueError("query format must be an object with 'type' and 'prompt' fields")
                                 converted_formats.append(_convert_format_string(fmt))
                             elif isinstance(fmt, dict):
                                 fmt_type = _convert_format_string(fmt.get('type')) if fmt.get('type') else None
                                 if fmt_type == 'json':
                                     validated_json = _validate_json_format({**fmt, 'type': 'json'})
                                     converted_formats.append(validated_json)
+                                elif fmt_type == 'query':
+                                    converted_formats.append(_validate_query_format(fmt))
                                 elif fmt_type == 'screenshot':
                                     # Normalize screenshot options
                                     normalized = {**fmt, 'type': 'screenshot'}
@@ -565,6 +591,8 @@ def prepare_scrape_options(options: Optional[ScrapeOptions]) -> Optional[Dict[st
                             elif hasattr(fmt, 'type'):
                                 if fmt.type == 'json':
                                     converted_formats.append(_validate_json_format(fmt.model_dump()))
+                                elif fmt.type == 'query':
+                                    converted_formats.append(_validate_query_format(fmt.model_dump(exclude_none=True)))
                                 else:
                                     converted_formats.append(_convert_format_string(fmt.type))
                             else:
@@ -593,12 +621,16 @@ def prepare_scrape_options(options: Optional[ScrapeOptions]) -> Optional[Dict[st
                         if isinstance(fmt, str):
                             if fmt == "json":
                                 raise ValueError("json format must be an object with 'type', 'prompt', and 'schema' fields")
+                            if fmt == "query":
+                                raise ValueError("query format must be an object with 'type' and 'prompt' fields")
                             converted_formats.append(_convert_format_string(fmt))
                         elif isinstance(fmt, dict):
                             fmt_type = _convert_format_string(fmt.get('type')) if fmt.get('type') else None
                             if fmt_type == 'json':
                                 validated_json = _validate_json_format({**fmt, 'type': 'json'})
                                 converted_formats.append(validated_json)
+                            elif fmt_type == 'query':
+                                converted_formats.append(_validate_query_format(fmt))
                             elif fmt_type == 'screenshot':
                                 normalized = {**fmt, 'type': 'screenshot'}
                                 if 'full_page' in normalized:
@@ -624,6 +656,8 @@ def prepare_scrape_options(options: Optional[ScrapeOptions]) -> Optional[Dict[st
                                 if vp is not None:
                                     normalized['viewport'] = vp.model_dump(exclude_none=True) if hasattr(vp, 'model_dump') else vp
                                 converted_formats.append(normalized)
+                            elif fmt.type == 'query':
+                                converted_formats.append(_validate_query_format(fmt.model_dump(exclude_none=True)))
                             else:
                                 converted_formats.append(_convert_format_string(fmt.type))
                         else:
