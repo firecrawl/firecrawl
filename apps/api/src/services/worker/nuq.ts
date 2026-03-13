@@ -57,6 +57,13 @@ const normalizedUUIDNamespace = "0f38e00e-d7ee-4b77-8a7a-a787a3537ca2";
 function normalizeOwnerId(ownerId: string | undefined | null): string | null {
   if (typeof ownerId !== "string") return null;
   if (isUUID(ownerId)) return ownerId;
+
+  // Handle preview_{uuid} format - extract the UUID if present
+  if (ownerId.startsWith("preview_")) {
+    const suffix = ownerId.slice("preview_".length);
+    if (isUUID(suffix)) return suffix;
+  }
+
   return uuidv5(ownerId, normalizedUUIDNamespace);
 }
 

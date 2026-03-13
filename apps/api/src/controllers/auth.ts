@@ -424,6 +424,11 @@ async function supaAuthenticateUser(
   let teamId: string | null = null;
   let priceId: string | null = null;
   let chunk: AuthCreditUsageChunk | null = null;
+  // Extract unauthenticated user ID from header (sent by playground frontend)
+  const unauthenticatedUserId = req.headers["x-unauthenticated-user-id"] as
+    | string
+    | undefined;
+
   if (token == "this_is_just_a_preview_token") {
     throw new Error(
       "Unauthenticated Playground calls are temporarily disabled due to abuse. Please sign up.",
@@ -437,7 +442,9 @@ async function supaAuthenticateUser(
     } else {
       rateLimiter = getRateLimiter(RateLimiterMode.Preview, token);
     }
-    teamId = `preview_${iptoken}`;
+    teamId = unauthenticatedUserId
+      ? `preview_${unauthenticatedUserId}`
+      : `preview_${iptoken}`;
   } else {
     normalizedApi = parseApi(token);
     if (!normalizedApiIsUuid(normalizedApi)) {
@@ -512,7 +519,7 @@ async function supaAuthenticateUser(
   ) {
     return {
       success: true,
-      team_id: `preview_${iptoken}`,
+      team_id: teamId,
       chunk: null,
     };
     // check the origin of the request and make sure its from firecrawl.dev
