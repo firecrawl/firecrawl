@@ -51,13 +51,19 @@ export interface AttributesFormat extends Format {
   }>;
 }
 
+export interface QueryFormat {
+  type: 'query';
+  prompt: string;
+}
+
 export type FormatOption =
   | FormatString
   | Format
   | JsonFormat
   | ChangeTrackingFormat
   | ScreenshotFormat
-  | AttributesFormat;
+  | AttributesFormat
+  | QueryFormat;
 
 export interface LocationConfig {
   country?: string;
@@ -388,6 +394,7 @@ export interface Document {
     values: string[];
   }>;
   actions?: Record<string, unknown>;
+  answer?: string;
   warning?: string;
   changeTracking?: Record<string, unknown>;
   branding?: BrandingProfile;
