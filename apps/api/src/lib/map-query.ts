@@ -1,7 +1,7 @@
 export function normalizeMapDomainUrl(url: string): string {
-  // Keep behavior intentionally simple to match existing project conventions:
-  // normalize host variants by stripping a leading www. sequence in the URL string.
-  return url.replace("www.", "");
+  // Strip www. only from the host portion of the URL to avoid mangling
+  // path or query strings that may contain "www." substrings.
+  return url.replace(/^(https?:\/\/)www\./i, "$1");
 }
 
 export function buildMapUrlQuery(

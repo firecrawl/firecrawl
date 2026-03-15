@@ -14,6 +14,12 @@ describe("map-query helpers", () => {
         "https://example.com",
       );
     });
+
+    it("does not strip www from path or query", () => {
+      expect(normalizeMapDomainUrl("https://example.com/www.page")).toBe(
+        "https://example.com/www.page",
+      );
+    });
   });
 
   describe("buildMapUrlQuery", () => {
