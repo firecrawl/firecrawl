@@ -1277,8 +1277,6 @@ export type AuthCreditUsageChunk = {
 export type TeamFlags = {
   ignoreRobots?: boolean;
   unblockedDomains?: string[];
-  forceZDR?: boolean;
-  allowZDR?: boolean;
   scrapeZDR?: "disabled" | "allowed" | "forced";
   searchZDR?: "disabled" | "allowed" | "forced";
   zdrCost?: number;
