@@ -59,6 +59,8 @@ describeIf(TEST_PRODUCTION || HAS_SEARCH || HAS_PROXY)("Search tests", () => {
         if (doc.markdown) {
           markdownCount += 1;
         } else {
+          // Search can return URLs that are not consistently scrapeable in test environments,
+          // so log the failing entries to make partial scrape failures easier to debug.
           console.warn("Search scrape result missing markdown", {
             url: doc.url,
             error: doc.metadata?.error,
