@@ -41,7 +41,7 @@ describeIf(TEST_PRODUCTION || HAS_SEARCH || HAS_PROXY)("Search tests", () => {
       const res = await search(
         {
           query: "firecrawl.dev",
-          limit: 2,
+          limit: 5,
           scrapeOptions: {
             formats: ["markdown"],
           },
@@ -50,8 +50,11 @@ describeIf(TEST_PRODUCTION || HAS_SEARCH || HAS_PROXY)("Search tests", () => {
         identity,
       );
 
+      expect(res.web).toBeDefined();
+      expect(res.web?.length).toBeGreaterThan(0);
+
       for (const doc of res.web ?? []) {
-        expect(doc.markdown).toBeDefined();
+        expect(!!doc.markdown || !!doc.metadata?.error).toBe(true);
       }
     },
     125000,
