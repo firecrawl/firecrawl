@@ -8,11 +8,11 @@
   "author": "",
   "license": "ISC",
   "devDependencies": {
-    "artillery": "^2.0.29"
+    "artillery": "^2.0.30"
   },
   "pnpm": {
     "overrides": {
-      "fast-xml-parser": "^5.3.8",
+      "fast-xml-parser": "^5.5.6",
       "minimatch@<10.2.3": ">=10.2.3",
       "undici": "^7.24.1"
     }

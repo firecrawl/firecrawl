@@ -11,7 +11,7 @@
   },
   "dependencies": {
     "@astrojs/mdx": "^4.3.13",
-    "@astrojs/rss": "^4.0.15",
+    "@astrojs/rss": "^4.0.17",
     "@astrojs/sitemap": "^3.7.0",
     "astro": "^5.18.0",
     "sharp": "^0.34.5"
@@ -26,6 +26,7 @@
       "sharp"
     ],
     "overrides": {
+      "fast-xml-parser": "^5.5.6",
       "devalue": ">=5.6.4"
     }
   }
