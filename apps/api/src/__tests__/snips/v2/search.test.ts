@@ -53,9 +53,22 @@ describeIf(TEST_PRODUCTION || HAS_SEARCH || HAS_PROXY)("Search tests", () => {
       expect(res.web).toBeDefined();
       expect(res.web?.length).toBeGreaterThan(0);
 
+      let markdownCount = 0;
+
       for (const doc of res.web ?? []) {
-        expect(!!doc.markdown || !!doc.metadata?.error).toBe(true);
+        if (doc.markdown) {
+          markdownCount += 1;
+        } else {
+          console.warn("Search scrape result missing markdown", {
+            url: doc.url,
+            error: doc.metadata?.error,
+            statusCode: doc.metadata?.statusCode,
+          });
+          expect(doc.metadata?.error).toBeDefined();
+        }
       }
+
+      expect(markdownCount).toBeGreaterThan(0);
     },
     125000,
   );
