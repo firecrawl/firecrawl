@@ -183,7 +183,14 @@ export async function crawlStatusController(
   );
   const sc = await getCrawl(req.params.jobId);
 
-  if (!group || (!groupAnyJob && (!sc || sc.team_id !== req.auth.team_id))) {
+  // Job is found if we have group, groupAnyJob, or (sc with matching team_id).
+  // sc (Redis) is written before the create response returns, so it's visible
+  // immediately when group/groupAnyJob are delayed by Postgres read-replica lag.
+  const jobFound =
+    group ||
+    groupAnyJob ||
+    (sc && sc.team_id === req.auth.team_id);
+  if (!jobFound) {
     return res.status(404).json({ success: false, error: "Job not found" });
   }
 
@@ -209,13 +216,19 @@ export async function crawlStatusController(
   // check if the crawl failed during kickoff (e.g. queue full)
   const crawlError = await getCrawlError(req.params.jobId);
 
+  const statusFromGroup = group
+    ? group.status === "active"
+      ? "scraping"
+      : group.status
+    : "scraping";
+
   let outputBulkA: {
     status?: "completed" | "scraping" | "cancelled" | "failed";
     completed?: number;
     total?: number;
     creditsUsed?: number;
   } = {
-    status: group.status === "active" ? "scraping" : group.status,
+    status: statusFromGroup,
     completed: numericStats.completed ?? 0,
     total:
       (numericStats.completed ?? 0) +
