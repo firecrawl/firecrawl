@@ -61,6 +61,12 @@ USE_DB_AUTHENTICATION=false
 # Experimental: Use any OpenAI-compatible API
 # OPENAI_BASE_URL=https://example.com/v1
 # OPENAI_API_KEY=
+# MODEL_NAME=your-model-name
+
+# Set to "false" to use the Chat Completions API (/v1/chat/completions) instead
+# of the Responses API (/v1/responses). Required for most OpenAI-compatible
+# proxies and providers that do not implement the Responses API endpoint.
+# USE_RESPONSES_ENDPOINT=false
 
 ## === Proxy ===
 # PROXY_SERVER can be a full URL (e.g. http://0.1.2.3:1234) or just an IP and port combo (e.g. 0.1.2.3:1234)
