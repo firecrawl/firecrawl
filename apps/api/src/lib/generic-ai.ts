@@ -58,8 +58,13 @@ export function getModel(name: string, provider: Provider = defaultProvider) {
     name = "gemini-2.5-pro";
   }
   const modelName = config.MODEL_NAME || name;
-  // o3-mini returns empty text via the Responses API — force Chat Completions
-  if (provider === "openai" && modelName.startsWith("o3-mini")) {
+  // Use Chat Completions API when the Responses API is disabled via
+  // USE_RESPONSES_ENDPOINT=false, or when the model is known to be
+  // incompatible with the Responses API (e.g. o3-mini).
+  if (
+    provider === "openai" &&
+    (modelName.startsWith("o3-mini") || !config.USE_RESPONSES_ENDPOINT)
+  ) {
     return providerList.openai.chat(modelName);
   }
   return providerList[provider](modelName);

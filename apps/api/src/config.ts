@@ -188,6 +188,10 @@ const configSchema = z.object({
   MODEL_EMBEDDING_NAME: z.string().optional(),
   OLLAMA_BASE_URL: z.string().optional(),
   VERTEX_CREDENTIALS: z.string().optional(),
+  USE_RESPONSES_ENDPOINT: z
+    .string()
+    .optional()
+    .transform((val) => val !== "false"),
 
   // Rate Limiting
   RATE_LIMIT_TEST_API_KEY_SCRAPE: z.coerce.number().optional(),
