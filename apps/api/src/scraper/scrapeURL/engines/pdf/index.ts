@@ -23,7 +23,10 @@ import type { PDFMode } from "../../../../controllers/v2/types";
 import { processPdf, detectPdf } from "@mendable/firecrawl-rs";
 import { MAX_FILE_SIZE, MILLISECONDS_PER_PAGE } from "./types";
 import type { PDFProcessorResult } from "./types";
-import { emitNativeLogs, extractAndEmitNativeLogs } from "../../../../lib/native-logging";
+import {
+  emitNativeLogs,
+  extractAndEmitNativeLogs,
+} from "../../../../lib/native-logging";
 import { withSpan, setSpanAttributes } from "../../../../lib/otel-tracer";
 import { scrapePDFWithRunPodMU } from "./runpodMU";
 import { scrapePDFWithParsePDF } from "./pdfParse";
@@ -157,9 +160,12 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
       // When PDF_RUST_EXTRACT_ENABLE is off this is the only path taken,
       // matching current prod behaviour (detectPdf → MinerU → pdfParse).
       try {
-        const nativeCtx = { scrapeId: meta.id, url: meta.rewrittenUrl ?? meta.url };
+        const nativeCtx = {
+          scrapeId: meta.id,
+          url: meta.rewrittenUrl ?? meta.url,
+        };
         const startedAt = Date.now();
-        const detection = await withSpan("native.pdf.detect", async (span) => {
+        const detection = await withSpan("native.pdf.detect", async span => {
           const result = detectPdf(tempFilePath, nativeCtx);
           setSpanAttributes(span, {
             "native.module": "pdf",
@@ -202,10 +208,17 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
     } else {
       // Rust extraction enabled (fast / auto modes).
       try {
-        const nativeCtx = { scrapeId: meta.id, url: meta.rewrittenUrl ?? meta.url };
+        const nativeCtx = {
+          scrapeId: meta.id,
+          url: meta.rewrittenUrl ?? meta.url,
+        };
         const startedAt = Date.now();
-        const pdfResult = await withSpan("native.pdf.process", async (span) => {
-          const result = processPdf(tempFilePath, maxPages ?? undefined, nativeCtx);
+        const pdfResult = await withSpan("native.pdf.process", async span => {
+          const result = processPdf(
+            tempFilePath,
+            maxPages ?? undefined,
+            nativeCtx,
+          );
           setSpanAttributes(span, {
             "native.module": "pdf",
             "native.pdf_type": result.pdfType,
@@ -248,14 +261,18 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
           mode,
         });
 
-        // Only shadow-compare when Rust had a real chance at extraction.
-        // Scanned/ImageBased/Mixed PDFs are expected to produce near-zero
-        // Rust output — comparing them just adds noise to the metrics.
+        // Shadow-compare when Rust produced meaningful output but wasn't
+        // eligible for direct serving. Includes:
+        // - Ineligible TextBased (complex layouts, lower confidence)
+        // - Mixed PDFs with substantial extracted text (invisible OCR layers)
+        const charsPerPage =
+          (pdfResult.markdown?.length ?? 0) / Math.max(pdfResult.pageCount, 1);
         const shadowEligible =
           !eligible &&
           pdfResult.markdown &&
           config.PDF_SHADOW_COMPARISON_ENABLE &&
-          pdfResult.pdfType === "TextBased";
+          (pdfResult.pdfType === "TextBased" ||
+            (pdfResult.pdfType === "Mixed" && charsPerPage >= 200));
 
         rustMarkdownForShadow = shadowEligible ? pdfResult.markdown : undefined;
         if (shadowEligible) {
