@@ -73,7 +73,7 @@ export function runSelfHostedOCRExperiment(
       const similarity = wordSimilarity(resp.markdown, muV1Result.markdown);
       const pages = resp.pages_processed ?? pagesProcessed;
       const timeDiffMs = muV1Result.durationMs - ocrDurationMs;
-      const speedup = muV1Result.durationMs > 0
+      const speedup = muV1Result.durationMs > 0 && ocrDurationMs > 0
         ? Math.round((muV1Result.durationMs / ocrDurationMs) * 100) / 100
         : undefined;
 
