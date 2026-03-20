@@ -72,12 +72,18 @@ export function runSelfHostedOCRExperiment(
       const ocrDurationMs = Date.now() - startedAt;
       const similarity = wordSimilarity(resp.markdown, muV1Result.markdown);
       const pages = resp.pages_processed ?? pagesProcessed;
+      const timeDiffMs = muV1Result.durationMs - ocrDurationMs;
+      const speedup = muV1Result.durationMs > 0
+        ? Math.round((muV1Result.durationMs / ocrDurationMs) * 100) / 100
+        : undefined;
 
       logger.info("Self-hosted OCR experiment completed", {
         scrapeId: meta.id,
         url: meta.rewrittenUrl ?? meta.url,
         ocrDurationMs,
         muV1DurationMs: muV1Result.durationMs,
+        timeDiffMs,
+        speedup,
         ocrMarkdownLength: resp.markdown.length,
         muV1MarkdownLength: muV1Result.markdown.length,
         wordSimilarity: Math.round(similarity * 1000) / 1000,
