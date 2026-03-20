@@ -59,7 +59,8 @@ export function getModel(name: string, provider: Provider = defaultProvider) {
   }
   const modelName = config.MODEL_NAME || name;
   // o3-mini returns empty text via the Responses API — force Chat Completions
-  if (provider === "openai" && modelName.startsWith("o3-mini")) {
+  // Also use Chat Completions when USE_RESPONSES_ENDPOINT is false (for OpenAI-compatible proxies)
+  if (provider === "openai" && (modelName.startsWith("o3-mini") || !config.USE_RESPONSES_ENDPOINT)) {
     return providerList.openai.chat(modelName);
   }
   return providerList[provider](modelName);
