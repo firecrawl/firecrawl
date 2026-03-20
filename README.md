@@ -65,6 +65,7 @@ _Pst. Hey, you, join our stargazers :)_
 - **Actions**: Click, scroll, input, wait, and more before extracting
 - **Batch processing**: Scrape thousands of URLs asynchronously
 - **Change tracking**: Monitor website content changes over time
+- **Scheduled scrapes**: Run scrapes on a cron schedule and ask Claude questions about the results
 
 ---
 
@@ -141,6 +142,8 @@ See the full [Skill + CLI documentation](https://docs.firecrawl.dev/sdks/cli) fo
 | [**Map**](#map) | Discover all URLs on a website instantly |
 | [**Crawl**](#crawling) | Scrape all URLs of a website with a single request |
 | [**Agent**](#agent) | Automated data gathering, just describe what you need |
+| [**Monitor**](#scheduled-scrapes) | Schedule recurring scrapes via cron and ask Claude about the results |
+
 ---
 
 ## Scrape
@@ -547,6 +550,33 @@ app = Firecrawl(api_key="fc-YOUR_API_KEY")
 result = app.map("https://firecrawl.dev", search="pricing")
 # Returns URLs ordered by relevance to "pricing"
 ```
+
+---
+
+## Scheduled Scrapes
+
+Schedule a URL to be scraped on a cron expression and ask Claude questions about the latest result.
+
+```bash
+# Create a schedule (scrape every hour)
+curl -X POST 'https://api.firecrawl.dev/v1/schedules' \
+  -H 'Authorization: Bearer fc-YOUR_API_KEY' \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "url": "https://example.com",
+    "cron": "0 * * * *",
+    "name": "hourly-monitor",
+    "scrapeOptions": { "formats": ["markdown"] }
+  }'
+
+# Ask Claude a question about the latest scraped content
+curl -X POST 'https://api.firecrawl.dev/v1/schedules/{scheduleId}/ask' \
+  -H 'Authorization: Bearer fc-YOUR_API_KEY' \
+  -H 'Content-Type: application/json' \
+  -d '{ "question": "What changed on this page?" }'
+```
+
+Other endpoints: `GET /v1/schedules`, `GET /v1/schedules/:id`, `PATCH /v1/schedules/:id` (pause/resume), `DELETE /v1/schedules/:id`.
 
 ---
 
