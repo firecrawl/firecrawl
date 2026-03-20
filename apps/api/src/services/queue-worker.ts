@@ -21,6 +21,7 @@ import Express from "express";
 import { robustFetch } from "../scraper/scrapeURL/lib/fetch";
 import { initializeBlocklist } from "../scraper/WebScraper/utils/blocklist";
 import { initializeEngineForcing } from "../scraper/WebScraper/utils/engine-forcing";
+import { startScheduleWorker } from "./worker/schedule-worker";
 import { crawlFinishedQueue, NuQJob, scrapeQueue } from "./worker/nuq";
 import { finishCrawlSuper } from "./worker/crawl-logic";
 import { getCrawl } from "../lib/crawl-redis";
@@ -451,6 +452,7 @@ app.listen(workerPort, () => {
   });
 
   initializeEngineForcing();
+  startScheduleWorker();
 
   await Promise.all([
     workerFun(getDeepResearchQueue(), processDeepResearchJobInternal),

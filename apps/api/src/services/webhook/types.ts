@@ -13,6 +13,8 @@ export enum WebhookEvent {
   EXTRACT_STARTED = "extract.started",
   EXTRACT_COMPLETED = "extract.completed",
   EXTRACT_FAILED = "extract.failed",
+  SCHEDULE_COMPLETED = "schedule.completed",
+  SCHEDULE_FAILED = "schedule.failed",
 }
 
 export type WebhookEventDataMap = {
@@ -25,6 +27,8 @@ export type WebhookEventDataMap = {
   [WebhookEvent.EXTRACT_STARTED]: ExtractStartedData;
   [WebhookEvent.EXTRACT_COMPLETED]: ExtractCompletedData;
   [WebhookEvent.EXTRACT_FAILED]: ExtractFailedData;
+  [WebhookEvent.SCHEDULE_COMPLETED]: ScheduleCompletedData;
+  [WebhookEvent.SCHEDULE_FAILED]: ScheduleFailedData;
 };
 
 export type WebhookConfig = z.infer<typeof webhookSchema>;
@@ -111,5 +115,18 @@ interface ExtractCompletedData extends BaseWebhookData {
 
 interface ExtractFailedData extends BaseWebhookData {
   success: false;
+  error: string;
+}
+
+// schedule
+interface ScheduleCompletedData extends BaseWebhookData {
+  success: true;
+  scheduleId: string;
+  data: Document[];
+}
+
+interface ScheduleFailedData extends BaseWebhookData {
+  success: false;
+  scheduleId: string;
   error: string;
 }

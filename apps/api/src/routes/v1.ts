@@ -43,6 +43,11 @@ import {
   createX402RouteConfig,
   isX402Enabled,
 } from "../lib/x402";
+import { scheduleCreateController } from "../controllers/v1/schedule";
+import { scheduleListController } from "../controllers/v1/schedule-list";
+import { scheduleStatusController } from "../controllers/v1/schedule-status";
+import { scheduleCancelController } from "../controllers/v1/schedule-cancel";
+import { scheduleUpdateController } from "../controllers/v1/schedule-update";
 
 expressWs(express());
 
@@ -309,6 +314,37 @@ v1Router.get(
   "/team/queue-status",
   authMiddleware(RateLimiterMode.CrawlStatus),
   wrap(queueStatusController),
+);
+
+// Schedule routes
+v1Router.post(
+  "/schedules",
+  authMiddleware(RateLimiterMode.Schedule),
+  wrap(scheduleCreateController),
+);
+
+v1Router.get(
+  "/schedules",
+  authMiddleware(RateLimiterMode.Schedule),
+  wrap(scheduleListController),
+);
+
+v1Router.get(
+  "/schedules/:scheduleId",
+  authMiddleware(RateLimiterMode.Schedule),
+  wrap(scheduleStatusController),
+);
+
+v1Router.delete(
+  "/schedules/:scheduleId",
+  authMiddleware(RateLimiterMode.Schedule),
+  wrap(scheduleCancelController),
+);
+
+v1Router.patch(
+  "/schedules/:scheduleId",
+  authMiddleware(RateLimiterMode.Schedule),
+  wrap(scheduleUpdateController),
 );
 
 // Only register x402 routes if X402_PAY_TO_ADDRESS is configured
