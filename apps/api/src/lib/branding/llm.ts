@@ -1,11 +1,11 @@
 import { generateObject } from "ai";
-import * as Sentry from "@sentry/node";
 import { logger } from "../logger";
 import { config } from "../../config";
 import { BrandingEnhancement, getBrandingEnhancementSchema } from "./schema";
 import { buildBrandingPrompt } from "./prompt";
 import { BrandingLLMInput } from "./types";
 import { getModel } from "../generic-ai";
+import { captureExceptionWithZdrCheck } from "../../services/sentry";
 
 function isDebugBrandingEnabled(input: BrandingLLMInput): boolean {
   return (
@@ -192,17 +192,21 @@ export async function enhanceBrandingWithLLM(
         },
       );
     } else {
-      Sentry.withScope(scope => {
-        scope.setTag("feature", "branding-llm");
-        scope.setTag("model", modelName);
-        scope.setContext("branding_llm", {
+      captureExceptionWithZdrCheck(error, {
+        tags: {
+          feature: "branding-llm",
+          model: modelName,
+          ...(input.scrapeId ? { scrape_id: input.scrapeId } : {}),
+          ...(input.teamId ? { team_id: input.teamId } : {}),
+        },
+        extra: {
           url: input.url,
           buttonsCount: input.buttons?.length || 0,
           logoCandidatesCount: input.logoCandidates?.length || 0,
           promptLength: prompt.length,
           hasScreenshot: !!input.screenshot,
-        });
-        Sentry.captureException(error);
+        },
+        zeroDataRetention: input.zeroDataRetention,
       });
       logger.error("LLM branding enhancement failed", {
         error,
