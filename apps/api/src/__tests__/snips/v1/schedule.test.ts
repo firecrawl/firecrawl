@@ -1,6 +1,7 @@
 import { config } from "../../../config";
 import {
   describeIf,
+  itIf,
   TEST_SELF_HOST,
   TEST_SUITE_WEBSITE,
   idmux,
@@ -186,4 +187,99 @@ describeIf(!TEST_SELF_HOST)("Schedule API tests", () => {
 
     expect(res.statusCode).toBe(401);
   }, 10000);
+
+  // Q&A failure paths (no ANTHROPIC_API_KEY required)
+  it("returns 400 when asking a schedule that has no result yet", async () => {
+    const createRes = await createScheduleRaw({
+      cron: "0 3 * * *", // 3am daily — won't fire during test
+      url: TEST_SUITE_WEBSITE,
+    });
+    expect(createRes.statusCode).toBe(201);
+    const scheduleId = createRes.body.id;
+    createdScheduleIds.push(scheduleId);
+
+    const askRes = await request(TEST_API_URL)
+      .post(`/v1/schedules/${scheduleId}/ask`)
+      .set("Authorization", `Bearer ${identity.apiKey}`)
+      .set("Content-Type", "application/json")
+      .send({ question: "What is this page about?" });
+
+    expect(askRes.statusCode).toBe(400);
+    expect(askRes.body.success).toBe(false);
+  }, 15000);
+
+  it("returns 404 when asking an unknown schedule", async () => {
+    const res = await request(TEST_API_URL)
+      .post("/v1/schedules/00000000-0000-0000-0000-000000000000/ask")
+      .set("Authorization", `Bearer ${identity.apiKey}`)
+      .set("Content-Type", "application/json")
+      .send({ question: "test" });
+
+    expect(res.statusCode).toBe(404);
+    expect(res.body.success).toBe(false);
+  }, 10000);
+
+  it("returns 400 when asking with an empty question", async () => {
+    const createRes = await createScheduleRaw({
+      cron: "0 4 * * *",
+      url: TEST_SUITE_WEBSITE,
+    });
+    expect(createRes.statusCode).toBe(201);
+    const scheduleId = createRes.body.id;
+    createdScheduleIds.push(scheduleId);
+
+    const res = await request(TEST_API_URL)
+      .post(`/v1/schedules/${scheduleId}/ask`)
+      .set("Authorization", `Bearer ${identity.apiKey}`)
+      .set("Content-Type", "application/json")
+      .send({ question: "" });
+
+    expect(res.statusCode).toBe(400);
+    expect(res.body.success).toBe(false);
+  }, 15000);
+
+  // Q&A happy path — requires ANTHROPIC_API_KEY and a completed scrape run
+  itIf(!TEST_SELF_HOST || !!process.env.ANTHROPIC_API_KEY)(
+    "asks Claude a question about a scraped result",
+    async () => {
+      // Create a schedule that runs every minute so it fires quickly
+      const createRes = await createScheduleRaw({
+        cron: "* * * * *",
+        url: TEST_SUITE_WEBSITE,
+        scrapeOptions: { formats: ["markdown"] },
+      });
+      expect(createRes.statusCode).toBe(201);
+      const scheduleId = createRes.body.id;
+      createdScheduleIds.push(scheduleId);
+
+      // Wait up to 70s for the first run to complete and last_result to be populated
+      let lastResult: string | null = null;
+      const deadline = Date.now() + 70_000;
+      while (Date.now() < deadline) {
+        await new Promise(r => setTimeout(r, 5000));
+        const statusRes = await getScheduleRaw(scheduleId);
+        if (statusRes.body?.schedule?.last_result) {
+          lastResult = statusRes.body.schedule.last_result;
+          break;
+        }
+      }
+      expect(lastResult).toBeTruthy();
+
+      // Now ask Claude a question
+      const askRes = await request(TEST_API_URL)
+        .post(`/v1/schedules/${scheduleId}/ask`)
+        .set("Authorization", `Bearer ${identity.apiKey}`)
+        .set("Content-Type", "application/json")
+        .send({
+          question:
+            "What is the main topic of this page? Answer in one sentence.",
+        });
+
+      expect(askRes.statusCode).toBe(200);
+      expect(askRes.body.success).toBe(true);
+      expect(typeof askRes.body.answer).toBe("string");
+      expect(askRes.body.answer.length).toBeGreaterThan(0);
+    },
+    90000,
+  );
 });

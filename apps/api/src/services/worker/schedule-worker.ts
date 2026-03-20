@@ -10,7 +10,7 @@ import {
   getRedisConnection,
 } from "../queue-service";
 import { supabase_service } from "../supabase";
-import { addScrapeJob } from "../queue-jobs";
+import { addScrapeJob, waitForJob } from "../queue-jobs";
 import { createWebhookSender, WebhookEvent } from "../webhook/index";
 import { v7 as uuidv7 } from "uuid";
 import { fromV1ScrapeOptions } from "../../controllers/v2/types";
@@ -50,59 +50,44 @@ async function processScheduleJob(data: SchedulerJobData): Promise<void> {
   });
 
   try {
-    if (schedule.mode === "scrape") {
-      const scrapeOptions = schedule.scrape_options ?? {};
-      const { scrapeOptions: parsedOptions } = fromV1ScrapeOptions(
-        scrapeOptions,
-        undefined,
-        teamId,
-      );
-      await addScrapeJob(
-        {
-          mode: "single_urls",
-          url: schedule.url,
-          scrapeOptions: parsedOptions,
-          origin: "schedule",
-          team_id: teamId,
-          zeroDataRetention: false,
-          webhook: schedule.webhook ?? undefined,
-          v1: true,
-          is_scrape: true,
-          apiKeyId: null,
-        },
-        jobId,
-        0,
-        false,
-        false,
-      );
-    } else {
+    if (schedule.mode !== "scrape") {
       // crawl mode — dispatch as a scrape for v1; full crawl support is a future enhancement
       jobLogger.warn(
         "Crawl mode scheduling not yet implemented, treating as scrape",
       );
-      const { scrapeOptions: parsedOptions } = fromV1ScrapeOptions(
-        schedule.scrape_options ?? {},
-        undefined,
-        teamId,
-      );
-      await addScrapeJob(
-        {
-          mode: "single_urls",
-          url: schedule.url,
-          scrapeOptions: parsedOptions,
-          origin: "schedule",
-          team_id: teamId,
-          zeroDataRetention: false,
-          webhook: schedule.webhook ?? undefined,
-          v1: true,
-          is_scrape: true,
-          apiKeyId: null,
-        },
-        jobId,
-        0,
-        false,
-        false,
-      );
+    }
+
+    const scrapeOptions = schedule.scrape_options ?? {};
+    const { scrapeOptions: parsedOptions } = fromV1ScrapeOptions(
+      scrapeOptions,
+      undefined,
+      teamId,
+    );
+
+    const job = await addScrapeJob(
+      {
+        mode: "single_urls",
+        url: schedule.url,
+        scrapeOptions: parsedOptions,
+        origin: "schedule",
+        team_id: teamId,
+        zeroDataRetention: false,
+        webhook: schedule.webhook ?? undefined,
+        v1: true,
+        is_scrape: true,
+        apiKeyId: null,
+      },
+      jobId,
+      0,
+      false,
+      false,
+    );
+
+    // Wait for the scrape to complete and capture the result
+    let lastResult: string | null = null;
+    if (job) {
+      const doc = await waitForJob(job, 90_000, false, jobLogger);
+      lastResult = doc.markdown?.substring(0, 100_000) ?? null;
     }
 
     await supabase_service
@@ -110,6 +95,7 @@ async function processScheduleJob(data: SchedulerJobData): Promise<void> {
       .update({
         last_run_at: new Date().toISOString(),
         last_run_status: "completed",
+        last_result: lastResult,
         updated_at: new Date().toISOString(),
       })
       .eq("id", scheduleId);
@@ -118,11 +104,14 @@ async function processScheduleJob(data: SchedulerJobData): Promise<void> {
       await sender.send(WebhookEvent.SCHEDULE_COMPLETED, {
         success: true,
         scheduleId,
-        data: [],
+        data: lastResult ? [{ markdown: lastResult } as any] : [],
       });
     }
 
-    jobLogger.info("Schedule run dispatched", { jobId });
+    jobLogger.info("Schedule run completed", {
+      jobId,
+      hasResult: !!lastResult,
+    });
   } catch (error) {
     Sentry.captureException(error);
     jobLogger.error("Schedule run failed", { error });
@@ -133,6 +122,7 @@ async function processScheduleJob(data: SchedulerJobData): Promise<void> {
         last_run_at: new Date().toISOString(),
         last_run_status: "failed",
         updated_at: new Date().toISOString(),
+        // last_result left unchanged — keep last successful result
       })
       .eq("id", scheduleId);
 

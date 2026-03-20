@@ -48,6 +48,7 @@ import { scheduleListController } from "../controllers/v1/schedule-list";
 import { scheduleStatusController } from "../controllers/v1/schedule-status";
 import { scheduleCancelController } from "../controllers/v1/schedule-cancel";
 import { scheduleUpdateController } from "../controllers/v1/schedule-update";
+import { scheduleAskController } from "../controllers/v1/schedule-ask";
 
 expressWs(express());
 
@@ -345,6 +346,12 @@ v1Router.patch(
   "/schedules/:scheduleId",
   authMiddleware(RateLimiterMode.Schedule),
   wrap(scheduleUpdateController),
+);
+
+v1Router.post(
+  "/schedules/:scheduleId/ask",
+  authMiddleware(RateLimiterMode.Schedule),
+  wrap(scheduleAskController),
 );
 
 // Only register x402 routes if X402_PAY_TO_ADDRESS is configured
