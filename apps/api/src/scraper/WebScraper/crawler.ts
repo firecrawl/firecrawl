@@ -307,6 +307,19 @@ export class WebCrawler {
           return false;
         }
 
+        // Filter out URLs with userinfo (basic auth credentials or malformed mailto)
+        // e.g. https://user:pass@example.com or https://email@example.com
+        if (url.username || url.password) {
+          if (config.FIRECRAWL_DEBUG_FILTER_LINKS) {
+            this.logger.debug(`${link} USERINFO FAIL`);
+          }
+          denialReasons.set(
+            link,
+            "This URL contains embedded credentials (userinfo) in the format user:pass@host or user@host. These are typically malformed mailto links or basic auth URLs that should not be crawled. Modern browsers strip this information from URLs.",
+          );
+          return false;
+        }
+
         const depth = getURLDepth(url.toString());
 
         // Check if the link exceeds the maximum depth allowed
@@ -667,6 +680,14 @@ export class WebCrawler {
     const links = await extractLinks(html);
     const filteredLinks: string[] = [];
     for (const link of links) {
+      // Skip non-http protocols and URLs with userinfo (basic auth / malformed mailto)
+      if (link.startsWith("mailto:") || link.startsWith("tel:")) continue;
+      try {
+        const parsed = new URL(link, url);
+        if (parsed.username || parsed.password) continue;
+      } catch {
+        continue;
+      }
       const filterResult = await this.filterURL(link, url);
       if (filterResult.allowed && filterResult.url) {
         filteredLinks.push(filterResult.url);
@@ -683,8 +704,17 @@ export class WebCrawler {
       const element = $("a")[i];
       let href = $(element).attr("href");
       if (href) {
+        // Skip non-http protocols (mailto, tel, etc.)
+        if (href.startsWith("mailto:") || href.startsWith("tel:") || href.startsWith("ftp:") || href.startsWith("ssh:") || href.startsWith("file:") || href.startsWith("telnet:")) continue;
         if (href.match(/^https?:\/[^\/]/)) {
           href = href.replace(/^https?:\//, "$&/");
+        }
+        // Skip URLs with userinfo (basic auth credentials or malformed mailto)
+        try {
+          const parsed = new URL(href, url);
+          if (parsed.username || parsed.password) continue;
+        } catch {
+          // If URL can't be parsed, filterURL will handle it
         }
         const filterResult = await this.filterURL(href, url);
         if (filterResult.allowed && filterResult.url) {
@@ -717,7 +747,10 @@ export class WebCrawler {
           (await this.extractLinksFromHTMLRust(html, url))
             .map(x => {
               try {
-                return new URL(x, url).href;
+                const parsed = new URL(x, url);
+                // Final safety check: reject URLs with userinfo
+                if (parsed.username || parsed.password) return null;
+                return parsed.href;
               } catch (e) {
                 return null;
               }
