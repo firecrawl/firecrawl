@@ -436,10 +436,25 @@ async function scrapeURLLoopIter(
     // NOTE: TODO: what to do when status code is bad is tough...
     // we cannot just rely on text because error messages can be brief and not hit the limit
     // should we just use all the fallbacks and pick the one with the longest text? - mogery
-    if (isLongEnough || !isGoodStatusCode) {
-      meta.logger.info("Scrape via " + engine + " deemed successful.", {
-        factors: { isLongEnough, isGoodStatusCode, hasNoPageError },
-      });
+    //
+    // When the page returns a good status code but has no content, this is a
+    // valid empty page — not an engine failure. We accept the result so the
+    // caller gets a 200 with empty content instead of a misleading 500
+    // SCRAPE_ALL_ENGINES_FAILED error. (fixes #2316)
+    if (isLongEnough || !isGoodStatusCode || (isGoodStatusCode && hasNoPageError)) {
+      if (!isLongEnough && isGoodStatusCode && hasNoPageError) {
+        meta.logger.info(
+          "Scrape via " + engine + " returned empty content with a good status code. Treating as successful empty page.",
+          {
+            factors: { isLongEnough, isGoodStatusCode, hasNoPageError },
+            statusCode: engineResult.statusCode,
+          },
+        );
+      } else {
+        meta.logger.info("Scrape via " + engine + " deemed successful.", {
+          factors: { isLongEnough, isGoodStatusCode, hasNoPageError },
+        });
+      }
       return engineResult;
     } else {
       meta.logger.warn("Scrape via " + engine + " deemed unsuccessful.", {
