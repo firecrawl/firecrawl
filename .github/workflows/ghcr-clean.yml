@@ -8,7 +8,7 @@ jobs:
     name: Delete Untagged Images
     runs-on: blacksmith-2vcpu-ubuntu-2404
     steps:
-      - uses: bots-house/ghcr-delete-image-action@v1.1.0
+      - uses: bots-house/ghcr-delete-image-action@3827559c68cb4dcdf54d813ea9853be6d468d3a4 # v1.1.0
         with:
           owner: firecrawl
           name: firecrawl

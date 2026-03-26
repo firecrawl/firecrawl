@@ -62,7 +62,7 @@ jobs:
 
       - name: Publish test report
         if: always() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork == false)
-        uses: dorny/test-reporter@v1
+        uses: dorny/test-reporter@3eeb9fc888e82e8be2fb356bbeec2750231672bc # v1
         with:
           name: Java SDK Test Report
           path: apps/java-sdk/build/test-results/test/*.xml
