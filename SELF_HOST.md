@@ -62,6 +62,9 @@ USE_DB_AUTHENTICATION=false
 # OPENAI_BASE_URL=https://example.com/v1
 # OPENAI_API_KEY=
 
+# Anthropic API key — required for the /v1/schedules/:id/ask (Claude Q&A) endpoint
+# ANTHROPIC_API_KEY=
+
 ## === Proxy ===
 # PROXY_SERVER can be a full URL (e.g. http://0.1.2.3:1234) or just an IP and port combo (e.g. 0.1.2.3:1234)
 # Do not uncomment PROXY_USERNAME and PROXY_PASSWORD if your proxy is unauthenticated
@@ -80,10 +83,12 @@ USE_DB_AUTHENTICATION=false
 
 ## === Other ===
 
-# Supabase Setup (used to support DB authentication, advanced logging, etc.)
+# Supabase Setup (used to support DB authentication, advanced logging, scheduled scrapes, etc.)
 # SUPABASE_ANON_TOKEN=
 # SUPABASE_URL=
 # SUPABASE_SERVICE_TOKEN=
+# After configuring Supabase, apply the migration:
+#   apps/api/src/services/schedules-migration.sql
 
 # Use if you've set up authentication and want to test with a real API key
 # TEST_API_KEY=
