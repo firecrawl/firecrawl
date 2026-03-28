@@ -1,0 +1,3 @@
+firecrawl-py>=1.0.0
+ragflow-sdk>=0.15.0
+python-dotenv>=1.0.0

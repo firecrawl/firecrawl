@@ -43,7 +43,7 @@
 
 [**Firecrawl**](https://firecrawl.dev/?ref=github) is an API that scrapes, crawls, and extracts structured data from any website, powering AI agents and apps with real-time context from the web.
 
-Looking for our MCP? Check out the repo [here](https://github.com/firecrawl/firecrawl-mcp-server).
+Looking for our MCP? Check out the repo [here](https://github.com/firecrawl/firecrawl-mcp-server). For detailed installation instructions covering 30+ MCP-compatible environments (Claude Desktop, Cursor, VS Code, Windsurf, Cline, Zed, JetBrains, and many more), see the **[MCP Installation Guide](./MCP_INSTALLATION.md)**.
 
 *This repository is in development, and we're still integrating custom modules into the mono repo. It's not fully ready for self-hosted deployment yet, but you can run it locally.*
 
@@ -747,7 +747,7 @@ end
 
 **Agents & AI Tools**
 - [Firecrawl Skill](https://docs.firecrawl.dev/sdks/cli)
-- [Firecrawl MCP](https://github.com/mendableai/firecrawl-mcp-server)
+- [Firecrawl MCP](https://github.com/mendableai/firecrawl-mcp-server) | [Installation Guide for 30+ environments](./MCP_INSTALLATION.md)
 
 **Platforms**
 - [Lovable](https://docs.lovable.dev/integrations/firecrawl)
