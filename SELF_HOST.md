@@ -62,6 +62,11 @@ USE_DB_AUTHENTICATION=false
 # OPENAI_BASE_URL=https://example.com/v1
 # OPENAI_API_KEY=
 
+# When using OpenAI-compatible proxies (Azure, LiteLLM, vLLM, etc.), set this to false
+# to use the Chat Completions API (/v1/chat/completions) instead of the Responses API (/v1/responses)
+# If OPENAI_BASE_URL is set and USE_RESPONSES_ENDPOINT is not specified, Chat Completions API is used automatically
+# USE_RESPONSES_ENDPOINT=false
+
 ## === Proxy ===
 # PROXY_SERVER can be a full URL (e.g. http://0.1.2.3:1234) or just an IP and port combo (e.g. 0.1.2.3:1234)
 # Do not uncomment PROXY_USERNAME and PROXY_PASSWORD if your proxy is unauthenticated
