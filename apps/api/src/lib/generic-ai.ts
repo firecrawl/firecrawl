@@ -58,10 +58,28 @@ export function getModel(name: string, provider: Provider = defaultProvider) {
     name = "gemini-2.5-pro";
   }
   const modelName = config.MODEL_NAME || name;
-  // o3-mini returns empty text via the Responses API — force Chat Completions
-  if (provider === "openai" && modelName.startsWith("o3-mini")) {
-    return providerList.openai.chat(modelName);
+
+  if (provider === "openai") {
+    // o3-mini returns empty text via the Responses API — force Chat Completions
+    if (modelName.startsWith("o3-mini")) {
+      return providerList.openai.chat(modelName);
+    }
+
+    // Determine API mode for OpenAI:
+    // - USE_RESPONSES_ENDPOINT explicitly set to "true" → use Responses API
+    // - USE_RESPONSES_ENDPOINT explicitly set to "false" → use Chat Completions API
+    // - OPENAI_BASE_URL is set (proxy) and USE_RESPONSES_ENDPOINT not set → use Chat Completions API (proxy detection)
+    // - Otherwise → use Responses API (default for official OpenAI)
+    const useResponsesApi =
+      config.USE_RESPONSES_ENDPOINT === true ||
+      (config.USE_RESPONSES_ENDPOINT === undefined && !config.OPENAI_BASE_URL);
+
+    if (!useResponsesApi) {
+      // Use Chat Completions API for OpenAI-compatible proxies
+      return providerList.openai.chat(modelName);
+    }
   }
+
   return providerList[provider](modelName);
 }
 

@@ -195,6 +195,10 @@ const configSchema = z.object({
   MODEL_EMBEDDING_NAME: z.string().optional(),
   OLLAMA_BASE_URL: z.string().optional(),
   VERTEX_CREDENTIALS: z.string().optional(),
+  // Controls whether to use OpenAI Responses API (/v1/responses) or Chat Completions API (/v1/chat/completions)
+  // Set to "false" when using OpenAI-compatible proxies (Azure, LiteLLM, vLLM) that don't support Responses API
+  // Defaults to "true" for official OpenAI API, but "false" when OPENAI_BASE_URL is set (proxy detection)
+  USE_RESPONSES_ENDPOINT: z.stringbool().optional(),
 
   // Rate Limiting
   RATE_LIMIT_TEST_API_KEY_SCRAPE: z.coerce.number().optional(),
