@@ -10,7 +10,7 @@ import { getRateLimiter } from "../services/rate-limiter";
 import { deleteKey, getValue, setValue } from "../services/redis";
 import { redlock } from "../services/redlock";
 import { supabase_rr_service, supabase_service } from "../services/supabase";
-import { AuthResponse, RateLimiterMode } from "../types";
+import { AuthResponse, RateLimiterMode, RateLimitInfo } from "../types";
 import { AuthCreditUsageChunk, AuthCreditUsageChunkFromTeam } from "./v1/types";
 import {
   isAutumnCheckEnabled,
@@ -513,8 +513,36 @@ async function supaAuthenticateUser(
 
   const team_endpoint_token = token === config.PREVIEW_TOKEN ? iptoken : teamId;
 
+  // Helper function to build RateLimitInfo
+  const buildRateLimitInfo = (
+    rateLimiterRes: any,
+    isLimited: boolean = false,
+  ): RateLimitInfo => {
+    const limit = rateLimiter.points ?? rateLimiter._points ?? 0;
+    const remaining = rateLimiterRes.remainingPoints ?? 0;
+    const msBeforeNext = rateLimiterRes.msBeforeNext ?? 60000;
+    const reset = Math.floor((Date.now() + msBeforeNext) / 1000);
+    
+    const info: RateLimitInfo = {
+      limit,
+      remaining,
+      reset,
+    };
+    
+    if (isLimited) {
+      info.retryAfter = Math.ceil(msBeforeNext / 1000);
+    }
+    
+    return info;
+  };
+
   try {
-    await rateLimiter.consume(team_endpoint_token);
+    const rateLimiterRes = await rateLimiter.consume(team_endpoint_token);
+    // Build rate limit info for successful request
+    const rateLimitInfo = buildRateLimitInfo(rateLimiterRes, false);
+
+    // Attach rate limit info to request for middleware to use
+    req.rateLimitInfo = rateLimitInfo;
   } catch (rateLimiterRes) {
     // logger.error(`Rate limit exceeded: ${rateLimiterRes}`, {
     //   teamId,
@@ -527,6 +555,9 @@ async function supaAuthenticateUser(
     const secs = Math.round(rateLimiterRes.msBeforeNext / 1000) || 1;
     const retryDate = new Date(Date.now() + rateLimiterRes.msBeforeNext);
 
+    // Build rate limit info for rate-limited request
+    const rateLimitInfo = buildRateLimitInfo(rateLimiterRes, true);
+
     // We can only send a rate limit email every 7 days, send notification already has the date in between checking
     // const startDate = new Date();
     // const endDate = new Date();
@@ -538,6 +569,7 @@ async function supaAuthenticateUser(
       success: false,
       error: `Rate limit exceeded. Consumed (req/min): ${rateLimiterRes.consumedPoints}, Remaining (req/min): ${rateLimiterRes.remainingPoints}. Upgrade your plan at https://firecrawl.dev/pricing for increased rate limits or please retry after ${secs}s, resets at ${retryDate}`,
       status: 429,
+      rateLimitInfo,
     };
   }
 
@@ -556,6 +588,7 @@ async function supaAuthenticateUser(
       team_id: `preview_${iptoken}`,
       org_id: null,
       chunk: null,
+      rateLimitInfo: req.rateLimitInfo,
     };
     // check the origin of the request and make sure its from firecrawl.dev
     // const origin = req.headers.origin;
@@ -595,5 +628,6 @@ async function supaAuthenticateUser(
     team_id: teamId ?? undefined,
     org_id: chunk?.org_id ?? null,
     chunk,
+    rateLimitInfo: req.rateLimitInfo,
   };
 }

@@ -6,7 +6,7 @@ import {
   RequestWithMaybeAuth,
   RequestWithMaybeACUC,
 } from "../controllers/v1/types";
-import { RateLimiterMode } from "../types";
+import { RateLimiterMode, RateLimitInfo } from "../types";
 import { authenticateUser } from "../controllers/auth";
 import { createIdempotencyKey } from "../services/idempotency/create";
 import { validateIdempotencyKey } from "../services/idempotency/validate";
@@ -29,6 +29,31 @@ import {
   isAutumnCheckEnabled,
   isAutumnCheckDryRun,
 } from "../services/autumn/autumn.service";
+
+/**
+ * Sets standard rate limit headers on the response following IETF draft specification.
+ * Headers set:
+ * - X-RateLimit-Limit: Maximum requests per window
+ * - X-RateLimit-Remaining: Remaining requests in current window
+ * - X-RateLimit-Reset: Unix timestamp when rate limit resets
+ * - X-RateLimit-Retry-After: Seconds until retry (only when rate limited)
+ */
+export function setRateLimitHeaders(
+  res: Response,
+  rateLimitInfo?: RateLimitInfo,
+): void {
+  if (!rateLimitInfo) {
+    return;
+  }
+
+  res.setHeader("X-RateLimit-Limit", rateLimitInfo.limit);
+  res.setHeader("X-RateLimit-Remaining", rateLimitInfo.remaining);
+  res.setHeader("X-RateLimit-Reset", rateLimitInfo.reset);
+
+  if (rateLimitInfo.retryAfter) {
+    res.setHeader("X-RateLimit-Retry-After", rateLimitInfo.retryAfter);
+  }
+}
 
 export function checkCreditsMiddleware(
   _minimum?: number,
@@ -244,6 +269,11 @@ export function authMiddleware(
       const auth = await authenticateUser(req, res, currentRateLimiterMode);
 
       if (!auth.success) {
+        // Set rate limit headers on error response if available
+        if (auth.rateLimitInfo) {
+          setRateLimitHeaders(res, auth.rateLimitInfo);
+        }
+        
         if (!res.headersSent) {
           return res
             .status(auth.status)
@@ -264,6 +294,8 @@ export function authMiddleware(
             : chunk.remaining_credits,
         };
       }
+      // Rate limit info is already set on req by authenticateUser
+      // It will be used by rateLimitHeadersMiddleware
       next();
     })().catch(err => next(err));
   };
@@ -419,6 +451,12 @@ export function requestTimingMiddleware(version: string) {
           requestTime,
           statusCode: res.statusCode,
         });
+      }
+
+      // Set rate limit headers from req.rateLimitInfo if available
+      // This ensures headers are set on all responses
+      if ((req as any).rateLimitInfo) {
+        setRateLimitHeaders(res, (req as any).rateLimitInfo);
       }
 
       return originalJson(body);

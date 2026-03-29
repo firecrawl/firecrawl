@@ -147,6 +147,13 @@ export enum RateLimiterMode {
   BrowserExecute = "browserExecute",
 }
 
+export type RateLimitInfo = {
+  limit: number;
+  remaining: number;
+  reset: number; // Unix timestamp in seconds when the rate limit resets
+  retryAfter?: number; // Seconds until retry (only set when rate limited)
+};
+
 export type AuthResponse =
   | {
       success: true;
@@ -154,11 +161,13 @@ export type AuthResponse =
       org_id?: string | null;
       api_key?: string;
       chunk: AuthCreditUsageChunk | null;
+      rateLimitInfo?: RateLimitInfo;
     }
   | {
       success: false;
       error: string;
       status: number;
+      rateLimitInfo?: RateLimitInfo;
     };
 
 export enum NotificationType {
