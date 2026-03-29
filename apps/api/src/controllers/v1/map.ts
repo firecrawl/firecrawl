@@ -124,6 +124,7 @@ export async function getMapResults({
   id?: string;
 }): Promise<MapResult> {
   const id = providedId ?? uuidv7();
+  const startTime = Date.now();
   let links: string[] = [url];
   let mapResults: MapDocument[] = [];
 
@@ -354,7 +355,7 @@ export async function getMapResults({
     mapResults: mapResults,
     scrape_id: origin?.includes("website") ? id : undefined,
     job_id: id,
-    time_taken: (new Date().getTime() - Date.now()) / 1000,
+    time_taken: (Date.now() - startTime) / 1000,
   };
 }
 
