@@ -24,5 +24,10 @@
     "@types/user-agents": "^1.0.4",
     "tsx": "^4.21.0",
     "typescript": "^5.9.3"
+  },
+  "pnpm": {
+    "overrides": {
+      "path-to-regexp@<8.4.0": ">=8.4.0"
+    }
   }
 }
