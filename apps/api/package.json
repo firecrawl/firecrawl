@@ -193,7 +193,7 @@
       "yaml@<2.8.3": ">=2.8.3",
       "smol-toml@<1.6.1": ">=1.6.1",
       "handlebars": ">=4.7.9",
-      "path-to-regexp@<0.1.13": ">=0.1.13",
+      "path-to-regexp@~0.1.12": "0.1.13",
       "brace-expansion": ">=5.0.5"
     }
   },
