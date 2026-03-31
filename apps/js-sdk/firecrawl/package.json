@@ -26,7 +26,7 @@
   "author": "Mendable.ai",
   "license": "MIT",
   "dependencies": {
-    "axios": "^1.13.5",
+    "axios": "1.14.0",
     "firecrawl": "4.16.0",
     "typescript-event-target": "^1.1.1",
     "zod": "^3.23.8",
@@ -69,7 +69,9 @@
       "rollup@<4.59.0": ">=4.59.0",
       "picomatch@<4.0.4": ">=4.0.4",
       "handlebars": ">=4.7.9",
-      "brace-expansion": ">=5.0.5"
+      "brace-expansion": ">=5.0.5",
+      "axios@>=1.14.1 <1.15.0": "1.14.0",
+      "axios@>=0.30.4 <0.31.0": "0.30.3"
     }
   }
 }
