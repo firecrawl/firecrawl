@@ -148,6 +148,9 @@ services:
         compress: "true"
   
   nuq-postgres:
+    # NOTE: If you don't want to build the image locally,
+    # comment out the build: statement and uncomment the image: statement
+    # image: ghcr.io/firecrawl/nuq-postgres:latest
     build: apps/nuq-postgres
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
