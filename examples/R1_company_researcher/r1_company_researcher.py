@@ -5,6 +5,10 @@ import requests
 from dotenv import load_dotenv
 from openai import OpenAI
 from serpapi.google_search import GoogleSearch
+try:
+    from tavily import TavilyClient
+except ImportError:
+    TavilyClient = None
 
 # ANSI color codes
 class Colors:
@@ -23,12 +27,27 @@ load_dotenv()
 client = OpenAI(api_key=os.getenv("DEEPSEEK_API_KEY"), base_url="https://api.deepseek.com")
 firecrawl_api_key = os.getenv("FIRECRAWL_API_KEY")
 serp_api_key = os.getenv("SERP_API_KEY")
+tavily_api_key = os.getenv("TAVILY_API_KEY")
 
 def search_google(query):
     """Search Google using SerpAPI and return top results."""
     print(f"{Colors.YELLOW}Searching Google for '{query}'...{Colors.RESET}")
     search = GoogleSearch({"q": query, "api_key": serp_api_key})
     return search.get_dict().get("organic_results", [])
+
+def search_tavily(query):
+    """Search the web using Tavily and return results in SerpAPI-compatible format."""
+    print(f"{Colors.YELLOW}Searching with Tavily for '{query}'...{Colors.RESET}")
+    client_tavily = TavilyClient(api_key=tavily_api_key)
+    response = client_tavily.search(query=query, max_results=10)
+    return [{"title": r.get("title", ""), "link": r.get("url", ""), "snippet": r.get("content", "")}
+            for r in response.get("results", [])]
+
+def search_web(query):
+    """Search the web using Tavily if available, otherwise fall back to SerpAPI."""
+    if tavily_api_key and TavilyClient is not None:
+        return search_tavily(query)
+    return search_google(query)
 
 def select_urls_with_r1(company, objective, serp_results):
     """
@@ -180,7 +199,7 @@ def main():
     company = input(f"{Colors.BLUE}Enter the company name: {Colors.RESET}")
     objective = input(f"{Colors.BLUE}Enter what information you want about the company: {Colors.RESET}")
     
-    serp_results = search_google(f"{company}")
+    serp_results = search_web(f"{company}")
     if not serp_results:
         print(f"{Colors.RED}No search results found.{Colors.RESET}")
         return

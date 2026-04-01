@@ -4,6 +4,10 @@ import time
 import requests
 from dotenv import load_dotenv
 from serpapi.google_search import GoogleSearch
+try:
+    from tavily import TavilyClient
+except ImportError:
+    TavilyClient = None
 from openai import OpenAI
 
 # ANSI color codes
@@ -27,6 +31,7 @@ if not openai_api_key:
 client = OpenAI(api_key=openai_api_key)
 firecrawl_api_key = os.getenv("FIRECRAWL_API_KEY")
 serp_api_key = os.getenv("SERP_API_KEY")
+tavily_api_key = os.getenv("TAVILY_API_KEY")
 
 if not firecrawl_api_key:
     print(f"{Colors.RED}Warning: FIRECRAWL_API_KEY not found in environment variables{Colors.RESET}")
@@ -84,6 +89,23 @@ def search_google(query, company):
     except Exception as e:
         print(f"{Colors.RED}Error in search_google: {str(e)}{Colors.RESET}")
         return []
+
+def search_tavily(query, company):
+    """Search the web using Tavily and return results in SerpAPI-compatible format."""
+    search_query = f"{company} company {query}"
+    print(f"{Colors.YELLOW}Searching with Tavily for information about {company}...{Colors.RESET}")
+    client_tavily = TavilyClient(api_key=tavily_api_key)
+    response = client_tavily.search(query=search_query, max_results=10)
+    results = [{"title": r.get("title", ""), "link": r.get("url", ""), "snippet": r.get("content", "")}
+               for r in response.get("results", [])]
+    print(f"{Colors.GREEN}Found {len(results)} search results{Colors.RESET}")
+    return results
+
+def search_web(query, company):
+    """Search the web using Tavily if available, otherwise fall back to SerpAPI."""
+    if tavily_api_key and TavilyClient is not None:
+        return search_tavily(query, company)
+    return search_google(query, company)
 
 def validate_official_source(url, company):
     """Check if a URL is likely an official company source."""
@@ -398,7 +420,7 @@ def main():
     company = input(f"{Colors.BLUE}Enter the company name: {Colors.RESET}")
     objective = input(f"{Colors.BLUE}Enter what information you want about the company: {Colors.RESET}")
     
-    serp_results = search_google(objective, company)
+    serp_results = search_web(objective, company)
     if not serp_results:
         print(f"{Colors.RED}No search results found.{Colors.RESET}")
         return

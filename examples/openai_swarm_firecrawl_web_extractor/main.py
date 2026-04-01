@@ -4,6 +4,10 @@ from swarm import Agent
 from swarm.repl import run_demo_loop
 import dotenv
 from serpapi import GoogleSearch
+try:
+    from tavily import TavilyClient
+except ImportError:
+    TavilyClient = None
 from openai import OpenAI
 
 dotenv.load_dotenv()
@@ -18,6 +22,23 @@ def search_google(query, objective):
     search = GoogleSearch({"q": query, "api_key": os.getenv("SERP_API_KEY")})
     results = search.get_dict().get("organic_results", [])
     return {"objective": objective, "results": results}
+
+def search_tavily(query, objective):
+    """Search the web using Tavily."""
+    print(f"Parameters: query={query}, objective={objective}")
+    tavily_api_key = os.getenv("TAVILY_API_KEY")
+    client_tavily = TavilyClient(api_key=tavily_api_key)
+    response = client_tavily.search(query=query, max_results=10)
+    results = [{"title": r.get("title", ""), "link": r.get("url", ""), "snippet": r.get("content", "")}
+               for r in response.get("results", [])]
+    return {"objective": objective, "results": results}
+
+def search_web(query, objective):
+    """Search the web using Tavily if available, otherwise fall back to SerpAPI."""
+    tavily_api_key = os.getenv("TAVILY_API_KEY")
+    if tavily_api_key and TavilyClient is not None:
+        return search_tavily(query, objective)
+    return search_google(query, objective)
 
 def map_url_pages(url, objective):
     """Map a website's pages using Firecrawl."""
@@ -94,7 +115,7 @@ user_interface_agent = Agent(
 google_search_agent = Agent(
     name="Google Search Agent",
     instructions="You are a google search agent specialized in searching the web. Only search for the website not any specific page. When you are done, you must hand off to the map agent.",
-    functions=[search_google, handoff_to_map_url],
+    functions=[search_web, handoff_to_map_url],
 )
 
 map_url_agent = Agent(

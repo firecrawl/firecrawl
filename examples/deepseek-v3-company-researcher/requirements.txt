@@ -2,4 +2,5 @@ python-dotenv>=1.0.0
 requests>=2.31.0
 openai>=1.12.0
 google-search-results>=2.4.2
-serpapi>=0.1.5 
+serpapi>=0.1.5
+tavily-python>=0.5.0
