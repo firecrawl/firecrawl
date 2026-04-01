@@ -234,6 +234,42 @@ describeIf(TEST_PRODUCTION || HAS_SEARCH || HAS_PROXY)("Search tests", () => {
     60000,
   );
 
+  // Tavily-specific tests (only run when TAVILY_API_KEY is set)
+  concurrentIf(!!config.TAVILY_API_KEY)(
+    "tavily: returns web results",
+    async () => {
+      const res = await search(
+        {
+          query: "firecrawl web scraping",
+        },
+        identity,
+      );
+      expect(res.web).toBeDefined();
+      expect(res.web?.length).toBeGreaterThan(0);
+      expect(res.web![0].url).toBeDefined();
+      expect(res.web![0].title).toBeDefined();
+    },
+    60000,
+  );
+
+  concurrentIf(!!config.TAVILY_API_KEY)(
+    "tavily: graceful fallback for nonsense query",
+    async () => {
+      const res = await search(
+        {
+          query: "xyzzy999zzz__no_results_expected",
+          limit: 1,
+        },
+        identity,
+      );
+      // The search pipeline falls through to other providers if Tavily
+      // returns nothing, so we just verify no error is thrown and we get
+      // a valid response shape.
+      expect(res).toBeDefined();
+    },
+    60000,
+  );
+
   // SEARXNG-specific pagination tests
   concurrentIf(!!config.SEARXNG_ENDPOINT)(
     "searxng respects limit of 2 results",

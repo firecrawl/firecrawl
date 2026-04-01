@@ -71,7 +71,6 @@ export async function search({
       logger.info("Using Tavily search");
       const results = await tavilySearch(query, {
         num_results,
-        lang,
         country,
       });
       if (results.web && results.web.length > 0) return results;
