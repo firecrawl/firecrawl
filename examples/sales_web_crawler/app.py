@@ -6,10 +6,6 @@ from dotenv import load_dotenv
 from firecrawl import FirecrawlApp
 from openai import OpenAI
 from serpapi import GoogleSearch
-try:
-    from tavily import TavilyClient
-except ImportError:
-    TavilyClient = None
 from swarm import Agent
 from swarm.repl import run_demo_loop
 

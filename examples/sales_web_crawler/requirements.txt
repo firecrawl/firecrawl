@@ -2,4 +2,3 @@ firecrawl-py
 openai
 google-search-results
 git+https://github.com/openai/swarm.git
-tavily-python>=0.5.0
