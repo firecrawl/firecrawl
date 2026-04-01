@@ -89,6 +89,7 @@
     "@sentry/cli": "^2.58.2",
     "@sentry/node": "^10.27.0",
     "@supabase/supabase-js": "^2.52.0",
+    "@tavily/core": "^0.7.2",
     "@types/ws": "^8.5.12",
     "@x402/core": "^2.4.0",
     "@x402/evm": "^2.4.0",
