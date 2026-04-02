@@ -72,6 +72,11 @@ const deleteKey = async (key: string) => {
 
 export { setValue, getValue, deleteKey };
 
+console.log("REDIS_RATE_LIMIT_URL:", process.env.REDIS_RATE_LIMIT_URL);
+console.log("REDIS_EVICT_URL:", process.env.REDIS_EVICT_URL);
+console.log("REDIS_URL:", process.env.REDIS_URL);
+console.log("REDIS_HOST:", process.env.REDIS_HOST);
+
 const redisEvictURL = config.REDIS_EVICT_URL ?? config.REDIS_RATE_LIMIT_URL;
 export const redisEvictConnection = new IORedis(redisEvictURL!, {
   enableAutoPipelining: true,
