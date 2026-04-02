@@ -13,6 +13,7 @@ import {
 } from "./llmExtract";
 import { uploadScreenshot } from "./uploadScreenshot";
 import { removeBase64Images } from "./removeBase64Images";
+import { sanitizeUnicodeLineTerminators } from "./sanitizeUnicodeLineTerminators";
 import { performAgent } from "./agent";
 import { performAttributes } from "./performAttributes";
 
@@ -535,6 +536,7 @@ const transformerStack: Transformer[] = [
   fetchAudio,
   coerceFieldsToFormats,
   removeBase64Images,
+  sanitizeUnicodeLineTerminators,
 ];
 
 export async function executeTransformers(
