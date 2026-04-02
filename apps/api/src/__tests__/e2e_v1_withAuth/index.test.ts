@@ -976,6 +976,28 @@ describe("E2E Tests for v1 API Routes", () => {
     );
 
     it.concurrent(
+      "should return crawl status immediately after create (no Job not found race)",
+      async () => {
+        const crawlResponse = await request(TEST_URL)
+          .post("/v1/crawl")
+          .set("Authorization", `Bearer ${config.TEST_API_KEY}`)
+          .set("Content-Type", "application/json")
+          .send({ url: "https://docs.firecrawl.dev", limit: 1 });
+        expect(crawlResponse.statusCode).toBe(200);
+        expect(crawlResponse.body.id).toBeDefined();
+
+        const statusResponse = await request(TEST_URL)
+          .get(`/v1/crawl/${crawlResponse.body.id}`)
+          .set("Authorization", `Bearer ${config.TEST_API_KEY}`);
+
+        expect(statusResponse.statusCode).toBe(200);
+        expect(statusResponse.body.success).toBe(true);
+        expect(statusResponse.body).toHaveProperty("status");
+        expect(statusResponse.body.error).not.toBe("Job not found");
+      },
+    );
+
+    it.concurrent(
       "should return a successful crawl status response for a valid crawl job",
       async () => {
         const crawlResponse = await request(TEST_URL)

@@ -203,7 +203,13 @@ export async function crawlStatusController(
   );
   const sc = await getCrawl(req.params.jobId);
 
-  if (!group || (!groupAnyJob && (!sc || sc.team_id !== req.auth.team_id))) {
+  // Team ownership is verified by groupAnyJob (Postgres, team-scoped) or sc (Redis, team-scoped).
+  // group alone is not team-scoped so it cannot authorize access by itself.
+  // sc is checked as a fallback for the Postgres read-replica lag race condition.
+  const teamVerified =
+    groupAnyJob ||
+    (sc && sc.team_id === req.auth.team_id);
+  if (!teamVerified) {
     return res.status(404).json({ success: false, error: "Job not found" });
   }
 
@@ -229,13 +235,21 @@ export async function crawlStatusController(
   // check if the crawl failed during kickoff (e.g. queue full)
   const crawlError = await getCrawlError(req.params.jobId);
 
+  const statusFromGroup = group
+    ? group.status === "active"
+      ? "scraping"
+      : group.status
+    : crawlError
+      ? "failed"
+      : "scraping";
+
   let outputBulkA: {
     status?: "completed" | "scraping" | "cancelled" | "failed";
     completed?: number;
     total?: number;
     creditsUsed?: number;
   } = {
-    status: group.status === "active" ? "scraping" : group.status,
+    status: statusFromGroup,
     completed: numericStats.completed ?? 0,
     total:
       (numericStats.completed ?? 0) +
@@ -246,11 +260,7 @@ export async function crawlStatusController(
   };
 
   // if the crawl has a stored error and no jobs were ever created, mark as failed
-  if (
-    crawlError &&
-    outputBulkA.total === 0 &&
-    outputBulkA.status === "completed"
-  ) {
+  if (crawlError && outputBulkA.total === 0) {
     outputBulkA.status = "failed";
   }
 
