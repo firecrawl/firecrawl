@@ -10,7 +10,8 @@ RUN corepack enable
 # Build Go shared library
 FROM golang:1.24 AS go-build
 WORKDIR /app
-COPY sharedLibs/go-html-to-md ./sharedLibs/go-html-to-md
+# COPY sharedLibs/go-html-to-md ./sharedLibs/go-html-to-md
+COPY apps/api/sharedLibs/go-html-to-md ./sharedLibs/go-html-to-md
 
 RUN cd sharedLibs/go-html-to-md && \
     go mod download && \
