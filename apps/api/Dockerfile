@@ -10,8 +10,7 @@ RUN corepack enable
 # Build Go shared library
 FROM golang:1.24 AS go-build
 WORKDIR /app
-# COPY sharedLibs/go-html-to-md ./sharedLibs/go-html-to-md
-COPY apps/api/sharedLibs/go-html-to-md ./sharedLibs/go-html-to-md
+COPY sharedLibs/go-html-to-md ./sharedLibs/go-html-to-md
 
 RUN cd sharedLibs/go-html-to-md && \
     go mod download && \
@@ -37,10 +36,8 @@ RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --no
     && chmod -R a+w $RUSTUP_HOME $CARGO_HOME
 
 # Copy source files
-# COPY pnpm-lock.yaml pnpm-workspace.yaml package.json ./
-# COPY . .
-COPY apps/api/pnpm-lock.yaml apps/api/pnpm-workspace.yaml apps/api/package.json ./
-COPY apps/api .
+COPY pnpm-lock.yaml pnpm-workspace.yaml package.json ./
+COPY . .
 
 # Install dependencies
 #RUN --mount=type=cache,id=cache-pnpm-store,target=/pnpm/store \

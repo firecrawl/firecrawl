@@ -50,6 +50,7 @@ import {
   INTERACT_CREDITS_PER_HOUR,
   calculateBrowserSessionCredits,
 } from "../../lib/browser-billing";
+import { autumnService } from "../../services/autumn/autumn.service";
 
 // ---------------------------------------------------------------------------
 // Schemas
@@ -354,11 +355,14 @@ export async function scrapeStopInteractiveBrowserController(
 
   invalidateActiveBrowserSessionCount(session.team_id).catch(() => {});
   removeConcurrencyLimitActiveJob(session.team_id, session.id).catch(error => {
-    logger.error("Failed to remove concurrency limiter entry for browser session", {
-      error,
-      sessionId: session.id,
-      teamId: session.team_id,
-    });
+    logger.error(
+      "Failed to remove concurrency limiter entry for browser session",
+      {
+        error,
+        sessionId: session.id,
+        teamId: session.team_id,
+      },
+    );
   });
 
   if (!claimed) {
@@ -462,7 +466,13 @@ async function createSessionForScrape(
 
   // Credit check (uses base rate — actual billing may be higher if prompts are used)
   const estimatedCredits = calculateBrowserSessionCredits(ttl * 1000);
-  if (req.acuc && req.acuc.remaining_credits < estimatedCredits) {
+  const autumnAllowed = await autumnService.checkCredits({
+    teamId: req.auth.team_id,
+    value: estimatedCredits,
+    properties: { source: "scrapeBrowserCreate", path: req.path },
+  });
+
+  if (autumnAllowed === false) {
     return {
       status: 402,
       body: {

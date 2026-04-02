@@ -32,6 +32,7 @@ import {
   INTERACT_CREDITS_PER_HOUR,
   calculateBrowserSessionCredits,
 } from "../../lib/browser-billing";
+import { autumnService } from "../../services/autumn/autumn.service";
 
 // ---------------------------------------------------------------------------
 // Zod schemas
@@ -225,10 +226,15 @@ export async function browserCreateController(
 
   // 0a. Check if team has enough credits for the full TTL
   const estimatedCredits = calculateBrowserSessionCredits(ttl * 1000);
-  if (req.acuc && req.acuc.remaining_credits < estimatedCredits) {
+  const autumnAllowed = await autumnService.checkCredits({
+    teamId: req.auth.team_id,
+    value: estimatedCredits,
+    properties: { source: "browserCreate", path: req.path },
+  });
+
+  if (autumnAllowed === false) {
     logger.warn("Insufficient credits for browser session TTL", {
       estimatedCredits,
-      remainingCredits: req.acuc.remaining_credits,
       ttl,
     });
     return res.status(402).json({
