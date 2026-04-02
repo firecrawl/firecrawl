@@ -40,9 +40,9 @@ COPY pnpm-lock.yaml pnpm-workspace.yaml package.json ./
 COPY . .
 
 # Install dependencies
-RUN --mount=type=cache,id=pnpm,target=/pnpm/store \
-    --mount=type=cache,target=/usr/local/cargo/registry \
-    --mount=type=cache,target=/app/native/target \
+RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store \
+    --mount=type=cache,id=cargo-cache,target=/usr/local/cargo/registry \
+    --mount=type=cache,id=native-target,target=/app/native/target \
     pnpm install --frozen-lockfile
 
 # Build the application
