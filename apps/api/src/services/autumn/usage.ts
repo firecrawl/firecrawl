@@ -156,15 +156,29 @@ export async function getTeamHistoricalUsage(
 
   const orgId = await lookupOrgId(teamId);
 
-  const response = await autumnClient.events.aggregate({
-    customerId: orgId,
-    entityId: teamId,
-    featureId: CREDITS_FEATURE_ID,
-    range: "3bc",
-    binSize: "month",
-  });
+  // Try entity-scoped aggregate first, fall back to customer-level
+  let response: any;
+  try {
+    response = await autumnClient.events.aggregate({
+      customerId: orgId,
+      entityId: teamId,
+      featureId: CREDITS_FEATURE_ID,
+      range: "3bc",
+      binSize: "month",
+    });
+  } catch (err: any) {
+    const status = err?.statusCode ?? err?.status ?? err?.response?.status;
+    if (status !== 404) throw err;
+    // Entity not found — retry at customer level
+    response = await autumnClient.events.aggregate({
+      customerId: orgId,
+      featureId: CREDITS_FEATURE_ID,
+      range: "3bc",
+      binSize: "month",
+    });
+  }
 
-  return response.list.map(entry => ({
+  return response.list.map((entry: any) => ({
     startDate: new Date(entry.period).toISOString(),
     endDate: null,
     creditsUsed: entry.values?.[CREDITS_FEATURE_ID] ?? 0,
