@@ -139,6 +139,13 @@ interface HistoricalPeriod {
   creditsUsed: number;
 }
 
+interface HistoricalPeriodByApiKey {
+  startDate: string | null;
+  endDate: string | null;
+  apiKey: string;
+  creditsUsed: number;
+}
+
 /**
  * Fetches a team's historical credit usage across billing periods from Autumn.
  *
@@ -193,6 +200,72 @@ export async function getTeamHistoricalUsage(
 }
 
 /**
+ * Fetches a team's historical credit usage grouped by API key from Autumn.
+ *
+ * Uses `groupBy: "properties.apiKeyId"` to break down usage per API key.
+ */
+export async function getTeamHistoricalUsageByApiKey(
+  teamId: string,
+): Promise<HistoricalPeriodByApiKey[]> {
+  if (!autumnClient) {
+    throw new Error(
+      "Autumn client is not configured (AUTUMN_SECRET_KEY missing)",
+    );
+  }
+
+  const orgId = await lookupOrgId(teamId);
+
+  let response: any;
+  try {
+    response = await autumnClient.events.aggregate({
+      customerId: orgId,
+      entityId: teamId,
+      featureId: CREDITS_FEATURE_ID,
+      range: "3bc",
+      binSize: "month",
+      groupBy: "properties.apiKeyId",
+    });
+  } catch (err: any) {
+    const status = err?.statusCode ?? err?.status ?? err?.response?.status;
+    if (status !== 404) throw err;
+    response = await autumnClient.events.aggregate({
+      customerId: orgId,
+      featureId: CREDITS_FEATURE_ID,
+      range: "3bc",
+      binSize: "month",
+      groupBy: "properties.apiKeyId",
+    });
+  }
+
+  const results: HistoricalPeriodByApiKey[] = [];
+
+  for (const entry of response.list ?? []) {
+    let startDate: string | null = null;
+    if (entry.period != null) {
+      const d = new Date(entry.period);
+      if (!isNaN(d.getTime())) startDate = d.toISOString();
+    }
+
+    const grouped = entry.groupedValues?.[CREDITS_FEATURE_ID] as
+      | Record<string, number>
+      | undefined;
+
+    if (grouped) {
+      for (const [apiKey, creditsUsed] of Object.entries(grouped)) {
+        results.push({
+          startDate,
+          endDate: null,
+          apiKey,
+          creditsUsed: creditsUsed ?? 0,
+        });
+      }
+    }
+  }
+
+  return results;
+}
+
+/**
  * Converts historical credit periods to token periods.
  * Tokens = credits × 15.
  */
@@ -202,6 +275,24 @@ export function toTokenPeriods(
   return periods.map(p => ({
     startDate: p.startDate,
     endDate: p.endDate,
+    tokensUsed: p.creditsUsed * TOKENS_PER_CREDIT,
+  }));
+}
+
+/**
+ * Converts historical credit periods (by API key) to token periods.
+ * Tokens = credits × 15.
+ */
+export function toTokenPeriodsByApiKey(periods: HistoricalPeriodByApiKey[]): {
+  startDate: string | null;
+  endDate: string | null;
+  apiKey: string;
+  tokensUsed: number;
+}[] {
+  return periods.map(p => ({
+    startDate: p.startDate,
+    endDate: p.endDate,
+    apiKey: p.apiKey,
     tokensUsed: p.creditsUsed * TOKENS_PER_CREDIT,
   }));
 }
