@@ -178,11 +178,18 @@ export async function getTeamHistoricalUsage(
     });
   }
 
-  return response.list.map((entry: any) => ({
-    startDate: new Date(entry.period).toISOString(),
-    endDate: null,
-    creditsUsed: entry.values?.[CREDITS_FEATURE_ID] ?? 0,
-  }));
+  return (response.list ?? []).map((entry: any) => {
+    let startDate: string | null = null;
+    if (entry.period != null) {
+      const d = new Date(entry.period);
+      if (!isNaN(d.getTime())) startDate = d.toISOString();
+    }
+    return {
+      startDate,
+      endDate: null,
+      creditsUsed: entry.values?.[CREDITS_FEATURE_ID] ?? 0,
+    };
+  });
 }
 
 /**
