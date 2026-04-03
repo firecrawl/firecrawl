@@ -3,6 +3,7 @@ import { supabase_rr_service } from "../supabase";
 import { autumnClient } from "./client";
 
 const CREDITS_FEATURE_ID = "CREDITS";
+const TOKENS_PER_CREDIT = 15;
 
 // ---------------------------------------------------------------------------
 // Types
@@ -50,7 +51,9 @@ export async function getTeamBalance(
   teamId: string,
 ): Promise<TeamBalance | null> {
   if (!autumnClient) {
-    throw new Error("Autumn client is not configured (AUTUMN_SECRET_KEY missing)");
+    throw new Error(
+      "Autumn client is not configured (AUTUMN_SECRET_KEY missing)",
+    );
   }
 
   const orgId = await lookupOrgId(teamId);
@@ -124,4 +127,60 @@ export async function getTeamBalance(
       ? new Date(periodEndEpoch * 1000).toISOString()
       : null,
   };
+}
+
+// ---------------------------------------------------------------------------
+// Historical usage (across billing periods)
+// ---------------------------------------------------------------------------
+
+interface HistoricalPeriod {
+  startDate: string | null;
+  endDate: string | null;
+  creditsUsed: number;
+}
+
+/**
+ * Fetches a team's historical credit usage across billing periods from Autumn.
+ *
+ * Uses `events.aggregate` with `range: "3bc"` (3 billing cycles) and
+ * `binSize: "month"` to return per-period usage totals.
+ */
+export async function getTeamHistoricalUsage(
+  teamId: string,
+): Promise<HistoricalPeriod[]> {
+  if (!autumnClient) {
+    throw new Error(
+      "Autumn client is not configured (AUTUMN_SECRET_KEY missing)",
+    );
+  }
+
+  const orgId = await lookupOrgId(teamId);
+
+  const response = await autumnClient.events.aggregate({
+    customerId: orgId,
+    entityId: teamId,
+    featureId: CREDITS_FEATURE_ID,
+    range: "3bc",
+    binSize: "month",
+  });
+
+  return response.list.map(entry => ({
+    startDate: new Date(entry.period).toISOString(),
+    endDate: null,
+    creditsUsed: entry.values?.[CREDITS_FEATURE_ID] ?? 0,
+  }));
+}
+
+/**
+ * Converts historical credit periods to token periods.
+ * Tokens = credits × 15.
+ */
+export function toTokenPeriods(
+  periods: HistoricalPeriod[],
+): { startDate: string | null; endDate: string | null; tokensUsed: number }[] {
+  return periods.map(p => ({
+    startDate: p.startDate,
+    endDate: p.endDate,
+    tokensUsed: p.creditsUsed * TOKENS_PER_CREDIT,
+  }));
 }

@@ -3,6 +3,8 @@ import {
   batchScrape,
   crawl,
   creditUsage,
+  creditUsageHistorical,
+  tokenUsageHistorical,
   idmux,
   map,
   scrape,
@@ -567,6 +569,62 @@ describeIf(TEST_PRODUCTION)("Billing tests", () => {
       }
     },
     600000,
+  );
+
+  it.concurrent(
+    "returns historical credit usage",
+    async () => {
+      const identity = await idmux({
+        name: "billing/returns historical credit usage",
+        credits: 100,
+      });
+
+      const result = await creditUsageHistorical(identity);
+
+      expect(result.success).toBe(true);
+      expect(Array.isArray(result.periods)).toBe(true);
+
+      for (const period of result.periods) {
+        expect(typeof period.creditsUsed).toBe("number");
+        expect(period.creditsUsed).toBeGreaterThanOrEqual(0);
+      }
+
+      // Verify periods are sorted by startDate ascending
+      for (let i = 1; i < result.periods.length; i++) {
+        const prev = new Date(result.periods[i - 1].startDate ?? 0).getTime();
+        const curr = new Date(result.periods[i].startDate ?? 0).getTime();
+        expect(curr).toBeGreaterThanOrEqual(prev);
+      }
+    },
+    60000,
+  );
+
+  it.concurrent(
+    "returns historical token usage",
+    async () => {
+      const identity = await idmux({
+        name: "billing/returns historical token usage",
+        credits: 100,
+      });
+
+      const result = await tokenUsageHistorical(identity);
+
+      expect(result.success).toBe(true);
+      expect(Array.isArray(result.periods)).toBe(true);
+
+      for (const period of result.periods) {
+        expect(typeof period.tokensUsed).toBe("number");
+        expect(period.tokensUsed).toBeGreaterThanOrEqual(0);
+      }
+
+      // Verify periods are sorted by startDate ascending
+      for (let i = 1; i < result.periods.length; i++) {
+        const prev = new Date(result.periods[i - 1].startDate ?? 0).getTime();
+        const curr = new Date(result.periods[i].startDate ?? 0).getTime();
+        expect(curr).toBeGreaterThanOrEqual(prev);
+      }
+    },
+    60000,
   );
 
   it.concurrent(

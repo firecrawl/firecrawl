@@ -429,6 +429,46 @@ export async function creditUsage(
   return req.body.data;
 }
 
+export async function creditUsageHistorical(identity: Identity): Promise<{
+  success: boolean;
+  periods: {
+    startDate: string | null;
+    endDate: string | null;
+    creditsUsed: number;
+  }[];
+}> {
+  const req = await request(TEST_API_URL)
+    .get("/v2/team/credit-usage/historical")
+    .set("Authorization", `Bearer ${identity.apiKey}`)
+    .set("Content-Type", "application/json");
+
+  if (req.status !== 200) {
+    throw req.body;
+  }
+
+  return req.body;
+}
+
+export async function tokenUsageHistorical(identity: Identity): Promise<{
+  success: boolean;
+  periods: {
+    startDate: string | null;
+    endDate: string | null;
+    tokensUsed: number;
+  }[];
+}> {
+  const req = await request(TEST_API_URL)
+    .get("/v2/team/token-usage/historical")
+    .set("Authorization", `Bearer ${identity.apiKey}`)
+    .set("Content-Type", "application/json");
+
+  if (req.status !== 200) {
+    throw req.body;
+  }
+
+  return req.body;
+}
+
 // =========================================
 // Concurrency API
 // =========================================
