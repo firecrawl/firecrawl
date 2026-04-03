@@ -37,6 +37,42 @@ async function lookupOrgId(teamId: string): Promise<string> {
   return data.org_id;
 }
 
+/**
+ * Maps numeric API key IDs to their display names from the api_keys table.
+ * Returns a map of id → name.  Unknown IDs are mapped to their string representation.
+ */
+async function lookupApiKeyNames(
+  apiKeyIds: string[],
+): Promise<Record<string, string>> {
+  const numericIds = apiKeyIds
+    .map(id => Number(id))
+    .filter(n => !isNaN(n) && n > 0);
+
+  const nameMap: Record<string, string> = {};
+
+  if (numericIds.length > 0) {
+    const { data } = await supabase_rr_service
+      .from("api_keys")
+      .select("id, name")
+      .in("id", numericIds);
+
+    if (data) {
+      for (const row of data) {
+        nameMap[String(row.id)] = row.name;
+      }
+    }
+  }
+
+  // Fall back to raw ID string for any keys not found
+  for (const id of apiKeyIds) {
+    if (!nameMap[id]) {
+      nameMap[id] = id;
+    }
+  }
+
+  return nameMap;
+}
+
 // ---------------------------------------------------------------------------
 // Balance (current billing period)
 // ---------------------------------------------------------------------------
@@ -185,15 +221,26 @@ export async function getTeamHistoricalUsage(
     });
   }
 
-  return (response.list ?? []).map((entry: any) => {
+  const list = response.list ?? [];
+
+  return list.map((entry: any, i: number) => {
     let startDate: string | null = null;
     if (entry.period != null) {
       const d = new Date(entry.period);
       if (!isNaN(d.getTime())) startDate = d.toISOString();
     }
+
+    // Derive endDate from the next bin's start timestamp
+    let endDate: string | null = null;
+    const nextEntry = list[i + 1];
+    if (nextEntry?.period != null) {
+      const nd = new Date(nextEntry.period);
+      if (!isNaN(nd.getTime())) endDate = nd.toISOString();
+    }
+
     return {
       startDate,
-      endDate: null,
+      endDate,
       creditsUsed: entry.values?.[CREDITS_FEATURE_ID] ?? 0,
     };
   });
@@ -237,13 +284,40 @@ export async function getTeamHistoricalUsageByApiKey(
     });
   }
 
+  const list = response.list ?? [];
+
+  // Collect all unique API key IDs so we can batch-lookup display names
+  const allApiKeyIds = new Set<string>();
+  for (const entry of list) {
+    const grouped = entry.groupedValues?.[CREDITS_FEATURE_ID] as
+      | Record<string, number>
+      | undefined;
+    if (grouped) {
+      for (const id of Object.keys(grouped)) {
+        allApiKeyIds.add(id);
+      }
+    }
+  }
+
+  const nameMap = await lookupApiKeyNames([...allApiKeyIds]);
+
   const results: HistoricalPeriodByApiKey[] = [];
 
-  for (const entry of response.list ?? []) {
+  for (let i = 0; i < list.length; i++) {
+    const entry = list[i];
+
     let startDate: string | null = null;
     if (entry.period != null) {
       const d = new Date(entry.period);
       if (!isNaN(d.getTime())) startDate = d.toISOString();
+    }
+
+    // Derive endDate from the next bin's start timestamp
+    let endDate: string | null = null;
+    const nextEntry = list[i + 1];
+    if (nextEntry?.period != null) {
+      const nd = new Date(nextEntry.period);
+      if (!isNaN(nd.getTime())) endDate = nd.toISOString();
     }
 
     const grouped = entry.groupedValues?.[CREDITS_FEATURE_ID] as
@@ -251,11 +325,11 @@ export async function getTeamHistoricalUsageByApiKey(
       | undefined;
 
     if (grouped) {
-      for (const [apiKey, creditsUsed] of Object.entries(grouped)) {
+      for (const [apiKeyId, creditsUsed] of Object.entries(grouped)) {
         results.push({
           startDate,
-          endDate: null,
-          apiKey,
+          endDate,
+          apiKey: nameMap[apiKeyId],
           creditsUsed: creditsUsed ?? 0,
         });
       }
