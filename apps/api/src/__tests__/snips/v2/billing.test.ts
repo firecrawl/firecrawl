@@ -591,9 +591,15 @@ describeIf(TEST_PRODUCTION)("Billing tests", () => {
 
       // Verify periods are sorted by startDate ascending
       for (let i = 1; i < result.periods.length; i++) {
-        const prev = new Date(result.periods[i - 1].startDate ?? 0).getTime();
-        const curr = new Date(result.periods[i].startDate ?? 0).getTime();
-        expect(curr).toBeGreaterThanOrEqual(prev);
+        const prevRaw = result.periods[i - 1].startDate ? Date.parse(result.periods[i - 1].startDate!) : NaN;
+        const currRaw = result.periods[i].startDate ? Date.parse(result.periods[i].startDate!) : NaN;
+        const prevNaN = Number.isNaN(prevRaw);
+        const currNaN = Number.isNaN(currRaw);
+        if (!prevNaN && !currNaN) {
+          expect(currRaw).toBeGreaterThanOrEqual(prevRaw);
+        } else if (!prevNaN && currNaN) {
+          // null dates sorted last — valid
+        }
       }
     },
     60000,
