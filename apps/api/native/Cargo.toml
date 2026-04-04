@@ -12,7 +12,7 @@ crate-type = ["cdylib"]
 chrono = { version = "0.4", features = ["serde"] }
 kuchikiki = "0.8.2"
 lol_html = "2.6.0"
-pdf-inspector = { git = "https://github.com/firecrawl/pdf-inspector", rev = "4d52d7a" }
+pdf-inspector = { git = "https://github.com/firecrawl/pdf-inspector", rev = "cf7e6b8" }
 maud = "0.27.0"
 napi = { version = "3.0.0", features = ["serde-json", "tokio_rt"] }
 napi-derive = "3.0.0"
