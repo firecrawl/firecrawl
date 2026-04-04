@@ -6,17 +6,28 @@ on:
       - main
     paths:
       - apps/nuq-postgres/**
+      - .github/workflows/deploy-nuq-postgres.yml
   workflow_dispatch:
 
 jobs:
-  push-app-image:
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+  build:
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      matrix:
+        include:
+          - platform: linux/amd64
+            runner: blacksmith-4vcpu-ubuntu-2404
+          - platform: linux/arm64
+            runner: blacksmith-4vcpu-ubuntu-2404-arm
     defaults:
       run:
         working-directory: './apps/nuq-postgres'
     steps:
       - name: 'Checkout GitHub Action'
         uses: actions/checkout@main
+
+      - name: Setup Blacksmith Builder
+        uses: useblacksmith/setup-docker-builder@ef12d5b165b596e3aa44ea8198d8fde563eab402 # v1
 
       - name: 'Login to GitHub Container Registry'
         uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
@@ -25,7 +36,46 @@ jobs:
           username: ${{github.actor}}
           password: ${{secrets.GITHUB_TOKEN}}
 
-      - name: 'Build NuQ Postgres Image'
+      - name: Lowercase Repo Owner
         run: |
-          docker build . --tag ghcr.io/firecrawl/nuq-postgres:latest
-          docker push ghcr.io/firecrawl/nuq-postgres:latest
+          echo "REPO_OWNER=${GITHUB_REPOSITORY_OWNER,,}" >>${GITHUB_ENV}
+        env:
+          GITHUB_REPOSITORY_OWNER: '${{ github.repository_owner }}'
+
+      - name: Extract platform suffix
+        run: |
+          platform=${{ matrix.platform }}
+          echo "PLATFORM_SUFFIX=${platform//\//-}" >> $GITHUB_ENV
+
+      - name: 'Build and Push Image'
+        uses: useblacksmith/build-push-action@30c71162f16ea2c27c3e21523255d209b8b538c1 # v2
+        with:
+          context: ./apps/nuq-postgres
+          push: true
+          tags: ghcr.io/${{ env.REPO_OWNER }}/nuq-postgres:${{ env.PLATFORM_SUFFIX }}
+          platforms: ${{ matrix.platform }}
+          provenance: false
+
+  manifest:
+    runs-on: blacksmith-2vcpu-ubuntu-2404
+    needs: build
+    steps:
+      - name: 'Login to GitHub Container Registry'
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          registry: ghcr.io
+          username: ${{github.actor}}
+          password: ${{secrets.GITHUB_TOKEN}}
+
+      - name: Lowercase Repo Owner
+        run: |
+          echo "REPO_OWNER=${GITHUB_REPOSITORY_OWNER,,}" >>${GITHUB_ENV}
+        env:
+          GITHUB_REPOSITORY_OWNER: '${{ github.repository_owner }}'
+
+      - name: 'Create and Push Multi-Arch Manifest'
+        run: |
+          docker manifest create ghcr.io/${{ env.REPO_OWNER }}/nuq-postgres:latest \
+            ghcr.io/${{ env.REPO_OWNER }}/nuq-postgres:linux-amd64 \
+            ghcr.io/${{ env.REPO_OWNER }}/nuq-postgres:linux-arm64
+          docker manifest push ghcr.io/${{ env.REPO_OWNER }}/nuq-postgres:latest
