@@ -62,6 +62,12 @@ export function getModel(name: string, provider: Provider = defaultProvider) {
   if (provider === "openai" && modelName.startsWith("o3-mini")) {
     return providerList.openai.chat(modelName);
   }
+  // Allow self-hosted deployments with OpenAI-compatible proxies (e.g. Azure, LiteLLM)
+  // that only support Chat Completions (/v1/chat/completions) to opt out of the
+  // Responses API (/v1/responses) by setting USE_RESPONSES_ENDPOINT=false
+  if (provider === "openai" && config.USE_RESPONSES_ENDPOINT === false) {
+    return providerList.openai.chat(modelName);
+  }
   return providerList[provider](modelName);
 }
 
