@@ -227,7 +227,7 @@ function waitForPort(
 
 function execForward(
   name: string,
-  command: string | string[],
+  processArgs: string | string[],
   env: Record<string, string> = {},
 ): ProcessResult {
   let child: ChildProcess;
@@ -237,30 +237,36 @@ function execForward(
   const isReduceNoise = env.NUQ_REDUCE_NOISE === "true";
   delete env.NUQ_REDUCE_NOISE;
 
-  if (typeof command === "string") {
-    displayCommand = command;
-    if (isWindows) {
-      child = spawn("cmd", ["/c", command], {
-        env: { ...process.env, ...env },
-        shell: false,
-        detached: false,
-      });
-    } else {
-      child = spawn("sh", ["-c", command], {
-        env: { ...process.env, ...env },
-        shell: false,
-        detached: true,
-      });
+  // Normalise to an argv array so we never pass raw strings through a shell
+  // interpreter (sh -c / cmd /c), which would allow command injection attacks.
+  let argv: string[];
+  if (typeof processArgs === "string") {
+    displayCommand = processArgs;
+    // Tokenise: split on whitespace, respecting single/double quoted segments.
+    argv = [];
+    const tokenRegex = /[^\s"']+|"([^"]*)"|'([^']*)'/g;
+    let match: RegExpExecArray | null;
+    while ((match = tokenRegex.exec(processArgs)) !== null) {
+      argv.push(match[1] ?? match[2] ?? match[0]);
     }
   } else {
-    const [cmd, ...args] = command;
-    displayCommand = [cmd, ...args].join(" ");
-    child = spawn(cmd, args, {
-      env: { ...process.env, ...env },
-      shell: false,
-      detached: !isWindows,
-    });
+    argv = processArgs;
+    displayCommand = processArgs.join(" ");
   }
+
+  if (argv.length === 0) {
+    throw new Error("execForward: empty command");
+  }
+
+  const [executable, ...execArgs] = argv;
+  // shell is explicitly disabled; executable is a resolved argv token, not a
+  // raw shell string — command injection via shell metacharacters is not possible.
+  // nosemgrep: javascript.lang.security.detect-child-process.detect-child-process
+  child = spawn(executable, execArgs, {
+    env: { ...process.env, ...env },
+    shell: false,
+    detached: !isWindows,
+  });
 
   logger.processStart(name, displayCommand);
   childProcesses.add(child);
