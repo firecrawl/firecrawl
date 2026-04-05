@@ -1675,6 +1675,18 @@ export const searchRequestSchema = z
     ignoreInvalidURLs: z.boolean().optional().prefault(false),
     asyncScraping: z.boolean().optional().prefault(false),
     __searchPreviewToken: z.string().optional(),
+    extract: z
+      .strictObject({
+        prompt: z.string().max(10000),
+        schema: z
+          .any()
+          .optional()
+          .transform(val => normalizeSchemaForOpenAI(val))
+          .refine(val => validateSchemaForOpenAI(val), {
+            message: OPENAI_SCHEMA_ERROR_MESSAGE,
+          }),
+      })
+      .optional(),
     scrapeOptions: baseScrapeOptions
       .extend({
         formats: z
@@ -1813,6 +1825,7 @@ export type SearchResponse =
       success: true;
       warning?: string;
       data: import("../../lib/entities").SearchV2Response;
+      extract?: any;
       creditsUsed: number;
       id: string;
     }

@@ -129,6 +129,7 @@ export async function searchController(
         categories: req.body.categories as CategoryOption[],
         enterprise: req.body.enterprise,
         scrapeOptions: req.body.scrapeOptions,
+        extract: req.body.extract,
         timeout: req.body.timeout,
       },
       {
@@ -199,12 +200,22 @@ export async function searchController(
       scrapeful: result.shouldScrape,
     });
 
-    return res.status(200).json({
+    const responseBody: any = {
       success: true,
       data: result.response,
       creditsUsed: result.totalCredits,
       id: jobId,
-    });
+    };
+
+    if (result.extract !== undefined) {
+      responseBody.extract = result.extract;
+    }
+
+    if (result.extractWarning) {
+      responseBody.warning = result.extractWarning;
+    }
+
+    return res.status(200).json(responseBody);
   } catch (error) {
     if (error instanceof z.ZodError) {
       logger.warn("Invalid request body", { error: error.issues });
