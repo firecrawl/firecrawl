@@ -22,60 +22,70 @@ import { RateLimiterMode } from "../types";
 
 export const adminRouter = express.Router();
 
+// Escape special path-to-regexp metacharacters so that BULL_AUTH_KEY values
+// containing characters like ) ( [ ] . * + ? are treated as literals in
+// Express route paths (which are internally compiled to regular expressions).
+function escapeRouteSegment(s: string | undefined): string {
+  if (!s) return "";
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+const authKey = escapeRouteSegment(config.BULL_AUTH_KEY);
+
 adminRouter.get(
-  `/admin/${config.BULL_AUTH_KEY}/redis-health`,
+  `/admin/${authKey}/redis-health`,
   redisHealthController,
 );
 
 adminRouter.post(
-  `/admin/${config.BULL_AUTH_KEY}/acuc-cache-clear`,
+  `/admin/${authKey}/acuc-cache-clear`,
   wrap(acucCacheClearController),
 );
 
 adminRouter.get(
-  `/admin/${config.BULL_AUTH_KEY}/feng-check`,
+  `/admin/${authKey}/feng-check`,
   wrap(checkFireEngine),
 );
 
-adminRouter.get(`/admin/${config.BULL_AUTH_KEY}/cclog`, wrap(cclogController));
+adminRouter.get(`/admin/${authKey}/cclog`, wrap(cclogController));
 
 adminRouter.get(
-  `/admin/${config.BULL_AUTH_KEY}/zdrcleaner`,
+  `/admin/${authKey}/zdrcleaner`,
   wrap(zdrcleanerController),
 );
 
 adminRouter.get(
-  `/admin/${config.BULL_AUTH_KEY}/index-queue-prometheus`,
+  `/admin/${authKey}/index-queue-prometheus`,
   wrap(indexQueuePrometheus),
 );
 
 adminRouter.get(
-  `/admin/${config.BULL_AUTH_KEY}/precrawl`,
+  `/admin/${authKey}/precrawl`,
   wrap(triggerPrecrawl),
 );
 
 adminRouter.get(
-  `/admin/${config.BULL_AUTH_KEY}/metrics`,
+  `/admin/${authKey}/metrics`,
   wrap(metricsController),
 );
 
 adminRouter.get(
-  `/admin/${config.BULL_AUTH_KEY}/nuq-metrics`,
+  `/admin/${authKey}/nuq-metrics`,
   wrap(nuqMetricsController),
 );
 
 adminRouter.post(
-  `/admin/${config.BULL_AUTH_KEY}/fsearch`,
+  `/admin/${authKey}/fsearch`,
   wrap(realtimeSearchController),
 );
 
 adminRouter.post(
-  `/admin/${config.BULL_AUTH_KEY}/concurrency-queue-backfill`,
+  `/admin/${authKey}/concurrency-queue-backfill`,
   wrap(concurrencyQueueBackfillController),
 );
 
 adminRouter.post(
-  `/admin/${config.BULL_AUTH_KEY}/crawl-monitor`,
+  `/admin/${authKey}/crawl-monitor`,
   authMiddleware(RateLimiterMode.Crawl),
   checkCreditsMiddleware(2),
   wrap(crawlMonitorController),
