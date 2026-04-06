@@ -25,11 +25,13 @@ function tryZodV4Conversion(schema: unknown): Record<string, unknown> | null {
   if (!isZodV4Schema(schema)) return null;
 
   try {
-    // Zod v4 exports toJSONSchema as a module-level function (z.toJSONSchema).
-    // Resolve the user's zod module — it's already loaded since the schema was
-    // created with it. Works in both CJS and ESM (tsup/esbuild shims require).
+    // The SDK bundles zod@3.x as a dependency, so a plain require("zod")
+    // resolves to v3 (which lacks toJSONSchema). Instead, resolve from the
+    // user's project root to find their zod@4.x installation.
     // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const zod = require("zod");
+    const { createRequire } = require("node:module") as typeof import("node:module");
+    const userRequire = createRequire(process.cwd() + "/package.json");
+    const zod = userRequire("zod");
     if (typeof zod?.toJSONSchema === "function") {
       return zod.toJSONSchema(schema) as Record<string, unknown>;
     }
