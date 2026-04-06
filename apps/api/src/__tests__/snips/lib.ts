@@ -30,7 +30,8 @@ export const HAS_PROXY = !!config.PROXY_SERVER;
 export const HAS_SEARCH = TEST_PRODUCTION || !!config.SEARXNG_ENDPOINT;
 
 const isLocalUrl = (x: string) =>
-  /^https?:\/\/(localhost|127\.0\.0\.1|10\.\d{1,3}\.\d{1,3}\.\d{1,3}|192\.168\.\d{1,3}\.\d{1,3}|172\.(1[6-9]|2\d|3[0-1])\.\d{1,3}\.\d{1,3})(:\d+)?([\/?#]|$)/i.test(
+  // Match localhost, private IPs, or k8s-style service names (no dots in hostname, or .svc.cluster.local)
+  /^https?:\/\/(localhost|127\.0\.0\.1|10\.\d{1,3}\.\d{1,3}\.\d{1,3}|192\.168\.\d{1,3}\.\d{1,3}|172\.(1[6-9]|2\d|3[0-1])\.\d{1,3}\.\d{1,3}|[a-z0-9-]+|[a-z0-9.-]+\.svc\.cluster\.local)(:\d+)?([\/?#]|$)/i.test(
     x as string,
   );
 

@@ -1,0 +1,962 @@
+name: Server Test Suite (k8s)
+
+on:
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:  # Allow manual triggering during development
+
+concurrency:
+  group: ci-k8s=${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build-images:
+    name: build images (cached)
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: firecrawl
+            context: ./apps/api
+            dockerfile: ./apps/api/Dockerfile
+            image: ghcr.io/${{ github.repository_owner }}/firecrawl-ci
+          - name: test-site
+            context: ./apps/test-site
+            dockerfile: ./apps/test-site/Dockerfile
+            image: ghcr.io/${{ github.repository_owner }}/test-site-ci
+          - name: playwright-service
+            context: ./apps/playwright-service-ts
+            dockerfile: ./apps/playwright-service-ts/Dockerfile
+            image: ghcr.io/${{ github.repository_owner }}/playwright-service-ci
+    steps:
+      - uses: actions/checkout@v5
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+      - name: Build and push image
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.context }}
+          file: ${{ matrix.dockerfile }}
+          push: true
+          tags: ${{ matrix.image }}:${{ github.sha }}
+          cache-from: type=gha,scope=${{ matrix.name }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.name }}
+
+  k8s-test:
+    name: k8s environment tests
+    needs: build-images
+    strategy:
+      fail-fast: false
+      matrix:
+        engine: ["playwright", "fetch"]
+        proxy: ["proxy", "no-proxy"]
+        search: ["searxng"]
+        ai: ["openai"]
+    runs-on: blacksmith-32vcpu-ubuntu-2404
+    env:
+      HOST: 0.0.0.0
+      TEST_SUITE_SELF_HOSTED: true
+      TEST_SUITE_WEBSITE: http://test-site.default.svc.cluster.local:4321
+      OPENAI_API_KEY: ${{ matrix.ai == 'openai' && secrets.OPENAI_API_KEY || '' }}
+      SEARXNG_ENDPOINT: ${{ matrix.search == 'searxng' && 'http://searxng.default.svc.cluster.local:3434' || '' }}
+      PLAYWRIGHT_MICROSERVICE_URL: ${{ matrix.engine == 'playwright' && 'http://playwright-service.default.svc.cluster.local:3003/scrape' || '' }}
+      PROXY_SERVER: ${{ matrix.proxy == 'proxy' && secrets.PROXY_SERVER || '' }}
+      PROXY_USERNAME: ${{ matrix.proxy == 'proxy' && secrets.PROXY_USERNAME || '' }}
+      PROXY_PASSWORD: ${{ matrix.proxy == 'proxy' && secrets.PROXY_PASSWORD || '' }}
+      NUQ_DATABASE_URL: postgres://postgres:postgres@nuq-postgres.default.svc.cluster.local:5432/postgres
+      NUQ_RABBITMQ_URL: amqp://rabbitmq.default.svc.cluster.local:5672
+      USE_GO_MARKDOWN_PARSER: true
+      ALLOW_LOCAL_WEBHOOKS: true
+      FIRECRAWL_LOG_TO_FILE: true
+    steps:
+      - uses: actions/checkout@v5
+
+      # Clone private firecrawl-infra repo for Helm charts
+      - name: Clone firecrawl-infra
+        uses: actions/checkout@v5
+        with:
+          repository: firecrawl/firecrawl-infra
+          token: ${{ secrets.FIRECRAWL_INFRA_PAT }}
+          path: infra
+
+      # ===========================================
+      # Performance Profiling: Initialize timing
+      # ===========================================
+
+      - name: Initialize performance profiling
+        run: |
+          mkdir -p logs/performance
+          echo "WORKFLOW_START=$(date +%s)" >> $GITHUB_ENV
+          echo "workflow_start,$(date +%s)" > logs/performance/timings.csv
+          echo "Performance profiling initialized at $(date -Iseconds)"
+
+      # ===========================================
+      # Phase 1: Basic Infrastructure
+      # ===========================================
+
+      - name: Record Phase 1 start
+        run: echo "phase1_start,$(date +%s)" >> logs/performance/timings.csv
+
+      - name: Install k3s
+        run: |
+          curl -sfL https://get.k3s.io | sh -s - \
+            --write-kubeconfig-mode 644 \
+            --disable traefik \
+            --disable metrics-server
+
+          # Give k3s service time to start
+          sleep 10
+
+          # Wait for k3s to be ready with retry logic
+          for i in {1..6}; do
+            echo "Waiting for k3s nodes (attempt $i/6)..."
+            if sudo k3s kubectl wait --for=condition=ready node --all --timeout=30s 2>/dev/null; then
+              echo "k3s nodes are ready"
+              break
+            else
+              echo "k3s nodes not ready yet, waiting..."
+              sleep 10
+            fi
+          done
+
+          # Final check - fail if still not ready
+          sudo k3s kubectl wait --for=condition=ready node --all --timeout=10s
+
+          # Set up kubeconfig for subsequent steps
+          mkdir -p ~/.kube
+          sudo cp /etc/rancher/k3s/k3s.yaml ~/.kube/config
+          sudo chown $USER:$USER ~/.kube/config
+          chmod 600 ~/.kube/config
+
+      - name: Install Helm
+        run: |
+          curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+
+      - name: Install RabbitMQ Operator
+        run: |
+          kubectl apply -f https://github.com/rabbitmq/cluster-operator/releases/latest/download/cluster-operator.yml
+          kubectl wait --for=condition=ready pod -l app.kubernetes.io/name=rabbitmq-cluster-operator -n rabbitmq-system --timeout=120s
+
+      - name: Install NGINX Ingress Controller
+        run: |
+          helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx
+          helm repo update
+          helm install nginx-ingress ingress-nginx/ingress-nginx \
+            --set controller.service.type=NodePort \
+            --set controller.service.nodePorts.http=30080 \
+            --set controller.service.nodePorts.https=30443 \
+            --wait --timeout 5m
+
+      - name: Record Phase 1 end
+        run: echo "phase1_end,$(date +%s)" >> logs/performance/timings.csv
+
+      # ===========================================
+      # Verify Phase 1 infrastructure
+      # ===========================================
+
+      - name: Verify k3s cluster health
+        run: |
+          echo "=== Cluster Info ==="
+          kubectl cluster-info
+
+          echo "=== Node Status ==="
+          kubectl get nodes -o wide
+
+          echo "=== All Pods ==="
+          kubectl get pods -A
+
+          echo "=== RabbitMQ Operator ==="
+          kubectl get pods -n rabbitmq-system
+
+          echo "=== Ingress Controller ==="
+          kubectl get pods -n default -l app.kubernetes.io/name=ingress-nginx
+
+      # ===========================================
+      # Phase 2: Core Services Deployment
+      # ===========================================
+
+      - name: Record core services start
+        run: echo "core_services_start,$(date +%s)" >> logs/performance/timings.csv
+
+      - name: Create GHCR image pull secret
+        env:
+          GHCR_TOKEN: ${{ github.token }}
+        run: |
+          kubectl create secret docker-registry ghcr-secret \
+            --docker-server=ghcr.io \
+            --docker-username="${{ github.actor }}" \
+            --docker-password="$GHCR_TOKEN" \
+            --docker-email="noreply@github.com" \
+            --dry-run=client -o yaml | kubectl apply -f -
+
+          kubectl patch serviceaccount default -p '{"imagePullSecrets":[{"name":"ghcr-secret"}]}'
+
+      - name: Create secrets for Firecrawl
+        run: |
+          # Create the secret required by the Helm chart
+          # These environment variables come from GitHub secrets and matrix config
+          kubectl create secret generic secret \
+            --from-literal=OPENAI_API_KEY="${{ secrets.OPENAI_API_KEY || '' }}" \
+            --from-literal=PROXY_SERVER="${{ matrix.proxy == 'proxy' && secrets.PROXY_SERVER || '' }}" \
+            --from-literal=PROXY_USERNAME="${{ matrix.proxy == 'proxy' && secrets.PROXY_USERNAME || '' }}" \
+            --from-literal=PROXY_PASSWORD="${{ matrix.proxy == 'proxy' && secrets.PROXY_PASSWORD || '' }}" \
+            --from-literal=SEARXNG_ENDPOINT="${{ matrix.search == 'searxng' && 'http://searxng:3434' || '' }}" \
+            --from-literal=PLAYWRIGHT_MICROSERVICE_URL="${{ matrix.engine == 'playwright' && 'http://playwright-service:3003/scrape' || '' }}" \
+            --from-literal=TEST_SUITE_WEBSITE="http://test-site.default.svc.cluster.local:4321"
+
+      - name: Deploy Firecrawl via Helm
+        run: |
+          # Deploy using CI test values
+          helm install firecrawl ./infra/helm-charts/firecrawl \
+            -f ./infra/helm-charts/firecrawl/values-ci-test.yaml \
+            --set image.registry=ghcr.io \
+            --set image.repository=${{ github.repository_owner }}/firecrawl-ci \
+            --set image.tag=${{ github.sha }} \
+            --set image.pullSecrets[0].name=ghcr-secret \
+            --wait \
+            --timeout 10m \
+            --debug
+
+      - name: Wait for core services
+        run: |
+          echo "=== Waiting for deployments ==="
+          kubectl wait --for=condition=available deployment --all --timeout=300s || true
+
+          echo "=== Waiting for pods ==="
+          kubectl wait --for=condition=ready pod -l app.kubernetes.io/name=firecrawl --timeout=300s || true
+
+          echo "=== Current pod status ==="
+          kubectl get pods -o wide
+
+      - name: Verify inter-service connectivity
+        run: |
+          echo "=== Testing Redis connectivity ==="
+          kubectl run redis-test --rm -i --restart=Never --image=redis:alpine -- \
+            redis-cli -h redis -p 6379 PING || echo "Redis test completed"
+
+          echo "=== Testing RabbitMQ connectivity ==="
+          kubectl run rabbitmq-test --rm -i --restart=Never --image=curlimages/curl -- \
+            curl -s http://rabbitmq:15672 || echo "RabbitMQ test completed"
+
+          echo "=== Testing PostgreSQL connectivity ==="
+          kubectl run pg-test --rm -i --restart=Never --image=postgres:15-alpine -- \
+            pg_isready -h nuq-postgres -p 5432 || echo "PostgreSQL test completed"
+
+          echo "=== Service endpoints ==="
+          kubectl get endpoints
+
+      - name: Record core services end
+        run: echo "core_services_end,$(date +%s)" >> logs/performance/timings.csv
+
+      # ===========================================
+      # Phase 3: Deploy Supporting Services
+      # ===========================================
+
+      - name: Record supporting services start
+        run: echo "supporting_services_start,$(date +%s)" >> logs/performance/timings.csv
+
+      - name: Deploy test-site
+        run: |
+          cat <<EOF | kubectl apply -f -
+          apiVersion: apps/v1
+          kind: Deployment
+          metadata:
+            name: test-site
+          spec:
+            replicas: 1
+            selector:
+              matchLabels:
+                app: test-site
+            template:
+              metadata:
+                labels:
+                  app: test-site
+              spec:
+                imagePullSecrets:
+                - name: ghcr-secret
+                containers:
+                - name: test-site
+                  image: ghcr.io/${{ github.repository_owner }}/test-site-ci:${{ github.sha }}
+                  ports:
+                  - containerPort: 4321
+                  resources:
+                    requests:
+                      memory: 128Mi
+                      cpu: 100m
+                    limits:
+                      memory: 512Mi
+                      cpu: 500m
+                  readinessProbe:
+                    httpGet:
+                      path: /
+                      port: 4321
+                    initialDelaySeconds: 5
+                    periodSeconds: 5
+                    timeoutSeconds: 3
+                    failureThreshold: 3
+                  livenessProbe:
+                    httpGet:
+                      path: /
+                      port: 4321
+                    initialDelaySeconds: 10
+                    periodSeconds: 10
+                    timeoutSeconds: 5
+                    failureThreshold: 3
+          ---
+          apiVersion: v1
+          kind: Service
+          metadata:
+            name: test-site
+          spec:
+            selector:
+              app: test-site
+            ports:
+            - port: 4321
+              targetPort: 4321
+          EOF
+
+          kubectl wait --for=condition=available deployment/test-site --timeout=120s
+
+      - name: Deploy SearXNG
+        if: matrix.search == 'searxng'
+        run: |
+          cat <<EOF | kubectl apply -f -
+          apiVersion: v1
+          kind: ConfigMap
+          metadata:
+            name: searxng-config
+          data:
+            settings.yml: |
+              use_default_settings: true
+              search:
+                formats: [html, json, csv]
+              server:
+                secret_key: 'fcsecret'
+          ---
+          apiVersion: apps/v1
+          kind: Deployment
+          metadata:
+            name: searxng
+          spec:
+            replicas: 1
+            selector:
+              matchLabels:
+                app: searxng
+            template:
+              metadata:
+                labels:
+                  app: searxng
+              spec:
+                containers:
+                - name: searxng
+                  image: searxng/searxng:latest
+                  ports:
+                  - containerPort: 8080
+                  volumeMounts:
+                  - name: config
+                    mountPath: /etc/searxng
+                  resources:
+                    requests:
+                      memory: 512Mi
+                      cpu: 250m
+                    limits:
+                      memory: 2Gi
+                      cpu: 1000m
+                  readinessProbe:
+                    httpGet:
+                      path: /healthz
+                      port: 8080
+                    initialDelaySeconds: 10
+                    periodSeconds: 5
+                    timeoutSeconds: 3
+                    failureThreshold: 3
+                  livenessProbe:
+                    httpGet:
+                      path: /healthz
+                      port: 8080
+                    initialDelaySeconds: 15
+                    periodSeconds: 10
+                    timeoutSeconds: 5
+                    failureThreshold: 3
+                volumes:
+                - name: config
+                  configMap:
+                    name: searxng-config
+          ---
+          apiVersion: v1
+          kind: Service
+          metadata:
+            name: searxng
+          spec:
+            selector:
+              app: searxng
+            ports:
+            - port: 3434
+              targetPort: 8080
+          EOF
+
+          kubectl wait --for=condition=available deployment/searxng --timeout=120s
+
+      - name: Deploy Playwright service
+        if: matrix.engine == 'playwright'
+        run: |
+          cat <<EOF | kubectl apply -f -
+          apiVersion: apps/v1
+          kind: Deployment
+          metadata:
+            name: playwright-service
+          spec:
+            replicas: 1
+            selector:
+              matchLabels:
+                app: playwright-service
+            template:
+              metadata:
+                labels:
+                  app: playwright-service
+              spec:
+                imagePullSecrets:
+                - name: ghcr-secret
+                containers:
+                - name: playwright
+                  image: ghcr.io/${{ github.repository_owner }}/playwright-service-ci:${{ github.sha }}
+                  ports:
+                  - containerPort: 3003
+                  env:
+                  - name: PORT
+                    value: "3003"
+                  resources:
+                    requests:
+                      memory: 1Gi
+                      cpu: 500m
+                    limits:
+                      memory: 4Gi
+                      cpu: 2000m
+                  readinessProbe:
+                    httpGet:
+                      path: /health
+                      port: 3003
+                    initialDelaySeconds: 10
+                    periodSeconds: 5
+                    timeoutSeconds: 5
+                    failureThreshold: 3
+                  livenessProbe:
+                    httpGet:
+                      path: /health
+                      port: 3003
+                    initialDelaySeconds: 20
+                    periodSeconds: 15
+                    timeoutSeconds: 10
+                    failureThreshold: 3
+          ---
+          apiVersion: v1
+          kind: Service
+          metadata:
+            name: playwright-service
+          spec:
+            selector:
+              app: playwright-service
+            ports:
+            - port: 3003
+              targetPort: 3003
+          EOF
+
+          kubectl wait --for=condition=available deployment/playwright-service --timeout=300s
+
+      - name: Verify supporting services
+        run: |
+          echo "=== All pods status ==="
+          kubectl get pods -o wide
+
+          echo "=== All services ==="
+          kubectl get svc
+
+          echo "=== Test connectivity to test-site ==="
+          kubectl run curl-test --rm -i --restart=Never --image=curlimages/curl -- \
+            curl -s -o /dev/null -w "%{http_code}" http://test-site:4321 || echo "test-site check completed"
+
+      - name: Record supporting services end
+        run: echo "supporting_services_end,$(date +%s)" >> logs/performance/timings.csv
+
+      # ===========================================
+      # Phase 5: Health Check Validations
+      # ===========================================
+
+      - name: Record health checks start
+        run: echo "health_checks_start,$(date +%s)" >> logs/performance/timings.csv
+
+      - name: Comprehensive health check validation
+        run: |
+          # Health check function with retry logic
+          check_health() {
+            local name="$1"
+            local url="$2"
+            local expected_code="${3:-200}"
+            local max_retries=12
+            local retry_interval=5
+            local retry=0
+
+            echo "Checking $name at $url (expecting HTTP $expected_code)..."
+
+            while [ $retry -lt $max_retries ]; do
+              response=$(kubectl run "health-check-$name-$retry-$RANDOM" --rm -i --restart=Never \
+                --image=curlimages/curl --quiet -- \
+                curl -s -o /dev/null -w "%{http_code}" --connect-timeout 5 --max-time 10 "$url" 2>/dev/null || echo "000")
+
+              if [ "$response" = "$expected_code" ]; then
+                echo "✓ $name is healthy (HTTP $response)"
+                return 0
+              fi
+
+              retry=$((retry + 1))
+              echo "  Attempt $retry/$max_retries: Got HTTP $response, retrying in ${retry_interval}s..."
+              sleep $retry_interval
+            done
+
+            echo "✗ $name health check FAILED after $max_retries attempts (last response: HTTP $response)"
+            return 1
+          }
+
+          # Track overall health status
+          HEALTH_FAILED=0
+
+          echo ""
+          echo "=========================================="
+          echo "Pre-Test Health Check Validation"
+          echo "=========================================="
+          echo ""
+
+          # Core services health checks
+          echo "--- Core Services ---"
+
+          # Firecrawl API health check
+          if ! check_health "firecrawl-api" "http://app-service:3002/is-production"; then
+            HEALTH_FAILED=1
+            echo "  Firecrawl API pod logs:"
+            kubectl logs -l app.kubernetes.io/name=firecrawl,app.kubernetes.io/component=app --tail=20 || true
+          fi
+
+          # Redis health check
+          echo ""
+          echo "Checking Redis connectivity..."
+          if kubectl run redis-health-$RANDOM --rm -i --restart=Never --quiet \
+              --image=redis:alpine -- redis-cli -h redis -p 6379 PING 2>/dev/null | grep -q "PONG"; then
+            echo "✓ Redis is healthy"
+          else
+            echo "✗ Redis health check FAILED"
+            HEALTH_FAILED=1
+          fi
+
+          # PostgreSQL health check
+          echo ""
+          echo "Checking PostgreSQL connectivity..."
+          if kubectl run pg-health-$RANDOM --rm -i --restart=Never --quiet \
+              --image=postgres:15-alpine -- pg_isready -h nuq-postgres -p 5432 2>/dev/null; then
+            echo "✓ PostgreSQL is healthy"
+          else
+            echo "✗ PostgreSQL health check FAILED"
+            HEALTH_FAILED=1
+          fi
+
+          # RabbitMQ health check
+          echo ""
+          echo "Checking RabbitMQ connectivity..."
+          if kubectl run rabbitmq-health-$RANDOM --rm -i --restart=Never --quiet \
+              --image=curlimages/curl -- curl -s -o /dev/null -w "%{http_code}" http://rabbitmq:15672 2>/dev/null | grep -q "200\|301"; then
+            echo "✓ RabbitMQ management interface is healthy"
+          else
+            # Try AMQP port check as fallback
+            if kubectl run rabbitmq-amqp-$RANDOM --rm -i --restart=Never --quiet \
+                --image=busybox -- nc -z rabbitmq 5672 2>/dev/null; then
+              echo "✓ RabbitMQ AMQP port is healthy"
+            else
+              echo "✗ RabbitMQ health check FAILED"
+              HEALTH_FAILED=1
+            fi
+          fi
+
+          echo ""
+          echo "--- Supporting Services ---"
+
+          # test-site health check
+          if ! check_health "test-site" "http://test-site:4321/"; then
+            HEALTH_FAILED=1
+          fi
+
+          # SearXNG health check (conditional)
+          if [ "${{ matrix.search }}" == "searxng" ]; then
+            if ! check_health "searxng" "http://searxng:3434/healthz"; then
+              HEALTH_FAILED=1
+            fi
+          fi
+
+          # Playwright service health check (conditional)
+          if [ "${{ matrix.engine }}" == "playwright" ]; then
+            if ! check_health "playwright-service" "http://playwright-service:3003/health"; then
+              HEALTH_FAILED=1
+              echo "  Playwright service pod logs:"
+              kubectl logs -l app=playwright-service --tail=20 || true
+            fi
+          fi
+
+          echo ""
+          echo "=========================================="
+
+          # Final status
+          if [ $HEALTH_FAILED -eq 1 ]; then
+            echo "❌ Health check validation FAILED"
+            echo ""
+            echo "=== Pod Status ==="
+            kubectl get pods -o wide
+            echo ""
+            echo "=== Recent Events ==="
+            kubectl get events --sort-by='.lastTimestamp' | tail -20
+            exit 1
+          fi
+
+          echo "✅ All health checks passed"
+          echo "=========================================="
+
+      - name: Record health checks end
+        run: echo "health_checks_end,$(date +%s)" >> logs/performance/timings.csv
+
+      # ===========================================
+      # Phase 4: Testing Integration
+      # ===========================================
+
+      - name: Record test setup start
+        run: echo "test_setup_start,$(date +%s)" >> logs/performance/timings.csv
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - run: pnpm config set store-dir ~/.pnpm-store
+      - run: mkdir -p ~/.pnpm-store
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: |
+            apps/api/pnpm-lock.yaml
+
+      - name: Cache pnpm store
+        uses: actions/cache@v4
+        with:
+          path: ~/.pnpm-store
+          key: ${{ runner.os }}-pnpm-${{ hashFiles('apps/api/pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-pnpm-
+
+      - run: pnpm fetch
+        working-directory: apps/api
+
+      - name: Install API dependencies
+        run: pnpm install --frozen-lockfile --ignore-scripts
+        working-directory: apps/api
+        env:
+          npm_config_ignore_scripts: "true"
+
+      - name: Setup port forwarding
+        run: |
+          echo "=== Setting up port forwarding ==="
+
+          # Forward Firecrawl API (3002)
+          kubectl port-forward service/app-service 3002:3002 &
+          PF_API_PID=$!
+          echo "API port-forward PID: $PF_API_PID"
+
+          # Forward test-site (4321)
+          kubectl port-forward service/test-site 4321:4321 &
+          PF_TESTSITE_PID=$!
+          echo "test-site port-forward PID: $PF_TESTSITE_PID"
+
+          # Forward SearXNG if enabled (3434)
+          if [ "${{ matrix.search }}" == "searxng" ]; then
+            kubectl port-forward service/searxng 3434:3434 &
+            PF_SEARXNG_PID=$!
+            echo "SearXNG port-forward PID: $PF_SEARXNG_PID"
+          fi
+
+          # Forward Playwright service if enabled (3003)
+          if [ "${{ matrix.engine }}" == "playwright" ]; then
+            kubectl port-forward service/playwright-service 3003:3003 &
+            PF_PLAYWRIGHT_PID=$!
+            echo "Playwright port-forward PID: $PF_PLAYWRIGHT_PID"
+          fi
+
+          # Give port-forwards time to establish
+          sleep 5
+
+          # Verify port forwards are working
+          echo "=== Verifying port forwards ==="
+          curl -s -o /dev/null -w "API: %{http_code}\n" http://127.0.0.1:3002/is-production || echo "API not responding yet"
+          curl -s -o /dev/null -w "test-site: %{http_code}\n" http://127.0.0.1:4321 || echo "test-site not responding yet"
+
+          # Save PIDs to file for cleanup
+          echo "$PF_API_PID" > /tmp/pf_pids.txt
+          echo "$PF_TESTSITE_PID" >> /tmp/pf_pids.txt
+          [ -n "${PF_SEARXNG_PID:-}" ] && echo "$PF_SEARXNG_PID" >> /tmp/pf_pids.txt || true
+          [ -n "${PF_PLAYWRIGHT_PID:-}" ] && echo "$PF_PLAYWRIGHT_PID" >> /tmp/pf_pids.txt || true
+
+      - name: Record test setup end / execution start
+        run: |
+          echo "test_setup_end,$(date +%s)" >> logs/performance/timings.csv
+          echo "test_execution_start,$(date +%s)" >> logs/performance/timings.csv
+
+      - name: Start resource monitoring (background)
+        run: |
+          # Monitor pod resource usage during test execution
+          # Captures CPU/memory every 30 seconds
+          (
+            while true; do
+              echo "=== $(date -Iseconds) ===" >> logs/performance/resource_usage.log
+              kubectl top pods --no-headers 2>/dev/null >> logs/performance/resource_usage.log || true
+              echo "" >> logs/performance/resource_usage.log
+              sleep 30
+            done
+          ) &
+          echo $! > /tmp/resource_monitor_pid.txt
+          echo "Resource monitoring started (PID: $(cat /tmp/resource_monitor_pid.txt))"
+
+      - name: Run tests
+        run: pnpm test:snips
+        working-directory: apps/api
+        env:
+          # Override environment variables to use localhost (port-forwarded endpoints)
+          TEST_API_URL: http://127.0.0.1:3002
+          TEST_SUITE_WEBSITE: http://test-site.default.svc.cluster.local:4321
+          TEST_SUITE_SELF_HOSTED: true
+          OPENAI_API_KEY: ${{ matrix.ai == 'openai' && secrets.OPENAI_API_KEY || '' }}
+          SEARXNG_ENDPOINT: ${{ matrix.search == 'searxng' && 'http://127.0.0.1:3434' || '' }}
+          PLAYWRIGHT_MICROSERVICE_URL: ${{ matrix.engine == 'playwright' && 'http://127.0.0.1:3003/scrape' || '' }}
+          PROXY_SERVER: ${{ matrix.proxy == 'proxy' && secrets.PROXY_SERVER || '' }}
+          PROXY_USERNAME: ${{ matrix.proxy == 'proxy' && secrets.PROXY_USERNAME || '' }}
+          PROXY_PASSWORD: ${{ matrix.proxy == 'proxy' && secrets.PROXY_PASSWORD || '' }}
+          # For test identity creation - don't use IDMUX_URL in k8s CI (service not deployed)
+          # Falls back to TEST_API_KEY + TEST_TEAM_ID
+          TEST_API_KEY: ${{ secrets.TEST_API_KEY || '' }}
+          TEST_TEAM_ID: ${{ secrets.TEST_TEAM_ID || '' }}
+          GITHUB_REF_NAME: ${{ github.ref_name }}
+          GITHUB_RUN_NUMBER: ${{ github.run_number }}
+          ALLOW_LOCAL_WEBHOOKS: true
+
+      - name: Record test execution end
+        if: always()
+        run: |
+          echo "test_execution_end,$(date +%s)" >> logs/performance/timings.csv
+          echo "workflow_end,$(date +%s)" >> logs/performance/timings.csv
+
+      - name: Stop resource monitoring
+        if: always()
+        run: |
+          if [ -f /tmp/resource_monitor_pid.txt ]; then
+            kill $(cat /tmp/resource_monitor_pid.txt) 2>/dev/null || true
+            rm /tmp/resource_monitor_pid.txt
+          fi
+
+      - name: Generate performance report
+        if: always()
+        run: |
+          echo "=========================================="
+          echo "Performance Profiling Report"
+          echo "=========================================="
+          echo ""
+
+          # Parse timings CSV and calculate durations
+          if [ -f logs/performance/timings.csv ]; then
+            echo "=== Phase Timings ==="
+            echo ""
+
+            # Read all timestamps
+            declare -A timestamps
+            while IFS=',' read -r name ts; do
+              timestamps[$name]=$ts
+            done < logs/performance/timings.csv
+
+            # Helper function to format duration
+            format_duration() {
+              local seconds=$1
+              local minutes=$((seconds / 60))
+              local remaining_seconds=$((seconds % 60))
+              if [ $minutes -gt 0 ]; then
+                echo "${minutes}m ${remaining_seconds}s"
+              else
+                echo "${remaining_seconds}s"
+              fi
+            }
+
+            # Calculate and display phase durations
+            if [ -n "${timestamps[phase1_start]}" ] && [ -n "${timestamps[phase1_end]}" ]; then
+              duration=$((timestamps[phase1_end] - timestamps[phase1_start]))
+              printf "%-30s %s\n" "Phase 1 (Infrastructure):" "$(format_duration $duration)"
+            fi
+
+            if [ -n "${timestamps[image_build_start]}" ] && [ -n "${timestamps[image_build_end]}" ]; then
+              duration=$((timestamps[image_build_end] - timestamps[image_build_start]))
+              printf "%-30s %s\n" "Image Build:" "$(format_duration $duration)"
+            fi
+
+            if [ -n "${timestamps[core_services_start]}" ] && [ -n "${timestamps[core_services_end]}" ]; then
+              duration=$((timestamps[core_services_end] - timestamps[core_services_start]))
+              printf "%-30s %s\n" "Core Services Deployment:" "$(format_duration $duration)"
+            fi
+
+            if [ -n "${timestamps[supporting_services_start]}" ] && [ -n "${timestamps[supporting_services_end]}" ]; then
+              duration=$((timestamps[supporting_services_end] - timestamps[supporting_services_start]))
+              printf "%-30s %s\n" "Supporting Services:" "$(format_duration $duration)"
+            fi
+
+            if [ -n "${timestamps[health_checks_start]}" ] && [ -n "${timestamps[health_checks_end]}" ]; then
+              duration=$((timestamps[health_checks_end] - timestamps[health_checks_start]))
+              printf "%-30s %s\n" "Health Checks:" "$(format_duration $duration)"
+            fi
+
+            if [ -n "${timestamps[test_setup_start]}" ] && [ -n "${timestamps[test_setup_end]}" ]; then
+              duration=$((timestamps[test_setup_end] - timestamps[test_setup_start]))
+              printf "%-30s %s\n" "Test Setup:" "$(format_duration $duration)"
+            fi
+
+            if [ -n "${timestamps[test_execution_start]}" ] && [ -n "${timestamps[test_execution_end]}" ]; then
+              duration=$((timestamps[test_execution_end] - timestamps[test_execution_start]))
+              printf "%-30s %s\n" "Test Execution:" "$(format_duration $duration)"
+            fi
+
+            echo ""
+            if [ -n "${timestamps[workflow_start]}" ] && [ -n "${timestamps[workflow_end]}" ]; then
+              total=$((timestamps[workflow_end] - timestamps[workflow_start]))
+              printf "%-30s %s\n" "TOTAL WORKFLOW TIME:" "$(format_duration $total)"
+            fi
+
+            echo ""
+            echo "=== Time Distribution ==="
+            echo ""
+
+            # Calculate percentages
+            if [ -n "${timestamps[workflow_start]}" ] && [ -n "${timestamps[workflow_end]}" ]; then
+              total=$((timestamps[workflow_end] - timestamps[workflow_start]))
+
+              # Infrastructure time
+              infra_time=0
+              [ -n "${timestamps[phase1_start]}" ] && [ -n "${timestamps[phase1_end]}" ] && \
+                infra_time=$((timestamps[phase1_end] - timestamps[phase1_start]))
+
+              # Build time
+              build_time=0
+              [ -n "${timestamps[image_build_start]}" ] && [ -n "${timestamps[image_build_end]}" ] && \
+                build_time=$((timestamps[image_build_end] - timestamps[image_build_start]))
+
+              # Deployment time (core + supporting)
+              deploy_time=0
+              [ -n "${timestamps[core_services_start]}" ] && [ -n "${timestamps[core_services_end]}" ] && \
+                deploy_time=$((deploy_time + timestamps[core_services_end] - timestamps[core_services_start]))
+              [ -n "${timestamps[supporting_services_start]}" ] && [ -n "${timestamps[supporting_services_end]}" ] && \
+                deploy_time=$((deploy_time + timestamps[supporting_services_end] - timestamps[supporting_services_start]))
+
+              # Test time (setup + execution)
+              test_time=0
+              [ -n "${timestamps[test_setup_start]}" ] && [ -n "${timestamps[test_execution_end]}" ] && \
+                test_time=$((timestamps[test_execution_end] - timestamps[test_setup_start]))
+
+              # Print distribution
+              if [ $total -gt 0 ]; then
+                printf "Infrastructure: %3d%% (%s)\n" $((infra_time * 100 / total)) "$(format_duration $infra_time)"
+                printf "Image Build:    %3d%% (%s)\n" $((build_time * 100 / total)) "$(format_duration $build_time)"
+                printf "Deployment:     %3d%% (%s)\n" $((deploy_time * 100 / total)) "$(format_duration $deploy_time)"
+                printf "Testing:        %3d%% (%s)\n" $((test_time * 100 / total)) "$(format_duration $test_time)"
+              fi
+            fi
+          fi
+
+          echo ""
+          echo "=== Resource Usage Summary ==="
+          echo ""
+          if [ -f logs/performance/resource_usage.log ]; then
+            # Show last resource snapshot
+            echo "Final resource snapshot:"
+            tail -20 logs/performance/resource_usage.log || echo "No resource data captured"
+          else
+            echo "No resource monitoring data available"
+          fi
+
+          echo ""
+          echo "=========================================="
+          echo "Full performance data saved to logs/performance/"
+          echo "=========================================="
+
+      - name: Publish test report
+        if: always()
+        uses: dorny/test-reporter@v1
+        with:
+          name: Test Report (k8s, ${{ matrix.engine }}, ${{ matrix.proxy }}, ${{ matrix.search }}, ${{ matrix.ai }})
+          path: apps/api/test-results/junit.xml
+          reporter: jest-junit
+          fail-on-error: true
+
+      - name: Cleanup port forwards
+        if: always()
+        run: |
+          if [ -f /tmp/pf_pids.txt ]; then
+            while read pid; do
+              kill $pid 2>/dev/null || true
+            done < /tmp/pf_pids.txt
+            rm /tmp/pf_pids.txt
+          fi
+
+      # ===========================================
+      # Debugging / Status (always runs)
+      # ===========================================
+
+      - name: Check cluster status (always)
+        if: always()
+        run: |
+          echo "=== Node Status ==="
+          kubectl get nodes -o wide || true
+
+          echo "=== Pod Status ==="
+          kubectl get pods -A -o wide || true
+
+          echo "=== Services ==="
+          kubectl get svc -A || true
+
+          echo "=== Events ==="
+          kubectl get events -A --sort-by='.lastTimestamp' | tail -50 || true
+
+      - name: Collect k8s logs
+        if: always()
+        run: |
+          mkdir -p logs/k8s
+
+          # Collect pod logs
+          kubectl get pods -A --no-headers -o custom-columns=":metadata.namespace,:metadata.name" 2>/dev/null | while read namespace pod_name; do
+            kubectl logs -n "$namespace" "$pod_name" --all-containers=true > "logs/k8s/${namespace}-${pod_name}.log" 2>&1 || true
+          done
+
+          # Collect deployment descriptions
+          kubectl describe deployments -A > logs/k8s/deployments.txt 2>&1 || true
+          kubectl describe services -A > logs/k8s/services.txt 2>&1 || true
+
+      - name: Zip logs
+        if: always()
+        run: |
+          cd logs
+          zip -r logs.zip ./* || true
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: Logs (k8s, ${{ matrix.engine }}, ${{ matrix.proxy }}, ${{ matrix.search }}, ${{ matrix.ai }})
+          path: logs/logs.zip

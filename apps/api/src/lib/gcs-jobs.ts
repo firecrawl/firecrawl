@@ -12,10 +12,19 @@ import type {
 } from "../services/logging/log_job";
 import { config } from "../config";
 
-const credentials = config.GCS_CREDENTIALS
-  ? JSON.parse(atob(config.GCS_CREDENTIALS))
-  : undefined;
-export const storage = new Storage({ credentials });
+// Lazy-initialize Storage to avoid GCP credential loading when GCS is not configured
+let _storage: Storage | null = null;
+function getStorage(): Storage {
+  if (!_storage) {
+    const credentials = config.GCS_CREDENTIALS
+      ? JSON.parse(atob(config.GCS_CREDENTIALS))
+      : undefined;
+    _storage = new Storage({ credentials });
+  }
+  return _storage;
+}
+// Deprecated: use getStorage() instead. Kept for backwards compatibility.
+export const storage = { bucket: (name: string) => getStorage().bucket(name) };
 
 export async function saveScrapeToGCS(scrape: LoggedScrape): Promise<void> {
   return await withSpan("firecrawl-gcs-save-job", async span => {
