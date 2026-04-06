@@ -9,6 +9,47 @@ function extractDomain(url: string): string {
   }
 }
 
+// =========================================
+// Scrape tracking
+// =========================================
+
+interface TrackScrapeParams {
+  scrapeId: string;
+  requestId: string;
+  teamId: string;
+  url: string;
+  origin: string;
+  kind: string;
+  isSuccessful: boolean;
+  creditsCost: number;
+  timeTaken: number;
+  zeroDataRetention: boolean;
+}
+
+export async function trackScrape(opts: TrackScrapeParams): Promise<void> {
+  if (opts.zeroDataRetention) return;
+
+  await chInsert("scrape_results", [
+    {
+      scrape_id: opts.scrapeId,
+      request_id: opts.requestId,
+      team_id: opts.teamId,
+      url: opts.url,
+      url_domain: extractDomain(opts.url),
+      origin: opts.origin,
+      kind: opts.kind,
+      is_successful: opts.isSuccessful,
+      credits_cost: opts.creditsCost,
+      time_taken: opts.timeTaken,
+      created_at: new Date().toISOString(),
+    },
+  ]);
+}
+
+// =========================================
+// Search tracking
+// =========================================
+
 interface SearchResultUrl {
   url: string;
   type: "web" | "news" | "image";

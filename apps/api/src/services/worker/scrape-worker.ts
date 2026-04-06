@@ -66,6 +66,7 @@ import {
   UnknownError,
 } from "../../lib/error";
 import { serializeTransportableError } from "../../lib/error-serde";
+import { trackScrape } from "../../lib/tracking";
 import type { NuQJob } from "./nuq";
 import {
   ScrapeJobData,
@@ -522,6 +523,19 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
         true,
       );
 
+      trackScrape({
+        scrapeId: job.id,
+        requestId: job.data.requestId ?? job.data.crawl_id ?? job.id,
+        teamId: job.data.team_id,
+        url: job.data.url,
+        origin: job.data.origin,
+        kind: job.data.billing?.endpoint ?? "unknown",
+        isSuccessful: true,
+        creditsCost: credits_billed ?? 0,
+        timeTaken: timeTakenInSeconds,
+        zeroDataRetention: job.data.zeroDataRetention,
+      }).catch(err => logger.warn("Scrape tracking failed", { error: err }));
+
       if (job.data.v1) {
         const sender = await createWebhookSender({
           teamId: job.data.team_id,
@@ -591,6 +605,19 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
         },
         false,
       );
+
+      trackScrape({
+        scrapeId: job.id,
+        requestId: job.data.requestId ?? job.data.crawl_id ?? job.id,
+        teamId: job.data.team_id,
+        url: job.data.url,
+        origin: job.data.origin,
+        kind: job.data.billing?.endpoint ?? "unknown",
+        isSuccessful: true,
+        creditsCost: credits_billed ?? 0,
+        timeTaken: timeTakenInSeconds,
+        zeroDataRetention: job.data.zeroDataRetention,
+      }).catch(err => logger.warn("Scrape tracking failed", { error: err }));
 
       if (job.data.skipNuq) {
         // doesn't use GCS for result retrieval, safe to not await
@@ -753,6 +780,20 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
       },
       true,
     );
+
+    trackScrape({
+      scrapeId: job.id,
+      requestId: job.data.requestId ?? job.data.crawl_id ?? job.id,
+      teamId: job.data.team_id,
+      url: job.data.url,
+      origin: job.data.origin,
+      kind: job.data.billing?.endpoint ?? "unknown",
+      isSuccessful: false,
+      creditsCost: credits_billed ?? 0,
+      timeTaken: timeTakenInSeconds,
+      zeroDataRetention: job.data.zeroDataRetention,
+    }).catch(err => logger.warn("Scrape tracking failed", { error: err }));
+
     return data;
   } finally {
     if (abortTimeoutHandle) clearTimeout(abortTimeoutHandle);

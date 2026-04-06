@@ -13,7 +13,7 @@ import {
   mergeScrapedContent,
   calculateScrapeCredits,
 } from "./scrape";
-import { trackSearchResults } from "../lib/search-tracking";
+import { trackSearchResults } from "../lib/tracking";
 import type { BillingMetadata } from "../services/billing/types";
 
 interface SearchOptions {
