@@ -25,6 +25,7 @@ import { hasFormatOfType } from "../../../lib/format-utils";
 import { brandingTransformer } from "../../../lib/branding/transformer";
 import { indexerQueue } from "../../../services/indexing/indexer-queue";
 import { config } from "../../../config";
+import { CrawlDenialError } from "../../../lib/error";
 
 type Transformer = (
   meta: Meta,
@@ -45,6 +46,18 @@ async function deriveMetadataFromRawHTML(
     ...(await extractMetadata(meta, document.rawHtml)),
     ...document.metadata,
   };
+
+  if (!meta.options.ignoreRobotsTxt) {
+    const robotsContent = document.metadata.robots;
+    const fcAgentContent = (document.metadata as any).firecrawlAgentRobots;
+    if (
+      (robotsContent && robotsContent.toLowerCase().includes("noindex")) ||
+      (fcAgentContent && fcAgentContent.toLowerCase().includes("noindex"))
+    ) {
+      throw new CrawlDenialError("URL blocked by noindex meta tag");
+    }
+  }
+
   return document;
 }
 
