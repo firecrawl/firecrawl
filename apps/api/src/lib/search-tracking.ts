@@ -46,6 +46,7 @@ interface TrackSearchParams {
   teamId: string;
   response: SearchV2Response;
   zeroDataRetention: boolean;
+  hasScrapeFormats: boolean;
 }
 
 export async function trackSearchResults(
@@ -67,6 +68,7 @@ export async function trackSearchResults(
       url_domain: extractDomain(url),
       result_type: type,
       result_index: index,
+      has_scrape_formats: opts.hasScrapeFormats,
       created_at,
     })),
   );

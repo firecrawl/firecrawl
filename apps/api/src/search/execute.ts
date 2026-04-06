@@ -180,6 +180,7 @@ export async function executeSearch(
     teamId,
     response: searchResponse,
     zeroDataRetention: zeroDataRetention ?? false,
+    hasScrapeFormats: shouldScrape ?? false,
   }).catch(err => logger.warn("Search tracking failed", { error: err }));
 
   return {
