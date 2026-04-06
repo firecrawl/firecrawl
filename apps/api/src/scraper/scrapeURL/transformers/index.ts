@@ -529,13 +529,13 @@ function coerceFieldsToFormats(meta: Meta, document: Document): Document {
 
 // TODO: allow some of these to run in parallel
 const transformerStack: Transformer[] = [
+  deriveMetadataFromRawHTML, // Must run before link extraction to enforce noindex
   deriveHTMLFromRawHTML,
   deriveMarkdownFromHTML,
   performCleanContent,
   deriveLinksFromHTML,
   deriveImagesFromHTML,
   deriveBrandingFromActions,
-  deriveMetadataFromRawHTML,
   uploadScreenshot,
   ...(useIndex ? [sendDocumentToIndex] : []),
   ...(useSearchIndex ? [sendDocumentToSearchIndex] : []), // Add to search index for real-time search
