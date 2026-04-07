@@ -76,7 +76,9 @@ describe("getTeamHistoricalUsage", () => {
       ],
     });
 
-    await expect(getTeamHistoricalUsage("team-1")).resolves.toEqual([
+    await expect(
+      getTeamHistoricalUsage("team-1"),
+    ).resolves.toEqual([
       {
         startDate: "2026-03-01T00:00:00.000Z",
         endDate: "2026-04-01T00:00:00.000Z",
@@ -114,7 +116,9 @@ describe("getTeamHistoricalUsage", () => {
         ],
       });
 
-    await expect(getTeamHistoricalUsage("team-1")).resolves.toEqual([
+    await expect(
+      getTeamHistoricalUsage("team-1"),
+    ).resolves.toEqual([
       {
         startDate: "2026-04-01T00:00:00.000Z",
         endDate: null,
@@ -156,7 +160,9 @@ describe("getTeamHistoricalUsage", () => {
       ],
     });
 
-    await expect(getTeamHistoricalUsage("team-1")).resolves.toEqual([
+    await expect(
+      getTeamHistoricalUsage("team-1"),
+    ).resolves.toEqual([
       {
         startDate: "2026-01-01T00:00:00.000Z",
         endDate: "2026-02-01T00:00:00.000Z",
@@ -195,7 +201,9 @@ describe("getTeamHistoricalUsageByApiKey", () => {
       ],
     });
 
-    await expect(getTeamHistoricalUsageByApiKey("team-1")).resolves.toEqual([
+    await expect(
+      getTeamHistoricalUsageByApiKey("team-1"),
+    ).resolves.toEqual([
       {
         startDate: "2026-03-01T00:00:00.000Z",
         endDate: "2026-04-01T00:00:00.000Z",
@@ -228,34 +236,6 @@ describe("getTeamHistoricalUsageByApiKey", () => {
     );
   });
 
-  it("labels deleted API keys as 'Revoked' instead of showing raw ID", async () => {
-    apiKeysData = [{ id: 101, name: "Default" }];
-
-    mockAggregate.mockResolvedValue({
-      list: [
-        {
-          period: Date.parse("2026-03-15T00:00:00.000Z"),
-          grouped_values: { CREDITS: { "101": 10, "999": 5 } },
-        },
-      ],
-    });
-
-    await expect(getTeamHistoricalUsageByApiKey("team-1")).resolves.toEqual([
-      {
-        startDate: "2026-03-01T00:00:00.000Z",
-        endDate: null,
-        apiKey: "Default",
-        creditsUsed: 10,
-      },
-      {
-        startDate: "2026-03-01T00:00:00.000Z",
-        endDate: null,
-        apiKey: "Revoked",
-        creditsUsed: 5,
-      },
-    ]);
-  });
-
   it("uses the next calendar month as endDate for grouped data when a month has zero usage", async () => {
     apiKeysData = [{ id: 101, name: "Default" }];
 
@@ -272,7 +252,9 @@ describe("getTeamHistoricalUsageByApiKey", () => {
       ],
     });
 
-    await expect(getTeamHistoricalUsageByApiKey("team-1")).resolves.toEqual([
+    await expect(
+      getTeamHistoricalUsageByApiKey("team-1"),
+    ).resolves.toEqual([
       {
         startDate: "2026-01-01T00:00:00.000Z",
         endDate: "2026-02-01T00:00:00.000Z",
