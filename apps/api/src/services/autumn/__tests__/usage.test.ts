@@ -145,6 +145,36 @@ describe("getTeamHistoricalUsage", () => {
     );
     expect(mockAggregate.mock.calls[1][0]).not.toHaveProperty("entityId");
   });
+
+  it("uses the next calendar month as endDate when a month has zero usage", async () => {
+    mockAggregate.mockResolvedValue({
+      list: [
+        {
+          period: Date.parse("2026-01-31T00:00:00.000Z"),
+          values: { CREDITS: 12 },
+        },
+        {
+          period: Date.parse("2026-03-01T00:00:00.000Z"),
+          values: { CREDITS: 7 },
+        },
+      ],
+    });
+
+    await expect(
+      getTeamHistoricalUsage("team-1"),
+    ).resolves.toEqual([
+      {
+        startDate: "2026-01-01T00:00:00.000Z",
+        endDate: "2026-02-01T00:00:00.000Z",
+        creditsUsed: 12,
+      },
+      {
+        startDate: "2026-03-01T00:00:00.000Z",
+        endDate: null,
+        creditsUsed: 7,
+      },
+    ]);
+  });
 });
 
 describe("getTeamHistoricalUsageByApiKey", () => {
@@ -204,5 +234,39 @@ describe("getTeamHistoricalUsageByApiKey", () => {
         groupBy: "properties.apiKeyId",
       }),
     );
+  });
+
+  it("uses the next calendar month as endDate for grouped data when a month has zero usage", async () => {
+    apiKeysData = [{ id: 101, name: "Default" }];
+
+    mockAggregate.mockResolvedValue({
+      list: [
+        {
+          period: Date.parse("2026-01-31T00:00:00.000Z"),
+          grouped_values: { CREDITS: { "101": 12 } },
+        },
+        {
+          period: Date.parse("2026-03-01T00:00:00.000Z"),
+          grouped_values: { CREDITS: { "101": 7 } },
+        },
+      ],
+    });
+
+    await expect(
+      getTeamHistoricalUsageByApiKey("team-1"),
+    ).resolves.toEqual([
+      {
+        startDate: "2026-01-01T00:00:00.000Z",
+        endDate: "2026-02-01T00:00:00.000Z",
+        apiKey: "Default",
+        creditsUsed: 12,
+      },
+      {
+        startDate: "2026-03-01T00:00:00.000Z",
+        endDate: null,
+        apiKey: "Default",
+        creditsUsed: 7,
+      },
+    ]);
   });
 });

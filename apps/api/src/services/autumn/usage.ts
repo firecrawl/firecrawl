@@ -111,7 +111,7 @@ function aggregateHistoricalPeriodsByMonth(list: any[]): HistoricalPeriod[] {
 
   return monthStarts.map((startDate, i) => ({
     startDate,
-    endDate: i < monthStarts.length - 1 ? monthStarts[i + 1] : null,
+    endDate: i < monthStarts.length - 1 ? nextMonthIso(startDate) : null,
     creditsUsed: monthTotals.get(startDate) ?? 0,
   }));
 }
@@ -155,7 +155,7 @@ async function aggregateHistoricalPeriodsByApiKeyMonth(
 
   for (let i = 0; i < monthStarts.length; i++) {
     const startDate = monthStarts[i];
-    const endDate = i < monthStarts.length - 1 ? monthStarts[i + 1] : null;
+    const endDate = i < monthStarts.length - 1 ? nextMonthIso(startDate) : null;
     const monthTotals = monthApiKeyTotals.get(startDate);
 
     if (!monthTotals) continue;
