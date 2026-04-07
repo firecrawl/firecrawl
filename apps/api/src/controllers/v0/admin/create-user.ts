@@ -4,10 +4,7 @@ import { supabase_service } from "../../../services/supabase";
 import crypto from "crypto";
 import { z } from "zod";
 import { apiKeyToFcApiKey } from "../../../lib/parseApi";
-import {
-  autumnService,
-  isAutumnEnabled,
-} from "../../../services/autumn/autumn.service";
+import { autumnService } from "../../../services/autumn/autumn.service";
 
 async function addCoupon(teamId: string, integration: any) {
   if (!integration.coupon_credits) {
@@ -219,12 +216,10 @@ export async function integCreateUserController(req: Request, res: Response) {
           });
         }
 
-        if (isAutumnEnabled()) {
-          await autumnService.ensureTeamProvisioned({
-            teamId,
-            orgId: existingTeam[0].org_id,
-          });
-        }
+        await autumnService.ensureTeamProvisioned({
+          teamId,
+          orgId: existingTeam[0].org_id,
+        });
 
         alreadyExisted = true;
 
@@ -290,12 +285,10 @@ export async function integCreateUserController(req: Request, res: Response) {
             .json({ error: "Failed to link team to organization" });
         }
 
-        if (isAutumnEnabled()) {
-          await autumnService.ensureTeamProvisioned({
-            teamId,
-            orgId: newOrg.id,
-          });
-        }
+        await autumnService.ensureTeamProvisioned({
+          teamId,
+          orgId: newOrg.id,
+        });
 
         const { error: newUserTeamError } = await supabase_service
           .from("user_teams")
@@ -379,9 +372,9 @@ export async function integCreateUserController(req: Request, res: Response) {
 
       apiKey = apiKeyFc.key;
 
-      if (isAutumnEnabled()) {
+      {
         // Look up org_id for the trigger-created team so ensureTeamProvisioned
-        // can evaluate the stable percent gate without a redundant query.
+        // can resolve the org.
         const { data: triggerTeam } = await supabase_service
           .from("teams")
           .select("org_id")

@@ -12,10 +12,6 @@ import { redlock } from "../services/redlock";
 import { supabase_rr_service, supabase_service } from "../services/supabase";
 import { AuthResponse, RateLimiterMode } from "../types";
 import { AuthCreditUsageChunk, AuthCreditUsageChunkFromTeam } from "./v1/types";
-import {
-  isAutumnCheckEnabled,
-  AUTUMN_BYPASS_ORG_IDS,
-} from "../services/autumn/autumn.service";
 
 function normalizedApiIsUuid(potentialUuid: string): boolean {
   // Check if the string is a valid UUID
@@ -397,18 +393,13 @@ export async function authenticateUser(
 }
 
 /**
- * Backfills org_id for stale cached auth chunks so Autumn check gating can run.
+ * Backfills org_id for stale cached auth chunks so Autumn can resolve the org.
  */
 async function ensureChunkOrgId(
   apiKey: string,
   chunk: AuthCreditUsageChunk | null,
 ): Promise<AuthCreditUsageChunk | null> {
-  if (
-    !chunk ||
-    chunk.org_id ||
-    config.USE_DB_AUTHENTICATION !== true ||
-    (!isAutumnCheckEnabled() && AUTUMN_BYPASS_ORG_IDS.size === 0)
-  ) {
+  if (!chunk || chunk.org_id || config.USE_DB_AUTHENTICATION !== true) {
     return chunk;
   }
 

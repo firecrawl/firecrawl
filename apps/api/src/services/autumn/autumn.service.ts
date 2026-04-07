@@ -1,5 +1,4 @@
 import { randomUUID } from "crypto";
-import { config } from "../../config";
 import { logger } from "../../lib/logger";
 import { supabase_rr_service } from "../supabase";
 import { autumnClient } from "./client";
@@ -18,77 +17,6 @@ import type {
 
 const TEAM_FEATURE_ID = "TEAM";
 const CREDITS_FEATURE_ID = "CREDITS";
-
-/**
- * Org IDs that always have Autumn enabled, regardless of experiment
- * percentage or feature flags.
- */
-export const AUTUMN_BYPASS_ORG_IDS = new Set([
-  "318e9dfd-9d76-489d-86fa-64bcbc3682f9", // Autumn
-  "601f9bf3-425c-4309-97ae-4626842738d5", // Autumn
-  "5ee89794-c287-47c5-b621-cbfbc0dbaaff",
-  "0f2c26d2-e1f9-4a96-b443-7e93067fc3a9",
-  "8454ff9b-833f-42ee-bcdd-87457f687779",
-]);
-
-/**
- * Deterministic bucket for an org UUID.
- *
- * Takes the first 8 hex digits of the id (after stripping dashes) and maps
- * them to an integer in [0, 100).  The same orgId always lands in the same
- * bucket so the experiment decision is stable across requests.
- */
-export function orgBucket(orgId: string): number {
-  const hex = orgId.replace(/-/g, "").slice(0, 8);
-  return parseInt(hex, 16) % 100;
-}
-
-/**
- * Returns true when the Autumn experiment is active.
- *
- * Without an orgId the check is a simple on/off flag — useful as a fast
- * bail-out before the orgId is known.  When an orgId is supplied the
- * stable percent gate is also evaluated so the same org always gets the
- * same answer.
- *
- * Only checked at the top-level billing entry points (`lockCredits` and the
- * direct-track `trackCredits`).
- * NOT checked by `finalizeCreditsLock`, `refundCredits`, or
- * `ensureTeamProvisioned`.
- */
-export function isAutumnEnabled(orgId?: string): boolean {
-  if (orgId && AUTUMN_BYPASS_ORG_IDS.has(orgId)) return true;
-  if (config.AUTUMN_EXPERIMENT !== "true") return false;
-  if (!orgId || config.AUTUMN_EXPERIMENT_PERCENT >= 100) return true;
-  return orgBucket(orgId) < config.AUTUMN_EXPERIMENT_PERCENT;
-}
-
-export function isAutumnCheckEnabled(orgId?: string): boolean {
-  if (orgId && AUTUMN_BYPASS_ORG_IDS.has(orgId)) return true;
-  if (config.AUTUMN_CHECK_ENABLED !== "true") return false;
-  if (config.AUTUMN_EXPERIMENT !== "true") return false;
-  const percent = config.AUTUMN_CHECK_EXPERIMENT_PERCENT ?? 100;
-  if (!orgId || percent >= 100) return true;
-  return orgBucket(orgId) < percent;
-}
-
-/**
- * When true, Autumn check results are logged but never used to gate requests.
- * The legacy credit system remains authoritative.
- */
-export function isAutumnCheckDryRun(): boolean {
-  return config.AUTUMN_CHECK_DRY_RUN === "true";
-}
-
-export function isAutumnRequestTrackEnabled(orgId?: string): boolean {
-  if (orgId && AUTUMN_BYPASS_ORG_IDS.has(orgId)) return true;
-  if (config.AUTUMN_REQUEST_TRACK_EXPERIMENT !== "true") return false;
-  if (!isAutumnEnabled(orgId)) return false;
-  if (!orgId || config.AUTUMN_REQUEST_TRACK_EXPERIMENT_PERCENT >= 100) {
-    return true;
-  }
-  return orgBucket(orgId) < config.AUTUMN_REQUEST_TRACK_EXPERIMENT_PERCENT;
-}
 
 const AUTUMN_DEFAULT_PLAN_ID = "free";
 /**
@@ -385,7 +313,7 @@ export class AutumnService {
 
   /**
    * Checks whether a team has enough Autumn balance to cover a request.
-   * Returns null when Autumn gating is unavailable and callers should fall back.
+   * Returns null when Autumn is unavailable.
    */
   async checkCredits({
     teamId,
@@ -399,9 +327,6 @@ export class AutumnService {
       return null;
     }
     try {
-      const orgId = await this.resolveOrgId(teamId);
-      if (!isAutumnCheckEnabled(orgId)) return null;
-
       const customerId = await this.ensureTrackingContext(teamId);
       const { allowed, balance } = await autumnClient.check({
         customerId,
@@ -452,9 +377,6 @@ export class AutumnService {
     const resolvedLockId = lockId ?? `billing_${randomUUID()}`;
 
     try {
-      const orgId = await this.resolveOrgId(teamId);
-      if (!isAutumnEnabled(orgId)) return null;
-
       const customerId = await this.ensureTrackingContext(teamId);
       const { allowed } = await autumnClient.check({
         customerId,
@@ -539,10 +461,6 @@ export class AutumnService {
 
   /**
    * Records a credit usage event directly in Autumn. Returns true on success.
-   *
-   * The experiment gate is evaluated here — once per request — using a stable
-   * bucket derived from the org UUID so the same org always gets the same
-   * answer for a given AUTUMN_EXPERIMENT_PERCENT value.
    */
   async trackCredits({
     teamId,
@@ -550,17 +468,10 @@ export class AutumnService {
     properties,
     requestScoped = false,
   }: TrackCreditsParams): Promise<boolean> {
-    const isEnabled = requestScoped
-      ? isAutumnRequestTrackEnabled
-      : isAutumnEnabled;
-    if (!isEnabled()) return false;
     if (!autumnClient) return false;
     if (this.isPreviewTeam(teamId)) return false;
 
     try {
-      const orgId = await this.resolveOrgId(teamId);
-      if (!isEnabled(orgId)) return false;
-
       const customerId = await this.ensureTrackingContext(teamId);
       return await this.track({
         customerId,
