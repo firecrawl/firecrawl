@@ -4,6 +4,8 @@ import { autumnClient } from "./client";
 
 const CREDITS_FEATURE_ID = "CREDITS";
 const TOKENS_PER_CREDIT = 15;
+const HISTORICAL_RANGE = "90d";
+const HISTORICAL_BIN_SIZE = "day";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -71,6 +73,106 @@ async function lookupApiKeyNames(
   }
 
   return nameMap;
+}
+
+function toMonthStartIso(period: unknown): string | null {
+  if (period == null) return null;
+
+  const date = new Date(period as string | number);
+  if (isNaN(date.getTime())) return null;
+
+  return new Date(
+    Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), 1),
+  ).toISOString();
+}
+
+function nextMonthIso(monthStartIso: string): string {
+  const date = new Date(monthStartIso);
+  return new Date(
+    Date.UTC(date.getUTCFullYear(), date.getUTCMonth() + 1, 1),
+  ).toISOString();
+}
+
+function aggregateHistoricalPeriodsByMonth(list: any[]): HistoricalPeriod[] {
+  const monthTotals = new Map<string, number>();
+
+  for (const entry of list) {
+    const monthStart = toMonthStartIso(entry.period);
+    if (!monthStart) continue;
+
+    monthTotals.set(
+      monthStart,
+      (monthTotals.get(monthStart) ?? 0) +
+        (entry.values?.[CREDITS_FEATURE_ID] ?? 0),
+    );
+  }
+
+  const monthStarts = [...monthTotals.keys()].sort();
+
+  return monthStarts.map((startDate, i) => ({
+    startDate,
+    endDate: i < monthStarts.length - 1 ? monthStarts[i + 1] : null,
+    creditsUsed: monthTotals.get(startDate) ?? 0,
+  }));
+}
+
+function getGroupedCredits(
+  entry: any,
+): Record<string, number> | undefined {
+  return (
+    entry.groupedValues?.[CREDITS_FEATURE_ID] ??
+    entry.grouped_values?.[CREDITS_FEATURE_ID]
+  );
+}
+
+async function aggregateHistoricalPeriodsByApiKeyMonth(
+  list: any[],
+): Promise<HistoricalPeriodByApiKey[]> {
+  const monthApiKeyTotals = new Map<string, Map<string, number>>();
+  const allApiKeyIds = new Set<string>();
+
+  for (const entry of list) {
+    const monthStart = toMonthStartIso(entry.period);
+    if (!monthStart) continue;
+
+    const grouped = getGroupedCredits(entry);
+    if (!grouped) continue;
+
+    const monthTotals =
+      monthApiKeyTotals.get(monthStart) ?? new Map<string, number>();
+
+    for (const [apiKeyId, creditsUsed] of Object.entries(grouped)) {
+      allApiKeyIds.add(apiKeyId);
+      monthTotals.set(apiKeyId, (monthTotals.get(apiKeyId) ?? 0) + creditsUsed);
+    }
+
+    monthApiKeyTotals.set(monthStart, monthTotals);
+  }
+
+  const nameMap = await lookupApiKeyNames([...allApiKeyIds]);
+  const monthStarts = [...monthApiKeyTotals.keys()].sort();
+  const results: HistoricalPeriodByApiKey[] = [];
+
+  for (let i = 0; i < monthStarts.length; i++) {
+    const startDate = monthStarts[i];
+    const endDate = i < monthStarts.length - 1 ? monthStarts[i + 1] : null;
+    const monthTotals = monthApiKeyTotals.get(startDate);
+
+    if (!monthTotals) continue;
+
+    for (const [apiKeyId, creditsUsed] of [...monthTotals.entries()].sort(
+      ([a], [b]) => a.localeCompare(b),
+    )) {
+      results.push({
+        startDate,
+        endDate,
+        apiKey: nameMap[apiKeyId],
+        creditsUsed,
+      });
+    }
+  }
+
+  return results;
 }
 
 // ---------------------------------------------------------------------------
@@ -185,8 +287,8 @@ interface HistoricalPeriodByApiKey {
 /**
  * Fetches a team's historical credit usage across billing periods from Autumn.
  *
- * Uses `events.aggregate` with `range: "3bc"` (3 billing cycles) and
- * `binSize: "month"` to return per-period usage totals.
+ * Uses `events.aggregate` with the last 90 days of daily usage and rolls those
+ * daily totals into calendar-month buckets in API code.
  */
 export async function getTeamHistoricalUsage(
   teamId: string,
@@ -206,8 +308,8 @@ export async function getTeamHistoricalUsage(
       customerId: orgId,
       entityId: teamId,
       featureId: CREDITS_FEATURE_ID,
-      range: "3bc",
-      binSize: "month",
+      range: HISTORICAL_RANGE,
+      binSize: HISTORICAL_BIN_SIZE,
     });
   } catch (err: any) {
     const status = err?.statusCode ?? err?.status ?? err?.response?.status;
@@ -216,40 +318,19 @@ export async function getTeamHistoricalUsage(
     response = await autumnClient.events.aggregate({
       customerId: orgId,
       featureId: CREDITS_FEATURE_ID,
-      range: "3bc",
-      binSize: "month",
+      range: HISTORICAL_RANGE,
+      binSize: HISTORICAL_BIN_SIZE,
     });
   }
 
-  const list = response.list ?? [];
-
-  return list.map((entry: any, i: number) => {
-    let startDate: string | null = null;
-    if (entry.period != null) {
-      const d = new Date(entry.period);
-      if (!isNaN(d.getTime())) startDate = d.toISOString();
-    }
-
-    // Derive endDate from the next bin's start timestamp
-    let endDate: string | null = null;
-    const nextEntry = list[i + 1];
-    if (nextEntry?.period != null) {
-      const nd = new Date(nextEntry.period);
-      if (!isNaN(nd.getTime())) endDate = nd.toISOString();
-    }
-
-    return {
-      startDate,
-      endDate,
-      creditsUsed: entry.values?.[CREDITS_FEATURE_ID] ?? 0,
-    };
-  });
+  return aggregateHistoricalPeriodsByMonth(response.list ?? []);
 }
 
 /**
  * Fetches a team's historical credit usage grouped by API key from Autumn.
  *
- * Uses `groupBy: "properties.apiKeyId"` to break down usage per API key.
+ * Uses the last 90 days of daily usage plus `groupBy: "properties.apiKeyId"`
+ * and rolls those daily totals into calendar-month buckets in API code.
  */
 export async function getTeamHistoricalUsageByApiKey(
   teamId: string,
@@ -268,8 +349,8 @@ export async function getTeamHistoricalUsageByApiKey(
       customerId: orgId,
       entityId: teamId,
       featureId: CREDITS_FEATURE_ID,
-      range: "3bc",
-      binSize: "month",
+      range: HISTORICAL_RANGE,
+      binSize: HISTORICAL_BIN_SIZE,
       groupBy: "properties.apiKeyId",
     });
   } catch (err: any) {
@@ -278,65 +359,13 @@ export async function getTeamHistoricalUsageByApiKey(
     response = await autumnClient.events.aggregate({
       customerId: orgId,
       featureId: CREDITS_FEATURE_ID,
-      range: "3bc",
-      binSize: "month",
+      range: HISTORICAL_RANGE,
+      binSize: HISTORICAL_BIN_SIZE,
       groupBy: "properties.apiKeyId",
     });
   }
 
-  const list = response.list ?? [];
-
-  // Collect all unique API key IDs so we can batch-lookup display names
-  const allApiKeyIds = new Set<string>();
-  for (const entry of list) {
-    const grouped = entry.groupedValues?.[CREDITS_FEATURE_ID] as
-      | Record<string, number>
-      | undefined;
-    if (grouped) {
-      for (const id of Object.keys(grouped)) {
-        allApiKeyIds.add(id);
-      }
-    }
-  }
-
-  const nameMap = await lookupApiKeyNames([...allApiKeyIds]);
-
-  const results: HistoricalPeriodByApiKey[] = [];
-
-  for (let i = 0; i < list.length; i++) {
-    const entry = list[i];
-
-    let startDate: string | null = null;
-    if (entry.period != null) {
-      const d = new Date(entry.period);
-      if (!isNaN(d.getTime())) startDate = d.toISOString();
-    }
-
-    // Derive endDate from the next bin's start timestamp
-    let endDate: string | null = null;
-    const nextEntry = list[i + 1];
-    if (nextEntry?.period != null) {
-      const nd = new Date(nextEntry.period);
-      if (!isNaN(nd.getTime())) endDate = nd.toISOString();
-    }
-
-    const grouped = entry.groupedValues?.[CREDITS_FEATURE_ID] as
-      | Record<string, number>
-      | undefined;
-
-    if (grouped) {
-      for (const [apiKeyId, creditsUsed] of Object.entries(grouped)) {
-        results.push({
-          startDate,
-          endDate,
-          apiKey: nameMap[apiKeyId],
-          creditsUsed: creditsUsed ?? 0,
-        });
-      }
-    }
-  }
-
-  return results;
+  return aggregateHistoricalPeriodsByApiKeyMonth(response.list ?? []);
 }
 
 /**
