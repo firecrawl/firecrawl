@@ -38,14 +38,6 @@ export function isAutumnCheckEnabled(): boolean {
   );
 }
 
-/**
- * When true, Autumn check results are logged but never used to gate requests.
- * The legacy credit system remains authoritative.
- */
-export function isAutumnCheckDryRun(): boolean {
-  return config.AUTUMN_CHECK_DRY_RUN === "true";
-}
-
 const AUTUMN_DEFAULT_PLAN_ID = "free";
 /**
  * Size-bounded Map with FIFO eviction. When the map is at capacity the oldest
