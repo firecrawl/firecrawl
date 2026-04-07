@@ -65,10 +65,10 @@ async function lookupApiKeyNames(
     }
   }
 
-  // Fall back to raw ID string for any keys not found
+  // Fall back to "Revoked" for any keys not found (deleted/revoked API keys)
   for (const id of apiKeyIds) {
     if (!nameMap[id]) {
-      nameMap[id] = id;
+      nameMap[id] = "Revoked";
     }
   }
 
@@ -116,9 +116,7 @@ function aggregateHistoricalPeriodsByMonth(list: any[]): HistoricalPeriod[] {
   }));
 }
 
-function getGroupedCredits(
-  entry: any,
-): Record<string, number> | undefined {
+function getGroupedCredits(entry: any): Record<string, number> | undefined {
   return (
     entry.groupedValues?.[CREDITS_FEATURE_ID] ??
     entry.grouped_values?.[CREDITS_FEATURE_ID]
