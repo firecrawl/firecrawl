@@ -10,15 +10,6 @@ jest.mock("../batch_billing", () => ({
   queueBillingOperation: (...args: any[]) => queueBillingOperation(args),
 }));
 
-const trackCredits = jest.fn<(args: any) => Promise<boolean>>();
-const refundCredits = jest.fn<(args: any) => Promise<void>>();
-jest.mock("../../autumn/autumn.service", () => ({
-  autumnService: {
-    trackCredits,
-    refundCredits,
-  },
-}));
-
 jest.mock("../../notification/email_notification", () => ({
   sendNotification: jest.fn(),
 }));
@@ -46,12 +37,10 @@ import { billTeam } from "../credit_billing";
 beforeEach(() => {
   jest.clearAllMocks();
   queueBillingOperation.mockResolvedValue({ success: true });
-  trackCredits.mockResolvedValue(true);
-  refundCredits.mockResolvedValue(undefined);
 });
 
 describe("billTeam", () => {
-  it("marks billing as already tracked when request tracking succeeds", async () => {
+  it("queues a billing operation with the correct arguments", async () => {
     await billTeam("team-1", "sub-1", 3, 123, {
       endpoint: "search",
       jobId: "job-1",
@@ -64,58 +53,22 @@ describe("billTeam", () => {
       123,
       { endpoint: "search", jobId: "job-1" },
       false,
-      true,
     ]);
-    expect(trackCredits).toHaveBeenCalledWith({
-      teamId: "team-1",
-      value: 3,
-      properties: {
-        source: "billTeam",
-        endpoint: "search",
-        jobId: "job-1",
-        apiKeyId: 123,
-      },
-      requestScoped: true,
-    });
   });
 
-  it("refunds Autumn when queueing fails after request tracking", async () => {
-    queueBillingOperation.mockResolvedValueOnce({ success: false });
-
-    await billTeam("team-1", "sub-1", 3, 123, {
-      endpoint: "search",
-      jobId: "job-1",
-    });
-
-    expect(refundCredits).toHaveBeenCalledWith({
-      teamId: "team-1",
-      value: 3,
-      properties: {
-        source: "billTeam",
-        endpoint: "search",
-        jobId: "job-1",
-        apiKeyId: 123,
-      },
-    });
-  });
-
-  it("leaves batch tracking enabled when request tracking is off", async () => {
-    trackCredits.mockResolvedValueOnce(false);
-
-    await billTeam("team-1", "sub-1", 3, 123, {
-      endpoint: "search",
-      jobId: "job-1",
+  it("passes is_extract=false by default", async () => {
+    await billTeam("team-1", "sub-1", 5, null, {
+      endpoint: "scrape",
+      jobId: "job-2",
     });
 
     expect(queueBillingOperation).toHaveBeenCalledWith([
       "team-1",
       "sub-1",
-      3,
-      123,
-      { endpoint: "search", jobId: "job-1" },
-      false,
+      5,
+      null,
+      { endpoint: "scrape", jobId: "job-2" },
       false,
     ]);
-    expect(refundCredits).not.toHaveBeenCalled();
   });
 });

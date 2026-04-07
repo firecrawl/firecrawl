@@ -466,7 +466,6 @@ export class AutumnService {
     teamId,
     value,
     properties,
-    requestScoped = false,
   }: TrackCreditsParams): Promise<boolean> {
     if (!autumnClient) return false;
     if (this.isPreviewTeam(teamId)) return false;
@@ -486,7 +485,6 @@ export class AutumnService {
         {
           teamId,
           value,
-          requestScoped,
           error,
         },
       );

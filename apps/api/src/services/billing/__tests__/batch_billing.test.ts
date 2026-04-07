@@ -21,11 +21,9 @@ jest.mock("../../../lib/withAuth", () => ({
 }));
 
 const trackCredits = jest.fn<(args: any) => Promise<boolean>>();
-const refundCredits = jest.fn<(args: any) => Promise<void>>();
 jest.mock("../../autumn/autumn.service", () => ({
   autumnService: {
     trackCredits,
-    refundCredits,
   },
 }));
 
@@ -128,11 +126,10 @@ beforeEach(() => {
   locks.clear();
   rpc.mockResolvedValue({ data: [], error: null });
   trackCredits.mockResolvedValue(true);
-  refundCredits.mockResolvedValue(undefined);
 });
 
 describe("processBillingBatch", () => {
-  it("tracks queued Autumn usage when the request path did not", async () => {
+  it("tracks Autumn usage after successful billing", async () => {
     queue = [makeOp()];
 
     await processBillingBatch();
@@ -151,84 +148,47 @@ describe("processBillingBatch", () => {
     expect(captureException).not.toHaveBeenCalled();
   });
 
-  it("skips Autumn tracking when the request path already tracked the op", async () => {
-    queue = [makeOp({ autumnTrackInRequest: true })];
-
-    await processBillingBatch();
-
-    expect(rpc).toHaveBeenCalled();
-    expect(trackCredits).not.toHaveBeenCalled();
-  });
-
-  it("continues when billing returns success false", async () => {
-    queue = [makeOp({ autumnTrackInRequest: true })];
+  it("skips Autumn tracking when billing returns an error", async () => {
+    queue = [makeOp()];
     rpc.mockResolvedValueOnce({ data: null, error: new Error("db failed") });
 
     await processBillingBatch();
 
-    expect(refundCredits).toHaveBeenCalledWith({
-      teamId: "team-1",
-      value: 10,
-      properties: {
-        source: "processBillingBatch",
-        endpoint: "extract",
-        apiKeyId: 123,
-        subscriptionId: "sub-1",
-      },
-    });
-    expect(captureException).toHaveBeenCalled();
+    expect(trackCredits).not.toHaveBeenCalled();
+    expect(captureException).not.toHaveBeenCalled();
   });
 
   it("captures exceptions when billing throws", async () => {
-    queue = [makeOp({ autumnTrackInRequest: true })];
+    queue = [makeOp()];
     rpc.mockRejectedValueOnce(new Error("rpc exploded"));
 
     await processBillingBatch();
 
-    expect(refundCredits).toHaveBeenCalledWith({
-      teamId: "team-1",
-      value: 10,
-      properties: {
-        source: "processBillingBatch",
-        endpoint: "extract",
-        apiKeyId: 123,
-        subscriptionId: "sub-1",
-      },
-    });
+    expect(trackCredits).not.toHaveBeenCalled();
     expect(captureException).toHaveBeenCalled();
   });
 
-  it("continues processing later groups when Autumn refund fails", async () => {
+  it("continues processing later groups when earlier group fails", async () => {
     queue = [
       makeOp({
         team_id: "team-1",
         subscription_id: "sub-1",
-        autumnTrackInRequest: true,
       }),
       makeOp({
         team_id: "team-2",
         subscription_id: "sub-2",
-        autumnTrackInRequest: false,
       }),
     ];
     rpc
       .mockResolvedValueOnce({ data: null, error: new Error("db failed") })
       .mockResolvedValueOnce({ data: [], error: null });
-    refundCredits.mockRejectedValueOnce(new Error("refund failed"));
 
     await processBillingBatch();
 
-    expect(refundCredits).toHaveBeenCalledWith({
-      teamId: "team-1",
-      value: 10,
-      properties: {
-        source: "processBillingBatch",
-        endpoint: "extract",
-        apiKeyId: 123,
-        subscriptionId: "sub-1",
-      },
-    });
     expect(rpc).toHaveBeenCalledTimes(2);
+    // First group failed, so no Autumn tracking for it
+    // Second group succeeded, so Autumn tracking happens
+    expect(trackCredits).toHaveBeenCalledTimes(1);
     expect(trackCredits).toHaveBeenCalledWith({
       teamId: "team-2",
       value: 10,
@@ -239,6 +199,5 @@ describe("processBillingBatch", () => {
         subscriptionId: "sub-2",
       },
     });
-    expect(captureException).toHaveBeenCalled();
   });
 });
