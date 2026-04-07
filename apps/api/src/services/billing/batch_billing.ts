@@ -30,7 +30,6 @@ interface BillingOperation {
   is_extract: boolean;
   timestamp: string;
   api_key_id: number | null;
-  autumnTrackInRequest: boolean;
 }
 
 // Grouped billing operations for batch processing
@@ -61,41 +60,6 @@ async function releaseLock() {
   const redis = getRedisConnection();
   await redis.del(BATCH_LOCK_KEY);
   logger.info("🔓 Released billing batch processing lock");
-}
-
-async function refundRequestTrackedCredits(group: GroupedBillingOperation) {
-  const requestTrackedCredits = group.operations
-    .filter(op => op.autumnTrackInRequest)
-    .reduce((sum, op) => sum + op.credits, 0);
-
-  if (requestTrackedCredits <= 0) return;
-
-  try {
-    await autumnService.refundCredits({
-      teamId: group.team_id,
-      value: requestTrackedCredits,
-      properties: {
-        source: "processBillingBatch",
-        ...toAutumnBillingProperties(group.billing),
-        apiKeyId: group.api_key_id,
-        subscriptionId: group.subscription_id,
-      },
-    });
-  } catch (error) {
-    logger.warn("Failed to refund Autumn request-tracked credits", {
-      error,
-      team_id: group.team_id,
-      credits: requestTrackedCredits,
-      billing: group.billing,
-    });
-    Sentry.captureException(error, {
-      data: {
-        operation: "batch_billing_refund",
-        team_id: group.team_id,
-        credits: requestTrackedCredits,
-      },
-    });
-  }
 }
 
 /**
@@ -176,10 +140,6 @@ export async function processBillingBatch() {
         continue;
       }
 
-      const batchTrackedCredits = group.operations
-        .filter(op => !op.autumnTrackInRequest)
-        .reduce((sum, op) => sum + op.credits, 0);
-
       try {
         // Execute the actual billing
         const billingResult = await withAuth(supaBillTeam, {
@@ -195,7 +155,6 @@ export async function processBillingBatch() {
         );
 
         if (!billingResult.success) {
-          await refundRequestTrackedCredits(group);
           logger.warn(
             `⚠️ Billing returned success: false for team ${group.team_id}`,
             {
@@ -211,10 +170,10 @@ export async function processBillingBatch() {
           `✅ Successfully billed team ${group.team_id} for ${group.total_credits} credits`,
         );
 
-        if (batchTrackedCredits > 0) {
+        if (group.total_credits > 0) {
           await autumnService.trackCredits({
             teamId: group.team_id,
-            value: batchTrackedCredits,
+            value: group.total_credits,
             properties: {
               source: "processBillingBatch",
               ...toAutumnBillingProperties(group.billing),
@@ -223,9 +182,7 @@ export async function processBillingBatch() {
             },
           });
         }
-
       } catch (error) {
-        await refundRequestTrackedCredits(group);
         logger.error(`❌ Failed to bill team ${group.team_id}`, {
           error,
           group,
@@ -282,7 +239,6 @@ export async function queueBillingOperation(
   api_key_id: number | null,
   billing: BillingMetadata,
   is_extract: boolean = false,
-  autumnTrackInRequest: boolean = false,
 ) {
   // Skip queuing for preview teams
   if (team_id === "preview" || team_id.startsWith("preview_")) {
@@ -307,7 +263,6 @@ export async function queueBillingOperation(
       is_extract,
       timestamp: new Date().toISOString(),
       api_key_id,
-      autumnTrackInRequest,
     };
 
     // Add operation to Redis list

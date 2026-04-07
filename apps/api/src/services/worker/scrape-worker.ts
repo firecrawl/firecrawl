@@ -30,11 +30,7 @@ import {
   StoredCrawl,
 } from "../../lib/crawl-redis";
 import { redisEvictConnection } from "../redis";
-import {
-  resolveBillingMetadata,
-  toAutumnBillingProperties,
-} from "../billing/types";
-import { autumnService } from "../autumn/autumn.service";
+import { resolveBillingMetadata } from "../billing/types";
 import {
   _addScrapeJobToBullMQ,
   addScrapeJob,
@@ -109,13 +105,6 @@ async function billScrapeJob(
     crawlId: job.data.crawl_id,
     crawlerOptions: job.data.crawlerOptions,
   });
-  const autumnProperties = {
-    source: "billScrapeJob",
-    ...toAutumnBillingProperties(billing),
-    apiKeyId: job.data.apiKeyId,
-  };
-  let trackedInRequest = false;
-
   if (job.data.is_scrape !== true && !job.data.internalOptions?.bypassBilling) {
     creditsToBeBilled = await calculateCreditsToBeBilled(
       job.data.scrapeOptions,
@@ -132,12 +121,6 @@ async function billScrapeJob(
       config.USE_DB_AUTHENTICATION
     ) {
       try {
-        trackedInRequest = await autumnService.trackCredits({
-          teamId: job.data.team_id,
-          value: creditsToBeBilled,
-          properties: autumnProperties,
-          requestScoped: true,
-        });
         const billingJobId = uuidv7();
         logger.debug(
           `Adding billing job to queue for team ${job.data.team_id}`,
@@ -161,7 +144,6 @@ async function billScrapeJob(
             timestamp: new Date().toISOString(),
             originating_job_id: job.id,
             api_key_id: job.data.apiKeyId,
-            autumnTrackInRequest: trackedInRequest,
           },
           {
             jobId: billingJobId,
@@ -175,13 +157,6 @@ async function billScrapeJob(
           `Failed to add billing job to queue for team ${job.data.team_id} for ${creditsToBeBilled} credits`,
           { error },
         );
-        if (trackedInRequest && creditsToBeBilled !== null) {
-          await autumnService.refundCredits({
-            teamId: job.data.team_id,
-            value: creditsToBeBilled,
-            properties: autumnProperties,
-          });
-        }
         captureExceptionWithZdrCheck(error, {
           extra: { zeroDataRetention: job.data.zeroDataRetention ?? false },
         });

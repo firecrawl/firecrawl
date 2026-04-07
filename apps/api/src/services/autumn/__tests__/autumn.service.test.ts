@@ -73,8 +73,6 @@ jest.mock("../../../config", () => ({
     AUTUMN_CHECK_ENABLED: undefined,
     AUTUMN_CHECK_DRY_RUN: undefined,
     AUTUMN_EXPERIMENT: "true",
-    AUTUMN_REQUEST_TRACK_EXPERIMENT: undefined,
-    AUTUMN_REQUEST_TRACK_EXPERIMENT_PERCENT: 100,
   },
 }));
 
@@ -86,7 +84,6 @@ import {
   isAutumnCheckDryRun,
   isAutumnCheckEnabled,
   isAutumnEnabled,
-  isAutumnRequestTrackEnabled,
 } from "../autumn.service";
 import { config } from "../../../config";
 
@@ -107,17 +104,11 @@ function setAutumnConfig(
     AUTUMN_CHECK_ENABLED?: string;
     AUTUMN_CHECK_DRY_RUN?: string;
     AUTUMN_EXPERIMENT?: string;
-    AUTUMN_REQUEST_TRACK_EXPERIMENT?: string;
-    AUTUMN_REQUEST_TRACK_EXPERIMENT_PERCENT?: number;
   } = {},
 ) {
   config.AUTUMN_CHECK_ENABLED = overrides.AUTUMN_CHECK_ENABLED;
   config.AUTUMN_CHECK_DRY_RUN = overrides.AUTUMN_CHECK_DRY_RUN;
   config.AUTUMN_EXPERIMENT = overrides.AUTUMN_EXPERIMENT ?? "true";
-  config.AUTUMN_REQUEST_TRACK_EXPERIMENT =
-    overrides.AUTUMN_REQUEST_TRACK_EXPERIMENT;
-  config.AUTUMN_REQUEST_TRACK_EXPERIMENT_PERCENT =
-    overrides.AUTUMN_REQUEST_TRACK_EXPERIMENT_PERCENT ?? 100;
 }
 
 // ---------------------------------------------------------------------------
@@ -592,21 +583,6 @@ describe("isAutumnCheckDryRun", () => {
   it("returns true when AUTUMN_CHECK_DRY_RUN is 'true'", () => {
     config.AUTUMN_CHECK_DRY_RUN = "true";
     expect(isAutumnCheckDryRun()).toBe(true);
-  });
-});
-
-describe("isAutumnRequestTrackEnabled", () => {
-  afterEach(() => {
-    setAutumnConfig({ AUTUMN_REQUEST_TRACK_EXPERIMENT: undefined });
-  });
-
-  it("returns false when request tracking flag is not 'true'", () => {
-    expect(isAutumnRequestTrackEnabled()).toBe(false);
-  });
-
-  it("returns true only when both request tracking and Autumn experiment are enabled", () => {
-    config.AUTUMN_REQUEST_TRACK_EXPERIMENT = "true";
-    expect(isAutumnRequestTrackEnabled()).toBe(true);
   });
 });
 

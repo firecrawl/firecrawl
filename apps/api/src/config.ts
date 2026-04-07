@@ -51,8 +51,6 @@ const configSchema = z.object({
   AUTUMN_CHECK_ENABLED: z.string().optional(),
   AUTUMN_CHECK_DRY_RUN: z.string().optional(),
   AUTUMN_EXPERIMENT: z.string().optional(),
-  AUTUMN_REQUEST_TRACK_EXPERIMENT: z.string().optional(),
-  AUTUMN_REQUEST_TRACK_EXPERIMENT_PERCENT: z.coerce.number().default(100),
   RESEND_API_KEY: z.string().optional(),
   PREVIEW_TOKEN: z.string().optional(),
   SEARCH_PREVIEW_TOKEN: z.string().optional(),

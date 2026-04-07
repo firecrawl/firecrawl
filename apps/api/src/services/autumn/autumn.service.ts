@@ -46,10 +46,6 @@ export function isAutumnCheckDryRun(): boolean {
   return config.AUTUMN_CHECK_DRY_RUN === "true";
 }
 
-export function isAutumnRequestTrackEnabled(): boolean {
-  return config.AUTUMN_REQUEST_TRACK_EXPERIMENT === "true" && isAutumnEnabled();
-}
-
 const AUTUMN_DEFAULT_PLAN_ID = "free";
 /**
  * Size-bounded Map with FIFO eviction. When the map is at capacity the oldest
@@ -502,12 +498,8 @@ export class AutumnService {
     teamId,
     value,
     properties,
-    requestScoped = false,
   }: TrackCreditsParams): Promise<boolean> {
-    const isEnabled = requestScoped
-      ? isAutumnRequestTrackEnabled
-      : isAutumnEnabled;
-    if (!isEnabled()) return false;
+    if (!isAutumnEnabled()) return false;
     if (!autumnClient) return false;
     if (this.isPreviewTeam(teamId)) return false;
 
@@ -526,7 +518,6 @@ export class AutumnService {
         {
           teamId,
           value,
-          requestScoped,
           error,
         },
       );

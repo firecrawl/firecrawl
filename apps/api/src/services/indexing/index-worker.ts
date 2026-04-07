@@ -89,9 +89,7 @@ const processBillingJobInternal = async (token: string, job: Job) => {
         endpoint,
         is_extract,
         api_key_id,
-        autumnTrackInRequest,
-      } =
-        job.data;
+      } = job.data;
 
       logger.info(`Adding team ${team_id} billing operation to batch queue`, {
         credits,
@@ -110,7 +108,6 @@ const processBillingJobInternal = async (token: string, job: Job) => {
           isExtract: is_extract,
         }),
         is_extract,
-        autumnTrackInRequest,
       );
     } else {
       logger.warn(`Unknown billing job type: ${job.name}`);
