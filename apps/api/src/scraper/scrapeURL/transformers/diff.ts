@@ -1,7 +1,7 @@
 import { supabase_service } from "../../../services/supabase";
 import { Document } from "../../../controllers/v1/types";
 import { Meta } from "../index";
-import gitDiff from "git-diff";
+import { createTwoFilesPatch } from "diff";
 import parseDiff from "parse-diff";
 import { generateCompletions } from "./llmExtract";
 import { hasFormatOfType } from "../../../lib/format-utils";
@@ -152,10 +152,12 @@ export async function deriveDiff(
         changeTrackingFormat?.modes?.includes("git-diff") &&
         changeStatus === "changed"
       ) {
-        const diffText = gitDiff(previousMarkdown, currentMarkdown, {
-          color: false,
-          wordDiff: false,
-        });
+        const diffText = createTwoFilesPatch(
+          "previous",
+          "current",
+          previousMarkdown,
+          currentMarkdown,
+        );
         // meta.logger.debug("Diff text", { diffText });
         if (diffText) {
           const diffStructured = parseDiff(diffText);
