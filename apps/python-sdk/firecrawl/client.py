@@ -302,13 +302,16 @@ class AsyncFirecrawl:
         self.cancel_crawl = self._v2_client.cancel_crawl
         self.crawl = self._v2_client.crawl
         self.get_crawl_errors = self._v2_client.get_crawl_errors
+        self.get_active_crawls = self._v2_client.get_active_crawls
         self.active_crawls = self._v2_client.active_crawls
+        self.wait_crawl = self._v2_client.wait_crawl
         self.crawl_params_preview = self._v2_client.crawl_params_preview
 
         self.start_batch_scrape = self._v2_client.start_batch_scrape
         self.get_batch_scrape_status = self._v2_client.get_batch_scrape_status
         self.get_batch_scrape_status_page = self._v2_client.get_batch_scrape_status_page
         self.cancel_batch_scrape = self._v2_client.cancel_batch_scrape
+        self.wait_batch_scrape = self._v2_client.wait_batch_scrape
         self.batch_scrape = self._v2_client.batch_scrape
         self.get_batch_scrape_errors = self._v2_client.get_batch_scrape_errors
 
