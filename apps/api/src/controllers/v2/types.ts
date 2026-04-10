@@ -928,6 +928,17 @@ export const crawlerOptions = z.strictObject({
 
 type CrawlerOptions = z.infer<typeof crawlerOptions>;
 
+// Extended crawler options for map operations that includes additional properties from MapRequest
+// Zod schema for MapCrawlerOptions - extends crawlerOptions with map-specific fields
+const mapCrawlerOptionsSchema = crawlerOptions.partial().extend({
+  sitemap: z.enum(["only", "include", "skip"]).optional(),
+  timeout: z.number().positive().finite().optional(),
+  useMock: z.string().optional(),
+});
+
+// Type inferred from zod schema
+export type MapCrawlerOptions = z.infer<typeof mapCrawlerOptionsSchema>;
+
 const crawlRequestSchemaBase = crawlerOptions.extend({
   url: URL,
   origin: z.string().optional().prefault("api"),
@@ -978,6 +989,9 @@ const mapRequestSchemaBase = crawlerOptions
     ignoreQueryParameters: z.boolean().prefault(true),
     search: z.string().optional(),
     sitemap: z.enum(["only", "include", "skip"]).prefault("include"),
+    // Backward compatibility: sitemapOnly and ignoreSitemap transform to sitemap
+    sitemapOnly: z.boolean().optional(),
+    ignoreSitemap: z.boolean().optional(),
     limit: z.number().min(1).max(MAX_MAP_LIMIT).prefault(5000),
     timeout: z.number().positive().finite().optional(),
     useMock: z.string().optional(),
@@ -988,7 +1002,29 @@ const mapRequestSchemaBase = crawlerOptions
     headers: z.record(z.string(), z.string()).optional(),
   });
 
-export const mapRequestSchema = strictWithMessage(mapRequestSchemaBase);
+export const mapRequestSchema = strictWithMessage(
+  mapRequestSchemaBase,
+).transform(data => {
+  // Transform sitemapOnly and ignoreSitemap to sitemap enum
+  // sitemap takes precedence if explicitly set
+  let sitemap = data.sitemap;
+
+  if (data.sitemap === "include" || !data.sitemap) {
+    // Only transform if sitemap wasn't explicitly set to "only" or "skip"
+    if (data.sitemapOnly === true) {
+      sitemap = "only";
+    } else if (data.ignoreSitemap === true) {
+      sitemap = "skip";
+    }
+  }
+
+  // Remove the backward compatibility fields from the output
+  const { sitemapOnly, ignoreSitemap, ...rest } = data;
+  return {
+    ...rest,
+    sitemap,
+  };
+});
 
 // export type MapRequest = {
 //   url: string;

@@ -698,6 +698,56 @@ describe("V2 Types Validation", () => {
       const result = mapRequestSchema.parse(input);
       expect(result.sitemap).toBe("only");
     });
+
+    it("should transform sitemapOnly: true to sitemap: 'only'", () => {
+      const input = {
+        url: "https://example.com",
+        sitemapOnly: true,
+      };
+
+      const result = mapRequestSchema.parse(input);
+      expect(result.sitemap).toBe("only");
+      // Verify backward compatibility fields are removed
+      expect(result).not.toHaveProperty("sitemapOnly");
+    });
+
+    it("should transform ignoreSitemap: true to sitemap: 'skip'", () => {
+      const input = {
+        url: "https://example.com",
+        ignoreSitemap: true,
+      };
+
+      const result = mapRequestSchema.parse(input);
+      expect(result.sitemap).toBe("skip");
+      // Verify backward compatibility fields are removed
+      expect(result).not.toHaveProperty("ignoreSitemap");
+    });
+
+    it("should prioritize explicit sitemap over sitemapOnly", () => {
+      const input = {
+        url: "https://example.com",
+        sitemap: "skip",
+        sitemapOnly: true,
+      };
+
+      const result = mapRequestSchema.parse(input);
+      // Explicit sitemap should take precedence
+      expect(result.sitemap).toBe("skip");
+      expect(result).not.toHaveProperty("sitemapOnly");
+    });
+
+    it("should prioritize explicit sitemap over ignoreSitemap", () => {
+      const input = {
+        url: "https://example.com",
+        sitemap: "only",
+        ignoreSitemap: true,
+      };
+
+      const result = mapRequestSchema.parse(input);
+      // Explicit sitemap should take precedence
+      expect(result.sitemap).toBe("only");
+      expect(result).not.toHaveProperty("ignoreSitemap");
+    });
   });
 
   describe("batchScrapeRequestSchema", () => {

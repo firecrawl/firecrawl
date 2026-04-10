@@ -3,8 +3,8 @@
 # @baseUrl = https://api.firecrawl.dev
 
 
-### Crawl
-# @name crawl
+### Map Website
+# @name map
 POST {{baseUrl}}/v2/map HTTP/1.1
 Authorization: Bearer {{$dotenv TEST_API_KEY}}
 content-type: application/json
@@ -12,6 +12,66 @@ content-type: application/json
 {
   "url": "https://firecrawl.dev",
   "limit": 2
+}
+
+### Map Website - Sitemap Only (backward compatible)
+# @name mapSitemapOnly
+POST {{baseUrl}}/v2/map HTTP/1.1
+Authorization: Bearer {{$dotenv TEST_API_KEY}}
+content-type: application/json
+
+{
+  "url": "https://firecrawl.dev",
+  "sitemapOnly": true,
+  "limit": 10
+}
+
+### Map Website - Sitemap Only (new format)
+# @name mapSitemapOnlyNew
+POST {{baseUrl}}/v2/map HTTP/1.1
+Authorization: Bearer {{$dotenv TEST_API_KEY}}
+content-type: application/json
+
+{
+  "url": "https://firecrawl.dev",
+  "sitemap": "only",
+  "limit": 10
+}
+
+### Map Website - Include Sitemap
+# @name mapSitemapInclude
+POST {{baseUrl}}/v2/map HTTP/1.1
+Authorization: Bearer {{$dotenv TEST_API_KEY}}
+content-type: application/json
+
+{
+  "url": "https://firecrawl.dev",
+  "sitemap": "include",
+  "limit": 10
+}
+
+### Map Website - Skip Sitemap (backward compatible)
+# @name mapSitemapSkip
+POST {{baseUrl}}/v2/map HTTP/1.1
+Authorization: Bearer {{$dotenv TEST_API_KEY}}
+content-type: application/json
+
+{
+  "url": "https://firecrawl.dev",
+  "ignoreSitemap": true,
+  "limit": 10
+}
+
+### Map Website - Skip Sitemap (new format)
+# @name mapSitemapSkipNew
+POST {{baseUrl}}/v2/map HTTP/1.1
+Authorization: Bearer {{$dotenv TEST_API_KEY}}
+content-type: application/json
+
+{
+  "url": "https://firecrawl.dev",
+  "sitemap": "skip",
+  "limit": 10
 }
 
 # {
