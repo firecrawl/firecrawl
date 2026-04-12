@@ -17,5 +17,9 @@ RUN set -eux; \
     sed -ri "s/^#?shared_preload_libraries\s*=.*/shared_preload_libraries = 'pg_cron'/" "$conf_sample"; \
     printf "\n# Added for pg_cron\ncron.database_name = 'postgres'\n" >> "$conf_sample"
 
-# Copy nuq.sql so it is executed as part of the initdb sequence
-COPY nuq.sql /docker-entrypoint-initdb.d/010-nuq.sql
+# Copy nuq.sql so it is executed as part of the initdb sequence.
+# --chmod=0644 ensures world-readable permissions: the postgres Docker image
+# re-executes itself via `gosu postgres`, so init scripts run as the postgres
+# user, not root.  Without explicit permissions the file may be unreadable,
+# causing: "psql: error: /docker-entrypoint-initdb.d/010-nuq.sql: Permission denied"
+COPY --chmod=0644 nuq.sql /docker-entrypoint-initdb.d/010-nuq.sql
