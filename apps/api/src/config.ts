@@ -162,6 +162,9 @@ const configSchema = z.object({
   PDF_MU_V2_EXPERIMENT: z.string().optional(),
   PDF_MU_V2_EXPERIMENT_PERCENT: z.coerce.number().default(100),
 
+  // MinerU direct routing (bypass Rust extraction for a % of traffic)
+  MINERU_PERCENT: z.coerce.number().min(0).max(100).default(0),
+
   // Fire PDF (replaces MinerU for a % of traffic)
   FIRE_PDF_ENABLE: z.stringbool().optional(),
   FIRE_PDF_PERCENT: z.coerce.number().min(0).max(100).default(10),

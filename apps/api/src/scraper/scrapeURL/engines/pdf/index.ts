@@ -161,7 +161,18 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
     const rustEnabled = !!config.PDF_RUST_EXTRACT_ENABLE;
     const logger = meta.logger.child({ method: "scrapePDF/processPdf" });
 
-    if (!rustEnabled || mode === "ocr" || forceFirePDF) {
+    // Route a percentage of traffic directly to MinerU, bypassing Rust extraction.
+    const routeToMinerU =
+      config.MINERU_PERCENT > 0 && Math.random() * 100 < config.MINERU_PERCENT;
+
+    if (routeToMinerU) {
+      logger.info("Routing to MinerU via MINERU_PERCENT", {
+        mineruPercent: config.MINERU_PERCENT,
+        url: meta.rewrittenUrl ?? meta.url,
+      });
+    }
+
+    if (!rustEnabled || mode === "ocr" || forceFirePDF || routeToMinerU) {
       // Legacy / OCR path: detect metadata only, skip Rust extraction.
       // When PDF_RUST_EXTRACT_ENABLE is off this is the only path taken,
       // matching current prod behaviour (detectPdf → MinerU → pdfParse).
@@ -349,12 +360,14 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
       const base64Content = (await readFile(tempFilePath)).toString("base64");
 
       // Route a percentage of traffic to Fire PDF instead of MinerU
+      // Skip Fire PDF when we explicitly routed to MinerU via MINERU_PERCENT
       const useFirePDF =
-        forceFirePDF ||
-        (config.FIRE_PDF_ENABLE &&
-          config.FIRE_PDF_BASE_URL &&
-          base64Content.length < MAX_FILE_SIZE &&
-          Math.random() * 100 < config.FIRE_PDF_PERCENT);
+        !routeToMinerU &&
+        (forceFirePDF ||
+          (config.FIRE_PDF_ENABLE &&
+            config.FIRE_PDF_BASE_URL &&
+            base64Content.length < MAX_FILE_SIZE &&
+            Math.random() * 100 < config.FIRE_PDF_PERCENT));
 
       if (useFirePDF) {
         try {
