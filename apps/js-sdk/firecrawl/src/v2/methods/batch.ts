@@ -4,6 +4,8 @@ import {
   type CrawlErrorsResponse,
   type Document,
   type BatchScrapeOptions,
+  type JsonFormat,
+  type ScrapeOptions,
   type PaginationConfig,
   JobTimeoutError,
   SdkError,
@@ -12,6 +14,21 @@ import { HttpClient } from "../utils/httpClient";
 import { ensureValidScrapeOptions } from "../utils/validation";
 import { fetchAllPages } from "../utils/pagination";
 import { normalizeAxiosError, throwForBadResponse, isRetryableError } from "../utils/errorHandler";
+import { isZodSchema, zodSchemaToJsonSchema } from "../../utils/zodSchemaToJson";
+
+function convertFormatsSchemas(options: ScrapeOptions): ScrapeOptions {
+  if (!options.formats) return options;
+  const convertedFormats = options.formats.map(format => {
+    if (typeof format === "object" && format !== null && (format as JsonFormat).type === "json") {
+      const jsonFormat = format as JsonFormat;
+      if (jsonFormat.schema != null && isZodSchema(jsonFormat.schema)) {
+        return { ...jsonFormat, schema: zodSchemaToJsonSchema(jsonFormat.schema) };
+      }
+    }
+    return format;
+  });
+  return { ...options, formats: convertedFormats };
+}
 
 export async function startBatchScrape(
   http: HttpClient,
@@ -32,7 +49,7 @@ export async function startBatchScrape(
   const payload: Record<string, unknown> = { urls };
   if (options) {
     ensureValidScrapeOptions(options);
-    Object.assign(payload, options);
+    Object.assign(payload, convertFormatsSchemas(options));
   }
   if (webhook != null) payload.webhook = webhook;
   if (appendToId != null) payload.appendToId = appendToId;
