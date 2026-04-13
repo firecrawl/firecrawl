@@ -44,10 +44,7 @@ const configSchema = z.object({
   BULL_AUTH_KEY: z.string().optional(),
   OPENAI_API_KEY: z.string().optional(),
   OPENAI_BASE_URL: z.string().optional(),
-  USE_RESPONSES_ENDPOINT: z
-    .enum(["true", "false"])
-    .optional()
-    .transform((val) => val !== "false"),
+  USE_RESPONSES_ENDPOINT: z.stringbool().default(true),
   OPENROUTER_API_KEY: z.string().optional(),
   LLAMAPARSE_API_KEY: z.string().optional(),
   STRIPE_SECRET_KEY: z.string().optional(),
