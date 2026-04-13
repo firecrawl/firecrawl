@@ -118,15 +118,15 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
           },
         );
 
-  const contentType =
-    "headers" in response
-      ? response.headers.get("content-type")
-      : response.contentType;
-  if (shouldRemovePdfFeatureForContentType(contentType)) {
-    throw new RemoveFeatureError(["pdf"]);
-  }
-
   try {
+    const contentType =
+      "headers" in response
+        ? response.headers.get("content-type")
+        : response.contentType;
+    if (shouldRemovePdfFeatureForContentType(contentType)) {
+      throw new RemoveFeatureError(["pdf"]);
+    }
+
     // Validate the downloaded file is actually a PDF by checking magic bytes
     const header = Buffer.alloc(PDF_SNIFF_WINDOW);
     const fh = await open(tempFilePath, "r");
