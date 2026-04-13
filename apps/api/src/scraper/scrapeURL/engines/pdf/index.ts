@@ -357,8 +357,9 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
     }
 
     // OCR / MU fallback.
-    // Skipped only when Rust extraction is enabled AND mode is "fast".
-    const skipOCR = rustEnabled && mode === "fast";
+    // Skipped only when Rust extraction is enabled AND mode is "fast",
+    // unless we explicitly routed to MinerU via MINERU_PERCENT.
+    const skipOCR = rustEnabled && mode === "fast" && !routeToMinerU;
     if (!result && !skipOCR) {
       const base64Content = (await readFile(tempFilePath)).toString("base64");
 
