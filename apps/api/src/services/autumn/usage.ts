@@ -116,9 +116,7 @@ function aggregateHistoricalPeriodsByMonth(list: any[]): HistoricalPeriod[] {
   }));
 }
 
-function getGroupedCredits(
-  entry: any,
-): Record<string, number> | undefined {
+function getGroupedCredits(entry: any): Record<string, number> | undefined {
   return (
     entry.groupedValues?.[CREDITS_FEATURE_ID] ??
     entry.grouped_values?.[CREDITS_FEATURE_ID]
@@ -259,11 +257,9 @@ export async function getTeamBalance(
     usage: creditBalance?.usage ?? 0,
     unlimited: creditBalance?.unlimited ?? false,
     periodStart: periodStartEpoch
-      ? new Date(periodStartEpoch * 1000).toISOString()
+      ? new Date(periodStartEpoch).toISOString()
       : null,
-    periodEnd: periodEndEpoch
-      ? new Date(periodEndEpoch * 1000).toISOString()
-      : null,
+    periodEnd: periodEndEpoch ? new Date(periodEndEpoch).toISOString() : null,
   };
 }
 
