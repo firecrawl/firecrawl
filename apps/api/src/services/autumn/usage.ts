@@ -262,12 +262,12 @@ export async function getTeamBalance(
   if (periodStartEpoch == null && periodEndEpoch == null) {
     const resetAt: number | undefined = creditBalance?.nextResetAt;
     if (resetAt) {
-      periodEndEpoch = resetAt;
       const resetEntry = breakdowns?.find(
         (b: any) => b.reset?.interval && b.reset.interval !== "one_off",
       );
       const interval = resetEntry?.reset?.interval;
       if (interval === "month" || interval === "year") {
+        periodEndEpoch = resetAt;
         const endDate = new Date(resetAt);
         const targetYear =
           interval === "year"

@@ -635,6 +635,39 @@ describe("getTeamBalance", () => {
     expect(result!.periodEnd).toBe("2028-02-29T12:00:00.000Z");
   });
 
+  it("Bug 5 — leaves both period dates null when nextResetAt exists but no valid interval breakdown", async () => {
+    const nextResetAt = Date.parse("2026-05-03T05:50:07.000Z");
+
+    mockEntitiesGet.mockResolvedValue({
+      balances: {
+        CREDITS: {
+          remaining: 500,
+          granted: 500,
+          usage: 0,
+          unlimited: false,
+          nextResetAt,
+          breakdown: [
+            {
+              planId: null,
+              includedGrant: 500,
+              reset: { interval: "one_off", resetsAt: null },
+            },
+          ],
+        },
+      },
+      subscriptions: [
+        { status: "active", currentPeriodStart: null, currentPeriodEnd: null },
+      ],
+    });
+
+    const result = await getTeamBalance("team-1");
+
+    expect(result).not.toBeNull();
+    // Both should be null — not an asymmetric response with only periodEnd set
+    expect(result!.periodStart).toBeNull();
+    expect(result!.periodEnd).toBeNull();
+  });
+
   it("Bug 5 — leaves period null when no nextResetAt and no subscription periods", async () => {
     mockEntitiesGet.mockResolvedValue({
       balances: {
