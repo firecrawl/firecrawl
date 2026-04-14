@@ -539,6 +539,102 @@ describe("getTeamBalance", () => {
     expect(result!.periodEnd).toBe("2025-12-03T05:50:07.000Z");
   });
 
+  it("Bug 5 — clamps day when month has fewer days (Mar 31 - 1 month = Feb 28)", async () => {
+    const nextResetAt = Date.parse("2026-03-31T12:00:00.000Z");
+
+    mockEntitiesGet.mockResolvedValue({
+      balances: {
+        CREDITS: {
+          remaining: 100000,
+          granted: 100000,
+          usage: 0,
+          unlimited: false,
+          nextResetAt,
+          breakdown: [
+            {
+              planId: "standard_yearly",
+              includedGrant: 100000,
+              reset: { interval: "month", resetsAt: nextResetAt },
+            },
+          ],
+        },
+      },
+      subscriptions: [
+        { status: "active", currentPeriodStart: null, currentPeriodEnd: null },
+      ],
+    });
+
+    const result = await getTeamBalance("team-1");
+
+    expect(result).not.toBeNull();
+    expect(result!.periodStart).toBe("2026-02-28T12:00:00.000Z");
+    expect(result!.periodEnd).toBe("2026-03-31T12:00:00.000Z");
+  });
+
+  it("Bug 5 — clamps day for leap year (Mar 31 - 1 month in leap year = Feb 29)", async () => {
+    const nextResetAt = Date.parse("2028-03-31T12:00:00.000Z"); // 2028 is a leap year
+
+    mockEntitiesGet.mockResolvedValue({
+      balances: {
+        CREDITS: {
+          remaining: 100000,
+          granted: 100000,
+          usage: 0,
+          unlimited: false,
+          nextResetAt,
+          breakdown: [
+            {
+              planId: "standard_yearly",
+              includedGrant: 100000,
+              reset: { interval: "month", resetsAt: nextResetAt },
+            },
+          ],
+        },
+      },
+      subscriptions: [
+        { status: "active", currentPeriodStart: null, currentPeriodEnd: null },
+      ],
+    });
+
+    const result = await getTeamBalance("team-1");
+
+    expect(result).not.toBeNull();
+    expect(result!.periodStart).toBe("2028-02-29T12:00:00.000Z");
+    expect(result!.periodEnd).toBe("2028-03-31T12:00:00.000Z");
+  });
+
+  it("Bug 5 — clamps day for yearly subtraction (Feb 29 leap year - 1 year = Feb 28)", async () => {
+    const nextResetAt = Date.parse("2028-02-29T12:00:00.000Z"); // 2028 is leap, 2027 is not
+
+    mockEntitiesGet.mockResolvedValue({
+      balances: {
+        CREDITS: {
+          remaining: 500000,
+          granted: 500000,
+          usage: 0,
+          unlimited: false,
+          nextResetAt,
+          breakdown: [
+            {
+              planId: "growth_yearly",
+              includedGrant: 500000,
+              reset: { interval: "year", resetsAt: nextResetAt },
+            },
+          ],
+        },
+      },
+      subscriptions: [
+        { status: "active", currentPeriodStart: null, currentPeriodEnd: null },
+      ],
+    });
+
+    const result = await getTeamBalance("team-1");
+
+    expect(result).not.toBeNull();
+    expect(result!.periodStart).toBe("2027-02-28T12:00:00.000Z");
+    expect(result!.periodEnd).toBe("2028-02-29T12:00:00.000Z");
+  });
+
   it("Bug 5 — leaves period null when no nextResetAt and no subscription periods", async () => {
     mockEntitiesGet.mockResolvedValue({
       balances: {

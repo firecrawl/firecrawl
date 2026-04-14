@@ -267,26 +267,29 @@ export async function getTeamBalance(
         (b: any) => b.reset?.interval && b.reset.interval !== "one_off",
       );
       const interval = resetEntry?.reset?.interval;
-      if (interval === "month") {
+      if (interval === "month" || interval === "year") {
         const endDate = new Date(resetAt);
+        const targetYear =
+          interval === "year"
+            ? endDate.getUTCFullYear() - 1
+            : endDate.getUTCFullYear();
+        const targetMonth =
+          interval === "month"
+            ? endDate.getUTCMonth() - 1
+            : endDate.getUTCMonth();
+
+        // Clamp day to the last day of the target month to avoid overflow
+        // (e.g. Mar 31 minus 1 month → Feb 28, not Mar 3)
+        const lastDay = new Date(
+          Date.UTC(targetYear, targetMonth + 1, 0),
+        ).getUTCDate();
+        const clampedDay = Math.min(endDate.getUTCDate(), lastDay);
+
         periodStartEpoch = new Date(
           Date.UTC(
-            endDate.getUTCFullYear(),
-            endDate.getUTCMonth() - 1,
-            endDate.getUTCDate(),
-            endDate.getUTCHours(),
-            endDate.getUTCMinutes(),
-            endDate.getUTCSeconds(),
-            endDate.getUTCMilliseconds(),
-          ),
-        ).getTime();
-      } else if (interval === "year") {
-        const endDate = new Date(resetAt);
-        periodStartEpoch = new Date(
-          Date.UTC(
-            endDate.getUTCFullYear() - 1,
-            endDate.getUTCMonth(),
-            endDate.getUTCDate(),
+            targetYear,
+            targetMonth,
+            clampedDay,
             endDate.getUTCHours(),
             endDate.getUTCMinutes(),
             endDate.getUTCSeconds(),
