@@ -211,14 +211,25 @@ export async function getTeamBalance(
     // Entity not found — fall through to customer-level
   }
 
-  // Fall back to customer-level balance if CREDITS feature not present
-  if (!balances?.[CREDITS_FEATURE_ID]) {
+  // Fall back to customer-level if CREDITS balance is missing, or if the
+  // entity had no subscriptions (subscriptions live at the customer level
+  // while balances may be entity-scoped).
+  const needCustomerFallback =
+    !balances?.[CREDITS_FEATURE_ID] || !subscriptions?.length;
+
+  if (needCustomerFallback) {
     const customer = await autumnClient.customers.getOrCreate({
       customerId: orgId,
       autoEnablePlanId: "free",
     });
-    balances = customer?.balances;
-    subscriptions = customer?.subscriptions;
+
+    if (!balances?.[CREDITS_FEATURE_ID]) {
+      balances = customer?.balances;
+    }
+    // Always prefer customer-level subscriptions when entity had none
+    if (!subscriptions?.length) {
+      subscriptions = customer?.subscriptions;
+    }
   }
 
   const creditBalance = balances?.[CREDITS_FEATURE_ID];
