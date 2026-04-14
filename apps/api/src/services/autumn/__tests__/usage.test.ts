@@ -21,13 +21,13 @@ let teamLookup = {
 
 let apiKeysData: Array<{ id: number; name: string }> = [];
 
-jest.unstable_mockModule("../client", () => ({
+jest.mock("../client", () => ({
   get autumnClient() {
     return autumnClientRef;
   },
 }));
 
-jest.unstable_mockModule("../../supabase", () => ({
+jest.mock("../../supabase", () => ({
   get supabase_rr_service() {
     return {
       from: (table: string) => ({
@@ -53,24 +53,11 @@ jest.unstable_mockModule("../../supabase", () => ({
   },
 }));
 
-// Dynamic import deferred to beforeAll so the file compiles under tsc's
-// NodeNext / CommonJS mode (top-level await is not allowed in CJS).
-let getTeamBalance: Awaited<typeof import("../usage.js")>["getTeamBalance"];
-let getTeamHistoricalUsage: Awaited<
-  typeof import("../usage.js")
->["getTeamHistoricalUsage"];
-let getTeamHistoricalUsageByApiKey: Awaited<
-  typeof import("../usage.js")
->["getTeamHistoricalUsageByApiKey"];
-
-beforeAll(async () => {
-  // Use extensionless path for Jest resolver compatibility; the .js in the
-  // type annotations above satisfies tsc's NodeNext module resolution.
-  const mod = await import("../usage");
-  getTeamBalance = mod.getTeamBalance;
-  getTeamHistoricalUsage = mod.getTeamHistoricalUsage;
-  getTeamHistoricalUsageByApiKey = mod.getTeamHistoricalUsageByApiKey;
-});
+import {
+  getTeamBalance,
+  getTeamHistoricalUsage,
+  getTeamHistoricalUsageByApiKey,
+} from "../usage";
 
 beforeEach(() => {
   jest.clearAllMocks();
