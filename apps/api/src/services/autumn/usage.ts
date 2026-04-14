@@ -227,13 +227,14 @@ export async function getTeamBalance(
     return null;
   }
 
-  // Find the active subscription's billing period
-  const activeSub = subscriptions?.find(
-    (s: any) =>
-      s.status === "active" ||
-      s.status === "trialing" ||
-      s.status === "past_due",
-  );
+  // Find the subscription's billing period.
+  // Autumn uses "active" and "scheduled" statuses (not Stripe's "trialing" /
+  // "past_due").  Prefer an active subscription, but fall back to any
+  // subscription that carries period timestamps so we never return nulls
+  // when the data is actually available.
+  const activeSub =
+    subscriptions?.find((s: any) => s.status === "active") ??
+    subscriptions?.find((s: any) => s.currentPeriodStart != null);
 
   const periodStartEpoch = activeSub?.currentPeriodStart;
   const periodEndEpoch = activeSub?.currentPeriodEnd;
