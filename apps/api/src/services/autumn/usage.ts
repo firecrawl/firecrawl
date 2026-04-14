@@ -251,13 +251,14 @@ export async function getTeamBalance(
   const periodEndEpoch = activeSub?.currentPeriodEnd;
 
   // Extract plan-only credits from the breakdown (excludes credit packs,
-  // auto-recharge, etc.) to preserve backwards compatibility with the old
-  // planCredits field semantics.
+  // auto-recharge, one-off grants, etc.) to preserve backwards compatibility
+  // with the old planCredits field semantics.
   let planCredits = creditBalance?.granted ?? 0;
   const breakdowns: Array<any> | undefined = creditBalance?.breakdown;
   if (breakdowns?.length) {
     planCredits = breakdowns.reduce(
-      (sum: number, b: any) => sum + (b.includedGrant ?? 0),
+      (sum: number, b: any) =>
+        b.planId != null ? sum + (b.includedGrant ?? 0) : sum,
       0,
     );
   }
