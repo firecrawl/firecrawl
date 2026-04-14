@@ -1,7 +1,21 @@
 import { createDefaultEsmPreset, type JestConfigWithTsJest } from "ts-jest";
 
 const config: JestConfigWithTsJest = {
-  ...createDefaultEsmPreset(),
+  extensionsToTreatAsEsm: [".ts", ".tsx", ".mts"],
+  transform: {
+    "^.+\\.m?tsx?$": [
+      "ts-jest",
+      {
+        useESM: true,
+        diagnostics: { ignoreDiagnostics: [151002] },
+        tsconfig: {
+          module: "ESNext",
+          moduleResolution: "bundler",
+          isolatedModules: true,
+        },
+      },
+    ],
+  },
   verbose: true,
   testPathIgnorePatterns: ["<rootDir>/dist/"],
   forceExit: true,

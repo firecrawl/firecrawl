@@ -247,14 +247,55 @@ export async function getTeamBalance(
     subscriptions?.find((s: any) => s.status === "active") ??
     subscriptions?.find((s: any) => s.currentPeriodStart != null);
 
-  const periodStartEpoch = activeSub?.currentPeriodStart;
-  const periodEndEpoch = activeSub?.currentPeriodEnd;
+  let periodStartEpoch = activeSub?.currentPeriodStart;
+  let periodEndEpoch = activeSub?.currentPeriodEnd;
 
   // Extract plan-only credits from the breakdown (excludes credit packs,
   // auto-recharge, one-off grants, etc.) to preserve backwards compatibility
   // with the old planCredits field semantics.
   let planCredits = creditBalance?.granted ?? 0;
   const breakdowns: Array<any> | undefined = creditBalance?.breakdown;
+
+  // For yearly plans, Autumn may not populate currentPeriodStart/End on the
+  // subscription.  Fall back to the balance's reset schedule: nextResetAt is
+  // the period end, and we derive the start from the reset interval.
+  if (periodStartEpoch == null && periodEndEpoch == null) {
+    const resetAt: number | undefined = creditBalance?.nextResetAt;
+    if (resetAt) {
+      periodEndEpoch = resetAt;
+      const resetEntry = breakdowns?.find(
+        (b: any) => b.reset?.interval && b.reset.interval !== "one_off",
+      );
+      const interval = resetEntry?.reset?.interval;
+      if (interval === "month") {
+        const endDate = new Date(resetAt);
+        periodStartEpoch = new Date(
+          Date.UTC(
+            endDate.getUTCFullYear(),
+            endDate.getUTCMonth() - 1,
+            endDate.getUTCDate(),
+            endDate.getUTCHours(),
+            endDate.getUTCMinutes(),
+            endDate.getUTCSeconds(),
+            endDate.getUTCMilliseconds(),
+          ),
+        ).getTime();
+      } else if (interval === "year") {
+        const endDate = new Date(resetAt);
+        periodStartEpoch = new Date(
+          Date.UTC(
+            endDate.getUTCFullYear() - 1,
+            endDate.getUTCMonth(),
+            endDate.getUTCDate(),
+            endDate.getUTCHours(),
+            endDate.getUTCMinutes(),
+            endDate.getUTCSeconds(),
+            endDate.getUTCMilliseconds(),
+          ),
+        ).getTime();
+      }
+    }
+  }
   if (breakdowns?.length) {
     planCredits = breakdowns.reduce(
       (sum: number, b: any) =>
