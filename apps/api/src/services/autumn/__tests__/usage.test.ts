@@ -53,11 +53,24 @@ jest.unstable_mockModule("../../supabase", () => ({
   },
 }));
 
-const {
-  getTeamBalance,
-  getTeamHistoricalUsage,
-  getTeamHistoricalUsageByApiKey,
-} = await import("../usage");
+// Dynamic import deferred to beforeAll so the file compiles under tsc's
+// NodeNext / CommonJS mode (top-level await is not allowed in CJS).
+let getTeamBalance: Awaited<typeof import("../usage.js")>["getTeamBalance"];
+let getTeamHistoricalUsage: Awaited<
+  typeof import("../usage.js")
+>["getTeamHistoricalUsage"];
+let getTeamHistoricalUsageByApiKey: Awaited<
+  typeof import("../usage.js")
+>["getTeamHistoricalUsageByApiKey"];
+
+beforeAll(async () => {
+  // Use extensionless path for Jest resolver compatibility; the .js in the
+  // type annotations above satisfies tsc's NodeNext module resolution.
+  const mod = await import("../usage");
+  getTeamBalance = mod.getTeamBalance;
+  getTeamHistoricalUsage = mod.getTeamHistoricalUsage;
+  getTeamHistoricalUsageByApiKey = mod.getTeamHistoricalUsageByApiKey;
+});
 
 beforeEach(() => {
   jest.clearAllMocks();
@@ -80,7 +93,7 @@ describe("getTeamBalance", () => {
   // The fix passes them directly to `new Date()`.
   it("Bug 1 — passes ms timestamps directly without * 1000", async () => {
     const startMs = 1712444524000; // 2024-04-06T21:32:04.000Z
-    const endMs = 1715036524000;   // 2024-05-06T21:32:04.000Z
+    const endMs = 1715036524000; // 2024-05-06T21:32:04.000Z
 
     mockEntitiesGet.mockResolvedValue({
       balances: {
@@ -181,12 +194,8 @@ describe("getTeamBalance", () => {
 
     const result = await getTeamBalance("team-1");
     expect(result).not.toBeNull();
-    expect(result!.periodStart).toBe(
-      new Date(1712444524000).toISOString(),
-    );
-    expect(result!.periodEnd).toBe(
-      new Date(1715036524000).toISOString(),
-    );
+    expect(result!.periodStart).toBe(new Date(1712444524000).toISOString());
+    expect(result!.periodEnd).toBe(new Date(1715036524000).toISOString());
   });
 
   it("Bug 2 — old Stripe-only statuses (trialing, past_due) without period timestamps produce null dates", async () => {
@@ -263,12 +272,8 @@ describe("getTeamBalance", () => {
     expect(result!.planCredits).toBe(100000);
 
     // But should get billing period from customer-level subscriptions
-    expect(result!.periodStart).toBe(
-      new Date(1712444524000).toISOString(),
-    );
-    expect(result!.periodEnd).toBe(
-      new Date(1715036524000).toISOString(),
-    );
+    expect(result!.periodStart).toBe(new Date(1712444524000).toISOString());
+    expect(result!.periodEnd).toBe(new Date(1715036524000).toISOString());
 
     // Verify entity was queried first, then customer for subscriptions
     expect(mockEntitiesGet).toHaveBeenCalledWith({
@@ -324,8 +329,8 @@ describe("getTeamBalance", () => {
           unlimited: false,
           breakdown: [
             { planId: "standard", includedGrant: 100000 },
-            { planId: null, includedGrant: 500 },   // one-off promo grant
-            { planId: null, includedGrant: 25 },     // another small grant
+            { planId: null, includedGrant: 500 }, // one-off promo grant
+            { planId: null, includedGrant: 25 }, // another small grant
           ],
         },
       },
@@ -435,9 +440,7 @@ describe("getTeamBalance", () => {
     expect(result).not.toBeNull();
     expect(result!.remaining).toBe(461027);
     expect(result!.planCredits).toBe(500000);
-    expect(result!.periodStart).toBe(
-      new Date(1712444524000).toISOString(),
-    );
+    expect(result!.periodStart).toBe(new Date(1712444524000).toISOString());
   });
 
   it("returns null when no CREDITS balance exists", async () => {
@@ -745,9 +748,7 @@ describe("getTeamHistoricalUsage", () => {
       ],
     });
 
-    await expect(
-      getTeamHistoricalUsage("team-1"),
-    ).resolves.toEqual([
+    await expect(getTeamHistoricalUsage("team-1")).resolves.toEqual([
       {
         startDate: "2026-03-01T00:00:00.000Z",
         endDate: "2026-04-01T00:00:00.000Z",
@@ -785,9 +786,7 @@ describe("getTeamHistoricalUsage", () => {
         ],
       });
 
-    await expect(
-      getTeamHistoricalUsage("team-1"),
-    ).resolves.toEqual([
+    await expect(getTeamHistoricalUsage("team-1")).resolves.toEqual([
       {
         startDate: "2026-04-01T00:00:00.000Z",
         endDate: null,
@@ -829,9 +828,7 @@ describe("getTeamHistoricalUsage", () => {
       ],
     });
 
-    await expect(
-      getTeamHistoricalUsage("team-1"),
-    ).resolves.toEqual([
+    await expect(getTeamHistoricalUsage("team-1")).resolves.toEqual([
       {
         startDate: "2026-01-01T00:00:00.000Z",
         endDate: "2026-02-01T00:00:00.000Z",
@@ -870,9 +867,7 @@ describe("getTeamHistoricalUsageByApiKey", () => {
       ],
     });
 
-    await expect(
-      getTeamHistoricalUsageByApiKey("team-1"),
-    ).resolves.toEqual([
+    await expect(getTeamHistoricalUsageByApiKey("team-1")).resolves.toEqual([
       {
         startDate: "2026-03-01T00:00:00.000Z",
         endDate: "2026-04-01T00:00:00.000Z",
@@ -921,9 +916,7 @@ describe("getTeamHistoricalUsageByApiKey", () => {
       ],
     });
 
-    await expect(
-      getTeamHistoricalUsageByApiKey("team-1"),
-    ).resolves.toEqual([
+    await expect(getTeamHistoricalUsageByApiKey("team-1")).resolves.toEqual([
       {
         startDate: "2026-01-01T00:00:00.000Z",
         endDate: "2026-02-01T00:00:00.000Z",
