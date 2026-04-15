@@ -336,11 +336,27 @@ const actionsSchema = z
     },
   );
 
+const ajv = new Ajv();
+
 const jsonFormatWithOptions = z.strictObject({
   type: z.literal("json"),
   schema: z
     .any()
     .optional()
+    .refine(
+      val => {
+        if (!val) return true; // Allow undefined schema
+        try {
+          const validate = ajv.compile(val);
+          return typeof validate === "function";
+        } catch (e) {
+          return false;
+        }
+      },
+      {
+        error: "Invalid JSON schema.",
+      },
+    )
     .transform(val => normalizeSchemaForOpenAI(val))
     .refine(val => validateSchemaForOpenAI(val), {
       message: OPENAI_SCHEMA_ERROR_MESSAGE,
@@ -356,6 +372,20 @@ const changeTrackingFormatWithOptions = z.strictObject({
   schema: z
     .any()
     .optional()
+    .refine(
+      val => {
+        if (!val) return true; // Allow undefined schema
+        try {
+          const validate = ajv.compile(val);
+          return typeof validate === "function";
+        } catch (e) {
+          return false;
+        }
+      },
+      {
+        error: "Invalid JSON schema.",
+      },
+    )
     .transform(val => normalizeSchemaForOpenAI(val))
     .refine(val => validateSchemaForOpenAI(val), {
       message: OPENAI_SCHEMA_ERROR_MESSAGE,
@@ -678,7 +708,6 @@ export type BaseScrapeOptions = z.infer<typeof baseScrapeOptions>;
 
 export type ScrapeOptions = BaseScrapeOptions;
 
-const ajv = new Ajv();
 const agentAjv = new Ajv();
 addFormats(agentAjv);
 
