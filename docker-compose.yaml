@@ -28,10 +28,10 @@ x-common-env: &common-env
   POSTGRES_HOST: ${POSTGRES_HOST:-nuq-postgres}
   POSTGRES_PORT: ${POSTGRES_PORT:-5432}
   USE_DB_AUTHENTICATION: ${USE_DB_AUTHENTICATION:-false}
-  NUM_WORKERS_PER_QUEUE: ${NUM_WORKERS_PER_QUEUE:-32}
-  CRAWL_CONCURRENT_REQUESTS: ${CRAWL_CONCURRENT_REQUESTS:-120}
-  MAX_CONCURRENT_JOBS: ${MAX_CONCURRENT_JOBS:-36}
-  BROWSER_POOL_SIZE: ${BROWSER_POOL_SIZE:-36}
+  NUM_WORKERS_PER_QUEUE: ${NUM_WORKERS_PER_QUEUE:-60}
+  CRAWL_CONCURRENT_REQUESTS: ${CRAWL_CONCURRENT_REQUESTS:-200}
+  MAX_CONCURRENT_JOBS: ${MAX_CONCURRENT_JOBS:-60}
+  BROWSER_POOL_SIZE: ${BROWSER_POOL_SIZE:-60}
   OPENAI_API_KEY: ${OPENAI_API_KEY}
   OPENAI_BASE_URL: ${OPENAI_BASE_URL}
   MODEL_NAME: ${MODEL_NAME}
@@ -61,16 +61,16 @@ services:
       PROXY_USERNAME: ${PROXY_USERNAME}
       PROXY_PASSWORD: ${PROXY_PASSWORD}
       BLOCK_MEDIA: ${BLOCK_MEDIA}
-      MAX_CONCURRENT_PAGES: ${MAX_CONCURRENT_PAGES:-60}
+      MAX_CONCURRENT_PAGES: ${MAX_CONCURRENT_PAGES:-30}
     networks:
       - backend
     deploy:
-      replicas: 3
+      replicas: 5
       resources:
         limits:
-          cpus: "5.0"
-          memory: 16G
-    shm_size: 2G
+          cpus: "3.0"
+          memory: 10G
+    shm_size: 1536M
     healthcheck:
       test: ["CMD-SHELL", "node -e \"fetch('http://localhost:3000/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))\""]
       interval: 30s
@@ -133,9 +133,9 @@ services:
     ports:
       - "${PORT:-3300}:${INTERNAL_PORT:-3300}"
     command: node dist/src/harness.js --start-docker
-    cpus: 12.0
-    mem_limit: 16G
-    memswap_limit: 16G
+    cpus: 3.0
+    mem_limit: 6G
+    memswap_limit: 6G
     healthcheck:
       test: ["CMD-SHELL", "node -e \"fetch('http://localhost:3300/').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))\""]
       interval: 30s
@@ -149,10 +149,10 @@ services:
     image: redis:alpine
     networks:
       - backend
-    command: redis-server --bind 0.0.0.0 --maxmemory 4096mb --maxmemory-policy allkeys-lru
-    cpus: 2.0
-    mem_limit: 5G
-    memswap_limit: 5G
+    command: redis-server --bind 0.0.0.0 --maxmemory 3072mb --maxmemory-policy allkeys-lru
+    cpus: 1.0
+    mem_limit: 4G
+    memswap_limit: 4G
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
