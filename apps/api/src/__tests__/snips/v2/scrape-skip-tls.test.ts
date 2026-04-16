@@ -46,11 +46,11 @@ describe("V2 Scrape skipTlsVerification Default", () => {
         identity,
       );
 
-      if (response.status !== 500) {
-        console.warn("Non-500 response:", JSON.stringify(response.body));
+      if (response.status !== 422) {
+        console.warn("Non-422 response:", JSON.stringify(response.body));
       }
 
-      expect(response.status).toBe(500);
+      expect(response.status).toBe(422);
       expect(response.body.success).toBe(false);
     },
     scrapeTimeout,
