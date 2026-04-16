@@ -251,7 +251,7 @@ export class JobCancelledError extends Error {
  * Timeouts return 408.
  * Only truly unknown/internal errors remain 500.
  */
-const errorCodeToHttpStatus: Partial<Record<ErrorCodes, number>> = {
+const errorCodeToHttpStatus: Record<ErrorCodes, number> = {
   // 408 - Timeout
   SCRAPE_TIMEOUT: 408,
   MAP_TIMEOUT: 408,
