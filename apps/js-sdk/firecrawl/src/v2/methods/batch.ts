@@ -118,6 +118,10 @@ export async function getBatchScrapeErrors(http: HttpClient, jobId: string): Pro
 }
 
 export async function waitForBatchCompletion(http: HttpClient, jobId: string, pollInterval = 2, timeout?: number): Promise<BatchScrapeJob> {
+  // Normalize: if pollInterval looks like milliseconds (>= 1000), convert to seconds.
+  // This prevents a silent 1000x hang when callers accidentally pass ms instead of s.
+  if (pollInterval >= 1000) pollInterval = pollInterval / 1000;
+
   const start = Date.now();
 
   while (true) {

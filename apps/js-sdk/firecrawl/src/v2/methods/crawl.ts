@@ -118,8 +118,12 @@ export async function cancelCrawl(http: HttpClient, jobId: string): Promise<bool
 }
 
 export async function waitForCrawlCompletion(http: HttpClient, jobId: string, pollInterval = 2, timeout?: number): Promise<CrawlJob> {
+  // Normalize: if pollInterval looks like milliseconds (>= 1000), convert to seconds.
+  // This prevents a silent 1000x hang when callers accidentally pass ms instead of s.
+  if (pollInterval >= 1000) pollInterval = pollInterval / 1000;
+
   const start = Date.now();
-  
+
   while (true) {
     try {
       const status = await getCrawlStatus(http, jobId);

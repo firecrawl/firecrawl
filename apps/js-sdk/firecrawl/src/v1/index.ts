@@ -1510,6 +1510,9 @@ export default class FirecrawlApp {
           } else if (
             ["active", "paused", "pending", "queued", "waiting", "scraping"].includes(statusData.status)
           ) {
+            // Normalize: if checkInterval looks like milliseconds (>= 1000), convert to seconds.
+            // This prevents a silent 1000x hang when callers accidentally pass ms instead of s.
+            if (checkInterval >= 1000) checkInterval = checkInterval / 1000;
             checkInterval = Math.max(checkInterval, 2);
             await new Promise((resolve) =>
               setTimeout(resolve, checkInterval * 1000)
