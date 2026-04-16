@@ -241,3 +241,62 @@ export class JobCancelledError extends Error {
     this.name = "JobCancelledError";
   }
 }
+
+/**
+ * Maps a TransportableError code to an appropriate HTTP status code.
+ *
+ * Target-site failures (e.g. SSL errors, engines failing, antibot) return 422
+ * since the request was valid but the target could not be processed.
+ * Client-fixable config errors return 400.
+ * Timeouts return 408.
+ * Only truly unknown/internal errors remain 500.
+ */
+const errorCodeToHttpStatus: Partial<Record<ErrorCodes, number>> = {
+  // 408 - Timeout
+  SCRAPE_TIMEOUT: 408,
+  MAP_TIMEOUT: 408,
+  SCRAPE_PDF_INSUFFICIENT_TIME_ERROR: 408,
+
+  // 400 - Bad request / client configuration error
+  SCRAPE_ACTIONS_NOT_SUPPORTED: 400,
+  SCRAPE_PROXY_SELECTION_ERROR: 400,
+  SCRAPE_ZDR_VIOLATION_ERROR: 400,
+  BAD_REQUEST_INVALID_JSON: 400,
+  BAD_REQUEST: 400,
+
+  // 403 - Forbidden
+  AGENT_INDEX_ONLY: 403,
+
+  // 404 - Not found
+  SCRAPE_NO_CACHED_DATA: 404,
+
+  // 200 - Success with failure payload
+  SCRAPE_DNS_RESOLUTION_ERROR: 200,
+
+  // 422 - Unprocessable: valid request, but target site cannot be scraped
+  SCRAPE_ALL_ENGINES_FAILED: 422,
+  SCRAPE_SSL_ERROR: 422,
+  SCRAPE_SITE_ERROR: 422,
+  SCRAPE_ACTION_ERROR: 422,
+  SCRAPE_UNSUPPORTED_FILE_ERROR: 422,
+  SCRAPE_PDF_ANTIBOT_ERROR: 422,
+  SCRAPE_PDF_OCR_REQUIRED: 422,
+  SCRAPE_PDF_PREFETCH_FAILED: 422,
+  SCRAPE_DOCUMENT_ANTIBOT_ERROR: 422,
+  SCRAPE_DOCUMENT_PREFETCH_FAILED: 422,
+  SCRAPE_BRANDING_NOT_SUPPORTED: 422,
+  SCRAPE_AUDIO_UNSUPPORTED_URL: 422,
+  SCRAPE_RACED_REDIRECT_ERROR: 422,
+  SCRAPE_JOB_CANCELLED: 422,
+  SCRAPE_RETRY_LIMIT: 422,
+  SCRAPE_SITEMAP_ERROR: 422,
+  CRAWL_DENIAL: 422,
+  MAP_FAILED: 422,
+
+  // 500 - True server errors
+  UNKNOWN_ERROR: 500,
+};
+
+export function getHttpStatusForErrorCode(code: ErrorCodes): number {
+  return errorCodeToHttpStatus[code] ?? 500;
+}

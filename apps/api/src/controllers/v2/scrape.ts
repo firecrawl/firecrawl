@@ -11,7 +11,7 @@ import {
 } from "./types";
 import { v7 as uuidv7 } from "uuid";
 import { hasFormatOfType } from "../../lib/format-utils";
-import { TransportableError } from "../../lib/error";
+import { TransportableError, getHttpStatusForErrorCode } from "../../lib/error";
 import { NuQJob } from "../../services/worker/nuq";
 import { checkPermissions } from "../../lib/permissions";
 import { withSpan, setSpanAttributes, SpanKind } from "../../lib/otel-tracer";
@@ -84,7 +84,8 @@ export async function scrapeController(
       }
 
       const zeroDataRetention =
-        getScrapeZDR(req.acuc?.flags) === "forced" || (req.body.zeroDataRetention ?? false);
+        getScrapeZDR(req.acuc?.flags) === "forced" ||
+        (req.body.zeroDataRetention ?? false);
       const billing: BillingMetadata = req.body.__agentInterop
         ? { endpoint: "agent" as const, jobId }
         : { endpoint: "scrape" as const, jobId };
@@ -291,34 +292,15 @@ export async function scrapeController(
               error: e,
             });
           }
-          // DNS resolution errors should return 200 with success: false
-          if (e.code === "SCRAPE_DNS_RESOLUTION_ERROR") {
-            setSpanAttributes(span, {
-              "scrape.status_code": 200,
-            });
-            return res.status(200).json({
-              success: false,
-              code: e.code,
-              error: e.message,
-            });
-          }
 
-          if (e.code === "SCRAPE_NO_CACHED_DATA") {
-            setSpanAttributes(span, {
-              "scrape.status_code": 404,
-            });
-            return res.status(404).json({
-              success: false,
-              code: e.code,
-              error: e.message,
-            });
-          }
+          const statusCode = getHttpStatusForErrorCode(e.code);
+          setSpanAttributes(span, {
+            "scrape.status_code": statusCode,
+          });
 
+          // AGENT_INDEX_ONLY includes extra fields for the sponsor flow
           if (e.code === "AGENT_INDEX_ONLY") {
-            setSpanAttributes(span, {
-              "scrape.status_code": 403,
-            });
-            return res.status(403).json({
+            return res.status(statusCode).json({
               success: false,
               code: e.code,
               error: e.message,
@@ -327,21 +309,6 @@ export async function scrapeController(
             });
           }
 
-          if (e.code === "SCRAPE_ACTIONS_NOT_SUPPORTED") {
-            setSpanAttributes(span, {
-              "scrape.status_code": 400,
-            });
-            return res.status(400).json({
-              success: false,
-              code: e.code,
-              error: e.message,
-            });
-          }
-
-          const statusCode = e.code === "SCRAPE_TIMEOUT" ? 408 : 500;
-          setSpanAttributes(span, {
-            "scrape.status_code": statusCode,
-          });
           return res.status(statusCode).json({
             success: false,
             code: e.code,

@@ -11,7 +11,7 @@ import {
 import { v7 as uuidv7 } from "uuid";
 import { getJobPriority } from "../../lib/job-priority";
 import { fromV1ScrapeOptions } from "../v2/types";
-import { TransportableError } from "../../lib/error";
+import { TransportableError, getHttpStatusForErrorCode } from "../../lib/error";
 import { NuQJob } from "../../services/worker/nuq";
 import { checkPermissions } from "../../lib/permissions";
 import { includesFormat } from "../../lib/format-utils";
@@ -189,17 +189,12 @@ export async function scrapeController(
           error: e,
         });
       }
-      // DNS resolution errors should return 200 with success: false
-      if (e.code === "SCRAPE_DNS_RESOLUTION_ERROR") {
-        return res.status(200).json({
-          success: false,
-          code: e.code,
-          error: e.message,
-        });
-      }
 
+      const statusCode = getHttpStatusForErrorCode(e.code);
+
+      // AGENT_INDEX_ONLY includes extra fields for the sponsor flow
       if (e.code === "AGENT_INDEX_ONLY") {
-        return res.status(403).json({
+        return res.status(statusCode).json({
           success: false,
           code: e.code,
           error: e.message,
@@ -208,15 +203,7 @@ export async function scrapeController(
         });
       }
 
-      if (e.code === "SCRAPE_ACTIONS_NOT_SUPPORTED") {
-        return res.status(400).json({
-          success: false,
-          code: e.code,
-          error: e.message,
-        });
-      }
-
-      return res.status(e.code === "SCRAPE_TIMEOUT" ? 408 : 500).json({
+      return res.status(statusCode).json({
         success: false,
         code: e.code,
         error: e.message,
