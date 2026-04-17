@@ -197,8 +197,8 @@ const initializeBrowser = async () => {
   });
 };
 
-const createContext = async (skipTlsVerification: boolean = false): Promise<{ context: BrowserContext; securityState: ContextSecurityState }> => {
-  const userAgent = new UserAgent().toString();
+const createContext = async (skipTlsVerification: boolean = false, userAgentOverride?: string): Promise<{ context: BrowserContext; securityState: ContextSecurityState }> => {
+  const userAgent = userAgentOverride || new UserAgent().toString();
   const viewport = { width: 1280, height: 800 };
   const securityState: ContextSecurityState = {
     blockedNavigationRequestUrl: null,
@@ -401,13 +401,27 @@ app.post('/scrape', async (req: Request, res: Response) => {
   let page: Page | null = null;
 
   try {
-    const contextBundle = await createContext(skip_tls_verification);
+    // Extract user-agent from request headers (case-insensitive) so it can
+    // be applied at the context level.  Playwright ignores user-agent in
+    // setExtraHTTPHeaders when the context already defines one (#2802).
+    const userAgentOverride = headers
+      ? Object.entries(headers).find(([k]) => k.toLowerCase() === 'user-agent')?.[1]
+      : undefined;
+
+    const contextBundle = await createContext(skip_tls_verification, userAgentOverride);
     requestContext = contextBundle.context;
     securityState = contextBundle.securityState;
     page = await requestContext.newPage();
 
     if (headers) {
-      await page.setExtraHTTPHeaders(headers);
+      // Remove the user-agent key before calling setExtraHTTPHeaders since
+      // we already forwarded it to the context-level userAgent option.
+      const filteredHeaders = Object.fromEntries(
+        Object.entries(headers).filter(([k]) => k.toLowerCase() !== 'user-agent')
+      );
+      if (Object.keys(filteredHeaders).length > 0) {
+        await page.setExtraHTTPHeaders(filteredHeaders);
+      }
     }
 
     const result = await scrapePage(
