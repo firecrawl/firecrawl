@@ -197,7 +197,8 @@
       "smol-toml@<1.6.1": ">=1.6.1",
       "handlebars": ">=4.7.9",
       "path-to-regexp@~0.1.12": "0.1.13",
-      "brace-expansion": ">=5.0.5"
+      "brace-expansion": ">=5.0.5",
+      "follow-redirects@<1.16.0": ">=1.16.0 <2.0.0"
     }
   },
   "lint-staged": {
