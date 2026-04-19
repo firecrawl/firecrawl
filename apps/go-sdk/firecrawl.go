@@ -790,20 +790,22 @@ func mergeOptions(body map[string]interface{}, opts interface{}) {
 // schema) and instead requires JSON format options to be embedded directly in
 // the formats array: [{"type": "json", "schema": {...}, "prompt": "..."}].
 func restructureJSONFormats(body map[string]interface{}) {
+	jsonOptsRaw, hasJsonOpts := body["jsonOptions"]
+	if !hasJsonOpts {
+		return
+	}
+	defer delete(body, "jsonOptions")
+
+	jsonOpts, ok := jsonOptsRaw.(map[string]interface{})
+	if !ok {
+		return
+	}
+
 	formatsRaw, ok := body["formats"]
 	if !ok {
 		return
 	}
 	formats, ok := formatsRaw.([]interface{})
-	if !ok {
-		return
-	}
-
-	jsonOptsRaw, hasJsonOpts := body["jsonOptions"]
-	if !hasJsonOpts {
-		return
-	}
-	jsonOpts, ok := jsonOptsRaw.(map[string]interface{})
 	if !ok {
 		return
 	}
