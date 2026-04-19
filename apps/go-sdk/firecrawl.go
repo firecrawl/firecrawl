@@ -93,6 +93,7 @@ func (c *Client) Scrape(ctx context.Context, url string, opts *ScrapeOptions) (*
 
 	body := map[string]interface{}{"url": url}
 	mergeOptions(body, opts)
+	restructureJSONFormats(body)
 
 	raw, err := c.http.post(ctx, "/v2/scrape", body, nil)
 	if err != nil {
@@ -782,6 +783,49 @@ func mergeOptions(body map[string]interface{}, opts interface{}) {
 	for k, v := range optsMap {
 		body[k] = v
 	}
+}
+
+// restructureJSONFormats moves jsonOptions into the formats array entries as
+// the v2 API expects. The v2 API rejects the top-level jsonOptions key (strict
+// schema) and instead requires JSON format options to be embedded directly in
+// the formats array: [{"type": "json", "schema": {...}, "prompt": "..."}].
+func restructureJSONFormats(body map[string]interface{}) {
+	formatsRaw, ok := body["formats"]
+	if !ok {
+		return
+	}
+	formats, ok := formatsRaw.([]interface{})
+	if !ok {
+		return
+	}
+
+	jsonOptsRaw, hasJsonOpts := body["jsonOptions"]
+	if !hasJsonOpts {
+		return
+	}
+	jsonOpts, ok := jsonOptsRaw.(map[string]interface{})
+	if !ok {
+		return
+	}
+
+	newFormats := make([]interface{}, 0, len(formats))
+	for _, f := range formats {
+		fStr, isStr := f.(string)
+		if isStr && fStr == "json" {
+			entry := map[string]interface{}{"type": "json"}
+			if s, ok := jsonOpts["schema"]; ok {
+				entry["schema"] = s
+			}
+			if p, ok := jsonOpts["prompt"]; ok {
+				entry["prompt"] = p
+			}
+			newFormats = append(newFormats, entry)
+		} else {
+			newFormats = append(newFormats, f)
+		}
+	}
+	body["formats"] = newFormats
+	delete(body, "jsonOptions")
 }
 
 // extractDataAs extracts the "data" field from a raw API response and deserializes it.
