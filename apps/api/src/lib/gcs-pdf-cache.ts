@@ -11,7 +11,7 @@ const PROVIDER_PREFIXES: Record<PdfCacheProvider, string> = {
   firepdf: "pdf-cache-firepdf/",
 };
 
-function createPdfCacheKey(pdfContent: string | Buffer): string {
+export function createPdfCacheKey(pdfContent: string | Buffer): string {
   return crypto.createHash("sha256").update(pdfContent).digest("hex");
 }
 

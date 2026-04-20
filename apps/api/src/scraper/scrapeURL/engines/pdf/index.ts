@@ -404,6 +404,13 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
           meta.logger.warn("FirePDF failed -- falling back to MinerU", {
             method: "scrapePDF/firePDF",
             error,
+            event: "pdf_engine_fallback",
+            scrape_id: meta.id,
+            team_id: meta.internalOptions.teamId,
+            from_engine: "firepdf",
+            to_engine: "mineru",
+            error_class: (error as Error)?.name,
+            error_message: ((error as Error)?.message ?? "").slice(0, 500),
           });
         }
       }

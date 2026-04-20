@@ -5,6 +5,7 @@ import { z } from "zod";
 import type { PDFProcessorResult } from "./types";
 import { safeMarkdownToHtml } from "./markdownToHtml";
 import {
+  createPdfCacheKey,
   getPdfResultFromCache,
   savePdfResultToCache,
 } from "../../../../lib/gcs-pdf-cache";
@@ -42,6 +43,9 @@ export async function scrapePDFWithFirePDF(
     pagesProcessed,
   });
 
+  const zdr = meta.internalOptions.zeroDataRetention === true;
+  const pdfSha256 = createPdfCacheKey(base64Content);
+
   const resp = await robustFetch({
     url: `${config.FIRE_PDF_BASE_URL}/ocr`,
     method: "POST",
@@ -52,6 +56,16 @@ export async function scrapePDFWithFirePDF(
       pdf: base64Content,
       scrape_id: meta.id,
       ...(maxPages !== undefined && { max_pages: maxPages }),
+      // Enrichment for the fire-pdf jobs DB / dashboard. fire-pdf treats
+      // these as optional — older fire-pdf builds will ignore unknown fields.
+      team_id: meta.internalOptions.teamId,
+      ...(meta.internalOptions.crawlId && {
+        crawl_id: meta.internalOptions.crawlId,
+      }),
+      ...(zdr ? {} : { url: meta.rewrittenUrl ?? meta.url }),
+      pdf_sha256: pdfSha256,
+      source: "firecrawl",
+      zdr,
     },
     logger,
     schema: z.object({
