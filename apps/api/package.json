@@ -122,7 +122,7 @@
     "joplin-turndown-plugin-gfm": "^1.0.12",
     "jsdom": "^26.0.0",
     "koffi": "^2.9.0",
-    "langsmith": "^0.5.18",
+    "langsmith": "^0.5.19",
     "lodash": "^4.18.0",
     "marked": "^14.1.2",
     "ollama-ai-provider": "^1.2.0",
