@@ -18,14 +18,13 @@ Usage:
 Check example.py for other usage examples.
 """
 
-from typing import Any, Dict, Optional, List, Union
+from typing import Optional
 import logging
 
 
 from .v1 import V1FirecrawlApp, AsyncV1FirecrawlApp
 from .v2 import FirecrawlClient as V2FirecrawlClient
 from .v2.client_async import AsyncFirecrawlClient
-from .v2.types import Document
 
 logger = logging.getLogger("firecrawl")
 
@@ -72,6 +71,7 @@ class V2Proxy:
             self.get_active_crawls = client_instance.get_active_crawls
             self.active_crawls = client_instance.active_crawls
             self.crawl_params_preview = client_instance.crawl_params_preview
+            self.crawl_to_store = client_instance.crawl_to_store
 
             self.extract = client_instance.extract
             self.start_extract = client_instance.start_extract
@@ -101,7 +101,7 @@ class V2Proxy:
             self.list_browsers = client_instance.list_browsers
 
             self.watcher = client_instance.watcher
-    
+
     def __getattr__(self, name):
         """Forward attribute access to the underlying client."""
         return getattr(self._client, name)
@@ -242,6 +242,7 @@ class Firecrawl:
         self.crawl = self._v2_client.crawl
         self.start_crawl = self._v2_client.start_crawl
         self.crawl_params_preview = self._v2_client.crawl_params_preview
+        self.crawl_to_store = self._v2_client.crawl_to_store
         self.get_crawl_status = self._v2_client.get_crawl_status
         self.get_crawl_status_page = self._v2_client.get_crawl_status_page
         self.cancel_crawl = self._v2_client.cancel_crawl

@@ -9,6 +9,7 @@ import os
 from .client import Firecrawl, AsyncFirecrawl, FirecrawlApp, AsyncFirecrawlApp
 from .v2.watcher import Watcher
 from .v2.watcher_async import AsyncWatcher
+from .v2.integrations.qdrant import CrawlToStoreResult
 from .v1 import (
     V1FirecrawlApp,
     AsyncV1FirecrawlApp,
@@ -84,4 +85,5 @@ __all__ = [
     'V1JsonConfig',
     'V1ScrapeOptions',
     'V1ChangeTrackingOptions',
+    'CrawlToStoreResult',
 ]

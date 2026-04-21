@@ -41,9 +41,8 @@ from .types import (
     AgentOptions,
 )
 from .utils.http_client import HttpClient
-from .utils.error_handler import FirecrawlError
 from .methods import scrape as scrape_module
-from .methods import crawl as crawl_module  
+from .methods import crawl as crawl_module
 from .methods import batch as batch_module
 from .methods import search as search_module
 from .methods import map as map_module
@@ -53,6 +52,7 @@ from .methods import extract as extract_module
 from .methods import agent as agent_module
 from .methods import browser as browser_module
 from .watcher import Watcher
+from .integrations.qdrant import crawl_to_store as _qdrant_crawl_to_store, CrawlToStoreResult
 
 class FirecrawlClient:
     """
@@ -644,6 +644,116 @@ class FirecrawlClient:
         """
         request = CrawlParamsRequest(url=url, prompt=prompt)
         return crawl_module.crawl_params_preview(self.http_client, request)
+
+    def crawl_to_store(
+        self,
+        url: str,
+        *,
+        qdrant_client: Any,
+        collection_name: str,
+        embedding_fn: Callable[[str], List[float]],
+        skip_existing: bool = True,
+        content_key: str = "markdown",
+        batch_size: int = 100,
+        prompt: Optional[str] = None,
+        exclude_paths: Optional[List[str]] = None,
+        include_paths: Optional[List[str]] = None,
+        max_discovery_depth: Optional[int] = None,
+        ignore_query_parameters: bool = False,
+        limit: Optional[int] = None,
+        crawl_entire_domain: bool = False,
+        allow_external_links: bool = False,
+        allow_subdomains: bool = False,
+        ignore_robots_txt: bool = False,
+        delay: Optional[int] = None,
+        max_concurrency: Optional[int] = None,
+        scrape_options: Optional[ScrapeOptions] = None,
+        deduplicate_similar_urls: bool = True,
+        zero_data_retention: bool = False,
+        poll_interval: int = 2,
+        timeout: Optional[int] = None,
+        request_timeout: Optional[float] = None,
+    ) -> CrawlToStoreResult:
+        """
+        Crawl *url* and upsert the pages into a Qdrant collection.
+
+        Pages are looked up in Qdrant by URL before embedding.  When
+        *skip_existing* is ``True`` (the default), pages whose content hash
+        has not changed since the previous crawl are skipped, making repeated
+        incremental crawls of the same site much cheaper.
+
+        Args:
+            url: Root URL to start crawling from.
+            qdrant_client: Initialised ``qdrant_client.QdrantClient`` instance.
+            collection_name: Target Qdrant collection (must already exist).
+            embedding_fn: Callable ``(text: str) -> List[float]`` used to
+                produce vectors.  Called only for pages that need to be upserted.
+            skip_existing: Skip pages whose content hash is unchanged in Qdrant
+                (default ``True``).
+            content_key: Document field to embed — ``"markdown"`` (default),
+                ``"html"``, or ``"raw_html"``.
+            batch_size: Points per Qdrant upsert call (default 100).  Failed
+                batches are retried one point at a time.
+            prompt: Optional natural-language prompt to guide the crawl.
+            exclude_paths: URL patterns to exclude.
+            include_paths: URL patterns to include.
+            max_discovery_depth: Maximum link-following depth.
+            ignore_query_parameters: Treat URLs differing only by query params
+                as identical.
+            limit: Maximum pages to crawl.
+            crawl_entire_domain: Follow links outside the starting path.
+            allow_external_links: Follow links to external domains.
+            allow_subdomains: Follow subdomain links.
+            ignore_robots_txt: Ignore robots.txt restrictions.
+            delay: Seconds between page requests.
+            max_concurrency: Maximum concurrent page requests.
+            scrape_options: :class:`~firecrawl.v2.types.ScrapeOptions` applied
+                to each page.
+            deduplicate_similar_urls: Remove near-duplicate URLs (default
+                ``True``).
+            zero_data_retention: Delete raw data from Firecrawl servers after
+                24 h.
+            poll_interval: Seconds between crawl-status polls.
+            timeout: Maximum seconds to wait for the crawl to complete.
+            request_timeout: Per-HTTP-request timeout in seconds.
+
+        Returns:
+            :class:`~firecrawl.v2.integrations.qdrant.CrawlToStoreResult`
+            with ``total``, ``upserted``, ``skipped``, ``updated`` counts and
+            the completed :class:`~firecrawl.v2.types.CrawlJob`.
+
+        Raises:
+            ImportError: If ``qdrant-client`` is not installed.
+            ValueError: If *content_key* is not a valid Document field.
+        """
+        return _qdrant_crawl_to_store(
+            self,
+            url,
+            qdrant_client=qdrant_client,
+            collection_name=collection_name,
+            embedding_fn=embedding_fn,
+            skip_existing=skip_existing,
+            content_key=content_key,
+            batch_size=batch_size,
+            prompt=prompt,
+            exclude_paths=exclude_paths,
+            include_paths=include_paths,
+            max_discovery_depth=max_discovery_depth,
+            ignore_query_parameters=ignore_query_parameters,
+            limit=limit,
+            crawl_entire_domain=crawl_entire_domain,
+            allow_external_links=allow_external_links,
+            allow_subdomains=allow_subdomains,
+            ignore_robots_txt=ignore_robots_txt,
+            delay=delay,
+            max_concurrency=max_concurrency,
+            scrape_options=scrape_options,
+            deduplicate_similar_urls=deduplicate_similar_urls,
+            zero_data_retention=zero_data_retention,
+            poll_interval=poll_interval,
+            timeout=timeout,
+            request_timeout=request_timeout,
+        )
 
     def start_extract(
         self,
