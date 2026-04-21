@@ -66,9 +66,20 @@ export class HttpClient {
           const data = (cfg.data ?? {}) as Record<string, unknown>;
           cfg.data = { ...data, origin: typeof data.origin === "string" && data.origin.includes("mcp") ? data.origin : `js-sdk@${version}` };
 
-          // If timeout is specified in the body, use it to override the request timeout
+          // If timeout is specified in the body, use it to override the request timeout.
+          // Most endpoints accept the timeout in milliseconds (matching Axios' cfg.timeout),
+          // but the interact and browser-execute endpoints take seconds (API cap 300s) — see
+          // `apps/api/src/controllers/v2/scrape-browser.ts` and `.../browser.ts`. Convert those
+          // so the Axios client doesn't give up ~5s into a long-running operation.
           if (typeof data.timeout === "number") {
-            cfg.timeout = data.timeout + 5000;
+            const url = typeof cfg.url === "string" ? cfg.url : "";
+            const timeoutInSeconds =
+              /\/v2\/scrape\/[^/]+\/interact(?:\/|$|\?)/.test(url) ||
+              /\/v2\/browser\/[^/]+\/execute(?:\/|$|\?)/.test(url);
+            const apiTimeoutMs = timeoutInSeconds
+              ? data.timeout * 1000
+              : data.timeout;
+            cfg.timeout = apiTimeoutMs + 5000;
           }
         }
 
