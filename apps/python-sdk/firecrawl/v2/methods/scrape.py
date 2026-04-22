@@ -13,21 +13,28 @@ from ..utils.normalize import normalize_document_input
 from ..utils import HttpClient, handle_response_error, prepare_scrape_options, validate_scrape_options
 
 
-def _prepare_scrape_request(url: str, options: Optional[ScrapeOptions] = None) -> Dict[str, Any]:
+def _prepare_scrape_request(
+    url: Optional[str], options: Optional[ScrapeOptions] = None
+) -> Dict[str, Any]:
     """
     Prepare a scrape request payload for v2 API.
-    
+
     Args:
-        url: URL to scrape
+        url: URL to scrape. May be ``None`` when ``options.session_id`` is set,
+            in which case the server reads the current DOM of the already-loaded
+            page in that local browser session.
         options: ScrapeOptions (snake_case) to convert and include
-        
+
     Returns:
         Request payload dictionary with camelCase fields
     """
-    if not url or not url.strip():
+    has_session_id = options is not None and options.session_id is not None
+    if not has_session_id and (not url or not url.strip()):
         raise ValueError("URL cannot be empty")
 
-    request_data: Dict[str, Any] = {"url": url.strip()}
+    request_data: Dict[str, Any] = {}
+    if url is not None and url.strip():
+        request_data["url"] = url.strip()
 
     if options is not None:
         validated = validate_scrape_options(options)
@@ -38,18 +45,22 @@ def _prepare_scrape_request(url: str, options: Optional[ScrapeOptions] = None) -
 
     return request_data
 
-def scrape(client: HttpClient, url: str, options: Optional[ScrapeOptions] = None) -> Document:
+def scrape(
+    client: HttpClient,
+    url: Optional[str],
+    options: Optional[ScrapeOptions] = None,
+) -> Document:
     """
     Scrape a single URL and return the document.
-    
+
     The v2 API returns: { success: boolean, data: Document }
     We surface just the Document to callers.
-    
+
     Args:
         client: HTTP client instance
-        url: URL to scrape
+        url: URL to scrape (or ``None`` when ``options.session_id`` is set)
         options: Scraping options (snake_case)
-        
+
     Returns:
         Document
     """

@@ -65,6 +65,10 @@ import {
   scrapeInteractController,
   scrapeStopInteractiveBrowserController,
 } from "../controllers/v2/scrape-browser";
+import {
+  localBrowserCreateController,
+  localBrowserDeleteController,
+} from "../controllers/v2/local-browser";
 
 expressWs(express());
 
@@ -266,6 +270,18 @@ v2Router.delete(
   authMiddleware(RateLimiterMode.BrowserExecute),
   validateJobIdParam,
   wrap(scrapeStopInteractiveBrowserController),
+);
+
+v2Router.post(
+  "/local-browser",
+  authMiddleware(RateLimiterMode.Scrape),
+  wrap(localBrowserCreateController),
+);
+
+v2Router.delete(
+  "/local-browser/:id",
+  authMiddleware(RateLimiterMode.Scrape),
+  wrap(localBrowserDeleteController),
 );
 
 v2Router.post(

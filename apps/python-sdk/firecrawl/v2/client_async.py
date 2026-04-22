@@ -50,6 +50,7 @@ from .methods.aio import usage as async_usage # type: ignore[attr-defined]
 from .methods.aio import extract as async_extract  # type: ignore[attr-defined]
 from .methods.aio import agent as async_agent  # type: ignore[attr-defined]
 from .methods.aio import browser as async_browser  # type: ignore[attr-defined]
+from .methods.aio import local_browser as async_local_browser  # type: ignore[attr-defined]
 
 from .watcher_async import AsyncWatcher
 
@@ -88,7 +89,7 @@ class AsyncFirecrawlClient:
     # Scrape
     async def scrape(
         self,
-        url: str,
+        url: Optional[str] = None,
         **kwargs,
     ):
         options = ScrapeOptions(**{k: v for k, v in kwargs.items() if v is not None}) if kwargs else None
@@ -620,6 +621,61 @@ class AsyncFirecrawlClient:
         return await async_browser.list_browsers(
             self.async_http_client,
             status=status,
+        )
+
+    async def local_browser(self):
+        """Create a new local browser session (self-hosted, playwright-service backed).
+
+        See :meth:`FirecrawlClient.local_browser` for full details and the
+        correct cleanup pattern. The async equivalent uses
+        ``async with async_playwright() as p:`` for Playwright teardown and
+        ``await firecrawl.delete_local_browser(session.id)`` for the
+        server-side session. Do **not** call ``browser.close()`` on a
+        CDP-attached Playwright Browser -- it terminates the remote
+        Chromium and wipes the session.
+
+        Example:
+            >>> from playwright.async_api import async_playwright
+            >>> from firecrawl import AsyncFirecrawl
+            >>> firecrawl = AsyncFirecrawl(api_url="http://localhost:3002")
+            >>> session = await firecrawl.local_browser()
+            >>> try:
+            ...     async with async_playwright() as p:
+            ...         browser = await p.chromium.connect_over_cdp(
+            ...             session.cdp_url
+            ...         )
+            ...         ctx = (
+            ...             browser.contexts[0]
+            ...             if browser.contexts
+            ...             else await browser.new_context()
+            ...         )
+            ...         page = (
+            ...             ctx.pages[0]
+            ...             if ctx.pages
+            ...             else await ctx.new_page()
+            ...         )
+            ...         await page.goto("https://example.com")
+            ...         doc = await firecrawl.scrape(
+            ...             session_id=session.id, formats=["markdown"]
+            ...         )
+            ... finally:
+            ...     await firecrawl.delete_local_browser(session.id)
+        """
+        return await async_local_browser.create_local_browser(
+            self.async_http_client
+        )
+
+    async def delete_local_browser(self, session_id: str):
+        """Delete a local browser session previously created with
+        :meth:`local_browser`.
+
+        This is the authoritative cleanup path for a local browser session:
+        it terminates the remote Chromium and releases the server-side slot.
+        Always call it (e.g. from a ``finally`` block) even if your
+        Playwright client already disconnected.
+        """
+        return await async_local_browser.delete_local_browser(
+            self.async_http_client, session_id
         )
 
     # Usage endpoints

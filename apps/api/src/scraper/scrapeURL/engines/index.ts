@@ -13,6 +13,10 @@ import {
   playwrightMaxReasonableTime,
   scrapeURLWithPlaywright,
 } from "./playwright";
+import {
+  playwrightSessionMaxReasonableTime,
+  scrapeURLWithPlaywrightSession,
+} from "./playwright-session";
 import { indexMaxReasonableTime, scrapeURLWithIndex } from "./index/index";
 import {
   scrapeURLWithWikipedia,
@@ -34,6 +38,7 @@ export type Engine =
   | "fire-engine;tlsclient"
   | "fire-engine;tlsclient;stealth"
   | "playwright"
+  | "playwright-session"
   | "fetch"
   | "pdf"
   | "document"
@@ -66,7 +71,7 @@ const engines: Engine[] = [
         "fire-engine;tlsclient;stealth" as const,
       ]
     : []),
-  ...(usePlaywright ? ["playwright" as const] : []),
+  ...(usePlaywright ? (["playwright", "playwright-session"] as const) : []),
   "fetch",
   "pdf",
   "document",
@@ -160,6 +165,7 @@ const engineHandlers: {
   "fire-engine;tlsclient": scrapeURLWithFireEngineTLSClient,
   "fire-engine;tlsclient;stealth": scrapeURLWithFireEngineTLSClient,
   playwright: scrapeURLWithPlaywright,
+  "playwright-session": scrapeURLWithPlaywrightSession,
   fetch: scrapeURLWithFetch,
   pdf: scrapePDF,
   document: scrapeDocument,
@@ -184,6 +190,7 @@ const engineMRTs: {
   "fire-engine;tlsclient;stealth": meta =>
     fireEngineMaxReasonableTime(meta, "tlsclient"),
   playwright: playwrightMaxReasonableTime,
+  "playwright-session": playwrightSessionMaxReasonableTime,
   fetch: fetchMaxReasonableTime,
   pdf: pdfMaxReasonableTime,
   document: documentMaxReasonableTime,
@@ -332,6 +339,36 @@ const engineOptions: {
       disableAdblock: false,
     },
     quality: 20,
+  },
+  "playwright-session": {
+    features: {
+      // Actions / waitFor are rejected at the schema layer when sessionId is
+      // set (the client drives the browser, so server-side actions are out of
+      // scope). Screenshots / pdf / document / branding require special
+      // rendering the snapshot endpoint doesn't do.
+      actions: false,
+      waitFor: false,
+      screenshot: false,
+      "screenshot@fullScreen": false,
+      pdf: false,
+      document: false,
+      branding: false,
+      // The remaining flags are driven by the client in their own browser;
+      // from the engine's perspective (which only reads the already-loaded
+      // DOM) they are no-ops. Mark them as "supported" so the feature-flag
+      // priority score doesn't exclude us on scrapes that enable these (the
+      // Python SDK for instance defaults ``skipTlsVerification`` to true).
+      atsv: true,
+      location: true,
+      mobile: true,
+      skipTlsVerification: true,
+      useFastMode: true,
+      stealthProxy: true,
+      disableAdblock: true,
+    },
+    // Negative quality so this engine is only used when forced via
+    // internalOptions.forceEngine (i.e. a sessionId is present on the scrape).
+    quality: -100,
   },
   "fire-engine;tlsclient": {
     features: {

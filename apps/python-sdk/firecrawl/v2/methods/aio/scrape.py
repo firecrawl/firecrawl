@@ -11,10 +11,15 @@ from ...utils.validation import prepare_scrape_options, validate_scrape_options
 from ...utils.http_client_async import AsyncHttpClient
 
 
-async def _prepare_scrape_request(url: str, options: Optional[ScrapeOptions] = None) -> Dict[str, Any]:
-    if not url or not url.strip():
+async def _prepare_scrape_request(
+    url: Optional[str], options: Optional[ScrapeOptions] = None
+) -> Dict[str, Any]:
+    has_session_id = options is not None and options.session_id is not None
+    if not has_session_id and (not url or not url.strip()):
         raise ValueError("URL cannot be empty")
-    payload: Dict[str, Any] = {"url": url.strip()}
+    payload: Dict[str, Any] = {}
+    if url is not None and url.strip():
+        payload["url"] = url.strip()
     if options is not None:
         validated = validate_scrape_options(options)
         if validated is not None:
@@ -24,7 +29,11 @@ async def _prepare_scrape_request(url: str, options: Optional[ScrapeOptions] = N
     return payload
 
 
-async def scrape(client: AsyncHttpClient, url: str, options: Optional[ScrapeOptions] = None) -> Document:
+async def scrape(
+    client: AsyncHttpClient,
+    url: Optional[str],
+    options: Optional[ScrapeOptions] = None,
+) -> Document:
     payload = await _prepare_scrape_request(url, options)
     response = await client.post("/v2/scrape", payload)
     if response.status_code >= 400:

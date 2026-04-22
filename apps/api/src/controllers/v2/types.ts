@@ -817,7 +817,8 @@ export type AgentRequest = z.infer<typeof agentRequestSchema>;
 // export type AgentRequestInput = z.input<typeof agentRequestSchema>;
 
 const scrapeRequestSchemaBase = baseScrapeOptions.extend({
-  url: URL,
+  url: URL.optional(),
+  sessionId: z.uuid().optional(),
   origin: z.string().optional().prefault("api"),
   integration: integrationSchema.optional().transform(val => val || null),
   zeroDataRetention: z.boolean().optional(),
@@ -833,6 +834,23 @@ const scrapeRequestSchemaBase = baseScrapeOptions.extend({
 
 export const scrapeRequestSchema = strictWithMessage(scrapeRequestSchemaBase)
   .refine(waitForRefine, waitForRefineOpts)
+  .refine(x => x.url !== undefined || x.sessionId !== undefined, {
+    message: "Either url or sessionId must be provided",
+    path: ["url"],
+  })
+  .refine(
+    x =>
+      !(
+        x.sessionId !== undefined &&
+        ((x.actions !== undefined && x.actions.length > 0) ||
+          (typeof x.waitFor === "number" && x.waitFor > 0))
+      ),
+    {
+      message:
+        "actions and waitFor are not supported when using sessionId (the client drives the browser)",
+      path: ["sessionId"],
+    },
+  )
   .transform(extractTransformRequired);
 
 export type ScrapeRequest = z.infer<typeof scrapeRequestSchema>;
@@ -845,7 +863,8 @@ export type ScrapeRequestInput = Omit<
 > & {
   formats?: z.input<typeof baseScrapeOptions>["formats"];
 } & {
-  url: z.input<typeof URL>;
+  url?: z.input<typeof URL>;
+  sessionId?: string;
   origin?: string;
   integration?: z.input<typeof integrationSchema> | null;
   zeroDataRetention?: boolean;

@@ -461,6 +461,11 @@ export type InternalOptions = {
   v1JSONSystemPrompt?: string;
   v1OriginalFormat?: "extract" | "json"; // Track original v1 format for backward compatibility
 
+  // Local browser session feature: when the scrape originated with a
+  // sessionId, this is set so the playwright-session engine can reach the
+  // right browser and skip navigation.
+  sessionId?: string;
+
   isPreCrawl?: boolean; // Whether this scrape is part of a precrawl job
   agentIndexOnly?: boolean; // Pre-confirmation agent key: serve from index only, never touch web/Fire Engine
   isParse?: boolean; // Whether this scrape originated from /v2/parse

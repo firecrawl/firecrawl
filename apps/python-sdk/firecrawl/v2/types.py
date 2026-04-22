@@ -547,6 +547,10 @@ class ScrapeOptions(BaseModel):
     store_in_cache: Optional[bool] = None
     profile: Optional[Dict[str, Any]] = None
     integration: Optional[str] = None
+    # ID of a local browser session created via ``local_browser()``. When set,
+    # the server reads the current DOM of the already-loaded page without
+    # re-navigating. ``url`` must be omitted in that case.
+    session_id: Optional[str] = None
 
     @field_validator("formats")
     @classmethod
@@ -874,6 +878,13 @@ class BrowserDeleteResponse(BaseModel):
     success: bool
     session_duration_ms: Optional[int] = None
     credits_billed: Optional[int] = None
+    error: Optional[str] = None
+
+
+class LocalBrowserDeleteResponse(BaseModel):
+    """Response from deleting a local browser session."""
+
+    success: bool
     error: Optional[str] = None
 
 

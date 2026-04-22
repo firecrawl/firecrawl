@@ -71,6 +71,16 @@ services:
       BLOCK_MEDIA: ${BLOCK_MEDIA}
       # Configure maximum concurrent pages for Playwright browser instances
       MAX_CONCURRENT_PAGES: ${CRAWL_CONCURRENT_REQUESTS:-10}
+      # Local browser (CDP) session range. The ports below are published so
+      # host-side clients can reach Chrome's remote debugging endpoint via the
+      # cdp_url returned by POST /v2/local-browser.
+      LOCAL_BROWSER_PORT_RANGE_START: ${LOCAL_BROWSER_PORT_RANGE_START:-9222}
+      LOCAL_BROWSER_PORT_RANGE_END: ${LOCAL_BROWSER_PORT_RANGE_END:-9226}
+      LOCAL_BROWSER_MAX_SESSIONS: ${LOCAL_BROWSER_MAX_SESSIONS:-5}
+      LOCAL_BROWSER_IDLE_TTL_MS: ${LOCAL_BROWSER_IDLE_TTL_MS:-900000}
+      PLAYWRIGHT_CDP_PUBLIC_HOST: ${PLAYWRIGHT_CDP_PUBLIC_HOST:-localhost}
+    ports:
+      - "${LOCAL_BROWSER_PORT_RANGE_START:-9222}-${LOCAL_BROWSER_PORT_RANGE_END:-9226}:${LOCAL_BROWSER_PORT_RANGE_START:-9222}-${LOCAL_BROWSER_PORT_RANGE_END:-9226}"
     networks:
       - backend
     # Resource limits for Docker Compose (not Swarm)
