@@ -225,6 +225,25 @@ export async function scrapeStopInteractiveBrowserRaw(
 }
 
 // =========================================
+// Local Browser API
+// =========================================
+
+export async function createLocalBrowserRaw(identity: Identity) {
+  return await request(TEST_API_URL)
+    .post("/v2/local-browser")
+    .set("Authorization", `Bearer ${identity.apiKey}`)
+    .set("Content-Type", "application/json")
+    .send({});
+}
+
+export async function deleteLocalBrowserRaw(id: string, identity: Identity) {
+  return await request(TEST_API_URL)
+    .delete("/v2/local-browser/" + encodeURIComponent(id))
+    .set("Authorization", `Bearer ${identity.apiKey}`)
+    .send();
+}
+
+// =========================================
 // Crawl API
 // =========================================
 

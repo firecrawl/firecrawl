@@ -102,6 +102,9 @@ class V2Proxy:
             self.delete_browser = client_instance.delete_browser
             self.list_browsers = client_instance.list_browsers
 
+            self.local_browser = client_instance.local_browser
+            self.delete_local_browser = client_instance.delete_local_browser
+
             self.watcher = client_instance.watcher
     
     def __getattr__(self, name):
@@ -181,6 +184,9 @@ class AsyncV2Proxy:
             self.browser_execute = client_instance.browser_execute
             self.delete_browser = client_instance.delete_browser
             self.list_browsers = client_instance.list_browsers
+
+            self.local_browser = client_instance.local_browser
+            self.delete_local_browser = client_instance.delete_local_browser
 
             self.watcher = client_instance.watcher
 
@@ -278,7 +284,10 @@ class Firecrawl:
         self.browser_execute = self._v2_client.browser_execute
         self.delete_browser = self._v2_client.delete_browser
         self.list_browsers = self._v2_client.list_browsers
-        
+
+        self.local_browser = self._v2_client.local_browser
+        self.delete_local_browser = self._v2_client.delete_local_browser
+
         self.watcher = self._v2_client.watcher
 
     def parse(
@@ -371,6 +380,9 @@ class AsyncFirecrawl:
         self.browser_execute = self._v2_client.browser_execute
         self.delete_browser = self._v2_client.delete_browser
         self.list_browsers = self._v2_client.list_browsers
+
+        self.local_browser = self._v2_client.local_browser
+        self.delete_local_browser = self._v2_client.delete_local_browser
 
         self.watcher = self._v2_client.watcher
 

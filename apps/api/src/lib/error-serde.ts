@@ -70,6 +70,9 @@ const errorMap: Record<ErrorCodes, any> = {
   BAD_REQUEST: null,
   BAD_REQUEST_INVALID_JSON: null,
   PARSE_UNSUPPORTED_OPTIONS: null,
+
+  // Plain TransportableError (no dedicated subclass)
+  LOCAL_BROWSER_SESSION_NOT_FOUND: null,
 };
 
 export function serializeTransportableError(error: TransportableError) {

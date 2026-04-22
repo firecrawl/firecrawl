@@ -536,7 +536,8 @@ def prepare_scrape_options(options: Optional[ScrapeOptions]) -> Optional[Dict[st
         "use_mock": "useMock",
         "block_ads": "blockAds",
         "store_in_cache": "storeInCache",
-        "max_age": "maxAge"
+        "max_age": "maxAge",
+        "session_id": "sessionId",
     }
     
     # Apply field mappings

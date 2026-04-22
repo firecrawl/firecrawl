@@ -24,6 +24,9 @@ import { getErrorContactMessage } from "../../lib/deployment";
 import { captureExceptionWithZdrCheck } from "../../services/sentry";
 import type { BillingMetadata } from "../../services/billing/types";
 import { getScrapeZDR } from "../../lib/zdr-helpers";
+import { checkLocalBrowserOwnership } from "../../lib/local-browser-sessions";
+
+const SESSION_PLACEHOLDER_URL = "about:blank";
 
 const AGENT_INTEROP_CONCURRENCY_BOOST = 3;
 
@@ -59,6 +62,30 @@ export async function scrapeController(
         });
       });
 
+      // Local browser session ownership check: reject before doing any work
+      // so callers get fast, clear 404/403 semantics instead of downstream
+      // engine-level errors.
+      if (req.body.sessionId) {
+        const ownership = checkLocalBrowserOwnership(
+          req.body.sessionId,
+          req.auth.team_id,
+        );
+        if (ownership.kind === "not-found") {
+          setSpanAttributes(span, { "scrape.status_code": 404 });
+          return res.status(404).json({
+            success: false,
+            error: "Local browser session not found.",
+          });
+        }
+        if (ownership.kind === "forbidden") {
+          setSpanAttributes(span, { "scrape.status_code": 403 });
+          return res.status(403).json({
+            success: false,
+            error: "Forbidden.",
+          });
+        }
+      }
+
       // Permission check span
       const permissions = await withSpan(
         "api.scrape.check_permissions",
@@ -84,7 +111,8 @@ export async function scrapeController(
       }
 
       const zeroDataRetention =
-        getScrapeZDR(req.acuc?.flags) === "forced" || (req.body.zeroDataRetention ?? false);
+        getScrapeZDR(req.acuc?.flags) === "forced" ||
+        (req.body.zeroDataRetention ?? false);
       const billing: BillingMetadata = req.body.__agentInterop
         ? { endpoint: "agent" as const, jobId }
         : { endpoint: "scrape" as const, jobId };
@@ -138,7 +166,11 @@ export async function scrapeController(
           team_id: req.auth.team_id,
           origin: req.body.origin ?? "api",
           integration: req.body.integration,
-          target_hint: req.body.url,
+          target_hint:
+            req.body.url ??
+            (req.body.sessionId
+              ? `session:${req.body.sessionId}`
+              : SESSION_PLACEHOLDER_URL),
           zeroDataRetention: zeroDataRetention || false,
           api_key_id: req.acuc?.api_key_id ?? null,
         }).catch(err =>
@@ -219,6 +251,10 @@ export async function scrapeController(
                   "wait.job_id": jobId,
                 });
 
+                const effectiveUrl = req.body.sessionId
+                  ? SESSION_PLACEHOLDER_URL
+                  : req.body.url!;
+
                 const job: NuQJob<ScrapeJobData> = {
                   id: jobId,
 
@@ -226,7 +262,7 @@ export async function scrapeController(
                   createdAt: new Date(),
                   priority: jobPriority,
                   data: {
-                    url: req.body.url,
+                    url: effectiveUrl,
                     mode: "single_urls",
                     team_id: req.auth.team_id,
                     scrapeOptions: {
@@ -248,6 +284,12 @@ export async function scrapeController(
                       zeroDataRetention,
                       teamFlags: req.acuc?.flags ?? null,
                       agentIndexOnly: (req as any).agentIndexOnly ?? false,
+                      ...(req.body.sessionId
+                        ? {
+                            sessionId: req.body.sessionId,
+                            forceEngine: ["playwright-session" as const],
+                          }
+                        : {}),
                     },
                     skipNuq: true,
                     origin,
@@ -315,6 +357,17 @@ export async function scrapeController(
           }
 
           if (e.code === "SCRAPE_LOCKDOWN_CACHE_MISS") {
+            setSpanAttributes(span, {
+              "scrape.status_code": 404,
+            });
+            return res.status(404).json({
+              success: false,
+              code: e.code,
+              error: e.message,
+            });
+          }
+
+          if (e.code === "LOCAL_BROWSER_SESSION_NOT_FOUND") {
             setSpanAttributes(span, {
               "scrape.status_code": 404,
             });

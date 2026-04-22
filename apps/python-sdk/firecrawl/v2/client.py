@@ -55,6 +55,7 @@ from .methods import usage as usage_methods
 from .methods import extract as extract_module
 from .methods import agent as agent_module
 from .methods import browser as browser_module
+from .methods import local_browser as local_browser_module
 from .watcher import Watcher
 
 class FirecrawlClient:
@@ -113,7 +114,7 @@ class FirecrawlClient:
     
     def scrape(
         self,
-        url: str,
+        url: Optional[str] = None,
         *,
         formats: Optional[List['FormatOption']] = None,
         headers: Optional[Dict[str, str]] = None,
@@ -136,11 +137,14 @@ class FirecrawlClient:
         store_in_cache: Optional[bool] = None,
         profile: Optional[Dict[str, Any]] = None,
         integration: Optional[str] = None,
+        session_id: Optional[str] = None,
     ) -> Document:
         """
         Scrape a single URL and return the document.
         Args:
-            url: URL to scrape
+            url: URL to scrape. Optional when ``session_id`` is provided, in
+                which case the server reads the current DOM of the already-loaded
+                page in that local browser session without re-navigating.
             formats: List of formats to scrape
             headers: Dictionary of headers to use
             include_tags: List of tags to include
@@ -161,6 +165,9 @@ class FirecrawlClient:
             max_age: Maximum age of the cache
             store_in_cache: Whether to store the result in the cache
             profile: Browser profile for persistent state (e.g. {"name": "my-profile", "saveChanges": True})
+            session_id: ID of a local browser session created via
+                ``local_browser()``. When set, the scrape reads the current DOM
+                of the page loaded in that session (no re-navigation).
         Returns:
             Document
         """
@@ -187,8 +194,9 @@ class FirecrawlClient:
                 store_in_cache=store_in_cache,
                 profile=profile,
                 integration=integration,
+                session_id=session_id,
             ).items() if v is not None}
-        ) if any(v is not None for v in [formats, headers, include_tags, exclude_tags, only_main_content, timeout, wait_for, mobile, parsers, actions, location, skip_tls_verification, remove_base64_images, fast_mode, use_mock, block_ads, proxy, max_age, store_in_cache, profile, integration]) else None
+        ) if any(v is not None for v in [formats, headers, include_tags, exclude_tags, only_main_content, timeout, wait_for, mobile, parsers, actions, location, skip_tls_verification, remove_base64_images, fast_mode, use_mock, block_ads, proxy, max_age, store_in_cache, profile, integration, session_id]) else None
         return scrape_module.scrape(self.http_client, url, options)
 
     def interact(
@@ -1178,6 +1186,71 @@ class FirecrawlClient:
         return browser_module.list_browsers(
             self.http_client,
             status=status,
+        )
+
+    def local_browser(self):
+        """Create a new local browser session (self-hosted, playwright-service backed).
+
+        The returned object has ``id`` and ``cdp_url`` fields. Pass
+        ``cdp_url`` to ``playwright.chromium.connect_over_cdp`` to drive the
+        browser, then pass ``id`` to :meth:`scrape` via ``session_id`` to read
+        the current DOM without re-navigating.
+
+        Only available when the self-hosted Firecrawl API has
+        ``PLAYWRIGHT_MICROSERVICE_URL`` configured.
+
+        Cleanup:
+            Release the Playwright client by exiting the ``sync_playwright()``
+            context (or calling ``p.stop()``), and call
+            :meth:`delete_local_browser` to release the server-side session.
+            Do **not** call ``browser.close()`` on a CDP-attached Playwright
+            Browser -- it sends a ``Browser.close`` CDP command that
+            terminates the remote Chromium and wipes the session.
+
+        Returns:
+            BrowserCreateResponse with session id and CDP URL.
+
+        Example:
+            >>> from playwright.sync_api import sync_playwright
+            >>> from firecrawl import Firecrawl
+            >>> firecrawl = Firecrawl(api_url="http://localhost:3002")
+            >>> session = firecrawl.local_browser()
+            >>> try:
+            ...     with sync_playwright() as p:
+            ...         browser = p.chromium.connect_over_cdp(session.cdp_url)
+            ...         ctx = (
+            ...             browser.contexts[0]
+            ...             if browser.contexts
+            ...             else browser.new_context()
+            ...         )
+            ...         page = ctx.pages[0] if ctx.pages else ctx.new_page()
+            ...         page.goto("https://example.com")
+            ...         # Drive the page however you like, then scrape the
+            ...         # current DOM via the same session:
+            ...         doc = firecrawl.scrape(
+            ...             session_id=session.id, formats=["markdown"]
+            ...         )
+            ... finally:
+            ...     firecrawl.delete_local_browser(session.id)
+        """
+        return local_browser_module.create_local_browser(self.http_client)
+
+    def delete_local_browser(self, session_id: str):
+        """Delete a local browser session previously created with :meth:`local_browser`.
+
+        This is the authoritative cleanup path for a local browser session:
+        it terminates the remote Chromium and releases the server-side slot.
+        Always call it (e.g. from a ``finally`` block) even if your
+        Playwright client already disconnected.
+
+        Args:
+            session_id: ID returned from ``local_browser()``.
+
+        Returns:
+            LocalBrowserDeleteResponse with ``success`` flag.
+        """
+        return local_browser_module.delete_local_browser(
+            self.http_client, session_id
         )
 
     def watcher(

@@ -66,6 +66,7 @@
     "jest-junit": "^16.0.0",
     "knip": "^5.70.1",
     "lint-staged": "^16.1.6",
+    "playwright": "^1.58.1",
     "supertest": "^6.3.3",
     "ts-jest": "^29.4.5",
     "tsc-watch": "^7.1.1",

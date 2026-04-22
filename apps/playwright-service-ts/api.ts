@@ -5,6 +5,14 @@ import UserAgent from 'user-agents';
 import { getError } from './helpers/get_error';
 import { lookup } from 'dns/promises';
 import IPAddr from 'ipaddr.js';
+import {
+  createSession,
+  snapshotSession,
+  deleteSession,
+  shutdownAllSessions,
+  SessionNotFoundError,
+  SessionCapacityError,
+} from './sessions';
 
 dotenv.config();
 
@@ -465,17 +473,83 @@ app.post('/scrape', async (req: Request, res: Response) => {
   }
 });
 
+app.post('/sessions', async (_req: Request, res: Response) => {
+  try {
+    const result = await createSession();
+    return res.status(200).json({ success: true, ...result });
+  } catch (error) {
+    if (error instanceof SessionCapacityError) {
+      return res.status(429).json({ success: false, error: error.message });
+    }
+    console.error('Create session error:', error);
+    return res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to create session',
+    });
+  }
+});
+
+app.post('/sessions/:id/snapshot', async (req: Request, res: Response) => {
+  const rawId = req.params.id;
+  const id = Array.isArray(rawId) ? rawId[0] : rawId;
+  try {
+    const result = await snapshotSession(id);
+    return res.status(200).json(result);
+  } catch (error) {
+    if (error instanceof SessionNotFoundError) {
+      return res.status(404).json({ error: error.message });
+    }
+    console.error(`Snapshot session ${id} error:`, error);
+    return res.status(500).json({
+      error: error instanceof Error ? error.message : 'Failed to snapshot session',
+    });
+  }
+});
+
+app.delete('/sessions/:id', async (req: Request, res: Response) => {
+  const rawId = req.params.id;
+  const id = Array.isArray(rawId) ? rawId[0] : rawId;
+  try {
+    const deleted = await deleteSession(id);
+    if (!deleted) {
+      return res.status(404).json({ success: false, error: 'Session not found' });
+    }
+    return res.status(200).json({ success: true });
+  } catch (error) {
+    console.error(`Delete session ${id} error:`, error);
+    return res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to delete session',
+    });
+  }
+});
+
 app.listen(port, () => {
   initializeBrowser().then(() => {
     console.log(`Server is running on port ${port}`);
   });
 });
 
+const gracefulShutdown = async (signal: string) => {
+  try {
+    await shutdownAllSessions();
+  } catch (err) {
+    console.warn('Error shutting down sessions:', err);
+  }
+  try {
+    await shutdownBrowser();
+  } catch (err) {
+    console.warn('Error shutting down shared browser:', err);
+  }
+  console.log(`Shutdown complete (${signal})`);
+  process.exit(0);
+};
+
 if (require.main === module) {
   process.on('SIGINT', () => {
-    shutdownBrowser().then(() => {
-      console.log('Browser closed');
-      process.exit(0);
-    });
+    void gracefulShutdown('SIGINT');
+  });
+  process.on('SIGTERM', () => {
+    void gracefulShutdown('SIGTERM');
   });
 }
