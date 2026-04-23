@@ -5,7 +5,6 @@ import { downloadFile, fetchFileToBuffer } from "../utils/downloadFile";
 import { safeMarkdownToHtml } from "./markdownToHtml";
 import {
   PDFAntibotError,
-  PDFInsufficientTimeError,
   PDFOCRRequiredError,
   PDFPrefetchFailed,
   RemoveFeatureError,
@@ -21,7 +20,11 @@ import {
 } from "../../../../controllers/v2/types";
 import type { PDFMode } from "../../../../controllers/v2/types";
 import { processPdf, detectPdf } from "@mendable/firecrawl-rs";
-import { MAX_FILE_SIZE, MILLISECONDS_PER_PAGE } from "./types";
+import {
+  MAX_FILE_SIZE,
+  MILLISECONDS_PER_PAGE,
+  PDF_TIMEOUT_BUFFER_MS,
+} from "./types";
 import type { PDFProcessorResult } from "./types";
 import {
   emitNativeLogs,
@@ -49,7 +52,7 @@ function getIneligibleReason(
 
 export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
   const shouldParse = shouldParsePDF(meta.options.parsers);
-  const maxPages = getPDFMaxPages(meta.options.parsers);
+  let maxPages = getPDFMaxPages(meta.options.parsers);
   const mode: PDFMode = getPDFMode(meta.options.parsers);
 
   if (!shouldParse) {
@@ -342,18 +345,30 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
       }
     }
 
-    // Only enforce the per-page time budget when we need MU/fallback.
-    // Rust extraction is fast enough that the constraint doesn't apply.
+    // When the PDF has more pages than the timeout allows for MU/fallback,
+    // trim to the maximum number of pages that fit within the timeout instead
+    // of erroring out. Rust extraction is fast enough that this doesn't apply.
+    let pdfTrimmedWarning: string | undefined;
     if (
       !result &&
       effectivePageCount > 0 &&
       effectivePageCount * MILLISECONDS_PER_PAGE >
         (meta.abort.scrapeTimeout() ?? Infinity)
     ) {
-      throw new PDFInsufficientTimeError(
-        effectivePageCount,
-        effectivePageCount * MILLISECONDS_PER_PAGE + 5000,
+      const scrapeTimeout = meta.abort.scrapeTimeout() ?? Infinity;
+      const maxPagesForTimeout = Math.max(
+        1,
+        Math.floor(scrapeTimeout / MILLISECONDS_PER_PAGE),
       );
+      meta.logger.warn("PDF trimmed due to timeout constraints", {
+        originalPageCount: effectivePageCount,
+        trimmedPageCount: maxPagesForTimeout,
+        scrapeTimeout,
+        url: meta.rewrittenUrl ?? meta.url,
+      });
+      pdfTrimmedWarning = `The PDF has ${effectivePageCount} pages, but only ${maxPagesForTimeout} could be processed within your timeout. To get all pages, increase the timeout to at least ${effectivePageCount * MILLISECONDS_PER_PAGE + PDF_TIMEOUT_BUFFER_MS}ms (${Math.ceil((effectivePageCount * MILLISECONDS_PER_PAGE + PDF_TIMEOUT_BUFFER_MS) / 1000)} seconds).`;
+      effectivePageCount = maxPagesForTimeout;
+      maxPages = maxPagesForTimeout;
     }
 
     // OCR / MU fallback.
@@ -548,6 +563,7 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
         numPages: effectivePageCount,
         title: metadataTitle,
       },
+      warning: pdfTrimmedWarning,
 
       contentType: "application/pdf",
       proxyUsed: "basic",

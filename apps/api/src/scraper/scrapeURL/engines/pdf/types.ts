@@ -4,3 +4,4 @@ export type PdfMetadata = { numPages: number; title?: string };
 
 export const MAX_FILE_SIZE = 19 * 1024 * 1024; // 19MB
 export const MILLISECONDS_PER_PAGE = 150;
+export const PDF_TIMEOUT_BUFFER_MS = 5000;

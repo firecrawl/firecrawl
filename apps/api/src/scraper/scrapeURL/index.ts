@@ -36,7 +36,6 @@ import {
   SiteError,
   UnsupportedFileError,
   SSLError,
-  PDFInsufficientTimeError,
   PDFOCRRequiredError,
   IndexMissError,
   NoCachedDataError,
@@ -798,7 +797,6 @@ async function scrapeURLLoop(meta: Meta): Promise<ScrapeUrlResponse> {
               error.error instanceof PDFAntibotError ||
               error.error instanceof PDFOCRRequiredError ||
               error.error instanceof DocumentAntibotError ||
-              error.error instanceof PDFInsufficientTimeError ||
               error.error instanceof ProxySelectionError ||
               error.error instanceof NoCachedDataError ||
               error.error instanceof AgentIndexOnlyError
@@ -973,6 +971,13 @@ async function scrapeURLLoop(meta: Meta): Promise<ScrapeUrlResponse> {
         postprocessorsUsed: engineResult.postprocessorsUsed,
       },
     };
+
+    if (engineResult.warning) {
+      document.warning =
+        document.warning !== undefined
+          ? document.warning + " " + engineResult.warning
+          : engineResult.warning;
+    }
 
     if (result.unsupportedFeatures.size > 0) {
       const warning = `The engine used does not support the following features: ${[...result.unsupportedFeatures].join(", ")} -- your scrape may be partial.`;
@@ -1345,11 +1350,6 @@ export async function scrapeURL(
       } else if (error instanceof UnsupportedFileError) {
         errorType = "UnsupportedFileError";
         meta.logger.warn("scrapeURL: Tried to scrape unsupported file", {
-          error,
-        });
-      } else if (error instanceof PDFInsufficientTimeError) {
-        errorType = "PDFInsufficientTimeError";
-        meta.logger.warn("scrapeURL: Insufficient time to process PDF", {
           error,
         });
       } else if (error instanceof PDFOCRRequiredError) {
