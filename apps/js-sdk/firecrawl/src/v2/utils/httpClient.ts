@@ -68,7 +68,12 @@ export class HttpClient {
 
           // If timeout is specified in the body, use it to override the request timeout
           if (typeof data.timeout === "number") {
-            cfg.timeout = data.timeout + 5000;
+            let timeoutMs = data.timeout;
+            // The interact endpoint expects timeout in seconds (<= 300), while others expect milliseconds
+            if (typeof cfg.url === "string" && cfg.url.endsWith("/interact")) {
+              timeoutMs = data.timeout * 1000;
+            }
+            cfg.timeout = timeoutMs + 5000;
           }
         }
 
