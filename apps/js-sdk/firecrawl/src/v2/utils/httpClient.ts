@@ -4,6 +4,7 @@ import { getVersion } from "./getVersion";
 export interface HttpClientOptions {
   apiKey: string;
   apiUrl: string;
+  headers?: Record<string, string>;
   timeoutMs?: number;
   maxRetries?: number;
   backoffFactor?: number; // seconds factor for 0.5, 1, 2...
@@ -26,6 +27,7 @@ export class HttpClient {
       timeout: options.timeoutMs ?? 300000,
       headers: {
         Authorization: `Bearer ${this.apiKey}`,
+        ...options.headers,
       },
       transitional: { clarifyTimeoutError: true },
     });

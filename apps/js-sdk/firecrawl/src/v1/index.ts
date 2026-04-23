@@ -11,6 +11,7 @@ import { TypedEventTarget } from "typescript-event-target";
 export interface FirecrawlAppConfig {
   apiKey?: string | null;
   apiUrl?: string | null;
+  headers?: Record<string, string>;
 }
 
 /**
@@ -172,7 +173,7 @@ export interface ScrapeParams<LLMSchema extends zt.ZodSchema = any, ActionsSchem
     schema?: LLMSchema;
     systemPrompt?: string;
   };
-  jsonOptions?:{
+  jsonOptions?: {
     prompt?: string;
     schema?: LLMSchema;
     systemPrompt?: string;
@@ -442,7 +443,7 @@ export interface CrawlErrorsResponse {
  * Parameters for deep research operations.
  * Defines options for conducting deep research on a query.
  */
-export interface DeepResearchParams<LLMSchema extends zt.ZodSchema = any>  {
+export interface DeepResearchParams<LLMSchema extends zt.ZodSchema = any> {
   /**
    * Maximum depth of research iterations (1-10)
    * @default 7
@@ -473,7 +474,7 @@ export interface DeepResearchParams<LLMSchema extends zt.ZodSchema = any>  {
   /**
    * The JSON options to use for the final analysis
    */
-  jsonOptions?:{
+  jsonOptions?: {
     prompt?: string;
     schema?: LLMSchema;
     systemPrompt?: string;
@@ -644,8 +645,9 @@ export interface TokenUsageHistoricalResponseV1 {
 export default class FirecrawlApp {
   public apiKey: string;
   public apiUrl: string;
-  public version: string =  "1.25.1";
-  
+  public headers?: Record<string, string>;
+  public version: string = "1.25.1";
+
   private isCloudService(url: string): boolean {
     return url.includes('api.firecrawl.dev');
   }
@@ -667,7 +669,7 @@ export default class FirecrawlApp {
         // eslint-disable-next-line no-console
         console.error("Error getting version:", error);
       }
-      return  "1.25.1";
+      return "1.25.1";
     }
   }
 
@@ -679,15 +681,16 @@ export default class FirecrawlApp {
    * Initializes a new instance of the FirecrawlApp class.
    * @param config - Configuration options for the FirecrawlApp instance.
    */
-  constructor({ apiKey = null, apiUrl = null }: FirecrawlAppConfig) {
+  constructor({ apiKey = null, apiUrl = null, headers }: FirecrawlAppConfig) {
     const baseUrl = apiUrl || "https://api.firecrawl.dev";
-    
+
     if (this.isCloudService(baseUrl) && typeof apiKey !== "string") {
       throw new FirecrawlError("No API key provided", 401);
     }
 
     this.apiKey = apiKey || '';
     this.apiUrl = baseUrl;
+    this.headers = headers;
     this.init();
   }
 
@@ -704,6 +707,7 @@ export default class FirecrawlApp {
     const headers: AxiosRequestHeaders = {
       "Content-Type": "application/json",
       Authorization: `Bearer ${this.apiKey}`,
+      ...this.headers,
     } as AxiosRequestHeaders;
     let jsonData: any = { url, ...params, origin: typeof (params as any).origin === "string" && (params as any).origin.includes("mcp") ? (params as any).origin : `js-sdk@${this.version}` };
     if (jsonData?.extract?.schema) {
@@ -762,6 +766,7 @@ export default class FirecrawlApp {
     const headers: AxiosRequestHeaders = {
       "Content-Type": "application/json",
       Authorization: `Bearer ${this.apiKey}`,
+      ...this.headers,
     } as AxiosRequestHeaders;
 
     let jsonData: any = {
@@ -954,7 +959,7 @@ export default class FirecrawlApp {
         if (response.data.next) {
           (resp as CrawlStatusResponse).next = response.data.next;
         }
-        
+
         return resp;
       } else {
         this.handleError(response, "check crawl status");
@@ -1242,7 +1247,7 @@ export default class FirecrawlApp {
         if (response.data.next) {
           (resp as BatchScrapeStatusResponse).next = response.data.next;
         }
-        
+
         return resp;
       } else {
         this.handleError(response, "check batch scrape status");
@@ -1287,9 +1292,9 @@ export default class FirecrawlApp {
   async extract<T extends zt.ZodSchema = any>(urls?: string[], params?: ExtractParams<T>): Promise<ExtractResponse<zt.infer<T>> | ErrorResponse> {
     const headers = this.prepareHeaders();
 
-    let jsonData: { urls?: string[] } & ExtractParams<T> = { urls: urls,  ...params };
+    let jsonData: { urls?: string[] } & ExtractParams<T> = { urls: urls, ...params };
     const jsonSchema = params?.schema ? zodSchemaToJsonSchema(params.schema) : undefined;
-    
+
     try {
       const response: AxiosResponse = await this.postRequest(
         this.apiUrl + `/v1/extract`,
@@ -1329,7 +1334,7 @@ export default class FirecrawlApp {
     } catch (error: any) {
       throw new FirecrawlError(error.message, 500, error.response?.data?.details);
     }
-    return { success: false, error: "Internal server error."};
+    return { success: false, error: "Internal server error." };
   }
 
   /**
@@ -1401,6 +1406,7 @@ export default class FirecrawlApp {
     return {
       "Content-Type": "application/json",
       Authorization: `Bearer ${this.apiKey}`,
+      ...this.headers,
       ...(idempotencyKey ? { "x-idempotency-key": idempotencyKey } : {}),
     } as AxiosRequestHeaders & { "x-idempotency-key"?: string };
   }
@@ -1452,7 +1458,7 @@ export default class FirecrawlApp {
     headers: AxiosRequestHeaders
   ): Promise<AxiosResponse> {
     try {
-        return await axios.delete(url, { headers });
+      return await axios.delete(url, { headers });
     } catch (error) {
       if (error instanceof AxiosError && error.response) {
         return error.response as AxiosResponse;
@@ -1478,19 +1484,19 @@ export default class FirecrawlApp {
     let failedTries = 0;
     let networkRetries = 0;
     const maxNetworkRetries = 3;
-    
+
     while (true) {
       try {
         let statusResponse: AxiosResponse = await this.getRequest(
           `${this.apiUrl}/v1/crawl/${id}`,
           headers
         );
-        
+
         if (statusResponse.status === 200) {
           failedTries = 0;
           networkRetries = 0;
           let statusData = statusResponse.data;
-          
+
           if (statusData.status === "completed") {
             if ("data" in statusData) {
               let data = statusData.data;
@@ -1530,11 +1536,11 @@ export default class FirecrawlApp {
         if (this.isRetryableError(error) && networkRetries < maxNetworkRetries) {
           networkRetries++;
           const backoffDelay = Math.min(1000 * Math.pow(2, networkRetries - 1), 10000);
-          
+
           await new Promise((resolve) => setTimeout(resolve, backoffDelay));
           continue;
         }
-        
+
         throw new FirecrawlError(error, 500);
       }
     }
@@ -1550,7 +1556,7 @@ export default class FirecrawlApp {
       if (!error.response) {
         const code = error.code;
         const message = error.message?.toLowerCase() || '';
-        
+
         return (
           code === 'ECONNRESET' ||
           code === 'ETIMEDOUT' ||
@@ -1561,31 +1567,31 @@ export default class FirecrawlApp {
           message.includes('timeout')
         );
       }
-      
+
       if (error.response?.status === 408 || error.response?.status === 504) {
         return true;
       }
     }
-    
+
     if (error && typeof error === 'object') {
       const code = error.code;
       const message = error.message?.toLowerCase() || '';
-      
+
       if (code === 'ECONNRESET' ||
-          code === 'ETIMEDOUT' ||
-          code === 'ENOTFOUND' ||
-          code === 'ECONNREFUSED' ||
-          message.includes('socket hang up') ||
-          message.includes('network error') ||
-          message.includes('timeout')) {
+        code === 'ETIMEDOUT' ||
+        code === 'ENOTFOUND' ||
+        code === 'ECONNREFUSED' ||
+        message.includes('socket hang up') ||
+        message.includes('network error') ||
+        message.includes('timeout')) {
         return true;
       }
-      
+
       if (error.response?.status === 408 || error.response?.status === 504) {
         return true;
       }
     }
-    
+
     return false;
   }
 
@@ -1628,7 +1634,7 @@ export default class FirecrawlApp {
    * @returns The final research results.
    */
   async deepResearch(
-    query: string, 
+    query: string,
     params: DeepResearchParams<zt.ZodSchema>,
     onActivity?: (activity: {
       type: string;
@@ -1646,7 +1652,7 @@ export default class FirecrawlApp {
   ): Promise<DeepResearchStatusResponse | ErrorResponse> {
     try {
       const response = await this.asyncDeepResearch(query, params);
-      
+
       if (!response.success || 'error' in response) {
         return { success: false, error: 'error' in response ? response.error : 'Unknown error' };
       }
@@ -1662,7 +1668,7 @@ export default class FirecrawlApp {
 
       while (true) {
         researchStatus = await this.checkDeepResearchStatus(jobId);
-        
+
         if ('error' in researchStatus && !researchStatus.success) {
           return researchStatus;
         }
@@ -1691,7 +1697,7 @@ export default class FirecrawlApp {
 
         if (researchStatus.status === "failed") {
           throw new FirecrawlError(
-            `Research job ${researchStatus.status}. Error: ${researchStatus.error}`, 
+            `Research job ${researchStatus.status}. Error: ${researchStatus.error}`,
             500
           );
         }
@@ -1789,7 +1795,7 @@ export default class FirecrawlApp {
    * @returns The final research results.
    */
   async __deepResearch(
-    topic: string, 
+    topic: string,
     params: DeepResearchParams,
     onActivity?: (activity: {
       type: string;
@@ -1801,7 +1807,7 @@ export default class FirecrawlApp {
   ): Promise<DeepResearchStatusResponse | ErrorResponse> {
     try {
       const response = await this.__asyncDeepResearch(topic, params);
-      
+
       if (!response.success || 'error' in response) {
         return { success: false, error: 'error' in response ? response.error : 'Unknown error' };
       }
@@ -1816,7 +1822,7 @@ export default class FirecrawlApp {
 
       while (true) {
         researchStatus = await this.__checkDeepResearchStatus(jobId);
-        
+
         if ('error' in researchStatus && !researchStatus.success) {
           return researchStatus;
         }
@@ -1836,7 +1842,7 @@ export default class FirecrawlApp {
 
         if (researchStatus.status === "failed") {
           throw new FirecrawlError(
-            `Research job ${researchStatus.status}. Error: ${researchStatus.error}`, 
+            `Research job ${researchStatus.status}. Error: ${researchStatus.error}`,
             500
           );
         }
@@ -1925,7 +1931,7 @@ export default class FirecrawlApp {
   async generateLLMsText(url: string, params?: GenerateLLMsTextParams): Promise<GenerateLLMsTextStatusResponse | ErrorResponse> {
     try {
       const response = await this.asyncGenerateLLMsText(url, params);
-      
+
       if (!response.success || 'error' in response) {
         return { success: false, error: 'error' in response ? response.error : 'Unknown error' };
       }
@@ -1939,7 +1945,7 @@ export default class FirecrawlApp {
 
       while (true) {
         generationStatus = await this.checkGenerateLLMsTextStatus(jobId);
-        
+
         if ('error' in generationStatus && !generationStatus.success) {
           return generationStatus;
         }
@@ -1950,7 +1956,7 @@ export default class FirecrawlApp {
 
         if (generationStatus.status === "failed") {
           throw new FirecrawlError(
-            `LLMs.txt generation job ${generationStatus.status}. Error: ${generationStatus.error}`, 
+            `LLMs.txt generation job ${generationStatus.status}. Error: ${generationStatus.error}`,
             500
           );
         }
@@ -2037,7 +2043,7 @@ export default class FirecrawlApp {
     const headers = this.prepareHeaders();
     try {
       const response: AxiosResponse = await this.getRequest(
-      `${this.apiUrl}/v1/team/queue-status`,
+        `${this.apiUrl}/v1/team/queue-status`,
         headers
       );
 
@@ -2185,19 +2191,19 @@ export class CrawlWatcher extends TypedEventTarget<CrawlWatcherEvents> {
       type: "error",
       error: string,
     }
-    
+
     type CatchupMessage = {
       type: "catchup",
       data: CrawlStatusResponse,
     }
-    
+
     type DocumentMessage = {
       type: "document",
       data: FirecrawlDocument<undefined>,
     }
-    
+
     type DoneMessage = { type: "done" }
-    
+
     type Message = ErrorMessage | CatchupMessage | DoneMessage | DocumentMessage;
 
     const messageHandler = (msg: Message) => {
