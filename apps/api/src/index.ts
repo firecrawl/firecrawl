@@ -70,6 +70,15 @@ app.use(cors()); // Add this line to enable CORS
 
 app.use(responseTime());
 
+// Mitigation for SDK bug where timeout is sent in milliseconds instead of seconds.
+// If timeout > 300, we assume it's milliseconds and convert it to seconds to avoid Zod validation errors.
+app.use((req, res, next) => {
+  if (req.body && typeof req.body === "object" && typeof req.body.timeout === "number" && req.body.timeout > 300) {
+    req.body.timeout = Math.floor(req.body.timeout / 1000);
+  }
+  next();
+});
+
 app.disable("x-powered-by");
 
 if (config.EXPRESS_TRUST_PROXY) {
