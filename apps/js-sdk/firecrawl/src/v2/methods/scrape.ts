@@ -7,9 +7,16 @@ import {
 } from "../types";
 import { HttpClient } from "../utils/httpClient";
 import { ensureValidScrapeOptions } from "../utils/validation";
-import { throwForBadResponse, normalizeAxiosError } from "../utils/errorHandler";
+import {
+  throwForBadResponse,
+  normalizeAxiosError,
+} from "../utils/errorHandler";
 
-export async function scrape(http: HttpClient, url: string, options?: ScrapeOptions): Promise<Document> {
+export async function scrape(
+  http: HttpClient,
+  url: string,
+  options?: ScrapeOptions,
+): Promise<Document> {
   if (!url || !url.trim()) {
     throw new Error("URL cannot be empty");
   }
@@ -19,7 +26,17 @@ export async function scrape(http: HttpClient, url: string, options?: ScrapeOpti
   if (options) Object.assign(payload, options);
 
   try {
-    const res = await http.post<{ success: boolean; data?: Document; error?: string }>("/v2/scrape", payload);
+    const res = await http.post<{
+      success: boolean;
+      data?: Document;
+      error?: string;
+    }>(
+      "/v2/scrape",
+      payload,
+      typeof options?.timeout === "number"
+        ? { timeoutMs: options.timeout + 5000 }
+        : {},
+    );
     if (res.status !== 200 || !res.data?.success) {
       throwForBadResponse(res, "scrape");
     }
@@ -33,7 +50,7 @@ export async function scrape(http: HttpClient, url: string, options?: ScrapeOpti
 export async function interact(
   http: HttpClient,
   jobId: string,
-  args: ScrapeExecuteRequest
+  args: ScrapeExecuteRequest,
 ): Promise<ScrapeExecuteResponse> {
   if (!jobId || !jobId.trim()) {
     throw new Error("Job ID cannot be empty");
@@ -54,19 +71,22 @@ export async function interact(
   try {
     const res = await http.post<ScrapeExecuteResponse>(
       `/v2/scrape/${jobId}/interact`,
-      body
+      body,
+      args.timeout != null ? { timeoutMs: args.timeout * 1000 + 5000 } : {},
     );
-    if (res.status !== 200) throwForBadResponse(res, "interact with scrape browser");
+    if (res.status !== 200)
+      throwForBadResponse(res, "interact with scrape browser");
     return res.data;
   } catch (err: any) {
-    if (err?.isAxiosError) return normalizeAxiosError(err, "interact with scrape browser");
+    if (err?.isAxiosError)
+      return normalizeAxiosError(err, "interact with scrape browser");
     throw err;
   }
 }
 
 export async function stopInteraction(
   http: HttpClient,
-  jobId: string
+  jobId: string,
 ): Promise<ScrapeBrowserDeleteResponse> {
   if (!jobId || !jobId.trim()) {
     throw new Error("Job ID cannot be empty");
@@ -74,7 +94,7 @@ export async function stopInteraction(
 
   try {
     const res = await http.delete<ScrapeBrowserDeleteResponse>(
-      `/v2/scrape/${jobId}/interact`
+      `/v2/scrape/${jobId}/interact`,
     );
     if (res.status !== 200) throwForBadResponse(res, "stop interaction");
     return res.data;
@@ -88,7 +108,7 @@ export async function stopInteraction(
 export async function scrapeExecute(
   http: HttpClient,
   jobId: string,
-  args: ScrapeExecuteRequest
+  args: ScrapeExecuteRequest,
 ): Promise<ScrapeExecuteResponse> {
   return interact(http, jobId, args);
 }
@@ -96,7 +116,7 @@ export async function scrapeExecute(
 /** @deprecated Use stopInteraction(). */
 export async function stopInteractiveBrowser(
   http: HttpClient,
-  jobId: string
+  jobId: string,
 ): Promise<ScrapeBrowserDeleteResponse> {
   return stopInteraction(http, jobId);
 }
@@ -104,8 +124,7 @@ export async function stopInteractiveBrowser(
 /** @deprecated Use stopInteraction(). */
 export async function deleteScrapeBrowser(
   http: HttpClient,
-  jobId: string
+  jobId: string,
 ): Promise<ScrapeBrowserDeleteResponse> {
   return stopInteraction(http, jobId);
 }
-

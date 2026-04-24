@@ -84,7 +84,9 @@ export async function scrapeController(
       }
 
       const zeroDataRetention =
-        getScrapeZDR(req.acuc?.flags) === "forced" || (req.body.zeroDataRetention ?? false);
+        getScrapeZDR(req.acuc?.flags) === "forced" ||
+        (req.body.zeroDataRetention ?? false) ||
+        (req.body.lockdown ?? false);
       const billing: BillingMetadata = req.body.__agentInterop
         ? { endpoint: "agent" as const, jobId }
         : { endpoint: "scrape" as const, jobId };

@@ -82,7 +82,7 @@ export async function calculateCreditsToBeBilled(
     creditsToBeBilled += 4;
   }
 
-  if (internalOptions.zeroDataRetention) {
+  if (internalOptions.zeroDataRetention && !options.lockdown) {
     creditsToBeBilled += flags?.zdrCost ?? 1;
   }
 

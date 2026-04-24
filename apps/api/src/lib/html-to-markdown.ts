@@ -56,6 +56,7 @@ export async function parseMarkdown(
   context?: {
     logger?: Logger;
     requestId?: string;
+    zeroDataRetention?: boolean;
   },
 ): Promise<string> {
   if (!html) {
@@ -64,6 +65,7 @@ export async function parseMarkdown(
 
   const contextLogger = context?.logger || logger;
   const requestId = context?.requestId;
+  const zeroDataRetention = context?.zeroDataRetention === true;
 
   // Try HTTP service first if enabled
   if (config.HTML_TO_MARKDOWN_SERVICE_URL) {
@@ -71,6 +73,7 @@ export async function parseMarkdown(
       let markdownContent = await convertHTMLToMarkdownWithHttpService(html, {
         logger: contextLogger,
         requestId,
+        zeroDataRetention,
       });
       markdownContent = await postProcessMarkdown(markdownContent);
       return markdownContent;
@@ -82,7 +85,7 @@ export async function parseMarkdown(
       Sentry.captureException(error, {
         tags: {
           fallback: "original_parser",
-          ...(requestId ? { request_id: requestId } : {}),
+          ...(requestId && !zeroDataRetention ? { request_id: requestId } : {}),
         },
       });
     }
@@ -102,7 +105,7 @@ export async function parseMarkdown(
     ) {
       Sentry.captureException(error, {
         tags: {
-          ...(requestId ? { request_id: requestId } : {}),
+          ...(requestId && !zeroDataRetention ? { request_id: requestId } : {}),
         },
       });
       contextLogger.error(

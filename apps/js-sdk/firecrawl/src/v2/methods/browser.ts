@@ -5,7 +5,10 @@ import type {
   BrowserListResponse,
 } from "../types";
 import { HttpClient } from "../utils/httpClient";
-import { normalizeAxiosError, throwForBadResponse } from "../utils/errorHandler";
+import {
+  normalizeAxiosError,
+  throwForBadResponse,
+} from "../utils/errorHandler";
 
 export async function browser(
   http: HttpClient,
@@ -19,7 +22,7 @@ export async function browser(
     };
     integration?: string;
     origin?: string;
-  } = {}
+  } = {},
 ): Promise<BrowserCreateResponse> {
   const body: Record<string, unknown> = {};
   if (args.ttl != null) body.ttl = args.ttl;
@@ -34,7 +37,8 @@ export async function browser(
     if (res.status !== 200) throwForBadResponse(res, "create browser session");
     return res.data;
   } catch (err: any) {
-    if (err?.isAxiosError) return normalizeAxiosError(err, "create browser session");
+    if (err?.isAxiosError)
+      return normalizeAxiosError(err, "create browser session");
     throw err;
   }
 }
@@ -46,7 +50,7 @@ export async function browserExecute(
     code: string;
     language?: "python" | "node" | "bash";
     timeout?: number;
-  }
+  },
 ): Promise<BrowserExecuteResponse> {
   const body: Record<string, unknown> = {
     code: args.code,
@@ -57,28 +61,31 @@ export async function browserExecute(
   try {
     const res = await http.post<BrowserExecuteResponse>(
       `/v2/browser/${sessionId}/execute`,
-      body
+      body,
+      args.timeout != null ? { timeoutMs: args.timeout * 1000 + 5000 } : {},
     );
     if (res.status !== 200) throwForBadResponse(res, "execute browser code");
     return res.data;
   } catch (err: any) {
-    if (err?.isAxiosError) return normalizeAxiosError(err, "execute browser code");
+    if (err?.isAxiosError)
+      return normalizeAxiosError(err, "execute browser code");
     throw err;
   }
 }
 
 export async function deleteBrowser(
   http: HttpClient,
-  sessionId: string
+  sessionId: string,
 ): Promise<BrowserDeleteResponse> {
   try {
     const res = await http.delete<BrowserDeleteResponse>(
-      `/v2/browser/${sessionId}`
+      `/v2/browser/${sessionId}`,
     );
     if (res.status !== 200) throwForBadResponse(res, "delete browser session");
     return res.data;
   } catch (err: any) {
-    if (err?.isAxiosError) return normalizeAxiosError(err, "delete browser session");
+    if (err?.isAxiosError)
+      return normalizeAxiosError(err, "delete browser session");
     throw err;
   }
 }
@@ -87,7 +94,7 @@ export async function listBrowsers(
   http: HttpClient,
   args: {
     status?: "active" | "destroyed";
-  } = {}
+  } = {},
 ): Promise<BrowserListResponse> {
   let endpoint = "/v2/browser";
   if (args.status) endpoint += `?status=${args.status}`;
@@ -97,7 +104,8 @@ export async function listBrowsers(
     if (res.status !== 200) throwForBadResponse(res, "list browser sessions");
     return res.data;
   } catch (err: any) {
-    if (err?.isAxiosError) return normalizeAxiosError(err, "list browser sessions");
+    if (err?.isAxiosError)
+      return normalizeAxiosError(err, "list browser sessions");
     throw err;
   }
 }

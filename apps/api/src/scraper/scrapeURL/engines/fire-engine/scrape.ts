@@ -7,6 +7,7 @@ import { MockState } from "../../lib/mock";
 import { getDocFromGCS } from "../../../../lib/gcs-jobs";
 import {
   ActionError,
+  AddFeatureError,
   DNSResolutionError,
   EngineError,
   FEPageLoadFailed,
@@ -152,6 +153,7 @@ const processingSchema = z.object({
 
 const failedSchema = z.object({
   error: z.string(),
+  retryWithStealth: z.boolean().optional(),
 });
 
 export const fireEngineURL =
@@ -213,6 +215,16 @@ export async function fireEngineScrape<
     logger.debug("Scrape job failed", {
       status,
     });
+    if (
+      failedParse.data.retryWithStealth &&
+      meta.options.proxy === "auto" &&
+      !meta.featureFlags.has("stealthProxy")
+    ) {
+      logger.info(
+        "Scrape signaled retryWithStealth. Adding stealthProxy flag.",
+      );
+      throw new AddFeatureError(["stealthProxy"]);
+    }
     if (
       typeof status.error === "string" &&
       status.error.includes("Chrome error: ")

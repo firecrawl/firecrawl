@@ -11,7 +11,11 @@ import {
 import { HttpClient } from "../utils/httpClient";
 import { ensureValidScrapeOptions } from "../utils/validation";
 import { fetchAllPages } from "../utils/pagination";
-import { normalizeAxiosError, throwForBadResponse, isRetryableError } from "../utils/errorHandler";
+import {
+  normalizeAxiosError,
+  throwForBadResponse,
+  isRetryableError,
+} from "../utils/errorHandler";
 
 export async function startBatchScrape(
   http: HttpClient,
@@ -26,9 +30,10 @@ export async function startBatchScrape(
     idempotencyKey,
     integration,
     origin,
-  }: BatchScrapeOptions = {}
+  }: BatchScrapeOptions = {},
 ): Promise<BatchScrapeResponse> {
-  if (!Array.isArray(urls) || urls.length === 0) throw new Error("URLs list cannot be empty");
+  if (!Array.isArray(urls) || urls.length === 0)
+    throw new Error("URLs list cannot be empty");
   const payload: Record<string, unknown> = { urls };
   if (options) {
     ensureValidScrapeOptions(options);
@@ -39,16 +44,29 @@ export async function startBatchScrape(
   if (ignoreInvalidURLs != null) payload.ignoreInvalidURLs = ignoreInvalidURLs;
   if (maxConcurrency != null) payload.maxConcurrency = maxConcurrency;
   if (zeroDataRetention != null) payload.zeroDataRetention = zeroDataRetention;
-  if (integration != null && integration.trim()) payload.integration = integration.trim();
+  if (integration != null && integration.trim())
+    payload.integration = integration.trim();
   if (origin) payload.origin = origin;
 
   try {
     const headers = http.prepareHeaders(idempotencyKey);
-    const res = await http.post<{ success: boolean; id: string; url: string; invalidURLs?: string[]; error?: string }>("/v2/batch/scrape", payload, headers);
-    if (res.status !== 200 || !res.data?.success) throwForBadResponse(res, "start batch scrape");
-    return { id: res.data.id, url: res.data.url, invalidURLs: res.data.invalidURLs || undefined };
+    const res = await http.post<{
+      success: boolean;
+      id: string;
+      url: string;
+      invalidURLs?: string[];
+      error?: string;
+    }>("/v2/batch/scrape", payload, { headers });
+    if (res.status !== 200 || !res.data?.success)
+      throwForBadResponse(res, "start batch scrape");
+    return {
+      id: res.data.id,
+      url: res.data.url,
+      invalidURLs: res.data.invalidURLs || undefined,
+    };
   } catch (err: any) {
-    if (err?.isAxiosError) return normalizeAxiosError(err, "start batch scrape");
+    if (err?.isAxiosError)
+      return normalizeAxiosError(err, "start batch scrape");
     throw err;
   }
 }
@@ -56,11 +74,21 @@ export async function startBatchScrape(
 export async function getBatchScrapeStatus(
   http: HttpClient,
   jobId: string,
-  pagination?: PaginationConfig
+  pagination?: PaginationConfig,
 ): Promise<BatchScrapeJob> {
   try {
-    const res = await http.get<{ success: boolean; status: BatchScrapeJob["status"]; completed?: number; total?: number; creditsUsed?: number; expiresAt?: string; next?: string | null; data?: Document[] }>(`/v2/batch/scrape/${jobId}`);
-    if (res.status !== 200 || !res.data?.success) throwForBadResponse(res, "get batch scrape status");
+    const res = await http.get<{
+      success: boolean;
+      status: BatchScrapeJob["status"];
+      completed?: number;
+      total?: number;
+      creditsUsed?: number;
+      expiresAt?: string;
+      next?: string | null;
+      data?: Document[];
+    }>(`/v2/batch/scrape/${jobId}`);
+    if (res.status !== 200 || !res.data?.success)
+      throwForBadResponse(res, "get batch scrape status");
     const body = res.data;
     const initialDocs = (body.data || []) as Document[];
     const auto = pagination?.autoPaginate ?? true;
@@ -77,7 +105,12 @@ export async function getBatchScrapeStatus(
       };
     }
 
-    const aggregated = await fetchAllPages(http, body.next, initialDocs, pagination);
+    const aggregated = await fetchAllPages(
+      http,
+      body.next,
+      initialDocs,
+      pagination,
+    );
     return {
       id: jobId,
       status: body.status,
@@ -89,35 +122,57 @@ export async function getBatchScrapeStatus(
       data: aggregated,
     };
   } catch (err: any) {
-    if (err?.isAxiosError) return normalizeAxiosError(err, "get batch scrape status");
+    if (err?.isAxiosError)
+      return normalizeAxiosError(err, "get batch scrape status");
     throw err;
   }
 }
 
-export async function cancelBatchScrape(http: HttpClient, jobId: string): Promise<boolean> {
+export async function cancelBatchScrape(
+  http: HttpClient,
+  jobId: string,
+): Promise<boolean> {
   try {
-    const res = await http.delete<{ status: string }>(`/v2/batch/scrape/${jobId}`);
+    const res = await http.delete<{ status: string }>(
+      `/v2/batch/scrape/${jobId}`,
+    );
     if (res.status !== 200) throwForBadResponse(res, "cancel batch scrape");
     return res.data?.status === "cancelled";
   } catch (err: any) {
-    if (err?.isAxiosError) return normalizeAxiosError(err, "cancel batch scrape");
+    if (err?.isAxiosError)
+      return normalizeAxiosError(err, "cancel batch scrape");
     throw err;
   }
 }
 
-export async function getBatchScrapeErrors(http: HttpClient, jobId: string): Promise<CrawlErrorsResponse> {
+export async function getBatchScrapeErrors(
+  http: HttpClient,
+  jobId: string,
+): Promise<CrawlErrorsResponse> {
   try {
-    const res = await http.get<{ success?: boolean; data?: { errors: Array<Record<string, string>>; robotsBlocked: string[] } }>(`/v2/batch/scrape/${jobId}/errors`);
+    const res = await http.get<{
+      success?: boolean;
+      data?: { errors: Array<Record<string, string>>; robotsBlocked: string[] };
+    }>(`/v2/batch/scrape/${jobId}/errors`);
     if (res.status !== 200) throwForBadResponse(res, "get batch scrape errors");
     const payload = res.data?.data ?? (res.data as any);
-    return { errors: payload.errors || [], robotsBlocked: payload.robotsBlocked || [] };
+    return {
+      errors: payload.errors || [],
+      robotsBlocked: payload.robotsBlocked || [],
+    };
   } catch (err: any) {
-    if (err?.isAxiosError) return normalizeAxiosError(err, "get batch scrape errors");
+    if (err?.isAxiosError)
+      return normalizeAxiosError(err, "get batch scrape errors");
     throw err;
   }
 }
 
-export async function waitForBatchCompletion(http: HttpClient, jobId: string, pollInterval = 2, timeout?: number): Promise<BatchScrapeJob> {
+export async function waitForBatchCompletion(
+  http: HttpClient,
+  jobId: string,
+  pollInterval = 2,
+  timeout?: number,
+): Promise<BatchScrapeJob> {
   const start = Date.now();
 
   while (true) {
@@ -137,7 +192,7 @@ export async function waitForBatchCompletion(http: HttpClient, jobId: string, po
             err.status,
             err.code,
             err.details,
-            jobId
+            jobId,
           );
           throw errorWithJobId;
         }
@@ -147,24 +202,30 @@ export async function waitForBatchCompletion(http: HttpClient, jobId: string, po
     }
 
     if (timeout != null && Date.now() - start > timeout * 1000) {
-      throw new JobTimeoutError(jobId, timeout, 'batch');
+      throw new JobTimeoutError(jobId, timeout, "batch");
     }
-    
-    await new Promise((r) => setTimeout(r, Math.max(1000, pollInterval * 1000)));
+
+    await new Promise(r => setTimeout(r, Math.max(1000, pollInterval * 1000)));
   }
 }
 
 export async function batchScrape(
   http: HttpClient,
   urls: string[],
-  opts: BatchScrapeOptions & { pollInterval?: number; timeout?: number } = {}
+  opts: BatchScrapeOptions & { pollInterval?: number; timeout?: number } = {},
 ): Promise<BatchScrapeJob> {
   const start = await startBatchScrape(http, urls, opts);
-  return waitForBatchCompletion(http, start.id, opts.pollInterval ?? 2, opts.timeout);
+  return waitForBatchCompletion(
+    http,
+    start.id,
+    opts.pollInterval ?? 2,
+    opts.timeout,
+  );
 }
 
 export function chunkUrls(urls: string[], chunkSize = 100): string[][] {
   const chunks: string[][] = [];
-  for (let i = 0; i < urls.length; i += chunkSize) chunks.push(urls.slice(i, i + chunkSize));
+  for (let i = 0; i < urls.length; i += chunkSize)
+    chunks.push(urls.slice(i, i + chunkSize));
   return chunks;
 }

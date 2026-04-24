@@ -1,0 +1,44 @@
+name: Go HTML-to-Markdown Service Check
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - apps/go-html-to-md-service/**
+      - .github/workflows/test-go-html-to-md-service.yml
+  push:
+    branches:
+      - main
+    paths:
+      - apps/go-html-to-md-service/**
+  workflow_dispatch:
+
+jobs:
+  build-vet-test:
+    name: Build, Vet and Test
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      github.event_name == 'pull_request' ||
+      (github.event_name == 'push' && github.ref == 'refs/heads/main')
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.23"
+          cache-dependency-path: apps/go-html-to-md-service/go.sum
+
+      - name: Build
+        working-directory: ./apps/go-html-to-md-service
+        run: go build ./...
+
+      - name: Vet
+        working-directory: ./apps/go-html-to-md-service
+        run: go vet ./...
+
+      - name: Test
+        working-directory: ./apps/go-html-to-md-service
+        run: go test ./...

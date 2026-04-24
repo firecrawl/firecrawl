@@ -26,7 +26,7 @@ strsim = "0.11"
 texting_robots = "0.2.2"
 url = "2.5.7"
 zip = "5.0.0"
-calamine = "0.26"
+calamine = { git = "https://github.com/firecrawl/calamine", branch = "fix/biff5-formula-ptg-lengths" }
 cfb = "0.10"
 tokio = "1.48.0"
 tracing = "0.1"

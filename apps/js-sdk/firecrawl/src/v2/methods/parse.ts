@@ -1,7 +1,10 @@
 import { type Document, type ParseFile, type ParseOptions } from "../types";
 import { HttpClient } from "../utils/httpClient";
 import { ensureValidParseOptions } from "../utils/validation";
-import { throwForBadResponse, normalizeAxiosError } from "../utils/errorHandler";
+import {
+  throwForBadResponse,
+  normalizeAxiosError,
+} from "../utils/errorHandler";
 import { getVersion } from "../utils/getVersion";
 
 function toUploadBlob(input: ParseFile["data"], contentType?: string): Blob {
@@ -25,7 +28,9 @@ function toUploadBlob(input: ParseFile["data"], contentType?: string): Blob {
   }
 
   if (typeof input === "string") {
-    return new Blob([input], { type: contentType ?? "text/plain; charset=utf-8" });
+    return new Blob([input], {
+      type: contentType ?? "text/plain; charset=utf-8",
+    });
   }
 
   throw new Error("Unsupported parse file data type");
@@ -57,7 +62,7 @@ export async function parse(
     origin:
       typeof options?.origin === "string" && options.origin.includes("mcp")
         ? options.origin
-        : options?.origin ?? `js-sdk@${version}`,
+        : (options?.origin ?? `js-sdk@${version}`),
   };
 
   const formData = new FormData();
@@ -68,17 +73,18 @@ export async function parse(
     file.filename.trim(),
   );
 
-  const requestTimeoutMs =
-    typeof normalizedOptions.timeout === "number"
-      ? normalizedOptions.timeout + 5000
-      : undefined;
-
   try {
     const res = await http.postMultipart<{
       success: boolean;
       data?: Document;
       error?: string;
-    }>("/v2/parse", formData, undefined, requestTimeoutMs);
+    }>(
+      "/v2/parse",
+      formData,
+      typeof normalizedOptions.timeout === "number"
+        ? { timeoutMs: normalizedOptions.timeout + 5000 }
+        : {},
+    );
     if (res.status !== 200 || !res.data?.success) {
       throwForBadResponse(res, "parse");
     }

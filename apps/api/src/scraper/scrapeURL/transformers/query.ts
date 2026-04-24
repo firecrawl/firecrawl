@@ -293,7 +293,7 @@ function assembleAnswer(sentences: Sentence[], indices: number[]): string {
 }
 
 const DIRECT_QUOTE_MODEL = {
-  id: "accounts/thomas-bfc570/models/gpt-oss-20b-query-finetune-2026-04-15#accounts/thomas-bfc570/deployments/gpt-oss-20b-query-finetune-2026-04-15",
+  id: "accounts/thomas-bfc570/models/gpt-oss-20b-query-finetune-2026-04-15#accounts/thomas-bfc570/deployments/gpt-oss-20b-query-finetune-2026-04-24",
   provider: "fireworks" as const,
 };
 

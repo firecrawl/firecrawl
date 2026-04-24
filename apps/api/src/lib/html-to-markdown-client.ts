@@ -38,6 +38,7 @@ export async function convertHTMLToMarkdownWithHttpService(
   context?: {
     logger?: Logger;
     requestId?: string;
+    zeroDataRetention?: boolean;
   },
 ): Promise<string> {
   if (!html || html.trim() === "") {
@@ -46,6 +47,7 @@ export async function convertHTMLToMarkdownWithHttpService(
 
   const contextLogger = context?.logger || logger;
   const requestId = context?.requestId;
+  const zeroDataRetention = context?.zeroDataRetention === true;
   const url = config.HTML_TO_MARKDOWN_SERVICE_URL;
   const startTime = Date.now();
 
@@ -56,9 +58,14 @@ export async function convertHTMLToMarkdownWithHttpService(
       "Content-Type": "application/json",
     };
 
-    // Add request ID header if available
-    if (requestId) {
+    // Add request ID header if available, but never for ZDR — it would
+    // let the downstream service correlate logs back to a customer scrape.
+    if (requestId && !zeroDataRetention) {
       headers["X-Request-ID"] = requestId;
+    }
+
+    if (zeroDataRetention) {
+      headers["X-Zero-Data-Retention"] = "true";
     }
 
     const response = await axios.post<ConvertResponse>(
@@ -76,12 +83,14 @@ export async function convertHTMLToMarkdownWithHttpService(
       throw new Error("Conversion was not successful");
     }
 
-    contextLogger.debug("HTML to Markdown conversion successful", {
-      duration_ms: duration,
-      input_size: html.length,
-      output_size: response.data.markdown.length,
-      ...(requestId ? { request_id: requestId } : {}),
-    });
+    if (!zeroDataRetention) {
+      contextLogger.debug("HTML to Markdown conversion successful", {
+        duration_ms: duration,
+        input_size: html.length,
+        output_size: response.data.markdown.length,
+        ...(requestId ? { request_id: requestId } : {}),
+      });
+    }
 
     return response.data.markdown;
   } catch (error) {
@@ -103,18 +112,19 @@ export async function convertHTMLToMarkdownWithHttpService(
         serviceUrl: url,
       });
 
-      // Capture in Sentry with additional context
+      // Capture in Sentry with additional context (omit identifying fields
+      // and content sizes when ZDR so nothing is retained in Sentry either).
       Sentry.captureException(error, {
         tags: {
           service: "html-to-markdown",
           status_code: statusCode,
-          ...(requestId ? { request_id: requestId } : {}),
+          ...(requestId && !zeroDataRetention ? { request_id: requestId } : {}),
         },
         extra: {
           serviceUrl: url,
           errorMessage,
           errorDetails,
-          inputSize: html.length,
+          ...(zeroDataRetention ? {} : { inputSize: html.length }),
         },
       });
 
@@ -133,7 +143,7 @@ export async function convertHTMLToMarkdownWithHttpService(
       );
       Sentry.captureException(error, {
         tags: {
-          ...(requestId ? { request_id: requestId } : {}),
+          ...(requestId && !zeroDataRetention ? { request_id: requestId } : {}),
         },
       });
       throw error;
