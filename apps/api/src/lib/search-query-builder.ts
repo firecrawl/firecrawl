@@ -4,7 +4,7 @@
  */
 
 interface CategoryInput {
-  type: "github" | "research" | "pdf";
+  type: "github" | "research" | "pdf" | "stackoverflow";
   sites?: string[];
 }
 
@@ -70,6 +70,9 @@ export function buildSearchQuery(
       } else if (category === "pdf") {
         hasPdfFilter = true;
         categoryMap.set("__pdf__", "pdf");
+      } else if (category === "stackoverflow") {
+        siteFilters.push("site:stackoverflow.com");
+        categoryMap.set("stackoverflow.com", "stackoverflow");
       }
     } else {
       // Object format with options
@@ -86,6 +89,9 @@ export function buildSearchQuery(
       } else if (category.type === "pdf") {
         hasPdfFilter = true;
         categoryMap.set("__pdf__", "pdf");
+      } else if (category.type === "stackoverflow") {
+        siteFilters.push("site:stackoverflow.com");
+        categoryMap.set("stackoverflow.com", "stackoverflow");
       }
     }
   }
@@ -132,10 +138,18 @@ export function getCategoryFromUrl(
       return "github";
     }
 
+    // Direct match for Stack Overflow
+    if (
+      hostname === "stackoverflow.com" ||
+      hostname.endsWith(".stackoverflow.com")
+    ) {
+      return "stackoverflow";
+    }
+
     // Check against category map for other sites
     for (const [site, category] of categoryMap.entries()) {
       if (site === "__pdf__") continue; // Skip the special PDF marker
-      
+
       if (
         hostname === site.toLowerCase() ||
         hostname.endsWith("." + site.toLowerCase())
