@@ -41,6 +41,11 @@ function isCrawlOrBatchScrape(options: {
   return !!options.crawlerOptions || !!options.crawl_id;
 }
 
+// Fallback backlog timeout for crawl/batch scrape jobs. Matches the crawl
+// Redis state TTL (24h); if a row sits here unpromoted past that, the reaper
+// can clean it so the group finisher's NOT EXISTS check on backlog can pass.
+const CRAWL_BACKLOG_TIMES_OUT_AT_MS = 24 * 60 * 60 * 1000;
+
 async function _addScrapeJobToConcurrencyQueue(
   webScraperOptions: any,
   jobId: string,
@@ -59,12 +64,12 @@ async function _addScrapeJobToConcurrencyQueue(
       ownerId: webScraperOptions.team_id ?? undefined,
       groupId: webScraperOptions.crawl_id ?? undefined,
       backlogged: true,
-      backloggedTimesOutAt: webScraperOptions.crawl_id
-        ? undefined
-        : new Date(
-            Date.now() +
-              (webScraperOptions.scrapeOptions?.timeout ?? 60 * 1000),
-          ),
+      backloggedTimesOutAt: new Date(
+        Date.now() +
+          (webScraperOptions.crawl_id
+            ? CRAWL_BACKLOG_TIMES_OUT_AT_MS
+            : (webScraperOptions.scrapeOptions?.timeout ?? 60 * 1000)),
+      ),
     },
   );
 
@@ -100,11 +105,12 @@ async function _addScrapeJobsToConcurrencyQueue(
         ownerId: job.data.team_id ?? undefined,
         groupId: job.data.crawl_id ?? undefined,
         backlogged: true,
-        backloggedTimesOutAt: job.data.crawl_id
-          ? undefined
-          : new Date(
-              Date.now() + (job.data.scrapeOptions?.timeout ?? 60 * 1000),
-            ),
+        backloggedTimesOutAt: new Date(
+          Date.now() +
+            (job.data.crawl_id
+              ? CRAWL_BACKLOG_TIMES_OUT_AT_MS
+              : (job.data.scrapeOptions?.timeout ?? 60 * 1000)),
+        ),
       },
     })),
   );
