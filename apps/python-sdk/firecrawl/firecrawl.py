@@ -2800,8 +2800,8 @@ class AsyncFirecrawlApp(FirecrawlApp):
         Returns:
             SearchResponse: The search results object
         """
-        url = f"{self.base_url}/search"
-        headers = self._get_headers()
+        url = f"{self.api_url}/v1/search"
+        headers = self._prepare_headers()
         data = {"query": query, **kwargs}
         
         response_data = await self._async_post_request(url, data, headers)
