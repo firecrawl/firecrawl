@@ -1,5 +1,6 @@
 import {
   type Document,
+  type JsonFormat,
   type ScrapeBrowserDeleteResponse,
   type ScrapeExecuteRequest,
   type ScrapeExecuteResponse,
@@ -8,6 +9,21 @@ import {
 import { HttpClient } from "../utils/httpClient";
 import { ensureValidScrapeOptions } from "../utils/validation";
 import { throwForBadResponse, normalizeAxiosError } from "../utils/errorHandler";
+import { isZodSchema, zodSchemaToJsonSchema } from "../../utils/zodSchemaToJson";
+
+function convertFormatsSchemas(options: ScrapeOptions): ScrapeOptions {
+  if (!options.formats) return options;
+  const convertedFormats = options.formats.map(format => {
+    if (typeof format === "object" && format !== null && (format as JsonFormat).type === "json") {
+      const jsonFormat = format as JsonFormat;
+      if (jsonFormat.schema != null && isZodSchema(jsonFormat.schema)) {
+        return { ...jsonFormat, schema: zodSchemaToJsonSchema(jsonFormat.schema) };
+      }
+    }
+    return format;
+  });
+  return { ...options, formats: convertedFormats };
+}
 
 export async function scrape(http: HttpClient, url: string, options?: ScrapeOptions): Promise<Document> {
   if (!url || !url.trim()) {
@@ -16,7 +32,7 @@ export async function scrape(http: HttpClient, url: string, options?: ScrapeOpti
   if (options) ensureValidScrapeOptions(options);
 
   const payload: Record<string, unknown> = { url: url.trim() };
-  if (options) Object.assign(payload, options);
+  if (options) Object.assign(payload, convertFormatsSchemas(options));
 
   try {
     const res = await http.post<{ success: boolean; data?: Document; error?: string }>("/v2/scrape", payload);
