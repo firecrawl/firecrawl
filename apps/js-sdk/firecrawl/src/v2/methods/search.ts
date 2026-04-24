@@ -54,7 +54,7 @@ function transformArray<ResultType>(arr: any[]): Array<ResultType | Document> {
 export async function search(http: HttpClient, request: SearchRequest): Promise<SearchData> {
   const payload = prepareSearchPayload(request);
   try {
-    const res = await http.post<{ success: boolean; data?: Record<string, unknown>; error?: string }>("/v2/search", payload);
+    const res = await http.post<{ success: boolean; data?: Record<string, unknown>; creditsUsed?: number; error?: string }>("/v2/search", payload);
     if (res.status !== 200 || !res.data?.success) {
       throwForBadResponse(res, "search");
     }
@@ -63,6 +63,7 @@ export async function search(http: HttpClient, request: SearchRequest): Promise<
     if (data.web) out.web = transformArray<SearchResultWeb>(data.web);
     if (data.news) out.news = transformArray<SearchResultNews>(data.news);
     if (data.images) out.images = transformArray<SearchResultImages>(data.images);
+    if (typeof res.data.creditsUsed === "number") out.creditsUsed = res.data.creditsUsed;
     return out;
   } catch (err: any) {
     if (err?.isAxiosError) return normalizeAxiosError(err, "search");

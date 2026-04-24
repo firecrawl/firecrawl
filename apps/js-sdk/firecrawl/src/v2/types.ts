@@ -496,6 +496,7 @@ export interface SearchData {
   web?: Array<SearchResultWeb | Document>;
   news?: Array<SearchResultNews | Document>;
   images?: Array<SearchResultImages | Document>;
+  creditsUsed?: number;
 }
 
 export interface CategoryOption {
