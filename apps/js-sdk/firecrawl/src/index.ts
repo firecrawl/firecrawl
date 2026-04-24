@@ -395,16 +395,25 @@ export interface SearchParams {
   scrapeOptions?: ScrapeParams;
 }
 
+export type SearchData = FirecrawlDocument<undefined>[];
+
 /**
  * Response interface for search operations.
  * Defines the structure of the response received after a search operation.
  */
 export interface SearchResponse {
   success: boolean;
-  data: FirecrawlDocument<undefined>[];
+  data: SearchData;
   warning?: string;
   error?: string;
 }
+
+export type SearchResponseWithMetadata = {
+  data: SearchData;
+  id?: string;
+  creditsUsed?: number;
+  warning?: string | null;
+};
 
 /**
  * Response interface for crawl/batch scrape error monitoring.
@@ -740,15 +749,55 @@ export default class FirecrawlApp {
    * Searches using the Firecrawl API and optionally scrapes the results.
    * @param query - The search query string.
    * @param params - Optional parameters for the search request.
-   * @returns The response from the search operation.
+   * @returns Search data wrapped in the legacy response envelope.
    */
   async search(query: string, params?: SearchParams | Record<string, any>): Promise<SearchResponse> {
+    const rawResponse = await this.searchRaw(query, params);
+    return {
+      success: true,
+      data: rawResponse.data,
+      warning: rawResponse.warning ?? undefined,
+    };
+  }
+
+  /**
+   * Searches using the Firecrawl API and returns search metadata alongside the results.
+   * @param query - The search query string.
+   * @param params - Optional parameters for the search request.
+   * @returns Search data and metadata from the API response.
+   */
+  async searchRaw(query: string, params?: SearchParams | Record<string, any>): Promise<SearchResponseWithMetadata> {
     const headers: AxiosRequestHeaders = {
       "Content-Type": "application/json",
       Authorization: `Bearer ${this.apiKey}`,
     } as AxiosRequestHeaders;
 
-    let jsonData: any = {
+    const jsonData = this.prepareSearchPayload(query, params);
+
+    try {
+      const response: AxiosResponse = await this.postRequest(
+        this.apiUrl + `/v1/search`,
+        jsonData,
+        headers
+      );
+
+      if (response.status === 200) {
+        return this.transformSearchResponse(response.data, response.status);
+      } else {
+        this.throwForBadResponse(response, "search");
+      }
+    } catch (error: any) {
+      if (error.response?.data?.error) {
+        throw new FirecrawlError(`Request failed with status code ${error.response.status}. Error: ${error.response.data.error} ${error.response.data.details ? ` - ${JSON.stringify(error.response.data.details)}` : ''}`, error.response.status);
+      } else {
+        throw new FirecrawlError(error.message, 500);
+      }
+    }
+    return { data: [] };
+  }
+
+  private prepareSearchPayload(query: string, params?: SearchParams | Record<string, any>): Record<string, any> {
+    let jsonData: Record<string, any> = {
       query,
       limit: params?.limit ?? 5,
       tbs: params?.tbs,
@@ -767,8 +816,7 @@ export default class FirecrawlApp {
       // Try parsing the schema as a Zod schema
       try {
         schema = zodToJsonSchema(schema);
-      } catch (error) {
-        
+      } catch (_) {
       }
       jsonData = {
         ...jsonData,
@@ -782,35 +830,29 @@ export default class FirecrawlApp {
       };
     }
 
-    try {
-      const response: AxiosResponse = await this.postRequest(
-        this.apiUrl + `/v1/search`,
-        jsonData,
-        headers
-      );
+    return jsonData;
+  }
 
-      if (response.status === 200) {
-        const responseData = response.data;
-        if (responseData.success) {
-          return {
-            success: true,
-            data: responseData.data as FirecrawlDocument<any>[],
-            warning: responseData.warning,
-          };
-        } else {
-          throw new FirecrawlError(`Failed to search. Error: ${responseData.error}`, response.status);
-        }
-      } else {
-        this.handleError(response, "search");
-      }
-    } catch (error: any) {
-      if (error.response?.data?.error) {
-        throw new FirecrawlError(`Request failed with status code ${error.response.status}. Error: ${error.response.data.error} ${error.response.data.details ? ` - ${JSON.stringify(error.response.data.details)}` : ''}`, error.response.status);
-      } else {
-        throw new FirecrawlError(error.message, 500);
-      }
+  private transformSearchData(data: unknown): SearchData {
+    return (data ?? []) as SearchData;
+  }
+
+  private transformSearchResponse(responseData: any, statusCode: number): SearchResponseWithMetadata {
+    if (!responseData?.success) {
+      throw new FirecrawlError(`Failed to search. Error: ${responseData?.error ?? "Unknown error"}`, statusCode);
     }
-    return { success: false, error: "Internal server error.", data: [] };
+
+    return {
+      data: this.transformSearchData(responseData.data),
+      id: responseData.id,
+      creditsUsed: responseData.creditsUsed,
+      warning: responseData.warning ?? undefined,
+    };
+  }
+
+  private throwForBadResponse(response: AxiosResponse, action: string): never {
+    this.handleError(response, action);
+    throw new FirecrawlError("Unexpected error occurred", response.status);
   }
 
   /**

@@ -293,6 +293,13 @@ describe('FirecrawlApp E2E Tests', () => {
     }
   }, 30000); // 30 seconds timeout
 
+  test('should expose search metadata with searchRaw', async () => {
+    const app = new FirecrawlApp({ apiUrl: API_URL, apiKey: TEST_API_KEY });
+    const response = await app.searchRaw("firecrawl", { limit: 2 });
+    expect(response.data.length).toBeGreaterThan(0);
+    expect(typeof response.creditsUsed === "number" || response.creditsUsed === undefined).toBe(true);
+  }, 30000); // 30 seconds timeout
+
   test('should handle invalid API key for search', async () => {
     const app = new FirecrawlApp({ apiUrl: API_URL, apiKey: "invalid_api_key" });
     await expect(app.search("test query")).rejects.toThrow("Request failed with status code 401");
