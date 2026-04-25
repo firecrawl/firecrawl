@@ -10,8 +10,6 @@ For more information visit https://github.com/firecrawl/
 
 from .firecrawl import AsyncFirecrawlApp, SearchResponse, FirecrawlDocument
 
-__all__ = ['AsyncFirecrawlApp', 'SearchResponse', 'FirecrawlDocument']
-
 import logging
 import os
 

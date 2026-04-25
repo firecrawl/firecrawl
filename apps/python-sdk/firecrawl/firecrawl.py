@@ -410,15 +410,6 @@ class GenerateLLMsTextStatusResponse(pydantic.BaseModel):
     status: Literal["processing", "completed", "failed"]
     error: Optional[str] = None
     expiresAt: str
-    
-class SearchResponse(pydantic.BaseModel):
-    """
-    Response from the search operation.
-    """
-    success: bool
-    data: List[Dict[str, Any]]
-    warning: Optional[str] = None
-    error: Optional[str] = None
 
 class ExtractParams(pydantic.BaseModel):
     """
@@ -2763,50 +2754,6 @@ class AsyncFirecrawlApp(FirecrawlApp):
         >>> print(result["total"])  # Access as dictionary
     """
     
-    def _create_search_response(self, data: dict) -> SearchResponse:
-        """Helper method to create a SearchResponse object from dict data."""
-        return SearchResponse(**data)
-
-    async def search(self, query: str, **kwargs) -> SearchResponse:
-        """Execute an async search query.
-        
-        Args:
-            query: Search query string
-            **kwargs: Additional search parameters
-            
-        Returns:
-            SearchResponse: Response object supporting both attribute and dict access
-            
-        Raises:
-            Exception: If the API request fails
-        """
-        response = await self._async_post_request(
-            f"{self.base_url}/search",
-            {"query": query, **kwargs},
-            self._get_headers()
-        )
-        
-        # Convert response to SearchResponse
-        return self._create_search_response(response)
-    
-    async def search(self, query: str, **kwargs) -> SearchResponse:
-        """
-        Asynchronously search using the Firecrawl API.
-        
-        Args:
-            query (str): The search query to execute
-            **kwargs: Additional parameters to pass to the search endpoint
-            
-        Returns:
-            SearchResponse: The search results object
-        """
-        url = f"{self.api_url}/v1/search"
-        headers = self._prepare_headers()
-        data = {"query": query, **kwargs}
-        
-        response_data = await self._async_post_request(url, data, headers)
-        return SearchResponse(**response_data)
-
     async def _async_request(
             self,
             method: str,
