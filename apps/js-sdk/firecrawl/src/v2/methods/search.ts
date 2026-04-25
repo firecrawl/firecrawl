@@ -2,6 +2,7 @@ import {
   type Document,
   type SearchData,
   type SearchRequest,
+  type SearchResponse,
   type SearchResultWeb,
   type ScrapeOptions,
   type SearchResultNews,
@@ -28,6 +29,8 @@ function prepareSearchPayload(req: SearchRequest): Record<string, unknown> {
   if (req.limit != null) payload.limit = req.limit;
   if (req.tbs != null) payload.tbs = req.tbs;
   if (req.location != null) payload.location = req.location;
+  if (req.country != null) payload.country = req.country;
+  if (req.enterprise != null) payload.enterprise = req.enterprise;
   if (req.ignoreInvalidURLs != null)
     payload.ignoreInvalidURLs = req.ignoreInvalidURLs;
   if (req.timeout != null) payload.timeout = req.timeout;
@@ -66,16 +69,19 @@ function transformArray<ResultType>(arr: any[]): Array<ResultType | Document> {
   return results;
 }
 
-export async function search(
+export async function searchRaw(
   http: HttpClient,
   request: SearchRequest,
-): Promise<SearchData> {
+): Promise<SearchResponse> {
   const payload = prepareSearchPayload(request);
   try {
     const res = await http.post<{
       success: boolean;
       data?: Record<string, unknown>;
       error?: string;
+      id?: string;
+      creditsUsed?: number;
+      warning?: string | null;
     }>(
       "/v2/search",
       payload,
@@ -92,9 +98,22 @@ export async function search(
     if (data.news) out.news = transformArray<SearchResultNews>(data.news);
     if (data.images)
       out.images = transformArray<SearchResultImages>(data.images);
-    return out;
+    return {
+      data: out,
+      id: res.data.id,
+      creditsUsed: res.data.creditsUsed,
+      warning: res.data.warning,
+    };
   } catch (err: any) {
     if (err?.isAxiosError) return normalizeAxiosError(err, "search");
     throw err;
   }
+}
+
+export async function search(
+  http: HttpClient,
+  request: SearchRequest,
+): Promise<SearchData> {
+  const response = await searchRaw(http, request);
+  return response.data;
 }

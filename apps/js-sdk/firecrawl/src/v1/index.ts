@@ -656,7 +656,7 @@ export default class FirecrawlApp {
       if (typeof process !== 'undefined' && process.env && process.env.npm_package_version) {
         return process.env.npm_package_version as string;
       }
-      const packageJson = await import('../../package.json', { assert: { type: 'json' } });
+      const packageJson = await import('../../package.json', { with: { type: 'json' } });
       return packageJson.default.version;
     } catch (error) {
       // Suppress noisy logs under test environments
