@@ -87,7 +87,8 @@ export async function searchController(
     const isZDR = req.body.enterprise?.includes("zdr");
     const isAnon = req.body.enterprise?.includes("anon");
     const isZDROrAnon = isZDR || isAnon;
-    zeroDataRetention = isZDROrAnon ?? false;
+    const scrapeOptionsZDR = req.body.scrapeOptions?.zeroDataRetention ?? false;
+    zeroDataRetention = (isZDROrAnon ?? false) || scrapeOptionsZDR;
     applyZdrScope(isZDROrAnon ?? false);
 
     // Verify the team has searchZDR enabled before allowing enterprise ZDR/anon

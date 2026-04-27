@@ -1780,6 +1780,7 @@ export const searchRequestSchema = z
           .refine(x => {
             return x.filter(f => f.type === "screenshot").length <= 1;
           }, "You may only specify one screenshot format"),
+        zeroDataRetention: z.boolean().optional(),
       })
       .optional(),
     __agentInterop: z
