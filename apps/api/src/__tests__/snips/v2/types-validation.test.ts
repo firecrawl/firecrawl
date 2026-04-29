@@ -914,6 +914,51 @@ describe("V2 Types Validation", () => {
       expect(Array.isArray(result.categories)).toBe(true);
     });
 
+    it("should accept arxiv in simple categories array", () => {
+      const input: SearchRequestInput = {
+        query: "retrieval augmented generation",
+        categories: ["arxiv"],
+      };
+
+      const result = searchRequestSchema.parse(input);
+      expect(result.categories).toEqual([{ type: "arxiv" }]);
+    });
+
+    it("should accept arxiv with other categories", () => {
+      const input: SearchRequestInput = {
+        query: "retrieval augmented generation",
+        categories: ["arxiv", "github", "research"],
+      };
+
+      const result = searchRequestSchema.parse(input);
+      expect(result.categories).toEqual([
+        { type: "arxiv" },
+        { type: "github" },
+        { type: "research" },
+      ]);
+    });
+
+    it("should accept arxiv in advanced categories format", () => {
+      const input: SearchRequestInput = {
+        query: "retrieval augmented generation",
+        categories: [{ type: "arxiv" }],
+      };
+
+      const result = searchRequestSchema.parse(input);
+      expect(result.categories).toBeDefined();
+      expect(Array.isArray(result.categories)).toBe(true);
+      expect((result.categories as any[])[0].type).toBe("arxiv");
+    });
+
+    it("should reject unknown categories", () => {
+      const input = {
+        query: "test",
+        categories: ["not-a-real-category"],
+      };
+
+      expect(() => searchRequestSchema.parse(input)).toThrow();
+    });
+
     it("should reject limit exceeding 100", () => {
       const input: SearchRequestInput = {
         query: "test",

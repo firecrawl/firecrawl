@@ -1,6 +1,6 @@
 import type { Logger } from "winston";
 import { search } from "./v2";
-import { SearchV2Response } from "../lib/entities";
+import { SearchV2Response, WebSearchResult } from "../lib/entities";
 import {
   buildSearchQuery,
   getCategoryFromUrl,
@@ -15,6 +15,7 @@ import {
 } from "./scrape";
 import { trackSearchResults, trackSearchRequest } from "../lib/tracking";
 import type { BillingMetadata } from "../services/billing/types";
+import { searchArxiv } from "./arxiv";
 
 interface SearchOptions {
   query: string;
@@ -81,24 +82,76 @@ export async function executeSearch(
     categories,
   );
 
-  const searchResponse = (await search({
-    query: searchQuery,
-    logger,
-    advanced: false,
-    num_results: num_results_buffer,
-    tbs: options.tbs,
-    filter: options.filter,
-    lang: options.lang,
-    country: options.country,
-    location: options.location,
-    type: searchTypes,
-    enterprise: options.enterprise,
-  })) as SearchV2Response;
+  // The dedicated arxiv retrieval API is only used when `arxiv` is the ONLY
+  // category. When it's mixed with other categories the query builder has
+  // already folded `site:arxiv.org` into the main search query so results
+  // come back ranked alongside the other categories instead of always
+  // prepended to the top.
+  const categoryTypes = (categories ?? []).map(c =>
+    typeof c === "string" ? c : c.type,
+  );
+  const wantsArxiv = categoryTypes.includes("arxiv");
+  const arxivOnly = wantsArxiv && categoryTypes.every(t => t === "arxiv");
+  const shouldFetchArxiv = arxivOnly && searchTypes.includes("web");
+
+  // When arxiv is the sole source of `web` results, strip `web` from the
+  // main search request so we don't burn a call on results that would just
+  // be appended behind the arxiv hits. Non-web sources (news, images) still
+  // go through the main search as normal.
+  const mainSearchTypes = shouldFetchArxiv
+    ? searchTypes.filter(t => t !== "web")
+    : searchTypes;
+  const shouldRunMainSearch = mainSearchTypes.length > 0;
+
+  const [searchResponse, arxivResults] = (await Promise.all([
+    shouldRunMainSearch
+      ? search({
+          query: searchQuery,
+          logger,
+          advanced: false,
+          num_results: num_results_buffer,
+          tbs: options.tbs,
+          filter: options.filter,
+          lang: options.lang,
+          country: options.country,
+          location: options.location,
+          type: mainSearchTypes,
+          enterprise: options.enterprise,
+        })
+      : Promise.resolve({} as SearchV2Response),
+    shouldFetchArxiv
+      ? searchArxiv({ query, limit, logger })
+      : Promise.resolve([] as WebSearchResult[]),
+  ])) as [SearchV2Response, WebSearchResult[]];
+
+  if (wantsArxiv && !shouldFetchArxiv) {
+    if (!arxivOnly) {
+      logger.info("Using main search for arxiv (mixed with other categories)", {
+        categories: categoryTypes,
+      });
+    } else {
+      logger.info(
+        "Skipping arxiv fetch because 'web' is not in the requested sources",
+        { sources: searchTypes },
+      );
+    }
+  }
+
+  if (arxivResults.length > 0) {
+    const existingWeb = searchResponse.web ?? [];
+    const existingUrls = new Set(
+      existingWeb.map(r => r.url?.toLowerCase()).filter(Boolean) as string[],
+    );
+    const dedupedArxiv = arxivResults.filter(
+      r => r.url && !existingUrls.has(r.url.toLowerCase()),
+    );
+    searchResponse.web = [...dedupedArxiv, ...existingWeb];
+  }
 
   if (searchResponse.web && searchResponse.web.length > 0) {
     searchResponse.web = searchResponse.web.map(result => ({
       ...result,
-      category: getCategoryFromUrl(result.url, categoryMap),
+      category: result.category ?? getCategoryFromUrl(result.url, categoryMap),
     }));
   }
 

@@ -33,3 +33,27 @@ content-type: application/json
   ],
   "limit": 5
 }
+
+### Search - Arxiv category (hits the dedicated arxiv search API)
+# @name searchArxiv
+POST {{baseUrl}}/v2/search HTTP/1.1
+Authorization: Bearer {{$dotenv TEST_API_KEY}}
+content-type: application/json
+
+{
+  "query": "retrieval augmented generation",
+  "categories": ["arxiv"],
+  "limit": 5
+}
+
+### Search - Arxiv + Github categories combined
+# @name searchArxivGithub
+POST {{baseUrl}}/v2/search HTTP/1.1
+Authorization: Bearer {{$dotenv TEST_API_KEY}}
+content-type: application/json
+
+{
+  "query": "retrieval augmented generation",
+  "categories": ["arxiv", "github"],
+  "limit": 10
+}

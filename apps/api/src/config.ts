@@ -125,6 +125,9 @@ const configSchema = z.object({
   SEARCH_SERVICE_URL: z.string().optional(),
   SEARCH_INDEX_SAMPLE_RATE: z.coerce.number().default(0.1),
   ENABLE_SEARCH_INDEX: z.stringbool().optional(),
+  // Internal arxiv search service. No default — the endpoint is private and
+  // must be configured via env. When unset the `arxiv` category is a no-op.
+  ARXIV_SEARCH_URL: z.string().optional(),
 
   // Worker Configuration
   WORKER_PORT: z.coerce.number().default(3005),

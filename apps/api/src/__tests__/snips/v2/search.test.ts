@@ -8,6 +8,8 @@ import {
 import { search, idmux, Identity } from "./lib";
 import { config } from "../../../config";
 
+const HAS_ARXIV = !!config.ARXIV_SEARCH_URL;
+
 let identity: Identity;
 
 beforeAll(async () => {
@@ -265,6 +267,117 @@ describeIf(TEST_PRODUCTION || HAS_SEARCH || HAS_PROXY)("Search tests", () => {
       expect(res.web).toBeDefined();
       expect(res.web?.length).toBeGreaterThan(0);
       expect(res.web?.length).toBeLessThanOrEqual(21);
+    },
+    60000,
+  );
+
+  // Arxiv category tests — these require the internal ARXIV_SEARCH_URL env var
+  // to be set, which points at the private arxiv retrieval service. When the
+  // URL is not configured the category becomes a no-op and these tests are skipped.
+  concurrentIf(HAS_ARXIV && (TEST_PRODUCTION || HAS_SEARCH || HAS_PROXY))(
+    "works with arxiv category",
+    async () => {
+      const res = await search(
+        {
+          query: "retrieval augmented generation",
+          categories: ["arxiv"],
+          limit: 5,
+        },
+        identity,
+      );
+      expect(res.web).toBeDefined();
+      expect(res.web?.length).toBeGreaterThan(0);
+
+      const arxivHits = (res.web ?? []).filter(r => r.category === "arxiv");
+      expect(arxivHits.length).toBeGreaterThan(0);
+      for (const hit of arxivHits) {
+        expect(hit.url).toMatch(/^https?:\/\/([^/]+\.)?arxiv\.org\//);
+        expect(typeof hit.title).toBe("string");
+        expect(hit.title.length).toBeGreaterThan(0);
+      }
+    },
+    60000,
+  );
+
+  concurrentIf(HAS_ARXIV && (TEST_PRODUCTION || HAS_SEARCH || HAS_PROXY))(
+    "works with arxiv category combined with github",
+    async () => {
+      const res = await search(
+        {
+          query: "retrieval augmented generation",
+          categories: ["arxiv", "github"],
+          limit: 10,
+        },
+        identity,
+      );
+      expect(res.web).toBeDefined();
+      expect(res.web?.length).toBeGreaterThan(0);
+
+      const categories = new Set(
+        (res.web ?? [])
+          .map(r => r.category)
+          .filter((c): c is string => Boolean(c)),
+      );
+      // We don't require github results in every environment (DDG fallbacks
+      // can be flaky), but arxiv must come back from the dedicated API.
+      expect(categories.has("arxiv")).toBe(true);
+    },
+    60000,
+  );
+
+  concurrentIf(HAS_ARXIV && (TEST_PRODUCTION || HAS_SEARCH || HAS_PROXY))(
+    "respects limit when arxiv category is selected",
+    async () => {
+      const res = await search(
+        {
+          query: "retrieval augmented generation",
+          categories: ["arxiv"],
+          limit: 3,
+        },
+        identity,
+      );
+      expect(res.web).toBeDefined();
+      expect(res.web?.length).toBeGreaterThan(0);
+      expect(res.web?.length).toBeLessThanOrEqual(3);
+    },
+    60000,
+  );
+
+  concurrentIf(HAS_ARXIV && (TEST_PRODUCTION || HAS_SEARCH || HAS_PROXY))(
+    "arxiv category works with advanced object format",
+    async () => {
+      const res = await search(
+        {
+          query: "retrieval augmented generation",
+          categories: [{ type: "arxiv" }],
+          limit: 5,
+        },
+        identity,
+      );
+      expect(res.web).toBeDefined();
+      const arxivHits = (res.web ?? []).filter(r => r.category === "arxiv");
+      expect(arxivHits.length).toBeGreaterThan(0);
+    },
+    60000,
+  );
+
+  // A happy-path failure test that runs everywhere: when arxiv is selected but
+  // the internal service is not configured, the endpoint must still respond
+  // successfully (just without arxiv-tagged results).
+  concurrentIf(!HAS_ARXIV && (TEST_PRODUCTION || HAS_SEARCH || HAS_PROXY))(
+    "arxiv category is a no-op when ARXIV_SEARCH_URL is not configured",
+    async () => {
+      const res = await search(
+        {
+          query: "firecrawl",
+          categories: ["arxiv"],
+          limit: 5,
+        },
+        identity,
+      );
+      expect(res.web).toBeDefined();
+      const arxivHits = (res.web ?? []).filter(r => r.category === "arxiv");
+      expect(arxivHits.length).toBe(0);
     },
     60000,
   );

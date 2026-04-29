@@ -4,7 +4,7 @@
  */
 
 interface CategoryInput {
-  type: "github" | "research" | "pdf";
+  type: "github" | "research" | "pdf" | "arxiv";
   sites?: string[];
 }
 
@@ -55,6 +55,22 @@ export function buildSearchQuery(
   const siteFilters: string[] = [];
   let hasPdfFilter = false;
 
+  // Arxiv has two modes:
+  //   1. When it's the ONLY category → the dedicated arxiv retrieval API is
+  //      used (handled in execute.ts) and we skip the site filter here.
+  //   2. When it's mixed with other categories → we fold `site:arxiv.org`
+  //      into the search query so arxiv results are ranked alongside the rest.
+  const categoryTypes = categories.map(c =>
+    typeof c === "string" ? c : c.type,
+  );
+  const arxivMixed =
+    categoryTypes.includes("arxiv") && categoryTypes.some(t => t !== "arxiv");
+
+  const claimForResearch = (site: string): string =>
+    site === "arxiv.org" && categoryTypes.includes("arxiv")
+      ? "arxiv"
+      : "research";
+
   for (const category of categories) {
     if (typeof category === "string") {
       // Simple string format
@@ -65,11 +81,16 @@ export function buildSearchQuery(
         // Use default research sites
         for (const site of DEFAULT_RESEARCH_SITES) {
           siteFilters.push(`site:${site}`);
-          categoryMap.set(site, "research");
+          categoryMap.set(site, claimForResearch(site));
         }
       } else if (category === "pdf") {
         hasPdfFilter = true;
         categoryMap.set("__pdf__", "pdf");
+      } else if (category === "arxiv") {
+        categoryMap.set("arxiv.org", "arxiv");
+        if (arxivMixed) {
+          siteFilters.push("site:arxiv.org");
+        }
       }
     } else {
       // Object format with options
@@ -81,19 +102,26 @@ export function buildSearchQuery(
         const sites = category.sites || DEFAULT_RESEARCH_SITES;
         for (const site of sites) {
           siteFilters.push(`site:${site}`);
-          categoryMap.set(site, "research");
+          categoryMap.set(site, claimForResearch(site));
         }
       } else if (category.type === "pdf") {
         hasPdfFilter = true;
         categoryMap.set("__pdf__", "pdf");
+      } else if (category.type === "arxiv") {
+        categoryMap.set("arxiv.org", "arxiv");
+        if (arxivMixed) {
+          siteFilters.push("site:arxiv.org");
+        }
       }
     }
   }
 
-  // Build the OR filter for sites
+  // Build the OR filter for sites (dedupe so e.g. research + arxiv doesn't
+  // emit `site:arxiv.org` twice).
+  const uniqueSiteFilters = [...new Set(siteFilters)];
   let categoryFilter = "";
-  if (siteFilters.length > 0) {
-    categoryFilter = " (" + siteFilters.join(" OR ") + ")";
+  if (uniqueSiteFilters.length > 0) {
+    categoryFilter = " (" + uniqueSiteFilters.join(" OR ") + ")";
   }
 
   // Add filetype:pdf filter if PDF category is requested
@@ -127,6 +155,15 @@ export function getCategoryFromUrl(
       return "pdf";
     }
 
+    // Arxiv takes priority over the hardcoded GitHub and any research mapping
+    // when the caller explicitly asked for the arxiv category.
+    if (
+      categoryMap.get("arxiv.org") === "arxiv" &&
+      (hostname === "arxiv.org" || hostname.endsWith(".arxiv.org"))
+    ) {
+      return "arxiv";
+    }
+
     // Direct match for GitHub
     if (hostname === "github.com" || hostname.endsWith(".github.com")) {
       return "github";
@@ -135,7 +172,7 @@ export function getCategoryFromUrl(
     // Check against category map for other sites
     for (const [site, category] of categoryMap.entries()) {
       if (site === "__pdf__") continue; // Skip the special PDF marker
-      
+
       if (
         hostname === site.toLowerCase() ||
         hostname.endsWith("." + site.toLowerCase())
