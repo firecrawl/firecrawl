@@ -29,6 +29,8 @@ import { specialtyScrapeCheck } from "../utils/specialtyHandler";
 import { fireEngineDelete } from "./delete";
 import { MockState } from "../../lib/mock";
 import { getInnerJson } from "@mendable/firecrawl-rs";
+import { isIPPrivate } from "../utils/safeFetch";
+import { config } from "../../../../config";
 import { hasFormatOfType } from "../../../../lib/format-utils";
 import { InternalAction } from "../../../../controllers/v1/types";
 import { AbortManagerThrownError } from "../../lib/abortManager";
@@ -57,6 +59,16 @@ async function performFireEngineScrape<
   abort?: AbortSignal,
   production = true,
 ): Promise<FireEngineCheckStatusSuccess> {
+  if (config.ALLOW_LOCAL_WEBHOOKS !== true) {
+    try {
+      const parsed = new URL(request.url);
+      if (isIPPrivate(parsed.hostname) || parsed.hostname === "metadata.google.internal") {
+        throw new EngineError("URL points to a private/internal network address");
+      }
+    } catch (e) {
+      if (e instanceof EngineError) throw e;
+    }
+  }
   return withSpan("engine.fire-engine.perform_scrape", async span => {
     const startTime = Date.now();
     let pollCount = 0;
