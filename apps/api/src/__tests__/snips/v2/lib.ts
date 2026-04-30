@@ -85,6 +85,94 @@ export async function scrapeWithFailure(
   return raw.body;
 }
 
+// =========================================
+// Monitor API
+// =========================================
+
+export type MonitorCreateInput = {
+  name: string;
+  schedule: { cron: string; timezone?: string };
+  webhook?: { url: string; headers?: Record<string, string> };
+  notification?: {
+    email?: {
+      enabled?: boolean;
+      recipients?: string[];
+      includeDiffs?: boolean;
+    };
+  };
+  targets: Array<
+    | {
+        type: "scrape";
+        urls: string[];
+        scrapeOptions?: Record<string, unknown>;
+      }
+    | {
+        type: "crawl";
+        url: string;
+        crawlOptions?: Record<string, unknown>;
+        scrapeOptions?: Record<string, unknown>;
+      }
+  >;
+  retentionDays?: number;
+};
+
+export async function monitorCreateRaw(
+  body: MonitorCreateInput,
+  identity: Identity,
+) {
+  return await request(TEST_API_URL)
+    .post("/v2/monitor")
+    .set("Authorization", `Bearer ${identity.apiKey}`)
+    .set("Content-Type", "application/json")
+    .send(body);
+}
+
+export async function monitorListRaw(identity: Identity) {
+  return await request(TEST_API_URL)
+    .get("/v2/monitor")
+    .set("Authorization", `Bearer ${identity.apiKey}`);
+}
+
+export async function monitorGetRaw(id: string, identity: Identity) {
+  return await request(TEST_API_URL)
+    .get(`/v2/monitor/${id}`)
+    .set("Authorization", `Bearer ${identity.apiKey}`);
+}
+
+export async function monitorPatchRaw(
+  id: string,
+  body: Partial<MonitorCreateInput> & { status?: "active" | "paused" },
+  identity: Identity,
+) {
+  return await request(TEST_API_URL)
+    .patch(`/v2/monitor/${id}`)
+    .set("Authorization", `Bearer ${identity.apiKey}`)
+    .set("Content-Type", "application/json")
+    .send(body);
+}
+
+export async function monitorDeleteRaw(id: string, identity: Identity) {
+  return await request(TEST_API_URL)
+    .delete(`/v2/monitor/${id}`)
+    .set("Authorization", `Bearer ${identity.apiKey}`);
+}
+
+export async function monitorRunRaw(id: string, identity: Identity) {
+  return await request(TEST_API_URL)
+    .post(`/v2/monitor/${id}/run`)
+    .set("Authorization", `Bearer ${identity.apiKey}`);
+}
+
+export async function monitorCheckRaw(
+  monitorId: string,
+  checkId: string,
+  identity: Identity,
+) {
+  return await request(TEST_API_URL)
+    .get(`/v2/monitor/${monitorId}/checks/${checkId}`)
+    .set("Authorization", `Bearer ${identity.apiKey}`);
+}
+
 export async function parseRaw(
   body: {
     options?: Omit<ParseRequestInput, "file">;

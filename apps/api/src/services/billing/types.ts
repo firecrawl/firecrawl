@@ -9,6 +9,7 @@ export type BillingEndpoint =
   | "interact"
   | "llms_txt"
   | "map"
+  | "monitor"
   | "parse"
   | "scrape"
   | "search";

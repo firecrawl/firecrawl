@@ -1,0 +1,171 @@
+import { Resend } from "resend";
+import { config } from "../../config";
+import { logger as _logger } from "../../lib/logger";
+import { supabase_service } from "../supabase";
+import type { MonitorCheckRow, MonitorRow } from "../monitoring/types";
+
+const logger = _logger.child({ module: "monitoring-email" });
+
+type MonitoringEmailPage = {
+  url: string;
+  status: string;
+  error?: string | null;
+};
+
+type MonitoringEmailPayload = {
+  monitorId: string;
+  monitorName: string;
+  checkId: string;
+  summary: {
+    changed: number;
+    new: number;
+    removed: number;
+    error: number;
+    totalPages: number;
+  };
+  pages: MonitoringEmailPage[];
+  creditsUsed: number | null;
+};
+
+async function getTeamEmails(teamId: string): Promise<string[]> {
+  const { data, error } = await supabase_service
+    .from("user_teams")
+    .select(
+      "users(email, id, notification_preferences(unsubscribed_all, email_preferences))",
+    )
+    .eq("team_id", teamId);
+
+  if (error) {
+    logger.warn("Failed to load team emails", { error, teamId });
+    return [];
+  }
+
+  const emails = new Set<string>();
+  for (const row of data ?? []) {
+    const user = (row as any).users;
+    const email = user?.email;
+    if (!email) continue;
+
+    const prefs = Array.isArray(user.notification_preferences)
+      ? user.notification_preferences[0]
+      : user.notification_preferences;
+    if (prefs?.unsubscribed_all) continue;
+    if (
+      Array.isArray(prefs?.email_preferences) &&
+      !prefs.email_preferences.includes("system_alerts")
+    ) {
+      continue;
+    }
+
+    emails.add(email);
+  }
+
+  return [...emails];
+}
+
+function buildHtml(payload: MonitoringEmailPayload): string {
+  const pageItems = payload.pages
+    .slice(0, 20)
+    .map(
+      page =>
+        `<li><strong>${page.status}</strong>: <a href="${page.url}">${page.url}</a>${
+          page.error ? ` — ${page.error}` : ""
+        }</li>`,
+    )
+    .join("");
+
+  return `Hey there,<br/>
+<p>Your Firecrawl monitor <strong>${payload.monitorName}</strong> detected activity.</p>
+<ul>
+  <li>Changed: ${payload.summary.changed}</li>
+  <li>New: ${payload.summary.new}</li>
+  <li>Removed: ${payload.summary.removed}</li>
+  <li>Errors: ${payload.summary.error}</li>
+  <li>Total pages checked: ${payload.summary.totalPages}</li>
+</ul>
+${pageItems ? `<p>Top pages:</p><ul>${pageItems}</ul>` : ""}
+<p>Check ID: <code>${payload.checkId}</code></p>
+<p>Credits used: ${payload.creditsUsed ?? "unknown"}</p>
+<br/>Thanks,<br/>Firecrawl Team<br/>`;
+}
+
+export async function sendMonitoringEmailSummary(params: {
+  monitor: MonitorRow;
+  check: MonitorCheckRow;
+  pages: MonitoringEmailPage[];
+}): Promise<{
+  attempted: boolean;
+  success: boolean;
+  recipients: string[];
+  error?: string;
+}> {
+  const configEmail = params.monitor.notification?.email;
+  if (!configEmail?.enabled) {
+    return { attempted: false, success: true, recipients: [] };
+  }
+
+  if (
+    params.check.changed_count +
+      params.check.new_count +
+      params.check.removed_count +
+      params.check.error_count <=
+    0
+  ) {
+    return { attempted: false, success: true, recipients: [] };
+  }
+
+  const explicitRecipients = configEmail.recipients ?? [];
+  const teamRecipients =
+    explicitRecipients.length > 0
+      ? []
+      : await getTeamEmails(params.monitor.team_id);
+  const recipients = [...new Set([...explicitRecipients, ...teamRecipients])];
+  if (recipients.length === 0 || !config.RESEND_API_KEY) {
+    return { attempted: false, success: true, recipients };
+  }
+
+  const payload: MonitoringEmailPayload = {
+    monitorId: params.monitor.id,
+    monitorName: params.monitor.name,
+    checkId: params.check.id,
+    summary: {
+      changed: params.check.changed_count,
+      new: params.check.new_count,
+      removed: params.check.removed_count,
+      error: params.check.error_count,
+      totalPages: params.check.total_pages,
+    },
+    pages: params.pages,
+    creditsUsed: params.check.actual_credits,
+  };
+
+  const resend = new Resend(config.RESEND_API_KEY);
+  try {
+    const { error } = await resend.emails.send({
+      from: "Firecrawl <notifications@notifications.firecrawl.dev>",
+      to: recipients,
+      reply_to: "help@firecrawl.com",
+      subject: `Monitor changes detected: ${params.monitor.name}`,
+      html: buildHtml(payload),
+    });
+
+    if (error) {
+      return {
+        attempted: true,
+        success: false,
+        recipients,
+        error: typeof error === "string" ? error : JSON.stringify(error),
+      };
+    }
+
+    return { attempted: true, success: true, recipients };
+  } catch (error) {
+    logger.warn("Failed to send monitoring email summary", { error });
+    return {
+      attempted: true,
+      success: false,
+      recipients,
+      error: error instanceof Error ? error.message : String(error),
+    };
+  }
+}

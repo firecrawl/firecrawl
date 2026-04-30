@@ -83,6 +83,10 @@ import {
 import { ScrapeUrlResponse } from "../../scraper/scrapeURL";
 import { logScrape } from "../logging/log_job";
 import { FeatureFlag } from "../../scraper/scrapeURL/engines";
+import {
+  recordMonitorScrapeFailure,
+  recordMonitorScrapeSuccess,
+} from "../monitoring/results";
 
 configDotenv();
 
@@ -456,6 +460,9 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
                     v1: job.data.v1,
                     zeroDataRetention: job.data.zeroDataRetention,
                     apiKeyId: job.data.apiKeyId,
+                    monitoring: job.data.monitoring
+                      ? { ...job.data.monitoring, source: "discovered" }
+                      : undefined,
                   },
                   jobId,
                   jobPriority,
@@ -576,6 +583,10 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
         }
       }
 
+      await recordMonitorScrapeSuccess(job, doc).catch(error =>
+        logger.warn("Failed to record monitor scrape result", { error }),
+      );
+
       logger.debug("Declaring job as done...");
       await addCrawlJobDone(job.data.crawl_id, job.id, true, logger);
     } else {
@@ -629,6 +640,10 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
         timeTaken: timeTakenInSeconds,
         zeroDataRetention: job.data.zeroDataRetention,
       }).catch(err => logger.warn("Scrape tracking failed", { error: err }));
+
+      await recordMonitorScrapeSuccess(job, doc).catch(error =>
+        logger.warn("Failed to record monitor scrape result", { error }),
+      );
 
       if (job.data.skipNuq) {
         // doesn't use GCS for result retrieval, safe to not await
@@ -805,6 +820,10 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
       timeTaken: timeTakenInSeconds,
       zeroDataRetention: job.data.zeroDataRetention,
     }).catch(err => logger.warn("Scrape tracking failed", { error: err }));
+
+    await recordMonitorScrapeFailure(job, error).catch(err =>
+      logger.warn("Failed to record monitor scrape failure", { error: err }),
+    );
 
     return data;
   } finally {

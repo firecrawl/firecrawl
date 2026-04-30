@@ -25,6 +25,12 @@ import { crawlFinishedQueue, NuQJob, scrapeQueue } from "./worker/nuq";
 import { finishCrawlSuper } from "./worker/crawl-logic";
 import { getCrawl } from "../lib/crawl-redis";
 import { TransportableError } from "../lib/error";
+import {
+  processMonitorCheckJob,
+  reconcileRunningMonitorChecks,
+} from "./monitoring/runner";
+import { enqueueDueMonitorChecks } from "./monitoring/scheduler";
+import { consumeMonitorCheckJobs } from "./monitoring/queue";
 
 configDotenv();
 
@@ -38,6 +44,7 @@ const connectionMonitorInterval = config.CONNECTION_MONITOR_INTERVAL;
 const gotJobInterval = config.CONNECTION_MONITOR_INTERVAL;
 
 const runningJobs: Set<string> = new Set();
+let monitorSchedulerInterval: NodeJS.Timeout | null = null;
 
 const processDeepResearchJobInternal = async (
   token: string,
@@ -452,11 +459,32 @@ app.listen(workerPort, () => {
 
   initializeEngineForcing();
 
+  monitorSchedulerInterval = setInterval(() => {
+    enqueueDueMonitorChecks().catch(error => {
+      _logger.error("Failed to enqueue due monitor checks", { error });
+    });
+    reconcileRunningMonitorChecks().catch(error => {
+      _logger.error("Failed to reconcile running monitor checks", { error });
+    });
+  }, 60_000);
+  enqueueDueMonitorChecks().catch(error => {
+    _logger.error("Failed to enqueue due monitor checks", { error });
+  });
+  reconcileRunningMonitorChecks().catch(error => {
+    _logger.error("Failed to reconcile running monitor checks", { error });
+  });
+
+  await consumeMonitorCheckJobs(processMonitorCheckJob);
+
   await Promise.all([
     workerFun(getDeepResearchQueue(), processDeepResearchJobInternal),
     workerFun(getGenerateLlmsTxtQueue(), processGenerateLlmsTxtJobInternal),
     crawlFinishWorker(),
   ]);
+
+  if (monitorSchedulerInterval) {
+    clearInterval(monitorSchedulerInterval);
+  }
 
   _logger.info("All workers exited. Waiting for all jobs to finish...");
 

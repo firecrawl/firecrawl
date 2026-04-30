@@ -65,6 +65,16 @@ import {
   scrapeInteractController,
   scrapeStopInteractiveBrowserController,
 } from "../controllers/v2/scrape-browser";
+import {
+  createMonitorController,
+  deleteMonitorController,
+  getMonitorCheckController,
+  getMonitorController,
+  listMonitorChecksController,
+  listMonitorsController,
+  runMonitorController,
+  updateMonitorController,
+} from "../controllers/v2/monitor";
 
 expressWs(express());
 
@@ -446,6 +456,63 @@ v2Router.get(
   "/team/activity",
   authMiddleware(RateLimiterMode.Account),
   wrap(activityController),
+);
+
+v2Router.post(
+  "/monitor",
+  authMiddleware(RateLimiterMode.Crawl),
+  countryCheck,
+  checkCreditsMiddleware(1),
+  blocklistMiddleware,
+  wrap(createMonitorController),
+);
+
+v2Router.get(
+  "/monitor",
+  authMiddleware(RateLimiterMode.CrawlStatus),
+  wrap(listMonitorsController),
+);
+
+v2Router.get(
+  "/monitor/:monitorId",
+  authMiddleware(RateLimiterMode.CrawlStatus),
+  wrap(getMonitorController),
+);
+
+v2Router.patch(
+  "/monitor/:monitorId",
+  authMiddleware(RateLimiterMode.Crawl),
+  countryCheck,
+  checkCreditsMiddleware(1),
+  blocklistMiddleware,
+  wrap(updateMonitorController),
+);
+
+v2Router.delete(
+  "/monitor/:monitorId",
+  authMiddleware(RateLimiterMode.CrawlStatus),
+  wrap(deleteMonitorController),
+);
+
+v2Router.post(
+  "/monitor/:monitorId/run",
+  authMiddleware(RateLimiterMode.Crawl),
+  countryCheck,
+  checkCreditsMiddleware(1),
+  blocklistMiddleware,
+  wrap(runMonitorController),
+);
+
+v2Router.get(
+  "/monitor/:monitorId/checks",
+  authMiddleware(RateLimiterMode.CrawlStatus),
+  wrap(listMonitorChecksController),
+);
+
+v2Router.get(
+  "/monitor/:monitorId/checks/:checkId",
+  authMiddleware(RateLimiterMode.CrawlStatus),
+  wrap(getMonitorCheckController),
 );
 
 v2Router.post(
