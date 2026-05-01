@@ -3,6 +3,7 @@ import { config } from "../../../../config";
 import { robustFetch } from "../../lib/fetch";
 import { z } from "zod";
 import type { PDFProcessorResult } from "./types";
+import type { PDFMode } from "../../../../controllers/v2/types";
 import { safeMarkdownToHtml } from "./markdownToHtml";
 import {
   createPdfCacheKey,
@@ -45,10 +46,14 @@ export async function scrapePDFWithFirePDF(
   base64Content: string,
   maxPages?: number,
   pagesProcessed?: number,
+  mode?: PDFMode,
 ): Promise<PDFProcessorResult> {
   const logger = meta.logger;
+  const forceOcr = mode === "ocr";
 
-  if (!maxPages && !meta.internalOptions.zeroDataRetention) {
+  // Cache is keyed by PDF content only, so an "auto"-mode hit would return
+  // non-OCR markdown for an "ocr" request. Skip cache for mode='ocr'.
+  if (!maxPages && !meta.internalOptions.zeroDataRetention && !forceOcr) {
     try {
       const cached = await getPdfResultFromCache(base64Content, "firepdf");
       if (cached) {
@@ -122,6 +127,10 @@ export async function scrapePDFWithFirePDF(
       pdf_sha256: pdfSha256,
       source: "firecrawl",
       zdr,
+      // Force-OCR signal for fire-pdf. The docs promise mode='ocr' OCR's
+      // every page; without this the service fast-paths an embedded text
+      // layer when present (the bug from Pylon ticket #28619).
+      ...(forceOcr && { force_ocr: true, mode: "ocr" }),
       ...deadlineFields,
     },
     logger,
@@ -153,7 +162,7 @@ export async function scrapePDFWithFirePDF(
     pagesProcessed: pages,
   };
 
-  if (!maxPages && !meta.internalOptions.zeroDataRetention) {
+  if (!maxPages && !meta.internalOptions.zeroDataRetention && !forceOcr) {
     try {
       await savePdfResultToCache(base64Content, processorResult, "firepdf");
     } catch (error) {

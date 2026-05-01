@@ -9,6 +9,33 @@ import {
   savePdfResultToCache,
 } from "../../../../lib/gcs-pdf-cache";
 import type { PDFProcessorResult } from "./types";
+import type { PDFMode } from "../../../../controllers/v2/types";
+
+/**
+ * Build the `input` payload sent to the MinerU RunPod handler.
+ *
+ * Pure / synchronous so the OCR-forwarding contract from Pylon ticket
+ * #28619 is unit-testable: when mode='ocr', `parse_method: "ocr"` must be
+ * present in the body so MinerU forces the OCR backend instead of falling
+ * back to a PDF's embedded text layer.
+ */
+export function buildRunPodMUInput(args: {
+  base64Content: string;
+  filename: string;
+  timeoutMs: number | undefined;
+  maxPages: number | undefined;
+  mode: PDFMode | undefined;
+  createdAt?: number;
+}): Record<string, unknown> {
+  return {
+    file_content: args.base64Content,
+    filename: args.filename,
+    timeout: args.timeoutMs,
+    created_at: args.createdAt ?? Date.now(),
+    ...(args.maxPages !== undefined && { max_pages: args.maxPages }),
+    ...(args.mode === "ocr" && { parse_method: "ocr" }),
+  };
+}
 
 export async function scrapePDFWithRunPodMU(
   meta: Meta,
@@ -16,12 +43,18 @@ export async function scrapePDFWithRunPodMU(
   base64Content: string,
   maxPages?: number,
   pagesProcessed?: number,
+  mode?: PDFMode,
 ): Promise<PDFProcessorResult> {
   meta.logger.debug("Processing PDF document with RunPod MU", {
     tempFilePath,
   });
 
-  if (!maxPages) {
+  const forceOcr = mode === "ocr";
+
+  // Cache is keyed by PDF content only; an "auto"-mode cache hit would
+  // return non-OCR markdown for an "ocr" request and silently break the
+  // documented force-OCR contract. Skip cache for mode='ocr'.
+  if (!maxPages && !forceOcr) {
     try {
       const cachedResult = await getPdfResultFromCache(base64Content);
       if (cachedResult) {
@@ -109,13 +142,13 @@ export async function scrapePDFWithRunPodMU(
       Authorization: `Bearer ${config.RUNPOD_MU_API_KEY}`,
     },
     body: {
-      input: {
-        file_content: base64Content,
+      input: buildRunPodMUInput({
+        base64Content,
         filename: path.basename(tempFilePath) + ".pdf",
-        timeout: meta.abort.scrapeTimeout(),
-        created_at: Date.now(),
-        ...(maxPages !== undefined && { max_pages: maxPages }),
-      },
+        timeoutMs: meta.abort.scrapeTimeout(),
+        maxPages,
+        mode,
+      }),
     },
     logger: meta.logger.child({
       method: "scrapePDFWithRunPodMU/runsync/robustFetch",
@@ -191,7 +224,7 @@ export async function scrapePDFWithRunPodMU(
     html: await safeMarkdownToHtml(result.markdown, meta.logger, meta.id),
   };
 
-  if (!meta.internalOptions.zeroDataRetention) {
+  if (!meta.internalOptions.zeroDataRetention && !forceOcr) {
     try {
       await savePdfResultToCache(base64Content, processorResult);
     } catch (error) {

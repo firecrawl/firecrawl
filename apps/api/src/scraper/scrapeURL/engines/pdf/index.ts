@@ -410,6 +410,7 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
             base64Content,
             maxPages,
             effectivePageCount,
+            mode,
           );
           effectivePageCount = reconcilePageCountWithFirePdf(
             effectivePageCount,
@@ -490,6 +491,7 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
             base64Content,
             maxPages,
             effectivePageCount,
+            mode,
           );
           const muV1DurationMs = Date.now() - muV1StartedAt;
           meta.logger
