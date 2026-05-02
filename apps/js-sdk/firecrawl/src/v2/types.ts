@@ -509,8 +509,10 @@ export interface SearchRequest {
   limit?: number;
   tbs?: string;
   location?: string;
+  country?: string;
   ignoreInvalidURLs?: boolean;
   timeout?: number; // ms
+  enterprise?: Array<'default' | 'anon' | 'zdr'>;
   scrapeOptions?: ScrapeOptions;
   integration?: string;
   origin?: string;
