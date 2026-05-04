@@ -74,6 +74,7 @@ export async function createMonitor(params: {
   const { data, error } = await supabase_service
     .from("monitors")
     .insert({
+      id: uuidv7(),
       team_id: params.teamId,
       name: params.input.name,
       schedule_cron: params.input.schedule.cron,
