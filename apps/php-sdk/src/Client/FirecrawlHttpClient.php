@@ -68,6 +68,15 @@ final class FirecrawlHttpClient
     }
 
     /**
+     * @param array<string, mixed> $body
+     * @return array<string, mixed>
+     */
+    public function patch(string $path, array $body): array
+    {
+        return $this->request('PATCH', $this->baseUrl . $path, $body);
+    }
+
+    /**
      * Send a POST request with a multipart/form-data body.
      *
      * @param array<string, string> $fields
@@ -145,7 +154,7 @@ final class FirecrawlHttpClient
 
         if ($multipart !== null) {
             $options[RequestOptions::MULTIPART] = $multipart;
-        } elseif ($method === 'POST' && $body !== []) {
+        } elseif (($method === 'POST' || $method === 'PATCH') && $body !== []) {
             $options[RequestOptions::JSON] = $body;
         }
 

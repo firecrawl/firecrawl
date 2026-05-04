@@ -264,3 +264,49 @@ class HttpClient:
 
         # This should never be reached due to the exception handling above
         raise last_exception or Exception("Unexpected error in DELETE request")
+
+    def patch(
+        self,
+        endpoint: str,
+        data: Dict[str, Any],
+        headers: Optional[Dict[str, str]] = None,
+        timeout: Optional[float] = None,
+        retries: Optional[int] = None,
+        backoff_factor: Optional[float] = None,
+    ) -> requests.Response:
+        """Make a PATCH request with retry logic."""
+        if headers is None:
+            headers = self._prepare_headers()
+        if timeout is None:
+            timeout = self.timeout
+        if retries is None:
+            retries = self.max_retries
+        if backoff_factor is None:
+            backoff_factor = self.backoff_factor
+
+        payload = dict(data)
+        payload['origin'] = f'python-sdk@{version}'
+        url = self._build_url(endpoint)
+
+        last_exception = None
+        num_attempts = max(1, retries)
+
+        for attempt in range(num_attempts):
+            try:
+                response = requests.patch(
+                    url,
+                    json=payload,
+                    headers=headers,
+                    timeout=timeout
+                )
+                if response.status_code == 502 and attempt < num_attempts - 1:
+                    time.sleep(backoff_factor * (2 ** attempt))
+                    continue
+                return response
+            except requests.RequestException as e:
+                last_exception = e
+                if attempt == num_attempts - 1:
+                    raise e
+                time.sleep(backoff_factor * (2 ** attempt))
+
+        raise last_exception or Exception("Unexpected error in PATCH request")

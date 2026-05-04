@@ -32,6 +32,16 @@ import {
   listBrowsers,
 } from "./methods/browser";
 import { getConcurrency, getCreditUsage, getQueueStatus, getTokenUsage, getCreditUsageHistorical, getTokenUsageHistorical } from "./methods/usage";
+import {
+  createMonitor as createMonitorMethod,
+  deleteMonitor as deleteMonitorMethod,
+  getMonitor as getMonitorMethod,
+  getMonitorCheck as getMonitorCheckMethod,
+  listMonitorChecks as listMonitorChecksMethod,
+  listMonitors as listMonitorsMethod,
+  runMonitor as runMonitorMethod,
+  updateMonitor as updateMonitorMethod,
+} from "./methods/monitor";
 import type {
   Document,
   ParseFile,
@@ -60,6 +70,13 @@ import type {
   ScrapeExecuteRequest,
   ScrapeExecuteResponse,
   ScrapeBrowserDeleteResponse,
+  CreateMonitorRequest,
+  ListMonitorChecksOptions,
+  ListMonitorsOptions,
+  Monitor,
+  MonitorCheck,
+  MonitorCheckDetail,
+  UpdateMonitorRequest,
 } from "./types";
 import { Watcher } from "./watcher";
 import type { WatcherOptions } from "./watcher";
@@ -274,6 +291,73 @@ export class FirecrawlClient {
    */
   async crawlParamsPreview(url: string, prompt: string): Promise<Record<string, unknown>> {
     return crawlParamsPreview(this.http, url, prompt);
+  }
+
+  // Monitor
+  /**
+   * Create a scheduled monitor.
+   */
+  async createMonitor(request: CreateMonitorRequest): Promise<Monitor> {
+    return createMonitorMethod(this.http, request);
+  }
+
+  /**
+   * List monitors for the authenticated team.
+   */
+  async listMonitors(options?: ListMonitorsOptions): Promise<Monitor[]> {
+    return listMonitorsMethod(this.http, options);
+  }
+
+  /**
+   * Get a monitor by id.
+   */
+  async getMonitor(monitorId: string): Promise<Monitor> {
+    return getMonitorMethod(this.http, monitorId);
+  }
+
+  /**
+   * Update a monitor.
+   */
+  async updateMonitor(
+    monitorId: string,
+    request: UpdateMonitorRequest,
+  ): Promise<Monitor> {
+    return updateMonitorMethod(this.http, monitorId, request);
+  }
+
+  /**
+   * Delete a monitor.
+   */
+  async deleteMonitor(monitorId: string): Promise<boolean> {
+    return deleteMonitorMethod(this.http, monitorId);
+  }
+
+  /**
+   * Trigger a manual monitor check.
+   */
+  async runMonitor(monitorId: string): Promise<MonitorCheck> {
+    return runMonitorMethod(this.http, monitorId);
+  }
+
+  /**
+   * List checks for a monitor.
+   */
+  async listMonitorChecks(
+    monitorId: string,
+    options?: ListMonitorChecksOptions,
+  ): Promise<MonitorCheck[]> {
+    return listMonitorChecksMethod(this.http, monitorId, options);
+  }
+
+  /**
+   * Get a monitor check with paginated page results and inline diffs.
+   */
+  async getMonitorCheck(
+    monitorId: string,
+    checkId: string,
+    options?: ListMonitorChecksOptions & { status?: MonitorCheckDetail["pages"][number]["status"] },
+  ): Promise<MonitorCheckDetail> {
+    return getMonitorCheckMethod(this.http, monitorId, checkId, options);
   }
 
   // Batch

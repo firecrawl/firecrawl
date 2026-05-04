@@ -59,6 +59,16 @@ module Firecrawl
       execute_with_retry(uri, request)
     end
 
+    # Sends a PATCH request with JSON body.
+    def patch(path, body)
+      uri = URI("#{@base_url}#{path}")
+      request = Net::HTTP::Patch.new(uri)
+      request["Authorization"] = "Bearer #{@api_key}"
+      request["Content-Type"] = "application/json"
+      request.body = JSON.generate(body)
+      execute_with_retry(uri, request)
+    end
+
     # Sends a POST request with a multipart/form-data body.
     #
     # @param path [String] API path

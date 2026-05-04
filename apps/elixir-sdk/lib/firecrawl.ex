@@ -1157,4 +1157,173 @@ defmodule Firecrawl do
     Req.delete!(client(opts), url: "/scrape/#{job_id}/interact")
   end
 
+  @monitor_key_mapping %{
+    name: "name",
+    schedule: "schedule",
+    targets: "targets",
+    webhook: "webhook",
+    notification: "notification",
+    retention_days: "retentionDays",
+    status: "status"
+  }
+
+  @monitor_list_key_mapping %{limit: "limit", offset: "offset"}
+  @monitor_check_key_mapping %{limit: "limit", offset: "offset", status: "status"}
+
+  @doc """
+  Create a scheduled monitor.
+
+  `POST /monitor`
+  """
+  @spec create_monitor(keyword(), keyword()) :: response()
+  def create_monitor(params \\ [], opts \\ []) do
+    Req.post(client(opts), url: "/monitor", json: to_body(params, @monitor_key_mapping))
+  end
+
+  @doc """
+  Bang variant of `create_monitor`. Raises on error.
+  """
+  @spec create_monitor!(keyword(), keyword()) :: Req.Response.t()
+  def create_monitor!(params \\ [], opts \\ []) do
+    Req.post!(client(opts), url: "/monitor", json: to_body(params, @monitor_key_mapping))
+  end
+
+  @doc """
+  List monitors for the authenticated team.
+
+  `GET /monitor`
+  """
+  @spec list_monitors(keyword(), keyword()) :: response()
+  def list_monitors(params \\ [], opts \\ []) do
+    Req.get(client(opts), url: "/monitor", params: to_query(params, @monitor_list_key_mapping))
+  end
+
+  @doc """
+  Bang variant of `list_monitors`. Raises on error.
+  """
+  @spec list_monitors!(keyword(), keyword()) :: Req.Response.t()
+  def list_monitors!(params \\ [], opts \\ []) do
+    Req.get!(client(opts), url: "/monitor", params: to_query(params, @monitor_list_key_mapping))
+  end
+
+  @doc """
+  Get a monitor by ID.
+
+  `GET /monitor/{monitorId}`
+  """
+  @spec get_monitor(String.t(), keyword()) :: response()
+  def get_monitor(monitor_id, opts \\ []) do
+    Req.get(client(opts), url: "/monitor/#{monitor_id}")
+  end
+
+  @doc """
+  Bang variant of `get_monitor`. Raises on error.
+  """
+  @spec get_monitor!(String.t(), keyword()) :: Req.Response.t()
+  def get_monitor!(monitor_id, opts \\ []) do
+    Req.get!(client(opts), url: "/monitor/#{monitor_id}")
+  end
+
+  @doc """
+  Update a monitor.
+
+  `PATCH /monitor/{monitorId}`
+  """
+  @spec update_monitor(String.t(), keyword(), keyword()) :: response()
+  def update_monitor(monitor_id, params \\ [], opts \\ []) do
+    Req.patch(client(opts), url: "/monitor/#{monitor_id}", json: to_body(params, @monitor_key_mapping))
+  end
+
+  @doc """
+  Bang variant of `update_monitor`. Raises on error.
+  """
+  @spec update_monitor!(String.t(), keyword(), keyword()) :: Req.Response.t()
+  def update_monitor!(monitor_id, params \\ [], opts \\ []) do
+    Req.patch!(client(opts), url: "/monitor/#{monitor_id}", json: to_body(params, @monitor_key_mapping))
+  end
+
+  @doc """
+  Delete a monitor.
+
+  `DELETE /monitor/{monitorId}`
+  """
+  @spec delete_monitor(String.t(), keyword()) :: response()
+  def delete_monitor(monitor_id, opts \\ []) do
+    Req.delete(client(opts), url: "/monitor/#{monitor_id}")
+  end
+
+  @doc """
+  Bang variant of `delete_monitor`. Raises on error.
+  """
+  @spec delete_monitor!(String.t(), keyword()) :: Req.Response.t()
+  def delete_monitor!(monitor_id, opts \\ []) do
+    Req.delete!(client(opts), url: "/monitor/#{monitor_id}")
+  end
+
+  @doc """
+  Trigger a manual monitor check.
+
+  `POST /monitor/{monitorId}/run`
+  """
+  @spec run_monitor(String.t(), keyword()) :: response()
+  def run_monitor(monitor_id, opts \\ []) do
+    Req.post(client(opts), url: "/monitor/#{monitor_id}/run", json: %{})
+  end
+
+  @doc """
+  Bang variant of `run_monitor`. Raises on error.
+  """
+  @spec run_monitor!(String.t(), keyword()) :: Req.Response.t()
+  def run_monitor!(monitor_id, opts \\ []) do
+    Req.post!(client(opts), url: "/monitor/#{monitor_id}/run", json: %{})
+  end
+
+  @doc """
+  List checks for a monitor.
+
+  `GET /monitor/{monitorId}/checks`
+  """
+  @spec list_monitor_checks(String.t(), keyword(), keyword()) :: response()
+  def list_monitor_checks(monitor_id, params \\ [], opts \\ []) do
+    Req.get(client(opts),
+      url: "/monitor/#{monitor_id}/checks",
+      params: to_query(params, @monitor_list_key_mapping)
+    )
+  end
+
+  @doc """
+  Bang variant of `list_monitor_checks`. Raises on error.
+  """
+  @spec list_monitor_checks!(String.t(), keyword(), keyword()) :: Req.Response.t()
+  def list_monitor_checks!(monitor_id, params \\ [], opts \\ []) do
+    Req.get!(client(opts),
+      url: "/monitor/#{monitor_id}/checks",
+      params: to_query(params, @monitor_list_key_mapping)
+    )
+  end
+
+  @doc """
+  Get a monitor check with paginated page results and inline diffs.
+
+  `GET /monitor/{monitorId}/checks/{checkId}`
+  """
+  @spec get_monitor_check(String.t(), String.t(), keyword(), keyword()) :: response()
+  def get_monitor_check(monitor_id, check_id, params \\ [], opts \\ []) do
+    Req.get(client(opts),
+      url: "/monitor/#{monitor_id}/checks/#{check_id}",
+      params: to_query(params, @monitor_check_key_mapping)
+    )
+  end
+
+  @doc """
+  Bang variant of `get_monitor_check`. Raises on error.
+  """
+  @spec get_monitor_check!(String.t(), String.t(), keyword(), keyword()) :: Req.Response.t()
+  def get_monitor_check!(monitor_id, check_id, params \\ [], opts \\ []) do
+    Req.get!(client(opts),
+      url: "/monitor/#{monitor_id}/checks/#{check_id}",
+      params: to_query(params, @monitor_check_key_mapping)
+    )
+  end
+
 end

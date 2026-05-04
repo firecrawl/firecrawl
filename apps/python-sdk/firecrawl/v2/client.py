@@ -41,6 +41,14 @@ from .types import (
     Location,
     PaginationConfig,
     AgentOptions,
+    Monitor,
+    MonitorCheck,
+    MonitorCheckDetail,
+    MonitorCreateRequest,
+    MonitorNotification,
+    MonitorSchedule,
+    MonitorTarget,
+    MonitorUpdateRequest,
 )
 from .utils.http_client import HttpClient
 from .utils.error_handler import FirecrawlError
@@ -55,6 +63,7 @@ from .methods import usage as usage_methods
 from .methods import extract as extract_module
 from .methods import agent as agent_module
 from .methods import browser as browser_module
+from .methods import monitor as monitor_module
 from .watcher import Watcher
 
 class FirecrawlClient:
@@ -655,6 +664,110 @@ class FirecrawlClient:
         ) if any(v is not None for v in [search, include_subdomains, ignore_query_parameters, limit, sitemap, timeout, integration, location]) else None
 
         return map_module.map(self.http_client, url, options)
+
+    def create_monitor(
+        self,
+        name: str,
+        schedule: Union[MonitorSchedule, Dict[str, Any]],
+        targets: List[Union[MonitorTarget, Dict[str, Any]]],
+        *,
+        webhook: Optional[WebhookConfig] = None,
+        notification: Optional[MonitorNotification] = None,
+        retention_days: Optional[int] = None,
+    ) -> Monitor:
+        """Create a scheduled monitor."""
+        if isinstance(schedule, dict):
+            schedule = MonitorSchedule(**schedule)
+        request = MonitorCreateRequest(
+            name=name,
+            schedule=schedule,
+            targets=targets,
+            webhook=webhook,
+            notification=notification,
+            retention_days=retention_days,
+        )
+        return monitor_module.create_monitor(self.http_client, request)
+
+    def list_monitors(
+        self,
+        *,
+        limit: Optional[int] = None,
+        offset: Optional[int] = None,
+    ) -> List[Monitor]:
+        """List monitors for the authenticated team."""
+        return monitor_module.list_monitors(self.http_client, limit=limit, offset=offset)
+
+    def get_monitor(self, monitor_id: str) -> Monitor:
+        """Get a monitor by ID."""
+        return monitor_module.get_monitor(self.http_client, monitor_id)
+
+    def update_monitor(
+        self,
+        monitor_id: str,
+        *,
+        name: Optional[str] = None,
+        status: Optional[Literal["active", "paused"]] = None,
+        schedule: Optional[Union[MonitorSchedule, Dict[str, Any]]] = None,
+        webhook: Optional[Union[WebhookConfig, Dict[str, Any]]] = None,
+        notification: Optional[Union[MonitorNotification, Dict[str, Any]]] = None,
+        targets: Optional[List[Union[MonitorTarget, Dict[str, Any]]]] = None,
+        retention_days: Optional[int] = None,
+    ) -> Monitor:
+        """Update a monitor."""
+        if isinstance(schedule, dict):
+            schedule = MonitorSchedule(**schedule)
+        request = MonitorUpdateRequest(
+            name=name,
+            status=status,
+            schedule=schedule,
+            webhook=webhook,
+            notification=notification,
+            targets=targets,
+            retention_days=retention_days,
+        )
+        return monitor_module.update_monitor(self.http_client, monitor_id, request)
+
+    def delete_monitor(self, monitor_id: str) -> bool:
+        """Delete a monitor."""
+        return monitor_module.delete_monitor(self.http_client, monitor_id)
+
+    def run_monitor(self, monitor_id: str) -> MonitorCheck:
+        """Run a monitor manually."""
+        return monitor_module.run_monitor(self.http_client, monitor_id)
+
+    def list_monitor_checks(
+        self,
+        monitor_id: str,
+        *,
+        limit: Optional[int] = None,
+        offset: Optional[int] = None,
+    ) -> List[MonitorCheck]:
+        """List checks for a monitor."""
+        return monitor_module.list_monitor_checks(
+            self.http_client,
+            monitor_id,
+            limit=limit,
+            offset=offset,
+        )
+
+    def get_monitor_check(
+        self,
+        monitor_id: str,
+        check_id: str,
+        *,
+        limit: Optional[int] = None,
+        offset: Optional[int] = None,
+        status: Optional[Literal["same", "new", "changed", "removed", "error"]] = None,
+    ) -> MonitorCheckDetail:
+        """Get a monitor check with paginated page results."""
+        return monitor_module.get_monitor_check(
+            self.http_client,
+            monitor_id,
+            check_id,
+            limit=limit,
+            offset=offset,
+            status=status,
+        )
     
     def cancel_crawl(self, crawl_id: str) -> bool:
         """

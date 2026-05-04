@@ -36,6 +36,14 @@ from .types import (
     PDFAction,
     Location,
     PaginationConfig,
+    Monitor,
+    MonitorCheck,
+    MonitorCheckDetail,
+    MonitorCreateRequest,
+    MonitorNotification,
+    MonitorSchedule,
+    MonitorTarget,
+    MonitorUpdateRequest,
 )
 from .utils.http_client import HttpClient
 from .utils.http_client_async import AsyncHttpClient
@@ -50,6 +58,7 @@ from .methods.aio import usage as async_usage # type: ignore[attr-defined]
 from .methods.aio import extract as async_extract  # type: ignore[attr-defined]
 from .methods.aio import agent as async_agent  # type: ignore[attr-defined]
 from .methods.aio import browser as async_browser  # type: ignore[attr-defined]
+from .methods.aio import monitor as async_monitor  # type: ignore[attr-defined]
 
 from .watcher_async import AsyncWatcher
 
@@ -331,6 +340,110 @@ class AsyncFirecrawlClient:
             integration=integration,
         ) if any(v is not None for v in [search, include_subdomains, limit, sitemap, integration, timeout]) else None
         return await async_map.map(self.async_http_client, url, options)
+
+    async def create_monitor(
+        self,
+        name: str,
+        schedule: Union[MonitorSchedule, Dict[str, Any]],
+        targets: List[Union[MonitorTarget, Dict[str, Any]]],
+        *,
+        webhook: Optional[WebhookConfig] = None,
+        notification: Optional[MonitorNotification] = None,
+        retention_days: Optional[int] = None,
+    ) -> Monitor:
+        if isinstance(schedule, dict):
+            schedule = MonitorSchedule(**schedule)
+        request = MonitorCreateRequest(
+            name=name,
+            schedule=schedule,
+            targets=targets,
+            webhook=webhook,
+            notification=notification,
+            retention_days=retention_days,
+        )
+        return await async_monitor.create_monitor(self.async_http_client, request)
+
+    async def list_monitors(
+        self,
+        *,
+        limit: Optional[int] = None,
+        offset: Optional[int] = None,
+    ) -> List[Monitor]:
+        return await async_monitor.list_monitors(
+            self.async_http_client,
+            limit=limit,
+            offset=offset,
+        )
+
+    async def get_monitor(self, monitor_id: str) -> Monitor:
+        return await async_monitor.get_monitor(self.async_http_client, monitor_id)
+
+    async def update_monitor(
+        self,
+        monitor_id: str,
+        *,
+        name: Optional[str] = None,
+        status: Optional[Literal["active", "paused"]] = None,
+        schedule: Optional[Union[MonitorSchedule, Dict[str, Any]]] = None,
+        webhook: Optional[Union[WebhookConfig, Dict[str, Any]]] = None,
+        notification: Optional[Union[MonitorNotification, Dict[str, Any]]] = None,
+        targets: Optional[List[Union[MonitorTarget, Dict[str, Any]]]] = None,
+        retention_days: Optional[int] = None,
+    ) -> Monitor:
+        if isinstance(schedule, dict):
+            schedule = MonitorSchedule(**schedule)
+        request = MonitorUpdateRequest(
+            name=name,
+            status=status,
+            schedule=schedule,
+            webhook=webhook,
+            notification=notification,
+            targets=targets,
+            retention_days=retention_days,
+        )
+        return await async_monitor.update_monitor(
+            self.async_http_client,
+            monitor_id,
+            request,
+        )
+
+    async def delete_monitor(self, monitor_id: str) -> bool:
+        return await async_monitor.delete_monitor(self.async_http_client, monitor_id)
+
+    async def run_monitor(self, monitor_id: str) -> MonitorCheck:
+        return await async_monitor.run_monitor(self.async_http_client, monitor_id)
+
+    async def list_monitor_checks(
+        self,
+        monitor_id: str,
+        *,
+        limit: Optional[int] = None,
+        offset: Optional[int] = None,
+    ) -> List[MonitorCheck]:
+        return await async_monitor.list_monitor_checks(
+            self.async_http_client,
+            monitor_id,
+            limit=limit,
+            offset=offset,
+        )
+
+    async def get_monitor_check(
+        self,
+        monitor_id: str,
+        check_id: str,
+        *,
+        limit: Optional[int] = None,
+        offset: Optional[int] = None,
+        status: Optional[Literal["same", "new", "changed", "removed", "error"]] = None,
+    ) -> MonitorCheckDetail:
+        return await async_monitor.get_monitor_check(
+            self.async_http_client,
+            monitor_id,
+            check_id,
+            limit=limit,
+            offset=offset,
+            status=status,
+        )
 
     async def start_batch_scrape(self, urls: List[str], **kwargs) -> Any:
         return await async_batch.start_batch_scrape(self.async_http_client, urls, **kwargs)

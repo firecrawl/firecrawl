@@ -797,6 +797,137 @@ class MapResponse(BaseResponse[MapData]):
     pass
 
 
+# Monitor types
+class MonitorSchedule(BaseModel):
+    """Cron schedule for a monitor."""
+
+    cron: str
+    timezone: str = "UTC"
+
+
+class MonitorEmailNotification(BaseModel):
+    enabled: bool = False
+    recipients: List[str] = []
+    include_diffs: bool = Field(default=False, alias="includeDiffs")
+
+    model_config = {"populate_by_name": True}
+
+
+class MonitorNotification(BaseModel):
+    email: Optional[MonitorEmailNotification] = None
+
+
+class MonitorTarget(BaseModel):
+    """A scrape or crawl target stored on a monitor."""
+
+    model_config = {"extra": "allow", "populate_by_name": True}
+
+    id: Optional[str] = None
+    type: Literal["scrape", "crawl"]
+    urls: Optional[List[str]] = None
+    url: Optional[str] = None
+    scrape_options: Optional[Union[ScrapeOptions, Dict[str, Any]]] = Field(default=None, alias="scrapeOptions")
+    crawl_options: Optional[Dict[str, Any]] = Field(default=None, alias="crawlOptions")
+
+
+class MonitorCreateRequest(BaseModel):
+    model_config = {"populate_by_name": True}
+
+    name: str
+    schedule: MonitorSchedule
+    webhook: Optional[WebhookConfig] = None
+    notification: Optional[MonitorNotification] = None
+    targets: List[Union[MonitorTarget, Dict[str, Any]]]
+    retention_days: Optional[int] = Field(default=None, alias="retentionDays")
+
+
+class MonitorUpdateRequest(BaseModel):
+    model_config = {"populate_by_name": True}
+
+    name: Optional[str] = None
+    status: Optional[Literal["active", "paused"]] = None
+    schedule: Optional[MonitorSchedule] = None
+    webhook: Optional[Union[WebhookConfig, Dict[str, Any]]] = None
+    notification: Optional[Union[MonitorNotification, Dict[str, Any]]] = None
+    targets: Optional[List[Union[MonitorTarget, Dict[str, Any]]]] = None
+    retention_days: Optional[int] = Field(default=None, alias="retentionDays")
+
+
+class MonitorSummary(BaseModel):
+    total_pages: int = Field(default=0, alias="totalPages")
+    same: int = 0
+    changed: int = 0
+    new: int = 0
+    removed: int = 0
+    error: int = 0
+
+    model_config = {"populate_by_name": True}
+
+
+class Monitor(BaseModel):
+    model_config = {"populate_by_name": True, "extra": "allow"}
+
+    id: str
+    name: str
+    status: Literal["active", "paused", "deleted"]
+    schedule: MonitorSchedule
+    next_run_at: Optional[str] = Field(default=None, alias="nextRunAt")
+    last_run_at: Optional[str] = Field(default=None, alias="lastRunAt")
+    current_check_id: Optional[str] = Field(default=None, alias="currentCheckId")
+    targets: List[Dict[str, Any]]
+    webhook: Optional[Dict[str, Any]] = None
+    notification: Optional[Dict[str, Any]] = None
+    retention_days: int = Field(alias="retentionDays")
+    estimated_credits_per_month: Optional[int] = Field(default=None, alias="estimatedCreditsPerMonth")
+    last_check_summary: Optional[MonitorSummary] = Field(default=None, alias="lastCheckSummary")
+    created_at: str = Field(alias="createdAt")
+    updated_at: str = Field(alias="updatedAt")
+
+
+class MonitorCheck(BaseModel):
+    model_config = {"populate_by_name": True, "extra": "allow"}
+
+    id: str
+    monitor_id: str = Field(alias="monitorId")
+    status: Literal["queued", "running", "completed", "failed", "partial", "skipped_overlap"]
+    trigger: Literal["scheduled", "manual"]
+    scheduled_for: Optional[str] = Field(default=None, alias="scheduledFor")
+    started_at: Optional[str] = Field(default=None, alias="startedAt")
+    finished_at: Optional[str] = Field(default=None, alias="finishedAt")
+    estimated_credits: Optional[int] = Field(default=None, alias="estimatedCredits")
+    reserved_credits: Optional[int] = Field(default=None, alias="reservedCredits")
+    actual_credits: Optional[int] = Field(default=None, alias="actualCredits")
+    billing_status: Literal["not_applicable", "reserved", "confirmed", "released", "failed"] = Field(alias="billingStatus")
+    summary: MonitorSummary
+    target_results: Optional[Any] = Field(default=None, alias="targetResults")
+    notification_status: Optional[Any] = Field(default=None, alias="notificationStatus")
+    error: Optional[str] = None
+    created_at: str = Field(alias="createdAt")
+    updated_at: str = Field(alias="updatedAt")
+
+
+class MonitorCheckPage(BaseModel):
+    model_config = {"populate_by_name": True, "extra": "allow"}
+
+    id: str
+    target_id: str = Field(alias="targetId")
+    url: str
+    status: Literal["same", "new", "changed", "removed", "error"]
+    previous_scrape_id: Optional[str] = Field(default=None, alias="previousScrapeId")
+    current_scrape_id: Optional[str] = Field(default=None, alias="currentScrapeId")
+    status_code: Optional[int] = Field(default=None, alias="statusCode")
+    error: Optional[str] = None
+    metadata: Optional[Any] = None
+    diff: Optional[Any] = None
+    created_at: str = Field(alias="createdAt")
+
+
+class MonitorCheckDetail(MonitorCheck):
+    pages: List[MonitorCheckPage] = []
+    page_limit: int = Field(alias="pageLimit")
+    page_offset: int = Field(alias="pageOffset")
+
+
 # Extract types
 class ExtractRequest(BaseModel):
     """Request for extract operations."""

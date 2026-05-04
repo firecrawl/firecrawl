@@ -92,6 +92,14 @@ class V2Proxy:
             self.get_batch_scrape_errors = client_instance.get_batch_scrape_errors
 
             self.map = client_instance.map
+            self.create_monitor = client_instance.create_monitor
+            self.list_monitors = client_instance.list_monitors
+            self.get_monitor = client_instance.get_monitor
+            self.update_monitor = client_instance.update_monitor
+            self.delete_monitor = client_instance.delete_monitor
+            self.run_monitor = client_instance.run_monitor
+            self.list_monitor_checks = client_instance.list_monitor_checks
+            self.get_monitor_check = client_instance.get_monitor_check
             self.get_concurrency = client_instance.get_concurrency
             self.get_credit_usage = client_instance.get_credit_usage
             self.get_token_usage = client_instance.get_token_usage
@@ -172,6 +180,14 @@ class AsyncV2Proxy:
             self.get_batch_scrape_errors = client_instance.get_batch_scrape_errors
 
             self.map = client_instance.map
+            self.create_monitor = client_instance.create_monitor
+            self.list_monitors = client_instance.list_monitors
+            self.get_monitor = client_instance.get_monitor
+            self.update_monitor = client_instance.update_monitor
+            self.delete_monitor = client_instance.delete_monitor
+            self.run_monitor = client_instance.run_monitor
+            self.list_monitor_checks = client_instance.list_monitor_checks
+            self.get_monitor_check = client_instance.get_monitor_check
             self.get_concurrency = client_instance.get_concurrency
             self.get_credit_usage = client_instance.get_credit_usage
             self.get_token_usage = client_instance.get_token_usage
@@ -242,6 +258,14 @@ class Firecrawl:
         self.parse = self._v2_client.parse
         self.search = self._v2_client.search
         self.map = self._v2_client.map
+        self.create_monitor = self._v2_client.create_monitor
+        self.list_monitors = self._v2_client.list_monitors
+        self.get_monitor = self._v2_client.get_monitor
+        self.update_monitor = self._v2_client.update_monitor
+        self.delete_monitor = self._v2_client.delete_monitor
+        self.run_monitor = self._v2_client.run_monitor
+        self.list_monitor_checks = self._v2_client.list_monitor_checks
+        self.get_monitor_check = self._v2_client.get_monitor_check
 
         self.crawl = self._v2_client.crawl
         self.start_crawl = self._v2_client.start_crawl
@@ -336,6 +360,14 @@ class AsyncFirecrawl:
         self.parse = self._v2_client.parse
         self.search = self._v2_client.search
         self.map = self._v2_client.map
+        self.create_monitor = self._v2_client.create_monitor
+        self.list_monitors = self._v2_client.list_monitors
+        self.get_monitor = self._v2_client.get_monitor
+        self.update_monitor = self._v2_client.update_monitor
+        self.delete_monitor = self._v2_client.delete_monitor
+        self.run_monitor = self._v2_client.run_monitor
+        self.list_monitor_checks = self._v2_client.list_monitor_checks
+        self.get_monitor_check = self._v2_client.get_monitor_check
 
         self.start_crawl = self._v2_client.start_crawl
         self.get_crawl_status = self._v2_client.get_crawl_status

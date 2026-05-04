@@ -49,6 +49,12 @@ func (h *httpClient) post(ctx context.Context, path string, body interface{}, ex
 	return h.doJSON(ctx, "POST", url, body, extraHeaders)
 }
 
+// patch sends a PATCH request.
+func (h *httpClient) patch(ctx context.Context, path string, body interface{}) (json.RawMessage, error) {
+	url := h.baseURL + path
+	return h.doJSON(ctx, "PATCH", url, body, nil)
+}
+
 // get sends a GET request.
 func (h *httpClient) get(ctx context.Context, path string) (json.RawMessage, error) {
 	url := h.baseURL + path

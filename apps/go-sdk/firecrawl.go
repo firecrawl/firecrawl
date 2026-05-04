@@ -16,6 +16,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
 	"os"
 	"strings"
 	"time"
@@ -24,7 +25,7 @@ import (
 )
 
 const (
-	defaultPollInterval = 2  // seconds
+	defaultPollInterval = 2   // seconds
 	defaultJobTimeout   = 300 // seconds
 )
 
@@ -381,6 +382,123 @@ func (c *Client) Map(ctx context.Context, url string, opts *MapOptions) (*MapDat
 		return nil, err
 	}
 	return data, nil
+}
+
+// ================================================================
+// MONITOR
+// ================================================================
+
+// CreateMonitor creates a scheduled monitor.
+func (c *Client) CreateMonitor(ctx context.Context, req *MonitorCreateRequest) (*Monitor, error) {
+	if req == nil {
+		return nil, &FirecrawlError{Message: "monitor request is required"}
+	}
+	raw, err := c.http.post(ctx, "/v2/monitor", req, nil)
+	if err != nil {
+		return nil, err
+	}
+	return extractDataAs[Monitor](raw)
+}
+
+// ListMonitors lists monitors for the authenticated team.
+func (c *Client) ListMonitors(ctx context.Context, opts *ListMonitorsOptions) ([]Monitor, error) {
+	path := "/v2/monitor" + listQuery(opts)
+	raw, err := c.http.get(ctx, path)
+	if err != nil {
+		return nil, err
+	}
+	data, err := extractDataAs[[]Monitor](raw)
+	if err != nil {
+		return nil, err
+	}
+	return *data, nil
+}
+
+// GetMonitor gets a monitor by ID.
+func (c *Client) GetMonitor(ctx context.Context, monitorID string) (*Monitor, error) {
+	if monitorID == "" {
+		return nil, &FirecrawlError{Message: "monitor ID is required"}
+	}
+	raw, err := c.http.get(ctx, "/v2/monitor/"+monitorID)
+	if err != nil {
+		return nil, err
+	}
+	return extractDataAs[Monitor](raw)
+}
+
+// UpdateMonitor updates a monitor.
+func (c *Client) UpdateMonitor(ctx context.Context, monitorID string, req *MonitorUpdateRequest) (*Monitor, error) {
+	if monitorID == "" {
+		return nil, &FirecrawlError{Message: "monitor ID is required"}
+	}
+	if req == nil {
+		return nil, &FirecrawlError{Message: "monitor update request is required"}
+	}
+	raw, err := c.http.patch(ctx, "/v2/monitor/"+monitorID, req)
+	if err != nil {
+		return nil, err
+	}
+	return extractDataAs[Monitor](raw)
+}
+
+// DeleteMonitor deletes a monitor.
+func (c *Client) DeleteMonitor(ctx context.Context, monitorID string) (bool, error) {
+	if monitorID == "" {
+		return false, &FirecrawlError{Message: "monitor ID is required"}
+	}
+	raw, err := c.http.delete(ctx, "/v2/monitor/"+monitorID)
+	if err != nil {
+		return false, err
+	}
+	var resp struct {
+		Success bool `json:"success"`
+	}
+	if err := json.Unmarshal(raw, &resp); err != nil {
+		return false, &FirecrawlError{Message: fmt.Sprintf("failed to decode response: %v", err)}
+	}
+	return resp.Success, nil
+}
+
+// RunMonitor triggers a manual monitor check.
+func (c *Client) RunMonitor(ctx context.Context, monitorID string) (*MonitorCheck, error) {
+	if monitorID == "" {
+		return nil, &FirecrawlError{Message: "monitor ID is required"}
+	}
+	raw, err := c.http.post(ctx, "/v2/monitor/"+monitorID+"/run", map[string]interface{}{}, nil)
+	if err != nil {
+		return nil, err
+	}
+	return extractDataAs[MonitorCheck](raw)
+}
+
+// ListMonitorChecks lists checks for a monitor.
+func (c *Client) ListMonitorChecks(ctx context.Context, monitorID string, opts *ListMonitorChecksOptions) ([]MonitorCheck, error) {
+	if monitorID == "" {
+		return nil, &FirecrawlError{Message: "monitor ID is required"}
+	}
+	path := "/v2/monitor/" + monitorID + "/checks" + checksQuery(opts)
+	raw, err := c.http.get(ctx, path)
+	if err != nil {
+		return nil, err
+	}
+	data, err := extractDataAs[[]MonitorCheck](raw)
+	if err != nil {
+		return nil, err
+	}
+	return *data, nil
+}
+
+// GetMonitorCheck gets a monitor check with paginated page results.
+func (c *Client) GetMonitorCheck(ctx context.Context, monitorID, checkID string, opts *ListMonitorChecksOptions) (*MonitorCheckDetail, error) {
+	if monitorID == "" || checkID == "" {
+		return nil, &FirecrawlError{Message: "monitor ID and check ID are required"}
+	}
+	path := "/v2/monitor/" + monitorID + "/checks/" + checkID + checksQuery(opts)
+	raw, err := c.http.get(ctx, path)
+	if err != nil {
+		return nil, err
+	}
+	return extractDataAs[MonitorCheckDetail](raw)
 }
 
 // ================================================================
@@ -791,6 +909,43 @@ func mergeOptions(body map[string]interface{}, opts interface{}) {
 	for k, v := range optsMap {
 		body[k] = v
 	}
+}
+
+func listQuery(opts *ListMonitorsOptions) string {
+	if opts == nil {
+		return ""
+	}
+	values := url.Values{}
+	if opts.Limit != nil {
+		values.Set("limit", fmt.Sprintf("%d", *opts.Limit))
+	}
+	if opts.Offset != nil {
+		values.Set("offset", fmt.Sprintf("%d", *opts.Offset))
+	}
+	if encoded := values.Encode(); encoded != "" {
+		return "?" + encoded
+	}
+	return ""
+}
+
+func checksQuery(opts *ListMonitorChecksOptions) string {
+	if opts == nil {
+		return ""
+	}
+	values := url.Values{}
+	if opts.Limit != nil {
+		values.Set("limit", fmt.Sprintf("%d", *opts.Limit))
+	}
+	if opts.Offset != nil {
+		values.Set("offset", fmt.Sprintf("%d", *opts.Offset))
+	}
+	if opts.Status != "" {
+		values.Set("status", opts.Status)
+	}
+	if encoded := values.Encode(); encoded != "" {
+		return "?" + encoded
+	}
+	return ""
 }
 
 // extractDataAs extracts the "data" field from a raw API response and deserializes it.

@@ -149,6 +149,20 @@ export class HttpClient {
     return this.request<T>({ method: "delete", url: endpoint, headers });
   }
 
+  patch<T = any>(
+    endpoint: string,
+    body: Record<string, unknown>,
+    options?: RequestOptions,
+  ) {
+    return this.request<T>({
+      method: "patch",
+      url: endpoint,
+      data: body,
+      headers: options?.headers,
+      timeout: options?.timeoutMs,
+    });
+  }
+
   prepareHeaders(idempotencyKey?: string): Record<string, string> {
     const headers: Record<string, string> = {};
     if (idempotencyKey) headers["x-idempotency-key"] = idempotencyKey;

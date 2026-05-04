@@ -139,6 +139,25 @@ internal class FirecrawlHttpClient
         return await ExecuteWithRetryAsync<T>(BuildRequest, cancellationToken);
     }
 
+    internal async Task<T> PatchAsync<T>(
+        string path,
+        object body,
+        CancellationToken cancellationToken = default)
+    {
+        var url = _baseUrl + path;
+        var json = JsonSerializer.Serialize(body, JsonOptions);
+
+        HttpRequestMessage BuildRequest()
+        {
+            var content = new StringContent(json, Encoding.UTF8, "application/json");
+            var request = new HttpRequestMessage(HttpMethod.Patch, url) { Content = content };
+            ApplyStandardHeaders(request);
+            return request;
+        }
+
+        return await ExecuteWithRetryAsync<T>(BuildRequest, cancellationToken);
+    }
+
     internal async Task<T> GetAbsoluteAsync<T>(string absoluteUrl, CancellationToken cancellationToken = default)
     {
         // Validate that the pagination URL belongs to the same host to prevent API key exfiltration

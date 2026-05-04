@@ -87,6 +87,27 @@ class FirecrawlHttpClient {
     }
 
     /**
+     * Sends a PATCH request with JSON body.
+     */
+    <T> T patch(String path, Object body, Class<T> responseType) {
+        String url = baseUrl + path;
+        String json;
+        try {
+            json = objectMapper.writeValueAsString(body);
+        } catch (JsonProcessingException e) {
+            throw new FirecrawlException("Failed to serialize request body", e);
+        }
+        RequestBody requestBody = RequestBody.create(json, JSON);
+        Request request = new Request.Builder()
+                .url(url)
+                .header("Authorization", "Bearer " + apiKey)
+                .header("Content-Type", "application/json")
+                .patch(requestBody)
+                .build();
+        return executeWithRetry(request, responseType);
+    }
+
+    /**
      * Sends a POST multipart/form-data request.
      */
     <T> T postMultipart(

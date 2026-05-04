@@ -606,6 +606,149 @@ export interface MapOptions {
   location?: LocationConfig;
 }
 
+export interface MonitorSchedule {
+  cron: string;
+  timezone?: string;
+}
+
+export interface MonitorEmailNotification {
+  enabled?: boolean;
+  recipients?: string[];
+  includeDiffs?: boolean;
+}
+
+export interface MonitorNotification {
+  email?: MonitorEmailNotification;
+}
+
+export interface MonitorWebhookConfig {
+  url: string;
+  headers?: Record<string, string>;
+  metadata?: Record<string, string>;
+  events?: string[];
+}
+
+export interface MonitorScrapeTarget {
+  id?: string;
+  type: 'scrape';
+  urls: string[];
+  scrapeOptions?: ScrapeOptions;
+}
+
+export interface MonitorCrawlTarget {
+  id?: string;
+  type: 'crawl';
+  url: string;
+  crawlOptions?: CrawlOptions;
+  scrapeOptions?: ScrapeOptions;
+}
+
+export type MonitorTarget = MonitorScrapeTarget | MonitorCrawlTarget;
+
+export interface CreateMonitorRequest {
+  name: string;
+  schedule: MonitorSchedule;
+  webhook?: MonitorWebhookConfig;
+  notification?: MonitorNotification;
+  targets: MonitorTarget[];
+  retentionDays?: number;
+}
+
+export interface UpdateMonitorRequest {
+  name?: string;
+  status?: 'active' | 'paused';
+  schedule?: MonitorSchedule;
+  webhook?: MonitorWebhookConfig | null;
+  notification?: MonitorNotification | null;
+  targets?: MonitorTarget[];
+  retentionDays?: number;
+}
+
+export interface MonitorSummary {
+  totalPages: number;
+  same: number;
+  changed: number;
+  new: number;
+  removed: number;
+  error: number;
+}
+
+export interface Monitor {
+  id: string;
+  name: string;
+  status: 'active' | 'paused' | 'deleted';
+  schedule: MonitorSchedule;
+  nextRunAt?: string | null;
+  lastRunAt?: string | null;
+  currentCheckId?: string | null;
+  targets: MonitorTarget[];
+  webhook?: MonitorWebhookConfig | null;
+  notification?: MonitorNotification | null;
+  retentionDays: number;
+  estimatedCreditsPerMonth?: number | null;
+  lastCheckSummary?: MonitorSummary | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface MonitorCheck {
+  id: string;
+  monitorId: string;
+  status:
+    | 'queued'
+    | 'running'
+    | 'completed'
+    | 'failed'
+    | 'partial'
+    | 'skipped_overlap';
+  trigger: 'scheduled' | 'manual';
+  scheduledFor?: string | null;
+  startedAt?: string | null;
+  finishedAt?: string | null;
+  estimatedCredits?: number | null;
+  reservedCredits?: number | null;
+  actualCredits?: number | null;
+  billingStatus:
+    | 'not_applicable'
+    | 'reserved'
+    | 'confirmed'
+    | 'released'
+    | 'failed';
+  summary: MonitorSummary;
+  targetResults?: unknown;
+  notificationStatus?: unknown;
+  error?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface MonitorCheckPage {
+  id: string;
+  targetId: string;
+  url: string;
+  status: 'same' | 'new' | 'changed' | 'removed' | 'error';
+  previousScrapeId?: string | null;
+  currentScrapeId?: string | null;
+  statusCode?: number | null;
+  error?: string | null;
+  metadata?: unknown;
+  diff?: unknown;
+  createdAt: string;
+}
+
+export interface MonitorCheckDetail extends MonitorCheck {
+  pages: MonitorCheckPage[];
+  pageLimit: number;
+  pageOffset: number;
+}
+
+export interface ListMonitorsOptions {
+  limit?: number;
+  offset?: number;
+}
+
+export type ListMonitorChecksOptions = ListMonitorsOptions;
+
 export interface ExtractResponse {
   success?: boolean;
   id?: string;
