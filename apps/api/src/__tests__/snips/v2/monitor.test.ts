@@ -1,4 +1,9 @@
-import { createTestIdUrl, describeIf, ALLOW_TEST_SUITE_WEBSITE } from "../lib";
+import {
+  createTestIdUrl,
+  describeIf,
+  ALLOW_TEST_SUITE_WEBSITE,
+  TEST_SELF_HOST,
+} from "../lib";
 import {
   idmux,
   Identity,
@@ -12,7 +17,7 @@ import {
   scrapeTimeout,
 } from "./lib";
 
-describeIf(ALLOW_TEST_SUITE_WEBSITE)("/v2/monitor", () => {
+describeIf(ALLOW_TEST_SUITE_WEBSITE && !TEST_SELF_HOST)("/v2/monitor", () => {
   let identity: Identity;
 
   beforeAll(async () => {
