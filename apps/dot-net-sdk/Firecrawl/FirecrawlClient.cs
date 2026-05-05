@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Firecrawl.Exceptions;
 using Firecrawl.Models;
+using MonitorModel = Firecrawl.Models.Monitor;
 
 namespace Firecrawl;
 
@@ -325,42 +326,42 @@ public class FirecrawlClient
     // MONITOR
     // ================================================================
 
-    public async Task<Monitor> CreateMonitorAsync(
+    public async Task<MonitorModel> CreateMonitorAsync(
         CreateMonitorRequest request,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
 
-        var response = await _http.PostAsync<ApiResponse<Monitor>>(
+        var response = await _http.PostAsync<ApiResponse<MonitorModel>>(
             "/v2/monitor", request, cancellationToken: cancellationToken);
 
         return response.Data ?? throw new FirecrawlException("Create monitor response contained no data");
     }
 
-    public async Task<List<Monitor>> ListMonitorsAsync(
+    public async Task<List<MonitorModel>> ListMonitorsAsync(
         int? limit = null,
         int? offset = null,
         CancellationToken cancellationToken = default)
     {
-        var response = await _http.GetAsync<ApiResponse<List<Monitor>>>(
+        var response = await _http.GetAsync<ApiResponse<List<MonitorModel>>>(
             $"/v2/monitor{BuildQuery(limit, offset)}", cancellationToken);
 
-        return response.Data ?? new List<Monitor>();
+        return response.Data ?? new List<MonitorModel>();
     }
 
-    public async Task<Monitor> GetMonitorAsync(
+    public async Task<MonitorModel> GetMonitorAsync(
         string monitorId,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(monitorId);
 
-        var response = await _http.GetAsync<ApiResponse<Monitor>>(
+        var response = await _http.GetAsync<ApiResponse<MonitorModel>>(
             $"/v2/monitor/{monitorId}", cancellationToken);
 
         return response.Data ?? throw new FirecrawlException("Get monitor response contained no data");
     }
 
-    public async Task<Monitor> UpdateMonitorAsync(
+    public async Task<MonitorModel> UpdateMonitorAsync(
         string monitorId,
         UpdateMonitorRequest request,
         CancellationToken cancellationToken = default)
@@ -368,7 +369,7 @@ public class FirecrawlClient
         ArgumentNullException.ThrowIfNull(monitorId);
         ArgumentNullException.ThrowIfNull(request);
 
-        var response = await _http.PatchAsync<ApiResponse<Monitor>>(
+        var response = await _http.PatchAsync<ApiResponse<MonitorModel>>(
             $"/v2/monitor/{monitorId}", request, cancellationToken);
 
         return response.Data ?? throw new FirecrawlException("Update monitor response contained no data");
