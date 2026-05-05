@@ -7,8 +7,10 @@ import {
   saveMonitorDiffArtifact,
 } from "../../lib/gcs-monitoring";
 import { logger as _logger } from "../../lib/logger";
+import { createWebhookSender, WebhookEvent } from "../webhook";
 import { diffMonitorMarkdown } from "./diff";
 import {
+  getMonitorForUpdate,
   getMonitorPage,
   hashMonitorUrl,
   insertMonitorCheckPages,
@@ -25,6 +27,51 @@ function getDocumentStatusCode(doc: any): number | null {
   return typeof doc?.metadata?.statusCode === "number"
     ? doc.metadata.statusCode
     : null;
+}
+
+async function sendMonitorPageWebhook(params: {
+  teamId: string;
+  monitorId: string;
+  checkId: string;
+  url: string;
+  status: string;
+  previousScrapeId?: string | null;
+  currentScrapeId?: string | null;
+  error?: string | null;
+}) {
+  try {
+    const monitor = await getMonitorForUpdate(params.teamId, params.monitorId);
+    if (!monitor?.webhook) return;
+
+    const sender = await createWebhookSender({
+      teamId: params.teamId,
+      jobId: params.checkId,
+      webhook: monitor.webhook as any,
+      v0: false,
+    });
+
+    await sender?.send(WebhookEvent.MONITOR_PAGE, {
+      success: params.status !== "error",
+      data: {
+        monitorId: params.monitorId,
+        checkId: params.checkId,
+        url: params.url,
+        status: params.status,
+        previousScrapeId: params.previousScrapeId ?? null,
+        currentScrapeId: params.currentScrapeId ?? null,
+        error: params.error ?? null,
+      },
+      error: params.error ?? undefined,
+    });
+  } catch (error) {
+    logger.warn("Failed to send monitor page webhook", {
+      error,
+      monitorId: params.monitorId,
+      checkId: params.checkId,
+      url: params.url,
+      status: params.status,
+    });
+  }
 }
 
 export async function recordMonitorScrapeSuccess(
@@ -126,6 +173,16 @@ export async function recordMonitorScrapeSuccess(
     previousScrapeId: previous?.last_scrape_id ?? null,
     diffGcsKey,
   });
+
+  await sendMonitorPageWebhook({
+    teamId: job.data.team_id,
+    monitorId: monitoring.monitorId,
+    checkId: monitoring.checkId,
+    url,
+    status,
+    previousScrapeId: previous?.last_scrape_id ?? null,
+    currentScrapeId: job.id,
+  });
 }
 
 export async function recordMonitorScrapeFailure(
@@ -155,6 +212,16 @@ export async function recordMonitorScrapeFailure(
     targetId: monitoring.targetId,
     scrapeId: job.id,
     url: job.data.url,
+    error: error instanceof Error ? error.message : String(error),
+  });
+
+  await sendMonitorPageWebhook({
+    teamId: job.data.team_id,
+    monitorId: monitoring.monitorId,
+    checkId: monitoring.checkId,
+    url: job.data.url,
+    status: "error",
+    currentScrapeId: job.id,
     error: error instanceof Error ? error.message : String(error),
   });
 }

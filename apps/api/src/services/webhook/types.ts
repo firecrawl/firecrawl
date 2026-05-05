@@ -13,6 +13,7 @@ export enum WebhookEvent {
   EXTRACT_STARTED = "extract.started",
   EXTRACT_COMPLETED = "extract.completed",
   EXTRACT_FAILED = "extract.failed",
+  MONITOR_PAGE = "monitor.page",
   MONITOR_CHECK_COMPLETED = "monitor.check.completed",
 }
 
@@ -26,6 +27,7 @@ export type WebhookEventDataMap = {
   [WebhookEvent.EXTRACT_STARTED]: ExtractStartedData;
   [WebhookEvent.EXTRACT_COMPLETED]: ExtractCompletedData;
   [WebhookEvent.EXTRACT_FAILED]: ExtractFailedData;
+  [WebhookEvent.MONITOR_PAGE]: MonitorPageData;
   [WebhookEvent.MONITOR_CHECK_COMPLETED]: MonitorCheckCompletedData;
 };
 
@@ -117,6 +119,20 @@ interface ExtractFailedData extends BaseWebhookData {
 }
 
 // monitor
+interface MonitorPageData extends BaseWebhookData {
+  success: boolean;
+  data: {
+    monitorId: string;
+    checkId: string;
+    url: string;
+    status: string;
+    previousScrapeId?: string | null;
+    currentScrapeId?: string | null;
+    error?: string | null;
+  };
+  error?: string;
+}
+
 interface MonitorCheckCompletedData extends BaseWebhookData {
   success: boolean;
   data: {

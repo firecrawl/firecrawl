@@ -1212,6 +1212,31 @@ describe("V2 Types Validation", () => {
         }),
       ).toThrow("Schedule must include either cron or text, not both");
     });
+
+    it("should accept monitor webhook event filters", () => {
+      const result = updateMonitorSchema.parse({
+        webhook: {
+          url: "https://example.com/webhook",
+          events: ["monitor.page", "monitor.check.completed"],
+        },
+      });
+
+      expect(result.webhook?.events).toEqual([
+        "monitor.page",
+        "monitor.check.completed",
+      ]);
+    });
+
+    it("should reject non-monitor webhook event filters", () => {
+      expect(() =>
+        updateMonitorSchema.parse({
+          webhook: {
+            url: "https://example.com/webhook",
+            events: ["completed"],
+          },
+        }),
+      ).toThrow();
+    });
   });
 
   describe("Edge cases", () => {

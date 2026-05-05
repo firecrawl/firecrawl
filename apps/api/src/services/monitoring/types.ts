@@ -4,7 +4,7 @@ import {
   URL as urlSchema,
   type ScrapeOptions,
 } from "../../controllers/v2/types";
-import { webhookSchema } from "../webhook/schema";
+import { createWebhookSchema } from "../webhook/schema";
 import { parseMonitorScheduleText } from "./cron";
 
 const formatSchema = z.union([z.string(), z.record(z.string(), z.unknown())]);
@@ -37,6 +37,11 @@ const crawlTargetSchema = z.strictObject({
 });
 
 const monitorTargetSchema = z.union([scrapeTargetSchema, crawlTargetSchema]);
+
+const monitorWebhookSchema = createWebhookSchema([
+  "monitor.page",
+  "monitor.check.completed",
+]);
 
 const monitorScheduleSchema = z
   .strictObject({
@@ -92,7 +97,7 @@ const monitorNotificationSchema = z
 export const createMonitorSchema = z.strictObject({
   name: z.string().min(1).max(256),
   schedule: monitorScheduleSchema,
-  webhook: webhookSchema.optional(),
+  webhook: monitorWebhookSchema.optional(),
   notification: monitorNotificationSchema,
   targets: z.array(monitorTargetSchema).min(1).max(50),
   retentionDays: z.number().int().positive().max(365).optional().default(30),
