@@ -76,6 +76,7 @@ import type {
   Monitor,
   MonitorCheck,
   MonitorCheckDetail,
+  GetMonitorCheckOptions,
   UpdateMonitorRequest,
 } from "./types";
 import { Watcher } from "./watcher";
@@ -355,7 +356,7 @@ export class FirecrawlClient {
   async getMonitorCheck(
     monitorId: string,
     checkId: string,
-    options?: ListMonitorChecksOptions & { status?: MonitorCheckDetail["pages"][number]["status"] },
+    options?: GetMonitorCheckOptions,
   ): Promise<MonitorCheckDetail> {
     return getMonitorCheckMethod(this.http, monitorId, checkId, options);
   }

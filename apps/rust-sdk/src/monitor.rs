@@ -113,8 +113,7 @@ pub struct MonitorCheckDetail {
     #[serde(flatten)]
     pub check: MonitorCheck,
     pub pages: Vec<MonitorCheckPage>,
-    pub page_limit: u32,
-    pub page_offset: u32,
+    pub next: Option<String>,
 }
 
 #[derive(Deserialize, Debug)]
@@ -136,6 +135,24 @@ fn query(limit: Option<u32>, offset: Option<u32>, status: Option<&str>) -> Strin
     }
     if let Some(offset) = offset {
         params.push(format!("offset={}", offset));
+    }
+    if let Some(status) = status {
+        params.push(format!("status={}", status));
+    }
+    if params.is_empty() {
+        String::new()
+    } else {
+        format!("?{}", params.join("&"))
+    }
+}
+
+fn check_page_query(limit: Option<u32>, skip: Option<u32>, status: Option<&str>) -> String {
+    let mut params = Vec::new();
+    if let Some(limit) = limit {
+        params.push(format!("limit={}", limit));
+    }
+    if let Some(skip) = skip {
+        params.push(format!("skip={}", skip));
     }
     if let Some(status) = status {
         params.push(format!("status={}", status));
@@ -283,14 +300,57 @@ impl Client {
         monitor_id: impl AsRef<str>,
         check_id: impl AsRef<str>,
         limit: Option<u32>,
-        offset: Option<u32>,
+        skip: Option<u32>,
         status: Option<&str>,
     ) -> Result<MonitorCheckDetail, FirecrawlError> {
         let path = format!(
             "/monitor/{}/checks/{}{}",
             monitor_id.as_ref(),
             check_id.as_ref(),
-            query(limit, offset, status)
+            check_page_query(limit, skip, status)
+        );
+        let response = self
+            .client
+            .get(self.url(&path))
+            .headers(self.prepare_headers(None))
+            .send()
+            .await
+            .map_err(|e| FirecrawlError::HttpError("Getting monitor check".to_string(), e))?;
+
+        let response: DataResponse<MonitorCheckDetail> =
+            self.handle_response(response, "get monitor check").await?;
+        let mut check = response.data;
+
+        while let Some(next) = check.next.clone() {
+            let response = self
+                .client
+                .get(next)
+                .headers(self.prepare_headers(None))
+                .send()
+                .await
+                .map_err(|e| FirecrawlError::HttpError("Getting monitor check page".to_string(), e))?;
+            let response: DataResponse<MonitorCheckDetail> =
+                self.handle_response(response, "get monitor check page").await?;
+            check.pages.extend(response.data.pages);
+            check.next = response.data.next;
+        }
+
+        Ok(check)
+    }
+
+    pub async fn get_monitor_check_page(
+        &self,
+        monitor_id: impl AsRef<str>,
+        check_id: impl AsRef<str>,
+        limit: Option<u32>,
+        skip: Option<u32>,
+        status: Option<&str>,
+    ) -> Result<MonitorCheckDetail, FirecrawlError> {
+        let path = format!(
+            "/monitor/{}/checks/{}{}",
+            monitor_id.as_ref(),
+            check_id.as_ref(),
+            check_page_query(limit, skip, status)
         );
         let response = self
             .client

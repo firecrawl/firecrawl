@@ -8,7 +8,7 @@
 
     <!-- NuGet package metadata -->
     <PackageId>firecrawl-sdk</PackageId>
-    <Version>1.2.1</Version>
+    <Version>1.3.0</Version>
     <Authors>Firecrawl</Authors>
     <Company>Firecrawl</Company>
     <Description>.NET SDK for the Firecrawl API - web scraping, crawling, and data extraction</Description>

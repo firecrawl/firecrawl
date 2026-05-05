@@ -1168,7 +1168,7 @@ defmodule Firecrawl do
   }
 
   @monitor_list_key_mapping %{limit: "limit", offset: "offset"}
-  @monitor_check_key_mapping %{limit: "limit", offset: "offset", status: "status"}
+  @monitor_check_key_mapping %{limit: "limit", skip: "skip", status: "status"}
 
   @doc """
   Create a scheduled monitor.
@@ -1309,10 +1309,15 @@ defmodule Firecrawl do
   """
   @spec get_monitor_check(String.t(), String.t(), keyword(), keyword()) :: response()
   def get_monitor_check(monitor_id, check_id, params \\ [], opts \\ []) do
-    Req.get(client(opts),
-      url: "/monitor/#{monitor_id}/checks/#{check_id}",
-      params: to_query(params, @monitor_check_key_mapping)
-    )
+    {auto_paginate, opts} = Keyword.pop(opts, :auto_paginate, true)
+
+    case Req.get(client(opts),
+           url: "/monitor/#{monitor_id}/checks/#{check_id}",
+           params: to_query(params, @monitor_check_key_mapping)
+         ) do
+      {:ok, response} when auto_paginate -> {:ok, paginate_monitor_check_response(response, opts)}
+      result -> result
+    end
   end
 
   @doc """
@@ -1320,10 +1325,40 @@ defmodule Firecrawl do
   """
   @spec get_monitor_check!(String.t(), String.t(), keyword(), keyword()) :: Req.Response.t()
   def get_monitor_check!(monitor_id, check_id, params \\ [], opts \\ []) do
-    Req.get!(client(opts),
+    {auto_paginate, opts} = Keyword.pop(opts, :auto_paginate, true)
+    response = Req.get!(client(opts),
       url: "/monitor/#{monitor_id}/checks/#{check_id}",
       params: to_query(params, @monitor_check_key_mapping)
     )
+
+    if auto_paginate, do: paginate_monitor_check_response(response, opts), else: response
+  end
+
+  defp paginate_monitor_check_response(%Req.Response{body: body} = response, opts) when is_map(body) do
+    data = Map.get(body, "data") || %{}
+    pages = Map.get(data, "pages") || []
+    next = Map.get(body, "next") || Map.get(data, "next")
+    pages = fetch_monitor_check_pages(next, pages, opts)
+    data = data |> Map.put("pages", pages) |> Map.put("next", nil)
+    %{response | body: body |> Map.put("data", data) |> Map.put("next", nil)}
+  end
+
+  defp paginate_monitor_check_response(response, _opts), do: response
+
+  defp fetch_monitor_check_pages(nil, pages, _opts), do: pages
+  defp fetch_monitor_check_pages("", pages, _opts), do: pages
+
+  defp fetch_monitor_check_pages(next, pages, opts) do
+    case Req.get(client(opts), url: next) do
+      {:ok, %Req.Response{body: body}} when is_map(body) ->
+        data = Map.get(body, "data") || %{}
+        next_pages = Map.get(data, "pages") || []
+        next_url = Map.get(body, "next") || Map.get(data, "next")
+        fetch_monitor_check_pages(next_url, pages ++ next_pages, opts)
+
+      _ ->
+        pages
+    end
   end
 
 end

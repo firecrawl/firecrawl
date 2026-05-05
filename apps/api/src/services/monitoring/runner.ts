@@ -532,19 +532,11 @@ async function sendNotifications(params: {
   check: MonitorCheckRow;
   pages: PageResult[];
 }): Promise<{ webhook?: unknown; email?: unknown }> {
-  const summary = summarize(params.pages);
   const payload = {
     monitorId: params.monitor.id,
     checkId: params.check.id,
     status: params.check.status,
-    summary,
-    pages: params.pages.slice(0, 100).map(page => ({
-      url: page.url,
-      status: page.status,
-      previousScrapeId: page.previous_scrape_id ?? null,
-      currentScrapeId: page.current_scrape_id ?? null,
-      error: page.error ?? null,
-    })),
+    summary: toSummaryObject(params.check),
   };
 
   let webhookStatus: unknown = { attempted: false };
@@ -845,7 +837,7 @@ async function processRemovedPagesForCompletedCrawls(params: {
       monitorId: params.monitor.id,
       checkId: params.check.id,
       limit: 100000,
-      offset: 0,
+      skip: 0,
     });
     const seen = new Set(
       checkPages
@@ -997,7 +989,7 @@ export async function reconcileRunningMonitorChecks(
         monitorId: monitor.id,
         checkId: check.id,
         limit: 100,
-        offset: 0,
+        skip: 0,
       })) as PageResult[];
 
       const notificationStatus = await sendNotifications({

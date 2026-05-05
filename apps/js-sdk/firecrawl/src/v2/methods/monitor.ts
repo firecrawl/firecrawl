@@ -5,6 +5,8 @@ import {
   type Monitor,
   type MonitorCheck,
   type MonitorCheckDetail,
+  type MonitorCheckPage,
+  type GetMonitorCheckOptions,
   type UpdateMonitorRequest,
 } from "../types";
 import { HttpClient } from "../utils/httpClient";
@@ -12,6 +14,7 @@ import {
   throwForBadResponse,
   normalizeAxiosError,
 } from "../utils/errorHandler";
+import { fetchAllPages } from "../utils/pagination";
 
 type ApiResponse<T> = {
   success: boolean;
@@ -147,13 +150,30 @@ export async function getMonitorCheck(
   http: HttpClient,
   monitorId: string,
   checkId: string,
-  options?: ListMonitorChecksOptions & { status?: MonitorCheckDetail["pages"][number]["status"] },
+  options?: GetMonitorCheckOptions,
 ): Promise<MonitorCheckDetail> {
   try {
+    const { autoPaginate: _autoPaginate, maxPages: _maxPages, maxResults: _maxResults, maxWaitTime: _maxWaitTime, ...query } = options ?? {};
     const res = await http.get<ApiResponse<MonitorCheckDetail>>(
-      `/v2/monitor/${monitorId}/checks/${checkId}${queryString(options as Record<string, unknown>)}`,
+      `/v2/monitor/${monitorId}/checks/${checkId}${queryString(query as Record<string, unknown>)}`,
     );
-    return dataOrThrow(res, "get monitor check");
+    const detail = dataOrThrow(res, "get monitor check");
+    const next = res.data?.next ?? detail.next ?? null;
+    const auto = options?.autoPaginate ?? true;
+    if (!auto || !next) {
+      return { ...detail, next };
+    }
+
+    return {
+      ...detail,
+      pages: await fetchAllPages<MonitorCheckPage>(
+        http,
+        next,
+        detail.pages || [],
+        options,
+      ),
+      next: null,
+    };
   } catch (err: any) {
     if (err?.isAxiosError) return normalizeAxiosError(err, "get monitor check");
     throw err;

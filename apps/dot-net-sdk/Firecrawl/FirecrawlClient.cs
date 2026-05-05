@@ -422,18 +422,20 @@ public class FirecrawlClient
         string monitorId,
         string checkId,
         int? limit = null,
-        int? offset = null,
+        int? skip = null,
         string? status = null,
+        bool autoPaginate = true,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(monitorId);
         ArgumentNullException.ThrowIfNull(checkId);
 
         var response = await _http.GetAsync<ApiResponse<MonitorCheckDetail>>(
-            $"/v2/monitor/{monitorId}/checks/{checkId}{BuildQuery(limit, offset, status)}",
+            $"/v2/monitor/{monitorId}/checks/{checkId}{BuildMonitorCheckQuery(limit, skip, status)}",
             cancellationToken);
 
-        return response.Data ?? throw new FirecrawlException("Get monitor check response contained no data");
+        var check = response.Data ?? throw new FirecrawlException("Get monitor check response contained no data");
+        return autoPaginate ? await PaginateMonitorCheckAsync(check, cancellationToken) : check;
     }
 
     // ================================================================
@@ -575,6 +577,32 @@ public class FirecrawlClient
         return job;
     }
 
+    private async Task<MonitorCheckDetail> PaginateMonitorCheckAsync(
+        MonitorCheckDetail check,
+        CancellationToken cancellationToken)
+    {
+        check.Pages ??= new List<MonitorCheckPage>();
+        var current = check;
+
+        while (!string.IsNullOrEmpty(current.Next))
+        {
+            var response = await _http.GetAbsoluteAsync<ApiResponse<MonitorCheckDetail>>(
+                current.Next, cancellationToken);
+            if (response.Data == null)
+                break;
+
+            var nextPage = response.Data;
+
+            if (nextPage.Pages is { Count: > 0 })
+                check.Pages.AddRange(nextPage.Pages);
+
+            current = nextPage;
+        }
+
+        check.Next = null;
+        return check;
+    }
+
     // ================================================================
     // INTERNAL UTILITIES
     // ================================================================
@@ -596,6 +624,19 @@ public class FirecrawlClient
             query.Add($"limit={Uri.EscapeDataString(limit.Value.ToString())}");
         if (offset.HasValue)
             query.Add($"offset={Uri.EscapeDataString(offset.Value.ToString())}");
+        if (!string.IsNullOrWhiteSpace(status))
+            query.Add($"status={Uri.EscapeDataString(status)}");
+
+        return query.Count == 0 ? string.Empty : "?" + string.Join("&", query);
+    }
+
+    private static string BuildMonitorCheckQuery(int? limit = null, int? skip = null, string? status = null)
+    {
+        var query = new List<string>();
+        if (limit.HasValue)
+            query.Add($"limit={Uri.EscapeDataString(limit.Value.ToString())}");
+        if (skip.HasValue)
+            query.Add($"skip={Uri.EscapeDataString(skip.Value.ToString())}");
         if (!string.IsNullOrWhiteSpace(status))
             query.Add($"status={Uri.EscapeDataString(status)}");
 

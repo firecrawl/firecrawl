@@ -420,16 +420,38 @@ final class FirecrawlClient
         string $monitorId,
         string $checkId,
         ?int $limit = null,
-        ?int $offset = null,
+        ?int $skip = null,
         ?string $status = null,
+        bool $autoPaginate = true,
     ): MonitorCheckDetail {
         $response = $this->http->get("/v2/monitor/{$monitorId}/checks/{$checkId}" . $this->query([
             'limit' => $limit,
-            'offset' => $offset,
+            'skip' => $skip,
             'status' => $status,
         ]));
 
-        return MonitorCheckDetail::fromArray($response['data'] ?? $response);
+        $data = $response['data'] ?? $response;
+        if (isset($response['next'])) {
+            $data['next'] = $response['next'];
+        }
+
+        if (!$autoPaginate) {
+            return MonitorCheckDetail::fromArray($data);
+        }
+
+        while (isset($data['next']) && is_string($data['next']) && $data['next'] !== '') {
+            $nextResponse = $this->http->getAbsolute($data['next']);
+            $nextData = $nextResponse['data'] ?? $nextResponse;
+            if (isset($nextResponse['next'])) {
+                $nextData['next'] = $nextResponse['next'];
+            }
+
+            $data['pages'] = array_merge($data['pages'] ?? [], $nextData['pages'] ?? []);
+            $data['next'] = $nextData['next'] ?? null;
+        }
+
+        $data['next'] = null;
+        return MonitorCheckDetail::fromArray($data);
     }
 
     // ================================================================

@@ -433,16 +433,18 @@ class AsyncFirecrawlClient:
         check_id: str,
         *,
         limit: Optional[int] = None,
-        offset: Optional[int] = None,
+        skip: Optional[int] = None,
         status: Optional[Literal["same", "new", "changed", "removed", "error"]] = None,
+        pagination_config: Optional[PaginationConfig] = None,
     ) -> MonitorCheckDetail:
         return await async_monitor.get_monitor_check(
             self.async_http_client,
             monitor_id,
             check_id,
             limit=limit,
-            offset=offset,
+            skip=skip,
             status=status,
+            pagination_config=pagination_config,
         )
 
     async def start_batch_scrape(self, urls: List[str], **kwargs) -> Any:

@@ -346,13 +346,16 @@ module Firecrawl
       (raw["data"] || []).map { |item| Models::MonitorCheck.new(item) }
     end
 
-    def get_monitor_check(monitor_id, check_id, limit: nil, offset: nil, status: nil)
+    def get_monitor_check(monitor_id, check_id, limit: nil, skip: nil, status: nil, auto_paginate: true)
       raise ArgumentError, "Monitor ID is required" if monitor_id.nil?
       raise ArgumentError, "Check ID is required" if check_id.nil?
 
-      params = query(limit: limit, offset: offset, status: status)
+      params = query(limit: limit, skip: skip, status: status)
       raw = @http.get("/v2/monitor/#{monitor_id}/checks/#{check_id}#{params}")
-      Models::MonitorCheckDetail.new(raw["data"] || raw)
+      data = raw["data"] || raw
+      data["next"] = raw["next"] if raw["next"]
+      check = Models::MonitorCheckDetail.new(data)
+      auto_paginate ? paginate_monitor_check(check) : check
     end
 
     # ================================================================
@@ -502,6 +505,21 @@ module Firecrawl
         current = next_page
       end
       job
+    end
+
+    def paginate_monitor_check(check)
+      check.pages ||= []
+      current = check
+      while current.next_url && !current.next_url.empty?
+        raw = @http.get_absolute(current.next_url)
+        data = raw["data"] || raw
+        data["next"] = raw["next"] if raw["next"]
+        next_page = Models::MonitorCheckDetail.new(data)
+        check.pages.concat(next_page.pages) unless next_page.pages.empty?
+        current = next_page
+      end
+      check.next_url = nil
+      check
     end
   end
 end

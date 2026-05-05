@@ -738,8 +738,7 @@ export interface MonitorCheckPage {
 
 export interface MonitorCheckDetail extends MonitorCheck {
   pages: MonitorCheckPage[];
-  pageLimit: number;
-  pageOffset: number;
+  next?: string | null;
 }
 
 export interface ListMonitorsOptions {
@@ -748,6 +747,12 @@ export interface ListMonitorsOptions {
 }
 
 export type ListMonitorChecksOptions = ListMonitorsOptions;
+
+export type GetMonitorCheckOptions = PaginationConfig & {
+  limit?: number;
+  skip?: number;
+  status?: MonitorCheckPage["status"];
+};
 
 export interface ExtractResponse {
   success?: boolean;

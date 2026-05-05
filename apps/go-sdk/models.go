@@ -195,9 +195,8 @@ type MonitorCheckPage struct {
 // MonitorCheckDetail includes paginated page results and inline diffs.
 type MonitorCheckDetail struct {
 	MonitorCheck
-	Pages      []MonitorCheckPage `json:"pages,omitempty"`
-	PageLimit  int                `json:"pageLimit"`
-	PageOffset int                `json:"pageOffset"`
+	Pages []MonitorCheckPage `json:"pages,omitempty"`
+	Next  string             `json:"next,omitempty"`
 }
 
 // ListMonitorsOptions controls monitor list pagination.
@@ -211,6 +210,14 @@ type ListMonitorChecksOptions struct {
 	Limit  *int
 	Offset *int
 	Status string
+}
+
+// GetMonitorCheckOptions controls monitor check page pagination/filtering.
+type GetMonitorCheckOptions struct {
+	Limit        *int
+	Skip         *int
+	Status       string
+	AutoPaginate *bool
 }
 
 // SearchData represents the result of a search request.

@@ -924,8 +924,7 @@ class MonitorCheckPage(BaseModel):
 
 class MonitorCheckDetail(MonitorCheck):
     pages: List[MonitorCheckPage] = []
-    page_limit: int = Field(alias="pageLimit")
-    page_offset: int = Field(alias="pageOffset")
+    next: Optional[str] = None
 
 
 # Extract types

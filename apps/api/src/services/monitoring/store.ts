@@ -392,7 +392,7 @@ export async function listMonitorCheckPages(params: {
   monitorId: string;
   checkId: string;
   limit: number;
-  offset: number;
+  skip: number;
   status?: string;
 }): Promise<any[]> {
   let query = supabase_rr_service
@@ -408,8 +408,8 @@ export async function listMonitorCheckPages(params: {
   }
 
   const { data, error } = await query.range(
-    params.offset,
-    params.offset + params.limit - 1,
+    params.skip,
+    params.skip + params.limit - 1,
   );
 
   throwIfError(error, "Failed to list monitor check pages");

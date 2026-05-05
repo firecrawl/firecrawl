@@ -167,10 +167,12 @@ export async function monitorCheckRaw(
   monitorId: string,
   checkId: string,
   identity: Identity,
+  query?: Record<string, string | number>,
 ) {
-  return await request(TEST_API_URL)
+  const req = request(TEST_API_URL)
     .get(`/v2/monitor/${monitorId}/checks/${checkId}`)
     .set("Authorization", `Bearer ${identity.apiKey}`);
+  return query ? req.query(query) : req;
 }
 
 export async function parseRaw(

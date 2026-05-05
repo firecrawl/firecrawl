@@ -1,6 +1,7 @@
 import { describe, test, expect, jest } from "@jest/globals";
 import { getCrawlStatus } from "../../../v2/methods/crawl";
 import { getBatchScrapeStatus } from "../../../v2/methods/batch";
+import { getMonitorCheck } from "../../../v2/methods/monitor";
 
 describe("JS SDK v2 pagination", () => {
   function makeHttp(getImpl: (url: string) => any) {
@@ -62,6 +63,26 @@ describe("JS SDK v2 pagination", () => {
     const res = await getBatchScrapeStatus(http, "jobB", { autoPaginate: false });
     expect(res.data.length).toBe(1);
     expect(res.next).toBe("https://api/nextBatch");
+  });
+
+  test("monitor check: default autoPaginate aggregates pages and nulls next", async () => {
+    const first = { status: 200, data: { success: true, next: "https://api/m1", data: { id: "check1", monitorId: "mon1", status: "completed", trigger: "manual", billingStatus: "confirmed", summary: {}, createdAt: "now", updatedAt: "now", pages: [{ url: "a", status: "changed" }], next: "https://api/m1" } } };
+    const second = { status: 200, data: { success: true, next: null, data: { pages: [{ url: "b", status: "same" }], next: null } } };
+    const http = makeHttp((url) => {
+      if (url.includes("/v2/monitor/")) return first;
+      return second;
+    });
+    const res = await getMonitorCheck(http, "mon1", "check1");
+    expect(res.pages.length).toBe(2);
+    expect(res.next).toBeNull();
+  });
+
+  test("monitor check: autoPaginate=false returns next", async () => {
+    const first = { status: 200, data: { success: true, next: "https://api/m1", data: { id: "check1", monitorId: "mon1", status: "completed", trigger: "manual", billingStatus: "confirmed", summary: {}, createdAt: "now", updatedAt: "now", pages: [{ url: "a", status: "changed" }], next: "https://api/m1" } } };
+    const http = makeHttp(() => first);
+    const res = await getMonitorCheck(http, "mon1", "check1", { autoPaginate: false });
+    expect(res.pages.length).toBe(1);
+    expect(res.next).toBe("https://api/m1");
   });
 
   test("crawl: maxWaitTime stops pagination after first page", async () => {

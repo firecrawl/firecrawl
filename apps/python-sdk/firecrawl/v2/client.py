@@ -756,17 +756,19 @@ class FirecrawlClient:
         check_id: str,
         *,
         limit: Optional[int] = None,
-        offset: Optional[int] = None,
+        skip: Optional[int] = None,
         status: Optional[Literal["same", "new", "changed", "removed", "error"]] = None,
+        pagination_config: Optional[PaginationConfig] = None,
     ) -> MonitorCheckDetail:
-        """Get a monitor check with paginated page results."""
+        """Get a monitor check with page results, auto-paginated by default."""
         return monitor_module.get_monitor_check(
             self.http_client,
             monitor_id,
             check_id,
             limit=limit,
-            offset=offset,
+            skip=skip,
             status=status,
+            pagination_config=pagination_config,
         )
     
     def cancel_crawl(self, crawl_id: str) -> bool:

@@ -488,17 +488,39 @@ func (c *Client) ListMonitorChecks(ctx context.Context, monitorID string, opts *
 	return *data, nil
 }
 
-// GetMonitorCheck gets a monitor check with paginated page results.
-func (c *Client) GetMonitorCheck(ctx context.Context, monitorID, checkID string, opts *ListMonitorChecksOptions) (*MonitorCheckDetail, error) {
+// GetMonitorCheck gets a monitor check with page results, auto-paginated by default.
+func (c *Client) GetMonitorCheck(ctx context.Context, monitorID, checkID string, opts *GetMonitorCheckOptions) (*MonitorCheckDetail, error) {
 	if monitorID == "" || checkID == "" {
 		return nil, &FirecrawlError{Message: "monitor ID and check ID are required"}
 	}
-	path := "/v2/monitor/" + monitorID + "/checks/" + checkID + checksQuery(opts)
+	path := "/v2/monitor/" + monitorID + "/checks/" + checkID + monitorCheckPageQuery(opts)
 	raw, err := c.http.get(ctx, path)
 	if err != nil {
 		return nil, err
 	}
-	return extractDataAs[MonitorCheckDetail](raw)
+	detail, err := extractMonitorCheckDetail(raw)
+	if err != nil {
+		return nil, err
+	}
+
+	autoPaginate := true
+	if opts != nil && opts.AutoPaginate != nil {
+		autoPaginate = *opts.AutoPaginate
+	}
+	for autoPaginate && detail.Next != "" {
+		raw, err := c.http.getAbsolute(ctx, detail.Next)
+		if err != nil {
+			return nil, err
+		}
+		nextPage, err := extractMonitorCheckDetail(raw)
+		if err != nil {
+			return nil, err
+		}
+		detail.Pages = append(detail.Pages, nextPage.Pages...)
+		detail.Next = nextPage.Next
+	}
+
+	return detail, nil
 }
 
 // ================================================================
@@ -948,6 +970,26 @@ func checksQuery(opts *ListMonitorChecksOptions) string {
 	return ""
 }
 
+func monitorCheckPageQuery(opts *GetMonitorCheckOptions) string {
+	if opts == nil {
+		return ""
+	}
+	values := url.Values{}
+	if opts.Limit != nil {
+		values.Set("limit", fmt.Sprintf("%d", *opts.Limit))
+	}
+	if opts.Skip != nil {
+		values.Set("skip", fmt.Sprintf("%d", *opts.Skip))
+	}
+	if opts.Status != "" {
+		values.Set("status", opts.Status)
+	}
+	if encoded := values.Encode(); encoded != "" {
+		return "?" + encoded
+	}
+	return ""
+}
+
 // extractDataAs extracts the "data" field from a raw API response and deserializes it.
 func extractDataAs[T any](raw json.RawMessage) (*T, error) {
 	var envelope map[string]json.RawMessage
@@ -970,4 +1012,18 @@ func extractDataAs[T any](raw json.RawMessage) (*T, error) {
 		return nil, &FirecrawlError{Message: fmt.Sprintf("failed to decode data: %v", err)}
 	}
 	return &result, nil
+}
+
+func extractMonitorCheckDetail(raw json.RawMessage) (*MonitorCheckDetail, error) {
+	var envelope struct {
+		Data MonitorCheckDetail `json:"data"`
+		Next string             `json:"next"`
+	}
+	if err := json.Unmarshal(raw, &envelope); err != nil {
+		return nil, &FirecrawlError{Message: fmt.Sprintf("failed to decode response: %v", err)}
+	}
+	if envelope.Next != "" {
+		envelope.Data.Next = envelope.Next
+	}
+	return &envelope.Data, nil
 }

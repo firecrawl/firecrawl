@@ -1,3 +1,4 @@
+import time
 from typing import Any, Dict, List, Optional
 from pydantic import BaseModel
 
@@ -5,7 +6,9 @@ from ...types import (
     Monitor,
     MonitorCheck,
     MonitorCheckDetail,
+    MonitorCheckPage,
     MonitorCreateRequest,
+    PaginationConfig,
     MonitorTarget,
     MonitorUpdateRequest,
     ScrapeOptions,
@@ -60,6 +63,60 @@ async def _data_or_error(response, action: str) -> Any:
     if not body.get("success"):
         raise Exception(body.get("error", "Unknown error occurred"))
     return body.get("data")
+
+
+async def _monitor_check_data_or_error(response, action: str) -> Dict[str, Any]:
+    if response.status_code >= 400:
+        handle_response_error(response, action)
+    body = response.json()
+    if not body.get("success"):
+        raise Exception(body.get("error", "Unknown error occurred"))
+    data = body.get("data") or {}
+    if body.get("next") is not None:
+        data["next"] = body.get("next")
+    return data
+
+
+async def _fetch_all_monitor_check_pages(
+    client: AsyncHttpClient,
+    next_url: str,
+    initial_pages: List[MonitorCheckPage],
+    pagination_config: Optional[PaginationConfig] = None,
+) -> List[MonitorCheckPage]:
+    pages = initial_pages.copy()
+    current_url = next_url
+    page_count = 0
+    max_pages = pagination_config.max_pages if pagination_config else None
+    max_results = pagination_config.max_results if pagination_config else None
+    max_wait_time = pagination_config.max_wait_time if pagination_config else None
+    start_time = time.monotonic()
+
+    while current_url:
+        if max_pages is not None and page_count >= max_pages:
+            break
+        if max_wait_time is not None and (time.monotonic() - start_time) > max_wait_time:
+            break
+
+        response = await client.get(current_url)
+        if response.status_code >= 400:
+            break
+        try:
+            data = await _monitor_check_data_or_error(response, "get monitor check page")
+        except Exception:
+            break
+
+        for page in data.get("pages") or []:
+            if max_results is not None and len(pages) >= max_results:
+                break
+            pages.append(MonitorCheckPage(**page))
+
+        if max_results is not None and len(pages) >= max_results:
+            break
+
+        current_url = data.get("next")
+        page_count += 1
+
+    return pages
 
 
 async def create_monitor(client: AsyncHttpClient, request: MonitorCreateRequest) -> Monitor:
@@ -126,16 +183,33 @@ async def get_monitor_check(
     check_id: str,
     *,
     limit: Optional[int] = None,
-    offset: Optional[int] = None,
+    skip: Optional[int] = None,
     status: Optional[str] = None,
+    pagination_config: Optional[PaginationConfig] = None,
 ) -> MonitorCheckDetail:
     params = []
     if limit is not None:
         params.append(f"limit={limit}")
-    if offset is not None:
-        params.append(f"offset={offset}")
+    if skip is not None:
+        params.append(f"skip={skip}")
     if status is not None:
         params.append(f"status={status}")
     suffix = f"?{'&'.join(params)}" if params else ""
-    data = await _data_or_error(await client.get(f"/v2/monitor/{monitor_id}/checks/{check_id}{suffix}"), "get monitor check")
-    return MonitorCheckDetail(**data)
+    data = await _monitor_check_data_or_error(await client.get(f"/v2/monitor/{monitor_id}/checks/{check_id}{suffix}"), "get monitor check")
+    detail = MonitorCheckDetail(**data)
+
+    auto_paginate = pagination_config.auto_paginate if pagination_config else True
+    if auto_paginate and detail.next and not (
+        pagination_config
+        and pagination_config.max_results is not None
+        and len(detail.pages) >= pagination_config.max_results
+    ):
+        detail.pages = await _fetch_all_monitor_check_pages(
+            client,
+            detail.next,
+            detail.pages,
+            pagination_config,
+        )
+        detail.next = None
+
+    return detail

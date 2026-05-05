@@ -28,8 +28,7 @@ final class MonitorCheckDetail extends MonitorCheck
         ?string $createdAt = null,
         ?string $updatedAt = null,
         private readonly array $pages = [],
-        private readonly ?int $pageLimit = null,
-        private readonly ?int $pageOffset = null,
+        private readonly ?string $next = null,
     ) {
         parent::__construct(
             id: $id,
@@ -75,8 +74,7 @@ final class MonitorCheckDetail extends MonitorCheck
             createdAt: isset($data['createdAt']) ? (string) $data['createdAt'] : null,
             updatedAt: isset($data['updatedAt']) ? (string) $data['updatedAt'] : null,
             pages: isset($data['pages']) && is_array($data['pages']) ? $data['pages'] : [],
-            pageLimit: isset($data['pageLimit']) ? (int) $data['pageLimit'] : null,
-            pageOffset: isset($data['pageOffset']) ? (int) $data['pageOffset'] : null,
+            next: isset($data['next']) ? (string) $data['next'] : null,
         );
 
         return $check;
@@ -84,6 +82,5 @@ final class MonitorCheckDetail extends MonitorCheck
 
     /** @return list<array<string, mixed>> */
     public function getPages(): array { return $this->pages; }
-    public function getPageLimit(): ?int { return $this->pageLimit; }
-    public function getPageOffset(): ?int { return $this->pageOffset; }
+    public function getNext(): ?string { return $this->next; }
 }

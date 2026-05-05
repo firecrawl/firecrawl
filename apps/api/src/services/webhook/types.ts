@@ -147,13 +147,6 @@ interface MonitorCheckCompletedData extends BaseWebhookData {
       removed: number;
       error: number;
     };
-    pages?: Array<{
-      url: string;
-      status: string;
-      previousScrapeId?: string | null;
-      currentScrapeId?: string | null;
-      error?: string | null;
-    }>;
   };
   error?: string;
 }

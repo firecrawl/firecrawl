@@ -501,18 +501,24 @@ public class FirecrawlClient {
     }
 
     public MonitorCheckDetail getMonitorCheck(String monitorId, String checkId) {
-        return getMonitorCheck(monitorId, checkId, null, null, null);
+        return getMonitorCheck(monitorId, checkId, null, null, null, true);
     }
 
     public MonitorCheckDetail getMonitorCheck(
-            String monitorId, String checkId, Integer limit, Integer offset, String status) {
+            String monitorId, String checkId, Integer limit, Integer skip, String status) {
+        return getMonitorCheck(monitorId, checkId, limit, skip, status, true);
+    }
+
+    public MonitorCheckDetail getMonitorCheck(
+            String monitorId, String checkId, Integer limit, Integer skip, String status, boolean autoPaginate) {
         Objects.requireNonNull(monitorId, "Monitor ID is required");
         Objects.requireNonNull(checkId, "Check ID is required");
-        return extractData(
+        MonitorCheckDetail check = extractData(
                 http.get("/v2/monitor/" + monitorId + "/checks/" + checkId
-                        + monitorCheckQuery(limit, offset, status), Map.class),
+                        + monitorCheckQuery(limit, skip, status), Map.class),
                 MonitorCheckDetail.class
         );
+        return autoPaginate ? paginateMonitorCheck(check) : check;
     }
 
     // ================================================================
@@ -943,9 +949,17 @@ public class FirecrawlClient {
     }
 
     public CompletableFuture<MonitorCheckDetail> getMonitorCheckAsync(
-            String monitorId, String checkId, Integer limit, Integer offset, String status) {
+            String monitorId, String checkId, Integer limit, Integer skip, String status) {
         return CompletableFuture.supplyAsync(
-                () -> getMonitorCheck(monitorId, checkId, limit, offset, status),
+                () -> getMonitorCheck(monitorId, checkId, limit, skip, status),
+                asyncExecutor
+        );
+    }
+
+    public CompletableFuture<MonitorCheckDetail> getMonitorCheckAsync(
+            String monitorId, String checkId, Integer limit, Integer skip, String status, boolean autoPaginate) {
+        return CompletableFuture.supplyAsync(
+                () -> getMonitorCheck(monitorId, checkId, limit, skip, status, autoPaginate),
                 asyncExecutor
         );
     }
@@ -1181,6 +1195,25 @@ public class FirecrawlClient {
         return job;
     }
 
+    private MonitorCheckDetail paginateMonitorCheck(MonitorCheckDetail check) {
+        if (check.getPages() == null) {
+            check.setPages(new ArrayList<>());
+        }
+        MonitorCheckDetail current = check;
+        while (current.getNext() != null && !current.getNext().isEmpty()) {
+            MonitorCheckDetail nextPage = extractData(
+                    http.getAbsolute(current.getNext(), Map.class),
+                    MonitorCheckDetail.class
+            );
+            if (nextPage.getPages() != null && !nextPage.getPages().isEmpty()) {
+                check.getPages().addAll(nextPage.getPages());
+            }
+            current = nextPage;
+        }
+        check.setNext(null);
+        return check;
+    }
+
     // ================================================================
     // INTERNAL UTILITIES
     // ================================================================
@@ -1217,10 +1250,10 @@ public class FirecrawlClient {
         return parts.isEmpty() ? "" : "?" + String.join("&", parts);
     }
 
-    private String monitorCheckQuery(Integer limit, Integer offset, String status) {
+    private String monitorCheckQuery(Integer limit, Integer skip, String status) {
         List<String> parts = new ArrayList<>();
         if (limit != null) parts.add("limit=" + limit);
-        if (offset != null) parts.add("offset=" + offset);
+        if (skip != null) parts.add("skip=" + skip);
         if (status != null && !status.isBlank()) parts.add("status=" + status);
         return parts.isEmpty() ? "" : "?" + String.join("&", parts);
     }

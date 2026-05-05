@@ -6,10 +6,10 @@ import java.util.List;
 @JsonIgnoreProperties(ignoreUnknown = true)
 public class MonitorCheckDetail extends MonitorCheck {
     private List<MonitorCheckPage> pages;
-    private int pageLimit;
-    private int pageOffset;
+    private String next;
 
     public List<MonitorCheckPage> getPages() { return pages; }
-    public int getPageLimit() { return pageLimit; }
-    public int getPageOffset() { return pageOffset; }
+    public void setPages(List<MonitorCheckPage> pages) { this.pages = pages; }
+    public String getNext() { return next; }
+    public void setNext(String next) { this.next = next; }
 }

@@ -220,9 +220,6 @@ public class MonitorCheckDetail : MonitorCheck
     [JsonPropertyName("pages")]
     public List<MonitorCheckPage>? Pages { get; set; }
 
-    [JsonPropertyName("pageLimit")]
-    public int PageLimit { get; set; }
-
-    [JsonPropertyName("pageOffset")]
-    public int PageOffset { get; set; }
+    [JsonPropertyName("next")]
+    public string? Next { get; set; }
 }

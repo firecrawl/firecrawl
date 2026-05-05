@@ -36,7 +36,7 @@ describeIf(ALLOW_TEST_SUITE_WEBSITE && !TEST_SELF_HOST)("/v2/monitor", () => {
         targets: [
           {
             type: "scrape",
-            urls: [createTestIdUrl()],
+            urls: [createTestIdUrl(), createTestIdUrl()],
             scrapeOptions: { formats: ["markdown"] },
           },
         ],
@@ -122,8 +122,18 @@ describeIf(ALLOW_TEST_SUITE_WEBSITE && !TEST_SELF_HOST)("/v2/monitor", () => {
       }
 
       expect(["completed", "partial"]).toContain(check.status);
-      expect(check.summary.totalPages).toBeGreaterThanOrEqual(1);
+      expect(check.summary.totalPages).toBeGreaterThanOrEqual(2);
       expect(check.pages.length).toBeGreaterThanOrEqual(1);
+      expect(check.next).toBeUndefined();
+
+      const firstPage = await monitorCheckRaw(monitorId, checkId, identity, {
+        limit: 1,
+      });
+      expect(firstPage.statusCode).toBe(200);
+      expect(firstPage.body.next).toContain("skip=1");
+      expect(firstPage.body.next).toContain("limit=1");
+      expect(firstPage.body.data.next).toBe(firstPage.body.next);
+      expect(firstPage.body.data.pages).toHaveLength(1);
 
       await monitorDeleteRaw(monitorId, identity);
     },

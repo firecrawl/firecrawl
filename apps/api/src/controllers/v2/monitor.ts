@@ -13,6 +13,7 @@ import {
 import {
   createMonitor,
   createMonitorCheck,
+  countMonitorCheckPages,
   deleteMonitor,
   estimateMonitorCreditsPerRun,
   getMonitor,
@@ -286,19 +287,26 @@ export async function getMonitorCheckController(
 ) {
   const { monitorId, checkId } = monitorCheckParamsSchema.parse(req.params);
   const query = monitorCheckDetailQuerySchema.parse(req.query);
+  const skip = query.skip;
   const check = await getMonitorCheck(req.auth.team_id, monitorId, checkId);
   if (!check) {
     return res.status(404).json({ success: false, error: "Check not found" });
   }
 
-  const pages = await listMonitorCheckPages({
-    teamId: req.auth.team_id,
-    monitorId,
-    checkId,
-    limit: query.limit,
-    offset: query.offset,
-    status: query.status,
-  });
+  const [pages, totalPagesForFilter] = await Promise.all([
+    listMonitorCheckPages({
+      teamId: req.auth.team_id,
+      monitorId,
+      checkId,
+      limit: query.limit,
+      skip,
+      status: query.status,
+    }),
+    countMonitorCheckPages({
+      checkId,
+      status: query.status,
+    }),
+  ]);
 
   const pagesWithDiffs = await Promise.all(
     pages.map(async page => ({
@@ -315,14 +323,19 @@ export async function getMonitorCheckController(
       createdAt: page.created_at,
     })),
   );
+  const nextSkip = skip + pagesWithDiffs.length;
+  const next =
+    totalPagesForFilter > nextSkip
+      ? `${req.protocol}://${req.get("host")}/v2/monitor/${monitorId}/checks/${checkId}?skip=${nextSkip}&limit=${query.limit}${query.status ? `&status=${query.status}` : ""}`
+      : undefined;
 
   res.status(200).json({
     success: true,
+    next,
     data: {
       ...serializeCheck(check),
       pages: pagesWithDiffs,
-      pageLimit: query.limit,
-      pageOffset: query.offset,
+      next,
     },
   });
 }

@@ -122,7 +122,7 @@ export const listMonitorChecksQuerySchema = z.object({
 
 export const monitorCheckDetailQuerySchema = z.object({
   limit: z.coerce.number().int().positive().max(100).optional().default(25),
-  offset: z.coerce.number().int().nonnegative().optional().default(0),
+  skip: z.coerce.number().int().nonnegative().optional().default(0),
   status: z.enum(["same", "new", "changed", "removed", "error"]).optional(),
 });
 

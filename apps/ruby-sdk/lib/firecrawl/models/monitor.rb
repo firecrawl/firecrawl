@@ -56,13 +56,12 @@ module Firecrawl
     end
 
     class MonitorCheckDetail < MonitorCheck
-      attr_reader :pages, :page_limit, :page_offset
+      attr_accessor :pages, :next_url
 
       def initialize(data)
         super
         @pages = data["pages"] || []
-        @page_limit = data["pageLimit"]
-        @page_offset = data["pageOffset"]
+        @next_url = data["next"]
       end
     end
   end
