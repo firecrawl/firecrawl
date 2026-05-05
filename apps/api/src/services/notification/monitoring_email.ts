@@ -101,6 +101,13 @@ export async function sendMonitoringEmailSummary(params: {
 }> {
   const configEmail = params.monitor.notification?.email;
   if (!configEmail?.enabled) {
+    logger.info(
+      "Skipping monitoring email summary; email notifications disabled",
+      {
+        monitorId: params.monitor.id,
+        checkId: params.check.id,
+      },
+    );
     return { attempted: false, success: true, recipients: [] };
   }
 
@@ -111,6 +118,14 @@ export async function sendMonitoringEmailSummary(params: {
       params.check.error_count <=
     0
   ) {
+    logger.info("Skipping monitoring email summary; no changes detected", {
+      monitorId: params.monitor.id,
+      checkId: params.check.id,
+      changed: params.check.changed_count,
+      new: params.check.new_count,
+      removed: params.check.removed_count,
+      errors: params.check.error_count,
+    });
     return { attempted: false, success: true, recipients: [] };
   }
 
@@ -120,7 +135,23 @@ export async function sendMonitoringEmailSummary(params: {
       ? []
       : await getTeamEmails(params.monitor.team_id);
   const recipients = [...new Set([...explicitRecipients, ...teamRecipients])];
-  if (recipients.length === 0 || !config.RESEND_API_KEY) {
+  if (recipients.length === 0) {
+    logger.info("Skipping monitoring email summary; no recipients configured", {
+      monitorId: params.monitor.id,
+      checkId: params.check.id,
+    });
+    return { attempted: false, success: true, recipients };
+  }
+
+  if (!config.RESEND_API_KEY) {
+    logger.warn(
+      "Skipping monitoring email summary; RESEND_API_KEY is not set",
+      {
+        monitorId: params.monitor.id,
+        checkId: params.check.id,
+        recipients,
+      },
+    );
     return { attempted: false, success: true, recipients };
   }
 
@@ -150,6 +181,12 @@ export async function sendMonitoringEmailSummary(params: {
     });
 
     if (error) {
+      logger.warn("Monitoring email summary send failed", {
+        monitorId: params.monitor.id,
+        checkId: params.check.id,
+        recipients,
+        error,
+      });
       return {
         attempted: true,
         success: false,
@@ -157,6 +194,12 @@ export async function sendMonitoringEmailSummary(params: {
         error: typeof error === "string" ? error : JSON.stringify(error),
       };
     }
+
+    logger.info("Monitoring email summary sent", {
+      monitorId: params.monitor.id,
+      checkId: params.check.id,
+      recipients,
+    });
 
     return { attempted: true, success: true, recipients };
   } catch (error) {

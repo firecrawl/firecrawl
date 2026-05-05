@@ -6,6 +6,7 @@ import {
   monitorDiffGcsKey,
   saveMonitorDiffArtifact,
 } from "../../lib/gcs-monitoring";
+import { logger as _logger } from "../../lib/logger";
 import { diffMonitorMarkdown } from "./diff";
 import {
   getMonitorPage,
@@ -13,6 +14,8 @@ import {
   insertMonitorCheckPages,
   upsertMonitorPage,
 } from "./store";
+
+const logger = _logger.child({ module: "monitoring-results" });
 
 function getDocumentUrl(doc: any, fallback: string): string {
   return doc?.metadata?.sourceURL ?? doc?.metadata?.url ?? doc?.url ?? fallback;
@@ -112,6 +115,17 @@ export async function recordMonitorScrapeSuccess(
       },
     },
   ]);
+
+  logger.info("Recorded monitor scrape result", {
+    monitorId: monitoring.monitorId,
+    checkId: monitoring.checkId,
+    targetId: monitoring.targetId,
+    scrapeId: job.id,
+    url,
+    status,
+    previousScrapeId: previous?.last_scrape_id ?? null,
+    diffGcsKey,
+  });
 }
 
 export async function recordMonitorScrapeFailure(
@@ -134,4 +148,13 @@ export async function recordMonitorScrapeFailure(
       error: error instanceof Error ? error.message : String(error),
     },
   ]);
+
+  logger.info("Recorded monitor scrape failure", {
+    monitorId: monitoring.monitorId,
+    checkId: monitoring.checkId,
+    targetId: monitoring.targetId,
+    scrapeId: job.id,
+    url: job.data.url,
+    error: error instanceof Error ? error.message : String(error),
+  });
 }

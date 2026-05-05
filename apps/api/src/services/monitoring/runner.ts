@@ -22,6 +22,7 @@ import {
 import { _addScrapeJobToBullMQ, addScrapeJob } from "../queue-jobs";
 import {
   CrawlRequest,
+  type ScrapeOptions,
   crawlRequestSchema,
   scrapeRequestSchema,
   toV0CrawlerOptions,
@@ -59,6 +60,15 @@ type PageResult = MonitorCheckPageInsert & {
   emailStatus?: string;
 };
 
+function withMonitorScrapeDefaults(
+  options: Record<string, unknown>,
+): ScrapeOptions {
+  return {
+    maxAge: 0,
+    ...withMarkdownFormat(options),
+  };
+}
+
 function getDocumentUrl(doc: any, fallback: string): string {
   return doc?.metadata?.sourceURL ?? doc?.metadata?.url ?? doc?.url ?? fallback;
 }
@@ -90,7 +100,7 @@ async function runSingleScrape(params: {
   const scrapeId = uuidv7();
   const scrapeOptions = scrapeRequestSchema.parse({
     url: params.url,
-    ...withMarkdownFormat(params.target.scrapeOptions ?? {}),
+    ...withMonitorScrapeDefaults(params.target.scrapeOptions ?? {}),
     origin: "monitor",
   });
 
@@ -586,7 +596,7 @@ async function enqueueMonitorScrapeTarget(params: {
     const scrapeId = uuidv7();
     const scrapeOptions = scrapeRequestSchema.parse({
       url,
-      ...withMarkdownFormat(params.target.scrapeOptions ?? {}),
+      ...withMonitorScrapeDefaults(params.target.scrapeOptions ?? {}),
       origin: "monitor",
     });
 
@@ -648,7 +658,7 @@ async function enqueueMonitorCrawlTarget(params: {
   const body = crawlRequestSchema.parse({
     url: params.target.url,
     ...(params.target.crawlOptions ?? {}),
-    scrapeOptions: withMarkdownFormat(params.target.scrapeOptions ?? {}),
+    scrapeOptions: withMonitorScrapeDefaults(params.target.scrapeOptions ?? {}),
     origin: "monitor",
   }) as CrawlRequest;
 
@@ -1010,6 +1020,18 @@ export async function reconcileRunningMonitorChecks(
         monitor,
         check: finalized,
         summary: toSummaryObject(finalized),
+      });
+
+      logger.info("Reconciled monitor check", {
+        monitorId: monitor.id,
+        checkId: finalized.id,
+        status: finalized.status,
+        totalPages,
+        same,
+        changed,
+        new: newCount,
+        removed,
+        errors: errorCount,
       });
     } catch (error) {
       logger.warn("Failed to reconcile monitor check", {
