@@ -5,6 +5,7 @@ import {
   type ScrapeOptions,
 } from "../../controllers/v2/types";
 import { webhookSchema } from "../webhook/schema";
+import { parseMonitorScheduleText } from "./cron";
 
 const formatSchema = z.union([z.string(), z.record(z.string(), z.unknown())]);
 
@@ -37,10 +38,43 @@ const crawlTargetSchema = z.strictObject({
 
 const monitorTargetSchema = z.union([scrapeTargetSchema, crawlTargetSchema]);
 
-const monitorScheduleSchema = z.strictObject({
-  cron: z.string().min(1).max(128),
-  timezone: z.string().min(1).max(128).optional().default("UTC"),
-});
+const monitorScheduleSchema = z
+  .strictObject({
+    cron: z.string().min(1).max(128).optional(),
+    text: z.string().min(1).max(128).optional(),
+    timezone: z.string().min(1).max(128).optional().default("UTC"),
+  })
+  .superRefine((schedule, ctx) => {
+    if (!schedule.cron && !schedule.text) {
+      ctx.addIssue({
+        code: "custom",
+        message: "Schedule must include either cron or text",
+        path: ["cron"],
+      });
+    }
+    if (schedule.cron && schedule.text) {
+      ctx.addIssue({
+        code: "custom",
+        message: "Schedule must include either cron or text, not both",
+        path: ["text"],
+      });
+    }
+    if (schedule.text) {
+      try {
+        parseMonitorScheduleText(schedule.text);
+      } catch (error) {
+        ctx.addIssue({
+          code: "custom",
+          message: error instanceof Error ? error.message : String(error),
+          path: ["text"],
+        });
+      }
+    }
+  })
+  .transform(schedule => ({
+    cron: schedule.cron ?? parseMonitorScheduleText(schedule.text!),
+    timezone: schedule.timezone,
+  }));
 
 const monitorNotificationSchema = z
   .strictObject({

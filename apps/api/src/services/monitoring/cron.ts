@@ -3,6 +3,84 @@ const SEARCH_LIMIT_MINUTES = 366 * 24 * 60;
 
 type CronField = Set<number>;
 
+function parseMinuteStart(value: string | undefined): number {
+  if (value === undefined) return 0;
+  const minute = Number(value);
+  if (!Number.isInteger(minute) || minute < 0 || minute > 59) {
+    throw new Error("Schedule start minute must be between 0 and 59");
+  }
+  return minute;
+}
+
+function assertDivides(value: number, divisor: number, unit: string) {
+  if (divisor % value !== 0) {
+    throw new Error(`${unit} interval must divide evenly into ${divisor}`);
+  }
+}
+
+export function parseMonitorScheduleText(input: string): string {
+  const text = input
+    .trim()
+    .toLowerCase()
+    .replace(/[.,]/g, "")
+    .replace(/\s+/g, " ");
+
+  const minuteMatch = text.match(
+    /^every (\d+) (?:minutes?|mins?)(?: (?:starting|start)(?: at| on)? :?(\d{1,2}))?$/,
+  );
+  if (minuteMatch) {
+    const interval = Number(minuteMatch[1]);
+    if (!Number.isInteger(interval) || interval <= 0 || interval > 60) {
+      throw new Error("Minute interval must be between 1 and 60");
+    }
+    assertDivides(interval, 60, "Minute");
+    const startMinute = parseMinuteStart(minuteMatch[2]);
+    return startMinute === 0
+      ? `*/${interval} * * * *`
+      : `${startMinute}-59/${interval} * * * *`;
+  }
+
+  const hourlyMatch = text.match(
+    /^(?:hourly|every hour)(?: (?:at|starting at) :?(\d{1,2}))?$/,
+  );
+  if (hourlyMatch) {
+    return `${parseMinuteStart(hourlyMatch[1])} * * * *`;
+  }
+
+  const hourMatch = text.match(/^every (\d+) (?:hours?|hrs?)$/);
+  if (hourMatch) {
+    const interval = Number(hourMatch[1]);
+    if (!Number.isInteger(interval) || interval <= 0 || interval > 24) {
+      throw new Error("Hour interval must be between 1 and 24");
+    }
+    assertDivides(interval, 24, "Hour");
+    return `0 */${interval} * * *`;
+  }
+
+  const dailyMatch = text.match(
+    /^(?:daily|every day)(?: at (\d{1,2})(?::(\d{2}))?)?$/,
+  );
+  if (dailyMatch) {
+    const hour = dailyMatch[1] === undefined ? 0 : Number(dailyMatch[1]);
+    const minute = dailyMatch[2] === undefined ? 0 : Number(dailyMatch[2]);
+    if (!Number.isInteger(hour) || hour < 0 || hour > 23) {
+      throw new Error("Daily schedule hour must be between 0 and 23");
+    }
+    if (!Number.isInteger(minute) || minute < 0 || minute > 59) {
+      throw new Error("Daily schedule minute must be between 0 and 59");
+    }
+    return `${minute} ${hour} * * *`;
+  }
+
+  if (text === "weekly" || text === "every week") {
+    return "0 0 * * 0";
+  }
+
+  throw new Error(
+    "Unsupported schedule text. Try phrases like 'every 30 minutes', 'hourly', or 'daily at 9:00'",
+  );
+}
+
 function parseField(field: string, min: number, max: number): CronField {
   const values = new Set<number>();
   for (const part of field.split(",")) {

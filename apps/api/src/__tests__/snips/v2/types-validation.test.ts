@@ -21,6 +21,10 @@ import {
   SearchRequestInput,
   toV2CrawlerOptions,
 } from "../../../controllers/v2/types";
+import {
+  createMonitorSchema,
+  updateMonitorSchema,
+} from "../../../services/monitoring/types";
 
 describe("V2 Types Validation", () => {
   describe("scrapeRequestSchema", () => {
@@ -1161,6 +1165,52 @@ describe("V2 Types Validation", () => {
       expect(() => scrapeOptions.parse(input)).toThrow(
         "Total wait time (waitFor + wait actions) cannot exceed",
       );
+    });
+  });
+
+  describe("monitor schedules", () => {
+    it("should accept natural language schedule text", () => {
+      const result = createMonitorSchema.parse({
+        name: "Blog monitor",
+        schedule: {
+          text: "every 30 minutes",
+        },
+        targets: [
+          {
+            type: "scrape",
+            urls: ["https://example.com"],
+          },
+        ],
+      });
+
+      expect(result.schedule).toEqual({
+        cron: "*/30 * * * *",
+        timezone: "UTC",
+      });
+    });
+
+    it("should accept a natural language start minute", () => {
+      const result = updateMonitorSchema.parse({
+        schedule: {
+          text: "every 15 minutes starting at :07",
+        },
+      });
+
+      expect(result.schedule).toEqual({
+        cron: "7-59/15 * * * *",
+        timezone: "UTC",
+      });
+    });
+
+    it("should reject ambiguous schedule definitions", () => {
+      expect(() =>
+        updateMonitorSchema.parse({
+          schedule: {
+            cron: "*/30 * * * *",
+            text: "every 30 minutes",
+          },
+        }),
+      ).toThrow("Schedule must include either cron or text, not both");
     });
   });
 
