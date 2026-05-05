@@ -536,6 +536,8 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
           zeroDataRetention: job.data.zeroDataRetention,
           skipNuq: job.data.skipNuq ?? false,
           is_parse: Boolean(job.data.internalOptions?.isParse),
+          monitor_id: job.data.monitoring?.monitorId,
+          monitor_check_id: job.data.monitoring?.checkId,
         },
         true,
       );
@@ -624,6 +626,8 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
           zeroDataRetention: job.data.zeroDataRetention,
           skipNuq: job.data.skipNuq ?? false,
           is_parse: Boolean(job.data.internalOptions?.isParse),
+          monitor_id: job.data.monitoring?.monitorId,
+          monitor_check_id: job.data.monitoring?.checkId,
         },
         false,
       );
@@ -804,6 +808,8 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
         zeroDataRetention: job.data.zeroDataRetention,
         skipNuq: job.data.skipNuq ?? false,
         is_parse: Boolean(job.data.internalOptions?.isParse),
+        monitor_id: job.data.monitoring?.monitorId,
+        monitor_check_id: job.data.monitoring?.checkId,
       },
       true,
     );

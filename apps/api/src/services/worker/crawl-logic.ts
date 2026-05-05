@@ -73,6 +73,8 @@ export async function finishCrawlSuper(job: NuQJob<any>) {
           ),
           zeroDataRetention: sc.zeroDataRetention || job.data.zeroDataRetention,
           cancelled: sc.cancelled ?? false,
+          monitor_id: job.data.monitoring?.monitorId,
+          monitor_check_id: job.data.monitoring?.checkId,
         },
         false,
       );
@@ -158,6 +160,8 @@ export async function finishCrawlSuper(job: NuQJob<any>) {
           credits_cost: credits_billed ?? 0,
           zeroDataRetention: sc.zeroDataRetention || job.data.zeroDataRetention,
           cancelled: sc.cancelled ?? false,
+          monitor_id: job.data.monitoring?.monitorId,
+          monitor_check_id: job.data.monitoring?.checkId,
         },
         false,
       );

@@ -222,6 +222,8 @@ export type LoggedScrape = {
   skipNuq: boolean;
   zeroDataRetention: boolean;
   is_parse?: boolean;
+  monitor_id?: string | null;
+  monitor_check_id?: string | null;
 };
 
 export async function logScrape(scrape: LoggedScrape, force: boolean = false) {
@@ -259,6 +261,12 @@ export async function logScrape(scrape: LoggedScrape, force: boolean = false) {
         ? null
         : (scrape.pdf_num_pages ?? null),
       credits_cost: scrape.credits_cost,
+      ...(scrape.is_parse
+        ? {}
+        : {
+            monitor_id: scrape.monitor_id ?? null,
+            monitor_check_id: scrape.monitor_check_id ?? null,
+          }),
     },
     force,
     logger,
@@ -322,6 +330,8 @@ type LoggedCrawl = {
   credits_cost: number;
   zeroDataRetention: boolean;
   cancelled: boolean;
+  monitor_id?: string | null;
+  monitor_check_id?: string | null;
 };
 
 export async function logCrawl(crawl: LoggedCrawl, force: boolean = false) {
@@ -350,6 +360,8 @@ export async function logCrawl(crawl: LoggedCrawl, force: boolean = false) {
       num_docs: crawl.num_docs,
       credits_cost: crawl.credits_cost,
       cancelled: crawl.cancelled,
+      monitor_id: crawl.monitor_id ?? null,
+      monitor_check_id: crawl.monitor_check_id ?? null,
     },
     force,
     logger,
