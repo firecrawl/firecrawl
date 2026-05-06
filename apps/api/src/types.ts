@@ -152,6 +152,7 @@ export enum RateLimiterMode {
   Browser = "browser",
   BrowserExecute = "browserExecute",
   Account = "account",
+  Support = "support",
 }
 
 export type AuthResponse =

@@ -550,11 +550,14 @@ v2Router.post(
 // Support agent proxy — forwards to the support-agent service.
 v2Router.post(
   "/support/ask",
-  authMiddleware(RateLimiterMode.Search),
+  authMiddleware(RateLimiterMode.Support),
   wrap(supportProxyController),
 );
-// docs-search is a public endpoint (no auth required)
-v2Router.post("/support/docs-search", wrap(supportProxyController));
+v2Router.post(
+  "/support/docs-search",
+  authMiddleware(RateLimiterMode.Support),
+  wrap(supportProxyController),
+);
 
 // Agent signup routes (public, no auth required — rate limiting is handled inside the controller)
 // v2Router.post("/agent-signup", wrap(agentSignupController));
