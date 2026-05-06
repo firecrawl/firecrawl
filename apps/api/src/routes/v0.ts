@@ -7,8 +7,12 @@ import { crawlCancelController } from "../../src/controllers/v0/crawl-cancel";
 import { keyAuthController } from "../../src/controllers/v0/keyAuth";
 import { livenessController } from "../controllers/v0/liveness";
 import { readinessController } from "../controllers/v0/readiness";
+import { requestTimingMiddleware } from "./shared";
 
 export const v0Router = express.Router();
+
+// Add timing middleware to all v0 routes (includes rate limit headers)
+v0Router.use(requestTimingMiddleware("v0"));
 
 v0Router.post("/v0/scrape", scrapeController);
 v0Router.post("/v0/crawl", crawlController);
