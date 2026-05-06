@@ -7,7 +7,6 @@ const PROXY_TIMEOUT_MS = 65_000;
 
 const FORWARDED_HEADERS = [
   "authorization",
-  "content-type",
   "idempotency-key",
   "x-request-id",
 ];
@@ -34,7 +33,7 @@ export async function supportProxyController(
   try {
     const upstream = await fetch(target, {
       method: "POST",
-      headers,
+      headers: { ...headers, "content-type": "application/json" },
       body: JSON.stringify(req.body),
       signal: AbortSignal.timeout(PROXY_TIMEOUT_MS),
     });
