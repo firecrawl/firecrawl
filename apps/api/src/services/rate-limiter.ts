@@ -30,7 +30,7 @@ const fallbackRateLimits: AuthCreditUsageChunk["rate_limits"] = {
   browser: 2,
   browserExecute: 10,
   account: 1000,
-  support: 5,
+  support: 3,
 };
 
 export function getRateLimiter(
@@ -44,7 +44,7 @@ export function getRateLimiter(
     rateLimit = Math.max(rateLimit, 100);
   }
 
-  const duration = mode === RateLimiterMode.Support ? 3600 : 60;
+  const duration = 60;
 
   return createRateLimiter(`${mode}`, rateLimit, duration);
 }
