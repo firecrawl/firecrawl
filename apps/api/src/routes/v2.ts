@@ -547,9 +547,13 @@ v2Router.post(
   wrap(browserWebhookDestroyedController),
 );
 
-// Support agent proxy — forwards to the support-agent service. No auth
-// middleware here; the support-agent validates the bearer itself.
-v2Router.post("/support/ask", wrap(supportProxyController));
+// Support agent proxy — forwards to the support-agent service.
+v2Router.post(
+  "/support/ask",
+  authMiddleware(RateLimiterMode.Search),
+  wrap(supportProxyController),
+);
+// docs-search is a public endpoint (no auth required)
 v2Router.post("/support/docs-search", wrap(supportProxyController));
 
 // Agent signup routes (public, no auth required — rate limiting is handled inside the controller)
