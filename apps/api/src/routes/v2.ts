@@ -56,6 +56,7 @@ import {
   browserWebhookDestroyedController,
 } from "../controllers/v2/browser";
 import { activityController } from "../controllers/v1/activity";
+import { supportProxyController } from "../controllers/v2/support-proxy";
 import { agentSignupController } from "../controllers/v2/agent-signup";
 import {
   agentSignupConfirmController,
@@ -545,6 +546,11 @@ v2Router.post(
   "/browser/webhook/destroyed",
   wrap(browserWebhookDestroyedController),
 );
+
+// Support agent proxy — forwards to the support-agent service. No auth
+// middleware here; the support-agent validates the bearer itself.
+v2Router.post("/support/ask", wrap(supportProxyController));
+v2Router.post("/support/docs-search", wrap(supportProxyController));
 
 // Agent signup routes (public, no auth required — rate limiting is handled inside the controller)
 // v2Router.post("/agent-signup", wrap(agentSignupController));
