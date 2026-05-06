@@ -550,12 +550,12 @@ v2Router.post(
 // Support agent proxy — forwards to the support-agent service.
 v2Router.post(
   "/support/ask",
-  authMiddleware(RateLimiterMode.Support),
+  authMiddleware(RateLimiterMode.SupportAsk),
   wrap(supportProxyController),
 );
 v2Router.post(
   "/support/docs-search",
-  authMiddleware(RateLimiterMode.Support),
+  authMiddleware(RateLimiterMode.SupportDocsSearch),
   wrap(supportProxyController),
 );
 
