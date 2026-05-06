@@ -165,3 +165,36 @@ export async function markSponsorBlocked({
     throw error;
   }
 }
+
+/**
+ * Look up agent sponsor record by request_id (the public, URL-safe identifier
+ * agents use to poll status — distinct from the secret verification_token).
+ */
+export async function getAgentSponsorByRequestId({
+  requestId,
+}: {
+  requestId: string;
+}): Promise<{
+  id: number;
+  email: string;
+  status: string;
+  verification_deadline: string;
+  agent_name: string;
+  sandboxed_team_id: string;
+  api_key_id: number;
+  use_case: string | null;
+} | null> {
+  const { data, error } = await supabase_rr_service
+    .from("agent_sponsors")
+    .select(
+      "id, email, status, verification_deadline, agent_name, sandboxed_team_id, api_key_id, use_case",
+    )
+    .eq("request_id", requestId)
+    .single();
+
+  if (error || !data) {
+    return null;
+  }
+
+  return data;
+}

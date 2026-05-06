@@ -62,6 +62,12 @@ import {
   agentSignupBlockController,
 } from "../controllers/v2/agent-signup-confirm";
 import {
+  agentAccessRequestController,
+  agentAccessStatusController,
+  agentAccessApproveController,
+  agentAccessRejectController,
+} from "../controllers/v2/agent-access";
+import {
   scrapeInteractController,
   scrapeStopInteractiveBrowserController,
 } from "../controllers/v2/scrape-browser";
@@ -479,10 +485,19 @@ v2Router.post(
   wrap(browserWebhookDestroyedController),
 );
 
-// Agent signup routes (public, no auth required — rate limiting is handled inside the controller)
+// Legacy agent signup routes (kept for existing tokens)
 // v2Router.post("/agent-signup", wrap(agentSignupController));
 v2Router.post("/agent-signup/confirm", wrap(agentSignupConfirmController));
 v2Router.post("/agent-signup/block", wrap(agentSignupBlockController));
+
+// Agent access routes (public, no auth — rate limiting inside controllers)
+v2Router.post("/agent-access/request", wrap(agentAccessRequestController));
+v2Router.get(
+  "/agent-access/:requestId/status",
+  wrap(agentAccessStatusController),
+);
+v2Router.post("/agent-access/approve", wrap(agentAccessApproveController));
+v2Router.post("/agent-access/reject", wrap(agentAccessRejectController));
 
 // Only register x402 routes if X402_PAY_TO_ADDRESS is configured
 if (isX402Enabled()) {
