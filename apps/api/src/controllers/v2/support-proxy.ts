@@ -39,7 +39,7 @@ export async function supportProxyController(
       signal: AbortSignal.timeout(PROXY_TIMEOUT_MS),
     });
 
-    for (const name of ["x-request-id", "x-idempotency-cached"]) {
+    for (const name of ["content-type", "x-request-id", "x-idempotency-cached"]) {
       const value = upstream.headers.get(name);
       if (value) res.setHeader(name, value);
     }
