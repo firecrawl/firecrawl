@@ -98,7 +98,7 @@ describeIf(ALLOW_TEST_SUITE_WEBSITE && !TEST_SELF_HOST)("/v2/monitor", () => {
           targets: [
             {
               type: "scrape",
-              urls: [createTestIdUrl()],
+              urls: [createTestIdUrl(), createTestIdUrl()],
               scrapeOptions: { formats: ["markdown"] },
             },
           ],

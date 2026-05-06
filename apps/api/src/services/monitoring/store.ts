@@ -261,7 +261,11 @@ export async function updateMonitorScheduleAfterRun(params: {
 }): Promise<void> {
   const nextRunAt =
     params.monitor.status === "active"
-      ? getNextMonitorRunAt(params.monitor.schedule_cron).toISOString()
+      ? getNextMonitorRunAt(
+          params.monitor.schedule_cron,
+          new Date(),
+          params.monitor.schedule_timezone,
+        ).toISOString()
       : null;
   const { error } = await supabase_service
     .from("monitors")
@@ -286,7 +290,11 @@ export async function advanceMonitorAfterSkippedCheck(params: {
 }): Promise<void> {
   const nextRunAt =
     params.monitor.status === "active"
-      ? getNextMonitorRunAt(params.monitor.schedule_cron).toISOString()
+      ? getNextMonitorRunAt(
+          params.monitor.schedule_cron,
+          new Date(),
+          params.monitor.schedule_timezone,
+        ).toISOString()
       : null;
   const { error } = await supabase_service
     .from("monitors")
@@ -340,14 +348,23 @@ export async function listMonitorChecks(params: {
   monitorId: string;
   limit: number;
   offset: number;
+  status?: MonitorCheckRow["status"];
 }): Promise<MonitorCheckRow[]> {
-  const { data, error } = await supabase_rr_service
+  let query = supabase_rr_service
     .from("monitor_checks")
     .select("*")
     .eq("monitor_id", params.monitorId)
     .eq("team_id", params.teamId)
-    .order("created_at", { ascending: false })
-    .range(params.offset, params.offset + params.limit - 1);
+    .order("created_at", { ascending: false });
+
+  if (params.status) {
+    query = query.eq("status", params.status);
+  }
+
+  const { data, error } = await query.range(
+    params.offset,
+    params.offset + params.limit - 1,
+  );
 
   throwIfError(error, "Failed to list monitor checks");
   return (data ?? []) as MonitorCheckRow[];
@@ -529,15 +546,28 @@ export async function listActiveMonitorPages(params: {
   monitorId: string;
   targetId: string;
 }): Promise<MonitorPageRow[]> {
-  const { data, error } = await supabase_rr_service
-    .from("monitor_pages")
-    .select("*")
-    .eq("monitor_id", params.monitorId)
-    .eq("target_id", params.targetId)
-    .eq("is_removed", false);
+  const pageSize = 1000;
+  const pages: MonitorPageRow[] = [];
+  let offset = 0;
 
-  throwIfError(error, "Failed to list active monitor pages");
-  return (data ?? []) as MonitorPageRow[];
+  while (true) {
+    const { data, error } = await supabase_rr_service
+      .from("monitor_pages")
+      .select("*")
+      .eq("monitor_id", params.monitorId)
+      .eq("target_id", params.targetId)
+      .eq("is_removed", false)
+      .order("created_at", { ascending: true })
+      .range(offset, offset + pageSize - 1);
+
+    throwIfError(error, "Failed to list active monitor pages");
+    const batch = (data ?? []) as MonitorPageRow[];
+    pages.push(...batch);
+    if (batch.length < pageSize) break;
+    offset += pageSize;
+  }
+
+  return pages;
 }
 
 export async function claimDueMonitors(params: {

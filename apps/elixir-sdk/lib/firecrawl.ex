@@ -1168,7 +1168,35 @@ defmodule Firecrawl do
   }
 
   @monitor_list_key_mapping %{limit: "limit", offset: "offset"}
+  @monitor_check_list_key_mapping %{limit: "limit", offset: "offset", status: "status"}
   @monitor_check_key_mapping %{limit: "limit", skip: "skip", status: "status"}
+
+  @monitor_schema NimbleOptions.new!([
+    name: [type: :string],
+    schedule: [type: :any],
+    targets: [type: {:list, :any}],
+    webhook: [type: :any],
+    notification: [type: :any],
+    retention_days: [type: :integer],
+    status: [type: :any]
+  ])
+
+  @monitor_list_schema NimbleOptions.new!([
+    limit: [type: :integer],
+    offset: [type: :integer]
+  ])
+
+  @monitor_check_list_schema NimbleOptions.new!([
+    limit: [type: :integer],
+    offset: [type: :integer],
+    status: [type: :any]
+  ])
+
+  @monitor_check_schema NimbleOptions.new!([
+    limit: [type: :integer],
+    skip: [type: :integer],
+    status: [type: :any]
+  ])
 
   @doc """
   Create a scheduled monitor.
@@ -1177,7 +1205,9 @@ defmodule Firecrawl do
   """
   @spec create_monitor(keyword(), keyword()) :: response()
   def create_monitor(params \\ [], opts \\ []) do
-    Req.post(client(opts), url: "/monitor", json: to_body(params, @monitor_key_mapping))
+    with {:ok, params} <- NimbleOptions.validate(params, @monitor_schema) do
+      Req.post(client(opts), url: "/monitor", json: to_body(params, @monitor_key_mapping))
+    end
   end
 
   @doc """
@@ -1185,6 +1215,7 @@ defmodule Firecrawl do
   """
   @spec create_monitor!(keyword(), keyword()) :: Req.Response.t()
   def create_monitor!(params \\ [], opts \\ []) do
+    params = NimbleOptions.validate!(params, @monitor_schema)
     Req.post!(client(opts), url: "/monitor", json: to_body(params, @monitor_key_mapping))
   end
 
@@ -1195,7 +1226,9 @@ defmodule Firecrawl do
   """
   @spec list_monitors(keyword(), keyword()) :: response()
   def list_monitors(params \\ [], opts \\ []) do
-    Req.get(client(opts), url: "/monitor", params: to_query(params, @monitor_list_key_mapping))
+    with {:ok, params} <- NimbleOptions.validate(params, @monitor_list_schema) do
+      Req.get(client(opts), url: "/monitor", params: to_query(params, @monitor_list_key_mapping))
+    end
   end
 
   @doc """
@@ -1203,6 +1236,7 @@ defmodule Firecrawl do
   """
   @spec list_monitors!(keyword(), keyword()) :: Req.Response.t()
   def list_monitors!(params \\ [], opts \\ []) do
+    params = NimbleOptions.validate!(params, @monitor_list_schema)
     Req.get!(client(opts), url: "/monitor", params: to_query(params, @monitor_list_key_mapping))
   end
 
@@ -1231,7 +1265,9 @@ defmodule Firecrawl do
   """
   @spec update_monitor(String.t(), keyword(), keyword()) :: response()
   def update_monitor(monitor_id, params \\ [], opts \\ []) do
-    Req.patch(client(opts), url: "/monitor/#{monitor_id}", json: to_body(params, @monitor_key_mapping))
+    with {:ok, params} <- NimbleOptions.validate(params, @monitor_schema) do
+      Req.patch(client(opts), url: "/monitor/#{monitor_id}", json: to_body(params, @monitor_key_mapping))
+    end
   end
 
   @doc """
@@ -1239,6 +1275,7 @@ defmodule Firecrawl do
   """
   @spec update_monitor!(String.t(), keyword(), keyword()) :: Req.Response.t()
   def update_monitor!(monitor_id, params \\ [], opts \\ []) do
+    params = NimbleOptions.validate!(params, @monitor_schema)
     Req.patch!(client(opts), url: "/monitor/#{monitor_id}", json: to_body(params, @monitor_key_mapping))
   end
 
@@ -1285,10 +1322,12 @@ defmodule Firecrawl do
   """
   @spec list_monitor_checks(String.t(), keyword(), keyword()) :: response()
   def list_monitor_checks(monitor_id, params \\ [], opts \\ []) do
-    Req.get(client(opts),
-      url: "/monitor/#{monitor_id}/checks",
-      params: to_query(params, @monitor_list_key_mapping)
-    )
+    with {:ok, params} <- NimbleOptions.validate(params, @monitor_check_list_schema) do
+      Req.get(client(opts),
+        url: "/monitor/#{monitor_id}/checks",
+        params: to_query(params, @monitor_check_list_key_mapping)
+      )
+    end
   end
 
   @doc """
@@ -1296,9 +1335,10 @@ defmodule Firecrawl do
   """
   @spec list_monitor_checks!(String.t(), keyword(), keyword()) :: Req.Response.t()
   def list_monitor_checks!(monitor_id, params \\ [], opts \\ []) do
+    params = NimbleOptions.validate!(params, @monitor_check_list_schema)
     Req.get!(client(opts),
       url: "/monitor/#{monitor_id}/checks",
-      params: to_query(params, @monitor_list_key_mapping)
+      params: to_query(params, @monitor_check_list_key_mapping)
     )
   end
 
@@ -1311,12 +1351,14 @@ defmodule Firecrawl do
   def get_monitor_check(monitor_id, check_id, params \\ [], opts \\ []) do
     {auto_paginate, opts} = Keyword.pop(opts, :auto_paginate, true)
 
-    case Req.get(client(opts),
-           url: "/monitor/#{monitor_id}/checks/#{check_id}",
-           params: to_query(params, @monitor_check_key_mapping)
-         ) do
-      {:ok, response} when auto_paginate -> {:ok, paginate_monitor_check_response(response, opts)}
-      result -> result
+    with {:ok, params} <- NimbleOptions.validate(params, @monitor_check_schema) do
+      case Req.get(client(opts),
+             url: "/monitor/#{monitor_id}/checks/#{check_id}",
+             params: to_query(params, @monitor_check_key_mapping)
+           ) do
+        {:ok, response} when auto_paginate -> {:ok, paginate_monitor_check_response(response, opts)}
+        result -> result
+      end
     end
   end
 
@@ -1326,12 +1368,13 @@ defmodule Firecrawl do
   @spec get_monitor_check!(String.t(), String.t(), keyword(), keyword()) :: Req.Response.t()
   def get_monitor_check!(monitor_id, check_id, params \\ [], opts \\ []) do
     {auto_paginate, opts} = Keyword.pop(opts, :auto_paginate, true)
+    params = NimbleOptions.validate!(params, @monitor_check_schema)
     response = Req.get!(client(opts),
       url: "/monitor/#{monitor_id}/checks/#{check_id}",
       params: to_query(params, @monitor_check_key_mapping)
     )
 
-    if auto_paginate, do: paginate_monitor_check_response(response, opts), else: response
+    if auto_paginate, do: paginate_monitor_check_response!(response, opts), else: response
   end
 
   defp paginate_monitor_check_response(%Req.Response{body: body} = response, opts) when is_map(body) do
@@ -1344,6 +1387,17 @@ defmodule Firecrawl do
   end
 
   defp paginate_monitor_check_response(response, _opts), do: response
+
+  defp paginate_monitor_check_response!(%Req.Response{body: body} = response, opts) when is_map(body) do
+    data = Map.get(body, "data") || %{}
+    pages = Map.get(data, "pages") || []
+    next = Map.get(body, "next") || Map.get(data, "next")
+    pages = fetch_monitor_check_pages!(next, pages, opts)
+    data = data |> Map.put("pages", pages) |> Map.put("next", nil)
+    %{response | body: body |> Map.put("data", data) |> Map.put("next", nil)}
+  end
+
+  defp paginate_monitor_check_response!(response, _opts), do: response
 
   defp fetch_monitor_check_pages(nil, pages, _opts), do: pages
   defp fetch_monitor_check_pages("", pages, _opts), do: pages
@@ -1359,6 +1413,18 @@ defmodule Firecrawl do
       _ ->
         pages
     end
+  end
+
+  defp fetch_monitor_check_pages!(nil, pages, _opts), do: pages
+  defp fetch_monitor_check_pages!("", pages, _opts), do: pages
+
+  defp fetch_monitor_check_pages!(next, pages, opts) do
+    response = Req.get!(client(opts), url: next)
+    body = response.body
+    data = if is_map(body), do: Map.get(body, "data") || %{}, else: %{}
+    next_pages = Map.get(data, "pages") || []
+    next_url = if is_map(body), do: Map.get(body, "next") || Map.get(data, "next"), else: nil
+    fetch_monitor_check_pages!(next_url, pages ++ next_pages, opts)
   end
 
 end

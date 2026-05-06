@@ -414,7 +414,7 @@ let currentLiveness: boolean = true;
 
 app.get("/liveness", (req, res) => {
   _logger.info("Liveness endpoint hit");
-  if (config.USE_DB_AUTHENTICATION) {
+  if (config.USE_DB_AUTHENTICATION && config.NUQ_RABBITMQ_URL) {
     // networking check for Kubernetes environments
     const host = config.FIRECRAWL_APP_HOST;
     const port = config.FIRECRAWL_APP_PORT;
@@ -476,9 +476,13 @@ app.listen(workerPort, () => {
     });
 
     await consumeMonitorCheckJobs(processMonitorCheckJob);
-  } else {
+  } else if (!config.USE_DB_AUTHENTICATION) {
     _logger.info(
       "Skipping monitor worker startup because database authentication is disabled",
+    );
+  } else {
+    _logger.info(
+      "Skipping monitor worker startup because NUQ_RABBITMQ_URL is not configured",
     );
   }
 

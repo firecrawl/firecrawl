@@ -1254,7 +1254,9 @@ public class FirecrawlClient {
         List<String> parts = new ArrayList<>();
         if (limit != null) parts.add("limit=" + limit);
         if (skip != null) parts.add("skip=" + skip);
-        if (status != null && !status.isBlank()) parts.add("status=" + status);
+        if (status != null && !status.isBlank()) {
+            parts.add("status=" + java.net.URLEncoder.encode(status, java.nio.charset.StandardCharsets.UTF_8));
+        }
         return parts.isEmpty() ? "" : "?" + String.join("&", parts);
     }
 

@@ -25,6 +25,7 @@ import {
   createMonitorSchema,
   updateMonitorSchema,
 } from "../../../services/monitoring/types";
+import { getNextMonitorRunAt } from "../../../services/monitoring/cron";
 
 describe("V2 Types Validation", () => {
   describe("scrapeRequestSchema", () => {
@@ -1211,6 +1212,16 @@ describe("V2 Types Validation", () => {
           },
         }),
       ).toThrow("Schedule must include either cron or text, not both");
+    });
+
+    it("should calculate next runs in the configured timezone", () => {
+      const next = getNextMonitorRunAt(
+        "0 9 * * *",
+        new Date("2026-01-01T13:00:00.000Z"),
+        "America/New_York",
+      );
+
+      expect(next.toISOString()).toBe("2026-01-01T14:00:00.000Z");
     });
 
     it("should accept monitor webhook event filters", () => {

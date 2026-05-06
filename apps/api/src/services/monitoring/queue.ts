@@ -103,7 +103,15 @@ export async function consumeMonitorCheckJobs(
     async msg => {
       if (!msg) return;
 
-      const data = JSON.parse(msg.content.toString()) as MonitorCheckJobData;
+      let data: MonitorCheckJobData;
+      try {
+        data = JSON.parse(msg.content.toString()) as MonitorCheckJobData;
+      } catch (error) {
+        logger.error("Failed to parse monitor check job", { error });
+        ch.nack(msg, false, false);
+        return;
+      }
+
       const jobLogger = logger.child({
         monitorId: data.monitorId,
         checkId: data.checkId,

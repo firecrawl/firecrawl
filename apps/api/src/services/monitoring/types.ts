@@ -118,6 +118,16 @@ export const listMonitorsQuerySchema = z.object({
 export const listMonitorChecksQuerySchema = z.object({
   limit: z.coerce.number().int().positive().max(100).optional().default(25),
   offset: z.coerce.number().int().nonnegative().optional().default(0),
+  status: z
+    .enum([
+      "queued",
+      "running",
+      "completed",
+      "failed",
+      "partial",
+      "skipped_overlap",
+    ])
+    .optional(),
 });
 
 export const monitorCheckDetailQuerySchema = z.object({

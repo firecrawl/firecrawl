@@ -440,6 +440,7 @@ final class FirecrawlClient
         }
 
         while (isset($data['next']) && is_string($data['next']) && $data['next'] !== '') {
+            $this->assertSameOrigin($data['next']);
             $nextResponse = $this->http->getAbsolute($data['next']);
             $nextData = $nextResponse['data'] ?? $nextResponse;
             if (isset($nextResponse['next'])) {
@@ -701,10 +702,25 @@ final class FirecrawlClient
 
     private function assertSameOrigin(string $url): void
     {
+        $baseScheme = parse_url($this->http->getBaseUrl(), PHP_URL_SCHEME);
         $baseHost = parse_url($this->http->getBaseUrl(), PHP_URL_HOST);
+        $basePort = parse_url($this->http->getBaseUrl(), PHP_URL_PORT);
+        $nextScheme = parse_url($url, PHP_URL_SCHEME);
         $nextHost = parse_url($url, PHP_URL_HOST);
+        $nextPort = parse_url($url, PHP_URL_PORT);
 
-        if ($baseHost === null || $nextHost === null || strcasecmp($baseHost, $nextHost) !== 0) {
+        $basePort ??= $baseScheme === 'https' ? 443 : 80;
+        $nextPort ??= $nextScheme === 'https' ? 443 : 80;
+
+        if (
+            $baseScheme === null ||
+            $nextScheme === null ||
+            $baseHost === null ||
+            $nextHost === null ||
+            strcasecmp($baseScheme, $nextScheme) !== 0 ||
+            strcasecmp($baseHost, $nextHost) !== 0 ||
+            $basePort !== $nextPort
+        ) {
             throw new FirecrawlException(
                 'Pagination URL origin does not match the API base URL. Refusing to follow: ' . $url,
             );

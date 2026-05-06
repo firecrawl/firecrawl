@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Firecrawl\Models;
 
+/** @phpstan-consistent-constructor */
 class MonitorCheck
 {
     /**
@@ -32,9 +33,9 @@ class MonitorCheck
     ) {}
 
     /** @param array<string, mixed> $data */
-    public static function fromArray(array $data): self
+    public static function fromArray(array $data): static
     {
-        return new self(
+        return new static(
             id: isset($data['id']) ? (string) $data['id'] : null,
             monitorId: isset($data['monitorId']) ? (string) $data['monitorId'] : null,
             status: isset($data['status']) ? (string) $data['status'] : null,

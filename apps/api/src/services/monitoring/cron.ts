@@ -2,6 +2,17 @@ const MIN_MONITOR_INTERVAL_MS = 15 * 60 * 1000;
 const SEARCH_LIMIT_MINUTES = 366 * 24 * 60;
 
 type CronField = Set<number>;
+type CronSpec = ReturnType<typeof parseCron>;
+
+const WEEKDAY_TO_NUMBER: Record<string, number> = {
+  sun: 0,
+  mon: 1,
+  tue: 2,
+  wed: 3,
+  thu: 4,
+  fri: 5,
+  sat: 6,
+};
 
 function parseMinuteStart(value: string | undefined): number {
   if (value === undefined) return 0;
@@ -145,27 +156,64 @@ function parseCron(cron: string) {
   };
 }
 
-function matches(date: Date, cron: ReturnType<typeof parseCron>): boolean {
+function validateTimeZone(timeZone: string): void {
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone }).format(new Date());
+  } catch {
+    throw new Error(`Invalid monitor schedule timezone: ${timeZone}`);
+  }
+}
+
+function getZonedParts(date: Date, timeZone: string) {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    hourCycle: "h23",
+    minute: "2-digit",
+    hour: "2-digit",
+    day: "2-digit",
+    month: "2-digit",
+    weekday: "short",
+  }).formatToParts(date);
+
+  const values = Object.fromEntries(
+    parts
+      .filter(part => part.type !== "literal")
+      .map(part => [part.type, part.value]),
+  );
+
+  return {
+    minutes: Number(values.minute),
+    hours: Number(values.hour),
+    daysOfMonth: Number(values.day),
+    months: Number(values.month),
+    daysOfWeek: WEEKDAY_TO_NUMBER[String(values.weekday).toLowerCase()],
+  };
+}
+
+function matches(date: Date, cron: CronSpec, timeZone: string): boolean {
+  const zoned = getZonedParts(date, timeZone);
   return (
-    cron.minutes.has(date.getUTCMinutes()) &&
-    cron.hours.has(date.getUTCHours()) &&
-    cron.daysOfMonth.has(date.getUTCDate()) &&
-    cron.months.has(date.getUTCMonth() + 1) &&
-    cron.daysOfWeek.has(date.getUTCDay())
+    cron.minutes.has(zoned.minutes) &&
+    cron.hours.has(zoned.hours) &&
+    cron.daysOfMonth.has(zoned.daysOfMonth) &&
+    cron.months.has(zoned.months) &&
+    cron.daysOfWeek.has(zoned.daysOfWeek)
   );
 }
 
 export function getNextMonitorRunAt(
   cronExpression: string,
   from = new Date(),
+  timeZone = "UTC",
 ): Date {
+  validateTimeZone(timeZone);
   const cron = parseCron(cronExpression);
   const candidate = new Date(from);
   candidate.setUTCSeconds(0, 0);
   candidate.setUTCMinutes(candidate.getUTCMinutes() + 1);
 
   for (let i = 0; i < SEARCH_LIMIT_MINUTES; i++) {
-    if (matches(candidate, cron)) {
+    if (matches(candidate, cron, timeZone)) {
       return new Date(candidate);
     }
     candidate.setUTCMinutes(candidate.getUTCMinutes() + 1);
@@ -174,12 +222,15 @@ export function getNextMonitorRunAt(
   throw new Error("Cron expression did not produce a run within one year");
 }
 
-export function validateMonitorCron(cronExpression: string): {
+export function validateMonitorCron(
+  cronExpression: string,
+  timeZone = "UTC",
+): {
   nextRunAt: Date;
   intervalMs: number;
 } {
-  const nextRunAt = getNextMonitorRunAt(cronExpression);
-  const secondRunAt = getNextMonitorRunAt(cronExpression, nextRunAt);
+  const nextRunAt = getNextMonitorRunAt(cronExpression, new Date(), timeZone);
+  const secondRunAt = getNextMonitorRunAt(cronExpression, nextRunAt, timeZone);
   const intervalMs = secondRunAt.getTime() - nextRunAt.getTime();
   if (intervalMs < MIN_MONITOR_INTERVAL_MS) {
     throw new Error(

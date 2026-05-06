@@ -54,7 +54,11 @@ export async function getMonitorDiffArtifact(
   try {
     const [contents] = await bucket.file(key).download();
     return JSON.parse(contents.toString()) as MonitorDiffArtifact;
-  } catch {
-    return null;
+  } catch (error) {
+    const maybeGcsError = error as { code?: number; statusCode?: number };
+    if (maybeGcsError.code === 404 || maybeGcsError.statusCode === 404) {
+      return null;
+    }
+    throw error;
   }
 }

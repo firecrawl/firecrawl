@@ -114,7 +114,10 @@ export async function createMonitorController(
   const input = createMonitorSchema.parse(req.body);
   let schedule;
   try {
-    schedule = validateMonitorCron(input.schedule.cron);
+    schedule = validateMonitorCron(
+      input.schedule.cron,
+      input.schedule.timezone,
+    );
   } catch (error) {
     return res.status(400).json({
       success: false,
@@ -181,9 +184,10 @@ export async function updateMonitorController(
 
   const input = updateMonitorSchema.parse(req.body);
   const cron = input.schedule?.cron ?? existing.schedule_cron;
+  const timezone = input.schedule?.timezone ?? existing.schedule_timezone;
   let schedule;
   try {
-    schedule = validateMonitorCron(cron);
+    schedule = validateMonitorCron(cron, timezone);
   } catch (error) {
     return res.status(400).json({
       success: false,
@@ -273,6 +277,7 @@ export async function listMonitorChecksController(
     monitorId,
     limit: query.limit,
     offset: query.offset,
+    status: query.status,
   });
 
   res.status(200).json({
@@ -324,10 +329,17 @@ export async function getMonitorCheckController(
     })),
   );
   const nextSkip = skip + pagesWithDiffs.length;
-  const next =
-    totalPagesForFilter > nextSkip
-      ? `${req.protocol}://${req.get("host")}/v2/monitor/${monitorId}/checks/${checkId}?skip=${nextSkip}&limit=${query.limit}${query.status ? `&status=${query.status}` : ""}`
-      : undefined;
+  const next = (() => {
+    if (totalPagesForFilter <= nextSkip) return undefined;
+    const url = new URL(
+      `/v2/monitor/${monitorId}/checks/${checkId}`,
+      `${req.protocol}://${req.get("host")}`,
+    );
+    url.searchParams.set("skip", String(nextSkip));
+    url.searchParams.set("limit", String(query.limit));
+    if (query.status) url.searchParams.set("status", query.status);
+    return url.toString();
+  })();
 
   res.status(200).json({
     success: true,

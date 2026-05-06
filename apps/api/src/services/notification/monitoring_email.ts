@@ -1,4 +1,5 @@
 import { Resend } from "resend";
+import escapeHtml from "escape-html";
 import { config } from "../../config";
 import { logger as _logger } from "../../lib/logger";
 import { supabase_service } from "../supabase";
@@ -66,16 +67,16 @@ async function getTeamEmails(teamId: string): Promise<string[]> {
 function buildHtml(payload: MonitoringEmailPayload): string {
   const pageItems = payload.pages
     .slice(0, 20)
-    .map(
-      page =>
-        `<li><strong>${page.status}</strong>: <a href="${page.url}">${page.url}</a>${
-          page.error ? ` — ${page.error}` : ""
-        }</li>`,
-    )
+    .map(page => {
+      const url = escapeHtml(page.url);
+      return `<li><strong>${escapeHtml(page.status)}</strong>: <a href="${url}">${url}</a>${
+        page.error ? ` &mdash; ${escapeHtml(page.error)}` : ""
+      }</li>`;
+    })
     .join("");
 
   return `Hey there,<br/>
-<p>Your Firecrawl monitor <strong>${payload.monitorName}</strong> detected activity.</p>
+<p>Your Firecrawl monitor <strong>${escapeHtml(payload.monitorName)}</strong> detected activity.</p>
 <ul>
   <li>Changed: ${payload.summary.changed}</li>
   <li>New: ${payload.summary.new}</li>
@@ -84,7 +85,7 @@ function buildHtml(payload: MonitoringEmailPayload): string {
   <li>Total pages checked: ${payload.summary.totalPages}</li>
 </ul>
 ${pageItems ? `<p>Top pages:</p><ul>${pageItems}</ul>` : ""}
-<p>Check ID: <code>${payload.checkId}</code></p>
+<p>Check ID: <code>${escapeHtml(payload.checkId)}</code></p>
 <p>Credits used: ${payload.creditsUsed ?? "unknown"}</p>
 <br/>Thanks,<br/>Firecrawl Team<br/>`;
 }
@@ -143,7 +144,8 @@ export async function sendMonitoringEmailSummary(params: {
     return { attempted: false, success: true, recipients };
   }
 
-  if (!config.RESEND_API_KEY) {
+  const resendApiKey = config.RESEND_API_KEY?.trim();
+  if (!resendApiKey) {
     logger.warn(
       "Skipping monitoring email summary; RESEND_API_KEY is not set",
       {
@@ -170,7 +172,7 @@ export async function sendMonitoringEmailSummary(params: {
     creditsUsed: params.check.actual_credits,
   };
 
-  const resend = new Resend(config.RESEND_API_KEY);
+  const resend = new Resend(resendApiKey);
   try {
     const { error } = await resend.emails.send({
       from: "Firecrawl <notifications@notifications.firecrawl.dev>",
