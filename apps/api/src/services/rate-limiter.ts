@@ -8,12 +8,12 @@ export const redisRateLimitClient = new Redis(config.REDIS_RATE_LIMIT_URL!, {
   enableAutoPipelining: true,
 });
 
-const createRateLimiter = (keyPrefix, points, duration = 60) =>
+const createRateLimiter = (keyPrefix, points) =>
   new RateLimiterRedis({
     storeClient: redisRateLimitClient,
     keyPrefix,
     points,
-    duration, // Duration in seconds
+    duration: 60, // Duration in seconds
   });
 
 const fallbackRateLimits: AuthCreditUsageChunk["rate_limits"] = {
@@ -45,7 +45,5 @@ export function getRateLimiter(
     rateLimit = Math.max(rateLimit, 100);
   }
 
-  const duration = 60;
-
-  return createRateLimiter(`${mode}`, rateLimit, duration);
+  return createRateLimiter(`${mode}`, rateLimit);
 }
