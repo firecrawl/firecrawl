@@ -709,8 +709,12 @@ final class FirecrawlClient
         $nextHost = parse_url($url, PHP_URL_HOST);
         $nextPort = parse_url($url, PHP_URL_PORT);
 
-        $basePort ??= $baseScheme === 'https' ? 443 : 80;
-        $nextPort ??= $nextScheme === 'https' ? 443 : 80;
+        $basePort ??= is_string($baseScheme) && strcasecmp($baseScheme, 'https') === 0
+            ? 443
+            : 80;
+        $nextPort ??= is_string($nextScheme) && strcasecmp($nextScheme, 'https') === 0
+            ? 443
+            : 80;
 
         if (
             $baseScheme === null ||
