@@ -459,22 +459,28 @@ app.listen(workerPort, () => {
 
   initializeEngineForcing();
 
-  monitorSchedulerInterval = setInterval(() => {
+  if (config.USE_DB_AUTHENTICATION) {
+    monitorSchedulerInterval = setInterval(() => {
+      enqueueDueMonitorChecks().catch(error => {
+        _logger.error("Failed to enqueue due monitor checks", { error });
+      });
+      reconcileRunningMonitorChecks().catch(error => {
+        _logger.error("Failed to reconcile running monitor checks", { error });
+      });
+    }, 60_000);
     enqueueDueMonitorChecks().catch(error => {
       _logger.error("Failed to enqueue due monitor checks", { error });
     });
     reconcileRunningMonitorChecks().catch(error => {
       _logger.error("Failed to reconcile running monitor checks", { error });
     });
-  }, 60_000);
-  enqueueDueMonitorChecks().catch(error => {
-    _logger.error("Failed to enqueue due monitor checks", { error });
-  });
-  reconcileRunningMonitorChecks().catch(error => {
-    _logger.error("Failed to reconcile running monitor checks", { error });
-  });
 
-  await consumeMonitorCheckJobs(processMonitorCheckJob);
+    await consumeMonitorCheckJobs(processMonitorCheckJob);
+  } else {
+    _logger.info(
+      "Skipping monitor worker startup because database authentication is disabled",
+    );
+  }
 
   await Promise.all([
     workerFun(getDeepResearchQueue(), processDeepResearchJobInternal),

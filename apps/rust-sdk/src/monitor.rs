@@ -328,9 +328,12 @@ impl Client {
                 .headers(self.prepare_headers(None))
                 .send()
                 .await
-                .map_err(|e| FirecrawlError::HttpError("Getting monitor check page".to_string(), e))?;
-            let response: DataResponse<MonitorCheckDetail> =
-                self.handle_response(response, "get monitor check page").await?;
+                .map_err(|e| {
+                    FirecrawlError::HttpError("Getting monitor check page".to_string(), e)
+                })?;
+            let response: DataResponse<MonitorCheckDetail> = self
+                .handle_response(response, "get monitor check page")
+                .await?;
             check.pages.extend(response.data.pages);
             check.next = response.data.next;
         }

@@ -32,9 +32,9 @@ class MonitorCheck
     ) {}
 
     /** @param array<string, mixed> $data */
-    public static function fromArray(array $data): static
+    public static function fromArray(array $data): self
     {
-        return new static(
+        return new self(
             id: isset($data['id']) ? (string) $data['id'] : null,
             monitorId: isset($data['monitorId']) ? (string) $data['monitorId'] : null,
             status: isset($data['status']) ? (string) $data['status'] : null,

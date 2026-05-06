@@ -437,7 +437,7 @@ describe("Crawl tests", () => {
         async () => {
           const res = await crawl(
             {
-              url: base,
+              url: new URL("/blog", base).href,
               prompt:
                 "Crawl everything including external links and subdomains",
               // Explicit options that should override the prompt

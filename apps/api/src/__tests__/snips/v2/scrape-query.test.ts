@@ -1,4 +1,4 @@
-import { concurrentIf, HAS_AI, TEST_PRODUCTION } from "../lib";
+import { concurrentIf, HAS_AI, HAS_FIREWORKS, TEST_PRODUCTION } from "../lib";
 import {
   scrape,
   scrapeRaw,
@@ -61,7 +61,7 @@ describe("Query format", () => {
     scrapeTimeout,
   );
 
-  concurrentIf(TEST_PRODUCTION || HAS_AI)(
+  concurrentIf(TEST_PRODUCTION || HAS_FIREWORKS)(
     "returns a direct quote answer when query mode is directQuote",
     async () => {
       const response = await scrape(
