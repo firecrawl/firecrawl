@@ -3,6 +3,7 @@ import { config } from "../../config";
 import { logger } from "../../lib/logger";
 
 const SUPPORT_AGENT_BASE = config.SUPPORT_AGENT_URL;
+const SUPPORT_AGENT_BYPASS = config.SUPPORT_AGENT_VERCEL_BYPASS_SECRET;
 const PROXY_TIMEOUT_MS = 65_000;
 
 const FORWARDED_HEADERS = [
@@ -33,7 +34,13 @@ export async function supportProxyController(
   try {
     const upstream = await fetch(target, {
       method: "POST",
-      headers: { ...headers, "content-type": "application/json" },
+      headers: {
+        ...headers,
+        "content-type": "application/json",
+        ...(SUPPORT_AGENT_BYPASS && {
+          "x-vercel-protection-bypass": SUPPORT_AGENT_BYPASS,
+        }),
+      },
       body: JSON.stringify(req.body),
       signal: AbortSignal.timeout(PROXY_TIMEOUT_MS),
     });

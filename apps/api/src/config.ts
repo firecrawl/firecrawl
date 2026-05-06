@@ -37,6 +37,7 @@ const configSchema = z.object({
   FIRECRAWL_APP_SCHEME: z.string().default("http"),
   LOGGING_LEVEL: z.string().optional(),
   SUPPORT_AGENT_URL: z.string().url().optional(),
+  SUPPORT_AGENT_VERCEL_BYPASS_SECRET: z.string().optional(),
 
   // Express
   EXPRESS_TRUST_PROXY: z.coerce.number().optional(),
