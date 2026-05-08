@@ -24,13 +24,15 @@ describe("extractEmbeddedPdfUrl", () => {
     );
   });
 
-  it("returns null when no embedded PDF is present", () => {
-    const html = `<html><body><p>No PDF here</p></body></html>`;
-    expect(extractEmbeddedPdfUrl(html, BASE)).toBeNull();
+  it("finds a URL without .pdf extension (e.g. viewer or download endpoint)", () => {
+    const html = `<iframe src="/viewer?id=12345"></iframe>`;
+    expect(extractEmbeddedPdfUrl(html, BASE)).toBe(
+      "https://www.example.com/viewer?id=12345",
+    );
   });
 
-  it("returns null for an iframe pointing to a non-PDF URL", () => {
-    const html = `<iframe src="https://example.com/page.html"></iframe>`;
+  it("returns null when no embedded src is present", () => {
+    const html = `<html><body><p>No PDF here</p></body></html>`;
     expect(extractEmbeddedPdfUrl(html, BASE)).toBeNull();
   });
 

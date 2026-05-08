@@ -9,8 +9,9 @@ export function isPdfBuffer(buf: Buffer): boolean {
 }
 
 /**
- * Given an HTML string, returns the first PDF URL found in an <iframe>,
+ * Given an HTML string, returns the first URL found in an <iframe>,
  * <embed>, or <object> tag, or null if none is found.
+ * The caller is responsible for verifying the fetched content is a PDF.
  */
 export function extractEmbeddedPdfUrl(
   html: string,
@@ -18,7 +19,7 @@ export function extractEmbeddedPdfUrl(
 ): string | null {
   // Match src/data attributes in <iframe>, <embed>, <object> tags
   const pattern =
-    /<(?:iframe|embed|object)[^>]+(?:src|data)=["']([^"']+\.pdf(?:[?#][^"']*)?)["']/gi;
+    /<(?:iframe|embed|object)[^>]+(?:src|data)=["']([^"']+)["']/gi;
   const match = pattern.exec(html);
   if (!match) return null;
 
