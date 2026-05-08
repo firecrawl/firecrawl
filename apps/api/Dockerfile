@@ -13,6 +13,7 @@ WORKDIR /app
 COPY sharedLibs/go-html-to-md ./sharedLibs/go-html-to-md
 
 RUN cd sharedLibs/go-html-to-md && \
+    export GOPROXY=https://goproxy.cn,direct && \
     go mod download && \
     go build -o libhtml-to-markdown.so -buildmode=c-shared html-to-markdown.go
 
