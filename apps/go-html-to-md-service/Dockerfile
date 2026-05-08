@@ -11,7 +11,7 @@ WORKDIR /app
 COPY go.mod go.sum ./
 
 # Download dependencies
-RUN go mod download
+RUN export GOPROXY=https://goproxy.cn,direct && go mod download
 
 # Copy source code
 COPY . .
