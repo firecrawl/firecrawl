@@ -454,6 +454,7 @@ export class FirecrawlClient {
    * Convenience waiter: start an agent and poll until it finishes.
    * @param args Agent request plus waiter controls (pollInterval, timeout seconds).
    * @returns Final agent response.
+   * @throws MaxCreditsExceededError when the agent stops early due to maxCreditsThreshold (partial data on error.partial).
    */
   async agent(args: Parameters<typeof startAgent>[1] & { pollInterval?: number; timeout?: number }): Promise<AgentStatusResponse> {
     return agentWaiter(this.http, args);
@@ -549,4 +550,3 @@ export class FirecrawlClient {
 }
 
 export default FirecrawlClient;
-

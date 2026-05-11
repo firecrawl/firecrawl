@@ -4,6 +4,7 @@ import asyncio
 from ...types import AgentResponse, AgentWebhookConfig
 from ...utils.http_client_async import AsyncHttpClient
 from ...utils.validation import _normalize_schema
+from ...utils.error_handler import MaxCreditsExceededError
 
 
 def _prepare_agent_request(
@@ -13,6 +14,7 @@ def _prepare_agent_request(
     schema: Optional[Any] = None,
     integration: Optional[str] = None,
     max_credits: Optional[int] = None,
+    max_credits_threshold: Optional[float] = None,
     strict_constrain_to_urls: Optional[bool] = None,
     model: Optional[Literal["spark-1-pro", "spark-1-mini"]] = None,
     webhook: Optional[Union[str, AgentWebhookConfig]] = None,
@@ -34,6 +36,8 @@ def _prepare_agent_request(
         body["integration"] = str(integration).strip()
     if max_credits is not None and max_credits > 0:
         body["maxCredits"] = max_credits
+    if max_credits_threshold is not None:
+        body["maxCreditsThreshold"] = max_credits_threshold
     if strict_constrain_to_urls is not None and strict_constrain_to_urls:
         body["strictConstrainToURLs"] = strict_constrain_to_urls
     if model is not None:
@@ -52,6 +56,8 @@ def _normalize_agent_response_payload(payload: Dict[str, Any]) -> Dict[str, Any]
         out["expires_at"] = out["expiresAt"]
     if "creditsUsed" in out and "credits_used" not in out:
         out["credits_used"] = out["creditsUsed"]
+    if "errorCode" in out and "error_code" not in out:
+        out["error_code"] = out["errorCode"]
     return out
 
 
@@ -63,6 +69,7 @@ async def start_agent(
     schema: Optional[Any] = None,
     integration: Optional[str] = None,
     max_credits: Optional[int] = None,
+    max_credits_threshold: Optional[float] = None,
     strict_constrain_to_urls: Optional[bool] = None,
     model: Optional[Literal["spark-1-pro", "spark-1-mini"]] = None,
     webhook: Optional[Union[str, AgentWebhookConfig]] = None,
@@ -73,6 +80,7 @@ async def start_agent(
         schema=schema,
         integration=integration,
         max_credits=max_credits,
+        max_credits_threshold=max_credits_threshold,
         strict_constrain_to_urls=strict_constrain_to_urls,
         model=model,
         webhook=webhook,
@@ -98,6 +106,15 @@ async def wait_agent(
     start_ts = asyncio.get_event_loop().time()
     while True:
         status = await get_agent_status(client, job_id)
+        if (
+            status.status == "failed"
+            and status.error_code == "MAX_CREDITS_EXCEEDED"
+        ):
+            raise MaxCreditsExceededError(
+                status.error or "Max credits threshold reached",
+                partial=status.partial,
+                job_id=job_id,
+            )
         if status.status in ("completed", "failed", "cancelled"):
             return status
         if timeout is not None and (asyncio.get_event_loop().time() - start_ts) > timeout:
@@ -115,6 +132,7 @@ async def agent(
     poll_interval: int = 2,
     timeout: Optional[int] = None,
     max_credits: Optional[int] = None,
+    max_credits_threshold: Optional[float] = None,
     strict_constrain_to_urls: Optional[bool] = None,
     model: Optional[Literal["spark-1-pro", "spark-1-mini"]] = None,
     webhook: Optional[Union[str, AgentWebhookConfig]] = None,
@@ -126,6 +144,7 @@ async def agent(
         schema=schema,
         integration=integration,
         max_credits=max_credits,
+        max_credits_threshold=max_credits_threshold,
         strict_constrain_to_urls=strict_constrain_to_urls,
         model=model,
         webhook=webhook,

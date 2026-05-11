@@ -9,6 +9,8 @@ on:
 
 env:
   IDMUX_URL: ${{ secrets.IDMUX_URL }}
+  TEST_API_KEY: ${{ secrets.TEST_API_KEY }}
+  TEST_TEAM_ID: ${{ secrets.TEST_TEAM_ID }}
 
 jobs:
   test:

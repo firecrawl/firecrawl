@@ -794,7 +794,9 @@ export interface AgentStatusResponse {
   success: boolean;
   status: 'processing' | 'completed' | 'failed';
   error?: string;
+  errorCode?: 'MAX_CREDITS_EXCEEDED';
   data?: unknown;
+  partial?: unknown;
   model?: 'spark-1-pro' | 'spark-1-mini';
   expiresAt: string;
   creditsUsed?: number;
@@ -895,6 +897,21 @@ export class SdkError extends Error {
     this.code = code;
     this.details = details;
     this.jobId = jobId;
+  }
+}
+
+export class MaxCreditsExceededError extends SdkError {
+  partial?: unknown;
+  constructor(message: string, partial?: unknown, jobId?: string) {
+    super(
+      message,
+      undefined,
+      'MAX_CREDITS_EXCEEDED',
+      partial ? { partial } : undefined,
+      jobId
+    );
+    this.name = 'MaxCreditsExceededError';
+    this.partial = partial;
   }
 }
 

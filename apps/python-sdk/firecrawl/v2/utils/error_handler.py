@@ -51,6 +51,22 @@ class InternalServerError(FirecrawlError):
     pass
 
 
+class MaxCreditsExceededError(FirecrawlError):
+    """Raised when an agent returns partial data due to max credits threshold."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        partial: Optional[Any] = None,
+        job_id: Optional[str] = None,
+    ):
+        super().__init__(message)
+        self.partial = partial
+        self.job_id = job_id
+        self.error_code = "MAX_CREDITS_EXCEEDED"
+
+
 def handle_response_error(response: requests.Response, action: str) -> None:
     """
     Handle API response errors and raise appropriate exceptions.

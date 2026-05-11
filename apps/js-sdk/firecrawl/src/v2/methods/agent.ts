@@ -1,4 +1,9 @@
-import { type AgentResponse, type AgentStatusResponse, type AgentWebhookConfig } from "../types";
+import {
+  type AgentResponse,
+  type AgentStatusResponse,
+  type AgentWebhookConfig,
+  MaxCreditsExceededError,
+} from "../types";
 import { HttpClient } from "../utils/httpClient";
 import { normalizeAxiosError, throwForBadResponse } from "../utils/errorHandler";
 import { isZodSchema, zodSchemaToJsonSchema } from "../../utils/zodSchemaToJson";
@@ -11,6 +16,7 @@ function prepareAgentPayload(args: {
   integration?: string;
   origin?: string;
   maxCredits?: number;
+  maxCreditsThreshold?: number;
   strictConstrainToURLs?: boolean;
   model?: "spark-1-pro" | "spark-1-mini";
   webhook?: string | AgentWebhookConfig;
@@ -24,6 +30,9 @@ function prepareAgentPayload(args: {
   if (args.integration && args.integration.trim()) body.integration = args.integration.trim();
   if (args.origin) body.origin = args.origin;
   if (args.maxCredits !== null && args.maxCredits !== undefined) body.maxCredits = args.maxCredits;
+  if (args.maxCreditsThreshold !== null && args.maxCreditsThreshold !== undefined) {
+    body.maxCreditsThreshold = args.maxCreditsThreshold;
+  }
   if (args.strictConstrainToURLs !== null && args.strictConstrainToURLs !== undefined) body.strictConstrainToURLs = args.strictConstrainToURLs;
   if (args.model !== null && args.model !== undefined) body.model = args.model;
   if (args.webhook != null) body.webhook = args.webhook;
@@ -62,6 +71,13 @@ export async function waitAgent(
   const start = Date.now();
   while (true) {
     const status = await getAgentStatus(http, jobId);
+    if (status.status === "failed" && status.errorCode === "MAX_CREDITS_EXCEEDED") {
+      throw new MaxCreditsExceededError(
+        status.error || "Max credits threshold reached",
+        status.partial,
+        jobId
+      );
+    }
     if (["completed", "failed", "cancelled"].includes(status.status || "")) return status;
     if (timeout != null && Date.now() - start > timeout * 1000) return status;
     await new Promise((r) => setTimeout(r, Math.max(1000, pollInterval * 1000)));

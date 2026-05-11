@@ -5,7 +5,7 @@ import {
   supabaseGetAgentByIdDirect,
   supabaseGetAgentRequestByIdDirect,
 } from "../../../lib/supabase-jobs";
-import { getJobFromGCS } from "../../../lib/gcs-jobs";
+import { getJobFromGCS, getPartialJobFromGCS } from "../../../lib/gcs-jobs";
 
 jest.mock("../../../lib/supabase-jobs", () => ({
   supabaseGetAgentByIdDirect: jest.fn(),
@@ -14,6 +14,7 @@ jest.mock("../../../lib/supabase-jobs", () => ({
 
 jest.mock("../../../lib/gcs-jobs", () => ({
   getJobFromGCS: jest.fn(),
+  getPartialJobFromGCS: jest.fn(),
 }));
 
 describe("agentStatusController", () => {

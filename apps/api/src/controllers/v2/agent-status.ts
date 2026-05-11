@@ -5,8 +5,21 @@ import {
   supabaseGetAgentRequestByIdDirect,
 } from "../../lib/supabase-jobs";
 import { logger as _logger, logger } from "../../lib/logger";
-import { getJobFromGCS } from "../../lib/gcs-jobs";
+import { getJobFromGCS, getPartialJobFromGCS } from "../../lib/gcs-jobs";
 import { config } from "../../config";
+
+const MAX_CREDITS_EXCEEDED_CODE = "MAX_CREDITS_EXCEEDED" as const;
+
+function getAgentErrorCode(
+  error?: string | null,
+): typeof MAX_CREDITS_EXCEEDED_CODE | undefined {
+  if (!error) return undefined;
+  if (error === MAX_CREDITS_EXCEEDED_CODE) return MAX_CREDITS_EXCEEDED_CODE;
+  if (error.startsWith(`${MAX_CREDITS_EXCEEDED_CODE}:`)) {
+    return MAX_CREDITS_EXCEEDED_CODE;
+  }
+  return undefined;
+}
 
 export async function agentStatusController(
   req: RequestWithAuth<{ jobId: string }, AgentStatusResponse, any>,
@@ -68,9 +81,13 @@ export async function agentStatusController(
     }
   }
 
+  const errorCode = getAgentErrorCode(agent?.error);
   let data: any = undefined;
+  let partial: any = undefined;
   if (agent?.is_successful) {
     data = await getJobFromGCS(agent.id);
+  } else if (errorCode === MAX_CREDITS_EXCEEDED_CODE) {
+    partial = await getPartialJobFromGCS(req.params.jobId);
   }
 
   return res.status(200).json({
@@ -81,7 +98,9 @@ export async function agentStatusController(
         ? "completed"
         : "failed",
     error: agent?.error || undefined,
+    errorCode,
     data,
+    partial,
     model,
     expiresAt: new Date(
       new Date(agent?.created_at ?? agentRequest.created_at).getTime() +

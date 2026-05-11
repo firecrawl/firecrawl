@@ -107,6 +107,7 @@ export async function agentController(
         teamId: req.auth.team_id,
         isFreeRequest,
         maxCredits: req.body.maxCredits ?? undefined,
+        maxCreditsThreshold: req.body.maxCreditsThreshold ?? undefined,
         strictConstrainToURLs: req.body.strictConstrainToURLs ?? undefined,
         webhook: req.body.webhook ?? undefined,
         model: req.body.model,

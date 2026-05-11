@@ -825,6 +825,7 @@ export const agentRequestSchema = z.strictObject({
   origin: z.string().optional().prefault("api"),
   integration: integrationSchema.optional().transform(val => val || null),
   maxCredits: z.number().optional(),
+  maxCreditsThreshold: z.number().gt(0).max(1).optional(),
   strictConstrainToURLs: z.boolean().optional(),
   webhook: agentWebhookSchema.optional(),
 
@@ -1266,7 +1267,9 @@ export type AgentStatusResponse =
       success: boolean;
       status: "processing" | "completed" | "failed";
       error?: string;
+      errorCode?: "MAX_CREDITS_EXCEEDED";
       data?: any;
+      partial?: any;
       model?: "spark-1-pro" | "spark-1-mini";
       expiresAt: string;
       creditsUsed?: number;

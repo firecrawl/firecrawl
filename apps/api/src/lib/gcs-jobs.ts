@@ -525,6 +525,48 @@ export async function getJobFromGCS(jobId: string): Promise<Document[] | null> {
   });
 }
 
+export async function getPartialJobFromGCS(
+  jobId: string,
+): Promise<unknown | null> {
+  return await withSpan("firecrawl-gcs-get-partial-job", async span => {
+    setSpanAttributes(span, {
+      "gcs.operation": "get_partial_job",
+      "job.id": jobId,
+    });
+
+    if (!config.GCS_BUCKET_NAME) {
+      setSpanAttributes(span, { "gcs.bucket_configured": false });
+      return null;
+    }
+
+    const bucket = storage.bucket(config.GCS_BUCKET_NAME);
+    const blob = bucket.file(`${jobId}.partial.json`);
+
+    try {
+      const [content] = await blob.download();
+      const result = JSON.parse(content.toString());
+      setSpanAttributes(span, { "gcs.job_found": true });
+      return result;
+    } catch (error) {
+      if (
+        error instanceof ApiError &&
+        error.code === 404 &&
+        error.message.includes("No such object:")
+      ) {
+        setSpanAttributes(span, { "gcs.job_found": false });
+        return null;
+      }
+
+      logger.error(`Error getting partial job from GCS`, {
+        error,
+        jobId,
+        scrapeId: jobId,
+      });
+      throw error;
+    }
+  });
+}
+
 export async function removeJobFromGCS(jobId: string): Promise<void> {
   return await withSpan("firecrawl-gcs-remove-job", async span => {
     setSpanAttributes(span, {

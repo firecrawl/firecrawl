@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll } from "@jest/globals";
 import { deepResearch, idmux, Identity } from "./lib";
-import { describeIf, HAS_AI, TEST_PRODUCTION } from "../lib";
+import { describeIf, HAS_AI, TEST_PRODUCTION, TEST_SELF_HOST } from "../lib";
 
 let identity: Identity;
 
@@ -12,7 +12,7 @@ beforeAll(async () => {
   });
 }, 10000);
 
-describeIf(TEST_PRODUCTION || HAS_AI)("Deep Research", () => {
+describeIf(TEST_PRODUCTION || (HAS_AI && !TEST_SELF_HOST))("Deep Research", () => {
   it("successfully completes a basic research query", async () => {
     const query = "What is artificial intelligence?";
 

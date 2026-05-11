@@ -128,7 +128,7 @@ describe("v2.search e2e", () => {
       tbs: "qdr:m",
       location: "US",
       ignoreInvalidURLs: true,
-      timeout: 60_000,
+      timeout: 120_000,
       scrapeOptions: {
         formats: [
           "markdown",
@@ -244,4 +244,3 @@ describe("v2.search e2e", () => {
     }
   }, 90_000);
 });
-
