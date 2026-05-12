@@ -364,6 +364,8 @@ export async function scrapeURLWithFireEngineChromeCDP(
         meta.internalOptions.saveScrapeResultToGCS,
       zeroDataRetention: meta.internalOptions.zeroDataRetention,
       ...(shouldAllowMedia ? { blockMedia: false } : {}),
+      fullPage:
+        hasFormatOfType(meta.options.formats, "screenshot")?.fullPage || false,
       persistentStorage: meta.options.profile
         ? {
             uniqueId: `${createHash("sha256").update(meta.internalOptions.teamId).digest("hex").slice(0, 16)}_${meta.options.profile.name}`,
