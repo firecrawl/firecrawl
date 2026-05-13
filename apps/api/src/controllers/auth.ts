@@ -12,10 +12,7 @@ import { redlock } from "../services/redlock";
 import { supabase_rr_service, supabase_service } from "../services/supabase";
 import { AuthResponse, RateLimiterMode } from "../types";
 import { AuthCreditUsageChunk, AuthCreditUsageChunkFromTeam } from "./v1/types";
-import {
-  isAutumnCheckEnabled,
-  AUTUMN_BYPASS_ORG_IDS,
-} from "../services/autumn/autumn.service";
+import { isAutumnCheckEnabled } from "../services/autumn/autumn.service";
 
 function normalizedApiIsUuid(potentialUuid: string): boolean {
   // Check if the string is a valid UUID
@@ -407,7 +404,7 @@ async function ensureChunkOrgId(
     !chunk ||
     chunk.org_id ||
     config.USE_DB_AUTHENTICATION !== true ||
-    (!isAutumnCheckEnabled() && AUTUMN_BYPASS_ORG_IDS.size === 0)
+    !isAutumnCheckEnabled()
   ) {
     return chunk;
   }
