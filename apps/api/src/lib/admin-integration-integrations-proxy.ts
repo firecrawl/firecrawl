@@ -1,12 +1,6 @@
 import type { Request, Response } from "express";
 import { logger } from "./logger";
 
-const FIRECRAWL_INTEGRATIONS_ORIGIN = "https://integrations.firecrawl.dev";
-const DEFAULT_PROXY_TIMEOUT_MS = 60_000;
-
-/** Partner route for POST /admin/integration/rotate-api-key */
-const PARTNER_ROTATE_UPSTREAM_PATH = "/partner/v1/api-keys/rotate";
-
 /**
  * Same contract as firecrawl-integrations `ResponseErrorPayload` (`src/errors/response-error.ts`).
  * Allowed `error.code` values are the `ExternalErrorCode` union in `src/errors/service-error.ts`;
@@ -20,19 +14,19 @@ type IntegrationsResponseErrorPayload = {
   };
 };
 
-/**
- * Proxies POST `/admin/integration/rotate-api-key` to `https://integrations.firecrawl.dev`.
- * JSON responses (success or error) are passed through with the upstream status. Upstream errors follow
- * firecrawl-integrations `ResponseErrorPayload` (`error: { code, message, data? }`).
- */
-export async function handleIntegrationAdminRotateProxy(
+async function proxyPartnerIntegrationPost(
   req: Request,
   res: Response,
+  upstreamPath:
+    | "/partner/v1/accounts"
+    | "/partner/v1/api-keys/validate"
+    | "/partner/v1/api-keys/rotate",
+  route: "create-user" | "validate-api-key" | "rotate-api-key",
 ): Promise<void> {
-  const url = `${FIRECRAWL_INTEGRATIONS_ORIGIN}${PARTNER_ROTATE_UPSTREAM_PATH}`;
+  const url = `https://integrations.firecrawl.dev${upstreamPath}`;
   const log = logger.child({
     module: "admin-integration-integrations-proxy",
-    route: "rotate-api-key",
+    route,
   });
 
   const headers: Record<string, string> = {
@@ -62,7 +56,7 @@ export async function handleIntegrationAdminRotateProxy(
       method: "POST",
       headers,
       body,
-      signal: AbortSignal.timeout(DEFAULT_PROXY_TIMEOUT_MS),
+      signal: AbortSignal.timeout(60_000),
     });
   } catch (error) {
     log.error("firecrawl-integrations proxy fetch failed", { error, url });
@@ -94,4 +88,52 @@ export async function handleIntegrationAdminRotateProxy(
   }
 
   res.status(upstream.status).send(text);
+}
+
+/**
+ * Proxies POST `/admin/integration/create-user` to integrations
+ * `POST /partner/v1/accounts`. JSON responses pass through with upstream status.
+ */
+export async function handleIntegrationAdminCreateUserProxy(
+  req: Request,
+  res: Response,
+): Promise<void> {
+  await proxyPartnerIntegrationPost(
+    req,
+    res,
+    "/partner/v1/accounts",
+    "create-user",
+  );
+}
+
+/**
+ * Proxies POST `/admin/integration/validate-api-key` to integrations
+ * `POST /partner/v1/api-keys/validate`. JSON responses pass through with upstream status.
+ */
+export async function handleIntegrationAdminValidateProxy(
+  req: Request,
+  res: Response,
+): Promise<void> {
+  await proxyPartnerIntegrationPost(
+    req,
+    res,
+    "/partner/v1/api-keys/validate",
+    "validate-api-key",
+  );
+}
+
+/**
+ * Proxies POST `/admin/integration/rotate-api-key` to integrations
+ * `POST /partner/v1/api-keys/rotate`. JSON responses pass through with upstream status.
+ */
+export async function handleIntegrationAdminRotateProxy(
+  req: Request,
+  res: Response,
+): Promise<void> {
+  await proxyPartnerIntegrationPost(
+    req,
+    res,
+    "/partner/v1/api-keys/rotate",
+    "rotate-api-key",
+  );
 }

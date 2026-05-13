@@ -15,10 +15,12 @@ import {
 } from "../controllers/v0/admin/metrics";
 import { realtimeSearchController } from "../controllers/v2/f-search";
 import { concurrencyQueueBackfillController } from "../controllers/v0/admin/concurrency-queue-backfill";
-import { integCreateUserController } from "../controllers/v0/admin/create-user";
-import { integValidateApiKeyController } from "../controllers/v0/admin/validate-api-key";
 import { crawlMonitorController } from "../controllers/v0/admin/crawl-monitor";
-import { handleIntegrationAdminRotateProxy } from "../lib/admin-integration-integrations-proxy";
+import {
+  handleIntegrationAdminCreateUserProxy,
+  handleIntegrationAdminRotateProxy,
+  handleIntegrationAdminValidateProxy,
+} from "../lib/admin-integration-integrations-proxy";
 import { RateLimiterMode } from "../types";
 
 export const adminRouter = express.Router();
@@ -89,12 +91,12 @@ adminRouter.post(
 
 adminRouter.post(
   `/admin/integration/create-user`,
-  wrap(integCreateUserController),
+  wrap(handleIntegrationAdminCreateUserProxy),
 );
 
 adminRouter.post(
   `/admin/integration/validate-api-key`,
-  wrap(integValidateApiKeyController),
+  wrap(handleIntegrationAdminValidateProxy),
 );
 
 adminRouter.post(
