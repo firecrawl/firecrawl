@@ -565,8 +565,6 @@ v2Router.post(
   wrap(supportProxyController),
 );
 
-// Agent signup: served by firecrawl-web at POST /api/v2/agent-signup (+ /confirm, /block).
-
 // Only register x402 routes if X402_PAY_TO_ADDRESS is configured
 if (isX402Enabled()) {
   v2Router.post(
