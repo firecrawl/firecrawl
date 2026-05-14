@@ -74,19 +74,26 @@ type ParseOptions struct {
 }
 
 // MarshalJSON preserves string formats while allowing object formats such as QuestionFormat.
+// When Formats contains "json" and JsonOptions is set, the "json" string entry is replaced
+// with a format object embedding the JsonOptions fields, and JsonOptions is omitted from the
+// top-level payload.
 func (o ParseOptions) MarshalJSON() ([]byte, error) {
+	// Clear JsonOptions from the copy so it never appears as a top-level field.
+	clean := o
+	clean.JsonOptions = nil
+
 	type parseOptions ParseOptions
 	payload := struct {
 		parseOptions
 		Formats interface{} `json:"formats,omitempty"`
 	}{
-		parseOptions: parseOptions(o),
+		parseOptions: parseOptions(clean),
 	}
 
 	if len(o.FormatOptions) > 0 {
 		payload.Formats = o.FormatOptions
 	} else if len(o.Formats) > 0 {
-		payload.Formats = o.Formats
+		payload.Formats = buildFormats(o.Formats, o.JsonOptions)
 	}
 
 	return json.Marshal(payload)

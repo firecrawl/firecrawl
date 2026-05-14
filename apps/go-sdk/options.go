@@ -95,19 +95,26 @@ type ScrapeOptions struct {
 }
 
 // MarshalJSON preserves string formats while allowing object formats such as QuestionFormat.
+// When Formats contains "json" and JsonOptions is set, the "json" string entry is replaced
+// with a format object embedding the JsonOptions fields, and JsonOptions is omitted from the
+// top-level payload.
 func (o ScrapeOptions) MarshalJSON() ([]byte, error) {
+	// Clear JsonOptions from the copy so it never appears as a top-level field.
+	clean := o
+	clean.JsonOptions = nil
+
 	type scrapeOptions ScrapeOptions
 	payload := struct {
 		scrapeOptions
 		Formats interface{} `json:"formats,omitempty"`
 	}{
-		scrapeOptions: scrapeOptions(o),
+		scrapeOptions: scrapeOptions(clean),
 	}
 
 	if len(o.FormatOptions) > 0 {
 		payload.Formats = o.FormatOptions
 	} else if len(o.Formats) > 0 {
-		payload.Formats = o.Formats
+		payload.Formats = buildFormats(o.Formats, o.JsonOptions)
 	}
 
 	return json.Marshal(payload)
@@ -201,9 +208,69 @@ type WebhookConfig struct {
 }
 
 // JsonOptions configures JSON extraction within formats.
+// When set alongside Formats containing "json", MarshalJSON on
+// ScrapeOptions/ParseOptions will embed these fields into the formats array
+// as a format object: {"type": "json", "schema": ..., "prompt": ...}.
 type JsonOptions struct {
 	Prompt string                 `json:"prompt,omitempty"`
 	Schema map[string]interface{} `json:"schema,omitempty"`
+}
+
+// JsonFormat represents a JSON extraction format entry in the formats array.
+// Use this in FormatOptions for explicit control, or set JsonOptions on
+// ScrapeOptions for automatic transformation.
+type JsonFormat struct {
+	Prompt string                 `json:"prompt,omitempty"`
+	Schema map[string]interface{} `json:"schema,omitempty"`
+}
+
+// MarshalJSON always emits the API-required json format type.
+func (j JsonFormat) MarshalJSON() ([]byte, error) {
+	type jsonFormat struct {
+		Type   string                 `json:"type"`
+		Prompt string                 `json:"prompt,omitempty"`
+		Schema map[string]interface{} `json:"schema,omitempty"`
+	}
+
+	return json.Marshal(jsonFormat{
+		Type:   "json",
+		Prompt: j.Prompt,
+		Schema: j.Schema,
+	})
+}
+
+// buildFormats transforms a string formats slice into the v2 API format.
+// If "json" is present and jsonOpts is non-nil, the "json" entry is replaced
+// with a JsonFormat object. Other string entries are preserved as-is.
+func buildFormats(formats []string, jsonOpts *JsonOptions) interface{} {
+	if jsonOpts == nil {
+		return formats
+	}
+
+	hasJSON := false
+	for _, f := range formats {
+		if f == "json" {
+			hasJSON = true
+			break
+		}
+	}
+
+	if !hasJSON {
+		return formats
+	}
+
+	result := make([]interface{}, 0, len(formats))
+	for _, f := range formats {
+		if f == "json" {
+			result = append(result, JsonFormat{
+				Prompt: jsonOpts.Prompt,
+				Schema: jsonOpts.Schema,
+			})
+		} else {
+			result = append(result, f)
+		}
+	}
+	return result
 }
 
 // Pointer helpers for optional fields.
