@@ -5,7 +5,7 @@ import {
   stopInteraction as stopInteractionMethod,
 } from "./methods/scrape";
 import { parse as parseMethod } from "./methods/parse";
-import { search } from "./methods/search";
+import { search, searchWithMetadata } from "./methods/search";
 import { map as mapMethod } from "./methods/map";
 import {
   startCrawl,
@@ -49,6 +49,7 @@ import type {
   ScrapeOptions,
   SearchData,
   SearchRequest,
+  SearchResponse,
   MapData,
   MapOptions,
   CrawlResponse,
@@ -226,6 +227,18 @@ export class FirecrawlClient {
    */
   async search(query: string, req: Omit<SearchRequest, "query"> = {}): Promise<SearchData> {
     return search(this.http, { query, ...req });
+  }
+
+  /**
+   * Search the web and return the full response envelope including metadata.
+   * Unlike `search()`, which returns only the data, this method also exposes
+   * `id`, `creditsUsed`, and `warning` from the API response.
+   * @param query Search query string.
+   * @param req Additional search options (sources, limit, scrapeOptions, etc.).
+   * @returns Full search response with data and metadata.
+   */
+  async searchWithMetadata(query: string, req: Omit<SearchRequest, "query"> = {}): Promise<SearchResponse> {
+    return searchWithMetadata(this.http, { query, ...req });
   }
 
   // Map
