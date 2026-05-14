@@ -89,11 +89,6 @@ adminRouter.post(
   wrap(crawlMonitorController),
 );
 
-// TODO: Remove dangling partner admin controller implementations (routes now proxy to
-// firecrawl-integrations — see `lib/admin-integration-integrations-proxy.ts`):
-// - `controllers/v0/admin/create-user.ts` (`integCreateUserController`)
-// - `controllers/v0/admin/validate-api-key.ts` (`integValidateApiKeyController`)
-// - `controllers/v0/admin/rotate-api-key.ts` (`integRotateApiKeyController`)
 adminRouter.post(
   `/admin/integration/create-user`,
   wrap(handleIntegrationAdminCreateUserProxy),
