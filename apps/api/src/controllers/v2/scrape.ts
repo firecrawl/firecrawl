@@ -1,6 +1,7 @@
 import { Response } from "express";
 import { config } from "../../config";
 import { logger as _logger } from "../../lib/logger";
+import { sendCompletionNotification } from "../../services/notification/completion-notification";
 import {
   Document,
   FormatObject,
@@ -286,6 +287,18 @@ export async function scrapeController(
             e instanceof TransportableError ? e.code : "unknown",
         });
 
+        if (req.body.notifyOnCompletion) {
+          sendCompletionNotification({
+            jobType: "scrape",
+            jobId: jobId,
+            success: false,
+            url: req.body.url,
+            error: e instanceof Error ? e.message : String(e),
+            duration: new Date().getTime() - middlewareStartTime,
+            teamId: req.auth.team_id,
+          }).catch(() => {});
+        }
+
         if (e instanceof TransportableError) {
           if (!timeoutErr) {
             logger.error(`Error in scrapeController`, {
@@ -452,6 +465,17 @@ export async function scrapeController(
         concurrencyLimited,
         concurrencyQueueDurationMs: lockTime || undefined,
       });
+
+      if (req.body.notifyOnCompletion) {
+        sendCompletionNotification({
+          jobType: "scrape",
+          jobId,
+          success: true,
+          url: req.body.url,
+          duration: new Date().getTime() - middlewareStartTime,
+          teamId: req.auth.team_id,
+        }).catch(() => {});
+      }
 
       return res.status(200).json({
         success: true,

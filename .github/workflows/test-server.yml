@@ -15,17 +15,17 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        engine: ['playwright', 'fetch'] # unsure if we need both of these
-        proxy: ['proxy', 'no-proxy'] # proxy / no-proxy run different tests, keep both
-        search: ['searxng'] # disabled google for now, should be fine with just Searxng
-        ai: ['openai'] # AI only should be fine, as it simply adds tests, if non-AI fails, AI will fail.
+        engine: ['playwright', 'fetch']
+        proxy: ['no-proxy'] # this fork has no proxy credentials configured
+        search: ['searxng']
+        ai: ['openai']
 
         # legacy matrix:
         # engine: ["playwright", "fetch"]
         # proxy: ["proxy", "no-proxy"]
         # search: ["searxng", "google"]
         # ai: ["openai", "no-ai"]
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: self-hosted
     services:
       redis:
         image: redis
@@ -176,16 +176,26 @@ jobs:
       - name: Set up SearXNG
         if: matrix.search == 'searxng'
         run: |
-          mkdir searxng
-
-          echo "use_default_settings: true
+          # Avoid host bind-mounts: Docker writes into the mounted dir as
+          # root and poisons the runner workspace for subsequent jobs.
+          # Instead, start with the image's default config, then docker cp
+          # our settings in and restart so it picks them up.
+          docker rm -f searxng 2>/dev/null || true
+          cat > /tmp/searxng-settings.yml <<'EOF'
+          use_default_settings: true
           search:
             formats: [html, json, csv]
           server:
-            secret_key: 'fcsecret'" > searxng/settings.yml
+            secret_key: 'fcsecret'
+          EOF
 
-          docker run -d -p 3434:8080 -v "${PWD}/searxng:/etc/searxng" --name searxng searxng/searxng
+          docker run -d -p 3434:8080 --name searxng searxng/searxng
           pnpx wait-on tcp:3434 -t 30s
+
+          docker cp /tmp/searxng-settings.yml searxng:/etc/searxng/settings.yml
+          docker restart searxng
+          pnpx wait-on tcp:3434 -t 30s
+          rm -f /tmp/searxng-settings.yml
         working-directory: ./
 
       - name: Install API dependencies

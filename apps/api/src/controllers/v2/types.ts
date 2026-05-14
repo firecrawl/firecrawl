@@ -842,6 +842,7 @@ const scrapeRequestSchemaBase = baseScrapeOptions.extend({
   origin: z.string().optional().prefault("api"),
   integration: integrationSchema.optional().transform(val => val || null),
   zeroDataRetention: z.boolean().optional(),
+  notifyOnCompletion: z.boolean().optional(),
   __agentInterop: z
     .object({
       auth: z.string(),
@@ -870,6 +871,7 @@ export type ScrapeRequestInput = Omit<
   origin?: string;
   integration?: z.input<typeof integrationSchema> | null;
   zeroDataRetention?: boolean;
+  notifyOnCompletion?: boolean;
 };
 
 const uploadedParseFileSchema = z.custom<UploadedParseFile>(
@@ -931,6 +933,7 @@ const batchScrapeRequestSchemaBase = baseScrapeOptions.extend({
   ignoreInvalidURLs: z.boolean().prefault(true),
   maxConcurrency: z.int().positive().optional(),
   zeroDataRetention: z.boolean().optional(),
+  notifyOnCompletion: z.boolean().optional(),
   __agentInterop: z
     .object({
       auth: z.string(),
@@ -955,6 +958,7 @@ const batchScrapeRequestSchemaNoURLValidationBase = baseScrapeOptions.extend({
   ignoreInvalidURLs: z.boolean().prefault(true),
   maxConcurrency: z.int().positive().optional(),
   zeroDataRetention: z.boolean().optional(),
+  notifyOnCompletion: z.boolean().optional(),
   __agentInterop: z
     .object({
       auth: z.string(),
@@ -987,6 +991,7 @@ export type BatchScrapeRequestInput = Omit<
   ignoreInvalidURLs?: boolean;
   maxConcurrency?: number;
   zeroDataRetention?: boolean;
+  notifyOnCompletion?: boolean;
 };
 
 export const crawlerOptions = z.strictObject({
@@ -1028,6 +1033,7 @@ const crawlRequestSchemaBase = crawlerOptions.extend({
   maxConcurrency: z.int().positive().optional(),
   zeroDataRetention: z.boolean().optional(),
   prompt: z.string().max(10000).optional(),
+  notifyOnCompletion: z.boolean().optional(),
 });
 
 export const crawlRequestSchema = strictWithMessage(crawlRequestSchemaBase)

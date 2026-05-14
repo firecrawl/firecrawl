@@ -51,7 +51,8 @@ export async function batchScrapeController(
   }
 
   const zeroDataRetention =
-    getScrapeZDR(req.acuc?.flags) === "forced" || (req.body.zeroDataRetention ?? false);
+    getScrapeZDR(req.acuc?.flags) === "forced" ||
+    (req.body.zeroDataRetention ?? false);
 
   if (
     req.body.__agentInterop &&
@@ -221,6 +222,7 @@ export async function batchScrapeController(
       sitemapped: true,
       v1: true,
       webhook: req.body.webhook,
+      notifyOnCompletion: req.body.notifyOnCompletion,
       internalOptions: sc.internalOptions,
       zeroDataRetention,
       apiKeyId: req.acuc?.api_key_id ?? null,

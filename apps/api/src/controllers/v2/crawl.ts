@@ -238,6 +238,7 @@ export async function crawlController(
       billing: { endpoint: "crawl", jobId: id },
       crawl_id: id,
       webhook: req.body.webhook,
+      notifyOnCompletion: req.body.notifyOnCompletion,
       v1: true,
       zeroDataRetention: zeroDataRetention || false,
       apiKeyId: req.acuc?.api_key_id ?? null,

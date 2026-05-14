@@ -1,0 +1,131 @@
+/* Body and Global Styles */
+
+/* Hide scrollbars but keep functionality */
+::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+}
+
+::-webkit-scrollbar-thumb:hover,
+::-webkit-scrollbar-thumb:active {
+  background-color: var(--black-alpha-12);
+}
+
+/* Global text rendering */
+* {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+/* Body defaults */
+body {
+  font-family: var(--font-sans);
+  font-size: 1rem;
+  line-height: 1.5;
+  color: var(--accent-black);
+  background-color: var(--background-base);
+  overflow-anchor: none;
+}
+
+/* Prevent image dragging */
+img,
+video {
+  max-width: unset;
+  user-select: none;
+  -webkit-user-drag: none;
+  -khtml-user-drag: none;
+  -moz-user-drag: none;
+  -o-user-drag: none;
+  user-drag: none;
+}
+
+/* Form elements */
+input,
+input:focus,
+textarea,
+textarea:focus,
+select,
+select:focus {
+  outline: 0;
+}
+
+/* Focus states handled by utilities */
+*:focus {
+  outline: 0;
+}
+
+/* Smooth scrolling */
+html {
+  scroll-behavior: smooth;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+}
+
+/* Section defaults */
+section {
+  position: relative;
+}
+
+/* Text selection */
+h1, h2, h3, h4, h5, h6, p {
+  user-select: text;
+}
+
+/* Button defaults */
+button {
+  text-align: left;
+  user-select: none;
+}
+
+/* Selection color using design system colors */
+*::selection {
+  background-color: var(--heat-20);
+  color: var(--accent-black);
+}
+
+/* Links */
+a {
+  color: inherit;
+  text-decoration: none;
+  transition: color 0.2s ease;
+}
+
+a:hover {
+  color: var(--heat-100);
+}
+
+/* Code blocks */
+code {
+  font-size: 0.875em;
+  background-color: var(--black-alpha-4);
+  padding: 0.125rem 0.25rem;
+  border-radius: 0.25rem;
+}
+
+pre code {
+  background-color: transparent;
+  padding: 0;
+}
+
+/* Prevent FOUC */
+html {
+  visibility: visible !important;
+}
+
+/* Responsive text sizing */
+@media (max-width: 768px) {
+  html {
+    font-size: 15px;
+  }
+}
+
+@media (min-width: 1536px) {
+  html {
+    font-size: 17px;
+  }
+}

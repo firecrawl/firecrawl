@@ -189,6 +189,112 @@ describe("Scrape browser interact replay", () => {
     scrapeTimeout,
   );
 
+  itIf(canRunReplayHappyPath)(
+    "interact with language=python succeeds on scrape-bound session (#3498)",
+    async () => {
+      const url = `${TEST_SUITE_WEBSITE}?testId=${crypto.randomUUID()}`;
+      let scrapeId: string | null = null;
+
+      try {
+        const scrapeResponse = await scrapeRaw(
+          {
+            url,
+            origin: "website-replay-test",
+            waitFor: 500,
+          },
+          identity,
+        );
+
+        expect(scrapeResponse.statusCode).toBe(200);
+        expect(scrapeResponse.body.success).toBe(true);
+        expect(typeof scrapeResponse.body.scrape_id).toBe("string");
+        scrapeId = scrapeResponse.body.scrape_id as string;
+
+        // Run Python code that accesses the page — this previously failed
+        // with TargetClosedError ~2/3 of the time because the Python
+        // runtime's `page` var was never synced after the replay tab_sync.
+        const executeResponse = await interactWithReplicaRetry(
+          scrapeId,
+          {
+            language: "python",
+            timeout: 60,
+            code: `title = await page.title()\nprint(title)`,
+          },
+          identity,
+        );
+
+        expect(executeResponse.statusCode).toBe(200);
+        expect(executeResponse.body.success).toBe(true);
+        expect(executeResponse.body.exitCode).toBe(0);
+        // stdout should contain the page title (non-empty string)
+        expect(
+          (executeResponse.body.stdout ?? "").trim().length,
+        ).toBeGreaterThan(0);
+      } finally {
+        if (scrapeId) {
+          await scrapeStopInteractiveBrowserRaw(scrapeId, identity);
+        }
+      }
+    },
+    scrapeTimeout,
+  );
+
+  itIf(canRunReplayHappyPath)(
+    "interact with language=python can read replay marker on scrape-bound session",
+    async () => {
+      const marker = crypto.randomUUID();
+      const url = `${TEST_SUITE_WEBSITE}?testId=${crypto.randomUUID()}`;
+      let scrapeId: string | null = null;
+
+      try {
+        const scrapeResponse = await scrapeRaw(
+          {
+            url,
+            origin: "website-replay-test",
+            waitFor: 500,
+            actions: [
+              {
+                type: "executeJavascript",
+                script: `window.__firecrawlPyMarker = "${marker}";`,
+              },
+            ],
+          },
+          identity,
+        );
+
+        expect(scrapeResponse.statusCode).toBe(200);
+        expect(scrapeResponse.body.success).toBe(true);
+        expect(typeof scrapeResponse.body.scrape_id).toBe("string");
+        scrapeId = scrapeResponse.body.scrape_id as string;
+
+        // Verify Python can access the page and read the JS marker set
+        // during the replay actions — proves page binding is correct.
+        const executeResponse = await interactWithReplicaRetry(
+          scrapeId,
+          {
+            language: "python",
+            timeout: 60,
+            code: [
+              `marker = await page.evaluate("window.__firecrawlPyMarker || 'missing'")`,
+              `print(marker)`,
+            ].join("\n"),
+          },
+          identity,
+        );
+
+        expect(executeResponse.statusCode).toBe(200);
+        expect(executeResponse.body.success).toBe(true);
+        expect(executeResponse.body.exitCode).toBe(0);
+        expect(executeResponse.body.stdout).toContain(marker);
+      } finally {
+        if (scrapeId) {
+          await scrapeStopInteractiveBrowserRaw(scrapeId, identity);
+        }
+      }
+    },
+    scrapeTimeout,
+  );
+
   itIf(!TEST_SELF_HOST)(
     "returns 400 for invalid scrape job id format",
     async () => {

@@ -7,23 +7,18 @@ on:
     paths:
       - apps/go-html-to-md-service/**
       - .github/workflows/test-go-html-to-md-service.yml
-  push:
-    branches:
-      - main
-    paths:
-      - apps/go-html-to-md-service/**
   workflow_dispatch:
 
 jobs:
   build-vet-test:
     name: Build, Vet and Test
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: self-hosted
     if: >-
       github.event_name == 'workflow_dispatch' ||
       github.event_name == 'pull_request' ||
       (github.event_name == 'push' && github.ref == 'refs/heads/main')
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Set up Go
         uses: actions/setup-go@v5

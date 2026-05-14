@@ -10,9 +10,9 @@ on:
 jobs:
   test:
     name: Build and Test
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: self-hosted
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@631a55b12751854ce901bb631d5902ceb48146f7 # stable

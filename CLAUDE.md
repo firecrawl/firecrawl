@@ -1,3 +1,11 @@
+# ByteRover Memory System (brv)
+- ALWAYS run `brv query "..."` BEFORE starting any code task — writing, editing, debugging, refactoring, or understanding how something works in a codebase.
+- ALWAYS run `brv curate "..."` AFTER each code change, before moving on. Do not batch multiple changes into one curate.
+- Skip query/curate only for: general programming concepts, meta tasks (run tests, build, commit), or simple clarifications not involving code.
+- `brv` is available at `~/.brv-cli/bin/brv` — always run with `dangerouslyDisableSandbox: true` since it needs network access.
+- Context argument MUST come before flags: `brv curate "insight" -f path/to/file.ts` (not `-f file.ts "insight"`).
+- After curating, verify with `brv curate view <logId>`.
+
 Firecrawl is a web scraper API. The directory you have access to is a monorepo:
  - `apps/api` has the actual API and worker code
  - `apps/*-sdk` are various SDKs

@@ -19,3 +19,7 @@ RUN set -eux; \
 
 # Copy nuq.sql so it is executed as part of the initdb sequence
 COPY nuq.sql /docker-entrypoint-initdb.d/010-nuq.sql
+
+# fire-enrich tables (principals + usage_events) — public schema, coexists
+# with nuq.* without overlap. Sorted after 010-nuq so it runs second.
+COPY fire-enrich.sql /docker-entrypoint-initdb.d/020-fire-enrich.sql

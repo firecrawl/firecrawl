@@ -1,0 +1,41 @@
+## Service image: Node (FastMCP) + NGINX sidecar in one container
+
+# 1) Build stage
+FROM node:22-alpine AS builder
+WORKDIR /app
+
+# Enable pnpm via corepack
+RUN corepack enable && corepack prepare pnpm@latest --activate
+
+COPY package.json pnpm-lock.yaml ./
+# Install dev dependencies for the build, but skip scripts to avoid running
+# the package "prepare" script before the source code is copied.
+RUN pnpm install --frozen-lockfile --ignore-scripts
+
+COPY . .
+RUN pnpm run build
+
+
+# 2) Runtime stage (Node + NGINX)
+FROM node:22-alpine AS runner
+WORKDIR /app
+
+# Enable pnpm via corepack
+RUN corepack enable && corepack prepare pnpm@latest --activate
+
+RUN apk add --no-cache nginx bash curl
+
+# Copy built app and install prod deps only
+COPY --from=builder /app/dist ./dist
+COPY package.json pnpm-lock.yaml ./
+RUN pnpm install --prod --frozen-lockfile --ignore-scripts
+
+# NGINX config and entrypoint
+COPY docker/nginx.conf /etc/nginx/nginx.conf
+COPY docker/entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
+ENV PORT=3000
+EXPOSE 8080
+
+CMD ["/entrypoint.sh"]

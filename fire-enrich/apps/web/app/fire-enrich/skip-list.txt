@@ -1,0 +1,35 @@
+# Common email domains to skip during enrichment
+# Free email providers
+gmail.com
+yahoo.com
+hotmail.com
+outlook.com
+aol.com
+icloud.com
+protonmail.com
+mail.com
+yandex.com
+zoho.com
+
+# Temporary email services
+guerrillamail.com
+mailinator.com
+10minutemail.com
+tempmail.com
+throwawaymail.com
+
+# Educational domains (generic)
+edu
+ac.uk
+
+# Generic business emails
+noreply.com
+no-reply.com
+donotreply.com
+
+# Test domains
+example.com
+test.com
+localhost.com
+
+# Other domains to skip

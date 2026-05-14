@@ -1,0 +1,45 @@
+.string,
+.language-html .tag:not(.punctuation, .attr-name, .attr-value, .special-attr) {
+  color: var(--heat-100) !important;
+}
+
+.punctuation,
+.operator {
+  color: #c2c2c2 !important;
+}
+
+.language-html .attr-name {
+  color: var(--black-alpha-64);
+}
+
+.comment {
+  color: #999999 !important;
+}
+
+code:not(.language-html) .property:not(.literal-property),
+.class-name,
+code:not(.language-html) .function,
+.language-json .boolean {
+  color: #9061ff;
+  color: color(display-p3 0.566 0.38 1);
+}
+
+.language-json .property {
+  color: inherit !important;
+}
+
+.prismjs {
+  padding-top: 20px;
+  @apply text-mono-medium;
+}
+
+.prismjs code {
+  color: var(--accent-black) !important;
+}
+
+.linenumber {
+  width: 48px;
+  padding: 0;
+  font-style: normal;
+  @apply !text-black-alpha-12 !pl-20 !pr-0 !text-left;
+}

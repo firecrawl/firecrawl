@@ -6,20 +6,21 @@ env:
 on:
   push:
     branches:
-      - main
+      - release
     paths:
       - apps/redis/**
+      - .github/workflows/deploy-redis.yml
   workflow_dispatch:
 
 jobs:
       push-app-image:
-        runs-on: blacksmith-4vcpu-ubuntu-2404
+        runs-on: self-hosted
         defaults:
           run:
             working-directory: './apps/redis'
         steps:
           - name: 'Checkout GitHub Action'
-            uses: actions/checkout@main
+            uses: actions/checkout@v5
 
           - name: 'Login to GitHub Container Registry'
             uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
@@ -28,7 +29,12 @@ jobs:
               username: ${{github.actor}}
               password: ${{secrets.GITHUB_TOKEN}}
 
+          - name: Lowercase repo owner
+            run: echo "REPO_OWNER=${GITHUB_REPOSITORY_OWNER,,}" >> "$GITHUB_ENV"
+            env:
+              GITHUB_REPOSITORY_OWNER: ${{ github.repository_owner }}
+
           - name: 'Build Inventory Image'
             run: |
-              docker build . --tag ghcr.io/firecrawl/firecrawl-redis:latest
-              docker push ghcr.io/firecrawl/firecrawl-redis:latest
+              docker build . --tag ghcr.io/${{ env.REPO_OWNER }}/firecrawl-redis:latest
+              docker push ghcr.io/${{ env.REPO_OWNER }}/firecrawl-redis:latest

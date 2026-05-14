@@ -1,0 +1,31 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.firecrawl/firecrawl-mcp-server",
+  "title": "Firecrawl MCP Server",
+  "description": "MCP server for Firecrawl web scraping, structured data extraction and web search integration.",
+  "version": "3.7.4",
+  "repository": {
+    "url": "https://github.com/firecrawl/firecrawl-mcp-server.git",
+    "source": "github"
+  },
+  "packages": [
+    {
+      "registryType": "npm",
+      "identifier": "firecrawl-mcp",
+      "version": "3.7.4",
+      "transport": {
+        "type": "stdio"
+      },
+      "environmentVariables": [
+        {
+          "description": "Your API key for Firecrawl",
+          "isRequired": false,
+          "format": "string",
+          "isSecret": true,
+          "name": "FIRECRAWL_API_KEY"
+        }
+      ]
+    }
+  ]
+}
+

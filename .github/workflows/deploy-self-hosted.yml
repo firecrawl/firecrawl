@@ -1,0 +1,80 @@
+name: Deploy to Self-Hosted Server
+
+on:
+  push:
+    branches:
+      - deploy
+    paths:
+      - 'apps/api/**'
+      - 'apps/nuq-postgres/**'
+      - 'firecrawl-mcp-server/**'
+      - 'docker-compose.yaml'
+      - '.github/workflows/deploy-self-hosted.yml'
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Target environment'
+        required: true
+        default: 'production'
+        type: choice
+        options:
+        - production
+        - staging
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          ssh-keyscan -H ${{ secrets.SERVER_HOST }} >> ~/.ssh/known_hosts
+
+      - name: Deploy to server
+        run: |
+          # Copy deployment files to server
+          rsync -avz --exclude='.git' --exclude='node_modules' ./ ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }}:${{ secrets.DEPLOY_PATH }}
+
+          # Run deployment commands on server
+          ssh ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} << 'EOF'
+            cd ${{ secrets.DEPLOY_PATH }}
+
+            # Stop existing services
+            docker-compose down
+
+            # Pull latest images if needed
+            docker-compose pull
+
+            # Build and start services
+            docker-compose up -d --build
+
+            # Wait for services to be healthy
+            sleep 30
+
+            # Run health checks
+            curl -f http://localhost:3002/health || exit 1
+            curl -f http://localhost:3000/health || exit 1
+
+            # Clean up old images
+            docker image prune -f
+          EOF
+
+      - name: Notify deployment success
+        if: success()
+        run: |
+          curl -X POST -H 'Content-type: application/json' \
+          --data '{"text":"🚀 Self-hosted Firecrawl deployed successfully!"}' \
+          ${{ secrets.SLACK_WEBHOOK_URL }}
+
+      - name: Notify deployment failure
+        if: failure()
+        run: |
+          curl -X POST -H 'Content-type: application/json' \
+          --data '{"text":"❌ Self-hosted Firecrawl deployment failed!"}' \
+          ${{ secrets.SLACK_WEBHOOK_URL }}

@@ -1,0 +1,66 @@
+{
+  "name": "firecrawl-mcp",
+  "version": "3.13.0",
+  "description": "MCP server for Firecrawl web scraping integration. Supports both cloud and self-hosted instances. Features include web scraping, search, batch processing, structured data extraction, and LLM-powered content analysis.",
+  "type": "module",
+  "mcpName": "io.github.firecrawl/firecrawl-mcp-server",
+  "bin": {
+    "firecrawl-mcp": "dist/index.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "tsc && node -e \"require('fs').chmodSync('dist/index.js', '755')\"",
+    "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js",
+    "test:endpoints": "node test-endpoints.js",
+    "start": "node dist/index.js",
+    "start:cloud": "CLOUD_SERVICE=true node dist/index.js",
+    "lint": "eslint src/**/*.ts",
+    "lint:fix": "eslint src/**/*.ts --fix",
+    "format": "prettier --write .",
+    "postinstall": "node scripts/patch-schema.mjs",
+    "prepare": "npm run build",
+    "publish-prod": "npm run build && npm publish",
+    "publish-beta": "npm run build && npm publish --tag beta"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "@fire-enrich/core": "link:../fire-enrich/packages/core",
+    "@mendable/firecrawl-js": "4.17.0",
+    "dotenv": "^17.2.2",
+    "firecrawl-fastmcp": "^1.0.4",
+    "openai": "^4.73.0",
+    "typescript": "^5.9.2",
+    "zod": "^4.1.5"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "keywords": [
+    "mcp",
+    "firecrawl",
+    "web-scraping",
+    "crawler",
+    "content-extraction"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/firecrawl/firecrawl-mcp-server.git"
+  },
+  "author": "firecrawl",
+  "bugs": {
+    "url": "https://github.com/firecrawl/firecrawl-mcp-server/issues"
+  },
+  "homepage": "https://github.com/firecrawl/firecrawl-mcp-server#readme",
+  "devDependencies": {
+    "@jest/globals": "^30.3.0",
+    "@types/jest": "^30.0.0",
+    "@types/node": "^24.3.1",
+    "jest": "^30.3.0",
+    "ts-jest": "^29.4.6"
+  }
+}

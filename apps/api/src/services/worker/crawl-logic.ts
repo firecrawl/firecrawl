@@ -10,6 +10,7 @@ import { supabase_service } from "../supabase";
 import { getJobs } from "../../controllers/v1/crawl-status";
 import { logCrawl, logBatchScrape } from "../logging/log_job";
 import { createWebhookSender, WebhookEvent } from "../webhook/index";
+import { sendCompletionNotification } from "../notification/completion-notification";
 import type { NuQJob } from "./nuq";
 
 export async function finishCrawlSuper(job: NuQJob<any>) {
@@ -126,6 +127,20 @@ export async function finishCrawlSuper(job: NuQJob<any>) {
         }
       }
     }
+
+    if (job.data.notifyOnCompletion) {
+      const jobType = sc.crawlerOptions !== null ? "crawl" : "batch_scrape";
+      sendCompletionNotification({
+        jobType,
+        jobId: crawlId,
+        success: jobStatus === "completed",
+        url: sc.originUrl,
+        numDocs: fullDocs.length,
+        teamId: job.data.team_id,
+      }).catch(err =>
+        logger.debug("Completion notification failed", { error: err }),
+      );
+    }
   } else {
     const num_docs = await getDoneJobsOrderedLength(crawlId);
 
@@ -201,6 +216,20 @@ export async function finishCrawlSuper(job: NuQJob<any>) {
           });
         }
       }
+    }
+
+    if (job.data.notifyOnCompletion) {
+      const jobType = sc.crawlerOptions !== null ? "crawl" : "batch_scrape";
+      sendCompletionNotification({
+        jobType,
+        jobId: crawlId,
+        success: !sc.cancelled,
+        url: sc.originUrl,
+        numDocs: num_docs,
+        teamId: job.data.team_id,
+      }).catch(err =>
+        logger.debug("Completion notification failed", { error: err }),
+      );
     }
   }
 }

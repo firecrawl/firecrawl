@@ -1,0 +1,212 @@
+/* Layout Utilities and Helpers */
+
+/* Container system */
+.container {
+  width: 100%;
+  margin-inline: auto;
+  padding-inline: var(--container-padding, 1rem);
+}
+
+@media (min-width: 640px) {
+  .container {
+    max-width: 640px;
+    padding-inline: 1.5rem;
+  }
+}
+
+@media (min-width: 768px) {
+  .container {
+    max-width: 768px;
+    padding-inline: 2rem;
+  }
+}
+
+@media (min-width: 1024px) {
+  .container {
+    max-width: 1024px;
+  }
+}
+
+@media (min-width: 1280px) {
+  .container {
+    max-width: 1280px;
+  }
+}
+
+@media (min-width: 1536px) {
+  .container {
+    max-width: 1536px;
+  }
+}
+
+/* Layout patterns */
+.layout-grid {
+  display: grid;
+  gap: var(--gap, 1rem);
+}
+
+.layout-flex {
+  display: flex;
+  gap: var(--gap, 1rem);
+}
+
+/* Common grid patterns */
+.grid-cols-auto-fit {
+  grid-template-columns: repeat(auto-fit, minmax(var(--min-width, 250px), 1fr));
+}
+
+.grid-cols-auto-fill {
+  grid-template-columns: repeat(auto-fill, minmax(var(--min-width, 250px), 1fr));
+}
+
+/* Sidebar layouts */
+.layout-sidebar {
+  display: grid;
+  grid-template-columns: var(--sidebar-width, 260px) 1fr;
+  gap: var(--gap, 2rem);
+  align-items: start;
+}
+
+@media (max-width: 1024px) {
+  .layout-sidebar {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Stack layouts */
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap, 1rem);
+}
+
+.stack-horizontal {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: var(--gap, 1rem);
+}
+
+/* Cluster layout */
+.cluster {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--gap, 1rem);
+  align-items: center;
+}
+
+/* Center layout */
+.center {
+  display: grid;
+  place-items: center;
+  min-height: var(--min-height, 100vh);
+}
+
+/* Cover layout */
+.cover {
+  display: flex;
+  flex-direction: column;
+  min-height: var(--min-height, 100vh);
+}
+
+.cover > * {
+  margin-block: 1rem;
+}
+
+.cover > :first-child:not(.centered) {
+  margin-block-start: 0;
+}
+
+.cover > :last-child:not(.centered) {
+  margin-block-end: 0;
+}
+
+.cover > .centered {
+  margin-block: auto;
+}
+
+/* Switcher layout (switches from horizontal to vertical) */
+.switcher {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--gap, 1rem);
+}
+
+.switcher > * {
+  flex-grow: 1;
+  flex-basis: calc((var(--threshold, 30rem) - 100%) * 999);
+}
+
+/* Frame layout (for aspect ratios) */
+.frame {
+  aspect-ratio: var(--ratio, 16 / 9);
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.frame > img,
+.frame > video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+/* Reel layout (horizontal scroll) */
+.reel {
+  display: flex;
+  gap: var(--gap, 1rem);
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+}
+
+.reel::-webkit-scrollbar {
+  display: none;
+}
+
+.reel > * {
+  flex: 0 0 auto;
+}
+
+/* Full bleed */
+.full-bleed {
+  width: 100vw;
+  margin-inline: calc(50% - 50vw);
+}
+
+/* Visually hidden but accessible */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border-width: 0;
+}
+
+/* Skip to content link */
+.skip-link {
+  position: absolute;
+  top: 1rem;
+  left: 1rem;
+  z-index: 999;
+  padding: 0.5rem 1rem;
+  background-color: var(--accent-black);
+  color: var(--white);
+  text-decoration: none;
+  border-radius: 0.25rem;
+  opacity: 0;
+  transform: translateY(-100%);
+  transition: opacity 0.2s, transform 0.2s;
+}
+
+.skip-link:focus {
+  opacity: 1;
+  transform: translateY(0);
+}

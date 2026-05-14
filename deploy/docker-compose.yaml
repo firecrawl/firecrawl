@@ -1,0 +1,273 @@
+name: firecrawl
+
+# Production compose for the self-hosted firecrawl stack at theochinomona.tech.
+# All services pull pre-built images from ghcr.io/theophiluschinomona/*.
+# Watchtower (run separately) polls GHCR and rolls labeled containers when
+# their :latest tag advances.
+
+x-common-service: &common-service
+  image: ghcr.io/theophiluschinomona/firecrawl:latest
+  ulimits:
+    nofile:
+      soft: 65535
+      hard: 65535
+  networks:
+    - backend
+  extra_hosts:
+    - "host.docker.internal:host-gateway"
+  labels:
+    - "com.centurylinklabs.watchtower.enable=true"
+  logging:
+    driver: "json-file"
+    options:
+      max-size: "10m"
+      max-file: "3"
+      compress: "true"
+
+x-common-env: &common-env
+  REDIS_URL: ${REDIS_URL:-redis://redis:6379}
+  REDIS_RATE_LIMIT_URL: ${REDIS_URL:-redis://redis:6379}
+  PLAYWRIGHT_MICROSERVICE_URL: ${PLAYWRIGHT_MICROSERVICE_URL:-http://playwright-service:3000/scrape}
+  POSTGRES_USER: ${POSTGRES_USER:-postgres}
+  POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:-postgres}"
+  POSTGRES_DB: ${POSTGRES_DB:-postgres}
+  POSTGRES_HOST: ${POSTGRES_HOST:-nuq-postgres}
+  POSTGRES_PORT: ${POSTGRES_PORT:-5432}
+  USE_DB_AUTHENTICATION: ${USE_DB_AUTHENTICATION:-false}
+  NUM_WORKERS_PER_QUEUE: ${NUM_WORKERS_PER_QUEUE:-8}
+  CRAWL_CONCURRENT_REQUESTS: ${CRAWL_CONCURRENT_REQUESTS:-10}
+  MAX_CONCURRENT_JOBS: ${MAX_CONCURRENT_JOBS:-5}
+  BROWSER_POOL_SIZE: ${BROWSER_POOL_SIZE:-5}
+  OPENAI_API_KEY: ${OPENAI_API_KEY}
+  OPENAI_BASE_URL: ${OPENAI_BASE_URL}
+  MODEL_NAME: ${MODEL_NAME}
+  MODEL_EMBEDDING_NAME: ${MODEL_EMBEDDING_NAME}
+  OLLAMA_BASE_URL: ${OLLAMA_BASE_URL}
+  SLACK_WEBHOOK_URL: ${SLACK_WEBHOOK_URL}
+  NOTIFY_SLACK_WEBHOOK_URL: ${NOTIFY_SLACK_WEBHOOK_URL}
+  NOTIFY_DISCORD_WEBHOOK_URL: ${NOTIFY_DISCORD_WEBHOOK_URL}
+  BULL_AUTH_KEY: ${BULL_AUTH_KEY}
+  TEST_API_KEY: ${TEST_API_KEY}
+  SELF_HOSTED_WEBHOOK_URL: ${SELF_HOSTED_WEBHOOK_URL}
+  LOGGING_LEVEL: ${LOGGING_LEVEL:-info}
+  PROXY_SERVER: ${PROXY_SERVER}
+  PROXY_USERNAME: ${PROXY_USERNAME}
+  PROXY_PASSWORD: ${PROXY_PASSWORD}
+  SEARXNG_ENDPOINT: ${SEARXNG_ENDPOINT}
+  SEARXNG_ENGINES: ${SEARXNG_ENGINES}
+  SEARXNG_CATEGORIES: ${SEARXNG_CATEGORIES}
+
+services:
+  playwright-service:
+    image: ghcr.io/theophiluschinomona/playwright-service:latest
+    environment:
+      PORT: 3000
+      PROXY_SERVER: ${PROXY_SERVER}
+      PROXY_USERNAME: ${PROXY_USERNAME}
+      PROXY_PASSWORD: ${PROXY_PASSWORD}
+      ALLOW_LOCAL_WEBHOOKS: ${ALLOW_LOCAL_WEBHOOKS}
+      BLOCK_MEDIA: ${BLOCK_MEDIA}
+      MAX_CONCURRENT_PAGES: ${CRAWL_CONCURRENT_REQUESTS:-10}
+    networks:
+      - backend
+    labels:
+      - "com.centurylinklabs.watchtower.enable=true"
+    cpus: 2.0
+    mem_limit: 4G
+    memswap_limit: 4G
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+        compress: "true"
+    tmpfs:
+      - /tmp/.cache:noexec,nosuid,size=1g
+
+  api:
+    <<: *common-service
+    environment:
+      <<: *common-env
+      HOST: "0.0.0.0"
+      PORT: ${INTERNAL_PORT:-3002}
+      EXTRACT_WORKER_PORT: ${EXTRACT_WORKER_PORT:-3004}
+      WORKER_PORT: ${WORKER_PORT:-3005}
+      NUQ_RABBITMQ_URL: amqp://rabbitmq:5672
+      HARNESS_STARTUP_TIMEOUT_MS: ${HARNESS_STARTUP_TIMEOUT_MS:-60000}
+      ENV: production
+    depends_on:
+      redis:
+        condition: service_started
+      playwright-service:
+        condition: service_started
+      rabbitmq:
+        condition: service_healthy
+    ports:
+      - "${PORT:-3002}:${INTERNAL_PORT:-3002}"
+    cpus: 4.0
+    mem_limit: 8G
+    memswap_limit: 8G
+
+  redis:
+    image: redis:alpine
+    networks:
+      - backend
+    command: redis-server --bind 0.0.0.0
+    labels:
+      - "com.centurylinklabs.watchtower.enable=true"
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "5m"
+        max-file: "2"
+        compress: "true"
+
+  rabbitmq:
+    image: rabbitmq:3-management
+    networks:
+      - backend
+    command: rabbitmq-server
+    labels:
+      - "com.centurylinklabs.watchtower.enable=true"
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "check_running"]
+      interval: 5s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "5m"
+        max-file: "2"
+        compress: "true"
+
+  nuq-postgres:
+    image: ghcr.io/theophiluschinomona/nuq-postgres:latest
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-postgres}
+    networks:
+      - backend
+    labels:
+      - "com.centurylinklabs.watchtower.enable=true"
+    volumes:
+      - nuq-postgres-data:/var/lib/postgresql/data
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+        compress: "true"
+
+  cf-access-verifier:
+    image: ghcr.io/theophiluschinomona/cf-access-verifier:latest
+    networks:
+      - backend
+    labels:
+      - "com.centurylinklabs.watchtower.enable=true"
+    environment:
+      CF_ACCESS_TEAM: ${CF_ACCESS_TEAM}
+      CF_ACCESS_AUDS: dashboard:${CF_ACCESS_AUD_DASHBOARD},mcp:${CF_ACCESS_AUD_MCP}
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "5m"
+        max-file: "2"
+        compress: "true"
+
+  firecrawl-mcp:
+    image: ghcr.io/theophiluschinomona/firecrawl-mcp:latest
+    networks:
+      - backend
+      - traefik
+    environment:
+      HTTP_STREAMABLE_SERVER: "true"
+      PORT: "3000"
+      HOST: "0.0.0.0"
+      FIRECRAWL_API_URL: http://api:3002
+      FIRECRAWL_API_KEY: ${FIRECRAWL_API_KEY:-}
+      LLM_API_KEY: ${LLM_API_KEY}
+      LLM_BASE_URL: ${LLM_BASE_URL}
+      LLM_MODEL_SMART: ${LLM_MODEL_SMART:-anthropic/claude-sonnet-4-6}
+      LLM_MODEL_FAST: ${LLM_MODEL_FAST:-anthropic/claude-haiku-4-5}
+    labels:
+      - "com.centurylinklabs.watchtower.enable=true"
+      - "traefik.enable=true"
+      - "traefik.docker.network=traefik"
+      - "traefik.http.routers.fc-mcp.rule=Host(`${MCP_HOST:-crawl.theochinomona.tech}`) && PathPrefix(`/mcp`)"
+      - "traefik.http.routers.fc-mcp.priority=100"
+      - "traefik.http.routers.fc-mcp.entrypoints=websecure"
+      - "traefik.http.routers.fc-mcp.tls.certresolver=cloudflare"
+      - "traefik.http.routers.fc-mcp.middlewares=cf-access-mcp@docker"
+      - "traefik.http.services.fc-mcp.loadbalancer.server.port=3000"
+      - "traefik.http.middlewares.cf-access-mcp.forwardauth.address=http://cf-access-verifier:8080/verify?aud=mcp"
+      - "traefik.http.middlewares.cf-access-mcp.forwardauth.authResponseHeaders=X-Auth-User-Email,X-Auth-User-Sub"
+    depends_on:
+      api:
+        condition: service_started
+      cf-access-verifier:
+        condition: service_started
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+        compress: "true"
+
+  fire-enrich-web:
+    image: ghcr.io/theophiluschinomona/fire-enrich-web:latest
+    networks:
+      - backend
+      - traefik
+    environment:
+      OPS_AUTH_MODE: proxy
+      OPERATOR_EMAILS: ${OPERATOR_EMAILS}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@nuq-postgres:5432/${POSTGRES_DB:-postgres}
+      FIRECRAWL_API_URL: http://api:3002
+      FIRECRAWL_INTERNAL_URL: http://api:3002
+      FIRECRAWL_API_KEY: ${FIRECRAWL_API_KEY:-}
+      BULL_AUTH_KEY: ${BULL_AUTH_KEY}
+      MCP_INTERNAL_URL: http://firecrawl-mcp:3000
+      KEY_ENCRYPTION_KEY: ${KEY_ENCRYPTION_KEY}
+      SERVER_PEPPER: ${SERVER_PEPPER}
+      ADMIN_TOKEN: ${ADMIN_TOKEN}
+      ADMIN_COOKIE_SECRET: ${ADMIN_COOKIE_SECRET}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+    labels:
+      - "com.centurylinklabs.watchtower.enable=true"
+      - "traefik.enable=true"
+      - "traefik.docker.network=traefik"
+      - "traefik.http.routers.fe-web.rule=Host(`${DASHBOARD_HOST:-enrich.theochinomona.tech}`)"
+      - "traefik.http.routers.fe-web.entrypoints=websecure"
+      - "traefik.http.routers.fe-web.tls.certresolver=cloudflare"
+      - "traefik.http.routers.fe-web.middlewares=cf-access-dashboard@docker"
+      - "traefik.http.services.fe-web.loadbalancer.server.port=3000"
+      - "traefik.http.middlewares.cf-access-dashboard.forwardauth.address=http://cf-access-verifier:8080/verify?aud=dashboard"
+      - "traefik.http.middlewares.cf-access-dashboard.forwardauth.authResponseHeaders=X-Auth-User-Email,X-Auth-User-Sub"
+    depends_on:
+      api:
+        condition: service_started
+      nuq-postgres:
+        condition: service_started
+      firecrawl-mcp:
+        condition: service_started
+      cf-access-verifier:
+        condition: service_started
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+        compress: "true"
+
+volumes:
+  nuq-postgres-data:
+
+networks:
+  backend:
+    driver: bridge
+  traefik:
+    external: true
+    name: ${TRAEFIK_NETWORK:-traefik}

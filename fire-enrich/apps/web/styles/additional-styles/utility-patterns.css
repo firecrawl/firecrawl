@@ -1,0 +1,112 @@
+/* Typography */
+.h1 {
+  @apply text-5xl font-bold;
+}
+
+.h2 {
+  @apply text-4xl font-bold;
+}
+
+.h3 {
+  @apply text-3xl font-bold;
+}
+
+.h4 {
+  @apply text-2xl font-bold;
+}
+
+@screen md {
+  .h1 {
+    @apply text-6xl;
+  }
+
+  .h2 {
+    @apply text-5xl;
+  }
+
+  .h3 {
+    @apply text-4xl;
+  }
+}
+
+/* Buttons */
+.btn,
+.btn-sm {
+  @apply text-sm font-medium inline-flex items-center justify-center border border-transparent rounded-md tracking-normal transition;
+}
+
+.btn {
+  @apply px-4 py-2;
+}
+
+.btn-sm {
+  @apply px-2 py-1;
+}
+
+/* Forms */
+input[type="search"]::-webkit-search-decoration,
+input[type="search"]::-webkit-search-cancel-button,
+input[type="search"]::-webkit-search-results-button,
+input[type="search"]::-webkit-search-results-decoration {
+  -webkit-appearance: none;
+}
+
+.form-input,
+.form-textarea,
+.form-multiselect,
+.form-select,
+.form-checkbox,
+.form-radio {
+  @apply bg-white border border-zinc-200 focus:border-zinc-400 shadow shadow-black/5;
+}
+
+.form-input,
+.form-textarea,
+.form-multiselect,
+.form-select,
+.form-checkbox {
+  @apply rounded;
+}
+
+.form-input,
+.form-textarea,
+.form-multiselect,
+.form-select {
+  @apply text-zinc-600 text-sm px-4 py-2;
+}
+
+.form-input,
+.form-textarea {
+  @apply placeholder-zinc-400;
+}
+
+.form-select {
+  @apply pr-10;
+}
+
+.form-checkbox,
+.form-radio {
+  @apply text-zinc-800;
+}
+
+.form-checkbox {
+  @apply rounded-sm;
+}
+
+/* Fix input cursor visibility on Windows Chrome */
+input,
+textarea {
+  caret-color: hsl(var(--foreground));
+}
+
+/* Chrome, Safari and Opera */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+.no-scrollbar {
+  -ms-overflow-style: none;
+  /* IE and Edge */
+  scrollbar-width: none;
+  /* Firefox */
+}

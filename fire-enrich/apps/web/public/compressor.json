@@ -1,0 +1,18 @@
+{
+  "configs": [
+    {
+      "quality": 80,
+      "scale": 1.0,
+      "format": 0,
+      "extension": "webp"
+    },
+    {
+      "quality": 70,
+      "scale": 1.0,
+      "format": 1,
+      "extension": "avif"
+    }
+  ],
+  "version": "1.0",
+  "last_updated": 1751380796
+}

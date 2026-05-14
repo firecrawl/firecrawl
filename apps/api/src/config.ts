@@ -188,6 +188,8 @@ const configSchema = z.object({
   SELF_HOSTED_WEBHOOK_HMAC_SECRET: z.string().optional(),
   SLACK_WEBHOOK_URL: z.string().optional(),
   SLACK_ADMIN_WEBHOOK_URL: z.string().optional(),
+  NOTIFY_SLACK_WEBHOOK_URL: z.string().optional(),
+  NOTIFY_DISCORD_WEBHOOK_URL: z.string().optional(),
   DISABLE_WEBHOOK_DELIVERY: z.stringbool().optional(),
   ALLOW_LOCAL_WEBHOOKS: z.stringbool().optional(),
   WEBHOOK_USE_RABBITMQ: z.stringbool().optional(),

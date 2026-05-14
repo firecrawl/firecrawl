@@ -1,0 +1,41 @@
+name: Deploy Images to GHCR
+
+env:
+  DOTNET_VERSION: '6.0.x'
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  push-image:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 'Checkout GitHub Action'
+        uses: actions/checkout@main
+
+      - name: 'Login to GitHub Container Registry'
+        uses: docker/login-action@v1
+        with:
+          registry: ghcr.io
+          username: ${{github.actor}}
+          password: ${{secrets.GITHUB_TOKEN}}
+
+      - name: 'Set up Docker Buildx'
+        uses: docker/setup-buildx-action@v1
+
+      - name: 'Build Service Image'
+        uses: docker/build-push-action@v2
+        with:
+          context: .
+          file: ./Dockerfile.service
+          push: true
+          tags: ghcr.io/theophiluschinomona/firecrawl-mcp-server:latest
+          cache-from: type=registry,ref=ghcr.io/theophiluschinomona/firecrawl-mcp-server:latest
+          cache-to: type=inline

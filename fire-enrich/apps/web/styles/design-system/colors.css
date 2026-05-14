@@ -1,0 +1,135 @@
+/* Fire Design System Colors */
+/* Define sRGB values first for maximum compatibility */
+:root {
+  /* Base colors */
+  --white: #ffffff;
+  --black: #000000;
+  
+  /* Fire-inspired heat colors */
+  --heat-4: rgba(250, 93, 25, 0.039);
+  --heat-8: rgba(250, 93, 25, 0.078);
+  --heat-12: rgba(250, 93, 25, 0.122);
+  --heat-16: rgba(250, 93, 25, 0.161);
+  --heat-20: rgba(250, 93, 25, 0.200);
+  --heat-40: rgba(250, 93, 25, 0.400);
+  --heat-100: #fa5d19;
+  --heat-200: #ff6600;
+  
+  /* Accent colors */
+  --accent-black: #262626;
+  --accent-white: #ffffff;
+  --accent-amethyst: #9061ff;
+  --accent-bluetron: #2a6dfb;
+  --accent-crimson: #eb3424;
+  
+  /* Black alpha variants */
+  --black-alpha-1: rgba(0, 0, 0, 0.012);
+  --black-alpha-2: rgba(0, 0, 0, 0.020);
+  --black-alpha-3: rgba(0, 0, 0, 0.031);
+  --black-alpha-4: rgba(0, 0, 0, 0.039);
+  --black-alpha-5: rgba(0, 0, 0, 0.051);
+  --black-alpha-6: rgba(0, 0, 0, 0.059);
+  --black-alpha-7: rgba(0, 0, 0, 0.071);
+  --black-alpha-8: rgba(0, 0, 0, 0.078);
+  --black-alpha-10: rgba(0, 0, 0, 0.102);
+  --black-alpha-12: rgba(0, 0, 0, 0.122);
+  --black-alpha-16: rgba(0, 0, 0, 0.161);
+  --black-alpha-20: rgba(0, 0, 0, 0.200);
+  --black-alpha-24: rgba(0, 0, 0, 0.239);
+  --black-alpha-32: rgba(38, 38, 38, 0.322);
+  --black-alpha-40: rgba(38, 38, 38, 0.400);
+  --black-alpha-48: rgba(38, 38, 38, 0.478);
+  --black-alpha-56: rgba(38, 38, 38, 0.561);
+  --black-alpha-64: rgba(38, 38, 38, 0.639);
+  --black-alpha-72: rgba(38, 38, 38, 0.722);
+  --black-alpha-88: rgba(38, 38, 38, 0.878);
+  
+  /* White alpha variants */
+  --white-alpha-56: rgba(255, 255, 255, 0.561);
+  --white-alpha-72: rgba(255, 255, 255, 0.722);
+  
+  /* Border colors */
+  --border-faint: #ededed;
+  --border-muted: #e8e8e8;
+  --border-loud: #e6e6e6;
+  
+  /* Illustration colors */
+  --illustrations-faint: #ededed;
+  --illustrations-muted: #e6e6e6;
+  --illustrations-default: #dbdbdb;
+  
+  /* Background colors */
+  --background-lighter: #fbfbfb;
+  --background-base: #f9f9f9;
+  
+  /* Foreground colors */
+  --foreground: #262626;
+  --foreground-dimmer: rgba(38, 38, 38, 0.722);
+}
+
+/* P3 color space enhancement for supported browsers */
+@supports (color: color(display-p3 1 1 1)) {
+  :root {
+    /* Base colors */
+    --white: color(display-p3 1 1 1);
+    --black: color(display-p3 0 0 0);
+    
+    /* Fire-inspired heat colors */
+    --heat-4: color(display-p3 0.980392 0.364706 0.098039 / 0.039216);
+    --heat-8: color(display-p3 0.980392 0.364706 0.098039 / 0.078431);
+    --heat-12: color(display-p3 0.980392 0.364706 0.098039 / 0.121569);
+    --heat-16: color(display-p3 0.980392 0.364706 0.098039 / 0.160784);
+    --heat-20: color(display-p3 0.980392 0.364706 0.098039 / 0.200000);
+    --heat-40: color(display-p3 0.980392 0.364706 0.098039 / 0.400000);
+    --heat-100: color(display-p3 0.980392 0.364706 0.098039 / 1.000000);
+    --heat-200: color(display-p3 1.000000 0.400000 0.000000 / 1.000000);
+    
+    /* Accent colors */
+    --accent-black: color(display-p3 0.149020 0.149020 0.149020 / 1.000000);
+    --accent-white: color(display-p3 1.000000 1.000000 1.000000 / 1.000000);
+    --accent-amethyst: color(display-p3 0.564706 0.380392 1.000000 / 1.000000);
+    --accent-bluetron: color(display-p3 0.164706 0.427451 0.984314 / 1.000000);
+    --accent-crimson: color(display-p3 0.921569 0.203922 0.141176 / 1.000000);
+    
+    /* Black alpha variants */
+    --black-alpha-1: color(display-p3 0.000000 0.000000 0.000000 / 0.011765);
+    --black-alpha-2: color(display-p3 0.000000 0.000000 0.000000 / 0.019608);
+    --black-alpha-3: color(display-p3 0.000000 0.000000 0.000000 / 0.031373);
+    --black-alpha-4: color(display-p3 0.000000 0.000000 0.000000 / 0.039216);
+    --black-alpha-5: color(display-p3 0.000000 0.000000 0.000000 / 0.050980);
+    --black-alpha-6: color(display-p3 0.000000 0.000000 0.000000 / 0.058824);
+    --black-alpha-7: color(display-p3 0.000000 0.000000 0.000000 / 0.070588);
+    --black-alpha-8: color(display-p3 0.000000 0.000000 0.000000 / 0.078431);
+    --black-alpha-10: color(display-p3 0.000000 0.000000 0.000000 / 0.101961);
+    --black-alpha-12: color(display-p3 0.000000 0.000000 0.000000 / 0.121569);
+    --black-alpha-16: color(display-p3 0.000000 0.000000 0.000000 / 0.160784);
+    --black-alpha-20: color(display-p3 0.000000 0.000000 0.000000 / 0.200000);
+    --black-alpha-24: color(display-p3 0.000000 0.000000 0.000000 / 0.239216);
+    --black-alpha-32: color(display-p3 0.149020 0.149020 0.149020 / 0.321569);
+    --black-alpha-40: color(display-p3 0.149020 0.149020 0.149020 / 0.400000);
+    --black-alpha-48: color(display-p3 0.149020 0.149020 0.149020 / 0.478431);
+    --black-alpha-56: color(display-p3 0.149020 0.149020 0.149020 / 0.560784);
+    --black-alpha-64: color(display-p3 0.149020 0.149020 0.149020 / 0.639216);
+    --black-alpha-72: color(display-p3 0.149020 0.149020 0.149020 / 0.721569);
+    --black-alpha-88: color(display-p3 0.149020 0.149020 0.149020 / 0.878431);
+    
+    /* White alpha variants */
+    --white-alpha-56: color(display-p3 1.000000 1.000000 1.000000 / 0.560784);
+    --white-alpha-72: color(display-p3 1.000000 1.000000 1.000000 / 0.721569);
+    
+    /* Border colors */
+    --border-faint: color(display-p3 0.929412 0.929412 0.929412 / 1.000000);
+    --border-muted: color(display-p3 0.909804 0.909804 0.909804 / 1.000000);
+    --border-loud: color(display-p3 0.901961 0.901961 0.901961 / 1.000000);
+    
+    /* Illustration colors */
+    --illustrations-faint: color(display-p3 0.929412 0.929412 0.929412 / 1.000000);
+    --illustrations-muted: color(display-p3 0.901961 0.901961 0.901961 / 1.000000);
+    --illustrations-default: color(display-p3 0.858824 0.858824 0.858824 / 1.000000);
+    
+    /* Background colors */
+    --background-lighter: color(display-p3 0.984314 0.984314 0.984314 / 1.000000);
+    --background-base: color(display-p3 0.976471 0.976471 0.976471 / 1.000000);
+  }
+}
+

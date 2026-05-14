@@ -1,0 +1,26 @@
+{
+  "name": "@fire-enrich/mcp",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "fire-enrich-mcp": "./bin/fire-enrich-mcp.js"
+  },
+  "scripts": {
+    "dev": "tsx src/server.ts",
+    "build": "tsc",
+    "test": "node --import tsx --test --test-force-exit src/server.test.ts"
+  },
+  "dependencies": {
+    "@fire-enrich/core": "workspace:*",
+    "@modelcontextprotocol/sdk": "^1.0.0",
+    "express": "^5.0.0",
+    "zod": "^3.25.3"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.0",
+    "@types/node": "^20",
+    "tsx": "^4.19.0",
+    "typescript": "^5"
+  }
+}

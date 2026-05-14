@@ -1,0 +1,22 @@
+# Smithery configuration file: https://smithery.ai/docs/config#smitheryyaml
+
+startCommand:
+  type: stdio
+  configSchema:
+    # JSON Schema defining the configuration options for the MCP.
+    type: object
+    required:
+      - fireCrawlApiKey
+    properties:
+      fireCrawlApiKey:
+        type: string
+        description: Your Firecrawl API key. Required for cloud API usage.
+      fireCrawlApiUrl:
+        type: string
+        description:
+          Custom API endpoint for self-hosted instances. If provided, API key
+          becomes optional.
+  commandFunction:
+    # A function that produces the CLI command to start the MCP on stdio.
+    |-
+    (config) => ({ command: 'node', args: ['dist/index.js'], env: { FIRECRAWL_API_KEY: config.fireCrawlApiKey, FIRECRAWL_API_URL: config.fireCrawlApiUrl || '' } })

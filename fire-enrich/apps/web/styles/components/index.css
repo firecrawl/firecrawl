@@ -1,0 +1,10 @@
+/* Component-specific styles from firecrawl-marketing */
+
+/* UI Components (for Dashboard v2) */
+@import "./button.css";
+@import "./code.css";
+
+/* Additional component CSS will be added as we migrate more components */
+/* @import "./modal.css"; */
+/* @import "./spinner.css"; */
+/* @import "./input.css"; */

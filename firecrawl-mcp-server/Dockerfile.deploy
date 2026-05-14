@@ -1,0 +1,51 @@
+# Build context = the *parent* of firecrawl-mcp-server and fire-enrich.
+# Compose: build: { context: .., dockerfile: firecrawl-mcp-server/Dockerfile.deploy }
+#
+# This Dockerfile materialises the fire-enrich workspace first so the
+# `link:../fire-enrich/packages/core` dep in our package.json resolves to a
+# real built package, then installs + builds the MCP server.
+
+FROM node:22-alpine AS build
+RUN corepack enable && corepack prepare pnpm@10.33.2 --activate
+
+# --- 1) Install + build fire-enrich packages/core (and its workspace deps).
+WORKDIR /workspace/fire-enrich
+COPY fire-enrich/pnpm-lock.yaml fire-enrich/pnpm-workspace.yaml fire-enrich/package.json ./
+COPY fire-enrich/apps/web/package.json apps/web/package.json
+COPY fire-enrich/packages/core/package.json packages/core/package.json
+COPY fire-enrich/packages/db/package.json packages/db/package.json
+COPY fire-enrich/packages/mcp/package.json packages/mcp/package.json
+RUN pnpm install --frozen-lockfile --ignore-scripts
+
+COPY fire-enrich/packages/db packages/db
+COPY fire-enrich/packages/core packages/core
+RUN pnpm --filter @fire-enrich/db build && pnpm --filter @fire-enrich/core build
+
+# --- 2) Install + build the MCP server, with the linked core now satisfied.
+WORKDIR /workspace/firecrawl-mcp-server
+COPY firecrawl-mcp-server/package.json firecrawl-mcp-server/pnpm-lock.yaml ./
+COPY firecrawl-mcp-server/tsconfig.json ./
+COPY firecrawl-mcp-server/scripts ./scripts
+RUN pnpm install --frozen-lockfile --ignore-scripts
+
+COPY firecrawl-mcp-server/src ./src
+RUN pnpm run build && node scripts/patch-schema.mjs
+
+
+FROM node:22-alpine AS runtime
+RUN corepack enable && corepack prepare pnpm@10.33.2 --activate
+WORKDIR /app
+ENV NODE_ENV=production
+
+# Bring the built MCP + the satisfied node_modules (which includes the
+# linked @fire-enrich/core via pnpm's symlink store).
+COPY --from=build /workspace/firecrawl-mcp-server/dist ./dist
+COPY --from=build /workspace/firecrawl-mcp-server/package.json ./package.json
+COPY --from=build /workspace/firecrawl-mcp-server/pnpm-lock.yaml ./pnpm-lock.yaml
+COPY --from=build /workspace/firecrawl-mcp-server/node_modules ./node_modules
+COPY --from=build /workspace/fire-enrich/packages/core /workspace/fire-enrich/packages/core
+# pnpm's link: resolves to an absolute path via /workspace/, so we keep the
+# linked source available at the same path inside the runtime image.
+
+EXPOSE 3000
+CMD ["node", "dist/index.js"]

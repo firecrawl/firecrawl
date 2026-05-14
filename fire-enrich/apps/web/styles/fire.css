@@ -1,0 +1,112 @@
+/* Fire Design System - New Firecrawl Design System */
+/* This is the new fire-inspired design system used in app and brand pages */
+
+/* ALL @import statements must come FIRST before any other CSS */
+
+/* Fire Design System Base */
+@import "./design-system/base/reset.css";
+@import "./design-system/base/body.css";
+@import "./design-system/base/layout.css";
+
+/* Fire Design System Core */
+@import "./design-system/fonts.css";
+@import "./design-system/colors.css";
+@import "./design-system/typography.css";
+@import "./design-system/animations.css";
+@import "./design-system/utilities.css";
+
+/* Tailwind CSS - After all imports */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Container configuration from firecrawl-marketing */
+:root {
+  --container-width: 1112px;
+  --container-width-padding: 1144px;
+}
+
+/* Container implementation matching firecrawl-marketing */
+.container {
+  max-width: min(calc(100% - 32px), var(--container-width));
+  --padding: 16px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+/* Custom container width utilities */
+.cmw-container {
+  max-width: var(--container-width);
+  padding-left: 16px;
+  padding-right: 16px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+@media (max-width: 1024px) {
+  :root {
+    --container-width: 356px;
+    --container-width-padding: var(--container-width);
+  }
+
+  .container {
+    --padding: 0px;
+  }
+}
+
+/* Marketing pattern utilities */
+.overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  border-radius: inherit;
+}
+
+.curvy-rect {
+  contain: layout paint;
+}
+
+/* Fire-specific utilities layer */
+@layer utilities {
+  /* Mask utilities */
+  .mask-intersect {
+    -webkit-mask-composite: source-in; /* For Chrome */
+    mask-composite: intersect; /* Standard */
+  }
+  
+  .mask-subtract {
+    -webkit-mask-composite: source-out; /* For Chrome */
+    mask-composite: subtract; /* Standard */
+  }
+  
+  .mask-union {
+    -webkit-mask-composite: source-over; /* For Chrome */
+    mask-composite: add; /* Standard */
+  }
+
+  /* Fire design pattern utilities */
+  .dotted-underline::before {
+    content: "";
+    position: absolute;
+    bottom: -3px;
+    left: 0;
+    width: 100%;
+    height: 1.7px;
+    background-image: url("data:image/svg+xml,%3Csvg width='4' height='2' viewBox='0 0 4 2' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Crect width='1.7' height='1.7' rx='0.85' fill='%23D1D1D1' style='fill:%23D1D1D1;fill:color(display-p3 0.8196 0.8196 0.8196);fill-opacity:1;'/%3E%3C/svg%3E%0A");
+    background-size: 3.4px 1.7px;
+    background-repeat: repeat-x;
+  }
+  
+  .inside-border::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    border: 1px solid;
+    border-color: inherit;
+    pointer-events: none;
+    transition: all 0.2s;
+  }
+}

@@ -656,6 +656,36 @@ async function createSessionForScrape(
       },
     ).catch(() => {});
 
+    // Sync the Python runtime's `page` variable to the same active tab.
+    // The Node tab_sync above only updates the Node REPL's `page` — the
+    // Python runtime maintains its own reference which can go stale after
+    // replay closes/swaps tabs, causing TargetClosedError on the first
+    // Python exec in a scrape-bound session. (fixes #3498)
+    //
+    // The Python `page` may already be closed (TargetClosedError), so we
+    // fall back to `browser.contexts` to find the live context and pages.
+    await browserServiceRequest(
+      "POST",
+      `/browsers/${svcResponse.sessionId}/exec`,
+      {
+        code: [
+          `try:`,
+          `    ctx = page.context`,
+          `except Exception:`,
+          `    ctx = browser.contexts[0] if browser.contexts else None`,
+          `if ctx:`,
+          `    pages = ctx.pages`,
+          `    if len(pages) > 0:`,
+          `        target = next((p for p in pages if p.url and p.url != "about:blank"), pages[-1])`,
+          `        page = target`,
+          `        await page.bring_to_front()`,
+        ].join("\n"),
+        language: "python",
+        timeout: 10,
+        origin: "tab_sync_python",
+      },
+    ).catch(() => {});
+
     // Sync agent-browser to the correct page
     const syncResult = await browserServiceRequest<BrowserServiceExecResponse>(
       "POST",

@@ -1,0 +1,44 @@
+name: Deploy fire-enrich-web Image to GHCR
+
+on:
+  push:
+    branches:
+      - release
+    paths:
+      - fire-enrich/apps/web/**
+      - fire-enrich/packages/**
+      - fire-enrich/pnpm-lock.yaml
+      - fire-enrich/pnpm-workspace.yaml
+      - fire-enrich/package.json
+      - .github/workflows/deploy-fire-enrich-web.yml
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: self-hosted
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Lowercase repo owner
+        run: echo "REPO_OWNER=${GITHUB_REPOSITORY_OWNER,,}" >> "$GITHUB_ENV"
+        env:
+          GITHUB_REPOSITORY_OWNER: ${{ github.repository_owner }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: ./fire-enrich
+          file: ./fire-enrich/apps/web/Dockerfile
+          push: true
+          tags: ghcr.io/${{ env.REPO_OWNER }}/fire-enrich-web:latest
+          provenance: false

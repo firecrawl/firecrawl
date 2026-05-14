@@ -1,0 +1,235 @@
+/* Custom Utility Classes */
+
+/* Gradient utilities */
+.gradient-fire {
+  background: linear-gradient(135deg, var(--heat-100) 0%, var(--accent-crimson) 100%);
+}
+
+.gradient-heat {
+  background: linear-gradient(135deg, var(--heat-20) 0%, var(--heat-100) 100%);
+}
+
+.gradient-sunset {
+  background: linear-gradient(135deg, var(--heat-100) 0%, var(--accent-amethyst) 100%);
+}
+
+.gradient-ocean {
+  background: linear-gradient(135deg, var(--accent-bluetron) 0%, var(--accent-amethyst) 100%);
+}
+
+/* Text gradient */
+.text-gradient {
+  background-clip: text;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-color: var(--heat-100); /* Fallback */
+}
+
+/* Mask utilities */
+.mask-fade-bottom {
+  mask-image: linear-gradient(to bottom, black 60%, transparent 100%);
+  -webkit-mask-image: linear-gradient(to bottom, black 60%, transparent 100%);
+}
+
+.mask-fade-edges {
+  mask-image: radial-gradient(ellipse at center, black 50%, transparent 100%);
+  -webkit-mask-image: radial-gradient(ellipse at center, black 50%, transparent 100%);
+}
+
+.mask-intersect {
+  -webkit-mask-composite: source-in; /* For Chrome */
+  mask-composite: intersect; /* For Firefox */
+}
+
+/* Blur utilities */
+.blur-backdrop {
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
+/* Border utilities */
+.border-gradient {
+  position: relative;
+  background: var(--white);
+  border: 1px solid transparent;
+}
+
+.border-gradient::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1px;
+  background: linear-gradient(135deg, var(--heat-100), var(--accent-crimson));
+  mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  mask-composite: xor;
+  -webkit-mask-composite: xor;
+  pointer-events: none;
+}
+
+/* Dotted underline - updated from marketing */
+.dotted-underline {
+  position: relative;
+  display: inline-block;
+  line-height: 1.1;
+}
+
+.dotted-underline::before {
+  content: "";
+  position: absolute;
+  bottom: -2px;
+  left: 0;
+  width: 100%;
+  height: 1.7px;
+  background-image: url("data:image/svg+xml,%3Csvg width='4' height='2' viewBox='0 0 4 2' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Crect width='1.7' height='1.7' rx='0.85' fill='%23D1D1D1' style='fill:%23D1D1D1;fill:color(display-p3 0.8196 0.8196 0.8196);fill-opacity:1;'/%3E%3C/svg%3E%0A");
+  background-size: 3.4px 1.7px;
+  background-repeat: repeat-x;
+}
+
+/* Container utilities */
+.container-prose {
+  max-width: 65ch;
+  margin-inline: auto;
+}
+
+.container-narrow {
+  max-width: 48rem; /* 768px */
+  margin-inline: auto;
+}
+
+.container-wide {
+  max-width: 80rem; /* 1280px */
+  margin-inline: auto;
+}
+
+/* Centering helpers */
+.center-absolute {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+}
+
+.center-flex {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Spacing utilities */
+.stack-sm > * + * {
+  margin-top: 0.5rem;
+}
+
+.stack-md > * + * {
+  margin-top: 1rem;
+}
+
+.stack-lg > * + * {
+  margin-top: 2rem;
+}
+
+.stack-xl > * + * {
+  margin-top: 3rem;
+}
+
+/* Aspect ratio utilities */
+.aspect-video {
+  aspect-ratio: 16 / 9;
+}
+
+.aspect-square {
+  aspect-ratio: 1 / 1;
+}
+
+.aspect-portrait {
+  aspect-ratio: 3 / 4;
+}
+
+/* Selection color */
+::selection {
+  background-color: var(--heat-20);
+  color: var(--accent-black);
+}
+
+/* Focus visible utilities */
+.focus-ring {
+  outline: 2px solid transparent;
+  outline-offset: 2px;
+}
+
+.focus-ring:focus-visible {
+  outline-color: var(--heat-100);
+}
+
+/* Scrollbar styling */
+.scrollbar-thin {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-muted) var(--background-lighter);
+}
+
+.scrollbar-thin::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.scrollbar-thin::-webkit-scrollbar-track {
+  background: var(--background-lighter);
+}
+
+.scrollbar-thin::-webkit-scrollbar-thumb {
+  background-color: var(--border-muted);
+  border-radius: 4px;
+}
+
+.scrollbar-thin::-webkit-scrollbar-thumb:hover {
+  background-color: var(--border-loud);
+}
+
+/* Animation delay utilities */
+.animation-delay-150 {
+  animation-delay: 150ms;
+}
+
+.animation-delay-300 {
+  animation-delay: 300ms;
+}
+
+.animation-delay-450 {
+  animation-delay: 450ms;
+}
+
+.animation-delay-600 {
+  animation-delay: 600ms;
+}
+
+/* Loading animation helpers */
+.animate-shimmer {
+  background-size: 400% 100%;
+  animation: shimmer 2s ease-in-out infinite;
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+/* Heat glow effect */
+.heat-glow {
+  box-shadow: 0 0 40px rgba(250, 93, 25, 0.3);
+  animation: heat-glow 3s ease-in-out infinite;
+}
+
+@keyframes heat-glow {
+  0%, 100% {
+    box-shadow: 0 0 20px rgba(250, 93, 25, 0.2);
+  }
+  50% {
+    box-shadow: 0 0 40px rgba(250, 93, 25, 0.4);
+  }
+}

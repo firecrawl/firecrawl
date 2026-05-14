@@ -1,0 +1,35 @@
+/* Custom Font Faces */
+@font-face {
+  src: url("/fonts/SuisseIntl/400.woff2");
+  font-weight: 400;
+  font-display: swap;
+  font-family: "SuisseIntl";
+}
+
+@font-face {
+  src: url("/fonts/SuisseIntl/450.woff2");
+  font-weight: 450;
+  font-display: swap;
+  font-family: "SuisseIntl";
+}
+
+@font-face {
+  src: url("/fonts/SuisseIntl/500.woff2");
+  font-weight: 500;
+  font-display: swap;
+  font-family: "SuisseIntl";
+}
+
+@font-face {
+  src: url("/fonts/SuisseIntl/600.woff2");
+  font-weight: 600;
+  font-display: swap;
+  font-family: "SuisseIntl";
+}
+
+@font-face {
+  src: url("/fonts/SuisseIntl/700.woff2");
+  font-weight: 700;
+  font-display: swap;
+  font-family: "SuisseIntl";
+}

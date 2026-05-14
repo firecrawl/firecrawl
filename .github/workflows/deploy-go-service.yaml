@@ -1,12 +1,9 @@
 name: Deploy Go Service to GHCR
 
-env:
-  DOTNET_VERSION: "6.0.x"
-
 on:
   push:
     branches:
-      - main
+      - release
     paths:
       - apps/go-html-to-md-service/**
       - .github/workflows/deploy-go-service.yaml
@@ -14,27 +11,33 @@ on:
 
 jobs:
   push-app-image:
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: self-hosted
     defaults:
       run:
         working-directory: "./apps/go-html-to-md-service"
     steps:
-      - name: "Checkout GitHub Action"
-        uses: actions/checkout@main
+      - name: Checkout
+        uses: actions/checkout@v5
 
-      - name: Setup Blacksmith Builder
-        uses: useblacksmith/setup-docker-builder@v1
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
 
-      - name: "Login to GitHub Container Registry"
+      - name: Log in to GitHub Container Registry
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
-          username: ${{github.actor}}
-          password: ${{secrets.GITHUB_TOKEN}}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: "Build and Push Image"
-        uses: useblacksmith/build-push-action@v2
+      - name: Lowercase repo owner
+        run: echo "REPO_OWNER=${GITHUB_REPOSITORY_OWNER,,}" >> "$GITHUB_ENV"
+        env:
+          GITHUB_REPOSITORY_OWNER: ${{ github.repository_owner }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
         with:
           context: ./apps/go-html-to-md-service
           push: true
-          tags: ghcr.io/firecrawl/go-html-to-md-service:latest
+          tags: ghcr.io/${{ env.REPO_OWNER }}/go-html-to-md-service:latest
+          provenance: false

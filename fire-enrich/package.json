@@ -1,0 +1,12 @@
+{
+  "name": "fire-enrich-monorepo",
+  "private": true,
+  "scripts": {
+    "dev": "pnpm --filter web dev",
+    "build": "pnpm -r build",
+    "mcp": "pnpm --filter @fire-enrich/mcp dev",
+    "mcp:build": "pnpm --filter @fire-enrich/mcp build",
+    "lint": "pnpm --filter web lint",
+    "test": "pnpm -r --if-present test"
+  }
+}

@@ -7,26 +7,29 @@ on:
     paths:
       - apps/dot-net-sdk/**
       - .github/workflows/test-dotnet-sdk.yml
-  push:
-    branches:
-      - main
-    paths:
-      - apps/dot-net-sdk/**
   workflow_dispatch:
 
 jobs:
   build-and-test:
     name: Build and Test
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: self-hosted
+    env:
+      DOTNET_NOLOGO: "1"
+      DOTNET_CLI_TELEMETRY_OPTOUT: "1"
     if: >-
       github.event_name == 'workflow_dispatch' ||
       github.event_name == 'pull_request' ||
       (github.event_name == 'push' && github.ref == 'refs/heads/main')
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Set up .NET 8
         uses: actions/setup-dotnet@v4
+        env:
+          # runner.temp is only valid at step-level, not job-level env.
+          # Redirect setup-dotnet away from /usr/share/dotnet which the
+          # self-hosted runner user can't write to.
+          DOTNET_INSTALL_DIR: ${{ runner.temp }}/.dotnet
         with:
           dotnet-version: "8.0.x"
 
