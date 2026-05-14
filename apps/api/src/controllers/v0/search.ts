@@ -81,16 +81,17 @@ async function searchHelper(
   );
 
   if (justSearch) {
+    const searchCredits = Math.ceil(res.length / 10) * 2;
     billTeam(
       team_id,
       subscription_id,
-      res.length,
+      searchCredits,
       api_key_id,
       { endpoint: "search", jobId },
       logger,
     ).catch(error => {
       logger.error(
-        `Failed to bill team ${team_id} for ${res.length} credits: ${error}`,
+        `Failed to bill team ${team_id} for ${searchCredits} credits: ${error}`,
       );
       // Optionally, you could notify an admin or add to a retry queue here
     });
@@ -264,7 +265,7 @@ export async function searchController(req: Request, res: Response) {
       options: searchOptions,
       credits_cost: pageOptions.fetchPageContent
         ? 0
-        : (result.data?.length ?? 0),
+        : Math.ceil((result.data?.length ?? 0) / 10) * 2,
       zeroDataRetention: false, // not supported
     });
     return res.status(result.returnCode).json(result);

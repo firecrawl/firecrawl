@@ -13,6 +13,7 @@ import {
   MapRequestInput,
   BatchScrapeRequestInput,
   SearchRequestInput,
+  SearchFeedbackRequestInput,
   ParseRequestInput,
 } from "../../../controllers/v2/types";
 import request from "supertest";
@@ -609,6 +610,73 @@ export async function searchWithFailure(
 }> {
   const raw = await searchRaw(body, identity);
   expectSearchToFail(raw);
+  return raw.body;
+}
+
+export async function searchRawFull(
+  body: SearchRequestInput,
+  identity: Identity,
+) {
+  return await request(TEST_API_URL)
+    .post("/v2/search")
+    .set("Authorization", `Bearer ${identity.apiKey}`)
+    .set("Content-Type", "application/json")
+    .send(body);
+}
+
+export async function searchFeedbackRaw(
+  searchId: string,
+  body: SearchFeedbackRequestInput,
+  identity: Identity,
+) {
+  return await request(TEST_API_URL)
+    .post("/v2/search/" + encodeURIComponent(searchId) + "/feedback")
+    .set("Authorization", `Bearer ${identity.apiKey}`)
+    .set("Content-Type", "application/json")
+    .send(body);
+}
+
+export async function searchFeedback(
+  searchId: string,
+  body: SearchFeedbackRequestInput,
+  identity: Identity,
+): Promise<{
+  success: true;
+  feedbackId: string;
+  creditsRefunded: number;
+  creditsRefundedToday?: number;
+  dailyRefundCap?: number;
+  dailyCapReached?: boolean;
+  alreadySubmitted?: boolean;
+  warning?: string;
+}> {
+  const raw = await searchFeedbackRaw(searchId, body, identity);
+  if (raw.statusCode !== 200) {
+    console.warn(
+      "Search feedback did not succeed",
+      JSON.stringify(raw.body, null, 2),
+    );
+  }
+  expect(raw.statusCode).toBe(200);
+  expect(raw.body.success).toBe(true);
+  expect(typeof raw.body.feedbackId).toBe("string");
+  expect(typeof raw.body.creditsRefunded).toBe("number");
+  return raw.body;
+}
+
+export async function searchFeedbackWithFailure(
+  searchId: string,
+  body: SearchFeedbackRequestInput,
+  identity: Identity,
+): Promise<{
+  success: false;
+  error: string;
+  details?: unknown;
+}> {
+  const raw = await searchFeedbackRaw(searchId, body, identity);
+  expect(raw.statusCode).not.toBe(200);
+  expect(raw.body.success).toBe(false);
+  expect(typeof raw.body.error).toBe("string");
   return raw.body;
 }
 

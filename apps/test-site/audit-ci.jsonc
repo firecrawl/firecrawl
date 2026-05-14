@@ -1,4 +1,13 @@
 {
     "$schema": "https://github.com/IBM/audit-ci/raw/main/docs/schema.json",
-    "low": true
+    "low": true,
+    "allowlist": [
+        // Temporary deferment for GHSA-77vg-94rm-hx3p (devalue via astro).
+        // devalue@5.8.1 is the first patched release, but it remains inside this
+        // app's configured 12-hour minimum-release-age window. Do not bypass the
+        // age gate for this test-site dependency; retry after 2026-05-15T06:46Z.
+        // Owner: team-engineering-reviewers. Tracking: create internal ticket.
+        // Expires: 2026-05-16.
+        "GHSA-77vg-94rm-hx3p"
+    ]
 }

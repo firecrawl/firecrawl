@@ -4,6 +4,7 @@ import { config } from "../config";
 import { RateLimiterMode } from "../types";
 import expressWs from "express-ws";
 import { searchController } from "../controllers/v2/search";
+import { searchFeedbackController } from "../controllers/v2/search-feedback";
 import { x402SearchController } from "../controllers/v2/x402-search";
 import { scrapeController } from "../controllers/v2/scrape";
 import {
@@ -233,6 +234,13 @@ v2Router.post(
   checkCreditsMiddleware(),
   blocklistMiddleware,
   wrap(searchController),
+);
+
+v2Router.post(
+  "/search/:jobId/feedback",
+  authMiddleware(RateLimiterMode.Account),
+  validateJobIdParam,
+  wrap(searchFeedbackController),
 );
 
 v2Router.post(

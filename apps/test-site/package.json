@@ -13,7 +13,7 @@
     "@astrojs/mdx": "^5.0.3",
     "@astrojs/rss": "^4.0.18",
     "@astrojs/sitemap": "^3.7.2",
-    "astro": "^6.1.10",
+    "astro": "^6.3.2",
     "sharp": "^0.34.5"
   },
   "devDependencies": {
@@ -28,7 +28,7 @@
     "overrides": {
       "fast-xml-builder": ">=1.1.6 <2.0.0",
       "fast-xml-parser": "^5.7.0",
-      "devalue": ">=5.6.4",
+      "devalue": ">=5.6.4 <6.0.0",
       "h3": ">=1.15.9",
       "picomatch@<4.0.4": ">=4.0.4",
       "smol-toml@<1.6.1": ">=1.6.1",
