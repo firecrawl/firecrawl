@@ -6,11 +6,7 @@ const SUPPORT_AGENT_BASE = config.SUPPORT_AGENT_URL;
 const SUPPORT_AGENT_BYPASS = config.SUPPORT_AGENT_VERCEL_BYPASS_SECRET;
 const PROXY_TIMEOUT_MS = 65_000;
 
-const FORWARDED_HEADERS = [
-  "authorization",
-  "idempotency-key",
-  "x-request-id",
-];
+const FORWARDED_HEADERS = ["authorization", "idempotency-key", "x-request-id"];
 
 export async function supportProxyController(
   req: Request,
@@ -45,7 +41,11 @@ export async function supportProxyController(
       signal: AbortSignal.timeout(PROXY_TIMEOUT_MS),
     });
 
-    for (const name of ["content-type", "x-request-id", "x-idempotency-cached"]) {
+    for (const name of [
+      "content-type",
+      "x-request-id",
+      "x-idempotency-cached",
+    ]) {
       const value = upstream.headers.get(name);
       if (value) res.setHeader(name, value);
     }

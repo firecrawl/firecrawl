@@ -41,6 +41,35 @@
 
 **Power AI agents with clean web data.** The API to search, scrape, and interact with the web at scale. Open source and available as a [hosted service](https://firecrawl.dev/?ref=github).
 
+## 🔥 Firecrawl Self-Hosted Enhanced
+
+This is an **enhanced self-hosted fork** of Firecrawl with breaking changes optimized for local deployments. **Not API-compatible with hosted Firecrawl.**
+
+### 🚀 Enhanced Features
+
+- **Local AI Processing**: Agent endpoints use local deep-research with configurable depth/time limits
+- **No API Limits**: Unlimited processing with local AI models (no credit costs)
+- **Enhanced Agent API**: Extended parameters for research depth, source limits, and output formats
+- **Principal Authentication**: Token-based access for self-hosted multi-tenant setups
+- **Engine Compatibility**: Local Fire Engine API endpoints (no external dependencies)
+- **MCP Integration**: Full Model Context Protocol support with enhanced agent tools
+
+### ⚠️ Breaking Changes from Hosted Version
+
+- Agent API: Enhanced parameters (`maxDepth`, `maxUrls`, `timeLimit`, `formats`)
+- Authentication: Principal tokens required for production use
+- Response formats: Additional metadata for self-hosted processing
+- No credit limits: Local processing has no cost restrictions
+- Extended retention: 7-day result retention vs hosted 24 hours
+
+### 🛠️ For Existing Self-Hosted Users
+
+This fork provides **superior capabilities** but requires code updates. Migration benefits:
+- Better AI research quality with configurable parameters
+- No API rate limits or costs
+- Enhanced structured data extraction
+- Improved MCP tool integration
+
 _Pst. Hey, you, join our stargazers :)_
 
 <a href="https://github.com/firecrawl/firecrawl">

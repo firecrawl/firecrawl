@@ -158,6 +158,16 @@ export async function getACUC(
     return acuc;
   }
 
+  // Check for principal tokens (for self-hosted)
+  if (api_key.startsWith("principal_")) {
+    // For self-hosted principal auth, return unlimited
+    const acuc = mockACUC();
+    acuc.api_key = api_key;
+    acuc.team_id = api_key; // use token as team_id
+    acuc.is_extract = isExtract;
+    return acuc;
+  }
+
   if (config.USE_DB_AUTHENTICATION !== true) {
     const acuc = mockACUC();
     acuc.is_extract = isExtract;
@@ -479,6 +489,21 @@ async function supaAuthenticateUser(
       rateLimiter = getRateLimiter(RateLimiterMode.Preview, token);
     }
     teamId = `preview_${iptoken}`;
+  } else if (token.startsWith("principal_")) {
+    // Principal token auth for self-hosted
+    chunk = await getACUC(token, false, true, mode);
+    if (chunk === null) {
+      return {
+        success: false,
+        error: "Unauthorized: Invalid principal token",
+        status: 401,
+      };
+    }
+    teamId = chunk.team_id;
+    rateLimiter = getRateLimiter(
+      mode ?? RateLimiterMode.Crawl,
+      chunk.rate_limits,
+    );
   } else {
     normalizedApi = parseApi(token);
     if (!normalizedApiIsUuid(normalizedApi)) {

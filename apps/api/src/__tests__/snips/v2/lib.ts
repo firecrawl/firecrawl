@@ -14,6 +14,9 @@ import {
   BatchScrapeRequestInput,
   SearchRequestInput,
   ParseRequestInput,
+  AgentRequest,
+  AgentResponse,
+  AgentStatusResponse,
 } from "../../../controllers/v2/types";
 import request from "supertest";
 import {
@@ -809,6 +812,74 @@ export async function extractRaw(
   identity: Identity,
 ) {
   return await extractStart(body, identity);
+}
+
+// =========================================
+// Agent API
+// =========================================
+
+export async function agentStart(body: AgentRequest, identity: Identity) {
+  return await request(TEST_API_URL)
+    .post("/v2/agent")
+    .set("Authorization", `Bearer ${identity.apiKey}`)
+    .set("Content-Type", "application/json")
+    .send(body);
+}
+
+export async function agentStatus(jobId: string, identity: Identity) {
+  return await request(TEST_API_URL)
+    .get(`/v2/agent/${jobId}`)
+    .set("Authorization", `Bearer ${identity.apiKey}`);
+}
+
+function expectAgentStartToSucceed(
+  response: Awaited<ReturnType<typeof agentStart>>,
+) {
+  if (response.statusCode !== 200) {
+    console.warn(
+      "Agent start did not succeed",
+      JSON.stringify(response.body, null, 2),
+    );
+  }
+
+  expect(response.statusCode).toBe(200);
+  expect(response.body.success).toBe(true);
+  expect(typeof response.body.id).toBe("string");
+}
+
+function expectAgentStatusToSucceed(
+  response: Awaited<ReturnType<typeof agentStatus>>,
+) {
+  if (response.statusCode !== 200) {
+    console.warn(
+      "Agent status did not succeed",
+      JSON.stringify(response.body, null, 2),
+    );
+  }
+
+  expect(response.statusCode).toBe(200);
+  expect(response.body.success).toBe(true);
+  expect(typeof response.body.status).toBe("string");
+}
+
+export async function agent(
+  body: AgentRequest,
+  identity: Identity,
+): Promise<AgentStatusResponse> {
+  const start = await agentStart(body, identity);
+  expectAgentStartToSucceed(start);
+
+  let status: Awaited<ReturnType<typeof agentStatus>> | undefined;
+
+  do {
+    if (status) await pollSleep();
+    status = await agentStatus(start.body.id, identity);
+    expectAgentStatusToSucceed(status);
+  } while (status.body.status === "processing");
+
+  expect(status.body.success).toBe(true);
+  expect(status.body.status).toBe("completed");
+  return status.body;
 }
 
 // =========================================

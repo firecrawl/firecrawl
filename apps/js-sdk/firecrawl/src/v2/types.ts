@@ -517,6 +517,13 @@ export interface SearchData {
   images?: Array<SearchResultImages | Document>;
 }
 
+export interface SearchResponse {
+  data: SearchData;
+  id?: string;
+  creditsUsed?: number;
+  warning?: string | null;
+}
+
 export interface CategoryOption {
   type: 'github' | 'research' | 'pdf';
 }

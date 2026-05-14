@@ -2,6 +2,7 @@ import {
   type Document,
   type SearchData,
   type SearchRequest,
+  type SearchResponse,
   type SearchResultWeb,
   type ScrapeOptions,
   type SearchResultNews,
@@ -72,17 +73,30 @@ function transformArray<ResultType>(arr: any[]): Array<ResultType | Document> {
   return results;
 }
 
-export async function search(
+interface RawSearchResponse {
+  success: boolean;
+  data?: Record<string, unknown>;
+  id?: string;
+  creditsUsed?: number;
+  warning?: string | null;
+  error?: string;
+}
+
+function transformSearchData(raw: Record<string, any>): SearchData {
+  const out: SearchData = {};
+  if (raw.web) out.web = transformArray<SearchResultWeb>(raw.web);
+  if (raw.news) out.news = transformArray<SearchResultNews>(raw.news);
+  if (raw.images) out.images = transformArray<SearchResultImages>(raw.images);
+  return out;
+}
+
+async function executeSearch(
   http: HttpClient,
   request: SearchRequest,
-): Promise<SearchData> {
+): Promise<RawSearchResponse> {
   const payload = prepareSearchPayload(request);
   try {
-    const res = await http.post<{
-      success: boolean;
-      data?: Record<string, unknown>;
-      error?: string;
-    }>(
+    const res = await http.post<RawSearchResponse>(
       "/v2/search",
       payload,
       typeof request.timeout === "number"
@@ -92,15 +106,31 @@ export async function search(
     if (res.status !== 200 || !res.data?.success) {
       throwForBadResponse(res, "search");
     }
-    const data = (res.data.data || {}) as Record<string, any>;
-    const out: SearchData = {};
-    if (data.web) out.web = transformArray<SearchResultWeb>(data.web);
-    if (data.news) out.news = transformArray<SearchResultNews>(data.news);
-    if (data.images)
-      out.images = transformArray<SearchResultImages>(data.images);
-    return out;
+    return res.data;
   } catch (err: any) {
     if (err?.isAxiosError) return normalizeAxiosError(err, "search");
     throw err;
   }
+}
+
+export async function search(
+  http: HttpClient,
+  request: SearchRequest,
+): Promise<SearchData> {
+  const raw = await executeSearch(http, request);
+  return transformSearchData((raw.data || {}) as Record<string, any>);
+}
+
+export async function searchWithMetadata(
+  http: HttpClient,
+  request: SearchRequest,
+): Promise<SearchResponse> {
+  const raw = await executeSearch(http, request);
+  const response: SearchResponse = {
+    data: transformSearchData((raw.data || {}) as Record<string, any>),
+  };
+  if (raw.id !== undefined) response.id = raw.id;
+  if (raw.creditsUsed !== undefined) response.creditsUsed = raw.creditsUsed;
+  if (raw.warning !== undefined) response.warning = raw.warning;
+  return response;
 }

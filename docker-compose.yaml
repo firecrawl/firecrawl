@@ -159,6 +159,11 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:-postgres}
     networks:
       - backend
+    volumes:
+      # Persist queue + fire-enrich tables across container recreations.
+      # initdb scripts (nuq.sql + fire-enrich.sql) only run on a fresh volume,
+      # so blowing this volume away resets BOTH the queue and every principal.
+      - nuq-postgres-data:/var/lib/postgresql/data
     logging:
       driver: "json-file"
       options:
@@ -166,6 +171,139 @@ services:
         max-file: "3"
         compress: "true"
 
+  # ====================================================================
+  # The three services below extend the upstream Firecrawl stack with the
+  # self-hosted dashboard + MCP + the Cloudflare Access verifier sidecar
+  # that gates them. They join the same `backend` network so the dashboard
+  # can probe them by internal hostname; they also join `traefik` so an
+  # external Traefik instance can route the public hostnames in.
+  # ====================================================================
+
+  cf-access-verifier:
+    # Tiny Node service that validates Cloudflare Access JWTs for
+    # Traefik's forwardAuth middleware. Stays on `backend` only — never
+    # exposed publicly. Two AUDs (dashboard, mcp) share one verifier.
+    build:
+      context: ../fire-enrich/services/cf-access-verifier
+    networks:
+      - backend
+    environment:
+      CF_ACCESS_TEAM: ${CF_ACCESS_TEAM}
+      CF_ACCESS_AUDS: dashboard:${CF_ACCESS_AUD_DASHBOARD},mcp:${CF_ACCESS_AUD_MCP}
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "5m"
+        max-file: "2"
+        compress: "true"
+
+  firecrawl-mcp:
+    # Self-hosted Firecrawl MCP server. Path-routed onto crawl.theochinomona.tech/mcp
+    # so it shares a hostname with the API — Cloudflare Access app is scoped
+    # to the /mcp subpath only.
+    build:
+      # Parent context so the Dockerfile can pull in fire-enrich/packages/core
+      # as a workspace dep (we link: that across repos).
+      context: ..
+      dockerfile: firecrawl-mcp-server/Dockerfile.deploy
+    networks:
+      - backend
+      - traefik
+    environment:
+      HTTP_STREAMABLE_SERVER: "true"
+      PORT: "3000"
+      HOST: "0.0.0.0"
+      FIRECRAWL_API_URL: http://api:3002
+      FIRECRAWL_API_KEY: ${FIRECRAWL_API_KEY:-}
+      LLM_API_KEY: ${LLM_API_KEY}
+      LLM_BASE_URL: ${LLM_BASE_URL}
+      LLM_MODEL_SMART: ${LLM_MODEL_SMART:-anthropic/claude-sonnet-4-6}
+      LLM_MODEL_FAST: ${LLM_MODEL_FAST:-anthropic/claude-haiku-4-5}
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=traefik"
+      # Higher priority than the api router so PathPrefix(`/mcp`) wins.
+      - "traefik.http.routers.fc-mcp.rule=Host(`crawl.theochinomona.tech`) && PathPrefix(`/mcp`)"
+      - "traefik.http.routers.fc-mcp.priority=100"
+      - "traefik.http.routers.fc-mcp.entrypoints=websecure"
+      - "traefik.http.routers.fc-mcp.tls.certresolver=cloudflare"
+      - "traefik.http.routers.fc-mcp.middlewares=cf-access-mcp@docker"
+      - "traefik.http.services.fc-mcp.loadbalancer.server.port=3000"
+      - "traefik.http.middlewares.cf-access-mcp.forwardauth.address=http://cf-access-verifier:8080/verify?aud=mcp"
+      - "traefik.http.middlewares.cf-access-mcp.forwardauth.authResponseHeaders=X-Auth-User-Email,X-Auth-User-Sub"
+    depends_on:
+      api:
+        condition: service_started
+      cf-access-verifier:
+        condition: service_started
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+        compress: "true"
+
+  fire-enrich-web:
+    # Self-hosted ops dashboard (and the original CSV-enrichment app).
+    # Same nuq-postgres instance — fire-enrich tables live in the public
+    # schema (apps/nuq-postgres/fire-enrich.sql, runs at initdb).
+    build:
+      context: ../fire-enrich
+      dockerfile: apps/web/Dockerfile
+    networks:
+      - backend
+      - traefik
+    environment:
+      OPS_AUTH_MODE: proxy
+      OPERATOR_EMAILS: ${OPERATOR_EMAILS}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@nuq-postgres:5432/${POSTGRES_DB:-postgres}
+      FIRECRAWL_API_URL: http://api:3002
+      FIRECRAWL_INTERNAL_URL: http://api:3002
+      FIRECRAWL_API_KEY: ${FIRECRAWL_API_KEY:-}
+      BULL_AUTH_KEY: ${BULL_AUTH_KEY}
+      MCP_INTERNAL_URL: http://firecrawl-mcp:3000
+      KEY_ENCRYPTION_KEY: ${KEY_ENCRYPTION_KEY}
+      SERVER_PEPPER: ${SERVER_PEPPER}
+      ADMIN_TOKEN: ${ADMIN_TOKEN}
+      ADMIN_COOKIE_SECRET: ${ADMIN_COOKIE_SECRET}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=traefik"
+      - "traefik.http.routers.fe-web.rule=Host(`enrich.theochinomona.tech`)"
+      - "traefik.http.routers.fe-web.entrypoints=websecure"
+      - "traefik.http.routers.fe-web.tls.certresolver=cloudflare"
+      - "traefik.http.routers.fe-web.middlewares=cf-access-dashboard@docker"
+      - "traefik.http.services.fe-web.loadbalancer.server.port=3000"
+      - "traefik.http.middlewares.cf-access-dashboard.forwardauth.address=http://cf-access-verifier:8080/verify?aud=dashboard"
+      - "traefik.http.middlewares.cf-access-dashboard.forwardauth.authResponseHeaders=X-Auth-User-Email,X-Auth-User-Sub"
+    depends_on:
+      api:
+        condition: service_started
+      nuq-postgres:
+        condition: service_started
+      firecrawl-mcp:
+        condition: service_started
+      cf-access-verifier:
+        condition: service_started
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+        compress: "true"
+
+volumes:
+  nuq-postgres-data:
+
 networks:
   backend:
     driver: bridge
+  # External network owned by the host's Traefik instance. The fire-enrich-web
+  # and firecrawl-mcp services join it so Traefik can route
+  # enrich.theochinomona.tech and crawl.theochinomona.tech/mcp to them.
+  # Override the name with TRAEFIK_NETWORK in .env if your Traefik network
+  # has a different name (e.g. "proxy", "web").
+  traefik:
+    external: true
+    name: ${TRAEFIK_NETWORK:-traefik}
