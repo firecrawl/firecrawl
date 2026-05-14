@@ -53,7 +53,6 @@ const emailTemplates: Record<NotificationType, EmailTemplate> = {
     <p>You can modify your notification settings anytime at <a href='https://www.firecrawl.dev/app/account-settings'>firecrawl.dev/app/account-settings</a>.</p>
     <br/>Thanks,<br/>Firecrawl Team<br/>`,
   },
-  // Agent sponsor confirm emails are sent directly in the agent-signup controller
   [NotificationType.AGENT_SPONSOR_CONFIRM]: {
     subject: "An AI agent requested an API key under your email - Firecrawl",
     html: "",

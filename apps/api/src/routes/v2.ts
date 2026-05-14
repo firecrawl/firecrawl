@@ -58,11 +58,6 @@ import {
 } from "../controllers/v2/browser";
 import { activityController } from "../controllers/v1/activity";
 import { supportProxyController } from "../controllers/v2/support-proxy";
-import { agentSignupController } from "../controllers/v2/agent-signup";
-import {
-  agentSignupConfirmController,
-  agentSignupBlockController,
-} from "../controllers/v2/agent-signup-confirm";
 import {
   scrapeInteractController,
   scrapeStopInteractiveBrowserController,
@@ -562,10 +557,7 @@ v2Router.post(
   wrap(supportProxyController),
 );
 
-// Agent signup routes (public, no auth required — rate limiting is handled inside the controller)
-// v2Router.post("/agent-signup", wrap(agentSignupController));
-v2Router.post("/agent-signup/confirm", wrap(agentSignupConfirmController));
-v2Router.post("/agent-signup/block", wrap(agentSignupBlockController));
+// Agent signup: served by firecrawl-web at POST /api/v2/agent-signup (+ /confirm, /block).
 
 // Only register x402 routes if X402_PAY_TO_ADDRESS is configured
 if (isX402Enabled()) {
