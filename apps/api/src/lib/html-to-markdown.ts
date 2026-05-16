@@ -123,7 +123,10 @@ export async function parseMarkdown(
   var TurndownService = require("turndown");
   var turndownPluginGfm = require("joplin-turndown-plugin-gfm");
 
-  const turndownService = new TurndownService();
+  const turndownService = new TurndownService({
+    headingStyle: 'atx',
+    codeBlockStyle: 'fenced',
+  });
   turndownService.addRule("inlineLink", {
     filter: function (node, options) {
       return (
@@ -134,8 +137,24 @@ export async function parseMarkdown(
     },
     replacement: function (content, node) {
       var href = node.getAttribute("href").trim();
-      var title = node.title ? ' "' + node.title + '"' : "";
-      return "[" + content.trim() + "](" + href + title + ")\n";
+      var title = node.getAttribute("title");
+      var titleStr = title ? ' "' + title + '"' : "";
+      return "[" + content.trim() + "](" + href + titleStr + ")";
+    },
+  });
+  // Preserve image alt text and title attribute in markdown output.
+  // This enables downstream consumers to extract structured metadata
+  // (e.g. ["image description"](url) "title") from scraped pages.
+  turndownService.addRule("imageWithTitle", {
+    filter: function (node) {
+      return node.nodeName === "IMG" && node.getAttribute("src");
+    },
+    replacement: function (_content, node) {
+      var alt = node.getAttribute("alt") || "";
+      var src = node.getAttribute("src").trim();
+      var title = node.getAttribute("title");
+      var suffix = title ? ' "' + title + '"' : "";
+      return "![" + alt + "](" + src + suffix + ")";
     },
   });
   var gfm = turndownPluginGfm.gfm;
