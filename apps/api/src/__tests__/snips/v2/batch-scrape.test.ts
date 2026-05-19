@@ -5,7 +5,15 @@ import {
   TEST_PRODUCTION,
   TEST_SUITE_WEBSITE,
 } from "../lib";
-import { batchScrape, scrapeTimeout, idmux, Identity } from "./lib";
+import {
+  batchScrape,
+  batchScrapeStartRaw,
+  batchScrapeStatusRaw,
+  batchScrapeCancelRaw,
+  scrapeTimeout,
+  idmux,
+  Identity,
+} from "./lib";
 
 let identity: Identity;
 
@@ -46,6 +54,34 @@ describe("Batch scrape tests", () => {
       );
 
       expect(response.data[0].metadata.sourceURL).toBe(url);
+    },
+    scrapeTimeout,
+  );
+
+  concurrentIf(ALLOW_TEST_SUITE_WEBSITE)(
+    "cancel flips status to cancelled and stops 404'ing on GET",
+    async () => {
+      // Queue enough URLs that the batch won't complete before we cancel.
+      const urls = Array.from(
+        { length: 50 },
+        (_, i) => `${TEST_SUITE_WEBSITE}/?cancel-test=${i}`,
+      );
+
+      const start = await batchScrapeStartRaw({ urls }, identity);
+      expect(start.statusCode).toBe(200);
+      expect(start.body.success).toBe(true);
+      const jobId: string = start.body.id;
+
+      const cancel = await batchScrapeCancelRaw(jobId, identity);
+      expect(cancel.statusCode).toBe(200);
+      expect(cancel.body).toEqual({ status: "cancelled" });
+
+      // GET must immediately report "cancelled" — not "scraping". This is
+      // the regression: previously the cancel flag was write-only and the
+      // status endpoint kept reading group.status === "active".
+      const status = await batchScrapeStatusRaw(jobId, identity);
+      expect(status.statusCode).toBe(200);
+      expect(status.body.status).toBe("cancelled");
     },
     scrapeTimeout,
   );

@@ -85,6 +85,21 @@ export async function removeConcurrencyLimitActiveJob(
   await getRedisConnection().zrem(constructKey(team_id), id);
 }
 
+// Release a queued (backlogged) job from the team's concurrency-limit queue:
+// drop it from the ZSET that counts against the queue cap and delete its
+// stored payload. Used by cancel to free queue slots immediately instead of
+// waiting for MAX_BACKLOG_TIMEOUT_MS.
+export async function releaseConcurrencyLimitedJob(
+  team_id: string,
+  id: string,
+) {
+  const redis = getRedisConnection();
+  await Promise.all([
+    redis.zrem(constructQueueKey(team_id), id),
+    redis.del(constructJobKey(id)),
+  ]);
+}
+
 type ConcurrencyLimitedJob = {
   id: string;
   data: any;

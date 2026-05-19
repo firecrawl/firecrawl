@@ -519,6 +519,24 @@ function expectBatchScrapeToSucceed(
   expect(response.body.data.length).toBeGreaterThan(0);
 }
 
+export async function batchScrapeStartRaw(
+  body: BatchScrapeRequestInput,
+  identity: Identity,
+) {
+  return await batchScrapeStart(body, identity);
+}
+
+export async function batchScrapeStatusRaw(id: string, identity: Identity) {
+  return await batchScrapeStatus(id, identity);
+}
+
+export async function batchScrapeCancelRaw(id: string, identity: Identity) {
+  return await request(TEST_API_URL)
+    .delete("/v2/batch/scrape/" + encodeURIComponent(id))
+    .set("Authorization", `Bearer ${identity.apiKey}`)
+    .send();
+}
+
 export async function batchScrape(
   body: BatchScrapeRequestInput,
   identity: Identity,

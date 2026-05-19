@@ -1619,6 +1619,50 @@ class NuQJobGroup {
     });
   }
 
+  public async setGroupStatus(
+    id: string,
+    status: NuQGroupStatus,
+    _logger: Logger = logger,
+  ): Promise<NuQJobGroupInstance | null> {
+    return withSpan("nuq.setGroupStatus", async span => {
+      setSpanAttributes(span, {
+        "nuq.group_name": this.groupName,
+        "nuq.group_id": id,
+        "nuq.group_status": status,
+      });
+
+      const start = Date.now();
+      try {
+        const result = this.rowToGroup(
+          (
+            await nuqPool.query(
+              `UPDATE ${this.groupName} SET status = $2 WHERE id = $1 RETURNING ${this.groupReturning.join(", ")};`,
+              [id, status],
+            )
+          ).rows[0],
+        );
+
+        setSpanAttributes(span, {
+          "nuq.group_updated": result !== null,
+        });
+
+        return result;
+      } finally {
+        const duration = Date.now() - start;
+        setSpanAttributes(span, {
+          "nuq.duration_ms": duration,
+        });
+        _logger.info("nuqSetGroupStatus metrics", {
+          module: "nuq/metrics",
+          method: "nuqSetGroupStatus",
+          duration,
+          groupId: id,
+          status,
+        });
+      }
+    });
+  }
+
   public async getOngoingByOwner(
     ownerId: string,
     _logger: Logger = logger,

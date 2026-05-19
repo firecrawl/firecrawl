@@ -1,10 +1,14 @@
 import { Response } from "express";
 import { logger } from "../../lib/logger";
-import { getCrawl, saveCrawl } from "../../lib/crawl-redis";
+import { getCrawl, getCrawlJobs, saveCrawl } from "../../lib/crawl-redis";
 import * as Sentry from "@sentry/node";
 import { configDotenv } from "dotenv";
 import { RequestWithAuth } from "./types";
 import { crawlGroup } from "../../services/worker/nuq";
+import {
+  releaseConcurrencyLimitedJob,
+  removeConcurrencyLimitActiveJob,
+} from "../../lib/concurrency-limit";
 configDotenv();
 
 export async function crawlCancelController(
@@ -36,6 +40,38 @@ export async function crawlCancelController(
       await saveCrawl(req.params.jobId, sc);
     } catch (error) {
       logger.error(error);
+    }
+
+    // Flip the NuQ group status so subsequent GETs report "cancelled"
+    // instead of continuing to read "active" (which the status endpoint
+    // surfaces as "scraping").
+    try {
+      await crawlGroup.setGroupStatus(req.params.jobId, "cancelled");
+    } catch (error) {
+      logger.error("Failed to set crawl group status to cancelled", {
+        crawlId: req.params.jobId,
+        error,
+      });
+    }
+
+    // Release any still-queued child jobs from the team's concurrency
+    // queue so the queue cap (concurrency-limit-queue:{team_id}) is
+    // freed immediately rather than waiting for MAX_BACKLOG_TIMEOUT_MS
+    // (48h). Active jobs are also dropped from concurrency-limiter so
+    // workers checking sc.cancelled can short-circuit cleanly.
+    try {
+      const childJobIds = await getCrawlJobs(req.params.jobId);
+      await Promise.all(
+        childJobIds.flatMap(childId => [
+          releaseConcurrencyLimitedJob(sc.team_id, childId),
+          removeConcurrencyLimitActiveJob(sc.team_id, childId),
+        ]),
+      );
+    } catch (error) {
+      logger.error("Failed to release concurrency queue slots on cancel", {
+        crawlId: req.params.jobId,
+        error,
+      });
     }
 
     res.json({

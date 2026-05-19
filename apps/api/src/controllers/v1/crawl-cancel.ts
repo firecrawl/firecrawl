@@ -1,10 +1,14 @@
 import { Response } from "express";
 import { logger } from "../../lib/logger";
-import { getCrawl, saveCrawl } from "../../lib/crawl-redis";
+import { getCrawl, getCrawlJobs, saveCrawl } from "../../lib/crawl-redis";
 import * as Sentry from "@sentry/node";
 import { configDotenv } from "dotenv";
 import { RequestWithAuth } from "./types";
 import { crawlGroup } from "../../services/worker/nuq";
+import {
+  releaseConcurrencyLimitedJob,
+  removeConcurrencyLimitActiveJob,
+} from "../../lib/concurrency-limit";
 configDotenv();
 
 export async function crawlCancelController(
@@ -35,6 +39,30 @@ export async function crawlCancelController(
       await saveCrawl(req.params.jobId, sc);
     } catch (error) {
       logger.error(error);
+    }
+
+    try {
+      await crawlGroup.setGroupStatus(req.params.jobId, "cancelled");
+    } catch (error) {
+      logger.error("Failed to set crawl group status to cancelled", {
+        crawlId: req.params.jobId,
+        error,
+      });
+    }
+
+    try {
+      const childJobIds = await getCrawlJobs(req.params.jobId);
+      await Promise.all(
+        childJobIds.flatMap(childId => [
+          releaseConcurrencyLimitedJob(sc.team_id, childId),
+          removeConcurrencyLimitActiveJob(sc.team_id, childId),
+        ]),
+      );
+    } catch (error) {
+      logger.error("Failed to release concurrency queue slots on cancel", {
+        crawlId: req.params.jobId,
+        error,
+      });
     }
 
     res.json({
