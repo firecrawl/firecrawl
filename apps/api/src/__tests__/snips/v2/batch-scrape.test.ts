@@ -5,7 +5,15 @@ import {
   TEST_PRODUCTION,
   TEST_SUITE_WEBSITE,
 } from "../lib";
-import { batchScrape, scrapeTimeout, idmux, Identity } from "./lib";
+import {
+  asyncBatchScrape,
+  asyncBatchScrapeWaitForFinish,
+  batchScrape,
+  batchScrapeOngoing,
+  scrapeTimeout,
+  idmux,
+  Identity,
+} from "./lib";
 
 let identity: Identity;
 
@@ -100,4 +108,55 @@ describe("Batch scrape tests", () => {
       180000,
     );
   });
+
+  concurrentIf(ALLOW_TEST_SUITE_WEBSITE)(
+    "ongoing batch scrapes endpoint works",
+    async () => {
+      const beforeStart = new Date();
+
+      const res = await asyncBatchScrape(
+        {
+          urls: [TEST_SUITE_WEBSITE],
+        },
+        identity,
+      );
+
+      const ongoing = await batchScrapeOngoing(identity);
+      const afterStart = new Date();
+
+      const item = ongoing.batchScrapes.find(x => x.id === res.id);
+      expect(item).toBeDefined();
+
+      if (item) {
+        expect(item.created_at).toBeDefined();
+        expect(typeof item.created_at).toBe("string");
+        expect(item.created_at).toMatch(
+          /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/,
+        );
+        const createdAtDate = new Date(item.created_at);
+        expect(createdAtDate.getTime()).toBeGreaterThanOrEqual(
+          beforeStart.getTime() - 1000,
+        );
+        expect(createdAtDate.getTime()).toBeLessThanOrEqual(
+          afterStart.getTime() + 1000,
+        );
+        expect(typeof item.urlCount).toBe("number");
+        expect(item.urlCount).toBeGreaterThanOrEqual(1);
+        expect(item.teamId).toBe(identity.teamId);
+      }
+
+      // /active alias
+      const active = await batchScrapeOngoing(identity, "active");
+      expect(active.batchScrapes.find(x => x.id === res.id)).toBeDefined();
+
+      await asyncBatchScrapeWaitForFinish(res.id, identity);
+
+      // wait for finish to propagate
+      await new Promise(resolve => setTimeout(resolve, 15000));
+
+      const after = await batchScrapeOngoing(identity);
+      expect(after.batchScrapes.find(x => x.id === res.id)).toBeUndefined();
+    },
+    3 * scrapeTimeout + 15000,
+  );
 });

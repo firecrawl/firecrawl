@@ -8,6 +8,7 @@ import {
   CrawlResponse,
   CrawlStatusResponse,
   OngoingCrawlsResponse,
+  OngoingBatchScrapesResponse,
   ErrorResponse,
   CrawlErrorsResponse,
   MapRequestInput,
@@ -540,6 +541,49 @@ export async function batchScrape(
     ...x.body,
     id: bss.body.id,
   };
+}
+
+export async function asyncBatchScrape(
+  body: BatchScrapeRequestInput,
+  identity: Identity,
+): Promise<{ id: string }> {
+  const bss = await batchScrapeStart(body, identity);
+  expectBatchScrapeStartToSucceed(bss);
+  return { id: bss.body.id };
+}
+
+export async function asyncBatchScrapeWaitForFinish(
+  id: string,
+  identity: Identity,
+): Promise<Exclude<CrawlStatusResponse, ErrorResponse>> {
+  let x: Awaited<ReturnType<typeof batchScrapeStatus>> | undefined;
+  do {
+    if (x) await pollSleep();
+    x = await batchScrapeStatus(id, identity);
+    expect(x.statusCode).toBe(200);
+    expect(typeof x.body.status).toBe("string");
+  } while (x.body.status === "scraping");
+  return x.body;
+}
+
+async function batchScrapeOngoingRaw(
+  identity: Identity,
+  path: "ongoing" | "active" = "ongoing",
+) {
+  return await request(TEST_API_URL)
+    .get(`/v2/batch/scrape/${path}`)
+    .set("Authorization", `Bearer ${identity.apiKey}`)
+    .send();
+}
+
+export async function batchScrapeOngoing(
+  identity: Identity,
+  path: "ongoing" | "active" = "ongoing",
+): Promise<Exclude<OngoingBatchScrapesResponse, ErrorResponse>> {
+  const res = await batchScrapeOngoingRaw(identity, path);
+  expect(res.statusCode).toBe(200);
+  expect(res.body.success).toBe(true);
+  return res.body;
 }
 
 // =========================================
