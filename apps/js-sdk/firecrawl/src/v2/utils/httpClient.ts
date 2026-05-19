@@ -11,6 +11,7 @@ export interface HttpClientOptions {
   timeoutMs?: number;
   maxRetries?: number;
   backoffFactor?: number; // seconds factor for 0.5, 1, 2...
+  headers?: Record<string, string>; // custom headers for self-hosted instances
 }
 
 export interface RequestOptions {
@@ -35,6 +36,7 @@ export class HttpClient {
       timeout: options.timeoutMs ?? 300000,
       headers: {
         Authorization: `Bearer ${this.apiKey}`,
+        ...(options.headers || {}), // merge custom headers
       },
       transitional: { clarifyTimeoutError: true },
     });
