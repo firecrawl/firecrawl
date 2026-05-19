@@ -30,6 +30,7 @@ export type ErrorCodes =
   | "SCRAPE_X_TWITTER_CONFIGURATION_ERROR"
   | "PARSE_UNSUPPORTED_OPTIONS"
   | "CRAWL_DENIAL"
+  | "BLOCKED_SITE_ERROR"
   | "MAP_FAILED"
   | "BAD_REQUEST_INVALID_JSON"
   | "BAD_REQUEST";
@@ -237,6 +238,27 @@ export class ActionsNotSupportedError extends TransportableError {
  * Error thrown when a job is cancelled (expected flow control, not a real error)
  * This should not be sent to Sentry as it's expected behavior when a crawl/batch is cancelled
  */
+export class BlockedSiteError extends TransportableError {
+  constructor(
+    message: string = "We apologize for the inconvenience but we do not support this site. If you are part of an enterprise and want to have a further conversation about this, please fill out our intake form here: https://fk4bvu0n5qp.typeform.com/to/Ej6oydlg",
+  ) {
+    super("BLOCKED_SITE_ERROR", message);
+  }
+
+  serialize() {
+    return super.serialize();
+  }
+
+  static deserialize(
+    _code: ErrorCodes,
+    data: ReturnType<typeof this.prototype.serialize>,
+  ) {
+    const x = new BlockedSiteError(data.message);
+    x.stack = data.stack;
+    return x;
+  }
+}
+
 export class JobCancelledError extends Error {
   constructor() {
     super(
