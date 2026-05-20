@@ -58,6 +58,7 @@ export type FireEngineScrapeRequestCommon = {
 export type FireEngineScrapeRequestChromeCDP = {
   engine: "chrome-cdp";
   skipTlsVerification?: boolean;
+  blockJsRedirects?: boolean;
   actions?: InternalAction[];
   blockMedia?: boolean;
   mobile?: boolean;

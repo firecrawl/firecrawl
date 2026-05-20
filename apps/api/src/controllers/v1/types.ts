@@ -512,6 +512,7 @@ const baseScrapeOptions = z.strictObject({
     })
     .optional(),
   skipTlsVerification: z.boolean().optional(),
+  blockJsRedirects: z.boolean().prefault(false),
   removeBase64Images: z.boolean().prefault(true),
   fastMode: z.boolean().prefault(false),
   useMock: z.string().optional(),
@@ -1466,6 +1467,7 @@ export function fromLegacyScrapeOptions(
       actions: pageOptions.actions,
       location: pageOptions.geolocation,
       skipTlsVerification: pageOptions.skipTlsVerification,
+      blockJsRedirects: pageOptions.blockJsRedirects,
       removeBase64Images: pageOptions.removeBase64Images,
       extract:
         extractorOptions !== undefined &&

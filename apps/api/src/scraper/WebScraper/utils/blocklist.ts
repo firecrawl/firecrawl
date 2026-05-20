@@ -15,7 +15,7 @@ type BlocklistBlob = {
   allowedKeywords: string[];
 };
 
-export type BlockContext = {
+type BlockContext = {
   team_id?: string | null;
   origin?: string | null;
 };

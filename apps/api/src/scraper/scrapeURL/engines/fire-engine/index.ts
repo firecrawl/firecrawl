@@ -348,6 +348,7 @@ export async function scrapeURLWithFireEngineChromeCDP(
       engine: "chrome-cdp",
       instantReturn: false,
       skipTlsVerification: meta.options.skipTlsVerification,
+      blockJsRedirects: meta.options.blockJsRedirects || undefined,
       headers: meta.options.headers,
       ...(actions.length > 0
         ? {
