@@ -5,7 +5,7 @@ import {
   stopInteraction as stopInteractionMethod,
 } from "./methods/scrape";
 import { parse as parseMethod } from "./methods/parse";
-import { search } from "./methods/search";
+import { search, searchRaw } from "./methods/search";
 import { map as mapMethod } from "./methods/map";
 import {
   startCrawl,
@@ -49,6 +49,7 @@ import type {
   ScrapeOptions,
   SearchData,
   SearchRequest,
+  SearchResponse,
   MapData,
   MapOptions,
   CrawlResponse,
@@ -226,6 +227,17 @@ export class FirecrawlClient {
    */
   async search(query: string, req: Omit<SearchRequest, "query"> = {}): Promise<SearchData> {
     return search(this.http, { query, ...req });
+  }
+
+  /**
+   * Search the web and optionally scrape each result.
+   * Returns the full response metadata including ID and credits used.
+   * @param query Search query string.
+   * @param req Additional search options (sources, limit, scrapeOptions, etc.).
+   * @returns Search response with metadata.
+   */
+  async searchRaw(query: string, req: Omit<SearchRequest, "query"> = {}): Promise<SearchResponse> {
+    return searchRaw(this.http, { query, ...req });
   }
 
   // Map

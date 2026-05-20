@@ -529,6 +529,13 @@ export interface SearchData {
   images?: Array<SearchResultImages | Document>;
 }
 
+export interface SearchResponse {
+  data: SearchData;
+  id?: string;
+  creditsUsed?: number;
+  warning?: string | null;
+}
+
 export interface CategoryOption {
   type: "github" | "research" | "pdf";
 }
@@ -544,6 +551,8 @@ export interface SearchRequest {
   limit?: number;
   tbs?: string;
   location?: string;
+  country?: string;
+  enterprise?: Array<'default' | 'anon' | 'zdr'>;
   ignoreInvalidURLs?: boolean;
   timeout?: number; // ms
   scrapeOptions?: ScrapeOptions;
