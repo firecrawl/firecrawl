@@ -18,7 +18,9 @@ type Provider =
   | "openrouter"
   | "fireworks"
   | "deepinfra"
-  | "vertex";
+  | "vertex"
+  | "astraflow"
+  | "astraflow-cn";
 const defaultProvider: Provider = config.OLLAMA_BASE_URL ? "ollama" : "openai";
 
 const providerList: Record<Provider, any> = {
@@ -37,6 +39,14 @@ const providerList: Record<Provider, any> = {
   }),
   fireworks, //FIREWORKS_API_KEY
   deepinfra, //DEEPINFRA_API_KEY
+  astraflow: createOpenAI({
+    apiKey: config.ASTRAFLOW_API_KEY,
+    baseURL: "https://api-us-ca.umodelverse.ai/v1",
+  }), //ASTRAFLOW_API_KEY
+  "astraflow-cn": createOpenAI({
+    apiKey: config.ASTRAFLOW_CN_API_KEY,
+    baseURL: "https://api.modelverse.cn/v1",
+  }), //ASTRAFLOW_CN_API_KEY
   vertex: createVertex({
     project: "firecrawl",
     //https://github.com/vercel/ai/issues/6644 bug
