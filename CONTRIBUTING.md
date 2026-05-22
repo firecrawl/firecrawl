@@ -24,7 +24,7 @@ docker build -t nuq-postgres .
 and then run:
 
 ```bash
-docker run --name nuqdb \          
+docker run --name nuqdb \
   -e POSTGRES_PASSWORD=postgres \
   -p 5433:5432 \
   -v nuq-data:/var/lib/postgresql/data \
