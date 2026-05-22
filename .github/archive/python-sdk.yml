@@ -24,7 +24,7 @@ jobs:
     runs-on: blacksmith-4vcpu-ubuntu-2404  
     strategy:  
       matrix:  
-        python-version: ["3.10"]
+        python-version: ["3.10", "3.11", "3.12", "3.13", "3.14"]
     services:
       redis:
         image: redis
