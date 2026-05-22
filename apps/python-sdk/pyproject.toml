@@ -10,7 +10,7 @@ readme = {file="README.md", content-type = "text/markdown"}
 requires-python = ">=3.8"
 dependencies = [
     "requests",
-    "httpx",
+    "httpx2",
     "python-dotenv",
     "websockets",
     "nest-asyncio",
