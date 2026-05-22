@@ -14,7 +14,7 @@ overrides:
   ws@>=8.0.0 <9.0.0: '>=8.20.1 <9.0.0'
   lodash: '>=4.18.0'
   protobufjs@<7.5.6: '>=7.5.6 <8.0.0'
-  uuid@>=11.0.0 <11.1.1: '>=11.1.1 <12.0.0'
+  uuid@<11.1.1: 11.1.1
   postcss@<8.5.10: '>=8.5.10 <9.0.0'
 
 importers:
@@ -2459,10 +2459,6 @@ packages:
     resolution: {integrity: sha512-vIYxrBCC/N/K+Js3qSN88go7kIfNPssr/hHCesKCQNAjmgvYS2oqr69kIufEG+O4+PfezOH4EbIeHCfFov8ZgQ==}
     hasBin: true
 
-  uuid@8.3.2:
-    resolution: {integrity: sha512-+NYs2QeMWy+GWFOEm9xnn6HCDp0l7QBD7ml8zLUmJ+93Q5NF0NocErnwkTkXVFNiX3/fpC6afS8Dhb/gz7R7eg==}
-    hasBin: true
-
   walk-sync@0.2.7:
     resolution: {integrity: sha512-OH8GdRMowEFr0XSHQeX5fGweO6zSVHo7bG/0yJQx6LAj9Oukz0C8heI3/FYectT66gY0IPGe89kOvU410/UNpg==}
 
@@ -3700,7 +3696,7 @@ snapshots:
     dependencies:
       '@azure/msal-common': 15.16.1
       jsonwebtoken: 9.0.3
-      uuid: 8.3.2
+      uuid: 11.1.1
 
   '@azure/storage-blob@12.31.0':
     dependencies:
@@ -3945,7 +3941,7 @@ snapshots:
   '@ngneat/falso@8.0.2':
     dependencies:
       seedrandom: 3.0.5
-      uuid: 8.3.2
+      uuid: 11.1.1
 
   '@nodable/entities@2.1.0': {}
 
@@ -6190,8 +6186,6 @@ snapshots:
     optional: true
 
   uuid@11.1.1: {}
-
-  uuid@8.3.2: {}
 
   walk-sync@0.2.7:
     dependencies:
