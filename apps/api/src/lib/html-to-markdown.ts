@@ -76,6 +76,7 @@ export async function parseMarkdown(
         zeroDataRetention,
       });
       markdownContent = await postProcessMarkdown(markdownContent);
+      markdownContent = deduplicateAdjacentWords(markdownContent);
       return markdownContent;
     } catch (error) {
       contextLogger.error(
@@ -96,6 +97,7 @@ export async function parseMarkdown(
       const converter = await GoMarkdownConverter.getInstance();
       let markdownContent = await converter.convertHTMLToMarkdown(html);
       markdownContent = await postProcessMarkdown(markdownContent);
+      markdownContent = deduplicateAdjacentWords(markdownContent);
       return markdownContent;
     }
   } catch (error) {
@@ -144,6 +146,7 @@ export async function parseMarkdown(
   try {
     let markdownContent = await turndownService.turndown(html);
     markdownContent = await postProcessMarkdown(markdownContent);
+    markdownContent = deduplicateAdjacentWords(markdownContent);
 
     return markdownContent;
   } catch (error) {
@@ -182,4 +185,13 @@ function removeSkipToContentLinks(markdownContent: string): string {
     "",
   );
   return newMarkdownContent;
+
+/**
+ * Fix word repetition bug where adjacent HTML elements produce
+ * duplicated adjacent words (e.g. "FunktionalFunktional" instead of
+ * "Funktional\nFunktional").
+ */
+function deduplicateAdjacentWords(markdownContent: string): string {
+  return markdownContent.replace(/(\b\w{3,}+)\1\b/g, "$1\n$1");
+}
 }
