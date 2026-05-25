@@ -11,7 +11,6 @@ import type {
   LoggedSearch,
 } from "../services/logging/log_job";
 import { config } from "../config";
-import { validate, version } from "uuid";
 import crypto from "crypto";
 import { Logger } from "winston";
 
@@ -49,7 +48,11 @@ type GCSOperationAttempt = {
  * @returns Filename for the job in GCS
  */
 function idToFilename(id: string): string {
-  if (validate(id) && version(id) === 7) {
+  if (
+    id.match(
+      /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-7[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$/,
+    )
+  ) {
     const timestamp = parseInt(id.replace(/-/g, "").slice(0, 12), 16);
     const cutover = Date.UTC(2026, 4, 26, 0, 0, 0, 0); // Cutover at 2026-05-26 00:00:00 UTC
     if (timestamp < cutover) {
