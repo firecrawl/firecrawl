@@ -11,11 +11,39 @@ import type {
   LoggedSearch,
 } from "../services/logging/log_job";
 import { config } from "../config";
+import { validate, version } from "uuid";
+import crypto from "crypto";
 
 const credentials = config.GCS_CREDENTIALS
   ? JSON.parse(atob(config.GCS_CREDENTIALS))
   : undefined;
 export const storage = new Storage({ credentials });
+
+/**
+ * Converts a job ID to a GCS filename.
+ *
+ * Before the cutover, the filename is always `<id>.json`.
+ * However, after we switched to v7 UUIDs, we realized that it's not working well with how GCS
+ * parititons GCS buckets, therefore, we need the filename to start with something random-esque
+ * to smooth out the distribution of files between the partitions.
+ * Therefore, after May 26, 2026, the filename is `<sha256(id)>-<id>.json`
+ *
+ * @param id Job ID to convert to a filename
+ * @returns Filename for the job in GCS
+ */
+function idToFilename(id: string): string {
+  if (validate(id) && version(id) === 7) {
+    const timestamp = parseInt(id.replace(/-/g, "").slice(0, 12), 16);
+    const cutover = Date.UTC(2026, 4, 26, 0, 0, 0, 0); // Cutover at 2026-05-26 00:00:00 UTC
+    if (timestamp < cutover) {
+      return `${id}.json`;
+    } else {
+      return `${crypto.createHash("sha256").update(id).digest("hex")}-${id}.json`;
+    }
+  } else {
+    return `${id}.json`;
+  }
+}
 
 export async function saveScrapeToGCS(scrape: LoggedScrape): Promise<void> {
   return await withSpan("firecrawl-gcs-save-job", async span => {
@@ -34,7 +62,7 @@ export async function saveScrapeToGCS(scrape: LoggedScrape): Promise<void> {
     }
 
     const bucket = storage.bucket(config.GCS_BUCKET_NAME);
-    const blob = bucket.file(`${scrape.id}.json`);
+    const blob = bucket.file(idToFilename(scrape.id));
 
     // Save job docs with retry
     for (let i = 0; i < 3; i++) {
@@ -126,7 +154,7 @@ export async function saveSearchToGCS(search: LoggedSearch): Promise<void> {
     }
 
     const bucket = storage.bucket(config.GCS_BUCKET_NAME);
-    const blob = bucket.file(`${search.id}.json`);
+    const blob = bucket.file(idToFilename(search.id));
 
     for (let i = 0; i < 3; i++) {
       try {
@@ -204,7 +232,7 @@ export async function saveExtractToGCS(extract: LoggedExtract): Promise<void> {
     }
 
     const bucket = storage.bucket(config.GCS_BUCKET_NAME);
-    const blob = bucket.file(`${extract.id}.json`);
+    const blob = bucket.file(idToFilename(extract.id));
 
     for (let i = 0; i < 3; i++) {
       try {
@@ -278,7 +306,7 @@ export async function saveMapToGCS(map: LoggedMap): Promise<void> {
     }
 
     const bucket = storage.bucket(config.GCS_BUCKET_NAME);
-    const blob = bucket.file(`${map.id}.json`);
+    const blob = bucket.file(idToFilename(map.id));
 
     for (let i = 0; i < 3; i++) {
       try {
@@ -352,7 +380,7 @@ export async function saveDeepResearchToGCS(
     }
 
     const bucket = storage.bucket(config.GCS_BUCKET_NAME);
-    const blob = bucket.file(`${deepResearch.id}.json`);
+    const blob = bucket.file(idToFilename(deepResearch.id));
 
     for (let i = 0; i < 3; i++) {
       try {
@@ -425,7 +453,7 @@ export async function saveLlmsTxtToGCS(llmsTxt: LoggedLlmsTxt): Promise<void> {
     }
 
     const bucket = storage.bucket(config.GCS_BUCKET_NAME);
-    const blob = bucket.file(`${llmsTxt.id}.json`);
+    const blob = bucket.file(idToFilename(llmsTxt.id));
 
     for (let i = 0; i < 3; i++) {
       try {
@@ -498,7 +526,7 @@ export async function getJobFromGCS(jobId: string): Promise<Document[] | null> {
     }
 
     const bucket = storage.bucket(config.GCS_BUCKET_NAME);
-    const blob = bucket.file(`${jobId}.json`);
+    const blob = bucket.file(idToFilename(jobId));
 
     try {
       const [content] = await blob.download();
@@ -538,7 +566,7 @@ export async function removeJobFromGCS(jobId: string): Promise<void> {
     }
 
     const bucket = storage.bucket(config.GCS_BUCKET_NAME);
-    const blob = bucket.file(`${jobId}.json`);
+    const blob = bucket.file(idToFilename(jobId));
 
     try {
       await blob.delete({
