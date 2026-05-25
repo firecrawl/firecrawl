@@ -1338,287 +1338,6 @@
         }
       }
     },
-    "/deep-research": {
-      "post": {
-        "summary": "Start a deep research operation on a query",
-        "operationId": "startDeepResearch",
-        "tags": [
-          "Research"
-        ],
-        "security": [
-          {
-            "bearerAuth": []
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "properties": {
-                  "query": {
-                    "type": "string",
-                    "description": "The query to research"
-                  },
-                  "maxDepth": {
-                    "type": "integer",
-                    "minimum": 1,
-                    "maximum": 12,
-                    "default": 7,
-                    "description": "Maximum depth of research iterations"
-                  },
-                  "timeLimit": {
-                    "type": "integer",
-                    "minimum": 30,
-                    "maximum": 600,
-                    "default": 300,
-                    "description": "Time limit in seconds"
-                  },
-                  "maxUrls": {
-                    "type": "integer",
-                    "minimum": 1,
-                    "maximum": 1000,
-                    "default": 20,
-                    "description": "Maximum number of URLs to analyze"
-                  },
-                  "analysisPrompt": {
-                    "type": "string",
-                    "description": "The prompt to use for the final analysis. Useful to format the final analysis markdown in a specific way."
-                  },
-                  "systemPrompt": {
-                    "type": "string",
-                    "description": "The system prompt to use for the research agent. Useful to steer the research agent to a specific direction."
-                  },
-                  "formats": {
-                    "type": "array",
-                    "items": {
-                      "type": "string",
-                      "enum": [
-                        "markdown",
-                        "json",
-                        "branding"
-                      ],
-                      "default": [
-                        "markdown"
-                      ]
-                    }
-                  },
-                  "jsonOptions": {
-                    "type": "object",
-                    "description": "Options for JSON output",
-                    "properties": {
-                      "schema": {
-                        "type": "object",
-                        "description": "The schema to use for the JSON output. Must conform to [JSON Schema](https://json-schema.org/)."
-                      },
-                      "systemPrompt": {
-                        "type": "string",
-                        "description": "The system prompt to use for the JSON output"
-                      },
-                      "prompt": {
-                        "type": "string",
-                        "description": "The prompt to use for the JSON output"
-                      }
-                    }
-                  }
-                },
-                "required": [
-                  "query"
-                ]
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Research job started successfully",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "success": {
-                      "type": "boolean",
-                      "example": true
-                    },
-                    "id": {
-                      "type": "string",
-                      "format": "uuid",
-                      "description": "ID of the research job"
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Invalid request parameters",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "success": {
-                      "type": "boolean",
-                      "example": false
-                    },
-                    "error": {
-                      "type": "string",
-                      "example": "Invalid parameters provided"
-                    }
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/deep-research/{id}": {
-      "parameters": [
-        {
-          "name": "id",
-          "in": "path",
-          "description": "The ID of the research job",
-          "required": true,
-          "schema": {
-            "type": "string",
-            "format": "uuid"
-          }
-        }
-      ],
-      "get": {
-        "summary": "Get the status and results of a deep research operation",
-        "operationId": "getDeepResearchStatus",
-        "tags": [
-          "Research"
-        ],
-        "security": [
-          {
-            "bearerAuth": []
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "success": {
-                      "type": "boolean"
-                    },
-                    "data": {
-                      "type": "object",
-                      "properties": {
-                        "finalAnalysis": {
-                          "type": "string"
-                        },
-                        "json": {
-                          "type": "object",
-                          "description": "Displayed when using JSON format",
-                          "nullable": true
-                        },
-                        "activities": {
-                          "type": "array",
-                          "items": {
-                            "type": "object",
-                            "properties": {
-                              "type": {
-                                "type": "string"
-                              },
-                              "status": {
-                                "type": "string"
-                              },
-                              "message": {
-                                "type": "string"
-                              },
-                              "timestamp": {
-                                "type": "string",
-                                "format": "date-time"
-                              },
-                              "depth": {
-                                "type": "integer"
-                              }
-                            }
-                          }
-                        },
-                        "sources": {
-                          "type": "array",
-                          "items": {
-                            "type": "object",
-                            "properties": {
-                              "url": {
-                                "type": "string"
-                              },
-                              "title": {
-                                "type": "string"
-                              },
-                              "description": {
-                                "type": "string"
-                              },
-                              "favicon": {
-                                "type": "string"
-                              }
-                            }
-                          }
-                        },
-                        "status": {
-                          "type": "string",
-                          "enum": [
-                            "processing",
-                            "completed",
-                            "failed"
-                          ]
-                        },
-                        "error": {
-                          "type": "string"
-                        },
-                        "expiresAt": {
-                          "type": "string",
-                          "format": "date-time"
-                        },
-                        "currentDepth": {
-                          "type": "integer"
-                        },
-                        "maxDepth": {
-                          "type": "integer"
-                        },
-                        "totalUrls": {
-                          "type": "integer"
-                        }
-                      }
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Research job not found",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "success": {
-                      "type": "boolean",
-                      "example": false
-                    },
-                    "error": {
-                      "type": "string",
-                      "example": "Research job not found"
-                    }
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
-    },
     "/team/credit-usage": {
       "get": {
         "summary": "Get remaining credits for the authenticated team",
@@ -1987,182 +1706,6 @@
                     "error": {
                       "type": "string",
                       "example": "An unexpected error occurred on the server."
-                    }
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/llmstxt": {
-      "post": {
-        "summary": "Generate LLMs.txt for a website",
-        "operationId": "generateLLMsTxt",
-        "tags": [
-          "LLMs.txt"
-        ],
-        "security": [
-          {
-            "bearerAuth": []
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "properties": {
-                  "url": {
-                    "type": "string",
-                    "format": "uri",
-                    "description": "The URL to generate LLMs.txt from"
-                  },
-                  "maxUrls": {
-                    "type": "integer",
-                    "description": "Maximum number of URLs to analyze",
-                    "default": 2
-                  },
-                  "showFullText": {
-                    "type": "boolean",
-                    "description": "Include full text content in the response",
-                    "default": false
-                  }
-                },
-                "required": [
-                  "url"
-                ]
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "LLMs.txt generation job started successfully",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "success": {
-                      "type": "boolean",
-                      "example": true
-                    },
-                    "id": {
-                      "type": "string",
-                      "format": "uuid",
-                      "description": "ID of the LLMs.txt generation job"
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Invalid request parameters",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "success": {
-                      "type": "boolean",
-                      "example": false
-                    },
-                    "error": {
-                      "type": "string",
-                      "example": "Invalid parameters provided"
-                    }
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/llmstxt/{id}": {
-      "parameters": [
-        {
-          "name": "id",
-          "in": "path",
-          "description": "The ID of the LLMs.txt generation job",
-          "required": true,
-          "schema": {
-            "type": "string",
-            "format": "uuid"
-          }
-        }
-      ],
-      "get": {
-        "summary": "Get the status and results of an LLMs.txt generation job",
-        "operationId": "getLLMsTxtStatus",
-        "tags": [
-          "LLMs.txt"
-        ],
-        "security": [
-          {
-            "bearerAuth": []
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "success": {
-                      "type": "boolean"
-                    },
-                    "status": {
-                      "type": "string",
-                      "enum": [
-                        "processing",
-                        "completed",
-                        "failed"
-                      ]
-                    },
-                    "data": {
-                      "type": "object",
-                      "properties": {
-                        "llmstxt": {
-                          "type": "string",
-                          "description": "The generated LLMs.txt content"
-                        },
-                        "llmsfulltxt": {
-                          "type": "string",
-                          "description": "The full text content when showFullText is true"
-                        }
-                      }
-                    },
-                    "expiresAt": {
-                      "type": "string",
-                      "format": "date-time",
-                      "description": "When the generated content will expire"
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "LLMs.txt generation job not found",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "success": {
-                      "type": "boolean",
-                      "example": false
-                    },
-                    "error": {
-                      "type": "string",
-                      "example": "LLMs.txt generation job not found"
                     }
                   }
                 }
@@ -2596,37 +2139,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "type": "object",
-                "properties": {
-                  "code": {
-                    "type": "string",
-                    "minLength": 1,
-                    "maxLength": 100000,
-                    "description": "Code to execute in the browser"
-                  },
-                  "prompt": {
-                    "type": "string",
-                    "minLength": 1,
-                    "maxLength": 10000,
-                    "description": "Natural language prompt for the interaction"
-                  },
-                  "language": {
-                    "type": "string",
-                    "enum": [
-                      "python",
-                      "node",
-                      "bash"
-                    ],
-                    "default": "node"
-                  },
-                  "timeout": {
-                    "type": "integer",
-                    "minimum": 1,
-                    "maximum": 300,
-                    "default": 30,
-                    "description": "Timeout in seconds"
-                  }
-                }
+                "$ref": "#/components/schemas/InteractRequest"
               }
             }
           }
@@ -2637,36 +2150,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "success": {
-                      "type": "boolean"
-                    },
-                    "liveViewUrl": {
-                      "type": "string",
-                      "nullable": true
-                    },
-                    "output": {
-                      "type": "string",
-                      "nullable": true
-                    },
-                    "stdout": {
-                      "type": "string",
-                      "nullable": true
-                    },
-                    "result": {
-                      "type": "string",
-                      "nullable": true
-                    },
-                    "stderr": {
-                      "type": "string",
-                      "nullable": true
-                    },
-                    "exitCode": {
-                      "type": "integer",
-                      "nullable": true
-                    }
-                  }
+                  "$ref": "#/components/schemas/InteractResponse"
                 }
               }
             }
@@ -2846,6 +2330,10 @@
                     "type": "string",
                     "format": "binary",
                     "description": "The file to parse. Supported: .html, .htm, .pdf, .docx, .doc, .odt, .rtf, .xlsx, .xls"
+                  },
+                  "options": {
+                    "type": "string",
+                    "description": "Optional JSON string of public scrape/parse options. Parsed server-side and validated with parseRequestSchema, which extends ScrapeOptions; unsupported upload options are rejected."
                   }
                 },
                 "required": [
@@ -2943,39 +2431,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "type": "object",
-                "properties": {
-                  "ttl": {
-                    "type": "integer",
-                    "minimum": 30,
-                    "maximum": 3600,
-                    "default": 600,
-                    "description": "Session time-to-live in seconds"
-                  },
-                  "activityTtl": {
-                    "type": "integer",
-                    "minimum": 10,
-                    "maximum": 3600,
-                    "default": 300,
-                    "description": "Inactivity timeout in seconds"
-                  },
-                  "streamWebView": {
-                    "type": "boolean",
-                    "default": true
-                  },
-                  "profile": {
-                    "type": "object",
-                    "properties": {
-                      "name": {
-                        "type": "string"
-                      },
-                      "saveChanges": {
-                        "type": "boolean",
-                        "default": true
-                      }
-                    }
-                  }
-                }
+                "$ref": "#/components/schemas/BrowserCreateRequest"
               }
             }
           }
@@ -2986,18 +2442,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "success": {
-                      "type": "boolean"
-                    },
-                    "id": {
-                      "type": "string"
-                    },
-                    "liveViewUrl": {
-                      "type": "string"
-                    }
-                  }
+                  "$ref": "#/components/schemas/BrowserCreateResponse"
                 }
               }
             }
@@ -3078,18 +2523,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "success": {
-                      "type": "boolean"
-                    },
-                    "data": {
-                      "type": "array",
-                      "items": {
-                        "type": "object"
-                      }
-                    }
-                  }
+                  "$ref": "#/components/schemas/BrowserListResponse"
                 }
               }
             }
@@ -3182,18 +2616,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "success": {
-                      "type": "boolean"
-                    },
-                    "sessionDurationMs": {
-                      "type": "integer"
-                    },
-                    "creditsBilled": {
-                      "type": "integer"
-                    }
-                  }
+                  "$ref": "#/components/schemas/BrowserDeleteResponse"
                 }
               }
             }
@@ -3270,7 +2693,7 @@
         }
       ],
       "post": {
-        "summary": "Execute code or prompt in a browser session",
+        "summary": "Execute code in a browser session",
         "operationId": "browserExecute",
         "tags": [
           "Browser"
@@ -3285,34 +2708,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "type": "object",
-                "properties": {
-                  "code": {
-                    "type": "string",
-                    "minLength": 1,
-                    "maxLength": 100000
-                  },
-                  "prompt": {
-                    "type": "string",
-                    "minLength": 1,
-                    "maxLength": 10000
-                  },
-                  "language": {
-                    "type": "string",
-                    "enum": [
-                      "python",
-                      "node",
-                      "bash"
-                    ],
-                    "default": "node"
-                  },
-                  "timeout": {
-                    "type": "integer",
-                    "minimum": 1,
-                    "maximum": 300,
-                    "default": 30
-                  }
-                }
+                "$ref": "#/components/schemas/BrowserExecuteRequest"
               }
             }
           }
@@ -3323,24 +2719,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "success": {
-                      "type": "boolean"
-                    },
-                    "output": {
-                      "type": "string"
-                    },
-                    "stdout": {
-                      "type": "string"
-                    },
-                    "stderr": {
-                      "type": "string"
-                    },
-                    "exitCode": {
-                      "type": "integer"
-                    }
-                  }
+                  "$ref": "#/components/schemas/BrowserExecuteResponse"
                 }
               }
             }
@@ -3428,10 +2807,16 @@
                     "type": "string",
                     "format": "uri",
                     "description": "The URL to preview crawl parameters for"
+                  },
+                  "prompt": {
+                    "type": "string",
+                    "maxLength": 10000,
+                    "description": "Natural-language crawl goal used to generate preview parameters"
                   }
                 },
                 "required": [
-                  "url"
+                  "url",
+                  "prompt"
                 ]
               }
             }
@@ -3992,23 +3377,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "type": "object",
-                "properties": {
-                  "url": {
-                    "type": "string",
-                    "format": "uri"
-                  },
-                  "schedule": {
-                    "type": "string",
-                    "description": "Cron expression for check frequency"
-                  },
-                  "scrapeOptions": {
-                    "$ref": "#/components/schemas/ScrapeOptions"
-                  }
-                },
-                "required": [
-                  "url"
-                ]
+                "$ref": "#/components/schemas/MonitorCreateRequest"
               }
             }
           }
@@ -4019,15 +3388,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "success": {
-                      "type": "boolean"
-                    },
-                    "id": {
-                      "type": "string"
-                    }
-                  }
+                  "$ref": "#/components/schemas/MonitorResponse"
                 }
               }
             }
@@ -4108,18 +3469,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "success": {
-                      "type": "boolean"
-                    },
-                    "data": {
-                      "type": "array",
-                      "items": {
-                        "type": "object"
-                      }
-                    }
-                  }
+                  "$ref": "#/components/schemas/MonitorListResponse"
                 }
               }
             }
@@ -4181,7 +3531,28 @@
               }
             }
           }
-        }
+        },
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 25
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0
+            }
+          }
+        ]
       }
     },
     "/monitor/{monitorId}": {
@@ -4212,15 +3583,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "success": {
-                      "type": "boolean"
-                    },
-                    "data": {
-                      "type": "object"
-                    }
-                  }
+                  "$ref": "#/components/schemas/MonitorResponse"
                 }
               }
             }
@@ -4300,7 +3663,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "type": "object"
+                "$ref": "#/components/schemas/MonitorUpdateRequest"
               }
             }
           }
@@ -4311,12 +3674,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "success": {
-                      "type": "boolean"
-                    }
-                  }
+                  "$ref": "#/components/schemas/MonitorResponse"
                 }
               }
             }
@@ -4397,12 +3755,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "success": {
-                      "type": "boolean"
-                    }
-                  }
+                  "$ref": "#/components/schemas/MonitorDeleteResponse"
                 }
               }
             }
@@ -4465,6 +3818,1741 @@
             }
           }
         }
+      }
+    },
+    "/search/{jobId}/feedback": {
+      "parameters": [
+        {
+          "name": "jobId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "description": "The search job ID"
+        }
+      ],
+      "post": {
+        "summary": "Submit feedback for a search job",
+        "operationId": "submitSearchFeedback",
+        "tags": [
+          "Search"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SearchFeedbackRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Feedback recorded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SearchFeedbackResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": false
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "error": {
+                      "type": "string"
+                    },
+                    "details": {}
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": false
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "error": {
+                      "type": "string"
+                    },
+                    "details": {}
+                  }
+                }
+              }
+            }
+          },
+          "402": {
+            "description": "Payment required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": false
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "error": {
+                      "type": "string"
+                    },
+                    "details": {}
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": false
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "error": {
+                      "type": "string"
+                    },
+                    "details": {}
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": false
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "error": {
+                      "type": "string"
+                    },
+                    "details": {}
+                  }
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many requests",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": false
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "error": {
+                      "type": "string"
+                    },
+                    "details": {}
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": false
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "error": {
+                      "type": "string"
+                    },
+                    "details": {}
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/crawl/ongoing": {
+      "get": {
+        "summary": "Get all ongoing crawls for the authenticated team",
+        "operationId": "getOngoingCrawls",
+        "tags": [
+          "Crawling"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": true
+                    },
+                    "crawls": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "format": "uuid",
+                            "description": "The unique identifier of the crawl"
+                          },
+                          "teamId": {
+                            "type": "string",
+                            "description": "The ID of the team that owns the crawl"
+                          },
+                          "url": {
+                            "type": "string",
+                            "format": "uri",
+                            "description": "The origin URL of the crawl"
+                          },
+                          "options": {
+                            "type": "object",
+                            "description": "The crawler options used for this crawl",
+                            "properties": {
+                              "scrapeOptions": {
+                                "$ref": "#/components/schemas/ScrapeOptions"
+                              }
+                            }
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "teamId",
+                          "url",
+                          "status",
+                          "options"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "402": {
+            "description": "Payment required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": false
+                    },
+                    "error": {
+                      "type": "string",
+                      "example": "Payment required to access this resource."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many requests",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": false
+                    },
+                    "error": {
+                      "type": "string",
+                      "example": "Request rate limit exceeded. Please wait and try again later."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": false
+                    },
+                    "error": {
+                      "type": "string",
+                      "example": "An unexpected error occurred on the server."
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/concurrency-check": {
+      "get": {
+        "summary": "Get current team concurrency usage and limit",
+        "operationId": "getConcurrencyCheck",
+        "tags": [
+          "Account"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Concurrency status",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConcurrencyCheckResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": false
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "error": {
+                      "type": "string"
+                    },
+                    "details": {}
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": false
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "error": {
+                      "type": "string"
+                    },
+                    "details": {}
+                  }
+                }
+              }
+            }
+          },
+          "402": {
+            "description": "Payment required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": false
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "error": {
+                      "type": "string"
+                    },
+                    "details": {}
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": false
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "error": {
+                      "type": "string"
+                    },
+                    "details": {}
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": false
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "error": {
+                      "type": "string"
+                    },
+                    "details": {}
+                  }
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many requests",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": false
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "error": {
+                      "type": "string"
+                    },
+                    "details": {}
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": false
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "error": {
+                      "type": "string"
+                    },
+                    "details": {}
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/monitor/{monitorId}/run": {
+      "parameters": [
+        {
+          "name": "monitorId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          },
+          "description": "The monitor ID"
+        }
+      ],
+      "post": {
+        "summary": "Run a monitor check immediately",
+        "operationId": "runMonitor",
+        "tags": [
+          "Monitor"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Monitor check queued",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MonitorCheckResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Monitor check already running",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": false
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "error": {
+                      "type": "string"
+                    },
+                    "details": {}
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": false
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "error": {
+                      "type": "string"
+                    },
+                    "details": {}
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": false
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "error": {
+                      "type": "string"
+                    },
+                    "details": {}
+                  }
+                }
+              }
+            }
+          },
+          "402": {
+            "description": "Payment required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": false
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "error": {
+                      "type": "string"
+                    },
+                    "details": {}
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": false
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "error": {
+                      "type": "string"
+                    },
+                    "details": {}
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": false
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "error": {
+                      "type": "string"
+                    },
+                    "details": {}
+                  }
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many requests",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": false
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "error": {
+                      "type": "string"
+                    },
+                    "details": {}
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": false
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "error": {
+                      "type": "string"
+                    },
+                    "details": {}
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/monitor/{monitorId}/checks": {
+      "parameters": [
+        {
+          "name": "monitorId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          },
+          "description": "The monitor ID"
+        }
+      ],
+      "get": {
+        "summary": "List monitor checks",
+        "operationId": "listMonitorChecks",
+        "tags": [
+          "Monitor"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 25
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "queued",
+                "running",
+                "completed",
+                "failed",
+                "partial",
+                "skipped_overlap"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Monitor checks",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MonitorChecksListResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": false
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "error": {
+                      "type": "string"
+                    },
+                    "details": {}
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": false
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "error": {
+                      "type": "string"
+                    },
+                    "details": {}
+                  }
+                }
+              }
+            }
+          },
+          "402": {
+            "description": "Payment required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": false
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "error": {
+                      "type": "string"
+                    },
+                    "details": {}
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": false
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "error": {
+                      "type": "string"
+                    },
+                    "details": {}
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": false
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "error": {
+                      "type": "string"
+                    },
+                    "details": {}
+                  }
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many requests",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": false
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "error": {
+                      "type": "string"
+                    },
+                    "details": {}
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": false
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "error": {
+                      "type": "string"
+                    },
+                    "details": {}
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/monitor/{monitorId}/checks/{checkId}": {
+      "parameters": [
+        {
+          "name": "monitorId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          },
+          "description": "The monitor ID"
+        },
+        {
+          "name": "checkId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          },
+          "description": "The monitor check ID"
+        }
+      ],
+      "get": {
+        "summary": "Get a monitor check with page-level diffs",
+        "operationId": "getMonitorCheck",
+        "tags": [
+          "Monitor"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 25
+            }
+          },
+          {
+            "name": "skip",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "same",
+                "new",
+                "changed",
+                "removed",
+                "error"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Monitor check details",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MonitorCheckDetailResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": false
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "error": {
+                      "type": "string"
+                    },
+                    "details": {}
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": false
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "error": {
+                      "type": "string"
+                    },
+                    "details": {}
+                  }
+                }
+              }
+            }
+          },
+          "402": {
+            "description": "Payment required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": false
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "error": {
+                      "type": "string"
+                    },
+                    "details": {}
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": false
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "error": {
+                      "type": "string"
+                    },
+                    "details": {}
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": false
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "error": {
+                      "type": "string"
+                    },
+                    "details": {}
+                  }
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many requests",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": false
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "error": {
+                      "type": "string"
+                    },
+                    "details": {}
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": false
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "error": {
+                      "type": "string"
+                    },
+                    "details": {}
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/browser/webhook/destroyed": {
+      "post": {
+        "summary": "Internal browser service destroyed-session webhook",
+        "operationId": "browserWebhookDestroyed",
+        "tags": [
+          "Browser"
+        ],
+        "parameters": [
+          {
+            "name": "x-browser-service-secret",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BrowserDestroyedWebhookRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Webhook accepted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BrowserDestroyedWebhookResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BrowserDestroyedWebhookResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BrowserDestroyedWebhookResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": false
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "error": {
+                      "type": "string"
+                    },
+                    "details": {}
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/support/ask": {
+      "post": {
+        "summary": "Ask the support agent",
+        "operationId": "supportAsk",
+        "tags": [
+          "Support"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SupportProxyRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Support agent response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SupportProxyResponse"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Support agent unreachable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": false
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "error": {
+                      "type": "string"
+                    },
+                    "details": {}
+                  }
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Support agent unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": false
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "error": {
+                      "type": "string"
+                    },
+                    "details": {}
+                  }
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "Support agent timeout",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": false
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "error": {
+                      "type": "string"
+                    },
+                    "details": {}
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/support/docs-search": {
+      "post": {
+        "summary": "Search support documentation",
+        "operationId": "supportDocsSearch",
+        "tags": [
+          "Support"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SupportProxyRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Support agent response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SupportProxyResponse"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Support agent unreachable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": false
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "error": {
+                      "type": "string"
+                    },
+                    "details": {}
+                  }
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Support agent unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": false
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "error": {
+                      "type": "string"
+                    },
+                    "details": {}
+                  }
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "Support agent timeout",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": false
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "error": {
+                      "type": "string"
+                    },
+                    "details": {}
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/x402/search": {
+      "post": {
+        "summary": "Search and scrape using X402 micropayment",
+        "operationId": "x402SearchAndScrape",
+        "tags": [
+          "Search"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "query": {
+                    "type": "string",
+                    "description": "The search query"
+                  },
+                  "limit": {
+                    "type": "integer",
+                    "description": "Maximum number of results to return",
+                    "default": 5,
+                    "maximum": 100,
+                    "minimum": 1
+                  },
+                  "tbs": {
+                    "type": "string",
+                    "description": "Time-based search parameter"
+                  },
+                  "location": {
+                    "type": "string",
+                    "description": "Location parameter for search results"
+                  },
+                  "timeout": {
+                    "type": "integer",
+                    "description": "Timeout in milliseconds",
+                    "default": 60000
+                  },
+                  "ignoreInvalidURLs": {
+                    "type": "boolean",
+                    "description": "Excludes URLs from the search results that are invalid for other Firecrawl endpoints. This helps reduce errors if you are piping data from search into other Firecrawl API endpoints.",
+                    "default": false
+                  },
+                  "scrapeOptions": {
+                    "type": "object",
+                    "description": "Options for scraping search results",
+                    "properties": {
+                      "formats": {
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "enum": [
+                            "markdown",
+                            "html",
+                            "rawHtml",
+                            "links",
+                            "screenshot",
+                            "screenshot@fullPage",
+                            "json",
+                            "branding"
+                          ]
+                        },
+                        "description": "Formats to include in the output",
+                        "default": []
+                      }
+                    },
+                    "default": {}
+                  }
+                },
+                "required": [
+                  "query"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "title": {
+                            "type": "string",
+                            "description": "Title from search result"
+                          },
+                          "description": {
+                            "type": "string",
+                            "description": "Description from search result"
+                          },
+                          "url": {
+                            "type": "string",
+                            "description": "URL of the search result"
+                          },
+                          "markdown": {
+                            "type": "string",
+                            "nullable": true,
+                            "description": "Markdown content if scraping was requested"
+                          },
+                          "html": {
+                            "type": "string",
+                            "nullable": true,
+                            "description": "HTML content if requested in formats"
+                          },
+                          "rawHtml": {
+                            "type": "string",
+                            "nullable": true,
+                            "description": "Raw HTML content if requested in formats"
+                          },
+                          "links": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            },
+                            "description": "Links found if requested in formats"
+                          },
+                          "screenshot": {
+                            "type": "string",
+                            "nullable": true,
+                            "description": "Screenshot URL if requested in formats"
+                          },
+                          "metadata": {
+                            "type": "object",
+                            "properties": {
+                              "title": {
+                                "type": "string"
+                              },
+                              "description": {
+                                "type": "string"
+                              },
+                              "sourceURL": {
+                                "type": "string"
+                              },
+                              "statusCode": {
+                                "type": "integer"
+                              },
+                              "error": {
+                                "type": "string",
+                                "nullable": true
+                              }
+                            }
+                          }
+                        }
+                      }
+                    },
+                    "warning": {
+                      "type": "string",
+                      "nullable": true,
+                      "description": "Warning message if any issues occurred"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "408": {
+            "description": "Request timeout",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": false
+                    },
+                    "error": {
+                      "type": "string",
+                      "example": "Request timed out"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "example": false
+                    },
+                    "error": {
+                      "type": "string",
+                      "example": "An unexpected error occurred on the server."
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "description": "Conditional route registered only when X402_PAY_TO_ADDRESS is configured."
       }
     }
   },
@@ -5400,6 +6488,923 @@
           "expiresAt": {
             "type": "string",
             "format": "date-time"
+          }
+        }
+      },
+      "SearchFeedbackRequest": {
+        "type": "object",
+        "properties": {
+          "rating": {
+            "type": "string",
+            "enum": [
+              "good",
+              "bad",
+              "partial"
+            ]
+          },
+          "valuableSources": {
+            "type": "array",
+            "maxItems": 50,
+            "items": {
+              "type": "object",
+              "properties": {
+                "url": {
+                  "type": "string",
+                  "format": "uri"
+                },
+                "reason": {
+                  "type": "string",
+                  "maxLength": 1000
+                }
+              },
+              "required": [
+                "url"
+              ]
+            }
+          },
+          "missingContent": {
+            "type": "array",
+            "maxItems": 20,
+            "items": {
+              "type": "object"
+            }
+          },
+          "querySuggestions": {
+            "type": "string",
+            "maxLength": 2000
+          },
+          "origin": {
+            "type": "string",
+            "default": "api"
+          },
+          "integration": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "rating"
+        ],
+        "description": "Substantive feedback is required by rating: good requires valuableSources; partial requires valuableSources or missingContent; bad requires missingContent or querySuggestions."
+      },
+      "SearchFeedbackResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "feedbackId": {
+            "type": "string"
+          },
+          "creditsRefunded": {
+            "type": "number"
+          },
+          "alreadySubmitted": {
+            "type": "boolean"
+          },
+          "dailyCapReached": {
+            "type": "boolean"
+          },
+          "creditsRefundedToday": {
+            "type": "number"
+          },
+          "dailyRefundCap": {
+            "type": "number"
+          },
+          "warning": {
+            "type": "string"
+          },
+          "error": {
+            "type": "string"
+          },
+          "feedbackErrorCode": {
+            "type": "string",
+            "enum": [
+              "SEARCH_NOT_FOUND",
+              "FEEDBACK_WINDOW_EXPIRED",
+              "SEARCH_FAILED",
+              "PREVIEW_TEAM_NOT_ALLOWED",
+              "TEAM_OPTED_OUT",
+              "INVALID_BODY",
+              "DB_DISABLED",
+              "INTERNAL"
+            ]
+          }
+        }
+      },
+      "BrowserCreateRequest": {
+        "type": "object",
+        "properties": {
+          "ttl": {
+            "type": "number",
+            "minimum": 30,
+            "maximum": 3600,
+            "default": 600
+          },
+          "activityTtl": {
+            "type": "number",
+            "minimum": 10,
+            "maximum": 3600,
+            "default": 300
+          },
+          "streamWebView": {
+            "type": "boolean",
+            "default": true
+          },
+          "integration": {
+            "type": "string"
+          },
+          "profile": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128
+              },
+              "saveChanges": {
+                "type": "boolean",
+                "default": true
+              }
+            },
+            "required": [
+              "name"
+            ]
+          }
+        }
+      },
+      "BrowserCreateResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "id": {
+            "type": "string"
+          },
+          "cdpUrl": {
+            "type": "string"
+          },
+          "liveViewUrl": {
+            "type": "string"
+          },
+          "interactiveLiveViewUrl": {
+            "type": "string"
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "error": {
+            "type": "string"
+          }
+        }
+      },
+      "BrowserExecuteRequest": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100000
+          },
+          "language": {
+            "type": "string",
+            "enum": [
+              "python",
+              "node",
+              "bash"
+            ],
+            "default": "node"
+          },
+          "timeout": {
+            "type": "number",
+            "minimum": 1,
+            "maximum": 300,
+            "default": 30
+          },
+          "origin": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "code"
+        ]
+      },
+      "BrowserExecuteResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "stdout": {
+            "type": "string"
+          },
+          "result": {
+            "type": "string"
+          },
+          "stderr": {
+            "type": "string"
+          },
+          "exitCode": {
+            "type": "integer"
+          },
+          "killed": {
+            "type": "boolean"
+          },
+          "error": {
+            "type": "string"
+          }
+        }
+      },
+      "BrowserDeleteResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "sessionDurationMs": {
+            "type": "integer"
+          },
+          "creditsBilled": {
+            "type": "integer"
+          },
+          "error": {
+            "type": "string"
+          }
+        }
+      },
+      "BrowserSession": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "cdpUrl": {
+            "type": "string"
+          },
+          "liveViewUrl": {
+            "type": "string"
+          },
+          "interactiveLiveViewUrl": {
+            "type": "string"
+          },
+          "streamWebView": {
+            "type": "boolean"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "lastActivity": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "BrowserListResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "sessions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/BrowserSession"
+            }
+          },
+          "error": {
+            "type": "string"
+          }
+        }
+      },
+      "InteractRequest": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100000,
+            "description": "Code to execute in the browser"
+          },
+          "prompt": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 10000,
+            "description": "Natural language prompt for the interaction"
+          },
+          "language": {
+            "type": "string",
+            "enum": [
+              "python",
+              "node",
+              "bash"
+            ],
+            "default": "node"
+          },
+          "timeout": {
+            "type": "number",
+            "minimum": 1,
+            "maximum": 300,
+            "default": 30
+          },
+          "origin": {
+            "type": "string"
+          },
+          "integration": {
+            "type": "string"
+          },
+          "existingSessionId": {
+            "type": "string"
+          }
+        },
+        "anyOf": [
+          {
+            "required": [
+              "code"
+            ]
+          },
+          {
+            "required": [
+              "prompt"
+            ]
+          }
+        ]
+      },
+      "InteractResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "liveViewUrl": {
+            "type": "string"
+          },
+          "interactiveLiveViewUrl": {
+            "type": "string"
+          },
+          "output": {
+            "type": "string"
+          },
+          "stdout": {
+            "type": "string"
+          },
+          "result": {
+            "type": "string"
+          },
+          "stderr": {
+            "type": "string"
+          },
+          "exitCode": {
+            "type": "integer"
+          },
+          "killed": {
+            "type": "boolean"
+          },
+          "error": {
+            "type": "string"
+          }
+        }
+      },
+      "MonitorSchedule": {
+        "type": "object",
+        "properties": {
+          "cron": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "text": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "timezone": {
+            "type": "string",
+            "default": "UTC",
+            "minLength": 1,
+            "maxLength": 128
+          }
+        },
+        "description": "Provide either cron or text, not both. The server normalizes text to cron.",
+        "anyOf": [
+          {
+            "required": [
+              "cron"
+            ]
+          },
+          {
+            "required": [
+              "text"
+            ]
+          }
+        ]
+      },
+      "MonitorWebhook": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string",
+            "format": "uri"
+          },
+          "headers": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "metadata": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "events": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "monitor.page",
+                "monitor.check.completed"
+              ]
+            }
+          }
+        },
+        "required": [
+          "url"
+        ]
+      },
+      "MonitorNotification": {
+        "type": "object",
+        "properties": {
+          "email": {
+            "type": "object",
+            "properties": {
+              "enabled": {
+                "type": "boolean",
+                "default": false
+              },
+              "recipients": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "format": "email"
+                },
+                "maxItems": 25
+              },
+              "includeDiffs": {
+                "type": "boolean",
+                "default": false
+              }
+            }
+          }
+        }
+      },
+      "MonitorScrapeTarget": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "scrape"
+            ]
+          },
+          "urls": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uri"
+            },
+            "minItems": 1
+          },
+          "scrapeOptions": {
+            "type": "object",
+            "additionalProperties": true,
+            "default": {}
+          }
+        },
+        "required": [
+          "type",
+          "urls"
+        ]
+      },
+      "MonitorCrawlTarget": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "crawl"
+            ]
+          },
+          "url": {
+            "type": "string",
+            "format": "uri"
+          },
+          "crawlOptions": {
+            "type": "object",
+            "additionalProperties": true,
+            "default": {}
+          },
+          "scrapeOptions": {
+            "type": "object",
+            "additionalProperties": true,
+            "default": {}
+          }
+        },
+        "required": [
+          "type",
+          "url"
+        ]
+      },
+      "MonitorTarget": {
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/MonitorScrapeTarget"
+          },
+          {
+            "$ref": "#/components/schemas/MonitorCrawlTarget"
+          }
+        ]
+      },
+      "MonitorCreateRequest": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "schedule": {
+            "$ref": "#/components/schemas/MonitorSchedule"
+          },
+          "webhook": {
+            "$ref": "#/components/schemas/MonitorWebhook"
+          },
+          "notification": {
+            "$ref": "#/components/schemas/MonitorNotification"
+          },
+          "targets": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MonitorTarget"
+            },
+            "minItems": 1,
+            "maxItems": 50
+          },
+          "retentionDays": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 365,
+            "default": 30
+          },
+          "goal": {
+            "type": "string",
+            "nullable": true,
+            "maxLength": 2000
+          },
+          "judgeEnabled": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "name",
+          "schedule",
+          "targets"
+        ]
+      },
+      "MonitorUpdateRequest": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "schedule": {
+            "$ref": "#/components/schemas/MonitorSchedule"
+          },
+          "webhook": {
+            "$ref": "#/components/schemas/MonitorWebhook"
+          },
+          "notification": {
+            "$ref": "#/components/schemas/MonitorNotification"
+          },
+          "targets": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MonitorTarget"
+            },
+            "minItems": 1,
+            "maxItems": 50
+          },
+          "retentionDays": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 365
+          },
+          "goal": {
+            "type": "string",
+            "nullable": true,
+            "maxLength": 2000
+          },
+          "judgeEnabled": {
+            "type": "boolean"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "active",
+              "paused"
+            ]
+          }
+        },
+        "minProperties": 1
+      },
+      "Monitor": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "schedule": {
+            "type": "object",
+            "properties": {
+              "cron": {
+                "type": "string"
+              },
+              "timezone": {
+                "type": "string"
+              }
+            }
+          },
+          "nextRunAt": {
+            "type": "string",
+            "nullable": true
+          },
+          "lastRunAt": {
+            "type": "string",
+            "nullable": true
+          },
+          "currentCheckId": {
+            "type": "string",
+            "nullable": true
+          },
+          "targets": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MonitorTarget"
+            }
+          },
+          "webhook": {
+            "type": "object",
+            "nullable": true
+          },
+          "notification": {
+            "type": "object"
+          },
+          "retentionDays": {
+            "type": "integer"
+          },
+          "estimatedCreditsPerMonth": {
+            "type": "number",
+            "nullable": true
+          },
+          "lastCheckSummary": {
+            "type": "object",
+            "nullable": true
+          },
+          "goal": {
+            "type": "string",
+            "nullable": true
+          },
+          "judgeEnabled": {
+            "type": "boolean"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "MonitorResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "data": {
+            "$ref": "#/components/schemas/Monitor"
+          }
+        }
+      },
+      "MonitorListResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Monitor"
+            }
+          }
+        }
+      },
+      "MonitorDeleteResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          }
+        }
+      },
+      "MonitorCheck": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "monitorId": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "trigger": {
+            "type": "string"
+          },
+          "scheduledFor": {
+            "type": "string",
+            "nullable": true
+          },
+          "startedAt": {
+            "type": "string",
+            "nullable": true
+          },
+          "finishedAt": {
+            "type": "string",
+            "nullable": true
+          },
+          "estimatedCredits": {
+            "type": "number"
+          },
+          "reservedCredits": {
+            "type": "number"
+          },
+          "actualCredits": {
+            "type": "number"
+          },
+          "billingStatus": {
+            "type": "string"
+          },
+          "summary": {
+            "type": "object"
+          },
+          "targetResults": {
+            "type": "object"
+          },
+          "notificationStatus": {
+            "type": "object"
+          },
+          "error": {
+            "type": "string",
+            "nullable": true
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "MonitorCheckResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "id": {
+            "type": "string"
+          },
+          "data": {
+            "$ref": "#/components/schemas/MonitorCheck"
+          }
+        }
+      },
+      "MonitorChecksListResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MonitorCheck"
+            }
+          }
+        }
+      },
+      "MonitorCheckDetailResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "next": {
+            "type": "string"
+          },
+          "data": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/MonitorCheck"
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "pages": {
+                    "type": "array",
+                    "items": {
+                      "type": "object"
+                    }
+                  },
+                  "next": {
+                    "type": "string"
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      "ConcurrencyCheckResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "concurrency": {
+            "type": "integer"
+          },
+          "maxConcurrency": {
+            "type": "integer"
+          },
+          "error": {
+            "type": "string"
+          }
+        }
+      },
+      "SupportProxyRequest": {
+        "type": "object",
+        "additionalProperties": true
+      },
+      "SupportProxyResponse": {
+        "type": "object",
+        "additionalProperties": true
+      },
+      "BrowserDestroyedWebhookRequest": {
+        "type": "object",
+        "properties": {
+          "sessionId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "sessionId"
+        ]
+      },
+      "BrowserDestroyedWebhookResponse": {
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          },
+          "error": {
+            "type": "string"
           }
         }
       }
