@@ -20,12 +20,28 @@ const credentials = config.GCS_CREDENTIALS
   : undefined;
 export const storage = new Storage({ credentials });
 
+const storageManualRetries = new Storage({
+  credentials,
+  retryOptions: {
+    autoRetry: false,
+    maxRetries: 0,
+  },
+});
+
+const BACKOFF_PARAMS = [0, 250, 1000];
+
+type GCSOperationAttempt = {
+  error: any;
+  timeMs: number;
+  backoffMs: number;
+};
+
 /**
  * Converts a job ID to a GCS filename.
  *
  * Before the cutover, the filename is always `<id>.json`.
  * However, after we switched to v7 UUIDs, we realized that it's not working well with how GCS
- * parititons GCS buckets, therefore, we need the filename to start with something random-esque
+ * partitions GCS buckets, therefore, we need the filename to start with something random-esque
  * to smooth out the distribution of files between the partitions.
  * Therefore, after May 26, 2026, the filename is `<sha256(id)>-<id>.json`
  *
@@ -67,6 +83,9 @@ async function saveJobToGCS(params: {
     zeroDataRetention: params.zeroDataRetention,
   });
 
+  const saveAttempts: GCSOperationAttempt[] = [];
+  const metadataAttempts: GCSOperationAttempt[] = [];
+
   return await withSpan("firecrawl-gcs-save-job", async span => {
     setSpanAttributes(span, {
       "gcs.operation": "save_job",
@@ -83,55 +102,106 @@ async function saveJobToGCS(params: {
       return;
     }
 
-    const bucket = storage.bucket(config.GCS_BUCKET_NAME);
+    const bucket = storageManualRetries.bucket(config.GCS_BUCKET_NAME);
     const blob = bucket.file(filename);
 
     // Save job docs with retry
-    for (let i = 0; i < 3; i++) {
+    for (let i = 0; i < BACKOFF_PARAMS.length; i++) {
+      const backoffMs = BACKOFF_PARAMS[i];
+      if (backoffMs > 0) {
+        await new Promise(resolve => setTimeout(resolve, backoffMs));
+      }
+
+      const saveStart = Date.now();
       try {
         await blob.save(JSON.stringify(params.data), {
           contentType: "application/json",
         });
+        saveAttempts.push({
+          error: null,
+          timeMs: Date.now() - saveStart,
+          backoffMs,
+        });
         break;
       } catch (error) {
-        if (i === 2) {
+        // TODO: determine what kind of errors we should backoff or instafail on
+        saveAttempts.push({ error, timeMs: Date.now() - saveStart, backoffMs });
+
+        if (i === BACKOFF_PARAMS.length - 1) {
+          setSpanAttributes(span, { "gcs.save_successful": false });
           throw error;
-        } else {
-          logger.error(`Error saving job to GCS, retrying`, {
-            error,
-            i,
-          });
         }
       }
     }
 
     // Save job metadata with retry
-    for (let i = 0; i < 3; i++) {
+    for (let i = 0; i < BACKOFF_PARAMS.length; i++) {
+      const backoffMs = BACKOFF_PARAMS[i];
+      if (backoffMs > 0) {
+        await new Promise(resolve => setTimeout(resolve, backoffMs));
+      }
+
+      const metadataStart = Date.now();
       try {
         await blob.setMetadata({
           metadata: params.metadata,
         });
+        metadataAttempts.push({
+          error: null,
+          timeMs: Date.now() - metadataStart,
+          backoffMs,
+        });
         break;
       } catch (error) {
-        if (i === 2) {
+        // TODO: determine what kind of errors we should backoff or instafail on
+        metadataAttempts.push({
+          error,
+          timeMs: Date.now() - metadataStart,
+          backoffMs,
+        });
+
+        if (i === BACKOFF_PARAMS.length - 1) {
+          setSpanAttributes(span, { "gcs.save_successful": false });
           throw error;
-        } else {
-          logger.error(`Error saving job metadata to GCS, retrying`, {
-            error,
-            i,
-          });
         }
       }
     }
 
     setSpanAttributes(span, { "gcs.save_successful": true });
-  }).catch(error => {
-    logger.error(`Error saving job to GCS`, {
-      error,
-      filename,
+  })
+    .then(x => {
+      if (saveAttempts.length === 0 && metadataAttempts.length === 0) {
+        return x;
+      }
+
+      if (saveAttempts.length === 1 && metadataAttempts.length === 1) {
+        logger.debug("Job saved to GCS", {
+          canonicalLog: "gcs-jobs/save",
+          saveAttempts,
+          metadataAttempts,
+          success: true,
+        });
+      } else {
+        logger.warn("Job saved to GCS with retries", {
+          canonicalLog: "gcs-jobs/save",
+          saveAttempts,
+          metadataAttempts,
+          success: true,
+        });
+      }
+
+      return x;
+    })
+    .catch(error => {
+      logger.error(`Job save to GCS failed`, {
+        canonicalLog: "gcs-jobs/save",
+        saveAttempts,
+        metadataAttempts,
+        success: false,
+        error,
+      });
+      throw error;
     });
-    throw error;
-  });
 }
 
 export async function saveScrapeToGCS(
