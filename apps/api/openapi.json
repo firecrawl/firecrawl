@@ -6526,7 +6526,21 @@
             "type": "array",
             "maxItems": 20,
             "items": {
-              "type": "object"
+              "type": "object",
+              "properties": {
+                "topic": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 200
+                },
+                "description": {
+                  "type": "string",
+                  "maxLength": 2000
+                }
+              },
+              "required": [
+                "topic"
+              ]
             }
           },
           "querySuggestions": {
