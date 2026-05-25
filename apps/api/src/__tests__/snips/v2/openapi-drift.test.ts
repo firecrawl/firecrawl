@@ -61,8 +61,13 @@ describe("openapi.json drift detection", () => {
     expect(Object.keys(spec.paths).length).toBeGreaterThan(0);
   });
 
+  test("every operation has an operationId", () => {
+    const missing = operations.filter((o) => !o.id);
+    expect(missing.map((m) => `${m.method} ${m.path}`)).toEqual([]);
+  });
+
   test("no duplicate operationIds", () => {
-    const ids = operations.map((o) => o.id).filter(Boolean);
+    const ids = operations.map((o) => o.id);
     const dupes = ids.filter((id, i) => ids.indexOf(id) !== i);
     expect(dupes).toEqual([]);
   });
