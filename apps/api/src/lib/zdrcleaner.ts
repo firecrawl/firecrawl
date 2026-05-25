@@ -31,7 +31,7 @@ export async function zdrcleaner() {
     const rows: { request_id: string; ids: string[] }[] = _rows;
 
     if (!rows || rows.length === 0) {
-      logger.info("zdrcleaner batch completed with no rows to process", {
+      logger.debug("zdrcleaner batch completed with no rows to process", {
         canonicalLog: "zdrcleaner",
         success: true,
         timeMs: Date.now() - start,
