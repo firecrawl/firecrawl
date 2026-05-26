@@ -1482,16 +1482,24 @@ class NuQ<JobData = any, JobReturnValue = any> {
         await nl.client.query(`UNLISTEN "${this.queueName}";`);
         await nl.client.end();
       } else {
-        await nl.channel.cancel(nl.queue);
-        await nl.channel.close();
-        await nl.connection.close();
+        try {
+          await nl.channel.cancel(nl.queue);
+          await nl.channel.close();
+          await nl.connection.close();
+        } catch (_) {
+          // Connection may already be closing — safe to ignore during shutdown
+        }
       }
     }
     if (this.sender) {
       const ns = this.sender;
       this.sender = null;
-      await ns.channel.close();
-      await ns.connection.close();
+      try {
+        await ns.channel.close();
+        await ns.connection.close();
+      } catch (_) {
+        // Connection may already be closing — safe to ignore during shutdown
+      }
     }
   }
 }
