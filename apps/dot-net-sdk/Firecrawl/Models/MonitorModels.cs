@@ -30,6 +30,18 @@ public class CreateMonitorRequest
 
     [JsonPropertyName("retentionDays")]
     public int? RetentionDays { get; set; }
+
+    /// <summary>
+    /// Optional natural-language description of what the monitor is
+    /// watching for (max 2000 chars). When <see cref="Goal"/> is set
+    /// and <see cref="JudgeEnabled"/> is left null, the API
+    /// automatically enables judging for this monitor.
+    /// </summary>
+    [JsonPropertyName("goal")]
+    public string? Goal { get; set; }
+
+    [JsonPropertyName("judgeEnabled")]
+    public bool? JudgeEnabled { get; set; }
 }
 
 public class UpdateMonitorRequest
@@ -54,6 +66,16 @@ public class UpdateMonitorRequest
 
     [JsonPropertyName("retentionDays")]
     public int? RetentionDays { get; set; }
+
+    /// <summary>
+    /// Same semantics as on <see cref="CreateMonitorRequest"/>; leave
+    /// null to keep the existing values.
+    /// </summary>
+    [JsonPropertyName("goal")]
+    public string? Goal { get; set; }
+
+    [JsonPropertyName("judgeEnabled")]
+    public bool? JudgeEnabled { get; set; }
 }
 
 public class MonitorSummary
@@ -117,6 +139,12 @@ public class Monitor
 
     [JsonPropertyName("lastCheckSummary")]
     public MonitorSummary? LastCheckSummary { get; set; }
+
+    [JsonPropertyName("goal")]
+    public string? Goal { get; set; }
+
+    [JsonPropertyName("judgeEnabled")]
+    public bool JudgeEnabled { get; set; }
 
     [JsonPropertyName("createdAt")]
     public string? CreatedAt { get; set; }
@@ -234,6 +262,27 @@ public class MonitorPageSnapshot
     public Dictionary<string, object>? Json { get; set; }
 }
 
+/// <summary>
+/// Judge's verdict on whether a monitor page change is meaningful.
+/// Populated on monitor check pages when the monitor has a
+/// <c>goal</c> set and judging is enabled.
+/// </summary>
+public class MonitorPageJudgment
+{
+    [JsonPropertyName("meaningful")]
+    public bool Meaningful { get; set; }
+
+    /// <summary>One of <c>high</c>, <c>medium</c>, <c>low</c>.</summary>
+    [JsonPropertyName("confidence")]
+    public string? Confidence { get; set; }
+
+    [JsonPropertyName("reason")]
+    public string? Reason { get; set; }
+
+    [JsonPropertyName("fields")]
+    public List<string>? Fields { get; set; }
+}
+
 public class MonitorCheckPage
 {
     [JsonPropertyName("id")]
@@ -268,6 +317,9 @@ public class MonitorCheckPage
 
     [JsonPropertyName("snapshot")]
     public MonitorPageSnapshot? Snapshot { get; set; }
+
+    [JsonPropertyName("judgment")]
+    public MonitorPageJudgment? Judgment { get; set; }
 
     [JsonPropertyName("createdAt")]
     public string? CreatedAt { get; set; }

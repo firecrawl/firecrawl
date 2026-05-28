@@ -115,6 +115,9 @@ export type MonitorCreateInput = {
       }
   >;
   retentionDays?: number;
+  goal?: string;
+  judgeEnabled?: boolean;
+  origin?: string;
 };
 
 export async function monitorCreateRaw(
@@ -174,6 +177,26 @@ export async function monitorCheckRaw(
     .get(`/v2/monitor/${monitorId}/checks/${checkId}`)
     .set("Authorization", `Bearer ${identity.apiKey}`);
   return query ? req.query(query) : req;
+}
+
+export async function monitorEmailConfirmRaw(token: string) {
+  return await request(TEST_API_URL)
+    .post(`/v2/monitor/email/confirm`)
+    .set("Content-Type", "application/json")
+    .send({ token });
+}
+
+export async function monitorEmailUnsubscribeRaw(token: string) {
+  return await request(TEST_API_URL)
+    .post(`/v2/monitor/email/unsubscribe`)
+    .set("Content-Type", "application/json")
+    .send({ token });
+}
+
+export async function monitorEmailConfirmRawViaQuery(token: string) {
+  return await request(TEST_API_URL)
+    .post(`/v2/monitor/email/confirm`)
+    .query({ token });
 }
 
 export async function parseRaw(

@@ -27,6 +27,8 @@ final class Monitor
         private readonly ?int $retentionDays = null,
         private readonly ?int $estimatedCreditsPerMonth = null,
         private readonly ?array $lastCheckSummary = null,
+        private readonly ?string $goal = null,
+        private readonly bool $judgeEnabled = false,
         private readonly ?string $createdAt = null,
         private readonly ?string $updatedAt = null,
     ) {}
@@ -48,6 +50,8 @@ final class Monitor
             retentionDays: isset($data['retentionDays']) ? (int) $data['retentionDays'] : null,
             estimatedCreditsPerMonth: isset($data['estimatedCreditsPerMonth']) ? (int) $data['estimatedCreditsPerMonth'] : null,
             lastCheckSummary: isset($data['lastCheckSummary']) && is_array($data['lastCheckSummary']) ? $data['lastCheckSummary'] : null,
+            goal: isset($data['goal']) ? (string) $data['goal'] : null,
+            judgeEnabled: isset($data['judgeEnabled']) ? (bool) $data['judgeEnabled'] : false,
             createdAt: isset($data['createdAt']) ? (string) $data['createdAt'] : null,
             updatedAt: isset($data['updatedAt']) ? (string) $data['updatedAt'] : null,
         );
@@ -71,6 +75,8 @@ final class Monitor
     public function getEstimatedCreditsPerMonth(): ?int { return $this->estimatedCreditsPerMonth; }
     /** @return array<string, mixed>|null */
     public function getLastCheckSummary(): ?array { return $this->lastCheckSummary; }
+    public function getGoal(): ?string { return $this->goal; }
+    public function getJudgeEnabled(): bool { return $this->judgeEnabled; }
     public function getCreatedAt(): ?string { return $this->createdAt; }
     public function getUpdatedAt(): ?string { return $this->updatedAt; }
 }

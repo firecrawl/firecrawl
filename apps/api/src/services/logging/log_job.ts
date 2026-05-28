@@ -278,7 +278,7 @@ export async function logScrape(scrape: LoggedScrape, force: boolean = false) {
     config.GCS_BUCKET_NAME &&
     !(scrape.skipNuq && scrape.zeroDataRetention)
   ) {
-    await saveScrapeToGCS(scrape);
+    await saveScrapeToGCS(scrape, logger);
   }
 
   if (
@@ -461,7 +461,7 @@ export async function logSearch(search: LoggedSearch, force: boolean = false) {
   );
 
   if (search.results && !search.zeroDataRetention) {
-    await saveSearchToGCS(search);
+    await saveSearchToGCS(search, logger);
   }
 }
 
@@ -514,7 +514,7 @@ export async function logExtract(
 
   if (extract.result) {
     if (config.GCS_BUCKET_NAME) {
-      await saveExtractToGCS(extract);
+      await saveExtractToGCS(extract, logger);
     } else {
       // Fallback: save result to Redis with 24h TTL when GCS is not configured
       await saveExtractResult(extract.id, extract.result);
@@ -564,7 +564,7 @@ export async function logMap(map: LoggedMap, force: boolean = false) {
   );
 
   if (map.results && !map.zeroDataRetention) {
-    await saveMapToGCS(map);
+    await saveMapToGCS(map, logger);
   }
 }
 
@@ -612,7 +612,7 @@ export async function logLlmsTxt(
   );
 
   if (llmsTxt.result) {
-    await saveLlmsTxtToGCS(llmsTxt);
+    await saveLlmsTxtToGCS(llmsTxt, logger);
   }
 }
 
@@ -661,6 +661,6 @@ export async function logDeepResearch(
   );
 
   if (deepResearch.result) {
-    await saveDeepResearchToGCS(deepResearch);
+    await saveDeepResearchToGCS(deepResearch, logger);
   }
 }

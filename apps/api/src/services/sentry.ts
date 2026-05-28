@@ -8,6 +8,7 @@ import {
 } from "../scraper/scrapeURL/error";
 import { AbortManagerThrownError } from "../scraper/scrapeURL/lib/abortManager";
 import { JobCancelledError } from "../lib/error";
+import { isQueueFullError } from "../lib/queue-full-error";
 
 type CaptureContext = {
   tags?: Record<string, string>;
@@ -24,6 +25,101 @@ type CaptureContext = {
   };
   [key: string]: any;
 };
+
+const transportableErrorCodes = [
+  "SCRAPE_ALL_ENGINES_FAILED",
+  "SCRAPE_DNS_RESOLUTION_ERROR",
+  "SCRAPE_SITE_ERROR",
+  "SCRAPE_SSL_ERROR",
+  "SCRAPE_PROXY_SELECTION_ERROR",
+  "SCRAPE_ZDR_VIOLATION_ERROR",
+  "SCRAPE_UNSUPPORTED_FILE_ERROR",
+  "SCRAPE_PDF_ANTIBOT_ERROR",
+  "SCRAPE_ACTION_ERROR",
+  "SCRAPE_PDF_INSUFFICIENT_TIME_ERROR",
+  "SCRAPE_PDF_PREFETCH_FAILED",
+  "SCRAPE_DOCUMENT_ANTIBOT_ERROR",
+  "SCRAPE_DOCUMENT_PREFETCH_FAILED",
+  "SCRAPE_TIMEOUT",
+  "MAP_TIMEOUT",
+  "SCRAPE_UNKNOWN_ERROR",
+  "SCRAPE_RACED_REDIRECT_ERROR",
+  "SCRAPE_SITEMAP_ERROR",
+  "CRAWL_DENIAL",
+];
+
+function getStringField(
+  error: Record<string, unknown>,
+  fields: string[],
+): string {
+  for (const field of fields) {
+    if (error[field] !== undefined && error[field] !== null) {
+      return String(error[field]);
+    }
+  }
+
+  return "";
+}
+
+function getErrorMessage(error: unknown): string {
+  if (error instanceof Error) {
+    return String(error.message || "");
+  }
+
+  if (typeof error === "string") {
+    return error;
+  }
+
+  if (error && typeof error === "object") {
+    return getStringField(error as Record<string, unknown>, [
+      "message",
+      "value",
+    ]);
+  }
+
+  return "";
+}
+
+export function shouldIgnoreSentryException(error: unknown): boolean {
+  if (isQueueFullError(error)) {
+    return true;
+  }
+
+  if (!error || typeof error !== "object") {
+    return false;
+  }
+
+  if (
+    error instanceof AddFeatureError ||
+    error instanceof RemoveFeatureError ||
+    error instanceof AbortManagerThrownError ||
+    error instanceof EngineError ||
+    error instanceof JobCancelledError
+  ) {
+    return true;
+  }
+
+  // We sometimes rethrow TransportableErrors across process boundaries as a
+  // plain Error with message like `${code}|${json}` (see error-serde.ts).
+  // In that case, `error.code` is missing, so extract it from the message.
+  const errorCodeFromField = "code" in error ? String(error.code) : "";
+  const errorMessage = getErrorMessage(error);
+
+  // Ignore cancellation errors (fallback for serialized errors)
+  if (
+    errorMessage === "Parent crawl/batch scrape was cancelled" ||
+    errorMessage.includes("Parent crawl/batch scrape was cancelled")
+  ) {
+    return true;
+  }
+
+  const errorCodeFromMessage =
+    errorCodeFromField ||
+    (errorMessage.includes("|") ? errorMessage.split("|", 1)[0] : "");
+  const errorCode = errorCodeFromMessage;
+
+  return transportableErrorCodes.includes(errorCode);
+}
 
 if (config.SENTRY_DSN) {
   logger.info("Setting up Sentry...");
@@ -58,63 +154,13 @@ if (config.SENTRY_DSN) {
       }
 
       const error = hint?.originalException;
+      const sentryException = event.exception?.values?.[0];
 
-      if (error && typeof error === "object") {
-        if (
-          error instanceof AddFeatureError ||
-          error instanceof RemoveFeatureError ||
-          error instanceof AbortManagerThrownError ||
-          error instanceof EngineError ||
-          error instanceof JobCancelledError
-        ) {
-          return null;
-        }
-
-        // We sometimes rethrow TransportableErrors across process boundaries as a
-        // plain Error with message like `${code}|${json}` (see error-serde.ts).
-        // In that case, `error.code` is missing, so extract it from the message.
-        const errorCodeFromField = "code" in error ? String(error.code) : "";
-        const errorMessage =
-          error instanceof Error ? String(error.message || "") : "";
-
-        // Ignore cancellation errors (fallback for serialized errors)
-        if (
-          errorMessage === "Parent crawl/batch scrape was cancelled" ||
-          errorMessage.includes("Parent crawl/batch scrape was cancelled")
-        ) {
-          return null;
-        }
-
-        const errorCodeFromMessage =
-          errorCodeFromField ||
-          (errorMessage.includes("|") ? errorMessage.split("|", 1)[0] : "");
-        const errorCode = errorCodeFromMessage;
-
-        const transportableErrorCodes = [
-          "SCRAPE_ALL_ENGINES_FAILED",
-          "SCRAPE_DNS_RESOLUTION_ERROR",
-          "SCRAPE_SITE_ERROR",
-          "SCRAPE_SSL_ERROR",
-          "SCRAPE_PROXY_SELECTION_ERROR",
-          "SCRAPE_ZDR_VIOLATION_ERROR",
-          "SCRAPE_UNSUPPORTED_FILE_ERROR",
-          "SCRAPE_PDF_ANTIBOT_ERROR",
-          "SCRAPE_ACTION_ERROR",
-          "SCRAPE_PDF_INSUFFICIENT_TIME_ERROR",
-          "SCRAPE_PDF_PREFETCH_FAILED",
-          "SCRAPE_DOCUMENT_ANTIBOT_ERROR",
-          "SCRAPE_DOCUMENT_PREFETCH_FAILED",
-          "SCRAPE_TIMEOUT",
-          "MAP_TIMEOUT",
-          "SCRAPE_UNKNOWN_ERROR",
-          "SCRAPE_RACED_REDIRECT_ERROR",
-          "SCRAPE_SITEMAP_ERROR",
-          "CRAWL_DENIAL",
-        ];
-
-        if (transportableErrorCodes.includes(errorCode)) {
-          return null;
-        }
+      if (
+        shouldIgnoreSentryException(error) ||
+        shouldIgnoreSentryException(sentryException)
+      ) {
+        return null;
       }
 
       return event;
@@ -132,6 +178,10 @@ export function captureExceptionWithZdrCheck(
     (context?.data as any)?.zeroDataRetention;
 
   if (zeroDataRetention) {
+    return;
+  }
+
+  if (shouldIgnoreSentryException(error)) {
     return;
   }
 

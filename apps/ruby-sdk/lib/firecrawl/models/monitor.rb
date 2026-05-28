@@ -6,7 +6,8 @@ module Firecrawl
       attr_reader :id, :name, :status, :schedule, :next_run_at, :last_run_at,
                   :current_check_id, :targets, :webhook, :notification,
                   :retention_days, :estimated_credits_per_month,
-                  :last_check_summary, :created_at, :updated_at
+                  :last_check_summary, :goal, :judge_enabled,
+                  :created_at, :updated_at
 
       def initialize(data)
         @id = data["id"]
@@ -22,6 +23,8 @@ module Firecrawl
         @retention_days = data["retentionDays"]
         @estimated_credits_per_month = data["estimatedCreditsPerMonth"]
         @last_check_summary = data["lastCheckSummary"]
+        @goal = data["goal"]
+        @judge_enabled = data["judgeEnabled"] || false
         @created_at = data["createdAt"]
         @updated_at = data["updatedAt"]
       end
@@ -68,6 +71,11 @@ module Firecrawl
     # * +"snapshot"+ – present on JSON / mixed-mode monitors. A hash
     #   with a +"json"+ key holding the current JSON extraction at this
     #   run.
+    # * +"judgment"+ – present when the monitor has a +goal+ set and
+    #   judging is enabled. A hash with +"meaningful"+ (Boolean),
+    #   +"confidence"+ (+"high"+ / +"medium"+ / +"low"+), +"reason"+
+    #   (String), and +"fields"+ (Array of String) describing which
+    #   fields the judge weighed.
     class MonitorCheckDetail < MonitorCheck
       attr_accessor :pages, :next_url
 

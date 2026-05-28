@@ -59,7 +59,10 @@ export async function extractController(
 
   const invalidURLs: string[] =
     req.body.urls?.filter((url: string) =>
-      isUrlBlocked(url, req.acuc?.flags ?? null),
+      isUrlBlocked(url, req.acuc?.flags ?? null, {
+        team_id: req.auth.team_id,
+        origin: req.body.origin ?? null,
+      }),
     ) ?? [];
 
   if (invalidURLs.length > 0 && !req.body.ignoreInvalidURLs) {

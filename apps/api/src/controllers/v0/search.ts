@@ -98,7 +98,13 @@ async function searchHelper(
     return { success: true, data: res, returnCode: 200 };
   }
 
-  res = res.filter(r => !isUrlBlocked(r.url, flags));
+  res = res.filter(
+    r =>
+      !isUrlBlocked(r.url, flags, {
+        team_id,
+        origin: req.body?.origin ?? null,
+      }),
+  );
   if (res.length > num_results) {
     res = res.slice(0, num_results);
   }

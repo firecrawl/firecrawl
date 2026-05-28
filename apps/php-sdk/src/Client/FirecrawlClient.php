@@ -338,6 +338,8 @@ final class FirecrawlClient
         ?array $webhook = null,
         ?array $notification = null,
         ?int $retentionDays = null,
+        ?string $goal = null,
+        ?bool $judgeEnabled = null,
     ): Monitor {
         $body = array_filter([
             'name' => $name,
@@ -346,6 +348,8 @@ final class FirecrawlClient
             'webhook' => $webhook,
             'notification' => $notification,
             'retentionDays' => $retentionDays,
+            'goal' => $goal,
+            'judgeEnabled' => $judgeEnabled,
         ], static fn ($value) => $value !== null);
 
         $response = $this->http->post('/v2/monitor', $body);

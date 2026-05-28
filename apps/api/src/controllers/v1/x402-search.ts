@@ -56,7 +56,12 @@ async function scrapeX402SearchResult(
   applyZdrScope(zeroDataRetention);
 
   try {
-    if (isUrlBlocked(searchResult.url, flags)) {
+    if (
+      isUrlBlocked(searchResult.url, flags, {
+        team_id: options.teamId,
+        origin: options.origin,
+      })
+    ) {
       throw new Error("Could not scrape url: " + UNSUPPORTED_SITE_MESSAGE);
     }
     logger.info("Adding scrape job [x402]", {
@@ -254,7 +259,11 @@ export async function x402SearchController(
 
     if (req.body.ignoreInvalidURLs) {
       searchResults = searchResults.filter(
-        result => !isUrlBlocked(result.url, req.acuc?.flags ?? null),
+        result =>
+          !isUrlBlocked(result.url, req.acuc?.flags ?? null, {
+            team_id: req.auth.team_id,
+            origin: req.body.origin ?? null,
+          }),
       );
     }
 

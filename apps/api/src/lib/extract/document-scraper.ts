@@ -37,7 +37,12 @@ export async function scrapeDocument(
     trace.timing.scrapedAt = new Date().toISOString();
   }
 
-  if (isUrlBlocked(options.url, options.flags ?? null)) {
+  if (
+    isUrlBlocked(options.url, options.flags ?? null, {
+      team_id: options.teamId,
+      origin: options.origin,
+    })
+  ) {
     return null;
   }
 

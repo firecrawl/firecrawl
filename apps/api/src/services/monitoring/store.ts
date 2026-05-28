@@ -1,7 +1,11 @@
 import { createHash } from "crypto";
 import { v7 as uuidv7 } from "uuid";
 import { supabase_rr_service, supabase_service } from "../supabase";
-import { getNextMonitorRunAt, estimateRunsPerMonth } from "./cron";
+import {
+  getNextMonitorRunAt,
+  estimateRunsPerMonth,
+  validateMonitorCron,
+} from "./cron";
 import type {
   CreateMonitorRequest,
   MonitorCheckPageInsert,
@@ -36,11 +40,15 @@ function estimateTargetCredits(target: MonitorTarget): number {
   return Math.max(1, limit);
 }
 
-export function estimateMonitorCreditsPerRun(targets: MonitorTarget[]): number {
-  return targets.reduce(
+export function estimateMonitorCreditsPerRun(
+  targets: MonitorTarget[],
+  judgeEnabled: boolean = false,
+): number {
+  const scrapeCredits = targets.reduce(
     (sum, target) => sum + estimateTargetCredits(target),
     0,
   );
+  return judgeEnabled ? scrapeCredits * 2 : scrapeCredits;
 }
 
 function toMonitorSummary(check: MonitorCheckRow): MonitorSummary {
@@ -60,6 +68,12 @@ function throwIfError(error: any, message: string): void {
   }
 }
 
+function normalizeGoal(goal: string | undefined | null): string | null {
+  if (goal == null) return null;
+  const trimmed = goal.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
 export async function createMonitor(params: {
   teamId: string;
   input: CreateMonitorRequest;
@@ -67,25 +81,40 @@ export async function createMonitor(params: {
   intervalMs: number;
 }): Promise<MonitorRow> {
   const targets = ensureTargetIds(params.input.targets);
-  const estimatedCreditsPerRun = estimateMonitorCreditsPerRun(targets);
+  const judgeEnabled =
+    Boolean(params.input.judgeEnabled) &&
+    Boolean(normalizeGoal(params.input.goal));
+  const estimatedCreditsPerRun = estimateMonitorCreditsPerRun(
+    targets,
+    judgeEnabled,
+  );
   const estimatedCreditsPerMonth =
     estimatedCreditsPerRun * estimateRunsPerMonth(params.intervalMs);
 
+  // Omit goal/judge_enabled keys when undefined so a pre-migration DB
+  // doesn't reject the insert. Migration lives in a separate repo.
+  const insert: Record<string, unknown> = {
+    id: uuidv7(),
+    team_id: params.teamId,
+    name: params.input.name,
+    schedule_cron: params.input.schedule.cron,
+    schedule_timezone: params.input.schedule.timezone,
+    next_run_at: params.nextRunAt.toISOString(),
+    retention_days: params.input.retentionDays,
+    estimated_credits_per_month: estimatedCreditsPerMonth,
+    targets,
+    webhook: params.input.webhook ?? null,
+    notification: params.input.notification ?? null,
+  };
+  if (params.input.goal !== undefined) {
+    insert.goal = normalizeGoal(params.input.goal);
+  }
+  if (params.input.judgeEnabled !== undefined) {
+    insert.judge_enabled = params.input.judgeEnabled;
+  }
   const { data, error } = await supabase_service
     .from("monitors")
-    .insert({
-      id: uuidv7(),
-      team_id: params.teamId,
-      name: params.input.name,
-      schedule_cron: params.input.schedule.cron,
-      schedule_timezone: params.input.schedule.timezone,
-      next_run_at: params.nextRunAt.toISOString(),
-      retention_days: params.input.retentionDays,
-      estimated_credits_per_month: estimatedCreditsPerMonth,
-      targets,
-      webhook: params.input.webhook ?? null,
-      notification: params.input.notification ?? null,
-    })
+    .insert(insert)
     .select("*")
     .single();
 
@@ -163,19 +192,55 @@ export async function updateMonitor(params: {
   if (params.input.retentionDays !== undefined) {
     patch.retention_days = params.input.retentionDays;
   }
+  if (params.input.goal !== undefined) {
+    patch.goal = normalizeGoal(params.input.goal);
+  }
+  if (params.input.judgeEnabled !== undefined) {
+    patch.judge_enabled = params.input.judgeEnabled;
+  }
   if (params.input.targets !== undefined) {
-    const targets = ensureTargetIds(params.input.targets);
-    patch.targets = targets;
-    if (params.intervalMs !== undefined) {
-      patch.estimated_credits_per_month =
-        estimateMonitorCreditsPerRun(targets) *
-        estimateRunsPerMonth(params.intervalMs);
-    }
+    patch.targets = ensureTargetIds(params.input.targets);
   }
   if (params.input.schedule !== undefined) {
     patch.schedule_cron = params.input.schedule.cron;
     patch.schedule_timezone = params.input.schedule.timezone;
     patch.next_run_at = params.nextRunAt?.toISOString() ?? null;
+  }
+
+  // Re-estimate whenever any cost input changed. Merge the patch with the
+  // current monitor row so a goal/judge-only update still recalculates
+  // against the existing targets + schedule, and a targets-only update
+  // preserves an already-enabled judge.
+  const costInputsChanged =
+    params.input.targets !== undefined ||
+    params.input.judgeEnabled !== undefined ||
+    params.input.goal !== undefined ||
+    params.input.schedule !== undefined;
+  if (costInputsChanged) {
+    const existing = await getMonitorForUpdate(params.teamId, params.monitorId);
+    if (existing) {
+      const mergedTargets =
+        (patch.targets as MonitorTarget[] | undefined) ?? existing.targets;
+      const mergedGoal =
+        params.input.goal !== undefined
+          ? normalizeGoal(params.input.goal)
+          : existing.goal;
+      const mergedJudgeEnabled =
+        params.input.judgeEnabled !== undefined
+          ? params.input.judgeEnabled
+          : existing.judge_enabled;
+      const mergedIntervalMs =
+        params.intervalMs ??
+        validateMonitorCron(
+          (patch.schedule_cron as string | undefined) ?? existing.schedule_cron,
+          (patch.schedule_timezone as string | undefined) ??
+            existing.schedule_timezone,
+        ).intervalMs;
+      const judgeOn = Boolean(mergedJudgeEnabled) && Boolean(mergedGoal);
+      patch.estimated_credits_per_month =
+        estimateMonitorCreditsPerRun(mergedTargets, judgeOn) *
+        estimateRunsPerMonth(mergedIntervalMs);
+    }
   }
 
   const { data, error } = await supabase_service
@@ -219,7 +284,10 @@ export async function createMonitorCheck(params: {
   scheduledFor?: string | null;
   status?: MonitorCheckRow["status"];
 }): Promise<MonitorCheckRow> {
-  const estimated = estimateMonitorCreditsPerRun(params.monitor.targets);
+  const estimated = estimateMonitorCreditsPerRun(
+    params.monitor.targets,
+    Boolean(params.monitor.judge_enabled) && Boolean(params.monitor.goal),
+  );
   const { data, error } = await supabase_service
     .from("monitor_checks")
     .insert({
@@ -629,4 +697,20 @@ export async function claimDueMonitors(params: {
 
   throwIfError(error, "Failed to claim due monitors");
   return (data ?? []) as MonitorRow[];
+}
+
+export async function deferMonitorClaim(
+  monitorId: string,
+  until: Date,
+): Promise<void> {
+  const { error } = await supabase_service
+    .from("monitors")
+    .update({
+      locked_until: until.toISOString(),
+      locked_at: null,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", monitorId);
+
+  throwIfError(error, "Failed to defer monitor claim");
 }

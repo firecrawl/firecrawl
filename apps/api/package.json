@@ -33,6 +33,8 @@
     "extract-worker:production": "node dist/src/services/extract-worker.js",
     "index-worker": "tsc-watch --onSuccess \"node dist/src/services/indexing/index-worker.js\"",
     "index-worker:production": "node dist/src/services/indexing/index-worker.js",
+    "zdr-worker": "tsc-watch --onSuccess \"node dist/src/services/zdr-worker.js\"",
+    "zdr-worker:production": "node dist/src/services/zdr-worker.js",
     "mongo-docker": "docker run -d -p 2717:27017 -v ./mongo-data:/data/db --name mongodb mongo:latest",
     "mongo-docker-console": "docker exec -it mongodb mongosh",
     "sentry:sourcemaps": "sentry-cli sourcemaps inject --org caleb-peffer --project firecrawl-scraper-js ./dist && sentry-cli sourcemaps upload --org caleb-peffer --project firecrawl-scraper-js ./dist",
@@ -148,7 +150,7 @@
     "undici": "7.24.1",
     "uuid": "^13.0.1",
     "winston": "^3.14.2",
-    "ws": "^8.18.0",
+    "ws": "^8.20.1",
     "xml2js": "^0.6.2",
     "zod": "4.1.12"
   },
@@ -190,7 +192,7 @@
       "fast-uri": ">=3.1.2 <4.0.0",
       "glob@>=10.2.0 <10.5.0": ">=10.5.0",
       "js-yaml@<3.14.2": ">=3.14.2",
-      "qs@<6.14.2": ">=6.14.2",
+      "qs@<6.15.2": ">=6.15.2 <7.0.0",
       "minimatch@<10.2.3": ">=10.2.3",
       "bn.js@<5.2.3": ">=5.2.3",
       "@tootallnate/once@<3.0.1": ">=3.0.1",
@@ -201,8 +203,11 @@
       "smol-toml@<1.6.1": ">=1.6.1",
       "handlebars": ">=4.7.9",
       "path-to-regexp@~0.1.12": "0.1.13",
-      "brace-expansion": ">=5.0.5",
-      "follow-redirects@<1.16.0": ">=1.16.0 <2.0.0"
+      "brace-expansion": ">=5.0.6",
+      "ws@>=8.0.0 <9.0.0": ">=8.20.1 <9.0.0",
+      "follow-redirects@<1.16.0": ">=1.16.0 <2.0.0",
+      "uuid@<11.1.1": "11.1.1",
+      "js-cookie@<3.0.7": "3.0.7"
     }
   },
   "lint-staged": {

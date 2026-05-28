@@ -10,7 +10,6 @@ import { RateLimiterMode } from "../types";
 import { authenticateUser } from "../controllers/auth";
 import { createIdempotencyKey } from "../services/idempotency/create";
 import { validateIdempotencyKey } from "../services/idempotency/validate";
-import { checkTeamCredits } from "../services/billing/credit_billing";
 import { isUrlBlocked } from "../scraper/WebScraper/utils/blocklist";
 import { logger } from "../lib/logger";
 import {
@@ -24,11 +23,7 @@ import { validate as isUuid } from "uuid";
 
 import { config } from "../config";
 import { supabase_service } from "../services/supabase";
-import {
-  autumnService,
-  isAutumnCheckEnabled,
-  isAutumnCheckDryRun,
-} from "../services/autumn/autumn.service";
+import { autumnService } from "../services/autumn/autumn.service";
 
 export function checkCreditsMiddleware(
   _minimum?: number,
@@ -124,56 +119,29 @@ export function checkCreditsMiddleware(
       }
 
       const requestedCredits = minimum ?? 1;
-      const useAutumnCheck =
-        !!req.auth.org_id && isAutumnCheckEnabled(req.auth.org_id);
 
-      const autumnProperties = {
-        source: "checkCreditsMiddleware",
-        path: req.path,
-      };
-      const [legacyCheck, autumnResult] = await Promise.all([
-        checkTeamCredits(req.acuc ?? null, req.auth.team_id, requestedCredits),
-        useAutumnCheck
-          ? autumnService.checkCredits({
-              teamId: req.auth.team_id,
-              value: requestedCredits,
-              properties: autumnProperties,
-            })
-          : null,
-      ]);
-      let { success, remainingCredits, chunk } = legacyCheck;
+      const autumnResult = await autumnService.checkCredits({
+        teamId: req.auth.team_id,
+        value: requestedCredits,
+        properties: {
+          source: "checkCreditsMiddleware",
+          path: req.path,
+        },
+      });
 
-      if (autumnResult !== null) {
-        const dryRun = isAutumnCheckDryRun();
-        if (autumnResult.allowed !== legacyCheck.success) {
-          logger.warn("Autumn check result diverged from legacy credit gate", {
-            teamId: req.auth.team_id,
-            path: req.path,
-            requestedCredits,
-            autumnAllowed: autumnResult.allowed,
-            autumnRemaining: autumnResult.remaining,
-            legacyAllowed: legacyCheck.success,
-            dryRun,
-          });
-        }
-        if (dryRun) {
-          logger.info("Autumn check dry-run result (not enforced)", {
-            teamId: req.auth.team_id,
-            path: req.path,
-            requestedCredits,
-            autumnAllowed: autumnResult.allowed,
-            autumnRemaining: autumnResult.remaining,
-            legacyAllowed: legacyCheck.success,
-          });
-        } else {
-          success = autumnResult.allowed;
-          remainingCredits = autumnResult.remaining;
-        }
+      // Autumn is the source of truth for credits. If it's unavailable
+      // (returns null), fail open — matches the behavior in browser.ts /
+      // scrape-browser.ts and avoids turning an Autumn outage into a
+      // customer outage.
+      if (autumnResult === null) {
+        req.account = { remainingCredits: Infinity };
+        return next();
       }
 
-      if (chunk) {
-        req.acuc = chunk;
-      }
+      const success = autumnResult.allowed;
+      // When Autumn allows the request (including overage), don't let a
+      // small remaining balance clamp downstream limits (e.g. crawl).
+      const remainingCredits = success ? Infinity : autumnResult.remaining;
       req.account = { remainingCredits };
       if (!success) {
         if (
@@ -298,7 +266,10 @@ export function blocklistMiddleware(
 ) {
   if (
     typeof req.body.url === "string" &&
-    isUrlBlocked(req.body.url, req.acuc?.flags ?? null)
+    isUrlBlocked(req.body.url, req.acuc?.flags ?? null, {
+      team_id: req.acuc?.team_id ?? null,
+      origin: typeof req.body.origin === "string" ? req.body.origin : null,
+    })
   ) {
     if (!res.headersSent) {
       return res.status(403).json({

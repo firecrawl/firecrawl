@@ -150,7 +150,10 @@ export async function executeSearch(
     scrapeOptions?.formats && scrapeOptions.formats.length > 0;
 
   if (shouldScrape && scrapeOptions) {
-    const itemsToScrape = getItemsToScrape(searchResponse, flags);
+    const itemsToScrape = getItemsToScrape(searchResponse, flags, {
+      team_id: teamId,
+      origin,
+    });
 
     if (itemsToScrape.length > 0) {
       const scrapeOpts = {

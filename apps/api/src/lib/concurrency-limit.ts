@@ -5,16 +5,7 @@ import { getCrawl, StoredCrawl } from "./crawl-redis";
 import { logger } from "./logger";
 import { abTestJob } from "../services/ab-test";
 import { scrapeQueue, type NuQJob } from "../services/worker/nuq";
-
-export class QueueFullError extends Error {
-  statusCode = 429;
-  constructor(queueSize: number, queueLimit: number) {
-    super(
-      `Queue limit reached: your team has ${queueSize} jobs queued (limit: ${queueLimit}). Please wait for existing jobs to complete before adding more, or upgrade your plan for a higher limit. For more info, see https://docs.firecrawl.dev/rate-limits#concurrent-browser-limits`,
-    );
-    this.name = "QueueFullError";
-  }
-}
+export { QueueFullError } from "./queue-full-error";
 
 // min 50k, max 2M, 2000 per concurrent browser
 export function getTeamQueueLimit(concurrencyLimit: number): number {
@@ -83,6 +74,25 @@ export async function removeConcurrencyLimitActiveJob(
   id: string,
 ) {
   await getRedisConnection().zrem(constructKey(team_id), id);
+}
+
+export async function removeConcurrencyLimitedJobs(
+  team_id: string,
+  job_ids: string[],
+) {
+  if (job_ids.length === 0) return;
+  const redis = getRedisConnection();
+  const queueKey = constructQueueKey(team_id);
+  const chunkSize = 1000;
+  for (let i = 0; i < job_ids.length; i += chunkSize) {
+    const chunk = job_ids.slice(i, i + chunkSize);
+    const pipeline = redis.pipeline();
+    pipeline.zrem(queueKey, ...chunk);
+    for (const id of chunk) {
+      pipeline.del(constructJobKey(id));
+    }
+    await pipeline.exec();
+  }
 }
 
 type ConcurrencyLimitedJob = {

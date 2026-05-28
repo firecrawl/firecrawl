@@ -69,11 +69,24 @@ export function parseMonitorScheduleText(input: string): string {
   }
 
   const dailyMatch = text.match(
-    /^(?:daily|every day)(?: at (\d{1,2})(?::(\d{2}))?)?$/,
+    /^(?:daily|every day)(?: at (\d{1,2})(?::(\d{2}))?\s*(am|pm)?)?$/,
   );
   if (dailyMatch) {
-    const hour = dailyMatch[1] === undefined ? 0 : Number(dailyMatch[1]);
+    let hour = dailyMatch[1] === undefined ? 0 : Number(dailyMatch[1]);
     const minute = dailyMatch[2] === undefined ? 0 : Number(dailyMatch[2]);
+    const meridiem = dailyMatch[3];
+    if (meridiem !== undefined) {
+      if (!Number.isInteger(hour) || hour < 1 || hour > 12) {
+        throw new Error(
+          "Daily schedule hour with am/pm must be between 1 and 12",
+        );
+      }
+      if (meridiem === "am") {
+        hour = hour === 12 ? 0 : hour;
+      } else {
+        hour = hour === 12 ? 12 : hour + 12;
+      }
+    }
     if (!Number.isInteger(hour) || hour < 0 || hour > 23) {
       throw new Error("Daily schedule hour must be between 0 and 23");
     }

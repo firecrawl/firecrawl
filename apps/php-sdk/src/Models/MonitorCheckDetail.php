@@ -10,12 +10,16 @@ final class MonitorCheckDetail extends MonitorCheck
      * @param list<array<string, mixed>> $pages Each page array contains
      *     keys: id, targetId, url, status, previousScrapeId,
      *     currentScrapeId, statusCode, error, metadata, diff, snapshot,
-     *     createdAt. The `diff` value (when present) is an array with
-     *     `text` (markdown unified diff) and/or `json` (parseDiff AST
-     *     for markdown monitors, or a per-field
+     *     judgment, createdAt. The `diff` value (when present) is an
+     *     array with `text` (markdown unified diff) and/or `json`
+     *     (parseDiff AST for markdown monitors, or a per-field
      *     `{previous, current}` map for JSON-extraction monitors). The
      *     `snapshot` value (JSON / mixed mode only) is an array with a
      *     `json` key holding the current JSON extraction at this run.
+     *     The `judgment` value (present when the monitor has a `goal`
+     *     set and judging is enabled) is an array with `meaningful`
+     *     (bool), `confidence` (`high`|`medium`|`low`), `reason`
+     *     (string), and `fields` (list of strings).
      */
     public function __construct(
         ?string $id = null,

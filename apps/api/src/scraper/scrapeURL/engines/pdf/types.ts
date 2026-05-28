@@ -15,4 +15,5 @@ export type PdfMetadata = { numPages: number; title?: string };
 
 export const MAX_FILE_SIZE = 19 * 1024 * 1024; // 19MB
 export const FIRE_PDF_MAX_FILE_SIZE = 30 * 1024 * 1024; // 30MB
+export const PDF_DOWNLOAD_MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB
 export const MILLISECONDS_PER_PAGE = 150;

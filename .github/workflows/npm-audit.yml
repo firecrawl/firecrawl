@@ -4,6 +4,9 @@ on:
   pull_request:
     branches:
       - main
+  schedule:
+    - cron: "0 17 * * *"  # 9am PST / 10am PDT
+  workflow_dispatch:
 
 jobs:
   audit:

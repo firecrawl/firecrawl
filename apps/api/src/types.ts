@@ -154,6 +154,7 @@ export enum RateLimiterMode {
   Account = "account",
   SupportAsk = "supportAsk",
   SupportDocsSearch = "supportDocsSearch",
+  Research = "research",
 }
 
 export type AuthResponse =

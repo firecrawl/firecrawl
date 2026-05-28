@@ -15,6 +15,7 @@ public class MonitorCheckPage {
     private Object metadata;
     private MonitorPageDiff diff;
     private MonitorPageSnapshot snapshot;
+    private MonitorPageJudgment judgment;
     private String createdAt;
 
     public String getId() { return id; }
@@ -28,5 +29,6 @@ public class MonitorCheckPage {
     public Object getMetadata() { return metadata; }
     public MonitorPageDiff getDiff() { return diff; }
     public MonitorPageSnapshot getSnapshot() { return snapshot; }
+    public MonitorPageJudgment getJudgment() { return judgment; }
     public String getCreatedAt() { return createdAt; }
 }

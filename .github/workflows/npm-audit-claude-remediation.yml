@@ -115,6 +115,20 @@ jobs:
 
           gh pr edit "$PR_NUMBER" --body-file "$UPDATED_BODY_FILE"
 
+      - name: Request code review
+        if: ${{ steps.scan.outputs.has_uncovered == 'true' && steps.claude.outputs.branch_name != '' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BRANCH_NAME: ${{ steps.claude.outputs.branch_name }}
+        run: |
+          set -euo pipefail
+          PR_NUMBER="$(gh pr list --head "$BRANCH_NAME" --state open --json number --jq '.[0].number // empty')"
+          if [ -z "$PR_NUMBER" ]; then
+            echo "::warning::No open PR for ${BRANCH_NAME}; cannot request reviewers."
+            exit 0
+          fi
+          gh pr edit "$PR_NUMBER" --add-reviewer abimaelmartell,mogery
+
       - name: Notify Slack about remediation PR
         if: ${{ steps.remediation_pr.outputs.pr_url != '' && env.NPM_AUDIT_CLAUDE_SLACK_WEBHOOK_URL != '' }}
         env:

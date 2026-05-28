@@ -430,6 +430,7 @@ class Format(BaseModel):
 class JsonFormat(Format):
     """Configuration for JSON extraction."""
 
+    type: Literal["json"] = "json"
     prompt: Optional[str] = None
     schema: Optional[Any] = None
 
@@ -437,6 +438,7 @@ class JsonFormat(Format):
 class ChangeTrackingFormat(Format):
     """Configuration for change tracking."""
 
+    type: Literal["change_tracking", "changeTracking"] = "change_tracking"
     modes: List[Literal["git-diff", "json"]]
     schema: Optional[Dict[str, Any]] = None
     prompt: Optional[str] = None
@@ -872,6 +874,30 @@ class MonitorNotification(BaseModel):
     email: Optional[MonitorEmailNotification] = None
 
 
+class MonitorEmailRecipientSubscription(BaseModel):
+    """Per-recipient opt-in state for monitor email notifications.
+
+    External recipients (not members of the team that owns the monitor) must
+    confirm their subscription via a one-time email before they receive any
+    monitor notifications. Team members are auto-confirmed.
+
+    Statuses:
+      - ``pending``      - confirmation email sent, no notifications yet
+      - ``confirmed``    - notifications enabled
+      - ``unsubscribed`` - recipient opted out and cannot be re-added without
+                            a new confirmation flow
+    """
+
+    model_config = {"populate_by_name": True}
+
+    email: str
+    status: Literal["pending", "confirmed", "unsubscribed"]
+    source: Literal["team", "opt_in", "legacy"]
+    confirmation_email_sent: Optional[bool] = Field(
+        default=None, alias="confirmationEmailSent"
+    )
+
+
 class MonitorTarget(BaseModel):
     """A scrape or crawl target stored on a monitor."""
 
@@ -894,6 +920,8 @@ class MonitorCreateRequest(BaseModel):
     notification: Optional[MonitorNotification] = None
     targets: List[Union[MonitorTarget, Dict[str, Any]]]
     retention_days: Optional[int] = Field(default=None, alias="retentionDays")
+    goal: Optional[str] = None
+    judge_enabled: Optional[bool] = Field(default=None, alias="judgeEnabled")
 
 
 class MonitorUpdateRequest(BaseModel):
@@ -906,6 +934,8 @@ class MonitorUpdateRequest(BaseModel):
     notification: Optional[Union[MonitorNotification, Dict[str, Any]]] = None
     targets: Optional[List[Union[MonitorTarget, Dict[str, Any]]]] = None
     retention_days: Optional[int] = Field(default=None, alias="retentionDays")
+    goal: Optional[str] = None
+    judge_enabled: Optional[bool] = Field(default=None, alias="judgeEnabled")
 
 
 class MonitorSummary(BaseModel):
@@ -932,11 +962,35 @@ class Monitor(BaseModel):
     targets: List[Dict[str, Any]]
     webhook: Optional[Dict[str, Any]] = None
     notification: Optional[Dict[str, Any]] = None
+    # Present on create/update/get when the API has reconciled email
+    # recipients (i.e. notification.email.recipients is non-empty). Each
+    # entry reports a recipient's opt-in status.
+    email_recipient_subscriptions: Optional[List[MonitorEmailRecipientSubscription]] = (
+        Field(default=None, alias="emailRecipientSubscriptions")
+    )
     retention_days: int = Field(alias="retentionDays")
     estimated_credits_per_month: Optional[int] = Field(default=None, alias="estimatedCreditsPerMonth")
     last_check_summary: Optional[MonitorSummary] = Field(default=None, alias="lastCheckSummary")
+    goal: Optional[str] = None
+    judge_enabled: Optional[bool] = Field(default=None, alias="judgeEnabled")
     created_at: str = Field(alias="createdAt")
     updated_at: str = Field(alias="updatedAt")
+
+
+class MonitorMeaningfulChange(BaseModel):
+    type: Literal["added", "removed", "changed"]
+    before: Optional[str] = None
+    after: Optional[str] = None
+    reason: str
+
+
+class MonitorPageJudgment(BaseModel):
+    model_config = {"populate_by_name": True}
+
+    meaningful: bool
+    confidence: Literal["high", "medium", "low"]
+    reason: str
+    meaningful_changes: List[MonitorMeaningfulChange] = Field(default_factory=list, alias="meaningfulChanges")
 
 
 class MonitorCheck(BaseModel):
@@ -997,6 +1051,7 @@ class MonitorCheckPage(BaseModel):
     metadata: Optional[Any] = None
     diff: Optional[MonitorPageDiff] = None
     snapshot: Optional[MonitorPageSnapshot] = None
+    judgment: Optional[MonitorPageJudgment] = None
     created_at: str = Field(alias="createdAt")
 
 
@@ -1361,6 +1416,20 @@ class SearchData(BaseModel):
     web: Optional[List[Union[SearchResultWeb, Document]]] = None
     news: Optional[List[Union[SearchResultNews, Document]]] = None
     images: Optional[List[Union[SearchResultImages, Document]]] = None
+
+    @property
+    def data(self):
+        parts = []
+        if self.web:
+            parts.append(f".web ({len(self.web)} results)")
+        if self.news:
+            parts.append(f".news ({len(self.news)} results)")
+        if self.images:
+            parts.append(f".images ({len(self.images)} results)")
+        available = ", ".join(parts) if parts else ".web, .news, or .images"
+        raise AttributeError(
+            f"SearchData has no '.data'. Results are grouped by source: {available}"
+        )
 
 
 class SearchResponse(BaseResponse[SearchData]):

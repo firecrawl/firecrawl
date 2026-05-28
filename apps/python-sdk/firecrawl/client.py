@@ -302,8 +302,19 @@ class Firecrawl:
         self.browser_execute = self._v2_client.browser_execute
         self.delete_browser = self._v2_client.delete_browser
         self.list_browsers = self._v2_client.list_browsers
-        
+
         self.watcher = self._v2_client.watcher
+
+        self.scrape_url = self._v2_client.scrape_url
+        self.crawl_url = self._v2_client.crawl_url
+        self.map_url = self._v2_client.map_url
+        self.async_crawl_url = self._v2_client.async_crawl_url
+        self.check_crawl_status = self._v2_client.check_crawl_status
+        self.check_crawl_errors = self._v2_client.check_crawl_errors
+        self.batch_scrape_urls = self._v2_client.batch_scrape_urls
+        self.async_batch_scrape_urls = self._v2_client.async_batch_scrape_urls
+        self.check_batch_scrape_status = self._v2_client.check_batch_scrape_status
+        self.check_batch_scrape_errors = self._v2_client.check_batch_scrape_errors
 
     def parse(
         self,
@@ -405,6 +416,17 @@ class AsyncFirecrawl:
         self.list_browsers = self._v2_client.list_browsers
 
         self.watcher = self._v2_client.watcher
+
+        self.scrape_url = self._v2_client.scrape_url
+        self.crawl_url = self._v2_client.crawl_url
+        self.map_url = self._v2_client.map_url
+        self.async_crawl_url = self._v2_client.async_crawl_url
+        self.check_crawl_status = self._v2_client.check_crawl_status
+        self.check_crawl_errors = self._v2_client.check_crawl_errors
+        self.batch_scrape_urls = self._v2_client.batch_scrape_urls
+        self.async_batch_scrape_urls = self._v2_client.async_batch_scrape_urls
+        self.check_batch_scrape_status = self._v2_client.check_batch_scrape_status
+        self.check_batch_scrape_errors = self._v2_client.check_batch_scrape_errors
 
     async def parse(
         self,

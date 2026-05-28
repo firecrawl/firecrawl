@@ -215,7 +215,11 @@ export async function crawlStatusController(
     total?: number;
     creditsUsed?: number;
   } = {
-    status: group.status === "active" ? "scraping" : group.status,
+    status: sc?.cancelled
+      ? "cancelled"
+      : group.status === "active"
+        ? "scraping"
+        : group.status,
     completed: numericStats.completed ?? 0,
     total:
       (numericStats.completed ?? 0) +

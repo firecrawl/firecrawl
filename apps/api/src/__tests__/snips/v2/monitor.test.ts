@@ -10,6 +10,9 @@ import {
   monitorCheckRaw,
   monitorCreateRaw,
   monitorDeleteRaw,
+  monitorEmailConfirmRaw,
+  monitorEmailConfirmRawViaQuery,
+  monitorEmailUnsubscribeRaw,
   monitorGetRaw,
   monitorListRaw,
   monitorPatchRaw,
@@ -66,6 +69,49 @@ describeIf(ALLOW_TEST_SUITE_WEBSITE && !TEST_SELF_HOST)("/v2/monitor", () => {
     const del = await monitorDeleteRaw(id, identity);
     expect(del.statusCode).toBe(200);
     expect(del.body.success).toBe(true);
+  });
+
+  it("accepts an origin field in the create body", async () => {
+    const create = await monitorCreateRaw(
+      {
+        name: "origin monitor",
+        schedule: { cron: "*/30 * * * *", timezone: "UTC" },
+        targets: [
+          {
+            type: "scrape",
+            urls: [createTestIdUrl()],
+          },
+        ],
+        origin: "python-sdk@4.28.0",
+      },
+      identity,
+    );
+
+    expect(create.statusCode).toBe(200);
+    expect(create.body.success).toBe(true);
+    const id = create.body.data.id;
+    await monitorDeleteRaw(id, identity);
+  });
+
+  it("still rejects unknown keys in the create body", async () => {
+    const create = await monitorCreateRaw(
+      {
+        name: "unknown key monitor",
+        schedule: { cron: "*/30 * * * *", timezone: "UTC" },
+        targets: [
+          {
+            type: "scrape",
+            urls: [createTestIdUrl()],
+          },
+        ],
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        nonsenseField: "value",
+      } as any,
+      identity,
+    );
+
+    expect(create.statusCode).toBe(400);
+    expect(create.body.success).toBe(false);
   });
 
   it("rejects cron schedules under 15 minutes", async () => {
@@ -264,6 +310,124 @@ describeIf(ALLOW_TEST_SUITE_WEBSITE && !TEST_SELF_HOST)("/v2/monitor", () => {
     },
     2 * scrapeTimeout,
   );
+
+  describe("email recipient opt-in", () => {
+    function externalRecipient(): string {
+      const id = Math.random().toString(36).slice(2, 10);
+      return `optin-${id}@external-test.example`;
+    }
+
+    it("starts external recipients as pending without sending notifications", async () => {
+      const recipient = externalRecipient();
+      const create = await monitorCreateRaw(
+        {
+          name: "opt-in monitor",
+          schedule: { cron: "*/30 * * * *", timezone: "UTC" },
+          targets: [
+            {
+              type: "scrape",
+              urls: [createTestIdUrl()],
+              scrapeOptions: { formats: ["markdown"] },
+            },
+          ],
+          notification: {
+            email: { enabled: true, recipients: [recipient] },
+          },
+        },
+        identity,
+      );
+      expect(create.statusCode).toBe(200);
+      expect(create.body.data.emailRecipientSubscriptions).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            email: recipient.toLowerCase(),
+            status: "pending",
+            source: "opt_in",
+          }),
+        ]),
+      );
+
+      const get = await monitorGetRaw(create.body.data.id, identity);
+      expect(get.body.data.emailRecipientSubscriptions).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            email: recipient.toLowerCase(),
+            status: "pending",
+          }),
+        ]),
+      );
+
+      await monitorDeleteRaw(create.body.data.id, identity);
+    });
+
+    it("rejects malformed confirm/unsubscribe tokens with a 400 JSON error", async () => {
+      const badConfirm = await monitorEmailConfirmRaw("x");
+      expect(badConfirm.statusCode).toBe(400);
+      expect(badConfirm.body).toEqual({
+        success: false,
+        error: "invalid_token",
+      });
+
+      const badUnsub = await monitorEmailUnsubscribeRaw("x");
+      expect(badUnsub.statusCode).toBe(400);
+      expect(badUnsub.body).toEqual({
+        success: false,
+        error: "invalid_token",
+      });
+    });
+
+    it("rejects tokens sent in the query string (body-only)", async () => {
+      // Tokens in URLs leak into access/proxy logs and APM URL tags, so
+      // the controller deliberately ignores query params.
+      const unknownToken = "a".repeat(43);
+      const response = await monitorEmailConfirmRawViaQuery(unknownToken);
+      expect(response.statusCode).toBe(400);
+      expect(response.body).toEqual({
+        success: false,
+        error: "invalid_token",
+      });
+    });
+
+    it("returns 404 JSON for unknown but well-formed tokens", async () => {
+      const unknownToken = "a".repeat(43);
+
+      const confirm = await monitorEmailConfirmRaw(unknownToken);
+      expect(confirm.statusCode).toBe(404);
+      expect(confirm.body).toEqual({
+        success: false,
+        error: "not_found",
+      });
+
+      const unsub = await monitorEmailUnsubscribeRaw(unknownToken);
+      expect(unsub.statusCode).toBe(404);
+      expect(unsub.body).toEqual({
+        success: false,
+        error: "not_found",
+      });
+    });
+
+    it("does not require opt-in when recipients are unset (team-default path)", async () => {
+      const create = await monitorCreateRaw(
+        {
+          name: "team default monitor",
+          schedule: { cron: "*/30 * * * *", timezone: "UTC" },
+          targets: [
+            {
+              type: "scrape",
+              urls: [createTestIdUrl()],
+              scrapeOptions: { formats: ["markdown"] },
+            },
+          ],
+          notification: { email: { enabled: true } },
+        },
+        identity,
+      );
+      expect(create.statusCode).toBe(200);
+      expect(create.body.data.emailRecipientSubscriptions).toEqual([]);
+
+      await monitorDeleteRaw(create.body.data.id, identity);
+    });
+  });
 
   it(
     "accepts mixed json + git-diff changeTracking modes",

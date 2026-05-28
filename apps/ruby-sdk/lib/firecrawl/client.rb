@@ -285,7 +285,8 @@ module Firecrawl
     # MONITOR
     # ================================================================
 
-    def create_monitor(name:, schedule:, targets:, webhook: nil, notification: nil, retention_days: nil)
+    def create_monitor(name:, schedule:, targets:, webhook: nil, notification: nil,
+                       retention_days: nil, goal: nil, judge_enabled: nil)
       body = {
         "name" => name,
         "schedule" => schedule,
@@ -293,6 +294,8 @@ module Firecrawl
         "webhook" => webhook,
         "notification" => notification,
         "retentionDays" => retention_days,
+        "goal" => goal,
+        "judgeEnabled" => judge_enabled,
       }.compact
       raw = @http.post("/v2/monitor", body)
       Models::Monitor.new(raw["data"] || raw)
@@ -321,6 +324,8 @@ module Firecrawl
         "notification" => attrs[:notification],
         "targets" => attrs[:targets],
         "retentionDays" => attrs[:retention_days],
+        "goal" => attrs[:goal],
+        "judgeEnabled" => attrs[:judge_enabled],
       }.compact
       raw = @http.patch("/v2/monitor/#{monitor_id}", body)
       Models::Monitor.new(raw["data"] || raw)

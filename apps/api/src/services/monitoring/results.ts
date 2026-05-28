@@ -2,7 +2,9 @@ import { NuQJob } from "../worker/nuq";
 import { ScrapeJobData } from "../../types";
 import { logger as _logger } from "../../lib/logger";
 import { createWebhookSender, WebhookEvent } from "../webhook";
+import { billTeam } from "../billing/credit_billing";
 import { computeAndPersistPageDiff } from "./diff-orchestrator";
+import { derivePageIsMeaningful } from "./page-events";
 import {
   getMonitorForUpdate,
   getMonitorPage,
@@ -10,6 +12,8 @@ import {
   insertMonitorCheckPages,
   upsertMonitorPage,
 } from "./store";
+
+const JUDGE_CREDIT_COST = 1;
 
 const logger = _logger.child({ module: "monitoring-results" });
 
@@ -23,6 +27,18 @@ function getDocumentStatusCode(doc: any): number | null {
     : null;
 }
 
+interface PageJudgment {
+  meaningful: boolean;
+  confidence: "high" | "medium" | "low";
+  reason: string;
+  meaningfulChanges: Array<{
+    type: "added" | "removed" | "changed";
+    before: string | null;
+    after: string | null;
+    reason: string;
+  }>;
+}
+
 async function sendMonitorPageWebhook(params: {
   teamId: string;
   monitorId: string;
@@ -32,6 +48,9 @@ async function sendMonitorPageWebhook(params: {
   previousScrapeId?: string | null;
   currentScrapeId?: string | null;
   error?: string | null;
+  judgment?: PageJudgment | null;
+  diffText?: string | null;
+  diffJson?: Record<string, { previous: unknown; current: unknown }> | null;
 }) {
   try {
     const monitor = await getMonitorForUpdate(params.teamId, params.monitorId);
@@ -44,19 +63,38 @@ async function sendMonitorPageWebhook(params: {
       v0: false,
     });
 
-    await sender?.send(WebhookEvent.MONITOR_PAGE, {
+    const isMeaningful = derivePageIsMeaningful(
+      params.status,
+      params.judgment ?? null,
+    );
+    const diff =
+      params.diffText || params.diffJson
+        ? {
+            ...(params.diffText ? { text: params.diffText } : {}),
+            ...(params.diffJson ? { json: params.diffJson } : {}),
+          }
+        : null;
+    const payload = {
       success: params.status !== "error",
-      data: {
-        monitorId: params.monitorId,
-        checkId: params.checkId,
-        url: params.url,
-        status: params.status,
-        previousScrapeId: params.previousScrapeId ?? null,
-        currentScrapeId: params.currentScrapeId ?? null,
-        error: params.error ?? null,
-      },
+      data: [
+        {
+          monitorId: params.monitorId,
+          checkId: params.checkId,
+          url: params.url,
+          status: params.status,
+          previousScrapeId: params.previousScrapeId ?? null,
+          currentScrapeId: params.currentScrapeId ?? null,
+          error: params.error ?? null,
+          isMeaningful,
+          judgment: params.judgment ?? null,
+          diff,
+        },
+      ],
       error: params.error ?? undefined,
-    });
+    };
+    if (sender) {
+      await sender.send(WebhookEvent.MONITOR_PAGE, payload);
+    }
   } catch (error) {
     logger.warn("Failed to send monitor page webhook", {
       error,
@@ -92,22 +130,37 @@ export async function recordMonitorScrapeSuccess(
     (t: any) => t.id === monitoring.targetId,
   )?.scrapeOptions?.formats;
 
-  const { status, diffGcsKey, diffTextBytes, diffJsonBytes } =
-    await computeAndPersistPageDiff({
-      teamId: job.data.team_id,
-      monitorId: monitoring.monitorId,
-      checkId: monitoring.checkId,
-      url,
-      scrapeId: job.id,
-      doc,
-      previous: previous
-        ? {
-            last_scrape_id: previous.last_scrape_id,
-            is_removed: previous.is_removed,
-          }
+  const targetCtFormat = Array.isArray(targetFormats)
+    ? (targetFormats as any[]).find((f: any) => f?.type === "changeTracking")
+    : undefined;
+  const {
+    status,
+    diffGcsKey,
+    diffTextBytes,
+    diffJsonBytes,
+    judgment,
+    diffText,
+    diffJson,
+  } = await computeAndPersistPageDiff({
+    teamId: job.data.team_id,
+    monitorId: monitoring.monitorId,
+    checkId: monitoring.checkId,
+    url,
+    scrapeId: job.id,
+    doc,
+    previous: previous
+      ? {
+          last_scrape_id: previous.last_scrape_id,
+          is_removed: previous.is_removed,
+        }
+      : null,
+    formats: targetFormats,
+    goal:
+      monitorForRun?.judge_enabled && monitorForRun?.goal
+        ? monitorForRun.goal
         : null,
-      formats: targetFormats,
-    });
+    extractionPrompt: targetCtFormat?.prompt ?? null,
+  });
 
   await upsertMonitorPage({
     monitorId: monitoring.monitorId,
@@ -144,6 +197,7 @@ export async function recordMonitorScrapeSuccess(
         title: doc?.metadata?.title ?? null,
         creditsUsed: doc?.metadata?.creditsUsed ?? null,
       },
+      judgment: judgment ?? null,
     },
   ]);
 
@@ -156,7 +210,27 @@ export async function recordMonitorScrapeSuccess(
     status,
     previousScrapeId: previous?.last_scrape_id ?? null,
     diffGcsKey,
+    judgmentMeaningful: judgment?.meaningful,
   });
+
+  if (judgment) {
+    try {
+      await billTeam(
+        job.data.team_id,
+        undefined,
+        JUDGE_CREDIT_COST,
+        job.data.apiKeyId ?? null,
+        { endpoint: "monitor", jobId: monitoring.checkId },
+        logger,
+      );
+    } catch (error) {
+      logger.warn("Failed to bill judge credit", {
+        error,
+        monitorId: monitoring.monitorId,
+        checkId: monitoring.checkId,
+      });
+    }
+  }
 
   await sendMonitorPageWebhook({
     teamId: job.data.team_id,
@@ -166,6 +240,9 @@ export async function recordMonitorScrapeSuccess(
     status,
     previousScrapeId: previous?.last_scrape_id ?? null,
     currentScrapeId: job.id,
+    judgment: judgment ?? null,
+    diffText: diffText ?? null,
+    diffJson: diffJson ?? null,
   });
 }
 

@@ -77,7 +77,12 @@ export async function processUrl_F0(
   urlTraces.push(trace);
 
   if (!options.url.includes("/*") && !options.allowExternalLinks) {
-    if (!isUrlBlocked(options.url, teamFlags)) {
+    if (
+      !isUrlBlocked(options.url, teamFlags, {
+        team_id: options.teamId,
+        origin: options.origin ?? null,
+      })
+    ) {
       trace.usedInCompletion = true;
       return [options.url];
     }

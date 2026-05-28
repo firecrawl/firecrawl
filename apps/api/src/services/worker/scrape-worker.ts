@@ -365,6 +365,10 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
           isUrlBlocked(
             doc.metadata.url,
             (await getACUCTeam(job.data.team_id))?.flags ?? null,
+            {
+              team_id: job.data.team_id,
+              origin: job.data.origin,
+            },
           )
         ) {
           throw new CrawlDenialError(UNSUPPORTED_SITE_MESSAGE); // TODO: make this its own error type that is ignored by error tracking

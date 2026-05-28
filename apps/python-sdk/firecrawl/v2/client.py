@@ -67,6 +67,18 @@ from .methods import browser as browser_module
 from .methods import monitor as monitor_module
 from .watcher import Watcher
 
+# Kwargs that map to ScrapeOptions fields. Used by async crawl normalization
+# to extract scrape kwargs from **kwargs before building CrawlRequest.
+# Does not include "integration" (crawl-level param, not a scrape option).
+_SCRAPE_OPTION_KEYS = frozenset({
+    "formats", "headers", "include_tags", "exclude_tags",
+    "only_main_content", "timeout", "wait_for", "mobile",
+    "parsers", "actions", "location", "skip_tls_verification",
+    "remove_base64_images", "fast_mode", "use_mock", "block_ads",
+    "proxy", "max_age", "store_in_cache", "lockdown", "profile",
+})
+
+
 class FirecrawlClient:
     """
     Main Firecrawl v2 API client.
@@ -280,6 +292,46 @@ class FirecrawlClient:
         """Deprecated alias for stop_interaction()."""
         return self.stop_interaction(job_id)
 
+    def scrape_url(self, url: str, **kwargs):
+        """V1 compatibility alias for agent recovery. Prefer scrape()."""
+        return self.scrape(url, **kwargs)
+
+    def crawl_url(self, url: str, **kwargs):
+        """V1 compatibility alias for agent recovery. Prefer crawl()."""
+        return self.crawl(url, **kwargs)
+
+    def map_url(self, url: str, **kwargs):
+        """V1 compatibility alias for agent recovery. Prefer map()."""
+        return self.map(url, **kwargs)
+
+    def async_crawl_url(self, url: str, **kwargs):
+        """V1 compatibility alias for agent recovery. Prefer start_crawl()."""
+        return self.start_crawl(url, **kwargs)
+
+    def check_crawl_status(self, id: str, **kwargs):
+        """V1 compatibility alias for agent recovery. Prefer get_crawl_status()."""
+        return self.get_crawl_status(id, **kwargs)
+
+    def check_crawl_errors(self, id: str):
+        """V1 compatibility alias for agent recovery. Prefer get_crawl_errors()."""
+        return self.get_crawl_errors(id)
+
+    def batch_scrape_urls(self, urls, **kwargs):
+        """V1 compatibility alias for agent recovery. Prefer batch_scrape()."""
+        return self.batch_scrape(urls, **kwargs)
+
+    def async_batch_scrape_urls(self, urls, **kwargs):
+        """V1 compatibility alias for agent recovery. Prefer start_batch_scrape()."""
+        return self.start_batch_scrape(urls, **kwargs)
+
+    def check_batch_scrape_status(self, id: str, **kwargs):
+        """V1 compatibility alias for agent recovery. Prefer get_batch_scrape_status()."""
+        return self.get_batch_scrape_status(id, **kwargs)
+
+    def check_batch_scrape_errors(self, id: str):
+        """V1 compatibility alias for agent recovery. Prefer get_batch_scrape_errors()."""
+        return self.get_batch_scrape_errors(id)
+
     def parse(
         self,
         file: Union[str, Path, bytes, bytearray, BinaryIO],
@@ -377,6 +429,26 @@ class FirecrawlClient:
         max_concurrency: Optional[int] = None,
         webhook: Optional[Union[str, WebhookConfig]] = None,
         scrape_options: Optional[ScrapeOptions] = None,
+        formats: Optional[List['FormatOption']] = None,
+        headers: Optional[Dict[str, str]] = None,
+        include_tags: Optional[List[str]] = None,
+        exclude_tags: Optional[List[str]] = None,
+        only_main_content: Optional[bool] = None,
+        wait_for: Optional[int] = None,
+        mobile: Optional[bool] = None,
+        parsers: Optional[Union[List[str], List[Union[str, PDFParser]]]] = None,
+        actions: Optional[List[Union['WaitAction', 'ScreenshotAction', 'ClickAction', 'WriteAction', 'PressAction', 'ScrollAction', 'ScrapeAction', 'ExecuteJavascriptAction', 'PDFAction']]] = None,
+        location: Optional['Location'] = None,
+        skip_tls_verification: Optional[bool] = None,
+        remove_base64_images: Optional[bool] = None,
+        fast_mode: Optional[bool] = None,
+        use_mock: Optional[str] = None,
+        block_ads: Optional[bool] = None,
+        proxy: Optional[str] = None,
+        max_age: Optional[int] = None,
+        store_in_cache: Optional[bool] = None,
+        lockdown: Optional[bool] = None,
+        profile: Optional[Dict[str, Any]] = None,
         regex_on_full_url: bool = False,
         deduplicate_similar_urls: bool = True,
         zero_data_retention: bool = False,
@@ -405,22 +477,56 @@ class FirecrawlClient:
             delay: Delay in seconds between scrapes
             max_concurrency: Maximum number of concurrent scrapes
             webhook: Webhook configuration for notifications
-            scrape_options: Page scraping configuration
+            scrape_options: Page scraping configuration (takes precedence over direct scrape kwargs)
+            formats: Output formats (convenience kwarg, ignored if scrape_options is set)
+            headers: HTTP headers for scraping (convenience kwarg)
+            include_tags: HTML tags to include (convenience kwarg)
+            exclude_tags: HTML tags to exclude (convenience kwarg)
+            only_main_content: Restrict to main content (convenience kwarg)
+            wait_for: Wait condition in ms (convenience kwarg)
+            mobile: Emulate mobile viewport (convenience kwarg)
+            parsers: Parser list (convenience kwarg)
+            actions: Browser actions (convenience kwarg)
+            location: Location settings (convenience kwarg)
+            skip_tls_verification: Skip TLS verification (convenience kwarg)
+            remove_base64_images: Remove base64 images (convenience kwarg)
+            fast_mode: Prefer faster modes (convenience kwarg)
+            use_mock: Use mock source (convenience kwarg)
+            block_ads: Block ads (convenience kwarg)
+            proxy: Proxy setting (convenience kwarg)
+            max_age: Cache max age (convenience kwarg)
+            store_in_cache: Cache results (convenience kwarg)
+            lockdown: Serve only cached results (convenience kwarg)
+            profile: Browser profile (convenience kwarg)
             regex_on_full_url: Apply includePaths/excludePaths regex to the full URL (including query parameters) instead of just the pathname
             deduplicate_similar_urls: Whether to deduplicate similar URLs during crawl (default: True)
             zero_data_retention: Whether to delete data after 24 hours
             poll_interval: Seconds between status checks
             timeout: Maximum seconds to wait for the entire crawl job to complete (None for no timeout)
             request_timeout: Timeout (in seconds) for each individual HTTP request, including pagination requests when fetching results. If there are multiple pages, each page request gets this timeout
-            
+
         Returns:
             CrawlJob when job completes
-            
+
         Raises:
             ValueError: If request is invalid
             Exception: If the crawl fails to start or complete
             TimeoutError: If timeout is reached
         """
+        if scrape_options is None:
+            scrape_kwargs = {k: v for k, v in dict(
+                formats=formats, headers=headers, include_tags=include_tags,
+                exclude_tags=exclude_tags, only_main_content=only_main_content,
+                wait_for=wait_for, mobile=mobile, parsers=parsers, actions=actions,
+                location=location, skip_tls_verification=skip_tls_verification,
+                remove_base64_images=remove_base64_images, fast_mode=fast_mode,
+                use_mock=use_mock, block_ads=block_ads, proxy=proxy,
+                max_age=max_age, store_in_cache=store_in_cache, lockdown=lockdown,
+                profile=profile,
+            ).items() if v is not None}
+            if scrape_kwargs:
+                scrape_options = ScrapeOptions(**scrape_kwargs)
+
         resolved_sitemap = sitemap
         if resolved_sitemap is None and ignore_sitemap is not None:
             resolved_sitemap = "skip" if ignore_sitemap else "include"
@@ -479,6 +585,27 @@ class FirecrawlClient:
         max_concurrency: Optional[int] = None,
         webhook: Optional[Union[str, WebhookConfig]] = None,
         scrape_options: Optional[ScrapeOptions] = None,
+        formats: Optional[List['FormatOption']] = None,
+        headers: Optional[Dict[str, str]] = None,
+        include_tags: Optional[List[str]] = None,
+        exclude_tags: Optional[List[str]] = None,
+        only_main_content: Optional[bool] = None,
+        timeout: Optional[int] = None,
+        wait_for: Optional[int] = None,
+        mobile: Optional[bool] = None,
+        parsers: Optional[Union[List[str], List[Union[str, PDFParser]]]] = None,
+        actions: Optional[List[Union['WaitAction', 'ScreenshotAction', 'ClickAction', 'WriteAction', 'PressAction', 'ScrollAction', 'ScrapeAction', 'ExecuteJavascriptAction', 'PDFAction']]] = None,
+        location: Optional['Location'] = None,
+        skip_tls_verification: Optional[bool] = None,
+        remove_base64_images: Optional[bool] = None,
+        fast_mode: Optional[bool] = None,
+        use_mock: Optional[str] = None,
+        block_ads: Optional[bool] = None,
+        proxy: Optional[str] = None,
+        max_age: Optional[int] = None,
+        store_in_cache: Optional[bool] = None,
+        lockdown: Optional[bool] = None,
+        profile: Optional[Dict[str, Any]] = None,
         regex_on_full_url: bool = False,
         deduplicate_similar_urls: bool = True,
         zero_data_retention: bool = False,
@@ -504,18 +631,54 @@ class FirecrawlClient:
             delay: Delay in seconds between scrapes
             max_concurrency: Maximum number of concurrent scrapes
             webhook: Webhook configuration for notifications
-            scrape_options: Page scraping configuration
+            scrape_options: Page scraping configuration (takes precedence over direct scrape kwargs)
+            formats: Output formats (convenience kwarg, ignored if scrape_options is set)
+            headers: HTTP headers for scraping (convenience kwarg)
+            include_tags: HTML tags to include (convenience kwarg)
+            exclude_tags: HTML tags to exclude (convenience kwarg)
+            only_main_content: Restrict to main content (convenience kwarg)
+            timeout: Scrape timeout in milliseconds (convenience kwarg)
+            wait_for: Wait condition in ms (convenience kwarg)
+            mobile: Emulate mobile viewport (convenience kwarg)
+            parsers: Parser list (convenience kwarg)
+            actions: Browser actions (convenience kwarg)
+            location: Location settings (convenience kwarg)
+            skip_tls_verification: Skip TLS verification (convenience kwarg)
+            remove_base64_images: Remove base64 images (convenience kwarg)
+            fast_mode: Prefer faster modes (convenience kwarg)
+            use_mock: Use mock source (convenience kwarg)
+            block_ads: Block ads (convenience kwarg)
+            proxy: Proxy setting (convenience kwarg)
+            max_age: Cache max age (convenience kwarg)
+            store_in_cache: Cache results (convenience kwarg)
+            lockdown: Serve only cached results (convenience kwarg)
+            profile: Browser profile (convenience kwarg)
             regex_on_full_url: Apply includePaths/excludePaths regex to the full URL (including query parameters) instead of just the pathname
             deduplicate_similar_urls: Whether to deduplicate similar URLs during crawl (default: True)
             zero_data_retention: Whether to delete data after 24 hours
 
         Returns:
             CrawlResponse with job information
-            
+
         Raises:
             ValueError: If request is invalid
             Exception: If the crawl operation fails to start
         """
+        if scrape_options is None:
+            scrape_kwargs = {k: v for k, v in dict(
+                formats=formats, headers=headers, include_tags=include_tags,
+                exclude_tags=exclude_tags, only_main_content=only_main_content,
+                timeout=timeout, wait_for=wait_for, mobile=mobile,
+                parsers=parsers, actions=actions,
+                location=location, skip_tls_verification=skip_tls_verification,
+                remove_base64_images=remove_base64_images, fast_mode=fast_mode,
+                use_mock=use_mock, block_ads=block_ads, proxy=proxy,
+                max_age=max_age, store_in_cache=store_in_cache, lockdown=lockdown,
+                profile=profile,
+            ).items() if v is not None}
+            if scrape_kwargs:
+                scrape_options = ScrapeOptions(**scrape_kwargs)
+
         resolved_sitemap = sitemap
         if resolved_sitemap is None and ignore_sitemap is not None:
             resolved_sitemap = "skip" if ignore_sitemap else "include"
@@ -679,6 +842,8 @@ class FirecrawlClient:
         webhook: Optional[Union[MonitorWebhookConfig, Dict[str, Any]]] = None,
         notification: Optional[MonitorNotification] = None,
         retention_days: Optional[int] = None,
+        goal: Optional[str] = None,
+        judge_enabled: Optional[bool] = None,
     ) -> Monitor:
         """Create a scheduled monitor."""
         if isinstance(schedule, dict):
@@ -690,6 +855,8 @@ class FirecrawlClient:
             webhook=webhook,
             notification=notification,
             retention_days=retention_days,
+            goal=goal,
+            judge_enabled=judge_enabled,
         )
         return monitor_module.create_monitor(self.http_client, request)
 
@@ -717,6 +884,8 @@ class FirecrawlClient:
         notification: Optional[Union[MonitorNotification, Dict[str, Any]]] = None,
         targets: Optional[List[Union[MonitorTarget, Dict[str, Any]]]] = None,
         retention_days: Optional[int] = None,
+        goal: Optional[str] = None,
+        judge_enabled: Optional[bool] = None,
     ) -> Monitor:
         """Update a monitor."""
         if isinstance(schedule, dict):
@@ -729,6 +898,8 @@ class FirecrawlClient:
             notification=notification,
             targets=targets,
             retention_days=retention_days,
+            goal=goal,
+            judge_enabled=judge_enabled,
         )
         return monitor_module.update_monitor(self.http_client, monitor_id, request)
 

@@ -7,8 +7,10 @@ import {
   EngineError,
   SiteError,
   SSLError,
+  UnsupportedFileError,
 } from "../../error";
 import { Writable } from "stream";
+import { TransformStream as NodeTransformStream } from "node:stream/web";
 import { v7 as uuid } from "uuid";
 import * as undici from "undici";
 import { getSecureDispatcher } from "./safeFetch";
@@ -56,10 +58,34 @@ const mapUndiciError = (url: string, skipTlsVerification: boolean, e: any) => {
   }
 };
 
+function createSizeLimiter(maxSize: number) {
+  let bytesRead = 0;
+  return new NodeTransformStream<Uint8Array, Uint8Array>({
+    transform(chunk, controller) {
+      bytesRead += chunk.byteLength;
+      if (bytesRead > maxSize) {
+        controller.error(new UnsupportedFileError("File exceeds size limit"));
+        return;
+      }
+      controller.enqueue(chunk);
+    },
+  });
+}
+
+function checkContentLength(response: undici.Response, maxSize: number) {
+  const header = response.headers.get("content-length");
+  if (header === null) return;
+  const declared = Number(header);
+  if (Number.isFinite(declared) && declared > maxSize) {
+    throw new UnsupportedFileError("File exceeds size limit");
+  }
+}
+
 export async function fetchFileToBuffer(
   url: string,
   skipTlsVerification: boolean = false,
   init?: undici.RequestInit,
+  maxSize?: number,
 ): Promise<{
   response: undici.Response;
   buffer: Buffer;
@@ -70,11 +96,34 @@ export async function fetchFileToBuffer(
       redirect: "follow",
       dispatcher: getSecureDispatcher(skipTlsVerification),
     });
+    if (maxSize !== undefined) {
+      checkContentLength(response, maxSize);
+    }
+    if (maxSize === undefined || response.body === null) {
+      return {
+        response,
+        buffer: Buffer.from(await response.arrayBuffer()),
+      };
+    }
+    const chunks: Uint8Array[] = [];
+    let bytesRead = 0;
+    const reader = response.body.getReader();
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      bytesRead += value.byteLength;
+      if (bytesRead > maxSize) {
+        await reader.cancel().catch(() => {});
+        throw new UnsupportedFileError("File exceeds size limit");
+      }
+      chunks.push(value);
+    }
     return {
       response,
-      buffer: Buffer.from(await response.arrayBuffer()),
+      buffer: Buffer.concat(chunks),
     };
   } catch (e) {
+    if (e instanceof UnsupportedFileError) throw e;
     throw mapUndiciError(url, skipTlsVerification, e);
   }
 }
@@ -84,6 +133,7 @@ export async function downloadFile(
   url: string,
   skipTlsVerification: boolean = false,
   init?: undici.RequestInit,
+  maxSize?: number,
 ): Promise<{
   response: undici.Response;
   tempFilePath: string;
@@ -100,16 +150,26 @@ export async function downloadFile(
       dispatcher: getSecureDispatcher(skipTlsVerification),
     });
 
+    if (maxSize !== undefined) {
+      checkContentLength(response, maxSize);
+    }
+
     // This should never happen in the current state of JS/Undici (2024), but let's check anyways.
     if (response.body === null) {
       throw new EngineError("Response body was null", { cause: { response } });
     }
 
-    await response.body
+    const body =
+      maxSize !== undefined
+        ? response.body.pipeThrough(createSizeLimiter(maxSize))
+        : response.body;
+
+    await body
       .pipeTo(Writable.toWeb(tempFileWrite), {
         signal: init?.signal || undefined,
       })
       .catch(error => {
+        if (error instanceof UnsupportedFileError) throw error;
         throw new EngineError("Failed to write to temp file", {
           cause: { error },
         });
@@ -120,8 +180,8 @@ export async function downloadFile(
       tempFilePath,
     };
   } catch (e) {
-    // Mark for cleanup on error (caller handles cleanup on success)
     shouldCleanup = true;
+    if (e instanceof UnsupportedFileError) throw e;
     throw mapUndiciError(url, skipTlsVerification, e);
   } finally {
     tempFileWrite.close();

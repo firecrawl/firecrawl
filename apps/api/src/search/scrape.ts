@@ -142,12 +142,13 @@ async function scrapeSearchResultDirect(
 export function getItemsToScrape(
   searchResponse: SearchV2Response,
   flags: TeamFlags,
+  context?: { team_id?: string | null; origin?: string | null },
 ): ScrapeItem[] {
   const items: ScrapeItem[] = [];
 
   if (searchResponse.web) {
     for (const item of searchResponse.web) {
-      if (!isUrlBlocked(item.url, flags)) {
+      if (!isUrlBlocked(item.url, flags, context)) {
         items.push({
           item,
           type: "web",
@@ -163,7 +164,7 @@ export function getItemsToScrape(
 
   if (searchResponse.news) {
     for (const item of searchResponse.news) {
-      if (item.url && !isUrlBlocked(item.url, flags)) {
+      if (item.url && !isUrlBlocked(item.url, flags, context)) {
         items.push({
           item,
           type: "news",
@@ -179,7 +180,7 @@ export function getItemsToScrape(
 
   if (searchResponse.images) {
     for (const item of searchResponse.images) {
-      if (item.url && !isUrlBlocked(item.url, flags)) {
+      if (item.url && !isUrlBlocked(item.url, flags, context)) {
         items.push({
           item,
           type: "image",

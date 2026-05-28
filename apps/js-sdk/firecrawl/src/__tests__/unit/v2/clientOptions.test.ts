@@ -1,4 +1,4 @@
-import { Firecrawl, type FirecrawlClientOptions } from '../../../index';
+import { Firecrawl, FirecrawlClient, type FirecrawlClientOptions } from '../../../index';
 
 describe('Firecrawl v2 Client Options', () => {
   it('should accept v2 options including timeoutMs, maxRetries, and backoffFactor', () => {
@@ -51,5 +51,33 @@ describe('Firecrawl v2 Client Options', () => {
 
     expect(options.timeoutMs).toBe(300);
     expect(options.apiKey).toBe('test-key');
+  });
+
+  it('should accept a string API key in Firecrawl constructor', () => {
+    const client = new Firecrawl('test-key');
+
+    expect(client).toBeDefined();
+    expect(client).toBeInstanceOf(Firecrawl);
+  });
+
+  it('should accept a string API key in FirecrawlClient constructor', () => {
+    const client = new FirecrawlClient('test-key');
+
+    expect(client).toBeDefined();
+    expect(client).toBeInstanceOf(FirecrawlClient);
+  });
+
+  it('should throw for empty string API key on cloud', () => {
+    expect(() => new Firecrawl('')).toThrow('API key is required');
+  });
+
+  it('should throw for whitespace-only string API key on cloud', () => {
+    expect(() => new Firecrawl('   ')).toThrow('API key is required');
+  });
+
+  it('should provide v1 accessor when constructed with string', () => {
+    const client = new Firecrawl('test-key');
+
+    expect(client.v1).toBeDefined();
   });
 });

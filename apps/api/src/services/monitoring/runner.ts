@@ -2,6 +2,7 @@ import { v7 as uuidv7 } from "uuid";
 import { config } from "../../config";
 import { logger as _logger } from "../../lib/logger";
 import { logRequest } from "../logging/log_job";
+import { getMonitorDiffArtifact } from "../../lib/gcs-monitoring";
 import { processJobInternal } from "../worker/scrape-worker";
 import { NuQJob, crawlGroup, scrapeQueue } from "../worker/nuq";
 import { ScrapeJobData } from "../../types";
@@ -27,6 +28,7 @@ import {
 import { createWebhookSender, WebhookEvent } from "../webhook";
 import { sendMonitoringEmailSummary } from "../notification/monitoring_email";
 import {
+  getMonitorCheck,
   getMonitorForUpdate,
   getMonitorPage,
   countMonitorCheckPages,
@@ -59,6 +61,25 @@ import { trackMonitorCheckStartedInterest } from "./interest";
 const logger = _logger.child({ module: "monitoring-runner" });
 const poll = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 export { isMonitorCheckStale, MONITOR_CHECK_STALE_TIMEOUT_MS };
+
+const MONITOR_NOTIFY_CLAIM_TTL_SECONDS = 7 * 24 * 60 * 60;
+const TERMINAL_CHECK_STATUSES = new Set([
+  "completed",
+  "partial",
+  "failed",
+  "skipped_overlap",
+]);
+
+async function claimMonitorNotification(checkId: string): Promise<boolean> {
+  const result = await redisEvictConnection.set(
+    `monitor-check-notify:${checkId}`,
+    "1",
+    "EX",
+    MONITOR_NOTIFY_CLAIM_TTL_SECONDS,
+    "NX",
+  );
+  return result === "OK";
+}
 
 type PageResult = MonitorCheckPageInsert & {
   emailStatus?: string;
@@ -112,9 +133,6 @@ function recoverScrapeTargetRunsFromMonitor(
 function withMonitorScrapeDefaults(
   options: Record<string, unknown>,
 ): ScrapeOptions {
-  // Monitor owns history: rewrite changeTracking-json to plain json before
-  // handing the formats array to the scrape engine, so we always get back
-  // current values to diff against the previous run.
   const formats = Array.isArray(options.formats)
     ? normalizeMonitorFormats(options.formats)
     : options.formats;
@@ -220,7 +238,12 @@ async function diffAndPersistPage(params: {
     url: params.url,
   });
 
-  const { status, diffGcsKey, diffTextBytes, diffJsonBytes } =
+  const ctFormat = Array.isArray(params.target.scrapeOptions?.formats)
+    ? (params.target.scrapeOptions!.formats as any[]).find(
+        (f: any) => f?.type === "changeTracking",
+      )
+    : undefined;
+  const { status, diffGcsKey, diffTextBytes, diffJsonBytes, judgment } =
     await computeAndPersistPageDiff({
       teamId: params.monitor.team_id,
       monitorId: params.monitor.id,
@@ -235,6 +258,8 @@ async function diffAndPersistPage(params: {
           }
         : null,
       formats: params.target.scrapeOptions?.formats,
+      goal: params.monitor.judge_enabled ? params.monitor.goal : null,
+      extractionPrompt: ctFormat?.prompt ?? null,
     });
 
   await upsertMonitorPage({
@@ -269,6 +294,7 @@ async function diffAndPersistPage(params: {
     metadata: {
       title: params.doc?.metadata?.title ?? null,
     },
+    judgment,
     emailStatus: status,
   };
 }
@@ -345,7 +371,7 @@ async function runCrawlTarget(params: {
   const body = crawlRequestSchema.parse({
     url: params.target.url,
     ...(params.target.crawlOptions ?? {}),
-    scrapeOptions: withMarkdownFormat(params.target.scrapeOptions ?? {}),
+    scrapeOptions: withMonitorScrapeDefaults(params.target.scrapeOptions ?? {}),
     origin: "monitor",
   }) as CrawlRequest;
 
@@ -585,7 +611,7 @@ async function sendNotifications(params: {
     try {
       const result = await sender?.send(WebhookEvent.MONITOR_CHECK_COMPLETED, {
         success: params.check.status === "completed",
-        data: payload,
+        data: [payload],
         error: params.check.error ?? undefined,
         awaitWebhook: true,
       });
@@ -606,17 +632,45 @@ async function sendNotifications(params: {
     }
   }
 
+  const nonSamePages = params.pages.filter(page => page.status !== "same");
+  // Pull the unified-diff text for up to 5 meaningful changed pages so the
+  // email leads with the actual diff. Cheap GCS reads, parallelised. Errors
+  // are swallowed per-page so a single GCS hiccup doesn't drop the alert.
+  const diffEligible = nonSamePages
+    .filter(
+      p => p.status === "changed" && (!p.judgment || p.judgment.meaningful),
+    )
+    .slice(0, 5);
+  const diffTextByUrl = new Map<string, string>();
+  await Promise.all(
+    diffEligible.map(async page => {
+      if (!page.diff_gcs_key) return;
+      try {
+        const artifact = await getMonitorDiffArtifact(page.diff_gcs_key);
+        const text =
+          artifact?.kind === "markdown"
+            ? artifact.text
+            : artifact?.markdown?.text;
+        if (text) diffTextByUrl.set(page.url, text);
+      } catch (error) {
+        logger.warn("Failed to load diff artifact for email", {
+          error,
+          url: page.url,
+        });
+      }
+    }),
+  );
+
   const emailStatus = await sendMonitoringEmailSummary({
     monitor: params.monitor,
     check: params.check,
-    pages: params.pages
-      .filter(page => page.status !== "same")
-      .slice(0, 25)
-      .map(page => ({
-        url: page.url,
-        status: page.status,
-        error: page.error,
-      })),
+    pages: nonSamePages.map(page => ({
+      url: page.url,
+      status: page.status,
+      error: page.error,
+      judgment: page.judgment ?? null,
+      diffText: diffTextByUrl.get(page.url) ?? null,
+    })),
   });
 
   return {
@@ -790,12 +844,24 @@ export async function processMonitorCheckJob(
     throw new Error("Monitor not found");
   }
 
+  const initialCheck = await getMonitorCheck(
+    job.teamId,
+    job.monitorId,
+    job.checkId,
+  );
+  if (!initialCheck) {
+    throw new Error("Monitor check not found");
+  }
+  if (TERMINAL_CHECK_STATUSES.has(initialCheck.status)) {
+    return;
+  }
+
   await markMonitorRunning({
     monitorId: monitor.id,
     checkId: job.checkId,
   });
 
-  let check = await updateMonitorCheck(job.checkId, {
+  let check: MonitorCheckRow = await updateMonitorCheck(job.checkId, {
     status: "running",
     started_at: new Date().toISOString(),
   });
@@ -862,15 +928,42 @@ export async function processMonitorCheckJob(
       error: error instanceof Error ? error.message : String(error),
     });
 
-    await sendNotifications({
-      monitor,
-      check,
-      pages: [],
-    }).catch(err =>
-      logger.warn("Failed to send monitor failure notifications", {
-        error: err,
-      }),
-    );
+    if (
+      await claimMonitorNotification(check.id).catch(error => {
+        logger.warn(
+          "Failed to claim monitor notification; continuing without dedupe",
+          {
+            error,
+            monitorId: monitor.id,
+            checkId: check.id,
+          },
+        );
+        return true;
+      })
+    ) {
+      const notificationStatus = await sendNotifications({
+        monitor,
+        check,
+        pages: [],
+      }).catch(err => {
+        logger.warn("Failed to send monitor failure notifications", {
+          error: err,
+        });
+        return null;
+      });
+      if (notificationStatus) {
+        check = await updateMonitorCheck(check.id, {
+          notification_status: notificationStatus,
+        }).catch(updateError => {
+          logger.warn("Failed to record monitor failure notification status", {
+            error: updateError,
+            monitorId: monitor.id,
+            checkId: check.id,
+          });
+          return check;
+        });
+      }
+    }
 
     await updateMonitorScheduleAfterRun({
       monitor,
@@ -1019,46 +1112,49 @@ async function failStaleMonitorCheck(params: {
     error,
   });
 
-  const notificationStatus = await sendNotifications({
-    monitor: params.monitor,
-    check: finalized,
-    pages: [],
-  }).catch(notificationError => {
-    logger.warn("Failed to send stale monitor check notifications", {
-      error: notificationError,
-      monitorId: params.monitor.id,
-      checkId: params.check.id,
+  let withNotifications = finalized;
+  if (await claimMonitorNotification(params.check.id)) {
+    const notificationStatus = await sendNotifications({
+      monitor: params.monitor,
+      check: finalized,
+      pages: [],
+    }).catch(notificationError => {
+      logger.warn("Failed to send stale monitor check notifications", {
+        error: notificationError,
+        monitorId: params.monitor.id,
+        checkId: params.check.id,
+      });
+      return {
+        webhook: {
+          attempted: !!params.monitor.webhook,
+          success: false,
+          error:
+            notificationError instanceof Error
+              ? notificationError.message
+              : String(notificationError),
+        },
+        email: {
+          attempted: !!params.monitor.notification?.email?.enabled,
+          success: false,
+          error:
+            notificationError instanceof Error
+              ? notificationError.message
+              : String(notificationError),
+        },
+      };
     });
-    return {
-      webhook: {
-        attempted: !!params.monitor.webhook,
-        success: false,
-        error:
-          notificationError instanceof Error
-            ? notificationError.message
-            : String(notificationError),
-      },
-      email: {
-        attempted: !!params.monitor.notification?.email?.enabled,
-        success: false,
-        error:
-          notificationError instanceof Error
-            ? notificationError.message
-            : String(notificationError),
-      },
-    };
-  });
 
-  const withNotifications = await updateMonitorCheck(params.check.id, {
-    notification_status: notificationStatus,
-  }).catch(updateError => {
-    logger.warn("Failed to record stale monitor check notification status", {
-      error: updateError,
-      monitorId: params.monitor.id,
-      checkId: params.check.id,
+    withNotifications = await updateMonitorCheck(params.check.id, {
+      notification_status: notificationStatus,
+    }).catch(updateError => {
+      logger.warn("Failed to record stale monitor check notification status", {
+        error: updateError,
+        monitorId: params.monitor.id,
+        checkId: params.check.id,
+      });
+      return finalized;
     });
-    return finalized;
-  });
+  }
 
   if (params.monitor.current_check_id === params.check.id) {
     await updateMonitorScheduleAfterRun({
@@ -1171,60 +1267,62 @@ export async function reconcileRunningMonitorChecks(
         });
       }
 
-      let notificationStatus: { webhook?: unknown; email?: unknown } | null =
-        null;
-      try {
-        const pages = (await listMonitorCheckPages({
-          teamId: monitor.team_id,
-          monitorId: monitor.id,
-          checkId: check.id,
-          limit: 100,
-          skip: 0,
-        })) as PageResult[];
+      if (await claimMonitorNotification(check.id)) {
+        let notificationStatus: { webhook?: unknown; email?: unknown } | null =
+          null;
+        try {
+          const pages = (await listMonitorCheckPages({
+            teamId: monitor.team_id,
+            monitorId: monitor.id,
+            checkId: check.id,
+            limit: 100,
+            skip: 0,
+          })) as PageResult[];
 
-        notificationStatus = await sendNotifications({
-          monitor,
-          check: finalized,
-          pages,
-        });
+          notificationStatus = await sendNotifications({
+            monitor,
+            check: finalized,
+            pages,
+          });
 
-        finalized = await updateMonitorCheck(check.id, {
-          notification_status: notificationStatus,
-          webhook_payload: notificationStatus.webhook
-            ? { summary: toSummaryObject(finalized) }
-            : null,
-          email_payload: notificationStatus.email
-            ? { summary: toSummaryObject(finalized) }
-            : null,
-        });
-      } catch (error) {
-        logger.warn("Failed to send monitor check notifications", {
-          monitorId: monitor.id,
-          checkId: finalized.id,
-          error,
-        });
-        notificationStatus = {
-          webhook: {
-            attempted: !!monitor.webhook,
-            success: false,
-            error: error instanceof Error ? error.message : String(error),
-          },
-          email: {
-            attempted: !!monitor.notification?.email?.enabled,
-            success: false,
-            error: error instanceof Error ? error.message : String(error),
-          },
-        };
-        finalized = await updateMonitorCheck(check.id, {
-          notification_status: notificationStatus,
-        }).catch(updateError => {
-          logger.warn("Failed to record monitor check notification failure", {
+          finalized = await updateMonitorCheck(check.id, {
+            notification_status: notificationStatus,
+            webhook_payload: notificationStatus.webhook
+              ? { summary: toSummaryObject(finalized) }
+              : null,
+            email_payload: notificationStatus.email
+              ? { summary: toSummaryObject(finalized) }
+              : null,
+          });
+        } catch (error) {
+          logger.warn("Failed to send monitor check notifications", {
             monitorId: monitor.id,
             checkId: finalized.id,
-            error: updateError,
+            error,
           });
-          return finalized;
-        });
+          notificationStatus = {
+            webhook: {
+              attempted: !!monitor.webhook,
+              success: false,
+              error: error instanceof Error ? error.message : String(error),
+            },
+            email: {
+              attempted: !!monitor.notification?.email?.enabled,
+              success: false,
+              error: error instanceof Error ? error.message : String(error),
+            },
+          };
+          finalized = await updateMonitorCheck(check.id, {
+            notification_status: notificationStatus,
+          }).catch(updateError => {
+            logger.warn("Failed to record monitor check notification failure", {
+              monitorId: monitor.id,
+              checkId: finalized.id,
+              error: updateError,
+            });
+            return finalized;
+          });
+        }
       }
 
       await updateMonitorScheduleAfterRun({

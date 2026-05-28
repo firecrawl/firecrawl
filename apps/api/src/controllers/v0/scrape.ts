@@ -62,7 +62,12 @@ async function scrapeHelper(
     return { success: false, error: "Url is required", returnCode: 400 };
   }
 
-  if (isUrlBlocked(url, flags)) {
+  if (
+    isUrlBlocked(url, flags, {
+      team_id,
+      origin: req.body?.origin ?? null,
+    })
+  ) {
     return {
       success: false,
       error: UNSUPPORTED_SITE_MESSAGE,

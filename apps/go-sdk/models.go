@@ -110,6 +110,10 @@ type MonitorSchedule struct {
 }
 
 // MonitorCreateRequest creates a scheduled monitor.
+//
+// Goal is an optional natural-language description of what the monitor is
+// watching for (max 2000 chars). When set with JudgeEnabled left nil, the
+// API auto-enables judging for this monitor.
 type MonitorCreateRequest struct {
 	Name          string                   `json:"name"`
 	Schedule      MonitorSchedule          `json:"schedule"`
@@ -117,9 +121,14 @@ type MonitorCreateRequest struct {
 	Webhook       map[string]interface{}   `json:"webhook,omitempty"`
 	Notification  map[string]interface{}   `json:"notification,omitempty"`
 	RetentionDays *int                     `json:"retentionDays,omitempty"`
+	Goal          *string                  `json:"goal,omitempty"`
+	JudgeEnabled  *bool                    `json:"judgeEnabled,omitempty"`
 }
 
 // MonitorUpdateRequest updates a scheduled monitor.
+//
+// Goal and JudgeEnabled follow the same semantics as MonitorCreateRequest;
+// leave them nil to keep the existing values.
 type MonitorUpdateRequest struct {
 	Name          string                   `json:"name,omitempty"`
 	Status        string                   `json:"status,omitempty"`
@@ -128,6 +137,8 @@ type MonitorUpdateRequest struct {
 	Webhook       map[string]interface{}   `json:"webhook,omitempty"`
 	Notification  map[string]interface{}   `json:"notification,omitempty"`
 	RetentionDays *int                     `json:"retentionDays,omitempty"`
+	Goal          *string                  `json:"goal,omitempty"`
+	JudgeEnabled  *bool                    `json:"judgeEnabled,omitempty"`
 }
 
 // Monitor represents a scheduled monitor.
@@ -145,6 +156,8 @@ type Monitor struct {
 	RetentionDays            int                      `json:"retentionDays"`
 	EstimatedCreditsPerMonth *int                     `json:"estimatedCreditsPerMonth,omitempty"`
 	LastCheckSummary         *MonitorSummary          `json:"lastCheckSummary,omitempty"`
+	Goal                     *string                  `json:"goal,omitempty"`
+	JudgeEnabled             bool                     `json:"judgeEnabled"`
 	CreatedAt                string                   `json:"createdAt,omitempty"`
 	UpdatedAt                string                   `json:"updatedAt,omitempty"`
 }
@@ -214,6 +227,25 @@ type MonitorPageSnapshot struct {
 	JSON map[string]interface{} `json:"json,omitempty"`
 }
 
+// MonitorMeaningfulChange is a single goal-relevant change selected by the
+// monitor judge.
+type MonitorMeaningfulChange struct {
+	Type   string  `json:"type"`
+	Before *string `json:"before"`
+	After  *string `json:"after"`
+	Reason string  `json:"reason"`
+}
+
+// MonitorPageJudgment is the judge's verdict on whether a page change is
+// meaningful. Populated on monitor check pages when the monitor has a
+// goal set and judging is enabled.
+type MonitorPageJudgment struct {
+	Meaningful        bool                      `json:"meaningful"`
+	Confidence        string                    `json:"confidence"`
+	Reason            string                    `json:"reason"`
+	MeaningfulChanges []MonitorMeaningfulChange `json:"meaningfulChanges"`
+}
+
 // MonitorCheckPage is a single page result in a monitor check.
 type MonitorCheckPage struct {
 	ID               string               `json:"id"`
@@ -227,6 +259,7 @@ type MonitorCheckPage struct {
 	Metadata         interface{}          `json:"metadata,omitempty"`
 	Diff             *MonitorPageDiff     `json:"diff,omitempty"`
 	Snapshot         *MonitorPageSnapshot `json:"snapshot,omitempty"`
+	Judgment         *MonitorPageJudgment `json:"judgment,omitempty"`
 	CreatedAt        string               `json:"createdAt,omitempty"`
 }
 

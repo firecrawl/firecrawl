@@ -98,6 +98,20 @@ export async function search(
     if (data.news) out.news = transformArray<SearchResultNews>(data.news);
     if (data.images)
       out.images = transformArray<SearchResultImages>(data.images);
+    Object.defineProperty(out, "data", {
+      get() {
+        const parts: string[] = [];
+        if (out.web?.length) parts.push(`.web (${out.web.length} results)`);
+        if (out.news?.length) parts.push(`.news (${out.news.length} results)`);
+        if (out.images?.length) parts.push(`.images (${out.images.length} results)`);
+        const available = parts.length ? parts.join(", ") : ".web, .news, or .images";
+        throw new Error(
+          `SearchData has no '.data'. Results are grouped by source: ${available}`,
+        );
+      },
+      enumerable: false,
+      configurable: true,
+    });
     return out;
   } catch (err: any) {
     if (err?.isAxiosError) return normalizeAxiosError(err, "search");

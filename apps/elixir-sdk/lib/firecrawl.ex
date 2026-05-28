@@ -1286,7 +1286,9 @@ defmodule Firecrawl do
     webhook: "webhook",
     notification: "notification",
     retention_days: "retentionDays",
-    status: "status"
+    status: "status",
+    goal: "goal",
+    judge_enabled: "judgeEnabled"
   }
 
   @monitor_list_key_mapping %{limit: "limit", offset: "offset"}
@@ -1300,7 +1302,9 @@ defmodule Firecrawl do
     webhook: [type: :any],
     notification: [type: :any],
     retention_days: [type: :integer],
-    status: [type: :any]
+    status: [type: :any],
+    goal: [type: :any],
+    judge_enabled: [type: :boolean]
   ])
 
   @monitor_list_schema NimbleOptions.new!([

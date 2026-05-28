@@ -1420,6 +1420,7 @@ export type TeamFlags = {
   bypassCreditChecks?: boolean;
   debugBranding?: boolean;
   maxBrowserSessions?: number;
+  researchBeta?: boolean;
 } | null;
 
 interface RequestWithMaybeACUC<

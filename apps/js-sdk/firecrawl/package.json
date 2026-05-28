@@ -1,6 +1,6 @@
 {
   "name": "@mendable/firecrawl-js",
-  "version": "4.24.1",
+  "version": "4.25.1",
   "description": "JavaScript SDK for Firecrawl API",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -69,7 +69,7 @@
       "rollup@<4.59.0": ">=4.59.0",
       "picomatch@<4.0.4": ">=4.0.4",
       "handlebars": ">=4.7.9",
-      "brace-expansion": ">=5.0.5",
+      "brace-expansion": ">=5.0.6",
       "axios@<1.15.2": "1.15.2",
       "follow-redirects@<1.16.0": ">=1.16.0 <2.0.0"
     }

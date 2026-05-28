@@ -15,11 +15,11 @@ export { Watcher, type WatcherOptions } from "./v2/watcher";
 export { default as FirecrawlAppV1 } from "./v1";
 
 import V1 from "./v1";
-import { FirecrawlClient as V2, type FirecrawlClientOptions } from "./v2/client";
+import { FirecrawlClient as V2, type FirecrawlClientOptions, type FirecrawlClientInput } from "./v2/client";
 import type { FirecrawlAppConfig } from "./v1";
 
 // Re-export v2 client options for convenience
-export type { FirecrawlClientOptions } from "./v2/client";
+export type { FirecrawlClientOptions, FirecrawlClientInput } from "./v2/client";
 
 /** Unified client: extends v2 and adds `.v1` for backward compatibility. */
 export class Firecrawl extends V2 {
@@ -27,12 +27,14 @@ export class Firecrawl extends V2 {
   private _v1?: V1;
   private _v1Opts: FirecrawlAppConfig;
 
-  /** @param opts API credentials and base URL. */
-  constructor(opts: FirecrawlClientOptions = {}) {
-    super(opts);
+  /** @param opts API key string or credentials object. */
+  constructor(opts: FirecrawlClientInput = {}) {
+    const resolved: FirecrawlClientOptions =
+      typeof opts === "string" ? { apiKey: opts } : opts;
+    super(resolved);
     this._v1Opts = {
-      apiKey: opts.apiKey,
-      apiUrl: opts.apiUrl,
+      apiKey: resolved.apiKey,
+      apiUrl: resolved.apiUrl,
     };
   }
 
@@ -42,6 +44,17 @@ export class Firecrawl extends V2 {
     return this._v1;
   }
 }
+
+// Copy V2 method descriptors onto Firecrawl.prototype so that
+// Object.getOwnPropertyNames(Object.getPrototypeOf(app)) includes them.
+(function exposeV2MethodsOnTopLevel() {
+  for (const name of Object.getOwnPropertyNames(V2.prototype)) {
+    if (name === "constructor") continue;
+    if (Object.prototype.hasOwnProperty.call(Firecrawl.prototype, name)) continue;
+    const desc = Object.getOwnPropertyDescriptor(V2.prototype, name);
+    if (desc) Object.defineProperty(Firecrawl.prototype, name, desc);
+  }
+})();
 
 export default Firecrawl;
 

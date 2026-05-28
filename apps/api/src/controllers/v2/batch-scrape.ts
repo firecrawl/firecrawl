@@ -95,7 +95,12 @@ export async function batchScrapeController(
     for (const u of pendingURLs) {
       try {
         const nu = urlSchema.parse(u);
-        if (!isUrlBlocked(nu, req.acuc?.flags ?? null)) {
+        if (
+          !isUrlBlocked(nu, req.acuc?.flags ?? null, {
+            team_id: req.auth.team_id,
+            origin: req.body.origin ?? null,
+          })
+        ) {
           urls.push(nu);
           unnormalizedURLs.push(u);
         } else {
@@ -108,7 +113,10 @@ export async function batchScrapeController(
   } else {
     if (
       req.body.urls?.some((url: string) =>
-        isUrlBlocked(url, req.acuc?.flags ?? null),
+        isUrlBlocked(url, req.acuc?.flags ?? null, {
+          team_id: req.auth.team_id,
+          origin: req.body.origin ?? null,
+        }),
       )
     ) {
       if (!res.headersSent) {

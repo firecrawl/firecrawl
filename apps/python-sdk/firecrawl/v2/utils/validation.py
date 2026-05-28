@@ -634,6 +634,10 @@ def prepare_scrape_options(options: Optional[ScrapeOptions]) -> Optional[Dict[st
                                     converted_formats.append(_validate_highlights_format(fmt.model_dump(exclude_none=True)))
                                 elif fmt.type == 'query':
                                     converted_formats.append(_validate_query_format(fmt.model_dump(exclude_none=True)))
+                                elif fmt.type in ('changeTracking', 'change_tracking'):
+                                    data = fmt.model_dump(exclude_none=True)
+                                    data['type'] = _convert_format_string(data.get('type', fmt.type))
+                                    converted_formats.append(data)
                                 else:
                                     converted_formats.append(_convert_format_string(fmt.type))
                             else:
@@ -711,6 +715,10 @@ def prepare_scrape_options(options: Optional[ScrapeOptions]) -> Optional[Dict[st
                                 converted_formats.append(normalized)
                             elif fmt.type == 'query':
                                 converted_formats.append(_validate_query_format(fmt.model_dump(exclude_none=True)))
+                            elif fmt.type in ('changeTracking', 'change_tracking'):
+                                data = fmt.model_dump(exclude_none=True)
+                                data['type'] = _convert_format_string(data.get('type', fmt.type))
+                                converted_formats.append(data)
                             else:
                                 converted_formats.append(_convert_format_string(fmt.type))
                         else:

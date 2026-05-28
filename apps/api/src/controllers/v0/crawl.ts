@@ -155,7 +155,12 @@ export async function crawlController(req: Request, res: Response) {
         .json({ error: e.message ?? e });
     }
 
-    if (isUrlBlocked(url, auth.chunk?.flags ?? null)) {
+    if (
+      isUrlBlocked(url, auth.chunk?.flags ?? null, {
+        team_id: auth.chunk?.team_id ?? team_id,
+        origin: req.body?.origin ?? null,
+      })
+    ) {
       return res.status(403).json({
         error: UNSUPPORTED_SITE_MESSAGE,
       });
