@@ -2,7 +2,7 @@ import { readFileSync } from "fs";
 import { join } from "path";
 
 const ROOT = join(__dirname, "../../../..");
-const OPENAPI_PATH = join(ROOT, "openapi.json");
+const OPENAPI_PATH = join(ROOT, "v2-openapi.json");
 const V2_ROUTES_PATH = join(ROOT, "src/routes/v2.ts");
 
 const HTTP_METHODS = new Set([
@@ -50,12 +50,12 @@ function normalizeOpenAPIPath(p: string) {
   return p.replace(/\{[^/]+\}/g, "{}");
 }
 
-describe("openapi.json drift detection", () => {
+describe("v2-openapi.json drift detection", () => {
   const spec = loadSpec();
   const operations = parseOpenAPIOperations(spec);
   const v2Routes = parseV2Routes();
 
-  test("openapi.json is valid JSON with paths", () => {
+  test("v2-openapi.json is valid JSON with paths", () => {
     expect(spec).toHaveProperty("openapi");
     expect(spec).toHaveProperty("paths");
     expect(Object.keys(spec.paths).length).toBeGreaterThan(0);
@@ -97,7 +97,7 @@ describe("openapi.json drift detection", () => {
     expect(missing).toEqual([]);
   });
 
-  test("every registered v2 route has a matching OpenAPI operation", () => {
+  test("every registered v2 route has a matching v2 OpenAPI operation", () => {
     const opSet = new Set(
       operations.map((o) => `${o.method}|${normalizeOpenAPIPath(o.path)}`)
     );
