@@ -116,6 +116,20 @@ export async function searchController(
       });
     }
 
+    // Extract scrape-side ZDR flag; strip it before forwarding scrapeOptions
+    // since ScrapeOptions does not carry this field downstream
+    const scrapeZDR: boolean =
+      !!(req.body.scrapeOptions as any)?.zeroDataRetention;
+
+    let forwardedScrapeOptions = req.body.scrapeOptions;
+    if (scrapeZDR && forwardedScrapeOptions) {
+      const { zeroDataRetention: _zdr, ...rest } =
+        forwardedScrapeOptions as typeof forwardedScrapeOptions & {
+          zeroDataRetention?: boolean;
+        };
+      forwardedScrapeOptions = rest as typeof forwardedScrapeOptions;
+    }
+
     const result = await executeSearch(
       {
         query: req.body.query,
@@ -130,7 +144,7 @@ export async function searchController(
         includeDomains: req.body.includeDomains,
         excludeDomains: req.body.excludeDomains,
         enterprise: req.body.enterprise,
-        scrapeOptions: req.body.scrapeOptions,
+        scrapeOptions: forwardedScrapeOptions,
         timeout: req.body.timeout,
       },
       {
@@ -142,7 +156,7 @@ export async function searchController(
         jobId,
         apiVersion: "v2",
         bypassBilling: !shouldBill,
-        zeroDataRetention: isZDROrAnon,
+        zeroDataRetention: (isZDROrAnon ?? false) || scrapeZDR,
         billing,
         agentIndexOnly: (req as any).agentIndexOnly ?? false,
       },
