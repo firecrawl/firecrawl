@@ -104,6 +104,8 @@ services:
         condition: service_started
       rabbitmq:
         condition: service_healthy
+      nuq-postgres:
+        condition: service_healthy
     ports:
       - "${PORT:-3002}:${INTERNAL_PORT:-3002}"
     command: node dist/src/harness.js --start-docker
@@ -149,23 +151,27 @@ services:
         compress: "true"
   
   nuq-postgres:
-    # NOTE: If you don't want to build the image locally,
-    # comment out the build: statement and uncomment the image: statement
-    # image: ghcr.io/firecrawl/nuq-postgres:latest
     build: apps/nuq-postgres
+    restart: unless-stopped
     environment:
-      POSTGRES_USER: ${POSTGRES_USER:-postgres}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
-      POSTGRES_DB: ${POSTGRES_DB:-postgres}
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: firecrawl_password_local_only
+      POSTGRES_DB: postgres
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d postgres"]
+      interval: 10s
+      timeout: 10s
+      retries: 20
+      start_period: 90s
+    ports:
+      - "5433:5432"  # optional: expose for manual psql if needed later
     networks:
       - backend
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
-        compress: "true"
 
 networks:
   backend:
     driver: bridge
+volumes:
+  postgres_data:
