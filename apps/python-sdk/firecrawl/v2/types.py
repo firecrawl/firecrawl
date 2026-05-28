@@ -1024,17 +1024,17 @@ class MonitorPageDiff(BaseModel):
     monitors (JSON + git-diff) populate both `json` (field diff) and
     `text` (markdown sidecar).
     """
-    model_config = {"populate_by_name": True, "extra": "allow"}
+    model_config = {"populate_by_name": True, "extra": "allow", "protected_namespaces": ()}
 
     text: Optional[str] = None
-    json: Optional[Any] = None  # markdown→parseDiff AST | json→field diff
+    json_: Optional[Any] = Field(default=None, alias="json")  # markdown→parseDiff AST | json→field diff
 
 
 class MonitorPageSnapshot(BaseModel):
     """Current JSON extraction at this run. JSON / mixed mode only."""
-    model_config = {"populate_by_name": True, "extra": "allow"}
+    model_config = {"populate_by_name": True, "extra": "allow", "protected_namespaces": ()}
 
-    json: Optional[Dict[str, Any]] = None
+    json_: Optional[Dict[str, Any]] = Field(default=None, alias="json")
 
 
 class MonitorCheckPage(BaseModel):
