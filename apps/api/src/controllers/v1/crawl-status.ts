@@ -169,12 +169,35 @@ export async function crawlStatusController(
   res: Response<CrawlStatusResponse>,
   isBatch = false,
 ) {
-  const start =
-    typeof req.query.skip === "string" ? parseInt(req.query.skip, 10) : 0;
-  const end =
-    typeof req.query.limit === "string"
-      ? start + parseInt(req.query.limit, 10) - 1
-      : undefined;
+  const uuidReg =
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  if (!req.params.jobId || !uuidReg.test(req.params.jobId)) {
+    return res.status(400).json({
+      success: false,
+      error: "Invalid job ID",
+    });
+  }
+
+  const parsedSkip =
+    typeof req.query.skip === "string" ? Number(req.query.skip) : 0;
+  const parsedLimit =
+    typeof req.query.limit === "string" ? Number(req.query.limit) : undefined;
+
+  if (
+    !Number.isInteger(parsedSkip) ||
+    parsedSkip < 0 ||
+    (parsedLimit !== undefined &&
+      (!Number.isInteger(parsedLimit) || parsedLimit <= 0))
+  ) {
+    return res.status(400).json({
+      success: false,
+      error:
+        "Invalid query parameters: skip must be a non-negative integer and limit must be a positive integer",
+    });
+  }
+
+  const start = parsedSkip;
+  const end = parsedLimit !== undefined ? start + parsedLimit - 1 : undefined;
 
   const group = await crawlGroup.getGroup(req.params.jobId);
   const groupAnyJob = await scrapeQueue.getGroupAnyJob(

@@ -92,7 +92,10 @@ export async function searchController(
     module: "search",
     method: "searchController",
     zeroDataRetention: getSearchZDR(req.acuc?.flags) === "forced",
-    searchQuery: req.body.query.slice(0, 100),
+    searchQuery:
+      typeof req.body.query === "string"
+        ? req.body.query.slice(0, 100)
+        : undefined,
   });
 
   if (getSearchZDR(req.acuc?.flags) === "forced") {

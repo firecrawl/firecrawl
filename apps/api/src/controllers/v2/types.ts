@@ -594,7 +594,7 @@ const baseScrapeOptions = z.strictObject({
     .optional(),
   onlyMainContent: z.boolean().prefault(true),
   onlyCleanContent: z.boolean().prefault(false),
-  timeout: z.int().positive().min(1000).optional(),
+  timeout: z.int().positive().min(1000).max(300000).optional(),
   waitFor: z.int().nonnegative().max(60000).prefault(0),
   mobile: z.boolean().prefault(false),
   parsers: parsersSchema.optional(),
@@ -773,7 +773,7 @@ const extractOptions = z
     origin: z.string().optional().prefault("api"),
     integration: integrationSchema.optional().transform(val => val || null),
     urlTrace: z.boolean().prefault(false),
-    timeout: z.int().positive().min(1000).optional(),
+    timeout: z.int().positive().min(1000).max(300000).optional(),
     agent: agentOptionsExtract.optional(),
     __experimental_streamSteps: z.boolean().prefault(false),
     __experimental_llmUsage: z.boolean().prefault(false),
@@ -819,7 +819,7 @@ const agentWebhookSchema = createWebhookSchema([
 
 export const agentRequestSchema = z.strictObject({
   urls: URL.array().optional(),
-  prompt: z.string().max(10000),
+  prompt: z.string().min(1).max(10000),
   schema: z
     .any()
     .optional()
@@ -842,7 +842,7 @@ export const agentRequestSchema = z.strictObject({
     }),
   origin: z.string().optional().prefault("api"),
   integration: integrationSchema.optional().transform(val => val || null),
-  maxCredits: z.number().optional(),
+  maxCredits: z.number().positive().optional(),
   strictConstrainToURLs: z.boolean().optional(),
   webhook: agentWebhookSchema.optional(),
 
@@ -1008,8 +1008,8 @@ export type BatchScrapeRequestInput = Omit<
 export const crawlerOptions = z.strictObject({
   includePaths: z.string().array().prefault([]),
   excludePaths: z.string().array().prefault([]),
-  maxDiscoveryDepth: z.number().optional(),
-  limit: z.number().prefault(10000), // default?
+  maxDiscoveryDepth: z.number().nonnegative().optional(),
+  limit: z.number().positive().prefault(10000), // default?
   crawlEntireDomain: z.boolean().optional(),
   allowExternalLinks: z.boolean().prefault(false),
   allowSubdomains: z.boolean().prefault(false),
@@ -1040,7 +1040,7 @@ const crawlRequestSchemaBase = crawlerOptions.extend({
   integration: integrationSchema.optional().transform(val => val || null),
   scrapeOptions: baseScrapeOptions.prefault(() => baseScrapeOptions.parse({})),
   webhook: webhookSchema.optional(),
-  limit: z.number().prefault(10000),
+  limit: z.number().positive().prefault(10000),
   maxConcurrency: z.int().positive().optional(),
   zeroDataRetention: z.boolean().optional(),
   prompt: z.string().max(10000).optional(),
@@ -1757,7 +1757,7 @@ const searchDomainSchema = z
 
 export const searchRequestSchema = z
   .strictObject({
-    query: z.string(),
+    query: z.string().min(1),
     limit: z.int().positive().finite().max(100).optional().prefault(10),
     tbs: z.string().optional(),
     filter: z.string().optional(),
@@ -1794,11 +1794,20 @@ export const searchRequestSchema = z
     excludeDomains: z.array(searchDomainSchema).optional(),
     lang: z.string().optional().prefault("en"),
     enterprise: z.array(z.enum(["default", "anon", "zdr"])).optional(),
-    country: z.string().optional(),
+    country: z
+      .string()
+      .optional()
+      .refine(
+        val =>
+          val === undefined ||
+          Object.keys(countries).includes(val.toUpperCase()) ||
+          SPECIAL_COUNTRIES.includes(val.toLowerCase()),
+        "Invalid country code. Use a valid ISO 3166-1 alpha-2 country code.",
+      ),
     location: z.string().optional(),
     origin: z.string().optional().prefault("api"),
     integration: integrationSchema.optional().transform(val => val || null),
-    timeout: z.int().positive().finite().prefault(60000),
+    timeout: z.int().positive().finite().max(300000).prefault(60000),
     ignoreInvalidURLs: z.boolean().optional().prefault(false),
     asyncScraping: z.boolean().optional().prefault(false),
     __searchPreviewToken: z.string().optional(),
