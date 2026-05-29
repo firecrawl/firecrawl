@@ -68,7 +68,7 @@ export async function scrapeController(
     account: req.account,
   });
 
-  logRequest({
+  await logRequest({
     id: jobId,
     kind: "scrape",
     api_version: "v1",
@@ -78,9 +78,7 @@ export async function scrapeController(
     target_hint: req.body.url,
     zeroDataRetention: zeroDataRetention || false,
     api_key_id: req.acuc?.api_key_id ?? null,
-  }).catch(err =>
-    logger.warn("Background request log failed", { error: err, jobId }),
-  );
+  });
 
   const origin = req.body.origin;
   const timeout = req.body.timeout;

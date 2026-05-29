@@ -133,7 +133,7 @@ export async function scrapeController(
       });
 
       if (!agentRequestId) {
-        logRequest({
+        await logRequest({
           id: jobId,
           kind: "scrape",
           api_version: "v2",
@@ -143,9 +143,7 @@ export async function scrapeController(
           target_hint: req.body.url,
           zeroDataRetention: zeroDataRetention || false,
           api_key_id: req.acuc?.api_key_id ?? null,
-        }).catch(err =>
-          logger.warn("Background request log failed", { error: err, jobId }),
-        );
+        });
       }
 
       setSpanAttributes(span, {
