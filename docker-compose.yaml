@@ -25,6 +25,12 @@ x-common-env: &common-env
   REDIS_URL: ${REDIS_URL:-redis://redis:6379}
   REDIS_RATE_LIMIT_URL: ${REDIS_URL:-redis://redis:6379}
   PLAYWRIGHT_MICROSERVICE_URL: ${PLAYWRIGHT_MICROSERVICE_URL:-http://playwright-service:3000/scrape}
+  # Docker Desktop on macOS reports host CPU count via cpuset.cpus.effective
+  # instead of the container's --cpus limit, making the cgroup CPU check
+  # unreliable. Set both to 1.0 to disable the connection-accept gate and
+  # rely on Docker's cpus/mem_limit instead.
+  MAX_CPU: ${MAX_CPU:-1.0}
+  MAX_RAM: ${MAX_RAM:-1.0}
   POSTGRES_USER: ${POSTGRES_USER:-postgres}
   POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:-postgres}"
   POSTGRES_DB: ${POSTGRES_DB:-postgres}
@@ -154,9 +160,9 @@ services:
     build: apps/nuq-postgres
     restart: unless-stopped
     environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: firecrawl_password_local_only
-      POSTGRES_DB: postgres
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-postgres}
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
