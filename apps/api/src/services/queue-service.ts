@@ -5,12 +5,9 @@ import IORedis from "ioredis";
 import type { DeepResearchServiceOptions } from "../lib/deep-research/deep-research-service";
 import { addExtractJob, ExtractJobData } from "./extract-queue";
 
-let loggingQueue: Queue;
-let indexQueue: Queue;
 let deepResearchQueue: Queue;
 let generateLlmsTxtQueue: Queue;
 let billingQueue: Queue;
-let precrawlQueue: Queue;
 let redisConnection: IORedis;
 
 export function getRedisConnection(): IORedis {
@@ -28,7 +25,6 @@ export function getRedisConnection(): IORedis {
 const generateLlmsTxtQueueName = "{generateLlmsTxtQueue}";
 const deepResearchQueueName = "{deepResearchQueue}";
 const billingQueueName = "{billingQueue}";
-export const precrawlQueueName = "{precrawlQueue}";
 
 export async function addExtractJobToQueue(
   extractId: string,
@@ -91,19 +87,3 @@ export function getBillingQueue() {
   return billingQueue;
 }
 
-export function getPrecrawlQueue() {
-  if (!precrawlQueue) {
-    precrawlQueue = new Queue(precrawlQueueName, {
-      connection: getRedisConnection(),
-      defaultJobOptions: {
-        removeOnComplete: {
-          age: 24 * 60 * 60, // 1 day
-        },
-        removeOnFail: {
-          age: 24 * 60 * 60, // 1 day
-        },
-      },
-    });
-  }
-  return precrawlQueue;
-}
