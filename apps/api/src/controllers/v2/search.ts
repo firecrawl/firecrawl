@@ -87,8 +87,9 @@ export async function searchController(
     const isZDR = req.body.enterprise?.includes("zdr");
     const isAnon = req.body.enterprise?.includes("anon");
     const isZDROrAnon = isZDR || isAnon;
-    zeroDataRetention = isZDROrAnon ?? false;
-    applyZdrScope(isZDROrAnon ?? false);
+    const scrapeOptionsZDR = req.body.scrapeOptions?.zeroDataRetention ?? false;
+    zeroDataRetention = (isZDROrAnon ?? false) || scrapeOptionsZDR;
+    applyZdrScope(zeroDataRetention);
 
     // Verify the team has searchZDR enabled before allowing enterprise ZDR/anon
     if (isZDROrAnon) {
@@ -111,7 +112,7 @@ export async function searchController(
         origin: req.body.origin ?? "api",
         integration: req.body.integration,
         target_hint: req.body.query,
-        zeroDataRetention: isZDROrAnon ?? false,
+        zeroDataRetention: zeroDataRetention,
         api_key_id: req.acuc?.api_key_id ?? null,
       });
     }
@@ -142,7 +143,7 @@ export async function searchController(
         jobId,
         apiVersion: "v2",
         bypassBilling: !shouldBill,
-        zeroDataRetention: isZDROrAnon,
+        zeroDataRetention: zeroDataRetention,
         billing,
         agentIndexOnly: (req as any).agentIndexOnly ?? false,
       },
@@ -180,7 +181,7 @@ export async function searchController(
         team_id: req.auth.team_id,
         options: req.body,
         credits_cost: shouldBill ? result.searchCredits : 0,
-        zeroDataRetention: isZDROrAnon ?? false,
+        zeroDataRetention: zeroDataRetention,
       },
       false,
     );
