@@ -9,7 +9,7 @@ import {
   getNextConcurrentJob,
   MAX_BACKLOG_TIMEOUT_MS,
   pushConcurrencyLimitActiveJob,
-  pushConcurrencyLimitedJob,
+  pushConcurrencyLimitedJobs,
   pushCrawlConcurrencyLimitActiveJob,
   removeConcurrencyLimitActiveJob,
   removeCrawlConcurrencyLimitActiveJob,
@@ -29,6 +29,17 @@ interface ReconcileResult {
   jobsStarted: number;
 }
 
+type RequeueableJob = {
+  job: {
+    id: string;
+    data: ScrapeJobData;
+    priority: number;
+    listenChannelId?: string;
+    listenable?: boolean;
+  };
+  timeout: number;
+};
+
 function isExtractJob(data: ScrapeJobData): boolean {
   return "is_extract" in data && !!data.is_extract;
 }
@@ -46,15 +57,29 @@ async function requeueJob(
   ownerId: string,
   job: NuQJob<ScrapeJobData>,
 ): Promise<void> {
-  await pushConcurrencyLimitedJob(
-    ownerId,
+  await requeueJobs(ownerId, [
     {
-      id: job.id,
-      data: job.data,
-      priority: job.priority,
-      listenable: job.listenChannelId !== undefined,
+      job,
+      timeout: getBacklogJobTimeout(job.data),
     },
-    getBacklogJobTimeout(job.data),
+  ]);
+}
+
+async function requeueJobs(
+  ownerId: string,
+  jobs: RequeueableJob[],
+): Promise<void> {
+  await pushConcurrencyLimitedJobs(
+    ownerId,
+    jobs.map(({ job, timeout }) => ({
+      job: {
+        id: job.id,
+        data: job.data,
+        priority: job.priority,
+        listenable: job.listenable ?? job.listenChannelId !== undefined,
+      },
+      timeout,
+    })),
   );
 }
 
@@ -220,6 +245,7 @@ async function drainQueue(
   let jobsPromoted = 0;
   let staleSkipped = 0;
   let typeBlocked = 0;
+  const blockedJobs: RequeueableJob[] = [];
 
   while (staleSkipped + typeBlocked < 100) {
     if (
@@ -236,16 +262,11 @@ async function drainQueue(
     const typeCount = isExtract ? extractCount : crawlCount;
 
     if (typeCount >= typeLimit) {
-      await pushConcurrencyLimitedJob(
-        ownerId,
-        {
-          id: nextJob.job.id,
-          data: nextJob.job.data,
-          priority: nextJob.job.priority,
-          listenable: nextJob.job.listenable,
-        },
-        nextJob.timeout === Infinity ? MAX_BACKLOG_TIMEOUT_MS : nextJob.timeout,
-      );
+      blockedJobs.push({
+        job: nextJob.job,
+        timeout:
+          nextJob.timeout === Infinity ? MAX_BACKLOG_TIMEOUT_MS : nextJob.timeout,
+      });
       typeBlocked++;
       continue;
     }
@@ -285,6 +306,8 @@ async function drainQueue(
       staleSkipped++;
     }
   }
+
+  await requeueJobs(ownerId, blockedJobs);
 
   if (staleSkipped >= 100) {
     teamLogger.warn(
