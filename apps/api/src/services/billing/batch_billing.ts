@@ -31,6 +31,7 @@ interface BillingOperation {
   timestamp: string;
   api_key_id: number | null;
   autumnTrackInRequest: boolean;
+  fetch_subscription: boolean;
 }
 
 // Grouped billing operations for batch processing
@@ -42,6 +43,7 @@ interface GroupedBillingOperation {
   is_extract: boolean;
   api_key_id: number | null;
   operations: BillingOperation[];
+  fetch_subscription: boolean;
 }
 
 // Function to acquire a lock for batch processing
@@ -148,11 +150,16 @@ export async function processBillingBatch() {
           is_extract: op.is_extract,
           api_key_id: op.api_key_id,
           operations: [],
+          fetch_subscription: op.fetch_subscription ?? false,
         });
       }
 
       const group = groupedOperations.get(key)!;
       group.total_credits += op.credits;
+      // If any operation in the group needs subscription lookup, the group does too
+      if (op.fetch_subscription) {
+        group.fetch_subscription = true;
+      }
       group.operations.push(op);
     }
 
@@ -192,6 +199,7 @@ export async function processBillingBatch() {
           group.api_key_id,
           logger,
           group.is_extract,
+          group.fetch_subscription,
         );
 
         if (!billingResult.success) {
@@ -223,7 +231,6 @@ export async function processBillingBatch() {
             },
           });
         }
-
       } catch (error) {
         await refundRequestTrackedCredits(group);
         logger.error(`❌ Failed to bill team ${group.team_id}`, {
@@ -308,6 +315,7 @@ export async function queueBillingOperation(
       timestamp: new Date().toISOString(),
       api_key_id,
       autumnTrackInRequest,
+      fetch_subscription: subscription_id === undefined,
     };
 
     // Add operation to Redis list
@@ -386,6 +394,7 @@ async function supaBillTeam(
   api_key_id: number | null,
   __logger?: any,
   is_extract: boolean = false,
+  fetch_subscription: boolean = false,
 ) {
   const _logger = (__logger ?? logger).child({
     module: "credit_billing",
@@ -399,13 +408,18 @@ async function supaBillTeam(
     return { success: true, message: "Preview team, no credits used" };
   }
 
-  _logger.info(`Batch billing team ${team_id} for ${credits} credits`);
+  // If subscription_id is not known, tell the RPC to look it up
+  const shouldFetchSubscription = fetch_subscription;
+
+  _logger.info(`Batch billing team ${team_id} for ${credits} credits`, {
+    fetch_subscription: shouldFetchSubscription,
+  });
 
   // Perform the actual database operation
   const { data, error } = await supabase_service.rpc("bill_team_6", {
     _team_id: team_id,
     sub_id: subscription_id ?? null,
-    fetch_subscription: subscription_id === undefined,
+    fetch_subscription: shouldFetchSubscription,
     credits,
     i_api_key_id: api_key_id ?? null,
     is_extract_param: is_extract,
