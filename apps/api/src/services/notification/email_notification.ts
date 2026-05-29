@@ -206,111 +206,123 @@ async function sendNotificationInternal(
   if (team_id === "preview" || team_id.startsWith("preview_")) {
     return { success: true };
   }
-  return await redlock.using(
-    [`notification-lock:${team_id}:${notificationType}`],
-    5000,
-    async () => {
-      if (!bypassRecentChecks) {
-        const fifteenDaysAgo = new Date();
-        fifteenDaysAgo.setDate(fifteenDaysAgo.getDate() - 15);
+  try {
+    return await redlock.using(
+      [`notification-lock:${team_id}:${notificationType}`],
+      5000,
+      async () => {
+        if (!bypassRecentChecks) {
+          const fifteenDaysAgo = new Date();
+          fifteenDaysAgo.setDate(fifteenDaysAgo.getDate() - 15);
 
-        const { data, error } = await supabase_service
-          .from("user_notifications")
-          .select("*")
-          .eq("team_id", team_id)
-          .eq("notification_type", notificationType)
-          .gte("sent_date", fifteenDaysAgo.toISOString());
+          const { data, error } = await supabase_service
+            .from("user_notifications")
+            .select("*")
+            .eq("team_id", team_id)
+            .eq("notification_type", notificationType)
+            .gte("sent_date", fifteenDaysAgo.toISOString());
 
-        if (error) {
-          logger.debug(`Error fetching notifications: ${error}`);
-          return { success: false };
+          if (error) {
+            logger.debug(`Error fetching notifications: ${error}`);
+            return { success: false };
+          }
+
+          if (data.length !== 0) {
+            return { success: false };
+          }
+
+          // TODO: observation: Free credits people are not receiving notifications
+
+          const { data: recentData, error: recentError } =
+            await supabase_service
+              .from("user_notifications")
+              .select("*")
+              .eq("team_id", team_id)
+              .eq("notification_type", notificationType)
+              .gte("sent_date", startDateString)
+              .lte("sent_date", endDateString);
+
+          if (recentError) {
+            logger.debug(
+              `Error fetching recent notifications: ${recentError.message}`,
+            );
+            return { success: false };
+          }
+
+          if (recentData.length !== 0) {
+            return { success: false };
+          }
         }
 
-        if (data.length !== 0) {
-          return { success: false };
-        }
+        logger.info(
+          "Sending notification for team_id: " + team_id + " and notificationType: " + notificationType,
+        );
 
-        // TODO: observation: Free credits people are not receiving notifications
-
-        const { data: recentData, error: recentError } = await supabase_service
-          .from("user_notifications")
-          .select("*")
-          .eq("team_id", team_id)
-          .eq("notification_type", notificationType)
-          .gte("sent_date", startDateString)
-          .lte("sent_date", endDateString);
-
-        if (recentError) {
-          logger.debug(
-            `Error fetching recent notifications: ${recentError.message}`,
-          );
-          return { success: false };
-        }
-
-        if (recentData.length !== 0) {
-          return { success: false };
-        }
-      }
-
-      console.log(
-        `Sending notification for team_id: ${team_id} and notificationType: ${notificationType}`,
-      );
-
-      if (is_ledger_enabled) {
-        sendLedgerEvent(team_id, notificationType).catch(error => {
-          logger.warn("Error sending ledger event", {
-            module: "email_notification",
-            method: "sendEmail",
-            error,
+        if (is_ledger_enabled) {
+          sendLedgerEvent(team_id, notificationType).catch(error => {
+            logger.warn("Error sending ledger event", {
+              module: "email_notification",
+              method: "sendEmail",
+              error,
+            });
           });
-        });
-      }
-      // get the emails from the user with the team_id
-      const { data: emails, error: emailsError } = await supabase_service
-        .from("users")
-        .select("email")
-        .eq("team_id", team_id);
-
-      if (emailsError) {
-        logger.debug(`Error fetching emails: ${emailsError}`);
-        return { success: false };
-      }
-
-      if (!is_ledger_enabled) {
-        for (const email of emails) {
-          await sendEmailNotification(email.email, notificationType, context);
         }
-      }
+        // get the emails from the user with the team_id
+        const { data: emails, error: emailsError } = await supabase_service
+          .from("users")
+          .select("email")
+          .eq("team_id", team_id);
 
-      const { error: insertError } = await supabase_service
-        .from("user_notifications")
-        .insert([
-          {
-            team_id: team_id,
-            notification_type: notificationType,
-            sent_date: new Date().toISOString(),
-            timestamp: new Date().toISOString(),
-          },
-        ]);
+        if (emailsError) {
+          logger.debug(`Error fetching emails: ${emailsError}`);
+          return { success: false };
+        }
 
-      if (config.SLACK_ADMIN_WEBHOOK_URL && emails.length > 0) {
-        sendSlackWebhook(
-          `${getNotificationString(notificationType)}: Team ${team_id}, with email ${emails[0].email}. Number of credits used: ${chunk.adjusted_credits_used} | Number of credits in the plan: ${chunk.price_credits}`,
-          false,
-          config.SLACK_ADMIN_WEBHOOK_URL,
-        ).catch(error => {
-          logger.debug(`Error sending slack notification: ${error}`);
-        });
-      }
+        if (!is_ledger_enabled) {
+          for (const email of emails) {
+            await sendEmailNotification(email.email, notificationType, context);
+          }
+        }
 
-      if (insertError) {
-        logger.debug(`Error inserting notification record: ${insertError}`);
-        return { success: false };
-      }
+        const { error: insertError } = await supabase_service
+          .from("user_notifications")
+          .insert([
+            {
+              team_id: team_id,
+              notification_type: notificationType,
+              sent_date: new Date().toISOString(),
+              timestamp: new Date().toISOString(),
+            },
+          ]);
 
-      return { success: true };
-    },
-  );
+        if (config.SLACK_ADMIN_WEBHOOK_URL && emails.length > 0) {
+          sendSlackWebhook(
+            `${getNotificationString(notificationType)}: Team ${team_id}, with email ${emails[0].email}. Number of credits used: ${chunk.adjusted_credits_used} | Number of credits in the plan: ${chunk.price_credits}`,
+            false,
+            config.SLACK_ADMIN_WEBHOOK_URL,
+          ).catch(error => {
+            logger.debug(`Error sending slack notification: ${error}`);
+          });
+        }
+
+        if (insertError) {
+          logger.debug(`Error inserting notification record: ${insertError}`);
+          return { success: false };
+        }
+
+        return { success: true };
+      },
+    );
+  } catch (error) {
+    logger.warn("Failed to acquire notification lock", {
+      module: "email_notification",
+      method: "sendNotificationInternal",
+      team_id,
+      notificationType,
+      error,
+    });
+    return { success: false };
+  }
 }
 
 export async function sendNotificationWithCustomDays(
