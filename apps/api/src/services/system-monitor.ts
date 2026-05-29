@@ -210,10 +210,10 @@ class SystemMonitor {
   }
 
   public async acceptConnection() {
-    const cpuUsage = await this.checkCpuUsage();
-    const memoryUsage = await this.checkMemoryUsage();
-
-    return cpuUsage < MAX_CPU && memoryUsage < MAX_RAM;
+    // Gate disabled: Docker resource limits (cpus/mem_limit) already enforce
+    // container boundaries. The cgroup-based check is unreliable on Docker Desktop
+    // for Mac (cpuset.cpus.effective reports host CPU count, not container limit).
+    return true;
   }
 
   public clearCache() {
