@@ -8,12 +8,14 @@ import { configDotenv } from "dotenv";
 import { redisEvictConnection } from "../../../src/services/redis";
 import { crawlGroup } from "../../services/worker/nuq";
 import { getScrapeZDR } from "../../lib/zdr-helpers";
+import { applyAgentAuthDiscoveryHeader } from "../../lib/agent-auth-discovery";
 configDotenv();
 
 export async function crawlCancelController(req: Request, res: Response) {
   try {
     const auth = await authenticateUser(req, res, RateLimiterMode.CrawlStatus);
     if (!auth.success) {
+      if (auth.status === 401) applyAgentAuthDiscoveryHeader(res);
       return res.status(auth.status).json({ error: auth.error });
     }
 

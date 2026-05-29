@@ -8,6 +8,7 @@ import {
 } from "../controllers/v1/types";
 import { RateLimiterMode } from "../types";
 import { authenticateUser } from "../controllers/auth";
+import { applyAgentAuthDiscoveryHeader } from "../lib/agent-auth-discovery";
 import { createIdempotencyKey } from "../services/idempotency/create";
 import { validateIdempotencyKey } from "../services/idempotency/validate";
 import { isUrlBlocked } from "../scraper/WebScraper/utils/blocklist";
@@ -215,6 +216,7 @@ export function authMiddleware(
 
       if (!auth.success) {
         if (!res.headersSent) {
+          if (auth.status === 401) applyAgentAuthDiscoveryHeader(res);
           return res
             .status(auth.status)
             .json({ success: false, error: auth.error });

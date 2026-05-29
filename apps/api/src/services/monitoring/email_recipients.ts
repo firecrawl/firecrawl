@@ -6,12 +6,9 @@ const logger = _logger.child({ module: "monitor-email-recipients" });
 
 const POSTGRES_UNIQUE_VIOLATION = "23505";
 
-export type MonitorEmailRecipientStatus =
-  | "pending"
-  | "confirmed"
-  | "unsubscribed";
+type MonitorEmailRecipientStatus = "pending" | "confirmed" | "unsubscribed";
 
-export type MonitorEmailRecipientSource = "team" | "opt_in" | "legacy";
+type MonitorEmailRecipientSource = "team" | "opt_in" | "legacy";
 
 export type MonitorEmailRecipientRow = {
   id: string;
@@ -34,7 +31,7 @@ export function normalizeRecipientEmail(email: string): string {
 }
 
 // 32 bytes → 43 chars base64url, no padding. 256 bits of entropy.
-export function generateRecipientToken(): string {
+function generateRecipientToken(): string {
   return randomBytes(32).toString("base64url");
 }
 
@@ -56,7 +53,7 @@ export async function listMonitorEmailRecipients(
   return (data ?? []) as MonitorEmailRecipientRow[];
 }
 
-export async function getRecipientByToken(
+async function getRecipientByToken(
   token: string,
 ): Promise<MonitorEmailRecipientRow | null> {
   const trimmed = token.trim();
@@ -123,13 +120,13 @@ export async function getTeamMemberEmails(
   return matches;
 }
 
-export type RecipientUpsertInput = {
+type RecipientUpsertInput = {
   email: string;
   source: MonitorEmailRecipientSource;
   status: MonitorEmailRecipientStatus;
 };
 
-export type RecipientUpsertResult = {
+type RecipientUpsertResult = {
   row: MonitorEmailRecipientRow;
   created: boolean;
 };
@@ -232,9 +229,7 @@ export async function ensureMonitorEmailRecipient(params: {
   return { row: data as MonitorEmailRecipientRow, created: true };
 }
 
-export async function markRecipientConfirmationSent(
-  id: string,
-): Promise<void> {
+export async function markRecipientConfirmationSent(id: string): Promise<void> {
   const now = new Date().toISOString();
   const { error } = await supabase_service
     .from("monitor_email_recipients")
@@ -298,9 +293,7 @@ export async function unsubscribeRecipientByToken(
   return await fetchRecipientByIdPrimary(row.id);
 }
 
-export async function touchRecipientsNotified(
-  ids: string[],
-): Promise<void> {
+export async function touchRecipientsNotified(ids: string[]): Promise<void> {
   if (ids.length === 0) return;
   const now = new Date().toISOString();
   const { error } = await supabase_service

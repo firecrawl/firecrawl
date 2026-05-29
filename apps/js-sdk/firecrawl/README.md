@@ -7,7 +7,7 @@ The Firecrawl Node SDK is a library that lets you easily search, scrape, and int
 To install the Firecrawl Node SDK, you can use npm:
 
 ```bash
-npm install @mendable/firecrawl-js
+npm install firecrawl
 ```
 
 ## Usage
@@ -18,7 +18,7 @@ npm install @mendable/firecrawl-js
 Here's an example of how to use the SDK with error handling:
 
 ```js
-import Firecrawl from '@mendable/firecrawl-js';
+import { Firecrawl } from 'firecrawl';
 
 const app = new Firecrawl({ apiKey: 'fc-YOUR_API_KEY' });
 
@@ -114,7 +114,7 @@ const status = await app.getCrawlStatus(id);
 Use `extract` with a prompt and schema. Zod schemas are supported directly.
 
 ```js
-import Firecrawl from '@mendable/firecrawl-js';
+import { Firecrawl } from 'firecrawl';
 import { z } from 'zod';
 
 const app = new Firecrawl({ apiKey: 'fc-YOUR_API_KEY' });
@@ -236,7 +236,7 @@ await watch.start();
 The feature‑frozen v1 is still available under `app.v1` with the original method names.
 
 ```js
-import Firecrawl from '@mendable/firecrawl-js';
+import { Firecrawl } from 'firecrawl';
 
 const app = new Firecrawl({ apiKey: 'fc-YOUR_API_KEY' });
 

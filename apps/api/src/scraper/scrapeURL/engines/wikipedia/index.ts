@@ -221,6 +221,11 @@ interface WikimediaArticle {
   date_modified: string;
   categories?: { name: string; url: string }[];
   has_parts?: { name: string }[];
+  image?: {
+    content_url: string;
+    width?: number;
+    height?: number;
+  };
 }
 
 export async function scrapeURLWithWikipedia(
@@ -328,6 +333,7 @@ export async function scrapeURLWithWikipedia(
   <meta property="og:title" content="${escapeHtml(article.name)}">
   <meta property="og:description" content="${escapeHtml(article.abstract ?? "")}">
   <meta property="og:url" content="${escapeHtml(article.url ?? urlToScrape)}">
+  ${article.image?.content_url ? `<meta property="og:image" content="${escapeHtml(article.image.content_url)}">` : ""}
   <meta name="article:modified_time" content="${article.date_modified ?? ""}">
   <meta name="language" content="${article.in_language?.name ?? lang}">
 </head>

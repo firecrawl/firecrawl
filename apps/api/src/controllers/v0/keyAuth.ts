@@ -5,12 +5,14 @@ import { authenticateUser } from "../auth";
 import { redisEvictConnection } from "../../../src/services/redis";
 import { logger } from "../../lib/logger";
 import { getScrapeZDR } from "../../lib/zdr-helpers";
+import { applyAgentAuthDiscoveryHeader } from "../../lib/agent-auth-discovery";
 
 export const keyAuthController = async (req: Request, res: Response) => {
   try {
     // make sure to authenticate user first, Bearer <token>
     const auth = await authenticateUser(req, res);
     if (!auth.success) {
+      if (auth.status === 401) applyAgentAuthDiscoveryHeader(res);
       return res.status(auth.status).json({ error: auth.error });
     }
 

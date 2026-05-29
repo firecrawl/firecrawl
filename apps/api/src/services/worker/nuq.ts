@@ -60,6 +60,42 @@ function normalizeOwnerId(ownerId: string | undefined | null): string | null {
   return uuidv5(ownerId, normalizedUUIDNamespace);
 }
 
+function isExpectedAmqpCloseError(error: unknown): boolean {
+  const message =
+    error instanceof Error
+      ? error.message
+      : error && typeof error === "object" && "message" in error
+        ? String(error.message)
+        : typeof error === "string"
+          ? error
+          : "";
+
+  return (
+    message === "Connection closing" ||
+    message === "Connection closed" ||
+    message === "Channel closing" ||
+    message === "Channel closed"
+  );
+}
+
+async function closeAmqpResource(
+  close: () => Promise<unknown>,
+  resource: string,
+) {
+  try {
+    await close();
+  } catch (error) {
+    if (isExpectedAmqpCloseError(error)) {
+      logger.info(`NuQ ${resource} already closing during shutdown`, {
+        module: "nuq/rabbitmq",
+      });
+      return;
+    }
+
+    throw error;
+  }
+}
+
 // === Queue
 
 class NuQ<JobData = any, JobReturnValue = any> {
@@ -318,7 +354,9 @@ class NuQ<JobData = any, JobReturnValue = any> {
 
         channel.on("close", () => {
           logger.info("NuQ sender channel closed", { module: "nuq/rabbitmq" });
-          connection.close().catch(() => {});
+          if (!this.shuttingDown) {
+            connection.close().catch(() => {});
+          }
           this.sender = null;
         });
 
@@ -1482,16 +1520,22 @@ class NuQ<JobData = any, JobReturnValue = any> {
         await nl.client.query(`UNLISTEN "${this.queueName}";`);
         await nl.client.end();
       } else {
-        await nl.channel.cancel(nl.queue);
-        await nl.channel.close();
-        await nl.connection.close();
+        await closeAmqpResource(
+          () => nl.channel.cancel(nl.queue),
+          "listener channel consumer",
+        );
+        await closeAmqpResource(() => nl.channel.close(), "listener channel");
+        await closeAmqpResource(
+          () => nl.connection.close(),
+          "listener connection",
+        );
       }
     }
     if (this.sender) {
       const ns = this.sender;
       this.sender = null;
-      await ns.channel.close();
-      await ns.connection.close();
+      await closeAmqpResource(() => ns.channel.close(), "sender channel");
+      await closeAmqpResource(() => ns.connection.close(), "sender connection");
     }
   }
 }

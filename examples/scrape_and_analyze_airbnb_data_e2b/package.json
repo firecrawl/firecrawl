@@ -19,7 +19,7 @@
   "dependencies": {
     "@anthropic-ai/sdk": "^0.20.7",
     "@e2b/code-interpreter": "^0.0.2",
-    "@mendable/firecrawl-js": "^4.3.5",
+    "firecrawl": "^4.3.5",
     "buffer": "^6.0.3",
     "dotenv": "^16.4.5"
   }

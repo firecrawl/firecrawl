@@ -20,6 +20,7 @@ import { saveExtractResult } from "../../lib/extract/extract-redis";
 configDotenv();
 
 const previewTeamId = "3adefd26-77ec-5968-8dcf-c94b5630d1de";
+const nullByteRegex = /\u0000/g;
 
 /**
  * Sanitize string fields by removing null bytes (\u0000)
@@ -29,7 +30,7 @@ const previewTeamId = "3adefd26-77ec-5968-8dcf-c94b5630d1de";
 function sanitizeString(value: string | null | undefined): string | null {
   if (value === null || value === undefined) return null;
 
-  return value.replace(/\u0000/g, "");
+  return value.replace(nullByteRegex, "");
 }
 
 async function robustInsert(
@@ -435,6 +436,11 @@ export async function logSearch(search: LoggedSearch, force: boolean = false) {
     zeroDataRetention: search.zeroDataRetention,
   });
 
+  const options =
+    search.zeroDataRetention || typeof search.options?.query !== "string"
+      ? search.options
+      : { ...search.options, query: sanitizeString(search.options.query) };
+
   await robustInsert(
     "searches",
     {
@@ -442,14 +448,14 @@ export async function logSearch(search: LoggedSearch, force: boolean = false) {
       request_id: search.request_id,
       query: search.zeroDataRetention
         ? "<redacted due to zero data retention>"
-        : search.query,
+        : sanitizeString(search.query),
       team_id:
         search.team_id === "preview" || search.team_id?.startsWith("preview_")
           ? previewTeamId
           : search.team_id,
       options: search.zeroDataRetention
         ? { enterprise: search.options?.enterprise }
-        : search.options,
+        : options,
       credits_cost: search.credits_cost,
       is_successful: search.is_successful,
       error: search.zeroDataRetention ? null : (search.error ?? null),

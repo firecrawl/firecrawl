@@ -25,6 +25,7 @@ import { ScrapeJobTimeoutError } from "../../lib/error";
 import { scrapeQueue } from "../../services/worker/nuq";
 import { defaultOrigin } from "../../lib/default-values";
 import { getSearchZDR } from "../../lib/zdr-helpers";
+import { applyAgentAuthDiscoveryHeader } from "../../lib/agent-auth-discovery";
 
 async function searchHelper(
   jobId: string,
@@ -180,6 +181,7 @@ export async function searchController(req: Request, res: Response) {
     // make sure to authenticate user first, Bearer <token>
     const auth = await authenticateUser(req, res, RateLimiterMode.Search);
     if (!auth.success) {
+      if (auth.status === 401) applyAgentAuthDiscoveryHeader(res);
       return res.status(auth.status).json({ error: auth.error });
     }
     const { team_id, chunk } = auth;

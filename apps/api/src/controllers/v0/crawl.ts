@@ -36,11 +36,13 @@ import { isSelfHosted } from "../../lib/deployment";
 import { crawlGroup } from "../../services/worker/nuq";
 import { logRequest } from "../../services/logging/log_job";
 import { getScrapeZDR } from "../../lib/zdr-helpers";
+import { applyAgentAuthDiscoveryHeader } from "../../lib/agent-auth-discovery";
 
 export async function crawlController(req: Request, res: Response) {
   try {
     const auth = await authenticateUser(req, res, RateLimiterMode.Crawl);
     if (!auth.success) {
+      if (auth.status === 401) applyAgentAuthDiscoveryHeader(res);
       return res.status(auth.status).json({ error: auth.error });
     }
 

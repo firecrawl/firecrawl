@@ -16,6 +16,7 @@ import {
 } from "./checkStatus";
 import {
   ActionError,
+  AddFeatureError,
   EngineError,
   DNSResolutionError,
   SiteError,
@@ -137,7 +138,8 @@ async function performFireEngineScrape<
             error instanceof ActionError ||
             error instanceof UnsupportedFileError ||
             error instanceof FEPageLoadFailed ||
-            error instanceof ProxySelectionError
+            error instanceof ProxySelectionError ||
+            error instanceof AddFeatureError
           ) {
             fireEngineDelete(
               logger.child({

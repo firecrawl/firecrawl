@@ -89,6 +89,16 @@ describe("sentry filtering", () => {
     ).toBe(true);
   });
 
+  it("recognizes actions-not-supported Sentry exception values", () => {
+    expect(
+      shouldIgnoreSentryException({
+        type: "Error",
+        value:
+          'SCRAPE_ACTIONS_NOT_SUPPORTED|{"message":"Actions are not supported by any available engines. Actions require Fire Engine (fire-engine) to be enabled."}',
+      }),
+    ).toBe(true);
+  });
+
   it("recognizes cancellation errors in Sentry exception values", () => {
     expect(
       shouldIgnoreSentryException({

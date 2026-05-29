@@ -11,7 +11,7 @@ import type { MonitorRow } from "./types";
 
 const logger = _logger.child({ module: "monitor-email-recipients-sync" });
 
-export type SyncedRecipient = {
+type SyncedRecipient = {
   email: string;
   status: MonitorEmailRecipientRow["status"];
   source: MonitorEmailRecipientRow["source"];
@@ -19,7 +19,7 @@ export type SyncedRecipient = {
   created: boolean;
 };
 
-export type SyncResult = {
+type SyncResult = {
   recipients: SyncedRecipient[];
 };
 
@@ -32,9 +32,7 @@ export async function syncMonitorEmailRecipients(params: {
   const configured = params.monitor.notification?.email?.recipients ?? [];
   const normalized = Array.from(
     new Set(
-      configured
-        .map(normalizeRecipientEmail)
-        .filter(email => email.length > 0),
+      configured.map(normalizeRecipientEmail).filter(email => email.length > 0),
     ),
   );
 
