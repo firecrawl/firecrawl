@@ -47,7 +47,11 @@ import { logger } from "../../lib/logger";
     await Promise.all([
       (async () => {
         while (true) {
-          await crawlFinishedQueue.prefetchJobs();
+          try {
+            await crawlFinishedQueue.prefetchJobs();
+          } catch (error) {
+            logger.warn("crawlFinishedQueue prefetch error, retrying", { error });
+          }
           await new Promise(resolve => setTimeout(resolve, 250));
         }
       })(),
@@ -56,13 +60,17 @@ import { logger } from "../../lib/logger";
           if (config.NUQ_PREFETCH_WORKER_HEARTBEAT_URL) {
             fetch(config.NUQ_PREFETCH_WORKER_HEARTBEAT_URL).catch(() => {});
           }
-          await scrapeQueue.prefetchJobs();
+          try {
+            await scrapeQueue.prefetchJobs();
+          } catch (error) {
+            logger.warn("scrapeQueue prefetch error, retrying", { error });
+          }
           await new Promise(resolve => setTimeout(resolve, 250));
         }
       })(),
     ]);
   } catch (error) {
-    logger.error("Error in prefetch worker", { error });
+    logger.error("Fatal error in prefetch worker", { error });
     process.exit(1);
   }
 
