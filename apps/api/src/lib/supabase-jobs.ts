@@ -13,21 +13,26 @@ import * as Sentry from "@sentry/node";
  * @returns Scrape data or null
  */
 export const supabaseGetScrapeById = async (scrapeId: string) => {
-  const { data, error } = await supabase_rr_service
+  const { data } = await supabase_rr_service
     .from("scrapes")
     .select("*")
     .eq("id", scrapeId)
     .single();
 
-  if (error) {
-    return null;
+  if (data) {
+    return data;
   }
 
-  if (!data) {
-    return null;
-  }
+  // Fallback to primary DB if read replica hasn't replicated yet.
+  // This handles the race condition where /scrape returns before the
+  // fire-and-forget logScrape insert is visible on the read replica.
+  const { data: primaryData } = await supabase_service
+    .from("scrapes")
+    .select("*")
+    .eq("id", scrapeId)
+    .single();
 
-  return data;
+  return primaryData ?? null;
 };
 
 /**
