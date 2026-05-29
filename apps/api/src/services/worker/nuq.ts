@@ -6,6 +6,7 @@ import { withSpan, setSpanAttributes } from "../../lib/otel-tracer";
 import amqp from "amqplib";
 import { v5 as uuidv5, validate as isUUID } from "uuid";
 import { config } from "../../config";
+import { nuqRedis } from "./redis";
 
 // === Basics
 
@@ -1734,6 +1735,10 @@ export const crawlGroup = new NuQJobGroup("nuq.group_crawl");
 // === Cleanup
 
 export async function nuqShutdown() {
-  await scrapeQueue.shutdown();
+  await Promise.all([
+    scrapeQueue.shutdown(),
+    crawlFinishedQueue.shutdown(),
+    nuqRedis.shutdown(),
+  ]);
   await nuqPool.end();
 }
