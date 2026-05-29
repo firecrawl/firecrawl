@@ -741,7 +741,13 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
             : new Error(JSON.stringify(error)),
     };
 
-    if (job.data.crawl_id) {
+    // Cancellation is a parent-job operation, not a per-URL failure. Emitting
+    // a CRAWL_PAGE/BATCH_SCRAPE_PAGE webhook for every queued URL after a
+    // crawl is cancelled floods consumers with spurious failure events that
+    // are indistinguishable from real per-URL errors. Skip the per-URL
+    // webhook on cancellation; the terminal CRAWL_COMPLETED event still fires
+    // from finishCrawlSuper.
+    if (job.data.crawl_id && !isCancelled) {
       const sender = await createWebhookSender({
         teamId: job.data.team_id,
         jobId: (job.data.crawl_id ?? job.id) as string,
