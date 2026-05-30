@@ -423,6 +423,17 @@ const queryFormatWithOptions = z.strictObject({
 
 type QueryFormatWithOptions = z.output<typeof queryFormatWithOptions>;
 
+const knowledgeGraphFormatWithOptions = z.strictObject({
+  type: z.literal("knowledgeGraph"),
+  // Optional allow-list constraining which entity types to extract
+  // (e.g. ["Person", "Organization"]). When omitted, types are inferred.
+  entityTypes: z.string().array().max(50).optional(),
+});
+
+type KnowledgeGraphFormatWithOptions = z.output<
+  typeof knowledgeGraphFormatWithOptions
+>;
+
 export type FormatObject =
   | { type: "markdown" }
   | { type: "html" }
@@ -437,6 +448,7 @@ export type FormatObject =
   | QuestionFormatWithOptions
   | HighlightsFormatWithOptions
   | QueryFormatWithOptions
+  | KnowledgeGraphFormatWithOptions
   | { type: "branding" }
   | { type: "audio" }
   | { type: "video" }
@@ -612,6 +624,7 @@ const baseScrapeOptions = z.strictObject({
           questionFormatWithOptions,
           highlightsFormatWithOptions,
           queryFormatWithOptions,
+          knowledgeGraphFormatWithOptions,
           z.strictObject({ type: z.literal("audio") }),
           z.strictObject({ type: z.literal("video") }),
           z.strictObject({ type: z.literal("pii") }),
@@ -1228,6 +1241,20 @@ export type Document = {
   summary?: string;
   answer?: string;
   highlights?: string;
+  knowledgeGraph?: {
+    nodes: {
+      id: string;
+      label: string;
+      type: string;
+      properties?: { key: string; value: string }[];
+    }[];
+    edges: {
+      source: string;
+      target: string;
+      relation: string;
+      properties?: { key: string; value: string }[];
+    }[];
+  };
   branding?: BrandingProfile;
   warning?: string;
   pii?: PIIBlock;
