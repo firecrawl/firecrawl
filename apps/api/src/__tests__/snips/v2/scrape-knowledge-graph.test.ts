@@ -168,6 +168,18 @@ describe("Knowledge graph format", () => {
         }
       }
       expect(graphs).toBeGreaterThan(0);
+
+      // A merged, deduped top-level graph is present and well-formed.
+      const merged = (res as any).knowledgeGraph;
+      expect(merged).toBeDefined();
+      expect(merged.nodes.length).toBeGreaterThan(0);
+      const mergedIds = merged.nodes.map((n: any) => n.id);
+      expect(new Set(mergedIds).size).toBe(mergedIds.length); // unique ids
+      const mergedIdSet = new Set(mergedIds);
+      for (const edge of merged.edges) {
+        expect(mergedIdSet.has(edge.source)).toBe(true);
+        expect(mergedIdSet.has(edge.target)).toBe(true);
+      }
     },
     60000 + scrapeTimeout,
   );

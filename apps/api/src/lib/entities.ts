@@ -1,5 +1,6 @@
 import type { Action } from "../controllers/v1/types";
 import type { BrandingProfile } from "../types/branding";
+import type { KnowledgeGraph } from "../scraper/scrapeURL/transformers/knowledgeGraphUtils";
 
 export type PageOptions = {
   includeMarkdown?: boolean;
@@ -167,6 +168,10 @@ export interface SearchV2Response {
   web?: WebSearchResult[];
   images?: ImageSearchResult[];
   news?: NewsSearchResult[];
+  // Merged, deduped knowledge graph across all scraped results. Present only
+  // when the knowledgeGraph scrape format was requested and at least one
+  // result produced a graph. Per-result graphs remain on each result too.
+  knowledgeGraph?: KnowledgeGraph;
 }
 
 export interface ScrapeActionContent {
