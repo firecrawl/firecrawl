@@ -1,3 +1,8 @@
+// MOCK EXPLANATION:
+// We mock `postProcessMarkdown` to allow running these tests in local environments 
+// where the native `@mendable/firecrawl-rs` module might fail to compile or load.
+// The mock simply normalizes Turndown's default list bullet spacing (`-   ` to `- `) 
+// to match the expected outputs from the primary parser.
 jest.mock(
   "@mendable/firecrawl-rs",
   () => ({
@@ -75,6 +80,12 @@ describe("parseMarkdown", () => {
     const html =
       "<div><blockquote>العلم نور</blockquote><ul><li>العنصر الأول</li><li>العنصر الثاني</li></ul></div>";
     const expectedMarkdown = "> العلم نور\n\n- العنصر الأول\n- العنصر الثاني";
+    await expect(parseMarkdown(html)).resolves.toBe(expectedMarkdown);
+  });
+
+  it("should format correctly when an inline link is the final element of a block", async () => {
+    const html = '<p>This is a paragraph ending with a <a href="https://example.com">link</a></p>';
+    const expectedMarkdown = "This is a paragraph ending with a [link](https://example.com)";
     await expect(parseMarkdown(html)).resolves.toBe(expectedMarkdown);
   });
 });
