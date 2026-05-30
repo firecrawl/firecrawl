@@ -17,7 +17,7 @@ def _parse_batch_scrape_documents(data_list: Optional[List[Any]]) -> List[Docume
 
 
 def _parse_batch_scrape_status_response(body: Dict[str, Any]) -> Dict[str, Any]:
-    if not body.get("success"):
+    if not body.get("success") and response.status_code >= 400:
         raise Exception(body.get("error", "Unknown error occurred"))
 
     return {
@@ -63,7 +63,7 @@ async def start_batch_scrape(client: AsyncHttpClient, urls: List[str], **kwargs)
     if response.status_code >= 400:
         handle_response_error(response, "start batch scrape")
     body = response.json()
-    if not body.get("success"):
+    if not body.get("success") and response.status_code >= 400:
         raise Exception(body.get("error", "Unknown error occurred"))
     return BatchScrapeResponse(id=body.get("id"), url=body.get("url"), invalid_urls=body.get("invalidURLs"))
 
@@ -235,6 +235,6 @@ async def get_batch_scrape_errors(client: AsyncHttpClient, job_id: str) -> Dict[
     if response.status_code >= 400:
         handle_response_error(response, "get batch scrape errors")
     body = response.json()
-    if not body.get("success"):
+    if not body.get("success") and response.status_code >= 400:
         raise Exception(body.get("error", "Unknown error occurred"))
     return body
