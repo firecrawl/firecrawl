@@ -1,8 +1,9 @@
-import { concurrentIf, HAS_AI, TEST_PRODUCTION } from "../lib";
+import { concurrentIf, HAS_AI, HAS_SEARCH, TEST_PRODUCTION } from "../lib";
 import {
   scrape,
   scrapeWithFailure,
   scrapeTimeout,
+  search,
   idmux,
   Identity,
 } from "./lib";
@@ -110,5 +111,64 @@ describe("Knowledge graph format", () => {
       expect(response.error).toBeDefined();
     },
     scrapeTimeout,
+  );
+
+  concurrentIf(TEST_PRODUCTION || HAS_AI)(
+    "returns a well-formed graph (no dangling edges) for a content-thin page",
+    async () => {
+      const response = await scrape(
+        {
+          url: "https://example.com",
+          formats: [{ type: "knowledgeGraph" }],
+        },
+        identity,
+      );
+
+      expect(response.knowledgeGraph).toBeDefined();
+      expect(Array.isArray(response.knowledgeGraph!.nodes)).toBe(true);
+      expect(Array.isArray(response.knowledgeGraph!.edges)).toBe(true);
+
+      // Pruning invariant must hold even on sparse content: every edge endpoint
+      // resolves to an emitted node.
+      const nodeIds = new Set(response.knowledgeGraph!.nodes.map(n => n.id));
+      for (const edge of response.knowledgeGraph!.edges) {
+        expect(nodeIds.has(edge.source)).toBe(true);
+        expect(nodeIds.has(edge.target)).toBe(true);
+      }
+    },
+    scrapeTimeout,
+  );
+
+  concurrentIf((TEST_PRODUCTION || HAS_SEARCH) && HAS_AI)(
+    "attaches a knowledgeGraph to scraped search results",
+    async () => {
+      const res = await search(
+        {
+          query: "Ada Lovelace",
+          limit: 2,
+          scrapeOptions: { formats: [{ type: "knowledgeGraph" }] },
+        },
+        identity,
+      );
+
+      expect(res.web).toBeDefined();
+      expect(res.web!.length).toBeGreaterThan(0);
+
+      // At least one result should carry a graph, and any graph present must be
+      // well-formed with no dangling edges.
+      let graphs = 0;
+      for (const result of res.web!) {
+        const kg = (result as any).knowledgeGraph;
+        if (!kg) continue;
+        graphs++;
+        const nodeIds = new Set(kg.nodes.map((n: any) => n.id));
+        for (const edge of kg.edges) {
+          expect(nodeIds.has(edge.source)).toBe(true);
+          expect(nodeIds.has(edge.target)).toBe(true);
+        }
+      }
+      expect(graphs).toBeGreaterThan(0);
+    },
+    60000 + scrapeTimeout,
   );
 });

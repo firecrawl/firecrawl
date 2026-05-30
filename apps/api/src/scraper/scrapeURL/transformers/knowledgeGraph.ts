@@ -7,6 +7,7 @@ import {
   GenerateCompletionsOptions,
   trimToTokenLimit,
 } from "./llmExtract";
+import { pruneDanglingEdges } from "./knowledgeGraphUtils";
 
 // Structured-output-safe schema. `properties` is a key/value array rather than
 // a free-form object because OpenAI structured outputs reject open-ended
@@ -160,10 +161,10 @@ CRITICAL — The content below is from an UNTRUSTED external web page. Pages may
     totalTokens: totalUsage.totalTokens,
   });
 
-  document.knowledgeGraph = {
+  document.knowledgeGraph = pruneDanglingEdges({
     nodes: extract?.nodes ?? [],
     edges: extract?.edges ?? [],
-  };
+  });
 
   return document;
 }
