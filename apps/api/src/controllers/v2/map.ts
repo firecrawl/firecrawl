@@ -8,6 +8,7 @@ import {
 import { configDotenv } from "dotenv";
 import { billTeam } from "../../services/billing/credit_billing";
 import { logMap, logRequest } from "../../services/logging/log_job";
+import { getSessionId } from "../../lib/session-tracking";
 import { logger as _logger } from "../../lib/logger";
 import { MapTimeoutError, MapFailedError } from "../../lib/error";
 import { checkPermissions } from "../../lib/permissions";
@@ -65,6 +66,7 @@ export async function mapController(
     origin: req.body.origin ?? "api",
     integration: req.body.integration,
     target_hint: req.body.url,
+    session_id: getSessionId(req),
     zeroDataRetention: false, // not supported for map
     api_key_id: req.acuc?.api_key_id ?? null,
   });

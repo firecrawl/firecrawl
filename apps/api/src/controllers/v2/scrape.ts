@@ -20,6 +20,7 @@ import { ScrapeJobData } from "../../types";
 import { teamConcurrencySemaphore } from "../../services/worker/team-semaphore";
 import { getJobPriority } from "../../lib/job-priority";
 import { logRequest } from "../../services/logging/log_job";
+import { getSessionId } from "../../lib/session-tracking";
 import { getErrorContactMessage } from "../../lib/deployment";
 import { captureExceptionWithZdrCheck } from "../../services/sentry";
 import type { BillingMetadata } from "../../services/billing/types";
@@ -141,6 +142,7 @@ export async function scrapeController(
           origin: req.body.origin ?? "api",
           integration: req.body.integration,
           target_hint: req.body.url,
+          session_id: getSessionId(req),
           zeroDataRetention: zeroDataRetention || false,
           api_key_id: req.acuc?.api_key_id ?? null,
         }).catch(err =>

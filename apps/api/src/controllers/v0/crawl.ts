@@ -35,6 +35,7 @@ import { fromV0ScrapeOptions } from "../v2/types";
 import { isSelfHosted } from "../../lib/deployment";
 import { crawlGroup } from "../../services/worker/nuq";
 import { logRequest } from "../../services/logging/log_job";
+import { getSessionId } from "../../lib/session-tracking";
 import { getScrapeZDR } from "../../lib/zdr-helpers";
 import { applyAgentAuthDiscoveryHeader } from "../../lib/agent-auth-discovery";
 
@@ -65,6 +66,7 @@ export async function crawlController(req: Request, res: Response) {
       origin: req.body.origin ?? "api",
       integration: req.body.integration,
       target_hint: req.body.url ?? "",
+      session_id: getSessionId(req),
       zeroDataRetention: false, // not supported on v0
       api_key_id: chunk?.api_key_id ?? null,
     });

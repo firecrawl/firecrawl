@@ -28,6 +28,7 @@ import { fromV1ScrapeOptions } from "../v2/types";
 import { checkPermissions } from "../../lib/permissions";
 import { crawlGroup } from "../../services/worker/nuq";
 import { logRequest } from "../../services/logging/log_job";
+import { getSessionId } from "../../lib/session-tracking";
 import { getScrapeZDR } from "../../lib/zdr-helpers";
 
 export async function batchScrapeController(
@@ -130,6 +131,7 @@ export async function batchScrapeController(
       origin: req.body.origin ?? "api",
       integration: req.body.integration,
       target_hint: urls[0] ?? "",
+      session_id: getSessionId(req),
       zeroDataRetention: zeroDataRetention || false,
       api_key_id: req.acuc?.api_key_id ?? null,
     });

@@ -10,6 +10,7 @@ import { getGenerateLlmsTxtQueue } from "../../services/queue-service";
 import * as Sentry from "@sentry/node";
 import { saveGeneratedLlmsTxt } from "../../lib/generate-llmstxt/generate-llmstxt-redis";
 import { logRequest } from "../../services/logging/log_job";
+import { getSessionId } from "../../lib/session-tracking";
 import { getScrapeZDR } from "../../lib/zdr-helpers";
 
 type GenerateLLMsTextResponse =
@@ -48,6 +49,7 @@ export async function generateLLMsTextController(
     team_id: req.auth.team_id,
     origin: "api", // no origin field for llmstxt
     target_hint: req.body.url,
+    session_id: getSessionId(req),
     zeroDataRetention: false, // not supported for llmstxt
     api_key_id: req.acuc?.api_key_id ?? null,
   });

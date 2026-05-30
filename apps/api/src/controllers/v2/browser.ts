@@ -26,6 +26,7 @@ import { RequestWithAuth } from "./types";
 import { billTeam } from "../../services/billing/credit_billing";
 import { enqueueBrowserSessionActivity } from "../../lib/browser-session-activity";
 import { logRequest } from "../../services/logging/log_job";
+import { getSessionId } from "../../lib/session-tracking";
 import { integrationSchema } from "../../utils/integration";
 import {
   BROWSER_CREDITS_PER_HOUR,
@@ -334,6 +335,7 @@ export async function browserCreateController(
       api_version: "v2",
       team_id: req.auth.team_id,
       target_hint: "Browser session",
+      session_id: getSessionId(req),
       origin: "api",
       integration: integration ?? null,
       zeroDataRetention: false,

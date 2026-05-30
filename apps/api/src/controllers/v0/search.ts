@@ -6,6 +6,7 @@ import {
 import { authenticateUser } from "../auth";
 import { RateLimiterMode, ScrapeJobSingleUrls } from "../../types";
 import { logSearch, logRequest } from "../../services/logging/log_job";
+import { getSessionId } from "../../lib/session-tracking";
 import { PageOptions, SearchOptions } from "../../lib/entities";
 import { search } from "../../search";
 import { isUrlBlocked } from "../../scraper/WebScraper/utils/blocklist";
@@ -203,6 +204,7 @@ export async function searchController(req: Request, res: Response) {
       origin: req.body.origin ?? "api",
       integration: req.body.integration,
       target_hint: req.body.query ?? "",
+      session_id: getSessionId(req),
       zeroDataRetention: false, // not supported on v0
       api_key_id: chunk?.api_key_id ?? null,
     });

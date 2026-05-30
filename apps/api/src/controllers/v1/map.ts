@@ -20,6 +20,7 @@ import {
 import { fireEngineMap } from "../../search/fireEngine";
 import { billTeam } from "../../services/billing/credit_billing";
 import { logMap, logRequest } from "../../services/logging/log_job";
+import { getSessionId } from "../../lib/session-tracking";
 import { performCosineSimilarity } from "../../lib/map-cosine";
 import { logger } from "../../lib/logger";
 import Redis from "ioredis";
@@ -406,6 +407,7 @@ export async function mapController(
     origin: req.body.origin ?? "api",
     integration: req.body.integration,
     target_hint: req.body.url,
+    session_id: getSessionId(req),
     zeroDataRetention: false, // not supported for map
     api_key_id: req.acuc?.api_key_id ?? null,
   });

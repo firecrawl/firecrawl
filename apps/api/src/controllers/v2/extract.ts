@@ -12,6 +12,7 @@ import { UNSUPPORTED_SITE_MESSAGE } from "../../lib/strings";
 import { isUrlBlocked } from "../../scraper/WebScraper/utils/blocklist";
 import { logger as _logger } from "../../lib/logger";
 import { logRequest } from "../../services/logging/log_job";
+import { getSessionId } from "../../lib/session-tracking";
 import { config } from "../../config";
 import { getScrapeZDR } from "../../lib/zdr-helpers";
 
@@ -82,6 +83,7 @@ export async function extractController(
     origin: req.body.origin ?? "api",
     integration: req.body.integration,
     target_hint: req.body.urls?.[0] ?? "",
+    session_id: getSessionId(req),
     zeroDataRetention: false, // not supported for extract
     api_key_id: req.acuc?.api_key_id ?? null,
   });

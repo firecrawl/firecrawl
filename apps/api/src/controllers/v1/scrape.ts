@@ -20,6 +20,7 @@ import { processJobInternal } from "../../services/worker/scrape-worker";
 import { ScrapeJobData } from "../../types";
 import { AbortManagerThrownError } from "../../scraper/scrapeURL/lib/abortManager";
 import { logRequest } from "../../services/logging/log_job";
+import { getSessionId } from "../../lib/session-tracking";
 import { getErrorContactMessage } from "../../lib/deployment";
 import { captureExceptionWithZdrCheck } from "../../services/sentry";
 import { getScrapeZDR } from "../../lib/zdr-helpers";
@@ -76,6 +77,7 @@ export async function scrapeController(
     origin: req.body.origin,
     integration: req.body.integration,
     target_hint: req.body.url,
+    session_id: getSessionId(req),
     zeroDataRetention: zeroDataRetention || false,
     api_key_id: req.acuc?.api_key_id ?? null,
   }).catch(err =>

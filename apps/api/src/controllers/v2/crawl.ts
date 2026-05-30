@@ -22,6 +22,7 @@ import { checkPermissions } from "../../lib/permissions";
 import { buildPromptWithWebsiteStructure } from "../../lib/map-utils";
 import { crawlGroup } from "../../services/worker/nuq";
 import { logRequest } from "../../services/logging/log_job";
+import { getSessionId } from "../../lib/session-tracking";
 import { getScrapeZDR } from "../../lib/zdr-helpers";
 
 export async function crawlController(
@@ -68,6 +69,7 @@ export async function crawlController(
     origin: req.body.origin ?? "api",
     integration: req.body.integration,
     target_hint: req.body.url,
+    session_id: getSessionId(req),
     zeroDataRetention: zeroDataRetention || false,
     api_key_id: req.acuc?.api_key_id ?? null,
   });

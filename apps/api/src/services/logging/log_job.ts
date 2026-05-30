@@ -166,6 +166,7 @@ type LoggedRequest = {
   target_hint: string;
   zeroDataRetention: boolean;
   api_key_id?: number | null;
+  session_id?: string | null;
 };
 
 export async function logRequest(request: LoggedRequest) {
@@ -201,6 +202,7 @@ export async function logRequest(request: LoggedRequest) {
         ? new Date(Date.now() + 24 * 60 * 60 * 1000)
         : null,
       api_key_id: request.api_key_id ?? null,
+      session_id: request.session_id ?? null,
     },
     true,
     logger,

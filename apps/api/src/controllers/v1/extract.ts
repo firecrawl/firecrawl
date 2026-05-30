@@ -20,6 +20,7 @@ import {
 } from "../v2/types";
 import { createWebhookSender, WebhookEvent } from "../../services/webhook";
 import { logRequest } from "../../services/logging/log_job";
+import { getSessionId } from "../../lib/session-tracking";
 import { getScrapeZDR } from "../../lib/zdr-helpers";
 
 import { config } from "../../config";
@@ -153,6 +154,7 @@ export async function extractController(
     origin: req.body.origin ?? "api",
     integration: req.body.integration,
     target_hint: req.body.urls?.[0] ?? "",
+    session_id: getSessionId(req),
     zeroDataRetention: false, // not supported for extract
     api_key_id: req.acuc?.api_key_id ?? null,
   });

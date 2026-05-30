@@ -9,6 +9,7 @@ import {
 import { billTeam } from "../../services/billing/credit_billing";
 import { v7 as uuidv7 } from "uuid";
 import { logSearch, logRequest } from "../../services/logging/log_job";
+import { getSessionId } from "../../lib/session-tracking";
 import { logger as _logger } from "../../lib/logger";
 import { ScrapeJobTimeoutError } from "../../lib/error";
 import { z } from "zod";
@@ -111,6 +112,7 @@ export async function searchController(
         origin: req.body.origin ?? "api",
         integration: req.body.integration,
         target_hint: req.body.query,
+        session_id: getSessionId(req),
         zeroDataRetention: isZDROrAnon ?? false,
         api_key_id: req.acuc?.api_key_id ?? null,
       });

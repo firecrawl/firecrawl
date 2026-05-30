@@ -12,6 +12,7 @@ import {
 import { v7 as uuidv7 } from "uuid";
 import { addScrapeJob, waitForJob } from "../../services/queue-jobs";
 import { logSearch, logRequest } from "../../services/logging/log_job";
+import { getSessionId } from "../../lib/session-tracking";
 import { search } from "../../search";
 import { isUrlBlocked } from "../../scraper/WebScraper/utils/blocklist";
 import { UNSUPPORTED_SITE_MESSAGE } from "../../lib/strings";
@@ -234,6 +235,7 @@ export async function x402SearchController(
       origin: req.body.origin ?? "api",
       integration: req.body.integration,
       target_hint: req.body.query,
+      session_id: getSessionId(req),
       zeroDataRetention: false, // not supported for x402 search
       api_key_id: req.acuc?.api_key_id ?? null,
     });

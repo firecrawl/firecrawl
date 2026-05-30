@@ -6,6 +6,7 @@ import * as Sentry from "@sentry/node";
 import { saveDeepResearch } from "../../lib/deep-research/deep-research-redis";
 import { z } from "zod";
 import { logRequest } from "../../services/logging/log_job";
+import { getSessionId } from "../../lib/session-tracking";
 import { getScrapeZDR } from "../../lib/zdr-helpers";
 
 const deepResearchRequestSchema = z
@@ -101,6 +102,7 @@ export async function deepResearchController(
     team_id: req.auth.team_id,
     origin: "api",
     target_hint: req.body.query ?? "",
+    session_id: getSessionId(req),
     zeroDataRetention: false, // not supported for deep research
     api_key_id: req.acuc?.api_key_id ?? null,
   });
