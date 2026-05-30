@@ -30,7 +30,7 @@ class SupabaseService {
         "Authentication is disabled. Supabase client will not be initialized.",
       );
       this.client = null;
-    } else if (!supabaseUrl || !supabaseServiceToken || !supabaseReplicaUrl) {
+    } else if (!supabaseUrl || !supabaseServiceToken) {
       logger.error(
         "Supabase environment variables aren't configured correctly. Supabase client will not be initialized. Fix ENV configuration or disable DB authentication with USE_DB_AUTHENTICATION env variable",
       );
@@ -43,7 +43,9 @@ class SupabaseService {
         },
       });
 
-      this.rrClient = createClient(supabaseReplicaUrl, supabaseServiceToken);
+      this.rrClient = supabaseReplicaUrl
+        ? createClient(supabaseReplicaUrl, supabaseServiceToken)
+        : this.client;
     }
   }
 
@@ -96,4 +98,3 @@ export const supabase_rr_service: SupabaseClient = new Proxy(serv, {
     return Reflect.get(client, prop, receiver);
   },
 }) as unknown as SupabaseClient;
-
