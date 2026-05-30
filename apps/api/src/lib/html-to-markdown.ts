@@ -123,7 +123,7 @@ export async function parseMarkdown(
   var TurndownService = require("turndown");
   var turndownPluginGfm = require("joplin-turndown-plugin-gfm");
 
-  const turndownService = new TurndownService();
+  const turndownService = new TurndownService({ bulletListMarker: "-" });
   turndownService.addRule("inlineLink", {
     filter: function (node, options) {
       return (
@@ -135,7 +135,7 @@ export async function parseMarkdown(
     replacement: function (content, node) {
       var href = node.getAttribute("href").trim();
       var title = node.title ? ' "' + node.title + '"' : "";
-      return "[" + content.trim() + "](" + href + title + ")\n";
+      return "[" + content.trim() + "](" + href + title + ")";
     },
   });
   var gfm = turndownPluginGfm.gfm;
