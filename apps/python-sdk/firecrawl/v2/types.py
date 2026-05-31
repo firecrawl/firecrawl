@@ -39,6 +39,14 @@ warnings.filterwarnings(
     "ignore",
     message='Field name "json" in "Document" shadows an attribute in parent "BaseModel"',
 )
+warnings.filterwarnings(
+    "ignore",
+    message='Field name "json" in "MonitorPageDiff" shadows an attribute in parent "BaseModel"',
+)
+warnings.filterwarnings(
+    "ignore",
+    message='Field name "json" in "MonitorPageSnapshot" shadows an attribute in parent "BaseModel"',
+)
 
 T = TypeVar("T")
 
