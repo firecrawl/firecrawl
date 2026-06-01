@@ -256,6 +256,50 @@ func TestConverter_ComplexHTML(t *testing.T) {
 	}
 }
 
+func TestConverter_TableWithImplicitHeaderRow(t *testing.T) {
+	converter := NewConverter()
+
+	testHTML := `<table>
+		<tbody>
+			<tr>
+				<td>First Name</td>
+				<td>Last Name (Surname)</td>
+				<td>Zip Code</td>
+				<td>CCN Visa / Master Card / AMEX</td>
+				<td>Expiration Date</td>
+			</tr>
+			<tr>
+				<td>Thomas</td>
+				<td>Robinson</td>
+				<td>6878</td>
+				<td>5019717010103740</td>
+				<td>5/22/2024</td>
+			</tr>
+			<tr>
+				<td>Brian</td>
+				<td>King</td>
+				<td>94920</td>
+				<td>6331101999990010</td>
+				<td>5/23/2024</td>
+			</tr>
+		</tbody>
+	</table>`
+
+	markdown, err := converter.ConvertHTMLToMarkdown(testHTML)
+	if err != nil {
+		t.Fatalf("conversion failed: %v", err)
+	}
+
+	expectedMarkdown := `| First Name | Last Name (Surname) | Zip Code | CCN Visa / Master Card / AMEX | Expiration Date |
+| --- | --- | --- | --- | --- |
+| Thomas | Robinson | 6878 | 5019717010103740 | 5/22/2024 |
+| Brian | King | 94920 | 6331101999990010 | 5/23/2024 |`
+
+	if markdown != expectedMarkdown {
+		t.Fatalf("unexpected markdown:\n%s", markdown)
+	}
+}
+
 // Helper function to check if a string contains a substring
 func contains(s, substr string) bool {
 	return bytes.Contains([]byte(s), []byte(substr))
@@ -340,4 +384,3 @@ func TestConvertHTML_NonZDR_LogsRequestID(t *testing.T) {
 		t.Errorf("expected completion log for non-ZDR conversion, got: %q", logs)
 	}
 }
-
