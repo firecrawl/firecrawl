@@ -1,3 +1,4 @@
+import { sql } from "drizzle-orm";
 import {
   pgTable,
   uuid,
@@ -78,7 +79,7 @@ export const blocklist = pgTable("blocklist", {
 });
 
 export const blocklist_hits = pgTable("blocklist_hits", {
-  id: uuid("id").notNull().defaultRandom(),
+  id: uuid("id").notNull(),
   domain: text("domain").notNull(),
   url: text("url"),
   team_id: uuid("team_id"),
@@ -89,7 +90,7 @@ export const blocklist_hits = pgTable("blocklist_hits", {
 export const browser_session_activities = pgTable(
   "browser_session_activities",
   {
-    id: bigintNum("id").notNull().generatedByDefaultAsIdentity(),
+    id: bigintNum("id").notNull().generatedAlwaysAsIdentity(),
     team_id: text("team_id").notNull(),
     session_id: text("session_id").notNull(),
     language: text("language").notNull(),
@@ -330,7 +331,9 @@ export const notification_preferences = pgTable("notification_preferences", {
   last_referral_notification: ts("last_referral_notification"),
   created_at: ts("created_at").notNull().defaultNow(),
   updated_at: ts("updated_at").notNull().defaultNow(),
-  email_preferences: text("email_preferences").array(),
+  email_preferences: text("email_preferences")
+    .array()
+    .default(["rate_limit_warnings", "system_alerts"]),
   unsubscribed_all: boolean("unsubscribed_all").default(false),
 });
 
@@ -367,7 +370,9 @@ export const prices = pgTable("prices", {
   concurrency: integer("concurrency"),
   plan_priority: jsonb("plan_priority"),
   upfront: boolean("upfront").default(false),
-  slug: text("slug").notNull(),
+  slug: text("slug")
+    .notNull()
+    .default(sql`gen_random_uuid()`),
   should_be_graceful: boolean("should_be_graceful").default(false),
   created_at: ts("created_at").notNull().defaultNow(),
   updated_at: ts("updated_at").notNull().defaultNow(),
@@ -487,7 +492,9 @@ export const teams = pgTable("teams", {
   banned: boolean("banned").default(false),
   idmux_expires_at: ts("idmux_expires_at"),
   updated_at: ts("updated_at").defaultNow(),
-  hmac_secret: text("hmac_secret").notNull(),
+  hmac_secret: text("hmac_secret")
+    .notNull()
+    .default(sql`encode(extensions.gen_random_bytes(32), 'hex'::text)`),
   referrer_integration: varchar("referrer_integration"),
   allocated_concurrent_browsers: integer("allocated_concurrent_browsers"),
   org_id: uuid("org_id").notNull(),

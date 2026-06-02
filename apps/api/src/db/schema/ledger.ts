@@ -15,10 +15,10 @@ const ts = (name: string) =>
 const bigintNum = (name: string) => bigint(name, { mode: "number" });
 
 export const provider_definitions = ledger.table("provider_definitions", {
-  id: bigintNum("id").notNull(),
-  created_at: ts("created_at").notNull(),
-  updated_at: ts("updated_at").notNull(),
-  is_active: boolean("is_active").notNull(),
+  id: bigintNum("id").notNull().generatedAlwaysAsIdentity(),
+  created_at: ts("created_at").notNull().defaultNow(),
+  updated_at: ts("updated_at").notNull().defaultNow(),
+  is_active: boolean("is_active").notNull().default(true),
   provider_id: bigintNum("provider_id").notNull(),
   slug: text("slug").notNull(),
   name: text("name").notNull(),
@@ -29,7 +29,7 @@ export const provider_definitions = ledger.table("provider_definitions", {
 });
 
 export const tracks = ledger.table("tracks", {
-  id: bigintNum("id").notNull().generatedByDefaultAsIdentity(),
+  id: bigintNum("id").notNull().generatedAlwaysAsIdentity(),
   is_active: boolean("is_active").notNull().default(true),
   created_at: ts("created_at").notNull().defaultNow(),
   updated_at: ts("updated_at").notNull().defaultNow(),
