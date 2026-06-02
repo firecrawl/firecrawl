@@ -111,7 +111,7 @@
     "cors": "^2.8.5",
     "culori": "^4.0.2",
     "dotenv": "^16.3.1",
-    "drizzle-orm": "^0.45.2",
+    "drizzle-orm": "1.0.0-rc.3",
     "esbuild": "^0.27.2",
     "escape-html": "^1.0.3",
     "express": "4.22.0",

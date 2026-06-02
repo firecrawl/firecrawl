@@ -1,9 +1,8 @@
 import { sql, SQL } from "drizzle-orm";
 import { NodePgDatabase } from "drizzle-orm/node-postgres";
 import { db, dbIndex } from "./connection";
-import * as schema from "./schema";
 
-type DB = NodePgDatabase<typeof schema>;
+type DB = NodePgDatabase;
 
 async function execRows<T = Record<string, any>>(
   database: DB,

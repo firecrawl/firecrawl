@@ -2,9 +2,8 @@ import { Pool } from "pg";
 import { drizzle, NodePgDatabase } from "drizzle-orm/node-postgres";
 import { config } from "../config";
 import { logger } from "../lib/logger";
-import * as schema from "./schema";
 
-type DB = NodePgDatabase<typeof schema>;
+type DB = NodePgDatabase;
 
 function makeDb(
   connectionString: string | undefined,
@@ -26,7 +25,7 @@ function makeDb(
     }),
   );
 
-  return drizzle(pool, { schema });
+  return drizzle({ client: pool });
 }
 
 const useDbAuthentication = config.USE_DB_AUTHENTICATION;
