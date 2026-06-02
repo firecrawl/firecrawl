@@ -33,6 +33,41 @@ function sanitizeString(value: string | null | undefined): string | null {
   return value.replace(nullByteRegex, "");
 }
 
+type SupabaseErrorLike = {
+  code?: unknown;
+  details?: unknown;
+  message?: unknown;
+};
+
+function getSupabaseErrorCode(error: unknown): string {
+  if (error && typeof error === "object" && "code" in error) {
+    return String((error as SupabaseErrorLike).code ?? "");
+  }
+
+  return "";
+}
+
+function getSupabaseErrorText(error: unknown): string {
+  if (!error || typeof error !== "object") return "";
+
+  const { details, message } = error as SupabaseErrorLike;
+  return `${String(message ?? "")} ${String(details ?? "")}`;
+}
+
+function isDuplicateInsertError(error: unknown): boolean {
+  return (
+    getSupabaseErrorCode(error) === "23505" &&
+    getSupabaseErrorText(error).includes("already exists")
+  );
+}
+
+function isMissingRequestForeignKeyError(error: unknown): boolean {
+  return (
+    getSupabaseErrorCode(error) === "23503" &&
+    getSupabaseErrorText(error).includes('not present in table "requests"')
+  );
+}
+
 async function robustInsert(
   table: string,
   data: any,
@@ -50,11 +85,23 @@ async function robustInsert(
   if (force) {
     let i = 0,
       done = false;
+    let skippedDuplicate = false;
     let lastError: any = null;
     while (i++ <= 10) {
       try {
         const { error } = await supabase_service.from(table).insert(data);
         if (error) {
+          if (isDuplicateInsertError(error)) {
+            logger.info("Skipping duplicate database insertion", {
+              error,
+              table,
+              attempt: i,
+            });
+            skippedDuplicate = true;
+            done = true;
+            break;
+          }
+
           lastError = error;
           logger.error(
             "Error inserting into database due to Supabase error, trying again",
@@ -66,6 +113,17 @@ async function robustInsert(
           break;
         }
       } catch (error) {
+        if (isDuplicateInsertError(error)) {
+          logger.info("Skipping duplicate database insertion", {
+            error,
+            table,
+            attempt: i,
+          });
+          skippedDuplicate = true;
+          done = true;
+          break;
+        }
+
         lastError = error;
         logger.error(
           "Error inserting into database due to unknown error, trying again",
@@ -76,7 +134,12 @@ async function robustInsert(
     }
 
     if (done) {
-      logger.info("Inserted into database successfully", { table });
+      logger.info(
+        skippedDuplicate
+          ? "Database insertion already exists"
+          : "Inserted into database successfully",
+        { table },
+      );
     } else {
       logger.error("Failed to insert into database after 10 attempts", {
         table,
@@ -103,6 +166,23 @@ async function robustInsert(
     try {
       const { error } = await supabase_service.from(table).insert(data);
       if (error) {
+        if (isDuplicateInsertError(error)) {
+          logger.info("Skipping duplicate database insertion", {
+            error,
+            table,
+          });
+          return;
+        }
+
+        if (isMissingRequestForeignKeyError(error)) {
+          logger.warn("Retrying database insertion after request log race", {
+            error,
+            table,
+          });
+          await robustInsert(table, data, true, logger);
+          return;
+        }
+
         logger.error("Error inserting into database due to Supabase error", {
           error,
           table,
@@ -124,10 +204,28 @@ async function robustInsert(
         logger.info("Inserted into database successfully", { table });
       }
     } catch (error) {
+      if (isDuplicateInsertError(error)) {
+        logger.info("Skipping duplicate database insertion", {
+          error,
+          table,
+        });
+        return;
+      }
+
+      if (isMissingRequestForeignKeyError(error)) {
+        logger.warn("Retrying database insertion after request log race", {
+          error,
+          table,
+        });
+        await robustInsert(table, data, true, logger);
+        return;
+      }
+
       logger.error("Error inserting into database due to unknown error", {
         error,
         table,
       });
+
       // Report to Sentry
       Sentry.captureException(error, {
         tags: {

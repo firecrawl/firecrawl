@@ -46,7 +46,12 @@ jest.mock("../../lib/extract/extract-redis", () => ({
   saveExtractResult: jest.fn(),
 }));
 
-import { logSearch, type LoggedSearch } from "./log_job";
+import {
+  logScrape,
+  logSearch,
+  type LoggedScrape,
+  type LoggedSearch,
+} from "./log_job";
 
 function makeSearch(overrides: Partial<LoggedSearch> = {}): LoggedSearch {
   return {
@@ -63,6 +68,22 @@ function makeSearch(overrides: Partial<LoggedSearch> = {}): LoggedSearch {
     is_successful: true,
     num_results: 0,
     results: null,
+    zeroDataRetention: false,
+    ...overrides,
+  };
+}
+
+function makeScrape(overrides: Partial<LoggedScrape> = {}): LoggedScrape {
+  return {
+    id: "scrape-id",
+    request_id: "request-id",
+    url: "https://example.com",
+    is_successful: true,
+    time_taken: 100,
+    team_id: "team-id",
+    options: {} as any,
+    credits_cost: 1,
+    skipNuq: false,
     zeroDataRetention: false,
     ...overrides,
   };
@@ -114,5 +135,49 @@ describe("logSearch", () => {
     };
     expect(context.extra.data).not.toContain("\\u0000");
     expect(context.extra.data).toContain("badquery");
+  });
+});
+
+describe("logScrape", () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    insert.mockResolvedValue({ error: null });
+  });
+
+  it("treats duplicate scrape log inserts as already logged", async () => {
+    insert.mockResolvedValueOnce({
+      error: {
+        code: "23505",
+        message:
+          'duplicate key value violates unique constraint "scrapes_p202605_pkey"',
+        details: "Key (id)=(scrape-id) already exists.",
+      },
+    });
+
+    await logScrape(makeScrape(), true);
+
+    expect(from).toHaveBeenCalledWith("scrapes");
+    expect(insert).toHaveBeenCalledTimes(1);
+    expect(captureException).not.toHaveBeenCalled();
+  });
+
+  it("retries scrape log inserts when the request log is still being written", async () => {
+    insert
+      .mockResolvedValueOnce({
+        error: {
+          code: "23503",
+          message:
+            'insert or update on table "scrapes_p202605" violates foreign key constraint "scrapes_request_id_fkey"',
+          details:
+            'Key (request_id)=(request-id) is not present in table "requests".',
+        },
+      })
+      .mockResolvedValueOnce({ error: null });
+
+    await logScrape(makeScrape(), false);
+
+    expect(from).toHaveBeenCalledWith("scrapes");
+    expect(insert).toHaveBeenCalledTimes(2);
+    expect(captureException).not.toHaveBeenCalled();
   });
 });
