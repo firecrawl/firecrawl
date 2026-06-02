@@ -3,7 +3,7 @@ import { z } from "zod";
 import { scrapeOptions } from "../controllers/v2/types";
 import { scrapeURL } from "../scraper/scrapeURL";
 import type { Engine } from "../scraper/scrapeURL/engines";
-import { desc, eq, inArray, isNull } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull } from "drizzle-orm";
 import { dbIndex } from "../db/connection";
 import * as schema from "../db/schema";
 import { queryIndexAtDomainSplitLevelOmce } from "../db/rpc";
@@ -130,7 +130,12 @@ export async function processEngpickerJob() {
     jobData = await dbIndex
       .update(schema.engpicker_queue)
       .set({ picked_up_at: new Date().toISOString() })
-      .where(inArray(schema.engpicker_queue.id, candidate))
+      .where(
+        and(
+          inArray(schema.engpicker_queue.id, candidate),
+          isNull(schema.engpicker_queue.picked_up_at),
+        ),
+      )
       .returning();
   } catch (getJobError) {
     logger.error("Error picking up engpicker job", { getJobError });
@@ -155,14 +160,14 @@ export async function processEngpickerJob() {
 
   let indexRows: { url: string }[];
   try {
-    const allRows = await queryIndexAtDomainSplitLevelOmce<{ url: string }>(
+    indexRows = await queryIndexAtDomainSplitLevelOmce<{ url: string }>(
       job.domain_level,
       job.domain_hash,
       new Date(
         new Date(job.created_at).valueOf() - 1000 * 60 * 60 * 24,
       ).toISOString(),
+      100,
     );
-    indexRows = allRows.slice(0, 100);
   } catch (indexRowsError) {
     logger.error("Error querying index rows", { indexRowsError });
     await new Promise(resolve => setTimeout(resolve, 1000));

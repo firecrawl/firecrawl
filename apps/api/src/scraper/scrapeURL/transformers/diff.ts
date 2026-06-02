@@ -89,11 +89,20 @@ export async function deriveDiff(
     }
 
     const start = Date.now();
-    const resData = await diffGetLastScrape(
-      meta.internalOptions.teamId!,
-      document.metadata.sourceURL ?? meta.rewrittenUrl ?? meta.url,
-      changeTrackingFormat?.tag ?? null,
-    );
+    let resData: { o_job_id: string; o_date_added: string }[];
+    try {
+      resData = await diffGetLastScrape(
+        meta.internalOptions.teamId!,
+        document.metadata.sourceURL ?? meta.rewrittenUrl ?? meta.url,
+        changeTrackingFormat?.tag ?? null,
+      );
+    } catch (error) {
+      meta.logger.error("Error fetching previous scrape", { error });
+      document.warning =
+        "Comparing failed, please try again later." +
+        (document.warning ? ` ${document.warning}` : "");
+      return document;
+    }
     const end = Date.now();
     if (end - start > 100) {
       meta.logger.debug("Diffing took a while", {

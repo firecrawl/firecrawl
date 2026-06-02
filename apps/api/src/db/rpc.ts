@@ -227,10 +227,11 @@ export function queryIndexAtDomainSplitLevelOmce<T = Record<string, any>>(
   i_level: number,
   i_domain_hash: string,
   i_newer_than: string,
+  limit?: number,
 ): Promise<T[]> {
   return execRows(
     dbIndex,
-    sql`select * from query_index_at_domain_split_level_omce(i_level => ${i_level}, i_domain_hash => ${i_domain_hash}::bytea, i_newer_than => ${i_newer_than}::timestamptz)`,
+    sql`select * from query_index_at_domain_split_level_omce(i_level => ${i_level}, i_domain_hash => ${i_domain_hash}::bytea, i_newer_than => ${i_newer_than}::timestamptz)${limit !== undefined ? sql` limit ${limit}` : sql``}`,
   );
 }
 
