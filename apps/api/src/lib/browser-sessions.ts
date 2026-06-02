@@ -1,5 +1,7 @@
+import { and, desc, eq } from "drizzle-orm";
 import { deleteKey, getValue, setValue } from "../services/redis";
-import { isPostgrestNoRowsError, supabase_service } from "../services/supabase";
+import { db } from "../db/connection";
+import * as schema from "../db/schema";
 import { logger as _logger } from "./logger";
 
 const logger = _logger.child({ module: "browser-sessions" });
@@ -29,8 +31,6 @@ interface BrowserSessionRow {
   updated_at: string; // ISO timestamp
 }
 
-const TABLE = "browser_sessions";
-
 // ---------------------------------------------------------------------------
 // CRUD helpers
 // ---------------------------------------------------------------------------
@@ -49,29 +49,19 @@ export async function insertBrowserSession(
   let lastError: any = null;
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
     try {
-      const { data, error } = await supabase_service
-        .from(TABLE)
-        .insert(full)
-        .select()
-        .single();
-
-      if (error) {
-        lastError = error;
-        logger.error(
-          "Error inserting browser session due to Supabase error, trying again",
-          { error, id: row.id, attempt },
-        );
-        await new Promise(resolve => setTimeout(resolve, 75));
-        continue;
-      }
+      const [data] = await db
+        .insert(schema.browser_sessions)
+        .values(full)
+        .returning();
 
       return data as BrowserSessionRow;
     } catch (error) {
       lastError = error;
-      logger.error(
-        "Error inserting browser session due to unknown error, trying again",
-        { error, id: row.id, attempt },
-      );
+      logger.error("Error inserting browser session, trying again", {
+        error,
+        id: row.id,
+        attempt,
+      });
       await new Promise(resolve => setTimeout(resolve, 75));
     }
   }
@@ -89,72 +79,70 @@ export async function insertBrowserSession(
 export async function getBrowserSession(
   id: string,
 ): Promise<BrowserSessionRow | null> {
-  const { data, error } = await supabase_service
-    .from(TABLE)
-    .select("*")
-    .eq("id", id)
-    .single();
-
-  if (error) {
-    if (isPostgrestNoRowsError(error)) return null;
+  try {
+    const [data] = await db
+      .select()
+      .from(schema.browser_sessions)
+      .where(eq(schema.browser_sessions.id, id))
+      .limit(1);
+    return (data ?? null) as BrowserSessionRow | null;
+  } catch (error) {
     logger.error("Failed to get browser session", { error, id });
-    throw new Error(`Failed to get browser session: ${error.message}`);
+    throw new Error(
+      `Failed to get browser session: ${error instanceof Error ? error.message : JSON.stringify(error)}`,
+    );
   }
-
-  return data as BrowserSessionRow;
 }
 
 export async function getBrowserSessionFromScrape(
   id: string,
 ): Promise<BrowserSessionRow | null> {
-  const { data, error } = await supabase_service
-    .from(TABLE)
-    .select("*")
-    .eq("scrape_id", id)
-    .single();
-
-  if (error) {
-    if (isPostgrestNoRowsError(error)) return null;
+  try {
+    const [data] = await db
+      .select()
+      .from(schema.browser_sessions)
+      .where(eq(schema.browser_sessions.scrape_id, id))
+      .limit(1);
+    return (data ?? null) as BrowserSessionRow | null;
+  } catch (error) {
     logger.error("Failed to get browser session from scrape", { error, id });
     throw new Error(
-      `Failed to get browser session from scrape: ${error.message}`,
+      `Failed to get browser session from scrape: ${error instanceof Error ? error.message : JSON.stringify(error)}`,
     );
   }
-
-  return data as BrowserSessionRow;
 }
 
 export async function listBrowserSessions(
   teamId: string,
   opts?: { status?: BrowserSessionStatus },
 ): Promise<BrowserSessionRow[]> {
-  let query = supabase_service
-    .from(TABLE)
-    .select("*")
-    .eq("team_id", teamId)
-    .order("created_at", { ascending: false });
-
+  const conditions = [eq(schema.browser_sessions.team_id, teamId)];
   if (opts?.status) {
-    query = query.eq("status", opts.status);
+    conditions.push(eq(schema.browser_sessions.status, opts.status));
   }
 
-  const { data, error } = await query;
-
-  if (error) {
+  try {
+    const data = await db
+      .select()
+      .from(schema.browser_sessions)
+      .where(and(...conditions))
+      .orderBy(desc(schema.browser_sessions.created_at));
+    return data as BrowserSessionRow[];
+  } catch (error) {
     logger.error("Failed to list browser sessions", { error, teamId });
-    throw new Error(`Failed to list browser sessions: ${error.message}`);
+    throw new Error(
+      `Failed to list browser sessions: ${error instanceof Error ? error.message : JSON.stringify(error)}`,
+    );
   }
-
-  return (data ?? []) as BrowserSessionRow[];
 }
 
 export async function updateBrowserSessionActivity(id: string): Promise<void> {
-  const { error } = await supabase_service
-    .from(TABLE)
-    .update({ updated_at: new Date().toISOString() })
-    .eq("id", id);
-
-  if (error) {
+  try {
+    await db
+      .update(schema.browser_sessions)
+      .set({ updated_at: new Date().toISOString() })
+      .where(eq(schema.browser_sessions.id, id));
+  } catch (error) {
     logger.warn("Failed to update browser session activity", { error, id });
   }
 }
@@ -162,40 +150,38 @@ export async function updateBrowserSessionActivity(id: string): Promise<void> {
 export async function getBrowserSessionByBrowserId(
   browserId: string,
 ): Promise<BrowserSessionRow | null> {
-  const { data, error } = await supabase_service
-    .from(TABLE)
-    .select("*")
-    .eq("browser_id", browserId)
-    .single();
-
-  if (error) {
-    if (isPostgrestNoRowsError(error)) return null;
+  try {
+    const [data] = await db
+      .select()
+      .from(schema.browser_sessions)
+      .where(eq(schema.browser_sessions.browser_id, browserId))
+      .limit(1);
+    return (data ?? null) as BrowserSessionRow | null;
+  } catch (error) {
     logger.error("Failed to get browser session by browser_id", {
       error,
       browserId,
     });
     throw new Error(
-      `Failed to get browser session by browser_id: ${error.message}`,
+      `Failed to get browser session by browser_id: ${error instanceof Error ? error.message : JSON.stringify(error)}`,
     );
   }
-
-  return data as BrowserSessionRow;
 }
 
 export async function updateBrowserSessionStatus(
   id: string,
   status: BrowserSessionStatus,
 ): Promise<void> {
-  const { error } = await supabase_service
-    .from(TABLE)
-    .update({
-      status,
-      updated_at: new Date().toISOString(),
-      deleted_at: status === "destroyed" ? new Date().toISOString() : null,
-    })
-    .eq("id", id);
-
-  if (error) {
+  try {
+    await db
+      .update(schema.browser_sessions)
+      .set({
+        status,
+        updated_at: new Date().toISOString(),
+        deleted_at: status === "destroyed" ? new Date().toISOString() : null,
+      })
+      .where(eq(schema.browser_sessions.id, id));
+  } catch (error) {
     logger.warn("Failed to update browser session status", { error, id });
   }
 }
@@ -204,35 +190,38 @@ export async function claimBrowserSessionDestroyed(
   id: string,
 ): Promise<boolean> {
   const now = new Date().toISOString();
-  const { data, error } = await supabase_service
-    .from(TABLE)
-    .update({
-      status: "destroyed" as BrowserSessionStatus,
-      updated_at: now,
-      deleted_at: now,
-    })
-    .eq("id", id)
-    .eq("status", "active")
-    .select("id");
-
-  if (error) {
+  try {
+    const data = await db
+      .update(schema.browser_sessions)
+      .set({
+        status: "destroyed" as BrowserSessionStatus,
+        updated_at: now,
+        deleted_at: now,
+      })
+      .where(
+        and(
+          eq(schema.browser_sessions.id, id),
+          eq(schema.browser_sessions.status, "active"),
+        ),
+      )
+      .returning({ id: schema.browser_sessions.id });
+    return data.length > 0;
+  } catch (error) {
     logger.warn("Failed to claim browser session destroyed", { error, id });
     return false;
   }
-
-  return (data?.length ?? 0) > 0;
 }
 
 export async function updateBrowserSessionScrapeId(
   id: string,
   scrapeId: string,
 ): Promise<void> {
-  const { error } = await supabase_service
-    .from(TABLE)
-    .update({ scrape_id: scrapeId, updated_at: new Date().toISOString() })
-    .eq("id", id);
-
-  if (error) {
+  try {
+    await db
+      .update(schema.browser_sessions)
+      .set({ scrape_id: scrapeId, updated_at: new Date().toISOString() })
+      .where(eq(schema.browser_sessions.id, id));
+  } catch (error) {
     logger.warn("Failed to update browser session scrape_id", {
       error,
       id,
@@ -245,12 +234,15 @@ export async function updateBrowserSessionCreditsUsed(
   id: string,
   creditsUsed: number,
 ): Promise<void> {
-  const { error } = await supabase_service
-    .from(TABLE)
-    .update({ credits_used: creditsUsed, updated_at: new Date().toISOString() })
-    .eq("id", id);
-
-  if (error) {
+  try {
+    await db
+      .update(schema.browser_sessions)
+      .set({
+        credits_used: creditsUsed,
+        updated_at: new Date().toISOString(),
+      })
+      .where(eq(schema.browser_sessions.id, id));
+  } catch (error) {
     logger.warn("Failed to update browser session credits_used", {
       error,
       id,

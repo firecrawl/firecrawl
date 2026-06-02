@@ -93,7 +93,6 @@
     "@openrouter/ai-sdk-provider": "^0.4.5",
     "@sentry/cli": "^2.58.2",
     "@sentry/node": "^10.27.0",
-    "@supabase/supabase-js": "^2.52.0",
     "@types/ws": "^8.5.12",
     "@x402/core": "^2.4.0",
     "@x402/evm": "^2.4.0",
@@ -112,6 +111,7 @@
     "cors": "^2.8.5",
     "culori": "^4.0.2",
     "dotenv": "^16.3.1",
+    "drizzle-orm": "^0.45.2",
     "esbuild": "^0.27.2",
     "escape-html": "^1.0.3",
     "express": "4.22.0",
@@ -179,7 +179,6 @@
       "msgpackr-extract",
       "oxc-resolver",
       "protobufjs",
-      "supabase",
       "utf-8-validate",
       "wordpos"
     ],

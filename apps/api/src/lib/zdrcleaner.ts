@@ -1,5 +1,8 @@
 import "dotenv/config";
-import { supabase_service } from "../services/supabase";
+import { inArray } from "drizzle-orm";
+import { db } from "../db/connection";
+import * as schema from "../db/schema";
+import { getZdrCleanupBatch } from "../db/rpc";
 import { removeJobFromGCS } from "./gcs-jobs";
 import { logger as _logger } from "./logger";
 import { config } from "../config";
@@ -21,20 +24,8 @@ export async function zdrcleaner() {
     // Call the RPC to get all blobs (scrapes, searches, extracts, maps, llmstxts, deep_researches)
     // associated with requests that need cleanup.
     // The RPC handles the dr_clean_by filtering logic (team-specific vs scheduled)
-    const { data: _rows, error } = await supabase_service.rpc(
-      "get_zdr_cleanup_batch_2",
-      {
-        p_limit: 1000,
-      },
-    );
-
-    if (error) {
-      throw new Error("Error calling get_zdr_cleanup_batch_2 RPC", {
-        cause: error,
-      });
-    }
-
-    const rows: { request_id: string; ids: string[] }[] = _rows;
+    const rows: { request_id: string; ids: string[] }[] =
+      await getZdrCleanupBatch(1000);
 
     if (!rows || rows.length === 0) {
       logger.debug("zdrcleaner batch completed with no rows to process", {
@@ -89,20 +80,13 @@ export async function zdrcleaner() {
     const updateErrors: any[] = [];
 
     if (fullyCleanedRequests.length > 0) {
-      // Process in batches of 100 to deal with URL limits on PostgREST
-      for (let i = 0; i < fullyCleanedRequests.length; i += 100) {
-        const batch = fullyCleanedRequests.slice(i, i + 100);
-        try {
-          await supabase_service
-            .from("requests")
-            .update({
-              dr_clean_by: null,
-            })
-            .in("id", batch)
-            .throwOnError();
-        } catch (error) {
-          updateErrors.push(error);
-        }
+      try {
+        await db
+          .update(schema.requests)
+          .set({ dr_clean_by: null })
+          .where(inArray(schema.requests.id, fullyCleanedRequests));
+      } catch (error) {
+        updateErrors.push(error);
       }
     }
 

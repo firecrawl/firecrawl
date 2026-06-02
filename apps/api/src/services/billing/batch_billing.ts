@@ -1,7 +1,7 @@
 import { logger } from "../../lib/logger";
 import { config } from "../../config";
 import { getRedisConnection } from "../queue-service";
-import { supabase_service } from "../supabase";
+import { billTeam6 } from "../../db/rpc";
 import * as Sentry from "@sentry/node";
 import { withAuth } from "../../lib/withAuth";
 import { setCachedACUC, setCachedACUCTeam } from "../../controllers/auth";
@@ -223,7 +223,6 @@ export async function processBillingBatch() {
             },
           });
         }
-
       } catch (error) {
         await refundRequestTrackedCredits(group);
         logger.error(`❌ Failed to bill team ${group.team_id}`, {
@@ -402,16 +401,17 @@ async function supaBillTeam(
   _logger.info(`Batch billing team ${team_id} for ${credits} credits`);
 
   // Perform the actual database operation
-  const { data, error } = await supabase_service.rpc("bill_team_6", {
-    _team_id: team_id,
-    sub_id: subscription_id ?? null,
-    fetch_subscription: subscription_id === undefined,
-    credits,
-    i_api_key_id: api_key_id ?? null,
-    is_extract_param: is_extract,
-  });
-
-  if (error) {
+  let data: { api_key: string }[];
+  try {
+    data = await billTeam6({
+      team_id,
+      subscription_id: subscription_id ?? null,
+      fetch_subscription: subscription_id === undefined,
+      credits,
+      api_key_id: api_key_id ?? null,
+      is_extract,
+    });
+  } catch (error) {
     Sentry.captureException(error);
     _logger.error("Failed to bill team.", { error });
     return { success: false, error };

@@ -1,8 +1,3 @@
-jest.mock("../supabase", () => ({
-  supabase_service: {},
-  supabase_rr_service: {},
-}));
-
 const mockEnsureRecipient = jest.fn();
 const mockListRecipients = jest.fn();
 const mockTouchNotified = jest.fn();
@@ -70,7 +65,8 @@ function fakeRecipient(
     status,
     token: `tok-${sanitized}`,
     source,
-    confirmation_sent_at: status === "pending" ? new Date().toISOString() : null,
+    confirmation_sent_at:
+      status === "pending" ? new Date().toISOString() : null,
     confirmed_at: status === "confirmed" ? new Date().toISOString() : null,
     unsubscribed_at:
       status === "unsubscribed" ? new Date().toISOString() : null,
@@ -200,7 +196,7 @@ describe("sendMonitoringConfirmationEmail", () => {
     expect(mockResendSend).toHaveBeenCalledTimes(1);
     expect(mockResendSend.mock.calls[0][0].to).toBe("new@example.com");
     expect(mockResendSend.mock.calls[0][0].subject).toContain(
-      'Confirm subscription',
+      "Confirm subscription",
     );
     expect(mockMarkConfirmationSent).toHaveBeenCalledWith("rec-newexamplecom");
   });

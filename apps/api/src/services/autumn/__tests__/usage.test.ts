@@ -27,27 +27,20 @@ jest.mock("../client", () => ({
   },
 }));
 
-jest.mock("../../supabase", () => ({
-  get supabase_rr_service() {
+jest.mock("../../../db/connection", () => ({
+  get dbRr() {
     return {
-      from: (table: string) => ({
-        select: () => {
-          if (table === "teams") {
-            return {
-              eq: () => ({
-                single: () => Promise.resolve(teamLookup),
-              }),
-            };
-          }
-
-          if (table === "api_keys") {
-            return {
-              in: () => Promise.resolve({ data: apiKeysData, error: null }),
-            };
-          }
-
-          return {};
-        },
+      select: () => ({
+        from: () => ({
+          where: () => {
+            // api_keys path awaits the builder directly; teams path calls .limit(1)
+            const apiKeysPromise = Promise.resolve(apiKeysData);
+            return Object.assign(apiKeysPromise, {
+              limit: () =>
+                Promise.resolve(teamLookup.data ? [teamLookup.data] : []),
+            });
+          },
+        }),
       }),
     };
   },

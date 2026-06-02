@@ -3,7 +3,9 @@ import { AuthCreditUsageChunk } from "../../controllers/v1/types";
 import { config } from "../../config";
 import { clearACUC, clearACUCTeam, getACUC } from "../../controllers/auth";
 import { redlock } from "../redlock";
-import { supabase_rr_service, supabase_service } from "../supabase";
+import { and, eq, gte, sql } from "drizzle-orm";
+import { db, dbRr } from "../../db/connection";
+import * as schema from "../../db/schema";
 import {
   createPaymentIntent,
   createSubscription,
@@ -103,14 +105,23 @@ async function _autoChargeScale(
           updatedChunk &&
           updatedChunk.remaining_credits < autoRechargeThreshold
         ) {
-          const { data: price, error: priceError } = await supabase_service
-            .from("prices")
-            .select("*")
-            .eq("id", chunk.price_associated_auto_recharge_price_id)
-            .single();
-          if (priceError || !price) {
+          let price: typeof schema.prices.$inferSelect | undefined;
+          try {
+            [price] = await db
+              .select()
+              .from(schema.prices)
+              .where(
+                eq(
+                  schema.prices.id,
+                  chunk.price_associated_auto_recharge_price_id,
+                ),
+              )
+              .limit(1);
+          } catch (priceError) {
+            logger.error("Error fetching price", { error: priceError });
+          }
+          if (!price) {
             logger.error("Error fetching price", {
-              error: priceError,
               priceId:
                 chunk.price_associated_auto_recharge_price_id === undefined
                   ? "undefined"
@@ -138,18 +149,32 @@ async function _autoChargeScale(
           currentMonth.setUTCDate(1);
           currentMonth.setUTCHours(0, 0, 0, 0);
 
-          const { data: rechargesThisMonth, error: rechargesThisMonthError } =
-            await supabase_service
-              .from("subscriptions")
-              .select("*, prices!inner(*)")
-              .eq("team_id", chunk.team_id)
-              .eq("prices.metadata->>auto_recharge", "true")
-              .gte("current_period_start", currentMonth.toISOString());
-
-          if (rechargesThisMonthError || !rechargesThisMonth) {
+          let rechargesThisMonth: { id: string }[] | undefined;
+          try {
+            rechargesThisMonth = await db
+              .select({ id: schema.subscriptions.id })
+              .from(schema.subscriptions)
+              .innerJoin(
+                schema.prices,
+                eq(schema.subscriptions.price_id, schema.prices.id),
+              )
+              .where(
+                and(
+                  eq(schema.subscriptions.team_id, chunk.team_id),
+                  sql`${schema.prices.metadata}->>'auto_recharge' = 'true'`,
+                  gte(
+                    schema.subscriptions.current_period_start,
+                    currentMonth.toISOString(),
+                  ),
+                ),
+              );
+          } catch (rechargesThisMonthError) {
             logger.error("Error fetching recharges this month", {
               error: rechargesThisMonthError,
             });
+          }
+
+          if (!rechargesThisMonth) {
             return {
               success: false,
               message: "Error fetching recharges this month",
@@ -182,17 +207,25 @@ async function _autoChargeScale(
               };
             }
 
-            const { data: customer, error: customersError } =
-              await supabase_rr_service
-                .from("customers")
-                .select("id, stripe_customer_id")
-                .eq("id", chunk.sub_user_id)
-                .single();
-
-            if (customersError || !customer) {
+            let customer:
+              | { id: string; stripe_customer_id: string | null }
+              | undefined;
+            try {
+              [customer] = await dbRr
+                .select({
+                  id: schema.customers.id,
+                  stripe_customer_id: schema.customers.stripe_customer_id,
+                })
+                .from(schema.customers)
+                .where(eq(schema.customers.id, chunk.sub_user_id))
+                .limit(1);
+            } catch (customersError) {
               logger.error("Error fetching customer data", {
                 error: customersError,
               });
+            }
+
+            if (!customer) {
               return {
                 success: false,
                 message: "Error fetching customer data",
@@ -255,9 +288,8 @@ async function _autoChargeScale(
             }
 
             // Try to insert it into subscriptions ourselves in case webhook is slow
-            const { error: subscriptionError } = await supabase_service
-              .from("subscriptions")
-              .insert({
+            try {
+              await db.insert(schema.subscriptions).values({
                 id: subscription.id,
                 user_id: userId,
                 metadata: subscription.metadata,
@@ -271,23 +303,22 @@ async function _autoChargeScale(
                   ? new Date(
                       subscription.current_period_start * 1000,
                     ).toISOString()
-                  : null,
+                  : undefined,
                 current_period_end: subscription.current_period_end
                   ? new Date(
                       subscription.current_period_end * 1000,
                     ).toISOString()
-                  : null,
+                  : undefined,
                 created: subscription.created
                   ? new Date(subscription.created * 1000).toISOString()
-                  : null,
+                  : undefined,
                 ended_at: null,
                 trial_start: null,
                 trial_end: null,
                 team_id: chunk.team_id,
                 is_extract: false,
               });
-
-            if (subscriptionError) {
+            } catch (subscriptionError) {
               logger.warn(
                 "Failed to add subscription to supabase -- maybe we got sniped by the webhook?",
                 { error: subscriptionError },
@@ -336,7 +367,7 @@ async function _autoChargeScale(
               chunk,
               true,
               false,
-              { autoRechargeCredits: price.credits },
+              { autoRechargeCredits: price.credits ?? 0 },
             );
 
             logger.info("Scale auto-recharge successful");
@@ -356,12 +387,12 @@ async function _autoChargeScale(
               message: "Auto-recharge successful",
               remainingCredits:
                 (updatedChunk?.remaining_credits ?? chunk.remaining_credits) +
-                price.credits,
+                (price.credits ?? 0),
               chunk: {
                 ...(updatedChunk ?? chunk),
                 remaining_credits:
                   (updatedChunk?.remaining_credits ?? chunk.remaining_credits) +
-                  price.credits,
+                  (price.credits ?? 0),
               },
             };
           }
@@ -481,14 +512,19 @@ async function _autoChargeSelfServe(
         ) {
           if (chunk.sub_user_id) {
             // Fetch the customer's Stripe information
-            const { data: customer, error: customersError } =
-              await supabase_rr_service
-                .from("customers")
-                .select("id, stripe_customer_id")
-                .eq("id", chunk.sub_user_id)
-                .single();
-
-            if (customersError) {
+            let customer:
+              | { id: string; stripe_customer_id: string | null }
+              | undefined;
+            try {
+              [customer] = await dbRr
+                .select({
+                  id: schema.customers.id,
+                  stripe_customer_id: schema.customers.stripe_customer_id,
+                })
+                .from(schema.customers)
+                .where(eq(schema.customers.id, chunk.sub_user_id))
+                .limit(1);
+            } catch (customersError) {
               logger.error(`Error fetching customer data`, {
                 error: customersError,
               });
@@ -524,7 +560,7 @@ async function _autoChargeSelfServe(
               }
 
               // Record the auto-recharge transaction
-              await supabase_service.from("auto_recharge_transactions").insert({
+              await db.insert(schema.auto_recharge_transactions).values({
                 team_id: chunk.team_id,
                 initial_payment_status: paymentStatus.return_status,
                 credits_issued: issueCreditsSuccess ? AUTO_RECHARGE_CREDITS : 0,

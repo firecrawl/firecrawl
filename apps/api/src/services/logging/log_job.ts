@@ -1,9 +1,12 @@
-import { supabase_service } from "../supabase";
+import { db } from "../../db/connection";
+import * as schema from "../../db/schema";
+import { changeTrackingInsertScrape } from "../../db/rpc";
 import { config } from "../../config";
 import "dotenv/config";
 import { logger as _logger } from "../../lib/logger";
 import { configDotenv } from "dotenv";
 import * as Sentry from "@sentry/node";
+import type { PgTable } from "drizzle-orm/pg-core";
 import {
   saveDeepResearchToGCS,
   saveExtractToGCS,
@@ -33,6 +36,19 @@ function sanitizeString(value: string | null | undefined): string | null {
   return value.replace(nullByteRegex, "");
 }
 
+const tableMap: Record<string, PgTable> = {
+  requests: schema.requests,
+  scrapes: schema.scrapes,
+  parses: schema.parses,
+  crawls: schema.crawls,
+  batch_scrapes: schema.batch_scrapes,
+  searches: schema.searches,
+  extracts: schema.extracts,
+  maps: schema.maps,
+  llmstxts: schema.llmstxts,
+  deep_researches: schema.deep_researches,
+};
+
 async function robustInsert(
   table: string,
   data: any,
@@ -47,30 +63,24 @@ async function robustInsert(
     return;
   }
 
+  const target = tableMap[table];
+
   if (force) {
     let i = 0,
       done = false;
     let lastError: any = null;
     while (i++ <= 10) {
       try {
-        const { error } = await supabase_service.from(table).insert(data);
-        if (error) {
-          lastError = error;
-          logger.error(
-            "Error inserting into database due to Supabase error, trying again",
-            { error, table, attempt: i },
-          );
-          await new Promise(resolve => setTimeout(resolve, 75));
-        } else {
-          done = true;
-          break;
-        }
+        await db.insert(target).values(data);
+        done = true;
+        break;
       } catch (error) {
         lastError = error;
-        logger.error(
-          "Error inserting into database due to unknown error, trying again",
-          { error, table, attempt: i },
-        );
+        logger.error("Error inserting into database, trying again", {
+          error,
+          table,
+          attempt: i,
+        });
         await new Promise(resolve => setTimeout(resolve, 75));
       }
     }
@@ -101,30 +111,10 @@ async function robustInsert(
     }
   } else {
     try {
-      const { error } = await supabase_service.from(table).insert(data);
-      if (error) {
-        logger.error("Error inserting into database due to Supabase error", {
-          error,
-          table,
-        });
-        // Report to Sentry
-        Sentry.captureException(error, {
-          tags: {
-            table,
-            operation: "robustInsert",
-            force: "false",
-          },
-          extra: {
-            table,
-            error: JSON.stringify(error),
-            data: JSON.stringify(data).substring(0, 500), // Limit size
-          },
-        });
-      } else {
-        logger.info("Inserted into database successfully", { table });
-      }
+      await db.insert(target).values(data);
+      logger.info("Inserted into database successfully", { table });
     } catch (error) {
-      logger.error("Error inserting into database due to unknown error", {
+      logger.error("Error inserting into database", {
         error,
         table,
       });
@@ -295,27 +285,21 @@ export async function logScrape(scrape: LoggedScrape, force: boolean = false) {
     );
 
     if (hasMarkdown || hasChangeTracking) {
-      const { error } = await supabase_service.rpc(
-        "change_tracking_insert_scrape",
-        {
-          p_team_id: scrape.team_id,
-          p_url: scrape.url,
-          p_job_id: scrape.id,
-          p_change_tracking_tag: hasChangeTracking
-            ? hasChangeTracking.tag
-            : null,
-          p_date_added: new Date().toISOString(),
-        },
-      );
-
-      if (error) {
+      try {
+        await changeTrackingInsertScrape({
+          team_id: scrape.team_id,
+          url: scrape.url,
+          job_id: scrape.id,
+          change_tracking_tag: hasChangeTracking ? hasChangeTracking.tag : null,
+          date_added: new Date().toISOString(),
+        });
+        _logger.debug("Change tracking record inserted successfully");
+      } catch (error) {
         _logger.warn("Error inserting into change_tracking_scrapes", {
           error,
           scrapeId: scrape.id,
           teamId: scrape.team_id,
         });
-      } else {
-        _logger.debug("Change tracking record inserted successfully");
       }
     }
   }

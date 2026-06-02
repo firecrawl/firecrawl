@@ -3,10 +3,8 @@ import { v7 as uuidv7 } from "uuid";
 import { config } from "../../../config";
 import { parse } from "tldts";
 import { TeamFlags } from "../../../controllers/v1/types";
-import {
-  supabase_rr_service,
-  supabase_service,
-} from "../../../services/supabase";
+import { db, dbRr } from "../../../db/connection";
+import * as schema from "../../../db/schema";
 
 configDotenv();
 
@@ -39,7 +37,7 @@ async function flushHits(): Promise<void> {
   hitBuffer = [];
   if (config.USE_DB_AUTHENTICATION !== true) return;
   try {
-    await supabase_service.from("blocklist_hits").insert(batch);
+    await db.insert(schema.blocklist_hits).values(batch);
   } catch {}
 }
 
@@ -114,13 +112,13 @@ export async function initializeBlocklist() {
     return;
   }
 
-  const { data, error } = await supabase_rr_service
-    .from("blocklist")
-    .select("*")
-    .single();
-
-  if (error) {
-    throw new Error(`Error getting blocklist: ${error.message}`);
+  let data: { data: any } | undefined;
+  try {
+    [data] = await dbRr.select().from(schema.blocklist).limit(1);
+  } catch (error) {
+    throw new Error(
+      `Error getting blocklist: ${error instanceof Error ? error.message : JSON.stringify(error)}`,
+    );
   }
 
   if (!data) {

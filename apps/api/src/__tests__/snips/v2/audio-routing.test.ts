@@ -15,11 +15,12 @@ describe("Audio format engine routing (buildFallbackList)", () => {
   let buildFallbackList: typeof import("../../../scraper/scrapeURL/engines").buildFallbackList;
 
   const originalFireEngineUrl = process.env.FIRE_ENGINE_BETA_URL;
-  const originalIndexUrl = process.env.INDEX_SUPABASE_URL;
+  const originalIndexUrl = process.env.INDEX_DATABASE_URL;
 
   beforeAll(() => {
     process.env.FIRE_ENGINE_BETA_URL = "http://test-fire-engine";
-    process.env.INDEX_SUPABASE_URL = "http://test-index-supabase";
+    process.env.INDEX_DATABASE_URL =
+      "postgresql://postgres:postgres@localhost:5432/postgres";
 
     jest.isolateModules(() => {
       buildFallbackList =
@@ -34,9 +35,9 @@ describe("Audio format engine routing (buildFallbackList)", () => {
       process.env.FIRE_ENGINE_BETA_URL = originalFireEngineUrl;
     }
     if (originalIndexUrl === undefined) {
-      delete process.env.INDEX_SUPABASE_URL;
+      delete process.env.INDEX_DATABASE_URL;
     } else {
-      process.env.INDEX_SUPABASE_URL = originalIndexUrl;
+      process.env.INDEX_DATABASE_URL = originalIndexUrl;
     }
   });
 

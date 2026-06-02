@@ -1,4 +1,6 @@
-import { supabase_service } from "../../services/supabase";
+import { and, desc, eq, gte } from "drizzle-orm";
+import { db } from "../../db/connection";
+import * as schema from "../../db/schema";
 import { config } from "../../config";
 import { logger } from "../logger";
 import { normalizeUrl, normalizeUrlOnlyHostname } from "../canonical-url";
@@ -21,28 +23,27 @@ export async function getLlmsTextFromCache(
   const originUrl = normalizeUrlOnlyHostname(url);
 
   try {
-    const { data, error } = await supabase_service
-      .from("llm_texts")
-      .select("*")
-      .eq("origin_url", originUrl)
-      .gte("max_urls", maxUrls) // Changed to gte since we want cached results with more URLs than requested
-      .order("updated_at", { ascending: false })
-      .limit(1)
-      .single();
-
-    if (error) {
-      return null;
-    }
+    const [data] = await db
+      .select()
+      .from(schema.llm_texts)
+      .where(
+        and(
+          eq(schema.llm_texts.origin_url, originUrl),
+          gte(schema.llm_texts.max_urls, maxUrls), // gte since we want cached results with more URLs than requested
+        ),
+      )
+      .orderBy(desc(schema.llm_texts.updated_at))
+      .limit(1);
 
     // Check if data is older than 1 week
     const oneWeekAgo = new Date();
     oneWeekAgo.setDate(oneWeekAgo.getDate() - 7);
 
-    if (!data || new Date(data.updated_at) < oneWeekAgo) {
+    if (!data || !data.updated_at || new Date(data.updated_at) < oneWeekAgo) {
       return null;
     }
 
-    return data;
+    return data as LlmsTextCache;
   } catch (error) {
     logger.error("Failed to fetch LLMs text from cache", { error, originUrl });
     return null;
@@ -63,51 +64,49 @@ export async function saveLlmsTextToCache(
 
   try {
     // First check if there's an existing entry
-    const { data: existingData } = await supabase_service
-      .from("llm_texts")
-      .select("*")
-      .eq("origin_url", originUrl)
-      .single();
+    const [existingData] = await db
+      .select({ id: schema.llm_texts.id })
+      .from(schema.llm_texts)
+      .where(eq(schema.llm_texts.origin_url, originUrl))
+      .limit(1);
 
     if (existingData) {
       // Update existing entry
-      const { error } = await supabase_service
-        .from("llm_texts")
-        .update({
-          llmstxt,
-          llmstxt_full,
-          max_urls: maxUrls,
-          updated_at: new Date().toISOString(),
-        })
-        .eq("origin_url", originUrl);
-
-      if (error) {
-        logger.error("Error updating LLMs text in cache", { error, originUrl });
-      } else {
+      try {
+        await db
+          .update(schema.llm_texts)
+          .set({
+            llmstxt,
+            llmstxt_full,
+            max_urls: maxUrls,
+            updated_at: new Date().toISOString(),
+          })
+          .where(eq(schema.llm_texts.origin_url, originUrl));
         logger.debug("Successfully updated cached LLMs text", {
           originUrl,
           maxUrls,
         });
+      } catch (error) {
+        logger.error("Error updating LLMs text in cache", { error, originUrl });
       }
     } else {
       // Insert new entry
-      const { error } = await supabase_service.from("llm_texts").insert({
-        origin_url: originUrl,
-        llmstxt,
-        llmstxt_full,
-        max_urls: maxUrls,
-        updated_at: new Date().toISOString(),
-      });
-
-      if (error) {
-        logger.error("Error inserting LLMs text to cache", {
-          error,
-          originUrl,
+      try {
+        await db.insert(schema.llm_texts).values({
+          origin_url: originUrl,
+          llmstxt,
+          llmstxt_full,
+          max_urls: maxUrls,
+          updated_at: new Date().toISOString(),
         });
-      } else {
         logger.debug("Successfully inserted new cached LLMs text", {
           originUrl,
           maxUrls,
+        });
+      } catch (error) {
+        logger.error("Error inserting LLMs text to cache", {
+          error,
+          originUrl,
         });
       }
     }

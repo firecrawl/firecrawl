@@ -1,18 +1,17 @@
-import { supabase_rr_service, supabase_service } from "../../services/supabase";
+import { eq } from "drizzle-orm";
+import { dbRr } from "../../db/connection";
+import * as schema from "../../db/schema";
 import { logger } from "../logger";
 
 import { withAuth } from "../withAuth";
 
 async function getTeamIdSyncBOriginal(teamId: string) {
   try {
-    const { data, error } = await supabase_rr_service
-      .from("eb-sync")
-      .select("team_id")
-      .eq("team_id", teamId)
+    const data = await dbRr
+      .select({ team_id: schema.eb_sync.team_id })
+      .from(schema.eb_sync)
+      .where(eq(schema.eb_sync.team_id, teamId))
       .limit(1);
-    if (error) {
-      throw new Error("Error getting team id (sync b)");
-    }
     return data[0] ?? null;
   } catch (error) {
     logger.error("Error getting team id (sync b)", error);

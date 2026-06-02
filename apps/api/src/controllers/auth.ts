@@ -10,7 +10,14 @@ import { getRedisConnection } from "../services/queue-service";
 import { getRateLimiter } from "../services/rate-limiter";
 import { deleteKey, getValue, setValue } from "../services/redis";
 import { redlock } from "../services/redlock";
-import { supabase_rr_service, supabase_service } from "../services/supabase";
+import { eq } from "drizzle-orm";
+import { db, dbRr } from "../db/connection";
+import * as schema from "../db/schema";
+import {
+  authCreditUsageChunk,
+  authCreditUsageChunkFromTeam,
+  AuthCreditUsageChunkRow,
+} from "../db/rpc";
 import { AuthResponse, RateLimiterMode } from "../types";
 import { AuthCreditUsageChunk, AuthCreditUsageChunkFromTeam } from "./v1/types";
 
@@ -260,45 +267,38 @@ export async function getACUC(
   }
 
   if (!cacheOnly) {
-    let data;
-    let error;
+    let data: AuthCreditUsageChunkRow[] = [];
     let retries = 0;
     const maxRetries = 5;
     while (retries < maxRetries) {
-      const client =
-        Math.random() > 2 / 3 ? supabase_rr_service : supabase_service;
-      ({ data, error } = await client.rpc(
-        "auth_credit_usage_chunk_47",
-        {
-          input_key: api_key,
-          i_is_extract: isExtract,
-          tally_untallied_credits: true,
-        },
-        { get: true },
-      ));
-
-      if (!error) {
+      const database = Math.random() > 2 / 3 ? dbRr : db;
+      try {
+        data = await authCreditUsageChunk(database, api_key, isExtract);
         break;
-      }
-
-      logger.warn(
-        `Failed to retrieve authentication and credit usage data after ${retries}, trying again...`,
-        { error },
-      );
-      retries++;
-      if (retries === maxRetries) {
-        throw new Error(
-          "Failed to retrieve authentication and credit usage data after 3 attempts: " +
-            JSON.stringify(error),
+      } catch (error) {
+        logger.warn(
+          `Failed to retrieve authentication and credit usage data after ${retries}, trying again...`,
+          { error },
         );
-      }
+        retries++;
+        if (retries === maxRetries) {
+          throw new Error(
+            "Failed to retrieve authentication and credit usage data after 3 attempts: " +
+              JSON.stringify(error),
+          );
+        }
 
-      // Wait for a short time before retrying
-      await new Promise(resolve => setTimeout(resolve, 200));
+        // Wait for a short time before retrying
+        await new Promise(resolve => setTimeout(resolve, 200));
+      }
     }
 
     const chunk: AuthCreditUsageChunk | null =
-      data.length === 0 ? null : data[0].team_id === null ? null : data[0];
+      data.length === 0
+        ? null
+        : data[0].team_id === null
+          ? null
+          : (data[0] as any);
 
     if (chunk) {
       chunk.is_extract = isExtract;
@@ -386,46 +386,39 @@ export async function getACUCTeam(
   }
 
   if (!cacheOnly) {
-    let data;
-    let error;
+    let data: AuthCreditUsageChunkRow[] = [];
     let retries = 0;
     const maxRetries = 5;
 
     while (retries < maxRetries) {
-      const client =
-        Math.random() > 2 / 3 ? supabase_rr_service : supabase_service;
-      ({ data, error } = await client.rpc(
-        "auth_credit_usage_chunk_47_from_team",
-        {
-          input_team: team_id,
-          i_is_extract: isExtract,
-          tally_untallied_credits: true,
-        },
-        { get: true },
-      ));
-
-      if (!error) {
+      const database = Math.random() > 2 / 3 ? dbRr : db;
+      try {
+        data = await authCreditUsageChunkFromTeam(database, team_id, isExtract);
         break;
-      }
-
-      logger.warn(
-        `Failed to retrieve authentication and credit usage data after ${retries}, trying again...`,
-        { error },
-      );
-      retries++;
-      if (retries === maxRetries) {
-        throw new Error(
-          "Failed to retrieve authentication and credit usage data after 3 attempts: " +
-            JSON.stringify(error),
+      } catch (error) {
+        logger.warn(
+          `Failed to retrieve authentication and credit usage data after ${retries}, trying again...`,
+          { error },
         );
-      }
+        retries++;
+        if (retries === maxRetries) {
+          throw new Error(
+            "Failed to retrieve authentication and credit usage data after 3 attempts: " +
+              JSON.stringify(error),
+          );
+        }
 
-      // Wait for a short time before retrying
-      await new Promise(resolve => setTimeout(resolve, 200));
+        // Wait for a short time before retrying
+        await new Promise(resolve => setTimeout(resolve, 200));
+      }
     }
 
     const chunk: AuthCreditUsageChunk | null =
-      data.length === 0 ? null : data[0].team_id === null ? null : data[0];
+      data.length === 0
+        ? null
+        : data[0].team_id === null
+          ? null
+          : (data[0] as any);
 
     // NOTE: Should we cache null chunks? - mogery
     if (chunk !== null && useCache) {
@@ -493,16 +486,24 @@ async function ensureChunkOrgId(
     return chunk;
   }
 
-  const { data, error } = await supabase_rr_service
-    .from("teams")
-    .select("org_id")
-    .eq("id", chunk.team_id)
-    .single();
-
-  if (error || !data?.org_id) {
+  let data: { org_id: string | null } | undefined;
+  try {
+    [data] = await dbRr
+      .select({ org_id: schema.teams.org_id })
+      .from(schema.teams)
+      .where(eq(schema.teams.id, chunk.team_id))
+      .limit(1);
+  } catch (error) {
     logger.warn("Failed to backfill org_id for auth chunk", {
       teamId: chunk.team_id,
       error,
+    });
+    return chunk;
+  }
+
+  if (!data?.org_id) {
+    logger.warn("Failed to backfill org_id for auth chunk", {
+      teamId: chunk.team_id,
     });
     return chunk;
   }

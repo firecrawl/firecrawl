@@ -18,7 +18,9 @@ import { UNSUPPORTED_SITE_MESSAGE } from "../../lib/strings";
 import { logger as _logger } from "../../lib/logger";
 import type { Logger } from "winston";
 import { CostTracking } from "../../lib/cost-tracking";
-import { supabase_service } from "../../services/supabase";
+import { eq } from "drizzle-orm";
+import { db } from "../../db/connection";
+import * as schema from "../../db/schema";
 import { fromV1ScrapeOptions } from "../v2/types";
 import { ScrapeJobTimeoutError } from "../../lib/error";
 import { scrapeQueue } from "../../services/worker/nuq";
@@ -132,17 +134,14 @@ async function scrapeX402SearchResult(
 
     let costTracking: ReturnType<typeof CostTracking.prototype.toJSON>;
     if (config.USE_DB_AUTHENTICATION) {
-      const { data: costTrackingResponse, error: costTrackingError } =
-        await supabase_service
-          .from("scrapes")
-          .select("cost_tracking")
-          .eq("id", jobId);
+      const costTrackingResponse = await db
+        .select({ cost_tracking: schema.scrapes.cost_tracking })
+        .from(schema.scrapes)
+        .where(eq(schema.scrapes.id, jobId));
 
-      if (costTrackingError) {
-        throw costTrackingError;
-      }
-
-      costTracking = costTrackingResponse?.[0]?.cost_tracking;
+      costTracking = costTrackingResponse?.[0]?.cost_tracking as ReturnType<
+        typeof CostTracking.prototype.toJSON
+      >;
     } else {
       costTracking = new CostTracking().toJSON();
     }

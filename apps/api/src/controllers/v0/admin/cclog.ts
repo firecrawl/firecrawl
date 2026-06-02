@@ -1,5 +1,6 @@
 import { getRedisConnection } from "../../../services/queue-service";
-import { supabase_service } from "../../../services/supabase";
+import { db } from "../../../db/connection";
+import * as schema from "../../../db/schema";
 import { logger as _logger } from "../../../lib/logger";
 import { Request, Response } from "express";
 
@@ -46,15 +47,13 @@ async function cclog() {
       }
 
       try {
-        const { error } = await supabase_service
-          .from("concurrency_log")
-          .insert(entries);
-        if (error) {
-          logger.error("Error inserting", {
-            error,
-            entryCount: entries.length,
-          });
-        }
+        await db.insert(schema.concurrency_log).values(
+          entries.map(e => ({
+            team_id: e.team_id,
+            concurrency: e.concurrency,
+            created_at: e.created_at.toISOString(),
+          })),
+        );
       } catch (e) {
         logger.error("Error inserting", { error: e });
       }

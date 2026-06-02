@@ -1,39 +1,38 @@
-import { supabase_service } from "../supabase";
-
-interface SubscriptionResponse {
-  prices: {
-    products: {
-      is_enterprise: boolean;
-    };
-  };
-}
+import { and, eq, gt } from "drizzle-orm";
+import { db } from "../../db/connection";
+import * as schema from "../../db/schema";
 
 const RATE_LIMIT_CHANGE_NOTIFICATION_START_DATE = new Date("2025-03-12");
 
 export async function isEnterpriseTeamCreatedAfterRateLimitChange(
   team_id: string,
 ): Promise<boolean> {
-  const { data, error } = (await supabase_service
-    .from("subscriptions")
-    .select("prices(products(is_enterprise))")
-    .eq("status", "active")
-    .eq("team_id", team_id)
-    .gt(
-      "created",
-      RATE_LIMIT_CHANGE_NOTIFICATION_START_DATE.toISOString(),
-    )) as {
-    data: SubscriptionResponse[] | null;
-    error: any;
-  };
+  try {
+    const data = await db
+      .select({ is_enterprise: schema.products.is_enterprise })
+      .from(schema.subscriptions)
+      .innerJoin(
+        schema.prices,
+        eq(schema.subscriptions.price_id, schema.prices.id),
+      )
+      .innerJoin(
+        schema.products,
+        eq(schema.prices.product_id, schema.products.id),
+      )
+      .where(
+        and(
+          eq(schema.subscriptions.status, "active"),
+          eq(schema.subscriptions.team_id, team_id),
+          gt(
+            schema.subscriptions.created,
+            RATE_LIMIT_CHANGE_NOTIFICATION_START_DATE.toISOString(),
+          ),
+        ),
+      );
 
-  if (error || !data) {
+    return data.some(sub => sub.is_enterprise === true);
+  } catch (error) {
     // If there's an error or no subscription found, assume non-enterprise
     return false;
   }
-
-  const isEnterprise = data.find(
-    sub => sub.prices?.products?.is_enterprise === true,
-  );
-
-  return !!isEnterprise;
 }

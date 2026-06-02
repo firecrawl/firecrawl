@@ -9,7 +9,7 @@ import {
 import { logger as _logger } from "../../lib/logger";
 import { logRequest } from "../../services/logging/log_job";
 import { config } from "../../config";
-import { supabase_service } from "../../services/supabase";
+import { agentConsumeFreeRequestIfLeft } from "../../db/rpc";
 import { getScrapeZDR } from "../../lib/zdr-helpers";
 
 export async function agentController(
@@ -57,18 +57,7 @@ export async function agentController(
   let freeRequest: any;
 
   if (config.USE_DB_AUTHENTICATION && !highCreditRequest) {
-    const { data, error: freeRequestError } = await supabase_service.rpc(
-      "agent_consume_free_request_if_left",
-      {
-        i_team_id: req.auth.team_id,
-      },
-    );
-
-    if (freeRequestError) {
-      throw freeRequestError;
-    }
-
-    freeRequest = data;
+    freeRequest = await agentConsumeFreeRequestIfLeft(req.auth.team_id);
   }
 
   const isFreeRequest = highCreditRequest

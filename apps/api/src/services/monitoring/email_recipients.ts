@@ -1,6 +1,8 @@
 import { randomBytes } from "crypto";
+import { and, eq, inArray, ne } from "drizzle-orm";
+import { db, dbRr } from "../../db/connection";
+import * as schema from "../../db/schema";
 import { logger as _logger } from "../../lib/logger";
-import { supabase_rr_service, supabase_service } from "../supabase";
 
 const logger = _logger.child({ module: "monitor-email-recipients" });
 
@@ -35,22 +37,28 @@ function generateRecipientToken(): string {
   return randomBytes(32).toString("base64url");
 }
 
-function throwIfError(error: any, message: string): void {
-  if (error) {
-    throw new Error(`${message}: ${error.message ?? JSON.stringify(error)}`);
+async function run<T>(fn: () => Promise<T>, message: string): Promise<T> {
+  try {
+    return await fn();
+  } catch (error) {
+    throw new Error(
+      `${message}: ${error instanceof Error ? error.message : JSON.stringify(error)}`,
+    );
   }
 }
 
 export async function listMonitorEmailRecipients(
   monitorId: string,
 ): Promise<MonitorEmailRecipientRow[]> {
-  const { data, error } = await supabase_rr_service
-    .from("monitor_email_recipients")
-    .select("*")
-    .eq("monitor_id", monitorId);
-
-  throwIfError(error, "Failed to list monitor email recipients");
-  return (data ?? []) as MonitorEmailRecipientRow[];
+  const data = await run(
+    () =>
+      dbRr
+        .select()
+        .from(schema.monitor_email_recipients)
+        .where(eq(schema.monitor_email_recipients.monitor_id, monitorId)),
+    "Failed to list monitor email recipients",
+  );
+  return data as MonitorEmailRecipientRow[];
 }
 
 async function getRecipientByToken(
@@ -59,33 +67,35 @@ async function getRecipientByToken(
   const trimmed = token.trim();
   if (!trimmed) return null;
 
-  const { data, error } = await supabase_rr_service
-    .from("monitor_email_recipients")
-    .select("*")
-    .eq("token", trimmed)
-    .maybeSingle();
-
-  throwIfError(error, "Failed to look up monitor email recipient by token");
+  const [data] = await run(
+    () =>
+      dbRr
+        .select()
+        .from(schema.monitor_email_recipients)
+        .where(eq(schema.monitor_email_recipients.token, trimmed))
+        .limit(1),
+    "Failed to look up monitor email recipient by token",
+  );
   return (data ?? null) as MonitorEmailRecipientRow | null;
 }
 
 export async function getMonitorNameById(
   monitorId: string,
 ): Promise<string | null> {
-  const { data, error } = await supabase_rr_service
-    .from("monitors")
-    .select("name")
-    .eq("id", monitorId)
-    .maybeSingle();
-
-  if (error) {
+  try {
+    const [data] = await dbRr
+      .select({ name: schema.monitors.name })
+      .from(schema.monitors)
+      .where(eq(schema.monitors.id, monitorId))
+      .limit(1);
+    return data?.name ?? null;
+  } catch (error) {
     logger.warn("Failed to load monitor name for opt-in response", {
       error,
       monitorId,
     });
     return null;
   }
-  return (data?.name as string | undefined) ?? null;
 }
 
 // Team members are auto-confirmed; they already have dashboard access.
@@ -95,12 +105,14 @@ export async function getTeamMemberEmails(
 ): Promise<Set<string>> {
   if (emails.length === 0) return new Set();
 
-  const { data, error } = await supabase_rr_service
-    .from("user_teams")
-    .select("users(email)")
-    .eq("team_id", teamId);
-
-  if (error) {
+  let rows: { email: string | null }[];
+  try {
+    rows = await dbRr
+      .select({ email: schema.users.email })
+      .from(schema.user_teams)
+      .innerJoin(schema.users, eq(schema.user_teams.user_id, schema.users.id))
+      .where(eq(schema.user_teams.team_id, teamId));
+  } catch (error) {
     logger.warn("Failed to load team member emails for recipient sync", {
       error,
       teamId,
@@ -110,10 +122,9 @@ export async function getTeamMemberEmails(
 
   const wanted = new Set(emails.map(normalizeRecipientEmail));
   const matches = new Set<string>();
-  for (const row of data ?? []) {
-    const email = (row as any).users?.email;
-    if (typeof email === "string") {
-      const normalized = normalizeRecipientEmail(email);
+  for (const row of rows) {
+    if (typeof row.email === "string") {
+      const normalized = normalizeRecipientEmail(row.email);
       if (wanted.has(normalized)) matches.add(normalized);
     }
   }
@@ -135,13 +146,20 @@ async function fetchRecipientByMonitorEmail(
   monitorId: string,
   email: string,
 ): Promise<MonitorEmailRecipientRow | null> {
-  const { data, error } = await supabase_rr_service
-    .from("monitor_email_recipients")
-    .select("*")
-    .eq("monitor_id", monitorId)
-    .eq("email", email)
-    .maybeSingle();
-  throwIfError(error, "Failed to look up monitor email recipient");
+  const [data] = await run(
+    () =>
+      dbRr
+        .select()
+        .from(schema.monitor_email_recipients)
+        .where(
+          and(
+            eq(schema.monitor_email_recipients.monitor_id, monitorId),
+            eq(schema.monitor_email_recipients.email, email),
+          ),
+        )
+        .limit(1),
+    "Failed to look up monitor email recipient",
+  );
   return (data ?? null) as MonitorEmailRecipientRow | null;
 }
 
@@ -152,13 +170,20 @@ async function fetchRecipientByMonitorEmailPrimary(
   monitorId: string,
   email: string,
 ): Promise<MonitorEmailRecipientRow | null> {
-  const { data, error } = await supabase_service
-    .from("monitor_email_recipients")
-    .select("*")
-    .eq("monitor_id", monitorId)
-    .eq("email", email)
-    .maybeSingle();
-  throwIfError(error, "Failed to look up monitor email recipient");
+  const [data] = await run(
+    () =>
+      db
+        .select()
+        .from(schema.monitor_email_recipients)
+        .where(
+          and(
+            eq(schema.monitor_email_recipients.monitor_id, monitorId),
+            eq(schema.monitor_email_recipients.email, email),
+          ),
+        )
+        .limit(1),
+    "Failed to look up monitor email recipient",
+  );
   return (data ?? null) as MonitorEmailRecipientRow | null;
 }
 
@@ -167,12 +192,15 @@ async function fetchRecipientByMonitorEmailPrimary(
 async function fetchRecipientByIdPrimary(
   id: string,
 ): Promise<MonitorEmailRecipientRow | null> {
-  const { data, error } = await supabase_service
-    .from("monitor_email_recipients")
-    .select("*")
-    .eq("id", id)
-    .maybeSingle();
-  throwIfError(error, "Failed to look up monitor email recipient by id");
+  const [data] = await run(
+    () =>
+      db
+        .select()
+        .from(schema.monitor_email_recipients)
+        .where(eq(schema.monitor_email_recipients.id, id))
+        .limit(1),
+    "Failed to look up monitor email recipient by id",
+  );
   return (data ?? null) as MonitorEmailRecipientRow | null;
 }
 
@@ -207,13 +235,13 @@ export async function ensureMonitorEmailRecipient(params: {
     updated_at: now,
   };
 
-  const { data, error } = await supabase_service
-    .from("monitor_email_recipients")
-    .insert(insert)
-    .select("*")
-    .maybeSingle();
-
-  if (error) {
+  let data: MonitorEmailRecipientRow | undefined;
+  try {
+    [data] = (await db
+      .insert(schema.monitor_email_recipients)
+      .values(insert)
+      .returning()) as MonitorEmailRecipientRow[];
+  } catch (error) {
     if ((error as { code?: string }).code === POSTGRES_UNIQUE_VIOLATION) {
       const winner = await fetchRecipientByMonitorEmailPrimary(
         params.monitorId,
@@ -223,7 +251,9 @@ export async function ensureMonitorEmailRecipient(params: {
         return { row: winner, created: false };
       }
     }
-    throwIfError(error, "Failed to insert monitor email recipient");
+    throw new Error(
+      `Failed to insert monitor email recipient: ${error instanceof Error ? error.message : JSON.stringify(error)}`,
+    );
   }
 
   return { row: data as MonitorEmailRecipientRow, created: true };
@@ -231,12 +261,14 @@ export async function ensureMonitorEmailRecipient(params: {
 
 export async function markRecipientConfirmationSent(id: string): Promise<void> {
   const now = new Date().toISOString();
-  const { error } = await supabase_service
-    .from("monitor_email_recipients")
-    .update({ confirmation_sent_at: now, updated_at: now })
-    .eq("id", id);
-
-  throwIfError(error, "Failed to mark recipient confirmation sent");
+  await run(
+    () =>
+      db
+        .update(schema.monitor_email_recipients)
+        .set({ confirmation_sent_at: now, updated_at: now })
+        .where(eq(schema.monitor_email_recipients.id, id)),
+    "Failed to mark recipient confirmation sent",
+  );
 }
 
 export async function confirmRecipientByToken(
@@ -254,15 +286,20 @@ export async function confirmRecipientByToken(
   // affect 0 rows; re-fetch and return the actual current state so an
   // in-flight confirm can't silently overwrite a terminal unsubscribe.
   const now = new Date().toISOString();
-  const { data, error } = await supabase_service
-    .from("monitor_email_recipients")
-    .update({ status: "confirmed", confirmed_at: now, updated_at: now })
-    .eq("id", row.id)
-    .eq("status", "pending")
-    .select("*")
-    .maybeSingle();
-
-  throwIfError(error, "Failed to confirm monitor email recipient");
+  const [data] = await run(
+    () =>
+      db
+        .update(schema.monitor_email_recipients)
+        .set({ status: "confirmed", confirmed_at: now, updated_at: now })
+        .where(
+          and(
+            eq(schema.monitor_email_recipients.id, row.id),
+            eq(schema.monitor_email_recipients.status, "pending"),
+          ),
+        )
+        .returning(),
+    "Failed to confirm monitor email recipient",
+  );
   if (data) return data as MonitorEmailRecipientRow;
 
   return await fetchRecipientByIdPrimary(row.id);
@@ -279,15 +316,20 @@ export async function unsubscribeRecipientByToken(
   // so two racing unsubscribes don't double-write timestamps. 0 rows here
   // means a concurrent call beat us to the terminal state.
   const now = new Date().toISOString();
-  const { data, error } = await supabase_service
-    .from("monitor_email_recipients")
-    .update({ status: "unsubscribed", unsubscribed_at: now, updated_at: now })
-    .eq("id", row.id)
-    .neq("status", "unsubscribed")
-    .select("*")
-    .maybeSingle();
-
-  throwIfError(error, "Failed to unsubscribe monitor email recipient");
+  const [data] = await run(
+    () =>
+      db
+        .update(schema.monitor_email_recipients)
+        .set({ status: "unsubscribed", unsubscribed_at: now, updated_at: now })
+        .where(
+          and(
+            eq(schema.monitor_email_recipients.id, row.id),
+            ne(schema.monitor_email_recipients.status, "unsubscribed"),
+          ),
+        )
+        .returning(),
+    "Failed to unsubscribe monitor email recipient",
+  );
   if (data) return data as MonitorEmailRecipientRow;
 
   return await fetchRecipientByIdPrimary(row.id);
@@ -296,12 +338,12 @@ export async function unsubscribeRecipientByToken(
 export async function touchRecipientsNotified(ids: string[]): Promise<void> {
   if (ids.length === 0) return;
   const now = new Date().toISOString();
-  const { error } = await supabase_service
-    .from("monitor_email_recipients")
-    .update({ last_notified_at: now, updated_at: now })
-    .in("id", ids);
-
-  if (error) {
+  try {
+    await db
+      .update(schema.monitor_email_recipients)
+      .set({ last_notified_at: now, updated_at: now })
+      .where(inArray(schema.monitor_email_recipients.id, ids));
+  } catch (error) {
     logger.warn("Failed to update last_notified_at on recipients", {
       error,
       ids,

@@ -1,4 +1,4 @@
-import { supabase_service } from "../../../services/supabase";
+import { diffGetLastScrape } from "../../../db/rpc";
 import { Document } from "../../../controllers/v1/types";
 import { Meta } from "../index";
 import gitDiff from "git-diff";
@@ -89,11 +89,11 @@ export async function deriveDiff(
     }
 
     const start = Date.now();
-    const res = await supabase_service.rpc("diff_get_last_scrape_v7", {
-      i_team_id: meta.internalOptions.teamId,
-      i_url: document.metadata.sourceURL ?? meta.rewrittenUrl ?? meta.url,
-      i_tag: changeTrackingFormat?.tag ?? null,
-    });
+    const resData = await diffGetLastScrape(
+      meta.internalOptions.teamId!,
+      document.metadata.sourceURL ?? meta.rewrittenUrl ?? meta.url,
+      changeTrackingFormat?.tag ?? null,
+    );
     const end = Date.now();
     if (end - start > 100) {
       meta.logger.debug("Diffing took a while", {
@@ -111,7 +111,7 @@ export async function deriveDiff(
           o_date_added: string;
         }
       | undefined
-      | null = (res.data ?? [])[0] as any;
+      | null = resData[0];
 
     const rawJob = data?.o_job_id ? await getJobFromGCS(data.o_job_id) : null;
     const job: Document | null = rawJob?.[0] ?? null;
@@ -265,7 +265,7 @@ export async function deriveDiff(
             (document.warning ? ` ${document.warning}` : "");
         }
       }
-    } else if (!res.error) {
+    } else {
       document.changeTracking = {
         previousScrapeAt: null,
         changeStatus: document.metadata.statusCode === 404 ? "removed" : "new",
@@ -273,11 +273,6 @@ export async function deriveDiff(
           ? "hidden"
           : "visible",
       };
-    } else {
-      meta.logger.error("Error fetching previous scrape", { error: res.error });
-      document.warning =
-        "Comparing failed, please try again later." +
-        (document.warning ? ` ${document.warning}` : "");
     }
   }
 

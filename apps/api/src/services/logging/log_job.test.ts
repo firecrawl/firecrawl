@@ -23,14 +23,10 @@ jest.mock("../../lib/logger", () => ({
   logger,
 }));
 
-const insert = jest.fn<(data: any) => Promise<{ error: any }>>();
-const from = jest.fn(() => ({
-  insert,
-}));
-jest.mock("../supabase", () => ({
-  supabase_service: {
-    from,
-  },
+const values = jest.fn<(data: any) => Promise<void>>();
+const insert = jest.fn(() => ({ values }));
+jest.mock("../../db/connection", () => ({
+  db: { insert },
 }));
 
 jest.mock("../../lib/gcs-jobs", () => ({
@@ -47,6 +43,7 @@ jest.mock("../../lib/extract/extract-redis", () => ({
 }));
 
 import { logSearch, type LoggedSearch } from "./log_job";
+import * as schema from "../../db/schema";
 
 function makeSearch(overrides: Partial<LoggedSearch> = {}): LoggedSearch {
   return {
@@ -71,7 +68,7 @@ function makeSearch(overrides: Partial<LoggedSearch> = {}): LoggedSearch {
 describe("logSearch", () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    insert.mockResolvedValue({ error: null });
+    values.mockResolvedValue(undefined);
   });
 
   it("removes null bytes from search query log fields", async () => {
@@ -85,8 +82,8 @@ describe("logSearch", () => {
 
     await logSearch(search);
 
-    expect(from).toHaveBeenCalledWith("searches");
-    const inserted = insert.mock.calls[0][0];
+    expect(insert).toHaveBeenCalledWith(schema.searches);
+    const inserted = values.mock.calls[0][0];
     expect(inserted.query).toBe("helloworld");
     expect(inserted.options.query).toBe("nestedquery");
     expect(inserted.options.sources[0].location).toBe("New\u0000York");
@@ -94,12 +91,11 @@ describe("logSearch", () => {
   });
 
   it("uses sanitized data in Sentry insert failure context", async () => {
-    insert.mockResolvedValueOnce({
-      error: {
+    values.mockRejectedValueOnce(
+      Object.assign(new Error("unsupported Unicode escape sequence"), {
         code: "22P05",
-        message: "unsupported Unicode escape sequence",
-      },
-    });
+      }),
+    );
 
     await logSearch(
       makeSearch({

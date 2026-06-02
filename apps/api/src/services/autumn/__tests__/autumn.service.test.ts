@@ -3,7 +3,7 @@
  *
  * All external I/O is mocked:
  *   - autumnClient  →  jest.fn() stubs on customers / entities / track
- *   - supabase_rr_service  →  stubbed Supabase query builder
+ *   - dbRr          →  stubbed Drizzle query builder
  */
 
 import { jest } from "@jest/globals";
@@ -44,15 +44,13 @@ jest.mock("../client", () => ({
   },
 }));
 
-// Minimal Supabase query-builder stub: .from().select().eq().single() → resolves data/error.
-const makeSupabaseStub = (data: unknown, error: unknown = null) => ({
-  from: () => ({
-    select: () => ({
-      eq: () => ({
-        single: () => Promise.resolve({ data, error }),
-        gte: () => Promise.resolve({ data: [], error: null }),
+// Minimal Drizzle query-builder stub: .select().from().where().limit() → rows.
+const makeDbStub = (data: unknown) => ({
+  select: () => ({
+    from: () => ({
+      where: () => ({
+        limit: () => Promise.resolve(data ? [data] : []),
       }),
-      gte: () => Promise.resolve({ data: [], error: null }),
     }),
   }),
 });
@@ -62,9 +60,9 @@ let supabaseStubData: { data: unknown; error: unknown } = {
   error: null,
 };
 
-jest.mock("../../supabase", () => ({
-  get supabase_rr_service() {
-    return makeSupabaseStub(supabaseStubData.data, supabaseStubData.error);
+jest.mock("../../../db/connection", () => ({
+  get dbRr() {
+    return makeDbStub(supabaseStubData.data);
   },
 }));
 

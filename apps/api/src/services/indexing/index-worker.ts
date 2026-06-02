@@ -20,11 +20,11 @@ import { resolveBillingMetadata } from "../billing/types";
 import systemMonitor from "../system-monitor";
 import { v7 as uuidv7 } from "uuid";
 import {
-  index_supabase_service,
   processIndexInsertJobs,
   processOMCEJobs,
   queryDomainsForPrecrawl,
 } from "..";
+import { queryTopUrlsForDomain, updateTallyTeam } from "../../db/rpc";
 import { getSearchIndexClient } from "../../lib/search-index-client";
 // Search indexing is now handled by the separate search service
 // import { processSearchIndexJobs } from "../../lib/search-index/queue";
@@ -40,7 +40,6 @@ import { _addScrapeJobToBullMQ } from "../queue-jobs";
 import { withSpan, setSpanAttributes } from "../../lib/otel-tracer";
 import { crawlGroup } from "../worker/nuq";
 import { getACUCTeam } from "../../controllers/auth";
-import { supabase_service } from "../supabase";
 import { processEngpickerJob } from "../../lib/engpicker";
 import { logRequest } from "../logging/log_job";
 
@@ -90,8 +89,7 @@ const processBillingJobInternal = async (token: string, job: Job) => {
         is_extract,
         api_key_id,
         autumnTrackInRequest,
-      } =
-        job.data;
+      } = job.data;
 
       logger.info(`Adding team ${team_id} billing operation to batch queue`, {
         credits,
@@ -284,13 +282,16 @@ const processPrecrawlJob = async (token: string, job: Job) => {
         const batch = batches[i];
 
         const batchFutures = batch.map(({ hash, urlsToFetch }) => {
-          return index_supabase_service
-            .rpc("query_top_urls_for_domain", {
-              p_domain_hash: hash,
-              p_time_window: "8 days", // increasing window can significantly slow down the query, modify with caution
-              p_top_n: urlsToFetch,
-            })
-            .overrideTypes<DomainUrlResult[]>();
+          return queryTopUrlsForDomain<DomainUrlResult>(
+            hash,
+            "8 days", // increasing window can significantly slow down the query, modify with caution
+            urlsToFetch,
+          )
+            .then(data => ({ data, error: null }))
+            .catch(error => ({
+              data: null as DomainUrlResult[] | null,
+              error,
+            }));
         });
 
         const startTimeNs = process.hrtime.bigint();
@@ -682,14 +683,11 @@ async function tallyBilling() {
   for (const teamId of billedTeams) {
     logger.info("Updating tally for team", { teamId });
 
-    const { error } = await supabase_service.rpc("update_tally_10_team", {
-      i_team_id: teamId,
-    });
-
-    if (error) {
-      logger.warn("Failed to update tally for team", { teamId, error });
-    } else {
+    try {
+      await updateTallyTeam(teamId);
       logger.info("Updated tally for team", { teamId });
+    } catch (error) {
+      logger.warn("Failed to update tally for team", { teamId, error });
     }
   }
 

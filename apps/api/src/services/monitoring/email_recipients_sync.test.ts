@@ -1,8 +1,3 @@
-jest.mock("../supabase", () => ({
-  supabase_service: {},
-  supabase_rr_service: {},
-}));
-
 const mockEnsureRecipient = jest.fn();
 const mockListRecipients = jest.fn();
 const mockGetTeamMemberEmails = jest.fn();
@@ -52,7 +47,8 @@ function recipientRow(
     status,
     token: `tok-${email}`,
     source,
-    confirmation_sent_at: status === "pending" ? new Date().toISOString() : null,
+    confirmation_sent_at:
+      status === "pending" ? new Date().toISOString() : null,
     confirmed_at: status === "confirmed" ? new Date().toISOString() : null,
     unsubscribed_at:
       status === "unsubscribed" ? new Date().toISOString() : null,
@@ -201,11 +197,7 @@ describe("syncMonitorEmailRecipients", () => {
     mockListRecipients.mockResolvedValue([]);
     mockGetTeamMemberEmails.mockResolvedValue(new Set(["owner@team.com"]));
     mockEnsureRecipient.mockImplementation(async ({ input }) => ({
-      row: recipientRow(
-        input.email,
-        input.status,
-        input.source,
-      ),
+      row: recipientRow(input.email, input.status, input.source),
       created: true,
     }));
 
@@ -214,7 +206,8 @@ describe("syncMonitorEmailRecipients", () => {
     });
 
     expect(mockSendConfirmationEmail).toHaveBeenCalledTimes(1);
-    const emailedTo = mockSendConfirmationEmail.mock.calls[0][0].recipient.email;
+    const emailedTo =
+      mockSendConfirmationEmail.mock.calls[0][0].recipient.email;
     expect(emailedTo).toBe("external@elsewhere.com");
 
     const byEmail = new Map(result.recipients.map(r => [r.email, r]));

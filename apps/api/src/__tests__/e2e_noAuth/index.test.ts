@@ -13,9 +13,7 @@ describe("E2E Tests for API Routes with No Authentication", () => {
   beforeAll(() => {
     originalConfig = {
       USE_DB_AUTHENTICATION: config.USE_DB_AUTHENTICATION,
-      SUPABASE_ANON_TOKEN: config.SUPABASE_ANON_TOKEN,
-      SUPABASE_URL: config.SUPABASE_URL,
-      SUPABASE_SERVICE_TOKEN: config.SUPABASE_SERVICE_TOKEN,
+      DATABASE_URL: config.DATABASE_URL,
       OPENAI_API_KEY: config.OPENAI_API_KEY,
       BULL_AUTH_KEY: config.BULL_AUTH_KEY,
       PLAYWRIGHT_MICROSERVICE_URL: config.PLAYWRIGHT_MICROSERVICE_URL,
@@ -23,9 +21,7 @@ describe("E2E Tests for API Routes with No Authentication", () => {
       TEST_API_KEY: config.TEST_API_KEY,
     };
     config.USE_DB_AUTHENTICATION = false;
-    config.SUPABASE_ANON_TOKEN = "";
-    config.SUPABASE_URL = "";
-    config.SUPABASE_SERVICE_TOKEN = "";
+    config.DATABASE_URL = "";
     config.OPENAI_API_KEY = "";
     config.BULL_AUTH_KEY = "";
     config.PLAYWRIGHT_MICROSERVICE_URL = "";

@@ -1,4 +1,6 @@
-import { supabase_rr_service } from "../supabase";
+import { and, desc, eq, inArray } from "drizzle-orm";
+import { dbRr } from "../../db/connection";
+import * as schema from "../../db/schema";
 import { logger as _logger } from "../../lib/logger";
 
 export type WebhookLogRow = {
@@ -16,15 +18,29 @@ export async function getLatestWebhookLog(params: {
   jobId: string;
   event: string;
 }): Promise<WebhookLogRow | null> {
-  const { data, error } = await supabase_rr_service
-    .from("webhook_logs")
-    .select("id,success,error,status_code,latency_ms,url,event,created_at")
-    .eq("crawl_id", params.jobId)
-    .eq("event", params.event)
-    .order("created_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-  if (error) {
+  try {
+    const [data] = await dbRr
+      .select({
+        id: schema.webhook_logs.id,
+        success: schema.webhook_logs.success,
+        error: schema.webhook_logs.error,
+        status_code: schema.webhook_logs.status_code,
+        latency_ms: schema.webhook_logs.latency_ms,
+        url: schema.webhook_logs.url,
+        event: schema.webhook_logs.event,
+        created_at: schema.webhook_logs.created_at,
+      })
+      .from(schema.webhook_logs)
+      .where(
+        and(
+          eq(schema.webhook_logs.crawl_id, params.jobId),
+          eq(schema.webhook_logs.event, params.event),
+        ),
+      )
+      .orderBy(desc(schema.webhook_logs.created_at))
+      .limit(1);
+    return (data ?? null) as WebhookLogRow | null;
+  } catch (error) {
     _logger.warn("Failed to fetch latest webhook log", {
       module: "webhook-logs",
       jobId: params.jobId,
@@ -33,7 +49,6 @@ export async function getLatestWebhookLog(params: {
     });
     return null;
   }
-  return data as WebhookLogRow | null;
 }
 
 export async function getLatestWebhookLogsByJob(params: {
@@ -43,16 +58,29 @@ export async function getLatestWebhookLogsByJob(params: {
   const result = new Map<string, WebhookLogRow>();
   if (params.jobIds.length === 0) return result;
 
-  const { data, error } = await supabase_rr_service
-    .from("webhook_logs")
-    .select(
-      "id,success,error,status_code,latency_ms,url,event,created_at,crawl_id",
-    )
-    .in("crawl_id", params.jobIds)
-    .eq("event", params.event)
-    .order("created_at", { ascending: false });
-
-  if (error) {
+  let data: (WebhookLogRow & { crawl_id: string })[];
+  try {
+    data = await dbRr
+      .select({
+        id: schema.webhook_logs.id,
+        success: schema.webhook_logs.success,
+        error: schema.webhook_logs.error,
+        status_code: schema.webhook_logs.status_code,
+        latency_ms: schema.webhook_logs.latency_ms,
+        url: schema.webhook_logs.url,
+        event: schema.webhook_logs.event,
+        created_at: schema.webhook_logs.created_at,
+        crawl_id: schema.webhook_logs.crawl_id,
+      })
+      .from(schema.webhook_logs)
+      .where(
+        and(
+          inArray(schema.webhook_logs.crawl_id, params.jobIds),
+          eq(schema.webhook_logs.event, params.event),
+        ),
+      )
+      .orderBy(desc(schema.webhook_logs.created_at));
+  } catch (error) {
     _logger.warn("Failed to fetch webhook logs batch", {
       module: "webhook-logs",
       event: params.event,
@@ -61,7 +89,7 @@ export async function getLatestWebhookLogsByJob(params: {
     return result;
   }
 
-  for (const row of (data ?? []) as (WebhookLogRow & { crawl_id: string })[]) {
+  for (const row of data) {
     if (!result.has(row.crawl_id)) result.set(row.crawl_id, row);
   }
   return result;

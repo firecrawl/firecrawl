@@ -1,6 +1,8 @@
 import { Response } from "express";
+import { and, desc, eq, gte, lt, or } from "drizzle-orm";
 import { RequestWithAuth, ErrorResponse } from "./types";
-import { supabase_rr_service } from "../../services/supabase";
+import { dbRr } from "../../db/connection";
+import * as schema from "../../db/schema";
 import { logger as _logger } from "../../lib/logger";
 
 const ACTIVITY_WINDOW_HOURS = 24;
@@ -98,30 +100,50 @@ export async function activityController(
     Date.now() - ACTIVITY_WINDOW_HOURS * 60 * 60 * 1000,
   ).toISOString();
 
-  let query = supabase_rr_service
-    .from("requests")
-    .select("id, kind, api_version, created_at, target_hint")
-    .eq("team_id", req.auth.team_id)
-    .gte("created_at", windowStart)
-    .order("created_at", { ascending: false })
-    .order("id", { ascending: false })
-    .limit(limit + 1); // fetch one extra to determine has_more
+  const conditions = [
+    eq(schema.requests.team_id, req.auth.team_id),
+    gte(schema.requests.created_at, windowStart),
+  ];
 
   if (endpoint) {
-    query = query.eq("kind", endpoint);
+    conditions.push(eq(schema.requests.kind, endpoint));
   }
 
   if (cursor) {
     // For keyset pagination: fetch rows where (created_at, id) < (cursor.createdAt, cursor.id)
     // This translates to: created_at < cursor OR (created_at = cursor AND id < cursor.id)
-    query = query.or(
-      `created_at.lt.${cursor.createdAt},and(created_at.eq.${cursor.createdAt},id.lt.${cursor.id})`,
+    conditions.push(
+      or(
+        lt(schema.requests.created_at, cursor.createdAt),
+        and(
+          eq(schema.requests.created_at, cursor.createdAt),
+          lt(schema.requests.id, cursor.id),
+        ),
+      )!,
     );
   }
 
-  const { data, error } = await query;
-
-  if (error) {
+  let data: {
+    id: string;
+    kind: string | null;
+    api_version: string | null;
+    created_at: string | null;
+    target_hint: string | null;
+  }[];
+  try {
+    data = await dbRr
+      .select({
+        id: schema.requests.id,
+        kind: schema.requests.kind,
+        api_version: schema.requests.api_version,
+        created_at: schema.requests.created_at,
+        target_hint: schema.requests.target_hint,
+      })
+      .from(schema.requests)
+      .where(and(...conditions))
+      .orderBy(desc(schema.requests.created_at), desc(schema.requests.id))
+      .limit(limit + 1); // fetch one extra to determine has_more
+  } catch (error) {
     logger.error("Failed to fetch activity", { error });
     return res.status(500).json({
       success: false,

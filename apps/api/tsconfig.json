@@ -12,6 +12,7 @@
     "outDir": "./dist/src",
     "moduleResolution": "NodeNext",
     "strictNullChecks": true,
+    "skipLibCheck": true,
 
     "inlineSources": true,
 

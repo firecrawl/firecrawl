@@ -4,11 +4,9 @@ import { z } from "zod";
 import { config } from "../../config";
 import { logger as _logger } from "../../lib/logger";
 import { autumnService } from "../../services/autumn/autumn.service";
-import {
-  isPostgrestNoRowsError,
-  supabase_service,
-  supabase_rr_service,
-} from "../../services/supabase";
+import { and, eq, gte } from "drizzle-orm";
+import { db, dbRr } from "../../db/connection";
+import * as schema from "../../db/schema";
 import { captureExceptionWithZdrCheck } from "../../services/sentry";
 import {
   RequestWithAuth,
@@ -66,18 +64,24 @@ async function lookupSearchRow(
   searchId: string,
   dbTeamId: string,
 ): Promise<SearchRowForFeedback | null> {
-  const { data, error } = await supabase_rr_service
-    .from("searches")
-    .select("id, team_id, credits_cost, created_at, is_successful")
-    .eq("id", searchId)
-    .eq("team_id", dbTeamId)
-    .single();
+  const [data] = await dbRr
+    .select({
+      id: schema.searches.id,
+      team_id: schema.searches.team_id,
+      credits_cost: schema.searches.credits_cost,
+      created_at: schema.searches.created_at,
+      is_successful: schema.searches.is_successful,
+    })
+    .from(schema.searches)
+    .where(
+      and(
+        eq(schema.searches.id, searchId),
+        eq(schema.searches.team_id, dbTeamId),
+      ),
+    )
+    .limit(1);
 
-  if (error) {
-    if (isPostgrestNoRowsError(error)) return null;
-    throw error;
-  }
-  return data as SearchRowForFeedback | null;
+  return (data ?? null) as SearchRowForFeedback | null;
 }
 
 function startOfUtcDay(now: Date = new Date()): Date {
@@ -94,13 +98,18 @@ async function sumTeamCreditsRefundedToday(
 ): Promise<number> {
   const since = startOfUtcDay().toISOString();
 
-  const { data, error } = await supabase_rr_service
-    .from("search_feedback")
-    .select("credits_refunded")
-    .eq("team_id", dbTeamId)
-    .gte("created_at", since);
-
-  if (error) {
+  let data: { credits_refunded: number | null }[];
+  try {
+    data = await dbRr
+      .select({ credits_refunded: schema.search_feedback.credits_refunded })
+      .from(schema.search_feedback)
+      .where(
+        and(
+          eq(schema.search_feedback.team_id, dbTeamId),
+          gte(schema.search_feedback.created_at, since),
+        ),
+      );
+  } catch (error) {
     logger.warn(
       "Failed to compute today's refund total; allowing refund this call",
       { error },
@@ -108,11 +117,7 @@ async function sumTeamCreditsRefundedToday(
     return 0;
   }
 
-  return (data ?? []).reduce(
-    (sum, row: { credits_refunded: number | null }) =>
-      sum + (row.credits_refunded ?? 0),
-    0,
-  );
+  return data.reduce((sum, row) => sum + (row.credits_refunded ?? 0), 0);
 }
 
 export async function searchFeedbackController(
@@ -237,9 +242,8 @@ export async function searchFeedbackController(
     }
 
     const feedbackId = uuidv7();
-    const { error: insertErr } = await supabase_service
-      .from("search_feedback")
-      .insert({
+    try {
+      await db.insert(schema.search_feedback).values({
         id: feedbackId,
         search_id: searchId,
         team_id: dbTeamId,
@@ -251,14 +255,16 @@ export async function searchFeedbackController(
         origin: parsedBody.origin ?? null,
         credits_refunded: 0,
       });
-
-    if (insertErr) {
+    } catch (insertErr) {
       if ((insertErr as { code?: string }).code === POSTGRES_UNIQUE_VIOLATION) {
-        const { data: existing } = await supabase_rr_service
-          .from("search_feedback")
-          .select("id, credits_refunded")
-          .eq("search_id", searchId)
-          .single();
+        const [existing] = await dbRr
+          .select({
+            id: schema.search_feedback.id,
+            credits_refunded: schema.search_feedback.credits_refunded,
+          })
+          .from(schema.search_feedback)
+          .where(eq(schema.search_feedback.search_id, searchId))
+          .limit(1);
 
         const dailyCapForResponse = config.SEARCH_FEEDBACK_DAILY_CAP_CREDITS;
         const refundedTodayForResponse = await sumTeamCreditsRefundedToday(
@@ -335,11 +341,12 @@ export async function searchFeedbackController(
       }
 
       if (creditsRefunded > 0) {
-        const { error: updateErr } = await supabase_service
-          .from("search_feedback")
-          .update({ credits_refunded: creditsRefunded })
-          .eq("id", feedbackId);
-        if (updateErr) {
+        try {
+          await db
+            .update(schema.search_feedback)
+            .set({ credits_refunded: creditsRefunded })
+            .where(eq(schema.search_feedback.id, feedbackId));
+        } catch (updateErr) {
           logger.warn(
             "Failed to persist credits_refunded on search_feedback row",
             { error: updateErr, feedbackId, creditsRefunded },

@@ -1,6 +1,7 @@
 import { EventDataMap, EventDefinitionSlug } from "./data-schemas";
-// @ts-nocheck - Schema not in types_db yet
-import { supabase_ledger_service } from "./supabase-ledger";
+import { eq } from "drizzle-orm";
+import { db } from "../../db/connection";
+import * as schema from "../../db/schema";
 import { getValue, setValue } from "../redis";
 import { logger } from "../../lib/logger";
 
@@ -26,14 +27,15 @@ export async function trackEvent<T extends EventDefinitionSlug>(
       providerDefinition = JSON.parse(cachedData);
     } else {
       // If not in cache, fetch from database
-      const result = await supabase_ledger_service
-        .from("provider_definitions")
-        .select("id")
-        .eq("slug", definitionSlug)
-        .single();
-
-      definitionError = result.error;
-      providerDefinition = result.data;
+      try {
+        [providerDefinition] = await db
+          .select({ id: schema.provider_definitions.id })
+          .from(schema.provider_definitions)
+          .where(eq(schema.provider_definitions.slug, definitionSlug))
+          .limit(1);
+      } catch (error) {
+        definitionError = error;
+      }
 
       // Cache the result for 24 hours (1440 minutes)
       if (!definitionError && providerDefinition) {
@@ -51,23 +53,24 @@ export async function trackEvent<T extends EventDefinitionSlug>(
     }
 
     // Create the track
-    const { data: track, error: trackError } = await supabase_ledger_service
-      .from("tracks")
-      //@ts-ignore
-      .insert({
-        created_at: new Date().toISOString(),
-        //@ts-ignore
-        provider_definition_id: providerDefinition.id,
-        data: data,
-      })
-      .select("uuid")
-      .single();
-
-    if (trackError || !track) {
+    let track: { uuid: string } | undefined;
+    try {
+      [track] = await db
+        .insert(schema.tracks)
+        .values({
+          created_at: new Date().toISOString(),
+          provider_definition_id: providerDefinition.id,
+          data: data,
+        })
+        .returning({ uuid: schema.tracks.uuid });
+    } catch (trackError) {
       logger.error("Error creating track:", trackError);
       return null;
     }
-    //@ts-ignore
+
+    if (!track) {
+      return null;
+    }
     return track.uuid;
   } catch (error) {
     logger.error("Error tracking event:", error);

@@ -29,11 +29,9 @@ jest.mock("../../autumn/autumn.service", () => ({
   },
 }));
 
-const rpc = jest.fn<(name: string, args: any) => Promise<any>>();
-jest.mock("../../supabase", () => ({
-  supabase_service: {
-    rpc,
-  },
+const billTeam6 = jest.fn<(params: any) => Promise<{ api_key: string }[]>>();
+jest.mock("../../../db/rpc", () => ({
+  billTeam6,
 }));
 
 const setCachedACUC = jest.fn();
@@ -126,7 +124,7 @@ beforeEach(() => {
   queue = [];
   billedTeams.clear();
   locks.clear();
-  rpc.mockResolvedValue({ data: [], error: null });
+  billTeam6.mockResolvedValue([]);
   trackCredits.mockResolvedValue(true);
   refundCredits.mockResolvedValue(undefined);
 });
@@ -137,7 +135,7 @@ describe("processBillingBatch", () => {
 
     await processBillingBatch();
 
-    expect(rpc).toHaveBeenCalled();
+    expect(billTeam6).toHaveBeenCalled();
     expect(trackCredits).toHaveBeenCalledWith({
       teamId: "team-1",
       value: 10,
@@ -156,13 +154,13 @@ describe("processBillingBatch", () => {
 
     await processBillingBatch();
 
-    expect(rpc).toHaveBeenCalled();
+    expect(billTeam6).toHaveBeenCalled();
     expect(trackCredits).not.toHaveBeenCalled();
   });
 
   it("continues when billing returns success false", async () => {
     queue = [makeOp({ autumnTrackInRequest: true })];
-    rpc.mockResolvedValueOnce({ data: null, error: new Error("db failed") });
+    billTeam6.mockRejectedValueOnce(new Error("db failed"));
 
     await processBillingBatch();
 
@@ -181,7 +179,7 @@ describe("processBillingBatch", () => {
 
   it("captures exceptions when billing throws", async () => {
     queue = [makeOp({ autumnTrackInRequest: true })];
-    rpc.mockRejectedValueOnce(new Error("rpc exploded"));
+    billTeam6.mockRejectedValueOnce(new Error("rpc exploded"));
 
     await processBillingBatch();
 
@@ -211,9 +209,9 @@ describe("processBillingBatch", () => {
         autumnTrackInRequest: false,
       }),
     ];
-    rpc
-      .mockResolvedValueOnce({ data: null, error: new Error("db failed") })
-      .mockResolvedValueOnce({ data: [], error: null });
+    billTeam6
+      .mockRejectedValueOnce(new Error("db failed"))
+      .mockResolvedValueOnce([]);
     refundCredits.mockRejectedValueOnce(new Error("refund failed"));
 
     await processBillingBatch();
@@ -228,7 +226,7 @@ describe("processBillingBatch", () => {
         subscriptionId: "sub-1",
       },
     });
-    expect(rpc).toHaveBeenCalledTimes(2);
+    expect(billTeam6).toHaveBeenCalledTimes(2);
     expect(trackCredits).toHaveBeenCalledWith({
       teamId: "team-2",
       value: 10,

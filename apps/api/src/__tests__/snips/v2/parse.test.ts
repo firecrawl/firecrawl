@@ -6,7 +6,9 @@ import {
   TEST_SUITE_WEBSITE,
 } from "../lib";
 import { idmux, Identity, parse, parseWithFailure, scrapeTimeout } from "./lib";
-import { supabase_service } from "../../../services/supabase";
+import { and, desc, eq } from "drizzle-orm";
+import { db } from "../../../db/connection";
+import * as schema from "../../../db/schema";
 import { config } from "../../../config";
 
 const DOCX_FIXTURE_BASE64 =
@@ -212,16 +214,19 @@ describe("/v2/parse", () => {
       );
 
       const requestLog = await waitForSingleRow<{ id: string }>(async () => {
-        const { data, error } = await supabase_service
-          .from("requests")
-          .select("id")
-          .eq("team_id", identity.teamId)
-          .eq("kind", "parse")
-          .eq("target_hint", filename)
-          .order("created_at", { ascending: false })
+        const data = await db
+          .select({ id: schema.requests.id })
+          .from(schema.requests)
+          .where(
+            and(
+              eq(schema.requests.team_id, identity.teamId),
+              eq(schema.requests.kind, "parse"),
+              eq(schema.requests.target_hint, filename),
+            ),
+          )
+          .orderBy(desc(schema.requests.created_at))
           .limit(1);
-        if (error) throw error;
-        return data?.[0] ?? null;
+        return data[0] ?? null;
       });
 
       expect(requestLog).not.toBeNull();
@@ -230,14 +235,16 @@ describe("/v2/parse", () => {
         request_id: string;
         url: string;
       }>(async () => {
-        const { data, error } = await supabase_service
-          .from("parses")
-          .select("request_id, url")
-          .eq("request_id", requestLog!.id)
-          .order("created_at", { ascending: false })
+        const data = await db
+          .select({
+            request_id: schema.parses.request_id,
+            url: schema.parses.url,
+          })
+          .from(schema.parses)
+          .where(eq(schema.parses.request_id, requestLog!.id))
+          .orderBy(desc(schema.parses.created_at))
           .limit(1);
-        if (error) throw error;
-        return data?.[0] ?? null;
+        return data[0] ?? null;
       });
 
       expect(parseLog).not.toBeNull();
@@ -246,14 +253,12 @@ describe("/v2/parse", () => {
         `https://parse.firecrawl.dev/uploads/${encodeURIComponent(filename)}`,
       );
 
-      const { data: scrapeRows, error: scrapeRowsError } =
-        await supabase_service
-          .from("scrapes")
-          .select("id")
-          .eq("request_id", requestLog!.id)
-          .limit(1);
-      expect(scrapeRowsError).toBeFalsy();
-      expect(scrapeRows ?? []).toHaveLength(0);
+      const scrapeRows = await db
+        .select({ id: schema.scrapes.id })
+        .from(schema.scrapes)
+        .where(eq(schema.scrapes.request_id, requestLog!.id))
+        .limit(1);
+      expect(scrapeRows).toHaveLength(0);
     },
     scrapeTimeout,
   );

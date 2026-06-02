@@ -459,7 +459,7 @@ app.listen(workerPort, () => {
 
   initializeEngineForcing();
 
-  if (config.USE_DB_AUTHENTICATION) {
+  if (config.USE_DB_AUTHENTICATION && !config.DISABLE_MONITORING) {
     monitorSchedulerInterval = setInterval(() => {
       enqueueDueMonitorChecks().catch(error => {
         _logger.error("Failed to enqueue due monitor checks", { error });

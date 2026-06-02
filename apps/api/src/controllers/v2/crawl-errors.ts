@@ -8,7 +8,9 @@ import {
 import { getCrawl, getCrawlJobs } from "../../lib/crawl-redis";
 import { redisEvictConnection } from "../../../src/services/redis";
 import { configDotenv } from "dotenv";
-import { supabase_rr_service } from "../../services/supabase";
+import { and, eq } from "drizzle-orm";
+import { dbRr } from "../../db/connection";
+import * as schema from "../../db/schema";
 import { logger as _logger } from "../../lib/logger";
 import { deserializeTransportableError } from "../../lib/error-serde";
 import { TransportableError } from "../../lib/error";
@@ -75,14 +77,14 @@ export async function crawlErrorsController(
     });
   } else if (config.USE_DB_AUTHENTICATION) {
     // Check the requests table for the crawl/batch scrape request
-    const { data: request, error: requestError } = await supabase_rr_service
-      .from("requests")
-      .select("*")
-      .eq("id", req.params.jobId)
-      .limit(1)
-      .throwOnError();
-
-    if (requestError) {
+    let request: (typeof schema.requests.$inferSelect)[];
+    try {
+      request = await dbRr
+        .select()
+        .from(schema.requests)
+        .where(eq(schema.requests.id, req.params.jobId))
+        .limit(1);
+    } catch (requestError) {
       _logger.error("Error getting request", { error: requestError });
       throw requestError;
     }
@@ -98,7 +100,7 @@ export async function crawlErrorsController(
 
     if (
       requestData &&
-      new Date().valueOf() - new Date(requestData.created_at).valueOf() >
+      new Date().valueOf() - new Date(requestData.created_at!).valueOf() >
         crawlTtlMs
     ) {
       return res.status(404).json({ success: false, error: "Job expired" });
@@ -109,16 +111,19 @@ export async function crawlErrorsController(
     }
 
     // Get failed scrapes from the scrapes table
-    const { data: failedScrapes, error: failedScrapesError } =
-      await supabase_rr_service
-        .from("scrapes")
-        .select("*")
-        .eq("request_id", req.params.jobId)
-        .eq("team_id", req.auth.team_id)
-        .eq("is_successful", false)
-        .throwOnError();
-
-    if (failedScrapesError) {
+    let failedScrapes: (typeof schema.scrapes.$inferSelect)[];
+    try {
+      failedScrapes = await dbRr
+        .select()
+        .from(schema.scrapes)
+        .where(
+          and(
+            eq(schema.scrapes.request_id, req.params.jobId),
+            eq(schema.scrapes.team_id, req.auth.team_id),
+            eq(schema.scrapes.is_successful, false),
+          ),
+        );
+    } catch (failedScrapesError) {
       _logger.error("Error getting failed scrapes", {
         error: failedScrapesError,
       });
@@ -134,10 +139,9 @@ export async function crawlErrorsController(
           : null;
         return {
           id: scrape.id,
-          timestamp:
-            scrape.created_at !== undefined
-              ? new Date(scrape.created_at).toISOString()
-              : undefined,
+          timestamp: scrape.created_at
+            ? new Date(scrape.created_at).toISOString()
+            : undefined,
           url: scrape.url,
           ...(error
             ? {

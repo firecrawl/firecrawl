@@ -13,10 +13,7 @@ const calls: CallRecord[] = [];
 // eq/neq calls and resolves at .maybeSingle() / .single() with the next
 // queued result. Tests stay explicit about query order without coupling to
 // the precise method chain shape.
-type QueuedResponse = (
-  client: ClientKind,
-  op: ChainOp,
-) => Promise<QueryResult>;
+type QueuedResponse = (client: ClientKind, op: ChainOp) => Promise<QueryResult>;
 let queue: QueuedResponse[] = [];
 
 function queueResponses(responses: QueuedResponse[]): void {
@@ -28,16 +25,21 @@ function makeChain(client: ClientKind): any {
   const setOp = (next: ChainOp) => {
     if (op === null) op = next;
   };
-  const resolve = (): Promise<QueryResult> => {
+  // Drizzle returns row arrays and throws on error; convert the queued
+  // {data, error} responses accordingly.
+  const resolve = (): Promise<unknown[]> => {
     const finalOp = op ?? "unknown";
     calls.push({ client, op: finalOp });
     const next = queue.shift();
     if (!next) {
       throw new Error(
-        `No queued Supabase response for client=${client} op=${finalOp} (queue exhausted)`,
+        `No queued response for client=${client} op=${finalOp} (queue exhausted)`,
       );
     }
-    return next(client, finalOp);
+    return next(client, finalOp).then(({ data, error }) => {
+      if (error) return Promise.reject(error);
+      return data === null || data === undefined ? [] : [data];
+    });
   };
   const builder: any = {
     select: () => {
@@ -56,21 +58,27 @@ function makeChain(client: ClientKind): any {
       setOp("delete");
       return builder;
     },
+    from: () => builder,
+    values: () => builder,
+    set: () => builder,
+    where: () => builder,
     eq: () => builder,
     neq: () => builder,
     in: () => builder,
-    maybeSingle: resolve,
-    single: resolve,
+    orderBy: () => builder,
+    limit: () => resolve(),
+    returning: () => resolve(),
+    then: (res: any, rej: any) => resolve().then(res, rej),
   };
   return builder;
 }
 
-jest.mock("../supabase", () => ({
-  supabase_service: {
-    from: (...args: unknown[]) => fromPrimary(...args),
+jest.mock("../../db/connection", () => ({
+  get db() {
+    return makeChain("primary");
   },
-  supabase_rr_service: {
-    from: (...args: unknown[]) => fromRR(...args),
+  get dbRr() {
+    return makeChain("rr");
   },
 }));
 
@@ -118,10 +126,14 @@ const baseEnsureInput = {
   },
 };
 
-const ok = (data: unknown): QueuedResponse => () =>
-  Promise.resolve({ data, error: null });
-const fail = (error: unknown): QueuedResponse => () =>
-  Promise.resolve({ data: null, error });
+const ok =
+  (data: unknown): QueuedResponse =>
+  () =>
+    Promise.resolve({ data, error: null });
+const fail =
+  (error: unknown): QueuedResponse =>
+  () =>
+    Promise.resolve({ data: null, error });
 
 describe("ensureMonitorEmailRecipient", () => {
   it("returns existing row when the recipient already exists (no insert)", async () => {

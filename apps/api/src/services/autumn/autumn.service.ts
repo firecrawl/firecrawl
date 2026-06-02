@@ -1,7 +1,9 @@
 import { randomUUID } from "crypto";
 import { config } from "../../config";
 import { logger } from "../../lib/logger";
-import { supabase_rr_service } from "../supabase";
+import { eq } from "drizzle-orm";
+import { dbRr } from "../../db/connection";
+import * as schema from "../../db/schema";
 import { autumnClient } from "./client";
 import type {
   CreateEntityParams,
@@ -87,13 +89,12 @@ export class AutumnService {
   }
 
   private async lookupOrgIdForTeam(teamId: string): Promise<string> {
-    const { data, error } = await supabase_rr_service
-      .from("teams")
-      .select("org_id")
-      .eq("id", teamId)
-      .single();
+    const [data] = await dbRr
+      .select({ org_id: schema.teams.org_id })
+      .from(schema.teams)
+      .where(eq(schema.teams.id, teamId))
+      .limit(1);
 
-    if (error) throw error;
     if (!data?.org_id) {
       throw new Error(`Missing org_id for team ${teamId}`);
     }

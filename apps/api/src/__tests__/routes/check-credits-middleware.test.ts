@@ -6,10 +6,6 @@ jest.mock("../../services/autumn/autumn.service", () => ({
   },
 }));
 
-jest.mock("../../services/supabase", () => ({
-  supabase_service: { rpc: jest.fn() },
-}));
-
 jest.mock("../../lib/http-metrics", () => ({
   httpRequestDurationSeconds: { observe: jest.fn() },
   getRoutePattern: jest.fn(() => "/v1/crawl"),

@@ -6,7 +6,6 @@ import { Meta } from "../..";
 import {
   getIndexFromGCS,
   hashURL,
-  index_supabase_service,
   normalizeURLForIndex,
   saveIndexToGCS,
   generateURLSplits,
@@ -14,6 +13,7 @@ import {
   generateDomainSplits,
   addOMCEJob,
 } from "../../../../services";
+import { queryMaxAge, indexGetRecent4 } from "../../../../db/rpc";
 import {
   AgentIndexOnlyError,
   EngineError,
@@ -234,23 +234,18 @@ export async function scrapeURLWithIndex(
       try {
         maxAge = await Promise.race([
           (async () => {
-            const { data, error } = await index_supabase_service.rpc(
-              "query_max_age",
-              {
-                i_domain_hash: domainSplitsHash[level],
-              },
-            );
-
-            if (error || !data || data.length === 0) {
-              meta.logger.warn("Failed to get max age from DB", {
-                error,
-              });
+            try {
+              const data = await queryMaxAge(domainSplitsHash[level]);
+              if (!data || data.length === 0) {
+                return 2 * 24 * 60 * 60 * 1000; // 2 days
+              }
+              return data[0].max_age ?? 2 * 24 * 60 * 60 * 1000; // 2 days
+            } catch (error) {
+              meta.logger.warn("Failed to get max age from DB", { error });
               return 2 * 24 * 60 * 60 * 1000; // 2 days
             }
-
-            return data[0].max_age ?? 2 * 24 * 60 * 60 * 1000; // 2 days
           })(),
-          new Promise(resolve =>
+          new Promise<number>(resolve =>
             setTimeout(() => {
               resolve(2 * 24 * 60 * 60 * 1000); // 2 days
             }, 200),
@@ -267,29 +262,27 @@ export async function scrapeURLWithIndex(
 
   const checkpoint1 = Date.now();
 
-  const { data, error } = await index_supabase_service.rpc(
-    "index_get_recent_4",
-    {
-      p_url_hash: urlHash,
-      p_max_age_ms: maxAge,
-      p_is_mobile: meta.options.mobile,
-      p_block_ads: meta.options.blockAds,
-      p_feature_screenshot: meta.featureFlags.has("screenshot"),
-      p_feature_screenshot_fullscreen: meta.featureFlags.has(
+  let data: { id: string; created_at: string; status: number }[];
+  try {
+    data = await indexGetRecent4({
+      url_hash: urlHash,
+      max_age_ms: maxAge,
+      is_mobile: meta.options.mobile,
+      block_ads: meta.options.blockAds,
+      feature_screenshot: meta.featureFlags.has("screenshot"),
+      feature_screenshot_fullscreen: meta.featureFlags.has(
         "screenshot@fullScreen",
       ),
-      p_location_country: meta.options.location?.country ?? null,
-      p_location_languages:
+      location_country: meta.options.location?.country ?? null,
+      location_languages:
         (meta.options.location?.languages?.length ?? 0) > 0
-          ? meta.options.location?.languages
+          ? (meta.options.location?.languages ?? null)
           : null,
-      p_wait_time_ms: meta.options.waitFor,
-      p_is_stealth: meta.featureFlags.has("stealthProxy"),
-      p_min_age_ms: meta.options.minAge ?? null,
-    },
-  );
-
-  if (error || !data) {
+      wait_time_ms: meta.options.waitFor,
+      is_stealth: meta.featureFlags.has("stealthProxy"),
+      min_age_ms: meta.options.minAge ?? null,
+    });
+  } catch (error) {
     throw new EngineError("Failed to retrieve URL from DB index", {
       cause: error,
     });

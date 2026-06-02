@@ -81,21 +81,15 @@ const configSchema = z.object({
   POSTGRES_DB: z.string().default("postgres"),
   POSTGRES_USER: z.string().default("postgres"),
   POSTGRES_PASSWORD: z.string().default("postgres"),
+  DATABASE_URL: z.string().optional(),
+  DATABASE_REPLICA_URL: z.string().optional(),
+  INDEX_DATABASE_URL: z.string().optional(),
   REDIS_URL: z.string().optional(),
   REDIS_EVICT_URL: z.string().optional(),
   REDIS_RATE_LIMIT_URL: z.string().optional(),
   NUQ_DATABASE_URL: z.string().optional(),
   NUQ_DATABASE_URL_LISTEN: z.string().optional(),
   NUQ_RABBITMQ_URL: z.string().optional(),
-
-  // Supabase
-  SUPABASE_URL: z.string().optional(),
-  SUPABASE_ANON_TOKEN: z.string().optional(),
-  SUPABASE_SERVICE_TOKEN: z.string().optional(),
-  SUPABASE_REPLICA_URL: z.string().optional(),
-  INDEX_SUPABASE_URL: z.string().optional(),
-  INDEX_SUPABASE_SERVICE_TOKEN: z.string().optional(),
-  SEARCH_INDEX_SUPABASE_URL: z.string().optional(),
 
   // Google Cloud Storage
   GCS_BUCKET_NAME: z.string().optional(),
@@ -268,6 +262,7 @@ const configSchema = z.object({
   GITHUB_REF_NAME: z.string().optional(),
   RESTRICTED_COUNTRIES: delimitedList(",").optional(),
   DISABLE_ENGPICKER: z.stringbool().optional(),
+  DISABLE_MONITORING: z.stringbool().default(false),
 
   EXTRACT_V3_BETA_URL: z.string().optional(),
   AGENT_INTEROP_SECRET: z.string().optional(),

@@ -16,11 +16,6 @@ jest.mock("../../../services/redis", () => ({
   deleteKey: (key: string) => mockDeleteKey(key),
 }));
 
-jest.mock("../../../services/supabase", () => ({
-  supabase_service: {},
-  isPostgrestNoRowsError: jest.fn(() => true),
-}));
-
 jest.mock("../../../lib/logger", () => ({
   logger: {
     info: jest.fn(),

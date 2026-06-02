@@ -6,7 +6,7 @@ import {
   getDoneJobsOrderedLength,
 } from "../../lib/crawl-redis";
 import { getCrawl } from "../../lib/crawl-redis";
-import { supabase_service } from "../supabase";
+import { creditsBilledByCrawlId } from "../../db/rpc";
 import { getJobs } from "../../controllers/v1/crawl-status";
 import { logCrawl, logBatchScrape } from "../logging/log_job";
 import { createWebhookSender, WebhookEvent } from "../webhook/index";
@@ -129,22 +129,18 @@ export async function finishCrawlSuper(job: NuQJob<any>) {
   } else {
     const num_docs = await getDoneJobsOrderedLength(crawlId);
 
-    let credits_billed = null;
+    let credits_billed: number | null = null;
 
     if (config.USE_DB_AUTHENTICATION) {
-      const creditsRpc = await supabase_service.rpc(
-        "credits_billed_by_crawl_id_2",
-        {
-          i_crawl_id: crawlId,
-        },
-      );
-
-      credits_billed = creditsRpc.data?.[0]?.credits_billed ?? null;
+      try {
+        const creditsRows = await creditsBilledByCrawlId(crawlId);
+        credits_billed = creditsRows?.[0]?.credits_billed ?? null;
+      } catch (error) {
+        logger.warn("Credits billed is null", { error });
+      }
 
       if (credits_billed === null) {
-        logger.warn("Credits billed is null", {
-          error: creditsRpc.error,
-        });
+        logger.warn("Credits billed is null", {});
       }
     }
 

@@ -13,7 +13,8 @@ import type {
   WebhookQueueMessage,
 } from "./types";
 import { redisEvictConnection } from "../redis";
-import { supabase_service } from "../supabase";
+import { db } from "../../db/connection";
+import * as schema from "../../db/schema";
 import { webhookQueue } from "./queue";
 import { randomUUID } from "crypto";
 
@@ -254,7 +255,7 @@ export async function processWebhookInsertJobs() {
   });
 
   try {
-    await supabase_service.from("webhook_logs").insert(parsedJobs);
+    await db.insert(schema.webhook_logs).values(parsedJobs);
     _logger.info("Webhook inserter inserted jobs", {
       jobCount: parsedJobs.length,
     });

@@ -22,10 +22,6 @@ jest.mock("../../autumn/autumn.service", () => ({
 jest.mock("../../notification/email_notification", () => ({
   sendNotification: jest.fn(),
 }));
-jest.mock("../../supabase", () => ({
-  supabase_rr_service: {},
-  supabase_service: {},
-}));
 jest.mock("../auto_charge", () => ({
   autoCharge: jest.fn(),
 }));

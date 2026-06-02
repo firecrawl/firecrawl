@@ -1,5 +1,7 @@
 import { logger } from "../../lib/logger";
-import { supabase_rr_service } from "../supabase";
+import { eq, inArray } from "drizzle-orm";
+import { dbRr } from "../../db/connection";
+import * as schema from "../../db/schema";
 import { autumnClient } from "./client";
 
 const CREDITS_FEATURE_ID = "CREDITS";
@@ -26,13 +28,12 @@ interface TeamBalance {
 // ---------------------------------------------------------------------------
 
 async function lookupOrgId(teamId: string): Promise<string> {
-  const { data, error } = await supabase_rr_service
-    .from("teams")
-    .select("org_id")
-    .eq("id", teamId)
-    .single();
+  const [data] = await dbRr
+    .select({ org_id: schema.teams.org_id })
+    .from(schema.teams)
+    .where(eq(schema.teams.id, teamId))
+    .limit(1);
 
-  if (error) throw error;
   if (!data?.org_id) {
     throw new Error(`Missing org_id for team ${teamId}`);
   }
@@ -53,15 +54,13 @@ async function lookupApiKeyNames(
   const nameMap: Record<string, string> = {};
 
   if (numericIds.length > 0) {
-    const { data } = await supabase_rr_service
-      .from("api_keys")
-      .select("id, name")
-      .in("id", numericIds);
+    const data = await dbRr
+      .select({ id: schema.api_keys.id, name: schema.api_keys.name })
+      .from(schema.api_keys)
+      .where(inArray(schema.api_keys.id, numericIds));
 
-    if (data) {
-      for (const row of data) {
-        nameMap[String(row.id)] = row.name;
-      }
+    for (const row of data) {
+      nameMap[String(row.id)] = row.name ?? String(row.id);
     }
   }
 
