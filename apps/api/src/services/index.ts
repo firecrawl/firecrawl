@@ -219,8 +219,8 @@ export function normalizeURLForIndex(url: string): string {
   return urlObj.toString();
 }
 
-export function hashURL(url: string): string {
-  return "\\x" + crypto.createHash("sha256").update(url).digest("hex");
+export function hashURL(url: string): Buffer {
+  return crypto.createHash("sha256").update(url).digest();
 }
 
 export function generateURLSplits(url: string): string[] {
@@ -296,13 +296,19 @@ export async function addIndexInsertJob(data: any) {
   );
 }
 
+function reviveBuffers(_key: string, value: any) {
+  return value?.type === "Buffer" && Array.isArray(value.data)
+    ? Buffer.from(value.data)
+    : value;
+}
+
 async function getIndexInsertJobs(): Promise<any[]> {
   const jobs =
     (await redisEvictConnection.lpop(
       INDEX_INSERT_QUEUE_KEY,
       INDEX_INSERT_BATCH_SIZE,
     )) ?? [];
-  return jobs.map(x => JSON.parse(x));
+  return jobs.map(x => JSON.parse(x, reviveBuffers));
 }
 
 export async function processIndexInsertJobs() {
@@ -331,17 +337,17 @@ export async function getIndexInsertQueueLength(): Promise<number> {
 const OMCE_JOB_QUEUE_KEY = "omce-job-queue";
 const OMCE_JOB_QUEUE_BATCH_SIZE = 100;
 
-export async function addOMCEJob(data: [number, string]) {
+export async function addOMCEJob(data: [number, Buffer]) {
   await redisEvictConnection.sadd(OMCE_JOB_QUEUE_KEY, JSON.stringify(data));
 }
 
-async function getOMCEJobs(): Promise<[number, string][]> {
+async function getOMCEJobs(): Promise<[number, Buffer][]> {
   const jobs =
     (await redisEvictConnection.spop(
       OMCE_JOB_QUEUE_KEY,
       OMCE_JOB_QUEUE_BATCH_SIZE,
     )) ?? [];
-  return jobs.map(x => JSON.parse(x) as [number, string]);
+  return jobs.map(x => JSON.parse(x, reviveBuffers) as [number, Buffer]);
 }
 
 export async function processOMCEJobs() {
@@ -579,7 +585,7 @@ export async function queryIndexAtDomainSplitLevelWithMeta(
 }
 
 type DomainPriority = {
-  domain_hash: string;
+  domain_hash: Buffer;
   priority: number;
 };
 

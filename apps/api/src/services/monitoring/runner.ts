@@ -533,7 +533,7 @@ async function runCrawlTarget(params: {
     const doc = job.returnvalue ?? (await getJobFromGCS(job.id))?.[0];
     if (!doc) continue;
     const url = getDocumentUrl(doc, (job.data as any)?.url ?? body.url);
-    seen.add(hashMonitorUrl(url));
+    seen.add(hashMonitorUrl(url).toString("hex"));
     credits += estimateActualCredits(doc, body.scrapeOptions);
     pages.push(
       await diffAndPersistPage({
@@ -554,7 +554,7 @@ async function runCrawlTarget(params: {
       targetId: params.target.id,
     });
     for (const previous of previousPages) {
-      if (seen.has(previous.url_hash)) continue;
+      if (seen.has(previous.url_hash.toString("hex"))) continue;
       await upsertMonitorPage({
         monitorId: params.monitor.id,
         teamId: params.monitor.team_id,
@@ -1054,7 +1054,7 @@ async function processRemovedPagesForCompletedCrawls(params: {
     const seen = new Set(
       checkPages
         .filter(page => page.target_id === target.targetId)
-        .map(page => page.url_hash),
+        .map(page => page.url_hash.toString("hex")),
     );
     const activePages = await listActiveMonitorPages({
       monitorId: params.monitor.id,
@@ -1063,7 +1063,7 @@ async function processRemovedPagesForCompletedCrawls(params: {
 
     const removed: MonitorCheckPageInsert[] = [];
     for (const previous of activePages) {
-      if (seen.has(previous.url_hash)) continue;
+      if (seen.has(previous.url_hash.toString("hex"))) continue;
       await upsertMonitorPage({
         monitorId: params.monitor.id,
         teamId: params.monitor.team_id,

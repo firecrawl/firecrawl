@@ -238,7 +238,7 @@ export type MonitorPageRow = {
   team_id: string;
   target_id: string;
   url: string;
-  url_hash: string;
+  url_hash: Buffer;
   source: MonitorPageSource;
   first_seen_check_id: string | null;
   last_seen_check_id: string | null;
@@ -267,7 +267,7 @@ export type MonitorCheckPageInsert = {
   team_id: string;
   target_id: string;
   url: string;
-  url_hash?: string;
+  url_hash?: Buffer;
   status: MonitorPageStatus;
   previous_scrape_id?: string | null;
   current_scrape_id?: string | null;

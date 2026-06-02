@@ -268,7 +268,7 @@ const processPrecrawlJob = async (token: string, job: Job) => {
 
       type DomainUrlResult = {
         url: string;
-        domain_hash: string;
+        domain_hash: Buffer;
         event_count: number;
         rank: number;
       };
@@ -353,10 +353,11 @@ const processPrecrawlJob = async (token: string, job: Job) => {
 
       const bucketedByDomain: Map<string, DomainUrlResult[]> = new Map();
       for (const item of urls) {
-        if (!bucketedByDomain.has(item.domain_hash)) {
-          bucketedByDomain.set(item.domain_hash, []);
+        const key = item.domain_hash.toString("hex");
+        if (!bucketedByDomain.has(key)) {
+          bucketedByDomain.set(key, []);
         }
-        bucketedByDomain.get(item.domain_hash)!.push(item);
+        bucketedByDomain.get(key)!.push(item);
       }
 
       const crawlTargets: Map<
@@ -373,7 +374,9 @@ const processPrecrawlJob = async (token: string, job: Job) => {
 
       for (const domain of domains) {
         try {
-          const pages = bucketedByDomain.get(domain.domain_hash);
+          const pages = bucketedByDomain.get(
+            domain.domain_hash.toString("hex"),
+          );
 
           // if this doesn't have any pages, do we want to locate the domain itself and add root only?
           if (!pages || pages.length === 0) {

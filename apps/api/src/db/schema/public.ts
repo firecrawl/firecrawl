@@ -12,11 +12,8 @@ import {
   numeric,
   timestamp,
   date,
+  bytea,
 } from "drizzle-orm/pg-core";
-
-// url_hash columns are bytea in the DB; the code passes Postgres hex literal
-// strings ("\\x..."), and Postgres infers the column type from context, so
-// they are typed as text here to match the values flowing through the code.
 
 const ts = (name: string) =>
   timestamp(name, { withTimezone: true, mode: "string" });
@@ -220,7 +217,7 @@ export const monitor_check_pages = pgTable("monitor_check_pages", {
   team_id: uuid("team_id").notNull(),
   target_id: text("target_id").notNull(),
   url: text("url").notNull(),
-  url_hash: text("url_hash").notNull(),
+  url_hash: bytea("url_hash").notNull(),
   status: text("status").notNull(),
   previous_scrape_id: uuid("previous_scrape_id"),
   current_scrape_id: uuid("current_scrape_id"),
@@ -285,7 +282,7 @@ export const monitor_pages = pgTable("monitor_pages", {
   team_id: uuid("team_id").notNull(),
   target_id: text("target_id").notNull(),
   url: text("url").notNull(),
-  url_hash: text("url_hash").notNull(),
+  url_hash: bytea("url_hash").notNull(),
   source: text("source").notNull(),
   first_seen_check_id: uuid("first_seen_check_id"),
   last_seen_check_id: uuid("last_seen_check_id"),

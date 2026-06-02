@@ -5,56 +5,59 @@ import {
   integer,
   boolean,
   timestamp,
+  bytea,
+  uuid,
+  varchar,
 } from "drizzle-orm/pg-core";
 
 // Tables in the separate index Postgres project (INDEX_DATABASE_URL).
-// Hash columns are bytea in the DB; the code passes Postgres hex literal
-// strings ("\\x..."), and Postgres infers the column type, so they are typed
-// as text here to match the values flowing through the code.
 
 const ts = (name: string) =>
   timestamp(name, { withTimezone: true, mode: "string" });
 
 const urlSplitHashes = Object.fromEntries(
-  Array.from({ length: 10 }, (_, i) => [
-    `url_split_${i}_hash`,
-    text(`url_split_${i}_hash`),
-  ]),
+  Array.from({ length: 10 }, (_, i) => {
+    const col = bytea(`url_split_${i}_hash`);
+    return [`url_split_${i}_hash`, i === 0 ? col.notNull() : col];
+  }),
 );
 
 const domainSplitHashes = Object.fromEntries(
   Array.from({ length: 5 }, (_, i) => [
     `domain_splits_${i}_hash`,
-    text(`domain_splits_${i}_hash`),
+    bytea(`domain_splits_${i}_hash`),
   ]),
 );
 
 export const index = pgTable("index", {
-  id: text("id"),
-  url: text("url"),
-  url_hash: text("url_hash"),
-  original_url: text("original_url"),
-  resolved_url: text("resolved_url"),
-  has_screenshot: boolean("has_screenshot"),
-  has_screenshot_fullscreen: boolean("has_screenshot_fullscreen"),
-  is_mobile: boolean("is_mobile"),
-  block_ads: boolean("block_ads"),
+  id: uuid("id").primaryKey().defaultRandom(),
+  created_at: ts("created_at").notNull().defaultNow(),
+  url: text("url").notNull(),
+  url_hash: bytea("url_hash").notNull(),
+  original_url: text("original_url").notNull(),
+  resolved_url: text("resolved_url").notNull(),
+  has_screenshot: boolean("has_screenshot").notNull(),
+  has_screenshot_fullscreen: boolean("has_screenshot_fullscreen").notNull(),
+  is_mobile: boolean("is_mobile").notNull(),
+  block_ads: boolean("block_ads").notNull(),
   location_country: text("location_country"),
   location_languages: text("location_languages").array(),
-  status: integer("status"),
-  is_precrawl: boolean("is_precrawl"),
-  is_stealth: boolean("is_stealth"),
-  wait_time_ms: integer("wait_time_ms"),
+  status: integer("status").notNull(),
   title: text("title"),
   description: text("description"),
-  created_at: ts("created_at"),
+  invalidated_at: ts("invalidated_at"),
+  is_precrawl: boolean("is_precrawl"),
+  wait_time_ms: bigint("wait_time_ms", { mode: "number" }),
+  is_stealth: boolean("is_stealth").notNull().default(false),
   ...urlSplitHashes,
   ...domainSplitHashes,
 });
 
 export const engpicker_queue = pgTable("engpicker_queue", {
-  id: bigint("id", { mode: "number" }).notNull().generatedByDefaultAsIdentity(),
-  domain_hash: text("domain_hash").notNull(),
+  id: bigint("id", { mode: "number" })
+    .primaryKey()
+    .generatedByDefaultAsIdentity(),
+  domain_hash: bytea("domain_hash").notNull(),
   domain_level: integer("domain_level").notNull(),
   picked_up_at: ts("picked_up_at"),
   done: boolean("done").notNull().default(false),
@@ -62,8 +65,8 @@ export const engpicker_queue = pgTable("engpicker_queue", {
 });
 
 export const engpicker_verdicts = pgTable("engpicker_verdicts", {
-  id: bigint("id", { mode: "number" }).notNull().generatedByDefaultAsIdentity(),
-  domain_hash: text("domain_hash").notNull(),
-  verdict: text("verdict").notNull(),
+  id: uuid("id").primaryKey().defaultRandom(),
+  domain_hash: bytea("domain_hash").notNull(),
+  verdict: varchar("verdict").notNull(),
   created_at: ts("created_at").notNull().defaultNow(),
 });

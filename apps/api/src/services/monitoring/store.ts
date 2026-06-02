@@ -20,8 +20,8 @@ import type {
   UpdateMonitorRequest,
 } from "./types";
 
-export function hashMonitorUrl(url: string): string {
-  return `\\x${createHash("sha256").update(url).digest("hex")}`;
+export function hashMonitorUrl(url: string): Buffer {
+  return createHash("sha256").update(url).digest();
 }
 
 function ensureTargetIds(targets: Array<Record<string, any>>): MonitorTarget[] {

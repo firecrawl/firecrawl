@@ -18,7 +18,7 @@ import {
 
 type EngpickerJob = {
   id: number;
-  domain_hash: string;
+  domain_hash: Buffer;
   domain_level: number;
   picked_up_at: string | null;
   done: boolean;

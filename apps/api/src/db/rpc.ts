@@ -137,77 +137,77 @@ export async function updateTallyTeam(i_team_id: string): Promise<void> {
 
 export async function insertOmceJobIfNeeded(
   i_domain_level: number,
-  i_domain_hash: string,
+  i_domain_hash: Buffer,
 ): Promise<void> {
   await dbIndex.execute(
-    sql`select insert_omce_job_if_needed(i_domain_level => ${i_domain_level}, i_domain_hash => ${i_domain_hash}::bytea)`,
+    sql`select insert_omce_job_if_needed(i_domain_level => ${i_domain_level}, i_domain_hash => ${i_domain_hash})`,
   );
 }
 
 export function queryIndexAtSplitLevel(
   i_level: number,
-  i_url_hash: string,
+  i_url_hash: Buffer,
   i_newer_than: string,
 ): Promise<{ resolved_url: string }[]> {
   return execRows(
     dbIndex,
-    sql`select * from query_index_at_split_level(i_level => ${i_level}, i_url_hash => ${i_url_hash}::bytea, i_newer_than => ${i_newer_than}::timestamptz)`,
+    sql`select * from query_index_at_split_level(i_level => ${i_level}, i_url_hash => ${i_url_hash}, i_newer_than => ${i_newer_than}::timestamptz)`,
   );
 }
 
 export function queryIndexAtDomainSplitLevel(
   i_level: number,
-  i_domain_hash: string,
+  i_domain_hash: Buffer,
   i_newer_than: string,
 ): Promise<{ resolved_url: string }[]> {
   return execRows(
     dbIndex,
-    sql`select * from query_index_at_domain_split_level(i_level => ${i_level}, i_domain_hash => ${i_domain_hash}::bytea, i_newer_than => ${i_newer_than}::timestamptz)`,
+    sql`select * from query_index_at_domain_split_level(i_level => ${i_level}, i_domain_hash => ${i_domain_hash}, i_newer_than => ${i_newer_than}::timestamptz)`,
   );
 }
 
 export function queryOmceSignatures(
-  i_domain_hash: string,
+  i_domain_hash: Buffer,
   i_newer_than: string,
 ): Promise<{ signatures: any[] }[]> {
   return execRows(
     dbIndex,
-    sql`select * from query_omce_signatures(i_domain_hash => ${i_domain_hash}::bytea, i_newer_than => ${i_newer_than}::timestamptz)`,
+    sql`select * from query_omce_signatures(i_domain_hash => ${i_domain_hash}, i_newer_than => ${i_newer_than}::timestamptz)`,
   );
 }
 
 export function queryEngpickerVerdict(
-  i_domain_hash: string,
+  i_domain_hash: Buffer,
 ): Promise<{ verdict: string }[]> {
   return execRows(
     dbIndex,
-    sql`select * from query_engpicker_verdict(i_domain_hash => ${i_domain_hash}::bytea)`,
+    sql`select * from query_engpicker_verdict(i_domain_hash => ${i_domain_hash})`,
   );
 }
 
 export function queryIndexAtSplitLevelWithMeta(
   i_level: number,
-  i_url_hash: string,
+  i_url_hash: Buffer,
   i_newer_than: string,
 ): Promise<
   { resolved_url: string; title: string | null; description: string | null }[]
 > {
   return execRows(
     dbIndex,
-    sql`select * from query_index_at_split_level_with_meta(i_level => ${i_level}, i_url_hash => ${i_url_hash}::bytea, i_newer_than => ${i_newer_than}::timestamptz)`,
+    sql`select * from query_index_at_split_level_with_meta(i_level => ${i_level}, i_url_hash => ${i_url_hash}, i_newer_than => ${i_newer_than}::timestamptz)`,
   );
 }
 
 export function queryIndexAtDomainSplitLevelWithMeta(
   i_level: number,
-  i_domain_hash: string,
+  i_domain_hash: Buffer,
   i_newer_than: string,
 ): Promise<
   { resolved_url: string; title: string | null; description: string | null }[]
 > {
   return execRows(
     dbIndex,
-    sql`select * from query_index_at_domain_split_level_with_meta(i_level => ${i_level}, i_domain_hash => ${i_domain_hash}::bytea, i_newer_than => ${i_newer_than}::timestamptz)`,
+    sql`select * from query_index_at_domain_split_level_with_meta(i_level => ${i_level}, i_domain_hash => ${i_domain_hash}, i_newer_than => ${i_newer_than}::timestamptz)`,
   );
 }
 
@@ -216,7 +216,7 @@ export function queryDomainPriority(
   p_min_priority: number,
   p_lim: number,
   p_time: string,
-): Promise<{ domain_hash: string; priority: number }[]> {
+): Promise<{ domain_hash: Buffer; priority: number }[]> {
   return execRows(
     dbIndex,
     sql`select * from query_domain_priority(p_min_total => ${p_min_total}, p_min_priority => ${p_min_priority}, p_lim => ${p_lim}, p_time => ${p_time}::timestamptz)`,
@@ -225,27 +225,27 @@ export function queryDomainPriority(
 
 export function queryIndexAtDomainSplitLevelOmce<T = Record<string, any>>(
   i_level: number,
-  i_domain_hash: string,
+  i_domain_hash: Buffer,
   i_newer_than: string,
   limit?: number,
 ): Promise<T[]> {
   return execRows(
     dbIndex,
-    sql`select * from query_index_at_domain_split_level_omce(i_level => ${i_level}, i_domain_hash => ${i_domain_hash}::bytea, i_newer_than => ${i_newer_than}::timestamptz)${limit !== undefined ? sql` limit ${limit}` : sql``}`,
+    sql`select * from query_index_at_domain_split_level_omce(i_level => ${i_level}, i_domain_hash => ${i_domain_hash}, i_newer_than => ${i_newer_than}::timestamptz)${limit !== undefined ? sql` limit ${limit}` : sql``}`,
   );
 }
 
 export function queryMaxAge(
-  i_domain_hash: string,
+  i_domain_hash: Buffer,
 ): Promise<{ max_age: number | null }[]> {
   return execRows(
     dbIndex,
-    sql`select * from query_max_age(i_domain_hash => ${i_domain_hash}::bytea)`,
+    sql`select * from query_max_age(i_domain_hash => ${i_domain_hash})`,
   );
 }
 
 export function indexGetRecent4(params: {
-  url_hash: string;
+  url_hash: Buffer;
   max_age_ms: number;
   is_mobile: boolean;
   block_ads: boolean;
@@ -259,17 +259,17 @@ export function indexGetRecent4(params: {
 }): Promise<{ id: string; created_at: string; status: number }[]> {
   return execRows(
     dbIndex,
-    sql`select * from index_get_recent_4(p_url_hash => ${params.url_hash}::bytea, p_max_age_ms => ${params.max_age_ms}, p_is_mobile => ${params.is_mobile}, p_block_ads => ${params.block_ads}, p_feature_screenshot => ${params.feature_screenshot}, p_feature_screenshot_fullscreen => ${params.feature_screenshot_fullscreen}, p_location_country => ${params.location_country}, p_location_languages => ${params.location_languages}, p_wait_time_ms => ${params.wait_time_ms}, p_is_stealth => ${params.is_stealth}, p_min_age_ms => ${params.min_age_ms})`,
+    sql`select * from index_get_recent_4(p_url_hash => ${params.url_hash}, p_max_age_ms => ${params.max_age_ms}, p_is_mobile => ${params.is_mobile}, p_block_ads => ${params.block_ads}, p_feature_screenshot => ${params.feature_screenshot}, p_feature_screenshot_fullscreen => ${params.feature_screenshot_fullscreen}, p_location_country => ${params.location_country}, p_location_languages => ${params.location_languages}, p_wait_time_ms => ${params.wait_time_ms}, p_is_stealth => ${params.is_stealth}, p_min_age_ms => ${params.min_age_ms})`,
   );
 }
 
 export function queryTopUrlsForDomain<T = Record<string, any>>(
-  p_domain_hash: string,
+  p_domain_hash: Buffer,
   p_time_window: string,
   p_top_n: number,
 ): Promise<T[]> {
   return execRows(
     dbIndex,
-    sql`select * from query_top_urls_for_domain(p_domain_hash => ${p_domain_hash}::bytea, p_time_window => ${p_time_window}::interval, p_top_n => ${p_top_n})`,
+    sql`select * from query_top_urls_for_domain(p_domain_hash => ${p_domain_hash}, p_time_window => ${p_time_window}::interval, p_top_n => ${p_top_n})`,
   );
 }
