@@ -302,13 +302,28 @@ function reviveBuffers(_key: string, value: any) {
     : value;
 }
 
+function safeParseJob<T>(raw: string, queueKey: string): T | undefined {
+  try {
+    return JSON.parse(raw, reviveBuffers) as T;
+  } catch (error) {
+    _logger.error(`Failed to parse queued job, skipping`, {
+      error,
+      queueKey,
+      raw,
+    });
+    return undefined;
+  }
+}
+
 async function getIndexInsertJobs(): Promise<any[]> {
   const jobs =
     (await redisEvictConnection.lpop(
       INDEX_INSERT_QUEUE_KEY,
       INDEX_INSERT_BATCH_SIZE,
     )) ?? [];
-  return jobs.map(x => JSON.parse(x, reviveBuffers));
+  return jobs
+    .map(x => safeParseJob<any>(x, INDEX_INSERT_QUEUE_KEY))
+    .filter(x => x !== undefined);
 }
 
 export async function processIndexInsertJobs() {
@@ -347,7 +362,9 @@ async function getOMCEJobs(): Promise<[number, Buffer][]> {
       OMCE_JOB_QUEUE_KEY,
       OMCE_JOB_QUEUE_BATCH_SIZE,
     )) ?? [];
-  return jobs.map(x => JSON.parse(x, reviveBuffers) as [number, Buffer]);
+  return jobs
+    .map(x => safeParseJob<[number, Buffer]>(x, OMCE_JOB_QUEUE_KEY))
+    .filter((x): x is [number, Buffer] => x !== undefined);
 }
 
 export async function processOMCEJobs() {
