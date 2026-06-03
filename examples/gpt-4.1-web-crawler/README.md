@@ -75,7 +75,7 @@ The crawler will then:
 
 ## License
 
-[MIT License](LICENSE)
+[MIT License](../../LICENSE)
 
 ## Contributing
 
