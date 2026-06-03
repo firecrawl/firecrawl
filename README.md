@@ -696,6 +696,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 ---
 
+## Ecosystem & Extensions
+
+We provide several standalone tools and resources to enhance your Firecrawl experience, especially when building AI agents and robust applications:
+
+- **[Firecrawl CLI](./firecrawl-cli)**: Command-line tools for using Firecrawl right from the terminal. Supports commands for search, scrape, crawl, map, interact, and agent jobs.
+- **[Firecrawl CLI Skills](./firecrawl-cli-skills)**: Agent skills that teach coding agents how to use the Firecrawl CLI for live web work during a session.
+- **[Firecrawl Skills](./firecrawl-skills)**: Core skills and examples for adding Firecrawl to product code, choosing the right endpoints, wiring SDKs, and securely setting up API keys.
+- **[Firecrawl Workflows](./firecrawl-workflows)**: Workflow skills for repeatable Firecrawl-powered deliverables, such as competitor analysis and website design clone briefs.
+
+---
+
 ## Integrations
 
 **Agents & AI Tools**
