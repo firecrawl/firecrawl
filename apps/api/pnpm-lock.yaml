@@ -146,6 +146,9 @@ importers:
       dotenv:
         specifier: ^16.3.1
         version: 16.4.5
+      diff:
+        specifier: ^8.0.3
+        version: 8.0.3
       esbuild:
         specifier: ^0.27.2
         version: 0.27.2

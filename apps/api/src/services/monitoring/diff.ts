@@ -1,4 +1,4 @@
-import gitDiff from "git-diff";
+import { createTwoFilesPatch } from "diff";
 import parseDiff from "parse-diff";
 
 type MonitorMarkdownDiffResult =
@@ -49,6 +49,21 @@ function normalizeMarkdownForChangeTracking(markdown: string): string {
     .join("");
 }
 
+function createSafeMarkdownDiff(
+  previousMarkdown: string,
+  currentMarkdown: string,
+): string {
+  return createTwoFilesPatch(
+    "previous",
+    "current",
+    previousMarkdown,
+    currentMarkdown,
+    "",
+    "",
+    { context: 3 },
+  );
+}
+
 export function diffMonitorMarkdown(
   previousMarkdown: string,
   currentMarkdown: string,
@@ -60,10 +75,7 @@ export function diffMonitorMarkdown(
     return { kind: "markdown", status: "same" };
   }
 
-  const text = gitDiff(previousMarkdown, currentMarkdown, {
-    color: false,
-    wordDiff: false,
-  });
+  const text = createSafeMarkdownDiff(previousMarkdown, currentMarkdown);
   const structured = parseDiff(text);
 
   return {

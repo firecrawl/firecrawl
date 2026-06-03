@@ -1,4 +1,31 @@
-import { diffMonitorJson } from "./diff";
+import { diffMonitorJson, diffMonitorMarkdown } from "./diff";
+
+describe("diffMonitorMarkdown", () => {
+  it("preserves printf-sensitive scraped content in markdown diffs", () => {
+    const result = diffMonitorMarkdown(
+      [
+        "https://example.com/search%3Fq=old",
+        "Price: $10, 50% off",
+        "https://example.com/a%E2%80%93b old",
+      ].join("\n"),
+      [
+        "https://example.com/search%3Fq=new",
+        "Price: $8, 60% off",
+        "https://example.com/a%E2%80%93b new",
+      ].join("\n"),
+    );
+
+    expect(result.status).toBe("changed");
+    if (result.status !== "changed") return;
+
+    expect(result.text).toContain("search%3Fq=new");
+    expect(result.text).toContain("Price: $8, 60% off");
+    expect(result.text).toContain("a%E2%80%93b new");
+    expect(result.text).not.toContain("0.000000");
+    expect(result.text).not.toContain("600ff");
+    expect(result.json.files[0]?.chunks.length).toBeGreaterThan(0);
+  });
+});
 
 describe("diffMonitorJson", () => {
   it("returns `same` when every value matches", () => {
@@ -11,9 +38,10 @@ describe("diffMonitorJson", () => {
   });
 
   it("returns `same` regardless of object key order", () => {
-    expect(
-      diffMonitorJson({ a: 1, b: 2 }, { b: 2, a: 1 }),
-    ).toEqual({ kind: "json", status: "same" });
+    expect(diffMonitorJson({ a: 1, b: 2 }, { b: 2, a: 1 })).toEqual({
+      kind: "json",
+      status: "same",
+    });
   });
 
   it("reports a single change for a top-level primitive that differs", () => {
