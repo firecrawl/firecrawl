@@ -68,7 +68,7 @@ export async function scrapeController(
     account: req.account,
   });
 
-  logRequest({
+  const logRequestPromise = logRequest({
     id: jobId,
     kind: "scrape",
     api_version: "v1",
@@ -171,6 +171,7 @@ export async function scrapeController(
             zeroDataRetention: zeroDataRetention ?? false,
             apiKeyId: req.acuc?.api_key_id ?? null,
             concurrencyLimited: limited,
+            logRequestPromise: logRequestPromise,
           },
         };
 
