@@ -314,6 +314,21 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
       document: doc,
     };
 
+    // Ensure the parent `requests` row is committed before any child
+    // `scrapes`/`parses` insert, to avoid a request_id FK violation. Runs on
+    // both the crawl and single-scrape paths; only single scrapes actually
+    // carry a logRequestPromise.
+    if (job.data.logRequestPromise) {
+      const start = Date.now();
+      await job.data.logRequestPromise;
+      const waited = Date.now() - start;
+      if (waited > 0) {
+        logger.warn("Had to wait for log request promise to complete", {
+          timeMs: waited,
+        });
+      }
+    }
+
     if (job.data.crawl_id) {
       const sc = (await getCrawl(job.data.crawl_id)) as StoredCrawl;
 
@@ -527,16 +542,6 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
       doc.metadata.creditsUsed = credits_billed ?? undefined;
 
       logger.debug("Logging job to DB...");
-      if (job.data.logRequestPromise) {
-        const start = Date.now();
-        await job.data.logRequestPromise;
-        const end = Date.now();
-        if (end - start > 0) {
-          logger.warn("Had to wait for log request promise to complete", {
-            timeMs: end - start,
-          });
-        }
-      }
       await logScrape(
         {
           id: job.id,
