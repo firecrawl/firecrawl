@@ -16,6 +16,8 @@ function makeDb(
   const pool = new Pool({
     connectionString,
     application_name: applicationName,
+    min: 2,
+    keepAlive: true,
   });
   pool.on("error", err =>
     logger.error("Error in idle Postgres client", {
@@ -24,6 +26,26 @@ function makeDb(
       applicationName,
     }),
   );
+
+  let lastWarn = 0;
+  pool.on("acquire", () => {
+    const max = pool.options.max ?? 10;
+    if (
+      pool.waitingCount > 0 &&
+      pool.totalCount >= max &&
+      Date.now() - lastWarn > 1000
+    ) {
+      lastWarn = Date.now();
+      logger.warn("Postgres pool exhausted, queries are queuing", {
+        module: "db",
+        applicationName,
+        total: pool.totalCount,
+        idle: pool.idleCount,
+        waiting: pool.waitingCount,
+        max,
+      });
+    }
+  });
 
   return drizzle({ client: pool });
 }

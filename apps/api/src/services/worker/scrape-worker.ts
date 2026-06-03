@@ -527,6 +527,16 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
       doc.metadata.creditsUsed = credits_billed ?? undefined;
 
       logger.debug("Logging job to DB...");
+      if (job.data.logRequestPromise) {
+        const start = Date.now();
+        await job.data.logRequestPromise;
+        const end = Date.now();
+        if (end - start > 0) {
+          logger.warn("Had to wait for log request promise to complete", {
+            timeMs: end - start,
+          });
+        }
+      }
       await logScrape(
         {
           id: job.id,

@@ -132,8 +132,10 @@ export async function scrapeController(
         account: req.account,
       });
 
+      let logRequestPromise: Promise<any> | undefined = undefined;
+
       if (!agentRequestId) {
-        logRequest({
+        logRequestPromise = logRequest({
           id: jobId,
           kind: "scrape",
           api_version: "v2",
@@ -260,6 +262,7 @@ export async function scrapeController(
                     apiKeyId: req.acuc?.api_key_id ?? null,
                     concurrencyLimited: limited,
                     requestId: agentRequestId ?? undefined,
+                    logRequestPromise: logRequestPromise,
                   },
                 };
 

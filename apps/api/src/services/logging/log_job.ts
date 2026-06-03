@@ -53,48 +53,73 @@ async function robustInsert(
   table: string,
   data: any,
   force: boolean,
-  logger: Logger,
+  _logger: Logger,
 ) {
+  const logger = _logger.child({
+    module: "log_job",
+    method: "robustInsert",
+    table,
+    canonicalLog: "log_job/robustInsert",
+  });
+
   if (config.USE_DB_AUTHENTICATION !== true) {
     logger.info(
       "Skipping database insertion due to USE_DB_AUTHENTICATION being off",
-      { table },
     );
     return;
   }
 
   const target = tableMap[table];
 
+  const attempts: { error: any; timeMs: number; backoffMs: number }[] = [];
+
   if (force) {
-    let i = 0,
-      done = false;
-    let lastError: any = null;
-    while (i++ <= 10) {
+    for (let i = 0; i < 10; i++) {
+      const start = Date.now();
       try {
         await db.insert(target).values(data);
-        done = true;
+        attempts.push({
+          error: null,
+          timeMs: Date.now() - start,
+          backoffMs: i === 0 ? 0 : 75,
+        });
         break;
       } catch (error) {
-        lastError = error;
-        logger.error("Error inserting into database, trying again", {
+        attempts.push({
           error,
-          table,
-          attempt: i,
+          timeMs: Date.now() - start,
+          backoffMs: i === 0 ? 0 : 75,
         });
         await new Promise(resolve => setTimeout(resolve, 75));
       }
     }
 
-    if (done) {
-      logger.info("Inserted into database successfully", { table });
+    if (attempts.length === 1 && attempts[0].error === null) {
+      logger.debug(
+        "Inserted into database successfully (" + table + ", " + data.id + ")",
+        { attempts },
+      );
+    } else if (
+      attempts.length > 1 &&
+      attempts[attempts.length - 1].error === null
+    ) {
+      logger.warn(
+        "Inserted into database successfully with retries (" +
+          table +
+          ", " +
+          data.id +
+          ")",
+        { attempts },
+      );
     } else {
-      logger.error("Failed to insert into database after 10 attempts", {
-        table,
-        lastError,
-      });
+      logger.error(
+        "Failed to insert into database (" + table + ", " + data.id + ")",
+        { attempts },
+      );
       // Report to Sentry with context
       Sentry.captureException(
-        lastError || new Error("Database insert failed after 10 attempts"),
+        attempts[attempts.length - 1]?.error ||
+          new Error("Database insert failed after 10 attempts"),
         {
           tags: {
             table,
@@ -104,20 +129,28 @@ async function robustInsert(
             table,
             data: JSON.stringify(data).substring(0, 500), // Limit size
             attempts: 10,
-            lastError: lastError ? JSON.stringify(lastError) : null,
+            lastError: attempts[attempts.length - 1]?.error
+              ? JSON.stringify(attempts[attempts.length - 1].error)
+              : null,
           },
         },
       );
     }
   } else {
+    const start = Date.now();
     try {
       await db.insert(target).values(data);
-      logger.info("Inserted into database successfully", { table });
+      attempts.push({ error: null, timeMs: Date.now() - start, backoffMs: 0 });
+      logger.debug(
+        "Inserted into database successfully (" + table + ", " + data.id + ")",
+        { attempts },
+      );
     } catch (error) {
-      logger.error("Error inserting into database", {
-        error,
-        table,
-      });
+      attempts.push({ error, timeMs: Date.now() - start, backoffMs: 0 });
+      logger.error(
+        "Failed to insert into database (" + table + ", " + data.id + ")",
+        { attempts },
+      );
       // Report to Sentry
       Sentry.captureException(error, {
         tags: {

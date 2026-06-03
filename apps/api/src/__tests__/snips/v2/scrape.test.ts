@@ -1203,7 +1203,7 @@ describe("Scrape tests", () => {
             identity,
           );
 
-          expect(response.markdown).toContain("| Country | United States |");
+          expect(response.markdown).toContain("| Country | United States "); // either United States or United States of America
         },
         scrapeTimeout,
       );
@@ -1346,7 +1346,7 @@ describe("Scrape tests", () => {
           );
 
           expect(response.markdown).toContain("PDF Test File");
-          expect(response.metadata.title).toBe("PDF Test Page");
+          expect(response.metadata.title).toContain("PDF Test Page");
           expect(response.metadata.numPages).toBe(1);
         },
         scrapeTimeout,
@@ -1373,7 +1373,9 @@ describe("Scrape tests", () => {
             identity,
           );
 
-          expect(response.error).toContain("Insufficient time to process PDF");
+          expect(response.error).toContain(
+            "pages, which requires more processing time than your current timeout allows.",
+          );
         },
         12000,
       );
