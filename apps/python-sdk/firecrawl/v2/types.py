@@ -1104,23 +1104,23 @@ class MonitorCheck(BaseModel):
 class MonitorPageDiff(BaseModel):
     """Diff payload returned alongside a monitor page.
 
-    Markdown-only monitors populate both `text` (unified diff) and `json`
-    (the parseDiff AST). JSON-extraction monitors populate `json` only,
-    where `json` is the per-field `{previous, current}` map. Mixed-mode
-    monitors (JSON + git-diff) populate both `json` (field diff) and
+    Markdown-only monitors populate both `text` (unified diff) and `json_data`
+    (the parseDiff AST). JSON-extraction monitors populate `json_data` only,
+    where `json_data` is the per-field `{previous, current}` map. Mixed-mode
+    monitors (JSON + git-diff) populate both `json_data` (field diff) and
     `text` (markdown sidecar).
     """
     model_config = {"populate_by_name": True, "extra": "allow"}
 
     text: Optional[str] = None
-    json: Optional[Any] = None  # markdown→parseDiff AST | json→field diff
+    json_data: Optional[Any] = Field(default=None, alias="json")  # markdown→parseDiff AST | json→field diff
 
 
 class MonitorPageSnapshot(BaseModel):
     """Current JSON extraction at this run. JSON / mixed mode only."""
     model_config = {"populate_by_name": True, "extra": "allow"}
 
-    json: Optional[Dict[str, Any]] = None
+    json_data: Optional[Dict[str, Any]] = Field(default=None, alias="json")
 
 
 class MonitorCheckPage(BaseModel):
