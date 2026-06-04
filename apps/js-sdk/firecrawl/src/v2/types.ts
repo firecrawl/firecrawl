@@ -188,7 +188,7 @@ export interface ScrapeOptions {
   includeTags?: string[];
   excludeTags?: string[];
   onlyMainContent?: boolean;
-  timeout?: number;
+  timeout?: number; // ms
   waitFor?: number;
   mobile?: boolean;
   parsers?: Array<
@@ -697,7 +697,7 @@ export interface MapOptions {
   includeSubdomains?: boolean;
   ignoreQueryParameters?: boolean;
   limit?: number;
-  timeout?: number;
+  timeout?: number; // ms
   integration?: string;
   origin?: string;
   location?: LocationConfig;
@@ -1132,7 +1132,7 @@ export interface ScrapeExecuteRequest {
   code?: string;
   prompt?: string;
   language?: "python" | "node" | "bash";
-  timeout?: number;
+  timeout?: number; // seconds, max 300
   origin?: string;
 }
 
