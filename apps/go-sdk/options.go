@@ -100,18 +100,68 @@ func (o ScrapeOptions) MarshalJSON() ([]byte, error) {
 	type scrapeOptions ScrapeOptions
 	payload := struct {
 		scrapeOptions
-		Formats interface{} `json:"formats,omitempty"`
+		Formats     interface{}  `json:"formats,omitempty"`
+		JsonOptions *JsonOptions `json:"jsonOptions,omitempty"`
 	}{
 		scrapeOptions: scrapeOptions(o),
-	}
-
-	if len(o.FormatOptions) > 0 {
-		payload.Formats = o.FormatOptions
-	} else if len(o.Formats) > 0 {
-		payload.Formats = o.Formats
+		Formats:       o.formatsPayload(),
 	}
 
 	return json.Marshal(payload)
+}
+
+func (o ScrapeOptions) formatsPayload() interface{} {
+	if len(o.FormatOptions) > 0 {
+		if o.JsonOptions == nil {
+			return o.FormatOptions
+		}
+		formats := make([]interface{}, 0, len(o.FormatOptions)+1)
+		formats = append(formats, o.FormatOptions...)
+		formats = append(formats, newJSONFormat(o.JsonOptions))
+		return formats
+	}
+
+	if len(o.Formats) == 0 {
+		if o.JsonOptions == nil {
+			return nil
+		}
+		return []interface{}{newJSONFormat(o.JsonOptions)}
+	}
+
+	if o.JsonOptions == nil {
+		return o.Formats
+	}
+
+	formats := make([]interface{}, 0, len(o.Formats)+1)
+	replacedJSON := false
+	for _, format := range o.Formats {
+		if format == "json" {
+			formats = append(formats, newJSONFormat(o.JsonOptions))
+			replacedJSON = true
+			continue
+		}
+		formats = append(formats, format)
+	}
+	if !replacedJSON {
+		formats = append(formats, newJSONFormat(o.JsonOptions))
+	}
+	return formats
+}
+
+type jsonFormat struct {
+	Type   string                 `json:"type"`
+	Prompt string                 `json:"prompt,omitempty"`
+	Schema map[string]interface{} `json:"schema,omitempty"`
+}
+
+func newJSONFormat(options *JsonOptions) jsonFormat {
+	format := jsonFormat{Type: "json"}
+	if options == nil {
+		return format
+	}
+	format.Prompt = options.Prompt
+	format.Schema = options.Schema
+	return format
 }
 
 // CrawlOptions configures a crawl request.

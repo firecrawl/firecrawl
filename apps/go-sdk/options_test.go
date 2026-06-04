@@ -64,6 +64,50 @@ func TestScrapeOptionsPreservesStringFormats(t *testing.T) {
 	}
 }
 
+func TestScrapeOptionsEmbedsJsonOptionsInFormats(t *testing.T) {
+	payload, err := json.Marshal(ScrapeOptions{
+		Formats: []string{"markdown", "json"},
+		JsonOptions: &JsonOptions{
+			Prompt: "Extract greeting",
+			Schema: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"hello": map[string]interface{}{"type": "string"},
+				},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Marshal ScrapeOptions: %v", err)
+	}
+
+	var body map[string]interface{}
+	if err := json.Unmarshal(payload, &body); err != nil {
+		t.Fatalf("Unmarshal payload: %v", err)
+	}
+	if _, ok := body["jsonOptions"]; ok {
+		t.Fatalf("payload contains top-level jsonOptions: %s", payload)
+	}
+
+	formats, ok := body["formats"].([]interface{})
+	if !ok || len(formats) != 2 {
+		t.Fatalf("formats = %#v, want markdown plus json object", body["formats"])
+	}
+	if formats[0] != "markdown" {
+		t.Fatalf("formats[0] = %#v, want markdown", formats[0])
+	}
+	jsonFormat, ok := formats[1].(map[string]interface{})
+	if !ok {
+		t.Fatalf("formats[1] = %#v, want json object", formats[1])
+	}
+	if jsonFormat["type"] != "json" || jsonFormat["prompt"] != "Extract greeting" {
+		t.Fatalf("json format = %#v", jsonFormat)
+	}
+	if _, ok := jsonFormat["schema"].(map[string]interface{}); !ok {
+		t.Fatalf("json format missing schema: %#v", jsonFormat)
+	}
+}
+
 func TestScrapeOptionsSerializesRedactPII(t *testing.T) {
 	payload, err := json.Marshal(ScrapeOptions{
 		RedactPII: Bool(true),
