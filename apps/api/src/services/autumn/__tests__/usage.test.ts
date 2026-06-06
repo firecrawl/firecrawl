@@ -876,8 +876,53 @@ describe("getTeamHistoricalUsageByApiKey", () => {
         range: "90d",
         binSize: "day",
         groupBy: "properties.apiKeyId",
+        maxGroups: 100,
       }),
     );
+  });
+
+  it("falls back to customer-level aggregate when the entity is missing (404)", async () => {
+    apiKeysData = [{ id: 101, name: "Default" }];
+
+    mockAggregate.mockRejectedValueOnce(
+      Object.assign(new Error("entity not found"), { statusCode: 404 }),
+    );
+    mockAggregate.mockResolvedValueOnce({
+      list: [
+        {
+          period: Date.parse("2026-03-15T00:00:00.000Z"),
+          grouped_values: { CREDITS: { "101": 9 } },
+        },
+      ],
+    });
+
+    await expect(getTeamHistoricalUsageByApiKey("team-1")).resolves.toEqual([
+      {
+        startDate: "2026-03-01T00:00:00.000Z",
+        endDate: null,
+        apiKey: "Default",
+        creditsUsed: 9,
+      },
+    ]);
+
+    expect(mockAggregate).toHaveBeenCalledTimes(2);
+    expect(mockAggregate.mock.calls[1][0]).not.toHaveProperty("entityId");
+    expect(mockAggregate.mock.calls[1][0]).toMatchObject({
+      groupBy: "properties.apiKeyId",
+      maxGroups: 100,
+    });
+  });
+
+  it("propagates non-404 Autumn errors without crashing on missing response", async () => {
+    mockAggregate.mockRejectedValueOnce(
+      Object.assign(new Error("bad gateway"), { statusCode: 502 }),
+    );
+
+    await expect(getTeamHistoricalUsageByApiKey("team-1")).rejects.toThrow(
+      "bad gateway",
+    );
+
+    expect(mockAggregate).toHaveBeenCalledTimes(1);
   });
 
   it("uses the next calendar month as endDate for grouped data when a month has zero usage", async () => {

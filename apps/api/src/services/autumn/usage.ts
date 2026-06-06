@@ -8,6 +8,11 @@ const CREDITS_FEATURE_ID = "CREDITS";
 const TOKENS_PER_CREDIT = 15;
 const HISTORICAL_RANGE = "90d";
 const HISTORICAL_BIN_SIZE = "day";
+// Autumn defaults maxGroups to 9, which silently buckets any keys beyond
+// the top 9 into "Other". Teams routinely have more API keys than that,
+// so we raise the ceiling to return a per-key row for each one.
+const HISTORICAL_MAX_GROUPS = 100;
+const API_KEY_GROUP_BY = "properties.apiKeyId";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -403,21 +408,31 @@ export async function getTeamHistoricalUsageByApiKey(
       featureId: CREDITS_FEATURE_ID,
       range: HISTORICAL_RANGE,
       binSize: HISTORICAL_BIN_SIZE,
-      groupBy: "properties.apiKeyId",
+      groupBy: API_KEY_GROUP_BY,
+      maxGroups: HISTORICAL_MAX_GROUPS,
     });
   } catch (err: any) {
     const status = err?.statusCode ?? err?.status ?? err?.response?.status;
-    if (status !== 404) throw err;
+    if (status !== 404) {
+      logger.error("Autumn events.aggregate (byApiKey) failed", {
+        teamId,
+        orgId,
+        status,
+        error: err,
+      });
+      throw err;
+    }
     response = await autumnClient.events.aggregate({
       customerId: orgId,
       featureId: CREDITS_FEATURE_ID,
       range: HISTORICAL_RANGE,
       binSize: HISTORICAL_BIN_SIZE,
-      groupBy: "properties.apiKeyId",
+      groupBy: API_KEY_GROUP_BY,
+      maxGroups: HISTORICAL_MAX_GROUPS,
     });
   }
 
-  return aggregateHistoricalPeriodsByApiKeyMonth(response.list ?? []);
+  return aggregateHistoricalPeriodsByApiKeyMonth(response?.list ?? []);
 }
 
 /**
