@@ -414,10 +414,61 @@ app.post('/scrape', async (req: Request, res: Response) => {
     page = await requestContext.newPage();
 
     if (headers) {
-      // Remove the user-agent key before calling setExtraHTTPHeaders since
-      // we already forwarded it to the context-level userAgent option.
+      // A Cookie header passed through setExtraHTTPHeaders is sent on the first
+      // request but DROPPED on any redirect hop (the browser regenerates the
+      // redirected request from its cookie jar, which is empty). Authenticated
+      // sites that 302 (e.g. to /signin when the session looks absent) then
+      // land on the login page. Seed the cookie jar instead so Chromium re-sends
+      // it on every request, including redirects — matching what a raw HTTP
+      // client does.
+      const cookieHeader = Object.entries(headers).find(([k]) => k.toLowerCase() === 'cookie')?.[1];
+      if (cookieHeader) {
+        // Scope cookies to the registrable domain (e.g. ".example.com"), not
+        // host-only. Authenticated pages often 302 across sibling subdomains
+        // (example.com -> app.example.com); a host-only cookie set for the
+        // original host would not be sent to the redirect target, leaving the
+        // request unauthenticated. The Cookie header carries no domain info, so
+        // we apply the eTLD+1 — broad enough to follow the redirect, and these
+        // are first-party cookies being returned to their own origin anyway.
+        let cookieDomain: string | undefined;
+        try {
+          const host = new URL(url).hostname;
+          const labels = host.split('.');
+          cookieDomain = labels.length > 2 ? labels.slice(-2).join('.') : host;
+        } catch {
+          cookieDomain = undefined;
+        }
+        type SeedCookie = { name: string; value: string; url?: string; domain?: string; path?: string };
+        const cookies = cookieHeader
+          .split(';')
+          .map(pair => pair.trim())
+          .filter(Boolean)
+          .map((pair): SeedCookie | null => {
+            const eq = pair.indexOf('=');
+            if (eq === -1) return null;
+            const name = pair.slice(0, eq).trim();
+            const value = pair.slice(eq + 1).trim();
+            return cookieDomain
+              ? { name, value, domain: `.${cookieDomain}`, path: '/' }
+              : { name, value, url };
+          })
+          .filter((c): c is SeedCookie => c !== null);
+        if (cookies.length > 0) {
+          try {
+            await requestContext.addCookies(cookies);
+          } catch (error) {
+            console.warn('Failed to seed cookies from Cookie header:', error);
+          }
+        }
+      }
+
+      // Remove user-agent (already applied at the context level) and cookie
+      // (now seeded into the jar) before forwarding the rest verbatim.
       const filteredHeaders = Object.fromEntries(
-        Object.entries(headers).filter(([k]) => k.toLowerCase() !== 'user-agent')
+        Object.entries(headers).filter(([k]) => {
+          const lower = k.toLowerCase();
+          return lower !== 'user-agent' && lower !== 'cookie';
+        })
       );
       if (Object.keys(filteredHeaders).length > 0) {
         await page.setExtraHTTPHeaders(filteredHeaders);

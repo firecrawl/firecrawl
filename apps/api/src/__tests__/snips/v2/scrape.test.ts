@@ -715,6 +715,28 @@ describe("Scrape tests", () => {
         scrapeTimeout * 2 + 1 * indexCooldown,
       );
 
+      // Gated to the playwright engine (where cookies are seeded into the jar);
+      // a Cookie passed as an extra request header is dropped on redirect hops.
+      concurrentIf(HAS_PLAYWRIGHT && !HAS_FIRE_ENGINE)(
+        "forwards cookies across redirects",
+        async () => {
+          // httpbin's /cookies echoes the cookies it received. The cookie only
+          // survives the 302 hop if it was seeded into the browser cookie jar.
+          const response = await scrape(
+            {
+              url: "https://httpbin.org/redirect-to?url=https%3A%2F%2Fhttpbin.org%2Fcookies&status_code=302",
+              headers: { Cookie: "fc_cookie_redirect_test=1" },
+              formats: ["rawHtml"],
+              waitFor: 1000,
+            },
+            identity,
+          );
+
+          expect(response.rawHtml).toContain("fc_cookie_redirect_test");
+        },
+        scrapeTimeout,
+      );
+
       it.concurrent(
         "respects mobile",
         async () => {
