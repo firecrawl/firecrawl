@@ -144,6 +144,14 @@ export async function scrapeInteractController(
 
   // --- Validate scrape ownership ---
 
+  if (config.USE_DB_AUTHENTICATION !== true) {
+    return res.status(501).json({
+      success: false,
+      error:
+        "Scrape interact requires stored scrape context and is not available when database authentication is disabled.",
+    });
+  }
+
   const scrape = (await supabaseGetScrapeById(
     scrapeId,
   )) as ScrapeContextRow | null;
