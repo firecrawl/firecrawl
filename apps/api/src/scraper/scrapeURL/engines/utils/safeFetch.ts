@@ -13,6 +13,10 @@ export class InsecureConnectionError extends Error {
 }
 
 export function isIPPrivate(address: string): boolean {
+  if (address.startsWith("[") && address.endsWith("]")) {
+    address = address.slice(1, -1);
+  }
+
   if (!IPAddr.isValid(address)) return false;
 
   const addr = IPAddr.parse(address);
