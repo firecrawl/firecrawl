@@ -633,10 +633,16 @@ export async function authenticateUser(
   mode?: RateLimiterMode,
   options?: { allowKeyless?: boolean },
 ): Promise<AuthResponse> {
+  const bypassChunk = mockACUC();
+  bypassChunk.is_extract =
+    mode === RateLimiterMode.Extract ||
+    mode === RateLimiterMode.ExtractStatus ||
+    mode === RateLimiterMode.ExtractAgentPreview;
+
   return withAuth(supaAuthenticateUser, {
     success: true,
-    chunk: null,
-    team_id: "bypass",
+    chunk: bypassChunk,
+    team_id: bypassChunk.team_id,
     org_id: null,
   })(req, res, mode, options);
 }
