@@ -9,6 +9,7 @@ import { ScrapeJobData } from "../../types";
 import { getJobFromGCS } from "../../lib/gcs-jobs";
 import { includesFormat } from "../../lib/format-utils";
 import { computeAndPersistPageDiff } from "./diff-orchestrator";
+import { calculateMonitorCheckActualCredits } from "./billing";
 import { normalizeMonitorFormats } from "./diff";
 import { autumnService } from "../autumn/autumn.service";
 import { getBillingQueue } from "../queue-service";
@@ -1338,7 +1339,32 @@ export async function reconcileRunningMonitorChecks(
         countMonitorCheckPages({ checkId: check.id, status: "error" }),
       ]);
       const totalPages = same + changed + newCount + removed + errorCount;
-      const actualCredits = totalPages;
+
+      // Bill from the recorded pages so JSON (5) and deterministicJson (7)
+      // targets are charged correctly instead of a flat 1 credit/page. Scanned
+      // in one pass like the other page reads in this file.
+      // TODO(monitoring-billing): judge credits are currently billed per-page
+      // in results.ts, while estimates reserve by doubling scrape credits.
+      // Keep that behavior unchanged here and reconcile it separately.
+      const creditPages = await listMonitorCheckPages({
+        teamId: monitor.team_id,
+        monitorId: monitor.id,
+        checkId: check.id,
+        limit: MONITOR_CHECK_PAGE_SCAN_LIMIT,
+        skip: 0,
+      });
+      const { actualCredits, unknownTargetIds } =
+        calculateMonitorCheckActualCredits({
+          targets: monitor.targets,
+          pages: creditPages,
+        });
+      if (unknownTargetIds.length > 0) {
+        logger.warn("Monitor check pages referenced unknown targets", {
+          monitorId: monitor.id,
+          checkId: check.id,
+          targetIds: unknownTargetIds,
+        });
+      }
 
       let finalized = await updateMonitorCheck(check.id, {
         status: errorCount > 0 ? "partial" : "completed",
