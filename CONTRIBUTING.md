@@ -135,6 +135,80 @@ docker compose up
 
 This will start Redis, the API server, and workers automatically in the correct configuration.
 
-## Tests:
+## Tests
 
-The best way to do this is run the test with `npm run test:snips`.
+The best way to do this locally is run `pnpm test:snips` from `apps/api`.
+
+### Non-self-hosted CI (k3s on PRs)
+
+PRs against `main` trigger a non-self-hosted job that provisions an ephemeral k3s
+cluster and deploys firecrawl, fire-engine, and idmux from the infra charts.
+The job is skipped for forked PRs.
+
+Required GitHub Actions secrets:
+
+Infra access:
+- FIRECRAWL_INFRA_REPO
+- FIRECRAWL_INFRA_REF
+- FIRECRAWL_INFRA_READ_TOKEN
+- FIRECRAWL_INFRA_VALUES
+  (Helm values YAML for CI overrides; stored only in Actions secrets.)
+
+Firecrawl staging envs:
+- TEST_API_KEY
+- TEST_TEAM_ID
+- TEST_API_KEY_CONCURRENCY
+- TEST_TEAM_ID_CONCURRENCY
+- TEST_API_KEY_ZDR
+- TEST_TEAM_ID_ZDR
+- TEST_SUITE_WEBSITE
+- SUPABASE_URL
+- SUPABASE_SERVICE_TOKEN
+- SUPABASE_ANON_TOKEN
+- SUPABASE_REPLICA_URL
+- INDEX_SUPABASE_URL
+- INDEX_SUPABASE_SERVICE_TOKEN
+- INDEX_SUPABASE_ANON_TOKEN
+- OPENAI_API_KEY
+- ANTHROPIC_API_KEY
+- GOOGLE_GENERATIVE_AI_API_KEY
+- GROQ_API_KEY
+- VERTEX_CREDENTIALS
+- RUNPOD_MU_API_KEY
+- RUNPOD_MU_POD_ID
+- RUNPOD_MUV2_POD_ID
+- GCS_CREDENTIALS
+- GCS_BUCKET_NAME
+- GCS_FIRE_ENGINE_BUCKET_NAME
+- GCS_INDEX_BUCKET_NAME
+- GCS_MEDIA_BUCKET_NAME
+- FIRE_ENGINE_BETA_URL
+- FIRE_ENGINE_STAGING_URL
+- IDMUX_URL
+- PROXY_SERVER
+- PROXY_USERNAME
+- PROXY_PASSWORD
+- BULL_AUTH_KEY
+- LOG_ENCRYPTION_KEY
+
+Fire-engine secret env file:
+- FIRE_ENGINE_SECRET_ENV_FILE
+  (Env file contents used to create the fire-engine `secret` in CI.)
+
+Idmux staging DB creds:
+- IDMUX_SUPABASE_URL
+- IDMUX_SUPABASE_SERVICE_TOKEN
+- IDMUX_SUPABASE_ANON_TOKEN
+
+Notes:
+- FIRE_ENGINE_BETA_URL and IDMUX_URL are still required for the snips runner, but the Helm chart overrides them to in-cluster service DNS for the deployed API.
+
+Local reproduction (internal only):
+1. Check out `firecrawl` and `firecrawl-infra` in separate directories.
+2. Create a k3d cluster with a local registry and namespaces `firecrawl`, `fire-engine`, `idmux`.
+3. Install the RabbitMQ cluster operator CRDs/controllers.
+4. Create GHCR pull secrets in each namespace.
+5. Build and push the firecrawl image to the local registry.
+6. Create a `secret` in each namespace with the same env values used in CI.
+7. Deploy fire-engine, idmux, and firecrawl via the infra Helm charts with the same overrides used in CI.
+8. Wait for rollouts, port-forward `app-service` in `firecrawl`, and run `pnpm test:snips` with `TEST_API_URL` pointing at the port-forward.

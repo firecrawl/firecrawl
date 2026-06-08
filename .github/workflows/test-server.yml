@@ -369,170 +369,272 @@ jobs:
         with:
           name: Logs (kubernetes, ${{ matrix.ai }}, ${{ matrix.search }}, ${{ matrix.engine }}, ${{ matrix.proxy }})
           path: logs/logs.zip
+  non-self-host:
+    name: Non-self-hosted environment tests
+    if: ${{ github.event.pull_request.head.repo.full_name == github.repository }}
+    runs-on: blacksmith-32vcpu-ubuntu-2404
+    permissions:
+      contents: read
+      packages: read
+    env:
+      CLUSTER_NAME: firecrawl-ci
+      REGISTRY_NAME: registry.localhost
+      REGISTRY_PORT: 5000
+      FIRECRAWL_NAMESPACE: firecrawl
+      FIRE_ENGINE_NAMESPACE: fire-engine
+      IDMUX_NAMESPACE: idmux
+    steps:
+      - uses: actions/checkout@v5
 
-  # temp disabled
-  # prod-test:
-  #   name: Production environment tests
-  #   runs-on: big-runner
-  #   services:
-  #     redis:
-  #       image: redis
-  #       ports:
-  #         - 6379:6379
-  #     rabbitmq:
-  #       image: rabbitmq
-  #       ports:
-  #         - 5672:5672
-  #   env:
-  #     BULL_AUTH_KEY: ${{ secrets.BULL_AUTH_KEY }}
-  #     OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-  #     REDIS_URL: ${{ secrets.REDIS_URL }}
-  #     SUPABASE_ANON_TOKEN: ${{ secrets.SUPABASE_ANON_TOKEN }}
-  #     SUPABASE_SERVICE_TOKEN: ${{ secrets.SUPABASE_SERVICE_TOKEN }}
-  #     SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-  #     SUPABASE_REPLICA_URL: ${{ secrets.SUPABASE_REPLICA_URL }}
-  #     INDEX_SUPABASE_SERVICE_TOKEN: ${{ secrets.INDEX_SUPABASE_SERVICE_TOKEN }}
-  #     INDEX_SUPABASE_ANON_TOKEN: ${{ secrets.INDEX_SUPABASE_ANON_TOKEN }}
-  #     INDEX_SUPABASE_URL: ${{ secrets.INDEX_SUPABASE_URL }}
-  #     TEST_API_KEY: ${{ secrets.TEST_API_KEY }}
-  #     TEST_TEAM_ID: ${{ secrets.TEST_TEAM_ID }}
-  #     TEST_API_KEY_CONCURRENCY: ${{ secrets.TEST_API_KEY_CONCURRENCY }}
-  #     TEST_TEAM_ID_CONCURRENCY: ${{ secrets.TEST_TEAM_ID_CONCURRENCY }}
-  #     TEST_API_KEY_ZDR: ${{ secrets.TEST_API_KEY_ZDR }}
-  #     TEST_TEAM_ID_ZDR: ${{ secrets.TEST_TEAM_ID_ZDR }}
-  #     FIRE_ENGINE_BETA_URL: ${{ secrets.FIRE_ENGINE_BETA_URL }}
-  #     FIRE_ENGINE_STAGING_URL: ${{ secrets.FIRE_ENGINE_STAGING_URL }}
-  #     USE_DB_AUTHENTICATION: true
-  #     ENV: ${{ secrets.ENV }}
-  #     RUNPOD_MU_POD_ID: ${{ secrets.RUNPOD_MU_POD_ID }}
-  #     RUNPOD_MUV2_POD_ID: ${{ secrets.RUNPOD_MUV2_POD_ID }}
-  #     RUNPOD_MU_API_KEY: ${{ secrets.RUNPOD_MU_API_KEY }}
-  #     GCS_CREDENTIALS: ${{ secrets.GCS_CREDENTIALS }}
-  #     GCS_BUCKET_NAME: ${{ secrets.GCS_BUCKET_NAME }}
-  #     GCS_INDEX_BUCKET_NAME: ${{ secrets.GCS_INDEX_BUCKET_NAME }}
-  #     GCS_MEDIA_BUCKET_NAME: ${{ secrets.GCS_MEDIA_BUCKET_NAME }}
-  #     GOOGLE_GENERATIVE_AI_API_KEY: ${{ secrets.GOOGLE_GENERATIVE_AI_API_KEY }}
-  #     GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
-  #     ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-  #     VERTEX_CREDENTIALS: ${{ secrets.VERTEX_CREDENTIALS }}
-  #     USE_GO_MARKDOWN_PARSER: true
-  #     SENTRY_ENVIRONMENT: dev
-  #     IDMUX_URL: ${{ secrets.IDMUX_URL }}
-  #     LOG_ENCRYPTION_KEY: ${{ secrets.LOG_ENCRYPTION_KEY }}
-  #     TEST_SUITE_WEBSITE: ${{ secrets.TEST_SUITE_WEBSITE }}
-  #     NUQ_DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
-  #     NUQ_RABBITMQ_URL: amqp://localhost:5672
-  #     HOST: 0.0.0.0
-  #   steps:
-  #     - uses: actions/checkout@v5
+      - name: Checkout infra repo
+        uses: actions/checkout@v5
+        with:
+          repository: ${{ secrets.FIRECRAWL_INFRA_REPO }}
+          ref: ${{ secrets.FIRECRAWL_INFRA_REF }}
+          token: ${{ secrets.FIRECRAWL_INFRA_READ_TOKEN }}
+          path: infra
 
-  #     - name: Tailscale
-  #       uses: tailscale/github-action@v4
-  #       with:
-  #         oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
-  #         oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
-  #         tags: tag:ci
-  #         use-cache: 'true'
+      - name: Install k3d, kubectl, and Helm
+        run: |
+          set -euo pipefail
+          curl -s https://raw.githubusercontent.com/k3d-io/k3d/main/install.sh | bash
+          curl -sSL -o kubectl "https://dl.k8s.io/release/$(curl -sSL https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+          sudo install -o root -g root -m 0755 kubectl /usr/local/bin/kubectl
+          rm -f kubectl
+          curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
 
-  #     - uses: pnpm/action-setup@v4
-  #       with:
-  #         version: 10
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
 
-  #     - run: pnpm config set store-dir ~/.pnpm-store
-  #     - run: mkdir -p ~/.pnpm-store
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: |
+            apps/api/pnpm-lock.yaml
 
-  #     - uses: actions/setup-node@v6
-  #       with:
-  #         node-version: 22
-  #         cache: pnpm
-  #         cache-dependency-path: |
-  #           apps/api/pnpm-lock.yaml
+      - run: pnpm config set store-dir ~/.pnpm-store
+      - run: mkdir -p ~/.pnpm-store
 
-  #     - run: pnpm fetch
-  #       working-directory: apps/api
+      - name: Create k3d cluster
+        run: |
+          set -euo pipefail
+          k3d registry create "${REGISTRY_NAME}" --port "${REGISTRY_PORT}"
+          k3d cluster create "${CLUSTER_NAME}" \
+            --servers 1 \
+            --agents 2 \
+            --registry-use "k3d-${REGISTRY_NAME}:${REGISTRY_PORT}" \
+            --k3s-arg "--disable=traefik@server:0"
+          kubectl create namespace "${FIRECRAWL_NAMESPACE}"
+          kubectl create namespace "${FIRE_ENGINE_NAMESPACE}"
+          kubectl create namespace "${IDMUX_NAMESPACE}"
 
-  #     - name: Restore native lib
-  #       id: napi_restore
-  #       uses: actions/cache/restore@v4
-  #       with:
-  #         path: |
-  #           apps/api/native/*.node
-  #           apps/api/native/index.js
-  #           apps/api/native/index.d.ts
-  #         # note: this key is not ideal, need to find a better solution
-  #         key: ${{ runner.os }}-napi-${{ hashFiles('apps/api/native/Cargo.toml', 'apps/api/native/package.json', 'apps/api/native/src/**') }}
+      - name: Install RabbitMQ cluster operator
+        run: |
+          set -euo pipefail
+          kubectl apply -f https://github.com/rabbitmq/cluster-operator/releases/latest/download/cluster-operator.yml
+          kubectl wait --for=condition=Established crd/rabbitmqclusters.rabbitmq.com --timeout=2m
+          kubectl -n rabbitmq-system rollout status deployment/rabbitmq-cluster-operator --timeout=5m
 
-  #     - name: Build native lib
-  #       if: steps.napi_restore.outputs.cache-hit != 'true'
-  #       run: pnpm install
-  #       working-directory: apps/api/native
+      - name: Create GHCR pull secrets
+        run: |
+          set -euo pipefail
+          for ns in "${FIRECRAWL_NAMESPACE}" "${FIRE_ENGINE_NAMESPACE}" "${IDMUX_NAMESPACE}"; do
+            kubectl -n "${ns}" create secret docker-registry ghcr-secret \
+              --docker-server=ghcr.io \
+              --docker-username="${{ github.actor }}" \
+              --docker-password="${{ secrets.GITHUB_TOKEN }}" \
+              --docker-email="ci@example.invalid" \
+              --dry-run=client -o yaml | kubectl apply -f -
+            kubectl -n "${ns}" patch serviceaccount default -p '{"imagePullSecrets":[{"name":"ghcr-secret"}]}'
+          done
 
-  #     - name: Cache native lib
-  #       if: steps.napi_restore.outputs.cache-hit != 'true'
-  #       uses: actions/cache/save@v4
-  #       with:
-  #         path: |
-  #           apps/api/native/*.node
-  #           apps/api/native/index.js
-  #           apps/api/native/index.d.ts
-  #         key: ${{ steps.napi_restore.outputs.cache-primary-key }}
+      - name: Create fire-engine secret
+        run: |
+          set -euo pipefail
+          printf '%s' "${{ secrets.FIRE_ENGINE_SECRET_ENV_FILE }}" > "$RUNNER_TEMP/fire-engine.env"
+          kubectl -n "${FIRE_ENGINE_NAMESPACE}" create secret generic secret \
+            --from-env-file="$RUNNER_TEMP/fire-engine.env" \
+            --dry-run=client -o yaml | kubectl apply -f -
 
-  #     - uses: actions/setup-go@v6
-  #       with:
-  #         go-version: 1.24
-  #         cache-dependency-path: apps/api/sharedLibs/go-html-to-md/go.sum
+      - name: Create idmux secret
+        run: |
+          set -euo pipefail
+          kubectl -n "${IDMUX_NAMESPACE}" create secret generic secret \
+            --from-literal=SUPABASE_URL="${{ secrets.IDMUX_SUPABASE_URL }}" \
+            --from-literal=SUPABASE_SERVICE_TOKEN="${{ secrets.IDMUX_SUPABASE_SERVICE_TOKEN }}" \
+            --from-literal=SUPABASE_ANON_TOKEN="${{ secrets.IDMUX_SUPABASE_ANON_TOKEN }}" \
+            --dry-run=client -o yaml | kubectl apply -f -
 
-  #     - name: Restore Go lib
-  #       id: golib_restore
-  #       uses: actions/cache/restore@v4
-  #       with:
-  #         path: apps/api/sharedLibs/go-html-to-md/libhtml-to-markdown.so
-  #         key: ${{ runner.os }}-golib-${{ hashFiles('apps/api/sharedLibs/go-html-to-md/go.sum', 'apps/api/sharedLibs/go-html-to-md/*.go') }}
+      - name: Create firecrawl secret
+        run: |
+          set -euo pipefail
+          printf '%s' "${{ secrets.GCS_CREDENTIALS }}" > "$RUNNER_TEMP/gcs-credentials.json"
+          printf '%s' "${{ secrets.VERTEX_CREDENTIALS }}" > "$RUNNER_TEMP/vertex-credentials.json"
+          kubectl -n "${FIRECRAWL_NAMESPACE}" create secret generic secret \
+            --from-literal=TEST_API_KEY="${{ secrets.TEST_API_KEY }}" \
+            --from-literal=TEST_TEAM_ID="${{ secrets.TEST_TEAM_ID }}" \
+            --from-literal=TEST_API_KEY_CONCURRENCY="${{ secrets.TEST_API_KEY_CONCURRENCY }}" \
+            --from-literal=TEST_TEAM_ID_CONCURRENCY="${{ secrets.TEST_TEAM_ID_CONCURRENCY }}" \
+            --from-literal=TEST_API_KEY_ZDR="${{ secrets.TEST_API_KEY_ZDR }}" \
+            --from-literal=TEST_TEAM_ID_ZDR="${{ secrets.TEST_TEAM_ID_ZDR }}" \
+            --from-literal=TEST_SUITE_WEBSITE="${{ secrets.TEST_SUITE_WEBSITE }}" \
+            --from-literal=SUPABASE_URL="${{ secrets.SUPABASE_URL }}" \
+            --from-literal=SUPABASE_SERVICE_TOKEN="${{ secrets.SUPABASE_SERVICE_TOKEN }}" \
+            --from-literal=SUPABASE_ANON_TOKEN="${{ secrets.SUPABASE_ANON_TOKEN }}" \
+            --from-literal=SUPABASE_REPLICA_URL="${{ secrets.SUPABASE_REPLICA_URL }}" \
+            --from-literal=INDEX_SUPABASE_URL="${{ secrets.INDEX_SUPABASE_URL }}" \
+            --from-literal=INDEX_SUPABASE_SERVICE_TOKEN="${{ secrets.INDEX_SUPABASE_SERVICE_TOKEN }}" \
+            --from-literal=INDEX_SUPABASE_ANON_TOKEN="${{ secrets.INDEX_SUPABASE_ANON_TOKEN }}" \
+            --from-literal=OPENAI_API_KEY="${{ secrets.OPENAI_API_KEY }}" \
+            --from-literal=ANTHROPIC_API_KEY="${{ secrets.ANTHROPIC_API_KEY }}" \
+            --from-literal=GOOGLE_GENERATIVE_AI_API_KEY="${{ secrets.GOOGLE_GENERATIVE_AI_API_KEY }}" \
+            --from-literal=GROQ_API_KEY="${{ secrets.GROQ_API_KEY }}" \
+            --from-literal=RUNPOD_MU_API_KEY="${{ secrets.RUNPOD_MU_API_KEY }}" \
+            --from-literal=RUNPOD_MU_POD_ID="${{ secrets.RUNPOD_MU_POD_ID }}" \
+            --from-literal=RUNPOD_MUV2_POD_ID="${{ secrets.RUNPOD_MUV2_POD_ID }}" \
+            --from-literal=GCS_BUCKET_NAME="${{ secrets.GCS_BUCKET_NAME }}" \
+            --from-literal=GCS_FIRE_ENGINE_BUCKET_NAME="${{ secrets.GCS_FIRE_ENGINE_BUCKET_NAME }}" \
+            --from-literal=GCS_INDEX_BUCKET_NAME="${{ secrets.GCS_INDEX_BUCKET_NAME }}" \
+            --from-literal=GCS_MEDIA_BUCKET_NAME="${{ secrets.GCS_MEDIA_BUCKET_NAME }}" \
+            --from-literal=FIRE_ENGINE_STAGING_URL="${{ secrets.FIRE_ENGINE_STAGING_URL }}" \
+            --from-literal=PROXY_SERVER="${{ secrets.PROXY_SERVER }}" \
+            --from-literal=PROXY_USERNAME="${{ secrets.PROXY_USERNAME }}" \
+            --from-literal=PROXY_PASSWORD="${{ secrets.PROXY_PASSWORD }}" \
+            --from-literal=BULL_AUTH_KEY="${{ secrets.BULL_AUTH_KEY }}" \
+            --from-literal=LOG_ENCRYPTION_KEY="${{ secrets.LOG_ENCRYPTION_KEY }}" \
+            --from-file=GCS_CREDENTIALS="$RUNNER_TEMP/gcs-credentials.json" \
+            --from-file=VERTEX_CREDENTIALS="$RUNNER_TEMP/vertex-credentials.json" \
+            --dry-run=client -o yaml | kubectl apply -f -
 
-  #     - name: Build go-html-to-md
-  #       if: steps.golib_restore.outputs.cache-hit != 'true'
-  #       run: |
-  #         cd apps/api/sharedLibs/go-html-to-md
-  #         go mod tidy
-  #         go build -o libhtml-to-markdown.so -buildmode=c-shared html-to-markdown.go
+      - name: Build and push firecrawl image
+        run: |
+          set -euo pipefail
+          image="localhost:${REGISTRY_PORT}/firecrawl/firecrawl:${{ github.sha }}"
+          docker build -t "${image}" apps/api
+          docker push "${image}"
 
-  #     - name: Cache Go lib
-  #       if: steps.golib_restore.outputs.cache-hit != 'true'
-  #       uses: actions/cache/save@v4
-  #       with:
-  #         path: apps/api/sharedLibs/go-html-to-md/libhtml-to-markdown.so
-  #         key: ${{ steps.golib_restore.outputs.cache-primary-key }}
+      - name: Deploy fire-engine
+        run: |
+          set -euo pipefail
+          printf '%s' "${{ secrets.FIRECRAWL_INFRA_VALUES }}" > "$RUNNER_TEMP/fire-engine-ci-values.yaml"
+          helm upgrade --install fire-engine ./infra/helm-charts/fire-engine \
+            --namespace "${FIRE_ENGINE_NAMESPACE}" \
+            --values "$RUNNER_TEMP/fire-engine-ci-values.yaml" \
+            --set onePassword.enabled=false
 
-  #     - name: Install API dependencies
-  #       run: pnpm install --frozen-lockfile --ignore-scripts
-  #       working-directory: apps/api
-  #       env:
-  #         npm_config_ignore_scripts: "true"
+      - name: Deploy idmux
+        run: |
+          set -euo pipefail
+          helm upgrade --install idmux ./infra/helm-charts/idmux \
+            --namespace "${IDMUX_NAMESPACE}" \
+            --set app.replicaCount=1 \
+            --set-string app.env.ENV=staging \
+            --set-string app.env.SUPABASE_URL="${{ secrets.IDMUX_SUPABASE_URL }}" \
+            --set onePassword.enabled=false
 
-  #     - name: Run Docker Postgres
-  #       run: |
-  #         docker build -t firecrawl/nuq-postgres:latest ./apps/nuq-postgres
-  #         docker run -d -p 5432:5432 -e POSTGRES_USER=postgres -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=postgres --name postgres firecrawl/nuq-postgres:latest
+      - name: Deploy firecrawl
+        run: |
+          set -euo pipefail
+          cat <<'EOF' > "$RUNNER_TEMP/firecrawl-ci-overrides.yaml"
+          app:
+            env: {}
+          workers:
+            nuq:
+              env: {}
+          EOF
+          helm upgrade --install firecrawl ./infra/helm-charts/firecrawl \
+            --namespace "${FIRECRAWL_NAMESPACE}" \
+            --values ./infra/helm-charts/firecrawl/values-ci-test.yaml \
+            --values "$RUNNER_TEMP/firecrawl-ci-overrides.yaml" \
+            --set-string image.registry="k3d-${REGISTRY_NAME}:${REGISTRY_PORT}" \
+            --set-string image.repository="firecrawl/firecrawl" \
+            --set-string image.tag="${{ github.sha }}" \
+            --set-string config.FIRE_ENGINE_BETA_URL="http://api-service.${FIRE_ENGINE_NAMESPACE}:8080" \
+            --set-string config.IDMUX_URL="http://idmux-service.${IDMUX_NAMESPACE}:3009" \
+            --set-string config.TEST_SUITE_SELF_HOSTED="false" \
+            --set-string config.USE_DB_AUTHENTICATION="true" \
+            --set workers.index.enabled=true \
+            --set workers.index.replicas=1 \
+            --set workers.extract.enabled=true \
+            --set workers.extract.replicas=1
 
-  #     - name: Run tests
-  #       run: pnpm harness pnpm test:snips
-  #       working-directory: apps/api
-  #       env:
-  #         npm_config_ignore_scripts: "true" # required currently to prevent re-building cached native lib
+      - name: Wait for deployments
+        run: |
+          set -euo pipefail
+          kubectl -n "${FIRE_ENGINE_NAMESPACE}" rollout status deployment/api --timeout=10m
+          kubectl -n "${IDMUX_NAMESPACE}" rollout status deployment/idmux --timeout=10m
+          kubectl -n "${FIRECRAWL_NAMESPACE}" rollout status deployment/app --timeout=10m
 
-  #     - name: Create logs directory
-  #       if: always()
-  #       run: |
-  #         mkdir -p logs
-  #         cp ./apps/api/firecrawl.log logs/firecrawl.log
-  #         cd logs
-  #         zip -r logs.zip ./*
-  #         echo "${{ secrets.LOG_ENCRYPTION_KEY }}" | gpg --batch --yes --passphrase-fd 0 -c logs.zip
-  #         rm logs.zip
+      - name: Install API dependencies
+        run: pnpm install --frozen-lockfile --ignore-scripts
+        working-directory: apps/api
+        env:
+          npm_config_ignore_scripts: 'true'
 
-  #     - uses: actions/upload-artifact@v4
-  #       if: always()
-  #       with:
-  #         name: Encrypted Logs
-  #         path: logs/logs.zip.gpg
-  #         retention-days: 5
+      - name: Run snips tests
+        run: |
+          set -euo pipefail
+          kubectl -n "${FIRECRAWL_NAMESPACE}" port-forward svc/app-service 3002:3002 > "$RUNNER_TEMP/port-forward.log" 2>&1 &
+          echo $! > "$RUNNER_TEMP/port-forward.pid"
+          trap 'kill "$(cat "$RUNNER_TEMP/port-forward.pid")" 2>/dev/null || true' EXIT
+          for _ in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:3002/v0/health/readiness >/dev/null; then
+              break
+            fi
+            sleep 2
+          done
+          curl -fsS http://127.0.0.1:3002/v0/health/readiness
+          pnpm test:snips
+        working-directory: apps/api
+        env:
+          TEST_API_URL: http://127.0.0.1:3002
+          TEST_SUITE_SELF_HOSTED: 'false'
+          USE_DB_AUTHENTICATION: 'true'
+          TEST_API_KEY: ${{ secrets.TEST_API_KEY }}
+          TEST_TEAM_ID: ${{ secrets.TEST_TEAM_ID }}
+          TEST_API_KEY_CONCURRENCY: ${{ secrets.TEST_API_KEY_CONCURRENCY }}
+          TEST_TEAM_ID_CONCURRENCY: ${{ secrets.TEST_TEAM_ID_CONCURRENCY }}
+          TEST_API_KEY_ZDR: ${{ secrets.TEST_API_KEY_ZDR }}
+          TEST_TEAM_ID_ZDR: ${{ secrets.TEST_TEAM_ID_ZDR }}
+          TEST_SUITE_WEBSITE: ${{ secrets.TEST_SUITE_WEBSITE }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_TOKEN: ${{ secrets.SUPABASE_SERVICE_TOKEN }}
+          SUPABASE_ANON_TOKEN: ${{ secrets.SUPABASE_ANON_TOKEN }}
+          SUPABASE_REPLICA_URL: ${{ secrets.SUPABASE_REPLICA_URL }}
+          INDEX_SUPABASE_URL: ${{ secrets.INDEX_SUPABASE_URL }}
+          INDEX_SUPABASE_SERVICE_TOKEN: ${{ secrets.INDEX_SUPABASE_SERVICE_TOKEN }}
+          INDEX_SUPABASE_ANON_TOKEN: ${{ secrets.INDEX_SUPABASE_ANON_TOKEN }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          GOOGLE_GENERATIVE_AI_API_KEY: ${{ secrets.GOOGLE_GENERATIVE_AI_API_KEY }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          VERTEX_CREDENTIALS: ${{ secrets.VERTEX_CREDENTIALS }}
+          RUNPOD_MU_API_KEY: ${{ secrets.RUNPOD_MU_API_KEY }}
+          RUNPOD_MU_POD_ID: ${{ secrets.RUNPOD_MU_POD_ID }}
+          RUNPOD_MUV2_POD_ID: ${{ secrets.RUNPOD_MUV2_POD_ID }}
+          GCS_CREDENTIALS: ${{ secrets.GCS_CREDENTIALS }}
+          GCS_BUCKET_NAME: ${{ secrets.GCS_BUCKET_NAME }}
+          GCS_FIRE_ENGINE_BUCKET_NAME: ${{ secrets.GCS_FIRE_ENGINE_BUCKET_NAME }}
+          GCS_INDEX_BUCKET_NAME: ${{ secrets.GCS_INDEX_BUCKET_NAME }}
+          GCS_MEDIA_BUCKET_NAME: ${{ secrets.GCS_MEDIA_BUCKET_NAME }}
+          FIRE_ENGINE_BETA_URL: ${{ secrets.FIRE_ENGINE_BETA_URL }}
+          FIRE_ENGINE_STAGING_URL: ${{ secrets.FIRE_ENGINE_STAGING_URL }}
+          IDMUX_URL: ${{ secrets.IDMUX_URL }}
+          PROXY_SERVER: ${{ secrets.PROXY_SERVER }}
+          PROXY_USERNAME: ${{ secrets.PROXY_USERNAME }}
+          PROXY_PASSWORD: ${{ secrets.PROXY_PASSWORD }}
+          BULL_AUTH_KEY: ${{ secrets.BULL_AUTH_KEY }}
+          LOG_ENCRYPTION_KEY: ${{ secrets.LOG_ENCRYPTION_KEY }}
+
+      - name: Cleanup k3d
+        if: always()
+        run: |
+          set -euo pipefail
+          if [ -f "$RUNNER_TEMP/port-forward.pid" ]; then
+            kill "$(cat "$RUNNER_TEMP/port-forward.pid")" || true
+          fi
+          k3d cluster delete "${CLUSTER_NAME}" || true
+          k3d registry delete "${REGISTRY_NAME}" || true
