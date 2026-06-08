@@ -3,8 +3,8 @@ import { v7 as uuidv7 } from "uuid";
 import { and, asc, count, desc, eq, isNull, ne } from "drizzle-orm";
 import { db, dbRr } from "../../db/connection";
 import * as schema from "../../db/schema";
-import { includesFormat } from "../../lib/format-utils";
 import { monitoringClaimDueMonitors } from "../../db/rpc";
+import { getMonitorTargetPerPageCredits } from "./billing";
 import {
   getNextMonitorRunAt,
   estimateRunsPerMonth,
@@ -32,28 +32,8 @@ function ensureTargetIds(targets: Array<Record<string, any>>): MonitorTarget[] {
   })) as MonitorTarget[];
 }
 
-// Per-page credit cost for a target's extraction mode. Mirrors
-// estimateActualCredits in runner.ts so the reserved/estimated credits match
-// what a check actually bills: deterministic JSON = 7, other JSON (plain or
-// changeTracking-json) = 5, otherwise the base scrape = 1.
-function perPageCredits(target: MonitorTarget): number {
-  const formats = Array.isArray(target.scrapeOptions?.formats)
-    ? (target.scrapeOptions!.formats as any[])
-    : [];
-  if (includesFormat(formats, "deterministicJson")) return 7;
-  const hasJson =
-    includesFormat(formats, "json") ||
-    formats.some(
-      format =>
-        format?.type === "changeTracking" &&
-        Array.isArray(format?.modes) &&
-        format.modes.includes("json"),
-    );
-  return hasJson ? 5 : 1;
-}
-
 function estimateTargetCredits(target: MonitorTarget): number {
-  const perPage = perPageCredits(target);
+  const perPage = getMonitorTargetPerPageCredits(target);
   if (target.type === "scrape") {
     return target.urls.length * perPage;
   }
