@@ -25,9 +25,9 @@ function unionProperties(
 ): KGNode["properties"] {
   if (!incoming?.length) return existing;
   const props = existing ? [...existing] : [];
-  const seen = new Set(props.map(p => `${p.key}=${p.value}`));
+  const seen = new Set(props.map(p => JSON.stringify([p.key, p.value])));
   for (const p of incoming) {
-    const sig = `${p.key}=${p.value}`;
+    const sig = JSON.stringify([p.key, p.value]);
     if (!seen.has(sig)) {
       props.push(p);
       seen.add(sig);
@@ -50,6 +50,76 @@ export function pruneDanglingEdges(graph: KnowledgeGraph): KnowledgeGraph {
       e => nodeIds.has(e.source) && nodeIds.has(e.target),
     ),
   };
+}
+
+/**
+ * Collapse nodes that share an `id` (the model can emit duplicates for the same
+ * slug) into a single node: keep the first occurrence's label/type and union in
+ * the properties of any later same-id nodes. Edges are left untouched — they
+ * still resolve, and pruneDanglingEdges handles genuinely dangling endpoints.
+ */
+export function dedupeNodesById(graph: KnowledgeGraph): KnowledgeGraph {
+  const byId = new Map<string, KGNode>();
+  for (const node of graph.nodes) {
+    const existing = byId.get(node.id);
+    if (existing) {
+      existing.properties = unionProperties(
+        existing.properties,
+        node.properties,
+      );
+    } else {
+      byId.set(node.id, {
+        ...node,
+        ...(node.properties?.length
+          ? { properties: [...node.properties] }
+          : {}),
+      });
+    }
+  }
+  return { nodes: [...byId.values()], edges: graph.edges };
+}
+
+const normalizeType = (s: string) => s.trim().toLowerCase();
+
+/**
+ * Restrict a graph to nodes whose `type` is in the caller-supplied allow-list
+ * (matched case-insensitively, trimmed). `entityTypes` is only *guidance* to the
+ * LLM in the prompt, so the model can still return out-of-list types; this
+ * enforces the constraint deterministically. Edges referencing a removed node
+ * are dropped so the result stays self-consistent. An empty/absent allow-list
+ * is a no-op (returns the graph unchanged).
+ */
+export function filterByEntityTypes(
+  graph: KnowledgeGraph,
+  entityTypes: string[] | undefined,
+): KnowledgeGraph {
+  if (!entityTypes || entityTypes.length === 0) return graph;
+  const allowed = new Set(entityTypes.map(normalizeType));
+  const nodes = graph.nodes.filter(n => allowed.has(normalizeType(n.type)));
+  const keptIds = new Set(nodes.map(n => n.id));
+  return {
+    nodes,
+    edges: graph.edges.filter(
+      e => keptIds.has(e.source) && keptIds.has(e.target),
+    ),
+  };
+}
+
+/**
+ * Compute the document warning for a knowledge graph that came back empty after
+ * a successful extraction (the LLM found nothing, or everything was filtered
+ * out by entityTypes). Returns the unchanged `previousWarning` when the graph
+ * is non-empty, so existing warnings are preserved rather than silently
+ * dropped.
+ */
+export function emptyKnowledgeGraphWarning(
+  graph: KnowledgeGraph,
+  previousWarning?: string,
+): string | undefined {
+  if (graph.nodes.length > 0) return previousWarning;
+  const warning =
+    "Knowledge graph extraction returned no entities for this page.";
+  return previousWarning ? `${warning} ${previousWarning}` : warning;
 }
 
 /**
@@ -79,7 +149,12 @@ export function mergeKnowledgeGraphs(graphs: KnowledgeGraph[]): KnowledgeGraph {
     const localIdToCanonical = new Map<string, string>();
 
     for (const node of graph.nodes) {
-      const key = normalizeLabel(node.label);
+      // Dedup on label AND type: distinct entities can share a label (e.g.
+      // "Mercury" the planet vs the element) and must not collapse into one.
+      const key = JSON.stringify([
+        normalizeLabel(node.label),
+        normalizeType(node.type),
+      ]);
       let canonicalId = labelToCanonicalId.get(key);
       if (canonicalId === undefined) {
         canonicalId = uniqueId(node.id);
