@@ -3,10 +3,7 @@ import { v7 as uuidv7 } from "uuid";
 import { z } from "zod";
 import { config } from "../../config";
 import { logger as _logger } from "../../lib/logger";
-import {
-  autumnService,
-  SEARCH_CREDITS_FEATURE_ID,
-} from "../../services/autumn/autumn.service";
+import { autumnService } from "../../services/autumn/autumn.service";
 import { and, eq, gte } from "drizzle-orm";
 import { db, dbRr } from "../../db/connection";
 import * as schema from "../../db/schema";
@@ -335,7 +332,6 @@ export async function searchFeedbackController(
             feedbackId,
             rating: parsedBody.rating,
           },
-          featureId: SEARCH_CREDITS_FEATURE_ID,
         });
         creditsRefunded = cappedRefund;
       } catch (error) {
