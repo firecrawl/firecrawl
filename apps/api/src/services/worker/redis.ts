@@ -51,8 +51,8 @@ return 1`,
 } as const;
 
 type ScriptHashes = {
-  [K in keyof typeof luaScripts]: {
-    [K2 in keyof (typeof luaScripts)[K]]: string;
+  -readonly [K in keyof typeof luaScripts]: {
+    -readonly [K2 in keyof (typeof luaScripts)[K]]: string;
   };
 };
 
