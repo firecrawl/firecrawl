@@ -26,6 +26,7 @@ import {
   updateMonitorSchema,
 } from "../../../services/monitoring/types";
 import { getNextMonitorRunAt } from "../../../services/monitoring/cron";
+import { DEFAULT_PROXY_SCRAPE_TIMEOUT_MS } from "../../../lib/scrape-timeout";
 
 describe("V2 Types Validation", () => {
   describe("scrapeRequestSchema", () => {
@@ -38,6 +39,7 @@ describe("V2 Types Validation", () => {
       expect(result.url).toBe("https://example.com");
       expect(result.origin).toBe("api");
       expect(result.formats).toEqual([{ type: "markdown" }]);
+      expect(result.timeout).toBe(DEFAULT_PROXY_SCRAPE_TIMEOUT_MS);
     });
 
     it("should accept valid scrape request with format objects", () => {

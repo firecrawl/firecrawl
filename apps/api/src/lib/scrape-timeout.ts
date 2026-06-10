@@ -1,0 +1,14 @@
+import { config } from "../config";
+
+export const DEFAULT_SCRAPE_TIMEOUT_MS = config.SCRAPE_TIMEOUT_MS ?? 30_000;
+export const DEFAULT_LEGACY_SCRAPE_TIMEOUT_MS =
+  config.SCRAPE_TIMEOUT_MS ?? 60_000;
+
+export const DEFAULT_JSON_SCRAPE_TIMEOUT_MS = Math.max(
+  DEFAULT_SCRAPE_TIMEOUT_MS,
+  60_000,
+);
+export const DEFAULT_PROXY_SCRAPE_TIMEOUT_MS = Math.max(
+  DEFAULT_SCRAPE_TIMEOUT_MS,
+  120_000,
+);

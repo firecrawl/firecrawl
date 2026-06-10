@@ -1,6 +1,8 @@
+import { DEFAULT_LEGACY_SCRAPE_TIMEOUT_MS } from "./scrape-timeout";
+
 export const defaultOrigin = "api";
 
-export const defaultTimeout = 60000; // 60 seconds
+export const defaultTimeout = DEFAULT_LEGACY_SCRAPE_TIMEOUT_MS;
 
 export const defaultPageOptions = {
   onlyMainContent: false,

@@ -17,6 +17,11 @@ import { integrationSchema } from "../../utils/integration";
 import { includesFormat } from "../../lib/format-utils";
 import { webhookSchema } from "../../services/webhook/schema";
 import { BrandingProfile } from "../../types/branding";
+import {
+  DEFAULT_JSON_SCRAPE_TIMEOUT_MS,
+  DEFAULT_PROXY_SCRAPE_TIMEOUT_MS,
+  DEFAULT_SCRAPE_TIMEOUT_MS,
+} from "../../lib/scrape-timeout";
 
 type Format =
   | "markdown"
@@ -551,14 +556,16 @@ const extractTransformRequired = <T extends ScrapeOptions>(obj: T): T => {
 
 const extractTransform = (obj: ScrapeOptions) => {
   // Handle timeout
+  obj = { ...obj, timeout: obj.timeout ?? DEFAULT_SCRAPE_TIMEOUT_MS };
+
   if (
     (includesFormat(obj.formats, "extract") ||
       obj.extract ||
       includesFormat(obj.formats, "json") ||
       obj.jsonOptions) &&
-    obj.timeout === 30000
+    obj.timeout === DEFAULT_SCRAPE_TIMEOUT_MS
   ) {
-    obj = { ...obj, timeout: 60000 };
+    obj = { ...obj, timeout: DEFAULT_JSON_SCRAPE_TIMEOUT_MS };
   }
 
   if (
@@ -568,8 +575,11 @@ const extractTransform = (obj: ScrapeOptions) => {
     obj = { ...obj, waitFor: 5000 };
   }
 
-  if (includesFormat(obj.formats, "changeTracking") && obj.timeout === 30000) {
-    obj = { ...obj, timeout: 60000 };
+  if (
+    includesFormat(obj.formats, "changeTracking") &&
+    obj.timeout === DEFAULT_SCRAPE_TIMEOUT_MS
+  ) {
+    obj = { ...obj, timeout: DEFAULT_JSON_SCRAPE_TIMEOUT_MS };
   }
 
   if ((obj as ScrapeOptions).agent) {
@@ -580,9 +590,9 @@ const extractTransform = (obj: ScrapeOptions) => {
     (obj.proxy === "stealth" ||
       obj.proxy === "enhanced" ||
       obj.proxy === "auto") &&
-    obj.timeout === 30000
+    obj.timeout === DEFAULT_SCRAPE_TIMEOUT_MS
   ) {
-    obj = { ...obj, timeout: 120000 };
+    obj = { ...obj, timeout: DEFAULT_PROXY_SCRAPE_TIMEOUT_MS };
   }
 
   if (includesFormat(obj.formats, "json")) {
@@ -626,11 +636,12 @@ const fire1Refine = (obj: ScrapeOptionsBase): boolean => {
 };
 
 const waitForRefine = (obj?: ScrapeOptionsBase): boolean => {
-  if (obj && obj.waitFor !== undefined && obj.timeout !== undefined) {
-    if (typeof obj.timeout !== "number" || obj.timeout <= 0) {
+  if (obj && obj.waitFor !== undefined) {
+    const timeout = obj.timeout ?? DEFAULT_SCRAPE_TIMEOUT_MS;
+    if (typeof timeout !== "number" || timeout <= 0) {
       return false;
     }
-    return obj.waitFor <= obj.timeout / 2;
+    return obj.waitFor <= timeout / 2;
   }
   return true;
 };
@@ -785,7 +796,7 @@ const scrapeRequestSchemaBase = baseScrapeOptions
     jsonOptions: extractOptionsWithAgent.optional(),
     origin: z.string().optional().prefault("api"),
     integration: integrationSchema.optional().transform(val => val || null),
-    timeout: z.int().positive().min(1000).prefault(30000),
+    timeout: z.int().positive().min(1000).prefault(DEFAULT_SCRAPE_TIMEOUT_MS),
     zeroDataRetention: z.boolean().optional(),
   })
   .strict();
