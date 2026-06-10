@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "description": "",
   "scripts": {
+    "test:extraction-quality": "node --test extraction-quality/*.test.mjs",
     "test:load": "artillery run --output ./load-test-results/test-run-report.json load-test.yml"
   },
   "author": "",
