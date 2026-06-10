@@ -275,6 +275,23 @@ const isValidUrl = (urlString: string): boolean => {
   }
 };
 
+const parseCookieHeader = (cookieHeader: string): { name: string; value: string }[] =>
+  cookieHeader
+    .split(';')
+    .map(pair => pair.trim())
+    .filter(Boolean)
+    .map(pair => {
+      const separatorIndex = pair.indexOf('=');
+      if (separatorIndex === -1) {
+        return { name: pair, value: '' };
+      }
+      return {
+        name: pair.slice(0, separatorIndex).trim(),
+        value: pair.slice(separatorIndex + 1).trim(),
+      };
+    })
+    .filter(cookie => cookie.name.length > 0);
+
 const scrapePage = async (
   page: Page,
   url: string,
@@ -414,10 +431,31 @@ app.post('/scrape', async (req: Request, res: Response) => {
     page = await requestContext.newPage();
 
     if (headers) {
-      // Remove the user-agent key before calling setExtraHTTPHeaders since
-      // we already forwarded it to the context-level userAgent option.
+      // Seed Cookie header values into the context's cookie jar instead of
+      // setExtraHTTPHeaders: Chromium re-generates redirected requests from
+      // the jar, so extra-header cookies are silently dropped on any redirect
+      // hop (#3725). The leading-dot domain (minus a "www." prefix) keeps the
+      // cookies valid across sibling subdomains of the scraped host.
+      const cookieHeader = Object.entries(headers).find(
+        ([k]) => k.toLowerCase() === 'cookie'
+      )?.[1];
+      if (cookieHeader) {
+        const cookieDomain = '.' + new URL(url).hostname.replace(/^www\./, '');
+        await requestContext.addCookies(
+          parseCookieHeader(cookieHeader).map(cookie => ({
+            ...cookie,
+            domain: cookieDomain,
+            path: '/',
+          }))
+        );
+      }
+
+      // Remove user-agent (forwarded to the context-level userAgent option)
+      // and cookie (seeded into the jar above) before setExtraHTTPHeaders.
       const filteredHeaders = Object.fromEntries(
-        Object.entries(headers).filter(([k]) => k.toLowerCase() !== 'user-agent')
+        Object.entries(headers).filter(
+          ([k]) => k.toLowerCase() !== 'user-agent' && k.toLowerCase() !== 'cookie'
+        )
       );
       if (Object.keys(filteredHeaders).length > 0) {
         await page.setExtraHTTPHeaders(filteredHeaders);
