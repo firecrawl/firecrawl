@@ -5,9 +5,17 @@ import { logger } from "../lib/logger";
 
 type DB = NodePgDatabase;
 
+interface PoolSizing {
+  /** Max client connections this pool opens to the pooler. Default 20. */
+  max?: number;
+  /** Idle connections held open permanently. Default 0. */
+  min?: number;
+}
+
 function makeDb(
   connectionString: string | undefined,
   applicationName: string,
+  sizing: PoolSizing = {},
 ): DB | null {
   if (!connectionString) {
     return null;
@@ -16,8 +24,14 @@ function makeDb(
   const pool = new Pool({
     connectionString,
     application_name: applicationName,
-    max: 20,
-    min: 2,
+    // Each process opens up to `max` client connections per pool against the
+    // (transaction) pooler. Supabase pins pgbouncer's max_client_conn at 12000,
+    // so the fleet-wide budget is `pods * sum(max across pools)`. Keep these
+    // small — the transaction pooler multiplexes server connections, so a large
+    // per-process client pool buys little throughput but eats the global cap.
+    // `min: 0` lets idle pods release connections instead of holding them.
+    max: sizing.max ?? 20,
+    min: sizing.min ?? 0,
     keepAlive: true,
   });
   pool.on("error", err =>
@@ -62,7 +76,14 @@ const replicaDb = useDbAuthentication
       "firecrawl-api-rr",
     )
   : null;
-const indexDb = makeDb(config.INDEX_DATABASE_URL, "firecrawl-index");
+// The index pool was the sole consumer behind the 2026-06-11 pgbouncer
+// `08P01: no more connections allowed (max_client_conn)` incident. It runs
+// against the transaction pooler, so cap it well below the generic 20 to keep
+// the fleet-wide client-connection count under Supabase's 12000 ceiling.
+const indexDb = makeDb(config.INDEX_DATABASE_URL, "firecrawl-index", {
+  max: 6,
+  min: 0,
+});
 
 if (useDbAuthentication && !mainDb) {
   logger.error(
