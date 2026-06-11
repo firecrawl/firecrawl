@@ -643,6 +643,16 @@ def prepare_scrape_options(options: Optional[ScrapeOptions]) -> Optional[Dict[st
                                     converted_formats.append(_validate_highlights_format(fmt.model_dump(exclude_none=True)))
                                 elif fmt.type == 'query':
                                     converted_formats.append(_validate_query_format(fmt.model_dump(exclude_none=True)))
+                                elif fmt.type == 'screenshot':
+                                    normalized = {'type': 'screenshot'}
+                                    if getattr(fmt, 'full_page', None) is not None:
+                                        normalized['fullPage'] = fmt.full_page
+                                    if getattr(fmt, 'quality', None) is not None:
+                                        normalized['quality'] = fmt.quality
+                                    vp = getattr(fmt, 'viewport', None)
+                                    if vp is not None:
+                                        normalized['viewport'] = vp.model_dump(exclude_none=True) if hasattr(vp, 'model_dump') else vp
+                                    converted_formats.append(normalized)
                                 elif fmt.type in ('changeTracking', 'change_tracking'):
                                     data = fmt.model_dump(exclude_none=True)
                                     data['type'] = _convert_format_string(data.get('type', fmt.type))
