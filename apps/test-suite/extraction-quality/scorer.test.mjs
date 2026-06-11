@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
+  applyGates,
+  compareToBaseline,
   evaluateExtraction,
   getPath,
   scoreExpectedValues,
@@ -83,12 +85,61 @@ test("table coverage treats non-numeric row counts as zero", () => {
 
 test("summarize reports aggregate pass and fail counts", () => {
   const summary = summarize([
-    { score: 0.91, passed: true },
-    { score: 0.7, passed: false },
+    { score: 0.91, passed: true, failures: [] },
+    {
+      score: 0.7,
+      passed: false,
+      failures: [{ metric: "requiredFields", message: "missing required field: jobs.0.title" }],
+    },
   ]);
 
   assert.equal(summary.cases, 2);
   assert.equal(summary.passed, 1);
   assert.equal(summary.failed, 1);
   assert.equal(summary.averageScore, 0.805);
+  assert.deepEqual(summary.failedByMetric, { requiredFields: 1 });
+});
+
+test("baseline comparison reports score drops over threshold", () => {
+  const current = summarize([{ name: "pricing", score: 0.86, passed: true, failures: [] }]);
+  const baseline = summarize([{ name: "pricing", score: 0.93, passed: true, failures: [] }]);
+
+  const regressions = compareToBaseline(current, baseline, 0.02);
+
+  assert.deepEqual(regressions, [
+    {
+      name: "pricing",
+      previousScore: 0.93,
+      currentScore: 0.86,
+      scoreDrop: 0.07,
+      maxScoreDrop: 0.02,
+    },
+  ]);
+});
+
+test("quality gates combine average score, failed cases, and baseline regressions", () => {
+  const summary = {
+    averageScore: 0.82,
+    failed: 2,
+  };
+  const failures = applyGates(
+    summary,
+    {
+      minAverageScore: 0.9,
+      maxFailedCases: 0,
+    },
+    [
+      {
+        name: "docs",
+        scoreDrop: 0.04,
+        maxScoreDrop: 0.02,
+      },
+    ],
+  );
+
+  assert.deepEqual(failures, [
+    "average score 0.8200 is below 0.9000",
+    "failed cases 2 is above 0",
+    "docs score dropped 0.0400 from baseline, max allowed 0.0200",
+  ]);
 });

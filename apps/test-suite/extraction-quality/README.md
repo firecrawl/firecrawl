@@ -17,7 +17,7 @@ It is intentionally independent of Firecrawl internals. A test case gives the be
 ```bash
 cd apps/test-suite
 pnpm test:extraction-quality
-node extraction-quality/run-benchmark.mjs
+pnpm benchmark:extraction-quality
 ```
 
 You can pass one or more case files to run a focused benchmark:
@@ -25,6 +25,41 @@ You can pass one or more case files to run a focused benchmark:
 ```bash
 node extraction-quality/run-benchmark.mjs extraction-quality/fixtures/careers-page.json
 ```
+
+To run the full manifest without using the package script:
+
+```bash
+node extraction-quality/run-benchmark.mjs \
+  --manifest extraction-quality/manifest.json \
+  --baseline extraction-quality/baselines/current.json \
+  --output-json extraction-quality/results/latest.json \
+  --output-markdown extraction-quality/results/latest.md
+```
+
+The manifest run writes a JSON artifact for CI and a Markdown report for humans. It fails when a case fails its `minScore`, when the suite breaks its gates, or when a case drops more than the allowed score delta from the baseline.
+
+## Regression Gates
+
+`manifest.json` defines suite-level gates:
+
+- `minAverageScore`: minimum average score across all cases
+- `maxFailedCases`: maximum number of failed fixtures allowed
+
+The CLI also accepts:
+
+- `--baseline`: previous benchmark summary to compare against
+- `--max-score-drop`: maximum allowed per-case score drop before flagging a regression
+- `--min-average-score`: override the manifest average score gate
+- `--max-failed-cases`: override the manifest failed case gate
+
+This catches subtle regressions where the suite still passes overall but a specific extraction surface gets worse.
+
+## Included Scenarios
+
+- Careers page extraction: structured roles plus markdown evidence
+- Pricing table extraction: plan rows, nested feature lists, and preserved links
+- API docs extraction: endpoint metadata, parameter tables, links, and code blocks
+- Noisy SPA careers extraction: script-heavy markdown with job data and mailto links
 
 ## Case Shape
 

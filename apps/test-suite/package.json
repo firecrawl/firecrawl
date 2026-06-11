@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "description": "",
   "scripts": {
+    "benchmark:extraction-quality": "node extraction-quality/run-benchmark.mjs --manifest extraction-quality/manifest.json --baseline extraction-quality/baselines/current.json --output-json extraction-quality/results/latest.json --output-markdown extraction-quality/results/latest.md",
     "test:extraction-quality": "node --test extraction-quality/*.test.mjs",
     "test:load": "artillery run --output ./load-test-results/test-run-report.json load-test.yml"
   },

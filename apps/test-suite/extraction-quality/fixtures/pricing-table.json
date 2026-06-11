@@ -1,0 +1,58 @@
+{
+  "name": "SaaS pricing table extraction",
+  "url": "https://example.com/pricing",
+  "actual": {
+    "company": {
+      "name": "Example Cloud"
+    },
+    "plans": [
+      {
+        "name": "Starter",
+        "price": "$29",
+        "billingPeriod": "month",
+        "features": ["10k pages", "basic support"]
+      },
+      {
+        "name": "Scale",
+        "price": "$199",
+        "billingPeriod": "month",
+        "features": ["500k pages", "priority queue", "webhooks"]
+      },
+      {
+        "name": "Enterprise",
+        "price": "Custom",
+        "billingPeriod": "annual",
+        "features": ["dedicated cluster", "SAML", "SLA"]
+      }
+    ],
+    "markdown": "# Pricing\n\n| Plan | Price | Includes |\n|---|---:|---|\n| Starter | $29/mo | 10k pages |\n| Scale | $199/mo | 500k pages, webhooks |\n| Enterprise | Custom | SAML, SLA |\n\n[Contact sales](/contact)"
+  },
+  "expected": {
+    "minScore": 0.92,
+    "requiredFields": ["company.name", "plans.0.name", "plans.0.price", "plans.1.features", "plans.2.price"],
+    "values": [
+      {
+        "path": "plans.1.name",
+        "value": "Scale",
+        "threshold": 0.8
+      },
+      {
+        "path": "plans.2.features",
+        "value": "dedicated cluster SAML SLA",
+        "threshold": 0.45
+      }
+    ],
+    "tables": [
+      {
+        "path": "plans",
+        "minRows": 3,
+        "requiredColumns": ["name", "price", "billingPeriod", "features"]
+      }
+    ],
+    "sections": ["Pricing", "Starter", "Enterprise"],
+    "markdown": {
+      "headings": true,
+      "links": true
+    }
+  }
+}

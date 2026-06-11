@@ -220,19 +220,23 @@ export function evaluateExtraction(caseDefinition) {
 
   const failures = [];
   for (const field of metrics.requiredFields.missing) {
-    failures.push(`missing required field: ${field}`);
+    failures.push({ metric: "requiredFields", message: `missing required field: ${field}` });
   }
   for (const detail of metrics.expectedValues.details) {
-    if (!detail.passed) failures.push(`low similarity at ${detail.path}: ${detail.similarity.toFixed(2)}`);
+    if (!detail.passed) {
+      failures.push({ metric: "expectedValues", message: `low similarity at ${detail.path}: ${detail.similarity.toFixed(2)}` });
+    }
   }
   for (const detail of metrics.tableCoverage.details) {
-    if (detail.score < 1) failures.push(`table coverage gap at ${detail.path}: ${detail.score.toFixed(2)}`);
+    if (detail.score < 1) {
+      failures.push({ metric: "tableCoverage", message: `table coverage gap at ${detail.path}: ${detail.score.toFixed(2)}` });
+    }
   }
   for (const detail of metrics.sectionCoverage.details) {
-    if (!detail.found) failures.push(`missing section evidence: ${detail.section}`);
+    if (!detail.found) failures.push({ metric: "sectionCoverage", message: `missing section evidence: ${detail.section}` });
   }
   for (const detail of metrics.markdownPreservation.details) {
-    if (!detail.found) failures.push(`markdown did not preserve ${detail.name}`);
+    if (!detail.found) failures.push({ metric: "markdownPreservation", message: `markdown did not preserve ${detail.name}` });
   }
 
   return {
@@ -252,11 +256,63 @@ export async function readBenchmarkCase(path) {
 
 export function summarize(results) {
   const average = results.reduce((total, result) => total + result.score, 0) / Math.max(results.length, 1);
+  const failedByMetric = {};
+  for (const result of results) {
+    for (const failure of result.failures ?? []) {
+      failedByMetric[failure.metric] = (failedByMetric[failure.metric] ?? 0) + 1;
+    }
+  }
+
   return {
     cases: results.length,
     passed: results.filter((result) => result.passed).length,
     failed: results.filter((result) => !result.passed).length,
     averageScore: Math.round(average * 10000) / 10000,
+    failedByMetric,
     results,
   };
+}
+
+export function compareToBaseline(summary, baseline, maxScoreDrop = 0.02) {
+  if (!baseline) return [];
+
+  const baselineByName = new Map((baseline.results ?? []).map((result) => [result.name, result]));
+  const regressions = [];
+  for (const result of summary.results) {
+    const previous = baselineByName.get(result.name);
+    if (!previous) continue;
+
+    const scoreDrop = Number((previous.score - result.score).toFixed(4));
+    if (scoreDrop > maxScoreDrop) {
+      regressions.push({
+        name: result.name,
+        previousScore: previous.score,
+        currentScore: result.score,
+        scoreDrop,
+        maxScoreDrop,
+      });
+    }
+  }
+
+  return regressions;
+}
+
+export function applyGates(summary, gates = {}, regressions = []) {
+  const failures = [];
+  const minAverageScore = gates.minAverageScore ?? 0;
+  const maxFailedCases = gates.maxFailedCases ?? 0;
+
+  if (summary.averageScore < minAverageScore) {
+    failures.push(`average score ${summary.averageScore.toFixed(4)} is below ${minAverageScore.toFixed(4)}`);
+  }
+  if (summary.failed > maxFailedCases) {
+    failures.push(`failed cases ${summary.failed} is above ${maxFailedCases}`);
+  }
+  for (const regression of regressions) {
+    failures.push(
+      `${regression.name} score dropped ${regression.scoreDrop.toFixed(4)} from baseline, max allowed ${regression.maxScoreDrop.toFixed(4)}`,
+    );
+  }
+
+  return failures;
 }
