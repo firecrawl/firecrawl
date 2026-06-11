@@ -313,111 +313,140 @@ export async function getNextConcurrentJob(teamId: string): Promise<{
  * @param job The BullMQ job that is done.
  */
 export async function concurrentJobDone(job: NuQJob<any>) {
-  if (job.id && job.data && job.data.team_id) {
-    await removeConcurrencyLimitActiveJob(job.data.team_id, job.id);
-    await getRedisConnection().zrem(
-      constructQueueKey(job.data.team_id),
-      job.id,
-    );
-    await getRedisConnection().del(constructJobKey(job.id));
-    await cleanOldConcurrencyLimitEntries(job.data.team_id);
-    await cleanOldConcurrencyLimitedJobs(job.data.team_id);
+  if (!job.id || !job.data || !job.data.team_id) return;
 
-    if (job.data.crawl_id) {
-      await removeCrawlConcurrencyLimitActiveJob(job.data.crawl_id, job.id);
-      await cleanOldCrawlConcurrencyLimitEntries(job.data.crawl_id);
-    }
+  try {
+    await cleanupCompletedConcurrencyJob(job);
+  } catch (error) {
+    logger.error("Failed to clean up completed concurrency job", {
+      error,
+      teamId: job.data.team_id,
+      jobId: job.id,
+      zeroDataRetention: job.data?.zeroDataRetention,
+    });
+  }
 
-    const maxTeamConcurrency =
-      (
-        await getACUCTeam(
-          job.data.team_id,
-          false,
-          true,
-          job.data.is_extract ? RateLimiterMode.Extract : RateLimiterMode.Crawl,
-        )
-      )?.concurrency ?? 2;
+  scheduleConcurrencyQueueDrain(job);
+}
 
-    let staleSkipped = 0;
-    while (staleSkipped < 100) {
-      const currentActiveConcurrency = (
-        await getConcurrencyLimitActiveJobs(job.data.team_id)
-      ).length;
+async function cleanupCompletedConcurrencyJob(job: NuQJob<any>) {
+  await removeConcurrencyLimitActiveJob(job.data.team_id, job.id);
+  await getRedisConnection().zrem(constructQueueKey(job.data.team_id), job.id);
+  await getRedisConnection().del(constructJobKey(job.id));
+  await cleanOldConcurrencyLimitEntries(job.data.team_id);
+  await cleanOldConcurrencyLimitedJobs(job.data.team_id);
 
-      if (currentActiveConcurrency >= maxTeamConcurrency) break;
+  if (job.data.crawl_id) {
+    await removeCrawlConcurrencyLimitActiveJob(job.data.crawl_id, job.id);
+    await cleanOldCrawlConcurrencyLimitEntries(job.data.crawl_id);
+  }
+}
 
-      const nextJob = await getNextConcurrentJob(job.data.team_id);
-      if (nextJob === null) break;
+function scheduleConcurrencyQueueDrain(job: NuQJob<any>) {
+  const drain = setImmediate(() => {
+    drainConcurrencyQueue(job).catch(error => {
+      logger.error("Failed to drain concurrency queue after job completion", {
+        error,
+        teamId: job.data.team_id,
+        jobId: job.id,
+        zeroDataRetention: job.data?.zeroDataRetention,
+      });
+    });
+  });
 
-      await pushConcurrencyLimitActiveJob(
+  drain.unref?.();
+}
+
+async function drainConcurrencyQueue(job: NuQJob<any>) {
+  const maxTeamConcurrency =
+    (
+      await getACUCTeam(
         job.data.team_id,
+        false,
+        true,
+        job.data.is_extract ? RateLimiterMode.Extract : RateLimiterMode.Crawl,
+      )
+    )?.concurrency ?? 2;
+
+  let staleSkipped = 0;
+  while (staleSkipped < 100) {
+    const currentActiveConcurrency = (
+      await getConcurrencyLimitActiveJobs(job.data.team_id)
+    ).length;
+
+    if (currentActiveConcurrency >= maxTeamConcurrency) break;
+
+    const nextJob = await getNextConcurrentJob(job.data.team_id);
+    if (nextJob === null) break;
+
+    await pushConcurrencyLimitActiveJob(
+      job.data.team_id,
+      nextJob.job.id,
+      60 * 1000,
+    );
+
+    if (nextJob.job.data.crawl_id) {
+      await pushCrawlConcurrencyLimitActiveJob(
+        nextJob.job.data.crawl_id,
         nextJob.job.id,
         60 * 1000,
       );
 
-      if (nextJob.job.data.crawl_id) {
-        await pushCrawlConcurrencyLimitActiveJob(
-          nextJob.job.data.crawl_id,
-          nextJob.job.id,
-          60 * 1000,
+      const sc = await getCrawl(nextJob.job.data.crawl_id);
+      if (sc !== null && typeof sc.crawlerOptions?.delay === "number") {
+        await new Promise(resolve =>
+          setTimeout(resolve, sc.crawlerOptions.delay * 1000),
         );
-
-        const sc = await getCrawl(nextJob.job.data.crawl_id);
-        if (sc !== null && typeof sc.crawlerOptions?.delay === "number") {
-          await new Promise(resolve =>
-            setTimeout(resolve, sc.crawlerOptions.delay * 1000),
-          );
-        }
       }
+    }
 
-      abTestJob(nextJob.job.data);
+    abTestJob(nextJob.job.data);
 
-      const promotedSuccessfully =
-        (await scrapeQueue.promoteJobFromBacklogOrAdd(
-          nextJob.job.id,
-          nextJob.job.data,
-          {
-            priority: nextJob.job.priority,
-            listenable: nextJob.job.listenable,
-            ownerId: nextJob.job.data.team_id ?? undefined,
-            groupId: nextJob.job.data.crawl_id ?? undefined,
-          },
-        )) !== null;
+    const promotedSuccessfully =
+      (await scrapeQueue.promoteJobFromBacklogOrAdd(
+        nextJob.job.id,
+        nextJob.job.data,
+        {
+          priority: nextJob.job.priority,
+          listenable: nextJob.job.listenable,
+          ownerId: nextJob.job.data.team_id ?? undefined,
+          groupId: nextJob.job.data.crawl_id ?? undefined,
+        },
+      )) !== null;
 
-      if (promotedSuccessfully) {
-        logger.debug("Successfully promoted concurrent queued job", {
+    if (promotedSuccessfully) {
+      logger.debug("Successfully promoted concurrent queued job", {
+        teamId: job.data.team_id,
+        jobId: nextJob.job.id,
+        zeroDataRetention: nextJob.job.data?.zeroDataRetention,
+      });
+      break;
+    } else {
+      logger.warn(
+        "Was unable to promote concurrent queued job as it already exists in the database",
+        {
           teamId: job.data.team_id,
           jobId: nextJob.job.id,
           zeroDataRetention: nextJob.job.data?.zeroDataRetention,
-        });
-        break;
-      } else {
-        logger.warn(
-          "Was unable to promote concurrent queued job as it already exists in the database",
-          {
-            teamId: job.data.team_id,
-            jobId: nextJob.job.id,
-            zeroDataRetention: nextJob.job.data?.zeroDataRetention,
-          },
-        );
-        await removeConcurrencyLimitActiveJob(job.data.team_id, nextJob.job.id);
-        if (nextJob.job.data.crawl_id) {
-          await removeCrawlConcurrencyLimitActiveJob(
-            nextJob.job.data.crawl_id,
-            nextJob.job.id,
-          );
-        }
-        staleSkipped++;
-      }
-    }
-
-    if (staleSkipped >= 100) {
-      logger.warn(
-        "Skipped 100 stale entries in concurrency queue without a successful promotion",
-        {
-          teamId: job.data.team_id,
         },
       );
+      await removeConcurrencyLimitActiveJob(job.data.team_id, nextJob.job.id);
+      if (nextJob.job.data.crawl_id) {
+        await removeCrawlConcurrencyLimitActiveJob(
+          nextJob.job.data.crawl_id,
+          nextJob.job.id,
+        );
+      }
+      staleSkipped++;
     }
+  }
+
+  if (staleSkipped >= 100) {
+    logger.warn(
+      "Skipped 100 stale entries in concurrency queue without a successful promotion",
+      {
+        teamId: job.data.team_id,
+      },
+    );
   }
 }

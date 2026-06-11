@@ -11,6 +11,7 @@ import Express from "express";
 import { _ } from "ajv";
 import { initializeBlocklist } from "../../scraper/WebScraper/utils/blocklist";
 import { initializeEngineForcing } from "../../scraper/WebScraper/utils/engine-forcing";
+import { concurrentJobDone } from "../../lib/concurrency-limit";
 
 (async () => {
   setSentryServiceTag("nuq-worker");
@@ -103,34 +104,38 @@ import { initializeEngineForcing } from "../../scraper/WebScraper/utils/engine-f
 
     clearInterval(lockRenewInterval);
 
-    if (processResult.ok) {
-      endJobTimer({ status: "success" });
-      if (
-        !(await scrapeQueue.jobFinish(
-          job.id,
-          job.lock!,
-          processResult.data,
-          logger,
-        ))
-      ) {
-        logger.warn("Could not update job status");
+    try {
+      if (processResult.ok) {
+        endJobTimer({ status: "success" });
+        if (
+          !(await scrapeQueue.jobFinish(
+            job.id,
+            job.lock!,
+            processResult.data,
+            logger,
+          ))
+        ) {
+          logger.warn("Could not update job status");
+        }
+      } else {
+        endJobTimer({ status: "failed" });
+        if (
+          !(await scrapeQueue.jobFail(
+            job.id,
+            job.lock!,
+            processResult.error instanceof Error
+              ? processResult.error.message
+              : typeof processResult.error === "string"
+                ? processResult.error
+                : JSON.stringify(processResult.error),
+            logger,
+          ))
+        ) {
+          logger.warn("Could not update job status");
+        }
       }
-    } else {
-      endJobTimer({ status: "failed" });
-      if (
-        !(await scrapeQueue.jobFail(
-          job.id,
-          job.lock!,
-          processResult.error instanceof Error
-            ? processResult.error.message
-            : typeof processResult.error === "string"
-              ? processResult.error
-              : JSON.stringify(processResult.error),
-          logger,
-        ))
-      ) {
-        logger.warn("Could not update job status");
-      }
+    } finally {
+      await concurrentJobDone(job);
     }
   }
 

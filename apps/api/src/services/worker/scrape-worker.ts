@@ -6,10 +6,7 @@ import http from "http";
 import https from "https";
 
 import { logger as _logger } from "../../lib/logger";
-import {
-  concurrentJobDone,
-  pushConcurrencyLimitActiveJob,
-} from "../../lib/concurrency-limit";
+import { pushConcurrencyLimitActiveJob } from "../../lib/concurrency-limit";
 import { addJobPriority, deleteJobPriority } from "../../lib/job-priority";
 import { cacheableLookup } from "../../scraper/scrapeURL/lib/cacheableLookup";
 import { v7 as uuidv7 } from "uuid";
@@ -1308,80 +1305,72 @@ export const processJobInternal = async (job: NuQJob<ScrapeJobData>) => {
 
 async function processJobWithTracing(job: NuQJob<ScrapeJobData>, logger: any) {
   try {
+    let extendLockInterval: NodeJS.Timeout | null = null;
+    if (
+      job.data?.mode !== "kickoff" &&
+      job.data?.team_id &&
+      !job.data.skipNuq
+    ) {
+      extendLockInterval = setInterval(async () => {
+        await pushConcurrencyLimitActiveJob(
+          job.data.team_id,
+          job.id,
+          60 * 1000,
+        ); // 60s lock renew, just like in the queue
+      }, jobLockExtendInterval);
+    }
+
+    await addJobPriority(job.data.team_id, job.id);
     try {
-      let extendLockInterval: NodeJS.Timeout | null = null;
-      if (
-        job.data?.mode !== "kickoff" &&
-        job.data?.team_id &&
-        !job.data.skipNuq
-      ) {
-        extendLockInterval = setInterval(async () => {
-          await pushConcurrencyLimitActiveJob(
-            job.data.team_id,
-            job.id,
-            60 * 1000,
-          ); // 60s lock renew, just like in the queue
-        }, jobLockExtendInterval);
-      }
-
-      await addJobPriority(job.data.team_id, job.id);
-      try {
-        if (job.data.mode === "kickoff") {
-          const result = await processKickoffJob(
-            job as NuQJob<ScrapeJobKickoff>,
-          );
-          if (result.success) {
-            return null;
-          } else {
-            throw (result as any).error;
-          }
-        } else if (job.data.mode === "kickoff_sitemap") {
-          const result = await processKickoffSitemapJob(
-            job as NuQJob<ScrapeJobKickoffSitemap>,
-          );
-          if (result.success) {
-            return null;
-          } else {
-            throw (result as any).error;
-          }
+      if (job.data.mode === "kickoff") {
+        const result = await processKickoffJob(job as NuQJob<ScrapeJobKickoff>);
+        if (result.success) {
+          return null;
         } else {
-          const result = await processJob(job as NuQJob<ScrapeJobSingleUrls>);
-          if (result.success) {
-            try {
-              if (job.data.team_id) {
-                await redisEvictConnection.set(
-                  "most-recent-success:" + job.data.team_id,
-                  new Date().toISOString(),
-                  "EX",
-                  60 * 60 * 24,
-                );
-              }
-            } catch (e) {
-              logger.warn("Failed to set most recent success", { error: e });
-            }
-
-            try {
-              if (config.GCS_BUCKET_NAME && !job.data.skipNuq) {
-                logger.debug("Job succeeded -- putting null in Redis");
-                return null;
-              } else {
-                logger.debug("Job succeeded -- putting result in Redis");
-                return result.document;
-              }
-            } catch (e) {}
-          } else {
-            throw (result as any).error;
-          }
+          throw (result as any).error;
         }
-      } finally {
-        await deleteJobPriority(job.data.team_id, job.id);
-        if (extendLockInterval) {
-          clearInterval(extendLockInterval);
+      } else if (job.data.mode === "kickoff_sitemap") {
+        const result = await processKickoffSitemapJob(
+          job as NuQJob<ScrapeJobKickoffSitemap>,
+        );
+        if (result.success) {
+          return null;
+        } else {
+          throw (result as any).error;
+        }
+      } else {
+        const result = await processJob(job as NuQJob<ScrapeJobSingleUrls>);
+        if (result.success) {
+          try {
+            if (job.data.team_id) {
+              await redisEvictConnection.set(
+                "most-recent-success:" + job.data.team_id,
+                new Date().toISOString(),
+                "EX",
+                60 * 60 * 24,
+              );
+            }
+          } catch (e) {
+            logger.warn("Failed to set most recent success", { error: e });
+          }
+
+          try {
+            if (config.GCS_BUCKET_NAME && !job.data.skipNuq) {
+              logger.debug("Job succeeded -- putting null in Redis");
+              return null;
+            } else {
+              logger.debug("Job succeeded -- putting result in Redis");
+              return result.document;
+            }
+          } catch (e) {}
+        } else {
+          throw (result as any).error;
         }
       }
     } finally {
-      if (!job.data.skipNuq) {
-        await concurrentJobDone(job);
+      await deleteJobPriority(job.data.team_id, job.id);
+      if (extendLockInterval) {
+        clearInterval(extendLockInterval);
       }
     }
   } catch (error) {
