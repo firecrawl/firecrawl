@@ -30,6 +30,10 @@ import {
   crawlGroup,
 } from "../../services/worker/nuq";
 import { ScrapeJobSingleUrls } from "../../types";
+import {
+  getCrawlStatusExpiresAt,
+  isCrawlStatusVisibleToTeam,
+} from "../crawl-status-utils";
 configDotenv();
 
 export type PseudoJob<T> = {
@@ -183,9 +187,22 @@ export async function crawlStatusController(
   );
   const sc = await getCrawl(req.params.jobId);
 
-  if (!group || (!groupAnyJob && (!sc || sc.team_id !== req.auth.team_id))) {
+  if (
+    !isCrawlStatusVisibleToTeam({
+      group,
+      groupAnyJob,
+      storedCrawl: sc,
+      teamId: req.auth.team_id,
+    })
+  ) {
     return res.status(404).json({ success: false, error: "Job not found" });
   }
+
+  const statusExpiresAt = async () =>
+    getCrawlStatusExpiresAt({
+      group,
+      redisExpiry: sc ? await getCrawlExpiry(req.params.jobId) : null,
+    }).toISOString();
 
   const zeroDataRetention = !!(
     groupAnyJob?.data?.zeroDataRetention ?? sc?.zeroDataRetention
@@ -211,9 +228,9 @@ export async function crawlStatusController(
   } = {
     status: sc?.cancelled
       ? "cancelled"
-      : group.status === "active"
+      : group?.status === "active"
         ? "scraping"
-        : group.status,
+        : (group?.status ?? "scraping"),
     completed: numericStats.completed ?? 0,
     total:
       (numericStats.completed ?? 0) +
@@ -241,7 +258,7 @@ export async function crawlStatusController(
       completed: 0,
       total: 0,
       creditsUsed: outputBulkA.creditsUsed ?? 0,
-      expiresAt: (await getCrawlExpiry(req.params.jobId)).toISOString(),
+      expiresAt: await statusExpiresAt(),
       data: [],
     });
   }
@@ -309,7 +326,7 @@ export async function crawlStatusController(
     completed: outputBulkA.completed ?? 0,
     total: outputBulkA.total ?? 0,
     creditsUsed: outputBulkA.creditsUsed ?? 0,
-    expiresAt: (await getCrawlExpiry(req.params.jobId)).toISOString(),
+    expiresAt: await statusExpiresAt(),
     next: outputBulkB.next,
     data: outputBulkB.data,
   });

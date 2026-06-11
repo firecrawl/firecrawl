@@ -55,7 +55,9 @@ type NuQOptions = {
 
 // owner IDs can sometimes be non-UUID, so let's normalize it to avoid query breakage - mogery
 const normalizedUUIDNamespace = "0f38e00e-d7ee-4b77-8a7a-a787a3537ca2";
-function normalizeOwnerId(ownerId: string | undefined | null): string | null {
+export function normalizeOwnerId(
+  ownerId: string | undefined | null,
+): string | null {
   if (typeof ownerId !== "string") return null;
   if (isUUID(ownerId)) return ownerId;
   return uuidv5(ownerId, normalizedUUIDNamespace);
