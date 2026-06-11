@@ -5,6 +5,7 @@ import {
   getPath,
   scoreExpectedValues,
   scoreRequiredFields,
+  scoreTableCoverage,
   summarize,
   tokenSimilarity,
 } from "./scorer.mjs";
@@ -64,6 +65,20 @@ test("evaluateExtraction combines schema, value, table, section, and markdown ch
   assert.equal(result.passed, true);
   assert.equal(result.failures.length, 0);
   assert.equal(result.metrics.tableCoverage.details[0].missingColumns.length, 0);
+});
+
+test("table coverage treats non-numeric row counts as zero", () => {
+  const score = scoreTableCoverage(
+    { jobs: { rows: "unknown" }, links: "not-a-number" },
+    [
+      { path: "jobs", minRows: 2, requiredColumns: ["title"] },
+      { path: "links", minRows: 1 },
+    ],
+  );
+
+  assert.equal(Number.isNaN(score.score), false);
+  assert.equal(score.details[0].rowCount, 0);
+  assert.equal(score.details[1].rowCount, 0);
 });
 
 test("summarize reports aggregate pass and fail counts", () => {

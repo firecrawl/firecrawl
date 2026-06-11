@@ -58,6 +58,12 @@ function ratio(numerator, denominator) {
   return Math.max(0, Math.min(1, numerator / denominator));
 }
 
+function numericCount(value) {
+  if (Array.isArray(value)) return value.length;
+  const count = Number(value ?? 0);
+  return Number.isFinite(count) && count > 0 ? count : 0;
+}
+
 export function scoreRequiredFields(actual, requiredFields = []) {
   const missing = [];
   let present = 0;
@@ -111,7 +117,7 @@ export function scoreTableCoverage(actual, expectedTables = []) {
 
   for (const table of expectedTables) {
     const actualRows = getPath(actual, table.path);
-    const rowCount = Array.isArray(actualRows) ? actualRows.length : Number(actualRows ?? 0);
+    const rowCount = numericCount(actualRows);
     const requiredRows = table.minRows ?? table.rows ?? 1;
     const rowScore = ratio(rowCount, requiredRows);
 
