@@ -126,15 +126,16 @@ export function emptyKnowledgeGraphWarning(
  * Merge several per-page graphs into one. Nodes are deduped by normalized
  * label (the same entity surfaced on different pages collapses into one node,
  * unioning its properties); edges are remapped to the canonical node ids and
- * deduped by (source, relation, target). Edges whose endpoints don't resolve
- * to a node in their own graph are dropped.
+ * deduped by (source, relation, target), unioning the properties of duplicates
+ * (symmetric with node merging). Edges whose endpoints don't resolve to a node
+ * in their own graph are dropped.
  */
 export function mergeKnowledgeGraphs(graphs: KnowledgeGraph[]): KnowledgeGraph {
   const labelToCanonicalId = new Map<string, string>();
   const mergedNodes = new Map<string, KGNode>(); // canonical id -> node
   const usedIds = new Set<string>();
   const mergedEdges: KGEdge[] = [];
-  const edgeSigs = new Set<string>();
+  const edgeBySig = new Map<string, KGEdge>(); // sig -> merged edge (by reference)
 
   // Keep ids unique across the merged graph even if two distinct entities
   // happened to share an id in their source graphs.
@@ -183,16 +184,26 @@ export function mergeKnowledgeGraphs(graphs: KnowledgeGraph[]): KnowledgeGraph {
       const target = localIdToCanonical.get(edge.target);
       if (source === undefined || target === undefined) continue;
       const sig = `${source}|${normalizeLabel(edge.relation)}|${target}`;
-      if (edgeSigs.has(sig)) continue;
-      edgeSigs.add(sig);
-      mergedEdges.push({
+      const existing = edgeBySig.get(sig);
+      if (existing) {
+        // Union the duplicate's properties instead of dropping them, mirroring
+        // the node-merge path (unionProperties above).
+        existing.properties = unionProperties(
+          existing.properties,
+          edge.properties,
+        );
+        continue;
+      }
+      const merged: KGEdge = {
         source,
         target,
         relation: edge.relation,
         ...(edge.properties?.length
           ? { properties: [...edge.properties] }
           : {}),
-      });
+      };
+      edgeBySig.set(sig, merged);
+      mergedEdges.push(merged);
     }
   }
 

@@ -157,6 +157,48 @@ describe("mergeKnowledgeGraphs", () => {
     ]);
   });
 
+  it("unions properties of duplicate edges (symmetric with node merging)", () => {
+    const g1 = {
+      nodes: [
+        { id: "ada", label: "Ada", type: "Person" },
+        { id: "babbage", label: "Charles Babbage", type: "Person" },
+      ],
+      edges: [
+        {
+          source: "ada",
+          target: "babbage",
+          relation: "collaborated_with",
+          properties: [{ key: "year", value: "1843" }],
+        },
+      ],
+    };
+    const g2 = {
+      nodes: [
+        { id: "a1", label: "ada", type: "Person" },
+        { id: "b1", label: "charles babbage", type: "Person" },
+      ],
+      edges: [
+        {
+          source: "a1",
+          target: "b1",
+          relation: "collaborated_with",
+          properties: [
+            { key: "year", value: "1843" }, // duplicate — must not repeat
+            { key: "topic", value: "analytical engine" },
+          ],
+        },
+      ],
+    };
+
+    const merged = mergeKnowledgeGraphs([g1, g2]);
+
+    expect(merged.edges).toHaveLength(1);
+    expect(merged.edges[0].properties).toEqual([
+      { key: "year", value: "1843" },
+      { key: "topic", value: "analytical engine" },
+    ]);
+  });
+
   it("keeps distinct entities that happen to share an id unique", () => {
     const g1 = {
       nodes: [{ id: "x", label: "Apple Inc", type: "Organization" }],
