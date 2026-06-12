@@ -9,6 +9,31 @@ const delimitedList = (separator = ",") => {
   });
 };
 
+const emptyStringAsUndefined = (value: unknown) =>
+  value === "" ? undefined : value;
+
+const optionalStringBool = z.preprocess(
+  emptyStringAsUndefined,
+  z.stringbool().optional(),
+);
+
+const modelProvider = z.preprocess(
+  emptyStringAsUndefined,
+  z
+    .enum([
+      "openai",
+      "ollama",
+      "anthropic",
+      "groq",
+      "google",
+      "openrouter",
+      "fireworks",
+      "deepinfra",
+      "vertex",
+    ])
+    .optional(),
+);
+
 // Ethereum address schema: validates 0x followed by 40 hex characters
 const ethereumAddress = z
   .string()
@@ -48,6 +73,9 @@ const configSchema = z.object({
   BULL_AUTH_KEY: z.string().optional(),
   OPENAI_API_KEY: z.string().optional(),
   OPENAI_BASE_URL: z.string().optional(),
+  ANTHROPIC_API_KEY: z.string().optional(),
+  ANTHROPIC_BASE_URL: z.string().optional(),
+  ANTHROPIC_DISABLE_THINKING: optionalStringBool,
   OPENROUTER_API_KEY: z.string().optional(),
   XAI_API_KEY: z.string().optional(),
   LLAMAPARSE_API_KEY: z.string().optional(),
@@ -207,6 +235,7 @@ const configSchema = z.object({
   DEBUG_BRANDING: z.stringbool().optional(),
 
   // AI/ML
+  MODEL_PROVIDER: modelProvider,
   MODEL_NAME: z.string().optional(),
   MODEL_EMBEDDING_NAME: z.string().optional(),
   OLLAMA_BASE_URL: z.string().optional(),

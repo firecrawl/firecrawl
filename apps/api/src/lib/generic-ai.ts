@@ -1,7 +1,7 @@
 import { createOpenAI } from "@ai-sdk/openai";
 import { config } from "../config";
 import { createOllama } from "ollama-ai-provider";
-import { anthropic } from "@ai-sdk/anthropic";
+import { anthropic, createAnthropic } from "@ai-sdk/anthropic";
 import { groq } from "@ai-sdk/groq";
 import { google } from "@ai-sdk/google";
 import { createOpenRouter } from "@openrouter/ai-sdk-provider";
@@ -19,7 +19,33 @@ type Provider =
   | "fireworks"
   | "deepinfra"
   | "vertex";
-const defaultProvider: Provider = config.OLLAMA_BASE_URL ? "ollama" : "openai";
+
+const defaultProvider: Provider =
+  config.MODEL_PROVIDER || (config.OLLAMA_BASE_URL ? "ollama" : "openai");
+
+export async function fetchWithAnthropicThinkingDisabled(
+  input: RequestInfo | URL,
+  init?: RequestInit,
+): Promise<Response> {
+  if (typeof init?.body !== "string") {
+    return fetch(input, init);
+  }
+
+  try {
+    const body = JSON.parse(init.body);
+    if (body && typeof body === "object" && body.thinking === undefined) {
+      body.thinking = { type: "disabled" };
+      return fetch(input, {
+        ...init,
+        body: JSON.stringify(body),
+      });
+    }
+  } catch (_) {
+    // Fall through to the original request if the body is not JSON.
+  }
+
+  return fetch(input, init);
+}
 
 const providerList: Record<Provider, any> = {
   openai: createOpenAI({
@@ -29,7 +55,18 @@ const providerList: Record<Provider, any> = {
   ollama: createOllama({
     baseURL: config.OLLAMA_BASE_URL,
   }),
-  anthropic, //ANTHROPIC_API_KEY
+  anthropic:
+    config.ANTHROPIC_API_KEY ||
+    config.ANTHROPIC_BASE_URL ||
+    config.ANTHROPIC_DISABLE_THINKING
+      ? createAnthropic({
+          apiKey: config.ANTHROPIC_API_KEY,
+          baseURL: config.ANTHROPIC_BASE_URL,
+          fetch: config.ANTHROPIC_DISABLE_THINKING
+            ? fetchWithAnthropicThinkingDisabled
+            : undefined,
+        })
+      : anthropic, //ANTHROPIC_API_KEY
   groq, //GROQ_API_KEY
   google, //GOOGLE_GENERATIVE_AI_API_KEY
   openrouter: createOpenRouter({

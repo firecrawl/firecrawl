@@ -62,6 +62,13 @@ USE_DB_AUTHENTICATION=false
 # OPENAI_BASE_URL=https://example.com/v1
 # OPENAI_API_KEY=
 
+# Experimental: Use Anthropic or an Anthropic-compatible API for AI extraction
+# MODEL_PROVIDER=anthropic
+# MODEL_NAME=deepseek-v4-pro
+# ANTHROPIC_API_KEY=
+# ANTHROPIC_BASE_URL=https://api.deepseek.com/anthropic
+# ANTHROPIC_DISABLE_THINKING=true
+
 ## === Proxy ===
 # PROXY_SERVER can be a full URL (e.g. http://0.1.2.3:1234) or just an IP and port combo (e.g. 0.1.2.3:1234)
 # Do not uncomment PROXY_USERNAME and PROXY_PASSWORD if your proxy is unauthenticated
