@@ -84,6 +84,7 @@ const configSchema = z.object({
   DATABASE_URL: z.string().optional(),
   DATABASE_REPLICA_URL: z.string().optional(),
   INDEX_DATABASE_URL: z.string().optional(),
+  INDEX_CACHE_REDIS_URL: z.string().optional(),
   REDIS_URL: z.string().optional(),
   REDIS_EVICT_URL: z.string().optional(),
   REDIS_RATE_LIMIT_URL: z.string().optional(),

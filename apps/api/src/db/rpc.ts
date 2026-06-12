@@ -258,7 +258,19 @@ export function queryMaxAge(
   );
 }
 
-export function indexGetRecent4(params: {
+type IndexGetRecentRow = {
+  id: string;
+  created_at: string;
+  status: number;
+  has_screenshot: boolean;
+  has_screenshot_fullscreen: boolean;
+  wait_time_ms: number | null;
+};
+
+// Same filters as index_get_recent_4, but also returns the per-entry
+// capability columns so results can populate the Dragonfly index cache
+// (services/index-cache.ts).
+export async function indexGetRecent5(params: {
   url_hash: Buffer;
   max_age_ms: number;
   is_mobile: boolean;
@@ -270,11 +282,15 @@ export function indexGetRecent4(params: {
   wait_time_ms: number;
   is_stealth: boolean;
   min_age_ms: number | null;
-}): Promise<{ id: string; created_at: string; status: number }[]> {
-  return execRows(
+}): Promise<IndexGetRecentRow[]> {
+  const rows = await execRows<IndexGetRecentRow>(
     dbIndex,
-    sql`select * from index_get_recent_4(p_url_hash => ${params.url_hash}, p_max_age_ms => ${params.max_age_ms}, p_is_mobile => ${params.is_mobile}, p_block_ads => ${params.block_ads}, p_feature_screenshot => ${params.feature_screenshot}, p_feature_screenshot_fullscreen => ${params.feature_screenshot_fullscreen}, p_location_country => ${params.location_country}, p_location_languages => ${sql.param(params.location_languages)}::text[], p_wait_time_ms => ${params.wait_time_ms}, p_is_stealth => ${params.is_stealth}, p_min_age_ms => ${params.min_age_ms})`,
+    sql`select * from index_get_recent_5(p_url_hash => ${params.url_hash}, p_max_age_ms => ${params.max_age_ms}, p_is_mobile => ${params.is_mobile}, p_block_ads => ${params.block_ads}, p_feature_screenshot => ${params.feature_screenshot}, p_feature_screenshot_fullscreen => ${params.feature_screenshot_fullscreen}, p_location_country => ${params.location_country}, p_location_languages => ${sql.param(params.location_languages)}::text[], p_wait_time_ms => ${params.wait_time_ms}, p_is_stealth => ${params.is_stealth}, p_min_age_ms => ${params.min_age_ms})`,
   );
+  for (const row of rows) {
+    row.wait_time_ms = toNum(row.wait_time_ms);
+  }
+  return rows;
 }
 
 export function queryTopUrlsForDomain<T = Record<string, any>>(
