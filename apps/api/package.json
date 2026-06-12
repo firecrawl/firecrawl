@@ -111,7 +111,7 @@
     "culori": "^4.0.2",
     "dotenv": "^16.3.1",
     "drizzle-orm": "1.0.0-rc.3",
-    "esbuild": "^0.27.2",
+    "esbuild": "^0.28.1",
     "escape-html": "^1.0.3",
     "express": "4.22.0",
     "express-ws": "^5.0.2",
@@ -208,7 +208,8 @@
       "follow-redirects@<1.16.0": ">=1.16.0 <2.0.0",
       "uuid@<11.1.1": "11.1.1",
       "js-cookie@<3.0.7": "3.0.7",
-      "shell-quote@<1.8.4": "1.8.4"
+      "shell-quote@<1.8.4": "1.8.4",
+      "esbuild@>=0.17.0 <0.28.1": "0.28.1"
     }
   },
   "lint-staged": {
