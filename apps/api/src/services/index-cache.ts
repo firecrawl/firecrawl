@@ -16,6 +16,7 @@ import type { Logger } from "winston";
 // instance.
 
 const ENTRY_KEY_PREFIX = "idxc:";
+const NEG_KEY_PREFIX = "idxcneg:";
 const MAX_AGE_KEY_PREFIX = "idxma:";
 const ENTRY_TTL_SECONDS = 7 * 24 * 60 * 60;
 const MAX_AGE_TTL_SECONDS = 15 * 60;
@@ -42,6 +43,18 @@ indexCacheRedis?.on("error", error => {
 });
 
 export const useIndexCache = indexCacheRedis !== null;
+
+// Negative (miss) caching is opt-in via a positive TTL. When enabled, a
+// confirmed DB miss is recorded so repeat lookups for URLs with no index
+// entry can skip Postgres entirely.
+const NEGATIVE_TTL_MS = config.INDEX_CACHE_NEGATIVE_TTL_MS;
+export const useIndexNegativeCache = useIndexCache && NEGATIVE_TTL_MS > 0;
+
+// The negative marker shares the variant's hash but lives under its own
+// prefix and TTL (deriveIndexVariantKey returns "idxc:<hash>").
+function negKeyFor(variantKey: string): string {
+  return NEG_KEY_PREFIX + variantKey.slice(ENTRY_KEY_PREFIX.length);
+}
 
 export type IndexCacheEntry = {
   id: string;
@@ -203,9 +216,13 @@ export async function upsertCachedIndexEntries(
     const pipeline = client.pipeline();
     pipeline.hset(key, fields);
     pipeline.expire(key, ENTRY_TTL_SECONDS);
+    // Writing positive entries invalidates any negative marker for this
+    // variant — this is what keeps a surviving negative marker a proof that
+    // nothing was inserted since it was set.
+    pipeline.del(negKeyFor(key));
     pipeline.hlen(key);
     const results = await pipeline.exec();
-    const hlen = results?.[2]?.[1];
+    const hlen = results?.[3]?.[1];
     if (typeof hlen === "number" && hlen > ENTRY_CAP) {
       const raw = await client.hgetall(key);
       const parsed = Object.entries(raw)
@@ -309,6 +326,78 @@ export async function setCachedMaxAge(
   } catch (error) {
     indexCacheErrorCounter.inc({ op: "maxage_write" });
     logger.warn("Index cache max age write failed", {
+      module: "index-cache",
+      error,
+    });
+  }
+}
+
+// A negative marker records that, as of when it was written, there was no
+// index entry in [emptyFrom, writeTime] for the variant. A later lookup for
+// window [now - maxAgeMs, now] is still guaranteed empty iff its left edge is
+// no earlier than emptyFrom AND the marker still exists (a positive write
+// would have deleted it, covering the (writeTime, now] tail). So the only
+// check needed at read time is the left-edge comparison.
+export function isNegativeStillValid(
+  emptyFrom: number,
+  maxAgeMs: number,
+  now: number,
+): boolean {
+  return now - maxAgeMs >= emptyFrom;
+}
+
+export async function getCachedNegative(
+  variantKey: string,
+  logger: Logger = _logger,
+  client: IORedis | null = indexCacheRedis,
+): Promise<{ emptyFrom: number } | null> {
+  if (client === null || !useIndexNegativeCache) {
+    return null;
+  }
+  try {
+    const raw = await withTimeout(
+      client.get(negKeyFor(variantKey)),
+      READ_TIMEOUT_MS,
+    );
+    if (raw === TIMED_OUT) {
+      indexCacheErrorCounter.inc({ op: "negative_read_timeout" });
+      return null;
+    }
+    if (raw === null || raw === undefined) {
+      return null;
+    }
+    const emptyFrom = JSON.parse(raw).emptyFrom;
+    return typeof emptyFrom === "number" ? { emptyFrom } : null;
+  } catch (error) {
+    indexCacheErrorCounter.inc({ op: "negative_read" });
+    logger.warn("Index cache negative read failed", {
+      module: "index-cache",
+      error,
+    });
+    return null;
+  }
+}
+
+// emptyFrom is the left edge of the confirmed-empty window: queryTime - maxAge.
+export async function setCachedNegative(
+  variantKey: string,
+  emptyFrom: number,
+  logger: Logger = _logger,
+  client: IORedis | null = indexCacheRedis,
+): Promise<void> {
+  if (client === null || !useIndexNegativeCache) {
+    return;
+  }
+  try {
+    await client.set(
+      negKeyFor(variantKey),
+      JSON.stringify({ emptyFrom }),
+      "PX",
+      NEGATIVE_TTL_MS,
+    );
+  } catch (error) {
+    indexCacheErrorCounter.inc({ op: "negative_write" });
+    logger.warn("Index cache negative write failed", {
       module: "index-cache",
       error,
     });

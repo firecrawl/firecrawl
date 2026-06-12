@@ -4,6 +4,9 @@ import {
   filterIndexEntries,
   getCachedIndexEntries,
   getCachedMaxAge,
+  getCachedNegative,
+  isNegativeStillValid,
+  setCachedNegative,
   upsertCachedIndexEntries,
   type IndexCacheEntry,
 } from "../../services/index-cache";
@@ -187,6 +190,36 @@ describe("filterIndexEntries", () => {
   });
 });
 
+describe("isNegativeStillValid", () => {
+  // A marker written at Tq with maxAge Mq stores emptyFrom = Tq - Mq, the left
+  // edge of the confirmed-empty window. A later request is still-empty iff its
+  // own left edge (now - maxAge) is no earlier than emptyFrom.
+  const Tq = 1_000_000_000_000;
+  const Mq = 2 * 24 * 60 * 60 * 1000; // 2 days
+  const emptyFrom = Tq - Mq;
+
+  it("stays valid as time passes with the same maxAge window", () => {
+    // 1 hour later, same 2-day window: left edge moved forward, still >= emptyFrom.
+    expect(isNegativeStillValid(emptyFrom, Mq, Tq + 60 * 60 * 1000)).toBe(true);
+  });
+
+  it("stays valid for a smaller (more recent) window", () => {
+    expect(isNegativeStillValid(emptyFrom, 60 * 60 * 1000, Tq)).toBe(true);
+  });
+
+  it("is invalid for a larger window that looks further back than confirmed", () => {
+    // 14-day window now reaches earlier than the 2-day confirmed-empty left edge.
+    expect(
+      isNegativeStillValid(emptyFrom, 14 * 24 * 60 * 60 * 1000, Tq),
+    ).toBe(false);
+  });
+
+  it("is exactly valid at the boundary", () => {
+    // now - maxAge == emptyFrom
+    expect(isNegativeStillValid(emptyFrom, Mq, Tq)).toBe(true);
+  });
+});
+
 describe("index cache fail-open", () => {
   // Points at a port nothing listens on: every operation must resolve (not
   // throw, not hang) so the read path can fall back to Postgres.
@@ -226,5 +259,17 @@ describe("index cache fail-open", () => {
     await expect(
       getCachedMaxAge(urlHash, undefined, deadClient),
     ).resolves.toBeNull();
+  }, 5000);
+
+  it("getCachedNegative resolves to null (disabled or dead) and never throws", async () => {
+    await expect(
+      getCachedNegative("idxc:test", undefined, deadClient),
+    ).resolves.toBeNull();
+  }, 5000);
+
+  it("setCachedNegative resolves without throwing", async () => {
+    await expect(
+      setCachedNegative("idxc:test", Date.now(), undefined, deadClient),
+    ).resolves.toBeUndefined();
   }, 5000);
 });

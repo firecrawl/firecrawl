@@ -20,9 +20,13 @@ import {
   filterIndexEntries,
   getCachedIndexEntries,
   getCachedMaxAge,
+  getCachedNegative,
+  isNegativeStillValid,
   setCachedMaxAge,
+  setCachedNegative,
   upsertCachedIndexEntries,
   useIndexCache,
+  useIndexNegativeCache,
   type IndexCacheEntry,
 } from "../../../../services/index-cache";
 import { indexLookupCounter } from "../../../../lib/index-cache-metrics";
@@ -314,6 +318,7 @@ export async function scrapeURLWithIndex(
   let cacheStatus: "hit" | "filtered" | "miss" | "error" | "disabled" =
     "disabled";
   let servedFromCache = false;
+  let negativeHit = false;
   let timingsCache = 0;
   let timingsDb = 0;
 
@@ -325,8 +330,9 @@ export async function scrapeURLWithIndex(
     dbResult: "hit" | "miss" | "error",
     extra: Record<string, unknown> = {},
   ) => {
-    const outcome =
-      cacheStatus === "hit"
+    const outcome = negativeHit
+      ? "cache_neg_hit"
+      : cacheStatus === "hit"
         ? "cache_hit"
         : cacheStatus === "disabled"
           ? `db_only_${dbResult}`
@@ -384,7 +390,26 @@ export async function scrapeURLWithIndex(
     }
   }
 
-  if (!servedFromCache) {
+  // Negative cache: on a clean positive miss (key absent), a still-valid
+  // negative marker proves there's no index entry for this window, so we can
+  // skip Postgres. Not consulted on "filtered"/"error" (entries exist, or the
+  // cache is unhealthy and we must fall back to the DB), nor for minAge
+  // requests (different no-data semantics — NoCachedDataError, no waterfall).
+  if (
+    !servedFromCache &&
+    useIndexNegativeCache &&
+    cacheStatus === "miss" &&
+    meta.options.minAge === undefined
+  ) {
+    const negStart = Date.now();
+    const neg = await getCachedNegative(variantKey, meta.logger);
+    timingsCache += Date.now() - negStart;
+    if (neg !== null && isNegativeStillValid(neg.emptyFrom, maxAge, Date.now())) {
+      negativeHit = true;
+    }
+  }
+
+  if (!servedFromCache && !negativeHit) {
     const dbStart = Date.now();
     try {
       const rows = await indexGetRecent5({
@@ -416,6 +441,15 @@ export async function scrapeURLWithIndex(
           wait_time_ms: row.wait_time_ms,
         }));
         upsertCachedIndexEntries(variantKey, entries, meta.logger).catch(
+          () => {},
+        );
+      } else if (
+        useIndexNegativeCache &&
+        rows.length === 0 &&
+        meta.options.minAge === undefined
+      ) {
+        // Confirmed empty for [dbStart - maxAge, dbStart]; record the left edge.
+        setCachedNegative(variantKey, dbStart - maxAge, meta.logger).catch(
           () => {},
         );
       }
