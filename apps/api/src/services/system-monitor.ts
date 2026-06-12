@@ -210,6 +210,14 @@ class SystemMonitor {
   }
 
   public async acceptConnection() {
+    // When both thresholds are >= 1.0, the caller signals "gate disabled"
+    // — useful on Docker Desktop where cpuset.cpus.effective reports the
+    // host CPU count instead of the container's cpus/mem_limit, making the
+    // cgroup-based CPU check unreliable.
+    if (MAX_CPU >= 1.0 && MAX_RAM >= 1.0) {
+      return true;
+    }
+
     const cpuUsage = await this.checkCpuUsage();
     const memoryUsage = await this.checkMemoryUsage();
 
