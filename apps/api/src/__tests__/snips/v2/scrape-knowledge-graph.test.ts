@@ -223,6 +223,20 @@ describe("Knowledge graph format", () => {
       expect(merged).toBeDefined();
       const mergedIds = merged.nodes.map((n: any) => n.id);
       expect(new Set(mergedIds).size).toBe(mergedIds.length); // unique ids
+
+      // Search-side dedup-by-label invariant: mergeKnowledgeGraphs collapses the
+      // same entity surfaced across results by normalized (label, type). Proven
+      // here end-to-end — no two merged nodes share a normalized label+type pair.
+      // (An invariant, not a fixed entity count, so it won't flake on
+      // non-deterministic LLM extraction.)
+      const labelTypeKeys = merged.nodes.map((n: any) =>
+        JSON.stringify([
+          n.label.trim().toLowerCase(),
+          n.type.trim().toLowerCase(),
+        ]),
+      );
+      expect(new Set(labelTypeKeys).size).toBe(labelTypeKeys.length);
+
       const mergedIdSet = new Set(mergedIds);
       for (const edge of merged.edges) {
         expect(mergedIdSet.has(edge.source)).toBe(true);
