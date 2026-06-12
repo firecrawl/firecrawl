@@ -1,5 +1,5 @@
 name: Scrape Evals
-on:
+on: cezary13k
   issue_comment:
     types: [created]
   pull_request:
