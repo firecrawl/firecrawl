@@ -14,6 +14,7 @@ import { performDeterministicJson } from "./deterministicJson";
 import { performQuery } from "./query";
 import { removeBase64Images } from "./removeBase64Images";
 import { performAgent } from "./agent";
+import { performHtmlExtractor } from "./htmlExtractor";
 import { performAttributes } from "./performAttributes";
 
 import { deriveDiff } from "./diff";
@@ -571,6 +572,7 @@ function coerceFieldsToFormats(meta: Meta, document: Document): Document {
 const transformerStack: Transformer[] = [
   deriveHTMLFromRawHTML,
   deriveMarkdownFromHTML,
+  performHtmlExtractor,
   performCleanContent,
   performRedactPII,
   deriveLinksFromHTML,

@@ -488,6 +488,7 @@ export type InternalOptions = {
   isPreCrawl?: boolean; // Whether this scrape is part of a precrawl job
   agentIndexOnly?: boolean; // Pre-confirmation agent key: serve from index only, never touch web/Fire Engine
   isParse?: boolean; // Whether this scrape originated from /v2/parse
+  useHtmlExtractor?: boolean; // Use @firecrawl/html-extractor for main-content; per-request override of FIRECRAWL_USE_HTML_EXTRACTOR env var
   uploadedFile?: {
     buffer: Buffer;
     filename: string;

@@ -230,6 +230,12 @@ const configSchema = z.object({
   FIRECRAWL_LOG_TO_FILE: z.stringbool().optional(),
   FIRECRAWL_SAVE_MOCKS: z.stringbool().optional(),
   FIRECRAWL_INDEX_WRITE_ONLY: z.stringbool().optional(),
+  FIRECRAWL_USE_HTML_EXTRACTOR: z.stringbool().optional(),
+  FIRECRAWL_HTML_EXTRACTOR_SHADOW_PERCENT: z.coerce
+    .number()
+    .min(0)
+    .max(100)
+    .default(5),
   DISABLE_BLOCKLIST: z.stringbool().optional(),
   FORCED_ENGINE_DOMAINS: z.string().optional(),
   DEBUG_BRANDING: z.stringbool().optional(),

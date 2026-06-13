@@ -87,6 +87,7 @@
     "@bull-board/express": "^6.14.0",
     "@clickhouse/client": "^1.8.1",
     "@dqbd/tiktoken": "^1.0.22",
+    "@firecrawl/html-extractor": "0.1.1",
     "@google-cloud/storage": "^7.19.0",
     "@mendable/firecrawl-rs": "workspace:*",
     "@openrouter/ai-sdk-provider": "^0.4.5",

@@ -76,6 +76,9 @@ importers:
       '@dqbd/tiktoken':
         specifier: ^1.0.22
         version: 1.0.22
+      '@firecrawl/html-extractor':
+        specifier: 0.1.1
+        version: 0.1.1
       '@google-cloud/storage':
         specifier: ^7.19.0
         version: 7.19.0(encoding@0.1.13)
@@ -984,6 +987,9 @@ packages:
     peerDependenciesMeta:
       '@noble/hashes':
         optional: true
+
+  '@firecrawl/html-extractor@0.1.1':
+    resolution: {integrity: sha512-OjvBkeSD+3l+9HbsFynuqCnmm+ScsRbiSR1TQB5mzFioL4Uw8XC5sS89L+Xdc+d2TgkjnHRi4Al9bJ9IAotk9w==}
 
   '@google-cloud/paginator@5.0.2':
     resolution: {integrity: sha512-DJS3s0OVH4zFDB1PzjxAsHqJT6sKVbRwwML0ZBP9PbU7Yebtu/7SWMRzvO2J3nUi9pRNITCfu4LJeooM2w4pjg==}
@@ -6468,6 +6474,8 @@ snapshots:
   '@exodus/bytes@1.15.1(@noble/hashes@1.8.0)':
     optionalDependencies:
       '@noble/hashes': 1.8.0
+
+  '@firecrawl/html-extractor@0.1.1': {}
 
   '@google-cloud/paginator@5.0.2':
     dependencies:
