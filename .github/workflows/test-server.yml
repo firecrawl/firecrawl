@@ -401,6 +401,155 @@ jobs:
           name: Logs (kubernetes, ${{ matrix.ai }}, ${{ matrix.search }}, ${{ matrix.engine }}, ${{ matrix.proxy }}, ${{ matrix.nuq }})
           path: logs/logs.zip
 
+  integrated:
+    name: Integrated environment tests
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    services:
+      redis:
+        image: redis
+        ports:
+          - 6379:6379
+      rabbitmq:
+        image: rabbitmq
+        ports:
+          - 5672:5672
+    env:
+      HOST: 0.0.0.0
+      USE_DB_AUTHENTICATION: true
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_TOKEN: ${{ secrets.SUPABASE_SERVICE_TOKEN }}
+      SUPABASE_ACUC_URL: ${{ secrets.SUPABASE_ACUC_URL }}
+      SUPABASE_ACUC_SERVICE_TOKEN: ${{ secrets.SUPABASE_ACUC_SERVICE_TOKEN }}
+      FIRE_ENGINE_BETA_URL: ${{ secrets.FIRE_ENGINE_BETA_URL }}
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      GCS_BUCKET_NAME: test-bucket
+      STORAGE_EMULATOR_HOST: http://localhost:4443
+      NUQ_DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
+      NUQ_RABBITMQ_URL: amqp://localhost:5672
+      USE_GO_MARKDOWN_PARSER: true
+      HTML_TO_MARKDOWN_SERVICE_URL: http://localhost:8080
+      FIRECRAWL_LOG_TO_FILE: true
+      IDMUX_URL: ${{ secrets.IDMUX_URL }}
+      TEST_SUITE_SELF_HOSTED: true
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - run: pnpm config set store-dir ~/.pnpm-store
+      - run: mkdir -p ~/.pnpm-store
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: |
+            apps/api/pnpm-lock.yaml
+
+      - run: pnpm fetch
+        working-directory: apps/api
+
+      - name: Restore native lib
+        id: napi_restore
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            apps/api/native/*.node
+            apps/api/native/index.js
+            apps/api/native/index.d.ts
+          key: ${{ runner.os }}-napi-${{ hashFiles('apps/api/native/Cargo.toml', 'apps/api/native/package.json', 'apps/api/native/src/**') }}
+
+      - name: Build native lib
+        if: steps.napi_restore.outputs.cache-hit != 'true'
+        run: pnpm install
+        working-directory: apps/api/native
+
+      - name: Cache native lib
+        if: steps.napi_restore.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            apps/api/native/*.node
+            apps/api/native/index.js
+            apps/api/native/index.d.ts
+          key: ${{ steps.napi_restore.outputs.cache-primary-key }}
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version: 1.24
+          cache-dependency-path: apps/api/sharedLibs/go-html-to-md/go.sum
+
+      - name: Restore Go lib
+        id: golib_restore
+        uses: actions/cache/restore@v4
+        with:
+          path: apps/api/sharedLibs/go-html-to-md/libhtml-to-markdown.so
+          key: ${{ runner.os }}-golib-${{ hashFiles('apps/api/sharedLibs/go-html-to-md/go.sum', 'apps/api/sharedLibs/go-html-to-md/*.go') }}
+
+      - name: Build go-html-to-md
+        if: steps.golib_restore.outputs.cache-hit != 'true'
+        run: |
+          cd apps/api/sharedLibs/go-html-to-md
+          go mod tidy
+          go build -o libhtml-to-markdown.so -buildmode=c-shared html-to-markdown.go
+
+      - name: Cache Go lib
+        if: steps.golib_restore.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: apps/api/sharedLibs/go-html-to-md/libhtml-to-markdown.so
+          key: ${{ steps.golib_restore.outputs.cache-primary-key }}
+
+      - name: Build and start go-html-to-md-service
+        run: |
+          docker build -t firecrawl/go-html-to-md-service:latest ./apps/go-html-to-md-service
+          docker run -d -p 8080:8080 --name go-html-to-md-service firecrawl/go-html-to-md-service:latest
+          pnpx wait-on http-get://localhost:8080/health -t 60s
+
+      - name: Start fake-gcs-server
+        run: |
+          docker run -d -p 4443:4443 --name fake-gcs-server fsouza/fake-gcs-server:latest -scheme http -port 4443 -backend memory
+          sleep 2
+          curl -X POST 'http://localhost:4443/storage/v1/b' -H 'Content-Type: application/json' -d '{"name": "test-bucket"}'
+
+      - name: Run Docker Postgres
+        run: |
+          docker build -t firecrawl/nuq-postgres:latest ./apps/nuq-postgres
+          docker run -d -p 5432:5432 -e POSTGRES_USER=postgres -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=postgres --name postgres firecrawl/nuq-postgres:latest
+
+      - name: Install API dependencies
+        run: pnpm install --frozen-lockfile --ignore-scripts
+        working-directory: apps/api
+        env:
+          npm_config_ignore_scripts: 'true'
+
+      - name: Run tests
+        run: pnpm harness pnpm test:integrated
+        working-directory: apps/api
+        env:
+          npm_config_ignore_scripts: 'true'
+
+      - name: Copy log files
+        if: always()
+        run: |
+          mkdir -p logs
+          cp ./apps/api/firecrawl-app.log logs/firecrawl.log || true
+          cp ./apps/api/firecrawl-worker.log logs/firecrawl-worker.log || true
+
+      - name: Zip logs
+        if: always()
+        run: |
+          cd logs
+          zip -r logs.zip ./*
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: Logs (integrated)
+          path: logs/logs.zip
+
   # temp disabled
   # prod-test:
   #   name: Production environment tests

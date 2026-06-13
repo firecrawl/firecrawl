@@ -20,6 +20,7 @@
     "test:full": "jest --testPathIgnorePatterns=\"(src/__tests__/e2e_noAuth|src/__tests__/e2e_withAuth)\"",
     "test:prod": "jest --testPathIgnorePatterns=\"(src/__tests__/e2e_noAuth|src/__tests__/e2e_full_withAuth|src/scraper/scrapeURL)\"",
     "test:snips": "jest \"src/__tests__/snips/v[12]/.+\\.test\\.ts\"",
+    "test:integrated": "jest \"src/__tests__/integrated/.+\\.test\\.ts\"",
     "harness": "tsx src/harness.ts",
     "workers": "tsc-watch --onSuccess \"node dist/src/services/queue-worker.js\"",
     "worker:production": "node dist/src/services/queue-worker.js",
