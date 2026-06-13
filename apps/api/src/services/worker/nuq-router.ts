@@ -112,6 +112,7 @@ export async function resolveNewGroupBackend(
 async function getCrawlQueueBackend(
   crawlId: string,
 ): Promise<QueueBackend | null> {
+  if (fdbForced()) return "fdb";
   const raw = await redisEvictConnection.get("crawl:" + crawlId);
   if (!raw) return null;
   try {
