@@ -279,7 +279,20 @@ export async function fdbEnqueueScrapeJobs(
   );
 
   const tagged = results.map(r => tagFdbJob(r as NuQJob<ScrapeJobData>));
-  await Promise.all(tagged.map(job => markJobBackend(job.id, "fdb")));
+  const markerResults = await Promise.allSettled(
+    tagged.map(job => markJobBackend(job.id, "fdb")),
+  );
+  const markerFailures = markerResults.filter(
+    (r): r is PromiseRejectedResult => r.status === "rejected",
+  );
+  if (markerFailures.length > 0) {
+    _logger.warn("Failed to mark some FDB job backends", {
+      module: "nuq-router",
+      failed: markerFailures.length,
+      total: markerResults.length,
+      errors: markerFailures.map(r => r.reason),
+    });
+  }
   return {
     jobs: tagged,
     backloggedCount: tagged.filter(j => j.status === "backlog").length,
@@ -505,9 +518,7 @@ class RoutedScrapeQueue {
     logger: Logger = _logger,
   ): Promise<T> {
     if ((await getJobQueueBackend(id)) === "fdb") {
-      return optionalFdb(() =>
-        scrapeQueueFdb.waitForJob(id, timeout, logger),
-      );
+      return optionalFdb(() => scrapeQueueFdb.waitForJob(id, timeout, logger));
     }
     return scrapeQueuePg.waitForJob(id, timeout, logger) as Promise<T>;
   }

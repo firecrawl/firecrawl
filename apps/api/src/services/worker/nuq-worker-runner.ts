@@ -103,10 +103,8 @@ export async function runNuqWorker(options: {
     isShuttingDown = true;
   }
 
-  if (require.main === module) {
-    process.on("SIGINT", shutdown);
-    process.on("SIGTERM", shutdown);
-  }
+  process.on("SIGINT", shutdown);
+  process.on("SIGTERM", shutdown);
 
   let noJobTimeout = 1500;
 
@@ -133,13 +131,18 @@ export async function runNuqWorker(options: {
     logger.info("Acquired job");
 
     const lockRenewInterval = setInterval(async () => {
-      logger.info("Renewing lock");
-      if (!(await options.queue.renewLock(job.id, job.lock!, logger))) {
-        logger.warn("Failed to renew lock");
+      try {
+        logger.info("Renewing lock");
+        if (!(await options.queue.renewLock(job.id, job.lock!, logger))) {
+          logger.warn("Failed to renew lock");
+          clearInterval(lockRenewInterval);
+          return;
+        }
+        logger.info("Renewed lock");
+      } catch (error) {
+        logger.warn("Failed to renew lock", { error });
         clearInterval(lockRenewInterval);
-        return;
       }
-      logger.info("Renewed lock");
     }, 15000);
 
     let processResult:

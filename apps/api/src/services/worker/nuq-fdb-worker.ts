@@ -73,16 +73,30 @@ function startCrawlFinishedLoop() {
       logger.info("Acquired crawl finished job");
 
       const lockRenewInterval = setInterval(async () => {
-        logger.info("Renewing crawl finished lock");
-        if (!(await crawlFinishedQueueFdb.renewLock(job.id, job.lock!, logger))) {
-          logger.warn("Failed to renew crawl finished lock");
+        try {
+          logger.info("Renewing crawl finished lock");
+          if (
+            !(await crawlFinishedQueueFdb.renewLock(job.id, job.lock!, logger))
+          ) {
+            logger.warn("Failed to renew crawl finished lock");
+            clearInterval(lockRenewInterval);
+          }
+        } catch (error) {
+          logger.warn("Failed to renew crawl finished lock", { error });
           clearInterval(lockRenewInterval);
         }
       }, 15000);
 
       try {
         await processFinishCrawlJobInternal(job as any);
-        if (!(await crawlFinishedQueueFdb.jobFinish(job.id, job.lock!, null, logger))) {
+        if (
+          !(await crawlFinishedQueueFdb.jobFinish(
+            job.id,
+            job.lock!,
+            null,
+            logger,
+          ))
+        ) {
           logger.warn("Could not update crawl finished job status");
         }
       } catch (error) {
@@ -114,7 +128,8 @@ function startCrawlFinishedLoop() {
 (async () => {
   setSentryServiceTag("nuq-fdb-worker");
 
-  let crawlFinishedLoop: ReturnType<typeof startCrawlFinishedLoop> | null = null;
+  let crawlFinishedLoop: ReturnType<typeof startCrawlFinishedLoop> | null =
+    null;
 
   await runNuqWorker({
     serviceName: "nuq-fdb-worker",
@@ -126,7 +141,11 @@ function startCrawlFinishedLoop() {
     },
     beforeShutdown: async () => {
       crawlFinishedLoop?.stop();
-      getNuqFdbSweeper().stop();
+      try {
+        await crawlFinishedLoop?.done;
+      } finally {
+        getNuqFdbSweeper().stop();
+      }
     },
   });
 })();
