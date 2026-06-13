@@ -291,8 +291,7 @@ export async function getMapResults({
 
     // Perform cosine similarity between the search query and the list of links
     if (search) {
-      const searchQuery = search.toLowerCase();
-      links = performCosineSimilarity(links, searchQuery);
+      links = performCosineSimilarity(links, search);
     }
 
     links = links

@@ -305,8 +305,7 @@ export async function getMapResults({
     }
 
     if (search) {
-      const searchQuery = search.toLowerCase();
-      mapResults = performCosineSimilarityV2(mapResults, searchQuery);
+      mapResults = performCosineSimilarityV2(mapResults, search);
     }
   }
 
