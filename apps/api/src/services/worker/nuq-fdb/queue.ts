@@ -810,8 +810,12 @@ export class NuQFdbQueue<JobData = any, JobReturnValue = any> {
         );
       }
 
-      // shed job data early on cloud (results live in GCS) and for ZDR
-      if (config.GCS_BUCKET_NAME || meta.f & F_ZDR) {
+      // Shed job input data early on cloud (results live in GCS) and always for
+      // ZDR. Group members are exempt on the plain cloud path: the crawl-finish
+      // job recovers crawl-scoped context (v1, webhook, team_id, ...) from a
+      // representative member via getGroupAnyJob, mirroring the PG backend which
+      // never sheds. ZDR still sheds even for members (compliance).
+      if (meta.f & F_ZDR || (config.GCS_BUCKET_NAME && !meta.g)) {
         const r = ks.jobDataRange(id);
         tn.clearRange(r.begin, r.end);
       }

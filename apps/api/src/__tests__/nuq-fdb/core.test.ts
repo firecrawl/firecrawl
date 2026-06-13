@@ -616,6 +616,54 @@ describeIf("NuQ FDB core", () => {
     await queue.jobFinish(j.id, j.lock!, null);
   });
 
+  // A completed crawl member must retain its input data so the crawl-finish job
+  // can recover crawl-scoped context (v1, webhook, team_id) via getGroupAnyJob,
+  // matching the PG backend. Cloud sheds standalone data but not group members.
+  test("group member retains input data after completion", async () => {
+    const { queue, group } = await makeCtx("retain-groupdata");
+    const owner = freshOwner();
+    const gid = randomUUID();
+    await group.addGroup(gid, owner);
+    const id = randomUUID();
+    await queue.addJob(
+      id,
+      scrapeData({ v1: true, team_id: owner, webhook: { url: "https://wh" } }),
+      { ownerId: owner, groupId: gid },
+      gate(10),
+    );
+
+    const [j] = await takeAll(queue, 1);
+    await queue.jobFinish(j.id, j.lock!, { ok: true });
+
+    const any = await queue.getGroupAnyJob(gid, owner);
+    expect(any?.id).toBe(id);
+    expect(any?.data).not.toBeNull();
+    expect(any?.data?.v1).toBe(true);
+    expect(any?.data?.webhook?.url).toBe("https://wh");
+  });
+
+  // ZDR members still shed input data on completion (compliance), so the
+  // crawl-finish path must tolerate null data for those crawls.
+  test("ZDR group member sheds input data on completion", async () => {
+    const { queue, group } = await makeCtx("zdr-shed");
+    const owner = freshOwner();
+    const gid = randomUUID();
+    await group.addGroup(gid, owner);
+    const id = randomUUID();
+    await queue.addJob(
+      id,
+      scrapeData({ zeroDataRetention: true }),
+      { ownerId: owner, groupId: gid },
+      gate(10),
+    );
+
+    const [j] = await takeAll(queue, 1);
+    await queue.jobFinish(j.id, j.lock!, null);
+
+    const got = await queue.getJob(id);
+    expect(got?.data).toBeNull();
+  });
+
   test("removeJob releases slots and promotes backlog", async () => {
     const { queue } = await makeCtx("remove");
     const owner = freshOwner();

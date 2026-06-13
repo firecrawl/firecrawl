@@ -178,6 +178,9 @@ export async function batchScrapeController(
         createdAt: Date.now(),
         maxConcurrency: req.body.maxConcurrency,
         zeroDataRetention,
+        v1: true,
+        webhook: req.body.webhook,
+        requestId: req.body.__agentInterop?.requestId ?? undefined,
       };
 
   if (req.body.appendToId) {

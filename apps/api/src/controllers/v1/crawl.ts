@@ -143,6 +143,8 @@ export async function crawlController(
           : req.body.maxConcurrency
         : undefined,
     zeroDataRetention,
+    v1: true,
+    webhook: req.body.webhook,
   };
 
   const crawler = crawlToCrawler(id, sc, req.acuc?.flags ?? null);
