@@ -54,7 +54,7 @@ describe("agentStatusController", () => {
     );
   });
 
-  it("defaults model to spark-1-pro when missing", async () => {
+  it("returns undefined model when options are missing instead of defaulting to spark-1-pro", async () => {
     (supabaseGetAgentRequestByIdDirect as jest.Mock).mockResolvedValue({
       team_id: "team-123",
       created_at: "2025-01-01T00:00:00Z",
@@ -71,7 +71,7 @@ describe("agentStatusController", () => {
 
     expect(res.status).toHaveBeenCalledWith(200);
     expect(res.json).toHaveBeenCalledWith(
-      expect.objectContaining({ model: "spark-1-pro" }),
+      expect.objectContaining({ model: undefined }),
     );
   });
 });

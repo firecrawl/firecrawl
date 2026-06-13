@@ -25,11 +25,13 @@ export async function agentStatusController(
 
   const agent = await supabaseGetAgentByIdDirect(req.params.jobId);
 
-  let model: "spark-1-pro" | "spark-1-mini";
+  let model: "spark-1-pro" | "spark-1-mini" | undefined;
   if (agent) {
-    model = (agent.options?.model ?? "spark-1-pro") as
-      | "spark-1-pro"
-      | "spark-1-mini";
+    const agentModel = agent.options?.model;
+    model =
+      agentModel === "spark-1-pro" || agentModel === "spark-1-mini"
+        ? agentModel
+        : undefined;
   } else {
     try {
       const optionsRequest = await fetch(
@@ -51,11 +53,13 @@ export async function agentStatusController(
           module: "api/v2",
           text: await optionsRequest.text(),
         });
-        model = "spark-1-pro"; // fall back to this value
+        model = undefined;
       } else {
-        model = ((await optionsRequest.json()).model ?? "spark-1-pro") as
-          | "spark-1-pro"
-          | "spark-1-mini";
+        const optionsModel = (await optionsRequest.json()).model;
+        model =
+          optionsModel === "spark-1-pro" || optionsModel === "spark-1-mini"
+            ? optionsModel
+            : undefined;
       }
     } catch (error) {
       logger.warn("Failed to get agent request details", {
@@ -64,7 +68,7 @@ export async function agentStatusController(
         module: "api/v2",
         extractId: req.params.jobId,
       });
-      model = "spark-1-pro"; // fall back to this value
+      model = undefined;
     }
   }
 
