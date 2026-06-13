@@ -117,11 +117,18 @@ function startCrawlFinishedLoop() {
     }
   })();
 
+  const done = loop.catch(error => {
+    _logger.error("Crawl finished loop stopped unexpectedly", {
+      module: "nuq-fdb-worker",
+      error,
+    });
+  });
+
   return {
     stop() {
       shuttingDown = true;
     },
-    done: loop,
+    done,
   };
 }
 
