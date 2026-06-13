@@ -4,7 +4,6 @@ import { isValidUuid } from "../lib/owner-id";
 import { config } from "../config";
 import { logger } from "../lib/logger";
 import { parseApi } from "../lib/parseApi";
-import { withAuth } from "../lib/withAuth";
 import { getAgentSponsorStatus } from "../services/agent-sponsor";
 import { getRedisConnection } from "../services/queue-service";
 import { getRateLimiter } from "../services/rate-limiter";
@@ -467,12 +466,23 @@ export async function authenticateUser(
   res,
   mode?: RateLimiterMode,
 ): Promise<AuthResponse> {
-  return withAuth(supaAuthenticateUser, {
-    success: true,
-    chunk: null,
-    team_id: "bypass",
-    org_id: null,
-  })(req, res, mode);
+  if (config.USE_DB_AUTHENTICATION !== true) {
+    const isExtract =
+      mode === RateLimiterMode.Extract ||
+      mode === RateLimiterMode.ExtractStatus ||
+      mode === RateLimiterMode.ExtractAgentPreview;
+    const chunk = mockACUC();
+    chunk.is_extract = isExtract;
+
+    return {
+      success: true,
+      chunk,
+      team_id: chunk.team_id,
+      org_id: null,
+    };
+  }
+
+  return supaAuthenticateUser(req, res, mode);
 }
 
 /**
