@@ -128,6 +128,7 @@ async function markJobBackend(
   jobId: string,
   backend: QueueBackend,
 ): Promise<void> {
+  if (fdbForced()) return;
   await redisEvictConnection.set(
     jobBackendKey(jobId),
     backend,
@@ -137,6 +138,7 @@ async function markJobBackend(
 }
 
 async function getJobQueueBackend(jobId: string): Promise<QueueBackend> {
+  if (fdbForced()) return "fdb";
   return (await redisEvictConnection.get(jobBackendKey(jobId))) === "fdb"
     ? "fdb"
     : "pg";
