@@ -1,10 +1,10 @@
-import type { Mock } from "vitest";
-const mockJudge: Mock<any, any> = vi.fn();
-const mockSave: Mock<any, any> = vi.fn(async () => ({
-  textBytes: 1,
-  jsonBytes: 1,
+// vi.mock is hoisted above declarations, so the mocks its factories reference
+// are created in vi.hoisted() (also hoisted) to avoid any TDZ surprises.
+const { mockJudge, mockSave, mockGetJob } = vi.hoisted(() => ({
+  mockJudge: vi.fn(),
+  mockSave: vi.fn(async (..._args: any[]) => ({ textBytes: 1, jsonBytes: 1 })),
+  mockGetJob: vi.fn(),
 }));
-const mockGetJob: Mock<any, any> = vi.fn();
 
 vi.mock("uuid", () => ({ v7: () => "test-uuid" }));
 vi.mock("./judgeChange", () => ({

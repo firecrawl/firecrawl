@@ -55,13 +55,13 @@ describe("scrape-interact/langsmith (disabled — no API key)", () => {
   });
 
   it("reports disabled when LANGSMITH_API_KEY is unset", async () => {
-    const mod = await import("./langsmith");
+    const mod = await import("./langsmith.js");
     expect(mod.isLangSmithEnabled).toBe(false);
   });
 
   it("re-exports raw ai SDK functions when disabled", async () => {
     const freshAi = await import("ai");
-    const mod = await import("./langsmith");
+    const mod = await import("./langsmith.js");
     expect(mod.generateText).toBe(freshAi.generateText);
     expect(mod.streamText).toBe(freshAi.streamText);
     expect(mod.generateObject).toBe(freshAi.generateObject);
@@ -69,7 +69,7 @@ describe("scrape-interact/langsmith (disabled — no API key)", () => {
   });
 
   it("returns undefined providerOptions when disabled", async () => {
-    const mod = await import("./langsmith");
+    const mod = await import("./langsmith.js");
     const opts = mod.buildLangSmithProviderOptions(
       {
         thread_id: "t1",
@@ -84,7 +84,7 @@ describe("scrape-interact/langsmith (disabled — no API key)", () => {
   });
 
   it("traceInteract returns the original function unchanged when disabled", async () => {
-    const mod = await import("./langsmith");
+    const mod = await import("./langsmith.js");
     const original = async (x: number) => x * 2;
     const wrapped = mod.traceInteract(
       original,
@@ -111,7 +111,7 @@ describe("scrape-interact/langsmith (disabled — no API key)", () => {
         LANGSMITH_ENDPOINT: undefined,
       },
     }));
-    const mod = await import("./langsmith");
+    const mod = await import("./langsmith.js");
     expect(mod.isLangSmithEnabled).toBe(false);
   });
 
@@ -125,12 +125,12 @@ describe("scrape-interact/langsmith (disabled — no API key)", () => {
         LANGSMITH_ENDPOINT: undefined,
       },
     }));
-    const mod = await import("./langsmith");
+    const mod = await import("./langsmith.js");
     expect(mod.isLangSmithEnabled).toBe(false);
   });
 
   it("sanitizeUrlForTrace strips query strings and fragments", async () => {
-    const { sanitizeUrlForTrace } = await import("./langsmith");
+    const { sanitizeUrlForTrace } = await import("./langsmith.js");
     expect(sanitizeUrlForTrace("https://example.com/page?token=abc#x")).toBe(
       "https://example.com/page",
     );
@@ -210,14 +210,14 @@ describe("scrape-interact/langsmith (enabled — mocked SDK)", () => {
   });
 
   it.skip("reports enabled and swaps generateText for the wrapped fn", async () => {
-    const mod = await import("./langsmith");
+    const mod = await import("./langsmith.js");
     expect(mod.isLangSmithEnabled).toBe(true);
     expect(mod.generateText).toBe(fakeWrappedFns.generateText);
     expect(mod.generateText).not.toBe(ai.generateText);
   });
 
   it.skip("builds provider options with thread_id + scrape context metadata", async () => {
-    const mod = await import("./langsmith");
+    const mod = await import("./langsmith.js");
     const result = mod.buildLangSmithProviderOptions(
       {
         thread_id: "sess-abc",
@@ -261,7 +261,7 @@ describe("scrape-interact/langsmith (enabled — mocked SDK)", () => {
   });
 
   it("skips tracing when meta.zeroDataRetention is true", async () => {
-    const mod = await import("./langsmith");
+    const mod = await import("./langsmith.js");
     const result = mod.buildLangSmithProviderOptions({
       thread_id: "sess-abc",
       session_id: "sess-abc",
@@ -287,7 +287,7 @@ describe("scrape-interact/langsmith (enabled — mocked SDK)", () => {
   });
 
   it.skip("wraps functions via traceable when zeroDataRetention is not set", async () => {
-    const mod = await import("./langsmith");
+    const mod = await import("./langsmith.js");
     const fn = vi.fn(async (x: number) => x + 1);
     const wrapped = mod.traceInteract(
       fn,
@@ -324,7 +324,7 @@ describe("scrape-interact/langsmith (enabled — mocked SDK)", () => {
     // Re-import ai from the fresh module graph so the identity check lines up
     // with the module instance the langsmith helper imported.
     const freshAi = await import("ai");
-    const mod = await import("./langsmith");
+    const mod = await import("./langsmith.js");
     expect(mod.generateText).toBe(freshAi.generateText);
     expect(
       mod.buildLangSmithProviderOptions({

@@ -98,7 +98,7 @@ describe("Engine Forcing", () => {
       // require() which, under ts-jest, returned a separate module evaluation).
       vi.resetModules();
       const { getEngineForUrl: freshGetEngineForUrl } = await import(
-        "../engine-forcing"
+        "../engine-forcing.js"
       );
       expect(() => {
         freshGetEngineForUrl("https://example.com");

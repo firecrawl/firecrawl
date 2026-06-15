@@ -15,11 +15,11 @@ describe("Audio format engine routing (buildFallbackList)", () => {
     process.env.INDEX_DATABASE_URL =
       "postgresql://postgres:postgres@localhost:5432/postgres";
 
-    await vi.isolateModulesAsync(async () => {
-      ({ buildFallbackList } = await import(
-        "../../../scraper/scrapeURL/engines"
-      ));
-    });
+    // Re-import engines fresh so it reads the env vars set above at eval time.
+    vi.resetModules();
+    ({ buildFallbackList } = await import(
+      "../../../scraper/scrapeURL/engines/index.js"
+    ));
   });
 
   afterAll(() => {
