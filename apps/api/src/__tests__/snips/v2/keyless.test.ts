@@ -66,7 +66,11 @@ describeIf(KEYLESS_ENABLED)("Keyless free tier", () => {
       const response = await request(TEST_API_URL)
         .post("/v2/scrape")
         .set("Content-Type", "application/json")
-        .send({ url: TEST_SUITE_WEBSITE, origin: "api", formats: ["markdown"] });
+        .send({
+          url: TEST_SUITE_WEBSITE,
+          origin: "api",
+          formats: ["markdown"],
+        });
 
       expect(response.statusCode).toBe(200);
       expect(response.body.success).toBe(true);
@@ -303,6 +307,92 @@ describeIf(KEYLESS_ENABLED)("Keyless free tier", () => {
         .post("/v2/search")
         .set("Content-Type", "application/json")
         .send({ query: "firecrawl", limit: 1, origin: "mcp" });
+
+      expect(response.statusCode).toBe(200);
+      expect(response.body.success).toBe(true);
+    },
+    scrapeTimeout,
+  );
+});
+
+// Spur Context IP-reputation check on the keyless tier. Only runs when both the
+// keyless tier and the Spur integration (SPUR_API_KEY) are configured, plus the
+// proxy secret so we can forward a specific test IP. We pre-seed the 30-day
+// Spur cache so these are hermetic — no real Spur API call is made (the lookup
+// reads the cache first).
+const SPUR_ENABLED =
+  KEYLESS_ENABLED &&
+  !!process.env.SPUR_API_KEY &&
+  !!process.env.KEYLESS_PROXY_SECRET;
+
+describeIf(SPUR_ENABLED)("Keyless free tier — Spur IP reputation", () => {
+  const spurKey = (ip: string) => `spur_context:${ip}`;
+
+  beforeAll(() => {
+    config.USE_DB_AUTHENTICATION = true;
+  });
+
+  afterAll(async () => {
+    delete config.USE_DB_AUTHENTICATION;
+    const keys = await redisRateLimitClient.keys("spur_context:*");
+    if (keys.length > 0) await redisRateLimitClient.del(...keys);
+  });
+
+  it(
+    "refuses keyless for an IP Spur flags as a VPN/proxy tunnel (403)",
+    async () => {
+      const ip = "203.0.113.66";
+      // Seed the Spur cache with a suspicious context (active VPN tunnel).
+      await redisRateLimitClient.set(
+        spurKey(ip),
+        JSON.stringify({
+          ip,
+          tunnels: [{ type: "VPN", operator: "PROTON_VPN" }],
+        }),
+      );
+
+      const response = await request(TEST_API_URL)
+        .post("/v2/scrape")
+        .set("Content-Type", "application/json")
+        .set("x-firecrawl-keyless-secret", process.env.KEYLESS_PROXY_SECRET!)
+        .set("x-firecrawl-keyless-ip", ip)
+        .send({
+          url: TEST_SUITE_WEBSITE,
+          origin: "mcp",
+          formats: ["markdown"],
+        });
+
+      expect(response.statusCode).toBe(403);
+      expect(response.body.success).toBe(false);
+      expect(response.body.error).toContain("suspicious");
+      // Out of the keyless path → emit the OAuth-discovery header.
+      expect(response.headers["www-authenticate"]).toContain(
+        "resource_metadata",
+      );
+    },
+    scrapeTimeout,
+  );
+
+  it(
+    "allows keyless for a clean (non-anonymizing) IP per Spur (200)",
+    async () => {
+      const ip = "203.0.113.67";
+      // Seed a clean context: datacenter alone is not "suspicious".
+      await redisRateLimitClient.set(
+        spurKey(ip),
+        JSON.stringify({ ip, infrastructure: "DATACENTER", risks: [] }),
+      );
+
+      const response = await request(TEST_API_URL)
+        .post("/v2/scrape")
+        .set("Content-Type", "application/json")
+        .set("x-firecrawl-keyless-secret", process.env.KEYLESS_PROXY_SECRET!)
+        .set("x-firecrawl-keyless-ip", ip)
+        .send({
+          url: TEST_SUITE_WEBSITE,
+          origin: "mcp",
+          formats: ["markdown"],
+        });
 
       expect(response.statusCode).toBe(200);
       expect(response.body.success).toBe(true);

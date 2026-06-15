@@ -58,6 +58,11 @@ const configSchema = z.object({
   // forward the real client IP for keyless rate-limiting via the
   // `x-firecrawl-keyless-ip` header. Untrusted callers can't override their IP.
   KEYLESS_PROXY_SECRET: z.string().optional(),
+  // Optional Spur Context API token (https://docs.spur.us/context-api). When
+  // set, keyless requests have their client IP checked against Spur and are
+  // refused if the IP fronts anonymizing/rotating infrastructure (VPN/proxy/
+  // TOR). Unset disables the check entirely (keyless behaves as before).
+  SPUR_API_KEY: z.string().optional(),
 
   // API Keys & Authentication
   BULL_AUTH_KEY: z.string().optional(),

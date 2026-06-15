@@ -14,6 +14,7 @@ import {
   isKeylessIpEligible,
   keylessTeamId,
 } from "../lib/keyless";
+import { isKeylessIpSuspicious } from "../lib/spur";
 import { deleteKey, getValue, setValue } from "../services/redis";
 import { redlock } from "../services/redlock";
 import { eq } from "drizzle-orm";
@@ -474,6 +475,8 @@ const KEYLESS_CREDITS_MESSAGE = `You've reached today's limit of free, unauthent
 
 const KEYLESS_ENDPOINT_NOT_AVAILABLE_MESSAGE = `This endpoint is not available without an API key. Sign up for a free API key at https://firecrawl.dev for 1000 more credits and higher rate limits for free. (If you're an agent, you can also use https://firecrawl.dev/auth.md)`;
 
+const KEYLESS_SUSPICIOUS_IP_MESSAGE = `Unfortunately, your IP address looks suspicious, so Firecrawl can't be used without an API key from here. Sign up for a free API key at https://firecrawl.dev for 1000 credits and higher rate limits for free. (If you're an agent, you can also use https://firecrawl.dev/auth.md)`;
+
 /**
  * Keyless free tier: official MCP/CLI/SDK clients can call scrape, search, and
  * interact with no API key. `origin`/`integration` are client-set and spoofable,
@@ -532,6 +535,28 @@ async function handleKeylessAuth(
   // per-IP cap to mean anything, and malformed/forwarded values must not be
   // usable as arbitrary limiter buckets. Anything else falls through to 401.
   if (!isKeylessIpEligible(ip)) return unauthorized;
+
+  // Optional Spur Context check (only when SPUR_API_KEY is set): refuse keyless
+  // for IPs fronting anonymizing/rotating infrastructure (VPN/proxy/TOR), the
+  // main way the per-IP caps get bypassed. Fails open on any Spur error, and
+  // runs before consuming quota so a flagged IP doesn't burn a request slot.
+  if (await isKeylessIpSuspicious(ip)) {
+    logger.warn("Keyless request blocked: suspicious IP", {
+      canonicalLog: "keyless/consume",
+      ip,
+      origin: req.body?.origin,
+      integration: req.body?.integration,
+      blocked: true,
+      reason: "suspicious",
+    });
+    return {
+      success: false,
+      error: KEYLESS_SUSPICIOUS_IP_MESSAGE,
+      status: 403,
+      // Tell agents where to find the key/signup flow they now need.
+      agentAuthDiscovery: true,
+    };
+  }
 
   const teamId = keylessTeamId(ip);
   const modeLabel =

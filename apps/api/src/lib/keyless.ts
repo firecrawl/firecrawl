@@ -4,6 +4,7 @@ import { config } from "../config";
 import { db } from "../db/connection";
 import * as schema from "../db/schema";
 import { redisRateLimitClient } from "../services/rate-limiter";
+import { isKeylessIpSuspicious } from "./spur";
 
 // Keyless free tier: scrape, search, and interact can be used without an API key
 // from the official MCP server, CLI, or SDKs. It's gated per-IP/day by TWO
@@ -128,6 +129,12 @@ export async function checkKeylessEligibility(
   if (!isKeylessConfigured()) return { eligible: false, reason: "disabled" };
   if (!ip || !isKeylessIpEligible(ip)) {
     return { eligible: false, reason: "ineligible_ip" };
+  }
+  // Optional Spur Context check (only when SPUR_API_KEY is set): treat IPs on
+  // anonymizing/rotating infrastructure as ineligible so the hosted MCP issues
+  // an OAuth challenge instead of serving keyless that auth would then reject.
+  if (await isKeylessIpSuspicious(ip)) {
+    return { eligible: false, reason: "suspicious" };
   }
   try {
     const requestsUsed = parseInt(
