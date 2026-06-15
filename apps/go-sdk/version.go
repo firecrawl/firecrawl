@@ -9,4 +9,4 @@ package firecrawl
 // Bump this when preparing a new release. The publish-go-sdk GitHub workflow
 // reads this value and creates the corresponding monorepo-prefixed tag on
 // merge to main.
-const Version = "1.6.0"
+const Version = "1.6.1"

@@ -37,6 +37,7 @@ import java.util.concurrent.ForkJoinPool;
 public class FirecrawlClient {
 
     private static final String DEFAULT_API_URL = "https://api.firecrawl.dev";
+    private static final String SDK_ORIGIN = "java-sdk@1.9.1";
     private static final long DEFAULT_TIMEOUT_MS = 300_000; // 5 minutes
     private static final int DEFAULT_MAX_RETRIES = 3;
     private static final double DEFAULT_BACKOFF_FACTOR = 0.5;
@@ -101,6 +102,7 @@ public class FirecrawlClient {
         if (options != null) {
             mergeOptions(body, options);
         }
+        body.putIfAbsent("origin", SDK_ORIGIN);
         return extractData(http.post("/v2/scrape", body, Map.class), Document.class);
     }
 
@@ -148,6 +150,7 @@ public class FirecrawlClient {
         body.put("language", language != null ? language : "node");
         if (timeout != null) body.put("timeout", timeout);
         if (origin != null) body.put("origin", origin);
+        body.putIfAbsent("origin", SDK_ORIGIN);
         return http.post("/v2/scrape/" + jobId + "/interact", body, BrowserExecuteResponse.class);
     }
 
@@ -549,6 +552,7 @@ public class FirecrawlClient {
         if (options != null) {
             mergeOptions(body, options);
         }
+        body.putIfAbsent("origin", SDK_ORIGIN);
         return extractData(http.post("/v2/search", body, Map.class), SearchData.class);
     }
 
@@ -1387,11 +1391,9 @@ public class FirecrawlClient {
             if (resolvedKey == null || resolvedKey.isBlank()) {
                 resolvedKey = System.getProperty("firecrawl.apiKey");
             }
-            if (resolvedKey == null || resolvedKey.isBlank()) {
-                throw new FirecrawlException(
-                        "API key is required. Set it via builder.apiKey(), " +
-                        "FIRECRAWL_API_KEY environment variable, or firecrawl.apiKey system property.");
-            }
+            // A null/blank key is allowed: scrape, search, and interact fall back
+            // to the keyless free tier (rate-limited per IP). Other methods return
+            // 401 from the API until a key is provided.
 
             String resolvedUrl = apiUrl;
             if (resolvedUrl == null || resolvedUrl.equals(DEFAULT_API_URL)) {

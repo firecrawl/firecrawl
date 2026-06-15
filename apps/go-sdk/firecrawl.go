@@ -56,12 +56,9 @@ func NewClient(opts ...option.RequestOption) (*Client, error) {
 	if apiKey == "" {
 		apiKey = strings.TrimSpace(os.Getenv("FIRECRAWL_API_KEY"))
 	}
-	if apiKey == "" {
-		return nil, &FirecrawlError{
-			Message: "API key is required. Set it via option.WithAPIKey(), " +
-				"or FIRECRAWL_API_KEY environment variable.",
-		}
-	}
+	// An empty API key is allowed: scrape, search, and interact fall back to the
+	// keyless free tier (rate-limited per IP). Other methods return 401 from the
+	// API until a key is provided.
 
 	// Resolve API URL.
 	apiURL := cfg.APIURL
@@ -95,6 +92,9 @@ func (c *Client) Scrape(ctx context.Context, url string, opts *ScrapeOptions) (*
 	body := map[string]interface{}{"url": url}
 	mergeOptions(body, opts)
 
+	if _, ok := body["origin"]; !ok {
+		body["origin"] = "go-sdk@" + Version
+	}
 	raw, err := c.http.post(ctx, "/v2/scrape", body, nil)
 	if err != nil {
 		return nil, err
@@ -132,6 +132,9 @@ func (c *Client) Interact(ctx context.Context, jobID, code string, params *Inter
 		}
 	}
 
+	if _, ok := body["origin"]; !ok {
+		body["origin"] = "go-sdk@" + Version
+	}
 	raw, err := c.http.post(ctx, "/v2/scrape/"+jobID+"/interact", body, nil)
 	if err != nil {
 		return nil, err
@@ -539,6 +542,9 @@ func (c *Client) Search(ctx context.Context, query string, opts *SearchOptions) 
 	body := map[string]interface{}{"query": query}
 	mergeOptions(body, opts)
 
+	if _, ok := body["origin"]; !ok {
+		body["origin"] = "go-sdk@" + Version
+	}
 	raw, err := c.http.post(ctx, "/v2/search", body, nil)
 	if err != nil {
 		return nil, err

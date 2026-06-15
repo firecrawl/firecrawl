@@ -136,10 +136,14 @@ final class FirecrawlHttpClient
         ?array $multipart = null,
     ): array {
         $defaultHeaders = [
-            'Authorization' => 'Bearer ' . $this->apiKey,
             'Accept' => 'application/json',
             'User-Agent' => 'firecrawl-php/' . Version::SDK_VERSION,
         ];
+        // Omit the Authorization header entirely when no key is set so that
+        // scrape/search/interact can use the keyless free tier.
+        if ($this->apiKey !== null && $this->apiKey !== '') {
+            $defaultHeaders['Authorization'] = 'Bearer ' . $this->apiKey;
+        }
 
         if ($multipart === null) {
             $defaultHeaders['Content-Type'] = 'application/json';

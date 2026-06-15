@@ -16,6 +16,7 @@ import {
   saveSearchToGCS,
 } from "../../lib/gcs-jobs";
 import { hasFormatOfType } from "../../lib/format-utils";
+import { keylessTeamUuid } from "../../lib/keyless";
 import type { Document, ScrapeOptions } from "../../controllers/v2/types";
 import type { CostTracking } from "../../lib/cost-tracking";
 import type { Logger } from "winston";
@@ -272,9 +273,10 @@ export async function logScrape(scrape: LoggedScrape, force: boolean = false) {
       error: scrape.error ?? null,
       time_taken: scrape.time_taken,
       team_id:
-        scrape.team_id === "preview" || scrape.team_id?.startsWith("preview_")
+        keylessTeamUuid(scrape.team_id) ??
+        (scrape.team_id === "preview" || scrape.team_id?.startsWith("preview_")
           ? previewTeamId
-          : scrape.team_id,
+          : scrape.team_id),
       options: scrape.zeroDataRetention ? null : scrape.options,
       cost_tracking: scrape.zeroDataRetention
         ? null

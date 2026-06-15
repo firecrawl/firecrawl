@@ -647,6 +647,7 @@ export interface BatchScrapeJob {
 }
 
 export interface MapData {
+  id?: string;
   links: SearchResultWeb[];
 }
 
@@ -660,6 +661,51 @@ export interface MapOptions {
   integration?: string;
   origin?: string;
   location?: LocationConfig;
+}
+
+export type FeedbackRating = "good" | "partial" | "bad";
+export type EndpointFeedbackEndpoint = "search" | "scrape" | "parse" | "map";
+
+export interface FeedbackValuableSource {
+  url: string;
+  reason?: string;
+}
+
+export interface FeedbackMissingContent {
+  topic: string;
+  description?: string;
+}
+
+export interface SearchFeedbackRequest {
+  rating: FeedbackRating;
+  valuableSources?: FeedbackValuableSource[];
+  missingContent?: FeedbackMissingContent[];
+  querySuggestions?: string;
+  integration?: string | null;
+  origin?: string;
+}
+
+export interface EndpointFeedbackRequest extends SearchFeedbackRequest {
+  endpoint: EndpointFeedbackEndpoint;
+  jobId: string;
+  issues?: string[];
+  tags?: string[];
+  note?: string;
+  url?: string;
+  pageNumbers?: number[];
+  /** Small endpoint-specific metadata object. Must be 8KB or smaller. */
+  metadata?: Record<string, unknown>;
+}
+
+export interface FeedbackResponse {
+  success: true;
+  feedbackId: string;
+  creditsRefunded: number;
+  alreadySubmitted?: boolean;
+  dailyCapReached?: boolean;
+  creditsRefundedToday?: number;
+  dailyRefundCap?: number;
+  warning?: string;
 }
 
 /**

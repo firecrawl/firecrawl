@@ -136,7 +136,9 @@ func (h *httpClient) postMultipart(
 			return nil, &FirecrawlError{Message: fmt.Sprintf("failed to create request: %v", err)}
 		}
 
-		req.Header.Set("Authorization", "Bearer "+h.apiKey)
+		if h.apiKey != "" {
+			req.Header.Set("Authorization", "Bearer "+h.apiKey)
+		}
 		req.Header.Set("Content-Type", contentType)
 		req.Header.Set("User-Agent", "firecrawl-go/"+Version)
 		for k, v := range h.extraHeaders {
@@ -221,7 +223,9 @@ func (h *httpClient) doJSON(ctx context.Context, method, url string, body interf
 			return nil, &FirecrawlError{Message: fmt.Sprintf("failed to create request: %v", err)}
 		}
 
-		req.Header.Set("Authorization", "Bearer "+h.apiKey)
+		if h.apiKey != "" {
+			req.Header.Set("Authorization", "Bearer "+h.apiKey)
+		}
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("User-Agent", "firecrawl-go/"+Version)
 		// Apply client-level headers.

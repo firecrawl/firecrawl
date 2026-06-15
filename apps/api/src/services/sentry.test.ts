@@ -1,12 +1,19 @@
-import { jest } from "@jest/globals";
+import { vi } from "vitest";
 
-const captureException = jest.fn();
-const init = jest.fn();
-const setTag = jest.fn();
-const scopeSetExtra = jest.fn();
-const scopeSetTag = jest.fn();
+// vi.mock is hoisted to the top of the file, so anything its factories reference
+// must be created in vi.hoisted() (which also hoists). Under Jest these worked
+// because importing `jest` from @jest/globals disables jest.mock hoisting.
+const { captureException, init, setTag, scopeSetExtra, scopeSetTag } = vi.hoisted(
+  () => ({
+    captureException: vi.fn(),
+    init: vi.fn(),
+    setTag: vi.fn(),
+    scopeSetExtra: vi.fn(),
+    scopeSetTag: vi.fn(),
+  }),
+);
 
-jest.mock("@sentry/node", () => ({
+vi.mock("@sentry/node", () => ({
   captureException,
   getCurrentScope: () => ({
     setExtra: scopeSetExtra,
@@ -14,10 +21,10 @@ jest.mock("@sentry/node", () => ({
   }),
   init,
   setTag,
-  vercelAIIntegration: jest.fn(() => ({})),
+  vercelAIIntegration: vi.fn(() => ({})),
 }));
 
-jest.mock("../config", () => ({
+vi.mock("../config", () => ({
   config: {
     NUQ_POD_NAME: "test-pod",
     SENTRY_DSN: undefined,
@@ -27,30 +34,24 @@ jest.mock("../config", () => ({
   },
 }));
 
-jest.mock("../lib/logger", () => ({
+vi.mock("../lib/logger", () => ({
   logger: {
-    info: jest.fn(),
+    info: vi.fn(),
   },
 }));
 
-class AddFeatureError extends Error {}
-class RemoveFeatureError extends Error {}
-class EngineError extends Error {}
-class AbortManagerThrownError extends Error {}
-class JobCancelledError extends Error {}
-
-jest.mock("../scraper/scrapeURL/error", () => ({
-  AddFeatureError,
-  RemoveFeatureError,
-  EngineError,
+vi.mock("../scraper/scrapeURL/error", () => ({
+  AddFeatureError: class AddFeatureError extends Error {},
+  RemoveFeatureError: class RemoveFeatureError extends Error {},
+  EngineError: class EngineError extends Error {},
 }));
 
-jest.mock("../scraper/scrapeURL/lib/abortManager", () => ({
-  AbortManagerThrownError,
+vi.mock("../scraper/scrapeURL/lib/abortManager", () => ({
+  AbortManagerThrownError: class AbortManagerThrownError extends Error {},
 }));
 
-jest.mock("../lib/error", () => ({
-  JobCancelledError,
+vi.mock("../lib/error", () => ({
+  JobCancelledError: class JobCancelledError extends Error {},
 }));
 
 import { QueueFullError } from "../lib/queue-full-error";
@@ -61,7 +62,7 @@ import {
 
 describe("sentry filtering", () => {
   beforeEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
   });
 
   it("does not capture queue full errors", () => {

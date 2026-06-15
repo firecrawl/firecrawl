@@ -7,6 +7,7 @@ import {
   searchRequestSchema,
 } from "./types";
 import { billTeam } from "../../services/billing/credit_billing";
+import { chargeKeylessCredits } from "../../lib/keyless";
 import { v7 as uuidv7 } from "uuid";
 import { logSearch, logRequest } from "../../services/logging/log_job";
 import { logger as _logger } from "../../lib/logger";
@@ -168,6 +169,13 @@ export async function searchController(
         ),
       );
     }
+
+    // Charge the keyless free tier's per-IP daily credit budget for search
+    // credits (no-op for non-keyless teams; scrape jobs within search charge
+    // themselves via the scrape worker).
+    chargeKeylessCredits(req.auth.team_id, result.searchCredits).catch(
+      () => {},
+    );
 
     const endTime = new Date().getTime();
     const timeTakenInSeconds = (endTime - middlewareStartTime) / 1000;

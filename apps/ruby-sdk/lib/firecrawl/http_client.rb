@@ -23,7 +23,7 @@ module Firecrawl
     def post(path, body, extra_headers: {})
       uri = URI("#{@base_url}#{path}")
       request = Net::HTTP::Post.new(uri)
-      request["Authorization"] = "Bearer #{@api_key}"
+      request["Authorization"] = "Bearer #{@api_key}" if @api_key
       request["Content-Type"] = "application/json"
       extra_headers.each { |k, v| request[k] = v }
       request.body = JSON.generate(body)
@@ -34,7 +34,7 @@ module Firecrawl
     def get(path)
       uri = URI("#{@base_url}#{path}")
       request = Net::HTTP::Get.new(uri)
-      request["Authorization"] = "Bearer #{@api_key}"
+      request["Authorization"] = "Bearer #{@api_key}" if @api_key
       execute_with_retry(uri, request)
     end
 
@@ -47,7 +47,7 @@ module Firecrawl
         raise FirecrawlError, "Absolute URL origin (#{uri.scheme}://#{uri.host}:#{uri.port}) does not match API base URL origin (#{base_uri.scheme}://#{base_uri.host}:#{base_uri.port}). Refusing to send credentials."
       end
       request = Net::HTTP::Get.new(uri)
-      request["Authorization"] = "Bearer #{@api_key}"
+      request["Authorization"] = "Bearer #{@api_key}" if @api_key
       execute_with_retry(uri, request)
     end
 
@@ -55,7 +55,7 @@ module Firecrawl
     def delete(path)
       uri = URI("#{@base_url}#{path}")
       request = Net::HTTP::Delete.new(uri)
-      request["Authorization"] = "Bearer #{@api_key}"
+      request["Authorization"] = "Bearer #{@api_key}" if @api_key
       execute_with_retry(uri, request)
     end
 
@@ -63,7 +63,7 @@ module Firecrawl
     def patch(path, body)
       uri = URI("#{@base_url}#{path}")
       request = Net::HTTP::Patch.new(uri)
-      request["Authorization"] = "Bearer #{@api_key}"
+      request["Authorization"] = "Bearer #{@api_key}" if @api_key
       request["Content-Type"] = "application/json"
       request.body = JSON.generate(body)
       execute_with_retry(uri, request)
@@ -84,7 +84,7 @@ module Firecrawl
 
       builder = lambda do
         request = Net::HTTP::Post.new(uri)
-        request["Authorization"] = "Bearer #{@api_key}"
+        request["Authorization"] = "Bearer #{@api_key}" if @api_key
         request["Content-Type"] = "multipart/form-data; boundary=#{boundary}"
         request.body = body
         request

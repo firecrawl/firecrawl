@@ -1,4 +1,12 @@
 {
     "$schema": "https://github.com/IBM/audit-ci/raw/main/docs/schema.json",
-    "low": true
+    "low": true,
+    "allowlist": [
+        // GHSA-h67p-54hq-rp68 (js-yaml):
+        // artillery still depends on js-yaml 3.x; the non-affected release is 4.x,
+        // so avoid a major-crossing override in load-test tooling.
+        // Owner: team-engineering-reviewers. Tracking: create internal ticket.
+        // Expires: 2026-06-30.
+        "GHSA-h67p-54hq-rp68"
+    ]
 }

@@ -52,6 +52,7 @@ import { createWebhookSender, WebhookEvent } from "../webhook/index";
 import { CustomError } from "../../lib/custom-error";
 import { startWebScraperPipeline } from "../../main/runWebScraper";
 import { CostTracking } from "../../lib/cost-tracking";
+import { chargeKeylessCredits } from "../../lib/keyless";
 import { normalizeUrlOnlyHostname } from "../../lib/canonical-url";
 import { isUrlBlocked } from "../../scraper/WebScraper/utils/blocklist";
 import { UNSUPPORTED_SITE_MESSAGE } from "../../lib/strings";
@@ -137,6 +138,10 @@ async function billScrapeJob(
       error,
       unsupportedFeatures,
     );
+
+    // Charge the keyless free tier's per-IP daily credit budget (no-op for
+    // non-keyless teams).
+    await chargeKeylessCredits(job.data.team_id, creditsToBeBilled);
 
     if (
       job.data.team_id !== config.BACKGROUND_INDEX_TEAM_ID! &&

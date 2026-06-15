@@ -11,7 +11,7 @@
   "author": "",
   "license": "MIT",
   "dependencies": {
-    "axios": "^1.15.2",
+    "axios": "^1.18.0",
     "firecrawl": "^4.3.4",
     "uuid": "^14.0.0",
     "zod": "^3.23.8"
@@ -26,6 +26,7 @@
     "overrides": {
       "diff@>=4.0.0 <4.0.4": ">=4.0.4",
       "follow-redirects@<1.16.0": ">=1.16.0 <2.0.0",
+      "form-data@>=4.0.0 <4.0.6": "4.0.6",
       "esbuild@>=0.17.0 <0.28.1": "0.28.1"
     }
   }

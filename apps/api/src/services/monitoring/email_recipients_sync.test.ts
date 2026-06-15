@@ -1,9 +1,18 @@
-const mockEnsureRecipient = jest.fn();
-const mockListRecipients = jest.fn();
-const mockGetTeamMemberEmails = jest.fn();
+const {
+  mockEnsureRecipient,
+  mockListRecipients,
+  mockGetTeamMemberEmails,
+  mockSendConfirmationEmail,
+} = vi.hoisted(() => ({
+  mockEnsureRecipient: vi.fn(),
+  mockListRecipients: vi.fn(),
+  mockGetTeamMemberEmails: vi.fn(),
+  mockSendConfirmationEmail: vi.fn(),
+}));
 
-jest.mock("./email_recipients", () => {
-  const actual = jest.requireActual("./email_recipients");
+vi.mock("./email_recipients", async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import("./email_recipients")>();
   return {
     ...actual,
     ensureMonitorEmailRecipient: (...args: unknown[]) =>
@@ -15,8 +24,7 @@ jest.mock("./email_recipients", () => {
   };
 });
 
-const mockSendConfirmationEmail = jest.fn();
-jest.mock("../notification/monitoring_email", () => ({
+vi.mock("../notification/monitoring_email", () => ({
   sendMonitoringConfirmationEmail: (...args: unknown[]) =>
     mockSendConfirmationEmail(...args),
 }));

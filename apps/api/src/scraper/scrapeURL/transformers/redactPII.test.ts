@@ -1,11 +1,12 @@
+import type { MockedFunction } from "vitest";
 import { performRedactPII } from "./redactPII";
 import { redactText } from "../../../lib/fire-privacy-client";
 
-jest.mock("../../../lib/fire-privacy-client", () => ({
-  redactText: jest.fn(),
+vi.mock("../../../lib/fire-privacy-client", () => ({
+  redactText: vi.fn(),
 }));
 
-const mockedRedactText = redactText as jest.MockedFunction<typeof redactText>;
+const mockedRedactText = redactText as MockedFunction<typeof redactText>;
 
 describe("performRedactPII", () => {
   const baseMeta = () =>
@@ -19,10 +20,10 @@ describe("performRedactPII", () => {
         },
       },
       logger: {
-        debug: jest.fn(),
-        info: jest.fn(),
-        warn: jest.fn(),
-        error: jest.fn(),
+        debug: vi.fn(),
+        info: vi.fn(),
+        warn: vi.fn(),
+        error: vi.fn(),
       },
     }) as any;
   const baseDocument = (overrides: Record<string, unknown> = {}) =>

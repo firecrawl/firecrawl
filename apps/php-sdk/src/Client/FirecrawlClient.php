@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Firecrawl\Client;
 
 use Firecrawl\Exceptions\FirecrawlException;
+use Firecrawl\Version;
 use Firecrawl\Exceptions\JobTimeoutException;
 use Firecrawl\Models\AgentOptions;
 use Firecrawl\Models\AgentResponse;
@@ -63,12 +64,10 @@ final class FirecrawlClient
         float $backoffFactor = self::DEFAULT_BACKOFF_FACTOR,
         ?ClientInterface $httpClient = null,
     ): self {
+        // An empty key is allowed: scrape, search, and interact fall back to the
+        // keyless free tier (rate-limited per IP). Other methods return 401 from
+        // the API until a key is provided.
         $resolvedKey = trim($apiKey ?: (getenv('FIRECRAWL_API_KEY') ?: ''));
-        if ($resolvedKey === '') {
-            throw new FirecrawlException(
-                'API key is required. Pass it directly or set the FIRECRAWL_API_KEY environment variable.',
-            );
-        }
 
         $resolvedUrl = $apiUrl ?: (getenv('FIRECRAWL_API_URL') ?: self::DEFAULT_API_URL);
 
@@ -111,6 +110,7 @@ final class FirecrawlClient
         if ($options !== null) {
             $body = array_merge($body, $options->toArray());
         }
+        $body['origin'] ??= 'php-sdk@' . Version::SDK_VERSION;
 
         $response = $this->http->post('/v2/scrape', $body);
 
@@ -141,6 +141,7 @@ final class FirecrawlClient
         if ($prompt !== null) {
             $body['prompt'] = $prompt;
         }
+        $body['origin'] ??= 'php-sdk@' . Version::SDK_VERSION;
 
         return BrowserExecuteResponse::fromArray(
             $this->http->post("/v2/scrape/{$jobId}/interact", $body),
@@ -472,6 +473,7 @@ final class FirecrawlClient
         if ($options !== null) {
             $body = array_merge($body, $options->toArray());
         }
+        $body['origin'] ??= 'php-sdk@' . Version::SDK_VERSION;
 
         $response = $this->http->post('/v2/search', $body);
 

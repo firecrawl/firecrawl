@@ -45,6 +45,7 @@ import { sanitizeUrlForTrace } from "../../lib/scrape-interact/langsmith";
 import { getScrapeZDR } from "../../lib/zdr-helpers";
 import { RequestWithAuth, ScrapeOptions } from "./types";
 import { billTeam } from "../../services/billing/credit_billing";
+import { chargeKeylessCredits, keylessTeamUuid } from "../../lib/keyless";
 import { enqueueBrowserSessionActivity } from "../../lib/browser-session-activity";
 import { logRequest } from "../../services/logging/log_job";
 import { integrationSchema } from "../../utils/integration";
@@ -141,7 +142,12 @@ export async function scrapeInteractController(
   if (!scrape) {
     return res.status(404).json({ success: false, error: "Job not found." });
   }
-  if (scrape.team_id !== req.auth.team_id) {
+  // Keyless scrapes are persisted under a deterministic per-IP UUID (the
+  // `scrapes.team_id` column is a UUID, so the raw `preview_keyless_<ip>` string
+  // can't be stored). Compare against that derived UUID for keyless requests.
+  const expectedScrapeTeam =
+    keylessTeamUuid(req.auth.team_id) ?? req.auth.team_id;
+  if (scrape.team_id !== expectedScrapeTeam) {
     return res.status(403).json({ success: false, error: "Forbidden." });
   }
 
@@ -456,6 +462,10 @@ export async function scrapeStopInteractiveBrowserController(
       durationMs,
     });
   });
+
+  // Charge the keyless free tier's per-IP daily credit budget (no-op for
+  // non-keyless teams).
+  chargeKeylessCredits(req.auth.team_id, creditsBilled).catch(() => {});
 
   logger.info("Browser session destroyed", {
     sessionDurationMs: durationMs,

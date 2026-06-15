@@ -65,7 +65,7 @@ type RequestSurface =
  * practice. NOTE: confirm the exact strings sent by firecrawl-mcp and
  * firecrawl-cli — adjust the prefixes below if they differ.
  */
-function originToSurface(origin?: string | null): RequestSurface {
+export function originToSurface(origin?: string | null): RequestSurface {
   const o = (origin ?? "").toLowerCase();
   if (o === "website" || o.includes("playground")) return "playground";
   if (o.startsWith("mcp")) return "mcp";

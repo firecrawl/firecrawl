@@ -1,5 +1,5 @@
 import { extractMetadata } from "../../scraper/scrapeURL/lib/extractMetadata";
-import { jest, describe, it, expect } from "@jest/globals";
+import { vi, describe, it, expect } from "vitest";
 
 describe("Metadata concatenation", () => {
   it("should concatenate description field into a string while preserving arrays for other metadata fields", async () => {
@@ -21,8 +21,8 @@ describe("Metadata concatenation", () => {
       url: "https://example.com",
       id: "test-id",
       logger: {
-        warn: jest.fn(),
-        error: jest.fn(),
+        warn: vi.fn(),
+        error: vi.fn(),
       },
     };
 
@@ -54,9 +54,9 @@ describe("Metadata concatenation", () => {
     `;
 
     const mockLogger = {
-      warn: jest.fn(),
-      error: jest.fn(),
-      debug: jest.fn(),
+      warn: vi.fn(),
+      error: vi.fn(),
+      debug: vi.fn(),
     };
 
     const meta: any = {
@@ -93,9 +93,9 @@ describe("Metadata concatenation", () => {
       url: "https://example.com",
       id: "test-id",
       logger: {
-        warn: jest.fn(),
-        error: jest.fn(),
-        debug: jest.fn(),
+        warn: vi.fn(),
+        error: vi.fn(),
+        debug: vi.fn(),
       },
     };
 

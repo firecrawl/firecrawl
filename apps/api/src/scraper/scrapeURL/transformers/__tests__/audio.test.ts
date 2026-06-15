@@ -8,11 +8,11 @@ describe("fetchAudio lockdown guard", () => {
   afterEach(() => {
     global.fetch = originalFetch;
     config.AVGRAB_SERVICE_URL = originalAvgrabServiceUrl;
-    jest.clearAllMocks();
+    vi.clearAllMocks();
   });
 
   function mockSuccessfulAvgrab() {
-    const fetchSpy = jest.fn(async (url: string, _init?: RequestInit) => {
+    const fetchSpy = vi.fn(async (url: string, _init?: RequestInit) => {
       if (url.endsWith("/supported-urls")) {
         return {
           ok: true,
@@ -32,7 +32,7 @@ describe("fetchAudio lockdown guard", () => {
   }
 
   it("does not issue any fetch when lockdown is true, even if audio format is requested", async () => {
-    const fetchSpy = jest.fn();
+    const fetchSpy = vi.fn();
     global.fetch = fetchSpy as any;
 
     const meta: any = {
@@ -41,7 +41,7 @@ describe("fetchAudio lockdown guard", () => {
         lockdown: true,
         formats: [{ type: "audio" }],
       },
-      logger: { warn: jest.fn(), info: jest.fn(), debug: jest.fn() },
+      logger: { warn: vi.fn(), info: vi.fn(), debug: vi.fn() },
     };
     const document: any = { markdown: "cached" };
 
@@ -53,7 +53,7 @@ describe("fetchAudio lockdown guard", () => {
   });
 
   it("returns early when audio format is not requested regardless of lockdown", async () => {
-    const fetchSpy = jest.fn();
+    const fetchSpy = vi.fn();
     global.fetch = fetchSpy as any;
 
     const meta: any = {
@@ -62,7 +62,7 @@ describe("fetchAudio lockdown guard", () => {
         lockdown: false,
         formats: [{ type: "markdown" }],
       },
-      logger: { warn: jest.fn(), info: jest.fn(), debug: jest.fn() },
+      logger: { warn: vi.fn(), info: vi.fn(), debug: vi.fn() },
     };
     const document: any = { markdown: "cached" };
 
@@ -91,7 +91,7 @@ describe("fetchAudio lockdown guard", () => {
         lockdown: false,
         formats: [{ type: "audio" }],
       },
-      logger: { warn: jest.fn(), info: jest.fn(), debug: jest.fn() },
+      logger: { warn: vi.fn(), info: vi.fn(), debug: vi.fn() },
     };
     const document: any = {};
 
@@ -118,7 +118,7 @@ describe("fetchAudio lockdown guard", () => {
         lockdown: false,
         formats: [{ type: "audio" }],
       },
-      logger: { warn: jest.fn(), info: jest.fn(), debug: jest.fn() },
+      logger: { warn: vi.fn(), info: vi.fn(), debug: vi.fn() },
     };
     const document: any = {};
 

@@ -16,6 +16,9 @@ use crate::FirecrawlError;
 #[derive(Deserialize, Serialize, Debug, Default, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct ScrapeOptions {
+    /// Origin label for request attribution (e.g., "rust-sdk@2.8.0").
+    pub origin: Option<String>,
+
     /// Output formats to include in the response.
     pub formats: Option<Vec<Format>>,
 
@@ -247,9 +250,13 @@ impl Client {
         url: impl AsRef<str>,
         options: impl Into<Option<ScrapeOptions>>,
     ) -> Result<Document, FirecrawlError> {
+        let mut options = options.into().unwrap_or_default();
+        if options.origin.is_none() {
+            options.origin = Some(format!("rust-sdk@{}", env!("CARGO_PKG_VERSION")));
+        }
         let body = ScrapeRequest {
             url: url.as_ref().to_string(),
-            options: options.into().unwrap_or_default(),
+            options,
         };
 
         let headers = self.prepare_headers(None);
@@ -360,6 +367,9 @@ impl Client {
         let mut body = options;
         if body.language.is_none() {
             body.language = Some(ScrapeExecuteLanguage::Node);
+        }
+        if body.origin.is_none() {
+            body.origin = Some(format!("rust-sdk@{}", env!("CARGO_PKG_VERSION")));
         }
 
         let response = self

@@ -171,6 +171,9 @@ export type AuthResponse =
       success: false;
       error: string;
       status: number;
+      // When true, send the agent OAuth-discovery WWW-Authenticate header even on
+      // non-401 responses (e.g. keyless cap 429s) so agents can find the key flow.
+      agentAuthDiscovery?: boolean;
     };
 
 export enum NotificationType {

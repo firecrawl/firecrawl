@@ -1424,6 +1424,7 @@ export type MapResponse =
   | ErrorResponse
   | {
       success: true;
+      id: string;
       links?: MapDocument[];
       warning?: string;
     };
@@ -2098,6 +2099,29 @@ const missingContentEntrySchema = z.strictObject({
   description: z.string().trim().max(2000).optional(),
 });
 
+function hasSubstantiveSearchFeedback(data: {
+  rating: "good" | "bad" | "partial";
+  valuableSources?: unknown[];
+  missingContent?: unknown[];
+  querySuggestions?: string;
+}): boolean {
+  const hasSources = (data.valuableSources?.length ?? 0) > 0;
+  const hasMissing = (data.missingContent?.length ?? 0) > 0;
+  const hasSuggestions =
+    !!data.querySuggestions && data.querySuggestions.length > 0;
+
+  switch (data.rating) {
+    case "good":
+      return hasSources;
+    case "partial":
+      return hasSources || hasMissing;
+    case "bad":
+      return hasMissing || hasSuggestions;
+  }
+
+  return false;
+}
+
 export const searchFeedbackSchema = z
   .strictObject({
     rating: z.enum(["good", "bad", "partial"]),
@@ -2115,27 +2139,10 @@ export const searchFeedbackSchema = z
     origin: z.string().optional().prefault("api"),
     integration: integrationSchema.optional().transform(val => val || null),
   })
-  .refine(
-    data => {
-      const hasSources = (data.valuableSources?.length ?? 0) > 0;
-      const hasMissing = (data.missingContent?.length ?? 0) > 0;
-      const hasSuggestions =
-        !!data.querySuggestions && data.querySuggestions.length > 0;
-
-      switch (data.rating) {
-        case "good":
-          return hasSources;
-        case "partial":
-          return hasSources || hasMissing;
-        case "bad":
-          return hasMissing || hasSuggestions;
-      }
-    },
-    {
-      message:
-        "Feedback must be substantive. 'good' requires at least one valuableSources entry; 'partial' requires valuableSources or at least one missingContent entry; 'bad' requires at least one missingContent entry or querySuggestions.",
-    },
-  );
+  .refine(data => hasSubstantiveSearchFeedback(data), {
+    message:
+      "Feedback must be substantive. 'good' requires at least one valuableSources entry; 'partial' requires valuableSources or at least one missingContent entry; 'bad' requires at least one missingContent entry or querySuggestions.",
+  });
 
 export type SearchFeedbackRequest = z.infer<typeof searchFeedbackSchema>;
 export type SearchFeedbackRequestInput = z.input<typeof searchFeedbackSchema>;
@@ -2152,6 +2159,119 @@ export type SearchFeedbackErrorCode =
 
 export type SearchFeedbackResponse =
   | (ErrorResponse & { feedbackErrorCode?: SearchFeedbackErrorCode })
+  | {
+      success: true;
+      feedbackId: string;
+      creditsRefunded: number;
+      alreadySubmitted?: boolean;
+      dailyCapReached?: boolean;
+      creditsRefundedToday?: number;
+      dailyRefundCap?: number;
+      warning?: string;
+    };
+
+// =============================================
+// Generic Endpoint Feedback
+// =============================================
+
+const endpointFeedbackEndpointSchema = z.enum([
+  "search",
+  "scrape",
+  "parse",
+  "map",
+]);
+
+export type EndpointFeedbackEndpoint = z.infer<
+  typeof endpointFeedbackEndpointSchema
+>;
+
+const feedbackIssueSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(80)
+  .regex(
+    /^[a-z0-9][a-z0-9_-]*$/,
+    "Issue codes must use lowercase letters, numbers, underscores, or hyphens",
+  );
+
+const MAX_FEEDBACK_METADATA_BYTES = 8 * 1024;
+const feedbackMetadataSchema = z
+  .record(z.string(), z.unknown())
+  .refine(
+    value =>
+      new TextEncoder().encode(JSON.stringify(value)).length <=
+      MAX_FEEDBACK_METADATA_BYTES,
+    "metadata must be 8KB or smaller",
+  );
+
+export const endpointFeedbackSchema = z
+  .strictObject({
+    endpoint: endpointFeedbackEndpointSchema,
+    jobId: z.uuid(),
+    rating: z.enum(["good", "bad", "partial"]),
+    issues: z.array(feedbackIssueSchema).max(20).optional(),
+    tags: z.array(feedbackIssueSchema).max(20).optional(),
+    note: z.string().trim().max(4000).optional(),
+    valuableSources: z
+      .array(
+        z.strictObject({
+          url: searchFeedbackUrlSchema,
+          reason: z.string().trim().max(1000).optional(),
+        }),
+      )
+      .max(50)
+      .optional(),
+    missingContent: z.array(missingContentEntrySchema).max(50).optional(),
+    querySuggestions: z.string().trim().max(2000).optional(),
+    url: searchFeedbackUrlSchema.optional(),
+    pageNumbers: z.array(z.number().int().positive()).max(100).optional(),
+    metadata: feedbackMetadataSchema.optional(),
+    origin: z.string().optional().prefault("api"),
+    integration: integrationSchema.optional().transform(val => val || null),
+  })
+  .refine(
+    data => {
+      return (
+        (data.issues?.length ?? 0) > 0 ||
+        (data.tags?.length ?? 0) > 0 ||
+        (data.note?.length ?? 0) > 0 ||
+        (data.valuableSources?.length ?? 0) > 0 ||
+        (data.missingContent?.length ?? 0) > 0 ||
+        !!data.querySuggestions ||
+        !!data.url ||
+        (data.pageNumbers?.length ?? 0) > 0
+      );
+    },
+    {
+      message:
+        "Feedback must include at least one substantive signal: issues, note, sources, missingContent, querySuggestions, url, or pageNumbers.",
+    },
+  )
+  .refine(
+    data => data.endpoint !== "search" || hasSubstantiveSearchFeedback(data),
+    {
+      message:
+        "Search feedback must be substantive. 'good' requires at least one valuableSources entry; 'partial' requires valuableSources or at least one missingContent entry; 'bad' requires at least one missingContent entry or querySuggestions.",
+    },
+  );
+
+export type EndpointFeedbackRequest = z.infer<typeof endpointFeedbackSchema>;
+export type EndpointFeedbackRequestInput = z.input<
+  typeof endpointFeedbackSchema
+>;
+
+export type EndpointFeedbackErrorCode =
+  | "JOB_NOT_FOUND"
+  | "FEEDBACK_WINDOW_EXPIRED"
+  | "PREVIEW_TEAM_NOT_ALLOWED"
+  | "TEAM_OPTED_OUT"
+  | "INVALID_BODY"
+  | "DB_DISABLED"
+  | "INTERNAL";
+
+export type EndpointFeedbackResponse =
+  | (ErrorResponse & { feedbackErrorCode?: EndpointFeedbackErrorCode })
   | {
       success: true;
       feedbackId: string;

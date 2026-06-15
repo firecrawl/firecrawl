@@ -1,38 +1,36 @@
+import type { MockedFunction } from "vitest";
 import type { NextFunction } from "express";
 
-jest.mock("../../services/autumn/autumn.service", () => ({
+vi.mock("../../services/autumn/autumn.service", () => ({
   autumnService: {
-    checkCredits: jest.fn(),
+    checkCredits: vi.fn(),
   },
+  CREDITS_FEATURE_ID: "CREDITS",
 }));
 
-jest.mock("../../lib/http-metrics", () => ({
-  httpRequestDurationSeconds: { observe: jest.fn() },
-  getRoutePattern: jest.fn(() => "/v1/crawl"),
+vi.mock("../../lib/http-metrics", () => ({
+  httpRequestDurationSeconds: { observe: vi.fn() },
+  getRoutePattern: vi.fn(() => "/v1/crawl"),
 }));
 
-jest.mock("../../controllers/auth", () => ({
-  authenticateUser: jest.fn(),
+vi.mock("../../controllers/auth", () => ({
+  authenticateUser: vi.fn(),
 }));
 
-jest.mock("../../services/idempotency/create", () => ({
-  createIdempotencyKey: jest.fn(),
+vi.mock("../../services/idempotency/create", () => ({
+  createIdempotencyKey: vi.fn(),
 }));
 
-jest.mock("../../services/idempotency/validate", () => ({
-  validateIdempotencyKey: jest.fn(),
+vi.mock("../../services/idempotency/validate", () => ({
+  validateIdempotencyKey: vi.fn(),
 }));
 
-jest.mock("uuid", () => ({ validate: jest.fn(() => true) }));
-
-jest.mock("geoip-country", () => ({ lookup: jest.fn(() => null) }), {
-  virtual: true,
-});
+vi.mock("geoip-country", () => ({ lookup: vi.fn(() => null) }));
 
 import { checkCreditsMiddleware } from "../../routes/shared";
 import { autumnService } from "../../services/autumn/autumn.service";
 
-const checkCreditsMock = autumnService.checkCredits as jest.MockedFunction<
+const checkCreditsMock = autumnService.checkCredits as MockedFunction<
   typeof autumnService.checkCredits
 >;
 
@@ -56,12 +54,12 @@ function runMiddleware(req: any): Promise<{ res: any; nextErr?: any }> {
     };
 
     const res: any = {
-      status: jest.fn((..._args: any[]) => {
+      status: vi.fn((..._args: any[]) => {
         // 402 / 403 paths terminate via res.status(...).json(...) without next()
         setImmediate(() => settle({ res }));
         return res;
       }),
-      json: jest.fn().mockReturnThis(),
+      json: vi.fn().mockReturnThis(),
       headersSent: false,
     };
 
@@ -72,7 +70,7 @@ function runMiddleware(req: any): Promise<{ res: any; nextErr?: any }> {
 
 describe("checkCreditsMiddleware – Autumn overage handling", () => {
   beforeEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
   });
 
   it("does not clamp the crawl limit when Autumn allows overage with 0 remaining", async () => {

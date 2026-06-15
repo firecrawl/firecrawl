@@ -67,12 +67,11 @@ describe('Firecrawl v2 Client Options', () => {
     expect(client).toBeInstanceOf(FirecrawlClient);
   });
 
-  it('should throw for empty string API key on cloud', () => {
-    expect(() => new Firecrawl('')).toThrow('API key is required');
-  });
-
-  it('should throw for whitespace-only string API key on cloud', () => {
-    expect(() => new Firecrawl('   ')).toThrow('API key is required');
+  it('should construct without an API key for the keyless free tier', () => {
+    // No key: scrape/search/interact use the keyless free tier; the SDK no
+    // longer throws at construction.
+    expect(() => new Firecrawl('')).not.toThrow();
+    expect(() => new Firecrawl('   ')).not.toThrow();
   });
 
   it('should provide v1 accessor when constructed with string', () => {

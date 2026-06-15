@@ -607,14 +607,28 @@ public class FirecrawlClient
     // INTERNAL UTILITIES
     // ================================================================
 
+    private const string SdkOrigin = "dotnet-sdk@1.7.1";
+
     private static Dictionary<string, object> BuildBody(object? options)
     {
+        Dictionary<string, object> body;
         if (options == null)
-            return new Dictionary<string, object>();
+        {
+            body = new Dictionary<string, object>();
+        }
+        else
+        {
+            var json = JsonSerializer.Serialize(options, FirecrawlHttpClient.JsonOptions);
+            body = JsonSerializer.Deserialize<Dictionary<string, object>>(json, FirecrawlHttpClient.JsonOptions)
+                ?? new Dictionary<string, object>();
+        }
 
-        var json = JsonSerializer.Serialize(options, FirecrawlHttpClient.JsonOptions);
-        return JsonSerializer.Deserialize<Dictionary<string, object>>(json, FirecrawlHttpClient.JsonOptions)
-            ?? new Dictionary<string, object>();
+        // Identify the SDK so the API can grant the keyless free tier; harmless
+        // telemetry on keyed requests.
+        if (!body.ContainsKey("origin"))
+            body["origin"] = SdkOrigin;
+
+        return body;
     }
 
     private static string BuildQuery(int? limit = null, int? offset = null, string? status = null)
@@ -643,7 +657,7 @@ public class FirecrawlClient
         return query.Count == 0 ? string.Empty : "?" + string.Join("&", query);
     }
 
-    private static string ResolveApiKey(string? apiKey)
+    private static string? ResolveApiKey(string? apiKey)
     {
         if (!string.IsNullOrWhiteSpace(apiKey))
             return apiKey;
@@ -652,8 +666,9 @@ public class FirecrawlClient
         if (!string.IsNullOrWhiteSpace(envKey))
             return envKey;
 
-        throw new FirecrawlException(
-            "API key is required. Pass it to the constructor or set the FIRECRAWL_API_KEY environment variable.");
+        // No key: scrape and search fall back to the keyless free tier (per-IP).
+        // Other endpoints return 401 from the API until a key is provided.
+        return null;
     }
 
     private static string ResolveApiUrl(string? apiUrl)

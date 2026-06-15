@@ -1,12 +1,26 @@
 import { safeMarkdownToHtml } from "../markdownToHtml";
 
+// Allow a single test to force marked.parse to throw. marked's ESM exports are
+// read-only, so we mock the module with a passthrough that delegates to the real
+// parse unless a test installs an override.
+const markedOverride = vi.hoisted(
+  () => ({ parse: null as null | ((...args: any[]) => any) }),
+);
+vi.mock("marked", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("marked")>();
+  return {
+    ...actual,
+    parse: (...args: any[]) => (markedOverride.parse ?? actual.parse)(...args),
+  };
+});
+
 const noopLogger = {
-  warn: jest.fn(),
+  warn: vi.fn(),
 } as any;
 
 describe("safeMarkdownToHtml", () => {
   afterEach(() => {
-    jest.restoreAllMocks();
+    vi.restoreAllMocks();
     noopLogger.warn.mockClear();
   });
 
@@ -35,10 +49,7 @@ describe("safeMarkdownToHtml", () => {
   });
 
   it("falls back to escaped <pre> and logs a warning when marked.parse throws", async () => {
-    // monkey-patch required since marked exports are non-configurable (can't use jest.spyOn)
-    const markedModule = require("marked");
-    const originalParse = markedModule.parse;
-    markedModule.parse = () => {
+    markedOverride.parse = () => {
       throw new RangeError("Maximum call stack size exceeded");
     };
 
@@ -61,7 +72,7 @@ describe("safeMarkdownToHtml", () => {
         }),
       );
     } finally {
-      markedModule.parse = originalParse;
+      markedOverride.parse = null;
     }
   });
 });

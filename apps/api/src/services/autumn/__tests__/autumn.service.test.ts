@@ -2,71 +2,96 @@
  * Unit tests for AutumnService.
  *
  * All external I/O is mocked:
- *   - autumnClient  →  jest.fn() stubs on customers / entities / track
+ *   - autumnClient  →  vi.fn() stubs on customers / entities / track
  *   - dbRr          →  stubbed Drizzle query builder
  */
 
-import { jest } from "@jest/globals";
+import { vi } from "vitest";
 
 // ---------------------------------------------------------------------------
-// Mocks — must be declared before the import under test so Jest hoists them.
+// Mocks — vi.mock is hoisted above the module body, so the mock backing objects
+// and the mutable state the factories read must live in vi.hoisted() too.
 // ---------------------------------------------------------------------------
 
-const mockTrack = jest
-  .fn<(args: any) => Promise<void>>()
-  .mockResolvedValue(undefined);
-const mockCheck = jest
-  .fn<(args: any) => Promise<any>>()
-  .mockResolvedValue({ allowed: true, customerId: "org-1", balance: null });
-const mockFinalize = jest
-  .fn<(args: any) => Promise<void>>()
-  .mockResolvedValue(undefined);
-const mockGetOrCreate = jest
-  .fn<(args: any) => Promise<unknown>>()
-  .mockResolvedValue({ id: "org-1" });
-const mockEntityGet = jest.fn<(args: any) => Promise<unknown>>();
-const mockEntityCreate = jest.fn<(args: any) => Promise<unknown>>();
+const {
+  mockTrack,
+  mockCheck,
+  mockFinalize,
+  mockGetOrCreate,
+  mockEntityGet,
+  mockEntityCreate,
+  mockAutumnClient,
+  makeDbStub,
+  state,
+} = vi.hoisted(() => {
+  const mockTrack = vi
+    .fn<(args: any) => Promise<void>>()
+    .mockResolvedValue(undefined);
+  const mockCheck = vi
+    .fn<(args: any) => Promise<any>>()
+    .mockResolvedValue({ allowed: true, customerId: "org-1", balance: null });
+  const mockFinalize = vi
+    .fn<(args: any) => Promise<void>>()
+    .mockResolvedValue(undefined);
+  const mockGetOrCreate = vi
+    .fn<(args: any) => Promise<unknown>>()
+    .mockResolvedValue({ id: "org-1" });
+  const mockEntityGet = vi.fn<(args: any) => Promise<unknown>>();
+  const mockEntityCreate = vi.fn<(args: any) => Promise<unknown>>();
 
-const mockAutumnClient = {
-  customers: { getOrCreate: mockGetOrCreate },
-  entities: { get: mockEntityGet, create: mockEntityCreate },
-  balances: { finalize: mockFinalize },
-  check: mockCheck,
-  track: mockTrack,
-};
+  const mockAutumnClient = {
+    customers: { getOrCreate: mockGetOrCreate },
+    entities: { get: mockEntityGet, create: mockEntityCreate },
+    balances: { finalize: mockFinalize },
+    check: mockCheck,
+    track: mockTrack,
+  };
 
-// Mutable reference so individual tests can set it to null to simulate missing key.
-let autumnClientRef: typeof mockAutumnClient | null = mockAutumnClient;
-
-jest.mock("../client", () => ({
-  get autumnClient() {
-    return autumnClientRef;
-  },
-}));
-
-// Minimal Drizzle query-builder stub: .select().from().where().limit() → rows.
-const makeDbStub = (data: unknown) => ({
-  select: () => ({
-    from: () => ({
-      where: () => ({
-        limit: () => Promise.resolve(data ? [data] : []),
+  // Minimal Drizzle query-builder stub: .select().from().where().limit() → rows.
+  const makeDbStub = (data: unknown) => ({
+    select: () => ({
+      from: () => ({
+        where: () => ({
+          limit: () => Promise.resolve(data ? [data] : []),
+        }),
       }),
     }),
-  }),
+  });
+
+  return {
+    mockTrack,
+    mockCheck,
+    mockFinalize,
+    mockGetOrCreate,
+    mockEntityGet,
+    mockEntityCreate,
+    mockAutumnClient,
+    makeDbStub,
+    // Mutable state individual tests tweak (e.g. set state.autumnClientRef = null to
+    // simulate a missing API key).
+    state: {
+      autumnClientRef: mockAutumnClient as typeof mockAutumnClient | null,
+      supabaseStubData: { data: { org_id: "org-1" }, error: null } as {
+        data: unknown;
+        error: unknown;
+      },
+    },
+  };
 });
 
-let supabaseStubData: { data: unknown; error: unknown } = {
-  data: { org_id: "org-1" },
-  error: null,
-};
-
-jest.mock("../../../db/connection", () => ({
-  get dbRr() {
-    return makeDbStub(supabaseStubData.data);
+vi.mock("../client", () => ({
+  get autumnClient() {
+    return state.autumnClientRef;
   },
 }));
 
-jest.mock("../../../config", () => ({
+vi.mock("../../../db/connection", () => ({
+  get dbRr() {
+    return makeDbStub(state.supabaseStubData.data);
+  },
+}));
+
+vi.mock("../../../config", () => ({
   config: {
     AUTUMN_REQUEST_TRACK_EXPERIMENT: undefined,
     AUTUMN_REQUEST_TRACK_EXPERIMENT_PERCENT: 100,
@@ -101,9 +126,9 @@ function makeEntity(usage: number) {
 // ---------------------------------------------------------------------------
 
 beforeEach(() => {
-  jest.clearAllMocks();
-  autumnClientRef = mockAutumnClient;
-  supabaseStubData = { data: { org_id: "org-1" }, error: null };
+  vi.clearAllMocks();
+  state.autumnClientRef = mockAutumnClient;
+  state.supabaseStubData = { data: { org_id: "org-1" }, error: null };
   config.AUTUMN_REQUEST_TRACK_EXPERIMENT = undefined;
   config.AUTUMN_REQUEST_TRACK_EXPERIMENT_PERCENT = 100;
   mockCheck.mockResolvedValue({
@@ -281,7 +306,7 @@ describe("ensureTrackingContext warm-cache short-circuit", () => {
 
 describe("lockCredits", () => {
   it("returns skipped when autumnClient is null", async () => {
-    autumnClientRef = null;
+    state.autumnClientRef = null;
     const svc = makeService();
     const result = await svc.lockCredits({ teamId: "team-1", value: 10 });
     expect(result).toEqual({ status: "skipped" });
@@ -357,7 +382,7 @@ describe("lockCredits", () => {
 
 describe("checkCredits", () => {
   it("returns null when autumnClient is null", async () => {
-    autumnClientRef = null;
+    state.autumnClientRef = null;
     const svc = makeService();
     const result = await svc.checkCredits({ teamId: "team-1", value: 10 });
     expect(result).toBeNull();
@@ -422,7 +447,7 @@ describe("checkCredits", () => {
 
 describe("trackCredits", () => {
   it("returns false when autumnClient is null", async () => {
-    autumnClientRef = null;
+    state.autumnClientRef = null;
     const svc = makeService();
     const result = await svc.trackCredits({ teamId: "team-1", value: 10 });
     expect(result).toBe(false);
@@ -504,7 +529,7 @@ describe("finalizeCreditsLock", () => {
   });
 
   it("is a no-op when autumnClient is null", async () => {
-    autumnClientRef = null;
+    state.autumnClientRef = null;
     const svc = makeService();
     await svc.finalizeCreditsLock({ lockId: "lock-123", action: "release" });
     expect(mockFinalize).not.toHaveBeenCalled();
@@ -550,7 +575,7 @@ describe("refundCredits", () => {
   });
 
   it("is a no-op when autumnClient is null", async () => {
-    autumnClientRef = null;
+    state.autumnClientRef = null;
     const svc = makeService();
     await svc.refundCredits({ teamId: "team-1", value: 30 });
     expect(mockTrack).not.toHaveBeenCalled();

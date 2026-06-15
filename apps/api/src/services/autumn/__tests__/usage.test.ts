@@ -1,8 +1,8 @@
-import { jest, beforeEach } from "@jest/globals";
+import { vi, beforeEach } from "vitest";
 
-const mockAggregate = jest.fn<(args: any) => Promise<any>>();
-const mockEntitiesGet = jest.fn<(args: any) => Promise<any>>();
-const mockCustomersGetOrCreate = jest.fn<(args: any) => Promise<any>>();
+const mockAggregate = vi.fn<(args: any) => Promise<any>>();
+const mockEntitiesGet = vi.fn<(args: any) => Promise<any>>();
+const mockCustomersGetOrCreate = vi.fn<(args: any) => Promise<any>>();
 
 let autumnClientRef: {
   events: { aggregate: typeof mockAggregate };
@@ -21,13 +21,13 @@ let teamLookup = {
 
 let apiKeysData: Array<{ id: number; name: string }> = [];
 
-jest.mock("../client", () => ({
+vi.mock("../client", () => ({
   get autumnClient() {
     return autumnClientRef;
   },
 }));
 
-jest.mock("../../../db/connection", () => ({
+vi.mock("../../../db/connection", () => ({
   get dbRr() {
     return {
       select: () => ({
@@ -53,7 +53,7 @@ import {
 } from "../usage";
 
 beforeEach(() => {
-  jest.clearAllMocks();
+  vi.clearAllMocks();
   autumnClientRef = {
     events: { aggregate: mockAggregate },
     entities: { get: mockEntitiesGet },

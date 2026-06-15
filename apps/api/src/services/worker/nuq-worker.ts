@@ -1,11 +1,7 @@
 import "dotenv/config";
 import "../sentry";
 import { setSentryServiceTag } from "../sentry";
-import {
-  nuqGetLocalMetrics,
-  nuqHealthCheck,
-  scrapeQueue,
-} from "./nuq";
+import { nuqGetLocalMetrics, nuqHealthCheck, scrapeQueue } from "./nuq";
 import { runNuqWorker } from "./nuq-worker-runner";
 
 (async () => {

@@ -156,9 +156,15 @@ export async function applySearchHighlights(
   for (const result of response.web ?? []) {
     if (!result.url) continue;
     tasks.push(
-      highlightOne(result.url, query, logger, h => {
-        result.description = h;
-      }, counters),
+      highlightOne(
+        result.url,
+        query,
+        logger,
+        h => {
+          result.description = h;
+        },
+        counters,
+      ),
     );
   }
 
@@ -167,9 +173,15 @@ export async function applySearchHighlights(
     if (!result.url) continue;
     const url = result.url;
     tasks.push(
-      highlightOne(url, query, logger, h => {
-        result.snippet = h;
-      }, counters),
+      highlightOne(
+        url,
+        query,
+        logger,
+        h => {
+          result.snippet = h;
+        },
+        counters,
+      ),
     );
   }
 
@@ -183,5 +195,9 @@ export async function applySearchHighlights(
     timeTakenMs: Date.now() - start,
   });
 
-  return { attempted, indexHits: counters.indexHits, replaced: counters.replaced };
+  return {
+    attempted,
+    indexHits: counters.indexHits,
+    replaced: counters.replaced,
+  };
 }

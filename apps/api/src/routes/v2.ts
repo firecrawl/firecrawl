@@ -5,9 +5,11 @@ import { RateLimiterMode } from "../types";
 import { SEARCH_CREDITS_FEATURE_ID } from "../services/autumn/autumn.service";
 import expressWs from "express-ws";
 import { searchController } from "../controllers/v2/search";
+import { feedbackController } from "../controllers/v2/feedback/controller";
 import { searchFeedbackController } from "../controllers/v2/search-feedback";
 import { x402SearchController } from "../controllers/v2/x402-search";
 import { scrapeController } from "../controllers/v2/scrape";
+import { keylessEligibilityController } from "../controllers/v2/keyless-eligibility";
 import {
   parseController,
   parseMultipartPayloadMiddleware,
@@ -234,9 +236,13 @@ v2Router.use(requestTimingMiddleware("v2"));
 //   ),
 // );
 
+// Internal: trusted-proxy (hosted MCP) keyless eligibility probe. Secret-gated
+// inside the controller; no auth middleware.
+v2Router.get("/keyless/eligibility", wrap(keylessEligibilityController));
+
 v2Router.post(
   "/search",
-  authMiddleware(RateLimiterMode.Search),
+  authMiddleware(RateLimiterMode.Search, { allowKeyless: true }),
   countryCheck,
   checkCreditsMiddleware(undefined, SEARCH_CREDITS_FEATURE_ID),
   blocklistMiddleware,
@@ -251,6 +257,12 @@ v2Router.post(
 );
 
 v2Router.post(
+  "/feedback",
+  authMiddleware(RateLimiterMode.Account),
+  wrap(feedbackController),
+);
+
+v2Router.post(
   "/parse",
   authMiddleware(RateLimiterMode.Scrape),
   countryCheck,
@@ -262,7 +274,7 @@ v2Router.post(
 
 v2Router.post(
   "/scrape",
-  authMiddleware(RateLimiterMode.Scrape),
+  authMiddleware(RateLimiterMode.Scrape, { allowKeyless: true }),
   countryCheck,
   checkCreditsMiddleware(1),
   blocklistMiddleware,
@@ -278,14 +290,14 @@ v2Router.get(
 
 v2Router.post(
   "/scrape/:jobId/interact",
-  authMiddleware(RateLimiterMode.BrowserExecute),
+  authMiddleware(RateLimiterMode.BrowserExecute, { allowKeyless: true }),
   validateJobIdParam,
   wrap(scrapeInteractController),
 );
 
 v2Router.delete(
   "/scrape/:jobId/interact",
-  authMiddleware(RateLimiterMode.BrowserExecute),
+  authMiddleware(RateLimiterMode.BrowserExecute, { allowKeyless: true }),
   validateJobIdParam,
   wrap(scrapeStopInteractiveBrowserController),
 );

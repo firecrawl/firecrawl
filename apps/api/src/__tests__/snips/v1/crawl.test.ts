@@ -9,7 +9,7 @@ import {
   scrapeTimeout,
 } from "./lib";
 import request from "supertest";
-import { it, expect } from "@jest/globals";
+import { it, expect } from "vitest";
 import {
   ALLOW_TEST_SUITE_WEBSITE,
   describeIf,
