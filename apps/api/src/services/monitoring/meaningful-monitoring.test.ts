@@ -1,18 +1,19 @@
-const mockJudge: jest.Mock<any, any> = jest.fn();
-const mockSave: jest.Mock<any, any> = jest.fn(async () => ({
+import type { Mock } from "vitest";
+const mockJudge: Mock<any, any> = vi.fn();
+const mockSave: Mock<any, any> = vi.fn(async () => ({
   textBytes: 1,
   jsonBytes: 1,
 }));
-const mockGetJob: jest.Mock<any, any> = jest.fn();
+const mockGetJob: Mock<any, any> = vi.fn();
 
-jest.mock("uuid", () => ({ v7: () => "test-uuid" }));
-jest.mock("./judgeChange", () => ({
+vi.mock("uuid", () => ({ v7: () => "test-uuid" }));
+vi.mock("./judgeChange", () => ({
   judgeChange: (args: any) => mockJudge(args),
 }));
-jest.mock("../../lib/gcs-jobs", () => ({
+vi.mock("../../lib/gcs-jobs", () => ({
   getJobFromGCS: (id: any) => mockGetJob(id),
 }));
-jest.mock("../../lib/gcs-monitoring", () => ({
+vi.mock("../../lib/gcs-monitoring", () => ({
   saveMonitorDiffArtifact: (key: any, artifact: any) => mockSave(key, artifact),
   monitorDiffGcsKey: () => "fake-gcs-key",
 }));

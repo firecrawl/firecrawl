@@ -1,3 +1,4 @@
+import type { Mock } from "vitest";
 import { trackMonitorTargetInterest } from "../../lib/tracking";
 import {
   getRemovedMonitorTargets,
@@ -7,8 +8,8 @@ import {
 } from "./interest";
 import type { MonitorCheckRow, MonitorRow, MonitorTarget } from "./types";
 
-jest.mock("../../lib/tracking", () => ({
-  trackMonitorTargetInterest: jest.fn(),
+vi.mock("../../lib/tracking", () => ({
+  trackMonitorTargetInterest: vi.fn(),
 }));
 
 const scrapeTarget: MonitorTarget = {
@@ -37,8 +38,8 @@ const monitor = {
 
 describe("monitor interest emit helpers", () => {
   beforeEach(() => {
-    jest.clearAllMocks();
-    (trackMonitorTargetInterest as jest.Mock).mockResolvedValue(undefined);
+    vi.clearAllMocks();
+    (trackMonitorTargetInterest as Mock).mockResolvedValue(undefined);
   });
 
   it("finds configured targets removed by an update", () => {

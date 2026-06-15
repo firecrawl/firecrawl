@@ -1,3 +1,4 @@
+import type { Mock } from "vitest";
 import {
   getJobPriority,
   addJobPriority,
@@ -6,18 +7,18 @@ import {
 import { redisEvictConnection } from "../../services/redis";
 import {} from "../../types";
 
-jest.mock("../../services/queue-service", () => ({
+vi.mock("../../services/queue-service", () => ({
   redisConnection: {
-    sadd: jest.fn(),
-    srem: jest.fn(),
-    scard: jest.fn(),
-    expire: jest.fn(),
+    sadd: vi.fn(),
+    srem: vi.fn(),
+    scard: vi.fn(),
+    expire: vi.fn(),
   },
 }));
 
 describe("Job Priority Tests", () => {
   afterEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
   });
 
   test("addJobPriority should add job_id to the set and set expiration", async () => {
@@ -47,12 +48,12 @@ describe("Job Priority Tests", () => {
   test("getJobPriority should return correct priority based on plan and set length", async () => {
     const team_id = "team1";
     const plan = "standard";
-    (redisEvictConnection.scard as jest.Mock).mockResolvedValue(150);
+    (redisEvictConnection.scard as Mock).mockResolvedValue(150);
 
     const priority = await getJobPriority({ team_id });
     expect(priority).toBe(10);
 
-    (redisEvictConnection.scard as jest.Mock).mockResolvedValue(250);
+    (redisEvictConnection.scard as Mock).mockResolvedValue(250);
     const priorityExceeded = await getJobPriority({ team_id });
     expect(priorityExceeded).toBe(20); // basePriority + Math.ceil((250 - 200) * 0.4)
   });
@@ -60,22 +61,22 @@ describe("Job Priority Tests", () => {
   test("getJobPriority should handle different plans correctly", async () => {
     const team_id = "team1";
 
-    (redisEvictConnection.scard as jest.Mock).mockResolvedValue(50);
+    (redisEvictConnection.scard as Mock).mockResolvedValue(50);
     let plan = "hobby";
     let priority = await getJobPriority({ team_id });
     expect(priority).toBe(10);
 
-    (redisEvictConnection.scard as jest.Mock).mockResolvedValue(150);
+    (redisEvictConnection.scard as Mock).mockResolvedValue(150);
     plan = "hobby";
     priority = await getJobPriority({ team_id });
     expect(priority).toBe(25); // basePriority + Math.ceil((150 - 50) * 0.3)
 
-    (redisEvictConnection.scard as jest.Mock).mockResolvedValue(25);
+    (redisEvictConnection.scard as Mock).mockResolvedValue(25);
     plan = "free";
     priority = await getJobPriority({ team_id });
     expect(priority).toBe(10);
 
-    (redisEvictConnection.scard as jest.Mock).mockResolvedValue(60);
+    (redisEvictConnection.scard as Mock).mockResolvedValue(60);
     plan = "free";
     priority = await getJobPriority({ team_id });
     expect(priority).toBe(28); // basePriority + Math.ceil((60 - 25) * 0.5)
@@ -93,7 +94,7 @@ describe("Job Priority Tests", () => {
     );
 
     // Clear the mock calls
-    (redisEvictConnection.expire as jest.Mock).mockClear();
+    (redisEvictConnection.expire as Mock).mockClear();
 
     // Add another job
     await addJobPriority(team_id, job_id2);
@@ -107,7 +108,7 @@ describe("Job Priority Tests", () => {
     const team_id = "team1";
     const job_id = "job1";
 
-    jest.useFakeTimers();
+    vi.useFakeTimers();
 
     await addJobPriority(team_id, job_id);
     expect(redisEvictConnection.expire).toHaveBeenCalledWith(
@@ -116,21 +117,21 @@ describe("Job Priority Tests", () => {
     );
 
     // Fast-forward time by 59 seconds
-    jest.advanceTimersByTime(59000);
+    vi.advanceTimersByTime(59000);
 
     // The set should still exist
     expect(redisEvictConnection.scard).not.toHaveBeenCalled();
 
     // Fast-forward time by 2 more seconds (total 61 seconds)
-    jest.advanceTimersByTime(2000);
+    vi.advanceTimersByTime(2000);
 
     // Check if the set has been removed (scard should return 0)
-    (redisEvictConnection.scard as jest.Mock).mockResolvedValue(0);
+    (redisEvictConnection.scard as Mock).mockResolvedValue(0);
     const setSize = await redisEvictConnection.scard(
       `limit_team_id:${team_id}`,
     );
     expect(setSize).toBe(0);
 
-    jest.useRealTimers();
+    vi.useRealTimers();
   });
 });

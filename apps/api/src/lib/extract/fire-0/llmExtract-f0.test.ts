@@ -1,26 +1,30 @@
+import type { Mock } from "vitest";
 import { trimToTokenLimit_F0 } from "./llmExtract-f0";
 import { encoding_for_model } from "@dqbd/tiktoken";
 
-jest.mock("@dqbd/tiktoken", () => ({
-  encoding_for_model: jest.fn(),
+vi.mock("@dqbd/tiktoken", () => ({
+  encoding_for_model: vi.fn(),
 }));
 
 describe("trimToTokenLimit_F0", () => {
   // Exercise the real tiktoken encoder/decoder rather than a mock, so the
   // encode -> slice -> decode round-trip (and the freeze regression it guards
   // against) is tested faithfully.
-  const { encoding_for_model: realEncodingForModel } = jest.requireActual(
-    "@dqbd/tiktoken",
-  ) as typeof import("@dqbd/tiktoken");
+  let realEncodingForModel: typeof import("@dqbd/tiktoken").encoding_for_model;
+
+  beforeAll(async () => {
+    ({ encoding_for_model: realEncodingForModel } =
+      await vi.importActual<typeof import("@dqbd/tiktoken")>("@dqbd/tiktoken"));
+  });
 
   // Records the length of every string handed to encode(), so we can prove the
   // synchronous tokenizer never has to chew through an unbounded input.
   let encodeInputLengths: number[];
 
   beforeEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
     encodeInputLengths = [];
-    (encoding_for_model as jest.Mock).mockImplementation((model: any) => {
+    (encoding_for_model as Mock).mockImplementation((model: any) => {
       const encoder = realEncodingForModel(model);
       const realEncode = encoder.encode.bind(encoder);
       encoder.encode = ((input: string) => {
@@ -75,7 +79,7 @@ describe("trimToTokenLimit_F0", () => {
 
   it("falls back to a char-based estimate when the encoder throws", () => {
     const text = "This is some text to test fallback";
-    (encoding_for_model as jest.Mock).mockImplementationOnce(() => {
+    (encoding_for_model as Mock).mockImplementationOnce(() => {
       throw new Error("Encoder error");
     });
 

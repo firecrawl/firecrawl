@@ -1,42 +1,63 @@
-import { jest } from "@jest/globals";
+import { vi } from "vitest";
 
-const captureException = jest.fn();
-jest.mock("@sentry/node", () => ({
+// vi.mock is hoisted above the file's static imports, so any value a factory
+// reads at build time must be created in vi.hoisted(). (Jest left jest.mock
+// un-hoisted here because `jest` was imported from @jest/globals.) The `redis`
+// stub below stays module-level: its factory only captures it lazily.
+const {
+  captureException,
+  logger,
+  withAuth,
+  trackCredits,
+  refundCredits,
+  billTeam6,
+  setCachedACUC,
+  setCachedACUCTeam,
+} = vi.hoisted(() => {
+  const logger: any = {
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+    child: vi.fn(() => logger),
+  };
+  return {
+    captureException: vi.fn(),
+    logger,
+    withAuth: vi.fn((fn: any) => fn),
+    trackCredits: vi.fn<(args: any) => Promise<boolean>>(),
+    refundCredits: vi.fn<(args: any) => Promise<void>>(),
+    billTeam6: vi.fn<(params: any) => Promise<{ api_key: string }[]>>(),
+    setCachedACUC: vi.fn(),
+    setCachedACUCTeam: vi.fn(),
+  };
+});
+
+vi.mock("@sentry/node", () => ({
   captureException,
 }));
 
-const logger = {
-  info: jest.fn(),
-  warn: jest.fn(),
-  error: jest.fn(),
-  child: jest.fn(() => logger),
-};
-jest.mock("../../../lib/logger", () => ({
+vi.mock("../../../lib/logger", () => ({
   logger,
 }));
 
-const withAuth = jest.fn((fn: any) => fn);
-jest.mock("../../../lib/withAuth", () => ({
+vi.mock("../../../lib/withAuth", () => ({
   withAuth,
 }));
 
-const trackCredits = jest.fn<(args: any) => Promise<boolean>>();
-const refundCredits = jest.fn<(args: any) => Promise<void>>();
-jest.mock("../../autumn/autumn.service", () => ({
+vi.mock("../../autumn/autumn.service", () => ({
   autumnService: {
     trackCredits,
     refundCredits,
   },
+  featureIdForBillingEndpoint: (endpoint?: string) =>
+    endpoint === "search" ? "SEARCH_CREDITS" : "CREDITS",
 }));
 
-const billTeam6 = jest.fn<(params: any) => Promise<{ api_key: string }[]>>();
-jest.mock("../../../db/rpc", () => ({
+vi.mock("../../../db/rpc", () => ({
   billTeam6,
 }));
 
-const setCachedACUC = jest.fn();
-const setCachedACUCTeam = jest.fn();
-jest.mock("../../../controllers/auth", () => ({
+vi.mock("../../../controllers/auth", () => ({
   setCachedACUC,
   setCachedACUCTeam,
 }));
@@ -45,7 +66,7 @@ let queue: string[] = [];
 const billedTeams = new Set<string>();
 const locks = new Map<string, string>();
 const redis = {
-  set: jest.fn(
+  set: vi.fn(
     async (
       key: string,
       value: string,
@@ -67,32 +88,32 @@ const redis = {
       return "OK";
     },
   ),
-  del: jest.fn(async (key: string) => {
+  del: vi.fn(async (key: string) => {
     if (key !== "billing_batch_lock") {
       throw new Error("unexpected redis.del key");
     }
     return locks.delete(key) ? 1 : 0;
   }),
-  lpop: jest.fn(async (key: string) => {
+  lpop: vi.fn(async (key: string) => {
     if (key !== "billing_batch") {
       throw new Error("unexpected redis.lpop key");
     }
     return queue.shift() ?? null;
   }),
-  llen: jest.fn(async (key: string) => {
+  llen: vi.fn(async (key: string) => {
     if (key !== "billing_batch") {
       throw new Error("unexpected redis.llen key");
     }
     return queue.length;
   }),
-  rpush: jest.fn(async (key: string, value: string) => {
+  rpush: vi.fn(async (key: string, value: string) => {
     if (key !== "billing_batch") {
       throw new Error("unexpected redis.rpush key");
     }
     queue.push(value);
     return queue.length;
   }),
-  sadd: jest.fn(async (key: string, teamId: string) => {
+  sadd: vi.fn(async (key: string, teamId: string) => {
     if (key !== "billed_teams") {
       throw new Error("unexpected redis.sadd key");
     }
@@ -100,7 +121,7 @@ const redis = {
     return 1;
   }),
 };
-jest.mock("../../queue-service", () => ({
+vi.mock("../../queue-service", () => ({
   getRedisConnection: () => redis,
 }));
 
@@ -120,7 +141,7 @@ function makeOp(overrides: Record<string, unknown> = {}) {
 }
 
 beforeEach(() => {
-  jest.clearAllMocks();
+  vi.clearAllMocks();
   queue = [];
   billedTeams.clear();
   locks.clear();

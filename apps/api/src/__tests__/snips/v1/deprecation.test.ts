@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll } from "@jest/globals";
+import { describe, it, expect, beforeAll } from "vitest";
 import request from "supertest";
 import { TEST_API_URL } from "../lib";
 import { idmux, Identity } from "./lib";

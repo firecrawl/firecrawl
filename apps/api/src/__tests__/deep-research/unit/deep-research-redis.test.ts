@@ -1,3 +1,4 @@
+import type { Mock } from "vitest";
 import { redisEvictConnection } from "../../../services/redis";
 import {
   saveDeepResearch,
@@ -7,12 +8,12 @@ import {
   StoredDeepResearch,
 } from "../../../lib/deep-research/deep-research-redis";
 
-jest.mock("../../../services/queue-service", () => ({
+vi.mock("../../../services/queue-service", () => ({
   redisConnection: {
-    set: jest.fn(),
-    get: jest.fn(),
-    expire: jest.fn(),
-    pttl: jest.fn(),
+    set: vi.fn(),
+    get: vi.fn(),
+    expire: vi.fn(),
+    pttl: vi.fn(),
   },
 }));
 
@@ -33,7 +34,7 @@ describe("Deep Research Redis Operations", () => {
   };
 
   beforeEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
   });
 
   describe("saveDeepResearch", () => {
@@ -53,7 +54,7 @@ describe("Deep Research Redis Operations", () => {
 
   describe("getDeepResearch", () => {
     it("should retrieve research data from Redis", async () => {
-      (redisEvictConnection.get as jest.Mock).mockResolvedValue(
+      (redisEvictConnection.get as Mock).mockResolvedValue(
         JSON.stringify(mockResearch),
       );
 
@@ -65,7 +66,7 @@ describe("Deep Research Redis Operations", () => {
     });
 
     it("should return null when research not found", async () => {
-      (redisEvictConnection.get as jest.Mock).mockResolvedValue(null);
+      (redisEvictConnection.get as Mock).mockResolvedValue(null);
 
       const result = await getDeepResearch("non-existent-id");
       expect(result).toBeNull();
@@ -74,7 +75,7 @@ describe("Deep Research Redis Operations", () => {
 
   describe("updateDeepResearch", () => {
     it("should update existing research with new data", async () => {
-      (redisEvictConnection.get as jest.Mock).mockResolvedValue(
+      (redisEvictConnection.get as Mock).mockResolvedValue(
         JSON.stringify(mockResearch),
       );
 
@@ -111,7 +112,7 @@ describe("Deep Research Redis Operations", () => {
     });
 
     it("should do nothing if research not found", async () => {
-      (redisEvictConnection.get as jest.Mock).mockResolvedValue(null);
+      (redisEvictConnection.get as Mock).mockResolvedValue(null);
 
       await updateDeepResearch("test-id", { status: "completed" });
 
@@ -123,7 +124,7 @@ describe("Deep Research Redis Operations", () => {
   describe("getDeepResearchExpiry", () => {
     it("should return correct expiry date", async () => {
       const mockTTL = 3600000; // 1 hour in milliseconds
-      (redisEvictConnection.pttl as jest.Mock).mockResolvedValue(mockTTL);
+      (redisEvictConnection.pttl as Mock).mockResolvedValue(mockTTL);
 
       const result = await getDeepResearchExpiry("test-id");
 

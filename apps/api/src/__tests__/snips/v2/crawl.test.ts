@@ -20,7 +20,7 @@ import {
   TEST_API_URL,
 } from "./lib";
 import request from "./lib";
-import { describe, it, expect } from "@jest/globals";
+import { describe, it, expect } from "vitest";
 
 let identity: Identity;
 

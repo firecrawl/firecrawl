@@ -1,15 +1,16 @@
+import type { Mocked, MockedFunction } from "vitest";
 // crawler.test.ts
 import { WebCrawler } from "../crawler";
 import axios from "axios";
 import robotsParser from "robots-parser";
 
-jest.mock("axios");
-jest.mock("robots-parser");
+vi.mock("axios");
+vi.mock("robots-parser");
 
 describe("WebCrawler", () => {
   let crawler: WebCrawler;
-  const mockAxios = axios as jest.Mocked<typeof axios>;
-  const mockRobotsParser = robotsParser as jest.MockedFunction<
+  const mockAxios = axios as Mocked<typeof axios>;
+  const mockRobotsParser = robotsParser as MockedFunction<
     typeof robotsParser
   >;
 
@@ -27,12 +28,12 @@ describe("WebCrawler", () => {
     });
 
     mockRobotsParser.mockReturnValue({
-      isAllowed: jest.fn().mockReturnValue(true),
-      isDisallowed: jest.fn().mockReturnValue(false),
-      getMatchingLineNumber: jest.fn().mockReturnValue(0),
-      getCrawlDelay: jest.fn().mockReturnValue(0),
-      getSitemaps: jest.fn().mockReturnValue([]),
-      getPreferredHost: jest.fn().mockReturnValue("example.com"),
+      isAllowed: vi.fn().mockReturnValue(true),
+      isDisallowed: vi.fn().mockReturnValue(false),
+      getMatchingLineNumber: vi.fn().mockReturnValue(0),
+      getCrawlDelay: vi.fn().mockReturnValue(0),
+      getSitemaps: vi.fn().mockReturnValue([]),
+      getPreferredHost: vi.fn().mockReturnValue("example.com"),
     });
   });
 
@@ -50,7 +51,7 @@ describe("WebCrawler", () => {
     });
 
     // Mock sitemap fetching function to return more links than the limit
-    crawler["tryFetchSitemapLinks"] = jest
+    crawler["tryFetchSitemapLinks"] = vi
       .fn()
       .mockResolvedValue([
         initialUrl,
