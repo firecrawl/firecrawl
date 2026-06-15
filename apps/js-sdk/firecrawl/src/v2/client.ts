@@ -7,6 +7,7 @@ import {
 import { parse as parseMethod } from "./methods/parse";
 import { search } from "./methods/search";
 import { map as mapMethod } from "./methods/map";
+import { feedback as feedbackMethod, searchFeedback as searchFeedbackMethod } from "./methods/feedback";
 import {
   startCrawl,
   getCrawlStatus,
@@ -50,6 +51,9 @@ import type {
   ScrapeOptions,
   SearchData,
   SearchRequest,
+  EndpointFeedbackRequest,
+  FeedbackResponse,
+  SearchFeedbackRequest,
   MapData,
   MapOptions,
   CrawlResponse,
@@ -234,6 +238,25 @@ export class FirecrawlClient {
    */
   async search(query: string, req: Omit<SearchRequest, "query"> = {}): Promise<SearchData> {
     return search(this.http, { query, ...req });
+  }
+
+  /**
+   * Submit feedback for a v2 job.
+   * @param request Feedback payload with endpoint, job id, rating, and supporting signals.
+   * @returns Feedback record and refund details.
+   */
+  async feedback(request: EndpointFeedbackRequest): Promise<FeedbackResponse> {
+    return feedbackMethod(this.http, request);
+  }
+
+  /**
+   * Submit feedback for a search job.
+   * @param jobId Search job id returned by search.
+   * @param request Search feedback payload.
+   * @returns Feedback record and refund details.
+   */
+  async searchFeedback(jobId: string, request: SearchFeedbackRequest): Promise<FeedbackResponse> {
+    return searchFeedbackMethod(this.http, jobId, request);
   }
 
   // Research
@@ -618,4 +641,3 @@ export class FirecrawlClient {
 }
 
 export default FirecrawlClient;
-

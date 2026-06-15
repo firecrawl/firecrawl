@@ -4,8 +4,8 @@ type ClientKind = "primary" | "rr";
 
 type CallRecord = { client: ClientKind; op: ChainOp };
 
-const fromPrimary = jest.fn();
-const fromRR = jest.fn();
+const fromPrimary = vi.fn();
+const fromRR = vi.fn();
 const calls: CallRecord[] = [];
 
 // Each test queues responses in the order the code under test will execute
@@ -73,7 +73,7 @@ function makeChain(client: ClientKind): any {
   return builder;
 }
 
-jest.mock("../../db/connection", () => ({
+vi.mock("../../db/connection", () => ({
   get db() {
     return makeChain("primary");
   },

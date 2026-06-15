@@ -44,12 +44,12 @@ describe("deriveIndexVariantKey", () => {
 
   it("changes when any exact-match dimension changes", () => {
     const base = deriveIndexVariantKey(baseKeyParams);
-    expect(deriveIndexVariantKey({ ...baseKeyParams, isMobile: true })).not.toBe(
-      base,
-    );
-    expect(deriveIndexVariantKey({ ...baseKeyParams, blockAds: false })).not.toBe(
-      base,
-    );
+    expect(
+      deriveIndexVariantKey({ ...baseKeyParams, isMobile: true }),
+    ).not.toBe(base);
+    expect(
+      deriveIndexVariantKey({ ...baseKeyParams, blockAds: false }),
+    ).not.toBe(base);
     expect(
       deriveIndexVariantKey({ ...baseKeyParams, isStealth: true }),
     ).not.toBe(base);
@@ -209,9 +209,9 @@ describe("isNegativeStillValid", () => {
 
   it("is invalid for a larger window that looks further back than confirmed", () => {
     // 14-day window now reaches earlier than the 2-day confirmed-empty left edge.
-    expect(
-      isNegativeStillValid(emptyFrom, 14 * 24 * 60 * 60 * 1000, Tq),
-    ).toBe(false);
+    expect(isNegativeStillValid(emptyFrom, 14 * 24 * 60 * 60 * 1000, Tq)).toBe(
+      false,
+    );
   });
 
   it("is exactly valid at the boundary", () => {

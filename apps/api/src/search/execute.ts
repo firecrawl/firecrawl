@@ -194,7 +194,11 @@ export async function executeSearch(
   // Runs after scraping (mergeScrapedContent rebuilds the result objects, so
   // highlight mutations must come last to survive). Uses the user's original
   // query, not the domain-filtered upstream query.
-  if (options.highlights && flags?.highlightsBeta === true && highlightsEnvReady()) {
+  if (
+    options.highlights &&
+    flags?.highlightsBeta === true &&
+    highlightsEnvReady()
+  ) {
     await applySearchHighlights(searchResponse, query, logger);
   }
 

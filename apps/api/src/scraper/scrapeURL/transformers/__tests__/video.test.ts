@@ -9,11 +9,11 @@ describe("fetchVideo", () => {
     global.fetch = originalFetch;
     config.AVGRAB_SERVICE_URL = originalAvgrabServiceUrl;
     resetVideoTransformerCacheForTests();
-    jest.clearAllMocks();
+    vi.clearAllMocks();
   });
 
   function mockSuccessfulAvgrab() {
-    const fetchSpy = jest.fn(async (url: string, _init?: RequestInit) => {
+    const fetchSpy = vi.fn(async (url: string, _init?: RequestInit) => {
       if (url.endsWith("/supported-urls")) {
         return {
           ok: true,
@@ -43,7 +43,7 @@ describe("fetchVideo", () => {
       thumbnail: "https://cdn.example.com/poster.jpg",
       mimeType: "video/mp4",
     };
-    const fetchSpy = jest.fn(async (url: string) => {
+    const fetchSpy = vi.fn(async (url: string) => {
       if (url.endsWith("/videos")) {
         return {
           ok: true,
@@ -62,7 +62,7 @@ describe("fetchVideo", () => {
         lockdown: false,
         formats: [{ type: "video" }],
       },
-      logger: { warn: jest.fn(), info: jest.fn(), debug: jest.fn() },
+      logger: { warn: vi.fn(), info: vi.fn(), debug: vi.fn() },
     };
     const document: any = { rawHtml: "<html></html>" };
 
@@ -84,7 +84,7 @@ describe("fetchVideo", () => {
   });
 
   it("does not issue any fetch when lockdown is true, even if video format is requested", async () => {
-    const fetchSpy = jest.fn();
+    const fetchSpy = vi.fn();
     global.fetch = fetchSpy as any;
 
     const meta: any = {
@@ -93,7 +93,7 @@ describe("fetchVideo", () => {
         lockdown: true,
         formats: [{ type: "video" }],
       },
-      logger: { warn: jest.fn(), info: jest.fn(), debug: jest.fn() },
+      logger: { warn: vi.fn(), info: vi.fn(), debug: vi.fn() },
     };
     const document: any = { markdown: "cached" };
 
@@ -105,7 +105,7 @@ describe("fetchVideo", () => {
   });
 
   it("returns early when video format is not requested regardless of lockdown", async () => {
-    const fetchSpy = jest.fn();
+    const fetchSpy = vi.fn();
     global.fetch = fetchSpy as any;
 
     const meta: any = {
@@ -114,7 +114,7 @@ describe("fetchVideo", () => {
         lockdown: false,
         formats: [{ type: "markdown" }],
       },
-      logger: { warn: jest.fn(), info: jest.fn(), debug: jest.fn() },
+      logger: { warn: vi.fn(), info: vi.fn(), debug: vi.fn() },
     };
     const document: any = { markdown: "cached" };
 
@@ -124,7 +124,7 @@ describe("fetchVideo", () => {
   });
 
   it("returns a warning when avgrab is not configured", async () => {
-    const fetchSpy = jest.fn();
+    const fetchSpy = vi.fn();
     global.fetch = fetchSpy as any;
     config.AVGRAB_SERVICE_URL = undefined;
 
@@ -134,7 +134,7 @@ describe("fetchVideo", () => {
         lockdown: false,
         formats: [{ type: "video" }],
       },
-      logger: { warn: jest.fn(), info: jest.fn(), debug: jest.fn() },
+      logger: { warn: vi.fn(), info: vi.fn(), debug: vi.fn() },
     };
     const document: any = {};
 
@@ -167,7 +167,7 @@ describe("fetchVideo", () => {
         lockdown: false,
         formats: [{ type: "video" }],
       },
-      logger: { warn: jest.fn(), info: jest.fn(), debug: jest.fn() },
+      logger: { warn: vi.fn(), info: vi.fn(), debug: vi.fn() },
     };
     const document: any = {};
 
@@ -187,7 +187,7 @@ describe("fetchVideo", () => {
   });
 
   it("skips generic discovery for YouTube URLs and preserves legacy video output", async () => {
-    const fetchSpy = jest.fn(async (url: string, _init?: RequestInit) => {
+    const fetchSpy = vi.fn(async (url: string, _init?: RequestInit) => {
       if (url.endsWith("/videos")) {
         throw new Error("Generic discovery should not run for YouTube URLs");
       }
@@ -212,7 +212,7 @@ describe("fetchVideo", () => {
         lockdown: false,
         formats: [{ type: "video" }],
       },
-      logger: { warn: jest.fn(), info: jest.fn(), debug: jest.fn() },
+      logger: { warn: vi.fn(), info: vi.fn(), debug: vi.fn() },
     };
     const document: any = {};
 
@@ -228,7 +228,7 @@ describe("fetchVideo", () => {
   });
 
   it("falls back to legacy download when generic discovery request fails", async () => {
-    const fetchSpy = jest.fn(async (url: string, _init?: RequestInit) => {
+    const fetchSpy = vi.fn(async (url: string, _init?: RequestInit) => {
       if (url.endsWith("/videos")) {
         throw new Error("connection reset");
       }
@@ -253,7 +253,7 @@ describe("fetchVideo", () => {
         lockdown: false,
         formats: [{ type: "video" }],
       },
-      logger: { warn: jest.fn(), info: jest.fn(), debug: jest.fn() },
+      logger: { warn: vi.fn(), info: vi.fn(), debug: vi.fn() },
     };
     const document: any = {};
 
@@ -276,7 +276,7 @@ describe("fetchVideo", () => {
         lockdown: false,
         formats: [{ type: "video" }],
       },
-      logger: { warn: jest.fn(), info: jest.fn(), debug: jest.fn() },
+      logger: { warn: vi.fn(), info: vi.fn(), debug: vi.fn() },
     };
     const document: any = {};
 
@@ -302,7 +302,7 @@ describe("fetchVideo", () => {
         lockdown: false,
         formats: [{ type: "video" }],
       },
-      logger: { warn: jest.fn(), info: jest.fn(), debug: jest.fn() },
+      logger: { warn: vi.fn(), info: vi.fn(), debug: vi.fn() },
     };
     const document: any = {};
 

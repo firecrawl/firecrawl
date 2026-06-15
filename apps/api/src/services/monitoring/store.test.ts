@@ -1,4 +1,4 @@
-jest.mock("uuid", () => ({
+vi.mock("uuid", () => ({
   v7: () => "test-uuid-v7",
 }));
 

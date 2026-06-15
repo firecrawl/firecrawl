@@ -1,45 +1,51 @@
-import { jest } from "@jest/globals";
+import { vi } from "vitest";
 
-const captureException = jest.fn();
-jest.mock("@sentry/node", () => ({
+// vi.mock is hoisted; anything its factories reference must be created in
+// vi.hoisted() (also hoisted). Under Jest these worked because importing `jest`
+// from @jest/globals disables jest.mock hoisting.
+const { captureException, logger, values, insert } = vi.hoisted(() => {
+  const logger: any = {
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+    debug: vi.fn(),
+    child: vi.fn(() => logger),
+  };
+  const values = vi.fn<(data: any) => Promise<void>>();
+  const insert = vi.fn(() => ({ values }));
+  return { captureException: vi.fn(), logger, values, insert };
+});
+
+vi.mock("@sentry/node", () => ({
   captureException,
 }));
 
-jest.mock("../../config", () => ({
+vi.mock("../../config", () => ({
   config: {
     GCS_BUCKET_NAME: undefined,
     USE_DB_AUTHENTICATION: true,
   },
 }));
 
-const logger = {
-  info: jest.fn(),
-  warn: jest.fn(),
-  error: jest.fn(),
-  debug: jest.fn(),
-  child: jest.fn(() => logger),
-};
-jest.mock("../../lib/logger", () => ({
+vi.mock("../../lib/logger", () => ({
   logger,
 }));
 
-const values = jest.fn<(data: any) => Promise<void>>();
-const insert = jest.fn(() => ({ values }));
-jest.mock("../../db/connection", () => ({
+vi.mock("../../db/connection", () => ({
   db: { insert },
 }));
 
-jest.mock("../../lib/gcs-jobs", () => ({
-  saveDeepResearchToGCS: jest.fn(),
-  saveExtractToGCS: jest.fn(),
-  saveLlmsTxtToGCS: jest.fn(),
-  saveMapToGCS: jest.fn(),
-  saveScrapeToGCS: jest.fn(),
-  saveSearchToGCS: jest.fn(),
+vi.mock("../../lib/gcs-jobs", () => ({
+  saveDeepResearchToGCS: vi.fn(),
+  saveExtractToGCS: vi.fn(),
+  saveLlmsTxtToGCS: vi.fn(),
+  saveMapToGCS: vi.fn(),
+  saveScrapeToGCS: vi.fn(),
+  saveSearchToGCS: vi.fn(),
 }));
 
-jest.mock("../../lib/extract/extract-redis", () => ({
-  saveExtractResult: jest.fn(),
+vi.mock("../../lib/extract/extract-redis", () => ({
+  saveExtractResult: vi.fn(),
 }));
 
 import { logSearch, type LoggedSearch } from "./log_job";
@@ -67,7 +73,7 @@ function makeSearch(overrides: Partial<LoggedSearch> = {}): LoggedSearch {
 
 describe("logSearch", () => {
   beforeEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
     values.mockResolvedValue(undefined);
   });
 

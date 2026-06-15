@@ -612,7 +612,7 @@ jobs:
           echo "docker:docker@127.0.0.1:4500" > /tmp/fdb.cluster
 
       - name: Run NuQ FDB core tests
-        run: npx jest src/__tests__/nuq-fdb --reporters=default
+        run: npx vitest run src/__tests__/nuq-fdb --reporter=default
         working-directory: apps/api
         env:
           FDB_CLUSTER_FILE: /tmp/fdb.cluster

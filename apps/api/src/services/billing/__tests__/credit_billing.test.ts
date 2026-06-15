@@ -1,46 +1,54 @@
-import { jest } from "@jest/globals";
+import { vi } from "vitest";
 
-const withAuth = jest.fn((fn: any) => fn);
-jest.mock("../../../lib/withAuth", () => ({
+// vi.mock is hoisted; factory-referenced values must be created in vi.hoisted().
+// (Jest didn't hoist jest.mock here because `jest` was imported from @jest/globals.)
+const { withAuth, queueBillingOperation, trackCredits, refundCredits } =
+  vi.hoisted(() => ({
+    withAuth: vi.fn((fn: any) => fn),
+    queueBillingOperation: vi.fn<(args: any[]) => Promise<any>>(),
+    trackCredits: vi.fn<(args: any) => Promise<boolean>>(),
+    refundCredits: vi.fn<(args: any) => Promise<void>>(),
+  }));
+
+vi.mock("../../../lib/withAuth", () => ({
   withAuth,
 }));
 
-const queueBillingOperation = jest.fn<(args: any[]) => Promise<any>>();
-jest.mock("../batch_billing", () => ({
+vi.mock("../batch_billing", () => ({
   queueBillingOperation: (...args: any[]) => queueBillingOperation(args),
 }));
 
-const trackCredits = jest.fn<(args: any) => Promise<boolean>>();
-const refundCredits = jest.fn<(args: any) => Promise<void>>();
-jest.mock("../../autumn/autumn.service", () => ({
+vi.mock("../../autumn/autumn.service", () => ({
   autumnService: {
     trackCredits,
     refundCredits,
   },
+  featureIdForBillingEndpoint: (endpoint?: string) =>
+    endpoint === "search" ? "SEARCH_CREDITS" : "CREDITS",
 }));
 
-jest.mock("../../notification/email_notification", () => ({
-  sendNotification: jest.fn(),
+vi.mock("../../notification/email_notification", () => ({
+  sendNotification: vi.fn(),
 }));
-jest.mock("../auto_charge", () => ({
-  autoCharge: jest.fn(),
+vi.mock("../auto_charge", () => ({
+  autoCharge: vi.fn(),
 }));
-jest.mock("../../redis", () => ({
-  getValue: jest.fn(),
-  setValue: jest.fn(),
+vi.mock("../../redis", () => ({
+  getValue: vi.fn(),
+  setValue: vi.fn(),
 }));
-jest.mock("../../../lib/logger", () => ({
+vi.mock("../../../lib/logger", () => ({
   logger: {
-    info: jest.fn(),
-    warn: jest.fn(),
-    error: jest.fn(),
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
   },
 }));
 
 import { billTeam } from "../credit_billing";
 
 beforeEach(() => {
-  jest.clearAllMocks();
+  vi.clearAllMocks();
   queueBillingOperation.mockResolvedValue({ success: true });
   trackCredits.mockResolvedValue(true);
   refundCredits.mockResolvedValue(undefined);

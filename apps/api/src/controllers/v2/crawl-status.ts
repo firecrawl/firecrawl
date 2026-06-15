@@ -374,16 +374,15 @@ export async function crawlStatusController(
   const status = outputBulkA.status ?? "scraping";
   const createdAtMs = sc?.createdAt;
   const lastDoneMs =
-    status !== "scraping" ? await getLastDoneJobTimestamp(req.params.jobId) : null;
+    status !== "scraping"
+      ? await getLastDoneJobTimestamp(req.params.jobId)
+      : null;
   const completedAtMs =
     status === "completed" || status === "failed" || status === "cancelled"
-      ? lastDoneMs ?? createdAtMs ?? null
+      ? (lastDoneMs ?? createdAtMs ?? null)
       : null;
   const durationSeconds = createdAtMs
-    ? Math.max(
-        0,
-        ((completedAtMs ?? Date.now()) - createdAtMs) / 1000,
-      )
+    ? Math.max(0, ((completedAtMs ?? Date.now()) - createdAtMs) / 1000)
     : undefined;
 
   return res.status(200).json({
@@ -396,7 +395,9 @@ export async function crawlStatusController(
     next: outputBulkB.next,
     data: outputBulkB.data,
     ...(createdAtMs && { createdAt: new Date(createdAtMs).toISOString() }),
-    ...(completedAtMs && { completedAt: new Date(completedAtMs).toISOString() }),
+    ...(completedAtMs && {
+      completedAt: new Date(completedAtMs).toISOString(),
+    }),
     ...(durationSeconds !== undefined && { duration: durationSeconds }),
     ...(warning && { warning }),
   });

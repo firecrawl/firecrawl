@@ -273,9 +273,7 @@ export async function scrapeURLWithIndex(
               const value =
                 !data || data.length === 0 ? null : (data[0].max_age ?? null);
               if (useIndexCache) {
-                setCachedMaxAge(domainHash, value, meta.logger).catch(
-                  () => {},
-                );
+                setCachedMaxAge(domainHash, value, meta.logger).catch(() => {});
               }
               return { value: value ?? defaultMaxAge, source: "dynamic_db" };
             } catch (error) {
@@ -283,11 +281,10 @@ export async function scrapeURLWithIndex(
               return { value: defaultMaxAge, source: "default" };
             }
           })(),
-          new Promise<{ value: number; source: MaxAgeSource }>(
-            resolve =>
-              setTimeout(() => {
-                resolve({ value: defaultMaxAge, source: "default" });
-              }, 200),
+          new Promise<{ value: number; source: MaxAgeSource }>(resolve =>
+            setTimeout(() => {
+              resolve({ value: defaultMaxAge, source: "default" });
+            }, 200),
           ),
         ]);
         maxAge = resolved.value;
@@ -404,7 +401,10 @@ export async function scrapeURLWithIndex(
     const negStart = Date.now();
     const neg = await getCachedNegative(variantKey, meta.logger);
     timingsCache += Date.now() - negStart;
-    if (neg !== null && isNegativeStillValid(neg.emptyFrom, maxAge, Date.now())) {
+    if (
+      neg !== null &&
+      isNegativeStillValid(neg.emptyFrom, maxAge, Date.now())
+    ) {
       negativeHit = true;
     }
   }
