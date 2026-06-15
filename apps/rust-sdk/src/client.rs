@@ -208,18 +208,17 @@ mod tests {
     }
 
     #[test]
-    fn test_new_client_requires_api_key_for_cloud() {
-        let result = Client::new_selfhosted(CLOUD_API_URL, None::<&str>);
-        assert!(result.is_err());
+    fn test_new_client_allows_no_api_key_for_cloud_keyless() {
+        // Keyless free tier: a cloud client with no API key is now allowed.
+        let client = Client::new_selfhosted(CLOUD_API_URL, None::<&str>).unwrap();
+        assert_eq!(client.api_key, None);
     }
 
     #[test]
-    fn test_new_client_rejects_empty_api_key_for_cloud() {
-        let result = Client::new_selfhosted(CLOUD_API_URL, Some(""));
-        assert!(result.is_err());
-
-        let result = Client::new_selfhosted(CLOUD_API_URL, Some("   "));
-        assert!(result.is_err());
+    fn test_new_client_allows_empty_api_key_for_cloud_keyless() {
+        // Empty/whitespace keys are no longer rejected (treated as keyless).
+        assert!(Client::new_selfhosted(CLOUD_API_URL, Some("")).is_ok());
+        assert!(Client::new_selfhosted(CLOUD_API_URL, Some("   ")).is_ok());
     }
 
     #[test]
@@ -244,11 +243,11 @@ mod tests {
 
     #[test]
     fn test_url_normalization_trailing_slash() {
-        // Cloud URL with trailing slash should still require API key
-        let result = Client::new_selfhosted("https://api.firecrawl.dev/", None::<&str>);
-        assert!(result.is_err());
+        // Cloud URL with trailing slash is normalized; no API key required (keyless).
+        let client = Client::new_selfhosted("https://api.firecrawl.dev/", None::<&str>).unwrap();
+        assert_eq!(client.api_url, "https://api.firecrawl.dev");
 
-        // Should work with API key
+        // Should also work with an API key
         let client = Client::new_selfhosted("https://api.firecrawl.dev/", Some("key")).unwrap();
         assert_eq!(client.api_url, "https://api.firecrawl.dev");
 
