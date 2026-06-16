@@ -1,8 +1,6 @@
 import request from "supertest";
 import { config } from "../../config";
 import { UNSUPPORTED_SITE_MESSAGE } from "../../lib/strings";
-const fs = require("fs");
-const path = require("path");
 
 const TEST_URL = "http://127.0.0.1:3002";
 

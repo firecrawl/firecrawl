@@ -128,11 +128,8 @@ export async function crawlController(req: Request, res: Response) {
     }
 
     const limitCheck = req.body?.crawlerOptions?.limit ?? 1;
-    const {
-      success: creditsCheckSuccess,
-      message: creditsCheckMessage,
-      remainingCredits,
-    } = await checkTeamCredits(chunk, team_id, limitCheck);
+    const { success: creditsCheckSuccess, remainingCredits } =
+      await checkTeamCredits(chunk, team_id, limitCheck);
 
     if (!creditsCheckSuccess) {
       return res.status(402).json({

@@ -14,7 +14,6 @@ export {
   removeConcurrencyLimitActiveJob,
 } from "./concurrency-redis";
 import {
-  getTeamQueueLimit,
   MAX_BACKLOG_TIMEOUT_MS,
   constructConcurrencyLimitKey,
   pushConcurrencyLimitActiveJob,

@@ -168,24 +168,6 @@ export async function getBrowserSessionByBrowserId(
   }
 }
 
-export async function updateBrowserSessionStatus(
-  id: string,
-  status: BrowserSessionStatus,
-): Promise<void> {
-  try {
-    await db
-      .update(schema.browser_sessions)
-      .set({
-        status,
-        updated_at: new Date().toISOString(),
-        deleted_at: status === "destroyed" ? new Date().toISOString() : null,
-      })
-      .where(eq(schema.browser_sessions.id, id));
-  } catch (error) {
-    logger.warn("Failed to update browser session status", { error, id });
-  }
-}
-
 export async function claimBrowserSessionDestroyed(
   id: string,
 ): Promise<boolean> {

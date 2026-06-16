@@ -1,11 +1,5 @@
 import { describeIf } from "../lib";
-import {
-  scrape,
-  scrapeRaw,
-  scrapeTimeout,
-  idmux,
-  Identity,
-} from "./lib";
+import { scrape, scrapeRaw, scrapeTimeout, idmux, Identity } from "./lib";
 
 const HAS_WIKIPEDIA = !!(
   process.env.WIKIPEDIA_ENTERPRISE_USERNAME &&

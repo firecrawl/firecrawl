@@ -3,7 +3,7 @@ import { db } from "../../db/connection";
 import * as schema from "../../db/schema";
 import { config } from "../../config";
 import { logger } from "../logger";
-import { normalizeUrl, normalizeUrlOnlyHostname } from "../canonical-url";
+import { normalizeUrlOnlyHostname } from "../canonical-url";
 
 interface LlmsTextCache {
   origin_url: string;

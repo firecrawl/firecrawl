@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll } from "vitest";
+import { it, expect, beforeAll } from "vitest";
 import { deepResearch, idmux, Identity } from "./lib";
 import { describeIf, HAS_AI, TEST_PRODUCTION } from "../lib";
 

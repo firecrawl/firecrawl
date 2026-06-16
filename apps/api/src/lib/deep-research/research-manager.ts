@@ -35,13 +35,9 @@ export class ResearchStateManager {
   private sources: DeepResearchSource[] = [];
   constructor(
     private readonly researchId: string,
-    private readonly teamId: string,
     private readonly maxDepth: number,
-    private readonly logger: Logger,
-    private readonly topic: string,
   ) {
     this.totalExpectedSteps = maxDepth * 5; // 5 steps per depth level
-    this.nextSearchTopic = topic;
   }
 
   hasSeenUrl(url: string): boolean {

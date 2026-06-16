@@ -8,7 +8,6 @@ import {
 } from "../lib";
 import {
   scrape,
-  scrapeRaw,
   scrapeWithFailure,
   scrapeTimeout,
   idmux,

@@ -12,7 +12,6 @@ import { UNSUPPORTED_SITE_MESSAGE } from "../../lib/strings";
 import { isUrlBlocked } from "../../scraper/WebScraper/utils/blocklist";
 import { logger as _logger } from "../../lib/logger";
 import { logRequest } from "../../services/logging/log_job";
-import { config } from "../../config";
 import { getScrapeZDR } from "../../lib/zdr-helpers";
 
 /**

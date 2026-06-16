@@ -38,13 +38,7 @@ export async function performDeepResearch(options: DeepResearchServiceOptions) {
 
   logger.debug("[Deep Research] Starting research with options:", { options });
 
-  const state = new ResearchStateManager(
-    researchId,
-    teamId,
-    options.maxDepth,
-    logger,
-    options.query,
-  );
+  const state = new ResearchStateManager(researchId, options.maxDepth);
   const llmService = new ResearchLLMService(logger);
 
   const acuc = await getACUCTeam(teamId);
@@ -398,7 +392,6 @@ export async function performDeepResearch(options: DeepResearchServiceOptions) {
       },
     ]);
 
-    const progress = state.getProgress();
     logger.debug("[Deep Research] Research completed successfully");
 
     const credits_billed = Math.min(urlsAnalyzed, options.maxUrls);

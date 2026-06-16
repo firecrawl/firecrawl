@@ -15,11 +15,7 @@ import { redisEvictConnection } from "../../../src/services/redis";
 import { addScrapeJob, waitForJob } from "../../services/queue-jobs";
 import * as Sentry from "@sentry/node";
 import { getJobPriority } from "../../lib/job-priority";
-import {
-  fromLegacyScrapeOptions,
-  TeamFlags,
-  toLegacyDocument,
-} from "../v1/types";
+import { TeamFlags, toLegacyDocument } from "../v1/types";
 import { fromV0Combo } from "../v2/types";
 import { ScrapeJobTimeoutError } from "../../lib/error";
 import { scrapeQueue } from "../../services/worker/nuq-router";
@@ -232,13 +228,15 @@ export async function searchController(req: Request, res: Response) {
       removeTags: req.body.pageOptions?.removeTags ?? [],
       fallback: req.body.pageOptions?.fallback ?? false,
     };
-    const origin = req.body.origin ?? "api";
 
     const searchOptions = req.body.searchOptions ?? { limit: 5 };
 
     try {
-      const { success: creditsCheckSuccess, message: creditsCheckMessage } =
-        await checkTeamCredits(chunk, team_id, 1);
+      const { success: creditsCheckSuccess } = await checkTeamCredits(
+        chunk,
+        team_id,
+        1,
+      );
       if (!creditsCheckSuccess) {
         return res.status(402).json({ error: "Insufficient credits" });
       }

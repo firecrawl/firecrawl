@@ -5,15 +5,9 @@ import {
   POLL_FLOOR_MS,
   POLL_CAP_MS,
 } from "./schema";
-import {
-  firePdfAsyncFallbackTotal,
-  type FallbackReason,
-} from "./metrics";
+import { firePdfAsyncFallbackTotal, type FallbackReason } from "./metrics";
 
-export function defaultSleep(
-  ms: number,
-  signal?: AbortSignal,
-): Promise<void> {
+export function defaultSleep(ms: number, signal?: AbortSignal): Promise<void> {
   return new Promise((resolve, reject) => {
     const handle = setTimeout(() => {
       signal?.removeEventListener("abort", onAbort);
@@ -29,9 +23,7 @@ export function defaultSleep(
       if (signal.aborted) {
         clearTimeout(handle);
         reject(
-          signal.reason instanceof Error
-            ? signal.reason
-            : new Error("Aborted"),
+          signal.reason instanceof Error ? signal.reason : new Error("Aborted"),
         );
         return;
       }

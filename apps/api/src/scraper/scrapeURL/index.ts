@@ -1,6 +1,5 @@
 import { Logger } from "winston";
 import { config } from "../../config";
-import * as Sentry from "@sentry/node";
 import { withSpan, setSpanAttributes } from "../../lib/otel-tracer";
 import { captureExceptionWithZdrCheck } from "../../services/sentry";
 

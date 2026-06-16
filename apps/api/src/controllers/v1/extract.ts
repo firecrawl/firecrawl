@@ -1,5 +1,5 @@
 import { v7 as uuidv7 } from "uuid";
-import { Request, Response } from "express";
+import { Response } from "express";
 import {
   RequestWithAuth,
   ExtractRequest,
@@ -22,7 +22,6 @@ import { createWebhookSender, WebhookEvent } from "../../services/webhook";
 import { logRequest } from "../../services/logging/log_job";
 import { getScrapeZDR } from "../../lib/zdr-helpers";
 
-import { config } from "../../config";
 async function oldExtract(
   req: RequestWithAuth<{}, ExtractResponse, ExtractRequest>,
   res: Response<ExtractResponse>,
@@ -102,7 +101,6 @@ export async function extractController(
   req: RequestWithAuth<{}, ExtractResponse, ExtractRequest>,
   res: Response<ExtractResponse>,
 ) {
-  const selfHosted = config.USE_DB_AUTHENTICATION !== true;
   const originalRequest = { ...req.body };
   req.body = extractRequestSchema.parse(req.body);
 

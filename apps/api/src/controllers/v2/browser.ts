@@ -10,7 +10,6 @@ import {
   getBrowserSessionByBrowserId,
   listBrowserSessions,
   updateBrowserSessionActivity,
-  updateBrowserSessionStatus,
   updateBrowserSessionCreditsUsed,
   claimBrowserSessionDestroyed,
   invalidateActiveBrowserSessionCount,

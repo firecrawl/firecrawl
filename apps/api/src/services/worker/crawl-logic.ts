@@ -55,9 +55,6 @@ export async function finishCrawlSuper(job: NuQJob<any>) {
       (a, b) => a.timestamp - b.timestamp,
     );
     // const jobStatuses = await Promise.all(jobs.map((x) => x.getState()));
-    const jobStatus = sc.cancelled // || jobStatuses.some((x) => x === "failed")
-      ? "failed"
-      : "completed";
 
     const fullDocs = jobs
       .map(x =>

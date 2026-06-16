@@ -3,10 +3,10 @@ import { safeMarkdownToHtml } from "../markdownToHtml";
 // Allow a single test to force marked.parse to throw. marked's ESM exports are
 // read-only, so we mock the module with a passthrough that delegates to the real
 // parse unless a test installs an override.
-const markedOverride = vi.hoisted(
-  () => ({ parse: null as null | ((...args: any[]) => any) }),
-);
-vi.mock("marked", async (importOriginal) => {
+const markedOverride = vi.hoisted(() => ({
+  parse: null as null | ((...args: any[]) => any),
+}));
+vi.mock("marked", async importOriginal => {
   const actual = await importOriginal<typeof import("marked")>();
   return {
     ...actual,

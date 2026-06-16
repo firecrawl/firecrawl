@@ -13,13 +13,11 @@ import {
   encodeJson,
   timeBucket,
   TIME_BUCKETS,
-  F_GATED,
   F_CRAWL_GATED,
   F_COUNTABLE,
   F_GACC,
 } from "./keyspace";
 import {
-  ONE,
   MINUS_ONE,
   EMPTY,
   MAX_STALLS,
@@ -33,7 +31,6 @@ import {
   admitThroughTeamGate,
   deleteJobRecords,
   popTeamPending,
-  setGroupJobIndex,
   bumpGroupStatusCount,
   bumpTeamActive,
   GroupJobIndexValue,

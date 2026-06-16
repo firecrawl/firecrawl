@@ -36,16 +36,6 @@ const cosineSimilarity = (vec1: number[], vec2: number[]): number => {
   return dotProduct / (magnitude1 * magnitude2);
 };
 
-// Function to convert text to vector
-const textToVector = (searchQuery: string, text: string): number[] => {
-  const words = searchQuery.toLowerCase().split(/\W+/);
-  return words.map(word => {
-    const count = (text.toLowerCase().match(new RegExp(word, "g")) || [])
-      .length;
-    return count / text.length;
-  });
-};
-
 async function performRanking(
   linksWithContext: string[],
   links: string[],

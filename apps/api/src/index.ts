@@ -79,7 +79,7 @@ if (config.EXPRESS_TRUST_PROXY) {
 const serverAdapter = new ExpressAdapter();
 serverAdapter.setBasePath(`/admin/${config.BULL_AUTH_KEY}/queues`);
 
-const { addQueue, removeQueue, setQueues, replaceQueues } = createBullBoard({
+createBullBoard({
   queues: [
     new BullMQAdapter(getGenerateLlmsTxtQueue()),
     new BullMQAdapter(getDeepResearchQueue()),

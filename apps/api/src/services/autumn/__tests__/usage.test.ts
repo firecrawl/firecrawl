@@ -113,7 +113,6 @@ describe("getTeamBalance", () => {
   // sane date from whatever epoch format it receives.
   it("Bug 1 — would produce year ~58000 if timestamps were erroneously multiplied by 1000", async () => {
     const startMs = 1712444524000;
-    const endMs = 1715036524000;
 
     // Simulating what the OLD code would have done: new Date(startMs * 1000)
     const brokenDate = new Date(startMs * 1000);

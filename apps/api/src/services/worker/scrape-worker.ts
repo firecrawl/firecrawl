@@ -1,6 +1,5 @@
 import { configDotenv } from "dotenv";
 import { config } from "../../config";
-import * as Sentry from "@sentry/node";
 import { applyZdrScope, captureExceptionWithZdrCheck } from "../sentry";
 import http from "http";
 import https from "https";
@@ -95,7 +94,6 @@ import {
 configDotenv();
 
 const jobLockExtendInterval = config.JOB_LOCK_EXTEND_INTERVAL;
-const jobLockExtensionTime = config.JOB_LOCK_EXTENSION_TIME;
 
 if (require.main === module) {
   cacheableLookup.install(http.globalAgent);

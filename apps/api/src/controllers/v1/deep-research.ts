@@ -1,8 +1,7 @@
 import { v7 as uuidv7 } from "uuid";
-import { Request, Response } from "express";
+import { Response } from "express";
 import { ErrorResponse, extractOptions, RequestWithAuth } from "./types";
 import { getDeepResearchQueue } from "../../services/queue-service";
-import * as Sentry from "@sentry/node";
 import { saveDeepResearch } from "../../lib/deep-research/deep-research-redis";
 import { z } from "zod";
 import { logRequest } from "../../services/logging/log_job";

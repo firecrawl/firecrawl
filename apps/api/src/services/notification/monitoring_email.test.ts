@@ -12,7 +12,7 @@ const {
   mockResendSend: vi.fn(),
 }));
 
-vi.mock("../monitoring/email_recipients", async (importOriginal) => {
+vi.mock("../monitoring/email_recipients", async importOriginal => {
   const actual =
     await importOriginal<typeof import("../monitoring/email_recipients")>();
   return {

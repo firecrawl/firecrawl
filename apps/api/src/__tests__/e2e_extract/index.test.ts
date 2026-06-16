@@ -1,10 +1,5 @@
 import request from "supertest";
 import { config } from "../../config";
-import {
-  FirecrawlCrawlResponse,
-  FirecrawlCrawlStatusResponse,
-  FirecrawlScrapeResponse,
-} from "../../types";
 
 const TEST_URL = "http://127.0.0.1:3002";
 

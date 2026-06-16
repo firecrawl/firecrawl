@@ -40,9 +40,7 @@ describe("Wikipedia URL parser", () => {
       });
 
       it("parses Japanese Wikipedia (3-letter lang code)", () => {
-        const result = parseWikimediaUrl(
-          "https://ja.wikipedia.org/wiki/日本",
-        );
+        const result = parseWikimediaUrl("https://ja.wikipedia.org/wiki/日本");
         expect(result).toEqual({
           articleName: "日本",
           lang: "ja",
@@ -234,9 +232,7 @@ describe("Wikipedia URL parser", () => {
     describe("rejected URLs", () => {
       it("returns null for non-Wikipedia URLs", () => {
         expect(parseWikimediaUrl("https://google.com")).toBeNull();
-        expect(
-          parseWikimediaUrl("https://example.com/wiki/test"),
-        ).toBeNull();
+        expect(parseWikimediaUrl("https://example.com/wiki/test")).toBeNull();
       });
 
       it("returns null for Wikipedia URLs without /wiki/ path", () => {
@@ -247,9 +243,7 @@ describe("Wikipedia URL parser", () => {
       });
 
       it("returns null for main Wikipedia domain without language prefix", () => {
-        expect(
-          parseWikimediaUrl("https://wikipedia.org/wiki/Test"),
-        ).toBeNull();
+        expect(parseWikimediaUrl("https://wikipedia.org/wiki/Test")).toBeNull();
       });
 
       it("returns null for invalid URLs", () => {
@@ -279,22 +273,16 @@ describe("Wikipedia URL parser", () => {
 
       it("returns null for Wikipedia Special pages", () => {
         expect(
-          parseWikimediaUrl(
-            "https://en.wikipedia.org/wiki/Special:Random",
-          ),
+          parseWikimediaUrl("https://en.wikipedia.org/wiki/Special:Random"),
         ).not.toBeNull(); // Special:Random is technically a valid /wiki/ path
       });
 
       it("returns null for bare /wiki/ path with no article", () => {
-        expect(
-          parseWikimediaUrl("https://en.wikipedia.org/wiki/"),
-        ).toBeNull();
+        expect(parseWikimediaUrl("https://en.wikipedia.org/wiki/")).toBeNull();
       });
 
       it("returns null for HTTP protocol", () => {
-        const result = parseWikimediaUrl(
-          "http://en.wikipedia.org/wiki/Test",
-        );
+        const result = parseWikimediaUrl("http://en.wikipedia.org/wiki/Test");
         // HTTP should still parse -- the protocol doesn't matter for article resolution
         expect(result).toEqual({
           articleName: "Test",
@@ -341,9 +329,9 @@ describe("Wikipedia URL parser", () => {
         isWikimediaUrl("https://commons.wikimedia.org/wiki/File:Test.jpg"),
       ).toBe(false);
       expect(isWikimediaUrl("https://www.wikidata.org/wiki/Q42")).toBe(false);
-      expect(
-        isWikimediaUrl("https://meta.wikimedia.org/wiki/Main_Page"),
-      ).toBe(false);
+      expect(isWikimediaUrl("https://meta.wikimedia.org/wiki/Main_Page")).toBe(
+        false,
+      );
     });
   });
 });

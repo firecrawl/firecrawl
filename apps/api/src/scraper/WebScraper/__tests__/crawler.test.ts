@@ -10,11 +10,7 @@ vi.mock("robots-parser");
 describe("WebCrawler", () => {
   let crawler: WebCrawler;
   const mockAxios = axios as Mocked<typeof axios>;
-  const mockRobotsParser = robotsParser as MockedFunction<
-    typeof robotsParser
-  >;
-
-  let maxCrawledDepth: number;
+  const mockRobotsParser = robotsParser as MockedFunction<typeof robotsParser>;
 
   beforeEach(() => {
     // Setup default mocks

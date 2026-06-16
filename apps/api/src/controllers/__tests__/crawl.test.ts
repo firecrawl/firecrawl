@@ -2,8 +2,6 @@ import type { Mock } from "vitest";
 import { crawlController } from "../v0/crawl";
 import { config } from "../../config";
 import { Request, Response } from "express";
-import { authenticateUser } from "../auth"; // Ensure this import is correct
-import { createIdempotencyKey } from "../../services/idempotency/create";
 import { validateIdempotencyKey } from "../../services/idempotency/validate";
 import { v7 as uuidv7 } from "uuid";
 

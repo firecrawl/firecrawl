@@ -1,23 +1,11 @@
 import { config } from "../../config";
-import {
-  SearchResult,
-  SearchV2Response,
-  SearchResultType,
-} from "../../lib/entities";
-import * as Sentry from "@sentry/node";
+import { SearchV2Response, SearchResultType } from "../../lib/entities";
 import { logger } from "../../lib/logger";
 import { executeWithRetry, attemptRequest } from "../../lib/retry-utils";
 
 const useFireEngine =
   config.FIRE_ENGINE_BETA_URL !== "" &&
   config.FIRE_ENGINE_BETA_URL !== undefined;
-
-function normalizeSearchTypes(
-  type?: SearchResultType | SearchResultType[],
-): SearchResultType[] {
-  if (!type) return ["web"];
-  return Array.isArray(type) ? type : [type];
-}
 
 /**
  * Checks if the response has at least one requested type with results.
@@ -71,7 +59,6 @@ export async function fire_engine_search_v2(
     enterprise: options.enterprise,
   };
 
-  const requestedTypes = normalizeSearchTypes(options.type);
   const url = `${config.FIRE_ENGINE_BETA_URL}/v2/search`;
   const data = JSON.stringify(payload);
 

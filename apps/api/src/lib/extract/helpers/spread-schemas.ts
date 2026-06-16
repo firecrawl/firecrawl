@@ -1,5 +1,3 @@
-import { logger } from "../../../lib/logger";
-
 export async function spreadSchemas(
   schema: any,
   keys: string[],
@@ -12,20 +10,6 @@ export async function spreadSchemas(
     type: "object",
     properties: {},
     ...(schema.required ? { required: [] } : {}),
-  };
-
-  // Helper function to check if a property path exists in schema
-  const hasPropertyPath = (schema: any, path: string[]): boolean => {
-    let current = schema.properties;
-    for (let i = 0; i < path.length; i++) {
-      if (!current[path[i]]) return false;
-      if (current[path[i]].type === "array" && current[path[i]].items) {
-        current = current[path[i]].items.properties;
-      } else {
-        current = current[path[i]].properties;
-      }
-    }
-    return true;
   };
 
   // Helper function to get the root property of a dot path

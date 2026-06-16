@@ -52,8 +52,6 @@ async function scrapeX402SearchResult(
 ): Promise<DocumentWithCostTracking> {
   const jobId = uuidv7();
 
-  const costTracking = new CostTracking();
-
   const zeroDataRetention = getSearchForcedKind(flags) !== null;
   applyZdrScope(zeroDataRetention);
 

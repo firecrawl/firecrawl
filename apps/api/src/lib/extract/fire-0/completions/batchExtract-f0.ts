@@ -1,5 +1,5 @@
 import { logger } from "../../../../lib/logger";
-import { ExtractResponse, TokenUsage } from "../../../../controllers/v1/types";
+import { TokenUsage } from "../../../../controllers/v1/types";
 import { Document } from "../../../../controllers/v1/types";
 import { generateCompletions_F0 } from "../llmExtract-f0";
 import {

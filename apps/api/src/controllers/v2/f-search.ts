@@ -4,7 +4,6 @@ import { logger as _logger } from "../../lib/logger";
 import { CostTracking } from "../../lib/cost-tracking";
 import {
   getSearchIndexClient,
-  SearchIndexClient,
   type SearchRequest,
 } from "../../lib/search-index-client";
 
@@ -24,17 +23,6 @@ const searchRequestSchema = z.object({
       isMobile: z.boolean().optional(),
       minFreshness: z.number().min(0).max(1).optional(),
       language: z.string().optional(),
-    })
-    .optional()
-    .prefault({}),
-});
-
-const searchChunksRequestSchema = z.object({
-  query: z.string().min(1).max(500),
-  limit: z.int().min(1).max(50).optional().prefault(20),
-  filters: z
-    .object({
-      domain: z.string().optional(),
     })
     .optional()
     .prefault({}),

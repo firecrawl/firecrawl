@@ -12,7 +12,6 @@ import {
   EngineUnsuccessfulError,
 } from "../../error";
 import { open, readFile, unlink } from "node:fs/promises";
-import type { Response } from "undici";
 import { AbortManagerThrownError } from "../../lib/abortManager";
 import {
   shouldParsePDF,

@@ -334,11 +334,6 @@ export async function scrapeURLWithFireEngineChromeCDP(
         : []),
     ];
 
-    const totalWait = actions.reduce(
-      (a, x) => (x.type === "wait" ? (x.milliseconds ?? 1000) + a : a),
-      0,
-    );
-
     const shouldAllowMedia =
       hasFormatOfType(meta.options.formats, "branding") ||
       shouldRunYoutubePostprocessor;

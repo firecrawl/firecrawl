@@ -27,15 +27,8 @@ type PollDeps = {
 type PollOk = { poll: PollResponse; pollCount: number };
 
 export async function pollUntilTerminal(deps: PollDeps): Promise<PollOk> {
-  const {
-    baseUrl,
-    scrapeId,
-    pollingDeadline,
-    meta,
-    fetchImpl,
-    sleep,
-    now,
-  } = deps;
+  const { baseUrl, scrapeId, pollingDeadline, meta, fetchImpl, sleep, now } =
+    deps;
   let pollCount = 0;
   let lastDelay = deps.initialDelay;
 

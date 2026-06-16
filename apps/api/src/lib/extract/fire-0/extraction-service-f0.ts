@@ -47,7 +47,6 @@ interface ExtractServiceOptions {
   cacheMode?: "load" | "save" | "direct";
   cacheKey?: string;
   apiKeyId: number | null;
-  createdAt?: number;
 }
 
 interface ExtractResult {
@@ -78,12 +77,8 @@ export async function performExtraction_F0(
   options: ExtractServiceOptions,
 ): Promise<ExtractResult> {
   const { request, teamId, subId, apiKeyId } = options;
-  const createdAt = options.createdAt
-    ? new Date(options.createdAt)
-    : new Date();
   const urlTraces: URLTrace[] = [];
   let docsMap: Map<string, Document> = new Map();
-  let singleAnswerCompletions: completions | null = null;
   let multiEntityCompletions: completions[] = [];
   let multiEntityResult: any = {};
   let singleAnswerResult: any = {};
@@ -432,22 +427,6 @@ export async function performExtraction_F0(
             );
             return null;
           }
-          // Add confidence score to schema with 5 levels
-          const schemaWithConfidence = {
-            ...multiEntitySchema,
-            properties: {
-              ...multiEntitySchema.properties,
-              is_content_relevant: {
-                type: "boolean",
-                description:
-                  "Determine if this content is relevant to the prompt. Return true ONLY if the content contains information that directly helps answer the prompt. Return false if the content is irrelevant or unlikely to contain useful information.",
-              },
-            },
-            required: [
-              ...(multiEntitySchema.required || []),
-              "is_content_relevant",
-            ],
-          };
 
           await updateExtract(extractId, {
             status: "processing",
@@ -760,7 +739,6 @@ export async function performExtraction_F0(
     }
 
     singleAnswerResult = completionResult;
-    singleAnswerCompletions = singleAnswerResult;
 
     // Update token usage in traces
     // if (completions && completions.numTokens) {
@@ -841,7 +819,8 @@ export async function performExtraction_F0(
   //   }
   // }
 
-  const totalTokensUsed = tokenUsage.reduce((a, b) => a + b.totalTokens, 0);
+  // const totalTokensUsed = tokenUsage.reduce((a, b) => a + b.totalTokens, 0);
+
   const llmUsage = estimateTotalCost_F0(tokenUsage);
   let tokensToBill = calculateFinalResultCost_F0(finalResult);
 

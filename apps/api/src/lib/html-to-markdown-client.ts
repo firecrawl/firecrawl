@@ -5,7 +5,7 @@
  * to avoid blocking Node.js event loop with heavy conversions.
  */
 
-import axios, { AxiosInstance, AxiosError } from "axios";
+import axios, { AxiosError } from "axios";
 import { config } from "../config";
 import { logger } from "./logger";
 import type { Logger } from "winston";

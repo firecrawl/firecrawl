@@ -11,9 +11,10 @@ describe("diffMonitorJson", () => {
   });
 
   it("returns `same` regardless of object key order", () => {
-    expect(
-      diffMonitorJson({ a: 1, b: 2 }, { b: 2, a: 1 }),
-    ).toEqual({ kind: "json", status: "same" });
+    expect(diffMonitorJson({ a: 1, b: 2 }, { b: 2, a: 1 })).toEqual({
+      kind: "json",
+      status: "same",
+    });
   });
 
   it("reports a single change for a top-level primitive that differs", () => {

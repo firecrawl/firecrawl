@@ -6,15 +6,7 @@ import {
   Document,
   RequestWithAuth,
 } from "./types";
-import {
-  getCrawl,
-  getCrawlError,
-  getCrawlExpiry,
-  getDoneJobsOrderedLength,
-  isCrawlKickoffFinished,
-  getCrawlQualifiedJobCount,
-  getDoneJobsOrderedUntil,
-} from "../../lib/crawl-redis";
+import { getCrawl, getCrawlError, getCrawlExpiry } from "../../lib/crawl-redis";
 import {
   supabaseGetScrapeById,
   supabaseGetScrapesById,

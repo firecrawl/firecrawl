@@ -359,8 +359,6 @@ describe("transformArrayToObject function", () => {
       categories: ["something", "else"],
     };
 
-    const res4 = { products: [] };
-
     const res2 = {
       name: "keep first",
       description: "description",
@@ -385,8 +383,6 @@ describe("transformArrayToObject function", () => {
       ],
       categories: ["hey", "something", "other one"],
     };
-
-    const res5 = { products: null };
 
     const results = [res1, res2, res3];
 

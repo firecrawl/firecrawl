@@ -1,11 +1,6 @@
 import { encoding_for_model } from "@dqbd/tiktoken";
 import { TiktokenModel } from "@dqbd/tiktoken";
-import {
-  Document,
-  ExtractOptions,
-  ExtractOptionsInput,
-  TokenUsage,
-} from "../../../controllers/v1/types";
+import { ExtractOptionsInput, TokenUsage } from "../../../controllers/v1/types";
 import { Logger } from "winston";
 import { logger } from "../../../lib/logger";
 import { modelPrices } from "../../../lib/extract/usage/model-prices";

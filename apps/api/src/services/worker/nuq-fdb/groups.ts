@@ -14,11 +14,9 @@ import {
   normalizeOwnerId,
 } from "./keyspace";
 import {
-  ONE,
   MINUS_ONE,
   EMPTY,
   TxContext,
-  newTxContext,
   uvSuffix,
   pushReady,
   setStatusQueued,

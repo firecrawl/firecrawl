@@ -13,7 +13,6 @@ import type { Logger } from "winston";
 import { generateText } from "ai";
 import { getModel } from "../../generic-ai";
 import { CostTracking } from "../../cost-tracking";
-import { getACUCTeam } from "../../../controllers/auth";
 
 export async function generateBasicCompletion_FO(
   prompt: string,
@@ -94,7 +93,6 @@ export async function processUrl_F0(
   }
 
   const baseUrl = options.url.replace("/*", "");
-  let urlWithoutWww = baseUrl.replace("www.", "");
 
   let searchQuery = options.prompt;
   if (options.prompt) {
@@ -253,7 +251,6 @@ export async function processUrl_F0(
       {
         links: mappedLinks,
         searchQuery: rephrasedPrompt,
-        urlTraces,
         metadata: {
           teamId: options.teamId,
           functionId: "processUrl_F0",
@@ -275,7 +272,6 @@ export async function processUrl_F0(
         {
           links: mappedLinks,
           searchQuery: rephrasedPrompt,
-          urlTraces,
           metadata: {
             teamId: options.teamId,
             functionId: "processUrl_F0",

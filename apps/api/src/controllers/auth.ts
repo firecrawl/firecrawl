@@ -708,11 +708,9 @@ async function supaAuthenticateUser(
   const iptoken = incomingIP + token;
 
   let rateLimiter: RateLimiterRedis;
-  let subscriptionData: { team_id: string } | null = null;
   let normalizedApi: string;
 
   let teamId: string | null = null;
-  let priceId: string | null = null;
   let chunk: AuthCreditUsageChunk | null = null;
   if (token == "this_is_just_a_preview_token") {
     throw new Error(
@@ -753,11 +751,6 @@ async function supaAuthenticateUser(
     }
 
     teamId = chunk.team_id;
-    priceId = chunk.price_id;
-
-    subscriptionData = {
-      team_id: teamId,
-    };
     rateLimiter = getRateLimiter(
       mode ?? RateLimiterMode.Crawl,
       chunk.rate_limits,
@@ -784,11 +777,6 @@ async function supaAuthenticateUser(
     }
 
     teamId = chunk.team_id;
-    priceId = chunk.price_id;
-
-    subscriptionData = {
-      team_id: teamId,
-    };
     rateLimiter = getRateLimiter(
       mode ?? RateLimiterMode.Crawl,
       chunk.rate_limits,

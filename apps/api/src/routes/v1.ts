@@ -1,11 +1,9 @@
 import express from "express";
-import { config } from "../config";
 import { crawlController } from "../controllers/v1/crawl";
 // import { crawlStatusController } from "../../src/controllers/v1/crawl-status";
 import { scrapeController } from "../../src/controllers/v1/scrape";
 import { crawlStatusController } from "../controllers/v1/crawl-status";
 import { mapController } from "../controllers/v1/map";
-import { RequestWithAuth } from "../controllers/v1/types";
 import { RateLimiterMode } from "../types";
 import { SEARCH_CREDITS_FEATURE_ID } from "../services/autumn/autumn.service";
 import expressWs from "express-ws";

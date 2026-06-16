@@ -1,4 +1,4 @@
-import { MapDocument, URLTrace } from "../../../controllers/v1/types";
+import { MapDocument } from "../../../controllers/v1/types";
 import { logger } from "../../logger";
 import { generateCompletions } from "../../../scraper/scrapeURL/transformers/llmExtract";
 import {
@@ -15,7 +15,6 @@ type RerankerResult = {
 type RerankerOptions = {
   links: MapDocument[];
   searchQuery: string;
-  urlTraces: URLTrace[];
   metadata: {
     teamId: string;
     functionId?: string;
@@ -28,7 +27,7 @@ export async function rerankLinksWithLLM_F0(
   options: RerankerOptions,
   costTracking: CostTracking,
 ): Promise<RerankerResult> {
-  const { links, searchQuery, urlTraces, metadata } = options;
+  const { links, searchQuery, metadata } = options;
   const chunkSize = 100;
   const chunks: MapDocument[][] = [];
   const TIMEOUT_MS = 20000;

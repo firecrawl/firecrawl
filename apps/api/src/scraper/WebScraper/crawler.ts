@@ -51,16 +51,12 @@ export class WebCrawler {
   private baseUrl: string;
   private includes: string[];
   private excludes: string[];
-  private maxCrawledLinks: number;
   private maxCrawledDepth: number;
-  private visited: Set<string> = new Set();
-  private crawledUrls: Map<string, string> = new Map();
   private limit: number;
   private robotsTxt: string;
   private robotsTxtUrl: string;
   public robots: Robot;
   private robotsCrawlDelay: number | null = null;
-  private generateImgAltText: boolean;
   private allowBackwardCrawling: boolean;
   private allowExternalContentLinks: boolean;
   private allowSubdomains: boolean;
@@ -81,9 +77,7 @@ export class WebCrawler {
     baseUrl,
     includes,
     excludes,
-    maxCrawledLinks = 10000,
     limit = 10000,
-    generateImgAltText = false,
     maxCrawledDepth = 10,
     allowBackwardCrawling = false,
     allowExternalContentLinks = false,
@@ -127,10 +121,7 @@ export class WebCrawler {
     this.robotsTxt = "";
     this.robotsTxtUrl = `${this.baseUrl}${this.baseUrl.endsWith("/") ? "" : "/"}robots.txt`;
     this.robots = robotsParser(this.robotsTxtUrl, this.robotsTxt);
-    // Deprecated, use limit instead
-    this.maxCrawledLinks = maxCrawledLinks ?? limit;
     this.maxCrawledDepth = maxCrawledDepth ?? 10;
-    this.generateImgAltText = generateImgAltText ?? false;
     this.allowBackwardCrawling = allowBackwardCrawling ?? false;
     this.allowExternalContentLinks = allowExternalContentLinks ?? false;
     this.allowSubdomains = allowSubdomains ?? false;
@@ -381,11 +372,6 @@ export class WebCrawler {
           }
           return false;
         }
-        const initialHostname = normalizedInitialUrl.hostname.replace(
-          /^www\./,
-          "",
-        );
-        const linkHostname = normalizedLink.hostname.replace(/^www\./, "");
 
         // Ensure the protocol and hostname match, and the path starts with the initial URL's path
         // commented to able to handling external link on allowExternalContentLinks

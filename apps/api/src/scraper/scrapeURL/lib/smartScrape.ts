@@ -2,20 +2,12 @@ import { z } from "zod";
 import { config } from "../../../config";
 import { logger as _logger } from "../../../lib/logger";
 import { robustFetch } from "./fetch";
-import fs from "fs/promises";
 import { configDotenv } from "dotenv";
 import {
   CostLimitExceededError,
   CostTracking,
 } from "../../../lib/cost-tracking";
 configDotenv();
-
-// Define schemas outside the function scope
-const tokenUsageDetailSchema = z.object({
-  input_tokens: z.int(),
-  output_tokens: z.int(),
-  total_cost: z.number().nullable(), // Allows number or null
-});
 
 // Schema for an individual scraped page object
 const scrapedPageSchema = z.object({

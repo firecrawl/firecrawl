@@ -16,7 +16,6 @@ import {
   createMonitorCheck,
   countMonitorCheckPages,
   deleteMonitor,
-  estimateMonitorCreditsPerRun,
   getMonitor,
   getMonitorCheck,
   getMonitorForUpdate,
@@ -26,10 +25,7 @@ import {
   updateMonitor,
 } from "../../services/monitoring/store";
 import { enqueueMonitorCheck } from "../../services/monitoring/scheduler";
-import {
-  estimateRunsPerMonth,
-  validateMonitorCron,
-} from "../../services/monitoring/cron";
+import { validateMonitorCron } from "../../services/monitoring/cron";
 import {
   getRemovedMonitorTargets,
   trackMonitorConfiguredInterest,
@@ -584,7 +580,11 @@ const emailActionBodySchema = z.object({
 type EmailActionResponse =
   | {
       success: true;
-      result: "confirmed" | "already_confirmed" | "unsubscribed" | "already_unsubscribed";
+      result:
+        | "confirmed"
+        | "already_confirmed"
+        | "unsubscribed"
+        | "already_unsubscribed";
       email: string;
       monitorName: string | null;
     }
@@ -592,7 +592,6 @@ type EmailActionResponse =
       success: false;
       error: "invalid_token" | "not_found" | "internal_error";
     };
-
 
 function parseTokenFromRequest(req: { body?: unknown }): string | null {
   const candidate =

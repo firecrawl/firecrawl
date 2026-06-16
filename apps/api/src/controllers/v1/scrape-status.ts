@@ -1,4 +1,3 @@
-import { Response } from "express";
 import { supabaseGetScrapeByIdOnlyData } from "../../lib/supabase-jobs";
 import { getJob } from "./crawl-status";
 import { logger as _logger } from "../../lib/logger";

@@ -1,5 +1,4 @@
 import { logger } from "../../lib/logger";
-import { config } from "../../config";
 import { getRedisConnection } from "../queue-service";
 import { billTeam6 } from "../../db/rpc";
 import * as Sentry from "@sentry/node";

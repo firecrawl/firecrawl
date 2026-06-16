@@ -1095,8 +1095,6 @@ describe("mixSchemaObjects function", () => {
       },
     };
 
-    const multiEntityResult = {};
-
     const finalResult = await mixSchemaObjects(
       originalSchema,
       singleAnswerResult,

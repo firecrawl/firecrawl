@@ -10,7 +10,7 @@ import { Engine } from "./engines";
 import { CostTracking } from "../../lib/cost-tracking";
 
 // Mock parseMarkdown but delegate to real implementation for other tests
-vi.mock("../../lib/html-to-markdown", async (importOriginal) => {
+vi.mock("../../lib/html-to-markdown", async importOriginal => {
   const actual =
     await importOriginal<typeof import("../../lib/html-to-markdown")>();
   return {

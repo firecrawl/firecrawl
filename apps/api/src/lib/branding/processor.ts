@@ -1,6 +1,6 @@
 import { BrandingProfile } from "../../types/branding";
 import { BrandingScriptReturn, InputSnapshot } from "./types";
-import { parse, rgb, formatHex } from "culori";
+import { parse, rgb } from "culori";
 
 // Export for testing
 export function hexify(
@@ -197,16 +197,6 @@ function inferPalette(
     (colorScheme === "dark" ? "#FFFFFF" : "#000000");
   const accent = ranked.find(h => h !== primary && !isGrayish(h)) || primary;
 
-  // Collect all detected colors with their frequencies for debugging
-  const allDetectedColors = Array.from(freq.entries())
-    .sort((a, b) => b[1] - a[1])
-    .map(([hex, count]) => ({
-      hex,
-      frequency: count,
-      isGrayish: isGrayish(hex),
-      yiq: contrastYIQ(hex),
-    }));
-
   // Secondary: a chromatic color distinct from both primary and accent
   const secondary =
     ranked.find(
@@ -337,9 +327,6 @@ export function processRawBranding(raw: BrandingScriptReturn): BrandingProfile {
 
       // Check for borders: has borderWidth > 0 AND border color is not transparent
       const hasBorder = s.colors.borderWidth && s.colors.borderWidth > 0;
-      const borderHex = hasBorder
-        ? hexify(s.colors.border, raw.pageBackground)
-        : null;
 
       // Include if has background OR has border (transparent buttons with borders are valid)
       // Note: borderHex might be null if border is transparent, but we still check hasBorder

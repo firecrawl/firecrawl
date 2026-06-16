@@ -24,7 +24,10 @@ export async function fireclawController(
   req: RequestWithAuth<{}, undefined, { plays?: number }>,
   res: Response<FireclawResponse | FireclawErrorResponse>,
 ): Promise<void> {
-  const plays = Math.max(1, Math.min(MAX_PLAYS, Math.floor(Number(req.body?.plays) || 1)));
+  const plays = Math.max(
+    1,
+    Math.min(MAX_PLAYS, Math.floor(Number(req.body?.plays) || 1)),
+  );
   const totalCredits = plays * FIRECLAW_COST_PER_PLAY;
 
   const chunk =
@@ -32,7 +35,10 @@ export async function fireclawController(
     (await getACUCTeam(req.auth.team_id, false, false, RateLimiterMode.Scrape));
 
   if (!chunk) {
-    res.status(404).json({ success: false, error: "Could not find team billing information." });
+    res.status(404).json({
+      success: false,
+      error: "Could not find team billing information.",
+    });
     return;
   }
 
@@ -53,17 +59,28 @@ export async function fireclawController(
       { endpoint: "fireclaw" },
     );
   } catch (error) {
-    logger.error(`Fireclaw billing failed for team ${req.auth.team_id}`, { error });
-    res.status(500).json({ success: false, error: "Failed to process billing. Please try again." });
+    logger.error(`Fireclaw billing failed for team ${req.auth.team_id}`, {
+      error,
+    });
+    res.status(500).json({
+      success: false,
+      error: "Failed to process billing. Please try again.",
+    });
     return;
   }
 
-  const updatedChunk = await getACUCTeam(req.auth.team_id, false, false, RateLimiterMode.Scrape);
+  const updatedChunk = await getACUCTeam(
+    req.auth.team_id,
+    false,
+    false,
+    RateLimiterMode.Scrape,
+  );
 
   res.json({
     success: true,
     credits_billed: totalCredits,
     plays,
-    remaining_credits: updatedChunk?.remaining_credits ?? chunk.remaining_credits - totalCredits,
+    remaining_credits:
+      updatedChunk?.remaining_credits ?? chunk.remaining_credits - totalCredits,
   });
 }

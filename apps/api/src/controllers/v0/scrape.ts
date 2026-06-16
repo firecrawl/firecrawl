@@ -2,7 +2,7 @@ import { ExtractorOptions, PageOptions } from "./../../lib/entities";
 import { Request, Response } from "express";
 import { checkTeamCredits } from "../../services/billing/credit_billing";
 import { authenticateUser } from "../auth";
-import { RateLimiterMode, AuthResponse } from "../../types";
+import { RateLimiterMode } from "../../types";
 import { TeamFlags, toLegacyDocument, url as urlSchema } from "../v1/types";
 import { isUrlBlocked } from "../../scraper/WebScraper/utils/blocklist"; // Import the isUrlBlocked function
 import {
@@ -183,7 +183,6 @@ async function scrapeHelper(
 
 export async function scrapeController(req: Request, res: Response) {
   try {
-    let earlyReturn = false;
     // make sure to authenticate user first, Bearer <token>
     const auth = await authenticateUser(req, res, RateLimiterMode.Scrape);
     if (!auth.success) {
@@ -236,7 +235,6 @@ export async function scrapeController(req: Request, res: Response) {
       ...defaultExtractorOptions,
       ...req.body.extractorOptions,
     };
-    const origin = req.body.origin ?? defaultOrigin;
     let timeout = req.body.timeout ?? defaultTimeout;
 
     if (extractorOptions.mode.includes("llm-extraction")) {
@@ -256,10 +254,12 @@ export async function scrapeController(req: Request, res: Response) {
 
     // checkCredits
     try {
-      const { success: creditsCheckSuccess, message: creditsCheckMessage } =
-        await checkTeamCredits(chunk, team_id, 1);
+      const { success: creditsCheckSuccess } = await checkTeamCredits(
+        chunk,
+        team_id,
+        1,
+      );
       if (!creditsCheckSuccess) {
-        earlyReturn = true;
         return res.status(402).json({
           error:
             "Insufficient credits. For more credits, you can upgrade your plan at https://firecrawl.dev/pricing",
@@ -267,7 +267,6 @@ export async function scrapeController(req: Request, res: Response) {
       }
     } catch (error) {
       logger.error(error);
-      earlyReturn = true;
       return res.status(500).json({
         error: getErrorContactMessage(),
       });

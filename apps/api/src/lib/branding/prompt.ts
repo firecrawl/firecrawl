@@ -1,5 +1,4 @@
-import { BrandingProfile } from "../../types/branding";
-import { ButtonSnapshot, BrandingLLMInput } from "./types";
+import { BrandingLLMInput } from "./types";
 import { parse, rgb } from "culori";
 
 /** Sanitize untrusted text for safe prompt interpolation. */
@@ -26,7 +25,6 @@ export function buildBrandingPrompt(input: BrandingLLMInput): string {
     url,
     headerHtmlChunk,
     favicon,
-    ogImage,
     heuristicLogoPick,
   } = input;
   const safeBrandName = sanitize(brandName, 80);
@@ -357,12 +355,10 @@ export function buildBrandingPrompt(input: BrandingLLMInput): string {
           ? candidate.src.substring(0, 80) + "..."
           : candidate.src;
 
-      const typeLabel = candidate.isSvg ? "SVG" : "IMG";
       const aspectLabel = meta.aspectRatio
         ? meta.aspectRatio.toFixed(1)
         : "n/a";
       const hintLabel = meta.hints.length > 0 ? meta.hints.join(", ") : "none";
-      const sourceLabel = candidate.source ? `source:${candidate.source}` : "";
       const svgScoreLabel =
         candidate.logoSvgScore !== undefined
           ? `logoSvgScore:${Math.round(candidate.logoSvgScore)}`

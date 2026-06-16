@@ -7,7 +7,6 @@ import {
   RequestWithAuth,
 } from "./types";
 import { getGenerateLlmsTxtQueue } from "../../services/queue-service";
-import * as Sentry from "@sentry/node";
 import { saveGeneratedLlmsTxt } from "../../lib/generate-llmstxt/generate-llmstxt-redis";
 import { logRequest } from "../../services/logging/log_job";
 import { getScrapeZDR } from "../../lib/zdr-helpers";

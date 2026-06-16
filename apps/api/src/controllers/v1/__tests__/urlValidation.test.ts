@@ -1,5 +1,4 @@
 import { url } from "../types";
-import { UNSUPPORTED_SITE_MESSAGE } from "../../../lib/strings";
 
 describe("URL Schema Validation", () => {
   beforeEach(() => {

@@ -28,7 +28,6 @@ import {
   isFdbConfigured,
   nuqFdbHealthCheck,
   withFdbTimeout,
-  NuQFdbQueue,
   NuQFdbJob,
 } from "./nuq-fdb";
 

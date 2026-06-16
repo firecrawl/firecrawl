@@ -4,8 +4,6 @@ import { z } from "zod";
 import { protocolIncluded, checkUrl } from "../../lib/validateUrl";
 import { countries } from "../../lib/validate-country";
 import {
-  ExtractorOptions,
-  PageOptions,
   ScrapeActionContent,
   Document as V0Document,
 } from "../../lib/entities";
@@ -17,19 +15,6 @@ import { integrationSchema } from "../../utils/integration";
 import { includesFormat } from "../../lib/format-utils";
 import { webhookSchema } from "../../services/webhook/schema";
 import { BrandingProfile } from "../../types/branding";
-
-type Format =
-  | "markdown"
-  | "html"
-  | "rawHtml"
-  | "links"
-  | "screenshot"
-  | "screenshot@fullPage"
-  | "extract"
-  | "json"
-  | "summary"
-  | "changeTracking"
-  | "branding";
 
 export const url = z.preprocess(
   x => {
@@ -1402,104 +1387,12 @@ export function toNewCrawlerOptions(x: any): CrawlerOptions {
   };
 }
 
-function fromLegacyCrawlerOptions(
-  x: any,
-  teamId: string,
-): {
-  crawlOptions: CrawlerOptions;
-  internalOptions: InternalOptions;
-} {
-  return {
-    crawlOptions: crawlerOptions.parse({
-      includePaths: x.includes,
-      excludePaths: x.excludes,
-      limit: x.maxCrawledLinks ?? x.limit,
-      maxDepth: x.maxDepth,
-      allowBackwardLinks: x.allowBackwardCrawling,
-      crawlEntireDomain: x.allowBackwardCrawling,
-      allowExternalLinks: x.allowExternalContentLinks,
-      allowSubdomains: x.allowSubdomains,
-      ignoreRobotsTxt: x.ignoreRobotsTxt,
-      ignoreSitemap: x.ignoreSitemap,
-      deduplicateSimilarURLs: x.deduplicateSimilarURLs,
-      ignoreQueryParameters: x.ignoreQueryParameters,
-      regexOnFullURL: x.regexOnFullURL,
-      maxDiscoveryDepth: x.maxDiscoveryDepth,
-      delay: x.delay,
-    }),
-    internalOptions: {
-      v0CrawlOnlyUrls: x.returnOnlyUrls,
-      teamId,
-    },
-  };
-}
-
 // Note: This interface has been transitioned to v2/types.ts while maintaining backwards compatibility
 export interface MapDocument {
   url: string;
   title?: string;
   description?: string;
 }
-export function fromLegacyScrapeOptions(
-  pageOptions: PageOptions,
-  extractorOptions: ExtractorOptions | undefined,
-  timeout: number | undefined,
-  teamId: string,
-): { scrapeOptions: ScrapeOptions; internalOptions: InternalOptions } {
-  return {
-    scrapeOptions: scrapeOptions.parse({
-      formats: [
-        (pageOptions.includeMarkdown ?? true) ? ("markdown" as const) : null,
-        (pageOptions.includeHtml ?? false) ? ("html" as const) : null,
-        (pageOptions.includeRawHtml ?? false) ? ("rawHtml" as const) : null,
-        (pageOptions.screenshot ?? false) ? ("screenshot" as const) : null,
-        (pageOptions.fullPageScreenshot ?? false)
-          ? ("screenshot@fullPage" as const)
-          : null,
-        extractorOptions !== undefined &&
-        extractorOptions.mode.includes("llm-extraction")
-          ? ("extract" as const)
-          : null,
-        "links",
-      ].filter(x => x !== null),
-      waitFor: pageOptions.waitFor,
-      headers: pageOptions.headers,
-      includeTags:
-        typeof pageOptions.onlyIncludeTags === "string"
-          ? [pageOptions.onlyIncludeTags]
-          : pageOptions.onlyIncludeTags,
-      excludeTags:
-        typeof pageOptions.removeTags === "string"
-          ? [pageOptions.removeTags]
-          : pageOptions.removeTags,
-      onlyMainContent: pageOptions.onlyMainContent ?? false,
-      timeout: timeout,
-      parsePDF: pageOptions.parsePDF,
-      actions: pageOptions.actions,
-      location: pageOptions.geolocation,
-      skipTlsVerification: pageOptions.skipTlsVerification,
-      removeBase64Images: pageOptions.removeBase64Images,
-      extract:
-        extractorOptions !== undefined &&
-        extractorOptions.mode.includes("llm-extraction")
-          ? {
-              systemPrompt: extractorOptions.extractionPrompt,
-              prompt: extractorOptions.userPrompt,
-              schema: extractorOptions.extractionSchema,
-            }
-          : undefined,
-      mobile: pageOptions.mobile,
-      fastMode: pageOptions.useFastMode,
-    }),
-    internalOptions: {
-      atsv: pageOptions.atsv,
-      v0DisableJsDom: pageOptions.disableJsDom,
-      teamId,
-    },
-    // TODO: fallback, fetchPageContent, replaceAllPathsWithAbsolutePaths, includeLinks
-  };
-}
-
 export function toLegacyDocument(
   document: Document,
   internalOptions: InternalOptions,

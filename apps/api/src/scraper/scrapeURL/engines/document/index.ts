@@ -3,7 +3,7 @@ import { EngineScrapeResult } from "..";
 import { fetchFileToBuffer } from "../utils/downloadFile";
 import { DocumentConverter, DocumentType } from "@mendable/firecrawl-rs";
 import type { Response } from "undici";
-import { DocumentAntibotError, DocumentPrefetchFailed } from "../../error";
+import { DocumentAntibotError } from "../../error";
 import { readFile, unlink } from "node:fs/promises";
 
 const converter = new DocumentConverter();

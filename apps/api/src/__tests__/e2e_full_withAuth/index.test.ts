@@ -824,11 +824,6 @@ describe("E2E Tests for API Routes", () => {
           .get(`/v0/crawl/status/${crawlResponse.body.jobId}`)
           .set("Authorization", `Bearer ${config.TEST_API_KEY}`);
 
-        const testurls = completedResponse.body.data.map(
-          (item: any) => item.metadata?.sourceURL,
-        );
-        //console.log(testurls)
-
         expect(completedResponse.statusCode).toBe(200);
         expect(completedResponse.body).toHaveProperty("status");
         expect(completedResponse.body.status).toBe("completed");
@@ -1579,8 +1574,6 @@ describe("E2E Tests for API Routes", () => {
     it.concurrent(
       "should complete the crawl under 20 seconds",
       async () => {
-        const startTime = Date.now();
-
         const crawlResponse = await request(TEST_URL)
           .post("/v0/crawl")
           .set("Authorization", `Bearer ${config.TEST_API_KEY}`)

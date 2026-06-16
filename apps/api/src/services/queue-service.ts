@@ -5,8 +5,6 @@ import IORedis from "ioredis";
 import type { DeepResearchServiceOptions } from "../lib/deep-research/deep-research-service";
 import { addExtractJob, ExtractJobData } from "./extract-queue";
 
-let loggingQueue: Queue;
-let indexQueue: Queue;
 let deepResearchQueue: Queue;
 let generateLlmsTxtQueue: Queue;
 let billingQueue: Queue;

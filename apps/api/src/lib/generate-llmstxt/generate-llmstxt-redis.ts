@@ -65,19 +65,3 @@ export async function getGeneratedLlmsTxtExpiry(id: string): Promise<Date> {
   d.setMilliseconds(0);
   return d;
 }
-
-// Convenience method for status updates
-async function updateGeneratedLlmsTxtStatus(
-  id: string,
-  status: "processing" | "completed" | "failed",
-  generatedText?: string,
-  fullText?: string,
-  error?: string,
-): Promise<void> {
-  const updates: Partial<GenerationData> = { status };
-  if (generatedText !== undefined) updates.generatedText = generatedText;
-  if (fullText !== undefined) updates.fullText = fullText;
-  if (error !== undefined) updates.error = error;
-
-  await updateGeneratedLlmsTxt(id, updates);
-}

@@ -10,11 +10,7 @@ import {
   getCrawl,
   getCrawlError,
   getCrawlExpiry,
-  getCrawlQualifiedJobCount,
-  getDoneJobsOrderedLength,
-  getDoneJobsOrderedUntil,
   getLastDoneJobTimestamp,
-  isCrawlKickoffFinished,
 } from "../../lib/crawl-redis";
 import {
   supabaseGetScrapeById,

@@ -75,7 +75,6 @@ export async function performGenerateLlmsTxt(
     subId,
     apiKeyId,
   } = options;
-  const startTime = Date.now();
   const logger = _logger.child({
     module: "generate-llmstxt",
     method: "performGenerateLlmsTxt",
@@ -267,7 +266,14 @@ export async function performGenerateLlmsTxt(
     });
 
     // Bill team for usage
-    billTeam(teamId, subId, urls.length, apiKeyId, { endpoint: "llms_txt", jobId: generationId }, logger).catch(error => {
+    billTeam(
+      teamId,
+      subId,
+      urls.length,
+      apiKeyId,
+      { endpoint: "llms_txt", jobId: generationId },
+      logger,
+    ).catch(error => {
       logger.error(`Failed to bill team ${teamId} for ${urls.length} urls`, {
         teamId,
         count: urls.length,

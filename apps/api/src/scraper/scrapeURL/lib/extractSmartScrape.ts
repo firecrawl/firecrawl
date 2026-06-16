@@ -8,12 +8,8 @@ import {
 import { smartScrape } from "./smartScrape";
 import { parseMarkdown } from "../../../lib/html-to-markdown";
 import { getModel } from "../../../lib/generic-ai";
-import { TokenUsage } from "../../../controllers/v1/types";
 import type { SmartScrapeResult } from "./smartScrape";
-import {
-  CostLimitExceededError,
-  CostTracking,
-} from "../../../lib/cost-tracking";
+import { CostLimitExceededError } from "../../../lib/cost-tracking";
 const commonSmartScrapeProperties = {
   shouldUseSmartscrape: {
     type: "boolean",
@@ -119,18 +115,6 @@ function prepareSmartScrapeSchema(
   });
   return { schemaToUse: wrappedSchema };
 }
-
-const hasRecursiveRefs = (schema: any, defs: any): boolean => {
-  if (!defs || typeof defs !== "object") return false;
-
-  for (const [defName, defValue] of Object.entries(defs)) {
-    if (containsRecursiveRef(defValue, defName, defs)) {
-      return true;
-    }
-  }
-
-  return false;
-};
 
 const containsRecursiveRef = (
   obj: any,
@@ -346,17 +330,11 @@ export async function extractData({
     schemaToUse,
   });
 
-  let extract: any,
-    warning: string | undefined,
-    totalUsage: TokenUsage | undefined;
+  let extract: any, warning: string | undefined;
 
   // checks if using smartScrape is needed for this case
   try {
-    const {
-      extract: e,
-      warning: w,
-      totalUsage: t,
-    } = await generateCompletions({
+    const { extract: e, warning: w } = await generateCompletions({
       ...extractOptionsNewSchema,
       costTrackingOptions: {
         costTracking: extractOptions.costTrackingOptions.costTracking,
@@ -369,7 +347,6 @@ export async function extractData({
     });
     extract = e;
     warning = w;
-    totalUsage = t;
   } catch (error) {
     if (error instanceof CostLimitExceededError) {
       throw error;

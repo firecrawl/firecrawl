@@ -13,7 +13,6 @@ import {
   timeBucket,
   teamPendingShard,
   READY_SHARDS,
-  TEAM_PENDING_SHARDS,
   F_GATED,
   F_CRAWL_GATED,
   F_COUNTABLE,

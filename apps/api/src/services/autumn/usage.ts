@@ -1,4 +1,3 @@
-import { logger } from "../../lib/logger";
 import { eq, inArray } from "drizzle-orm";
 import { dbRr } from "../../db/connection";
 import * as schema from "../../db/schema";

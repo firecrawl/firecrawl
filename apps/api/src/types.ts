@@ -1,12 +1,6 @@
 import { z } from "zod";
-import {
-  BaseScrapeOptions,
-  ScrapeOptions,
-  Document as V2Document,
-  TeamFlags,
-} from "./controllers/v2/types";
+import { BaseScrapeOptions, ScrapeOptions } from "./controllers/v2/types";
 import { AuthCreditUsageChunk } from "./controllers/v1/types";
-import { ExtractorOptions, Document } from "./lib/entities";
 import { InternalOptions } from "./scraper/scrapeURL";
 import type { CostTracking } from "./lib/cost-tracking";
 import type { BillingMetadata } from "./services/billing/types";
@@ -112,33 +106,6 @@ export interface RunWebScraperParams {
   is_crawl?: boolean;
   urlInvisibleInCurrentCrawl?: boolean;
   costTracking: CostTracking;
-}
-
-export interface FirecrawlScrapeResponse {
-  statusCode: number;
-  body: {
-    status: string;
-    data: Document;
-  };
-  error?: string;
-}
-
-export interface FirecrawlCrawlResponse {
-  statusCode: number;
-  body: {
-    status: string;
-    jobId: string;
-  };
-  error?: string;
-}
-
-export interface FirecrawlCrawlStatusResponse {
-  statusCode: number;
-  body: {
-    status: string;
-    data: Document[];
-  };
-  error?: string;
 }
 
 export enum RateLimiterMode {

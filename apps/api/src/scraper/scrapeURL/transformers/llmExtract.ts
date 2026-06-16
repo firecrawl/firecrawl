@@ -10,7 +10,6 @@ import { Meta } from "..";
 import { logger } from "../../../lib/logger";
 import { modelPrices } from "../../../lib/extract/usage/model-prices";
 import {
-  AISDKError,
   generateObject,
   generateText,
   LanguageModel,
@@ -19,8 +18,6 @@ import {
 } from "ai";
 import { getModel } from "../../../lib/generic-ai";
 import { z } from "zod";
-import fs from "fs/promises";
-import Ajv from "ajv";
 import { extractData } from "../lib/extractSmartScrape";
 import { CostTracking } from "../../../lib/cost-tracking";
 import { isAgentExtractModelValid } from "../../../controllers/v1/types";
@@ -1006,19 +1003,18 @@ export async function performLLMExtract(
       },
     };
 
-    const { extractedDataArray, warning, costLimitExceededTokenUsage } =
-      await extractData({
-        extractOptions: generationOptions,
-        urls: [meta.rewrittenUrl ?? meta.url],
-        useAgent: isAgentExtractModelValid(
-          meta.internalOptions.v1JSONAgent?.model,
-        ),
-        scrapeId: meta.id,
-        metadata: {
-          teamId: meta.internalOptions.teamId,
-          functionId: "performLLMExtract",
-        },
-      });
+    const { extractedDataArray, warning } = await extractData({
+      extractOptions: generationOptions,
+      urls: [meta.rewrittenUrl ?? meta.url],
+      useAgent: isAgentExtractModelValid(
+        meta.internalOptions.v1JSONAgent?.model,
+      ),
+      scrapeId: meta.id,
+      metadata: {
+        teamId: meta.internalOptions.teamId,
+        functionId: "performLLMExtract",
+      },
+    });
 
     if (warning) {
       document.warning =

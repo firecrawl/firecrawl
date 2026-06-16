@@ -640,73 +640,73 @@ describe("E2E Tests for v1 API Routes", () => {
   );
 
   // TODO: fix this test (need to fix fire-engine first)
-  it.concurrent(
-    "should handle 'action pressKey' parameter correctly",
-    async () => {
-      const scrapeRequest = {
-        url: E2E_TEST_SERVER_URL,
-        formats: ["markdown"],
-        actions: [
-          {
-            type: "press",
-            key: "ArrowDown",
-          },
-        ],
-      } as ScrapeRequest;
-
-      const response: any = await request(FIRECRAWL_API_URL)
-        .post("/v1/scrape")
-        .set("Authorization", `Bearer ${config.TEST_API_KEY}`)
-        .set("Content-Type", "application/json")
-        .send(scrapeRequest);
-
-      // // TODO: fix this test (need to fix fire-engine first)
-      // // right now response.body is: { success: false, error: '(Internal server error) - null' }
-      // expect(response.statusCode).toBe(200);
-      // if (!("data" in response.body)) {
-      //   throw new Error("Expected response body to have 'data' property");
-      // }
-      // expect(response.body.data.markdown).toContain("Last Key Clicked: ArrowDown")
-    },
-    30000,
-  );
+  // it.concurrent(
+  //   "should handle 'action pressKey' parameter correctly",
+  //   async () => {
+  //     const scrapeRequest = {
+  //       url: E2E_TEST_SERVER_URL,
+  //       formats: ["markdown"],
+  //       actions: [
+  //         {
+  //           type: "press",
+  //           key: "ArrowDown",
+  //         },
+  //       ],
+  //     } as ScrapeRequest;
+  //
+  //     const response: any = await request(FIRECRAWL_API_URL)
+  //       .post("/v1/scrape")
+  //       .set("Authorization", `Bearer ${config.TEST_API_KEY}`)
+  //       .set("Content-Type", "application/json")
+  //       .send(scrapeRequest);
+  //
+  //     // // TODO: fix this test (need to fix fire-engine first)
+  //     // // right now response.body is: { success: false, error: '(Internal server error) - null' }
+  //     // expect(response.statusCode).toBe(200);
+  //     // if (!("data" in response.body)) {
+  //     //   throw new Error("Expected response body to have 'data' property");
+  //     // }
+  //     // expect(response.body.data.markdown).toContain("Last Key Clicked: ArrowDown")
+  //   },
+  //   30000,
+  // );
 
   // TODO: fix this test (need to fix fire-engine first)
-  it.concurrent(
-    "should handle 'action scroll' parameter correctly",
-    async () => {
-      const scrapeRequest = {
-        url: E2E_TEST_SERVER_URL,
-        formats: ["markdown"],
-        actions: [
-          {
-            type: "click",
-            selector: "#scroll-bottom-loader",
-          },
-          {
-            type: "scroll",
-            direction: "down",
-            amount: 2000,
-          },
-        ],
-      } as ScrapeRequest;
-
-      const response: any = await request(FIRECRAWL_API_URL)
-        .post("/v1/scrape")
-        .set("Authorization", `Bearer ${config.TEST_API_KEY}`)
-        .set("Content-Type", "application/json")
-        .send(scrapeRequest);
-
-      // TODO: uncomment this tests
-      // expect(response.statusCode).toBe(200);
-      // if (!("data" in response.body)) {
-      //   throw new Error("Expected response body to have 'data' property");
-      // }
-      //
-      // expect(response.body.data.markdown).toContain("You have reached the bottom!")
-    },
-    30000,
-  );
+  // it.concurrent(
+  //   "should handle 'action scroll' parameter correctly",
+  //   async () => {
+  //     const scrapeRequest = {
+  //       url: E2E_TEST_SERVER_URL,
+  //       formats: ["markdown"],
+  //       actions: [
+  //         {
+  //           type: "click",
+  //           selector: "#scroll-bottom-loader",
+  //         },
+  //         {
+  //           type: "scroll",
+  //           direction: "down",
+  //           amount: 2000,
+  //         },
+  //       ],
+  //     } as ScrapeRequest;
+  //
+  //     const response: any = await request(FIRECRAWL_API_URL)
+  //       .post("/v1/scrape")
+  //       .set("Authorization", `Bearer ${config.TEST_API_KEY}`)
+  //       .set("Content-Type", "application/json")
+  //       .send(scrapeRequest);
+  //
+  //     // TODO: uncomment this tests
+  //     // expect(response.statusCode).toBe(200);
+  //     // if (!("data" in response.body)) {
+  //     //   throw new Error("Expected response body to have 'data' property");
+  //     // }
+  //     //
+  //     // expect(response.body.data.markdown).toContain("You have reached the bottom!")
+  //   },
+  //   30000,
+  // );
 
   // TODO: test scrape action
 });

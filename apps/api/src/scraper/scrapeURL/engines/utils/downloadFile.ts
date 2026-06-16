@@ -2,7 +2,6 @@ import path from "path";
 import os from "os";
 import { createWriteStream, promises as fs } from "node:fs";
 import {
-  AddFeatureError,
   DNSResolutionError,
   EngineError,
   SiteError,
