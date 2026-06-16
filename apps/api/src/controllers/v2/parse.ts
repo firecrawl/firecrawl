@@ -26,6 +26,7 @@ import { getErrorContactMessage } from "../../lib/deployment";
 import { captureExceptionWithZdrCheck } from "../../services/sentry";
 import type { BillingMetadata } from "../../services/billing/types";
 import { getScrapeZDR } from "../../lib/zdr-helpers";
+import { chargeKeylessCredits } from "../../lib/keyless";
 import path from "node:path";
 
 const AGENT_INTEROP_CONCURRENCY_BOOST = 3;
@@ -661,6 +662,11 @@ export async function parseController(
         concurrencyLimited,
         concurrencyQueueDurationMs: lockTime || undefined,
       });
+
+      chargeKeylessCredits(
+        req.auth.team_id,
+        doc?.metadata?.creditsUsed ?? 0,
+      ).catch(() => {});
 
       return res.status(200).json({
         success: true,

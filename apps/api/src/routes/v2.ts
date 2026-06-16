@@ -264,7 +264,7 @@ v2Router.post(
 
 v2Router.post(
   "/parse",
-  authMiddleware(RateLimiterMode.Scrape),
+  authMiddleware(RateLimiterMode.Scrape, { allowKeyless: true }),
   countryCheck,
   parseUploadMiddleware,
   parseMultipartPayloadMiddleware,

@@ -22,8 +22,8 @@ const KEYLESS_ENABLED =
   Number.isFinite(KEYLESS_CREDITS_PER_DAY) &&
   KEYLESS_CREDITS_PER_DAY > 0;
 
-// Keyless free tier: scrape, search, and interact work without an API key from
-// the official MCP server (origin "mcp*"), CLI (integration "cli"), or SDKs
+// Keyless free tier: scrape, parse, search, and interact work without an API key
+// from the official MCP server (origin "mcp*"), CLI (integration "cli"), or SDKs
 // (origin "<lang>-sdk@..."). Gated per-IP/day by a request cap AND a credit cap.
 // These tests are the only ones that exercise keyless mode, so they exclusively
 // own the `keyless_*` rate-limit keyspace — we flush it before each test (and run
@@ -104,6 +104,35 @@ describeIf(KEYLESS_ENABLED)("Keyless free tier", () => {
     expect(response.body.error).toContain("not available without an API key");
   });
 
+  it(
+    "allows keyless parse upload and charges the keyless credit cap (200)",
+    async () => {
+      const response = await request(TEST_API_URL)
+        .post("/v2/parse")
+        .field(
+          "options",
+          JSON.stringify({ formats: ["markdown"], origin: "mcp" }),
+        )
+        .attach(
+          "file",
+          Buffer.from("<h1>Keyless Parse Upload</h1><p>Hello.</p>"),
+          { filename: "keyless.html", contentType: "text/html" },
+        );
+
+      expect(response.statusCode).toBe(200);
+      expect(response.body.success).toBe(true);
+      expect(response.body.data.markdown).toContain("Keyless Parse Upload");
+      expect(response.body.data.metadata.creditsUsed).toBe(1);
+
+      const ip = await currentKeylessIp();
+      const creditsUsed = Number(
+        await redisRateLimitClient.get(`keyless_credits:${ip}`),
+      );
+      expect(creditsUsed).toBeGreaterThanOrEqual(1);
+    },
+    scrapeTimeout,
+  );
+
   it("enforces the daily request cap with the request signup message (429)", async () => {
     // Each request consumes a slot during auth, then fails fast in the controller
     // (no url) — so we exhaust the cap without real scrapes, and 0 credits.
@@ -142,6 +171,33 @@ describeIf(KEYLESS_ENABLED)("Keyless free tier", () => {
       .post("/v2/scrape")
       .set("Content-Type", "application/json")
       .send({ origin: "mcp" });
+
+    expect(blocked.statusCode).toBe(429);
+    expect(blocked.body.error).toContain("unauthenticated credits");
+  });
+
+  it("enforces the daily credit cap on parse (429)", async () => {
+    // Materialize the loopback IP, then seed its credit counter to the cap.
+    await request(TEST_API_URL)
+      .post("/v2/scrape")
+      .set("Content-Type", "application/json")
+      .send({ origin: "mcp" });
+    const ip = await currentKeylessIp();
+    await redisRateLimitClient.set(
+      `keyless_credits:${ip}`,
+      String(KEYLESS_CREDITS_PER_DAY),
+    );
+
+    const blocked = await request(TEST_API_URL)
+      .post("/v2/parse")
+      .field(
+        "options",
+        JSON.stringify({ formats: ["markdown"], origin: "mcp" }),
+      )
+      .attach("file", Buffer.from("<h1>Blocked</h1>"), {
+        filename: "blocked.html",
+        contentType: "text/html",
+      });
 
     expect(blocked.statusCode).toBe(429);
     expect(blocked.body.error).toContain("unauthenticated credits");
