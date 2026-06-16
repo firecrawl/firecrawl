@@ -22,9 +22,8 @@ const KEYLESS_ENABLED =
   Number.isFinite(KEYLESS_CREDITS_PER_DAY) &&
   KEYLESS_CREDITS_PER_DAY > 0;
 
-// Keyless free tier: scrape, parse, search, and interact work without an API key
-// from the official MCP server (origin "mcp*"), CLI (integration "cli"), or SDKs
-// (origin "<lang>-sdk@..."). Gated per-IP/day by a request cap AND a credit cap.
+// Keyless free tier: scrape, parse, search, and interact work without an API key.
+// Gated per-IP/day by a request cap AND a credit cap.
 // These tests are the only ones that exercise keyless mode, so they exclusively
 // own the `keyless_*` rate-limit keyspace — we flush it before each test (and run
 // sequentially) for isolation. `req.ip` is loopback under supertest, so the
@@ -203,6 +202,254 @@ describeIf(KEYLESS_ENABLED)("Keyless free tier", () => {
     expect(blocked.body.error).toContain("unauthenticated credits");
   });
 
+  it(
+    "rejects projected multi-credit keyless parse before parsing (429)",
+    async () => {
+      await request(TEST_API_URL)
+        .post("/v2/scrape")
+        .set("Content-Type", "application/json")
+        .send({ origin: "mcp" });
+      const ip = await currentKeylessIp();
+      await redisRateLimitClient.set(
+        `keyless_credits:${ip}`,
+        String(KEYLESS_CREDITS_PER_DAY - 1),
+      );
+
+      const blocked = await request(TEST_API_URL)
+        .post("/v2/parse")
+        .field(
+          "options",
+          JSON.stringify({
+            origin: "mcp",
+            proxy: "basic",
+            formats: [
+              {
+                type: "json",
+                schema: {
+                  type: "object",
+                  properties: { title: { type: "string" } },
+                },
+              },
+            ],
+          }),
+        )
+        .attach("file", Buffer.from("<h1>Blocked parse</h1>"), {
+          filename: "blocked.html",
+          contentType: "text/html",
+        });
+
+      expect(blocked.statusCode).toBe(429);
+      expect(blocked.body.error).toContain("unauthenticated credits");
+      expect(blocked.headers["www-authenticate"]).toContain(
+        "resource_metadata",
+      );
+    },
+    scrapeTimeout,
+  );
+
+  it(
+    "rejects projected multi-credit keyless scrape before scraping (429)",
+    async () => {
+      await request(TEST_API_URL)
+        .post("/v2/scrape")
+        .set("Content-Type", "application/json")
+        .send({ origin: "mcp" });
+      const ip = await currentKeylessIp();
+      await redisRateLimitClient.set(
+        `keyless_credits:${ip}`,
+        String(KEYLESS_CREDITS_PER_DAY - 1),
+      );
+
+      const blocked = await request(TEST_API_URL)
+        .post("/v2/scrape")
+        .set("Content-Type", "application/json")
+        .send({
+          url: TEST_SUITE_WEBSITE,
+          origin: "mcp",
+          proxy: "basic",
+          formats: [
+            {
+              type: "json",
+              schema: {
+                type: "object",
+                properties: { title: { type: "string" } },
+              },
+            },
+          ],
+        });
+
+      expect(blocked.statusCode).toBe(429);
+      expect(blocked.body.error).toContain("unauthenticated credits");
+      expect(blocked.headers["www-authenticate"]).toContain(
+        "resource_metadata",
+      );
+    },
+    scrapeTimeout,
+  );
+
+  it(
+    "rejects projected multi-credit v1 keyless scrape before scraping (429)",
+    async () => {
+      await request(TEST_API_URL)
+        .post("/v1/scrape")
+        .set("Content-Type", "application/json")
+        .send({ origin: "mcp" });
+      const ip = await currentKeylessIp();
+      await redisRateLimitClient.set(
+        `keyless_credits:${ip}`,
+        String(KEYLESS_CREDITS_PER_DAY - 1),
+      );
+
+      const blocked = await request(TEST_API_URL)
+        .post("/v1/scrape")
+        .set("Content-Type", "application/json")
+        .send({
+          url: TEST_SUITE_WEBSITE,
+          origin: "mcp",
+          proxy: "basic",
+          formats: ["json"],
+          jsonOptions: {
+            schema: {
+              type: "object",
+              properties: { title: { type: "string" } },
+            },
+          },
+        });
+
+      expect(blocked.statusCode).toBe(429);
+      expect(blocked.body.error).toContain("unauthenticated credits");
+      expect(blocked.headers["www-authenticate"]).toContain(
+        "resource_metadata",
+      );
+    },
+    scrapeTimeout,
+  );
+
+  it(
+    "reconciles keyless scrape reservation to actual credits (200)",
+    async () => {
+      const response = await request(TEST_API_URL)
+        .post("/v2/scrape")
+        .set("Content-Type", "application/json")
+        .send({
+          url: TEST_SUITE_WEBSITE,
+          origin: "mcp",
+          proxy: "basic",
+          formats: [
+            {
+              type: "json",
+              schema: {
+                type: "object",
+                properties: { title: { type: "string" } },
+              },
+            },
+          ],
+        });
+
+      expect(response.statusCode).toBe(200);
+      expect(response.body.success).toBe(true);
+      expect(response.body.data.metadata.creditsUsed).toBe(5);
+
+      const ip = await currentKeylessIp();
+      const creditsUsed = Number(
+        await redisRateLimitClient.get(`keyless_credits:${ip}`),
+      );
+      expect(creditsUsed).toBe(response.body.data.metadata.creditsUsed);
+    },
+    scrapeTimeout,
+  );
+
+  it(
+    "rejects projected keyless search with scrape options before search (429)",
+    async () => {
+      await request(TEST_API_URL)
+        .post("/v2/scrape")
+        .set("Content-Type", "application/json")
+        .send({ origin: "mcp" });
+      const ip = await currentKeylessIp();
+      await redisRateLimitClient.set(
+        `keyless_credits:${ip}`,
+        String(KEYLESS_CREDITS_PER_DAY - 1),
+      );
+
+      const blocked = await request(TEST_API_URL)
+        .post("/v2/search")
+        .set("Content-Type", "application/json")
+        .send({
+          query: "firecrawl",
+          limit: 1,
+          origin: "mcp",
+          scrapeOptions: {
+            proxy: "basic",
+            formats: ["markdown"],
+          },
+        });
+
+      expect(blocked.statusCode).toBe(429);
+      expect(blocked.body.error).toContain("unauthenticated credits");
+      expect(blocked.headers["www-authenticate"]).toContain(
+        "resource_metadata",
+      );
+    },
+    scrapeTimeout,
+  );
+
+  it(
+    "rejects projected v1 keyless search with scrape options before search (429)",
+    async () => {
+      await request(TEST_API_URL)
+        .post("/v1/scrape")
+        .set("Content-Type", "application/json")
+        .send({ origin: "mcp" });
+      const ip = await currentKeylessIp();
+      await redisRateLimitClient.set(
+        `keyless_credits:${ip}`,
+        String(KEYLESS_CREDITS_PER_DAY - 1),
+      );
+
+      const blocked = await request(TEST_API_URL)
+        .post("/v1/search")
+        .set("Content-Type", "application/json")
+        .send({
+          query: "firecrawl",
+          limit: 1,
+          origin: "mcp",
+          scrapeOptions: {
+            proxy: "basic",
+            formats: ["markdown"],
+          },
+        });
+
+      expect(blocked.statusCode).toBe(429);
+      expect(blocked.body.error).toContain("unauthenticated credits");
+      expect(blocked.headers["www-authenticate"]).toContain(
+        "resource_metadata",
+      );
+    },
+    scrapeTimeout,
+  );
+
+  it(
+    "reconciles keyless search reservation to actual credits (200)",
+    async () => {
+      const response = await request(TEST_API_URL)
+        .post("/v2/search")
+        .set("Content-Type", "application/json")
+        .send({ query: "firecrawl", limit: 1, origin: "mcp" });
+
+      expect(response.statusCode).toBe(200);
+      expect(response.body.success).toBe(true);
+      expect(typeof response.body.creditsUsed).toBe("number");
+
+      const ip = await currentKeylessIp();
+      const creditsUsed = Number(
+        await redisRateLimitClient.get(`keyless_credits:${ip}`),
+      );
+      expect(creditsUsed).toBe(response.body.creditsUsed);
+    },
+    scrapeTimeout,
+  );
+
   itIf(!!process.env.KEYLESS_PROXY_SECRET)(
     "rate-limits per forwarded client IP when the proxy secret is provided",
     async () => {
@@ -307,6 +554,43 @@ describeIf(KEYLESS_ENABLED)("Keyless free tier", () => {
         .send({ code: "return 1;", origin: "mcp" });
 
       expect(response.statusCode).not.toBe(401);
+    },
+    scrapeTimeout,
+  );
+
+  itIf(!!config.BROWSER_SERVICE_URL)(
+    "rejects projected keyless interact session creation before browser work (429)",
+    async () => {
+      const scrapeResponse = await request(TEST_API_URL)
+        .post("/v2/scrape")
+        .set("Content-Type", "application/json")
+        .send({
+          url: TEST_SUITE_WEBSITE,
+          origin: "website-keyless-interact-test",
+          proxy: "basic",
+          formats: ["markdown"],
+        });
+
+      expect(scrapeResponse.statusCode).toBe(200);
+      expect(scrapeResponse.body.success).toBe(true);
+      expect(typeof scrapeResponse.body.scrape_id).toBe("string");
+
+      const ip = await currentKeylessIp();
+      await redisRateLimitClient.set(
+        `keyless_credits:${ip}`,
+        String(KEYLESS_CREDITS_PER_DAY - 1),
+      );
+
+      const blocked = await request(TEST_API_URL)
+        .post(`/v2/scrape/${scrapeResponse.body.scrape_id}/interact`)
+        .set("Content-Type", "application/json")
+        .send({ code: "return 1;", origin: "mcp" });
+
+      expect(blocked.statusCode).toBe(429);
+      expect(blocked.body.error).toContain("unauthenticated credits");
+      expect(blocked.headers["www-authenticate"]).toContain(
+        "resource_metadata",
+      );
     },
     scrapeTimeout,
   );

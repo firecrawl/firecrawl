@@ -18,6 +18,7 @@ type ScrapeJobCommon = {
   team_id: string;
   zeroDataRetention: boolean;
   billing?: BillingMetadata;
+  keylessReserved?: boolean;
   traceContext?: SerializedTraceContext;
   skipNuq?: boolean;
   requestId?: string;

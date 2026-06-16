@@ -47,6 +47,7 @@ interface SearchContext {
   zeroDataRetention?: boolean;
   billing?: BillingMetadata;
   agentIndexOnly?: boolean;
+  keylessReserved?: boolean;
 }
 
 interface SearchExecuteResult {
@@ -169,6 +170,7 @@ export async function executeSearch(
         requestId,
         billing,
         agentIndexOnly: context.agentIndexOnly,
+        keylessReserved: context.keylessReserved,
       };
 
       const allDocsWithCostTracking = await scrapeSearchResults(

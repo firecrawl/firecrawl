@@ -7,7 +7,11 @@ import {
   searchRequestSchema,
 } from "./types";
 import { billTeam } from "../../services/billing/credit_billing";
-import { chargeKeylessCredits } from "../../lib/keyless";
+import {
+  KEYLESS_CREDITS_MESSAGE,
+  adjustKeylessCredits,
+  reserveKeylessCredits,
+} from "../../lib/keyless";
 import { v7 as uuidv7 } from "uuid";
 import { logSearch, logRequest } from "../../services/logging/log_job";
 import { logger as _logger } from "../../lib/logger";
@@ -21,6 +25,8 @@ import {
 import { executeSearch } from "../../search/execute";
 import type { BillingMetadata } from "../../services/billing/types";
 import { getSearchForcedKind, getSearchZDR } from "../../lib/zdr-helpers";
+import { projectSearchTotalCredits } from "../../lib/keyless-credit-projection";
+import { applyAgentAuthDiscoveryHeader } from "../../lib/agent-auth-discovery";
 
 export async function searchController(
   req: RequestWithAuth<{}, SearchResponse, SearchRequest>,
@@ -48,6 +54,8 @@ export async function searchController(
     config.SEARCH_PREVIEW_TOKEN === req.body.__searchPreviewToken;
 
   let zeroDataRetention = teamForcedKind !== null;
+  let reservedKeylessCredits = 0;
+  let reconciledKeylessCredits = false;
 
   try {
     req.body = searchRequestSchema.parse(req.body);
@@ -121,6 +129,33 @@ export async function searchController(
       });
     }
 
+    const projectedKeylessCredits =
+      !isSearchPreview && shouldBill
+        ? projectSearchTotalCredits(
+            {
+              limit: req.body.limit,
+              enterprise: req.body.enterprise,
+              scrapeOptions: req.body.scrapeOptions,
+            },
+            req.acuc?.flags ?? null,
+            zeroDataRetention,
+          )
+        : 0;
+    if (projectedKeylessCredits > 0) {
+      const reservation = await reserveKeylessCredits(
+        req.auth.team_id,
+        projectedKeylessCredits,
+      );
+      if (!reservation.ok) {
+        applyAgentAuthDiscoveryHeader(res);
+        return res.status(429).json({
+          success: false,
+          error: KEYLESS_CREDITS_MESSAGE,
+        });
+      }
+      reservedKeylessCredits = projectedKeylessCredits;
+    }
+
     const result = await executeSearch(
       {
         query: req.body.query,
@@ -151,6 +186,7 @@ export async function searchController(
         zeroDataRetention,
         billing,
         agentIndexOnly: (req as any).agentIndexOnly ?? false,
+        keylessReserved: reservedKeylessCredits > 0,
       },
       logger,
     );
@@ -170,12 +206,13 @@ export async function searchController(
       );
     }
 
-    // Charge the keyless free tier's per-IP daily credit budget for search
-    // credits (no-op for non-keyless teams; scrape jobs within search charge
-    // themselves via the scrape worker).
-    chargeKeylessCredits(req.auth.team_id, result.searchCredits).catch(
-      () => {},
-    );
+    if (reservedKeylessCredits > 0) {
+      reconciledKeylessCredits = true;
+      adjustKeylessCredits(
+        req.auth.team_id,
+        result.totalCredits - reservedKeylessCredits,
+      ).catch(() => {});
+    }
 
     const endTime = new Date().getTime();
     const timeTakenInSeconds = (endTime - middlewareStartTime) / 1000;
@@ -223,6 +260,13 @@ export async function searchController(
       id: jobId,
     });
   } catch (error) {
+    if (reservedKeylessCredits > 0 && !reconciledKeylessCredits) {
+      reconciledKeylessCredits = true;
+      adjustKeylessCredits(req.auth.team_id, -reservedKeylessCredits).catch(
+        () => {},
+      );
+    }
+
     if (error instanceof z.ZodError) {
       logger.warn("Invalid request body", { error: error.issues });
       return res.status(400).json({

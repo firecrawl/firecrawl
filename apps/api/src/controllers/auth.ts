@@ -9,6 +9,7 @@ import { getAgentSponsorStatus } from "../services/agent-sponsor";
 import { getRedisConnection } from "../services/queue-service";
 import { getRateLimiter } from "../services/rate-limiter";
 import {
+  KEYLESS_CREDITS_MESSAGE,
   consumeKeylessRequest,
   isKeylessConfigured,
   isKeylessIpEligible,
@@ -470,8 +471,6 @@ export async function clearACUCTeam(team_id: string): Promise<void> {
 }
 
 const KEYLESS_REQUESTS_MESSAGE = `You've reached today's limit of free, unauthenticated requests to Firecrawl. Sign up for a free API key at https://firecrawl.dev for 1000 more credits and higher rate limits for free. (If you're an agent, you can also use https://firecrawl.dev/auth.md)`;
-
-const KEYLESS_CREDITS_MESSAGE = `You've reached today's limit of free, unauthenticated credits for Firecrawl. Sign up for a free API key at https://firecrawl.dev for 1000 more credits and higher rate limits for free. (If you're an agent, you can also use https://firecrawl.dev/auth.md)`;
 
 const KEYLESS_ENDPOINT_NOT_AVAILABLE_MESSAGE = `This endpoint is not available without an API key. Sign up for a free API key at https://firecrawl.dev for 1000 more credits and higher rate limits for free. (If you're an agent, you can also use https://firecrawl.dev/auth.md)`;
 

@@ -139,9 +139,11 @@ async function billScrapeJob(
       unsupportedFeatures,
     );
 
-    // Charge the keyless free tier's per-IP daily credit budget (no-op for
-    // non-keyless teams).
-    await chargeKeylessCredits(job.data.team_id, creditsToBeBilled);
+    // Charge the keyless free tier's per-IP daily credit budget unless this
+    // request reserved credits in the controller and will reconcile there.
+    if (!job.data.keylessReserved) {
+      await chargeKeylessCredits(job.data.team_id, creditsToBeBilled);
+    }
 
     if (
       job.data.team_id !== config.BACKGROUND_INDEX_TEAM_ID! &&

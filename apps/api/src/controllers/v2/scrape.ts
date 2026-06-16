@@ -24,6 +24,13 @@ import { getErrorContactMessage } from "../../lib/deployment";
 import { captureExceptionWithZdrCheck } from "../../services/sentry";
 import type { BillingMetadata } from "../../services/billing/types";
 import { getScrapeZDR } from "../../lib/zdr-helpers";
+import {
+  KEYLESS_CREDITS_MESSAGE,
+  adjustKeylessCredits,
+  reserveKeylessCredits,
+} from "../../lib/keyless";
+import { projectScrapeCredits } from "../../lib/keyless-credit-projection";
+import { applyAgentAuthDiscoveryHeader } from "../../lib/agent-auth-discovery";
 
 const AGENT_INTEROP_CONCURRENCY_BOOST = 3;
 
@@ -111,6 +118,34 @@ export async function scrapeController(
       const agentRequestId = req.body.__agentInterop?.requestId ?? null;
       const boostConcurrency =
         req.body.__agentInterop?.boostConcurrency ?? false;
+      const isDirectToBullMQ =
+        config.SEARCH_PREVIEW_TOKEN !== undefined &&
+        config.SEARCH_PREVIEW_TOKEN === req.body.__searchPreviewToken;
+      const projectedKeylessCredits =
+        shouldBill && !isDirectToBullMQ
+          ? projectScrapeCredits(
+              req.body,
+              req.acuc?.flags ?? null,
+              zeroDataRetention,
+            )
+          : 0;
+      let reservedKeylessCredits = 0;
+      let reconciledKeylessCredits = false;
+
+      if (projectedKeylessCredits > 0) {
+        const reservation = await reserveKeylessCredits(
+          req.auth.team_id,
+          projectedKeylessCredits,
+        );
+        if (!reservation.ok) {
+          applyAgentAuthDiscoveryHeader(res);
+          return res.status(429).json({
+            success: false,
+            error: KEYLESS_CREDITS_MESSAGE,
+          });
+        }
+        reservedKeylessCredits = projectedKeylessCredits;
+      }
 
       const logger = _logger.child({
         method: "scrapeController",
@@ -158,10 +193,6 @@ export async function scrapeController(
 
       const origin = req.body.origin;
       const timeout = req.body.timeout;
-
-      const isDirectToBullMQ =
-        config.SEARCH_PREVIEW_TOKEN !== undefined &&
-        config.SEARCH_PREVIEW_TOKEN === req.body.__searchPreviewToken;
 
       const totalWait =
         (req.body.waitFor ?? 0) +
@@ -261,6 +292,7 @@ export async function scrapeController(
                     zeroDataRetention,
                     apiKeyId: req.acuc?.api_key_id ?? null,
                     concurrencyLimited: limited,
+                    keylessReserved: reservedKeylessCredits > 0,
                     requestId: agentRequestId ?? undefined,
                     logRequestPromise: logRequestPromise,
                   },
@@ -280,6 +312,13 @@ export async function scrapeController(
           },
         );
       } catch (e) {
+        if (reservedKeylessCredits > 0 && !reconciledKeylessCredits) {
+          reconciledKeylessCredits = true;
+          adjustKeylessCredits(req.auth.team_id, -reservedKeylessCredits).catch(
+            () => {},
+          );
+        }
+
         const timeoutErr =
           e instanceof TransportableError && e.code === "SCRAPE_TIMEOUT";
 
@@ -404,6 +443,14 @@ export async function scrapeController(
         if (doc && doc.rawHtml) {
           delete doc.rawHtml;
         }
+      }
+
+      if (reservedKeylessCredits > 0 && !reconciledKeylessCredits) {
+        reconciledKeylessCredits = true;
+        adjustKeylessCredits(
+          req.auth.team_id,
+          (doc?.metadata?.creditsUsed ?? 0) - reservedKeylessCredits,
+        ).catch(() => {});
       }
 
       const totalRequestTime = new Date().getTime() - middlewareStartTime;

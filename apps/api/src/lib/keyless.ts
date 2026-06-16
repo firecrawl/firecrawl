@@ -17,6 +17,8 @@ import { isKeylessIpSuspicious } from "./spur";
 const KEYLESS_REQUESTS_PER_DAY = config.KEYLESS_REQUESTS_PER_DAY;
 const KEYLESS_CREDITS_PER_DAY = config.KEYLESS_CREDITS_PER_DAY;
 
+export const KEYLESS_CREDITS_MESSAGE = `You've reached today's limit of free, unauthenticated credits for Firecrawl. Sign up for a free API key at https://firecrawl.dev for 1000 more credits and higher rate limits for free. (If you're an agent, you can also use https://firecrawl.dev/auth.md)`;
+
 // The tier is "configured" when BOTH limits are set — even to 0. Unset means the
 // feature is off (callers get a plain Unauthorized); 0 means it's on but the
 // budget is exhausted (callers get the 429 cap message).
@@ -87,6 +89,12 @@ type KeylessConsumeResult = {
   creditsUsed: number;
 };
 
+type KeylessCreditReservationResult = {
+  ok: boolean;
+  creditsUsed: number;
+  limit: number;
+};
+
 /**
  * Consume one request from the per-IP daily request budget and check the credit
  * budget (credits are charged after the request completes, in
@@ -116,6 +124,88 @@ export async function consumeKeylessRequest(
     return { ok: false, reason: "credits", requestsUsed, creditsUsed };
   }
   return { ok: true, requestsUsed, creditsUsed };
+}
+
+/**
+ * Atomically reserve projected credits from the keyless per-IP daily credit
+ * budget. No-op for non-keyless teams.
+ */
+export async function reserveKeylessCredits(
+  teamId: string,
+  projectedCredits: number,
+): Promise<KeylessCreditReservationResult> {
+  const ip = keylessIpFromTeamId(teamId);
+  const limit = KEYLESS_CREDITS_PER_DAY ?? 0;
+  if (!ip || !Number.isFinite(projectedCredits) || projectedCredits <= 0) {
+    return { ok: true, creditsUsed: 0, limit };
+  }
+
+  const projected = Math.ceil(projectedCredits);
+  const key = creditsKey(ip);
+  const result = (await redisRateLimitClient.eval(
+    `
+local current = tonumber(redis.call("GET", KEYS[1]) or "0")
+local projected = tonumber(ARGV[1])
+local limit = tonumber(ARGV[2])
+local ttl = tonumber(ARGV[3])
+if current + projected > limit then
+  return {0, current}
+end
+local total = redis.call("INCRBY", KEYS[1], projected)
+if total == projected then
+  redis.call("EXPIRE", KEYS[1], ttl)
+end
+return {1, total}
+`,
+    1,
+    key,
+    projected,
+    limit,
+    DAY_SECONDS,
+  )) as [number, number];
+
+  return {
+    ok: result[0] === 1,
+    creditsUsed: Number(result[1] ?? 0),
+    limit,
+  };
+}
+
+/**
+ * Reconcile a prior keyless reservation to actual credits. Delta may be
+ * negative; the counter is clamped at zero to tolerate retries or races.
+ */
+export async function adjustKeylessCredits(
+  teamId: string,
+  deltaCredits: number,
+): Promise<number | null> {
+  const ip = keylessIpFromTeamId(teamId);
+  if (!ip || !Number.isFinite(deltaCredits) || deltaCredits === 0) return null;
+
+  const delta =
+    deltaCredits > 0
+      ? Math.ceil(deltaCredits)
+      : -Math.ceil(Math.abs(deltaCredits));
+  const key = creditsKey(ip);
+  const total = (await redisRateLimitClient.eval(
+    `
+local current = tonumber(redis.call("GET", KEYS[1]) or "0")
+local delta = tonumber(ARGV[1])
+local ttl = tonumber(ARGV[2])
+local next = current + delta
+if next < 0 then
+  next = 0
+end
+redis.call("SET", KEYS[1], next, "EX", ttl)
+return next
+`,
+    1,
+    key,
+    delta,
+    DAY_SECONDS,
+  )) as number;
+
+  return Number(total);
 }
 
 /**
