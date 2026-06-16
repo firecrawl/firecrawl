@@ -99,6 +99,7 @@ type BrowserExecuteRequest = z.infer<typeof browserExecuteRequestSchema>;
 
 interface BrowserExecuteResponse {
   success: boolean;
+  cdpUrl?: string;
   liveViewUrl?: string;
   interactiveLiveViewUrl?: string;
   output?: string;
@@ -361,6 +362,7 @@ export async function scrapeInteractController(
 
   return res.status(200).json({
     success: !hasError,
+    cdpUrl: session.cdp_url,
     liveViewUrl: session.cdp_path,
     interactiveLiveViewUrl: session.cdp_interactive_path,
     ...(agentOutput ? { output: agentOutput } : {}),

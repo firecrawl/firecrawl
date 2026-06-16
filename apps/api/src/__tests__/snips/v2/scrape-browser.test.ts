@@ -107,6 +107,8 @@ describe("Scrape browser interact replay", () => {
         expect(executeResponse.statusCode).toBe(200);
         expect(executeResponse.body.success).toBe(true);
         expect(executeResponse.body.stdout).toContain(marker);
+        expect(typeof executeResponse.body.cdpUrl).toBe("string");
+        expect(executeResponse.body.cdpUrl.length).toBeGreaterThan(0);
       } finally {
         if (scrapeId) {
           await scrapeStopInteractiveBrowserRaw(scrapeId, identity);

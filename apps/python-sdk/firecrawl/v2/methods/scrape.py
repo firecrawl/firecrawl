@@ -128,6 +128,8 @@ def interact(
     normalized = dict(payload)
     if "exitCode" in normalized and "exit_code" not in normalized:
         normalized["exit_code"] = normalized["exitCode"]
+    if "cdpUrl" in normalized and "cdp_url" not in normalized:
+        normalized["cdp_url"] = normalized["cdpUrl"]
     if "liveViewUrl" in normalized and "live_view_url" not in normalized:
         normalized["live_view_url"] = normalized["liveViewUrl"]
     if "interactiveLiveViewUrl" in normalized and "interactive_live_view_url" not in normalized:
