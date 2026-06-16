@@ -27,6 +27,15 @@ describe("youtubePostprocessor.shouldRun", () => {
     ).toBe(true);
   });
 
+  it("runs for YouTube Shorts video URLs", () => {
+    expect(
+      youtubePostprocessor.shouldRun(
+        meta,
+        new URL("https://www.youtube.com/shorts/H4fUJQCIV5E"),
+      ),
+    ).toBe(true);
+  });
+
   it("does not run for non-video YouTube paths or already processed URLs", () => {
     expect(
       youtubePostprocessor.shouldRun(meta, new URL("https://www.youtube.com/")),
@@ -35,6 +44,12 @@ describe("youtubePostprocessor.shouldRun", () => {
       youtubePostprocessor.shouldRun(
         meta,
         new URL("https://www.youtube.com/live/"),
+      ),
+    ).toBe(false);
+    expect(
+      youtubePostprocessor.shouldRun(
+        meta,
+        new URL("https://www.youtube.com/shorts/"),
       ),
     ).toBe(false);
     expect(
