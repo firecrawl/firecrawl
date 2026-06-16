@@ -98,10 +98,30 @@ it('hydrates video URL in Document', function (): void {
     $doc = Document::fromArray([
         'markdown' => '# Video',
         'video' => 'https://storage.googleapis.com/firecrawl/video.mp4',
+        'videos' => [
+            [
+                'url' => 'https://cdn.example.com/product.mp4',
+                'sourceURL' => 'https://example.com/product',
+                'source' => 'script',
+                'kind' => 'file',
+                'provider' => 'cdn.example.com',
+                'title' => 'Product video',
+                'thumbnail' => 'https://cdn.example.com/poster.jpg',
+                'description' => 'Product overview',
+                'duration' => 'PT45S',
+                'mimeType' => 'video/mp4',
+                'width' => 1920,
+                'height' => 1080,
+                'metadata' => ['resourceType' => 'Media'],
+            ],
+        ],
     ]);
 
     expect($doc->getMarkdown())->toBe('# Video');
     expect($doc->getVideo())->toBe('https://storage.googleapis.com/firecrawl/video.mp4');
+    expect($doc->getVideos())->toHaveCount(1);
+    expect($doc->getVideos()[0]['sourceURL'])->toBe('https://example.com/product');
+    expect($doc->getVideos()[0]['thumbnail'])->toBe('https://cdn.example.com/poster.jpg');
 });
 
 it('preserves positional integration in ScrapeOptions::with', function (): void {

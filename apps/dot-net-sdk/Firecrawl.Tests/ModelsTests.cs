@@ -122,6 +122,23 @@ public class ModelsTests
             "markdown": "# Hello World",
             "html": "<h1>Hello World</h1>",
             "video": "https://storage.googleapis.com/firecrawl/video.mp4",
+            "videos": [
+                {
+                    "url": "https://cdn.example.com/product.mp4",
+                    "sourceURL": "https://example.com/product",
+                    "source": "script",
+                    "kind": "file",
+                    "provider": "cdn.example.com",
+                    "title": "Product video",
+                    "thumbnail": "https://cdn.example.com/poster.jpg",
+                    "description": "Product overview",
+                    "duration": "PT45S",
+                    "mimeType": "video/mp4",
+                    "width": 1920,
+                    "height": 1080,
+                    "metadata": { "resourceType": "Media" }
+                }
+            ],
             "metadata": {
                 "title": "Test",
                 "sourceURL": "https://example.com"
@@ -135,6 +152,11 @@ public class ModelsTests
         Assert.Equal("# Hello World", doc.Markdown);
         Assert.Equal("<h1>Hello World</h1>", doc.Html);
         Assert.Equal("https://storage.googleapis.com/firecrawl/video.mp4", doc.Video);
+        Assert.NotNull(doc.Videos);
+        Assert.Single(doc.Videos);
+        Assert.Equal("https://example.com/product", doc.Videos[0].SourceURL);
+        Assert.Equal("video/mp4", doc.Videos[0].MimeType);
+        Assert.Equal("https://cdn.example.com/poster.jpg", doc.Videos[0].Thumbnail);
         Assert.NotNull(doc.Metadata);
         Assert.Null(doc.Warning);
     }

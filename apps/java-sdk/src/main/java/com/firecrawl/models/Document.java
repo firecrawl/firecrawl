@@ -21,6 +21,7 @@ public class Document {
     private String screenshot;
     private String audio;
     private String video;
+    private List<VideoItem> videos;
     private List<Map<String, Object>> attributes;
     private Map<String, Object> actions;
     private String answer;
@@ -40,6 +41,7 @@ public class Document {
     public String getScreenshot() { return screenshot; }
     public String getAudio() { return audio; }
     public String getVideo() { return video; }
+    public List<VideoItem> getVideos() { return videos; }
     public List<Map<String, Object>> getAttributes() { return attributes; }
     public Map<String, Object> getActions() { return actions; }
     public String getAnswer() { return answer; }

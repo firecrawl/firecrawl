@@ -272,6 +272,26 @@ RedactPIIEntity = Literal[
 ]
 
 
+class VideoItem(BaseModel):
+    """A discovered video reference on a scraped page."""
+
+    model_config = {"populate_by_name": True}
+
+    url: str
+    source_url: str = Field(alias="sourceURL")
+    source: str
+    kind: Optional[str] = None
+    provider: Optional[str] = None
+    title: Optional[str] = None
+    thumbnail: Optional[str] = None
+    description: Optional[str] = None
+    duration: Optional[str] = None
+    mime_type: Optional[str] = Field(default=None, alias="mimeType")
+    width: Optional[int] = None
+    height: Optional[int] = None
+    metadata: Optional[Dict[str, Any]] = None
+
+
 class Document(BaseModel):
     """A scraped document."""
 
@@ -286,6 +306,7 @@ class Document(BaseModel):
     screenshot: Optional[str] = None
     audio: Optional[str] = None
     video: Optional[str] = None
+    videos: Optional[List[VideoItem]] = None
     actions: Optional[Dict[str, Any]] = None
     answer: Optional[str] = None
     highlights: Optional[str] = None

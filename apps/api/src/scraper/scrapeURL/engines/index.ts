@@ -440,7 +440,7 @@ const engineOptions: {
       atsv: false,
       location: false,
       mobile: false,
-      skipTlsVerification: false,
+      skipTlsVerification: true,
       useFastMode: true,
       stealthProxy: true, // kinda...
       branding: false,
@@ -461,7 +461,7 @@ const engineOptions: {
       atsv: false,
       location: false,
       mobile: false,
-      skipTlsVerification: false,
+      skipTlsVerification: true,
       useFastMode: true,
       stealthProxy: true, // kinda...
       branding: false,

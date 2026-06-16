@@ -1,5 +1,7 @@
 package com.firecrawl;
 
+import com.fasterxml.jackson.databind.DeserializationFeature;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.firecrawl.client.FirecrawlClient;
 import com.firecrawl.errors.FirecrawlException;
 import com.firecrawl.models.*;
@@ -251,6 +253,40 @@ class FirecrawlClientTest {
                 .build();
 
         assertTrue(options.getRedactPII());
+    }
+
+    @Test
+    void testDocumentDeserializesVideos() throws Exception {
+        ObjectMapper objectMapper = new ObjectMapper()
+                .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
+        String json = "{"
+                + "\"markdown\":\"# Video\","
+                + "\"video\":\"https://storage.googleapis.com/firecrawl/video.mp4\","
+                + "\"videos\":[{"
+                + "\"url\":\"https://cdn.example.com/product.mp4\","
+                + "\"sourceURL\":\"https://example.com/product\","
+                + "\"source\":\"script\","
+                + "\"kind\":\"file\","
+                + "\"provider\":\"cdn.example.com\","
+                + "\"title\":\"Product video\","
+                + "\"thumbnail\":\"https://cdn.example.com/poster.jpg\","
+                + "\"description\":\"Product overview\","
+                + "\"duration\":\"PT45S\","
+                + "\"mimeType\":\"video/mp4\","
+                + "\"width\":1920,"
+                + "\"height\":1080,"
+                + "\"metadata\":{\"resourceType\":\"Media\"}"
+                + "}]"
+                + "}";
+
+        Document doc = objectMapper.readValue(json, Document.class);
+
+        assertEquals("https://storage.googleapis.com/firecrawl/video.mp4", doc.getVideo());
+        assertNotNull(doc.getVideos());
+        assertEquals(1, doc.getVideos().size());
+        assertEquals("https://example.com/product", doc.getVideos().get(0).getSourceURL());
+        assertEquals("video/mp4", doc.getVideos().get(0).getMimeType());
+        assertEquals("https://cdn.example.com/poster.jpg", doc.getVideos().get(0).getThumbnail());
     }
 
     // ================================================================

@@ -75,13 +75,13 @@ Console.WriteLine(doc.Html);
 
 ### Video Extraction
 
-Use the `video` format on supported video URLs, including YouTube and TikTok. The returned `Video` property is a signed URL to the extracted video file.
+Use the `video` format to discover videos on a page. The returned `Videos` list contains direct video URLs and metadata when available. For supported provider URLs, the legacy `Video` property remains a signed URL to the extracted video file.
 
 ```csharp
-var doc = await client.ScrapeAsync("https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+var doc = await client.ScrapeAsync("https://example.com/product",
     new ScrapeOptions { Formats = new List<object> { "video" } });
 
-Console.WriteLine(doc.Video);
+Console.WriteLine(doc.Videos?.FirstOrDefault()?.Url);
 ```
 
 ### Crawl

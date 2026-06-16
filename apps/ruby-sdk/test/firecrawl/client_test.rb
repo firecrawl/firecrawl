@@ -74,7 +74,26 @@ class ClientTest < Minitest::Test
       )
       .to_return(
         status: 200,
-        body: JSON.generate(data: { markdown: "# Hello", video: "https://storage.googleapis.com/firecrawl/video.mp4", metadata: { title: "Example", sourceURL: "https://example.com" } }),
+        body: JSON.generate(data: {
+          markdown: "# Hello",
+          video: "https://storage.googleapis.com/firecrawl/video.mp4",
+          videos: [{
+            url: "https://cdn.example.com/product.mp4",
+            sourceURL: "https://example.com/product",
+            source: "script",
+            kind: "file",
+            provider: "cdn.example.com",
+            title: "Product video",
+            thumbnail: "https://cdn.example.com/poster.jpg",
+            description: "Product overview",
+            duration: "PT45S",
+            mimeType: "video/mp4",
+            width: 1920,
+            height: 1080,
+            metadata: { resourceType: "Media" }
+          }],
+          metadata: { title: "Example", sourceURL: "https://example.com" }
+        }),
         headers: { "Content-Type" => "application/json" }
       )
 
@@ -82,6 +101,8 @@ class ClientTest < Minitest::Test
     assert_instance_of Firecrawl::Models::Document, doc
     assert_equal "# Hello", doc.markdown
     assert_equal "https://storage.googleapis.com/firecrawl/video.mp4", doc.video
+    assert_equal "https://example.com/product", doc.videos.first["sourceURL"]
+    assert_equal "https://cdn.example.com/poster.jpg", doc.videos.first["thumbnail"]
     assert_equal "Example", doc.metadata["title"]
   end
 

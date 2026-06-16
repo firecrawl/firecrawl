@@ -486,6 +486,22 @@ export interface DocumentMetadata {
   [key: string]: unknown;
 }
 
+export interface VideoItem {
+  url: string;
+  sourceURL: string;
+  source: string;
+  kind?: string;
+  provider?: string;
+  title?: string;
+  thumbnail?: string;
+  description?: string;
+  duration?: string;
+  mimeType?: string;
+  width?: number;
+  height?: number;
+  metadata?: Record<string, unknown>;
+}
+
 export interface Document {
   markdown?: string;
   html?: string;
@@ -498,6 +514,7 @@ export interface Document {
   screenshot?: string;
   audio?: string;
   video?: string;
+  videos?: VideoItem[];
   attributes?: Array<{
     selector: string;
     attribute: string;

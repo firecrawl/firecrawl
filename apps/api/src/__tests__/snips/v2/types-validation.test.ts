@@ -38,6 +38,29 @@ describe("V2 Types Validation", () => {
       expect(result.url).toBe("https://example.com");
       expect(result.origin).toBe("api");
       expect(result.formats).toEqual([{ type: "markdown" }]);
+      expect(result.skipTlsVerification).toBe(true);
+    });
+
+    it("should preserve explicit skipTlsVerification false", () => {
+      const input: ScrapeRequestInput = {
+        url: "https://example.com",
+        skipTlsVerification: false,
+      };
+
+      const result = scrapeRequestSchema.parse(input);
+      expect(result.skipTlsVerification).toBe(false);
+    });
+
+    it("should default skipTlsVerification to false when custom headers are used", () => {
+      const input: ScrapeRequestInput = {
+        url: "https://example.com",
+        headers: {
+          "x-test": "true",
+        },
+      };
+
+      const result = scrapeRequestSchema.parse(input);
+      expect(result.skipTlsVerification).toBe(false);
     });
 
     it("should accept valid scrape request with format objects", () => {

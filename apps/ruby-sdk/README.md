@@ -65,13 +65,13 @@ puts doc.html
 
 ### Video Extraction
 
-Use the `video` format on supported video URLs, including YouTube and TikTok. The returned `video` field is a signed URL to the extracted video file.
+Use the `video` format to discover videos on a page. The returned `videos` array contains direct video URLs and metadata when available. For supported provider URLs, the legacy `video` field remains a signed URL to the extracted video file.
 
 ```ruby
-doc = client.scrape("https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+doc = client.scrape("https://example.com/product",
   Firecrawl::Models::ScrapeOptions.new(formats: ["video"]))
 
-puts doc.video
+puts doc.videos&.first&.dig("url")
 ```
 
 ### Parse

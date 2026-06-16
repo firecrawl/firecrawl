@@ -51,11 +51,11 @@ print(scrape_result)
 
 ### Video extraction
 
-Use the `video` format on supported video URLs, including YouTube and TikTok. The returned `video` field is a signed URL to the extracted video file.
+Use the `video` format to discover videos on a page. The returned `videos` list contains direct video URLs and metadata when available. For supported provider URLs, the legacy `video` field remains a signed URL to the extracted video file.
 
 ```python
-doc = firecrawl.scrape('https://www.youtube.com/watch?v=dQw4w9WgXcQ', formats=['video'])
-print(doc.video)
+doc = firecrawl.scrape('https://example.com/product', formats=['video'])
+print(doc.videos[0].url if doc.videos else None)
 ```
 
 ### Parsing uploaded files

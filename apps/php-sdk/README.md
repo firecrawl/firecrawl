@@ -85,14 +85,14 @@ echo $doc->getJson(); // Structured data
 
 ### Video Extraction
 
-Use the `video` format on supported video URLs, including YouTube and TikTok. The returned `video` field is a signed URL to the extracted video file.
+Use the `video` format to discover videos on a page. The returned `videos` array contains direct video URLs and metadata when available. For supported provider URLs, the legacy `video` field remains a signed URL to the extracted video file.
 
 ```php
-$doc = $client->scrape('https://www.youtube.com/watch?v=dQw4w9WgXcQ', ScrapeOptions::with(
+$doc = $client->scrape('https://example.com/product', ScrapeOptions::with(
     formats: ['video'],
 ));
 
-echo $doc->getVideo();
+echo $doc->getVideos()[0]['url'] ?? null;
 ```
 
 ### Parse

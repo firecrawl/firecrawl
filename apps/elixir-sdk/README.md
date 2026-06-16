@@ -43,11 +43,13 @@ All params are passed as keyword lists with snake_case keys. Invalid keys, missi
   formats: ["markdown"]
 )
 
-# Extract video from supported video URLs
+# Discover videos on a page
 {:ok, response} = Firecrawl.scrape_and_extract_from_url(
-  url: "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+  url: "https://example.com/product",
   formats: ["video"]
 )
+
+videos = get_in(response.body, ["data", "videos"])
 
 # Crawl a site
 {:ok, response} = Firecrawl.crawl_urls(

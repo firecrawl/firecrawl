@@ -48,14 +48,14 @@ const scrapedData = await app.scrape(url);
 
 ### Video extraction
 
-Use the `video` format on supported video URLs, including YouTube and TikTok. The returned `video` field is a signed URL to the extracted video file.
+Use the `video` format to discover videos on a page. The returned `videos` array contains direct video URLs and metadata when available. For supported provider URLs, the legacy `video` field remains a signed URL to the extracted video file.
 
 ```js
-const doc = await app.scrape('https://www.youtube.com/watch?v=dQw4w9WgXcQ', {
+const doc = await app.scrape('https://example.com/product', {
   formats: ['video'],
 });
 
-console.log(doc.video);
+console.log(doc.videos?.[0]?.url);
 ```
 
 ### Parsing uploaded files

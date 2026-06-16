@@ -718,6 +718,18 @@ const waitForRefineOpts = {
   path: ["waitFor"],
 };
 
+export const applyScrapeOptionsDefaults = <T extends ScrapeOptionsBase>(
+  obj: T,
+): T & { skipTlsVerification: boolean } => ({
+  ...obj,
+  skipTlsVerification:
+    obj.skipTlsVerification ??
+    ((obj.headers && Object.keys(obj.headers).length > 0) ||
+    (obj.actions && obj.actions.length > 0)
+      ? false
+      : true),
+});
+
 // Base transform function that handles both nullable and non-nullable cases
 // Uses generic type to preserve all fields from extended schemas
 const extractTransformImpl = <T extends ScrapeOptionsBase | undefined>(
@@ -725,7 +737,7 @@ const extractTransformImpl = <T extends ScrapeOptionsBase | undefined>(
 ): T extends undefined ? undefined : T => {
   if (!obj) return obj as T extends undefined ? undefined : T;
   // Handle timeout
-  let result = { ...obj };
+  let result = applyScrapeOptionsDefaults(obj);
   if (
     obj.formats.find(x => typeof x === "object" && x.type === "json") &&
     obj.timeout === 30000

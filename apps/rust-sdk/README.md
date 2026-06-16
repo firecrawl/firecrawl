@@ -42,7 +42,7 @@ match scrape_result {
 
 ### Video extraction
 
-Use `Format::Video` on supported video URLs, including YouTube and TikTok. The returned `video` field is a signed URL to the extracted video file.
+Use `Format::Video` to discover videos on a page. The returned `videos` list contains direct video URLs and metadata when available. For supported provider URLs, the legacy `video` field remains a signed URL to the extracted video file.
 
 ```rust
 use firecrawl::{Format, ScrapeOptions};
@@ -53,9 +53,9 @@ let options = ScrapeOptions {
 };
 
 let doc = client
-    .scrape("https://www.youtube.com/watch?v=dQw4w9WgXcQ", options)
+    .scrape("https://example.com/product", options)
     .await?;
-println!("{:?}", doc.video);
+println!("{:?}", doc.videos.as_ref().and_then(|videos| videos.first()).map(|video| &video.url));
 ```
 
 ### Parsing uploaded files (v2)

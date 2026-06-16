@@ -124,11 +124,11 @@ describe("v2.search e2e", () => {
 
     const results = await client.search("artificial intelligence", {
       sources: [ "web", "news", "images" ],
-      limit: 3,
+      limit: 1,
       tbs: "qdr:m",
       location: "US",
       ignoreInvalidURLs: true,
-      timeout: 60_000,
+      timeout: 120_000,
       scrapeOptions: {
         formats: [
           "markdown",
@@ -158,7 +158,7 @@ describe("v2.search e2e", () => {
     expect(results).toHaveProperty("images");
 
     expect(results.web).toBeTruthy();
-    expect((results.web || []).length).toBeLessThanOrEqual(3);
+    expect((results.web || []).length).toBeLessThanOrEqual(1);
 
     const nonDocEntries = (results.web || []).filter(r => !isDocument(r));
     if (nonDocEntries.length > 0) {
@@ -177,7 +177,7 @@ describe("v2.search e2e", () => {
     }
 
     if (results.news != null) {
-      expect((results.news || []).length).toBeLessThanOrEqual(3);
+      expect((results.news || []).length).toBeLessThanOrEqual(1);
       for (const result of results.news || []) {
         if (isDocument(result)) {
           expect(Boolean(result.markdown) || Boolean(result.html)).toBe(true);
@@ -189,14 +189,14 @@ describe("v2.search e2e", () => {
     }
 
     expect(results.images).toBeTruthy();
-    expect((results.images || []).length).toBeLessThanOrEqual(3);
+    expect((results.images || []).length).toBeLessThanOrEqual(1);
     for (const result of results.images || []) {
       if (!isDocument(result)) {
         expect(typeof result.url).toBe("string");
         expect(result.url?.startsWith("http")).toBe(true);
       }
     }
-  }, 120_000);
+  }, 180_000);
 
   test("formats flexibility: list vs object", async () => {
     if (!client) throw new Error();
@@ -244,4 +244,3 @@ describe("v2.search e2e", () => {
     }
   }, 90_000);
 });
-

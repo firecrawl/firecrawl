@@ -96,16 +96,18 @@ doc, err := client.Scrape(ctx, "https://example.com", &firecrawl.ScrapeOptions{
 
 ### Video Extraction
 
-Use the `video` format on supported video URLs, including YouTube and TikTok. The returned `Video` field is a signed URL to the extracted video file.
+Use the `video` format to discover videos on a page. The returned `Videos` slice contains direct video URLs and metadata when available. For supported provider URLs, the legacy `Video` field remains a signed URL to the extracted video file.
 
 ```go
-doc, err := client.Scrape(ctx, "https://www.youtube.com/watch?v=dQw4w9WgXcQ", &firecrawl.ScrapeOptions{
+doc, err := client.Scrape(ctx, "https://example.com/product", &firecrawl.ScrapeOptions{
 	Formats: []string{"video"},
 })
 if err != nil {
 	return err
 }
-fmt.Println(doc.Video)
+if len(doc.Videos) > 0 {
+	fmt.Println(doc.Videos[0].URL)
+}
 ```
 
 #### Interactive Browser

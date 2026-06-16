@@ -10,6 +10,7 @@ final class Document
      * @param array<string, mixed>|null               $metadata
      * @param list<string>|null                        $links
      * @param list<string>|null                        $images
+     * @param list<array<string, mixed>>|null          $videos
      * @param list<array<string, mixed>>|null          $attributes
      * @param array<string, mixed>|null               $actions
      * @param array<string, mixed>|null               $changeTracking
@@ -27,6 +28,7 @@ final class Document
         private readonly ?string $screenshot = null,
         private readonly ?string $audio = null,
         private readonly ?string $video = null,
+        private readonly ?array $videos = null,
         private readonly ?array $attributes = null,
         private readonly ?array $actions = null,
         private readonly ?string $answer = null,
@@ -51,6 +53,7 @@ final class Document
             screenshot: $data['screenshot'] ?? null,
             audio: $data['audio'] ?? null,
             video: $data['video'] ?? null,
+            videos: $data['videos'] ?? null,
             attributes: $data['attributes'] ?? null,
             actions: $data['actions'] ?? null,
             answer: $data['answer'] ?? null,
@@ -117,6 +120,12 @@ final class Document
     public function getVideo(): ?string
     {
         return $this->video;
+    }
+
+    /** @return list<array<string, mixed>>|null */
+    public function getVideos(): ?array
+    {
+        return $this->videos;
     }
 
     /** @return list<array<string, mixed>>|null */

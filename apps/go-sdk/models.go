@@ -2,6 +2,23 @@ package firecrawl
 
 import "encoding/json"
 
+// VideoItem represents a discovered video reference on a scraped page.
+type VideoItem struct {
+	URL         string                 `json:"url"`
+	SourceURL   string                 `json:"sourceURL"`
+	Source      string                 `json:"source"`
+	Kind        string                 `json:"kind,omitempty"`
+	Provider    string                 `json:"provider,omitempty"`
+	Title       string                 `json:"title,omitempty"`
+	Thumbnail   string                 `json:"thumbnail,omitempty"`
+	Description string                 `json:"description,omitempty"`
+	Duration    string                 `json:"duration,omitempty"`
+	MimeType    string                 `json:"mimeType,omitempty"`
+	Width       int                    `json:"width,omitempty"`
+	Height      int                    `json:"height,omitempty"`
+	Metadata    map[string]interface{} `json:"metadata,omitempty"`
+}
+
 // Document represents a scraped web page.
 type Document struct {
 	Markdown       string                   `json:"markdown,omitempty"`
@@ -15,6 +32,7 @@ type Document struct {
 	Screenshot     string                   `json:"screenshot,omitempty"`
 	Audio          string                   `json:"audio,omitempty"`
 	Video          string                   `json:"video,omitempty"`
+	Videos         []VideoItem              `json:"videos,omitempty"`
 	Attributes     []map[string]interface{} `json:"attributes,omitempty"`
 	Actions        map[string]interface{}   `json:"actions,omitempty"`
 	Answer         string                   `json:"answer,omitempty"`

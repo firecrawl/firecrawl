@@ -6,7 +6,7 @@ module Firecrawl
     class Document
       attr_reader :markdown, :html, :raw_html, :json, :summary,
                   :metadata, :links, :images, :screenshot, :audio,
-                  :video, :attributes, :actions, :answer, :highlights,
+                  :video, :videos, :attributes, :actions, :answer, :highlights,
                   :warning, :change_tracking, :branding
 
       def initialize(data)
@@ -21,6 +21,7 @@ module Firecrawl
         @screenshot = data["screenshot"]
         @audio = data["audio"]
         @video = data["video"]
+        @videos = data["videos"]
         @attributes = data["attributes"]
         @actions = data["actions"]
         @answer = data["answer"]

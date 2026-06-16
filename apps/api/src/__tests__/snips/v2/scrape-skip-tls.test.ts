@@ -1,13 +1,28 @@
 import {
   ALLOW_TEST_SUITE_WEBSITE,
+  HAS_PROXY,
   TEST_PRODUCTION,
+  TEST_SELF_HOST,
   TEST_SUITE_WEBSITE,
   testIf,
 } from "../lib";
 import { Identity, idmux, scrapeTimeout, scrape, scrapeRaw } from "./lib";
+import { execFile } from "child_process";
+import { createServer, type Server } from "https";
+import { mkdtemp, readFile, rm } from "fs/promises";
+import { tmpdir } from "os";
+import path from "path";
+import { promisify } from "util";
+
+const execFileAsync = promisify(execFile);
+const TLS_FIXTURE_BODY = "skip tls verification fixture";
+const ALLOW_LOCAL_TLS_TEST = TEST_SELF_HOST && !HAS_PROXY;
 
 describe("V2 Scrape skipTlsVerification Default", () => {
   let identity: Identity;
+  let tlsServer: Server | undefined;
+  let tlsServerUrl: string;
+  let tlsTempDir: string | undefined;
 
   beforeAll(async () => {
     identity = await idmux({
@@ -15,31 +30,94 @@ describe("V2 Scrape skipTlsVerification Default", () => {
       concurrency: 100,
       credits: 1000000,
     });
-  }, 10000);
 
-  test(
+    if (!ALLOW_LOCAL_TLS_TEST) {
+      return;
+    }
+
+    tlsTempDir = await mkdtemp(path.join(tmpdir(), "firecrawl-skip-tls-"));
+    const keyPath = path.join(tlsTempDir, "key.pem");
+    const certPath = path.join(tlsTempDir, "cert.pem");
+
+    await execFileAsync("openssl", [
+      "req",
+      "-x509",
+      "-newkey",
+      "rsa:2048",
+      "-sha256",
+      "-days",
+      "1",
+      "-nodes",
+      "-keyout",
+      keyPath,
+      "-out",
+      certPath,
+      "-subj",
+      "/CN=localhost",
+      "-addext",
+      "subjectAltName=DNS:localhost,IP:127.0.0.1",
+    ]);
+
+    const [key, cert] = await Promise.all([
+      readFile(keyPath),
+      readFile(certPath),
+    ]);
+
+    tlsServer = createServer({ key, cert }, (_req, res) => {
+      res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
+      res.end(`<html><body>${TLS_FIXTURE_BODY}</body></html>`);
+    });
+
+    await new Promise<void>((resolve, reject) => {
+      tlsServer!.once("error", reject);
+      tlsServer!.listen(0, "127.0.0.1", () => {
+        tlsServer!.off("error", reject);
+        const address = tlsServer!.address();
+        if (address && typeof address === "object") {
+          tlsServerUrl = `https://127.0.0.1:${address.port}/`;
+          resolve();
+        } else {
+          reject(new Error("HTTPS TLS fixture failed to start"));
+        }
+      });
+    });
+  }, 20000);
+
+  afterAll(async () => {
+    if (tlsServer) {
+      await new Promise<void>(resolve => {
+        tlsServer!.close(() => resolve());
+      });
+    }
+
+    if (tlsTempDir) {
+      await rm(tlsTempDir, { recursive: true, force: true });
+    }
+  });
+
+  testIf(ALLOW_LOCAL_TLS_TEST)(
     "should default skipTlsVerification to true in v2 API",
     async () => {
       const data = await scrape(
         {
-          url: "https://expired.badssl.com/",
+          url: tlsServerUrl,
           maxAge: 0,
         },
         identity,
       );
 
       expect(data).toBeDefined();
-      expect(data.markdown).toContain("badssl.com");
+      expect(data.markdown).toContain(TLS_FIXTURE_BODY);
     },
     scrapeTimeout,
   );
 
-  test(
+  testIf(ALLOW_LOCAL_TLS_TEST)(
     "should allow explicit skipTlsVerification: false override",
     async () => {
       const response = await scrapeRaw(
         {
-          url: "https://expired.badssl.com/",
+          url: tlsServerUrl,
           skipTlsVerification: false,
           maxAge: 0,
         },

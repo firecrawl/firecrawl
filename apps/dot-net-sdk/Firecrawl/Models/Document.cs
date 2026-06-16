@@ -40,6 +40,9 @@ public class Document
     [JsonPropertyName("video")]
     public string? Video { get; set; }
 
+    [JsonPropertyName("videos")]
+    public List<VideoItem>? Videos { get; set; }
+
     [JsonPropertyName("actions")]
     public object? Actions { get; set; }
 

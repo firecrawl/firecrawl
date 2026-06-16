@@ -637,6 +637,27 @@ pub struct AttributeResult {
     pub values: Vec<String>,
 }
 
+/// Discovered video reference on a scraped page.
+#[serde_with::skip_serializing_none]
+#[derive(Deserialize, Serialize, Debug, Default, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct VideoItem {
+    pub url: String,
+    #[serde(rename = "sourceURL")]
+    pub source_url: String,
+    pub source: String,
+    pub kind: Option<String>,
+    pub provider: Option<String>,
+    pub title: Option<String>,
+    pub thumbnail: Option<String>,
+    pub description: Option<String>,
+    pub duration: Option<String>,
+    pub mime_type: Option<String>,
+    pub width: Option<u32>,
+    pub height: Option<u32>,
+    pub metadata: Option<HashMap<String, Value>>,
+}
+
 /// Document returned from scrape operations.
 #[serde_with::skip_serializing_none]
 #[derive(Deserialize, Serialize, Debug, Default, Clone)]
@@ -664,6 +685,8 @@ pub struct Document {
     pub audio: Option<String>,
     /// Video download URL (signed GCS link).
     pub video: Option<String>,
+    /// Discovered video references on the page.
+    pub videos: Option<Vec<VideoItem>>,
     /// Extracted attributes.
     pub attributes: Option<Vec<AttributeResult>>,
     /// Action results.
@@ -800,6 +823,23 @@ mod tests {
         let json = json!({
             "markdown": "# Hello",
             "video": "https://storage.googleapis.com/firecrawl/video.mp4",
+            "videos": [
+                {
+                    "url": "https://cdn.example.com/product.mp4",
+                    "sourceURL": "https://example.com/product",
+                    "source": "script",
+                    "kind": "file",
+                    "provider": "cdn.example.com",
+                    "title": "Product video",
+                    "thumbnail": "https://cdn.example.com/poster.jpg",
+                    "description": "Product overview",
+                    "duration": "PT45S",
+                    "mimeType": "video/mp4",
+                    "width": 1920,
+                    "height": 1080,
+                    "metadata": {"resourceType": "Media"}
+                }
+            ],
             "metadata": {
                 "sourceURL": "https://example.com",
                 "statusCode": 200,
@@ -816,6 +856,14 @@ mod tests {
         assert_eq!(
             doc.video,
             Some("https://storage.googleapis.com/firecrawl/video.mp4".to_string())
+        );
+        let videos = doc.videos.unwrap();
+        let video = &videos[0];
+        assert_eq!(video.source_url, "https://example.com/product");
+        assert_eq!(video.mime_type.as_deref(), Some("video/mp4"));
+        assert_eq!(
+            video.thumbnail.as_deref(),
+            Some("https://cdn.example.com/poster.jpg")
         );
         let meta = doc.metadata.unwrap();
         assert_eq!(meta.title, Some("Example Page".to_string()));

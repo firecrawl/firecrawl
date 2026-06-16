@@ -12,6 +12,7 @@ from .v2.types import (
     # Document types
     Document,
     DocumentMetadata,
+    VideoItem,
     
     # Scrape types
     ScrapeFormats,
@@ -95,6 +96,7 @@ __all__ = [
     # Document types
     'Document',
     'DocumentMetadata',
+    'VideoItem',
     
     # Scrape types
     'ScrapeFormats',
@@ -170,4 +172,4 @@ __all__ = [
     # Configuration types
     'ClientConfig',
     'AgentOptions',
-]  
+]
