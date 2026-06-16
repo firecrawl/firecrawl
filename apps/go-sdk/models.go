@@ -24,6 +24,120 @@ type Document struct {
 	Branding       map[string]interface{}   `json:"branding,omitempty"`
 }
 
+// PaperResult represents a ranked research paper result.
+type PaperResult struct {
+	PaperID   string                 `json:"paperId"`
+	PrimaryID string                 `json:"primaryId,omitempty"`
+	IDs       map[string]interface{} `json:"ids,omitempty"`
+	Title     string                 `json:"title,omitempty"`
+	Abstract  string                 `json:"abstract,omitempty"`
+	Score     *float64               `json:"score,omitempty"`
+	Year      *int                   `json:"year,omitempty"`
+	Authors   []string               `json:"authors,omitempty"`
+	Venue     string                 `json:"venue,omitempty"`
+	URL       string                 `json:"url,omitempty"`
+	Signals   map[string]interface{} `json:"signals,omitempty"`
+}
+
+// PaperMetadata represents paper metadata returned by inspect/read endpoints.
+type PaperMetadata struct {
+	PaperID     string                 `json:"paperId,omitempty"`
+	IDs         map[string]interface{} `json:"ids,omitempty"`
+	Title       string                 `json:"title,omitempty"`
+	Abstract    string                 `json:"abstract,omitempty"`
+	Authors     string                 `json:"authors,omitempty"`
+	Categories  []string               `json:"categories,omitempty"`
+	CreatedDate string                 `json:"createdDate,omitempty"`
+	UpdateDate  string                 `json:"updateDate,omitempty"`
+}
+
+// Passage is a relevant paper passage.
+type Passage struct {
+	Text     string                 `json:"text,omitempty"`
+	Section  string                 `json:"section,omitempty"`
+	Page     *int                   `json:"page,omitempty"`
+	Score    *float64               `json:"score,omitempty"`
+	Metadata map[string]interface{} `json:"metadata,omitempty"`
+}
+
+// SearchPapersResponse is returned by SearchPapers.
+type SearchPapersResponse struct {
+	Success bool          `json:"success"`
+	Results []PaperResult `json:"results"`
+}
+
+// PaperMetadataResponse is returned by InspectPaper.
+type PaperMetadataResponse struct {
+	Success bool          `json:"success"`
+	Paper   PaperMetadata `json:"paper"`
+}
+
+// ReadPaperResponse is returned by ReadPaper.
+type ReadPaperResponse struct {
+	Success  bool          `json:"success"`
+	Paper    PaperMetadata `json:"paper"`
+	PaperID  string        `json:"paperId,omitempty"`
+	Query    string        `json:"query,omitempty"`
+	Passages []Passage     `json:"passages,omitempty"`
+}
+
+// SimilarPapersResponse is returned by RelatedPapers.
+type SimilarPapersResponse struct {
+	Success   bool          `json:"success"`
+	Results   []PaperResult `json:"results"`
+	PoolSize  *int          `json:"poolSize,omitempty"`
+	Truncated bool          `json:"truncated"`
+	Note      *string       `json:"note,omitempty"`
+}
+
+// GitHubSearchItem represents a GitHub research search result.
+type GitHubSearchItem struct {
+	ResultType   string                 `json:"resultType,omitempty"`
+	Repo         string                 `json:"repo,omitempty"`
+	URL          string                 `json:"url,omitempty"`
+	PageType     string                 `json:"pageType,omitempty"`
+	Number       *int                   `json:"number,omitempty"`
+	SegmentCount *int                   `json:"segmentCount,omitempty"`
+	ReadmeURL    string                 `json:"readmeUrl,omitempty"`
+	Title        string                 `json:"title,omitempty"`
+	Snippet      string                 `json:"snippet,omitempty"`
+	ContentMD    string                 `json:"contentMd,omitempty"`
+	Scores       map[string]interface{} `json:"scores,omitempty"`
+}
+
+// GitHubSearchResponse is returned by SearchGitHub.
+type GitHubSearchResponse struct {
+	Success bool               `json:"success"`
+	Results []GitHubSearchItem `json:"results"`
+}
+
+// Research options for search-like endpoints.
+type SearchPapersOptions struct {
+	K          *int     `json:"k,omitempty"`
+	Authors    []string `json:"authors,omitempty"`
+	Categories []string `json:"categories,omitempty"`
+	From       string   `json:"from,omitempty"`
+	To         string   `json:"to,omitempty"`
+}
+
+// ReadPaperOptions configures ReadPaper.
+type ReadPaperOptions struct {
+	K *int `json:"k,omitempty"`
+}
+
+// RelatedPapersOptions configures RelatedPapers.
+type RelatedPapersOptions struct {
+	Mode   string   `json:"mode,omitempty"`
+	K      *int     `json:"k,omitempty"`
+	Rerank *bool    `json:"rerank,omitempty"`
+	Anchor []string `json:"anchor,omitempty"`
+}
+
+// SearchGitHubOptions configures SearchGitHub.
+type SearchGitHubOptions struct {
+	K *int `json:"k,omitempty"`
+}
+
 // CrawlResponse is returned when starting an async crawl.
 type CrawlResponse struct {
 	ID  string `json:"id"`

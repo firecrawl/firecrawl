@@ -461,6 +461,113 @@ public class FirecrawlClient
         return response.Data ?? throw new FirecrawlException("Search response contained no data");
     }
 
+    /// <summary>
+    /// Searches research papers.
+    /// </summary>
+    public async Task<SearchPapersResponse> SearchPapersAsync(
+        string query,
+        SearchPapersOptions? options = null,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(query);
+
+        return await _http.GetAsync<SearchPapersResponse>(
+            "/v2/search/research/papers" + BuildResearchQuery(new Dictionary<string, object?>
+            {
+                ["query"] = query,
+                ["origin"] = SdkOrigin,
+                ["k"] = options?.K,
+                ["authors"] = options?.Authors,
+                ["categories"] = options?.Categories,
+                ["from"] = options?.From,
+                ["to"] = options?.To
+            }),
+            cancellationToken);
+    }
+
+    /// <summary>
+    /// Fetches paper metadata.
+    /// </summary>
+    public async Task<PaperMetadataResponse> InspectPaperAsync(
+        string paperId,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(paperId);
+
+        return await _http.GetAsync<PaperMetadataResponse>(
+            $"/v2/search/research/papers/{Uri.EscapeDataString(paperId)}",
+            cancellationToken);
+    }
+
+    /// <summary>
+    /// Fetches paper metadata and query-guided passages.
+    /// </summary>
+    public async Task<ReadPaperResponse> ReadPaperAsync(
+        string paperId,
+        string query,
+        ReadPaperOptions? options = null,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(paperId);
+        ArgumentNullException.ThrowIfNull(query);
+
+        return await _http.GetAsync<ReadPaperResponse>(
+            $"/v2/search/research/papers/{Uri.EscapeDataString(paperId)}"
+            + BuildResearchQuery(new Dictionary<string, object?>
+            {
+                ["query"] = query,
+                ["origin"] = SdkOrigin,
+                ["k"] = options?.K
+            }),
+            cancellationToken);
+    }
+
+    /// <summary>
+    /// Finds papers related to a paper.
+    /// </summary>
+    public async Task<SimilarPapersResponse> RelatedPapersAsync(
+        string paperId,
+        string intent,
+        RelatedPapersOptions? options = null,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(paperId);
+        ArgumentNullException.ThrowIfNull(intent);
+
+        return await _http.GetAsync<SimilarPapersResponse>(
+            $"/v2/search/research/papers/{Uri.EscapeDataString(paperId)}/similar"
+            + BuildResearchQuery(new Dictionary<string, object?>
+            {
+                ["intent"] = intent,
+                ["origin"] = SdkOrigin,
+                ["mode"] = options?.Mode,
+                ["k"] = options?.K,
+                ["rerank"] = options?.Rerank,
+                ["anchor"] = options?.Anchor
+            }),
+            cancellationToken);
+    }
+
+    /// <summary>
+    /// Searches GitHub research content.
+    /// </summary>
+    public async Task<GitHubSearchResponse> SearchGitHubAsync(
+        string query,
+        SearchGitHubOptions? options = null,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(query);
+
+        return await _http.GetAsync<GitHubSearchResponse>(
+            "/v2/search/research/github" + BuildResearchQuery(new Dictionary<string, object?>
+            {
+                ["query"] = query,
+                ["origin"] = SdkOrigin,
+                ["k"] = options?.K
+            }),
+            cancellationToken);
+    }
+
     // ================================================================
     // USAGE & METRICS
     // ================================================================
@@ -655,6 +762,39 @@ public class FirecrawlClient
             query.Add($"status={Uri.EscapeDataString(status)}");
 
         return query.Count == 0 ? string.Empty : "?" + string.Join("&", query);
+    }
+
+    private static string BuildResearchQuery(Dictionary<string, object?> parameters)
+    {
+        var query = new List<string>();
+        foreach (var (key, value) in parameters)
+        {
+            if (value == null)
+                continue;
+
+            if (value is System.Collections.IEnumerable values && value is not string)
+            {
+                foreach (var item in values)
+                {
+                    if (item != null)
+                        AddQueryValue(query, key, item);
+                }
+                continue;
+            }
+
+            AddQueryValue(query, key, value);
+        }
+
+        return query.Count == 0 ? string.Empty : "?" + string.Join("&", query);
+    }
+
+    private static void AddQueryValue(List<string> query, string key, object value)
+    {
+        var stringValue = value is bool boolValue
+            ? boolValue.ToString().ToLowerInvariant()
+            : value.ToString() ?? string.Empty;
+
+        query.Add($"{Uri.EscapeDataString(key)}={Uri.EscapeDataString(stringValue)}");
     }
 
     private static string? ResolveApiKey(string? apiKey)

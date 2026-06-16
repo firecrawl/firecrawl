@@ -32,7 +32,7 @@ const fallbackRateLimits: AuthCreditUsageChunk["rate_limits"] = {
   account: 1000,
   supportAsk: 3,
   supportDocsSearch: 3,
-  research: 20,
+  research: 100,
 };
 
 export function getRateLimiter(

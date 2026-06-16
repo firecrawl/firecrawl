@@ -141,7 +141,7 @@ final class FirecrawlHttpClient
         ];
         // Omit the Authorization header entirely when no key is set so that
         // scrape/search/interact can use the keyless free tier.
-        if ($this->apiKey !== null && $this->apiKey !== '') {
+        if ($this->apiKey !== '') {
             $defaultHeaders['Authorization'] = 'Bearer ' . $this->apiKey;
         }
 

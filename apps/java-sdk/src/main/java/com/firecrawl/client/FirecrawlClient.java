@@ -556,6 +556,65 @@ public class FirecrawlClient {
         return extractData(http.post("/v2/search", body, Map.class), SearchData.class);
     }
 
+    public ResearchModels.SearchPapersResponse searchPapers(String query) {
+        return searchPapers(query, null);
+    }
+
+    public ResearchModels.SearchPapersResponse searchPapers(String query, ResearchModels.SearchPapersOptions options) {
+        Objects.requireNonNull(query, "Query is required");
+        Map<String, Object> params = new LinkedHashMap<>();
+        params.put("query", query);
+        params.put("origin", SDK_ORIGIN);
+        if (options != null) mergeOptions(params, options);
+        return http.get("/v2/search/research/papers" + researchQuery(params), ResearchModels.SearchPapersResponse.class);
+    }
+
+    public ResearchModels.PaperMetadataResponse inspectPaper(String paperId) {
+        Objects.requireNonNull(paperId, "Paper ID is required");
+        return http.get("/v2/search/research/papers/" + urlEncode(paperId), ResearchModels.PaperMetadataResponse.class);
+    }
+
+    public ResearchModels.ReadPaperResponse readPaper(String paperId, String query) {
+        return readPaper(paperId, query, null);
+    }
+
+    public ResearchModels.ReadPaperResponse readPaper(String paperId, String query, ResearchModels.ReadPaperOptions options) {
+        Objects.requireNonNull(paperId, "Paper ID is required");
+        Objects.requireNonNull(query, "Query is required");
+        Map<String, Object> params = new LinkedHashMap<>();
+        params.put("query", query);
+        params.put("origin", SDK_ORIGIN);
+        if (options != null) mergeOptions(params, options);
+        return http.get("/v2/search/research/papers/" + urlEncode(paperId) + researchQuery(params), ResearchModels.ReadPaperResponse.class);
+    }
+
+    public ResearchModels.SimilarPapersResponse relatedPapers(String paperId, String intent) {
+        return relatedPapers(paperId, intent, null);
+    }
+
+    public ResearchModels.SimilarPapersResponse relatedPapers(String paperId, String intent, ResearchModels.RelatedPapersOptions options) {
+        Objects.requireNonNull(paperId, "Paper ID is required");
+        Objects.requireNonNull(intent, "Intent is required");
+        Map<String, Object> params = new LinkedHashMap<>();
+        params.put("intent", intent);
+        params.put("origin", SDK_ORIGIN);
+        if (options != null) mergeOptions(params, options);
+        return http.get("/v2/search/research/papers/" + urlEncode(paperId) + "/similar" + researchQuery(params), ResearchModels.SimilarPapersResponse.class);
+    }
+
+    public ResearchModels.GitHubSearchResponse searchGitHub(String query) {
+        return searchGitHub(query, null);
+    }
+
+    public ResearchModels.GitHubSearchResponse searchGitHub(String query, ResearchModels.SearchGitHubOptions options) {
+        Objects.requireNonNull(query, "Query is required");
+        Map<String, Object> params = new LinkedHashMap<>();
+        params.put("query", query);
+        params.put("origin", SDK_ORIGIN);
+        if (options != null) mergeOptions(params, options);
+        return http.get("/v2/search/research/github" + researchQuery(params), ResearchModels.GitHubSearchResponse.class);
+    }
+
     // ================================================================
     // AGENT
     // ================================================================
@@ -913,6 +972,26 @@ public class FirecrawlClient {
         return CompletableFuture.supplyAsync(() -> search(query, options), asyncExecutor);
     }
 
+    public CompletableFuture<ResearchModels.SearchPapersResponse> searchPapersAsync(String query, ResearchModels.SearchPapersOptions options) {
+        return CompletableFuture.supplyAsync(() -> searchPapers(query, options), asyncExecutor);
+    }
+
+    public CompletableFuture<ResearchModels.PaperMetadataResponse> inspectPaperAsync(String paperId) {
+        return CompletableFuture.supplyAsync(() -> inspectPaper(paperId), asyncExecutor);
+    }
+
+    public CompletableFuture<ResearchModels.ReadPaperResponse> readPaperAsync(String paperId, String query, ResearchModels.ReadPaperOptions options) {
+        return CompletableFuture.supplyAsync(() -> readPaper(paperId, query, options), asyncExecutor);
+    }
+
+    public CompletableFuture<ResearchModels.SimilarPapersResponse> relatedPapersAsync(String paperId, String intent, ResearchModels.RelatedPapersOptions options) {
+        return CompletableFuture.supplyAsync(() -> relatedPapers(paperId, intent, options), asyncExecutor);
+    }
+
+    public CompletableFuture<ResearchModels.GitHubSearchResponse> searchGitHubAsync(String query, ResearchModels.SearchGitHubOptions options) {
+        return CompletableFuture.supplyAsync(() -> searchGitHub(query, options), asyncExecutor);
+    }
+
     /**
      * Asynchronously runs a map operation.
      *
@@ -1262,6 +1341,30 @@ public class FirecrawlClient {
             parts.add("status=" + java.net.URLEncoder.encode(status, java.nio.charset.StandardCharsets.UTF_8));
         }
         return parts.isEmpty() ? "" : "?" + String.join("&", parts);
+    }
+
+    private String researchQuery(Map<String, Object> params) {
+        List<String> parts = new ArrayList<>();
+        for (Map.Entry<String, Object> entry : params.entrySet()) {
+            Object value = entry.getValue();
+            if (value == null) continue;
+            if (value instanceof Collection<?>) {
+                for (Object item : (Collection<?>) value) {
+                    if (item != null) parts.add(urlEncode(entry.getKey()) + "=" + urlEncode(stringValue(item)));
+                }
+            } else {
+                parts.add(urlEncode(entry.getKey()) + "=" + urlEncode(stringValue(value)));
+            }
+        }
+        return parts.isEmpty() ? "" : "?" + String.join("&", parts);
+    }
+
+    private String stringValue(Object value) {
+        return value instanceof Boolean ? value.toString().toLowerCase(Locale.ROOT) : value.toString();
+    }
+
+    private String urlEncode(String value) {
+        return java.net.URLEncoder.encode(value, java.nio.charset.StandardCharsets.UTF_8);
     }
 
     /**

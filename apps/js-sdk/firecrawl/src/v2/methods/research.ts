@@ -13,7 +13,7 @@ import { SdkError } from "../types";
 import { HttpClient } from "../utils/httpClient";
 import { throwForBadResponse } from "../utils/errorHandler";
 
-const BASE = "/v2/research";
+const BASE = "/v2/search/research";
 
 /** Append a value (or repeated array values) to a URLSearchParams instance. */
 function appendParam(

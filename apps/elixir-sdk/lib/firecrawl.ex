@@ -1196,6 +1196,149 @@ defmodule Firecrawl do
     Req.post!(client(opts), url: "/search", json: to_body(params, @search_and_scrape_key_mapping))
   end
 
+  @research_search_papers_schema NimbleOptions.new!([
+    authors: [type: {:list, :string}],
+    categories: [type: {:list, :string}],
+    from: [type: :string],
+    k: [type: :integer],
+    query: [type: :string, required: true],
+    to: [type: :string]
+  ])
+
+  @research_search_papers_key_mapping %{authors: "authors", categories: "categories", from: "from", k: "k", query: "query", to: "to"}
+
+  @doc """
+  Search research papers.
+
+  `GET /search/research/papers`
+  """
+  @spec search_papers(keyword(), keyword()) :: response()
+  def search_papers(params \\ [], opts \\ []) do
+    with {:ok, params} <- NimbleOptions.validate(params, @research_search_papers_schema) do
+      Req.get(client(opts), url: "/search/research/papers", params: [{"origin", @sdk_origin} | to_query(params, @research_search_papers_key_mapping)])
+    end
+  end
+
+  @doc """
+  Bang variant of `search_papers`. Raises on error.
+  """
+  @spec search_papers!(keyword(), keyword()) :: Req.Response.t()
+  def search_papers!(params \\ [], opts \\ []) do
+    params = NimbleOptions.validate!(params, @research_search_papers_schema)
+    Req.get!(client(opts), url: "/search/research/papers", params: [{"origin", @sdk_origin} | to_query(params, @research_search_papers_key_mapping)])
+  end
+
+  @doc """
+  Inspect paper metadata.
+
+  `GET /search/research/papers/{id}`
+  """
+  @spec inspect_paper(String.t(), keyword()) :: response()
+  def inspect_paper(id, opts \\ []) do
+    Req.get(client(opts),
+      url: "/search/research/papers/#{URI.encode_www_form(id)}",
+      params: [{"origin", @sdk_origin}]
+    )
+  end
+
+  @doc """
+  Bang variant of `inspect_paper`. Raises on error.
+  """
+  @spec inspect_paper!(String.t(), keyword()) :: Req.Response.t()
+  def inspect_paper!(id, opts \\ []) do
+    Req.get!(client(opts),
+      url: "/search/research/papers/#{URI.encode_www_form(id)}",
+      params: [{"origin", @sdk_origin}]
+    )
+  end
+
+  @research_read_paper_schema NimbleOptions.new!([
+    k: [type: :integer],
+    query: [type: :string, required: true]
+  ])
+
+  @research_read_paper_key_mapping %{k: "k", query: "query"}
+
+  @doc """
+  Read a paper with query-guided passages.
+
+  `GET /search/research/papers/{id}`
+  """
+  @spec read_paper(String.t(), keyword(), keyword()) :: response()
+  def read_paper(id, params \\ [], opts \\ []) do
+    with {:ok, params} <- NimbleOptions.validate(params, @research_read_paper_schema) do
+      Req.get(client(opts), url: "/search/research/papers/#{URI.encode_www_form(id)}", params: [{"origin", @sdk_origin} | to_query(params, @research_read_paper_key_mapping)])
+    end
+  end
+
+  @doc """
+  Bang variant of `read_paper`. Raises on error.
+  """
+  @spec read_paper!(String.t(), keyword(), keyword()) :: Req.Response.t()
+  def read_paper!(id, params \\ [], opts \\ []) do
+    params = NimbleOptions.validate!(params, @research_read_paper_schema)
+    Req.get!(client(opts), url: "/search/research/papers/#{URI.encode_www_form(id)}", params: [{"origin", @sdk_origin} | to_query(params, @research_read_paper_key_mapping)])
+  end
+
+  @research_related_papers_schema NimbleOptions.new!([
+    anchor: [type: {:list, :string}],
+    intent: [type: :string, required: true],
+    k: [type: :integer],
+    mode: [type: {:in, [:similar, :citers, :references, "similar", "citers", "references"]}],
+    rerank: [type: :boolean]
+  ])
+
+  @research_related_papers_key_mapping %{anchor: "anchor", intent: "intent", k: "k", mode: "mode", rerank: "rerank"}
+
+  @doc """
+  Find papers related to a paper.
+
+  `GET /search/research/papers/{id}/similar`
+  """
+  @spec related_papers(String.t(), keyword(), keyword()) :: response()
+  def related_papers(id, params \\ [], opts \\ []) do
+    with {:ok, params} <- NimbleOptions.validate(params, @research_related_papers_schema) do
+      Req.get(client(opts), url: "/search/research/papers/#{URI.encode_www_form(id)}/similar", params: [{"origin", @sdk_origin} | to_query(params, @research_related_papers_key_mapping)])
+    end
+  end
+
+  @doc """
+  Bang variant of `related_papers`. Raises on error.
+  """
+  @spec related_papers!(String.t(), keyword(), keyword()) :: Req.Response.t()
+  def related_papers!(id, params \\ [], opts \\ []) do
+    params = NimbleOptions.validate!(params, @research_related_papers_schema)
+    Req.get!(client(opts), url: "/search/research/papers/#{URI.encode_www_form(id)}/similar", params: [{"origin", @sdk_origin} | to_query(params, @research_related_papers_key_mapping)])
+  end
+
+  @research_search_github_schema NimbleOptions.new!([
+    k: [type: :integer],
+    query: [type: :string, required: true]
+  ])
+
+  @research_search_github_key_mapping %{k: "k", query: "query"}
+
+  @doc """
+  Search GitHub research content.
+
+  `GET /search/research/github`
+  """
+  @spec search_github(keyword(), keyword()) :: response()
+  def search_github(params \\ [], opts \\ []) do
+    with {:ok, params} <- NimbleOptions.validate(params, @research_search_github_schema) do
+      Req.get(client(opts), url: "/search/research/github", params: [{"origin", @sdk_origin} | to_query(params, @research_search_github_key_mapping)])
+    end
+  end
+
+  @doc """
+  Bang variant of `search_github`. Raises on error.
+  """
+  @spec search_github!(keyword(), keyword()) :: Req.Response.t()
+  def search_github!(params \\ [], opts \\ []) do
+    params = NimbleOptions.validate!(params, @research_search_github_schema)
+    Req.get!(client(opts), url: "/search/research/github", params: [{"origin", @sdk_origin} | to_query(params, @research_search_github_key_mapping)])
+  end
+
 
   @start_agent_schema NimbleOptions.new!([
     max_credits: [type: {:or, [:integer, :float]}, doc: "Maximum credits to spend on this agent task. Defaults to 2500 if not set. Values above 2,500 are always billed as paid requests."],

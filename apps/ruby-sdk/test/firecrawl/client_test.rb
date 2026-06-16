@@ -15,14 +15,14 @@ class ClientTest < Minitest::Test
   # CLIENT INITIALIZATION
   # ================================================================
 
-  def test_raises_when_no_api_key
+  def test_allows_no_api_key_for_keyless_endpoints
     ENV.delete("FIRECRAWL_API_KEY")
-    assert_raises(Firecrawl::FirecrawlError) { Firecrawl::Client.new }
+    assert_instance_of Firecrawl::Client, Firecrawl::Client.new
   end
 
-  def test_raises_when_whitespace_only_api_key
+  def test_allows_whitespace_only_api_key_for_keyless_endpoints
     ENV.delete("FIRECRAWL_API_KEY")
-    assert_raises(Firecrawl::FirecrawlError) { Firecrawl::Client.new(api_key: "   ") }
+    assert_instance_of Firecrawl::Client, Firecrawl::Client.new(api_key: "   ")
   end
 
   def test_raises_when_api_url_not_http
@@ -69,7 +69,7 @@ class ClientTest < Minitest::Test
   def test_scrape_basic
     stub_request(:post, "#{BASE_URL}/v2/scrape")
       .with(
-        body: { url: "https://example.com" }.to_json,
+        body: { url: "https://example.com", origin: "ruby-sdk@#{Firecrawl::VERSION}" }.to_json,
         headers: { "Authorization" => "Bearer #{API_KEY}", "Content-Type" => "application/json" }
       )
       .to_return(

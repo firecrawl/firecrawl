@@ -562,9 +562,11 @@ async function handleKeylessAuth(
   const modeLabel =
     mode === RateLimiterMode.Search
       ? "search"
-      : mode === RateLimiterMode.BrowserExecute
-        ? "interact"
-        : "scrape";
+      : mode === RateLimiterMode.Research
+        ? "research"
+        : mode === RateLimiterMode.BrowserExecute
+          ? "interact"
+          : "scrape";
 
   let result: Awaited<ReturnType<typeof consumeKeylessRequest>>;
   try {
@@ -832,7 +834,8 @@ async function supaAuthenticateUser(
       mode === RateLimiterMode.Crawl ||
       mode === RateLimiterMode.CrawlStatus ||
       mode === RateLimiterMode.Extract ||
-      mode === RateLimiterMode.Search)
+      mode === RateLimiterMode.Search ||
+      mode === RateLimiterMode.Research)
   ) {
     return {
       success: true,

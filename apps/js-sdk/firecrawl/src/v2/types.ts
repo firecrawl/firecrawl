@@ -1175,16 +1175,18 @@ export interface PaperSignals {
   structural: number;
   /** Semantic score from the intent abstract search (0 if absent). */
   semantic: number;
-  /** Citation-graph PageRank of the candidate. */
-  pagerank: number;
+  /** Citation-graph article-rank score of the candidate. */
+  articleRank: number;
   /** Number of distinct seeds connected to this candidate. */
-  seed_overlap: number;
+  seedOverlap: number;
 }
 
-/** A ranked paper. `paper_id` is canonical; arXiv lives in `ids`. */
+/** A ranked paper. `paperId` is canonical; arXiv lives in `ids`. */
 export interface PaperResult {
   /** Canonical paper id — the Milvus INT64 primary key as a decimal string. */
-  paper_id: string;
+  paperId: string;
+  /** Preferred cite/fetch identifier such as `arxiv:<id>`, `pmid:<id>`, or `doi:<id>`. */
+  primaryId: string;
   ids?: IdMap;
   title: string;
   abstract: string;
@@ -1195,7 +1197,7 @@ export interface PaperResult {
 }
 
 export interface PaperMetadata {
-  paper_id: string;
+  paperId: string;
   ids?: IdMap;
   title: string;
   abstract: string;
@@ -1204,9 +1206,9 @@ export interface PaperMetadata {
   /** arXiv categories. Omitted if unknown. */
   categories?: string[];
   /** Original creation date string (format varies). Omitted if unknown. */
-  created_date?: string;
+  createdDate?: string;
   /** Last-updated date string. Omitted if unknown. */
-  update_date?: string;
+  updateDate?: string;
 }
 
 export interface Passage {
@@ -1217,17 +1219,20 @@ export interface Passage {
 }
 
 export interface SearchPapersResponse {
+  success: boolean;
   results: PaperResult[];
 }
 
 export interface PaperMetadataResponse {
+  success: boolean;
   paper: PaperMetadata;
 }
 
 export interface ReadPaperResponse {
+  success: boolean;
   paper: PaperMetadata;
   /** Resolved canonical paper id (empty string if not found via id-key). */
-  paper_id: string;
+  paperId: string;
   /** Echo of the read query. */
   query: string;
   /** Top matching in-body passages. */
@@ -1235,10 +1240,11 @@ export interface ReadPaperResponse {
 }
 
 export interface SimilarPapersResponse {
+  success: boolean;
   /** Ranked related papers; each carries `signals`. */
   results: PaperResult[];
   /** Number of resolved candidates considered before truncation to `k`. */
-  pool_size: number;
+  poolSize: number;
   /** True if more resolved candidates existed than were returned. */
   truncated: boolean;
   /** Human-readable note when no results are produced. */
@@ -1251,11 +1257,12 @@ export interface GitHubScoreBreakdown {
   semantic?: number;
   lexical?: number;
   fusion?: number;
+  rerank?: number;
 }
 
 export interface GitHubSearchItem {
-  resultType: "github_history" | "repo_readme";
-  /** `owner/name`. */
+  resultType: "github_history" | "repo_readme" | "web";
+  /** `owner/name`; empty for web results whose URL is not a repo page. */
   repo: string;
   url: string;
   /** History page type (e.g. `issue`, `pull`). Omitted for readmes. */
@@ -1266,6 +1273,8 @@ export interface GitHubSearchItem {
   segmentCount?: number;
   /** Readme URL (readme results). Omitted otherwise. */
   readmeUrl?: string;
+  /** SERP page title. Only set on web results. */
+  title?: string;
   /** Short matched excerpt. */
   snippet: string;
   /** Full matched content in markdown. Omitted unless available. */
@@ -1274,6 +1283,7 @@ export interface GitHubSearchItem {
 }
 
 export interface GitHubSearchResponse {
+  success: boolean;
   results: GitHubSearchItem[];
 }
 

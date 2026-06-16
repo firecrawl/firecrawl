@@ -638,6 +638,20 @@ export async function searchWithFailure(
   return raw.body;
 }
 
+export async function researchRaw(
+  path: string,
+  query: Record<string, string | number | boolean | string[]> | undefined,
+  identity?: Identity,
+) {
+  const req = request(TEST_API_URL)
+    .get(path)
+    .set("Content-Type", "application/json");
+  if (identity) {
+    req.set("Authorization", `Bearer ${identity.apiKey}`);
+  }
+  return query ? req.query(query) : req;
+}
+
 export async function searchRawFull(
   body: SearchRequestInput,
   identity: Identity,

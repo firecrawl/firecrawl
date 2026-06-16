@@ -162,6 +162,42 @@ export const deep_researches = pgTable("deep_researches", {
   options: jsonb("options"),
 });
 
+const researchEndpointTable = (name: string) =>
+  pgTable(name, {
+    id: uuid("id").notNull(),
+    request_id: uuid("request_id").notNull(),
+    target: text("target").notNull(),
+    team_id: uuid("team_id").notNull(),
+    options: jsonb("options"),
+    response: jsonb("response"),
+    num_results: integer("num_results").notNull(),
+    time_taken: num("time_taken").notNull(),
+    credits_cost: integer("credits_cost").notNull(),
+    is_successful: boolean("is_successful").notNull(),
+    error: text("error"),
+    created_at: ts("created_at").notNull().defaultNow(),
+  });
+
+export const research_paper_searches = researchEndpointTable(
+  "research_paper_searches",
+);
+
+export const research_paper_inspects = researchEndpointTable(
+  "research_paper_inspects",
+);
+
+export const research_paper_reads = researchEndpointTable(
+  "research_paper_reads",
+);
+
+export const research_related_papers = researchEndpointTable(
+  "research_related_papers",
+);
+
+export const research_github_searches = researchEndpointTable(
+  "research_github_searches",
+);
+
 export const deterministic_json_scripts = pgTable(
   "deterministic_json_scripts",
   {

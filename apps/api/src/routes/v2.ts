@@ -62,10 +62,7 @@ import {
 } from "../controllers/v2/browser";
 import { activityController } from "../controllers/v1/activity";
 import { supportProxyController } from "../controllers/v2/support-proxy";
-import {
-  researchFlagMiddleware,
-  researchProxyController,
-} from "../controllers/v2/research-proxy";
+import { createResearchRouter } from "../controllers/v2/research-proxy";
 import {
   scrapeInteractController,
   scrapeStopInteractiveBrowserController,
@@ -593,11 +590,16 @@ v2Router.post(
 );
 
 if (config.RESEARCH_PROXY_URL) {
-  v2Router.all(
-    "/research/*",
+  v2Router.use(
+    "/search/research",
+    authMiddleware(RateLimiterMode.Research, { allowKeyless: true }),
+    createResearchRouter(),
+  );
+
+  v2Router.use(
+    "/research",
     authMiddleware(RateLimiterMode.Research),
-    researchFlagMiddleware,
-    wrap(researchProxyController),
+    createResearchRouter({ legacy: true }),
   );
 }
 

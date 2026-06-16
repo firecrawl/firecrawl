@@ -118,6 +118,78 @@ final class FirecrawlClient
     }
 
     /**
+     * Search research papers.
+     *
+     * @param array<string, mixed> $options
+     * @return array<string, mixed>
+     */
+    public function searchPapers(string $query, array $options = []): array
+    {
+        return $this->http->get('/v2/search/research/papers' . $this->queryArray(array_merge(
+            ['query' => $query, 'origin' => 'php-sdk@' . Version::SDK_VERSION],
+            $options,
+        )));
+    }
+
+    /**
+     * Inspect paper metadata.
+     *
+     * @return array<string, mixed>
+     */
+    public function inspectPaper(string $paperId): array
+    {
+        return $this->http->get('/v2/search/research/papers/' . rawurlencode($paperId));
+    }
+
+    /**
+     * Read a paper with query-guided passages.
+     *
+     * @param array<string, mixed> $options
+     * @return array<string, mixed>
+     */
+    public function readPaper(string $paperId, string $query, array $options = []): array
+    {
+        return $this->http->get(
+            '/v2/search/research/papers/' . rawurlencode($paperId)
+            . $this->queryArray(array_merge(
+                ['query' => $query, 'origin' => 'php-sdk@' . Version::SDK_VERSION],
+                $options,
+            )),
+        );
+    }
+
+    /**
+     * Find papers related to a paper.
+     *
+     * @param array<string, mixed> $options
+     * @return array<string, mixed>
+     */
+    public function relatedPapers(string $paperId, string $intent, array $options = []): array
+    {
+        return $this->http->get(
+            '/v2/search/research/papers/' . rawurlencode($paperId) . '/similar'
+            . $this->queryArray(array_merge(
+                ['intent' => $intent, 'origin' => 'php-sdk@' . Version::SDK_VERSION],
+                $options,
+            )),
+        );
+    }
+
+    /**
+     * Search GitHub research content.
+     *
+     * @param array<string, mixed> $options
+     * @return array<string, mixed>
+     */
+    public function searchGithub(string $query, array $options = []): array
+    {
+        return $this->http->get('/v2/search/research/github' . $this->queryArray(array_merge(
+            ['query' => $query, 'origin' => 'php-sdk@' . Version::SDK_VERSION],
+            $options,
+        )));
+    }
+
+    /**
      * Interact with the scrape-bound browser session for a scrape job.
      */
     public function interact(
@@ -658,6 +730,29 @@ final class FirecrawlClient
         $params = array_filter($params, static fn ($value) => $value !== null && $value !== '');
 
         return $params === [] ? '' : '?' . http_build_query($params);
+    }
+
+    /**
+     * @param array<string, mixed> $params
+     */
+    private function queryArray(array $params): string
+    {
+        $pairs = [];
+        foreach ($params as $key => $value) {
+            if ($value === null || $value === '') {
+                continue;
+            }
+            $values = is_array($value) ? $value : [$value];
+            foreach ($values as $item) {
+                if ($item === null || $item === '') {
+                    continue;
+                }
+                $stringValue = is_bool($item) ? ($item ? 'true' : 'false') : (string) $item;
+                $pairs[] = rawurlencode((string) $key) . '=' . rawurlencode($stringValue);
+            }
+        }
+
+        return $pairs === [] ? '' : '?' . implode('&', $pairs);
     }
 
     private function pollCrawl(
