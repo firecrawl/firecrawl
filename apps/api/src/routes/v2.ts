@@ -547,7 +547,7 @@ v2Router.get(
 );
 
 v2Router.post(
-  "/browser",
+  ["/browser", "/interact"],
   authMiddleware(RateLimiterMode.Browser),
   countryCheck,
   checkCreditsMiddleware(2),
@@ -555,19 +555,19 @@ v2Router.post(
 );
 
 v2Router.get(
-  "/browser",
+  ["/browser", "/interact"],
   authMiddleware(RateLimiterMode.BrowserExecute),
   wrap(browserListController),
 );
 
 v2Router.post(
-  "/browser/:sessionId/execute",
+  ["/browser/:sessionId/execute", "/interact/:sessionId/execute"],
   authMiddleware(RateLimiterMode.BrowserExecute),
   wrap(browserExecuteController),
 );
 
 v2Router.delete(
-  "/browser/:sessionId",
+  ["/browser/:sessionId", "/interact/:sessionId"],
   authMiddleware(RateLimiterMode.BrowserExecute),
   wrap(browserDeleteController),
 );
