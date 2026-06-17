@@ -245,6 +245,108 @@ function parseMicrodata(html: string, baseUrl: string): RawProduct | null {
 }
 
 // ---------------------------------------------------------------------------
+// OpenGraph / <meta> source
+// ---------------------------------------------------------------------------
+
+/**
+ * Mirrors Rust `meta_content`: read the `content` of the first `<meta>` whose
+ * `property` matches the key, falling back to `name` (some publishers emit the
+ * og/product keys on `name` rather than `property`, matching how
+ * extractMetadata.ts tolerates both). Returns the trimmed value, or undefined
+ * when absent/empty.
+ */
+function metaContent($: CheerioAPI, key: string): string | undefined {
+  const value =
+    $(`meta[property="${key}"]`).attr("content") ??
+    $(`meta[name="${key}"]`).attr("content");
+  if (value === undefined) return undefined;
+  const trimmed = value.trim();
+  return trimmed !== "" ? trimmed : undefined;
+}
+
+/**
+ * Mirrors Rust `availability_token`: map the many ways stock state is expressed
+ * (schema.org URLs, OpenGraph strings) onto the schema.org tokens the shared
+ * normalizer already understands. Returns undefined for unrecognized text so we
+ * omit availability rather than guess.
+ */
+function availabilityToken(raw: string): string | undefined {
+  const tail = raw.split(/[/#]/).pop() ?? raw;
+  const compact = tail.replace(/[^a-zA-Z0-9]/g, "").toLowerCase();
+  switch (compact) {
+    case "instock":
+    case "instoreonly":
+    case "onlineonly":
+    case "available":
+    case "true":
+      return "InStock";
+    case "limitedavailability":
+    case "limited":
+    case "lowstock":
+      return "LimitedAvailability";
+    case "outofstock":
+    case "soldout":
+    case "oos":
+    case "unavailable":
+    case "false":
+      return "OutOfStock";
+    case "preorder":
+      return "PreOrder";
+    case "backorder":
+      return "BackOrder";
+    case "discontinued":
+      return "Discontinued";
+    default:
+      return undefined;
+  }
+}
+
+/**
+ * Mirrors Rust `extract_opengraph_structured`. Reads product/OpenGraph `<meta>`
+ * tags into the JSON-LD-shaped node `normalizeStructuredProduct` expects.
+ *
+ * CRITICAL fail-closed rule: the page is treated as a product ONLY when a price
+ * meta (`product:price:amount` / `og:price:amount`) is present. `og:type=product`
+ * alone is too weak — category/landing pages (e.g. apple.com/.../buy-mac) set it
+ * too, which would mint hollow, price-less "products". No price -> return null.
+ */
+function parseOpenGraph(html: string, baseUrl: string): RawProduct | null {
+  const $ = load(html);
+
+  const priceText =
+    metaContent($, "product:price:amount") ?? metaContent($, "og:price:amount");
+  const price = asNumber(priceText);
+  // OpenGraph is only trusted as a product source when it carries a price.
+  if (price === undefined) return null;
+
+  const currency =
+    metaContent($, "product:price:currency") ??
+    metaContent($, "og:price:currency");
+  const availabilityRaw =
+    metaContent($, "product:availability") ?? metaContent($, "og:availability");
+  const availability =
+    availabilityRaw !== undefined
+      ? availabilityToken(availabilityRaw)
+      : undefined;
+
+  const offers: Record<string, unknown> = { price };
+  if (currency !== undefined) offers["priceCurrency"] = currency;
+  if (availability !== undefined) offers["availability"] = availability;
+
+  const node: Record<string, unknown> = { "@type": "Product", offers };
+  const name = metaContent($, "og:title");
+  if (name !== undefined) node["name"] = name;
+  const description = metaContent($, "og:description");
+  if (description !== undefined) node["description"] = description;
+  const image = metaContent($, "og:image");
+  if (image !== undefined) node["image"] = image;
+  const url = metaContent($, "og:url");
+  if (url !== undefined) node["url"] = url;
+
+  return normalizeStructuredProduct(node, baseUrl);
+}
+
+// ---------------------------------------------------------------------------
 // normalize
 // ---------------------------------------------------------------------------
 
@@ -496,7 +598,8 @@ function finalize(raw: RawProduct, baseUrl: string): ProductProfile {
 /**
  * Extract a single structured product from a page's HTML.
  *
- * Currently sources from JSON-LD only. Returns null when no product node with a
+ * Currently sources from JSON-LD, microdata, then OpenGraph/<meta> (first hit
+ * wins; per-field merge lands later). Returns null when no product node with a
  * title is found (non-ecommerce / nav / link pages). Signature is STABLE.
  */
 export async function extractProducts(
@@ -505,8 +608,12 @@ export async function extractProducts(
 ): Promise<ProductProfile | null> {
   try {
     // Sources are tried in priority order; the proper per-field MERGE across
-    // sources lands in a later task. For now: JSON-LD, then microdata.
-    const raw = parseJsonLd(html, baseUrl) ?? parseMicrodata(html, baseUrl);
+    // sources lands in a later task. For now: JSON-LD, then microdata, then
+    // OpenGraph/<meta>.
+    const raw =
+      parseJsonLd(html, baseUrl) ??
+      parseMicrodata(html, baseUrl) ??
+      parseOpenGraph(html, baseUrl);
     return raw && raw.title ? finalize(raw, baseUrl) : null;
   } catch (error) {
     logger.warn("extractProducts failed", {

@@ -84,3 +84,30 @@ describe("extractProducts — microdata", () => {
     expect(p!.title).toBe("Widget");
   });
 });
+
+describe("extractProducts — OpenGraph", () => {
+  it("extracts when a product price meta is present", async () => {
+    const html = `<html><head>
+      <meta property="og:type" content="product">
+      <meta property="og:title" content="OG Shoe">
+      <meta property="product:price:amount" content="120.00">
+      <meta property="product:price:currency" content="EUR">
+    </head><body></body></html>`;
+    const p = await extractProducts(html, "https://x.test/s");
+    expect(p!.title).toBe("OG Shoe");
+    expect(p!.price).toEqual({
+      amount: 120,
+      currency: "EUR",
+      formatted: expect.any(String),
+    });
+  });
+  it("returns null for og:type=product WITHOUT a price (category/landing page)", async () => {
+    const html = `<html><head>
+      <meta property="og:type" content="product">
+      <meta property="og:title" content="Buy Mac">
+    </head><body></body></html>`;
+    expect(
+      await extractProducts(html, "https://apple.test/buy-mac"),
+    ).toBeNull();
+  });
+});
