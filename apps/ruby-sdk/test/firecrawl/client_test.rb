@@ -117,10 +117,6 @@ class ClientTest < Minitest::Test
               category: "Gadgets",
               url: "https://example.com/widget",
               description: "A fine widget.",
-              images: [{ url: "https://example.com/w.jpg", alt: "Widget" }],
-              price: { amount: 1999, currency: "USD", formatted: "$19.99" },
-              originalPrice: { amount: 2999, currency: "USD", formatted: "$29.99" },
-              availability: { inStock: true, text: "In stock" },
               variants: [
                 {
                   id: "v1",
@@ -128,8 +124,14 @@ class ClientTest < Minitest::Test
                   title: "Large",
                   values: { size: "L" },
                   price: { amount: 2199, currency: "USD" },
-                  availability: { inStock: false },
-                  images: [{ url: "https://example.com/v1.jpg" }],
+                  sale: { originalPrice: { amount: 2999, currency: "USD", formatted: "$29.99" } },
+                  availability: { inStock: true, text: "In stock" },
+                  images: [{ url: "https://example.com/v1.jpg", alt: "Widget" }],
+                },
+                {
+                  id: "v2",
+                  title: "Small",
+                  values: { size: "S" },
                 },
               ],
             },
@@ -147,28 +149,34 @@ class ClientTest < Minitest::Test
     assert_equal "https://example.com/widget", product.url
     assert_equal "A fine widget.", product.description
 
-    assert_equal 1, product.images.size
-    assert_equal "https://example.com/w.jpg", product.images.first.url
-    assert_equal "Widget", product.images.first.alt
-
-    assert_equal 1999, product.price.amount
-    assert_equal "USD", product.price.currency
-    assert_equal "$19.99", product.price.formatted
-
-    assert_equal 2999, product.original_price.amount
-
-    assert_equal true, product.availability.in_stock
-    assert_equal "In stock", product.availability.text
-
-    assert_equal 1, product.variants.size
+    assert_equal 2, product.variants.size
     variant = product.variants.first
     assert_equal "v1", variant.id
     assert_equal "ACME-1", variant.sku
     assert_equal "Large", variant.title
     assert_equal({ "size" => "L" }, variant.values)
+
     assert_equal 2199, variant.price.amount
-    assert_equal false, variant.availability.in_stock
+    assert_equal "USD", variant.price.currency
+
+    assert_equal 2999, variant.sale.original_price.amount
+    assert_equal "$29.99", variant.sale.original_price.formatted
+
+    assert_equal true, variant.availability.in_stock
+    assert_equal "In stock", variant.availability.text
+
+    assert_equal 1, variant.images.size
     assert_equal "https://example.com/v1.jpg", variant.images.first.url
+    assert_equal "Widget", variant.images.first.alt
+
+    # Availability is always present; sale/price/images are optional.
+    bare = product.variants.last
+    assert_equal "v2", bare.id
+    assert_nil bare.price
+    assert_nil bare.sale
+    refute_nil bare.availability
+    assert_equal false, bare.availability.in_stock
+    assert_empty bare.images
   end
 
   def test_scrape_without_product_format_leaves_product_nil

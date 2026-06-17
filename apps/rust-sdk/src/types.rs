@@ -701,15 +701,6 @@ pub struct Product {
     pub url: String,
     /// Product description.
     pub description: Option<String>,
-    /// Product images.
-    pub images: Option<Vec<ProductImage>>,
-    /// Current price.
-    pub price: Option<ProductPrice>,
-    /// Original price before any discount.
-    #[serde(rename = "originalPrice")]
-    pub original_price: Option<ProductPrice>,
-    /// Availability information.
-    pub availability: Option<ProductAvailability>,
     /// Product variants.
     #[serde(default)]
     pub variants: Vec<ProductVariant>,
@@ -763,16 +754,24 @@ pub struct ProductVariant {
     /// Variant title.
     pub title: Option<String>,
     /// Variant option values (e.g. size, color).
-    pub values: Option<HashMap<String, String>>,
+    pub values: Option<HashMap<String, serde_json::Value>>,
     /// Variant price.
     pub price: Option<ProductPrice>,
-    /// Variant original price before any discount.
-    #[serde(rename = "originalPrice")]
-    pub original_price: Option<ProductPrice>,
-    /// Variant availability information.
-    pub availability: Option<ProductAvailability>,
+    /// Sale information, present when the variant is discounted.
+    pub sale: Option<ProductSale>,
+    /// Variant availability information (always present).
+    pub availability: ProductAvailability,
     /// Variant images.
     pub images: Option<Vec<ProductImage>>,
+}
+
+/// Sale information for a product variant.
+#[serde_with::skip_serializing_none]
+#[derive(Deserialize, Serialize, Debug, Default, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct ProductSale {
+    /// Original price before the discount.
+    pub original_price: ProductPrice,
 }
 
 /// Job status types for crawl and batch operations.

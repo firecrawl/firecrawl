@@ -114,22 +114,21 @@ it('hydrates product into Product model in Document', function (): void {
             'category' => 'Footwear',
             'url' => 'https://example.com/shoe',
             'description' => 'A fast running shoe.',
-            'images' => [
-                ['url' => 'https://example.com/shoe.jpg', 'alt' => 'Side view'],
-                ['url' => 'https://example.com/shoe-2.jpg'],
-            ],
-            'price' => ['amount' => 99.99, 'currency' => 'USD', 'formatted' => '$99.99'],
-            'originalPrice' => ['amount' => 129.99, 'currency' => 'USD'],
-            'availability' => ['inStock' => true, 'text' => 'In stock'],
             'variants' => [
                 [
                     'id' => 'v1',
                     'sku' => 'SHOE-RED-42',
                     'title' => 'Red / 42',
                     'values' => ['color' => 'red', 'size' => '42'],
-                    'price' => ['amount' => 99.99],
-                    'availability' => ['inStock' => false],
+                    'price' => ['amount' => 99.99, 'currency' => 'USD', 'formatted' => '$99.99'],
+                    'sale' => ['originalPrice' => ['amount' => 129.99, 'currency' => 'USD']],
+                    'availability' => ['inStock' => false, 'text' => 'Sold out'],
                     'images' => [['url' => 'https://example.com/shoe-red.jpg']],
+                ],
+                [
+                    'id' => 'v2',
+                    'title' => 'Blue / 42',
+                    'values' => ['color' => 'blue', 'size' => '42', 'limited' => true],
                 ],
             ],
         ],
@@ -143,16 +142,22 @@ it('hydrates product into Product model in Document', function (): void {
     expect($product->getCategory())->toBe('Footwear');
     expect($product->getUrl())->toBe('https://example.com/shoe');
     expect($product->getDescription())->toBe('A fast running shoe.');
-    expect($product->getImages())->toHaveCount(2);
-    expect($product->getImages()[0])->toBe(['url' => 'https://example.com/shoe.jpg', 'alt' => 'Side view']);
-    expect($product->getImages()[1])->toBe(['url' => 'https://example.com/shoe-2.jpg']);
-    expect($product->getPrice())->toBe(['amount' => 99.99, 'currency' => 'USD', 'formatted' => '$99.99']);
-    expect($product->getOriginalPrice())->toBe(['amount' => 129.99, 'currency' => 'USD']);
-    expect($product->getAvailability())->toBe(['inStock' => true, 'text' => 'In stock']);
-    expect($product->getVariants())->toHaveCount(1);
-    expect($product->getVariants()[0]['id'])->toBe('v1');
-    expect($product->getVariants()[0]['values'])->toBe(['color' => 'red', 'size' => '42']);
-    expect($product->getVariants()[0]['availability'])->toBe(['inStock' => false]);
+    expect($product->getVariants())->toHaveCount(2);
+
+    $v1 = $product->getVariants()[0];
+    expect($v1['id'])->toBe('v1');
+    expect($v1['values'])->toBe(['color' => 'red', 'size' => '42']);
+    expect($v1['price'])->toBe(['amount' => 99.99, 'currency' => 'USD', 'formatted' => '$99.99']);
+    expect($v1['sale'])->toBe(['originalPrice' => ['amount' => 129.99, 'currency' => 'USD']]);
+    expect($v1['availability'])->toBe(['inStock' => false, 'text' => 'Sold out']);
+    expect($v1['images'])->toBe([['url' => 'https://example.com/shoe-red.jpg']]);
+
+    // Availability is always present, even when omitted from the payload.
+    $v2 = $product->getVariants()[1];
+    expect($v2['values'])->toBe(['color' => 'blue', 'size' => '42', 'limited' => true]);
+    expect($v2['availability'])->toBe(['inStock' => false]);
+    expect(array_key_exists('sale', $v2))->toBeFalse();
+    expect(array_key_exists('price', $v2))->toBeFalse();
 });
 
 it('returns null product when absent in Document', function (): void {

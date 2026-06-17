@@ -21,11 +21,16 @@ class TestProductFormat:
                     "category": "Footwear",
                     "url": "https://example.com/shoe",
                     "description": "A lightweight running shoe.",
-                    "images": [{"url": "https://example.com/shoe.jpg", "alt": "Acme shoe"}],
-                    "price": {"amount": 89.99, "currency": "USD", "formatted": "$89.99"},
-                    "originalPrice": {"amount": 129.99, "currency": "USD"},
-                    "availability": {"inStock": True, "text": "In stock"},
-                    "variants": []
+                    "variants": [
+                        {
+                            "id": "default",
+                            "values": {"size": "10"},
+                            "price": {"amount": 89.99, "currency": "USD", "formatted": "$89.99"},
+                            "sale": {"originalPrice": {"amount": 129.99, "currency": "USD"}},
+                            "availability": {"inStock": True, "text": "In stock"},
+                            "images": [{"url": "https://example.com/shoe.jpg", "alt": "Acme shoe"}],
+                        }
+                    ]
                 }
             }
         }
@@ -39,12 +44,14 @@ class TestProductFormat:
         assert result.product.title == "Acme Running Shoe"
         assert result.product.brand == "Acme"
         assert result.product.category == "Footwear"
-        assert result.product.price.amount == 89.99
-        assert result.product.price.currency == "USD"
-        assert result.product.original_price.amount == 129.99
-        assert result.product.availability.in_stock is True
-        assert result.product.availability.text == "In stock"
-        assert result.product.images[0].url == "https://example.com/shoe.jpg"
+        variant = result.product.variants[0]
+        assert variant.price.amount == 89.99
+        assert variant.price.currency == "USD"
+        assert variant.sale.original_price.amount == 129.99
+        assert variant.sale.original_price.currency == "USD"
+        assert variant.availability.in_stock is True
+        assert variant.availability.text == "In stock"
+        assert variant.images[0].url == "https://example.com/shoe.jpg"
 
     def test_scrape_with_product_and_markdown_formats_returns_both(self):
         """Test that scraping with both product and markdown formats returns both."""
@@ -57,8 +64,12 @@ class TestProductFormat:
                 "product": {
                     "title": "Acme Mug",
                     "url": "https://example.com/mug",
-                    "price": {"amount": 12.5, "currency": "USD"},
-                    "variants": []
+                    "variants": [
+                        {
+                            "price": {"amount": 12.5, "currency": "USD"},
+                            "availability": {"inStock": True}
+                        }
+                    ]
                 }
             }
         }
@@ -71,7 +82,7 @@ class TestProductFormat:
         assert result.markdown == "# Example Content"
         assert result.product is not None
         assert result.product.title == "Acme Mug"
-        assert result.product.price.amount == 12.5
+        assert result.product.variants[0].price.amount == 12.5
 
     def test_scrape_without_product_format_does_not_return_product(self):
         """Test that scraping without product format does not return product."""
@@ -123,8 +134,6 @@ class TestProductFormat:
                     "title": "Acme T-Shirt",
                     "brand": "Acme",
                     "url": "https://example.com/tshirt",
-                    "price": {"amount": 24.0, "currency": "USD"},
-                    "availability": {"inStock": True},
                     "variants": [
                         {
                             "id": "v1",

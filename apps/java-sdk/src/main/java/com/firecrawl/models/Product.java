@@ -14,10 +14,6 @@ public class Product {
     private String category;
     private String url;
     private String description;
-    private List<ProductImage> images;
-    private ProductPrice price;
-    private ProductPrice originalPrice;
-    private ProductAvailability availability;
     private List<ProductVariant> variants;
 
     public String getTitle() { return title; }
@@ -25,10 +21,6 @@ public class Product {
     public String getCategory() { return category; }
     public String getUrl() { return url; }
     public String getDescription() { return description; }
-    public List<ProductImage> getImages() { return images; }
-    public ProductPrice getPrice() { return price; }
-    public ProductPrice getOriginalPrice() { return originalPrice; }
-    public ProductAvailability getAvailability() { return availability; }
     public List<ProductVariant> getVariants() { return variants; }
 
     @Override

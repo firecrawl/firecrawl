@@ -1,3 +1,4 @@
+using System.Text.Json;
 using System.Text.Json.Serialization;
 
 namespace Firecrawl.Models;
@@ -24,22 +25,6 @@ public class ProductProfile
     [JsonPropertyName("description")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? Description { get; set; }
-
-    [JsonPropertyName("images")]
-    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    public List<ProductImage>? Images { get; set; }
-
-    [JsonPropertyName("price")]
-    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    public ProductPrice? Price { get; set; }
-
-    [JsonPropertyName("originalPrice")]
-    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    public ProductPrice? OriginalPrice { get; set; }
-
-    [JsonPropertyName("availability")]
-    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    public ProductAvailability? Availability { get; set; }
 
     [JsonPropertyName("variants")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
@@ -108,21 +93,29 @@ public class ProductVariant
 
     [JsonPropertyName("values")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    public Dictionary<string, string>? Values { get; set; }
+    public Dictionary<string, JsonElement>? Values { get; set; }
 
     [JsonPropertyName("price")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public ProductPrice? Price { get; set; }
 
-    [JsonPropertyName("originalPrice")]
+    [JsonPropertyName("sale")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    public ProductPrice? OriginalPrice { get; set; }
+    public ProductSale? Sale { get; set; }
 
     [JsonPropertyName("availability")]
-    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    public ProductAvailability? Availability { get; set; }
+    public ProductAvailability Availability { get; set; } = new();
 
     [JsonPropertyName("images")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public List<ProductImage>? Images { get; set; }
+}
+
+/// <summary>
+/// Sale information for a product variant (the price before the current sale).
+/// </summary>
+public class ProductSale
+{
+    [JsonPropertyName("originalPrice")]
+    public ProductPrice OriginalPrice { get; set; } = new();
 }

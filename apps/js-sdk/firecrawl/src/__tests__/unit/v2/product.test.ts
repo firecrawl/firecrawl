@@ -19,11 +19,15 @@ describe("JS SDK v2 product format", () => {
             category: "Footwear",
             url: "https://example.com/shoe",
             description: "A lightweight running shoe.",
-            images: [{ url: "https://example.com/shoe.jpg", alt: "Acme shoe" }],
-            price: { amount: 89.99, currency: "USD", formatted: "$89.99" },
-            originalPrice: { amount: 129.99, currency: "USD", formatted: "$129.99" },
-            availability: { inStock: true, text: "In stock" },
-            variants: []
+            variants: [
+              {
+                id: "default",
+                images: [{ url: "https://example.com/shoe.jpg", alt: "Acme shoe" }],
+                price: { amount: 89.99, currency: "USD", formatted: "$89.99" },
+                sale: { originalPrice: { amount: 129.99, currency: "USD", formatted: "$129.99" } },
+                availability: { inStock: true, text: "In stock" }
+              }
+            ]
           }
         }
       }
@@ -35,11 +39,11 @@ describe("JS SDK v2 product format", () => {
     expect(result.product).toBeDefined();
     expect(result.product?.title).toBe("Acme Running Shoe");
     expect(result.product?.brand).toBe("Acme");
-    expect(result.product?.price?.amount).toBe(89.99);
-    expect(result.product?.price?.currency).toBe("USD");
-    expect(result.product?.originalPrice?.amount).toBe(129.99);
-    expect(result.product?.availability?.inStock).toBe(true);
-    expect(result.product?.images?.[0]?.url).toBe("https://example.com/shoe.jpg");
+    expect(result.product?.variants?.[0]?.price?.amount).toBe(89.99);
+    expect(result.product?.variants?.[0]?.price?.currency).toBe("USD");
+    expect(result.product?.variants?.[0]?.sale?.originalPrice?.amount).toBe(129.99);
+    expect(result.product?.variants?.[0]?.availability?.inStock).toBe(true);
+    expect(result.product?.variants?.[0]?.images?.[0]?.url).toBe("https://example.com/shoe.jpg");
   });
 
   test("scrape with product and markdown formats returns both", async () => {
@@ -52,8 +56,12 @@ describe("JS SDK v2 product format", () => {
           product: {
             title: "Acme Mug",
             url: "https://example.com/mug",
-            price: { amount: 12.5, currency: "USD" },
-            variants: []
+            variants: [
+              {
+                price: { amount: 12.5, currency: "USD" },
+                availability: { inStock: true }
+              }
+            ]
           }
         }
       }
@@ -65,7 +73,7 @@ describe("JS SDK v2 product format", () => {
     expect(result.markdown).toBe("# Example Content");
     expect(result.product).toBeDefined();
     expect(result.product?.title).toBe("Acme Mug");
-    expect(result.product?.price?.amount).toBe(12.5);
+    expect(result.product?.variants?.[0]?.price?.amount).toBe(12.5);
   });
 
   test("scrape without product format does not return product", async () => {
@@ -115,15 +123,14 @@ describe("JS SDK v2 product format", () => {
             title: "Acme T-Shirt",
             brand: "Acme",
             url: "https://example.com/tshirt",
-            price: { amount: 24.0, currency: "USD" },
-            availability: { inStock: true },
             variants: [
               {
                 id: "v1",
                 sku: "TSHIRT-S-RED",
                 title: "Small / Red",
                 values: { size: "S", color: "Red" },
-                price: { amount: 24.0, currency: "USD" },
+                price: { amount: 19.0, currency: "USD" },
+                sale: { originalPrice: { amount: 24.0, currency: "USD" } },
                 availability: { inStock: true },
                 images: [{ url: "https://example.com/tshirt-red.jpg" }]
               },
@@ -148,6 +155,7 @@ describe("JS SDK v2 product format", () => {
     expect(result.product?.variants?.[0]?.sku).toBe("TSHIRT-S-RED");
     expect(result.product?.variants?.[0]?.values?.color).toBe("Red");
     expect(result.product?.variants?.[0]?.images?.[0]?.url).toBe("https://example.com/tshirt-red.jpg");
+    expect(result.product?.variants?.[0]?.sale?.originalPrice?.amount).toBe(24.0);
     expect(result.product?.variants?.[1]?.availability?.inStock).toBe(false);
     expect(result.product?.variants?.[1]?.availability?.text).toBe("Sold out");
   });

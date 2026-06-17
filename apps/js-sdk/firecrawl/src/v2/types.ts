@@ -444,14 +444,18 @@ export interface ProductImage {
   alt?: string;
 }
 
+export interface ProductSale {
+  originalPrice: ProductPrice;
+}
+
 export interface ProductVariant {
   id?: string;
   sku?: string;
   title?: string;
-  values?: Record<string, string>;
+  values?: Record<string, unknown>;
   price?: ProductPrice;
-  originalPrice?: ProductPrice;
-  availability?: ProductAvailability;
+  sale?: ProductSale;
+  availability: ProductAvailability;
   images?: ProductImage[];
 }
 
@@ -461,10 +465,6 @@ export interface ProductProfile {
   category?: string;
   url: string;
   description?: string;
-  images?: ProductImage[];
-  price?: ProductPrice;
-  originalPrice?: ProductPrice;
-  availability?: ProductAvailability;
   variants: ProductVariant[];
 }
 

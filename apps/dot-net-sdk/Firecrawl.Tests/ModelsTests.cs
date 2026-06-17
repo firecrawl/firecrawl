@@ -151,21 +151,16 @@ public class ModelsTests
                 "category": "Shoes",
                 "url": "https://example.com/product/1",
                 "description": "A great sneaker",
-                "images": [
-                    { "url": "https://example.com/img1.jpg", "alt": "Front" }
-                ],
-                "price": { "amount": 99.99, "currency": "USD", "formatted": "$99.99" },
-                "originalPrice": { "amount": 129.99, "currency": "USD" },
-                "availability": { "inStock": true, "text": "In stock" },
                 "variants": [
                     {
                         "id": "v1",
                         "sku": "SKU-1",
                         "title": "Size 10",
                         "values": { "size": "10" },
-                        "price": { "amount": 99.99, "currency": "USD" },
-                        "availability": { "inStock": true },
-                        "images": [ { "url": "https://example.com/v1.jpg" } ]
+                        "price": { "amount": 99.99, "currency": "USD", "formatted": "$99.99" },
+                        "sale": { "originalPrice": { "amount": 129.99, "currency": "USD" } },
+                        "availability": { "inStock": true, "text": "In stock" },
+                        "images": [ { "url": "https://example.com/v1.jpg", "alt": "Front" } ]
                     }
                 ]
             }
@@ -178,23 +173,23 @@ public class ModelsTests
         Assert.Equal("Test Sneaker", doc.Product.Title);
         Assert.Equal("Acme", doc.Product.Brand);
         Assert.Equal("https://example.com/product/1", doc.Product.Url);
-        Assert.NotNull(doc.Product.Images);
-        Assert.Single(doc.Product.Images);
-        Assert.Equal("Front", doc.Product.Images[0].Alt);
-        Assert.NotNull(doc.Product.Price);
-        Assert.Equal(99.99, doc.Product.Price.Amount);
-        Assert.Equal("USD", doc.Product.Price.Currency);
-        Assert.NotNull(doc.Product.OriginalPrice);
-        Assert.Equal(129.99, doc.Product.OriginalPrice.Amount);
-        Assert.NotNull(doc.Product.Availability);
-        Assert.True(doc.Product.Availability.InStock);
         Assert.NotNull(doc.Product.Variants);
         Assert.Single(doc.Product.Variants);
         var variant = doc.Product.Variants[0];
         Assert.Equal("v1", variant.Id);
         Assert.Equal("SKU-1", variant.Sku);
         Assert.NotNull(variant.Values);
-        Assert.Equal("10", variant.Values["size"]);
+        Assert.Equal("10", variant.Values["size"].GetString());
+        Assert.NotNull(variant.Price);
+        Assert.Equal(99.99, variant.Price.Amount);
+        Assert.Equal("USD", variant.Price.Currency);
+        Assert.NotNull(variant.Sale);
+        Assert.Equal(129.99, variant.Sale.OriginalPrice.Amount);
+        Assert.NotNull(variant.Availability);
+        Assert.True(variant.Availability.InStock);
+        Assert.NotNull(variant.Images);
+        Assert.Single(variant.Images);
+        Assert.Equal("Front", variant.Images[0].Alt);
     }
 
     [Fact]

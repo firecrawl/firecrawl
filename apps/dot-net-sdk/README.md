@@ -87,8 +87,9 @@ Console.WriteLine(doc.Video);
 ### Product Extraction
 
 Use the `product` format on product pages to get structured product extraction
-(title, price, availability, variants) on the document's `Product` property. It is
-the deterministic counterpart to the LLM-based `json` format.
+(title, brand, and variants, each with their own price and availability) on the
+document's `Product` property. It is the deterministic counterpart to the LLM-based
+`json` format.
 
 ```csharp
 var doc = await client.ScrapeAsync("https://example.com/product/123",

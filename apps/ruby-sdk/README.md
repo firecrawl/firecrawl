@@ -77,9 +77,9 @@ puts doc.video
 ### Product Extraction
 
 Use the `product` format on product pages to get structured product data
-(title, price, availability, variants). It is the deterministic counterpart to
-the LLM-based `json` format. The returned `product` field contains the extracted
-fields.
+(title, brand, category, and per-variant price, availability, and images).
+It is the deterministic counterpart to the LLM-based `json` format. The
+returned `product` field contains the extracted fields.
 
 ```ruby
 doc = client.scrape("https://example.com/products/widget",

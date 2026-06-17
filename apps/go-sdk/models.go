@@ -33,10 +33,6 @@ type ProductProfile struct {
 	Category      string               `json:"category,omitempty"`
 	URL           string               `json:"url"`
 	Description   string               `json:"description,omitempty"`
-	Images        []ProductImage       `json:"images,omitempty"`
-	Price         *ProductPrice        `json:"price,omitempty"`
-	OriginalPrice *ProductPrice        `json:"originalPrice,omitempty"`
-	Availability  *ProductAvailability `json:"availability,omitempty"`
 	Variants      []ProductVariant     `json:"variants,omitempty"`
 }
 
@@ -59,16 +55,21 @@ type ProductAvailability struct {
 	Text    string `json:"text,omitempty"`
 }
 
+// ProductSale represents sale information for a product variant.
+type ProductSale struct {
+	OriginalPrice ProductPrice `json:"originalPrice"`
+}
+
 // ProductVariant represents a single purchasable variant of a product.
 type ProductVariant struct {
-	ID            string               `json:"id,omitempty"`
-	SKU           string               `json:"sku,omitempty"`
-	Title         string               `json:"title,omitempty"`
-	Values        map[string]string    `json:"values,omitempty"`
-	Price         *ProductPrice        `json:"price,omitempty"`
-	OriginalPrice *ProductPrice        `json:"originalPrice,omitempty"`
-	Availability  *ProductAvailability `json:"availability,omitempty"`
-	Images        []ProductImage       `json:"images,omitempty"`
+	ID           string              `json:"id,omitempty"`
+	SKU          string              `json:"sku,omitempty"`
+	Title        string              `json:"title,omitempty"`
+	Values       map[string]any      `json:"values,omitempty"`
+	Price        *ProductPrice       `json:"price,omitempty"`
+	Sale         *ProductSale        `json:"sale,omitempty"`
+	Availability ProductAvailability `json:"availability"`
+	Images       []ProductImage      `json:"images,omitempty"`
 }
 
 // PaperResult represents a ranked research paper result.

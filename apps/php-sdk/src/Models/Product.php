@@ -6,15 +6,14 @@ namespace Firecrawl\Models;
 
 /**
  * Structured product information extracted via the `product` scrape format.
+ *
+ * Pricing, availability, and images live on individual variants; the
+ * top-level product carries identity and descriptive fields only.
  */
 final class Product
 {
     /**
-     * @param list<array{url: string, alt?: string|null}> $images
-     * @param array{amount: float, currency?: string|null, formatted?: string|null}|null      $price
-     * @param array{amount: float, currency?: string|null, formatted?: string|null}|null      $originalPrice
-     * @param array{inStock: bool, text?: string|null}|null                                   $availability
-     * @param list<array<string, mixed>>                                                       $variants
+     * @param list<array<string, mixed>> $variants
      */
     public function __construct(
         private readonly string $title,
@@ -22,10 +21,6 @@ final class Product
         private readonly ?string $brand = null,
         private readonly ?string $category = null,
         private readonly ?string $description = null,
-        private readonly array $images = [],
-        private readonly ?array $price = null,
-        private readonly ?array $originalPrice = null,
-        private readonly ?array $availability = null,
         private readonly array $variants = [],
     ) {}
 
@@ -38,10 +33,6 @@ final class Product
             brand: $data['brand'] ?? null,
             category: $data['category'] ?? null,
             description: $data['description'] ?? null,
-            images: self::normalizeImages($data['images'] ?? []),
-            price: self::normalizePrice($data['price'] ?? null),
-            originalPrice: self::normalizePrice($data['originalPrice'] ?? null),
-            availability: self::normalizeAvailability($data['availability'] ?? null),
             variants: self::normalizeVariants($data['variants'] ?? []),
         );
     }
@@ -94,15 +85,15 @@ final class Product
 
     /**
      * @param mixed $availability
-     * @return array{inStock: bool, text?: string|null}|null
+     * @return array{inStock: bool, text?: string|null}
      */
-    private static function normalizeAvailability(mixed $availability): ?array
+    private static function normalizeAvailability(mixed $availability): array
     {
-        if (!is_array($availability) || !array_key_exists('inStock', $availability)) {
-            return null;
+        if (!is_array($availability)) {
+            return ['inStock' => false];
         }
 
-        $entry = ['inStock' => (bool) $availability['inStock']];
+        $entry = ['inStock' => (bool) ($availability['inStock'] ?? false)];
         if (array_key_exists('text', $availability)) {
             $entry['text'] = $availability['text'] !== null ? (string) $availability['text'] : null;
         }
@@ -133,21 +124,19 @@ final class Product
                 }
             }
             if (isset($variant['values']) && is_array($variant['values'])) {
-                $values = [];
-                foreach ($variant['values'] as $vk => $vv) {
-                    $values[(string) $vk] = (string) $vv;
-                }
-                $entry['values'] = $values;
+                $entry['values'] = $variant['values'];
             }
             if (($price = self::normalizePrice($variant['price'] ?? null)) !== null) {
                 $entry['price'] = $price;
             }
-            if (($originalPrice = self::normalizePrice($variant['originalPrice'] ?? null)) !== null) {
-                $entry['originalPrice'] = $originalPrice;
+            if (
+                is_array($variant['sale'] ?? null)
+                && ($originalPrice = self::normalizePrice($variant['sale']['originalPrice'] ?? null)) !== null
+            ) {
+                $entry['sale'] = ['originalPrice' => $originalPrice];
             }
-            if (($availability = self::normalizeAvailability($variant['availability'] ?? null)) !== null) {
-                $entry['availability'] = $availability;
-            }
+            // Availability is always present on a variant.
+            $entry['availability'] = self::normalizeAvailability($variant['availability'] ?? null);
             if (isset($variant['images'])) {
                 $entry['images'] = self::normalizeImages($variant['images']);
             }
@@ -181,30 +170,6 @@ final class Product
     public function getDescription(): ?string
     {
         return $this->description;
-    }
-
-    /** @return list<array{url: string, alt?: string|null}> */
-    public function getImages(): array
-    {
-        return $this->images;
-    }
-
-    /** @return array{amount: float, currency?: string|null, formatted?: string|null}|null */
-    public function getPrice(): ?array
-    {
-        return $this->price;
-    }
-
-    /** @return array{amount: float, currency?: string|null, formatted?: string|null}|null */
-    public function getOriginalPrice(): ?array
-    {
-        return $this->originalPrice;
-    }
-
-    /** @return array{inStock: bool, text?: string|null}|null */
-    public function getAvailability(): ?array
-    {
-        return $this->availability;
     }
 
     /** @return list<array<string, mixed>> */

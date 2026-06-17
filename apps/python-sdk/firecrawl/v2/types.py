@@ -290,6 +290,14 @@ class ProductImage(BaseModel):
     alt: Optional[str] = None
 
 
+class ProductSale(BaseModel):
+    """Sale information for a variant, holding the pre-sale price."""
+
+    model_config = {"extra": "allow", "populate_by_name": True}
+
+    original_price: ProductPrice = Field(alias="originalPrice")
+
+
 class ProductVariant(BaseModel):
     """A purchasable variant of a product (e.g. a size/color combination)."""
 
@@ -298,10 +306,10 @@ class ProductVariant(BaseModel):
     id: Optional[str] = None
     sku: Optional[str] = None
     title: Optional[str] = None
-    values: Optional[Dict[str, str]] = None
+    values: Optional[Dict[str, Any]] = None
     price: Optional[ProductPrice] = None
-    original_price: Optional[ProductPrice] = Field(default=None, alias="originalPrice")
-    availability: Optional[ProductAvailability] = None
+    sale: Optional[ProductSale] = None
+    availability: ProductAvailability
     images: Optional[List[ProductImage]] = None
 
 
@@ -315,10 +323,6 @@ class ProductProfile(BaseModel):
     category: Optional[str] = None
     url: str
     description: Optional[str] = None
-    images: Optional[List[ProductImage]] = None
-    price: Optional[ProductPrice] = None
-    original_price: Optional[ProductPrice] = Field(default=None, alias="originalPrice")
-    availability: Optional[ProductAvailability] = None
     variants: List[ProductVariant] = Field(default_factory=list)
 
 
