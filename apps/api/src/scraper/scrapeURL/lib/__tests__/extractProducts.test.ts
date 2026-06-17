@@ -45,4 +45,13 @@ describe("extractProducts — JSON-LD", () => {
       await extractProducts(html, "https://shop.example/about"),
     ).toBeNull();
   });
+
+  it("resolves a relative JSON-LD url against baseUrl", async () => {
+    const html = `<html><head><script type="application/ld+json">
+      {"@type":"Product","name":"Rel","url":"/products/rel",
+       "offers":{"@type":"Offer","price":"5","priceCurrency":"USD"}}
+    </script></head></html>`;
+    const p = await extractProducts(html, "https://shop.example/listing");
+    expect(p!.url).toBe("https://shop.example/products/rel");
+  });
 });

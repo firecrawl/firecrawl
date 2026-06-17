@@ -378,16 +378,35 @@ function normalizeStructuredProduct(
 // finalize + public API
 // ---------------------------------------------------------------------------
 
+/**
+ * Resolve a (possibly relative) JSON-LD url/@id against the page baseUrl so the
+ * emitted product/image urls are always absolute. Absolute urls pass through
+ * unchanged; relative ones are resolved; a missing or unparseable url falls
+ * back to baseUrl.
+ */
+function resolveUrl(maybeUrl: string | undefined, baseUrl: string): string {
+  if (!maybeUrl) return baseUrl;
+  try {
+    return new URL(maybeUrl, baseUrl).href;
+  } catch {
+    return baseUrl;
+  }
+}
+
 function finalize(raw: RawProduct, baseUrl: string): ProductProfile {
   const profile: ProductProfile = {
     title: raw.title!,
-    url: raw.url ?? baseUrl,
+    url: resolveUrl(raw.url, baseUrl),
     variants: raw.variants ?? [],
   };
   if (raw.brand !== undefined) profile.brand = raw.brand;
   if (raw.category !== undefined) profile.category = raw.category;
   if (raw.description !== undefined) profile.description = raw.description;
-  if (raw.images !== undefined) profile.images = raw.images;
+  if (raw.images !== undefined)
+    profile.images = raw.images.map(img => ({
+      ...img,
+      url: resolveUrl(img.url, baseUrl),
+    }));
   if (raw.price !== undefined) profile.price = raw.price;
   if (raw.originalPrice !== undefined)
     profile.originalPrice = raw.originalPrice;
