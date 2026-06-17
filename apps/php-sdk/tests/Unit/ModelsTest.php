@@ -166,6 +166,24 @@ it('returns null product when absent in Document', function (): void {
     expect($doc->getProduct())->toBeNull();
 });
 
+it('coerces non-string scalar identity fields without a TypeError under strict_types', function (): void {
+    // Defensive: upstream data could carry a non-string scalar (e.g. a numeric
+    // brand). Under declare(strict_types=1) these must be cast, not passed raw.
+    $product = Product::fromArray([
+        'title' => 'Widget',
+        'url' => 'https://example.com/widget',
+        'brand' => 1234,
+        'category' => 56.7,
+        'description' => true,
+        'variants' => [],
+    ]);
+
+    expect($product->getBrand())->toBe('1234');
+    expect($product->getCategory())->toBe('56.7');
+    expect($product->getDescription())->toBe('1');
+    expect($product->getVariants())->toBe([]);
+});
+
 it('preserves positional integration in ScrapeOptions::with', function (): void {
     $options = ScrapeOptions::with(
         null,

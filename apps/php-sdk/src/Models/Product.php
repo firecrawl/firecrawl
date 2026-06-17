@@ -30,9 +30,9 @@ final class Product
         return new self(
             title: (string) ($data['title'] ?? ''),
             url: (string) ($data['url'] ?? ''),
-            brand: $data['brand'] ?? null,
-            category: $data['category'] ?? null,
-            description: $data['description'] ?? null,
+            brand: ($data['brand'] ?? null) !== null ? (string) $data['brand'] : null,
+            category: ($data['category'] ?? null) !== null ? (string) $data['category'] : null,
+            description: ($data['description'] ?? null) !== null ? (string) $data['description'] : null,
             variants: self::normalizeVariants($data['variants'] ?? []),
         );
     }
