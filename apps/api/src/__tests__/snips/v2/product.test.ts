@@ -77,10 +77,22 @@ describeIf(ALLOW_TEST_SUITE_WEBSITE)("Product scrape format", () => {
         identity,
       );
 
+      // Additive-only contract: a scrape that does not request the `product`
+      // format must be byte-identical in shape to a pre-feature scrape.
+      // No `product` field...
       expect(response.product).toBeUndefined();
+      // ...and no spurious `warning` (the no-product warning is only emitted
+      // when the format is actually requested).
+      expect(response.warning).toBeUndefined();
+      // ...while the rest of the document is present and unchanged.
       expect(response.markdown).toBeDefined();
       expect(typeof response.markdown).toBe("string");
       expect(response.markdown?.length).toBeGreaterThan(0);
+      expect(response.metadata).toBeDefined();
+      expect(response.metadata.sourceURL ?? response.metadata.url).toBe(
+        productUrl,
+      );
+      expect(response.metadata.statusCode).toBe(200);
     },
     scrapeTimeout,
   );
