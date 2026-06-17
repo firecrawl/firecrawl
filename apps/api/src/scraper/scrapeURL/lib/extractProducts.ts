@@ -92,10 +92,34 @@ function asNumber(value: unknown): number | undefined {
   return undefined;
 }
 
+/** True when a node's `@type` matches a schema.org collection type. */
+function isItemListType(type: unknown): boolean {
+  const matchOne = (t: string): boolean => {
+    const ty = t.split(/[/#:]/).pop()!.toLowerCase();
+    return (
+      ty === "itemlist" ||
+      ty === "offercatalog" ||
+      ty === "collectionpage" ||
+      ty === "breadcrumblist"
+    );
+  };
+  if (Array.isArray(type)) {
+    return type.map(asString).some(t => t !== undefined && matchOne(t));
+  }
+  const t = asString(type);
+  return t !== undefined && matchOne(t);
+}
+
 /**
  * Mirrors Rust `find_product_node`: depth-first search for the first node whose
  * `@type` matches a product schema type, preferring `@graph` then `mainEntity`
  * then any nested value.
+ *
+ * IMPORTANT: it does NOT descend into a collection (`ItemList` and friends) or
+ * follow an `itemListElement` edge. A category/listing page wraps its products
+ * in an `ItemList`; returning the first member would emit one arbitrary listed
+ * product as if it were the page's product. Such pages fail closed (null). A
+ * top-level / `@graph` / `mainEntity` Product is still found.
  */
 function findProductNode(value: unknown): Record<string, unknown> | null {
   if (Array.isArray(value)) {
@@ -108,6 +132,11 @@ function findProductNode(value: unknown): Record<string, unknown> | null {
   if (value && typeof value === "object") {
     const map = value as Record<string, unknown>;
     const type = map["@type"];
+
+    // A collection node is not a product, and its members must not be harvested
+    // as the page product -> do not descend into it at all.
+    if (isItemListType(type)) return null;
+
     let isProduct = false;
     if (Array.isArray(type)) {
       isProduct = type
@@ -125,7 +154,10 @@ function findProductNode(value: unknown): Record<string, unknown> | null {
       findProductNode(map["@graph"]) ??
       findProductNode(map["mainEntity"]) ??
       (() => {
-        for (const v of Object.values(map)) {
+        for (const [key, v] of Object.entries(map)) {
+          // Never follow a listing edge: an `itemListElement` array holds
+          // collection members, not the page's own product.
+          if (key === "itemListElement") continue;
           const found = findProductNode(v);
           if (found) return found;
         }
