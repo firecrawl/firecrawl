@@ -585,9 +585,14 @@ function parseEmbeddedState(html: string, baseUrl: string): RawProduct | null {
   const name = asString(node["name"]) ?? asString(node["title"]);
   // price: node.price -> first offer price
   const price = asNumber(node["price"]) ?? asNumber(offer?.["price"]);
-  // currency: priceCurrency -> currency (never fabricated)
+  // currency: node priceCurrency/currency, then the offer's priceCurrency/
+  // currency (the common __NEXT_DATA__ shape carries it on the offer, alongside
+  // the price). Never fabricated.
   const currency =
-    asString(node["priceCurrency"]) ?? asString(node["currency"]);
+    asString(node["priceCurrency"]) ??
+    asString(node["currency"]) ??
+    asString(offer?.["priceCurrency"]) ??
+    asString(offer?.["currency"]);
   // availability: node.availability -> offer.availability, mapped to a token.
   const availabilityRaw =
     asString(node["availability"]) ?? asString(offer?.["availability"]);
