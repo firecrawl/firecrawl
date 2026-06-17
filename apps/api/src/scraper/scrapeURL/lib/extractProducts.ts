@@ -12,9 +12,9 @@ import type {
  * Multi-source structured product extractor, ported from the product-search
  * Rust crate (`platforms::structured_data` / `platforms::structured_schema`).
  *
- * This file currently ships the JSON-LD source + the canonical normalize step.
- * Additional sources (microdata, RDFa, embedded state, OpenGraph) and the
- * priority merge land in later tasks. The public signature
+ * This file currently ships the JSON-LD, microdata, embedded-state, and
+ * OpenGraph sources + the canonical normalize step. Remaining sources (RDFa,
+ * dataLayer) and the priority merge land in later tasks. The public signature
  * `extractProducts(html, baseUrl)` is STABLE and must not change.
  */
 
@@ -347,6 +347,230 @@ function parseOpenGraph(html: string, baseUrl: string): RawProduct | null {
 }
 
 // ---------------------------------------------------------------------------
+// Embedded-state source (__NEXT_DATA__ / framework hydration blobs)
+// ---------------------------------------------------------------------------
+
+/**
+ * Mirrors Rust `json_object_after`: finds the first brace-balanced `{...}`
+ * object beginning at or after `anchor`, and `JSON.parse`s it as strict JSON.
+ * Returns undefined when the anchor is absent or the object is not valid JSON
+ * (fail closed — we do not attempt to repair JS object literals with single
+ * quotes / unquoted keys).
+ */
+function jsonObjectAfter(
+  haystack: string,
+  anchor: string,
+): Record<string, unknown> | undefined {
+  const anchorIdx = haystack.indexOf(anchor);
+  if (anchorIdx === -1) return undefined;
+  const rest = haystack.slice(anchorIdx + anchor.length);
+  const open = rest.indexOf("{");
+  if (open === -1) return undefined;
+
+  let depth = 0;
+  let inStr = false;
+  let escaped = false;
+  for (let i = open; i < rest.length; i++) {
+    const ch = rest[i];
+    if (inStr) {
+      if (escaped) escaped = false;
+      else if (ch === "\\") escaped = true;
+      else if (ch === '"') inStr = false;
+      continue;
+    }
+    if (ch === '"') inStr = true;
+    else if (ch === "{") depth++;
+    else if (ch === "}") {
+      depth--;
+      if (depth === 0) {
+        try {
+          const parsed = JSON.parse(rest.slice(open, i + 1));
+          return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+            ? (parsed as Record<string, unknown>)
+            : undefined;
+        } catch {
+          return undefined;
+        }
+      }
+    }
+  }
+  return undefined;
+}
+
+/**
+ * Mirrors Rust `extract_embedded_state_json` + `extract_next_data_json`. Reads a
+ * hydration/state JSON blob from the common SSR frameworks. First tries the
+ * `<script id="__NEXT_DATA__" type="application/json">` block, then the
+ * `window.__NUXT__ = {...}` / Apollo / Redux / Remix assignment object literals.
+ * Returns the first one that parses as a JSON object; tolerates parse failures.
+ */
+function extractEmbeddedStateJson(
+  html: string,
+): Record<string, unknown> | undefined {
+  const $ = load(html);
+  const nextData = $('script#__NEXT_DATA__[type="application/json"]')
+    .first()
+    .text()
+    .trim();
+  if (nextData) {
+    try {
+      const parsed = JSON.parse(nextData);
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+        return parsed as Record<string, unknown>;
+      }
+    } catch {
+      // Tolerate a malformed __NEXT_DATA__ blob; fall through to anchors.
+    }
+  }
+  for (const anchor of [
+    "window.__NUXT__",
+    "window.__APOLLO_STATE__",
+    "window.__INITIAL_STATE__",
+    "window.__PRELOADED_STATE__",
+    "window.__remixContext",
+  ]) {
+    const obj = jsonObjectAfter(html, anchor);
+    if (obj !== undefined) return obj;
+  }
+  return undefined;
+}
+
+/**
+ * Mirrors Rust `is_product_like`: a node looks like a concrete product when it
+ * has a name/title string AND a real, parseable price (`price` or the first
+ * `offers` entry's `price`). A bare `priceCurrency` is deliberately NOT enough —
+ * locale/config nodes commonly carry a currency without being products.
+ */
+function isProductLike(value: unknown): value is Record<string, unknown> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const node = value as Record<string, unknown>;
+  const hasName =
+    asString(node["name"]) !== undefined ||
+    asString(node["title"]) !== undefined;
+  const hasPrice =
+    asNumber(node["price"]) !== undefined ||
+    asNumber(firstOffer(node)?.["price"]) !== undefined;
+  return hasName && hasPrice;
+}
+
+/**
+ * Mirrors Rust `next_data_known_product`: looks up the product at well-known
+ * Next.js page-product paths. A product found here is trusted as the page
+ * product because the path itself is the signal (e.g. `props.pageProps.product`).
+ */
+function nextDataKnownProduct(
+  data: Record<string, unknown>,
+): Record<string, unknown> | undefined {
+  const PATHS: string[][] = [
+    ["props", "pageProps", "product"],
+    ["props", "pageProps", "productData"],
+    ["props", "pageProps", "initialData", "product"],
+    ["props", "pageProps", "page", "product"],
+    ["props", "pageProps", "__APOLLO_STATE__", "product"],
+    ["query", "product"],
+  ];
+  for (const path of PATHS) {
+    let node: unknown = data;
+    for (const key of path) {
+      if (!node || typeof node !== "object" || Array.isArray(node)) {
+        node = undefined;
+        break;
+      }
+      node = (node as Record<string, unknown>)[key];
+    }
+    if (isProductLike(node)) return node;
+  }
+  return undefined;
+}
+
+/**
+ * Mirrors Rust `collect_product_like`: collects product-like objects anywhere in
+ * the payload. A product-like node is treated as a leaf (we do not descend into
+ * its own subtree) so its offers / variants are not counted as candidates.
+ */
+function collectProductLike(
+  value: unknown,
+  out: Record<string, unknown>[],
+): void {
+  if (Array.isArray(value)) {
+    for (const child of value) collectProductLike(child, out);
+    return;
+  }
+  if (value && typeof value === "object") {
+    if (isProductLike(value)) {
+      out.push(value);
+      return;
+    }
+    for (const child of Object.values(value as Record<string, unknown>)) {
+      collectProductLike(child, out);
+    }
+  }
+}
+
+/**
+ * Mirrors Rust `node_matches_url`: does this node's url/handle/sku/id align with
+ * the page URL? Compares case-insensitively, requiring an overlap of >= 3 chars.
+ */
+function nodeMatchesUrl(
+  node: Record<string, unknown>,
+  finalUrl: string,
+): boolean {
+  const url = finalUrl.toLowerCase();
+  return [
+    "url",
+    "canonicalUrl",
+    "handle",
+    "slug",
+    "sku",
+    "id",
+    "productId",
+    "@id",
+  ]
+    .map(key => asString(node[key]))
+    .filter((v): v is string => v !== undefined)
+    .map(v => v.toLowerCase())
+    .some(v => v.length >= 3 && (url.includes(v) || v.includes(url)));
+}
+
+/**
+ * Mirrors Rust `select_next_data_product`. Prefers a known page-product path;
+ * otherwise accepts a single product-like candidate, or disambiguates multiple
+ * candidates by URL alignment. Returns undefined when the choice is ambiguous,
+ * so we fail closed rather than emit a recommendation or cart item as the
+ * requested product.
+ */
+function selectNextDataProduct(
+  data: Record<string, unknown>,
+  finalUrl: string,
+): Record<string, unknown> | undefined {
+  const known = nextDataKnownProduct(data);
+  if (known !== undefined) return known;
+
+  const candidates: Record<string, unknown>[] = [];
+  collectProductLike(data, candidates);
+  if (candidates.length === 0) return undefined;
+  if (candidates.length === 1) return candidates[0];
+
+  const aligned = candidates.filter(node => nodeMatchesUrl(node, finalUrl));
+  // Exactly one URL-aligned candidate wins; zero or many remain ambiguous.
+  return aligned.length === 1 ? aligned[0] : undefined;
+}
+
+/**
+ * Mirrors Rust `extract_next_data_structured`. Obtains the embedded-state JSON
+ * object, selects the page product (fail-closed), and normalizes it. The chosen
+ * node already looks like a Product/offers shape, so it shares the JSON-LD
+ * normalize step.
+ */
+function parseEmbeddedState(html: string, baseUrl: string): RawProduct | null {
+  const data = extractEmbeddedStateJson(html);
+  if (data === undefined) return null;
+  const node = selectNextDataProduct(data, baseUrl);
+  if (node === undefined) return null;
+  return normalizeStructuredProduct(node, baseUrl);
+}
+
+// ---------------------------------------------------------------------------
 // normalize
 // ---------------------------------------------------------------------------
 
@@ -598,9 +822,10 @@ function finalize(raw: RawProduct, baseUrl: string): ProductProfile {
 /**
  * Extract a single structured product from a page's HTML.
  *
- * Currently sources from JSON-LD, microdata, then OpenGraph/<meta> (first hit
- * wins; per-field merge lands later). Returns null when no product node with a
- * title is found (non-ecommerce / nav / link pages). Signature is STABLE.
+ * Currently sources from JSON-LD, microdata, embedded state (__NEXT_DATA__ /
+ * framework hydration blobs), then OpenGraph/<meta> (first hit wins; per-field
+ * merge lands later). Returns null when no product node with a title is found
+ * (non-ecommerce / nav / link pages). Signature is STABLE.
  */
 export async function extractProducts(
   html: string,
@@ -608,11 +833,12 @@ export async function extractProducts(
 ): Promise<ProductProfile | null> {
   try {
     // Sources are tried in priority order; the proper per-field MERGE across
-    // sources lands in a later task. For now: JSON-LD, then microdata, then
-    // OpenGraph/<meta>.
+    // sources lands in a later task. For now: JSON-LD, microdata, embedded
+    // state, then OpenGraph/<meta>.
     const raw =
       parseJsonLd(html, baseUrl) ??
       parseMicrodata(html, baseUrl) ??
+      parseEmbeddedState(html, baseUrl) ??
       parseOpenGraph(html, baseUrl);
     return raw && raw.title ? finalize(raw, baseUrl) : null;
   } catch (error) {

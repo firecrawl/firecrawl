@@ -111,3 +111,36 @@ describe("extractProducts — OpenGraph", () => {
     ).toBeNull();
   });
 });
+
+describe("extractProducts — __NEXT_DATA__", () => {
+  it("finds the page product via a known path", async () => {
+    const blob = JSON.stringify({
+      props: {
+        pageProps: {
+          product: {
+            name: "Next Lamp",
+            offers: { price: "30", priceCurrency: "USD" },
+          },
+        },
+      },
+    });
+    const html = `<html><body><script id="__NEXT_DATA__" type="application/json">${blob}</script></body></html>`;
+    const p = await extractProducts(html, "https://x.test/lamp");
+    expect(p!.title).toBe("Next Lamp");
+    expect(p!.price?.amount).toBe(30);
+  });
+  it("prefers the page product over recommendations and bails on ambiguity", async () => {
+    const blob = JSON.stringify({
+      props: {
+        pageProps: {
+          recommendations: [
+            { name: "Rec A", offers: { price: "1" } },
+            { name: "Rec B", offers: { price: "2" } },
+          ],
+        },
+      },
+    });
+    const html = `<html><body><script id="__NEXT_DATA__" type="application/json">${blob}</script></body></html>`;
+    expect(await extractProducts(html, "https://x.test/lamp")).toBeNull();
+  });
+});
