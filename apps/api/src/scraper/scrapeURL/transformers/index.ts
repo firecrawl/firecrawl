@@ -4,7 +4,6 @@ import { Document } from "../../../controllers/v2/types";
 import { htmlTransform } from "../lib/removeUnwantedElements";
 import { extractLinks } from "../lib/extractLinks";
 import { extractImages } from "../lib/extractImages";
-import { extractProducts } from "../lib/extractProducts";
 import { extractMetadata } from "../lib/extractMetadata";
 import {
   performLLMExtract,
@@ -19,6 +18,7 @@ import { performAttributes } from "./performAttributes";
 
 import { deriveDiff } from "./diff";
 import { fetchAudio } from "./audio";
+import { fetchProduct } from "./product";
 import { fetchVideo } from "./video";
 import { performRedactPII } from "./redactPII";
 import { useIndex, useSearchIndex } from "../../../services/index";
@@ -274,34 +274,6 @@ async function deriveImagesFromHTML(
     );
   }
 
-  return document;
-}
-
-export async function deriveStructuredProductFromHTML(
-  meta: Meta,
-  document: Document,
-): Promise<Document> {
-  if (!hasFormatOfType(meta.options.formats, "product")) return document;
-  if (document.rawHtml === undefined) {
-    throw new Error(
-      "rawHtml is undefined -- deriveStructuredProductFromHTML must run after rawHtml is available",
-    );
-  }
-  const baseUrl =
-    document.metadata.url ??
-    document.metadata.sourceURL ??
-    meta.rewrittenUrl ??
-    meta.url;
-  const product = await extractProducts(document.rawHtml, baseUrl);
-  if (product) {
-    document.product = product;
-  } else {
-    const noProduct =
-      "No product found on this page; it does not appear to be a product page.";
-    document.warning = document.warning
-      ? `${noProduct} ${document.warning}`
-      : noProduct;
-  }
   return document;
 }
 
@@ -614,7 +586,7 @@ const transformerStack: Transformer[] = [
   deriveImagesFromHTML,
   deriveBrandingFromActions,
   deriveMetadataFromRawHTML,
-  deriveStructuredProductFromHTML,
+  fetchProduct,
   ...(useIndex ? [sendDocumentToIndex] : []),
   ...(useSearchIndex ? [sendDocumentToSearchIndex] : []), // Add to search index for real-time search
   performLLMExtract,
