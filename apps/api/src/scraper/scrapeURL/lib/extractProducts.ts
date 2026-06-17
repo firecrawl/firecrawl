@@ -931,6 +931,34 @@ function normalizeAvailabilityText(text: string): string {
 }
 
 /**
+ * Out-of-stock availability tokens (compact, lower-cased). Mirrors the
+ * OutOfStock-family of `availabilityToken` PLUS the schema.org states that map
+ * to "no buyable stock" (`SoldOut`/`Discontinued`/`BackOrder`). A raw value is
+ * out of stock when its trailing token (after any `/` or `#`, e.g.
+ * `https://schema.org/SoldOut`) falls in this set.
+ */
+const OUT_OF_STOCK_TOKENS = new Set([
+  "outofstock",
+  "soldout",
+  "oos",
+  "unavailable",
+  "false",
+  "discontinued",
+  "backorder",
+]);
+
+/**
+ * True when a raw availability string denotes out-of-stock. Replaces the old
+ * `includes("outofstock")` substring check, which wrongly reported
+ * `SoldOut`/`BackOrder`/`Discontinued`/`"Out of stock"` as in stock.
+ */
+function isOutOfStock(rawText: string): boolean {
+  const tail = rawText.split(/[/#]/).pop() ?? rawText;
+  const compact = tail.replace(/[^a-zA-Z0-9]/g, "").toLowerCase();
+  return OUT_OF_STOCK_TOKENS.has(compact);
+}
+
+/**
  * Mirrors Rust `structured_availability`: availability lives on the product or
  * the first offer, as a raw token or `{text, inStock}` object. `inStock` is the
  * explicit boolean when present, else true unless the token says out of stock.
@@ -956,10 +984,7 @@ function normalizeAvailability(
   }
 
   const inStock =
-    explicitInStock ??
-    (rawText !== undefined
-      ? !rawText.toLowerCase().includes("outofstock")
-      : true);
+    explicitInStock ?? (rawText !== undefined ? !isOutOfStock(rawText) : true);
   const text =
     rawText !== undefined ? normalizeAvailabilityText(rawText) : undefined;
   return text !== undefined ? { inStock, text } : { inStock };

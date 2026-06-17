@@ -270,6 +270,101 @@ describe("structuredProductEvidence", () => {
   });
 });
 
+describe("extractProducts — correctness regressions (Codex review)", () => {
+  // Bug 1: availability over-reports in-stock.
+  it("reports inStock:false for a SoldOut JSON-LD availability", async () => {
+    const html = `<html><head><script type="application/ld+json">{"@type":"Product","name":"Sold Out Item",
+      "offers":{"price":"5","priceCurrency":"USD","availability":"https://schema.org/SoldOut"}}</script></head></html>`;
+    const p = await extractProducts(html, "https://x.test/so");
+    expect(p!.availability?.inStock).toBe(false);
+  });
+  it("still reports inStock:true for an InStock availability", async () => {
+    const html = `<html><head><script type="application/ld+json">{"@type":"Product","name":"In Stock Item",
+      "offers":{"price":"5","priceCurrency":"USD","availability":"https://schema.org/InStock"}}</script></head></html>`;
+    const p = await extractProducts(html, "https://x.test/is");
+    expect(p!.availability?.inStock).toBe(true);
+  });
+
+  // Bug 2: embedded-state drops currency.
+  it("reads priceCurrency from a __NEXT_DATA__ offer", async () => {
+    const blob = JSON.stringify({
+      props: {
+        pageProps: {
+          product: {
+            name: "Euro Lamp",
+            offers: { price: "30", priceCurrency: "EUR" },
+          },
+        },
+      },
+    });
+    const html = `<html><body><script id="__NEXT_DATA__" type="application/json">${blob}</script></body></html>`;
+    const p = await extractProducts(html, "https://x.test/lamp");
+    expect(p!.price?.currency).toBe("EUR");
+  });
+
+  // Bug 3: microdata loses nested-Offer price.
+  it("reads price/currency from a nested Offer itemscope inside the Product", async () => {
+    const html = `<html><body>
+      <div itemscope itemtype="https://schema.org/Product">
+        <span itemprop="name">Nested Offer Widget</span>
+        <div itemprop="offers" itemscope itemtype="https://schema.org/Offer">
+          <span itemprop="price" content="9.99"></span>
+          <span itemprop="priceCurrency" content="USD"></span>
+        </div>
+      </div>
+    </body></html>`;
+    const p = await extractProducts(html, "https://x.test/no");
+    expect(p!.title).toBe("Nested Offer Widget");
+    expect(p!.price?.amount).toBe(9.99);
+    expect(p!.price?.currency).toBe("USD");
+  });
+
+  // Bug 4: RDFa reads document-wide.
+  it("scopes RDFa property reads to the single Product typeof element", async () => {
+    const html = `<html><body>
+      <span property="schema:name">Other</span>
+      <div typeof="schema:Product">
+        <span property="schema:name">RDFa Inside</span>
+        <span property="schema:price" content="3.00"></span>
+      </div>
+    </body></html>`;
+    const p = await extractProducts(html, "https://x.test/rd");
+    expect(p!.title).toBe("RDFa Inside");
+  });
+
+  // Bug 5: JSON-LD pulls a product out of an ItemList.
+  it("does not extract a product from an ItemList category page", async () => {
+    const html = `<html><head><script type="application/ld+json">{"@type":"ItemList",
+      "itemListElement":[{"@type":"Product","name":"A"},{"@type":"Product","name":"B"}]}</script></head></html>`;
+    expect(await extractProducts(html, "https://x.test/cat")).toBeNull();
+  });
+  it("still extracts a top-level Product node", async () => {
+    const html = `<html><head><script type="application/ld+json">{"@type":"Product","name":"X"}</script></head></html>`;
+    const p = await extractProducts(html, "https://x.test/x");
+    expect(p!.title).toBe("X");
+  });
+
+  // Bug 6: identity merge — title containment must not absorb a different product.
+  // Anchor "iPhone" sku AAA; a second "iPhone Case" with its own sku BBB. The
+  // titles are in a containment relationship ("iPhone" ⊂ "iPhone Case"), which
+  // the buggy code treats as non-conflict — but the disagreeing skus mean these
+  // are different products, so the Case's price must NOT merge into the iPhone.
+  it("does not merge a different product's price via title containment (disagreeing sku)", async () => {
+    const html = `<html><head>
+      <script type="application/ld+json">{"@type":"Product","name":"iPhone","sku":"AAA"}</script>
+    </head><body>
+      <div itemscope itemtype="https://schema.org/Product">
+        <span itemprop="name">iPhone Case</span>
+        <span itemprop="sku">BBB</span>
+        <span itemprop="price" content="19.99"></span>
+      </div>
+    </body></html>`;
+    const p = await extractProducts(html, "https://x.test/iphone");
+    expect(p!.title).toBe("iPhone");
+    expect(p!.price).toBeUndefined();
+  });
+});
+
 describe("extractProducts — robustness", () => {
   it("tolerates a malformed JSON-LD script and uses a later valid Product", async () => {
     const html = `<html><head>
