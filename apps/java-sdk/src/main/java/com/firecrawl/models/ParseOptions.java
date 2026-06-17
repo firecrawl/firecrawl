@@ -12,7 +12,7 @@ import java.util.Map;
  * Options for parsing uploaded files via /v2/parse.
  *
      * <p>Parse does not support browser-rendering formats/options such as
-     * change tracking, screenshot, branding, audio, video, actions, waitFor, location, or mobile.
+     * change tracking, screenshot, branding, product, audio, video, actions, waitFor, location, or mobile.
  */
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public class ParseOptions {
@@ -93,6 +93,7 @@ public class ParseOptions {
                 || normalized.equals("screenshot")
                 || normalized.equals("screenshot@fullPage")
                 || normalized.equals("branding")
+                || normalized.equals("product")
                 || normalized.equals("audio")
                 || normalized.equals("video");
     }

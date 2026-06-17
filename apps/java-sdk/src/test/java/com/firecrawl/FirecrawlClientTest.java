@@ -244,6 +244,15 @@ class FirecrawlClientTest {
     }
 
     @Test
+    void testParseOptionsRejectsProductFormat() {
+        assertThrows(IllegalArgumentException.class, () ->
+                ParseOptions.builder()
+                        .formats(List.of("product"))
+                        .build()
+        );
+    }
+
+    @Test
     void testParseOptionsBuilderSupportsRedactPII() {
         ParseOptions options = ParseOptions.builder()
                 .formats(List.of("markdown"))
