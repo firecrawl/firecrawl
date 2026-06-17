@@ -87,6 +87,27 @@ describe("deriveStructuredProductFromHTML", () => {
     expect(result.warning).toContain("Pre-existing warning.");
   });
 
+  it("extracts from rawHtml even when cleaned html has stripped script/meta/head (pipeline simulation)", async () => {
+    // Simulate the real pipeline: deriveHTMLFromRawHTML + removeUnwantedElements
+    // strip <script>/<style>/<noscript>/<meta>/<head> from document.html BEFORE
+    // this transformer runs, so the JSON-LD only survives in document.rawHtml.
+    const STRIPPED_HTML = `<!DOCTYPE html>
+<html>
+  <body><h1>Acme Super Widget</h1></body>
+</html>`;
+
+    const meta = makeMeta([{ type: "product" }]);
+    const document = makeDocument(STRIPPED_HTML);
+    // rawHtml retains the original markup (with JSON-LD in <head><script>).
+    document.rawHtml = PRODUCT_HTML;
+
+    const result = await deriveStructuredProductFromHTML(meta, document);
+
+    expect(result.product).toBeDefined();
+    expect(result.product?.title).toBe("Acme Super Widget");
+    expect(result.warning).toBeUndefined();
+  });
+
   it("early-returns without touching product/warning when the product format is not requested", async () => {
     const meta = makeMeta([{ type: "markdown" }]);
     const document = makeDocument(PRODUCT_HTML);

@@ -282,9 +282,9 @@ export async function deriveStructuredProductFromHTML(
   document: Document,
 ): Promise<Document> {
   if (!hasFormatOfType(meta.options.formats, "product")) return document;
-  if (document.html === undefined) {
+  if (document.rawHtml === undefined) {
     throw new Error(
-      "html is undefined -- deriveStructuredProductFromHTML must run after HTML is derived",
+      "rawHtml is undefined -- deriveStructuredProductFromHTML must run after rawHtml is available",
     );
   }
   const baseUrl =
@@ -292,7 +292,7 @@ export async function deriveStructuredProductFromHTML(
     document.metadata.sourceURL ??
     meta.rewrittenUrl ??
     meta.url;
-  const product = await extractProducts(document.html, baseUrl);
+  const product = await extractProducts(document.rawHtml, baseUrl);
   if (product) {
     document.product = product;
   } else {
