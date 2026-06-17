@@ -558,16 +558,53 @@ function selectNextDataProduct(
 
 /**
  * Mirrors Rust `extract_next_data_structured`. Obtains the embedded-state JSON
- * object, selects the page product (fail-closed), and normalizes it. The chosen
- * node already looks like a Product/offers shape, so it shares the JSON-LD
- * normalize step.
+ * object, selects the page product (fail-closed), then RESHAPES the selected
+ * node into a restricted clean node carrying only the fields the shared
+ * normalizer consumes before normalizing.
+ *
+ * The reshape is load-bearing: the raw embedded-state node can carry extra keys
+ * (`sku`, `id`, `category`, `url`, `variants`, ...). A leaked `id`/`sku` would
+ * then participate in the identity-conflict logic of the merge step and could
+ * wrongly drop a valid lower-priority source or corrupt anchoring. Restricting
+ * to the Rust field set removes that risk. Selection logic is unchanged.
  */
 function parseEmbeddedState(html: string, baseUrl: string): RawProduct | null {
   const data = extractEmbeddedStateJson(html);
   if (data === undefined) return null;
   const node = selectNextDataProduct(data, baseUrl);
   if (node === undefined) return null;
-  return normalizeStructuredProduct(node, baseUrl);
+
+  const offer = firstOffer(node);
+
+  // name: name -> title
+  const name = asString(node["name"]) ?? asString(node["title"]);
+  // price: node.price -> first offer price
+  const price = asNumber(node["price"]) ?? asNumber(offer?.["price"]);
+  // currency: priceCurrency -> currency (never fabricated)
+  const currency =
+    asString(node["priceCurrency"]) ?? asString(node["currency"]);
+  // availability: node.availability -> offer.availability, mapped to a token.
+  const availabilityRaw =
+    asString(node["availability"]) ?? asString(offer?.["availability"]);
+  const availability =
+    availabilityRaw !== undefined
+      ? availabilityToken(availabilityRaw)
+      : undefined;
+  const brand = normalizeBrand(node["brand"]);
+  const description = asString(node["description"]);
+
+  const offers: Record<string, unknown> = {};
+  if (price !== undefined) offers["price"] = price;
+  if (currency !== undefined) offers["priceCurrency"] = currency;
+  if (availability !== undefined) offers["availability"] = availability;
+
+  const clean: Record<string, unknown> = { "@type": "Product", offers };
+  if (name !== undefined) clean["name"] = name;
+  if (brand !== undefined) clean["brand"] = brand;
+  if (description !== undefined) clean["description"] = description;
+  if (node["image"] !== undefined) clean["image"] = node["image"];
+
+  return normalizeStructuredProduct(clean, baseUrl);
 }
 
 // ---------------------------------------------------------------------------

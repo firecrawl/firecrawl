@@ -143,6 +143,28 @@ describe("extractProducts — __NEXT_DATA__", () => {
     const html = `<html><body><script id="__NEXT_DATA__" type="application/json">${blob}</script></body></html>`;
     expect(await extractProducts(html, "https://x.test/lamp")).toBeNull();
   });
+  it("embedded-state node does not leak identity (sku) into the merge", async () => {
+    const blob = JSON.stringify({
+      props: {
+        pageProps: {
+          product: {
+            name: "Anchor Item",
+            sku: "ZZZ",
+            description: "from next-data",
+            offers: { price: "10", priceCurrency: "USD" },
+          },
+        },
+      },
+    });
+    const html = `<html><head>
+    <script type="application/ld+json">{"@type":"Product","name":"Anchor Item","sku":"AAA"}</script>
+    </head><body><script id="__NEXT_DATA__" type="application/json">${blob}</script></body></html>`;
+    const p = await extractProducts(html, "https://x.test/a");
+    expect(p!.title).toBe("Anchor Item");
+    // embedded-state NOT dropped despite differing raw sku
+    expect(p!.description).toBe("from next-data");
+    expect(p!.price?.amount).toBe(10);
+  });
 });
 
 describe("extractProducts — bonus sources", () => {
