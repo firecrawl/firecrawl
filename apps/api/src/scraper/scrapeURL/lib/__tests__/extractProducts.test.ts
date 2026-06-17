@@ -55,3 +55,32 @@ describe("extractProducts — JSON-LD", () => {
     expect(p!.url).toBe("https://shop.example/products/rel");
   });
 });
+
+describe("extractProducts — microdata", () => {
+  const productHtml = `<div itemscope itemtype="https://schema.org/Product">
+    <span itemprop="name">Widget</span>
+    <span itemprop="brand">Acme</span>
+    <span itemprop="price" content="9.50"></span>
+    <link itemprop="availability" href="https://schema.org/InStock">
+  </div>`;
+  it("reads itemprops from a single Product scope", async () => {
+    const p = await extractProducts(
+      `<html><body>${productHtml}</body></html>`,
+      "https://x.test/w",
+    );
+    expect(p!.title).toBe("Widget");
+    expect(p!.price?.amount).toBe(9.5);
+  });
+  it("bails on multiple Product scopes", async () => {
+    const p = await extractProducts(
+      `<html><body>${productHtml}${productHtml}</body></html>`,
+      "https://x.test/w",
+    );
+    expect(p).toBeNull(); // ambiguous → no microdata product (and no other source here)
+  });
+  it("ignores itemprops outside the Product scope", async () => {
+    const html = `<html><body><span itemprop="name">Outside</span>${productHtml}</body></html>`;
+    const p = await extractProducts(html, "https://x.test/w");
+    expect(p!.title).toBe("Widget");
+  });
+});

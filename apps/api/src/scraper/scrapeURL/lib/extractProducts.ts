@@ -1,4 +1,4 @@
-import { load } from "cheerio"; // rustified
+import { load, type CheerioAPI, type Element } from "cheerio"; // rustified
 import { logger } from "../../../lib/logger";
 import type {
   ProductProfile,
@@ -163,6 +163,85 @@ function parseJsonLd(html: string, baseUrl: string): RawProduct | null {
     }
   }
   return null;
+}
+
+// ---------------------------------------------------------------------------
+// Microdata source
+// ---------------------------------------------------------------------------
+
+/**
+ * Mirrors Rust `itemprop_value`: resolve a microdata property value with the
+ * precedence `content` attribute -> `href`/`src` attribute -> trimmed inner
+ * text. Returns undefined when nothing non-empty is found.
+ */
+function itempropValue($: CheerioAPI, el: Element): string | undefined {
+  const node = $(el);
+  const content = node.attr("content");
+  if (content !== undefined && content.trim() !== "") return content.trim();
+  const href = node.attr("href") ?? node.attr("src");
+  if (href !== undefined && href.trim() !== "") return href.trim();
+  const text = node.text().trim();
+  return text !== "" ? text : undefined;
+}
+
+/**
+ * Mirrors Rust `microdata_product_fragment` + `extract_microdata_structured`.
+ *
+ * Scopes to the SINGLE element whose `itemtype` ends in `schema.org/Product`
+ * (tolerating http/https and a trailing slash). If zero or more than one such
+ * Product scope exists, we fail closed (return null) rather than guess which
+ * element is the page product.
+ *
+ * Within that scope we read direct itemprops only, excluding any nested inside a
+ * deeper `[itemscope]` (which would belong to a sub-item, not this product). The
+ * collected props are shaped like the JSON-LD node `normalizeStructuredProduct`
+ * expects, so both sources share one normalize.
+ */
+function parseMicrodata(html: string, baseUrl: string): RawProduct | null {
+  const $ = load(html);
+
+  // schema.org/Product, tolerating http/https and a trailing slash.
+  const scopes = $("[itemtype]").filter((_, el) => {
+    const itemtype = $(el).attr("itemtype") ?? "";
+    return /schema\.org\/Product\/?$/i.test(itemtype.trim());
+  });
+  if (scopes.length !== 1) return null; // zero or ambiguous -> fail closed
+  const scope = scopes[0];
+
+  // First itemprop value belonging directly to THIS product scope: skip any
+  // itemprop whose closest ancestor `[itemscope]` is a deeper nested item.
+  const propValue = (prop: string): string | undefined => {
+    const matches = $(scope).find(`[itemprop~="${prop}"]`);
+    for (let i = 0; i < matches.length; i++) {
+      const el = matches[i];
+      const owner = $(el).parent().closest("[itemscope]");
+      if (owner.length && owner[0] !== scope) continue; // nested item -> skip
+      const value = itempropValue($, el);
+      if (value !== undefined) return value;
+    }
+    return undefined;
+  };
+
+  const node: Record<string, unknown> = { "@type": "Product" };
+  for (const prop of [
+    "name",
+    "price",
+    "priceCurrency",
+    "availability",
+    "brand",
+    "description",
+    "image",
+    "sku",
+    "category",
+  ]) {
+    const value = propValue(prop);
+    if (value !== undefined) node[prop] = value;
+  }
+
+  // Same gate as Rust: ignore a scope with neither a name nor a price.
+  if (node["name"] === undefined && node["price"] === undefined) return null;
+
+  return normalizeStructuredProduct(node, baseUrl);
 }
 
 // ---------------------------------------------------------------------------
@@ -425,7 +504,9 @@ export async function extractProducts(
   baseUrl: string,
 ): Promise<ProductProfile | null> {
   try {
-    const raw = parseJsonLd(html, baseUrl);
+    // Sources are tried in priority order; the proper per-field MERGE across
+    // sources lands in a later task. For now: JSON-LD, then microdata.
+    const raw = parseJsonLd(html, baseUrl) ?? parseMicrodata(html, baseUrl);
     return raw && raw.title ? finalize(raw, baseUrl) : null;
   } catch (error) {
     logger.warn("extractProducts failed", {
