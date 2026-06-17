@@ -26,6 +26,11 @@ import {
   createWebhookSchema,
 } from "../../services/webhook/schema";
 import { BrandingProfile } from "../../types/branding";
+import {
+  DEFAULT_JSON_SCRAPE_TIMEOUT_MS,
+  DEFAULT_PROXY_SCRAPE_TIMEOUT_MS,
+  DEFAULT_SCRAPE_TIMEOUT_MS,
+} from "../../lib/scrape-timeout";
 
 // Base URL schema with common validation logic
 export const URL = z.preprocess(
@@ -705,11 +710,12 @@ const baseScrapeOptions = z.strictObject({
 type ScrapeOptionsBase = z.infer<typeof baseScrapeOptions>;
 
 const waitForRefine = (obj?: ScrapeOptionsBase): boolean => {
-  if (obj && obj.waitFor && obj.timeout) {
-    if (typeof obj.timeout !== "number" || obj.timeout <= 0) {
+  if (obj && obj.waitFor !== undefined) {
+    const timeout = obj.timeout ?? DEFAULT_SCRAPE_TIMEOUT_MS;
+    if (typeof timeout !== "number" || timeout <= 0) {
       return false;
     }
-    return obj.waitFor <= obj.timeout / 2;
+    return obj.waitFor <= timeout / 2;
   }
   return true;
 };
@@ -725,12 +731,12 @@ const extractTransformImpl = <T extends ScrapeOptionsBase | undefined>(
 ): T extends undefined ? undefined : T => {
   if (!obj) return obj as T extends undefined ? undefined : T;
   // Handle timeout
-  let result = { ...obj };
+  let result = { ...obj, timeout: obj.timeout ?? DEFAULT_SCRAPE_TIMEOUT_MS };
   if (
     obj.formats.find(x => typeof x === "object" && x.type === "json") &&
-    obj.timeout === 30000
+    result.timeout === DEFAULT_SCRAPE_TIMEOUT_MS
   ) {
-    result = { ...result, timeout: 60000 };
+    result = { ...result, timeout: DEFAULT_JSON_SCRAPE_TIMEOUT_MS };
   }
 
   const changeTracking = obj.formats?.find(
@@ -741,17 +747,17 @@ const extractTransformImpl = <T extends ScrapeOptionsBase | undefined>(
     result = { ...result, waitFor: 5000 };
   }
 
-  if (changeTracking && obj.timeout === 30000) {
-    result = { ...result, timeout: 60000 };
+  if (changeTracking && result.timeout === DEFAULT_SCRAPE_TIMEOUT_MS) {
+    result = { ...result, timeout: DEFAULT_JSON_SCRAPE_TIMEOUT_MS };
   }
 
   if (
     (obj.proxy === "stealth" ||
       obj.proxy === "enhanced" ||
       obj.proxy === "auto") &&
-    obj.timeout === 30000
+    result.timeout === DEFAULT_SCRAPE_TIMEOUT_MS
   ) {
-    result = { ...result, timeout: 120000 };
+    result = { ...result, timeout: DEFAULT_PROXY_SCRAPE_TIMEOUT_MS };
   }
 
   if (obj.lockdown && obj.maxAge === undefined) {
