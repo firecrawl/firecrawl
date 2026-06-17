@@ -31,6 +31,8 @@ pub enum Format {
     Attributes,
     /// Brand analysis of the page.
     Branding,
+    /// Product extraction from the page.
+    Product,
     /// Audio extraction (MP3) from YouTube videos.
     Audio,
     /// Video extraction from supported video URLs.
@@ -60,6 +62,7 @@ impl Serialize for Format {
             Format::Json => serializer.serialize_str("json"),
             Format::Attributes => serializer.serialize_str("attributes"),
             Format::Branding => serializer.serialize_str("branding"),
+            Format::Product => serializer.serialize_str("product"),
             Format::Audio => serializer.serialize_str("audio"),
             Format::Video => serializer.serialize_str("video"),
             Format::Question(question) => question.serialize(serializer),
@@ -88,6 +91,7 @@ impl<'de> Deserialize<'de> for Format {
                 "json" => Ok(Format::Json),
                 "attributes" => Ok(Format::Attributes),
                 "branding" => Ok(Format::Branding),
+                "product" => Ok(Format::Product),
                 "audio" => Ok(Format::Audio),
                 "video" => Ok(Format::Video),
                 _ => Err(de::Error::custom(format!("unknown format: {}", format))),
@@ -678,6 +682,97 @@ pub struct Document {
     pub change_tracking: Option<Value>,
     /// Branding analysis.
     pub branding: Option<Value>,
+    /// Product extraction result.
+    pub product: Option<Product>,
+}
+
+/// Product extraction result for a page.
+#[serde_with::skip_serializing_none]
+#[derive(Deserialize, Serialize, Debug, Default, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct Product {
+    /// Product title.
+    pub title: String,
+    /// Brand name.
+    pub brand: Option<String>,
+    /// Product category.
+    pub category: Option<String>,
+    /// Product URL.
+    pub url: String,
+    /// Product description.
+    pub description: Option<String>,
+    /// Product images.
+    pub images: Option<Vec<ProductImage>>,
+    /// Current price.
+    pub price: Option<ProductPrice>,
+    /// Original price before any discount.
+    #[serde(rename = "originalPrice")]
+    pub original_price: Option<ProductPrice>,
+    /// Availability information.
+    pub availability: Option<ProductAvailability>,
+    /// Product variants.
+    #[serde(default)]
+    pub variants: Vec<ProductVariant>,
+}
+
+/// An image associated with a product.
+#[serde_with::skip_serializing_none]
+#[derive(Deserialize, Serialize, Debug, Default, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct ProductImage {
+    /// Image URL.
+    pub url: String,
+    /// Alternative text for the image.
+    pub alt: Option<String>,
+}
+
+/// Price information for a product.
+#[serde_with::skip_serializing_none]
+#[derive(Deserialize, Serialize, Debug, Default, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct ProductPrice {
+    /// Numeric price amount.
+    pub amount: f64,
+    /// Currency code.
+    pub currency: Option<String>,
+    /// Human-readable formatted price.
+    pub formatted: Option<String>,
+}
+
+/// Availability information for a product.
+#[serde_with::skip_serializing_none]
+#[derive(Deserialize, Serialize, Debug, Default, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct ProductAvailability {
+    /// Whether the product is in stock.
+    #[serde(rename = "inStock")]
+    pub in_stock: bool,
+    /// Human-readable availability text.
+    pub text: Option<String>,
+}
+
+/// A variant of a product.
+#[serde_with::skip_serializing_none]
+#[derive(Deserialize, Serialize, Debug, Default, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct ProductVariant {
+    /// Variant identifier.
+    pub id: Option<String>,
+    /// Stock keeping unit.
+    pub sku: Option<String>,
+    /// Variant title.
+    pub title: Option<String>,
+    /// Variant option values (e.g. size, color).
+    pub values: Option<HashMap<String, String>>,
+    /// Variant price.
+    pub price: Option<ProductPrice>,
+    /// Variant original price before any discount.
+    #[serde(rename = "originalPrice")]
+    pub original_price: Option<ProductPrice>,
+    /// Variant availability information.
+    pub availability: Option<ProductAvailability>,
+    /// Variant images.
+    pub images: Option<Vec<ProductImage>>,
 }
 
 /// Job status types for crawl and batch operations.
