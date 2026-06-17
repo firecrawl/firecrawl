@@ -54,7 +54,7 @@ func NewParseFileFromBytes(filename string, content []byte) *ParseFile {
 // ParseOptions configures a parse request.
 //
 // Parse does not support browser-rendering features (actions, waitFor, location,
-// mobile) nor the screenshot, branding, or changeTracking formats. The proxy
+// mobile) nor the screenshot, branding, product, or changeTracking formats. The proxy
 // field only accepts "auto" or "basic".
 type ParseOptions struct {
 	Formats             []string          `json:"-"`
