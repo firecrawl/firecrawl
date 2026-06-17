@@ -5,10 +5,10 @@ module Firecrawl
     # Options for parsing uploaded files via `/v2/parse`.
     #
     # Parse does not support browser-rendering features (actions, waitFor,
-    # location, mobile) nor screenshot/branding/audio/video/changeTracking formats. The
+    # location, mobile) nor screenshot/branding/product/audio/video/changeTracking formats. The
     # proxy field only accepts "auto" or "basic".
     class ParseOptions
-      UNSUPPORTED_FORMATS = %w[changeTracking screenshot screenshot@fullPage branding audio video].freeze
+      UNSUPPORTED_FORMATS = %w[changeTracking screenshot screenshot@fullPage branding product audio video].freeze
 
       FIELDS = %i[
         formats headers include_tags exclude_tags only_main_content
