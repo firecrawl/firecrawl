@@ -17,6 +17,7 @@ import { integrationSchema } from "../../utils/integration";
 import { includesFormat } from "../../lib/format-utils";
 import { webhookSchema } from "../../services/webhook/schema";
 import { BrandingProfile } from "../../types/branding";
+import { ProductProfile } from "../../types/product";
 
 type Format =
   | "markdown"
@@ -29,7 +30,8 @@ type Format =
   | "json"
   | "summary"
   | "changeTracking"
-  | "branding";
+  | "branding"
+  | "product";
 
 export const url = z.preprocess(
   x => {
@@ -429,6 +431,7 @@ const baseScrapeOptions = z.strictObject({
       "summary",
       "changeTracking",
       "branding",
+      "product",
     ])
     .array()
     .optional()
@@ -992,6 +995,7 @@ export type Document = {
   json?: any;
   summary?: string;
   branding?: BrandingProfile;
+  product?: ProductProfile;
   warning?: string;
   actions?: {
     screenshots?: string[];

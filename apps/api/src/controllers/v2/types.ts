@@ -26,6 +26,7 @@ import {
   createWebhookSchema,
 } from "../../services/webhook/schema";
 import { BrandingProfile } from "../../types/branding";
+import { ProductProfile } from "../../types/product";
 
 // Base URL schema with common validation logic
 export const URL = z.preprocess(
@@ -458,6 +459,7 @@ export type FormatObject =
   | HighlightsFormatWithOptions
   | QueryFormatWithOptions
   | { type: "branding" }
+  | { type: "product" }
   | { type: "audio" }
   | { type: "video" };
 
@@ -629,6 +631,7 @@ const baseScrapeOptions = z.strictObject({
           screenshotFormatWithOptions,
           attributesFormatWithOptions,
           z.strictObject({ type: z.literal("branding") }),
+          z.strictObject({ type: z.literal("product") }),
           questionFormatWithOptions,
           highlightsFormatWithOptions,
           queryFormatWithOptions,
@@ -1204,6 +1207,7 @@ export type Document = {
   answer?: string;
   highlights?: string;
   branding?: BrandingProfile;
+  product?: ProductProfile;
   warning?: string;
   attributes?: {
     selector: string;
@@ -1773,6 +1777,8 @@ export function fromV1ScrapeOptions(
             return { type: "screenshot" as const, fullPage: true };
           } else if (x === "branding") {
             return { type: "branding" as const };
+          } else if (x === "product") {
+            return { type: "product" as const };
           } else {
             return x;
           }

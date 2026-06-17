@@ -15,9 +15,6 @@ const config: KnipConfig = {
   ignore: [
     "native/**",
     "src/scraper/scrapeURL/engines/fire-engine/branding-script/**",
-    // Additive type module for structured product extraction; consumers
-    // (Document type, extractor, SDKs) are wired up in later tasks.
-    "src/types/product.ts",
   ],
   ignoreDependencies: ["undici-types", "stripe"],
 };
