@@ -523,10 +523,6 @@ function coerceFieldsToFormats(meta: Meta, document: Document): Document {
       "Removed product from Document because it wasn't in formats -- this indicates the engine returned unexpected data.",
     );
     delete document.product;
-  } else if (hasProduct && document.product === undefined) {
-    meta.logger.warn(
-      "Request had format product, but there was no product field in the result.",
-    );
   }
 
   const hasAudio = hasFormatOfType(meta.options.formats, "audio");
