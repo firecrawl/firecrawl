@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use Firecrawl\Models\CreditUsage;
 use Firecrawl\Models\Document;
+use Firecrawl\Models\Product;
 use Firecrawl\Models\MapData;
 use Firecrawl\Models\BatchScrapeJob;
 use Firecrawl\Models\CrawlJob;
@@ -102,6 +103,62 @@ it('hydrates video URL in Document', function (): void {
 
     expect($doc->getMarkdown())->toBe('# Video');
     expect($doc->getVideo())->toBe('https://storage.googleapis.com/firecrawl/video.mp4');
+});
+
+it('hydrates product into Product model in Document', function (): void {
+    $doc = Document::fromArray([
+        'markdown' => '# Product',
+        'product' => [
+            'title' => 'Running Shoe',
+            'brand' => 'Acme',
+            'category' => 'Footwear',
+            'url' => 'https://example.com/shoe',
+            'description' => 'A fast running shoe.',
+            'images' => [
+                ['url' => 'https://example.com/shoe.jpg', 'alt' => 'Side view'],
+                ['url' => 'https://example.com/shoe-2.jpg'],
+            ],
+            'price' => ['amount' => 99.99, 'currency' => 'USD', 'formatted' => '$99.99'],
+            'originalPrice' => ['amount' => 129.99, 'currency' => 'USD'],
+            'availability' => ['inStock' => true, 'text' => 'In stock'],
+            'variants' => [
+                [
+                    'id' => 'v1',
+                    'sku' => 'SHOE-RED-42',
+                    'title' => 'Red / 42',
+                    'values' => ['color' => 'red', 'size' => '42'],
+                    'price' => ['amount' => 99.99],
+                    'availability' => ['inStock' => false],
+                    'images' => [['url' => 'https://example.com/shoe-red.jpg']],
+                ],
+            ],
+        ],
+    ]);
+
+    $product = $doc->getProduct();
+
+    expect($product)->toBeInstanceOf(Product::class);
+    expect($product->getTitle())->toBe('Running Shoe');
+    expect($product->getBrand())->toBe('Acme');
+    expect($product->getCategory())->toBe('Footwear');
+    expect($product->getUrl())->toBe('https://example.com/shoe');
+    expect($product->getDescription())->toBe('A fast running shoe.');
+    expect($product->getImages())->toHaveCount(2);
+    expect($product->getImages()[0])->toBe(['url' => 'https://example.com/shoe.jpg', 'alt' => 'Side view']);
+    expect($product->getImages()[1])->toBe(['url' => 'https://example.com/shoe-2.jpg']);
+    expect($product->getPrice())->toBe(['amount' => 99.99, 'currency' => 'USD', 'formatted' => '$99.99']);
+    expect($product->getOriginalPrice())->toBe(['amount' => 129.99, 'currency' => 'USD']);
+    expect($product->getAvailability())->toBe(['inStock' => true, 'text' => 'In stock']);
+    expect($product->getVariants())->toHaveCount(1);
+    expect($product->getVariants()[0]['id'])->toBe('v1');
+    expect($product->getVariants()[0]['values'])->toBe(['color' => 'red', 'size' => '42']);
+    expect($product->getVariants()[0]['availability'])->toBe(['inStock' => false]);
+});
+
+it('returns null product when absent in Document', function (): void {
+    $doc = Document::fromArray(['markdown' => '# No product']);
+
+    expect($doc->getProduct())->toBeNull();
 });
 
 it('preserves positional integration in ScrapeOptions::with', function (): void {

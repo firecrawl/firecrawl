@@ -45,6 +45,10 @@ it('rejects video parse format', function (): void {
     ParseOptions::with(formats: ['video']);
 })->throws(FirecrawlException::class);
 
+it('rejects product parse format', function (): void {
+    ParseOptions::with(formats: ['product']);
+})->throws(FirecrawlException::class);
+
 it('rejects invalid proxy values', function (): void {
     ParseOptions::with(proxy: 'stealth');
 })->throws(FirecrawlException::class);

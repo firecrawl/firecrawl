@@ -99,7 +99,7 @@ echo $doc->getVideo();
 
 Upload a local file (`html`, `pdf`, `docx`, etc.) via multipart form data and
 parse it synchronously. Parse options intentionally exclude browser-only
-features such as change tracking, screenshot, branding, audio, video, actions,
+features such as change tracking, screenshot, branding, product, audio, video, actions,
 waitFor, location, and mobile. The `proxy` option only accepts `"auto"` or `"basic"`.
 
 ```php

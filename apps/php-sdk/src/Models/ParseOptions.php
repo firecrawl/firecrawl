@@ -10,7 +10,7 @@ use Firecrawl\Exceptions\FirecrawlException;
  * Options for parsing uploaded files via `/v2/parse`.
  *
  * Parse does not support browser-rendering features (actions, waitFor,
- * location, mobile) nor the screenshot, branding, audio, video, or changeTracking formats.
+ * location, mobile) nor the screenshot, branding, product, audio, video, or changeTracking formats.
  * The proxy field only accepts "auto" or "basic".
  */
 final class ParseOptions
@@ -20,6 +20,7 @@ final class ParseOptions
         'screenshot',
         'screenshot@fullPage',
         'branding',
+        'product',
         'audio',
         'video',
     ];
