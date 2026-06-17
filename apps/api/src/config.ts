@@ -327,6 +327,9 @@ const configSchema = z.object({
   // Audio (avgrab)
   AVGRAB_SERVICE_URL: z.string().optional(),
 
+  // Product extraction (product-search Rust service)
+  PRODUCT_EXTRACTION_SERVICE_URL: z.string().optional(),
+
   // PII Redaction (fire-privacy)
   FIRE_PRIVACY_URL: z.string().optional(),
   FIRE_PRIVACY_TIMEOUT_MS: z.coerce.number().int().positive().default(5000),
