@@ -57,4 +57,7 @@ public class Document
 
     [JsonPropertyName("branding")]
     public object? Branding { get; set; }
+
+    [JsonPropertyName("product")]
+    public ProductProfile? Product { get; set; }
 }

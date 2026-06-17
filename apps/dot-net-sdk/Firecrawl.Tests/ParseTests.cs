@@ -80,6 +80,18 @@ public class ParseTests
     }
 
     [Fact]
+    public void ParseOptions_Validate_RejectsProductFormat()
+    {
+        var options = new ParseOptions
+        {
+            Formats = new List<object> { "markdown", "product" }
+        };
+
+        var ex = Assert.Throws<ArgumentException>(() => options.Validate());
+        Assert.Contains("product", ex.Message);
+    }
+
+    [Fact]
     public void ParseOptions_Validate_RejectsUnsupportedProxy()
     {
         var options = new ParseOptions { Proxy = "stealth" };

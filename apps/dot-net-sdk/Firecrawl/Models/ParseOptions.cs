@@ -8,7 +8,7 @@ namespace Firecrawl.Models;
 ///
 /// <para>
 /// Parse does not support browser-rendering formats/options such as change
-/// tracking, screenshot, branding, actions, waitFor, location, or mobile.
+/// tracking, screenshot, branding, product, actions, waitFor, location, or mobile.
 /// These are rejected client-side in <see cref="Validate"/>.
 /// </para>
 /// </summary>
@@ -21,6 +21,7 @@ public class ParseOptions
         "screenshot",
         "screenshot@fullPage",
         "branding",
+        "product",
     };
 
     internal static readonly HashSet<string> SupportedProxies = new(StringComparer.OrdinalIgnoreCase)
