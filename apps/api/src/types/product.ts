@@ -1,9 +1,16 @@
 import { z } from "zod";
 
+// Canonical product shape, mirroring the product-extraction service's output
+// (product-search `Product`). Everything that can differ by size, color, store
+// selection, or stock state lives on a variant — there is no top-level price,
+// availability, or images. A single-SKU product still has exactly one variant.
 const productPriceSchema = z.object({
   amount: z.number(),
   currency: z.string().optional(),
   formatted: z.string().optional(),
+});
+const productSaleSchema = z.object({
+  originalPrice: productPriceSchema,
 });
 const productAvailabilitySchema = z.object({
   inStock: z.boolean(),
@@ -17,10 +24,10 @@ const productVariantSchema = z.object({
   id: z.string().optional(),
   sku: z.string().optional(),
   title: z.string().optional(),
-  values: z.record(z.string(), z.string()).optional(),
+  values: z.record(z.string(), z.unknown()).optional(),
   price: productPriceSchema.optional(),
-  originalPrice: productPriceSchema.optional(),
-  availability: productAvailabilitySchema.optional(),
+  sale: productSaleSchema.optional(),
+  availability: productAvailabilitySchema,
   images: z.array(productImageSchema).optional(),
 });
 const productProfileSchema = z.object({
@@ -29,10 +36,6 @@ const productProfileSchema = z.object({
   category: z.string().optional(),
   url: z.string(),
   description: z.string().optional(),
-  images: z.array(productImageSchema).optional(),
-  price: productPriceSchema.optional(),
-  originalPrice: productPriceSchema.optional(),
-  availability: productAvailabilitySchema.optional(),
   variants: z.array(productVariantSchema),
 });
 

@@ -46,11 +46,14 @@ describeIf(ALLOW_TEST_SUITE_WEBSITE && HAS_PRODUCT_SERVICE)(
 
         expect(response.product).toBeDefined();
         expect(response.product?.title).toBe("Firecrawl Test Widget");
-        expect(response.product?.price).toBeDefined();
-        expect(response.product?.price?.amount).toBe(49.99);
-        expect(response.product?.price?.currency).toBe("USD");
-        expect(response.product?.availability).toBeDefined();
-        expect(response.product?.availability?.inStock).toBe(true);
+        // Canonical shape: price/availability live on variants, not top-level.
+        const variant = response.product?.variants?.[0];
+        expect(variant).toBeDefined();
+        expect(variant?.price).toBeDefined();
+        expect(variant?.price?.amount).toBe(49.99);
+        expect(variant?.price?.currency).toBe("USD");
+        expect(variant?.availability).toBeDefined();
+        expect(variant?.availability?.inStock).toBe(true);
       },
       scrapeTimeout,
     );
