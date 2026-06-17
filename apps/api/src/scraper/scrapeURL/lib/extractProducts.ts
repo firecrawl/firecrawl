@@ -208,33 +208,58 @@ function parseMicrodata(html: string, baseUrl: string): RawProduct | null {
   if (scopes.length !== 1) return null; // zero or ambiguous -> fail closed
   const scope = scopes[0];
 
-  // First itemprop value belonging directly to THIS product scope: skip any
-  // itemprop whose closest ancestor `[itemscope]` is a deeper nested item.
-  const propValue = (prop: string): string | undefined => {
-    const matches = $(scope).find(`[itemprop~="${prop}"]`);
+  // First itemprop value owned by `ownerScope`: skip any itemprop whose closest
+  // ancestor `[itemscope]` is a deeper nested item (so a nested Offer/Demand's
+  // props do not leak into the Product, and vice versa).
+  const propValueIn = (
+    ownerScope: Element,
+    prop: string,
+  ): string | undefined => {
+    const matches = $(ownerScope).find(`[itemprop~="${prop}"]`);
     for (let i = 0; i < matches.length; i++) {
       const el = matches[i];
       const owner = $(el).parent().closest("[itemscope]");
-      if (owner.length && owner[0] !== scope) continue; // nested item -> skip
+      if (owner.length && owner[0] !== ownerScope) continue; // nested item -> skip
       const value = itempropValue($, el);
       if (value !== undefined) return value;
     }
     return undefined;
   };
+  const propValue = (prop: string): string | undefined =>
+    propValueIn(scope, prop);
+
+  // The canonical microdata shape nests price/currency/availability in an Offer:
+  // `Product[itemscope] -> offers -> Offer[itemscope]{price,priceCurrency,...}`.
+  // Mirror the Rust whole-fragment read: when a single nested Offer/Demand
+  // itemscope exists inside the Product, read those offer-valued props from it.
+  // (Several nested offers are ambiguous -> read none, leave the direct read.)
+  const offerScopes = $(scope)
+    .find("[itemscope][itemtype]")
+    .filter((_, el) => {
+      const itemtype = $(el).attr("itemtype") ?? "";
+      return /schema\.org\/(Offer|Demand)\/?$/i.test(itemtype.trim());
+    });
+  const offerScope = offerScopes.length === 1 ? offerScopes[0] : undefined;
+  const offerProp = (prop: string): string | undefined =>
+    propValue(prop) ??
+    (offerScope !== undefined ? propValueIn(offerScope, prop) : undefined);
 
   const node: Record<string, unknown> = { "@type": "Product" };
-  for (const prop of [
+  const directProps = [
     "name",
-    "price",
-    "priceCurrency",
-    "availability",
     "brand",
     "description",
     "image",
     "sku",
     "category",
-  ]) {
+  ];
+  const offerValuedProps = ["price", "priceCurrency", "availability"];
+  for (const prop of directProps) {
     const value = propValue(prop);
+    if (value !== undefined) node[prop] = value;
+  }
+  for (const prop of offerValuedProps) {
+    const value = offerProp(prop);
     if (value !== undefined) node[prop] = value;
   }
 
