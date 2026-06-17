@@ -4,6 +4,7 @@ import { Document } from "../../../controllers/v2/types";
 import { htmlTransform } from "../lib/removeUnwantedElements";
 import { extractLinks } from "../lib/extractLinks";
 import { extractImages } from "../lib/extractImages";
+import { extractProducts } from "../lib/extractProducts";
 import { extractMetadata } from "../lib/extractMetadata";
 import {
   performLLMExtract,
@@ -276,6 +277,34 @@ async function deriveImagesFromHTML(
   return document;
 }
 
+export async function deriveStructuredProductFromHTML(
+  meta: Meta,
+  document: Document,
+): Promise<Document> {
+  if (!hasFormatOfType(meta.options.formats, "product")) return document;
+  if (document.html === undefined) {
+    throw new Error(
+      "html is undefined -- deriveStructuredProductFromHTML must run after HTML is derived",
+    );
+  }
+  const baseUrl =
+    document.metadata.url ??
+    document.metadata.sourceURL ??
+    meta.rewrittenUrl ??
+    meta.url;
+  const product = await extractProducts(document.html, baseUrl);
+  if (product) {
+    document.product = product;
+  } else {
+    const noProduct =
+      "No product found on this page; it does not appear to be a product page.";
+    document.warning = document.warning
+      ? `${noProduct} ${document.warning}`
+      : noProduct;
+  }
+  return document;
+}
+
 async function deriveBrandingFromActions(
   meta: Meta,
   document: Document,
@@ -334,6 +363,7 @@ function coerceFieldsToFormats(meta: Meta, document: Document): Document {
   const hasScreenshot = hasFormatOfType(meta.options.formats, "screenshot");
   const hasSummary = hasFormatOfType(meta.options.formats, "summary");
   const hasBranding = hasFormatOfType(meta.options.formats, "branding");
+  const hasProduct = hasFormatOfType(meta.options.formats, "product");
   const hasQuestionFormat = hasFormatOfType(meta.options.formats, "question");
   const hasHighlightsFormat = hasFormatOfType(
     meta.options.formats,
@@ -488,6 +518,17 @@ function coerceFieldsToFormats(meta: Meta, document: Document): Document {
     );
   }
 
+  if (!hasProduct && document.product !== undefined) {
+    meta.logger.warn(
+      "Removed product from Document because it wasn't in formats -- this indicates the engine returned unexpected data.",
+    );
+    delete document.product;
+  } else if (hasProduct && document.product === undefined) {
+    meta.logger.warn(
+      "Request had format product, but there was no product field in the result.",
+    );
+  }
+
   const hasAudio = hasFormatOfType(meta.options.formats, "audio");
   if (!hasAudio && document.audio !== undefined) {
     delete document.audio;
@@ -577,6 +618,7 @@ const transformerStack: Transformer[] = [
   deriveImagesFromHTML,
   deriveBrandingFromActions,
   deriveMetadataFromRawHTML,
+  deriveStructuredProductFromHTML,
   ...(useIndex ? [sendDocumentToIndex] : []),
   ...(useSearchIndex ? [sendDocumentToSearchIndex] : []), // Add to search index for real-time search
   performLLMExtract,
