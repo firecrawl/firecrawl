@@ -12,9 +12,9 @@ import type {
  * Multi-source structured product extractor, ported from the product-search
  * Rust crate (`platforms::structured_data` / `platforms::structured_schema`).
  *
- * This file currently ships the JSON-LD, microdata, RDFa, embedded-state,
- * runParams (AliExpress), dataLayer (GA4), and OpenGraph sources + the canonical
- * normalize step. The priority per-field merge lands in a later task. The public
+ * This file ships the JSON-LD, microdata, RDFa, embedded-state, runParams
+ * (AliExpress), dataLayer (GA4), and OpenGraph sources, the canonical normalize
+ * step, and the identity-aware per-field merge across all sources. The public
  * signature `extractProducts(html, baseUrl)` is STABLE and must not change.
  */
 
@@ -994,6 +994,99 @@ function normalizeStructuredProduct(
 }
 
 // ---------------------------------------------------------------------------
+// identity-aware multi-source merge
+// ---------------------------------------------------------------------------
+
+/**
+ * Mirrors Rust `is_empty_json`: null/undefined, empty string, empty array, and
+ * empty object all count as empty (so they don't satisfy first-non-empty-wins).
+ */
+function isEmptyValue(value: unknown): boolean {
+  if (value === null || value === undefined) return true;
+  if (typeof value === "string") return value === "";
+  if (Array.isArray(value)) return value.length === 0;
+  if (typeof value === "object") return Object.keys(value).length === 0;
+  return false;
+}
+
+/**
+ * Mirrors Rust `structured_norm_title`: lower-cased, whitespace-collapsed title,
+ * or undefined when absent/empty.
+ */
+function structuredNormTitle(product: RawProduct): string | undefined {
+  const title = product.title;
+  if (title === undefined) return undefined;
+  const normalized = title.toLowerCase().split(/\s+/).filter(Boolean).join(" ");
+  return normalized !== "" ? normalized : undefined;
+}
+
+/**
+ * Mirrors Rust `structured_ident`: trimmed, lower-cased identity value
+ * (`id`/`sku`) of an intermediate product, or undefined when absent/empty.
+ */
+function structuredIdent(
+  product: RawProduct,
+  key: "id" | "sku",
+): string | undefined {
+  const value = product[key];
+  if (value === undefined) return undefined;
+  const normalized = value.trim().toLowerCase();
+  return normalized !== "" ? normalized : undefined;
+}
+
+/**
+ * Mirrors Rust `structured_sources_conflict`: true when two intermediate
+ * products clearly describe DIFFERENT products — their titles disagree (and
+ * neither contains the other), or their `id`/`sku` disagree. A source that
+ * merely lacks identity fields (e.g. an OpenGraph price-only fragment) never
+ * conflicts, so gap-filling still works.
+ */
+function structuredSourcesConflict(
+  anchor: RawProduct,
+  other: RawProduct,
+): boolean {
+  const a = structuredNormTitle(anchor);
+  const b = structuredNormTitle(other);
+  if (a !== undefined && b !== undefined) {
+    if (a !== b && !a.includes(b) && !b.includes(a)) return true;
+  }
+  for (const key of ["id", "sku"] as const) {
+    const ai = structuredIdent(anchor, key);
+    const bi = structuredIdent(other, key);
+    if (ai !== undefined && bi !== undefined && ai !== bi) return true;
+  }
+  return false;
+}
+
+/**
+ * Mirrors Rust `merge_structured_products`. `sources` must be ordered
+ * highest-priority first. The first source anchors product identity;
+ * lower-priority sources are merged only when they do not conflict with the
+ * anchor's identity, so fields from a different product are never spliced
+ * together. For each field, the first non-empty value among the kept sources
+ * wins (first-wins by priority).
+ */
+function mergeStructuredProducts(sources: RawProduct[]): RawProduct {
+  const [anchor, ...rest] = sources;
+  const kept: RawProduct[] = [
+    anchor,
+    ...rest.filter(source => !structuredSourcesConflict(anchor, source)),
+  ];
+
+  const out: Record<string, unknown> = {};
+  for (const field of STRUCTURED_FIELDS) {
+    for (const source of kept) {
+      const value = source[field];
+      if (!isEmptyValue(value)) {
+        out[field] = value;
+        break;
+      }
+    }
+  }
+  return out as RawProduct;
+}
+
+// ---------------------------------------------------------------------------
 // finalize + public API
 // ---------------------------------------------------------------------------
 
@@ -1036,30 +1129,36 @@ function finalize(raw: RawProduct, baseUrl: string): ProductProfile {
 /**
  * Extract a single structured product from a page's HTML.
  *
- * Currently sources from JSON-LD, microdata, RDFa, embedded state (__NEXT_DATA__
- * / framework hydration blobs), runParams (AliExpress), dataLayer (GA4), then
- * OpenGraph/<meta> (first hit wins; per-field merge lands later). Returns null
- * when no product node with a title is found (non-ecommerce / nav / link pages).
- * Signature is STABLE.
+ * Sources from JSON-LD, microdata, RDFa, embedded state (__NEXT_DATA__ /
+ * framework hydration blobs), runParams (AliExpress), dataLayer (GA4), then
+ * OpenGraph/<meta>, in that priority order, and field-merges them: the
+ * highest-priority source anchors identity and lower-priority, non-conflicting
+ * sources gap-fill missing fields. Returns null when no product node with a
+ * title is found (non-ecommerce / nav / link pages). Signature is STABLE.
  */
 export async function extractProducts(
   html: string,
   baseUrl: string,
 ): Promise<ProductProfile | null> {
   try {
-    // Sources are tried in priority order; the proper per-field MERGE across
-    // sources lands in a later task. The `??` chain approximates the Rust
-    // priority: JSON-LD > microdata > RDFa > embedded-state > runParams >
-    // dataLayer > OpenGraph/<meta>.
-    const raw =
-      parseJsonLd(html, baseUrl) ??
-      parseMicrodata(html, baseUrl) ??
-      parseRdfa(html, baseUrl) ??
-      parseEmbeddedState(html, baseUrl) ??
-      parseRunParams(html, baseUrl) ??
-      parseDataLayer(html, baseUrl) ??
-      parseOpenGraph(html, baseUrl);
-    return raw && raw.title ? finalize(raw, baseUrl) : null;
+    // Collect every source result in priority order (highest first), dropping
+    // the ones that found no product, then field-merge them. Priority:
+    // JSON-LD > microdata > RDFa > embedded-state > runParams > dataLayer >
+    // OpenGraph/<meta>. The merge anchors identity on the highest-priority
+    // source and only gap-fills from lower-priority, non-conflicting sources.
+    const sources = [
+      parseJsonLd(html, baseUrl),
+      parseMicrodata(html, baseUrl),
+      parseRdfa(html, baseUrl),
+      parseEmbeddedState(html, baseUrl),
+      parseRunParams(html, baseUrl),
+      parseDataLayer(html, baseUrl),
+      parseOpenGraph(html, baseUrl),
+    ].filter((s): s is RawProduct => s !== null);
+
+    if (sources.length === 0) return null;
+    const merged = mergeStructuredProducts(sources);
+    return merged.title ? finalize(merged, baseUrl) : null;
   } catch (error) {
     logger.warn("extractProducts failed", {
       error,

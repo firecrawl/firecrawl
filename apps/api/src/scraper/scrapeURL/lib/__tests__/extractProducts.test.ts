@@ -199,3 +199,30 @@ describe("extractProducts — bonus sources", () => {
     expect(p!.availability?.inStock).toBe(true);
   });
 });
+
+describe("extractProducts — merge", () => {
+  it("fills missing fields from a lower-priority source (JSON-LD title + OG price)", async () => {
+    const html = `<html><head>
+      <script type="application/ld+json">{"@type":"Product","name":"Merge Item"}</script>
+      <meta property="product:price:amount" content="42.00">
+      <meta property="product:price:currency" content="USD">
+    </head><body></body></html>`;
+    const p = await extractProducts(html, "https://x.test/m");
+    expect(p!.title).toBe("Merge Item"); // from JSON-LD (higher priority)
+    expect(p!.price?.amount).toBe(42); // from OpenGraph (gap fill)
+  });
+  it("does not splice fields from a conflicting (different) product", async () => {
+    const html = `<html><head>
+      <script type="application/ld+json">{"@type":"Product","name":"Real Product","sku":"AAA"}</script>
+    </head><body>
+      <div itemscope itemtype="https://schema.org/Product">
+        <span itemprop="name">Totally Different</span>
+        <span itemprop="sku">BBB</span>
+        <span itemprop="price" content="999"></span>
+      </div>
+    </body></html>`;
+    const p = await extractProducts(html, "https://x.test/m");
+    expect(p!.title).toBe("Real Product");
+    expect(p!.price).toBeUndefined(); // conflicting microdata dropped, not spliced
+  });
+});
