@@ -1939,6 +1939,7 @@ export const searchRequestSchema = z
                 z.strictObject({ type: z.literal("links") }),
                 z.strictObject({ type: z.literal("images") }),
                 z.strictObject({ type: z.literal("summary") }),
+                z.strictObject({ type: z.literal("product") }),
                 jsonFormatWithOptions,
                 questionFormatWithOptions,
                 highlightsFormatWithOptions,

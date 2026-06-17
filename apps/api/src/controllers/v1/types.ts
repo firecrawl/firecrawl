@@ -1562,6 +1562,7 @@ export const searchRequestSchema = z
               "screenshot@fullPage",
               "extract",
               "json",
+              "product",
             ]),
           )
           .prefault([]),
