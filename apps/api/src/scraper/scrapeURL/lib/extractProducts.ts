@@ -731,17 +731,31 @@ function parseRunParams(html: string, baseUrl: string): RawProduct | null {
  * the precedence `content` attribute -> `href`/`src` attribute -> trimmed inner
  * text. The `property` token may carry a namespace prefix (e.g. `schema:name`),
  * so we match the suffix after any `:` separator.
+ *
+ * Reads are SCOPED to `scope` (the single Product `typeof` element) and its
+ * descendants, so an unrelated `[property]` elsewhere on the page (e.g. a footer
+ * `schema:name`) can never be read as the product's property.
  */
-function rdfaPropertyValue($: CheerioAPI, prop: string): string | undefined {
-  const matches = $(`[property]`).filter((_, el) => {
+function rdfaPropertyValue(
+  $: CheerioAPI,
+  scope: Element,
+  prop: string,
+): string | undefined {
+  const hasProp = (el: Element): boolean => {
     const raw = $(el).attr("property") ?? "";
     return raw
       .trim()
       .split(/\s+/)
       .some(token => token.split(":").pop() === prop);
-  });
-  for (let i = 0; i < matches.length; i++) {
-    const node = $(matches[i]);
+  };
+  // The scope element itself may also carry a matching `property`.
+  const candidates: Element[] = [];
+  if (hasProp(scope)) candidates.push(scope);
+  const descendants = $(scope).find("[property]").toArray() as Element[];
+  for (const el of descendants) if (hasProp(el)) candidates.push(el);
+
+  for (const el of candidates) {
+    const node = $(el);
     const content = node.attr("content");
     if (content !== undefined && content.trim() !== "") return content.trim();
     const href = node.attr("href") ?? node.attr("src");
@@ -769,13 +783,14 @@ function parseRdfa(html: string, baseUrl: string): RawProduct | null {
       .some(token => token.split(":").pop() === "Product");
   });
   if (scopes.length !== 1) return null; // zero or ambiguous -> fail closed
+  const scope = scopes[0];
 
-  const name = rdfaPropertyValue($, "name");
-  const price = asNumber(rdfaPropertyValue($, "price"));
+  const name = rdfaPropertyValue($, scope, "name");
+  const price = asNumber(rdfaPropertyValue($, scope, "price"));
   if (name === undefined && price === undefined) return null;
 
-  const currency = rdfaPropertyValue($, "priceCurrency");
-  const availabilityRaw = rdfaPropertyValue($, "availability");
+  const currency = rdfaPropertyValue($, scope, "priceCurrency");
+  const availabilityRaw = rdfaPropertyValue($, scope, "availability");
   const availability =
     availabilityRaw !== undefined
       ? availabilityToken(availabilityRaw)
@@ -788,11 +803,11 @@ function parseRdfa(html: string, baseUrl: string): RawProduct | null {
 
   const node: Record<string, unknown> = { "@type": "Product", offers };
   if (name !== undefined) node["name"] = name;
-  const brand = rdfaPropertyValue($, "brand");
+  const brand = rdfaPropertyValue($, scope, "brand");
   if (brand !== undefined) node["brand"] = brand;
-  const description = rdfaPropertyValue($, "description");
+  const description = rdfaPropertyValue($, scope, "description");
   if (description !== undefined) node["description"] = description;
-  const image = rdfaPropertyValue($, "image");
+  const image = rdfaPropertyValue($, scope, "image");
   if (image !== undefined) node["image"] = image;
 
   return normalizeStructuredProduct(node, baseUrl);
