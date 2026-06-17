@@ -1,4 +1,8 @@
-import { extractProducts, STRUCTURED_FIELDS } from "../extractProducts";
+import {
+  extractProducts,
+  STRUCTURED_FIELDS,
+  structuredProductEvidence,
+} from "../extractProducts";
 
 describe("extractProducts — STRUCTURED_FIELDS", () => {
   it("exposes the canonical merge field order", () => {
@@ -246,5 +250,54 @@ describe("extractProducts — merge", () => {
     const p = await extractProducts(html, "https://x.test/m");
     expect(p!.title).toBe("Real Product");
     expect(p!.price).toBeUndefined(); // conflicting microdata dropped, not spliced
+  });
+});
+
+describe("structuredProductEvidence", () => {
+  it("reports the sources that can recover a product", () => {
+    const html = `<html><head><script type="application/ld+json">{"@type":"Product","name":"E"}</script></head></html>`;
+    expect(structuredProductEvidence(html, "https://x.test/e")).toContain(
+      "json-ld-product",
+    );
+  });
+  it("is empty for a non-product page", () => {
+    expect(
+      structuredProductEvidence(
+        `<html><body>nope</body></html>`,
+        "https://x.test/n",
+      ),
+    ).toEqual([]);
+  });
+});
+
+describe("extractProducts — robustness", () => {
+  it("tolerates a malformed JSON-LD script and uses a later valid Product", async () => {
+    const html = `<html><head>
+      <script type="application/ld+json">{ broken json, not valid }</script>
+      <script type="application/ld+json">{"@type":"Product","name":"Valid After Broken",
+        "offers":{"price":"3","priceCurrency":"USD"}}</script>
+    </head><body></body></html>`;
+    const p = await extractProducts(html, "https://x.test/v");
+    expect(p!.title).toBe("Valid After Broken");
+    expect(p!.price?.amount).toBe(3);
+  });
+
+  it("traverses @graph to find the Product node", async () => {
+    const html = `<html><head><script type="application/ld+json">{"@context":"https://schema.org","@graph":[
+      {"@type":"WebPage"},
+      {"@type":"Product","name":"Graph Prod","offers":{"price":"7","priceCurrency":"USD"}}
+    ]}</script></head></html>`;
+    const p = await extractProducts(html, "https://x.test/g");
+    expect(p!.title).toBe("Graph Prod");
+    expect(p!.price?.amount).toBe(7);
+  });
+
+  it("omits currency and formatted when priceCurrency is absent", async () => {
+    const html = `<html><head><script type="application/ld+json">{"@type":"Product","name":"No Currency",
+      "offers":{"price":"15"}}</script></head></html>`;
+    const p = await extractProducts(html, "https://x.test/nc");
+    expect(p!.price!.amount).toBe(15);
+    expect(p!.price!.currency).toBeUndefined();
+    expect(p!.price!.formatted).toBeUndefined();
   });
 });

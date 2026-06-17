@@ -507,6 +507,9 @@ function collectProductLike(
   }
 }
 
+/** Minimum case-insensitive overlap (chars) for a node value to match the URL. */
+const MIN_URL_OVERLAP = 3;
+
 /**
  * Mirrors Rust `node_matches_url`: does this node's url/handle/sku/id align with
  * the page URL? Compares case-insensitively, requiring an overlap of >= 3 chars.
@@ -529,7 +532,9 @@ function nodeMatchesUrl(
     .map(key => asString(node[key]))
     .filter((v): v is string => v !== undefined)
     .map(v => v.toLowerCase())
-    .some(v => v.length >= 3 && (url.includes(v) || v.includes(url)));
+    .some(
+      v => v.length >= MIN_URL_OVERLAP && (url.includes(v) || v.includes(url)),
+    );
 }
 
 /**
@@ -856,9 +861,13 @@ function normalizeCategory(value: unknown): string | undefined {
   if (typeof value === "string") return value;
   if (Array.isArray(value)) {
     const strings = value
-      .map(
-        v => asString(v) ?? asString((v as Record<string, unknown>)?.["name"]),
-      )
+      .map(v => {
+        const obj =
+          v && typeof v === "object"
+            ? (v as Record<string, unknown>)
+            : undefined;
+        return asString(v) ?? asString(obj?.["name"]);
+      })
       .filter((s): s is string => s !== undefined);
     return strings.length ? strings[strings.length - 1] : undefined;
   }
@@ -1142,6 +1151,8 @@ function resolveUrl(maybeUrl: string | undefined, baseUrl: string): string {
   }
 }
 
+// Invariant: the caller guarantees `raw.title` is present (we use `raw.title!`);
+// `extractProducts` gates on `merged.title` before calling finalize.
 function finalize(raw: RawProduct, baseUrl: string): ProductProfile {
   const profile: ProductProfile = {
     title: raw.title!,
@@ -1173,6 +1184,40 @@ function finalize(raw: RawProduct, baseUrl: string): ProductProfile {
  * sources gap-fill missing fields. Returns null when no product node with a
  * title is found (non-ecommerce / nav / link pages). Signature is STABLE.
  */
+/**
+ * Mirrors Rust `structured_product_evidence`. Reports which structured-product
+ * sources the page exposes, so generic detection can route pages carrying only
+ * microdata / OpenGraph / an unambiguous embedded-state product to the product
+ * extractor — not just JSON-LD pages.
+ *
+ * Each entry is emitted ONLY when the corresponding source parser actually
+ * recovers a product WITH a title, reusing the exact parser functions the merge
+ * uses (the parsers already fail closed on ambiguity), so evidence never
+ * over-promises. The `next-data-product` tag maps to the embedded-state parser.
+ * Returns [] when nothing matches. Synchronous (all parsers are sync).
+ */
+export function structuredProductEvidence(
+  html: string,
+  baseUrl: string,
+): string[] {
+  const checks: [string, RawProduct | null][] = [
+    ["json-ld-product", parseJsonLd(html, baseUrl)],
+    ["microdata-product", parseMicrodata(html, baseUrl)],
+    ["next-data-product", parseEmbeddedState(html, baseUrl)],
+    ["runparams-product", parseRunParams(html, baseUrl)],
+    ["rdfa-product", parseRdfa(html, baseUrl)],
+    ["datalayer-product", parseDataLayer(html, baseUrl)],
+    ["opengraph-product", parseOpenGraph(html, baseUrl)],
+  ];
+  const evidence: string[] = [];
+  for (const [tag, product] of checks) {
+    if (product !== null && product.title !== undefined) {
+      evidence.push(tag);
+    }
+  }
+  return evidence;
+}
+
 export async function extractProducts(
   html: string,
   baseUrl: string,
