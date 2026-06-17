@@ -36,4 +36,8 @@ const productProfileSchema = z.object({
   variants: z.array(productVariantSchema),
 });
 
+export type ProductPrice = z.infer<typeof productPriceSchema>;
+export type ProductAvailability = z.infer<typeof productAvailabilitySchema>;
+export type ProductImage = z.infer<typeof productImageSchema>;
+export type ProductVariant = z.infer<typeof productVariantSchema>;
 export type ProductProfile = z.infer<typeof productProfileSchema>;
