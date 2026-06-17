@@ -108,6 +108,22 @@ if err != nil {
 fmt.Println(doc.Video)
 ```
 
+### Product Extraction
+
+Use the `product` format on product pages for structured product extraction
+(title, price, availability, variants). The result is returned on the document's
+`Product` field. This is the deterministic counterpart to the LLM-based `json` format.
+
+```go
+doc, err := client.Scrape(ctx, "https://example.com/products/widget", &firecrawl.ScrapeOptions{
+	Formats: []string{"product"},
+})
+if err != nil {
+	return err
+}
+fmt.Println(doc.Product)
+```
+
 #### Interactive Browser
 
 Execute code in a scrape-bound browser session:

@@ -74,11 +74,25 @@ doc = client.scrape("https://www.youtube.com/watch?v=dQw4w9WgXcQ",
 puts doc.video
 ```
 
+### Product Extraction
+
+Use the `product` format on product pages to get structured product data
+(title, price, availability, variants). It is the deterministic counterpart to
+the LLM-based `json` format. The returned `product` field contains the extracted
+fields.
+
+```ruby
+doc = client.scrape("https://example.com/products/widget",
+  Firecrawl::Models::ScrapeOptions.new(formats: ["product"]))
+
+puts doc.product
+```
+
 ### Parse
 
 Upload a local file (`html`, `pdf`, `docx`, etc.) via multipart form data and
 parse it synchronously. Parse options intentionally exclude browser-only
-features such as change tracking, screenshot, branding, audio, video, actions,
+features such as change tracking, screenshot, branding, audio, video, product, actions,
 wait_for, location, and mobile. The `proxy` option only accepts `"auto"` or `"basic"`.
 
 ```ruby

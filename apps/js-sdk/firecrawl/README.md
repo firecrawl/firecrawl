@@ -58,6 +58,18 @@ const doc = await app.scrape('https://www.youtube.com/watch?v=dQw4w9WgXcQ', {
 console.log(doc.video);
 ```
 
+### Product extraction
+
+Use the `product` format to deterministically pull a product (title, price, availability, variants) from product pages — the deterministic counterpart to the LLM-based `json` format.
+
+```js
+const doc = await app.scrape('https://example.com/product/123', {
+  formats: ['product'],
+});
+
+console.log(doc.product);
+```
+
 ### Parsing uploaded files
 
 Use `parse` to upload a file (`html`, `pdf`, `docx`, etc.) as multipart form data and process it through the same parsing pipeline.

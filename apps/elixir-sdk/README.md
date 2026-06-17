@@ -49,6 +49,15 @@ All params are passed as keyword lists with snake_case keys. Invalid keys, missi
   formats: ["video"]
 )
 
+# Structured product extraction from product pages
+# `product` pulls title, price, availability, and variants. It's the
+# deterministic counterpart to the LLM `json` format. Read the result
+# from the response body's "product" key.
+{:ok, response} = Firecrawl.scrape_and_extract_from_url(
+  url: "https://example.com/products/widget",
+  formats: ["product"]
+)
+
 # Crawl a site
 {:ok, response} = Firecrawl.crawl_urls(
   url: "https://example.com",

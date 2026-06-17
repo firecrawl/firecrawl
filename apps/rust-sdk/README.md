@@ -58,6 +58,24 @@ let doc = client
 println!("{:?}", doc.video);
 ```
 
+### Product extraction
+
+Use `Format::Product` on product pages for structured product extraction (title, price, availability, variants). The result is returned on the document's `product` field. This is the deterministic counterpart to the LLM-based `json` format.
+
+```rust
+use firecrawl::{Format, ScrapeOptions};
+
+let options = ScrapeOptions {
+    formats: Some(vec![Format::Product]),
+    ..Default::default()
+};
+
+let doc = client
+    .scrape("https://www.example.com/product/123", options)
+    .await?;
+println!("{:?}", doc.product);
+```
+
 ### Parsing uploaded files (v2)
 
 Use the v2 client `parse` method to upload local files (`html`, `pdf`, `docx`, etc.) as multipart form data.

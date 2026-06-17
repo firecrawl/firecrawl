@@ -83,6 +83,20 @@ $doc = $client->scrape('https://example.com/product', ScrapeOptions::with(
 echo $doc->getJson(); // Structured data
 ```
 
+### Product Extraction
+
+Use the `product` format on product pages for structured product extraction
+(title, price, availability, variants). It is the deterministic counterpart to
+the LLM-based `json` format, returned on the document's `getProduct()`.
+
+```php
+$doc = $client->scrape('https://example.com/product', ScrapeOptions::with(
+    formats: ['product'],
+));
+
+echo $doc->getProduct(); // Structured product data
+```
+
 ### Video Extraction
 
 Use the `video` format on supported video URLs, including YouTube and TikTok. The returned `video` field is a signed URL to the extracted video file.
