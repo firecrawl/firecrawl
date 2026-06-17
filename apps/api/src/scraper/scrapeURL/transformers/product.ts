@@ -47,10 +47,29 @@ export async function fetchProduct(
     throw new Error(`Product extraction failed: ${error.detail}`);
   }
 
-  const data = await response.json().catch(() => null);
-  if (data && data.product) {
+  let data: any;
+  try {
+    data = await response.json();
+  } catch {
+    throw new Error(
+      "Product extraction failed: service returned a non-JSON response",
+    );
+  }
+
+  // The service contract is a 200 with a body of `{ product: Product | null }`.
+  // A body that isn't an object, or is missing the `product` key entirely, is a
+  // malformed response -- surface it as a service failure rather than silently
+  // reporting "no product found" (which is reserved for an explicit `null`).
+  if (typeof data !== "object" || data === null || !("product" in data)) {
+    throw new Error(
+      "Product extraction failed: service returned an unexpected response shape (missing 'product')",
+    );
+  }
+
+  if (data.product) {
     document.product = data.product;
   } else {
+    // `product` is null: the page loaded but is not a product page.
     document.warning =
       "No product found on this page; it does not appear to be a product page." +
       (document.warning ? " " + document.warning : "");

@@ -78,6 +78,44 @@ describe("fetchProduct", () => {
     expect(out.warning).toMatch(/no product found/i);
   });
 
+  it("throws when the service returns a non-JSON 200 response", async () => {
+    config.PRODUCT_EXTRACTION_SERVICE_URL = "https://product.internal";
+    global.fetch = vi.fn(async () => ({
+      ok: true,
+      json: async () => {
+        throw new SyntaxError("Unexpected token < in JSON");
+      },
+    })) as any;
+    const document: any = {
+      rawHtml: "<html></html>",
+      metadata: { url: "https://shop.test/p" },
+    };
+
+    await expect(fetchProduct(baseMeta(), document)).rejects.toThrow(
+      /Product extraction failed/i,
+    );
+    expect(document.product).toBeUndefined();
+    expect(document.warning).toBeUndefined();
+  });
+
+  it("throws when the service 200 response omits the product key", async () => {
+    config.PRODUCT_EXTRACTION_SERVICE_URL = "https://product.internal";
+    global.fetch = vi.fn(async () => ({
+      ok: true,
+      json: async () => ({ unexpected: "shape" }),
+    })) as any;
+    const document: any = {
+      rawHtml: "<html></html>",
+      metadata: { url: "https://shop.test/p" },
+    };
+
+    await expect(fetchProduct(baseMeta(), document)).rejects.toThrow(
+      /unexpected response/i,
+    );
+    expect(document.product).toBeUndefined();
+    expect(document.warning).toBeUndefined();
+  });
+
   it("early-returns when the product format isn't requested", async () => {
     const fetchSpy = vi.fn();
     global.fetch = fetchSpy as any;
