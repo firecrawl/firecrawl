@@ -144,3 +144,58 @@ describe("extractProducts — __NEXT_DATA__", () => {
     expect(await extractProducts(html, "https://x.test/lamp")).toBeNull();
   });
 });
+
+describe("extractProducts — bonus sources", () => {
+  it("recovers a product from GA4 dataLayer view_item (single item)", async () => {
+    // NOTE: the brace scanner parses STRICT JSON (mirrors the Rust
+    // `json_object_after`, which fails closed on JS object literals with
+    // unquoted keys), so the GA4 event-params object after the `view_item`
+    // anchor must be valid JSON — exactly how gtag emits it on the wire.
+    const html = `<html><body><script>
+      window.dataLayer = window.dataLayer || [];
+      gtag("event", "view_item", { "currency": "USD", "items": [
+        { "item_name": "DL Mug", "price": 12.5, "currency": "USD" } ] });
+    </script></body></html>`;
+    const p = await extractProducts(html, "https://x.test/mug");
+    expect(p!.title).toBe("DL Mug");
+    expect(p!.price?.amount).toBe(12.5);
+  });
+  it("reads RDFa Product (single typeof scope)", async () => {
+    const html = `<html><body><div typeof="schema:Product">
+      <span property="schema:name">RDFa Pen</span>
+      <span property="schema:price" content="3.00"></span>
+    </div></body></html>`;
+    expect((await extractProducts(html, "https://x.test/pen"))!.title).toBe(
+      "RDFa Pen",
+    );
+  });
+  it("bails on multiple RDFa Product scopes (fail closed)", async () => {
+    const scope = `<div typeof="schema:Product"><span property="schema:name">P</span><span property="schema:price" content="1"></span></div>`;
+    const html = `<html><body>${scope}${scope}</body></html>`;
+    expect(await extractProducts(html, "https://x.test/p")).toBeNull();
+  });
+  it("bails on multiple dataLayer items (item-list event, fail closed)", async () => {
+    const html = `<html><body><script>
+      dataLayer.push({ "ecommerce": { "items": [
+        { "item_name": "A", "price": 1, "currency": "USD" },
+        { "item_name": "B", "price": 2, "currency": "USD" } ] } });
+    </script></body></html>`;
+    expect(await extractProducts(html, "https://x.test/list")).toBeNull();
+  });
+  it("recovers a product from AliExpress window.runParams", async () => {
+    const blob = JSON.stringify({
+      data: {
+        titleModule: { subject: "AE Cable" },
+        priceModule: { minActivityAmount: { value: 4.2, currency: "USD" } },
+        quantityModule: { totalAvailQuantity: 7 },
+        pageModule: { description: "A cable", imagePath: "/img/cable.jpg" },
+      },
+    });
+    const html = `<html><body><script>window.runParams = ${blob};</script></body></html>`;
+    const p = await extractProducts(html, "https://x.test/cable");
+    expect(p!.title).toBe("AE Cable");
+    expect(p!.price?.amount).toBe(4.2);
+    expect(p!.price?.currency).toBe("USD");
+    expect(p!.availability?.inStock).toBe(true);
+  });
+});

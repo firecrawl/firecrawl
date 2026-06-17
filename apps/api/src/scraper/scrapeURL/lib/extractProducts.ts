@@ -12,10 +12,10 @@ import type {
  * Multi-source structured product extractor, ported from the product-search
  * Rust crate (`platforms::structured_data` / `platforms::structured_schema`).
  *
- * This file currently ships the JSON-LD, microdata, embedded-state, and
- * OpenGraph sources + the canonical normalize step. Remaining sources (RDFa,
- * dataLayer) and the priority merge land in later tasks. The public signature
- * `extractProducts(html, baseUrl)` is STABLE and must not change.
+ * This file currently ships the JSON-LD, microdata, RDFa, embedded-state,
+ * runParams (AliExpress), dataLayer (GA4), and OpenGraph sources + the canonical
+ * normalize step. The priority per-field merge lands in a later task. The public
+ * signature `extractProducts(html, baseUrl)` is STABLE and must not change.
  */
 
 /**
@@ -571,6 +571,220 @@ function parseEmbeddedState(html: string, baseUrl: string): RawProduct | null {
 }
 
 // ---------------------------------------------------------------------------
+// runParams source (AliExpress)
+// ---------------------------------------------------------------------------
+
+/**
+ * Walk a nested object/array path (mirrors Rust serde `Value::pointer`),
+ * returning the leaf value or undefined when any segment is missing.
+ */
+function pointer(value: unknown, ...path: string[]): unknown {
+  let node: unknown = value;
+  for (const key of path) {
+    if (!node || typeof node !== "object" || Array.isArray(node)) {
+      return undefined;
+    }
+    node = (node as Record<string, unknown>)[key];
+  }
+  return node;
+}
+
+/**
+ * Mirrors Rust `extract_runparams_structured`. AliExpress ships the full product
+ * object in static HTML as `window.runParams = {...}` (no JSON-LD / SSR-state).
+ *
+ * We anchor on the assignment (`runParams = `, tolerating whitespace variants,
+ * falling back to the bare word last) so a stray earlier `runParams` mention
+ * can't shadow the real payload. The product node is `runParams.data` (newer
+ * pages) or the object itself (older inline builds). Fail-closed: returns null
+ * unless a title or price is found. Currency only when the payload provides it.
+ */
+function parseRunParams(html: string, baseUrl: string): RawProduct | null {
+  const obj =
+    jsonObjectAfter(html, "runParams = ") ??
+    jsonObjectAfter(html, "runParams =") ??
+    jsonObjectAfter(html, "runParams=") ??
+    jsonObjectAfter(html, "runParams");
+  if (obj === undefined) return null;
+
+  // Newer pages wrap the product under `data`; older ones inline it.
+  const dataValue = obj["data"];
+  const data: Record<string, unknown> =
+    dataValue && typeof dataValue === "object" && !Array.isArray(dataValue)
+      ? (dataValue as Record<string, unknown>)
+      : obj;
+
+  const name =
+    asString(pointer(data, "titleModule", "subject")) ??
+    asString(pointer(data, "pageModule", "title"));
+  // Prefer the activity (sale) price, then the base price.
+  const price =
+    asNumber(pointer(data, "priceModule", "minActivityAmount", "value")) ??
+    asNumber(pointer(data, "priceModule", "minAmount", "value"));
+  if (name === undefined && price === undefined) return null;
+
+  const currency =
+    asString(pointer(data, "priceModule", "minActivityAmount", "currency")) ??
+    asString(pointer(data, "priceModule", "minAmount", "currency"));
+  const availQuantity = asNumber(
+    pointer(data, "quantityModule", "totalAvailQuantity"),
+  );
+  const description = asString(pointer(data, "pageModule", "description"));
+  const image = asString(pointer(data, "pageModule", "imagePath"));
+
+  const offers: Record<string, unknown> = {};
+  if (price !== undefined) offers["price"] = price;
+  if (currency !== undefined) offers["priceCurrency"] = currency;
+  if (availQuantity !== undefined) {
+    offers["availability"] =
+      availQuantity > 0
+        ? "https://schema.org/InStock"
+        : "https://schema.org/OutOfStock";
+  }
+
+  const node: Record<string, unknown> = { "@type": "Product", offers };
+  if (name !== undefined) node["name"] = name;
+  if (description !== undefined) node["description"] = description;
+  if (image !== undefined) node["image"] = image;
+
+  return normalizeStructuredProduct(node, baseUrl);
+}
+
+// ---------------------------------------------------------------------------
+// RDFa source
+// ---------------------------------------------------------------------------
+
+/**
+ * Mirrors Rust `rdfa_property_value`: read a single RDFa `property` value with
+ * the precedence `content` attribute -> `href`/`src` attribute -> trimmed inner
+ * text. The `property` token may carry a namespace prefix (e.g. `schema:name`),
+ * so we match the suffix after any `:` separator.
+ */
+function rdfaPropertyValue($: CheerioAPI, prop: string): string | undefined {
+  const matches = $(`[property]`).filter((_, el) => {
+    const raw = $(el).attr("property") ?? "";
+    return raw
+      .trim()
+      .split(/\s+/)
+      .some(token => token.split(":").pop() === prop);
+  });
+  for (let i = 0; i < matches.length; i++) {
+    const node = $(matches[i]);
+    const content = node.attr("content");
+    if (content !== undefined && content.trim() !== "") return content.trim();
+    const href = node.attr("href") ?? node.attr("src");
+    if (href !== undefined && href.trim() !== "") return href.trim();
+    const text = node.text().trim();
+    if (text !== "") return text;
+  }
+  return undefined;
+}
+
+/**
+ * Mirrors Rust `extract_rdfa_structured`. Reads a Product expressed via RDFa
+ * (`typeof` containing `Product`). Like microdata, requires EXACTLY ONE Product
+ * `typeof` scope: zero or several are ambiguous, so we fail closed (return null)
+ * rather than guess which scope is the page product. The collected `property`
+ * values are shaped like the JSON-LD node the shared normalizer expects.
+ */
+function parseRdfa(html: string, baseUrl: string): RawProduct | null {
+  const $ = load(html);
+  const scopes = $("[typeof]").filter((_, el) => {
+    const raw = $(el).attr("typeof") ?? "";
+    return raw
+      .trim()
+      .split(/\s+/)
+      .some(token => token.split(":").pop() === "Product");
+  });
+  if (scopes.length !== 1) return null; // zero or ambiguous -> fail closed
+
+  const name = rdfaPropertyValue($, "name");
+  const price = asNumber(rdfaPropertyValue($, "price"));
+  if (name === undefined && price === undefined) return null;
+
+  const currency = rdfaPropertyValue($, "priceCurrency");
+  const availabilityRaw = rdfaPropertyValue($, "availability");
+  const availability =
+    availabilityRaw !== undefined
+      ? availabilityToken(availabilityRaw)
+      : undefined;
+
+  const offers: Record<string, unknown> = {};
+  if (price !== undefined) offers["price"] = price;
+  if (currency !== undefined) offers["priceCurrency"] = currency;
+  if (availability !== undefined) offers["availability"] = availability;
+
+  const node: Record<string, unknown> = { "@type": "Product", offers };
+  if (name !== undefined) node["name"] = name;
+  const brand = rdfaPropertyValue($, "brand");
+  if (brand !== undefined) node["brand"] = brand;
+  const description = rdfaPropertyValue($, "description");
+  if (description !== undefined) node["description"] = description;
+  const image = rdfaPropertyValue($, "image");
+  if (image !== undefined) node["image"] = image;
+
+  return normalizeStructuredProduct(node, baseUrl);
+}
+
+// ---------------------------------------------------------------------------
+// GA4 dataLayer source
+// ---------------------------------------------------------------------------
+
+/**
+ * Mirrors Rust `extract_datalayer_structured`. Recovers a single page product
+ * from a GA4 `view_item` / UA enhanced-ecommerce `ecommerce` payload embedded in
+ * an inline script. Prefers a single-product `view_item` push, then falls back
+ * to a bare `ecommerce` object. Fail-closed: requires EXACTLY ONE product item,
+ * since item-list / impression events carry many. Currency only when sourced.
+ */
+function parseDataLayer(html: string, baseUrl: string): RawProduct | null {
+  const payload =
+    jsonObjectAfter(html, "view_item',") ??
+    jsonObjectAfter(html, 'view_item",') ??
+    jsonObjectAfter(html, "ecommerce");
+  if (payload === undefined) return null;
+
+  const asItems = (value: unknown): Record<string, unknown>[] | undefined => {
+    if (!Array.isArray(value)) return undefined;
+    return value.filter(
+      (v): v is Record<string, unknown> =>
+        v !== null && typeof v === "object" && !Array.isArray(v),
+    );
+  };
+
+  const items =
+    asItems(payload["items"]) ??
+    asItems(pointer(payload, "detail", "products")) ??
+    asItems(pointer(payload, "ecommerce", "items")) ??
+    asItems(pointer(payload, "ecommerce", "detail", "products")) ??
+    [];
+
+  if (items.length !== 1) return null; // zero or a list -> not a single product
+  const item = items[0];
+
+  const name = asString(item["item_name"]) ?? asString(item["name"]);
+  const price = asNumber(item["price"]);
+  if (name === undefined && price === undefined) return null;
+
+  // currency: item-level, else top-level event currency; never fabricated.
+  const currency = asString(item["currency"]) ?? asString(payload["currency"]);
+  const brand = asString(item["item_brand"]) ?? asString(item["brand"]);
+  const category =
+    asString(item["item_category"]) ?? asString(item["category"]);
+
+  const offers: Record<string, unknown> = {};
+  if (price !== undefined) offers["price"] = price;
+  if (currency !== undefined) offers["priceCurrency"] = currency;
+
+  const node: Record<string, unknown> = { "@type": "Product", offers };
+  if (name !== undefined) node["name"] = name;
+  if (brand !== undefined) node["brand"] = brand;
+  if (category !== undefined) node["category"] = category;
+
+  return normalizeStructuredProduct(node, baseUrl);
+}
+
+// ---------------------------------------------------------------------------
 // normalize
 // ---------------------------------------------------------------------------
 
@@ -822,10 +1036,11 @@ function finalize(raw: RawProduct, baseUrl: string): ProductProfile {
 /**
  * Extract a single structured product from a page's HTML.
  *
- * Currently sources from JSON-LD, microdata, embedded state (__NEXT_DATA__ /
- * framework hydration blobs), then OpenGraph/<meta> (first hit wins; per-field
- * merge lands later). Returns null when no product node with a title is found
- * (non-ecommerce / nav / link pages). Signature is STABLE.
+ * Currently sources from JSON-LD, microdata, RDFa, embedded state (__NEXT_DATA__
+ * / framework hydration blobs), runParams (AliExpress), dataLayer (GA4), then
+ * OpenGraph/<meta> (first hit wins; per-field merge lands later). Returns null
+ * when no product node with a title is found (non-ecommerce / nav / link pages).
+ * Signature is STABLE.
  */
 export async function extractProducts(
   html: string,
@@ -833,12 +1048,16 @@ export async function extractProducts(
 ): Promise<ProductProfile | null> {
   try {
     // Sources are tried in priority order; the proper per-field MERGE across
-    // sources lands in a later task. For now: JSON-LD, microdata, embedded
-    // state, then OpenGraph/<meta>.
+    // sources lands in a later task. The `??` chain approximates the Rust
+    // priority: JSON-LD > microdata > RDFa > embedded-state > runParams >
+    // dataLayer > OpenGraph/<meta>.
     const raw =
       parseJsonLd(html, baseUrl) ??
       parseMicrodata(html, baseUrl) ??
+      parseRdfa(html, baseUrl) ??
       parseEmbeddedState(html, baseUrl) ??
+      parseRunParams(html, baseUrl) ??
+      parseDataLayer(html, baseUrl) ??
       parseOpenGraph(html, baseUrl);
     return raw && raw.title ? finalize(raw, baseUrl) : null;
   } catch (error) {
