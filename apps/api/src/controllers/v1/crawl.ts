@@ -24,11 +24,19 @@ import {
 } from "../../services/worker/nuq-router";
 import { logRequest } from "../../services/logging/log_job";
 import { getScrapeZDR } from "../../lib/zdr-helpers";
+import {
+  featureDisabledBody,
+  isCrawlDisabled,
+} from "../../lib/feature-flags";
 
 export async function crawlController(
   req: RequestWithAuth<{}, CrawlResponse, CrawlRequest>,
   res: Response<CrawlResponse>,
 ) {
+  if (isCrawlDisabled()) {
+    return res.status(403).json(featureDisabledBody("crawl"));
+  }
+
   const preNormalizedBody = req.body;
   req.body = crawlRequestSchema.parse(req.body);
 

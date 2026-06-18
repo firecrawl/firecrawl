@@ -1,4 +1,4 @@
-import express from "express";
+import express, { RequestHandler } from "express";
 import multer from "multer";
 import { config } from "../config";
 import { RateLimiterMode } from "../types";
@@ -79,6 +79,11 @@ import {
   unsubscribeMonitorEmailController,
   updateMonitorController,
 } from "../controllers/v2/monitor";
+import {
+  featureDisabledBody,
+  isCrawlDisabled,
+  isMapDisabled,
+} from "../lib/feature-flags";
 
 expressWs(express());
 
@@ -236,6 +241,20 @@ v2Router.use(requestTimingMiddleware("v2"));
 // Internal: trusted-proxy (hosted MCP) keyless eligibility probe. Secret-gated
 // inside the controller; no auth middleware.
 v2Router.get("/keyless/eligibility", wrap(keylessEligibilityController));
+
+const crawlDisabledHandler: RequestHandler = (_req, res) =>
+  res.status(403).json(featureDisabledBody("crawl"));
+
+const mapDisabledHandler: RequestHandler = (_req, res) =>
+  res.status(403).json(featureDisabledBody("map"));
+
+if (isCrawlDisabled()) {
+  v2Router.use("/crawl", crawlDisabledHandler);
+}
+
+if (isMapDisabled()) {
+  v2Router.use("/map", mapDisabledHandler);
+}
 
 v2Router.post(
   "/search",
