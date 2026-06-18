@@ -1,6 +1,5 @@
 # syntax=docker/dockerfile:1
-FROM node:22.22-slim AS base
-# Pinned cause 22.23 is breaking gcs upload "ERR_STREAM_PREMATURE_CLOSE" https://www.googleapis.com/oauth2/v4/token
+FROM node:22-slim AS base
 
 ENV PNPM_HOME="/pnpm"
 ENV PATH="$PNPM_HOME:$PATH"
