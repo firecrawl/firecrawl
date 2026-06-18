@@ -147,6 +147,10 @@ const args = parseArgs(process.argv.slice(2));
 const runConfig = await collectRunConfig(args);
 const results = [];
 
+if (runConfig.caseFiles.length === 0) {
+  throw new Error(`No benchmark cases found for suite "${runConfig.name}"`);
+}
+
 for (const file of runConfig.caseFiles) {
   const benchmarkCase = await readBenchmarkCase(file);
   results.push(evaluateExtraction(benchmarkCase));

@@ -282,13 +282,13 @@ export function compareToBaseline(summary, baseline, maxScoreDrop = 0.02) {
     const previous = baselineByName.get(result.name);
     if (!previous) continue;
 
-    const scoreDrop = Number((previous.score - result.score).toFixed(4));
+    const scoreDrop = previous.score - result.score;
     if (scoreDrop > maxScoreDrop) {
       regressions.push({
         name: result.name,
         previousScore: previous.score,
         currentScore: result.score,
-        scoreDrop,
+        scoreDrop: Number(scoreDrop.toFixed(4)),
         maxScoreDrop,
       });
     }

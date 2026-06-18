@@ -1,5 +1,10 @@
 import assert from "node:assert/strict";
+import { execFile } from "node:child_process";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import { test } from "node:test";
+import { promisify } from "node:util";
 import {
   applyGates,
   compareToBaseline,
@@ -11,6 +16,8 @@ import {
   summarize,
   tokenSimilarity,
 } from "./scorer.mjs";
+
+const execFileAsync = promisify(execFile);
 
 test("getPath reads nested objects and arrays", () => {
   const actual = { jobs: [{ title: "Search Engineer" }], company: { name: "Firecrawl" } };
@@ -117,6 +124,23 @@ test("baseline comparison reports score drops over threshold", () => {
   ]);
 });
 
+test("baseline comparison uses raw score drops before display rounding", () => {
+  const current = summarize([{ name: "pricing", score: 0.90996, passed: true, failures: [] }]);
+  const baseline = summarize([{ name: "pricing", score: 0.93, passed: true, failures: [] }]);
+
+  const regressions = compareToBaseline(current, baseline, 0.02);
+
+  assert.deepEqual(regressions, [
+    {
+      name: "pricing",
+      previousScore: 0.93,
+      currentScore: 0.90996,
+      scoreDrop: 0.02,
+      maxScoreDrop: 0.02,
+    },
+  ]);
+});
+
 test("quality gates combine average score, failed cases, and baseline regressions", () => {
   const summary = {
     averageScore: 0.82,
@@ -142,4 +166,30 @@ test("quality gates combine average score, failed cases, and baseline regression
     "failed cases 2 is above 0",
     "docs score dropped 0.0400 from baseline, max allowed 0.0200",
   ]);
+});
+
+test("benchmark runner fails when a manifest resolves no cases", async () => {
+  const tempDir = await mkdtemp(path.join(os.tmpdir(), "firecrawl-empty-benchmark-"));
+  const manifestPath = path.join(tempDir, "manifest.json");
+
+  await writeFile(
+    manifestPath,
+    JSON.stringify({
+      name: "empty-suite",
+      suites: [{ name: "empty", cases: [] }],
+    }),
+  );
+
+  try {
+    await assert.rejects(
+      execFileAsync(process.execPath, [
+        path.join(import.meta.dirname, "run-benchmark.mjs"),
+        "--manifest",
+        manifestPath,
+      ]),
+      /No benchmark cases found for suite "empty-suite"/,
+    );
+  } finally {
+    await rm(tempDir, { recursive: true, force: true });
+  }
 });
