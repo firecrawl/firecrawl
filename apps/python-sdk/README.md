@@ -67,6 +67,15 @@ doc = firecrawl.scrape('https://firecrawl.dev', formats=['product'])
 print(doc.product)
 ```
 
+### Menu extraction
+
+Use the `menu` format on menu pages to deterministically pull structured menu data (merchant, sections, items, prices, availability). It is the deterministic counterpart to the LLM-based `json` format.
+
+```python
+doc = firecrawl.scrape('https://example.com/restaurant/menu', formats=['menu'])
+print(doc.menu)
+```
+
 ### Parsing uploaded files
 
 Use `parse` to upload local bytes/files (`html`, `pdf`, `docx`, etc.) as multipart form data and return the parsed document.

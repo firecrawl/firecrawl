@@ -326,6 +326,95 @@ class ProductProfile(BaseModel):
     variants: List[ProductVariant] = Field(default_factory=list)
 
 
+class MenuPrice(BaseModel):
+    """A monetary price for a menu item."""
+
+    model_config = {"extra": "allow", "populate_by_name": True}
+
+    amount: float
+    currency: Optional[str] = None
+    formatted: Optional[str] = None
+
+
+class MenuAvailability(BaseModel):
+    """Availability information for a menu item."""
+
+    model_config = {"extra": "allow", "populate_by_name": True}
+
+    in_stock: bool = Field(alias="inStock")
+    text: Optional[str] = None
+
+
+class MenuImage(BaseModel):
+    """An image associated with a menu item."""
+
+    model_config = {"extra": "allow", "populate_by_name": True}
+
+    url: str
+    alt: Optional[str] = None
+
+
+class MenuItemIdentifiers(BaseModel):
+    """External identifiers for a menu item."""
+
+    model_config = {"extra": "allow", "populate_by_name": True}
+
+    merchant_item_id: Optional[str] = Field(default=None, alias="merchantItemId")
+
+
+class MenuItem(BaseModel):
+    """A single item on a menu."""
+
+    model_config = {"extra": "allow", "populate_by_name": True}
+
+    id: str
+    name: str
+    description: Optional[str] = None
+    images: List[MenuImage] = Field(default_factory=list)
+    price: Optional[MenuPrice] = None
+    availability: MenuAvailability
+    dietary: List[str] = Field(default_factory=list)
+    calories: Optional[float] = None
+    option_groups: List[Any] = Field(default_factory=list, alias="optionGroups")
+    identifiers: MenuItemIdentifiers = Field(default_factory=MenuItemIdentifiers)
+    url: Optional[str] = None
+    source_url: str = Field(alias="sourceUrl")
+
+
+class MenuSection(BaseModel):
+    """An ordered group of menu items."""
+
+    model_config = {"extra": "allow", "populate_by_name": True}
+
+    id: str
+    name: str
+    description: Optional[str] = None
+    items: List[MenuItem] = Field(default_factory=list)
+
+
+class MenuMerchant(BaseModel):
+    """The merchant a menu belongs to."""
+
+    model_config = {"extra": "allow", "populate_by_name": True}
+
+    name: str
+    type: Optional[str] = None
+    location: Optional[Any] = None
+
+
+class MenuProfile(BaseModel):
+    """Structured menu information extracted from a website."""
+
+    model_config = {"extra": "allow", "populate_by_name": True}
+
+    is_menu: bool = Field(alias="isMenu")
+    confidence: float
+    merchant: MenuMerchant
+    currency: Optional[str] = None
+    sections: List[MenuSection] = Field(default_factory=list)
+    source_url: str = Field(alias="sourceUrl")
+
+
 RedactPIIEntity = Literal[
     "PERSON",
     "EMAIL",
@@ -357,6 +446,7 @@ class Document(BaseModel):
     change_tracking: Optional[Dict[str, Any]] = None
     branding: Optional[BrandingProfile] = None
     product: Optional[ProductProfile] = None
+    menu: Optional[MenuProfile] = None
 
     @property
     def metadata_typed(self) -> DocumentMetadata:
@@ -481,6 +571,7 @@ FormatString = Literal[
     "attributes",
     "branding",
     "product",
+    "menu",
     "query",
     "audio",
     "video",
