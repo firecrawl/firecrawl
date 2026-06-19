@@ -899,6 +899,12 @@ class ClientTest < Minitest::Test
     end
   end
 
+  def test_parse_options_rejects_menu_format
+    assert_raises(ArgumentError) do
+      Firecrawl::Models::ParseOptions.new(formats: ["menu"])
+    end
+  end
+
   def test_parse_options_rejects_invalid_proxy
     assert_raises(ArgumentError) do
       Firecrawl::Models::ParseOptions.new(proxy: "stealth")
