@@ -1535,6 +1535,7 @@ export type TeamFlags = {
   maxBrowserSessions?: number;
   researchBeta?: boolean;
   highlightsBeta?: boolean;
+  menuBeta?: boolean;
 } | null;
 
 interface RequestWithMaybeACUC<

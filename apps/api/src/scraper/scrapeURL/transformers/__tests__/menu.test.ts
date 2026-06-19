@@ -11,14 +11,35 @@ describe("fetchMenu", () => {
     vi.clearAllMocks();
   });
 
-  function baseMeta(formats: any[] = [{ type: "menu" }]) {
+  function baseMeta(
+    formats: any[] = [{ type: "menu" }],
+    teamFlags: any = { menuBeta: true },
+  ) {
     return {
       url: "https://shop.test/menu",
       rewrittenUrl: "https://shop.test/menu",
       options: { formats },
+      internalOptions: { teamFlags },
       logger: { warn: vi.fn(), info: vi.fn(), debug: vi.fn(), error: vi.fn() },
     } as any;
   }
+
+  it("skips silently when the team lacks the menuBeta flag", async () => {
+    config.MENU_EXTRACTION_SERVICE_URL = "https://menu.internal";
+    const fetchSpy = vi.fn();
+    global.fetch = fetchSpy as any;
+    const document: any = {
+      rawHtml: "<html></html>",
+      metadata: { url: "https://shop.test/menu" },
+    };
+
+    // menuBeta not enabled -> no engine call, no menu, no warning (fail closed)
+    const out = await fetchMenu(baseMeta([{ type: "menu" }], {}), document);
+
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(out.menu).toBeUndefined();
+    expect(out.warning).toBeUndefined();
+  });
 
   it("warns and yields no menu when the service is not configured", async () => {
     config.MENU_EXTRACTION_SERVICE_URL = undefined;

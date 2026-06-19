@@ -11,6 +11,14 @@ export async function fetchMenu(
     return document;
   }
 
+  // Beta gate: during beta the menu format is limited to teams with the menuBeta
+  // flag. Fail closed and silent (mirrors highlightsBeta) -- a team without the
+  // flag gets no menu field, no error, and no engine call.
+  if (meta.internalOptions?.teamFlags?.menuBeta !== true) {
+    meta.logger.info("menu format requested without menuBeta flag; skipping");
+    return document;
+  }
+
   if (!config.MENU_EXTRACTION_SERVICE_URL) {
     meta.logger.warn("MENU_EXTRACTION_SERVICE_URL is not configured");
     document.warning =
