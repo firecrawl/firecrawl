@@ -18,6 +18,7 @@ import { includesFormat } from "../../lib/format-utils";
 import { webhookSchema } from "../../services/webhook/schema";
 import { BrandingProfile } from "../../types/branding";
 import { ProductProfile } from "../../types/product";
+import { MenuProfile } from "../../types/menu";
 
 type Format =
   | "markdown"
@@ -31,7 +32,8 @@ type Format =
   | "summary"
   | "changeTracking"
   | "branding"
-  | "product";
+  | "product"
+  | "menu";
 
 export const url = z.preprocess(
   x => {
@@ -432,6 +434,7 @@ const baseScrapeOptions = z.strictObject({
       "changeTracking",
       "branding",
       "product",
+      "menu",
     ])
     .array()
     .optional()
@@ -996,6 +999,7 @@ export type Document = {
   summary?: string;
   branding?: BrandingProfile;
   product?: ProductProfile;
+  menu?: MenuProfile;
   warning?: string;
   actions?: {
     screenshots?: string[];
@@ -1563,6 +1567,7 @@ export const searchRequestSchema = z
               "extract",
               "json",
               "product",
+              "menu",
             ]),
           )
           .prefault([]),

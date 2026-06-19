@@ -27,6 +27,7 @@ import {
 } from "../../services/webhook/schema";
 import { BrandingProfile } from "../../types/branding";
 import { ProductProfile } from "../../types/product";
+import { MenuProfile } from "../../types/menu";
 
 // Base URL schema with common validation logic
 export const URL = z.preprocess(
@@ -460,6 +461,7 @@ export type FormatObject =
   | QueryFormatWithOptions
   | { type: "branding" }
   | { type: "product" }
+  | { type: "menu" }
   | { type: "audio" }
   | { type: "video" };
 
@@ -632,6 +634,7 @@ const baseScrapeOptions = z.strictObject({
           attributesFormatWithOptions,
           z.strictObject({ type: z.literal("branding") }),
           z.strictObject({ type: z.literal("product") }),
+          z.strictObject({ type: z.literal("menu") }),
           questionFormatWithOptions,
           highlightsFormatWithOptions,
           queryFormatWithOptions,
@@ -1208,6 +1211,7 @@ export type Document = {
   highlights?: string;
   branding?: BrandingProfile;
   product?: ProductProfile;
+  menu?: MenuProfile;
   warning?: string;
   attributes?: {
     selector: string;
@@ -1779,6 +1783,8 @@ export function fromV1ScrapeOptions(
             return { type: "branding" as const };
           } else if (x === "product") {
             return { type: "product" as const };
+          } else if (x === "menu") {
+            return { type: "menu" as const };
           } else {
             return x;
           }
@@ -1940,6 +1946,7 @@ export const searchRequestSchema = z
                 z.strictObject({ type: z.literal("images") }),
                 z.strictObject({ type: z.literal("summary") }),
                 z.strictObject({ type: z.literal("product") }),
+                z.strictObject({ type: z.literal("menu") }),
                 jsonFormatWithOptions,
                 questionFormatWithOptions,
                 highlightsFormatWithOptions,
