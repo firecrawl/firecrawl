@@ -23,6 +23,7 @@ type Document struct {
 	ChangeTracking map[string]interface{}   `json:"changeTracking,omitempty"`
 	Branding       map[string]interface{}   `json:"branding,omitempty"`
 	Product        *ProductProfile          `json:"product,omitempty"`
+	Menu           *MenuProfile             `json:"menu,omitempty"`
 }
 
 // ProductProfile represents structured product data extracted from a page
@@ -70,6 +71,72 @@ type ProductVariant struct {
 	Sale         *ProductSale        `json:"sale,omitempty"`
 	Availability ProductAvailability `json:"availability"`
 	Images       []ProductImage      `json:"images,omitempty"`
+}
+
+// MenuProfile represents structured menu data extracted from a page
+// via the `menu` scrape format.
+type MenuProfile struct {
+	IsMenu     bool          `json:"isMenu"`
+	Confidence float64       `json:"confidence"`
+	Merchant   MenuMerchant  `json:"merchant"`
+	Currency   string        `json:"currency,omitempty"`
+	Sections   []MenuSection `json:"sections,omitempty"`
+	SourceURL  string        `json:"sourceUrl"`
+}
+
+// MenuMerchant represents the merchant a menu belongs to.
+type MenuMerchant struct {
+	Name     string      `json:"name"`
+	Type     string      `json:"type,omitempty"`
+	Location interface{} `json:"location,omitempty"`
+}
+
+// MenuSection represents an ordered grouping of menu items.
+type MenuSection struct {
+	ID          string     `json:"id"`
+	Name        string     `json:"name"`
+	Description string     `json:"description,omitempty"`
+	Items       []MenuItem `json:"items,omitempty"`
+}
+
+// MenuItem represents a single item on a menu.
+type MenuItem struct {
+	ID           string              `json:"id"`
+	Name         string              `json:"name"`
+	Description  string              `json:"description,omitempty"`
+	Images       []MenuImage         `json:"images,omitempty"`
+	Price        *MenuPrice          `json:"price,omitempty"`
+	Availability MenuAvailability    `json:"availability"`
+	Dietary      []string            `json:"dietary,omitempty"`
+	Calories     *float64            `json:"calories,omitempty"`
+	OptionGroups []interface{}       `json:"optionGroups,omitempty"`
+	Identifiers  MenuItemIdentifiers `json:"identifiers"`
+	URL          string              `json:"url,omitempty"`
+	SourceURL    string              `json:"sourceUrl"`
+}
+
+// MenuImage is a single menu item image.
+type MenuImage struct {
+	URL string `json:"url"`
+	Alt string `json:"alt,omitempty"`
+}
+
+// MenuPrice represents a price for a menu item.
+type MenuPrice struct {
+	Amount    float64 `json:"amount"`
+	Currency  string  `json:"currency,omitempty"`
+	Formatted string  `json:"formatted,omitempty"`
+}
+
+// MenuAvailability represents stock availability for a menu item.
+type MenuAvailability struct {
+	InStock bool   `json:"inStock"`
+	Text    string `json:"text,omitempty"`
+}
+
+// MenuItemIdentifiers holds merchant-specific identifiers for a menu item.
+type MenuItemIdentifiers struct {
+	MerchantItemID string `json:"merchantItemId,omitempty"`
 }
 
 // PaperResult represents a ranked research paper result.

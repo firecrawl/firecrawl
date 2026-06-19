@@ -124,6 +124,22 @@ if err != nil {
 fmt.Println(doc.Product)
 ```
 
+### Menu Extraction
+
+Use the `menu` format on menu pages for structured menu extraction
+(merchant, sections, items, prices, availability). The result is returned on the
+document's `Menu` field. This is the deterministic counterpart to the LLM-based `json` format.
+
+```go
+doc, err := client.Scrape(ctx, "https://example.com/menu", &firecrawl.ScrapeOptions{
+	Formats: []string{"menu"},
+})
+if err != nil {
+	return err
+}
+fmt.Println(doc.Menu)
+```
+
 #### Interactive Browser
 
 Execute code in a scrape-bound browser session:
