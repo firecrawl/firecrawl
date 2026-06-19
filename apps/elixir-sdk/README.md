@@ -58,6 +58,14 @@ All params are passed as keyword lists with snake_case keys. Invalid keys, missi
   formats: ["product"]
 )
 
+# Structured menu extraction from restaurant/menu pages
+# `menu` pulls structured menu data (sections, items, prices). Read the
+# result from the response body's "menu" key.
+{:ok, response} = Firecrawl.scrape_and_extract_from_url(
+  url: "https://example.com/menu",
+  formats: ["menu"]
+)
+
 # Crawl a site
 {:ok, response} = Firecrawl.crawl_urls(
   url: "https://example.com",
