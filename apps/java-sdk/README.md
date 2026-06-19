@@ -217,6 +217,19 @@ Document doc = client.scrape("https://example.com/product",
 System.out.println(doc.getProduct());
 ```
 
+#### Menu Extraction
+
+Use the `menu` format to get structured menu data (merchant profile plus ordered sections, each holding items with their own price, availability, and images) from restaurant and menu pages, available on the document's `getMenu()`.
+
+```java
+Document doc = client.scrape("https://example.com/menu",
+    ScrapeOptions.builder()
+        .formats(List.of("menu"))
+        .build());
+
+System.out.println(doc.getMenu());
+```
+
 #### Scrape-Bound Interactive Session
 
 Run browser automation against the page context captured by a scrape job:

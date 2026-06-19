@@ -29,6 +29,7 @@ public class Document {
     private Map<String, Object> changeTracking;
     private Map<String, Object> branding;
     private Product product;
+    private Menu menu;
 
     public String getMarkdown() { return markdown; }
     public String getHtml() { return html; }
@@ -49,6 +50,7 @@ public class Document {
     public Map<String, Object> getChangeTracking() { return changeTracking; }
     public Map<String, Object> getBranding() { return branding; }
     public Product getProduct() { return product; }
+    public Menu getMenu() { return menu; }
 
     @Override
     public String toString() {
