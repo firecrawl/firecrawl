@@ -191,6 +191,124 @@ class ClientTest < Minitest::Test
     assert_nil doc.product
   end
 
+  def test_scrape_with_menu_format
+    stub_request(:post, "#{BASE_URL}/v2/scrape")
+      .to_return(
+        status: 200,
+        body: JSON.generate(
+          data: {
+            markdown: "# Menu",
+            menu: {
+              isMenu: true,
+              confidence: 0.92,
+              currency: "USD",
+              sourceUrl: "https://example.com/menu",
+              merchant: {
+                name: "Joe's Diner",
+                type: "restaurant",
+                location: { city: "Springfield" },
+              },
+              sections: [
+                {
+                  id: "s1",
+                  name: "Breakfast",
+                  description: "Served all day.",
+                  items: [
+                    {
+                      id: "i1",
+                      name: "Pancakes",
+                      description: "Fluffy stack.",
+                      images: [{ url: "https://example.com/pancakes.jpg", alt: "Pancakes" }],
+                      price: { amount: 899, currency: "USD", formatted: "$8.99" },
+                      availability: { inStock: true, text: "Available" },
+                      dietary: ["vegetarian"],
+                      calories: 520,
+                      optionGroups: [{ name: "Syrup" }],
+                      identifiers: { merchantItemId: "MENU-1" },
+                      url: "https://example.com/menu#pancakes",
+                      sourceUrl: "https://example.com/menu",
+                    },
+                    {
+                      id: "i2",
+                      name: "Toast",
+                      sourceUrl: "https://example.com/menu",
+                    },
+                  ],
+                },
+              ],
+            },
+          }
+        ),
+        headers: { "Content-Type" => "application/json" }
+      )
+
+    doc = @client.scrape("https://example.com/menu")
+    menu = doc.menu
+    assert_instance_of Firecrawl::Models::MenuProfile, menu
+    assert_equal true, menu.is_menu
+    assert_in_delta 0.92, menu.confidence, 0.0001
+    assert_equal "USD", menu.currency
+    assert_equal "https://example.com/menu", menu.source_url
+
+    assert_equal "Joe's Diner", menu.merchant.name
+    assert_equal "restaurant", menu.merchant.type
+    assert_equal({ "city" => "Springfield" }, menu.merchant.location)
+
+    assert_equal 1, menu.sections.size
+    section = menu.sections.first
+    assert_equal "s1", section.id
+    assert_equal "Breakfast", section.name
+    assert_equal "Served all day.", section.description
+
+    assert_equal 2, section.items.size
+    item = section.items.first
+    assert_equal "i1", item.id
+    assert_equal "Pancakes", item.name
+    assert_equal "Fluffy stack.", item.description
+
+    assert_equal 1, item.images.size
+    assert_equal "https://example.com/pancakes.jpg", item.images.first.url
+    assert_equal "Pancakes", item.images.first.alt
+
+    assert_equal 899, item.price.amount
+    assert_equal "USD", item.price.currency
+    assert_equal "$8.99", item.price.formatted
+
+    assert_equal true, item.availability.in_stock
+    assert_equal "Available", item.availability.text
+
+    assert_equal ["vegetarian"], item.dietary
+    assert_equal 520, item.calories
+    assert_equal [{ "name" => "Syrup" }], item.option_groups
+    assert_equal "MENU-1", item.identifiers.merchant_item_id
+    assert_equal "https://example.com/menu#pancakes", item.url
+    assert_equal "https://example.com/menu", item.source_url
+
+    # price/images/calories optional; availability always present.
+    bare = section.items.last
+    assert_equal "i2", bare.id
+    assert_nil bare.price
+    assert_nil bare.calories
+    assert_empty bare.images
+    assert_empty bare.dietary
+    assert_empty bare.option_groups
+    refute_nil bare.availability
+    assert_equal false, bare.availability.in_stock
+    assert_nil bare.identifiers.merchant_item_id
+  end
+
+  def test_scrape_without_menu_format_leaves_menu_nil
+    stub_request(:post, "#{BASE_URL}/v2/scrape")
+      .to_return(
+        status: 200,
+        body: JSON.generate(data: { markdown: "# Hi" }),
+        headers: { "Content-Type" => "application/json" }
+      )
+
+    doc = @client.scrape("https://example.com")
+    assert_nil doc.menu
+  end
+
   # ================================================================
   # CRAWL
   # ================================================================
