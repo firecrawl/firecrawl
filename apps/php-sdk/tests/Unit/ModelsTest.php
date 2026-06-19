@@ -5,6 +5,7 @@ declare(strict_types=1);
 use Firecrawl\Models\CreditUsage;
 use Firecrawl\Models\Document;
 use Firecrawl\Models\Product;
+use Firecrawl\Models\Menu;
 use Firecrawl\Models\MapData;
 use Firecrawl\Models\BatchScrapeJob;
 use Firecrawl\Models\CrawlJob;
@@ -164,6 +165,96 @@ it('returns null product when absent in Document', function (): void {
     $doc = Document::fromArray(['markdown' => '# No product']);
 
     expect($doc->getProduct())->toBeNull();
+});
+
+it('hydrates menu into Menu model in Document', function (): void {
+    $doc = Document::fromArray([
+        'markdown' => '# Menu',
+        'menu' => [
+            'isMenu' => true,
+            'confidence' => 0.95,
+            'currency' => 'USD',
+            'sourceUrl' => 'https://example.com/menu',
+            'merchant' => [
+                'name' => 'Cafe Acme',
+                'type' => 'restaurant',
+                'location' => ['city' => 'Springfield'],
+            ],
+            'sections' => [
+                [
+                    'id' => 's1',
+                    'name' => 'Drinks',
+                    'description' => 'Hot and cold beverages.',
+                    'items' => [
+                        [
+                            'id' => 'i1',
+                            'name' => 'Latte',
+                            'description' => 'Espresso with steamed milk.',
+                            'url' => 'https://example.com/menu/latte',
+                            'sourceUrl' => 'https://example.com/menu',
+                            'images' => [['url' => 'https://example.com/latte.jpg']],
+                            'price' => ['amount' => 4.5, 'currency' => 'USD', 'formatted' => '$4.50'],
+                            'availability' => ['inStock' => true, 'text' => 'Available'],
+                            'dietary' => ['vegetarian'],
+                            'calories' => 120,
+                            'optionGroups' => [['name' => 'Size', 'options' => ['S', 'M', 'L']]],
+                            'identifiers' => ['merchantItemId' => 'LATTE-1'],
+                        ],
+                        [
+                            'id' => 'i2',
+                            'name' => 'Water',
+                            'sourceUrl' => 'https://example.com/menu',
+                        ],
+                    ],
+                ],
+            ],
+        ],
+    ]);
+
+    $menu = $doc->getMenu();
+
+    expect($menu)->toBeInstanceOf(Menu::class);
+    expect($menu->getIsMenu())->toBeTrue();
+    expect($menu->getConfidence())->toBe(0.95);
+    expect($menu->getCurrency())->toBe('USD');
+    expect($menu->getSourceUrl())->toBe('https://example.com/menu');
+    expect($menu->getMerchant())->toBe([
+        'name' => 'Cafe Acme',
+        'type' => 'restaurant',
+        'location' => ['city' => 'Springfield'],
+    ]);
+    expect($menu->getSections())->toHaveCount(1);
+
+    $section = $menu->getSections()[0];
+    expect($section['id'])->toBe('s1');
+    expect($section['name'])->toBe('Drinks');
+    expect($section['description'])->toBe('Hot and cold beverages.');
+    expect($section['items'])->toHaveCount(2);
+
+    $i1 = $section['items'][0];
+    expect($i1['id'])->toBe('i1');
+    expect($i1['name'])->toBe('Latte');
+    expect($i1['sourceUrl'])->toBe('https://example.com/menu');
+    expect($i1['images'])->toBe([['url' => 'https://example.com/latte.jpg']]);
+    expect($i1['price'])->toBe(['amount' => 4.5, 'currency' => 'USD', 'formatted' => '$4.50']);
+    expect($i1['availability'])->toBe(['inStock' => true, 'text' => 'Available']);
+    expect($i1['dietary'])->toBe(['vegetarian']);
+    expect($i1['calories'])->toBe(120.0);
+    expect($i1['optionGroups'])->toBe([['name' => 'Size', 'options' => ['S', 'M', 'L']]]);
+    expect($i1['identifiers'])->toBe(['merchantItemId' => 'LATTE-1']);
+
+    // Availability is always present, even when omitted from the payload.
+    $i2 = $section['items'][1];
+    expect($i2['name'])->toBe('Water');
+    expect($i2['availability'])->toBe(['inStock' => false]);
+    expect(array_key_exists('price', $i2))->toBeFalse();
+    expect(array_key_exists('calories', $i2))->toBeFalse();
+});
+
+it('returns null menu when absent in Document', function (): void {
+    $doc = Document::fromArray(['markdown' => '# No menu']);
+
+    expect($doc->getMenu())->toBeNull();
 });
 
 it('coerces non-string scalar identity fields without a TypeError under strict_types', function (): void {

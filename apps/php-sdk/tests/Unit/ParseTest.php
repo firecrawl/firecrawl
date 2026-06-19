@@ -49,6 +49,10 @@ it('rejects product parse format', function (): void {
     ParseOptions::with(formats: ['product']);
 })->throws(FirecrawlException::class);
 
+it('rejects menu parse format', function (): void {
+    ParseOptions::with(formats: ['menu']);
+})->throws(FirecrawlException::class);
+
 it('rejects invalid proxy values', function (): void {
     ParseOptions::with(proxy: 'stealth');
 })->throws(FirecrawlException::class);
