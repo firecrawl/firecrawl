@@ -92,6 +92,18 @@ public class ParseTests
     }
 
     [Fact]
+    public void ParseOptions_Validate_RejectsMenuFormat()
+    {
+        var options = new ParseOptions
+        {
+            Formats = new List<object> { "markdown", "menu" }
+        };
+
+        var ex = Assert.Throws<ArgumentException>(() => options.Validate());
+        Assert.Contains("menu", ex.Message);
+    }
+
+    [Fact]
     public void ParseOptions_Validate_RejectsUnsupportedProxy()
     {
         var options = new ParseOptions { Proxy = "stealth" };
