@@ -330,6 +330,9 @@ const configSchema = z.object({
   // Product extraction (product-search Rust service)
   PRODUCT_EXTRACTION_SERVICE_URL: z.string().optional(),
 
+  // Menu extraction (menu-search Rust service)
+  MENU_EXTRACTION_SERVICE_URL: z.string().optional(),
+
   // PII Redaction (fire-privacy)
   FIRE_PRIVACY_URL: z.string().optional(),
   FIRE_PRIVACY_TIMEOUT_MS: z.coerce.number().int().positive().default(5000),
