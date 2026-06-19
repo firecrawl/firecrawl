@@ -193,6 +193,80 @@ public class ModelsTests
     }
 
     [Fact]
+    public void Document_DeserializesMenuCorrectly()
+    {
+        var json = """
+        {
+            "markdown": "# Menu",
+            "menu": {
+                "isMenu": true,
+                "confidence": 0.95,
+                "merchant": { "name": "Acme Diner", "type": "restaurant" },
+                "currency": "USD",
+                "sourceUrl": "https://example.com/restaurant/1",
+                "sections": [
+                    {
+                        "id": "s1",
+                        "name": "Appetizers",
+                        "description": "Starters",
+                        "items": [
+                            {
+                                "id": "i1",
+                                "name": "Garlic Bread",
+                                "description": "Toasted",
+                                "images": [ { "url": "https://example.com/i1.jpg", "alt": "Bread" } ],
+                                "price": { "amount": 5.99, "currency": "USD", "formatted": "$5.99" },
+                                "availability": { "inStock": true, "text": "Available" },
+                                "dietary": [ "vegetarian" ],
+                                "calories": 320,
+                                "optionGroups": [],
+                                "identifiers": { "merchantItemId": "MID-1" },
+                                "url": "https://example.com/item/1",
+                                "sourceUrl": "https://example.com/restaurant/1"
+                            }
+                        ]
+                    }
+                ]
+            }
+        }
+        """;
+
+        var doc = JsonSerializer.Deserialize<Document>(json, JsonOptions);
+        Assert.NotNull(doc);
+        Assert.NotNull(doc.Menu);
+        Assert.True(doc.Menu.IsMenu);
+        Assert.Equal(0.95, doc.Menu.Confidence);
+        Assert.Equal("USD", doc.Menu.Currency);
+        Assert.Equal("https://example.com/restaurant/1", doc.Menu.SourceUrl);
+        Assert.NotNull(doc.Menu.Merchant);
+        Assert.Equal("Acme Diner", doc.Menu.Merchant.Name);
+        Assert.Equal("restaurant", doc.Menu.Merchant.Type);
+        Assert.NotNull(doc.Menu.Sections);
+        Assert.Single(doc.Menu.Sections);
+        var section = doc.Menu.Sections[0];
+        Assert.Equal("s1", section.Id);
+        Assert.Equal("Appetizers", section.Name);
+        Assert.Single(section.Items);
+        var item = section.Items[0];
+        Assert.Equal("i1", item.Id);
+        Assert.Equal("Garlic Bread", item.Name);
+        Assert.NotNull(item.Price);
+        Assert.Equal(5.99, item.Price.Amount);
+        Assert.Equal("USD", item.Price.Currency);
+        Assert.NotNull(item.Availability);
+        Assert.True(item.Availability.InStock);
+        Assert.NotNull(item.Dietary);
+        Assert.Contains("vegetarian", item.Dietary);
+        Assert.Equal(320, item.Calories);
+        Assert.NotNull(item.Identifiers);
+        Assert.Equal("MID-1", item.Identifiers.MerchantItemId);
+        Assert.NotNull(item.Images);
+        Assert.Single(item.Images);
+        Assert.Equal("Bread", item.Images[0].Alt);
+        Assert.Equal("https://example.com/restaurant/1", item.SourceUrl);
+    }
+
+    [Fact]
     public void Document_IgnoresUnknownProperties()
     {
         var json = """

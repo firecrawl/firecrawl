@@ -60,4 +60,7 @@ public class Document
 
     [JsonPropertyName("product")]
     public ProductProfile? Product { get; set; }
+
+    [JsonPropertyName("menu")]
+    public MenuProfile? Menu { get; set; }
 }

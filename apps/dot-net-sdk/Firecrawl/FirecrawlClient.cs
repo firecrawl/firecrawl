@@ -259,7 +259,7 @@ public class FirecrawlClient
     /// </summary>
     /// <param name="file">The file to upload.</param>
     /// <param name="options">Optional parse options. Browser-only formats
-    /// (changeTracking, screenshot, branding, product), actions, waitFor, location,
+    /// (changeTracking, screenshot, branding, product, menu), actions, waitFor, location,
     /// and mobile are rejected.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     public async Task<Document> ParseAsync(

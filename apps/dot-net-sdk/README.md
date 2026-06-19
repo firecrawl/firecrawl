@@ -98,6 +98,20 @@ var doc = await client.ScrapeAsync("https://example.com/product/123",
 Console.WriteLine(doc.Product);
 ```
 
+### Menu Extraction
+
+Use the `menu` format on restaurant/merchant pages to get structured menu
+extraction (a merchant profile plus ordered sections, each holding items with
+their own price, availability, and images) on the document's `Menu` property. It
+is the deterministic counterpart to the LLM-based `json` format.
+
+```csharp
+var doc = await client.ScrapeAsync("https://example.com/restaurant/123",
+    new ScrapeOptions { Formats = new List<object> { "menu" } });
+
+Console.WriteLine(doc.Menu);
+```
+
 ### Crawl
 
 ```csharp
