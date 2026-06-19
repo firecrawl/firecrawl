@@ -76,6 +76,24 @@ let doc = client
 println!("{:?}", doc.product);
 ```
 
+### Menu extraction
+
+Use `Format::Menu` on restaurant/menu pages for structured menu extraction (merchant, sections, items, prices, availability). The result is returned on the document's `menu` field. This is the deterministic counterpart to the LLM-based `json` format.
+
+```rust
+use firecrawl::{Format, ScrapeOptions};
+
+let options = ScrapeOptions {
+    formats: Some(vec![Format::Menu]),
+    ..Default::default()
+};
+
+let doc = client
+    .scrape("https://www.example.com/menu", options)
+    .await?;
+println!("{:?}", doc.menu);
+```
+
 ### Parsing uploaded files (v2)
 
 Use the v2 client `parse` method to upload local files (`html`, `pdf`, `docx`, etc.) as multipart form data.

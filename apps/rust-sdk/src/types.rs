@@ -33,6 +33,8 @@ pub enum Format {
     Branding,
     /// Product extraction from the page.
     Product,
+    /// Menu extraction from the page.
+    Menu,
     /// Audio extraction (MP3) from YouTube videos.
     Audio,
     /// Video extraction from supported video URLs.
@@ -63,6 +65,7 @@ impl Serialize for Format {
             Format::Attributes => serializer.serialize_str("attributes"),
             Format::Branding => serializer.serialize_str("branding"),
             Format::Product => serializer.serialize_str("product"),
+            Format::Menu => serializer.serialize_str("menu"),
             Format::Audio => serializer.serialize_str("audio"),
             Format::Video => serializer.serialize_str("video"),
             Format::Question(question) => question.serialize(serializer),
@@ -92,6 +95,7 @@ impl<'de> Deserialize<'de> for Format {
                 "attributes" => Ok(Format::Attributes),
                 "branding" => Ok(Format::Branding),
                 "product" => Ok(Format::Product),
+                "menu" => Ok(Format::Menu),
                 "audio" => Ok(Format::Audio),
                 "video" => Ok(Format::Video),
                 _ => Err(de::Error::custom(format!("unknown format: {}", format))),
@@ -684,6 +688,8 @@ pub struct Document {
     pub branding: Option<Value>,
     /// Product extraction result.
     pub product: Option<Product>,
+    /// Menu extraction result.
+    pub menu: Option<Menu>,
 }
 
 /// Product extraction result for a page.
@@ -772,6 +778,136 @@ pub struct ProductVariant {
 pub struct ProductSale {
     /// Original price before the discount.
     pub original_price: ProductPrice,
+}
+
+/// Menu extraction result for a page.
+#[serde_with::skip_serializing_none]
+#[derive(Deserialize, Serialize, Debug, Default, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct Menu {
+    /// Whether the page was identified as a menu.
+    pub is_menu: bool,
+    /// Confidence score for the menu classification.
+    pub confidence: f64,
+    /// Currency code for the menu prices.
+    pub currency: Option<String>,
+    /// Source URL of the menu.
+    pub source_url: String,
+    /// Merchant information.
+    pub merchant: MenuMerchant,
+    /// Menu sections.
+    #[serde(default)]
+    pub sections: Vec<MenuSection>,
+}
+
+/// Merchant information for a menu.
+#[serde_with::skip_serializing_none]
+#[derive(Deserialize, Serialize, Debug, Default, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct MenuMerchant {
+    /// Merchant name.
+    pub name: String,
+    /// Merchant type.
+    #[serde(rename = "type")]
+    pub merchant_type: Option<String>,
+    /// Merchant location (arbitrary shape).
+    pub location: Option<Value>,
+}
+
+/// A section of a menu.
+#[serde_with::skip_serializing_none]
+#[derive(Deserialize, Serialize, Debug, Default, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct MenuSection {
+    /// Section identifier.
+    pub id: String,
+    /// Section name.
+    pub name: String,
+    /// Section description.
+    pub description: Option<String>,
+    /// Items in the section.
+    #[serde(default)]
+    pub items: Vec<MenuItem>,
+}
+
+/// An item on a menu.
+#[serde_with::skip_serializing_none]
+#[derive(Deserialize, Serialize, Debug, Default, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct MenuItem {
+    /// Item identifier.
+    pub id: String,
+    /// Item name.
+    pub name: String,
+    /// Item description.
+    pub description: Option<String>,
+    /// Item images.
+    #[serde(default)]
+    pub images: Vec<MenuImage>,
+    /// Item price.
+    pub price: Option<MenuPrice>,
+    /// Item availability information.
+    pub availability: MenuAvailability,
+    /// Dietary tags.
+    #[serde(default)]
+    pub dietary: Vec<String>,
+    /// Calorie count.
+    pub calories: Option<f64>,
+    /// Option groups (arbitrary shape).
+    #[serde(default)]
+    pub option_groups: Vec<Value>,
+    /// Item identifiers.
+    #[serde(default)]
+    pub identifiers: MenuItemIdentifiers,
+    /// Item URL.
+    pub url: Option<String>,
+    /// Source URL of the item.
+    pub source_url: String,
+}
+
+/// An image associated with a menu item.
+#[serde_with::skip_serializing_none]
+#[derive(Deserialize, Serialize, Debug, Default, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct MenuImage {
+    /// Image URL.
+    pub url: String,
+    /// Alternative text for the image.
+    pub alt: Option<String>,
+}
+
+/// Price information for a menu item.
+#[serde_with::skip_serializing_none]
+#[derive(Deserialize, Serialize, Debug, Default, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct MenuPrice {
+    /// Numeric price amount.
+    pub amount: f64,
+    /// Currency code.
+    pub currency: Option<String>,
+    /// Human-readable formatted price.
+    pub formatted: Option<String>,
+}
+
+/// Availability information for a menu item.
+#[serde_with::skip_serializing_none]
+#[derive(Deserialize, Serialize, Debug, Default, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct MenuAvailability {
+    /// Whether the item is in stock.
+    #[serde(rename = "inStock")]
+    pub in_stock: bool,
+    /// Human-readable availability text.
+    pub text: Option<String>,
+}
+
+/// Identifiers for a menu item.
+#[serde_with::skip_serializing_none]
+#[derive(Deserialize, Serialize, Debug, Default, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct MenuItemIdentifiers {
+    /// Merchant-specific item identifier.
+    pub merchant_item_id: Option<String>,
 }
 
 /// Job status types for crawl and batch operations.
@@ -921,5 +1057,79 @@ mod tests {
         assert_eq!(meta.og_image, Some("https://img.jpg".to_string()));
         assert_eq!(meta.language, Some("en".to_string()));
         assert_eq!(meta.keywords, Some("rust, sdk, firecrawl".to_string()));
+    }
+
+    #[test]
+    fn test_format_menu_round_trip() {
+        let format = Format::Menu;
+        let serialized = serde_json::to_value(&format).unwrap();
+        assert_eq!(serialized, json!("menu"));
+        let deserialized: Format = serde_json::from_value(json!("menu")).unwrap();
+        assert_eq!(deserialized, Format::Menu);
+    }
+
+    #[test]
+    fn test_document_with_menu() {
+        let json = json!({
+            "menu": {
+                "isMenu": true,
+                "confidence": 0.95,
+                "currency": "USD",
+                "sourceUrl": "https://example.com/menu",
+                "merchant": {
+                    "name": "Test Diner",
+                    "type": "restaurant",
+                    "location": { "city": "Springfield" }
+                },
+                "sections": [
+                    {
+                        "id": "s1",
+                        "name": "Mains",
+                        "items": [
+                            {
+                                "id": "i1",
+                                "name": "Burger",
+                                "images": [{ "url": "https://example.com/burger.jpg" }],
+                                "price": { "amount": 12.5, "currency": "USD", "formatted": "$12.50" },
+                                "availability": { "inStock": true },
+                                "dietary": ["vegetarian"],
+                                "optionGroups": [],
+                                "identifiers": { "merchantItemId": "abc123" },
+                                "sourceUrl": "https://example.com/menu#i1"
+                            }
+                        ]
+                    }
+                ]
+            }
+        });
+        let doc: Document = serde_json::from_value(json).unwrap();
+        let menu = doc.menu.as_ref().expect("menu should be present");
+        assert!(menu.is_menu);
+        assert_eq!(menu.confidence, 0.95);
+        assert_eq!(menu.currency, Some("USD".to_string()));
+        assert_eq!(menu.source_url, "https://example.com/menu");
+        assert_eq!(menu.merchant.name, "Test Diner");
+        assert_eq!(menu.merchant.merchant_type, Some("restaurant".to_string()));
+        assert_eq!(menu.sections.len(), 1);
+        let section = &menu.sections[0];
+        assert_eq!(section.name, "Mains");
+        assert_eq!(section.items.len(), 1);
+        let item = &section.items[0];
+        assert_eq!(item.name, "Burger");
+        assert!(item.availability.in_stock);
+        assert_eq!(item.dietary, vec!["vegetarian".to_string()]);
+        assert_eq!(
+            item.identifiers.merchant_item_id,
+            Some("abc123".to_string())
+        );
+        let price = item.price.as_ref().unwrap();
+        assert_eq!(price.amount, 12.5);
+
+        // Round-trip back to JSON and ensure camelCase field names are preserved.
+        let reserialized = serde_json::to_value(&doc).unwrap();
+        let item_json = &reserialized["menu"]["sections"][0]["items"][0];
+        assert_eq!(item_json["sourceUrl"], "https://example.com/menu#i1");
+        assert_eq!(item_json["availability"]["inStock"], true);
+        assert_eq!(item_json["identifiers"]["merchantItemId"], "abc123");
     }
 }
