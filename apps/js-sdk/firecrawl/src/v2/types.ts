@@ -14,6 +14,7 @@ export type FormatString =
   | "attributes"
   | "branding"
   | "product"
+  | "menu"
   | "audio"
   | "video";
 
@@ -468,6 +469,63 @@ export interface ProductProfile {
   variants: ProductVariant[];
 }
 
+export interface MenuPrice {
+  amount: number;
+  currency?: string;
+  formatted?: string;
+}
+
+export interface MenuAvailability {
+  inStock: boolean;
+  text?: string;
+}
+
+export interface MenuImage {
+  url: string;
+  alt?: string;
+}
+
+export interface MenuItemIdentifiers {
+  merchantItemId?: string;
+}
+
+export interface MenuItem {
+  id: string;
+  name: string;
+  description?: string;
+  images: MenuImage[];
+  price?: MenuPrice;
+  availability: MenuAvailability;
+  dietary: string[];
+  calories?: number;
+  optionGroups: unknown[];
+  identifiers: MenuItemIdentifiers;
+  url?: string;
+  sourceUrl: string;
+}
+
+export interface MenuSection {
+  id: string;
+  name: string;
+  description?: string;
+  items: MenuItem[];
+}
+
+export interface MenuMerchant {
+  name: string;
+  type?: string | null;
+  location?: unknown;
+}
+
+export interface MenuProfile {
+  isMenu: boolean;
+  confidence: number;
+  merchant: MenuMerchant;
+  currency?: string | null;
+  sections: MenuSection[];
+  sourceUrl: string;
+}
+
 export interface DocumentMetadata {
   // Common metadata fields
   title?: string;
@@ -551,6 +609,7 @@ export interface Document {
   changeTracking?: Record<string, unknown>;
   branding?: BrandingProfile;
   product?: ProductProfile;
+  menu?: MenuProfile;
 }
 
 // Pagination configuration for auto-fetching pages from v2 endpoints that return a `next` URL
