@@ -19,6 +19,7 @@ import { performAttributes } from "./performAttributes";
 import { deriveDiff } from "./diff";
 import { fetchAudio } from "./audio";
 import { fetchProduct } from "./product";
+import { fetchMenu } from "./menu";
 import { fetchVideo } from "./video";
 import { performRedactPII } from "./redactPII";
 import { useIndex, useSearchIndex } from "../../../services/index";
@@ -336,6 +337,7 @@ function coerceFieldsToFormats(meta: Meta, document: Document): Document {
   const hasSummary = hasFormatOfType(meta.options.formats, "summary");
   const hasBranding = hasFormatOfType(meta.options.formats, "branding");
   const hasProduct = hasFormatOfType(meta.options.formats, "product");
+  const hasMenu = hasFormatOfType(meta.options.formats, "menu");
   const hasQuestionFormat = hasFormatOfType(meta.options.formats, "question");
   const hasHighlightsFormat = hasFormatOfType(
     meta.options.formats,
@@ -497,6 +499,13 @@ function coerceFieldsToFormats(meta: Meta, document: Document): Document {
     delete document.product;
   }
 
+  if (!hasMenu && document.menu !== undefined) {
+    meta.logger.warn(
+      "Removed menu from Document because it wasn't in formats -- this indicates the engine returned unexpected data.",
+    );
+    delete document.menu;
+  }
+
   const hasAudio = hasFormatOfType(meta.options.formats, "audio");
   if (!hasAudio && document.audio !== undefined) {
     delete document.audio;
@@ -587,6 +596,7 @@ const transformerStack: Transformer[] = [
   deriveBrandingFromActions,
   deriveMetadataFromRawHTML,
   fetchProduct,
+  fetchMenu,
   ...(useIndex ? [sendDocumentToIndex] : []),
   ...(useSearchIndex ? [sendDocumentToSearchIndex] : []), // Add to search index for real-time search
   performLLMExtract,
