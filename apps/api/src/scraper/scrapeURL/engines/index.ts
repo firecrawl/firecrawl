@@ -649,13 +649,21 @@ export async function buildFallbackList(meta: Meta): Promise<
     }
   }
 
-  if (
-    selectedEngines.some(
-      x => engineOptions[x.engine].quality > 0 && !x.engine.startsWith("index"),
-    )
-  ) {
+  const positiveQualityEngines = selectedEngines.filter(
+    x => engineOptions[x.engine].quality > 0 && !x.engine.startsWith("index"),
+  );
+  if (positiveQualityEngines.length > 0) {
+    const maxPositiveSupportScore = Math.max(
+      ...positiveQualityEngines.map(x => x.supportScore),
+    );
+    // Keep negative-quality engines only if they support more features
+    // than the best positive-quality engine (higher supportScore).
+    // This ensures specialty engines (e.g. stealth proxy) aren't
+    // filtered out when they're the only ones supporting all requested features.
     selectedEngines = selectedEngines.filter(
-      x => engineOptions[x.engine].quality > 0,
+      x =>
+        engineOptions[x.engine].quality > 0 ||
+        x.supportScore > maxPositiveSupportScore,
     );
   }
 
