@@ -842,6 +842,7 @@ class NuQ<JobData = any, JobReturnValue = any> {
               ],
             )
           ).rows[0],
+          options.backlogged,
         )!;
 
         setSpanAttributes(span, {
@@ -902,6 +903,7 @@ class NuQ<JobData = any, JobReturnValue = any> {
               ],
             )
           ).rows[0],
+          options.backlogged,
         );
 
         setSpanAttributes(span, {

@@ -73,6 +73,12 @@ jobs:
       - run: pnpm config set store-dir ~/.pnpm-store
       - run: mkdir -p ~/.pnpm-store
 
+      - name: Install FoundationDB client library
+        run: |
+          curl -fsSL -o /tmp/fdb-clients.deb \
+            "https://github.com/apple/foundationdb/releases/download/${FDB_VERSION}/foundationdb-clients_${FDB_VERSION}-1_amd64.deb"
+          sudo dpkg -i /tmp/fdb-clients.deb
+
       - uses: actions/setup-node@v6
         with:
           node-version: 22
@@ -231,13 +237,6 @@ jobs:
         run: |
           docker build -t firecrawl/nuq-postgres:latest ./apps/nuq-postgres
           docker run -d -p 5432:5432 -e POSTGRES_USER=postgres -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=postgres --name postgres firecrawl/nuq-postgres:latest
-
-      - name: Install FoundationDB client library
-        if: matrix.nuq == 'fdb'
-        run: |
-          curl -fsSL -o /tmp/fdb-clients.deb \
-            "https://github.com/apple/foundationdb/releases/download/${FDB_VERSION}/foundationdb-clients_${FDB_VERSION}-1_amd64.deb"
-          sudo dpkg -i /tmp/fdb-clients.deb
 
       - name: Start FoundationDB
         if: matrix.nuq == 'fdb'
