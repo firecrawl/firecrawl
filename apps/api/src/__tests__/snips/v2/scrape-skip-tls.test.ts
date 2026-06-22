@@ -1,5 +1,6 @@
 import {
   ALLOW_TEST_SUITE_WEBSITE,
+  HAS_PROXY,
   TEST_PRODUCTION,
   TEST_SUITE_WEBSITE,
   testIf,
@@ -85,12 +86,15 @@ describe("V2 Scrape skipTlsVerification Default", () => {
   }, 10000);
 
   afterAll(async () => {
+    if (!tlsServer) {
+      return;
+    }
     await new Promise<void>((resolve, reject) => {
       tlsServer.close(err => (err ? reject(err) : resolve()));
     });
   });
 
-  test(
+  testIf(!HAS_PROXY)(
     "should default skipTlsVerification to true in v2 API",
     async () => {
       const data = await scrape(
@@ -107,7 +111,7 @@ describe("V2 Scrape skipTlsVerification Default", () => {
     scrapeTimeout,
   );
 
-  test(
+  testIf(!HAS_PROXY)(
     "should allow explicit skipTlsVerification: false override",
     async () => {
       const response = await scrapeRaw(
