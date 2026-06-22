@@ -1,5 +1,7 @@
 import { randomUUID } from "crypto";
+import { vi } from "vitest";
 import { config } from "../../config";
+import { redisEvictConnection } from "../../services/redis";
 import {
   fdbQueueEnabled,
   isFdbTeam,
@@ -112,10 +114,17 @@ describeIf("NuQ router (forced FDB mode)", () => {
 
   test("optional FDB waitForJob uses caller timeout, not the quick optional-op timeout", async () => {
     const forcedBackend = config.NUQ_BACKEND;
+    const redisGet = vi.spyOn(redisEvictConnection, "get");
+    const redisSet = vi.spyOn(redisEvictConnection, "set");
     config.NUQ_BACKEND = "pg";
     try {
       const teamId = randomUUID();
       const jobId = randomUUID();
+      redisGet.mockImplementation(async key =>
+        key === `nuq:job_backend:${jobId}` ? "fdb" : null,
+      );
+      redisSet.mockResolvedValue("OK" as any);
+
       const { jobs, backloggedCount } = await fdbEnqueueScrapeJobs(
         [
           {
@@ -146,6 +155,8 @@ describeIf("NuQ router (forced FDB mode)", () => {
       await expect(wait).resolves.toBeDefined();
     } finally {
       config.NUQ_BACKEND = forcedBackend;
+      redisGet.mockRestore();
+      redisSet.mockRestore();
     }
   });
 
