@@ -1256,7 +1256,7 @@ export class NuQFdbQueue<JobData = any, JobReturnValue = any> {
       const counts = new Map<string, number>();
       for (const [key, value] of rows) {
         const parts = ks.unpack(key as Buffer);
-        const teamId = parts[2];
+        const teamId = parts[3];
         if (typeof teamId !== "string") continue;
         const count = Math.max(0, decodeI64(value as Buffer));
         if (count > 0) counts.set(teamId, count);
@@ -1274,6 +1274,80 @@ export class NuQFdbQueue<JobData = any, JobReturnValue = any> {
         decodeI64(await tn.snapshot().get(this.ks.teamPendingCount(owner))),
       ),
     );
+  }
+
+  public async getWorkerLoadCount(): Promise<number> {
+    const ks = this.ks;
+    return await this.db.doTn(async tn => {
+      const [readyRows, activeRows] = await Promise.all([
+        tn
+          .snapshot()
+          .getRangeAll(
+            ks.readyShardCountRange().begin,
+            ks.readyShardCountRange().end,
+          ),
+        tn.snapshot().getRangeAll(ks.leaseRange().begin, ks.leaseRange().end),
+      ]);
+      const queued = readyRows.reduce(
+        (sum, [, value]) => sum + Math.max(0, decodeI64(value as Buffer)),
+        0,
+      );
+      return queued + activeRows.length;
+    });
+  }
+
+  private async getMetricCounts(): Promise<Record<NuQJobStatusCompat, number>> {
+    const ks = this.ks;
+    return await this.db.doTn(async tn => {
+      const [readyRows, activeRows, teamRows] = await Promise.all([
+        tn
+          .snapshot()
+          .getRangeAll(
+            ks.readyShardCountRange().begin,
+            ks.readyShardCountRange().end,
+          ),
+        tn.snapshot().getRangeAll(ks.leaseRange().begin, ks.leaseRange().end),
+        tn.snapshot().getRangeAll(ks.teamRange().begin, ks.teamRange().end),
+      ]);
+
+      const queued = readyRows.reduce(
+        (sum, [, value]) => sum + Math.max(0, decodeI64(value as Buffer)),
+        0,
+      );
+
+      let backlog = 0;
+      for (const [key, value] of teamRows) {
+        const parts = ks.unpack(key as Buffer);
+        if (parts[4] !== "pend") continue;
+        backlog += Math.max(0, decodeI64(value as Buffer));
+      }
+
+      return {
+        queued,
+        active: activeRows.length,
+        completed: 0,
+        failed: 0,
+        backlog,
+      };
+    });
+  }
+
+  public async getMetrics(): Promise<string> {
+    const metricName = `nuq_fdb_queue_${this.queueName.replace(/[^a-zA-Z0-9_]/g, "_")}_job_count`;
+    const statusCounts = await this.getMetricCounts();
+    return `# HELP ${metricName} Number of FDB jobs in each status\n# TYPE ${metricName} gauge\n${(
+      [
+        "queued",
+        "active",
+        "completed",
+        "failed",
+        "backlog",
+      ] satisfies NuQJobStatusCompat[]
+    )
+      .map(
+        status => `${metricName}{status="${status}"} ${statusCounts[status]}`,
+      )
+      .join("\n")}\n`;
   }
 }
 

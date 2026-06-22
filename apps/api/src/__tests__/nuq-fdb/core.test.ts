@@ -9,7 +9,7 @@ import {
   getNuqFdbDatabase,
   getFdb,
 } from "../../services/worker/nuq-fdb/client";
-import { encodeJson } from "../../services/worker/nuq-fdb/keyspace";
+import { encodeI64, encodeJson } from "../../services/worker/nuq-fdb/keyspace";
 
 // These tests exercise the FDB queue core directly against a real FoundationDB
 // cluster (no API server needed). They are skipped when FDB is not configured.
@@ -139,9 +139,33 @@ describeIf("NuQ FDB core", () => {
     expect(jobs.filter(j => j.status === "backlog").length).toBe(3);
     expect(await queue.getTeamActiveCount(owner)).toBe(2);
     expect(await queue.getTeamPendingCount(owner)).toBe(3);
+    expect(await queue.getWorkerLoadCount()).toBe(2);
+
+    const queuedMetrics = await queue.getMetrics();
+    expect(queuedMetrics).toContain(
+      `nuq_fdb_queue_t_${RUN}_teamgate_job_count{status="queued"} 2`,
+    );
+    expect(queuedMetrics).toContain(
+      `nuq_fdb_queue_t_${RUN}_teamgate_job_count{status="active"} 0`,
+    );
+    expect(queuedMetrics).toContain(
+      `nuq_fdb_queue_t_${RUN}_teamgate_job_count{status="backlog"} 3`,
+    );
 
     const taken = await takeAll(queue, 5);
     expect(taken.length).toBe(2);
+    expect(await queue.getWorkerLoadCount()).toBe(2);
+
+    const activeMetrics = await queue.getMetrics();
+    expect(activeMetrics).toContain(
+      `nuq_fdb_queue_t_${RUN}_teamgate_job_count{status="queued"} 0`,
+    );
+    expect(activeMetrics).toContain(
+      `nuq_fdb_queue_t_${RUN}_teamgate_job_count{status="active"} 2`,
+    );
+    expect(activeMetrics).toContain(
+      `nuq_fdb_queue_t_${RUN}_teamgate_job_count{status="backlog"} 3`,
+    );
 
     // finishing one job promotes exactly one backlogged job
     await queue.jobFinish(taken[0].id, taken[0].lock!, null);
@@ -158,6 +182,20 @@ describeIf("NuQ FDB core", () => {
     for (const j of rest) await queue.jobFinish(j.id, j.lock!, null);
     expect(await queue.getTeamActiveCount(owner)).toBe(0);
     expect(await queue.getTeamPendingCount(owner)).toBe(0);
+  });
+
+  test("metrics count pending teams even without active index entries", async () => {
+    const { queue } = await makeCtx("pending-metrics");
+    const owner = freshOwner();
+
+    await getNuqFdbDatabase().doTn(async tn => {
+      tn.set(queue.ks.teamPendingCount(owner), encodeI64(4));
+    });
+
+    const metrics = await queue.getMetrics();
+    expect(metrics).toContain(
+      `nuq_fdb_queue_t_${RUN}_pending_metrics_job_count{status="backlog"} 4`,
+    );
   });
 
   test("promotion respects priority order", async () => {

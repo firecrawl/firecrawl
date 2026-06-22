@@ -168,6 +168,9 @@ export class NuqFdbKeyspace {
   teamLimit(tid: string): Buffer {
     return this.pack(["t", tid, "limit"]);
   }
+  teamRange() {
+    return this.packRange(["t"]);
+  }
   teamActive(tid: string): Buffer {
     return this.pack(["t", tid, "active"]);
   }
@@ -271,6 +274,9 @@ export class NuqFdbKeyspace {
   // === Time-ordered indexes (sweeper-owned)
   lease(bucket: number, expMs: number, id: string): Buffer {
     return this.pack(["lease", bucket, expMs, id]);
+  }
+  leaseRange() {
+    return this.packRange(["lease"]);
   }
   leaseScanRange(bucket: number, untilMs: number) {
     return {
