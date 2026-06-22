@@ -138,6 +138,10 @@ ${escapePromptTags(markdown)}
       model: getModel("gemini-2.5-flash-lite", "google"),
     },
     {
+      name: "gpt-4o-mini",
+      model: getModel("gpt-4o-mini", "openai"),
+    },
+    {
       name: "gemini-2.5-flash-lite",
       model: getModel("gemini-2.5-flash-lite", "vertex"),
     },
