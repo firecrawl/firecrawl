@@ -98,7 +98,31 @@ jobs:
           tags: ${{ needs.version.outputs.image }}:sha-${{ needs.version.outputs.short_sha }}-${{ matrix.platform_suffix }}
           platforms: ${{ matrix.platform }}
           provenance: false
-          no-cache: true
+          build-args: |
+            GIT_SHA=${{ github.sha }}
+          cache-from: type=registry,ref=${{ needs.version.outputs.image }}:buildcache-${{ matrix.platform_suffix }}
+          cache-to: type=registry,ref=${{ needs.version.outputs.image }}:buildcache-${{ matrix.platform_suffix }},mode=max
+
+      - name: Verify pushed image contents
+        env:
+          IMAGE_TAG: ${{ needs.version.outputs.image }}:sha-${{ needs.version.outputs.short_sha }}-${{ matrix.platform_suffix }}
+          EXPECTED_SHA: ${{ github.sha }}
+        run: |
+          docker pull "${IMAGE_TAG}"
+          actual_sha="$(docker run --rm --entrypoint node "${IMAGE_TAG}" -p 'process.env.FIRECRAWL_BUILD_SHA')"
+          if [ "${actual_sha}" != "${EXPECTED_SHA}" ]; then
+            echo "::error::Image build SHA mismatch: expected ${EXPECTED_SHA}, got ${actual_sha}"
+            exit 1
+          fi
+
+          docker run --rm --entrypoint node "${IMAGE_TAG}" -e '
+            const fs = require("fs");
+            for (const path of ["dist/src/harness.js", "dist/src/controllers/v0/crawl-status.js", "BUILD_SHA"]) {
+              if (!fs.statSync(path).size) {
+                throw new Error(`${path} missing or empty`);
+              }
+            }
+          '
 
   publish:
     runs-on: blacksmith-2vcpu-ubuntu-2404
@@ -141,6 +165,7 @@ jobs:
           git push origin "${RELEASE_TAG}"
 
       - name: 'Create and Push Multi-Arch Manifest'
+        timeout-minutes: 10
         env:
           IMAGE: ${{ needs.version.outputs.image }}
           VERSION: ${{ needs.version.outputs.version }}
@@ -148,6 +173,8 @@ jobs:
           MAJOR_MINOR: ${{ needs.version.outputs.major_minor }}
           SHORT_SHA: ${{ needs.version.outputs.short_sha }}
         run: |
+          set -euo pipefail
+
           amd64_image="${IMAGE}:sha-${SHORT_SHA}-linux-amd64"
           arm64_image="${IMAGE}:sha-${SHORT_SHA}-linux-arm64"
           manifest_tags=(
@@ -159,7 +186,9 @@ jobs:
           )
 
           for target in "${manifest_tags[@]}"; do
-            docker manifest rm "${target}" >/dev/null 2>&1 || true
-            docker manifest create "${target}" "${amd64_image}" "${arm64_image}"
-            docker manifest push "${target}"
+            echo "Publishing multi-arch manifest ${target}"
+            docker buildx imagetools create \
+              --tag "${target}" \
+              "${amd64_image}" \
+              "${arm64_image}"
           done
