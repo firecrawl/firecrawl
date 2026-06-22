@@ -15,14 +15,14 @@ class ClientTest < Minitest::Test
   # CLIENT INITIALIZATION
   # ================================================================
 
-  def test_raises_when_no_api_key
+  def test_allows_no_api_key_for_keyless_endpoints
     ENV.delete("FIRECRAWL_API_KEY")
-    assert_raises(Firecrawl::FirecrawlError) { Firecrawl::Client.new }
+    assert_instance_of Firecrawl::Client, Firecrawl::Client.new
   end
 
-  def test_raises_when_whitespace_only_api_key
+  def test_allows_whitespace_only_api_key_for_keyless_endpoints
     ENV.delete("FIRECRAWL_API_KEY")
-    assert_raises(Firecrawl::FirecrawlError) { Firecrawl::Client.new(api_key: "   ") }
+    assert_instance_of Firecrawl::Client, Firecrawl::Client.new(api_key: "   ")
   end
 
   def test_raises_when_api_url_not_http
@@ -69,7 +69,7 @@ class ClientTest < Minitest::Test
   def test_scrape_basic
     stub_request(:post, "#{BASE_URL}/v2/scrape")
       .with(
-        body: { url: "https://example.com" }.to_json,
+        body: { url: "https://example.com", origin: "ruby-sdk@#{Firecrawl::VERSION}" }.to_json,
         headers: { "Authorization" => "Bearer #{API_KEY}", "Content-Type" => "application/json" }
       )
       .to_return(
@@ -102,6 +102,211 @@ class ClientTest < Minitest::Test
 
   def test_scrape_raises_on_nil_url
     assert_raises(ArgumentError) { @client.scrape(nil) }
+  end
+
+  def test_scrape_with_product_format
+    stub_request(:post, "#{BASE_URL}/v2/scrape")
+      .to_return(
+        status: 200,
+        body: JSON.generate(
+          data: {
+            markdown: "# Widget",
+            product: {
+              title: "Acme Widget",
+              brand: "Acme",
+              category: "Gadgets",
+              url: "https://example.com/widget",
+              description: "A fine widget.",
+              variants: [
+                {
+                  id: "v1",
+                  sku: "ACME-1",
+                  title: "Large",
+                  values: { size: "L" },
+                  price: { amount: 2199, currency: "USD" },
+                  sale: { originalPrice: { amount: 2999, currency: "USD", formatted: "$29.99" } },
+                  availability: { inStock: true, text: "In stock" },
+                  images: [{ url: "https://example.com/v1.jpg", alt: "Widget" }],
+                },
+                {
+                  id: "v2",
+                  title: "Small",
+                  values: { size: "S" },
+                },
+              ],
+            },
+          }
+        ),
+        headers: { "Content-Type" => "application/json" }
+      )
+
+    doc = @client.scrape("https://example.com/widget")
+    product = doc.product
+    assert_instance_of Firecrawl::Models::ProductProfile, product
+    assert_equal "Acme Widget", product.title
+    assert_equal "Acme", product.brand
+    assert_equal "Gadgets", product.category
+    assert_equal "https://example.com/widget", product.url
+    assert_equal "A fine widget.", product.description
+
+    assert_equal 2, product.variants.size
+    variant = product.variants.first
+    assert_equal "v1", variant.id
+    assert_equal "ACME-1", variant.sku
+    assert_equal "Large", variant.title
+    assert_equal({ "size" => "L" }, variant.values)
+
+    assert_equal 2199, variant.price.amount
+    assert_equal "USD", variant.price.currency
+
+    assert_equal 2999, variant.sale.original_price.amount
+    assert_equal "$29.99", variant.sale.original_price.formatted
+
+    assert_equal true, variant.availability.in_stock
+    assert_equal "In stock", variant.availability.text
+
+    assert_equal 1, variant.images.size
+    assert_equal "https://example.com/v1.jpg", variant.images.first.url
+    assert_equal "Widget", variant.images.first.alt
+
+    # Availability is always present; sale/price/images are optional.
+    bare = product.variants.last
+    assert_equal "v2", bare.id
+    assert_nil bare.price
+    assert_nil bare.sale
+    refute_nil bare.availability
+    assert_equal false, bare.availability.in_stock
+    assert_empty bare.images
+  end
+
+  def test_scrape_without_product_format_leaves_product_nil
+    stub_request(:post, "#{BASE_URL}/v2/scrape")
+      .to_return(
+        status: 200,
+        body: JSON.generate(data: { markdown: "# Hi" }),
+        headers: { "Content-Type" => "application/json" }
+      )
+
+    doc = @client.scrape("https://example.com")
+    assert_nil doc.product
+  end
+
+  def test_scrape_with_menu_format
+    stub_request(:post, "#{BASE_URL}/v2/scrape")
+      .to_return(
+        status: 200,
+        body: JSON.generate(
+          data: {
+            markdown: "# Menu",
+            menu: {
+              isMenu: true,
+              confidence: 0.92,
+              currency: "USD",
+              sourceUrl: "https://example.com/menu",
+              merchant: {
+                name: "Joe's Diner",
+                type: "restaurant",
+                location: { city: "Springfield" },
+              },
+              sections: [
+                {
+                  id: "s1",
+                  name: "Breakfast",
+                  description: "Served all day.",
+                  items: [
+                    {
+                      id: "i1",
+                      name: "Pancakes",
+                      description: "Fluffy stack.",
+                      images: [{ url: "https://example.com/pancakes.jpg", alt: "Pancakes" }],
+                      price: { amount: 899, currency: "USD", formatted: "$8.99" },
+                      availability: { inStock: true, text: "Available" },
+                      dietary: ["vegetarian"],
+                      calories: 520,
+                      optionGroups: [{ name: "Syrup" }],
+                      identifiers: { merchantItemId: "MENU-1" },
+                      url: "https://example.com/menu#pancakes",
+                      sourceUrl: "https://example.com/menu",
+                    },
+                    {
+                      id: "i2",
+                      name: "Toast",
+                      sourceUrl: "https://example.com/menu",
+                    },
+                  ],
+                },
+              ],
+            },
+          }
+        ),
+        headers: { "Content-Type" => "application/json" }
+      )
+
+    doc = @client.scrape("https://example.com/menu")
+    menu = doc.menu
+    assert_instance_of Firecrawl::Models::MenuProfile, menu
+    assert_equal true, menu.is_menu
+    assert_in_delta 0.92, menu.confidence, 0.0001
+    assert_equal "USD", menu.currency
+    assert_equal "https://example.com/menu", menu.source_url
+
+    assert_equal "Joe's Diner", menu.merchant.name
+    assert_equal "restaurant", menu.merchant.type
+    assert_equal({ "city" => "Springfield" }, menu.merchant.location)
+
+    assert_equal 1, menu.sections.size
+    section = menu.sections.first
+    assert_equal "s1", section.id
+    assert_equal "Breakfast", section.name
+    assert_equal "Served all day.", section.description
+
+    assert_equal 2, section.items.size
+    item = section.items.first
+    assert_equal "i1", item.id
+    assert_equal "Pancakes", item.name
+    assert_equal "Fluffy stack.", item.description
+
+    assert_equal 1, item.images.size
+    assert_equal "https://example.com/pancakes.jpg", item.images.first.url
+    assert_equal "Pancakes", item.images.first.alt
+
+    assert_equal 899, item.price.amount
+    assert_equal "USD", item.price.currency
+    assert_equal "$8.99", item.price.formatted
+
+    assert_equal true, item.availability.in_stock
+    assert_equal "Available", item.availability.text
+
+    assert_equal ["vegetarian"], item.dietary
+    assert_equal 520, item.calories
+    assert_equal [{ "name" => "Syrup" }], item.option_groups
+    assert_equal "MENU-1", item.identifiers.merchant_item_id
+    assert_equal "https://example.com/menu#pancakes", item.url
+    assert_equal "https://example.com/menu", item.source_url
+
+    # price/images/calories optional; availability always present.
+    bare = section.items.last
+    assert_equal "i2", bare.id
+    assert_nil bare.price
+    assert_nil bare.calories
+    assert_empty bare.images
+    assert_empty bare.dietary
+    assert_empty bare.option_groups
+    refute_nil bare.availability
+    assert_equal false, bare.availability.in_stock
+    assert_nil bare.identifiers.merchant_item_id
+  end
+
+  def test_scrape_without_menu_format_leaves_menu_nil
+    stub_request(:post, "#{BASE_URL}/v2/scrape")
+      .to_return(
+        status: 200,
+        body: JSON.generate(data: { markdown: "# Hi" }),
+        headers: { "Content-Type" => "application/json" }
+      )
+
+    doc = @client.scrape("https://example.com")
+    assert_nil doc.menu
   end
 
   # ================================================================
@@ -685,6 +890,18 @@ class ClientTest < Minitest::Test
   def test_parse_options_rejects_video_format
     assert_raises(ArgumentError) do
       Firecrawl::Models::ParseOptions.new(formats: ["video"])
+    end
+  end
+
+  def test_parse_options_rejects_product_format
+    assert_raises(ArgumentError) do
+      Firecrawl::Models::ParseOptions.new(formats: ["product"])
+    end
+  end
+
+  def test_parse_options_rejects_menu_format
+    assert_raises(ArgumentError) do
+      Firecrawl::Models::ParseOptions.new(formats: ["menu"])
     end
   end
 

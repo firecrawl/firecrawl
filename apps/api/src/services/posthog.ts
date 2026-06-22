@@ -18,7 +18,7 @@ import { logger as _logger } from "../lib/logger";
 const POSTHOG_API_KEY = process.env.POSTHOG_API_KEY;
 const POSTHOG_HOST = process.env.POSTHOG_HOST || "https://us.i.posthog.com";
 
-export function capturePostHog(
+function capturePostHog(
   event: string,
   distinctId: string,
   properties: Record<string, unknown> = {},
@@ -39,13 +39,17 @@ export function capturePostHog(
         }),
       });
     } catch (error) {
-      _logger.debug("PostHog capture failed", { module: "posthog", event, error });
+      _logger.debug("PostHog capture failed", {
+        module: "posthog",
+        event,
+        error,
+      });
     }
   })();
 }
 
 /** Normalized request surface, derived from the free-form `origin` field. */
-export type RequestSurface =
+type RequestSurface =
   | "playground"
   | "sdk"
   | "mcp"
@@ -61,7 +65,7 @@ export type RequestSurface =
  * practice. NOTE: confirm the exact strings sent by firecrawl-mcp and
  * firecrawl-cli — adjust the prefixes below if they differ.
  */
-export function originToSurface(origin?: string | null): RequestSurface {
+function originToSurface(origin?: string | null): RequestSurface {
   const o = (origin ?? "").toLowerCase();
   if (o === "website" || o.includes("playground")) return "playground";
   if (o.startsWith("mcp")) return "mcp";
@@ -92,7 +96,12 @@ async function resolveDistinctId(
       .leftJoin(schema.users, eq(schema.users.id, schema.api_keys.owner_id))
       // Scope to the team so a stale/mismatched apiKeyId can't attribute this
       // team's milestone to another team's owner email — falls back to teamId.
-      .where(and(eq(schema.api_keys.id, apiKeyId), eq(schema.api_keys.team_id, teamId)))
+      .where(
+        and(
+          eq(schema.api_keys.id, apiKeyId),
+          eq(schema.api_keys.team_id, teamId),
+        ),
+      )
       .limit(1);
     return rows[0]?.email || teamId;
   } catch {

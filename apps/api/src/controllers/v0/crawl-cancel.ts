@@ -6,7 +6,7 @@ import { getCrawl, saveCrawl } from "../../../src/lib/crawl-redis";
 import * as Sentry from "@sentry/node";
 import { configDotenv } from "dotenv";
 import { redisEvictConnection } from "../../../src/services/redis";
-import { crawlGroup } from "../../services/worker/nuq";
+import { crawlGroup } from "../../services/worker/nuq-router";
 import { getScrapeZDR } from "../../lib/zdr-helpers";
 import { applyAgentAuthDiscoveryHeader } from "../../lib/agent-auth-discovery";
 configDotenv();
@@ -71,6 +71,10 @@ export async function crawlCancelController(req: Request, res: Response) {
       await saveCrawl(req.params.jobId, sc);
     } catch (error) {
       logger.error(error);
+    }
+
+    if (sc.queueBackend === "fdb") {
+      await crawlGroup.cancelGroup(req.params.jobId);
     }
 
     res.json({

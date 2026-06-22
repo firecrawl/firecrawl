@@ -19,6 +19,15 @@ jobs:
         proxy: ['proxy', 'no-proxy'] # proxy / no-proxy run different tests, keep both
         search: ['searxng'] # disabled google for now, should be fine with just Searxng
         ai: ['openai'] # AI only should be fine, as it simply adds tests, if non-AI fails, AI will fail.
+        nuq: ['postgres']
+        include:
+          # Exercise the self-hosted API/harness path through the FDB NuQ router
+          # without doubling the expensive Playwright/proxy matrix.
+          - engine: fetch
+            proxy: no-proxy
+            search: searxng
+            ai: openai
+            nuq: fdb
 
         # legacy matrix:
         # engine: ["playwright", "fetch"]
@@ -48,6 +57,9 @@ jobs:
       PROXY_PASSWORD: ${{ matrix.proxy == 'proxy' && secrets.PROXY_PASSWORD || '' }}
       NUQ_DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
       NUQ_RABBITMQ_URL: amqp://localhost:5672
+      NUQ_BACKEND: ${{ matrix.nuq == 'fdb' && 'fdb' || '' }}
+      FDB_CLUSTER_FILE: ${{ matrix.nuq == 'fdb' && '/tmp/fdb.cluster' || '' }}
+      FDB_VERSION: 7.3.63
       USE_GO_MARKDOWN_PARSER: true
       ALLOW_LOCAL_WEBHOOKS: true
       FIRECRAWL_LOG_TO_FILE: true
@@ -60,6 +72,12 @@ jobs:
 
       - run: pnpm config set store-dir ~/.pnpm-store
       - run: mkdir -p ~/.pnpm-store
+
+      - name: Install FoundationDB client library
+        run: |
+          curl -fsSL -o /tmp/fdb-clients.deb \
+            "https://github.com/apple/foundationdb/releases/download/${FDB_VERSION}/foundationdb-clients_${FDB_VERSION}-1_amd64.deb"
+          sudo dpkg -i /tmp/fdb-clients.deb
 
       - uses: actions/setup-node@v6
         with:
@@ -215,9 +233,21 @@ jobs:
           PORT: 3003
 
       - name: Run Docker Postgres
+        if: matrix.nuq == 'postgres'
         run: |
           docker build -t firecrawl/nuq-postgres:latest ./apps/nuq-postgres
           docker run -d -p 5432:5432 -e POSTGRES_USER=postgres -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=postgres --name postgres firecrawl/nuq-postgres:latest
+
+      - name: Start FoundationDB
+        if: matrix.nuq == 'fdb'
+        run: |
+          docker run -d --name fdb -p 4500:4500 -e FDB_NETWORKING_MODE=host foundationdb/foundationdb:${FDB_VERSION}
+          for i in $(seq 1 30); do
+            if docker exec fdb fdbcli --exec "status minimal" 2>/dev/null; then break; fi
+            sleep 1
+          done
+          docker exec fdb fdbcli --exec "configure new single memory"
+          echo "docker:docker@127.0.0.1:4500" > /tmp/fdb.cluster
 
       - name: Run tests
         run: pnpm harness pnpm test:snips
@@ -230,7 +260,7 @@ jobs:
         shell: python3 {0}
         env:
           JUNIT: apps/api/test-results/junit.xml
-          MATRIX_LABEL: "${{ matrix.engine }}, ${{ matrix.proxy }}, ${{ matrix.search }}, ${{ matrix.ai }}"
+          MATRIX_LABEL: "${{ matrix.engine }}, ${{ matrix.proxy }}, ${{ matrix.search }}, ${{ matrix.ai }}, ${{ matrix.nuq }}"
         run: |
           import os, sys, xml.etree.ElementTree as ET
 
@@ -367,7 +397,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: Logs (kubernetes, ${{ matrix.ai }}, ${{ matrix.search }}, ${{ matrix.engine }}, ${{ matrix.proxy }})
+          name: Logs (kubernetes, ${{ matrix.ai }}, ${{ matrix.search }}, ${{ matrix.engine }}, ${{ matrix.proxy }}, ${{ matrix.nuq }})
           path: logs/logs.zip
 
   # temp disabled
@@ -536,3 +566,52 @@ jobs:
   #         name: Encrypted Logs
   #         path: logs/logs.zip.gpg
   #         retention-days: 5
+
+  nuq-fdb-core:
+    name: NuQ FoundationDB core tests
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    env:
+      FDB_VERSION: 7.3.63
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4
+        with:
+          version: 10
+
+      - run: pnpm config set store-dir ~/.pnpm-store
+      - run: mkdir -p ~/.pnpm-store
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: apps/api/pnpm-lock.yaml
+
+      - name: Install API dependencies
+        run: pnpm install --frozen-lockfile --ignore-scripts
+        working-directory: apps/api
+        env:
+          npm_config_ignore_scripts: 'true'
+
+      - name: Install FoundationDB client library
+        run: |
+          curl -fsSL -o /tmp/fdb-clients.deb \
+            "https://github.com/apple/foundationdb/releases/download/${FDB_VERSION}/foundationdb-clients_${FDB_VERSION}-1_amd64.deb"
+          sudo dpkg -i /tmp/fdb-clients.deb
+
+      - name: Start FoundationDB
+        run: |
+          docker run -d --name fdb -p 4500:4500 -e FDB_NETWORKING_MODE=host foundationdb/foundationdb:${FDB_VERSION}
+          for i in $(seq 1 30); do
+            if docker exec fdb fdbcli --exec "status minimal" 2>/dev/null; then break; fi
+            sleep 1
+          done
+          docker exec fdb fdbcli --exec "configure new single memory"
+          echo "docker:docker@127.0.0.1:4500" > /tmp/fdb.cluster
+
+      - name: Run NuQ FDB core tests
+        run: npx vitest run src/__tests__/nuq-fdb --reporter=default
+        working-directory: apps/api
+        env:
+          FDB_CLUSTER_FILE: /tmp/fdb.cluster

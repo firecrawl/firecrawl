@@ -10,6 +10,7 @@ import { indexQueuePrometheus } from "../controllers/v0/admin/index-queue-promet
 import { triggerPrecrawl } from "../controllers/v0/admin/precrawl";
 import {
   metricsController,
+  nuqFdbMetricsController,
   nuqMetricsController,
 } from "../controllers/v0/admin/metrics";
 import { realtimeSearchController } from "../controllers/v2/f-search";
@@ -64,6 +65,11 @@ adminRouter.get(
 adminRouter.get(
   `/admin/${config.BULL_AUTH_KEY}/nuq-metrics`,
   wrap(nuqMetricsController),
+);
+
+adminRouter.get(
+  `/admin/${config.BULL_AUTH_KEY}/nuq-fdb-metrics`,
+  wrap(nuqFdbMetricsController),
 );
 
 adminRouter.post(

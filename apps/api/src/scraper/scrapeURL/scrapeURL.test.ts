@@ -1,3 +1,4 @@
+import type { MockedFunction } from "vitest";
 import "dotenv/config";
 
 import { config } from "../../config";
@@ -9,11 +10,12 @@ import { Engine } from "./engines";
 import { CostTracking } from "../../lib/cost-tracking";
 
 // Mock parseMarkdown but delegate to real implementation for other tests
-jest.mock("../../lib/html-to-markdown", () => {
-  const actual = jest.requireActual("../../lib/html-to-markdown");
+vi.mock("../../lib/html-to-markdown", async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import("../../lib/html-to-markdown")>();
   return {
     ...actual,
-    parseMarkdown: jest.fn(actual.parseMarkdown),
+    parseMarkdown: vi.fn(actual.parseMarkdown),
   };
 });
 
@@ -532,7 +534,7 @@ describe("Standalone scrapeURL tests", () => {
   );
 
   it("Sitemap scrape should not convert to markdown", async () => {
-    const mockParseMarkdown = parseMarkdown as jest.MockedFunction<
+    const mockParseMarkdown = parseMarkdown as MockedFunction<
       typeof parseMarkdown
     >;
     mockParseMarkdown.mockClear();

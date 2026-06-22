@@ -14,7 +14,7 @@ import * as schema from "../../db/schema";
 import { logger as _logger } from "../../lib/logger";
 import { deserializeTransportableError } from "../../lib/error-serde";
 import { TransportableError } from "../../lib/error";
-import { scrapeQueue } from "../../services/worker/nuq";
+import { scrapeQueue } from "../../services/worker/nuq-router";
 configDotenv();
 
 export async function crawlErrorsController(

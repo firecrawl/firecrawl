@@ -22,6 +22,235 @@ type Document struct {
 	Warning        string                   `json:"warning,omitempty"`
 	ChangeTracking map[string]interface{}   `json:"changeTracking,omitempty"`
 	Branding       map[string]interface{}   `json:"branding,omitempty"`
+	Product        *ProductProfile          `json:"product,omitempty"`
+	Menu           *MenuProfile             `json:"menu,omitempty"`
+}
+
+// ProductProfile represents structured product data extracted from a page
+// via the `product` scrape format.
+type ProductProfile struct {
+	Title         string               `json:"title"`
+	Brand         string               `json:"brand,omitempty"`
+	Category      string               `json:"category,omitempty"`
+	URL           string               `json:"url"`
+	Description   string               `json:"description,omitempty"`
+	Variants      []ProductVariant     `json:"variants,omitempty"`
+}
+
+// ProductImage is a single product image.
+type ProductImage struct {
+	URL string `json:"url"`
+	Alt string `json:"alt,omitempty"`
+}
+
+// ProductPrice represents a price for a product or variant.
+type ProductPrice struct {
+	Amount    float64 `json:"amount"`
+	Currency  string  `json:"currency,omitempty"`
+	Formatted string  `json:"formatted,omitempty"`
+}
+
+// ProductAvailability represents stock availability for a product or variant.
+type ProductAvailability struct {
+	InStock bool   `json:"inStock"`
+	Text    string `json:"text,omitempty"`
+}
+
+// ProductSale represents sale information for a product variant.
+type ProductSale struct {
+	OriginalPrice ProductPrice `json:"originalPrice"`
+}
+
+// ProductVariant represents a single purchasable variant of a product.
+type ProductVariant struct {
+	ID           string              `json:"id,omitempty"`
+	SKU          string              `json:"sku,omitempty"`
+	Title        string              `json:"title,omitempty"`
+	Values       map[string]any      `json:"values,omitempty"`
+	Price        *ProductPrice       `json:"price,omitempty"`
+	Sale         *ProductSale        `json:"sale,omitempty"`
+	Availability ProductAvailability `json:"availability"`
+	Images       []ProductImage      `json:"images,omitempty"`
+}
+
+// MenuProfile represents structured menu data extracted from a page
+// via the `menu` scrape format.
+type MenuProfile struct {
+	IsMenu     bool          `json:"isMenu"`
+	Confidence float64       `json:"confidence"`
+	Merchant   MenuMerchant  `json:"merchant"`
+	Currency   string        `json:"currency,omitempty"`
+	Sections   []MenuSection `json:"sections,omitempty"`
+	SourceURL  string        `json:"sourceUrl"`
+}
+
+// MenuMerchant represents the merchant a menu belongs to.
+type MenuMerchant struct {
+	Name     string      `json:"name"`
+	Type     string      `json:"type,omitempty"`
+	Location interface{} `json:"location,omitempty"`
+}
+
+// MenuSection represents an ordered grouping of menu items.
+type MenuSection struct {
+	ID          string     `json:"id"`
+	Name        string     `json:"name"`
+	Description string     `json:"description,omitempty"`
+	Items       []MenuItem `json:"items,omitempty"`
+}
+
+// MenuItem represents a single item on a menu.
+type MenuItem struct {
+	ID           string              `json:"id"`
+	Name         string              `json:"name"`
+	Description  string              `json:"description,omitempty"`
+	Images       []MenuImage         `json:"images,omitempty"`
+	Price        *MenuPrice          `json:"price,omitempty"`
+	Availability MenuAvailability    `json:"availability"`
+	Dietary      []string            `json:"dietary,omitempty"`
+	Calories     *float64            `json:"calories,omitempty"`
+	OptionGroups []interface{}       `json:"optionGroups,omitempty"`
+	Identifiers  MenuItemIdentifiers `json:"identifiers"`
+	URL          string              `json:"url,omitempty"`
+	SourceURL    string              `json:"sourceUrl"`
+}
+
+// MenuImage is a single menu item image.
+type MenuImage struct {
+	URL string `json:"url"`
+	Alt string `json:"alt,omitempty"`
+}
+
+// MenuPrice represents a price for a menu item.
+type MenuPrice struct {
+	Amount    float64 `json:"amount"`
+	Currency  string  `json:"currency,omitempty"`
+	Formatted string  `json:"formatted,omitempty"`
+}
+
+// MenuAvailability represents stock availability for a menu item.
+type MenuAvailability struct {
+	InStock bool   `json:"inStock"`
+	Text    string `json:"text,omitempty"`
+}
+
+// MenuItemIdentifiers holds merchant-specific identifiers for a menu item.
+type MenuItemIdentifiers struct {
+	MerchantItemID string `json:"merchantItemId,omitempty"`
+}
+
+// PaperResult represents a ranked research paper result.
+type PaperResult struct {
+	PaperID   string                 `json:"paperId"`
+	PrimaryID string                 `json:"primaryId,omitempty"`
+	IDs       map[string]interface{} `json:"ids,omitempty"`
+	Title     string                 `json:"title,omitempty"`
+	Abstract  string                 `json:"abstract,omitempty"`
+	Score     *float64               `json:"score,omitempty"`
+	Year      *int                   `json:"year,omitempty"`
+	Authors   []string               `json:"authors,omitempty"`
+	Venue     string                 `json:"venue,omitempty"`
+	URL       string                 `json:"url,omitempty"`
+	Signals   map[string]interface{} `json:"signals,omitempty"`
+}
+
+// PaperMetadata represents paper metadata returned by inspect/read endpoints.
+type PaperMetadata struct {
+	PaperID     string                 `json:"paperId,omitempty"`
+	IDs         map[string]interface{} `json:"ids,omitempty"`
+	Title       string                 `json:"title,omitempty"`
+	Abstract    string                 `json:"abstract,omitempty"`
+	Authors     string                 `json:"authors,omitempty"`
+	Categories  []string               `json:"categories,omitempty"`
+	CreatedDate string                 `json:"createdDate,omitempty"`
+	UpdateDate  string                 `json:"updateDate,omitempty"`
+}
+
+// Passage is a relevant paper passage.
+type Passage struct {
+	Text     string                 `json:"text,omitempty"`
+	Section  string                 `json:"section,omitempty"`
+	Page     *int                   `json:"page,omitempty"`
+	Score    *float64               `json:"score,omitempty"`
+	Metadata map[string]interface{} `json:"metadata,omitempty"`
+}
+
+// SearchPapersResponse is returned by SearchPapers.
+type SearchPapersResponse struct {
+	Success bool          `json:"success"`
+	Results []PaperResult `json:"results"`
+}
+
+// PaperMetadataResponse is returned by InspectPaper.
+type PaperMetadataResponse struct {
+	Success bool          `json:"success"`
+	Paper   PaperMetadata `json:"paper"`
+}
+
+// ReadPaperResponse is returned by ReadPaper.
+type ReadPaperResponse struct {
+	Success  bool          `json:"success"`
+	Paper    PaperMetadata `json:"paper"`
+	PaperID  string        `json:"paperId,omitempty"`
+	Query    string        `json:"query,omitempty"`
+	Passages []Passage     `json:"passages,omitempty"`
+}
+
+// SimilarPapersResponse is returned by RelatedPapers.
+type SimilarPapersResponse struct {
+	Success   bool          `json:"success"`
+	Results   []PaperResult `json:"results"`
+	PoolSize  *int          `json:"poolSize,omitempty"`
+	Truncated bool          `json:"truncated"`
+	Note      *string       `json:"note,omitempty"`
+}
+
+// GitHubSearchItem represents a GitHub research search result.
+type GitHubSearchItem struct {
+	ResultType   string                 `json:"resultType,omitempty"`
+	Repo         string                 `json:"repo,omitempty"`
+	URL          string                 `json:"url,omitempty"`
+	PageType     string                 `json:"pageType,omitempty"`
+	Number       *int                   `json:"number,omitempty"`
+	SegmentCount *int                   `json:"segmentCount,omitempty"`
+	ReadmeURL    string                 `json:"readmeUrl,omitempty"`
+	Title        string                 `json:"title,omitempty"`
+	Snippet      string                 `json:"snippet,omitempty"`
+	ContentMD    string                 `json:"contentMd,omitempty"`
+	Scores       map[string]interface{} `json:"scores,omitempty"`
+}
+
+// GitHubSearchResponse is returned by SearchGitHub.
+type GitHubSearchResponse struct {
+	Success bool               `json:"success"`
+	Results []GitHubSearchItem `json:"results"`
+}
+
+// Research options for search-like endpoints.
+type SearchPapersOptions struct {
+	K          *int     `json:"k,omitempty"`
+	Authors    []string `json:"authors,omitempty"`
+	Categories []string `json:"categories,omitempty"`
+	From       string   `json:"from,omitempty"`
+	To         string   `json:"to,omitempty"`
+}
+
+// ReadPaperOptions configures ReadPaper.
+type ReadPaperOptions struct {
+	K *int `json:"k,omitempty"`
+}
+
+// RelatedPapersOptions configures RelatedPapers.
+type RelatedPapersOptions struct {
+	Mode   string   `json:"mode,omitempty"`
+	K      *int     `json:"k,omitempty"`
+	Rerank *bool    `json:"rerank,omitempty"`
+	Anchor []string `json:"anchor,omitempty"`
+}
+
+// SearchGitHubOptions configures SearchGitHub.
+type SearchGitHubOptions struct {
+	K *int `json:"k,omitempty"`
 }
 
 // CrawlResponse is returned when starting an async crawl.

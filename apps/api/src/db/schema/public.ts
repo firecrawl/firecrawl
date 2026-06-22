@@ -20,6 +20,16 @@ const ts = (name: string) =>
 const bigintNum = (name: string) => bigint(name, { mode: "number" });
 const num = (name: string) => numeric(name, { mode: "number" });
 
+// Keyless free-tier credit usage log (see keyless_credit_usage migration).
+// team_id is the deterministic per-IP keyless team UUID; ip is the raw client IP.
+export const keyless_credit_usage = pgTable("keyless_credit_usage", {
+  id: bigintNum("id").notNull().generatedByDefaultAsIdentity(),
+  team_id: uuid("team_id").notNull(),
+  ip: text("ip").notNull(),
+  credits_used: integer("credits_used").notNull(),
+  created_at: ts("created_at").notNull().defaultNow(),
+});
+
 export const agent_sponsors = pgTable("agent_sponsors", {
   id: bigintNum("id").notNull().generatedByDefaultAsIdentity(),
   email: text("email").notNull(),
@@ -151,6 +161,42 @@ export const deep_researches = pgTable("deep_researches", {
   cost_tracking: jsonb("cost_tracking"),
   options: jsonb("options"),
 });
+
+const researchEndpointTable = (name: string) =>
+  pgTable(name, {
+    id: uuid("id").notNull(),
+    request_id: uuid("request_id").notNull(),
+    target: text("target").notNull(),
+    team_id: uuid("team_id").notNull(),
+    options: jsonb("options"),
+    response: jsonb("response"),
+    num_results: integer("num_results").notNull(),
+    time_taken: num("time_taken").notNull(),
+    credits_cost: integer("credits_cost").notNull(),
+    is_successful: boolean("is_successful").notNull(),
+    error: text("error"),
+    created_at: ts("created_at").notNull().defaultNow(),
+  });
+
+export const research_paper_searches = researchEndpointTable(
+  "research_paper_searches",
+);
+
+export const research_paper_inspects = researchEndpointTable(
+  "research_paper_inspects",
+);
+
+export const research_paper_reads = researchEndpointTable(
+  "research_paper_reads",
+);
+
+export const research_related_papers = researchEndpointTable(
+  "research_related_papers",
+);
+
+export const research_github_searches = researchEndpointTable(
+  "research_github_searches",
+);
 
 export const deterministic_json_scripts = pgTable(
   "deterministic_json_scripts",
@@ -457,16 +503,29 @@ export const scrapes = pgTable("scrapes", {
 
 export const search_feedback = pgTable("search_feedback", {
   id: uuid("id").notNull().defaultRandom(),
-  search_id: uuid("search_id").notNull(),
+  search_id: uuid("search_id"),
+  endpoint: text("endpoint").notNull().default("search"),
+  job_id: uuid("job_id"),
+  request_id: uuid("request_id"),
+  api_version: text("api_version").default("v2"),
   team_id: uuid("team_id").notNull(),
+  api_key_id: bigintNum("api_key_id"),
   overall_rating: text("overall_rating").notNull(),
+  issue_types: text("issue_types").array().notNull().default([]),
+  tags: text("tags").array().notNull().default([]),
+  comment: text("comment"),
   valuable_sources: jsonb("valuable_sources").notNull().default([]),
   missing_content: jsonb("missing_content").notNull().default([]),
   query_suggestions: text("query_suggestions"),
+  metadata: jsonb("metadata").notNull().default({}),
+  job_status: text("job_status"),
+  credits_billed: integer("credits_billed").notNull().default(0),
   integration: text("integration"),
   origin: text("origin"),
   credits_refunded: integer("credits_refunded").notNull().default(0),
+  refund_policy: jsonb("refund_policy"),
   created_at: ts("created_at").notNull().defaultNow(),
+  updated_at: ts("updated_at").notNull().defaultNow(),
 });
 
 export const searches = pgTable("searches", {

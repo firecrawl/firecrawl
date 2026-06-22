@@ -34,10 +34,21 @@ export async function finishCrawlSuper(job: NuQJob<any>) {
     zeroDataRetention: sc.internalOptions.zeroDataRetention,
   });
 
+  // On the FDB backend a completed member's input data is shed for ZDR crawls,
+  // so `job.data` can be null here. Prefer the member's job data when present,
+  // otherwise recover the crawl-scoped context persisted on the stored crawl.
+  const data = job.data;
+  const isV1 = data ? !!data.v1 : (sc.v1 ?? true);
+  const teamId = data?.team_id ?? sc.team_id;
+  const requestId = data?.requestId ?? sc.requestId ?? crawlId;
+  const zeroDataRetention = sc.zeroDataRetention || data?.zeroDataRetention;
+  const webhook = data?.webhook ?? sc.webhook;
+  const monitoring = data?.monitoring;
+
   logger.info("Finishing crawl");
   await finishCrawl(crawlId, logger);
 
-  if (!job.data.v1) {
+  if (!isV1) {
     const jobIDs = await getCrawlJobs(crawlId);
 
     const jobs = (await getJobs(jobIDs)).sort(
@@ -62,19 +73,19 @@ export async function finishCrawlSuper(job: NuQJob<any>) {
       await logCrawl(
         {
           id: crawlId,
-          request_id: job.data.requestId ?? crawlId,
+          request_id: requestId,
           url: sc.originUrl!,
-          team_id: job.data.team_id,
+          team_id: teamId,
           options: sc.crawlerOptions,
           num_docs: fullDocs.length,
           credits_cost: fullDocs.reduce(
             (acc, doc) => acc + (doc?.metadata?.creditsUsed ?? 0),
             0,
           ),
-          zeroDataRetention: sc.zeroDataRetention || job.data.zeroDataRetention,
+          zeroDataRetention,
           cancelled: sc.cancelled ?? false,
-          monitor_id: job.data.monitoring?.monitorId,
-          monitor_check_id: job.data.monitoring?.checkId,
+          monitor_id: monitoring?.monitorId,
+          monitor_check_id: monitoring?.checkId,
         },
         false,
       );
@@ -82,14 +93,14 @@ export async function finishCrawlSuper(job: NuQJob<any>) {
       await logBatchScrape(
         {
           id: crawlId,
-          request_id: job.data.requestId ?? crawlId,
-          team_id: job.data.team_id,
+          request_id: requestId,
+          team_id: teamId,
           num_docs: fullDocs.length,
           credits_cost: fullDocs.reduce(
             (acc, doc) => acc + (doc?.metadata?.creditsUsed ?? 0),
             0,
           ),
-          zeroDataRetention: sc.zeroDataRetention || job.data.zeroDataRetention,
+          zeroDataRetention,
           cancelled: sc.cancelled ?? false,
         },
         false,
@@ -97,11 +108,11 @@ export async function finishCrawlSuper(job: NuQJob<any>) {
     }
 
     // v0 web hooks, call when done with all the data
-    if (!job.data.v1) {
+    if (!isV1) {
       const sender = await createWebhookSender({
-        teamId: job.data.team_id,
+        teamId,
         jobId: crawlId,
-        webhook: job.data.webhook,
+        webhook,
         v0: true,
       });
       if (sender) {
@@ -148,16 +159,16 @@ export async function finishCrawlSuper(job: NuQJob<any>) {
       await logCrawl(
         {
           id: crawlId,
-          request_id: job.data.requestId ?? crawlId,
+          request_id: requestId,
           url: sc.originUrl!,
-          team_id: job.data.team_id,
+          team_id: teamId,
           options: sc.crawlerOptions,
           num_docs: num_docs,
           credits_cost: credits_billed ?? 0,
-          zeroDataRetention: sc.zeroDataRetention || job.data.zeroDataRetention,
+          zeroDataRetention,
           cancelled: sc.cancelled ?? false,
-          monitor_id: job.data.monitoring?.monitorId,
-          monitor_check_id: job.data.monitoring?.checkId,
+          monitor_id: monitoring?.monitorId,
+          monitor_check_id: monitoring?.checkId,
         },
         false,
       );
@@ -165,11 +176,11 @@ export async function finishCrawlSuper(job: NuQJob<any>) {
       await logBatchScrape(
         {
           id: crawlId,
-          request_id: job.data.requestId ?? crawlId,
-          team_id: job.data.team_id,
+          request_id: requestId,
+          team_id: teamId,
           num_docs: num_docs,
           credits_cost: credits_billed ?? 0,
-          zeroDataRetention: sc.zeroDataRetention || job.data.zeroDataRetention,
+          zeroDataRetention,
           cancelled: sc.cancelled ?? false,
         },
         false,
@@ -177,11 +188,11 @@ export async function finishCrawlSuper(job: NuQJob<any>) {
     }
 
     // v1 web hooks, call when done with no data, but with event completed
-    if (job.data.v1 && job.data.webhook) {
+    if (isV1 && webhook) {
       const sender = await createWebhookSender({
-        teamId: job.data.team_id,
+        teamId,
         jobId: crawlId,
-        webhook: job.data.webhook,
+        webhook,
         v0: false,
       });
       if (sender) {

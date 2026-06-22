@@ -33,7 +33,10 @@ import { ZodError } from "zod";
 import { UNSUPPORTED_SITE_MESSAGE } from "../../lib/strings";
 import { fromV0ScrapeOptions } from "../v2/types";
 import { isSelfHosted } from "../../lib/deployment";
-import { crawlGroup } from "../../services/worker/nuq";
+import {
+  crawlGroup,
+  resolveNewGroupBackend,
+} from "../../services/worker/nuq-router";
 import { logRequest } from "../../services/logging/log_job";
 import { getScrapeZDR } from "../../lib/zdr-helpers";
 import { applyAgentAuthDiscoveryHeader } from "../../lib/agent-auth-discovery";
@@ -225,10 +228,16 @@ export async function crawlController(req: Request, res: Response) {
       sc.robots = await crawler.getRobotsTxt();
     } catch (_) {}
 
+    sc.queueBackend = await resolveNewGroupBackend(sc.team_id);
     await crawlGroup.addGroup(
       id,
       sc.team_id,
       (chunk?.flags?.crawlTtlHours ?? 24) * 60 * 60 * 1000,
+      {
+        backend: sc.queueBackend,
+        maxConcurrency: sc.maxConcurrency,
+        delaySeconds: sc.crawlerOptions?.delay,
+      },
     );
 
     await saveCrawl(id, sc);

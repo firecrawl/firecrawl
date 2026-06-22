@@ -4,14 +4,22 @@ import { authenticateUser } from "../auth";
 import { RateLimiterMode } from "../../../src/types";
 import { redisEvictConnection } from "../../../src/services/redis";
 import { logger } from "../../../src/lib/logger";
-import { getCrawl, getCrawlJobs } from "../../../src/lib/crawl-redis";
+import {
+  getCrawl,
+  getCrawlJobs,
+  type StoredCrawl,
+} from "../../../src/lib/crawl-redis";
 import { supabaseGetScrapesByRequestId } from "../../../src/lib/supabase-jobs";
 import * as Sentry from "@sentry/node";
 import { configDotenv } from "dotenv";
 import { toLegacyDocument } from "../v1/types";
 import type { DBScrape, PseudoJob } from "../v1/crawl-status";
 import { getJobFromGCS } from "../../lib/gcs-jobs";
-import { scrapeQueue, NuQJob } from "../../services/worker/nuq";
+import {
+  scrapeQueue,
+  NuQJob,
+  crawlGroup,
+} from "../../services/worker/nuq-router";
 import { includesFormat } from "../../lib/format-utils";
 import { getScrapeZDR } from "../../lib/zdr-helpers";
 import { applyAgentAuthDiscoveryHeader } from "../../lib/agent-auth-discovery";
@@ -91,6 +99,87 @@ async function getJobs(
   return jobs;
 }
 
+async function getFdbCrawlStatus(crawlId: string, sc: StoredCrawl) {
+  const group = await crawlGroup.getGroup(crawlId);
+  const numericStats = await scrapeQueue.getGroupNumericStats(
+    crawlId,
+    logger.child({ module: "v0-crawl-status", backend: "fdb" }),
+  );
+
+  const completed = numericStats.completed ?? 0;
+  const total =
+    completed +
+    (numericStats.active ?? 0) +
+    (numericStats.queued ?? 0) +
+    (numericStats.backlog ?? 0);
+
+  const doneJobs =
+    completed > 0
+      ? await scrapeQueue.getCrawlJobsForListing(
+          crawlId,
+          completed,
+          0,
+          logger.child({ module: "v0-crawl-status", backend: "fdb" }),
+        )
+      : [];
+
+  const scrapeBlobs = await Promise.all(
+    doneJobs.map(
+      async x =>
+        [
+          x,
+          x.returnvalue ??
+            (config.GCS_BUCKET_NAME ? await getJobFromGCS(x.id) : null),
+        ] as const,
+    ),
+  );
+
+  const data = scrapeBlobs
+    .filter(
+      ([job, scrape]) =>
+        job.failedReason !== "Concurreny limit hit" && scrape != null,
+    )
+    .map(([, scrape]) => (Array.isArray(scrape) ? scrape[0] : scrape));
+
+  const firstScrapeOptions =
+    doneJobs.length > 0 && "scrapeOptions" in doneJobs[0].data
+      ? doneJobs[0].data.scrapeOptions
+      : undefined;
+
+  if (
+    firstScrapeOptions?.formats &&
+    !includesFormat(firstScrapeOptions.formats, "rawHtml")
+  ) {
+    data.forEach(item => {
+      if (item) {
+        delete item.rawHtml;
+      }
+    });
+  }
+
+  const jobStatus = sc.cancelled
+    ? "failed"
+    : group?.status === "completed"
+      ? "completed"
+      : "active";
+
+  return {
+    status: jobStatus,
+    current: completed,
+    total,
+    data:
+      jobStatus === "completed"
+        ? data.map(x => toLegacyDocument(x, sc.internalOptions))
+        : null,
+    partial_data:
+      jobStatus === "completed"
+        ? []
+        : data
+            .filter(x => x !== null)
+            .map(x => toLegacyDocument(x, sc.internalOptions)),
+  };
+}
+
 export async function crawlStatusController(req: Request, res: Response) {
   try {
     const auth = await authenticateUser(req, res, RateLimiterMode.CrawlStatus);
@@ -135,6 +224,11 @@ export async function crawlStatusController(req: Request, res: Response) {
     if (sc.team_id !== team_id) {
       return res.status(403).json({ error: "Forbidden" });
     }
+
+    if (sc.queueBackend === "fdb") {
+      return res.json(await getFdbCrawlStatus(req.params.jobId, sc));
+    }
+
     let jobIDs = await getCrawlJobs(req.params.jobId);
     let jobs = await getJobs(req.params.jobId, jobIDs);
     let jobStatuses = jobs.map(x => x.status);

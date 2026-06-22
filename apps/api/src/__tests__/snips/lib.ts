@@ -9,7 +9,6 @@ import { TeamFlags } from "../../controllers/v1/types";
 // =========================================
 
 export const TEST_API_URL = config.TEST_API_URL;
-export const TEST_URL = TEST_API_URL; // backwards compat temp
 
 const stripTrailingSlash = (url: string) => {
   if (url.length < 1) throw new Error("Invalid URL supplied");
@@ -27,6 +26,8 @@ export const HAS_FIREWORKS = !!process.env.FIREWORKS_API_KEY;
 export const HAS_FIRE_ENGINE = !!config.FIRE_ENGINE_BETA_URL;
 export const HAS_PLAYWRIGHT = !!config.PLAYWRIGHT_MICROSERVICE_URL;
 export const HAS_PROXY = !!config.PROXY_SERVER;
+export const HAS_PRODUCT_SERVICE = !!config.PRODUCT_EXTRACTION_SERVICE_URL;
+export const HAS_MENU_SERVICE = !!config.MENU_EXTRACTION_SERVICE_URL;
 
 export const HAS_SEARCH = TEST_PRODUCTION || !!config.SEARXNG_ENDPOINT;
 

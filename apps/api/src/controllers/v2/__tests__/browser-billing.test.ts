@@ -1,27 +1,27 @@
-import { jest } from "@jest/globals";
+import { vi } from "vitest";
 
 // ---------------------------------------------------------------------------
 // Mocks — must come before imports
 // ---------------------------------------------------------------------------
 
-const mockGetValue = jest.fn<(key: string) => Promise<string | null>>();
+const mockGetValue = vi.fn<(key: string) => Promise<string | null>>();
 const mockSetValue =
-  jest.fn<(key: string, value: string, ttl: number) => Promise<void>>();
-const mockDeleteKey = jest.fn<(key: string) => Promise<void>>();
+  vi.fn<(key: string, value: string, ttl: number) => Promise<void>>();
+const mockDeleteKey = vi.fn<(key: string) => Promise<void>>();
 
-jest.mock("../../../services/redis", () => ({
+vi.mock("../../../services/redis", () => ({
   getValue: (key: string) => mockGetValue(key),
   setValue: (key: string, value: string, ttl: number) =>
     mockSetValue(key, value, ttl),
   deleteKey: (key: string) => mockDeleteKey(key),
 }));
 
-jest.mock("../../../lib/logger", () => ({
+vi.mock("../../../lib/logger", () => ({
   logger: {
-    info: jest.fn(),
-    warn: jest.fn(),
-    error: jest.fn(),
-    child: jest.fn().mockReturnThis(),
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+    child: vi.fn().mockReturnThis(),
   },
 }));
 
@@ -42,7 +42,7 @@ import {
 // ---------------------------------------------------------------------------
 
 beforeEach(() => {
-  jest.clearAllMocks();
+  vi.clearAllMocks();
   mockGetValue.mockResolvedValue(null);
   mockSetValue.mockResolvedValue(undefined);
   mockDeleteKey.mockResolvedValue(undefined);

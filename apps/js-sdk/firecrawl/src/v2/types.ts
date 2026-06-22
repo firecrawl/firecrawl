@@ -13,6 +13,8 @@ export type FormatString =
   | "json"
   | "attributes"
   | "branding"
+  | "product"
+  | "menu"
   | "audio"
   | "video";
 
@@ -427,6 +429,103 @@ export interface BrandingProfile {
   [key: string]: unknown;
 }
 
+export interface ProductPrice {
+  amount: number;
+  currency?: string;
+  formatted?: string;
+}
+
+export interface ProductAvailability {
+  inStock: boolean;
+  text?: string;
+}
+
+export interface ProductImage {
+  url: string;
+  alt?: string;
+}
+
+export interface ProductSale {
+  originalPrice: ProductPrice;
+}
+
+export interface ProductVariant {
+  id?: string;
+  sku?: string;
+  title?: string;
+  values?: Record<string, unknown>;
+  price?: ProductPrice;
+  sale?: ProductSale;
+  availability: ProductAvailability;
+  images?: ProductImage[];
+}
+
+export interface ProductProfile {
+  title: string;
+  brand?: string;
+  category?: string;
+  url: string;
+  description?: string;
+  variants: ProductVariant[];
+}
+
+export interface MenuPrice {
+  amount: number;
+  currency?: string;
+  formatted?: string;
+}
+
+export interface MenuAvailability {
+  inStock: boolean;
+  text?: string;
+}
+
+export interface MenuImage {
+  url: string;
+  alt?: string;
+}
+
+export interface MenuItemIdentifiers {
+  merchantItemId?: string;
+}
+
+export interface MenuItem {
+  id: string;
+  name: string;
+  description?: string;
+  images: MenuImage[];
+  price?: MenuPrice;
+  availability: MenuAvailability;
+  dietary: string[];
+  calories?: number;
+  optionGroups: unknown[];
+  identifiers: MenuItemIdentifiers;
+  url?: string;
+  sourceUrl: string;
+}
+
+export interface MenuSection {
+  id: string;
+  name: string;
+  description?: string;
+  items: MenuItem[];
+}
+
+export interface MenuMerchant {
+  name: string;
+  type?: string | null;
+  location?: unknown;
+}
+
+export interface MenuProfile {
+  isMenu: boolean;
+  confidence: number;
+  merchant: MenuMerchant;
+  currency?: string | null;
+  sections: MenuSection[];
+  sourceUrl: string;
+}
+
 export interface DocumentMetadata {
   // Common metadata fields
   title?: string;
@@ -509,6 +608,8 @@ export interface Document {
   warning?: string;
   changeTracking?: Record<string, unknown>;
   branding?: BrandingProfile;
+  product?: ProductProfile;
+  menu?: MenuProfile;
 }
 
 // Pagination configuration for auto-fetching pages from v2 endpoints that return a `next` URL
@@ -647,6 +748,7 @@ export interface BatchScrapeJob {
 }
 
 export interface MapData {
+  id?: string;
   links: SearchResultWeb[];
 }
 
@@ -660,6 +762,51 @@ export interface MapOptions {
   integration?: string;
   origin?: string;
   location?: LocationConfig;
+}
+
+export type FeedbackRating = "good" | "partial" | "bad";
+export type EndpointFeedbackEndpoint = "search" | "scrape" | "parse" | "map";
+
+export interface FeedbackValuableSource {
+  url: string;
+  reason?: string;
+}
+
+export interface FeedbackMissingContent {
+  topic: string;
+  description?: string;
+}
+
+export interface SearchFeedbackRequest {
+  rating: FeedbackRating;
+  valuableSources?: FeedbackValuableSource[];
+  missingContent?: FeedbackMissingContent[];
+  querySuggestions?: string;
+  integration?: string | null;
+  origin?: string;
+}
+
+export interface EndpointFeedbackRequest extends SearchFeedbackRequest {
+  endpoint: EndpointFeedbackEndpoint;
+  jobId: string;
+  issues?: string[];
+  tags?: string[];
+  note?: string;
+  url?: string;
+  pageNumbers?: number[];
+  /** Small endpoint-specific metadata object. Must be 8KB or smaller. */
+  metadata?: Record<string, unknown>;
+}
+
+export interface FeedbackResponse {
+  success: true;
+  feedbackId: string;
+  creditsRefunded: number;
+  alreadySubmitted?: boolean;
+  dailyCapReached?: boolean;
+  creditsRefundedToday?: number;
+  dailyRefundCap?: number;
+  warning?: string;
 }
 
 /**
@@ -1069,6 +1216,7 @@ export interface BrowserCreateResponse {
 
 export interface BrowserExecuteResponse {
   success: boolean;
+  cdpUrl?: string;
   liveViewUrl?: string;
   interactiveLiveViewUrl?: string;
   output?: string;
@@ -1129,16 +1277,18 @@ export interface PaperSignals {
   structural: number;
   /** Semantic score from the intent abstract search (0 if absent). */
   semantic: number;
-  /** Citation-graph PageRank of the candidate. */
-  pagerank: number;
+  /** Citation-graph article-rank score of the candidate. */
+  articleRank: number;
   /** Number of distinct seeds connected to this candidate. */
-  seed_overlap: number;
+  seedOverlap: number;
 }
 
-/** A ranked paper. `paper_id` is canonical; arXiv lives in `ids`. */
+/** A ranked paper. `paperId` is canonical; arXiv lives in `ids`. */
 export interface PaperResult {
   /** Canonical paper id — the Milvus INT64 primary key as a decimal string. */
-  paper_id: string;
+  paperId: string;
+  /** Preferred cite/fetch identifier such as `arxiv:<id>`, `pmid:<id>`, or `doi:<id>`. */
+  primaryId: string;
   ids?: IdMap;
   title: string;
   abstract: string;
@@ -1149,7 +1299,7 @@ export interface PaperResult {
 }
 
 export interface PaperMetadata {
-  paper_id: string;
+  paperId: string;
   ids?: IdMap;
   title: string;
   abstract: string;
@@ -1158,9 +1308,9 @@ export interface PaperMetadata {
   /** arXiv categories. Omitted if unknown. */
   categories?: string[];
   /** Original creation date string (format varies). Omitted if unknown. */
-  created_date?: string;
+  createdDate?: string;
   /** Last-updated date string. Omitted if unknown. */
-  update_date?: string;
+  updateDate?: string;
 }
 
 export interface Passage {
@@ -1171,17 +1321,20 @@ export interface Passage {
 }
 
 export interface SearchPapersResponse {
+  success: boolean;
   results: PaperResult[];
 }
 
 export interface PaperMetadataResponse {
+  success: boolean;
   paper: PaperMetadata;
 }
 
 export interface ReadPaperResponse {
+  success: boolean;
   paper: PaperMetadata;
   /** Resolved canonical paper id (empty string if not found via id-key). */
-  paper_id: string;
+  paperId: string;
   /** Echo of the read query. */
   query: string;
   /** Top matching in-body passages. */
@@ -1189,10 +1342,11 @@ export interface ReadPaperResponse {
 }
 
 export interface SimilarPapersResponse {
+  success: boolean;
   /** Ranked related papers; each carries `signals`. */
   results: PaperResult[];
   /** Number of resolved candidates considered before truncation to `k`. */
-  pool_size: number;
+  poolSize: number;
   /** True if more resolved candidates existed than were returned. */
   truncated: boolean;
   /** Human-readable note when no results are produced. */
@@ -1205,11 +1359,12 @@ export interface GitHubScoreBreakdown {
   semantic?: number;
   lexical?: number;
   fusion?: number;
+  rerank?: number;
 }
 
 export interface GitHubSearchItem {
-  resultType: "github_history" | "repo_readme";
-  /** `owner/name`. */
+  resultType: "github_history" | "repo_readme" | "web";
+  /** `owner/name`; empty for web results whose URL is not a repo page. */
   repo: string;
   url: string;
   /** History page type (e.g. `issue`, `pull`). Omitted for readmes. */
@@ -1220,6 +1375,8 @@ export interface GitHubSearchItem {
   segmentCount?: number;
   /** Readme URL (readme results). Omitted otherwise. */
   readmeUrl?: string;
+  /** SERP page title. Only set on web results. */
+  title?: string;
   /** Short matched excerpt. */
   snippet: string;
   /** Full matched content in markdown. Omitted unless available. */
@@ -1228,6 +1385,7 @@ export interface GitHubSearchItem {
 }
 
 export interface GitHubSearchResponse {
+  success: boolean;
   results: GitHubSearchItem[];
 }
 

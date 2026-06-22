@@ -41,6 +41,7 @@ defmodule Firecrawl do
   @type response :: {:ok, Req.Response.t()} | {:error, Exception.t() | Firecrawl.Error.t()}
 
   @base_url "https://api.firecrawl.dev/v2"
+  @sdk_origin "elixir-sdk@1.6.1"
 
   defp client(opts) do
     api_key =
@@ -48,43 +49,29 @@ defmodule Firecrawl do
         Application.get_env(:firecrawl, :api_key)
       end)
 
+    # A nil/empty key is allowed: scrape, search, and interact fall back to the
+    # keyless free tier (rate-limited per IP). Other endpoints return 401 from the
+    # API until a key is provided.
     api_key =
       case api_key do
         key when is_binary(key) ->
           case String.trim(key) do
-            "" ->
-              raise """
-              Firecrawl API key not found or empty. Set it in your config:
-
-                  config :firecrawl, api_key: "fc-your-api-key"
-
-              Or pass it as an option:
-
-                  Firecrawl.scrape_and_extract_from_url([url: "..."], api_key: "fc-your-api-key")
-              """
-
-            trimmed ->
-              trimmed
+            "" -> nil
+            trimmed -> trimmed
           end
 
         _ ->
-          raise """
-          Firecrawl API key not found or empty. Set it in your config:
-
-              config :firecrawl, api_key: "fc-your-api-key"
-
-          Or pass it as an option:
-
-              Firecrawl.scrape_and_extract_from_url([url: "..."], api_key: "fc-your-api-key")
-          """
+          nil
       end
 
     {base_url, opts} = Keyword.pop(opts, :base_url, @base_url)
     opts = Keyword.delete(opts, :api_key)
 
+    headers = if api_key, do: [{"authorization", "Bearer #{api_key}"}], else: []
+
     Req.new(
       base_url: base_url,
-      headers: [{"authorization", "Bearer #{api_key}"}]
+      headers: headers
     )
     |> Req.merge(opts)
     |> Req.Request.append_response_steps(firecrawl_error_handler: &handle_api_error/1)
@@ -97,10 +84,14 @@ defmodule Firecrawl do
   defp handle_api_error({request, response}), do: {request, response}
 
   defp to_body(validated_params, key_mapping) do
-    Map.new(validated_params, fn {k, v} ->
+    validated_params
+    |> Map.new(fn {k, v} ->
       json_key = Map.fetch!(key_mapping, k)
       {json_key, to_json_value(v)}
     end)
+    # Identify the SDK so the API can grant the keyless free tier; harmless
+    # telemetry on keyed requests.
+    |> Map.put_new("origin", @sdk_origin)
   end
 
   defp to_query(validated_params, key_mapping) do
@@ -1203,6 +1194,149 @@ defmodule Firecrawl do
   def search_and_scrape!(params \\ [], opts \\ []) do
     params = NimbleOptions.validate!(params, @search_and_scrape_schema)
     Req.post!(client(opts), url: "/search", json: to_body(params, @search_and_scrape_key_mapping))
+  end
+
+  @research_search_papers_schema NimbleOptions.new!([
+    authors: [type: {:list, :string}],
+    categories: [type: {:list, :string}],
+    from: [type: :string],
+    k: [type: :integer],
+    query: [type: :string, required: true],
+    to: [type: :string]
+  ])
+
+  @research_search_papers_key_mapping %{authors: "authors", categories: "categories", from: "from", k: "k", query: "query", to: "to"}
+
+  @doc """
+  Search research papers.
+
+  `GET /search/research/papers`
+  """
+  @spec search_papers(keyword(), keyword()) :: response()
+  def search_papers(params \\ [], opts \\ []) do
+    with {:ok, params} <- NimbleOptions.validate(params, @research_search_papers_schema) do
+      Req.get(client(opts), url: "/search/research/papers", params: [{"origin", @sdk_origin} | to_query(params, @research_search_papers_key_mapping)])
+    end
+  end
+
+  @doc """
+  Bang variant of `search_papers`. Raises on error.
+  """
+  @spec search_papers!(keyword(), keyword()) :: Req.Response.t()
+  def search_papers!(params \\ [], opts \\ []) do
+    params = NimbleOptions.validate!(params, @research_search_papers_schema)
+    Req.get!(client(opts), url: "/search/research/papers", params: [{"origin", @sdk_origin} | to_query(params, @research_search_papers_key_mapping)])
+  end
+
+  @doc """
+  Inspect paper metadata.
+
+  `GET /search/research/papers/{id}`
+  """
+  @spec inspect_paper(String.t(), keyword()) :: response()
+  def inspect_paper(id, opts \\ []) do
+    Req.get(client(opts),
+      url: "/search/research/papers/#{URI.encode_www_form(id)}",
+      params: [{"origin", @sdk_origin}]
+    )
+  end
+
+  @doc """
+  Bang variant of `inspect_paper`. Raises on error.
+  """
+  @spec inspect_paper!(String.t(), keyword()) :: Req.Response.t()
+  def inspect_paper!(id, opts \\ []) do
+    Req.get!(client(opts),
+      url: "/search/research/papers/#{URI.encode_www_form(id)}",
+      params: [{"origin", @sdk_origin}]
+    )
+  end
+
+  @research_read_paper_schema NimbleOptions.new!([
+    k: [type: :integer],
+    query: [type: :string, required: true]
+  ])
+
+  @research_read_paper_key_mapping %{k: "k", query: "query"}
+
+  @doc """
+  Read a paper with query-guided passages.
+
+  `GET /search/research/papers/{id}`
+  """
+  @spec read_paper(String.t(), keyword(), keyword()) :: response()
+  def read_paper(id, params \\ [], opts \\ []) do
+    with {:ok, params} <- NimbleOptions.validate(params, @research_read_paper_schema) do
+      Req.get(client(opts), url: "/search/research/papers/#{URI.encode_www_form(id)}", params: [{"origin", @sdk_origin} | to_query(params, @research_read_paper_key_mapping)])
+    end
+  end
+
+  @doc """
+  Bang variant of `read_paper`. Raises on error.
+  """
+  @spec read_paper!(String.t(), keyword(), keyword()) :: Req.Response.t()
+  def read_paper!(id, params \\ [], opts \\ []) do
+    params = NimbleOptions.validate!(params, @research_read_paper_schema)
+    Req.get!(client(opts), url: "/search/research/papers/#{URI.encode_www_form(id)}", params: [{"origin", @sdk_origin} | to_query(params, @research_read_paper_key_mapping)])
+  end
+
+  @research_related_papers_schema NimbleOptions.new!([
+    anchor: [type: {:list, :string}],
+    intent: [type: :string, required: true],
+    k: [type: :integer],
+    mode: [type: {:in, [:similar, :citers, :references, "similar", "citers", "references"]}],
+    rerank: [type: :boolean]
+  ])
+
+  @research_related_papers_key_mapping %{anchor: "anchor", intent: "intent", k: "k", mode: "mode", rerank: "rerank"}
+
+  @doc """
+  Find papers related to a paper.
+
+  `GET /search/research/papers/{id}/similar`
+  """
+  @spec related_papers(String.t(), keyword(), keyword()) :: response()
+  def related_papers(id, params \\ [], opts \\ []) do
+    with {:ok, params} <- NimbleOptions.validate(params, @research_related_papers_schema) do
+      Req.get(client(opts), url: "/search/research/papers/#{URI.encode_www_form(id)}/similar", params: [{"origin", @sdk_origin} | to_query(params, @research_related_papers_key_mapping)])
+    end
+  end
+
+  @doc """
+  Bang variant of `related_papers`. Raises on error.
+  """
+  @spec related_papers!(String.t(), keyword(), keyword()) :: Req.Response.t()
+  def related_papers!(id, params \\ [], opts \\ []) do
+    params = NimbleOptions.validate!(params, @research_related_papers_schema)
+    Req.get!(client(opts), url: "/search/research/papers/#{URI.encode_www_form(id)}/similar", params: [{"origin", @sdk_origin} | to_query(params, @research_related_papers_key_mapping)])
+  end
+
+  @research_search_github_schema NimbleOptions.new!([
+    k: [type: :integer],
+    query: [type: :string, required: true]
+  ])
+
+  @research_search_github_key_mapping %{k: "k", query: "query"}
+
+  @doc """
+  Search GitHub research content.
+
+  `GET /search/research/github`
+  """
+  @spec search_github(keyword(), keyword()) :: response()
+  def search_github(params \\ [], opts \\ []) do
+    with {:ok, params} <- NimbleOptions.validate(params, @research_search_github_schema) do
+      Req.get(client(opts), url: "/search/research/github", params: [{"origin", @sdk_origin} | to_query(params, @research_search_github_key_mapping)])
+    end
+  end
+
+  @doc """
+  Bang variant of `search_github`. Raises on error.
+  """
+  @spec search_github!(keyword(), keyword()) :: Req.Response.t()
+  def search_github!(params \\ [], opts \\ []) do
+    params = NimbleOptions.validate!(params, @research_search_github_schema)
+    Req.get!(client(opts), url: "/search/research/github", params: [{"origin", @sdk_origin} | to_query(params, @research_search_github_key_mapping)])
   end
 
 

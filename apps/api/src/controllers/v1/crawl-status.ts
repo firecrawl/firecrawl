@@ -28,7 +28,7 @@ import {
   NuQJob,
   NuQJobStatus,
   crawlGroup,
-} from "../../services/worker/nuq";
+} from "../../services/worker/nuq-router";
 import { ScrapeJobSingleUrls } from "../../types";
 configDotenv();
 

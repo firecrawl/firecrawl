@@ -39,9 +39,10 @@ module Firecrawl
       backoff_factor: DEFAULT_BACKOFF_FACTOR
     )
       resolved_key = api_key || ENV["FIRECRAWL_API_KEY"]
-      if resolved_key.nil? || resolved_key.strip.empty?
-        raise FirecrawlError, "API key is required. Provide api_key: or set FIRECRAWL_API_KEY environment variable."
-      end
+      # A nil/empty key is allowed: scrape, search, and interact fall back to the
+      # keyless free tier (rate-limited per IP). Other methods return 401 from the
+      # API until a key is provided.
+      resolved_key = nil if resolved_key.nil? || resolved_key.strip.empty?
 
       resolved_url = api_url || ENV["FIRECRAWL_API_URL"] || DEFAULT_API_URL
       unless resolved_url.match?(%r{\Ahttps?://}i)
@@ -78,9 +79,61 @@ module Firecrawl
 
       body = { "url" => url }
       body.merge!(options.to_h) if options
+      body["origin"] ||= "ruby-sdk@#{Firecrawl::VERSION}"
       raw = @http.post("/v2/scrape", body)
       data = raw["data"] || raw
       Models::Document.new(data)
+    end
+
+    # Search research papers.
+    #
+    # @param query [String] research query
+    # @param options [Hash] optional query parameters
+    # @return [Hash]
+    def search_papers(query, options = {})
+      @http.get("/v2/search/research/papers#{query(options.merge("query" => query, "origin" => "ruby-sdk@#{Firecrawl::VERSION}"))}")
+    end
+
+    # Inspect paper metadata.
+    #
+    # @param paper_id [String] paper identifier
+    # @return [Hash]
+    def inspect_paper(paper_id)
+      raise ArgumentError, "Paper ID is required" if paper_id.nil?
+      @http.get("/v2/search/research/papers/#{URI.encode_www_form_component(paper_id)}")
+    end
+
+    # Read a paper with query-guided passages.
+    #
+    # @param paper_id [String] paper identifier
+    # @param query_text [String] passage query
+    # @param options [Hash] optional query parameters
+    # @return [Hash]
+    def read_paper(paper_id, query_text, options = {})
+      raise ArgumentError, "Paper ID is required" if paper_id.nil?
+      path = "/v2/search/research/papers/#{URI.encode_www_form_component(paper_id)}"
+      @http.get("#{path}#{query(options.merge("query" => query_text, "origin" => "ruby-sdk@#{Firecrawl::VERSION}"))}")
+    end
+
+    # Find papers related to a paper.
+    #
+    # @param paper_id [String] paper identifier
+    # @param intent [String] relatedness intent
+    # @param options [Hash] optional query parameters
+    # @return [Hash]
+    def related_papers(paper_id, intent, options = {})
+      raise ArgumentError, "Paper ID is required" if paper_id.nil?
+      path = "/v2/search/research/papers/#{URI.encode_www_form_component(paper_id)}/similar"
+      @http.get("#{path}#{query(options.merge("intent" => intent, "origin" => "ruby-sdk@#{Firecrawl::VERSION}"))}")
+    end
+
+    # Search GitHub research content.
+    #
+    # @param query_text [String] GitHub query
+    # @param options [Hash] optional query parameters
+    # @return [Hash]
+    def search_github(query_text, options = {})
+      @http.get("/v2/search/research/github#{query(options.merge("query" => query_text, "origin" => "ruby-sdk@#{Firecrawl::VERSION}"))}")
     end
 
     # Interacts with the scrape-bound browser session for a scrape job.
@@ -96,6 +149,7 @@ module Firecrawl
 
       body = { "code" => code, "language" => language }
       body["timeout"] = timeout if timeout
+      body["origin"] ||= "ruby-sdk@#{Firecrawl::VERSION}"
       @http.post("/v2/scrape/#{job_id}/interact", body)
     end
 
@@ -377,6 +431,7 @@ module Firecrawl
 
       body = { "query" => query }
       body.merge!(options.to_h) if options
+      body["origin"] ||= "ruby-sdk@#{Firecrawl::VERSION}"
       raw = @http.post("/v2/search", body)
       data = raw["data"] || raw
       Models::SearchData.new(data)
@@ -461,9 +516,21 @@ module Firecrawl
 
     private
 
-    def query(**params)
-      compact = params.compact
-      compact.empty? ? "" : "?#{URI.encode_www_form(compact)}"
+    def query(params = nil, **kwargs)
+      params = (params || {}).merge(kwargs)
+      pairs = []
+      params.each do |key, value|
+        next if value.nil? || value == ""
+
+        values = value.is_a?(Array) ? value : [value]
+        values.each do |item|
+          next if item.nil? || item == ""
+
+          string_value = item == true ? "true" : item == false ? "false" : item.to_s
+          pairs << [key.to_s, string_value]
+        end
+      end
+      pairs.empty? ? "" : "?#{URI.encode_www_form(pairs)}"
     end
 
     def poll_crawl(job_id, poll_interval, timeout)

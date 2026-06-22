@@ -9,7 +9,8 @@ import {
 import * as Sentry from "@sentry/node";
 import { configDotenv } from "dotenv";
 import { RequestWithAuth, scrapeOptions } from "./types";
-import { crawlGroup, normalizeOwnerId } from "../../services/worker/nuq";
+import { crawlGroup } from "../../services/worker/nuq-router";
+import { normalizeOwnerId } from "../../lib/owner-id";
 import { removeConcurrencyLimitedJobs } from "../../lib/concurrency-limit";
 configDotenv();
 
@@ -50,8 +51,12 @@ export async function crawlCancelController(
       logger.error(error);
     }
 
-    const jobIds = await getCrawlJobs(req.params.jobId);
-    await removeConcurrencyLimitedJobs(sc.team_id, jobIds);
+    if (sc.queueBackend === "fdb") {
+      await crawlGroup.cancelGroup(req.params.jobId);
+    } else {
+      const jobIds = await getCrawlJobs(req.params.jobId);
+      await removeConcurrencyLimitedJobs(sc.team_id, jobIds);
+    }
 
     res.json({
       status: "cancelled",

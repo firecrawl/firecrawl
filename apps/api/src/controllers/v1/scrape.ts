@@ -23,6 +23,14 @@ import { logRequest } from "../../services/logging/log_job";
 import { getErrorContactMessage } from "../../lib/deployment";
 import { captureExceptionWithZdrCheck } from "../../services/sentry";
 import { getScrapeZDR } from "../../lib/zdr-helpers";
+import {
+  KEYLESS_CREDITS_MESSAGE,
+  adjustKeylessCredits,
+  logKeylessCreditUsage,
+  reserveKeylessCredits,
+} from "../../lib/keyless";
+import { projectScrapeCredits } from "../../lib/keyless-credit-projection";
+import { applyAgentAuthDiscoveryHeader } from "../../lib/agent-auth-discovery";
 
 export async function scrapeController(
   req: RequestWithAuth<{}, ScrapeResponse, ScrapeRequest>,
@@ -96,6 +104,30 @@ export async function scrapeController(
     req.body.timeout,
     req.auth.team_id,
   );
+  const projectedKeylessCredits = !isDirectToBullMQ
+    ? projectScrapeCredits(
+        scrapeOptions,
+        req.acuc?.flags ?? null,
+        zeroDataRetention ?? false,
+      )
+    : 0;
+  let reservedKeylessCredits = 0;
+  let reconciledKeylessCredits = false;
+
+  if (projectedKeylessCredits > 0) {
+    const reservation = await reserveKeylessCredits(
+      req.auth.team_id,
+      projectedKeylessCredits,
+    );
+    if (!reservation.ok) {
+      applyAgentAuthDiscoveryHeader(res);
+      return res.status(429).json({
+        success: false,
+        error: KEYLESS_CREDITS_MESSAGE,
+      });
+    }
+    reservedKeylessCredits = projectedKeylessCredits;
+  }
 
   const totalWait =
     (req.body.waitFor ?? 0) +
@@ -171,6 +203,7 @@ export async function scrapeController(
             zeroDataRetention: zeroDataRetention ?? false,
             apiKeyId: req.acuc?.api_key_id ?? null,
             concurrencyLimited: limited,
+            keylessReserved: reservedKeylessCredits > 0,
             logRequestPromise: logRequestPromise,
           },
         };
@@ -180,6 +213,13 @@ export async function scrapeController(
       },
     );
   } catch (e) {
+    if (reservedKeylessCredits > 0 && !reconciledKeylessCredits) {
+      reconciledKeylessCredits = true;
+      adjustKeylessCredits(req.auth.team_id, -reservedKeylessCredits).catch(
+        () => {},
+      );
+    }
+
     const timeoutErr =
       e instanceof TransportableError && e.code === "SCRAPE_TIMEOUT";
 
@@ -263,6 +303,18 @@ export async function scrapeController(
     if (doc && doc.rawHtml) {
       delete doc.rawHtml;
     }
+  }
+
+  if (reservedKeylessCredits > 0 && !reconciledKeylessCredits) {
+    reconciledKeylessCredits = true;
+    const actualKeylessCredits = doc?.metadata?.creditsUsed ?? 0;
+    adjustKeylessCredits(
+      req.auth.team_id,
+      actualKeylessCredits - reservedKeylessCredits,
+    ).catch(() => {});
+    logKeylessCreditUsage(req.auth.team_id, actualKeylessCredits).catch(
+      () => {},
+    );
   }
 
   const totalRequestTime = new Date().getTime() - middlewareStartTime;

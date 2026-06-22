@@ -83,6 +83,37 @@ $doc = $client->scrape('https://example.com/product', ScrapeOptions::with(
 echo $doc->getJson(); // Structured data
 ```
 
+### Product Extraction
+
+Use the `product` format on product pages for structured product extraction
+(title, brand, category, and per-variant price, availability, and images).
+It is the deterministic counterpart to the LLM-based `json` format, returned
+on the document's `getProduct()`.
+
+```php
+$doc = $client->scrape('https://example.com/product', ScrapeOptions::with(
+    formats: ['product'],
+));
+
+echo $doc->getProduct(); // Structured product data
+```
+
+### Menu Extraction
+
+Use the `menu` format on restaurant or merchant menu pages for structured menu
+extraction (merchant profile plus ordered sections, each holding items with
+per-item price, availability, dietary tags, and images). It is the
+deterministic counterpart to the LLM-based `json` format, returned on the
+document's `getMenu()`.
+
+```php
+$doc = $client->scrape('https://example.com/menu', ScrapeOptions::with(
+    formats: ['menu'],
+));
+
+echo $doc->getMenu(); // Structured menu data
+```
+
 ### Video Extraction
 
 Use the `video` format on supported video URLs, including YouTube and TikTok. The returned `video` field is a signed URL to the extracted video file.
@@ -99,7 +130,7 @@ echo $doc->getVideo();
 
 Upload a local file (`html`, `pdf`, `docx`, etc.) via multipart form data and
 parse it synchronously. Parse options intentionally exclude browser-only
-features such as change tracking, screenshot, branding, audio, video, actions,
+features such as change tracking, screenshot, branding, product, menu, audio, video, actions,
 waitFor, location, and mobile. The `proxy` option only accepts `"auto"` or `"basic"`.
 
 ```php

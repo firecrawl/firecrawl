@@ -1,6 +1,6 @@
 import { createOpenAI } from "@ai-sdk/openai";
 import { config } from "../config";
-import { createOllama } from "ollama-ai-provider";
+import { createOllama } from "ollama-ai-provider-v2";
 import { anthropic } from "@ai-sdk/anthropic";
 import { groq } from "@ai-sdk/groq";
 import { google } from "@ai-sdk/google";

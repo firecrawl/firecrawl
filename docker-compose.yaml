@@ -38,8 +38,8 @@ x-common-env: &common-env
   OPENAI_API_KEY: ${OPENAI_API_KEY}
   OPENAI_BASE_URL: ${OPENAI_BASE_URL}
   MODEL_NAME: ${MODEL_NAME}
-  MODEL_EMBEDDING_NAME: ${MODEL_EMBEDDING_NAME} 
-  OLLAMA_BASE_URL: ${OLLAMA_BASE_URL} 
+  MODEL_EMBEDDING_NAME: ${MODEL_EMBEDDING_NAME}
+  OLLAMA_BASE_URL: ${OLLAMA_BASE_URL}
   AUTUMN_SECRET_KEY: ${AUTUMN_SECRET_KEY}
   SLACK_WEBHOOK_URL: ${SLACK_WEBHOOK_URL}
   BULL_AUTH_KEY: ${BULL_AUTH_KEY}
@@ -55,6 +55,9 @@ x-common-env: &common-env
   SEARXNG_ENDPOINT: ${SEARXNG_ENDPOINT}
   SEARXNG_ENGINES: ${SEARXNG_ENGINES}
   SEARXNG_CATEGORIES: ${SEARXNG_CATEGORIES}
+  # Set NUQ_BACKEND=fdb to run the queue on FoundationDB instead of Postgres
+  NUQ_BACKEND: ${NUQ_BACKEND}
+  FDB_CLUSTER_FILE: ${NUQ_BACKEND:+/var/fdb/fdb.cluster}
 
 services:
   playwright-service:
@@ -106,6 +109,8 @@ services:
         condition: service_healthy
     ports:
       - "${PORT:-3002}:${INTERNAL_PORT:-3002}"
+    volumes:
+      - fdb-cluster-file:/var/fdb:ro
     command: node dist/src/harness.js --start-docker
     # Resource limits for Docker Compose (not Swarm)
     # Increase if you have more CPU cores/RAM available
@@ -129,7 +134,7 @@ services:
         max-size: "5m"
         max-file: "2"
         compress: "true"
-    
+
   rabbitmq:
     image: rabbitmq:3-management
     networks:
@@ -147,7 +152,7 @@ services:
         max-size: "5m"
         max-file: "2"
         compress: "true"
-  
+
   nuq-postgres:
     # NOTE: If you don't want to build the image locally,
     # comment out the build: statement and uncomment the image: statement
@@ -166,6 +171,45 @@ services:
         max-file: "3"
         compress: "true"
 
+  # FoundationDB queue backend (experimental). Enable by setting
+  # NUQ_BACKEND=fdb; the api container reads the shared cluster file from the
+  # fdb-cluster-file volume. Replaces nuq-postgres once stable.
+  foundationdb:
+    image: foundationdb/foundationdb:7.3.63
+    environment:
+      FDB_NETWORKING_MODE: container
+      FDB_COORDINATOR_PORT: 4500
+    networks:
+      - backend
+    volumes:
+      - fdb-data:/var/fdb/data
+      - fdb-cluster-file:/var/fdb
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+        compress: "true"
+
+  # one-shot: creates the database on first boot (no-op afterwards)
+  foundationdb-init:
+    image: foundationdb/foundationdb:7.3.63
+    depends_on:
+      - foundationdb
+    entrypoint:
+      - /bin/bash
+      - -c
+      - "sleep 5 && out=$(fdbcli -C /var/fdb/fdb.cluster --exec 'configure new single ssd' 2>&1); status=$$?; printf '%s\n' \"$$out\"; if [ \"$$status\" -eq 0 ]; then exit 0; fi; printf '%s\n' \"$$out\" | grep -Eiq 'already.*configured|database.*configured'"
+    volumes:
+      - fdb-cluster-file:/var/fdb
+    networks:
+      - backend
+    restart: "no"
+
 networks:
   backend:
     driver: bridge
+
+volumes:
+  fdb-data:
+  fdb-cluster-file:

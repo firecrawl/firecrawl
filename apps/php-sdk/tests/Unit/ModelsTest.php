@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 use Firecrawl\Models\CreditUsage;
 use Firecrawl\Models\Document;
+use Firecrawl\Models\Product;
+use Firecrawl\Models\Menu;
 use Firecrawl\Models\MapData;
 use Firecrawl\Models\BatchScrapeJob;
 use Firecrawl\Models\CrawlJob;
@@ -102,6 +104,175 @@ it('hydrates video URL in Document', function (): void {
 
     expect($doc->getMarkdown())->toBe('# Video');
     expect($doc->getVideo())->toBe('https://storage.googleapis.com/firecrawl/video.mp4');
+});
+
+it('hydrates product into Product model in Document', function (): void {
+    $doc = Document::fromArray([
+        'markdown' => '# Product',
+        'product' => [
+            'title' => 'Running Shoe',
+            'brand' => 'Acme',
+            'category' => 'Footwear',
+            'url' => 'https://example.com/shoe',
+            'description' => 'A fast running shoe.',
+            'variants' => [
+                [
+                    'id' => 'v1',
+                    'sku' => 'SHOE-RED-42',
+                    'title' => 'Red / 42',
+                    'values' => ['color' => 'red', 'size' => '42'],
+                    'price' => ['amount' => 99.99, 'currency' => 'USD', 'formatted' => '$99.99'],
+                    'sale' => ['originalPrice' => ['amount' => 129.99, 'currency' => 'USD']],
+                    'availability' => ['inStock' => false, 'text' => 'Sold out'],
+                    'images' => [['url' => 'https://example.com/shoe-red.jpg']],
+                ],
+                [
+                    'id' => 'v2',
+                    'title' => 'Blue / 42',
+                    'values' => ['color' => 'blue', 'size' => '42', 'limited' => true],
+                ],
+            ],
+        ],
+    ]);
+
+    $product = $doc->getProduct();
+
+    expect($product)->toBeInstanceOf(Product::class);
+    expect($product->getTitle())->toBe('Running Shoe');
+    expect($product->getBrand())->toBe('Acme');
+    expect($product->getCategory())->toBe('Footwear');
+    expect($product->getUrl())->toBe('https://example.com/shoe');
+    expect($product->getDescription())->toBe('A fast running shoe.');
+    expect($product->getVariants())->toHaveCount(2);
+
+    $v1 = $product->getVariants()[0];
+    expect($v1['id'])->toBe('v1');
+    expect($v1['values'])->toBe(['color' => 'red', 'size' => '42']);
+    expect($v1['price'])->toBe(['amount' => 99.99, 'currency' => 'USD', 'formatted' => '$99.99']);
+    expect($v1['sale'])->toBe(['originalPrice' => ['amount' => 129.99, 'currency' => 'USD']]);
+    expect($v1['availability'])->toBe(['inStock' => false, 'text' => 'Sold out']);
+    expect($v1['images'])->toBe([['url' => 'https://example.com/shoe-red.jpg']]);
+
+    // Availability is always present, even when omitted from the payload.
+    $v2 = $product->getVariants()[1];
+    expect($v2['values'])->toBe(['color' => 'blue', 'size' => '42', 'limited' => true]);
+    expect($v2['availability'])->toBe(['inStock' => false]);
+    expect(array_key_exists('sale', $v2))->toBeFalse();
+    expect(array_key_exists('price', $v2))->toBeFalse();
+});
+
+it('returns null product when absent in Document', function (): void {
+    $doc = Document::fromArray(['markdown' => '# No product']);
+
+    expect($doc->getProduct())->toBeNull();
+});
+
+it('hydrates menu into Menu model in Document', function (): void {
+    $doc = Document::fromArray([
+        'markdown' => '# Menu',
+        'menu' => [
+            'isMenu' => true,
+            'confidence' => 0.95,
+            'currency' => 'USD',
+            'sourceUrl' => 'https://example.com/menu',
+            'merchant' => [
+                'name' => 'Cafe Acme',
+                'type' => 'restaurant',
+                'location' => ['city' => 'Springfield'],
+            ],
+            'sections' => [
+                [
+                    'id' => 's1',
+                    'name' => 'Drinks',
+                    'description' => 'Hot and cold beverages.',
+                    'items' => [
+                        [
+                            'id' => 'i1',
+                            'name' => 'Latte',
+                            'description' => 'Espresso with steamed milk.',
+                            'url' => 'https://example.com/menu/latte',
+                            'sourceUrl' => 'https://example.com/menu',
+                            'images' => [['url' => 'https://example.com/latte.jpg']],
+                            'price' => ['amount' => 4.5, 'currency' => 'USD', 'formatted' => '$4.50'],
+                            'availability' => ['inStock' => true, 'text' => 'Available'],
+                            'dietary' => ['vegetarian'],
+                            'calories' => 120,
+                            'optionGroups' => [['name' => 'Size', 'options' => ['S', 'M', 'L']]],
+                            'identifiers' => ['merchantItemId' => 'LATTE-1'],
+                        ],
+                        [
+                            'id' => 'i2',
+                            'name' => 'Water',
+                            'sourceUrl' => 'https://example.com/menu',
+                        ],
+                    ],
+                ],
+            ],
+        ],
+    ]);
+
+    $menu = $doc->getMenu();
+
+    expect($menu)->toBeInstanceOf(Menu::class);
+    expect($menu->getIsMenu())->toBeTrue();
+    expect($menu->getConfidence())->toBe(0.95);
+    expect($menu->getCurrency())->toBe('USD');
+    expect($menu->getSourceUrl())->toBe('https://example.com/menu');
+    expect($menu->getMerchant())->toBe([
+        'name' => 'Cafe Acme',
+        'type' => 'restaurant',
+        'location' => ['city' => 'Springfield'],
+    ]);
+    expect($menu->getSections())->toHaveCount(1);
+
+    $section = $menu->getSections()[0];
+    expect($section['id'])->toBe('s1');
+    expect($section['name'])->toBe('Drinks');
+    expect($section['description'])->toBe('Hot and cold beverages.');
+    expect($section['items'])->toHaveCount(2);
+
+    $i1 = $section['items'][0];
+    expect($i1['id'])->toBe('i1');
+    expect($i1['name'])->toBe('Latte');
+    expect($i1['sourceUrl'])->toBe('https://example.com/menu');
+    expect($i1['images'])->toBe([['url' => 'https://example.com/latte.jpg']]);
+    expect($i1['price'])->toBe(['amount' => 4.5, 'currency' => 'USD', 'formatted' => '$4.50']);
+    expect($i1['availability'])->toBe(['inStock' => true, 'text' => 'Available']);
+    expect($i1['dietary'])->toBe(['vegetarian']);
+    expect($i1['calories'])->toBe(120.0);
+    expect($i1['optionGroups'])->toBe([['name' => 'Size', 'options' => ['S', 'M', 'L']]]);
+    expect($i1['identifiers'])->toBe(['merchantItemId' => 'LATTE-1']);
+
+    // Availability is always present, even when omitted from the payload.
+    $i2 = $section['items'][1];
+    expect($i2['name'])->toBe('Water');
+    expect($i2['availability'])->toBe(['inStock' => false]);
+    expect(array_key_exists('price', $i2))->toBeFalse();
+    expect(array_key_exists('calories', $i2))->toBeFalse();
+});
+
+it('returns null menu when absent in Document', function (): void {
+    $doc = Document::fromArray(['markdown' => '# No menu']);
+
+    expect($doc->getMenu())->toBeNull();
+});
+
+it('coerces non-string scalar identity fields without a TypeError under strict_types', function (): void {
+    // Defensive: upstream data could carry a non-string scalar (e.g. a numeric
+    // brand). Under declare(strict_types=1) these must be cast, not passed raw.
+    $product = Product::fromArray([
+        'title' => 'Widget',
+        'url' => 'https://example.com/widget',
+        'brand' => 1234,
+        'category' => 56.7,
+        'description' => true,
+        'variants' => [],
+    ]);
+
+    expect($product->getBrand())->toBe('1234');
+    expect($product->getCategory())->toBe('56.7');
+    expect($product->getDescription())->toBe('1');
+    expect($product->getVariants())->toBe([]);
 });
 
 it('preserves positional integration in ScrapeOptions::with', function (): void {

@@ -262,6 +262,159 @@ class BrandingProfile(BaseModel):
     personality: Optional[Dict[str, Any]] = None
 
 
+class ProductPrice(BaseModel):
+    """A monetary price for a product or variant."""
+
+    model_config = {"extra": "allow", "populate_by_name": True}
+
+    amount: float
+    currency: Optional[str] = None
+    formatted: Optional[str] = None
+
+
+class ProductAvailability(BaseModel):
+    """Availability information for a product or variant."""
+
+    model_config = {"extra": "allow", "populate_by_name": True}
+
+    in_stock: bool = Field(alias="inStock")
+    text: Optional[str] = None
+
+
+class ProductImage(BaseModel):
+    """An image associated with a product or variant."""
+
+    model_config = {"extra": "allow", "populate_by_name": True}
+
+    url: str
+    alt: Optional[str] = None
+
+
+class ProductSale(BaseModel):
+    """Sale information for a variant, holding the pre-sale price."""
+
+    model_config = {"extra": "allow", "populate_by_name": True}
+
+    original_price: ProductPrice = Field(alias="originalPrice")
+
+
+class ProductVariant(BaseModel):
+    """A purchasable variant of a product (e.g. a size/color combination)."""
+
+    model_config = {"extra": "allow", "populate_by_name": True}
+
+    id: Optional[str] = None
+    sku: Optional[str] = None
+    title: Optional[str] = None
+    values: Optional[Dict[str, Any]] = None
+    price: Optional[ProductPrice] = None
+    sale: Optional[ProductSale] = None
+    availability: ProductAvailability
+    images: Optional[List[ProductImage]] = None
+
+
+class ProductProfile(BaseModel):
+    """Structured product information extracted from a website."""
+
+    model_config = {"extra": "allow", "populate_by_name": True}
+
+    title: str
+    brand: Optional[str] = None
+    category: Optional[str] = None
+    url: str
+    description: Optional[str] = None
+    variants: List[ProductVariant] = Field(default_factory=list)
+
+
+class MenuPrice(BaseModel):
+    """A monetary price for a menu item."""
+
+    model_config = {"extra": "allow", "populate_by_name": True}
+
+    amount: float
+    currency: Optional[str] = None
+    formatted: Optional[str] = None
+
+
+class MenuAvailability(BaseModel):
+    """Availability information for a menu item."""
+
+    model_config = {"extra": "allow", "populate_by_name": True}
+
+    in_stock: bool = Field(alias="inStock")
+    text: Optional[str] = None
+
+
+class MenuImage(BaseModel):
+    """An image associated with a menu item."""
+
+    model_config = {"extra": "allow", "populate_by_name": True}
+
+    url: str
+    alt: Optional[str] = None
+
+
+class MenuItemIdentifiers(BaseModel):
+    """External identifiers for a menu item."""
+
+    model_config = {"extra": "allow", "populate_by_name": True}
+
+    merchant_item_id: Optional[str] = Field(default=None, alias="merchantItemId")
+
+
+class MenuItem(BaseModel):
+    """A single item on a menu."""
+
+    model_config = {"extra": "allow", "populate_by_name": True}
+
+    id: str
+    name: str
+    description: Optional[str] = None
+    images: List[MenuImage] = Field(default_factory=list)
+    price: Optional[MenuPrice] = None
+    availability: MenuAvailability
+    dietary: List[str] = Field(default_factory=list)
+    calories: Optional[float] = None
+    option_groups: List[Any] = Field(default_factory=list, alias="optionGroups")
+    identifiers: MenuItemIdentifiers = Field(default_factory=MenuItemIdentifiers)
+    url: Optional[str] = None
+    source_url: str = Field(alias="sourceUrl")
+
+
+class MenuSection(BaseModel):
+    """An ordered group of menu items."""
+
+    model_config = {"extra": "allow", "populate_by_name": True}
+
+    id: str
+    name: str
+    description: Optional[str] = None
+    items: List[MenuItem] = Field(default_factory=list)
+
+
+class MenuMerchant(BaseModel):
+    """The merchant a menu belongs to."""
+
+    model_config = {"extra": "allow", "populate_by_name": True}
+
+    name: str
+    type: Optional[str] = None
+    location: Optional[Any] = None
+
+
+class MenuProfile(BaseModel):
+    """Structured menu information extracted from a website."""
+
+    model_config = {"extra": "allow", "populate_by_name": True}
+
+    is_menu: bool = Field(alias="isMenu")
+    confidence: float
+    merchant: MenuMerchant
+    currency: Optional[str] = None
+    sections: List[MenuSection] = Field(default_factory=list)
+    source_url: str = Field(alias="sourceUrl")
+
+
 RedactPIIEntity = Literal[
     "PERSON",
     "EMAIL",
@@ -292,6 +445,8 @@ class Document(BaseModel):
     warning: Optional[str] = None
     change_tracking: Optional[Dict[str, Any]] = None
     branding: Optional[BrandingProfile] = None
+    product: Optional[ProductProfile] = None
+    menu: Optional[MenuProfile] = None
 
     @property
     def metadata_typed(self) -> DocumentMetadata:
@@ -415,6 +570,8 @@ FormatString = Literal[
     "json",
     "attributes",
     "branding",
+    "product",
+    "menu",
     "query",
     "audio",
     "video",
@@ -1158,6 +1315,7 @@ class BrowserExecuteResponse(BaseModel):
     """Response from executing code in a browser session."""
 
     success: bool
+    cdp_url: Optional[str] = None
     live_view_url: Optional[str] = None
     interactive_live_view_url: Optional[str] = None
     output: Optional[str] = None

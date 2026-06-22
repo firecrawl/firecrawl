@@ -26,7 +26,10 @@ import { logger as _logger } from "../../lib/logger";
 import { UNSUPPORTED_SITE_MESSAGE } from "../../lib/strings";
 import { isUrlBlocked } from "../../scraper/WebScraper/utils/blocklist";
 import { checkPermissions } from "../../lib/permissions";
-import { crawlGroup } from "../../services/worker/nuq";
+import {
+  crawlGroup,
+  resolveNewGroupBackend,
+} from "../../services/worker/nuq-router";
 import { logRequest } from "../../services/logging/log_job";
 import type { BillingMetadata } from "../../services/billing/types";
 import { getScrapeZDR } from "../../lib/zdr-helpers";
@@ -51,7 +54,8 @@ export async function batchScrapeController(
   }
 
   const zeroDataRetention =
-    getScrapeZDR(req.acuc?.flags) === "forced" || (req.body.zeroDataRetention ?? false);
+    getScrapeZDR(req.acuc?.flags) === "forced" ||
+    (req.body.zeroDataRetention ?? false);
 
   if (
     req.body.__agentInterop &&
@@ -174,6 +178,9 @@ export async function batchScrapeController(
         createdAt: Date.now(),
         maxConcurrency: req.body.maxConcurrency,
         zeroDataRetention,
+        v1: true,
+        webhook: req.body.webhook,
+        requestId: req.body.__agentInterop?.requestId ?? undefined,
       };
 
   if (req.body.appendToId) {
@@ -186,10 +193,16 @@ export async function batchScrapeController(
   }
 
   if (!req.body.appendToId) {
+    sc.queueBackend = await resolveNewGroupBackend(sc.team_id);
     await crawlGroup.addGroup(
       id,
       sc.team_id,
       (req.acuc?.flags?.crawlTtlHours ?? 24) * 60 * 60 * 1000,
+      {
+        backend: sc.queueBackend,
+        maxConcurrency: sc.maxConcurrency,
+        delaySeconds: sc.crawlerOptions?.delay,
+      },
     );
     await saveCrawl(id, sc);
     await markCrawlActive(id);

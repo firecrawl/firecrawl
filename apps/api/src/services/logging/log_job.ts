@@ -16,6 +16,7 @@ import {
   saveSearchToGCS,
 } from "../../lib/gcs-jobs";
 import { hasFormatOfType } from "../../lib/format-utils";
+import { keylessTeamUuid } from "../../lib/keyless";
 import type { Document, ScrapeOptions } from "../../controllers/v2/types";
 import type { CostTracking } from "../../lib/cost-tracking";
 import type { Logger } from "winston";
@@ -44,6 +45,11 @@ const tableMap: Record<string, PgTable> = {
   crawls: schema.crawls,
   batch_scrapes: schema.batch_scrapes,
   searches: schema.searches,
+  research_paper_searches: schema.research_paper_searches,
+  research_paper_inspects: schema.research_paper_inspects,
+  research_paper_reads: schema.research_paper_reads,
+  research_related_papers: schema.research_related_papers,
+  research_github_searches: schema.research_github_searches,
   extracts: schema.extracts,
   maps: schema.maps,
   llmstxts: schema.llmstxts,
@@ -165,7 +171,12 @@ type LoggedRequest = {
     | "parse"
     | "agent"
     | "browser"
-    | "interact";
+    | "interact"
+    | "research_paper_search"
+    | "research_paper_inspect"
+    | "research_paper_read"
+    | "research_related_papers"
+    | "research_github_search";
   api_version: string;
   team_id: string;
   origin?: string;
@@ -272,9 +283,10 @@ export async function logScrape(scrape: LoggedScrape, force: boolean = false) {
       error: scrape.error ?? null,
       time_taken: scrape.time_taken,
       team_id:
-        scrape.team_id === "preview" || scrape.team_id?.startsWith("preview_")
+        keylessTeamUuid(scrape.team_id) ??
+        (scrape.team_id === "preview" || scrape.team_id?.startsWith("preview_")
           ? previewTeamId
-          : scrape.team_id,
+          : scrape.team_id),
       options: scrape.zeroDataRetention ? null : scrape.options,
       cost_tracking: scrape.zeroDataRetention
         ? null
@@ -486,6 +498,76 @@ export async function logSearch(search: LoggedSearch, force: boolean = false) {
   if (search.results && !search.zeroDataRetention) {
     await saveSearchToGCS(search, logger);
   }
+}
+
+export type ResearchRequestKind =
+  | "research_paper_search"
+  | "research_paper_inspect"
+  | "research_paper_read"
+  | "research_related_papers"
+  | "research_github_search";
+
+export type ResearchTableName =
+  | "research_paper_searches"
+  | "research_paper_inspects"
+  | "research_paper_reads"
+  | "research_related_papers"
+  | "research_github_searches";
+
+type LoggedResearchEndpoint = {
+  table: ResearchTableName;
+  id: string;
+  request_id: string;
+  target: string;
+  team_id: string;
+  options: any;
+  response: any;
+  num_results: number;
+  time_taken: number;
+  credits_cost: number;
+  is_successful: boolean;
+  error?: string;
+  zeroDataRetention: boolean;
+};
+
+export async function logResearchEndpoint(
+  research: LoggedResearchEndpoint,
+  force: boolean = false,
+) {
+  const logger = _logger.child({
+    module: "log_job",
+    method: "logResearchEndpoint",
+    researchId: research.id,
+    requestId: research.request_id,
+    teamId: research.team_id,
+    zeroDataRetention: research.zeroDataRetention,
+  });
+
+  await robustInsert(
+    research.table,
+    {
+      id: research.id,
+      request_id: research.request_id,
+      target: research.zeroDataRetention
+        ? "<redacted due to zero data retention>"
+        : (sanitizeString(research.target) ?? ""),
+      team_id:
+        keylessTeamUuid(research.team_id) ??
+        (research.team_id === "preview" ||
+        research.team_id?.startsWith("preview_")
+          ? previewTeamId
+          : research.team_id),
+      options: research.zeroDataRetention ? null : research.options,
+      response: research.zeroDataRetention ? null : research.response,
+      num_results: research.num_results,
+      time_taken: research.time_taken,
+      credits_cost: research.credits_cost,
+      is_successful: research.is_successful,
+      error: research.zeroDataRetention ? null : (research.error ?? null),
+    },
+    force,
+    logger,
+  );
 }
 
 export type LoggedExtract = {

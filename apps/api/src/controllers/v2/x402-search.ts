@@ -23,7 +23,7 @@ import { db } from "../../db/connection";
 import * as schema from "../../db/schema";
 import { SearchV2Response } from "../../lib/entities";
 import { ScrapeJobTimeoutError } from "../../lib/error";
-import { scrapeQueue } from "../../services/worker/nuq";
+import { scrapeQueue } from "../../services/worker/nuq-router";
 import { z } from "zod";
 import {
   buildSearchQuery,

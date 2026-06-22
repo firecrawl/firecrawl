@@ -34,6 +34,8 @@ final class Document
         private readonly ?string $warning = null,
         private readonly ?array $changeTracking = null,
         private readonly ?array $branding = null,
+        private readonly ?Product $product = null,
+        private readonly ?Menu $menu = null,
     ) {}
 
     /** @param array<string, mixed> $data */
@@ -58,6 +60,12 @@ final class Document
             warning: $data['warning'] ?? null,
             changeTracking: $data['changeTracking'] ?? null,
             branding: $data['branding'] ?? null,
+            product: isset($data['product']) && is_array($data['product'])
+                ? Product::fromArray($data['product'])
+                : null,
+            menu: isset($data['menu']) && is_array($data['menu'])
+                ? Menu::fromArray($data['menu'])
+                : null,
         );
     }
 
@@ -156,5 +164,15 @@ final class Document
     public function getBranding(): ?array
     {
         return $this->branding;
+    }
+
+    public function getProduct(): ?Product
+    {
+        return $this->product;
+    }
+
+    public function getMenu(): ?Menu
+    {
+        return $this->menu;
     }
 }

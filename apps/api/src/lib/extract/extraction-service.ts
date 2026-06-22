@@ -155,13 +155,11 @@ async function performExtraction(
         apiKeyId,
         { endpoint: "extract", jobId: extractId },
         logger,
-      ).catch(
-        error => {
-          logger.error(
-            `Failed to bill team ${teamId} for ${creditsToBill} credits: ${error}`,
-          );
-        },
-      );
+      ).catch(error => {
+        logger.error(
+          `Failed to bill team ${teamId} for ${creditsToBill} credits: ${error}`,
+        );
+      });
 
       return {
         success: false,
@@ -673,13 +671,11 @@ async function performExtraction(
           apiKeyId,
           { endpoint: "extract", jobId: extractId },
           logger,
-        ).catch(
-          error => {
-            logger.error(
-              `Failed to bill team ${teamId} for ${creditsToBill} credits: ${error}`,
-            );
-          },
-        );
+        ).catch(error => {
+          logger.error(
+            `Failed to bill team ${teamId} for ${creditsToBill} credits: ${error}`,
+          );
+        });
         return {
           success: false,
           error: getErrorContactMessage(),
@@ -787,13 +783,11 @@ async function performExtraction(
           apiKeyId,
           { endpoint: "extract", jobId: extractId },
           logger,
-        ).catch(
-          error => {
-            logger.error(
-              `Failed to bill team ${teamId} for thinking tokens: ${error}`,
-            );
-          },
-        );
+        ).catch(error => {
+          logger.error(
+            `Failed to bill team ${teamId} for thinking tokens: ${error}`,
+          );
+        });
         return {
           success: false,
           error: error.message,
@@ -817,13 +811,11 @@ async function performExtraction(
           apiKeyId,
           { endpoint: "extract", jobId: extractId },
           logger,
-        ).catch(
-          error => {
-            logger.error(
-              `Failed to bill team ${teamId} for thinking tokens: ${error}`,
-            );
-          },
-        );
+        ).catch(error => {
+          logger.error(
+            `Failed to bill team ${teamId} for thinking tokens: ${error}`,
+          );
+        });
         await logExtract({
           id: extractId,
           request_id: extractId,
@@ -1011,13 +1003,11 @@ async function performExtraction(
       apiKeyId,
       { endpoint: "extract" },
       logger,
-    ).catch(
-      error => {
-        logger.error(
-          `Failed to bill team ${teamId} for ${creditsToBill} credits: ${error}`,
-        );
-      },
-    );
+    ).catch(error => {
+      logger.error(
+        `Failed to bill team ${teamId} for ${creditsToBill} credits: ${error}`,
+      );
+    });
 
     // Log job with token usage and sources
     logger.debug("Logging extract to database", {
@@ -1081,13 +1071,11 @@ async function performExtraction(
       apiKeyId,
       { endpoint: "extract" },
       logger,
-    ).catch(
-      error => {
-        logger.error(
-          `Failed to bill team ${teamId} for ${creditsToBill} credits: ${error}`,
-        );
-      },
-    );
+    ).catch(error => {
+      logger.error(
+        `Failed to bill team ${teamId} for ${creditsToBill} credits: ${error}`,
+      );
+    });
     await logExtract({
       id: extractId,
       request_id: extractId,

@@ -26,6 +26,14 @@ import { getErrorContactMessage } from "../../lib/deployment";
 import { captureExceptionWithZdrCheck } from "../../services/sentry";
 import type { BillingMetadata } from "../../services/billing/types";
 import { getScrapeZDR } from "../../lib/zdr-helpers";
+import {
+  KEYLESS_CREDITS_MESSAGE,
+  adjustKeylessCredits,
+  logKeylessCreditUsage,
+  reserveKeylessCredits,
+} from "../../lib/keyless";
+import { projectScrapeCredits } from "../../lib/keyless-credit-projection";
+import { applyAgentAuthDiscoveryHeader } from "../../lib/agent-auth-discovery";
 import path from "node:path";
 
 const AGENT_INTEROP_CONCURRENCY_BOOST = 3;
@@ -348,6 +356,34 @@ export async function parseController(
       const agentRequestId = req.body.__agentInterop?.requestId ?? null;
       const boostConcurrency =
         req.body.__agentInterop?.boostConcurrency ?? false;
+      const isDirectToBullMQ =
+        config.SEARCH_PREVIEW_TOKEN !== undefined &&
+        config.SEARCH_PREVIEW_TOKEN === req.body.__searchPreviewToken;
+      const projectedKeylessCredits =
+        shouldBill && !isDirectToBullMQ
+          ? projectScrapeCredits(
+              req.body,
+              req.acuc?.flags ?? null,
+              zeroDataRetention,
+            )
+          : 0;
+      let reservedKeylessCredits = 0;
+      let reconciledKeylessCredits = false;
+
+      if (projectedKeylessCredits > 0) {
+        const reservation = await reserveKeylessCredits(
+          req.auth.team_id,
+          projectedKeylessCredits,
+        );
+        if (!reservation.ok) {
+          applyAgentAuthDiscoveryHeader(res);
+          return res.status(429).json({
+            success: false,
+            error: KEYLESS_CREDITS_MESSAGE,
+          });
+        }
+        reservedKeylessCredits = projectedKeylessCredits;
+      }
 
       const logger = _logger.child({
         method: "parseController",
@@ -393,10 +429,6 @@ export async function parseController(
 
       const origin = req.body.origin;
       const timeout = req.body.timeout;
-
-      const isDirectToBullMQ =
-        config.SEARCH_PREVIEW_TOKEN !== undefined &&
-        config.SEARCH_PREVIEW_TOKEN === req.body.__searchPreviewToken;
 
       const totalWait = 0;
 
@@ -493,6 +525,7 @@ export async function parseController(
                     zeroDataRetention,
                     apiKeyId: req.acuc?.api_key_id ?? null,
                     concurrencyLimited: limited,
+                    keylessReserved: reservedKeylessCredits > 0,
                     requestId: agentRequestId ?? undefined,
                   },
                 };
@@ -511,6 +544,13 @@ export async function parseController(
           },
         );
       } catch (e) {
+        if (reservedKeylessCredits > 0 && !reconciledKeylessCredits) {
+          reconciledKeylessCredits = true;
+          adjustKeylessCredits(req.auth.team_id, -reservedKeylessCredits).catch(
+            () => {},
+          );
+        }
+
         const timeoutErr =
           e instanceof TransportableError && e.code === "SCRAPE_TIMEOUT";
 
@@ -613,6 +653,18 @@ export async function parseController(
         if (doc && doc.rawHtml) {
           delete doc.rawHtml;
         }
+      }
+
+      if (reservedKeylessCredits > 0 && !reconciledKeylessCredits) {
+        reconciledKeylessCredits = true;
+        const actualKeylessCredits = doc?.metadata?.creditsUsed ?? 0;
+        adjustKeylessCredits(
+          req.auth.team_id,
+          actualKeylessCredits - reservedKeylessCredits,
+        ).catch(() => {});
+        logKeylessCreditUsage(req.auth.team_id, actualKeylessCredits).catch(
+          () => {},
+        );
       }
 
       const totalRequestTime = new Date().getTime() - middlewareStartTime;

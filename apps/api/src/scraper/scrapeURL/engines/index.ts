@@ -649,6 +649,22 @@ export async function buildFallbackList(meta: Meta): Promise<
     }
   }
 
+  // When stealth proxy is explicitly requested (proxy: "stealth" | "enhanced"),
+  // restrict the fallback list to engines that actually support it. Stealth
+  // engines all carry negative quality, so without this the quality filter
+  // below would drop them in favor of a regular positive-quality engine,
+  // silently ignoring the user's request and never attempting stealth.
+  // The guard keeps the original list if no stealth-capable engine qualified
+  // (e.g. self-hosted without fire-engine) so scrapes don't break entirely.
+  if (meta.featureFlags.has("stealthProxy")) {
+    const stealthCapable = selectedEngines.filter(
+      x => !x.unsupportedFeatures.has("stealthProxy"),
+    );
+    if (stealthCapable.length > 0) {
+      selectedEngines = stealthCapable;
+    }
+  }
+
   if (
     selectedEngines.some(
       x => engineOptions[x.engine].quality > 0 && !x.engine.startsWith("index"),

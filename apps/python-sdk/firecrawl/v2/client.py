@@ -65,6 +65,7 @@ from .methods import extract as extract_module
 from .methods import agent as agent_module
 from .methods import browser as browser_module
 from .methods import monitor as monitor_module
+from .methods import research as research_module
 from .watcher import Watcher
 
 # Kwargs that map to ScrapeOptions fields. Used by async crawl normalization
@@ -111,11 +112,10 @@ class FirecrawlClient:
         if api_key is None:
             api_key = os.getenv("FIRECRAWL_API_KEY")
 
-        if self._is_cloud_service(api_url) and not api_key:
-            raise ValueError(
-                "API key is required for the cloud API. Set FIRECRAWL_API_KEY environment variable "
-                "or pass api_key parameter."
-            )
+        # No API key is allowed: scrape, search, and interact fall back to the
+        # keyless free tier (rate-limited per IP). The HTTP client only sends an
+        # Authorization header when a key is present, and other methods return
+        # 401 from the API until a key is provided.
 
         self.config = ClientConfig(
             api_key=api_key,
@@ -215,6 +215,21 @@ class FirecrawlClient:
             ).items() if v is not None}
         ) if any(v is not None for v in [formats, headers, include_tags, exclude_tags, only_main_content, timeout, wait_for, mobile, parsers, actions, location, skip_tls_verification, remove_base64_images, fast_mode, use_mock, block_ads, proxy, max_age, store_in_cache, lockdown, profile, integration]) else None
         return scrape_module.scrape(self.http_client, url, options)
+
+    def search_papers(self, query: str, **kwargs):
+        return research_module.search_papers(self.http_client, query, **kwargs)
+
+    def inspect_paper(self, paper_id: str):
+        return research_module.inspect_paper(self.http_client, paper_id)
+
+    def read_paper(self, paper_id: str, query: str, **kwargs):
+        return research_module.read_paper(self.http_client, paper_id, query, **kwargs)
+
+    def related_papers(self, paper_id: str, intent: str, **kwargs):
+        return research_module.related_papers(self.http_client, paper_id, intent, **kwargs)
+
+    def search_github(self, query: str, **kwargs):
+        return research_module.search_github(self.http_client, query, **kwargs)
 
     def interact(
         self,

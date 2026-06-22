@@ -1,5 +1,4 @@
 import { randomUUID } from "crypto";
-import { config } from "../../config";
 import { logger } from "../../lib/logger";
 import { eq } from "drizzle-orm";
 import { dbRr } from "../../db/connection";
@@ -33,26 +32,6 @@ export const SEARCH_CREDITS_FEATURE_ID = "SEARCH_CREDITS";
  */
 export function featureIdForBillingEndpoint(endpoint?: string): string {
   return endpoint === "search" ? SEARCH_CREDITS_FEATURE_ID : CREDITS_FEATURE_ID;
-}
-
-/**
- * Deterministic bucket for an org UUID.
- *
- * Takes the first 8 hex digits of the id (after stripping dashes) and maps
- * them to an integer in [0, 100).  The same orgId always lands in the same
- * bucket so the experiment decision is stable across requests.
- */
-export function orgBucket(orgId: string): number {
-  const hex = orgId.replace(/-/g, "").slice(0, 8);
-  return parseInt(hex, 16) % 100;
-}
-
-export function isAutumnRequestTrackEnabled(orgId?: string): boolean {
-  if (config.AUTUMN_REQUEST_TRACK_EXPERIMENT !== "true") return false;
-  if (!orgId || config.AUTUMN_REQUEST_TRACK_EXPERIMENT_PERCENT >= 100) {
-    return true;
-  }
-  return orgBucket(orgId) < config.AUTUMN_REQUEST_TRACK_EXPERIMENT_PERCENT;
 }
 
 const AUTUMN_DEFAULT_PLAN_ID = "free";
@@ -498,28 +477,17 @@ export class AutumnService {
 
   /**
    * Records a credit usage event directly in Autumn. Returns true on success.
-   *
-   * For request-scoped tracking the AUTUMN_REQUEST_TRACK_EXPERIMENT gate is
-   * evaluated using a stable bucket derived from the org UUID so the same
-   * org always gets the same answer for a given percent value.
    */
   async trackCredits({
     teamId,
     value,
     properties,
-    requestScoped = false,
     featureId = CREDITS_FEATURE_ID,
   }: TrackCreditsParams): Promise<boolean> {
-    if (requestScoped && !isAutumnRequestTrackEnabled()) return false;
     if (!autumnClient) return false;
     if (this.isPreviewTeam(teamId)) return false;
 
     try {
-      if (requestScoped) {
-        const orgId = await this.resolveOrgId(teamId);
-        if (!isAutumnRequestTrackEnabled(orgId)) return false;
-      }
-
       const customerId = await this.ensureTrackingContext(teamId);
       return await this.track({
         customerId,
@@ -534,7 +502,6 @@ export class AutumnService {
         {
           teamId,
           value,
-          requestScoped,
           error,
         },
       );

@@ -1911,6 +1911,186 @@
         }
       }
     },
+    "/feedback": {
+      "post": {
+        "summary": "Submit feedback for a v2 job",
+        "operationId": "submitEndpointFeedback",
+        "tags": ["Feedback"],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EndpointFeedbackRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Feedback recorded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FeedbackResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request body",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FeedbackErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Feedback is not available for this team",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FeedbackErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Job not found for this team",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FeedbackErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Feedback cannot be recorded for this job",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FeedbackErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FeedbackErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/search/{jobId}/feedback": {
+      "post": {
+        "summary": "Submit feedback for a search job",
+        "operationId": "submitSearchFeedback",
+        "tags": ["Search", "Feedback"],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "jobId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "Search job id returned by /search."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SearchFeedbackRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Feedback recorded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FeedbackResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request body",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FeedbackErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Feedback is not available for this team",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FeedbackErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Search not found for this team",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FeedbackErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Feedback cannot be recorded for this search",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FeedbackErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FeedbackErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/llmstxt": {
       "post": {
         "summary": "Generate LLMs.txt for a website",
@@ -2648,6 +2828,20 @@
             "format": "date-time",
             "description": "The date and time when the crawl will expire."
           },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "The date and time when the crawl was started."
+          },
+          "completedAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "The date and time when the crawl finished. Present only when the crawl is in a terminal state (`completed`, `failed`, or `cancelled`)."
+          },
+          "duration": {
+            "type": "number",
+            "description": "Crawl duration in seconds. For terminal crawls, this is the elapsed time from `createdAt` to `completedAt`. For in-progress crawls, it is the elapsed time from `createdAt` to now."
+          },
           "next": {
             "type": "string",
             "nullable": true,
@@ -2905,6 +3099,11 @@
           "success": {
             "type": "boolean"
           },
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "The map job id. Use this as jobId when submitting feedback."
+          },
           "links": {
             "type": "array",
             "items": {
@@ -2912,6 +3111,180 @@
             }
           }
         }
+      },
+      "FeedbackErrorResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "example": false
+          },
+          "error": {
+            "type": "string"
+          },
+          "feedbackErrorCode": {
+            "type": "string"
+          },
+          "details": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            }
+          }
+        },
+        "required": ["success", "error"]
+      },
+      "FeedbackResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "example": true
+          },
+          "feedbackId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "creditsRefunded": {
+            "type": "number"
+          },
+          "alreadySubmitted": {
+            "type": "boolean"
+          },
+          "dailyCapReached": {
+            "type": "boolean"
+          },
+          "creditsRefundedToday": {
+            "type": "number"
+          },
+          "dailyRefundCap": {
+            "type": "number"
+          },
+          "warning": {
+            "type": "string"
+          }
+        },
+        "required": ["success", "feedbackId", "creditsRefunded"]
+      },
+      "SearchFeedbackRequest": {
+        "type": "object",
+        "description": "For 'good', include valuableSources. For 'partial', include valuableSources or missingContent. For 'bad', include missingContent or querySuggestions.",
+        "properties": {
+          "rating": {
+            "type": "string",
+            "enum": ["good", "partial", "bad"]
+          },
+          "valuableSources": {
+            "type": "array",
+            "maxItems": 50,
+            "items": {
+              "type": "object",
+              "properties": {
+                "url": {
+                  "type": "string",
+                  "format": "uri"
+                },
+                "reason": {
+                  "type": "string",
+                  "maxLength": 1000
+                }
+              },
+              "required": ["url"]
+            }
+          },
+          "missingContent": {
+            "type": "array",
+            "maxItems": 20,
+            "items": {
+              "type": "object",
+              "properties": {
+                "topic": {
+                  "type": "string",
+                  "maxLength": 200
+                },
+                "description": {
+                  "type": "string",
+                  "maxLength": 2000
+                }
+              },
+              "required": ["topic"]
+            }
+          },
+          "querySuggestions": {
+            "type": "string",
+            "maxLength": 2000
+          },
+          "origin": {
+            "type": "string",
+            "default": "api"
+          },
+          "integration": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "required": ["rating"]
+      },
+      "EndpointFeedbackRequest": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/SearchFeedbackRequest"
+          },
+          {
+            "type": "object",
+            "description": "Submit feedback for a v2 job. Include at least one substantive signal such as issues, note, valuableSources, missingContent, querySuggestions, url, or pageNumbers.",
+            "properties": {
+              "endpoint": {
+                "type": "string",
+                "enum": ["search", "scrape", "parse", "map"]
+              },
+              "jobId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "issues": {
+                "type": "array",
+                "maxItems": 20,
+                "items": {
+                  "type": "string",
+                  "pattern": "^[a-z0-9][a-z0-9_-]*$",
+                  "maxLength": 80
+                }
+              },
+              "tags": {
+                "type": "array",
+                "maxItems": 20,
+                "items": {
+                  "type": "string",
+                  "pattern": "^[a-z0-9][a-z0-9_-]*$",
+                  "maxLength": 80
+                }
+              },
+              "note": {
+                "type": "string",
+                "maxLength": 4000
+              },
+              "url": {
+                "type": "string",
+                "format": "uri"
+              },
+              "pageNumbers": {
+                "type": "array",
+                "maxItems": 100,
+                "items": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              },
+              "metadata": {
+                "type": "object",
+                "additionalProperties": true,
+                "description": "Small endpoint-specific metadata object. Must be 8KB or smaller; do not include full endpoint results."
+              }
+            },
+            "required": ["endpoint", "jobId"]
+          }
+        ]
       },
       "ExtractResponse": {
         "type": "object",

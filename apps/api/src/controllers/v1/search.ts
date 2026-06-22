@@ -27,6 +27,14 @@ import {
 } from "../../search/transform";
 import { fromV1ScrapeOptions } from "../v2/types";
 import { getSearchForcedKind } from "../../lib/zdr-helpers";
+import {
+  KEYLESS_CREDITS_MESSAGE,
+  adjustKeylessCredits,
+  logKeylessCreditUsage,
+  reserveKeylessCredits,
+} from "../../lib/keyless";
+import { projectSearchTotalCredits } from "../../lib/keyless-credit-projection";
+import { applyAgentAuthDiscoveryHeader } from "../../lib/agent-auth-discovery";
 
 // Used for deep research
 export async function searchAndScrapeSearchResult(
@@ -108,6 +116,8 @@ export async function searchController(
   const isSearchPreview =
     config.SEARCH_PREVIEW_TOKEN !== undefined &&
     config.SEARCH_PREVIEW_TOKEN === req.body.__searchPreviewToken;
+  let reservedKeylessCredits = 0;
+  let reconciledKeylessCredits = false;
 
   try {
     req.body = searchRequestSchema.parse(req.body);
@@ -141,6 +151,32 @@ export async function searchController(
     const shouldScrape =
       req.body.scrapeOptions.formats &&
       req.body.scrapeOptions.formats.length > 0;
+    const projectedKeylessCredits = !isSearchPreview
+      ? projectSearchTotalCredits(
+          {
+            limit: req.body.limit,
+            enterprise: teamEnterprise,
+            scrapeOptions: shouldScrape ? scrapeOptions : undefined,
+          },
+          req.acuc?.flags ?? null,
+          zeroDataRetention,
+        )
+      : 0;
+
+    if (projectedKeylessCredits > 0) {
+      const reservation = await reserveKeylessCredits(
+        req.auth.team_id,
+        projectedKeylessCredits,
+      );
+      if (!reservation.ok) {
+        applyAgentAuthDiscoveryHeader(res);
+        return res.status(429).json({
+          success: false,
+          error: KEYLESS_CREDITS_MESSAGE,
+        });
+      }
+      reservedKeylessCredits = projectedKeylessCredits;
+    }
 
     // Execute search using v2 logic
     const result = await executeSearch(
@@ -168,6 +204,7 @@ export async function searchController(
         bypassBilling: false,
         zeroDataRetention,
         agentIndexOnly: (req as any).agentIndexOnly ?? false,
+        keylessReserved: reservedKeylessCredits > 0,
       },
       logger,
     );
@@ -210,6 +247,17 @@ export async function searchController(
           `Failed to bill team ${req.auth.team_id} for ${result.searchCredits} credits: ${error}`,
         );
       });
+    }
+
+    if (reservedKeylessCredits > 0) {
+      reconciledKeylessCredits = true;
+      adjustKeylessCredits(
+        req.auth.team_id,
+        result.totalCredits - reservedKeylessCredits,
+      ).catch(() => {});
+      logKeylessCreditUsage(req.auth.team_id, result.totalCredits).catch(
+        () => {},
+      );
     }
 
     const endTime = new Date().getTime();
@@ -255,6 +303,13 @@ export async function searchController(
 
     return res.status(200).json(responseData);
   } catch (error) {
+    if (reservedKeylessCredits > 0 && !reconciledKeylessCredits) {
+      reconciledKeylessCredits = true;
+      adjustKeylessCredits(req.auth.team_id, -reservedKeylessCredits).catch(
+        () => {},
+      );
+    }
+
     if (error instanceof z.ZodError) {
       logger.warn("Invalid request body", { error: error.issues });
       return res.status(400).json({

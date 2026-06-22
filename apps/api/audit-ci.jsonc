@@ -2,21 +2,12 @@
     "$schema": "https://github.com/IBM/audit-ci/raw/main/docs/schema.json",
     "low": true,
     "allowlist": [
-        // GHSA-v2v4-37r5-5v8g (ip-address XSS in Address6 HTML-emitting methods):
-        // geoip-country pins ip-address@^6.4.0; fix requires ip-address>=10.1.1 (major
-        // version jump). The vulnerable methods (group/link/spanAll) are HTML-only surfaces
-        // unused by geoip-country and unexploitable in this server-side context.
-        // Blocked until geoip-country ships a dependency on ip-address>=10.1.1.
-        // Owner: team-engineering-reviewers. Tracking: create internal ticket.
-        // Expires: 2026-06-15.
-        "GHSA-v2v4-37r5-5v8g",
-        // GHSA-866g-f22w-33x8 (@ai-sdk/provider-utils resource consumption):
-        // Current compatible direct dependency lines still resolve to affected
-        // provider-utils 2.x/3.x packages; the available non-affected line requires
-        // coordinated major-family AI SDK upgrades. Do not override across majors
+        // GHSA-v2v4-37r5-5v8g (ip-address):
+        // geoip-country still depends on ip-address 6.x; the non-affected line is a
+        // multi-major jump outside the upstream range. Do not override across majors
         // without compatibility approval.
         // Owner: team-engineering-reviewers. Tracking: create internal ticket.
         // Expires: 2026-06-30.
-        "GHSA-866g-f22w-33x8"
+        "GHSA-v2v4-37r5-5v8g"
     ]
 }

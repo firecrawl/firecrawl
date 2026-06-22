@@ -6,7 +6,7 @@ describe("DNS", () => {
   it("cached dns", async () => {
     const cachedDns = new CacheableLookup();
     cachedDns.install(https.globalAgent);
-    jest.spyOn(cachedDns, "lookupAsync");
+    vi.spyOn(cachedDns, "lookupAsync");
 
     const res = await axios.get("https://example.com");
     expect(res.status).toBe(200);

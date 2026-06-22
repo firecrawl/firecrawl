@@ -38,7 +38,7 @@ import {
 import { StoredCrawl, crawlToCrawler, saveCrawl } from "../../lib/crawl-redis";
 import { _addScrapeJobToBullMQ } from "../queue-jobs";
 import { withSpan, setSpanAttributes } from "../../lib/otel-tracer";
-import { crawlGroup } from "../worker/nuq";
+import { crawlGroup, resolveNewGroupBackend } from "../worker/nuq-router";
 import { getACUCTeam } from "../../controllers/auth";
 import { processEngpickerJob } from "../../lib/engpicker";
 import { logRequest } from "../logging/log_job";
@@ -507,6 +507,7 @@ const processPrecrawlJob = async (token: string, job: Job) => {
               zeroDataRetention: false,
             };
 
+            sc.queueBackend = await resolveNewGroupBackend(sc.team_id);
             await crawlGroup.addGroup(
               crawlId,
               sc.team_id,
@@ -514,6 +515,11 @@ const processPrecrawlJob = async (token: string, job: Job) => {
                 60 *
                 60 *
                 1000,
+              {
+                backend: sc.queueBackend,
+                maxConcurrency: sc.maxConcurrency,
+                delaySeconds: sc.crawlerOptions?.delay,
+              },
             );
 
             await saveCrawl(crawlId, sc);

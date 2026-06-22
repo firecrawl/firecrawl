@@ -5,9 +5,11 @@ import { RateLimiterMode } from "../types";
 import { SEARCH_CREDITS_FEATURE_ID } from "../services/autumn/autumn.service";
 import expressWs from "express-ws";
 import { searchController } from "../controllers/v2/search";
+import { feedbackController } from "../controllers/v2/feedback/controller";
 import { searchFeedbackController } from "../controllers/v2/search-feedback";
 import { x402SearchController } from "../controllers/v2/x402-search";
 import { scrapeController } from "../controllers/v2/scrape";
+import { keylessEligibilityController } from "../controllers/v2/keyless-eligibility";
 import {
   parseController,
   parseMultipartPayloadMiddleware,
@@ -60,10 +62,7 @@ import {
 } from "../controllers/v2/browser";
 import { activityController } from "../controllers/v1/activity";
 import { supportProxyController } from "../controllers/v2/support-proxy";
-import {
-  researchFlagMiddleware,
-  researchProxyController,
-} from "../controllers/v2/research-proxy";
+import { createResearchRouter } from "../controllers/v2/research-proxy";
 import {
   scrapeInteractController,
   scrapeStopInteractiveBrowserController,
@@ -234,9 +233,13 @@ v2Router.use(requestTimingMiddleware("v2"));
 //   ),
 // );
 
+// Internal: trusted-proxy (hosted MCP) keyless eligibility probe. Secret-gated
+// inside the controller; no auth middleware.
+v2Router.get("/keyless/eligibility", wrap(keylessEligibilityController));
+
 v2Router.post(
   "/search",
-  authMiddleware(RateLimiterMode.Search),
+  authMiddleware(RateLimiterMode.Search, { allowKeyless: true }),
   countryCheck,
   checkCreditsMiddleware(undefined, SEARCH_CREDITS_FEATURE_ID),
   blocklistMiddleware,
@@ -251,8 +254,14 @@ v2Router.post(
 );
 
 v2Router.post(
+  "/feedback",
+  authMiddleware(RateLimiterMode.Account),
+  wrap(feedbackController),
+);
+
+v2Router.post(
   "/parse",
-  authMiddleware(RateLimiterMode.Scrape),
+  authMiddleware(RateLimiterMode.Scrape, { allowKeyless: true }),
   countryCheck,
   parseUploadMiddleware,
   parseMultipartPayloadMiddleware,
@@ -262,7 +271,7 @@ v2Router.post(
 
 v2Router.post(
   "/scrape",
-  authMiddleware(RateLimiterMode.Scrape),
+  authMiddleware(RateLimiterMode.Scrape, { allowKeyless: true }),
   countryCheck,
   checkCreditsMiddleware(1),
   blocklistMiddleware,
@@ -278,14 +287,14 @@ v2Router.get(
 
 v2Router.post(
   "/scrape/:jobId/interact",
-  authMiddleware(RateLimiterMode.BrowserExecute),
+  authMiddleware(RateLimiterMode.BrowserExecute, { allowKeyless: true }),
   validateJobIdParam,
   wrap(scrapeInteractController),
 );
 
 v2Router.delete(
   "/scrape/:jobId/interact",
-  authMiddleware(RateLimiterMode.BrowserExecute),
+  authMiddleware(RateLimiterMode.BrowserExecute, { allowKeyless: true }),
   validateJobIdParam,
   wrap(scrapeStopInteractiveBrowserController),
 );
@@ -538,7 +547,7 @@ v2Router.get(
 );
 
 v2Router.post(
-  "/browser",
+  ["/browser", "/interact"],
   authMiddleware(RateLimiterMode.Browser),
   countryCheck,
   checkCreditsMiddleware(2),
@@ -546,19 +555,19 @@ v2Router.post(
 );
 
 v2Router.get(
-  "/browser",
+  ["/browser", "/interact"],
   authMiddleware(RateLimiterMode.BrowserExecute),
   wrap(browserListController),
 );
 
 v2Router.post(
-  "/browser/:sessionId/execute",
+  ["/browser/:sessionId/execute", "/interact/:sessionId/execute"],
   authMiddleware(RateLimiterMode.BrowserExecute),
   wrap(browserExecuteController),
 );
 
 v2Router.delete(
-  "/browser/:sessionId",
+  ["/browser/:sessionId", "/interact/:sessionId"],
   authMiddleware(RateLimiterMode.BrowserExecute),
   wrap(browserDeleteController),
 );
@@ -581,11 +590,16 @@ v2Router.post(
 );
 
 if (config.RESEARCH_PROXY_URL) {
-  v2Router.all(
-    "/research/*",
+  v2Router.use(
+    "/search/research",
+    authMiddleware(RateLimiterMode.Research, { allowKeyless: true }),
+    createResearchRouter(),
+  );
+
+  v2Router.use(
+    "/research",
     authMiddleware(RateLimiterMode.Research),
-    researchFlagMiddleware,
-    wrap(researchProxyController),
+    createResearchRouter({ legacy: true }),
   );
 }
 

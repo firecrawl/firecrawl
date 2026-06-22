@@ -60,6 +60,7 @@ from .methods.aio import extract as async_extract  # type: ignore[attr-defined]
 from .methods.aio import agent as async_agent  # type: ignore[attr-defined]
 from .methods.aio import browser as async_browser  # type: ignore[attr-defined]
 from .methods.aio import monitor as async_monitor  # type: ignore[attr-defined]
+from .methods.aio import research as async_research  # type: ignore[attr-defined]
 
 from .client import _SCRAPE_OPTION_KEYS
 from .watcher_async import AsyncWatcher
@@ -104,6 +105,21 @@ class AsyncFirecrawlClient:
     ):
         options = ScrapeOptions(**{k: v for k, v in kwargs.items() if v is not None}) if kwargs else None
         return await async_scrape.scrape(self.async_http_client, url, options)
+
+    async def search_papers(self, query: str, **kwargs):
+        return await async_research.search_papers(self.async_http_client, query, **kwargs)
+
+    async def inspect_paper(self, paper_id: str):
+        return await async_research.inspect_paper(self.async_http_client, paper_id)
+
+    async def read_paper(self, paper_id: str, query: str, **kwargs):
+        return await async_research.read_paper(self.async_http_client, paper_id, query, **kwargs)
+
+    async def related_papers(self, paper_id: str, intent: str, **kwargs):
+        return await async_research.related_papers(self.async_http_client, paper_id, intent, **kwargs)
+
+    async def search_github(self, query: str, **kwargs):
+        return await async_research.search_github(self.async_http_client, query, **kwargs)
 
     async def interact(
         self,

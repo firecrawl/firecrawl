@@ -4,7 +4,12 @@ import { logger as _logger } from "../../lib/logger";
 import { logRequest } from "../logging/log_job";
 import { getMonitorDiffArtifact } from "../../lib/gcs-monitoring";
 import { processJobInternal } from "../worker/scrape-worker";
-import { NuQJob, crawlGroup, scrapeQueue } from "../worker/nuq";
+import {
+  NuQJob,
+  crawlGroup,
+  scrapeQueue,
+  resolveNewGroupBackend,
+} from "../worker/nuq-router";
 import { ScrapeJobData } from "../../types";
 import { getJobFromGCS } from "../../lib/gcs-jobs";
 import { includesFormat } from "../../lib/format-utils";
@@ -505,7 +510,12 @@ async function runCrawlTarget(params: {
     // Crawls tolerate robots fetch failures in the public controller too.
   }
 
-  await crawlGroup.addGroup(crawlId, sc.team_id, 24 * 60 * 60 * 1000);
+  sc.queueBackend = await resolveNewGroupBackend(sc.team_id);
+  await crawlGroup.addGroup(crawlId, sc.team_id, 24 * 60 * 60 * 1000, {
+    backend: sc.queueBackend,
+    maxConcurrency: sc.maxConcurrency,
+    delaySeconds: sc.crawlerOptions?.delay,
+  });
   await saveCrawl(crawlId, sc);
   await markCrawlActive(crawlId);
 
@@ -891,7 +901,12 @@ async function enqueueMonitorCrawlTarget(params: {
     // Non-fatal, same as the public crawl controller.
   }
 
-  await crawlGroup.addGroup(crawlId, sc.team_id, 24 * 60 * 60 * 1000);
+  sc.queueBackend = await resolveNewGroupBackend(sc.team_id);
+  await crawlGroup.addGroup(crawlId, sc.team_id, 24 * 60 * 60 * 1000, {
+    backend: sc.queueBackend,
+    maxConcurrency: sc.maxConcurrency,
+    delaySeconds: sc.crawlerOptions?.delay,
+  });
   await saveCrawl(crawlId, sc);
   await markCrawlActive(crawlId);
 

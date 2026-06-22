@@ -19,6 +19,10 @@ let nuqRabbitMQContainer: {
   containerName: string;
   containerRuntime: string;
 } | null = null;
+let fdbContainer: {
+  containerName: string;
+  containerRuntime: string;
+} | null = null;
 
 // Get the monorepo root for both tsx source execution and compiled dist execution.
 // __dirname is available in CommonJS (which this compiles to)
@@ -50,6 +54,10 @@ interface Services {
     containerRuntime: string;
   };
   nuqRabbitMQ?: {
+    containerName: string;
+    containerRuntime: string;
+  };
+  fdb?: {
     containerName: string;
     containerRuntime: string;
   };
@@ -675,6 +683,96 @@ async function setupNuqRabbitMQ(): Promise<Services["nuqRabbitMQ"]> {
   return containerInfo;
 }
 
+const FDB_IMAGE = "foundationdb/foundationdb:7.3.63";
+
+async function waitForFdb(
+  runtime: string,
+  containerName: string,
+  timeoutMs: number = config.HARNESS_STARTUP_TIMEOUT_MS,
+): Promise<void> {
+  logger.info("Waiting for FoundationDB to be ready...");
+  const start = Date.now();
+
+  while (Date.now() - start < timeoutMs) {
+    try {
+      const check = execForward(
+        `${runtime}@fdb-status`,
+        `${runtime} exec ${containerName} fdbcli --exec "status minimal"`,
+      );
+      await check.promise;
+      logger.success("FoundationDB is ready");
+      return;
+    } catch (e) {
+      await new Promise(resolve => setTimeout(resolve, 500));
+    }
+  }
+
+  throw new Error(`FoundationDB did not become ready within ${timeoutMs}ms`);
+}
+
+async function setupFdb(): Promise<Services["fdb"]> {
+  // FDB is only needed when the FDB queue backend is in play
+  if (config.NUQ_BACKEND !== "fdb" && !process.env.NUQ_FDB_TESTS) {
+    return undefined;
+  }
+
+  // If FDB_CLUSTER_FILE is already set, respect it (user's explicit choice)
+  if (config.FDB_CLUSTER_FILE) {
+    logger.info("FDB_CLUSTER_FILE is set, skipping container management");
+    return undefined;
+  }
+
+  logger.section("Setting up FoundationDB container");
+
+  const runtime = await detectContainerRuntime();
+  if (!runtime) {
+    throw new Error(
+      "Neither Docker nor Podman found. Please install Docker/Podman or set FDB_CLUSTER_FILE manually.",
+    );
+  }
+
+  logger.success(`Using container runtime: ${runtime}`);
+
+  const containerName = "firecrawl-fdb";
+  await stopAndRemoveContainer(runtime, containerName);
+
+  const start = execForward(
+    `${runtime}@start`,
+    `${runtime} run -d --name ${containerName} -p 4500:4500 -e FDB_NETWORKING_MODE=host ${FDB_IMAGE}`,
+  );
+  await start.promise;
+
+  await waitForFdb(runtime, containerName);
+
+  // first boot: create the database; only suppress the known "already
+  // configured" failure and surface any real configure error.
+  const configure = execForward(
+    `${runtime}@fdb-configure`,
+    `${runtime} exec ${containerName} sh -c 'out=$(fdbcli --exec "configure new single memory" 2>&1); status=$?; printf "%s\\n" "$out"; if [ "$status" -eq 0 ]; then exit 0; fi; printf "%s\\n" "$out" | grep -Eiq "already.*configured|database.*configured"'`,
+  );
+  await configure.promise;
+
+  // the host-side client needs a cluster file pointing at the published port
+  const { writeFileSync, mkdirSync } = await import("fs");
+  const { tmpdir } = await import("os");
+  const clusterDir = join(tmpdir(), "firecrawl-fdb");
+  mkdirSync(clusterDir, { recursive: true });
+  const clusterFile = join(clusterDir, "fdb.cluster");
+  writeFileSync(clusterFile, "docker:docker@127.0.0.1:4500");
+
+  config.FDB_CLUSTER_FILE = clusterFile;
+  process.env.FDB_CLUSTER_FILE = clusterFile;
+
+  logger.success("FoundationDB container is ready");
+
+  const containerInfo = {
+    containerName,
+    containerRuntime: runtime,
+  };
+  fdbContainer = containerInfo;
+  return containerInfo;
+}
+
 async function installDependencies() {
   logger.section("Installing dependencies");
 
@@ -724,6 +822,9 @@ async function startServices(command?: string[]): Promise<Services> {
   // Setup NUQ RabbitMQ container if needed
   const nuqRabbitMQ = await setupNuqRabbitMQ();
 
+  // Setup FoundationDB container if the FDB queue backend is enabled
+  const fdb = await setupFdb();
+
   logger.section("Starting services");
 
   const api = execForward(
@@ -763,42 +864,48 @@ async function startServices(command?: string[]): Promise<Services> {
 
   const nuqWorkers = Array.from({ length: NUQ_WORKER_COUNT }, (_, i) =>
     execForward(
-      `nuq-worker-${i}`,
+      `${config.NUQ_BACKEND === "fdb" ? "nuq-fdb-worker" : "nuq-worker"}-${i}`,
       process.argv[2] === "--start-docker"
-        ? "node dist/src/services/worker/nuq-worker.js"
-        : "pnpm nuq-worker:production",
+        ? `node dist/src/services/worker/${config.NUQ_BACKEND === "fdb" ? "nuq-fdb-worker" : "nuq-worker"}.js`
+        : `pnpm ${config.NUQ_BACKEND === "fdb" ? "nuq-fdb-worker" : "nuq-worker"}:production`,
       {
         NUQ_WORKER_PORT: String(NUQ_WORKER_START_PORT + i),
         NUQ_REDUCE_NOISE: "true",
-        NUQ_POD_NAME: `nuq-worker-${i}`,
+        NUQ_POD_NAME: `${config.NUQ_BACKEND === "fdb" ? "nuq-fdb-worker" : "nuq-worker"}-${i}`,
       },
     ),
   );
 
-  const nuqPrefetchWorker = execForward(
-    "nuq-prefetch-worker",
-    process.argv[2] === "--start-docker"
-      ? "node dist/src/services/worker/nuq-prefetch-worker.js"
-      : "pnpm nuq-prefetch-worker:production",
-    {
-      NUQ_PREFETCH_WORKER_PORT: String(NUQ_PREFETCH_WORKER_PORT),
-      NUQ_REDUCE_NOISE: "true",
-      NUQ_POD_NAME: "nuq-prefetch-worker-0",
-      NUQ_PREFETCH_REPLICAS: String(1),
-    },
-  );
+  const nuqPrefetchWorker =
+    config.NUQ_BACKEND === "fdb"
+      ? undefined
+      : execForward(
+          "nuq-prefetch-worker",
+          process.argv[2] === "--start-docker"
+            ? "node dist/src/services/worker/nuq-prefetch-worker.js"
+            : "pnpm nuq-prefetch-worker:production",
+          {
+            NUQ_PREFETCH_WORKER_PORT: String(NUQ_PREFETCH_WORKER_PORT),
+            NUQ_REDUCE_NOISE: "true",
+            NUQ_POD_NAME: "nuq-prefetch-worker-0",
+            NUQ_PREFETCH_REPLICAS: String(1),
+          },
+        );
 
-  const nuqReconcilerWorker = execForward(
-    "nuq-reconciler",
-    process.argv[2] === "--start-docker"
-      ? "node dist/src/services/worker/nuq-reconciler-worker.js"
-      : "pnpm nuq-reconciler-worker:production",
-    {
-      NUQ_RECONCILER_WORKER_PORT: String(NUQ_RECONCILER_WORKER_PORT),
-      NUQ_REDUCE_NOISE: "true",
-      NUQ_POD_NAME: "nuq-reconciler-worker-0",
-    },
-  );
+  const nuqReconcilerWorker =
+    config.NUQ_BACKEND === "fdb"
+      ? undefined
+      : execForward(
+          "nuq-reconciler",
+          process.argv[2] === "--start-docker"
+            ? "node dist/src/services/worker/nuq-reconciler-worker.js"
+            : "pnpm nuq-reconciler-worker:production",
+          {
+            NUQ_RECONCILER_WORKER_PORT: String(NUQ_RECONCILER_WORKER_PORT),
+            NUQ_REDUCE_NOISE: "true",
+            NUQ_POD_NAME: "nuq-reconciler-worker-0",
+          },
+        );
 
   const indexWorker = config.USE_DB_AUTHENTICATION
     ? execForward(
@@ -840,6 +947,7 @@ async function startServices(command?: string[]): Promise<Services> {
     command: commandProcess,
     nuqPostgres,
     nuqRabbitMQ,
+    fdb,
   };
 }
 
@@ -1058,6 +1166,17 @@ async function gracefulShutdown() {
     );
     logger.success("NUQ RabbitMQ container stopped");
     nuqRabbitMQContainer = null;
+  }
+
+  // Stop and remove FoundationDB container if it was started by harness
+  if (fdbContainer) {
+    logger.info("Stopping FoundationDB container");
+    await stopAndRemoveContainer(
+      fdbContainer.containerRuntime,
+      fdbContainer.containerName,
+    );
+    logger.success("FoundationDB container stopped");
+    fdbContainer = null;
   }
 
   logger.success("All processes terminated");

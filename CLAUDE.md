@@ -17,3 +17,5 @@ When making changes to the API, here are the general steps you should take:
   - The full test suite takes a long time to run, so you should try to only execute the relevant tests locally, and let CI run the full test suite.
 4. Push to a branch, open a PR, and let CI run to verify your win condition.
 Keep these steps in mind while building your TODO list.
+
+Never bypass `knip` failures (e.g. with `git commit --no-verify`). If the pre-commit `knip` check fails, fix the reported unused exports/files — even if they predate your change — before committing.

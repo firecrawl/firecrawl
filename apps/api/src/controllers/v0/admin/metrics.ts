@@ -1,6 +1,8 @@
 import type { Request, Response } from "express";
 import { getRedisConnection } from "../../../services/queue-service";
-import { nuqGetLocalMetrics, scrapeQueue } from "../../../services/worker/nuq";
+import { nuqFdbGetMetrics } from "../../../services/worker/nuq-fdb";
+import { nuqGetLocalMetrics } from "../../../services/worker/nuq";
+import { scrapeQueue } from "../../../services/worker/nuq-router";
 import { teamConcurrencySemaphore } from "../../../services/worker/team-semaphore";
 
 export async function metricsController(_: Request, res: Response) {
@@ -49,4 +51,8 @@ ${semaphoreMetrics}`);
 
 export async function nuqMetricsController(_: Request, res: Response) {
   res.contentType("text/plain").send(await scrapeQueue.getMetrics());
+}
+
+export async function nuqFdbMetricsController(_: Request, res: Response) {
+  res.contentType("text/plain").send(await nuqFdbGetMetrics());
 }

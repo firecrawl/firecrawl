@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Firecrawl\Client;
 
 use Firecrawl\Exceptions\FirecrawlException;
+use Firecrawl\Version;
 use Firecrawl\Exceptions\JobTimeoutException;
 use Firecrawl\Models\AgentOptions;
 use Firecrawl\Models\AgentResponse;
@@ -63,12 +64,10 @@ final class FirecrawlClient
         float $backoffFactor = self::DEFAULT_BACKOFF_FACTOR,
         ?ClientInterface $httpClient = null,
     ): self {
+        // An empty key is allowed: scrape, search, and interact fall back to the
+        // keyless free tier (rate-limited per IP). Other methods return 401 from
+        // the API until a key is provided.
         $resolvedKey = trim($apiKey ?: (getenv('FIRECRAWL_API_KEY') ?: ''));
-        if ($resolvedKey === '') {
-            throw new FirecrawlException(
-                'API key is required. Pass it directly or set the FIRECRAWL_API_KEY environment variable.',
-            );
-        }
 
         $resolvedUrl = $apiUrl ?: (getenv('FIRECRAWL_API_URL') ?: self::DEFAULT_API_URL);
 
@@ -111,10 +110,83 @@ final class FirecrawlClient
         if ($options !== null) {
             $body = array_merge($body, $options->toArray());
         }
+        $body['origin'] ??= 'php-sdk@' . Version::SDK_VERSION;
 
         $response = $this->http->post('/v2/scrape', $body);
 
         return Document::fromArray($response['data'] ?? $response);
+    }
+
+    /**
+     * Search research papers.
+     *
+     * @param array<string, mixed> $options
+     * @return array<string, mixed>
+     */
+    public function searchPapers(string $query, array $options = []): array
+    {
+        return $this->http->get('/v2/search/research/papers' . $this->queryArray(array_merge(
+            ['query' => $query, 'origin' => 'php-sdk@' . Version::SDK_VERSION],
+            $options,
+        )));
+    }
+
+    /**
+     * Inspect paper metadata.
+     *
+     * @return array<string, mixed>
+     */
+    public function inspectPaper(string $paperId): array
+    {
+        return $this->http->get('/v2/search/research/papers/' . rawurlencode($paperId));
+    }
+
+    /**
+     * Read a paper with query-guided passages.
+     *
+     * @param array<string, mixed> $options
+     * @return array<string, mixed>
+     */
+    public function readPaper(string $paperId, string $query, array $options = []): array
+    {
+        return $this->http->get(
+            '/v2/search/research/papers/' . rawurlencode($paperId)
+            . $this->queryArray(array_merge(
+                ['query' => $query, 'origin' => 'php-sdk@' . Version::SDK_VERSION],
+                $options,
+            )),
+        );
+    }
+
+    /**
+     * Find papers related to a paper.
+     *
+     * @param array<string, mixed> $options
+     * @return array<string, mixed>
+     */
+    public function relatedPapers(string $paperId, string $intent, array $options = []): array
+    {
+        return $this->http->get(
+            '/v2/search/research/papers/' . rawurlencode($paperId) . '/similar'
+            . $this->queryArray(array_merge(
+                ['intent' => $intent, 'origin' => 'php-sdk@' . Version::SDK_VERSION],
+                $options,
+            )),
+        );
+    }
+
+    /**
+     * Search GitHub research content.
+     *
+     * @param array<string, mixed> $options
+     * @return array<string, mixed>
+     */
+    public function searchGithub(string $query, array $options = []): array
+    {
+        return $this->http->get('/v2/search/research/github' . $this->queryArray(array_merge(
+            ['query' => $query, 'origin' => 'php-sdk@' . Version::SDK_VERSION],
+            $options,
+        )));
     }
 
     /**
@@ -141,6 +213,7 @@ final class FirecrawlClient
         if ($prompt !== null) {
             $body['prompt'] = $prompt;
         }
+        $body['origin'] ??= 'php-sdk@' . Version::SDK_VERSION;
 
         return BrowserExecuteResponse::fromArray(
             $this->http->post("/v2/scrape/{$jobId}/interact", $body),
@@ -472,6 +545,7 @@ final class FirecrawlClient
         if ($options !== null) {
             $body = array_merge($body, $options->toArray());
         }
+        $body['origin'] ??= 'php-sdk@' . Version::SDK_VERSION;
 
         $response = $this->http->post('/v2/search', $body);
 
@@ -656,6 +730,29 @@ final class FirecrawlClient
         $params = array_filter($params, static fn ($value) => $value !== null && $value !== '');
 
         return $params === [] ? '' : '?' . http_build_query($params);
+    }
+
+    /**
+     * @param array<string, mixed> $params
+     */
+    private function queryArray(array $params): string
+    {
+        $pairs = [];
+        foreach ($params as $key => $value) {
+            if ($value === null || $value === '') {
+                continue;
+            }
+            $values = is_array($value) ? $value : [$value];
+            foreach ($values as $item) {
+                if ($item === null || $item === '') {
+                    continue;
+                }
+                $stringValue = is_bool($item) ? ($item ? 'true' : 'false') : (string) $item;
+                $pairs[] = rawurlencode((string) $key) . '=' . rawurlencode($stringValue);
+            }
+        }
+
+        return $pairs === [] ? '' : '?' . implode('&', $pairs);
     }
 
     private function pollCrawl(

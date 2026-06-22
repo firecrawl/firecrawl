@@ -17,6 +17,8 @@ import { integrationSchema } from "../../utils/integration";
 import { includesFormat } from "../../lib/format-utils";
 import { webhookSchema } from "../../services/webhook/schema";
 import { BrandingProfile } from "../../types/branding";
+import { ProductProfile } from "../../types/product";
+import { MenuProfile } from "../../types/menu";
 
 type Format =
   | "markdown"
@@ -29,7 +31,9 @@ type Format =
   | "json"
   | "summary"
   | "changeTracking"
-  | "branding";
+  | "branding"
+  | "product"
+  | "menu";
 
 export const url = z.preprocess(
   x => {
@@ -429,6 +433,8 @@ const baseScrapeOptions = z.strictObject({
       "summary",
       "changeTracking",
       "branding",
+      "product",
+      "menu",
     ])
     .array()
     .optional()
@@ -992,6 +998,8 @@ export type Document = {
   json?: any;
   summary?: string;
   branding?: BrandingProfile;
+  product?: ProductProfile;
+  menu?: MenuProfile;
   warning?: string;
   actions?: {
     screenshots?: string[];
@@ -1310,6 +1318,9 @@ export type TeamFlags = {
   // POST /v2/search/:jobId/feedback returns 403 TEAM_OPTED_OUT when true.
   searchFeedbackOptOut?: boolean;
   researchBeta?: boolean;
+  highlightsBeta?: boolean;
+  // routes the team's new queue work to the FoundationDB backend
+  nuqFdb?: boolean;
 } | null;
 
 export type AuthCreditUsageChunkFromTeam = Omit<
@@ -1555,6 +1566,8 @@ export const searchRequestSchema = z
               "screenshot@fullPage",
               "extract",
               "json",
+              "product",
+              "menu",
             ]),
           )
           .prefault([]),

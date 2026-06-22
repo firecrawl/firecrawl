@@ -73,7 +73,14 @@ export async function calculateCreditsToBeBilled(
   }
 
   if (hasFormatOfType(options.formats, "deterministicJson")) {
-    creditsToBeBilled = 7;
+    // 10 when this run generated the extractor script, 3 when it reused a
+    // cached one. The codegen call is tagged in deterministicJson/llm/client.ts.
+    const generatedScript = costTrackingJSON.calls?.some(
+      call =>
+        call.metadata?.module === "deterministic-json" &&
+        call.metadata?.role === "codegen",
+    );
+    creditsToBeBilled = generatedScript ? 10 : 3;
   }
 
   if (

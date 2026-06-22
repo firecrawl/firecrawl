@@ -18,10 +18,10 @@ import {
   clearBrowserSessionPromptFlag,
 } from "../../lib/browser-sessions";
 import {
-  getConcurrencyLimitActiveJobsCount,
-  pushConcurrencyLimitActiveJob,
-  removeConcurrencyLimitActiveJob,
-} from "../../lib/concurrency-limit";
+  getCombinedTeamActiveCount,
+  mirrorExternalSlotAcquire,
+  mirrorExternalSlotRelease,
+} from "../../services/worker/nuq-router";
 import { RequestWithAuth } from "./types";
 import { billTeam } from "../../services/billing/credit_billing";
 import { enqueueBrowserSessionActivity } from "../../lib/browser-session-activity";
@@ -245,9 +245,7 @@ export async function browserCreateController(
 
   // 0b. Enforce concurrency limit (shared pool with scrape/crawl/interact)
   const concurrencyLimit = req.acuc?.concurrency ?? 2;
-  const activeCount = await getConcurrencyLimitActiveJobsCount(
-    req.auth.team_id,
-  );
+  const activeCount = await getCombinedTeamActiveCount(req.auth.team_id);
   if (activeCount >= concurrencyLimit) {
     logger.warn("Concurrency limit reached for browser session", {
       activeCount,
@@ -374,7 +372,7 @@ export async function browserCreateController(
 
   // Register in the shared concurrency limiter so this session counts
   // against the team's concurrent job limit while it's active.
-  pushConcurrencyLimitActiveJob(req.auth.team_id, sessionId, ttl * 1000).catch(
+  mirrorExternalSlotAcquire(req.auth.team_id, sessionId, ttl * 1000).catch(
     () => {},
   );
 
@@ -554,7 +552,7 @@ export async function browserDeleteController(
 
   // Invalidate cached count so next check reflects the destroyed session
   invalidateActiveBrowserSessionCount(session.team_id).catch(() => {});
-  removeConcurrencyLimitActiveJob(session.team_id, session.id).catch(error => {
+  mirrorExternalSlotRelease(session.team_id, session.id).catch(error => {
     logger.error(
       "Failed to remove concurrency limiter entry for browser session",
       {
@@ -701,7 +699,7 @@ export async function browserWebhookDestroyedController(
   const claimed = await claimBrowserSessionDestroyed(session.id);
 
   invalidateActiveBrowserSessionCount(session.team_id).catch(() => {});
-  removeConcurrencyLimitActiveJob(session.team_id, session.id).catch(error => {
+  mirrorExternalSlotRelease(session.team_id, session.id).catch(error => {
     logger.error(
       "Failed to remove concurrency limiter entry for browser session via webhook",
       {

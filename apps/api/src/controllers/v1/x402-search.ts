@@ -23,7 +23,7 @@ import { db } from "../../db/connection";
 import * as schema from "../../db/schema";
 import { fromV1ScrapeOptions } from "../v2/types";
 import { ScrapeJobTimeoutError } from "../../lib/error";
-import { scrapeQueue } from "../../services/worker/nuq";
+import { scrapeQueue } from "../../services/worker/nuq-router";
 import {
   applyZdrScope,
   captureExceptionWithZdrCheck,

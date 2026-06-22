@@ -11,7 +11,7 @@ import { addScrapeJob } from "../../../services/queue-jobs";
 import { getJobPriority } from "../../job-priority";
 import type { Logger } from "winston";
 import { isUrlBlocked } from "../../../scraper/WebScraper/utils/blocklist";
-import { scrapeQueue } from "../../../services/worker/nuq";
+import { scrapeQueue } from "../../../services/worker/nuq-router";
 
 interface ScrapeDocumentOptions {
   url: string;

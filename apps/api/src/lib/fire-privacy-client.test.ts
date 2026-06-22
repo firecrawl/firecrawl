@@ -272,7 +272,12 @@ describe("redactText", () => {
     handler = withBody({
       redacted_text: "x",
       spans: [
-        { start: 0, end: 5, kind: "PRIVATE_PERSON", source: "openai-privacy-filter" },
+        {
+          start: 0,
+          end: 5,
+          kind: "PRIVATE_PERSON",
+          source: "openai-privacy-filter",
+        },
         { start: 6, end: 10, kind: "EMAIL_ADDRESS", source: "EmailRecognizer" },
         { start: 11, end: 15, kind: "ORGANIZATION", source: "SpacyRecognizer" },
       ],

@@ -2,14 +2,11 @@
     "$schema": "https://github.com/IBM/audit-ci/raw/main/docs/schema.json",
     "low": true,
     "allowlist": [
-        // GHSA-q7cg-457f-vx79 (joi uncaught RangeError on recursive link() schemas):
-        // Patched version requires joi>=18.2.1 (major upgrade from 17.x). artillery@2.0.32
-        // still depends on joi@^17.13.3; forcing joi@18 via override risks breaking artillery
-        // config validation. This is test-only infrastructure — not deployed to production.
-        // The vulnerability requires specially crafted recursive link() schemas as input;
-        // artillery configs are authored by the team, not submitted by external users.
+        // GHSA-h67p-54hq-rp68 (js-yaml):
+        // artillery still depends on js-yaml 3.x; the non-affected release is 4.x,
+        // so avoid a major-crossing override in load-test tooling.
         // Owner: team-engineering-reviewers. Tracking: create internal ticket.
-        // Expires: 2026-09-11.
-        "GHSA-q7cg-457f-vx79"
+        // Expires: 2026-06-30.
+        "GHSA-h67p-54hq-rp68"
     ]
 }

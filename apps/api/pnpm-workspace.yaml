@@ -5,3 +5,20 @@ minimumReleaseAge: 720 # 12 hours
 minimumReleaseAgeExclude:
   - fast-xml-parser
   - follow-redirects
+onlyBuiltDependencies:
+  - "@mendable/firecrawl-rs"
+  - "@sentry-internal/node-cpu-profiler"
+  - "@sentry/cli"
+  - bigint-buffer
+  - bufferutil
+  - esbuild
+  - foundationdb
+  - four-flap-bigint-buffer
+  - keccak
+  - koffi
+  - libpq
+  - msgpackr-extract
+  - oxc-resolver
+  - protobufjs
+  - utf-8-validate
+  - wordpos

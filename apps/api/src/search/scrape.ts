@@ -39,6 +39,7 @@ interface ScrapeSearchOptions {
   requestId?: string;
   billing?: BillingMetadata;
   agentIndexOnly?: boolean;
+  keylessReserved?: boolean;
 }
 
 async function scrapeSearchResultDirect(
@@ -87,6 +88,7 @@ async function scrapeSearchResultDirect(
         startTime: Date.now(),
         zeroDataRetention,
         apiKeyId: options.apiKeyId,
+        keylessReserved: options.keylessReserved ?? false,
         requestId: options.requestId,
         billing: options.billing,
       },

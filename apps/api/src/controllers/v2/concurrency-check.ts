@@ -5,9 +5,9 @@ import {
 } from "./types";
 import { AuthCreditUsageChunkFromTeam } from "../v1/types";
 import { Response } from "express";
-import { getRedisConnection } from "../../../src/services/queue-service";
 import { getACUCTeam } from "../auth";
 import { RateLimiterMode } from "../../types";
+import { getCombinedTeamActiveCount } from "../../services/worker/nuq-router";
 
 // Basically just middleware and error wrapping
 export async function concurrencyCheckController(
@@ -38,17 +38,11 @@ export async function concurrencyCheckController(
     );
   }
 
-  const concurrencyLimiterKey = "concurrency-limiter:" + req.auth.team_id;
-  const now = Date.now();
-  const activeJobsOfTeam = await getRedisConnection().zrangebyscore(
-    concurrencyLimiterKey,
-    now,
-    Infinity,
-  );
+  const activeJobsOfTeam = await getCombinedTeamActiveCount(req.auth.team_id);
 
   return res.status(200).json({
     success: true,
-    concurrency: activeJobsOfTeam.length,
+    concurrency: activeJobsOfTeam,
     maxConcurrency: Math.max(req.acuc.concurrency, otherACUC?.concurrency ?? 0),
   });
 }

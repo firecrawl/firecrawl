@@ -108,6 +108,38 @@ if err != nil {
 fmt.Println(doc.Video)
 ```
 
+### Product Extraction
+
+Use the `product` format on product pages for structured product extraction
+(title, price, availability, variants). The result is returned on the document's
+`Product` field. This is the deterministic counterpart to the LLM-based `json` format.
+
+```go
+doc, err := client.Scrape(ctx, "https://example.com/products/widget", &firecrawl.ScrapeOptions{
+	Formats: []string{"product"},
+})
+if err != nil {
+	return err
+}
+fmt.Println(doc.Product)
+```
+
+### Menu Extraction
+
+Use the `menu` format on menu pages for structured menu extraction
+(merchant, sections, items, prices, availability). The result is returned on the
+document's `Menu` field. This is the deterministic counterpart to the LLM-based `json` format.
+
+```go
+doc, err := client.Scrape(ctx, "https://example.com/menu", &firecrawl.ScrapeOptions{
+	Formats: []string{"menu"},
+})
+if err != nil {
+	return err
+}
+fmt.Println(doc.Menu)
+```
+
 #### Interactive Browser
 
 Execute code in a scrape-bound browser session:
@@ -126,7 +158,7 @@ deleteResp, err := client.StopInteractiveBrowser(ctx, scrapeJobID)
 
 Upload a local file (`html`, `pdf`, `docx`, etc.) via multipart form data and
 parse it synchronously. Parse options intentionally exclude browser-only
-features such as change tracking, screenshot, branding, audio, video, actions,
+features such as change tracking, screenshot, branding, product, menu, audio, video, actions,
 waitFor, location, and mobile. The `Proxy` option only accepts `"auto"` or `"basic"`.
 
 ```go

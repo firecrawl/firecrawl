@@ -39,7 +39,7 @@ describe("research.searchPapers", () => {
       to: "2024-12-31",
     });
     const url = calls[0];
-    expect(url.startsWith("/v2/research/papers?")).toBe(true);
+    expect(url.startsWith("/v2/search/research/papers?")).toBe(true);
     const qs = new URLSearchParams(url.split("?")[1]);
     expect(qs.get("query")).toBe("diffusion models");
     expect(qs.get("k")).toBe("10");
@@ -67,7 +67,7 @@ describe("research.searchPapers", () => {
   });
 
   test("returns the response body verbatim", async () => {
-    const payload = { results: [{ paper_id: "1", title: "t", abstract: "a", score: 0.1 }] };
+    const payload = { results: [{ paperId: "1", title: "t", abstract: "a", score: 0.1 }] };
     const { client } = makeClient(() => ({ status: 200, data: payload }));
     await expect(client.searchPapers("q")).resolves.toEqual(payload);
   });
@@ -77,17 +77,17 @@ describe("research.getPaper", () => {
   test("detail mode encodes the id and sends no query params", async () => {
     const { client, calls } = makeClient(() => ({ status: 200, data: { paper: {} } }));
     await client.getPaper("arxiv:2105.05233");
-    expect(calls[0]).toBe("/v2/research/papers/arxiv%3A2105.05233");
+    expect(calls[0]).toBe("/v2/search/research/papers/arxiv%3A2105.05233");
   });
 
   test("read mode adds query and k", async () => {
     const { client, calls } = makeClient(() => ({
       status: 200,
-      data: { paper: {}, paper_id: "1", query: "q", passages: [] },
+      data: { paper: {}, paperId: "1", query: "q", passages: [] },
     }));
     await client.getPaper("123", { query: "noise schedule", k: 4 });
     const [path, query] = calls[0].split("?");
-    expect(path).toBe("/v2/research/papers/123");
+    expect(path).toBe("/v2/search/research/papers/123");
     const qs = new URLSearchParams(query);
     expect(qs.get("query")).toBe("noise schedule");
     expect(qs.get("k")).toBe("4");
@@ -112,7 +112,7 @@ describe("research.similarPapers", () => {
   test("builds path and query with repeated anchors and rerank", async () => {
     const { client, calls } = makeClient(() => ({
       status: 200,
-      data: { results: [], pool_size: 0, truncated: false },
+      data: { results: [], poolSize: 0, truncated: false },
     }));
     await client.similarPapers("2105.05233", {
       intent: "diffusion image synthesis",
@@ -122,7 +122,7 @@ describe("research.similarPapers", () => {
       anchor: ["arxiv:2006.11239", "1503.03585"],
     });
     const [path, query] = calls[0].split("?");
-    expect(path).toBe("/v2/research/papers/2105.05233/similar");
+    expect(path).toBe("/v2/search/research/papers/2105.05233/similar");
     const qs = new URLSearchParams(query);
     expect(qs.get("intent")).toBe("diffusion image synthesis");
     expect(qs.get("mode")).toBe("citers");
@@ -137,7 +137,7 @@ describe("research.searchGithub", () => {
     const { client, calls } = makeClient(() => ({ status: 200, data: { results: [] } }));
     await client.searchGithub("milvus hybrid search", { k: 10 });
     const qs = new URLSearchParams(calls[0].split("?")[1]);
-    expect(calls[0].startsWith("/v2/research/github?")).toBe(true);
+    expect(calls[0].startsWith("/v2/search/research/github?")).toBe(true);
     expect(qs.get("query")).toBe("milvus hybrid search");
     expect(qs.get("k")).toBe("10");
   });

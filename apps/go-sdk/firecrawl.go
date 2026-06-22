@@ -56,12 +56,9 @@ func NewClient(opts ...option.RequestOption) (*Client, error) {
 	if apiKey == "" {
 		apiKey = strings.TrimSpace(os.Getenv("FIRECRAWL_API_KEY"))
 	}
-	if apiKey == "" {
-		return nil, &FirecrawlError{
-			Message: "API key is required. Set it via option.WithAPIKey(), " +
-				"or FIRECRAWL_API_KEY environment variable.",
-		}
-	}
+	// An empty API key is allowed: scrape, search, and interact fall back to the
+	// keyless free tier (rate-limited per IP). Other methods return 401 from the
+	// API until a key is provided.
 
 	// Resolve API URL.
 	apiURL := cfg.APIURL
@@ -95,6 +92,9 @@ func (c *Client) Scrape(ctx context.Context, url string, opts *ScrapeOptions) (*
 	body := map[string]interface{}{"url": url}
 	mergeOptions(body, opts)
 
+	if _, ok := body["origin"]; !ok {
+		body["origin"] = "go-sdk@" + Version
+	}
 	raw, err := c.http.post(ctx, "/v2/scrape", body, nil)
 	if err != nil {
 		return nil, err
@@ -132,6 +132,9 @@ func (c *Client) Interact(ctx context.Context, jobID, code string, params *Inter
 		}
 	}
 
+	if _, ok := body["origin"]; !ok {
+		body["origin"] = "go-sdk@" + Version
+	}
 	raw, err := c.http.post(ctx, "/v2/scrape/"+jobID+"/interact", body, nil)
 	if err != nil {
 		return nil, err
@@ -539,6 +542,9 @@ func (c *Client) Search(ctx context.Context, query string, opts *SearchOptions) 
 	body := map[string]interface{}{"query": query}
 	mergeOptions(body, opts)
 
+	if _, ok := body["origin"]; !ok {
+		body["origin"] = "go-sdk@" + Version
+	}
 	raw, err := c.http.post(ctx, "/v2/search", body, nil)
 	if err != nil {
 		return nil, err
@@ -549,6 +555,142 @@ func (c *Client) Search(ctx context.Context, query string, opts *SearchOptions) 
 		return nil, err
 	}
 	return data, nil
+}
+
+// SearchPapers searches research papers.
+func (c *Client) SearchPapers(ctx context.Context, query string, opts *SearchPapersOptions) (*SearchPapersResponse, error) {
+	if query == "" {
+		return nil, &FirecrawlError{Message: "query is required"}
+	}
+	values := url.Values{}
+	values.Set("query", query)
+	values.Set("origin", "go-sdk@"+Version)
+	if opts != nil {
+		if opts.K != nil {
+			values.Set("k", fmt.Sprint(*opts.K))
+		}
+		for _, author := range opts.Authors {
+			values.Add("authors", author)
+		}
+		for _, category := range opts.Categories {
+			values.Add("categories", category)
+		}
+		if opts.From != "" {
+			values.Set("from", opts.From)
+		}
+		if opts.To != "" {
+			values.Set("to", opts.To)
+		}
+	}
+
+	raw, err := c.http.get(ctx, "/v2/search/research/papers?"+values.Encode())
+	if err != nil {
+		return nil, err
+	}
+	var resp SearchPapersResponse
+	if err := json.Unmarshal(raw, &resp); err != nil {
+		return nil, &FirecrawlError{Message: fmt.Sprintf("failed to decode response: %v", err)}
+	}
+	return &resp, nil
+}
+
+// InspectPaper fetches paper metadata.
+func (c *Client) InspectPaper(ctx context.Context, paperID string) (*PaperMetadataResponse, error) {
+	if paperID == "" {
+		return nil, &FirecrawlError{Message: "paper ID is required"}
+	}
+	raw, err := c.http.get(ctx, "/v2/search/research/papers/"+url.PathEscape(paperID))
+	if err != nil {
+		return nil, err
+	}
+	var resp PaperMetadataResponse
+	if err := json.Unmarshal(raw, &resp); err != nil {
+		return nil, &FirecrawlError{Message: fmt.Sprintf("failed to decode response: %v", err)}
+	}
+	return &resp, nil
+}
+
+// ReadPaper fetches paper metadata and relevant passages.
+func (c *Client) ReadPaper(ctx context.Context, paperID, query string, opts *ReadPaperOptions) (*ReadPaperResponse, error) {
+	if paperID == "" {
+		return nil, &FirecrawlError{Message: "paper ID is required"}
+	}
+	if query == "" {
+		return nil, &FirecrawlError{Message: "query is required"}
+	}
+	values := url.Values{}
+	values.Set("query", query)
+	values.Set("origin", "go-sdk@"+Version)
+	if opts != nil && opts.K != nil {
+		values.Set("k", fmt.Sprint(*opts.K))
+	}
+	raw, err := c.http.get(ctx, "/v2/search/research/papers/"+url.PathEscape(paperID)+"?"+values.Encode())
+	if err != nil {
+		return nil, err
+	}
+	var resp ReadPaperResponse
+	if err := json.Unmarshal(raw, &resp); err != nil {
+		return nil, &FirecrawlError{Message: fmt.Sprintf("failed to decode response: %v", err)}
+	}
+	return &resp, nil
+}
+
+// RelatedPapers finds papers related to a paper.
+func (c *Client) RelatedPapers(ctx context.Context, paperID, intent string, opts *RelatedPapersOptions) (*SimilarPapersResponse, error) {
+	if paperID == "" {
+		return nil, &FirecrawlError{Message: "paper ID is required"}
+	}
+	if intent == "" {
+		return nil, &FirecrawlError{Message: "intent is required"}
+	}
+	values := url.Values{}
+	values.Set("intent", intent)
+	values.Set("origin", "go-sdk@"+Version)
+	if opts != nil {
+		if opts.Mode != "" {
+			values.Set("mode", opts.Mode)
+		}
+		if opts.K != nil {
+			values.Set("k", fmt.Sprint(*opts.K))
+		}
+		if opts.Rerank != nil {
+			values.Set("rerank", fmt.Sprint(*opts.Rerank))
+		}
+		for _, anchor := range opts.Anchor {
+			values.Add("anchor", anchor)
+		}
+	}
+	raw, err := c.http.get(ctx, "/v2/search/research/papers/"+url.PathEscape(paperID)+"/similar?"+values.Encode())
+	if err != nil {
+		return nil, err
+	}
+	var resp SimilarPapersResponse
+	if err := json.Unmarshal(raw, &resp); err != nil {
+		return nil, &FirecrawlError{Message: fmt.Sprintf("failed to decode response: %v", err)}
+	}
+	return &resp, nil
+}
+
+// SearchGitHub searches GitHub research content.
+func (c *Client) SearchGitHub(ctx context.Context, query string, opts *SearchGitHubOptions) (*GitHubSearchResponse, error) {
+	if query == "" {
+		return nil, &FirecrawlError{Message: "query is required"}
+	}
+	values := url.Values{}
+	values.Set("query", query)
+	values.Set("origin", "go-sdk@"+Version)
+	if opts != nil && opts.K != nil {
+		values.Set("k", fmt.Sprint(*opts.K))
+	}
+	raw, err := c.http.get(ctx, "/v2/search/research/github?"+values.Encode())
+	if err != nil {
+		return nil, err
+	}
+	var resp GitHubSearchResponse
+	if err := json.Unmarshal(raw, &resp); err != nil {
+		return nil, &FirecrawlError{Message: fmt.Sprintf("failed to decode response: %v", err)}
+	}
+	return &resp, nil
 }
 
 // ================================================================

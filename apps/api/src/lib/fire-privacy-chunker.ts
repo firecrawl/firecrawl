@@ -75,10 +75,14 @@ export function chunkMarkdown(text: string, opts?: ChunkOptions): Chunk[] {
   // Guard against caller bugs that would otherwise leave the cursor parked
   // at 0 (maxChars ≤ 0 → tentativeEnd ≤ cursor) and spin forever.
   if (maxChars <= 0) {
-    throw new RangeError(`chunkMarkdown: maxChars must be > 0 (got ${maxChars})`);
+    throw new RangeError(
+      `chunkMarkdown: maxChars must be > 0 (got ${maxChars})`,
+    );
   }
   if (maxBytes <= 0) {
-    throw new RangeError(`chunkMarkdown: maxBytes must be > 0 (got ${maxBytes})`);
+    throw new RangeError(
+      `chunkMarkdown: maxBytes must be > 0 (got ${maxBytes})`,
+    );
   }
 
   const chunks: Chunk[] = [];

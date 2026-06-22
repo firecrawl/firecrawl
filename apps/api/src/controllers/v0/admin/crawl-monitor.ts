@@ -15,7 +15,10 @@ import {
   StoredCrawl,
 } from "../../../lib/crawl-redis";
 import { config } from "../../../config";
-import { crawlGroup } from "../../../services/worker/nuq";
+import {
+  crawlGroup,
+  resolveNewGroupBackend,
+} from "../../../services/worker/nuq-router";
 import { _addScrapeJobToBullMQ } from "../../../services/queue-jobs";
 
 type ResponseType = {
@@ -77,10 +80,16 @@ export async function crawlMonitorController(
     });
   }
 
+  sc.queueBackend = await resolveNewGroupBackend(sc.team_id);
   await crawlGroup.addGroup(
     id,
     sc.team_id,
     (req.acuc?.flags?.crawlTtlHours ?? 24) * 60 * 60 * 1000,
+    {
+      backend: sc.queueBackend,
+      maxConcurrency: sc.maxConcurrency,
+      delaySeconds: sc.crawlerOptions?.delay,
+    },
   );
 
   await saveCrawl(id, sc);

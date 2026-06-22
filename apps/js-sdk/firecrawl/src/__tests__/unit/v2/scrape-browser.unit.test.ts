@@ -33,6 +33,7 @@ describe("JS SDK v2 scrape-browser methods", () => {
       data: {
         success: true,
         output: "Clicked the button",
+        cdpUrl: "wss://browser.example.com/cdp",
         liveViewUrl: "https://live.example.com/view",
         interactiveLiveViewUrl: "https://live.example.com/interactive",
         stdout: "",
@@ -52,6 +53,7 @@ describe("JS SDK v2 scrape-browser methods", () => {
     );
     expect(response.success).toBe(true);
     expect(response.output).toBe("Clicked the button");
+    expect(response.cdpUrl).toBe("wss://browser.example.com/cdp");
     expect(response.liveViewUrl).toBe("https://live.example.com/view");
     expect(response.interactiveLiveViewUrl).toBe(
       "https://live.example.com/interactive",

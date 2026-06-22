@@ -1,5 +1,4 @@
 import { logger } from "../../lib/logger";
-import { config } from "../../config";
 import { getRedisConnection } from "../queue-service";
 import { billTeam6 } from "../../db/rpc";
 import * as Sentry from "@sentry/node";
@@ -180,10 +179,6 @@ export async function processBillingBatch() {
         continue;
       }
 
-      const batchTrackedCredits = group.operations
-        .filter(op => !op.autumnTrackInRequest)
-        .reduce((sum, op) => sum + op.credits, 0);
-
       try {
         // Execute the actual billing
         const billingResult = await withAuth(supaBillTeam, {
@@ -215,19 +210,7 @@ export async function processBillingBatch() {
           `✅ Successfully billed team ${group.team_id} for ${group.total_credits} credits`,
         );
 
-        if (batchTrackedCredits > 0) {
-          await autumnService.trackCredits({
-            teamId: group.team_id,
-            value: batchTrackedCredits,
-            properties: {
-              source: "processBillingBatch",
-              ...toAutumnBillingProperties(group.billing),
-              apiKeyId: group.api_key_id,
-              subscriptionId: group.subscription_id,
-            },
-            featureId: featureIdForBillingEndpoint(group.billing.endpoint),
-          });
-        }
+        // Ledger commit only — usage is tracked to Autumn at request time, not here.
       } catch (error) {
         await refundRequestTrackedCredits(group);
         logger.error(`❌ Failed to bill team ${group.team_id}`, {

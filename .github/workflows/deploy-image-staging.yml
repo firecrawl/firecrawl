@@ -1,20 +1,62 @@
 name: STAGING Deploy Images to GHCR
 
-env:
-  DOTNET_VERSION: '6.0.x'
-
 on:
   workflow_dispatch:
 
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: api-image-staging-release
+  cancel-in-progress: false
+
 jobs:
-  push-app-image:
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+  version:
+    runs-on: blacksmith-2vcpu-ubuntu-2404
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      short_sha: ${{ steps.version.outputs.short_sha }}
+      image: ${{ steps.version.outputs.image }}
+      staging_image: ${{ steps.staging_image.outputs.image }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Fetch tags
+        run: git fetch --force --tags origin
+
+      - name: Resolve staging image version
+        id: version
+        run: python .github/scripts/resolve_api_image_version.py --bump patch --sha "${GITHUB_SHA}" --include-current-commit-tags
+
+      - name: Resolve staging image repository
+        id: staging_image
+        run: echo "image=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/firecrawl-staging" >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: version
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      matrix:
+        include:
+          - platform: linux/amd64
+            platform_suffix: linux-amd64
+            runner: blacksmith-4vcpu-ubuntu-2404
+          - platform: linux/arm64
+            platform_suffix: linux-arm64
+            runner: blacksmith-4vcpu-ubuntu-2404-arm
     defaults:
       run:
         working-directory: './apps/api'
     steps:
-      - name: 'Checkout GitHub Action'
-        uses: actions/checkout@main
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Blacksmith Builder
+        uses: useblacksmith/setup-docker-builder@ef12d5b165b596e3aa44ea8198d8fde563eab402 # v1
 
       - name: 'Login to GitHub Container Registry'
         uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
@@ -23,7 +65,75 @@ jobs:
           username: ${{github.actor}}
           password: ${{secrets.GITHUB_TOKEN}}
 
-      - name: 'Build Inventory Image'
+      - name: 'Build and Push Image'
+        uses: useblacksmith/build-push-action@30c71162f16ea2c27c3e21523255d209b8b538c1 # v2
+        with:
+          context: ./apps/api
+          push: true
+          tags: ${{ needs.version.outputs.image }}:sha-${{ needs.version.outputs.short_sha }}-staging-${{ matrix.platform_suffix }}
+          platforms: ${{ matrix.platform }}
+          provenance: false
+          build-args: |
+            GIT_SHA=${{ github.sha }}
+          cache-from: type=registry,ref=${{ needs.version.outputs.image }}:buildcache-staging-${{ matrix.platform_suffix }}
+          cache-to: type=registry,ref=${{ needs.version.outputs.image }}:buildcache-staging-${{ matrix.platform_suffix }},mode=max
+
+      - name: Verify pushed image contents
+        env:
+          IMAGE_TAG: ${{ needs.version.outputs.image }}:sha-${{ needs.version.outputs.short_sha }}-staging-${{ matrix.platform_suffix }}
+          EXPECTED_SHA: ${{ github.sha }}
         run: |
-          docker build . --tag ghcr.io/firecrawl/firecrawl-staging:latest
-          docker push ghcr.io/firecrawl/firecrawl-staging:latest
+          docker pull "${IMAGE_TAG}"
+          actual_sha="$(docker run --rm --entrypoint node "${IMAGE_TAG}" -p 'process.env.FIRECRAWL_BUILD_SHA')"
+          if [ "${actual_sha}" != "${EXPECTED_SHA}" ]; then
+            echo "::error::Image build SHA mismatch: expected ${EXPECTED_SHA}, got ${actual_sha}"
+            exit 1
+          fi
+
+          docker run --rm --entrypoint node "${IMAGE_TAG}" -e '
+            const fs = require("fs");
+            for (const path of ["dist/src/harness.js", "dist/src/controllers/v0/crawl-status.js", "BUILD_SHA"]) {
+              if (!fs.statSync(path).size) {
+                throw new Error(`${path} missing or empty`);
+              }
+            }
+          '
+
+  publish:
+    runs-on: blacksmith-2vcpu-ubuntu-2404
+    needs:
+      - version
+      - build
+    steps:
+      - name: 'Login to GitHub Container Registry'
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          registry: ghcr.io
+          username: ${{github.actor}}
+          password: ${{secrets.GITHUB_TOKEN}}
+
+      - name: 'Create and Push Staging Multi-Arch Manifest'
+        timeout-minutes: 10
+        env:
+          IMAGE: ${{ needs.version.outputs.image }}
+          STAGING_IMAGE: ${{ needs.version.outputs.staging_image }}
+          VERSION: ${{ needs.version.outputs.version }}
+          SHORT_SHA: ${{ needs.version.outputs.short_sha }}
+        run: |
+          set -euo pipefail
+
+          amd64_image="${IMAGE}:sha-${SHORT_SHA}-staging-linux-amd64"
+          arm64_image="${IMAGE}:sha-${SHORT_SHA}-staging-linux-arm64"
+          manifest_tags=(
+            "${IMAGE}:${VERSION}-staging"
+            "${STAGING_IMAGE}:${VERSION}-staging"
+            "${STAGING_IMAGE}:latest"
+          )
+
+          for target in "${manifest_tags[@]}"; do
+            echo "Publishing multi-arch manifest ${target}"
+            docker buildx imagetools create \
+              --tag "${target}" \
+              "${amd64_image}" \
+              "${arm64_image}"
+          done

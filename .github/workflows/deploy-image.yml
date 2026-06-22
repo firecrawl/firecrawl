@@ -7,17 +7,71 @@ on:
     paths:
       - apps/api/**
       - .github/workflows/deploy-image.yml
+      - .github/scripts/resolve_api_image_version.py
   workflow_dispatch:
+    inputs:
+      bump:
+        description: Version bump to apply when publishing a new deploy tag
+        required: false
+        default: patch
+        type: choice
+        options:
+          - patch
+          - minor
+
+permissions:
+  contents: write
+  packages: write
+
+concurrency:
+  group: api-image-release
+  cancel-in-progress: false
 
 jobs:
+  version:
+    runs-on: blacksmith-2vcpu-ubuntu-2404
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      tag: ${{ steps.version.outputs.tag }}
+      tag_exists: ${{ steps.version.outputs.tag_exists }}
+      major: ${{ steps.version.outputs.major }}
+      minor: ${{ steps.version.outputs.minor }}
+      major_minor: ${{ steps.version.outputs.major_minor }}
+      short_sha: ${{ steps.version.outputs.short_sha }}
+      image: ${{ steps.version.outputs.image }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Ensure main ref
+        run: |
+          if [ "${GITHUB_REF}" != "refs/heads/main" ]; then
+            echo "::error::API image releases must run from refs/heads/main, got ${GITHUB_REF}"
+            exit 1
+          fi
+
+      - name: Fetch tags
+        run: git fetch --force --tags origin
+
+      - name: Resolve image version
+        id: version
+        env:
+          BUMP: ${{ github.event.inputs.bump || 'patch' }}
+        run: python .github/scripts/resolve_api_image_version.py --bump "${BUMP}" --sha "${GITHUB_SHA}"
+
   build:
+    needs: version
     runs-on: ${{ matrix.runner }}
     strategy:
       matrix:
         include:
           - platform: linux/amd64
+            platform_suffix: linux-amd64
             runner: blacksmith-4vcpu-ubuntu-2404
           - platform: linux/arm64
+            platform_suffix: linux-arm64
             runner: blacksmith-4vcpu-ubuntu-2404-arm
     defaults:
       run:
@@ -36,30 +90,51 @@ jobs:
           username: ${{github.actor}}
           password: ${{secrets.GITHUB_TOKEN}}
 
-      - name: Lowercase Repo Owner
-        run: |
-          echo "REPO_OWNER=${GITHUB_REPOSITORY_OWNER,,}" >>${GITHUB_ENV}
-        env:
-          GITHUB_REPOSITORY_OWNER: '${{ github.repository_owner }}'
-
-      - name: Extract platform suffix
-        run: |
-          platform=${{ matrix.platform }}
-          echo "PLATFORM_SUFFIX=${platform//\//-}" >> $GITHUB_ENV
-
       - name: 'Build and Push Image'
         uses: useblacksmith/build-push-action@30c71162f16ea2c27c3e21523255d209b8b538c1 # v2
         with:
           context: ./apps/api
           push: true
-          tags: ghcr.io/${{ env.REPO_OWNER }}/firecrawl:${{ env.PLATFORM_SUFFIX }}
+          tags: ${{ needs.version.outputs.image }}:sha-${{ needs.version.outputs.short_sha }}-${{ matrix.platform_suffix }}
           platforms: ${{ matrix.platform }}
           provenance: false
+          build-args: |
+            GIT_SHA=${{ github.sha }}
+          cache-from: type=registry,ref=${{ needs.version.outputs.image }}:buildcache-${{ matrix.platform_suffix }}
+          cache-to: type=registry,ref=${{ needs.version.outputs.image }}:buildcache-${{ matrix.platform_suffix }},mode=max
 
-  manifest:
+      - name: Verify pushed image contents
+        env:
+          IMAGE_TAG: ${{ needs.version.outputs.image }}:sha-${{ needs.version.outputs.short_sha }}-${{ matrix.platform_suffix }}
+          EXPECTED_SHA: ${{ github.sha }}
+        run: |
+          docker pull "${IMAGE_TAG}"
+          actual_sha="$(docker run --rm --entrypoint node "${IMAGE_TAG}" -p 'process.env.FIRECRAWL_BUILD_SHA')"
+          if [ "${actual_sha}" != "${EXPECTED_SHA}" ]; then
+            echo "::error::Image build SHA mismatch: expected ${EXPECTED_SHA}, got ${actual_sha}"
+            exit 1
+          fi
+
+          docker run --rm --entrypoint node "${IMAGE_TAG}" -e '
+            const fs = require("fs");
+            for (const path of ["dist/src/harness.js", "dist/src/controllers/v0/crawl-status.js", "BUILD_SHA"]) {
+              if (!fs.statSync(path).size) {
+                throw new Error(`${path} missing or empty`);
+              }
+            }
+          '
+
+  publish:
     runs-on: blacksmith-2vcpu-ubuntu-2404
-    needs: build
+    needs:
+      - version
+      - build
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
       - name: 'Login to GitHub Container Registry'
         uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
         with:
@@ -67,15 +142,53 @@ jobs:
           username: ${{github.actor}}
           password: ${{secrets.GITHUB_TOKEN}}
 
-      - name: Lowercase Repo Owner
-        run: |
-          echo "REPO_OWNER=${GITHUB_REPOSITORY_OWNER,,}" >>${GITHUB_ENV}
+      - name: Create Git tag
         env:
-          GITHUB_REPOSITORY_OWNER: '${{ github.repository_owner }}'
+          RELEASE_TAG: ${{ needs.version.outputs.tag }}
+        run: |
+          git fetch --force --tags origin
+
+          if git rev-parse -q --verify "refs/tags/${RELEASE_TAG}" >/dev/null; then
+            tag_commit="$(git rev-list -n 1 "${RELEASE_TAG}")"
+            if [ "${tag_commit}" != "${GITHUB_SHA}" ]; then
+              echo "::error::${RELEASE_TAG} already points at ${tag_commit}, not ${GITHUB_SHA}"
+              exit 1
+            fi
+
+            echo "${RELEASE_TAG} already exists on this commit; reusing it."
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a "${RELEASE_TAG}" "${GITHUB_SHA}" -m "Release API image ${RELEASE_TAG}"
+          git push origin "${RELEASE_TAG}"
 
       - name: 'Create and Push Multi-Arch Manifest'
+        timeout-minutes: 10
+        env:
+          IMAGE: ${{ needs.version.outputs.image }}
+          VERSION: ${{ needs.version.outputs.version }}
+          MAJOR: ${{ needs.version.outputs.major }}
+          MAJOR_MINOR: ${{ needs.version.outputs.major_minor }}
+          SHORT_SHA: ${{ needs.version.outputs.short_sha }}
         run: |
-          docker manifest create ghcr.io/${{ env.REPO_OWNER }}/firecrawl:latest \
-            ghcr.io/${{ env.REPO_OWNER }}/firecrawl:linux-amd64 \
-            ghcr.io/${{ env.REPO_OWNER }}/firecrawl:linux-arm64
-          docker manifest push ghcr.io/${{ env.REPO_OWNER }}/firecrawl:latest
+          set -euo pipefail
+
+          amd64_image="${IMAGE}:sha-${SHORT_SHA}-linux-amd64"
+          arm64_image="${IMAGE}:sha-${SHORT_SHA}-linux-arm64"
+          manifest_tags=(
+            "${IMAGE}:${VERSION}"
+            "${IMAGE}:${VERSION}-production"
+            "${IMAGE}:${MAJOR_MINOR}"
+            "${IMAGE}:${MAJOR}"
+            "${IMAGE}:latest"
+          )
+
+          for target in "${manifest_tags[@]}"; do
+            echo "Publishing multi-arch manifest ${target}"
+            docker buildx imagetools create \
+              --tag "${target}" \
+              "${amd64_image}" \
+              "${arm64_image}"
+          done

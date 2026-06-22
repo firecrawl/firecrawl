@@ -84,6 +84,34 @@ var doc = await client.ScrapeAsync("https://www.youtube.com/watch?v=dQw4w9WgXcQ"
 Console.WriteLine(doc.Video);
 ```
 
+### Product Extraction
+
+Use the `product` format on product pages to get structured product extraction
+(title, brand, and variants, each with their own price and availability) on the
+document's `Product` property. It is the deterministic counterpart to the LLM-based
+`json` format.
+
+```csharp
+var doc = await client.ScrapeAsync("https://example.com/product/123",
+    new ScrapeOptions { Formats = new List<object> { "product" } });
+
+Console.WriteLine(doc.Product);
+```
+
+### Menu Extraction
+
+Use the `menu` format on restaurant/merchant pages to get structured menu
+extraction (a merchant profile plus ordered sections, each holding items with
+their own price, availability, and images) on the document's `Menu` property. It
+is the deterministic counterpart to the LLM-based `json` format.
+
+```csharp
+var doc = await client.ScrapeAsync("https://example.com/restaurant/123",
+    new ScrapeOptions { Formats = new List<object> { "menu" } });
+
+Console.WriteLine(doc.Menu);
+```
+
 ### Crawl
 
 ```csharp

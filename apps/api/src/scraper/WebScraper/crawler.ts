@@ -160,10 +160,14 @@ export class WebCrawler {
     maxDepth: number,
     fromMap: boolean = false,
     skipRobots: boolean = false,
+    ignoreDiscoveryDepth: boolean = false,
   ): Promise<FilterLinksResult> {
     const denialReasons = new Map<string, string>();
 
-    if (this.currentDiscoveryDepth === this.maxDiscoveryDepth) {
+    if (
+      !ignoreDiscoveryDepth &&
+      this.currentDiscoveryDepth === this.maxDiscoveryDepth
+    ) {
       this.logger.debug("Max discovery depth hit, filtering off all links", {
         currentDiscoveryDepth: this.currentDiscoveryDepth,
         maxDiscoveryDepth: this.maxDiscoveryDepth,
