@@ -132,26 +132,30 @@ describe("Map tests", () => {
         {
           url: "http://firecrawl.com",
           limit: 5,
+          sitemap: "only",
+          useIndex: false,
+          useMock: "map-redirect",
+          ignoreCache: true,
         },
         identity,
       );
+
+      if (response.statusCode !== 200) {
+        console.warn(
+          "Map redirect test failed",
+          JSON.stringify(response.body, null, 2),
+        );
+      }
 
       expect(response.statusCode).toBe(200);
       expect(response.body.success).toBe(true);
       expect(response.body.links.length).toBeGreaterThan(0);
 
-      const nonFirecrawlLinks = response.body.links.filter(
-        link => !link.url.includes("firecrawl.dev"),
-      );
-      if (nonFirecrawlLinks.length > 0) {
-        console.log(
-          "Links not containing 'firecrawl.dev':",
-          JSON.stringify(nonFirecrawlLinks, null, 2),
-        );
-      }
-
       expect(
         response.body.links.every(link => link.url.includes("firecrawl.dev")),
+      ).toBe(true);
+      expect(
+        response.body.links.every(link => !link.url.includes("firecrawl.com")),
       ).toBe(true);
     },
     60000,
