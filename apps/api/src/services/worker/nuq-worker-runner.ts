@@ -93,7 +93,16 @@ export async function runNuqWorker(options: {
     }
   });
 
-  const server = app.listen(config.NUQ_WORKER_PORT, () => {
+  const server = app.listen(config.NUQ_WORKER_PORT, (error?: Error) => {
+    if (error) {
+      _logger.error("Failed to start NuQ worker metrics server", {
+        module: options.serviceName,
+        error,
+        port: config.NUQ_WORKER_PORT,
+      });
+      throw error;
+    }
+
     _logger.info("NuQ worker metrics server started", {
       module: options.serviceName,
     });

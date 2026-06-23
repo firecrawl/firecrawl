@@ -44,11 +44,22 @@ const reconcilerJobsRecoveredTotal = new Counter({
     res.status(200).send("OK");
   });
 
-  const server = app.listen(config.NUQ_RECONCILER_WORKER_PORT, () => {
-    _logger.info("NuQ reconciler worker started", {
-      port: config.NUQ_RECONCILER_WORKER_PORT,
-    });
-  });
+  const server = app.listen(
+    config.NUQ_RECONCILER_WORKER_PORT,
+    (error?: Error) => {
+      if (error) {
+        _logger.error("Failed to start NuQ reconciler worker", {
+          error,
+          port: config.NUQ_RECONCILER_WORKER_PORT,
+        });
+        throw error;
+      }
+
+      _logger.info("NuQ reconciler worker started", {
+        port: config.NUQ_RECONCILER_WORKER_PORT,
+      });
+    },
+  );
 
   async function shutdown() {
     if (isShuttingDown) return;

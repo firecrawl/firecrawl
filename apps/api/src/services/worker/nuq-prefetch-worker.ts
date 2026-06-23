@@ -28,9 +28,20 @@ import { logger } from "../../lib/logger";
     }
   });
 
-  const server = app.listen(config.NUQ_PREFETCH_WORKER_PORT, () => {
-    logger.info("NuQ prefetch worker metrics server started");
-  });
+  const server = app.listen(
+    config.NUQ_PREFETCH_WORKER_PORT,
+    (error?: Error) => {
+      if (error) {
+        logger.error("Failed to start NuQ prefetch worker metrics server", {
+          error,
+          port: config.NUQ_PREFETCH_WORKER_PORT,
+        });
+        throw error;
+      }
+
+      logger.info("NuQ prefetch worker metrics server started");
+    },
+  );
 
   async function shutdown() {
     server.close();

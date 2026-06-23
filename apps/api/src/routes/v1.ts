@@ -49,9 +49,8 @@ import {
 } from "../lib/x402";
 import { deprecationMiddleware } from "../lib/deprecations";
 
-expressWs(express());
-
 export const v1Router = express.Router();
+expressWs(express()).applyTo(v1Router);
 
 // Add timing middleware to all v1 routes
 v1Router.use(requestTimingMiddleware("v1"));

@@ -199,7 +199,15 @@ app.get("/metrics", async (_, res) => {
 });
 
 const workerPort = config.EXTRACT_WORKER_PORT || config.PORT;
-app.listen(workerPort, () => {
+app.listen(workerPort, (error?: Error) => {
+  if (error) {
+    _logger.error("Failed to start extract worker health endpoint", {
+      error,
+      port: workerPort,
+    });
+    throw error;
+  }
+
   _logger.info(
     `Extract worker health endpoint is running on port ${workerPort}`,
   );

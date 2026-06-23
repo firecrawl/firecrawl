@@ -80,9 +80,8 @@ import {
   updateMonitorController,
 } from "../controllers/v2/monitor";
 
-expressWs(express());
-
 export const v2Router = express.Router();
+expressWs(express()).applyTo(v2Router);
 
 const parseUpload = multer({
   storage: multer.memoryStorage(),
@@ -362,7 +361,11 @@ v2Router.delete(
 v2Router.ws(
   "/crawl/:jobId",
   ((ws: any, req: express.Request, next: (err?: unknown) => void) => {
-    if (!isValidJobId(req.params.jobId)) {
+    const jobId = Array.isArray(req.params.jobId)
+      ? undefined
+      : req.params.jobId;
+
+    if (!isValidJobId(jobId)) {
       ws.close(1008, "Invalid job ID");
       return;
     }

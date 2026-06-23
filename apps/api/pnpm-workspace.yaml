@@ -5,6 +5,8 @@ minimumReleaseAge: 720 # 12 hours
 minimumReleaseAgeExclude:
   - fast-xml-parser
   - follow-redirects
+overrides:
+  "@types/express": "^5.0.6"
 onlyBuiltDependencies:
   - "@mendable/firecrawl-rs"
   - "@sentry-internal/node-cpu-profiler"

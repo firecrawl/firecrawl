@@ -445,7 +445,15 @@ app.get("/liveness", (req, res) => {
 });
 
 const workerPort = config.WORKER_PORT || config.PORT;
-app.listen(workerPort, () => {
+app.listen(workerPort, (error?: Error) => {
+  if (error) {
+    _logger.error("Failed to start liveness endpoint", {
+      error,
+      port: workerPort,
+    });
+    throw error;
+  }
+
   _logger.info(`Liveness endpoint is running on port ${workerPort}`);
 });
 
