@@ -9,7 +9,6 @@ overrides:
   "@types/express": "^5.0.6"
 patchedDependencies:
   "node-fetch@2.7.0": "patches/node-fetch@2.7.0.patch"
-  "knip@5.70.1": "patches/knip@5.70.1.patch"
 onlyBuiltDependencies:
   - "@mendable/firecrawl-rs"
   - "@sentry-internal/node-cpu-profiler"

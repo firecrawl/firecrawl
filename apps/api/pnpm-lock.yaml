@@ -41,9 +41,6 @@ overrides:
   '@opentelemetry/core@>=2.0.0 <2.8.0': 2.8.0
 
 patchedDependencies:
-  knip@5.70.1:
-    hash: 0b04b4d175ef23aea33a2de54d569c2d53cd7f08ccf145c57a151f024487a763
-    path: patches/knip@5.70.1.patch
   node-fetch@2.7.0:
     hash: cf2058381802eaf328e1cb26b185762ba41e2157a5545e7ed9bba56b7de0c49b
     path: patches/node-fetch@2.7.0.patch
@@ -349,7 +346,7 @@ importers:
         version: 9.1.7
       knip:
         specifier: ^5.70.1
-        version: 5.70.1(patch_hash=0b04b4d175ef23aea33a2de54d569c2d53cd7f08ccf145c57a151f024487a763)(@types/node@22.19.1)(typescript@7.0.1-rc)
+        version: 5.70.1(@types/node@22.19.1)(typescript@7.0.1-rc)
       lint-staged:
         specifier: ^16.1.6
         version: 16.1.6
@@ -8838,7 +8835,7 @@ snapshots:
       jwa: 2.0.1
       safe-buffer: 5.2.1
 
-  knip@5.70.1(patch_hash=0b04b4d175ef23aea33a2de54d569c2d53cd7f08ccf145c57a151f024487a763)(@types/node@22.19.1)(typescript@7.0.1-rc):
+  knip@5.70.1(@types/node@22.19.1)(typescript@7.0.1-rc):
     dependencies:
       '@nodelib/fs.walk': 1.2.8
       '@types/node': 22.19.1
