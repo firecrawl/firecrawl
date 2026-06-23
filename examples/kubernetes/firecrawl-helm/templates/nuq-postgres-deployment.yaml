@@ -18,6 +18,26 @@ spec:
       imagePullSecrets:
         {{- toYaml .Values.imagePullSecrets | nindent 8 }}
       {{- end }}
+      initContainers:
+        - name: init-pgdata
+          image: busybox:1.36
+          imagePullPolicy: IfNotPresent
+          command:
+            - sh
+            - -c
+            - |
+              mkdir -p /var/lib/postgresql/data
+              chown -R 999:999 /var/lib/postgresql/data
+          resources:
+            requests:
+              cpu: 10m
+              memory: 16Mi
+            limits:
+              cpu: 50m
+              memory: 32Mi
+          volumeMounts:
+            - name: postgres-storage
+              mountPath: /var/lib/postgresql
       containers:
         - name: nuq-postgres
           image: "{{ .Values.nuqPostgres.image.repository }}:{{ .Values.nuqPostgres.image.tag | default "latest" }}"
@@ -29,11 +49,14 @@ spec:
               value: "{{ .Values.nuqPostgres.auth.password | default "password" }}"
             - name: POSTGRES_DB
               value: "{{ .Values.nuqPostgres.auth.database | default "postgres" }}"
+            - name: PGDATA
+              value: /var/lib/postgresql/data
           ports:
             - containerPort: 5432
           volumeMounts:
             - name: postgres-storage
               mountPath: /var/lib/postgresql/data
+              subPath: data
           {{- if .Values.resources.enabled }}
             {{- if .Values.nuqPostgres.resources }}
           resources:
