@@ -1,4 +1,4 @@
-import ts from "typescript";
+import ts from "typescript5";
 
 export interface GeneratedCodeIssue {
   field: string;

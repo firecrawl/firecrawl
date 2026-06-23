@@ -11,6 +11,9 @@
     "sourceMap": true,
     "outDir": "./dist/src",
     "moduleResolution": "NodeNext",
+    "strict": false,
+    "noImplicitAny": false,
+    "useUnknownInCatchVariables": false,
     "strictNullChecks": true,
     "skipLibCheck": true,
 
