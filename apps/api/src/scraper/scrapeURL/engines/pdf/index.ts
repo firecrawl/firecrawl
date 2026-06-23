@@ -41,6 +41,7 @@ import { scrapePDFWithParsePDF } from "./pdfParse";
 import { captureExceptionWithZdrCheck } from "../../../../services/sentry";
 import { isPdfBuffer, PDF_SNIFF_WINDOW } from "./pdfUtils";
 import { comparePdfOutputs } from "./shadowComparison";
+import { garbledTextRatio, GARBLED_TEXT_THRESHOLD } from "./textQuality";
 
 /** Check if the PDF is eligible for Rust extraction, returning a rejection reason or null. */
 function getIneligibleReason(
@@ -323,12 +324,29 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
         }
 
         if (eligible && pdfResult.markdown) {
-          const html = await safeMarkdownToHtml(
-            pdfResult.markdown,
-            logger,
-            meta.id,
-          );
-          result = { markdown: pdfResult.markdown, html };
+          // Quality gate (auto mode only): the Rust path classified this as a
+          // clean TextBased extraction, but a broken or missing ToUnicode CMap
+          // can still yield mojibake (U+FFFD, PUA, or control chars) that passes
+          // the "is not empty" check. When the extracted text looks garbled,
+          // leave `result` unset so we fall through to the OCR/MU fallback,
+          // which recovers the real characters. Never override an explicit fast
+          // or ocr mode.
+          const garbledRatio =
+            mode === "auto" ? garbledTextRatio(pdfResult.markdown) : 0;
+          if (garbledRatio >= GARBLED_TEXT_THRESHOLD) {
+            logger.info("PDF text layer appears garbled; falling back to OCR", {
+              garbledRatio,
+              threshold: GARBLED_TEXT_THRESHOLD,
+              url: meta.rewrittenUrl ?? meta.url,
+            });
+          } else {
+            const html = await safeMarkdownToHtml(
+              pdfResult.markdown,
+              logger,
+              meta.id,
+            );
+            result = { markdown: pdfResult.markdown, html };
+          }
         }
       } catch (error) {
         if (error instanceof PDFOCRRequiredError) {
