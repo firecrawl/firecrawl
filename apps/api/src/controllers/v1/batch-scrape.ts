@@ -255,7 +255,7 @@ export async function batchScrapeController(
   return res.status(200).json({
     success: true,
     id,
-    url: `${protocol}://${req.get("host")}/v1/batch/scrape/${id}`,
+    url: `${protocol}://${req.host}/v1/batch/scrape/${id}`,
     invalidURLs,
   });
 }

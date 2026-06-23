@@ -553,7 +553,7 @@ export async function getMonitorCheckController(
     if (totalPagesForFilter <= nextSkip) return undefined;
     const url = new URL(
       `/v2/monitor/${monitorId}/checks/${checkId}`,
-      `${req.protocol}://${req.get("host")}`,
+      `${req.protocol}://${req.host}`,
     );
     url.searchParams.set("skip", String(nextSkip));
     url.searchParams.set("limit", String(query.limit));

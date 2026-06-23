@@ -172,7 +172,7 @@ function cleanupExpiredLocalUploads(now = Date.now()) {
 function buildPublicBaseUrl(req: Request): string {
   const configured = config.PARSE_UPLOAD_PUBLIC_BASE_URL;
   if (configured) return configured.replace(/\/$/, "");
-  return `${req.protocol}://${req.get("host")}`;
+  return `${req.protocol}://${req.host}`;
 }
 
 function makeObjectPath(
