@@ -11,7 +11,7 @@ import {
   pushConcurrencyLimitActiveJob,
 } from "../../lib/concurrency-limit";
 import { addJobPriority, deleteJobPriority } from "../../lib/job-priority";
-import { cacheableLookup } from "../../scraper/scrapeURL/lib/cacheableLookup";
+import { cacheableLookup } from "../../scraper/scrapeURL/lib/cacheable-lookup";
 import { v7 as uuidv7 } from "uuid";
 import {
   addCrawlJob,
@@ -34,10 +34,7 @@ import {
   resolveBillingMetadata,
   toAutumnBillingProperties,
 } from "../billing/types";
-import {
-  autumnService,
-  featureIdForBillingEndpoint,
-} from "../autumn/autumn.service";
+import { autumnService } from "../autumn/autumn.service";
 import {
   _addScrapeJobToBullMQ,
   addScrapeJob,
@@ -52,7 +49,6 @@ import { createWebhookSender, WebhookEvent } from "../webhook/index";
 import { CustomError } from "../../lib/custom-error";
 import { startWebScraperPipeline } from "../../main/runWebScraper";
 import { CostTracking } from "../../lib/cost-tracking";
-import { chargeKeylessCredits } from "../../lib/keyless";
 import { normalizeUrlOnlyHostname } from "../../lib/canonical-url";
 import { isUrlBlocked } from "../../scraper/WebScraper/utils/blocklist";
 import { UNSUPPORTED_SITE_MESSAGE } from "../../lib/strings";
@@ -86,11 +82,7 @@ import {
 } from "../../lib/otel-tracer";
 import { ScrapeUrlResponse } from "../../scraper/scrapeURL";
 import { logScrape } from "../logging/log_job";
-import { FeatureFlag } from "../../scraper/scrapeURL/engines";
-import {
-  recordMonitorScrapeFailure,
-  recordMonitorScrapeSuccess,
-} from "../monitoring/results";
+import { FeatureFlag } from "../../scraper/scrapeURL/types";
 
 configDotenv();
 
@@ -122,10 +114,6 @@ async function billScrapeJob(
     ...toAutumnBillingProperties(billing),
     apiKeyId: job.data.apiKeyId,
   };
-  // Scrapes initiated by a search (billing.endpoint === "search", e.g. search +
-  // scrapeOptions) are metered against SEARCH_CREDITS, matching the search
-  // request's own credits. Standalone scrapes stay on CREDITS.
-  const featureId = featureIdForBillingEndpoint(billing.endpoint);
   let trackedInRequest = false;
 
   if (job.data.is_scrape !== true && !job.data.internalOptions?.bypassBilling) {
@@ -139,12 +127,6 @@ async function billScrapeJob(
       unsupportedFeatures,
     );
 
-    // Charge the keyless free tier's per-IP daily credit budget unless this
-    // request reserved credits in the controller and will reconcile there.
-    if (!job.data.keylessReserved) {
-      await chargeKeylessCredits(job.data.team_id, creditsToBeBilled);
-    }
-
     if (
       job.data.team_id !== config.BACKGROUND_INDEX_TEAM_ID! &&
       config.USE_DB_AUTHENTICATION
@@ -154,7 +136,6 @@ async function billScrapeJob(
           teamId: job.data.team_id,
           value: creditsToBeBilled,
           properties: autumnProperties,
-          featureId,
         });
         const billingJobId = uuidv7();
         logger.debug(
@@ -198,7 +179,6 @@ async function billScrapeJob(
             teamId: job.data.team_id,
             value: creditsToBeBilled,
             properties: autumnProperties,
-            featureId,
           });
         }
         captureExceptionWithZdrCheck(error, {
@@ -329,21 +309,6 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
       document: doc,
     };
 
-    // Ensure the parent `requests` row is committed before any child
-    // `scrapes`/`parses` insert, to avoid a request_id FK violation. Runs on
-    // both the crawl and single-scrape paths; only single scrapes actually
-    // carry a logRequestPromise.
-    if (job.data.logRequestPromise) {
-      const start = Date.now();
-      await job.data.logRequestPromise;
-      const waited = Date.now() - start;
-      if (waited > 0) {
-        logger.warn("Had to wait for log request promise to complete", {
-          timeMs: waited,
-        });
-      }
-    }
-
     if (job.data.crawl_id) {
       const sc = (await getCrawl(job.data.crawl_id)) as StoredCrawl;
 
@@ -395,10 +360,6 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
           isUrlBlocked(
             doc.metadata.url,
             (await getACUCTeam(job.data.team_id))?.flags ?? null,
-            {
-              team_id: job.data.team_id,
-              origin: job.data.origin,
-            },
           )
         ) {
           throw new CrawlDenialError(UNSUPPORTED_SITE_MESSAGE); // TODO: make this its own error type that is ignored by error tracking
@@ -494,12 +455,6 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
                     v1: job.data.v1,
                     zeroDataRetention: job.data.zeroDataRetention,
                     apiKeyId: job.data.apiKeyId,
-                    monitoring: job.data.monitoring
-                      ? {
-                          ...job.data.monitoring,
-                          source: "discovered" as const,
-                        }
-                      : undefined,
                   },
                   jobId,
                   jobPriority,
@@ -526,9 +481,6 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
               [doc.metadata.url ?? doc.metadata.sourceURL!],
               1,
               sc.crawlerOptions?.maxDepth ?? 10,
-              false,
-              false,
-              true,
             );
             if (filterResult.links.length === 0) {
               const url = doc.metadata.url ?? doc.metadata.sourceURL!;
@@ -572,13 +524,10 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
           options: job.data.scrapeOptions,
           cost_tracking: costTracking.toJSON(),
           pdf_num_pages: doc.metadata.numPages,
-          content_type: doc.metadata.contentType,
           credits_cost: credits_billed ?? 0,
           zeroDataRetention: job.data.zeroDataRetention,
           skipNuq: job.data.skipNuq ?? false,
-          is_parse: Boolean(job.data.internalOptions?.isParse),
-          monitor_id: job.data.monitoring?.monitorId,
-          monitor_check_id: job.data.monitoring?.checkId,
+          is_parse: !!job.data.file,
         },
         true,
       );
@@ -626,8 +575,6 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
         }
       }
 
-      await recordMonitorScrapeSuccess(job, doc);
-
       logger.debug("Declaring job as done...");
       await addCrawlJobDone(job.data.crawl_id, job.id, true, logger);
     } else {
@@ -661,13 +608,10 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
           options: job.data.scrapeOptions,
           cost_tracking: costTracking.toJSON(),
           pdf_num_pages: doc.metadata.numPages,
-          content_type: doc.metadata.contentType,
           credits_cost: credits_billed ?? 0,
           zeroDataRetention: job.data.zeroDataRetention,
           skipNuq: job.data.skipNuq ?? false,
-          is_parse: Boolean(job.data.internalOptions?.isParse),
-          monitor_id: job.data.monitoring?.monitorId,
-          monitor_check_id: job.data.monitoring?.checkId,
+          is_parse: !!job.data.file,
         },
         false,
       );
@@ -684,10 +628,6 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
         timeTaken: timeTakenInSeconds,
         zeroDataRetention: job.data.zeroDataRetention,
       }).catch(err => logger.warn("Scrape tracking failed", { error: err }));
-
-      await recordMonitorScrapeSuccess(job, doc).catch(error =>
-        logger.warn("Failed to record monitor scrape result", { error }),
-      );
 
       if (job.data.skipNuq) {
         // doesn't use GCS for result retrieval, safe to not await
@@ -776,23 +716,6 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
             : new Error(JSON.stringify(error)),
     };
 
-    try {
-      // Ensure the parent `requests` row is committed before any child
-      // `scrapes`/`parses` insert, to avoid a request_id FK violation. Runs on
-      // both the crawl and single-scrape paths; only single scrapes actually
-      // carry a logRequestPromise.
-      if (job.data.logRequestPromise) {
-        const start = Date.now();
-        await job.data.logRequestPromise;
-        const waited = Date.now() - start;
-        if (waited > 0) {
-          logger.warn("Had to wait for log request promise to complete", {
-            timeMs: waited,
-          });
-        }
-      }
-    } catch {}
-
     if (job.data.crawl_id) {
       const sender = await createWebhookSender({
         teamId: job.data.team_id,
@@ -864,9 +787,7 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
         credits_cost: credits_billed ?? 0,
         zeroDataRetention: job.data.zeroDataRetention,
         skipNuq: job.data.skipNuq ?? false,
-        is_parse: Boolean(job.data.internalOptions?.isParse),
-        monitor_id: job.data.monitoring?.monitorId,
-        monitor_check_id: job.data.monitoring?.checkId,
+        is_parse: !!job.data.file,
       },
       true,
     );
@@ -883,8 +804,6 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
       timeTaken: timeTakenInSeconds,
       zeroDataRetention: job.data.zeroDataRetention,
     }).catch(err => logger.warn("Scrape tracking failed", { error: err }));
-
-    await recordMonitorScrapeFailure(job, error);
 
     return data;
   } finally {
@@ -968,9 +887,6 @@ async function addKickoffSitemapJob(
       webhook: sourceJob.data.webhook,
       v1: sourceJob.data.v1,
       apiKeyId: sourceJob.data.apiKeyId,
-      monitoring: sourceJob.data.monitoring
-        ? { ...sourceJob.data.monitoring, source: "discovered" as const }
-        : undefined,
     } satisfies ScrapeJobKickoffSitemap,
     jobId,
     21,
@@ -1026,9 +942,6 @@ async function processKickoffJob(job: NuQJob<ScrapeJobKickoff>) {
         isCrawlSourceScrape: true,
         zeroDataRetention: job.data.zeroDataRetention,
         apiKeyId: job.data.apiKeyId,
-        monitoring: job.data.monitoring
-          ? { ...job.data.monitoring, source: "discovered" as const }
-          : undefined,
       },
       jobId,
       await getJobPriority({ team_id: job.data.team_id, basePriority: 15 }),
@@ -1117,9 +1030,6 @@ async function processKickoffJob(job: NuQJob<ScrapeJobKickoff>) {
             v1: job.data.v1,
             zeroDataRetention: job.data.zeroDataRetention,
             apiKeyId: job.data.apiKeyId,
-            monitoring: job.data.monitoring
-              ? { ...job.data.monitoring, source: "discovered" as const }
-              : undefined,
           },
           priority: jobPriority,
         };
@@ -1234,9 +1144,6 @@ async function processKickoffSitemapJob(job: NuQJob<ScrapeJobKickoffSitemap>) {
           zeroDataRetention:
             job.data.zeroDataRetention || (sc.zeroDataRetention ?? false),
           apiKeyId: job.data.apiKeyId,
-          monitoring: job.data.monitoring
-            ? { ...job.data.monitoring, source: "discovered" as const }
-            : undefined,
         } satisfies ScrapeJobSingleUrls,
         jobId: uuidv7(),
         priority: jobPriority,
@@ -1316,14 +1223,10 @@ export const processJobInternal = async (job: NuQJob<ScrapeJobData>) => {
 };
 
 async function processJobWithTracing(job: NuQJob<ScrapeJobData>, logger: any) {
-  // FDB-backed jobs hold their concurrency slot through the queue lease; the
-  // Redis slot mirror and promotion-on-done below are PG-backend machinery
-  const isFdbJob = (job as any).backend === "fdb";
   try {
     try {
       let extendLockInterval: NodeJS.Timeout | null = null;
       if (
-        !isFdbJob &&
         job.data?.mode !== "kickoff" &&
         job.data?.team_id &&
         !job.data.skipNuq
@@ -1393,7 +1296,7 @@ async function processJobWithTracing(job: NuQJob<ScrapeJobData>, logger: any) {
         }
       }
     } finally {
-      if (!job.data.skipNuq && !isFdbJob) {
+      if (!job.data.skipNuq) {
         await concurrentJobDone(job);
       }
     }

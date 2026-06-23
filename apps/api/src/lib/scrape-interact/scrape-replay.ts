@@ -1,4 +1,4 @@
-import { rewriteUrl } from "../../scraper/scrapeURL/lib/rewriteUrl";
+import { rewriteUrl } from "../../scraper/scrapeURL/lib/rewrite-url";
 
 // ---------------------------------------------------------------------------
 // Types

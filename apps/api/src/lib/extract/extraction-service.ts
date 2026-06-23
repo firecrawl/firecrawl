@@ -11,7 +11,7 @@ import { scrapeDocument } from "./document-scraper";
 import {
   generateCompletions,
   generateSchemaFromPrompt,
-} from "../../scraper/scrapeURL/transformers/llmExtract";
+} from "../../scraper/scrapeURL/enrich/llm-extract";
 import { billTeam } from "../../services/billing/credit_billing";
 import { logExtract } from "../../services/logging/log_job";
 import { dereferenceSchema } from "./helpers/dereference-schema";

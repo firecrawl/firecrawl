@@ -24,7 +24,7 @@ import {
 import type { Logger } from "winston";
 import psl from "psl";
 import { MapDocument } from "../controllers/v2/types";
-import type { PdfMetadata } from "../scraper/scrapeURL/engines/pdf/types";
+import type { PdfMetadata } from "../scraper/scrapeURL/parse/pdf/types";
 import { storage } from "../lib/gcs-jobs";
 import { withSpan, setSpanAttributes } from "../lib/otel-tracer";
 import { config } from "../config";

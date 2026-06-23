@@ -8,7 +8,7 @@ import {
 import { CostTracking } from "./cost-tracking";
 import { hasFormatOfType } from "./format-utils";
 import { TransportableError } from "./error";
-import { FeatureFlag } from "../scraper/scrapeURL/engines";
+import { FeatureFlag } from "../scraper/scrapeURL/types";
 import { isUrlBlocked } from "../scraper/WebScraper/utils/blocklist";
 
 const creditsPerPDFPage = 1;

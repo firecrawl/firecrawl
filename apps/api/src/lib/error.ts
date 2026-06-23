@@ -2,14 +2,12 @@ export type ErrorCodes =
   | "SCRAPE_TIMEOUT"
   | "MAP_TIMEOUT"
   | "UNKNOWN_ERROR"
-  | "SCRAPE_ALL_ENGINES_FAILED"
   | "SCRAPE_SSL_ERROR"
   | "SCRAPE_SITE_ERROR"
   | "SCRAPE_PROXY_SELECTION_ERROR"
   | "SCRAPE_PDF_PREFETCH_FAILED"
   | "SCRAPE_DOCUMENT_PREFETCH_FAILED"
   | "SCRAPE_JOB_CANCELLED"
-  | "SCRAPE_RETRY_LIMIT"
   | "SCRAPE_ZDR_VIOLATION_ERROR"
   | "SCRAPE_DNS_RESOLUTION_ERROR"
   | "SCRAPE_PDF_INSUFFICIENT_TIME_ERROR"
@@ -41,23 +39,6 @@ export class TransportableError extends Error {
     super(message, options);
     this.code = code;
   }
-
-  serialize() {
-    return {
-      cause: this.cause,
-      stack: this.stack,
-      message: this.message,
-    };
-  }
-
-  static deserialize(
-    code: ErrorCodes,
-    data: ReturnType<typeof this.prototype.serialize>,
-  ) {
-    const x = new TransportableError(code, data.message, { cause: data.cause });
-    x.stack = data.stack;
-    return x;
-  }
 }
 
 export class ScrapeJobTimeoutError extends TransportableError {
@@ -65,19 +46,6 @@ export class ScrapeJobTimeoutError extends TransportableError {
     message: string = "The scrape operation timed out before completing. This happens when a page takes too long to load, render, or process. Possible causes: (1) The website is slow or unresponsive, (2) The page has heavy JavaScript that takes time to execute, (3) The page is very large or has many resources to load, (4) Network latency is high. To fix this, try increasing the timeout parameter in your scrape request, or if using actions, ensure your selectors are correct and the page is ready before actions are executed.",
   ) {
     super("SCRAPE_TIMEOUT", message);
-  }
-
-  serialize() {
-    return super.serialize();
-  }
-
-  static deserialize(
-    _code: ErrorCodes,
-    data: ReturnType<typeof this.prototype.serialize>,
-  ) {
-    const x = new ScrapeJobTimeoutError(data.message);
-    x.stack = data.stack;
-    return x;
   }
 }
 
@@ -94,20 +62,6 @@ export class UnknownError extends TransportableError {
       this.stack = inner.stack;
     }
   }
-
-  serialize() {
-    return super.serialize();
-  }
-
-  static deserialize(
-    _code: ErrorCodes,
-    data: ReturnType<typeof this.prototype.serialize>,
-  ) {
-    const x = new UnknownError("dummy");
-    x.message = data.message;
-    x.stack = data.stack;
-    return x;
-  }
 }
 
 export class MapTimeoutError extends TransportableError {
@@ -117,37 +71,11 @@ export class MapTimeoutError extends TransportableError {
       "The map operation timed out before completing. This happens when discovering URLs on a large website takes too long. Try using a more specific starting URL, or increase the timeout parameter if available.",
     );
   }
-
-  serialize() {
-    return super.serialize();
-  }
-
-  static deserialize(
-    _code: ErrorCodes,
-    data: ReturnType<typeof this.prototype.serialize>,
-  ) {
-    const x = new MapTimeoutError();
-    x.stack = data.stack;
-    return x;
-  }
 }
 
 export class MapFailedError extends TransportableError {
   constructor(message: string) {
     super("MAP_FAILED", message);
-  }
-
-  serialize() {
-    return super.serialize();
-  }
-
-  static deserialize(
-    _code: ErrorCodes,
-    data: ReturnType<typeof this.prototype.serialize>,
-  ) {
-    const x = new MapFailedError(data.message);
-    x.stack = data.stack;
-    return x;
   }
 }
 
@@ -158,37 +86,11 @@ export class RacedRedirectError extends TransportableError {
       "This URL was not scraped because another scrape job in this same crawl or batch scrape has already scraped this URL (usually due to a redirect). This is an expected error used to prevent duplicate scrapes of the same URL and ensure efficiency. No action is needed - the content is already captured by the other scrape job.",
     );
   }
-
-  serialize() {
-    return super.serialize();
-  }
-
-  static deserialize(
-    _: ErrorCodes,
-    data: ReturnType<typeof this.prototype.serialize>,
-  ) {
-    const x = new RacedRedirectError();
-    x.stack = data.stack;
-    return x;
-  }
 }
 
 export class SitemapError extends TransportableError {
   constructor(message: string, cause?: unknown) {
     super("SCRAPE_SITEMAP_ERROR", message, { cause });
-  }
-
-  serialize() {
-    return super.serialize();
-  }
-
-  static deserialize(
-    _: ErrorCodes,
-    data: ReturnType<typeof this.prototype.serialize>,
-  ) {
-    const x = new SitemapError(data.message, data.cause);
-    x.stack = data.stack;
-    return x;
   }
 }
 
@@ -196,46 +98,17 @@ export class CrawlDenialError extends TransportableError {
   constructor(public reason: string) {
     super("CRAWL_DENIAL", reason);
   }
-
-  serialize() {
-    return {
-      ...super.serialize(),
-      reason: this.reason,
-    };
-  }
-
-  static deserialize(
-    _: ErrorCodes,
-    data: ReturnType<typeof this.prototype.serialize> & { reason: string },
-  ) {
-    const x = new CrawlDenialError(data.reason);
-    x.stack = data.stack;
-    return x;
-  }
 }
 
 export class ActionsNotSupportedError extends TransportableError {
   constructor(message: string) {
     super("SCRAPE_ACTIONS_NOT_SUPPORTED", message);
   }
-
-  serialize() {
-    return super.serialize();
-  }
-
-  static deserialize(
-    _: ErrorCodes,
-    data: ReturnType<typeof this.prototype.serialize>,
-  ) {
-    const x = new ActionsNotSupportedError(data.message);
-    x.stack = data.stack;
-    return x;
-  }
 }
 
 /**
- * Error thrown when a job is cancelled (expected flow control, not a real error)
- * This should not be sent to Sentry as it's expected behavior when a crawl/batch is cancelled
+ * Thrown when a job is cancelled (expected flow control, not a real error).
+ * Not sent to Sentry since it's expected when a crawl/batch is cancelled.
  */
 export class JobCancelledError extends Error {
   constructor() {

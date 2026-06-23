@@ -1,5 +1,5 @@
 import * as undici from "undici";
-import { getSecureDispatcher } from "../scraper/scrapeURL/engines/utils/safeFetch";
+import { getSecureDispatcher } from "../lib/safe-fetch";
 
 export const protocolIncluded = (url: string) => {
   // if :// not in the start of the url assume http (maybe https?)

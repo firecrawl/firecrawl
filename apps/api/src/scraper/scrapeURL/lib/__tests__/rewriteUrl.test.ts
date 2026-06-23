@@ -1,4 +1,4 @@
-import { rewriteUrl } from "../rewriteUrl";
+import { rewriteUrl } from "../rewrite-url";
 
 describe("rewriteUrl", () => {
   describe("Google Docs", () => {

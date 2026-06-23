@@ -1,4 +1,4 @@
-import { extractMetadata } from "../../scraper/scrapeURL/lib/extractMetadata";
+import { extractMetadata } from "../../scraper/scrapeURL/lib/html/extract-metadata";
 import { vi, describe, it, expect } from "vitest";
 
 describe("Metadata concatenation", () => {

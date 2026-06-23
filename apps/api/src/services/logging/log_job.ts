@@ -269,10 +269,8 @@ export async function logScrape(scrape: LoggedScrape, force: boolean = false) {
     zeroDataRetention: scrape.zeroDataRetention,
   });
 
-  const tableName = scrape.is_parse ? "parses" : "scrapes";
-
   await robustInsert(
-    tableName,
+    scrape.is_parse ? "parses" : "scrapes",
     {
       id: scrape.id,
       request_id: scrape.request_id,

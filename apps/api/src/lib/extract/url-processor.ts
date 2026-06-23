@@ -8,7 +8,7 @@ import { extractConfig } from "./config";
 import type { Logger } from "winston";
 import { generateText } from "ai";
 import { getModel } from "../generic-ai";
-import { calculateCost } from "../../scraper/scrapeURL/transformers/llmExtract";
+import { calculateCost } from "../../scraper/scrapeURL/enrich/llm-extract";
 import type { CostTracking } from "../cost-tracking";
 
 export async function generateBasicCompletion(

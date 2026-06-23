@@ -627,8 +627,12 @@ describeIf(TEST_PRODUCTION)("Billing tests", () => {
 
       // Verify periods are sorted by startDate ascending
       for (let i = 1; i < result.periods.length; i++) {
-        const prevRaw = result.periods[i - 1].startDate ? Date.parse(result.periods[i - 1].startDate!) : NaN;
-        const currRaw = result.periods[i].startDate ? Date.parse(result.periods[i].startDate!) : NaN;
+        const prevRaw = result.periods[i - 1].startDate
+          ? Date.parse(result.periods[i - 1].startDate!)
+          : NaN;
+        const currRaw = result.periods[i].startDate
+          ? Date.parse(result.periods[i].startDate!)
+          : NaN;
         const prevNaN = Number.isNaN(prevRaw);
         const currNaN = Number.isNaN(currRaw);
         if (!prevNaN && !currNaN) {

@@ -1,7 +1,7 @@
 import {
   generateCompletions,
   GenerateCompletionsOptions,
-} from "../../../scraper/scrapeURL/transformers/llmExtract";
+} from "../../../scraper/scrapeURL/enrich/llm-extract";
 import { buildDocument } from "../build-document";
 import { ExtractResponse, TokenUsage } from "../../../controllers/v1/types";
 import { Document } from "../../../controllers/v1/types";
@@ -12,7 +12,7 @@ import {
 import { getModel } from "../../generic-ai";
 import { CostTracking, CostLimitExceededError } from "../../cost-tracking";
 import fs from "fs/promises";
-import { extractData } from "../../../scraper/scrapeURL/lib/extractSmartScrape";
+import { extractData } from "../../../scraper/scrapeURL/enrich/extract-smart-scrape";
 import type { Logger } from "winston";
 
 type BatchExtractOptions = {

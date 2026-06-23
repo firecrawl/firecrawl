@@ -4,7 +4,7 @@ metadata:
   name: playwright-service-config
 data:
   PORT: "3000"
-  ALLOW_LOCAL_WEBHOOKS: "false"
+  DISABLE_SSRF_PROXY: "false"
 ---
 apiVersion: apps/v1
 kind: Deployment

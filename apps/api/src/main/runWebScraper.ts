@@ -1,7 +1,7 @@
 import { ScrapeJobSingleUrls, RunWebScraperParams } from "../types";
 import { logger as _logger } from "../lib/logger";
 import { configDotenv } from "dotenv";
-import { scrapeURL, ScrapeUrlResponse } from "../scraper/scrapeURL";
+import { scrapeURL, scrapeFile, ScrapeUrlResponse } from "../scraper/scrapeURL";
 import type { NuQJob } from "../services/worker/nuq";
 import { CostTracking } from "../lib/cost-tracking";
 configDotenv();
@@ -30,6 +30,7 @@ export async function startWebScraperPipeline({
       teamId: job.data.team_id,
       ...job.data.internalOptions,
     },
+    file: job.data.file,
     team_id: job.data.team_id,
     bull_job_id: job.id,
     priority: job.priority,
@@ -44,6 +45,7 @@ async function runWebScraper({
   url,
   scrapeOptions,
   internalOptions,
+  file,
   team_id,
   bull_job_id,
   priority,
@@ -80,18 +82,28 @@ async function runWebScraper({
 
     try {
       logger.info("running scrapeURL...");
-      response = await scrapeURL(
-        bull_job_id,
-        url,
-        scrapeOptions,
-        {
-          priority,
-          ...internalOptions,
-          urlInvisibleInCurrentCrawl,
-          teamId: internalOptions?.teamId ?? team_id,
-        },
-        costTracking,
-      );
+      const effectiveInternal = {
+        priority,
+        ...internalOptions,
+        urlInvisibleInCurrentCrawl,
+        teamId: internalOptions?.teamId ?? team_id,
+      };
+      response = file
+        ? await scrapeFile(
+            bull_job_id,
+            url,
+            file,
+            scrapeOptions,
+            effectiveInternal,
+            costTracking,
+          )
+        : await scrapeURL(
+            bull_job_id,
+            url,
+            scrapeOptions,
+            effectiveInternal,
+            costTracking,
+          );
       if (!response.success) {
         if (response.error instanceof Error) {
           throw response.error;

@@ -6,11 +6,10 @@ config.ENV = "test";
 
 import { scrapeURL } from ".";
 import { scrapeOptions } from "../../controllers/v2/types";
-import { Engine } from "./engines";
 import { CostTracking } from "../../lib/cost-tracking";
 
 // Mock parseMarkdown but delegate to real implementation for other tests
-vi.mock("../../lib/html-to-markdown", async (importOriginal) => {
+vi.mock("../../lib/html-to-markdown", async importOriginal => {
   const actual =
     await importOriginal<typeof import("../../lib/html-to-markdown")>();
   return {
@@ -21,26 +20,14 @@ vi.mock("../../lib/html-to-markdown", async (importOriginal) => {
 
 import { parseMarkdown } from "../../lib/html-to-markdown";
 
-const testEngines: (Engine | undefined)[] = [
-  undefined,
-  "fire-engine;chrome-cdp",
-  "fire-engine;tlsclient",
-  "fetch",
-];
-
-const testEnginesScreenshot: (Engine | undefined)[] = [
-  undefined,
-  "fire-engine;chrome-cdp",
-];
-
 describe("Standalone scrapeURL tests", () => {
-  describe.each(testEngines)("Engine %s", (forceEngine: Engine | undefined) => {
+  describe("Live", () => {
     it("Basic scrape", async () => {
       const out = await scrapeURL(
         "test:scrape-basic",
         "https://firecrawl-test-site.vercel.app",
         scrapeOptions.parse({}),
-        { forceEngine, teamId: "test" },
+        { teamId: "test" },
         new CostTracking(),
       );
 
@@ -79,7 +66,7 @@ describe("Standalone scrapeURL tests", () => {
         scrapeOptions.parse({
           formats: ["markdown", "html"],
         }),
-        { forceEngine, teamId: "test" },
+        { teamId: "test" },
         new CostTracking(),
       );
 
@@ -104,7 +91,7 @@ describe("Standalone scrapeURL tests", () => {
         scrapeOptions.parse({
           onlyMainContent: false,
         }),
-        { forceEngine, teamId: "test" },
+        { teamId: "test" },
         new CostTracking(),
       );
 
@@ -128,7 +115,7 @@ describe("Standalone scrapeURL tests", () => {
           onlyMainContent: false,
           excludeTags: [".nav", "#footer", "strong"],
         }),
-        { forceEngine, teamId: "test" },
+        { teamId: "test" },
         new CostTracking(),
       );
 
@@ -149,7 +136,7 @@ describe("Standalone scrapeURL tests", () => {
         "test:scrape-400",
         "https://httpstat.us/400",
         scrapeOptions.parse({}),
-        { forceEngine, teamId: "test" },
+        { teamId: "test" },
         new CostTracking(),
       );
 
@@ -168,7 +155,7 @@ describe("Standalone scrapeURL tests", () => {
         "test:scrape-401",
         "https://httpstat.us/401",
         scrapeOptions.parse({}),
-        { forceEngine, teamId: "test" },
+        { teamId: "test" },
         new CostTracking(),
       );
 
@@ -187,7 +174,7 @@ describe("Standalone scrapeURL tests", () => {
         "test:scrape-403",
         "https://httpstat.us/403",
         scrapeOptions.parse({}),
-        { forceEngine, teamId: "test" },
+        { teamId: "test" },
         new CostTracking(),
       );
 
@@ -206,7 +193,7 @@ describe("Standalone scrapeURL tests", () => {
         "test:scrape-404",
         "https://httpstat.us/404",
         scrapeOptions.parse({}),
-        { forceEngine, teamId: "test" },
+        { teamId: "test" },
         new CostTracking(),
       );
 
@@ -225,7 +212,7 @@ describe("Standalone scrapeURL tests", () => {
         "test:scrape-405",
         "https://httpstat.us/405",
         scrapeOptions.parse({}),
-        { forceEngine, teamId: "test" },
+        { teamId: "test" },
         new CostTracking(),
       );
 
@@ -244,7 +231,7 @@ describe("Standalone scrapeURL tests", () => {
         "test:scrape-500",
         "https://httpstat.us/500",
         scrapeOptions.parse({}),
-        { forceEngine, teamId: "test" },
+        { teamId: "test" },
         new CostTracking(),
       );
 
@@ -263,7 +250,7 @@ describe("Standalone scrapeURL tests", () => {
         "test:scrape-redirect",
         "https://scrapethissite.com/",
         scrapeOptions.parse({}),
-        { forceEngine, teamId: "test" },
+        { teamId: "test" },
         new CostTracking(),
       );
 
@@ -286,68 +273,65 @@ describe("Standalone scrapeURL tests", () => {
     }, 30000);
   });
 
-  describe.each(testEnginesScreenshot)(
-    "Screenshot on engine %s",
-    (forceEngine: Engine | undefined) => {
-      it("Scrape with screenshot", async () => {
-        const out = await scrapeURL(
-          "test:scrape-screenshot",
-          "https://www.scrapethissite.com/",
-          scrapeOptions.parse({
-            formats: ["screenshot"],
-          }),
-          { forceEngine, teamId: "test" },
-          new CostTracking(),
+  describe("Screenshot", () => {
+    it("Scrape with screenshot", async () => {
+      const out = await scrapeURL(
+        "test:scrape-screenshot",
+        "https://www.scrapethissite.com/",
+        scrapeOptions.parse({
+          formats: ["screenshot"],
+        }),
+        { teamId: "test" },
+        new CostTracking(),
+      );
+
+      // expect(out.logs.length).toBeGreaterThan(0);
+      expect(out.success).toBe(true);
+      if (out.success) {
+        expect(out.document.warning).toBeUndefined();
+        expect(out.document).toHaveProperty("screenshot");
+        expect(typeof out.document.screenshot).toBe("string");
+        expect(
+          out.document.screenshot!.startsWith(
+            "https://service.firecrawl.dev/storage/v1/object/public/media/",
+          ),
         );
+        // TODO: attempt to fetch screenshot
+        expect(out.document).toHaveProperty("metadata");
+        expect(out.document.metadata.statusCode).toBe(200);
+        expect(out.document.metadata.error).toBeUndefined();
+      }
+    }, 30000);
 
-        // expect(out.logs.length).toBeGreaterThan(0);
-        expect(out.success).toBe(true);
-        if (out.success) {
-          expect(out.document.warning).toBeUndefined();
-          expect(out.document).toHaveProperty("screenshot");
-          expect(typeof out.document.screenshot).toBe("string");
-          expect(
-            out.document.screenshot!.startsWith(
-              "https://service.firecrawl.dev/storage/v1/object/public/media/",
-            ),
-          );
-          // TODO: attempt to fetch screenshot
-          expect(out.document).toHaveProperty("metadata");
-          expect(out.document.metadata.statusCode).toBe(200);
-          expect(out.document.metadata.error).toBeUndefined();
-        }
-      }, 30000);
+    it("Scrape with full-page screenshot", async () => {
+      const out = await scrapeURL(
+        "test:scrape-screenshot-fullPage",
+        "https://www.scrapethissite.com/",
+        scrapeOptions.parse({
+          formats: ["screenshot@fullPage"],
+        }),
+        { teamId: "test" },
+        new CostTracking(),
+      );
 
-      it("Scrape with full-page screenshot", async () => {
-        const out = await scrapeURL(
-          "test:scrape-screenshot-fullPage",
-          "https://www.scrapethissite.com/",
-          scrapeOptions.parse({
-            formats: ["screenshot@fullPage"],
-          }),
-          { forceEngine, teamId: "test" },
-          new CostTracking(),
+      // expect(out.logs.length).toBeGreaterThan(0);
+      expect(out.success).toBe(true);
+      if (out.success) {
+        expect(out.document.warning).toBeUndefined();
+        expect(out.document).toHaveProperty("screenshot");
+        expect(typeof out.document.screenshot).toBe("string");
+        expect(
+          out.document.screenshot!.startsWith(
+            "https://service.firecrawl.dev/storage/v1/object/public/media/",
+          ),
         );
-
-        // expect(out.logs.length).toBeGreaterThan(0);
-        expect(out.success).toBe(true);
-        if (out.success) {
-          expect(out.document.warning).toBeUndefined();
-          expect(out.document).toHaveProperty("screenshot");
-          expect(typeof out.document.screenshot).toBe("string");
-          expect(
-            out.document.screenshot!.startsWith(
-              "https://service.firecrawl.dev/storage/v1/object/public/media/",
-            ),
-          );
-          // TODO: attempt to fetch screenshot
-          expect(out.document).toHaveProperty("metadata");
-          expect(out.document.metadata.statusCode).toBe(200);
-          expect(out.document.metadata.error).toBeUndefined();
-        }
-      }, 30000);
-    },
-  );
+        // TODO: attempt to fetch screenshot
+        expect(out.document).toHaveProperty("metadata");
+        expect(out.document.metadata.statusCode).toBe(200);
+        expect(out.document.metadata.error).toBeUndefined();
+      }
+    }, 30000);
+  });
 
   it("Scrape of a PDF file", async () => {
     const out = await scrapeURL(

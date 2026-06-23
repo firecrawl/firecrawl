@@ -1,6 +1,6 @@
 import { MapDocument, URLTrace } from "../../controllers/v1/types";
 import { logger } from "../logger";
-import { generateCompletions } from "../../scraper/scrapeURL/transformers/llmExtract";
+import { generateCompletions } from "../../scraper/scrapeURL/enrich/llm-extract";
 import { buildRerankerUserPrompt } from "./build-prompts";
 import { getModel } from "../generic-ai";
 import { CostTracking } from "../cost-tracking";

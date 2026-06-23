@@ -1,7 +1,7 @@
 import {
   generateCompletions,
   generateSchemaFromPrompt,
-} from "../../../scraper/scrapeURL/transformers/llmExtract";
+} from "../../../scraper/scrapeURL/enrich/llm-extract";
 import { TokenUsage } from "../../../controllers/v1/types";
 import { z } from "zod";
 import {

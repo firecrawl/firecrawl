@@ -2,7 +2,7 @@ import { Response } from "express";
 import { z } from "zod";
 import { ErrorResponse, RequestWithAuth } from "./types";
 import { logger as _logger } from "../../lib/logger";
-import { generateCrawlerOptionsFromPrompt } from "../../scraper/scrapeURL/transformers/llmExtract";
+import { generateCrawlerOptionsFromPrompt } from "../../scraper/scrapeURL/enrich/llm-extract";
 import { CostTracking } from "../../lib/cost-tracking";
 import { buildPromptWithWebsiteStructure } from "../../lib/map-utils";
 

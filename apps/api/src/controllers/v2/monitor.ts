@@ -584,7 +584,11 @@ const emailActionBodySchema = z.object({
 type EmailActionResponse =
   | {
       success: true;
-      result: "confirmed" | "already_confirmed" | "unsubscribed" | "already_unsubscribed";
+      result:
+        | "confirmed"
+        | "already_confirmed"
+        | "unsubscribed"
+        | "already_unsubscribed";
       email: string;
       monitorName: string | null;
     }
@@ -592,7 +596,6 @@ type EmailActionResponse =
       success: false;
       error: "invalid_token" | "not_found" | "internal_error";
     };
-
 
 function parseTokenFromRequest(req: { body?: unknown }): string | null {
   const candidate =

@@ -1,21 +1,26 @@
-import { Logger } from "winston";
+import type { Logger } from "winston";
 import { z, ZodError } from "zod";
 import * as Sentry from "@sentry/node";
-import { MockState, saveMock } from "./mock";
-import { fireEngineURL } from "../engines/fire-engine/scrape";
-import { fetch, Response, FormData, Agent } from "undici";
-import { cacheableLookup } from "./cacheableLookup";
+import { fetch, FormData, Agent } from "undici";
 import dns from "dns";
-import { AbortManagerThrownError } from "./abortManager";
+import { MockState, saveMock } from "./mock";
+import { config } from "../../../config";
+import { cacheableLookup } from "./cacheable-lookup";
+import { AbortManagerThrownError } from "./abort-manager";
+
+const fireEngineURL = config.FIRE_ENGINE_BETA_URL ?? "<mock-fire-engine-url>";
+const playwrightURL =
+  config.PLAYWRIGHT_MICROSERVICE_URL ?? "<mock-playwright-url>";
+
+type Method = "GET" | "POST" | "DELETE" | "PUT";
 
 type RobustFetchParams<Schema extends z.Schema<any>> = {
   url: string;
   logger: Logger;
-  method: "GET" | "POST" | "DELETE" | "PUT";
+  method: Method;
   body?: any;
   headers?: Record<string, string>;
   schema?: Schema;
-  dontParseResponse?: boolean;
   ignoreResponse?: boolean;
   ignoreFailure?: boolean;
   ignoreFailureStatus?: boolean;
@@ -27,247 +32,167 @@ type RobustFetchParams<Schema extends z.Schema<any>> = {
   useCacheableLookup?: boolean;
 };
 
-const robustAgent = new Agent({
+const agentCached = new Agent({
   headersTimeout: 0,
   bodyTimeout: 0,
-  connect: {
-    lookup: cacheableLookup.lookup,
-  },
+  connect: { lookup: cacheableLookup.lookup },
+});
+const agentPlain = new Agent({
+  headersTimeout: 0,
+  bodyTimeout: 0,
+  connect: { lookup: dns.lookup },
 });
 
-const robustAgentNoLookup = new Agent({
-  headersTimeout: 0,
-  bodyTimeout: 0,
-  connect: {
-    lookup: dns.lookup,
-  },
-});
+type RawResponse = { status: number; headers: Headers; body: string };
+
+function redactBody(body: any): any {
+  if (body?.input?.file_content !== undefined) {
+    return { ...body, input: { ...body.input, file_content: undefined } };
+  }
+  if (body?.pdf !== undefined) {
+    return { ...body, pdf: undefined };
+  }
+  return body;
+}
+
+function mockResponseFor(
+  mock: MockState,
+  url: string,
+  method: Method,
+  body: any,
+): RawResponse {
+  const makeId = (x: { url: string; method: string; body?: any }) => {
+    let u = x.url;
+    if (u.startsWith(fireEngineURL)) {
+      u = u.replace(fireEngineURL, "<fire-engine>");
+    } else if (u.startsWith(playwrightURL)) {
+      u = u.replace(playwrightURL, "<playwright>");
+    }
+    let out = u + ";" + x.method;
+    if (u.startsWith("<fire-engine>") && x.method === "POST") {
+      out += "f-e;" + x.body?.engine + ";" + x.body?.url;
+    } else if (u.startsWith("<playwright>") && x.method === "POST") {
+      out += "pw;" + x.body?.url;
+    }
+    return out;
+  };
+  const id = makeId({ url, method, body });
+  const matches = mock.requests
+    .filter(x => makeId(x.options) === id)
+    .sort((a, b) => a.time - b.time);
+  const i = mock.tracker[id] ?? 0;
+  mock.tracker[id] = i + 1;
+  if (!matches[i]) {
+    throw new Error("Failed to mock request -- no mock targets found.");
+  }
+  return {
+    ...matches[i].result,
+    headers: new Headers(matches[i].result.headers),
+  };
+}
 
 export async function robustFetch<
   Schema extends z.Schema<any>,
   Output = z.infer<Schema>,
->({
-  url,
-  logger,
-  method = "GET",
-  body,
-  headers,
-  schema,
-  ignoreResponse = false,
-  ignoreFailure = false,
-  ignoreFailureStatus = false,
-  requestId = crypto.randomUUID(),
-  tryCount = 1,
-  tryCooldown,
-  mock,
-  abort,
-  useCacheableLookup = true,
-}: RobustFetchParams<Schema>): Promise<Output> {
-  abort?.throwIfAborted();
-
-  const params = {
+>(params: RobustFetchParams<Schema>): Promise<Output> {
+  const {
     url,
     logger,
-    method,
+    method = "GET",
     body,
     headers,
     schema,
-    ignoreResponse,
-    ignoreFailure,
-    ignoreFailureStatus,
-    tryCount,
+    ignoreResponse = false,
+    ignoreFailure = false,
+    ignoreFailureStatus = false,
+    requestId = crypto.randomUUID(),
+    tryCount = 1,
     tryCooldown,
+    mock,
     abort,
-  };
+    useCacheableLookup = true,
+  } = params;
 
-  // omit pdf file content from logs
-  const logParams = {
-    ...params,
-    body: body?.input
-      ? {
-          ...body,
-          input: {
-            ...body.input,
-            file_content: undefined,
-          },
-        }
-      : body?.pdf
-        ? {
-            ...body,
-            pdf: undefined,
-          }
-        : body,
-    logger: undefined,
-  };
+  abort?.throwIfAborted();
 
-  let response: {
-    status: number;
-    headers: Headers;
-    body: string;
-  };
+  const logParams = { ...params, body: redactBody(body), logger: undefined };
+  const retry = () =>
+    robustFetch<Schema, Output>({
+      ...params,
+      requestId,
+      tryCount: tryCount - 1,
+    });
+
+  let response: RawResponse;
 
   if (mock === null) {
-    let request: Response;
     try {
-      request = await fetch(url, {
+      const isForm = body instanceof FormData;
+      const res = await fetch(url, {
         method,
         headers: {
-          ...(body instanceof FormData
+          ...(isForm
             ? {}
             : body !== undefined
-              ? {
-                  "Content-Type": "application/json",
-                }
+              ? { "Content-Type": "application/json" }
               : {}),
-          ...(headers !== undefined ? headers : {}),
+          ...(headers ?? {}),
         },
         signal: abort,
-        dispatcher: useCacheableLookup ? robustAgent : robustAgentNoLookup,
-        ...(body instanceof FormData
-          ? {
-              body,
-            }
+        dispatcher: useCacheableLookup ? agentCached : agentPlain,
+        ...(isForm
+          ? { body }
           : body !== undefined
-            ? {
-                body: JSON.stringify(body),
-              }
+            ? { body: JSON.stringify(body) }
             : {}),
       });
+      response = {
+        status: res.status,
+        headers: res.headers,
+        body: await res.text(),
+      };
     } catch (error) {
-      if (error instanceof AbortManagerThrownError) {
-        throw error;
-      } else if (!ignoreFailure) {
-        Sentry.captureException(error);
-        if (tryCount > 1) {
-          logger.debug(
-            "Request failed, trying " + (tryCount - 1) + " more times",
-            { params: logParams, error, requestId },
-          );
-          return await robustFetch({
-            ...params,
-            requestId,
-            tryCount: tryCount - 1,
-            mock,
-          });
-        } else {
-          logger.debug("Request failed", {
-            params: logParams,
-            error,
-            requestId,
-          });
-          throw new Error("Request failed", {
-            cause: {
-              params: logParams,
-              requestId,
-              error,
-            },
-          });
-        }
-      } else {
-        return null as Output;
-      }
+      if (error instanceof AbortManagerThrownError) throw error;
+      if (ignoreFailure) return null as Output;
+
+      Sentry.captureException(error);
+      const msg =
+        tryCount > 1
+          ? `Request failed, trying ${tryCount - 1} more times`
+          : "Request failed";
+      logger.debug(msg, { params: logParams, error, requestId });
+      if (tryCount > 1) return retry();
+      throw new Error("Request failed", {
+        cause: { params: logParams, requestId, error },
+      });
     }
 
-    if (ignoreResponse === true) {
-      return null as Output;
-    }
-
-    const resp = await request.text();
-    response = {
-      status: request.status,
-      headers: request.headers,
-      body: resp, // NOTE: can this throw an exception?
-    };
+    if (ignoreResponse) return null as Output;
+    await saveMock(
+      { ...params, logger: undefined, schema: undefined, headers: undefined },
+      response,
+    );
   } else {
-    if (ignoreResponse === true) {
-      return null as Output;
-    }
-
-    const makeRequestTypeId = (
-      request: (typeof mock)["requests"][number]["options"],
-    ) => {
-      let trueUrl = request.url.startsWith(fireEngineURL)
-        ? request.url.replace(fireEngineURL, "<fire-engine>")
-        : request.url;
-
-      let out = trueUrl + ";" + request.method;
-      if (trueUrl.startsWith("<fire-engine>") && request.method === "POST") {
-        out += "f-e;" + request.body?.engine + ";" + request.body?.url;
-      }
-      return out;
-    };
-
-    const thisId = makeRequestTypeId(params);
-    const matchingMocks = mock.requests
-      .filter(x => makeRequestTypeId(x.options) === thisId)
-      .sort((a, b) => a.time - b.time);
-    const nextI = mock.tracker[thisId] ?? 0;
-    mock.tracker[thisId] = nextI + 1;
-
-    if (!matchingMocks[nextI]) {
-      throw new Error("Failed to mock request -- no mock targets found.");
-    }
-
-    response = {
-      ...matchingMocks[nextI].result,
-      headers: new Headers(matchingMocks[nextI].result.headers),
-    };
+    if (ignoreResponse) return null as Output;
+    response = mockResponseFor(mock, url, method, body);
   }
 
   if (response.status >= 300 && !ignoreFailureStatus) {
+    const responseLog = { status: response.status, body: response.body };
+    const msg =
+      tryCount > 1
+        ? `Request sent failure status, trying ${tryCount - 1} more times`
+        : "Request sent failure status";
+    logger.debug(msg, { params: logParams, response: responseLog, requestId });
     if (tryCount > 1) {
-      logger.debug(
-        "Request sent failure status, trying " + (tryCount - 1) + " more times",
-        {
-          params: logParams,
-          response: { status: response.status, body: response.body },
-          requestId,
-        },
-      );
       if (tryCooldown !== undefined) {
-        let timeoutHandle: NodeJS.Timeout | null = null;
-        try {
-          await new Promise<null>(resolve => {
-            timeoutHandle = setTimeout(() => resolve(null), tryCooldown);
-          });
-        } finally {
-          if (timeoutHandle) {
-            clearTimeout(timeoutHandle);
-          }
-        }
+        await new Promise(r => setTimeout(r, tryCooldown));
       }
-      return await robustFetch({
-        ...params,
-        requestId,
-        tryCount: tryCount - 1,
-        mock,
-      });
-    } else {
-      logger.debug("Request sent failure status", {
-        params: logParams,
-        response: { status: response.status, body: response.body },
-        requestId,
-      });
-      throw new Error("Request sent failure status", {
-        cause: {
-          params: logParams,
-          response: { status: response.status, body: response.body },
-          requestId,
-        },
-      });
+      return retry();
     }
-  }
-
-  if (mock === null) {
-    await saveMock(
-      {
-        ...params,
-        logger: undefined,
-        schema: undefined,
-        headers: undefined,
-      },
-      response,
-    );
+    throw new Error("Request sent failure status", {
+      cause: { params: logParams, response: responseLog, requestId },
+    });
   }
 
   let data: Output;
@@ -280,11 +205,7 @@ export async function robustFetch<
       requestId,
     });
     throw new Error("Request sent malformed JSON", {
-      cause: {
-        params: logParams,
-        response,
-        requestId,
-      },
+      cause: { params: logParams, response, requestId },
     });
   }
 
@@ -292,41 +213,20 @@ export async function robustFetch<
     try {
       data = schema.parse(data);
     } catch (error) {
-      if (error instanceof ZodError) {
-        logger.debug("Response does not match provided schema", {
-          params: logParams,
-          response: { status: response.status, body: response.body },
-          requestId,
-          error,
-          schema,
-        });
-        throw new Error("Response does not match provided schema", {
-          cause: {
-            params: logParams,
-            response,
-            requestId,
-            error,
-            schema,
-          },
-        });
-      } else {
-        logger.debug("Parsing response with provided schema failed", {
-          params: logParams,
-          response: { status: response.status, body: response.body },
-          requestId,
-          error,
-          schema,
-        });
-        throw new Error("Parsing response with provided schema failed", {
-          cause: {
-            params: logParams,
-            response,
-            requestId,
-            error,
-            schema,
-          },
-        });
-      }
+      const label =
+        error instanceof ZodError
+          ? "Response does not match provided schema"
+          : "Parsing response with provided schema failed";
+      logger.debug(label, {
+        params: logParams,
+        response: { status: response.status, body: response.body },
+        requestId,
+        error,
+        schema,
+      });
+      throw new Error(label, {
+        cause: { params: logParams, response, requestId, error, schema },
+      });
     }
   }
 

@@ -1,12 +1,8 @@
 import * as Sentry from "@sentry/node";
 import { logger } from "../lib/logger";
 import { config } from "../config";
-import {
-  AddFeatureError,
-  RemoveFeatureError,
-  EngineError,
-} from "../scraper/scrapeURL/error";
-import { AbortManagerThrownError } from "../scraper/scrapeURL/lib/abortManager";
+import { EngineError } from "../scraper/scrapeURL/error";
+import { AbortManagerThrownError } from "../scraper/scrapeURL/lib/abort-manager";
 import { JobCancelledError } from "../lib/error";
 import { isQueueFullError } from "../lib/queue-full-error";
 
@@ -27,7 +23,6 @@ type CaptureContext = {
 };
 
 const transportableErrorCodes = [
-  "SCRAPE_ALL_ENGINES_FAILED",
   "SCRAPE_DNS_RESOLUTION_ERROR",
   "SCRAPE_SITE_ERROR",
   "SCRAPE_SSL_ERROR",
@@ -91,8 +86,6 @@ export function shouldIgnoreSentryException(error: unknown): boolean {
   }
 
   if (
-    error instanceof AddFeatureError ||
-    error instanceof RemoveFeatureError ||
     error instanceof AbortManagerThrownError ||
     error instanceof EngineError ||
     error instanceof JobCancelledError
@@ -100,13 +93,9 @@ export function shouldIgnoreSentryException(error: unknown): boolean {
     return true;
   }
 
-  // We sometimes rethrow TransportableErrors across process boundaries as a
-  // plain Error with message like `${code}|${json}` (see error-serde.ts).
-  // In that case, `error.code` is missing, so extract it from the message.
   const errorCodeFromField = "code" in error ? String(error.code) : "";
   const errorMessage = getErrorMessage(error);
 
-  // Ignore cancellation errors (fallback for serialized errors)
   if (
     errorMessage === "Parent crawl/batch scrape was cancelled" ||
     errorMessage.includes("Parent crawl/batch scrape was cancelled")
@@ -117,9 +106,8 @@ export function shouldIgnoreSentryException(error: unknown): boolean {
   const errorCodeFromMessage =
     errorCodeFromField ||
     (errorMessage.includes("|") ? errorMessage.split("|", 1)[0] : "");
-  const errorCode = errorCodeFromMessage;
 
-  return transportableErrorCodes.includes(errorCode);
+  return transportableErrorCodes.includes(errorCodeFromMessage);
 }
 
 if (config.SENTRY_DSN) {

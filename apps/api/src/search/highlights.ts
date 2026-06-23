@@ -8,7 +8,7 @@ import {
 } from "../services";
 import { indexGetRecent5 } from "../db/rpc";
 import { parseMarkdown } from "../lib/html-to-markdown";
-import { htmlTransform } from "../scraper/scrapeURL/lib/removeUnwantedElements";
+import { htmlTransform } from "../scraper/scrapeURL/lib/html/remove-unwanted-elements";
 import type { ScrapeOptions } from "../controllers/v2/types";
 import { generateHighlights } from "./highlight-model";
 import { config } from "../config";

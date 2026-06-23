@@ -8,7 +8,7 @@ import {
 import {
   generateCompletions,
   trimToTokenLimit,
-} from "../../scraper/scrapeURL/transformers/llmExtract";
+} from "../../scraper/scrapeURL/enrich/llm-extract";
 import { ExtractOptions } from "../../controllers/v1/types";
 
 import { getModel } from "../generic-ai";

@@ -20,17 +20,10 @@ import { updateGeneratedLlmsTxt } from "../lib/generate-llmstxt/generate-llmstxt
 import Express from "express";
 import { robustFetch } from "../scraper/scrapeURL/lib/fetch";
 import { initializeBlocklist } from "../scraper/WebScraper/utils/blocklist";
-import { initializeEngineForcing } from "../scraper/WebScraper/utils/engine-forcing";
 import { crawlFinishedQueue, NuQJob, scrapeQueue } from "./worker/nuq";
 import { finishCrawlSuper } from "./worker/crawl-logic";
 import { getCrawl } from "../lib/crawl-redis";
 import { TransportableError } from "../lib/error";
-import {
-  processMonitorCheckJob,
-  reconcileRunningMonitorChecks,
-} from "./monitoring/runner";
-import { enqueueDueMonitorChecks } from "./monitoring/scheduler";
-import { consumeMonitorCheckJobs } from "./monitoring/queue";
 
 configDotenv();
 
@@ -44,7 +37,6 @@ const connectionMonitorInterval = config.CONNECTION_MONITOR_INTERVAL;
 const gotJobInterval = config.CONNECTION_MONITOR_INTERVAL;
 
 const runningJobs: Set<string> = new Set();
-let monitorSchedulerInterval: NodeJS.Timeout | null = null;
 
 const processDeepResearchJobInternal = async (
   token: string,
@@ -414,7 +406,7 @@ let currentLiveness: boolean = true;
 
 app.get("/liveness", (req, res) => {
   _logger.info("Liveness endpoint hit");
-  if (config.USE_DB_AUTHENTICATION && config.NUQ_RABBITMQ_URL) {
+  if (config.USE_DB_AUTHENTICATION) {
     // networking check for Kubernetes environments
     const host = config.FIRECRAWL_APP_HOST;
     const port = config.FIRECRAWL_APP_PORT;
@@ -445,15 +437,7 @@ app.get("/liveness", (req, res) => {
 });
 
 const workerPort = config.WORKER_PORT || config.PORT;
-app.listen(workerPort, (error?: Error) => {
-  if (error) {
-    _logger.error("Failed to start liveness endpoint", {
-      error,
-      port: workerPort,
-    });
-    throw error;
-  }
-
+app.listen(workerPort, () => {
   _logger.info(`Liveness endpoint is running on port ${workerPort}`);
 });
 
@@ -465,44 +449,11 @@ app.listen(workerPort, (error?: Error) => {
     process.exit(1);
   });
 
-  initializeEngineForcing();
-
-  if (config.USE_DB_AUTHENTICATION && !config.DISABLE_MONITORING) {
-    monitorSchedulerInterval = setInterval(() => {
-      enqueueDueMonitorChecks().catch(error => {
-        _logger.error("Failed to enqueue due monitor checks", { error });
-      });
-      reconcileRunningMonitorChecks().catch(error => {
-        _logger.error("Failed to reconcile running monitor checks", { error });
-      });
-    }, 60_000);
-    enqueueDueMonitorChecks().catch(error => {
-      _logger.error("Failed to enqueue due monitor checks", { error });
-    });
-    reconcileRunningMonitorChecks().catch(error => {
-      _logger.error("Failed to reconcile running monitor checks", { error });
-    });
-
-    await consumeMonitorCheckJobs(processMonitorCheckJob);
-  } else if (!config.USE_DB_AUTHENTICATION) {
-    _logger.info(
-      "Skipping monitor worker startup because database authentication is disabled",
-    );
-  } else {
-    _logger.info(
-      "Skipping monitor worker startup because NUQ_RABBITMQ_URL is not configured",
-    );
-  }
-
   await Promise.all([
     workerFun(getDeepResearchQueue(), processDeepResearchJobInternal),
     workerFun(getGenerateLlmsTxtQueue(), processGenerateLlmsTxtJobInternal),
     crawlFinishWorker(),
   ]);
-
-  if (monitorSchedulerInterval) {
-    clearInterval(monitorSchedulerInterval);
-  }
 
   _logger.info("All workers exited. Waiting for all jobs to finish...");
 

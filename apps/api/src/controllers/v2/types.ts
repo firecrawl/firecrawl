@@ -704,7 +704,6 @@ const baseScrapeOptions = z.strictObject({
   __searchPreviewToken: z.string().optional(),
   __experimental_omce: z.boolean().prefault(false).optional(),
   __experimental_omceDomain: z.string().optional(),
-  __experimental_engpicker: z.boolean().prefault(false).optional(),
   __forceFirePDF: z.boolean().prefault(false).optional(),
 });
 
@@ -997,9 +996,7 @@ const uploadedParseFileSchema = z.custom<UploadedParseFile>(
       (value as any).kind === "html" ||
       (value as any).kind === "pdf" ||
       (value as any).kind === "document"),
-  {
-    error: "A file upload is required.",
-  },
+  { error: "A file upload is required." },
 );
 
 const parseRequestSchemaBase = baseScrapeOptions.extend({
@@ -1634,7 +1631,6 @@ function fromV0CrawlerOptions(
       delay: x.delay,
     }),
     internalOptions: {
-      v0CrawlOnlyUrls: x.returnOnlyUrls,
       teamId,
     },
   };
@@ -1698,7 +1694,6 @@ export function fromV0ScrapeOptions(
     }),
     internalOptions: {
       atsv: pageOptions.atsv,
-      v0DisableJsDom: pageOptions.disableJsDom,
       teamId,
       ...(extractorOptions !== undefined &&
       extractorOptions.mode.includes("llm-extraction")

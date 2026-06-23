@@ -160,7 +160,7 @@ config:
 
 playwrightConfig:
   PORT: "3000"
-  ALLOW_LOCAL_WEBHOOKS: ""
+  DISABLE_SSRF_PROXY: ""
   BLOCK_MEDIA: ""
   MAX_CONCURRENT_PAGES: "10"
 

@@ -10,9 +10,8 @@ const {
   mockSendConfirmationEmail: vi.fn(),
 }));
 
-vi.mock("./email_recipients", async (importOriginal) => {
-  const actual =
-    await importOriginal<typeof import("./email_recipients")>();
+vi.mock("./email_recipients", async importOriginal => {
+  const actual = await importOriginal<typeof import("./email_recipients")>();
   return {
     ...actual,
     ensureMonitorEmailRecipient: (...args: unknown[]) =>

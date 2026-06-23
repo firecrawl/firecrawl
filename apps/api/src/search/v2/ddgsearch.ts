@@ -3,7 +3,7 @@ import { config } from "../../config";
 import { JSDOM } from "jsdom";
 import { SearchV2Response, WebSearchResult } from "../../lib/entities";
 import { logger } from "../../lib/logger";
-import { getSecureDispatcher } from "../../scraper/scrapeURL/engines/utils/safeFetch";
+import { getSecureDispatcher } from "../../lib/safe-fetch";
 
 class DDGAntiBotError extends Error {
   constructor() {

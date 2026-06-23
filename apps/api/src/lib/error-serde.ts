@@ -18,7 +18,6 @@ import {
   DocumentAntibotError,
   PDFInsufficientTimeError,
   PDFOCRRequiredError,
-  NoEnginesLeftError,
   ZDRViolationError,
   PDFPrefetchFailed,
   DocumentPrefetchFailed,
@@ -29,64 +28,73 @@ import {
   NoCachedDataError,
   LockdownMissError,
   ScrapeJobCancelledError,
-  ScrapeRetryLimitError,
   BrandingNotSupportedError,
   AudioUnsupportedUrlError,
   VideoUnsupportedUrlError,
   XTwitterConfigurationError,
 } from "../scraper/scrapeURL/error";
 
-// TODO: figure out correct typing for this
-const errorMap: Record<ErrorCodes, any> = {
-  SCRAPE_TIMEOUT: ScrapeJobTimeoutError,
-  MAP_TIMEOUT: MapTimeoutError,
-  UNKNOWN_ERROR: UnknownError,
-  SCRAPE_ALL_ENGINES_FAILED: NoEnginesLeftError,
-  SCRAPE_SSL_ERROR: SSLError,
-  SCRAPE_SITE_ERROR: SiteError,
-  SCRAPE_PROXY_SELECTION_ERROR: ProxySelectionError,
-  SCRAPE_PDF_PREFETCH_FAILED: PDFPrefetchFailed,
-  SCRAPE_DOCUMENT_PREFETCH_FAILED: DocumentPrefetchFailed,
-  SCRAPE_JOB_CANCELLED: ScrapeJobCancelledError,
-  SCRAPE_RETRY_LIMIT: ScrapeRetryLimitError,
-  SCRAPE_ZDR_VIOLATION_ERROR: ZDRViolationError,
-  SCRAPE_DNS_RESOLUTION_ERROR: DNSResolutionError,
-  SCRAPE_PDF_INSUFFICIENT_TIME_ERROR: PDFInsufficientTimeError,
-  SCRAPE_PDF_ANTIBOT_ERROR: PDFAntibotError,
-  SCRAPE_PDF_OCR_REQUIRED: PDFOCRRequiredError,
-  SCRAPE_DOCUMENT_ANTIBOT_ERROR: DocumentAntibotError,
-  SCRAPE_UNSUPPORTED_FILE_ERROR: UnsupportedFileError,
-  SCRAPE_NO_CACHED_DATA: NoCachedDataError,
-  SCRAPE_LOCKDOWN_CACHE_MISS: LockdownMissError,
-  SCRAPE_ACTION_ERROR: ActionError,
-  SCRAPE_ACTIONS_NOT_SUPPORTED: ActionsNotSupportedError,
-  SCRAPE_BRANDING_NOT_SUPPORTED: BrandingNotSupportedError,
-  AGENT_INDEX_ONLY: AgentIndexOnlyError,
-  SCRAPE_RACED_REDIRECT_ERROR: RacedRedirectError,
-  SCRAPE_SITEMAP_ERROR: SitemapError,
-  CRAWL_DENIAL: CrawlDenialError,
-  SCRAPE_AUDIO_UNSUPPORTED_URL: AudioUnsupportedUrlError,
-  SCRAPE_VIDEO_UNSUPPORTED_URL: VideoUnsupportedUrlError,
-  SCRAPE_X_TWITTER_CONFIGURATION_ERROR: XTwitterConfigurationError,
-  MAP_FAILED: MapFailedError,
+type Reviver = (d: any) => TransportableError;
 
-  // Zod errors
-  BAD_REQUEST: null,
-  BAD_REQUEST_INVALID_JSON: null,
-  PARSE_UNSUPPORTED_OPTIONS: null,
+const revivers: Partial<Record<ErrorCodes, Reviver>> = {
+  SCRAPE_TIMEOUT: d => new ScrapeJobTimeoutError(d.message),
+  MAP_TIMEOUT: () => new MapTimeoutError(),
+  UNKNOWN_ERROR: d => {
+    const x = new UnknownError("");
+    x.message = d.message;
+    return x;
+  },
+  SCRAPE_SSL_ERROR: d => new SSLError(d.skipTlsVerification),
+  SCRAPE_SITE_ERROR: d => new SiteError(d.errorCode),
+  SCRAPE_PROXY_SELECTION_ERROR: () => new ProxySelectionError(),
+  SCRAPE_PDF_PREFETCH_FAILED: () => new PDFPrefetchFailed(),
+  SCRAPE_DOCUMENT_PREFETCH_FAILED: () => new DocumentPrefetchFailed(),
+  SCRAPE_JOB_CANCELLED: () => new ScrapeJobCancelledError(),
+  SCRAPE_ZDR_VIOLATION_ERROR: d => new ZDRViolationError(d.feature),
+  SCRAPE_DNS_RESOLUTION_ERROR: d => new DNSResolutionError(d.hostname),
+  SCRAPE_PDF_INSUFFICIENT_TIME_ERROR: d =>
+    new PDFInsufficientTimeError(d.pageCount, d.minTimeout),
+  SCRAPE_PDF_ANTIBOT_ERROR: () => new PDFAntibotError(),
+  SCRAPE_PDF_OCR_REQUIRED: d => new PDFOCRRequiredError(d.pdfType),
+  SCRAPE_DOCUMENT_ANTIBOT_ERROR: () => new DocumentAntibotError(),
+  SCRAPE_UNSUPPORTED_FILE_ERROR: d => new UnsupportedFileError(d.reason),
+  SCRAPE_NO_CACHED_DATA: () => new NoCachedDataError(),
+  SCRAPE_LOCKDOWN_CACHE_MISS: () => new LockdownMissError(),
+  SCRAPE_ACTION_ERROR: d => new ActionError(d.errorCode),
+  SCRAPE_ACTIONS_NOT_SUPPORTED: d => new ActionsNotSupportedError(d.message),
+  SCRAPE_BRANDING_NOT_SUPPORTED: d => new BrandingNotSupportedError(d.message),
+  AGENT_INDEX_ONLY: () => new AgentIndexOnlyError(),
+  SCRAPE_RACED_REDIRECT_ERROR: () => new RacedRedirectError(),
+  SCRAPE_SITEMAP_ERROR: d => new SitemapError(d.message, d.cause),
+  CRAWL_DENIAL: d => new CrawlDenialError(d.reason),
+  SCRAPE_AUDIO_UNSUPPORTED_URL: d => new AudioUnsupportedUrlError(d.message),
+  SCRAPE_VIDEO_UNSUPPORTED_URL: d => new VideoUnsupportedUrlError(d.message),
+  SCRAPE_X_TWITTER_CONFIGURATION_ERROR: () => new XTwitterConfigurationError(),
+  MAP_FAILED: d => new MapFailedError(d.message),
 };
 
-export function serializeTransportableError(error: TransportableError) {
-  return `${error.code}|${JSON.stringify(error.serialize())}`;
+export function serializeTransportableError(error: TransportableError): string {
+  const payload: Record<string, unknown> = {
+    message: error.message,
+    stack: error.stack,
+    cause: error.cause,
+  };
+  for (const [k, v] of Object.entries(error)) {
+    if (k !== "code") payload[k] = v;
+  }
+  return `${error.code}|${JSON.stringify(payload)}`;
 }
 
 export function deserializeTransportableError(
   data: string,
-): InstanceType<(typeof errorMap)[keyof typeof errorMap]> | null {
-  const [code, ...serialized] = data.split("|");
-  const x = errorMap[code];
-  if (!x) {
-    return null;
-  }
-  return x.deserialize(code, JSON.parse(serialized.join("|")));
+): TransportableError | null {
+  const sep = data.indexOf("|");
+  if (sep === -1) return null;
+  const code = data.slice(0, sep) as ErrorCodes;
+  const reviver = revivers[code];
+  if (!reviver) return null;
+  const parsed = JSON.parse(data.slice(sep + 1));
+  const instance = reviver(parsed);
+  instance.stack = parsed.stack;
+  return instance;
 }

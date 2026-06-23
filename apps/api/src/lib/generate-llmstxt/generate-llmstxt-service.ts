@@ -10,7 +10,7 @@ import {
 import { billTeam } from "../../services/billing/credit_billing";
 import { logLlmsTxt } from "../../services/logging/log_job";
 import { getModel } from "../generic-ai";
-import { generateCompletions } from "../../scraper/scrapeURL/transformers/llmExtract";
+import { generateCompletions } from "../../scraper/scrapeURL/enrich/llm-extract";
 import { CostTracking } from "../cost-tracking";
 import { getACUCTeam } from "../../controllers/auth";
 interface GenerateLLMsTextServiceOptions {
@@ -267,7 +267,14 @@ export async function performGenerateLlmsTxt(
     });
 
     // Bill team for usage
-    billTeam(teamId, subId, urls.length, apiKeyId, { endpoint: "llms_txt", jobId: generationId }, logger).catch(error => {
+    billTeam(
+      teamId,
+      subId,
+      urls.length,
+      apiKeyId,
+      { endpoint: "llms_txt", jobId: generationId },
+      logger,
+    ).catch(error => {
       logger.error(`Failed to bill team ${teamId} for ${urls.length} urls`, {
         teamId,
         count: urls.length,
