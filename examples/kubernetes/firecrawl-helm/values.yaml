@@ -80,6 +80,9 @@ nuqPostgres:
     enabled: false
     size: 10Gi
     storageClass: ""
+  initContainer:
+    image: busybox:1.36
+    pullPolicy: IfNotPresent
 
 rabbitmq:
   enabled: true

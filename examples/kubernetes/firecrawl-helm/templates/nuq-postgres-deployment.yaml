@@ -20,8 +20,8 @@ spec:
       {{- end }}
       initContainers:
         - name: init-pgdata
-          image: busybox:1.36
-          imagePullPolicy: IfNotPresent
+          image: "{{ .Values.nuqPostgres.initContainer.image | default "busybox:1.36" }}"
+          imagePullPolicy: {{ .Values.nuqPostgres.initContainer.pullPolicy | default "IfNotPresent" }}
           command:
             - sh
             - -c
