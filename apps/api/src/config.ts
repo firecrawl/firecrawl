@@ -69,6 +69,9 @@ const configSchema = z.object({
   OPENAI_API_KEY: z.string().optional(),
   OPENAI_BASE_URL: z.string().optional(),
   OPENROUTER_API_KEY: z.string().optional(),
+  // Atlas Cloud (OpenAI-compatible) — https://www.atlascloud.ai
+  ATLASCLOUD_API_KEY: z.string().optional(),
+  ATLASCLOUD_API_BASE: z.string().optional(),
   XAI_API_KEY: z.string().optional(),
   LLAMAPARSE_API_KEY: z.string().optional(),
   STRIPE_SECRET_KEY: z.string().optional(),

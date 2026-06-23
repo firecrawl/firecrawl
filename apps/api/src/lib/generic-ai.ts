@@ -18,7 +18,8 @@ type Provider =
   | "openrouter"
   | "fireworks"
   | "deepinfra"
-  | "vertex";
+  | "vertex"
+  | "atlas";
 const defaultProvider: Provider = config.OLLAMA_BASE_URL ? "ollama" : "openai";
 
 const providerList: Record<Provider, any> = {
@@ -26,6 +27,11 @@ const providerList: Record<Provider, any> = {
     apiKey: config.OPENAI_API_KEY,
     baseURL: config.OPENAI_BASE_URL,
   }), //OPENAI_API_KEY
+  // Atlas Cloud is OpenAI-compatible — https://www.atlascloud.ai
+  atlas: createOpenAI({
+    apiKey: config.ATLASCLOUD_API_KEY,
+    baseURL: config.ATLASCLOUD_API_BASE || "https://api.atlascloud.ai/v1",
+  }), //ATLASCLOUD_API_KEY
   ollama: createOllama({
     baseURL: config.OLLAMA_BASE_URL,
   }),
