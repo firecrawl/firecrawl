@@ -1,10 +1,6 @@
 import { defineConfig } from "vitest/config";
-import tsconfigPaths from "vite-tsconfig-paths";
 
 export default defineConfig({
-  // Vitest does not read tsconfig `paths` on its own; this plugin honors the
-  // x402 / x402/* / x402-express aliases declared in tsconfig.json.
-  plugins: [tsconfigPaths()],
   resolve: {
     alias: [
       // pdf-parse's package entry runs a debug self-test (reading a sample PDF)

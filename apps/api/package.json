@@ -69,7 +69,6 @@
     "tsc-watch": "^7.1.1",
     "tsx": "^4.20.3",
     "undici-types": "^7.16.0",
-    "vite-tsconfig-paths": "^6.1.1",
     "vitest": "^4.1.9"
   },
   "dependencies": {
@@ -91,9 +90,6 @@
     "@sentry/cli": "^2.58.2",
     "@sentry/node": "^10.27.0",
     "@types/ws": "^8.5.12",
-    "@x402/core": "^2.4.0",
-    "@x402/evm": "^2.4.0",
-    "@x402/express": "^2.4.0",
     "ai": "6.0.86",
     "ajv": "^8.18.0",
     "ajv-formats": "^3.0.1",
