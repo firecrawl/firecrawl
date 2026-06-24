@@ -1,4 +1,4 @@
-import express from "express";
+import express, { RequestHandler } from "express";
 import { config } from "../config";
 import { crawlController } from "../controllers/v1/crawl";
 // import { crawlStatusController } from "../../src/controllers/v1/crawl-status";
@@ -48,6 +48,11 @@ import {
   isX402Enabled,
 } from "../lib/x402";
 import { deprecationMiddleware } from "../lib/deprecations";
+import {
+  featureDisabledBody,
+  isCrawlDisabled,
+  isMapDisabled,
+} from "../lib/feature-flags";
 
 export const v1Router = express.Router();
 expressWs(express()).applyTo(v1Router);
@@ -120,6 +125,20 @@ v1Router.use(requestTimingMiddleware("v1"));
 //     facilitator,
 //   ),
 // );
+
+const crawlDisabledHandler: RequestHandler = (_req, res) =>
+  res.status(403).json(featureDisabledBody("crawl"));
+
+const mapDisabledHandler: RequestHandler = (_req, res) =>
+  res.status(403).json(featureDisabledBody("map"));
+
+if (isCrawlDisabled()) {
+  v1Router.use("/crawl", crawlDisabledHandler);
+}
+
+if (isMapDisabled()) {
+  v1Router.use("/map", mapDisabledHandler);
+}
 
 v1Router.post(
   "/scrape",

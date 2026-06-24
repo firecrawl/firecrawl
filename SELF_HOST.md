@@ -80,6 +80,10 @@ USE_DB_AUTHENTICATION=false
 
 ## === Other ===
 
+# Disable crawl or map endpoints entirely (set to "true" to turn off)
+# DISABLE_CRAWL=false
+# DISABLE_MAP=false
+
 # Supabase Setup (used to support DB authentication, advanced logging, etc.)
 # SUPABASE_ANON_TOKEN=
 # SUPABASE_URL=
