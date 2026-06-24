@@ -275,6 +275,23 @@ const isValidUrl = (urlString: string): boolean => {
   }
 };
 
+const parseCookieHeader = (cookieHeader: string): { name: string; value: string }[] =>
+  cookieHeader
+    .split(';')
+    .map(pair => pair.trim())
+    .filter(Boolean)
+    .map(pair => {
+      const separatorIndex = pair.indexOf('=');
+      if (separatorIndex === -1) {
+        return { name: pair, value: '' };
+      }
+      return {
+        name: pair.slice(0, separatorIndex).trim(),
+        value: pair.slice(separatorIndex + 1).trim(),
+      };
+    })
+    .filter(cookie => cookie.name.length > 0);
+
 const scrapePage = async (
   page: Page,
   url: string,
@@ -414,10 +431,55 @@ app.post('/scrape', async (req: Request, res: Response) => {
     page = await requestContext.newPage();
 
     if (headers) {
-      // Remove the user-agent key before calling setExtraHTTPHeaders since
-      // we already forwarded it to the context-level userAgent option.
+      // Seed Cookie header values into the context's cookie jar instead of
+      // setExtraHTTPHeaders: Chromium re-generates redirected requests from
+      // the jar, so extra-header cookies are silently dropped on any redirect
+      // hop (#3725).
+      const cookieHeader = Object.entries(headers).find(
+        ([k]) => k.toLowerCase() === 'cookie'
+      )?.[1];
+
+      // Only drop the raw Cookie header from setExtraHTTPHeaders once it has
+      // actually been seeded into the jar; if seeding fails we keep the header
+      // so the cookie is at least sent on the initial (pre-redirect) request.
+      let cookieSeededIntoJar = false;
+      if (cookieHeader) {
+        try {
+          const baseDomain = new URL(url).hostname.replace(/^www\./, '');
+          const cookies = parseCookieHeader(cookieHeader).map(cookie => {
+            // __Host- cookies must be host-only (no Domain attribute), Secure,
+            // and Path=/ per RFC 6265bis. Binding to the origin makes Chromium
+            // store them host-only with path '/'; a synthesized Domain would be
+            // rejected via CDP.
+            if (cookie.name.startsWith('__Host-')) {
+              return { ...cookie, url: new URL(url).origin, secure: true };
+            }
+            // The leading-dot domain (minus a "www." prefix) keeps cookies
+            // valid across sibling subdomains of the scraped host on redirects.
+            const scoped = { ...cookie, domain: '.' + baseDomain, path: '/' };
+            // __Secure- cookies are allowed a Domain but must carry Secure.
+            return cookie.name.startsWith('__Secure-')
+              ? { ...scoped, secure: true }
+              : scoped;
+          });
+          await requestContext.addCookies(cookies);
+          cookieSeededIntoJar = true;
+        } catch (error) {
+          console.warn(
+            `Failed to seed cookies into jar, falling back to Cookie header: ${error instanceof Error ? error.message : String(error)}`
+          );
+        }
+      }
+
+      // Remove user-agent (forwarded to the context-level userAgent option),
+      // and the cookie only if it was seeded into the jar above.
       const filteredHeaders = Object.fromEntries(
-        Object.entries(headers).filter(([k]) => k.toLowerCase() !== 'user-agent')
+        Object.entries(headers).filter(([k]) => {
+          const key = k.toLowerCase();
+          if (key === 'user-agent') return false;
+          if (key === 'cookie') return !cookieSeededIntoJar;
+          return true;
+        })
       );
       if (Object.keys(filteredHeaders).length > 0) {
         await page.setExtraHTTPHeaders(filteredHeaders);
