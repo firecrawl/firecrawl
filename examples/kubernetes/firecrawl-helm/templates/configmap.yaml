@@ -7,8 +7,11 @@
   {{- $redisResolved = $redisInCluster -}}
 {{- else if .Values.redis.external.url -}}
   {{- $redisResolved = .Values.redis.external.url -}}
+{{- else if .Values.config.REDIS_URL -}}
+  {{- /* legacy override via config.REDIS_URL — honour it, skip fail */}}
+  {{- $redisResolved = .Values.config.REDIS_URL -}}
 {{- else -}}
-  {{- fail "redis.enabled is false but redis.external.url is not set. Please provide an external Redis URL." -}}
+  {{- fail "redis.enabled is false but no Redis URL is configured. Set redis.external.url or config.REDIS_URL." -}}
 {{- end -}}
 {{- $redisRateLimitResolved := default $redisResolved .Values.redis.external.rateLimitUrl -}}
 
@@ -28,8 +31,11 @@
   {{- $extPgDb := default "postgres" .Values.nuqPostgres.external.database -}}
   {{- $extPgPort := default 5432 .Values.nuqPostgres.external.port -}}
   {{- $nuqDbResolved = printf "postgresql://%s:%s@%s:%v/%s" $extPgUser $extPgPass .Values.nuqPostgres.external.host $extPgPort $extPgDb -}}
+{{- else if .Values.config.NUQ_DATABASE_URL -}}
+  {{- /* legacy override via config.NUQ_DATABASE_URL — honour it, skip fail */}}
+  {{- $nuqDbResolved = .Values.config.NUQ_DATABASE_URL -}}
 {{- else -}}
-  {{- fail "nuqPostgres.enabled is false but neither nuqPostgres.external.url nor nuqPostgres.external.host is set. Please provide external PostgreSQL connection details." -}}
+  {{- fail "nuqPostgres.enabled is false but no PostgreSQL URL is configured. Set nuqPostgres.external.url, nuqPostgres.external.host, or config.NUQ_DATABASE_URL." -}}
 {{- end -}}
 {{- $nuqDbUrl := default $nuqDbResolved .Values.config.NUQ_DATABASE_URL -}}
 
@@ -40,8 +46,11 @@
   {{- $rabbitMqResolved = $rabbitMqInCluster -}}
 {{- else if .Values.rabbitmq.external.url -}}
   {{- $rabbitMqResolved = .Values.rabbitmq.external.url -}}
+{{- else if .Values.config.NUQ_RABBITMQ_URL -}}
+  {{- /* legacy override via config.NUQ_RABBITMQ_URL — honour it, skip fail */}}
+  {{- $rabbitMqResolved = .Values.config.NUQ_RABBITMQ_URL -}}
 {{- else -}}
-  {{- fail "rabbitmq.enabled is false but rabbitmq.external.url is not set. Please provide an external RabbitMQ URL." -}}
+  {{- fail "rabbitmq.enabled is false but no RabbitMQ URL is configured. Set rabbitmq.external.url or config.NUQ_RABBITMQ_URL." -}}
 {{- end -}}
 
 {{- $apiHostDefault := printf "%s-api" $fullname -}}
