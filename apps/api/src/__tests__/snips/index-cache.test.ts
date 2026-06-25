@@ -6,7 +6,6 @@ import {
   getCachedMaxAge,
   getCachedNegative,
   isNegativeStillValid,
-  SCREENSHOT_INDEX_CUTOFF_MS,
   setCachedNegative,
   upsertCachedIndexEntries,
   type IndexCacheEntry,
@@ -171,82 +170,6 @@ describe("filterIndexEntries", () => {
         waitTimeMs: 1000,
       }).map(x => x.id),
     ).toEqual([longWait.id]);
-  });
-
-  it("drops pre-cutoff screenshot entries but keeps non-screenshot ones (temporary screenshot cutoff)", () => {
-    const cutoff = now - hour;
-    const preCutoff = entry({
-      has_screenshot: true,
-      created_at: new Date(cutoff - 1000).toISOString(),
-    });
-    const postCutoff = entry({
-      has_screenshot: true,
-      created_at: new Date(cutoff + 1000).toISOString(),
-    });
-    const opts = {
-      maxAgeMs: 24 * hour,
-      minAgeMs: null,
-      needsScreenshotFullscreen: false,
-      waitTimeMs: 0,
-      screenshotCutoffMs: cutoff,
-      now,
-    };
-    // Screenshot request: only the post-cutoff entry survives.
-    expect(
-      filterIndexEntries([preCutoff, postCutoff], {
-        ...opts,
-        needsScreenshot: true,
-      }).map(x => x.id),
-    ).toEqual([postCutoff.id]);
-    // Non-screenshot request: the cutoff doesn't apply, both survive.
-    expect(
-      filterIndexEntries([preCutoff, postCutoff], {
-        ...opts,
-        needsScreenshot: false,
-      }),
-    ).toHaveLength(2);
-  });
-
-  it("applies the screenshot cutoff to fullscreen-screenshot requests too", () => {
-    const cutoff = now - hour;
-    const preCutoff = entry({
-      has_screenshot: true,
-      has_screenshot_fullscreen: true,
-      created_at: new Date(cutoff - 1000).toISOString(),
-    });
-    expect(
-      filterIndexEntries([preCutoff], {
-        maxAgeMs: 24 * hour,
-        minAgeMs: null,
-        needsScreenshot: false,
-        needsScreenshotFullscreen: true,
-        waitTimeMs: 0,
-        screenshotCutoffMs: cutoff,
-        now,
-      }),
-    ).toHaveLength(0);
-  });
-
-  it("ignores the screenshot cutoff when screenshotCutoffMs is omitted", () => {
-    const preCutoff = entry({
-      has_screenshot: true,
-      created_at: new Date(now - 5 * hour).toISOString(),
-    });
-    expect(
-      filterIndexEntries([preCutoff], {
-        maxAgeMs: 24 * hour,
-        minAgeMs: null,
-        needsScreenshot: true,
-        needsScreenshotFullscreen: false,
-        waitTimeMs: 0,
-        now,
-      }),
-    ).toHaveLength(1);
-  });
-
-  it("exports a sane screenshot cutoff constant", () => {
-    expect(Number.isNaN(SCREENSHOT_INDEX_CUTOFF_MS)).toBe(false);
-    expect(SCREENSHOT_INDEX_CUTOFF_MS).toBe(Date.parse("2026-06-24T20:00:00Z"));
   });
 
   it("sorts newest-first and caps at 5 like the SQL LIMIT", () => {

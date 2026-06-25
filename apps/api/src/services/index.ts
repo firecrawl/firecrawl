@@ -28,11 +28,13 @@ import type { PdfMetadata } from "../scraper/scrapeURL/engines/pdf/types";
 import { storage } from "../lib/gcs-jobs";
 import { withSpan, setSpanAttributes } from "../lib/otel-tracer";
 import { config } from "../config";
+import { getGcsScreenshotUrlResignReason } from "./index-screenshot-url";
 configDotenv();
 
 export async function getIndexFromGCS(
   url: string,
   logger?: Logger,
+  opts: { indexCreatedAt?: string | null } = {},
 ): Promise<any | null> {
   try {
     return await withSpan("firecrawl-index-get-from-gcs", async span => {
@@ -54,26 +56,11 @@ export async function getIndexFromGCS(
       if (typeof parsed.screenshot === "string") {
         try {
           const screenshotUrl = new URL(parsed.screenshot);
-          let expiresAt =
-            parseInt(screenshotUrl.searchParams.get("Expires") ?? "0", 10) *
-            1000;
-          if (expiresAt === 0) {
-            expiresAt =
-              new Date(
-                screenshotUrl.searchParams.get("X-Goog-Date") ??
-                  "1970-01-01T00:00:00Z",
-              ).getTime() +
-              parseInt(
-                screenshotUrl.searchParams.get("X-Goog-Expires") ?? "0",
-                10,
-              ) *
-                1000;
-          }
-          if (
-            screenshotUrl.hostname === "storage.googleapis.com" &&
-            expiresAt < Date.now()
-          ) {
-            logger?.info("Re-signing screenshot URL");
+          const resignReason = getGcsScreenshotUrlResignReason(screenshotUrl, {
+            indexCreatedAt: opts.indexCreatedAt,
+          });
+          if (resignReason !== null) {
+            logger?.info("Re-signing screenshot URL", { reason: resignReason });
             const filePath = decodeURIComponent(
               screenshotUrl.pathname.split("/")[2],
             );

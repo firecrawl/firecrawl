@@ -100,20 +100,11 @@ export function deriveIndexVariantKey(params: {
   );
 }
 
-// TEMPORARY: screenshots indexed before this instant were stored with URLs
-// that are no longer reachable, so the index must not serve them when a
-// screenshot is requested — force a fresh scrape that re-saves a working URL
-// instead. The default 2-day index window means pre-cutoff entries age out
-// shortly after, so remove this constant (and the screenshotCutoffMs plumbing
-// in filterIndexEntries / scrapeURLWithIndex) once they're gone.
-export const SCREENSHOT_INDEX_CUTOFF_MS = Date.parse("2026-06-24T20:00:00Z");
-
 // Mirrors the per-entry filters of index_get_recent_5 (see PR description for
 // the SQL source): age window, screenshot capability (a request that doesn't
 // need a screenshot matches any entry; one that does requires it), waitFor
 // (COALESCE(entry, 0) >= requested), newest-first, LIMIT 5. Keep in sync with
-// the SQL function. screenshotCutoffMs is a temporary app-level guard (no SQL
-// equivalent) that drops pre-cutoff screenshot entries.
+// the SQL function.
 export function filterIndexEntries(
   entries: IndexCacheEntry[],
   opts: {
@@ -122,7 +113,6 @@ export function filterIndexEntries(
     needsScreenshot: boolean;
     needsScreenshotFullscreen: boolean;
     waitTimeMs: number | null;
-    screenshotCutoffMs?: number | null;
     now?: number;
   },
 ): IndexCacheEntry[] {
@@ -136,12 +126,6 @@ export function filterIndexEntries(
         return false;
       if (opts.needsScreenshot && !entry.has_screenshot) return false;
       if (opts.needsScreenshotFullscreen && !entry.has_screenshot_fullscreen)
-        return false;
-      if (
-        (opts.needsScreenshot || opts.needsScreenshotFullscreen) &&
-        opts.screenshotCutoffMs != null &&
-        createdAt < opts.screenshotCutoffMs
-      )
         return false;
       if (
         opts.waitTimeMs !== null &&

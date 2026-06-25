@@ -22,7 +22,6 @@ import {
   getCachedMaxAge,
   getCachedNegative,
   isNegativeStillValid,
-  SCREENSHOT_INDEX_CUTOFF_MS,
   setCachedMaxAge,
   setCachedNegative,
   upsertCachedIndexEntries,
@@ -373,7 +372,6 @@ export async function scrapeURLWithIndex(
           "screenshot@fullScreen",
         ),
         waitTimeMs: meta.options.waitFor,
-        screenshotCutoffMs: SCREENSHOT_INDEX_CUTOFF_MS,
       });
       if (filtered.length > 0) {
         data = filtered;
@@ -465,20 +463,6 @@ export async function scrapeURLWithIndex(
     }
   }
 
-  // TEMPORARY: screenshots indexed before SCREENSHOT_INDEX_CUTOFF_MS have
-  // unreachable URLs, so never serve them for screenshot requests — drop them
-  // here so we waterfall to a fresh scrape that re-saves a working URL. The
-  // cache path already filters these via filterIndexEntries; this covers the
-  // DB path. Remove once pre-cutoff entries have aged out.
-  if (
-    meta.featureFlags.has("screenshot") ||
-    meta.featureFlags.has("screenshot@fullScreen")
-  ) {
-    data = data.filter(
-      x => new Date(x.created_at).getTime() >= SCREENSHOT_INDEX_CUTOFF_MS,
-    );
-  }
-
   let selectedRow: {
     id: string;
     created_at: string;
@@ -519,6 +503,7 @@ export async function scrapeURLWithIndex(
   const doc = await getIndexFromGCS(
     id + ".json",
     meta.logger.child({ module: "index", method: "getIndexFromGCS" }),
+    { indexCreatedAt: selectedRow.created_at },
   );
   if (!doc) {
     if (servedFromCache) {

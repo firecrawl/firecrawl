@@ -88,6 +88,7 @@ async function getIndexedMarkdownForURL(
     const doc = await getIndexFromGCS(
       selected.id + ".json",
       logger.child({ module: "search/highlights", method: "getIndexFromGCS" }),
+      { indexCreatedAt: selected.created_at },
     );
     if (!doc || !doc.html) {
       return null;
