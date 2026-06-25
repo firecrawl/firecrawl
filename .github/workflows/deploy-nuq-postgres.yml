@@ -8,15 +8,22 @@ on:
       - apps/nuq-postgres/**
   workflow_dispatch:
 
+permissions:
+  contents: read
+  packages: write
+
 jobs:
   push-app-image:
     runs-on: blacksmith-4vcpu-ubuntu-2404
-    defaults:
-      run:
-        working-directory: './apps/nuq-postgres'
     steps:
       - name: 'Checkout GitHub Action'
         uses: actions/checkout@main
+
+      - name: 'Set up QEMU (for multi-arch builds)'
+        uses: docker/setup-qemu-action@v3
+
+      - name: 'Set up Docker Buildx'
+        uses: docker/setup-buildx-action@v3
 
       - name: 'Login to GitHub Container Registry'
         uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
@@ -25,7 +32,10 @@ jobs:
           username: ${{github.actor}}
           password: ${{secrets.GITHUB_TOKEN}}
 
-      - name: 'Build NuQ Postgres Image'
-        run: |
-          docker build . --tag ghcr.io/firecrawl/nuq-postgres:latest
-          docker push ghcr.io/firecrawl/nuq-postgres:latest
+      - name: 'Build and Push Multi-Arch NuQ Postgres Image'
+        uses: docker/build-push-action@v6
+        with:
+          context: ./apps/nuq-postgres
+          push: true
+          platforms: linux/amd64, linux/arm64
+          tags: ghcr.io/firecrawl/nuq-postgres:latest
