@@ -1,11 +1,13 @@
 # Firecrawl Helm Chart
 
 This chart deploys Firecrawl on Kubernetes with:
+
 - `api`
 - `worker` (queue-worker)
 - `extract-worker`
 - `nuq-worker`
 - `nuq-prefetch-worker`
+- `cclog-worker`
 - `playwright-service`
 - `redis`
 - `nuq-postgres`
@@ -23,12 +25,13 @@ Official Firecrawl images are fine for x86. Use winkk images only when ARM suppo
 Use `values.yaml` plus one overlay.
 
 Important fields:
+
 - `secret.*` for API keys and sensitive values.
 - `config.extra` / `secret.extra` for custom env vars.
 - `image.dockerSecretEnabled` and `imagePullSecrets` for private registries.
 - `resources.enabled` enables/disables all container resource requests/limits.
   Default: `false`.
-- `rabbitmq.enabled`, `extractWorker.enabled`, `nuqPrefetchWorker.enabled` to toggle components.
+- `rabbitmq.enabled`, `extractWorker.enabled`, `nuqPrefetchWorker.enabled`, `cclogWorker.enabled` to toggle components.
 
 ## Deploy
 

@@ -21,6 +21,7 @@ data:
   EXTRACT_WORKER_PORT: {{ default (printf "%v" .Values.extractWorker.port) .Values.config.EXTRACT_WORKER_PORT | quote }}
   NUQ_WORKER_PORT: {{ default (printf "%v" .Values.nuqWorker.port) .Values.config.NUQ_WORKER_PORT | quote }}
   NUQ_PREFETCH_WORKER_PORT: {{ default (printf "%v" .Values.nuqPrefetchWorker.port) .Values.config.NUQ_PREFETCH_WORKER_PORT | quote }}
+  CCLOG_WORKER_PORT: {{ default (printf "%v" .Values.cclogWorker.port) .Values.config.CCLOG_WORKER_PORT | quote }}
   NUQ_WORKER_COUNT: {{ default (printf "%v" .Values.nuqWorker.replicaCount) .Values.config.NUQ_WORKER_COUNT | quote }}
   REDIS_URL: {{ default $redisDefault .Values.config.REDIS_URL | quote }}
   REDIS_RATE_LIMIT_URL: {{ default $redisDefault .Values.config.REDIS_RATE_LIMIT_URL | quote }}

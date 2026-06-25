@@ -5,7 +5,6 @@ import { autumnHealthController } from "../controllers/v0/admin/autumn-health";
 import { authMiddleware, checkCreditsMiddleware, wrap } from "./shared";
 import { acucCacheClearController } from "../controllers/v0/admin/acuc-cache-clear";
 import { checkFireEngine } from "../controllers/v0/admin/check-fire-engine";
-import { cclogController } from "../controllers/v0/admin/cclog";
 import { indexQueuePrometheus } from "../controllers/v0/admin/index-queue-prometheus";
 import { triggerPrecrawl } from "../controllers/v0/admin/precrawl";
 import {
@@ -44,11 +43,6 @@ if (config.BULL_AUTH_KEY) {
   adminRouter.get(
     `/admin/${config.BULL_AUTH_KEY}/feng-check`,
     wrap(checkFireEngine),
-  );
-
-  adminRouter.get(
-    `/admin/${config.BULL_AUTH_KEY}/cclog`,
-    wrap(cclogController),
   );
 
   adminRouter.get(

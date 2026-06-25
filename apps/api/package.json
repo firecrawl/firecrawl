@@ -31,6 +31,8 @@
     "nuq-prefetch-worker:production": "node dist/src/services/worker/nuq-prefetch-worker.js",
     "nuq-reconciler-worker": "tsc-watch --onSuccess \"node dist/src/services/worker/nuq-reconciler-worker.js\"",
     "nuq-reconciler-worker:production": "node dist/src/services/worker/nuq-reconciler-worker.js",
+    "cclog-worker": "tsc-watch --onSuccess \"node dist/src/services/cclog-worker.js\"",
+    "cclog-worker:production": "node dist/src/services/cclog-worker.js",
     "extract-worker": "tsc-watch --onSuccess \"node dist/src/services/extract-worker.js\"",
     "extract-worker:production": "node dist/src/services/extract-worker.js",
     "index-worker": "tsc-watch --onSuccess \"node dist/src/services/indexing/index-worker.js\"",
