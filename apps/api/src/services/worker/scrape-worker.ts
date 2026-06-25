@@ -56,6 +56,7 @@ import { chargeKeylessCredits } from "../../lib/keyless";
 import { normalizeUrlOnlyHostname } from "../../lib/canonical-url";
 import { isUrlBlocked } from "../../scraper/WebScraper/utils/blocklist";
 import { UNSUPPORTED_SITE_MESSAGE } from "../../lib/strings";
+import { checkScrapeJobPermissions } from "../../lib/scrape-job-permissions";
 import { generateURLSplits, queryIndexAtSplitLevel } from "../index";
 import { WebCrawler } from "../../scraper/WebScraper/crawler";
 import { calculateCreditsToBeBilled } from "../../lib/scrape-billing";
@@ -251,6 +252,15 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
       if (sc && sc.cancelled) {
         throw new JobCancelledError();
       }
+    }
+
+    const flags =
+      job.data.internalOptions?.teamFlags ??
+      (await getACUCTeam(job.data.team_id))?.flags ??
+      null;
+    const permissions = checkScrapeJobPermissions(job.data, flags);
+    if (permissions.error) {
+      throw new CrawlDenialError(permissions.error);
     }
 
     let pipeline: ScrapeUrlResponse | null = null;

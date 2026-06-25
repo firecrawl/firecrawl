@@ -21,8 +21,13 @@ import { getJobFromGCS, removeJobFromGCS } from "../lib/gcs-jobs";
 import { Document } from "../controllers/v1/types";
 import { getCrawl } from "../lib/crawl-redis";
 import { Logger } from "winston";
-import { ScrapeJobTimeoutError, TransportableError } from "../lib/error";
+import {
+  CrawlDenialError,
+  ScrapeJobTimeoutError,
+  TransportableError,
+} from "../lib/error";
 import { deserializeTransportableError } from "../lib/error-serde";
+import { checkScrapeJobPermissions } from "../lib/scrape-job-permissions";
 import { abTestJob } from "./ab-test";
 import { NuQJob, scrapeQueue } from "./worker/nuq";
 import {
@@ -60,6 +65,26 @@ function isCrawlOrBatchScrape(options: {
   // If crawlerOptions exists, it's a crawl
   // If crawl_id exists but no crawlerOptions, it's a batch scrape
   return !!options.crawlerOptions || !!options.crawl_id;
+}
+
+async function assertScrapeJobAllowed(webScraperOptions: ScrapeJobData) {
+  // Crawl-tracked jobs need worker-side denial so crawl completion cleanup runs.
+  if (
+    webScraperOptions.mode !== "single_urls" ||
+    webScraperOptions.crawl_id
+  ) {
+    return;
+  }
+
+  const flags =
+    webScraperOptions.internalOptions &&
+    "teamFlags" in webScraperOptions.internalOptions
+      ? webScraperOptions.internalOptions.teamFlags
+      : ((await getACUCTeam(webScraperOptions.team_id))?.flags ?? null);
+  const permissions = checkScrapeJobPermissions(webScraperOptions, flags);
+  if (permissions.error) {
+    throw new CrawlDenialError(permissions.error);
+  }
 }
 
 async function _addScrapeJobToConcurrencyQueue(
@@ -156,6 +181,8 @@ export async function _addScrapeJobToBullMQ(
   priority: number = 0,
   listenable: boolean = false,
 ): Promise<NuQJob<ScrapeJobData>> {
+  await assertScrapeJobAllowed(webScraperOptions);
+
   // direct adds bypass the gates; on the FDB backend that's a slotless enqueue
   if ((await resolveJobBackend(webScraperOptions)) === "fdb") {
     if (webScraperOptions.mode === "single_urls") {
@@ -504,6 +531,8 @@ export async function addScrapeJob(
   directToBullMQ: boolean = false,
   listenable: boolean = false,
 ): Promise<NuQJob<ScrapeJobData> | null> {
+  await assertScrapeJobAllowed(webScraperOptions);
+
   // Capture trace context to propagate to worker
   const traceContext = serializeTraceContext();
   const optionsWithTrace: ScrapeJobData = {

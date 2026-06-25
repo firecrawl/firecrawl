@@ -13,7 +13,6 @@ import { v7 as uuidv7 } from "uuid";
 import { addScrapeJob, waitForJob } from "../../services/queue-jobs";
 import { logSearch, logRequest } from "../../services/logging/log_job";
 import { search } from "../../search/v2";
-import { isUrlBlocked } from "../../scraper/WebScraper/utils/blocklist";
 import { logger as _logger } from "../../lib/logger";
 import type { Logger } from "winston";
 import { getJobPriority } from "../../lib/job-priority";
@@ -22,7 +21,7 @@ import { eq } from "drizzle-orm";
 import { db } from "../../db/connection";
 import * as schema from "../../db/schema";
 import { SearchV2Response } from "../../lib/entities";
-import { ScrapeJobTimeoutError } from "../../lib/error";
+import { ScrapeJobTimeoutError, TransportableError } from "../../lib/error";
 import { scrapeQueue } from "../../services/worker/nuq-router";
 import { z } from "zod";
 import {
@@ -94,6 +93,7 @@ async function startX420ScrapeJob(
         teamId: options.teamId,
         bypassBilling: true,
         zeroDataRetention,
+        teamFlags: flags,
       },
       origin: options.origin,
       // Do not touch this flag
@@ -174,6 +174,12 @@ async function scrapeX420SearchResult(
       costTracking,
     };
   } catch (error) {
+    const statusCode =
+      error instanceof TransportableError && error.code === "CRAWL_DENIAL"
+        ? 403
+        : 500;
+    const errorMessage = error instanceof Error ? error.message : String(error);
+
     logger.error(`Error in scrapeSearchResult [x402]: ${error}`, {
       url: searchResult.url,
       teamId: options.teamId,
@@ -184,8 +190,8 @@ async function scrapeX420SearchResult(
       description: searchResult.description,
       url: searchResult.url,
       metadata: {
-        statusCode: 500,
-        error: error.message,
+        statusCode,
+        error: errorMessage,
         proxyUsed: "basic",
       },
     };
@@ -400,73 +406,52 @@ export async function x402SearchController(
         scrapeInput: ScrapeJobInput;
       }> = [];
 
-      const blockContext = {
-        team_id: req.auth.team_id,
-        origin: req.body.origin ?? null,
-      };
-
-      // Add web results (skip blocked URLs)
+      // Add web results. Scrape permissions are enforced by the scrape worker.
       if (searchResponse.web) {
         searchResponse.web.forEach(item => {
-          if (!isUrlBlocked(item.url, req.acuc?.flags ?? null, blockContext)) {
-            itemsToScrape.push({
-              item,
-              type: "web",
-              scrapeInput: {
-                url: item.url,
-                title: item.title,
-                description: item.description,
-              },
-            });
-          } else {
-            logger.info(`Skipping blocked URL [x402]: ${item.url}`);
-          }
+          itemsToScrape.push({
+            item,
+            type: "web",
+            scrapeInput: {
+              url: item.url,
+              title: item.title,
+              description: item.description,
+            },
+          });
         });
       }
 
-      // Add news results (only those with URLs and not blocked)
+      // Add news results (only those with URLs).
       if (searchResponse.news) {
         searchResponse.news
           .filter(item => item.url)
           .forEach(item => {
-            if (
-              !isUrlBlocked(item.url!, req.acuc?.flags ?? null, blockContext)
-            ) {
-              itemsToScrape.push({
-                item,
-                type: "news",
-                scrapeInput: {
-                  url: item.url!,
-                  title: item.title || "",
-                  description: item.snippet || "",
-                },
-              });
-            } else {
-              logger.info(`Skipping blocked URL [x402]: ${item.url}`);
-            }
+            itemsToScrape.push({
+              item,
+              type: "news",
+              scrapeInput: {
+                url: item.url!,
+                title: item.title || "",
+                description: item.snippet || "",
+              },
+            });
           });
       }
 
-      // Add image results (only those with URLs and not blocked)
+      // Add image results (only those with URLs).
       if (searchResponse.images) {
         searchResponse.images
           .filter(item => item.url)
           .forEach(item => {
-            if (
-              !isUrlBlocked(item.url!, req.acuc?.flags ?? null, blockContext)
-            ) {
-              itemsToScrape.push({
-                item,
-                type: "image",
-                scrapeInput: {
-                  url: item.url!,
-                  title: item.title || "",
-                  description: "",
-                },
-              });
-            } else {
-              logger.info(`Skipping blocked URL [x402]: ${item.url}`);
-            }
+            itemsToScrape.push({
+              item,
+              type: "image",
+              scrapeInput: {
+                url: item.url!,
+                title: item.title || "",
+                description: "",
+              },
+            });
           });
       }
 

@@ -13,8 +13,6 @@ import { v7 as uuidv7 } from "uuid";
 import { addScrapeJob, waitForJob } from "../../services/queue-jobs";
 import { logSearch, logRequest } from "../../services/logging/log_job";
 import { search } from "../../search";
-import { isUrlBlocked } from "../../scraper/WebScraper/utils/blocklist";
-import { UNSUPPORTED_SITE_MESSAGE } from "../../lib/strings";
 import { logger as _logger } from "../../lib/logger";
 import type { Logger } from "winston";
 import { CostTracking } from "../../lib/cost-tracking";
@@ -22,7 +20,7 @@ import { eq } from "drizzle-orm";
 import { db } from "../../db/connection";
 import * as schema from "../../db/schema";
 import { fromV1ScrapeOptions } from "../v2/types";
-import { ScrapeJobTimeoutError } from "../../lib/error";
+import { ScrapeJobTimeoutError, TransportableError } from "../../lib/error";
 import { scrapeQueue } from "../../services/worker/nuq-router";
 import {
   applyZdrScope,
@@ -58,14 +56,6 @@ async function scrapeX402SearchResult(
   applyZdrScope(zeroDataRetention);
 
   try {
-    if (
-      isUrlBlocked(searchResult.url, flags, {
-        team_id: options.teamId,
-        origin: options.origin,
-      })
-    ) {
-      throw new Error("Could not scrape url: " + UNSUPPORTED_SITE_MESSAGE);
-    }
     logger.info("Adding scrape job [x402]", {
       scrapeId: jobId,
       url: searchResult.url,
@@ -95,6 +85,7 @@ async function scrapeX402SearchResult(
           teamId: options.teamId,
           bypassBilling: true,
           zeroDataRetention,
+          teamFlags: flags,
         },
         origin: options.origin,
         is_scrape: true,
@@ -151,16 +142,17 @@ async function scrapeX402SearchResult(
       costTracking,
     };
   } catch (error) {
+    const statusCode =
+      error instanceof TransportableError && error.code === "CRAWL_DENIAL"
+        ? 403
+        : 500;
+    const errorMessage = error instanceof Error ? error.message : String(error);
+
     logger.error(`Error in scrapeSearchResult [x402]: ${error}`, {
       scrapeId: jobId,
       url: searchResult.url,
       teamId: options.teamId,
     });
-
-    let statusCode = 0;
-    if (error?.message?.includes("Could not scrape url")) {
-      statusCode = 403;
-    }
 
     const document: Document = {
       title: searchResult.title,
@@ -168,7 +160,7 @@ async function scrapeX402SearchResult(
       url: searchResult.url,
       metadata: {
         statusCode,
-        error: error.message,
+        error: errorMessage,
         proxyUsed: "basic",
       },
     };
@@ -250,16 +242,6 @@ export async function x402SearchController(
       country: req.body.country,
       location: req.body.location,
     });
-
-    if (req.body.ignoreInvalidURLs) {
-      searchResults = searchResults.filter(
-        result =>
-          !isUrlBlocked(result.url, req.acuc?.flags ?? null, {
-            team_id: req.auth.team_id,
-            origin: req.body.origin ?? null,
-          }),
-      );
-    }
 
     logger.info("Searching [x402] completed", {
       num_results: searchResults.length,

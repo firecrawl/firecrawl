@@ -383,6 +383,17 @@ export async function scrapeController(
             });
           }
 
+          if (e.code === "CRAWL_DENIAL") {
+            setSpanAttributes(span, {
+              "scrape.status_code": 403,
+            });
+            return res.status(403).json({
+              success: false,
+              code: e.code,
+              error: e.message,
+            });
+          }
+
           if (e.code === "SCRAPE_ACTIONS_NOT_SUPPORTED") {
             setSpanAttributes(span, {
               "scrape.status_code": 400,

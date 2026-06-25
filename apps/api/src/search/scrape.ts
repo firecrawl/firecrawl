@@ -3,13 +3,13 @@ import type { Logger } from "winston";
 import { Document, ScrapeOptions, TeamFlags } from "../controllers/v2/types";
 import { CostTracking } from "../lib/cost-tracking";
 import { getJobPriority } from "../lib/job-priority";
-import { isUrlBlocked } from "../scraper/WebScraper/utils/blocklist";
 import { NuQJob } from "../services/worker/nuq";
 import { processJobInternal } from "../services/worker/scrape-worker";
 import { ScrapeJobData } from "../types";
 import { SearchV2Response } from "../lib/entities";
 import type { BillingMetadata } from "../services/billing/types";
 import { getScrapeZDR } from "../lib/zdr-helpers";
+import { TransportableError } from "../lib/error";
 
 export interface DocumentWithCostTracking {
   document: Document;
@@ -117,6 +117,12 @@ async function scrapeSearchResultDirect(
       costTracking: new CostTracking().toJSON(),
     };
   } catch (error) {
+    const statusCode =
+      error instanceof TransportableError && error.code === "CRAWL_DENIAL"
+        ? 403
+        : 500;
+    const errorMessage = error instanceof Error ? error.message : String(error);
+
     logger.error(`Error in scrapeSearchResultDirect: ${error}`, {
       url: searchResult.url,
       teamId: options.teamId,
@@ -128,8 +134,8 @@ async function scrapeSearchResultDirect(
       description: searchResult.description,
       url: searchResult.url,
       metadata: {
-        statusCode: 500,
-        error: error.message,
+        statusCode,
+        error: errorMessage,
         proxyUsed: "basic",
       },
     };
@@ -143,30 +149,28 @@ async function scrapeSearchResultDirect(
 
 export function getItemsToScrape(
   searchResponse: SearchV2Response,
-  flags: TeamFlags,
-  context?: { team_id?: string | null; origin?: string | null },
+  _flags: TeamFlags,
+  _context?: { team_id?: string | null; origin?: string | null },
 ): ScrapeItem[] {
   const items: ScrapeItem[] = [];
 
   if (searchResponse.web) {
     for (const item of searchResponse.web) {
-      if (!isUrlBlocked(item.url, flags, context)) {
-        items.push({
-          item,
-          type: "web",
-          scrapeInput: {
-            url: item.url,
-            title: item.title,
-            description: item.description,
-          },
-        });
-      }
+      items.push({
+        item,
+        type: "web",
+        scrapeInput: {
+          url: item.url,
+          title: item.title,
+          description: item.description,
+        },
+      });
     }
   }
 
   if (searchResponse.news) {
     for (const item of searchResponse.news) {
-      if (item.url && !isUrlBlocked(item.url, flags, context)) {
+      if (item.url) {
         items.push({
           item,
           type: "news",
@@ -182,7 +186,7 @@ export function getItemsToScrape(
 
   if (searchResponse.images) {
     for (const item of searchResponse.images) {
-      if (item.url && !isUrlBlocked(item.url, flags, context)) {
+      if (item.url) {
         items.push({
           item,
           type: "image",

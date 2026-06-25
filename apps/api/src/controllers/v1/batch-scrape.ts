@@ -157,6 +157,7 @@ export async function batchScrapeController(
             ? true
             : false,
           zeroDataRetention,
+          teamFlags: req.acuc?.flags ?? null,
           agentIndexOnly: (req as any).agentIndexOnly ?? false,
         }, // NOTE: smart wait disabled for batch scrapes to ensure contentful scrape, speed does not matter
         team_id: req.auth.team_id,

@@ -191,6 +191,7 @@ export async function crawlController(
       teamId: req.auth.team_id,
       saveScrapeResultToGCS: config.GCS_FIRE_ENGINE_BUCKET_NAME ? true : false,
       zeroDataRetention,
+      teamFlags: req.acuc?.flags ?? null,
       agentIndexOnly: (req as any).agentIndexOnly ?? false,
     },
     team_id: req.auth.team_id,

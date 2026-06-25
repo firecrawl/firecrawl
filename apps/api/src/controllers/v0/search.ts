@@ -6,7 +6,6 @@ import { RateLimiterMode, ScrapeJobSingleUrls } from "../../types";
 import { logSearch, logRequest } from "../../services/logging/log_job";
 import { PageOptions, SearchOptions } from "../../lib/entities";
 import { search } from "../../search";
-import { isUrlBlocked } from "../../scraper/WebScraper/utils/blocklist";
 import { v7 as uuidv7 } from "uuid";
 import { logger } from "../../lib/logger";
 import { redisEvictConnection } from "../../../src/services/redis";
@@ -97,13 +96,6 @@ async function searchHelper(
     return { success: true, data: res, returnCode: 200 };
   }
 
-  res = res.filter(
-    r =>
-      !isUrlBlocked(r.url, flags, {
-        team_id,
-        origin: req.body?.origin ?? null,
-      }),
-  );
   if (res.length > num_results) {
     res = res.slice(0, num_results);
   }
@@ -127,7 +119,10 @@ async function searchHelper(
         mode: "single_urls" as const,
         team_id: team_id,
         scrapeOptions,
-        internalOptions,
+        internalOptions: {
+          ...internalOptions,
+          teamFlags: flags,
+        },
         startTime: Date.now(),
         zeroDataRetention: false, // not supported on v0
         apiKeyId: api_key_id,

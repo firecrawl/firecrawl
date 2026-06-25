@@ -249,6 +249,14 @@ export async function scrapeController(
         });
       }
 
+      if (e.code === "CRAWL_DENIAL") {
+        return res.status(403).json({
+          success: false,
+          code: e.code,
+          error: e.message,
+        });
+      }
+
       if (e.code === "SCRAPE_ACTIONS_NOT_SUPPORTED") {
         return res.status(400).json({
           success: false,
