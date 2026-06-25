@@ -1,45 +1,46 @@
+import { vi } from "vitest";
 import { authenticateUser } from "../auth";
 import { config } from "../../config";
 import { RateLimiterMode } from "../../types";
 
-jest.mock("../../services/queue-service", () => ({
-  getRedisConnection: jest.fn(() => ({
-    sadd: jest.fn(),
+vi.mock("../../services/queue-service", () => ({
+  getRedisConnection: vi.fn(() => ({
+    sadd: vi.fn(),
   })),
 }));
 
-jest.mock("uuid", () => ({
-  validate: jest.fn(() => true),
+vi.mock("uuid", () => ({
+  validate: vi.fn(() => true),
 }));
 
-jest.mock("../../services/redis", () => ({
-  getValue: jest.fn(),
-  setValue: jest.fn(),
-  deleteKey: jest.fn(),
+vi.mock("../../services/redis", () => ({
+  getValue: vi.fn(),
+  setValue: vi.fn(),
+  deleteKey: vi.fn(),
 }));
 
-jest.mock("../../services/redlock", () => ({
+vi.mock("../../services/redlock", () => ({
   redlock: {
-    using: jest.fn(),
+    using: vi.fn(),
   },
 }));
 
-jest.mock("../../db/connection", () => ({
+vi.mock("../../db/connection", () => ({
   db: {},
   dbRr: {},
 }));
 
-jest.mock("../../db/rpc", () => ({
-  authCreditUsageChunk: jest.fn(),
-  authCreditUsageChunkFromTeam: jest.fn(),
+vi.mock("../../db/rpc", () => ({
+  authCreditUsageChunk: vi.fn(),
+  authCreditUsageChunkFromTeam: vi.fn(),
 }));
 
-jest.mock("../../services/rate-limiter", () => ({
-  getRateLimiter: jest.fn(),
+vi.mock("../../services/rate-limiter", () => ({
+  getRateLimiter: vi.fn(),
 }));
 
-jest.mock("../../services/agent-sponsor", () => ({
-  getAgentSponsorStatus: jest.fn(),
+vi.mock("../../services/agent-sponsor", () => ({
+  getAgentSponsorStatus: vi.fn(),
 }));
 
 describe("authenticateUser", () => {
