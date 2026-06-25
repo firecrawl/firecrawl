@@ -355,7 +355,7 @@ const engineOptions: {
       video: false,
       atsv: false,
       location: false,
-      mobile: false,
+      mobile: true,
       skipTlsVerification: true,
       useFastMode: false,
       stealthProxy: false,
