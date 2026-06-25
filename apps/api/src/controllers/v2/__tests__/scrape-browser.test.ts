@@ -1,64 +1,65 @@
 import type { Response } from "express";
+import { vi } from "vitest";
 import { config } from "../../../config";
 import { supabaseGetScrapeById } from "../../../lib/supabase-jobs";
 import { scrapeInteractController } from "../scrape-browser";
 import type { RequestWithAuth } from "../types";
 
-jest.mock("uuid", () => ({
-  v7: jest.fn(() => "session-123"),
+vi.mock("uuid", () => ({
+  v7: vi.fn(() => "session-123"),
 }));
 
-jest.mock("../../../lib/supabase-jobs", () => ({
-  supabaseGetScrapeById: jest.fn(),
+vi.mock("../../../lib/supabase-jobs", () => ({
+  supabaseGetScrapeById: vi.fn(),
 }));
 
-jest.mock("../../../lib/browser-sessions", () => ({
-  insertBrowserSession: jest.fn(),
-  getBrowserSession: jest.fn(),
-  updateBrowserSessionActivity: jest.fn(() => Promise.resolve()),
-  updateBrowserSessionCreditsUsed: jest.fn(() => Promise.resolve()),
-  updateBrowserSessionScrapeId: jest.fn(() => Promise.resolve()),
-  claimBrowserSessionDestroyed: jest.fn(),
-  invalidateActiveBrowserSessionCount: jest.fn(() => Promise.resolve()),
-  getBrowserSessionFromScrape: jest.fn(),
-  markBrowserSessionUsedPrompt: jest.fn(() => Promise.resolve()),
-  didBrowserSessionUsePrompt: jest.fn(),
-  clearBrowserSessionPromptFlag: jest.fn(() => Promise.resolve()),
+vi.mock("../../../lib/browser-sessions", () => ({
+  insertBrowserSession: vi.fn(),
+  getBrowserSession: vi.fn(),
+  updateBrowserSessionActivity: vi.fn(() => Promise.resolve()),
+  updateBrowserSessionCreditsUsed: vi.fn(() => Promise.resolve()),
+  updateBrowserSessionScrapeId: vi.fn(() => Promise.resolve()),
+  claimBrowserSessionDestroyed: vi.fn(),
+  invalidateActiveBrowserSessionCount: vi.fn(() => Promise.resolve()),
+  getBrowserSessionFromScrape: vi.fn(),
+  markBrowserSessionUsedPrompt: vi.fn(() => Promise.resolve()),
+  didBrowserSessionUsePrompt: vi.fn(),
+  clearBrowserSessionPromptFlag: vi.fn(() => Promise.resolve()),
 }));
 
-jest.mock("../../../lib/concurrency-limit", () => ({
-  getConcurrencyLimitActiveJobsCount: jest.fn(),
-  pushConcurrencyLimitActiveJob: jest.fn(() => Promise.resolve()),
-  removeConcurrencyLimitActiveJob: jest.fn(() => Promise.resolve()),
+vi.mock("../../../lib/concurrency-limit", () => ({
+  getConcurrencyLimitActiveJobsCount: vi.fn(),
+  pushConcurrencyLimitActiveJob: vi.fn(() => Promise.resolve()),
+  removeConcurrencyLimitActiveJob: vi.fn(() => Promise.resolve()),
 }));
 
-jest.mock("../../../lib/scrape-interact/browser-service-client", () => ({
-  browserServiceRequest: jest.fn(),
+vi.mock("../../../lib/scrape-interact/browser-service-client", () => ({
+  browserServiceRequest: vi.fn(),
   BrowserServiceError: class BrowserServiceError extends Error {
     status = 500;
   },
 }));
 
-jest.mock("../../../lib/scrape-interact/browser-agent", () => ({
-  executePromptViaBrowserAgent: jest.fn(),
-  executeCodeViaBrowserSession: jest.fn(),
+vi.mock("../../../lib/scrape-interact/browser-agent", () => ({
+  executePromptViaBrowserAgent: vi.fn(),
+  executeCodeViaBrowserSession: vi.fn(),
 }));
 
-jest.mock("../../../lib/browser-session-activity", () => ({
-  enqueueBrowserSessionActivity: jest.fn(),
+vi.mock("../../../lib/browser-session-activity", () => ({
+  enqueueBrowserSessionActivity: vi.fn(),
 }));
 
-jest.mock("../../../services/billing/credit_billing", () => ({
-  billTeam: jest.fn(() => Promise.resolve()),
+vi.mock("../../../services/billing/credit_billing", () => ({
+  billTeam: vi.fn(() => Promise.resolve()),
 }));
 
-jest.mock("../../../services/logging/log_job", () => ({
-  logRequest: jest.fn(),
+vi.mock("../../../services/logging/log_job", () => ({
+  logRequest: vi.fn(),
 }));
 
-jest.mock("../../../services/autumn/autumn.service", () => ({
+vi.mock("../../../services/autumn/autumn.service", () => ({
   autumnService: {
-    checkCredits: jest.fn(),
+    checkCredits: vi.fn(),
   },
 }));
 
@@ -67,12 +68,12 @@ describe("scrapeInteractController", () => {
 
   const buildRes = () =>
     ({
-      status: jest.fn().mockReturnThis(),
-      json: jest.fn(),
+      status: vi.fn().mockReturnThis(),
+      json: vi.fn(),
     }) as unknown as Response;
 
   beforeEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
   });
 
   afterEach(() => {
