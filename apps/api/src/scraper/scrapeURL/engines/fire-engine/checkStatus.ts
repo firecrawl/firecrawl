@@ -18,6 +18,7 @@ import { MockState } from "../../lib/mock";
 import { fireEngineURL } from "./scrape";
 import { getDocFromGCS } from "../../../../lib/gcs-jobs";
 import { Meta } from "../..";
+import { shouldRetryChromeProxyErrorWithStealth } from "./chromeError";
 
 const browserCookieSchema = z
   .object({
@@ -210,7 +211,13 @@ export async function fireEngineCheckStatus(
     ) {
       const code = status.error.split("Chrome error: ")[1];
 
-      if (
+      if (shouldRetryChromeProxyErrorWithStealth(code, meta)) {
+        logger.info(
+          "Chrome proxy error received from Fire Engine. Adding stealthProxy flag.",
+          { errorCode: code, jobId },
+        );
+        throw new AddFeatureError(["stealthProxy"]);
+      } else if (
         code.includes("ERR_CERT_") ||
         code.includes("ERR_SSL_") ||
         code.includes("ERR_BAD_SSL_")
