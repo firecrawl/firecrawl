@@ -1,6 +1,4 @@
 import type IORedis from "ioredis";
-import { db } from "../db/connection";
-import * as schema from "../db/schema";
 import { logger as _logger } from "./logger";
 import {
   nuqFdbHealthCheck,
@@ -8,6 +6,7 @@ import {
   withFdbTimeout,
 } from "../services/worker/nuq-fdb";
 import { fdbQueueEnabled } from "../services/worker/nuq-router";
+import { chInsert } from "./clickhouse-client";
 
 const FDB_OPTIONAL_COUNT_TIMEOUT_MS = 500;
 const CONCURRENCY_LIMITER_KEY_PATTERN = "concurrency-limiter:*";
@@ -25,7 +24,8 @@ type CclogSample = {
 
 type CclogAggregateEntry = {
   team_id: string;
-  concurrency: number;
+  avg_concurrency: number;
+  max_concurrency: number;
   created_at: string;
 };
 
@@ -165,14 +165,18 @@ async function buildCclogAggregateEntries(
   const created_at = floorToMinute(at).toISOString();
   return Array.from(teamIds).map(team_id => {
     let total = 0;
+    let max = 0;
 
     for (const sample of samples) {
-      total += Number.parseInt(sample[team_id] ?? "0", 10);
+      const concurrency = Number.parseInt(sample[team_id] ?? "0", 10);
+      total += concurrency;
+      max = Math.max(max, concurrency);
     }
 
     return {
       team_id,
-      concurrency: Math.round(total / CCLOG_AGGREGATE_INTERVAL_MINUTES),
+      avg_concurrency: Math.round(total / CCLOG_AGGREGATE_INTERVAL_MINUTES),
+      max_concurrency: max,
       created_at,
     };
   });
@@ -181,7 +185,7 @@ async function buildCclogAggregateEntries(
 async function insertCclogAggregate(entries: CclogAggregateEntry[]) {
   if (entries.length === 0) return;
 
-  await db.insert(schema.concurrency_log).values(entries);
+  await chInsert("concurrency_logs", entries, { throwOnError: true });
 }
 
 export async function runCclogTick(redis: IORedis, at = new Date()) {

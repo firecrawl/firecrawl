@@ -16,6 +16,7 @@ const client = config.CLICKHOUSE_ANALYTICS_URL
 export async function chInsert(
   table: string,
   rows: Record<string, unknown>[],
+  opts?: { throwOnError?: boolean },
 ): Promise<void> {
   if (!client || rows.length === 0) return;
 
@@ -31,5 +32,8 @@ export async function chInsert(
       rowCount: rows.length,
       error: error?.message,
     });
+    if (opts?.throwOnError) {
+      throw error;
+    }
   }
 }

@@ -129,13 +129,6 @@ export const browser_sessions = pgTable("browser_sessions", {
   scrape_id: uuid("scrape_id"),
 });
 
-export const concurrency_log = pgTable("concurrency_log", {
-  id: bigintNum("id").notNull().generatedByDefaultAsIdentity(),
-  created_at: ts("created_at").notNull().defaultNow(),
-  team_id: uuid("team_id").notNull(),
-  concurrency: integer("concurrency").notNull(),
-});
-
 export const crawls = pgTable("crawls", {
   id: uuid("id").notNull(),
   request_id: uuid("request_id").notNull(),
