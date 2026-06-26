@@ -17,6 +17,7 @@ import {
   UnsupportedFileError,
 } from "../../error";
 import { Meta } from "../..";
+import { shouldRetryChromeProxyErrorWithStealth } from "./chromeError";
 
 import { config } from "../../../../config";
 
@@ -248,7 +249,13 @@ export async function fireEngineScrape<
     ) {
       const code = status.error.split("Chrome error: ")[1];
 
-      if (
+      if (shouldRetryChromeProxyErrorWithStealth(code, meta)) {
+        logger.info(
+          "Chrome proxy error received from Fire Engine. Adding stealthProxy flag.",
+          { errorCode: code },
+        );
+        throw new AddFeatureError(["stealthProxy"]);
+      } else if (
         code.includes("ERR_CERT_") ||
         code.includes("ERR_SSL_") ||
         code.includes("ERR_BAD_SSL_")
