@@ -207,12 +207,14 @@ export async function runCclogTick(redis: IORedis, at = new Date()) {
   }
 
   const entries = await buildCclogAggregateEntries(redis, minute);
+  let insertedRows = 0;
 
   try {
     await insertCclogAggregate(entries);
+    insertedRows = entries.length;
     logger.info("Inserted cclog aggregate", {
       at: minute.toISOString(),
-      rows: entries.length,
+      rows: insertedRows,
     });
   } catch (error) {
     logger.error("Error inserting cclog aggregate", { error });
@@ -220,6 +222,6 @@ export async function runCclogTick(redis: IORedis, at = new Date()) {
 
   return {
     sampledTeams: concurrencyByTeam.size,
-    insertedRows: entries.length,
+    insertedRows,
   };
 }
