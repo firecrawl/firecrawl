@@ -6,7 +6,6 @@ import { NuQJob } from "./nuq";
 import { register } from "prom-client";
 import Express from "express";
 import { initializeBlocklist } from "../../scraper/WebScraper/utils/blocklist";
-import { initializeEngineForcing } from "../../scraper/WebScraper/utils/engine-forcing";
 
 export type WorkerQueue = {
   getJobToProcess(logger?: any): Promise<NuQJob<any, any> | null>;
@@ -57,7 +56,6 @@ export async function runNuqWorker(options: {
 }) {
   try {
     await initializeBlocklist();
-    initializeEngineForcing();
     await options.beforeStart?.();
   } catch (error) {
     _logger.error("Failed to initialize NuQ worker", {

@@ -34,7 +34,6 @@ import { v2Router } from "./routes/v2";
 import { nuqShutdown } from "./services/worker/nuq";
 import { getErrorContactMessage } from "./lib/deployment";
 import { initializeBlocklist } from "./scraper/WebScraper/utils/blocklist";
-import { initializeEngineForcing } from "./scraper/WebScraper/utils/engine-forcing";
 import responseTime from "response-time";
 import { shutdownWebhookQueue } from "./services/webhook";
 import { shutdownIndexerQueue } from "./services/indexing/indexer-queue";
@@ -118,9 +117,8 @@ const HOST = config.HOST;
 async function startServer(port = DEFAULT_PORT) {
   try {
     await initializeBlocklist();
-    initializeEngineForcing();
   } catch (error) {
-    logger.error("Failed to initialize blocklist and engine forcing", {
+    logger.error("Failed to initialize blocklist", {
       error,
     });
     throw error;

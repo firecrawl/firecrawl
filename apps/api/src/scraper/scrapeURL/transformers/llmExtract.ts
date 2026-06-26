@@ -94,7 +94,7 @@ const getModelLimits = (model: string) => {
   };
 };
 
-export class LLMRefusalError extends Error {
+class LLMRefusalError extends Error {
   public refusal: string;
 
   constructor(refusal: string) {

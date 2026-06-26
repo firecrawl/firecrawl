@@ -2,7 +2,6 @@ import type { Logger } from "winston";
 import { config } from "../../config";
 import { scrapeOptions, ScrapeOptions } from "../../controllers/v2/types";
 import { logger as _logger } from "../../lib/logger";
-import { Engine } from "../scrapeURL/engines";
 import { scrapeURL } from "../scrapeURL";
 import { CostTracking } from "../../lib/cost-tracking";
 import {
@@ -52,7 +51,7 @@ async function getSitemapXML(options: SitemapScrapeOptions): Promise<string> {
   const isLocationSpecified =
     options.location && options.location.country !== "us-generic";
 
-  const forceEngine: Engine[] = [
+  const forceEngine = [
     ...(options.maxAge > 0 && useIndex ? ["index" as const] : []),
     ...(isLocationSpecified && useFireEngine
       ? [

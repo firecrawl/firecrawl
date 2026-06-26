@@ -77,20 +77,26 @@ export async function submitJob(args: SubmitArgs): Promise<SubmitOutcome> {
   if (status === 503) failAsync(meta, "http_503");
 
   if (status === 409) {
-    meta.logger.error("FirePDF async POST /jobs returned 409 scrape_id_conflict", {
-      scrapeId,
-      body: json,
-    });
+    meta.logger.error(
+      "FirePDF async POST /jobs returned 409 scrape_id_conflict",
+      {
+        scrapeId,
+        body: json,
+      },
+    );
     throw new Error(
       "fire-pdf async POST /jobs conflict: scrape_id reused with different inputs",
     );
   }
 
   if (status === 400) {
-    meta.logger.error("FirePDF async POST /jobs returned 400 validation error", {
-      scrapeId,
-      body: json,
-    });
+    meta.logger.error(
+      "FirePDF async POST /jobs returned 400 validation error",
+      {
+        scrapeId,
+        body: json,
+      },
+    );
     throw new Error("fire-pdf async POST /jobs validation error");
   }
 

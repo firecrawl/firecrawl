@@ -1,11 +1,9 @@
 import { Logger } from "winston";
-import * as Sentry from "@sentry/node";
 import { z } from "zod";
 
 import { robustFetch } from "../../lib/fetch";
 import {
   ActionError,
-  AddFeatureError,
   EngineError,
   SiteError,
   SSLError,
@@ -13,11 +11,11 @@ import {
   DNSResolutionError,
   FEPageLoadFailed,
   ProxySelectionError,
+  ReliableRetrievalError,
 } from "../../error";
-import { MockState } from "../../lib/mock";
 import { fireEngineURL } from "./scrape";
 import { getDocFromGCS } from "../../../../lib/gcs-jobs";
-import { Meta } from "../..";
+import { Meta } from "../../lib/meta";
 
 const browserCookieSchema = z
   .object({
@@ -152,7 +150,6 @@ export async function fireEngineCheckStatus(
   meta: Meta,
   logger: Logger,
   jobId: string,
-  mock: MockState | null,
   abort?: AbortSignal,
   baseUrl: string = fireEngineURL,
 ): Promise<FireEngineCheckStatusSuccess> {
@@ -161,7 +158,6 @@ export async function fireEngineCheckStatus(
     method: "GET",
     logger: logger.child({ method: "fireEngineCheckStatus/robustFetch" }),
     headers: {},
-    mock,
     abort,
   });
 
@@ -193,22 +189,10 @@ export async function fireEngineCheckStatus(
     throw new StillProcessingError(jobId);
   } else if (failedParse.success) {
     logger.debug("Scrape job failed", { status, jobId });
-    if (
-      failedParse.data.retryWithStealth &&
-      meta.options.proxy === "auto" &&
-      !meta.featureFlags.has("stealthProxy")
-    ) {
-      logger.info(
-        "Scrape job signaled retryWithStealth. Adding stealthProxy flag.",
-        { jobId },
-      );
-      throw new AddFeatureError(["stealthProxy"]);
-    }
-    if (
-      typeof status.error === "string" &&
-      status.error.includes("Chrome error: ")
-    ) {
-      const code = status.error.split("Chrome error: ")[1];
+    if (failedParse.data.retryWithStealth) {
+      throw new ReliableRetrievalError(meta.options.proxy !== "basic");
+    } else if (failedParse.data.error.includes("Chrome error: ")) {
+      const code = failedParse.data.error.split("Chrome error: ")[1];
 
       if (
         code.includes("ERR_CERT_") ||
@@ -219,37 +203,30 @@ export async function fireEngineCheckStatus(
       } else {
         throw new SiteError(code);
       }
-    } else if (
-      typeof status.error === "string" &&
-      status.error.includes("proxies available for")
-    ) {
+    } else if (failedParse.data.error.includes("proxies available for")) {
       throw new ProxySelectionError();
     } else if (
-      typeof status.error === "string" &&
-      status.error.includes("Dns resolution error for hostname: ")
+      failedParse.data.error.includes("Dns resolution error for hostname: ")
     ) {
       throw new DNSResolutionError(
-        status.error.split("Dns resolution error for hostname: ")[1],
+        failedParse.data.error.split("Dns resolution error for hostname: ")[1],
       );
     } else if (
-      typeof status.error === "string" &&
-      (status.error.includes("File size exceeds") ||
-        status.error.includes("File exceeds size limit"))
+      failedParse.data.error.includes("File size exceeds") ||
+      failedParse.data.error.includes("File exceeds size limit")
     ) {
       throw new UnsupportedFileError("File exceeds size limit");
     } else if (
-      typeof status.error === "string" &&
-      status.error.includes("failed to finish without timing out")
+      failedParse.data.error.includes("failed to finish without timing out")
     ) {
       logger.warn("CDP timed out while loading the page", { status, jobId });
       throw new FEPageLoadFailed();
     } else if (
-      typeof status.error === "string" &&
       // TODO: improve this later
-      (status.error.includes("Element") ||
-        status.error.includes("Javascript execution failed"))
+      failedParse.data.error.includes("Element") ||
+      failedParse.data.error.includes("Javascript execution failed")
     ) {
-      const errorMessage = status.error.startsWith("Error: ")
+      const errorMessage = failedParse.data.error.startsWith("Error: ")
         ? status.error.substring(7)
         : status.error;
       throw new ActionError(errorMessage);

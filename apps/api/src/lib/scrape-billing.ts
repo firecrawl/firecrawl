@@ -139,10 +139,7 @@ export async function calculateCreditsToBeBilled(
     }
   }
 
-  if (
-    document?.metadata?.proxyUsed === "stealth" &&
-    !unsupportedFeatures?.has("stealthProxy") // if stealth proxy was unsupported, don't bill for it
-  ) {
+  if (document?.metadata?.proxyUsed === "stealth") {
     creditsToBeBilled += stealthProxyCostBonus;
   }
 

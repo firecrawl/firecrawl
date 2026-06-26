@@ -1,25 +1,29 @@
 # `scrapeURL`
-New URL scraper for Firecrawl
+
+Single-URL scraper for Firecrawl.
 
 ## Signal flow
+
 ```mermaid
 flowchart TD;
-    scrapeURL-.->buildFallbackList;
-    buildFallbackList-.->scrapeURLWithEngine;
-    scrapeURLWithEngine-.->parseMarkdown;
-    parseMarkdown-.->wasScrapeSuccessful{{Was scrape successful?}};
-    wasScrapeSuccessful-."No".->areEnginesLeft{{Are there engines left to try?}};
-    areEnginesLeft-."Yes, try next engine".->scrapeURLWithEngine;
-    areEnginesLeft-."No".->NoEnginesLeftError[/NoEnginesLeftError/]
-    wasScrapeSuccessful-."Yes".->asd;
+    scrapeURL --> meta[build meta];
+    meta --> robots[robots check];
+    robots --> index{index eligible?};
+    index -- hit --> parser[parse engine result];
+    index -- miss --> specialty{specialty URL?};
+    specialty -- yes --> specialEngine[run specialty engine once];
+    specialty -- no --> mainEngine[run configured main engine];
+    mainEngine -- reliable retrieval error and proxy auto --> enhancedRetry[retry same main engine with enhanced proxy];
+    specialEngine --> parser;
+    mainEngine --> parser;
+    enhancedRetry --> parser;
+    parser --> document[document];
+    document --> transformers[run transformers];
 ```
 
-## Differences from `WebScraperDataProvider`
- - The job of `WebScraperDataProvider.validateInitialUrl` has been delegated to the zod layer above `scrapeUrl`.
- - `WebScraperDataProvider.mode` has no equivalent, only `scrape_url` is supported.
- - You may no longer specify multiple URLs.
- - Built on `v1` definitons, instead of `v0`.
- - PDFs are now converted straight to markdown using LlamaParse, instead of converting to just plaintext.
- - DOCXs are now converted straight to HTML (and then later to markdown) using mammoth, instead of converting to just plaintext.
- - Using new JSON Schema OpenAI API -- schema fails with LLM Extract will be basically non-existant.
-        
+## Engine selection
+
+- Feature support does not select engines. Unsupported features produce warnings on the returned document.
+- Parsers materialize `Document` from `EngineScrapeResult`. HTML is the default parser; PDF and document parsers inspect fetched file payloads from the engine result.
+- Specialty URL engines are terminal once selected.
+- `proxy: "auto"` tries the main engine with basic proxy first, then retries the same main engine with enhanced proxy only when the engine raises `ReliableRetrievalError`.

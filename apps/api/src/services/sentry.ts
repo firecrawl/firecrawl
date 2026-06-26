@@ -1,11 +1,7 @@
 import * as Sentry from "@sentry/node";
 import { logger } from "../lib/logger";
 import { config } from "../config";
-import {
-  AddFeatureError,
-  RemoveFeatureError,
-  EngineError,
-} from "../scraper/scrapeURL/error";
+import { EngineError } from "../scraper/scrapeURL/error";
 import { AbortManagerThrownError } from "../scraper/scrapeURL/lib/abortManager";
 import { JobCancelledError } from "../lib/error";
 import { isQueueFullError } from "../lib/queue-full-error";
@@ -27,19 +23,16 @@ type CaptureContext = {
 };
 
 const transportableErrorCodes = [
-  "SCRAPE_ALL_ENGINES_FAILED",
   "SCRAPE_DNS_RESOLUTION_ERROR",
   "SCRAPE_SITE_ERROR",
   "SCRAPE_SSL_ERROR",
   "SCRAPE_PROXY_SELECTION_ERROR",
   "SCRAPE_ZDR_VIOLATION_ERROR",
   "SCRAPE_UNSUPPORTED_FILE_ERROR",
-  "SCRAPE_PDF_ANTIBOT_ERROR",
+  "SCRAPE_PAGE_LOAD_FAILED",
   "SCRAPE_ACTION_ERROR",
   "SCRAPE_PDF_INSUFFICIENT_TIME_ERROR",
-  "SCRAPE_PDF_PREFETCH_FAILED",
-  "SCRAPE_DOCUMENT_ANTIBOT_ERROR",
-  "SCRAPE_DOCUMENT_PREFETCH_FAILED",
+  "SCRAPE_RELIABLE_RETRIEVAL_ERROR",
   "SCRAPE_ACTIONS_NOT_SUPPORTED",
   "SCRAPE_TIMEOUT",
   "MAP_TIMEOUT",
@@ -91,8 +84,6 @@ export function shouldIgnoreSentryException(error: unknown): boolean {
   }
 
   if (
-    error instanceof AddFeatureError ||
-    error instanceof RemoveFeatureError ||
     error instanceof AbortManagerThrownError ||
     error instanceof EngineError ||
     error instanceof JobCancelledError

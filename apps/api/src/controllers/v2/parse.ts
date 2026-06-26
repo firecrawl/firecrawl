@@ -114,20 +114,6 @@ function getSyntheticFilename(file: UploadedParseFile): string {
   return `${file.filename}.html`;
 }
 
-function getParseForceEngine(
-  kind: UploadedParseFileKind,
-): "fetch" | "pdf" | "document" {
-  if (kind === "pdf") {
-    return "pdf";
-  }
-
-  if (kind === "document") {
-    return "document";
-  }
-
-  return "fetch";
-}
-
 function sanitizeParseRequestForLogs(
   body: ParseRequest | Record<string, unknown>,
 ): Record<string, unknown> {
@@ -477,7 +463,6 @@ export async function parseController(
             const { file, ...parseOptions } = req.body;
             const syntheticFilename = getSyntheticFilename(file);
             const syntheticUrl = `https://parse.firecrawl.dev/uploads/${encodeURIComponent(syntheticFilename)}`;
-            const forceEngine = getParseForceEngine(file.kind!);
 
             const doc = await withSpan(
               "api.parse.wait_for_job",
@@ -512,8 +497,6 @@ export async function parseController(
                       bypassBilling: isDirectToBullMQ || !shouldBill,
                       zeroDataRetention,
                       teamFlags: req.acuc?.flags ?? null,
-                      uploadedFile: file,
-                      forceEngine,
                       isParse: true,
                       agentIndexOnly: (req as any).agentIndexOnly ?? false,
                     },

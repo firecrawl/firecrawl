@@ -1,11 +1,11 @@
 import { z } from "zod";
 import { config } from "../../../../config";
-import { EngineScrapeResult } from "..";
-import { Meta } from "../..";
 import { robustFetch } from "../../lib/fetch";
 import { getInnerJson } from "@mendable/firecrawl-rs";
+import { Engine, EngineScrapeResult } from "../types";
+import { Meta } from "../../lib/meta";
 
-export async function scrapeURLWithPlaywright(
+async function scrapeURLWithPlaywright(
   meta: Meta,
 ): Promise<EngineScrapeResult> {
   const response = await robustFetch({
@@ -28,7 +28,6 @@ export async function scrapeURLWithPlaywright(
       pageError: z.string().optional(),
       contentType: z.string().optional(),
     }),
-    mock: meta.mock,
     abort: meta.abort.asSignal(),
   });
 
@@ -47,6 +46,30 @@ export async function scrapeURLWithPlaywright(
   };
 }
 
-export function playwrightMaxReasonableTime(meta: Meta): number {
-  return (meta.options.waitFor ?? 0) + 30000;
-}
+export const playwrightEngine: Engine = {
+  name: "playwright",
+  features: {
+    actions: false,
+    waitFor: true,
+    screenshot: false,
+    "screenshot@fullScreen": false,
+    audio: false,
+    video: false,
+    atsv: false,
+    location: false,
+    mobile: false,
+    branding: false,
+    disableAdblock: false,
+  },
+  scrape: meta => {
+    const logger = meta.logger.child({
+      method: "scrapeURLWithPlaywright",
+      engine: "playwright",
+    });
+
+    return scrapeURLWithPlaywright({
+      ...meta,
+      logger,
+    });
+  },
+};

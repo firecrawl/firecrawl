@@ -1,7 +1,4 @@
 import { ErrorCodes, TransportableError } from "../../lib/error";
-import { Meta } from ".";
-import { Engine, FeatureFlag } from "./engines";
-import { isSelfHosted } from "../../lib/deployment";
 
 export class EngineError extends Error {
   constructor(message?: string, options?: ErrorOptions) {
@@ -28,65 +25,6 @@ export class XTwitterConfigurationError extends TransportableError {
     const x = new XTwitterConfigurationError();
     x.stack = data.stack;
     return x;
-  }
-}
-
-export class NoEnginesLeftError extends TransportableError {
-  public fallbackList: Engine[];
-
-  constructor(fallbackList: Engine[]) {
-    const enginesTriedStr = fallbackList.join(", ");
-    const message = isSelfHosted()
-      ? `All scraping engines failed to retrieve content from this URL. Engines tried: [${enginesTriedStr}]. This usually happens when: (1) The URL is invalid or the page doesn't exist (404), (2) The website is blocking automated access, (3) The website is down or unreachable, (4) The page requires authentication. Double check the URL is correct and accessible in a browser. Check your server logs for more detailed error information from each engine.`
-      : `All scraping engines failed to retrieve content from this URL. Engines tried: [${enginesTriedStr}]. This usually happens when: (1) The URL is invalid or the page doesn't exist (404), (2) The website is blocking automated access, (3) The website is down or unreachable, (4) The page requires authentication. Double check the URL is correct and accessible in a browser. If the issue persists, contact us at help@firecrawl.com with your request ID for investigation.`;
-
-    super("SCRAPE_ALL_ENGINES_FAILED", message);
-    this.fallbackList = fallbackList;
-  }
-
-  serialize() {
-    return {
-      ...super.serialize(),
-      fallbackList: this.fallbackList,
-    };
-  }
-
-  static deserialize(
-    _: ErrorCodes,
-    data: ReturnType<typeof this.prototype.serialize>,
-  ) {
-    const x = new NoEnginesLeftError(data.fallbackList);
-    x.stack = data.stack;
-    return x;
-  }
-}
-
-export class AddFeatureError extends Error {
-  public featureFlags: FeatureFlag[];
-  public pdfPrefetch: Meta["pdfPrefetch"];
-  public documentPrefetch: Meta["documentPrefetch"];
-
-  constructor(
-    featureFlags: FeatureFlag[],
-    pdfPrefetch?: Meta["pdfPrefetch"],
-    documentPrefetch?: Meta["documentPrefetch"],
-  ) {
-    super("New feature flags have been discovered: " + featureFlags.join(", "));
-    this.featureFlags = featureFlags;
-    this.pdfPrefetch = pdfPrefetch;
-    this.documentPrefetch = documentPrefetch;
-  }
-}
-
-export class RemoveFeatureError extends Error {
-  public featureFlags: FeatureFlag[];
-
-  constructor(featureFlags: FeatureFlag[]) {
-    super(
-      "Incorrect feature flags have been discovered: " +
-        featureFlags.join(", "),
-    );
-    this.featureFlags = featureFlags;
   }
 }
 
@@ -250,25 +188,6 @@ export class UnsupportedFileError extends TransportableError {
   }
 }
 
-export class PDFAntibotError extends TransportableError {
-  constructor() {
-    super("SCRAPE_PDF_ANTIBOT_ERROR", "PDF scrape was prevented by anti-bot");
-  }
-
-  serialize() {
-    return super.serialize();
-  }
-
-  static deserialize(
-    _: ErrorCodes,
-    data: ReturnType<typeof this.prototype.serialize>,
-  ) {
-    const x = new PDFAntibotError();
-    x.stack = data.stack;
-    return x;
-  }
-}
-
 export class PDFInsufficientTimeError extends TransportableError {
   constructor(
     public pageCount: number,
@@ -423,69 +342,26 @@ export class PDFOCRRequiredError extends TransportableError {
   }
 }
 
-export class PDFPrefetchFailed extends TransportableError {
-  constructor() {
-    const message = isSelfHosted()
-      ? "Failed to prefetch the PDF file because the website's anti-bot protection blocked the initial download attempt. This typically happens when the PDF is protected by a CAPTCHA, login wall, or aggressive bot detection. Firecrawl tried to bypass the protection but was unsuccessful. Check your server logs for more details about the specific protection mechanism encountered."
-      : "Failed to prefetch the PDF file because the website's anti-bot protection blocked the initial download attempt. This typically happens when the PDF is protected by a CAPTCHA, login wall, or aggressive bot detection. Firecrawl tried to bypass the protection but was unsuccessful. If this is a business-critical URL, please contact help@firecrawl.com with the URL and we can investigate adding specific support for this site.";
-
-    super("SCRAPE_PDF_PREFETCH_FAILED", message);
-  }
-
-  serialize() {
-    return super.serialize();
-  }
-
-  static deserialize(
-    _: ErrorCodes,
-    data: ReturnType<typeof this.prototype.serialize>,
-  ) {
-    const x = new PDFPrefetchFailed();
-    x.stack = data.stack;
-    return x;
-  }
-}
-
-export class DocumentAntibotError extends TransportableError {
-  constructor() {
+export class ReliableRetrievalError extends TransportableError {
+  constructor(public enhancedOrAuto: boolean) {
     super(
-      "SCRAPE_DOCUMENT_ANTIBOT_ERROR",
-      "Document scrape was prevented by anti-bot",
+      "SCRAPE_RELIABLE_RETRIEVAL_ERROR",
+      `Firecrawl was unable to reliably retrieve content from this URL. ${enhancedOrAuto ? "Please reach out to help@firecrawl.com so that we can help you." : 'Please retry the request with the "proxy" scrape option set to auto.'}`,
     );
   }
 
   serialize() {
-    return super.serialize();
+    return {
+      ...super.serialize(),
+      enhancedOrAuto: this.enhancedOrAuto,
+    };
   }
 
   static deserialize(
     _: ErrorCodes,
     data: ReturnType<typeof this.prototype.serialize>,
   ) {
-    const x = new DocumentAntibotError();
-    x.stack = data.stack;
-    return x;
-  }
-}
-
-export class DocumentPrefetchFailed extends TransportableError {
-  constructor() {
-    const message = isSelfHosted()
-      ? "Failed to prefetch the document file because the website's anti-bot protection blocked the initial download attempt. This typically happens when the document (DOCX, XLSX, etc.) is protected by a CAPTCHA, login wall, or aggressive bot detection. Firecrawl tried to bypass the protection but was unsuccessful. Check your server logs for more details about the specific protection mechanism encountered."
-      : "Failed to prefetch the document file because the website's anti-bot protection blocked the initial download attempt. This typically happens when the document (DOCX, XLSX, etc.) is protected by a CAPTCHA, login wall, or aggressive bot detection. Firecrawl tried to bypass the protection but was unsuccessful. If this is a business-critical URL, please contact help@firecrawl.com with the URL and we can investigate adding specific support for this site.";
-
-    super("SCRAPE_DOCUMENT_PREFETCH_FAILED", message);
-  }
-
-  serialize() {
-    return super.serialize();
-  }
-
-  static deserialize(
-    _: ErrorCodes,
-    data: ReturnType<typeof this.prototype.serialize>,
-  ) {
-    const x = new DocumentPrefetchFailed();
+    const x = new ReliableRetrievalError(data.enhancedOrAuto);
     x.stack = data.stack;
     return x;
   }
@@ -576,35 +452,25 @@ export class BrandingNotSupportedError extends TransportableError {
   }
 }
 
-export class FEPageLoadFailed extends Error {
+export class FEPageLoadFailed extends TransportableError {
   constructor() {
     super(
+      "SCRAPE_PAGE_LOAD_FAILED",
       "The page failed to load with the specified timeout. Please increase the timeout parameter in your request.",
     );
   }
-}
 
-export class EngineSnipedError extends Error {
-  name = "EngineSnipedError";
-
-  constructor() {
-    super("Engine got sniped");
+  serialize() {
+    return super.serialize();
   }
-}
 
-export class EngineUnsuccessfulError extends Error {
-  name = "EngineUnsuccessfulError";
-
-  constructor(engine: Engine) {
-    super(`Engine ${engine} was unsuccessful`);
-  }
-}
-
-export class WaterfallNextEngineSignal extends Error {
-  name = "WaterfallNextEngineSignal";
-
-  constructor() {
-    super("Waterfall next engine");
+  static deserialize(
+    _: ErrorCodes,
+    data: ReturnType<typeof this.prototype.serialize>,
+  ) {
+    const x = new FEPageLoadFailed();
+    x.stack = data.stack;
+    return x;
   }
 }
 
@@ -625,50 +491,6 @@ export class ScrapeJobCancelledError extends TransportableError {
     data: ReturnType<typeof this.prototype.serialize>,
   ) {
     const x = new ScrapeJobCancelledError();
-    x.stack = data.stack;
-    return x;
-  }
-}
-
-export type ScrapeRetryLimitReason =
-  | "global"
-  | "feature_toggle"
-  | "feature_removal"
-  | "pdf_antibot"
-  | "document_antibot";
-
-export type ScrapeRetryStats = {
-  totalAttempts: number;
-  addFeatureAttempts: number;
-  removeFeatureAttempts: number;
-  pdfAntibotAttempts: number;
-  documentAntibotAttempts: number;
-};
-
-export class ScrapeRetryLimitError extends TransportableError {
-  constructor(
-    public reason: ScrapeRetryLimitReason,
-    public stats: ScrapeRetryStats,
-  ) {
-    super(
-      "SCRAPE_RETRY_LIMIT",
-      `Scrape aborted after exceeding retry limit (${reason}).`,
-    );
-  }
-
-  serialize() {
-    return {
-      ...super.serialize(),
-      reason: this.reason,
-      stats: this.stats,
-    };
-  }
-
-  static deserialize(
-    _: ErrorCodes,
-    data: ReturnType<typeof this.prototype.serialize>,
-  ) {
-    const x = new ScrapeRetryLimitError(data.reason, data.stats);
     x.stack = data.stack;
     return x;
   }

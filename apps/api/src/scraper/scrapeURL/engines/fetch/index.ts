@@ -1,14 +1,20 @@
 import * as undici from "undici";
-import { EngineScrapeResult } from "..";
-import { Meta } from "../..";
-import { SSLError } from "../../error";
-import { specialtyScrapeCheck } from "../utils/specialtyHandler";
+import { SSLError, UnsupportedFileError } from "../../error";
 import {
   getSecureDispatcher,
   InsecureConnectionError,
 } from "../utils/safeFetch";
-import { MockState, saveMock } from "../../lib/mock";
 import { TextDecoder } from "util";
+import { Meta } from "../../lib/meta";
+import { Engine, EngineScrapeResult } from "../types";
+import { attachEngineResultFile } from "../../lib/engine-result-file";
+import {
+  isDocumentContentType,
+  isPdfContentType,
+  isProbablyDocumentBase64,
+  isProbablyPdfBase64,
+  isUnsupportedBinaryContentType,
+} from "../../lib/file-format-check";
 
 function decodeHtmlBuffer(
   buf: Buffer,
@@ -83,19 +89,7 @@ function decodeHtmlBuffer(
   return { text };
 }
 
-export async function scrapeURLWithFetch(
-  meta: Meta,
-): Promise<EngineScrapeResult> {
-  const mockOptions = {
-    url: meta.rewrittenUrl ?? meta.url,
-
-    // irrelevant
-    method: "GET",
-    ignoreResponse: false,
-    ignoreFailure: false,
-    tryCount: 1,
-  };
-
+async function scrapeURLWithFetch(meta: Meta): Promise<EngineScrapeResult> {
   let response: {
     url: string;
     body: string;
@@ -103,14 +97,54 @@ export async function scrapeURLWithFetch(
     headers: [string, string][];
   };
 
-  if (meta.fetchPrefetch !== undefined && meta.fetchPrefetch !== null) {
+  try {
+    const x = await undici.fetch(meta.rewrittenUrl ?? meta.url, {
+      dispatcher: getSecureDispatcher(meta.options.skipTlsVerification),
+      redirect: "follow",
+      headers: meta.options.headers,
+      signal: meta.abort.asSignal(),
+    });
+
+    const buf = Buffer.from(await x.arrayBuffer());
+    const contentType = x.headers.get("content-type") ?? undefined;
+    const base64 = buf.toString("base64");
+    const shouldKeepAsBase64 =
+      isPdfContentType(contentType) ||
+      isDocumentContentType(contentType) ||
+      isProbablyPdfBase64(base64) ||
+      isProbablyDocumentBase64(base64);
+
+    if (!shouldKeepAsBase64 && isUnsupportedBinaryContentType(contentType)) {
+      throw new UnsupportedFileError(contentType ?? "unknown");
+    }
+
+    if (shouldKeepAsBase64) {
+      response = {
+        url: x.url,
+        body: base64,
+        status: x.status,
+        headers: [...x.headers],
+      };
+      const result: EngineScrapeResult = {
+        url: response.url,
+        html: response.body,
+        statusCode: response.status,
+        contentType:
+          (response.headers.find(x => x[0].toLowerCase() === "content-type") ??
+            [])[1] ?? undefined,
+        proxyUsed: "basic",
+      };
+
+      return attachEngineResultFile(result, { content: response.body });
+    }
+
     const { text, charset, charsetSource, decodeError } = decodeHtmlBuffer(
-      meta.fetchPrefetch.bodyBuffer,
-      meta.fetchPrefetch.contentType,
+      buf,
+      contentType,
     );
     if (decodeError) {
       meta.logger.warn(
-        "Failed to re-parse uploaded HTML with detected charset",
+        "Failed to re-parse fetched HTML with detected charset",
         {
           charset,
           charsetSource,
@@ -118,103 +152,35 @@ export async function scrapeURLWithFetch(
         },
       );
     } else if (charset) {
-      meta.logger.debug("Decoded uploaded HTML using detected charset", {
+      meta.logger.debug("Decoded fetched HTML using detected charset", {
         charset,
         charsetSource,
       });
     }
 
     response = {
-      url: meta.fetchPrefetch.url ?? meta.rewrittenUrl ?? meta.url,
+      url: x.url,
       body: text,
-      status: meta.fetchPrefetch.status,
-      headers: meta.fetchPrefetch.contentType
-        ? [["content-type", meta.fetchPrefetch.contentType]]
-        : [],
+      status: x.status,
+      headers: [...x.headers],
     };
-  } else if (meta.mock !== null) {
-    const makeRequestTypeId = (
-      request: MockState["requests"][number]["options"],
-    ) => request.url + ";" + request.method;
-
-    const thisId = makeRequestTypeId(mockOptions);
-    const matchingMocks = meta.mock.requests
-      .filter(x => makeRequestTypeId(x.options) === thisId)
-      .sort((a, b) => a.time - b.time);
-    const nextI = meta.mock.tracker[thisId] ?? 0;
-    meta.mock.tracker[thisId] = nextI + 1;
-
-    if (!matchingMocks[nextI]) {
-      throw new Error("Failed to mock request -- no mock targets found.");
-    }
-
-    response = {
-      ...matchingMocks[nextI].result,
-    };
-  } else {
-    try {
-      const x = await undici.fetch(meta.rewrittenUrl ?? meta.url, {
-        dispatcher: getSecureDispatcher(meta.options.skipTlsVerification),
-        redirect: "follow",
-        headers: meta.options.headers,
-        signal: meta.abort.asSignal(),
-      });
-
-      const buf = Buffer.from(await x.arrayBuffer());
-      const contentType = x.headers.get("content-type") ?? undefined;
-      const { text, charset, charsetSource, decodeError } = decodeHtmlBuffer(
-        buf,
-        contentType,
-      );
-      if (decodeError) {
-        meta.logger.warn(
-          "Failed to re-parse fetched HTML with detected charset",
-          {
-            charset,
-            charsetSource,
-            error: decodeError,
-          },
-        );
-      } else if (charset) {
-        meta.logger.debug("Decoded fetched HTML using detected charset", {
-          charset,
-          charsetSource,
-        });
-      }
-
-      response = {
-        url: x.url,
-        body: text,
-        status: x.status,
-        headers: [...x.headers],
-      };
-
-      if (meta.mock === null) {
-        await saveMock(mockOptions, response);
-      }
-    } catch (error) {
-      if (
-        error instanceof TypeError &&
-        error.cause instanceof InsecureConnectionError
-      ) {
-        throw error.cause;
-      } else if (
-        error instanceof Error &&
-        error.message === "fetch failed" &&
-        error.cause &&
-        (error.cause as any).code === "CERT_HAS_EXPIRED"
-      ) {
-        throw new SSLError(meta.options.skipTlsVerification);
-      } else {
-        throw error;
-      }
+  } catch (error) {
+    if (
+      error instanceof TypeError &&
+      error.cause instanceof InsecureConnectionError
+    ) {
+      throw error.cause;
+    } else if (
+      error instanceof Error &&
+      error.message === "fetch failed" &&
+      error.cause &&
+      (error.cause as any).code === "CERT_HAS_EXPIRED"
+    ) {
+      throw new SSLError(meta.options.skipTlsVerification);
+    } else {
+      throw error;
     }
   }
-
-  await specialtyScrapeCheck(
-    meta.logger.child({ method: "scrapeURLWithFetch/specialtyScrapeCheck" }),
-    Object.fromEntries(response.headers as any),
-  );
 
   return {
     url: response.url,
@@ -228,6 +194,30 @@ export async function scrapeURLWithFetch(
   };
 }
 
-export function fetchMaxReasonableTime(meta: Meta): number {
-  return 15000;
-}
+export const fetchEngine: Engine = {
+  name: "fetch",
+  features: {
+    actions: false,
+    waitFor: false,
+    screenshot: false,
+    "screenshot@fullScreen": false,
+    audio: false,
+    video: false,
+    atsv: false,
+    location: false,
+    mobile: false,
+    branding: false,
+    disableAdblock: false,
+  },
+  scrape: meta => {
+    const logger = meta.logger.child({
+      method: "scrapeURLWithFetch",
+      engine: "fetch",
+    });
+
+    return scrapeURLWithFetch({
+      ...meta,
+      logger,
+    });
+  },
+};

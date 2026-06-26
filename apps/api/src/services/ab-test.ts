@@ -56,7 +56,6 @@ export function abTestJob(webScraperOptions: ScrapeJobData) {
             logger: abLogger,
             tryCount: 1,
             ignoreResponse: true,
-            mock: null,
             abort: abortController.signal,
           });
           abLogger.info("A/B-testing scrapeURL (staging) request sent");
@@ -122,7 +121,6 @@ export function abTestFireEngine(
         tryCount: 1,
         ignoreResponse: false,
         ignoreFailureStatus: true,
-        mock: null,
         abort: abortController.signal,
       });
 
@@ -174,7 +172,6 @@ export function abTestFireEngine(
           method: "DELETE",
           headers: {},
           logger: abLogger.child({ method: "abTestFireEngine/delete", jobId }),
-          mock: null,
         }).catch(e => {
           abLogger.warn("Failed to delete AB test job from fire-engine", {
             error: e,

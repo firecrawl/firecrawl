@@ -7,7 +7,6 @@ import type { Logger } from "winston";
 import { CostTracking } from "../../lib/cost-tracking";
 import { ScrapeJobTimeoutError } from "../../lib/error";
 import type { ScrapeOptions } from "../../controllers/v2/types";
-import { Engine } from "../scrapeURL/engines";
 import {
   ParsedSitemap,
   parseSitemapXml,
@@ -83,7 +82,7 @@ export async function getLinksFromSitemap(
         const shouldPrioritizeFireEngine =
           location && mode === "fire-engine" && useFireEngine;
 
-        const forceEngine: Engine[] = [
+        const forceEngine = [
           ...(maxAge > 0 && useIndex ? ["index" as const] : []),
           ...(shouldPrioritizeFireEngine
             ? [

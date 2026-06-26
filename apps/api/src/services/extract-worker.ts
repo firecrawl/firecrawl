@@ -13,7 +13,6 @@ import Express from "express";
 import { getErrorContactMessage } from "../lib/deployment";
 import { TransportableError } from "../lib/error";
 import { initializeBlocklist } from "../scraper/WebScraper/utils/blocklist";
-import { initializeEngineForcing } from "../scraper/WebScraper/utils/engine-forcing";
 import {
   consumeExtractJobs,
   consumeExtractDLQ,
@@ -239,8 +238,6 @@ if (require.main === module) {
     _logger.error("Failed to initialize blocklist", { error: e });
     process.exit(1);
   });
-
-  initializeEngineForcing();
 
   _logger.info("Starting extract worker with RabbitMQ...");
 

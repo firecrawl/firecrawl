@@ -15,6 +15,7 @@ import { performQuery } from "./query";
 import { removeBase64Images } from "./removeBase64Images";
 import { performAgent } from "./agent";
 import { performAttributes } from "./performAttributes";
+import { fetchYoutube } from "./youtube";
 
 import { deriveDiff } from "./diff";
 import { fetchAudio } from "./audio";
@@ -118,10 +119,10 @@ async function deriveMarkdownFromHTML(
     return document;
   }
 
-  // Skip markdown derivation if a postprocessor already set it
+  // Skip markdown derivation if a metadata transformer already set it
   if (document.metadata.postprocessorsUsed?.length && document.markdown) {
     meta.logger.debug(
-      "Skipping markdown derivation - postprocessor already set markdown",
+      "Skipping markdown derivation - metadata transformer already set markdown",
       { postprocessorsUsed: document.metadata.postprocessorsUsed },
     );
     return document;
@@ -587,6 +588,7 @@ function coerceFieldsToFormats(meta: Meta, document: Document): Document {
 
 // TODO: allow some of these to run in parallel
 const transformerStack: Transformer[] = [
+  fetchYoutube,
   deriveHTMLFromRawHTML,
   deriveMarkdownFromHTML,
   performCleanContent,

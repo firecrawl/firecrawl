@@ -1,18 +1,16 @@
-import { Meta } from "../..";
 import { config } from "../../../../config";
-import { EngineScrapeResult } from "..";
-import { downloadFile, fetchFileToBuffer } from "../utils/downloadFile";
+import { Document } from "../../../../controllers/v2/types";
+import { EngineScrapeResult } from "../../engines/types";
 import { safeMarkdownToHtml } from "./markdownToHtml";
 import {
-  PDFAntibotError,
   PDFInsufficientTimeError,
   PDFOCRRequiredError,
-  PDFPrefetchFailed,
-  RemoveFeatureError,
-  EngineUnsuccessfulError,
+  UnsupportedFileError,
 } from "../../error";
-import { open, readFile, unlink } from "node:fs/promises";
-import type { Response } from "undici";
+import { randomUUID } from "node:crypto";
+import { open, readFile, unlink, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import { AbortManagerThrownError } from "../../lib/abortManager";
 import {
   shouldParsePDF,
@@ -26,7 +24,6 @@ import {
   FIRE_PDF_MAX_FILE_SIZE,
   MAX_FILE_SIZE,
   MILLISECONDS_PER_PAGE,
-  PDF_DOWNLOAD_MAX_FILE_SIZE,
 } from "./types";
 import type { PDFProcessorResult } from "./types";
 import {
@@ -41,6 +38,36 @@ import { scrapePDFWithParsePDF } from "./pdfParse";
 import { captureExceptionWithZdrCheck } from "../../../../services/sentry";
 import { isPdfBuffer, PDF_SNIFF_WINDOW } from "./pdfUtils";
 import { comparePdfOutputs } from "./shadowComparison";
+import { Meta } from "../../lib/meta";
+import { getEngineResultFile } from "../../lib/engine-result-file";
+import { isProbablyPdfBase64 } from "../../lib/file-format-check";
+import { parseHTML } from "../html";
+
+type PdfFileInput = {
+  filePath: string;
+  url?: string;
+  status: number;
+  proxyUsed: "basic" | "stealth";
+};
+
+async function writeBase64PdfToTemp(content: string): Promise<string> {
+  const tempFilePath = path.join(tmpdir(), `scrape-pdf-${randomUUID()}.pdf`);
+  await writeFile(tempFilePath, Buffer.from(content, "base64"));
+  return tempFilePath;
+}
+
+function getPdfContent(result: EngineScrapeResult): string | undefined {
+  const file = getEngineResultFile(result);
+  if (file?.content) {
+    return file.content;
+  }
+
+  if (isProbablyPdfBase64(result.html)) {
+    return result.html;
+  }
+
+  return undefined;
+}
 
 /** Check if the PDF is eligible for Rust extraction, returning a rejection reason or null. */
 function getIneligibleReason(
@@ -54,80 +81,30 @@ function getIneligibleReason(
   return null;
 }
 
-export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
+async function parsePDFFile(
+  meta: Meta,
+  file: PdfFileInput,
+): Promise<EngineScrapeResult> {
   const shouldParse = shouldParsePDF(meta.options.parsers);
   const maxPages = getPDFMaxPages(meta.options.parsers);
   const mode: PDFMode = getPDFMode(meta.options.parsers);
-
-  if (!shouldParse) {
-    if (meta.pdfPrefetch !== undefined && meta.pdfPrefetch !== null) {
-      const content = (await readFile(meta.pdfPrefetch.filePath)).toString(
-        "base64",
-      );
-      return {
-        url: meta.pdfPrefetch.url ?? meta.rewrittenUrl ?? meta.url,
-        statusCode: meta.pdfPrefetch.status,
-
-        html: content,
-        markdown: content,
-
-        contentType: "application/pdf",
-        proxyUsed: meta.pdfPrefetch.proxyUsed,
-      };
-    } else {
-      const file = await fetchFileToBuffer(
-        meta.rewrittenUrl ?? meta.url,
-        meta.options.skipTlsVerification,
-        {
-          headers: meta.options.headers,
-          signal: meta.abort.asSignal(),
-        },
-        PDF_DOWNLOAD_MAX_FILE_SIZE,
-      );
-
-      if (!isPdfBuffer(file.buffer)) {
-        // downloaded content isn't a valid PDF
-        if (meta.pdfPrefetch === undefined) {
-          // for non-PDF URLs, this is expected, not anti-bot
-          if (!meta.featureFlags.has("pdf")) {
-            throw new EngineUnsuccessfulError("pdf");
-          } else {
-            throw new PDFAntibotError();
-          }
-        } else {
-          throw new PDFPrefetchFailed();
-        }
-      }
-
-      const content = file.buffer.toString("base64");
-      return {
-        url: file.response.url,
-        statusCode: file.response.status,
-
-        html: content,
-        markdown: content,
-
-        contentType: "application/pdf",
-        proxyUsed: "basic",
-      };
-    }
-  }
-
-  const { response, tempFilePath } =
-    meta.pdfPrefetch !== undefined && meta.pdfPrefetch !== null
-      ? { response: meta.pdfPrefetch, tempFilePath: meta.pdfPrefetch.filePath }
-      : await downloadFile(
-          meta.id,
-          meta.rewrittenUrl ?? meta.url,
-          meta.options.skipTlsVerification,
-          {
-            headers: meta.options.headers,
-            signal: meta.abort.asSignal(),
-          },
-          PDF_DOWNLOAD_MAX_FILE_SIZE,
-        );
+  const tempFilePath = file.filePath;
 
   try {
+    if (!shouldParse) {
+      const content = (await readFile(file.filePath)).toString("base64");
+      return {
+        url: file.url ?? meta.rewrittenUrl ?? meta.url,
+        statusCode: file.status,
+
+        html: content,
+        markdown: content,
+
+        contentType: "application/pdf",
+        proxyUsed: file.proxyUsed,
+      };
+    }
+
     // Validate the downloaded file is actually a PDF by checking magic bytes
     const header = Buffer.alloc(PDF_SNIFF_WINDOW);
     const fh = await open(tempFilePath, "r");
@@ -144,15 +121,7 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
     }
 
     if (!isPdfBuffer(header.subarray(0, headerBytesRead))) {
-      if (meta.pdfPrefetch === undefined) {
-        if (!meta.featureFlags.has("pdf")) {
-          throw new EngineUnsuccessfulError("pdf");
-        } else {
-          throw new PDFAntibotError();
-        }
-      } else {
-        throw new PDFPrefetchFailed();
-      }
+      throw new UnsupportedFileError("Invalid PDF content");
     }
 
     let result: PDFProcessorResult | null = null;
@@ -430,10 +399,7 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
             result,
           );
         } catch (error) {
-          if (
-            error instanceof RemoveFeatureError ||
-            error instanceof AbortManagerThrownError
-          ) {
+          if (error instanceof AbortManagerThrownError) {
             throw error;
           }
           if (forceFirePDF) {
@@ -554,10 +520,7 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
             })();
           }
         } catch (error) {
-          if (
-            error instanceof RemoveFeatureError ||
-            error instanceof AbortManagerThrownError
-          ) {
+          if (error instanceof AbortManagerThrownError) {
             throw error;
           }
           meta.logger.warn(
@@ -600,8 +563,8 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
     }
 
     return {
-      url: response.url ?? meta.rewrittenUrl ?? meta.url,
-      statusCode: response.status,
+      url: file.url ?? meta.rewrittenUrl ?? meta.url,
+      statusCode: file.status,
       html: result?.html ?? "",
       markdown: result?.markdown ?? "",
       pdfMetadata: {
@@ -610,7 +573,7 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
       },
 
       contentType: "application/pdf",
-      proxyUsed: "basic",
+      proxyUsed: file.proxyUsed,
     };
   } finally {
     // Always clean up temp file after we're done with it
@@ -626,6 +589,21 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
   }
 }
 
-export function pdfMaxReasonableTime(meta: Meta): number {
-  return 120000; // Infinity, really
+export async function parsePDF(
+  meta: Meta,
+  result: EngineScrapeResult,
+): Promise<Document> {
+  const content = getPdfContent(result);
+  if (!content) {
+    return parseHTML(meta, result);
+  }
+
+  const parsedResult = await parsePDFFile(meta, {
+    filePath: await writeBase64PdfToTemp(content),
+    url: result.url,
+    status: result.statusCode,
+    proxyUsed: result.proxyUsed,
+  });
+
+  return parseHTML(meta, { ...result, ...parsedResult });
 }

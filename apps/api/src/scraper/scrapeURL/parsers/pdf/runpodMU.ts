@@ -79,7 +79,6 @@ export async function scrapePDFWithRunPodMU(
           },
           logger,
           schema: z.any(),
-          mock: meta.mock,
           abort: meta.abort.asSignal(),
         });
         const body: any = resp as any;
@@ -129,7 +128,6 @@ export async function scrapePDFWithRunPodMU(
         })
         .optional(),
     }),
-    mock: meta.mock,
     abort: meta.abort.asSignal(),
   });
 
@@ -158,7 +156,6 @@ export async function scrapePDFWithRunPodMU(
             })
             .optional(),
         }),
-        mock: meta.mock,
         abort: meta.abort.asSignal(),
       });
       status = podStatus.status;

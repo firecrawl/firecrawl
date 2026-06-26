@@ -6,7 +6,6 @@ import {
   queryIndexAtSplitLevel as rpcQueryIndexAtSplitLevel,
   queryIndexAtDomainSplitLevel as rpcQueryIndexAtDomainSplitLevel,
   queryOmceSignatures as rpcQueryOmceSignatures,
-  queryEngpickerVerdict as rpcQueryEngpickerVerdict,
   queryIndexAtSplitLevelWithMeta as rpcQueryIndexAtSplitLevelWithMeta,
   queryIndexAtDomainSplitLevelWithMeta as rpcQueryIndexAtDomainSplitLevelWithMeta,
   queryDomainPriority as rpcQueryDomainPriority,
@@ -24,7 +23,7 @@ import {
 import type { Logger } from "winston";
 import psl from "psl";
 import { MapDocument } from "../controllers/v2/types";
-import type { PdfMetadata } from "../scraper/scrapeURL/engines/pdf/types";
+import type { PdfMetadata } from "../scraper/scrapeURL/parsers/pdf/types";
 import { storage } from "../lib/gcs-jobs";
 import { withSpan, setSpanAttributes } from "../lib/otel-tracer";
 import { config } from "../config";
@@ -525,43 +524,6 @@ export async function queryOMCESignatures(
   } catch (error) {
     _logger.warn("Error querying index (omce)", { error, hostname });
     return [];
-  }
-}
-
-export async function queryEngpickerVerdict(
-  hostname: string,
-): Promise<"TlsClientOk" | "ChromeCdpRequired" | "Uncertain" | "Unknown"> {
-  if (!useIndex || config.FIRECRAWL_INDEX_WRITE_ONLY) {
-    return "Unknown";
-  }
-
-  const domainSplitsHash = generateDomainSplits(hostname).map(x => hashURL(x));
-
-  const level = domainSplitsHash.length - 1;
-  if (domainSplitsHash.length === 0) {
-    return "Unknown";
-  }
-
-  // 250ms max time taken
-  try {
-    const data = await Promise.race([
-      rpcQueryEngpickerVerdict(domainSplitsHash[level]),
-      new Promise<{ verdict: string }[]>(resolve =>
-        setTimeout(() => resolve([{ verdict: "Unknown" }]), 250),
-      ),
-    ]);
-
-    return (data?.[0]?.verdict ?? "Unknown") as
-      | "TlsClientOk"
-      | "ChromeCdpRequired"
-      | "Uncertain"
-      | "Unknown";
-  } catch (error) {
-    _logger.warn("Error querying index (engpicker)", {
-      error,
-      hostname,
-    });
-    return "Unknown";
   }
 }
 

@@ -3,7 +3,6 @@ import { config } from "../config";
 import { Logger } from "winston";
 import { ScrapeOptions, scrapeOptions } from "../controllers/v2/types";
 import { scrapeURL } from "../scraper/scrapeURL";
-import { Engine } from "../scraper/scrapeURL/engines";
 import { CostTracking } from "./cost-tracking";
 import { useIndex } from "../services";
 
@@ -42,7 +41,7 @@ export async function fetchRobotsTxt(
 
   const shouldPrioritizeFireEngine = location && useFireEngine;
 
-  const forceEngine: Engine[] = [
+  const forceEngine = [
     ...(useIndex && !skipCache ? ["index" as const] : []),
     ...(shouldPrioritizeFireEngine
       ? [

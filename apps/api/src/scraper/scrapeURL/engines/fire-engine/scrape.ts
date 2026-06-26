@@ -3,22 +3,21 @@ import { z } from "zod";
 
 import { InternalAction } from "../../../../controllers/v1/types";
 import { robustFetch } from "../../lib/fetch";
-import { MockState } from "../../lib/mock";
 import { getDocFromGCS } from "../../../../lib/gcs-jobs";
 import {
   ActionError,
-  AddFeatureError,
   DNSResolutionError,
   EngineError,
   FEPageLoadFailed,
   ProxySelectionError,
+  ReliableRetrievalError,
   SSLError,
   SiteError,
   UnsupportedFileError,
 } from "../../error";
-import { Meta } from "../..";
 
 import { config } from "../../../../config";
+import { Meta } from "../../lib/meta";
 
 const browserCookieSchema = z
   .object({
@@ -186,7 +185,6 @@ export async function fireEngineScrape<
   meta: Meta,
   logger: Logger,
   request: FireEngineScrapeRequestCommon & Engine,
-  mock: MockState | null,
   abort?: AbortSignal,
   baseUrl: string = fireEngineURL,
 ): Promise<z.infer<typeof processingSchema> | FireEngineCheckStatusSuccess> {
@@ -198,7 +196,6 @@ export async function fireEngineScrape<
     logger: logger.child({ method: "fireEngineScrape/robustFetch" }),
     tryCount: 3,
     ignoreFailureStatus: true, // sends 500 on processing and various codes on errors
-    mock,
     abort,
   });
 
@@ -232,21 +229,10 @@ export async function fireEngineScrape<
     logger.debug("Scrape job failed", {
       status,
     });
-    if (
-      failedParse.data.retryWithStealth &&
-      meta.options.proxy === "auto" &&
-      !meta.featureFlags.has("stealthProxy")
-    ) {
-      logger.info(
-        "Scrape signaled retryWithStealth. Adding stealthProxy flag.",
-      );
-      throw new AddFeatureError(["stealthProxy"]);
-    }
-    if (
-      typeof status.error === "string" &&
-      status.error.includes("Chrome error: ")
-    ) {
-      const code = status.error.split("Chrome error: ")[1];
+    if (failedParse.data.retryWithStealth) {
+      throw new ReliableRetrievalError(meta.options.proxy !== "basic");
+    } else if (failedParse.data.error.includes("Chrome error: ")) {
+      const code = failedParse.data.error.split("Chrome error: ")[1];
 
       if (
         code.includes("ERR_CERT_") ||
@@ -258,40 +244,30 @@ export async function fireEngineScrape<
         throw new SiteError(code);
       }
     } else if (
-      typeof status.error === "string" &&
-      status.error.includes("Dns resolution error for hostname: ")
+      failedParse.data.error.includes("Dns resolution error for hostname: ")
     ) {
       throw new DNSResolutionError(
-        status.error.split("Dns resolution error for hostname: ")[1],
+        failedParse.data.error.split("Dns resolution error for hostname: ")[1],
       );
     } else if (
-      typeof status.error === "string" &&
-      (status.error.includes("File size exceeds") ||
-        status.error.includes("File exceeds size limit"))
+      failedParse.data.error.includes("File size exceeds") ||
+      failedParse.data.error.includes("File exceeds size limit")
     ) {
       throw new UnsupportedFileError("File exceeds size limit");
     } else if (
-      typeof status.error === "string" &&
-      status.error.includes("failed to finish without timing out")
+      failedParse.data.error.includes("failed to finish without timing out")
     ) {
-      logger.warn("CDP timed out while loading the page", {
-        status,
-      });
       throw new FEPageLoadFailed();
     } else if (
-      typeof status.error === "string" &&
       // TODO: improve this later
-      (status.error.includes("Element") ||
-        status.error.includes("Javascript execution failed"))
+      failedParse.data.error.includes("Element") ||
+      failedParse.data.error.includes("Javascript execution failed")
     ) {
-      const errorMessage = status.error.startsWith("Error: ")
+      const errorMessage = failedParse.data.error.startsWith("Error: ")
         ? status.error.substring(7)
         : status.error;
       throw new ActionError(errorMessage);
-    } else if (
-      typeof status.error === "string" &&
-      status.error.includes("proxies available for")
-    ) {
+    } else if (failedParse.data.error.includes("proxies available for")) {
       throw new ProxySelectionError();
     } else {
       throw new EngineError("Scrape job failed", {
@@ -301,7 +277,7 @@ export async function fireEngineScrape<
       });
     }
   } else {
-    logger.debug("Scrape returned response not matched by any schema", {
+    logger.warn("Scrape returned response not matched by any schema", {
       status,
     });
     throw new Error(

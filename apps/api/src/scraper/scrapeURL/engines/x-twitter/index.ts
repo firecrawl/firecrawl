@@ -1,10 +1,10 @@
 import { xai } from "@ai-sdk/xai";
 import { generateText, jsonSchema, Output } from "ai";
 import { config } from "../../../../config";
-import { Meta } from "../..";
-import { EngineScrapeResult } from "..";
 import { EngineError, XTwitterConfigurationError } from "../../error";
-import { safeMarkdownToHtml } from "../pdf/markdownToHtml";
+import { safeMarkdownToHtml } from "../../parsers/pdf/markdownToHtml";
+import { Meta } from "../../lib/meta";
+import { Engine, EngineScrapeResult, SpecialEngine } from "../types";
 
 const XAI_RESPONSES_MODEL = "grok-4-1-fast-non-reasoning";
 
@@ -296,13 +296,11 @@ function parseXTwitterUrl(url: string): XTwitterUrl | null {
   return null;
 }
 
-export function isXTwitterUrl(url: string): boolean {
+function isXTwitterUrl(url: string): boolean {
   return parseXTwitterUrl(url) !== null;
 }
 
-export async function scrapeURLWithXTwitter(
-  meta: Meta,
-): Promise<EngineScrapeResult> {
+async function scrapeURLWithXTwitter(meta: Meta): Promise<EngineScrapeResult> {
   const urlToScrape = meta.rewrittenUrl ?? meta.url;
   const xUrl = parseXTwitterUrl(urlToScrape);
 
@@ -341,10 +339,6 @@ export async function scrapeURLWithXTwitter(
     proxyUsed: "basic",
     postprocessorsUsed: ["x-twitter"],
   };
-}
-
-export function xTwitterMaxReasonableTime(_meta: Meta): number {
-  return 30000;
 }
 
 function buildProfileMarkdown(profile: XTwitterProfileData): string {
@@ -654,3 +648,34 @@ function escapeMarkdownBlock(value: string): string {
 function trimMarkdown(markdown: string): string {
   return markdown.replace(/\n{3,}/g, "\n\n").trim() + "\n";
 }
+
+export const xTwitterSpecialEngine: SpecialEngine = {
+  name: "x-twitter",
+  features: {
+    actions: false,
+    waitFor: false,
+    screenshot: false,
+    "screenshot@fullScreen": false,
+    audio: false,
+    video: false,
+    atsv: false,
+    location: false,
+    mobile: false,
+    branding: false,
+    disableAdblock: true,
+  },
+  scrape: meta => {
+    const logger = meta.logger.child({
+      function: "scrapeURLWithXTwitter",
+      engine: "x-twitter",
+    });
+
+    return scrapeURLWithXTwitter({
+      ...meta,
+      logger,
+    });
+  },
+  special: {
+    matches: isXTwitterUrl,
+  },
+};

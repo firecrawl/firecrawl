@@ -131,10 +131,7 @@ function estimateBaseCreditsPerPage(
     credits += SCRAPE_OPTION_CREDIT_BONUS;
   }
 
-  if (
-    includeProxy &&
-    (options?.proxy === "stealth" || options?.proxy === "enhanced")
-  ) {
+  if (includeProxy && options?.proxy === "enhanced") {
     credits += SCRAPE_OPTION_CREDIT_BONUS;
   }
 

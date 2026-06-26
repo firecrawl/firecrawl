@@ -6,11 +6,10 @@ config.ENV = "test";
 
 import { scrapeURL } from ".";
 import { scrapeOptions } from "../../controllers/v2/types";
-import { Engine } from "./engines";
 import { CostTracking } from "../../lib/cost-tracking";
 
 // Mock parseMarkdown but delegate to real implementation for other tests
-vi.mock("../../lib/html-to-markdown", async (importOriginal) => {
+vi.mock("../../lib/html-to-markdown", async importOriginal => {
   const actual =
     await importOriginal<typeof import("../../lib/html-to-markdown")>();
   return {
@@ -21,274 +20,281 @@ vi.mock("../../lib/html-to-markdown", async (importOriginal) => {
 
 import { parseMarkdown } from "../../lib/html-to-markdown";
 
-const testEngines: (Engine | undefined)[] = [
+type LegacyForceEngine = string;
+
+const testEngines: (LegacyForceEngine | undefined)[] = [
   undefined,
   "fire-engine;chrome-cdp",
   "fire-engine;tlsclient",
   "fetch",
 ];
 
-const testEnginesScreenshot: (Engine | undefined)[] = [
+const testEnginesScreenshot: (LegacyForceEngine | undefined)[] = [
   undefined,
   "fire-engine;chrome-cdp",
 ];
 
 describe("Standalone scrapeURL tests", () => {
-  describe.each(testEngines)("Engine %s", (forceEngine: Engine | undefined) => {
-    it("Basic scrape", async () => {
-      const out = await scrapeURL(
-        "test:scrape-basic",
-        "https://firecrawl-test-site.vercel.app",
-        scrapeOptions.parse({}),
-        { forceEngine, teamId: "test" },
-        new CostTracking(),
-      );
-
-      // expect(out.logs.length).toBeGreaterThan(0);
-      expect(out.success).toBe(true);
-      if (out.success) {
-        expect(out.document.warning).toBeUndefined();
-        expect(out.document).not.toHaveProperty("content");
-        expect(out.document).toHaveProperty("markdown");
-        expect(out.document).toHaveProperty("metadata");
-        expect(out.document).not.toHaveProperty("html");
-        expect(out.document.markdown).toContain("Firecrawl Test Site");
-        expect(out.document.metadata.error).toBeUndefined();
-        expect(out.document.metadata.title).toBe("Firecrawl Test Website");
-        expect(out.document.metadata.description).toBe(
-          "Welcome to the Firecrawl Test Website!",
-        );
-        expect(out.document.metadata.ogTitle).toBe("Firecrawl Test Website");
-        expect(out.document.metadata.ogDescription).toBe(
-          "Welcome to the Firecrawl Test Website!",
-        );
-        expect(out.document.metadata.ogUrl).toContain("firecrawl-test-site");
-        expect(out.document.metadata.ogImage).toContain("firecrawl-test-site");
-        expect(out.document.metadata.ogLocaleAlternate).toStrictEqual([]);
-        expect(out.document.metadata.sourceURL).toBe(
+  describe.each(testEngines)(
+    "Engine %s",
+    (forceEngine: LegacyForceEngine | undefined) => {
+      it("Basic scrape", async () => {
+        const out = await scrapeURL(
+          "test:scrape-basic",
           "https://firecrawl-test-site.vercel.app",
+          scrapeOptions.parse({}),
+          { forceEngine, teamId: "test" },
+          new CostTracking(),
         );
-        expect(out.document.metadata.statusCode).toBe(200);
-      }
-    }, 30000);
 
-    it("Scrape with formats markdown and html", async () => {
-      const out = await scrapeURL(
-        "test:scrape-formats-markdown-html",
-        "https://firecrawl-test-site.vercel.app",
-        scrapeOptions.parse({
-          formats: ["markdown", "html"],
-        }),
-        { forceEngine, teamId: "test" },
-        new CostTracking(),
-      );
+        // expect(out.logs.length).toBeGreaterThan(0);
+        expect(out.success).toBe(true);
+        if (out.success) {
+          expect(out.document.warning).toBeUndefined();
+          expect(out.document).not.toHaveProperty("content");
+          expect(out.document).toHaveProperty("markdown");
+          expect(out.document).toHaveProperty("metadata");
+          expect(out.document).not.toHaveProperty("html");
+          expect(out.document.markdown).toContain("Firecrawl Test Site");
+          expect(out.document.metadata.error).toBeUndefined();
+          expect(out.document.metadata.title).toBe("Firecrawl Test Website");
+          expect(out.document.metadata.description).toBe(
+            "Welcome to the Firecrawl Test Website!",
+          );
+          expect(out.document.metadata.ogTitle).toBe("Firecrawl Test Website");
+          expect(out.document.metadata.ogDescription).toBe(
+            "Welcome to the Firecrawl Test Website!",
+          );
+          expect(out.document.metadata.ogUrl).toContain("firecrawl-test-site");
+          expect(out.document.metadata.ogImage).toContain(
+            "firecrawl-test-site",
+          );
+          expect(out.document.metadata.ogLocaleAlternate).toStrictEqual([]);
+          expect(out.document.metadata.sourceURL).toBe(
+            "https://firecrawl-test-site.vercel.app",
+          );
+          expect(out.document.metadata.statusCode).toBe(200);
+        }
+      }, 30000);
 
-      // expect(out.logs.length).toBeGreaterThan(0);
-      expect(out.success).toBe(true);
-      if (out.success) {
-        expect(out.document.warning).toBeUndefined();
-        expect(out.document).toHaveProperty("markdown");
-        expect(out.document).toHaveProperty("html");
-        expect(out.document).toHaveProperty("metadata");
-        expect(out.document.markdown).toContain("Firecrawl Test Site");
-        expect(out.document.html).toContain("<h1");
-        expect(out.document.metadata.statusCode).toBe(200);
-        expect(out.document.metadata.error).toBeUndefined();
-      }
-    }, 30000);
-
-    it("Scrape with onlyMainContent disabled", async () => {
-      const out = await scrapeURL(
-        "test:scrape-onlyMainContent-false",
-        "https://www.scrapethissite.com/",
-        scrapeOptions.parse({
-          onlyMainContent: false,
-        }),
-        { forceEngine, teamId: "test" },
-        new CostTracking(),
-      );
-
-      // expect(out.logs.length).toBeGreaterThan(0);
-      expect(out.success).toBe(true);
-      if (out.success) {
-        expect(out.document.warning).toBeUndefined();
-        expect(out.document).toHaveProperty("markdown");
-        expect(out.document).toHaveProperty("metadata");
-        expect(out.document).not.toHaveProperty("html");
-        expect(out.document.markdown).toContain("[FAQ](/faq/)"); // .nav
-        expect(out.document.markdown).toContain("Hartley Brody 2023"); // #footer
-      }
-    }, 30000);
-
-    it("Scrape with excludeTags", async () => {
-      const out = await scrapeURL(
-        "test:scrape-excludeTags",
-        "https://www.scrapethissite.com/",
-        scrapeOptions.parse({
-          onlyMainContent: false,
-          excludeTags: [".nav", "#footer", "strong"],
-        }),
-        { forceEngine, teamId: "test" },
-        new CostTracking(),
-      );
-
-      // expect(out.logs.length).toBeGreaterThan(0);
-      expect(out.success).toBe(true);
-      if (out.success) {
-        expect(out.document.warning).toBeUndefined();
-        expect(out.document).toHaveProperty("markdown");
-        expect(out.document).toHaveProperty("metadata");
-        expect(out.document).not.toHaveProperty("html");
-        expect(out.document.markdown).not.toContain("Hartley Brody 2023");
-        expect(out.document.markdown).not.toContain("[FAQ](/faq/)");
-      }
-    }, 30000);
-
-    it("Scrape of a page with 400 status code", async () => {
-      const out = await scrapeURL(
-        "test:scrape-400",
-        "https://httpstat.us/400",
-        scrapeOptions.parse({}),
-        { forceEngine, teamId: "test" },
-        new CostTracking(),
-      );
-
-      // expect(out.logs.length).toBeGreaterThan(0);
-      expect(out.success).toBe(true);
-      if (out.success) {
-        expect(out.document.warning).toBeUndefined();
-        expect(out.document).toHaveProperty("markdown");
-        expect(out.document).toHaveProperty("metadata");
-        expect(out.document.metadata.statusCode).toBe(400);
-      }
-    }, 30000);
-
-    it("Scrape of a page with 401 status code", async () => {
-      const out = await scrapeURL(
-        "test:scrape-401",
-        "https://httpstat.us/401",
-        scrapeOptions.parse({}),
-        { forceEngine, teamId: "test" },
-        new CostTracking(),
-      );
-
-      // expect(out.logs.length).toBeGreaterThan(0);
-      expect(out.success).toBe(true);
-      if (out.success) {
-        expect(out.document.warning).toBeUndefined();
-        expect(out.document).toHaveProperty("markdown");
-        expect(out.document).toHaveProperty("metadata");
-        expect(out.document.metadata.statusCode).toBe(401);
-      }
-    }, 30000);
-
-    it("Scrape of a page with 403 status code", async () => {
-      const out = await scrapeURL(
-        "test:scrape-403",
-        "https://httpstat.us/403",
-        scrapeOptions.parse({}),
-        { forceEngine, teamId: "test" },
-        new CostTracking(),
-      );
-
-      // expect(out.logs.length).toBeGreaterThan(0);
-      expect(out.success).toBe(true);
-      if (out.success) {
-        expect(out.document.warning).toBeUndefined();
-        expect(out.document).toHaveProperty("markdown");
-        expect(out.document).toHaveProperty("metadata");
-        expect(out.document.metadata.statusCode).toBe(403);
-      }
-    }, 30000);
-
-    it("Scrape of a page with 404 status code", async () => {
-      const out = await scrapeURL(
-        "test:scrape-404",
-        "https://httpstat.us/404",
-        scrapeOptions.parse({}),
-        { forceEngine, teamId: "test" },
-        new CostTracking(),
-      );
-
-      // expect(out.logs.length).toBeGreaterThan(0);
-      expect(out.success).toBe(true);
-      if (out.success) {
-        expect(out.document.warning).toBeUndefined();
-        expect(out.document).toHaveProperty("markdown");
-        expect(out.document).toHaveProperty("metadata");
-        expect(out.document.metadata.statusCode).toBe(404);
-      }
-    }, 30000);
-
-    it("Scrape of a page with 405 status code", async () => {
-      const out = await scrapeURL(
-        "test:scrape-405",
-        "https://httpstat.us/405",
-        scrapeOptions.parse({}),
-        { forceEngine, teamId: "test" },
-        new CostTracking(),
-      );
-
-      // expect(out.logs.length).toBeGreaterThan(0);
-      expect(out.success).toBe(true);
-      if (out.success) {
-        expect(out.document.warning).toBeUndefined();
-        expect(out.document).toHaveProperty("markdown");
-        expect(out.document).toHaveProperty("metadata");
-        expect(out.document.metadata.statusCode).toBe(405);
-      }
-    }, 30000);
-
-    it("Scrape of a page with 500 status code", async () => {
-      const out = await scrapeURL(
-        "test:scrape-500",
-        "https://httpstat.us/500",
-        scrapeOptions.parse({}),
-        { forceEngine, teamId: "test" },
-        new CostTracking(),
-      );
-
-      // expect(out.logs.length).toBeGreaterThan(0);
-      expect(out.success).toBe(true);
-      if (out.success) {
-        expect(out.document.warning).toBeUndefined();
-        expect(out.document).toHaveProperty("markdown");
-        expect(out.document).toHaveProperty("metadata");
-        expect(out.document.metadata.statusCode).toBe(500);
-      }
-    }, 30000);
-
-    it("Scrape a redirected page", async () => {
-      const out = await scrapeURL(
-        "test:scrape-redirect",
-        "https://scrapethissite.com/",
-        scrapeOptions.parse({}),
-        { forceEngine, teamId: "test" },
-        new CostTracking(),
-      );
-
-      // expect(out.logs.length).toBeGreaterThan(0);
-      expect(out.success).toBe(true);
-      if (out.success) {
-        expect(out.document.warning).toBeUndefined();
-        expect(out.document).toHaveProperty("markdown");
-        expect(out.document.markdown).toContain("Explore Sandbox");
-        expect(out.document).toHaveProperty("metadata");
-        expect(out.document.metadata.sourceURL).toBe(
-          "https://scrapethissite.com/",
+      it("Scrape with formats markdown and html", async () => {
+        const out = await scrapeURL(
+          "test:scrape-formats-markdown-html",
+          "https://firecrawl-test-site.vercel.app",
+          scrapeOptions.parse({
+            formats: ["markdown", "html"],
+          }),
+          { forceEngine, teamId: "test" },
+          new CostTracking(),
         );
-        expect(out.document.metadata.url).toBe(
+
+        // expect(out.logs.length).toBeGreaterThan(0);
+        expect(out.success).toBe(true);
+        if (out.success) {
+          expect(out.document.warning).toBeUndefined();
+          expect(out.document).toHaveProperty("markdown");
+          expect(out.document).toHaveProperty("html");
+          expect(out.document).toHaveProperty("metadata");
+          expect(out.document.markdown).toContain("Firecrawl Test Site");
+          expect(out.document.html).toContain("<h1");
+          expect(out.document.metadata.statusCode).toBe(200);
+          expect(out.document.metadata.error).toBeUndefined();
+        }
+      }, 30000);
+
+      it("Scrape with onlyMainContent disabled", async () => {
+        const out = await scrapeURL(
+          "test:scrape-onlyMainContent-false",
           "https://www.scrapethissite.com/",
+          scrapeOptions.parse({
+            onlyMainContent: false,
+          }),
+          { forceEngine, teamId: "test" },
+          new CostTracking(),
         );
-        expect(out.document.metadata.statusCode).toBe(200);
-        expect(out.document.metadata.error).toBeUndefined();
-      }
-    }, 30000);
-  });
+
+        // expect(out.logs.length).toBeGreaterThan(0);
+        expect(out.success).toBe(true);
+        if (out.success) {
+          expect(out.document.warning).toBeUndefined();
+          expect(out.document).toHaveProperty("markdown");
+          expect(out.document).toHaveProperty("metadata");
+          expect(out.document).not.toHaveProperty("html");
+          expect(out.document.markdown).toContain("[FAQ](/faq/)"); // .nav
+          expect(out.document.markdown).toContain("Hartley Brody 2023"); // #footer
+        }
+      }, 30000);
+
+      it("Scrape with excludeTags", async () => {
+        const out = await scrapeURL(
+          "test:scrape-excludeTags",
+          "https://www.scrapethissite.com/",
+          scrapeOptions.parse({
+            onlyMainContent: false,
+            excludeTags: [".nav", "#footer", "strong"],
+          }),
+          { forceEngine, teamId: "test" },
+          new CostTracking(),
+        );
+
+        // expect(out.logs.length).toBeGreaterThan(0);
+        expect(out.success).toBe(true);
+        if (out.success) {
+          expect(out.document.warning).toBeUndefined();
+          expect(out.document).toHaveProperty("markdown");
+          expect(out.document).toHaveProperty("metadata");
+          expect(out.document).not.toHaveProperty("html");
+          expect(out.document.markdown).not.toContain("Hartley Brody 2023");
+          expect(out.document.markdown).not.toContain("[FAQ](/faq/)");
+        }
+      }, 30000);
+
+      it("Scrape of a page with 400 status code", async () => {
+        const out = await scrapeURL(
+          "test:scrape-400",
+          "https://httpstat.us/400",
+          scrapeOptions.parse({}),
+          { forceEngine, teamId: "test" },
+          new CostTracking(),
+        );
+
+        // expect(out.logs.length).toBeGreaterThan(0);
+        expect(out.success).toBe(true);
+        if (out.success) {
+          expect(out.document.warning).toBeUndefined();
+          expect(out.document).toHaveProperty("markdown");
+          expect(out.document).toHaveProperty("metadata");
+          expect(out.document.metadata.statusCode).toBe(400);
+        }
+      }, 30000);
+
+      it("Scrape of a page with 401 status code", async () => {
+        const out = await scrapeURL(
+          "test:scrape-401",
+          "https://httpstat.us/401",
+          scrapeOptions.parse({}),
+          { forceEngine, teamId: "test" },
+          new CostTracking(),
+        );
+
+        // expect(out.logs.length).toBeGreaterThan(0);
+        expect(out.success).toBe(true);
+        if (out.success) {
+          expect(out.document.warning).toBeUndefined();
+          expect(out.document).toHaveProperty("markdown");
+          expect(out.document).toHaveProperty("metadata");
+          expect(out.document.metadata.statusCode).toBe(401);
+        }
+      }, 30000);
+
+      it("Scrape of a page with 403 status code", async () => {
+        const out = await scrapeURL(
+          "test:scrape-403",
+          "https://httpstat.us/403",
+          scrapeOptions.parse({}),
+          { forceEngine, teamId: "test" },
+          new CostTracking(),
+        );
+
+        // expect(out.logs.length).toBeGreaterThan(0);
+        expect(out.success).toBe(true);
+        if (out.success) {
+          expect(out.document.warning).toBeUndefined();
+          expect(out.document).toHaveProperty("markdown");
+          expect(out.document).toHaveProperty("metadata");
+          expect(out.document.metadata.statusCode).toBe(403);
+        }
+      }, 30000);
+
+      it("Scrape of a page with 404 status code", async () => {
+        const out = await scrapeURL(
+          "test:scrape-404",
+          "https://httpstat.us/404",
+          scrapeOptions.parse({}),
+          { forceEngine, teamId: "test" },
+          new CostTracking(),
+        );
+
+        // expect(out.logs.length).toBeGreaterThan(0);
+        expect(out.success).toBe(true);
+        if (out.success) {
+          expect(out.document.warning).toBeUndefined();
+          expect(out.document).toHaveProperty("markdown");
+          expect(out.document).toHaveProperty("metadata");
+          expect(out.document.metadata.statusCode).toBe(404);
+        }
+      }, 30000);
+
+      it("Scrape of a page with 405 status code", async () => {
+        const out = await scrapeURL(
+          "test:scrape-405",
+          "https://httpstat.us/405",
+          scrapeOptions.parse({}),
+          { forceEngine, teamId: "test" },
+          new CostTracking(),
+        );
+
+        // expect(out.logs.length).toBeGreaterThan(0);
+        expect(out.success).toBe(true);
+        if (out.success) {
+          expect(out.document.warning).toBeUndefined();
+          expect(out.document).toHaveProperty("markdown");
+          expect(out.document).toHaveProperty("metadata");
+          expect(out.document.metadata.statusCode).toBe(405);
+        }
+      }, 30000);
+
+      it("Scrape of a page with 500 status code", async () => {
+        const out = await scrapeURL(
+          "test:scrape-500",
+          "https://httpstat.us/500",
+          scrapeOptions.parse({}),
+          { forceEngine, teamId: "test" },
+          new CostTracking(),
+        );
+
+        // expect(out.logs.length).toBeGreaterThan(0);
+        expect(out.success).toBe(true);
+        if (out.success) {
+          expect(out.document.warning).toBeUndefined();
+          expect(out.document).toHaveProperty("markdown");
+          expect(out.document).toHaveProperty("metadata");
+          expect(out.document.metadata.statusCode).toBe(500);
+        }
+      }, 30000);
+
+      it("Scrape a redirected page", async () => {
+        const out = await scrapeURL(
+          "test:scrape-redirect",
+          "https://scrapethissite.com/",
+          scrapeOptions.parse({}),
+          { forceEngine, teamId: "test" },
+          new CostTracking(),
+        );
+
+        // expect(out.logs.length).toBeGreaterThan(0);
+        expect(out.success).toBe(true);
+        if (out.success) {
+          expect(out.document.warning).toBeUndefined();
+          expect(out.document).toHaveProperty("markdown");
+          expect(out.document.markdown).toContain("Explore Sandbox");
+          expect(out.document).toHaveProperty("metadata");
+          expect(out.document.metadata.sourceURL).toBe(
+            "https://scrapethissite.com/",
+          );
+          expect(out.document.metadata.url).toBe(
+            "https://www.scrapethissite.com/",
+          );
+          expect(out.document.metadata.statusCode).toBe(200);
+          expect(out.document.metadata.error).toBeUndefined();
+        }
+      }, 30000);
+    },
+  );
 
   describe.each(testEnginesScreenshot)(
     "Screenshot on engine %s",
-    (forceEngine: Engine | undefined) => {
+    (forceEngine: LegacyForceEngine | undefined) => {
       it("Scrape with screenshot", async () => {
         const out = await scrapeURL(
           "test:scrape-screenshot",

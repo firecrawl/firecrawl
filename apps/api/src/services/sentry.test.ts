@@ -3,15 +3,14 @@ import { vi } from "vitest";
 // vi.mock is hoisted to the top of the file, so anything its factories reference
 // must be created in vi.hoisted() (which also hoists). Under Jest these worked
 // because importing `jest` from @jest/globals disables jest.mock hoisting.
-const { captureException, init, setTag, scopeSetExtra, scopeSetTag } = vi.hoisted(
-  () => ({
+const { captureException, init, setTag, scopeSetExtra, scopeSetTag } =
+  vi.hoisted(() => ({
     captureException: vi.fn(),
     init: vi.fn(),
     setTag: vi.fn(),
     scopeSetExtra: vi.fn(),
     scopeSetTag: vi.fn(),
-  }),
-);
+  }));
 
 vi.mock("@sentry/node", () => ({
   captureException,
@@ -41,8 +40,6 @@ vi.mock("../lib/logger", () => ({
 }));
 
 vi.mock("../scraper/scrapeURL/error", () => ({
-  AddFeatureError: class AddFeatureError extends Error {},
-  RemoveFeatureError: class RemoveFeatureError extends Error {},
   EngineError: class EngineError extends Error {},
 }));
 

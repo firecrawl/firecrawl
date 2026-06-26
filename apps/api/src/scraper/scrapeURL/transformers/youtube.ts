@@ -1,7 +1,7 @@
 import { config } from "../../../config";
-import type { BrowserCookie, Meta } from "..";
-import type { Postprocessor } from ".";
-import type { EngineScrapeResult } from "../engines";
+import { Document } from "../../../controllers/v2/types";
+import type { BrowserCookie } from "../engines/types";
+import { Meta } from "../lib/meta";
 
 type YouTubeMetadataResponse = {
   thumbnail_image: {
@@ -98,11 +98,11 @@ ${metadata.transcript}`);
 
 async function getYouTubeMetadata(
   meta: Meta,
-  engineResult: EngineScrapeResult,
+  sourceUrl: string,
 ): Promise<YouTubeMetadataResponse> {
-  const cookies = meta.audioCookies ?? engineResult.audioCookies;
+  const cookies = meta.audioCookies;
   const requestBody: YouTubeMetadataRequest = {
-    url: engineResult.url,
+    url: sourceUrl,
     transcript_language: getTranscriptLanguage(meta),
     ...(cookies && cookies.length > 0 ? { cookies } : {}),
   };
@@ -137,44 +137,58 @@ async function getYouTubeMetadata(
   return data;
 }
 
-export const youtubePostprocessor: Postprocessor = {
-  name: "youtube",
-  shouldRun: (_meta: Meta, url: URL, postProcessorsUsed?: string[]) => {
-    if (postProcessorsUsed?.includes("youtube")) {
-      return false;
-    }
+export function shouldRunYoutubeTransformer(
+  _meta: Meta,
+  url: URL,
+  postProcessorsUsed?: string[],
+): boolean {
+  if (postProcessorsUsed?.includes("youtube")) {
+    return false;
+  }
 
-    if (
-      url.hostname.endsWith(".youtube.com") ||
-      url.hostname === "youtube.com"
-    ) {
-      return isYouTubeVideoPath(url);
-    } else if (url.hostname === "youtu.be") {
-      return url.pathname !== "/";
-    } else {
-      return false;
-    }
-  },
-  run: async (meta: Meta, engineResult: EngineScrapeResult) => {
-    if (meta.options.lockdown) {
-      return engineResult;
-    }
+  if (url.hostname.endsWith(".youtube.com") || url.hostname === "youtube.com") {
+    return isYouTubeVideoPath(url);
+  } else if (url.hostname === "youtu.be") {
+    return url.pathname !== "/";
+  } else {
+    return false;
+  }
+}
 
-    if (!config.AVGRAB_SERVICE_URL) {
-      meta.logger.warn("AVGRAB_SERVICE_URL is not configured");
-      return engineResult;
-    }
+export async function fetchYoutube(
+  meta: Meta,
+  document: Document,
+): Promise<Document> {
+  const sourceUrl = document.metadata.url ?? document.metadata.sourceURL;
+  if (!sourceUrl) {
+    return document;
+  }
 
-    const metadata = await getYouTubeMetadata(meta, engineResult);
-    const markdown = buildMarkdown(metadata, engineResult.url);
+  if (
+    !shouldRunYoutubeTransformer(
+      meta,
+      new URL(sourceUrl),
+      document.metadata.postprocessorsUsed,
+    )
+  ) {
+    return document;
+  }
 
-    return {
-      ...engineResult,
-      markdown,
-      postprocessorsUsed: [
-        ...(engineResult.postprocessorsUsed ?? []),
-        "youtube",
-      ],
-    };
-  },
-};
+  if (meta.options.lockdown) {
+    return document;
+  }
+
+  if (!config.AVGRAB_SERVICE_URL) {
+    meta.logger.warn("AVGRAB_SERVICE_URL is not configured");
+    return document;
+  }
+
+  const metadata = await getYouTubeMetadata(meta, sourceUrl);
+  document.markdown = buildMarkdown(metadata, sourceUrl);
+  document.metadata.postprocessorsUsed = [
+    ...(document.metadata.postprocessorsUsed ?? []),
+    "youtube",
+  ];
+
+  return document;
+}

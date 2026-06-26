@@ -7,7 +7,6 @@ import {
   timestamp,
   bytea,
   uuid,
-  varchar,
 } from "drizzle-orm/pg-core";
 
 // Tables in the separate index Postgres project (INDEX_DATABASE_URL).
@@ -51,22 +50,4 @@ export const index = pgTable("index", {
   is_stealth: boolean("is_stealth").notNull().default(false),
   ...urlSplitHashes,
   ...domainSplitHashes,
-});
-
-export const engpicker_queue = pgTable("engpicker_queue", {
-  id: bigint("id", { mode: "number" })
-    .primaryKey()
-    .generatedByDefaultAsIdentity(),
-  domain_hash: bytea("domain_hash").notNull(),
-  domain_level: integer("domain_level").notNull(),
-  picked_up_at: ts("picked_up_at"),
-  done: boolean("done").notNull().default(false),
-  created_at: ts("created_at").notNull().defaultNow(),
-});
-
-export const engpicker_verdicts = pgTable("engpicker_verdicts", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  domain_hash: bytea("domain_hash").notNull(),
-  verdict: varchar("verdict").notNull(),
-  created_at: ts("created_at").notNull().defaultNow(),
 });

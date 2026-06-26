@@ -107,7 +107,6 @@ export async function smartScrape({
       },
       schema: smartScrapeResultSchema, // Pass the schema instance for validation
       logger,
-      mock: null, // Keep mock null if not mocking
     });
 
     // Check if the response indicates a 500 error

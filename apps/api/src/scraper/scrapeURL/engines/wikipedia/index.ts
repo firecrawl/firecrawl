@@ -1,10 +1,10 @@
 import * as undici from "undici";
-import { EngineScrapeResult } from "..";
-import { Meta } from "../..";
 import { config } from "../../../../config";
 import { EngineError } from "../../error";
 import { getRedisConnection } from "../../../../services/queue-service";
 import { redlock } from "../../../../services/redlock";
+import { Engine, EngineScrapeResult, SpecialEngine } from "../types";
+import { Meta } from "../../lib/meta";
 
 const WIKIMEDIA_AUTH_URL = "https://auth.enterprise.wikimedia.com/v1/login";
 const WIKIMEDIA_API_BASE = "https://api.enterprise.wikimedia.com/v2";
@@ -226,9 +226,7 @@ interface WikimediaArticle {
   };
 }
 
-export async function scrapeURLWithWikipedia(
-  meta: Meta,
-): Promise<EngineScrapeResult> {
+async function scrapeURLWithWikipedia(meta: Meta): Promise<EngineScrapeResult> {
   const urlToScrape = meta.rewrittenUrl ?? meta.url;
   const wikiInfo = parseWikimediaUrl(urlToScrape);
 
@@ -364,10 +362,37 @@ function escapeHtml(str: string): string {
     .replace(/"/g, "&quot;");
 }
 
-export function wikipediaMaxReasonableTime(_meta: Meta): number {
-  return 10000;
-}
-
 export function isWikimediaUrl(url: string): boolean {
   return parseWikimediaUrl(url) !== null;
 }
+
+export const wikipediaSpecialEngine: SpecialEngine = {
+  name: "wikipedia",
+  features: {
+    actions: false,
+    waitFor: false,
+    screenshot: false,
+    "screenshot@fullScreen": false,
+    audio: false,
+    video: false,
+    atsv: false,
+    location: false,
+    mobile: false,
+    branding: false,
+    disableAdblock: true,
+  },
+  scrape: meta => {
+    const logger = meta.logger.child({
+      method: "scrapeURLWithWikipedia",
+      engine: "wikipedia",
+    });
+
+    return scrapeURLWithWikipedia({
+      ...meta,
+      logger,
+    });
+  },
+  special: {
+    matches: isWikimediaUrl,
+  },
+};

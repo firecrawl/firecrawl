@@ -62,7 +62,6 @@ function makeMeta(overrides: Record<string, unknown> = {}) {
     url: "https://example.com/doc.pdf",
     rewrittenUrl: undefined,
     logger: noopLogger,
-    mock: null,
     abort: {
       throwIfAborted: vi.fn(),
       asSignal: vi.fn(() => new AbortController().signal),

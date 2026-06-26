@@ -162,7 +162,6 @@ export async function scrapePDFWithFirePDF(
       failed_pages: z.array(z.number()).nullable(),
       pages_processed: z.number().optional(),
     }),
-    mock: meta.mock,
     abort: meta.abort.asSignal(),
   });
 

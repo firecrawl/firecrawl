@@ -20,7 +20,6 @@ import { updateGeneratedLlmsTxt } from "../lib/generate-llmstxt/generate-llmstxt
 import Express from "express";
 import { robustFetch } from "../scraper/scrapeURL/lib/fetch";
 import { initializeBlocklist } from "../scraper/WebScraper/utils/blocklist";
-import { initializeEngineForcing } from "../scraper/WebScraper/utils/engine-forcing";
 import { crawlFinishedQueue, NuQJob, scrapeQueue } from "./worker/nuq";
 import { finishCrawlSuper } from "./worker/crawl-logic";
 import { getCrawl } from "../lib/crawl-redis";
@@ -422,7 +421,6 @@ app.get("/liveness", (req, res) => {
     robustFetch({
       url: `${scheme}://${host}:${port}`,
       method: "GET",
-      mock: null,
       logger: _logger,
       abort: AbortSignal.timeout(5000),
       ignoreResponse: true,
@@ -463,8 +461,6 @@ app.listen(workerPort, (error?: Error) => {
     _logger.error("Failed to initialize blocklist", { error: e });
     process.exit(1);
   });
-
-  initializeEngineForcing();
 
   if (config.USE_DB_AUTHENTICATION && !config.DISABLE_MONITORING) {
     monitorSchedulerInterval = setInterval(() => {

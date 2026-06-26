@@ -1,8 +1,6 @@
 import crypto from "crypto";
 import { config } from "../../../../config";
 import { Document } from "../../../../controllers/v1/types";
-import { EngineScrapeResult } from "..";
-import { Meta } from "../..";
 import {
   getIndexFromGCS,
   hashURL,
@@ -38,6 +36,8 @@ import {
 } from "../../error";
 import { shouldParsePDF } from "../../../../controllers/v2/types";
 import { hasFormatOfType } from "../../../../lib/format-utils";
+import { Engine, EngineScrapeResult } from "../types";
+import { Meta } from "../../lib/meta";
 
 export async function sendDocumentToIndex(meta: Meta, document: Document) {
   // Skip caching if screenshot format has custom viewport or quality settings
@@ -51,8 +51,6 @@ export async function sendDocumentToIndex(meta: Meta, document: Document) {
     !meta.internalOptions.isParse &&
     !meta.internalOptions.zeroDataRetention &&
     meta.winnerEngine !== "index" &&
-    meta.winnerEngine !== "index;documents" &&
-    !(meta.winnerEngine === "pdf" && !shouldParsePDF(meta.options.parsers)) &&
     !meta.options.parsers?.some(parser => {
       if (
         typeof parser === "object" &&
@@ -63,10 +61,6 @@ export async function sendDocumentToIndex(meta: Meta, document: Document) {
       }
       return false;
     }) &&
-    (meta.internalOptions.teamId === "sitemap" ||
-      (meta.winnerEngine !== "fire-engine;tlsclient" &&
-        meta.winnerEngine !== "fire-engine;tlsclient;stealth" &&
-        meta.winnerEngine !== "fetch")) &&
     !meta.featureFlags.has("actions") &&
     !hasCustomScreenshotSettings &&
     (meta.options.headers === undefined ||
@@ -175,7 +169,7 @@ export async function sendDocumentToIndex(meta: Meta, document: Document) {
           location_languages: meta.options.location?.languages ?? null,
           status: document.metadata.statusCode,
           is_precrawl: meta.internalOptions.isPreCrawl === true,
-          is_stealth: meta.featureFlags.has("stealthProxy"),
+          is_stealth: meta.options.proxy === "enhanced",
           wait_time_ms: meta.options.waitFor > 0 ? meta.options.waitFor : null,
           ...urlSplitsHash.slice(0, 10).reduce(
             (a, x, i) => ({
@@ -224,9 +218,7 @@ export async function sendDocumentToIndex(meta: Meta, document: Document) {
 
 const errorCountToRegister = 3;
 
-export async function scrapeURLWithIndex(
-  meta: Meta,
-): Promise<EngineScrapeResult> {
+async function scrapeURLWithIndex(meta: Meta): Promise<EngineScrapeResult> {
   const startTime = Date.now();
   const normalizedURL = normalizeURLForIndex(meta.url);
   const urlHash = hashURL(normalizedURL);
@@ -304,7 +296,7 @@ export async function scrapeURLWithIndex(
     urlHash,
     isMobile: meta.options.mobile,
     blockAds: meta.options.blockAds,
-    isStealth: meta.featureFlags.has("stealthProxy"),
+    isStealth: meta.options.proxy === "enhanced",
     locationCountry: meta.options.location?.country ?? null,
     locationLanguages:
       (meta.options.location?.languages?.length ?? 0) > 0
@@ -427,7 +419,7 @@ export async function scrapeURLWithIndex(
             ? (meta.options.location?.languages ?? null)
             : null,
         wait_time_ms: meta.options.waitFor,
-        is_stealth: meta.featureFlags.has("stealthProxy"),
+        is_stealth: meta.options.proxy === "enhanced",
         min_age_ms: meta.options.minAge ?? null,
       });
       timingsDb = Date.now() - dbStart;
@@ -566,12 +558,34 @@ export async function scrapeURLWithIndex(
 
     postprocessorsUsed: doc.postprocessorsUsed,
 
-    proxyUsed:
-      doc.proxyUsed ??
-      (meta.featureFlags.has("stealthProxy") ? "stealth" : "basic"), // this can be dropped after june 2026, it's here to backfill proxyUsed for older index entries that don't have it
+    proxyUsed: doc.proxyUsed,
   };
 }
 
-export function indexMaxReasonableTime(meta: Meta): number {
-  return 1500;
-}
+export const indexEngine: Engine = {
+  name: "index",
+  features: {
+    actions: false,
+    waitFor: true,
+    screenshot: true,
+    "screenshot@fullScreen": true,
+    audio: false,
+    video: false,
+    atsv: false,
+    mobile: true,
+    location: true,
+    branding: false,
+    disableAdblock: true,
+  },
+  scrape: meta => {
+    const logger = meta.logger.child({
+      method: "scrapeURLWithIndex",
+      engine: "index",
+    });
+
+    return scrapeURLWithIndex({
+      ...meta,
+      logger,
+    });
+  },
+};
