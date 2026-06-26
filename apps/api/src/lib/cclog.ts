@@ -39,19 +39,19 @@ export function getMsUntilNextMinute(now = new Date()): number {
   return CCLOG_MINUTE_MS - (now.getSeconds() * 1000 + now.getMilliseconds());
 }
 
-export function getSampleKey(at: Date): string {
+function getSampleKey(at: Date): string {
   return `${CCLOG_SAMPLE_KEY_PREFIX}:${Math.floor(
     floorToMinute(at).getTime() / CCLOG_MINUTE_MS,
   )}`;
 }
 
-export function shouldAggregateAt(at: Date): boolean {
+function shouldAggregateAt(at: Date): boolean {
   return (
     floorToMinute(at).getMinutes() % CCLOG_AGGREGATE_INTERVAL_MINUTES === 0
   );
 }
 
-export function getAggregationWindow(at: Date): Date[] {
+function getAggregationWindow(at: Date): Date[] {
   const end = floorToMinute(at).getTime();
   return Array.from({ length: CCLOG_AGGREGATE_INTERVAL_MINUTES }, (_, i) => {
     return new Date(
@@ -142,7 +142,7 @@ async function saveCclogMinuteSample(
   await pipeline.exec();
 }
 
-export async function buildCclogAggregateEntries(
+async function buildCclogAggregateEntries(
   redis: IORedis,
   at: Date,
 ): Promise<CclogAggregateEntry[]> {

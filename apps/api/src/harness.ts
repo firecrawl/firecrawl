@@ -46,7 +46,6 @@ interface Services {
   nuqWorkers: ProcessResult[];
   nuqPrefetchWorker?: ProcessResult;
   nuqReconcilerWorker?: ProcessResult;
-  cclogWorker?: ProcessResult;
   extractWorker?: ProcessResult;
   indexWorker?: ProcessResult;
   command?: ProcessResult;
@@ -119,7 +118,6 @@ const NUQ_WORKER_START_PORT = config.NUQ_WORKER_START_PORT;
 const NUQ_WORKER_COUNT = config.NUQ_WORKER_COUNT;
 const NUQ_PREFETCH_WORKER_PORT = NUQ_WORKER_START_PORT + NUQ_WORKER_COUNT;
 const NUQ_RECONCILER_WORKER_PORT = NUQ_PREFETCH_WORKER_PORT + 1;
-const CCLOG_WORKER_PORT = NUQ_RECONCILER_WORKER_PORT + 1;
 
 // PostgreSQL credentials (with defaults for backward compatibility)
 const POSTGRES_USER = config.POSTGRES_USER;
@@ -909,18 +907,6 @@ async function startServices(command?: string[]): Promise<Services> {
           },
         );
 
-  const cclogWorker = execForward(
-    "cclog-worker",
-    process.argv[2] === "--start-docker"
-      ? "node dist/src/services/cclog-worker.js"
-      : "pnpm cclog-worker:production",
-    {
-      CCLOG_WORKER_PORT: String(CCLOG_WORKER_PORT),
-      NUQ_REDUCE_NOISE: "true",
-      NUQ_POD_NAME: "cclog-worker-0",
-    },
-  );
-
   const indexWorker = config.USE_DB_AUTHENTICATION
     ? execForward(
         "index-worker",
@@ -956,7 +942,6 @@ async function startServices(command?: string[]): Promise<Services> {
     nuqWorkers,
     nuqPrefetchWorker,
     nuqReconcilerWorker,
-    cclogWorker,
     indexWorker,
     extractWorker,
     command: commandProcess,
@@ -975,7 +960,6 @@ async function stopDevelopmentServices(services: Services) {
     ...services.nuqWorkers.map(w => w.process),
     services.nuqPrefetchWorker?.process,
     services.nuqReconcilerWorker?.process,
-    services.cclogWorker?.process,
     services.indexWorker?.process,
     services.extractWorker?.process,
     services.command?.process,

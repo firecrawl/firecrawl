@@ -60,7 +60,7 @@ nuqPrefetchWorker:
       cpu: "1000m"
 
 cclogWorker:
-  enabled: true
+  enabled: false
   replicaCount: 1
   port: 3013
   resources:
