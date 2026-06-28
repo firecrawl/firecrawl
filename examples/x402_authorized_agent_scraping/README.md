@@ -1,88 +1,61 @@
-# Authorized Agent Scraping
+# Per-Agent Access Control for Firecrawl
 
-An example showing how to verify an AI agent's identity and permissions before it makes paid API calls through Firecrawl.
+Gate Firecrawl API calls behind agent identity verification so only credentialed agents can scrape.
 
-## The Problem
+## Why This Matters
 
-With x402 and similar pay-per-call protocols, any agent with a crypto wallet can call paid APIs. But there's no standard way to answer:
+When multiple AI agents share a Firecrawl API key, you have no way to answer:
 
-- **Which agent** is making this call?
-- **Does it have permission** to spend money on API calls?
-- **Who authorized it**, and when does that authorization expire?
+- **Which agent** made this scrape request?
+- **Is it allowed** to call paid endpoints?
+- **When does its access expire?**
 
-Without an identity layer, operators have no way to control which of their agents can make financial API calls — or to revoke that access later.
-
-## What This Example Does
-
-1. **Creates an operator identity** — the human or organization that owns the agent
-2. **Issues an agent credential** — a signed, time-limited credential with specific permissions (in this case, `READ_DATA` + `FINANCIAL_SMALL` for paid APIs under $100)
-3. **Generates a zero-knowledge proof** — the agent proves it holds a valid credential without revealing the operator's secret key
-4. **Verifies the proof** — the authorization check passes or fails
-5. **Scrapes via Firecrawl** — only if the agent is authorized
-
-The authorization check is local (no network call to a central auth server). The ZK proof reveals nothing about the operator's secrets.
+This example adds a lightweight authorization layer in front of Firecrawl. Before an agent can scrape, it must prove it holds a valid, time-limited credential with the right permissions. The check runs locally (no extra network call).
 
 ## Prerequisites
 
-- Python 3.11+
-- Node.js 18+ (required by the ZK proof engine)
-- [Firecrawl](https://firecrawl.dev) API key
-- [@bolyra/sdk](https://www.npmjs.com/package/@bolyra/sdk) installed globally or in a sibling directory
+- **Python 3.11+**
+- **Node.js 18+** — the ZK proof engine runs in Node. The Python SDK (`bolyra`) wraps `@bolyra/sdk` via a subprocess call, so both runtimes are needed.
+- A [Firecrawl](https://firecrawl.dev) API key
 
-## Setup
+## Quick Start
 
-1. Install Python dependencies:
-   ```
-   pip install -r requirements.txt
-   ```
+```bash
+# Python deps
+pip install -r requirements.txt
 
-2. Install the Node.js SDK (needed for ZK proof generation):
-   ```
-   npm install @bolyra/sdk
-   ```
+# Node.js dep (ZK proof engine)
+npm install @bolyra/sdk
 
-3. Set your Firecrawl API key:
-   ```
-   export FIRECRAWL_API_KEY=your_firecrawl_api_key
-   ```
+# Configure
+cp .env.example .env   # then add your FIRECRAWL_API_KEY
 
-## Usage
-
-```
+# Run
 python authorized_scrape.py
 ```
-
-You'll be prompted for a URL to scrape. The script will:
-- Create operator + agent identities
-- Run the authorization check (ZK handshake)
-- Scrape the URL only if authorization succeeds
 
 ## How It Works
 
 ```
-Operator (human)                    Agent (AI)
-      |                                |
-      |-- issues credential ---------->|  (signed, scoped, time-limited)
-      |                                |
-      |                                |-- prove_handshake() -->  ZK Proof
-      |                                |
-      |                     Verifier <--|-- verify_handshake()
-      |                                |
-      |                                |-- [authorized] --> Firecrawl x402 API
+Operator                        Agent
+   |                              |
+   |-- issue credential -------->|   (scoped permissions, TTL)
+   |                              |
+   |                              |-- authorize()  -->  ZK proof
+   |                              |                     (local, no network)
+   |                              |
+   |                              |-- [authorized] -->  Firecrawl scrape
 ```
 
-The credential uses a permission bitmask. For this example, the agent gets:
-- `READ_DATA` (bit 0) — can receive scrape results
-- `FINANCIAL_SMALL` (bit 2) — can make paid API calls under $100
+1. **`agent_auth.py`** — helper that wraps [Bolyra](https://github.com/bolyra/bolyra) identity primitives into two calls: `create_agent_identity()` and `authorize()`.
+2. **`authorized_scrape.py`** — the Firecrawl example. Creates an identity, runs the auth check, then scrapes.
 
-Permissions are cumulative: `FINANCIAL_MEDIUM` implies `FINANCIAL_SMALL`, and `FINANCIAL_UNLIMITED` implies both. This prevents accidental privilege escalation.
+Permissions are bitmask-based. This example grants `READ_DATA` + `FINANCIAL_SMALL` (paid calls under $100). Swap or narrow the permission set in `agent_auth.py` to match your use case.
 
 ## Extending This
 
-- **Multi-agent fleets**: Issue different credentials to different agents. A research agent gets `READ_DATA` only; a purchasing agent gets `FINANCIAL_SMALL`.
-- **Delegation**: An authorized agent can delegate a *narrower* set of permissions to a sub-agent (delegation can only reduce scope, never expand it).
-- **Expiry**: Set short-lived credentials (e.g., 1 hour) for sensitive operations.
-- **Audit trail**: Log the `session_nonce` from each handshake to trace which authorization was used for which API call.
+- Issue different credentials per agent to enforce least-privilege across a fleet.
+- Set short TTLs for sensitive scraping jobs.
 
 ## License
 
