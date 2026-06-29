@@ -402,7 +402,7 @@ class FirecrawlClient:
             tbs: Time-based search filter
             location: Location string for search
             timeout: Request timeout in milliseconds (default: 300000)
-            page_options: Options for scraping individual pages
+            scrape_options: Options for scraping each search result page
 
         Returns:
             SearchData containing the search results
