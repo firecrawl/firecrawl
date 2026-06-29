@@ -13,6 +13,7 @@ import {
   createRobotsChecker,
   isUrlAllowedByRobots,
 } from "../../lib/robots-txt";
+import { stripUrlUserInfo } from "../../lib/url-utils";
 import { ScrapeJobTimeoutError } from "../../lib/error";
 import { ScrapeOptions } from "../../controllers/v2/types";
 import { filterLinks, filterUrl } from "@mendable/firecrawl-rs";
@@ -543,6 +544,7 @@ export class WebCrawler {
     let leftOfLimit = this.limit;
 
     const normalizeUrl = (url: string) => {
+      url = stripUrlUserInfo(url);
       url = url.replace(/^https?:\/\//, "").replace(/^www\./, "");
       if (url.endsWith("/")) {
         url = url.slice(0, -1);
@@ -684,7 +686,7 @@ export class WebCrawler {
     for (const link of links) {
       const filterResult = await this.filterURL(link, url);
       if (filterResult.allowed && filterResult.url) {
-        filteredLinks.push(filterResult.url);
+        filteredLinks.push(stripUrlUserInfo(filterResult.url));
       }
     }
     return filteredLinks;
@@ -703,7 +705,7 @@ export class WebCrawler {
         }
         const filterResult = await this.filterURL(href, url);
         if (filterResult.allowed && filterResult.url) {
-          links.push(filterResult.url);
+          links.push(stripUrlUserInfo(filterResult.url));
         }
       }
     }

@@ -1,6 +1,7 @@
 // TODO: refactor
 import { load } from "cheerio"; // rustified
 import { logger } from "../../../lib/logger";
+import { stripUrlUserInfo } from "../../../lib/url-utils";
 import {
   extractLinks as _extractLinks,
   extractBaseHref as _extractBaseHref,
@@ -28,13 +29,13 @@ function resolveUrlWithBaseHref(
 
   try {
     if (href.startsWith("http://") || href.startsWith("https://")) {
-      return href;
+      return stripUrlUserInfo(href);
     } else if (href.startsWith("mailto:")) {
       return href;
     } else if (href.startsWith("#")) {
       return "";
     } else {
-      return new URL(href, resolutionBase).href;
+      return stripUrlUserInfo(new URL(href, resolutionBase).href);
     }
   } catch (error) {
     logger.error(

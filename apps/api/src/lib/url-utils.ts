@@ -64,3 +64,33 @@ export function extractBaseDomain(url: string): string | null {
     return null;
   }
 }
+
+/**
+ * Strips userinfo (username:password@ or username@) from HTTP(S) URLs.
+ * Modern browsers strip credentials from URLs before sending requests.
+ * This normalization prevents duplicate crawls when the same page is
+ * discovered via both https://domain.com/page and https://user@domain.com/page.
+ *
+ * Handles:
+ * - Malformed mailto links that become https://email@domain.com
+ * - Basic auth URLs: https://user@domain.com, https://user:pass@domain.com
+ */
+export function stripUrlUserInfo(url: string): string {
+  try {
+    const urlObj = new URL(url);
+    if (
+      urlObj.protocol !== "http:" &&
+      urlObj.protocol !== "https:"
+    ) {
+      return url;
+    }
+    if (urlObj.username || urlObj.password) {
+      urlObj.username = "";
+      urlObj.password = "";
+      return urlObj.href;
+    }
+    return url;
+  } catch {
+    return url;
+  }
+}

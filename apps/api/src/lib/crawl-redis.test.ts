@@ -1,4 +1,7 @@
-import { generateURLPermutations } from "./crawl-redis";
+import {
+  generateURLPermutations,
+  normalizeURL,
+} from "./crawl-redis";
 
 describe("generateURLPermutations", () => {
   it("generates permutations correctly", () => {
@@ -79,5 +82,42 @@ describe("generateURLPermutations", () => {
     expect(wwwHttp.includes("http://www.firecrawl.dev/")).toBe(true);
     expect(wwwHttp.includes("http://www.firecrawl.dev/index.html")).toBe(true);
     expect(wwwHttp.includes("http://www.firecrawl.dev/index.php")).toBe(true);
+  });
+
+  it("strips userinfo before generating permutations", () => {
+    const withUserInfo = generateURLPermutations(
+      "https://user:pass@firecrawl.dev/page",
+    ).map(x => x.href);
+    const withoutUserInfo = generateURLPermutations(
+      "https://firecrawl.dev/page",
+    ).map(x => x.href);
+    expect(withUserInfo).toEqual(withoutUserInfo);
+  });
+});
+
+describe("normalizeURL userinfo stripping", () => {
+  const minimalSc = {
+    crawlerOptions: {},
+    scrapeOptions: {},
+    internalOptions: {},
+    team_id: "test",
+    createdAt: Date.now(),
+  } as any;
+
+  it("strips userinfo from URLs", () => {
+    expect(
+      normalizeURL("https://user@example.com/page", minimalSc),
+    ).toBe("https://example.com/page");
+    expect(
+      normalizeURL("https://user:pass@example.com/path", minimalSc),
+    ).toBe("https://example.com/path");
+  });
+
+  it("deduplicates malformed mailto-style URLs", () => {
+    const normalized = normalizeURL(
+      "https://contact@example.com/page",
+      minimalSc,
+    );
+    expect(normalized).toBe("https://example.com/page");
   });
 });

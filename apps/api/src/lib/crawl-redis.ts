@@ -3,6 +3,7 @@ import { ScrapeOptions, TeamFlags } from "../controllers/v2/types";
 import { WebhookConfig } from "../services/webhook/types";
 import { WebCrawler } from "../scraper/WebScraper/crawler";
 import { redisEvictConnection } from "../services/redis";
+import { stripUrlUserInfo } from "./url-utils";
 import { logger as _logger } from "./logger";
 import { getAdjustedMaxDepth } from "../scraper/WebScraper/utils/maxDepthUtils";
 import type { Logger } from "winston";
@@ -342,7 +343,8 @@ export async function getCrawlQualifiedJobCount(id: string): Promise<number> {
 }
 
 export function normalizeURL(url: string, sc: StoredCrawl): string {
-  const urlO = new URL(url);
+  const urlWithoutUserInfo = stripUrlUserInfo(url);
+  const urlO = new URL(urlWithoutUserInfo);
   if (sc && sc.crawlerOptions && sc.crawlerOptions.ignoreQueryParameters) {
     urlO.search = "";
   }
@@ -371,7 +373,8 @@ export function normalizeURL(url: string, sc: StoredCrawl): string {
 // Points 1 and 2 are proven in permu-refactor.test.ts, point 3 is not as proving a negative is hard and outside the scope of a web crawler.
 // - mogery
 export function generateURLPermutations(url: string | URL): URL[] {
-  const urlO = new URL(url);
+  const strippedUrl = stripUrlUserInfo(typeof url === "string" ? url : url.href);
+  const urlO = new URL(strippedUrl);
 
   // Construct two versions, one with www., one without
   const urlWithWWW = new URL(urlO);

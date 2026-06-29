@@ -1,4 +1,8 @@
-import { isBaseDomain, extractBaseDomain } from "../url-utils";
+import {
+  isBaseDomain,
+  extractBaseDomain,
+  stripUrlUserInfo,
+} from "../url-utils";
 
 describe("URL Utils", () => {
   describe("isBaseDomain", () => {
@@ -54,6 +58,81 @@ describe("URL Utils", () => {
     it("should return null for invalid URLs", () => {
       expect(extractBaseDomain("not-a-url")).toBe(null);
       expect(extractBaseDomain("")).toBe(null);
+    });
+  });
+
+  describe("stripUrlUserInfo", () => {
+    it("strips username from basic auth URLs", () => {
+      expect(stripUrlUserInfo("https://user@example.com/page")).toBe(
+        "https://example.com/page",
+      );
+      expect(stripUrlUserInfo("http://user@example.com/")).toBe(
+        "http://example.com/",
+      );
+    });
+
+    it("strips username:password from basic auth URLs", () => {
+      expect(stripUrlUserInfo("https://user:pass@example.com/page")).toBe(
+        "https://example.com/page",
+      );
+      expect(stripUrlUserInfo("http://admin:secret@example.com/path")).toBe(
+        "http://example.com/path",
+      );
+    });
+
+    it("normalizes malformed mailto-style URLs (https://email@domain.com)", () => {
+      expect(stripUrlUserInfo("https://contact@example.com")).toBe(
+        "https://example.com/",
+      );
+      expect(stripUrlUserInfo("https://support@company.co.uk/page")).toBe(
+        "https://company.co.uk/page",
+      );
+    });
+
+    it("leaves URLs without userinfo unchanged", () => {
+      expect(stripUrlUserInfo("https://example.com/page")).toBe(
+        "https://example.com/page",
+      );
+      expect(stripUrlUserInfo("http://example.org/path?q=1")).toBe(
+        "http://example.org/path?q=1",
+      );
+    });
+
+    it("handles URLs with path, query, and fragment", () => {
+      expect(
+        stripUrlUserInfo("https://user:pass@example.com/path?q=1#anchor"),
+      ).toBe("https://example.com/path?q=1#anchor");
+    });
+
+    it("leaves non-http(s) protocols unchanged", () => {
+      expect(stripUrlUserInfo("mailto:user@example.com")).toBe(
+        "mailto:user@example.com",
+      );
+      expect(stripUrlUserInfo("ftp://user:pass@ftp.example.com/")).toBe(
+        "ftp://user:pass@ftp.example.com/",
+      );
+    });
+
+    it("returns original string for invalid URLs", () => {
+      expect(stripUrlUserInfo("not-a-valid-url")).toBe("not-a-valid-url");
+      expect(stripUrlUserInfo("")).toBe("");
+    });
+
+    it("handles punycode and internationalized domains", () => {
+      expect(
+        stripUrlUserInfo("https://user@xn--example-9ua.com/page"),
+      ).toBe("https://xn--example-9ua.com/page");
+    });
+
+    it("handles port numbers in URLs with userinfo", () => {
+      expect(stripUrlUserInfo("https://user@example.com:8080/path")).toBe(
+        "https://example.com:8080/path",
+      );
+    });
+
+    it("handles userinfo with special characters", () => {
+      const encoded = "https://user%40mail.com:pass%23@example.com/page";
+      expect(stripUrlUserInfo(encoded)).toBe("https://example.com/page");
     });
   });
 });
