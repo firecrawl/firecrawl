@@ -14,8 +14,14 @@
 
 const MAX_ITEMS = 150;
 const CONCURRENCY = 8;
-const RECIPE_WAIT_MS = 7000;
-const OVERALL_BUDGET_MS = 30000;
+// This script runs inside the fire-engine `executeJavascript` action, which the engine awaits.
+// Keep the worst-case total (RECIPE_WAIT_MS + OVERALL_BUDGET_MS) comfortably under the engine's
+// per-action timeout so the script always returns its own (possibly partial) result rather than
+// being killed mid-flight with nothing. The outer scrape budget is not the constraint: requesting
+// `modifiers` forces the stealth proxy, which bumps the default scrape timeout to 120s. The replay
+// of a typical menu finishes in a few seconds; OVERALL_BUDGET_MS is only a backstop for hung calls.
+const RECIPE_WAIT_MS = 5000;
+const OVERALL_BUDGET_MS = 20000;
 
 interface CaptureResult {
   type: "menu-modifiers";
@@ -134,8 +140,23 @@ export async function captureMenuModifiers(): Promise<CaptureResult> {
       isDD ? 'a[href*="itemId"]' : 'a[href*="modctx"]',
     ) as HTMLElement | null;
     if (opener) {
+      // These are real <a href> links. If the SPA router does not intercept the click (e.g. mid
+      // hydration), the default navigation would unload the page and abort this whole action with
+      // no result. A one-shot capture-phase preventDefault stops the navigation while still letting
+      // the SPA's own click handler run (preventDefault does not stop propagation), which is what
+      // fires the item-detail request we capture.
+      const blockNav = (e: Event): void => e.preventDefault();
+      document.addEventListener("click", blockNav, {
+        capture: true,
+        once: true,
+      });
       try {
         opener.click();
+      } catch {
+        /* ignore */
+      }
+      try {
+        document.removeEventListener("click", blockNav, { capture: true });
       } catch {
         /* ignore */
       }
