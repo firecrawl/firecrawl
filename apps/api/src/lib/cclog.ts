@@ -182,10 +182,12 @@ async function buildCclogAggregateEntries(
   });
 }
 
-async function insertCclogAggregate(entries: CclogAggregateEntry[]) {
-  if (entries.length === 0) return;
+async function insertCclogAggregate(
+  entries: CclogAggregateEntry[],
+): Promise<boolean> {
+  if (entries.length === 0) return true;
 
-  await chInsert("concurrency_logs", entries, { throwOnError: true });
+  return chInsert("concurrency_logs", entries, { throwOnError: true });
 }
 
 export async function runCclogTick(redis: IORedis, at = new Date()) {
@@ -214,12 +216,18 @@ export async function runCclogTick(redis: IORedis, at = new Date()) {
   let insertedRows = 0;
 
   try {
-    await insertCclogAggregate(entries);
-    insertedRows = entries.length;
-    logger.info("Inserted cclog aggregate", {
-      at: minute.toISOString(),
-      rows: insertedRows,
-    });
+    if (await insertCclogAggregate(entries)) {
+      insertedRows = entries.length;
+      logger.info("Inserted cclog aggregate", {
+        at: minute.toISOString(),
+        rows: insertedRows,
+      });
+    } else {
+      logger.warn("Skipped cclog aggregate insert", {
+        at: minute.toISOString(),
+        rows: entries.length,
+      });
+    }
   } catch (error) {
     logger.error("Error inserting cclog aggregate", { error });
   }

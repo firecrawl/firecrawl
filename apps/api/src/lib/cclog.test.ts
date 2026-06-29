@@ -76,6 +76,7 @@ class FakeRedis {
 describe("cclog", () => {
   beforeEach(() => {
     chInsertMock.mockReset();
+    chInsertMock.mockResolvedValue(true);
   });
 
   it("inserts avg and max aggregate concurrency rows into ClickHouse", async () => {
@@ -134,6 +135,33 @@ describe("cclog", () => {
       [teamId]: "4",
     });
     chInsertMock.mockRejectedValueOnce(new Error("clickhouse unavailable"));
+
+    const result = await runCclogTick(redis as any, at);
+
+    expect(chInsertMock).toHaveBeenCalledWith(
+      "concurrency_logs",
+      [
+        {
+          team_id: teamId,
+          avg_concurrency: 0,
+          max_concurrency: 4,
+          created_at: "2026-06-26T12:20:00.000Z",
+        },
+      ],
+      { throwOnError: true },
+    );
+    expect(result.insertedRows).toBe(0);
+  });
+
+  it("does not report inserted rows when ClickHouse is not configured", async () => {
+    const teamId = "11111111-1111-1111-1111-111111111111";
+    const at = new Date("2026-06-26T12:20:00.000Z");
+    const redis = new FakeRedis([], {});
+
+    redis.seedHash(sampleKey(new Date("2026-06-26T12:19:00.000Z")), {
+      [teamId]: "4",
+    });
+    chInsertMock.mockResolvedValueOnce(false);
 
     const result = await runCclogTick(redis as any, at);
 

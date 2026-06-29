@@ -17,8 +17,9 @@ export async function chInsert(
   table: string,
   rows: Record<string, unknown>[],
   opts?: { throwOnError?: boolean },
-): Promise<void> {
-  if (!client || rows.length === 0) return;
+): Promise<boolean> {
+  if (rows.length === 0) return true;
+  if (!client) return false;
 
   try {
     await client.insert({
@@ -26,6 +27,7 @@ export async function chInsert(
       values: rows,
       format: "JSONEachRow",
     });
+    return true;
   } catch (error: any) {
     logger.error("ClickHouse insert failed", {
       table,
@@ -35,5 +37,6 @@ export async function chInsert(
     if (opts?.throwOnError) {
       throw error;
     }
+    return false;
   }
 }
