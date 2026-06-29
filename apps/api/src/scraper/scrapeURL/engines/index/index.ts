@@ -112,8 +112,14 @@ export async function sendDocumentToIndex(meta: Meta, document: Document) {
           pdfMetadata:
             document.metadata.numPages !== undefined
               ? {
-                  // reconstruct pdfMetadata from numPages and title
+                  // reconstruct pdfMetadata from response metadata fields
                   numPages: document.metadata.numPages,
+                  pagesProcessed:
+                    document.metadata.pagesProcessed ??
+                    document.metadata.numPages,
+                  originalTotalPages:
+                    document.metadata.originalTotalPages ??
+                    document.metadata.numPages,
                   title: document.metadata.title ?? undefined,
                 }
               : undefined,
@@ -552,14 +558,23 @@ export async function scrapeURLWithIndex(
     statusCode: doc.statusCode,
     error: doc.error,
     screenshot: doc.screenshot,
-    pdfMetadata:
-      doc.pdfMetadata ??
-      (doc.numPages !== undefined
+    pdfMetadata: doc.pdfMetadata
+      ? {
+          numPages: doc.pdfMetadata.numPages,
+          pagesProcessed:
+            doc.pdfMetadata.pagesProcessed ?? doc.pdfMetadata.numPages,
+          originalTotalPages:
+            doc.pdfMetadata.originalTotalPages ?? doc.pdfMetadata.numPages,
+          title: doc.pdfMetadata.title ?? undefined,
+        }
+      : doc.numPages !== undefined
         ? {
-            // backwards-compatible shim of pdfMetadata without title
+            // backwards-compatible shim when older cached docs use numPages
             numPages: doc.numPages,
+            pagesProcessed: doc.numPages,
+            originalTotalPages: doc.numPages,
           }
-        : undefined),
+        : undefined,
     contentType: doc.contentType,
 
     cacheInfo: {

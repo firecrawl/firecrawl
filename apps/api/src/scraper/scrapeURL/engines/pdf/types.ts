@@ -11,7 +11,12 @@ export type PDFProcessorResult = {
   pagesProcessed?: number;
 };
 
-export type PdfMetadata = { numPages: number; title?: string };
+export type PdfMetadata = {
+  numPages: number;
+  pagesProcessed?: number;
+  originalTotalPages?: number;
+  title?: string;
+};
 
 export const MAX_FILE_SIZE = 19 * 1024 * 1024; // 19MB
 export const FIRE_PDF_MAX_FILE_SIZE = 30 * 1024 * 1024; // 30MB
