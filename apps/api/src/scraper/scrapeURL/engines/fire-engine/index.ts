@@ -37,6 +37,7 @@ import { AbortManagerThrownError } from "../../lib/abortManager";
 import { youtubePostprocessor } from "../../postprocessors/youtube";
 import { withSpan, setSpanAttributes } from "../../../../lib/otel-tracer";
 import { getBrandingScript } from "./brandingScript";
+import { getMenuModifierScript } from "./menuModifierScript";
 import { abTestFireEngine } from "../../../../services/ab-test";
 import { scheduleABComparison } from "../../../../services/ab-test-comparison";
 import { createHash } from "node:crypto";
@@ -337,6 +338,15 @@ export async function scrapeURLWithFireEngineChromeCDP(
             {
               type: "executeJavascript" as const,
               script: getBrandingScript(),
+              metadata: { __firecrawl_internal: true },
+            },
+          ]
+        : []),
+      ...(hasFormatOfType(meta.options.formats, "menu")?.modifiers
+        ? [
+            {
+              type: "executeJavascript" as const,
+              script: getMenuModifierScript(),
               metadata: { __firecrawl_internal: true },
             },
           ]

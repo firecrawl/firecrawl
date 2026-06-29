@@ -7,7 +7,8 @@ export async function fetchMenu(
   meta: Meta,
   document: Document,
 ): Promise<Document> {
-  if (!hasFormatOfType(meta.options.formats, "menu")) {
+  const menuFormat = hasFormatOfType(meta.options.formats, "menu");
+  if (!menuFormat) {
     return document;
   }
 
@@ -39,6 +40,44 @@ export async function fetchMenu(
     meta.rewrittenUrl ??
     meta.url;
 
+  // When `modifiers` is opted in, the fire-engine layer ran an in-session capture action whose
+  // result lands in document.actions.javascriptReturns as a `menu-modifiers` envelope:
+  // `{ source, items: { [merchantItemId]: rawPayload } }`. Forward it to the service, which parses
+  // and merges the option groups by merchant item id. Absent/malformed capture -> a normal request.
+  let modifierPayloads:
+    | { source: string; items: Record<string, unknown> }
+    | undefined;
+  if (menuFormat.modifiers) {
+    // Mirror deriveBrandingFromActions: locate our internal action's return, then splice it out of
+    // document.actions so the raw per-item payloads never leak into the user-facing response.
+    const idx = document.actions?.javascriptReturns?.findIndex(
+      r => r.type === "menu-modifiers",
+    );
+    if (idx !== undefined && idx !== -1) {
+      const captured = document.actions!.javascriptReturns![idx].value as
+        | { source?: unknown; items?: unknown; error?: unknown }
+        | undefined;
+      document.actions!.javascriptReturns!.splice(idx, 1);
+      if (
+        captured &&
+        typeof captured.source === "string" &&
+        captured.items &&
+        typeof captured.items === "object"
+      ) {
+        modifierPayloads = {
+          source: captured.source,
+          items: captured.items as Record<string, unknown>,
+        };
+      } else {
+        meta.logger.info(
+          "menu modifiers requested but capture payload was empty/malformed",
+        );
+      }
+    } else {
+      meta.logger.info("menu modifiers requested but no capture payload found");
+    }
+  }
+
   const response = await fetch(
     `${config.MENU_EXTRACTION_SERVICE_URL}/v1/scrape-menu`,
     {
@@ -48,6 +87,7 @@ export async function fetchMenu(
         html: document.rawHtml,
         url,
         title: document.metadata.title ?? undefined,
+        ...(modifierPayloads ? { modifierPayloads } : {}),
       }),
     },
   );

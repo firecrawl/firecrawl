@@ -444,6 +444,15 @@ const queryFormatWithOptions = z.strictObject({
 
 type QueryFormatWithOptions = z.output<typeof queryFormatWithOptions>;
 
+const menuFormatWithOptions = z.strictObject({
+  type: z.literal("menu"),
+  // Opt-in: also capture each item's modifier/option groups. On DoorDash/UberEats these are not in
+  // the page HTML and are fetched per item inside the scrape session (best-effort, adds latency).
+  modifiers: z.boolean().optional(),
+});
+
+type MenuFormatWithOptions = z.output<typeof menuFormatWithOptions>;
+
 export type FormatObject =
   | { type: "markdown" }
   | { type: "html" }
@@ -461,7 +470,7 @@ export type FormatObject =
   | QueryFormatWithOptions
   | { type: "branding" }
   | { type: "product" }
-  | { type: "menu" }
+  | MenuFormatWithOptions
   | { type: "audio" }
   | { type: "video" };
 
@@ -634,7 +643,7 @@ const baseScrapeOptions = z.strictObject({
           attributesFormatWithOptions,
           z.strictObject({ type: z.literal("branding") }),
           z.strictObject({ type: z.literal("product") }),
-          z.strictObject({ type: z.literal("menu") }),
+          menuFormatWithOptions,
           questionFormatWithOptions,
           highlightsFormatWithOptions,
           queryFormatWithOptions,

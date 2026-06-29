@@ -224,6 +224,12 @@ function buildFeatureFlags(
     flags.add("stealthProxy");
   }
 
+  // Menu modifier capture replays per-item endpoints inside the page session; aggregators
+  // (DoorDash/UberEats) bot-wall the store-page load without stealth, so force it on.
+  if (hasFormatOfType(options.formats, "menu")?.modifiers) {
+    flags.add("stealthProxy");
+  }
+
   const urlO = new URL(url);
   const lowerPath = urlO.pathname.toLowerCase();
 
