@@ -91,6 +91,7 @@ type ScrapeOptions struct {
 	StoreInCache        *bool                    `json:"storeInCache,omitempty"`
 	Lockdown            *bool                    `json:"lockdown,omitempty"`
 	RedactPII           *bool                    `json:"redactPII,omitempty"`
+	Profile             *ProfileConfig           `json:"profile,omitempty"`
 	Integration         *string                  `json:"integration,omitempty"`
 	JsonOptions         *JsonOptions             `json:"jsonOptions,omitempty"`
 }
@@ -191,6 +192,17 @@ type AgentOptions struct {
 type LocationConfig struct {
 	Country   string   `json:"country,omitempty"`
 	Languages []string `json:"languages,omitempty"`
+}
+
+// ProfileConfig enables a persistent browser profile for a scrape. Scrapes that
+// reuse the same profile name share browser state such as cookies, localStorage,
+// and session data, which is useful for staying logged in across requests.
+type ProfileConfig struct {
+	// Name identifies the profile. Required (1-128 characters).
+	Name string `json:"name"`
+	// SaveChanges controls whether browser state changed during the scrape is
+	// persisted back to the profile. Defaults to true on the server when omitted.
+	SaveChanges *bool `json:"saveChanges,omitempty"`
 }
 
 // WebhookConfig configures webhook notifications.

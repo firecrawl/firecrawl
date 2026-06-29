@@ -140,6 +140,21 @@ if err != nil {
 fmt.Println(doc.Menu)
 ```
 
+### Persistent Browser Profile
+
+Pass a `Profile` to preserve browser state (cookies, `localStorage`, session data)
+across scrapes. Scrapes that reuse the same profile name share that state, which is
+useful for staying logged in between requests without scripting interactions. Set
+`SaveChanges` to `false` to load an existing profile without persisting any changes
+made during the scrape (it defaults to `true`).
+
+```go
+doc, err := client.Scrape(ctx, "https://example.com/dashboard", &firecrawl.ScrapeOptions{
+	Formats: []string{"markdown"},
+	Profile: &firecrawl.ProfileConfig{Name: "my-profile"},
+})
+```
+
 #### Interactive Browser
 
 Execute code in a scrape-bound browser session:
