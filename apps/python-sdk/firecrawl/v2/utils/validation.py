@@ -647,6 +647,10 @@ def prepare_scrape_options(options: Optional[ScrapeOptions]) -> Optional[Dict[st
                                     data = fmt.model_dump(exclude_none=True)
                                     data['type'] = _convert_format_string(data.get('type', fmt.type))
                                     converted_formats.append(data)
+                                elif fmt.type == 'menu':
+                                    data = fmt.model_dump(exclude_none=True)
+                                    data['type'] = 'menu'
+                                    converted_formats.append(data)
                                 else:
                                     converted_formats.append(_convert_format_string(fmt.type))
                             else:
@@ -727,6 +731,10 @@ def prepare_scrape_options(options: Optional[ScrapeOptions]) -> Optional[Dict[st
                             elif fmt.type in ('changeTracking', 'change_tracking'):
                                 data = fmt.model_dump(exclude_none=True)
                                 data['type'] = _convert_format_string(data.get('type', fmt.type))
+                                converted_formats.append(data)
+                            elif fmt.type == 'menu':
+                                data = fmt.model_dump(exclude_none=True)
+                                data['type'] = 'menu'
                                 converted_formats.append(data)
                             else:
                                 converted_formats.append(_convert_format_string(fmt.type))

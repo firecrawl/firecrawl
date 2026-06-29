@@ -667,6 +667,18 @@ class QueryFormat(Format):
     mode: Optional[Literal["freeform", "directQuote"]] = None
 
 
+class MenuFormat(Format):
+    """Configuration for menu format.
+
+    Set ``modifiers`` to also capture each item's modifier/option groups. On
+    DoorDash/UberEats these are fetched per item inside the scrape session
+    (best-effort, adds latency).
+    """
+
+    type: Literal["menu"] = "menu"
+    modifiers: Optional[bool] = None
+
+
 FormatOption = Union[
     Dict[str, Any],
     FormatString,
@@ -677,6 +689,7 @@ FormatOption = Union[
     QuestionFormat,
     HighlightsFormat,
     QueryFormat,
+    MenuFormat,
     Format,
 ]
 

@@ -77,6 +77,15 @@ export interface QueryFormat {
   mode?: "freeform" | "directQuote";
 }
 
+export interface MenuFormat extends Format {
+  type: "menu";
+  /**
+   * Also capture each item's modifier/option groups. On DoorDash/UberEats these
+   * are fetched per item inside the scrape session (best-effort, adds latency).
+   */
+  modifiers?: boolean;
+}
+
 export type FormatOption =
   | FormatString
   | Format
@@ -86,7 +95,8 @@ export type FormatOption =
   | AttributesFormat
   | QuestionFormat
   | HighlightsFormat
-  | QueryFormat;
+  | QueryFormat
+  | MenuFormat;
 
 export type ParseFormatString = Exclude<
   FormatString,
