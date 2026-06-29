@@ -1,5 +1,5 @@
 import pytest
-from firecrawl.v2.types import ScrapeOptions, Viewport, ScreenshotAction
+from firecrawl.v2.types import ScrapeOptions, Viewport, ScreenshotAction, MenuFormat
 from firecrawl.v2.methods.scrape import (
     _prepare_scrape_request,
     interact,
@@ -50,6 +50,21 @@ class TestScrapeRequestPreparation:
         # Check that no options are present
         assert "formats" not in data
         assert "headers" not in data
+
+    def test_menu_modifiers_format_serializes(self):
+        """Menu `modifiers` survives both the typed model form and the dict form."""
+        # typed model form
+        data = _prepare_scrape_request(
+            "https://www.doordash.com/store/x",
+            ScrapeOptions(formats=[MenuFormat(modifiers=True)]),
+        )
+        assert {"type": "menu", "modifiers": True} in data["formats"]
+        # dict form
+        data2 = _prepare_scrape_request(
+            "https://www.ubereats.com/store/x",
+            ScrapeOptions(formats=[{"type": "menu", "modifiers": True}]),
+        )
+        assert {"type": "menu", "modifiers": True} in data2["formats"]
 
     def test_scrape_options_conversion(self):
         """Test that ScrapeOptions fields are converted to camelCase."""

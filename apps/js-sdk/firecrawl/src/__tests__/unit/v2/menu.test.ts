@@ -111,6 +111,30 @@ describe("JS SDK v2 menu format", () => {
     expect(result.menu?.sections?.[0]?.items?.[0]?.price?.amount).toBe(3.5);
   });
 
+  test("menu format with modifiers is sent in the request body", async () => {
+    const mockResponse = {
+      status: 200,
+      data: {
+        success: true,
+        data: {
+          menu: {
+            isMenu: true,
+            confidence: 1,
+            sourceUrl: "https://example.com",
+            merchant: { name: "X" },
+            sections: []
+          }
+        }
+      }
+    };
+    const http = makeHttp(() => mockResponse);
+    await scrape(http, "https://example.com", {
+      formats: [{ type: "menu", modifiers: true }]
+    });
+    const sentBody = (http.post as jest.Mock).mock.calls[0][1] as any;
+    expect(sentBody.formats).toContainEqual({ type: "menu", modifiers: true });
+  });
+
   test("scrape without menu format does not return menu", async () => {
     const mockResponse = {
       status: 200,
