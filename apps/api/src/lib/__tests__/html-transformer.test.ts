@@ -486,5 +486,74 @@ describe("HTML Transformer", () => {
       expect(result).toContain("https://example.com/#q1");
       expect(result).toContain("https://example.com/#q2");
     });
+
+    it("should normalize onclick window.open links with decoded query params", async () => {
+      const options: TransformHtmlOptions = {
+        html: `
+          <div>
+            <h2 onclick="window.open('news-release.html?newsid=123&amp;symbol=NSP', '_blank').focus()">Headline</h2>
+          </div>
+        `,
+        url: "https://example.com/press/",
+        includeTags: [],
+        excludeTags: [],
+        onlyMainContent: false,
+      };
+
+      const result = await transformHtml(options);
+      const links = await extractLinks(result);
+      expect(links).toContain(
+        "https://example.com/press/news-release.html?newsid=123&symbol=NSP",
+      );
+    });
+
+    it("should normalize double-quoted onclick window.open links", async () => {
+      const options: TransformHtmlOptions = {
+        html: `
+          <div onclick='window.open("release-2.html", "_blank")'>Second</div>
+        `,
+        url: "https://example.com/press/",
+        includeTags: [],
+        excludeTags: [],
+        onlyMainContent: false,
+      };
+
+      const result = await transformHtml(options);
+      const links = await extractLinks(result);
+      expect(links).toContain("https://example.com/press/release-2.html");
+    });
+
+    it("should skip dynamic onclick window.open handlers", async () => {
+      const options: TransformHtmlOptions = {
+        html: `<div onclick="window.open('/news/' + id)">Dynamic</div>`,
+        url: "https://example.com/press/",
+        includeTags: [],
+        excludeTags: [],
+        onlyMainContent: false,
+      };
+
+      const result = await transformHtml(options);
+      const links = await extractLinks(result);
+      expect(links).toEqual([]);
+      expect(result).not.toContain("<a href=");
+    });
+
+    it("should preserve existing anchor links without wrapping", async () => {
+      const options: TransformHtmlOptions = {
+        html: `
+          <div>
+            <a href="/keep">Keep</a>
+          </div>
+        `,
+        url: "https://example.com",
+        includeTags: [],
+        excludeTags: [],
+        onlyMainContent: false,
+      };
+
+      const result = await transformHtml(options);
+      const links = await extractLinks(result);
+      expect(links).toEqual(["https://example.com/keep"]);
+    });
   });
 });

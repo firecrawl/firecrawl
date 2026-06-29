@@ -715,6 +715,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 ---
 
+## Recent Updates
+
+- Improved extraction of JS-clickable links by normalizing simple `window.open(...)` handlers before markdown conversion.
+
+---
+
 ## Resources
 
 - [Documentation](https://docs.firecrawl.dev)

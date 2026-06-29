@@ -66,6 +66,63 @@ const forceIncludeMainTags = [
   ".swoogo-agenda",
 ];
 
+const windowOpenSingleQuoteRegex =
+  /^\s*window\.open\(\s*'([^']+)'\s*(?:,\s*'_blank')?\s*\)\s*(?:\.focus\(\))?\s*;?\s*$/;
+const windowOpenDoubleQuoteRegex =
+  /^\s*window\.open\(\s*"([^"]+)"\s*(?:,\s*"_blank")?\s*\)\s*(?:\.focus\(\))?\s*;?\s*$/;
+
+const decodeOnclickUrl = (url: string) =>
+  url.includes("&amp;") ? url.replace(/&amp;/g, "&") : url;
+
+const extractOnclickUrl = (onclick: string): string | null => {
+  const singleMatch = onclick.match(windowOpenSingleQuoteRegex);
+  if (singleMatch) {
+    return singleMatch[1];
+  }
+
+  const doubleMatch = onclick.match(windowOpenDoubleQuoteRegex);
+  return doubleMatch ? doubleMatch[1] : null;
+};
+
+const normalizeOnclickWindowOpen = (
+  soup: ReturnType<typeof load>,
+  baseUrl: string,
+) => {
+  soup("[onclick]").each((_, el) => {
+    if (el.type !== "tag" || el.name === "a") {
+      return;
+    }
+
+    const $el = soup(el);
+    if ($el.find("a").length > 0) {
+      return;
+    }
+
+    const onclick = el.attribs?.onclick;
+    if (!onclick) {
+      return;
+    }
+
+    const urlLiteral = extractOnclickUrl(onclick);
+    if (!urlLiteral) {
+      return;
+    }
+
+    const decodedUrl = decodeOnclickUrl(urlLiteral);
+    let resolvedUrl = decodedUrl;
+    try {
+      resolvedUrl = new URL(decodedUrl, baseUrl).href;
+    } catch (_) {}
+
+    const anchor = soup("<a></a>");
+    anchor.attr("href", resolvedUrl);
+    anchor.append($el.contents());
+    $el.empty();
+    $el.removeAttr("onclick");
+    $el.append(anchor);
+  });
+};
+
 export const htmlTransform = async (
   html: string,
   url: string,
@@ -172,6 +229,8 @@ export const htmlTransform = async (
       elementsToRemove.remove();
     });
   }
+
+  normalizeOnclickWindowOpen(soup, url);
 
   // always return biggest image
   soup("img[srcset]").each((_, el) => {

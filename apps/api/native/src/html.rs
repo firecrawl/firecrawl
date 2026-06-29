@@ -14,7 +14,99 @@ use url::Url;
 static URL_REGEX: LazyLock<Regex> =
   LazyLock::new(|| Regex::new(r#"url\(['"]?([^'")]+)['"]?\)"#).expect("URL_REGEX is a valid static regex pattern"));
 
+static WINDOW_OPEN_SINGLE_QUOTE_REGEX: LazyLock<Regex> = LazyLock::new(|| {
+  Regex::new(
+    r#"^\s*window\.open\(\s*'([^']+)'\s*(?:,\s*'_blank')?\s*\)\s*(?:\.focus\(\))?\s*;?\s*$"#,
+  )
+  .expect("WINDOW_OPEN_SINGLE_QUOTE_REGEX is a valid static regex pattern")
+});
+
+static WINDOW_OPEN_DOUBLE_QUOTE_REGEX: LazyLock<Regex> = LazyLock::new(|| {
+  Regex::new(
+    r#"^\s*window\.open\(\s*"([^"]+)"\s*(?:,\s*"_blank")?\s*\)\s*(?:\.focus\(\))?\s*;?\s*$"#,
+  )
+  .expect("WINDOW_OPEN_DOUBLE_QUOTE_REGEX is a valid static regex pattern")
+});
+
 use crate::utils::to_napi_err;
+
+fn decode_html_entities(input: &str) -> String {
+  if !input.contains("&amp;") {
+    return input.to_string();
+  }
+
+  input.replace("&amp;", "&")
+}
+
+fn extract_window_open_url(onclick: &str) -> Option<String> {
+  if let Some(caps) = WINDOW_OPEN_SINGLE_QUOTE_REGEX.captures(onclick) {
+    return caps.get(1).map(|m| m.as_str().to_string());
+  }
+
+  WINDOW_OPEN_DOUBLE_QUOTE_REGEX
+    .captures(onclick)
+    .and_then(|caps| caps.get(1).map(|m| m.as_str().to_string()))
+}
+
+fn normalize_onclick_window_open(
+  document: &NodeRef,
+  base_url: &Url,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+  let elements: Vec<_> = document
+    .select("[onclick]")
+    .map_err(|_| "Failed to select onclick elements")?
+    .collect();
+
+  for element in elements {
+    if element.name.local.as_ref() == "a" {
+      continue;
+    }
+
+    if let Ok(mut anchors) = element.as_node().select("a") {
+      if anchors.next().is_some() {
+        continue;
+      }
+    }
+
+    let onclick = match element.attributes.borrow().get("onclick") {
+      Some(value) => value.to_string(),
+      None => continue,
+    };
+
+    let Some(url_literal) = extract_window_open_url(&onclick) else {
+      continue;
+    };
+
+    let decoded_url = decode_html_entities(&url_literal);
+    let resolved_url = match base_url.join(&decoded_url) {
+      Ok(resolved) => resolved.to_string(),
+      Err(_) => decoded_url,
+    };
+
+    let anchor_document = parse_html().one("<a></a>");
+    let anchor = anchor_document
+      .select_first("a")
+      .map_err(|_| "Failed to create anchor element")?;
+    anchor
+      .attributes
+      .borrow_mut()
+      .insert("href", resolved_url);
+
+    let anchor_node = anchor.as_node().clone();
+    anchor_node.detach();
+
+    let children: Vec<_> = element.as_node().children().collect();
+    for child in children {
+      child.detach();
+      anchor_node.append(child);
+    }
+
+    element.attributes.borrow_mut().remove("onclick");
+    element.as_node().append(anchor_node);
+  }
+
+  Ok(())
+}
 
 fn _extract_base_href_from_document(
   document: &NodeRef,
@@ -523,6 +615,8 @@ fn _transform_html_inner(
       }
     }
   }
+
+  normalize_onclick_window_open(&document, &url)?;
 
   let srcset_images: Vec<_> = document
     .select("img[srcset]")
