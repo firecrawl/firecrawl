@@ -10,6 +10,7 @@ use Firecrawl\Models\MapData;
 use Firecrawl\Models\BatchScrapeJob;
 use Firecrawl\Models\CrawlJob;
 use Firecrawl\Models\HighlightsFormat;
+use Firecrawl\Models\MenuFormat;
 use Firecrawl\Models\QueryFormat;
 use Firecrawl\Models\QuestionFormat;
 use Firecrawl\Models\ScrapeOptions;
@@ -361,6 +362,20 @@ it('serializes question and highlights formats in ScrapeOptions', function (): v
         [
             'type' => 'highlights',
             'query' => 'What is Firecrawl?',
+        ],
+    ]);
+});
+
+it('serializes the menu format with modifiers in ScrapeOptions', function (): void {
+    $options = ScrapeOptions::with(
+        formats: ['markdown', MenuFormat::with(true)],
+    );
+
+    expect($options->toArray()['formats'])->toMatchArray([
+        'markdown',
+        [
+            'type' => 'menu',
+            'modifiers' => true,
         ],
     ]);
 });

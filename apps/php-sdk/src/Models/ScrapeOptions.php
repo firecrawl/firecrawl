@@ -7,7 +7,7 @@ namespace Firecrawl\Models;
 final class ScrapeOptions
 {
     /**
-     * @param list<string|JsonFormat|ScreenshotFormat|QuestionFormat|HighlightsFormat|QueryFormat>|null $formats Supports strings like "markdown", "audio", and "video".
+     * @param list<string|JsonFormat|ScreenshotFormat|QuestionFormat|HighlightsFormat|QueryFormat|MenuFormat>|null $formats Supports strings like "markdown", "audio", and "video".
      * @param array<string, string>|null   $headers
      * @param list<string>|null            $includeTags
      * @param list<string>|null            $excludeTags
@@ -42,7 +42,7 @@ final class ScrapeOptions
     ) {}
 
     /**
-     * @param list<string|JsonFormat|ScreenshotFormat|QuestionFormat|HighlightsFormat|QueryFormat>|null $formats Supports strings like "markdown", "audio", and "video".
+     * @param list<string|JsonFormat|ScreenshotFormat|QuestionFormat|HighlightsFormat|QueryFormat|MenuFormat>|null $formats Supports strings like "markdown", "audio", and "video".
      * @param array<string, string>|null                    $headers
      * @param list<string>|null                             $includeTags
      * @param list<string>|null                             $excludeTags
@@ -91,13 +91,14 @@ final class ScrapeOptions
 
         if ($this->formats !== null) {
             $data['formats'] = array_map(
-                fn (string|JsonFormat|ScreenshotFormat|QuestionFormat|HighlightsFormat|QueryFormat $f): string|array =>
+                fn (string|JsonFormat|ScreenshotFormat|QuestionFormat|HighlightsFormat|QueryFormat|MenuFormat $f): string|array =>
                     (
                         $f instanceof JsonFormat
                         || $f instanceof ScreenshotFormat
                         || $f instanceof QuestionFormat
                         || $f instanceof HighlightsFormat
                         || $f instanceof QueryFormat
+                        || $f instanceof MenuFormat
                     ) ? $f->toArray() : $f,
                 $this->formats,
             );
@@ -137,7 +138,7 @@ final class ScrapeOptions
         return $data;
     }
 
-    /** @return list<string|JsonFormat|ScreenshotFormat|QuestionFormat|HighlightsFormat|QueryFormat>|null */
+    /** @return list<string|JsonFormat|ScreenshotFormat|QuestionFormat|HighlightsFormat|QueryFormat|MenuFormat>|null */
     public function getFormats(): ?array
     {
         return $this->formats;

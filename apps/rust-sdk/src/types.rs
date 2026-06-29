@@ -45,6 +45,9 @@ pub enum Format {
     Highlights(HighlightsFormat),
     /// Deprecated query answer generated from the page content.
     Query(QueryFormat),
+    /// Menu extraction with per-item modifier/option capture enabled. Plain `Format::Menu` returns
+    /// the menu without per-item modifiers.
+    MenuWithModifiers(MenuFormat),
 }
 
 impl Serialize for Format {
@@ -71,6 +74,7 @@ impl Serialize for Format {
             Format::Question(question) => question.serialize(serializer),
             Format::Highlights(highlights) => highlights.serialize(serializer),
             Format::Query(query) => query.serialize(serializer),
+            Format::MenuWithModifiers(menu) => menu.serialize(serializer),
         }
     }
 }
@@ -109,6 +113,9 @@ impl<'de> Deserialize<'de> for Format {
                     .map_err(de::Error::custom),
                 Some("query") => QueryFormat::deserialize(value)
                     .map(Format::Query)
+                    .map_err(de::Error::custom),
+                Some("menu") => MenuFormat::deserialize(value)
+                    .map(Format::MenuWithModifiers)
                     .map_err(de::Error::custom),
                 Some(format_type) => Err(de::Error::custom(format!(
                     "unknown object format: {}",
@@ -206,6 +213,52 @@ impl<'de> Deserialize<'de> for HighlightsFormat {
         }
 
         Ok(Self { query: wire.query })
+    }
+}
+
+/// Menu format with per-item modifier/option capture. Used by `Format::MenuWithModifiers`;
+/// serializes to `{ "type": "menu", "modifiers": <bool> }`.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct MenuFormat {
+    /// Capture each item's modifier/option groups (best-effort, adds latency; DoorDash/UberEats).
+    pub modifiers: bool,
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct MenuFormatWire {
+    #[serde(rename = "type")]
+    format_type: String,
+    #[serde(default)]
+    modifiers: bool,
+}
+
+impl Serialize for MenuFormat {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        MenuFormatWire {
+            format_type: "menu".to_string(),
+            modifiers: self.modifiers,
+        }
+        .serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for MenuFormat {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let wire = MenuFormatWire::deserialize(deserializer)?;
+        if wire.format_type != "menu" {
+            return Err(de::Error::custom("menu format object must have type menu"));
+        }
+
+        Ok(Self {
+            modifiers: wire.modifiers,
+        })
     }
 }
 
@@ -1024,6 +1077,22 @@ pub struct CrawlErrorsResponse {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn plain_menu_format_serializes_to_string() {
+        assert_eq!(serde_json::to_value(Format::Menu).unwrap(), json!("menu"));
+        let f: Format = serde_json::from_value(json!("menu")).unwrap();
+        assert_eq!(f, Format::Menu);
+    }
+
+    #[test]
+    fn menu_with_modifiers_round_trips_as_object() {
+        let f = Format::MenuWithModifiers(MenuFormat { modifiers: true });
+        let v = serde_json::to_value(&f).unwrap();
+        assert_eq!(v, json!({ "type": "menu", "modifiers": true }));
+        let back: Format = serde_json::from_value(v).unwrap();
+        assert_eq!(back, f);
+    }
 
     #[test]
     fn test_full_document_with_array_metadata() {
