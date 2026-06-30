@@ -2,12 +2,14 @@
     "$schema": "https://github.com/IBM/audit-ci/raw/main/docs/schema.json",
     "low": true,
     "allowlist": [
-        // GHSA-v2v4-37r5-5v8g (ip-address):
-        // geoip-country still depends on ip-address 6.x; the non-affected line is a
-        // multi-major jump outside the upstream range. Do not override across majors
-        // without compatibility approval.
+        // GHSA-v2v4-37r5-5v8g (ip-address XSS in Address6 HTML-emitting methods):
+        // geoip-country@5.x depends on ip-address ^6.4.0; upgrading to a patched
+        // ip-address line requires a cross-major jump (6 -> 9) which geoip-country
+        // does not support. The XSS is only triggerable if ip-address HTML-emitting
+        // methods (e.g. toHtml()) are rendered in a browser — geoip-country never
+        // calls these methods, so this is not reachable in production.
         // Owner: team-engineering-reviewers. Tracking: create internal ticket.
-        // Expires: 2026-06-30.
+        // Expires: 2026-09-30.
         "GHSA-v2v4-37r5-5v8g"
     ]
 }
