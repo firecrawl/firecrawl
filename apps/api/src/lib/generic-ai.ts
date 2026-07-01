@@ -1,4 +1,5 @@
 import { createOpenAI } from "@ai-sdk/openai";
+import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import { config } from "../config";
 import { createOllama } from "ollama-ai-provider-v2";
 import { anthropic } from "@ai-sdk/anthropic";
@@ -53,6 +54,17 @@ const providerList: Record<Provider, any> = {
   }),
 };
 
+// Third-party OpenAI-compatible endpoints (e.g. Z.AI/GLM) don't support the
+// OpenAI Responses API or json_schema structured outputs. The openai-compatible
+// provider uses Chat Completions + json_object mode, which they do support.
+const openaiCompatibleProvider = config.OPENAI_BASE_URL
+  ? createOpenAICompatible({
+      name: "openai-compatible",
+      baseURL: config.OPENAI_BASE_URL,
+      apiKey: config.OPENAI_API_KEY,
+    })
+  : null;
+
 export function getModel(name: string, provider: Provider = defaultProvider) {
   if (name === "gemini-2.5-pro") {
     name = "gemini-2.5-pro";
@@ -61,6 +73,13 @@ export function getModel(name: string, provider: Provider = defaultProvider) {
   // o3-mini returns empty text via the Responses API — force Chat Completions
   if (provider === "openai" && modelName.startsWith("o3-mini")) {
     return providerList.openai.chat(modelName);
+  }
+  // A custom OPENAI_BASE_URL means a third-party OpenAI-compatible endpoint
+  // (e.g. Z.AI/GLM). Route it through the openai-compatible provider, which uses
+  // Chat Completions + json_object mode (not the Responses API / json_schema
+  // structured outputs that the official OpenAI provider forces).
+  if (provider === "openai" && openaiCompatibleProvider) {
+    return openaiCompatibleProvider(modelName);
   }
   return providerList[provider](modelName);
 }
