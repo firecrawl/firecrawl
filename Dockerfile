@@ -66,6 +66,9 @@ RUN apt-get update && apt-get install -y \
 EXPOSE 8080
 WORKDIR /app
 
+# Bind to all interfaces so the platform's proxy can reach the server
+ENV HOST=0.0.0.0
+
 # Copy built application
 COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/dist ./dist

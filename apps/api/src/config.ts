@@ -259,4 +259,11 @@ const configSchema = z.object({
   NUQ_PREFETCH_WORKER_HEARTBEAT_URL: z.string().optional(),
 });
 
-export const config = configSchema.parse(process.env);
+const parsedConfig = configSchema.parse(process.env);
+
+// Deployments with a single Redis (e.g. one managed Redis add-on) only set
+// REDIS_URL — use it for rate limiting too unless a dedicated instance is
+// configured. (REDIS_EVICT_URL already falls back to REDIS_RATE_LIMIT_URL.)
+parsedConfig.REDIS_RATE_LIMIT_URL ??= parsedConfig.REDIS_URL;
+
+export const config = parsedConfig;
