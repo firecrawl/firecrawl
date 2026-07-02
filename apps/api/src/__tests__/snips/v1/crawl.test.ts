@@ -77,6 +77,29 @@ describeIf(ALLOW_TEST_SUITE_WEBSITE)("Crawl tests", () => {
   );
 
   it.concurrent(
+    "returns crawl status immediately after creation (no 'Job not found' race, #2662)",
+    async () => {
+      const startRes = await crawlStart({ url: base, limit: 1 }, identity);
+      expect(startRes.statusCode).toBe(200);
+      expect(startRes.body.id).toBeDefined();
+
+      // Query status immediately. This must not 404 with "Job not found" even
+      // when the Postgres crawl group has not yet caught up with the Redis
+      // crawl record created by the POST above. See issue #2662.
+      const statusRes = await request(TEST_API_URL)
+        .get(`/v1/crawl/${startRes.body.id}`)
+        .set("Authorization", `Bearer ${identity.apiKey}`)
+        .send();
+
+      expect(statusRes.statusCode).toBe(200);
+      expect(statusRes.body.success).toBe(true);
+      expect(statusRes.body.error).not.toBe("Job not found");
+      expect(statusRes.body).toHaveProperty("status");
+    },
+    scrapeTimeout,
+  );
+
+  it.concurrent(
     "works with ignoreSitemap: true",
     async () => {
       const results = await crawl(

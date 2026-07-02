@@ -204,7 +204,16 @@ export async function crawlStatusController(
   );
   const sc = await getCrawl(req.params.jobId);
 
-  if (!group || (!groupAnyJob && (!sc || sc.team_id !== req.auth.team_id))) {
+  // Verify the crawl exists and belongs to this team. Ownership must come from
+  // a team-scoped source: groupAnyJob (Postgres, team-scoped) or sc (Redis,
+  // team-scoped). `group` alone is not team-scoped, and the Postgres-backed
+  // group can briefly lag behind the Redis crawl record right after creation,
+  // so a missing `group` must not by itself return 404 for a crawl that
+  // demonstrably exists for this team.
+  // See https://github.com/firecrawl/firecrawl/issues/2662.
+  const teamOwnsCrawl =
+    !!groupAnyJob || (!!sc && sc.team_id === req.auth.team_id);
+  if (!teamOwnsCrawl) {
     return res.status(404).json({ success: false, error: "Job not found" });
   }
 
@@ -232,9 +241,13 @@ export async function crawlStatusController(
   } = {
     status: sc?.cancelled
       ? "cancelled"
-      : group.status === "active"
-        ? "scraping"
-        : group.status,
+      : !group
+        ? crawlError
+          ? "failed"
+          : "scraping"
+        : group.status === "active"
+          ? "scraping"
+          : group.status,
     completed: numericStats.completed ?? 0,
     total:
       (numericStats.completed ?? 0) +
