@@ -61,6 +61,27 @@ describe("Crawl tests", () => {
   );
 
   concurrentIf(ALLOW_TEST_SUITE_WEBSITE)(
+    "clamps invalid crawl-status pagination params instead of erroring",
+    async () => {
+      const started = await crawlStart({ url: base, limit: 1 }, identity);
+      expect(started.statusCode).toBe(200);
+      const id = started.body.id;
+
+      // Malformed skip/limit previously reached Postgres as NaN/negative
+      // LIMIT/OFFSET and made the status endpoint return 500; they must now
+      // clamp to defaults and return 200.
+      for (const qs of ["skip=abc", "limit=abc", "skip=-5", "skip=abc&limit=-10"]) {
+        const res = await request(TEST_API_URL)
+          .get(`/v2/crawl/${encodeURIComponent(id)}?${qs}`)
+          .set("Authorization", `Bearer ${identity.apiKey}`)
+          .send();
+        expect(res.statusCode).toBe(200);
+      }
+    },
+    2 * scrapeTimeout,
+  );
+
+  concurrentIf(ALLOW_TEST_SUITE_WEBSITE)(
     "works with sitemap: skip",
     async () => {
       const results = await crawl(

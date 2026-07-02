@@ -169,12 +169,13 @@ export async function crawlStatusController(
   res: Response<CrawlStatusResponse>,
   isBatch = false,
 ) {
-  const start =
-    typeof req.query.skip === "string" ? parseInt(req.query.skip, 10) : 0;
+  const skipParam = parseInt(req.query.skip as string, 10);
+  const start = Number.isNaN(skipParam) || skipParam < 0 ? 0 : skipParam;
+  const limitParam = parseInt(req.query.limit as string, 10);
   const end =
-    typeof req.query.limit === "string"
-      ? start + parseInt(req.query.limit, 10) - 1
-      : undefined;
+    Number.isNaN(limitParam) || limitParam < 1
+      ? undefined
+      : start + limitParam - 1;
 
   const group = await crawlGroup.getGroup(req.params.jobId);
   const groupAnyJob = await scrapeQueue.getGroupAnyJob(
