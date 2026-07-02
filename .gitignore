@@ -60,4 +60,4 @@ target/
 _local/
 
 
-apps/api/src/lib/scrape-interact/*.md
+apps/api/src/lib/scrape-interact/*.mdecho apps/js-sdk/firecrawl/package-lock.json
