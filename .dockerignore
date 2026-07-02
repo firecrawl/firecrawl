@@ -1,0 +1,8 @@
+# The root Dockerfile only builds apps/api — keep everything else out of the context.
+*
+!apps/api
+apps/api/**/node_modules/
+apps/api/**/dist/
+apps/api/**/target/
+apps/api/.env
+apps/api/**/*.csv
