@@ -128,7 +128,14 @@ export async function executeSearch(
       const { decisionsByDomain } = await checkUrlsAgainstThreatPolicy(
         urlsToCheck,
         threatPolicy,
-        { teamId },
+        {
+          teamId,
+          requestId,
+          jobId: context.jobId,
+          endpoint: "search",
+          origin,
+          zeroDataRetention,
+        },
       );
       threatScanCredits = calculateThreatScanCredits(
         decisionsByDomain.values(),

@@ -62,6 +62,8 @@ import {
 import { activityController } from "../controllers/v1/activity";
 import {
   getTeamThreatProtectionController,
+  getTeamThreatProtectionLogsController,
+  postTeamThreatProtectionTestSiemController,
   putTeamThreatProtectionController,
 } from "../controllers/v2/team-threat-protection";
 import { supportProxyController } from "../controllers/v2/support-proxy";
@@ -427,6 +429,18 @@ v2Router.put(
   "/team/threat-protection",
   authMiddleware(RateLimiterMode.Account),
   wrap(putTeamThreatProtectionController),
+);
+
+v2Router.get(
+  "/team/threat-protection/logs",
+  authMiddleware(RateLimiterMode.Account),
+  wrap(getTeamThreatProtectionLogsController),
+);
+
+v2Router.post(
+  "/team/threat-protection/test-siem",
+  authMiddleware(RateLimiterMode.Account),
+  wrap(postTeamThreatProtectionTestSiemController),
 );
 
 v2Router.post(

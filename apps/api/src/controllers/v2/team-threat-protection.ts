@@ -1,8 +1,13 @@
 import { Response } from "express";
+import { z } from "zod";
 import { logger as _logger } from "../../lib/logger";
 import { RequestWithAuth } from "./types";
 import { getThreatProtection } from "../../lib/zdr-helpers";
 import { threatProtectionConfigSchema } from "../../lib/threat-protection/config";
+import {
+  InvalidThreatLogsCursorError,
+  queryThreatProtectionLogs,
+} from "../../lib/threat-protection/logs";
 import {
   getOrgIdForTeam,
   getOrgThreatProtectionConfig,
@@ -10,6 +15,7 @@ import {
   upsertOrgThreatProtectionConfig,
   type OrgThreatProtectionConfig,
 } from "../../lib/threat-protection/store";
+import { sendSiemTestEvent } from "../../services/webhook/siem";
 
 const logger = _logger.child({ module: "team-threat-protection" });
 
@@ -126,5 +132,124 @@ export async function putTeamThreatProtectionController(
   res.status(200).json({
     success: true,
     data: serializeConfig(updated),
+  });
+}
+
+// =========================================
+// Security log export (ENG-4987 pull)
+// =========================================
+
+const threatProtectionLogsQuerySchema = z.object({
+  from: z.coerce.date().optional(),
+  to: z.coerce.date().optional(),
+  decision: z.enum(["allowed", "blocked"]).optional(),
+  domain: z.string().min(1).optional(),
+  cursor: z.string().min(1).optional(),
+  limit: z.coerce.number().int().min(1).max(1000).default(100),
+});
+
+/**
+ * GET /v2/team/threat-protection/logs — pull export of the org's threat
+ * protection security log (ClickHouse-backed), newest-first,
+ * cursor-paginated. Query params: from, to (ISO timestamps), decision
+ * (allowed|blocked), domain, cursor, limit (default 100, max 1000).
+ */
+export async function getTeamThreatProtectionLogsController(
+  req: RequestWithAuth,
+  res: Response,
+): Promise<void> {
+  if (rejectWithoutFlag(req, res)) return;
+
+  const query = threatProtectionLogsQuerySchema.parse(req.query);
+  if (query.from && query.to && query.from > query.to) {
+    res.status(400).json({
+      success: false,
+      error: '"from" must not be after "to".',
+    });
+    return;
+  }
+
+  const orgId = await resolveOrgId(req, res);
+  if (!orgId) return;
+
+  let page;
+  try {
+    page = await queryThreatProtectionLogs({
+      orgId,
+      from: query.from,
+      to: query.to,
+      decision: query.decision,
+      domain: query.domain,
+      cursor: query.cursor,
+      limit: query.limit,
+    });
+  } catch (error) {
+    if (error instanceof InvalidThreatLogsCursorError) {
+      res.status(400).json({ success: false, error: "Invalid cursor." });
+      return;
+    }
+    throw error;
+  }
+
+  if (page === null) {
+    // No analytics ClickHouse configured (e.g. self-hosted).
+    res.status(200).json({
+      success: true,
+      data: { logs: [], nextCursor: null },
+      warning: "Security log storage is not configured on this instance.",
+    });
+    return;
+  }
+
+  res.status(200).json({
+    success: true,
+    data: page,
+  });
+}
+
+// =========================================
+// SIEM test event (ENG-4987 push)
+// =========================================
+
+/**
+ * POST /v2/team/threat-protection/test-siem — sends one synthetic,
+ * clearly-marked test event to the org's configured SIEM destination and
+ * reports the delivery outcome.
+ */
+export async function postTeamThreatProtectionTestSiemController(
+  req: RequestWithAuth,
+  res: Response,
+): Promise<void> {
+  if (rejectWithoutFlag(req, res)) return;
+
+  const orgId = await resolveOrgId(req, res);
+  if (!orgId) return;
+
+  const orgConfig = await getOrgThreatProtectionConfig(orgId);
+  if (!orgConfig?.siem?.url) {
+    res.status(400).json({
+      success: false,
+      error:
+        "No SIEM destination is configured. Set siem.url via PUT /v2/team/threat-protection first.",
+    });
+    return;
+  }
+
+  const result = await sendSiemTestEvent(
+    orgId,
+    req.auth.team_id,
+    orgConfig.siem,
+  );
+
+  logger.info("SIEM test event sent", {
+    teamId: req.auth.team_id,
+    orgId,
+    delivered: result.delivered,
+    statusCode: result.statusCode,
+  });
+
+  res.status(200).json({
+    success: true,
+    data: result,
   });
 }

@@ -267,7 +267,9 @@ export async function processWebhookInsertJobs() {
   }
 }
 
-async function logWebhook(data: {
+// Also used by the SIEM sender (siem.ts), which delivers non-job webhook
+// events — hence `event` is a string rather than the WebhookEvent enum.
+export async function logWebhook(data: {
   success: boolean;
   error?: string;
   teamId: string;
@@ -275,7 +277,7 @@ async function logWebhook(data: {
   scrapeId?: string;
   url: string;
   statusCode?: number;
-  event: WebhookEvent;
+  event: string;
 }): Promise<void> {
   try {
     await redisEvictConnection.rpush(

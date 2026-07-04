@@ -35,7 +35,7 @@ function isMissingTableError(error: unknown): boolean {
   return false;
 }
 
-interface OrgThreatProtectionSiemConfig {
+export interface OrgThreatProtectionSiemConfig {
   url: string;
   secret: string | null;
   events: "blocked" | "all";

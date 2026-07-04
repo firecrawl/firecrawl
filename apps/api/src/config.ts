@@ -269,6 +269,14 @@ const configSchema = z.object({
   ALLOW_LOCAL_WEBHOOKS: z.stringbool().optional(),
   WEBHOOK_USE_RABBITMQ: z.stringbool().optional(),
 
+  // Threat protection SIEM push (batched security-event webhooks).
+  THREAT_SIEM_BATCH_SIZE: z.coerce.number().int().positive().default(50),
+  THREAT_SIEM_FLUSH_INTERVAL_MS: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(5000),
+
   // Firecrawl Features
   FIRECRAWL_DEBUG_FILTER_LINKS: z.stringbool().optional(),
   FIRECRAWL_LOG_TO_FILE: z.stringbool().optional(),

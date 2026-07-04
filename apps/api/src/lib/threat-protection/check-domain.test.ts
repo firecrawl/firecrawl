@@ -13,6 +13,18 @@ vi.mock("../../services/rate-limiter", () => ({
   },
 }));
 
+// checkDomain emits security events (see logging.ts) — stub the sinks so this
+// suite doesn't touch ClickHouse, the SIEM buffer, or Postgres (org lookup).
+vi.mock("../tracking", () => ({
+  trackThreatProtectionCheck: vi.fn().mockResolvedValue(undefined),
+}));
+vi.mock("../../services/webhook/siem", () => ({
+  enqueueSiemThreatEvent: vi.fn(),
+}));
+vi.mock("./store", () => ({
+  getOrgIdForTeam: vi.fn().mockResolvedValue(null),
+}));
+
 import { config } from "../../config";
 import {
   checkDomain,

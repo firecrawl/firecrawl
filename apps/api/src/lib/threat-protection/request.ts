@@ -1,6 +1,6 @@
 import type { TeamFlags } from "../../controllers/v2/types";
 import { getThreatProtection } from "../zdr-helpers";
-import { checkDomain } from "./index";
+import { checkDomain, type ThreatCheckContext } from "./index";
 import {
   getOrgIdForTeam,
   getOrgThreatProtectionConfig,
@@ -119,7 +119,7 @@ const DOMAIN_CHECK_CONCURRENCY = 16;
 export async function checkUrlsAgainstThreatPolicy(
   urls: string[],
   policy: ThreatProtectionPolicy,
-  ctx: { teamId?: string },
+  ctx: ThreatCheckContext,
 ): Promise<UrlPolicyCheckResult> {
   const domains = [...new Set(urls.map(url => normalizeDomain(url)))];
 

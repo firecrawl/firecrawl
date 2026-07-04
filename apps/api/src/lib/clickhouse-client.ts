@@ -13,6 +13,25 @@ const client = config.CLICKHOUSE_ANALYTICS_URL
     })
   : null;
 
+/**
+ * Runs a parameterized SELECT against the analytics ClickHouse and returns
+ * the rows, or `null` when ClickHouse is not configured on this instance.
+ * Errors propagate to the caller.
+ */
+export async function chQuery<T extends Record<string, unknown>>(
+  query: string,
+  params?: Record<string, unknown>,
+): Promise<T[] | null> {
+  if (!client) return null;
+
+  const resultSet = await client.query({
+    query,
+    query_params: params,
+    format: "JSONEachRow",
+  });
+  return await resultSet.json<T>();
+}
+
 export async function chInsert(
   table: string,
   rows: Record<string, unknown>[],

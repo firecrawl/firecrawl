@@ -1,5 +1,6 @@
 import { logger } from "../logger";
 import { getCachedVerdict, setCachedVerdict } from "./cache";
+import { emitThreatCheck, type ThreatCheckContext } from "./logging";
 import { fetchAlphaMountainVerdict } from "./providers/alphamountain";
 import { fetchGoogleWebRiskVerdict } from "./providers/google-web-risk";
 import type {
@@ -26,6 +27,7 @@ import { evaluatePolicy, localOnlyDecision, normalizeDomain } from "./verdict";
 // from ./verdict, and the shared contract types from ./types — import those
 // directly; index.ts only re-exports what checkDomain callers need.
 export { UnsafeDomainBlockedError } from "./error";
+export type { ThreatCheckContext } from "./logging";
 export * from "./types";
 
 const PROVIDER_TIMEOUT_MS = 5000;
@@ -61,11 +63,17 @@ async function fetchProviderVerdict(
  * provider failures resolve through the policy's failurePolicy
  * ("provider-failure" rule). Callers bill +2 (normal) / +3 (enhanced) credits
  * when the returned decision has `providerConsulted` set.
+ *
+ * Every decision (allowed and blocked, local-only and provider-based,
+ * including provider-failure resolutions) is emitted as a security event —
+ * to the ClickHouse security log and, when the org has a SIEM destination
+ * configured, to the SIEM push buffer. Pass as much of `ctx` as is cheaply
+ * available at the call site; it enriches the emitted event.
  */
 export async function checkDomain(
   domain: string,
   policy: ThreatProtectionPolicy,
-  ctx: { teamId?: string },
+  ctx: ThreatCheckContext,
 ): Promise<ThreatDecision> {
   const normalized = normalizeDomain(domain);
 
@@ -83,6 +91,7 @@ export async function checkDomain(
   // skip the paid provider call entirely.
   const local = localOnlyDecision(normalized, policy);
   if (local !== null) {
+    emitThreatCheck(normalized, local, ctx);
     return local;
   }
 
@@ -102,6 +111,7 @@ export async function checkDomain(
   }
 
   const decision = evaluatePolicy(normalized, verdict, policy);
+  emitThreatCheck(normalized, decision, ctx);
   if (!decision.allowed || decision.rule === "provider-failure") {
     logger.info("Threat protection decision", {
       canonicalLog: "threat-protection/check",

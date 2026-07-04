@@ -164,7 +164,12 @@ export async function batchScrapeController(
     const { blocked } = await checkUrlsAgainstThreatPolicy(
       urls,
       threatProtection.policy,
-      { teamId: req.auth.team_id },
+      {
+        teamId: req.auth.team_id,
+        orgId: threatProtection.orgConfig?.orgId,
+        endpoint: "batch-scrape",
+        origin: req.body.origin,
+      },
     );
     if (blocked.length > 0) {
       // Blocked domains whose decision consulted the classifier (fresh or

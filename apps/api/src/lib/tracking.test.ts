@@ -2,8 +2,10 @@ import { chInsert } from "./clickhouse-client";
 import {
   buildMonitorTargetInterestRows,
   trackMonitorTargetInterest,
+  trackThreatProtectionCheck,
 } from "./tracking";
 import type { MonitorTarget } from "../services/monitoring/types";
+import type { ThreatCheckEvent } from "./threat-protection/logging";
 
 vi.mock("./clickhouse-client", () => ({
   chInsert: vi.fn(),
@@ -149,6 +151,45 @@ describe("monitor target interest tracking", () => {
         scrape_url_count: 1,
         interval_seconds: 1800,
         frequency_bucket: "30m",
+      }),
+    ]);
+  });
+
+  it("inserts threat protection checks (including zero-data-retention rows)", async () => {
+    const event: ThreatCheckEvent = {
+      event_id: "11111111-2222-4333-8444-555555555555",
+      event_time: "2026-07-04T12:00:00.000Z",
+      team_id: "team-1",
+      org_id: "org-1",
+      request_id: "",
+      job_id: "job-1",
+      crawl_id: "",
+      endpoint: "scrape",
+      url: "", // ZDR: URL already scrubbed upstream
+      url_domain: "blocked.example.com",
+      mode: "normal",
+      provider: "google-web-risk",
+      risk_score: 100,
+      categories: ["MALWARE"],
+      domain_age_days: null,
+      country_code: "",
+      decision: "blocked",
+      rule: "risk-score",
+      provider_consulted: true,
+      from_cache: false,
+      origin: "api",
+      zero_data_retention: true,
+    };
+
+    await trackThreatProtectionCheck(event);
+
+    expect(chInsert).toHaveBeenCalledWith("threat_protection_checks", [
+      expect.objectContaining({
+        event_id: "11111111-2222-4333-8444-555555555555",
+        url: "",
+        url_domain: "blocked.example.com",
+        decision: "blocked",
+        zero_data_retention: true,
       }),
     ]);
   });

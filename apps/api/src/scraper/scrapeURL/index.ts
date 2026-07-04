@@ -1118,6 +1118,11 @@ export async function scrapeURL(
       const initialDomain = normalizeDomain(meta.rewrittenUrl ?? meta.url);
       const decision = await checkDomain(initialDomain, threatPolicy, {
         teamId: internalOptions.teamId,
+        jobId: id,
+        crawlId: internalOptions.crawlId,
+        endpoint: "scrape",
+        url: meta.rewrittenUrl ?? meta.url,
+        zeroDataRetention: internalOptions.zeroDataRetention,
       });
       meta.threatDecisions.push(decision);
       if (!decision.allowed) {
@@ -1331,6 +1336,11 @@ export async function scrapeURL(
         if (finalDomain !== null && finalDomain !== initialDomain) {
           const decision = await checkDomain(finalDomain, threatPolicy, {
             teamId: internalOptions.teamId,
+            jobId: id,
+            crawlId: internalOptions.crawlId,
+            endpoint: "scrape",
+            url: finalUrl ?? undefined,
+            zeroDataRetention: internalOptions.zeroDataRetention,
           });
           meta.threatDecisions.push(decision);
           if (!decision.allowed) {

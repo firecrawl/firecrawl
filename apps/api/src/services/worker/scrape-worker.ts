@@ -528,7 +528,13 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
                 await checkUrlsAgainstThreatPolicy(
                   discoveredLinks,
                   threatPolicy,
-                  { teamId: job.data.team_id },
+                  {
+                    teamId: job.data.team_id,
+                    crawlId: job.data.crawl_id,
+                    jobId: job.id,
+                    endpoint: "crawl",
+                    zeroDataRetention: job.data.zeroDataRetention,
+                  },
                 );
               discoveredLinks = allowedUrls;
               for (const blockedUrl of blocked) {
@@ -1212,7 +1218,13 @@ async function processKickoffJob(job: NuQJob<ScrapeJobKickoff>) {
       const { allowedUrls, blocked } = await checkUrlsAgainstThreatPolicy(
         indexLinks,
         kickoffThreatPolicy,
-        { teamId: job.data.team_id },
+        {
+          teamId: job.data.team_id,
+          crawlId: job.data.crawl_id,
+          jobId: job.id,
+          endpoint: "crawl",
+          zeroDataRetention: job.data.zeroDataRetention,
+        },
       );
       indexLinks = allowedUrls;
       for (const blockedUrl of blocked) {
@@ -1371,7 +1383,13 @@ async function processKickoffSitemapJob(job: NuQJob<ScrapeJobKickoffSitemap>) {
       const { allowedUrls, blocked } = await checkUrlsAgainstThreatPolicy(
         passingURLs,
         sitemapThreatPolicy,
-        { teamId: job.data.team_id },
+        {
+          teamId: job.data.team_id,
+          crawlId: job.data.crawl_id,
+          jobId: job.id,
+          endpoint: "crawl",
+          zeroDataRetention: job.data.zeroDataRetention,
+        },
       );
       passingURLs = allowedUrls;
       for (const blockedUrl of blocked) {
