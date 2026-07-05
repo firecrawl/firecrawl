@@ -128,10 +128,15 @@ function extractDomainAgeDays(whois: unknown): number | null {
 
 /**
  * Best-effort extraction of an ISO 3166-1 alpha-2 country code from the geo
- * intelligence section (geolocation of the domain's resolved IPs).
+ * intelligence section (geolocation of the domain's resolved IPs). The live
+ * API (verified 2026-07-05) returns
+ * `{ ipv4: [{ ip, isoCode: "US", country: "United States", ... }], ipv6: [...], ns: [...] }`
+ * — `isoCode` is the alpha-2 field; `country` is a full name and is kept only
+ * as a fallback for 2-letter values.
  */
 function extractCountryCode(geo: unknown): string | null {
   const candidateKeys = [
+    "isocode",
     "country_code",
     "countrycode",
     "country_iso",

@@ -175,9 +175,33 @@ describe("fetchAlphaMountainVerdict", () => {
       body: {
         version: 1,
         status: { whois: "Success", geo: "Success" },
+        // Mirrors the live /intelligence/hostname response shape
+        // (verified against the real API 2026-07-05): whois fields are
+        // top-level, geo nests per-address-family arrays with `isoCode`.
         sections: {
-          whois: { parsed: { created: registered.toISOString() } },
-          geo: [{ ip: "203.0.113.7", country_code: "ru" }],
+          whois: {
+            domain: "risky.example",
+            created: registered.toISOString(),
+            updated: registered.toISOString(),
+            registrar: "Test Registrar Inc.",
+            private: false,
+          },
+          geo: {
+            ipv4: [
+              {
+                ip: "203.0.113.7",
+                latLng: [55.75, 37.61],
+                city: null,
+                country: "Russia",
+                isoCode: "RU",
+                asn: { number: 64496, organization: "Test AS" },
+                traits: null,
+                rating: 3.1,
+              },
+            ],
+            ipv6: [],
+            ns: [],
+          },
         },
         errors: {},
       },
