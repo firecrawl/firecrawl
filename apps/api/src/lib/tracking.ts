@@ -2,7 +2,6 @@ import { createHash } from "crypto";
 import { chInsert } from "./clickhouse-client";
 import type { SearchV2Response } from "./entities";
 import type { MonitorTarget } from "../services/monitoring/types";
-import type { ThreatCheckEvent } from "./threat-protection/logging";
 
 function extractDomain(url: string): string {
   try {
@@ -66,23 +65,6 @@ export async function trackScrape(opts: TrackScrapeParams): Promise<void> {
       created_at: new Date().toISOString(),
     },
   ]);
-}
-
-// =========================================
-// Threat protection check tracking
-// =========================================
-
-/**
- * Writes one threat protection decision to the `threat_protection_checks`
- * security log. Unlike other trackers this is NOT skipped for
- * zero-data-retention requests — the event was already scrubbed upstream
- * (buildThreatCheckEvent drops the URL and never carries the raw provider
- * payload), and security logging must cover every enforcement decision.
- */
-export async function trackThreatProtectionCheck(
-  event: ThreatCheckEvent,
-): Promise<void> {
-  await chInsert("threat_protection_checks", [{ ...event }]);
 }
 
 // =========================================

@@ -1,17 +1,19 @@
 import { randomUUID } from "crypto";
 import { logger as _logger } from "../logger";
-import { trackThreatProtectionCheck } from "../tracking";
 import { enqueueSiemThreatEvent } from "../../services/webhook/siem";
 import { getOrgIdForTeam } from "./store";
 import type { ThreatCheckDedup, ThreatDecision } from "./types";
 
 // Security-event emission for threat protection (ENG-4986/4987). Every
 // decision produced by checkDomain() flows through emitThreatCheck(), which
-// fans out to:
-//  * ClickHouse (threat_protection_checks) via trackThreatProtectionCheck()
-//  * the org's SIEM destination (batched webhook push) when configured
+// delivers to the org's SIEM destination (batched webhook push) when one is
+// configured — and nowhere else. The whole feature is zero-data-retention:
+// security events are never persisted on our side (no ClickHouse, no
+// Postgres); our only copy lives in the transient in-memory SIEM buffer for
+// at most the flush interval. Orgs that want an audit trail configure a SIEM
+// destination — that archive is theirs, on their infrastructure.
 //
-// Retention rules (applied in buildThreatCheckEvent, shared by both sinks):
+// Retention rules (applied in buildThreatCheckEvent):
 //  * zero-data-retention requests keep the domain but drop the full URL
 //  * the raw provider payload (verdict.raw) is NEVER included — the event
 //    carries only the normalized verdict fields (risk score, categories,
@@ -155,18 +157,8 @@ export function emitThreatCheck(
       null;
     const event = buildThreatCheckEvent(domain, decision, ctx, orgId);
 
-    // SIEM buffering is synchronous and independent of the ClickHouse write,
-    // so one sink failing never starves the other.
     if (orgId) {
       enqueueSiemThreatEvent(orgId, event);
-    }
-    // ZDR: security events for zero-data-retention requests go to the org's
-    // SIEM only (their infrastructure; our side holds them in a transient
-    // in-memory buffer for at most the flush interval). They are never
-    // persisted in ClickHouse — even domain-level rows are scrape-derived
-    // data at rest. The export API consequently serves non-ZDR checks only.
-    if (!event.zero_data_retention) {
-      await trackThreatProtectionCheck(event);
     }
   })().catch(error => {
     logger.warn("Failed to emit threat protection check event", {

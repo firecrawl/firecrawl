@@ -1,12 +1,8 @@
 import { buildThreatCheckEvent, emitThreatCheck } from "./logging";
-import { trackThreatProtectionCheck } from "../tracking";
 import { enqueueSiemThreatEvent } from "../../services/webhook/siem";
 import { getOrgIdForTeam } from "./store";
 import type { RawVerdict, ThreatDecision } from "./types";
 
-vi.mock("../tracking", () => ({
-  trackThreatProtectionCheck: vi.fn().mockResolvedValue(undefined),
-}));
 vi.mock("../../services/webhook/siem", () => ({
   enqueueSiemThreatEvent: vi.fn(),
 }));
@@ -142,27 +138,24 @@ describe("emitThreatCheck", () => {
     vi.clearAllMocks();
   });
 
-  it("emits to ClickHouse and SIEM with the resolved org id", async () => {
+  it("delivers to the SIEM buffer with the resolved org id", async () => {
     vi.mocked(getOrgIdForTeam).mockResolvedValue(ORG_ID);
     const teamId = "0198a751-0000-7000-8000-000000000002";
 
     emitThreatCheck("risky.example.com", blockedDecision, { teamId });
 
     await vi.waitFor(() => {
-      expect(trackThreatProtectionCheck).toHaveBeenCalledTimes(1);
       expect(enqueueSiemThreatEvent).toHaveBeenCalledTimes(1);
     });
     expect(getOrgIdForTeam).toHaveBeenCalledWith(teamId);
 
-    const tracked = vi.mocked(trackThreatProtectionCheck).mock.calls[0][0];
-    expect(tracked.org_id).toBe(ORG_ID);
     const [siemOrgId, siemEvent] = vi.mocked(enqueueSiemThreatEvent).mock
       .calls[0];
     expect(siemOrgId).toBe(ORG_ID);
-    expect(siemEvent).toEqual(tracked);
+    expect(siemEvent.org_id).toBe(ORG_ID);
   });
 
-  it("zero-data-retention: delivers to SIEM only, never to ClickHouse", async () => {
+  it("zero-data-retention events drop the URL before leaving the process", async () => {
     emitThreatCheck("risky.example.com", blockedDecision, {
       teamId: TEAM_ID,
       orgId: ORG_ID,
@@ -173,9 +166,6 @@ describe("emitThreatCheck", () => {
     await vi.waitFor(() => {
       expect(enqueueSiemThreatEvent).toHaveBeenCalledTimes(1);
     });
-    // Even domain-level rows are scrape-derived data at rest — nothing about
-    // a ZDR request may be persisted on our side.
-    expect(trackThreatProtectionCheck).not.toHaveBeenCalled();
     const [, siemEvent] = vi.mocked(enqueueSiemThreatEvent).mock.calls[0];
     expect(siemEvent.zero_data_retention).toBe(true);
     expect(siemEvent.url).toBe("");
@@ -188,26 +178,23 @@ describe("emitThreatCheck", () => {
     });
 
     await vi.waitFor(() => {
-      expect(trackThreatProtectionCheck).toHaveBeenCalledTimes(1);
+      expect(enqueueSiemThreatEvent).toHaveBeenCalledTimes(1);
     });
     expect(getOrgIdForTeam).not.toHaveBeenCalled();
     expect(vi.mocked(enqueueSiemThreatEvent).mock.calls[0][0]).toBe(ORG_ID);
   });
 
-  it("still logs to ClickHouse when the org cannot be resolved", async () => {
-    // Pseudo teams ("sitemap", "robots-txt") are not UUIDs — no org lookup.
+  it("drops the event when the org cannot be resolved (no SIEM destination)", async () => {
+    // Pseudo teams ("sitemap", "robots-txt") are not UUIDs — no org lookup,
+    // so there is no SIEM destination to deliver to. Nothing is persisted
+    // anywhere by design.
     emitThreatCheck("risky.example.com", blockedDecision, {
       teamId: "sitemap",
     });
 
-    await vi.waitFor(() => {
-      expect(trackThreatProtectionCheck).toHaveBeenCalledTimes(1);
-    });
+    await new Promise(resolve => setTimeout(resolve, 20));
     expect(getOrgIdForTeam).not.toHaveBeenCalled();
     expect(enqueueSiemThreatEvent).not.toHaveBeenCalled();
-    expect(vi.mocked(trackThreatProtectionCheck).mock.calls[0][0].org_id).toBe(
-      "",
-    );
   });
 
   it('does not emit for mode "off" decisions', async () => {
@@ -224,14 +211,13 @@ describe("emitThreatCheck", () => {
     );
 
     await new Promise(resolve => setTimeout(resolve, 20));
-    expect(trackThreatProtectionCheck).not.toHaveBeenCalled();
     expect(enqueueSiemThreatEvent).not.toHaveBeenCalled();
   });
 
-  it("never throws when the sinks fail", async () => {
-    vi.mocked(trackThreatProtectionCheck).mockRejectedValueOnce(
-      new Error("clickhouse down"),
-    );
+  it("never throws when the SIEM sink fails", async () => {
+    vi.mocked(enqueueSiemThreatEvent).mockImplementationOnce(() => {
+      throw new Error("siem buffer down");
+    });
     expect(() =>
       emitThreatCheck("risky.example.com", blockedDecision, {
         teamId: TEAM_ID,
@@ -239,7 +225,7 @@ describe("emitThreatCheck", () => {
       }),
     ).not.toThrow();
     await vi.waitFor(() => {
-      expect(trackThreatProtectionCheck).toHaveBeenCalledTimes(1);
+      expect(enqueueSiemThreatEvent).toHaveBeenCalledTimes(1);
     });
   });
 });

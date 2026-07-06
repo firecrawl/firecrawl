@@ -15,14 +15,10 @@ import { scrapeRaw, scrape } from "./lib";
 // =========================================
 // Threat protection security logging + SIEM export (ENG-4986/4987)
 //
-// Coverage strategy:
-//  * Flag gating (403s) and the log export API surface run everywhere
-//    TEST_PRODUCTION is set.
-//  * ClickHouse row-level assertions run only when the analytics ClickHouse
-//    is provisioned for the harness (the logs endpoint responds without the
-//    "not configured" warning); otherwise the row content is covered by unit
-//    tests (logging.test.ts, tracking.test.ts, logs.test.ts) and this suite
-//    only asserts the API surface.
+// Security events are SIEM-push-only: the whole feature is zero-data-
+// retention, so nothing is persisted on our side and there is no pull
+// export API. Coverage strategy:
+//  * Flag gating (403s) runs everywhere TEST_PRODUCTION is set.
 //  * SIEM push tests need a local HTTP receiver, which the API/worker may
 //    only call when started with ALLOW_LOCAL_WEBHOOKS=true, and an org
 //    config (threat_protection_config DDL). Run locally with:
@@ -91,14 +87,6 @@ async function waitFor<T>(
   return undefined;
 }
 
-async function getLogs(identity: Identity, query: Record<string, string>) {
-  return await request(TEST_API_URL)
-    .get("/v2/team/threat-protection/logs")
-    .query(query)
-    .set("Authorization", `Bearer ${identity.apiKey}`)
-    .send();
-}
-
 async function putConfig(body: unknown, identity: Identity) {
   return await request(TEST_API_URL)
     .put("/v2/team/threat-protection")
@@ -125,17 +113,6 @@ describeIf(TEST_PRODUCTION)("Threat protection security logging", () => {
     });
 
     it(
-      "log export is rejected with 403",
-      async () => {
-        const res = await getLogs(identity, {});
-        expect(res.statusCode).toBe(403);
-        expect(res.body.success).toBe(false);
-        expect(res.body.error).toContain("enterprise feature");
-      },
-      scrapeTimeout,
-    );
-
-    it(
       "test-siem is rejected with 403",
       async () => {
         const res = await postTestSiem(identity);
@@ -144,111 +121,6 @@ describeIf(TEST_PRODUCTION)("Threat protection security logging", () => {
         expect(res.body.error).toContain("enterprise feature");
       },
       scrapeTimeout,
-    );
-  });
-
-  describe("log export API", () => {
-    let identity: Identity;
-
-    beforeAll(async () => {
-      identity = await idmux({
-        name: "threat-protection-logging/logs",
-        flags: { threatProtection: "allowed" },
-        credits: 1_000_000,
-      });
-    });
-
-    it(
-      "returns a well-formed page",
-      async () => {
-        const res = await getLogs(identity, { limit: "5" });
-        expect(res.statusCode).toBe(200);
-        expect(res.body.success).toBe(true);
-        expect(Array.isArray(res.body.data.logs)).toBe(true);
-        expect(res.body.data).toHaveProperty("nextCursor");
-      },
-      scrapeTimeout,
-    );
-
-    it(
-      "rejects invalid filter values with 400",
-      async () => {
-        const res = await getLogs(identity, { decision: "maybe" });
-        expect(res.statusCode).toBe(400);
-      },
-      scrapeTimeout,
-    );
-
-    it(
-      "rejects a malformed cursor with 400",
-      async () => {
-        const res = await getLogs(identity, { cursor: "not-a-cursor" });
-        expect(res.statusCode).toBe(400);
-      },
-      scrapeTimeout,
-    );
-
-    it(
-      "rejects from > to with 400",
-      async () => {
-        const res = await getLogs(identity, {
-          from: "2026-07-04T00:00:00.000Z",
-          to: "2026-07-01T00:00:00.000Z",
-        });
-        expect(res.statusCode).toBe(400);
-      },
-      scrapeTimeout,
-    );
-
-    it(
-      "a blocked scrape shows up in the security log (when ClickHouse is provisioned)",
-      async () => {
-        const probe = await getLogs(identity, { limit: "1" });
-        expect(probe.statusCode).toBe(200);
-        if (probe.body.warning) {
-          console.warn(
-            "analytics ClickHouse not configured for the harness; row-level " +
-              "log assertions are covered by unit tests (logging.test.ts, " +
-              "logs.test.ts) instead",
-          );
-          return;
-        }
-
-        const res = await scrapeRaw(
-          {
-            url: `https://${BLACKLISTED_DOMAIN}/page`,
-            threatProtection: {
-              mode: "normal",
-              blacklist: [BLACKLISTED_DOMAIN],
-            },
-          } as any,
-          identity,
-        );
-        expect(res.statusCode).toBe(403);
-        expect(res.body.code).toBe("unsafe_domain_blocked");
-
-        // Async-inserted; poll the export API.
-        const deadline = Date.now() + 30000;
-        let entry: any;
-        while (Date.now() < deadline && !entry) {
-          const logs = await getLogs(identity, {
-            decision: "blocked",
-            domain: BLACKLISTED_DOMAIN,
-            limit: "10",
-          });
-          expect(logs.statusCode).toBe(200);
-          entry = logs.body.data.logs[0];
-          if (!entry) await new Promise(resolve => setTimeout(resolve, 1000));
-        }
-
-        expect(entry).toBeDefined();
-        expect(entry.domain).toBe(BLACKLISTED_DOMAIN);
-        expect(entry.decision).toBe("blocked");
-        expect(entry.rule).toBe("blacklist");
-        expect(entry.mode).toBe("normal");
-        expect(entry.providerConsulted).toBe(false);
-      },
-      scrapeTimeout * 2,
     );
   });
 
