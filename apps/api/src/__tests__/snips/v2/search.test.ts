@@ -78,6 +78,24 @@ describeIf(TEST_PRODUCTION || HAS_SEARCH || HAS_PROXY)("Search tests", () => {
   );
 
   it.concurrent(
+    "rejects invalid filterRiskyURLs threat types",
+    async () => {
+      const res = await searchWithFailure(
+        {
+          query: "firecrawl",
+          filterRiskyURLs: {
+            threatTypes: ["NOT_A_THREAT_TYPE"] as any,
+          },
+        },
+        identity,
+      );
+
+      expect(res.error).toBe("Invalid request body");
+    },
+    60000,
+  );
+
+  it.concurrent(
     "works with scrape",
     async () => {
       const res = await search(

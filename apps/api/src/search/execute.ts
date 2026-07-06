@@ -16,6 +16,11 @@ import {
 import { applySearchHighlights, highlightsEnvReady } from "./highlights";
 import { trackSearchResults, trackSearchRequest } from "../lib/tracking";
 import type { BillingMetadata } from "../services/billing/types";
+import {
+  filterSearchResponseWithWebRisk,
+  FilterRiskyURLsOptions,
+  WEB_RISK_CREDITS_PER_SCANNED_URL,
+} from "./web-risk";
 
 interface SearchOptions {
   query: string;
@@ -32,6 +37,7 @@ interface SearchOptions {
   enterprise?: ("default" | "anon" | "zdr")[];
   scrapeOptions?: ScrapeOptions;
   highlights?: boolean;
+  filterRiskyURLs?: FilterRiskyURLsOptions;
   timeout: number;
 }
 
@@ -147,7 +153,30 @@ export async function executeSearch(
   const creditsPerTenResults = isZDR ? 10 : 2;
   const searchCredits =
     Math.ceil(totalResultsCount / 10) * creditsPerTenResults;
+  let riskFilterCredits = 0;
   let scrapeCredits = 0;
+
+  if (options.filterRiskyURLs) {
+    const filteringResult = await filterSearchResponseWithWebRisk(
+      searchResponse,
+      options.filterRiskyURLs,
+      logger,
+    );
+    searchResponse.web = filteringResult.response.web;
+    searchResponse.images = filteringResult.response.images;
+    searchResponse.news = filteringResult.response.news;
+    riskFilterCredits =
+      filteringResult.scannedUrls * WEB_RISK_CREDITS_PER_SCANNED_URL;
+    totalResultsCount =
+      (searchResponse.web?.length ?? 0) +
+      (searchResponse.images?.length ?? 0) +
+      (searchResponse.news?.length ?? 0);
+    logger.info("Google Web Risk filtering complete", {
+      scannedUrls: filteringResult.scannedUrls,
+      filteredUrls: filteringResult.filteredUrls,
+      riskFilterCredits,
+    });
+  }
 
   const shouldScrape =
     scrapeOptions?.formats && scrapeOptions.formats.length > 0;
@@ -209,6 +238,7 @@ export async function executeSearch(
         typeof f === "string" ? f : f.type,
       )
     : [];
+  const totalSearchCredits = searchCredits + riskFilterCredits;
 
   trackSearchRequest({
     searchId: context.jobId,
@@ -222,9 +252,9 @@ export async function executeSearch(
     country: options.country,
     sources: searchTypes,
     numResults: totalResultsCount,
-    searchCredits,
+    searchCredits: totalSearchCredits,
     scrapeCredits,
-    totalCredits: searchCredits + scrapeCredits,
+    totalCredits: totalSearchCredits + scrapeCredits,
     hasScrapeFormats: shouldScrape ?? false,
     scrapeFormats,
     isSuccessful: true,
@@ -245,9 +275,9 @@ export async function executeSearch(
   return {
     response: searchResponse,
     totalResultsCount,
-    searchCredits,
+    searchCredits: totalSearchCredits,
     scrapeCredits,
-    totalCredits: searchCredits + scrapeCredits,
+    totalCredits: totalSearchCredits + scrapeCredits,
     shouldScrape: shouldScrape ?? false,
   };
 }

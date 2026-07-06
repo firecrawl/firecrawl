@@ -1890,6 +1890,26 @@ const searchDomainSchema = z
     "Domain must be a valid hostname without protocol or path",
   );
 
+const webRiskThreatTypeSchema = z.enum([
+  "MALWARE",
+  "SOCIAL_ENGINEERING",
+  "UNWANTED_SOFTWARE",
+  "SOCIAL_ENGINEERING_EXTENDED_COVERAGE",
+]);
+
+const filterRiskyURLsSchema = z.union([
+  z.boolean(),
+  z.strictObject({
+    enabled: z.boolean().optional().prefault(true),
+    threatTypes: z
+      .array(webRiskThreatTypeSchema)
+      .min(1)
+      .optional()
+      .prefault(["MALWARE", "SOCIAL_ENGINEERING", "UNWANTED_SOFTWARE"]),
+    failOpen: z.boolean().optional().prefault(true),
+  }),
+]);
+
 export const searchRequestSchema = z
   .strictObject({
     query: z.string(),
@@ -1940,6 +1960,7 @@ export const searchRequestSchema = z
     // highlights pulled from our index (last 30 days), out-of-line from
     // scrapeURL. Falls back to the provider snippet when the URL isn't indexed.
     highlights: z.boolean().optional().prefault(false),
+    filterRiskyURLs: filterRiskyURLsSchema.optional().prefault(false),
     __searchPreviewToken: z.string().optional(),
     scrapeOptions: baseScrapeOptions
       .extend({

@@ -1,5 +1,6 @@
 import { ScrapeOptions, TeamFlags } from "../controllers/v2/types";
 import { hasFormatOfType } from "./format-utils";
+import { WEB_RISK_CREDITS_PER_SCANNED_URL } from "../search/web-risk";
 
 export function projectScrapeCredits(
   options: ScrapeOptions,
@@ -76,19 +77,35 @@ function projectSearchCredits(
 export function projectSearchTotalCredits(
   params: {
     limit: number;
+    sources?: Array<{ type: string } | string>;
     enterprise?: ("default" | "anon" | "zdr")[];
     scrapeOptions?: ScrapeOptions;
+    filterRiskyURLs?: boolean | { enabled?: boolean };
   },
   flags: TeamFlags,
   zeroDataRetention: boolean,
 ): number {
   const searchCredits = projectSearchCredits(params.limit, params.enterprise);
+  const sourceCount = new Set(
+    (params.sources ?? [{ type: "web" }]).map(s =>
+      typeof s === "string" ? s : s.type,
+    ),
+  ).size;
+  const riskFilterCredits =
+    params.filterRiskyURLs &&
+    (params.filterRiskyURLs === true ||
+      params.filterRiskyURLs.enabled !== false)
+      ? params.limit * sourceCount * WEB_RISK_CREDITS_PER_SCANNED_URL
+      : 0;
   const shouldScrape =
     params.scrapeOptions?.formats && params.scrapeOptions.formats.length > 0;
-  if (!shouldScrape || !params.scrapeOptions) return searchCredits;
+  if (!shouldScrape || !params.scrapeOptions) {
+    return searchCredits + riskFilterCredits;
+  }
 
   return (
     searchCredits +
+    riskFilterCredits +
     params.limit *
       projectScrapeCredits(params.scrapeOptions, flags, zeroDataRetention)
   );

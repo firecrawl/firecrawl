@@ -135,8 +135,10 @@ export async function searchController(
         ? projectSearchTotalCredits(
             {
               limit: req.body.limit,
+              sources: req.body.sources,
               enterprise: req.body.enterprise,
               scrapeOptions: req.body.scrapeOptions,
+              filterRiskyURLs: req.body.filterRiskyURLs,
             },
             req.acuc?.flags ?? null,
             zeroDataRetention,
@@ -173,6 +175,7 @@ export async function searchController(
         enterprise: req.body.enterprise,
         scrapeOptions: req.body.scrapeOptions,
         highlights: req.body.highlights,
+        filterRiskyURLs: req.body.filterRiskyURLs,
         timeout: req.body.timeout,
       },
       {
