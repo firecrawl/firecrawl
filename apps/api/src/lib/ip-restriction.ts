@@ -2,7 +2,7 @@ import { BlockList, isIP } from "node:net";
 import { eq } from "drizzle-orm";
 import { dbRr } from "../db/connection";
 import * as schema from "../db/schema";
-import { getValue, setValue } from "../services/redis";
+import { deleteKey, getValue, setValue } from "../services/redis";
 import { logger } from "./logger";
 import type { TeamFlags } from "../controllers/v1/types";
 
@@ -11,6 +11,12 @@ const ALLOWLIST_CACHE_TTL_SECONDS = 60;
 
 const allowlistCacheKey = (teamId: string) =>
   `ip-restriction-allowlist:${teamId}`;
+
+// Invalidates the cached allowlist so dashboard edits apply immediately
+// (admin route ip-restriction-cache-clear).
+export async function clearIpRestrictionCache(teamId: string): Promise<void> {
+  await deleteKey(allowlistCacheKey(teamId));
+}
 
 // Express hands IPv4 clients back as IPv4-mapped IPv6 (::ffff:1.2.3.4) when
 // the socket is dual-stack; compare in IPv4 form so allowlist entries match.
