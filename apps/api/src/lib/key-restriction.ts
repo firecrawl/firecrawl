@@ -30,6 +30,10 @@ export async function clearKeyRestrictionCache(
   await deleteKey(configCacheKey(apiKeyId));
 }
 
+function isStringArray(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every(x => typeof x === "string");
+}
+
 function asStringArray(value: unknown): string[] {
   return Array.isArray(value)
     ? value.filter((x): x is string => typeof x === "string")
@@ -45,12 +49,20 @@ async function getKeyRestrictionConfig(
     const cached = await getValue(cacheKey);
     if (cached !== null) {
       const parsed = JSON.parse(cached);
-      // A corrupted-but-parseable cache entry must not reach enforcement;
-      // treat anything that isn't the expected shape as a cache miss.
-      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+      // A corrupted-but-parseable cache entry must not reach enforcement:
+      // coercing a bad shape to [] would silently lift the restriction, so
+      // anything that isn't strictly two string arrays is a cache miss and
+      // the DB-backed config applies instead.
+      if (
+        parsed &&
+        typeof parsed === "object" &&
+        !Array.isArray(parsed) &&
+        isStringArray(parsed.allowedFormats) &&
+        isStringArray(parsed.allowedEndpoints)
+      ) {
         return {
-          allowedFormats: asStringArray(parsed.allowedFormats),
-          allowedEndpoints: asStringArray(parsed.allowedEndpoints),
+          allowedFormats: parsed.allowedFormats,
+          allowedEndpoints: parsed.allowedEndpoints,
         };
       }
       logger.warn("Ignoring malformed key restriction cache entry", {

@@ -127,9 +127,14 @@ export async function searchController(
   try {
     req.body = searchRequestSchema.parse(req.body);
 
+    const requestedFormats = formatTypesOf(req.body.scrapeOptions?.formats);
     const keyRestriction = await checkKeyFormatRestriction(
-      formatTypesOf(req.body.scrapeOptions?.formats),
-      actionTypesOf(req.body.scrapeOptions?.actions),
+      requestedFormats,
+      // Search only scrapes (and only runs actions) when formats are
+      // requested; without them scrapeOptions is ignored entirely.
+      requestedFormats.length > 0
+        ? actionTypesOf(req.body.scrapeOptions?.actions)
+        : [],
       req.acuc?.api_key_id,
       req.acuc?.flags ?? null,
     );
