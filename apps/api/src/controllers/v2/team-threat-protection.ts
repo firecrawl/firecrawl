@@ -119,6 +119,15 @@ export async function putTeamThreatProtectionController(
   if (!orgId) return;
 
   const previous = await getOrgThreatProtectionConfig(orgId);
+
+  // The SIEM secret is write-only (serializeConfig never echoes it), so
+  // clients update the document without resending it: an omitted/null secret
+  // preserves the stored one. Clearing it requires disabling SIEM entirely
+  // (siem: null).
+  if (input.siem && input.siem.secret === null && previous?.siem?.secret) {
+    input.siem.secret = previous.siem.secret;
+  }
+
   const updated = await upsertOrgThreatProtectionConfig(orgId, input);
 
   // Audit log — org-level security configuration change.

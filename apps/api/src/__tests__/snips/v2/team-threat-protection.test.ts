@@ -127,6 +127,61 @@ describeIf(TEST_PRODUCTION)("Team threat protection config API", () => {
       expect(JSON.stringify(get.body.data)).not.toContain("test-secret");
     });
 
+    it("PUT without a secret preserves the stored SIEM secret (write-only contract)", async () => {
+      const withSecret = await putConfigRaw(
+        {
+          mode: "normal",
+          siem: {
+            url: "https://siem.example.com/ingest",
+            secret: "keep-me",
+            events: "blocked",
+          },
+        },
+        identity,
+      );
+      expect(withSecret.statusCode).toBe(200);
+      expect(withSecret.body.data.siem.secretSet).toBe(true);
+
+      // Update the destination without resending the secret — it must survive.
+      const withoutSecret = await putConfigRaw(
+        {
+          mode: "normal",
+          siem: {
+            url: "https://siem2.example.com/ingest",
+            events: "all",
+          },
+        },
+        identity,
+      );
+      expect(withoutSecret.statusCode).toBe(200);
+      expect(withoutSecret.body.data.siem).toEqual({
+        url: "https://siem2.example.com/ingest",
+        events: "all",
+        secretSet: true,
+      });
+
+      // Disabling SIEM entirely is the way to clear the secret.
+      const disabled = await putConfigRaw(
+        { mode: "normal", siem: null },
+        identity,
+      );
+      expect(disabled.statusCode).toBe(200);
+      expect(disabled.body.data.siem).toBeNull();
+
+      const reEnabled = await putConfigRaw(
+        {
+          mode: "normal",
+          siem: {
+            url: "https://siem2.example.com/ingest",
+            events: "all",
+          },
+        },
+        identity,
+      );
+      expect(reEnabled.statusCode).toBe(200);
+      expect(reEnabled.body.data.siem.secretSet).toBe(false);
+    });
+
     it("PUT is a full-document update (unspecified fields reset to defaults)", async () => {
       const put = await putConfigRaw({ mode: "normal" }, identity);
       expect(put.statusCode).toBe(200);
