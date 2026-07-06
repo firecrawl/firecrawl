@@ -212,7 +212,7 @@ export async function mapController(
 
   // Threat protection: remove links on blocked domains from the returned
   // URL list entirely. Every consulted decision (fresh or cached provider
-  // verdict) is a billable scan (+2 normal / +3 enhanced).
+  // verdict) is a billable scan (+2 per scanned domain).
   let threatScanCredits = 0;
   if (threatProtection.policy && result.mapResults.length > 0) {
     const { decisionsByDomain } = await checkUrlsAgainstThreatPolicy(

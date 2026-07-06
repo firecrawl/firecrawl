@@ -121,8 +121,6 @@ export async function fetchGoogleWebRiskVerdict(
       provider: PROVIDER,
       riskScore: 0,
       categories: [],
-      domainAgeDays: null,
-      countryCode: null,
       fromCache: false,
       raw: { localPrefixMatch: false },
     };
@@ -162,8 +160,6 @@ export async function fetchGoogleWebRiskVerdict(
     // No confirmed full-hash match = prefix collision = clean.
     riskScore: categories.length > 0 ? 100 : 0,
     categories,
-    domainAgeDays: null,
-    countryCode: null,
     fromCache: false,
     raw: {
       localPrefixMatch: true,

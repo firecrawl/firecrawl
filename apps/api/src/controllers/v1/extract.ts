@@ -163,7 +163,7 @@ export async function extractController(
       { teamId: req.auth.team_id },
     );
     // Every consulted decision (fresh or cached provider verdict) is a
-    // billable scan (+2 normal / +3 enhanced) — including when the request is
+    // billable scan (+2 per scanned domain) — including when the request is
     // rejected below: the scans already happened.
     const threatScanCredits = calculateThreatScanCredits(
       decisionsByDomain.values(),

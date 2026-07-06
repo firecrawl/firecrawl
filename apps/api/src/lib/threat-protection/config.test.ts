@@ -1,7 +1,6 @@
 import {
-  ALPHAMOUNTAIN_CATEGORIES,
-  DEFAULT_DENIED_CATEGORIES,
   threatProtectionConfigSchema,
+  threatProtectionOverrideSchema,
   threatProtectionPolicySchema,
 } from "./config";
 import { THREAT_PROTECTION_POLICY_DEFAULTS } from "./types";
@@ -17,19 +16,15 @@ describe("threatProtectionPolicySchema", () => {
 
   it("accepts a full valid document", () => {
     const policy = threatProtectionPolicySchema.parse({
-      mode: "enhanced",
+      mode: "normal",
       riskScoreThreshold: 50,
-      deniedCategories: ["Malicious", "Phishing", "Gambling"],
-      maxDomainAgeDays: 30,
       blacklist: ["bad.example.com", "*.malware.example"],
       whitelist: ["example.com", "*.example.org"],
       blockedTlds: ["zip", "mov"],
-      blockedCountries: ["KP", "IR"],
       failurePolicy: "open",
     });
-    expect(policy.mode).toBe("enhanced");
+    expect(policy.mode).toBe("normal");
     expect(policy.riskScoreThreshold).toBe(50);
-    expect(policy.maxDomainAgeDays).toBe(30);
     expect(policy.failurePolicy).toBe("open");
   });
 
@@ -39,10 +34,35 @@ describe("threatProtectionPolicySchema", () => {
     ).toThrow();
   });
 
+  it('rejects the retired "enhanced" mode', () => {
+    expect(() =>
+      threatProtectionPolicySchema.parse({ mode: "enhanced" }),
+    ).toThrow();
+    expect(() =>
+      threatProtectionOverrideSchema.parse({ mode: "enhanced" }),
+    ).toThrow();
+    expect(() =>
+      threatProtectionConfigSchema.parse({ mode: "enhanced" }),
+    ).toThrow();
+  });
+
   it("rejects unknown keys", () => {
     expect(() =>
       threatProtectionPolicySchema.parse({ mode: "off", nope: true }),
     ).toThrow();
+  });
+
+  it("rejects retired policy fields as unknown keys", () => {
+    for (const retired of [
+      { deniedCategories: ["Malicious"] },
+      { maxDomainAgeDays: 30 },
+      { blockedCountries: ["KP"] },
+    ]) {
+      expect(() =>
+        threatProtectionPolicySchema.parse({ mode: "normal", ...retired }),
+      ).toThrow();
+      expect(() => threatProtectionOverrideSchema.parse(retired)).toThrow();
+    }
   });
 
   describe("riskScoreThreshold", () => {
@@ -113,76 +133,6 @@ describe("threatProtectionPolicySchema", () => {
       ).toThrow(/Invalid TLD/);
     });
   });
-
-  describe("blockedCountries", () => {
-    it("accepts and uppercases alpha-2 codes", () => {
-      const policy = threatProtectionPolicySchema.parse({
-        mode: "enhanced",
-        blockedCountries: ["us", "KP"],
-      });
-      expect(policy.blockedCountries).toEqual(["US", "KP"]);
-    });
-
-    it.each(["USA", "U", "1A", ""])("rejects %j", entry => {
-      expect(() =>
-        threatProtectionPolicySchema.parse({
-          mode: "enhanced",
-          blockedCountries: [entry],
-        }),
-      ).toThrow(/Invalid country code/);
-    });
-  });
-
-  describe("deniedCategories", () => {
-    it("accepts known alphaMountain categories", () => {
-      const policy = threatProtectionPolicySchema.parse({
-        mode: "enhanced",
-        deniedCategories: ["Malicious", "Scam/Illegal/Unethical"],
-      });
-      expect(policy.deniedCategories).toEqual([
-        "Malicious",
-        "Scam/Illegal/Unethical",
-      ]);
-    });
-
-    it.each(["Botnets", "malicious", "Totally Made Up"])(
-      "rejects unknown category %j",
-      entry => {
-        expect(() =>
-          threatProtectionPolicySchema.parse({
-            mode: "enhanced",
-            deniedCategories: [entry],
-          }),
-        ).toThrow(/Unknown content category/);
-      },
-    );
-  });
-
-  describe("maxDomainAgeDays", () => {
-    it("accepts null and positive integers", () => {
-      expect(
-        threatProtectionPolicySchema.parse({
-          mode: "enhanced",
-          maxDomainAgeDays: null,
-        }).maxDomainAgeDays,
-      ).toBeNull();
-      expect(
-        threatProtectionPolicySchema.parse({
-          mode: "enhanced",
-          maxDomainAgeDays: 90,
-        }).maxDomainAgeDays,
-      ).toBe(90);
-    });
-
-    it.each([0, -5, 2.5])("rejects %d", value => {
-      expect(() =>
-        threatProtectionPolicySchema.parse({
-          mode: "enhanced",
-          maxDomainAgeDays: value,
-        }),
-      ).toThrow();
-    });
-  });
 });
 
 describe("threatProtectionConfigSchema", () => {
@@ -239,22 +189,5 @@ describe("threatProtectionConfigSchema", () => {
         siem: { url: "https://siem.example.com", events: "everything" },
       }),
     ).toThrow();
-  });
-});
-
-describe("category constants", () => {
-  it("DEFAULT_DENIED_CATEGORIES only contains known categories", () => {
-    const known = new Set<string>(ALPHAMOUNTAIN_CATEGORIES);
-    for (const category of DEFAULT_DENIED_CATEGORIES) {
-      expect(known.has(category)).toBe(true);
-    }
-  });
-
-  it("DEFAULT_DENIED_CATEGORIES validates against the schema", () => {
-    const policy = threatProtectionPolicySchema.parse({
-      mode: "enhanced",
-      deniedCategories: DEFAULT_DENIED_CATEGORIES,
-    });
-    expect(policy.deniedCategories).toEqual(DEFAULT_DENIED_CATEGORIES);
   });
 });

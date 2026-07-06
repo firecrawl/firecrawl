@@ -113,7 +113,7 @@ export async function executeSearch(
   // Threat protection: remove results on blocked domains entirely — before
   // slicing/counting, before scraping, and before returning. Domain checks
   // are deduped and Redis-cached. Every consulted decision (fresh or cached
-  // provider verdict) is a billable scan (+2 normal / +3 enhanced), charged
+  // provider verdict) is a billable scan (+2 per scanned domain), charged
   // as part of the search credits below.
   let threatScanCredits = 0;
   const threatPolicy = context.threatProtectionPolicy;

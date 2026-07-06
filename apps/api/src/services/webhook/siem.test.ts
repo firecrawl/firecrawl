@@ -41,8 +41,6 @@ function makeEvent(overrides: Partial<ThreatCheckEvent>): ThreatCheckEvent {
     provider: "google-web-risk",
     risk_score: 100,
     categories: ["MALWARE"],
-    domain_age_days: null,
-    country_code: "",
     decision: "blocked",
     rule: "risk-score",
     provider_consulted: true,

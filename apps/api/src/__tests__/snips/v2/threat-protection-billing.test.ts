@@ -26,26 +26,23 @@ import {
 //
 // Billing rules under test:
 //   - +2 credits per domain scanned in "normal" mode (Google Web Risk)
-//   - +3 credits per domain scanned in "enhanced" mode (alphaMountain)
-//   - a "scan" = a ThreatDecision with providerConsulted — +2/+3 per
-//     consulted verdict. There is no verdict cache anymore (ZDR): every
-//     request scans afresh, and dedup only applies within one request/job.
+//   - a "scan" = a ThreatDecision with providerConsulted — +2 per consulted
+//     verdict. There is no verdict cache anymore (ZDR): every request scans
+//     afresh, and dedup only applies within one request/job.
 //   - blocked requests still bill the scan fee (no base scrape cost, matching
 //     how other failed scrapes bill)
 //   - local-only decisions (whitelist/blacklist/blocked-tld) never bill
 //
-// These tests need the mock providers below. Start the harness with the
-// base-URL overrides pointing at them, e.g.:
+// These tests need the mock provider below. Start the harness with the
+// base-URL override pointing at it, e.g.:
 //
 //   GOOGLE_WEB_RISK_API_KEY=test \
 //   GOOGLE_WEB_RISK_API_URL=http://localhost:4519 \
-//   ALPHAMOUNTAIN_API_KEY=test \
-//   ALPHAMOUNTAIN_API_URL=http://localhost:4520 \
 //   pnpm harness pnpm exec vitest run src/__tests__/snips/v2/threat-protection-billing.test.ts
 //
-// Tests that need a provider self-skip when the corresponding override is not
-// set to a local address. NOTE: this file binds the mock ports itself — do not
-// run it in the same pass as another file using the same ports (e.g.
+// Tests that need the provider self-skip when the override is not set to a
+// local address. NOTE: this file binds the mock port itself — do not run it
+// in the same pass as another file using the same port (e.g.
 // threat-protection-enforcement.test.ts if given the same Web Risk port).
 // =========================================
 
@@ -72,10 +69,6 @@ const isLocalMock = (url: string) =>
 const webRiskMockUrl = process.env.GOOGLE_WEB_RISK_API_URL ?? "";
 const HAS_WEB_RISK_MOCK =
   isLocalMock(webRiskMockUrl) && !!process.env.GOOGLE_WEB_RISK_API_KEY;
-
-const alphaMountainMockUrl = process.env.ALPHAMOUNTAIN_API_URL ?? "";
-const HAS_ALPHAMOUNTAIN_MOCK =
-  isLocalMock(alphaMountainMockUrl) && !!process.env.ALPHAMOUNTAIN_API_KEY;
 
 const sleep = (ms: number) => new Promise(x => setTimeout(() => x(true), ms));
 // Credit deductions land through the batched billing queue; see billing.test.ts.
@@ -111,60 +104,10 @@ function startWebRiskMock(): Promise<void> {
   });
 }
 
-let alphaMountainServer: http.Server | null = null;
-
-// Minimal alphaMountain mock: /threat/uri and /category/uri are required by
-// the provider (it throws if either fails); /intelligence/hostname is
-// best-effort. All domains score 1.0/10 (=10/100, well below the default
-// 75 threshold) so enhanced-mode scrapes stay clean.
-function startAlphaMountainMock(): Promise<void> {
-  const port = Number(new URL(alphaMountainMockUrl).port);
-  alphaMountainServer = http.createServer((req, res) => {
-    let body = "";
-    req.on("data", chunk => (body += chunk));
-    req.on("end", () => {
-      res.setHeader("Content-Type", "application/json");
-      if (req.url === "/threat/uri") {
-        res.end(
-          JSON.stringify({
-            version: 1,
-            // The provider only accepts "Success" / "Not Found" semantic
-            // statuses (anything else routes into retry/failurePolicy).
-            status: { threat: "Success" },
-            threat: { score: 1.0, scope: "domain", source: "mock" },
-            ttl: 3600,
-          }),
-        );
-      } else if (req.url === "/category/uri") {
-        res.end(
-          JSON.stringify({
-            version: 1,
-            status: { category: "Success" },
-            category: { categories: [], scope: "domain", confidence: 1 },
-            ttl: 3600,
-          }),
-        );
-      } else if (req.url === "/intelligence/hostname") {
-        res.end(JSON.stringify({ version: 1, status: {}, sections: {} }));
-      } else {
-        res.statusCode = 404;
-        res.end("{}");
-      }
-    });
-  });
-  return new Promise((resolve, reject) => {
-    alphaMountainServer!.once("error", reject);
-    alphaMountainServer!.listen(port, () => resolve());
-  });
-}
-
 describeIf(TEST_PRODUCTION)("Threat protection billing", () => {
   beforeAll(async () => {
     if (HAS_WEB_RISK_MOCK) {
       await startWebRiskMock();
-    }
-    if (HAS_ALPHAMOUNTAIN_MOCK) {
-      await startAlphaMountainMock();
     }
   });
 
@@ -172,10 +115,6 @@ describeIf(TEST_PRODUCTION)("Threat protection billing", () => {
     if (webRiskServer) {
       await new Promise(resolve => webRiskServer!.close(resolve));
       webRiskServer = null;
-    }
-    if (alphaMountainServer) {
-      await new Promise(resolve => alphaMountainServer!.close(resolve));
-      alphaMountainServer = null;
     }
   });
 
@@ -201,21 +140,6 @@ describeIf(TEST_PRODUCTION)("Threat protection billing", () => {
           identity,
         );
         expect(doc.metadata.creditsUsed).toBe(3);
-      },
-      scrapeTimeout,
-    );
-
-    (HAS_ALPHAMOUNTAIN_MOCK ? it : it.skip)(
-      "enhanced-mode clean scrape bills base + 3",
-      async () => {
-        const doc = await scrape(
-          {
-            url: CLEAN_URL,
-            threatProtection: { mode: "enhanced", failurePolicy: "open" },
-          } as any,
-          identity,
-        );
-        expect(doc.metadata.creditsUsed).toBe(4);
       },
       scrapeTimeout,
     );

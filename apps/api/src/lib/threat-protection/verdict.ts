@@ -6,8 +6,10 @@ import type {
 
 // Pure policy evaluation for threat protection. No I/O in this file — the
 // provider/cache orchestration lives in ./index.ts. Rule precedence (fixed):
-// whitelist → blacklist → blocked-tld → blocked-country → domain-age →
-// denied-category → risk-score → provider-failure → default-allow.
+// whitelist → blacklist → blocked-tld → risk-score → provider-failure →
+// default-allow. The engine consumes the provider-agnostic RawVerdict shape
+// only (normalized riskScore + categories) — it never knows which provider
+// produced the verdict, so new providers slot in without touching it.
 
 /**
  * Whether `domain` matches a single whitelist/blacklist entry.
@@ -124,34 +126,6 @@ export function evaluatePolicy(
   }
 
   if (verdict !== null) {
-    if (
-      verdict.countryCode !== null &&
-      policy.blockedCountries.some(
-        country => country.trim().toUpperCase() === verdict.countryCode,
-      )
-    ) {
-      return { allowed: false, rule: "blocked-country", ...base };
-    }
-
-    if (
-      policy.maxDomainAgeDays !== null &&
-      verdict.domainAgeDays !== null &&
-      verdict.domainAgeDays < policy.maxDomainAgeDays
-    ) {
-      return { allowed: false, rule: "domain-age", ...base };
-    }
-
-    const deniedCategories = new Set(
-      policy.deniedCategories.map(category => category.trim().toLowerCase()),
-    );
-    if (
-      verdict.categories.some(category =>
-        deniedCategories.has(category.trim().toLowerCase()),
-      )
-    ) {
-      return { allowed: false, rule: "denied-category", ...base };
-    }
-
     if (
       verdict.riskScore !== null &&
       verdict.riskScore >= policy.riskScoreThreshold

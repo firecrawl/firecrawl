@@ -10,7 +10,7 @@ function policy(
   overrides: Partial<ThreatProtectionPolicy> = {},
 ): ThreatProtectionPolicy {
   return {
-    mode: "enhanced",
+    mode: "normal",
     ...THREAT_PROTECTION_POLICY_DEFAULTS,
     ...overrides,
   };
@@ -18,11 +18,9 @@ function policy(
 
 function verdict(overrides: Partial<RawVerdict> = {}): RawVerdict {
   return {
-    provider: "alphamountain",
+    provider: "google-web-risk",
     riskScore: 0,
     categories: [],
-    domainAgeDays: null,
-    countryCode: null,
     fromCache: false,
     raw: {},
     ...overrides,
@@ -114,15 +112,10 @@ describe("evaluatePolicy", () => {
       domain: "example.com",
       verdict: verdict({
         riskScore: 100,
-        categories: ["Malicious"],
-        domainAgeDays: 1,
-        countryCode: "KP",
+        categories: ["MALWARE"],
       }),
       policy: policy({
         whitelist: ["example.com"],
-        deniedCategories: ["Malicious"],
-        maxDomainAgeDays: 30,
-        blockedCountries: ["KP"],
         riskScoreThreshold: 10,
       }),
       allowed: true,
@@ -195,122 +188,12 @@ describe("evaluatePolicy", () => {
       rule: "blocked-tld",
     },
     {
-      name: "blocked TLD wins over blocked country (rule ordering)",
+      name: "blocked TLD wins over risk score (rule ordering)",
       domain: "archive.zip",
-      verdict: verdict({ countryCode: "RU" }),
-      policy: policy({ blockedTlds: ["zip"], blockedCountries: ["RU"] }),
+      verdict: verdict({ riskScore: 100 }),
+      policy: policy({ blockedTlds: ["zip"], riskScoreThreshold: 75 }),
       allowed: false,
       rule: "blocked-tld",
-    },
-    // --- blocked-country ---
-    {
-      name: "blocked country blocks",
-      domain: "example.com",
-      verdict: verdict({ countryCode: "RU" }),
-      policy: policy({ blockedCountries: ["RU"] }),
-      allowed: false,
-      rule: "blocked-country",
-    },
-    {
-      name: "blocked country comparison is case-insensitive",
-      domain: "example.com",
-      verdict: verdict({ countryCode: "RU" }),
-      policy: policy({ blockedCountries: ["ru"] }),
-      allowed: false,
-      rule: "blocked-country",
-    },
-    {
-      name: "null country code never matches blocked countries",
-      domain: "example.com",
-      verdict: verdict({ countryCode: null }),
-      policy: policy({ blockedCountries: ["RU"] }),
-      allowed: true,
-      rule: "default-allow",
-    },
-    {
-      name: "blocked country wins over domain age (rule ordering)",
-      domain: "example.com",
-      verdict: verdict({ countryCode: "RU", domainAgeDays: 1 }),
-      policy: policy({ blockedCountries: ["RU"], maxDomainAgeDays: 30 }),
-      allowed: false,
-      rule: "blocked-country",
-    },
-    // --- domain-age ---
-    {
-      name: "domain younger than the threshold is blocked",
-      domain: "example.com",
-      verdict: verdict({ domainAgeDays: 5 }),
-      policy: policy({ maxDomainAgeDays: 30 }),
-      allowed: false,
-      rule: "domain-age",
-    },
-    {
-      name: "domain exactly at the threshold is allowed",
-      domain: "example.com",
-      verdict: verdict({ domainAgeDays: 30 }),
-      policy: policy({ maxDomainAgeDays: 30 }),
-      allowed: true,
-      rule: "default-allow",
-    },
-    {
-      name: "null maxDomainAgeDays disables the age rule",
-      domain: "example.com",
-      verdict: verdict({ domainAgeDays: 1 }),
-      policy: policy({ maxDomainAgeDays: null }),
-      allowed: true,
-      rule: "default-allow",
-    },
-    {
-      name: "unknown domain age never triggers the age rule",
-      domain: "example.com",
-      verdict: verdict({ domainAgeDays: null }),
-      policy: policy({ maxDomainAgeDays: 30 }),
-      allowed: true,
-      rule: "default-allow",
-    },
-    {
-      name: "domain age wins over denied category (rule ordering)",
-      domain: "example.com",
-      verdict: verdict({ domainAgeDays: 1, categories: ["Gambling"] }),
-      policy: policy({
-        maxDomainAgeDays: 30,
-        deniedCategories: ["Gambling"],
-      }),
-      allowed: false,
-      rule: "domain-age",
-    },
-    // --- denied-category ---
-    {
-      name: "denied category blocks",
-      domain: "example.com",
-      verdict: verdict({ categories: ["Gambling", "Games"] }),
-      policy: policy({ deniedCategories: ["Gambling"] }),
-      allowed: false,
-      rule: "denied-category",
-    },
-    {
-      name: "denied category comparison is case-insensitive",
-      domain: "example.com",
-      verdict: verdict({ categories: ["gambling"] }),
-      policy: policy({ deniedCategories: ["GAMBLING"] }),
-      allowed: false,
-      rule: "denied-category",
-    },
-    {
-      name: "non-denied categories pass",
-      domain: "example.com",
-      verdict: verdict({ categories: ["News"] }),
-      policy: policy({ deniedCategories: ["Gambling"] }),
-      allowed: true,
-      rule: "default-allow",
-    },
-    {
-      name: "denied category wins over risk score (rule ordering)",
-      domain: "example.com",
-      verdict: verdict({ categories: ["Gambling"], riskScore: 100 }),
-      policy: policy({ deniedCategories: ["Gambling"] }),
-      allowed: false,
-      rule: "denied-category",
     },
     // --- risk-score ---
     {
@@ -345,6 +228,14 @@ describe("evaluatePolicy", () => {
       allowed: true,
       rule: "default-allow",
     },
+    {
+      name: "verdict categories alone never block (no category rules)",
+      domain: "example.com",
+      verdict: verdict({ riskScore: 0, categories: ["MALWARE"] }),
+      policy: policy({ riskScoreThreshold: 75 }),
+      allowed: true,
+      rule: "default-allow",
+    },
     // --- provider-failure ---
     {
       name: "provider failure with fail-closed blocks",
@@ -359,14 +250,6 @@ describe("evaluatePolicy", () => {
       domain: "example.com",
       verdict: null,
       policy: policy({ failurePolicy: "open" }),
-      allowed: true,
-      rule: "provider-failure",
-    },
-    {
-      name: "provider failure in normal mode also honors fail-open",
-      domain: "example.com",
-      verdict: null,
-      policy: policy({ mode: "normal", failurePolicy: "open" }),
       allowed: true,
       rule: "provider-failure",
     },
@@ -393,10 +276,7 @@ describe("evaluatePolicy", () => {
       verdict: verdict(),
       policy: policy({
         riskScoreThreshold: 50,
-        deniedCategories: ["Gambling"],
-        maxDomainAgeDays: 30,
         blockedTlds: ["zip"],
-        blockedCountries: ["KP"],
       }),
       allowed: true,
       rule: "default-allow",
@@ -426,7 +306,7 @@ describe("localOnlyDecision", () => {
       rule: "whitelist",
       providerConsulted: false,
       verdict: null,
-      mode: "enhanced",
+      mode: "normal",
     });
   });
 
@@ -473,9 +353,6 @@ describe("localOnlyDecision", () => {
         "example.com",
         policy({
           riskScoreThreshold: 10,
-          deniedCategories: ["Gambling"],
-          blockedCountries: ["KP"],
-          maxDomainAgeDays: 30,
         }),
       ),
     ).toBeNull();

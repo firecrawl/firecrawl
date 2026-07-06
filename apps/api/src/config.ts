@@ -50,18 +50,13 @@ const configSchema = z.object({
   SPUR_API_KEY: z.string().optional(),
 
   // Threat protection (enterprise domain risk blocking). "normal" mode uses
-  // Google Web Risk, "enhanced" mode uses alphaMountain. Unset keys disable the
-  // corresponding provider (lookups then fail per the org's failurePolicy).
+  // Google Web Risk. An unset key disables the provider (lookups then fail
+  // per the org's failurePolicy).
   GOOGLE_WEB_RISK_API_KEY: z.string().optional(),
   GOOGLE_WEB_RISK_API_URL: z
     .string()
     .url()
     .default("https://webrisk.googleapis.com"),
-  ALPHAMOUNTAIN_API_KEY: z.string().optional(),
-  ALPHAMOUNTAIN_API_URL: z
-    .string()
-    .url()
-    .default("https://api.alphamountain.ai"),
   // Google Web Risk Update API sync tuning. ZDR: "normal" mode checks run
   // against a locally synced hash-prefix database (threatLists:computeDiff)
   // instead of sending URLs to Google, and verdicts are never persisted.

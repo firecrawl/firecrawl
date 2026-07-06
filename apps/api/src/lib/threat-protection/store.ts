@@ -1,4 +1,5 @@
 import { eq } from "drizzle-orm";
+import { z } from "zod";
 import { db, dbRr } from "../../db/connection";
 import * as schema from "../../db/schema";
 import { deleteKey, getValue, setValue } from "../../services/redis";
@@ -58,30 +59,70 @@ export interface OrgThreatProtectionConfig {
 type ThreatProtectionConfigRow =
   typeof schema.threat_protection_config.$inferSelect;
 
-function rowToConfig(
+/**
+ * Tolerant schema for the `config` jsonb document stored alongside `mode`.
+ * The document is written exclusively by {@link upsertOrgThreatProtectionConfig}
+ * (from API-validated input), but reads must survive anything: a missing or
+ * partial document, unknown keys, or field-level garbage all fall back to the
+ * field defaults instead of throwing — a bad row must never take down the
+ * enforcement hot path.
+ */
+const storedConfigDocumentSchema = z
+  .object({
+    riskScoreThreshold: z
+      .number()
+      .int()
+      .min(0)
+      .max(100)
+      .catch(THREAT_PROTECTION_POLICY_DEFAULTS.riskScoreThreshold),
+    blacklist: z.array(z.string()).catch([]),
+    whitelist: z.array(z.string()).catch([]),
+    blockedTlds: z.array(z.string()).catch([]),
+    failurePolicy: z
+      .enum(["open", "closed"])
+      .catch(THREAT_PROTECTION_POLICY_DEFAULTS.failurePolicy),
+    allowRequestOverrides: z.boolean().catch(true),
+    siem: z
+      .object({
+        url: z.string().min(1),
+        secret: z.string().nullable().catch(null),
+        events: z.enum(["blocked", "all"]).catch("blocked"),
+      })
+      .nullable()
+      .catch(null),
+  })
+  .catch({
+    ...THREAT_PROTECTION_POLICY_DEFAULTS,
+    allowRequestOverrides: true,
+    siem: null,
+  });
+
+/**
+ * Maps a `threat_protection_config` row (mode column + config jsonb document)
+ * to the runtime config shape. Tolerant by construction: never throws, even
+ * for empty/partial/unknown-keyed documents (see
+ * {@link storedConfigDocumentSchema}). Exported for tests.
+ */
+export function rowToConfig(
   row: ThreatProtectionConfigRow,
 ): OrgThreatProtectionConfig {
+  const doc = storedConfigDocumentSchema.parse(row.config ?? {});
   return {
     orgId: row.org_id,
     policy: {
-      mode: row.mode === "normal" || row.mode === "enhanced" ? row.mode : "off",
-      riskScoreThreshold:
-        row.risk_score_threshold ??
-        THREAT_PROTECTION_POLICY_DEFAULTS.riskScoreThreshold,
-      deniedCategories: row.denied_categories ?? [],
-      maxDomainAgeDays: row.max_domain_age_days,
-      blacklist: row.blacklist ?? [],
-      whitelist: row.whitelist ?? [],
-      blockedTlds: row.blocked_tlds ?? [],
-      blockedCountries: row.blocked_countries ?? [],
-      failurePolicy: row.failure_policy === "open" ? "open" : "closed",
+      mode: row.mode === "normal" ? "normal" : "off",
+      riskScoreThreshold: doc.riskScoreThreshold,
+      blacklist: doc.blacklist,
+      whitelist: doc.whitelist,
+      blockedTlds: doc.blockedTlds,
+      failurePolicy: doc.failurePolicy,
     },
-    allowRequestOverrides: row.allow_request_overrides ?? true,
-    siem: row.siem_url
+    allowRequestOverrides: doc.allowRequestOverrides,
+    siem: doc.siem
       ? {
-          url: row.siem_url,
-          secret: row.siem_secret,
-          events: row.siem_events === "all" ? "all" : "blocked",
+          url: doc.siem.url,
+          secret: doc.siem.secret,
+          events: doc.siem.events,
         }
       : null,
     createdAt: row.created_at,
@@ -156,18 +197,18 @@ export async function upsertOrgThreatProtectionConfig(
   const values = {
     org_id: orgId,
     mode: config.mode,
-    risk_score_threshold: config.riskScoreThreshold,
-    denied_categories: config.deniedCategories,
-    max_domain_age_days: config.maxDomainAgeDays,
-    blacklist: config.blacklist,
-    whitelist: config.whitelist,
-    blocked_tlds: config.blockedTlds,
-    blocked_countries: config.blockedCountries,
-    failure_policy: config.failurePolicy,
-    allow_request_overrides: config.allowRequestOverrides,
-    siem_url: config.siem?.url ?? null,
-    siem_secret: config.siem?.secret ?? null,
-    siem_events: config.siem?.events ?? null,
+    // Everything but the mode lives in the jsonb document. The SIEM secret is
+    // stored at config.siem.secret inside it; the API layer keeps the secret
+    // write-only (see the PUT controller).
+    config: {
+      riskScoreThreshold: config.riskScoreThreshold,
+      blacklist: config.blacklist,
+      whitelist: config.whitelist,
+      blockedTlds: config.blockedTlds,
+      failurePolicy: config.failurePolicy,
+      allowRequestOverrides: config.allowRequestOverrides,
+      siem: config.siem,
+    },
   };
 
   const [row] = await db

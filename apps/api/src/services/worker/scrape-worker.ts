@@ -231,7 +231,7 @@ async function billScrapeJob(
  * decisions bill here: allowed discoveries are billed by their own scrape
  * job, which re-checks the (cached) verdict. Deduplicates by domain, and only
  * decisions that consulted the classifier (fresh or cached provider verdict)
- * carry a fee (+2 normal / +3 enhanced) — local-only blocks (e.g. blacklist)
+ * carry a fee (+2 per scanned domain) — local-only blocks (e.g. blacklist)
  * are free.
  */
 function billThreatBlockedDiscoveries(

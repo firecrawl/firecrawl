@@ -78,7 +78,7 @@ export async function agentController(
     );
     if (blocked.length > 0) {
       // Blocked domains whose decision consulted the classifier (fresh or
-      // cached verdict) bill the scan fee (+2 normal / +3 enhanced) even
+      // cached verdict) bill the scan fee (+2 per scanned domain) even
       // though the request is rejected — the scan already happened. Allowed
       // start URLs are not billed here: the agent's API-driven scrapes
       // re-check the policy in the scrape pipeline and bill there.

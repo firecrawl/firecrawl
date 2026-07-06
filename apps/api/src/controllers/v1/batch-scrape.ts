@@ -143,7 +143,7 @@ export async function batchScrapeController(
     );
     if (blocked.length > 0) {
       // Blocked domains whose decision consulted the classifier (fresh or
-      // cached verdict) bill the scan fee (+2 normal / +3 enhanced) even
+      // cached verdict) bill the scan fee (+2 per scanned domain) even
       // though they will never be scraped — the scan already happened.
       // Allowed URLs are not billed here: their scrape jobs re-check the
       // cached verdict and bill there.

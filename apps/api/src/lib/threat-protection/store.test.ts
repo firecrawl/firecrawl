@@ -1,18 +1,19 @@
-import { resolveEffectivePolicy, OrgThreatProtectionConfig } from "./store";
+import {
+  resolveEffectivePolicy,
+  rowToConfig,
+  OrgThreatProtectionConfig,
+} from "./store";
 import {
   THREAT_PROTECTION_POLICY_DEFAULTS,
   ThreatProtectionPolicy,
 } from "./types";
 
 const orgPolicy: ThreatProtectionPolicy = {
-  mode: "enhanced",
+  mode: "normal",
   riskScoreThreshold: 60,
-  deniedCategories: ["Malicious", "Phishing"],
-  maxDomainAgeDays: 30,
   blacklist: ["*.bad.example"],
   whitelist: ["example.com"],
   blockedTlds: ["zip"],
-  blockedCountries: ["KP"],
   failurePolicy: "open",
 };
 
@@ -29,6 +30,148 @@ function makeOrgConfig(
     ...overrides,
   };
 }
+
+// =========================================
+// rowToConfig — mode column + config jsonb document
+// =========================================
+
+const ORG_ID = "00000000-0000-0000-0000-000000000001";
+
+function makeRow(mode: string, config: unknown) {
+  return {
+    id: "00000000-0000-0000-0000-00000000000a",
+    org_id: ORG_ID,
+    mode,
+    config,
+    created_at: "2026-01-01T00:00:00.000Z",
+    updated_at: "2026-01-02T00:00:00.000Z",
+  };
+}
+
+describe("rowToConfig", () => {
+  it("maps a full stored document", () => {
+    const config = rowToConfig(
+      makeRow("normal", {
+        riskScoreThreshold: 40,
+        blacklist: ["*.bad.example"],
+        whitelist: ["example.com"],
+        blockedTlds: ["zip"],
+        failurePolicy: "open",
+        allowRequestOverrides: false,
+        siem: {
+          url: "https://siem.example.com/ingest",
+          secret: "hunter2",
+          events: "all",
+        },
+      }),
+    );
+
+    expect(config).toEqual({
+      orgId: ORG_ID,
+      policy: {
+        mode: "normal",
+        riskScoreThreshold: 40,
+        blacklist: ["*.bad.example"],
+        whitelist: ["example.com"],
+        blockedTlds: ["zip"],
+        failurePolicy: "open",
+      },
+      allowRequestOverrides: false,
+      siem: {
+        url: "https://siem.example.com/ingest",
+        secret: "hunter2",
+        events: "all",
+      },
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-02T00:00:00.000Z",
+    });
+  });
+
+  it("falls back to defaults for an empty config document", () => {
+    const config = rowToConfig(makeRow("normal", {}));
+    expect(config.policy).toEqual({
+      mode: "normal",
+      ...THREAT_PROTECTION_POLICY_DEFAULTS,
+    });
+    expect(config.allowRequestOverrides).toBe(true);
+    expect(config.siem).toBeNull();
+  });
+
+  it("ignores unknown keys in the document", () => {
+    const config = rowToConfig(
+      makeRow("normal", {
+        riskScoreThreshold: 10,
+        someFutureField: { nested: true },
+        deniedCategories: ["Malicious"], // retired field, silently dropped
+      }),
+    );
+    expect(config.policy.riskScoreThreshold).toBe(10);
+    expect(config.policy).not.toHaveProperty("deniedCategories");
+    expect(config.policy).not.toHaveProperty("someFutureField");
+  });
+
+  it("fills defaults for a partial document", () => {
+    const config = rowToConfig(
+      makeRow("normal", { blacklist: ["bad.example"] }),
+    );
+    expect(config.policy).toEqual({
+      mode: "normal",
+      ...THREAT_PROTECTION_POLICY_DEFAULTS,
+      blacklist: ["bad.example"],
+    });
+  });
+
+  it("never throws on field-level garbage — bad fields fall back to defaults", () => {
+    const config = rowToConfig(
+      makeRow("normal", {
+        riskScoreThreshold: "not-a-number",
+        blacklist: "not-an-array",
+        failurePolicy: "sideways",
+        allowRequestOverrides: "yes",
+        siem: { events: "all" }, // missing url → invalid → null
+      }),
+    );
+    expect(config.policy).toEqual({
+      mode: "normal",
+      ...THREAT_PROTECTION_POLICY_DEFAULTS,
+    });
+    expect(config.allowRequestOverrides).toBe(true);
+    expect(config.siem).toBeNull();
+  });
+
+  it("never throws when the document is not an object at all", () => {
+    for (const config of [null, "garbage", 42, ["array"]]) {
+      const parsed = rowToConfig(makeRow("normal", config));
+      expect(parsed.policy).toEqual({
+        mode: "normal",
+        ...THREAT_PROTECTION_POLICY_DEFAULTS,
+      });
+      expect(parsed.siem).toBeNull();
+    }
+  });
+
+  it("coerces unknown modes (including the retired enhanced) to off", () => {
+    expect(rowToConfig(makeRow("off", {})).policy.mode).toBe("off");
+    expect(rowToConfig(makeRow("enhanced", {})).policy.mode).toBe("off");
+    expect(rowToConfig(makeRow("garbage", {})).policy.mode).toBe("off");
+  });
+
+  it("keeps SIEM null when the document has none", () => {
+    const config = rowToConfig(makeRow("normal", { siem: null }));
+    expect(config.siem).toBeNull();
+  });
+
+  it("defaults SIEM secret/events inside a valid destination", () => {
+    const config = rowToConfig(
+      makeRow("normal", { siem: { url: "https://siem.example.com" } }),
+    );
+    expect(config.siem).toEqual({
+      url: "https://siem.example.com",
+      secret: null,
+      events: "blocked",
+    });
+  });
+});
 
 describe("resolveEffectivePolicy", () => {
   it("returns mode off with defaults when there is no org config", () => {

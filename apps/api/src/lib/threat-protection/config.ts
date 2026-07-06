@@ -5,142 +5,6 @@ import {
 } from "./types";
 
 // =========================================
-// alphaMountain content categories
-// =========================================
-
-/**
- * Full list of alphaMountain content category names, as published at
- * https://www.alphamountain.ai/categories/ (retrieved 2026-07-04).
- *
- * Keep this list in sync with the provider. `deniedCategories` in the
- * threat protection policy is validated against it.
- */
-export const ALPHAMOUNTAIN_CATEGORIES = [
-  "Abortion",
-  "Adult/Mature",
-  "Ads/Analytics",
-  "AI/ML Applications",
-  "Alcohol",
-  "Alternative Currency",
-  "Alternative Ideology",
-  "Anonymizers",
-  "Arts/Culture",
-  "Auctions/Classifieds",
-  "Audio",
-  "Brokerage/Trading",
-  "Business/Economy",
-  "Chat/IM/SMS",
-  "Child Pornography/Abuse",
-  "Content Servers",
-  "Dating/Personals",
-  "Digital Postcards",
-  "DNS over HTTP",
-  "Drugs/Controlled Substances",
-  "Dynamic DNS",
-  "Education",
-  "Email",
-  "Entertainment",
-  "Extreme/Gruesome",
-  "File Sharing/Storage",
-  "Finance",
-  "For Kids",
-  "Forums",
-  "Gambling",
-  "Games",
-  "Government/Legal",
-  "Hacking",
-  "Hate/Discrimination",
-  "Health",
-  "Hobbies/Recreation",
-  "Hosting",
-  "Humor/Comics",
-  "Information Technology",
-  "Information/Computer Security",
-  "Infrastructure/IOT",
-  "Job Search",
-  "Lingerie/Swimsuit",
-  "Local/Non-Routable",
-  "Login/Challenge",
-  "Malicious",
-  "Marijuana",
-  "Marketing/Merchandising",
-  "Media Sharing",
-  "Military",
-  "Mixed Content/Potentially Adult",
-  "Network Access/Captive Portal",
-  "News",
-  "Newly Registered",
-  "Non-Profit/Advocacy",
-  "Nudity",
-  "Parked Site",
-  "Peer-to-Peer (P2P)",
-  "Personal Sites/Blogs",
-  "Phishing",
-  "Piracy/Plagiarism",
-  "Politics/Opinion",
-  "Pornography",
-  "Potentially Unwanted Programs",
-  "Productivity Applications",
-  "Promotional Compensation",
-  "Real Estate",
-  "Reference",
-  "Religion",
-  "Remote Access",
-  "Restaurants/Food",
-  "Scam/Illegal/Unethical",
-  "Search Engines/Portals",
-  "Sex Education",
-  "Shopping",
-  "Social Networking",
-  "Society/Lifestyle",
-  "Software Downloads",
-  "Spam",
-  "Sports",
-  "Suspicious",
-  "Telephony",
-  "Tobacco",
-  "Translation",
-  "Travel",
-  "Unrated",
-  "URL Redirect",
-  "Vehicles",
-  "Video/Multimedia",
-  "Violence",
-  "Virtual Meetings",
-  "Weapons",
-] as const;
-
-const ALPHAMOUNTAIN_CATEGORY_SET = new Set<string>(ALPHAMOUNTAIN_CATEGORIES);
-
-/**
- * Sensible security-focused default for `deniedCategories` in enhanced mode:
- * clearly malicious categories plus the categories enterprise compliance
- * teams most commonly deny.
- */
-export const DEFAULT_DENIED_CATEGORIES: string[] = [
-  // Clearly malicious / abuse
-  "Malicious",
-  "Phishing",
-  "Spam",
-  "Suspicious",
-  "Scam/Illegal/Unethical",
-  "Hacking",
-  "Potentially Unwanted Programs",
-  "Child Pornography/Abuse",
-  // Common enterprise compliance denials
-  "Weapons",
-  "Violence",
-  "Hate/Discrimination",
-  "Extreme/Gruesome",
-  "Drugs/Controlled Substances",
-  "Gambling",
-  "Pornography",
-  "Nudity",
-  "Adult/Mature",
-  "Piracy/Plagiarism",
-];
-
-// =========================================
 // Field schemas
 // =========================================
 
@@ -170,22 +34,6 @@ const tldSchema = z
       `Invalid TLD ${JSON.stringify(iss.input)}: must be a lowercase alphanumeric TLD without the leading dot, e.g. "zip"`,
   });
 
-const countryCodeSchema = z
-  .string()
-  .trim()
-  .toUpperCase()
-  .refine(value => /^[A-Z]{2}$/.test(value), {
-    error: iss =>
-      `Invalid country code ${JSON.stringify(iss.input)}: must be an ISO 3166-1 alpha-2 code, e.g. "US"`,
-  });
-
-const deniedCategorySchema = z
-  .string()
-  .refine(value => ALPHAMOUNTAIN_CATEGORY_SET.has(value), {
-    error: iss =>
-      `Unknown content category ${JSON.stringify(iss.input)}: must be one of the alphaMountain category names`,
-  });
-
 // =========================================
 // Policy + org config schemas
 // =========================================
@@ -195,24 +43,13 @@ const deniedCategorySchema = z
  * except `mode` defaults to {@link THREAT_PROTECTION_POLICY_DEFAULTS}.
  */
 export const threatProtectionPolicySchema = z.strictObject({
-  mode: z.enum(["off", "normal", "enhanced"]),
+  mode: z.enum(["off", "normal"]),
   riskScoreThreshold: z
     .number()
     .int()
     .min(0)
     .max(100)
     .prefault(THREAT_PROTECTION_POLICY_DEFAULTS.riskScoreThreshold),
-  deniedCategories: z
-    .array(deniedCategorySchema)
-    .max(ALPHAMOUNTAIN_CATEGORIES.length)
-    .prefault(THREAT_PROTECTION_POLICY_DEFAULTS.deniedCategories),
-  maxDomainAgeDays: z
-    .number()
-    .int()
-    .min(1)
-    .max(3650)
-    .nullable()
-    .prefault(THREAT_PROTECTION_POLICY_DEFAULTS.maxDomainAgeDays),
   blacklist: z
     .array(domainGlobSchema)
     .max(1000)
@@ -225,10 +62,6 @@ export const threatProtectionPolicySchema = z.strictObject({
     .array(tldSchema)
     .max(1000)
     .prefault(THREAT_PROTECTION_POLICY_DEFAULTS.blockedTlds),
-  blockedCountries: z
-    .array(countryCodeSchema)
-    .max(250)
-    .prefault(THREAT_PROTECTION_POLICY_DEFAULTS.blockedCountries),
   failurePolicy: z
     .enum(["open", "closed"])
     .prefault(THREAT_PROTECTION_POLICY_DEFAULTS.failurePolicy),
@@ -248,17 +81,11 @@ void _policyContractCheck;
  * provides replace the org policy's values (see `resolveEffectivePolicy`).
  */
 export const threatProtectionOverrideSchema = z.strictObject({
-  mode: z.enum(["off", "normal", "enhanced"]).optional(),
+  mode: z.enum(["off", "normal"]).optional(),
   riskScoreThreshold: z.number().int().min(0).max(100).optional(),
-  deniedCategories: z
-    .array(deniedCategorySchema)
-    .max(ALPHAMOUNTAIN_CATEGORIES.length)
-    .optional(),
-  maxDomainAgeDays: z.number().int().min(1).max(3650).nullable().optional(),
   blacklist: z.array(domainGlobSchema).max(1000).optional(),
   whitelist: z.array(domainGlobSchema).max(1000).optional(),
   blockedTlds: z.array(tldSchema).max(1000).optional(),
-  blockedCountries: z.array(countryCodeSchema).max(250).optional(),
   failurePolicy: z.enum(["open", "closed"]).optional(),
 });
 

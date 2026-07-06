@@ -124,23 +124,18 @@ describe("calculateCreditsToBeBilled", () => {
 // Threat protection scan fees (ENG-4985)
 // =========================================
 
-const consulted = (
-  mode: "normal" | "enhanced",
-  allowed = true,
-): ThreatDecision => ({
+const consulted = (allowed = true): ThreatDecision => ({
   allowed,
   rule: allowed ? "default-allow" : "risk-score",
   providerConsulted: true,
   verdict: {
-    provider: mode === "normal" ? "google-web-risk" : "alphamountain",
+    provider: "google-web-risk",
     riskScore: allowed ? 0 : 100,
     categories: [],
-    domainAgeDays: null,
-    countryCode: null,
     fromCache: false,
     raw: {},
   },
-  mode,
+  mode: "normal",
 });
 
 const localOnly = (
@@ -180,24 +175,17 @@ describe("calculateThreatScanCredits", () => {
     expect(calculateThreatScanCredits([])).toBe(0);
   });
 
-  it("bills +2 per consulted normal-mode decision", () => {
-    expect(calculateThreatScanCredits([consulted("normal")])).toBe(2);
-    expect(
-      calculateThreatScanCredits([consulted("normal"), consulted("normal")]),
-    ).toBe(4);
-  });
-
-  it("bills +3 per consulted enhanced-mode decision", () => {
-    expect(calculateThreatScanCredits([consulted("enhanced")])).toBe(3);
+  it("bills +2 per consulted decision", () => {
+    expect(calculateThreatScanCredits([consulted()])).toBe(2);
+    expect(calculateThreatScanCredits([consulted(), consulted()])).toBe(4);
   });
 
   it("bills consulted decisions regardless of the allow/block outcome", () => {
-    expect(calculateThreatScanCredits([consulted("normal", false)])).toBe(2);
-    expect(calculateThreatScanCredits([consulted("enhanced", false)])).toBe(3);
+    expect(calculateThreatScanCredits([consulted(false)])).toBe(2);
   });
 
   it("bills cached verdicts the same as fresh ones", () => {
-    const cached = consulted("normal");
+    const cached = consulted();
     cached.verdict = { ...cached.verdict!, fromCache: true };
     expect(calculateThreatScanCredits([cached])).toBe(2);
   });
@@ -216,38 +204,29 @@ describe("calculateThreatScanCredits", () => {
   it("sums mixed decisions", () => {
     expect(
       calculateThreatScanCredits([
-        consulted("normal"),
-        consulted("enhanced"),
+        consulted(),
+        consulted(false),
         localOnly("blacklist", false),
       ]),
-    ).toBe(5);
+    ).toBe(4);
   });
 });
 
 describe("calculateCreditsToBeBilled — threat protection scan fees", () => {
-  it("adds +2 to a successful scrape with a consulted normal decision", async () => {
+  it("adds +2 to a successful scrape with a consulted decision", async () => {
     expect(
       await billWithDecisions({
         document: successDocument,
-        threatDecisions: [consulted("normal")],
+        threatDecisions: [consulted()],
       }),
     ).toBe(3);
-  });
-
-  it("adds +3 to a successful scrape with a consulted enhanced decision", async () => {
-    expect(
-      await billWithDecisions({
-        document: successDocument,
-        threatDecisions: [consulted("enhanced")],
-      }),
-    ).toBe(4);
   });
 
   it("bills each consulted decision on a redirect (two domains scanned)", async () => {
     expect(
       await billWithDecisions({
         document: successDocument,
-        threatDecisions: [consulted("normal"), consulted("normal")],
+        threatDecisions: [consulted(), consulted()],
       }),
     ).toBe(5);
   });
@@ -262,7 +241,7 @@ describe("calculateCreditsToBeBilled — threat protection scan fees", () => {
   });
 
   it("bills the scan fee (and no base cost) for a blocked scrape", async () => {
-    const decision = consulted("normal", false);
+    const decision = consulted(false);
     expect(
       await billWithDecisions({
         document: null,
@@ -273,18 +252,18 @@ describe("calculateCreditsToBeBilled — threat protection scan fees", () => {
   });
 
   it("bills a blocked scrape from the error decision when the decisions array is missing", async () => {
-    const decision = consulted("enhanced", false);
+    const decision = consulted(false);
     expect(
       await billWithDecisions({
         document: null,
         error: new UnsafeDomainBlockedError("blocked.example.com", decision),
       }),
-    ).toBe(3);
+    ).toBe(2);
   });
 
   it("does not double-bill when the error decision is also in the decisions array", async () => {
-    const initial = consulted("normal");
-    const redirectBlock = consulted("normal", false);
+    const initial = consulted();
+    const redirectBlock = consulted(false);
     expect(
       await billWithDecisions({
         document: null,
@@ -322,7 +301,7 @@ describe("calculateCreditsToBeBilled — threat protection scan fees", () => {
       await billWithDecisions({
         document: null,
         error: new Error("engine failure"),
-        threatDecisions: [consulted("normal")],
+        threatDecisions: [consulted()],
       }),
     ).toBe(2);
   });

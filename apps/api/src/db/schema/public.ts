@@ -595,25 +595,13 @@ export const teams = pgTable("teams", {
 
 // Org-scoped threat protection configuration (enterprise feature, gated by the
 // `threatProtection` team flag). One row per org; DDL is applied out-of-band.
+// The policy document lives in the `config` jsonb column (parsed tolerantly in
+// lib/threat-protection/store.ts); only `mode` is a dedicated column.
 export const threat_protection_config = pgTable("threat_protection_config", {
   id: uuid("id").notNull().defaultRandom(),
   org_id: uuid("org_id").notNull().unique(),
   mode: varchar("mode").notNull().default("off"),
-  risk_score_threshold: integer("risk_score_threshold").notNull().default(75),
-  denied_categories: text("denied_categories").array().notNull().default([]),
-  max_domain_age_days: integer("max_domain_age_days"),
-  blacklist: text("blacklist").array().notNull().default([]),
-  whitelist: text("whitelist").array().notNull().default([]),
-  blocked_tlds: text("blocked_tlds").array().notNull().default([]),
-  blocked_countries: text("blocked_countries").array().notNull().default([]),
-  failure_policy: varchar("failure_policy").notNull().default("closed"),
-  allow_request_overrides: boolean("allow_request_overrides")
-    .notNull()
-    .default(true),
-  siem_url: text("siem_url"),
-  siem_secret: text("siem_secret"),
-  // "blocked" | "all"
-  siem_events: varchar("siem_events"),
+  config: jsonb("config").notNull().default({}),
   created_at: ts("created_at").notNull().defaultNow(),
   updated_at: ts("updated_at").notNull().defaultNow(),
 });

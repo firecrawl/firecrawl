@@ -16,8 +16,8 @@ import type { ThreatCheckDedup, ThreatDecision } from "./types";
 // Retention rules (applied in buildThreatCheckEvent):
 //  * zero-data-retention requests keep the domain but drop the full URL
 //  * the raw provider payload (verdict.raw) is NEVER included — the event
-//    carries only the normalized verdict fields (risk score, categories,
-//    domain age, country). The raw payload stays in server logs only.
+//    carries only the normalized verdict fields (risk score, categories).
+//    The raw payload stays in server logs only.
 //
 // Emission is strictly fire-and-forget: it never throws and never delays the
 // enforcement hot path.
@@ -68,8 +68,6 @@ export interface ThreatCheckEvent {
   provider: string;
   risk_score: number | null;
   categories: string[];
-  domain_age_days: number | null;
-  country_code: string;
   decision: "allowed" | "blocked";
   rule: string;
   provider_consulted: boolean;
@@ -103,8 +101,6 @@ export function buildThreatCheckEvent(
     provider: verdict?.provider ?? "",
     risk_score: verdict?.riskScore ?? null,
     categories: verdict?.categories ?? [],
-    domain_age_days: verdict?.domainAgeDays ?? null,
-    country_code: verdict?.countryCode ?? "",
     decision: decision.allowed ? "allowed" : "blocked",
     rule: decision.rule,
     provider_consulted: decision.providerConsulted,

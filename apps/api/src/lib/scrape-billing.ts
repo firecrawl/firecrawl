@@ -26,20 +26,17 @@ const redactPIICostBonus = 4;
 // the per-page surcharge mirrors the +4 base — same tier as lockdown.
 const redactPIIPdfPageCostBonus = 4;
 // Threat protection domain scans: +2 per scanned domain in "normal" mode
-// (Google Web Risk), +3 in "enhanced" mode (alphaMountain). A "scan" is any
-// ThreatDecision with providerConsulted set — +2/+3 per consulted verdict.
-// Checks deduplicated within one request/job (e.g. a scrape and its
-// same-domain redirect re-check) share a single decision and therefore bill
-// once; verdicts are never reused across requests (no verdict cache — ZDR).
-// Local-only decisions (whitelist/blacklist/blocked-tld, mode off, provider
-// failure) never bill.
-const threatScanCostNormal = 2;
-const threatScanCostEnhanced = 3;
+// (Google Web Risk). A "scan" is any ThreatDecision with providerConsulted
+// set — +2 per consulted verdict. Checks deduplicated within one request/job
+// (e.g. a scrape and its same-domain redirect re-check) share a single
+// decision and therefore bill once; verdicts are never reused across
+// requests (no verdict cache — ZDR). Local-only decisions (whitelist/
+// blacklist/blocked-tld, mode off, provider failure) never bill.
+const threatScanCost = 2;
 
 /**
  * Sums the scan fees for a set of threat protection decisions. Only decisions
- * that consulted the provider bill; the fee is +2 for "normal" mode and +3
- * for "enhanced" mode.
+ * that consulted the provider bill; the fee is +2 per scanned domain.
  */
 export function calculateThreatScanCredits(
   decisions: Iterable<ThreatDecision>,
@@ -47,10 +44,7 @@ export function calculateThreatScanCredits(
   let credits = 0;
   for (const decision of decisions) {
     if (!decision.providerConsulted) continue;
-    credits +=
-      decision.mode === "enhanced"
-        ? threatScanCostEnhanced
-        : threatScanCostNormal;
+    credits += threatScanCost;
   }
   return credits;
 }
@@ -66,7 +60,7 @@ export async function calculateCreditsToBeBilled(
   dataLayer?: DataLayerScrapeMetadata,
   // Threat protection decisions for this scrape (initial + redirect checks,
   // in order). Each decision with `providerConsulted` bills a scan fee (+2
-  // normal / +3 enhanced) on top of the scrape's own cost — on both success
+  // per scanned domain) on top of the scrape's own cost — on both success
   // and failure (a scrape blocked by threat protection still consulted the
   // classifier). For scrapes blocked by threat protection, the
   // UnsafeDomainBlockedError in `error` also carries its decision, which is

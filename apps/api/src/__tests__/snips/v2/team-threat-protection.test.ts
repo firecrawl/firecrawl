@@ -76,14 +76,11 @@ describeIf(TEST_PRODUCTION)("Team threat protection config API", () => {
 
     it("PUT round-trips a full config document", async () => {
       const doc = {
-        mode: "enhanced",
+        mode: "normal",
         riskScoreThreshold: 60,
-        deniedCategories: ["Malicious", "Phishing"],
-        maxDomainAgeDays: 30,
         blacklist: ["*.bad.example"],
         whitelist: ["firecrawl.dev"],
         blockedTlds: ["zip"],
-        blockedCountries: ["KP"],
         failurePolicy: "open",
         allowRequestOverrides: false,
         siem: {
@@ -97,14 +94,11 @@ describeIf(TEST_PRODUCTION)("Team threat protection config API", () => {
       expect(put.statusCode).toBe(200);
       expect(put.body.success).toBe(true);
       expect(put.body.data).toMatchObject({
-        mode: "enhanced",
+        mode: "normal",
         riskScoreThreshold: 60,
-        deniedCategories: ["Malicious", "Phishing"],
-        maxDomainAgeDays: 30,
         blacklist: ["*.bad.example"],
         whitelist: ["firecrawl.dev"],
         blockedTlds: ["zip"],
-        blockedCountries: ["KP"],
         failurePolicy: "open",
         allowRequestOverrides: false,
         configured: true,
@@ -115,16 +109,23 @@ describeIf(TEST_PRODUCTION)("Team threat protection config API", () => {
         events: "all",
         secretSet: true,
       });
+      // Retired policy fields must not appear in the served document.
+      expect(put.body.data).not.toHaveProperty("deniedCategories");
+      expect(put.body.data).not.toHaveProperty("maxDomainAgeDays");
+      expect(put.body.data).not.toHaveProperty("blockedCountries");
 
       const get = await getConfigRaw(identity);
       expect(get.statusCode).toBe(200);
       expect(get.body.data).toMatchObject({
-        mode: "enhanced",
+        mode: "normal",
         riskScoreThreshold: 60,
         configured: true,
       });
       expect(get.body.data.siem?.secretSet).toBe(true);
       expect(JSON.stringify(get.body.data)).not.toContain("test-secret");
+      expect(get.body.data).not.toHaveProperty("deniedCategories");
+      expect(get.body.data).not.toHaveProperty("maxDomainAgeDays");
+      expect(get.body.data).not.toHaveProperty("blockedCountries");
     });
 
     it("PUT without a secret preserves the stored SIEM secret (write-only contract)", async () => {
@@ -197,7 +198,7 @@ describeIf(TEST_PRODUCTION)("Team threat protection config API", () => {
     it("PUT rejects an invalid document with 400", async () => {
       const res = await putConfigRaw(
         {
-          mode: "enhanced",
+          mode: "normal",
           riskScoreThreshold: 500,
           blacklist: ["https://not-a-domain"],
         },
@@ -205,6 +206,27 @@ describeIf(TEST_PRODUCTION)("Team threat protection config API", () => {
       );
       expect(res.statusCode).toBe(400);
       expect(res.body.success).toBe(false);
+    });
+
+    it('PUT rejects the retired "enhanced" mode with 400', async () => {
+      const res = await putConfigRaw({ mode: "enhanced" }, identity);
+      expect(res.statusCode).toBe(400);
+      expect(res.body.success).toBe(false);
+    });
+
+    it("PUT rejects retired policy fields with 400", async () => {
+      for (const retired of [
+        { deniedCategories: ["Malicious"] },
+        { maxDomainAgeDays: 30 },
+        { blockedCountries: ["KP"] },
+      ]) {
+        const res = await putConfigRaw(
+          { mode: "normal", ...retired },
+          identity,
+        );
+        expect(res.statusCode).toBe(400);
+        expect(res.body.success).toBe(false);
+      }
     });
   });
 });

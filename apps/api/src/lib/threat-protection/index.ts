@@ -1,10 +1,10 @@
 import { logger } from "../logger";
 import { emitThreatCheck, type ThreatCheckContext } from "./logging";
-import { fetchAlphaMountainVerdict } from "./providers/alphamountain";
 import { fetchGoogleWebRiskVerdict } from "./providers/google-web-risk";
 import type {
   RawVerdict,
   ThreatDecision,
+  ThreatProtectionMode,
   ThreatProtectionPolicy,
 } from "./types";
 import { evaluatePolicy, localOnlyDecision, normalizeDomain } from "./verdict";
@@ -16,12 +16,12 @@ import { evaluatePolicy, localOnlyDecision, normalizeDomain } from "./verdict";
 //      this request/job reuses the same in-flight decision
 //   3. local-only rules (whitelist/blacklist/blocked-tld) → decide without a
 //      provider call (no billing)
-//   4. provider ("normal" = Google Web Risk local hash-prefix database,
-//      "enhanced" = alphaMountain), with a per-attempt timeout and one retry
+//   4. provider ("normal" = Google Web Risk local hash-prefix database),
+//      with a per-attempt timeout and one retry
 //   5. evaluate the policy against the verdict; provider failure → the org's
 //      failurePolicy decides (fail-open allows, fail-closed blocks)
 // Any decision backed by a verdict sets providerConsulted, which drives
-// billing (+2 credits normal / +3 enhanced) in the enforcement layer. This
+// billing (+2 credits per scanned domain) in the enforcement layer. This
 // module performs no billing or pipeline integration itself.
 //
 // ZDR boundary: verdicts are NEVER persisted — there is no cross-request
@@ -40,17 +40,25 @@ export * from "./types";
 const PROVIDER_TIMEOUT_MS = 5000;
 const PROVIDER_ATTEMPTS = 2; // 1 initial + 1 retry
 
+/**
+ * Single mode→provider dispatch point. Every provider is a separate module
+ * under ./providers exporting `fetch<X>Verdict(domain) → RawVerdict`; this
+ * switch is the only place that knows which mode maps to which classifier.
+ * Deliberately kept as a dispatch even with one live branch — future partner
+ * classifiers add a mode + a case here and nothing else changes.
+ */
 async function fetchProviderVerdict(
   domain: string,
-  mode: "normal" | "enhanced",
+  mode: Exclude<ThreatProtectionMode, "off">,
 ): Promise<RawVerdict> {
   let lastError: unknown;
   for (let attempt = 1; attempt <= PROVIDER_ATTEMPTS; attempt++) {
     try {
       const signal = AbortSignal.timeout(PROVIDER_TIMEOUT_MS);
-      return mode === "normal"
-        ? await fetchGoogleWebRiskVerdict(domain, { signal })
-        : await fetchAlphaMountainVerdict(domain, { signal });
+      switch (mode) {
+        case "normal":
+          return await fetchGoogleWebRiskVerdict(domain, { signal });
+      }
     } catch (error) {
       lastError = error;
       logger.warn("Threat protection provider lookup failed", {
@@ -82,7 +90,7 @@ async function checkDomainFresh(
   try {
     verdict = await fetchProviderVerdict(
       normalized,
-      policy.mode as "normal" | "enhanced",
+      policy.mode as Exclude<ThreatProtectionMode, "off">,
     );
   } catch {
     // Already logged per-attempt; a null verdict routes the decision
@@ -112,8 +120,8 @@ async function checkDomainFresh(
 /**
  * Classify a domain against an org's threat protection policy. Never throws:
  * provider failures resolve through the policy's failurePolicy
- * ("provider-failure" rule). Callers bill +2 (normal) / +3 (enhanced) credits
- * when the returned decision has `providerConsulted` set.
+ * ("provider-failure" rule). Callers bill +2 credits per scanned domain when
+ * the returned decision has `providerConsulted` set.
  *
  * When `ctx.dedup` is provided (a request/job-scoped map created by the call
  * site), repeated checks of the same domain within that scope share one

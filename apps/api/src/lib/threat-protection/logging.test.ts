@@ -15,11 +15,9 @@ const RAW_PROVIDER_PAYLOAD = {
 };
 
 const verdict: RawVerdict = {
-  provider: "alphamountain",
+  provider: "google-web-risk",
   riskScore: 91,
-  categories: ["Malware", "Phishing"],
-  domainAgeDays: 12,
-  countryCode: "US",
+  categories: ["MALWARE", "SOCIAL_ENGINEERING"],
   fromCache: true,
   raw: RAW_PROVIDER_PAYLOAD,
 };
@@ -29,7 +27,7 @@ const blockedDecision: ThreatDecision = {
   rule: "risk-score",
   providerConsulted: true,
   verdict,
-  mode: "enhanced",
+  mode: "normal",
 };
 
 const localAllowDecision: ThreatDecision = {
@@ -71,12 +69,10 @@ describe("buildThreatCheckEvent", () => {
         endpoint: "scrape",
         url: "https://risky.example.com/page",
         url_domain: "risky.example.com",
-        mode: "enhanced",
-        provider: "alphamountain",
+        mode: "normal",
+        provider: "google-web-risk",
         risk_score: 91,
-        categories: ["Malware", "Phishing"],
-        domain_age_days: 12,
-        country_code: "US",
+        categories: ["MALWARE", "SOCIAL_ENGINEERING"],
         decision: "blocked",
         rule: "risk-score",
         provider_consulted: true,
@@ -123,8 +119,6 @@ describe("buildThreatCheckEvent", () => {
         provider: "",
         risk_score: null,
         categories: [],
-        domain_age_days: null,
-        country_code: "",
         provider_consulted: false,
         from_cache: false,
         url: "",

@@ -201,8 +201,6 @@ export async function sendSiemTestEvent(
         provider: "",
         risk_score: null,
         categories: ["TEST_EVENT"],
-        domain_age_days: null,
-        country_code: "",
         decision: "blocked",
         rule: "siem-test",
         provider_consulted: false,
