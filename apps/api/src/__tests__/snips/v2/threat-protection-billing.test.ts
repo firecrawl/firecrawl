@@ -15,15 +15,21 @@ import {
   scrapeRaw,
   searchRaw,
 } from "./lib";
+import {
+  createWebRiskMockCounters,
+  createWebRiskMockHandler,
+  WebRiskMockDatabase,
+} from "../../../lib/threat-protection/providers/web-risk/testing";
 
 // =========================================
-// Threat protection billing (ENG-4985)
+// Threat protection billing (ENG-4985, ZDR rework ENG-5004)
 //
 // Billing rules under test:
 //   - +2 credits per domain scanned in "normal" mode (Google Web Risk)
 //   - +3 credits per domain scanned in "enhanced" mode (alphaMountain)
-//   - a "scan" = a ThreatDecision with providerConsulted (fresh AND cached
-//     provider verdicts both bill — cache hits bill)
+//   - a "scan" = a ThreatDecision with providerConsulted — +2/+3 per
+//     consulted verdict. There is no verdict cache anymore (ZDR): every
+//     request scans afresh, and dedup only applies within one request/job.
 //   - blocked requests still bill the scan fee (no base scrape cost, matching
 //     how other failed scrapes bill)
 //   - local-only decisions (whitelist/blacklist/blocked-tld) never bill
@@ -53,10 +59,12 @@ const CLEAN_URL = TEST_SUITE_WEBSITE;
 // A stable cross-hostname redirect: google.com 301s to www.google.com. The
 // mock flags only the redirect target, so the scrape consults the provider
 // twice (initial domain + redirect re-check) before being blocked.
+// NOTE the two hostnames are different domains for the request-scoped dedup,
+// so the redirect re-check is a second scan (two consulted decisions).
 const REDIRECT_SOURCE_URL = "https://google.com/";
 const REDIRECT_TARGET_DOMAIN = "www.google.com";
 
-const MOCK_RISKY_DOMAINS = new Set([RISKY_DOMAIN, REDIRECT_TARGET_DOMAIN]);
+const MOCK_RISKY_DOMAINS = [RISKY_DOMAIN, REDIRECT_TARGET_DOMAIN];
 
 const isLocalMock = (url: string) =>
   /^http:\/\/(localhost|127\.0\.0\.1):\d+$/.test(url);
@@ -73,34 +81,26 @@ const sleep = (ms: number) => new Promise(x => setTimeout(() => x(true), ms));
 // Credit deductions land through the batched billing queue; see billing.test.ts.
 const sleepForBatchBilling = () => sleep(40000);
 
+// Update API mock (ZDR rework): the API syncs the mock's threat lists via
+// threatLists:computeDiff and confirms local prefix hits via hashes:search —
+// clean domains resolve locally and never reach the mock at all.
+const webRiskDb = new WebRiskMockDatabase();
+for (const domain of MOCK_RISKY_DOMAINS) {
+  webRiskDb.addRiskyDomain(domain, "MALWARE");
+}
+const webRiskCounters = createWebRiskMockCounters();
+const webRiskHandler = createWebRiskMockHandler(webRiskDb, webRiskCounters);
+
 let webRiskServer: http.Server | null = null;
-const webRiskHits = new Map<string, number>();
+
+/** hashes:search confirmations whose prefix belongs to `domain`. */
+const webRiskHitsFor = (domain: string) =>
+  webRiskCounters.hashesSearchRequestsForDomain(domain);
 
 function startWebRiskMock(): Promise<void> {
   const port = Number(new URL(webRiskMockUrl).port);
   webRiskServer = http.createServer((req, res) => {
-    const url = new URL(req.url ?? "/", webRiskMockUrl);
-    if (url.pathname === "/v1/uris:search") {
-      const uri = url.searchParams.get("uri") ?? "";
-      let domain = "";
-      try {
-        domain = new URL(uri).hostname;
-      } catch (_) {}
-      webRiskHits.set(domain, (webRiskHits.get(domain) ?? 0) + 1);
-      res.setHeader("Content-Type", "application/json");
-      if (MOCK_RISKY_DOMAINS.has(domain)) {
-        res.end(
-          JSON.stringify({
-            threat: {
-              threatTypes: ["MALWARE"],
-              expireTime: new Date(Date.now() + 3600_000).toISOString(),
-            },
-          }),
-        );
-      } else {
-        res.end(JSON.stringify({}));
-      }
-    } else {
+    if (!webRiskHandler(req, res)) {
       res.statusCode = 404;
       res.end("{}");
     }
@@ -219,8 +219,12 @@ describeIf(TEST_PRODUCTION)("Threat protection billing", () => {
     );
 
     (HAS_WEB_RISK_MOCK ? it : it.skip)(
-      "second scrape of the same domain within the cache TTL still bills + 2",
+      "a rescrape of the same domain is a fresh scan and bills + 2 again",
       async () => {
+        // ZDR: there is no cross-request verdict cache — every request scans
+        // afresh and bills per consulted verdict. A clean domain's scan is
+        // entirely local (hash-prefix lookup against the synced list), so
+        // Google is never contacted for it on either scrape.
         const cleanDomain = new URL(CLEAN_URL).hostname;
 
         const first = await scrape(
@@ -232,8 +236,6 @@ describeIf(TEST_PRODUCTION)("Threat protection billing", () => {
         );
         expect(first.metadata.creditsUsed).toBe(3);
 
-        const hitsAfterFirst = webRiskHits.get(cleanDomain) ?? 0;
-
         const second = await scrape(
           {
             url: CLEAN_URL,
@@ -241,10 +243,10 @@ describeIf(TEST_PRODUCTION)("Threat protection billing", () => {
           } as any,
           identity,
         );
-        // The verdict is now Redis-cached, so no new provider hit — but the
-        // cached scan still bills.
-        expect(webRiskHits.get(cleanDomain) ?? 0).toBe(hitsAfterFirst);
         expect(second.metadata.creditsUsed).toBe(3);
+
+        // Clean domains never trigger a hashes:search confirmation.
+        expect(webRiskHitsFor(cleanDomain)).toBe(0);
       },
       scrapeTimeout * 2,
     );
@@ -352,7 +354,7 @@ describeIf(TEST_PRODUCTION)("Threat protection billing", () => {
     });
 
     (HAS_WEB_RISK_MOCK ? it : it.skip)(
-      "batch scrape bills base + 2 per document (cache hits bill)",
+      "batch scrape bills base + 2 per document (each job scans afresh)",
       async () => {
         const res = await batchScrape(
           {

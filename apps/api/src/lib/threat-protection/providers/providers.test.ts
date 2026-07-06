@@ -1,12 +1,25 @@
 import http from "http";
 import { AddressInfo } from "net";
+
+// The Web Risk threat-list store lives on the durable Redis connection —
+// swap in an in-memory fake. (fake-redis.ts has no runtime imports, so the
+// factory cannot re-enter the module being mocked.)
+vi.mock("../../../services/queue-service", async () => {
+  const { createFakeWebRiskRedis } = await import("./web-risk/fake-redis.js");
+  const client = createFakeWebRiskRedis();
+  return { getRedisConnection: () => client };
+});
+
 import { config } from "../../../config";
 import { fetchAlphaMountainVerdict } from "./alphamountain";
 import { fetchGoogleWebRiskVerdict } from "./google-web-risk";
+import { domainExpressionHash, WebRiskMockDatabase } from "./web-risk/testing";
 
 // Mocked-HTTP provider tests: a local http server stands in for the real
 // provider APIs via the config URL overrides (same pattern as
-// src/lib/fire-privacy-client.test.ts).
+// src/lib/fire-privacy-client.test.ts). For Google Web Risk the mock serves
+// the Update API endpoints (threatLists:computeDiff + hashes:search); the
+// old uris:search endpoint intentionally no longer exists.
 
 type SeenRequest = { url: string; method: string; body: unknown };
 
@@ -14,6 +27,27 @@ let server: http.Server;
 let baseUrl: string;
 let seenRequests: SeenRequest[] = [];
 let routes: Record<string, { status: number; body: unknown }> = {};
+
+// Fixture threat lists, fixed for the whole file (the local list is synced
+// once per process by the provider's boot sync).
+const CONFIRMED_DOMAIN = "malware.example";
+const COLLISION_DOMAIN = "collision.example";
+
+const webRiskDb = new WebRiskMockDatabase();
+webRiskDb.addRiskyDomain(CONFIRMED_DOMAIN, "MALWARE");
+webRiskDb.addRiskyDomain(CONFIRMED_DOMAIN, "SOCIAL_ENGINEERING");
+// A list entry that shares the 4-byte prefix of COLLISION_DOMAIN's expression
+// hash but is a different full hash → local hit, unconfirmed by hashes:search.
+webRiskDb.addCollidingFullHash(
+  Buffer.concat([
+    domainExpressionHash(COLLISION_DOMAIN).subarray(0, 4),
+    Buffer.alloc(28, 0xab),
+  ]),
+  "UNWANTED_SOFTWARE",
+);
+
+// While > 0, hashes:search requests fail with 503 (decremented per request).
+let failHashesSearches = 0;
 
 const originalConfig = {
   webRiskUrl: config.GOOGLE_WEB_RISK_API_URL,
@@ -39,7 +73,39 @@ beforeAll(async () => {
           body,
         });
 
-        const path = (req.url ?? "").split("?")[0];
+        const url = new URL(req.url ?? "/", "http://localhost");
+        const path = url.pathname;
+
+        // Web Risk Update API endpoints.
+        if (path === "/v1/threatLists:computeDiff") {
+          res.setHeader("content-type", "application/json");
+          res.end(
+            JSON.stringify(
+              webRiskDb.computeDiffResponse(
+                url.searchParams.get("threatType") ?? "",
+              ),
+            ),
+          );
+          return;
+        }
+        if (path === "/v1/hashes:search") {
+          if (failHashesSearches > 0) {
+            failHashesSearches--;
+            res.statusCode = 503;
+            res.end("{}");
+            return;
+          }
+          res.setHeader("content-type", "application/json");
+          res.end(
+            JSON.stringify(
+              webRiskDb.hashesSearchResponse(
+                url.searchParams.get("hashPrefix") ?? "",
+              ),
+            ),
+          );
+          return;
+        }
+
         const route = routes[path];
         if (!route) {
           res.statusCode = 404;
@@ -73,47 +139,60 @@ afterAll(async () => {
 beforeEach(() => {
   seenRequests = [];
   routes = {};
+  failHashesSearches = 0;
 });
 
-describe("fetchGoogleWebRiskVerdict", () => {
-  it("maps a confirmed threat to riskScore 100 with threat-type categories", async () => {
-    routes["/v1/uris:search"] = {
-      status: 200,
-      body: {
-        threat: {
-          threatTypes: ["MALWARE", "SOCIAL_ENGINEERING"],
-          expireTime: "2026-07-04T12:00:00Z",
-        },
-      },
-    };
+const hashesSearchRequests = () =>
+  seenRequests.filter(r => r.url.startsWith("/v1/hashes:search"));
+const urisSearchRequests = () =>
+  seenRequests.filter(r => r.url.startsWith("/v1/uris:search"));
 
-    const verdict = await fetchGoogleWebRiskVerdict("malware.example");
+describe("fetchGoogleWebRiskVerdict", () => {
+  it("confirms a local prefix hit via hashes:search → riskScore 100 with categories", async () => {
+    const verdict = await fetchGoogleWebRiskVerdict(CONFIRMED_DOMAIN);
 
     expect(verdict).toMatchObject({
       provider: "google-web-risk",
       riskScore: 100,
-      categories: ["MALWARE", "SOCIAL_ENGINEERING"],
       domainAgeDays: null,
       countryCode: null,
       fromCache: false,
     });
-    expect(verdict.raw).toEqual(routes["/v1/uris:search"].body);
+    expect([...verdict.categories].sort()).toEqual([
+      "MALWARE",
+      "SOCIAL_ENGINEERING",
+    ]);
 
-    expect(seenRequests).toHaveLength(1);
-    const url = new URL(baseUrl + seenRequests[0].url);
-    expect(seenRequests[0].method).toBe("GET");
+    // Exactly one confirmation call, carrying ONLY the anonymized 4-byte
+    // hash prefix (never the domain or URL), plus the API key.
+    const confirmations = hashesSearchRequests();
+    expect(confirmations).toHaveLength(1);
+    const url = new URL(baseUrl + confirmations[0].url);
+    expect(confirmations[0].method).toBe("GET");
+    expect(url.searchParams.get("hashPrefix")).toBe(
+      domainExpressionHash(CONFIRMED_DOMAIN).subarray(0, 4).toString("base64"),
+    );
     expect(url.searchParams.getAll("threatTypes")).toEqual([
       "MALWARE",
       "SOCIAL_ENGINEERING",
       "UNWANTED_SOFTWARE",
     ]);
-    expect(url.searchParams.get("uri")).toBe("http://malware.example/");
     expect(url.searchParams.get("key")).toBe("test-web-risk-key");
+    expect(confirmations[0].url).not.toContain(CONFIRMED_DOMAIN);
+    // The legacy full-URL lookup endpoint is never used.
+    expect(urisSearchRequests()).toHaveLength(0);
   });
 
-  it("maps no match to riskScore 0 with no categories", async () => {
-    routes["/v1/uris:search"] = { status: 200, body: {} };
+  it("flags subdomains of a listed domain through host-suffix expressions", async () => {
+    const verdict = await fetchGoogleWebRiskVerdict(
+      `cdn.assets.${CONFIRMED_DOMAIN}`,
+    );
 
+    expect(verdict.riskScore).toBe(100);
+    expect(verdict.categories).toContain("MALWARE");
+  });
+
+  it("resolves clean domains locally with zero Google calls", async () => {
     const verdict = await fetchGoogleWebRiskVerdict("safe.example");
 
     expect(verdict).toMatchObject({
@@ -121,13 +200,31 @@ describe("fetchGoogleWebRiskVerdict", () => {
       riskScore: 0,
       categories: [],
       fromCache: false,
+      raw: { localPrefixMatch: false },
     });
+    // The common case transmits nothing: no hashes:search, no uris:search.
+    expect(hashesSearchRequests()).toHaveLength(0);
+    expect(urisSearchRequests()).toHaveLength(0);
   });
 
-  it("throws on non-2xx responses so failurePolicy can apply", async () => {
-    routes["/v1/uris:search"] = { status: 503, body: {} };
+  it("treats an unconfirmed prefix hit (collision) as clean", async () => {
+    const verdict = await fetchGoogleWebRiskVerdict(COLLISION_DOMAIN);
 
-    await expect(fetchGoogleWebRiskVerdict("safe.example")).rejects.toThrow(
+    expect(verdict).toMatchObject({
+      provider: "google-web-risk",
+      riskScore: 0,
+      categories: [],
+    });
+    // The collision DID require a confirmation round trip…
+    expect(hashesSearchRequests()).toHaveLength(1);
+    // …whose returned full hash didn't match any of our expression hashes.
+    expect(verdict.raw).toMatchObject({ localPrefixMatch: true });
+  });
+
+  it("throws on hashes:search errors so failurePolicy can apply", async () => {
+    failHashesSearches = Infinity;
+
+    await expect(fetchGoogleWebRiskVerdict(CONFIRMED_DOMAIN)).rejects.toThrow(
       /status 503/,
     );
   });

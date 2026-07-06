@@ -13,6 +13,11 @@ const logger = _logger.child({ module: "threat-protection-store" });
 
 // Short TTL so config changes apply without a redeploy while keeping the
 // enforcement hot path off Postgres. Invalidated on write.
+//
+// ZDR boundary: this cache (and the team→org map below) stores the org's OWN
+// configuration — never scrape-derived data (no target domains, URLs, or
+// verdicts) — so it is compatible with zero-data-retention requirements and
+// deliberately survives the removal of the verdict cache (ENG-5004).
 const CACHE_TTL_SECONDS = 60;
 
 const cacheKey = (orgId: string) => `threat-protection-config:${orgId}`;

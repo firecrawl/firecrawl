@@ -1,5 +1,4 @@
 import { logger } from "../logger";
-import { getCachedVerdict, setCachedVerdict } from "./cache";
 import { emitThreatCheck, type ThreatCheckContext } from "./logging";
 import { fetchAlphaMountainVerdict } from "./providers/alphamountain";
 import { fetchGoogleWebRiskVerdict } from "./providers/google-web-risk";
@@ -13,15 +12,23 @@ import { evaluatePolicy, localOnlyDecision, normalizeDomain } from "./verdict";
 // Public entry point for the threat protection core library (enterprise
 // domain risk blocking). Flow per domain:
 //   1. mode "off" → allow, no provider, no billing
-//   2. local-only rules (whitelist/blacklist/blocked-tld) → decide without a
+//   2. request-scoped dedup (ctx.dedup) → a domain already checked within
+//      this request/job reuses the same in-flight decision
+//   3. local-only rules (whitelist/blacklist/blocked-tld) → decide without a
 //      provider call (no billing)
-//   3. cache → provider ("normal" = Google Web Risk, "enhanced" =
-//      alphaMountain), with a per-attempt timeout and one retry
-//   4. evaluate the policy against the verdict; provider failure → the org's
+//   4. provider ("normal" = Google Web Risk local hash-prefix database,
+//      "enhanced" = alphaMountain), with a per-attempt timeout and one retry
+//   5. evaluate the policy against the verdict; provider failure → the org's
 //      failurePolicy decides (fail-open allows, fail-closed blocks)
-// Any decision backed by a verdict (fresh OR cached) sets providerConsulted,
-// which drives billing (+2 credits normal / +3 enhanced) in the enforcement
-// layer. This module performs no billing or pipeline integration itself.
+// Any decision backed by a verdict sets providerConsulted, which drives
+// billing (+2 credits normal / +3 enhanced) in the enforcement layer. This
+// module performs no billing or pipeline integration itself.
+//
+// ZDR boundary: verdicts are NEVER persisted — there is no cross-request
+// verdict cache (scrape-target domains must not be stored at rest). The only
+// reuse of a decision is via the caller-provided, request-scoped in-memory
+// dedup map. The org-config cache in ./store.ts is unaffected: it caches the
+// org's own settings, not scrape-derived data.
 
 // Policy evaluation helpers (evaluatePolicy, localOnlyDecision) are exported
 // from ./verdict, and the shared contract types from ./types — import those
@@ -58,15 +65,65 @@ async function fetchProviderVerdict(
   throw lastError;
 }
 
+async function checkDomainFresh(
+  normalized: string,
+  policy: ThreatProtectionPolicy,
+  ctx: ThreatCheckContext,
+): Promise<ThreatDecision> {
+  // Local rules first: when whitelist/blacklist/blocked-tld are decisive we
+  // skip the paid provider scan entirely.
+  const local = localOnlyDecision(normalized, policy);
+  if (local !== null) {
+    emitThreatCheck(normalized, local, ctx);
+    return local;
+  }
+
+  let verdict: RawVerdict | null = null;
+  try {
+    verdict = await fetchProviderVerdict(
+      normalized,
+      policy.mode as "normal" | "enhanced",
+    );
+  } catch {
+    // Already logged per-attempt; a null verdict routes the decision
+    // through the org's failurePolicy below.
+    verdict = null;
+  }
+
+  const decision = evaluatePolicy(normalized, verdict, policy);
+  emitThreatCheck(normalized, decision, ctx);
+  if (!decision.allowed || decision.rule === "provider-failure") {
+    logger.info("Threat protection decision", {
+      canonicalLog: "threat-protection/check",
+      teamId: ctx.teamId,
+      domain: normalized,
+      mode: policy.mode,
+      allowed: decision.allowed,
+      rule: decision.rule,
+      providerConsulted: decision.providerConsulted,
+      riskScore: verdict?.riskScore ?? null,
+      categories: verdict?.categories ?? [],
+      rawVerdict: verdict?.raw,
+    });
+  }
+  return decision;
+}
+
 /**
  * Classify a domain against an org's threat protection policy. Never throws:
  * provider failures resolve through the policy's failurePolicy
  * ("provider-failure" rule). Callers bill +2 (normal) / +3 (enhanced) credits
  * when the returned decision has `providerConsulted` set.
  *
- * Every decision (allowed and blocked, local-only and provider-based,
- * including provider-failure resolutions) is emitted as a security event —
- * to the ClickHouse security log and, when the org has a SIEM destination
+ * When `ctx.dedup` is provided (a request/job-scoped map created by the call
+ * site), repeated checks of the same domain within that scope share one
+ * in-flight decision: one scan, one billable consulted verdict, one emitted
+ * security event. There is deliberately no cross-request or persisted verdict
+ * reuse (ZDR: scrape-target domains are never stored at rest).
+ *
+ * Every scan (allowed and blocked, local-only and provider-based, including
+ * provider-failure resolutions) is emitted as a security event — to the
+ * ClickHouse security log and, when the org has a SIEM destination
  * configured, to the SIEM push buffer. Pass as much of `ctx` as is cheaply
  * available at the call site; it enriches the emitted event.
  */
@@ -87,45 +144,15 @@ export async function checkDomain(
     };
   }
 
-  // Local rules first: when whitelist/blacklist/blocked-tld are decisive we
-  // skip the paid provider call entirely.
-  const local = localOnlyDecision(normalized, policy);
-  if (local !== null) {
-    emitThreatCheck(normalized, local, ctx);
-    return local;
-  }
-
-  let verdict: RawVerdict | null = await getCachedVerdict(
-    normalized,
-    policy.mode,
-  );
-  if (verdict === null) {
-    try {
-      verdict = await fetchProviderVerdict(normalized, policy.mode);
-      await setCachedVerdict(normalized, policy.mode, verdict);
-    } catch {
-      // Already logged per-attempt; a null verdict routes the decision
-      // through the org's failurePolicy below.
-      verdict = null;
+  if (ctx.dedup) {
+    const existing = ctx.dedup.get(normalized);
+    if (existing !== undefined) {
+      return existing;
     }
+    const pending = checkDomainFresh(normalized, policy, ctx);
+    ctx.dedup.set(normalized, pending);
+    return pending;
   }
 
-  const decision = evaluatePolicy(normalized, verdict, policy);
-  emitThreatCheck(normalized, decision, ctx);
-  if (!decision.allowed || decision.rule === "provider-failure") {
-    logger.info("Threat protection decision", {
-      canonicalLog: "threat-protection/check",
-      teamId: ctx.teamId,
-      domain: normalized,
-      mode: policy.mode,
-      allowed: decision.allowed,
-      rule: decision.rule,
-      providerConsulted: decision.providerConsulted,
-      fromCache: verdict?.fromCache ?? false,
-      riskScore: verdict?.riskScore ?? null,
-      categories: verdict?.categories ?? [],
-      rawVerdict: verdict?.raw,
-    });
-  }
-  return decision;
+  return checkDomainFresh(normalized, policy, ctx);
 }

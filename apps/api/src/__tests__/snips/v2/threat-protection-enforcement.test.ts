@@ -10,6 +10,11 @@ import {
   scrapeTimeout,
 } from "../lib";
 import { crawl, crawlStart, map, scrape, scrapeRaw, search } from "./lib";
+import {
+  createWebRiskMockCounters,
+  createWebRiskMockHandler,
+  WebRiskMockDatabase,
+} from "../../../lib/threat-protection/providers/web-risk/testing";
 
 // =========================================
 // Threat protection enforcement (ENG-4982/4983/4984)
@@ -47,42 +52,34 @@ const CLEAN_DOMAIN = new URL(TEST_SUITE_WEBSITE).hostname;
 const REDIRECT_SOURCE_URL = "https://google.com/";
 const REDIRECT_TARGET_DOMAIN = "www.google.com";
 
-// Domains the mock provider flags as MALWARE (risk score 100).
-const MOCK_RISKY_DOMAINS = new Set([RISKY_DOMAIN, REDIRECT_TARGET_DOMAIN]);
+// Domains the mock provider's threat lists flag as MALWARE (risk score 100).
+const MOCK_RISKY_DOMAINS = [RISKY_DOMAIN, REDIRECT_TARGET_DOMAIN];
 
 const mockProviderUrl = process.env.GOOGLE_WEB_RISK_API_URL ?? "";
 const HAS_MOCK_PROVIDER =
   /^http:\/\/(localhost|127\.0\.0\.1):\d+$/.test(mockProviderUrl) &&
   !!process.env.GOOGLE_WEB_RISK_API_KEY;
 
+// Update API mock (ZDR rework): the API syncs the mock's threat lists via
+// threatLists:computeDiff and confirms local prefix hits via hashes:search —
+// there is no uris:search anymore, and clean domains never reach the mock.
+const webRiskDb = new WebRiskMockDatabase();
+for (const domain of MOCK_RISKY_DOMAINS) {
+  webRiskDb.addRiskyDomain(domain, "MALWARE");
+}
+const webRiskCounters = createWebRiskMockCounters();
+const webRiskHandler = createWebRiskMockHandler(webRiskDb, webRiskCounters);
+
 let mockServer: http.Server | null = null;
-const providerHits = new Map<string, number>();
+
+/** hashes:search confirmations whose prefix belongs to `domain`. */
+const providerHitsFor = (domain: string) =>
+  webRiskCounters.hashesSearchRequestsForDomain(domain);
 
 function startMockProvider(): Promise<void> {
   const port = Number(new URL(mockProviderUrl).port);
   mockServer = http.createServer((req, res) => {
-    const url = new URL(req.url ?? "/", mockProviderUrl);
-    if (url.pathname === "/v1/uris:search") {
-      const uri = url.searchParams.get("uri") ?? "";
-      let domain = "";
-      try {
-        domain = new URL(uri).hostname;
-      } catch (_) {}
-      providerHits.set(domain, (providerHits.get(domain) ?? 0) + 1);
-      res.setHeader("Content-Type", "application/json");
-      if (MOCK_RISKY_DOMAINS.has(domain)) {
-        res.end(
-          JSON.stringify({
-            threat: {
-              threatTypes: ["MALWARE"],
-              expireTime: new Date(Date.now() + 3600_000).toISOString(),
-            },
-          }),
-        );
-      } else {
-        res.end(JSON.stringify({}));
-      }
-    } else {
+    if (!webRiskHandler(req, res)) {
       res.statusCode = 404;
       res.end("{}");
     }
@@ -188,7 +185,7 @@ describeIf(TEST_PRODUCTION)("Threat protection enforcement", () => {
         expect(res.body.code).toBe("unsafe_domain_blocked");
         expect(res.body.error).toContain(BLACKLISTED_DOMAIN);
         if (HAS_MOCK_PROVIDER) {
-          expect(providerHits.get(BLACKLISTED_DOMAIN) ?? 0).toBe(0);
+          expect(providerHitsFor(BLACKLISTED_DOMAIN)).toBe(0);
         }
       },
       scrapeTimeout,
@@ -201,7 +198,7 @@ describeIf(TEST_PRODUCTION)("Threat protection enforcement", () => {
         // is unavailable — so a success here proves the whitelist
         // short-circuited the check in environments without a provider, and
         // the hit counter proves it where the mock is running.
-        const before = providerHits.get(CLEAN_DOMAIN) ?? 0;
+        const before = providerHitsFor(CLEAN_DOMAIN);
         const doc = await scrape(
           {
             url: CLEAN_URL,
@@ -215,7 +212,7 @@ describeIf(TEST_PRODUCTION)("Threat protection enforcement", () => {
         );
         expect(doc.metadata.statusCode).toBe(200);
         if (HAS_MOCK_PROVIDER) {
-          expect(providerHits.get(CLEAN_DOMAIN) ?? 0).toBe(before);
+          expect(providerHitsFor(CLEAN_DOMAIN)).toBe(before);
         }
       },
       scrapeTimeout,
@@ -446,10 +443,10 @@ describeIf(TEST_PRODUCTION)("Threat protection enforcement", () => {
         expect(res.statusCode).toBe(403);
         expect(res.body.success).toBe(false);
         expect(res.body.code).toBe("unsafe_domain_blocked");
-        // Fresh or Redis-cached verdict — either way the mock has seen this
-        // domain at least once across runs; assert we did not skip the
-        // provider path entirely on a cold cache.
+        // The domain's hash prefix is in the synced local list; the block
+        // required a hashes:search confirmation against the mock.
         expect(res.body.error).toContain(RISKY_DOMAIN);
+        expect(providerHitsFor(RISKY_DOMAIN)).toBeGreaterThanOrEqual(1);
       },
       scrapeTimeout,
     );

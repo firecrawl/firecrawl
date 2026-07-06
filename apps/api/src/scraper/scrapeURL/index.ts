@@ -90,6 +90,7 @@ import { randomUUID } from "node:crypto";
 import type { DataLayerScrapeMetadata } from "../../lib/data-layer";
 import {
   checkDomain,
+  type ThreatCheckDedup,
   type ThreatDecision,
   type ThreatProtectionPolicy,
 } from "../../lib/threat-protection";
@@ -1113,7 +1114,11 @@ export async function scrapeURL(
     // Threat protection: check the target domain BEFORE any engine selection
     // or outbound fetch. The policy is resolved at the controller layer and
     // threaded through internalOptions; absent policy = zero overhead.
+    // The dedup map is scoped to this one scrape: the initial check and any
+    // redirect re-check on the same domain share a single scan (one billable
+    // consulted decision); a cross-domain redirect is a second scan.
     const threatPolicy = internalOptions.threatProtection;
+    const threatDedup: ThreatCheckDedup = new Map();
     if (threatPolicy && threatPolicy.mode !== "off") {
       const initialDomain = normalizeDomain(meta.rewrittenUrl ?? meta.url);
       const decision = await checkDomain(initialDomain, threatPolicy, {
@@ -1123,6 +1128,7 @@ export async function scrapeURL(
         endpoint: "scrape",
         url: meta.rewrittenUrl ?? meta.url,
         zeroDataRetention: internalOptions.zeroDataRetention,
+        dedup: threatDedup,
       });
       meta.threatDecisions.push(decision);
       if (!decision.allowed) {
@@ -1341,6 +1347,7 @@ export async function scrapeURL(
             endpoint: "scrape",
             url: finalUrl ?? undefined,
             zeroDataRetention: internalOptions.zeroDataRetention,
+            dedup: threatDedup,
           });
           meta.threatDecisions.push(decision);
           if (!decision.allowed) {

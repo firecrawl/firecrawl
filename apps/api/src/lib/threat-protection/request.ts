@@ -107,14 +107,17 @@ interface UrlPolicyCheckResult {
 }
 
 // Crawls/searches fan out to many URLs on few domains: dedupe by domain and
-// check domains concurrently (bounded), leaning on the lib's Redis verdict
-// cache so repeated domains don't re-hit the provider.
+// check domains concurrently (bounded). Deduplication is strictly scoped to
+// this one batch (an in-memory map) — there is no cross-request or persisted
+// verdict reuse (ZDR).
 const DOMAIN_CHECK_CONCURRENCY = 16;
 
 /**
  * Checks a list of URLs against a policy, deduplicated by domain. Never
  * throws — `checkDomain` resolves provider failures via the policy's
- * failurePolicy.
+ * failurePolicy. Each call scans a given domain at most once (per-batch
+ * in-memory dedup; callers may pass their own `ctx.dedup` to widen the scope
+ * to a whole request/job).
  */
 export async function checkUrlsAgainstThreatPolicy(
   urls: string[],
@@ -122,12 +125,16 @@ export async function checkUrlsAgainstThreatPolicy(
   ctx: ThreatCheckContext,
 ): Promise<UrlPolicyCheckResult> {
   const domains = [...new Set(urls.map(url => normalizeDomain(url)))];
+  const dedupCtx: ThreatCheckContext = {
+    ...ctx,
+    dedup: ctx.dedup ?? new Map(),
+  };
 
   const decisionsByDomain = new Map<string, ThreatDecision>();
   for (let i = 0; i < domains.length; i += DOMAIN_CHECK_CONCURRENCY) {
     const batch = domains.slice(i, i + DOMAIN_CHECK_CONCURRENCY);
     const decisions = await Promise.all(
-      batch.map(domain => checkDomain(domain, policy, ctx)),
+      batch.map(domain => checkDomain(domain, policy, dedupCtx)),
     );
     batch.forEach((domain, index) =>
       decisionsByDomain.set(domain, decisions[index]),

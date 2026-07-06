@@ -49,10 +49,27 @@ export interface RawVerdict {
   domainAgeDays: number | null;
   /** ISO 3166-1 alpha-2 (enhanced mode only). */
   countryCode: string | null;
+  /**
+   * Kept for contract stability (security log rows / SIEM events carry a
+   * from_cache column). Always false: verdicts are never persisted (ZDR) —
+   * repeated checks within one request share the same in-flight decision via
+   * the request-scoped dedup handle instead of a cache.
+   */
   fromCache: boolean;
   /** Raw provider payload, for security logging. */
   raw: unknown;
 }
+
+/**
+ * Request/job-scoped dedup handle for {@link import("./index").checkDomain}.
+ * Call sites create one per request or job (never shared across requests, and
+ * never persisted) so that repeated checks of the same domain within that
+ * scope — e.g. a scrape plus its redirect re-check, or one crawl-discovery
+ * batch — share a single in-flight decision instead of re-scanning. Keyed by
+ * normalized domain only: within one request the effective policy is
+ * constant, so the domain fully identifies the decision.
+ */
+export type ThreatCheckDedup = Map<string, Promise<ThreatDecision>>;
 
 export type ThreatDecisionRule =
   | "whitelist"

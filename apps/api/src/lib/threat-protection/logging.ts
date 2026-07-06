@@ -3,7 +3,7 @@ import { logger as _logger } from "../logger";
 import { trackThreatProtectionCheck } from "../tracking";
 import { enqueueSiemThreatEvent } from "../../services/webhook/siem";
 import { getOrgIdForTeam } from "./store";
-import type { ThreatDecision } from "./types";
+import type { ThreatCheckDedup, ThreatDecision } from "./types";
 
 // Security-event emission for threat protection (ENG-4986/4987). Every
 // decision produced by checkDomain() flows through emitThreatCheck(), which
@@ -38,6 +38,13 @@ export interface ThreatCheckContext {
   url?: string;
   origin?: string;
   zeroDataRetention?: boolean;
+  /**
+   * Request/job-scoped dedup handle (see {@link ThreatCheckDedup}). When set,
+   * checkDomain() reuses the in-flight decision for a domain already checked
+   * within this request instead of re-scanning it. Strictly in-memory and
+   * request-scoped — never persisted, never shared across requests (ZDR).
+   */
+  dedup?: ThreatCheckDedup;
 }
 
 /**

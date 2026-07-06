@@ -62,9 +62,20 @@ const configSchema = z.object({
     .string()
     .url()
     .default("https://api.alphamountain.ai"),
-  // TTL for cached provider verdicts, in seconds. Kept modest (6h default)
-  // because verdict freshness is an acceptance criterion for the feature.
-  THREAT_PROTECTION_CACHE_TTL_SECONDS: z.coerce
+  // Google Web Risk Update API sync tuning. ZDR: "normal" mode checks run
+  // against a locally synced hash-prefix database (threatLists:computeDiff)
+  // instead of sending URLs to Google, and verdicts are never persisted.
+  //
+  // Floor for how often threatLists:computeDiff may run per list. Google's
+  // recommendedNextDiff is respected when it is later than this floor.
+  THREAT_LIST_SYNC_MIN_INTERVAL_SECONDS: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(60),
+  // A synced threat list older than this is treated as unavailable
+  // (provider-failure semantics → the org's failurePolicy decides).
+  THREAT_LIST_STALENESS_SECONDS: z.coerce
     .number()
     .int()
     .positive()
