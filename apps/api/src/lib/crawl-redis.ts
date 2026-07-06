@@ -354,13 +354,12 @@ export async function finishCrawl(id: string, __logger: Logger = _logger) {
   await redisEvictConnection.del("crawl:" + id + ":visited");
   await redisEvictConnection.del("crawl:" + id + ":visited_unique");
 
-  // ZDR: for zero-data-retention crawls, eagerly drop the threat-protection
-  // bookkeeping (URL -> decision records of silently skipped discoveries)
-  // instead of letting it ride out its 24h TTL. Nothing reads it after the
-  // crawl finishes.
-  if (crawl?.zeroDataRetention) {
-    await redisEvictConnection.del("crawl:" + id + ":threat_blocked");
-  }
+  // Eagerly drop the threat-protection bookkeeping (URL -> decision records
+  // of silently skipped discoveries) instead of letting it ride out its 24h
+  // TTL. Nothing reads it after the crawl finishes, and deleting it
+  // unconditionally keeps the ZDR guarantee even when the crawl document is
+  // missing or unreadable at finish time.
+  await redisEvictConnection.del("crawl:" + id + ":threat_blocked");
 }
 
 export async function getCrawlJobs(id: string): Promise<string[]> {

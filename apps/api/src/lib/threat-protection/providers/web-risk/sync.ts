@@ -81,6 +81,14 @@ function decodeAdditions(additions: RawHashes[] | undefined): Buffer[] {
   for (const group of additions ?? []) {
     if (!group.rawHashes) continue;
     const prefixSize = group.prefixSize ?? 4;
+    // The response is unvalidated remote JSON: a non-positive prefixSize
+    // would make the offset loop below spin forever and stall the fleet-wide
+    // sync for the whole lock TTL. Valid Web Risk prefixes are 4-32 bytes.
+    if (!Number.isInteger(prefixSize) || prefixSize < 4 || prefixSize > 32) {
+      throw new Error(
+        `Web Risk computeDiff returned invalid prefixSize ${prefixSize}`,
+      );
+    }
     const blob = Buffer.from(group.rawHashes, "base64");
     for (
       let offset = 0;
@@ -302,12 +310,20 @@ export function ensureThreatListBootSync(): Promise<void> {
       const redis = getRedisConnection() as unknown as WebRiskRedis;
       const synced = await runThreatListSyncPass({ force: true });
       if (synced) return;
-      // Another process is syncing right now — wait for the lock to clear
-      // (bounded), then proceed with whatever state it produced.
-      const deadline = Date.now() + 60_000;
+      // Another process is syncing right now — wait for the lock to clear,
+      // bounded by the lock TTL (plus padding) so we cover the longest
+      // possible sync: three sequential list fetches can exceed a minute.
+      // Callers stay responsive regardless: the provider awaits this behind
+      // the request's abort signal, and lists appearing mid-wait end it.
+      const store = getWebRiskListStore();
+      const deadline = Date.now() + LOCK_TTL_SECONDS * 1000 + 30_000;
       while (Date.now() < deadline) {
         await new Promise(resolve => setTimeout(resolve, 500));
         if ((await redis.get(LOCK_KEY)) === null) return;
+        // The other process swaps pointers list-by-list; once every list is
+        // present we don't need to outwait its lock.
+        const pointers = await store.getPointers();
+        if ([...pointers.values()].every(pointer => pointer !== null)) return;
       }
     })().catch(error => {
       // Do not cache a failed boot sync: the next check retries it.

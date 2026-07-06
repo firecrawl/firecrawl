@@ -159,6 +159,32 @@ describe("runThreatListSyncPass", () => {
     ).toBe(true);
   });
 
+  it("rejects a malformed prefixSize instead of spinning (remote JSON is untrusted)", async () => {
+    const redis = createFakeWebRiskRedis();
+    const store = new WebRiskListStore(redis);
+    diffHandler = () => ({
+      responseType: "RESET",
+      additions: {
+        rawHashes: [
+          {
+            prefixSize: 0,
+            rawHashes: Buffer.from("11111111", "hex").toString("base64"),
+          },
+        ],
+      },
+      newVersionToken: Buffer.from("v1").toString("base64"),
+      checksum: { sha256: checksumOf(sortedPrefixes(["11111111"])) },
+    });
+
+    // Per-list failures are logged and skipped (one bad list must not take
+    // down the pass) — the important part is: no infinite loop, and nothing
+    // gets published.
+    await runThreatListSyncPass({}, store, redis);
+    for (const type of WEB_RISK_THREAT_TYPES) {
+      expect(await store.getPointer(type)).toBeNull();
+    }
+  });
+
   it("recovers from a DIFF checksum mismatch by re-syncing from scratch", async () => {
     const redis = createFakeWebRiskRedis();
     const store = new WebRiskListStore(redis);
