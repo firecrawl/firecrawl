@@ -162,6 +162,25 @@ describe("emitThreatCheck", () => {
     expect(siemEvent).toEqual(tracked);
   });
 
+  it("zero-data-retention: delivers to SIEM only, never to ClickHouse", async () => {
+    emitThreatCheck("risky.example.com", blockedDecision, {
+      teamId: TEAM_ID,
+      orgId: ORG_ID,
+      url: "https://risky.example.com/secret-path",
+      zeroDataRetention: true,
+    });
+
+    await vi.waitFor(() => {
+      expect(enqueueSiemThreatEvent).toHaveBeenCalledTimes(1);
+    });
+    // Even domain-level rows are scrape-derived data at rest — nothing about
+    // a ZDR request may be persisted on our side.
+    expect(trackThreatProtectionCheck).not.toHaveBeenCalled();
+    const [, siemEvent] = vi.mocked(enqueueSiemThreatEvent).mock.calls[0];
+    expect(siemEvent.zero_data_retention).toBe(true);
+    expect(siemEvent.url).toBe("");
+  });
+
   it("uses ctx.orgId without a team lookup", async () => {
     emitThreatCheck("risky.example.com", blockedDecision, {
       teamId: TEAM_ID,

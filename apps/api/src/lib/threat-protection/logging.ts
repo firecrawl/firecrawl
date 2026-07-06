@@ -160,7 +160,14 @@ export function emitThreatCheck(
     if (orgId) {
       enqueueSiemThreatEvent(orgId, event);
     }
-    await trackThreatProtectionCheck(event);
+    // ZDR: security events for zero-data-retention requests go to the org's
+    // SIEM only (their infrastructure; our side holds them in a transient
+    // in-memory buffer for at most the flush interval). They are never
+    // persisted in ClickHouse — even domain-level rows are scrape-derived
+    // data at rest. The export API consequently serves non-ZDR checks only.
+    if (!event.zero_data_retention) {
+      await trackThreatProtectionCheck(event);
+    }
   })().catch(error => {
     logger.warn("Failed to emit threat protection check event", {
       error,
