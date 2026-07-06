@@ -30,7 +30,7 @@ import {
 //
 //   GOOGLE_WEB_RISK_API_KEY=test \
 //   GOOGLE_WEB_RISK_API_URL=http://localhost:4517 \
-//   pnpm harness jest src/__tests__/snips/v2/threat-protection-enforcement.test.ts
+//   pnpm harness pnpm exec vitest run src/__tests__/snips/v2/threat-protection-enforcement.test.ts
 //
 // Those tests are skipped when the override is not set to a local address.
 //

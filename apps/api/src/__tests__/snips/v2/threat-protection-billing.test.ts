@@ -128,7 +128,9 @@ function startAlphaMountainMock(): Promise<void> {
         res.end(
           JSON.stringify({
             version: 1,
-            status: { threat: "OK" },
+            // The provider only accepts "Success" / "Not Found" semantic
+            // statuses (anything else routes into retry/failurePolicy).
+            status: { threat: "Success" },
             threat: { score: 1.0, scope: "domain", source: "mock" },
             ttl: 3600,
           }),
@@ -137,7 +139,7 @@ function startAlphaMountainMock(): Promise<void> {
         res.end(
           JSON.stringify({
             version: 1,
-            status: { category: "OK" },
+            status: { category: "Success" },
             category: { categories: [], scope: "domain", confidence: 1 },
             ttl: 3600,
           }),
@@ -285,14 +287,16 @@ describeIf(TEST_PRODUCTION)("Threat protection billing", () => {
           credits: 1_000_000,
         });
 
-        // A fresh team's credit grant can land a moment after idmux returns;
-        // poll until the baseline read reflects it so the delta is exact.
+        // A fresh team's credit grant can land a moment after idmux returns
+        // (and a small default allotment can show up before the 1M grant);
+        // poll until the baseline read reflects the full grant so the delta
+        // is exact.
         let before = 0;
-        for (let i = 0; i < 30 && before <= 0; i++) {
+        for (let i = 0; i < 30 && before < 100_000; i++) {
           before = (await creditUsage(identity)).remainingCredits;
-          if (before <= 0) await sleep(1000);
+          if (before < 100_000) await sleep(1000);
         }
-        expect(before).toBeGreaterThan(0);
+        expect(before).toBeGreaterThanOrEqual(100_000);
 
         // 1. Blocked by provider verdict: 0 base + 2 scan.
         const blocked = await scrapeRaw(

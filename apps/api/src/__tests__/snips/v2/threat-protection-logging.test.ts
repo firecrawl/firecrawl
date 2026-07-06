@@ -28,7 +28,7 @@ import { scrapeRaw, scrape } from "./lib";
 //    config (threat_protection_config DDL). Run locally with:
 //
 //      ALLOW_LOCAL_WEBHOOKS=true \
-//      pnpm harness jest src/__tests__/snips/v2/threat-protection-logging.test.ts
+//      pnpm harness pnpm exec vitest run src/__tests__/snips/v2/threat-protection-logging.test.ts
 //
 //    They self-skip (with a warning) when either prerequisite is missing.
 // =========================================
