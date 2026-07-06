@@ -12,6 +12,11 @@ import { v7 as uuidv7 } from "uuid";
 import { logSearch, logRequest } from "../../services/logging/log_job";
 import { search } from "../../search";
 import { logger as _logger } from "../../lib/logger";
+import {
+  actionTypesOf,
+  checkKeyFormatRestriction,
+  formatTypesOf,
+} from "../../lib/key-restriction";
 import type { Logger } from "winston";
 import { ScrapeJobTimeoutError } from "../../lib/error";
 import { captureExceptionWithZdrCheck } from "../../services/sentry";
@@ -121,6 +126,19 @@ export async function searchController(
 
   try {
     req.body = searchRequestSchema.parse(req.body);
+
+    const keyRestriction = await checkKeyFormatRestriction(
+      formatTypesOf(req.body.scrapeOptions?.formats),
+      actionTypesOf(req.body.scrapeOptions?.actions),
+      req.acuc?.api_key_id,
+      req.acuc?.flags ?? null,
+    );
+    if (!keyRestriction.allowed) {
+      return res.status(keyRestriction.status).json({
+        success: false,
+        error: keyRestriction.error,
+      });
+    }
 
     logger = logger.child({
       version: "v1",

@@ -254,6 +254,23 @@ export const ip_restriction_config = pgTable("ip_restriction_config", {
   updated_at: ts("updated_at").notNull().defaultNow(),
 });
 
+// Per-API-key scope/format lockdown, gated by the keyRestriction team flag.
+// Each allowlist is enforced only when non-empty; allowed_formats holds v2
+// format type names, allowed_endpoints holds endpoint group names.
+export const key_restriction_config = pgTable("key_restriction_config", {
+  id: uuid("id").notNull().defaultRandom(),
+  api_key_id: bigintNum("api_key_id").notNull().unique(),
+  team_id: uuid("team_id").notNull(),
+  allowed_formats: jsonb("allowed_formats")
+    .notNull()
+    .default(sql`'[]'::jsonb`),
+  allowed_endpoints: jsonb("allowed_endpoints")
+    .notNull()
+    .default(sql`'[]'::jsonb`),
+  created_at: ts("created_at").notNull().defaultNow(),
+  updated_at: ts("updated_at").notNull().defaultNow(),
+});
+
 export const llm_texts = pgTable("llm_texts", {
   id: uuid("id").notNull().defaultRandom(),
   origin_url: text("origin_url").notNull(),

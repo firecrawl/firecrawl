@@ -28,6 +28,11 @@ import type { BillingMetadata } from "../../services/billing/types";
 import { getSearchForcedKind, getSearchZDR } from "../../lib/zdr-helpers";
 import { projectSearchTotalCredits } from "../../lib/keyless-credit-projection";
 import { applyAgentAuthDiscoveryHeader } from "../../lib/agent-auth-discovery";
+import {
+  actionTypesOf,
+  checkKeyFormatRestriction,
+  formatTypesOf,
+} from "../../lib/key-restriction";
 
 export async function searchController(
   req: RequestWithAuth<{}, SearchResponse, SearchRequest>,
@@ -60,6 +65,19 @@ export async function searchController(
 
   try {
     req.body = searchRequestSchema.parse(req.body);
+
+    const keyRestriction = await checkKeyFormatRestriction(
+      formatTypesOf(req.body.scrapeOptions?.formats),
+      actionTypesOf(req.body.scrapeOptions?.actions),
+      req.acuc?.api_key_id,
+      req.acuc?.flags ?? null,
+    );
+    if (!keyRestriction.allowed) {
+      return res.status(keyRestriction.status).json({
+        success: false,
+        error: keyRestriction.error,
+      });
+    }
 
     if (
       req.body.__agentInterop &&

@@ -5,6 +5,7 @@ import { autumnHealthController } from "../controllers/v0/admin/autumn-health";
 import { authMiddleware, checkCreditsMiddleware, wrap } from "./shared";
 import { acucCacheClearController } from "../controllers/v0/admin/acuc-cache-clear";
 import { ipRestrictionCacheClearController } from "../controllers/v0/admin/ip-restriction-cache-clear";
+import { keyRestrictionCacheClearController } from "../controllers/v0/admin/key-restriction-cache-clear";
 import { checkFireEngine } from "../controllers/v0/admin/check-fire-engine";
 import { indexQueuePrometheus } from "../controllers/v0/admin/index-queue-prometheus";
 import { triggerPrecrawl } from "../controllers/v0/admin/precrawl";
@@ -44,6 +45,11 @@ if (config.BULL_AUTH_KEY) {
   adminRouter.post(
     `/admin/${config.BULL_AUTH_KEY}/ip-restriction-cache-clear`,
     wrap(ipRestrictionCacheClearController),
+  );
+
+  adminRouter.post(
+    `/admin/${config.BULL_AUTH_KEY}/key-restriction-cache-clear`,
+    wrap(keyRestrictionCacheClearController),
   );
 
   adminRouter.get(

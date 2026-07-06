@@ -27,6 +27,11 @@ import { isUrlBlocked } from "../../scraper/WebScraper/utils/blocklist";
 import { fromV1ScrapeOptions } from "../v2/types";
 import { checkPermissions } from "../../lib/permissions";
 import {
+  actionTypesOf,
+  checkKeyFormatRestriction,
+  formatTypesOf,
+} from "../../lib/key-restriction";
+import {
   crawlGroup,
   resolveNewGroupBackend,
 } from "../../services/worker/nuq-router";
@@ -49,6 +54,19 @@ export async function batchScrapeController(
     return res.status(403).json({
       success: false,
       error: permissions.error,
+    });
+  }
+
+  const keyRestriction = await checkKeyFormatRestriction(
+    formatTypesOf(req.body.formats),
+    actionTypesOf(req.body.actions),
+    req.acuc?.api_key_id,
+    req.acuc?.flags ?? null,
+  );
+  if (!keyRestriction.allowed) {
+    return res.status(keyRestriction.status).json({
+      success: false,
+      error: keyRestriction.error,
     });
   }
 

@@ -14,6 +14,11 @@ import { fromV1ScrapeOptions } from "../v2/types";
 import { TransportableError } from "../../lib/error";
 import { NuQJob } from "../../services/worker/nuq";
 import { checkPermissions } from "../../lib/permissions";
+import {
+  actionTypesOf,
+  checkKeyFormatRestriction,
+  formatTypesOf,
+} from "../../lib/key-restriction";
 import { includesFormat } from "../../lib/format-utils";
 import { teamConcurrencySemaphore } from "../../services/worker/team-semaphore";
 import { processJobInternal } from "../../services/worker/scrape-worker";
@@ -50,6 +55,19 @@ export async function scrapeController(
     return res.status(403).json({
       success: false,
       error: permissions.error,
+    });
+  }
+
+  const keyRestriction = await checkKeyFormatRestriction(
+    formatTypesOf(req.body.formats),
+    actionTypesOf(req.body.actions),
+    req.acuc?.api_key_id,
+    req.acuc?.flags ?? null,
+  );
+  if (!keyRestriction.allowed) {
+    return res.status(keyRestriction.status).json({
+      success: false,
+      error: keyRestriction.error,
     });
   }
 
