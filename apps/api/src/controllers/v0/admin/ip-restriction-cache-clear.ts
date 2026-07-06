@@ -9,18 +9,20 @@ export async function ipRestrictionCacheClearController(
   res: Response,
 ) {
   try {
-    const team_id: string = req.body.team_id;
+    const team_id = req.body?.team_id;
 
-    if (!team_id) {
+    if (typeof team_id !== "string" || team_id.length === 0) {
       return res.status(400).json({ error: "team_id is required" });
     }
 
     await clearIpRestrictionCache(team_id);
 
-    logger.info(`IP restriction allowlist cache cleared for team ${team_id}`);
+    logger.info("IP restriction allowlist cache cleared", { team_id });
     res.json({ ok: true });
   } catch (error) {
-    logger.error(`Error clearing IP restriction cache via API route: ${error}`);
+    logger.error("Error clearing IP restriction cache via API route", {
+      error,
+    });
     res.status(500).json({ error: "Internal server error" });
   }
 }
