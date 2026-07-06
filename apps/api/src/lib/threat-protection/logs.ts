@@ -170,7 +170,10 @@ export async function queryThreatProtectionLogs(
     params.cursorId = cursor.id;
   }
 
-  params.limit = query.limit + 1; // one extra row to detect the next page
+  // Defensive clamp independent of route-level validation: this is an
+  // exported query function, and an unbounded LIMIT is an expensive scan.
+  const limit = Math.min(Math.max(1, Math.floor(query.limit)), 1000);
+  params.limit = limit + 1; // one extra row to detect the next page
 
   const rows = await chQuery<ThreatProtectionCheckRow>(
     `SELECT
@@ -189,8 +192,8 @@ export async function queryThreatProtectionLogs(
 
   if (rows === null) return null;
 
-  const hasMore = rows.length > query.limit;
-  const page = hasMore ? rows.slice(0, query.limit) : rows;
+  const hasMore = rows.length > limit;
+  const page = hasMore ? rows.slice(0, limit) : rows;
   const last = page[page.length - 1];
 
   return {

@@ -242,9 +242,11 @@ export async function mapController(
     req.acuc?.api_key_id ?? null,
     { endpoint: "map", jobId: mapId },
   ).catch(error => {
-    logger.error(
-      `Failed to bill team ${req.auth.team_id} for ${creditsToBill} credit(s): ${error}`,
-    );
+    logger.error("Failed to bill team for map credits", {
+      teamId: req.auth.team_id,
+      creditsToBill,
+      error,
+    });
   });
 
   logMap({

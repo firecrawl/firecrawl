@@ -53,9 +53,15 @@ const configSchema = z.object({
   // Google Web Risk, "enhanced" mode uses alphaMountain. Unset keys disable the
   // corresponding provider (lookups then fail per the org's failurePolicy).
   GOOGLE_WEB_RISK_API_KEY: z.string().optional(),
-  GOOGLE_WEB_RISK_API_URL: z.string().default("https://webrisk.googleapis.com"),
+  GOOGLE_WEB_RISK_API_URL: z
+    .string()
+    .url()
+    .default("https://webrisk.googleapis.com"),
   ALPHAMOUNTAIN_API_KEY: z.string().optional(),
-  ALPHAMOUNTAIN_API_URL: z.string().default("https://api.alphamountain.ai"),
+  ALPHAMOUNTAIN_API_URL: z
+    .string()
+    .url()
+    .default("https://api.alphamountain.ai"),
   // TTL for cached provider verdicts, in seconds. Kept modest (6h default)
   // because verdict freshness is an acceptance criterion for the feature.
   THREAT_PROTECTION_CACHE_TTL_SECONDS: z.coerce

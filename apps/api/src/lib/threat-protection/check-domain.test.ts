@@ -234,6 +234,23 @@ describe("checkDomain", () => {
     expect(decision).toMatchObject({ allowed: true, rule: "default-allow" });
     expect(requestCount).toBe(1);
   });
+
+  it("treats a parseable but malformed cache entry as a miss", async () => {
+    // Valid JSON, wrong shape: categories missing entirely. Must not reach
+    // evaluatePolicy (which would throw on categories.some) — checkDomain
+    // never throws.
+    redisStore.set(
+      "threat_protection_verdict:normal:safe.example",
+      JSON.stringify({ provider: "google-web-risk", riskScore: 0 }),
+    );
+    respondWith({});
+
+    const decision = await checkDomain("safe.example", policy(), {});
+
+    expect(decision).toMatchObject({ allowed: true, rule: "default-allow" });
+    expect(decision.verdict?.fromCache).toBe(false);
+    expect(requestCount).toBe(1);
+  });
 });
 
 describe("UnsafeDomainBlockedError", () => {

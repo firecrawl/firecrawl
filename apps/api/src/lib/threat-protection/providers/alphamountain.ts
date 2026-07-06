@@ -45,7 +45,7 @@ type AlphaMountainIntelligenceResponse = {
 function isAlphaMountainConfigured(): boolean {
   return (
     typeof config.ALPHAMOUNTAIN_API_KEY === "string" &&
-    config.ALPHAMOUNTAIN_API_KEY.length > 0
+    config.ALPHAMOUNTAIN_API_KEY.trim().length > 0
   );
 }
 
@@ -212,8 +212,26 @@ export async function fetchAlphaMountainVerdict(
     }),
   ]);
 
+  // alphaMountain reports semantic failures (quota, license issues) inside
+  // HTTP 200 bodies via status.*. Only "Success" and "Not Found" (domain
+  // unrated) are valid outcomes; anything else must throw so the caller
+  // routes it through retry and the org's failurePolicy — a silent
+  // riskScore:null + categories:[] verdict would read as benign.
+  const threatStatus = threat.status?.threat;
+  if (threatStatus !== "Success" && threatStatus !== "Not Found") {
+    throw new Error(
+      `alphaMountain threat lookup returned status "${threatStatus ?? "missing"}"`,
+    );
+  }
+  const categoryStatus = category.status?.category;
+  if (categoryStatus !== "Success" && categoryStatus !== "Not Found") {
+    throw new Error(
+      `alphaMountain category lookup returned status "${categoryStatus ?? "missing"}"`,
+    );
+  }
+
   const score = normalizeScore(
-    threat.status?.threat === "Not Found" ? null : threat.threat?.score,
+    threatStatus === "Not Found" ? null : threat.threat?.score,
   );
 
   return {

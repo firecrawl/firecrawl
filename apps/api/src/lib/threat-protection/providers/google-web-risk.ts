@@ -27,7 +27,7 @@ type WebRiskSearchResponse = {
 function isGoogleWebRiskConfigured(): boolean {
   return (
     typeof config.GOOGLE_WEB_RISK_API_KEY === "string" &&
-    config.GOOGLE_WEB_RISK_API_KEY.length > 0
+    config.GOOGLE_WEB_RISK_API_KEY.trim().length > 0
   );
 }
 

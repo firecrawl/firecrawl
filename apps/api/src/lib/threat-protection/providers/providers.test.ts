@@ -242,6 +242,44 @@ describe("fetchAlphaMountainVerdict", () => {
     });
   });
 
+  it("throws on a semantic failure inside an HTTP 200 body", async () => {
+    // e.g. quota/license errors are reported via status.* with HTTP 200 —
+    // they must route into retry/failurePolicy, not read as a benign verdict.
+    routes["/threat/uri"] = {
+      status: 200,
+      body: { version: 1, status: { threat: "License Limit Exceeded" } },
+    };
+    routes["/category/uri"] = {
+      status: 200,
+      body: {
+        version: 1,
+        status: { category: "Success" },
+        category: { categories: [45] },
+      },
+    };
+    routes["/intelligence/hostname"] = {
+      status: 200,
+      body: { version: 1, sections: {} },
+    };
+
+    await expect(fetchAlphaMountainVerdict("quota.example")).rejects.toThrow(
+      /threat lookup returned status/,
+    );
+
+    routes["/threat/uri"] = {
+      status: 200,
+      body: { version: 1, status: { threat: "Success" }, threat: { score: 1 } },
+    };
+    routes["/category/uri"] = {
+      status: 200,
+      body: { version: 1, status: { category: "Unauthorized" } },
+    };
+
+    await expect(fetchAlphaMountainVerdict("quota.example")).rejects.toThrow(
+      /category lookup returned status/,
+    );
+  });
+
   it("returns a null riskScore when the threat rating is Not Found", async () => {
     routes["/threat/uri"] = {
       status: 200,
