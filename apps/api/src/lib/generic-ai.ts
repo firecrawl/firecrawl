@@ -24,7 +24,12 @@ const defaultProvider: Provider = config.OLLAMA_BASE_URL ? "ollama" : "openai";
 const providerList: Record<Provider, any> = {
   openai: createOpenAI({
     apiKey: config.OPENAI_API_KEY,
-    baseURL: config.OPENAI_BASE_URL,
+    // Fall back to the canonical OpenAI URL when OPENAI_BASE_URL is empty.
+    // docker-compose passes OPENAI_BASE_URL through as "" when unset, and the
+    // SDK's loadOptionalSetting reads that empty env var directly (its own
+    // `?? default` doesn't catch ""), making requests target a relative
+    // "/responses" URL. Passing a non-empty value here takes precedence.
+    baseURL: config.OPENAI_BASE_URL || "https://api.openai.com/v1",
   }), //OPENAI_API_KEY
   ollama: createOllama({
     baseURL: config.OLLAMA_BASE_URL,

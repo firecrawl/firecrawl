@@ -187,7 +187,9 @@ export function trimToTokenLimit(
       // The candidate fits within the token budget. If we never pre-trimmed, the
       // original text is returned untouched.
       if (numTokens <= maxTokens && !preTrimmed) {
-        return { text, numTokens };
+        // No trimming needed, but still thread through any prior warning so
+        // callers that pass one don't silently lose it on the common path.
+        return { text, numTokens, warning: previousWarning };
       }
 
       if (numTokens <= maxTokens) {

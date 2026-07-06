@@ -16,6 +16,10 @@ import {
 import { applySearchHighlights, highlightsEnvReady } from "./highlights";
 import { trackSearchResults, trackSearchRequest } from "../lib/tracking";
 import type { BillingMetadata } from "../services/billing/types";
+import {
+  mergeKnowledgeGraphs,
+  KnowledgeGraph,
+} from "../scraper/scrapeURL/transformers/knowledgeGraphUtils";
 
 interface SearchOptions {
   query: string;
@@ -209,6 +213,21 @@ export async function executeSearch(
         typeof f === "string" ? f : f.type,
       )
     : [];
+
+  // When the knowledgeGraph format was requested, merge every result's graph
+  // into one deduped top-level graph (per-result graphs are left in place).
+  if (scrapeFormats.includes("knowledgeGraph")) {
+    const perResultGraphs = [
+      ...(searchResponse.web ?? []),
+      ...(searchResponse.news ?? []),
+    ]
+      .map((r: any) => r.knowledgeGraph)
+      .filter((kg): kg is KnowledgeGraph => !!kg);
+
+    if (perResultGraphs.length > 0) {
+      searchResponse.knowledgeGraph = mergeKnowledgeGraphs(perResultGraphs);
+    }
+  }
 
   trackSearchRequest({
     searchId: context.jobId,
