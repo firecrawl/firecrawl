@@ -3,6 +3,12 @@ import type {
   ThreatDecision,
   ThreatProtectionPolicy,
 } from "./types";
+// Shared host canonicalization (lowercase, dot handling, and inet_aton-style
+// IP normalization). The Web Risk provider already canonicalizes hosts this
+// way; local blacklist/whitelist rules MUST use the exact same function so
+// the two paths can never disagree on what host they're evaluating — e.g. so
+// a blacklist entry for "195.127.0.11" is not bypassed by "http://3279880203/".
+import { canonicalizeHost } from "./providers/web-risk/canonicalize";
 
 // Pure policy evaluation for threat protection. No I/O in this file — the
 // provider/cache orchestration lives in ./index.ts. Rule precedence (fixed):
@@ -23,11 +29,11 @@ import type {
  *   listing "example.com".
  */
 function domainMatchesEntry(domain: string, entry: string): boolean {
-  const normalized = entry.trim().toLowerCase().replace(/\.$/, "");
-  if (!normalized) return false;
+  const trimmed = entry.trim().toLowerCase().replace(/\.$/, "");
+  if (!trimmed) return false;
 
-  if (normalized.includes("*")) {
-    const pattern = normalized
+  if (trimmed.includes("*")) {
+    const pattern = trimmed
       .split("*")
       .map(part => part.replace(/[.+?^${}()|[\]\\]/g, "\\$&"))
       .join(".*");
@@ -38,6 +44,10 @@ function domainMatchesEntry(domain: string, entry: string): boolean {
     }
   }
 
+  // Canonicalize non-glob entries the same way as the looked-up domain, so an
+  // entry written in a non-canonical IP form (e.g. "3279880203") still matches
+  // its dotted-quad host and vice versa.
+  const normalized = canonicalizeHost(trimmed);
   return domain === normalized || domain.endsWith(`.${normalized}`);
 }
 
@@ -58,9 +68,14 @@ function matchesBlockedTld(domain: string, blockedTlds: string[]): boolean {
   });
 }
 
-/** Normalize a domain-ish input: lowercase, strip URL parts and trailing dot. */
+/**
+ * Normalize a domain-ish input: strip URL parts/port, then apply the shared
+ * host canonicalization (lowercase, dot handling, inet_aton-style IP
+ * normalization) so local rule matching sees the same canonical host as the
+ * Web Risk provider — closing IP-form blacklist bypasses.
+ */
 export function normalizeDomain(input: string): string {
-  let domain = input.trim().toLowerCase();
+  let domain = input.trim();
   if (domain.includes("://")) {
     try {
       domain = new URL(domain).hostname;
@@ -68,9 +83,9 @@ export function normalizeDomain(input: string): string {
       // Not a parseable URL — fall through with the raw string.
     }
   }
-  // Strip any path/port fragments and a trailing FQDN dot.
-  domain = domain.split("/")[0].split(":")[0].replace(/\.$/, "");
-  return domain;
+  // Strip any path/port fragments before canonicalizing the bare host.
+  domain = domain.split("/")[0].split(":")[0];
+  return canonicalizeHost(domain);
 }
 
 /**

@@ -375,7 +375,31 @@ describe("normalizeDomain", () => {
     ["https://sub.example.com/path?q=1", "sub.example.com"],
     ["example.com:8080", "example.com"],
     ["example.com/path", "example.com"],
+    // inet_aton-style IP forms canonicalize to dotted-quad, matching the Web
+    // Risk provider (prevents blacklist bypass via alternate IP notation).
+    ["195.127.0.11", "195.127.0.11"],
+    ["3279880203", "195.127.0.11"],
+    ["http://3279880203/", "195.127.0.11"],
   ])("normalizes %s to %s", (input, expected) => {
     expect(normalizeDomain(input)).toBe(expected);
+  });
+
+  test("a blacklisted dotted-quad IP is not bypassed by integer notation", () => {
+    const p = policy({ blacklist: ["195.127.0.11"] });
+    for (const host of ["http://3279880203/", "195.127.0.11"]) {
+      expect(localOnlyDecision(host, p)).toMatchObject({
+        allowed: false,
+        rule: "blacklist",
+      });
+    }
+  });
+
+  test("a blacklist entry in integer notation blocks the dotted-quad host", () => {
+    expect(
+      localOnlyDecision(
+        "http://195.127.0.11/",
+        policy({ blacklist: ["3279880203"] }),
+      ),
+    ).toMatchObject({ allowed: false, rule: "blacklist" });
   });
 });
