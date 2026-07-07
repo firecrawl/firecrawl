@@ -83,8 +83,18 @@ export function normalizeDomain(input: string): string {
       // Not a parseable URL — fall through with the raw string.
     }
   }
-  // Strip any path/port fragments before canonicalizing the bare host.
-  domain = domain.split("/")[0].split(":")[0];
+  // Strip a path fragment, then the port — carefully, because IPv6 literals
+  // contain colons. A bracketed literal ("[2001:db8::1]") keeps everything
+  // through the closing bracket (dropping any ":port" after it); a plain
+  // host:port has exactly one colon; a bare IPv6 (multiple colons, no
+  // brackets) is left intact rather than truncated.
+  domain = domain.split("/")[0];
+  if (domain.startsWith("[")) {
+    const end = domain.indexOf("]");
+    if (end !== -1) domain = domain.slice(0, end + 1);
+  } else if (domain.split(":").length === 2) {
+    domain = domain.split(":")[0];
+  }
   return canonicalizeHost(domain);
 }
 

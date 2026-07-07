@@ -380,8 +380,21 @@ describe("normalizeDomain", () => {
     ["195.127.0.11", "195.127.0.11"],
     ["3279880203", "195.127.0.11"],
     ["http://3279880203/", "195.127.0.11"],
+    // IPv6 literals must not be truncated by port-stripping.
+    ["http://[2001:db8::1]/", "[2001:db8::1]"],
+    ["http://[2001:db8::1]:8080/", "[2001:db8::1]"],
+    ["[2001:db8::1]:8080", "[2001:db8::1]"],
+    ["2001:db8::1", "2001:db8::1"],
   ])("normalizes %s to %s", (input, expected) => {
     expect(normalizeDomain(input)).toBe(expected);
+  });
+
+  test("a blacklisted IPv6 literal is matched, not truncated to a wrong host", () => {
+    const p = policy({ blacklist: ["[2001:db8::1]"] });
+    expect(localOnlyDecision("http://[2001:db8::1]:8080/", p)).toMatchObject({
+      allowed: false,
+      rule: "blacklist",
+    });
   });
 
   test("a blacklisted dotted-quad IP is not bypassed by integer notation", () => {
