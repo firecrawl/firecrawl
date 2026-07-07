@@ -24,7 +24,6 @@ function makeOrgConfig(
     orgId: "00000000-0000-0000-0000-000000000000",
     policy: { ...orgPolicy },
     allowRequestOverrides: true,
-    siem: null,
     createdAt: null,
     updatedAt: null,
     ...overrides,
@@ -58,11 +57,6 @@ describe("rowToConfig", () => {
         blockedTlds: ["zip"],
         failurePolicy: "open",
         allowRequestOverrides: false,
-        siem: {
-          url: "https://siem.example.com/ingest",
-          secret: "hunter2",
-          events: "all",
-        },
       }),
     );
 
@@ -77,11 +71,6 @@ describe("rowToConfig", () => {
         failurePolicy: "open",
       },
       allowRequestOverrides: false,
-      siem: {
-        url: "https://siem.example.com/ingest",
-        secret: "hunter2",
-        events: "all",
-      },
       createdAt: "2026-01-01T00:00:00.000Z",
       updatedAt: "2026-01-02T00:00:00.000Z",
     });
@@ -94,7 +83,6 @@ describe("rowToConfig", () => {
       ...THREAT_PROTECTION_POLICY_DEFAULTS,
     });
     expect(config.allowRequestOverrides).toBe(true);
-    expect(config.siem).toBeNull();
   });
 
   it("ignores unknown keys in the document", () => {
@@ -103,11 +91,13 @@ describe("rowToConfig", () => {
         riskScoreThreshold: 10,
         someFutureField: { nested: true },
         deniedCategories: ["Malicious"], // retired field, silently dropped
+        siem: { url: "https://siem.example.com" }, // retired field, silently dropped
       }),
     );
     expect(config.policy.riskScoreThreshold).toBe(10);
     expect(config.policy).not.toHaveProperty("deniedCategories");
     expect(config.policy).not.toHaveProperty("someFutureField");
+    expect(config).not.toHaveProperty("siem");
   });
 
   it("fills defaults for a partial document", () => {
@@ -128,7 +118,6 @@ describe("rowToConfig", () => {
         blacklist: "not-an-array",
         failurePolicy: "sideways",
         allowRequestOverrides: "yes",
-        siem: { events: "all" }, // missing url → invalid → null
       }),
     );
     expect(config.policy).toEqual({
@@ -136,7 +125,6 @@ describe("rowToConfig", () => {
       ...THREAT_PROTECTION_POLICY_DEFAULTS,
     });
     expect(config.allowRequestOverrides).toBe(true);
-    expect(config.siem).toBeNull();
   });
 
   it("never throws when the document is not an object at all", () => {
@@ -146,7 +134,6 @@ describe("rowToConfig", () => {
         mode: "normal",
         ...THREAT_PROTECTION_POLICY_DEFAULTS,
       });
-      expect(parsed.siem).toBeNull();
     }
   });
 
@@ -154,22 +141,6 @@ describe("rowToConfig", () => {
     expect(rowToConfig(makeRow("off", {})).policy.mode).toBe("off");
     expect(rowToConfig(makeRow("enhanced", {})).policy.mode).toBe("off");
     expect(rowToConfig(makeRow("garbage", {})).policy.mode).toBe("off");
-  });
-
-  it("keeps SIEM null when the document has none", () => {
-    const config = rowToConfig(makeRow("normal", { siem: null }));
-    expect(config.siem).toBeNull();
-  });
-
-  it("defaults SIEM secret/events inside a valid destination", () => {
-    const config = rowToConfig(
-      makeRow("normal", { siem: { url: "https://siem.example.com" } }),
-    );
-    expect(config.siem).toEqual({
-      url: "https://siem.example.com",
-      secret: null,
-      events: "blocked",
-    });
   });
 });
 

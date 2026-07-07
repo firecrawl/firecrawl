@@ -11,7 +11,6 @@ import {
   upsertOrgThreatProtectionConfig,
   type OrgThreatProtectionConfig,
 } from "../../lib/threat-protection/store";
-import { sendSiemTestEvent } from "../../services/webhook/siem";
 
 const logger = _logger.child({ module: "team-threat-protection" });
 
@@ -53,20 +52,13 @@ async function resolveOrgId(
 /**
  * Effective config document served by GET and PUT. Always includes every
  * policy field (defaults applied), so the dashboard can render the form
- * without knowing the defaults. The SIEM secret is never echoed back.
+ * without knowing the defaults.
  */
 function serializeConfig(orgConfig: OrgThreatProtectionConfig | null) {
   const policy = resolveEffectivePolicy(orgConfig);
   return {
     ...policy,
     allowRequestOverrides: orgConfig?.allowRequestOverrides ?? true,
-    siem: orgConfig?.siem
-      ? {
-          url: orgConfig.siem.url,
-          events: orgConfig.siem.events,
-          secretSet: orgConfig.siem.secret !== null,
-        }
-      : null,
     configured: orgConfig !== null,
     updatedAt: orgConfig?.updatedAt ?? null,
   };
@@ -116,14 +108,6 @@ export async function putTeamThreatProtectionController(
 
   const previous = await getOrgThreatProtectionConfig(orgId);
 
-  // The SIEM secret is write-only (serializeConfig never echoes it), so
-  // clients update the document without resending it: an omitted/null secret
-  // preserves the stored one. Clearing it requires disabling SIEM entirely
-  // (siem: null).
-  if (input.siem && input.siem.secret === null && previous?.siem?.secret) {
-    input.siem.secret = previous.siem.secret;
-  }
-
   const updated = await upsertOrgThreatProtectionConfig(orgId, input);
 
   // Audit log — org-level security configuration change.
@@ -137,52 +121,5 @@ export async function putTeamThreatProtectionController(
   res.status(200).json({
     success: true,
     data: serializeConfig(updated),
-  });
-}
-
-// =========================================
-// SIEM test event (ENG-4987 push)
-// =========================================
-
-/**
- * POST /v2/team/threat-protection/test-siem — sends one synthetic,
- * clearly-marked test event to the org's configured SIEM destination and
- * reports the delivery outcome.
- */
-export async function postTeamThreatProtectionTestSiemController(
-  req: RequestWithAuth,
-  res: Response,
-): Promise<void> {
-  if (rejectWithoutFlag(req, res)) return;
-
-  const orgId = await resolveOrgId(req, res);
-  if (!orgId) return;
-
-  const orgConfig = await getOrgThreatProtectionConfig(orgId);
-  if (!orgConfig?.siem?.url) {
-    res.status(400).json({
-      success: false,
-      error:
-        "No SIEM destination is configured. Set siem.url via PUT /v2/team/threat-protection first.",
-    });
-    return;
-  }
-
-  const result = await sendSiemTestEvent(
-    orgId,
-    req.auth.team_id,
-    orgConfig.siem,
-  );
-
-  logger.info("SIEM test event sent", {
-    teamId: req.auth.team_id,
-    orgId,
-    delivered: result.delivered,
-    statusCode: result.statusCode,
-  });
-
-  res.status(200).json({
-    success: true,
-    data: result,
   });
 }

@@ -41,13 +41,12 @@ export interface RawVerdict {
   /** Provider threat categories (Web Risk threat types map through here). */
   categories: string[];
   /**
-   * Kept for contract stability (security log rows / SIEM events carry a
-   * from_cache column). Always false: verdicts are never persisted (ZDR) —
-   * repeated checks within one request share the same in-flight decision via
-   * the request-scoped dedup handle instead of a cache.
+   * Always false: verdicts are never persisted (ZDR) — repeated checks within
+   * one request share the same in-flight decision via the request-scoped
+   * dedup handle instead of a cache. Kept for contract stability.
    */
   fromCache: boolean;
-  /** Raw provider payload, for security logging. */
+  /** Raw provider payload, surfaced only in server logs. */
   raw: unknown;
 }
 

@@ -98,17 +98,6 @@ const _overrideContractCheck = (
 ): Partial<ThreatProtectionPolicy> => x;
 void _overrideContractCheck;
 
-const siemConfigSchema = z.strictObject({
-  url: z
-    .url({
-      protocol: /^https?$/,
-      error: "SIEM url must be a valid http(s) URL",
-    })
-    .max(2048),
-  secret: z.string().min(1).max(4096).nullable().prefault(null),
-  events: z.enum(["blocked", "all"]).prefault("blocked"),
-});
-
 /**
  * Full org-level configuration document, as accepted by
  * `PUT /v2/team/threat-protection`.
@@ -116,7 +105,6 @@ const siemConfigSchema = z.strictObject({
 export const threatProtectionConfigSchema = threatProtectionPolicySchema.extend(
   {
     allowRequestOverrides: z.boolean().prefault(true),
-    siem: siemConfigSchema.nullable().prefault(null),
   },
 );
 

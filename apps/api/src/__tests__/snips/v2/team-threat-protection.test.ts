@@ -69,9 +69,9 @@ describeIf(TEST_PRODUCTION)("Team threat protection config API", () => {
         mode: "off",
         ...THREAT_PROTECTION_POLICY_DEFAULTS,
         allowRequestOverrides: true,
-        siem: null,
         configured: false,
       });
+      expect(res.body.data).not.toHaveProperty("siem");
     });
 
     it("PUT round-trips a full config document", async () => {
@@ -83,11 +83,6 @@ describeIf(TEST_PRODUCTION)("Team threat protection config API", () => {
         blockedTlds: ["zip"],
         failurePolicy: "open",
         allowRequestOverrides: false,
-        siem: {
-          url: "https://siem.example.com/ingest",
-          secret: "test-secret",
-          events: "all",
-        },
       };
 
       const put = await putConfigRaw(doc, identity);
@@ -103,13 +98,8 @@ describeIf(TEST_PRODUCTION)("Team threat protection config API", () => {
         allowRequestOverrides: false,
         configured: true,
       });
-      // The SIEM secret must never be echoed back.
-      expect(put.body.data.siem).toEqual({
-        url: "https://siem.example.com/ingest",
-        events: "all",
-        secretSet: true,
-      });
       // Retired policy fields must not appear in the served document.
+      expect(put.body.data).not.toHaveProperty("siem");
       expect(put.body.data).not.toHaveProperty("deniedCategories");
       expect(put.body.data).not.toHaveProperty("maxDomainAgeDays");
       expect(put.body.data).not.toHaveProperty("blockedCountries");
@@ -121,66 +111,10 @@ describeIf(TEST_PRODUCTION)("Team threat protection config API", () => {
         riskScoreThreshold: 60,
         configured: true,
       });
-      expect(get.body.data.siem?.secretSet).toBe(true);
-      expect(JSON.stringify(get.body.data)).not.toContain("test-secret");
+      expect(get.body.data).not.toHaveProperty("siem");
       expect(get.body.data).not.toHaveProperty("deniedCategories");
       expect(get.body.data).not.toHaveProperty("maxDomainAgeDays");
       expect(get.body.data).not.toHaveProperty("blockedCountries");
-    });
-
-    it("PUT without a secret preserves the stored SIEM secret (write-only contract)", async () => {
-      const withSecret = await putConfigRaw(
-        {
-          mode: "normal",
-          siem: {
-            url: "https://siem.example.com/ingest",
-            secret: "keep-me",
-            events: "blocked",
-          },
-        },
-        identity,
-      );
-      expect(withSecret.statusCode).toBe(200);
-      expect(withSecret.body.data.siem.secretSet).toBe(true);
-
-      // Update the destination without resending the secret — it must survive.
-      const withoutSecret = await putConfigRaw(
-        {
-          mode: "normal",
-          siem: {
-            url: "https://siem2.example.com/ingest",
-            events: "all",
-          },
-        },
-        identity,
-      );
-      expect(withoutSecret.statusCode).toBe(200);
-      expect(withoutSecret.body.data.siem).toEqual({
-        url: "https://siem2.example.com/ingest",
-        events: "all",
-        secretSet: true,
-      });
-
-      // Disabling SIEM entirely is the way to clear the secret.
-      const disabled = await putConfigRaw(
-        { mode: "normal", siem: null },
-        identity,
-      );
-      expect(disabled.statusCode).toBe(200);
-      expect(disabled.body.data.siem).toBeNull();
-
-      const reEnabled = await putConfigRaw(
-        {
-          mode: "normal",
-          siem: {
-            url: "https://siem2.example.com/ingest",
-            events: "all",
-          },
-        },
-        identity,
-      );
-      expect(reEnabled.statusCode).toBe(200);
-      expect(reEnabled.body.data.siem.secretSet).toBe(false);
     });
 
     it("PUT is a full-document update (unspecified fields reset to defaults)", async () => {
@@ -190,9 +124,9 @@ describeIf(TEST_PRODUCTION)("Team threat protection config API", () => {
         mode: "normal",
         ...THREAT_PROTECTION_POLICY_DEFAULTS,
         allowRequestOverrides: true,
-        siem: null,
         configured: true,
       });
+      expect(put.body.data).not.toHaveProperty("siem");
     });
 
     it("PUT rejects an invalid document with 400", async () => {
@@ -216,6 +150,7 @@ describeIf(TEST_PRODUCTION)("Team threat protection config API", () => {
 
     it("PUT rejects retired policy fields with 400", async () => {
       for (const retired of [
+        { siem: { url: "https://siem.example.com/ingest" } },
         { deniedCategories: ["Malicious"] },
         { maxDomainAgeDays: 30 },
         { blockedCountries: ["KP"] },

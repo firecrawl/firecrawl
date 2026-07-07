@@ -218,13 +218,7 @@ export async function mapController(
     const { decisionsByDomain } = await checkUrlsAgainstThreatPolicy(
       result.mapResults.map(x => x.url),
       threatProtection.policy,
-      {
-        teamId: req.auth.team_id,
-        orgId: threatProtection.orgConfig?.orgId,
-        jobId: mapId,
-        endpoint: "map",
-        origin: req.body.origin,
-      },
+      { teamId: req.auth.team_id },
     );
     threatScanCredits = calculateThreatScanCredits(decisionsByDomain.values());
     result.mapResults = result.mapResults.filter(x => {

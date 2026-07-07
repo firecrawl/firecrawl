@@ -1,17 +1,8 @@
 import http from "http";
 import { AddressInfo } from "net";
 
-// checkDomain emits security events (see logging.ts) — stub the sinks so this
-// suite doesn't touch ClickHouse, the SIEM buffer, or Postgres (org lookup).
-vi.mock("../tracking", () => ({
-  trackThreatProtectionCheck: vi.fn().mockResolvedValue(undefined),
-}));
-vi.mock("../../services/webhook/siem", () => ({
-  enqueueSiemThreatEvent: vi.fn(),
-}));
-vi.mock("./store", () => ({
-  getOrgIdForTeam: vi.fn().mockResolvedValue(null),
-}));
+// checkDomain is enforcement-only: it emits/exports no security events, so
+// there are no event sinks to stub here.
 // The Web Risk threat-list store lives on the durable Redis connection —
 // swap in an in-memory fake. (fake-redis.ts has no runtime imports, so the
 // factory cannot re-enter the module being mocked.)

@@ -101,13 +101,7 @@ export async function extractController(
     const { blocked, decisionsByDomain } = await checkUrlsAgainstThreatPolicy(
       req.body.urls ?? [],
       threatProtection.policy,
-      {
-        teamId: req.auth.team_id,
-        orgId: threatProtection.orgConfig?.orgId,
-        jobId: extractId,
-        endpoint: "extract",
-        origin: req.body.origin,
-      },
+      { teamId: req.auth.team_id },
     );
     // Every consulted decision (fresh or cached provider verdict) is a
     // billable scan (+2 per scanned domain) — including when the request is

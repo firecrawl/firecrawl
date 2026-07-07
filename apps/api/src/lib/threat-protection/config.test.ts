@@ -136,57 +136,16 @@ describe("threatProtectionPolicySchema", () => {
 });
 
 describe("threatProtectionConfigSchema", () => {
-  it("applies defaults for allowRequestOverrides and siem", () => {
+  it("applies defaults for allowRequestOverrides", () => {
     const config = threatProtectionConfigSchema.parse({ mode: "normal" });
     expect(config.allowRequestOverrides).toBe(true);
-    expect(config.siem).toBeNull();
   });
 
-  it("accepts a SIEM config", () => {
-    const config = threatProtectionConfigSchema.parse({
-      mode: "normal",
-      siem: {
-        url: "https://siem.example.com/ingest",
-        secret: "hunter2hunter2",
-        events: "all",
-      },
-    });
-    expect(config.siem).toEqual({
-      url: "https://siem.example.com/ingest",
-      secret: "hunter2hunter2",
-      events: "all",
-    });
-  });
-
-  it("defaults SIEM events to blocked and secret to null", () => {
-    const config = threatProtectionConfigSchema.parse({
-      mode: "normal",
-      siem: { url: "https://siem.example.com/ingest" },
-    });
-    expect(config.siem?.events).toBe("blocked");
-    expect(config.siem?.secret).toBeNull();
-  });
-
-  it("rejects non-http(s) SIEM urls", () => {
+  it("rejects the retired siem field", () => {
     expect(() =>
       threatProtectionConfigSchema.parse({
         mode: "normal",
-        siem: { url: "ftp://siem.example.com" },
-      }),
-    ).toThrow();
-    expect(() =>
-      threatProtectionConfigSchema.parse({
-        mode: "normal",
-        siem: { url: "not a url" },
-      }),
-    ).toThrow();
-  });
-
-  it("rejects invalid siem events values", () => {
-    expect(() =>
-      threatProtectionConfigSchema.parse({
-        mode: "normal",
-        siem: { url: "https://siem.example.com", events: "everything" },
+        siem: { url: "https://siem.example.com/ingest" },
       }),
     ).toThrow();
   });

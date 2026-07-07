@@ -1,13 +1,32 @@
 import { logger } from "../logger";
-import { emitThreatCheck, type ThreatCheckContext } from "./logging";
 import { fetchGoogleWebRiskVerdict } from "./providers/google-web-risk";
 import type {
   RawVerdict,
+  ThreatCheckDedup,
   ThreatDecision,
   ThreatProtectionMode,
   ThreatProtectionPolicy,
 } from "./types";
 import { evaluatePolicy, localOnlyDecision, normalizeDomain } from "./verdict";
+
+/**
+ * Request context threaded into {@link checkDomain}. Enforcement-only: the
+ * feature no longer emits or exports security events (both the ClickHouse
+ * security log and the SIEM push were removed), so this carries just the
+ * request/job-scoped dedup handle plus the team id used for server-side
+ * logging. Everything is optional — call sites pass whatever is cheaply
+ * available.
+ */
+export interface ThreatCheckContext {
+  teamId?: string;
+  /**
+   * Request/job-scoped dedup handle (see {@link ThreatCheckDedup}). When set,
+   * checkDomain() reuses the in-flight decision for a domain already checked
+   * within this request instead of re-scanning it. Strictly in-memory and
+   * request-scoped — never persisted, never shared across requests (ZDR).
+   */
+  dedup?: ThreatCheckDedup;
+}
 
 // Public entry point for the threat protection core library (enterprise
 // domain risk blocking). Flow per domain:
@@ -29,12 +48,15 @@ import { evaluatePolicy, localOnlyDecision, normalizeDomain } from "./verdict";
 // reuse of a decision is via the caller-provided, request-scoped in-memory
 // dedup map. The org-config cache in ./store.ts is unaffected: it caches the
 // org's own settings, not scrape-derived data.
+//
+// This feature is enforcement-only: it emits and exports NO security events.
+// (There is no built-in audit trail — both the ClickHouse security log and
+// the SIEM push that once consumed decisions have been removed.)
 
 // Policy evaluation helpers (evaluatePolicy, localOnlyDecision) are exported
 // from ./verdict, and the shared contract types from ./types — import those
 // directly; index.ts only re-exports what checkDomain callers need.
 export { UnsafeDomainBlockedError } from "./error";
-export type { ThreatCheckContext } from "./logging";
 export * from "./types";
 
 const PROVIDER_TIMEOUT_MS = 5000;
@@ -82,7 +104,6 @@ async function checkDomainFresh(
   // skip the paid provider scan entirely.
   const local = localOnlyDecision(normalized, policy);
   if (local !== null) {
-    emitThreatCheck(normalized, local, ctx);
     return local;
   }
 
@@ -99,7 +120,6 @@ async function checkDomainFresh(
   }
 
   const decision = evaluatePolicy(normalized, verdict, policy);
-  emitThreatCheck(normalized, decision, ctx);
   if (!decision.allowed || decision.rule === "provider-failure") {
     logger.info("Threat protection decision", {
       canonicalLog: "threat-protection/check",
@@ -125,15 +145,13 @@ async function checkDomainFresh(
  *
  * When `ctx.dedup` is provided (a request/job-scoped map created by the call
  * site), repeated checks of the same domain within that scope share one
- * in-flight decision: one scan, one billable consulted verdict, one emitted
- * security event. There is deliberately no cross-request or persisted verdict
- * reuse (ZDR: scrape-target domains are never stored at rest).
+ * in-flight decision: one scan, one billable consulted verdict. There is
+ * deliberately no cross-request or persisted verdict reuse (ZDR:
+ * scrape-target domains are never stored at rest).
  *
- * Every scan (allowed and blocked, local-only and provider-based, including
- * provider-failure resolutions) is emitted as a security event — to the
- * ClickHouse security log and, when the org has a SIEM destination
- * configured, to the SIEM push buffer. Pass as much of `ctx` as is cheaply
- * available at the call site; it enriches the emitted event.
+ * Enforcement-only: no security event is emitted or exported for a scan
+ * (neither to a ClickHouse log nor to a SIEM destination — both were
+ * removed). There is no built-in audit trail.
  */
 export async function checkDomain(
   domain: string,

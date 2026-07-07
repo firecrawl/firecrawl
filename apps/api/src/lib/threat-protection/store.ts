@@ -41,17 +41,10 @@ function isMissingTableError(error: unknown): boolean {
   return false;
 }
 
-export interface OrgThreatProtectionSiemConfig {
-  url: string;
-  secret: string | null;
-  events: "blocked" | "all";
-}
-
 export interface OrgThreatProtectionConfig {
   orgId: string;
   policy: ThreatProtectionPolicy;
   allowRequestOverrides: boolean;
-  siem: OrgThreatProtectionSiemConfig | null;
   createdAt: string | null;
   updatedAt: string | null;
 }
@@ -82,19 +75,10 @@ const storedConfigDocumentSchema = z
       .enum(["open", "closed"])
       .catch(THREAT_PROTECTION_POLICY_DEFAULTS.failurePolicy),
     allowRequestOverrides: z.boolean().catch(true),
-    siem: z
-      .object({
-        url: z.string().min(1),
-        secret: z.string().nullable().catch(null),
-        events: z.enum(["blocked", "all"]).catch("blocked"),
-      })
-      .nullable()
-      .catch(null),
   })
   .catch({
     ...THREAT_PROTECTION_POLICY_DEFAULTS,
     allowRequestOverrides: true,
-    siem: null,
   });
 
 /**
@@ -118,13 +102,6 @@ export function rowToConfig(
       failurePolicy: doc.failurePolicy,
     },
     allowRequestOverrides: doc.allowRequestOverrides,
-    siem: doc.siem
-      ? {
-          url: doc.siem.url,
-          secret: doc.siem.secret,
-          events: doc.siem.events,
-        }
-      : null,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -197,9 +174,7 @@ export async function upsertOrgThreatProtectionConfig(
   const values = {
     org_id: orgId,
     mode: config.mode,
-    // Everything but the mode lives in the jsonb document. The SIEM secret is
-    // stored at config.siem.secret inside it; the API layer keeps the secret
-    // write-only (see the PUT controller).
+    // Everything but the mode lives in the jsonb document.
     config: {
       riskScoreThreshold: config.riskScoreThreshold,
       blacklist: config.blacklist,
@@ -207,7 +182,6 @@ export async function upsertOrgThreatProtectionConfig(
       blockedTlds: config.blockedTlds,
       failurePolicy: config.failurePolicy,
       allowRequestOverrides: config.allowRequestOverrides,
-      siem: config.siem,
     },
   };
 
