@@ -35,6 +35,8 @@
     "cclog-worker:production": "node dist/src/services/cclog-worker.js",
     "extract-worker": "tsc-watch --onSuccess \"node dist/src/services/extract-worker.js\"",
     "extract-worker:production": "node dist/src/services/extract-worker.js",
+    "webhook-worker": "tsc-watch --onSuccess \"node dist/src/services/webhook-worker.js\"",
+    "webhook-worker:production": "node dist/src/services/webhook-worker.js",
     "index-worker": "tsc-watch --onSuccess \"node dist/src/services/indexing/index-worker.js\"",
     "index-worker:production": "node dist/src/services/indexing/index-worker.js",
     "zdr-worker": "tsc-watch --onSuccess \"node dist/src/services/zdr-worker.js\"",
