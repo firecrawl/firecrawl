@@ -164,4 +164,35 @@ describeIf(TEST_PRODUCTION)("Team threat protection config API", () => {
       }
     });
   });
+
+  describe("with the forced team flag", () => {
+    let identity: Identity;
+
+    beforeAll(async () => {
+      identity = await idmux({
+        name: "team-threat-protection/forced",
+        flags: {
+          threatProtection: "forced",
+        },
+      });
+    });
+
+    it('PUT rejects mode "off" with 403', async () => {
+      const res = await putConfigRaw({ mode: "off" }, identity);
+      expect(res.statusCode).toBe(403);
+      expect(res.body.success).toBe(false);
+      expect(res.body.error).toContain("enforced");
+      expect(res.body.error).toContain('"off"');
+    });
+
+    it('PUT accepts mode "normal" with 200 (forced teams may tighten config)', async () => {
+      const res = await putConfigRaw({ mode: "normal" }, identity);
+      expect(res.statusCode).toBe(200);
+      expect(res.body.success).toBe(true);
+      expect(res.body.data).toMatchObject({
+        mode: "normal",
+        configured: true,
+      });
+    });
+  });
 });

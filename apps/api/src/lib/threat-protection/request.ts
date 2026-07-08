@@ -26,6 +26,25 @@ export const THREAT_PROTECTION_OVERRIDES_DISABLED_MESSAGE =
 export const THREAT_PROTECTION_CANNOT_DISABLE_MESSAGE =
   'Threat protection is enforced for your team and cannot be disabled per-request (threatProtection.mode may not be "off"). Remove the mode field or contact your organization administrator.';
 
+export const THREAT_PROTECTION_CANNOT_TURN_OFF_MESSAGE =
+  'Threat protection is enforced for your team and its mode cannot be set to "off". Contact your organization administrator.';
+
+export const THREAT_PROTECTION_V0_UNSUPPORTED_MESSAGE =
+  "Threat protection is enforced for your team and is not supported on the deprecated v0 API. Please update your code to use the v1 or v2 API.";
+
+/**
+ * The deprecated v0 endpoints never resolve a threat protection policy, so
+ * teams whose flag is "forced" must not be able to fetch content through
+ * them. Content-fetching v0 controllers (scrape, crawl, search) call this
+ * right after auth and reject with 403 when it returns true; crawl-status and
+ * crawl-cancel intentionally do not, so existing jobs can drain.
+ */
+export function isThreatProtectionForced(
+  flags: TeamFlags | undefined,
+): boolean {
+  return getThreatProtection(flags) === "forced";
+}
+
 interface ResolvedThreatProtection {
   /** Set when the request must be rejected with a 403. */
   error?: string;

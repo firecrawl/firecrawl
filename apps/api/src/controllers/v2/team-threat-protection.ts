@@ -4,6 +4,7 @@ import { logger as _logger } from "../../lib/logger";
 import { RequestWithAuth } from "./types";
 import { getThreatProtection } from "../../lib/zdr-helpers";
 import { threatProtectionConfigSchema } from "../../lib/threat-protection/config";
+import { THREAT_PROTECTION_CANNOT_TURN_OFF_MESSAGE } from "../../lib/threat-protection/request";
 import {
   getOrgIdForTeam,
   getOrgThreatProtectionConfig,
@@ -102,6 +103,19 @@ export async function putTeamThreatProtectionController(
   if (rejectWithoutFlag(req, res)) return;
 
   const input = threatProtectionConfigSchema.parse(req.body);
+
+  // "forced" guarantees enforcement: the org config may be tightened, but its
+  // mode may never be turned off through the API.
+  if (
+    getThreatProtection(req.acuc?.flags) === "forced" &&
+    input.mode === "off"
+  ) {
+    res.status(403).json({
+      success: false,
+      error: THREAT_PROTECTION_CANNOT_TURN_OFF_MESSAGE,
+    });
+    return;
+  }
 
   const orgId = await resolveOrgId(req, res);
   if (!orgId) return;
