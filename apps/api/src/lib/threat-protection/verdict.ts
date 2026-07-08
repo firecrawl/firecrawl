@@ -8,7 +8,7 @@ import type {
 // way; local blacklist/whitelist rules MUST use the exact same function so
 // the two paths can never disagree on what host they're evaluating — e.g. so
 // a blacklist entry for "195.127.0.11" is not bypassed by "http://3279880203/".
-import { canonicalizeHost } from "./providers/web-risk/canonicalize";
+import { canonicalizeHost, splitUrl } from "./providers/web-risk/canonicalize";
 
 // Pure policy evaluation for threat protection. No I/O in this file — the
 // provider/cache orchestration lives in ./index.ts. Rule precedence (fixed):
@@ -80,7 +80,12 @@ export function normalizeDomain(input: string): string {
     try {
       domain = new URL(domain).hostname;
     } catch {
-      // Not a parseable URL — fall through with the raw string.
+      // WHATWG URL rejects hosts the Safe Browsing spec still handles (e.g.
+      // percent-escaped spaces or control bytes). Fall back to the same
+      // lenient splitter the canonicalizer uses — the naive string handling
+      // below would otherwise extract "http:" as the "host" and local rules
+      // would silently never match.
+      domain = splitUrl(domain).host;
     }
   }
   // Strip a path fragment, then the port — carefully, because IPv6 literals

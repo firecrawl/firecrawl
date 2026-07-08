@@ -179,18 +179,21 @@ export async function batchScrapeController(
   // redirect) is still blocked in the scrape pipeline and its job document
   // gets the unsafe_domain_blocked error.
   if (threatProtection.policy) {
-    const { blocked } = await checkUrlsAgainstThreatPolicy(
+    const { blocked, decisionsByUrl } = await checkUrlsAgainstThreatPolicy(
       urls,
       threatProtection.policy,
       { teamId: req.auth.team_id },
     );
     if (blocked.length > 0) {
-      // Blocked URLs whose decision consulted the classifier bill the scan
-      // fee (+2 per unique scanned URL) even though they will never
-      // be scraped — the scan already happened. Allowed URLs are not billed
-      // here: their scrape jobs re-check and bill there.
+      // Consulted decisions bill the scan fee (+2 per unique scanned URL) —
+      // the scans already happened. With ignoreInvalidURLs the allowed URLs
+      // proceed to scrape jobs that bill their own scans, so only blocked
+      // ones bill here; when the whole request is rejected below, no scrape
+      // jobs will ever run, so every scanned URL bills here.
       const threatScanCredits = calculateThreatScanCredits(
-        blocked.map(x => x.decision),
+        req.body.ignoreInvalidURLs
+          ? blocked.map(x => x.decision)
+          : decisionsByUrl.values(),
       );
       if (
         threatScanCredits > 0 &&

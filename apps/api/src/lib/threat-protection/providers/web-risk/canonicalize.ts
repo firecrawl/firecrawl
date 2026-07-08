@@ -185,9 +185,12 @@ interface ParsedUrl {
 
 /**
  * Lenient URL splitter (real URL parsers reject hosts the spec requires us to
- * handle, e.g. embedded spaces or raw control bytes).
+ * handle, e.g. embedded spaces or raw control bytes). Exported so host
+ * extraction elsewhere (normalizeDomain) can fall back to the same splitting
+ * when WHATWG URL parsing rejects the input — otherwise local rule matching
+ * and the classifier could disagree about a URL's host.
  */
-function splitUrl(input: string): ParsedUrl {
+export function splitUrl(input: string): ParsedUrl {
   let rest = input;
   let scheme = "http";
   const schemeMatch = rest.match(/^([a-zA-Z][a-zA-Z0-9+.-]*):\/\//);

@@ -375,6 +375,10 @@ describe("normalizeDomain", () => {
     ["  example.com  ", "example.com"],
     ["example.com.", "example.com"],
     ["https://sub.example.com/path?q=1", "sub.example.com"],
+    // Hosts WHATWG URL rejects (escaped bytes) still resolve via the lenient
+    // splitter instead of degenerating to "http" (which would let such URLs
+    // slip past every local rule).
+    ["http://%20leadingspace.com/path", "%20leadingspace.com"],
     ["example.com:8080", "example.com"],
     ["example.com/path", "example.com"],
     // inet_aton-style IP forms canonicalize to dotted-quad, matching the Web

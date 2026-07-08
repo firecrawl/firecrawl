@@ -76,12 +76,13 @@ export async function recordRobotsBlocked(crawlId: string, url: string) {
 /**
  * Records a URL that was silently skipped during crawl link discovery because
  * it was blocked by the team's threat protection policy. The crawl continues
- * without it; the record (url -> full ThreatDecision JSON) is crawl
- * bookkeeping, and doubles as the crawl-scoped billing dedup for blocked
- * discoveries: returns true only for the first record of a URL within this
- * crawl (HSETNX), so a blocked link that many pages point at (e.g. in a
- * site-wide nav) bills its scan fee once per crawl, not once per page that
- * rediscovered it.
+ * without it; the record (canonical url -> full ThreatDecision JSON) is
+ * crawl bookkeeping, and doubles as the crawl-scoped billing dedup for
+ * blocked discoveries: returns true only for the first record of a URL
+ * within this crawl (HSETNX), so a blocked link that many pages point at
+ * (e.g. in a site-wide nav) bills its scan fee once per crawl, not once per
+ * page that rediscovered it. Callers key by the decision's canonical URL so
+ * raw spelling variants dedupe together, matching billing.
  *
  * ZDR posture: this hash follows the same rules as the rest of the transient
  * crawl bookkeeping in this file (crawl doc, visited sets, robots_blocked) —

@@ -535,7 +535,9 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
                 if (
                   await recordThreatBlocked(
                     job.data.crawl_id,
-                    blockedUrl.url,
+                    // Key on the canonical URL so raw spelling variants of
+                    // one URL dedupe to a single fee, matching billing.
+                    blockedUrl.decision.url ?? blockedUrl.url,
                     blockedUrl.decision,
                   )
                 ) {
@@ -1225,7 +1227,9 @@ async function processKickoffJob(job: NuQJob<ScrapeJobKickoff>) {
         if (
           await recordThreatBlocked(
             job.data.crawl_id,
-            blockedUrl.url,
+            // Key on the canonical URL so raw spelling variants of one URL
+            // dedupe to a single fee, matching billing.
+            blockedUrl.decision.url ?? blockedUrl.url,
             blockedUrl.decision,
           )
         ) {
@@ -1390,7 +1394,9 @@ async function processKickoffSitemapJob(job: NuQJob<ScrapeJobKickoffSitemap>) {
         if (
           await recordThreatBlocked(
             job.data.crawl_id,
-            blockedUrl.url,
+            // Key on the canonical URL so raw spelling variants of one URL
+            // dedupe to a single fee, matching billing.
+            blockedUrl.decision.url ?? blockedUrl.url,
             blockedUrl.decision,
           )
         ) {

@@ -71,19 +71,18 @@ export async function agentController(
     });
   }
   if (threatProtection.policy && (req.body.urls?.length ?? 0) > 0) {
-    const { blocked } = await checkUrlsAgainstThreatPolicy(
+    const { blocked, decisionsByUrl } = await checkUrlsAgainstThreatPolicy(
       req.body.urls ?? [],
       threatProtection.policy,
       { teamId: req.auth.team_id },
     );
     if (blocked.length > 0) {
-      // Blocked URLs whose decision consulted the classifier bill the scan
-      // fee (+2 per unique scanned URL) even though the request is
-      // rejected — the scan already happened. Allowed start URLs are not
-      // billed here: the agent's API-driven scrapes re-check the policy in
-      // the scrape pipeline and bill there.
+      // The whole request is rejected below, so no agent job will ever run
+      // to bill the allowed start URLs' scans — every consulted decision
+      // (allowed and blocked) bills its scan fee here (+2 per unique
+      // scanned URL): the scans already happened.
       const threatScanCredits = calculateThreatScanCredits(
-        blocked.map(x => x.decision),
+        decisionsByUrl.values(),
       );
       if (threatScanCredits > 0) {
         billTeam(
