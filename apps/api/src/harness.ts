@@ -1074,7 +1074,15 @@ async function runDevMode(): Promise<void> {
   });
 
   logger.section("Starting development mode");
-  watch.start("--project", ".");
+  // The typescript package is aliased to @typescript/typescript6 (which only
+  // ships tsc6), so tsc-watch's default typescript/bin/tsc does not resolve;
+  // point it at TypeScript 7's tsc explicitly, like the package.json scripts.
+  watch.start(
+    "--compiler",
+    "./node_modules/typescript-7/bin/tsc",
+    "--project",
+    ".",
+  );
 
   await new Promise<void>(resolve => {
     const stop = () => {
