@@ -5,6 +5,12 @@ minimumReleaseAge: 720 # 12 hours
 minimumReleaseAgeExclude:
   - fast-xml-parser
   - follow-redirects
+  # TypeScript 7 resolves its native platform binaries (e.g.
+  # @typescript/typescript-darwin-arm64) as transitive optional deps, which
+  # the age gate would otherwise silently skip, leaving tsc unable to run.
+  - typescript
+  - "@typescript/typescript6"
+  - "@typescript/typescript-*"
 overrides:
   "@types/express": "^5.0.6"
 patchedDependencies:
