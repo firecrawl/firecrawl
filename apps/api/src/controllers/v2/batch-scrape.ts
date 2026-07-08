@@ -185,16 +185,12 @@ export async function batchScrapeController(
       { teamId: req.auth.team_id },
     );
     if (blocked.length > 0) {
-      // Blocked domains whose decision consulted the classifier (fresh or
-      // cached verdict) bill the scan fee (+2 per scanned domain) even
-      // though they will never be scraped — the scan already happened.
-      // Allowed URLs are not billed here: their scrape jobs re-check the
-      // cached verdict and bill there.
-      const blockedDecisionsByDomain = new Map(
-        blocked.map(x => [x.domain, x.decision]),
-      );
+      // Blocked URLs whose decision consulted the classifier bill the scan
+      // fee (+2 per unique scanned URL) even though they will never
+      // be scraped — the scan already happened. Allowed URLs are not billed
+      // here: their scrape jobs re-check and bill there.
       const threatScanCredits = calculateThreatScanCredits(
-        blockedDecisionsByDomain.values(),
+        blocked.map(x => x.decision),
       );
       if (
         threatScanCredits > 0 &&
@@ -228,10 +224,7 @@ export async function batchScrapeController(
         unnormalizedURLs = keptUnnormalized;
       } else {
         const first = blocked[0];
-        const error = new UnsafeDomainBlockedError(
-          first.domain,
-          first.decision,
-        );
+        const error = new UnsafeDomainBlockedError(first.url, first.decision);
         return res.status(403).json({
           success: false,
           code: error.code,

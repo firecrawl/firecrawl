@@ -1,7 +1,7 @@
 import { createHash } from "crypto";
 import { config } from "../../../config";
 import type { RawVerdict, ThreatProvider } from "../types";
-import { generateHostExpressions } from "./web-risk/canonicalize";
+import { generateUrlExpressions } from "./web-risk/canonicalize";
 import {
   getWebRiskListStore,
   WEB_RISK_THREAT_TYPES,
@@ -16,11 +16,11 @@ import {
 // Google Web Risk provider ("normal" threat protection mode), built on the
 // Update API for ZDR compliance:
 //
-//  1. The domain is canonicalized into host-suffix expressions per the Safe
-//     Browsing spec, each expression is SHA-256 hashed, and the 4-byte hash
-//     prefixes are checked against the locally synced threat lists
-//     (./web-risk/store.ts + ./web-risk/sync.ts). No network I/O, and the
-//     target domain is never transmitted anywhere.
+//  1. The URL is canonicalized into host-suffix × path-prefix expressions per
+//     the Safe Browsing spec, each expression is SHA-256 hashed, and the
+//     4-byte hash prefixes are checked against the locally synced threat
+//     lists (./web-risk/store.ts + ./web-risk/sync.ts). No network I/O, and
+//     the target URL is never transmitted anywhere.
 //  2. Only when a local prefix matches (rare) is Google consulted:
 //     GET /v1/hashes:search with the matched (anonymized, non-reversible)
 //     hash prefix. The returned full hashes are compared locally — a full
@@ -80,12 +80,12 @@ async function searchHashPrefix(
 }
 
 /**
- * Look up a domain against Google Web Risk. Throws on any transport/API
+ * Look up a URL against Google Web Risk. Throws on any transport/API
  * error, and when the local threat lists are unavailable or stale, so the
  * caller can apply the org's failurePolicy.
  */
 export async function fetchGoogleWebRiskVerdict(
-  domain: string,
+  url: string,
   options?: { signal?: AbortSignal },
 ): Promise<RawVerdict> {
   if (!isGoogleWebRiskConfigured()) {
@@ -94,9 +94,9 @@ export async function fetchGoogleWebRiskVerdict(
 
   ensureThreatListSyncLoop();
 
-  const expressions = generateHostExpressions(domain);
+  const expressions = generateUrlExpressions(url);
   if (expressions.length === 0) {
-    throw new Error(`Cannot canonicalize domain for Web Risk lookup`);
+    throw new Error(`Cannot canonicalize URL for Web Risk lookup`);
   }
   const fullHashes = expressions.map(expression =>
     createHash("sha256").update(expression).digest(),
@@ -115,7 +115,7 @@ export async function fetchGoogleWebRiskVerdict(
   }
 
   if (lookup.hits.length === 0) {
-    // The overwhelmingly common case: clean domain, zero Google calls,
+    // The overwhelmingly common case: clean URL, zero Google calls,
     // nothing transmitted anywhere.
     return {
       provider: PROVIDER,

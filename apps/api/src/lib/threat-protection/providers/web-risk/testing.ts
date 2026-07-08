@@ -1,6 +1,6 @@
 import { createHash } from "crypto";
 import type http from "http";
-import { generateHostExpressions } from "./canonicalize";
+import { generateUrlExpressions } from "./canonicalize";
 import { WEB_RISK_THREAT_TYPES, type WebRiskThreatType } from "./store";
 
 // Test helpers for the Web Risk Update API provider — shared by the unit
@@ -15,9 +15,13 @@ export function sha256(data: string | Buffer): Buffer {
   return createHash("sha256").update(data).digest();
 }
 
-/** SHA-256 of the primary (exact-host) lookup expression for a domain. */
-export function domainExpressionHash(domain: string): Buffer {
-  return sha256(generateHostExpressions(domain)[0]);
+/**
+ * SHA-256 of the exact (most-specific) lookup expression for a URL or bare
+ * domain — index 0 of the expression list is always exact host + exact path
+ * (+ query); for a bare domain that is `host/`.
+ */
+export function urlExpressionHash(url: string): Buffer {
+  return sha256(generateUrlExpressions(url)[0]);
 }
 
 /**
@@ -30,12 +34,24 @@ export class WebRiskMockDatabase {
   /** Entries in the list with no confirmable full hash (collision cases). */
   private prefixOnlyByType = new Map<WebRiskThreatType, Buffer[]>();
 
-  /** Flags a domain: its exact-host expression hash joins the list. */
+  /**
+   * Flags a whole domain: its exact-host expression hash (`host/`) joins the
+   * list, so every URL on the domain matches via the host-suffix expressions.
+   */
   addRiskyDomain(
     domain: string,
     threatType: WebRiskThreatType = "MALWARE",
   ): void {
-    this.addFullHash(domainExpressionHash(domain), threatType);
+    this.addFullHash(urlExpressionHash(domain), threatType);
+  }
+
+  /**
+   * Flags a single URL: only its exact expression (host + path + query) joins
+   * the list — other URLs on the same domain stay clean, which is what makes
+   * checks URL-level rather than domain-level.
+   */
+  addRiskyUrl(url: string, threatType: WebRiskThreatType = "MALWARE"): void {
+    this.addFullHash(urlExpressionHash(url), threatType);
   }
 
   addFullHash(fullHash: Buffer, threatType: WebRiskThreatType): void {
@@ -125,7 +141,8 @@ interface WebRiskMockCounters {
   hashesSearchRequests: number;
   /** hashes:search requests per 4-byte prefix (hex). */
   hashesSearchByPrefixHex: Map<string, number>;
-  hashesSearchRequestsForDomain(domain: string): number;
+  /** hashes:search confirmations for a URL's/domain's exact expression. */
+  hashesSearchRequestsForTarget(urlOrDomain: string): number;
 }
 
 /**
@@ -169,8 +186,8 @@ export function createWebRiskMockCounters(): WebRiskMockCounters {
     computeDiffRequests: 0,
     hashesSearchRequests: 0,
     hashesSearchByPrefixHex: new Map(),
-    hashesSearchRequestsForDomain(domain: string): number {
-      const prefixHex = domainExpressionHash(domain)
+    hashesSearchRequestsForTarget(urlOrDomain: string): number {
+      const prefixHex = urlExpressionHash(urlOrDomain)
         .subarray(0, 4)
         .toString("hex");
       return counters.hashesSearchByPrefixHex.get(prefixHex) ?? 0;

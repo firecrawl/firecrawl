@@ -89,13 +89,13 @@ import { tmpdir } from "node:os";
 import { randomUUID } from "node:crypto";
 import type { DataLayerScrapeMetadata } from "../../lib/data-layer";
 import {
-  checkDomain,
+  checkUrl,
   type ThreatCheckDedup,
   type ThreatDecision,
   type ThreatProtectionPolicy,
 } from "../../lib/threat-protection";
 import { UnsafeDomainBlockedError } from "../../lib/threat-protection/error";
-import { normalizeDomain } from "../../lib/threat-protection/verdict";
+import { canonicalizeUrl } from "../../lib/threat-protection/providers/web-risk/canonicalize";
 
 export type ScrapeUrlResponse =
   | {
@@ -1111,24 +1111,26 @@ export async function scrapeURL(
 
     meta.logger.info("scrapeURL entered");
 
-    // Threat protection: check the target domain BEFORE any engine selection
+    // Threat protection: check the target URL BEFORE any engine selection
     // or outbound fetch. The policy is resolved at the controller layer and
     // threaded through internalOptions; absent policy = zero overhead.
     // The dedup map is scoped to this one scrape: the initial check and any
-    // redirect re-check on the same domain share a single scan (one billable
-    // consulted decision); a cross-domain redirect is a second scan.
+    // redirect re-check on the same URL share a single scan (one fee); a
+    // redirect to a different URL is a second scan and bills a second fee
+    // (see calculateThreatScanCredits).
     const threatPolicy = internalOptions.threatProtection;
     const threatDedup: ThreatCheckDedup = new Map();
     if (threatPolicy && threatPolicy.mode !== "off") {
-      const initialDomain = normalizeDomain(meta.rewrittenUrl ?? meta.url);
-      const decision = await checkDomain(initialDomain, threatPolicy, {
+      const initialUrl = meta.rewrittenUrl ?? meta.url;
+      const decision = await checkUrl(initialUrl, threatPolicy, {
         teamId: internalOptions.teamId,
         dedup: threatDedup,
       });
       meta.threatDecisions.push(decision);
       if (!decision.allowed) {
-        meta.logger.info("Domain blocked by threat protection policy", {
-          domain: initialDomain,
+        meta.logger.info("URL blocked by threat protection policy", {
+          url: initialUrl,
+          domain: decision.domain,
           rule: decision.rule,
         });
         setSpanAttributes(span, {
@@ -1136,7 +1138,7 @@ export async function scrapeURL(
         });
         return {
           success: false,
-          error: new UnsafeDomainBlockedError(initialDomain, decision),
+          error: new UnsafeDomainBlockedError(initialUrl, decision),
           threatDecisions: meta.threatDecisions,
         };
       }
@@ -1327,15 +1329,18 @@ export async function scrapeURL(
         }
       }
 
-      // Threat protection: if the scrape ended up on a different domain than
-      // requested (redirect), re-check the destination domain. This closes
-      // the "clean domain redirects to a blocked domain" bypass vector.
+      // Threat protection: if the scrape ended up on a different URL than
+      // requested (redirect), re-check the destination URL. This closes the
+      // "clean URL redirects to a blocked URL" bypass vector — including
+      // same-domain redirects onto a flagged path.
       if (threatPolicy && threatPolicy.mode !== "off" && result.success) {
+        const initialUrl = meta.rewrittenUrl ?? meta.url;
         const finalUrl = result.document.metadata.url;
-        const initialDomain = normalizeDomain(meta.rewrittenUrl ?? meta.url);
-        const finalDomain = finalUrl ? normalizeDomain(finalUrl) : null;
-        if (finalDomain !== null && finalDomain !== initialDomain) {
-          const decision = await checkDomain(finalDomain, threatPolicy, {
+        if (
+          finalUrl &&
+          canonicalizeUrl(finalUrl) !== canonicalizeUrl(initialUrl)
+        ) {
+          const decision = await checkUrl(finalUrl, threatPolicy, {
             teamId: internalOptions.teamId,
             dedup: threatDedup,
           });
@@ -1344,15 +1349,16 @@ export async function scrapeURL(
             meta.logger.info(
               "Redirect destination blocked by threat protection policy",
               {
-                domain: finalDomain,
-                initialDomain,
+                url: finalUrl,
+                domain: decision.domain,
+                initialUrl,
                 rule: decision.rule,
               },
             );
             setSpanAttributes(span, {
               "scrape.blocked_by_threat_protection": true,
             });
-            throw new UnsafeDomainBlockedError(finalDomain, decision);
+            throw new UnsafeDomainBlockedError(finalUrl, decision);
           }
         }
       }

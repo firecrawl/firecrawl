@@ -100,15 +100,19 @@ export function normalizeDomain(input: string): string {
 
 /**
  * Resolve a decision using ONLY local policy rules (whitelist → blacklist →
- * blocked-tld), or null if a provider verdict is needed. Local decisions never
- * consult a provider, so they never set `providerConsulted` (no billing).
+ * blocked-tld), or null if a provider verdict is needed. Local rules are
+ * domain-level (the lists hold domains/globs), so `target` may be a full URL —
+ * only its canonicalized host is evaluated. Local decisions never consult a
+ * provider, so they never set `providerConsulted` (no billing).
  */
 export function localOnlyDecision(
-  domain: string,
+  target: string,
   policy: ThreatProtectionPolicy,
 ): ThreatDecision | null {
-  const normalized = normalizeDomain(domain);
+  const normalized = normalizeDomain(target);
   const base = {
+    url: target,
+    domain: normalized,
     providerConsulted: false,
     verdict: null,
     mode: policy.mode,
@@ -133,17 +137,19 @@ export function localOnlyDecision(
  * was used, which drives billing.
  */
 export function evaluatePolicy(
-  domain: string,
+  target: string,
   verdict: RawVerdict | null,
   policy: ThreatProtectionPolicy,
 ): ThreatDecision {
   const base = {
+    url: target,
+    domain: normalizeDomain(target),
     providerConsulted: verdict !== null,
     verdict,
     mode: policy.mode,
   };
 
-  const local = localOnlyDecision(domain, policy);
+  const local = localOnlyDecision(target, policy);
   if (local !== null) {
     // Preserve the local rule but reflect any verdict we were given (billing
     // still applies if a provider was consulted before evaluation).
@@ -162,7 +168,7 @@ export function evaluatePolicy(
   }
 
   // No verdict: the provider failed or was unavailable (mode "off" never
-  // reaches here via checkDomain). Fail open or closed per the org policy.
+  // reaches here via checkUrl). Fail open or closed per the org policy.
   if (policy.mode === "off") {
     return { allowed: true, rule: "default-allow", ...base };
   }

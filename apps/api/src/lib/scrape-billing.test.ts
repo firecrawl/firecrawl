@@ -124,9 +124,14 @@ describe("calculateCreditsToBeBilled", () => {
 // Threat protection scan fees (ENG-4985)
 // =========================================
 
-const consulted = (allowed = true): ThreatDecision => ({
+const consulted = (
+  allowed = true,
+  url = "http://scanned.example/",
+): ThreatDecision => ({
   allowed,
   rule: allowed ? "default-allow" : "risk-score",
+  url,
+  domain: new URL(url).hostname,
   providerConsulted: true,
   verdict: {
     provider: "google-web-risk",
@@ -144,6 +149,8 @@ const localOnly = (
 ): ThreatDecision => ({
   allowed,
   rule,
+  url: "http://local.example/",
+  domain: "local.example",
   providerConsulted: false,
   verdict: null,
   mode: "normal",
@@ -175,9 +182,42 @@ describe("calculateThreatScanCredits", () => {
     expect(calculateThreatScanCredits([])).toBe(0);
   });
 
-  it("bills +2 per consulted decision", () => {
+  it("bills +2 per unique consulted URL", () => {
     expect(calculateThreatScanCredits([consulted()])).toBe(2);
-    expect(calculateThreatScanCredits([consulted(), consulted()])).toBe(4);
+    expect(
+      calculateThreatScanCredits([
+        consulted(true, "http://a.example/"),
+        consulted(true, "http://b.example/"),
+      ]),
+    ).toBe(4);
+  });
+
+  it("bills every distinct URL, including URLs sharing a domain", () => {
+    expect(
+      calculateThreatScanCredits([
+        consulted(true, "http://one.example/a"),
+        consulted(true, "http://one.example/b"),
+        consulted(false, "http://one.example/c"),
+      ]),
+    ).toBe(6);
+  });
+
+  it("bills a URL once no matter how many decisions repeat it", () => {
+    expect(
+      calculateThreatScanCredits([
+        consulted(true, "http://one.example/a"),
+        consulted(true, "http://one.example/a"),
+      ]),
+    ).toBe(2);
+  });
+
+  it("bills legacy decisions without a url individually (mid-rollout jobs)", () => {
+    const legacy = () => {
+      const decision = consulted();
+      delete (decision as Partial<ThreatDecision>).url;
+      return decision;
+    };
+    expect(calculateThreatScanCredits([legacy(), legacy()])).toBe(4);
   });
 
   it("bills consulted decisions regardless of the allow/block outcome", () => {
@@ -201,11 +241,11 @@ describe("calculateThreatScanCredits", () => {
     ).toBe(0);
   });
 
-  it("sums mixed decisions", () => {
+  it("sums mixed decisions across URLs", () => {
     expect(
       calculateThreatScanCredits([
-        consulted(),
-        consulted(false),
+        consulted(true, "http://a.example/"),
+        consulted(false, "http://b.example/"),
         localOnly("blacklist", false),
       ]),
     ).toBe(4);
@@ -222,13 +262,28 @@ describe("calculateCreditsToBeBilled — threat protection scan fees", () => {
     ).toBe(3);
   });
 
-  it("bills each consulted decision on a redirect (two domains scanned)", async () => {
+  it("bills each scanned URL on a redirect — including same-domain", async () => {
     expect(
       await billWithDecisions({
         document: successDocument,
-        threatDecisions: [consulted(), consulted()],
+        threatDecisions: [
+          consulted(true, "http://one.example/"),
+          consulted(true, "http://one.example/landing"),
+        ],
       }),
     ).toBe(5);
+  });
+
+  it("bills once when the redirect re-check resolves to the same URL", async () => {
+    expect(
+      await billWithDecisions({
+        document: successDocument,
+        threatDecisions: [
+          consulted(true, "http://one.example/"),
+          consulted(true, "http://one.example/"),
+        ],
+      }),
+    ).toBe(3);
   });
 
   it("adds nothing for local-only decisions on success", async () => {
@@ -262,8 +317,8 @@ describe("calculateCreditsToBeBilled — threat protection scan fees", () => {
   });
 
   it("does not double-bill when the error decision is also in the decisions array", async () => {
-    const initial = consulted();
-    const redirectBlock = consulted(false);
+    const initial = consulted(true, "http://a.example/");
+    const redirectBlock = consulted(false, "http://b.example/");
     expect(
       await billWithDecisions({
         document: null,

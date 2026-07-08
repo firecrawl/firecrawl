@@ -1,5 +1,6 @@
 import { logger } from "../logger";
 import { fetchGoogleWebRiskVerdict } from "./providers/google-web-risk";
+import { canonicalizeUrl } from "./providers/web-risk/canonicalize";
 import type {
   RawVerdict,
   ThreatCheckDedup,
@@ -10,7 +11,7 @@ import type {
 import { evaluatePolicy, localOnlyDecision, normalizeDomain } from "./verdict";
 
 /**
- * Request context threaded into {@link checkDomain}. Enforcement-only: the
+ * Request context threaded into {@link checkUrl}. Enforcement-only: the
  * feature no longer emits or exports security events (both the ClickHouse
  * security log and the SIEM push were removed), so this carries just the
  * request/job-scoped dedup handle plus the team id used for server-side
@@ -21,7 +22,7 @@ export interface ThreatCheckContext {
   teamId?: string;
   /**
    * Request/job-scoped dedup handle (see {@link ThreatCheckDedup}). When set,
-   * checkDomain() reuses the in-flight decision for a domain already checked
+   * checkUrl() reuses the in-flight decision for a URL already checked
    * within this request instead of re-scanning it. Strictly in-memory and
    * request-scoped — never persisted, never shared across requests (ZDR).
    */
@@ -29,22 +30,26 @@ export interface ThreatCheckContext {
 }
 
 // Public entry point for the threat protection core library (enterprise
-// domain risk blocking). Flow per domain:
+// URL risk blocking). Flow per URL:
 //   1. mode "off" → allow, no provider, no billing
-//   2. request-scoped dedup (ctx.dedup) → a domain already checked within
+//   2. request-scoped dedup (ctx.dedup) → a URL already checked within
 //      this request/job reuses the same in-flight decision
-//   3. local-only rules (whitelist/blacklist/blocked-tld) → decide without a
-//      provider call (no billing)
+//   3. local-only rules (whitelist/blacklist/blocked-tld, evaluated against
+//      the URL's host) → decide without a provider call (no billing)
 //   4. provider ("normal" = Google Web Risk local hash-prefix database),
-//      with a per-attempt timeout and one retry
+//      with a per-attempt timeout and one retry. Lookups are URL-level:
+//      host-suffix × path-prefix expressions per the Safe Browsing spec, so
+//      a listing that flags only a specific page is caught even when its
+//      domain is otherwise clean.
 //   5. evaluate the policy against the verdict; provider failure → the org's
 //      failurePolicy decides (fail-open allows, fail-closed blocks)
 // Any decision backed by a verdict sets providerConsulted, which drives
-// billing (+2 credits per scanned domain) in the enforcement layer. This
-// module performs no billing or pipeline integration itself.
+// billing in the enforcement layer (+2 credits per unique scanned URL per
+// billing scope — see calculateThreatScanCredits). This module performs no
+// billing or pipeline integration itself.
 //
 // ZDR boundary: verdicts are NEVER persisted — there is no cross-request
-// verdict cache (scrape-target domains must not be stored at rest). The only
+// verdict cache (scrape-target URLs must not be stored at rest). The only
 // reuse of a decision is via the caller-provided, request-scoped in-memory
 // dedup map. The org-config cache in ./store.ts is unaffected: it caches the
 // org's own settings, not scrape-derived data.
@@ -55,7 +60,7 @@ export interface ThreatCheckContext {
 
 // Policy evaluation helpers (evaluatePolicy, localOnlyDecision) are exported
 // from ./verdict, and the shared contract types from ./types — import those
-// directly; index.ts only re-exports what checkDomain callers need.
+// directly; index.ts only re-exports what checkUrl callers need.
 export { UnsafeDomainBlockedError } from "./error";
 export * from "./types";
 
@@ -64,13 +69,13 @@ const PROVIDER_ATTEMPTS = 2; // 1 initial + 1 retry
 
 /**
  * Single mode→provider dispatch point. Every provider is a separate module
- * under ./providers exporting `fetch<X>Verdict(domain) → RawVerdict`; this
+ * under ./providers exporting `fetch<X>Verdict(url) → RawVerdict`; this
  * switch is the only place that knows which mode maps to which classifier.
  * Deliberately kept as a dispatch even with one live branch — future partner
  * classifiers add a mode + a case here and nothing else changes.
  */
 async function fetchProviderVerdict(
-  domain: string,
+  url: string,
   mode: Exclude<ThreatProtectionMode, "off">,
 ): Promise<RawVerdict> {
   let lastError: unknown;
@@ -79,13 +84,13 @@ async function fetchProviderVerdict(
       const signal = AbortSignal.timeout(PROVIDER_TIMEOUT_MS);
       switch (mode) {
         case "normal":
-          return await fetchGoogleWebRiskVerdict(domain, { signal });
+          return await fetchGoogleWebRiskVerdict(url, { signal });
       }
     } catch (error) {
       lastError = error;
       logger.warn("Threat protection provider lookup failed", {
         canonicalLog: "threat-protection/provider",
-        domain,
+        url,
         mode,
         attempt,
         error,
@@ -95,14 +100,14 @@ async function fetchProviderVerdict(
   throw lastError;
 }
 
-async function checkDomainFresh(
-  normalized: string,
+async function checkUrlFresh(
+  canonicalUrl: string,
   policy: ThreatProtectionPolicy,
   ctx: ThreatCheckContext,
 ): Promise<ThreatDecision> {
-  // Local rules first: when whitelist/blacklist/blocked-tld are decisive we
-  // skip the paid provider scan entirely.
-  const local = localOnlyDecision(normalized, policy);
+  // Local rules first: when whitelist/blacklist/blocked-tld are decisive
+  // (they match on the URL's host) we skip the paid provider scan entirely.
+  const local = localOnlyDecision(canonicalUrl, policy);
   if (local !== null) {
     return local;
   }
@@ -110,7 +115,7 @@ async function checkDomainFresh(
   let verdict: RawVerdict | null = null;
   try {
     verdict = await fetchProviderVerdict(
-      normalized,
+      canonicalUrl,
       policy.mode as Exclude<ThreatProtectionMode, "off">,
     );
   } catch {
@@ -119,12 +124,13 @@ async function checkDomainFresh(
     verdict = null;
   }
 
-  const decision = evaluatePolicy(normalized, verdict, policy);
+  const decision = evaluatePolicy(canonicalUrl, verdict, policy);
   if (!decision.allowed || decision.rule === "provider-failure") {
     logger.info("Threat protection decision", {
       canonicalLog: "threat-protection/check",
       teamId: ctx.teamId,
-      domain: normalized,
+      url: canonicalUrl,
+      domain: decision.domain,
       mode: policy.mode,
       allowed: decision.allowed,
       rule: decision.rule,
@@ -138,32 +144,36 @@ async function checkDomainFresh(
 }
 
 /**
- * Classify a domain against an org's threat protection policy. Never throws:
+ * Classify a URL against an org's threat protection policy. Accepts full URLs
+ * or bare domains (a bare domain is checked as its root URL). Never throws:
  * provider failures resolve through the policy's failurePolicy
- * ("provider-failure" rule). Callers bill +2 credits per scanned domain when
- * the returned decision has `providerConsulted` set.
+ * ("provider-failure" rule). Callers bill scan fees for decisions with
+ * `providerConsulted` set — +2 per unique scanned canonical URL, see
+ * calculateThreatScanCredits.
  *
  * When `ctx.dedup` is provided (a request/job-scoped map created by the call
- * site), repeated checks of the same domain within that scope share one
- * in-flight decision: one scan, one billable consulted verdict. There is
- * deliberately no cross-request or persisted verdict reuse (ZDR:
- * scrape-target domains are never stored at rest).
+ * site), repeated checks of the same URL within that scope share one
+ * in-flight decision: one scan, one consulted verdict. There is deliberately
+ * no cross-request or persisted verdict reuse (ZDR: scrape-target URLs are
+ * never stored at rest).
  *
  * Enforcement-only: no security event is emitted or exported for a scan
  * (neither to a ClickHouse log nor to a SIEM destination — both were
  * removed). There is no built-in audit trail.
  */
-export async function checkDomain(
-  domain: string,
+export async function checkUrl(
+  url: string,
   policy: ThreatProtectionPolicy,
   ctx: ThreatCheckContext,
 ): Promise<ThreatDecision> {
-  const normalized = normalizeDomain(domain);
+  const canonicalUrl = canonicalizeUrl(url);
 
   if (policy.mode === "off") {
     return {
       allowed: true,
       rule: "default-allow",
+      url: canonicalUrl,
+      domain: normalizeDomain(canonicalUrl),
       providerConsulted: false,
       verdict: null,
       mode: "off",
@@ -171,14 +181,14 @@ export async function checkDomain(
   }
 
   if (ctx.dedup) {
-    const existing = ctx.dedup.get(normalized);
+    const existing = ctx.dedup.get(canonicalUrl);
     if (existing !== undefined) {
       return existing;
     }
-    const pending = checkDomainFresh(normalized, policy, ctx);
-    ctx.dedup.set(normalized, pending);
+    const pending = checkUrlFresh(canonicalUrl, policy, ctx);
+    ctx.dedup.set(canonicalUrl, pending);
     return pending;
   }
 
-  return checkDomainFresh(normalized, policy, ctx);
+  return checkUrlFresh(canonicalUrl, policy, ctx);
 }

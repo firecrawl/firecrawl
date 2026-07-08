@@ -20,7 +20,6 @@ import {
   checkUrlsAgainstThreatPolicy,
   resolveThreatProtection,
 } from "../../lib/threat-protection/request";
-import { normalizeDomain } from "../../lib/threat-protection/verdict";
 import { calculateThreatScanCredits } from "../../lib/scrape-billing";
 
 configDotenv();
@@ -210,19 +209,19 @@ export async function mapController(
     }
   }
 
-  // Threat protection: remove links on blocked domains from the returned
-  // URL list entirely. Every consulted decision (fresh or cached provider
-  // verdict) is a billable scan (+2 per scanned domain).
+  // Threat protection: remove blocked links from the returned URL list
+  // entirely. Checks are URL-level; scan fees bill +2 per unique scanned
+  // URL (see calculateThreatScanCredits).
   let threatScanCredits = 0;
   if (threatProtection.policy && result.mapResults.length > 0) {
-    const { decisionsByDomain } = await checkUrlsAgainstThreatPolicy(
+    const { decisionsByUrl } = await checkUrlsAgainstThreatPolicy(
       result.mapResults.map(x => x.url),
       threatProtection.policy,
       { teamId: req.auth.team_id },
     );
-    threatScanCredits = calculateThreatScanCredits(decisionsByDomain.values());
+    threatScanCredits = calculateThreatScanCredits(decisionsByUrl.values());
     result.mapResults = result.mapResults.filter(x => {
-      const decision = decisionsByDomain.get(normalizeDomain(x.url));
+      const decision = decisionsByUrl.get(x.url);
       return decision === undefined || decision.allowed;
     });
   }

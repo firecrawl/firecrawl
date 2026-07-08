@@ -1,6 +1,6 @@
 import type { TeamFlags } from "../../controllers/v2/types";
 import { getThreatProtection } from "../zdr-helpers";
-import { checkDomain, type ThreatCheckContext } from "./index";
+import { checkUrl, type ThreatCheckContext } from "./index";
 import {
   getOrgIdForTeam,
   getOrgThreatProtectionConfig,
@@ -8,7 +8,6 @@ import {
   type OrgThreatProtectionConfig,
 } from "./store";
 import type { ThreatDecision, ThreatProtectionPolicy } from "./types";
-import { normalizeDomain } from "./verdict";
 
 // Controller-layer glue for threat protection enforcement. One helper
 // (resolveThreatProtection) is shared by every endpoint: it turns
@@ -102,56 +101,55 @@ interface BlockedUrl {
 interface UrlPolicyCheckResult {
   allowedUrls: string[];
   blocked: BlockedUrl[];
-  /** All decisions, keyed by normalized domain — for logging/bookkeeping. */
-  decisionsByDomain: Map<string, ThreatDecision>;
+  /** One decision per input URL, keyed by the URL as given by the caller. */
+  decisionsByUrl: Map<string, ThreatDecision>;
 }
 
-// Crawls/searches fan out to many URLs on few domains: dedupe by domain and
-// check domains concurrently (bounded). Deduplication is strictly scoped to
-// this one batch (an in-memory map) — there is no cross-request or persisted
-// verdict reuse (ZDR).
-const DOMAIN_CHECK_CONCURRENCY = 16;
+// Checks are URL-level and run concurrently (bounded). Repeats of the same
+// canonical URL share one in-flight decision via the dedup handle, which is
+// strictly scoped to this one batch (an in-memory map) unless the caller
+// widens it — there is no cross-request or persisted verdict reuse (ZDR).
+// Clean URLs resolve against the local hash-prefix lists (no network I/O),
+// so many URLs stay cheap on the check side; billing is +2 per unique
+// scanned canonical URL (see calculateThreatScanCredits).
+const URL_CHECK_CONCURRENCY = 16;
 
 /**
- * Checks a list of URLs against a policy, deduplicated by domain. Never
- * throws — `checkDomain` resolves provider failures via the policy's
- * failurePolicy. Each call scans a given domain at most once (per-batch
- * in-memory dedup; callers may pass their own `ctx.dedup` to widen the scope
- * to a whole request/job).
+ * Checks a list of URLs against a policy. Never throws — `checkUrl` resolves
+ * provider failures via the policy's failurePolicy. Each call scans a given
+ * canonical URL at most once (per-batch in-memory dedup; callers may pass
+ * their own `ctx.dedup` to widen the scope to a whole request/job).
  */
 export async function checkUrlsAgainstThreatPolicy(
   urls: string[],
   policy: ThreatProtectionPolicy,
   ctx: ThreatCheckContext,
 ): Promise<UrlPolicyCheckResult> {
-  const domains = [...new Set(urls.map(url => normalizeDomain(url)))];
+  const uniqueUrls = [...new Set(urls)];
   const dedupCtx: ThreatCheckContext = {
     ...ctx,
     dedup: ctx.dedup ?? new Map(),
   };
 
-  const decisionsByDomain = new Map<string, ThreatDecision>();
-  for (let i = 0; i < domains.length; i += DOMAIN_CHECK_CONCURRENCY) {
-    const batch = domains.slice(i, i + DOMAIN_CHECK_CONCURRENCY);
+  const decisionsByUrl = new Map<string, ThreatDecision>();
+  for (let i = 0; i < uniqueUrls.length; i += URL_CHECK_CONCURRENCY) {
+    const batch = uniqueUrls.slice(i, i + URL_CHECK_CONCURRENCY);
     const decisions = await Promise.all(
-      batch.map(domain => checkDomain(domain, policy, dedupCtx)),
+      batch.map(url => checkUrl(url, policy, dedupCtx)),
     );
-    batch.forEach((domain, index) =>
-      decisionsByDomain.set(domain, decisions[index]),
-    );
+    batch.forEach((url, index) => decisionsByUrl.set(url, decisions[index]));
   }
 
   const allowedUrls: string[] = [];
   const blocked: BlockedUrl[] = [];
   for (const url of urls) {
-    const domain = normalizeDomain(url);
-    const decision = decisionsByDomain.get(domain);
+    const decision = decisionsByUrl.get(url);
     if (decision && !decision.allowed) {
-      blocked.push({ url, domain, decision });
+      blocked.push({ url, domain: decision.domain, decision });
     } else {
       allowedUrls.push(url);
     }
   }
 
-  return { allowedUrls, blocked, decisionsByDomain };
+  return { allowedUrls, blocked, decisionsByUrl };
 }

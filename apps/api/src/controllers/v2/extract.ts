@@ -98,16 +98,16 @@ export async function extractController(
     });
   }
   if (threatProtection.policy && (req.body.urls?.length ?? 0) > 0) {
-    const { blocked, decisionsByDomain } = await checkUrlsAgainstThreatPolicy(
+    const { blocked, decisionsByUrl } = await checkUrlsAgainstThreatPolicy(
       req.body.urls ?? [],
       threatProtection.policy,
       { teamId: req.auth.team_id },
     );
-    // Every consulted decision (fresh or cached provider verdict) is a
-    // billable scan (+2 per scanned domain) — including when the request is
-    // rejected below: the scans already happened.
+    // Consulted decisions bill the scan fee (+2 per unique scanned URL) —
+    // including when the request is rejected below: the scans already
+    // happened.
     const threatScanCredits = calculateThreatScanCredits(
-      decisionsByDomain.values(),
+      decisionsByUrl.values(),
     );
     if (threatScanCredits > 0) {
       billTeam(
@@ -127,10 +127,7 @@ export async function extractController(
         invalidURLs.push(...blocked.map(x => x.url));
       } else {
         const first = blocked[0];
-        const error = new UnsafeDomainBlockedError(
-          first.domain,
-          first.decision,
-        );
+        const error = new UnsafeDomainBlockedError(first.url, first.decision);
         return res.status(403).json({
           success: false,
           error: error.message,

@@ -1,7 +1,7 @@
 import {
   canonicalizeHost,
   canonicalizeUrl,
-  generateHostExpressions,
+  generateUrlExpressions,
 } from "./canonicalize";
 
 // Google's published canonicalization test vectors, verbatim:
@@ -82,38 +82,82 @@ describe("canonicalizeHost", () => {
   });
 });
 
-describe("generateHostExpressions", () => {
-  // Spec example (host component of "http://a.b.c.d.e.f.g/1.html"): the
-  // exact host plus the four suffixes built from the last five components.
-  it("walks at most the last five host components", () => {
-    expect(generateHostExpressions("a.b.c.d.e.f.g")).toEqual([
+describe("generateUrlExpressions", () => {
+  // Google's published suffix/prefix expression examples, verbatim:
+  // https://cloud.google.com/web-risk/docs/urls-hashing#suffixprefix_expressions
+  it("matches the spec example for a URL with path and query", () => {
+    expect(generateUrlExpressions("http://a.b.com/1/2.html?param=1")).toEqual([
+      "a.b.com/1/2.html?param=1",
+      "a.b.com/1/2.html",
+      "a.b.com/",
+      "a.b.com/1/",
+      "b.com/1/2.html?param=1",
+      "b.com/1/2.html",
+      "b.com/",
+      "b.com/1/",
+    ]);
+  });
+
+  it("matches the spec example for a long hostname (last five components)", () => {
+    expect(generateUrlExpressions("http://a.b.c.d.e.f.g/1.html")).toEqual([
+      "a.b.c.d.e.f.g/1.html",
       "a.b.c.d.e.f.g/",
+      // (Note: skip "b.c.d.e.f.g", since we'll take only the last five
+      // hostname components, and the full hostname.)
+      "c.d.e.f.g/1.html",
       "c.d.e.f.g/",
+      "d.e.f.g/1.html",
       "d.e.f.g/",
+      "e.f.g/1.html",
       "e.f.g/",
+      "f.g/1.html",
       "f.g/",
     ]);
   });
 
-  it("generates exact host + registrable suffixes for short hosts", () => {
-    expect(generateHostExpressions("a.b.c")).toEqual(["a.b.c/", "b.c/"]);
-    expect(generateHostExpressions("example.com")).toEqual(["example.com/"]);
-    expect(generateHostExpressions("www.phishing.example.com")).toEqual([
+  it("matches the spec example for an IP host (no suffix walk)", () => {
+    expect(generateUrlExpressions("http://1.2.3.4/1/")).toEqual([
+      "1.2.3.4/1/",
+      "1.2.3.4/",
+    ]);
+  });
+
+  it("caps path prefixes at the root plus the first three components", () => {
+    expect(generateUrlExpressions("http://example.com/a/b/c/d/e.html")).toEqual(
+      [
+        "example.com/a/b/c/d/e.html",
+        "example.com/",
+        "example.com/a/",
+        "example.com/a/b/",
+        "example.com/a/b/c/",
+      ],
+    );
+  });
+
+  it("expands a bare domain to its root expression (crawl seeds etc.)", () => {
+    expect(generateUrlExpressions("example.com")).toEqual(["example.com/"]);
+    expect(generateUrlExpressions("www.phishing.example.com")).toEqual([
       "www.phishing.example.com/",
       "phishing.example.com/",
       "example.com/",
     ]);
   });
 
-  it("generates a single expression for IP hosts (no suffix walk)", () => {
-    expect(generateHostExpressions("195.127.0.11")).toEqual(["195.127.0.11/"]);
-    expect(generateHostExpressions("3279880203")).toEqual(["195.127.0.11/"]);
-  });
-
-  it("canonicalizes the host before expanding", () => {
-    expect(generateHostExpressions("WWW.Example.COM.")).toEqual([
+  it("canonicalizes host and IP forms before expanding", () => {
+    expect(generateUrlExpressions("WWW.Example.COM.")).toEqual([
       "www.example.com/",
       "example.com/",
     ]);
+    expect(generateUrlExpressions("http://3279880203/blah")).toEqual([
+      "195.127.0.11/blah",
+      "195.127.0.11/",
+    ]);
+  });
+
+  it("puts the exact host + path + query expression first", () => {
+    const expressions = generateUrlExpressions(
+      "https://sub.example.com/page?x=1",
+    );
+    expect(expressions[0]).toBe("sub.example.com/page?x=1");
   });
 });

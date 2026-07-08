@@ -25,10 +25,12 @@ import {
 // Threat protection billing (ENG-4985, ZDR rework ENG-5004)
 //
 // Billing rules under test:
-//   - +2 credits per domain scanned in "normal" mode (Google Web Risk)
-//   - a "scan" = a ThreatDecision with providerConsulted — +2 per consulted
-//     verdict. There is no verdict cache anymore (ZDR): every request scans
-//     afresh, and dedup only applies within one request/job.
+//   - +2 credits per URL scanned in "normal" mode (Google Web Risk).
+//     Checks are URL-level and so is billing: consulted decisions bill once
+//     per unique canonical URL within one request/job
+//     (calculateThreatScanCredits).
+//   - There is no verdict cache (ZDR): every request scans afresh, and
+//     dedup only applies within one request/job.
 //   - blocked requests still bill the scan fee (no base scrape cost, matching
 //     how other failed scrapes bill)
 //   - local-only decisions (whitelist/blacklist/blocked-tld) never bill
@@ -55,9 +57,9 @@ const CLEAN_URL = TEST_SUITE_WEBSITE;
 
 // A stable cross-hostname redirect: google.com 301s to www.google.com. The
 // mock flags only the redirect target, so the scrape consults the provider
-// twice (initial domain + redirect re-check) before being blocked.
-// NOTE the two hostnames are different domains for the request-scoped dedup,
-// so the redirect re-check is a second scan (two consulted decisions).
+// twice (initial URL + redirect re-check) before being blocked.
+// NOTE the redirect lands on a different URL, so the re-check is a second
+// billable scan (billing dedups per canonical URL, and these differ).
 const REDIRECT_SOURCE_URL = "https://google.com/";
 const REDIRECT_TARGET_DOMAIN = "www.google.com";
 
@@ -86,9 +88,9 @@ const webRiskHandler = createWebRiskMockHandler(webRiskDb, webRiskCounters);
 
 let webRiskServer: http.Server | null = null;
 
-/** hashes:search confirmations whose prefix belongs to `domain`. */
-const webRiskHitsFor = (domain: string) =>
-  webRiskCounters.hashesSearchRequestsForDomain(domain);
+/** hashes:search confirmations whose prefix belongs to a URL or domain. */
+const webRiskHitsFor = (urlOrDomain: string) =>
+  webRiskCounters.hashesSearchRequestsForTarget(urlOrDomain);
 
 function startWebRiskMock(): Promise<void> {
   const port = Number(new URL(webRiskMockUrl).port);
@@ -334,7 +336,7 @@ describeIf(TEST_PRODUCTION)("Threat protection billing", () => {
     });
 
     (HAS_WEB_RISK_MOCK ? it : it.skip)(
-      "bills a scan fee per result domain on top of normal search billing",
+      "bills a scan fee per result URL on top of normal search billing",
       async () => {
         const limit = 20;
         const res = await searchRaw(
@@ -353,22 +355,20 @@ describeIf(TEST_PRODUCTION)("Threat protection billing", () => {
         const web: { url: string }[] = res.body.data.web ?? [];
         expect(web.length).toBeGreaterThan(0);
 
-        const uniqueDomains = new Set(
-          web.map(x => new URL(x.url).hostname.toLowerCase()),
-        );
+        const uniqueUrls = new Set(web.map(x => x.url));
         const searchCredits = Math.ceil(web.length / 10) * 2;
 
         if (web.length < limit) {
           // Nothing was sliced off, so the returned set IS the scanned set:
-          // exactly one +2 scan fee per unique result domain.
+          // exactly one +2 scan fee per unique result URL.
           expect(res.body.creditsUsed).toBe(
-            searchCredits + 2 * uniqueDomains.size,
+            searchCredits + 2 * uniqueUrls.size,
           );
         } else {
           // The provider over-fetched (limit * 2 buffer) and results were
-          // sliced; scanned domains ⊇ returned domains.
+          // sliced; scanned URLs ⊇ returned URLs.
           expect(res.body.creditsUsed).toBeGreaterThanOrEqual(
-            searchCredits + 2 * uniqueDomains.size,
+            searchCredits + 2 * uniqueUrls.size,
           );
         }
       },

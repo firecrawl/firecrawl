@@ -304,6 +304,8 @@ describe("localOnlyDecision", () => {
     expect(decision).toEqual({
       allowed: true,
       rule: "whitelist",
+      url: "example.com",
+      domain: "example.com",
       providerConsulted: false,
       verdict: null,
       mode: "normal",

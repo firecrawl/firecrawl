@@ -51,13 +51,13 @@ export interface RawVerdict {
 }
 
 /**
- * Request/job-scoped dedup handle for {@link import("./index").checkDomain}.
+ * Request/job-scoped dedup handle for {@link import("./index").checkUrl}.
  * Call sites create one per request or job (never shared across requests, and
- * never persisted) so that repeated checks of the same domain within that
+ * never persisted) so that repeated checks of the same URL within that
  * scope — e.g. a scrape plus its redirect re-check, or one crawl-discovery
  * batch — share a single in-flight decision instead of re-scanning. Keyed by
- * normalized domain only: within one request the effective policy is
- * constant, so the domain fully identifies the decision.
+ * the canonicalized URL only: within one request the effective policy is
+ * constant, so the URL fully identifies the decision.
  */
 export type ThreatCheckDedup = Map<string, Promise<ThreatDecision>>;
 
@@ -72,7 +72,16 @@ export type ThreatDecisionRule =
 export interface ThreatDecision {
   allowed: boolean;
   rule: ThreatDecisionRule;
-  /** True if a provider verdict (fresh OR cached) was consulted — this drives billing (+2 per scanned domain). */
+  /**
+   * The canonicalized URL this decision is about — also the billing dedup
+   * key: consulted decisions bill +2 once per unique canonical URL within
+   * one billing scope (see calculateThreatScanCredits), so raw-string
+   * variants of the same URL never double-bill a single scan.
+   */
+  url: string;
+  /** Canonicalized host of the checked URL (for logs and error surfaces). */
+  domain: string;
+  /** True if a provider verdict (fresh OR cached) was consulted — this drives billing (+2 per scanned URL). */
   providerConsulted: boolean;
   verdict: RawVerdict | null;
   mode: ThreatProtectionMode;

@@ -30,9 +30,8 @@ import {
 import { logRequest } from "../../services/logging/log_job";
 import { getScrapeZDR } from "../../lib/zdr-helpers";
 import { resolveThreatProtection } from "../../lib/threat-protection/request";
-import { checkDomain } from "../../lib/threat-protection";
+import { checkUrl } from "../../lib/threat-protection";
 import { UnsafeDomainBlockedError } from "../../lib/threat-protection/error";
-import { normalizeDomain } from "../../lib/threat-protection/verdict";
 import { calculateThreatScanCredits } from "../../lib/scrape-billing";
 import { billTeam } from "../../services/billing/credit_billing";
 
@@ -70,8 +69,7 @@ export async function crawlController(
 
   // Threat protection: check the seed URL before kicking off the crawl.
   if (threatProtection.policy) {
-    const seedDomain = normalizeDomain(req.body.url);
-    const decision = await checkDomain(seedDomain, threatProtection.policy, {
+    const decision = await checkUrl(req.body.url, threatProtection.policy, {
       teamId: req.auth.team_id,
     });
     if (!decision.allowed) {
@@ -92,7 +90,7 @@ export async function crawlController(
           );
         });
       }
-      const error = new UnsafeDomainBlockedError(seedDomain, decision);
+      const error = new UnsafeDomainBlockedError(req.body.url, decision);
       return res.status(403).json({
         success: false,
         code: error.code,

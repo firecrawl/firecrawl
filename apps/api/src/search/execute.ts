@@ -18,7 +18,6 @@ import { trackSearchResults, trackSearchRequest } from "../lib/tracking";
 import type { BillingMetadata } from "../services/billing/types";
 import type { ThreatProtectionPolicy } from "../lib/threat-protection/types";
 import { checkUrlsAgainstThreatPolicy } from "../lib/threat-protection/request";
-import { normalizeDomain } from "../lib/threat-protection/verdict";
 import { calculateThreatScanCredits } from "../lib/scrape-billing";
 
 interface SearchOptions {
@@ -110,11 +109,11 @@ export async function executeSearch(
     enterprise: options.enterprise,
   })) as SearchV2Response;
 
-  // Threat protection: remove results on blocked domains entirely — before
-  // slicing/counting, before scraping, and before returning. Domain checks
-  // are deduped and Redis-cached. Every consulted decision (fresh or cached
-  // provider verdict) is a billable scan (+2 per scanned domain), charged
-  // as part of the search credits below.
+  // Threat protection: remove blocked results entirely — before
+  // slicing/counting, before scraping, and before returning. Checks are
+  // URL-level and deduped within this request; scan fees bill +2 per unique
+  // scanned URL (see calculateThreatScanCredits), charged as part of the
+  // search credits below.
   let threatScanCredits = 0;
   const threatPolicy = context.threatProtectionPolicy;
   if (threatPolicy && threatPolicy.mode !== "off") {
@@ -125,17 +124,15 @@ export async function executeSearch(
     ].filter((x): x is string => !!x);
 
     if (urlsToCheck.length > 0) {
-      const { decisionsByDomain } = await checkUrlsAgainstThreatPolicy(
+      const { decisionsByUrl } = await checkUrlsAgainstThreatPolicy(
         urlsToCheck,
         threatPolicy,
         { teamId },
       );
-      threatScanCredits = calculateThreatScanCredits(
-        decisionsByDomain.values(),
-      );
+      threatScanCredits = calculateThreatScanCredits(decisionsByUrl.values());
       const isAllowed = (url: string | undefined | null): boolean => {
         if (!url) return true;
-        const decision = decisionsByDomain.get(normalizeDomain(url));
+        const decision = decisionsByUrl.get(url);
         return decision === undefined || decision.allowed;
       };
       if (searchResponse.web) {

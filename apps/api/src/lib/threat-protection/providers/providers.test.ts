@@ -12,7 +12,7 @@ vi.mock("../../../services/queue-service", async () => {
 
 import { config } from "../../../config";
 import { fetchGoogleWebRiskVerdict } from "./google-web-risk";
-import { domainExpressionHash, WebRiskMockDatabase } from "./web-risk/testing";
+import { urlExpressionHash, WebRiskMockDatabase } from "./web-risk/testing";
 
 // Mocked-HTTP provider tests: a local http server stands in for the real
 // provider API via the config URL override (same pattern as
@@ -30,15 +30,18 @@ let seenRequests: SeenRequest[] = [];
 // once per process by the provider's boot sync).
 const CONFIRMED_DOMAIN = "malware.example";
 const COLLISION_DOMAIN = "collision.example";
+// URL-level listing: only this exact page is flagged, its domain is clean.
+const CONFIRMED_URL = "http://mostly-clean.example/landing/phishing-page.html";
 
 const webRiskDb = new WebRiskMockDatabase();
 webRiskDb.addRiskyDomain(CONFIRMED_DOMAIN, "MALWARE");
 webRiskDb.addRiskyDomain(CONFIRMED_DOMAIN, "SOCIAL_ENGINEERING");
+webRiskDb.addRiskyUrl(CONFIRMED_URL, "SOCIAL_ENGINEERING");
 // A list entry that shares the 4-byte prefix of COLLISION_DOMAIN's expression
 // hash but is a different full hash → local hit, unconfirmed by hashes:search.
 webRiskDb.addCollidingFullHash(
   Buffer.concat([
-    domainExpressionHash(COLLISION_DOMAIN).subarray(0, 4),
+    urlExpressionHash(COLLISION_DOMAIN).subarray(0, 4),
     Buffer.alloc(28, 0xab),
   ]),
   "UNWANTED_SOFTWARE",
@@ -152,7 +155,7 @@ describe("fetchGoogleWebRiskVerdict", () => {
     const url = new URL(baseUrl + confirmations[0].url);
     expect(confirmations[0].method).toBe("GET");
     expect(url.searchParams.get("hashPrefix")).toBe(
-      domainExpressionHash(CONFIRMED_DOMAIN).subarray(0, 4).toString("base64"),
+      urlExpressionHash(CONFIRMED_DOMAIN).subarray(0, 4).toString("base64"),
     );
     expect(url.searchParams.getAll("threatTypes")).toEqual([
       "MALWARE",
@@ -172,6 +175,35 @@ describe("fetchGoogleWebRiskVerdict", () => {
 
     expect(verdict.riskScore).toBe(100);
     expect(verdict.categories).toContain("MALWARE");
+  });
+
+  it("flags every URL on a listed domain through host-suffix expressions", async () => {
+    const verdict = await fetchGoogleWebRiskVerdict(
+      `https://${CONFIRMED_DOMAIN}/some/deep/page.html?q=1`,
+    );
+
+    expect(verdict.riskScore).toBe(100);
+    expect(verdict.categories).toContain("MALWARE");
+  });
+
+  it("flags a listed URL whose domain is otherwise clean", async () => {
+    const verdict = await fetchGoogleWebRiskVerdict(CONFIRMED_URL);
+
+    expect(verdict.riskScore).toBe(100);
+    expect(verdict.categories).toEqual(["SOCIAL_ENGINEERING"]);
+  });
+
+  it("keeps other URLs on that domain clean (URL-level, not domain-level)", async () => {
+    const siblingPage = await fetchGoogleWebRiskVerdict(
+      "http://mostly-clean.example/landing/legit-page.html",
+    );
+    const root = await fetchGoogleWebRiskVerdict(
+      "http://mostly-clean.example/",
+    );
+
+    expect(siblingPage.riskScore).toBe(0);
+    expect(root.riskScore).toBe(0);
+    expect(hashesSearchRequests()).toHaveLength(0);
   });
 
   it("resolves clean domains locally with zero Google calls", async () => {

@@ -25,25 +25,36 @@ const redactPIICostBonus = 4;
 // Each additional PDF page also gets redacted through fire-privacy, so
 // the per-page surcharge mirrors the +4 base — same tier as lockdown.
 const redactPIIPdfPageCostBonus = 4;
-// Threat protection domain scans: +2 per scanned domain in "normal" mode
-// (Google Web Risk). A "scan" is any ThreatDecision with providerConsulted
-// set — +2 per consulted verdict. Checks deduplicated within one request/job
-// (e.g. a scrape and its same-domain redirect re-check) share a single
-// decision and therefore bill once; verdicts are never reused across
-// requests (no verdict cache — ZDR). Local-only decisions (whitelist/
-// blacklist/blocked-tld, mode off, provider failure) never bill.
+// Threat protection scans: +2 per scanned URL in "normal" mode (Google Web
+// Risk). Checks are URL-level and so is the billable unit: consulted
+// decisions bill once per unique canonical `decision.url` within one billing
+// scope — a scrape and its same-URL re-check share one fee, while a crawl of
+// N pages bills N scans (each page job is its own scope). Verdicts are never
+// reused across requests (no verdict cache — ZDR). Local-only decisions
+// (whitelist/blacklist/blocked-tld, mode off, provider failure) never bill.
 const threatScanCost = 2;
 
 /**
  * Sums the scan fees for a set of threat protection decisions. Only decisions
- * that consulted the provider bill; the fee is +2 per scanned domain.
+ * that consulted the provider bill; the fee is +2 per unique scanned
+ * canonical URL across the given decisions.
  */
 export function calculateThreatScanCredits(
   decisions: Iterable<ThreatDecision>,
 ): number {
+  const billedUrls = new Set<string>();
   let credits = 0;
   for (const decision of decisions) {
     if (!decision.providerConsulted) continue;
+    // Decisions serialized by a pre-URL-level deploy have no `url`; bill
+    // them individually (the old per-decision behavior) rather than letting
+    // them all collapse onto one `undefined` key.
+    if (decision.url === undefined) {
+      credits += threatScanCost;
+      continue;
+    }
+    if (billedUrls.has(decision.url)) continue;
+    billedUrls.add(decision.url);
     credits += threatScanCost;
   }
   return credits;
@@ -60,7 +71,7 @@ export async function calculateCreditsToBeBilled(
   dataLayer?: DataLayerScrapeMetadata,
   // Threat protection decisions for this scrape (initial + redirect checks,
   // in order). Each decision with `providerConsulted` bills a scan fee (+2
-  // per scanned domain) on top of the scrape's own cost — on both success
+  // per unique scanned URL) on top of the scrape's own cost — on both success
   // and failure (a scrape blocked by threat protection still consulted the
   // classifier). For scrapes blocked by threat protection, the
   // UnsafeDomainBlockedError in `error` also carries its decision, which is

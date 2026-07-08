@@ -229,10 +229,9 @@ async function billScrapeJob(
  * Bills threat protection scan fees for crawl-discovered URLs that were
  * blocked by the policy and therefore never become scrape jobs. Only blocked
  * decisions bill here: allowed discoveries are billed by their own scrape
- * job, which re-checks the (cached) verdict. Deduplicates by domain, and only
- * decisions that consulted the classifier (fresh or cached provider verdict)
- * carry a fee (+2 per scanned domain) — local-only blocks (e.g. blacklist)
- * are free.
+ * job, which performs its own scan. Only decisions that consulted the
+ * classifier carry a fee (+2 per unique scanned URL) — local-only blocks
+ * (e.g. blacklist) are free.
  */
 function billThreatBlockedDiscoveries(
   args: {
@@ -245,11 +244,8 @@ function billThreatBlockedDiscoveries(
   logger: Logger,
 ) {
   if (args.bypassBilling) return;
-  const blockedDecisionsByDomain = new Map(
-    blocked.map(x => [x.domain, x.decision]),
-  );
   const threatScanCredits = calculateThreatScanCredits(
-    blockedDecisionsByDomain.values(),
+    blocked.map(x => x.decision),
   );
   if (threatScanCredits <= 0) return;
   billTeam(
@@ -512,11 +508,12 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
               }
             }
 
-            // Threat protection: silently skip discovered links on blocked
-            // domains (cross-domain links included) — the crawl continues.
-            // Skipped URLs + decisions are recorded for the security-logging
-            // layer. Domain checks are deduped and rely on the Redis verdict
-            // cache, so many links on few domains stay cheap.
+            // Threat protection: silently skip blocked discovered links
+            // (cross-domain links included) — the crawl continues. Skipped
+            // URLs + decisions are recorded for crawl bookkeeping. Checks
+            // are URL-level against the local hash-prefix lists (deduped
+            // in-batch), so many links stay cheap on the check side; blocked
+            // discoveries bill +2 per unique scanned URL.
             let discoveredLinks = links.links;
             const threatPolicy = job.data.internalOptions?.threatProtection;
             if (

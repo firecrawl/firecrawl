@@ -55,6 +55,14 @@ const REDIRECT_TARGET_DOMAIN = "www.google.com";
 // Domains the mock provider's threat lists flag as MALWARE (risk score 100).
 const MOCK_RISKY_DOMAINS = [RISKY_DOMAIN, REDIRECT_TARGET_DOMAIN];
 
+// URL-level listing on the otherwise-clean test-suite domain: only this exact
+// page is flagged — the domain root and every other page stay clean. Blocked
+// scrapes never fetch, so the page does not need to exist.
+const RISKY_URL_ON_CLEAN_DOMAIN = new URL(
+  "/threat-fixture/flagged-page.html",
+  TEST_SUITE_WEBSITE,
+).href;
+
 const mockProviderUrl = process.env.GOOGLE_WEB_RISK_API_URL ?? "";
 const HAS_MOCK_PROVIDER =
   /^http:\/\/(localhost|127\.0\.0\.1):\d+$/.test(mockProviderUrl) &&
@@ -67,14 +75,15 @@ const webRiskDb = new WebRiskMockDatabase();
 for (const domain of MOCK_RISKY_DOMAINS) {
   webRiskDb.addRiskyDomain(domain, "MALWARE");
 }
+webRiskDb.addRiskyUrl(RISKY_URL_ON_CLEAN_DOMAIN, "MALWARE");
 const webRiskCounters = createWebRiskMockCounters();
 const webRiskHandler = createWebRiskMockHandler(webRiskDb, webRiskCounters);
 
 let mockServer: http.Server | null = null;
 
-/** hashes:search confirmations whose prefix belongs to `domain`. */
-const providerHitsFor = (domain: string) =>
-  webRiskCounters.hashesSearchRequestsForDomain(domain);
+/** hashes:search confirmations whose prefix belongs to a URL or domain. */
+const providerHitsFor = (urlOrDomain: string) =>
+  webRiskCounters.hashesSearchRequestsForTarget(urlOrDomain);
 
 function startMockProvider(): Promise<void> {
   const port = Number(new URL(mockProviderUrl).port);
@@ -449,6 +458,39 @@ describeIf(TEST_PRODUCTION)("Threat protection enforcement", () => {
         expect(providerHitsFor(RISKY_DOMAIN)).toBeGreaterThanOrEqual(1);
       },
       scrapeTimeout,
+    );
+
+    (HAS_MOCK_PROVIDER ? it : it.skip)(
+      "scrape: flagged URL is blocked while the rest of its domain stays scrapeable",
+      async () => {
+        // Checks are URL-level: only the listed page's expression matches,
+        // so the block requires a hashes:search confirmation for the URL…
+        const blocked = await scrapeRaw(
+          {
+            url: RISKY_URL_ON_CLEAN_DOMAIN,
+            threatProtection: { mode: "normal", failurePolicy: "open" },
+          } as any,
+          identity,
+        );
+        expect(blocked.statusCode).toBe(403);
+        expect(blocked.body.success).toBe(false);
+        expect(blocked.body.code).toBe("unsafe_domain_blocked");
+        expect(blocked.body.error).toContain("/threat-fixture/flagged-page");
+        expect(
+          providerHitsFor(RISKY_URL_ON_CLEAN_DOMAIN),
+        ).toBeGreaterThanOrEqual(1);
+
+        // …while the same policy still scrapes the domain root fine.
+        const doc = await scrape(
+          {
+            url: CLEAN_URL,
+            threatProtection: { mode: "normal", failurePolicy: "open" },
+          } as any,
+          identity,
+        );
+        expect(doc.metadata.statusCode).toBe(200);
+      },
+      scrapeTimeout * 2,
     );
 
     (HAS_MOCK_PROVIDER ? it : it.skip)(

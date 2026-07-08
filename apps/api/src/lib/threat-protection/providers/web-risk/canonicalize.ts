@@ -255,27 +255,66 @@ function isIpHost(host: string): boolean {
 }
 
 /**
- * Host-suffix lookup expressions for a domain-level check, per the spec: the
- * exact hostname plus up to four suffixes formed from the last five host
- * components, successively dropping the leading component (never the bare
- * TLD), each with the "/" root path. IP hosts get a single expression.
- *
- * Firecrawl's threat protection is domain-level (we classify the target
- * domain, not individual URLs), so path variants are intentionally not
- * generated — this matches the previous uris:search behavior of looking up
- * `http://<domain>/`.
+ * Host-suffix candidates per the spec: the exact (canonicalized) host plus up
+ * to four suffixes formed from the last five host components, successively
+ * dropping the leading component (never the bare TLD). IP hosts get a single
+ * candidate (no suffix walk).
  */
-export function generateHostExpressions(domain: string): string[] {
-  const host = canonicalizeHost(domain.trim());
-  if (host.length === 0) return [];
-  if (isIpHost(host)) return [host + "/"];
+function hostSuffixes(host: string): string[] {
+  if (isIpHost(host)) return [host];
 
-  const expressions = [host + "/"];
+  const suffixes = [host];
   const parts = host.split(".");
   const maxSuffix = Math.min(5, parts.length - 1);
   for (let suffixLen = maxSuffix; suffixLen >= 2; suffixLen--) {
     const suffix = parts.slice(parts.length - suffixLen).join(".");
-    if (suffix !== host) expressions.push(suffix + "/");
+    if (suffix !== host) suffixes.push(suffix);
   }
-  return expressions;
+  return suffixes;
+}
+
+/**
+ * Path-prefix candidates per the spec: the exact path with query parameters
+ * (if any), the exact path without them, and up to four prefix paths formed
+ * by starting at the root and successively appending path components with a
+ * trailing slash. The walk builds directory prefixes only — the leaf
+ * component never re-appears with a trailing slash (the spec's example for
+ * "/1/2.html" yields "/" and "/1/", not "/1/2.html/"). Duplicates are
+ * collapsed, most-specific first.
+ */
+function pathPrefixes(path: string, query: string | null): string[] {
+  const variants: string[] = [];
+  if (query !== null) variants.push(`${path}?${query}`);
+  variants.push(path);
+
+  const components = path.split("/").filter(component => component.length > 0);
+  const maxWalk = Math.min(3, Math.max(0, components.length - 1));
+  let prefix = "/";
+  variants.push(prefix);
+  for (const component of components.slice(0, maxWalk)) {
+    prefix += component + "/";
+    variants.push(prefix);
+  }
+  return [...new Set(variants)];
+}
+
+/**
+ * URL lookup expressions per the spec: every combination of host suffix and
+ * path prefix (up to 5 × 6 = 30), most-specific first — index 0 is always the
+ * exact canonicalized host + path (+ query). Threat protection is URL-level:
+ * a listing that flags only a specific page (a path expression) is caught
+ * even when its domain is otherwise clean.
+ */
+export function generateUrlExpressions(url: string): string[] {
+  const canonical = canonicalizeUrl(url);
+  const { host, path, query } = splitUrl(canonical);
+  if (host.length === 0) return [];
+
+  const expressions: string[] = [];
+  for (const hostSuffix of hostSuffixes(host)) {
+    for (const pathPrefix of pathPrefixes(path, query)) {
+      expressions.push(hostSuffix + pathPrefix);
+    }
+  }
+  return [...new Set(expressions)];
 }

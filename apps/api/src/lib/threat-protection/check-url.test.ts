@@ -1,7 +1,7 @@
 import http from "http";
 import { AddressInfo } from "net";
 
-// checkDomain is enforcement-only: it emits/exports no security events, so
+// checkUrl is enforcement-only: it emits/exports no security events, so
 // there are no event sinks to stub here.
 // The Web Risk threat-list store lives on the durable Redis connection —
 // swap in an in-memory fake. (fake-redis.ts has no runtime imports, so the
@@ -16,7 +16,7 @@ vi.mock("../../services/queue-service", async () => {
 
 import { config } from "../../config";
 import {
-  checkDomain,
+  checkUrl,
   THREAT_PROTECTION_POLICY_DEFAULTS,
   ThreatCheckDedup,
   ThreatProtectionPolicy,
@@ -38,13 +38,16 @@ function policy(
   };
 }
 
-// The mock provider: a flagged fixture domain in the MALWARE list, served
-// through the Update API endpoints (computeDiff for the local list sync,
-// hashes:search for prefix-hit confirmation).
+// The mock provider: a flagged fixture domain plus a flagged single URL on an
+// otherwise-clean domain, both in the MALWARE list, served through the Update
+// API endpoints (computeDiff for the local list sync, hashes:search for
+// prefix-hit confirmation).
 const RISKY_DOMAIN = "threat-risky.example";
+const RISKY_URL = "http://threat-mixed.example/downloads/malware-installer.exe";
 
 const db = new WebRiskMockDatabase();
 db.addRiskyDomain(RISKY_DOMAIN, "MALWARE");
+db.addRiskyUrl(RISKY_URL, "MALWARE");
 
 const counters = createWebRiskMockCounters();
 const webRiskHandler = createWebRiskMockHandler(db, counters);
@@ -96,18 +99,20 @@ beforeEach(() => {
   failHashesSearches = 0;
 });
 
-const riskyHits = () => counters.hashesSearchRequestsForDomain(RISKY_DOMAIN);
+const riskyHits = () => counters.hashesSearchRequestsForTarget(RISKY_DOMAIN);
 
-describe("checkDomain", () => {
+describe("checkUrl", () => {
   it("allows immediately when mode is off, with no provider call", async () => {
     const before = counters.hashesSearchRequests;
-    const decision = await checkDomain("example.com", policy({ mode: "off" }), {
+    const decision = await checkUrl("example.com", policy({ mode: "off" }), {
       teamId: "team-1",
     });
 
     expect(decision).toEqual({
       allowed: true,
       rule: "default-allow",
+      url: "http://example.com/",
+      domain: "example.com",
       providerConsulted: false,
       verdict: null,
       mode: "off",
@@ -117,8 +122,8 @@ describe("checkDomain", () => {
 
   it("skips the provider scan when a local rule is decisive", async () => {
     const before = counters.hashesSearchRequests;
-    const decision = await checkDomain(
-      "cdn.blocked.com",
+    const decision = await checkUrl(
+      "https://cdn.blocked.com/some/page",
       policy({ blacklist: ["blocked.com"] }),
       { teamId: "team-1" },
     );
@@ -126,6 +131,7 @@ describe("checkDomain", () => {
     expect(decision).toMatchObject({
       allowed: false,
       rule: "blacklist",
+      domain: "cdn.blocked.com",
       providerConsulted: false,
       verdict: null,
     });
@@ -134,13 +140,14 @@ describe("checkDomain", () => {
 
   it("consults the provider and blocks a flagged domain (fresh scan)", async () => {
     const before = riskyHits();
-    const decision = await checkDomain(RISKY_DOMAIN.toUpperCase(), policy(), {
+    const decision = await checkUrl(RISKY_DOMAIN.toUpperCase(), policy(), {
       teamId: "team-1",
     });
 
     expect(decision).toMatchObject({
       allowed: false,
       rule: "risk-score",
+      domain: RISKY_DOMAIN,
       providerConsulted: true,
       mode: "normal",
     });
@@ -156,13 +163,59 @@ describe("checkDomain", () => {
     expect(riskyHits()).toBe(before + 1);
   });
 
-  it("resolves clean domains locally with zero Google calls", async () => {
+  it("blocks every URL on a flagged domain (host-suffix expressions)", async () => {
+    const decision = await checkUrl(
+      `https://${RISKY_DOMAIN}/any/path?query=1`,
+      policy(),
+      { teamId: "team-1" },
+    );
+
+    expect(decision).toMatchObject({
+      allowed: false,
+      rule: "risk-score",
+      domain: RISKY_DOMAIN,
+      providerConsulted: true,
+    });
+  });
+
+  it("blocks a flagged URL while keeping its domain's other URLs clean", async () => {
+    const flagged = await checkUrl(RISKY_URL, policy(), { teamId: "team-1" });
+    const sibling = await checkUrl(
+      "http://threat-mixed.example/downloads/press-kit.zip",
+      policy(),
+      { teamId: "team-1" },
+    );
+    const root = await checkUrl("http://threat-mixed.example/", policy(), {
+      teamId: "team-1",
+    });
+
+    expect(flagged).toMatchObject({
+      allowed: false,
+      rule: "risk-score",
+      domain: "threat-mixed.example",
+      providerConsulted: true,
+    });
+    expect(flagged.verdict).toMatchObject({ riskScore: 100 });
+    expect(sibling).toMatchObject({
+      allowed: true,
+      rule: "default-allow",
+      providerConsulted: true,
+    });
+    expect(root).toMatchObject({ allowed: true, rule: "default-allow" });
+  });
+
+  it("resolves clean URLs locally with zero Google calls", async () => {
     const before = counters.hashesSearchRequests;
-    const decision = await checkDomain("safe.example", policy(), {});
+    const decision = await checkUrl(
+      "https://safe.example/pricing",
+      policy(),
+      {},
+    );
 
     expect(decision).toMatchObject({
       allowed: true,
       rule: "default-allow",
+      domain: "safe.example",
       providerConsulted: true,
     });
     expect(decision.verdict?.fromCache).toBe(false);
@@ -172,8 +225,8 @@ describe("checkDomain", () => {
   it("re-scans on a second lookup without a dedup handle (no verdict cache)", async () => {
     const before = riskyHits();
 
-    const first = await checkDomain(RISKY_DOMAIN, policy(), {});
-    const second = await checkDomain(RISKY_DOMAIN, policy(), {});
+    const first = await checkUrl(RISKY_DOMAIN, policy(), {});
+    const second = await checkUrl(RISKY_DOMAIN, policy(), {});
 
     expect(first).toMatchObject({ allowed: false, providerConsulted: true });
     expect(second).toMatchObject({ allowed: false, providerConsulted: true });
@@ -186,35 +239,45 @@ describe("checkDomain", () => {
     const before = riskyHits();
     const dedup: ThreatCheckDedup = new Map();
 
-    // Concurrent + sequential re-checks of the same domain in one request.
+    // Concurrent + sequential re-checks of the same URL in one request.
     const [first, second] = await Promise.all([
-      checkDomain(RISKY_DOMAIN, policy(), { dedup }),
-      checkDomain(RISKY_DOMAIN, policy(), { dedup }),
+      checkUrl(RISKY_DOMAIN, policy(), { dedup }),
+      checkUrl(RISKY_DOMAIN, policy(), { dedup }),
     ]);
-    const third = await checkDomain(`${RISKY_DOMAIN}.`, policy(), { dedup });
+    const third = await checkUrl(`http://${RISKY_DOMAIN}./`, policy(), {
+      dedup,
+    });
 
-    // Same decision object → a single scan → a single billable decision.
+    // Same decision object → a single scan → a single consulted decision.
     expect(second).toBe(first);
-    expect(third).toBe(first); // normalization applies before dedup
+    expect(third).toBe(first); // URL canonicalization applies before dedup
     expect(riskyHits()).toBe(before + 1);
   });
 
-  it("scans each distinct domain in a dedup scope separately", async () => {
+  it("scans distinct URLs in a dedup scope separately (same domain included)", async () => {
     const dedup: ThreatCheckDedup = new Map();
     const before = riskyHits();
 
-    const clean = await checkDomain("safe.example", policy(), { dedup });
-    const risky = await checkDomain(RISKY_DOMAIN, policy(), { dedup });
+    const clean = await checkUrl("safe.example", policy(), { dedup });
+    const risky = await checkUrl(RISKY_DOMAIN, policy(), { dedup });
+    const riskyPath = await checkUrl(`http://${RISKY_DOMAIN}/page`, policy(), {
+      dedup,
+    });
 
     expect(clean.allowed).toBe(true);
     expect(risky.allowed).toBe(false);
-    expect(riskyHits()).toBe(before + 1);
+    expect(riskyPath.allowed).toBe(false);
+    expect(riskyPath).not.toBe(risky); // different canonical URLs
+    // Two independent scans of the same domain: each one confirms the
+    // domain's flagged root-expression prefix, and each is its own billable
+    // scan (billing dedups on decision.url — see calculateThreatScanCredits).
+    expect(riskyHits()).toBe(before + 2);
   });
 
   it("retries once and succeeds when the first confirmation attempt fails", async () => {
     failHashesSearches = 1; // exactly the first hashes:search attempt 503s
 
-    const decision = await checkDomain(RISKY_DOMAIN, policy(), {});
+    const decision = await checkUrl(RISKY_DOMAIN, policy(), {});
 
     expect(decision).toMatchObject({
       allowed: false,
@@ -227,7 +290,7 @@ describe("checkDomain", () => {
   it("fails closed when confirmation is down and failurePolicy is closed", async () => {
     failHashesSearches = Infinity;
 
-    const decision = await checkDomain(
+    const decision = await checkUrl(
       RISKY_DOMAIN,
       policy({ failurePolicy: "closed" }),
       { teamId: "team-1" },
@@ -236,6 +299,8 @@ describe("checkDomain", () => {
     expect(decision).toEqual({
       allowed: false,
       rule: "provider-failure",
+      url: `http://${RISKY_DOMAIN}/`,
+      domain: RISKY_DOMAIN,
       providerConsulted: false,
       verdict: null,
       mode: "normal",
@@ -245,7 +310,7 @@ describe("checkDomain", () => {
   it("fails open when confirmation is down and failurePolicy is open", async () => {
     failHashesSearches = Infinity;
 
-    const decision = await checkDomain(
+    const decision = await checkUrl(
       RISKY_DOMAIN,
       policy({ failurePolicy: "open" }),
       {},
@@ -261,16 +326,20 @@ describe("checkDomain", () => {
 });
 
 describe("UnsafeDomainBlockedError", () => {
-  it("carries the decision and the unsafe_domain_blocked code", async () => {
-    const decision = await checkDomain(
-      "bad.example",
+  it("carries the URL, domain and decision with the unsafe_domain_blocked code", async () => {
+    const decision = await checkUrl(
+      "https://bad.example/landing",
       policy({ blacklist: ["bad.example"] }),
       {},
     );
-    const error = new UnsafeDomainBlockedError("bad.example", decision);
+    const error = new UnsafeDomainBlockedError(
+      "https://bad.example/landing",
+      decision,
+    );
 
     expect(error.code).toBe("unsafe_domain_blocked");
     expect(error.name).toBe("UnsafeDomainBlockedError");
+    expect(error.url).toBe("https://bad.example/landing");
     expect(error.domain).toBe("bad.example");
     expect(error.decision).toBe(decision);
     expect(error.message).toContain("threat protection policy");
