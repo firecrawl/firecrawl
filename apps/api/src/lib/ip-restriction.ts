@@ -155,7 +155,7 @@ export async function checkIpRestriction(
 
   return {
     allowed: false,
-    error: `Request blocked: IP address ${clientIp ? normalizeIp(clientIp) : "unknown"} is not on this team's allowed IP list. Team admins can manage allowed IPs at https://www.firecrawl.dev/app/settings?tab=advanced`,
+    error: `Request blocked: IP address ${clientIp ? normalizeIp(clientIp) : "unknown"} is not on this team's allowed IP list. Team admins can manage allowed IPs at https://www.firecrawl.dev/app/enterprise-controls?tab=ip-restriction`,
     status: 403,
   };
 }
