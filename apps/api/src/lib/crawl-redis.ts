@@ -75,9 +75,13 @@ export async function recordRobotsBlocked(crawlId: string, url: string) {
 
 /**
  * Records a URL that was silently skipped during crawl link discovery because
- * its domain was blocked by the team's threat protection policy. The crawl
- * continues without it; the record (url -> full ThreatDecision JSON) is kept
- * for the security-logging layer to read.
+ * it was blocked by the team's threat protection policy. The crawl continues
+ * without it; the record (url -> full ThreatDecision JSON) is crawl
+ * bookkeeping, and doubles as the crawl-scoped billing dedup for blocked
+ * discoveries: returns true only for the first record of a URL within this
+ * crawl (HSETNX), so a blocked link that many pages point at (e.g. in a
+ * site-wide nav) bills its scan fee once per crawl, not once per page that
+ * rediscovered it.
  *
  * ZDR posture: this hash follows the same rules as the rest of the transient
  * crawl bookkeeping in this file (crawl doc, visited sets, robots_blocked) —
@@ -89,10 +93,15 @@ export async function recordThreatBlocked(
   crawlId: string,
   url: string,
   decision: unknown,
-) {
+): Promise<boolean> {
   const key = "crawl:" + crawlId + ":threat_blocked";
-  await redisEvictConnection.hset(key, url, JSON.stringify(decision));
+  const isNew = await redisEvictConnection.hsetnx(
+    key,
+    url,
+    JSON.stringify(decision),
+  );
   await redisEvictConnection.expire(key, 24 * 60 * 60);
+  return isNew === 1;
 }
 
 export async function markCrawlActive(id: string) {

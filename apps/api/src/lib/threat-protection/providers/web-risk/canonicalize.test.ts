@@ -62,6 +62,25 @@ describe("canonicalizeUrl", () => {
   it.each(CANONICALIZATION_VECTORS)("canonicalizes %j", (input, expected) => {
     expect(canonicalizeUrl(input)).toBe(expected);
   });
+
+  // The published vectors never exercise %XX escapes inside the query, but
+  // the spec's "repeatedly unescape, then escape once" step applies to the
+  // whole URL — Google's reference implementations unescape the query too.
+  // Without it, a valid escape like %20 double-escapes to %2520, hashes to a
+  // different expression than the list entry, and silently never matches.
+  it.each([
+    // Already-canonical escape survives the unescape/escape round trip.
+    ["http://host.com/p?q=%20x", "http://host.com/p?q=%20x"],
+    // Double-escaped input converges instead of gaining another layer.
+    ["http://host.com/p?q=%2520x", "http://host.com/p?q=%20x"],
+    // Escapes of printable ASCII outside the escape class are dropped.
+    ["http://host.com/p?q=%61", "http://host.com/p?q=a"],
+  ] as [string, string][])(
+    "percent-unescapes the query: %j",
+    (input, expected) => {
+      expect(canonicalizeUrl(input)).toBe(expected);
+    },
+  );
 });
 
 describe("canonicalizeHost", () => {

@@ -241,7 +241,12 @@ export function canonicalizeUrl(input: string): string {
 
   const canonicalHost = canonicalizeHost(host);
   const canonicalPath = escapeBytes(canonicalizePath(fullyUnescape(path)));
-  const canonicalQuery = query === null ? null : escapeBytes(query);
+  // The query is percent-unescaped like every other component (the spec's
+  // "repeatedly unescape" step applies to the whole URL) and then re-escaped
+  // once — otherwise `?q=%20x` would double-escape to `?q=%2520x`, hash to a
+  // different expression than Google's list entry, and silently never match.
+  const canonicalQuery =
+    query === null ? null : escapeBytes(fullyUnescape(query));
 
   return (
     `${scheme}://${canonicalHost}${canonicalPath}` +

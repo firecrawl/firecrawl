@@ -102,6 +102,7 @@ export async function agentController(
       const error = new UnsafeDomainBlockedError(first.url, first.decision);
       return res.status(403).json({
         success: false,
+        code: error.code,
         error: error.message,
       });
     }

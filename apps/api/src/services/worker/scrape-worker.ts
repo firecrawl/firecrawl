@@ -231,7 +231,9 @@ async function billScrapeJob(
  * decisions bill here: allowed discoveries are billed by their own scrape
  * job, which performs its own scan. Only decisions that consulted the
  * classifier carry a fee (+2 per unique scanned URL) — local-only blocks
- * (e.g. blacklist) are free.
+ * (e.g. blacklist) are free. Callers pass only FIRST-TIME blocks for this
+ * crawl (recordThreatBlocked's HSETNX return), so a blocked URL rediscovered
+ * by many page jobs bills once per crawl.
  */
 function billThreatBlockedDiscoveries(
   args: {
@@ -528,12 +530,17 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
                   { teamId: job.data.team_id },
                 );
               discoveredLinks = allowedUrls;
+              const newlyBlocked: typeof blocked = [];
               for (const blockedUrl of blocked) {
-                await recordThreatBlocked(
-                  job.data.crawl_id,
-                  blockedUrl.url,
-                  blockedUrl.decision,
-                );
+                if (
+                  await recordThreatBlocked(
+                    job.data.crawl_id,
+                    blockedUrl.url,
+                    blockedUrl.decision,
+                  )
+                ) {
+                  newlyBlocked.push(blockedUrl);
+                }
               }
               if (blocked.length > 0) {
                 billThreatBlockedDiscoveries(
@@ -548,7 +555,7 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
                     bypassBilling:
                       job.data.internalOptions?.bypassBilling ?? false,
                   },
-                  blocked,
+                  newlyBlocked,
                   logger,
                 );
                 logger.info(
@@ -1199,7 +1206,8 @@ async function processKickoffJob(job: NuQJob<ScrapeJobKickoff>) {
 
     let indexLinks = await kickoffGetIndexLinks(sc, crawler, job.data.url);
 
-    // Threat protection: skip index-sourced discoveries on blocked domains.
+    // Threat protection: skip blocked index-sourced discoveries (URL-level
+    // checks; first-time blocks are recorded and billed, see below).
     const kickoffThreatPolicy = sc.internalOptions?.threatProtection;
     if (
       kickoffThreatPolicy &&
@@ -1212,12 +1220,17 @@ async function processKickoffJob(job: NuQJob<ScrapeJobKickoff>) {
         { teamId: job.data.team_id },
       );
       indexLinks = allowedUrls;
+      const newlyBlocked: typeof blocked = [];
       for (const blockedUrl of blocked) {
-        await recordThreatBlocked(
-          job.data.crawl_id,
-          blockedUrl.url,
-          blockedUrl.decision,
-        );
+        if (
+          await recordThreatBlocked(
+            job.data.crawl_id,
+            blockedUrl.url,
+            blockedUrl.decision,
+          )
+        ) {
+          newlyBlocked.push(blockedUrl);
+        }
       }
       if (blocked.length > 0) {
         billThreatBlockedDiscoveries(
@@ -1231,7 +1244,7 @@ async function processKickoffJob(job: NuQJob<ScrapeJobKickoff>) {
             }),
             bypassBilling: sc.internalOptions?.bypassBilling ?? false,
           },
-          blocked,
+          newlyBlocked,
           logger,
         );
       }
@@ -1357,8 +1370,9 @@ async function processKickoffSitemapJob(job: NuQJob<ScrapeJobKickoffSitemap>) {
       )
     ).links;
 
-    // Threat protection: skip sitemap entries on blocked domains — the crawl
-    // continues; skipped URLs + decisions are recorded for security logging.
+    // Threat protection: skip blocked sitemap entries — the crawl continues;
+    // skipped URLs + decisions are recorded as crawl bookkeeping (which also
+    // dedups the scan fee per crawl).
     const sitemapThreatPolicy = sc.internalOptions?.threatProtection;
     if (
       sitemapThreatPolicy &&
@@ -1371,12 +1385,17 @@ async function processKickoffSitemapJob(job: NuQJob<ScrapeJobKickoffSitemap>) {
         { teamId: job.data.team_id },
       );
       passingURLs = allowedUrls;
+      const newlyBlocked: typeof blocked = [];
       for (const blockedUrl of blocked) {
-        await recordThreatBlocked(
-          job.data.crawl_id,
-          blockedUrl.url,
-          blockedUrl.decision,
-        );
+        if (
+          await recordThreatBlocked(
+            job.data.crawl_id,
+            blockedUrl.url,
+            blockedUrl.decision,
+          )
+        ) {
+          newlyBlocked.push(blockedUrl);
+        }
       }
       if (blocked.length > 0) {
         billThreatBlockedDiscoveries(
@@ -1390,7 +1409,7 @@ async function processKickoffSitemapJob(job: NuQJob<ScrapeJobKickoffSitemap>) {
             }),
             bypassBilling: sc.internalOptions?.bypassBilling ?? false,
           },
-          blocked,
+          newlyBlocked,
           logger,
         );
       }
