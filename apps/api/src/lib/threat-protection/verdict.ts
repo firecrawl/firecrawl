@@ -84,8 +84,13 @@ export function normalizeDomain(input: string): string {
       // percent-escaped spaces or control bytes). Fall back to the same
       // lenient splitter the canonicalizer uses — the naive string handling
       // below would otherwise extract "http:" as the "host" and local rules
-      // would silently never match.
-      domain = splitUrl(domain).host;
+      // would silently never match. Mirror canonicalizeUrl's pre-split
+      // cleanup (embedded tab/CR/LF, fragment) so a fragment directly after
+      // the host can't ride along into it.
+      let cleaned = domain.replace(/[\t\r\n]/g, "");
+      const hash = cleaned.indexOf("#");
+      if (hash !== -1) cleaned = cleaned.slice(0, hash);
+      domain = splitUrl(cleaned).host;
     }
   }
   // Strip a path fragment, then the port — carefully, because IPv6 literals

@@ -379,6 +379,9 @@ describe("normalizeDomain", () => {
     // splitter instead of degenerating to "http" (which would let such URLs
     // slip past every local rule).
     ["http://%20leadingspace.com/path", "%20leadingspace.com"],
+    // …including when a fragment directly follows the host (no path) — it
+    // must not ride along into the extracted host.
+    ["http://%20leadingspace.com#frag", "%20leadingspace.com"],
     ["example.com:8080", "example.com"],
     ["example.com/path", "example.com"],
     // inet_aton-style IP forms canonicalize to dotted-quad, matching the Web
