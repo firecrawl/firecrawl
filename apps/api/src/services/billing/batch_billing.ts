@@ -317,9 +317,11 @@ export async function queueBillingOperation(
       logger.info(
         "🔄 Billing queue reached batch size, triggering immediate processing",
       );
-      await processBillingBatch();
+      // Run in background instead of blocking the current request
+      processBillingBatch().catch(error => {
+        logger.error("Error in immediate billing batch processing", { error });
+      });
     }
-    // TODO is there a better way to do this?
 
     // Update cached credits used immediately to provide accurate feedback to users
     // This is optimistic - actual billing happens in batch
