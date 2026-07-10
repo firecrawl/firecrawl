@@ -509,23 +509,37 @@ describeIf("NuQ router (forced FDB mode)", () => {
   test("external slot mirror consumes and releases FDB capacity", async () => {
     const teamId = randomUUID();
     const holder = randomUUID();
-    await mirrorExternalSlotAcquire(teamId, holder, 30_000);
-    expect(await scrapeQueueFdb.getTeamActiveCount(teamId)).toBe(1);
-    await expect(
-      reserveExternalSlot(teamId, randomUUID(), 30_000, 1),
-    ).resolves.toBe(false);
-    // re-acquire (heartbeat) must not double-count
-    await mirrorExternalSlotAcquire(teamId, holder, 30_000);
-    expect(await scrapeQueueFdb.getTeamActiveCount(teamId)).toBe(1);
-    await mirrorExternalSlotRelease(teamId, holder);
-    expect(await scrapeQueueFdb.getTeamActiveCount(teamId)).toBe(0);
-    const nextHolder = randomUUID();
-    await expect(
-      reserveExternalSlot(teamId, nextHolder, 30_000, 1),
-    ).resolves.toBe(true);
-    await mirrorExternalSlotRelease(teamId, nextHolder);
-    // double release is a no-op
-    await mirrorExternalSlotRelease(teamId, holder);
-    expect(await scrapeQueueFdb.getTeamActiveCount(teamId)).toBe(0);
+    const redis = getRedisConnection();
+    const redisActiveCount = vi
+      .spyOn(redis, "zcount")
+      .mockRejectedValue(new Error("forced FDB must not read Redis active"));
+    const redisPendingCount = vi
+      .spyOn(redis, "zcard")
+      .mockRejectedValue(new Error("forced FDB must not read Redis pending"));
+    try {
+      await mirrorExternalSlotAcquire(teamId, holder, 30_000);
+      expect(await scrapeQueueFdb.getTeamActiveCount(teamId)).toBe(1);
+      await expect(
+        reserveExternalSlot(teamId, randomUUID(), 30_000, 1),
+      ).resolves.toBe(false);
+      expect(redisActiveCount).not.toHaveBeenCalled();
+      expect(redisPendingCount).not.toHaveBeenCalled();
+      // re-acquire (heartbeat) must not double-count
+      await mirrorExternalSlotAcquire(teamId, holder, 30_000);
+      expect(await scrapeQueueFdb.getTeamActiveCount(teamId)).toBe(1);
+      await mirrorExternalSlotRelease(teamId, holder);
+      expect(await scrapeQueueFdb.getTeamActiveCount(teamId)).toBe(0);
+      const nextHolder = randomUUID();
+      await expect(
+        reserveExternalSlot(teamId, nextHolder, 30_000, 1),
+      ).resolves.toBe(true);
+      await mirrorExternalSlotRelease(teamId, nextHolder);
+      // double release is a no-op
+      await mirrorExternalSlotRelease(teamId, holder);
+      expect(await scrapeQueueFdb.getTeamActiveCount(teamId)).toBe(0);
+    } finally {
+      redisActiveCount.mockRestore();
+      redisPendingCount.mockRestore();
+    }
   });
 });

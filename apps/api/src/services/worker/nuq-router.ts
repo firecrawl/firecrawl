@@ -290,6 +290,11 @@ export async function reconcileFdbTeamLimit(
 export async function getCombinedTeamPendingCount(
   teamId: string,
 ): Promise<number> {
+  if (fdbForced() && isSelfHosted()) {
+    return await optionalFdbRead(() =>
+      scrapeQueueFdb.getTeamPendingCount(teamId),
+    );
+  }
   const pgPending = await getRedisConnection().zcard(
     `concurrency-limit-queue:${teamId}`,
   );
@@ -303,6 +308,11 @@ export async function getCombinedTeamPendingCount(
 export async function getCombinedTeamActiveCount(
   teamId: string,
 ): Promise<number> {
+  if (fdbForced() && isSelfHosted()) {
+    return await optionalFdbRead(() =>
+      scrapeQueueFdb.getTeamActiveCount(teamId),
+    );
+  }
   const redisCount = await getConcurrencyLimitActiveJobsCount(teamId);
   if (!(await teamUsesFdbLedger(teamId))) return redisCount;
   // Always include FDB for migrated teams, even after the rollout flag is
