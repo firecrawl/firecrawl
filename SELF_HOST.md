@@ -62,6 +62,13 @@ USE_DB_AUTHENTICATION=false
 # OPENAI_BASE_URL=https://example.com/v1
 # OPENAI_API_KEY=
 
+# MiniMax text models
+# MODEL_PROVIDER=minimax
+# MODEL_NAME=MiniMax-M3 # MiniMax-M2.7 is also supported
+# MINIMAX_API_KEY=
+# MINIMAX_REGION=global_en # use cn_zh for the mainland China endpoint
+# MINIMAX_API_FORMAT=openai # use anthropic for the Anthropic-compatible API
+
 ## === Proxy ===
 # PROXY_SERVER can be a full URL (e.g. http://0.1.2.3:1234) or just an IP and port combo (e.g. 0.1.2.3:1234)
 # Do not uncomment PROXY_USERNAME and PROXY_PASSWORD if your proxy is unauthenticated
@@ -121,6 +128,13 @@ BULL_AUTH_KEY=CHANGEME
 # Set if you'd like to allow local webhooks to be sent to your self-hosted instance
 # ALLOW_LOCAL_WEBHOOKS=true
 ```
+
+MiniMax supports both API formats in each region:
+
+| Region         | OpenAI-compatible base URL    | Anthropic-compatible base URL           | Documentation                                                      |
+| -------------- | ----------------------------- | --------------------------------------- | ------------------------------------------------------------------ |
+| Global         | `https://api.minimax.io/v1`   | `https://api.minimax.io/anthropic/v1`   | [Global documentation](https://platform.minimax.io/docs)           |
+| Mainland China | `https://api.minimaxi.com/v1` | `https://api.minimaxi.com/anthropic/v1` | [Mainland China documentation](https://platform.minimaxi.com/docs) |
 
 ### Security considerations
 
