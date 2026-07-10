@@ -88,6 +88,51 @@ describeIf("NuQ FDB concurrency stress", () => {
     expect(await queue.getTeamPendingCount(owner)).toBe(0);
   }, 120_000);
 
+  test(">=256 concurrent producers obey strict admission and the queue-cap boundary", async () => {
+    const strictName = `t-${RUN}-strict-256`;
+    queueNames.push(strictName);
+    const strictQueue: NuQFdbQueue = new NuQFdbQueue(strictName, {
+      hasGroups: true,
+    });
+    const owner = randomUUID();
+    const inputs = Array.from({ length: 256 }, () => ({
+      id: randomUUID(),
+      data: { mode: "single_urls", url: "https://example.com" },
+      options: { ownerId: owner },
+    }));
+    await Promise.all(
+      inputs.map(input =>
+        strictQueue.addJob(input.id, input.data, input.options, {
+          teamLimit: 256,
+          queueCap: 1_000_000,
+        }),
+      ),
+    );
+    expect(await strictQueue.getTeamActiveCount(owner)).toBe(256);
+    expect(await strictQueue.getTeamPendingCount(owner)).toBe(0);
+
+    const capName = `t-${RUN}-cap-256`;
+    queueNames.push(capName);
+    const capQueue: NuQFdbQueue = new NuQFdbQueue(capName, {
+      hasGroups: true,
+    });
+    const capOwner = randomUUID();
+    const attempts = await Promise.allSettled(
+      Array.from({ length: 256 }, () =>
+        capQueue.addJob(
+          randomUUID(),
+          { mode: "single_urls", url: "https://example.com" },
+          { ownerId: capOwner },
+          { teamLimit: 0, queueCap: 100 },
+        ),
+      ),
+    );
+    expect(
+      attempts.filter(result => result.status === "fulfilled"),
+    ).toHaveLength(100);
+    expect(await capQueue.getTeamPendingCount(capOwner)).toBe(100);
+  }, 180_000);
+
   test("parallel enqueuers + workers with a crawl gate stay within both limits", async () => {
     const name = `t-${RUN}-stress2`;
     queueNames.push(name);

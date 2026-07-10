@@ -142,6 +142,9 @@ const configSchema = z.object({
   NUQ_FDB_TIME_BUCKETS: emptyStringAsDefault(
     z.coerce.number().int().positive().default(16),
   ),
+  // Two-phase rollout gate. Enable only after every FDB queue writer is on a
+  // version that understands maintained metric membership.
+  NUQ_FDB_METRICS_V2_ACTIVATE: z.stringbool().default(false),
 
   // Google Cloud Storage
   GCS_BUCKET_NAME: z.string().optional(),

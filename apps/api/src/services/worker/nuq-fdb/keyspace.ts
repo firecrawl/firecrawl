@@ -9,8 +9,25 @@ export { normalizeOwnerId } from "../../../lib/owner-id";
 export const READY_SHARDS = config.NUQ_FDB_READY_SHARDS;
 export const TEAM_PENDING_SHARDS = config.NUQ_FDB_TEAM_PENDING_SHARDS;
 export const TIME_BUCKETS = config.NUQ_FDB_TIME_BUCKETS;
+export const METRIC_SHARDS = 32;
+export const METRIC_STATUSES = [
+  "pending",
+  "queued",
+  "active",
+  "completed",
+  "failed",
+] as const;
+export type NuqFdbMetricStatus = (typeof METRIC_STATUSES)[number];
+export type NuqFdbMetricPhase = "backfill-jobs" | "backfill-ledger" | "ready";
+export type NuqFdbMetricControl = {
+  format: 3;
+  generation: string;
+  phase: NuqFdbMetricPhase;
+  shards: 32;
+};
 
 export type NuqFdbJobStatus =
+  | "ingesting" // reserved by a resumable multi-transaction enqueue
   | "pending" // waiting for a concurrency slot (externally: "backlog")
   | "queued" // holds its slots, in a ready shard
   | "active"
@@ -53,6 +70,23 @@ export type JobStatusRecord = {
   st: number; // stall count
   fa?: number; // finishedAt ms
   loc?: PendingLoc;
+  op?: string; // ingest operation while s === "ingesting"
+};
+
+export type IngestMeta = {
+  o: string; // normalized owner id (or empty for ungated/self-hosted)
+  c: number; // creation time
+  x: number; // abandoned-ingest cleanup time
+  r: number; // team queue-cap reservations not yet published
+  l: number | null; // frozen team limit
+  q: number; // frozen team queue cap
+  k?: { id: string; limit: number } | null; // frozen API-key gate
+};
+
+export type ClaimRecord = {
+  i: string;
+  l: string;
+  e: number;
 };
 
 // Entry stored in ready shards, pending queues and the delay index.
@@ -143,6 +177,9 @@ export class NuqFdbKeyspace {
   }
 
   // === Job records
+  jobRootRange() {
+    return this.packRange(["j"]);
+  }
   jobMeta(id: string): Buffer {
     return this.pack(["j", id, "m"]);
   }
@@ -168,6 +205,50 @@ export class NuqFdbKeyspace {
     return this.packRange(["j", id]);
   }
 
+  // === Resumable enqueue / commit-unknown claim records
+  ingest(op: string): Buffer {
+    return this.pack(["ing", op, "meta"]);
+  }
+  ingestJob(op: string, id: string): Buffer {
+    return this.pack(["ing", op, "jobs", id]);
+  }
+  ingestJobRange(op: string) {
+    return this.packRange(["ing", op, "jobs"]);
+  }
+  ingestGroup(op: string, gid: string): Buffer {
+    return this.pack(["ing", op, "groups", gid]);
+  }
+  ingestGroupRange(op: string) {
+    return this.packRange(["ing", op, "groups"]);
+  }
+  ingestExpiry(atMs: number, op: string): Buffer {
+    return this.pack(["ingexp", atMs, op]);
+  }
+  ingestExpiryScanRange(untilMs: number) {
+    return {
+      begin: this.pack(["ingexp"]),
+      end: this.pack(["ingexp", untilMs]),
+    };
+  }
+  claim(op: string): Buffer {
+    return this.pack(["claim", op]);
+  }
+  claimRange() {
+    return this.packRange(["claim"]);
+  }
+  claimExpiry(atMs: number, op: string): Buffer {
+    return this.pack(["claimexp", atMs, op]);
+  }
+  claimExpiryRange() {
+    return this.packRange(["claimexp"]);
+  }
+  claimExpiryScanRange(untilMs: number) {
+    return {
+      begin: this.pack(["claimexp"]),
+      end: this.pack(["claimexp", untilMs]),
+    };
+  }
+
   // === Team gate
   teamLimit(tid: string): Buffer {
     return this.pack(["t", tid, "limit"]);
@@ -186,6 +267,9 @@ export class NuqFdbKeyspace {
   }
   teamPendingCount(tid: string): Buffer {
     return this.pack(["t", tid, "pend"]);
+  }
+  teamIngestReserved(tid: string): Buffer {
+    return this.pack(["t", tid, "ing"]);
   }
   teamShardCount(tid: string, shard: number): Buffer {
     return this.pack(["t", tid, "qn", shard]);
@@ -237,6 +321,9 @@ export class NuqFdbKeyspace {
   }
   groupCrawlActive(gid: string): Buffer {
     return this.pack(["g", gid, "cact"]);
+  }
+  groupIngestCount(gid: string): Buffer {
+    return this.pack(["g", gid, "ing"]);
   }
   groupStatusCount(gid: string, status: string): Buffer {
     return this.pack(["g", gid, "n", status]);
@@ -295,6 +382,33 @@ export class NuqFdbKeyspace {
   }
   readyShardCountRange() {
     return this.packRange(["rn"]);
+  }
+
+  // === Generation-scoped maintained queue metrics
+  // Writers always normal-read the stable control key, including while it is
+  // absent. Generation data is immutable after invalidation and therefore can
+  // never leak into a later activation.
+  metricControl(): Buffer {
+    return this.pack(["metrics", "v3", "ctl"]);
+  }
+  metricCount(
+    generation: string,
+    status: NuqFdbMetricStatus,
+    shard: number,
+  ): Buffer {
+    return this.pack(["metrics", "v3", "gen", generation, "n", status, shard]);
+  }
+  metricLedger(generation: string, id: string): Buffer {
+    return this.pack(["metrics", "v3", "gen", generation, "status", id]);
+  }
+  metricLedgerRange(generation: string) {
+    return this.packRange(["metrics", "v3", "gen", generation, "status"]);
+  }
+  metricJobsCursor(generation: string): Buffer {
+    return this.pack(["metrics", "v3", "gen", generation, "cursor", "jobs"]);
+  }
+  metricLedgerCursor(generation: string): Buffer {
+    return this.pack(["metrics", "v3", "gen", generation, "cursor", "ledger"]);
   }
 
   // === Time-ordered indexes (sweeper-owned)

@@ -1,6 +1,7 @@
 import { randomUUID } from "crypto";
 import { Logger } from "winston";
 import { logger as _logger } from "../../../lib/logger";
+import { config } from "../../../config";
 import { getNuqFdbDatabase } from "./client";
 import {
   NuqFdbKeyspace,
@@ -19,6 +20,7 @@ import {
   F_COUNTABLE,
   F_GACC,
   F_KEY_GATED,
+  IngestMeta,
 } from "./keyspace";
 import {
   ONE,
@@ -41,6 +43,7 @@ import {
   bumpGroupStatusCount,
   bumpTeamActive,
   GroupJobIndexValue,
+  alignQueueMetricStatus,
 } from "./ops";
 import { NuQFdbQueue } from "./queue";
 import { NuqFdbExternalSlots } from "./slots";
@@ -163,9 +166,12 @@ export class NuqFdbSweeper {
   public async sweepOnce(logger: Logger = _logger): Promise<void> {
     const now = Date.now();
     for (const queue of this.queues) {
+      await queue.backfillMetricCounts(100, config.NUQ_FDB_METRICS_V2_ACTIVATE);
       await this.sweepLeases(queue, now, logger);
       await this.sweepBacklogTimeouts(queue, now, logger);
       await this.sweepDelayed(queue, now, logger);
+      await this.sweepClaimMarkers(queue, now);
+      await this.sweepAbandonedIngests(queue, now);
       await this.sweepGroupFinishTasks(queue, now, logger);
       await this.sweepGroupCancelTasks(queue, now, logger);
       await this.sweepTeamRaiseTasks(queue, now, logger);
@@ -248,6 +254,7 @@ export class NuqFdbSweeper {
             // requeue directly to ready -- the job retains its slots
             pushReady(tn, ks, entry, txc);
             setStatusQueued(tn, ks, id, st.st + 1);
+            await alignQueueMetricStatus(tn, ks, id);
             if (meta.g && meta.f & F_COUNTABLE) {
               bumpGroupStatusCount(tn, ks, meta.g, "active", -1);
               bumpGroupStatusCount(tn, ks, meta.g, "queued", 1);
@@ -265,6 +272,7 @@ export class NuqFdbSweeper {
               ks.jobFailedReason(id),
               Buffer.from(STALL_FAILED_REASON, "utf8"),
             );
+            await alignQueueMetricStatus(tn, ks, id);
             if (meta.g && meta.f & F_GACC && queue.groupOps) {
               await queue.groupOps.terminalAccounting(
                 tn,
@@ -359,6 +367,7 @@ export class NuqFdbSweeper {
             tn.set(ks.taskGroupFinish(meta.g), EMPTY);
           }
           deleteJobRecords(tn, ks, id);
+          await alignQueueMetricStatus(tn, ks, id);
         });
         stats.processedCount++;
       }
@@ -396,12 +405,102 @@ export class NuqFdbSweeper {
           // the job already holds its crawl slot; admit through the key gate
           // and then the team gate
           await admitThroughGates(tn, ks, e, txc);
+          await alignQueueMetricStatus(tn, ks, e.i);
         });
         stats.processedCount++;
       }
     }
     stats.durationMs = Date.now() - startedAt;
     logSweepLag(logger, queue, "delay", stats);
+  }
+
+  // === Commit-unknown claim marker GC
+
+  private async sweepClaimMarkers(
+    queue: NuQFdbQueue,
+    now: number,
+  ): Promise<void> {
+    const ks = queue.ks;
+    const range = ks.claimExpiryScanRange(now);
+    const due = await this.db.doTn(async tn =>
+      tn.snapshot().getRangeAll(range.begin, range.end, {
+        limit: SWEEP_BATCH,
+      }),
+    );
+    if (due.length === 0) return;
+    await this.db.doTn(async tn => {
+      for (const [key] of due) {
+        const expiryKey = key as Buffer;
+        const op = ks.unpackId(expiryKey);
+        const expiresAt = Number(ks.unpackId(expiryKey, 1));
+        const marker = decodeJson<{ e: number }>(await tn.get(ks.claim(op)));
+        if (marker && marker.e === expiresAt && marker.e <= now) {
+          tn.clear(ks.claim(op));
+        }
+        // Always discard the observed expiry row. A mismatched/live marker has
+        // its own later durable row and must survive this stale-row cleanup.
+        tn.clear(expiryKey);
+      }
+    });
+  }
+
+  // === Abandoned resumable enqueues
+
+  private async sweepAbandonedIngests(
+    queue: NuQFdbQueue,
+    now: number,
+  ): Promise<void> {
+    const ks = queue.ks;
+    const range = ks.ingestExpiryScanRange(now);
+    const due = await this.db.doTn(async tn =>
+      tn.snapshot().getRangeAll(range.begin, range.end, { limit: 20 }),
+    );
+    for (const [expiryKey] of due) {
+      const op = ks.unpackId(expiryKey as Buffer);
+      await this.db.doTn(async tn => {
+        const meta = decodeJson<IngestMeta>(await tn.get(ks.ingest(op)));
+        if (!meta) {
+          tn.clear(expiryKey as Buffer);
+          return;
+        }
+        const jobsRange = ks.ingestJobRange(op);
+        const members = await tn.getRangeAll(jobsRange.begin, jobsRange.end, {
+          limit: SWEEP_BATCH,
+        });
+        for (const [memberKey] of members) {
+          const id = ks.unpackId(memberKey as Buffer);
+          const status = decodeJson<JobStatusRecord>(
+            await tn.get(ks.jobStatus(id)),
+          );
+          if (status?.s === "ingesting" && status.op === op) {
+            deleteJobRecords(tn, ks, id);
+            await alignQueueMetricStatus(tn, ks, id);
+          }
+          tn.clear(memberKey as Buffer);
+        }
+        if (members.length >= SWEEP_BATCH) return;
+
+        const groupsRange = ks.ingestGroupRange(op);
+        const groups = await tn.getRangeAll(
+          groupsRange.begin,
+          groupsRange.end,
+          { limit: SWEEP_BATCH },
+        );
+        for (const [groupKey] of groups) {
+          const gid = ks.unpackId(groupKey as Buffer);
+          tn.clear(groupKey as Buffer);
+          tn.add(ks.groupIngestCount(gid), MINUS_ONE);
+          tn.set(ks.taskGroupFinish(gid), EMPTY);
+        }
+        if (groups.length >= SWEEP_BATCH) return;
+
+        if (meta.r > 0 && meta.o) {
+          tn.add(ks.teamIngestReserved(meta.o), encodeI64(-meta.r));
+        }
+        tn.clear(ks.ingest(op));
+        tn.clear(expiryKey as Buffer);
+      });
+    }
   }
 
   // === Group finish detection (backstop for the inline path)
@@ -449,30 +548,29 @@ export class NuqFdbSweeper {
     for (const [key] of tasks) {
       const gid = ks.unpackId(key as Buffer);
       let exhausted = false;
-      let begin: Buffer | null = null;
-      // clean pending members in batches until none remain
+      // The task value is a durable cursor. A concurrent cancelled-group
+      // enqueue resets it to EMPTY and conflicts with this normal read, so a
+      // newly inserted member can never be skipped behind the cursor.
       for (let rounds = 0; rounds < 50 && !exhausted; rounds++) {
-        const result = await this.db.doTn(async tn => {
+        exhausted = await this.db.doTn(async tn => {
+          const cursor = await tn.get(key as Buffer);
+          if (!cursor) return true;
           const jr = ks.groupJobRange(gid);
-          const rangeBegin = begin ?? jr.begin;
+          const rangeBegin = cursor.length > 0 ? keyAfter(cursor) : jr.begin;
           const members = await tn
             .snapshot()
             .getRangeAll(rangeBegin, jr.end, { limit: 500 });
           let cleaned = 0;
+          let lastExamined: Buffer | undefined;
           for (const [mKey, mValue] of members) {
+            lastExamined = mKey as Buffer;
             const gj = decodeJson<GroupJobIndexValue>(mValue as Buffer);
             if (!gj || gj.s !== "pending") continue;
-            if (cleaned >= SWEEP_BATCH) {
-              return { exhausted: false, nextBegin: rangeBegin };
-            }
             const id = ks.unpackId(mKey as Buffer);
             const st = decodeJson<JobStatusRecord>(
               await tn.get(ks.jobStatus(id)),
             );
-            if (!st || st.s !== "pending" || !st.loc) {
-              // moved on; fix the index lazily
-              continue;
-            }
+            if (!st || st.s !== "pending" || !st.loc) continue;
             const meta = decodeJson<JobMeta>(await tn.get(ks.jobMeta(id)));
             if (!meta) continue;
             clearPendingPlacement(
@@ -485,13 +583,9 @@ export class NuqFdbSweeper {
               st.loc,
               meta.to,
             );
-            // team-/key-pending/delayed members hold a crawl slot; the group
-            // is cancelled so there is nothing to promote -- just release it
             if (st.loc.k !== "gq" && meta.f & F_CRAWL_GATED) {
               tn.add(ks.groupCrawlActive(gid), MINUS_ONE);
             }
-            // team-pending members also hold a key slot; release it and let
-            // the raise task hand it to key-pending jobs outside this group
             if (st.loc.k === "tq" && meta.k && meta.f & F_KEY_GATED) {
               tn.add(ks.keyActive(meta.k), MINUS_ONE);
               tn.set(ks.taskKeyRaise(meta.k), EMPTY);
@@ -501,23 +595,18 @@ export class NuqFdbSweeper {
             if (meta.f & F_COUNTABLE)
               bumpGroupStatusCount(tn, ks, gid, "pending", -1);
             deleteJobRecords(tn, ks, id);
+            await alignQueueMetricStatus(tn, ks, id);
             cleaned++;
+            if (cleaned >= SWEEP_BATCH) break;
           }
-          const lastKey = members[members.length - 1]?.[0] as
-            | Buffer
-            | undefined;
-          return {
-            exhausted: members.length < 500,
-            nextBegin: lastKey ? keyAfter(lastKey) : jr.end,
-          };
-        });
-        exhausted = result.exhausted;
-        begin = result.nextBegin;
-      }
-      if (exhausted) {
-        await this.db.doTn(async tn => {
-          tn.clear(key as Buffer);
-          tn.set(ks.taskGroupFinish(gid), EMPTY);
+          const done = members.length < 500 && cleaned < SWEEP_BATCH;
+          if (done) {
+            tn.clear(key as Buffer);
+            tn.set(ks.taskGroupFinish(gid), EMPTY);
+          } else if (lastExamined) {
+            tn.set(key as Buffer, lastExamined);
+          }
+          return done;
         });
       }
     }
@@ -537,7 +626,10 @@ export class NuqFdbSweeper {
     );
     for (const [key] of tasks) {
       const tid = ks.unpackId(key as Buffer);
-      const done = await this.db.doTn(async tn => {
+      await this.db.doTn(async tn => {
+        // Consume the generation in the same conflicting transaction as the
+        // drain so a concurrent raiser cannot have its signal cleared later.
+        if (!(await tn.get(key as Buffer))) return;
         const txc = newTxContext();
         const limitBuf = await tn.get(ks.teamLimit(tid));
         const limit = limitBuf ? decodeI64(limitBuf) : Infinity;
@@ -547,17 +639,14 @@ export class NuqFdbSweeper {
         while (free > 0) {
           const e = await popTeamPending(tn, ks, tid);
           if (!e) break;
-          promoteEntryToReady(tn, ks, e, txc);
+          await promoteEntryToReady(tn, ks, e, txc);
           promoted++;
           free--;
         }
         if (promoted > 0) bumpTeamActive(tn, ks, tid, promoted);
         // done when no free slots remain or the pending queue is drained
-        return free > 0 || limit - active <= 0;
+        if (free > 0 || limit - active <= 0) tn.clear(key as Buffer);
       });
-      if (done) {
-        await this.db.doTn(async tn => tn.clear(key as Buffer));
-      }
     }
   }
 
@@ -576,7 +665,8 @@ export class NuqFdbSweeper {
     );
     for (const [key] of tasks) {
       const kid = ks.unpackId(key as Buffer);
-      const done = await this.db.doTn(async tn => {
+      await this.db.doTn(async tn => {
+        if (!(await tn.get(key as Buffer))) return;
         const txc = newTxContext();
         const limitBuf = await tn.get(ks.keyLimit(kid));
         const limit = limitBuf ? decodeI64(limitBuf) : Infinity;
@@ -592,11 +682,8 @@ export class NuqFdbSweeper {
         }
         if (promoted > 0) tn.add(ks.keyActive(kid), encodeI64(promoted));
         // done when no free slots remain or the pending queue is drained
-        return free > 0 || limit - active <= 0;
+        if (free > 0 || limit - active <= 0) tn.clear(key as Buffer);
       });
-      if (done) {
-        await this.db.doTn(async tn => tn.clear(key as Buffer));
-      }
     }
   }
 
@@ -627,6 +714,7 @@ export class NuqFdbSweeper {
           ) {
             deleteJobRecords(tn, ks, id);
           }
+          await alignQueueMetricStatus(tn, ks, id);
         }
       });
     }
@@ -656,18 +744,22 @@ export class NuqFdbSweeper {
           for (const [mKey] of members) {
             const id = ks.unpackId(mKey as Buffer);
             deleteJobRecords(tn, ks, id);
+            await alignQueueMetricStatus(tn, ks, id);
             tn.clear(mKey as Buffer);
           }
           return members.length < 200;
         });
       }
+      if (!drained) continue;
       await this.db.doTn(async tn => {
         const g = decodeJson<GroupMeta>(await tn.get(ks.groupMeta(gid)));
         // the crawl-finished job for this group lives in the finished queue
         const fjobBuf = await tn.get(ks.groupFinishedJob(gid));
         if (fjobBuf && queue.groupOps!.finishedKs) {
           const fid = fjobBuf.toString("utf8");
-          deleteJobRecords(tn, queue.groupOps!.finishedKs as any, fid);
+          const finishedKs = queue.groupOps!.finishedKs;
+          deleteJobRecords(tn, finishedKs, fid);
+          await alignQueueMetricStatus(tn, finishedKs, fid);
         }
         const gr = ks.groupRange(gid);
         tn.clearRange(gr.begin, gr.end);

@@ -24,6 +24,7 @@ import {
   setStatusQueued,
   setGroupJobIndex,
   bumpGroupStatusCount,
+  alignQueueMetricStatus,
 } from "./ops";
 
 export type NuQFdbGroupStatus = "active" | "completed" | "cancelled";
@@ -100,6 +101,11 @@ export class NuqFdbGroupOps {
     now: number,
     txc: TxContext,
   ): Promise<boolean> {
+    // A multi-transaction enqueue holds this barrier from reservation through
+    // its final publish, so an empty prefix of the batch cannot finish the
+    // group while later chunks are still invisible.
+    const ingests = decodeI64(await tn.get(this.ks.groupIngestCount(gid)));
+    if (ingests > 0) return false;
     const gMeta = decodeJson<GroupMeta>(await tn.get(this.ks.groupMeta(gid)));
     if (!gMeta || gMeta.s === "completed") {
       tn.clear(this.ks.taskGroupFinish(gid));
@@ -127,6 +133,7 @@ export class NuqFdbGroupOps {
       };
       pushReady(tn, this.finishedKs, entry, txc);
       setStatusQueued(tn, this.finishedKs, fid);
+      await alignQueueMetricStatus(tn, this.finishedKs, fid);
       // pointer for group TTL cleanup to find the finished job's records
       tn.set(this.ks.groupFinishedJob(gid), Buffer.from(fid, "utf8"));
     }

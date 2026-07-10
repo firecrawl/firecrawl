@@ -1,4 +1,4 @@
-import { randomUUID } from "crypto";
+import { createHash, randomUUID } from "crypto";
 import type {
   Transaction,
   TransactionOptionCode as FdbTransactionOptionCode,
@@ -21,6 +21,10 @@ import {
   decodeJson,
   timeBucket,
   READY_SHARDS,
+  METRIC_SHARDS,
+  METRIC_STATUSES,
+  NuqFdbMetricControl,
+  NuqFdbMetricStatus,
   F_GATED,
   F_CRAWL_GATED,
   F_LISTENABLE,
@@ -29,6 +33,8 @@ import {
   F_GACC,
   F_KEY_GATED,
   normalizeOwnerId,
+  IngestMeta,
+  ClaimRecord,
 } from "./keyspace";
 
 export { normalizeOwnerId, F_GACC };
@@ -55,6 +61,7 @@ import {
   setGroupJobIndex,
   bumpGroupStatusCount,
   bumpTeamActive,
+  alignQueueMetricStatus,
   GroupJobIndexValue,
 } from "./ops";
 import { NuqFdbGroupOps } from "./groups";
@@ -63,6 +70,8 @@ import { NuqFdbGroupOps } from "./groups";
 // importing queue types does not eagerly load libfdb_c in PG-only processes.
 const TransactionOptionCode = {
   Timeout: 500 as FdbTransactionOptionCode,
+  RetryLimit: 501 as FdbTransactionOptionCode,
+  MaxRetryDelay: 502 as FdbTransactionOptionCode,
 };
 
 const DATA_CHUNK_BYTES = 90 * 1024;
@@ -73,6 +82,13 @@ const FDB_TRANSACTION_BYTE_LIMIT = 10_000_000;
 const ENQUEUE_BATCH_BYTE_BUDGET = 750 * 1024;
 const ENQUEUE_SINGLE_JOB_BYTE_LIMIT = 8 * 1024 * 1024;
 const ENQUEUE_MAX_JOBS_PER_TRANSACTION = 250;
+const MAX_INLINE_RETURNVALUE_BYTES = 8 * 1024 * 1024;
+const MAX_FAILED_REASON_BYTES = 90 * 1024;
+const INGEST_TTL_MS = 60 * 60 * 1000;
+const CLAIM_CLEANUP_MAX_IN_FLIGHT = 8;
+const CLAIM_CLEANUP_TIMEOUT_MS = 250;
+const CLAIM_CLEANUP_RETRY_LIMIT = 1;
+const CLAIM_CLEANUP_MAX_RETRY_DELAY_MS = 25;
 
 export { QueueFullError };
 
@@ -140,6 +156,19 @@ type PreparedAddJob<Data> = AddJobInput<Data> & {
   estimatedAffectedBytes: number;
 };
 
+type IngestJobPlan = {
+  h: string;
+  p: number;
+  o: string;
+  g?: string;
+  b: boolean;
+  l: boolean;
+  to?: number;
+  dc: number;
+  ct: boolean;
+  z: boolean;
+};
+
 function chunkBuffer(buf: Buffer, size: number): Buffer[] {
   const chunks: Buffer[] = [];
   for (let i = 0; i < buf.length; i += size) {
@@ -150,19 +179,40 @@ function chunkBuffer(buf: Buffer, size: number): Buffer[] {
 
 function externalStatus(s: NuqFdbJobStatus): NuQJobStatusCompat | null {
   if (s === "pending") return "backlog";
-  if (s === "cancelled") return null; // cancelled jobs read as gone, like PG row deletes
+  if (s === "ingesting" || s === "cancelled") return null;
   return s;
 }
+
+function truncateUtf8(value: string, maxBytes: number): Buffer {
+  const buf = Buffer.from(value, "utf8");
+  if (buf.length <= maxBytes) return buf;
+  let end = maxBytes;
+  while (end > 0 && (buf[end] & 0xc0) === 0x80) end--;
+  return buf.subarray(0, end);
+}
+
+class IngestBusyError extends Error {}
+class IngestValidationError extends Error {}
+export class NuqFdbMetricsInitializingError extends Error {}
 
 function encodedJsonBytes(v: any): number {
   return Buffer.byteLength(JSON.stringify(v), "utf8");
 }
 
+function semanticDataHash(value: unknown): string {
+  return createHash("sha256")
+    .update(
+      JSON.stringify(value ?? null, (key, nested) =>
+        key === "traceContext" ? undefined : nested,
+      ),
+    )
+    .digest("hex");
+}
+
 export class NuQFdbQueue<JobData = any, JobReturnValue = any> {
   public readonly ks: NuqFdbKeyspace;
   public readonly groupOps: NuqFdbGroupOps | null;
-  // worker-local lease expiry tracking so renewLock can stay a blind write
-  private leaseExps: Map<string, number> = new Map();
+  private claimCleanupInFlight = 0;
 
   constructor(
     public readonly queueName: string,
@@ -173,6 +223,14 @@ export class NuQFdbQueue<JobData = any, JobReturnValue = any> {
       finishedQueueName?: string;
       // lease duration override, used by tests
       leaseMs?: number;
+      // Deterministic fault/race injection for the FDB integration tests.
+      testHooks?: {
+        afterManifest?: () => Promise<void>;
+        afterStageBatch?: (batch: number) => Promise<void>;
+        afterPublishBatch?: (batch: number) => Promise<void>;
+        simulateClaimCommitUnknown?: () => boolean;
+        runClaimCleanup?: (cleanup: () => Promise<void>) => Promise<void>;
+      };
     },
   ) {
     this.ks = new NuqFdbKeyspace(queueName);
@@ -217,13 +275,18 @@ export class NuQFdbQueue<JobData = any, JobReturnValue = any> {
     if (jobs.some(j => normalizeOwnerId(j.options.ownerId) !== ownerId)) {
       throw new Error("addJobs requires all jobs to share an owner");
     }
+    if (gate.teamLimit !== null && ownerId === null) {
+      throw new Error("Team-gated jobs require an owner");
+    }
 
-    const prepared = jobs.map(j =>
+    // Duplicate IDs in one call are one logical enqueue. Preserve the API's
+    // output cardinality/order below while ensuring each ID is placed once.
+    const byId = new Map<string, AddJobInput<JobData>>();
+    for (const job of jobs) if (!byId.has(job.id)) byId.set(job.id, job);
+    const uniqueInputs = [...byId.values()];
+    const prepared = uniqueInputs.map(j =>
       this.prepareAddJob(j, ownerId, gate.key?.id ?? null),
     );
-    const results: NuQFdbJob<JobData, JobReturnValue>[] = [];
-    let batch: PreparedAddJob<JobData>[] = [];
-    let batchBytes = 0;
 
     for (const job of prepared) {
       if (job.estimatedAffectedBytes > ENQUEUE_SINGLE_JOB_BYTE_LIMIT) {
@@ -231,7 +294,6 @@ export class NuQFdbQueue<JobData = any, JobReturnValue = any> {
           `NuQ FDB job ${job.id} is too large to enqueue safely: estimated ${job.estimatedAffectedBytes} bytes of affected data exceeds ${ENQUEUE_SINGLE_JOB_BYTE_LIMIT}`,
         );
       }
-
       if (job.estimatedAffectedBytes > ENQUEUE_BATCH_BYTE_BUDGET) {
         logger.warn("NuQ FDB enqueue job exceeds batch budget", {
           canonicalLog: "nuq-fdb/enqueue_batch",
@@ -242,25 +304,90 @@ export class NuQFdbQueue<JobData = any, JobReturnValue = any> {
           transactionByteLimit: FDB_TRANSACTION_BYTE_LIMIT,
         });
       }
+    }
 
+    // The stable operation identity intentionally excludes regenerated request
+    // fields (deadlines, trace context, changing limits). The first caller's
+    // gate and per-job plan are persisted; retries attach to that plan.
+    const op = createHash("sha256")
+      .update(
+        JSON.stringify([
+          this.queueName,
+          ownerId,
+          uniqueInputs.map(job => job.id),
+        ]),
+      )
+      .digest("hex");
+    await this.initIngest(op, ownerId, gate);
+
+    const batches: PreparedAddJob<JobData>[][] = [];
+    let batch: PreparedAddJob<JobData>[] = [];
+    let batchBytes = 0;
+    for (const job of prepared) {
       if (
         batch.length > 0 &&
         (batchBytes + job.estimatedAffectedBytes > ENQUEUE_BATCH_BYTE_BUDGET ||
           batch.length >= ENQUEUE_MAX_JOBS_PER_TRANSACTION)
       ) {
-        results.push(...(await this.addJobsBatch(batch, ownerId, gate)));
+        batches.push(batch);
         batch = [];
         batchBytes = 0;
       }
-
       batch.push(job);
       batchBytes += job.estimatedAffectedBytes;
     }
+    if (batch.length > 0) batches.push(batch);
 
-    if (batch.length > 0) {
-      results.push(...(await this.addJobsBatch(batch, ownerId, gate)));
+    // Persist the complete small manifest before claiming any IDs. This
+    // freezes deadlines/options across a process-level retry without putting
+    // the unbounded manifest in one FDB transaction.
+    for (const manifestBatch of batches) {
+      await this.persistIngestPlanBatch(op, manifestBatch);
     }
-    return results;
+    await this.options.testHooks?.afterManifest?.();
+    try {
+      for (let batchNumber = 0; batchNumber < batches.length; batchNumber++) {
+        for (let attempt = 0; ; attempt++) {
+          try {
+            await this.reserveAndStageBatch(op, batches[batchNumber]);
+            break;
+          } catch (error) {
+            if (!(error instanceof IngestBusyError) || attempt >= 100)
+              throw error;
+            await new Promise(resolve => setTimeout(resolve, 10));
+          }
+        }
+        await this.options.testHooks?.afterStageBatch?.(batchNumber + 1);
+      }
+    } catch (error) {
+      if (
+        error instanceof QueueFullError ||
+        error instanceof IngestValidationError ||
+        error instanceof IngestBusyError
+      ) {
+        await this.abortIngest(op);
+      }
+      throw error;
+    }
+
+    for (let i = 0; i < batches.length; i++) {
+      await this.publishIngestBatch(op, batches[i]);
+      await this.options.testHooks?.afterPublishBatch?.(i + 1);
+    }
+    await this.finalizeIngest(op);
+
+    const stored = await this.getJobs(
+      uniqueInputs.map(j => j.id),
+      logger,
+    );
+    const storedById = new Map(stored.map(job => [job.id, job]));
+    return jobs.map(j => {
+      const storedJob = storedById.get(j.id);
+      if (!storedJob) {
+        throw new Error(`Job ${j.id} disappeared after enqueue publication`);
+      }
+      return storedJob;
+    });
   }
 
   private prepareAddJob(
@@ -328,6 +455,17 @@ export class NuQFdbQueue<JobData = any, JobReturnValue = any> {
       encodedJsonBytes(meta) +
       ks.jobStatus(job.id).length +
       encodedJsonBytes({ s: "pending", st: 0 }) +
+      // One generation ledger row and two fixed-counter atomic mutations are
+      // the worst-case metric transition footprint.
+      ks.metricLedger("00000000-0000-0000-0000-000000000000", job.id).length +
+      "completed".length +
+      2 *
+        (ks.metricCount(
+          "00000000-0000-0000-0000-000000000000",
+          "completed",
+          METRIC_SHARDS - 1,
+        ).length +
+          8) +
       ks.readyPrefix(READY_SHARDS - 1, priority).length +
       encodedJsonBytes(entry) +
       ks.readyShardCount(READY_SHARDS - 1).length +
@@ -392,16 +530,204 @@ export class NuQFdbQueue<JobData = any, JobReturnValue = any> {
     return bytes + 4096;
   }
 
-  private async addJobsBatch(
-    jobs: PreparedAddJob<JobData>[],
+  private async initIngest(
+    op: string,
     ownerId: string | null,
     gate: NuQFdbGate,
-  ): Promise<NuQFdbJob<JobData, JobReturnValue>[]> {
+  ): Promise<void> {
     const ks = this.ks;
-    return await this.db.doTn(async tn => {
+    await this.db.doTn(async tn => {
+      if (await tn.get(ks.ingest(op))) return;
+      // Even an ingest that only creates the untracked "ingesting" state must
+      // conflict with activation/invalidation. Publication performs the actual
+      // canonical ledger alignment.
+      await tn.get(ks.metricControl());
+      const createdAt = Date.now();
+      const meta: IngestMeta = {
+        o: ownerId ?? "",
+        c: createdAt,
+        x: createdAt + INGEST_TTL_MS,
+        r: 0,
+        l: gate.teamLimit,
+        q: gate.queueCap,
+        k: gate.key ?? null,
+      };
+      tn.set(ks.ingest(op), encodeJson(meta));
+      tn.set(ks.ingestExpiry(meta.x, op), EMPTY);
+    });
+  }
+
+  private async persistIngestPlanBatch(
+    op: string,
+    jobs: PreparedAddJob<JobData>[],
+  ): Promise<void> {
+    const ks = this.ks;
+    await this.db.doTn(async tn => {
+      const opMeta = decodeJson<IngestMeta>(await tn.get(ks.ingest(op)));
+      if (!opMeta) return;
+      const [existing, statuses] = await Promise.all([
+        Promise.all(jobs.map(job => tn.get(ks.ingestJob(op, job.id)))),
+        Promise.all(jobs.map(job => tn.get(ks.jobStatus(job.id)))),
+      ]);
+      for (let i = 0; i < jobs.length; i++) {
+        // A published/existing status is authoritative. This normal read
+        // conflicts with publication, so a concurrent retry cannot recreate
+        // a manifest row after publish cleared it.
+        if (existing[i] || statuses[i]) continue;
+        const job = jobs[i];
+        const plan: IngestJobPlan = {
+          h: semanticDataHash(job.data),
+          p: job.options.priority ?? 0,
+          o: opMeta.o,
+          g: job.options.groupId,
+          b: !!job.options.bypassGate,
+          l: !!job.options.listenable,
+          to: job.options.timesOutAt?.getTime(),
+          dc: job.dataChunks.length,
+          ct: (job.data as any)?.mode === "single_urls",
+          z: !!(job.data as any)?.zeroDataRetention,
+        };
+        tn.set(ks.ingestJob(op, job.id), encodeJson(plan));
+      }
+    });
+  }
+
+  private async reserveAndStageBatch(
+    op: string,
+    jobs: PreparedAddJob<JobData>[],
+  ): Promise<void> {
+    const ks = this.ks;
+    await this.db.doTn(async tn => {
+      const opMeta = decodeJson<IngestMeta>(await tn.get(ks.ingest(op)));
+      if (!opMeta) return;
+      const [statuses, planValues] = await Promise.all([
+        Promise.all(jobs.map(job => tn.get(ks.jobStatus(job.id)))),
+        Promise.all(jobs.map(job => tn.get(ks.ingestJob(op, job.id)))),
+      ]);
+      const fresh: { job: PreparedAddJob<JobData>; plan: IngestJobPlan }[] = [];
+      for (let i = 0; i < jobs.length; i++) {
+        const status = decodeJson<JobStatusRecord>(statuses[i]);
+        const plan = decodeJson<IngestJobPlan>(planValues[i]);
+        if (!plan) continue;
+        if (status?.s === "ingesting" && status.op !== op) {
+          throw new IngestBusyError(`Job ${jobs[i].id} is being ingested`);
+        }
+        if (status?.s === "cancelled") {
+          throw new IngestValidationError(
+            `Job ${jobs[i].id} was cancelled and is not reusable yet`,
+          );
+        }
+        if (!status) {
+          if (semanticDataHash(jobs[i].data) !== plan.h) {
+            throw new IngestValidationError(
+              `Job ${jobs[i].id} changed during ingest retry`,
+            );
+          }
+          fresh.push({ job: jobs[i], plan });
+        } else if (status.s !== "ingesting") {
+          tn.clear(ks.ingestJob(op, jobs[i].id));
+        }
+      }
+      if (fresh.length === 0) return;
+
+      const gated = fresh.filter(
+        ({ plan }) => opMeta.l !== null && !plan.b,
+      ).length;
+      if (gated > 0 && opMeta.o) {
+        const [pendingBuf, reservedBuf] = await Promise.all([
+          tn.get(ks.teamPendingCount(opMeta.o)),
+          tn.get(ks.teamIngestReserved(opMeta.o)),
+        ]);
+        const pending = decodeI64(pendingBuf);
+        const reserved = decodeI64(reservedBuf);
+        if (pending + reserved + gated > opMeta.q) {
+          throw new QueueFullError(pending + reserved, opMeta.q);
+        }
+        tn.add(ks.teamIngestReserved(opMeta.o), encodeI64(gated));
+        const storedBuf = await tn.get(ks.teamLimit(opMeta.o));
+        const stored = storedBuf ? decodeI64(storedBuf) : null;
+        if (stored !== opMeta.l) {
+          tn.set(ks.teamLimit(opMeta.o), encodeI64(opMeta.l!));
+          if (stored !== null && opMeta.l! > stored) {
+            tn.set(ks.taskTeamRaise(opMeta.o), EMPTY);
+          }
+        }
+      }
+
+      if (this.options.hasGroups) {
+        for (const gid of new Set(fresh.map(({ plan }) => plan.g))) {
+          if (!gid || (await tn.get(ks.ingestGroup(op, gid)))) continue;
+          const groupMeta = decodeJson<GroupMeta>(
+            await tn.get(ks.groupMeta(gid)),
+          );
+          if (groupMeta?.s !== "active") {
+            throw new IngestValidationError(
+              `Cannot enqueue job into non-active group ${gid}`,
+            );
+          }
+          tn.set(ks.ingestGroup(op, gid), EMPTY);
+          tn.add(ks.groupIngestCount(gid), ONE);
+        }
+      }
+
+      tn.set(ks.ingest(op), encodeJson({ ...opMeta, r: opMeta.r + gated }));
+      for (const { job } of fresh) {
+        tn.set(
+          ks.jobStatus(job.id),
+          encodeJson({ s: "ingesting", st: 0, op } satisfies JobStatusRecord),
+        );
+        job.dataChunks.forEach((chunk, chunkIndex) =>
+          tn.set(ks.jobData(job.id, chunkIndex), chunk),
+        );
+        await alignQueueMetricStatus(tn, ks, job.id);
+      }
+    });
+  }
+
+  private async publishIngestBatch(
+    op: string,
+    jobs: PreparedAddJob<JobData>[],
+  ): Promise<void> {
+    const ks = this.ks;
+    await this.db.doTn(async tn => {
       const txc = newTxContext();
       const now = Date.now();
-      const out: NuQFdbJob<JobData, JobReturnValue>[] = [];
+      const opMeta = decodeJson<IngestMeta>(await tn.get(ks.ingest(op)));
+      if (!opMeta) return;
+      const [statuses, planValues] = await Promise.all([
+        Promise.all(jobs.map(job => tn.get(ks.jobStatus(job.id)))),
+        Promise.all(jobs.map(job => tn.get(ks.ingestJob(op, job.id)))),
+      ]);
+      const publishJobs = jobs.flatMap((job, i) => {
+        const status = decodeJson<JobStatusRecord>(statuses[i]);
+        const plan = decodeJson<IngestJobPlan>(planValues[i]);
+        if (status?.s !== "ingesting" || status.op !== op || !plan) return [];
+        return [
+          {
+            ...job,
+            data: {
+              mode: plan.ct ? "single_urls" : undefined,
+              zeroDataRetention: plan.z,
+            } as JobData,
+            dataChunks: new Array<Buffer>(plan.dc),
+            options: {
+              ownerId: plan.o || undefined,
+              groupId: plan.g,
+              priority: plan.p,
+              bypassGate: plan.b,
+              listenable: plan.l,
+              timesOutAt: plan.to === undefined ? undefined : new Date(plan.to),
+            },
+          },
+        ];
+      });
+      if (publishJobs.length === 0) return;
+      const ownerId = opMeta.o || null;
+      const gate: NuQFdbGate = {
+        teamLimit: opMeta.l,
+        queueCap: opMeta.q,
+        key: opMeta.k,
+      };
 
       let free = Infinity;
       if (gate.teamLimit !== null && ownerId !== null) {
@@ -414,19 +740,9 @@ export class NuQFdbQueue<JobData = any, JobReturnValue = any> {
           }
         }
 
-        const pend = decodeI64(
-          await tn.snapshot().get(ks.teamPendingCount(ownerId)),
-        );
-        if (pend + jobs.length > gate.queueCap) {
-          throw new QueueFullError(pend, gate.queueCap);
-        }
-
-        // big-limit teams tolerate a small admission overshoot in exchange for
-        // a conflict-free read; small-limit teams get the strict read
-        const active =
-          gate.teamLimit >= 256
-            ? decodeI64(await tn.snapshot().get(ks.teamActive(ownerId)))
-            : decodeI64(await tn.get(ks.teamActive(ownerId)));
+        // Strict for every limit, including >=256. The ingest reservation
+        // bounds queue admission; this conflicting read bounds active slots.
+        const active = decodeI64(await tn.get(ks.teamActive(ownerId)));
         free = Math.max(0, gate.teamLimit - active);
       }
 
@@ -451,7 +767,7 @@ export class NuQFdbQueue<JobData = any, JobReturnValue = any> {
       const groupMetas = new Map<string, GroupMeta | null>();
       const crawlFree = new Map<string, number>();
       if (this.options.hasGroups) {
-        for (const j of jobs) {
+        for (const j of publishJobs) {
           const gid = j.options.groupId;
           if (!gid || groupMetas.has(gid)) continue;
           const gMeta = decodeJson<GroupMeta>(await tn.get(ks.groupMeta(gid)));
@@ -470,16 +786,17 @@ export class NuQFdbQueue<JobData = any, JobReturnValue = any> {
       let keyGranted = 0;
       const crawlAcquired = new Map<string, number>();
 
-      for (const j of jobs) {
+      for (const j of publishJobs) {
         const gid = j.options.groupId;
         const gMeta = gid ? groupMetas.get(gid) : null;
-        const groupLive = !!gMeta && gMeta.s === "active";
+        const groupAccounted = !!gMeta && !!gid && gMeta.s !== "completed";
         const gated = gate.teamLimit !== null && !j.options.bypassGate;
-        const crawlGated = gated && !!gid && groupLive && crawlFree.has(gid!);
+        const crawlGated =
+          gated && !!gid && gMeta?.s === "active" && crawlFree.has(gid!);
         const keyGated = gated && keyId !== null;
         const countable =
           this.options.hasGroups &&
-          groupLive &&
+          groupAccounted &&
           (j.data as any)?.mode === "single_urls";
 
         let flags = 0;
@@ -489,7 +806,7 @@ export class NuQFdbQueue<JobData = any, JobReturnValue = any> {
         if (j.options.listenable) flags |= F_LISTENABLE;
         if ((j.data as any)?.zeroDataRetention) flags |= F_ZDR;
         if (countable) flags |= F_COUNTABLE;
-        if (groupLive) flags |= F_GACC;
+        if (groupAccounted) flags |= F_GACC;
 
         const timesOutAt = gated ? j.options.timesOutAt?.getTime() : undefined;
         const entry: QueueEntry = {
@@ -514,9 +831,6 @@ export class NuQFdbQueue<JobData = any, JobReturnValue = any> {
           dc: j.dataChunks.length,
         };
         tn.set(ks.jobMeta(j.id), encodeJson(meta));
-        j.dataChunks.forEach((chunk, ci) =>
-          tn.set(ks.jobData(j.id, ci), chunk),
-        );
 
         let placedStatus: NuqFdbJobStatus;
         if (!gated) {
@@ -558,22 +872,16 @@ export class NuQFdbQueue<JobData = any, JobReturnValue = any> {
           }
         }
 
-        if (groupLive && gid) {
+        await alignQueueMetricStatus(tn, ks, j.id);
+        if (groupAccounted && gid) {
           tn.add(ks.groupRemaining(gid), ONE);
           setGroupJobIndex(tn, ks, gid, j.id, countable, placedStatus);
           if (countable) bumpGroupStatusCount(tn, ks, gid, placedStatus, 1);
+          if (gMeta?.s === "cancelled") {
+            tn.set(ks.taskGroupCancel(gid), EMPTY);
+          }
         }
-
-        out.push({
-          backend: "fdb",
-          id: j.id,
-          status: placedStatus === "pending" ? "backlog" : "queued",
-          createdAt: new Date(now),
-          priority: entry.p,
-          data: j.data,
-          ownerId: entry.o || undefined,
-          groupId: gid,
-        });
+        tn.clear(ks.ingestJob(op, j.id));
       }
 
       if (granted > 0 && ownerId !== null) {
@@ -586,8 +894,128 @@ export class NuQFdbQueue<JobData = any, JobReturnValue = any> {
         tn.add(ks.groupCrawlActive(gid), encodeI64(n));
       }
 
-      return out;
+      const releasedReservations = publishJobs.filter(
+        job => gate.teamLimit !== null && !job.options.bypassGate,
+      ).length;
+      if (releasedReservations > 0 && ownerId !== null) {
+        tn.add(
+          ks.teamIngestReserved(ownerId),
+          encodeI64(-releasedReservations),
+        );
+      }
+      tn.set(
+        ks.ingest(op),
+        encodeJson({
+          ...opMeta,
+          r: Math.max(0, opMeta.r - releasedReservations),
+        } satisfies IngestMeta),
+      );
     });
+  }
+
+  private async abortIngest(op: string): Promise<void> {
+    const ks = this.ks;
+    for (;;) {
+      const done = await this.db.doTn(async tn => {
+        const opMeta = decodeJson<IngestMeta>(await tn.get(ks.ingest(op)));
+        if (!opMeta) return true;
+        const jobsRange = ks.ingestJobRange(op);
+        const jobs = await tn.getRangeAll(jobsRange.begin, jobsRange.end, {
+          limit: 200,
+        });
+        for (const [jobKey] of jobs) {
+          const id = ks.unpackId(jobKey as Buffer);
+          const status = decodeJson<JobStatusRecord>(
+            await tn.get(ks.jobStatus(id)),
+          );
+          if (status?.s === "ingesting" && status.op === op) {
+            deleteJobRecords(tn, ks, id);
+            await alignQueueMetricStatus(tn, ks, id);
+          }
+          tn.clear(jobKey as Buffer);
+        }
+        if (jobs.length > 0) return false;
+        const groupsRange = ks.ingestGroupRange(op);
+        const groups = await tn.getRangeAll(
+          groupsRange.begin,
+          groupsRange.end,
+          { limit: 200 },
+        );
+        for (const [groupKey] of groups) {
+          const gid = ks.unpackId(groupKey as Buffer);
+          tn.clear(groupKey as Buffer);
+          tn.add(ks.groupIngestCount(gid), MINUS_ONE);
+          tn.set(ks.taskGroupFinish(gid), EMPTY);
+        }
+        if (groups.length > 0) return false;
+        if (opMeta.r > 0 && opMeta.o) {
+          tn.add(ks.teamIngestReserved(opMeta.o), encodeI64(-opMeta.r));
+        }
+        tn.clear(ks.ingestExpiry(opMeta.x, op));
+        tn.clear(ks.ingest(op));
+        return true;
+      });
+      if (done) return;
+    }
+  }
+
+  private async finalizeIngest(op: string): Promise<void> {
+    const ks = this.ks;
+    for (let attempt = 0; ; attempt++) {
+      const state = await this.db.doTn(async tn => {
+        const opMeta = decodeJson<IngestMeta>(await tn.get(ks.ingest(op)));
+        if (!opMeta) return "done" as const;
+        const jobsRange = ks.ingestJobRange(op);
+        // This must be a conflicting range read: a concurrent persister may
+        // not insert a manifest after we decide the operation is empty.
+        const remainingJobs = await tn.getRangeAll(
+          jobsRange.begin,
+          jobsRange.end,
+          { limit: 200 },
+        );
+        if (remainingJobs.length > 0) {
+          let waiting = false;
+          for (const [jobKey] of remainingJobs) {
+            const id = ks.unpackId(jobKey as Buffer);
+            const status = decodeJson<JobStatusRecord>(
+              await tn.get(ks.jobStatus(id)),
+            );
+            if (status?.s === "ingesting" && status.op === op) {
+              waiting = true;
+            } else {
+              // Defensive cleanup for a retry that stopped after persisting a
+              // plan for an already-existing job.
+              tn.clear(jobKey as Buffer);
+            }
+          }
+          return waiting ? ("waiting" as const) : ("progress" as const);
+        }
+        const groupRange = ks.ingestGroupRange(op);
+        const groups = await tn.getRangeAll(groupRange.begin, groupRange.end, {
+          limit: 200,
+        });
+        for (const [groupKey] of groups) {
+          const gid = ks.unpackId(groupKey as Buffer);
+          tn.clear(groupKey as Buffer);
+          tn.add(ks.groupIngestCount(gid), MINUS_ONE);
+          tn.set(ks.taskGroupFinish(gid), EMPTY);
+        }
+        if (groups.length > 0) return "progress" as const;
+        if (opMeta.r > 0 && opMeta.o) {
+          tn.add(ks.teamIngestReserved(opMeta.o), encodeI64(-opMeta.r));
+        }
+        tn.clear(ks.ingestExpiry(opMeta.x, op));
+        tn.clear(ks.ingest(op));
+        return "done" as const;
+      });
+      if (state === "done") return;
+      if (state === "waiting") {
+        if (attempt >= 100) {
+          throw new IngestBusyError(`Ingest ${op} is still being published`);
+        }
+        await new Promise(resolve => setTimeout(resolve, 25));
+      }
+    }
   }
 
   // === Take (worker dequeue)
@@ -610,7 +1038,7 @@ export class NuQFdbQueue<JobData = any, JobReturnValue = any> {
     };
     // blind random probes win at high occupancy (no coordination, conflicts
     // spread across shards); the occupancy scan below covers the sparse case
-    const PROBES = 4;
+    const PROBES = Math.min(4, READY_SHARDS);
     const tried = new Set<number>();
     let randomDropped = 0;
     while (tried.size < PROBES) {
@@ -627,7 +1055,6 @@ export class NuQFdbQueue<JobData = any, JobReturnValue = any> {
         randomDropped++;
         continue;
       }
-      this.leaseExps.set(result.id, result.leaseExpiresAt!.getTime());
       logger.debug("NuQ FDB dequeue attempt", {
         canonicalLog: "nuq-fdb/dequeue",
         queueName: this.queueName,
@@ -681,7 +1108,6 @@ export class NuQFdbQueue<JobData = any, JobReturnValue = any> {
           fallbackDropped++;
           continue;
         }
-        this.leaseExps.set(result.id, result.leaseExpiresAt!.getTime());
         logger.debug("NuQ FDB dequeue attempt", {
           canonicalLog: "nuq-fdb/dequeue",
           queueName: this.queueName,
@@ -723,9 +1149,14 @@ export class NuQFdbQueue<JobData = any, JobReturnValue = any> {
     operation?: { timeoutMs: number },
   ): Promise<NuQFdbJob<JobData, JobReturnValue> | "empty" | "dropped"> {
     const ks = this.ks;
-    return await this.db.doTn(async tn => {
+    const op = randomUUID();
+    const claimTransaction = async (
+      tn: Transaction,
+    ): Promise<NuQFdbJob<JobData, JobReturnValue> | "empty" | "dropped"> => {
       if (operation)
         tn.setOption(TransactionOptionCode.Timeout, operation.timeoutMs);
+      const prior = decodeJson<ClaimRecord>(await tn.get(ks.claim(op)));
+      if (prior) return await this.readClaimedJob(tn, prior);
       const txc = newTxContext();
       const now = Date.now();
       const range = ks.readyShardRange(shard);
@@ -738,14 +1169,14 @@ export class NuQFdbQueue<JobData = any, JobReturnValue = any> {
 
       const st = decodeJson<JobStatusRecord>(await tn.get(ks.jobStatus(e.i)));
       if (!st || st.s !== "queued") {
-        // tombstone (removed job) -- slots were released by the remover
+        // Tombstone (removed job) -- slots were released by the remover. The
+        // placement GC still participates in the metric control protocol.
+        await alignQueueMetricStatus(tn, ks, e.i);
         return "dropped";
       }
 
       if (e.g && this.options.hasGroups) {
-        const gMeta = decodeJson<GroupMeta>(
-          await tn.snapshot().get(ks.groupMeta(e.g)),
-        );
+        const gMeta = decodeJson<GroupMeta>(await tn.get(ks.groupMeta(e.g)));
         if (gMeta && gMeta.s === "cancelled") {
           // lazy cancellation: this job dies at take time
           if (e.f & F_GACC) {
@@ -761,6 +1192,7 @@ export class NuQFdbQueue<JobData = any, JobReturnValue = any> {
             }
           }
           deleteJobRecords(tn, ks, e.i);
+          await alignQueueMetricStatus(tn, ks, e.i);
           await releaseSlotsAndPromote(
             tn,
             ks,
@@ -776,7 +1208,10 @@ export class NuQFdbQueue<JobData = any, JobReturnValue = any> {
       const meta = decodeJson<JobMeta>(
         await tn.snapshot().get(ks.jobMeta(e.i)),
       );
-      if (!meta) return "dropped";
+      if (!meta) {
+        await alignQueueMetricStatus(tn, ks, e.i);
+        return "dropped";
+      }
       const dataRange = ks.jobDataRange(e.i);
       const dataParts = await tn
         .snapshot()
@@ -790,6 +1225,12 @@ export class NuQFdbQueue<JobData = any, JobReturnValue = any> {
       const rec: JobStatusRecord = { s: "active", l: lock, e: exp, st: st.st };
       tn.set(ks.jobStatus(e.i), encodeJson(rec));
       tn.set(ks.lease(timeBucket(e.i), exp, e.i), encodeJson({ l: lock }));
+      tn.set(
+        ks.claim(op),
+        encodeJson({ i: e.i, l: lock, e: exp } satisfies ClaimRecord),
+      );
+      tn.set(ks.claimExpiry(exp, op), EMPTY);
+      await alignQueueMetricStatus(tn, ks, e.i);
       if (e.g && e.f & F_COUNTABLE) {
         bumpGroupStatusCount(tn, ks, e.g, "queued", -1);
         bumpGroupStatusCount(tn, ks, e.g, "active", 1);
@@ -808,7 +1249,87 @@ export class NuQFdbQueue<JobData = any, JobReturnValue = any> {
         ownerId: meta.o || undefined,
         groupId: meta.g,
       };
-    });
+    };
+    let result = await this.db.doTn(claimTransaction);
+    if (this.options.testHooks?.simulateClaimCommitUnknown?.()) {
+      // Model the binding retrying our closure after the first commit became
+      // ambiguous. The operation marker must return the original claim.
+      result = await this.db.doTn(claimTransaction);
+    }
+    // A definite result may return immediately. Marker cleanup is best-effort,
+    // bounded per queue, and has no wait queue; durable claimExpiry is the
+    // fallback whenever the cap, timeout, error, or process exit wins.
+    if (result !== "empty" && result !== "dropped") {
+      this.scheduleClaimCleanup(op);
+    }
+    return result;
+  }
+
+  private scheduleClaimCleanup(op: string): void {
+    if (this.claimCleanupInFlight >= CLAIM_CLEANUP_MAX_IN_FLIGHT) return;
+    this.claimCleanupInFlight++;
+    const cleanup = async () => {
+      await this.db.doTn(async tn => {
+        tn.setOption(TransactionOptionCode.Timeout, CLAIM_CLEANUP_TIMEOUT_MS);
+        tn.setOption(
+          TransactionOptionCode.RetryLimit,
+          CLAIM_CLEANUP_RETRY_LIMIT,
+        );
+        tn.setOption(
+          TransactionOptionCode.MaxRetryDelay,
+          CLAIM_CLEANUP_MAX_RETRY_DELAY_MS,
+        );
+        const marker = decodeJson<ClaimRecord>(await tn.get(this.ks.claim(op)));
+        if (marker) tn.clear(this.ks.claimExpiry(marker.e, op));
+        tn.clear(this.ks.claim(op));
+      });
+    };
+    const run = this.options.testHooks?.runClaimCleanup;
+    void (run ? run(cleanup) : cleanup())
+      .catch(error => {
+        _logger.debug("NuQ FDB claim cleanup deferred to sweeper", {
+          canonicalLog: "nuq-fdb/claim_cleanup_deferred",
+          queueName: this.queueName,
+          error,
+        });
+      })
+      .finally(() => {
+        this.claimCleanupInFlight--;
+      });
+  }
+
+  public getClaimCleanupInFlightForTest(): number {
+    return this.claimCleanupInFlight;
+  }
+
+  private async readClaimedJob(
+    tn: Transaction,
+    claim: ClaimRecord,
+  ): Promise<NuQFdbJob<JobData, JobReturnValue> | "dropped"> {
+    const meta = decodeJson<JobMeta>(await tn.get(this.ks.jobMeta(claim.i)));
+    const status = decodeJson<JobStatusRecord>(
+      await tn.get(this.ks.jobStatus(claim.i)),
+    );
+    if (!meta || status?.s !== "active" || status.l !== claim.l) {
+      return "dropped";
+    }
+    const range = this.ks.jobDataRange(claim.i);
+    const parts = await tn.getRangeAll(range.begin, range.end);
+    const data = JSON.parse(
+      Buffer.concat(parts.map(([, value]) => value as Buffer)).toString("utf8"),
+    );
+    return {
+      backend: "fdb",
+      id: claim.i,
+      status: "active",
+      createdAt: new Date(meta.c),
+      priority: meta.p,
+      data,
+      lock: claim.l,
+      leaseExpiresAt: new Date(claim.e),
+      ownerId: meta.o || undefined,
+      groupId: meta.g,
+    };
   }
 
   // === Leases
@@ -819,37 +1340,28 @@ export class NuQFdbQueue<JobData = any, JobReturnValue = any> {
     logger: Logger = _logger,
     operation?: { timeoutMs: number },
   ): Promise<boolean> {
-    const oldExp = this.leaseExps.get(id);
-    if (oldExp === undefined) return false;
     const ks = this.ks;
+    // Stable across a commit_unknown_result retry of this renewal.
     const newExp = Date.now() + (this.options.leaseMs ?? LEASE_MS);
-    try {
-      await this.db.doTn(async tn => {
-        if (operation)
-          tn.setOption(TransactionOptionCode.Timeout, operation.timeoutMs);
-        // blind writes only; the sweeper validates the lock before reaping
-        tn.clear(ks.lease(timeBucket(id), oldExp, id));
-        tn.set(ks.lease(timeBucket(id), newExp, id), encodeJson({ l: lock }));
-        // the lease index moved, keep the status record's expiry in sync for
-        // observability; only the worker holding the lock writes this
-        // This must be a conflictful read. If the sweeper requeues between the
-        // read and commit, FDB retries us and the lock check fences this worker
-        // instead of recreating an active lease beside a ready queue entry.
-        const st = decodeJson<JobStatusRecord>(await tn.get(ks.jobStatus(id)));
-        if (!st || st.s !== "active" || st.l !== lock) {
-          throw new LockLostError();
-        }
-        tn.set(ks.jobStatus(id), encodeJson({ ...st, e: newExp }));
-      });
-    } catch (e) {
-      if (e instanceof LockLostError) {
-        this.leaseExps.delete(id);
-        return false;
+    return await this.db.doTn(async tn => {
+      if (operation)
+        tn.setOption(TransactionOptionCode.Timeout, operation.timeoutMs);
+      // A normal status read makes renew conflict with finish, cancellation and
+      // reap. The status' lock/expiry, not worker-local memory, is authoritative.
+      const st = decodeJson<JobStatusRecord>(await tn.get(ks.jobStatus(id)));
+      if (!st || st.s !== "active" || st.l !== lock) return false;
+      if (st.e !== undefined) {
+        tn.clear(ks.lease(timeBucket(id), st.e, id));
       }
-      throw e;
-    }
-    this.leaseExps.set(id, newExp);
-    return true;
+      const effectiveExp = Math.max(newExp, st.e ?? 0);
+      tn.set(
+        ks.lease(timeBucket(id), effectiveExp, id),
+        encodeJson({ l: lock }),
+      );
+      tn.set(ks.jobStatus(id), encodeJson({ ...st, e: effectiveExp }));
+      await alignQueueMetricStatus(tn, ks, id);
+      return true;
+    });
   }
 
   // === Finish / fail
@@ -896,12 +1408,21 @@ export class NuQFdbQueue<JobData = any, JobReturnValue = any> {
       const txc = newTxContext();
       const now = Date.now();
       const st = decodeJson<JobStatusRecord>(await tn.get(ks.jobStatus(id)));
-      if (!st) return false;
+      if (!st) {
+        await alignQueueMetricStatus(tn, ks, id);
+        return false;
+      }
       // idempotency: a commit_unknown_result retry lands here
-      if (st.s === outcome && st.l === lock) return true;
+      if (st.s === outcome && st.l === lock) {
+        await alignQueueMetricStatus(tn, ks, id);
+        return true;
+      }
       if (st.s !== "active" || st.l !== lock) return false;
       const meta = decodeJson<JobMeta>(await tn.get(ks.jobMeta(id)));
-      if (!meta) return false;
+      if (!meta) {
+        await alignQueueMetricStatus(tn, ks, id);
+        return false;
+      }
 
       const rec: JobStatusRecord = {
         s: outcome,
@@ -919,16 +1440,20 @@ export class NuQFdbQueue<JobData = any, JobReturnValue = any> {
           !(meta.f & F_ZDR)
         ) {
           const buf = Buffer.from(JSON.stringify(returnvalue), "utf8");
-          chunkBuffer(buf, DATA_CHUNK_BYTES).forEach((chunk, ci) =>
-            tn.set(ks.jobReturnvalue(id, ci), chunk),
-          );
+          if (buf.length <= MAX_INLINE_RETURNVALUE_BYTES) {
+            chunkBuffer(buf, DATA_CHUNK_BYTES).forEach((chunk, ci) =>
+              tn.set(ks.jobReturnvalue(id, ci), chunk),
+            );
+          }
         }
       } else {
         tn.set(
           ks.jobFailedReason(id),
-          Buffer.from((failedReason ?? "").slice(0, DATA_CHUNK_BYTES), "utf8"),
+          truncateUtf8(failedReason ?? "", MAX_FAILED_REASON_BYTES),
         );
       }
+
+      await alignQueueMetricStatus(tn, ks, id);
 
       // Shed job input data early on cloud (results live in GCS) and always for
       // ZDR. Group members are exempt on the plain cloud path: the crawl-finish
@@ -981,7 +1506,6 @@ export class NuQFdbQueue<JobData = any, JobReturnValue = any> {
       }
       return true;
     });
-    if (ok) this.leaseExps.delete(id);
     return ok;
   }
 
@@ -1069,11 +1593,15 @@ export class NuQFdbQueue<JobData = any, JobReturnValue = any> {
   ): Promise<NuQFdbJob<JobData, JobReturnValue>[]> {
     if (ids.length === 0) return [];
     const out: NuQFdbJob<JobData, JobReturnValue>[] = [];
-    const BATCH = 100;
-    for (let i = 0; i < ids.length; i += BATCH) {
-      const batch = ids.slice(i, i + BATCH);
-      const jobs = await this.db.doTn(async tn =>
-        Promise.all(batch.map(id => this.readJob(tn, id))),
+    // A job may contain ~8MiB input and ~8MiB inline output. Keep each job in
+    // its own transaction, with bounded parallelism, rather than materializing
+    // up to 100 giant jobs under one read version/heap burst.
+    const CONCURRENCY = 16;
+    for (let i = 0; i < ids.length; i += CONCURRENCY) {
+      const jobs = await Promise.all(
+        ids
+          .slice(i, i + CONCURRENCY)
+          .map(id => this.db.doTn(async tn => this.readJob(tn, id))),
       );
       out.push(
         ...jobs.filter(
@@ -1112,9 +1640,15 @@ export class NuQFdbQueue<JobData = any, JobReturnValue = any> {
       const txc = newTxContext();
       const now = Date.now();
       const st = decodeJson<JobStatusRecord>(await tn.get(ks.jobStatus(id)));
-      if (!st || st.s === "cancelled") return false;
+      if (!st || st.s === "cancelled") {
+        await alignQueueMetricStatus(tn, ks, id);
+        return false;
+      }
       const meta = decodeJson<JobMeta>(await tn.get(ks.jobMeta(id)));
-      if (!meta) return false;
+      if (!meta) {
+        await alignQueueMetricStatus(tn, ks, id);
+        return false;
+      }
       const entry: QueueEntry = {
         i: id,
         o: meta.o,
@@ -1158,6 +1692,7 @@ export class NuQFdbQueue<JobData = any, JobReturnValue = any> {
           tn.set(ks.taskGroupFinish(meta.g!), EMPTY);
         }
         deleteJobRecords(tn, ks, id);
+        await alignQueueMetricStatus(tn, ks, id);
       } else if (st.s === "queued" || st.s === "active") {
         tn.set(
           ks.jobStatus(id),
@@ -1189,6 +1724,7 @@ export class NuQFdbQueue<JobData = any, JobReturnValue = any> {
           ),
           EMPTY,
         );
+        await alignQueueMetricStatus(tn, ks, id);
       } else {
         // terminal: drop the records, like the PG row delete
         if (accounted) {
@@ -1196,6 +1732,7 @@ export class NuQFdbQueue<JobData = any, JobReturnValue = any> {
           if (countable) bumpGroupStatusCount(tn, ks, meta.g!, st.s, -1);
         }
         deleteJobRecords(tn, ks, id);
+        await alignQueueMetricStatus(tn, ks, id);
       }
       return true;
     });
@@ -1205,8 +1742,14 @@ export class NuQFdbQueue<JobData = any, JobReturnValue = any> {
     ids: string[],
     logger: Logger = _logger,
   ): Promise<void> {
-    for (const id of ids) {
-      await this.removeJob(id, logger);
+    const uniqueIds = [...new Set(ids)];
+    const CONCURRENCY = 16;
+    for (let i = 0; i < uniqueIds.length; i += CONCURRENCY) {
+      await Promise.all(
+        uniqueIds
+          .slice(i, i + CONCURRENCY)
+          .map(id => this.removeJob(id, logger)),
+      );
     }
   }
 
@@ -1311,35 +1854,31 @@ export class NuQFdbQueue<JobData = any, JobReturnValue = any> {
   ): Promise<NuQFdbJob<JobData, JobReturnValue> | null> {
     const ks = this.ks;
     const owner = normalizeOwnerId(ownerId);
-    const candidateId = await this.db.doTn(async tn => {
-      const r = ks.groupJobRange(groupId);
-      let begin: Buffer | FdbKeySelector = r.begin;
-      // scan for the first countable (single_urls) member
-      for (let scanned = 0; scanned < 2000; ) {
-        const batch = await tn
-          .snapshot()
-          .getRangeAll(begin as any, r.end, { limit: 200 });
-        if (batch.length === 0) return null;
-        for (const [key, value] of batch) {
-          const gj = decodeJson<GroupJobIndexValue>(value as Buffer);
-          if (gj?.m === 1) return ks.unpackId(key as Buffer);
-        }
-        scanned += batch.length;
-        const lastKey = batch[batch.length - 1][0] as Buffer;
-        begin = {
-          key: lastKey,
-          orEqual: true,
-          offset: 1,
-          _isKeySelector: true,
-        };
+    const range = ks.groupJobRange(groupId);
+    let begin: Buffer | FdbKeySelector = range.begin;
+    // Page across transactions so a deep group cannot hit FDB's five-second
+    // transaction lifetime or silently stop after an arbitrary member count.
+    while (true) {
+      const page = await this.db.doTn(async tn =>
+        tn.snapshot().getRangeAll(begin as any, range.end, { limit: 200 }),
+      );
+      if (page.length === 0) return null;
+      for (const [key, value] of page) {
+        const gj = decodeJson<GroupJobIndexValue>(value as Buffer);
+        if (gj?.m !== 1) continue;
+        const job = await this.getJob(ks.unpackId(key as Buffer), logger);
+        if (!job) continue;
+        if (owner !== null && job.ownerId !== owner) return null;
+        return job;
       }
-      return null;
-    });
-    if (!candidateId) return null;
-    const job = await this.getJob(candidateId, logger);
-    if (!job) return null;
-    if (owner !== null && job.ownerId !== owner) return null;
-    return job;
+      const lastKey = page[page.length - 1][0] as Buffer;
+      begin = {
+        key: lastKey,
+        orEqual: true,
+        offset: 1,
+        _isKeySelector: true,
+      };
+    }
   }
 
   public async getCrawlJobsForListing(
@@ -1349,15 +1888,31 @@ export class NuQFdbQueue<JobData = any, JobReturnValue = any> {
     logger: Logger = _logger,
   ): Promise<NuQFdbJob<JobData, JobReturnValue>[]> {
     const ks = this.ks;
-    const ids = await this.db.doTn(async tn => {
-      const r = ks.groupDoneRange(groupId);
-      const rows = await tn
-        .snapshot()
-        .getRangeAll(r.begin, r.end, { limit: offset + limit });
-      return rows
-        .slice(offset)
-        .map(([, value]) => (value as Buffer).toString("utf8"));
-    });
+    const range = ks.groupDoneRange(groupId);
+    const ids: string[] = [];
+    let begin: Buffer | FdbKeySelector = range.begin;
+    let skipped = 0;
+    while (ids.length < limit) {
+      const pageSize = Math.min(500, offset - skipped + (limit - ids.length));
+      const rows = await this.db.doTn(async tn =>
+        tn.snapshot().getRangeAll(begin as any, range.end, {
+          limit: Math.max(1, pageSize),
+        }),
+      );
+      if (rows.length === 0) break;
+      for (const [, value] of rows) {
+        if (skipped < offset) skipped++;
+        else if (ids.length < limit)
+          ids.push((value as Buffer).toString("utf8"));
+      }
+      const lastKey = rows[rows.length - 1][0] as Buffer;
+      begin = {
+        key: lastKey,
+        orEqual: true,
+        offset: 1,
+        _isKeySelector: true,
+      };
+    }
     const jobs = await this.getJobs(ids, logger);
     const byId = new Map(jobs.map(j => [j.id, j]));
     return ids
@@ -1383,19 +1938,39 @@ export class NuQFdbQueue<JobData = any, JobReturnValue = any> {
 
   public async getTeamActiveCounts(): Promise<Map<string, number>> {
     const ks = this.ks;
-    return await this.db.doTn(async tn => {
-      const r = ks.teamActiveIndexRange();
-      const rows = await tn.snapshot().getRangeAll(r.begin, r.end);
-      const counts = new Map<string, number>();
-      for (const [key, value] of rows) {
-        const parts = ks.unpack(key as Buffer);
-        const teamId = parts[3];
-        if (typeof teamId !== "string") continue;
-        const count = Math.max(0, decodeI64(value as Buffer));
-        if (count > 0) counts.set(teamId, count);
-      }
-      return counts;
-    });
+    const range = ks.teamActiveIndexRange();
+    const counts = new Map<string, number>();
+    let begin: Buffer | FdbKeySelector = range.begin;
+    while (true) {
+      const page = await this.db.doTn(async tn => {
+        const rows = await tn.getRangeAll(begin as any, range.end, {
+          limit: 500,
+        });
+        const values: Array<[string, number]> = [];
+        for (const [key] of rows) {
+          const parts = ks.unpack(key as Buffer);
+          const teamId = parts[3];
+          if (typeof teamId !== "string") continue;
+          const count = Math.max(
+            0,
+            decodeI64(await tn.get(ks.teamActive(teamId))),
+          );
+          if (count > 0) values.push([teamId, count]);
+          else tn.clear(key as Buffer); // clean legacy zero-valued index rows
+        }
+        return { rows, values };
+      });
+      for (const [teamId, count] of page.values) counts.set(teamId, count);
+      if (page.rows.length < 500) break;
+      const lastKey = page.rows[page.rows.length - 1][0] as Buffer;
+      begin = {
+        key: lastKey,
+        orEqual: true,
+        offset: 1,
+        _isKeySelector: true,
+      };
+    }
+    return counts;
   }
 
   public async getTeamPendingCount(teamId: string): Promise<number> {
@@ -1409,58 +1984,201 @@ export class NuQFdbQueue<JobData = any, JobReturnValue = any> {
     );
   }
 
-  public async getWorkerLoadCount(): Promise<number> {
-    const ks = this.ks;
+  private decodeMetricControl(
+    value: Buffer | undefined | null,
+  ): NuqFdbMetricControl | null {
+    const control = decodeJson<NuqFdbMetricControl>(value);
+    if (!control) return null;
+    if (
+      control.format !== 3 ||
+      control.shards !== METRIC_SHARDS ||
+      !control.generation ||
+      !["backfill-jobs", "backfill-ledger", "ready"].includes(control.phase)
+    ) {
+      throw new Error("Unsupported NuQ FDB metric control record");
+    }
+    return control;
+  }
+
+  // Explicit release-B activation API. Concurrent callers converge on the one
+  // generation that wins the normal control-key conflict.
+  public async beginMetricCounterBackfill(): Promise<NuqFdbMetricControl> {
+    const requested: NuqFdbMetricControl = {
+      format: 3,
+      generation: randomUUID(),
+      phase: "backfill-jobs",
+      shards: METRIC_SHARDS,
+    };
     return await this.db.doTn(async tn => {
-      const [readyRows, activeRows] = await Promise.all([
-        tn
-          .snapshot()
-          .getRangeAll(
-            ks.readyShardCountRange().begin,
-            ks.readyShardCountRange().end,
-          ),
-        tn.snapshot().getRangeAll(ks.leaseRange().begin, ks.leaseRange().end),
-      ]);
-      const queued = readyRows.reduce(
-        (sum, [, value]) => sum + Math.max(0, decodeI64(value as Buffer)),
-        0,
+      const current = this.decodeMetricControl(
+        await tn.get(this.ks.metricControl()),
       );
-      return queued + activeRows.length;
+      if (current) return current;
+      tn.set(this.ks.metricControl(), encodeJson(requested));
+      return requested;
     });
+  }
+
+  public async getMetricCounterBackfillStatus(): Promise<NuqFdbMetricControl | null> {
+    return await this.db.doTn(async tn =>
+      this.decodeMetricControl(
+        await tn.snapshot().get(this.ks.metricControl()),
+      ),
+    );
+  }
+
+  // Deployment rollback must call this before any pre-protocol writer returns.
+  // Old generation keys intentionally remain isolated for later bounded GC.
+  public async invalidateMetricCounterGeneration(
+    expectedGeneration?: string,
+  ): Promise<boolean> {
+    return await this.db.doTn(async tn => {
+      const control = this.decodeMetricControl(
+        await tn.get(this.ks.metricControl()),
+      );
+      if (!control) return true;
+      if (
+        expectedGeneration !== undefined &&
+        control.generation !== expectedGeneration
+      ) {
+        return false;
+      }
+      tn.clear(this.ks.metricControl());
+      return true;
+    });
+  }
+
+  // Advances one durable raw-key page. Job discovery intentionally scans every
+  // legacy job key so status-only tombstones and jobs with very large payloads
+  // are handled exactly. The second, separately enumerable ledger pass removes
+  // orphans before READY. Cursor, all alignments, and phase change are atomic.
+  public async backfillMetricCounts(
+    batchSize = 100,
+    activate = false,
+  ): Promise<boolean> {
+    if (activate) await this.beginMetricCounterBackfill();
+    const pageSize = Math.max(1, batchSize);
+    return await this.db.doTn(async tn => {
+      const control = this.decodeMetricControl(
+        await tn.get(this.ks.metricControl()),
+      );
+      if (!control) return false;
+      if (control.phase === "ready") return true;
+
+      if (control.phase === "backfill-jobs") {
+        const range = this.ks.jobRootRange();
+        const cursor = await tn.get(
+          this.ks.metricJobsCursor(control.generation),
+        );
+        const begin = cursor
+          ? Buffer.concat([cursor as Buffer, Buffer.from([0])])
+          : range.begin;
+        const rows = await tn.getRangeAll(begin, range.end, {
+          limit: pageSize,
+        });
+        const ids = new Set<string>();
+        for (const [key] of rows) {
+          const parts = this.ks.unpack(key as Buffer);
+          if (parts[2] === "j" && typeof parts[3] === "string") {
+            ids.add(parts[3]);
+          }
+        }
+        for (const id of ids) {
+          await alignQueueMetricStatus(tn, this.ks, id);
+        }
+        if (rows.length < pageSize) {
+          tn.clear(this.ks.metricJobsCursor(control.generation));
+          tn.set(
+            this.ks.metricControl(),
+            encodeJson({ ...control, phase: "backfill-ledger" }),
+          );
+        } else {
+          tn.set(
+            this.ks.metricJobsCursor(control.generation),
+            rows[rows.length - 1][0] as Buffer,
+          );
+        }
+        return false;
+      }
+
+      const range = this.ks.metricLedgerRange(control.generation);
+      const cursor = await tn.get(
+        this.ks.metricLedgerCursor(control.generation),
+      );
+      const begin = cursor
+        ? Buffer.concat([cursor as Buffer, Buffer.from([0])])
+        : range.begin;
+      const rows = await tn.getRangeAll(begin, range.end, {
+        limit: pageSize,
+      });
+      for (const [key] of rows) {
+        await alignQueueMetricStatus(
+          tn,
+          this.ks,
+          this.ks.unpackId(key as Buffer),
+        );
+      }
+      if (rows.length < pageSize) {
+        tn.clear(this.ks.metricLedgerCursor(control.generation));
+        tn.set(
+          this.ks.metricControl(),
+          encodeJson({ ...control, phase: "ready" }),
+        );
+        return true;
+      }
+      tn.set(
+        this.ks.metricLedgerCursor(control.generation),
+        rows[rows.length - 1][0] as Buffer,
+      );
+      return false;
+    });
+  }
+
+  public async getWorkerLoadCount(): Promise<number> {
+    const counts = await this.getMetricCounts();
+    return counts.queued + counts.active;
   }
 
   private async getMetricCounts(): Promise<Record<NuQJobStatusCompat, number>> {
     const ks = this.ks;
     return await this.db.doTn(async tn => {
-      const [readyRows, activeRows, teamRows] = await Promise.all([
-        tn
-          .snapshot()
-          .getRangeAll(
-            ks.readyShardCountRange().begin,
-            ks.readyShardCountRange().end,
-          ),
-        tn.snapshot().getRangeAll(ks.leaseRange().begin, ks.leaseRange().end),
-        tn.snapshot().getRangeAll(ks.teamRange().begin, ks.teamRange().end),
-      ]);
-
-      const queued = readyRows.reduce(
-        (sum, [, value]) => sum + Math.max(0, decodeI64(value as Buffer)),
-        0,
+      const snapshot = tn.snapshot();
+      // READY has one control read plus exactly 5x32 generation-scoped point
+      // reads. No job, ledger, placement, lease, or team range is touched.
+      const control = this.decodeMetricControl(
+        await snapshot.get(ks.metricControl()),
       );
-
-      let backlog = 0;
-      for (const [key, value] of teamRows) {
-        const parts = ks.unpack(key as Buffer);
-        if (parts[4] !== "pend") continue;
-        backlog += Math.max(0, decodeI64(value as Buffer));
+      if (!control || control.phase !== "ready") {
+        throw new NuqFdbMetricsInitializingError(
+          "NuQ FDB metrics are initializing",
+        );
       }
-
+      const rows = await Promise.all(
+        METRIC_STATUSES.map(status =>
+          Promise.all(
+            Array.from({ length: METRIC_SHARDS }, (_, shard) =>
+              snapshot.get(ks.metricCount(control.generation, status, shard)),
+            ),
+          ),
+        ),
+      );
+      const totals = new Map<NuqFdbMetricStatus, number>();
+      METRIC_STATUSES.forEach((status, index) => {
+        const total = rows[index].reduce(
+          (sum, value) => sum + decodeI64(value),
+          0,
+        );
+        if (!Number.isSafeInteger(total) || total < 0) {
+          throw new Error(`Corrupt NuQ FDB metric counter ${status}: ${total}`);
+        }
+        totals.set(status, total);
+      });
       return {
-        queued,
-        active: activeRows.length,
-        completed: 0,
-        failed: 0,
-        backlog,
+        queued: totals.get("queued")!,
+        active: totals.get("active")!,
+        completed: totals.get("completed")!,
+        failed: totals.get("failed")!,
+        backlog: totals.get("pending")!,
       };
     });
   }
@@ -1483,5 +2201,3 @@ export class NuQFdbQueue<JobData = any, JobReturnValue = any> {
       .join("\n")}\n`;
   }
 }
-
-class LockLostError extends Error {}
