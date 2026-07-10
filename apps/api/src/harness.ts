@@ -4,6 +4,7 @@ import { existsSync } from "fs";
 import * as net from "net";
 import { basename, join } from "path";
 import { HTML_TO_MARKDOWN_PATH } from "./natives";
+import { resolveNuqServiceTopology } from "./services/worker/nuq-service-topology";
 
 const childProcesses = new Set<ChildProcess>();
 const stopping = new WeakSet<ChildProcess>(); // processes we're intentionally stopping
@@ -46,6 +47,8 @@ interface Services {
   nuqWorkers: ProcessResult[];
   nuqPrefetchWorker?: ProcessResult;
   nuqReconcilerWorker?: ProcessResult;
+  nuqFdbMaintenanceWorker?: ProcessResult;
+  nuqFdbCrawlFinishedWorker?: ProcessResult;
   extractWorker?: ProcessResult;
   indexWorker?: ProcessResult;
   command?: ProcessResult;
@@ -116,8 +119,6 @@ const WORKER_PORT = config.WORKER_PORT;
 const EXTRACT_WORKER_PORT = config.EXTRACT_WORKER_PORT;
 const NUQ_WORKER_START_PORT = config.NUQ_WORKER_START_PORT;
 const NUQ_WORKER_COUNT = config.NUQ_WORKER_COUNT;
-const NUQ_PREFETCH_WORKER_PORT = NUQ_WORKER_START_PORT + NUQ_WORKER_COUNT;
-const NUQ_RECONCILER_WORKER_PORT = NUQ_PREFETCH_WORKER_PORT + 1;
 
 // PostgreSQL credentials (with defaults for backward compatibility)
 const POSTGRES_USER = config.POSTGRES_USER;
@@ -711,8 +712,15 @@ async function waitForFdb(
 }
 
 async function setupFdb(): Promise<Services["fdb"]> {
-  // FDB is only needed when the FDB queue backend is in play
-  if (config.NUQ_BACKEND !== "fdb" && !process.env.NUQ_FDB_TESTS) {
+  if (config.NUQ_BACKEND === "pg") return undefined;
+
+  // A cluster file without forced-FDB mode is the mixed/team-flag topology.
+  // It needs FDB consumers even though unflagged traffic continues to use PG.
+  if (
+    config.NUQ_BACKEND !== "fdb" &&
+    !config.FDB_CLUSTER_FILE &&
+    !process.env.NUQ_FDB_TESTS
+  ) {
     return undefined;
   }
 
@@ -816,14 +824,28 @@ async function installDependencies() {
 }
 
 async function startServices(command?: string[]): Promise<Services> {
-  // Setup NUQ PostgreSQL container if needed
-  const nuqPostgres = await setupNuqPostgres();
+  const requestedTopology = resolveNuqServiceTopology({
+    backend: config.NUQ_BACKEND,
+    fdbClusterFile: config.FDB_CLUSTER_FILE,
+    scrapeWorkerCount: NUQ_WORKER_COUNT,
+  });
 
-  // Setup NUQ RabbitMQ container if needed
+  // Forced FDB does not need the PG queue database. Mixed mode keeps it for
+  // unflagged teams and for already-pinned PG crawls while they drain.
+  const nuqPostgres = requestedTopology.postgres
+    ? await setupNuqPostgres()
+    : undefined;
+
+  // RabbitMQ is also used for wakeups by the FDB implementation.
   const nuqRabbitMQ = await setupNuqRabbitMQ();
 
-  // Setup FoundationDB container if the FDB queue backend is enabled
+  // setupFdb may create a local cluster and populate FDB_CLUSTER_FILE.
   const fdb = await setupFdb();
+  const topology = resolveNuqServiceTopology({
+    backend: config.NUQ_BACKEND,
+    fdbClusterFile: config.FDB_CLUSTER_FILE,
+    scrapeWorkerCount: NUQ_WORKER_COUNT,
+  });
 
   logger.section("Starting services");
 
@@ -862,50 +884,104 @@ async function startServices(command?: string[]): Promise<Services> {
     },
   );
 
-  const nuqWorkers = Array.from({ length: NUQ_WORKER_COUNT }, (_, i) =>
-    execForward(
-      `${config.NUQ_BACKEND === "fdb" ? "nuq-fdb-worker" : "nuq-worker"}-${i}`,
-      process.argv[2] === "--start-docker"
-        ? `node dist/src/services/worker/${config.NUQ_BACKEND === "fdb" ? "nuq-fdb-worker" : "nuq-worker"}.js`
-        : `pnpm ${config.NUQ_BACKEND === "fdb" ? "nuq-fdb-worker" : "nuq-worker"}:production`,
-      {
-        NUQ_WORKER_PORT: String(NUQ_WORKER_START_PORT + i),
-        NUQ_REDUCE_NOISE: "true",
-        NUQ_POD_NAME: `${config.NUQ_BACKEND === "fdb" ? "nuq-fdb-worker" : "nuq-worker"}-${i}`,
-      },
-    ),
+  const startNuqWorkers = (
+    serviceName: "nuq-worker" | "nuq-fdb-worker",
+    count: number,
+    portOffset: number,
+  ) =>
+    Array.from({ length: count }, (_, i) =>
+      execForward(
+        `${serviceName}-${i}`,
+        process.argv[2] === "--start-docker"
+          ? `node dist/src/services/worker/${serviceName}.js`
+          : `pnpm ${serviceName}:production`,
+        {
+          NUQ_WORKER_PORT: String(NUQ_WORKER_START_PORT + portOffset + i),
+          NUQ_REDUCE_NOISE: "true",
+          NUQ_POD_NAME: `${serviceName}-${i}`,
+          ...(serviceName === "nuq-fdb-worker"
+            ? { NUQ_FDB_WORKER_MODE: "scrape" }
+            : {}),
+        },
+      ),
+    );
+
+  const pgNuqWorkers = startNuqWorkers(
+    "nuq-worker",
+    topology.pgScrapeWorkers,
+    0,
   );
+  const fdbNuqWorkers = startNuqWorkers(
+    "nuq-fdb-worker",
+    topology.fdbScrapeWorkers,
+    topology.pgScrapeWorkers,
+  );
+  const nuqWorkers = [...pgNuqWorkers, ...fdbNuqWorkers];
+  const nextNuqPort =
+    NUQ_WORKER_START_PORT +
+    topology.pgScrapeWorkers +
+    topology.fdbScrapeWorkers;
+  const nuqPrefetchWorkerPort = nextNuqPort;
+  const nuqReconcilerWorkerPort = nextNuqPort + 1;
+  const nuqFdbMaintenanceWorkerPort = nextNuqPort + 2;
+  const nuqFdbCrawlFinishedWorkerPort = nextNuqPort + 3;
 
-  const nuqPrefetchWorker =
-    config.NUQ_BACKEND === "fdb"
-      ? undefined
-      : execForward(
-          "nuq-prefetch-worker",
-          process.argv[2] === "--start-docker"
-            ? "node dist/src/services/worker/nuq-prefetch-worker.js"
-            : "pnpm nuq-prefetch-worker:production",
-          {
-            NUQ_PREFETCH_WORKER_PORT: String(NUQ_PREFETCH_WORKER_PORT),
-            NUQ_REDUCE_NOISE: "true",
-            NUQ_POD_NAME: "nuq-prefetch-worker-0",
-            NUQ_PREFETCH_REPLICAS: String(1),
-          },
-        );
+  const startFdbControlWorker = (
+    mode: "maintenance" | "crawl-finished",
+    port: number,
+  ) =>
+    execForward(
+      `nuq-fdb-${mode}`,
+      process.argv[2] === "--start-docker"
+        ? "node dist/src/services/worker/nuq-fdb-worker.js"
+        : "pnpm nuq-fdb-worker:production",
+      {
+        NUQ_WORKER_PORT: String(port),
+        NUQ_REDUCE_NOISE: "true",
+        NUQ_POD_NAME: `nuq-fdb-${mode}-0`,
+        NUQ_FDB_WORKER_MODE: mode,
+        // Harness FDB namespaces have no pre-compat writers. Production uses
+        // the two-release activation procedure documented in the Helm chart.
+        ...(mode === "maintenance"
+          ? { NUQ_FDB_METRICS_V2_ACTIVATE: "true" }
+          : {}),
+      },
+    );
+  const nuqFdbMaintenanceWorker = topology.fdbMaintenance
+    ? startFdbControlWorker("maintenance", nuqFdbMaintenanceWorkerPort)
+    : undefined;
+  const nuqFdbCrawlFinishedWorker = topology.fdbCrawlFinished
+    ? startFdbControlWorker("crawl-finished", nuqFdbCrawlFinishedWorkerPort)
+    : undefined;
 
-  const nuqReconcilerWorker =
-    config.NUQ_BACKEND === "fdb"
-      ? undefined
-      : execForward(
-          "nuq-reconciler",
-          process.argv[2] === "--start-docker"
-            ? "node dist/src/services/worker/nuq-reconciler-worker.js"
-            : "pnpm nuq-reconciler-worker:production",
-          {
-            NUQ_RECONCILER_WORKER_PORT: String(NUQ_RECONCILER_WORKER_PORT),
-            NUQ_REDUCE_NOISE: "true",
-            NUQ_POD_NAME: "nuq-reconciler-worker-0",
-          },
-        );
+  const nuqPrefetchWorker = topology.pgPrefetch
+    ? execForward(
+        "nuq-prefetch-worker",
+        process.argv[2] === "--start-docker"
+          ? "node dist/src/services/worker/nuq-prefetch-worker.js"
+          : "pnpm nuq-prefetch-worker:production",
+        {
+          NUQ_PREFETCH_WORKER_PORT: String(nuqPrefetchWorkerPort),
+          NUQ_REDUCE_NOISE: "true",
+          NUQ_POD_NAME: "nuq-prefetch-worker-0",
+          NUQ_PREFETCH_REPLICAS: String(1),
+        },
+      )
+    : undefined;
+
+  const nuqReconcilerWorker = topology.pgReconciler
+    ? execForward(
+        "nuq-reconciler",
+        process.argv[2] === "--start-docker"
+          ? "node dist/src/services/worker/nuq-reconciler-worker.js"
+          : "pnpm nuq-reconciler-worker:production",
+        {
+          NUQ_RECONCILER_WORKER_PORT: String(nuqReconcilerWorkerPort),
+          NUQ_REDUCE_NOISE: "true",
+          NUQ_POD_NAME: "nuq-reconciler-worker-0",
+        },
+      )
+    : undefined;
 
   const indexWorker = config.USE_DB_AUTHENTICATION
     ? execForward(
@@ -942,6 +1018,8 @@ async function startServices(command?: string[]): Promise<Services> {
     nuqWorkers,
     nuqPrefetchWorker,
     nuqReconcilerWorker,
+    nuqFdbMaintenanceWorker,
+    nuqFdbCrawlFinishedWorker,
     indexWorker,
     extractWorker,
     command: commandProcess,
@@ -960,6 +1038,8 @@ async function stopDevelopmentServices(services: Services) {
     ...services.nuqWorkers.map(w => w.process),
     services.nuqPrefetchWorker?.process,
     services.nuqReconcilerWorker?.process,
+    services.nuqFdbMaintenanceWorker?.process,
+    services.nuqFdbCrawlFinishedWorker?.process,
     services.indexWorker?.process,
     services.extractWorker?.process,
     services.command?.process,
@@ -1133,6 +1213,10 @@ async function waitForTermination(services: Services): Promise<void> {
     promises.push(services.nuqPrefetchWorker.promise);
   if (services.nuqReconcilerWorker)
     promises.push(services.nuqReconcilerWorker.promise);
+  if (services.nuqFdbMaintenanceWorker)
+    promises.push(services.nuqFdbMaintenanceWorker.promise);
+  if (services.nuqFdbCrawlFinishedWorker)
+    promises.push(services.nuqFdbCrawlFinishedWorker.promise);
 
   promises.push(...services.nuqWorkers.map(w => w.promise));
 

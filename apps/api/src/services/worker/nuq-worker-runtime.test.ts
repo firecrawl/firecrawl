@@ -3,6 +3,7 @@ import {
   nextIdlePollDelay,
   runLeasedJob,
   settleDrain,
+  superviseRequiredWorkerLoops,
   type RuntimeLogger,
 } from "./nuq-worker-runtime";
 import {
@@ -266,6 +267,54 @@ describe("NuQ worker lease lifecycle", () => {
     });
     expect(q.jobFinish).not.toHaveBeenCalled();
     expect(q.jobFail).not.toHaveBeenCalled();
+  });
+});
+
+describe("required worker loop supervision", () => {
+  test("treats an unexpected required-loop stop as fatal", async () => {
+    const stopped = deferred<void>();
+    const onFatal = vi.fn();
+
+    superviseRequiredWorkerLoops(
+      [
+        {
+          name: "crawl-finished",
+          isHealthy: () => true,
+          done: stopped.promise,
+        },
+      ],
+      () => false,
+      onFatal,
+    );
+
+    stopped.resolve();
+    await stopped.promise;
+    await Promise.resolve();
+    expect(onFatal).toHaveBeenCalledOnce();
+    expect(onFatal.mock.calls[0][0]).toBe("crawl-finished");
+    expect(onFatal.mock.calls[0][1]).toBeInstanceOf(Error);
+  });
+
+  test("ignores required-loop completion after drain begins", async () => {
+    const stopped = deferred<void>();
+    const onFatal = vi.fn();
+
+    superviseRequiredWorkerLoops(
+      [
+        {
+          name: "maintenance",
+          isHealthy: () => false,
+          done: stopped.promise,
+        },
+      ],
+      () => true,
+      onFatal,
+    );
+
+    stopped.resolve();
+    await stopped.promise;
+    await Promise.resolve();
+    expect(onFatal).not.toHaveBeenCalled();
   });
 });
 

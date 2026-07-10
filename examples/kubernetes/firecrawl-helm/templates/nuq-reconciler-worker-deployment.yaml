@@ -1,19 +1,19 @@
-{{- if .Values.extractWorker.enabled }}
+{{- if and (include "firecrawl.pgEnabled" .) .Values.nuqReconcilerWorker.enabled }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ include "firecrawl.fullname" . }}-extract-worker
+  name: {{ include "firecrawl.fullname" . }}-nuq-reconciler-worker
   labels:
-    app: {{ include "firecrawl.name" . }}-extract-worker
+    app: {{ include "firecrawl.name" . }}-nuq-reconciler-worker
 spec:
-  replicas: {{ .Values.extractWorker.replicaCount | default 1 }}
+  replicas: {{ .Values.nuqReconcilerWorker.replicaCount }}
   selector:
     matchLabels:
-      app: {{ include "firecrawl.name" . }}-extract-worker
+      app: {{ include "firecrawl.name" . }}-nuq-reconciler-worker
   template:
     metadata:
       labels:
-        app: {{ include "firecrawl.name" . }}-extract-worker
+        app: {{ include "firecrawl.name" . }}-nuq-reconciler-worker
     spec:
       {{- if .Values.image.dockerSecretEnabled }}
       imagePullSecrets:
@@ -21,18 +21,18 @@ spec:
       {{- end }}
       terminationGracePeriodSeconds: 60
       containers:
-        - name: extract-worker
+        - name: nuq-reconciler-worker
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           command: [ "node" ]
-          args: [ "--max-old-space-size=3072", "dist/src/services/extract-worker.js" ]
+          args: [ "--max-old-space-size=1024", "dist/src/services/worker/nuq-reconciler-worker.js" ]
           ports:
-            - containerPort: {{ .Values.extractWorker.port | int }}
+            - containerPort: {{ .Values.nuqReconcilerWorker.port | int }}
           env:
             - name: FLY_PROCESS_GROUP
-              value: "extract-worker"
-            - name: EXTRACT_WORKER_PORT
-              value: {{ .Values.extractWorker.port | quote }}
+              value: "nuq-reconciler-worker"
+            - name: NUQ_RECONCILER_WORKER_PORT
+              value: {{ .Values.nuqReconcilerWorker.port | quote }}
             - name: NUQ_POD_NAME
               valueFrom:
                 fieldRef:
@@ -42,28 +42,24 @@ spec:
                 name: {{ include "firecrawl.fullname" . }}-config
             - secretRef:
                 name: {{ include "firecrawl.fullname" . }}-secret
-          {{- include "firecrawl.fdbVolumeMounts" . | nindent 10 }}
-          {{- if and .Values.resources.enabled .Values.extractWorker.resources }}
+          {{- if and .Values.resources.enabled .Values.nuqReconcilerWorker.resources }}
           resources:
-            {{- toYaml .Values.extractWorker.resources | nindent 12 }}
+            {{- toYaml .Values.nuqReconcilerWorker.resources | nindent 12 }}
           {{- end }}
           livenessProbe:
             httpGet:
-              path: /liveness
-              port: {{ .Values.extractWorker.port | int }}
+              path: /health
+              port: {{ .Values.nuqReconcilerWorker.port | int }}
             initialDelaySeconds: 10
             periodSeconds: 10
             timeoutSeconds: 5
-            successThreshold: 1
             failureThreshold: 3
           readinessProbe:
             httpGet:
               path: /health
-              port: {{ .Values.extractWorker.port | int }}
+              port: {{ .Values.nuqReconcilerWorker.port | int }}
             initialDelaySeconds: 10
             periodSeconds: 10
             timeoutSeconds: 5
-            successThreshold: 1
             failureThreshold: 3
-      {{- include "firecrawl.fdbVolumes" . | nindent 6 }}
 {{- end }}

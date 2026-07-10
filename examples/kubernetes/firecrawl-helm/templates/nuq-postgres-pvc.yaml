@@ -1,8 +1,10 @@
-{{- if .Values.nuqPostgres.persistence.enabled }}
+{{- if and (include "firecrawl.pgEnabled" .) .Values.nuqPostgres.persistence.enabled }}
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
   name: {{ include "firecrawl.fullname" . }}-nuq-postgres-pvc
+  annotations:
+    helm.sh/resource-policy: keep
   labels:
     app: {{ include "firecrawl.name" . }}-nuq-postgres
 spec:

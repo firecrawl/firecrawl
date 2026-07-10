@@ -29,6 +29,7 @@ export function getNuqFdbDatabase(): Database {
 }
 
 export function isFdbConfigured(): boolean {
+  if (config.NUQ_BACKEND === "pg") return false;
   return !!config.FDB_CLUSTER_FILE || config.NUQ_BACKEND === "fdb";
 }
 

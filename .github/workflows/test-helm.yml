@@ -1,0 +1,32 @@
+name: Helm Chart Tests
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "docker-compose.yaml"
+      - "examples/kubernetes/firecrawl-helm/**"
+      - ".github/workflows/test-helm.yml"
+
+concurrency:
+  group: ci=${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  topology:
+    name: NuQ topology render smoke tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: azure/setup-helm@v4
+        with:
+          version: v3.19.0
+      - name: Install test dependency
+        run: python3 -m pip install --disable-pip-version-check PyYAML==6.0.3
+      - name: Lint chart
+        run: helm lint examples/kubernetes/firecrawl-helm
+      - name: Test rendered topologies
+        run: python3 examples/kubernetes/firecrawl-helm/tests/topology_smoke.py
+      - name: Test Docker Compose topology env
+        run: python3 examples/kubernetes/firecrawl-helm/tests/compose_topology_smoke.py

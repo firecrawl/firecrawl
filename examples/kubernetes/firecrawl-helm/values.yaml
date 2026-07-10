@@ -36,6 +36,11 @@ extractWorker:
       memory: "3G"
       cpu: "1000m"
 
+# Queue topology: pg, mixed (team-flag rollout), or fdb (forced FDB).
+nuq:
+  mode: pg
+
+# PostgreSQL scrape consumers. Used by pg and mixed modes.
 nuqWorker:
   replicaCount: 5
   port: 3006
@@ -46,6 +51,46 @@ nuqWorker:
     limits:
       memory: "4G"
       cpu: "1000m"
+
+# FoundationDB consumers and control loops. The cluster file must be supplied
+# through an existing Secret in mixed/fdb modes; do not put it in values.yaml.
+nuqFdb:
+  clusterFile:
+    existingSecret: ""
+    key: fdb.cluster
+    mountPath: /etc/foundationdb
+  scrapeWorker:
+    replicaCount: 5
+    port: 3005
+    resources:
+      requests:
+        memory: "3G"
+        cpu: "1000m"
+      limits:
+        memory: "4G"
+        cpu: "1000m"
+  # Keep these fixed control deployments at one or more replicas even when
+  # scrape consumers are drained to zero.
+  maintenanceWorker:
+    replicaCount: 2
+    port: 3005
+    resources:
+      requests:
+        memory: "512Mi"
+        cpu: "250m"
+      limits:
+        memory: "1Gi"
+        cpu: "500m"
+  crawlFinishedWorker:
+    replicaCount: 2
+    port: 3005
+    resources:
+      requests:
+        memory: "1G"
+        cpu: "500m"
+      limits:
+        memory: "2G"
+        cpu: "1000m"
 
 nuqPrefetchWorker:
   enabled: true
@@ -63,6 +108,18 @@ cclogWorker:
   enabled: false
   replicaCount: 1
   port: 3013
+  resources:
+    requests:
+      memory: "512Mi"
+      cpu: "250m"
+    limits:
+      memory: "1Gi"
+      cpu: "500m"
+
+nuqReconcilerWorker:
+  enabled: true
+  replicaCount: 1
+  port: 3012
   resources:
     requests:
       memory: "512Mi"
@@ -144,6 +201,7 @@ config:
   EXTRACT_WORKER_PORT: "3004"
   NUQ_WORKER_PORT: "3006"
   NUQ_PREFETCH_WORKER_PORT: "3011"
+  NUQ_RECONCILER_WORKER_PORT: "3012"
   CCLOG_WORKER_PORT: "3013"
   NUQ_WORKER_COUNT: "5"
   USE_DB_AUTHENTICATION: "false"

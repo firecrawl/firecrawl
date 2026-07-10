@@ -1,4 +1,8 @@
+{{- include "firecrawl.validateNuqTopology" . -}}
 {{- $fullname := include "firecrawl.fullname" . -}}
+{{- $nuqMode := include "firecrawl.nuqMode" . -}}
+{{- $fdbEnabled := include "firecrawl.fdbEnabled" . -}}
+{{- $pgEnabled := include "firecrawl.pgEnabled" . -}}
 {{- $redisDefault := printf "redis://%s-redis:%v" $fullname .Values.service.redis.port -}}
 {{- $playwrightDefault := printf "http://%s-playwright:%v/scrape" $fullname .Values.service.playwright.port -}}
 {{- $pgUser := default "postgres" .Values.nuqPostgres.auth.username -}}
@@ -6,6 +10,9 @@
 {{- $pgDb := default "postgres" .Values.nuqPostgres.auth.database -}}
 {{- $nuqDbDefault := printf "postgresql://%s:%s@%s-nuq-postgres:5432/%s" $pgUser $pgPassword $fullname $pgDb -}}
 {{- $nuqDbUrl := default $nuqDbDefault .Values.config.NUQ_DATABASE_URL -}}
+{{- if not $pgEnabled -}}
+  {{- $nuqDbUrl = default "" .Values.config.NUQ_DATABASE_URL -}}
+{{- end -}}
 {{- $rabbitMqDefault := printf "amqp://%s-rabbitmq:%v" $fullname .Values.service.rabbitmq.port -}}
 {{- $apiHostDefault := printf "%s-api" $fullname -}}
 {{- $apiPortDefault := printf "%v" .Values.service.api.port -}}
@@ -21,8 +28,11 @@ data:
   EXTRACT_WORKER_PORT: {{ default (printf "%v" .Values.extractWorker.port) .Values.config.EXTRACT_WORKER_PORT | quote }}
   NUQ_WORKER_PORT: {{ default (printf "%v" .Values.nuqWorker.port) .Values.config.NUQ_WORKER_PORT | quote }}
   NUQ_PREFETCH_WORKER_PORT: {{ default (printf "%v" .Values.nuqPrefetchWorker.port) .Values.config.NUQ_PREFETCH_WORKER_PORT | quote }}
+  NUQ_RECONCILER_WORKER_PORT: {{ default (printf "%v" .Values.nuqReconcilerWorker.port) .Values.config.NUQ_RECONCILER_WORKER_PORT | quote }}
   CCLOG_WORKER_PORT: {{ default (printf "%v" .Values.cclogWorker.port) .Values.config.CCLOG_WORKER_PORT | quote }}
   NUQ_WORKER_COUNT: {{ default (printf "%v" .Values.nuqWorker.replicaCount) .Values.config.NUQ_WORKER_COUNT | quote }}
+  NUQ_BACKEND: {{ if eq $nuqMode "fdb" }}"fdb"{{ else if eq $nuqMode "pg" }}"pg"{{ else }}""{{ end }}
+  FDB_CLUSTER_FILE: {{ if $fdbEnabled }}{{ include "firecrawl.fdbClusterFilePath" . | quote }}{{ else }}""{{ end }}
   REDIS_URL: {{ default $redisDefault .Values.config.REDIS_URL | quote }}
   REDIS_RATE_LIMIT_URL: {{ default $redisDefault .Values.config.REDIS_RATE_LIMIT_URL | quote }}
   PLAYWRIGHT_MICROSERVICE_URL: {{ default $playwrightDefault .Values.config.PLAYWRIGHT_MICROSERVICE_URL | quote }}

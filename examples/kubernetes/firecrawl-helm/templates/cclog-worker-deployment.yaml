@@ -42,6 +42,7 @@ spec:
                 name: {{ include "firecrawl.fullname" . }}-config
             - secretRef:
                 name: {{ include "firecrawl.fullname" . }}-secret
+          {{- include "firecrawl.fdbVolumeMounts" . | nindent 10 }}
           {{- if and .Values.resources.enabled .Values.cclogWorker.resources }}
           resources:
             {{- toYaml .Values.cclogWorker.resources | nindent 12 }}
@@ -64,4 +65,5 @@ spec:
             timeoutSeconds: 5
             successThreshold: 1
             failureThreshold: 3
+      {{- include "firecrawl.fdbVolumes" . | nindent 6 }}
 {{- end }}

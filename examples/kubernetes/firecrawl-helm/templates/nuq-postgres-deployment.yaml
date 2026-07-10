@@ -1,3 +1,4 @@
+{{- if include "firecrawl.pgEnabled" . }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -71,3 +72,4 @@ spec:
       port: 5432
       targetPort: 5432
   type: ClusterIP
+{{- end }}

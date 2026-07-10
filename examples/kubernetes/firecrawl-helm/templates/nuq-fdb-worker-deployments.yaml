@@ -1,0 +1,83 @@
+{{- if include "firecrawl.fdbEnabled" . }}
+{{- $workers := list
+  (dict "role" "scrape" "settings" .Values.nuqFdb.scrapeWorker "heapMb" 3072 "graceSeconds" 180)
+  (dict "role" "maintenance" "settings" .Values.nuqFdb.maintenanceWorker "heapMb" 1024 "graceSeconds" 60)
+  (dict "role" "crawl-finished" "settings" .Values.nuqFdb.crawlFinishedWorker "heapMb" 2048 "graceSeconds" 180)
+-}}
+{{- range $spec := $workers }}
+{{- $role := $spec.role }}
+{{- $worker := $spec.settings }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "firecrawl.fullname" $ }}-nuq-fdb-{{ $role }}-worker
+  labels:
+    app: {{ include "firecrawl.name" $ }}-nuq-fdb-{{ $role }}-worker
+spec:
+  {{- if eq $role "scrape" }}
+  # Zero is valid during a controlled drain. Maintenance and crawl completion
+  # are independent deployments and remain available.
+  {{- end }}
+  replicas: {{ $worker.replicaCount }}
+  selector:
+    matchLabels:
+      app: {{ include "firecrawl.name" $ }}-nuq-fdb-{{ $role }}-worker
+  template:
+    metadata:
+      labels:
+        app: {{ include "firecrawl.name" $ }}-nuq-fdb-{{ $role }}-worker
+    spec:
+      {{- if $.Values.image.dockerSecretEnabled }}
+      imagePullSecrets:
+        {{- toYaml $.Values.imagePullSecrets | nindent 8 }}
+      {{- end }}
+      terminationGracePeriodSeconds: {{ $spec.graceSeconds }}
+      containers:
+        - name: nuq-fdb-{{ $role }}-worker
+          image: "{{ $.Values.image.repository }}:{{ $.Values.image.tag }}"
+          imagePullPolicy: {{ $.Values.image.pullPolicy }}
+          command: [ "node" ]
+          args: [ {{ printf "--max-old-space-size=%v" $spec.heapMb | quote }}, "dist/src/services/worker/nuq-fdb-worker.js" ]
+          ports:
+            - containerPort: {{ $worker.port | int }}
+          env:
+            - name: FLY_PROCESS_GROUP
+              value: {{ printf "nuq-fdb-%s-worker" $role | quote }}
+            - name: NUQ_FDB_WORKER_MODE
+              value: {{ $role | quote }}
+            - name: NUQ_WORKER_PORT
+              value: {{ $worker.port | quote }}
+            - name: NUQ_POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+          envFrom:
+            - configMapRef:
+                name: {{ include "firecrawl.fullname" $ }}-config
+            - secretRef:
+                name: {{ include "firecrawl.fullname" $ }}-secret
+          {{- include "firecrawl.fdbVolumeMounts" $ | nindent 10 }}
+          {{- if and $.Values.resources.enabled $worker.resources }}
+          resources:
+            {{- toYaml $worker.resources | nindent 12 }}
+          {{- end }}
+          livenessProbe:
+            httpGet:
+              path: /live
+              port: {{ $worker.port | int }}
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: {{ $worker.port | int }}
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+      {{- include "firecrawl.fdbVolumes" $ | nindent 6 }}
+{{- end }}
+{{- end }}

@@ -1,4 +1,4 @@
-{{- if .Values.nuqPrefetchWorker.enabled }}
+{{- if and (include "firecrawl.pgEnabled" .) .Values.nuqPrefetchWorker.enabled }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:

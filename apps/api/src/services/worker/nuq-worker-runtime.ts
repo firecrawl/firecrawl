@@ -7,6 +7,34 @@ export type RuntimeLogger = {
   error: (message: string, meta?: Record<string, unknown>) => void;
 };
 
+export type RequiredWorkerLoop = {
+  name: string;
+  isHealthy: () => boolean;
+  done: Promise<void>;
+};
+
+export function superviseRequiredWorkerLoops(
+  requiredLoops: readonly RequiredWorkerLoop[],
+  isShuttingDown: () => boolean,
+  onFatal: (loopName: string, error: unknown) => void,
+): void {
+  for (const requiredLoop of requiredLoops) {
+    void requiredLoop.done.then(
+      () => {
+        if (isShuttingDown()) return;
+        onFatal(
+          requiredLoop.name,
+          new Error(`Required loop ${requiredLoop.name} stopped unexpectedly`),
+        );
+      },
+      error => {
+        if (isShuttingDown()) return;
+        onFatal(requiredLoop.name, error);
+      },
+    );
+  }
+}
+
 export type QueueOperationOptions = { timeoutMs: number };
 
 export type LeasedJobQueue = {

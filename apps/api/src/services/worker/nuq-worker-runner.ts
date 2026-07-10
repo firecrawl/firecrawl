@@ -4,7 +4,7 @@ import { jobDurationSeconds } from "../../lib/job-metrics";
 import { processJobInternal } from "./scrape-worker";
 import { NuQJob } from "./nuq";
 import { register } from "prom-client";
-import Express from "express";
+import { createNuqWorkerHttpApp } from "./nuq-worker-http";
 import { initializeBlocklist } from "../../scraper/WebScraper/utils/blocklist";
 import { initializeEngineForcing } from "../../scraper/WebScraper/utils/engine-forcing";
 import type { Server } from "http";
@@ -12,9 +12,11 @@ import {
   nextIdlePollDelay,
   runLeasedJob,
   settleDrain,
+  superviseRequiredWorkerLoops,
   waitForAbortableDelay,
   withOperationTimeout,
   type QueueOperationOptions,
+  type RequiredWorkerLoop,
 } from "./nuq-worker-runtime";
 
 export type WorkerQueue = {
@@ -44,6 +46,37 @@ export type WorkerQueue = {
   ): Promise<boolean>;
 };
 
+export type WorkerSignalSource = {
+  on(signal: "SIGINT" | "SIGTERM", listener: () => void): unknown;
+  off(signal: "SIGINT" | "SIGTERM", listener: () => void): unknown;
+};
+
+export type RunNuqWorkerHost = {
+  initialize?: () => void | Promise<void>;
+  signalSource?: WorkerSignalSource;
+  port?: number;
+  onServerStarted?: (server: Server) => void;
+  exit?: (code: number) => void;
+};
+
+export type RunNuqWorkerOptions = {
+  serviceName: string;
+  queue: WorkerQueue;
+  healthCheck: () => Promise<boolean>;
+  /** @deprecated Use requiredLoops. */
+  livenessCheck?: () => boolean;
+  requiredLoops?: () => readonly RequiredWorkerLoop[];
+  metrics?: () => string | Promise<string>;
+  beforeStart?: () => void | Promise<void>;
+  onShutdownRequested?: () => void | Promise<void>;
+  drain?: () => void | Promise<void>;
+  onShutdownDeadline?: () => void | Promise<void>;
+  beforeShutdown?: () => void | Promise<void>;
+  shutdown?: () => void | Promise<void>;
+  shutdownGraceMs?: number;
+  processJob?: (job: NuQJob<any, any>, signal: AbortSignal) => Promise<any>;
+};
+
 async function withTimeout<T>(
   promise: Promise<T>,
   timeoutMs: number,
@@ -71,36 +104,35 @@ function closeServer(server: Server) {
   });
 }
 
-export async function runNuqWorker(options: {
-  serviceName: string;
-  queue: WorkerQueue;
-  healthCheck: () => Promise<boolean>;
-  livenessCheck?: () => boolean;
-  metrics?: () => string | Promise<string>;
-  beforeStart?: () => void | Promise<void>;
-  onShutdownRequested?: () => void | Promise<void>;
-  drain?: () => void | Promise<void>;
-  onShutdownDeadline?: () => void | Promise<void>;
-  beforeShutdown?: () => void | Promise<void>;
-  shutdown?: () => void | Promise<void>;
-  shutdownGraceMs?: number;
-  processJob?: (job: NuQJob<any, any>, signal: AbortSignal) => Promise<any>;
-}) {
+export async function runNuqWorker(
+  options: RunNuqWorkerOptions,
+  host: RunNuqWorkerHost = {},
+) {
+  const signalSource = host.signalSource ?? process;
+  const exit = host.exit ?? ((code: number) => process.exit(code));
+
   try {
-    await initializeBlocklist();
-    initializeEngineForcing();
+    if (host.initialize) {
+      await host.initialize();
+    } else {
+      await initializeBlocklist();
+      initializeEngineForcing();
+    }
     await options.beforeStart?.();
   } catch (error) {
     _logger.error("Failed to initialize NuQ worker", {
       module: options.serviceName,
       error,
     });
-    process.exit(1);
+    exit(1);
+    return;
   }
 
   let isShuttingDown = false;
   let shutdownStartedAt: number | null = null;
   let activeJobs = 0;
+  let fatalRequiredLoopError: unknown = null;
+  const requiredLoops = options.requiredLoops?.() ?? [];
   const idleController = new AbortController();
   const forceActiveJobController = new AbortController();
   let resolveShutdownRequested!: () => void;
@@ -108,58 +140,38 @@ export async function runNuqWorker(options: {
     resolveShutdownRequested = resolve;
   });
 
-  const app = Express();
-
-  app.get("/metrics", async (_, res) => {
-    try {
+  const app = createNuqWorkerHttpApp({
+    isDraining: () => isShuttingDown,
+    dependencyReady: options.healthCheck,
+    requiredLoopsReady: () =>
+      requiredLoops.every(requiredLoop => requiredLoop.isHealthy()) &&
+      (options.livenessCheck?.() ?? true),
+    metrics: async () => {
       const localMetrics = options.metrics ? await options.metrics() : "";
       const runtimeMetrics = `# HELP firecrawl_nuq_worker_active_jobs Number of jobs executing in this worker process\n# TYPE firecrawl_nuq_worker_active_jobs gauge\nfirecrawl_nuq_worker_active_jobs{service="${options.serviceName}"} ${activeJobs}\n`;
-      res
-        .contentType("text/plain")
-        .send(
-          localMetrics + "\n" + runtimeMetrics + (await register.metrics()),
-        );
-    } catch (error) {
+      return localMetrics + "\n" + runtimeMetrics + (await register.metrics());
+    },
+    onReadinessError: error => {
+      _logger.warn("NuQ worker readiness check failed", {
+        module: options.serviceName,
+        error,
+      });
+    },
+    onMetricsError: error => {
       _logger.warn("NuQ worker metrics collection failed", {
         module: options.serviceName,
         error,
       });
-      res.status(500).send("Metrics unavailable");
-    }
-  });
-  app.get("/health", async (_, res) => {
-    try {
-      if (options.livenessCheck && !options.livenessCheck()) {
-        res.status(500).send("Not OK");
-        return;
-      }
-      if (await withTimeout(options.healthCheck(), 1000, "NuQ health check")) {
-        res.status(200).send("OK");
-      } else {
-        res.status(500).send("Not OK");
-      }
-    } catch (error) {
-      _logger.warn("NuQ worker health check failed", {
-        module: options.serviceName,
-        error,
-      });
-      res.status(500).send("Not OK");
-    }
+    },
   });
 
-  const server = app.listen(config.NUQ_WORKER_PORT, (error?: Error) => {
-    if (error) {
-      _logger.error("Failed to start NuQ worker metrics server", {
-        module: options.serviceName,
-        error,
-        port: config.NUQ_WORKER_PORT,
-      });
-      throw error;
-    }
-
+  const port = host.port ?? config.NUQ_WORKER_PORT;
+  const server = app.listen(port, () => {
     _logger.info("NuQ worker metrics server started", {
       module: options.serviceName,
+      port,
     });
+    host.onServerStarted?.(server);
   });
 
   function requestShutdown() {
@@ -176,8 +188,22 @@ export async function runNuqWorker(options: {
     });
   }
 
-  process.on("SIGINT", requestShutdown);
-  process.on("SIGTERM", requestShutdown);
+  signalSource.on("SIGINT", requestShutdown);
+  signalSource.on("SIGTERM", requestShutdown);
+
+  superviseRequiredWorkerLoops(
+    requiredLoops,
+    () => isShuttingDown,
+    (loop, error) => {
+      fatalRequiredLoopError = error;
+      _logger.error("NuQ worker required loop failed", {
+        module: options.serviceName,
+        loop,
+        error,
+      });
+      requestShutdown();
+    },
+  );
 
   const loop = (async () => {
     let idleBaseMs = 500;
@@ -246,7 +272,7 @@ export async function runNuqWorker(options: {
             // processJobInternal does not yet accept an AbortSignal. Exiting the
             // single-job worker is the only hard cancellation boundary that
             // prevents the stale owner from continuing crawl/scrape effects.
-            setImmediate(() => process.exit(1));
+            setImmediate(() => exit(1));
           },
           process: signal =>
             options.processJob
@@ -333,8 +359,8 @@ export async function runNuqWorker(options: {
     drained,
   });
 
-  process.off("SIGINT", requestShutdown);
-  process.off("SIGTERM", requestShutdown);
+  signalSource.off("SIGINT", requestShutdown);
+  signalSource.off("SIGTERM", requestShutdown);
 
   const remainingShutdownMs = () =>
     shutdownStartedAt === null
@@ -372,5 +398,5 @@ export async function runNuqWorker(options: {
   }
 
   _logger.info("NuQ worker shut down", { module: options.serviceName });
-  process.exit(0);
+  exit(fatalRequiredLoopError === null ? 0 : 1);
 }
