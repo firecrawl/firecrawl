@@ -41,6 +41,10 @@ export type NuQFdbJobGroupInstance = {
 };
 
 const DEFAULT_GROUP_TTL_MS = 86400000;
+// A group that is never populated, abandoned by its producer, or otherwise
+// never reaches normal completion must not live forever. This deadline is
+// independent of the post-completion retention TTL.
+export const ACTIVE_GROUP_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 
 export class NuqFdbGroupOps {
   constructor(
@@ -112,9 +116,18 @@ export class NuqFdbGroupOps {
       return false;
     }
     const expiresAt = now + gMeta.t;
-    const updated: GroupMeta = { ...gMeta, s: "completed", x: expiresAt };
+    const expiryGeneration = randomUUID();
+    const updated: GroupMeta = {
+      ...gMeta,
+      s: "completed",
+      x: expiresAt,
+      eg: expiryGeneration,
+    };
     tn.set(this.ks.groupMeta(gid), encodeJson(updated));
-    tn.set(this.ks.groupExpiry(expiresAt, gid), EMPTY);
+    if (gMeta.a !== undefined && gMeta.eg) {
+      tn.clear(this.ks.groupExpiry(gMeta.a, gid, gMeta.eg));
+    }
+    tn.set(this.ks.groupExpiry(expiresAt, gid, expiryGeneration), EMPTY);
     tn.clear(this.ks.ongoingGroup(gMeta.o, gid));
     tn.clear(this.ks.taskGroupFinish(gid));
 
@@ -178,6 +191,8 @@ export class NuQFdbJobGroup {
       const existing = decodeJson<GroupMeta>(existingBuf);
       if (existing) return this.toInstance(id, existing);
       const now = Date.now();
+      const abandonmentDeadline = now + ACTIVE_GROUP_MAX_AGE_MS;
+      const expiryGeneration = randomUUID();
       const g: GroupMeta = {
         o: owner,
         c: now,
@@ -185,8 +200,14 @@ export class NuQFdbJobGroup {
         s: "active",
         m: opts?.maxConcurrency,
         d: opts?.delaySeconds,
+        a: abandonmentDeadline,
+        eg: expiryGeneration,
       };
       tn.set(this.ks.groupMeta(id), encodeJson(g));
+      tn.set(
+        this.ks.groupExpiry(abandonmentDeadline, id, expiryGeneration),
+        EMPTY,
+      );
       tn.set(this.ks.ongoingGroup(owner, id), encodeJson({ c: now }));
       return this.toInstance(id, g);
     });

@@ -26,6 +26,16 @@ export type CrawlFinishedLoop = {
   metrics(): string;
 };
 
+// The legacy worker has a single `/health` endpoint, so transient sweeper
+// health cannot be composed here without turning readiness failures into
+// liveness restarts. The deployment-mode worker adds sweeper health to
+// `/ready`; legacy liveness remains limited to its required finish loop.
+export function isLegacyFdbWorkerLive(
+  crawlFinishedLoop: Pick<CrawlFinishedLoop, "isHealthy"> | null,
+): boolean {
+  return crawlFinishedLoop?.isHealthy() ?? false;
+}
+
 export function startCrawlFinishedLoop(options: {
   queue: CrawlFinishedQueue;
   processJob: (job: NuQJob<any, any>, signal: AbortSignal) => Promise<void>;

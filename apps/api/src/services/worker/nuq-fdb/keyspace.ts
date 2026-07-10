@@ -108,7 +108,14 @@ export type GroupMeta = {
   s: "active" | "completed" | "cancelled";
   m?: number; // maxConcurrency
   d?: number; // delay seconds between job starts
-  x?: number; // expiresAt ms
+  x?: number; // completed-group expiresAt ms
+  a?: number; // active-group abandonment deadline ms
+  eg?: string; // generation of the currently scheduled expiry
+  z?: boolean; // abandonment deadline elapsed; force-drain nonterminal work
+};
+
+export type RaiseTask = {
+  g: string; // generation; protects a newer task from an older sweeper
 };
 
 export function encodeI64(n: number): Buffer {
@@ -265,6 +272,12 @@ export class NuqFdbKeyspace {
   teamActiveIndexRange() {
     return this.packRange(["ta"]);
   }
+  teamLedgerGcIndex(tid: string): Buffer {
+    return this.pack(["tgc", timeBucket(tid), tid]);
+  }
+  teamLedgerGcIndexRange(bucket: number) {
+    return this.packRange(["tgc", bucket]);
+  }
   teamPendingCount(tid: string): Buffer {
     return this.pack(["t", tid, "pend"]);
   }
@@ -297,6 +310,15 @@ export class NuqFdbKeyspace {
   keyActive(kid: string): Buffer {
     return this.pack(["k", kid, "active"]);
   }
+  keyLedgerIndex(kid: string): Buffer {
+    return this.pack(["ki2", timeBucket(kid), kid]);
+  }
+  keyLedgerIndexRange(bucket: number) {
+    return this.packRange(["ki2", bucket]);
+  }
+  keyGateRange() {
+    return this.packRange(["k"]);
+  }
   keyPendingCount(kid: string): Buffer {
     return this.pack(["k", kid, "qn"]);
   }
@@ -315,6 +337,9 @@ export class NuqFdbKeyspace {
   // === Group (crawl) records
   groupMeta(gid: string): Buffer {
     return this.pack(["g", gid, "meta"]);
+  }
+  groupAllRange() {
+    return this.packRange(["g"]);
   }
   groupRemaining(gid: string): Buffer {
     return this.pack(["g", gid, "rem"]);
@@ -360,6 +385,12 @@ export class NuqFdbKeyspace {
   groupFinishedJob(gid: string): Buffer {
     return this.pack(["g", gid, "fjob"]);
   }
+  groupCancelCursor(gid: string): Buffer {
+    return this.pack(["g", gid, "ccur"]);
+  }
+  groupGcCursor(gid: string): Buffer {
+    return this.pack(["g", gid, "gccur"]);
+  }
   groupRange(gid: string) {
     return this.packRange(["g", gid]);
   }
@@ -368,6 +399,9 @@ export class NuqFdbKeyspace {
   }
   ongoingGroupRange(ownerId: string) {
     return this.packRange(["go", ownerId]);
+  }
+  ongoingGroupAllRange() {
+    return this.packRange(["go"]);
   }
 
   // === Ready shards
@@ -451,10 +485,16 @@ export class NuqFdbKeyspace {
       end: this.pack(["jexp", bucket, untilMs]),
     };
   }
-  groupExpiry(atMs: number, gid: string): Buffer {
-    return this.pack(["gexp", atMs, gid]);
+  groupExpiry(atMs: number, gid: string, generation: string = ""): Buffer {
+    return this.pack(["gexp2", timeBucket(gid), atMs, gid, generation]);
   }
-  groupExpiryScanRange(untilMs: number) {
+  groupExpiryScanRange(bucket: number, untilMs: number) {
+    return {
+      begin: this.pack(["gexp2", bucket]),
+      end: this.pack(["gexp2", bucket, untilMs]),
+    };
+  }
+  legacyGroupExpiryScanRange(untilMs: number) {
     return {
       begin: this.pack(["gexp"]),
       end: this.pack(["gexp", untilMs]),
@@ -462,32 +502,52 @@ export class NuqFdbKeyspace {
   }
 
   // === Task keys (blind-set, sweeper-drained)
+  // New tasks are hash-partitioned. The legacy ranges remain readable during
+  // rolling deployment so work written by an older replica is not lost.
   taskGroupFinish(gid: string): Buffer {
-    return this.pack(["task", "gfin", gid]);
+    return this.pack(["task2", "gfin", timeBucket(gid), gid]);
   }
-  taskGroupFinishRange() {
+  taskGroupFinishRange(bucket: number) {
+    return this.packRange(["task2", "gfin", bucket]);
+  }
+  legacyTaskGroupFinishRange() {
     return this.packRange(["task", "gfin"]);
   }
   taskGroupCancel(gid: string): Buffer {
-    return this.pack(["task", "gcancel", gid]);
+    return this.pack(["task2", "gcancel", timeBucket(gid), gid]);
   }
-  taskGroupCancelRange() {
+  taskGroupCancelRange(bucket: number) {
+    return this.packRange(["task2", "gcancel", bucket]);
+  }
+  legacyTaskGroupCancelRange() {
     return this.packRange(["task", "gcancel"]);
   }
   taskTeamRaise(tid: string): Buffer {
-    return this.pack(["task", "traise", tid]);
+    return this.pack(["task2", "traise", timeBucket(tid), tid]);
   }
-  taskTeamRaiseRange() {
+  taskTeamRaiseRange(bucket: number) {
+    return this.packRange(["task2", "traise", bucket]);
+  }
+  legacyTaskTeamRaiseRange() {
     return this.packRange(["task", "traise"]);
   }
   taskKeyRaise(kid: string): Buffer {
-    return this.pack(["task", "kraise", kid]);
+    return this.pack(["task2", "kraise", timeBucket(kid), kid]);
   }
-  taskKeyRaiseRange() {
+  taskKeyRaiseRange(bucket: number) {
+    return this.packRange(["task2", "kraise", bucket]);
+  }
+  legacyTaskKeyRaiseRange() {
     return this.packRange(["task", "kraise"]);
   }
-  sweeperLock(): Buffer {
+  legacySweeperLock(): Buffer {
     return this.pack(["sweep", "lock"]);
+  }
+  sweeperPartition(phase: string, partition: number): Buffer {
+    return this.pack(["sweep", phase, partition, "lock"]);
+  }
+  sweeperCursor(phase: string, partition: number): Buffer {
+    return this.pack(["sweep", phase, partition, "cursor"]);
   }
 
   unpackId(key: Buffer, indexFromEnd: number = 0): string {

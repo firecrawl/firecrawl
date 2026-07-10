@@ -89,3 +89,7 @@ export function getNuqFdbSweeper(): NuqFdbSweeper {
   }
   return sweeper;
 }
+
+export function nuqFdbSweeperGetMetrics(): string {
+  return getNuqFdbSweeper().getMetrics();
+}

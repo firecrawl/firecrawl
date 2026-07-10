@@ -8,9 +8,13 @@ import {
   crawlFinishedQueueFdb,
   getNuqFdbSweeper,
   nuqFdbHealthCheck,
+  nuqFdbSweeperGetMetrics,
   scrapeQueueFdb,
 } from "./nuq-fdb";
-import { startCrawlFinishedLoop } from "./nuq-fdb-worker-runtime";
+import {
+  isLegacyFdbWorkerLive,
+  startCrawlFinishedLoop,
+} from "./nuq-fdb-worker-runtime";
 import { runNuqWorker } from "./nuq-worker-runner";
 import type { NuQJob } from "./nuq";
 
@@ -54,10 +58,13 @@ async function processFinishCrawlJobInternal(_job: NuQJob) {
     serviceName: "nuq-fdb-worker",
     queue: scrapeQueueFdb as any,
     healthCheck: () => nuqFdbHealthCheck(),
-    livenessCheck: () => crawlFinishedLoop?.isHealthy() ?? false,
+    livenessCheck: () => isLegacyFdbWorkerLive(crawlFinishedLoop),
     // These are process-local metrics. Queue-wide FDB ranges are deliberately
     // not scanned from every worker's Prometheus scrape callback.
-    metrics: () => crawlFinishedLoop?.metrics() ?? "",
+    metrics: () =>
+      [crawlFinishedLoop?.metrics() ?? "", nuqFdbSweeperGetMetrics()]
+        .filter(Boolean)
+        .join("\n"),
     beforeStart: () => {
       getNuqFdbSweeper().start();
       crawlFinishedLoop = startCrawlFinishedLoop({
@@ -81,9 +88,14 @@ async function processFinishCrawlJobInternal(_job: NuQJob) {
       // Stop both dequeue loops immediately, then let their in-flight jobs keep
       // renewing and drain within runNuqWorker's bounded grace period.
       crawlFinishedLoop?.stop();
+      getNuqFdbSweeper().stop();
     },
-    drain: () => crawlFinishedLoop?.done,
-    onShutdownDeadline: () => crawlFinishedLoop?.forceStop(),
-    shutdown: () => getNuqFdbSweeper().stop(),
+    drain: async () => {
+      await Promise.all([crawlFinishedLoop?.done, getNuqFdbSweeper().done]);
+    },
+    onShutdownDeadline: () => {
+      crawlFinishedLoop?.forceStop();
+      getNuqFdbSweeper().forceStop();
+    },
   });
 })();

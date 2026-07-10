@@ -5,7 +5,10 @@ import {
   settleDrain,
   type RuntimeLogger,
 } from "./nuq-worker-runtime";
-import { startCrawlFinishedLoop } from "./nuq-fdb-worker-runtime";
+import {
+  isLegacyFdbWorkerLive,
+  startCrawlFinishedLoop,
+} from "./nuq-fdb-worker-runtime";
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -267,6 +270,14 @@ describe("NuQ worker lease lifecycle", () => {
 });
 
 describe("NuQ FDB worker supervision", () => {
+  test("keeps transient sweeper readiness out of legacy liveness", () => {
+    const crawlFinishedLoop = { isHealthy: vi.fn(() => true) };
+
+    expect(isLegacyFdbWorkerLive(crawlFinishedLoop)).toBe(true);
+    expect(crawlFinishedLoop.isHealthy).toHaveBeenCalledOnce();
+    expect(isLegacyFdbWorkerLive(null)).toBe(false);
+  });
+
   test("keeps crawl-finished loop healthy through transient dequeue and finish failures", async () => {
     vi.useFakeTimers();
     const directFdbJob = job();

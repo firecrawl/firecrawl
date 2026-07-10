@@ -1,3 +1,4 @@
+import { randomUUID } from "crypto";
 import type { Transaction } from "foundationdb";
 import { logger as _logger } from "../../../lib/logger";
 import {
@@ -24,6 +25,7 @@ import {
   NuqFdbMetricControl,
   NuqFdbMetricStatus,
   fnv1a,
+  RaiseTask,
 } from "./keyspace";
 
 export const ONE = encodeI64(1);
@@ -46,6 +48,7 @@ export function bumpTeamActive(
   // This is a compact presence index, not a second counter. Zero transitions
   // use setTeamActive below and remove the key entirely.
   if (delta > 0) tn.set(ks.teamActiveIndex(teamId), EMPTY);
+  tn.set(ks.teamLedgerGcIndex(teamId), EMPTY);
 }
 
 export function setTeamActive(
@@ -58,6 +61,21 @@ export function setTeamActive(
   tn.set(ks.teamActive(teamId), encodeI64(next));
   if (next === 0) tn.clear(ks.teamActiveIndex(teamId));
   else tn.set(ks.teamActiveIndex(teamId), EMPTY);
+  tn.set(ks.teamLedgerGcIndex(teamId), EMPTY);
+}
+
+export function bumpKeyActive(
+  tn: Transaction,
+  ks: NuqFdbKeyspace,
+  keyId: string,
+  delta: number,
+): void {
+  tn.add(ks.keyActive(keyId), encodeI64(delta));
+  tn.set(ks.keyLedgerIndex(keyId), EMPTY);
+}
+
+export function scheduleRaiseTask(tn: Transaction, key: Buffer): void {
+  tn.set(key, encodeJson({ g: randomUUID() } satisfies RaiseTask));
 }
 
 function decodeMetricControl(
@@ -185,6 +203,7 @@ export function appendTeamPending(
 ): PendingLoc {
   const shard = teamPendingShard(e.i);
   tn.set(ks.teamPendingKey(e.o, shard, e.p, e.c, e.i), encodeJson(e));
+  tn.set(ks.teamLedgerGcIndex(e.o), EMPTY);
   tn.add(ks.teamShardCount(e.o, shard), ONE);
   tn.add(ks.teamPendingCount(e.o), ONE);
   if (e.to !== undefined) {
@@ -199,6 +218,7 @@ export function appendKeyPending(
   e: QueueEntry,
 ): PendingLoc {
   tn.set(ks.keyPendingKey(e.k!, e.p, e.c, e.i), encodeJson(e));
+  tn.set(ks.keyLedgerIndex(e.k!), EMPTY);
   tn.add(ks.keyPendingCount(e.k!), ONE);
   tn.add(ks.teamPendingCount(e.o), ONE);
   if (e.to !== undefined) {
@@ -456,7 +476,7 @@ export async function releaseSlotsAndPromote(
     }
     if (keyOverLimit) {
       // limit-lowering convergence: swallow the slot instead of handing off
-      tn.add(ks.keyActive(e.k!), MINUS_ONE);
+      bumpKeyActive(tn, ks, e.k!, -1);
       keyHandedOff = true; // accounted for; don't decrement again below
     } else {
       const keyHead = await popKeyPending(tn, ks, e.k!);
@@ -518,7 +538,7 @@ export async function releaseSlotsAndPromote(
           const kLimit = kLimitBuf ? decodeI64(kLimitBuf) : Infinity;
           const kActive = decodeI64(await tn.get(ks.keyActive(j2.k!)));
           if (kActive < kLimit) {
-            tn.add(ks.keyActive(j2.k!), ONE);
+            bumpKeyActive(tn, ks, j2.k!, 1);
             hasKeySlot = true;
           }
         }
@@ -546,7 +566,7 @@ export async function releaseSlotsAndPromote(
   }
 
   if (holdsKey && !keyHandedOff) {
-    tn.add(ks.keyActive(e.k!), MINUS_ONE);
+    bumpKeyActive(tn, ks, e.k!, -1);
   }
 
   if (held.team) {
@@ -601,7 +621,7 @@ export async function admitThroughGates(
       await alignQueueMetricStatus(tn, ks, e.i);
       return;
     }
-    tn.add(ks.keyActive(e.k), ONE);
+    bumpKeyActive(tn, ks, e.k, 1);
   }
   await admitThroughTeamGate(tn, ks, e, txc);
 }
