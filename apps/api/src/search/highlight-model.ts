@@ -208,6 +208,7 @@ export async function generateHighlightsBatch(
     if (
       typeof data !== "object" ||
       data === null ||
+      Array.isArray(data) ||
       ("pages" in data && !Array.isArray(data.pages))
     ) {
       throw new HighlightInvalidResponseError(

@@ -213,19 +213,22 @@ describe("generateHighlightsBatch", () => {
     expect(out).toEqual(new Map());
   });
 
-  it("classifies malformed JSON responses as invalid responses", async () => {
-    mockFetchOnce(null);
-    const onFailure = vi.fn();
+  it.each([null, []])(
+    "classifies malformed JSON response %j as invalid",
+    async body => {
+      mockFetchOnce(body);
+      const onFailure = vi.fn();
 
-    const out = await generateHighlightsBatch(
-      "q",
-      [{ id: "0", markdown: "md" }],
-      { logger, onFailure },
-    );
+      const out = await generateHighlightsBatch(
+        "q",
+        [{ id: "0", markdown: "md" }],
+        { logger, onFailure },
+      );
 
-    expect(out).toBeNull();
-    expect(onFailure).toHaveBeenCalledWith("invalid_response");
-  });
+      expect(out).toBeNull();
+      expect(onFailure).toHaveBeenCalledWith("invalid_response");
+    },
+  );
 
   it("does not retry after the request deadline aborts during backoff", async () => {
     vi.useFakeTimers();
