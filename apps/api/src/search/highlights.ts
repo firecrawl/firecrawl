@@ -10,7 +10,7 @@ import { indexGetRecent5 } from "../db/rpc";
 import { parseMarkdown } from "../lib/html-to-markdown";
 import { htmlTransform } from "../scraper/scrapeURL/lib/removeUnwantedElements";
 import type { ScrapeOptions } from "../controllers/v2/types";
-import { generateHighlights } from "./highlight-model";
+import { generateHighlightsBatch } from "./highlight-model";
 import { config } from "../config";
 
 // How far back into the index we're willing to reach for highlight source text.
@@ -19,15 +19,11 @@ const HIGHLIGHTS_INDEX_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
 /**
  * Whether the deployment has every dependency the highlights beta needs: the
  * index DB (to find cached content), the GCS index bucket (to fetch it), and the
- * highlight model service URL + token (to score it). Missing any => silently
- * skip.
+ * highlight model service URL (to score it). Missing any => silently skip.
  */
 export function highlightsEnvReady(): boolean {
   return (
-    useIndex &&
-    !!config.GCS_INDEX_BUCKET_NAME &&
-    !!config.HIGHLIGHT_MODEL_URL &&
-    !!config.HIGHLIGHT_MODEL_TOKEN
+    useIndex && !!config.GCS_INDEX_BUCKET_NAME && !!config.HIGHLIGHT_MODEL_URL
   );
 }
 
@@ -124,9 +120,10 @@ async function getIndexedMarkdownForURL(
  * For each search result: look up the URL in our index (last 30 days), and if
  * present, replace the provider snippet with query-relevant highlights generated
  * from the indexed content. Index lookups run in parallel; each hit's full
- * markdown is sent to the highlight model service, which returns the selected
- * highlights reassembled into a single markdown document. Mutates `response` in
- * place. Results not in the index keep their original snippet.
+ * markdown pages are sent to the highlight model service in one batch, which
+ * returns each page's selected highlights reassembled into a single markdown
+ * document. Mutates `response` in place. Results not in the index keep their
+ * original snippet.
  */
 export async function applySearchHighlights(
   response: SearchV2Response,
@@ -177,21 +174,27 @@ export async function applySearchHighlights(
   });
   const indexHits = hits.length;
 
-  // Send each hit's full markdown to the highlight model service in parallel and
-  // use the reassembled markdown it returns as the snippet.
+  // Send every hit in one request. IDs are local batch indexes, so a missing or
+  // empty response only falls back the corresponding provider snippet.
   let replaced = 0;
   if (indexHits > 0) {
-    const results = await Promise.all(
-      hits.map(h => generateHighlights(query, h.markdown, { logger })),
+    const results = await generateHighlightsBatch(
+      query,
+      hits.map((hit, index) => ({
+        id: String(index),
+        markdown: hit.markdown,
+      })),
+      { logger },
     );
-    results.forEach((result, i) => {
-      if (!result) return;
-      const snippet = result.markdown;
-      if (snippet.trim() !== "") {
-        hits[i].apply(snippet);
-        replaced++;
-      }
-    });
+    if (results) {
+      hits.forEach((hit, index) => {
+        const snippet = results.get(String(index))?.markdown;
+        if (snippet?.trim()) {
+          hit.apply(snippet);
+          replaced++;
+        }
+      });
+    }
   }
 
   logger.info("Search highlights applied", {

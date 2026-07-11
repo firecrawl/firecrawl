@@ -159,9 +159,8 @@ const configSchema = z.object({
   CLICKHOUSE_ANALYTICS_URL: z.string().optional(),
   CLICKHOUSE_ANALYTICS_DATABASE: z.string().optional(),
 
-  // Search highlights (beta): query-highlights model service. URL is the base
-  // (e.g. https://firecrawl--query-highlights.modal.run); TOKEN is the bearer
-  // token sent on every request.
+  // Search highlights (beta): highlighter service base URL. TOKEN is optional
+  // bearer auth for legacy/external services; the in-cluster service omits it.
   HIGHLIGHT_MODEL_URL: z.string().optional(),
   HIGHLIGHT_MODEL_TOKEN: z.string().optional(),
 
