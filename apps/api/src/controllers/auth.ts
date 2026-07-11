@@ -7,6 +7,10 @@ import { withAuth } from "../lib/withAuth";
 import { getAgentSponsorStatus } from "../services/agent-sponsor";
 import { getRateLimiter, getAutumnRateLimiter } from "../services/rate-limiter";
 import {
+  buildRateLimitMessage,
+  isRateLimiterRes,
+} from "../lib/rate-limit-error";
+import {
   KEYLESS_FREE_TIER_LIMIT_MESSAGE,
   consumeKeylessRequest,
   isKeylessConfigured,
@@ -810,27 +814,39 @@ async function supaAuthenticateUser(
   try {
     await rateLimiter.consume(team_endpoint_token);
   } catch (rateLimiterRes) {
-    logger.error(`Rate limit exceeded: ${rateLimiterRes}`, {
-      teamId,
-      mode,
-      rateLimiterRes,
-    });
+    // `consume()` rejects with a `RateLimiterRes` on a genuine rate-limit hit,
+    // but with a plain `Error` when the rate-limit Redis store is unreachable
+    // (no insuranceLimiter is configured). Only the former is a real 429 —
+    // treating a store/infra error as a 429 returns a bogus response with
+    // `undefined` fields on every authenticated request while Redis is down
+    // (issue #3728). Fail open on infra errors instead.
+    if (!isRateLimiterRes(rateLimiterRes)) {
+      logger.error("Rate limiter backing store error — failing open", {
+        teamId,
+        mode,
+        error: rateLimiterRes,
+      });
+    } else {
+      logger.error(`Rate limit exceeded: ${rateLimiterRes}`, {
+        teamId,
+        mode,
+        rateLimiterRes,
+      });
+      const { message } = buildRateLimitMessage(rateLimiterRes);
 
-    const secs = Math.round(rateLimiterRes.msBeforeNext / 1000) || 1;
-    const retryDate = new Date(Date.now() + rateLimiterRes.msBeforeNext);
+      // We can only send a rate limit email every 7 days, send notification already has the date in between checking
+      // const startDate = new Date();
+      // const endDate = new Date();
+      // endDate.setDate(endDate.getDate() + 7);
 
-    // We can only send a rate limit email every 7 days, send notification already has the date in between checking
-    // const startDate = new Date();
-    // const endDate = new Date();
-    // endDate.setDate(endDate.getDate() + 7);
+      // await sendNotification(team_id, NotificationType.RATE_LIMIT_REACHED, startDate.toISOString(), endDate.toISOString());
 
-    // await sendNotification(team_id, NotificationType.RATE_LIMIT_REACHED, startDate.toISOString(), endDate.toISOString());
-
-    return {
-      success: false,
-      error: `Rate limit exceeded. Consumed (req/min): ${rateLimiterRes.consumedPoints}, Remaining (req/min): ${rateLimiterRes.remainingPoints}. Upgrade your plan at https://firecrawl.dev/pricing for increased rate limits or please retry after ${secs}s, resets at ${retryDate}`,
-      status: 429,
-    };
+      return {
+        success: false,
+        error: message,
+        status: 429,
+      };
+    }
   }
 
   if (
