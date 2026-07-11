@@ -240,18 +240,16 @@ export async function executeSearch(
     }
   }
 
-  // Experimental highlights beta: replace provider snippets with index-backed
-  // highlights. Gated on (1) the request opting in, (2) the team's highlightsBeta
-  // flag, and (3) all required envs being present (index DB, GCS, model). Any
-  // gate failing => silently keep the provider snippets.
+  // Highlights: replace provider snippets with index-backed highlights. On by
+  // default for search requests (the v1 and v2 schemas prefault `highlights`
+  // to true). Gated on (1) the request not opting out and (2) all required
+  // envs being present (index DB, GCS, model). Any gate failing => silently
+  // keep the provider snippets. The whole pass runs under a hard latency
+  // budget (see HIGHLIGHTS_TIMEOUT_MS).
   // Runs after scraping (mergeScrapedContent rebuilds the result objects, so
   // highlight mutations must come last to survive). Uses the user's original
   // query, not the domain-filtered upstream query.
-  if (
-    options.highlights &&
-    flags?.highlightsBeta === true &&
-    highlightsEnvReady()
-  ) {
+  if (options.highlights && highlightsEnvReady()) {
     await applySearchHighlights(searchResponse, query, logger);
   }
 

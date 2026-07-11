@@ -394,6 +394,7 @@ class FirecrawlClient:
         tbs: Optional[str] = None,
         location: Optional[str] = None,
         ignore_invalid_urls: Optional[bool] = None,
+        highlights: Optional[bool] = None,
         timeout: Optional[int] = None,
         scrape_options: Optional[ScrapeOptions] = None,
         integration: Optional[str] = None,
@@ -408,6 +409,7 @@ class FirecrawlClient:
             limit: Maximum number of results to return (default: 5)
             tbs: Time-based search filter
             location: Location string for search
+            highlights: Replace each result's description with query-relevant highlights from Firecrawl's index (on by default; set False to opt out)
             timeout: Request timeout in milliseconds (default: 300000)
             page_options: Options for scraping individual pages
             enterprise: Enterprise search options. Use ["zdr"] for end-to-end
@@ -429,6 +431,7 @@ class FirecrawlClient:
             tbs=tbs,
             location=location,
             ignore_invalid_urls=ignore_invalid_urls,
+            highlights=highlights,
             timeout=timeout,
             scrape_options=scrape_options,
             integration=integration,

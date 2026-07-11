@@ -36,6 +36,7 @@ function prepareSearchPayload(req: SearchRequest): Record<string, unknown> {
   if (req.location != null) payload.location = req.location;
   if (req.ignoreInvalidURLs != null)
     payload.ignoreInvalidURLs = req.ignoreInvalidURLs;
+  if (req.highlights != null) payload.highlights = req.highlights;
   if (req.timeout != null) payload.timeout = req.timeout;
   if (req.integration && req.integration.trim())
     payload.integration = req.integration.trim();

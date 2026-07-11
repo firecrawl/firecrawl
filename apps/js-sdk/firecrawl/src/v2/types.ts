@@ -696,6 +696,11 @@ export interface SearchRequest {
   tbs?: string;
   location?: string;
   ignoreInvalidURLs?: boolean;
+  /**
+   * Replace each result's description with query-relevant highlights from
+   * Firecrawl's index (on by default; set false to opt out).
+   */
+  highlights?: boolean;
   timeout?: number; // ms
   scrapeOptions?: ScrapeOptions;
   /**

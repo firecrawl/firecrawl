@@ -351,6 +351,7 @@ class V1SearchParams(pydantic.BaseModel):
     lang: Optional[str] = "en"
     country: Optional[str] = "us"
     location: Optional[str] = None
+    highlights: Optional[bool] = None
     origin: Optional[str] = "api"
     timeout: Optional[int] = 60000
     scrapeOptions: Optional[V1ScrapeOptions] = None
@@ -697,6 +698,7 @@ class V1FirecrawlApp:
             lang: Optional[str] = None,
             country: Optional[str] = None,
             location: Optional[str] = None,
+            highlights: Optional[bool] = None,
             timeout: Optional[int] = 30000,
             scrape_options: Optional[V1ScrapeOptions] = None,
             **kwargs) -> V1SearchResponse:
@@ -709,8 +711,9 @@ class V1FirecrawlApp:
             tbs (Optional[str]): Time filter (e.g. "qdr:d")
             filter (Optional[str]): Custom result filter
             lang (Optional[str]): Language code (default: "en")
-            country (Optional[str]): Country code (default: "us") 
+            country (Optional[str]): Country code (default: "us")
             location (Optional[str]): Geo-targeting
+            highlights: Replace each result's description with query-relevant highlights from Firecrawl's index (on by default; set False to opt out)
             timeout (Optional[int]): Request timeout in milliseconds
             scrape_options (Optional[ScrapeOptions]): Result scraping configuration
             **kwargs: Additional keyword arguments for future compatibility
@@ -744,11 +747,13 @@ class V1FirecrawlApp:
             search_params['country'] = country
         if location is not None:
             search_params['location'] = location
+        if highlights is not None:
+            search_params['highlights'] = highlights
         if timeout is not None:
             search_params['timeout'] = timeout
         if scrape_options is not None:
             search_params['scrapeOptions'] = scrape_options.dict(by_alias=True, exclude_none=True)
-        
+
         # Add any additional kwargs
         search_params.update(kwargs)
         _integration = search_params.get('integration')
@@ -5205,6 +5210,7 @@ class AsyncV1FirecrawlApp(V1FirecrawlApp):
             lang: Optional[str] = None,
             country: Optional[str] = None,
             location: Optional[str] = None,
+            highlights: Optional[bool] = None,
             timeout: Optional[int] = 30000,
             scrape_options: Optional[V1ScrapeOptions] = None,
             params: Optional[Union[Dict[str, Any], V1SearchParams]] = None,
@@ -5218,8 +5224,9 @@ class AsyncV1FirecrawlApp(V1FirecrawlApp):
             tbs (Optional[str]): Time filter (e.g. "qdr:d")
             filter (Optional[str]): Custom result filter
             lang (Optional[str]): Language code (default: "en")
-            country (Optional[str]): Country code (default: "us") 
+            country (Optional[str]): Country code (default: "us")
             location (Optional[str]): Geo-targeting
+            highlights: Replace each result's description with query-relevant highlights from Firecrawl's index (on by default; set False to opt out)
             timeout (Optional[int]): Request timeout in milliseconds
             scrape_options (Optional[ScrapeOptions]): Result scraping configuration
             params (Optional[Union[Dict[str, Any], SearchParams]]): Additional search parameters
@@ -5256,11 +5263,13 @@ class AsyncV1FirecrawlApp(V1FirecrawlApp):
             search_params['country'] = country
         if location is not None:
             search_params['location'] = location
+        if highlights is not None:
+            search_params['highlights'] = highlights
         if timeout is not None:
             search_params['timeout'] = timeout
         if scrape_options is not None:
             search_params['scrapeOptions'] = scrape_options.dict(by_alias=True, exclude_none=True)
-        
+
         # Add any additional kwargs
         search_params.update(kwargs)
 

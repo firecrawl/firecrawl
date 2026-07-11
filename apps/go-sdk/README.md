@@ -253,6 +253,10 @@ results, err := client.Search(ctx, "firecrawl web scraping", &firecrawl.SearchOp
 })
 ```
 
+By default, each result's description is replaced with query-relevant
+highlights from Firecrawl's index. Set `Highlights: firecrawl.Bool(false)` to
+keep the provider descriptions instead.
+
 ### Agent
 
 Run an AI-powered agent to extract structured data.

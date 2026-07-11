@@ -1601,6 +1601,7 @@ class SearchRequest(BaseModel):
     tbs: Optional[str] = None
     location: Optional[str] = None
     ignore_invalid_urls: Optional[bool] = None
+    highlights: Optional[bool] = None
     timeout: Optional[int] = 300000
     scrape_options: Optional[ScrapeOptions] = None
     # Enterprise search options. Use ["zdr"] for end-to-end Zero Data

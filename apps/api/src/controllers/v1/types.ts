@@ -1326,7 +1326,6 @@ export type TeamFlags = {
   // POST /v2/search/:jobId/feedback returns 403 TEAM_OPTED_OUT when true.
   searchFeedbackOptOut?: boolean;
   researchBeta?: boolean;
-  highlightsBeta?: boolean;
   enrichBeta?: boolean;
   professionalProfileCompanyDataBeta?: boolean;
   organizationDataSourceAccess?: Record<
@@ -1574,6 +1573,11 @@ export const searchRequestSchema = z
     integration: integrationSchema.optional().transform(val => val || null),
     timeout: z.int().positive().finite().prefault(60000),
     ignoreInvalidURLs: z.boolean().optional().prefault(false),
+    // Replace each result's description with query-relevant highlights pulled
+    // from our index (last 30 days). On by default (pass false to opt out);
+    // falls back to the provider description when the URL isn't indexed or the
+    // highlights pass exceeds its latency budget.
+    highlights: z.boolean().optional().prefault(true),
     __searchPreviewToken: z.string().optional(),
     threatProtection: threatProtectionOverrideSchema.optional(),
     scrapeOptions: baseScrapeOptions

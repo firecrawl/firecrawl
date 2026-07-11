@@ -182,6 +182,11 @@ results.web&.each { |r| puts r["url"] }
 # With options
 results = client.search("latest news",
   Firecrawl::Models::SearchOptions.new(limit: 5, location: "US"))
+
+# Highlights replace each result's description with query-relevant highlights
+# from Firecrawl's index (on by default; set highlights: false to opt out)
+results = client.search("latest news",
+  Firecrawl::Models::SearchOptions.new(highlights: false))
 ```
 
 ### Agent

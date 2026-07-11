@@ -16,6 +16,12 @@ import { config } from "../config";
 // How far back into the index we're willing to reach for highlight source text.
 const HIGHLIGHTS_INDEX_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
 
+// Hard cap on the whole highlights pass. Highlights run on every search by
+// default, so they must never add more than this to search latency — when the
+// deadline fires we abort the in-flight model calls, keep every provider
+// snippet, and log a warning.
+const HIGHLIGHTS_TIMEOUT_MS = 300;
+
 /**
  * Whether the deployment has every dependency the highlights beta needs: the
  * index DB (to find cached content), the GCS index bucket (to fetch it), and the
@@ -43,13 +49,17 @@ const ERROR_COUNT_TO_REGISTER = 3;
 /**
  * Fetch the most recent indexed markdown for a URL within the last 30 days.
  * Returns null when the URL isn't in the index (or the lookup fails) so callers
- * can fall back to the provider snippet.
+ * can fall back to the provider snippet. An aborted `signal` (the overall
+ * highlights deadline) makes it bail with null at the next stage boundary —
+ * the individual DB/GCS/parse calls aren't cancelable, but this keeps a
+ * timed-out pass from continuing through the remaining expensive stages.
  */
 async function getIndexedMarkdownForURL(
   url: string,
   logger: Logger,
+  signal?: AbortSignal,
 ): Promise<string | null> {
-  if (!useIndex) {
+  if (!useIndex || signal?.aborted) {
     return null;
   }
 
@@ -73,7 +83,7 @@ async function getIndexedMarkdownForURL(
       min_age_ms: null,
     });
 
-    if (!rows || rows.length === 0) {
+    if (!rows || rows.length === 0 || signal?.aborted) {
       return null;
     }
 
@@ -90,7 +100,7 @@ async function getIndexedMarkdownForURL(
       logger.child({ module: "search/highlights", method: "getIndexFromGCS" }),
       { indexCreatedAt: selected.created_at },
     );
-    if (!doc || !doc.html) {
+    if (!doc || !doc.html || signal?.aborted) {
       return null;
     }
 
@@ -108,6 +118,9 @@ async function getIndexedMarkdownForURL(
       includeTags: [],
       excludeTags: [],
     } as unknown as ScrapeOptions);
+    if (signal?.aborted) {
+      return null;
+    }
 
     const markdown = await parseMarkdown(cleanedHtml, { logger });
     return markdown && markdown.trim() !== "" ? markdown : null;
@@ -127,12 +140,22 @@ async function getIndexedMarkdownForURL(
  * markdown is sent to the highlight model service, which returns the selected
  * highlights reassembled into a single markdown document. Mutates `response` in
  * place. Results not in the index keep their original snippet.
+ *
+ * The whole pass is capped at HIGHLIGHTS_TIMEOUT_MS: past the deadline every
+ * result keeps its provider snippet, even if some highlights came back in time.
+ * Time taken is always canonical-logged — debug when within the deadline, warn
+ * when it fires.
  */
 export async function applySearchHighlights(
   response: SearchV2Response,
   query: string,
   logger: Logger,
-): Promise<{ attempted: number; indexHits: number; replaced: number }> {
+): Promise<{
+  attempted: number;
+  indexHits: number;
+  replaced: number;
+  timedOut: boolean;
+}> {
   const start = Date.now();
 
   // Collect every result we could highlight, each with a setter for its snippet
@@ -159,47 +182,104 @@ export async function applySearchHighlights(
 
   const attempted = targets.length;
   if (attempted === 0) {
-    return { attempted, indexHits: 0, replaced: 0 };
-  }
-
-  // Look up indexed markdown for every URL in parallel, keeping the markdown for
-  // each hit so we can send it to the highlight model service.
-  const markdowns = await Promise.all(
-    targets.map(t => getIndexedMarkdownForURL(t.url, logger)),
-  );
-  const hits: {
-    apply: (h: string) => void;
-    markdown: string;
-  }[] = [];
-  markdowns.forEach((markdown, i) => {
-    if (!markdown) return;
-    hits.push({ apply: targets[i].apply, markdown });
-  });
-  const indexHits = hits.length;
-
-  // Send each hit's full markdown to the highlight model service in parallel and
-  // use the reassembled markdown it returns as the snippet.
-  let replaced = 0;
-  if (indexHits > 0) {
-    const results = await Promise.all(
-      hits.map(h => generateHighlights(query, h.markdown, { logger })),
-    );
-    results.forEach((result, i) => {
-      if (!result) return;
-      const snippet = result.markdown;
-      if (snippet.trim() !== "") {
-        hits[i].apply(snippet);
-        replaced++;
-      }
+    logger.debug("Search highlights applied", {
+      canonicalLog: "search/highlights",
+      attempted,
+      indexHits: 0,
+      replaced: 0,
+      timedOut: false,
+      timeTakenMs: Date.now() - start,
+      timeoutMs: HIGHLIGHTS_TIMEOUT_MS,
     });
+    return { attempted, indexHits: 0, replaced: 0, timedOut: false };
   }
 
-  logger.info("Search highlights applied", {
+  // Race the pass against the deadline. On timeout, abort the in-flight model
+  // calls and bail without touching the response — the dangling work can't
+  // mutate it, because all snippet mutations happen below, and only when the
+  // work wins the race.
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), HIGHLIGHTS_TIMEOUT_MS);
+
+  let indexHits = 0;
+  let replaced = 0;
+  let timedOut = false;
+  try {
+    const work = (async () => {
+      // Look up indexed markdown for every URL in parallel, keeping the
+      // markdown for each hit so we can send it to the highlight model service.
+      const markdowns = await Promise.all(
+        targets.map(t =>
+          getIndexedMarkdownForURL(t.url, logger, controller.signal),
+        ),
+      );
+      if (controller.signal.aborted) {
+        return { hits: [], results: [] };
+      }
+      const hits: {
+        apply: (h: string) => void;
+        markdown: string;
+      }[] = [];
+      markdowns.forEach((markdown, i) => {
+        if (!markdown) return;
+        hits.push({ apply: targets[i].apply, markdown });
+      });
+
+      // Send each hit's full markdown to the highlight model service in
+      // parallel and use the reassembled markdown it returns as the snippet.
+      const results = await Promise.all(
+        hits.map(h =>
+          generateHighlights(query, h.markdown, {
+            logger,
+            signal: controller.signal,
+          }),
+        ),
+      );
+
+      return { hits, results };
+    })();
+
+    const finished = await Promise.race([
+      work,
+      new Promise<null>(resolve =>
+        controller.signal.addEventListener("abort", () => resolve(null), {
+          once: true,
+        }),
+      ),
+    ]);
+
+    if (finished === null) {
+      timedOut = true;
+    } else {
+      indexHits = finished.hits.length;
+      finished.results.forEach((result, i) => {
+        if (!result) return;
+        const snippet = result.markdown;
+        if (snippet.trim() !== "") {
+          finished.hits[i].apply(snippet);
+          replaced++;
+        }
+      });
+    }
+  } finally {
+    clearTimeout(timer);
+  }
+
+  const timeTakenMs = Date.now() - start;
+  const logFields = {
+    canonicalLog: "search/highlights",
     attempted,
     indexHits,
     replaced,
-    timeTakenMs: Date.now() - start,
-  });
+    timedOut,
+    timeTakenMs,
+    timeoutMs: HIGHLIGHTS_TIMEOUT_MS,
+  };
+  if (timedOut) {
+    logger.warn("Search highlights timed out", logFields);
+  } else {
+    logger.debug("Search highlights applied", logFields);
+  }
 
-  return { attempted, indexHits, replaced };
+  return { attempted, indexHits, replaced, timedOut };
 }

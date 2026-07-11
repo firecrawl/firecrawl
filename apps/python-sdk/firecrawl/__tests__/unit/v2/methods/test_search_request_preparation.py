@@ -20,6 +20,27 @@ class TestSearchRequestPreparation:
         assert "ignore_invalid_urls" not in data
         assert "scrape_options" not in data
 
+        # highlights must be omitted when not set (server default applies)
+        assert "highlights" not in data
+
+    def test_highlights_serialization(self):
+        """Test that highlights is serialized as-is when set and omitted when unset."""
+        # Explicit False (opt out) is included
+        request = SearchRequest(query="test", highlights=False)
+        data = _prepare_search_request(request)
+        assert "highlights" in data
+        assert data["highlights"] is False
+
+        # Explicit True is included
+        request = SearchRequest(query="test", highlights=True)
+        data = _prepare_search_request(request)
+        assert data["highlights"] is True
+
+        # Unset (None) is omitted so the SDK never sends a default
+        request = SearchRequest(query="test", highlights=None)
+        data = _prepare_search_request(request)
+        assert "highlights" not in data
+
     def test_all_fields_conversion(self):
         """Test request preparation with all possible fields."""
         scrape_opts = ScrapeOptions(

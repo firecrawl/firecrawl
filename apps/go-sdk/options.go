@@ -173,6 +173,10 @@ type SearchOptions struct {
 	Timeout           *int           `json:"timeout,omitempty"`
 	ScrapeOptions     *ScrapeOptions `json:"scrapeOptions,omitempty"`
 	Integration       *string        `json:"integration,omitempty"`
+	// Highlights replaces each result's description with query-relevant
+	// highlights from Firecrawl's index (on by default; set to false to opt
+	// out).
+	Highlights *bool `json:"highlights,omitempty"`
 }
 
 // AgentOptions configures an agent request.

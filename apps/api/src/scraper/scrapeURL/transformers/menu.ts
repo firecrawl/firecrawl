@@ -12,8 +12,8 @@ export async function fetchMenu(
   }
 
   // Beta gate: during beta the menu format is limited to teams with the menuBeta
-  // flag. Fail closed and silent (mirrors highlightsBeta) -- a team without the
-  // flag gets no menu field, no error, and no engine call.
+  // flag. Fail closed and silent -- a team without the flag gets no menu field,
+  // no error, and no engine call.
   if (meta.internalOptions?.teamFlags?.menuBeta !== true) {
     meta.logger.info("menu format requested without menuBeta flag; skipping");
     return document;

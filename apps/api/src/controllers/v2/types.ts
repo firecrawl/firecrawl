@@ -1560,7 +1560,6 @@ export type TeamFlags = {
   debugBranding?: boolean;
   maxBrowserSessions?: number;
   researchBeta?: boolean;
-  highlightsBeta?: boolean;
   menuBeta?: boolean;
   enrichBeta?: boolean;
   professionalProfileCompanyDataBeta?: boolean;
@@ -1960,10 +1959,11 @@ export const searchRequestSchema = z
     timeout: z.int().positive().finite().prefault(60000),
     ignoreInvalidURLs: z.boolean().optional().prefault(false),
     asyncScraping: z.boolean().optional().prefault(false),
-    // Experimental: replace each result's snippet with query-relevant
-    // highlights pulled from our index (last 30 days), out-of-line from
-    // scrapeURL. Falls back to the provider snippet when the URL isn't indexed.
-    highlights: z.boolean().optional().prefault(false),
+    // Replace each result's snippet with query-relevant highlights pulled from
+    // our index (last 30 days), out-of-line from scrapeURL. On by default
+    // (pass false to opt out); falls back to the provider snippet when the URL
+    // isn't indexed or the highlights pass exceeds its latency budget.
+    highlights: z.boolean().optional().prefault(true),
     __searchPreviewToken: z.string().optional(),
     threatProtection: threatProtectionOverrideSchema.optional(),
     scrapeOptions: baseScrapeOptions

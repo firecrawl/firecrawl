@@ -99,4 +99,64 @@ describe("generateHighlights", () => {
     expect(out).toBeNull();
     expect(logger.warn).toHaveBeenCalled();
   });
+
+  it("cancels the request when the external signal aborts, logging at debug", async () => {
+    const fetchMock = vi.fn().mockImplementation(
+      (_url, init: { signal: AbortSignal }) =>
+        new Promise((_, reject) => {
+          const abort = () =>
+            reject(
+              new DOMException("This operation was aborted", "AbortError"),
+            );
+          if (init.signal.aborted) abort();
+          else init.signal.addEventListener("abort", abort, { once: true });
+        }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const external = new AbortController();
+    const promise = generateHighlights("q", "md", {
+      logger,
+      signal: external.signal,
+    });
+    external.abort();
+
+    const out = await promise;
+
+    expect(out).toBeNull();
+    expect(logger.warn).not.toHaveBeenCalled();
+    expect(logger.debug).toHaveBeenCalledWith(
+      "query highlights failed",
+      expect.objectContaining({
+        canonicalLog: "search/highlights",
+        aborted: true,
+        elapsedMs: expect.any(Number),
+      }),
+    );
+  });
+
+  it("returns null without warning when called with an already-aborted signal", async () => {
+    const fetchMock = vi.fn().mockImplementation(
+      (_url, init: { signal: AbortSignal }) =>
+        new Promise((_, reject) => {
+          if (init.signal.aborted) {
+            reject(
+              new DOMException("This operation was aborted", "AbortError"),
+            );
+          }
+        }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const external = new AbortController();
+    external.abort();
+
+    const out = await generateHighlights("q", "md", {
+      logger,
+      signal: external.signal,
+    });
+
+    expect(out).toBeNull();
+    expect(logger.warn).not.toHaveBeenCalled();
+  });
 });

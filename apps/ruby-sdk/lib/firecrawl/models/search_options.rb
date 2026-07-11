@@ -7,6 +7,7 @@ module Firecrawl
       FIELDS = %i[
         sources categories include_domains exclude_domains limit tbs location
         ignore_invalid_urls timeout scrape_options integration enterprise
+        highlights
       ].freeze
 
       attr_reader(*FIELDS)
@@ -31,6 +32,9 @@ module Firecrawl
           # Enterprise search options. Use ["zdr"] for end-to-end Zero Data
           # Retention or ["anon"] for anonymized search. Must be enabled for your team.
           "enterprise" => enterprise,
+          # Replace each result's description with query-relevant highlights from
+          # Firecrawl's index (on by default; set to false to opt out).
+          "highlights" => highlights,
         }.compact
       end
     end

@@ -405,6 +405,11 @@ export interface SearchParams {
   location?: string;
   origin?: string;
   timeout?: number;
+  /**
+   * Replace each result's description with query-relevant highlights from
+   * Firecrawl's index (on by default; set false to opt out).
+   */
+  highlights?: boolean;
   scrapeOptions?: ScrapeParams;
 }
 
@@ -786,6 +791,10 @@ export default class FirecrawlApp {
       timeout: params?.timeout ?? 60000,
       scrapeOptions: params?.scrapeOptions ?? { formats: [] },
     };
+
+    if (params?.highlights !== undefined) {
+      jsonData.highlights = params.highlights;
+    }
 
     if (jsonData?.scrapeOptions?.extract?.schema) {
       jsonData = {

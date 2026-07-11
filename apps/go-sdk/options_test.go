@@ -64,6 +64,32 @@ func TestScrapeOptionsPreservesStringFormats(t *testing.T) {
 	}
 }
 
+func TestSearchOptionsSerializesHighlights(t *testing.T) {
+	payload, err := json.Marshal(SearchOptions{
+		Highlights: Bool(false),
+	})
+	if err != nil {
+		t.Fatalf("Marshal SearchOptions: %v", err)
+	}
+
+	if !strings.Contains(string(payload), `"highlights":false`) {
+		t.Fatalf("serialized highlights = %s, want to contain %q", payload, `"highlights":false`)
+	}
+}
+
+func TestSearchOptionsOmitsUnsetHighlights(t *testing.T) {
+	payload, err := json.Marshal(SearchOptions{
+		Limit: Int(5),
+	})
+	if err != nil {
+		t.Fatalf("Marshal SearchOptions: %v", err)
+	}
+
+	if strings.Contains(string(payload), "highlights") {
+		t.Fatalf("serialized SearchOptions = %s, want highlights omitted when unset", payload)
+	}
+}
+
 func TestScrapeOptionsSerializesRedactPII(t *testing.T) {
 	payload, err := json.Marshal(ScrapeOptions{
 		RedactPII: Bool(true),

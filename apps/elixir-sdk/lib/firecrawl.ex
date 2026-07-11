@@ -41,7 +41,7 @@ defmodule Firecrawl do
   @type response :: {:ok, Req.Response.t()} | {:error, Exception.t() | Firecrawl.Error.t()}
 
   @base_url "https://api.firecrawl.dev/v2"
-  @sdk_origin "elixir-sdk@1.6.1"
+  @sdk_origin "elixir-sdk@1.9.0"
 
   defp client(opts) do
     api_key =
@@ -1149,6 +1149,7 @@ defmodule Firecrawl do
     country: [type: :string, doc: "ISO country code for geo-targeting search results (e.g. `US`). For best results, set both this and the `location` parameter."],
     enterprise: [type: {:list, :string}, doc: "Enterprise search options for Zero Data Retention (ZDR). Use `[\"zdr\"]` for end-to-end ZDR (10 credits / 10 results) or `[\"anon\"]` for anonymized ZDR (2 credits / 10 results). Must be enabled for your team."],
     exclude_domains: [type: {:list, :string}, doc: "Domains to exclude from search results."],
+    highlights: [type: :boolean, doc: "Replace each result's description with query-relevant highlights from Firecrawl's index (on by default; set to false to opt out)."],
     ignore_invalid_urls: [type: :boolean, doc: "Excludes URLs from the search results that are invalid for other Firecrawl endpoints. This helps reduce errors if you are piping data from search into other Firecrawl API endpoints."],
     include_domains: [type: {:list, :string}, doc: "Domains to include in search results."],
     limit: [type: :integer, doc: "Maximum number of results to return"],
@@ -1160,7 +1161,7 @@ defmodule Firecrawl do
     timeout: [type: :integer, doc: "Timeout in milliseconds"]
   ])
 
-  @search_and_scrape_key_mapping %{categories: "categories", country: "country", enterprise: "enterprise", exclude_domains: "excludeDomains", ignore_invalid_urls: "ignoreInvalidURLs", include_domains: "includeDomains", limit: "limit", location: "location", query: "query", scrape_options: "scrapeOptions", sources: "sources", tbs: "tbs", timeout: "timeout"}
+  @search_and_scrape_key_mapping %{categories: "categories", country: "country", enterprise: "enterprise", exclude_domains: "excludeDomains", highlights: "highlights", ignore_invalid_urls: "ignoreInvalidURLs", include_domains: "includeDomains", limit: "limit", location: "location", query: "query", scrape_options: "scrapeOptions", sources: "sources", tbs: "tbs", timeout: "timeout"}
 
   @doc """
   Search and optionally scrape search results

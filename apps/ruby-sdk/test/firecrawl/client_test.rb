@@ -751,6 +751,20 @@ class ClientTest < Minitest::Test
     assert_equal "qdr:w", h["tbs"]
     assert_equal ["firecrawl.dev"], h["includeDomains"]
     assert_equal ["example.com"], h["excludeDomains"]
+    refute_includes h, "highlights"
+  end
+
+  def test_search_options_highlights_serialized_when_set
+    opts = Firecrawl::Models::SearchOptions.new(highlights: false)
+    assert_equal false, opts.to_h["highlights"]
+
+    opts = Firecrawl::Models::SearchOptions.new(highlights: true)
+    assert_equal true, opts.to_h["highlights"]
+  end
+
+  def test_search_options_highlights_omitted_when_unset
+    opts = Firecrawl::Models::SearchOptions.new(limit: 3)
+    refute_includes opts.to_h, "highlights"
   end
 
   def test_agent_options_to_h

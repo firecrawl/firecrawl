@@ -230,6 +230,7 @@ export async function searchController(
         location: req.body.location,
         sources: [{ type: "web" }], // v1 only supports web
         scrapeOptions: shouldScrape ? scrapeOptions : undefined,
+        highlights: req.body.highlights,
         timeout: req.body.timeout,
         enterprise: teamEnterprise,
       },

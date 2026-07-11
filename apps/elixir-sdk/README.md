@@ -11,7 +11,7 @@ Add `firecrawl` to your list of dependencies in `mix.exs`:
 ```elixir
 def deps do
   [
-    {:firecrawl, "~> 1.4"}
+    {:firecrawl, "~> 1.9"}
   ]
 end
 ```
@@ -77,7 +77,12 @@ All params are passed as keyword lists with snake_case keys. Invalid keys, missi
 {:ok, response} = Firecrawl.map_urls(url: "https://example.com")
 
 # Search
-{:ok, response} = Firecrawl.search_and_scrape(query: "firecrawl web scraping")
+# `highlights` replaces each result's description with query-relevant
+# highlights from Firecrawl's index (on by default; set to false to opt out).
+{:ok, response} = Firecrawl.search_and_scrape(
+  query: "firecrawl web scraping",
+  highlights: false
+)
 
 # Check crawl status
 {:ok, response} = Firecrawl.get_crawl_status("job-uuid")

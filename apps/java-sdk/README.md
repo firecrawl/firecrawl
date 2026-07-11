@@ -82,13 +82,13 @@ Before using the Java SDK, ensure you have the following installed:
 ### Gradle (Kotlin DSL)
 
 ```kotlin
-implementation("com.firecrawl:firecrawl-java:1.6.0")
+implementation("com.firecrawl:firecrawl-java:1.12.0")
 ```
 
 ### Gradle (Groovy)
 
 ```groovy
-implementation 'com.firecrawl:firecrawl-java:1.6.0'
+implementation 'com.firecrawl:firecrawl-java:1.12.0'
 ```
 
 ### Maven
@@ -97,7 +97,7 @@ implementation 'com.firecrawl:firecrawl-java:1.6.0'
 <dependency>
     <groupId>com.firecrawl</groupId>
     <artifactId>firecrawl-java</artifactId>
-    <version>1.6.0</version>
+    <version>1.12.0</version>
 </dependency>
 ```
 
@@ -324,12 +324,13 @@ for (Map<String, Object> link : data.getLinks()) {
 
 ### Search
 
-Search the web and optionally scrape results.
+Search the web and optionally scrape results. By default, each result's description is replaced with query-relevant highlights from Firecrawl's index; pass `.highlights(false)` to keep the provider descriptions.
 
 ```java
 SearchData results = client.search("firecrawl",
     SearchOptions.builder()
         .limit(10)
+        .highlights(false) // optional: opt out of index highlights
         .build());
 
 if (results.getWeb() != null) {
@@ -430,14 +431,14 @@ gradle build
 
 ```bash
 gradle jar
-# Output: build/libs/firecrawl-java-1.6.0.jar
+# Output: build/libs/firecrawl-java-1.12.0.jar
 ```
 
 ### Install Locally
 
 ```bash
 gradle publishToMavenLocal
-# Now available as: com.firecrawl:firecrawl-java:1.6.0 in local Maven repository
+# Now available as: com.firecrawl:firecrawl-java:1.12.0 in local Maven repository
 ```
 
 ## Running Tests

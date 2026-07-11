@@ -24,6 +24,7 @@ final class SearchOptions
         private readonly ?string $integration = null,
         private readonly ?array $includeDomains = null,
         private readonly ?array $excludeDomains = null,
+        private readonly ?bool $highlights = null,
     ) {}
 
     /**
@@ -31,6 +32,8 @@ final class SearchOptions
      * @param list<mixed>|null $categories
      * @param list<string>|null $includeDomains
      * @param list<string>|null $excludeDomains
+     * @param bool|null $highlights Replace each result's description with query-relevant
+     *     highlights from Firecrawl's index (on by default; set to false to opt out).
      */
     public static function with(
         ?array $sources = null,
@@ -44,10 +47,12 @@ final class SearchOptions
         ?string $integration = null,
         ?array $includeDomains = null,
         ?array $excludeDomains = null,
+        ?bool $highlights = null,
     ): self {
         return new self(
             $sources, $categories, $limit, $tbs, $location, $ignoreInvalidURLs,
             $timeout, $scrapeOptions, $integration, $includeDomains, $excludeDomains,
+            $highlights,
         );
     }
 
@@ -63,6 +68,7 @@ final class SearchOptions
             'tbs' => $this->tbs,
             'location' => $this->location,
             'ignoreInvalidURLs' => $this->ignoreInvalidURLs,
+            'highlights' => $this->highlights,
             'timeout' => $this->timeout,
             'scrapeOptions' => $this->scrapeOptions?->toArray(),
             'integration' => $this->integration,

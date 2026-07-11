@@ -17,6 +17,7 @@ public class SearchOptions {
     private String tbs;
     private String location;
     private Boolean ignoreInvalidURLs;
+    private Boolean highlights;
     private Integer timeout;
     private ScrapeOptions scrapeOptions;
     private String integration;
@@ -31,6 +32,7 @@ public class SearchOptions {
     public String getTbs() { return tbs; }
     public String getLocation() { return location; }
     public Boolean getIgnoreInvalidURLs() { return ignoreInvalidURLs; }
+    public Boolean getHighlights() { return highlights; }
     public Integer getTimeout() { return timeout; }
     public ScrapeOptions getScrapeOptions() { return scrapeOptions; }
     public String getIntegration() { return integration; }
@@ -46,6 +48,7 @@ public class SearchOptions {
         private String tbs;
         private String location;
         private Boolean ignoreInvalidURLs;
+        private Boolean highlights;
         private Integer timeout;
         private ScrapeOptions scrapeOptions;
         private String integration;
@@ -68,6 +71,8 @@ public class SearchOptions {
         public Builder location(String location) { this.location = location; return this; }
         /** Ignore invalid URLs in results. */
         public Builder ignoreInvalidURLs(Boolean ignoreInvalidURLs) { this.ignoreInvalidURLs = ignoreInvalidURLs; return this; }
+        /** Replace each result's description with query-relevant highlights from Firecrawl's index (on by default; set to false to opt out). */
+        public Builder highlights(Boolean highlights) { this.highlights = highlights; return this; }
         /** Timeout in milliseconds. */
         public Builder timeout(Integer timeout) { this.timeout = timeout; return this; }
         /** Scrape options applied to search result pages. */
@@ -85,6 +90,7 @@ public class SearchOptions {
             o.tbs = this.tbs;
             o.location = this.location;
             o.ignoreInvalidURLs = this.ignoreInvalidURLs;
+            o.highlights = this.highlights;
             o.timeout = this.timeout;
             o.scrapeOptions = this.scrapeOptions;
             o.integration = this.integration;

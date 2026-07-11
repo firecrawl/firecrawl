@@ -38,6 +38,9 @@ pub struct SearchOptions {
     /// Whether to ignore invalid URLs in results.
     pub ignore_invalid_urls: Option<bool>,
 
+    /// Replace each result's description with query-relevant highlights from Firecrawl's index (on by default; set to false to opt out).
+    pub highlights: Option<bool>,
+
     /// Timeout in milliseconds.
     pub timeout: Option<u32>,
 
@@ -410,6 +413,29 @@ mod tests {
 
         assert!(result.is_err());
         mock.assert();
+    }
+
+    #[test]
+    fn test_search_options_highlights_serialization() {
+        // When set, highlights must appear in the request body under the "highlights" key.
+        let options = SearchOptions {
+            highlights: Some(false),
+            ..Default::default()
+        };
+        let body = serde_json::to_value(SearchRequest {
+            query: "test".to_string(),
+            options,
+        })
+        .unwrap();
+        assert_eq!(body.get("highlights"), Some(&json!(false)));
+
+        // When unset, highlights must be omitted from the request body entirely.
+        let body = serde_json::to_value(SearchRequest {
+            query: "test".to_string(),
+            options: SearchOptions::default(),
+        })
+        .unwrap();
+        assert!(body.get("highlights").is_none());
     }
 
     #[tokio::test]

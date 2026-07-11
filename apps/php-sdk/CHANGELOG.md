@@ -5,6 +5,13 @@ All notable changes to the Firecrawl PHP SDK will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.9.0] - 2026-07-06
+
+### Added
+- Search: optional `highlights` option on `SearchOptions`. Replace each
+  result's description with query-relevant highlights from Firecrawl's index
+  (on by default; set to `false` to opt out).
+
 ## [1.3.0] - 2026-05-12
 
 ### Added

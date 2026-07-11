@@ -88,7 +88,8 @@ public class ModelsTests
             Location = "US",
             Tbs = "qdr:w",
             IncludeDomains = new() { "firecrawl.dev" },
-            ExcludeDomains = new() { "example.com" }
+            ExcludeDomains = new() { "example.com" },
+            Highlights = false
         };
 
         var json = JsonSerializer.Serialize(options, JsonOptions);
@@ -97,6 +98,19 @@ public class ModelsTests
         Assert.Contains("\"tbs\":\"qdr:w\"", json);
         Assert.Contains("\"includeDomains\":[\"firecrawl.dev\"]", json);
         Assert.Contains("\"excludeDomains\":[\"example.com\"]", json);
+        Assert.Contains("\"highlights\":false", json);
+    }
+
+    [Fact]
+    public void SearchOptions_Highlights_OmittedWhenNull()
+    {
+        var options = new SearchOptions
+        {
+            Limit = 5
+        };
+
+        var json = JsonSerializer.Serialize(options, JsonOptions);
+        Assert.DoesNotContain("highlights", json);
     }
 
     [Fact]

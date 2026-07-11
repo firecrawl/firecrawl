@@ -56,6 +56,14 @@ public class SearchOptions
     public string? Country { get; set; }
 
     /// <summary>
+    /// Replace each result's description with query-relevant highlights from
+    /// Firecrawl's index (on by default; set to false to opt out).
+    /// </summary>
+    [JsonPropertyName("highlights")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public bool? Highlights { get; set; }
+
+    /// <summary>
     /// Enterprise search options. Use <c>["zdr"]</c> for end-to-end Zero Data
     /// Retention or <c>["anon"]</c> for anonymized search. Must be enabled for your team.
     /// </summary>

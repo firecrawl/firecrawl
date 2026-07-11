@@ -13,6 +13,7 @@ use Firecrawl\Models\HighlightsFormat;
 use Firecrawl\Models\QueryFormat;
 use Firecrawl\Models\QuestionFormat;
 use Firecrawl\Models\ScrapeOptions;
+use Firecrawl\Models\SearchOptions;
 use Firecrawl\Models\Monitor;
 use Firecrawl\Models\MonitorCheck;
 
@@ -436,4 +437,28 @@ it('passes through a search target result on MonitorCheck', function (): void {
     expect($results[0]['searchCredits'])->toBe(7);
     expect($results[0]['judgeCredits'])->toBe(2);
     expect($results[0]['resultsJudged'])->toBe(7);
+});
+
+it('serializes highlights in SearchOptions when set', function (): void {
+    $options = SearchOptions::with(
+        limit: 5,
+        highlights: false,
+    );
+
+    expect($options->toArray())->toMatchArray([
+        'limit' => 5,
+        'highlights' => false,
+    ]);
+
+    expect(SearchOptions::with(highlights: true)->toArray())->toMatchArray([
+        'highlights' => true,
+    ]);
+});
+
+it('omits highlights from SearchOptions when unset', function (): void {
+    $options = SearchOptions::with(
+        limit: 5,
+    );
+
+    expect(array_key_exists('highlights', $options->toArray()))->toBeFalse();
 });

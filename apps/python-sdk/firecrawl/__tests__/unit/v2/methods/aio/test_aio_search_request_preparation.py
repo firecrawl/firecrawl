@@ -10,6 +10,20 @@ class TestAsyncSearchRequestPreparation:
         assert data["query"] == "test query"
         assert "ignore_invalid_urls" not in data
         assert "scrape_options" not in data
+        assert "highlights" not in data
+
+    def test_highlights_serialization(self):
+        # Explicit False (opt out) is included
+        data = _prepare_search_request(SearchRequest(query="test", highlights=False))
+        assert data["highlights"] is False
+
+        # Explicit True is included
+        data = _prepare_search_request(SearchRequest(query="test", highlights=True))
+        assert data["highlights"] is True
+
+        # Unset (None) is omitted so the SDK never sends a default
+        data = _prepare_search_request(SearchRequest(query="test", highlights=None))
+        assert "highlights" not in data
 
     def test_all_fields_conversion(self):
         scrape_opts = ScrapeOptions(

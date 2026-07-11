@@ -36,15 +36,22 @@ interface HighlightResult {
  * Generate query highlights for one page by sending its full markdown and the
  * query to the highlight model service. Returns the service's highlight entries
  * plus the reassembled markdown, or null when the call fails (so callers can
- * keep the provider snippet).
+ * keep the provider snippet). An aborted `opts.signal` (the caller's overall
+ * highlights deadline) cancels the request.
  */
 export async function generateHighlights(
   query: string,
   markdown: string,
-  opts: { logger: Logger },
+  opts: { logger: Logger; signal?: AbortSignal },
 ): Promise<HighlightResult | null> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  const onExternalAbort = () => controller.abort();
+  if (opts.signal?.aborted) {
+    controller.abort();
+  } else {
+    opts.signal?.addEventListener("abort", onExternalAbort, { once: true });
+  }
   const start = Date.now();
   try {
     const res = await fetch(`${config.HIGHLIGHT_MODEL_URL}/highlight`, {
@@ -76,12 +83,18 @@ export async function generateHighlights(
 
     return { highlights, markdown: data.markdown ?? "" };
   } catch (error) {
-    opts.logger.warn("query highlights failed", {
+    // An external abort means the caller's overall highlights deadline fired —
+    // expected under load, so keep it at debug; real failures stay warnings.
+    const level = opts.signal?.aborted ? "debug" : "warn";
+    opts.logger[level]("query highlights failed", {
       canonicalLog: "search/highlights",
       error: error instanceof Error ? error.message : String(error),
+      aborted: opts.signal?.aborted ?? false,
+      elapsedMs: Date.now() - start,
     });
     return null;
   } finally {
     clearTimeout(timer);
+    opts.signal?.removeEventListener("abort", onExternalAbort);
   }
 }

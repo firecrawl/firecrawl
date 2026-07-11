@@ -223,6 +223,7 @@ use Firecrawl\Models\SearchOptions;
 
 $result = $client->search('firecrawl web scraping', SearchOptions::with(
     limit: 5,
+    highlights: false, // optional: opt out of query-relevant highlights (on by default)
 ));
 
 foreach ($result->getWeb() as $item) {

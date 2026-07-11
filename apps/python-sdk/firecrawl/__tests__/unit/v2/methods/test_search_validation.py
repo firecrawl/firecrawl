@@ -117,6 +117,7 @@ class TestSearchValidation:
             tbs="qdr:w",
             location="US",
             ignore_invalid_urls=False,
+            highlights=False,
             timeout=30000
         )
         validated = _validate_search_request(request)
@@ -192,6 +193,7 @@ class TestSearchRequestModel:
         request = SearchRequest(query="test")
         assert request.limit == 5
         assert request.ignore_invalid_urls is None  # No default in model
+        assert request.highlights is None  # No default in model; server defaults to on
         assert request.timeout == 300000
         assert request.sources is None
         assert request.tbs is None

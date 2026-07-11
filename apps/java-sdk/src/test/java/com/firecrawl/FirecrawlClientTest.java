@@ -103,6 +103,33 @@ class FirecrawlClientTest {
     }
 
     @Test
+    void testSearchOptionsHighlightsSerializedWhenSet() throws Exception {
+        SearchOptions options = SearchOptions.builder()
+                .limit(5)
+                .highlights(false)
+                .build();
+
+        assertFalse(options.getHighlights());
+
+        com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+        String json = mapper.writeValueAsString(options);
+        assertTrue(json.contains("\"highlights\":false"));
+    }
+
+    @Test
+    void testSearchOptionsHighlightsOmittedWhenUnset() throws Exception {
+        SearchOptions options = SearchOptions.builder()
+                .limit(5)
+                .build();
+
+        assertNull(options.getHighlights());
+
+        com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+        String json = mapper.writeValueAsString(options);
+        assertFalse(json.contains("highlights"));
+    }
+
+    @Test
     void testCrawlOptionsBuilder() {
         CrawlOptions options = CrawlOptions.builder()
                 .limit(100)

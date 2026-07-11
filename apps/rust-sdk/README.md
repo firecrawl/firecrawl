@@ -7,7 +7,7 @@ To install the Firecrawl Rust SDK, add the following to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-firecrawl = "2.5.0"
+firecrawl = "2.12.0"
 tokio = { version = "^1", features = ["full"] }
 ```
 
