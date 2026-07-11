@@ -30,6 +30,8 @@ class HighlightHttpError extends Error {
   }
 }
 
+class HighlightInvalidResponseError extends Error {}
+
 // One highlight entry as returned by the service. Field semantics are
 // intentionally left undocumented here.
 interface Highlight {
@@ -73,6 +75,9 @@ function failureReason(error: unknown): HighlightFailureReason {
   if (error instanceof SyntaxError) {
     return "invalid_response";
   }
+  if (error instanceof HighlightInvalidResponseError) {
+    return "invalid_response";
+  }
   if (error instanceof Error && error.name === "AbortError") {
     return "timeout";
   }
@@ -80,6 +85,24 @@ function failureReason(error: unknown): HighlightFailureReason {
     return "network";
   }
   return "unknown";
+}
+
+function waitForRetry(signal: AbortSignal): Promise<void> {
+  if (signal.aborted) {
+    return Promise.reject(signal.reason);
+  }
+
+  return new Promise((resolve, reject) => {
+    const onAbort = () => {
+      clearTimeout(timer);
+      reject(signal.reason);
+    };
+    const timer = setTimeout(() => {
+      signal.removeEventListener("abort", onAbort);
+      resolve();
+    }, RETRY_DELAY_MS);
+    signal.addEventListener("abort", onAbort, { once: true });
+  });
 }
 
 async function fetchBatchWithRetry(
@@ -102,7 +125,7 @@ async function fetchBatchWithRetry(
         throw error;
       }
     }
-    await new Promise(resolve => setTimeout(resolve, RETRY_DELAY_MS));
+    await waitForRetry(signal);
   }
   throw lastError;
 }
@@ -181,9 +204,19 @@ export async function generateHighlightsBatch(
       throw new HighlightHttpError(res.status, body);
     }
 
-    const data = (await res.json()) as HighlightBatchResponse;
+    const data: unknown = await res.json();
+    if (
+      typeof data !== "object" ||
+      data === null ||
+      ("pages" in data && !Array.isArray(data.pages))
+    ) {
+      throw new HighlightInvalidResponseError(
+        "highlight model returned an invalid response",
+      );
+    }
     const results = new Map<string, HighlightResult>();
-    for (const page of data.pages ?? []) {
+    for (const page of (data as HighlightBatchResponse).pages ?? []) {
+      if (typeof page !== "object" || page === null) continue;
       if (typeof page.id !== "string" || !page.output) continue;
       results.set(page.id, {
         highlights: page.output.highlights ?? [],

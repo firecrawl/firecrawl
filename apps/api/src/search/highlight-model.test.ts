@@ -27,6 +27,7 @@ function mockFetchOnce(body: unknown, ok = true, status = 200) {
 }
 
 afterEach(() => {
+  vi.useRealTimers();
   vi.unstubAllGlobals();
   vi.clearAllMocks();
 });
@@ -210,6 +211,52 @@ describe("generateHighlightsBatch", () => {
 
     expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(out).toEqual(new Map());
+  });
+
+  it("classifies malformed JSON responses as invalid responses", async () => {
+    mockFetchOnce(null);
+    const onFailure = vi.fn();
+
+    const out = await generateHighlightsBatch(
+      "q",
+      [{ id: "0", markdown: "md" }],
+      { logger, onFailure },
+    );
+
+    expect(out).toBeNull();
+    expect(onFailure).toHaveBeenCalledWith("invalid_response");
+  });
+
+  it("does not retry after the request deadline aborts during backoff", async () => {
+    vi.useFakeTimers();
+    const fetchMock = vi.fn().mockImplementation(
+      () =>
+        new Promise(resolve =>
+          setTimeout(
+            () =>
+              resolve({
+                ok: false,
+                status: 503,
+                text: async () => "unavailable",
+              }),
+            29_990,
+          ),
+        ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const onFailure = vi.fn();
+
+    const resultPromise = generateHighlightsBatch(
+      "q",
+      [{ id: "0", markdown: "md" }],
+      { logger, onFailure },
+    );
+    await vi.advanceTimersByTimeAsync(30_000);
+    const out = await resultPromise;
+
+    expect(out).toBeNull();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(onFailure).toHaveBeenCalledWith("timeout");
   });
 
   it("falls back to legacy per-page calls while the old service URL is configured", async () => {
