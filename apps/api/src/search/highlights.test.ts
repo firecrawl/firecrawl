@@ -95,7 +95,10 @@ describe("applySearchHighlights", () => {
           markdown: "markdown:<main>index:https://second.test.json</main>",
         },
       ],
-      { logger },
+      {
+        logger,
+        onFailure: expect.any(Function),
+      },
     );
     expect(response.web[0].description).toBe("first highlight");
     expect(response.news[0].snippet).toBe("second highlight");
@@ -184,6 +187,7 @@ describe("applySearchHighlights", () => {
         logger,
         logPayload: false,
         allowLegacyFallback: false,
+        onFailure: expect.any(Function),
       },
     );
     expect(logger.info).not.toHaveBeenCalledWith(

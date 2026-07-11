@@ -115,6 +115,33 @@ describe("runSearchHighlightsShadow", () => {
     await new Promise(resolve => setImmediate(resolve));
   });
 
+  it("emits the content-free failure category", async () => {
+    vi.mocked(applySearchHighlights).mockResolvedValue({
+      attempted: 3,
+      indexHits: 1,
+      replaced: 0,
+      succeeded: false,
+      failureReason: "network",
+    });
+
+    runSearchHighlightsShadow({
+      response: {} as any,
+      query: "private query",
+      requestId: "request-1",
+      teamId: "team-1",
+      zeroDataRetention: false,
+    });
+    await new Promise(resolve => setImmediate(resolve));
+
+    expect(logger.info).toHaveBeenCalledWith(
+      "Search highlights shadow completed",
+      expect.objectContaining({
+        outcome: "failed",
+        failureReason: "network",
+      }),
+    );
+  });
+
   it("does not shadow ZDR, disabled, or unavailable requests", () => {
     const input = {
       response: {} as any,

@@ -10,6 +10,25 @@ import { config } from "../config";
 // the in-cluster GCP Stage 1 service relies on cluster network isolation.
 
 const REQUEST_TIMEOUT_MS = 30000;
+const MAX_BATCH_ATTEMPTS = 2;
+const RETRY_DELAY_MS = 50;
+
+export type HighlightFailureReason =
+  | "timeout"
+  | "network"
+  | "http_4xx"
+  | "http_5xx"
+  | "invalid_response"
+  | "unknown";
+
+class HighlightHttpError extends Error {
+  constructor(
+    readonly status: number,
+    body: string,
+  ) {
+    super(`highlight model HTTP ${status}: ${body.slice(0, 200)}`);
+  }
+}
 
 // One highlight entry as returned by the service. Field semantics are
 // intentionally left undocumented here.
@@ -47,6 +66,47 @@ interface HighlightResult {
   markdown: string;
 }
 
+function failureReason(error: unknown): HighlightFailureReason {
+  if (error instanceof HighlightHttpError) {
+    return error.status >= 500 ? "http_5xx" : "http_4xx";
+  }
+  if (error instanceof SyntaxError) {
+    return "invalid_response";
+  }
+  if (error instanceof Error && error.name === "AbortError") {
+    return "timeout";
+  }
+  if (error instanceof TypeError) {
+    return "network";
+  }
+  return "unknown";
+}
+
+async function fetchBatchWithRetry(
+  url: string,
+  init: RequestInit,
+  signal: AbortSignal,
+): Promise<Response> {
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= MAX_BATCH_ATTEMPTS; attempt++) {
+    try {
+      const response = await fetch(url, init);
+      if (response.status < 500 || attempt === MAX_BATCH_ATTEMPTS) {
+        return response;
+      }
+      await response.body?.cancel().catch(() => undefined);
+      lastError = new HighlightHttpError(response.status, "");
+    } catch (error) {
+      lastError = error;
+      if (signal.aborted || attempt === MAX_BATCH_ATTEMPTS) {
+        throw error;
+      }
+    }
+    await new Promise(resolve => setTimeout(resolve, RETRY_DELAY_MS));
+  }
+  throw lastError;
+}
+
 function requestHeaders(requestId?: string): Record<string, string> {
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
@@ -74,6 +134,7 @@ export async function generateHighlightsBatch(
     logPayload?: boolean;
     allowLegacyFallback?: boolean;
     requestId?: string;
+    onFailure?: (reason: HighlightFailureReason) => void;
   },
 ): Promise<Map<string, HighlightResult> | null> {
   if (pages.length === 0) {
@@ -85,12 +146,16 @@ export async function generateHighlightsBatch(
   const start = Date.now();
   try {
     const baseUrl = config.HIGHLIGHT_MODEL_URL!.replace(/\/$/, "");
-    const res = await fetch(`${baseUrl}/batch_highlight`, {
-      method: "POST",
-      headers: requestHeaders(opts.requestId),
-      body: JSON.stringify({ query, pages }),
-      signal: controller.signal,
-    });
+    const res = await fetchBatchWithRetry(
+      `${baseUrl}/batch_highlight`,
+      {
+        method: "POST",
+        headers: requestHeaders(opts.requestId),
+        body: JSON.stringify({ query, pages }),
+        signal: controller.signal,
+      },
+      controller.signal,
+    );
 
     if (!res.ok) {
       const body = await res.text().catch(() => "");
@@ -113,9 +178,7 @@ export async function generateHighlightsBatch(
           opts,
         );
       }
-      throw new Error(
-        `highlight model HTTP ${res.status}: ${body.slice(0, 200)}`,
-      );
+      throw new HighlightHttpError(res.status, body);
     }
 
     const data = (await res.json()) as HighlightBatchResponse;
@@ -145,6 +208,7 @@ export async function generateHighlightsBatch(
 
     return results;
   } catch (error) {
+    opts.onFailure?.(failureReason(error));
     opts.logger.warn("query highlights batch failed", {
       canonicalLog: "search/highlights",
       error: error instanceof Error ? error.message : String(error),

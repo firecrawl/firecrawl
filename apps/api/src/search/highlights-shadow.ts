@@ -71,6 +71,7 @@ export function createSearchHighlightsShadowRunner(
           attempted: result.attempted,
           indexHits: result.indexHits,
           wouldReplace: result.replaced,
+          failureReason: result.failureReason,
           timeTakenMs: Date.now() - startedAt,
           inFlight,
           maxInFlight: config.HIGHLIGHT_SHADOW_MAX_INFLIGHT,

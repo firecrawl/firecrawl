@@ -11,6 +11,7 @@ import { parseMarkdown } from "../lib/html-to-markdown";
 import { htmlTransform } from "../scraper/scrapeURL/lib/removeUnwantedElements";
 import type { ScrapeOptions } from "../controllers/v2/types";
 import { generateHighlightsBatch } from "./highlight-model";
+import type { HighlightFailureReason } from "./highlight-model";
 import { config } from "../config";
 
 // How far back into the index we're willing to reach for highlight source text.
@@ -142,6 +143,7 @@ export async function applySearchHighlights(
   indexHits: number;
   replaced: number;
   succeeded: boolean;
+  failureReason?: HighlightFailureReason;
 }> {
   const start = Date.now();
   const applyResults = options.applyResults ?? true;
@@ -194,6 +196,7 @@ export async function applySearchHighlights(
   // empty response only falls back the corresponding provider snippet.
   let replaced = 0;
   let succeeded = true;
+  let failureReason: HighlightFailureReason | undefined;
   if (indexHits > 0) {
     const results = await generateHighlightsBatch(
       query,
@@ -206,9 +209,18 @@ export async function applySearchHighlights(
             logger,
             logPayload: !options.suppressPayloadLog,
             allowLegacyFallback: options.allowLegacyFallback,
-            requestId: options.requestId,
+            ...(options.requestId ? { requestId: options.requestId } : {}),
+            onFailure: reason => {
+              failureReason = reason;
+            },
           }
-        : { logger, requestId: options.requestId },
+        : {
+            logger,
+            ...(options.requestId ? { requestId: options.requestId } : {}),
+            onFailure: reason => {
+              failureReason = reason;
+            },
+          },
     );
     succeeded = results !== null;
     if (results) {
@@ -238,5 +250,6 @@ export async function applySearchHighlights(
     indexHits,
     replaced,
     succeeded,
+    ...(failureReason ? { failureReason } : {}),
   };
 }

@@ -172,6 +172,35 @@ describe("generateHighlightsBatch", () => {
 
   it("returns null when the service errors", async () => {
     mockFetchOnce({ error: "boom" }, false, 500);
+    const onFailure = vi.fn();
+
+    const out = await generateHighlightsBatch(
+      "q",
+      [{ id: "0", markdown: "md" }],
+      { logger, onFailure },
+    );
+
+    expect(out).toBeNull();
+    expect(fetch).toHaveBeenCalledTimes(2);
+    expect(onFailure).toHaveBeenCalledWith("http_5xx");
+    expect(logger.warn).toHaveBeenCalled();
+  });
+
+  it("retries one transient server failure", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 503,
+        text: async () => "unavailable",
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({ pages: [] }),
+        text: async () => "",
+      });
+    vi.stubGlobal("fetch", fetchMock);
 
     const out = await generateHighlightsBatch(
       "q",
@@ -179,8 +208,8 @@ describe("generateHighlightsBatch", () => {
       { logger },
     );
 
-    expect(out).toBeNull();
-    expect(logger.warn).toHaveBeenCalled();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(out).toEqual(new Map());
   });
 
   it("falls back to legacy per-page calls while the old service URL is configured", async () => {
