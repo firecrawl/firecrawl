@@ -26,7 +26,14 @@ import {
   NuqFdbMetricStatus,
   fnv1a,
   RaiseTask,
+  MigrationRuntimePin,
 } from "./keyspace";
+import {
+  MigrationCorruptionError,
+  MigrationObjectPin,
+  MigrationResidue,
+  nuqFdbMigrationStore,
+} from "./migration-store";
 
 export const ONE = encodeI64(1);
 export const MINUS_ONE = encodeI64(-1);
@@ -36,6 +43,82 @@ export const LEASE_MS = 90_000;
 export const MAX_STALLS = 9;
 export const COMPLETED_STANDALONE_RETENTION_MS = 60 * 60 * 1000;
 export const FAILED_STANDALONE_RETENTION_MS = 6 * 60 * 60 * 1000;
+
+export function runtimeMigrationPin(
+  record: MigrationRuntimePin,
+): { backend: "pg" | "fdb"; generation: number } | undefined {
+  if (record.mb === undefined && record.mg === undefined) return undefined;
+  if (
+    (record.mb !== "pg" && record.mb !== "fdb") ||
+    !Number.isSafeInteger(record.mg) ||
+    record.mg! <= 0
+  ) {
+    throw new MigrationCorruptionError(
+      "NuQ runtime record",
+      "migration backend and generation must be a valid pair",
+    );
+  }
+  return { backend: record.mb, generation: record.mg! };
+}
+
+export function stampMigrationPin<T extends object>(
+  record: T,
+  pin: MigrationObjectPin | null,
+): T & MigrationRuntimePin {
+  if (!pin) return record;
+  return { ...record, mb: pin.backend, mg: pin.generation };
+}
+
+export async function reconcileJobMigrationInTxn(
+  tn: Transaction,
+  ks: NuqFdbKeyspace,
+  entry: QueueEntry,
+  residue: Partial<MigrationResidue>,
+  options?: { allowMissingRecordPin?: boolean; terminal?: boolean },
+): Promise<MigrationObjectPin | null> {
+  // Ownerless operational jobs have no team migration authority or capacity.
+  if (!entry.o) return null;
+  const effectiveResidue =
+    ks.migrationObjectKind === "crawl_finished" && !options?.terminal
+      ? ({ control_crawl_finished: 1 } as const)
+      : residue;
+  const pin = await nuqFdbMigrationStore.reconcileManagedObjectInTxn(tn, {
+    teamId: entry.o,
+    kind: ks.migrationObjectKind,
+    objectId: entry.i,
+    recordPin: runtimeMigrationPin(entry),
+    allowMissingRecordPin: options?.allowMissingRecordPin,
+    residue: effectiveResidue,
+    terminal: options?.terminal,
+  });
+  if (options?.terminal) tn.clear(ks.ownerLiveJob(entry.o, entry.i));
+  else tn.set(ks.ownerLiveJob(entry.o, entry.i), EMPTY);
+  return pin;
+}
+
+export async function validateJobMigrationInTxn(
+  tn: Transaction,
+  ks: NuqFdbKeyspace,
+  entry: QueueEntry,
+  options?: {
+    allowMissingRecordPin?: boolean;
+    legacyResidue?: Partial<MigrationResidue>;
+  },
+): Promise<MigrationObjectPin | null> {
+  if (!entry.o) return null;
+  return await nuqFdbMigrationStore.validateManagedObjectInTxn(tn, {
+    teamId: entry.o,
+    kind: ks.migrationObjectKind,
+    objectId: entry.i,
+    recordPin: runtimeMigrationPin(entry),
+    allowMissingRecordPin: options?.allowMissingRecordPin,
+    legacyResidue:
+      options?.legacyResidue ??
+      (ks.migrationObjectKind === "crawl_finished"
+        ? { control_crawl_finished: 1 }
+        : { capacity_ready_active: 1 }),
+  });
+}
 
 export function bumpTeamActive(
   tn: Transaction,
@@ -62,6 +145,29 @@ export function setTeamActive(
   if (next === 0) tn.clear(ks.teamActiveIndex(teamId));
   else tn.set(ks.teamActiveIndex(teamId), EMPTY);
   tn.set(ks.teamLedgerGcIndex(teamId), EMPTY);
+}
+
+// Keep the release/promotion gate synchronized with the limit observed by any
+// authoritative admission path, not only queue ingestion. Returns the current
+// active count from the same conflictful transaction.
+export async function synchronizeTeamLimitInTxn(
+  tn: Transaction,
+  ks: NuqFdbKeyspace,
+  teamId: string,
+  limit: number,
+): Promise<number> {
+  const storedBuf = await tn.get(ks.teamLimit(teamId));
+  const stored = storedBuf ? decodeI64(storedBuf) : null;
+  if (stored !== limit) {
+    tn.set(ks.teamLimit(teamId), encodeI64(limit));
+    // Also indexes teams whose configured limit is zero.
+    tn.add(ks.teamActiveIndex(teamId), encodeI64(0));
+    tn.set(ks.teamLedgerGcIndex(teamId), EMPTY);
+    if (stored !== null && limit > stored) {
+      scheduleRaiseTask(tn, ks.taskTeamRaise(teamId));
+    }
+  }
+  return decodeI64(await tn.get(ks.teamActive(teamId)));
 }
 
 export function bumpKeyActive(
@@ -262,6 +368,9 @@ export async function promoteEntryToReady(
   pushReady(tn, ks, e, txc);
   setStatusQueued(tn, ks, e.i);
   await alignQueueMetricStatus(tn, ks, e.i);
+  await reconcileJobMigrationInTxn(tn, ks, e, {
+    capacity_ready_active: 1,
+  });
   if (e.g && e.f & F_COUNTABLE) {
     tn.add(ks.groupStatusCount(e.g, "pending"), MINUS_ONE);
     tn.add(ks.groupStatusCount(e.g, "queued"), ONE);
@@ -491,6 +600,9 @@ export async function releaseSlotsAndPromote(
         } else {
           const loc = appendTeamPending(tn, ks, keyHead);
           setStatusPending(tn, ks, keyHead.i, loc);
+          await reconcileJobMigrationInTxn(tn, ks, keyHead, {
+            capacity_team_pending: 1,
+          });
           await alignQueueMetricStatus(tn, ks, keyHead.i);
         }
       }
@@ -522,6 +634,9 @@ export async function releaseSlotsAndPromote(
       const notBefore = now + crawlDelaySeconds * 1000;
       tn.set(ks.delayed(timeBucket(j2.i), notBefore, j2.i), encodeJson(j2));
       setStatusPending(tn, ks, j2.i, { k: "dl", at: notBefore });
+      await reconcileJobMigrationInTxn(tn, ks, j2, {
+        capacity_delayed: 1,
+      });
       await alignQueueMetricStatus(tn, ks, j2.i);
     } else {
       // key gate for the crawl-promoted job
@@ -547,6 +662,9 @@ export async function releaseSlotsAndPromote(
         // waits in the key gate; keeps the crawl slot
         const loc = appendKeyPending(tn, ks, j2);
         setStatusPending(tn, ks, j2.i, loc);
+        await reconcileJobMigrationInTxn(tn, ks, j2, {
+          capacity_key_pending: 1,
+        });
         await alignQueueMetricStatus(tn, ks, j2.i);
       } else if (teamSlotFree()) {
         // the freed team slot goes directly to the crawl-promoted job
@@ -560,6 +678,9 @@ export async function releaseSlotsAndPromote(
         // waits in the team gate; keeps the crawl + key slots
         const loc = appendTeamPending(tn, ks, j2);
         setStatusPending(tn, ks, j2.i, loc);
+        await reconcileJobMigrationInTxn(tn, ks, j2, {
+          capacity_team_pending: 1,
+        });
         await alignQueueMetricStatus(tn, ks, j2.i);
       }
     }
@@ -599,6 +720,9 @@ export async function admitThroughTeamGate(
   } else {
     const loc = appendTeamPending(tn, ks, e);
     setStatusPending(tn, ks, e.i, loc);
+    await reconcileJobMigrationInTxn(tn, ks, e, {
+      capacity_team_pending: 1,
+    });
     await alignQueueMetricStatus(tn, ks, e.i);
   }
 }
@@ -618,6 +742,9 @@ export async function admitThroughGates(
     if (kActive >= kLimit) {
       const loc = appendKeyPending(tn, ks, e);
       setStatusPending(tn, ks, e.i, loc);
+      await reconcileJobMigrationInTxn(tn, ks, e, {
+        capacity_key_pending: 1,
+      });
       await alignQueueMetricStatus(tn, ks, e.i);
       return;
     }

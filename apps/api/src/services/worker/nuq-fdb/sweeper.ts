@@ -47,8 +47,17 @@ import {
   setGroupJobIndex,
   GroupJobIndexValue,
   alignQueueMetricStatus,
+  reconcileJobMigrationInTxn,
+  validateJobMigrationInTxn,
+  runtimeMigrationPin,
 } from "./ops";
-import { ACTIVE_GROUP_MAX_AGE_MS } from "./groups";
+import { MigrationStoreError, nuqFdbMigrationStore } from "./migration-store";
+import {
+  ACTIVE_GROUP_MAX_AGE_MS,
+  LEGACY_GROUP_OWNER_INDEX_PHASE,
+  NuQFdbJobGroup,
+  prepareGroupSweepTaskInTxn,
+} from "./groups";
 import { NuQFdbQueue } from "./queue";
 import { ExternalSlotSweepGuard, NuqFdbExternalSlots } from "./slots";
 
@@ -153,6 +162,8 @@ function entryFromMeta(id: string, meta: JobMeta): QueueEntry {
     f: meta.f,
     c: meta.c,
     to: meta.to,
+    mb: meta.mb,
+    mg: meta.mg,
   };
 }
 
@@ -528,6 +539,29 @@ export class NuqFdbSweeper {
         },
         {
           ks: queue.ks,
+          phase: LEGACY_GROUP_OWNER_INDEX_PHASE,
+          partition: 0,
+          run: async claim => {
+            await this.renewClaim(claim);
+            if (!queue.groupOps) return;
+            try {
+              await new NuQFdbJobGroup(
+                queue.ks,
+                queue.groupOps,
+              ).backfillLegacyOwnerIndex(SWEEP_BATCH * 2);
+            } catch (error) {
+              if (
+                error instanceof MigrationStoreError &&
+                error.code === "NUQ_FDB_GROUP_OWNER_INDEX_NOT_READY"
+              ) {
+                return;
+              }
+              throw error;
+            }
+          },
+        },
+        {
+          ks: queue.ks,
           phase: "legacy-team-ledger-index",
           partition: 0,
           run: claim => this.indexLegacyLedgers(queue, "team", claim),
@@ -560,14 +594,16 @@ export class NuqFdbSweeper {
           partition: bucket,
           run: async claim => {
             await this.renewClaim(claim);
-            await slots.sweepExpiredBucket(
-              now,
-              bucket,
-              this.guard(claim),
-              due =>
-                this.observeDue(claim, "external_expiry", due, key =>
-                  Number(claim.ks.unpack(key)[4]),
-                ),
+            const guard = this.guard(claim);
+            const observedDue: [Buffer, Buffer][] = [];
+            await slots.sweepExpiredBucket(now, bucket, guard, due =>
+              observedDue.push(...due),
+            );
+            await slots.sweepExpiredPgBucket(now, bucket, guard, due =>
+              observedDue.push(...due),
+            );
+            this.observeDue(claim, "external_expiry", observedDue, key =>
+              Number(claim.ks.unpack(key)[4]),
             );
           },
         });
@@ -592,7 +628,11 @@ export class NuqFdbSweeper {
       ) {
         return;
       }
-      await queue.backfillMetricCounts(100, config.NUQ_FDB_METRICS_V2_ACTIVATE);
+      if (!config.NUQ_FDB_METRICS_V2_ACTIVATE) {
+        await queue.invalidateMetricCounterGeneration();
+      } else {
+        await queue.backfillMetricCounts(100, true);
+      }
       if (
         lifecycleGeneration !== undefined &&
         lifecycleGeneration !== this.runGeneration
@@ -1004,6 +1044,7 @@ export class NuqFdbSweeper {
           if (!meta) return;
           const entry = entryFromMeta(id, meta);
           if (st.st < MAX_STALLS) {
+            await validateJobMigrationInTxn(tn, ks, entry);
             pushReady(tn, ks, entry, txc);
             setStatusQueued(tn, ks, id, st.st + 1);
             await alignQueueMetricStatus(tn, ks, id);
@@ -1012,6 +1053,15 @@ export class NuqFdbSweeper {
               bumpGroupStatusCount(tn, ks, meta.g, "queued", 1);
             }
           } else {
+            await reconcileJobMigrationInTxn(
+              tn,
+              ks,
+              entry,
+              {},
+              {
+                terminal: true,
+              },
+            );
             tn.set(
               ks.jobStatus(id),
               encodeJson({
@@ -1099,6 +1149,16 @@ export class NuqFdbSweeper {
           if (!st || st.s !== "pending" || !st.loc) return;
           const meta = decodeJson<JobMeta>(await tn.get(ks.jobMeta(id)));
           if (!meta) return;
+          const entry = entryFromMeta(id, meta);
+          await reconcileJobMigrationInTxn(
+            tn,
+            ks,
+            entry,
+            {},
+            {
+              terminal: true,
+            },
+          );
           clearPendingPlacement(
             tn,
             ks,
@@ -1113,7 +1173,7 @@ export class NuqFdbSweeper {
             await releaseSlotsAndPromote(
               tn,
               ks,
-              entryFromMeta(id, meta),
+              entry,
               { team: false, key: st.loc.k === "tq", crawl: true },
               now,
               txc,
@@ -1246,6 +1306,16 @@ export class NuqFdbSweeper {
               await tn.get(ks.jobStatus(id)),
             );
             if (status?.s === "ingesting" && status.op === op) {
+              if (meta.o) {
+                await nuqFdbMigrationStore.reconcileManagedObjectInTxn(tn, {
+                  teamId: meta.o,
+                  kind: ks.migrationObjectKind,
+                  objectId: id,
+                  allowMissingRecordPin: true,
+                  residue: {},
+                  terminal: true,
+                });
+              }
               deleteJobRecords(tn, ks, id);
               await alignQueueMetricStatus(tn, ks, id);
             }
@@ -1381,8 +1451,10 @@ export class NuqFdbSweeper {
     observedTaskKey: Buffer,
   ): Promise<void> {
     const ks = queue.ks;
-    const startedAt = Date.now();
-    while (Date.now() - startedAt < PARTITION_WORK_BUDGET_MS) {
+    // Once a group task is claimed, finish its resumable pages while renewing
+    // ownership. Yielding at the partition budget can strand the only task
+    // behind its still-live lease, so a concurrent sweeper cannot continue it.
+    while (true) {
       await this.renewClaim(claim);
       const result = await this.db.doTn(async tn => {
         await this.guardClaim(tn, claim);
@@ -1421,6 +1493,16 @@ export class NuqFdbSweeper {
             continue;
           }
           if (st.s === "pending" && st.loc) {
+            const entry = entryFromMeta(id, meta);
+            await reconcileJobMigrationInTxn(
+              tn,
+              ks,
+              entry,
+              {},
+              {
+                terminal: true,
+              },
+            );
             clearPendingPlacement(
               tn,
               ks,
@@ -1447,6 +1529,16 @@ export class NuqFdbSweeper {
             await alignQueueMetricStatus(tn, ks, id);
             cleaned++;
           } else if (g.z && (st.s === "queued" || st.s === "active")) {
+            const entry = entryFromMeta(id, meta);
+            await reconcileJobMigrationInTxn(
+              tn,
+              ks,
+              entry,
+              {},
+              {
+                terminal: true,
+              },
+            );
             tn.set(
               ks.jobStatus(id),
               encodeJson({
@@ -1461,7 +1553,7 @@ export class NuqFdbSweeper {
             await releaseSlotsAndPromote(
               tn,
               ks,
-              entryFromMeta(id, meta),
+              entry,
               { team: true, key: true, crawl: true },
               now,
               newTxContext(),
@@ -1701,6 +1793,15 @@ export class NuqFdbSweeper {
         return "done";
       }
       if (g.s === "active") {
+        await prepareGroupSweepTaskInTxn(tn, gid, g);
+        await nuqFdbMigrationStore.reconcileManagedObjectInTxn(tn, {
+          teamId: g.o,
+          kind: "group",
+          objectId: gid,
+          recordPin: runtimeMigrationPin(g),
+          residue: {},
+          terminal: true,
+        });
         const nextAt = now + ABANDONED_GROUP_DRAIN_GRACE_MS;
         const nextGeneration = randomUUID();
         tn.set(

@@ -9,9 +9,11 @@ configDotenv();
 export async function startWebScraperPipeline({
   job,
   costTracking,
+  signal,
 }: {
   job: NuQJob<ScrapeJobSingleUrls>;
   costTracking: CostTracking;
+  signal?: AbortSignal;
 }) {
   return await runWebScraper({
     url: job.data.url,
@@ -29,6 +31,16 @@ export async function startWebScraperPipeline({
       crawlId: job.data.crawl_id,
       teamId: job.data.team_id,
       ...job.data.internalOptions,
+      externalAbort: signal
+        ? {
+            signal,
+            tier: "external",
+            throwable: () =>
+              signal.reason instanceof Error
+                ? signal.reason
+                : new Error("Scrape work aborted"),
+          }
+        : job.data.internalOptions?.externalAbort,
     },
     team_id: job.data.team_id,
     bull_job_id: job.id,

@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
+import { config } from "../../../config";
 import {
   encodeI64,
   encodeJson,
@@ -34,6 +35,8 @@ nuq_fdb_queue_crawl_finished_job_count{status="failed"} 1
 nuq_fdb_queue_crawl_finished_job_count{status="backlog"} 0
 `;
 
+const previousActivation = config.NUQ_FDB_METRICS_V2_ACTIVATE;
+
 const CONTROL: NuqFdbMetricControl = {
   format: 3,
   generation: "generation",
@@ -42,6 +45,7 @@ const CONTROL: NuqFdbMetricControl = {
 };
 
 afterEach(() => {
+  config.NUQ_FDB_METRICS_V2_ACTIVATE = previousActivation;
   vi.restoreAllMocks();
 });
 
@@ -129,6 +133,7 @@ describe("NuQ FDB metrics", () => {
   });
 
   test("exported collector composes READY fixed families", async () => {
+    config.NUQ_FDB_METRICS_V2_ACTIVATE = true;
     vi.spyOn(scrapeQueueFdb, "getMetrics").mockResolvedValue(SCRAPE_METRICS);
     vi.spyOn(crawlFinishedQueueFdb, "getMetrics").mockResolvedValue(
       CRAWL_FINISHED_METRICS,
@@ -140,7 +145,16 @@ describe("NuQ FDB metrics", () => {
     );
   });
 
+  test("deactivated rollout exports ready=0 even if an old generation remains READY", async () => {
+    config.NUQ_FDB_METRICS_V2_ACTIVATE = false;
+    vi.spyOn(scrapeQueueFdb, "getMetrics");
+    const output = await nuqFdbGetMetrics();
+    expect(output).toBe(`${READINESS}firecrawl_nuq_fdb_metrics_ready 0\n`);
+    expect(scrapeQueueFdb.getMetrics).not.toHaveBeenCalled();
+  });
+
   test("release A exposes only readiness while fixed counters build", async () => {
+    config.NUQ_FDB_METRICS_V2_ACTIVATE = true;
     vi.spyOn(scrapeQueueFdb, "getMetrics").mockRejectedValue(
       new NuqFdbMetricsInitializingError("initializing"),
     );

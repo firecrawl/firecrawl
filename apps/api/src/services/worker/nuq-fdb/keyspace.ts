@@ -1,5 +1,6 @@
 import { config } from "../../../config";
 import { getFdb } from "./client";
+import type { MigrationBackend, MigrationObjectKind } from "./migration-store";
 
 export { normalizeOwnerId } from "../../../lib/owner-id";
 
@@ -52,7 +53,12 @@ export type PendingLoc =
   | { k: "gq"; p: number; c: number } // crawl-pending: priority, createdAtMs
   | { k: "dl"; at: number }; // delay index: notBeforeMs
 
-export type JobMeta = {
+export type MigrationRuntimePin = {
+  mb?: MigrationBackend; // durable migration backend (paired with mg)
+  mg?: number; // never-reused team generation (paired with mb)
+};
+
+export type JobMeta = MigrationRuntimePin & {
   c: number; // createdAt ms
   p: number; // priority
   o: string; // ownerId (normalized uuid)
@@ -90,7 +96,7 @@ export type ClaimRecord = {
 };
 
 // Entry stored in ready shards, pending queues and the delay index.
-export type QueueEntry = {
+export type QueueEntry = MigrationRuntimePin & {
   i: string; // jobId
   o: string; // ownerId
   g?: string; // groupId
@@ -101,7 +107,7 @@ export type QueueEntry = {
   to?: number; // backlog timesOutAt ms
 };
 
-export type GroupMeta = {
+export type GroupMeta = MigrationRuntimePin & {
   o: string; // ownerId
   c: number; // createdAt ms
   t: number; // ttl ms
@@ -168,7 +174,10 @@ export function teamPendingShard(jobId: string): number {
 }
 
 export class NuqFdbKeyspace {
-  constructor(public readonly queueName: string) {}
+  constructor(
+    public readonly queueName: string,
+    public readonly migrationObjectKind: MigrationObjectKind = "scrape_job",
+  ) {}
 
   pack(parts: any[]): Buffer {
     return getFdb().tuple.pack(["nuq", this.queueName, ...parts]) as Buffer;
@@ -210,6 +219,18 @@ export class NuqFdbKeyspace {
   }
   jobRange(id: string) {
     return this.packRange(["j", id]);
+  }
+  ownerLiveJob(ownerId: string, id: string): Buffer {
+    return this.pack(["oj", ownerId, id]);
+  }
+  ownerLiveJobRange(ownerId: string) {
+    return this.packRange(["oj", ownerId]);
+  }
+  ownerLiveBackfillCursor(metricGeneration: string): Buffer {
+    return this.pack(["ojctl", metricGeneration, "cursor"]);
+  }
+  ownerLiveBackfillReady(metricGeneration: string): Buffer {
+    return this.pack(["ojctl", metricGeneration, "ready"]);
   }
 
   // === Resumable enqueue / commit-unknown claim records

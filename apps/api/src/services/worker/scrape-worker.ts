@@ -11,6 +11,10 @@ import {
   pushConcurrencyLimitActiveJob,
 } from "../../lib/concurrency-limit";
 import { addJobPriority, deleteJobPriority } from "../../lib/job-priority";
+import {
+  syncFdbLimitToPgOccupancy,
+  withTeamMigrationAdmission,
+} from "./nuq-router";
 import { cacheableLookup } from "../../scraper/scrapeURL/lib/cacheableLookup";
 import { v7 as uuidv7 } from "uuid";
 import {
@@ -264,7 +268,17 @@ function billThreatBlockedDiscoveries(
   });
 }
 
-async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
+function throwIfProtectionAborted(signal?: AbortSignal): void {
+  if (!signal?.aborted) return;
+  throw signal.reason instanceof Error
+    ? signal.reason
+    : new ScrapeJobTimeoutError();
+}
+
+async function processJob(
+  job: NuQJob<ScrapeJobSingleUrls>,
+  protectionSignal?: AbortSignal,
+) {
   const logger = _logger.child({
     module: "queue-worker",
     method: "processJob",
@@ -298,6 +312,7 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
   let pipeline: ScrapeUrlResponse | null = null;
 
   try {
+    throwIfProtectionAborted(protectionSignal);
     if (remainingTime !== undefined && remainingTime < 0) {
       throw new ScrapeJobTimeoutError();
     }
@@ -315,6 +330,7 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
         startWebScraperPipeline({
           job,
           costTracking,
+          signal: protectionSignal,
         }),
         ...(remainingTime !== undefined
           ? [
@@ -334,6 +350,7 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
       }
     }
 
+    throwIfProtectionAborted(protectionSignal);
     try {
       signal?.throwIfAborted();
     } catch (e) {
@@ -384,6 +401,8 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
       document: doc,
     };
 
+    throwIfProtectionAborted(protectionSignal);
+
     // Ensure the parent `requests` row is committed before any child
     // `scrapes`/`parses` insert, to avoid a request_id FK violation. Runs on
     // both the crawl and single-scrape paths; only single scrapes actually
@@ -399,6 +418,7 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
       }
     }
 
+    throwIfProtectionAborted(protectionSignal);
     if (job.data.crawl_id) {
       const sc = (await getCrawl(job.data.crawl_id)) as StoredCrawl;
 
@@ -443,6 +463,7 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
         if (job.data.isCrawlSourceScrape && isHostnameDifferent) {
           // TODO: re-fetch sitemap for redirect target domain
           sc.originUrl = doc.metadata.url;
+          throwIfProtectionAborted(protectionSignal);
           await saveCrawl(job.data.crawl_id, sc);
         }
 
@@ -588,6 +609,7 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
                   { jobPriority, url: link },
                 );
 
+                throwIfProtectionAborted(protectionSignal);
                 await addScrapeJob(
                   {
                     url: link,
@@ -621,6 +643,7 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
                   jobPriority,
                 );
 
+                throwIfProtectionAborted(protectionSignal);
                 await addCrawlJob(job.data.crawl_id, jobId, logger);
                 logger.debug("Added job for URL " + JSON.stringify(link), {
                   jobPriority,
@@ -657,6 +680,7 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
         }
       }
 
+      throwIfProtectionAborted(protectionSignal);
       try {
         signal?.throwIfAborted();
       } catch (e) {
@@ -678,6 +702,7 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
       doc.metadata.creditsUsed = credits_billed ?? undefined;
 
       logger.debug("Logging job to DB...");
+      throwIfProtectionAborted(protectionSignal);
       await logScrape(
         {
           id: job.id,
@@ -701,6 +726,7 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
         true,
       );
 
+      throwIfProtectionAborted(protectionSignal);
       trackScrape({
         scrapeId: job.id,
         requestId: job.data.requestId ?? job.data.crawl_id ?? job.id,
@@ -722,6 +748,7 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
           v0: false,
         });
         if (sender) {
+          throwIfProtectionAborted(protectionSignal);
           logger.debug("Calling webhook with success...", {
             webhook: job.data.webhook,
           });
@@ -744,11 +771,14 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
         }
       }
 
+      throwIfProtectionAborted(protectionSignal);
       await recordMonitorScrapeSuccess(job, doc);
 
+      throwIfProtectionAborted(protectionSignal);
       logger.debug("Declaring job as done...");
       await addCrawlJobDone(job.data.crawl_id, job.id, true, logger);
     } else {
+      throwIfProtectionAborted(protectionSignal);
       try {
         signal?.throwIfAborted();
       } catch (e) {
@@ -769,6 +799,7 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
 
       doc.metadata.creditsUsed = credits_billed ?? undefined;
 
+      throwIfProtectionAborted(protectionSignal);
       const logScrapePromise = logScrape(
         {
           id: job.id,
@@ -792,6 +823,7 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
         false,
       );
 
+      throwIfProtectionAborted(protectionSignal);
       trackScrape({
         scrapeId: job.id,
         requestId: job.data.requestId ?? job.data.crawl_id ?? job.id,
@@ -805,6 +837,7 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
         zeroDataRetention: job.data.zeroDataRetention,
       }).catch(err => logger.warn("Scrape tracking failed", { error: err }));
 
+      throwIfProtectionAborted(protectionSignal);
       await recordMonitorScrapeSuccess(job, doc).catch(error =>
         logger.warn("Failed to record monitor scrape result", { error }),
       );
@@ -820,9 +853,13 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
       }
     }
 
+    throwIfProtectionAborted(protectionSignal);
     logger.info(`🐂 Job done ${job.id}`);
     return data;
   } catch (error) {
+    // A lost capacity/lease owner must not publish failure side effects after
+    // its protection boundary has been revoked.
+    throwIfProtectionAborted(protectionSignal);
     // Record top-level robots.txt rejections so crawl status can warn
     try {
       if (
@@ -1108,7 +1145,10 @@ async function addKickoffSitemapJob(
   );
 }
 
-async function processKickoffJob(job: NuQJob<ScrapeJobKickoff>) {
+async function processKickoffJob(
+  job: NuQJob<ScrapeJobKickoff>,
+  protectionSignal?: AbortSignal,
+) {
   const logger = _logger.child({
     module: "queue-worker",
     method: "processKickoffJob",
@@ -1120,6 +1160,7 @@ async function processKickoffJob(job: NuQJob<ScrapeJobKickoff>) {
   });
 
   try {
+    throwIfProtectionAborted(protectionSignal);
     const sc = (await getCrawl(job.data.crawl_id)) as StoredCrawl;
     const crawler = crawlToCrawler(
       job.data.crawl_id,
@@ -1127,9 +1168,11 @@ async function processKickoffJob(job: NuQJob<ScrapeJobKickoff>) {
       (await getACUCTeam(job.data.team_id))?.flags ?? null,
     );
 
+    throwIfProtectionAborted(protectionSignal);
     logger.debug("Locking URL...");
     await lockURL(job.data.crawl_id, sc, job.data.url);
     const jobId = uuidv7();
+    throwIfProtectionAborted(protectionSignal);
     logger.debug("Adding scrape job to Redis...", { jobId });
     await addScrapeJob(
       {
@@ -1156,6 +1199,7 @@ async function processKickoffJob(job: NuQJob<ScrapeJobKickoff>) {
       jobId,
       await getJobPriority({ team_id: job.data.team_id, basePriority: 15 }),
     );
+    throwIfProtectionAborted(protectionSignal);
     logger.debug("Adding scrape job to BullMQ...", { jobId });
     await addCrawlJob(job.data.crawl_id, jobId, logger);
 
@@ -1170,6 +1214,7 @@ async function processKickoffJob(job: NuQJob<ScrapeJobKickoff>) {
         v0: Boolean(!job.data.v1),
       });
       if (sender) {
+        throwIfProtectionAborted(protectionSignal);
         sender.send(WebhookEvent.CRAWL_STARTED, { success: true });
       }
     }
@@ -1201,6 +1246,7 @@ async function processKickoffJob(job: NuQJob<ScrapeJobKickoff>) {
         attempts.push(urlRootSitemap.href);
 
         for (const attempt of attempts) {
+          throwIfProtectionAborted(protectionSignal);
           await addKickoffSitemapJob(attempt, job, sc, logger);
         }
       }
@@ -1303,22 +1349,26 @@ async function processKickoffJob(job: NuQJob<ScrapeJobKickoff>) {
       const lockedJobs = jobs.filter(x =>
         lockedIds.find(y => y.id === x.jobId),
       );
+      throwIfProtectionAborted(protectionSignal);
       logger.debug("Adding scrape jobs to Redis...");
       await addCrawlJobs(
         job.data.crawl_id,
         lockedJobs.map(x => x.jobId),
         logger,
       );
+      throwIfProtectionAborted(protectionSignal);
       logger.debug("Adding scrape jobs to BullMQ...");
       await addScrapeJobs(lockedJobs);
     }
 
     logger.debug("Done queueing jobs!");
 
+    throwIfProtectionAborted(protectionSignal);
     await finishCrawlKickoff(job.data.crawl_id);
 
     return { success: true };
   } catch (error) {
+    throwIfProtectionAborted(protectionSignal);
     logger.error("An error occurred!", { error });
     await finishCrawlKickoff(job.data.crawl_id);
     await setCrawlError(
@@ -1331,7 +1381,10 @@ async function processKickoffJob(job: NuQJob<ScrapeJobKickoff>) {
   }
 }
 
-async function processKickoffSitemapJob(job: NuQJob<ScrapeJobKickoffSitemap>) {
+async function processKickoffSitemapJob(
+  job: NuQJob<ScrapeJobKickoffSitemap>,
+  protectionSignal?: AbortSignal,
+) {
   const logger = _logger.child({
     module: "queue-worker",
     method: "processKickoffSitemapJob",
@@ -1341,9 +1394,10 @@ async function processKickoffSitemapJob(job: NuQJob<ScrapeJobKickoffSitemap>) {
     zeroDataRetention: job.data.zeroDataRetention ?? false,
   });
 
-  const sc = await getCrawl(job.data.crawl_id);
-
   try {
+    throwIfProtectionAborted(protectionSignal);
+    const sc = await getCrawl(job.data.crawl_id);
+    throwIfProtectionAborted(protectionSignal);
     if (!sc) {
       logger.error("Crawl not found");
       return { success: false, error: "Crawl not found" };
@@ -1364,6 +1418,7 @@ async function processKickoffSitemapJob(job: NuQJob<ScrapeJobKickoffSitemap>) {
       logger,
       isPreCrawl: sc.internalOptions?.isPreCrawl ?? false,
     });
+    throwIfProtectionAborted(protectionSignal);
 
     let passingURLs = (
       await crawler.filterLinks(
@@ -1464,11 +1519,13 @@ async function processKickoffSitemapJob(job: NuQJob<ScrapeJobKickoffSitemap>) {
         jobs.map(x => ({ id: x.jobId, url: x.data.url })),
       );
       const winningIds = new Set(urls.map(x => x.id));
+      throwIfProtectionAborted(protectionSignal);
       await addCrawlJobs(
         job.data.crawl_id,
         urls.map(x => x.id),
         logger,
       );
+      throwIfProtectionAborted(protectionSignal);
       await addScrapeJobs(jobs.filter(x => winningIds.has(x.jobId)));
 
       logger.debug("Done queueing jobs!");
@@ -1480,28 +1537,36 @@ async function processKickoffSitemapJob(job: NuQJob<ScrapeJobKickoffSitemap>) {
       });
 
       for (const sitemap of results.sitemaps) {
+        throwIfProtectionAborted(protectionSignal);
         await addKickoffSitemapJob(sitemap.href, job, sc, logger);
       }
 
       logger.debug("Done queueing sitemap jobs!");
     }
+    throwIfProtectionAborted(protectionSignal);
     return { success: true };
   } catch (error) {
+    throwIfProtectionAborted(protectionSignal);
     logger.error("An error occurred!", { error });
     return { success: false, error };
   } finally {
-    await redisEvictConnection.sadd(
-      "crawl:" + job.data.crawl_id + ":sitemap_jobs_done",
-      job.id,
-    );
-    await redisEvictConnection.expire(
-      "crawl:" + job.data.crawl_id + ":sitemap_jobs_done",
-      24 * 60 * 60,
-    );
+    if (!protectionSignal?.aborted) {
+      await redisEvictConnection.sadd(
+        "crawl:" + job.data.crawl_id + ":sitemap_jobs_done",
+        job.id,
+      );
+      await redisEvictConnection.expire(
+        "crawl:" + job.data.crawl_id + ":sitemap_jobs_done",
+        24 * 60 * 60,
+      );
+    }
   }
 }
 
-export const processJobInternal = async (job: NuQJob<ScrapeJobData>) => {
+export const processJobInternal = async (
+  job: NuQJob<ScrapeJobData>,
+  protectionSignal?: AbortSignal,
+) => {
   const logger = _logger.child({
     module: "queue-worker",
     method: "processJobInternal",
@@ -1523,15 +1588,19 @@ export const processJobInternal = async (job: NuQJob<ScrapeJobData>) => {
           "worker.url": job.data.mode === "single_urls" ? job.data.url : "n/a",
         });
 
-        return processJobWithTracing(job, logger);
+        return processJobWithTracing(job, logger, protectionSignal);
       }),
     );
   } else {
-    return processJobWithTracing(job, logger);
+    return processJobWithTracing(job, logger, protectionSignal);
   }
 };
 
-async function processJobWithTracing(job: NuQJob<ScrapeJobData>, logger: any) {
+async function processJobWithTracing(
+  job: NuQJob<ScrapeJobData>,
+  logger: any,
+  protectionSignal?: AbortSignal,
+) {
   // FDB-backed jobs hold their concurrency slot through the queue lease; the
   // Redis slot mirror and promotion-on-done below are PG-backend machinery
   const isFdbJob = (job as any).backend === "fdb";
@@ -1544,12 +1613,37 @@ async function processJobWithTracing(job: NuQJob<ScrapeJobData>, logger: any) {
         job.data?.team_id &&
         !job.data.skipNuq
       ) {
-        extendLockInterval = setInterval(async () => {
-          await pushConcurrencyLimitActiveJob(
+        let reconciliationRunning = false;
+        extendLockInterval = setInterval(() => {
+          // Never let a slow/hung FDB reconciliation suppress the Redis TTL
+          // heartbeat that keeps this live PG job visible.
+          void pushConcurrencyLimitActiveJob(
             job.data.team_id,
             job.id,
             60 * 1000,
-          ); // 60s lock renew, just like in the queue
+          ).catch(error =>
+            _logger.warn("Failed to renew PG concurrency occupancy", {
+              jobId: job.id,
+              teamId: job.data.team_id,
+              error,
+            }),
+          );
+
+          if (reconciliationRunning) return;
+          reconciliationRunning = true;
+          void withTeamMigrationAdmission(job.data.team_id, async () =>
+            syncFdbLimitToPgOccupancy(job.data.team_id),
+          )
+            .catch(error =>
+              _logger.warn("Failed to reconcile FDB concurrency occupancy", {
+                jobId: job.id,
+                teamId: job.data.team_id,
+                error,
+              }),
+            )
+            .finally(() => {
+              reconciliationRunning = false;
+            });
         }, jobLockExtendInterval);
       }
 
@@ -1558,6 +1652,7 @@ async function processJobWithTracing(job: NuQJob<ScrapeJobData>, logger: any) {
         if (job.data.mode === "kickoff") {
           const result = await processKickoffJob(
             job as NuQJob<ScrapeJobKickoff>,
+            protectionSignal,
           );
           if (result.success) {
             return null;
@@ -1567,6 +1662,7 @@ async function processJobWithTracing(job: NuQJob<ScrapeJobData>, logger: any) {
         } else if (job.data.mode === "kickoff_sitemap") {
           const result = await processKickoffSitemapJob(
             job as NuQJob<ScrapeJobKickoffSitemap>,
+            protectionSignal,
           );
           if (result.success) {
             return null;
@@ -1574,7 +1670,10 @@ async function processJobWithTracing(job: NuQJob<ScrapeJobData>, logger: any) {
             throw (result as any).error;
           }
         } else {
-          const result = await processJob(job as NuQJob<ScrapeJobSingleUrls>);
+          const result = await processJob(
+            job as NuQJob<ScrapeJobSingleUrls>,
+            protectionSignal,
+          );
           if (result.success) {
             try {
               if (job.data.team_id) {

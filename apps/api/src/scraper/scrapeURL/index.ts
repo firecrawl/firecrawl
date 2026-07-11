@@ -996,6 +996,7 @@ async function scrapeURLLoop(meta: Meta): Promise<ScrapeUrlResponse> {
             engineResult,
           );
         } catch (error) {
+          if (error instanceof AbortManagerThrownError) throw error;
           meta.logger.warn(
             "Failed to run postprocessor " + postprocessor.name,
             {
@@ -1056,8 +1057,10 @@ async function scrapeURLLoop(meta: Meta): Promise<ScrapeUrlResponse> {
           : warning;
     }
 
+    meta.abort.throwIfAborted();
     // NOTE: for sitemap, we don't need all the transformers, need to skip unused ones
     document = await executeTransformers(meta, document);
+    meta.abort.throwIfAborted();
 
     // Set final span attributes
     setSpanAttributes(span, {
@@ -1209,7 +1212,10 @@ export async function scrapeURL(
               throw new CrawlDenialError("URL blocked by robots.txt");
             }
           } catch (error) {
-            if (error instanceof CrawlDenialError) {
+            if (
+              error instanceof CrawlDenialError ||
+              error instanceof AbortManagerThrownError
+            ) {
               throw error;
             }
             meta.logger.debug("Failed to fetch robots.txt, allowing scrape", {

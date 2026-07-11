@@ -1,4 +1,5 @@
 import "dotenv/config";
+import "./worker/nuq-router";
 import { config } from "../config";
 import "./sentry";
 import { setSentryServiceTag } from "./sentry";

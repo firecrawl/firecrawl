@@ -243,15 +243,15 @@ export async function runNuqWorker(options: {
               "Worker lost job ownership; terminating to abort stale side effects",
               { reason },
             );
-            // processJobInternal does not yet accept an AbortSignal. Exiting the
-            // single-job worker is the only hard cancellation boundary that
-            // prevents the stale owner from continuing crawl/scrape effects.
+            // The AbortSignal passed below cancels scraper engines immediately;
+            // process exit remains the final fence for non-cooperative external
+            // code in this single-job worker process.
             setImmediate(() => process.exit(1));
           },
           process: signal =>
             options.processJob
               ? options.processJob(job!, signal)
-              : processJobInternal(job!),
+              : processJobInternal(job!, signal),
         });
 
         if (result.status === "completed") {

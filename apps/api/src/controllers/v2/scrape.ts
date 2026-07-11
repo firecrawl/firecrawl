@@ -275,7 +275,7 @@ export async function scrapeController(
           concurrency,
           aborter.signal,
           timeout ?? 60_000,
-          async limited => {
+          async (limited, protectionSignal) => {
             const jobPriority = await getJobPriority({
               team_id: req.auth.team_id,
               basePriority: 10,
@@ -345,7 +345,7 @@ export async function scrapeController(
                   },
                 };
 
-                const result = await processJobInternal(job);
+                const result = await processJobInternal(job, protectionSignal);
 
                 setSpanAttributes(waitSpan, {
                   "wait.success": true,

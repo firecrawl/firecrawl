@@ -31,6 +31,7 @@ const RUN = randomUUID().slice(0, 8);
 const TEST_LEASE_MS = 1500;
 
 const createdQueueNames: string[] = [];
+const previousMetricsActivation = config.NUQ_FDB_METRICS_V2_ACTIVATE;
 
 type Ctx = {
   queue: NuQFdbQueue;
@@ -150,14 +151,25 @@ function countsFromLedger(
 }
 
 describeIf("NuQ FDB core", () => {
+  beforeAll(() => {
+    // This suite explicitly activates and validates maintained generations.
+    // Keep the runtime sweeper in release-B mode so it does not correctly
+    // invalidate those generations as a disabled rollout would in production.
+    config.NUQ_FDB_METRICS_V2_ACTIVATE = true;
+  });
+
   afterAll(async () => {
-    const fdb = getFdb();
-    const db = getNuqFdbDatabase();
-    for (const name of createdQueueNames) {
-      const r = fdb.tuple.range(["nuq", name]);
-      await db.doTn(async tn =>
-        tn.clearRange(r.begin as Buffer, r.end as Buffer),
-      );
+    try {
+      const fdb = getFdb();
+      const db = getNuqFdbDatabase();
+      for (const name of createdQueueNames) {
+        const r = fdb.tuple.range(["nuq", name]);
+        await db.doTn(async tn =>
+          tn.clearRange(r.begin as Buffer, r.end as Buffer),
+        );
+      }
+    } finally {
+      config.NUQ_FDB_METRICS_V2_ACTIVATE = previousMetricsActivation;
     }
   });
 

@@ -18,9 +18,8 @@ import {
   clearBrowserSessionPromptFlag,
 } from "../../lib/browser-sessions";
 import {
-  getCombinedTeamActiveCount,
-  mirrorExternalSlotAcquire,
   mirrorExternalSlotRelease,
+  reserveExternalSlot,
 } from "../../services/worker/nuq-router";
 import { RequestWithAuth } from "./types";
 import { billTeam } from "../../services/billing/credit_billing";
@@ -257,10 +256,14 @@ export async function browserCreateController(
 
   // 0b. Enforce concurrency limit (shared pool with scrape/crawl/interact)
   const concurrencyLimit = req.acuc?.concurrency ?? 2;
-  const activeCount = await getCombinedTeamActiveCount(req.auth.team_id);
-  if (activeCount >= concurrencyLimit) {
+  const reserved = await reserveExternalSlot(
+    req.auth.team_id,
+    sessionId,
+    ttl * 1000 + 60_000,
+    concurrencyLimit,
+  );
+  if (!reserved) {
     logger.warn("Concurrency limit reached for browser session", {
-      activeCount,
       limit: concurrencyLimit,
     });
     return res.status(429).json({
@@ -303,6 +306,9 @@ export async function browserCreateController(
     } catch (err) {
       // 409 means the profile is locked by another writer — don't retry
       if (err instanceof BrowserServiceError && err.status === 409) {
+        await mirrorExternalSlotRelease(req.auth.team_id, sessionId).catch(
+          () => {},
+        );
         logger.warn("Profile is locked", {
           profileName: profile?.name,
           error: err,
@@ -327,6 +333,9 @@ export async function browserCreateController(
   }
 
   if (!svcResponse) {
+    await mirrorExternalSlotRelease(req.auth.team_id, sessionId).catch(
+      () => {},
+    );
     logger.error("Failed to create browser session after all retries", {
       error: lastCreateError,
       attempts: MAX_CREATE_RETRIES,
@@ -374,6 +383,9 @@ export async function browserCreateController(
       "DELETE",
       `/browsers/${svcResponse.sessionId}`,
     ).catch(() => {});
+    await mirrorExternalSlotRelease(req.auth.team_id, sessionId).catch(
+      () => {},
+    );
     return res.status(500).json({
       success: false,
       error: "Failed to persist browser session.",
@@ -382,12 +394,6 @@ export async function browserCreateController(
 
   // Invalidate cached count so next check reflects the new session
   invalidateActiveBrowserSessionCount(req.auth.team_id).catch(() => {});
-
-  // Register in the shared concurrency limiter so this session counts
-  // against the team's concurrent job limit while it's active.
-  mirrorExternalSlotAcquire(req.auth.team_id, sessionId, ttl * 1000).catch(
-    () => {},
-  );
 
   logger.info("Browser session created", {
     sessionId,

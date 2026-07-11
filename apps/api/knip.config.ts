@@ -19,7 +19,8 @@ const config: KnipConfig = {
     // the provider/verdict types are consumed by the core-lib branch.
     "src/lib/threat-protection/types.ts",
   ],
-  ignoreDependencies: ["undici-types", "stripe"],
+  // Referenced as an explicit compiler path in long-running worker scripts.
+  ignoreDependencies: ["undici-types", "stripe", "typescript-7"],
 };
 
 export default config;

@@ -245,7 +245,7 @@ jobs:
           PORT: 3003
 
       - name: Run Docker Postgres
-        if: matrix.nuq == 'postgres'
+        if: matrix.nuq == 'postgres' || matrix.nuq == 'fdb'
         run: |
           docker build -t firecrawl/nuq-postgres:latest ./apps/nuq-postgres
           docker run -d -p 5432:5432 -e POSTGRES_USER=postgres -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=postgres --name postgres firecrawl/nuq-postgres:latest
@@ -582,8 +582,17 @@ jobs:
   nuq-fdb-core:
     name: NuQ FoundationDB core tests
     runs-on: blacksmith-4vcpu-ubuntu-2404
+    services:
+      redis:
+        image: redis
+        ports:
+          - 6379:6379
     env:
       FDB_VERSION: 7.3.63
+      NUQ_DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
+      REDIS_URL: redis://localhost:6379
+      REDIS_RATE_LIMIT_URL: redis://localhost:6379
+      REDIS_EVICT_URL: redis://localhost:6379
     steps:
       - uses: actions/checkout@v5
 
@@ -612,6 +621,15 @@ jobs:
             "https://github.com/apple/foundationdb/releases/download/${FDB_VERSION}/foundationdb-clients_${FDB_VERSION}-1_amd64.deb"
           sudo dpkg -i /tmp/fdb-clients.deb
 
+      - name: Start NuQ Postgres
+        run: |
+          docker build -t firecrawl/nuq-postgres:latest ./apps/nuq-postgres
+          docker run -d -p 5432:5432 -e POSTGRES_USER=postgres -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=postgres --name postgres firecrawl/nuq-postgres:latest
+          for i in $(seq 1 30); do
+            if docker exec postgres pg_isready -U postgres 2>/dev/null; then break; fi
+            sleep 1
+          done
+
       - name: Start FoundationDB
         run: |
           docker run -d --name fdb -p 4500:4500 -e FDB_NETWORKING_MODE=host foundationdb/foundationdb:${FDB_VERSION}
@@ -623,7 +641,12 @@ jobs:
           echo "docker:docker@127.0.0.1:4500" > /tmp/fdb.cluster
 
       - name: Run NuQ FDB core tests
-        run: npx vitest run src/__tests__/nuq-fdb --reporter=default
+        shell: bash
+        run: |
+          set -euo pipefail
+          for test in src/__tests__/nuq-fdb/*.test.ts; do
+            npx vitest run "$test" --reporter=default --maxWorkers=1 --no-file-parallelism
+          done
         working-directory: apps/api
         env:
           FDB_CLUSTER_FILE: /tmp/fdb.cluster

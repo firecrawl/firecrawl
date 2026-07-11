@@ -1,10 +1,8 @@
 import {
-  pushConcurrencyLimitActiveJob,
-  removeConcurrencyLimitActiveJob,
-} from "../../lib/concurrency-limit";
-import { config } from "../../config";
-import { isFdbTeam } from "./nuq-router";
-import { externalSlotsFdb, nuqFdbHealthCheck, withFdbTimeout } from "./nuq-fdb";
+  mirrorExternalSlotRelease,
+  renewExternalSlot,
+  reserveExternalSlot,
+} from "./nuq-router";
 import { isSelfHosted } from "../../lib/deployment";
 import { ScrapeJobTimeoutError, TransportableError } from "../../lib/error";
 import { logger as _logger } from "../../lib/logger";
@@ -33,21 +31,7 @@ const semaphoreHoldDuration = new Histogram({
 const { scripts, runScript, ensure } = nuqRedis;
 
 const SEMAPHORE_TTL = 30 * 1000;
-const FDB_OPTIONAL_SLOT_TIMEOUT_MS = 500;
-type MirrorBackend = "pg" | "fdb";
-type MirrorState = { backend?: MirrorBackend; touched: Set<MirrorBackend> };
-
-function fdbForced(): boolean {
-  return config.NUQ_BACKEND === "fdb";
-}
-
-async function optionalFdbSlot<T>(operation: () => Promise<T>): Promise<T> {
-  if (fdbForced()) return operation();
-  if (!(await nuqFdbHealthCheck(FDB_OPTIONAL_SLOT_TIMEOUT_MS))) {
-    throw new Error("FDB health check failed before optional slot operation");
-  }
-  return await withFdbTimeout(operation(), FDB_OPTIONAL_SLOT_TIMEOUT_MS);
-}
+type MirrorState = { acquired: boolean };
 
 async function acquire(
   teamId: string,
@@ -70,7 +54,7 @@ async function acquire(
   };
 }
 
-async function acquireBlocking(
+async function acquireAuthoritativeBlocking(
   teamId: string,
   holderId: string,
   limit: number,
@@ -81,63 +65,32 @@ async function acquireBlocking(
     signal: AbortSignal;
   },
 ): Promise<{ limited: boolean; removed: number }> {
-  await ensure();
-
   const deadline = Date.now() + options.timeout_ms;
-  const keys = semaphoreKeys(teamId);
-
   let delay = options.base_delay_ms;
-  let totalRemoved = 0;
-  let failedOnce = false;
-
+  let limited = false;
   const endTimer = semaphoreAcquireDuration.startTimer();
 
-  do {
-    if (options.signal.aborted) {
+  while (true) {
+    if (options.signal.aborted || deadline < Date.now()) {
       throw new ScrapeJobTimeoutError();
     }
-
-    if (deadline < Date.now()) {
-      throw new ScrapeJobTimeoutError();
-    }
-
-    const [granted, _count, _removed] = await runScript<
-      [number, number, number]
-    >(
-      scripts.semaphore.acquire,
-      [keys.leases],
-      [holderId, limit, SEMAPHORE_TTL],
-    );
-
-    totalRemoved++;
-
-    if (granted === 1) {
+    if (await reserveExternalSlot(teamId, holderId, SEMAPHORE_TTL, limit)) {
+      // An unbounded FDB retry can outlive the caller's deadline. Never start
+      // protected work after a late reservation; release the owned holder first.
+      if (options.signal.aborted || deadline < Date.now()) {
+        await mirrorExternalSlotRelease(teamId, holderId);
+        throw new ScrapeJobTimeoutError();
+      }
       endTimer();
-      return { limited: failedOnce, removed: totalRemoved };
+      return { limited, removed: 0 };
     }
-
-    failedOnce = true;
-
+    limited = true;
     const jitter = Math.floor(
       Math.random() * Math.max(1, Math.floor(delay / 4)),
     );
-    await new Promise(r => setTimeout(r, delay + jitter));
-
+    await new Promise(resolve => setTimeout(resolve, delay + jitter));
     delay = Math.min(options.max_delay_ms, Math.floor(delay * 1.5));
-  } while (true);
-}
-
-async function heartbeat(teamId: string, holderId: string): Promise<boolean> {
-  await ensure();
-
-  const keys = semaphoreKeys(teamId);
-  return (
-    (await runScript<number>(
-      scripts.semaphore.heartbeat,
-      [keys.leases],
-      [holderId, SEMAPHORE_TTL],
-    )) === 1
-  );
+  }
 }
 
 async function release(teamId: string, holderId: string): Promise<void> {
@@ -180,30 +133,39 @@ function startHeartbeat(
   const promise = (async () => {
     try {
       while (!stopped) {
-        await mirrorSlotAcquire(teamId, holderId, mirrorState).catch(() => {
-          _logger.warn("Failed to update concurrency limit active job", {
-            teamId,
-            jobId: holderId,
-          });
+        // This routed holder is the shared queue-capacity authority on both PG
+        // and FDB. A swept/expired holder must never be resurrected from a
+        // stale request limit; losing ownership makes protected work fail closed.
+        let renewalTimer: NodeJS.Timeout | undefined;
+        const renewed = await Promise.race([
+          renewExternalSlot(teamId, holderId, SEMAPHORE_TTL),
+          new Promise<never>((_, reject) => {
+            renewalTimer = setTimeout(
+              () =>
+                reject(
+                  new TransportableError("SCRAPE_TIMEOUT", "heartbeat_timeout"),
+                ),
+              intervalMs,
+            );
+          }),
+        ]).finally(() => {
+          if (renewalTimer) clearTimeout(renewalTimer);
         });
-        if (stopped) break;
-
-        const ok = await heartbeat(teamId, holderId);
-        if (!ok) {
+        if (!renewed) {
           throw new TransportableError("SCRAPE_TIMEOUT", "heartbeat_failed");
         }
+        mirrorState.acquired = true;
         if (stopped) break;
         await sleep(intervalMs);
       }
     } catch (error) {
       if (!stopped) {
         _logger.error("Error in semaphore heartbeat loop", { error });
+        throw error;
       }
     }
 
-    return Promise.reject(
-      new Error("heartbeat loop stopped unexpectedly"),
-    ) as never;
+    throw new Error("heartbeat loop stopped unexpectedly");
   })();
 
   return {
@@ -217,65 +179,16 @@ function startHeartbeat(
 }
 
 // Sync scrapes occupy queue capacity so async jobs see the team's real load.
-// PG-backed teams mirror into the Redis ZSET; FDB-backed teams consume an
-// external slot on the FDB ledger.
-async function resolveMirrorBackend(teamId: string): Promise<MirrorBackend> {
-  if (!(await isFdbTeam(teamId))) return "pg";
-  if (fdbForced()) return "fdb";
-  return (await nuqFdbHealthCheck(FDB_OPTIONAL_SLOT_TIMEOUT_MS)) ? "fdb" : "pg";
-}
-
-async function releaseMirrorBackend(
-  teamId: string,
-  holderId: string,
-  backend: MirrorBackend,
-): Promise<void> {
-  if (backend === "fdb") {
-    await optionalFdbSlot(() => externalSlotsFdb.release(teamId, holderId));
-  } else {
-    await removeConcurrencyLimitActiveJob(teamId, holderId);
-  }
-}
-
-async function mirrorSlotAcquire(
-  teamId: string,
-  holderId: string,
-  state: MirrorState,
-): Promise<void> {
-  const backend = await resolveMirrorBackend(teamId);
-  if (backend === "fdb") {
-    await optionalFdbSlot(() =>
-      externalSlotsFdb.acquire(teamId, holderId, 60 * 1000),
-    );
-  } else {
-    await pushConcurrencyLimitActiveJob(teamId, holderId, 60 * 1000);
-  }
-  const previous = state.backend;
-  state.backend = backend;
-  state.touched.add(backend);
-  if (previous && previous !== backend) {
-    await releaseMirrorBackend(teamId, holderId, previous);
-    state.touched.delete(previous);
-  }
-}
-
+// Router-owned durable holder pins survive rollout flag changes and remove the
+// old convention that an in-memory backend choice was sufficient authority.
 async function mirrorSlotRelease(
   teamId: string,
   holderId: string,
   state: MirrorState,
 ): Promise<void> {
-  const backends = Array.from(state.touched);
-  const results = await Promise.allSettled(
-    backends.map(backend => releaseMirrorBackend(teamId, holderId, backend)),
-  );
-  const failed = results.find(
-    (result): result is PromiseRejectedResult => result.status === "rejected",
-  );
-  if (failed) {
-    throw failed.reason;
-  }
-  state.backend = undefined;
-  state.touched.clear();
+  if (!state.acquired) return;
+  await mirrorExternalSlotRelease(teamId, holderId);
+  state.acquired = false;
 }
 
 async function withSemaphore<T>(
@@ -284,7 +197,7 @@ async function withSemaphore<T>(
   limit: number,
   signal: AbortSignal,
   timeoutMs: number,
-  func: (limited: boolean) => Promise<T>,
+  func: (limited: boolean, signal: AbortSignal) => Promise<T>,
 ): Promise<T> {
   // Bypass concurrency limits for self-hosted deployments
   if (isSelfHosted()) {
@@ -292,28 +205,52 @@ async function withSemaphore<T>(
       teamId,
       jobId: holderId,
     });
-    return await func(false);
+    return await func(false, signal);
   }
 
-  const { limited } = await acquireBlocking(teamId, holderId, limit, {
-    base_delay_ms: 25,
-    max_delay_ms: 250,
-    timeout_ms: timeoutMs,
-    signal,
-  });
+  // Reserve the backend-specific ledger shared with queue jobs. The legacy
+  // `nuq:semaphore` ZSET counts only sync work and cannot safely govern this
+  // path during normal PG operation or a backend transition.
+  const { limited } = await acquireAuthoritativeBlocking(
+    teamId,
+    holderId,
+    limit,
+    {
+      base_delay_ms: 25,
+      max_delay_ms: 250,
+      timeout_ms: timeoutMs,
+      signal,
+    },
+  );
 
   const endTimer = semaphoreHoldDuration.startTimer();
-  const mirrorState: MirrorState = { touched: new Set() };
+  const mirrorState: MirrorState = { acquired: true };
+  const protection = new AbortController();
+  const abortProtection = () => protection.abort(signal.reason);
+  signal.addEventListener("abort", abortProtection, { once: true });
+  if (signal.aborted) abortProtection();
   let hb: ReturnType<typeof startHeartbeat> | null = null;
 
   activeSemaphores.inc();
   try {
-    await mirrorSlotAcquire(teamId, holderId, mirrorState);
     hb = startHeartbeat(teamId, holderId, SEMAPHORE_TTL / 2, mirrorState);
-
-    const result = await Promise.race([func(limited), hb.promise]);
-    return result;
+    const protectedWork = Promise.resolve().then(() =>
+      func(limited, protection.signal),
+    );
+    return await Promise.race([
+      protectedWork,
+      hb.promise.catch(async error => {
+        // Ownership loss is a cancellation boundary, not merely a competing
+        // rejected promise. Abort the callback and wait for its abort-aware
+        // cleanup before releasing the authoritative holder.
+        protection.abort(error);
+        await protectedWork.catch(() => undefined);
+        throw error;
+      }),
+    ]);
   } finally {
+    protection.abort();
+    signal.removeEventListener("abort", abortProtection);
     await hb?.stop();
 
     await mirrorSlotRelease(teamId, holderId, mirrorState).catch(() => {
@@ -325,8 +262,6 @@ async function withSemaphore<T>(
 
     activeSemaphores.dec();
     endTimer();
-
-    await release(teamId, holderId).catch(() => {});
   }
 }
 

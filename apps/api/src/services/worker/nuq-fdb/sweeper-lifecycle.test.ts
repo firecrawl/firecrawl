@@ -1,5 +1,6 @@
 import type { Logger } from "winston";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { config } from "../../../config";
 import type { NuqFdbKeyspace } from "./keyspace";
 import type { NuQFdbQueue } from "./queue";
 import { NuqFdbSweeper } from "./sweeper";
@@ -9,6 +10,7 @@ const logger = {
   warn: vi.fn(),
   error: vi.fn(),
 } as unknown as Logger;
+const previousMetricsActivation = config.NUQ_FDB_METRICS_V2_ACTIVATE;
 
 function deferred() {
   let resolve!: () => void;
@@ -55,9 +57,13 @@ describe("NuqFdbSweeper lifecycle", () => {
   beforeEach(() => {
     vi.useFakeTimers();
     vi.clearAllMocks();
+    // Lifecycle backfill tests model the activated release-B sweeper. Disabled
+    // rollout behavior is covered separately by the metric invalidation tests.
+    config.NUQ_FDB_METRICS_V2_ACTIVATE = true;
   });
 
   afterEach(() => {
+    config.NUQ_FDB_METRICS_V2_ACTIVATE = previousMetricsActivation;
     vi.useRealTimers();
   });
 
@@ -229,6 +235,21 @@ describe("NuqFdbSweeper lifecycle", () => {
     expect(sweepOnce).toHaveBeenCalledTimes(2);
     sweeper.stop();
     await expect(restartedDone).resolves.toBeUndefined();
+  });
+
+  it("invalidates queue metric generations while release-B activation is disabled", async () => {
+    config.NUQ_FDB_METRICS_V2_ACTIVATE = false;
+    const queue = {
+      ks: { queueName: "disabled" },
+      invalidateMetricCounterGeneration: vi.fn().mockResolvedValue(true),
+      backfillMetricCounts: vi.fn(),
+    } as unknown as NuQFdbQueue;
+    const sweeper = new NuqFdbSweeper([queue]);
+
+    await sweeper.sweepOnce(logger, 0);
+
+    expect(queue.invalidateMetricCounterGeneration).toHaveBeenCalledOnce();
+    expect(queue.backfillMetricCounts).not.toHaveBeenCalled();
   });
 
   it("does not continue queue backfills after force-stop and restart", async () => {

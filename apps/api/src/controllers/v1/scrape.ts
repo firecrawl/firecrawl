@@ -192,7 +192,7 @@ export async function scrapeController(
       req.acuc?.concurrency || 1,
       aborter.signal,
       timeout ?? 60_000,
-      async limited => {
+      async (limited, protectionSignal) => {
         const jobPriority = await getJobPriority({
           team_id: req.auth.team_id,
           basePriority: 10,
@@ -243,7 +243,7 @@ export async function scrapeController(
           },
         };
 
-        const doc = await processJobInternal(job);
+        const doc = await processJobInternal(job, protectionSignal);
         return doc ?? null;
       },
     );

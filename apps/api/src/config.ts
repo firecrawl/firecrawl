@@ -207,6 +207,29 @@ const configSchema = z.object({
   NUQ_WORKER_COUNT: z.coerce.number().default(5),
   NUQ_PREFETCH_WORKER_PORT: z.coerce.number().default(3011).catch(3011), // todo: investigate why .catch is needed
   NUQ_RECONCILER_WORKER_PORT: z.coerce.number().default(3012).catch(3012),
+  // Migration GC runs on the reconciler. Every storage page remains <=100;
+  // these two independent bounds prevent shutdown or normal reconciliation
+  // from being held by an arbitrarily large retained-history cliff.
+  NUQ_MIGRATION_GC_PAGE_LIMIT: emptyStringAsDefault(
+    z.coerce.number().int().min(1).max(100).default(100),
+  ),
+  NUQ_MIGRATION_GC_MAX_PAGES: emptyStringAsDefault(
+    z.coerce.number().int().min(1).max(1024).default(128),
+  ),
+  NUQ_MIGRATION_GC_WORK_BUDGET_MS: emptyStringAsDefault(
+    z.coerce.number().int().min(100).max(55_000).default(20_000),
+  ),
+  NUQ_RECONCILER_IDLE_INTERVAL_MS: emptyStringAsDefault(
+    z.coerce
+      .number()
+      .int()
+      .min(1_000)
+      .max(10 * 60_000)
+      .default(60_000),
+  ),
+  NUQ_RECONCILER_BACKLOG_RETRY_MS: emptyStringAsDefault(
+    z.coerce.number().int().min(1_000).max(60_000).default(5_000),
+  ),
   CCLOG_WORKER_PORT: z.coerce.number().default(3013).catch(3013),
   EXTRACT_WORKER_PORT: z.coerce.number().default(3004),
   NUQ_WAIT_MODE: z.string().optional(),

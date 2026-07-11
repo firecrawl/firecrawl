@@ -70,6 +70,8 @@ SET (autovacuum_vacuum_scale_factor = 0.01,
      autovacuum_vacuum_cost_delay = 0);
 
 CREATE INDEX IF NOT EXISTS queue_scrape_active_locked_at_idx ON nuq.queue_scrape USING btree (locked_at) WHERE (status = 'active'::nuq.job_status);
+-- Authoritative per-owner drain probe for PG/FDB generation transitions.
+CREATE INDEX IF NOT EXISTS nuq_queue_scrape_owner_live_idx ON nuq.queue_scrape (owner_id) WHERE status IN ('queued'::nuq.job_status, 'active'::nuq.job_status);
 CREATE INDEX IF NOT EXISTS nuq_queue_scrape_queued_optimal_2_idx ON nuq.queue_scrape (priority ASC, created_at ASC, id) WHERE (status = 'queued'::nuq.job_status);
 CREATE INDEX IF NOT EXISTS nuq_queue_scrape_failed_created_at_idx ON nuq.queue_scrape USING btree (created_at) WHERE (status = 'failed'::nuq.job_status);
 
@@ -206,6 +208,7 @@ SET (autovacuum_vacuum_scale_factor = 0.01,
      autovacuum_vacuum_cost_delay = 0);
 
 CREATE INDEX IF NOT EXISTS queue_crawl_finished_active_locked_at_idx ON nuq.queue_crawl_finished USING btree (locked_at) WHERE (status = 'active'::nuq.job_status);
+CREATE INDEX IF NOT EXISTS nuq_queue_crawl_finished_owner_live_idx ON nuq.queue_crawl_finished (owner_id) WHERE status IN ('queued'::nuq.job_status, 'active'::nuq.job_status);
 CREATE INDEX IF NOT EXISTS nuq_queue_crawl_finished_queued_optimal_2_idx ON nuq.queue_crawl_finished (priority ASC, created_at ASC, id) WHERE (status = 'queued'::nuq.job_status);
 CREATE INDEX IF NOT EXISTS nuq_queue_crawl_finished_failed_created_at_idx ON nuq.queue_crawl_finished USING btree (created_at) WHERE (status = 'failed'::nuq.job_status);
 CREATE INDEX IF NOT EXISTS nuq_queue_crawl_finished_completed_created_at_idx ON nuq.queue_crawl_finished USING btree (created_at) WHERE (status = 'completed'::nuq.job_status);
@@ -258,6 +261,7 @@ CREATE TABLE IF NOT EXISTS nuq.group_crawl (
 
 -- Index for group finish cron to find active groups
 CREATE INDEX IF NOT EXISTS idx_group_crawl_status ON nuq.group_crawl (status) WHERE status = 'active'::nuq.group_status;
+CREATE INDEX IF NOT EXISTS nuq_group_crawl_owner_live_idx ON nuq.group_crawl (owner_id) WHERE status = 'active'::nuq.group_status;
 
 -- Index for nuq_group_crawl_clean victim selection. The status='active'
 -- partial index above is the opposite predicate, so without this the cleaner

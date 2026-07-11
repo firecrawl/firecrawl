@@ -46,6 +46,7 @@ export class AbortManager {
 
     abort.signal.addEventListener("abort", handler);
     this.listeners.push({ signal: abort.signal, handler });
+    if (abort.signal.aborted) handler();
   }
 
   add(...instances: (AbortInstance | undefined | null)[]) {

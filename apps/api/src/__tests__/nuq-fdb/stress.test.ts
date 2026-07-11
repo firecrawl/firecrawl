@@ -136,9 +136,22 @@ describeIf("NuQ FDB concurrency stress", () => {
   test("parallel enqueuers + workers with a crawl gate stay within both limits", async () => {
     const name = `t-${RUN}-stress2`;
     queueNames.push(name);
+    const PRODUCERS = 4;
+    let stagedProducers = 0;
+    let releaseProducers!: () => void;
+    const allProducersStaged = new Promise<void>(resolve => {
+      releaseProducers = resolve;
+    });
     const queue: NuQFdbQueue = new NuQFdbQueue(name, {
       hasGroups: true,
       finishedQueueName: `${name}-fin`,
+      testHooks: {
+        afterStageBatch: async () => {
+          stagedProducers++;
+          if (stagedProducers === PRODUCERS) releaseProducers();
+          await allProducersStaged;
+        },
+      },
     });
     queueNames.push(`${name}-fin`);
     const finishedQueue: NuQFdbQueue = new NuQFdbQueue(`${name}-fin`, {
@@ -156,8 +169,10 @@ describeIf("NuQ FDB concurrency stress", () => {
       maxConcurrency: CRAWL_LIMIT,
     });
 
-    // enqueue from 4 parallel producers while workers consume
-    const producers = Array.from({ length: 4 }, (_, p) =>
+    // Each real crawl producer is itself an unfinished group member until its
+    // children are published. Admit every synthetic producer before consumption
+    // so this models that lifetime while preserving concurrent publication.
+    const producers = Array.from({ length: PRODUCERS }, () =>
       queue.addJobs(
         Array.from({ length: JOBS / 4 }, () => ({
           id: randomUUID(),

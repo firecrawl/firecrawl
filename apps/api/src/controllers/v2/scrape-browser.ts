@@ -19,9 +19,8 @@ import {
 } from "../../lib/browser-sessions";
 import {} from "../../lib/concurrency-limit";
 import {
-  getCombinedTeamActiveCount,
-  mirrorExternalSlotAcquire,
   mirrorExternalSlotRelease,
+  reserveExternalSlot,
 } from "../../services/worker/nuq-router";
 import {
   browserServiceRequest,
@@ -595,8 +594,13 @@ async function createSessionForScrape(
 
   // Active session limit — uses the same concurrency pool as scrape/crawl
   const concurrencyLimit = req.acuc?.concurrency ?? 2;
-  const activeCount = await getCombinedTeamActiveCount(req.auth.team_id);
-  if (activeCount >= concurrencyLimit) {
+  const reserved = await reserveExternalSlot(
+    req.auth.team_id,
+    sessionId,
+    ttl * 1000 + 60_000,
+    concurrencyLimit,
+  );
+  if (!reserved) {
     adjustKeylessCredits(req.auth.team_id, -keylessReserved).catch(() => {});
     return {
       status: 429,
@@ -644,6 +648,9 @@ async function createSessionForScrape(
       break;
     } catch (err) {
       if (err instanceof BrowserServiceError && err.status === 409) {
+        await mirrorExternalSlotRelease(req.auth.team_id, sessionId).catch(
+          () => {},
+        );
         adjustKeylessCredits(req.auth.team_id, -keylessReserved).catch(
           () => {},
         );
@@ -670,6 +677,9 @@ async function createSessionForScrape(
   }
 
   if (!svcResponse) {
+    await mirrorExternalSlotRelease(req.auth.team_id, sessionId).catch(
+      () => {},
+    );
     adjustKeylessCredits(req.auth.team_id, -keylessReserved).catch(() => {});
     logger.error("Failed to create browser session after all retries", {
       error: lastCreateError,
@@ -772,6 +782,9 @@ async function createSessionForScrape(
       );
     }
   } catch (err) {
+    await mirrorExternalSlotRelease(req.auth.team_id, sessionId).catch(
+      () => {},
+    );
     adjustKeylessCredits(req.auth.team_id, -keylessReserved).catch(() => {});
     logger.error("Failed to initialize scrape browser session context", {
       error: err,
@@ -823,12 +836,6 @@ async function createSessionForScrape(
 
     invalidateActiveBrowserSessionCount(req.auth.team_id).catch(() => {});
 
-    // Register in the shared concurrency limiter so this session counts
-    // against the team's concurrent job limit while it's active.
-    mirrorExternalSlotAcquire(req.auth.team_id, sessionId, ttl * 1000).catch(
-      () => {},
-    );
-
     return { session };
   } catch (err) {
     adjustKeylessCredits(req.auth.team_id, -keylessReserved).catch(() => {});
@@ -839,6 +846,9 @@ async function createSessionForScrape(
       "DELETE",
       `/browsers/${svcResponse.sessionId}`,
     ).catch(() => {});
+    await mirrorExternalSlotRelease(req.auth.team_id, sessionId).catch(
+      () => {},
+    );
     return {
       status: 500,
       body: { success: false, error: "Failed to persist browser session." },
