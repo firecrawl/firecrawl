@@ -56,7 +56,7 @@ afterEach(() => {
 });
 
 describe("applySearchHighlights", () => {
-  it("enables the in-cluster service without an unused bearer token", () => {
+  it("enables the in-cluster service without requiring a bearer token", () => {
     const token = config.HIGHLIGHT_MODEL_TOKEN;
     config.HIGHLIGHT_MODEL_TOKEN = undefined;
 
@@ -67,7 +67,7 @@ describe("applySearchHighlights", () => {
     }
   });
 
-  it("sends every indexed result in one batch and applies responses by ID", async () => {
+  it("sends indexed web and news results in one batch and applies responses by ID", async () => {
     vi.mocked(generateHighlightsBatch).mockResolvedValue(
       new Map([
         ["0", { highlights: [], markdown: "first highlight" }],
@@ -75,10 +75,8 @@ describe("applySearchHighlights", () => {
       ]),
     );
     const response = {
-      web: [
-        { url: "https://first.test", description: "first fallback" },
-        { url: "https://second.test", description: "second fallback" },
-      ],
+      web: [{ url: "https://first.test", description: "first fallback" }],
+      news: [{ url: "https://second.test", snippet: "second fallback" }],
     } as any;
 
     const result = await applySearchHighlights(response, "query", logger);
@@ -98,10 +96,8 @@ describe("applySearchHighlights", () => {
       ],
       { logger },
     );
-    expect(response.web.map((item: any) => item.description)).toEqual([
-      "first highlight",
-      "second highlight",
-    ]);
+    expect(response.web[0].description).toBe("first highlight");
+    expect(response.news[0].snippet).toBe("second highlight");
     expect(result).toEqual({ attempted: 2, indexHits: 2, replaced: 2 });
   });
 
