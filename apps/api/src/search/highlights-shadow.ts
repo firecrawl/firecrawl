@@ -60,6 +60,7 @@ export function createSearchHighlightsShadowRunner(
       suppressSummaryLog: true,
       suppressPayloadLog: true,
       allowLegacyFallback: false,
+      requestId: options.requestId,
     })
       .then(result => {
         canonicalLogger.info("Search highlights shadow completed", {

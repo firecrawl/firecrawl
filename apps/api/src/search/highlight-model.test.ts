@@ -41,7 +41,7 @@ describe("generateHighlightsBatch", () => {
         { id: "0", markdown: "# First\n\nbody text" },
         { id: "1", markdown: "# Second\n\nmore text" },
       ],
-      { logger },
+      { logger, requestId: "request-1" },
     );
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
@@ -49,6 +49,7 @@ describe("generateHighlightsBatch", () => {
     expect(url).toBe("https://highlight.test/batch_highlight");
     expect(init.method).toBe("POST");
     expect(init.headers.Authorization).toBe("Bearer secret-token");
+    expect(init.headers["X-Request-ID"]).toBe("request-1");
 
     const sent = JSON.parse(init.body);
     expect(sent).toEqual({

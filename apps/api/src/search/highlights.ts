@@ -135,6 +135,7 @@ export async function applySearchHighlights(
     suppressSummaryLog?: boolean;
     suppressPayloadLog?: boolean;
     allowLegacyFallback?: boolean;
+    requestId?: string;
   } = {},
 ): Promise<{
   attempted: number;
@@ -205,8 +206,9 @@ export async function applySearchHighlights(
             logger,
             logPayload: !options.suppressPayloadLog,
             allowLegacyFallback: options.allowLegacyFallback,
+            requestId: options.requestId,
           }
-        : { logger },
+        : { logger, requestId: options.requestId },
     );
     succeeded = results !== null;
     if (results) {

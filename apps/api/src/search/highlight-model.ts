@@ -47,10 +47,13 @@ interface HighlightResult {
   markdown: string;
 }
 
-function requestHeaders(): Record<string, string> {
+function requestHeaders(requestId?: string): Record<string, string> {
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
   };
+  if (requestId) {
+    headers["X-Request-ID"] = requestId;
+  }
   if (config.HIGHLIGHT_MODEL_TOKEN) {
     headers.Authorization = `Bearer ${config.HIGHLIGHT_MODEL_TOKEN}`;
   }
@@ -70,6 +73,7 @@ export async function generateHighlightsBatch(
     logger: Logger;
     logPayload?: boolean;
     allowLegacyFallback?: boolean;
+    requestId?: string;
   },
 ): Promise<Map<string, HighlightResult> | null> {
   if (pages.length === 0) {
@@ -83,7 +87,7 @@ export async function generateHighlightsBatch(
     const baseUrl = config.HIGHLIGHT_MODEL_URL!.replace(/\/$/, "");
     const res = await fetch(`${baseUrl}/batch_highlight`, {
       method: "POST",
-      headers: requestHeaders(),
+      headers: requestHeaders(opts.requestId),
       body: JSON.stringify({ query, pages }),
       signal: controller.signal,
     });
@@ -156,14 +160,14 @@ async function generateLegacyHighlightsBatch(
   query: string,
   pages: HighlightPage[],
   signal: AbortSignal,
-  opts: { logger: Logger },
+  opts: { logger: Logger; requestId?: string },
 ): Promise<Map<string, HighlightResult>> {
   const entries = await Promise.all(
     pages.map(async page => {
       try {
         const res = await fetch(`${baseUrl}/highlight`, {
           method: "POST",
-          headers: requestHeaders(),
+          headers: requestHeaders(opts.requestId),
           body: JSON.stringify({ query, markdown: page.markdown }),
           signal,
         });

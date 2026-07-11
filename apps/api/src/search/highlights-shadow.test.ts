@@ -58,6 +58,7 @@ describe("runSearchHighlightsShadow", () => {
         suppressSummaryLog: true,
         suppressPayloadLog: true,
         allowLegacyFallback: false,
+        requestId: "request-1",
       },
     );
     expect(logger.info).toHaveBeenCalledWith(
