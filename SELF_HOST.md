@@ -131,10 +131,10 @@ BULL_AUTH_KEY=CHANGEME
 
 MiniMax supports both API formats in each region:
 
-| Region         | OpenAI-compatible base URL    | Anthropic-compatible base URL           | Documentation                                                      |
-| -------------- | ----------------------------- | --------------------------------------- | ------------------------------------------------------------------ |
-| Global         | `https://api.minimax.io/v1`   | `https://api.minimax.io/anthropic/v1`   | [Global documentation](https://platform.minimax.io/docs)           |
-| Mainland China | `https://api.minimaxi.com/v1` | `https://api.minimaxi.com/anthropic/v1` | [Mainland China documentation](https://platform.minimaxi.com/docs) |
+| Region         | OpenAI-compatible base URL    | Anthropic-compatible base URL        | Documentation                                                      |
+| -------------- | ----------------------------- | ------------------------------------ | ------------------------------------------------------------------ |
+| Global         | `https://api.minimax.io/v1`   | `https://api.minimax.io/anthropic`   | [Global documentation](https://platform.minimax.io/docs)           |
+| Mainland China | `https://api.minimaxi.com/v1` | `https://api.minimaxi.com/anthropic` | [Mainland China documentation](https://platform.minimaxi.com/docs) |
 
 ### Security considerations
 

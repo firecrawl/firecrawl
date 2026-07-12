@@ -1,11 +1,11 @@
 export const minimaxEndpoints = {
   global_en: {
     openai: "https://api.minimax.io/v1",
-    anthropic: "https://api.minimax.io/anthropic/v1",
+    anthropic: "https://api.minimax.io/anthropic",
   },
   cn_zh: {
     openai: "https://api.minimaxi.com/v1",
-    anthropic: "https://api.minimaxi.com/anthropic/v1",
+    anthropic: "https://api.minimaxi.com/anthropic",
   },
 } as const;
 

@@ -22,7 +22,8 @@ const minimaxOpenAI = createOpenAI({
 });
 const minimaxAnthropic = createAnthropic({
   apiKey: config.MINIMAX_API_KEY,
-  baseURL: getMiniMaxBaseURL(config.MINIMAX_REGION, "anthropic"),
+  // The Anthropic SDK appends /messages; MiniMax's request route is /v1/messages.
+  baseURL: `${getMiniMaxBaseURL(config.MINIMAX_REGION, "anthropic")}/v1`,
 });
 
 const providerList: Record<ModelProvider, any> = {
