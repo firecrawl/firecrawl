@@ -189,7 +189,7 @@ export class ResearchLLMService {
         },
         prompt: `Generate a list of 3-5 search queries to deeply research this topic: "${topic}"
           ${findings.length > 0 ? `\nBased on these previous findings, generate more specific queries:\n${trimToTokenLimit(findings.map(f => `- ${f.text}`).join("\n"), 10000).text}` : ""}
-          
+
           Each query should be specific and focused on a particular aspect.
           Build upon previous findings when available.
           Be specific and go deep, not wide - always following the original topic.
@@ -322,10 +322,10 @@ export class ResearchLLMService {
             : includesFormat(formats, "json")
               ? `Analyze the following research data on "${topic}" and structure the output according to the provided schema: Schema: ${JSON.stringify(jsonOptions?.schema)}\n\nFindings:\n\n${findings.map(f => `[From ${f.source}]: ${f.text}`).join("\n")}`
               : `Create a comprehensive research report on "${topic}" based on the collected findings and analysis.
-  
+
                 Research data:
                 ${findings.map(f => `[From ${f.source}]: ${f.text}`).join("\n")}
-    
+
                 Requirements:
                 - Format the report in Markdown with proper headers and sections
                 - Include specific citations to sources where appropriate
@@ -337,7 +337,7 @@ export class ResearchLLMService {
                 - Use bullet points and lists where appropriate for readability
                 - Don't begin the report by saying "Here is the report", nor "Below is the report", nor something similar.
                 - ALWAYS Start with a great title that reflects the research topic and findings - concise and to the point. That's the first thing you should output.
-                
+
                 Begin!`,
           100000,
         ).text,

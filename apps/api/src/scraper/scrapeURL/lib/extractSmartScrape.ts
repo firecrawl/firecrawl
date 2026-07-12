@@ -33,7 +33,7 @@ const commonReasoningPromptProperties = {
   },
   smartscrape_prompt: {
     type: ["string", "null"],
-    description: `A clear, outcome-focused prompt describing what information to find on the page. 
+    description: `A clear, outcome-focused prompt describing what information to find on the page.
       Example: "Find the product specifications in the expandable section" rather than "Click the button to reveal product specs".
       Used by the smart scraping agent to determine what actions to take.
       Dont mention anything about extraction, smartscrape just returns page content.`,

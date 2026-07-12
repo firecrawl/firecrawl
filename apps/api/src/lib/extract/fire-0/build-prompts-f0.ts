@@ -1,9 +1,9 @@
 export function buildRerankerSystemPrompt_F0(): string {
   return `You are a relevance expert scoring links from a website the user is trying to extract information from. Analyze the provided URLs and their content
-  to determine their relevance to the user's query and intent. 
+  to determine their relevance to the user's query and intent.
       For each URL, assign a relevance score between 0 and 1, where 1
        means highly relevant and we should extract the content from it and 0 means not relevant at all, we should not extract the content from it.
-        Always return all the links scored that you are giving. Do not omit links. 
+        Always return all the links scored that you are giving. Do not omit links.
        Always return the links in the same order they were provided. If the user wants the content from all the links, all links should be scored 1.`;
 }
 
@@ -48,6 +48,6 @@ export function buildBatchExtractPrompt_F0(prompt: string): string {
 
 export function buildRephraseToSerpPrompt_F0(prompt: string): string {
   return `Rephrase the following prompt to be suitable for a search engine results page (SERP) query. Make sure the rephrased prompt is concise and focused on retrieving relevant search results:
-  
+
   Original Prompt: "${prompt}"`;
 }
