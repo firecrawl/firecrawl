@@ -8,6 +8,7 @@ import {
   InsecureConnectionError,
 } from "../utils/safeFetch";
 import { MockState, saveMock } from "../../lib/mock";
+import { FIRE_CRAWL_AGENT_USER_AGENT } from "../../lib/fetch";
 import { TextDecoder } from "util";
 
 function decodeHtmlBuffer(
@@ -156,7 +157,12 @@ export async function scrapeURLWithFetch(
       const x = await undici.fetch(meta.rewrittenUrl ?? meta.url, {
         dispatcher: getSecureDispatcher(meta.options.skipTlsVerification),
         redirect: "follow",
-        headers: meta.options.headers,
+        headers: {
+          "User-Agent":
+            meta.options.headers?.["User-Agent"] ??
+            FIRE_CRAWL_AGENT_USER_AGENT,
+          ...(meta.options.headers ?? {}),
+        },
         signal: meta.abort.asSignal(),
       });
 
