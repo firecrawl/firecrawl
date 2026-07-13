@@ -50,12 +50,14 @@ class HttpClient:
 
         if self.api_key:
             headers['Authorization'] = f'Bearer {self.api_key}'
-        
+
         if idempotency_key:
             headers['x-idempotency-key'] = idempotency_key
-            
+
+        headers['User-Agent'] = f'FireCrawl/{version}'
+
         return headers
-    
+
     def post(
         self,
         endpoint: str,
@@ -158,7 +160,7 @@ class HttpClient:
                 time.sleep(backoff_factor * (2 ** attempt))
 
         raise last_exception or Exception("Unexpected error in multipart POST request")
-    
+
     def get(
         self,
         endpoint: str,
@@ -205,7 +207,7 @@ class HttpClient:
 
         # This should never be reached due to the exception handling above
         raise last_exception or Exception("Unexpected error in GET request")
-    
+
     def delete(
         self,
         endpoint: str,
