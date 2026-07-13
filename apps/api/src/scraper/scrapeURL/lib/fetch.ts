@@ -7,6 +7,8 @@ import { cacheableLookup } from "./cacheableLookup";
 import dns from "dns";
 import { AbortManagerThrownError } from "./abortManager";
 
+export const FIRE_CRAWL_AGENT_USER_AGENT = "FireCrawlAgent/1.0.0";
+
 type RobustFetchParams<Schema extends z.Schema<any>> = {
   url: string;
   logger: Logger;
@@ -111,6 +113,7 @@ export async function robustFetch<
       request = await fetch(url, {
         method,
         headers: {
+          "User-Agent": headers?.["User-Agent"] ?? FIRE_CRAWL_AGENT_USER_AGENT,
           ...(body instanceof FormData
             ? {}
             : body !== undefined
