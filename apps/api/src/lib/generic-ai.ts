@@ -1,27 +1,32 @@
 import { createOpenAI } from "@ai-sdk/openai";
-import { config } from "../config";
+import { config, type ModelProvider } from "../config";
 import { createOllama } from "ollama-ai-provider-v2";
-import { anthropic } from "@ai-sdk/anthropic";
+import { anthropic, createAnthropic } from "@ai-sdk/anthropic";
 import { groq } from "@ai-sdk/groq";
 import { google } from "@ai-sdk/google";
 import { createOpenRouter } from "@openrouter/ai-sdk-provider";
 import { fireworks } from "@ai-sdk/fireworks";
 import { deepinfra } from "@ai-sdk/deepinfra";
 import { createVertex } from "@ai-sdk/google-vertex";
+import { getMiniMaxBaseURL } from "./minimax";
 
-type Provider =
-  | "openai"
-  | "ollama"
-  | "anthropic"
-  | "groq"
-  | "google"
-  | "openrouter"
-  | "fireworks"
-  | "deepinfra"
-  | "vertex";
-const defaultProvider: Provider = config.OLLAMA_BASE_URL ? "ollama" : "openai";
+const defaultProvider: ModelProvider =
+  config.MODEL_PROVIDER ?? (config.OLLAMA_BASE_URL ? "ollama" : "openai");
+const defaultEmbeddingProvider: ModelProvider = config.OLLAMA_BASE_URL
+  ? "ollama"
+  : "openai";
 
-const providerList: Record<Provider, any> = {
+const minimaxOpenAI = createOpenAI({
+  apiKey: config.MINIMAX_API_KEY,
+  baseURL: getMiniMaxBaseURL(config.MINIMAX_REGION, "openai"),
+});
+const minimaxAnthropic = createAnthropic({
+  apiKey: config.MINIMAX_API_KEY,
+  // The Anthropic SDK appends /messages; MiniMax's request route is /v1/messages.
+  baseURL: `${getMiniMaxBaseURL(config.MINIMAX_REGION, "anthropic")}/v1`,
+});
+
+const providerList: Record<ModelProvider, any> = {
   openai: createOpenAI({
     apiKey: config.OPENAI_API_KEY,
     baseURL: config.OPENAI_BASE_URL,
@@ -51,9 +56,16 @@ const providerList: Record<Provider, any> = {
           keyFile: "./gke-key.json",
         },
   }),
+  minimax: (modelName: string) =>
+    config.MINIMAX_API_FORMAT === "anthropic"
+      ? minimaxAnthropic(modelName)
+      : minimaxOpenAI.chat(modelName),
 };
 
-export function getModel(name: string, provider: Provider = defaultProvider) {
+export function getModel(
+  name: string,
+  provider: ModelProvider = defaultProvider,
+) {
   if (name === "gemini-2.5-pro") {
     name = "gemini-2.5-pro";
   }
@@ -67,7 +79,7 @@ export function getModel(name: string, provider: Provider = defaultProvider) {
 
 export function getEmbeddingModel(
   name: string,
-  provider: Provider = defaultProvider,
+  provider: ModelProvider = defaultEmbeddingProvider,
 ) {
   return config.MODEL_EMBEDDING_NAME
     ? providerList[provider].embedding(config.MODEL_EMBEDDING_NAME)

@@ -1,5 +1,6 @@
 import "dotenv/config";
 import { z } from "zod";
+import { minimaxApiFormats, minimaxRegions } from "./lib/minimax";
 
 /* Codecs */
 const delimitedList = (separator = ",") => {
@@ -14,6 +15,21 @@ const emptyStringAsUndefined = <T extends z.ZodTypeAny>(schema: T) =>
 
 const emptyStringAsDefault = <T extends z.ZodTypeAny>(schema: T) =>
   z.preprocess(value => (value === "" ? undefined : value), schema);
+
+export const modelProviders = [
+  "openai",
+  "ollama",
+  "anthropic",
+  "groq",
+  "google",
+  "openrouter",
+  "fireworks",
+  "deepinfra",
+  "vertex",
+  "minimax",
+] as const;
+
+export type ModelProvider = (typeof modelProviders)[number];
 
 /* Schema */
 const configSchema = z.object({
@@ -80,6 +96,7 @@ const configSchema = z.object({
   BULL_AUTH_KEY: z.string().optional(),
   OPENAI_API_KEY: z.string().optional(),
   OPENAI_BASE_URL: z.string().optional(),
+  MINIMAX_API_KEY: z.string().optional(),
   OPENROUTER_API_KEY: z.string().optional(),
   XAI_API_KEY: z.string().optional(),
   LLAMAPARSE_API_KEY: z.string().optional(),
@@ -292,10 +309,17 @@ const configSchema = z.object({
   DEBUG_BRANDING: z.stringbool().optional(),
 
   // AI/ML
+  MODEL_PROVIDER: emptyStringAsUndefined(z.enum(modelProviders)),
   MODEL_NAME: z.string().optional(),
   MODEL_EMBEDDING_NAME: z.string().optional(),
   OLLAMA_BASE_URL: z.string().optional(),
   VERTEX_CREDENTIALS: z.string().optional(),
+  MINIMAX_REGION: emptyStringAsDefault(
+    z.enum(minimaxRegions).default("global_en"),
+  ),
+  MINIMAX_API_FORMAT: emptyStringAsDefault(
+    z.enum(minimaxApiFormats).default("openai"),
+  ),
 
   // LangSmith (tracing for interact agent)
   LANGSMITH_API_KEY: z.string().optional(),
