@@ -99,7 +99,6 @@ import {
   recordMonitorScrapeFailure,
   recordMonitorScrapeSuccess,
 } from "../monitoring/results";
-import type { DataLayerScrapeMetadata } from "../../lib/data-layer";
 
 configDotenv();
 
@@ -119,7 +118,6 @@ async function billScrapeJob(
   flags: TeamFlags,
   error?: Error | null,
   unsupportedFeatures?: Set<FeatureFlag>,
-  dataLayer?: DataLayerScrapeMetadata,
   threatDecisions?: ThreatDecision[],
 ) {
   let creditsToBeBilled: number | null = null;
@@ -148,7 +146,6 @@ async function billScrapeJob(
       flags,
       error,
       unsupportedFeatures,
-      dataLayer,
       threatDecisions,
     );
 
@@ -666,7 +663,6 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
         (await getACUCTeam(job.data.team_id))?.flags ?? null,
         undefined,
         pipeline.unsupportedFeatures,
-        pipeline.dataLayer,
         pipeline.threatDecisions,
       );
 
@@ -758,7 +754,6 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
         (await getACUCTeam(job.data.team_id))?.flags ?? null,
         undefined,
         pipeline.unsupportedFeatures,
-        pipeline.dataLayer,
         pipeline.threatDecisions,
       );
 
@@ -958,7 +953,6 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
       costTracking,
       (await getACUCTeam(job.data.team_id))?.flags ?? null,
       error instanceof Error ? error : null,
-      undefined,
       undefined,
       pipeline?.threatDecisions,
     );

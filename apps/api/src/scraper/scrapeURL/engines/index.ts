@@ -7,10 +7,6 @@ import {
   scrapeURLWithFireEngineChromeCDP,
   scrapeURLWithFireEngineTLSClient,
 } from "./fire-engine";
-import {
-  dataLayerMaxReasonableTime,
-  scrapeURLWithDataLayer,
-} from "./data-layer";
 import { pdfMaxReasonableTime, scrapePDF } from "./pdf";
 import { fetchMaxReasonableTime, scrapeURLWithFetch } from "./fetch";
 import {
@@ -34,13 +30,8 @@ import { getPDFMaxPages } from "../../../controllers/v2/types";
 import type { PdfMetadata } from "./pdf/types";
 import { BrandingProfile } from "../../../types/branding";
 import { BrandingNotSupportedError } from "../error";
-import {
-  canUseDataLayerForRequest,
-  type DataLayerScrapeMetadata,
-} from "../../../lib/data-layer";
 
 export type Engine =
-  | "data-layer"
   | "fire-engine;chrome-cdp"
   | "fire-engine(retry);chrome-cdp"
   | "fire-engine;chrome-cdp;stealth"
@@ -171,13 +162,11 @@ export type EngineScrapeResult = {
 
   proxyUsed: "basic" | "stealth";
   timezone?: string;
-  dataLayer?: DataLayerScrapeMetadata;
 };
 
 const engineHandlers: {
   [E in Engine]: (meta: Meta) => Promise<EngineScrapeResult>;
 } = {
-  "data-layer": scrapeURLWithDataLayer,
   index: scrapeURLWithIndex,
   "index;documents": scrapeURLWithIndex,
   "fire-engine;chrome-cdp": scrapeURLWithFireEngineChromeCDP,
@@ -197,7 +186,6 @@ const engineHandlers: {
 const engineMRTs: {
   [E in Engine]: (meta: Meta) => number;
 } = {
-  "data-layer": dataLayerMaxReasonableTime,
   index: indexMaxReasonableTime,
   "index;documents": indexMaxReasonableTime,
   "fire-engine;chrome-cdp": meta =>
@@ -230,27 +218,6 @@ const engineOptions: {
     quality: number;
   };
 } = {
-  "data-layer": {
-    features: {
-      actions: false,
-      waitFor: false,
-      screenshot: false,
-      "screenshot@fullScreen": false,
-      pdf: false,
-      document: false,
-      audio: false,
-      video: false,
-      atsv: false,
-      location: false,
-      mobile: false,
-      skipTlsVerification: true,
-      useFastMode: true,
-      stealthProxy: false,
-      branding: false,
-      disableAdblock: false,
-    },
-    quality: 2000,
-  },
   index: {
     features: {
       actions: false,
@@ -580,31 +547,6 @@ export async function buildFallbackList(meta: Meta): Promise<
     unsupportedFeatures: Set<FeatureFlag>;
   }[]
 > {
-  if (
-    !meta.internalOptions.agentIndexOnly &&
-    (await canUseDataLayerForRequest({
-      url: meta.rewrittenUrl ?? meta.url,
-      formats: meta.options.formats,
-      actions: meta.options.actions,
-      headers: meta.options.headers,
-      waitFor: meta.options.waitFor,
-      mobile: meta.options.mobile,
-      location: meta.options.location,
-      proxy: meta.options.proxy,
-      blockAds: meta.options.blockAds,
-      zeroDataRetention: meta.internalOptions.zeroDataRetention,
-      lockdown: meta.options.lockdown,
-      flags: meta.internalOptions.teamFlags ?? null,
-    }))
-  ) {
-    return [
-      {
-        engine: "data-layer",
-        unsupportedFeatures: new Set(),
-      },
-    ];
-  }
-
   const shouldPrioritizeTlsClient = meta.options.__experimental_engpicker
     ? (await queryEngpickerVerdict(
         meta.options.__experimental_omceDomain ?? new URL(meta.url).hostname,

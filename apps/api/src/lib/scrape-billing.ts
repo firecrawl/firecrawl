@@ -10,10 +10,6 @@ import { hasFormatOfType } from "./format-utils";
 import { TransportableError } from "./error";
 import { FeatureFlag } from "../scraper/scrapeURL/engines";
 import { isUrlBlocked } from "../scraper/WebScraper/utils/blocklist";
-import {
-  DataLayerScrapeMetadata,
-  getDataLayerSuccessCredits,
-} from "./data-layer";
 import type { ThreatDecision } from "./threat-protection/types";
 import { UnsafeDomainBlockedError } from "./threat-protection/error";
 
@@ -68,7 +64,6 @@ export async function calculateCreditsToBeBilled(
   flags: TeamFlags,
   error?: Error | null,
   unsupportedFeatures?: Set<FeatureFlag>,
-  dataLayer?: DataLayerScrapeMetadata,
   // Threat protection decisions for this scrape (initial + redirect checks,
   // in order). Each decision with `providerConsulted` bills a scan fee (+2
   // per unique scanned URL) on top of the scrape's own cost — on both success
@@ -115,14 +110,6 @@ export async function calculateCreditsToBeBilled(
     // protection scans that already happened still bill — including scrapes
     // blocked by the policy itself.
     return creditsToBeBilled + threatScanCredits;
-  }
-
-  const dataLayerCredits = getDataLayerSuccessCredits({
-    dataLayer,
-    statusCode: document.metadata?.statusCode,
-  });
-  if (dataLayerCredits !== null) {
-    return dataLayerCredits + threatScanCredits;
   }
 
   let creditsToBeBilled = 1; // Assuming 1 credit per document
