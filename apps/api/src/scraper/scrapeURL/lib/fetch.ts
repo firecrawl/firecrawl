@@ -147,7 +147,6 @@ export async function robustFetch<
       request = await fetch(url, {
         method,
         headers: {
-          ...buildHeadersWithUserAgent(headers),
           ...(body instanceof FormData
             ? {}
             : body !== undefined
@@ -155,6 +154,7 @@ export async function robustFetch<
                   "Content-Type": "application/json",
                 }
               : {}),
+          ...buildHeadersWithUserAgent(headers),
         },
         signal: abort,
         dispatcher: useCacheableLookup ? robustAgent : robustAgentNoLookup,
