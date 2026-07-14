@@ -159,9 +159,20 @@ export async function scrapeURLWithFetch(
         redirect: "follow",
         headers: {
           "User-Agent":
-            meta.options.headers?.["User-Agent"] ??
-            FIRE_CRAWL_AGENT_USER_AGENT,
-          ...(meta.options.headers ?? {}),
+            (meta.options.headers
+              ? meta.options.headers[
+                  Object.keys(meta.options.headers).find(
+                    (k) => k.toLowerCase() === "user-agent",
+                  ) ?? ""
+                ]
+              : undefined) ?? FIRE_CRAWL_AGENT_USER_AGENT,
+          ...(meta.options.headers
+            ? Object.fromEntries(
+                Object.entries(meta.options.headers).filter(
+                  ([k]) => k.toLowerCase() !== "user-agent",
+                ),
+              )
+            : {}),
         },
         signal: meta.abort.asSignal(),
       });

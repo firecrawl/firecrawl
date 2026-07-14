@@ -68,8 +68,9 @@ class HttpClient:
         backoff_factor: Optional[float] = None,
     ) -> requests.Response:
         """Make a POST request with retry logic."""
-        if headers is None:
-            headers = self._prepare_headers()
+        request_headers = self._prepare_headers()
+        if headers:
+            request_headers.update(headers)
         if timeout is None:
             timeout = self.timeout
         if retries is None:
@@ -89,7 +90,7 @@ class HttpClient:
             try:
                 response = requests.post(
                     url,
-                    headers=headers,
+                    headers=request_headers,
                     json=payload,
                     timeout=timeout
                 )
@@ -170,8 +171,9 @@ class HttpClient:
         backoff_factor: Optional[float] = None,
     ) -> requests.Response:
         """Make a GET request with retry logic."""
-        if headers is None:
-            headers = self._prepare_headers()
+        request_headers = self._prepare_headers()
+        if headers:
+            request_headers.update(headers)
         if timeout is None:
             timeout = self.timeout
         if retries is None:
@@ -188,7 +190,7 @@ class HttpClient:
             try:
                 response = requests.get(
                     url,
-                    headers=headers,
+                    headers=request_headers,
                     timeout=timeout
                 )
 
@@ -217,8 +219,9 @@ class HttpClient:
         backoff_factor: Optional[float] = None,
     ) -> requests.Response:
         """Make a DELETE request with retry logic."""
-        if headers is None:
-            headers = self._prepare_headers()
+        request_headers = self._prepare_headers()
+        if headers:
+            request_headers.update(headers)
         if timeout is None:
             timeout = self.timeout
         if retries is None:
@@ -235,7 +238,7 @@ class HttpClient:
             try:
                 response = requests.delete(
                     url,
-                    headers=headers,
+                    headers=request_headers,
                     timeout=timeout
                 )
 
@@ -265,8 +268,9 @@ class HttpClient:
         backoff_factor: Optional[float] = None,
     ) -> requests.Response:
         """Make a PATCH request with retry logic."""
-        if headers is None:
-            headers = self._prepare_headers()
+        request_headers = self._prepare_headers()
+        if headers:
+            request_headers.update(headers)
         if timeout is None:
             timeout = self.timeout
         if retries is None:
@@ -286,7 +290,7 @@ class HttpClient:
                 response = requests.patch(
                     url,
                     json=payload,
-                    headers=headers,
+                    headers=request_headers,
                     timeout=timeout
                 )
                 if response.status_code == 502 and attempt < num_attempts - 1:

@@ -140,7 +140,6 @@ export function isUrlAllowedByRobots(
   userAgents: string[] = [
     "FireCrawlAgent",
     "FirecrawlAgent",
-    "FireCrawlAgent/1.0.0",
   ],
 ): boolean {
   if (!robots) return true;
