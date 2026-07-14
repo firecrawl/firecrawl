@@ -159,6 +159,9 @@ export type EngineScrapeResult = {
 
   pdfMetadata?: PdfMetadata;
 
+  /** Per-page typed layout blocks (PDF + fire-pdf only; `blocks` format). */
+  blocks?: import("../../../controllers/v2/types").PDFBlockPage[];
+
   cacheInfo?: {
     created_at: Date;
   };

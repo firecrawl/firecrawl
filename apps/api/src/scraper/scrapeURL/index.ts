@@ -1008,6 +1008,7 @@ async function scrapeURLLoop(meta: Meta): Promise<ScrapeUrlResponse> {
 
     let document: Document = {
       markdown: engineResult.markdown,
+      blocks: engineResult.blocks,
       rawHtml: engineResult.html,
       json: engineResult.json,
       screenshot: engineResult.screenshot,

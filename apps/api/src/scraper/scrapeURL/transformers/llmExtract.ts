@@ -25,6 +25,12 @@ import { extractData } from "../lib/extractSmartScrape";
 import { CostTracking } from "../../../lib/cost-tracking";
 import { isAgentExtractModelValid } from "../../../controllers/v1/types";
 import { hasFormatOfType } from "../../../lib/format-utils";
+import {
+  CITATIONS_PROMPT_ADDENDUM,
+  groundCitations,
+  splitCitedExtraction,
+  wrapSchemaWithCitations,
+} from "../lib/citations";
 
 // Smart model selection based on schema
 function detectRecursiveSchema(schema: any): boolean {
@@ -983,11 +989,41 @@ export async function performLLMExtract(
 
     const modelSelection = selectModelForSchema(jsonFormat.schema);
 
+    // Grounded citations (ENG-4963): wrap the schema as { data, citations }
+    // so the model returns per-field verbatim supporting quotes alongside
+    // the untouched user shape; quotes are grounded to page + bbox through
+    // fire-pdf block spans after extraction. Requires blocks (PDF via
+    // fire-pdf) — otherwise extraction proceeds unwrapped and ungrounded.
+    // Requires a user schema: OpenAI strict structured outputs cannot
+    // express a schema-less wrapped shape. Schema-less citeSources
+    // degrades to a normal ungrounded extraction with a warning.
+    const citing =
+      jsonFormat.citeSources === true &&
+      jsonFormat.schema !== undefined &&
+      !!document.blocks?.length &&
+      typeof document.markdown === "string";
+    if (jsonFormat.citeSources === true && !citing) {
+      document.warning =
+        "citeSources was requested but citations are unavailable for this document" +
+        (jsonFormat.schema === undefined ? " (a JSON schema is required)" : "") +
+        "; extraction proceeded ungrounded." +
+        (document.warning ? " " + document.warning : "");
+    }
+    const effectiveFormat = citing
+      ? {
+          ...jsonFormat,
+          schema: wrapSchemaWithCitations(jsonFormat.schema),
+          prompt: [jsonFormat.prompt, CITATIONS_PROMPT_ADDENDUM]
+            .filter(Boolean)
+            .join("\n\n"),
+        }
+      : jsonFormat;
+
     const generationOptions: GenerateCompletionsOptions = {
       logger: meta.logger.child({
         method: "performLLMExtract/generateCompletions",
       }),
-      options: jsonFormat,
+      options: effectiveFormat,
       markdown: document.markdown,
       previousWarning: document.warning,
       model: getModel(modelSelection.modelName, "openai"),
@@ -1026,8 +1062,27 @@ export async function performLLMExtract(
     }
 
     // IMPORTANT: here it only get's the last page!!!
-    const extractedData =
+    let extractedData =
       extractedDataArray[extractedDataArray.length - 1] ?? undefined;
+
+    if (citing && extractedData !== undefined) {
+      const split = splitCitedExtraction(extractedData);
+      if (split) {
+        extractedData = split.data;
+        document.citations = groundCitations(
+          document.markdown!,
+          document.blocks!,
+          split.quotesByField,
+        );
+      } else {
+        // Model ignored the wrapper — serve the raw result ungrounded
+        // rather than failing the extraction.
+        meta.logger.warn(
+          "citeSources: extraction result missing { data, citations } wrapper; returning ungrounded",
+        );
+        document.citations = {};
+      }
+    }
 
     // // Prepare the schema, potentially wrapping it
     // const { schemaToUse, schemaWasWrapped } = prepareSmartScrapeSchema(

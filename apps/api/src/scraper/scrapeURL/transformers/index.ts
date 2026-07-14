@@ -378,6 +378,20 @@ function coerceFieldsToFormats(meta: Meta, document: Document): Document {
     );
   }
 
+  // Blocks are INTERNAL (they exist only to ground citations) — always
+  // strip them; the public blocks format is a separate unshipped decision.
+  if (document.blocks !== undefined) {
+    delete document.blocks;
+  }
+  // Citations belong to the json format with citeSources on; strip
+  // otherwise so no stray field leaks.
+  if (
+    document.citations !== undefined &&
+    hasFormatOfType(meta.options.formats, "json")?.citeSources !== true
+  ) {
+    delete document.citations;
+  }
+
   if (!hasRawHtml && document.rawHtml !== undefined) {
     delete document.rawHtml;
   } else if (hasRawHtml && document.rawHtml === undefined) {

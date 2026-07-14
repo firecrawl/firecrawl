@@ -349,6 +349,11 @@ const jsonFormatWithOptions = z.strictObject({
       message: OPENAI_SCHEMA_ERROR_MESSAGE,
     }),
   prompt: z.string().max(10000).optional(),
+  // Grounded citations (PDF documents only): the extraction also returns,
+  // per extracted field, page + bbox + verbatim source text located via
+  // fire-pdf block spans. Fields whose support can't be located degrade to
+  // an empty citation list.
+  citeSources: z.boolean().optional(),
 });
 
 export type JsonFormatWithOptions = z.output<typeof jsonFormatWithOptions>;
@@ -469,6 +474,10 @@ export type FormatObject =
 const pdfModeSchema = z.enum(["fast", "auto", "ocr"]);
 
 export type PDFMode = z.infer<typeof pdfModeSchema>;
+
+const pdfTableFormatSchema = z.enum(["markdown", "html", "dynamic"]);
+
+export type PDFTableFormat = z.infer<typeof pdfTableFormatSchema>;
 
 const pdfParserWithOptions = z.strictObject({
   type: z.literal("pdf"),
@@ -1210,11 +1219,62 @@ export const mapRequestSchema = strictWithMessage(mapRequestSchemaBase);
 export type MapRequest = z.infer<typeof mapRequestSchema>;
 export type MapRequestInput = z.input<typeof mapRequestSchema>;
 
+/**
+ * One typed layout block of a parsed PDF page. INTERNAL for now: blocks
+ * flow from fire-pdf only to power grounded citations (json format with
+ * `citeSources`) and are always stripped from responses — the public
+ * `blocks` format is a separate, unshipped decision (ENG-4956).
+ * Wire contract: fire-pdf docs/blocks-schema.md.
+ */
+export type PDFBlock = {
+  id: string;
+  type: string;
+  label: string | null;
+  /** [x0, y0, x1, y1] normalized 0-1 to page width/height; null when the
+   * page had no dimension anchor. */
+  bbox: [number, number, number, number] | null;
+  content: string;
+  /** [start, end) char offsets into the document markdown; null when a
+   * post-assembly transform rewrote the fragment. */
+  markdown_span: [number, number] | null;
+  reading_order: number;
+  source: string;
+  confidence: { layout: number | null; ocr: number | null };
+};
+
+export type PDFBlockPage = {
+  /** 1-based, matches `<!-- page N -->` markers in the markdown. */
+  page: number;
+  width: number | null;
+  height: number | null;
+  status: "ok" | "partial" | "failed";
+  blocks: PDFBlock[];
+};
+
+export type DocumentCitation = {
+  /** 1-based page number in the source PDF. */
+  page: number;
+  /** [x0, y0, x1, y1] normalized 0-1 to the page; null when the source
+   * block carried no grounded bbox. */
+  bbox: [number, number, number, number] | null;
+  /** The verbatim markdown slice the citation matched. */
+  text: string;
+  /** fire-pdf block id, stable within this response. */
+  blockId: string;
+};
+
 export type Document = {
   title?: string;
   description?: string;
   url?: string;
   markdown?: string;
+  /** INTERNAL: per-page typed layout blocks from fire-pdf, populated only
+   * when grounded citations need them; always stripped before responding. */
+  blocks?: PDFBlockPage[];
+  /** Grounded citations for `json` extraction (`citeSources: true`):
+   * field JSON path -> locations supporting the extracted value. Empty
+   * array = the model's supporting quote could not be located (ungrounded). */
+  citations?: Record<string, DocumentCitation[]>;
   html?: string;
   rawHtml?: string;
   links?: string[];

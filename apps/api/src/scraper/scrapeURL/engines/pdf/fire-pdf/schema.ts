@@ -45,11 +45,17 @@ export const pollResponseSchema = z.object({
 });
 
 export const resultResponseSchema = z.object({
-  schema_version: z.literal(1).optional(),
+  // v1 results carry schema_version 1 (or omit it); jobs submitted with
+  // include_blocks return schema_version 2 + `pages`. Non-strict so either
+  // generation of fire-pdf parses.
+  schema_version: z.union([z.literal(1), z.literal(2)]).optional(),
   markdown: z.string(),
   pages_processed: z.number().optional(),
   failed_pages: z.array(z.number()).nullable().optional(),
   partial_pages: z.array(z.number()).nullable().optional(),
+  // Per-page typed blocks (fire-pdf docs/blocks-schema.md). Loose on
+  // purpose — forward-compatible passthrough.
+  pages: z.array(z.looseObject({})).optional(),
 });
 
 export type PollResponse = z.infer<typeof pollResponseSchema>;

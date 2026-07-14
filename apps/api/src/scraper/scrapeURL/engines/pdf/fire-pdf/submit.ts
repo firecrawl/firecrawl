@@ -1,5 +1,8 @@
 import type { Meta } from "../../..";
-import type { PDFMode } from "../../../../../controllers/v2/types";
+import type {
+  PDFMode,
+  PDFTableFormat,
+} from "../../../../../controllers/v2/types";
 import { fetch as undiciFetch } from "undici";
 import { AbortManagerThrownError } from "../../../lib/abortManager";
 import { firePdfAsyncSubmittedTotal } from "./metrics";
@@ -19,6 +22,8 @@ type SubmitArgs = {
   maxPages: number | undefined;
   pagesProcessed: number | undefined;
   mode: PDFMode | undefined;
+  includeBlocks: boolean | undefined;
+  tableFormat: PDFTableFormat | undefined;
   deadlineAt: string;
   fetchImpl: typeof undiciFetch;
 };
@@ -52,6 +57,8 @@ export async function submitJob(args: SubmitArgs): Promise<SubmitOutcome> {
       ...(pagesProcessed !== undefined && { pages_estimate: pagesProcessed }),
       ...(maxPages !== undefined && { max_pages: maxPages }),
       ...(mode !== undefined && { mode }),
+      ...(args.includeBlocks && { include_blocks: true }),
+      ...(args.tableFormat !== undefined && { tableFormat: args.tableFormat }),
     },
   };
 
@@ -77,20 +84,26 @@ export async function submitJob(args: SubmitArgs): Promise<SubmitOutcome> {
   if (status === 503) failAsync(meta, "http_503");
 
   if (status === 409) {
-    meta.logger.error("FirePDF async POST /jobs returned 409 scrape_id_conflict", {
-      scrapeId,
-      body: json,
-    });
+    meta.logger.error(
+      "FirePDF async POST /jobs returned 409 scrape_id_conflict",
+      {
+        scrapeId,
+        body: json,
+      },
+    );
     throw new Error(
       "fire-pdf async POST /jobs conflict: scrape_id reused with different inputs",
     );
   }
 
   if (status === 400) {
-    meta.logger.error("FirePDF async POST /jobs returned 400 validation error", {
-      scrapeId,
-      body: json,
-    });
+    meta.logger.error(
+      "FirePDF async POST /jobs returned 400 validation error",
+      {
+        scrapeId,
+        body: json,
+      },
+    );
     throw new Error("fire-pdf async POST /jobs validation error");
   }
 
