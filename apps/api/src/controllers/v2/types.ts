@@ -447,6 +447,7 @@ type QueryFormatWithOptions = z.output<typeof queryFormatWithOptions>;
 
 export type FormatObject =
   | { type: "markdown" }
+  | { type: "blocks" }
   | { type: "html" }
   | { type: "rawHtml" }
   | { type: "links" }
@@ -470,10 +471,19 @@ const pdfModeSchema = z.enum(["fast", "auto", "ocr"]);
 
 export type PDFMode = z.infer<typeof pdfModeSchema>;
 
+const pdfTableFormatSchema = z.enum(["markdown", "html", "dynamic"]);
+
+export type PDFTableFormat = z.infer<typeof pdfTableFormatSchema>;
+
 const pdfParserWithOptions = z.strictObject({
   type: z.literal("pdf"),
   mode: pdfModeSchema.optional(),
   maxPages: z.int().positive().finite().max(10000).optional(),
+  // Table rendering in the parsed markdown: "markdown" (pipe tables,
+  // merged cells grid-expanded), "html" (structure-preserving <table>
+  // passthrough), or "dynamic" (HTML only when the table carries
+  // structure markdown cannot express). Forwarded to fire-pdf verbatim.
+  tableFormat: pdfTableFormatSchema.optional(),
   // Experimental: route this request through the fire-pdf async pipeline
   // (POST /jobs + poll) instead of the sync POST /ocr endpoint. Falls back
   // to sync on any async-path failure, so user-visible behavior is unchanged
@@ -521,6 +531,18 @@ export function getPDFMode(parsers?: Parsers): PDFMode {
     }
   }
   return "auto";
+}
+
+export function getPDFTableFormat(
+  parsers?: Parsers,
+): PDFTableFormat | undefined {
+  if (!parsers) return undefined;
+  for (const parser of parsers) {
+    if (typeof parser === "object" && parser.type === "pdf") {
+      return parser.tableFormat;
+    }
+  }
+  return undefined;
 }
 
 export function getFirePdfAsync(parsers?: Parsers): boolean {
@@ -623,6 +645,7 @@ const baseScrapeOptions = z.strictObject({
       z
         .union([
           z.strictObject({ type: z.literal("markdown") }),
+          z.strictObject({ type: z.literal("blocks") }),
           z.strictObject({ type: z.literal("html") }),
           z.strictObject({ type: z.literal("rawHtml") }),
           z.strictObject({ type: z.literal("links") }),
@@ -1210,11 +1233,45 @@ export const mapRequestSchema = strictWithMessage(mapRequestSchemaBase);
 export type MapRequest = z.infer<typeof mapRequestSchema>;
 export type MapRequestInput = z.input<typeof mapRequestSchema>;
 
+/**
+ * One typed layout block of a parsed PDF page (`formats: ["blocks"]`).
+ * Wire contract: fire-pdf docs/blocks-schema.md. `label` carries the raw
+ * layout-model label for forward-compat; unknown future `type` values
+ * must be tolerated by consumers.
+ */
+export type PDFBlock = {
+  id: string;
+  type: string;
+  label: string | null;
+  /** [x0, y0, x1, y1] normalized 0-1 to page width/height; null when the
+   * page had no dimension anchor. */
+  bbox: [number, number, number, number] | null;
+  content: string;
+  /** [start, end) char offsets into the document markdown; null when a
+   * post-assembly transform rewrote the fragment. */
+  markdown_span: [number, number] | null;
+  reading_order: number;
+  source: string;
+  confidence: { layout: number | null; ocr: number | null };
+};
+
+export type PDFBlockPage = {
+  /** 1-based, matches `<!-- page N -->` markers in the markdown. */
+  page: number;
+  width: number | null;
+  height: number | null;
+  status: "ok" | "partial" | "failed";
+  blocks: PDFBlock[];
+};
+
 export type Document = {
   title?: string;
   description?: string;
   url?: string;
   markdown?: string;
+  /** Per-page typed layout blocks — present only for PDF documents when
+   * `formats` includes `"blocks"`. */
+  blocks?: PDFBlockPage[];
   html?: string;
   rawHtml?: string;
   links?: string[];

@@ -18,6 +18,7 @@ import {
   shouldParsePDF,
   getPDFMaxPages,
   getPDFMode,
+  getPDFTableFormat,
   getFirePdfAsync,
 } from "../../../../controllers/v2/types";
 import type { PDFMode } from "../../../../controllers/v2/types";
@@ -38,6 +39,7 @@ import { scrapePDFWithRunPodMU } from "./runpodMU";
 import { reconcilePageCountWithFirePdf, scrapePDFWithFirePDF } from "./firePDF";
 import { scrapePDFWithFirePDFAsync } from "./fire-pdf/async";
 import { scrapePDFWithParsePDF } from "./pdfParse";
+import { hasFormatOfType } from "../../../../lib/format-utils";
 import { captureExceptionWithZdrCheck } from "../../../../services/sentry";
 import { isPdfBuffer, PDF_SNIFF_WINDOW } from "./pdfUtils";
 import { comparePdfOutputs } from "./shadowComparison";
@@ -58,6 +60,18 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
   const shouldParse = shouldParsePDF(meta.options.parsers);
   const maxPages = getPDFMaxPages(meta.options.parsers);
   const mode: PDFMode = getPDFMode(meta.options.parsers);
+  // blocks format requires fire-pdf: it is the only engine that produces
+  // per-page typed blocks. When requested we force the fire-pdf route
+  // (bypassing the Rust direct-serve path and the MinerU diversion). If
+  // fire-pdf itself fails, the normal fallback chain still runs and the
+  // document is returned WITHOUT blocks — degraded, never erroring the
+  // whole scrape over an output format.
+  const wantsBlocks = !!hasFormatOfType(meta.options.formats, "blocks");
+  const tableFormat = getPDFTableFormat(meta.options.parsers);
+  const firePdfOptions =
+    wantsBlocks || tableFormat !== undefined
+      ? { includeBlocks: wantsBlocks, tableFormat }
+      : undefined;
 
   if (!shouldParse) {
     if (meta.pdfPrefetch !== undefined && meta.pdfPrefetch !== null) {
@@ -169,7 +183,8 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
     let shadowPagesNeedingOcr: number[] | undefined;
 
     const forceFirePDF =
-      !!meta.options.__forceFirePDF && !!config.FIRE_PDF_BASE_URL;
+      (!!meta.options.__forceFirePDF || wantsBlocks) &&
+      !!config.FIRE_PDF_BASE_URL;
     const rustEnabled = !!config.PDF_RUST_EXTRACT_ENABLE;
     const logger = meta.logger.child({ method: "scrapePDF/processPdf" });
 
@@ -414,22 +429,30 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
         // sync path.
         const useAsync = getFirePdfAsync(meta.options.parsers);
         try {
-          result = await (
-            useAsync ? scrapePDFWithFirePDFAsync : scrapePDFWithFirePDF
-          )(
-            {
-              ...meta,
-              logger: meta.logger.child({
-                method: useAsync
-                  ? "scrapePDF/firePDFAsync"
-                  : "scrapePDF/firePDF",
-              }),
-            },
-            base64Content,
-            maxPages,
-            effectivePageCount,
-            mode,
-          );
+          const firePdfMeta = {
+            ...meta,
+            logger: meta.logger.child({
+              method: useAsync ? "scrapePDF/firePDFAsync" : "scrapePDF/firePDF",
+            }),
+          };
+          result = await (useAsync
+            ? scrapePDFWithFirePDFAsync(
+                firePdfMeta,
+                base64Content,
+                maxPages,
+                effectivePageCount,
+                mode,
+                {},
+                firePdfOptions,
+              )
+            : scrapePDFWithFirePDF(
+                firePdfMeta,
+                base64Content,
+                maxPages,
+                effectivePageCount,
+                mode,
+                firePdfOptions,
+              ));
           effectivePageCount = reconcilePageCountWithFirePdf(
             effectivePageCount,
             result,
@@ -441,7 +464,7 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
           ) {
             throw error;
           }
-          if (forceFirePDF) {
+          if (meta.options.__forceFirePDF) {
             meta.logger.error("FirePDF failed (forced, no fallback)", {
               method: "scrapePDF/firePDF",
               error,
@@ -609,6 +632,7 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
       statusCode: response.status,
       html: result?.html ?? "",
       markdown: result?.markdown ?? "",
+      ...(result?.blocks !== undefined && { blocks: result.blocks }),
       pdfMetadata: {
         numPages: effectivePageCount,
         totalPages: totalPageCount,

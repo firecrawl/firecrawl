@@ -151,7 +151,9 @@ function sanitizeParseRequestForLogs(
   };
 }
 
-function getUnsupportedParseOptionError(reqBody: ParseRequest): string | null {
+export function getUnsupportedParseOptionError(
+  reqBody: ParseRequest,
+): string | null {
   if (reqBody.actions !== undefined && reqBody.actions.length > 0) {
     return "Parse uploads do not support actions.";
   }
@@ -166,6 +168,15 @@ function getUnsupportedParseOptionError(reqBody: ParseRequest): string | null {
 
   if (hasFormatOfType(reqBody.formats, "changeTracking")) {
     return "Parse uploads do not support change tracking.";
+  }
+
+  // blocks come from the PDF pipeline only — document/HTML uploads have no
+  // layout-block producer.
+  if (
+    hasFormatOfType(reqBody.formats, "blocks") &&
+    reqBody.file?.kind !== "pdf"
+  ) {
+    return "The blocks format is only supported for PDF uploads.";
   }
 
   if (reqBody.waitFor !== undefined && reqBody.waitFor > 0) {

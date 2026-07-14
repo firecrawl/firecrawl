@@ -378,6 +378,17 @@ function coerceFieldsToFormats(meta: Meta, document: Document): Document {
     );
   }
 
+  const hasBlocks = hasFormatOfType(meta.options.formats, "blocks");
+  if (!hasBlocks && document.blocks !== undefined) {
+    delete document.blocks;
+  } else if (hasBlocks && document.blocks === undefined) {
+    // Expected when the document wasn't a PDF, or when fire-pdf failed and
+    // a fallback engine served the request (blocks degrade, never error).
+    meta.logger.warn(
+      "Request had format: blocks, but there was no blocks field in the result.",
+    );
+  }
+
   if (!hasRawHtml && document.rawHtml !== undefined) {
     delete document.rawHtml;
   } else if (hasRawHtml && document.rawHtml === undefined) {

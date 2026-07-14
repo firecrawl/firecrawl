@@ -7,6 +7,10 @@ import {
 } from "../controllers/v2/types";
 import { CostTracking } from "./cost-tracking";
 import { hasFormatOfType } from "./format-utils";
+// NOTE: the `blocks` format is intentionally NOT billed (product decision
+// 2026-07-03: blocks are free as the adoption driver for grounded
+// extraction). If a format-based charge is ever added here for it, that
+// decision needs explicit revisiting.
 import { TransportableError } from "./error";
 import { FeatureFlag } from "../scraper/scrapeURL/engines";
 import { isUrlBlocked } from "../scraper/WebScraper/utils/blocklist";

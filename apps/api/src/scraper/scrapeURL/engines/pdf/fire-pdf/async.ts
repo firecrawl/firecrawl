@@ -2,6 +2,8 @@ import { Meta } from "../../..";
 import { config } from "../../../../../config";
 import { fetch as undiciFetch } from "undici";
 import type { PDFProcessorResult } from "../types";
+import type { PDFBlockPage } from "../../../../../controllers/v2/types";
+import type { FirePdfRequestOptions } from "../firePDF";
 import type { PDFMode } from "../../../../../controllers/v2/types";
 import { safeMarkdownToHtml } from "../markdownToHtml";
 import { scrapePDFWithFirePDF } from "../firePDF";
@@ -29,19 +31,21 @@ export async function scrapePDFWithFirePDFAsync(
   pagesProcessed?: number,
   mode?: PDFMode,
   deps: FirePdfAsyncDeps = {},
+  firePdfOptions?: FirePdfRequestOptions,
 ): Promise<PDFProcessorResult> {
   const fetchImpl = deps.fetchImpl ?? undiciFetch;
   const fallbackImpl = deps.fallbackImpl ?? scrapePDFWithFirePDF;
   const sleep = deps.sleepImpl ?? defaultSleep;
   const now = deps.nowImpl ?? Date.now;
+  const includeBlocks = firePdfOptions?.includeBlocks === true;
+  const tableFormat = firePdfOptions?.tableFormat;
+  // blocks / non-default tableFormat bypass the PDF cache — mirrors the
+  // sync client (entries were written without these formats).
+  const cacheEligible = !includeBlocks && tableFormat === undefined;
 
-  const cached = await tryGetCached(
-    meta,
-    base64Content,
-    mode,
-    maxPages,
-    pagesProcessed,
-  );
+  const cached = cacheEligible
+    ? await tryGetCached(meta, base64Content, mode, maxPages, pagesProcessed)
+    : null;
   if (cached) return cached;
 
   meta.abort.throwIfAborted();
@@ -50,7 +54,14 @@ export async function scrapePDFWithFirePDFAsync(
   if (!baseUrl) {
     // Should be unreachable — call site checks this — but fall back rather
     // than crash if a route somehow bypasses the gate.
-    return fallbackImpl(meta, base64Content, maxPages, pagesProcessed, mode);
+    return fallbackImpl(
+      meta,
+      base64Content,
+      maxPages,
+      pagesProcessed,
+      mode,
+      firePdfOptions,
+    );
   }
 
   const overallStartedAt = now();
@@ -67,6 +78,8 @@ export async function scrapePDFWithFirePDFAsync(
     maxPages,
     pagesProcessed,
     mode,
+    includeBlocks,
+    tableFormat,
     deadlineAt,
     fetchImpl,
   });
@@ -117,7 +130,12 @@ export async function scrapePDFWithFirePDFAsync(
     markdown: fetched.markdown,
     html: await safeMarkdownToHtml(fetched.markdown, meta.logger, meta.id),
     pagesProcessed: pages,
+    ...(fetched.pages !== undefined && {
+      blocks: fetched.pages as unknown as PDFBlockPage[],
+    }),
   };
+
+  if (!cacheEligible) return processorResult;
 
   await maybeSaveResult({
     meta,

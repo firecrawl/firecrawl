@@ -1,6 +1,16 @@
+import type { PDFBlockPage } from "../../../../controllers/v2/types";
+
 export type PDFProcessorResult = {
   html: string;
   markdown?: string;
+  /**
+   * Per-page typed layout blocks from fire-pdf (`include_blocks`). Only
+   * populated when the request asked for the `blocks` format AND the
+   * fire-pdf engine served it — the MinerU / pdf-parse fallbacks can't
+   * produce blocks, so consumers must treat absence as "engine couldn't",
+   * not an error.
+   */
+  blocks?: PDFBlockPage[];
   /**
    * Pages the underlying engine actually processed for this request.
    * Currently populated only by fire-pdf (via OcrSuccessBody.pages_processed).

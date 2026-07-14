@@ -3,7 +3,11 @@ import { config } from "../../../../config";
 import { robustFetch } from "../../lib/fetch";
 import { z } from "zod";
 import type { PDFProcessorResult } from "./types";
-import type { PDFMode } from "../../../../controllers/v2/types";
+import type {
+  PDFBlockPage,
+  PDFMode,
+  PDFTableFormat,
+} from "../../../../controllers/v2/types";
 import { safeMarkdownToHtml } from "./markdownToHtml";
 import {
   createPdfCacheKey,
@@ -41,14 +45,24 @@ export function reconcilePageCountWithFirePdf(
   return Math.max(current, fromFirePdf);
 }
 
+export type FirePdfRequestOptions = {
+  /** Request per-page typed blocks (fire-pdf `include_blocks`). */
+  includeBlocks?: boolean;
+  /** Table rendering: markdown | html | dynamic (fire-pdf `tableFormat`). */
+  tableFormat?: PDFTableFormat;
+};
+
 export async function scrapePDFWithFirePDF(
   meta: Meta,
   base64Content: string,
   maxPages?: number,
   pagesProcessed?: number,
   mode?: PDFMode,
+  firePdfOptions?: FirePdfRequestOptions,
 ): Promise<PDFProcessorResult> {
   const logger = meta.logger;
+  const includeBlocks = firePdfOptions?.includeBlocks === true;
+  const tableFormat = firePdfOptions?.tableFormat;
 
   // Cache layout:
   //   - `ocr` mode reads/writes a dedicated `…-ocr.json` bucket. ocr
@@ -62,8 +76,16 @@ export async function scrapePDFWithFirePDF(
   //     running fire-pdf again.
   //   - `fast` is bypassed entirely (hard cost ceiling — must fail on
   //     scanned PDFs, not serve a cached OCR result).
+  // blocks / non-default tableFormat responses bypass the PDF cache in both
+  // directions: existing entries were written without blocks (a hit would
+  // silently drop the requested format), and writing the variant would need
+  // a key split that isn't worth it until adoption justifies it.
   const cacheable =
-    mode !== "fast" && !maxPages && !meta.internalOptions.zeroDataRetention;
+    mode !== "fast" &&
+    !maxPages &&
+    !meta.internalOptions.zeroDataRetention &&
+    !includeBlocks &&
+    tableFormat === undefined;
   const ownVariant: string | undefined = mode === "ocr" ? "ocr" : undefined;
   const lookupVariants: (string | undefined)[] =
     mode === "ocr" ? ["ocr"] : [undefined, "ocr"];
@@ -154,6 +176,8 @@ export async function scrapePDFWithFirePDF(
       pdf_sha256: pdfSha256,
       source: "firecrawl",
       zdr,
+      ...(includeBlocks && { include_blocks: true }),
+      ...(tableFormat !== undefined && { tableFormat }),
       ...deadlineFields,
     },
     logger,
@@ -161,6 +185,10 @@ export async function scrapePDFWithFirePDF(
       markdown: z.string(),
       failed_pages: z.array(z.number()).nullable(),
       pages_processed: z.number().optional(),
+      // Present only when include_blocks was sent (fire-pdf blocks-schema
+      // v2). Loose on purpose: fire-pdf may add block fields — pass them
+      // through rather than strip/fail.
+      pages: z.array(z.looseObject({})).optional(),
     }),
     mock: meta.mock,
     abort: meta.abort.asSignal(),
@@ -183,6 +211,9 @@ export async function scrapePDFWithFirePDF(
     markdown: resp.markdown,
     html: await safeMarkdownToHtml(resp.markdown, logger, meta.id),
     pagesProcessed: pages,
+    ...(resp.pages !== undefined && {
+      blocks: resp.pages as unknown as PDFBlockPage[],
+    }),
   };
 
   if (cacheable) {
