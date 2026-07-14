@@ -114,7 +114,14 @@ export async function robustFetch<
       request = await fetch(url, {
         method,
         headers: {
-          "User-Agent": headers?.["User-Agent"] ?? FIRE_CRAWL_AGENT_USER_AGENT,
+          "User-Agent":
+            (headers
+              ? headers[
+                  Object.keys(headers).find(
+                    (k) => k.toLowerCase() === "user-agent",
+                  ) ?? ""
+                ]
+              : undefined) ?? FIRE_CRAWL_AGENT_USER_AGENT,
           ...(body instanceof FormData
             ? {}
             : body !== undefined
@@ -122,7 +129,13 @@ export async function robustFetch<
                   "Content-Type": "application/json",
                 }
               : {}),
-          ...(headers !== undefined ? headers : {}),
+          ...(headers !== undefined
+            ? Object.fromEntries(
+                Object.entries(headers).filter(
+                  ([k]) => k.toLowerCase() !== "user-agent",
+                ),
+              )
+            : {}),
         },
         signal: abort,
         dispatcher: useCacheableLookup ? robustAgent : robustAgentNoLookup,
