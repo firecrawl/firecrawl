@@ -1,4 +1,4 @@
-name: Audit NPM Packages
+name: Audit Packages
 
 on:
   pull_request:
@@ -17,7 +17,7 @@ jobs:
         uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4
         with:
           version: 10
-      
+
       - name: Create audit output directory
         run: mkdir -p /tmp/audit-outputs
 
@@ -70,6 +70,20 @@ jobs:
           set -o pipefail
           pnpm dlx audit-ci@^7 --directory apps/test-site --config apps/test-site/audit-ci.jsonc 2>&1 | tee /tmp/audit-outputs/test-site.txt
 
+      - name: Audit Rust SDK Packages
+        id: audit-rust-sdk
+        continue-on-error: true
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          scan-type: fs
+          scan-ref: apps/rust-sdk
+          scanners: vuln
+          vuln-type: library
+          severity: HIGH,CRITICAL
+          format: table
+          output: /tmp/audit-outputs/rust-sdk.txt
+          exit-code: "1"
+
       - name: Report audit failures
         if: always()
         run: |
@@ -81,6 +95,7 @@ jobs:
             ["Test Suite"]="test-suite.txt"
             ["Ingestion UI"]="ingestion-ui.txt"
             ["Test Site"]="test-site.txt"
+            ["Rust SDK"]="rust-sdk.txt"
           )
 
           declare -A AUDIT_OUTCOMES=(
@@ -91,10 +106,11 @@ jobs:
             ["Test Suite"]="${{ steps.audit-test-suite.outcome }}"
             ["Ingestion UI"]="${{ steps.audit-ingestion-ui.outcome }}"
             ["Test Site"]="${{ steps.audit-test-site.outcome }}"
+            ["Rust SDK"]="${{ steps.audit-rust-sdk.outcome }}"
           )
 
           FAILED=false
-          for name in "API" "Playwright Service" "JavaScript SDK" "JavaScript SDK Firecrawl" "Test Suite" "Ingestion UI" "Test Site"; do
+          for name in "API" "Playwright Service" "JavaScript SDK" "JavaScript SDK Firecrawl" "Test Suite" "Ingestion UI" "Test Site" "Rust SDK"; do
             if [ "${AUDIT_OUTCOMES[$name]}" == "failure" ]; then
               FAILED=true
               echo ""
@@ -103,7 +119,12 @@ jobs:
               echo "=========================================="
               if [ -f "/tmp/audit-outputs/${AUDIT_FILES[$name]}" ]; then
                 # Extract only the summary (from "Found vulnerable advisory paths:" to end)
-                sed -n '/Found vulnerable advisory paths:/,$p' "/tmp/audit-outputs/${AUDIT_FILES[$name]}" | sed 's/\x1b\[[0-9;]*m//g'
+                SUMMARY=$(sed -n '/Found vulnerable advisory paths:/,$p' "/tmp/audit-outputs/${AUDIT_FILES[$name]}" | sed 's/\x1b\[[0-9;]*m//g')
+                if [ -n "$SUMMARY" ]; then
+                  echo "$SUMMARY"
+                else
+                  sed 's/\x1b\[[0-9;]*m//g' "/tmp/audit-outputs/${AUDIT_FILES[$name]}"
+                fi
               fi
             fi
           done
