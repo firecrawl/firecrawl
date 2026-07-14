@@ -58,9 +58,20 @@ USE_DB_AUTHENTICATION=false
 # MODEL_NAME=deepseek-r1:7b
 # MODEL_EMBEDDING_NAME=nomic-embed-text
 
-# Experimental: Use any OpenAI-compatible API
+# Experimental: Use any OpenAI-compatible API (custom base URL).
+# Firecrawl's OpenAI provider path honors OPENAI_BASE_URL for JSON-format
+# scrape fields and the /extract API (see apps/api/src/lib/generic-ai.ts).
 # OPENAI_BASE_URL=https://example.com/v1
 # OPENAI_API_KEY=
+# MODEL_NAME=your_exact_model_id
+
+# Example: DaoXE multi-model multi-protocol gateway (OpenAI-compatible Chat Completions)
+# DaoXE also exposes OpenAI Responses and Anthropic Messages for other clients;
+# self-hosted Firecrawl uses the OpenAI-compatible path below.
+# Copy an exact model ID from your DaoXE account (account-scoped availability).
+# OPENAI_BASE_URL=https://daoxe.com/v1
+# OPENAI_API_KEY=your_daoxe_api_key
+# MODEL_NAME=your_exact_account_model_id
 
 ## === Proxy ===
 # PROXY_SERVER can be a full URL (e.g. http://0.1.2.3:1234) or just an IP and port combo (e.g. 0.1.2.3:1234)
@@ -121,6 +132,21 @@ BULL_AUTH_KEY=CHANGEME
 # Set if you'd like to allow local webhooks to be sent to your self-hosted instance
 # ALLOW_LOCAL_WEBHOOKS=true
 ```
+
+### AI features with an OpenAI-compatible gateway
+
+Self-hosted Firecrawl can drive JSON-format scrape fields and the `/extract` API through any OpenAI-compatible Chat Completions endpoint by setting `OPENAI_BASE_URL`, `OPENAI_API_KEY`, and optionally `MODEL_NAME` / `MODEL_EMBEDDING_NAME`.
+
+Example with [DaoXE](https://daoxe.com) (multi-model multi-protocol API gateway; not a built-in Firecrawl provider):
+
+```bash
+# In your root .env (do not commit real keys)
+OPENAI_BASE_URL=https://daoxe.com/v1
+OPENAI_API_KEY=your_daoxe_api_key
+MODEL_NAME=your_exact_account_model_id
+```
+
+Use an exact model ID currently available to your DaoXE account (for example from the DaoXE dashboard or `GET https://daoxe.com/v1/models` with your key). Do not hard-code a public model list from a blog post—availability is account-scoped. Requests may be billed by the gateway. Examples: https://github.com/seven7763/DaoXE-AI
 
 ### Security considerations
 
