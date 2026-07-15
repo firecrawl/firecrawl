@@ -695,8 +695,10 @@ export interface SearchRequest {
   limit?: number;
   tbs?: string;
   location?: string;
+  country?: string;
   ignoreInvalidURLs?: boolean;
   timeout?: number; // ms
+  enterprise?: Array<"default" | "anon" | "zdr">;
   scrapeOptions?: ScrapeOptions;
   /**
    * Enterprise search options. Use `["zdr"]` for end-to-end Zero Data
