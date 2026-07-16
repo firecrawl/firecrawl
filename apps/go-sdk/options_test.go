@@ -76,3 +76,29 @@ func TestScrapeOptionsSerializesRedactPII(t *testing.T) {
 		t.Fatalf("serialized redactPII = %s", payload)
 	}
 }
+
+func TestScrapeOptionsSerializesProfile(t *testing.T) {
+	payload, err := json.Marshal(ScrapeOptions{
+		Profile: &ProfileConfig{Name: "my-profile"},
+	})
+	if err != nil {
+		t.Fatalf("Marshal ScrapeOptions: %v", err)
+	}
+
+	if !strings.Contains(string(payload), `"profile":{"name":"my-profile"}`) {
+		t.Fatalf("serialized profile = %s, want to contain %s", payload, `"profile":{"name":"my-profile"}`)
+	}
+}
+
+func TestScrapeOptionsSerializesProfileSaveChanges(t *testing.T) {
+	payload, err := json.Marshal(ScrapeOptions{
+		Profile: &ProfileConfig{Name: "my-profile", SaveChanges: Bool(false)},
+	})
+	if err != nil {
+		t.Fatalf("Marshal ScrapeOptions: %v", err)
+	}
+
+	if !strings.Contains(string(payload), `"profile":{"name":"my-profile","saveChanges":false}`) {
+		t.Fatalf("serialized profile = %s, want to contain %s", payload, `"profile":{"name":"my-profile","saveChanges":false}`)
+	}
+}
