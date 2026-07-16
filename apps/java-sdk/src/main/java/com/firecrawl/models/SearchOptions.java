@@ -18,6 +18,7 @@ public class SearchOptions {
     private String location;
     private Boolean ignoreInvalidURLs;
     private Integer timeout;
+    private Boolean highlights;
     private ScrapeOptions scrapeOptions;
     private String integration;
 
@@ -32,6 +33,7 @@ public class SearchOptions {
     public String getLocation() { return location; }
     public Boolean getIgnoreInvalidURLs() { return ignoreInvalidURLs; }
     public Integer getTimeout() { return timeout; }
+    public Boolean getHighlights() { return highlights; }
     public ScrapeOptions getScrapeOptions() { return scrapeOptions; }
     public String getIntegration() { return integration; }
 
@@ -47,6 +49,7 @@ public class SearchOptions {
         private String location;
         private Boolean ignoreInvalidURLs;
         private Integer timeout;
+        private Boolean highlights;
         private ScrapeOptions scrapeOptions;
         private String integration;
 
@@ -70,6 +73,8 @@ public class SearchOptions {
         public Builder ignoreInvalidURLs(Boolean ignoreInvalidURLs) { this.ignoreInvalidURLs = ignoreInvalidURLs; return this; }
         /** Timeout in milliseconds. */
         public Builder timeout(Integer timeout) { this.timeout = timeout; return this; }
+        /** Generate query-relevant highlights for search results. Defaults to true. */
+        public Builder highlights(Boolean highlights) { this.highlights = highlights; return this; }
         /** Scrape options applied to search result pages. */
         public Builder scrapeOptions(ScrapeOptions scrapeOptions) { this.scrapeOptions = scrapeOptions; return this; }
         /** Integration identifier. */
@@ -86,6 +91,7 @@ public class SearchOptions {
             o.location = this.location;
             o.ignoreInvalidURLs = this.ignoreInvalidURLs;
             o.timeout = this.timeout;
+            o.highlights = this.highlights;
             o.scrapeOptions = this.scrapeOptions;
             o.integration = this.integration;
             return o;

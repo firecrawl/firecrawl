@@ -171,6 +171,7 @@ type SearchOptions struct {
 	Location          *string        `json:"location,omitempty"`
 	IgnoreInvalidURLs *bool          `json:"ignoreInvalidURLs,omitempty"`
 	Timeout           *int           `json:"timeout,omitempty"`
+	Highlights        *bool          `json:"highlights,omitempty"`
 	ScrapeOptions     *ScrapeOptions `json:"scrapeOptions,omitempty"`
 	Integration       *string        `json:"integration,omitempty"`
 }

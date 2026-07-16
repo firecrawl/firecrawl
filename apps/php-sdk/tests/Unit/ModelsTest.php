@@ -13,6 +13,7 @@ use Firecrawl\Models\HighlightsFormat;
 use Firecrawl\Models\QueryFormat;
 use Firecrawl\Models\QuestionFormat;
 use Firecrawl\Models\ScrapeOptions;
+use Firecrawl\Models\SearchOptions;
 use Firecrawl\Models\Monitor;
 use Firecrawl\Models\MonitorCheck;
 
@@ -257,6 +258,12 @@ it('returns null menu when absent in Document', function (): void {
     $doc = Document::fromArray(['markdown' => '# No menu']);
 
     expect($doc->getMenu())->toBeNull();
+});
+
+it('serializes the search highlights option', function (): void {
+    $options = SearchOptions::with(highlights: false);
+
+    expect($options->toArray())->toBe(['highlights' => false]);
 });
 
 it('coerces non-string scalar identity fields without a TypeError under strict_types', function (): void {

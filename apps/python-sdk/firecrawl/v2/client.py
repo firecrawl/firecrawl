@@ -395,6 +395,7 @@ class FirecrawlClient:
         location: Optional[str] = None,
         ignore_invalid_urls: Optional[bool] = None,
         timeout: Optional[int] = None,
+        highlights: Optional[bool] = None,
         scrape_options: Optional[ScrapeOptions] = None,
         integration: Optional[str] = None,
         enterprise: Optional[List[str]] = None,
@@ -409,6 +410,8 @@ class FirecrawlClient:
             tbs: Time-based search filter
             location: Location string for search
             timeout: Request timeout in milliseconds (default: 300000)
+            highlights: Generate query-relevant highlights for search results
+                (default: true)
             page_options: Options for scraping individual pages
             enterprise: Enterprise search options. Use ["zdr"] for end-to-end
                 Zero Data Retention or ["anon"] for anonymized search. Must be
@@ -430,6 +433,7 @@ class FirecrawlClient:
             location=location,
             ignore_invalid_urls=ignore_invalid_urls,
             timeout=timeout,
+            highlights=highlights,
             scrape_options=scrape_options,
             integration=integration,
             enterprise=enterprise,

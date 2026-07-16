@@ -76,3 +76,14 @@ func TestScrapeOptionsSerializesRedactPII(t *testing.T) {
 		t.Fatalf("serialized redactPII = %s", payload)
 	}
 }
+
+func TestSearchOptionsSerializesHighlights(t *testing.T) {
+	payload, err := json.Marshal(SearchOptions{Highlights: Bool(false)})
+	if err != nil {
+		t.Fatalf("Marshal SearchOptions: %v", err)
+	}
+
+	if !strings.Contains(string(payload), `"highlights":false`) {
+		t.Fatalf("serialized search options = %s", payload)
+	}
+}
