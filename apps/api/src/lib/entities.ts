@@ -144,6 +144,11 @@ interface NewsSearchResult {
   highlights?: string;
 }
 
+export interface RagPassage {
+  text: string;
+  score: number;
+}
+
 export interface WebSearchResult {
   url: string;
   title: string;
@@ -159,6 +164,7 @@ export interface WebSearchResult {
   metadata?: Record<string, any>;
   answer?: string;
   highlights?: string;
+  passages?: RagPassage[];
 }
 
 export type SearchResultType = "web" | "images" | "news";

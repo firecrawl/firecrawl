@@ -1,6 +1,7 @@
 import type { Logger } from "winston";
 import { search } from "./v2";
 import { rerankWebResults } from "./v2/reranker";
+import { attachRagPassages } from "./v2/rag";
 import { SearchV2Response } from "../lib/entities";
 import {
   buildSearchQuery,
@@ -244,6 +245,10 @@ export async function executeSearch(
         allDocsWithCostTracking,
       );
       scrapeCredits = calculateScrapeCredits(allDocsWithCostTracking);
+
+      // RAG: chunk each scraped page, embed via DeepInfra bge-m3, and attach the
+      // top-k passages most relevant to the query. Best-effort (see rag.ts).
+      await attachRagPassages(searchResponse, query, logger);
     }
   }
 
