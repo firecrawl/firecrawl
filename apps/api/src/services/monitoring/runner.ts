@@ -364,7 +364,6 @@ async function billMonitorCheck(params: {
     "bill_team",
     {
       team_id: params.monitor.team_id,
-      subscription_id: undefined,
       credits: params.actualCredits,
       billing: { endpoint: "monitor", jobId: params.check.id },
       is_extract: false,

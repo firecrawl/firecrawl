@@ -33,7 +33,6 @@ async function searchHelper(
   jobId: string,
   req: Request,
   team_id: string,
-  subscription_id: string | null | undefined,
   crawlerOptions: any,
   pageOptions: PageOptions,
   searchOptions: SearchOptions,
@@ -87,7 +86,6 @@ async function searchHelper(
     const searchCredits = Math.ceil(res.length / 10) * 2;
     billTeam(
       team_id,
-      subscription_id,
       searchCredits,
       api_key_id,
       { endpoint: "search", jobId },
@@ -267,7 +265,6 @@ export async function searchController(req: Request, res: Response) {
       jobId,
       req,
       team_id,
-      chunk?.sub_id,
       crawlerOptions,
       pageOptions,
       searchOptions,

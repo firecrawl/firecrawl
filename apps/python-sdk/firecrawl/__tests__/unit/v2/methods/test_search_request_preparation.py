@@ -44,6 +44,7 @@ class TestSearchRequestPreparation:
             location="US",
             ignore_invalid_urls=False,
             timeout=30000,
+            highlights=False,
             scrape_options=scrape_opts,
             integration="  _e2e-test  ",
         )
@@ -56,6 +57,7 @@ class TestSearchRequestPreparation:
         assert data["tbs"] == "qdr:w"
         assert data["location"] == "US"
         assert data["timeout"] == 30000
+        assert data["highlights"] is False
         
         # Check snake_case to camelCase conversions
         assert "ignoreInvalidURLs" in data

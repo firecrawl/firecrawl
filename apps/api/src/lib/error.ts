@@ -1,4 +1,5 @@
 export type ErrorCodes =
+  | "THIRD_PARTY_DATA_TERMS_REQUIRED"
   | "SCRAPE_TIMEOUT"
   | "MAP_TIMEOUT"
   | "UNKNOWN_ERROR"

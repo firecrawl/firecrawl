@@ -66,7 +66,6 @@ export async function fireclawController(
   try {
     await billTeam(
       req.auth.team_id,
-      req.acuc?.sub_id ?? undefined,
       totalCredits,
       req.acuc?.api_key_id ?? null,
       { endpoint: "fireclaw" },

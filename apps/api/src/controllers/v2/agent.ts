@@ -49,7 +49,6 @@ export async function agentController(
   _logger.info("Agent starting...", {
     request: req.body,
     originalRequest,
-    subId: req.acuc?.sub_id,
     zeroDataRetention: getScrapeZDR(req.acuc?.flags) === "forced",
   });
 
@@ -87,7 +86,6 @@ export async function agentController(
       if (threatScanCredits > 0) {
         billTeam(
           req.auth.team_id,
-          req.acuc?.sub_id ?? undefined,
           threatScanCredits,
           req.acuc?.api_key_id ?? null,
           { endpoint: "agent", jobId: agentId },

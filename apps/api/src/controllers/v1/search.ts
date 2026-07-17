@@ -279,7 +279,6 @@ export async function searchController(
     if (!isSearchPreview) {
       billTeam(
         req.auth.team_id,
-        req.acuc?.sub_id ?? undefined,
         result.searchCredits,
         req.acuc?.api_key_id ?? null,
         { endpoint: "search", jobId },

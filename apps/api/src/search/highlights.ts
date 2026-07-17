@@ -10,7 +10,11 @@ import { indexGetRecent5 } from "../db/rpc";
 import { parseMarkdown } from "../lib/html-to-markdown";
 import { htmlTransform } from "../scraper/scrapeURL/lib/removeUnwantedElements";
 import type { ScrapeOptions } from "../controllers/v2/types";
-import { generateHighlightsBatch } from "./highlight-model";
+import {
+  generateHighlightsBatch,
+  generateHighlightsIndexedBatch,
+  type HighlightIndexedPage,
+} from "./highlight-model";
 import type { HighlightFailureReason } from "./highlight-model";
 import { config } from "../config";
 
@@ -47,6 +51,52 @@ async function getIndexedMarkdownForURL(
   logger: Logger,
   logUrl = true,
 ): Promise<string | null> {
+  const indexRef = await getIndexObjectForURL(url, logger, logUrl);
+  if (!indexRef) {
+    return null;
+  }
+
+  try {
+    const doc = await getIndexFromGCS(
+      indexRef.name,
+      logger.child({ module: "search/highlights", method: "getIndexFromGCS" }),
+      { indexCreatedAt: indexRef.createdAt },
+    );
+    if (!doc || !doc.html) {
+      return null;
+    }
+
+    // Skip raw base64 PDFs — they aren't useful as highlight source text.
+    if (typeof doc.html === "string" && doc.html.startsWith("JVBERi")) {
+      return null;
+    }
+
+    // The index stores rawHtml, so we must run the same cleaning the scrape
+    // pipeline does (strip <style>/<script>/nav, extract main content) before
+    // converting to markdown — otherwise CSS/JS leaks in and pollutes the
+    // highlight source text.
+    const cleanedHtml = await htmlTransform(doc.html, url, {
+      onlyMainContent: true,
+      includeTags: [],
+      excludeTags: [],
+    } as unknown as ScrapeOptions);
+
+    const markdown = await parseMarkdown(cleanedHtml, { logger });
+    return markdown && markdown.trim() !== "" ? markdown : null;
+  } catch (error) {
+    logger.warn("highlights: index content load failed", {
+      error: error instanceof Error ? error.message : String(error),
+      ...(logUrl ? { url } : {}),
+    });
+    return null;
+  }
+}
+
+async function getIndexObjectForURL(
+  url: string,
+  logger: Logger,
+  logUrl = true,
+): Promise<{ name: string; createdAt: string | null } | null> {
   if (!useIndex) {
     return null;
   }
@@ -83,32 +133,10 @@ async function getIndexedMarkdownForURL(
         ? rows[0]
         : rows[newest200Index];
 
-    const doc = await getIndexFromGCS(
-      selected.id + ".json",
-      logger.child({ module: "search/highlights", method: "getIndexFromGCS" }),
-      { indexCreatedAt: selected.created_at },
-    );
-    if (!doc || !doc.html) {
-      return null;
-    }
-
-    // Skip raw base64 PDFs — they aren't useful as highlight source text.
-    if (typeof doc.html === "string" && doc.html.startsWith("JVBERi")) {
-      return null;
-    }
-
-    // The index stores rawHtml, so we must run the same cleaning the scrape
-    // pipeline does (strip <style>/<script>/nav, extract main content) before
-    // converting to markdown — otherwise CSS/JS leaks in and pollutes the
-    // highlight source text.
-    const cleanedHtml = await htmlTransform(doc.html, url, {
-      onlyMainContent: true,
-      includeTags: [],
-      excludeTags: [],
-    } as unknown as ScrapeOptions);
-
-    const markdown = await parseMarkdown(cleanedHtml, { logger });
-    return markdown && markdown.trim() !== "" ? markdown : null;
+    return {
+      name: selected.id + ".json",
+      createdAt: selected.created_at,
+    };
   } catch (error) {
     logger.warn("highlights: index lookup failed", {
       error: error instanceof Error ? error.message : String(error),
@@ -116,6 +144,131 @@ async function getIndexedMarkdownForURL(
     });
     return null;
   }
+}
+
+interface IndexedSearchHighlightTarget {
+  url: string;
+  apply?: (highlight: string) => void;
+}
+
+function indexedSearchHighlightTargets(
+  response: SearchV2Response,
+): IndexedSearchHighlightTarget[] {
+  const targets: IndexedSearchHighlightTarget[] = [];
+  for (const result of response.web ?? []) {
+    if (!result.url) continue;
+    targets.push({
+      url: result.url,
+      apply: highlight => {
+        result.description = highlight;
+      },
+    });
+  }
+  for (const result of response.news ?? []) {
+    if (!result.url) continue;
+    targets.push({
+      url: result.url,
+      apply: highlight => {
+        result.snippet = highlight;
+      },
+    });
+  }
+  return targets;
+}
+
+export function searchHighlightURLs(response: SearchV2Response): string[] {
+  return indexedSearchHighlightTargets(response).map(target => target.url);
+}
+
+async function runIndexedSearchHighlights(
+  targets: IndexedSearchHighlightTarget[],
+  query: string,
+  logger: Logger,
+  requestId: string,
+): Promise<{
+  attempted: number;
+  indexHits: number;
+  replaced: number;
+  succeeded: boolean;
+  failureReason?: HighlightFailureReason;
+}> {
+  const attempted = targets.length;
+  const resolved = await Promise.all(
+    targets.map(target => getIndexObjectForURL(target.url, logger, false)),
+  );
+  const pages: HighlightIndexedPage[] = [];
+  resolved.forEach((indexRef, index) => {
+    if (!indexRef) return;
+    pages.push({
+      id: String(index),
+      url: targets[index].url,
+      indexObject: indexRef.name,
+    });
+  });
+
+  let failureReason: HighlightFailureReason | undefined;
+  const results = await generateHighlightsIndexedBatch(query, pages, {
+    logger,
+    logPayload: false,
+    requestId,
+    timeoutMs: null,
+    onFailure: reason => {
+      failureReason = reason;
+    },
+  });
+  let replaced = 0;
+  if (results) {
+    for (const page of pages) {
+      const highlight = results.get(page.id)?.markdown;
+      if (!highlight?.trim()) continue;
+      targets[Number(page.id)].apply?.(highlight);
+      replaced++;
+    }
+  }
+
+  return {
+    attempted,
+    indexHits: pages.length,
+    replaced,
+    succeeded: results !== null,
+    ...(failureReason ? { failureReason } : {}),
+  };
+}
+
+export async function applyIndexedSearchHighlights(
+  response: SearchV2Response,
+  query: string,
+  logger: Logger,
+  requestId: string,
+): ReturnType<typeof runIndexedSearchHighlights> {
+  const start = Date.now();
+  const result = await runIndexedSearchHighlights(
+    indexedSearchHighlightTargets(response),
+    query,
+    logger,
+    requestId,
+  );
+  logger.info("Search highlights applied", {
+    attempted: result.attempted,
+    indexHits: result.indexHits,
+    replaced: result.replaced,
+    timeTakenMs: Date.now() - start,
+  });
+  return result;
+}
+
+export function runIndexedSearchHighlightsShadow(
+  urls: string[],
+  query: string,
+  logger: Logger,
+  requestId: string,
+): ReturnType<typeof runIndexedSearchHighlights> {
+  return runIndexedSearchHighlights(
+    urls.map(url => ({ url })),
+    query,
+    logger,
+    requestId,
+  );
 }
 
 /**

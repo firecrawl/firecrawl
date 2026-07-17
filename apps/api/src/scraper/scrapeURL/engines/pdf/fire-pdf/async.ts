@@ -1,25 +1,33 @@
-import { Meta } from "../../..";
+import type { Meta } from "../../..";
+import type { PDFMode } from "../../../../../controllers/v2/types";
 import { config } from "../../../../../config";
 import { fetch as undiciFetch } from "undici";
 import type { PDFProcessorResult } from "../types";
-import type { PDFMode } from "../../../../../controllers/v2/types";
 import { safeMarkdownToHtml } from "../markdownToHtml";
 import { scrapePDFWithFirePDF } from "../firePDF";
-import { firePdfAsyncTotalDurationSeconds } from "./metrics";
-import { POLL_FLOOR_MS, POLL_TIMEOUT_BUFFER_MS } from "./schema";
-import { defaultSleep, computeDeadlineMs } from "./utils";
+import { cancelJob } from "./cancel";
 import { tryGetCached, maybeSaveResult } from "./cache";
-import { submitJob } from "./submit";
+import { firePdfAsyncTotalDurationSeconds } from "./metrics";
 import { pollUntilTerminal } from "./poll";
 import { fetchResult } from "./result";
+import { FIRE_PDF_ASYNC_MIN_REMAINING_MS } from "./routing";
+import { POLL_FLOOR_MS, POLL_TIMEOUT_BUFFER_MS } from "./schema";
+import { submitJob, SubmitJobMayHaveBeenAcceptedError } from "./submit";
+import {
+  computeDeadlineMs,
+  defaultSleep,
+  failAsync,
+  FirePdfAsyncFailure,
+} from "./utils";
 
-export { FirePdfAsyncFailure } from "./utils";
+export { FirePdfAsyncFailure };
 
 type FirePdfAsyncDeps = {
   fetchImpl?: typeof undiciFetch;
   fallbackImpl?: typeof scrapePDFWithFirePDF;
   sleepImpl?: (ms: number, signal?: AbortSignal) => Promise<void>;
   nowImpl?: () => number;
+  randomImpl?: () => number;
 };
 
 export async function scrapePDFWithFirePDFAsync(
@@ -34,6 +42,13 @@ export async function scrapePDFWithFirePDFAsync(
   const fallbackImpl = deps.fallbackImpl ?? scrapePDFWithFirePDF;
   const sleep = deps.sleepImpl ?? defaultSleep;
   const now = deps.nowImpl ?? Date.now;
+  const random = deps.randomImpl ?? Math.random;
+
+  // Async persists inputs and queue state, so ZDR is excluded until that
+  // lifecycle has an explicit delete-on-completion contract.
+  if (meta.internalOptions.zeroDataRetention) {
+    return fallbackImpl(meta, base64Content, maxPages, pagesProcessed, mode);
+  }
 
   const cached = await tryGetCached(
     meta,
@@ -46,6 +61,14 @@ export async function scrapePDFWithFirePDFAsync(
 
   meta.abort.throwIfAborted();
 
+  const remainingMs = meta.abort.scrapeTimeout();
+  if (
+    remainingMs !== undefined &&
+    remainingMs < FIRE_PDF_ASYNC_MIN_REMAINING_MS
+  ) {
+    failAsync(meta, "deadline_too_close", { remainingMs });
+  }
+
   const baseUrl = config.FIRE_PDF_BASE_URL;
   if (!baseUrl) {
     // Should be unreachable — call site checks this — but fall back rather
@@ -55,47 +78,73 @@ export async function scrapePDFWithFirePDFAsync(
 
   const overallStartedAt = now();
   const submitTime = now();
-  const deadlineFromNow = computeDeadlineMs(meta.abort.scrapeTimeout());
+  const deadlineFromNow = computeDeadlineMs(remainingMs);
   const deadlineAt = new Date(submitTime + deadlineFromNow).toISOString();
   const pollingDeadline = submitTime + deadlineFromNow + POLL_TIMEOUT_BUFFER_MS;
 
   // ── Step 1: POST /jobs ────────────────────────────────────────────────
-  const submit = await submitJob({
-    meta,
-    baseUrl,
-    base64Content,
-    maxPages,
-    pagesProcessed,
-    mode,
-    deadlineAt,
-    fetchImpl,
-  });
+  let submissionAccepted = false;
+  let terminalReached = false;
+  let polled: Awaited<ReturnType<typeof pollUntilTerminal>>;
+  let fetched: Awaited<ReturnType<typeof fetchResult>>;
+  try {
+    const submit = await submitJob({
+      meta,
+      baseUrl,
+      base64Content,
+      maxPages,
+      pagesProcessed,
+      mode,
+      deadlineAt,
+      fetchImpl,
+    });
+    submissionAccepted = true;
+    terminalReached = submit.alreadyDone;
 
-  // ── Step 2: poll until terminal (skip on idempotent-replay done) ──────
-  const polled = submit.alreadyDone
-    ? {
-        poll: { scrape_id: meta.id, status: "done" as const },
-        pollCount: 0,
-      }
-    : await pollUntilTerminal({
-        baseUrl,
-        scrapeId: meta.id,
-        initialDelay: submit.retryAfterMs ?? POLL_FLOOR_MS,
-        pollingDeadline,
-        meta,
-        fetchImpl,
-        sleep,
-        now,
-      });
+    // ── Step 2: poll until terminal (skip on idempotent-replay done) ──────
+    polled = submit.alreadyDone
+      ? {
+          poll: { scrape_id: meta.id, status: "done" as const },
+          pollCount: 0,
+        }
+      : await pollUntilTerminal({
+          baseUrl,
+          scrapeId: meta.id,
+          initialDelay: submit.retryAfterMs ?? POLL_FLOOR_MS,
+          pollingDeadline,
+          meta,
+          fetchImpl,
+          sleep,
+          now,
+          random,
+        });
+    terminalReached = true;
 
-  // ── Step 3: GET /jobs/:id/result ──────────────────────────────────────
-  const fetched = await fetchResult({
-    baseUrl,
-    scrapeId: meta.id,
-    meta,
-    fetchImpl,
-    sleep,
-  });
+    // ── Step 3: GET /jobs/:id/result ────────────────────────────────────
+    fetched = await fetchResult({
+      baseUrl,
+      scrapeId: meta.id,
+      meta,
+      fetchImpl,
+      sleep,
+    });
+  } catch (error) {
+    const submitMayHaveBeenAccepted =
+      error instanceof SubmitJobMayHaveBeenAcceptedError;
+    const jobAlreadyTerminal =
+      error instanceof FirePdfAsyncFailure &&
+      (error.reason === "terminal_failed" ||
+        error.reason === "terminal_expired" ||
+        error.reason === "terminal_cancelled");
+    if (
+      (submissionAccepted || submitMayHaveBeenAccepted) &&
+      !terminalReached &&
+      !jobAlreadyTerminal
+    ) {
+      await cancelJob({ baseUrl, scrapeId: meta.id, meta, fetchImpl });
+    }
+    throw submitMayHaveBeenAccepted ? error.originalError : error;
+  }
 
   // ── Assemble + cache save ─────────────────────────────────────────────
   const pages =

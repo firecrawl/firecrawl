@@ -41,10 +41,6 @@ concurrency_limit_queue_job_count_total ${totalJobCount}
 # TYPE concurrency_limit_queue_team_count gauge
 concurrency_limit_queue_team_count ${teamCount}
 
-# HELP billed_teams_count The number of teams that have been billed but not yet tallied
-# TYPE billed_teams_count gauge
-billed_teams_count ${await getRedisConnection().scard("billed_teams")}
-
 ${nuqGetLocalMetrics()}
 ${semaphoreMetrics}`);
 }

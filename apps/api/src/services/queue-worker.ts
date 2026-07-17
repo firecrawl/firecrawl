@@ -77,7 +77,6 @@ const processDeepResearchJobInternal = async (
       query: job.data.request.query,
       maxDepth: job.data.request.maxDepth,
       timeLimit: job.data.request.timeLimit,
-      subId: job.data.subId,
       maxUrls: job.data.request.maxUrls,
       analysisPrompt: job.data.request.analysisPrompt,
       systemPrompt: job.data.request.systemPrompt,
@@ -152,7 +151,6 @@ const processGenerateLlmsTxtJobInternal = async (
       url: job.data.request.url,
       maxUrls: job.data.request.maxUrls,
       showFullText: job.data.request.showFullText,
-      subId: job.data.subId,
       cache: job.data.request.cache,
       apiKeyId: job.data.apiKeyId,
     });

@@ -8,9 +8,9 @@ import {
   scrapeURLWithFireEngineTLSClient,
 } from "./fire-engine";
 import {
-  dataLayerMaxReasonableTime,
-  scrapeURLWithDataLayer,
-} from "./data-layer";
+  exchangeMaxReasonableTime,
+  scrapeURLWithExchange,
+} from "./exchange";
 import { pdfMaxReasonableTime, scrapePDF } from "./pdf";
 import { fetchMaxReasonableTime, scrapeURLWithFetch } from "./fetch";
 import {
@@ -34,13 +34,14 @@ import { getPDFMaxPages } from "../../../controllers/v2/types";
 import type { PdfMetadata } from "./pdf/types";
 import { BrandingProfile } from "../../../types/branding";
 import { BrandingNotSupportedError } from "../error";
+import { isUrlBlocked } from "../../WebScraper/utils/blocklist";
 import {
-  canUseDataLayerForRequest,
-  type DataLayerScrapeMetadata,
-} from "../../../lib/data-layer";
+  canUseExchangeForRequest,
+  type ExchangeScrapeMetadata,
+} from "../../../lib/exchange";
 
 export type Engine =
-  | "data-layer"
+  | "exchange"
   | "fire-engine;chrome-cdp"
   | "fire-engine(retry);chrome-cdp"
   | "fire-engine;chrome-cdp;stealth"
@@ -171,13 +172,13 @@ export type EngineScrapeResult = {
 
   proxyUsed: "basic" | "stealth";
   timezone?: string;
-  dataLayer?: DataLayerScrapeMetadata;
+  exchange?: ExchangeScrapeMetadata;
 };
 
 const engineHandlers: {
   [E in Engine]: (meta: Meta) => Promise<EngineScrapeResult>;
 } = {
-  "data-layer": scrapeURLWithDataLayer,
+  "exchange": scrapeURLWithExchange,
   index: scrapeURLWithIndex,
   "index;documents": scrapeURLWithIndex,
   "fire-engine;chrome-cdp": scrapeURLWithFireEngineChromeCDP,
@@ -197,7 +198,7 @@ const engineHandlers: {
 const engineMRTs: {
   [E in Engine]: (meta: Meta) => number;
 } = {
-  "data-layer": dataLayerMaxReasonableTime,
+  "exchange": exchangeMaxReasonableTime,
   index: indexMaxReasonableTime,
   "index;documents": indexMaxReasonableTime,
   "fire-engine;chrome-cdp": meta =>
@@ -230,7 +231,7 @@ const engineOptions: {
     quality: number;
   };
 } = {
-  "data-layer": {
+  "exchange": {
     features: {
       actions: false,
       waitFor: false,
@@ -582,27 +583,69 @@ export async function buildFallbackList(meta: Meta): Promise<
 > {
   if (
     !meta.internalOptions.agentIndexOnly &&
-    (await canUseDataLayerForRequest({
-      url: meta.rewrittenUrl ?? meta.url,
-      formats: meta.options.formats,
-      actions: meta.options.actions,
-      headers: meta.options.headers,
-      waitFor: meta.options.waitFor,
-      mobile: meta.options.mobile,
-      location: meta.options.location,
-      proxy: meta.options.proxy,
-      blockAds: meta.options.blockAds,
-      zeroDataRetention: meta.internalOptions.zeroDataRetention,
-      lockdown: meta.options.lockdown,
-      flags: meta.internalOptions.teamFlags ?? null,
-    }))
+    meta.internalOptions.forceEngine === undefined
   ) {
-    return [
-      {
-        engine: "data-layer",
-        unsupportedFeatures: new Set(),
-      },
-    ];
+    if (
+      await canUseExchangeForRequest({
+        url: meta.rewrittenUrl ?? meta.url,
+        formats: meta.options.formats,
+        actions: meta.options.actions,
+        headers: meta.options.headers,
+        waitFor: meta.options.waitFor,
+        mobile: meta.options.mobile,
+        location: meta.options.location,
+        proxy: meta.options.proxy,
+        blockAds: meta.options.blockAds,
+        profile: meta.options.profile,
+        atsv: meta.internalOptions.atsv,
+        minAge: meta.options.minAge,
+        includeTags: meta.options.includeTags,
+        excludeTags: meta.options.excludeTags,
+        zeroDataRetention: meta.internalOptions.zeroDataRetention,
+        lockdown: meta.options.lockdown,
+        flags: meta.internalOptions.teamFlags ?? null,
+      })
+    ) {
+      return [
+        {
+          engine: "exchange",
+          unsupportedFeatures: new Set(),
+        },
+      ];
+    }
+
+    // A blocked URL can only have been admitted by the Exchange bypass in
+    // blocklistMiddleware, which only applies to flagged orgs; if the
+    // Exchange is no longer usable by execution time (catalog changed,
+    // service down), fail closed rather than letting normal engines scrape
+    // a blocklisted site. An error here also fails closed: this branch only
+    // runs for flagged orgs, and a retryable scrape failure is preferable
+    // to scraping a potentially blocklisted site with normal engines.
+    if (
+      meta.internalOptions.teamFlags?.professionalProfileCompanyDataBeta ===
+      true
+    ) {
+      try {
+        if (
+          isUrlBlocked(
+            meta.rewrittenUrl ?? meta.url,
+            meta.internalOptions.teamFlags ?? null,
+            {
+              team_id: meta.internalOptions.teamId ?? null,
+              origin: null,
+            },
+          )
+        ) {
+          return [];
+        }
+      } catch (error) {
+        meta.logger.warn(
+          "Exchange blocklist re-check failed; failing closed",
+          { error },
+        );
+        return [];
+      }
+    }
   }
 
   const shouldPrioritizeTlsClient = meta.options.__experimental_engpicker

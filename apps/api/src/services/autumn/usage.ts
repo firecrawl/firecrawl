@@ -15,7 +15,6 @@ const HISTORICAL_BIN_SIZE = "day";
 
 interface TeamBalance {
   remaining: number;
-  granted: number;
   planCredits: number;
   usage: number;
   unlimited: boolean;
@@ -319,7 +318,6 @@ export async function getTeamBalance(
 
   return {
     remaining: signedRemaining(creditBalance),
-    granted: creditBalance?.granted ?? 0,
     planCredits,
     usage: creditBalance?.usage ?? 0,
     unlimited: creditBalance?.unlimited ?? false,

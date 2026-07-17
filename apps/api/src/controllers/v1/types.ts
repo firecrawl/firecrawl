@@ -1257,13 +1257,6 @@ export type AuthCreditUsageChunk = {
   api_key_id: number;
   team_id: string;
   org_id?: string | null;
-  sub_id: string | null;
-  sub_current_period_start: string | null;
-  sub_current_period_end: string | null;
-  sub_user_id: string | null;
-  price_id: string | null;
-  price_should_be_graceful: boolean;
-  price_associated_auto_recharge_price_id: string | null;
   plan_priority: {
     bucketLimit: number;
     planModifier: number;

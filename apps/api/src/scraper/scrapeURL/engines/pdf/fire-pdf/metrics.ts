@@ -14,7 +14,7 @@ export const firePdfAsyncCompletedTotal = new Counter({
 
 export const firePdfAsyncFallbackTotal = new Counter({
   name: "firecrawl_fire_pdf_async_fallback_total",
-  help: "Count of fire-pdf async requests that fell back to the sync /ocr path",
+  help: "Count of requests that left fire-pdf async processing",
   labelNames: ["reason"],
 });
 
@@ -31,12 +31,16 @@ export const firePdfAsyncPollCount = new Histogram({
 });
 
 export type FallbackReason =
+  | "http_401"
   | "http_404"
+  | "http_410"
   | "http_413"
+  | "http_502"
   | "http_503"
   | "http_429"
   | "http_5xx"
   | "network_error"
+  | "deadline_too_close"
   | "terminal_failed"
   | "terminal_expired"
   | "terminal_cancelled"

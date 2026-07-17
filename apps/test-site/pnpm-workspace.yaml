@@ -1,0 +1,15 @@
+allowBuilds:
+  esbuild: true
+  sharp: true
+overrides:
+  fast-xml-builder: ">=1.1.6 <2.0.0"
+  fast-xml-parser: "^5.7.0"
+  devalue: ">=5.8.1 <6.0.0"
+  h3: ">=1.15.9"
+  "picomatch@<4.0.4": ">=4.0.4"
+  "smol-toml@<1.6.1": ">=1.6.1"
+  defu: ">=6.1.5"
+  "vite@>=7.0.0 <7.3.5": "7.3.5"
+  "js-yaml@>=4.0.0 <4.2.0": "4.2.0"
+  "postcss@<8.5.10": ">=8.5.10 <9.0.0"
+  "esbuild@>=0.17.0 <0.28.1": "0.28.1"

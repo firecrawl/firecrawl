@@ -43,6 +43,11 @@ public class SearchOptions
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public int? Timeout { get; set; }
 
+    /// <summary>Generate query-relevant highlights for search results. Defaults to true.</summary>
+    [JsonPropertyName("highlights")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public bool? Highlights { get; set; }
+
     [JsonPropertyName("scrapeOptions")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public ScrapeOptions? ScrapeOptions { get; set; }

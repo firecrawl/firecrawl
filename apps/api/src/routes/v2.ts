@@ -38,6 +38,7 @@ import {
   authMiddleware,
   checkCreditsMiddleware,
   blocklistMiddleware,
+  scrapeBlocklistMiddleware,
   countryCheck,
   idempotencyMiddleware,
   requestTimingMiddleware,
@@ -210,7 +211,7 @@ v2Router.post(
   authMiddleware(RateLimiterMode.Scrape, { allowKeyless: true }),
   countryCheck,
   checkCreditsMiddleware(1),
-  blocklistMiddleware,
+  scrapeBlocklistMiddleware,
   wrap(scrapeController),
 );
 
@@ -257,7 +258,7 @@ v2Router.post(
   authMiddleware(RateLimiterMode.Crawl),
   countryCheck,
   checkCreditsMiddleware(),
-  blocklistMiddleware,
+  scrapeBlocklistMiddleware,
   idempotencyMiddleware,
   wrap(crawlController),
 );

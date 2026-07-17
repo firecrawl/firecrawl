@@ -201,7 +201,6 @@ export async function batchScrapeController(
       ) {
         billTeam(
           req.auth.team_id,
-          req.acuc?.sub_id ?? undefined,
           threatScanCredits,
           req.acuc?.api_key_id ?? null,
           billing,

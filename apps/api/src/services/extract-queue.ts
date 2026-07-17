@@ -10,7 +10,6 @@ export type ExtractJobData = {
   extractId: string;
   request: any;
   teamId: string;
-  subId?: string | null;
   apiKeyId?: number | null;
   agent?: any;
   createdAt: number;

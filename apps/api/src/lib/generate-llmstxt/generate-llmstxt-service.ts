@@ -21,7 +21,6 @@ interface GenerateLLMsTextServiceOptions {
   maxUrls: number;
   showFullText: boolean;
   cache?: boolean;
-  subId?: string;
 }
 
 const descriptionSchema = z.object({
@@ -72,7 +71,6 @@ export async function performGenerateLlmsTxt(
     maxUrls = 100,
     showFullText,
     cache = true,
-    subId,
     apiKeyId,
   } = options;
   const startTime = Date.now();
@@ -267,7 +265,13 @@ export async function performGenerateLlmsTxt(
     });
 
     // Bill team for usage
-    billTeam(teamId, subId, urls.length, apiKeyId, { endpoint: "llms_txt", jobId: generationId }, logger).catch(error => {
+    billTeam(
+      teamId,
+      urls.length,
+      apiKeyId,
+      { endpoint: "llms_txt", jobId: generationId },
+      logger,
+    ).catch(error => {
       logger.error(`Failed to bill team ${teamId} for ${urls.length} urls`, {
         teamId,
         count: urls.length,

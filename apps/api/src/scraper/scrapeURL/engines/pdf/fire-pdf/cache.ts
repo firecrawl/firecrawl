@@ -10,7 +10,10 @@ import {
 // entries. `fast` mode bypasses entirely (hard cost ceiling — must fail on
 // scanned PDFs, not serve a cached OCR result), as does any call with
 // `maxPages` (the cached entry may have been written with a different cap).
-function cacheKeyShape(mode: PDFMode | undefined, maxPages: number | undefined) {
+function cacheKeyShape(
+  mode: PDFMode | undefined,
+  maxPages: number | undefined,
+) {
   const cacheable = mode !== "fast" && !maxPages;
   const ownVariant: string | undefined = mode === "ocr" ? "ocr" : undefined;
   const lookupVariants: (string | undefined)[] =
@@ -25,6 +28,7 @@ export async function tryGetCached(
   maxPages: number | undefined,
   pagesProcessed: number | undefined,
 ): Promise<PDFProcessorResult | null> {
+  if (meta.internalOptions.zeroDataRetention) return null;
   const { cacheable, lookupVariants } = cacheKeyShape(mode, maxPages);
   if (!cacheable) return null;
 
@@ -64,6 +68,7 @@ export async function maybeSaveResult(args: {
   result: PDFProcessorResult & { markdown: string };
 }): Promise<void> {
   const { meta, base64Content, mode, maxPages, result } = args;
+  if (meta.internalOptions.zeroDataRetention) return;
   const { cacheable, ownVariant } = cacheKeyShape(mode, maxPages);
   if (!cacheable) return;
 

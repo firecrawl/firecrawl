@@ -278,7 +278,6 @@ export async function scrapeInteractController(
   // so LangSmith metadata filters don't match empty strings.
   const traceIdentity = {
     orgId: req.auth.org_id ?? undefined,
-    subUserId: req.acuc?.sub_user_id ?? undefined,
   };
 
   let execResult: BrowserServiceExecResponse | AgentResult;
@@ -474,13 +473,10 @@ export async function scrapeStopInteractiveBrowserController(
     });
   });
 
-  billTeam(
-    req.auth.team_id,
-    req.acuc?.sub_id ?? undefined,
-    creditsBilled,
-    req.acuc?.api_key_id ?? null,
-    { endpoint: "interact", jobId: session.id },
-  ).catch(error => {
+  billTeam(req.auth.team_id, creditsBilled, req.acuc?.api_key_id ?? null, {
+    endpoint: "interact",
+    jobId: session.id,
+  }).catch(error => {
     logger.error("Failed to bill team for interact session", {
       error,
       creditsBilled,

@@ -29,10 +29,8 @@ import {
   CREDITS_FEATURE_ID,
 } from "../services/autumn/autumn.service";
 import { getTeamBalance } from "../services/autumn/usage";
-import {
-  getDataLayerAccessForRequest,
-  getThirdPartyDataTermsRequiredResponse,
-} from "../lib/data-layer";
+import { getThirdPartyDataTermsRequiredResponse } from "../lib/exchange";
+import { getExchangeAccessForRequestBody } from "../lib/exchange-request";
 import { getScrapeZDR } from "../lib/zdr-helpers";
 
 export function checkCreditsMiddleware(
@@ -290,39 +288,57 @@ export function blocklistMiddleware(
   res: Response,
   next: NextFunction,
 ) {
+  return blocklistGate(req, res, next, { exchange: false });
+}
+
+/**
+ * Blocklist gate for single-URL scrape-shaped routes (scrape, crawl), where
+ * an Exchange-eligible URL may bypass the blocklist because the exchange
+ * engine can serve it. Everything else (map, search, batch scrape, monitors)
+ * keeps plain blocklist behavior - batch stays out until its jobs carry the
+ * access flags the worker-side recheck needs.
+ */
+export function scrapeBlocklistMiddleware(
+  req: RequestWithMaybeACUC<any, any, any>,
+  res: Response,
+  next: NextFunction,
+) {
+  return blocklistGate(req, res, next, { exchange: true });
+}
+
+function blocklistGate(
+  req: RequestWithMaybeACUC<any, any, any>,
+  res: Response,
+  next: NextFunction,
+  options: { exchange: boolean },
+) {
   (async () => {
     const zeroDataRetention =
       getScrapeZDR(req.acuc?.flags) === "forced" ||
-      req.body?.zeroDataRetention === true ||
-      req.body?.lockdown === true;
-    const dataLayerAccess =
+      req.body?.zeroDataRetention === true;
+    const exchangeAccess =
+      options.exchange &&
       typeof req.body.url === "string" &&
-      (await getDataLayerAccessForRequest({
-        url: req.body.url,
-        formats: req.body.formats,
-        actions: req.body.actions,
-        headers: req.body.headers,
-        waitFor: req.body.waitFor,
-        mobile: req.body.mobile,
-        location: req.body.location,
-        proxy: req.body.proxy,
-        blockAds: req.body.blockAds,
-        zeroDataRetention,
-        lockdown: req.body.lockdown,
+      (await getExchangeAccessForRequestBody({
+        body: req.body,
         flags: req.acuc?.flags ?? null,
+        url: req.body.url,
+        zeroDataRetention,
       }));
-    const canUseDataLayer =
-      typeof dataLayerAccess === "object" && dataLayerAccess.allowed;
+    const canUseExchange =
+      typeof exchangeAccess === "object" && exchangeAccess.allowed;
 
-    if (typeof dataLayerAccess === "object" && dataLayerAccess.termsRequired) {
+    if (typeof exchangeAccess === "object" && exchangeAccess.termsRequired) {
       if (!res.headersSent) {
-        return res.status(403).json(getThirdPartyDataTermsRequiredResponse());
+        return res
+          .status(403)
+          .json(getThirdPartyDataTermsRequiredResponse(exchangeAccess.terms));
       }
     }
 
     if (
       typeof req.body.url === "string" &&
-      !canUseDataLayer &&
+      !canUseExchange &&
       isUrlBlocked(req.body.url, req.acuc?.flags ?? null, {
         team_id: req.acuc?.team_id ?? null,
         origin: typeof req.body.origin === "string" ? req.body.origin : null,

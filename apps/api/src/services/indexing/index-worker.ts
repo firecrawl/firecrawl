@@ -82,13 +82,13 @@ const processBillingJobInternal = async (token: string, job: Job) => {
       // This is an individual billing operation that should be queued for batch processing
       const {
         team_id,
-        subscription_id,
         credits,
         billing,
         endpoint,
         is_extract,
         api_key_id,
         autumnTrackInRequest,
+        exchangeAccessEventId,
       } = job.data;
 
       logger.info(`Adding team ${team_id} billing operation to batch queue`, {
@@ -100,7 +100,6 @@ const processBillingJobInternal = async (token: string, job: Job) => {
       // Add to the REDIS batch queue
       await queueBillingOperation(
         team_id,
-        subscription_id,
         credits,
         api_key_id ?? null,
         resolveBillingMetadata({
@@ -109,6 +108,13 @@ const processBillingJobInternal = async (token: string, job: Job) => {
         }),
         is_extract,
         autumnTrackInRequest,
+        typeof exchangeAccessEventId === "string" &&
+          exchangeAccessEventId.length > 0
+          ? {
+              accessEventId: exchangeAccessEventId,
+              billingReference: String(job.id),
+            }
+          : undefined,
       );
     } else {
       logger.warn(`Unknown billing job type: ${job.name}`);

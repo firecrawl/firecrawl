@@ -1150,6 +1150,7 @@ defmodule Firecrawl do
     enterprise: [type: {:list, :string}, doc: "Enterprise search options for Zero Data Retention (ZDR). Use `[\"zdr\"]` for end-to-end ZDR (10 credits / 10 results) or `[\"anon\"]` for anonymized ZDR (2 credits / 10 results). Must be enabled for your team."],
     exclude_domains: [type: {:list, :string}, doc: "Domains to exclude from search results."],
     ignore_invalid_urls: [type: :boolean, doc: "Excludes URLs from the search results that are invalid for other Firecrawl endpoints. This helps reduce errors if you are piping data from search into other Firecrawl API endpoints."],
+    highlights: [type: :boolean, doc: "Generate query-relevant highlights for search results. Defaults to true."],
     include_domains: [type: {:list, :string}, doc: "Domains to include in search results."],
     limit: [type: :integer, doc: "Maximum number of results to return"],
     location: [type: :string, doc: "Location parameter for search results (e.g. `San Francisco,California,United States`). For best results, set both this and the `country` parameter."],
@@ -1160,7 +1161,7 @@ defmodule Firecrawl do
     timeout: [type: :integer, doc: "Timeout in milliseconds"]
   ])
 
-  @search_and_scrape_key_mapping %{categories: "categories", country: "country", enterprise: "enterprise", exclude_domains: "excludeDomains", ignore_invalid_urls: "ignoreInvalidURLs", include_domains: "includeDomains", limit: "limit", location: "location", query: "query", scrape_options: "scrapeOptions", sources: "sources", tbs: "tbs", timeout: "timeout"}
+  @search_and_scrape_key_mapping %{categories: "categories", country: "country", enterprise: "enterprise", exclude_domains: "excludeDomains", highlights: "highlights", ignore_invalid_urls: "ignoreInvalidURLs", include_domains: "includeDomains", limit: "limit", location: "location", query: "query", scrape_options: "scrapeOptions", sources: "sources", tbs: "tbs", timeout: "timeout"}
 
   @doc """
   Search and optionally scrape search results

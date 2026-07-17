@@ -6,7 +6,7 @@ import {
   resultResponseSchema,
   type ResultResponse,
 } from "./schema";
-import { failAsync } from "./utils";
+import { failAsync, firePdfHeaders } from "./utils";
 
 type ResultDeps = {
   baseUrl: string;
@@ -25,6 +25,7 @@ export async function fetchResult(deps: ResultDeps): Promise<ResultResponse> {
     try {
       resp = await fetchImpl(`${baseUrl}/jobs/${scrapeId}/result`, {
         method: "GET",
+        headers: firePdfHeaders(),
         signal: meta.abort.asSignal(),
       });
     } catch (error) {
@@ -34,6 +35,10 @@ export async function fetchResult(deps: ResultDeps): Promise<ResultResponse> {
 
     const status = resp.status;
     const body = await resp.json().catch(() => ({}));
+
+    if (status === 401) {
+      failAsync(meta, "http_401");
+    }
 
     if (status === 503) {
       failAsync(meta, "result_503", { body });

@@ -329,9 +329,8 @@ describe("getTeamBalance", () => {
     // planCredits should be 100,000 (only from planId: "standard")
     // NOT 100,525 (which includes the one-off grants)
     expect(result!.planCredits).toBe(100000);
-    // But remaining/granted reflects the full amount including grants
+    // But remaining reflects the full amount including grants
     expect(result!.remaining).toBe(100525);
-    expect(result!.granted).toBe(100525);
   });
 
   it("Bug 4 — sums credits from multiple plans correctly", async () => {
@@ -732,7 +731,6 @@ describe("getTeamBalance", () => {
 
     expect(result).not.toBeNull();
     expect(result!.remaining).toBe(-4438178);
-    expect(result!.granted).toBe(25250000);
     expect(result!.usage).toBe(29688178);
   });
 });

@@ -40,7 +40,7 @@ function buildReq(overrides: any = {}): any {
   return {
     body: { plays: 1 },
     auth: { team_id: "team_test", org_id: "org_test" },
-    acuc: { sub_id: "sub_1", api_key_id: 1 },
+    acuc: { api_key_id: 1 },
     ...overrides,
   };
 }
@@ -104,7 +104,6 @@ describe("fireclawController credit gating (Autumn)", () => {
     );
     expect(billTeamMock).toHaveBeenCalledWith(
       "team_test",
-      "sub_1",
       200,
       1,
       expect.objectContaining({ endpoint: "fireclaw" }),
@@ -129,7 +128,6 @@ describe("fireclawController credit gating (Autumn)", () => {
 
     expect(billTeamMock).toHaveBeenCalledWith(
       "team_test",
-      "sub_1",
       300,
       1,
       expect.objectContaining({ endpoint: "fireclaw" }),

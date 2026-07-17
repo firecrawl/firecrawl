@@ -22,12 +22,10 @@ export type InteractTraceMetadata = {
   session_id: string;
   scrape_id: string;
   team_id: string;
-  // Optional identifiers below team_id for finer-grained LangSmith filtering.
-  // sub_user_id is the per-request sub-user label (when the API key carries
-  // one); org_id is the parent org when teams are grouped. Neither is always
-  // present — team_id is the only guaranteed identity.
+  // Optional org_id below team_id for finer-grained LangSmith filtering — the
+  // parent org when teams are grouped. Not always present; team_id is the only
+  // guaranteed identity.
   org_id?: string;
-  sub_user_id?: string;
   browser_id?: string;
   run_id?: string;
   mode: "prompt" | "code";

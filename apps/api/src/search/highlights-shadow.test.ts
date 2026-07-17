@@ -1,17 +1,21 @@
 vi.mock("../config", () => ({
   config: {
     HIGHLIGHT_SHADOW_RATE: 1,
-    HIGHLIGHT_SHADOW_MAX_INFLIGHT: 1,
   },
 }));
 
 vi.mock("./highlights", () => ({
   highlightsEnvReady: vi.fn(() => true),
-  applySearchHighlights: vi.fn(),
+  searchHighlightURLs: vi.fn(() => []),
+  runIndexedSearchHighlightsShadow: vi.fn(),
 }));
 
 import { config } from "../config";
-import { applySearchHighlights, highlightsEnvReady } from "./highlights";
+import {
+  highlightsEnvReady,
+  runIndexedSearchHighlightsShadow,
+  searchHighlightURLs,
+} from "./highlights";
 import { createSearchHighlightsShadowRunner } from "./highlights-shadow";
 
 const logger = {
@@ -24,14 +28,13 @@ let runSearchHighlightsShadow = createSearchHighlightsShadowRunner(logger);
 afterEach(() => {
   vi.clearAllMocks();
   config.HIGHLIGHT_SHADOW_RATE = 1;
-  config.HIGHLIGHT_SHADOW_MAX_INFLIGHT = 1;
   vi.mocked(highlightsEnvReady).mockReturnValue(true);
   runSearchHighlightsShadow = createSearchHighlightsShadowRunner(logger);
 });
 
 describe("runSearchHighlightsShadow", () => {
   it("runs without applying results and emits a content-free canonical log", async () => {
-    vi.mocked(applySearchHighlights).mockResolvedValue({
+    vi.mocked(runIndexedSearchHighlightsShadow).mockResolvedValue({
       attempted: 10,
       indexHits: 7,
       replaced: 6,
@@ -49,17 +52,12 @@ describe("runSearchHighlightsShadow", () => {
     ).toBe("started");
     await new Promise(resolve => setImmediate(resolve));
 
-    expect(applySearchHighlights).toHaveBeenCalledWith(
-      {},
+    expect(searchHighlightURLs).toHaveBeenCalledWith({});
+    expect(runIndexedSearchHighlightsShadow).toHaveBeenCalledWith(
+      [],
       "private query",
       expect.objectContaining({ silent: true }),
-      {
-        applyResults: false,
-        suppressSummaryLog: true,
-        suppressPayloadLog: true,
-        allowLegacyFallback: false,
-        requestId: "request-1",
-      },
+      "request-1",
     );
     expect(logger.info).toHaveBeenCalledWith(
       "Search highlights shadow completed",
@@ -77,18 +75,13 @@ describe("runSearchHighlightsShadow", () => {
     expect(fields).not.toHaveProperty("highlights");
   });
 
-  it("drops excess work instead of creating a backlog", async () => {
-    let finish!: (value: {
-      attempted: number;
-      indexHits: number;
-      replaced: number;
-      succeeded: boolean;
-    }) => void;
-    vi.mocked(applySearchHighlights).mockReturnValue(
-      new Promise(resolve => {
-        finish = resolve;
-      }),
-    );
+  it("forwards concurrent shadow work without admission drops", async () => {
+    vi.mocked(runIndexedSearchHighlightsShadow).mockResolvedValue({
+      attempted: 1,
+      indexHits: 1,
+      replaced: 1,
+      succeeded: true,
+    });
 
     const input = {
       response: {} as any,
@@ -101,22 +94,13 @@ describe("runSearchHighlightsShadow", () => {
     ).toBe("started");
     expect(
       runSearchHighlightsShadow({ ...input, requestId: "request-2" }),
-    ).toBe("dropped");
-    expect(logger.info).toHaveBeenCalledWith(
-      "Search highlights shadow dropped",
-      expect.objectContaining({
-        canonicalLog: "search/highlights-shadow",
-        outcome: "dropped",
-        reason: "max_inflight",
-      }),
-    );
-
-    finish({ attempted: 1, indexHits: 1, replaced: 1, succeeded: true });
+    ).toBe("started");
     await new Promise(resolve => setImmediate(resolve));
+    expect(runIndexedSearchHighlightsShadow).toHaveBeenCalledTimes(2);
   });
 
   it("emits the content-free failure category", async () => {
-    vi.mocked(applySearchHighlights).mockResolvedValue({
+    vi.mocked(runIndexedSearchHighlightsShadow).mockResolvedValue({
       attempted: 3,
       indexHits: 1,
       replaced: 0,
@@ -165,6 +149,6 @@ describe("runSearchHighlightsShadow", () => {
       runSearchHighlightsShadow({ ...input, zeroDataRetention: false }),
     ).toBe("skipped");
 
-    expect(applySearchHighlights).not.toHaveBeenCalled();
+    expect(runIndexedSearchHighlightsShadow).not.toHaveBeenCalled();
   });
 });

@@ -6,6 +6,7 @@ settings:
   injectWorkspacePackages: true
 
 overrides:
+  '@types/express': ^5.0.6
   bigint-buffer: npm:four-flap-bigint-buffer@1.1.6
   diff: ^8.0.3
   ajv: ^8.18.0
@@ -41,9 +42,7 @@ overrides:
   '@opentelemetry/core@>=2.0.0 <2.8.0': 2.8.0
 
 patchedDependencies:
-  node-fetch@2.7.0:
-    hash: cf2058381802eaf328e1cb26b185762ba41e2157a5545e7ed9bba56b7de0c49b
-    path: patches/node-fetch@2.7.0.patch
+  node-fetch@2.7.0: cf2058381802eaf328e1cb26b185762ba41e2157a5545e7ed9bba56b7de0c49b
 
 importers:
 
@@ -87,7 +86,7 @@ importers:
         version: 1.0.22
       '@google-cloud/storage':
         specifier: ^7.21.0
-        version: 7.21.0(encoding@0.1.13)
+        version: 7.21.0
       '@mendable/firecrawl-rs':
         specifier: workspace:*
         version: link:native
@@ -96,7 +95,7 @@ importers:
         version: 2.9.1(ai@6.0.86(zod@4.1.12))(zod@4.1.12)
       '@sentry/cli':
         specifier: ^2.58.2
-        version: 2.58.2(encoding@0.1.13)
+        version: 2.58.2
       '@sentry/node':
         specifier: ^10.27.0
         version: 10.27.0
@@ -150,7 +149,7 @@ importers:
         version: 16.4.5
       drizzle-orm:
         specifier: 1.0.0-rc.3
-        version: 1.0.0-rc.3(@opentelemetry/api@1.9.0)(@sinclair/typebox@0.34.41)(@types/pg@8.15.5)(pg@8.16.3(pg-native@3.5.2))(zod@4.1.12)
+        version: 1.0.0-rc.3(@opentelemetry/api@1.9.0)(@types/pg@8.15.5)(pg@8.16.3)(zod@4.1.12)
       esbuild:
         specifier: ^0.28.1
         version: 0.28.1
@@ -162,13 +161,13 @@ importers:
         version: 5.2.1
       express-ws:
         specifier: ^5.0.2
-        version: 5.0.2(bufferutil@4.0.9)(express@5.2.1)(utf-8-validate@5.0.10)
+        version: 5.0.2(express@5.2.1)
       foundationdb:
         specifier: ^2.0.1
         version: 2.0.1
       geoip-country:
-        specifier: ^5.0.202607110104
-        version: 5.0.202607110104
+        specifier: ^5.0.202607150057
+        version: 5.0.202607150057
       he:
         specifier: ^1.2.0
         version: 1.2.0
@@ -195,7 +194,7 @@ importers:
         version: 2.9.0
       langsmith:
         specifier: ^0.6.0
-        version: 0.6.3(@opentelemetry/api@1.9.0)(@opentelemetry/sdk-trace-base@2.2.0(@opentelemetry/api@1.9.0))(openai@5.20.2(ws@8.21.0(bufferutil@4.0.9)(utf-8-validate@5.0.10))(zod@4.1.12))(ws@8.21.0(bufferutil@4.0.9)(utf-8-validate@5.0.10))
+        version: 0.6.3(@opentelemetry/api@1.9.0)(@opentelemetry/sdk-trace-base@2.2.0(@opentelemetry/api@1.9.0))(ws@8.21.0)
       lodash:
         specifier: ^4.18.0
         version: 4.18.1
@@ -216,7 +215,7 @@ importers:
         version: 1.1.1
       pg:
         specifier: ^8.16.3
-        version: 8.16.3(pg-native@3.5.2)
+        version: 8.16.3
       prettier:
         specifier: ^3.6.2
         version: 3.6.2
@@ -245,8 +244,8 @@ importers:
         specifier: ^16.1.0
         version: 16.1.0
       systeminformation:
-        specifier: ^5.31.6
-        version: 5.31.6
+        specifier: ^5.31.17
+        version: 5.31.17
       tldts:
         specifier: ^6.1.75
         version: 6.1.75
@@ -273,7 +272,7 @@ importers:
         version: 3.14.2
       ws:
         specifier: ^8.21.0
-        version: 8.21.0(bufferutil@4.0.9)(utf-8-validate@5.0.10)
+        version: 8.21.0
       xml2js:
         specifier: ^0.6.2
         version: 0.6.2
@@ -1207,8 +1206,8 @@ packages:
   '@napi-rs/wasm-runtime@1.0.7':
     resolution: {integrity: sha512-SeDnOO0Tk7Okiq6DbXmmBODgOAb9dp9gjlphokTUxmt8U3liIP1ZsozBahH69j/RJv+Rfs6IwUKHTgQYJ/HBAw==}
 
-  '@napi-rs/wasm-runtime@1.1.5':
-    resolution: {integrity: sha512-AWPoBRJ9tsnVhor4sjO7rkni+7p+2IAEFj6cx06UgP10jkQHqay/36uRV/bFkgrh18D9vb4cr8Q0Pthskgzy+Q==}
+  '@napi-rs/wasm-runtime@1.1.6':
+    resolution: {integrity: sha512-ZLv/JdUfkvOy9eCnnBaGfiO+XimbjebAeO+MRQqD/B+FR1tnRN0tpKSJHRbE8sFfS6aqsXZ67TQjfwfsxULVbg==}
     peerDependencies:
       '@emnapi/core': ^1.7.1
       '@emnapi/runtime': ^1.7.1
@@ -1915,9 +1914,6 @@ packages:
       '@opentelemetry/sdk-trace-base': ^1.30.1 || ^2.1.0 || ^2.2.0
       '@opentelemetry/semantic-conventions': ^1.37.0
 
-  '@sinclair/typebox@0.34.41':
-    resolution: {integrity: sha512-6gS8pZzSXdyRHTIqoqSVknxolr1kzfy4/CeDnrzsVz8TTIWUbOBr6gnzOmTYJ3eXQNh4IYHIGi5aIL7sOZ2G/g==}
-
   '@standard-schema/spec@1.1.0':
     resolution: {integrity: sha512-l2aFy5jALhniG5HgqrD6jXLi/rUWrKvqN/qJx6yoJsgKhblVd+iqqU4RCXavm/jPityDo5TCvKMnpjKnOriy0w==}
 
@@ -1932,8 +1928,8 @@ packages:
   '@tybys/wasm-util@0.10.1':
     resolution: {integrity: sha512-9tTaPJLSiejZKx+Bmog4uSubteqTvFrVrURwkmHixBo0G4seD0zUxp98E1DzUBJxLQ3NPwXrGKDiVjwx/DpPsg==}
 
-  '@tybys/wasm-util@0.10.2':
-    resolution: {integrity: sha512-RoBvJ2X0wuKlWFIjrwffGw1IqZHKQqzIchKaadZZfnNpsAYp2mM0h36JtPCjNDAHGgYez/15uMBpfGwchhiMgg==}
+  '@tybys/wasm-util@0.10.3':
+    resolution: {integrity: sha512-F3fo1MYrRJYL3zER0OUOmkutjr1Vp23m7OsSgp7nq4SP6OqX6C/56XFIPAl5bt3zaBRjmW7SGz3u/6LwFpYcOg==}
 
   '@types/amqplib@0.10.7':
     resolution: {integrity: sha512-IVj3avf9AQd2nXCx0PGk/OYq7VmHiyNxWFSb5HhU9ATh+i+gHWvVcljFTcTWQ/dyHJCTrzCixde+r/asL2ErDA==}
@@ -2359,9 +2355,6 @@ packages:
     resolution: {integrity: sha512-JocpCSOixzy5XFJi2ub6IMmV/G9i8Lrm2lZvwBv9xPdglmZM0ufDVBbjbrfU/zuLvBfD7Bv2eYxz9i+OHTgkew==}
     deprecated: pkg version number incorrect
 
-  bindings@1.5.0:
-    resolution: {integrity: sha512-p2q/t/mhvuOj/UeLlV6566GD/guowlr0hHxClI0W9m7MWYkL1F0hLo+0Aexs9HSPCtR1SXQ0TD3MMKrXZajbiQ==}
-
   bintrees@1.0.2:
     resolution: {integrity: sha512-VOMgTMwjAaUG580SXn3LacVgjurrbMme7ZZNYGSSV7mmtY6QQRh0Eg3pwIcntQ77DErK1L0NxkbetjcoXzVwKw==}
 
@@ -2398,10 +2391,6 @@ packages:
 
   buffer@6.0.3:
     resolution: {integrity: sha512-FTiCpNxtwiZZHEZbcbTIcZjERVICn9yq/pDFkTl95/AxzD1naBctN7YO68riM/gLSDY7sdrMby8hofADYuuqOA==}
-
-  bufferutil@4.0.9:
-    resolution: {integrity: sha512-WDtdLmJvAuNNPzByAYpRo2rF1Mmradw6gvWsQKf63476DDXmomT9zUiGypLcG4ibIM67vhAj8jJRdbmEws2Aqw==}
-    engines: {node: '>=6.14.2'}
 
   bullmq@5.56.7:
     resolution: {integrity: sha512-Aa4Y7rmkuZOuyHvitGd2rSETgQ0SMawPD0XVsU9gAUg9Q4bwNpSD9ZDVcWGhfAQAUZFJH82JUmLsm0B59Prmtg==}
@@ -2826,9 +2815,6 @@ packages:
     resolution: {integrity: sha512-Q0n9HRi4m6JuGIV1eFlmvJB7ZEVxu93IrMyiMsGC0lrMJMWzRgx6WGquyfQgZVb31vhGgXnfmPNNXmxnOkRBrg==}
     engines: {node: '>= 0.8'}
 
-  encoding@0.1.13:
-    resolution: {integrity: sha512-ETBauow1T35Y/WZMkio9jiM0Z5xjHHmJ4XmjZOq1l/dXz3lr2sRn87nJy20RupqSh1F2m3HHPSp8ShIPQJrJ3A==}
-
   end-of-stream@1.4.5:
     resolution: {integrity: sha512-ooEGc6HP26xXq/N+GCGOT0JKCLDGrq2bQUZrQ7gyrJiZANJ/8YDTxTpQBXGMn+WbIQXNVpyWymm7KYVICQnyOg==}
 
@@ -2974,9 +2960,6 @@ packages:
     resolution: {integrity: sha512-7yAQpD2UMJzLi1Dqv7qFYnPbaPx7ZfFK6PiIxQ4PfkGPyNyl2Ugx+a/umUonmKqjhM4DnfbMvdX6otXq83soQQ==}
     engines: {node: ^12.20 || >= 14.13}
 
-  file-uri-to-path@1.0.0:
-    resolution: {integrity: sha512-0Zt+s3L7Vf1biwWZ29aARiVYLx7iMGnEUl9x33fbB/j3jR81u/O2LbqK+Bm1CDSNDKVtJ/YjwY7TUd5SkeLQLw==}
-
   filelist@1.0.4:
     resolution: {integrity: sha512-w1cEuf3S+DrLCQL7ET6kz+gmlJdbq9J7yXCSjK/OZCPA+qEN1WyF4ZAf0YYJa4/shHJra2t/d/r8SV4Ji+x+8Q==}
 
@@ -3066,8 +3049,8 @@ packages:
     resolution: {integrity: sha512-zV/5HKTfCeKWnxG0Dmrw51hEWFGfcF2xiXqcA3+J90WDuP0SvoiSO5ORvcBsifmx/FoIjgQN3oNOGaQ5PhLFkg==}
     engines: {node: '>=18'}
 
-  geoip-country@5.0.202607110104:
-    resolution: {integrity: sha512-Acug9yXKPmy0QnrI41i/8QUpBfO2HY82OVZMTWYMy9Iq0SRDybEDIZOnVy5VWN3z9xqYc0tpK8ugpo1TrdX6CA==}
+  geoip-country@5.0.202607150057:
+    resolution: {integrity: sha512-BsCnrL6DluGwo4CfvCys6q9P+1DJp7CxaJOCRHarkpHQmgjPDZu6n56euBRlullrcB5dwTRODNqlcNTP/Sv4zQ==}
     engines: {node: '>=10.20.0'}
 
   get-east-asian-width@1.3.1:
@@ -3374,9 +3357,6 @@ packages:
   leac@0.6.0:
     resolution: {integrity: sha512-y+SqErxb8h7nE/fiEX07jsbuhrpO9lL8eca7/Y1nuWV2moNlXhyd59iDGcRf6moVyDMbmTNzL40SUyrFU/yDpg==}
 
-  libpq@1.10.0:
-    resolution: {integrity: sha512-PHY+JGD3+9X5b2emXLh+WJEnz1jhczO1xs25ZH0xbMWvQi+Hd9X/mTZOrGA99Rcw/DvNjsBRlegroqigpNfaJA==}
-
   lightningcss-android-arm64@1.32.0:
     resolution: {integrity: sha512-YK7/ClTt4kAK0vo6w3X+Pnm0D2cf2vPHbhOXdoNti1Ga0al1P4TBZhwjATvjNwLEBCnKvjJc2jQgHXH0NEwlAg==}
     engines: {node: '>= 12.0.0'}
@@ -3627,15 +3607,12 @@ packages:
     resolution: {integrity: sha512-WWdIxpyjEn+FhQJQQv9aQAYlHoNVdzIzUySNV1gHUPDSdZJ3yZn7pAAbQcV7B56Mvu881q9FZV+0Vx2xC44VWA==}
     engines: {node: ^18.17.0 || >=20.5.0}
 
-  nan@2.23.1:
-    resolution: {integrity: sha512-r7bBUGKzlqk8oPBDYxt6Z0aEdF1G1rwlMcLk8LCOMbOzf0mG+JUfUzG4fIMWwHWP0iyaLWEQZJmtB7nOHEm/qw==}
-
   nano-spawn@1.0.2:
     resolution: {integrity: sha512-21t+ozMQDAL/UGgQVBbZ/xXvNO10++ZPuTmKRO8k9V3AClVRht49ahtDjfY8l1q6nSHOrE5ASfthzH3ol6R/hg==}
     engines: {node: '>=20.17'}
 
-  nanoid@3.3.12:
-    resolution: {integrity: sha512-ZB9RH/39qpq5Vu6Y+NmUaFhQR6pp+M2Xt76XBnEwDaGcVAqhlvxrl3B2bKS5D3NH3QR76v3aSrKaF/Kiy7lEtQ==}
+  nanoid@3.3.16:
+    resolution: {integrity: sha512-bzlKTyNJ7+LdGIIwy8ijFpIqEQIvafahV7eYykJ8Cvh42EdJeODoJ6gUJXpQJvej1BddH8OqTXZNE/KfbWAu8Q==}
     engines: {node: ^10 || ^12 || ^13.7 || ^14 || >=15.0.1}
     hasBin: true
 
@@ -3732,18 +3709,6 @@ packages:
     resolution: {integrity: sha512-VXJjc87FScF88uafS3JllDgvAm+c/Slfz06lorj2uAY34rlUu0Nt+v8wreiImcrgAjjIHp1rXpTDlLOGw29WwQ==}
     engines: {node: '>=18'}
 
-  openai@5.20.2:
-    resolution: {integrity: sha512-ZeBIEazj6W/XOulMw92L8iU5FblQeM5IxjPRCZNVArNXsoF+bLPnS7B2X4O0JSmpCM+F5Gdajr6bn4nAUj4LFQ==}
-    hasBin: true
-    peerDependencies:
-      ws: 8.21.0
-      zod: ^3.23.8
-    peerDependenciesMeta:
-      ws:
-        optional: true
-      zod:
-        optional: true
-
   oxc-resolver@11.13.2:
     resolution: {integrity: sha512-1SXVyYQ9bqMX3uZo8Px81EG7jhZkO9PvvR5X9roY5TLYVm4ZA7pbPDNlYaDBBeF9U+YO3OeMNoHde52hrcCu8w==}
 
@@ -3833,9 +3798,6 @@ packages:
     resolution: {integrity: sha512-WCtabS6t3c8SkpDBUlb1kjOs7l66xsGdKpIPZsg4wR+B3+u9UAum2odSsF9tnvxg80h4ZxLWMy4pRjOsFIqQpw==}
     engines: {node: '>=4.0.0'}
 
-  pg-native@3.5.2:
-    resolution: {integrity: sha512-3oi+KVil86Vngo4H0IlhBaYSJWdcu8t2f1Y4TkQoQi5oZ9bNeYECGqW3oSGx69mjSZYHoC3h+3jYtqzRgndn5A==}
-
   pg-pool@3.10.1:
     resolution: {integrity: sha512-Tu8jMlcX+9d8+QVzKIvM/uJtp07PKr82IUOYEphaWcoBhIYkoHpLXN3qO59nAI11ripznDsEzEv8nUxBVWajGg==}
     peerDependencies:
@@ -3867,13 +3829,17 @@ packages:
     resolution: {integrity: sha512-QP88BAKvMam/3NxH6vj2o21R6MjxZUAd6nlwAS/pnGvN9IVLocLHxGYIzFhg6fUQ+5th6P4dv4eW9jX3DSIj7A==}
     engines: {node: '>=12'}
 
+  picomatch@4.0.5:
+    resolution: {integrity: sha512-RvwwcruNjI1ncT5xRakeyS9Lf8lcItv34KD+aif+VH9kduAyfYBipGh12274xtenIPZ119/R9BdTBa8gAwSh0A==}
+    engines: {node: '>=12'}
+
   pidtree@0.6.0:
     resolution: {integrity: sha512-eG2dWTVw5bzqGRztnHExczNxt5VGsE6OwTeCG3fdUf9KBsZzO3R5OIIIzWR+iZA0NtZ+RDVdaoE2dK1cn6jH4g==}
     engines: {node: '>=0.10'}
     hasBin: true
 
-  postcss@8.5.15:
-    resolution: {integrity: sha512-FfR8sjd4em2T6fb3I2MwAJU7HWVMr9zba+enmQeeWFfCbm+UOC/0X4DS8XtpUTMwWMGbjKYP7xjfNekzyGmB3A==}
+  postcss@8.5.19:
+    resolution: {integrity: sha512-Mz8SaolMd8nB+G13WkORcxQKHZ/NE4xXevtkJHVuG+guo9/wYKlIMTKAqGdEmYOXR2ijPjTYNHssizdaVSUNdQ==}
     engines: {node: ^10 || ^12 || >=14}
 
   postgres-array@2.0.0:
@@ -4266,8 +4232,8 @@ packages:
   symbol-tree@3.2.4:
     resolution: {integrity: sha512-9QNk5KwDF+Bvz+PyObkmSYjI5ksVUYtjW7AU22r2NKcfLJcXp96hkDWU3+XndOsUb+AQ9QhfzfCT2O+CNWT5Tw==}
 
-  systeminformation@5.31.6:
-    resolution: {integrity: sha512-Uv2b2uGGM6ns+26czgW2cYRabYdnswM0ddSOOlryHOaelzsmDSet1iM/NT7VOYxW8x/BW+HkY+b1Ve2pLTSGSA==}
+  systeminformation@5.31.17:
+    resolution: {integrity: sha512-TvFA9iwDWlMjqZVlKIJ0Cy+Zgm9ttlMx0SMRwJDMNKyhlEKWBMb3+WRwDi/3dvHdWbexpos4Osp4U49p5WjB5g==}
     engines: {node: '>=8.0.0'}
     os: [darwin, linux, win32, freebsd, openbsd, netbsd, sunos, android]
     hasBin: true
@@ -4418,10 +4384,6 @@ packages:
 
   url-parse@1.5.10:
     resolution: {integrity: sha512-WypcfiRhfeUP9vvF0j6rw0J3hrWrw6iZv3+22h6iRMJ/8z1Tj6XfLP4DsUix5MhMPnXpiHDoKyoZ/bdCkwBCiQ==}
-
-  utf-8-validate@5.0.10:
-    resolution: {integrity: sha512-Z6czzLq4u8fPOyx7TU6X3dvUZVvoJmxSQ+IcrlmagKhilxlhZgxPK6C5Jqbkw1IDUmFTM+cz9QDnnLTwDz/2gQ==}
-    engines: {node: '>=6.14.2'}
 
   util-deprecate@1.0.2:
     resolution: {integrity: sha512-EPD5q1uXyFxJpCrLnCc1nHnq3gOa6DZBocAIiI2TaSCA7VCJ1UJDMagCzIkXNsUYfD1daK//LTEQ8xiIbrHtcw==}
@@ -4987,7 +4949,7 @@ snapshots:
 
   '@google-cloud/promisify@4.0.0': {}
 
-  '@google-cloud/storage@7.21.0(encoding@0.1.13)':
+  '@google-cloud/storage@7.21.0':
     dependencies:
       '@google-cloud/paginator': 5.0.2
       '@google-cloud/projectify': 4.0.0
@@ -4996,13 +4958,13 @@ snapshots:
       async-retry: 1.3.3
       duplexify: 4.1.3
       fast-xml-parser: 5.7.1
-      gaxios: 6.7.1(encoding@0.1.13)
-      google-auth-library: 9.15.1(encoding@0.1.13)
+      gaxios: 6.7.1
+      google-auth-library: 9.15.1
       html-entities: 2.6.0
       mime: 3.0.0
       p-limit: 3.1.0
-      retry-request: 7.0.2(encoding@0.1.13)
-      teeny-request: 9.0.0(encoding@0.1.13)
+      retry-request: 7.0.2
+      teeny-request: 9.0.0
     transitivePeerDependencies:
       - encoding
       - supports-color
@@ -5342,11 +5304,11 @@ snapshots:
       '@tybys/wasm-util': 0.10.1
     optional: true
 
-  '@napi-rs/wasm-runtime@1.1.5(@emnapi/core@1.10.0)(@emnapi/runtime@1.10.0)':
+  '@napi-rs/wasm-runtime@1.1.6(@emnapi/core@1.10.0)(@emnapi/runtime@1.10.0)':
     dependencies:
       '@emnapi/core': 1.10.0
       '@emnapi/runtime': 1.10.0
-      '@tybys/wasm-util': 0.10.2
+      '@tybys/wasm-util': 0.10.3
     optional: true
 
   '@napi-rs/wasm-tools-android-arm-eabi@1.0.1':
@@ -5866,7 +5828,7 @@ snapshots:
     dependencies:
       '@emnapi/core': 1.10.0
       '@emnapi/runtime': 1.10.0
-      '@napi-rs/wasm-runtime': 1.1.5(@emnapi/core@1.10.0)(@emnapi/runtime@1.10.0)
+      '@napi-rs/wasm-runtime': 1.1.6(@emnapi/core@1.10.0)(@emnapi/runtime@1.10.0)
     optional: true
 
   '@rolldown/binding-win32-arm64-msvc@1.0.3':
@@ -5906,10 +5868,10 @@ snapshots:
   '@sentry/cli-win32-x64@2.58.2':
     optional: true
 
-  '@sentry/cli@2.58.2(encoding@0.1.13)':
+  '@sentry/cli@2.58.2':
     dependencies:
       https-proxy-agent: 5.0.1
-      node-fetch: 2.7.0(patch_hash=cf2058381802eaf328e1cb26b185762ba41e2157a5545e7ed9bba56b7de0c49b)(encoding@0.1.13)
+      node-fetch: 2.7.0(patch_hash=cf2058381802eaf328e1cb26b185762ba41e2157a5545e7ed9bba56b7de0c49b)
       progress: 2.0.3
       proxy-from-env: 1.1.0
       which: 2.0.2
@@ -5995,9 +5957,6 @@ snapshots:
       '@opentelemetry/semantic-conventions': 1.38.0
       '@sentry/core': 10.27.0
 
-  '@sinclair/typebox@0.34.41':
-    optional: true
-
   '@standard-schema/spec@1.1.0': {}
 
   '@taplo/cli@0.7.0': {}
@@ -6009,7 +5968,7 @@ snapshots:
       tslib: 2.8.1
     optional: true
 
-  '@tybys/wasm-util@0.10.2':
+  '@tybys/wasm-util@0.10.3':
     dependencies:
       tslib: 2.8.1
     optional: true
@@ -6391,11 +6350,6 @@ snapshots:
 
   bignumber.js@9.2.0: {}
 
-  bindings@1.5.0:
-    dependencies:
-      file-uri-to-path: 1.0.0
-    optional: true
-
   bintrees@1.0.2: {}
 
   body-parser@1.20.3:
@@ -6451,11 +6405,6 @@ snapshots:
     dependencies:
       base64-js: 1.5.1
       ieee754: 1.2.1
-
-  bufferutil@4.0.9:
-    dependencies:
-      node-gyp-build: 4.8.4
-    optional: true
 
   bullmq@5.56.7:
     dependencies:
@@ -6699,12 +6648,11 @@ snapshots:
 
   dotenv@16.4.5: {}
 
-  drizzle-orm@1.0.0-rc.3(@opentelemetry/api@1.9.0)(@sinclair/typebox@0.34.41)(@types/pg@8.15.5)(pg@8.16.3(pg-native@3.5.2))(zod@4.1.12):
+  drizzle-orm@1.0.0-rc.3(@opentelemetry/api@1.9.0)(@types/pg@8.15.5)(pg@8.16.3)(zod@4.1.12):
     optionalDependencies:
       '@opentelemetry/api': 1.9.0
-      '@sinclair/typebox': 0.34.41
       '@types/pg': 8.15.5
-      pg: 8.16.3(pg-native@3.5.2)
+      pg: 8.16.3
       zod: 4.1.12
 
   dunder-proto@1.0.1:
@@ -6748,11 +6696,6 @@ snapshots:
   enabled@2.0.0: {}
 
   encodeurl@2.0.0: {}
-
-  encoding@0.1.13:
-    dependencies:
-      iconv-lite: 0.6.3
-    optional: true
 
   end-of-stream@1.4.5:
     dependencies:
@@ -6844,10 +6787,10 @@ snapshots:
 
   expect-type@1.3.0: {}
 
-  express-ws@5.0.2(bufferutil@4.0.9)(express@5.2.1)(utf-8-validate@5.0.10):
+  express-ws@5.0.2(express@5.2.1):
     dependencies:
       express: 5.2.1
-      ws: 7.5.11(bufferutil@4.0.9)(utf-8-validate@5.0.10)
+      ws: 7.5.11
     transitivePeerDependencies:
       - bufferutil
       - utf-8-validate
@@ -6938,9 +6881,6 @@ snapshots:
       node-domexception: 1.0.0
       web-streams-polyfill: 3.3.3
 
-  file-uri-to-path@1.0.0:
-    optional: true
-
   filelist@1.0.4:
     dependencies:
       minimatch: 10.2.4
@@ -7016,12 +6956,12 @@ snapshots:
 
   function-bind@1.1.2: {}
 
-  gaxios@6.7.1(encoding@0.1.13):
+  gaxios@6.7.1:
     dependencies:
       extend: 3.0.2
       https-proxy-agent: 7.0.6
       is-stream: 2.0.1
-      node-fetch: 2.7.0(patch_hash=cf2058381802eaf328e1cb26b185762ba41e2157a5545e7ed9bba56b7de0c49b)(encoding@0.1.13)
+      node-fetch: 2.7.0(patch_hash=cf2058381802eaf328e1cb26b185762ba41e2157a5545e7ed9bba56b7de0c49b)
       uuid: 11.1.1
     transitivePeerDependencies:
       - encoding
@@ -7036,9 +6976,9 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  gcp-metadata@6.1.1(encoding@0.1.13):
+  gcp-metadata@6.1.1:
     dependencies:
-      gaxios: 6.7.1(encoding@0.1.13)
+      gaxios: 6.7.1
       google-logging-utils: 0.0.2
       json-bigint: 1.0.0
     transitivePeerDependencies:
@@ -7053,7 +6993,7 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  geoip-country@5.0.202607110104:
+  geoip-country@5.0.202607150057:
     dependencies:
       async: 2.6.4
       countries-list: 3.1.1
@@ -7106,13 +7046,13 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  google-auth-library@9.15.1(encoding@0.1.13):
+  google-auth-library@9.15.1:
     dependencies:
       base64-js: 1.5.1
       ecdsa-sig-formatter: 1.0.11
-      gaxios: 6.7.1(encoding@0.1.13)
-      gcp-metadata: 6.1.1(encoding@0.1.13)
-      gtoken: 7.1.0(encoding@0.1.13)
+      gaxios: 6.7.1
+      gcp-metadata: 6.1.1
+      gtoken: 7.1.0
       jws: 4.0.1
     transitivePeerDependencies:
       - encoding
@@ -7124,9 +7064,9 @@ snapshots:
 
   gopd@1.2.0: {}
 
-  gtoken@7.1.0(encoding@0.1.13):
+  gtoken@7.1.0:
     dependencies:
-      gaxios: 6.7.1(encoding@0.1.13)
+      gaxios: 6.7.1
       jws: 4.0.1
     transitivePeerDependencies:
       - encoding
@@ -7403,22 +7343,15 @@ snapshots:
 
   kuler@2.0.0: {}
 
-  langsmith@0.6.3(@opentelemetry/api@1.9.0)(@opentelemetry/sdk-trace-base@2.2.0(@opentelemetry/api@1.9.0))(openai@5.20.2(ws@8.21.0(bufferutil@4.0.9)(utf-8-validate@5.0.10))(zod@4.1.12))(ws@8.21.0(bufferutil@4.0.9)(utf-8-validate@5.0.10)):
+  langsmith@0.6.3(@opentelemetry/api@1.9.0)(@opentelemetry/sdk-trace-base@2.2.0(@opentelemetry/api@1.9.0))(ws@8.21.0):
     dependencies:
       p-queue: 6.6.2
     optionalDependencies:
       '@opentelemetry/api': 1.9.0
       '@opentelemetry/sdk-trace-base': 2.2.0(@opentelemetry/api@1.9.0)
-      openai: 5.20.2(ws@8.21.0(bufferutil@4.0.9)(utf-8-validate@5.0.10))(zod@4.1.12)
-      ws: 8.21.0(bufferutil@4.0.9)(utf-8-validate@5.0.10)
+      ws: 8.21.0
 
   leac@0.6.0: {}
-
-  libpq@1.10.0:
-    dependencies:
-      bindings: 1.5.0
-      nan: 2.23.1
-    optional: true
 
   lightningcss-android-arm64@1.32.0:
     optional: true
@@ -7633,12 +7566,9 @@ snapshots:
 
   mute-stream@2.0.0: {}
 
-  nan@2.23.1:
-    optional: true
-
   nano-spawn@1.0.2: {}
 
-  nanoid@3.3.12: {}
+  nanoid@3.3.16: {}
 
   negotiator@1.0.0: {}
 
@@ -7650,11 +7580,9 @@ snapshots:
 
   node-ensure@0.0.0: {}
 
-  node-fetch@2.7.0(patch_hash=cf2058381802eaf328e1cb26b185762ba41e2157a5545e7ed9bba56b7de0c49b)(encoding@0.1.13):
+  node-fetch@2.7.0(patch_hash=cf2058381802eaf328e1cb26b185762ba41e2157a5545e7ed9bba56b7de0c49b):
     dependencies:
       whatwg-url: 5.0.0
-    optionalDependencies:
-      encoding: 0.1.13
 
   node-fetch@3.3.2:
     dependencies:
@@ -7720,12 +7648,6 @@ snapshots:
   onetime@7.0.0:
     dependencies:
       mimic-function: 5.0.1
-
-  openai@5.20.2(ws@8.21.0(bufferutil@4.0.9)(utf-8-validate@5.0.10))(zod@4.1.12):
-    optionalDependencies:
-      ws: 8.21.0(bufferutil@4.0.9)(utf-8-validate@5.0.10)
-      zod: 4.1.12
-    optional: true
 
   oxc-resolver@11.13.2:
     optionalDependencies:
@@ -7832,15 +7754,9 @@ snapshots:
 
   pg-int8@1.0.1: {}
 
-  pg-native@3.5.2:
+  pg-pool@3.10.1(pg@8.16.3):
     dependencies:
-      libpq: 1.10.0
-      pg-types: 2.2.0
-    optional: true
-
-  pg-pool@3.10.1(pg@8.16.3(pg-native@3.5.2)):
-    dependencies:
-      pg: 8.16.3(pg-native@3.5.2)
+      pg: 8.16.3
 
   pg-protocol@1.10.3: {}
 
@@ -7852,16 +7768,15 @@ snapshots:
       postgres-date: 1.0.7
       postgres-interval: 1.2.0
 
-  pg@8.16.3(pg-native@3.5.2):
+  pg@8.16.3:
     dependencies:
       pg-connection-string: 2.9.1
-      pg-pool: 3.10.1(pg@8.16.3(pg-native@3.5.2))
+      pg-pool: 3.10.1(pg@8.16.3)
       pg-protocol: 1.10.3
       pg-types: 2.2.0
       pgpass: 1.0.5
     optionalDependencies:
       pg-cloudflare: 1.2.7
-      pg-native: 3.5.2
 
   pgpass@1.0.5:
     dependencies:
@@ -7871,11 +7786,13 @@ snapshots:
 
   picomatch@4.0.4: {}
 
+  picomatch@4.0.5: {}
+
   pidtree@0.6.0: {}
 
-  postcss@8.5.15:
+  postcss@8.5.19:
     dependencies:
-      nanoid: 3.3.12
+      nanoid: 3.3.16
       picocolors: 1.1.1
       source-map-js: 1.2.1
 
@@ -8030,11 +7947,11 @@ snapshots:
       onetime: 7.0.0
       signal-exit: 4.1.0
 
-  retry-request@7.0.2(encoding@0.1.13):
+  retry-request@7.0.2:
     dependencies:
       '@types/request': 2.48.13
       extend: 3.0.2
-      teeny-request: 9.0.0(encoding@0.1.13)
+      teeny-request: 9.0.0
     transitivePeerDependencies:
       - encoding
       - supports-color
@@ -8296,17 +8213,17 @@ snapshots:
 
   symbol-tree@3.2.4: {}
 
-  systeminformation@5.31.6: {}
+  systeminformation@5.31.17: {}
 
   tdigest@0.1.2:
     dependencies:
       bintrees: 1.0.2
 
-  teeny-request@9.0.0(encoding@0.1.13):
+  teeny-request@9.0.0:
     dependencies:
       http-proxy-agent: 5.0.0
       https-proxy-agent: 5.0.1
-      node-fetch: 2.7.0(patch_hash=cf2058381802eaf328e1cb26b185762ba41e2157a5545e7ed9bba56b7de0c49b)(encoding@0.1.13)
+      node-fetch: 2.7.0(patch_hash=cf2058381802eaf328e1cb26b185762ba41e2157a5545e7ed9bba56b7de0c49b)
       stream-events: 1.0.5
       uuid: 11.1.1
     transitivePeerDependencies:
@@ -8449,11 +8366,6 @@ snapshots:
       querystringify: 2.2.0
       requires-port: 1.0.0
 
-  utf-8-validate@5.0.10:
-    dependencies:
-      node-gyp-build: 4.8.4
-    optional: true
-
   util-deprecate@1.0.2: {}
 
   uuid@11.1.1: {}
@@ -8465,8 +8377,8 @@ snapshots:
   vite@8.0.16(@types/node@22.19.1)(esbuild@0.28.1)(jiti@2.6.1)(tsx@4.20.3)(yaml@2.8.3):
     dependencies:
       lightningcss: 1.32.0
-      picomatch: 4.0.4
-      postcss: 8.5.15
+      picomatch: 4.0.5
+      postcss: 8.5.19
       rolldown: 1.0.3
       tinyglobby: 0.2.17
     optionalDependencies:
@@ -8580,15 +8492,9 @@ snapshots:
 
   wrappy@1.0.2: {}
 
-  ws@7.5.11(bufferutil@4.0.9)(utf-8-validate@5.0.10):
-    optionalDependencies:
-      bufferutil: 4.0.9
-      utf-8-validate: 5.0.10
+  ws@7.5.11: {}
 
-  ws@8.21.0(bufferutil@4.0.9)(utf-8-validate@5.0.10):
-    optionalDependencies:
-      bufferutil: 4.0.9
-      utf-8-validate: 5.0.10
+  ws@8.21.0: {}
 
   xml-name-validator@5.0.0: {}
 

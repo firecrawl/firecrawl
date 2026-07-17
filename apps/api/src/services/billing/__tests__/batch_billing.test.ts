@@ -121,7 +121,6 @@ import { processBillingBatch } from "../batch_billing";
 function makeOp(overrides: Record<string, unknown> = {}) {
   return JSON.stringify({
     team_id: "team-1",
-    subscription_id: "sub-1",
     credits: 10,
     billing: { endpoint: "extract" },
     is_extract: false,
@@ -177,7 +176,6 @@ describe("processBillingBatch", () => {
         source: "processBillingBatch",
         endpoint: "extract",
         apiKeyId: 123,
-        subscriptionId: "sub-1",
       },
       featureId: "CREDITS",
     });
@@ -197,7 +195,6 @@ describe("processBillingBatch", () => {
         source: "processBillingBatch",
         endpoint: "extract",
         apiKeyId: 123,
-        subscriptionId: "sub-1",
       },
       featureId: "CREDITS",
     });
@@ -208,12 +205,10 @@ describe("processBillingBatch", () => {
     queue = [
       makeOp({
         team_id: "team-1",
-        subscription_id: "sub-1",
         autumnTrackInRequest: true,
       }),
       makeOp({
         team_id: "team-2",
-        subscription_id: "sub-2",
         autumnTrackInRequest: true,
       }),
     ];
@@ -231,7 +226,6 @@ describe("processBillingBatch", () => {
         source: "processBillingBatch",
         endpoint: "extract",
         apiKeyId: 123,
-        subscriptionId: "sub-1",
       },
       featureId: "CREDITS",
     });
