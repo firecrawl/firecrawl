@@ -47,7 +47,7 @@ import {
   addScrapeJob,
   addScrapeJobs,
 } from "../queue-jobs";
-import { parseHostname } from "../../lib/url-utils";
+import { getKickoffSitemapUrls } from "./sitemap-kickoff";
 import { getJobPriority } from "../../lib/job-priority";
 import { Document, scrapeOptions, TeamFlags } from "../../controllers/v2/types";
 import { hasFormatOfType } from "../../lib/format-utils";
@@ -66,7 +66,6 @@ import {
   calculateCreditsToBeBilled,
   calculateThreatScanCredits,
 } from "../../lib/scrape-billing";
-import { getCrawlScope } from "../../lib/crawl-scope";
 import { billTeam } from "../billing/credit_billing";
 import { getBillingQueue } from "../queue-service";
 import type { Logger } from "winston";
@@ -529,7 +528,27 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
           normalizeUrlOnlyHostname(doc.metadata.url) !==
           normalizeUrlOnlyHostname(doc.metadata.sourceURL);
         if (job.data.isCrawlSourceScrape && isHostnameDifferent) {
-          // TODO: re-fetch sitemap for redirect target domain
+          crawler.setBaseUrl(doc.metadata.url);
+          try {
+            sc.robots = await crawler.getRobotsTxt(
+              job.data.scrapeOptions.skipTlsVerification ?? false,
+            );
+            crawler.importRobotsTxt(sc.robots);
+          } catch (error) {
+            logger.warn("Failed to refresh robots.txt after crawl redirect", {
+              error,
+              url: doc.metadata.url,
+            });
+            crawler.importRobotsTxt("");
+          }
+
+          await enqueueKickoffSitemapJobs(
+            doc.metadata.url,
+            job,
+            sc,
+            crawler,
+            logger,
+          );
           sc.originUrl = doc.metadata.url;
           await saveCrawl(job.data.crawl_id, sc);
         }
@@ -1162,17 +1181,26 @@ async function kickoffGetIndexLinks(
   return validIndexLinks;
 }
 
+type SitemapSourceJob =
+  | ScrapeJobKickoff
+  | ScrapeJobKickoffSitemap
+  | ScrapeJobSingleUrls;
+
 async function addKickoffSitemapJob(
   sitemapUrl: string,
-  sourceJob: NuQJob<ScrapeJobKickoff | ScrapeJobKickoffSitemap>,
+  sourceJob: NuQJob<SitemapSourceJob>,
   sc: StoredCrawl,
   logger: Logger,
 ) {
+  const crawlId = sourceJob.data.crawl_id;
+  if (!crawlId) {
+    logger.warn("Skipping sitemap job without a crawl ID", { sitemapUrl });
+    return;
+  }
+
   // TEMP: max 20 sitemaps per crawl
   if (
-    (await redisEvictConnection.scard(
-      "crawl:" + sourceJob.data.crawl_id + ":sitemaps",
-    )) >= 20
+    (await redisEvictConnection.scard("crawl:" + crawlId + ":sitemaps")) >= 20
   ) {
     logger.debug("Sitemap limit reached, skipping...", { sitemap: sitemapUrl });
     return;
@@ -1180,11 +1208,11 @@ async function addKickoffSitemapJob(
 
   const sitemapLocked =
     (await redisEvictConnection.sadd(
-      "crawl:" + sourceJob.data.crawl_id + ":sitemaps",
+      "crawl:" + crawlId + ":sitemaps",
       sitemapUrl,
     )) === 1;
   await redisEvictConnection.expire(
-    "crawl:" + sourceJob.data.crawl_id + ":sitemaps",
+    "crawl:" + crawlId + ":sitemaps",
     24 * 60 * 60,
   );
   if (!sitemapLocked) {
@@ -1202,11 +1230,11 @@ async function addKickoffSitemapJob(
       sitemapUrl: sitemapUrl,
       origin: sourceJob.data.origin,
       integration: sourceJob.data.integration,
-      crawl_id: sourceJob.data.crawl_id,
+      crawl_id: crawlId,
       requestId: sourceJob.data.requestId,
       billing: sourceJob.data.billing,
       webhook: sourceJob.data.webhook,
-      v1: sourceJob.data.v1,
+      v1: sourceJob.data.v1 ?? false,
       apiKeyId: sourceJob.data.apiKeyId,
       monitoring: sourceJob.data.monitoring
         ? { ...sourceJob.data.monitoring, source: "discovered" as const }
@@ -1215,14 +1243,30 @@ async function addKickoffSitemapJob(
     jobId,
     21,
   );
-  await redisEvictConnection.sadd(
-    "crawl:" + sourceJob.data.crawl_id + ":sitemap_jobs",
-    jobId,
-  );
+  await redisEvictConnection.sadd("crawl:" + crawlId + ":sitemap_jobs", jobId);
   await redisEvictConnection.expire(
-    "crawl:" + sourceJob.data.crawl_id + ":sitemap_jobs",
+    "crawl:" + crawlId + ":sitemap_jobs",
     24 * 60 * 60,
   );
+}
+
+async function enqueueKickoffSitemapJobs(
+  url: string,
+  sourceJob: NuQJob<SitemapSourceJob>,
+  sc: StoredCrawl,
+  crawler: WebCrawler,
+  logger: Logger,
+) {
+  if (sc.crawlerOptions.ignoreSitemap) {
+    return;
+  }
+
+  for (const attempt of getKickoffSitemapUrls(
+    url,
+    crawler.robots.getSitemaps(),
+  )) {
+    await addKickoffSitemapJob(attempt, sourceJob, sc, logger);
+  }
 }
 
 async function processKickoffJob(job: NuQJob<ScrapeJobKickoff>) {
@@ -1291,40 +1335,7 @@ async function processKickoffJob(job: NuQJob<ScrapeJobKickoff>) {
       }
     }
 
-    if (!sc.crawlerOptions.ignoreSitemap) {
-      if (job.data.url.endsWith(".xml") || job.data.url.endsWith(".xml.gz")) {
-        await addKickoffSitemapJob(job.data.url, job, sc, logger);
-      } else {
-        const urlObj = new URL(job.data.url);
-
-        const attempts: string[] = crawler.robots.getSitemaps();
-
-        // sitemap.xml in the directory the crawl is scoped to
-        const urlWithSitemap = new URL(urlObj.href);
-        urlWithSitemap.pathname =
-          getCrawlScope(urlObj.href).prefix + "sitemap.xml";
-        urlWithSitemap.search = "";
-        urlWithSitemap.hash = "";
-        attempts.push(urlWithSitemap.href);
-
-        // Base sitemap.xml
-        attempts.push(new URL("/sitemap.xml", urlObj.href).href);
-
-        // Root domain sitemap.xml. Skipped when the host has no registrable domain
-        // (IP literals, localhost): assigning a null domain would stringify to the
-        // literal hostname "null" and produce https://null/sitemap.xml.
-        const rootDomain = parseHostname(urlObj.hostname).domain;
-        if (rootDomain && rootDomain !== urlObj.hostname) {
-          const urlRootSitemap = new URL("/sitemap.xml", urlObj.href);
-          urlRootSitemap.hostname = rootDomain;
-          attempts.push(urlRootSitemap.href);
-        }
-
-        for (const attempt of new Set(attempts)) {
-          await addKickoffSitemapJob(attempt, job, sc, logger);
-        }
-      }
-    }
+    await enqueueKickoffSitemapJobs(job.data.url, job, sc, crawler, logger);
 
     let indexLinks = await kickoffGetIndexLinks(sc, crawler, job.data.url);
 
