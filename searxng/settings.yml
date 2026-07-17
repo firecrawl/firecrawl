@@ -12,3 +12,14 @@ server:
   secret_key: "searxng"
   bind_address: "0.0.0.0"
   port: 8080
+
+# Engine overrides (merged with use_default_settings). The Docker image ships
+# with a fragile default general set (brave, duckduckgo, google cse, startpage)
+# where most engines rate-limit a typical self-hosted IP. Enable bing and
+# yandex -- both verified reliable without API keys -- so the general category
+# has real redundancy instead of depending on startpage alone.
+engines:
+  - name: bing
+    disabled: false
+  - name: yandex
+    disabled: false
