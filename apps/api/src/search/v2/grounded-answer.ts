@@ -8,8 +8,8 @@ import {
 import { Logger } from "winston";
 
 // Synthesis LLM = the same model this pi chat uses: GLM-5.2 via the ZAI Coding
-// Plan endpoint (OpenAI-compat). GLM-5.2 is a reasoning model; we read
-// `content`, not `reasoning_content`.
+// Plan endpoint (OpenAI-compat). thinking:{type:"disabled"} + temperature:0
+// mirror the pi fetch-no-thinking extension (direct verdicts, no reasoning).
 const ZAI_CHAT_URL = "https://api.z.ai/api/coding/paas/v4/chat/completions";
 const ZAI_MODEL = "glm-5.2";
 const HHEM_VERIFY_URL =
@@ -17,9 +17,21 @@ const HHEM_VERIFY_URL =
 
 const SYNTH_TIMEOUT_MS = 60_000;
 const VERIFY_TIMEOUT_MS = 90_000;
+const SUFFICIENCY_TIMEOUT_MS = 30_000;
 const MAX_CONTEXT_RESULTS = 3;
 const MAX_CONTEXT_CHARS = 6_000;
 const SYNTH_MAX_TOKENS = 2048;
+
+// Policy thresholds. The HHEM service sets grounded = faithfulness >= 0.7; below
+// REGEN_FLOOR the answer is too weak to salvage, so abstain without regenerating.
+const REGEN_FLOOR = 0.3;
+const ABSTAIN_TEXT =
+  "I am not confident in the accuracy of this information based on the retrieved context.";
+
+const SYNTHESIS_SYSTEM =
+  "Answer the question using only the provided context. If the context does not contain the answer, say the context does not contain the answer. Keep the answer to 2-3 sentences. Cite every factual claim with [N] where N is the source number shown in the context (e.g. [1], [2]).";
+const SYNTHESIS_SYSTEM_STRICT =
+  "Your previous answer contained claims not supported by the context. Answer the question using ONLY the provided context. Ensure EVERY claim is directly supported by the context and cite it with [N]. If the context does not support an answer, say the context does not contain the answer. Keep it to 2-3 sentences.";
 
 export interface SynthesisSource {
   n: number;
@@ -44,8 +56,8 @@ export function pickSynthesisSources(
     }));
 }
 
-// Parse [N] citation markers from the synthesized answer; keep only N in the
-// valid source range so the model cannot cite a non-existent source.
+// Parse [N] citation markers from the synthesized answer (handles [1] and
+// grouped [1, 2, 3]); keep only N in the valid source range.
 export function extractCitations(text: string, maxN: number): number[] {
   const ns = new Set<number>();
   for (const m of text.matchAll(/\[([\d,\s]+)\]/g)) {
@@ -57,13 +69,24 @@ export function extractCitations(text: string, maxN: number): number[] {
   return [...ns].sort((a, b) => a - b);
 }
 
+// Post-generation policy on HHEM faithfulness. `grounded` already encodes the
+// accept threshold (>=0.7); below the floor there is nothing to salvage.
+export function decidePolicy(
+  faithfulness: number,
+  grounded: boolean,
+  regenFloor: number,
+): "accept" | "regen" | "abstain" {
+  if (grounded) return "accept";
+  if (faithfulness < regenFloor) return "abstain";
+  return "regen";
+}
+
 export function buildSnippets(results: WebSearchResult[]): string[] {
   return results.map(r =>
     `${r.title}${r.description ? ` — ${r.description}` : ""}`,
   );
 }
 
-const SUFFICIENCY_TIMEOUT_MS = 30_000;
 const SUFFICIENCY_SYSTEM =
   "You are a strict retrieval evaluator. Given a query and search-result snippets, decide if the snippets CLEARLY contain enough information to answer the query. Answer with ONLY 'YES' or 'NO'. When in doubt, answer 'YES' — say 'NO' only if the snippets plainly cannot answer.";
 
@@ -113,9 +136,8 @@ export async function checkSufficiency(
     const content: string =
       response.data?.choices?.[0]?.message?.content ?? "";
     const upper = content.trim().toUpperCase();
-    // Fail-open: refuse only on an explicit NO. An empty/garbage response (e.g.
-    // reasoning ate the budget) must NOT false-refuse a good query -- the HHEM
-    // grounding gate downstream catches genuinely weak retrieval.
+    // Fail-open: refuse only on an explicit NO. An empty/odd response must not
+    // false-refuse a good query -- the HHEM grounding gate backstops it.
     const explicitNo = upper.startsWith("N");
     if (!upper.startsWith("Y") && !explicitNo) {
       logger.warn("Sufficiency gate returned ambiguous verdict; proceeding", {
@@ -140,12 +162,12 @@ export async function checkSufficiency(
 export function buildSynthesisMessages(
   query: string,
   contexts: string[],
+  strict = false,
 ): Array<{ role: "system" | "user"; content: string }> {
   return [
     {
       role: "system",
-      content:
-        "Answer the question using only the provided context. If the context does not contain the answer, say the context does not contain the answer. Keep the answer to 2-3 sentences. Cite every factual claim with [N] where N is the source number shown in the context (e.g. [1], [2]).",
+      content: strict ? SYNTHESIS_SYSTEM_STRICT : SYNTHESIS_SYSTEM,
     },
     {
       role: "user",
@@ -159,6 +181,7 @@ export function buildSynthesisMessages(
 async function synthesizeAnswer(
   query: string,
   contexts: string[],
+  strict = false,
 ): Promise<string | null> {
   const controller = new AbortController();
   const handle = setTimeout(() => controller.abort(), SYNTH_TIMEOUT_MS);
@@ -167,7 +190,7 @@ async function synthesizeAnswer(
       ZAI_CHAT_URL,
       {
         model: ZAI_MODEL,
-        messages: buildSynthesisMessages(query, contexts),
+        messages: buildSynthesisMessages(query, contexts, strict),
         max_tokens: SYNTH_MAX_TOKENS,
         temperature: 0,
         thinking: { type: "disabled" },
@@ -192,7 +215,7 @@ async function synthesizeAnswer(
 async function verifyGrounding(
   answer: string,
   contexts: string[],
-): Promise<{ faithfulness: number; grounded: boolean } | null> {
+): Promise<{ faithfulness: number; grounded: boolean }> {
   const controller = new AbortController();
   const handle = setTimeout(() => controller.abort(), VERIFY_TIMEOUT_MS);
   try {
@@ -214,9 +237,27 @@ async function verifyGrounding(
   }
 }
 
-// Synthesize one grounded answer to the query from the top scraped pages, then
-// HHEM-verify it. Best-effort: synthesis failure => no answer; verify failure
-// => answer returned with grounded=false. No-op without ZAI_API_KEY or markdown.
+async function tryVerify(
+  answer: string,
+  contexts: string[],
+  query: string,
+  logger: Logger,
+): Promise<{ faithfulness: number; grounded: boolean } | null> {
+  try {
+    return await verifyGrounding(answer, contexts);
+  } catch (error) {
+    logger.warn("HHEM verify failed; treating as unverified", {
+      query,
+      error: (error as Error)?.message,
+    });
+    return null;
+  }
+}
+
+// Synthesize one grounded answer, HHEM-verify it, and apply the accept /
+// regenerate / abstain policy. Accept => keep the cited answer; regen => one
+// stricter retry; abstain (or below the floor) => canned text + low_confidence.
+// No-op without ZAI_API_KEY or scraped markdown.
 export async function buildGroundedAnswer(
   searchResponse: SearchV2Response,
   query: string,
@@ -233,10 +274,13 @@ export async function buildGroundedAnswer(
   );
   if (sources.length === 0) return;
   const contexts = sources.map(s => s.text);
+  const sourceList = sources.map(s => ({ n: s.n, url: s.url, title: s.title }));
 
-  let answer: string | null;
+  let first;
   try {
-    answer = await synthesizeAnswer(query, contexts);
+    const answer = await synthesizeAnswer(query, contexts, false);
+    if (!answer) return;
+    first = { answer, v: await tryVerify(answer, contexts, query, logger) };
   } catch (error) {
     logger.warn("Grounded answer synthesis failed", {
       query,
@@ -244,33 +288,62 @@ export async function buildGroundedAnswer(
     });
     return;
   }
-  if (!answer) return;
 
-  const grounded: GroundedAnswer = {
-    text: answer,
-    faithfulness: 0,
-    grounded: false,
-    sources: sources.map(s => ({ n: s.n, url: s.url, title: s.title })),
-  };
-  const cited = extractCitations(answer, sources.length);
-  logger.info("Grounded answer citations", { query, cited });
-  try {
-    const v = await verifyGrounding(answer, contexts);
-    if (v) {
-      grounded.faithfulness = v.faithfulness;
-      grounded.grounded = v.grounded;
+  let text = first.answer as string;
+  let v = first.v as {
+    faithfulness: number;
+    grounded: boolean;
+  } | null;
+  let abstain = false;
+
+  if (v) {
+    const policy = decidePolicy(v.faithfulness, v.grounded, REGEN_FLOOR);
+    if (policy === "regen") {
+      logger.info("Grounded answer not grounded; regenerating", {
+        query,
+        faithfulness: v.faithfulness,
+      });
+      try {
+        const regen = await synthesizeAnswer(query, contexts, true);
+        if (regen) {
+          const v2 = await tryVerify(regen, contexts, query, logger);
+          if (v2?.grounded) {
+            text = regen;
+            v = v2;
+          } else {
+            abstain = true;
+          }
+        } else {
+          abstain = true;
+        }
+      } catch (error) {
+        logger.warn("Grounded answer regeneration failed; abstaining", {
+          query,
+          error: (error as Error)?.message,
+        });
+        abstain = true;
+      }
+    } else if (policy === "abstain") {
+      abstain = true;
     }
-  } catch (error) {
-    logger.warn("Grounded answer verification failed (returned unverified)", {
-      query,
-      error: (error as Error)?.message,
-    });
   }
 
+  const cited = extractCitations(text, sources.length);
+  logger.info("Grounded answer citations", { query, cited });
+
+  const grounded: GroundedAnswer = {
+    text: abstain ? ABSTAIN_TEXT : text,
+    faithfulness: v?.faithfulness ?? 0,
+    grounded: abstain ? false : (v?.grounded ?? false),
+    sources: sourceList,
+    ...(abstain ? { reason: "low_confidence" as const } : {}),
+  };
   searchResponse.answer = grounded;
+  // (policy outcome logged below)
   logger.info("Grounded answer attached", {
     query,
     faithfulness: grounded.faithfulness,
     grounded: grounded.grounded,
+    abstain,
   });
 }

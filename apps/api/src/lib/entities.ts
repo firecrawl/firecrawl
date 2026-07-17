@@ -174,7 +174,7 @@ export interface GroundedAnswer {
   text: string;
   faithfulness: number;
   grounded: boolean;
-  reason?: "insufficient_context";
+  reason?: "insufficient_context" | "low_confidence";
   sources?: Array<{ n: number; url: string; title: string }>;
 }
 

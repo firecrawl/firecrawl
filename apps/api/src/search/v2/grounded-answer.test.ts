@@ -3,6 +3,7 @@ import {
   buildSynthesisMessages,
   buildSnippets,
   extractCitations,
+  decidePolicy,
 } from "./grounded-answer";
 import { WebSearchResult } from "../../lib/entities";
 
@@ -111,5 +112,20 @@ describe("buildSynthesisMessages", () => {
     const msgs = buildSynthesisMessages("q", ["ctx A", "ctx B"]);
     expect(msgs[1].content).toContain("ctx A");
     expect(msgs[1].content).toContain("ctx B");
+  });
+});
+
+describe("decidePolicy", () => {
+  it("accepts when grounded", () => {
+    expect(decidePolicy(0.71, true, 0.3)).toBe("accept");
+    expect(decidePolicy(0.4, true, 0.3)).toBe("accept");
+  });
+  it("regenerates when not grounded but above the floor", () => {
+    expect(decidePolicy(0.5, false, 0.3)).toBe("regen");
+    expect(decidePolicy(0.3, false, 0.3)).toBe("regen");
+  });
+  it("abstains immediately below the floor", () => {
+    expect(decidePolicy(0.29, false, 0.3)).toBe("abstain");
+    expect(decidePolicy(0.05, false, 0.3)).toBe("abstain");
   });
 });
