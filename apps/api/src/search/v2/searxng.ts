@@ -16,6 +16,8 @@ interface SearchOptions {
   num_results: number;
   page?: number;
   type?: SearchResultType | SearchResultType[];
+  timeout?: number;
+  maxRetries?: number;
 }
 
 // Firecrawl's source buckets map onto SearXNG's category taxonomy. SearXNG
@@ -28,6 +30,9 @@ const SOURCE_TO_SEARXNG_CATEGORY: Record<SearchResultType, string> = {
 };
 
 const RESULTS_PER_PAGE = 20;
+
+const SEARXNG_DEFAULT_TIMEOUT = 5000;
+const SEARXNG_DEFAULT_RETRIES = 1;
 
 function parseImageResolution(
   resolution: unknown,
@@ -47,12 +52,90 @@ function normalizeRequestedTypes(
   return deduped.length > 0 ? deduped : ["web"];
 }
 
+export type SearxngErrorKind =
+  | "timeout"
+  | "network"
+  | "http_server"
+  | "http_client"
+  | "parse"
+  | "unknown";
+
+export interface SearxngErrorInfo {
+  kind: SearxngErrorKind;
+  status?: number;
+  message: string;
+  retryable: boolean;
+}
+
+// Maps an axios/runtime failure onto a classified, retry-aware descriptor so
+// the caller can log distinctly and decide whether to retry. Grounded in the
+// codes axios 1.x emits: ERR_CANCELED (AbortController), ERR_NETWORK,
+// ERR_BAD_RESPONSE (5xx), ERR_BAD_REQUEST (4xx).
+export function classifySearxngError(error: unknown): SearxngErrorInfo {
+  const e = error as { code?: string; message?: string; name?: string };
+  const code = e?.code;
+  const status = (
+    error as { response?: { status?: number } }
+  )?.response?.status;
+
+  if (code === "ERR_CANCELED") {
+    return {
+      kind: "timeout",
+      message: "request aborted (timeout)",
+      retryable: true,
+    };
+  }
+  if (code === "ERR_NETWORK") {
+    return {
+      kind: "network",
+      message: e?.message ?? "network error",
+      retryable: true,
+    };
+  }
+  if (typeof status === "number") {
+    if (status >= 500) {
+      return {
+        kind: "http_server",
+        status,
+        message: `searxng returned ${status}`,
+        retryable: true,
+      };
+    }
+    if (status >= 400) {
+      // 429 is a transient rate limit — retry it; other 4xx are caller bugs.
+      return {
+        kind: "http_client",
+        status,
+        message: `searxng returned ${status}`,
+        retryable: status === 429,
+      };
+    }
+  }
+  if (e?.name === "SyntaxError" || code === "ERR_BAD_RESPONSE") {
+    return {
+      kind: "parse",
+      message: e?.message ?? "response parse error",
+      retryable: false,
+    };
+  }
+  return {
+    kind: "unknown",
+    message: e?.message ?? String(error),
+    retryable: false,
+  };
+}
+
 export async function searxng_search(
   q: string,
   options: SearchOptions,
 ): Promise<SearchV2Response> {
   const requestedResults = Math.max(options.num_results, 0);
   const startPage = options.page ?? 1;
+  const timeout = Math.max(options.timeout ?? SEARXNG_DEFAULT_TIMEOUT, 1);
+  const maxRetries = Math.max(
+    options.maxRetries ?? SEARXNG_DEFAULT_RETRIES,
+    0,
+  );
 
   if (requestedResults === 0) return {};
 
@@ -82,15 +165,27 @@ export async function searxng_search(
       format: "json",
     };
 
-    const response = await axios.get(finalUrl, {
-      headers: {
-        "Content-Type": "application/json",
-      },
-      params: params,
-    });
-
-    const data = response.data;
-    return data && Array.isArray(data.results) ? data.results : [];
+    let lastError: unknown;
+    for (let attempt = 0; attempt <= maxRetries; attempt += 1) {
+      const controller = new AbortController();
+      const timeoutHandle = setTimeout(() => controller.abort(), timeout);
+      try {
+        const response = await axios.get(finalUrl, {
+          headers: { "Content-Type": "application/json" },
+          params,
+          signal: controller.signal,
+        });
+        const data = response.data;
+        return data && Array.isArray(data.results) ? data.results : [];
+      } catch (error) {
+        lastError = error;
+        const info = classifySearxngError(error);
+        if (!info.retryable || attempt === maxRetries) break;
+      } finally {
+        clearTimeout(timeoutHandle);
+      }
+    }
+    throw lastError;
   };
 
   const webResults: WebSearchResult[] = [];
@@ -130,8 +225,20 @@ export async function searxng_search(
       Math.ceil(requestedResults / RESULTS_PER_PAGE),
     );
 
+    let pageError: SearxngErrorInfo | null = null;
+
     for (let pageOffset = 0; pageOffset < pagesToFetch; pageOffset += 1) {
-      const pageResults = await fetchPage(startPage + pageOffset);
+      let pageResults: any[];
+      try {
+        pageResults = await fetchPage(startPage + pageOffset);
+      } catch (error) {
+        pageError = classifySearxngError(error);
+        logger.warn("SearXNG page fetch failed", {
+          page: startPage + pageOffset,
+          ...pageError,
+        });
+        break;
+      }
       if (pageResults.length === 0) {
         break;
       }
@@ -142,6 +249,22 @@ export async function searxng_search(
         webResults.length + imageResults.length + newsResults.length;
       if (total >= requestedResults) {
         break;
+      }
+    }
+
+    const total =
+      webResults.length + imageResults.length + newsResults.length;
+
+    if (total === 0) {
+      // Distinguish "SearXNG errored" from "SearXNG returned nothing" so the
+      // DuckDuckGo fallback in the dispatcher is observable in logs.
+      if (pageError) {
+        logger.warn("SearXNG search failed; falling back", {
+          query: q,
+          ...pageError,
+        });
+      } else {
+        logger.info("SearXNG returned no results", { query: q });
       }
     }
 
@@ -157,7 +280,7 @@ export async function searxng_search(
     }
     return response;
   } catch (error) {
-    logger.error(`There was an error searching for content`, { error });
+    logger.error("Unexpected SearXNG failure", { query: q, error });
     return {};
   }
 }

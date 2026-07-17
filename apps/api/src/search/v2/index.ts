@@ -63,6 +63,7 @@ export async function search({
         country,
         location,
         type,
+        timeout,
       });
       const hasAny =
         (results.web?.length ?? 0) > 0 ||
