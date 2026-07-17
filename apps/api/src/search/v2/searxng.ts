@@ -32,8 +32,8 @@ const SOURCE_TO_SEARXNG_CATEGORY: Record<SearchResultType, string> = {
 
 const RESULTS_PER_PAGE = 20;
 
-const SEARXNG_DEFAULT_TIMEOUT = 5000;
-const SEARXNG_DEFAULT_RETRIES = 1;
+export const SEARXNG_DEFAULT_TIMEOUT = 5000;
+export const SEARXNG_DEFAULT_RETRIES = 1;
 
 function parseImageResolution(
   resolution: unknown,
@@ -147,6 +147,37 @@ export function classifySearxngError(error: unknown): SearxngErrorInfo {
   };
 }
 
+// Shared single-page SearXNG fetch with timeout + bounded retry. Used by both
+// the v1 (flat SearchResult[]) and v2 (bucketed) paths so the HTTP hardening
+// lives in one place. Returns the raw results array, or throws the last error.
+export async function fetchSearxngPage(
+  url: string,
+  params: Record<string, unknown>,
+  { timeout, maxRetries }: { timeout: number; maxRetries: number },
+): Promise<any[]> {
+  let lastError: unknown;
+  for (let attempt = 0; attempt <= maxRetries; attempt += 1) {
+    const controller = new AbortController();
+    const timeoutHandle = setTimeout(() => controller.abort(), timeout);
+    try {
+      const response = await axios.get(url, {
+        headers: { "Content-Type": "application/json" },
+        params,
+        signal: controller.signal,
+      });
+      const data = response.data;
+      return data && Array.isArray(data.results) ? data.results : [];
+    } catch (error) {
+      lastError = error;
+      const info = classifySearxngError(error);
+      if (!info.retryable || attempt === maxRetries) break;
+    } finally {
+      clearTimeout(timeoutHandle);
+    }
+  }
+  throw lastError;
+}
+
 export async function searxng_search(
   q: string,
   options: SearchOptions,
@@ -175,42 +206,20 @@ export async function searxng_search(
     requestedTypes.map(t => SOURCE_TO_SEARXNG_CATEGORY[t]).join(",") ||
     (config.SEARXNG_CATEGORIES ?? "");
 
-  const fetchPage = async (page: number): Promise<any[]> => {
-    const params = {
-      q: q,
-      language: options.lang,
-      // gl: options.country, //not possible with SearXNG
-      // location: options.location, //not possible with SearXNG
-      // num: options.num_results, //not possible with SearXNG
-      engines: config.SEARXNG_ENGINES ?? "",
-      categories: searxngCategories,
-      pageno: page,
-      format: "json",
-      ...(timeRange ? { time_range: timeRange } : {}),
-    };
-
-    let lastError: unknown;
-    for (let attempt = 0; attempt <= maxRetries; attempt += 1) {
-      const controller = new AbortController();
-      const timeoutHandle = setTimeout(() => controller.abort(), timeout);
-      try {
-        const response = await axios.get(finalUrl, {
-          headers: { "Content-Type": "application/json" },
-          params,
-          signal: controller.signal,
-        });
-        const data = response.data;
-        return data && Array.isArray(data.results) ? data.results : [];
-      } catch (error) {
-        lastError = error;
-        const info = classifySearxngError(error);
-        if (!info.retryable || attempt === maxRetries) break;
-      } finally {
-        clearTimeout(timeoutHandle);
-      }
-    }
-    throw lastError;
-  };
+  const fetchPage = (page: number): Promise<any[]> =>
+    fetchSearxngPage(
+      finalUrl,
+      {
+        q,
+        language: options.lang,
+        engines: config.SEARXNG_ENGINES ?? "",
+        categories: searxngCategories,
+        pageno: page,
+        format: "json",
+        ...(timeRange ? { time_range: timeRange } : {}),
+      },
+      { timeout, maxRetries },
+    );
 
   const webResults: WebSearchResult[] = [];
   const imageResults: NonNullable<SearchV2Response["images"]> = [];
