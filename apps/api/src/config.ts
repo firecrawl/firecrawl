@@ -83,6 +83,8 @@ const configSchema = z.object({
   OPENROUTER_API_KEY: z.string().optional(),
   XAI_API_KEY: z.string().optional(),
   DEEPINFRA_API_KEY: z.string().optional(),
+  ZAI_API_KEY: z.string().optional(),
+  HHEM_VERIFIER_URL: z.string().optional(),
   LLAMAPARSE_API_KEY: z.string().optional(),
   STRIPE_SECRET_KEY: z.string().optional(),
   AUTUMN_SECRET_KEY: z.string().optional(),
