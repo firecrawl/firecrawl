@@ -18,13 +18,19 @@ export function decodeHtmlBuffer(
 } {
   let text = buf.toString("utf8");
 
+  // Match `charset` only as a standalone Content-Type parameter (preceded by
+  // the start of string, whitespace, or a `;` delimiter) so a different
+  // parameter such as `x-charset=` is not mistaken for a charset declaration.
   const headerCharsetRaw = (contentType?.match(
-    /charset\s*=\s*["']?([^;"'\s]+)/i,
+    /(?:^|[;\s])charset\s*=\s*["']?([^;"'\s]+)/i,
   ) ?? [])[1];
   const headerCharset = headerCharsetRaw?.trim();
 
+  // Match `charset` only as a standalone attribute name (preceded by an
+  // attribute boundary — whitespace or a quote) so a different attribute such
+  // as `data-charset=` is not mistaken for the meta charset.
   const metaCharsetRaw = (text.match(
-    /<meta\b[^>]*charset\s*=\s*["']?([^"'\s\/>]+)/i,
+    /<meta\b[^>]*[\s"']charset\s*=\s*["']?([^"'\s\/>]+)/i,
   ) ?? [])[1];
   const metaCharset = metaCharsetRaw?.trim();
 

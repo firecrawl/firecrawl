@@ -42,4 +42,26 @@ describe("decodeHtmlBuffer", () => {
     expect(charset).toBeUndefined();
     expect(charsetSource).toBeUndefined();
   });
+
+  it("ignores a non-charset Content-Type parameter that merely ends in 'charset'", () => {
+    // A parameter like `x-charset=` must not be treated as a charset
+    // declaration, otherwise UTF-8 content would be corrupted.
+    const buf = Buffer.from("hello 日本語", "utf8");
+    const { text, charset } = decodeHtmlBuffer(
+      buf,
+      "text/html; x-charset=Shift_JIS",
+    );
+    expect(text).toBe("hello 日本語");
+    expect(charset).toBeUndefined();
+  });
+
+  it("ignores a <meta> attribute that merely ends in 'charset'", () => {
+    // `data-charset` is a different attribute and must not drive decoding.
+    const buf = Buffer.concat([
+      Buffer.from('<meta data-charset="windows-1251">hello 日本語', "utf8"),
+    ]);
+    const { text, charset } = decodeHtmlBuffer(buf, undefined);
+    expect(text).toContain("日本語");
+    expect(charset).toBeUndefined();
+  });
 });
