@@ -283,9 +283,14 @@ export async function buildGroundedAnswer(
 
   let first;
   try {
+    const __tSynth = Date.now();
     const answer = await synthesizeAnswer(query, sources, false);
     if (!answer) return;
-    first = { answer, v: await tryVerify(answer, contexts, query, logger) };
+    const __tVerify = Date.now();
+    const __v = await tryVerify(answer, contexts, query, logger);
+    logger.info(`ga.timing synth ${Date.now() - __tSynth}ms`);
+    logger.info(`ga.timing verify ${Date.now() - __tVerify}ms contexts_chars=${contexts.reduce((a, c) => a + c.length, 0)}`);
+    first = { answer, v: __v };
   } catch (error) {
     logger.warn("Grounded answer synthesis failed", {
       query,
@@ -362,7 +367,12 @@ export async function buildGroundedAnswer(
         items.push({ url: s.url, text: p.text });
       }
     }
-    await persistVerifiedChunks(items, grounded.faithfulness, logger);
+    const __tPC = Date.now();
+    await Promise.all([
+      persistVerifiedChunks(items, grounded.faithfulness, logger),
+      cacheAnswer(query, grounded.text, grounded.faithfulness, sourceList, logger),
+    ]);
+    logger.info(`ga.timing persist+cache ${Date.now() - __tPC}ms (parallel)`);
     await cacheAnswer(query, grounded.text, grounded.faithfulness, sourceList, logger);
   }
 }
