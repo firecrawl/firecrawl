@@ -52,6 +52,27 @@ function normalizeRequestedTypes(
   return deduped.length > 0 ? deduped : ["web"];
 }
 
+// Maps Firecrawl's Google-style `tbs` time filter (e.g. "qdr:d") onto SearXNG's
+// `time_range` param. SearXNG only supports day/week/month/year (no hour, no
+// custom ranges), so unknown/custom values map to undefined (no filter).
+const TBS_TO_SEARXNG_RANGE: Record<string, "day" | "week" | "month" | "year"> = {
+  h: "day", // SearXNG has no hour granularity; day is the closest
+  d: "day",
+  w: "week",
+  m: "month",
+  y: "year",
+};
+
+export function tbsToSearxngTimeRange(
+  tbs?: string,
+): "day" | "week" | "month" | "year" | undefined {
+  if (typeof tbs !== "string") return undefined;
+  const cleaned = tbs.trim().toLowerCase();
+  const g = cleaned.match(/qdr:([hdwmy])/)?.[1];
+  if (!g && !["h", "d", "w", "m", "y"].includes(cleaned)) return undefined;
+  return TBS_TO_SEARXNG_RANGE[g ?? cleaned];
+}
+
 export type SearxngErrorKind =
   | "timeout"
   | "network"
@@ -141,6 +162,7 @@ export async function searxng_search(
 
   const requestedTypes = normalizeRequestedTypes(options.type);
   const requestedTypeSet = new Set(requestedTypes);
+  const timeRange = tbsToSearxngTimeRange(options.tbs);
 
   const url = config.SEARXNG_ENDPOINT!;
   const cleanedUrl = url.endsWith("/") ? url.slice(0, -1) : url;
@@ -163,6 +185,7 @@ export async function searxng_search(
       categories: searxngCategories,
       pageno: page,
       format: "json",
+      ...(timeRange ? { time_range: timeRange } : {}),
     };
 
     let lastError: unknown;
