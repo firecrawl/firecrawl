@@ -169,10 +169,17 @@ export interface WebSearchResult {
 
 export type SearchResultType = "web" | "images" | "news";
 
+export interface GroundedAnswer {
+  text: string;
+  faithfulness: number;
+  grounded: boolean;
+}
+
 export interface SearchV2Response {
   web?: WebSearchResult[];
   images?: ImageSearchResult[];
   news?: NewsSearchResult[];
+  answer?: GroundedAnswer;
 }
 
 export interface ScrapeActionContent {
