@@ -2,7 +2,7 @@ import type { Logger } from "winston";
 import { search } from "./v2";
 import { rerankWebResults } from "./v2/reranker";
 import { attachRagPassages } from "./v2/rag";
-import { buildGroundedAnswer } from "./v2/grounded-answer";
+import { buildGroundedAnswer, checkSufficiency, buildSnippets } from "./v2/grounded-answer";
 import { SearchV2Response } from "../lib/entities";
 import {
   buildSearchQuery,
@@ -211,7 +211,24 @@ export async function executeSearch(
   const shouldScrape =
     scrapeOptions?.formats && scrapeOptions.formats.length > 0;
 
-  if (shouldScrape && scrapeOptions) {
+  let retrievalSufficient = true;
+  if (shouldScrape) {
+    retrievalSufficient = await checkSufficiency(
+      query,
+      buildSnippets(searchResponse.web ?? []),
+      logger,
+    );
+    if (!retrievalSufficient) {
+      searchResponse.answer = {
+        text: "The retrieved context does not contain sufficient information to answer this query.",
+        faithfulness: 0,
+        grounded: false,
+        reason: "insufficient_context",
+      };
+    }
+  }
+
+  if (shouldScrape && scrapeOptions && retrievalSufficient) {
     const itemsToScrape = getItemsToScrape(searchResponse, flags, {
       team_id: teamId,
       origin,

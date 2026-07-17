@@ -1,6 +1,7 @@
 import {
   pickSynthesisContexts,
   buildSynthesisMessages,
+  buildSnippets,
 } from "./grounded-answer";
 import { WebSearchResult } from "../../lib/entities";
 
@@ -40,6 +41,22 @@ describe("pickSynthesisContexts", () => {
   it("returns nothing when no result has markdown", () => {
     const results = [{ url: "https://a", title: "a", description: "" }];
     expect(pickSynthesisContexts(results, 5, 1000)).toEqual([]);
+  });
+});
+
+describe("buildSnippets", () => {
+  it("joins title and description", () => {
+    expect(
+      buildSnippets([
+        { url: "u", title: "Firecrawl", description: "scrapes the web" },
+      ]),
+    ).toEqual(["Firecrawl — scrapes the web"]);
+  });
+
+  it("returns title only when description is empty", () => {
+    expect(
+      buildSnippets([{ url: "u", title: "Only Title", description: "" }]),
+    ).toEqual(["Only Title"]);
   });
 });
 
