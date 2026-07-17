@@ -32,6 +32,86 @@ export function pickSynthesisContexts(
     .map(r => r.markdown!.slice(0, maxChars));
 }
 
+export function buildSnippets(results: WebSearchResult[]): string[] {
+  return results.map(r =>
+    `${r.title}${r.description ? ` — ${r.description}` : ""}`,
+  );
+}
+
+const SUFFICIENCY_TIMEOUT_MS = 30_000;
+const SUFFICIENCY_SYSTEM =
+  "You are a strict retrieval evaluator. Given a query and search-result snippets, decide if the snippets CLEARLY contain enough information to answer the query. Answer with ONLY 'YES' or 'NO'. When in doubt, answer 'YES' — say 'NO' only if the snippets plainly cannot answer.";
+
+// Pre-scrape sufficiency gate: judge from search snippets whether retrieval is
+// worth scraping at all. Strict (biases toward YES) so borderline queries fall
+// through to scrape, where the HHEM grounding gate catches real insufficiency.
+// Returns true = sufficient (proceed); false = refuse (skip the scrape tail).
+export async function checkSufficiency(
+  query: string,
+  snippets: string[],
+  logger: Logger,
+): Promise<boolean> {
+  if (!config.ZAI_API_KEY) {
+    logger.warn("Sufficiency gate skipped: ZAI_API_KEY not set");
+    return true;
+  }
+  if (snippets.length === 0) return false;
+
+  const controller = new AbortController();
+  const handle = setTimeout(() => controller.abort(), SUFFICIENCY_TIMEOUT_MS);
+  try {
+    const response = await axios.post(
+      ZAI_CHAT_URL,
+      {
+        model: ZAI_MODEL,
+        messages: [
+          { role: "system", content: SUFFICIENCY_SYSTEM },
+          {
+            role: "user",
+            content: `Query: ${query}\n\nSnippets:\n${snippets
+              .map((s, i) => `[${i + 1}] ${s}`)
+              .join("\n")}`,
+          },
+        ],
+        max_tokens: 16,
+        temperature: 0,
+        thinking: { type: "disabled" },
+      },
+      {
+        headers: {
+          Authorization: `Bearer ${config.ZAI_API_KEY}`,
+          "Content-Type": "application/json",
+        },
+        signal: controller.signal,
+      },
+    );
+    const content: string =
+      response.data?.choices?.[0]?.message?.content ?? "";
+    const upper = content.trim().toUpperCase();
+    // Fail-open: refuse only on an explicit NO. An empty/garbage response (e.g.
+    // reasoning ate the budget) must NOT false-refuse a good query -- the HHEM
+    // grounding gate downstream catches genuinely weak retrieval.
+    const explicitNo = upper.startsWith("N");
+    if (!upper.startsWith("Y") && !explicitNo) {
+      logger.warn("Sufficiency gate returned ambiguous verdict; proceeding", {
+        query,
+        raw: content,
+      });
+    }
+    const sufficient = !explicitNo;
+    logger.info("Sufficiency gate", { query, verdict: sufficient, raw: content });
+    return sufficient;
+  } catch (error) {
+    logger.warn("Sufficiency gate failed; proceeding (fail-open)", {
+      query,
+      error: (error as Error)?.message,
+    });
+    return true;
+  } finally {
+    clearTimeout(handle);
+  }
+}
+
 export function buildSynthesisMessages(
   query: string,
   contexts: string[],
@@ -65,6 +145,7 @@ async function synthesizeAnswer(
         messages: buildSynthesisMessages(query, contexts),
         max_tokens: SYNTH_MAX_TOKENS,
         temperature: 0,
+        thinking: { type: "disabled" },
       },
       {
         headers: {

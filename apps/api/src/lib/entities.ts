@@ -173,6 +173,7 @@ export interface GroundedAnswer {
   text: string;
   faithfulness: number;
   grounded: boolean;
+  reason?: "insufficient_context";
 }
 
 export interface SearchV2Response {
