@@ -62,8 +62,13 @@ export async function search({
         lang,
         country,
         location,
+        type,
       });
-      if (results.web && results.web.length > 0) return results;
+      const hasAny =
+        (results.web?.length ?? 0) > 0 ||
+        (results.images?.length ?? 0) > 0 ||
+        (results.news?.length ?? 0) > 0;
+      if (hasAny) return results;
     }
 
     logger.info("Using DuckDuckGo search");

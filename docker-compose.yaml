@@ -89,6 +89,19 @@ services:
     tmpfs:
       - /tmp/.cache:noexec,nosuid,size=1g
 
+  searxng:
+    image: searxng/searxng:latest
+    restart: unless-stopped
+    networks:
+      - backend
+    ports:
+      - "${SEARXNG_HOST_PORT:-8888}:8080"
+    environment:
+      SEARXNG_BASE_URL: ${SEARXNG_BASE_URL:-http://localhost:8888/}
+    volumes:
+      - ./searxng/settings.yml:/etc/searxng/settings.yml:ro
+      - searxng-cache:/var/cache/searxng
+
   api:
     <<: *common-service
     environment:
@@ -213,3 +226,4 @@ networks:
 volumes:
   fdb-data:
   fdb-cluster-file:
+  searxng-cache:
