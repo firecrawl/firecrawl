@@ -147,6 +147,7 @@ interface NewsSearchResult {
 export interface RagPassage {
   text: string;
   score: number;
+  source?: number;
 }
 
 export interface WebSearchResult {
@@ -174,6 +175,7 @@ export interface GroundedAnswer {
   faithfulness: number;
   grounded: boolean;
   reason?: "insufficient_context";
+  sources?: Array<{ n: number; url: string; title: string }>;
 }
 
 export interface SearchV2Response {

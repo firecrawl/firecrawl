@@ -21,15 +21,40 @@ const MAX_CONTEXT_RESULTS = 3;
 const MAX_CONTEXT_CHARS = 6_000;
 const SYNTH_MAX_TOKENS = 2048;
 
-export function pickSynthesisContexts(
+export interface SynthesisSource {
+  n: number;
+  url: string;
+  title: string;
+  text: string;
+}
+
+export function pickSynthesisSources(
   results: WebSearchResult[],
   max: number,
   maxChars: number,
-): string[] {
+): SynthesisSource[] {
   return results
     .filter(r => typeof r.markdown === "string" && r.markdown!.length > 0)
     .slice(0, max)
-    .map(r => r.markdown!.slice(0, maxChars));
+    .map((r, i) => ({
+      n: i + 1,
+      url: r.url,
+      title: r.title,
+      text: r.markdown!.slice(0, maxChars),
+    }));
+}
+
+// Parse [N] citation markers from the synthesized answer; keep only N in the
+// valid source range so the model cannot cite a non-existent source.
+export function extractCitations(text: string, maxN: number): number[] {
+  const ns = new Set<number>();
+  for (const m of text.matchAll(/\[([\d,\s]+)\]/g)) {
+    for (const part of m[1].split(",")) {
+      const n = parseInt(part.trim(), 10);
+      if (n >= 1 && n <= maxN) ns.add(n);
+    }
+  }
+  return [...ns].sort((a, b) => a - b);
 }
 
 export function buildSnippets(results: WebSearchResult[]): string[] {
@@ -120,7 +145,7 @@ export function buildSynthesisMessages(
     {
       role: "system",
       content:
-        "Answer the question using only the provided context. If the context does not contain the answer, say the context does not contain the answer. Keep the answer to 2-3 sentences.",
+        "Answer the question using only the provided context. If the context does not contain the answer, say the context does not contain the answer. Keep the answer to 2-3 sentences. Cite every factual claim with [N] where N is the source number shown in the context (e.g. [1], [2]).",
     },
     {
       role: "user",
@@ -201,12 +226,13 @@ export async function buildGroundedAnswer(
     logger.warn("Grounded answer skipped: ZAI_API_KEY not set");
     return;
   }
-  const contexts = pickSynthesisContexts(
+  const sources = pickSynthesisSources(
     searchResponse.web ?? [],
     MAX_CONTEXT_RESULTS,
     MAX_CONTEXT_CHARS,
   );
-  if (contexts.length === 0) return;
+  if (sources.length === 0) return;
+  const contexts = sources.map(s => s.text);
 
   let answer: string | null;
   try {
@@ -220,7 +246,14 @@ export async function buildGroundedAnswer(
   }
   if (!answer) return;
 
-  const grounded: GroundedAnswer = { text: answer, faithfulness: 0, grounded: false };
+  const grounded: GroundedAnswer = {
+    text: answer,
+    faithfulness: 0,
+    grounded: false,
+    sources: sources.map(s => ({ n: s.n, url: s.url, title: s.title })),
+  };
+  const cited = extractCitations(answer, sources.length);
+  logger.info("Grounded answer citations", { query, cited });
   try {
     const v = await verifyGrounding(answer, contexts);
     if (v) {
