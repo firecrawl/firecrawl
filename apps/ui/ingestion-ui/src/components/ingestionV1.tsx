@@ -155,11 +155,20 @@ export default function FirecrawlComponentV1() {
     const currentValue = Number(e.currentTarget.value) || 0;
     const value =
       e.key === "PageUp" ? currentValue + 1 : Math.max(0, currentValue - 1);
+    const nextValue = value.toString();
 
-    setFormData((prevData) => ({
-      ...prevData,
-      [e.currentTarget.name]: value.toString(),
-    }));
+    setFormData((prevData) => {
+      const newData = {
+        ...prevData,
+        [e.currentTarget.name]: nextValue,
+      };
+
+      if (e.currentTarget.name === "limit") {
+        newData.crawlSubPages = !!nextValue || !!newData.search;
+      }
+
+      return newData;
+    });
   };
 
   const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
