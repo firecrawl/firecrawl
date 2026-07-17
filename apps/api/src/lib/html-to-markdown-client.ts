@@ -72,7 +72,7 @@ export async function convertHTMLToMarkdownWithHttpService(
       `${url}/convert`,
       request,
       {
-        timeout: 60_000,
+        timeout: config.HTML_TO_MARKDOWN_TIMEOUT_MS,
         headers,
       },
     );
