@@ -176,6 +176,7 @@ export interface GroundedAnswer {
   grounded: boolean;
   reason?: "insufficient_context" | "low_confidence";
   sources?: Array<{ n: number; url: string; title: string }>;
+  cached?: boolean;
 }
 
 export interface SearchV2Response {
