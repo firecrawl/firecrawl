@@ -28,6 +28,7 @@ import {
 import * as Sentry from "@sentry/node";
 import { gunzipSync } from "node:zlib";
 import { specialtyScrapeCheck } from "../utils/specialtyHandler";
+import { decodeHtmlBuffer } from "../utils/decodeHtmlBuffer";
 import { fireEngineDelete } from "./delete";
 import { MockState } from "../../lib/mock";
 import { getInnerJson } from "@mendable/firecrawl-rs";
@@ -229,7 +230,7 @@ async function performFireEngineScrape<
           throw new UnsupportedFileError("Failed to decompress gzip content");
         }
       }
-      status.content = buffer.toString("utf8"); // TODO: handle other encodings via Content-Type tag
+      status.content = decodeHtmlBuffer(buffer, contentType).text;
     }
 
     fireEngineDelete(
