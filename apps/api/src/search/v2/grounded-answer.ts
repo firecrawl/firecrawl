@@ -17,10 +17,8 @@ const HHEM_VERIFY_URL =
   (config.HHEM_VERIFIER_URL ?? "http://127.0.0.1:8100") + "/verify";
 
 const SYNTH_TIMEOUT_MS = 60_000;
-const VERIFY_TIMEOUT_MS = 90_000;
+const VERIFY_TIMEOUT_MS = 300_000;
 const SUFFICIENCY_TIMEOUT_MS = 30_000;
-const MAX_CONTEXT_RESULTS = 3;
-const MAX_CONTEXT_CHARS = 6_000;
 const SYNTH_MAX_TOKENS = 2048;
 
 // Policy thresholds. The HHEM service sets grounded = faithfulness >= 0.7; below
@@ -41,20 +39,30 @@ export interface SynthesisSource {
   text: string;
 }
 
-export function pickSynthesisSources(
+// Gather every scraped page that yielded RAG passages as an answer source.
+// No count cap, no head-truncate: each source's text is its full set of
+// query-relevant passages (the chunks RAG already selected), so synth and
+// HHEM both read the relevant parts of the whole page, not a truncated head.
+// `n` follows the markdown-result order used by attachRagPassages so the
+// answer's [N] citations line up with each passage's `source` tag.
+export function gatherAnswerSources(
   results: WebSearchResult[],
-  max: number,
-  maxChars: number,
 ): SynthesisSource[] {
-  return results
-    .filter(r => typeof r.markdown === "string" && r.markdown!.length > 0)
-    .slice(0, max)
-    .map((r, i) => ({
-      n: i + 1,
+  const out: SynthesisSource[] = [];
+  let n = 0;
+  for (const r of results) {
+    if (typeof r.markdown !== "string" || r.markdown.length === 0) continue;
+    n += 1;
+    const passages = Array.isArray(r.passages) ? r.passages : [];
+    if (passages.length === 0) continue;
+    out.push({
+      n,
       url: r.url,
       title: r.title,
-      text: r.markdown!.slice(0, maxChars),
-    }));
+      text: passages.map(p => p.text).join("\n\n"),
+    });
+  }
+  return out;
 }
 
 // Parse [N] citation markers from the synthesized answer (handles [1] and
@@ -162,7 +170,7 @@ export async function checkSufficiency(
 
 export function buildSynthesisMessages(
   query: string,
-  contexts: string[],
+  sources: SynthesisSource[],
   strict = false,
 ): Array<{ role: "system" | "user"; content: string }> {
   return [
@@ -172,8 +180,8 @@ export function buildSynthesisMessages(
     },
     {
       role: "user",
-      content: `Context:\n${contexts
-        .map((c, i) => `[${i + 1}] ${c}`)
+      content: `Context:\n${sources
+        .map(s => `[${s.n}] ${s.text}`)
         .join("\n\n")}\n\nQuestion: ${query}`,
     },
   ];
@@ -181,7 +189,7 @@ export function buildSynthesisMessages(
 
 async function synthesizeAnswer(
   query: string,
-  contexts: string[],
+  sources: SynthesisSource[],
   strict = false,
 ): Promise<string | null> {
   const controller = new AbortController();
@@ -191,7 +199,7 @@ async function synthesizeAnswer(
       ZAI_CHAT_URL,
       {
         model: ZAI_MODEL,
-        messages: buildSynthesisMessages(query, contexts, strict),
+        messages: buildSynthesisMessages(query, sources, strict),
         max_tokens: SYNTH_MAX_TOKENS,
         temperature: 0,
         thinking: { type: "disabled" },
@@ -268,18 +276,14 @@ export async function buildGroundedAnswer(
     logger.warn("Grounded answer skipped: ZAI_API_KEY not set");
     return;
   }
-  const sources = pickSynthesisSources(
-    searchResponse.web ?? [],
-    MAX_CONTEXT_RESULTS,
-    MAX_CONTEXT_CHARS,
-  );
+  const sources = gatherAnswerSources(searchResponse.web ?? [])
   if (sources.length === 0) return;
   const contexts = sources.map(s => s.text);
   const sourceList = sources.map(s => ({ n: s.n, url: s.url, title: s.title }));
 
   let first;
   try {
-    const answer = await synthesizeAnswer(query, contexts, false);
+    const answer = await synthesizeAnswer(query, sources, false);
     if (!answer) return;
     first = { answer, v: await tryVerify(answer, contexts, query, logger) };
   } catch (error) {
@@ -305,7 +309,7 @@ export async function buildGroundedAnswer(
         faithfulness: v.faithfulness,
       });
       try {
-        const regen = await synthesizeAnswer(query, contexts, true);
+        const regen = await synthesizeAnswer(query, sources, true);
         if (regen) {
           const v2 = await tryVerify(regen, contexts, query, logger);
           if (v2?.grounded) {

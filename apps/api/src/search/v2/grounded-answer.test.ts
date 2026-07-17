@@ -1,5 +1,5 @@
 import {
-  pickSynthesisSources,
+  gatherAnswerSources,
   buildSynthesisMessages,
   buildSnippets,
   extractCitations,
@@ -9,50 +9,41 @@ import { WebSearchResult } from "../../lib/entities";
 
 function wr(
   url: string,
-  markdown: string,
-  position?: number,
+  passages: string[],
+  markdown = "md",
 ): WebSearchResult {
-  return { url, title: url, description: "", position, markdown };
+  return {
+    url,
+    title: url,
+    description: "",
+    markdown,
+    passages: passages.map(text => ({ text, score: 1, source: 0 })),
+  };
 }
 
-describe("pickSynthesisSources", () => {
-  it("keeps the top-N markdown results, numbered 1..N with identity", () => {
-    const results = [
-      wr("https://a", "alpha", 0),
-      wr("https://b", "beta", 1),
-      wr("https://c", "gamma", 2),
-    ];
-    const out = pickSynthesisSources(results, 2, 1000);
-    expect(out.map(s => ({ n: s.n, url: s.url, text: s.text }))).toEqual([
-      { n: 1, url: "https://a", text: "alpha" },
-      { n: 2, url: "https://b", text: "beta" },
+describe("gatherAnswerSources", () => {
+  it("gathers every passage-bearing result, numbered by markdown order", () => {
+    const out = gatherAnswerSources([
+      wr("https://a", ["a1", "a2"]),
+      wr("https://b", ["b1"]),
+      { url: "https://c", title: "c", description: "" },
+    ]);
+    expect(out).toEqual([
+      { n: 1, url: "https://a", title: "https://a", text: "a1\n\na2" },
+      { n: 2, url: "https://b", title: "https://b", text: "b1" },
     ]);
   });
 
-  it("skips results without markdown (n reflects position among kept)", () => {
-    const results = [
-      wr("https://a", "alpha", 0),
-      { url: "https://b", title: "b", description: "" },
-      wr("https://c", "gamma", 2),
-    ];
-    const out = pickSynthesisSources(results, 5, 1000);
-    expect(out.map(s => s.n)).toEqual([1, 2]);
-    expect(out.map(s => s.url)).toEqual(["https://a", "https://c"]);
+  it("skips results with markdown but no passages", () => {
+    const out = gatherAnswerSources([
+      wr("https://a", ["a1"]),
+      { url: "https://b", title: "b", description: "", markdown: "md" },
+    ]);
+    expect(out.map(s => s.url)).toEqual(["https://a"]);
   });
 
-  it("truncates each text to maxChars", () => {
-    const [s] = pickSynthesisSources([wr("https://a", "x".repeat(5000), 0)], 1, 100);
-    expect(s!.text.length).toBe(100);
-  });
-
-  it("returns nothing when no result has markdown", () => {
-    expect(
-      pickSynthesisSources(
-        [{ url: "https://a", title: "a", description: "" }],
-        5,
-        1000,
-      ),
-    ).toEqual([]);
+  it("returns nothing when nothing has passages", () => {
+    expect(gatherAnswerSources([{ url: "u", title: "u", description: "" }])).toEqual([]);
   });
 });
 
@@ -98,20 +89,23 @@ describe("buildSnippets", () => {
 });
 
 describe("buildSynthesisMessages", () => {
-  it("emits a system + user message carrying query and contexts", () => {
+  it("emits a system + user message carrying query and source text", () => {
     const msgs = buildSynthesisMessages("what is firecrawl", [
-      "Firecrawl converts pages to markdown.",
+      { n: 1, url: "u", title: "t", text: "Firecrawl converts pages to markdown." },
     ]);
     expect(msgs[0].role).toBe("system");
     expect(msgs[1].role).toBe("user");
     expect(msgs[1].content).toContain("what is firecrawl");
-    expect(msgs[1].content).toContain("Firecrawl converts pages to markdown.");
+    expect(msgs[1].content).toContain("[1] Firecrawl converts pages to markdown.");
   });
 
-  it("joins multiple contexts", () => {
-    const msgs = buildSynthesisMessages("q", ["ctx A", "ctx B"]);
-    expect(msgs[1].content).toContain("ctx A");
-    expect(msgs[1].content).toContain("ctx B");
+  it("labels each source by its n, not array index", () => {
+    const msgs = buildSynthesisMessages("q", [
+      { n: 3, url: "u3", title: "t3", text: "ctx C" },
+      { n: 5, url: "u5", title: "t5", text: "ctx E" },
+    ]);
+    expect(msgs[1].content).toContain("[3] ctx C");
+    expect(msgs[1].content).toContain("[5] ctx E");
   });
 });
 
