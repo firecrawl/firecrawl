@@ -32,6 +32,61 @@ export function reorderResultsByScores(
     .map(p => p.result);
 }
 
+// Score raw text documents against a query with the Qwen3 cross-encoder.
+// Returns scores aligned with the input texts (document order), or null on any
+// failure. Same model used for page rerank -- chunk selection must not use a
+// weaker method than page selection.
+export async function rerankTexts(
+  query: string,
+  texts: string[],
+  logger: Logger,
+): Promise<number[] | null> {
+  if (!config.DEEPINFRA_API_KEY || texts.length === 0) return null;
+  for (let attempt = 0; attempt <= RERANK_MAX_RETRIES; attempt += 1) {
+    const controller = new AbortController();
+    const handle = setTimeout(() => controller.abort(), RERANK_TIMEOUT_MS);
+    try {
+      const response = await axios.post(
+        DEEPINFRA_RERANK_URL,
+        { queries: [query], documents: texts, top_n: texts.length },
+        {
+          headers: {
+            Authorization: `Bearer ${config.DEEPINFRA_API_KEY}`,
+            "Content-Type": "application/json",
+          },
+          signal: controller.signal,
+        },
+      );
+      const scores = response.data?.scores;
+      if (Array.isArray(scores) && scores.length === texts.length) {
+        return scores as number[];
+      }
+      logger.warn("rerankTexts: unexpected shape", {
+        query,
+        scoreCount: Array.isArray(scores) ? scores.length : "non-array",
+      });
+      return null;
+    } catch (error) {
+      const e = error as { code?: string; response?: { status?: number } };
+      const transient =
+        e.code === "ERR_CANCELED" ||
+        e.code === "ERR_NETWORK" ||
+        (typeof e.response?.status === "number" && e.response.status >= 500);
+      if (!transient || attempt === RERANK_MAX_RETRIES) {
+        logger.warn("rerankTexts failed", {
+          query,
+          code: e.code,
+          status: e.response?.status,
+        });
+        return null;
+      }
+    } finally {
+      clearTimeout(handle);
+    }
+  }
+  return null;
+}
+
 // Always-on rerank for web results. Reranking is an ordering optimisation: on
 // any failure (no key, timeout, bad shape) the original SearXNG order is kept
 // and the failure is logged at warn -- never silently swallowed.
