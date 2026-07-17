@@ -1,5 +1,6 @@
 import type { Logger } from "winston";
 import { search } from "./v2";
+import { rerankWebResults } from "./v2/reranker";
 import { SearchV2Response } from "../lib/entities";
 import {
   buildSearchQuery,
@@ -155,6 +156,11 @@ export async function executeSearch(
       ...result,
       category: getCategoryFromUrl(result.url, categoryMap),
     }));
+
+    // Always-on rerank: score the full candidate pool against the query, then
+    // the slice below keeps the most relevant top-`limit`. Best-effort ordering
+    // -- on any reranker failure the SearXNG order is kept (see reranker.ts).
+    searchResponse.web = await rerankWebResults(query, searchResponse.web, logger);
   }
 
   if (searchResponse.news && searchResponse.news.length > 0) {
