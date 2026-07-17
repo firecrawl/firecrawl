@@ -7,8 +7,7 @@ import { Logger } from "winston";
 const EMBED_URL = "https://api.deepinfra.com/v1/openai/embeddings";
 const EMBED_MODEL = "BAAI/bge-m3";
 const CHUNK_MAX_CHARS = 2000;
-const MAX_CHUNKS_PER_RESULT = 50;
-const TOP_K_PASSAGES = 3;
+const TOP_K_PASSAGES = 5;
 const EMBED_TIMEOUT_MS = 15000;
 
 export function cosineSimilarity(a: number[], b: number[]): number {
@@ -97,7 +96,7 @@ export async function attachRagPassages(
       try {
         const chunks = chunkMarkdown(result.markdown!, {
           maxChars: CHUNK_MAX_CHARS,
-        }).slice(0, MAX_CHUNKS_PER_RESULT);
+        });
         if (chunks.length === 0) return;
         const embeddings = await embedTexts(chunks.map(c => c.text));
         result.passages = selectTopPassages(
