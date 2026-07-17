@@ -243,7 +243,13 @@ export async function crawlController(req: Request, res: Response) {
 
     try {
       sc.robots = await crawler.getRobotsTxt();
-    } catch (_) {}
+    } catch (error) {
+      logger.warn("Failed to get robots.txt for crawl, proceeding without it", {
+        error,
+        crawlId: id,
+        teamId: team_id,
+      });
+    }
 
     sc.queueBackend = await resolveNewGroupBackend(sc.team_id);
     await crawlGroup.addGroup(
