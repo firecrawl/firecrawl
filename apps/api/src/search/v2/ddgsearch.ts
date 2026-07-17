@@ -4,6 +4,22 @@ import { JSDOM } from "jsdom";
 import { SearchV2Response, WebSearchResult } from "../../lib/entities";
 import { logger } from "../../lib/logger";
 import { getSecureDispatcher } from "../../scraper/scrapeURL/engines/utils/safeFetch";
+import { parseTbsGranularity, TbsGranularity } from "./tbs";
+
+const TBS_TO_DDG_DF: Record<TbsGranularity, string> = {
+  h: "d", // DuckDuckGo exposes no hour filter; day is the closest
+  d: "d",
+  w: "w",
+  m: "m",
+  y: "y",
+};
+
+// Maps Firecrawl's Google-style tbs filter onto DuckDuckGo's `df` param.
+// Custom ranges (cdr:...) are unsupported by DDG and map to undefined.
+export function tbsToDdgDf(tbs?: string): string | undefined {
+  const g = parseTbsGranularity(tbs);
+  return g ? TBS_TO_DDG_DF[g] : undefined;
+}
 
 class DDGAntiBotError extends Error {
   constructor() {
@@ -124,8 +140,9 @@ export async function ddgSearch(
       params.set("kl", `${country.toLowerCase()}-${lang.toLowerCase()}`);
     }
 
-    if (tbs && (["d", "w", "m", "y"].includes(tbs) || tbs.includes(".."))) {
-      params.set("df", tbs);
+    const df = tbsToDdgDf(tbs);
+    if (df) {
+      params.set("df", df);
     }
 
     const results: WebSearchResult[] = [];

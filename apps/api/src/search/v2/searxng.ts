@@ -1,6 +1,11 @@
 import axios from "axios";
 import { config } from "../../config";
-import { SearchV2Response, WebSearchResult } from "../../lib/entities";
+import { parseTbsGranularity, TbsGranularity } from "./tbs";
+import {
+  SearchV2Response,
+  WebSearchResult,
+  SearchResultType,
+} from "../../lib/entities";
 import { logger } from "../../lib/logger";
 
 interface SearchOptions {
@@ -11,82 +16,304 @@ interface SearchOptions {
   location?: string;
   num_results: number;
   page?: number;
+  type?: SearchResultType | SearchResultType[];
+  timeout?: number;
+  maxRetries?: number;
+}
+
+// Firecrawl's source buckets map onto SearXNG's category taxonomy. SearXNG
+// tags every result with its own `category`, so a single comma-joined
+// `categories` request returns a mixed set we can bucket on the way back.
+const SOURCE_TO_SEARXNG_CATEGORY: Record<SearchResultType, string> = {
+  web: "general",
+  images: "images",
+  news: "news",
+};
+
+const RESULTS_PER_PAGE = 20;
+
+export const SEARXNG_DEFAULT_TIMEOUT = 5000;
+export const SEARXNG_DEFAULT_RETRIES = 1;
+
+function parseImageResolution(
+  resolution: unknown,
+): { imageWidth?: number; imageHeight?: number } {
+  if (typeof resolution !== "string") return {};
+  const match = resolution.match(/^(\d+)x(\d+)$/);
+  return match
+    ? { imageWidth: Number(match[1]), imageHeight: Number(match[2]) }
+    : {};
+}
+
+function normalizeRequestedTypes(
+  type: SearchOptions["type"],
+): SearchResultType[] {
+  const raw = type ? (Array.isArray(type) ? type : [type]) : [];
+  const deduped = Array.from(new Set(raw));
+  return deduped.length > 0 ? deduped : ["web"];
+}
+
+// Maps Firecrawl's Google-style `tbs` time filter (e.g. "qdr:d") onto SearXNG's
+// `time_range` param. SearXNG only supports day/week/month/year (no hour, no
+// custom ranges), so unknown/custom values map to undefined (no filter).
+const TBS_TO_SEARXNG_RANGE: Record<
+  TbsGranularity,
+  "day" | "week" | "month" | "year"
+> = {
+  h: "day", // SearXNG has no hour granularity; day is the closest
+  d: "day",
+  w: "week",
+  m: "month",
+  y: "year",
+};
+
+export function tbsToSearxngTimeRange(
+  tbs?: string,
+): "day" | "week" | "month" | "year" | undefined {
+  const g = parseTbsGranularity(tbs);
+  return g ? TBS_TO_SEARXNG_RANGE[g] : undefined;
+}
+
+export type SearxngErrorKind =
+  | "timeout"
+  | "network"
+  | "http_server"
+  | "http_client"
+  | "parse"
+  | "unknown";
+
+export interface SearxngErrorInfo {
+  kind: SearxngErrorKind;
+  status?: number;
+  message: string;
+  retryable: boolean;
+}
+
+// Maps an axios/runtime failure onto a classified, retry-aware descriptor so
+// the caller can log distinctly and decide whether to retry. Grounded in the
+// codes axios 1.x emits: ERR_CANCELED (AbortController), ERR_NETWORK,
+// ERR_BAD_RESPONSE (5xx), ERR_BAD_REQUEST (4xx).
+export function classifySearxngError(error: unknown): SearxngErrorInfo {
+  const e = error as { code?: string; message?: string; name?: string };
+  const code = e?.code;
+  const status = (
+    error as { response?: { status?: number } }
+  )?.response?.status;
+
+  if (code === "ERR_CANCELED") {
+    return {
+      kind: "timeout",
+      message: "request aborted (timeout)",
+      retryable: true,
+    };
+  }
+  if (code === "ERR_NETWORK") {
+    return {
+      kind: "network",
+      message: e?.message ?? "network error",
+      retryable: true,
+    };
+  }
+  if (typeof status === "number") {
+    if (status >= 500) {
+      return {
+        kind: "http_server",
+        status,
+        message: `searxng returned ${status}`,
+        retryable: true,
+      };
+    }
+    if (status >= 400) {
+      // 429 is a transient rate limit — retry it; other 4xx are caller bugs.
+      return {
+        kind: "http_client",
+        status,
+        message: `searxng returned ${status}`,
+        retryable: status === 429,
+      };
+    }
+  }
+  if (e?.name === "SyntaxError" || code === "ERR_BAD_RESPONSE") {
+    return {
+      kind: "parse",
+      message: e?.message ?? "response parse error",
+      retryable: false,
+    };
+  }
+  return {
+    kind: "unknown",
+    message: e?.message ?? String(error),
+    retryable: false,
+  };
+}
+
+// Shared single-page SearXNG fetch with timeout + bounded retry. Used by both
+// the v1 (flat SearchResult[]) and v2 (bucketed) paths so the HTTP hardening
+// lives in one place. Returns the raw results array, or throws the last error.
+export async function fetchSearxngPage(
+  url: string,
+  params: Record<string, unknown>,
+  { timeout, maxRetries }: { timeout: number; maxRetries: number },
+): Promise<any[]> {
+  let lastError: unknown;
+  for (let attempt = 0; attempt <= maxRetries; attempt += 1) {
+    const controller = new AbortController();
+    const timeoutHandle = setTimeout(() => controller.abort(), timeout);
+    try {
+      const response = await axios.get(url, {
+        headers: { "Content-Type": "application/json" },
+        params,
+        signal: controller.signal,
+      });
+      const data = response.data;
+      return data && Array.isArray(data.results) ? data.results : [];
+    } catch (error) {
+      lastError = error;
+      const info = classifySearxngError(error);
+      if (!info.retryable || attempt === maxRetries) break;
+    } finally {
+      clearTimeout(timeoutHandle);
+    }
+  }
+  throw lastError;
 }
 
 export async function searxng_search(
   q: string,
   options: SearchOptions,
 ): Promise<SearchV2Response> {
-  const resultsPerPage = 20;
   const requestedResults = Math.max(options.num_results, 0);
   const startPage = options.page ?? 1;
+  const timeout = Math.max(options.timeout ?? SEARXNG_DEFAULT_TIMEOUT, 1);
+  const maxRetries = Math.max(
+    options.maxRetries ?? SEARXNG_DEFAULT_RETRIES,
+    0,
+  );
+
+  if (requestedResults === 0) return {};
+
+  const requestedTypes = normalizeRequestedTypes(options.type);
+  const requestedTypeSet = new Set(requestedTypes);
+  const timeRange = tbsToSearxngTimeRange(options.tbs);
 
   const url = config.SEARXNG_ENDPOINT!;
   const cleanedUrl = url.endsWith("/") ? url.slice(0, -1) : url;
   const finalUrl = cleanedUrl + "/search";
 
-  const fetchPage = async (page: number): Promise<WebSearchResult[]> => {
-    const params = {
-      q: q,
-      language: options.lang,
-      // gl: options.country, //not possible with SearXNG
-      // location: options.location, //not possible with SearXNG
-      // num: options.num_results, //not possible with SearXNG
-      engines: config.SEARXNG_ENGINES ?? "",
-      categories: config.SEARXNG_CATEGORIES ?? "",
-      pageno: page,
-      format: "json",
-    };
+  // Per-request source types drive the SearXNG category filter. Fall back to
+  // the global SEARXNG_CATEGORIES only when no type was supplied.
+  const searxngCategories =
+    requestedTypes.map(t => SOURCE_TO_SEARXNG_CATEGORY[t]).join(",") ||
+    (config.SEARXNG_CATEGORIES ?? "");
 
-    const response = await axios.get(finalUrl, {
-      headers: {
-        "Content-Type": "application/json",
+  const fetchPage = (page: number): Promise<any[]> =>
+    fetchSearxngPage(
+      finalUrl,
+      {
+        q,
+        language: options.lang,
+        engines: config.SEARXNG_ENGINES ?? "",
+        categories: searxngCategories,
+        pageno: page,
+        format: "json",
+        ...(timeRange ? { time_range: timeRange } : {}),
       },
-      params: params,
-    });
+      { timeout, maxRetries },
+    );
 
-    const data = response.data;
+  const webResults: WebSearchResult[] = [];
+  const imageResults: NonNullable<SearchV2Response["images"]> = [];
+  const newsResults: NonNullable<SearchV2Response["news"]> = [];
 
-    if (data && Array.isArray(data.results)) {
-      return data.results.map((a: any) => ({
-        url: a.url,
-        title: a.title,
-        description: a.content,
-      }));
+  const bucket = (r: any) => {
+    const category: string = typeof r.category === "string" ? r.category : "";
+
+    if (category === "general" && requestedTypeSet.has("web")) {
+      webResults.push({
+        url: r.url,
+        title: r.title,
+        description: r.content,
+      });
+    } else if (category === "images" && requestedTypeSet.has("images")) {
+      imageResults.push({
+        title: r.title,
+        imageUrl: r.img_src,
+        url: r.url,
+        ...parseImageResolution(r.resolution),
+      });
+    } else if (category === "news" && requestedTypeSet.has("news")) {
+      newsResults.push({
+        title: r.title,
+        url: r.url,
+        snippet: r.content,
+        date: r.publishedDate || r.pubdate || undefined,
+        imageUrl: r.thumbnail || undefined,
+      });
     }
-
-    return [];
   };
 
   try {
-    if (requestedResults === 0) {
-      return {};
-    }
-
     const pagesToFetch = Math.max(
       1,
-      Math.ceil(requestedResults / resultsPerPage),
+      Math.ceil(requestedResults / RESULTS_PER_PAGE),
     );
-    let webResults: WebSearchResult[] = [];
+
+    let pageError: SearxngErrorInfo | null = null;
 
     for (let pageOffset = 0; pageOffset < pagesToFetch; pageOffset += 1) {
-      const pageResults = await fetchPage(startPage + pageOffset);
+      let pageResults: any[];
+      try {
+        pageResults = await fetchPage(startPage + pageOffset);
+      } catch (error) {
+        pageError = classifySearxngError(error);
+        logger.warn("SearXNG page fetch failed", {
+          page: startPage + pageOffset,
+          ...pageError,
+        });
+        break;
+      }
       if (pageResults.length === 0) {
         break;
       }
-      webResults = webResults.concat(pageResults);
-      if (webResults.length >= requestedResults) {
+      for (const r of pageResults) {
+        bucket(r);
+      }
+      const total =
+        webResults.length + imageResults.length + newsResults.length;
+      if (total >= requestedResults) {
         break;
       }
     }
 
-    return webResults.length > 0
-      ? {
-          web: webResults.slice(0, requestedResults),
-        }
-      : {};
+    const total =
+      webResults.length + imageResults.length + newsResults.length;
+
+    if (total === 0) {
+      // Distinguish "SearXNG errored" from "SearXNG returned nothing" so the
+      // DuckDuckGo fallback in the dispatcher is observable in logs.
+      if (pageError) {
+        logger.warn("SearXNG search failed; falling back", {
+          query: q,
+          ...pageError,
+        });
+      } else {
+        logger.info("SearXNG returned no results", { query: q });
+      }
+    }
+
+    const response: SearchV2Response = {};
+    if (webResults.length > 0) {
+      response.web = webResults.slice(0, requestedResults);
+    }
+    if (imageResults.length > 0) {
+      response.images = imageResults.slice(0, requestedResults);
+    }
+    if (newsResults.length > 0) {
+      response.news = newsResults.slice(0, requestedResults);
+    }
+    return response;
   } catch (error) {
-    logger.error(`There was an error searching for content`, { error });
+    logger.error("Unexpected SearXNG failure", { query: q, error });
     return {};
   }
 }

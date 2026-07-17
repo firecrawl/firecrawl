@@ -77,9 +77,9 @@ services:
     networks:
       - backend
     # Resource limits for Docker Compose (not Swarm)
-    cpus: 2.0
-    mem_limit: 4G
-    memswap_limit: 4G
+    cpus: 4.0
+    mem_limit: 8G
+    memswap_limit: 8G
     logging:
       driver: "json-file"
       options:
@@ -88,6 +88,19 @@ services:
         compress: "true"
     tmpfs:
       - /tmp/.cache:noexec,nosuid,size=1g
+
+  searxng:
+    image: searxng/searxng:latest
+    restart: unless-stopped
+    networks:
+      - backend
+    ports:
+      - "${SEARXNG_HOST_PORT:-8888}:8080"
+    environment:
+      SEARXNG_BASE_URL: ${SEARXNG_BASE_URL:-http://localhost:8888/}
+    volumes:
+      - ./searxng/settings.yml:/etc/searxng/settings.yml:ro
+      - searxng-cache:/var/cache/searxng
 
   api:
     <<: *common-service
@@ -114,9 +127,9 @@ services:
     command: node dist/src/harness.js --start-docker
     # Resource limits for Docker Compose (not Swarm)
     # Increase if you have more CPU cores/RAM available
-    cpus: 4.0
-    mem_limit: 8G
-    memswap_limit: 8G
+    cpus: 8.0
+    mem_limit: 16G
+    memswap_limit: 16G
 
   redis:
     # NOTE: If you want to use Valkey (open source) instead of Redis (source available),
@@ -213,3 +226,4 @@ networks:
 volumes:
   fdb-data:
   fdb-cluster-file:
+  searxng-cache:

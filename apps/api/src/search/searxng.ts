@@ -1,7 +1,11 @@
-import axios from "axios";
 import { config } from "../config";
 import { SearchResult } from "../../src/lib/entities";
 import { logger } from "../lib/logger";
+import {
+  fetchSearxngPage,
+  SEARXNG_DEFAULT_TIMEOUT,
+  SEARXNG_DEFAULT_RETRIES,
+} from "./v2/searxng";
 
 interface SearchOptions {
   tbs?: string;
@@ -13,6 +17,10 @@ interface SearchOptions {
   page?: number;
 }
 
+// Thin v1 adapter: the HTTP fetch + timeout/retry/error classification is
+// shared with v2 via fetchSearxngPage. This path keeps the legacy flat
+// SearchResult[] contract and the SEARXNG_CATEGORIES knob for the v0/v1
+// /search routes.
 export async function searxng_search(
   q: string,
   options: SearchOptions,
@@ -26,36 +34,23 @@ export async function searxng_search(
   const finalUrl = cleanedUrl + "/search";
 
   const fetchPage = async (page: number): Promise<SearchResult[]> => {
-    const params = {
-      q: q,
-      language: options.lang,
-      // gl: options.country, //not possible with SearXNG
-      // location: options.location, //not possible with SearXNG
-      // num: options.num_results, //not possible with SearXNG
-      engines: config.SEARXNG_ENGINES ?? "",
-      categories: config.SEARXNG_CATEGORIES ?? "",
-      pageno: page,
-      format: "json",
-    };
-
-    const response = await axios.get(finalUrl, {
-      headers: {
-        "Content-Type": "application/json",
+    const raw = await fetchSearxngPage(
+      finalUrl,
+      {
+        q,
+        language: options.lang,
+        engines: config.SEARXNG_ENGINES ?? "",
+        categories: config.SEARXNG_CATEGORIES ?? "",
+        pageno: page,
+        format: "json",
       },
-      params: params,
-    });
-
-    const data = response.data;
-
-    if (data && Array.isArray(data.results)) {
-      return data.results.map((a: any) => ({
-        url: a.url,
-        title: a.title,
-        description: a.content,
-      }));
-    }
-
-    return [];
+      { timeout: SEARXNG_DEFAULT_TIMEOUT, maxRetries: SEARXNG_DEFAULT_RETRIES },
+    );
+    return raw.map((a: any) => ({
+      url: a.url,
+      title: a.title,
+      description: a.content,
+    }));
   };
 
   try {

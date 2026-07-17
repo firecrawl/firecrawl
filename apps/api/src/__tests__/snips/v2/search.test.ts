@@ -310,4 +310,96 @@ describeIf(TEST_PRODUCTION || HAS_SEARCH || HAS_PROXY)("Search tests", () => {
     },
     60000,
   );
+
+  // SEARXNG source-type (web/images/news) mapping tests
+  concurrentIf(!!config.SEARXNG_ENDPOINT)(
+    "searxng returns images bucket for images source",
+    async () => {
+      const res = await search(
+        {
+          query: "firecrawl logo",
+          sources: ["images"],
+          limit: 5,
+        },
+        identity,
+      );
+      expect(res.images).toBeDefined();
+      expect(res.images?.length).toBeGreaterThan(0);
+      for (const result of res.images ?? []) {
+        expect(result.imageUrl).toBeDefined();
+      }
+    },
+    60000,
+  );
+
+  concurrentIf(!!config.SEARXNG_ENDPOINT)(
+    "searxng returns news bucket for news source",
+    async () => {
+      const res = await search(
+        {
+          query: "openai",
+          sources: ["news"],
+          limit: 5,
+        },
+        identity,
+      );
+      expect(res.news).toBeDefined();
+      expect(res.news?.length).toBeGreaterThan(0);
+      for (const result of res.news ?? []) {
+        expect(result.url).toBeDefined();
+      }
+    },
+    60000,
+  );
+
+  concurrentIf(!!config.SEARXNG_ENDPOINT)(
+    "searxng returns web and news for mixed sources",
+    async () => {
+      const res = await search(
+        {
+          query: "openai",
+          sources: ["web", "news"],
+          limit: 5,
+        },
+        identity,
+      );
+      expect(res.web).toBeDefined();
+      expect(res.web?.length).toBeGreaterThan(0);
+      expect(res.news).toBeDefined();
+      expect(res.news?.length).toBeGreaterThan(0);
+    },
+    60000,
+  );
+
+  concurrentIf(!!config.SEARXNG_ENDPOINT)(
+    "searxng does not leak images into web-only source",
+    async () => {
+      const res = await search(
+        {
+          query: "firecrawl",
+          sources: ["web"],
+          limit: 5,
+        },
+        identity,
+      );
+      expect(res.web).toBeDefined();
+      expect(res.images).toBeUndefined();
+    },
+    60000,
+  );
+
+  concurrentIf(!!config.SEARXNG_ENDPOINT)(
+    "searxng rejects invalid source type",
+    async () => {
+      const res = await searchWithFailure(
+        {
+          query: "firecrawl",
+          sources: ["videos"] as any,
+        },
+        identity,
+      );
+      expect(res.success).toBe(false);
+    },
+    60000,
+  );
 });
