@@ -105,7 +105,21 @@ export async function executeSearch(
     billing,
   } = context;
 
-  const num_results_buffer = Math.floor(limit * 2);
+  // Rerank needs a real candidate pool to be meaningful -- floor at 30 so even
+  // small limit requests rerank a broad set, then slice takes the top_k.
+  const RERANK_MIN_CANDIDATES = 30;
+  const num_results_buffer = Math.max(Math.floor(limit * 2), RERANK_MIN_CANDIDATES);
+
+  // Lightweight per-stage observability: ms since the previous mark + a count.
+  let __last = Date.now();
+  const __mark = (stage: string, extra: Record<string, unknown> = {}) => {
+    const now = Date.now();
+    const ms = now - __last;
+    __last = now;
+    logger.info(
+      `pipeline.stage ${stage} ${ms}ms ${JSON.stringify(extra)}`,
+    );
+  };
 
   logger.info("Searching for results");
 
@@ -132,6 +146,7 @@ export async function executeSearch(
     type: searchTypes,
     enterprise: options.enterprise,
   })) as SearchV2Response;
+  __mark("search", { candidates: searchResponse.web?.length ?? 0 });
 
   // Threat protection: remove blocked results entirely — before
   // slicing/counting, before scraping, and before returning. Checks are
@@ -184,6 +199,7 @@ export async function executeSearch(
     // -- on any reranker failure the SearXNG order is kept (see reranker.ts).
     searchResponse.web = await rerankWebResults(query, searchResponse.web, logger);
   }
+  __mark("rerank", { web: searchResponse.web?.length ?? 0 });
 
   if (searchResponse.news && searchResponse.news.length > 0) {
     searchResponse.news = searchResponse.news.map(result => ({
@@ -202,6 +218,7 @@ export async function executeSearch(
     }
     totalResultsCount += searchResponse.web.length;
   }
+  __mark("slice", { web: searchResponse.web?.length ?? 0 });
 
   if (searchResponse.images && searchResponse.images.length > 0) {
     if (searchResponse.images.length > limit) {
@@ -233,6 +250,7 @@ export async function executeSearch(
 
   let retrievalSufficient = true;
   if (shouldScrape) {
+  __mark("pre_sufficiency");
     retrievalSufficient = await checkSufficiency(
       query,
       buildSnippets(searchResponse.web ?? []),
@@ -283,14 +301,17 @@ export async function executeSearch(
         allDocsWithCostTracking,
       );
       scrapeCredits = calculateScrapeCredits(allDocsWithCostTracking);
+      __mark("scrape", { scraped: itemsToScrape.length });
 
       // RAG: chunk each scraped page, embed via DeepInfra bge-m3, and attach the
       // top-k passages most relevant to the query. Best-effort (see rag.ts).
       await attachRagPassages(searchResponse, query, logger);
+      __mark("rag");
 
       // Grounded answer: synthesize one answer to the query from the scraped
       // pages via GLM-5.2 (ZAI Coding Plan), then HHEM-verify it. Best-effort.
       await buildGroundedAnswer(searchResponse, query, logger);
+      __mark("grounded_answer");
     }
   }
 
