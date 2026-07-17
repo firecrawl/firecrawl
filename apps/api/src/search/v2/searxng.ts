@@ -1,5 +1,6 @@
 import axios from "axios";
 import { config } from "../../config";
+import { parseTbsGranularity, TbsGranularity } from "./tbs";
 import {
   SearchV2Response,
   WebSearchResult,
@@ -55,7 +56,10 @@ function normalizeRequestedTypes(
 // Maps Firecrawl's Google-style `tbs` time filter (e.g. "qdr:d") onto SearXNG's
 // `time_range` param. SearXNG only supports day/week/month/year (no hour, no
 // custom ranges), so unknown/custom values map to undefined (no filter).
-const TBS_TO_SEARXNG_RANGE: Record<string, "day" | "week" | "month" | "year"> = {
+const TBS_TO_SEARXNG_RANGE: Record<
+  TbsGranularity,
+  "day" | "week" | "month" | "year"
+> = {
   h: "day", // SearXNG has no hour granularity; day is the closest
   d: "day",
   w: "week",
@@ -66,11 +70,8 @@ const TBS_TO_SEARXNG_RANGE: Record<string, "day" | "week" | "month" | "year"> = 
 export function tbsToSearxngTimeRange(
   tbs?: string,
 ): "day" | "week" | "month" | "year" | undefined {
-  if (typeof tbs !== "string") return undefined;
-  const cleaned = tbs.trim().toLowerCase();
-  const g = cleaned.match(/qdr:([hdwmy])/)?.[1];
-  if (!g && !["h", "d", "w", "m", "y"].includes(cleaned)) return undefined;
-  return TBS_TO_SEARXNG_RANGE[g ?? cleaned];
+  const g = parseTbsGranularity(tbs);
+  return g ? TBS_TO_SEARXNG_RANGE[g] : undefined;
 }
 
 export type SearxngErrorKind =
