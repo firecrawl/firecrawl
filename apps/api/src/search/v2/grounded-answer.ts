@@ -6,6 +6,7 @@ import {
   WebSearchResult,
 } from "../../lib/entities";
 import { Logger } from "winston";
+import { persistVerifiedChunks } from "./persistence";
 
 // Synthesis LLM = the same model this pi chat uses: GLM-5.2 via the ZAI Coding
 // Plan endpoint (OpenAI-compat). thinking:{type:"disabled"} + temperature:0
@@ -339,11 +340,24 @@ export async function buildGroundedAnswer(
     ...(abstain ? { reason: "low_confidence" as const } : {}),
   };
   searchResponse.answer = grounded;
-  // (policy outcome logged below)
   logger.info("Grounded answer attached", {
     query,
     faithfulness: grounded.faithfulness,
     grounded: grounded.grounded,
     abstain,
   });
+
+  // Persist the verified source passages to pgvector for later semantic
+  // retrieval (cache). Only on accept -- abstained/insufficient answers are
+  // never stored. Best-effort (see persistence.ts).
+  if (grounded.grounded) {
+    const items: Array<{ url: string; text: string }> = [];
+    for (const s of sources) {
+      const r = (searchResponse.web ?? []).find(r => r.url === s.url);
+      for (const p of r?.passages ?? []) {
+        items.push({ url: s.url, text: p.text });
+      }
+    }
+    await persistVerifiedChunks(items, grounded.faithfulness, logger);
+  }
 }
