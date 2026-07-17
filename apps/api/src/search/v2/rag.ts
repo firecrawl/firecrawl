@@ -92,7 +92,8 @@ export async function attachRagPassages(
   }
 
   await Promise.all(
-    results.map(async result => {
+    results.map(async (result, idx) => {
+      const source = idx + 1;
       try {
         const chunks = chunkMarkdown(result.markdown!, {
           maxChars: CHUNK_MAX_CHARS,
@@ -104,7 +105,7 @@ export async function attachRagPassages(
           embeddings,
           chunks,
           TOP_K_PASSAGES,
-        );
+        ).map(p => ({ ...p, source }));
       } catch (error) {
         logger.warn("RAG passages failed for result; skipping", {
           url: result.url,
