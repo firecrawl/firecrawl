@@ -3,11 +3,12 @@
 ARG PG_MAJOR=17
 FROM postgres:${PG_MAJOR}
 
-# Install pg_cron for the specified Postgres major version
+# Install pg_cron and pgvector for the specified Postgres major version
 RUN set -eux; \
     apt-get update; \
     apt-get install -y --no-install-recommends \
-        postgresql-${PG_MAJOR}-cron; \
+        postgresql-${PG_MAJOR}-cron \
+        postgresql-${PG_MAJOR}-pgvector; \
     rm -rf /var/lib/apt/lists/*
 
 # Ensure pg_cron is preloaded on first startup by modifying the initdb template

@@ -40,7 +40,7 @@ export function selectTopPassages(
     .slice(0, k);
 }
 
-async function embedTexts(texts: string[]): Promise<number[][]> {
+export async function embedTexts(texts: string[]): Promise<number[][]> {
   const controller = new AbortController();
   const handle = setTimeout(() => controller.abort(), EMBED_TIMEOUT_MS);
   try {
