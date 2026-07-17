@@ -16,6 +16,7 @@ import {
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
 import { ChevronDown, ChevronLeft, ChevronRight } from "lucide-react";
+import { handleNumberInputPageKey } from "@/lib/utils";
 
 //! Hardcoded values (not recommended for production)
 //! Highly recommended to move all Firecrawl API calls to the backend (e.g. Next.js API route)
@@ -126,17 +127,12 @@ export default function FirecrawlComponent() {
   };
 
   const handleNumberKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
-    if (e.key !== "PageUp" && e.key !== "PageDown") return;
-
-    e.preventDefault();
-    const currentValue = Number(e.currentTarget.value) || 0;
-    const value =
-      e.key === "PageUp" ? currentValue + 1 : Math.max(0, currentValue - 1);
-
-    setFormData((prevData) => ({
-      ...prevData,
-      [e.currentTarget.name]: value.toString(),
-    }));
+    handleNumberInputPageKey(e, (name, value) => {
+      setFormData((prevData) => ({
+        ...prevData,
+        [name]: value,
+      }));
+    });
   };
 
   const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
