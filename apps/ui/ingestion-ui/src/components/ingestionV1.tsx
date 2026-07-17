@@ -1,4 +1,4 @@
-import { useState, ChangeEvent, FormEvent, useEffect } from "react";
+import { useState, ChangeEvent, FormEvent, KeyboardEvent, useEffect } from "react";
 import {
   Card,
   CardHeader,
@@ -146,6 +146,20 @@ export default function FirecrawlComponentV1() {
 
       return newData;
     });
+  };
+
+  const handleNumberKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
+    if (e.key !== "PageUp" && e.key !== "PageDown") return;
+
+    e.preventDefault();
+    const currentValue = Number(e.currentTarget.value) || 0;
+    const value =
+      e.key === "PageUp" ? currentValue + 1 : Math.max(0, currentValue - 1);
+
+    setFormData((prevData) => ({
+      ...prevData,
+      [e.currentTarget.name]: value.toString(),
+    }));
   };
 
   const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
@@ -444,9 +458,12 @@ export default function FirecrawlComponentV1() {
                     <Input
                       id="limit"
                       name="limit"
+                      type="number"
+                      min={0}
                       placeholder="10"
                       value={formData.limit}
                       onChange={handleChange}
+                      onKeyDown={handleNumberKeyDown}
                     />
                   </div>
                 </div>
