@@ -1,8 +1,10 @@
 import type { Logger } from "winston";
+import { config } from "../config";
 import { search } from "./v2";
 import { rerankWebResults } from "./v2/reranker";
 import { attachRagPassages } from "./v2/rag";
 import { buildGroundedAnswer, checkSufficiency, buildSnippets } from "./v2/grounded-answer";
+import { checkAnswerCache } from "./v2/persistence";
 import { SearchV2Response } from "../lib/entities";
 import {
   buildSearchQuery,
@@ -74,6 +76,24 @@ export async function executeSearch(
   logger: Logger,
 ): Promise<SearchExecuteResult> {
   const { query, limit, sources, categories, scrapeOptions } = options;
+
+  // Semantic cache: if we've answered a near-duplicate query recently, serve
+  // it directly and skip the entire pipeline. Only for answer-bearing
+  // (scrape) requests.
+  if (scrapeOptions && config.DEEPINFRA_API_KEY) {
+    const cached = await checkAnswerCache(query, logger);
+    if (cached) {
+      logger.info("Answer cache hit; skipping pipeline", { query });
+      return {
+        response: { answer: cached },
+        totalResultsCount: 0,
+        searchCredits: 0,
+        scrapeCredits: 0,
+        totalCredits: 0,
+        shouldScrape: false,
+      };
+    }
+  }
   const {
     teamId,
     origin,

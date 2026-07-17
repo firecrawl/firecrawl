@@ -6,7 +6,7 @@ import {
   WebSearchResult,
 } from "../../lib/entities";
 import { Logger } from "winston";
-import { persistVerifiedChunks } from "./persistence";
+import { persistVerifiedChunks, cacheAnswer } from "./persistence";
 
 // Synthesis LLM = the same model this pi chat uses: GLM-5.2 via the ZAI Coding
 // Plan endpoint (OpenAI-compat). thinking:{type:"disabled"} + temperature:0
@@ -359,5 +359,6 @@ export async function buildGroundedAnswer(
       }
     }
     await persistVerifiedChunks(items, grounded.faithfulness, logger);
+    await cacheAnswer(query, grounded.text, grounded.faithfulness, sourceList, logger);
   }
 }

@@ -2,6 +2,7 @@ import { Pool } from "pg";
 import { createHash } from "crypto";
 import { config } from "../../config";
 import { embedTexts } from "./rag";
+import { GroundedAnswer } from "../../lib/entities";
 import { Logger } from "winston";
 
 // Persist verified scraped chunks (text + bge-m3 embedding) into pgvector so
@@ -11,6 +12,10 @@ import { Logger } from "winston";
 
 let pool: Pool | null = null;
 let ensured = false;
+// Cache hit = cosine distance <= this (0.05 ~= 0.95 similarity); ignore rows
+// older than this many days.
+const CACHE_THRESHOLD = 0.05;
+const CACHE_MAX_AGE_DAYS = 7;
 
 function getPool(): Pool | null {
   if (pool) return pool;
@@ -44,6 +49,20 @@ export async function ensureScrapedChunks(logger: Logger): Promise<boolean> {
     `);
     await p.query(
       "CREATE INDEX IF NOT EXISTS scraped_chunks_embedding_idx ON scraped_chunks USING hnsw (embedding vector_cosine_ops)",
+    );
+    await p.query(`
+      CREATE TABLE IF NOT EXISTS answer_cache (
+        id BIGSERIAL PRIMARY KEY,
+        query TEXT NOT NULL,
+        query_embedding vector(1024) NOT NULL,
+        answer TEXT NOT NULL,
+        faithfulness REAL,
+        sources JSONB,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+      )
+    `);
+    await p.query(
+      "CREATE INDEX IF NOT EXISTS answer_cache_qemb_idx ON answer_cache USING hnsw (query_embedding vector_cosine_ops)",
     );
     ensured = true;
     return true;
@@ -117,5 +136,73 @@ export async function searchScrapedChunks(
       error: (error as Error)?.message,
     });
     return [];
+  }
+}
+
+// Pre-search semantic cache: embed the query, find the nearest cached
+// answer within the threshold and freshness window. Returns the cached
+// GroundedAnswer (cached=true) or null on miss.
+export async function checkAnswerCache(
+  query: string,
+  logger: Logger,
+): Promise<GroundedAnswer | null> {
+  if (!config.DEEPINFRA_API_KEY) return null;
+  const ok = await ensureScrapedChunks(logger);
+  const p = ok ? getPool() : null;
+  if (!p) return null;
+  try {
+    const [emb] = await embedTexts([query]);
+    const res = await p.query(
+      `SELECT answer, faithfulness, sources,
+              (query_embedding <=> $1::vector) AS distance
+       FROM answer_cache
+       WHERE created_at > now() - interval '${CACHE_MAX_AGE_DAYS} days'
+       ORDER BY query_embedding <=> $1::vector
+       LIMIT 1`,
+      [JSON.stringify(emb)],
+    );
+    if (!res.rows.length) return null;
+    const row = res.rows[0];
+    if (row.distance > CACHE_THRESHOLD) return null;
+    logger.info("Answer cache hit", { query, distance: row.distance });
+    return {
+      text: row.answer,
+      faithfulness: typeof row.faithfulness === "number" ? row.faithfulness : 0,
+      grounded: true,
+      sources: Array.isArray(row.sources) ? row.sources : [],
+      cached: true,
+    } as GroundedAnswer;
+  } catch (error) {
+    logger.warn("checkAnswerCache failed", {
+      error: (error as Error)?.message,
+    });
+    return null;
+  }
+}
+
+// Store an accepted answer keyed by its query embedding so a later
+// near-duplicate query can be served from cache.
+export async function cacheAnswer(
+  query: string,
+  answer: string,
+  faithfulness: number,
+  sources: Array<{ n: number; url: string; title: string }>,
+  logger: Logger,
+): Promise<void> {
+  if (!config.DEEPINFRA_API_KEY) return;
+  const ok = await ensureScrapedChunks(logger);
+  const p = ok ? getPool() : null;
+  if (!p) return;
+  try {
+    const [emb] = await embedTexts([query]);
+    await p.query(
+      "INSERT INTO answer_cache (query, query_embedding, answer, faithfulness, sources) VALUES ($1, $2::vector, $3, $4, $5)",
+      [query, JSON.stringify(emb), answer, faithfulness, JSON.stringify(sources)],
+    );
+    logger.info("Cached answer", { query, faithfulness });
+  } catch (error) {
+    logger.warn("cacheAnswer failed", {
+      error: (error as Error)?.message,
+    });
   }
 }
