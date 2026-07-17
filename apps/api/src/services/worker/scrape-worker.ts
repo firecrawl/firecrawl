@@ -528,6 +528,9 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
           normalizeUrlOnlyHostname(doc.metadata.url) !==
           normalizeUrlOnlyHostname(doc.metadata.sourceURL);
         if (job.data.isCrawlSourceScrape && isHostnameDifferent) {
+          sc.originUrl = doc.metadata.url;
+          await saveCrawl(job.data.crawl_id, sc);
+
           crawler.setBaseUrl(doc.metadata.url);
           try {
             sc.robots = await crawler.getRobotsTxt(
@@ -549,8 +552,6 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
             crawler,
             logger,
           );
-          sc.originUrl = doc.metadata.url;
-          await saveCrawl(job.data.crawl_id, sc);
         }
 
         const teamChunk = await getACUCTeam(job.data.team_id);
