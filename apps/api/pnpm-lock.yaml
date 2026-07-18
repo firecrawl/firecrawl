@@ -166,8 +166,8 @@ importers:
         specifier: ^2.0.1
         version: 2.0.1
       geoip-country:
-        specifier: ^5.0.202607150057
-        version: 5.0.202607150057
+        specifier: ^5.0.202607180103
+        version: 5.0.202607180103
       he:
         specifier: ^1.2.0
         version: 1.2.0
@@ -2377,9 +2377,6 @@ packages:
     resolution: {integrity: sha512-yQbXgO/OSZVD2IsiLlro+7Hf6Q18EJrKSEsdoMzKePKXct3gvD8oLcOQdIzGupr5Fj+EDe8gO/lxc1BzfMpxvA==}
     engines: {node: '>=8'}
 
-  buffer-crc32@0.2.13:
-    resolution: {integrity: sha512-VO9Ht/+p3SN7SKWqcrgEzjGbRSJYTx+Q1pTQC0wrWqHx0vpJraQ6GtHx8tvcg1rlK1byhU5gccxgOgj7B0TDkQ==}
-
   buffer-equal-constant-time@1.0.1:
     resolution: {integrity: sha512-zRpUiDwd/xk6ADqPMATG8vc9VPrkck7T07OIx0gnjmJAnHnTVXNQG3vfvWNuiZIkwu9KrKdA1iJKfsfTVxE6NA==}
 
@@ -2538,8 +2535,8 @@ packages:
     resolution: {integrity: sha512-KIHbLJqu73RGr/hnbrO9uBeixNGuvSQjul/jdFvS/KFSIH1hWVd1ng7zOHx+YrEfInLG7q4n6GHQ9cDtxv/P6g==}
     engines: {node: '>= 0.10'}
 
-  countries-list@3.1.1:
-    resolution: {integrity: sha512-nPklKJ5qtmY5MdBKw1NiBAoyx5Sa7p2yPpljZyQ7gyCN1m+eMFs9I6CT37Mxt8zvR5L3VzD3DJBE4WQzX3WF4A==}
+  countries-list@3.4.1:
+    resolution: {integrity: sha512-sKLGAZD5EAdzQwQ19vOp/9u33MTjmZ0CkdXPYtp/An6cyIlJ/E8TwGf2FcPe1AnzHO+h7nbTfoHyXIi58Hpa+Q==}
 
   cron-parser@4.9.0:
     resolution: {integrity: sha512-p0SaNjrHOnQeR8/VnfGbmg9te2kfyYSQ7Sc/j/6DtPL3JQvKxmjO9TSjNFpujqV3vEYYBvNNvXSxzyksBWAx1Q==}
@@ -3049,8 +3046,8 @@ packages:
     resolution: {integrity: sha512-zV/5HKTfCeKWnxG0Dmrw51hEWFGfcF2xiXqcA3+J90WDuP0SvoiSO5ORvcBsifmx/FoIjgQN3oNOGaQ5PhLFkg==}
     engines: {node: '>=18'}
 
-  geoip-country@5.0.202607150057:
-    resolution: {integrity: sha512-BsCnrL6DluGwo4CfvCys6q9P+1DJp7CxaJOCRHarkpHQmgjPDZu6n56euBRlullrcB5dwTRODNqlcNTP/Sv4zQ==}
+  geoip-country@5.0.202607180103:
+    resolution: {integrity: sha512-UlOfSeHs8P9M5nukx5hPH9oKGFZ7ch4RkC7C+Gut6i84lmWHiPk4zVrm+clnYTSdyYkRpyFjrBF7xitJUxpb3Q==}
     engines: {node: '>=10.20.0'}
 
   get-east-asian-width@1.3.1:
@@ -4600,8 +4597,8 @@ packages:
     engines: {node: '>= 14.6'}
     hasBin: true
 
-  yauzl@3.2.1:
-    resolution: {integrity: sha512-k1isifdbpNSFEHFJ1ZY4YDewv0IH9FR61lDetaRMD3j2ae3bIXGV+7c+LHCqtQGofSd8PIyV4X6+dHMAnSr60A==}
+  yauzl@3.4.0:
+    resolution: {integrity: sha512-jIH9yLR9wqr0wOS0TpBvo/g/2UgZH5qePVbjgRliiF0BYvOZyaBknKsF+x9Iht0O6sqgnB93rCICdOZFecJuDw==}
     engines: {node: '>=12'}
 
   yocto-queue@0.1.0:
@@ -6393,8 +6390,6 @@ snapshots:
     dependencies:
       fill-range: 7.1.1
 
-  buffer-crc32@0.2.13: {}
-
   buffer-equal-constant-time@1.0.1: {}
 
   buffer-from@1.1.2: {}
@@ -6555,7 +6550,7 @@ snapshots:
       object-assign: 4.1.1
       vary: 1.1.2
 
-  countries-list@3.1.1: {}
+  countries-list@3.4.1: {}
 
   cron-parser@4.9.0:
     dependencies:
@@ -6993,12 +6988,12 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  geoip-country@5.0.202607150057:
+  geoip-country@5.0.202607180103:
     dependencies:
       async: 2.6.4
-      countries-list: 3.1.1
+      countries-list: 3.4.1
       ip-address: 6.4.0
-      yauzl: 3.2.1
+      yauzl: 3.4.0
 
   get-east-asian-width@1.3.1: {}
 
@@ -8513,9 +8508,8 @@ snapshots:
 
   yaml@2.8.3: {}
 
-  yauzl@3.2.1:
+  yauzl@3.4.0:
     dependencies:
-      buffer-crc32: 0.2.13
       pend: 1.2.0
 
   yocto-queue@0.1.0: {}
