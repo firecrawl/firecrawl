@@ -41,6 +41,7 @@ interface SearchOptions {
 
 interface SearchContext {
   teamId: string;
+  orgId?: string | null;
   origin: string;
   apiKeyId: number | null;
   flags: TeamFlags;
@@ -73,6 +74,7 @@ export async function executeSearch(
   const { query, limit, sources, categories, scrapeOptions } = options;
   const {
     teamId,
+    orgId,
     origin,
     apiKeyId,
     flags,
@@ -206,12 +208,14 @@ export async function executeSearch(
   if (shouldScrape && scrapeOptions) {
     const itemsToScrape = getItemsToScrape(searchResponse, flags, {
       team_id: teamId,
+      org_id: orgId ?? null,
       origin,
     });
 
     if (itemsToScrape.length > 0) {
       const scrapeOpts = {
         teamId,
+        orgId: orgId ?? null,
         origin,
         timeout: options.timeout,
         scrapeOptions,

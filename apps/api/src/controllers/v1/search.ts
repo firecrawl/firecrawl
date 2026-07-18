@@ -47,6 +47,7 @@ export async function searchAndScrapeSearchResult(
   query: string,
   options: {
     teamId: string;
+    orgId?: string | null;
     origin: string;
     timeout: number;
     scrapeOptions: any;
@@ -77,6 +78,7 @@ export async function searchAndScrapeSearchResult(
       })),
       {
         teamId: options.teamId,
+        orgId: options.orgId ?? null,
         origin: options.origin,
         timeout: options.timeout,
         scrapeOptions,
@@ -235,6 +237,7 @@ export async function searchController(
       },
       {
         teamId: req.auth.team_id,
+        orgId: req.acuc?.org_id ?? null,
         origin: req.body.origin,
         apiKeyId: req.acuc?.api_key_id ?? null,
         flags: req.acuc?.flags ?? null,

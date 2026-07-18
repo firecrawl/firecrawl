@@ -180,6 +180,7 @@ export async function crawlController(req: Request, res: Response) {
     if (
       isUrlBlocked(url, auth.chunk?.flags ?? null, {
         team_id: auth.chunk?.team_id ?? team_id,
+        org_id: auth.chunk?.org_id ?? null,
         origin: req.body?.origin ?? null,
       })
     ) {

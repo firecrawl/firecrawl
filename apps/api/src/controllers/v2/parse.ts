@@ -512,6 +512,7 @@ export async function parseController(
                       bypassBilling: isDirectToBullMQ || !shouldBill,
                       zeroDataRetention,
                       teamFlags: req.acuc?.flags ?? null,
+                      orgId: req.acuc?.org_id ?? null,
                       teamConcurrency: req.acuc?.concurrency ?? null,
                       uploadedFile: file,
                       forceEngine,

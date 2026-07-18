@@ -159,6 +159,7 @@ export async function performGenerateLlmsTxt(
               {
                 url,
                 teamId,
+                orgId: acuc?.org_id ?? null,
                 origin: "llmstxt",
                 timeout: 30000,
                 isSingleUrl: true,

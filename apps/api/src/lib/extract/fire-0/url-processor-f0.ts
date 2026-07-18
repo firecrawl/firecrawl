@@ -53,6 +53,7 @@ interface ProcessUrlOptions {
   prompt?: string;
   schema?: any;
   teamId: string;
+  orgId?: string | null;
   allowExternalLinks?: boolean;
   origin?: string;
   limit?: number;
@@ -80,6 +81,7 @@ export async function processUrl_F0(
     if (
       !isUrlBlocked(options.url, teamFlags, {
         team_id: options.teamId,
+        org_id: options.orgId ?? null,
         origin: options.origin ?? null,
       })
     ) {

@@ -7,10 +7,7 @@ import {
   scrapeURLWithFireEngineChromeCDP,
   scrapeURLWithFireEngineTLSClient,
 } from "./fire-engine";
-import {
-  exchangeMaxReasonableTime,
-  scrapeURLWithExchange,
-} from "./exchange";
+import { exchangeMaxReasonableTime, scrapeURLWithExchange } from "./exchange";
 import { pdfMaxReasonableTime, scrapePDF } from "./pdf";
 import { fetchMaxReasonableTime, scrapeURLWithFetch } from "./fetch";
 import {
@@ -178,7 +175,7 @@ export type EngineScrapeResult = {
 const engineHandlers: {
   [E in Engine]: (meta: Meta) => Promise<EngineScrapeResult>;
 } = {
-  "exchange": scrapeURLWithExchange,
+  exchange: scrapeURLWithExchange,
   index: scrapeURLWithIndex,
   "index;documents": scrapeURLWithIndex,
   "fire-engine;chrome-cdp": scrapeURLWithFireEngineChromeCDP,
@@ -198,7 +195,7 @@ const engineHandlers: {
 const engineMRTs: {
   [E in Engine]: (meta: Meta) => number;
 } = {
-  "exchange": exchangeMaxReasonableTime,
+  exchange: exchangeMaxReasonableTime,
   index: indexMaxReasonableTime,
   "index;documents": indexMaxReasonableTime,
   "fire-engine;chrome-cdp": meta =>
@@ -231,7 +228,7 @@ const engineOptions: {
     quality: number;
   };
 } = {
-  "exchange": {
+  exchange: {
     features: {
       actions: false,
       waitFor: false,
@@ -632,6 +629,7 @@ export async function buildFallbackList(meta: Meta): Promise<
             meta.internalOptions.teamFlags ?? null,
             {
               team_id: meta.internalOptions.teamId ?? null,
+              org_id: meta.internalOptions.orgId ?? null,
               origin: null,
             },
           )
@@ -639,10 +637,9 @@ export async function buildFallbackList(meta: Meta): Promise<
           return [];
         }
       } catch (error) {
-        meta.logger.warn(
-          "Exchange blocklist re-check failed; failing closed",
-          { error },
-        );
+        meta.logger.warn("Exchange blocklist re-check failed; failing closed", {
+          error,
+        });
         return [];
       }
     }

@@ -464,15 +464,13 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
           await saveCrawl(job.data.crawl_id, sc);
         }
 
+        const teamChunk = await getACUCTeam(job.data.team_id);
         if (
-          isUrlBlocked(
-            doc.metadata.url,
-            (await getACUCTeam(job.data.team_id))?.flags ?? null,
-            {
-              team_id: job.data.team_id,
-              origin: job.data.origin,
-            },
-          )
+          isUrlBlocked(doc.metadata.url, teamChunk?.flags ?? null, {
+            team_id: job.data.team_id,
+            org_id: teamChunk?.org_id ?? null,
+            origin: job.data.origin,
+          })
         ) {
           throw new CrawlDenialError(UNSUPPORTED_SITE_MESSAGE); // TODO: make this its own error type that is ignored by error tracking
         }

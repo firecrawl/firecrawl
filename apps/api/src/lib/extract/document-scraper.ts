@@ -17,6 +17,7 @@ import { scrapeQueue } from "../../services/worker/nuq-router";
 interface ScrapeDocumentOptions {
   url: string;
   teamId: string;
+  orgId?: string | null;
   origin: string;
   timeout: number;
   isSingleUrl?: boolean;
@@ -40,6 +41,7 @@ export async function scrapeDocument(
   if (
     isUrlBlocked(options.url, options.flags ?? null, {
       team_id: options.teamId,
+      org_id: options.orgId ?? null,
       origin: options.origin,
     })
   ) {
@@ -64,6 +66,7 @@ export async function scrapeDocument(
         }),
         internalOptions: {
           teamId: options.teamId,
+          orgId: options.orgId ?? null,
           saveScrapeResultToGCS: config.GCS_FIRE_ENGINE_BUCKET_NAME
             ? true
             : false,

@@ -96,6 +96,8 @@ export const batch_scrapes = pgTable("batch_scrapes", {
 export const blocklist = pgTable("blocklist", {
   id: bigintNum("id").notNull().generatedByDefaultAsIdentity(),
   data: jsonb("data").notNull(),
+  // NULL = the row's entries block globally; set = they block only that org.
+  org_id: uuid("org_id"),
 });
 
 export const blocklist_hits = pgTable("blocklist_hits", {

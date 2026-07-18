@@ -41,6 +41,7 @@ async function scrapeHelper(
   extractorOptions: ExtractorOptions,
   timeout: number,
   flags: TeamFlags,
+  org_id: string | null,
   apiKeyId: number | null,
 ): Promise<{
   success: boolean;
@@ -70,6 +71,7 @@ async function scrapeHelper(
   if (
     isUrlBlocked(url, flags, {
       team_id,
+      org_id,
       origin: req.body?.origin ?? null,
     })
   ) {
@@ -299,6 +301,7 @@ export async function scrapeController(req: Request, res: Response) {
       extractorOptions,
       timeout,
       chunk?.flags ?? null,
+      chunk?.org_id ?? null,
       chunk?.api_key_id ?? null,
     );
 

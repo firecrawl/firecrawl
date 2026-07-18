@@ -778,6 +778,7 @@ async function runMonitorSearchTarget(params: {
     isBlocked: url =>
       isUrlBlocked(url, teamFlags, {
         team_id: monitor.team_id,
+        org_id: acuc?.org_id ?? null,
         origin: "monitor.search",
       }),
     goalVersion,
