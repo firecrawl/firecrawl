@@ -34,11 +34,6 @@ CREATE TABLE public.mcp_action_logs (
   CONSTRAINT mcp_action_logs_team_request_unique UNIQUE (team_id, request_id)
 );
 
-COMMENT ON COLUMN public.mcp_action_logs.api_key_id IS
-  'Required for API-key events; optional for OAuth events when it identifies the validated backing managed credential.';
-COMMENT ON COLUMN public.mcp_action_logs.expires_at IS
-  'Enforced by the Core retention worker and bounded cleanup performed before each write.';
-
 CREATE INDEX IF NOT EXISTS mcp_action_logs_team_created_idx
   ON public.mcp_action_logs (team_id, created_at DESC, id DESC);
 
