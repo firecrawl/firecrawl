@@ -76,6 +76,11 @@ describe("MCP action log contract", () => {
         resource: "https://mcp.firecrawl.dev/v2/mcp-oauth",
       }),
     ).toMatchObject({ auth_type: "oauth", user_id: USER_ID });
+    expect(
+      input({ resource: "https://mcp.firecrawl.dev/v2/mcp-search" }),
+    ).toMatchObject({
+      resource: "https://mcp.firecrawl.dev/v2/mcp-search",
+    });
 
     expect(() => input({ status: "started" })).toThrow(
       "status must be success or error",

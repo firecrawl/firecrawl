@@ -8,6 +8,7 @@ const AUTH_TYPES = ["oauth", "api-key"] as const;
 const RESOURCES = new Set([
   "https://mcp.firecrawl.dev/v2/mcp",
   "https://mcp.firecrawl.dev/v2/mcp-oauth",
+  "https://mcp.firecrawl.dev/v2/mcp-search",
 ]);
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
