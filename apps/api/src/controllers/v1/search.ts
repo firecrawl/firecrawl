@@ -22,6 +22,7 @@ import { ScrapeJobTimeoutError } from "../../lib/error";
 import { captureExceptionWithZdrCheck } from "../../services/sentry";
 import { z } from "zod";
 import { executeSearch } from "../../search/execute";
+import { isUrlBlocked } from "../../scraper/WebScraper/utils/blocklist";
 import { resolveThreatProtection } from "../../lib/threat-protection/request";
 import {
   DocumentWithCostTracking,
@@ -64,6 +65,15 @@ export async function searchAndScrapeSearchResult(
       num_results: 5,
     });
 
+    const allowedResults = searchResults.filter(
+      r =>
+        !isUrlBlocked(r.url, flags, {
+          team_id: options.teamId,
+          org_id: options.orgId ?? null,
+          origin: options.origin,
+        }),
+    );
+
     const { scrapeOptions } = fromV1ScrapeOptions(
       options.scrapeOptions,
       options.timeout,
@@ -71,7 +81,7 @@ export async function searchAndScrapeSearchResult(
     );
 
     return await scrapeSearchResults(
-      searchResults.map(r => ({
+      allowedResults.map(r => ({
         url: r.url,
         title: r.title,
         description: r.description,

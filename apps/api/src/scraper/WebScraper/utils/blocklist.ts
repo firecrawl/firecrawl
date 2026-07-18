@@ -124,6 +124,15 @@ function mergeBlob(target: BlocklistBlob, source: BlocklistBlob): void {
   target.allowedKeywords.push(...source.allowedKeywords);
 }
 
+// Rows may repeat entries; the match loops scan linearly, so dedupe once at
+// load instead of paying for duplicates on every check.
+function dedupeBlob(blob: BlocklistBlob): BlocklistBlob {
+  return {
+    blocklist: [...new Set(blob.blocklist)],
+    allowedKeywords: [...new Set(blob.allowedKeywords)],
+  };
+}
+
 export async function initializeBlocklist() {
   if (config.USE_DB_AUTHENTICATION !== true || config.DISABLE_BLOCKLIST) {
     blob = {
@@ -143,8 +152,14 @@ export async function initializeBlocklist() {
     );
   }
 
-  if (!rows.some(row => row.org_id === null)) {
+  if (rows.length === 0) {
     throw new Error("Error getting blocklist: No data returned from database");
+  }
+
+  if (!rows.some(row => row.org_id === null)) {
+    throw new Error(
+      "Error getting blocklist: No global blocklist row (org_id IS NULL) found",
+    );
   }
 
   const globalBlob: BlocklistBlob = { blocklist: [], allowedKeywords: [] };
@@ -161,7 +176,10 @@ export async function initializeBlocklist() {
       }
     }
   }
-  blob = globalBlob;
+  for (const [orgId, orgBlob] of perOrg) {
+    perOrg.set(orgId, dedupeBlob(orgBlob));
+  }
+  blob = dedupeBlob(globalBlob);
   orgBlobs = perOrg;
 }
 

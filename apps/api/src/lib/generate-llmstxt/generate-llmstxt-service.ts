@@ -3,6 +3,7 @@ import { updateGeneratedLlmsTxt } from "./generate-llmstxt-redis";
 import { getMapResults } from "../../controllers/v1/map";
 import { z } from "zod";
 import { scrapeDocument } from "../extract/document-scraper";
+import { isUrlBlocked } from "../../scraper/WebScraper/utils/blocklist";
 import {
   getLlmsTextFromCache,
   saveLlmsTextToCache,
@@ -87,10 +88,20 @@ export async function performGenerateLlmsTxt(
     // Enforce max URL limit
     const effectiveMaxUrls = Math.min(maxUrls, 5000);
 
+    // The cache is shared across teams, so a requester whose org blocks this
+    // URL must neither read cached content for it nor seed the cache with
+    // their (blocklist-filtered) generation.
+    const urlBlockedForRequester = isUrlBlocked(url, acuc?.flags ?? null, {
+      team_id: teamId,
+      org_id: acuc?.org_id ?? null,
+      origin: "llmstxt",
+    });
+
     // Check cache first, unless cache is set to false
-    const cachedResult = cache
-      ? await getLlmsTextFromCache(url, effectiveMaxUrls)
-      : null;
+    const cachedResult =
+      cache && !urlBlockedForRequester
+        ? await getLlmsTextFromCache(url, effectiveMaxUrls)
+        : null;
     if (cachedResult) {
       logger.info("Found cached LLMs text", { url });
 
@@ -234,7 +245,9 @@ export async function performGenerateLlmsTxt(
     }
 
     // After successful generation, save to cache
-    await saveLlmsTextToCache(url, llmstxt, llmsFulltxt, effectiveMaxUrls);
+    if (!urlBlockedForRequester) {
+      await saveLlmsTextToCache(url, llmstxt, llmsFulltxt, effectiveMaxUrls);
+    }
 
     // Limit pages and remove separators before final update
     const limitedFullText = limitPages(llmsFulltxt, effectiveMaxUrls);

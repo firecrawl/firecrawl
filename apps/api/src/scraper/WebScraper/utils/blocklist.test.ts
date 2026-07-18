@@ -172,12 +172,19 @@ describe("isUrlBlocked", () => {
       expect(isUrlBlocked("https://example.com", null, ctx(ORG_B))).toBe(false);
     });
 
-    it("throws when no global row exists", async () => {
+    it("throws when the table is empty", async () => {
+      dbState.rows = [];
+      await expect(initializeBlocklist()).rejects.toThrow(
+        "No data returned from database",
+      );
+    });
+
+    it("throws when rows exist but none is global", async () => {
       dbState.rows = [
         { org_id: ORG_A, data: { blocklist: [], allowedKeywords: [] } },
       ];
       await expect(initializeBlocklist()).rejects.toThrow(
-        "No data returned from database",
+        "No global blocklist row",
       );
     });
   });
