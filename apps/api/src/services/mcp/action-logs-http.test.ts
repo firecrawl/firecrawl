@@ -126,7 +126,7 @@ describe("MCP action log ingest route", () => {
     expect(ingest).toHaveBeenCalledTimes(1);
   });
 
-  it("bounds authenticated source buckets instead of retaining them forever", () => {
+  it("rejects new authenticated sources at capacity without evicting active buckets", () => {
     const rateLimit = createMcpActionLogRateLimitMiddleware({
       limit: 1,
       windowMs: 10_000,
@@ -146,8 +146,16 @@ describe("MCP action log ingest route", () => {
 
     expect(invoke("source-a").next).toHaveBeenCalledTimes(1);
     expect(invoke("source-b").next).toHaveBeenCalledTimes(1);
-    expect(invoke("source-c").next).toHaveBeenCalledTimes(1);
-    expect(invoke("source-a").next).toHaveBeenCalledTimes(1);
+    const rejected = invoke("source-c");
+    expect(rejected.next).not.toHaveBeenCalled();
+    expect(rejected.res.status).toHaveBeenCalledWith(429);
+    expect(rejected.res.json).toHaveBeenCalledWith({
+      success: false,
+      error: "Too many MCP action log sources",
+    });
+    const stillLimited = invoke("source-a");
+    expect(stillLimited.next).not.toHaveBeenCalled();
+    expect(stillLimited.res.status).toHaveBeenCalledWith(429);
   });
 
   it("wires the activity read route behind account authentication", async () => {

@@ -88,8 +88,13 @@ export function createMcpActionLogRateLimitMiddleware(options?: {
     }
     const previous = buckets.get(key);
     if (!previous && buckets.size >= maxBuckets) {
-      const oldestKey = buckets.keys().next().value;
-      if (oldestKey !== undefined) buckets.delete(oldestKey);
+      res.setHeader(
+        "Retry-After",
+        String(Math.max(1, Math.ceil(windowMs / 1000))),
+      );
+      return res
+        .status(429)
+        .json({ success: false, error: "Too many MCP action log sources" });
     }
     const bucket =
       !previous || previous.resetAt <= current
