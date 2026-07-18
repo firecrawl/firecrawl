@@ -239,6 +239,20 @@ function findBlockedMatch(
   return null;
 }
 
+/**
+ * Whether the org has any org-scoped blocklist entries at all. Lets shared
+ * caches opt such requesters out entirely: a per-URL check is not enough
+ * when the cached artifact covers other URLs than the one checked.
+ */
+export function hasOrgScopedBlocklist(
+  orgId: string | null | undefined,
+): boolean {
+  if (blob === null) {
+    throw new Error("Blocklist not initialized");
+  }
+  return typeof orgId === "string" && orgBlobs.has(orgId);
+}
+
 export function isUrlBlocked(
   url: string,
   flags: TeamFlags,

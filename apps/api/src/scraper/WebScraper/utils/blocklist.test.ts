@@ -1,5 +1,9 @@
 import type { TeamFlags } from "../../../controllers/v1/types";
-import { initializeBlocklist, isUrlBlocked } from "./blocklist";
+import {
+  hasOrgScopedBlocklist,
+  initializeBlocklist,
+  isUrlBlocked,
+} from "./blocklist";
 
 const dbState = vi.hoisted(() => ({
   rows: [] as { data: unknown; org_id: string | null }[],
@@ -133,6 +137,13 @@ describe("isUrlBlocked", () => {
       expect(
         isUrlBlocked("https://facebook.com/allowed-path", null, ctx(ORG_A)),
       ).toBe(true);
+    });
+
+    it("reports which orgs have org-scoped entries", () => {
+      expect(hasOrgScopedBlocklist(ORG_A)).toBe(true);
+      expect(hasOrgScopedBlocklist(ORG_B)).toBe(false);
+      expect(hasOrgScopedBlocklist(null)).toBe(false);
+      expect(hasOrgScopedBlocklist(undefined)).toBe(false);
     });
   });
 

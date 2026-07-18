@@ -3,7 +3,10 @@ import { updateGeneratedLlmsTxt } from "./generate-llmstxt-redis";
 import { getMapResults } from "../../controllers/v1/map";
 import { z } from "zod";
 import { scrapeDocument } from "../extract/document-scraper";
-import { isUrlBlocked } from "../../scraper/WebScraper/utils/blocklist";
+import {
+  hasOrgScopedBlocklist,
+  isUrlBlocked,
+} from "../../scraper/WebScraper/utils/blocklist";
 import {
   getLlmsTextFromCache,
   saveLlmsTextToCache,
@@ -88,14 +91,19 @@ export async function performGenerateLlmsTxt(
     // Enforce max URL limit
     const effectiveMaxUrls = Math.min(maxUrls, 5000);
 
-    // The cache is shared across teams, so a requester whose org blocks this
-    // URL must neither read cached content for it nor seed the cache with
-    // their (blocklist-filtered) generation.
-    const urlBlockedForRequester = isUrlBlocked(url, acuc?.flags ?? null, {
-      team_id: teamId,
-      org_id: acuc?.org_id ?? null,
-      origin: "llmstxt",
-    });
+    // The cache is shared across teams, so a requester under org-scoped
+    // blocklist rules must not touch it at all: even when the origin URL
+    // itself is exempt, mapped child URLs may still be blocked, so a cached
+    // generation could hand them blocked content and their filtered output
+    // would poison the cache for everyone else. A blocked origin likewise
+    // skips both read and write.
+    const urlBlockedForRequester =
+      hasOrgScopedBlocklist(acuc?.org_id) ||
+      isUrlBlocked(url, acuc?.flags ?? null, {
+        team_id: teamId,
+        org_id: acuc?.org_id ?? null,
+        origin: "llmstxt",
+      });
 
     // Check cache first, unless cache is set to false
     const cachedResult =
