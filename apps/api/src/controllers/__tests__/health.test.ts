@@ -1,24 +1,43 @@
 import type { Request, Response } from "express";
 import { vi } from "vitest";
 
-const { getRedisConnection, logger, queueRedis, redisRateLimitClient } =
-  vi.hoisted(() => {
-    const queueRedis = {
-      status: "ready",
-      ping: vi.fn<() => Promise<unknown>>(),
-    };
-    const redisRateLimitClient = {
-      status: "ready",
-      ping: vi.fn<() => Promise<unknown>>(),
-    };
-
+const {
+  getRedisConnection,
+  logger,
+  queueRedis,
+  queueRedisProbe,
+  redisRateLimitClient,
+  redisRateLimitProbe,
+} = vi.hoisted(() => {
+  function makeProbe() {
     return {
-      getRedisConnection: vi.fn(() => queueRedis),
-      logger: { warn: vi.fn() },
-      queueRedis,
-      redisRateLimitClient,
+      status: "ready",
+      ping: vi.fn<() => Promise<unknown>>(),
+      disconnect: vi.fn(),
     };
-  });
+  }
+
+  function makeClient(probe: ReturnType<typeof makeProbe>) {
+    return {
+      status: "ready",
+      duplicate: vi.fn(() => probe),
+    };
+  }
+
+  const queueRedisProbe = makeProbe();
+  const redisRateLimitProbe = makeProbe();
+  const queueRedis = makeClient(queueRedisProbe);
+  const redisRateLimitClient = makeClient(redisRateLimitProbe);
+
+  return {
+    getRedisConnection: vi.fn(() => queueRedis),
+    logger: { warn: vi.fn() },
+    queueRedis,
+    queueRedisProbe,
+    redisRateLimitClient,
+    redisRateLimitProbe,
+  };
+});
 
 vi.mock("../../services/queue-service", () => ({ getRedisConnection }));
 vi.mock("../../services/rate-limiter", () => ({ redisRateLimitClient }));
@@ -44,9 +63,13 @@ beforeEach(() => {
   vi.clearAllMocks();
   vi.useRealTimers();
   queueRedis.status = "ready";
+  queueRedisProbe.status = "ready";
   redisRateLimitClient.status = "ready";
-  queueRedis.ping.mockResolvedValue("PONG");
-  redisRateLimitClient.ping.mockResolvedValue("PONG");
+  redisRateLimitProbe.status = "ready";
+  queueRedisProbe.ping.mockResolvedValue("PONG");
+  redisRateLimitProbe.ping.mockResolvedValue("PONG");
+  queueRedis.duplicate.mockReturnValue(queueRedisProbe);
+  redisRateLimitClient.duplicate.mockReturnValue(redisRateLimitProbe);
   getRedisConnection.mockReturnValue(queueRedis);
 });
 
@@ -63,8 +86,8 @@ describe("livenessController", () => {
     expect(res.status).toHaveBeenCalledWith(200);
     expect(res.json).toHaveBeenCalledWith({ status: "ok" });
     expect(getRedisConnection).not.toHaveBeenCalled();
-    expect(queueRedis.ping).not.toHaveBeenCalled();
-    expect(redisRateLimitClient.ping).not.toHaveBeenCalled();
+    expect(queueRedisProbe.ping).not.toHaveBeenCalled();
+    expect(redisRateLimitProbe.ping).not.toHaveBeenCalled();
   });
 });
 
@@ -76,22 +99,22 @@ describe("readinessController", () => {
 
     expect(res.status).toHaveBeenCalledWith(200);
     expect(res.json).toHaveBeenCalledWith({ status: "ok" });
-    expect(getRedisConnection).toHaveBeenCalledTimes(1);
-    expect(queueRedis.ping).toHaveBeenCalledTimes(1);
-    expect(redisRateLimitClient.ping).toHaveBeenCalledTimes(1);
+    expect(queueRedisProbe.ping).toHaveBeenCalledTimes(1);
+    expect(redisRateLimitProbe.ping).toHaveBeenCalledTimes(1);
     expect(logger.warn).not.toHaveBeenCalled();
   });
 
   it("returns unavailable when a shared Redis client rejects", async () => {
     const error = new Error("connection refused");
-    queueRedis.ping.mockRejectedValue(error);
+    queueRedisProbe.ping.mockRejectedValue(error);
     const res = makeResponse();
 
     await readinessController({} as Request, res);
 
     expect(res.status).toHaveBeenCalledWith(503);
     expect(res.json).toHaveBeenCalledWith({ status: "unhealthy" });
-    expect(redisRateLimitClient.ping).toHaveBeenCalledTimes(1);
+    expect(queueRedisProbe.disconnect).toHaveBeenCalledTimes(1);
+    expect(redisRateLimitProbe.ping).toHaveBeenCalledTimes(1);
     expect(logger.warn).toHaveBeenCalledWith(
       "Readiness Redis dependency check failed",
       { dependency: "queueRedis", error },
@@ -106,35 +129,39 @@ describe("readinessController", () => {
 
     expect(res.status).toHaveBeenCalledWith(503);
     expect(res.json).toHaveBeenCalledWith({ status: "unhealthy" });
-    expect(queueRedis.ping).toHaveBeenCalledTimes(1);
-    expect(redisRateLimitClient.ping).not.toHaveBeenCalled();
+    expect(queueRedisProbe.ping).toHaveBeenCalledTimes(1);
+    expect(redisRateLimitProbe.ping).not.toHaveBeenCalled();
     expect(logger.warn).toHaveBeenCalledWith(
       "Readiness Redis dependency is not ready",
       {
         dependency: "redisRateLimitClient",
         status: "reconnecting",
+        probeStatus: "ready",
       },
     );
   });
 
-  it("returns unavailable when a shared Redis client times out", async () => {
-    vi.useFakeTimers();
-    queueRedis.ping.mockImplementation(() => new Promise(() => {}));
+  it("resets a dedicated probe connection when a command times out", async () => {
+    queueRedisProbe.ping.mockRejectedValue(new Error("Command timed out"));
     const res = makeResponse();
 
-    const response = readinessController({} as Request, res);
-    await vi.advanceTimersByTimeAsync(READINESS_CHECK_TIMEOUT_MS);
-    await response;
+    await readinessController({} as Request, res);
 
     expect(res.status).toHaveBeenCalledWith(503);
     expect(res.json).toHaveBeenCalledWith({ status: "unhealthy" });
-    expect(redisRateLimitClient.ping).toHaveBeenCalledTimes(1);
+    expect(queueRedisProbe.disconnect).toHaveBeenCalledTimes(1);
+    expect(queueRedis.duplicate).toHaveBeenCalledWith({
+      commandTimeout: READINESS_CHECK_TIMEOUT_MS,
+      enableOfflineQueue: false,
+      maxRetriesPerRequest: 0,
+    });
+    expect(redisRateLimitProbe.ping).toHaveBeenCalledTimes(1);
     expect(logger.warn).toHaveBeenCalledWith(
       "Readiness Redis dependency check failed",
       {
         dependency: "queueRedis",
         error: expect.objectContaining({
-          message: "Redis readiness check timed out",
+          message: "Command timed out",
         }),
       },
     );

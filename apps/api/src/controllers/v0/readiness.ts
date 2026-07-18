@@ -7,45 +7,45 @@ import { redisRateLimitClient } from "../../services/rate-limiter";
 export const READINESS_CHECK_TIMEOUT_MS = 1000;
 
 type RedisDependency = "queueRedis" | "redisRateLimitClient";
-type RedisPingClient = Pick<Redis, "ping" | "status">;
 
-async function withTimeout<T>(promise: Promise<T>): Promise<T> {
-  let timer: NodeJS.Timeout | undefined;
+const redisClients: Record<RedisDependency, Redis> = {
+  queueRedis: getRedisConnection(),
+  redisRateLimitClient,
+};
 
-  try {
-    return await Promise.race([
-      promise,
-      new Promise<T>((_, reject) => {
-        timer = setTimeout(
-          () => reject(new Error("Redis readiness check timed out")),
-          READINESS_CHECK_TIMEOUT_MS,
-        );
-      }),
-    ]);
-  } finally {
-    if (timer) clearTimeout(timer);
-  }
+function createProbeClient(client: Redis): Redis {
+  return client.duplicate({
+    commandTimeout: READINESS_CHECK_TIMEOUT_MS,
+    enableOfflineQueue: false,
+    maxRetriesPerRequest: 0,
+  });
 }
 
-async function checkRedis(
-  dependency: RedisDependency,
-  getClient: () => RedisPingClient,
-): Promise<boolean> {
-  try {
-    const client = getClient();
+const probeClients: Record<RedisDependency, Redis> = {
+  queueRedis: createProbeClient(redisClients.queueRedis),
+  redisRateLimitClient: createProbeClient(redisClients.redisRateLimitClient),
+};
 
-    // The queue client has an unbounded offline queue. Do not add a PING while
-    // it is already reconnecting; the timeout covers a command that stalls
-    // after the client was observed in the ready state.
-    if (client.status !== "ready") {
+function resetProbeClient(dependency: RedisDependency) {
+  probeClients[dependency].disconnect();
+  probeClients[dependency] = createProbeClient(redisClients[dependency]);
+}
+
+async function checkRedis(dependency: RedisDependency): Promise<boolean> {
+  try {
+    const client = redisClients[dependency];
+    const probeClient = probeClients[dependency];
+
+    if (client.status !== "ready" || probeClient.status !== "ready") {
       logger.warn("Readiness Redis dependency is not ready", {
         dependency,
         status: client.status,
+        probeStatus: probeClient.status,
       });
       return false;
     }
 
-    if ((await withTimeout(client.ping())) !== "PONG") {
+    if ((await probeClient.ping()) !== "PONG") {
       logger.warn(
         "Readiness Redis dependency returned an unexpected response",
         {
@@ -57,6 +57,9 @@ async function checkRedis(
 
     return true;
   } catch (error) {
+    // A timed-out ioredis command remains queued internally. Closing this
+    // dedicated connection discards it without affecting application clients.
+    resetProbeClient(dependency);
     logger.warn("Readiness Redis dependency check failed", {
       dependency,
       error,
@@ -67,8 +70,8 @@ async function checkRedis(
 
 export async function readinessController(req: Request, res: Response) {
   const [queueRedisHealthy, redisRateLimitClientHealthy] = await Promise.all([
-    checkRedis("queueRedis", getRedisConnection),
-    checkRedis("redisRateLimitClient", () => redisRateLimitClient),
+    checkRedis("queueRedis"),
+    checkRedis("redisRateLimitClient"),
   ]);
 
   if (!queueRedisHealthy || !redisRateLimitClientHealthy) {
