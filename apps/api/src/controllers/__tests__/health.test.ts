@@ -31,7 +31,7 @@ const {
 
   return {
     getRedisConnection: vi.fn(() => queueRedis),
-    logger: { warn: vi.fn() },
+    logger: { info: vi.fn(), warn: vi.fn() },
     queueRedis,
     queueRedisProbe,
     redisRateLimitClient,
@@ -92,6 +92,11 @@ describe("livenessController", () => {
 });
 
 describe("readinessController", () => {
+  beforeEach(async () => {
+    await readinessController({} as Request, makeResponse());
+    vi.clearAllMocks();
+  });
+
   it("preserves the existing response when both Redis clients are healthy", async () => {
     const res = makeResponse();
 
@@ -101,6 +106,7 @@ describe("readinessController", () => {
     expect(res.json).toHaveBeenCalledWith({ status: "ok" });
     expect(queueRedisProbe.ping).toHaveBeenCalledTimes(1);
     expect(redisRateLimitProbe.ping).toHaveBeenCalledTimes(1);
+    expect(logger.info).not.toHaveBeenCalled();
     expect(logger.warn).not.toHaveBeenCalled();
   });
 
@@ -116,8 +122,8 @@ describe("readinessController", () => {
     expect(queueRedisProbe.disconnect).toHaveBeenCalledTimes(1);
     expect(redisRateLimitProbe.ping).toHaveBeenCalledTimes(1);
     expect(logger.warn).toHaveBeenCalledWith(
-      "Readiness Redis dependency check failed",
-      { dependency: "queueRedis", error },
+      "Readiness Redis dependency is unhealthy",
+      { dependency: "queueRedis", reason: "error", error },
     );
   });
 
@@ -132,9 +138,10 @@ describe("readinessController", () => {
     expect(queueRedisProbe.ping).toHaveBeenCalledTimes(1);
     expect(redisRateLimitProbe.ping).not.toHaveBeenCalled();
     expect(logger.warn).toHaveBeenCalledWith(
-      "Readiness Redis dependency is not ready",
+      "Readiness Redis dependency is unhealthy",
       {
         dependency: "redisRateLimitClient",
+        reason: "not_ready",
         status: "reconnecting",
         probeStatus: "ready",
       },
@@ -157,13 +164,41 @@ describe("readinessController", () => {
     });
     expect(redisRateLimitProbe.ping).toHaveBeenCalledTimes(1);
     expect(logger.warn).toHaveBeenCalledWith(
-      "Readiness Redis dependency check failed",
+      "Readiness Redis dependency is unhealthy",
       {
         dependency: "queueRedis",
+        reason: "error",
         error: expect.objectContaining({
           message: "Command timed out",
         }),
       },
+    );
+  });
+
+  it("logs Redis health transitions instead of every probe", async () => {
+    redisRateLimitClient.status = "reconnecting";
+
+    await readinessController({} as Request, makeResponse());
+    await readinessController({} as Request, makeResponse());
+
+    expect(logger.warn).toHaveBeenCalledTimes(1);
+    expect(logger.warn).toHaveBeenCalledWith(
+      "Readiness Redis dependency is unhealthy",
+      {
+        dependency: "redisRateLimitClient",
+        reason: "not_ready",
+        status: "reconnecting",
+        probeStatus: "ready",
+      },
+    );
+
+    redisRateLimitClient.status = "ready";
+    await readinessController({} as Request, makeResponse());
+
+    expect(logger.info).toHaveBeenCalledTimes(1);
+    expect(logger.info).toHaveBeenCalledWith(
+      "Readiness Redis dependency recovered",
+      { dependency: "redisRateLimitClient" },
     );
   });
 });
