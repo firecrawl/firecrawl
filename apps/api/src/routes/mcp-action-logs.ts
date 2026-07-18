@@ -5,14 +5,19 @@ import express, {
   Request,
   RequestHandler,
   Response,
+  Router,
 } from "express";
 import { config } from "../config";
-import { ingestMcpActionLogController } from "../controllers/v2/mcp-action-logs";
+import {
+  ingestMcpActionLogController,
+  listMcpActionLogsController,
+} from "../controllers/v2/mcp-action-logs";
 import { wrap } from "./shared";
 
 const BODY_LIMIT = "64kb";
 const DEFAULT_LIMIT = 600;
 const DEFAULT_WINDOW_MS = 60_000;
+const DEFAULT_MAX_BUCKETS = 10_000;
 
 function bearerToken(value: string | string[] | undefined) {
   const header = Array.isArray(value) ? value[0] : value;
@@ -61,15 +66,31 @@ export function createMcpActionLogRateLimitMiddleware(options?: {
   limit?: number;
   windowMs?: number;
   now?: () => number;
+  maxBuckets?: number;
 }): RequestHandler {
+  // This runs after the shared-secret check and is deliberately local
+  // load-shedding for trusted MCP writers, not a cross-replica billing or
+  // security quota. The bounded map prevents stale pod IPs accumulating.
   const limit = options?.limit ?? DEFAULT_LIMIT;
   const windowMs = options?.windowMs ?? DEFAULT_WINDOW_MS;
   const now = options?.now ?? Date.now;
+  const maxBuckets = options?.maxBuckets ?? DEFAULT_MAX_BUCKETS;
   const buckets = new Map<string, { count: number; resetAt: number }>();
+  let nextCleanupAt = 0;
   return (req, res, next) => {
     const key = req.ip || req.socket.remoteAddress || "unknown";
     const current = now();
+    if (current >= nextCleanupAt) {
+      for (const [bucketKey, bucket] of buckets) {
+        if (bucket.resetAt <= current) buckets.delete(bucketKey);
+      }
+      nextCleanupAt = current + windowMs;
+    }
     const previous = buckets.get(key);
+    if (!previous && buckets.size >= maxBuckets) {
+      const oldestKey = buckets.keys().next().value;
+      if (oldestKey !== undefined) buckets.delete(oldestKey);
+    }
     const bucket =
       !previous || previous.resetAt <= current
         ? { count: 0, resetAt: current + windowMs }
@@ -100,5 +121,16 @@ export function registerMcpActionLogIngestRoute(
     options?.rateLimit ?? createMcpActionLogRateLimitMiddleware(),
     express.json({ limit: BODY_LIMIT }),
     wrap(ingestMcpActionLogController),
+  );
+}
+
+export function registerMcpActionLogReadRoute(
+  router: Pick<Router, "get">,
+  authenticateViewer: RequestHandler,
+) {
+  router.get(
+    "/mcp/action-logs",
+    authenticateViewer,
+    wrap(listMcpActionLogsController),
   );
 }

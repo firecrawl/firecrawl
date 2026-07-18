@@ -81,7 +81,7 @@ export async function listMcpActionLogsController(
     await authorizeMcpActionLogViewer(
       db,
       req.auth.team_id,
-      req.acuc?.api_key_id,
+      req.acuc?.api_key_id_text ?? req.acuc?.api_key_id,
     );
     const team = await resolveMcpActionLogTeamPolicy(db, req.auth.team_id);
     if (!team) {

@@ -2,6 +2,7 @@ import express from "express";
 import multer from "multer";
 import { config } from "../config";
 import { RateLimiterMode } from "../types";
+import { registerMcpActionLogReadRoute } from "./mcp-action-logs";
 import { SEARCH_CREDITS_FEATURE_ID } from "../services/autumn/autumn.service";
 import expressWs from "express-ws";
 import { searchController } from "../controllers/v2/search";
@@ -96,8 +97,6 @@ import {
   slackOAuthStartController,
   slackStatusController,
 } from "../controllers/v2/slack";
-import { listMcpActionLogsController } from "../controllers/v2/mcp-action-logs";
-
 export const v2Router = express.Router();
 expressWs(express()).applyTo(v2Router);
 
@@ -162,10 +161,9 @@ v2Router.use(requestTimingMiddleware("v2"));
 // inside the controller; no auth middleware.
 v2Router.get("/keyless/eligibility", wrap(keylessEligibilityController));
 
-v2Router.get(
-  "/mcp/action-logs",
+registerMcpActionLogReadRoute(
+  v2Router,
   authMiddleware(RateLimiterMode.Account),
-  wrap(listMcpActionLogsController),
 );
 
 v2Router.post(
