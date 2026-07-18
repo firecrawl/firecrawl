@@ -92,6 +92,43 @@ describe("OAuth token introspection", () => {
     ).resolves.toBeNull();
   });
 
+  it("rejects truthy non-boolean active values from cache", async () => {
+    getOAuthTokenCacheState.mockResolvedValue({
+      revoked: false,
+      cached: JSON.stringify({ ...ACTIVE, active: "false" }),
+    });
+    const fetchFn = vi.fn();
+
+    await expect(
+      resolveOAuthToken("fco_token", {
+        introspectUrl: "https://example.test/introspect",
+        introspectSecret: "secret",
+        expectedResource: FIRECRAWL_REST_RESOURCE,
+        fetchFn,
+      }),
+    ).resolves.toBeNull();
+    expect(fetchFn).not.toHaveBeenCalled();
+  });
+
+  it("rejects cached tokens whose embedded expiry has passed", async () => {
+    getOAuthTokenCacheState.mockResolvedValue({
+      revoked: false,
+      cached: JSON.stringify({
+        ...ACTIVE,
+        exp: Math.floor(Date.now() / 1000) - 1,
+      }),
+    });
+
+    await expect(
+      resolveOAuthToken("fco_token", {
+        introspectUrl: "https://example.test/introspect",
+        introspectSecret: "secret",
+        expectedResource: FIRECRAWL_REST_RESOURCE,
+      }),
+    ).resolves.toBeNull();
+    expect(isOAuthTokenRevoked).not.toHaveBeenCalled();
+  });
+
   it("rejects a result revoked while introspection is in flight", async () => {
     let finish: (() => void) | undefined;
     const fetchFn = vi.fn(
@@ -269,6 +306,29 @@ describe("OAuth token introspection", () => {
         introspectUrl: "https://example.test/introspect",
         introspectSecret: "secret",
         expectedResource: "https://api.firecrawl.dev/",
+        fetchFn,
+      }),
+    ).resolves.toBeNull();
+    expect(setOAuthTokenCache).toHaveBeenCalledWith(
+      "a".repeat(64),
+      JSON.stringify({ active: false }),
+      60,
+    );
+  });
+
+  it("fails closed on a truthy non-boolean active response", async () => {
+    const fetchFn = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ ...ACTIVE, active: "false" }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+
+    await expect(
+      resolveOAuthToken("fco_token", {
+        introspectUrl: "https://example.test/introspect",
+        introspectSecret: "secret",
+        expectedResource: FIRECRAWL_REST_RESOURCE,
         fetchFn,
       }),
     ).resolves.toBeNull();

@@ -51,7 +51,13 @@ export async function resolveOAuthToken(
   if (cache.cached !== null) {
     try {
       const parsed = JSON.parse(cache.cached) as OAuthIntrospectionResponse;
-      if (!parsed.active) return null;
+      if (parsed.active !== true) return null;
+      if (
+        !Number.isFinite(parsed.exp) ||
+        parsed.exp <= Math.floor(Date.now() / 1000)
+      ) {
+        return null;
+      }
       // Tokens minted before resource indicators have no audience. That legacy
       // compatibility applies only to the original REST resource; MCP resources
       // always require an explicit, exact audience.
@@ -91,7 +97,7 @@ export async function resolveOAuthToken(
     const data = (await response.json()) as OAuthIntrospectionResponse;
     if (await isOAuthTokenRevoked(tokenHash)) return null;
 
-    if (!data.active) {
+    if (data.active !== true) {
       await setOAuthTokenCache(
         tokenHash,
         JSON.stringify({ active: false }),
@@ -107,6 +113,7 @@ export async function resolveOAuthToken(
       return null;
     }
 
+    if (!Number.isFinite(data.exp)) return null;
     const remainingSeconds = Math.max(
       0,
       data.exp - Math.floor(Date.now() / 1000),

@@ -35,6 +35,7 @@ import {
   ingestMcpActionLogController,
   listMcpActionLogsController,
 } from "../../controllers/v2/mcp-action-logs";
+import { McpActionLogAuthorizationError } from "./action-logs";
 
 function response() {
   const res: any = {};
@@ -108,6 +109,46 @@ describe("MCP action log controllers", () => {
       "team",
       expect.any(Object),
     );
+  });
+
+  it("prefers the exact bigint API-key ID when authentication provides it", async () => {
+    const res = response();
+    await listMcpActionLogsController(
+      {
+        auth: { team_id: "team" },
+        acuc: {
+          api_key_id: Number("9007199254740993"),
+          api_key_id_text: "9007199254740993",
+        },
+        query: {},
+      } as any,
+      res,
+    );
+
+    expect(mocks.authorize).toHaveBeenCalledWith(
+      mocks.primaryDb,
+      "team",
+      "9007199254740993",
+    );
+  });
+
+  it("returns 403 when the presented key is not owner-bound", async () => {
+    mocks.authorize.mockRejectedValueOnce(
+      new McpActionLogAuthorizationError("An owner-bound API key is required"),
+    );
+    const res = response();
+
+    await listMcpActionLogsController(
+      {
+        auth: { team_id: "team" },
+        acuc: { api_key_id: 42 },
+        query: {},
+      } as any,
+      res,
+    );
+
+    expect(res.status).toHaveBeenCalledWith(403);
+    expect(mocks.list).not.toHaveBeenCalled();
   });
 
   it("does not query storage when activity logging is disabled", async () => {

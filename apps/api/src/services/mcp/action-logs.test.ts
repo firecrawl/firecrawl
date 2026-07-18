@@ -204,7 +204,12 @@ describe("MCP action log contract", () => {
   });
 
   it("requires the API-key owner to be a team admin or owner for listing", async () => {
-    const rows = [[{ owner_id: USER_ID }], [{ role: "admin" }]];
+    const rows = [
+      [{ owner_id: USER_ID }],
+      [{ role: "admin" }],
+      [{ owner_id: USER_ID }],
+      [{ role: "admin" }],
+    ];
     const db = {
       select: vi.fn(() => ({
         from: () => ({
@@ -214,6 +219,10 @@ describe("MCP action log contract", () => {
     };
     await expect(
       authorizeMcpActionLogViewer(db as any, TEAM_ID, 123),
+    ).resolves.toEqual({ userId: USER_ID, role: "admin" });
+
+    await expect(
+      authorizeMcpActionLogViewer(db as any, TEAM_ID, "9007199254740993"),
     ).resolves.toEqual({ userId: USER_ID, role: "admin" });
 
     const noOwner = {

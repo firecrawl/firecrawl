@@ -1255,6 +1255,7 @@ type Account = {
 export type AuthCreditUsageChunk = {
   api_key: string;
   api_key_id: number;
+  api_key_id_text?: string;
   team_id: string;
   org_id?: string | null;
   plan_priority: {

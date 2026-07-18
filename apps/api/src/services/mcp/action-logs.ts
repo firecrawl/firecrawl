@@ -296,9 +296,19 @@ export async function recordMcpActionLog(db: any, input: McpActionLogInput) {
 export async function authorizeMcpActionLogViewer(
   db: any,
   teamId: string,
-  apiKeyId: number | null | undefined,
+  apiKeyId: string | number | null | undefined,
 ) {
-  if (!apiKeyId) {
+  const canonicalApiKeyId =
+    typeof apiKeyId === "string"
+      ? isCanonicalApiKeyId(apiKeyId)
+        ? apiKeyId
+        : null
+      : typeof apiKeyId === "number" &&
+          Number.isSafeInteger(apiKeyId) &&
+          apiKeyId > 0
+        ? String(apiKeyId)
+        : null;
+  if (!canonicalApiKeyId) {
     throw new McpActionLogAuthorizationError(
       "An owner-bound API key is required",
     );
@@ -308,7 +318,7 @@ export async function authorizeMcpActionLogViewer(
     .from(schema.api_keys)
     .where(
       and(
-        eq(schema.api_keys.id, apiKeyId),
+        sql`${schema.api_keys.id} = cast(${canonicalApiKeyId} as bigint)`,
         eq(schema.api_keys.team_id, teamId),
       ),
     )

@@ -4,14 +4,18 @@ import request from "supertest";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { config } from "../../config";
 
-const { ingest } = vi.hoisted(() => ({
+const { ingest, list } = vi.hoisted(() => ({
   ingest: vi.fn(async (_req: Request, res: Response) =>
     res.status(202).json({ success: true }),
+  ),
+  list: vi.fn(async (_req: Request, res: Response) =>
+    res.status(200).json({ success: true, data: [] }),
   ),
 }));
 
 vi.mock("../../controllers/v2/mcp-action-logs", () => ({
   ingestMcpActionLogController: ingest,
+  listMcpActionLogsController: list,
 }));
 vi.mock("../../routes/shared", () => ({
   wrap:
@@ -22,6 +26,7 @@ vi.mock("../../routes/shared", () => ({
 import {
   createMcpActionLogRateLimitMiddleware,
   registerMcpActionLogIngestRoute,
+  registerMcpActionLogReadRoute,
   timingSafeSecretEqual,
 } from "../../routes/mcp-action-logs";
 
@@ -42,12 +47,26 @@ function app(rateLimit = createMcpActionLogRateLimitMiddleware()) {
   return server;
 }
 
+function readApp() {
+  const server = express();
+  const router = express.Router();
+  registerMcpActionLogReadRoute(router, (req, res, next) => {
+    if (req.headers.authorization !== "Bearer owner-key") {
+      return res.status(401).json({ success: false, error: "Unauthorized" });
+    }
+    next();
+  });
+  server.use("/v2", router);
+  return server;
+}
+
 describe("MCP action log ingest route", () => {
   beforeEach(() => {
     config.MCP_ACTION_LOG_SECRET = "test-secret";
     config.MCP_ACTION_LOG_STORAGE_ENABLED = true;
     config.MCP_ACTION_LOG_WRITES_ENABLED = true;
     ingest.mockClear();
+    list.mockClear();
   });
 
   it("is disabled by default through an explicit write flag", async () => {
@@ -105,5 +124,41 @@ describe("MCP action log ingest route", () => {
     expect(blocked.status).toBe(429);
     expect(blocked.headers["retry-after"]).toBe("10");
     expect(ingest).toHaveBeenCalledTimes(1);
+  });
+
+  it("bounds authenticated source buckets instead of retaining them forever", () => {
+    const rateLimit = createMcpActionLogRateLimitMiddleware({
+      limit: 1,
+      windowMs: 10_000,
+      maxBuckets: 2,
+      now: () => 1_000,
+    });
+    const invoke = (ip: string) => {
+      const next = vi.fn();
+      const res = {
+        setHeader: vi.fn(),
+        status: vi.fn().mockReturnThis(),
+        json: vi.fn(),
+      } as any;
+      rateLimit({ ip, socket: {} } as any, res, next);
+      return { next, res };
+    };
+
+    expect(invoke("source-a").next).toHaveBeenCalledTimes(1);
+    expect(invoke("source-b").next).toHaveBeenCalledTimes(1);
+    expect(invoke("source-c").next).toHaveBeenCalledTimes(1);
+    expect(invoke("source-a").next).toHaveBeenCalledTimes(1);
+  });
+
+  it("wires the activity read route behind account authentication", async () => {
+    const server = readApp();
+    expect((await request(server).get("/v2/mcp/action-logs")).status).toBe(401);
+    expect(list).not.toHaveBeenCalled();
+
+    const accepted = await request(server)
+      .get("/v2/mcp/action-logs")
+      .set("Authorization", "Bearer owner-key");
+    expect(accepted.status).toBe(200);
+    expect(list).toHaveBeenCalledTimes(1);
   });
 });

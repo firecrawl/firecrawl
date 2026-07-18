@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { getOAuthCacheInvalidationConfigErrors } from "./oauth-cache-invalidation-config";
 
 describe("OAuth cache invalidation configuration", () => {
   const original = process.env.OAUTH_CACHE_INVALIDATION_ENABLED;
@@ -17,5 +18,21 @@ describe("OAuth cache invalidation configuration", () => {
     vi.resetModules();
     const { config } = await import("../config.js");
     expect(config.OAUTH_CACHE_INVALIDATION_ENABLED).toBe(false);
+  });
+
+  it("requires database authentication when enabled", () => {
+    expect(
+      getOAuthCacheInvalidationConfigErrors({
+        OAUTH_CACHE_INVALIDATION_ENABLED: true,
+      }),
+    ).toEqual([
+      expect.objectContaining({ path: "OAUTH_CACHE_INVALIDATION_ENABLED" }),
+    ]);
+    expect(
+      getOAuthCacheInvalidationConfigErrors({
+        OAUTH_CACHE_INVALIDATION_ENABLED: true,
+        USE_DB_AUTHENTICATION: true,
+      }),
+    ).toEqual([]);
   });
 });

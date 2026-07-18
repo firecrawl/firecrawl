@@ -39,6 +39,7 @@ export async function authCreditUsageChunk(
   // api_key_id is a bigint column, so the pg driver hands it back as a string.
   for (const row of rows) {
     if (row.api_key_id != null) {
+      row.api_key_id_text = String(row.api_key_id);
       row.api_key_id = toNum(row.api_key_id);
     }
   }
@@ -167,10 +168,6 @@ export async function oauthAckCacheInvalidation(params: {
     sql`select oauth_ack_cache_invalidation(p_id => ${params.id}::bigint, p_claim_attempt => ${params.attempt}, p_succeeded => ${params.succeeded}, p_error => ${params.error})`,
   );
   return rows[0]?.oauth_ack_cache_invalidation === true;
-}
-
-export async function updateTallyTeam(i_team_id: string): Promise<void> {
-  await db.execute(sql`select update_tally_10_team(i_team_id => ${i_team_id})`);
 }
 
 // ============================================================================
