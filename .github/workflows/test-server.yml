@@ -218,6 +218,10 @@ jobs:
         env:
           npm_config_ignore_scripts: 'true'
 
+      - name: Cache metadata unit tests
+        run: npx vitest run src/scraper/scrapeURL/cacheMetadata.test.ts
+        working-directory: apps/api
+
       - name: Install test site dependencies
         run: pnpm install --frozen-lockfile
         working-directory: apps/test-site
