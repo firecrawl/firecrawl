@@ -436,11 +436,14 @@ export async function parseLocalUploadController(req: Request, res: Response) {
   const body = Buffer.isBuffer(req.body)
     ? req.body
     : Buffer.from(req.body ?? "");
-  if (body.length > record.maxBytes) {
+  if (body.length === 0 || body.length > record.maxBytes) {
     return res.status(400).json({
       success: false,
       code: "BAD_REQUEST",
-      error: "Uploaded file exceeds maximum size of 50MB.",
+      error:
+        body.length === 0
+          ? "Uploaded file must not be empty."
+          : "Uploaded file exceeds maximum size of 50MB.",
     });
   }
 
