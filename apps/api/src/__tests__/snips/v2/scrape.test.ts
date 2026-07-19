@@ -355,6 +355,49 @@ describe("Scrape tests", () => {
     scrapeTimeout,
   );
 
+  // Self-hosted mobile used to fail with SCRAPE_ALL_ENGINES_FAILED / partial
+  // scrapes because only fire-engine advertised mobile support (#3744).
+  concurrentIf(TEST_SELF_HOST && HAS_PLAYWRIGHT)(
+    "self-hosted mobile scrape succeeds without unsupported-feature warning",
+    async () => {
+      const response = await scrape(
+        {
+          url: "https://example.com",
+          formats: ["markdown"],
+          mobile: true,
+          maxAge: 0,
+        },
+        identity,
+      );
+
+      expect(response.markdown).toBeTruthy();
+      expect(response.markdown).toContain("Example Domain");
+      // playwright now emulates mobile; must not warn that mobile is unsupported
+      expect(response.warning ?? "").not.toMatch(/\bmobile\b/i);
+    },
+    scrapeTimeout,
+  );
+
+  concurrentIf(TEST_SELF_HOST && HAS_PLAYWRIGHT)(
+    "self-hosted desktop scrape is unchanged when mobile is false",
+    async () => {
+      const response = await scrape(
+        {
+          url: "https://example.com",
+          formats: ["markdown"],
+          mobile: false,
+          maxAge: 0,
+        },
+        identity,
+      );
+
+      expect(response.markdown).toBeTruthy();
+      expect(response.markdown).toContain("Example Domain");
+      expect(response.warning ?? "").not.toMatch(/\bmobile\b/i);
+    },
+    scrapeTimeout,
+  );
+
   itIf(TEST_SELF_HOST && !HAS_FIRE_ENGINE)(
     "rejects actions when fire-engine is not configured",
     async () => {

@@ -390,7 +390,8 @@ const engineOptions: {
       video: false,
       atsv: false,
       location: false,
-      mobile: false,
+      // Self-hosted playwright-service supports mobile viewport/UA emulation.
+      mobile: true,
       skipTlsVerification: true,
       useFastMode: false,
       stealthProxy: false,
