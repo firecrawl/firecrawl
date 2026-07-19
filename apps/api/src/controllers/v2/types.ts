@@ -1664,7 +1664,6 @@ function fromV0CrawlerOptions(
     internalOptions: {
       v0CrawlOnlyUrls: x.returnOnlyUrls,
       teamId,
-      // Conversion helpers have no ACUC; entry-point builders override this.
       orgId: null,
     },
   };
@@ -1730,7 +1729,6 @@ export function fromV0ScrapeOptions(
       atsv: pageOptions.atsv,
       v0DisableJsDom: pageOptions.disableJsDom,
       teamId,
-      // Conversion helpers have no ACUC; entry-point builders override this.
       orgId: null,
       ...(extractorOptions !== undefined &&
       extractorOptions.mode.includes("llm-extraction")
@@ -1844,7 +1842,6 @@ export function fromV1ScrapeOptions(
     }),
     internalOptions: {
       teamId,
-      // Conversion helpers have no ACUC; entry-point builders override this.
       orgId: null,
       v1Agent: v1ScrapeOptions.agent,
       v1JSONSystemPrompt: (
