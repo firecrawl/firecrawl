@@ -3,10 +3,7 @@ import { updateGeneratedLlmsTxt } from "./generate-llmstxt-redis";
 import { getMapResults } from "../../controllers/v1/map";
 import { z } from "zod";
 import { scrapeDocument } from "../extract/document-scraper";
-import {
-  hasOrgScopedBlocklist,
-  isUrlBlocked,
-} from "../../scraper/WebScraper/utils/blocklist";
+import { hasOrgScopedBlocklist } from "../../scraper/WebScraper/utils/blocklist";
 import {
   getLlmsTextFromCache,
   saveLlmsTextToCache,
@@ -17,7 +14,6 @@ import { getModel } from "../generic-ai";
 import { generateCompletions } from "../../scraper/scrapeURL/transformers/llmExtract";
 import { CostTracking } from "../cost-tracking";
 import { getACUCTeam } from "../../controllers/auth";
-import { UNSUPPORTED_SITE_MESSAGE } from "../strings";
 interface GenerateLLMsTextServiceOptions {
   generationId: string;
   teamId: string;
@@ -92,21 +88,6 @@ export async function performGenerateLlmsTxt(
     // Enforce max URL limit
     const effectiveMaxUrls = Math.min(maxUrls, 5000);
 
-    // A blocked origin fails outright — before the cache, and before mapping
-    // would fire sitemap/discovery requests at the blocked site.
-    const originBlocked = isUrlBlocked(url, acuc?.flags ?? null, {
-      team_id: teamId,
-      org_id: acuc?.org_id ?? null,
-      origin: "llmstxt",
-    });
-    if (originBlocked) {
-      await updateGeneratedLlmsTxt(generationId, {
-        status: "failed",
-        error: UNSUPPORTED_SITE_MESSAGE,
-      });
-      return { success: false as const, error: UNSUPPORTED_SITE_MESSAGE };
-    }
-
     // The cache is shared across teams, so a requester under org-scoped
     // blocklist rules must not touch it at all: even with the origin URL
     // itself unblocked, mapped child URLs may still be blocked, so a cached
@@ -144,7 +125,7 @@ export async function performGenerateLlmsTxt(
       });
 
       return {
-        success: true as const,
+        success: true,
         data: {
           generatedText: limitedLlmsTxt,
           fullText: cleanFullText,
@@ -312,7 +293,7 @@ export async function performGenerateLlmsTxt(
     });
 
     return {
-      success: true as const,
+      success: true,
       data: {
         generatedText: llmstxt,
         fullText: cleanFullText,

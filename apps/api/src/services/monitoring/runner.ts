@@ -11,7 +11,6 @@ import {
   resolveNewGroupBackend,
 } from "../worker/nuq-router";
 import { ScrapeJobData } from "../../types";
-import type { TeamFlags } from "../../controllers/v1/types";
 import { includesFormat } from "../../lib/format-utils";
 import { normalizeMonitorFormats } from "./diff";
 import { autumnService } from "../autumn/autumn.service";
@@ -266,7 +265,6 @@ export function estimateActualCredits(doc: any, options?: any): number {
 async function scrapeSearchMonitorPage(params: {
   teamId: string;
   orgId?: string | null;
-  teamFlags?: TeamFlags | null;
   checkId: string;
   url: string;
   judgePrompt: string;
@@ -307,7 +305,6 @@ async function scrapeSearchMonitorPage(params: {
       internalOptions: {
         teamId: params.teamId,
         orgId: params.orgId ?? null,
-        teamFlags: params.teamFlags ?? null,
         saveScrapeResultToGCS: !!config.GCS_FIRE_ENGINE_BUCKET_NAME,
         bypassBilling: true,
         zeroDataRetention: false,
@@ -543,7 +540,6 @@ async function enqueueMonitorScrapeTarget(params: {
         internalOptions: {
           teamId: params.monitor.team_id,
           orgId: acuc?.org_id ?? null,
-          teamFlags: acuc?.flags ?? null,
           saveScrapeResultToGCS: !!config.GCS_FIRE_ENGINE_BUCKET_NAME,
           bypassBilling: true,
           zeroDataRetention: false,
@@ -614,7 +610,6 @@ async function enqueueMonitorCrawlTarget(params: {
       disableSmartWaitCache: true,
       teamId: params.monitor.team_id,
       orgId: acuc?.org_id ?? null,
-      teamFlags: acuc?.flags ?? null,
       saveScrapeResultToGCS: !!config.GCS_FIRE_ENGINE_BUCKET_NAME,
       zeroDataRetention: false,
       bypassBilling: true,
@@ -784,7 +779,6 @@ async function runMonitorSearchTarget(params: {
       scrapeSearchMonitorPage({
         teamId: monitor.team_id,
         orgId: acuc?.org_id ?? null,
-        teamFlags,
         checkId: check.id,
         url,
         judgePrompt,
