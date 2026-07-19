@@ -50,12 +50,12 @@ export type ExchangeScrapeMetadata = {
   integrationId?: string;
 };
 
-export type ExchangeTerms = {
+type ExchangeTerms = {
   key: string;
   version: string;
 };
 
-export type ExchangeProvider = {
+type ExchangeProvider = {
   id: string;
   creditsCost: number;
   terms?: ExchangeTerms;
@@ -227,7 +227,10 @@ async function getExchangeProviders(): Promise<ExchangeProvider[] | null> {
   return providersRequest;
 }
 
-function providerMatchesUrl(provider: ExchangeProvider, inputUrl: string): boolean {
+function providerMatchesUrl(
+  provider: ExchangeProvider,
+  inputUrl: string,
+): boolean {
   let parsed: URL;
   try {
     parsed = new URL(inputUrl);
@@ -265,7 +268,9 @@ export async function resolveExchangeProvider(
     return null;
   }
 
-  return providers.find(provider => providerMatchesUrl(provider, inputUrl)) ?? null;
+  return (
+    providers.find(provider => providerMatchesUrl(provider, inputUrl)) ?? null
+  );
 }
 
 export function getExchangeRequestLogContext(inputUrl: string):
@@ -365,7 +370,9 @@ function getProviderAccessDecision(
   const entry = typeof access === "object" && access !== null ? access : null;
 
   if (provider.terms === undefined) {
-    return entry !== null && entry.status !== "enabled" ? "not_enabled" : "allowed";
+    return entry !== null && entry.status !== "enabled"
+      ? "not_enabled"
+      : "allowed";
   }
 
   if (entry === null) {
