@@ -167,6 +167,7 @@ export async function mapController(
         },
         origin: req.body.origin,
         teamId: req.auth.team_id,
+        orgId: req.acuc?.org_id ?? null,
         allowExternalLinks: req.body.allowExternalLinks,
         abort: abort.signal,
         mock: req.body.useMock,

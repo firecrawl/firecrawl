@@ -177,7 +177,15 @@ export async function initializeBlocklist() {
     }
   }
   for (const [orgId, orgBlob] of perOrg) {
-    perOrg.set(orgId, dedupeBlob(orgBlob));
+    const deduped = dedupeBlob(orgBlob);
+    // An org whose rows hold no blockable entries must not register as
+    // org-scoped at all — hasOrgScopedBlocklist consumers would otherwise
+    // pay cache opt-outs for an org that can never block anything.
+    if (deduped.blocklist.length === 0) {
+      perOrg.delete(orgId);
+    } else {
+      perOrg.set(orgId, deduped);
+    }
   }
   blob = dedupeBlob(globalBlob);
   orgBlobs = perOrg;

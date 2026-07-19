@@ -82,6 +82,7 @@ async function searchHelper(
     crawlerOptions,
     team_id,
   );
+  internalOptions.orgId = org_id;
 
   if (justSearch) {
     const searchCredits = Math.ceil(res.length / 10) * 2;

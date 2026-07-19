@@ -145,6 +145,15 @@ describe("isUrlBlocked", () => {
       expect(hasOrgScopedBlocklist(null)).toBe(false);
       expect(hasOrgScopedBlocklist(undefined)).toBe(false);
     });
+
+    it("does not count an org whose rows hold no blockable entries", async () => {
+      dbState.rows = [
+        GLOBAL_ROW,
+        { org_id: ORG_B, data: { blocklist: [], allowedKeywords: ["/x"] } },
+      ];
+      await initializeBlocklist();
+      expect(hasOrgScopedBlocklist(ORG_B)).toBe(false);
+    });
   });
 
   describe("row loading", () => {

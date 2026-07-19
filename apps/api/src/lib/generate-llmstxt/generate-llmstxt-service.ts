@@ -149,6 +149,7 @@ export async function performGenerateLlmsTxt(
     const mapResult = await getMapResults({
       url,
       teamId,
+      orgId: acuc?.org_id ?? null,
       limit: effectiveMaxUrls,
       includeSubdomains: false,
       ignoreSitemap: false,

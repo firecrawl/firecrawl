@@ -119,6 +119,7 @@ export async function processUrl_F0(
       url: baseUrl,
       search: searchQuery,
       teamId: options.teamId,
+      orgId: options.orgId ?? null,
       allowExternalLinks: options.allowExternalLinks,
       origin: options.origin,
       limit: options.limit,

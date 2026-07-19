@@ -86,6 +86,7 @@ export async function getMapResults({
   includeSubdomains = true,
   crawlerOptions = {},
   teamId,
+  orgId,
   allowExternalLinks,
   abort = new AbortController().signal,
   filterByPath = true,
@@ -103,6 +104,7 @@ export async function getMapResults({
   includeSubdomains?: boolean;
   crawlerOptions?: any;
   teamId: string;
+  orgId?: string | null;
   origin?: string;
   includeMetadata?: boolean;
   allowExternalLinks?: boolean;
@@ -144,7 +146,7 @@ export async function getMapResults({
       ...(location ? { location } : {}),
       ...(headers ? { headers } : {}),
     }),
-    internalOptions: { teamId },
+    internalOptions: { teamId, orgId: orgId ?? null },
     team_id: teamId,
     createdAt: Date.now(),
     zeroDataRetention,
