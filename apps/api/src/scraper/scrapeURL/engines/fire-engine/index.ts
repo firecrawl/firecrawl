@@ -379,7 +379,6 @@ export async function scrapeURLWithFireEngineChromeCDP(
       timeout: meta.abort.scrapeTimeout() ?? 300000,
       disableSmartWaitCache: meta.internalOptions.disableSmartWaitCache,
       mobileProxy: meta.featureFlags.has("stealthProxy"),
-      maxAge: meta.options.maxAge,
       saveScrapeResultToGCS:
         !meta.internalOptions.zeroDataRetention &&
         meta.internalOptions.saveScrapeResultToGCS,
@@ -522,7 +521,6 @@ export async function scrapeURLWithFireEngineTLSClient(
       mobileProxy: meta.featureFlags.has("stealthProxy"),
 
       timeout: meta.abort.scrapeTimeout() ?? 300000,
-      maxAge: meta.options.maxAge,
       saveScrapeResultToGCS:
         !meta.internalOptions.zeroDataRetention &&
         meta.internalOptions.saveScrapeResultToGCS,
