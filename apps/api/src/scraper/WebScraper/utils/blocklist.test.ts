@@ -154,6 +154,18 @@ describe("isUrlBlocked", () => {
       await initializeBlocklist();
       expect(hasOrgScopedBlocklist(ORG_B)).toBe(false);
     });
+
+    it("does not count an org whose entries are all blank strings", async () => {
+      dbState.rows = [
+        GLOBAL_ROW,
+        {
+          org_id: ORG_B,
+          data: { blocklist: ["", "   "], allowedKeywords: [] },
+        },
+      ];
+      await initializeBlocklist();
+      expect(hasOrgScopedBlocklist(ORG_B)).toBe(false);
+    });
   });
 
   describe("row loading", () => {

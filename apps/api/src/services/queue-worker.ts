@@ -165,7 +165,7 @@ const processGenerateLlmsTxtJobInternal = async (
       return result;
     } else {
       const error = new Error(
-        "LLMs text generation failed without specific error",
+        result.error ?? "LLMs text generation failed without specific error",
       );
       await job.moveToFailed(error, token, false);
       await updateGeneratedLlmsTxt(job.data.generateId, {

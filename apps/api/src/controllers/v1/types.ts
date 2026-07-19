@@ -1453,6 +1453,8 @@ function fromLegacyCrawlerOptions(
     internalOptions: {
       v0CrawlOnlyUrls: x.returnOnlyUrls,
       teamId,
+      // Conversion helpers have no ACUC; entry-point builders override this.
+      orgId: null,
     },
   };
 }
@@ -1518,6 +1520,8 @@ export function fromLegacyScrapeOptions(
       atsv: pageOptions.atsv,
       v0DisableJsDom: pageOptions.disableJsDom,
       teamId,
+      // Conversion helpers have no ACUC; entry-point builders override this.
+      orgId: null,
     },
     // TODO: fallback, fetchPageContent, replaceAllPathsWithAbsolutePaths, includeLinks
   };

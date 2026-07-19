@@ -503,6 +503,7 @@ const processPrecrawlJob = async (token: string, job: Job) => {
               internalOptions: {
                 disableSmartWaitCache: true, // NOTE: smart wait disabled for crawls to ensure contentful scrape, speed does not matter
                 teamId,
+                orgId: null, // internal pre-crawl team, no org applies
                 saveScrapeResultToGCS: !!config.GCS_FIRE_ENGINE_BUCKET_NAME,
                 zeroDataRetention: false,
                 isPreCrawl: true, // NOTE: must be added to internal options for indexing, if not it will be treated as a normal scrape in the index

@@ -106,16 +106,21 @@ let blob: BlocklistBlob | null = null;
 let orgBlobs: Map<string, BlocklistBlob> = new Map();
 
 // Rows are written by ops directly, so reads must survive a missing or
-// partial document — a bad row must never take down startup.
+// partial document — a bad row must never take down startup. Blank entries
+// can never match and would make an org register as scoped, so drop them.
+function parseStringEntries(value: unknown): string[] {
+  return Array.isArray(value)
+    ? value.filter(
+        (x): x is string => typeof x === "string" && x.trim().length > 0,
+      )
+    : [];
+}
+
 function parseBlob(data: unknown): BlocklistBlob {
   const doc = (data ?? {}) as Record<string, unknown>;
   return {
-    blocklist: Array.isArray(doc.blocklist)
-      ? doc.blocklist.filter((x): x is string => typeof x === "string")
-      : [],
-    allowedKeywords: Array.isArray(doc.allowedKeywords)
-      ? doc.allowedKeywords.filter((x): x is string => typeof x === "string")
-      : [],
+    blocklist: parseStringEntries(doc.blocklist),
+    allowedKeywords: parseStringEntries(doc.allowedKeywords),
   };
 }
 

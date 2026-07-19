@@ -17,6 +17,7 @@ import { getModel } from "../generic-ai";
 import { generateCompletions } from "../../scraper/scrapeURL/transformers/llmExtract";
 import { CostTracking } from "../cost-tracking";
 import { getACUCTeam } from "../../controllers/auth";
+import { UNSUPPORTED_SITE_MESSAGE } from "../strings";
 interface GenerateLLMsTextServiceOptions {
   generationId: string;
   teamId: string;
@@ -91,23 +92,31 @@ export async function performGenerateLlmsTxt(
     // Enforce max URL limit
     const effectiveMaxUrls = Math.min(maxUrls, 5000);
 
-    // The cache is shared across teams, so a requester under org-scoped
-    // blocklist rules must not touch it at all: even when the origin URL
-    // itself is exempt, mapped child URLs may still be blocked, so a cached
-    // generation could hand them blocked content and their filtered output
-    // would poison the cache for everyone else. A blocked origin likewise
-    // skips both read and write.
-    const urlBlockedForRequester =
-      hasOrgScopedBlocklist(acuc?.org_id) ||
-      isUrlBlocked(url, acuc?.flags ?? null, {
-        team_id: teamId,
-        org_id: acuc?.org_id ?? null,
-        origin: "llmstxt",
+    // A blocked origin fails outright — before the cache, and before mapping
+    // would fire sitemap/discovery requests at the blocked site.
+    const originBlocked = isUrlBlocked(url, acuc?.flags ?? null, {
+      team_id: teamId,
+      org_id: acuc?.org_id ?? null,
+      origin: "llmstxt",
+    });
+    if (originBlocked) {
+      await updateGeneratedLlmsTxt(generationId, {
+        status: "failed",
+        error: UNSUPPORTED_SITE_MESSAGE,
       });
+      return { success: false as const, error: UNSUPPORTED_SITE_MESSAGE };
+    }
+
+    // The cache is shared across teams, so a requester under org-scoped
+    // blocklist rules must not touch it at all: even with the origin URL
+    // itself unblocked, mapped child URLs may still be blocked, so a cached
+    // generation could hand them blocked content and their filtered output
+    // would poison the cache for everyone else.
+    const skipSharedCache = hasOrgScopedBlocklist(acuc?.org_id);
 
     // Check cache first, unless cache is set to false
     const cachedResult =
-      cache && !urlBlockedForRequester
+      cache && !skipSharedCache
         ? await getLlmsTextFromCache(url, effectiveMaxUrls)
         : null;
     if (cachedResult) {
@@ -135,7 +144,7 @@ export async function performGenerateLlmsTxt(
       });
 
       return {
-        success: true,
+        success: true as const,
         data: {
           generatedText: limitedLlmsTxt,
           fullText: cleanFullText,
@@ -254,7 +263,7 @@ export async function performGenerateLlmsTxt(
     }
 
     // After successful generation, save to cache
-    if (!urlBlockedForRequester) {
+    if (!skipSharedCache) {
       await saveLlmsTextToCache(url, llmstxt, llmsFulltxt, effectiveMaxUrls);
     }
 
@@ -303,7 +312,7 @@ export async function performGenerateLlmsTxt(
     });
 
     return {
-      success: true,
+      success: true as const,
       data: {
         generatedText: llmstxt,
         fullText: cleanFullText,

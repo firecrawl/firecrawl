@@ -157,6 +157,7 @@ export async function processUrl_F0(
       const retryMapResults = await getMapResults({
         url: baseUrl,
         teamId: options.teamId,
+        orgId: options.orgId ?? null,
         allowExternalLinks: options.allowExternalLinks,
         origin: options.origin,
         limit: options.limit,

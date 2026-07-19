@@ -170,6 +170,7 @@ export async function crawlController(
         basePrompt: req.body.prompt,
         url: req.body.url,
         teamId: req.auth.team_id,
+        orgId: req.acuc?.org_id ?? null,
         flags: req.acuc?.flags ?? null,
         logger,
         limit: 50,
