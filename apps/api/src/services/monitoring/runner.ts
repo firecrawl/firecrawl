@@ -264,7 +264,6 @@ export function estimateActualCredits(doc: any, options?: any): number {
 // per-page — search monitors bill flat at the check level.
 async function scrapeSearchMonitorPage(params: {
   teamId: string;
-  orgId?: string | null;
   checkId: string;
   url: string;
   judgePrompt: string;
@@ -304,7 +303,9 @@ async function scrapeSearchMonitorPage(params: {
       scrapeOptions,
       internalOptions: {
         teamId: params.teamId,
-        orgId: params.orgId ?? null,
+        // Monitors do no in-pipeline blocklist enforcement (business rule);
+        // search results are filtered via isBlocked before scraping.
+        orgId: null,
         saveScrapeResultToGCS: !!config.GCS_FIRE_ENGINE_BUCKET_NAME,
         bypassBilling: true,
         zeroDataRetention: false,
@@ -509,8 +510,6 @@ async function enqueueMonitorScrapeTarget(params: {
     throw new Error("Expected scrape target");
   }
 
-  const acuc = await getACUCTeam(params.monitor.team_id);
-
   for (const [index, url] of params.target.urls.entries()) {
     const scrapeId = params.targetRun.expectedJobs[index];
     const scrapeOptions = scrapeRequestSchema.parse({
@@ -539,7 +538,8 @@ async function enqueueMonitorScrapeTarget(params: {
         scrapeOptions,
         internalOptions: {
           teamId: params.monitor.team_id,
-          orgId: acuc?.org_id ?? null,
+          // Monitors do no in-pipeline blocklist enforcement (business rule).
+          orgId: null,
           saveScrapeResultToGCS: !!config.GCS_FIRE_ENGINE_BUCKET_NAME,
           bypassBilling: true,
           zeroDataRetention: false,
@@ -575,7 +575,6 @@ async function enqueueMonitorCrawlTarget(params: {
   }
 
   const crawlId = params.targetRun.crawlId;
-  const acuc = await getACUCTeam(params.monitor.team_id);
   const body = crawlRequestSchema.parse({
     url: params.target.url,
     ...(params.target.crawlOptions ?? {}),
@@ -609,7 +608,8 @@ async function enqueueMonitorCrawlTarget(params: {
     internalOptions: {
       disableSmartWaitCache: true,
       teamId: params.monitor.team_id,
-      orgId: acuc?.org_id ?? null,
+      // Monitors do no in-pipeline blocklist enforcement (business rule).
+      orgId: null,
       saveScrapeResultToGCS: !!config.GCS_FIRE_ENGINE_BUCKET_NAME,
       zeroDataRetention: false,
       bypassBilling: true,
@@ -778,7 +778,6 @@ async function runMonitorSearchTarget(params: {
     scrapePage: ({ url, judgePrompt }) =>
       scrapeSearchMonitorPage({
         teamId: monitor.team_id,
-        orgId: acuc?.org_id ?? null,
         checkId: check.id,
         url,
         judgePrompt,
