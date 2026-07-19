@@ -393,6 +393,7 @@ class FirecrawlClient:
         limit: Optional[int] = None,
         tbs: Optional[str] = None,
         location: Optional[str] = None,
+        country: Optional[str] = None,
         ignore_invalid_urls: Optional[bool] = None,
         timeout: Optional[int] = None,
         highlights: Optional[bool] = None,
@@ -409,6 +410,7 @@ class FirecrawlClient:
             limit: Maximum number of results to return (default: 5)
             tbs: Time-based search filter
             location: Location string for search
+            country: ISO country code for geo-targeted results (e.g. "US", "DE")
             timeout: Request timeout in milliseconds (default: 300000)
             highlights: Generate query-relevant highlights for search results
                 (default: true)
@@ -431,6 +433,7 @@ class FirecrawlClient:
             limit=limit,
             tbs=tbs,
             location=location,
+            country=country,
             ignore_invalid_urls=ignore_invalid_urls,
             timeout=timeout,
             highlights=highlights,
