@@ -11,6 +11,9 @@
   "keywords": [],
   "author": "Jeff Pereira",
   "license": "ISC",
+  "engines": {
+    "node": ">=22.13.0"
+  },
   "dependencies": {
     "dotenv": "^16.4.5",
     "express": "^5.2.1",
@@ -26,11 +29,5 @@
     "tsx": "^4.21.0",
     "typescript": "^5.9.3"
   },
-  "pnpm": {
-    "overrides": {
-      "path-to-regexp@<8.4.0": ">=8.4.0",
-      "qs@<6.15.2": ">=6.15.2 <7.0.0",
-      "esbuild@>=0.17.0 <0.28.1": "0.28.1"
-    }
-  }
+  "packageManager": "pnpm@11.4.0"
 }

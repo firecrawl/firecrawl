@@ -697,6 +697,8 @@ export interface SearchRequest {
   location?: string;
   ignoreInvalidURLs?: boolean;
   timeout?: number; // ms
+  /** Generate query-relevant highlights for search results. Defaults to true. */
+  highlights?: boolean;
   scrapeOptions?: ScrapeOptions;
   /**
    * Enterprise search options. Use `["zdr"]` for end-to-end Zero Data

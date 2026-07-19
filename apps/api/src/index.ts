@@ -34,6 +34,7 @@ import { v2Router } from "./routes/v2";
 import { nuqShutdown } from "./services/worker/nuq";
 import { getErrorContactMessage } from "./lib/deployment";
 import { initializeBlocklist } from "./scraper/WebScraper/utils/blocklist";
+import { warmExchangeCatalog } from "./lib/exchange";
 import { initializeEngineForcing } from "./scraper/WebScraper/utils/engine-forcing";
 import responseTime from "response-time";
 import { shutdownWebhookQueue } from "./services/webhook";
@@ -132,6 +133,7 @@ async function startServer(port = DEFAULT_PORT) {
   try {
     await initializeBlocklist();
     initializeEngineForcing();
+    warmExchangeCatalog();
   } catch (error) {
     logger.error("Failed to initialize API startup dependencies", {
       error,

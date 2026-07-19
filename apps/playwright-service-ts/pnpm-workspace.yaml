@@ -1,0 +1,6 @@
+allowBuilds:
+  esbuild: true
+overrides:
+  "path-to-regexp@<8.4.0": ">=8.4.0"
+  "qs@<6.15.2": ">=6.15.2 <7.0.0"
+  "esbuild@>=0.17.0 <0.28.1": "0.28.1"

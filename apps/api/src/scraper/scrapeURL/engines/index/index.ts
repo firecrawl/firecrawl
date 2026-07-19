@@ -52,6 +52,9 @@ export async function sendDocumentToIndex(meta: Meta, document: Document) {
     !meta.internalOptions.zeroDataRetention &&
     meta.winnerEngine !== "index" &&
     meta.winnerEngine !== "index;documents" &&
+    // Exchange-delivered content is never stored on the Firecrawl side:
+    // every access must go through the Exchange and its ledger.
+    meta.winnerEngine !== "exchange" &&
     !(meta.winnerEngine === "pdf" && !shouldParsePDF(meta.options.parsers)) &&
     !meta.options.parsers?.some(parser => {
       if (

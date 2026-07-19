@@ -6,6 +6,33 @@ import { UnsafeDomainBlockedError } from "./threat-protection/error";
 import type { ThreatDecision } from "./threat-protection/types";
 
 describe("calculateCreditsToBeBilled", () => {
+  it("bills handled Exchange successes at the reported credit cost", async () => {
+    const credits = await calculateCreditsToBeBilled(
+      {
+        formats: [{ type: "markdown" }],
+      } as any,
+      {
+        teamId: "team-id",
+      },
+      {
+        metadata: {
+          statusCode: 200,
+          url: "https://profiles.example/person/example-person",
+          proxyUsed: "basic",
+        },
+      } as any,
+      {
+        totalCost: 0,
+      } as any,
+      {} as any,
+      undefined,
+      undefined,
+      { handled: true, creditsCost: 12 },
+    );
+
+    expect(credits).toBe(12);
+  });
+
   it("bills X/Twitter scrapes at 30 credits", async () => {
     const credits = await calculateCreditsToBeBilled(
       {
@@ -141,6 +168,7 @@ const billWithDecisions = (args: {
     { totalCost: 0 } as any,
     {} as any,
     args.error,
+    undefined,
     undefined,
     args.threatDecisions,
   );

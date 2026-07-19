@@ -24,6 +24,7 @@ final class SearchOptions
         private readonly ?string $integration = null,
         private readonly ?array $includeDomains = null,
         private readonly ?array $excludeDomains = null,
+        private readonly ?bool $highlights = null,
     ) {}
 
     /**
@@ -44,10 +45,12 @@ final class SearchOptions
         ?string $integration = null,
         ?array $includeDomains = null,
         ?array $excludeDomains = null,
+        ?bool $highlights = null,
     ): self {
         return new self(
             $sources, $categories, $limit, $tbs, $location, $ignoreInvalidURLs,
             $timeout, $scrapeOptions, $integration, $includeDomains, $excludeDomains,
+            $highlights,
         );
     }
 
@@ -64,6 +67,7 @@ final class SearchOptions
             'location' => $this->location,
             'ignoreInvalidURLs' => $this->ignoreInvalidURLs,
             'timeout' => $this->timeout,
+            'highlights' => $this->highlights,
             'scrapeOptions' => $this->scrapeOptions?->toArray(),
             'integration' => $this->integration,
         ];

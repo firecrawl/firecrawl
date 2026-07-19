@@ -13,7 +13,7 @@ import {
   mergeScrapedContent,
   calculateScrapeCredits,
 } from "./scrape";
-import { applySearchHighlights, highlightsEnvReady } from "./highlights";
+import { applyIndexedSearchHighlights, highlightsEnvReady } from "./highlights";
 import { runSearchHighlightsShadow } from "./highlights-shadow";
 import { trackSearchResults, trackSearchRequest } from "../lib/tracking";
 import type { BillingMetadata } from "../services/billing/types";
@@ -253,7 +253,12 @@ export async function executeSearch(
     flags?.highlightsBeta === true &&
     highlightsEnvReady();
   if (shouldApplyHighlights) {
-    await applySearchHighlights(searchResponse, query, logger);
+    await applyIndexedSearchHighlights(
+      searchResponse,
+      query,
+      logger,
+      context.requestId,
+    );
   } else {
     runSearchHighlightsShadow({
       response: searchResponse,

@@ -27,6 +27,11 @@ function shouldIndexForSearch(meta: Meta, document: Document): boolean {
     return false;
   }
 
+  // Exchange-delivered content is never stored on the Firecrawl side.
+  if (meta.winnerEngine === "exchange") {
+    return false;
+  }
+
   // Lockdown must not forward the target URL to any external service.
   if (meta.options.lockdown) {
     return false;

@@ -3,7 +3,7 @@
     "low": true,
     "allowlist": [
         // GHSA-v2v4-37r5-5v8g (ip-address):
-        // geoip-country 5.0.202607110104 still depends on ip-address 6.x; the
+        // geoip-country 5.0.202607150057 still depends on ip-address 6.x; the
         // non-affected line is a multi-major jump outside the upstream range.
         // Do not override across majors without compatibility approval.
         // Owner: team-engineering-reviewers. Tracking: create internal ticket.

@@ -2,7 +2,11 @@ import { createLogger, type Logger } from "winston";
 import type { SearchV2Response } from "../lib/entities";
 import { config } from "../config";
 import { logger as rootLogger } from "../lib/logger";
-import { applySearchHighlights, highlightsEnvReady } from "./highlights";
+import {
+  highlightsEnvReady,
+  runIndexedSearchHighlightsShadow,
+  searchHighlightURLs,
+} from "./highlights";
 
 const CANONICAL_LOG = "search/highlights-shadow";
 const shadowLogger = createLogger({ silent: true });
@@ -27,7 +31,7 @@ export function createSearchHighlightsShadowRunner(
   requestId: string;
   teamId: string;
   zeroDataRetention: boolean;
-}) => "skipped" | "dropped" | "started" {
+}) => "skipped" | "started" {
   let inFlight = 0;
 
   return options => {
@@ -39,42 +43,23 @@ export function createSearchHighlightsShadowRunner(
       return "skipped";
     }
 
-    if (inFlight >= config.HIGHLIGHT_SHADOW_MAX_INFLIGHT) {
-      canonicalLogger.info("Search highlights shadow dropped", {
-        canonicalLog: CANONICAL_LOG,
-        outcome: "dropped",
-        reason: "max_inflight",
-        requestId: options.requestId,
-        teamId: options.teamId,
-        inFlight,
-        maxInFlight: config.HIGHLIGHT_SHADOW_MAX_INFLIGHT,
-        sampleRate: config.HIGHLIGHT_SHADOW_RATE,
-      });
-      return "dropped";
-    }
-
+    const urls = searchHighlightURLs(options.response);
+    const { query, requestId, teamId } = options;
     inFlight++;
     const startedAt = Date.now();
-    void applySearchHighlights(options.response, options.query, shadowLogger, {
-      applyResults: false,
-      suppressSummaryLog: true,
-      suppressPayloadLog: true,
-      allowLegacyFallback: false,
-      requestId: options.requestId,
-    })
+    void runIndexedSearchHighlightsShadow(urls, query, shadowLogger, requestId)
       .then(result => {
         canonicalLogger.info("Search highlights shadow completed", {
           canonicalLog: CANONICAL_LOG,
           outcome: result.succeeded ? "completed" : "failed",
-          requestId: options.requestId,
-          teamId: options.teamId,
+          requestId,
+          teamId,
           attempted: result.attempted,
           indexHits: result.indexHits,
           wouldReplace: result.replaced,
           failureReason: result.failureReason,
           timeTakenMs: Date.now() - startedAt,
           inFlight,
-          maxInFlight: config.HIGHLIGHT_SHADOW_MAX_INFLIGHT,
           sampleRate: config.HIGHLIGHT_SHADOW_RATE,
         });
       })
@@ -82,12 +67,11 @@ export function createSearchHighlightsShadowRunner(
         canonicalLogger.warn("Search highlights shadow failed", {
           canonicalLog: CANONICAL_LOG,
           outcome: "failed",
-          requestId: options.requestId,
-          teamId: options.teamId,
+          requestId,
+          teamId,
           errorType: error instanceof Error ? error.name : "unknown",
           timeTakenMs: Date.now() - startedAt,
           inFlight,
-          maxInFlight: config.HIGHLIGHT_SHADOW_MAX_INFLIGHT,
           sampleRate: config.HIGHLIGHT_SHADOW_RATE,
         });
       })

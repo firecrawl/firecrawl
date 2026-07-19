@@ -87,6 +87,7 @@ public class ModelsTests
             Limit = 5,
             Location = "US",
             Tbs = "qdr:w",
+            Highlights = false,
             IncludeDomains = new() { "firecrawl.dev" },
             ExcludeDomains = new() { "example.com" }
         };
@@ -95,6 +96,7 @@ public class ModelsTests
         Assert.Contains("\"limit\":5", json);
         Assert.Contains("\"location\":\"US\"", json);
         Assert.Contains("\"tbs\":\"qdr:w\"", json);
+        Assert.Contains("\"highlights\":false", json);
         Assert.Contains("\"includeDomains\":[\"firecrawl.dev\"]", json);
         Assert.Contains("\"excludeDomains\":[\"example.com\"]", json);
     }

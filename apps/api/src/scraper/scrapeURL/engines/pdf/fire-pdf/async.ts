@@ -82,6 +82,16 @@ export async function scrapePDFWithFirePDFAsync(
   const deadlineAt = new Date(submitTime + deadlineFromNow).toISOString();
   const pollingDeadline = submitTime + deadlineFromNow + POLL_TIMEOUT_BUFFER_MS;
 
+  // Account context for FirePDF's per-team admission observation,
+  // snapshotted from the request ACUC into internalOptions at
+  // acceptance (same pattern as teamFlags) — no re-fetch here. Absence
+  // means FirePDF skips team observation for this submit.
+  const rawConcurrency = meta.internalOptions.teamConcurrency;
+  const teamConcurrency =
+    typeof rawConcurrency === "number" && rawConcurrency > 0
+      ? rawConcurrency
+      : undefined;
+
   // ── Step 1: POST /jobs ────────────────────────────────────────────────
   let submissionAccepted = false;
   let terminalReached = false;
@@ -96,6 +106,7 @@ export async function scrapePDFWithFirePDFAsync(
       pagesProcessed,
       mode,
       deadlineAt,
+      teamConcurrency,
       fetchImpl,
     });
     submissionAccepted = true;

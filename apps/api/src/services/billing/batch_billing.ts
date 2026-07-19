@@ -13,6 +13,71 @@ import {
   type BillingEndpoint,
   type BillingMetadata,
 } from "./types";
+import { reportExchangeBilling } from "../../lib/exchange";
+
+// Upper bound on concurrent Exchange confirmation requests across the
+// whole worker, so slow or retrying deliveries from overlapping batch
+// runs never stack into a burst against the Exchange.
+const EXCHANGE_CONFIRM_CONCURRENCY = 16;
+let exchangeConfirmSlots = EXCHANGE_CONFIRM_CONCURRENCY;
+const exchangeConfirmWaiters: Array<() => void> = [];
+
+async function withExchangeConfirmSlot<T>(fn: () => Promise<T>): Promise<T> {
+  if (exchangeConfirmSlots > 0) {
+    exchangeConfirmSlots--;
+  } else {
+    await new Promise<void>(resolve => exchangeConfirmWaiters.push(resolve));
+  }
+  try {
+    return await fn();
+  } finally {
+    const next = exchangeConfirmWaiters.shift();
+    if (next !== undefined) {
+      next();
+    } else {
+      exchangeConfirmSlots++;
+    }
+  }
+}
+
+// Confirm the Exchange accesses behind a set of committed billing
+// operations. Runs after the batch lock is released so an Exchange outage
+// can never stall the billing loop past its lease. reportExchangeBilling
+// retries internally and never throws; a sustained failure leaves the
+// event pending on the Exchange, which flags unresolved events for
+// reconciliation.
+async function confirmExchangeOutcomes(
+  operations: BillingOperation[],
+): Promise<void> {
+  // A small worker pool pulls operations one at a time, so a slow
+  // Exchange queues at most EXCHANGE_CONFIRM_CONCURRENCY waiters per
+  // invocation on the shared budget instead of one per operation.
+  let nextIndex = 0;
+  const workerCount = Math.min(
+    EXCHANGE_CONFIRM_CONCURRENCY,
+    operations.length,
+  );
+  await Promise.all(
+    Array.from({ length: workerCount }, async () => {
+      while (true) {
+        const index = nextIndex++;
+        if (index >= operations.length) {
+          return;
+        }
+        const op = operations[index];
+        await withExchangeConfirmSlot(() =>
+          reportExchangeBilling({
+            accessEventId: op.exchange_access_event_id!,
+            status: "confirmed",
+            ...(op.billing_reference === undefined
+              ? {}
+              : { billingReference: op.billing_reference }),
+          }),
+        );
+      }
+    }),
+  );
+}
 
 // Configuration constants
 const BATCH_KEY = "billing_batch";
@@ -31,6 +96,11 @@ interface BillingOperation {
   timestamp: string;
   api_key_id: number | null;
   autumnTrackInRequest: boolean;
+  // Exchange access backing this operation, if any: its ledger event is
+  // confirmed once the debit commits. Failed or ambiguous commits leave
+  // the event pending for reconciliation rather than voiding it.
+  exchange_access_event_id?: string;
+  billing_reference?: string;
 }
 
 // Grouped billing operations for batch processing
@@ -108,6 +178,10 @@ export async function processBillingBatch() {
   if (!(await acquireLock())) {
     return;
   }
+
+  // Exchange operations whose debit committed this run; their ledger
+  // confirmations are delivered after the lock is released.
+  const committedExchangeOps: BillingOperation[] = [];
 
   try {
     // Get all operations from Redis list
@@ -188,6 +262,11 @@ export async function processBillingBatch() {
 
         if (!billingResult.success) {
           await refundRequestTrackedCredits(group);
+          // Deliberately no Exchange outcome here: supaBillTeam maps thrown
+          // errors to success: false, and a transport error can occur after
+          // the debit committed, so voiding could erase a real debit. The
+          // events stay pending on the Exchange, which flags unresolved
+          // events for reconciliation.
           logger.warn(
             `⚠️ Billing returned success: false for team ${group.team_id}`,
             {
@@ -204,8 +283,18 @@ export async function processBillingBatch() {
         );
 
         // Ledger commit only — usage is tracked to Autumn at request time, not here.
+
+        // The debit is committed: confirm the Exchange accesses it covered
+        // once the batch lock is released.
+        committedExchangeOps.push(
+          ...group.operations.filter(
+            op => op.exchange_access_event_id !== undefined,
+          ),
+        );
       } catch (error) {
         await refundRequestTrackedCredits(group);
+        // No Exchange outcome here either — same ambiguity as the
+        // success: false branch above; the events stay pending.
         logger.error(`❌ Failed to bill team ${group.team_id}`, {
           error,
           group,
@@ -231,6 +320,8 @@ export async function processBillingBatch() {
   } finally {
     await releaseLock();
   }
+
+  await confirmExchangeOutcomes(committedExchangeOps);
 }
 
 // Start periodic batch processing
@@ -262,6 +353,7 @@ export async function queueBillingOperation(
   billing: BillingMetadata,
   is_extract: boolean = false,
   autumnTrackInRequest: boolean = false,
+  exchange?: { accessEventId: string; billingReference?: string },
 ) {
   // Skip queuing for preview teams
   if (team_id === "preview" || team_id.startsWith("preview_")) {
@@ -285,6 +377,14 @@ export async function queueBillingOperation(
       timestamp: new Date().toISOString(),
       api_key_id,
       autumnTrackInRequest,
+      ...(exchange === undefined
+        ? {}
+        : {
+            exchange_access_event_id: exchange.accessEventId,
+            ...(exchange.billingReference === undefined
+              ? {}
+              : { billing_reference: exchange.billingReference }),
+          }),
     };
 
     // Add operation to Redis list

@@ -77,10 +77,7 @@ jobs:
 
       - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4
         with:
-          version: 10
-
-      - run: pnpm config set store-dir ~/.pnpm-store
-      - run: mkdir -p ~/.pnpm-store
+          version: 11.4.0
 
       - name: Install FoundationDB client library
         run: |
@@ -478,7 +475,7 @@ jobs:
 
   #     - uses: pnpm/action-setup@v4
   #       with:
-  #         version: 10
+  #         version: 11.4.0
 
   #     - run: pnpm config set store-dir ~/.pnpm-store
   #     - run: mkdir -p ~/.pnpm-store
@@ -589,10 +586,7 @@ jobs:
 
       - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4
         with:
-          version: 10
-
-      - run: pnpm config set store-dir ~/.pnpm-store
-      - run: mkdir -p ~/.pnpm-store
+          version: 11.4.0
 
       - uses: actions/setup-node@v6
         with:

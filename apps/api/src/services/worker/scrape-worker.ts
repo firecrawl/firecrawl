@@ -99,6 +99,11 @@ import {
   recordMonitorScrapeFailure,
   recordMonitorScrapeSuccess,
 } from "../monitoring/results";
+import {
+  reportExchangeBilling,
+  warmExchangeCatalog,
+  type ExchangeScrapeMetadata,
+} from "../../lib/exchange";
 
 configDotenv();
 
@@ -108,6 +113,7 @@ const jobLockExtensionTime = config.JOB_LOCK_EXTENSION_TIME;
 if (require.main === module) {
   cacheableLookup.install(http.globalAgent);
   cacheableLookup.install(https.globalAgent);
+  warmExchangeCatalog();
 }
 
 async function billScrapeJob(
@@ -118,6 +124,7 @@ async function billScrapeJob(
   flags: TeamFlags,
   error?: Error | null,
   unsupportedFeatures?: Set<FeatureFlag>,
+  exchange?: ExchangeScrapeMetadata,
   threatDecisions?: ThreatDecision[],
 ) {
   let creditsToBeBilled: number | null = null;
@@ -146,6 +153,7 @@ async function billScrapeJob(
       flags,
       error,
       unsupportedFeatures,
+      exchange,
       threatDecisions,
     );
 
@@ -177,7 +185,10 @@ async function billScrapeJob(
           },
         );
 
-        // Add directly to the billing queue - the billing worker will handle the rest
+        // Add directly to the billing queue - the billing worker will handle
+        // the rest, including confirming the Exchange access event once the
+        // debit actually commits. A failed commit leaves the event pending
+        // for reconciliation - it is never voided on an ambiguous outcome.
         await getBillingQueue().add(
           "bill_team",
           {
@@ -189,6 +200,9 @@ async function billScrapeJob(
             originating_job_id: job.id,
             api_key_id: job.data.apiKeyId,
             autumnTrackInRequest: trackedInRequest,
+            ...(exchange?.accessEventId === undefined
+              ? {}
+              : { exchangeAccessEventId: exchange.accessEventId }),
           },
           {
             jobId: billingJobId,
@@ -208,6 +222,18 @@ async function billScrapeJob(
             value: creditsToBeBilled,
             properties: autumnProperties,
             featureId,
+          });
+        }
+        // The billing operation never reached the queue, so no debit will
+        // commit and no confirmation will ever arrive: void the Exchange
+        // access event instead of leaving it dangling. If the enqueue
+        // actually succeeded and only the acknowledgement was lost, the
+        // eventual confirmation repairs the void (void -> confirmed is
+        // legal on the Exchange). Fire-and-forget.
+        if (exchange?.accessEventId !== undefined) {
+          void reportExchangeBilling({
+            accessEventId: exchange.accessEventId,
+            status: "void",
           });
         }
         captureExceptionWithZdrCheck(error, {
@@ -663,6 +689,7 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
         (await getACUCTeam(job.data.team_id))?.flags ?? null,
         undefined,
         pipeline.unsupportedFeatures,
+        pipeline.exchange,
         pipeline.threatDecisions,
       );
 
@@ -754,6 +781,7 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
         (await getACUCTeam(job.data.team_id))?.flags ?? null,
         undefined,
         pipeline.unsupportedFeatures,
+        pipeline.exchange,
         pipeline.threatDecisions,
       );
 
@@ -954,8 +982,23 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
       (await getACUCTeam(job.data.team_id))?.flags ?? null,
       error instanceof Error ? error : null,
       undefined,
+      undefined,
       pipeline?.threatDecisions,
     );
+
+    // The Exchange delivered this access but the scrape ultimately failed,
+    // so the customer was never billed for it - void the access event so
+    // the Exchange ledger reconciles. Fire-and-forget. If billing was in
+    // fact queued before a later step failed, the billing worker's
+    // confirmation authoritatively repairs this void (void -> confirmed is
+    // legal on the Exchange; confirmed -> void is not), so a paid access
+    // can never end up voided.
+    if (pipeline?.success && pipeline.exchange?.accessEventId !== undefined) {
+      void reportExchangeBilling({
+        accessEventId: pipeline.exchange.accessEventId,
+        status: "void",
+      });
+    }
 
     logger.debug("Logging job to DB...");
     await logScrape(

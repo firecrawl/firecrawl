@@ -742,6 +742,7 @@ class ClientTest < Minitest::Test
       limit: 10,
       location: "US",
       tbs: "qdr:w",
+      highlights: false,
       include_domains: ["firecrawl.dev"],
       exclude_domains: ["example.com"]
     )
@@ -749,6 +750,7 @@ class ClientTest < Minitest::Test
     assert_equal 10, h["limit"]
     assert_equal "US", h["location"]
     assert_equal "qdr:w", h["tbs"]
+    assert_equal false, h["highlights"]
     assert_equal ["firecrawl.dev"], h["includeDomains"]
     assert_equal ["example.com"], h["excludeDomains"]
   end
