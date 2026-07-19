@@ -8,6 +8,7 @@ module Firecrawl
         prompt exclude_paths include_paths max_discovery_depth sitemap
         ignore_query_parameters deduplicate_similar_urls limit
         crawl_entire_domain allow_external_links allow_subdomains
+        ignore_robots_txt robots_user_agent
         delay max_concurrency webhook scrape_options regex_on_full_url
         zero_data_retention integration
       ].freeze
@@ -31,6 +32,8 @@ module Firecrawl
           "crawlEntireDomain" => crawl_entire_domain,
           "allowExternalLinks" => allow_external_links,
           "allowSubdomains" => allow_subdomains,
+          "ignoreRobotsTxt" => ignore_robots_txt,
+          "robotsUserAgent" => robots_user_agent,
           "delay" => delay,
           "maxConcurrency" => max_concurrency,
           "webhook" => serialize_webhook,
