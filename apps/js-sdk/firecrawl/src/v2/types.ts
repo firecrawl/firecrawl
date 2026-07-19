@@ -203,6 +203,13 @@ export interface ScrapeOptions {
   useMock?: string;
   blockAds?: boolean;
   proxy?: "basic" | "stealth" | "enhanced" | "auto" | string;
+  /**
+   * Maximum age, in milliseconds, of an indexed copy that may be returned
+   * instead of running the scrape path. If Firecrawl has indexed content
+   * younger than `maxAge`, it may be reused to cut latency and cost. When
+   * omitted, the common reuse window is 2 days and may be tuned by domain.
+   * Set to `0` to bypass index reuse.
+   */
   maxAge?: number;
   minAge?: number;
   storeInCache?: boolean;
@@ -553,6 +560,11 @@ export interface DocumentMetadata {
   // Common metadata fields
   title?: string;
   description?: string;
+  /**
+   * URL reported by the selected scrape engine. When it differs from
+   * `sourceURL` (the requested URL), it can indicate a redirect. Matching
+   * values do not prove that no redirect occurred.
+   */
   url?: string;
   language?: string;
   keywords?: string | string[];
@@ -589,7 +601,13 @@ export interface DocumentMetadata {
   articleSection?: string;
 
   // Response-level metadata
+  /** The URL that was requested. Compare with `url` for possible redirect evidence. */
   sourceURL?: string;
+  /**
+   * HTTP status code reported for the scrape response. A 200 does not confirm
+   * that the item described by the page (e.g. a job posting or listing) is
+   * still active.
+   */
   statusCode?: number;
   scrapeId?: string;
   numPages?: number;

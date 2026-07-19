@@ -83,6 +83,9 @@ class DocumentMetadata(BaseModel):
     # Common metadata fields
     title: Optional[str] = None
     description: Optional[str] = None
+    # URL reported by the selected scrape engine. When it differs from source_url
+    # (the requested URL), it can indicate a redirect. Matching values do not
+    # prove that no redirect occurred.
     url: Optional[str] = None
     language: Optional[str] = None
     keywords: Optional[Union[str, List[str]]] = None
@@ -119,7 +122,11 @@ class DocumentMetadata(BaseModel):
     article_section: Optional[str] = None
 
     # Response-level metadata
+    # The URL that was requested. Compare with url for possible redirect evidence.
     source_url: Optional[str] = None
+    # HTTP status code reported for the scrape response. A 200 does not confirm
+    # that the item described by the page (e.g. a job posting or listing) is
+    # still active.
     status_code: Optional[int] = None
     scrape_id: Optional[str] = None
     num_pages: Optional[int] = None
@@ -812,6 +819,11 @@ class ScrapeOptions(BaseModel):
     use_mock: Optional[str] = None
     block_ads: Optional[bool] = None
     proxy: Optional[Literal["basic", "stealth", "enhanced", "auto"]] = None
+    # Maximum age, in milliseconds, of an indexed copy that may be returned
+    # instead of running the scrape path. If Firecrawl has indexed content
+    # younger than max_age, it may be reused to cut latency and cost. When
+    # omitted, the common reuse window is 2 days and may be tuned by domain.
+    # Set to 0 to bypass index reuse.
     max_age: Optional[int] = None
     min_age: Optional[int] = None
     store_in_cache: Optional[bool] = None
