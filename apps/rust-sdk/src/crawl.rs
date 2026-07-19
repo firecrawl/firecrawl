@@ -42,6 +42,12 @@ pub struct CrawlOptions {
     /// Allow following links to subdomains.
     pub allow_subdomains: Option<bool>,
 
+    /// When true, skip robots.txt checks (enterprise feature on cloud).
+    pub ignore_robots_txt: Option<bool>,
+
+    /// User-agent string used when checking robots.txt.
+    pub robots_user_agent: Option<String>,
+
     /// Delay between requests in seconds.
     pub delay: Option<u32>,
 
@@ -607,5 +613,22 @@ mod tests {
         assert_eq!(result.data.len(), 1);
         start_mock.assert();
         status_mock.assert();
+    }
+
+    #[test]
+    fn serializes_robots_crawl_options() {
+        let options = CrawlOptions {
+            ignore_robots_txt: Some(true),
+            robots_user_agent: Some("MyBot/1.0".to_string()),
+            ..Default::default()
+        };
+
+        assert_eq!(
+            serde_json::to_value(options).unwrap(),
+            json!({
+                "ignoreRobotsTxt": true,
+                "robotsUserAgent": "MyBot/1.0"
+            })
+        );
     }
 }
