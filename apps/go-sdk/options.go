@@ -88,9 +88,15 @@ type ScrapeOptions struct {
 	BlockAds            *bool                    `json:"blockAds,omitempty"`
 	Proxy               *string                  `json:"proxy,omitempty"`
 	MaxAge              *int64                   `json:"maxAge,omitempty"`
+	// MinAge, when set, only checks the cache and never triggers a fresh scrape.
+	// Value is milliseconds; set to 1 to accept any cached data regardless of age.
+	MinAge              *int64                   `json:"minAge,omitempty"`
 	StoreInCache        *bool                    `json:"storeInCache,omitempty"`
 	Lockdown            *bool                    `json:"lockdown,omitempty"`
 	RedactPII           *bool                    `json:"redactPII,omitempty"`
+	// Profile enables a persistent browser profile (cookies, localStorage, etc.)
+	// shared across scrapes that use the same name. See ProfileConfig.
+	Profile             *ProfileConfig           `json:"profile,omitempty"`
 	Integration         *string                  `json:"integration,omitempty"`
 	JsonOptions         *JsonOptions             `json:"jsonOptions,omitempty"`
 }
@@ -127,6 +133,10 @@ type CrawlOptions struct {
 	CrawlEntireDomain      *bool          `json:"crawlEntireDomain,omitempty"`
 	AllowExternalLinks     *bool          `json:"allowExternalLinks,omitempty"`
 	AllowSubdomains        *bool          `json:"allowSubdomains,omitempty"`
+	// IgnoreRobotsTxt skips robots.txt checks when true. Enterprise feature on cloud.
+	IgnoreRobotsTxt        *bool          `json:"ignoreRobotsTxt,omitempty"`
+	// RobotsUserAgent is the user-agent string used when checking robots.txt.
+	RobotsUserAgent        *string        `json:"robotsUserAgent,omitempty"`
 	Delay                  *int           `json:"delay,omitempty"`
 	MaxConcurrency         *int           `json:"maxConcurrency,omitempty"`
 	Webhook                interface{}    `json:"webhook,omitempty"`
@@ -169,9 +179,14 @@ type SearchOptions struct {
 	Limit             *int           `json:"limit,omitempty"`
 	TBS               *string        `json:"tbs,omitempty"`
 	Location          *string        `json:"location,omitempty"`
+	// Country is an ISO country code for geo-targeted search (e.g. "US", "DE").
+	Country           *string        `json:"country,omitempty"`
 	IgnoreInvalidURLs *bool          `json:"ignoreInvalidURLs,omitempty"`
 	Timeout           *int           `json:"timeout,omitempty"`
 	Highlights        *bool          `json:"highlights,omitempty"`
+	// Enterprise search modes. Use []string{"zdr"} for Zero Data Retention or
+	// []string{"anon"} for anonymized search (must be enabled for the team).
+	Enterprise        []string       `json:"enterprise,omitempty"`
 	ScrapeOptions     *ScrapeOptions `json:"scrapeOptions,omitempty"`
 	Integration       *string        `json:"integration,omitempty"`
 }
@@ -192,6 +207,17 @@ type AgentOptions struct {
 type LocationConfig struct {
 	Country   string   `json:"country,omitempty"`
 	Languages []string `json:"languages,omitempty"`
+}
+
+// ProfileConfig enables a persistent browser profile for a scrape. Scrapes that
+// reuse the same profile name share browser state such as cookies, localStorage,
+// and session data, which is useful for staying logged in across requests.
+type ProfileConfig struct {
+	// Name identifies the profile. Required (1-128 characters).
+	Name string `json:"name"`
+	// SaveChanges controls whether browser state changed during the scrape is
+	// persisted back to the profile. Defaults to true on the server when omitted.
+	SaveChanges *bool `json:"saveChanges,omitempty"`
 }
 
 // WebhookConfig configures webhook notifications.

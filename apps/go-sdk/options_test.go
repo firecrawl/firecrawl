@@ -87,3 +87,81 @@ func TestSearchOptionsSerializesHighlights(t *testing.T) {
 		t.Fatalf("serialized search options = %s", payload)
 	}
 }
+
+func TestScrapeOptionsSerializesProfile(t *testing.T) {
+	payload, err := json.Marshal(ScrapeOptions{
+		Profile: &ProfileConfig{Name: "my-profile"},
+	})
+	if err != nil {
+		t.Fatalf("Marshal ScrapeOptions: %v", err)
+	}
+
+	if !strings.Contains(string(payload), `"profile":{"name":"my-profile"}`) {
+		t.Fatalf("serialized profile = %s, want to contain %s", payload, `"profile":{"name":"my-profile"}`)
+	}
+}
+
+func TestScrapeOptionsSerializesProfileSaveChanges(t *testing.T) {
+	payload, err := json.Marshal(ScrapeOptions{
+		Profile: &ProfileConfig{Name: "my-profile", SaveChanges: Bool(false)},
+	})
+	if err != nil {
+		t.Fatalf("Marshal ScrapeOptions: %v", err)
+	}
+
+	if !strings.Contains(string(payload), `"profile":{"name":"my-profile","saveChanges":false}`) {
+		t.Fatalf("serialized profile = %s, want to contain %s", payload, `"profile":{"name":"my-profile","saveChanges":false}`)
+	}
+}
+
+func TestScrapeOptionsSerializesMinAge(t *testing.T) {
+	minAge := int64(1000)
+	payload, err := json.Marshal(ScrapeOptions{MinAge: &minAge})
+	if err != nil {
+		t.Fatalf("Marshal ScrapeOptions: %v", err)
+	}
+
+	if !strings.Contains(string(payload), `"minAge":1000`) {
+		t.Fatalf("serialized minAge = %s", payload)
+	}
+}
+
+func TestCrawlOptionsSerializesRobotsFields(t *testing.T) {
+	payload, err := json.Marshal(CrawlOptions{
+		IgnoreRobotsTxt: Bool(true),
+		RobotsUserAgent: String("MyBot/1.0"),
+	})
+	if err != nil {
+		t.Fatalf("Marshal CrawlOptions: %v", err)
+	}
+
+	jsonBody := string(payload)
+	for _, want := range []string{
+		`"ignoreRobotsTxt":true`,
+		`"robotsUserAgent":"MyBot/1.0"`,
+	} {
+		if !strings.Contains(jsonBody, want) {
+			t.Fatalf("serialized crawl options = %s, want to contain %s", jsonBody, want)
+		}
+	}
+}
+
+func TestSearchOptionsSerializesCountryAndEnterprise(t *testing.T) {
+	payload, err := json.Marshal(SearchOptions{
+		Country:    String("DE"),
+		Enterprise: []string{"zdr"},
+	})
+	if err != nil {
+		t.Fatalf("Marshal SearchOptions: %v", err)
+	}
+
+	jsonBody := string(payload)
+	for _, want := range []string{
+		`"country":"DE"`,
+		`"enterprise":["zdr"]`,
+	} {
+		if !strings.Contains(jsonBody, want) {
+			t.Fatalf("serialized search options = %s, want to contain %s", jsonBody, want)
+		}
+	}
+}
