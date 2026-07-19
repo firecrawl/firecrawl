@@ -16,6 +16,7 @@ const PARSE_UPLOAD_TTL_MS = 10 * 60 * 1000;
 const PARSE_UPLOAD_UNPARSED_LIMIT = 10;
 const PARSE_UPLOAD_UNPARSED_WINDOW_MS = 24 * 60 * 60 * 1000;
 const PARSE_UPLOAD_UNPARSED_TTL_SECONDS = 25 * 60 * 60;
+const PARSE_UPLOAD_CONSUMED_KEY_PREFIX = "parse-upload-consumed:";
 const uploadInitSchema = z.strictObject({
   filename: z.string().min(1).max(512),
   contentType: z.string().min(1).max(255).optional(),
@@ -225,6 +226,24 @@ async function releaseUnparsedUploadRef(teamId: string, uploadId: string) {
     .zrem(key, uploadId)
     .expire(key, PARSE_UPLOAD_UNPARSED_TTL_SECONDS)
     .exec();
+}
+
+async function claimUploadRef(payload: ParseUploadRefPayload): Promise<boolean> {
+  const ttlMs = Math.max(1, payload.expiresAt - Date.now());
+  const result = await getRedisConnection().set(
+    `${PARSE_UPLOAD_CONSUMED_KEY_PREFIX}${payload.teamId}:${payload.uploadId}`,
+    "1",
+    "PX",
+    ttlMs,
+    "NX",
+  );
+  return result === "OK";
+}
+
+async function releaseUploadRefClaim(payload: ParseUploadRefPayload) {
+  await getRedisConnection().del(
+    `${PARSE_UPLOAD_CONSUMED_KEY_PREFIX}${payload.teamId}:${payload.uploadId}`,
+  );
 }
 
 async function reserveUnparsedUploadRefOrRespond(
@@ -578,6 +597,15 @@ export async function parseUploadRefPayloadMiddleware(
     return;
   }
 
+  if (!(await claimUploadRef(payload))) {
+    res.status(409).json({
+      success: false,
+      code: "UPLOAD_REF_ALREADY_USED",
+      error: "uploadRef has already been used.",
+    });
+    return;
+  }
+
   try {
     const resolved = await resolveUploadRef(payload);
     const { uploadRef: _uploadRef, ...options } = req.body;
@@ -598,6 +626,12 @@ export async function parseUploadRefPayloadMiddleware(
     });
     next();
   } catch (error) {
+    await releaseUploadRefClaim(payload).catch(releaseError => {
+      _logger.warn("Failed to release parse upload claim", {
+        error: releaseError,
+        uploadId: payload.uploadId,
+      });
+    });
     res.status(400).json({
       success: false,
       code: "BAD_REQUEST",

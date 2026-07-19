@@ -281,6 +281,30 @@ describe("/v2/parse", () => {
   );
 
   it(
+    "allows an uploadRef to start only one parse",
+    async () => {
+      enableLocalUploadRefAdapter();
+      const init = await mintRequiredUploadRef(identity);
+      const upload = await uploadToMintedTarget(init, htmlFixture);
+      expect(upload.status).toBe(200);
+
+      const startParse = () =>
+        request(TEST_API_URL)
+          .post("/v2/parse")
+          .set("Authorization", `Bearer ${identity.apiKey}`)
+          .set("Content-Type", "application/json")
+          .send({ uploadRef: init.uploadRef, formats: ["markdown"] });
+
+      const responses = await Promise.all([startParse(), startParse()]);
+      expect(responses.map(response => response.statusCode).sort()).toEqual([
+        200,
+        409,
+      ]);
+    },
+    scrapeTimeout,
+  );
+
+  it(
     "rejects oversized declared upload-ref sizes before signing",
     async () => {
       enableLocalUploadRefAdapter();
