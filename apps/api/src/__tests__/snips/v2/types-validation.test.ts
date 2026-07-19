@@ -1127,6 +1127,33 @@ describe("V2 Types Validation", () => {
       ]);
     });
 
+    it("should accept scrapeOptions.zeroDataRetention for search (#3441)", () => {
+      const input: SearchRequestInput = {
+        query: "sensitive topic",
+        enterprise: ["zdr"],
+        scrapeOptions: {
+          formats: [{ type: "markdown" }],
+          zeroDataRetention: true,
+        },
+      };
+
+      const result = searchRequestSchema.parse(input);
+      expect(result.scrapeOptions?.zeroDataRetention).toBe(true);
+      expect(result.enterprise).toEqual(["zdr"]);
+    });
+
+    it("should reject unknown fields under search scrapeOptions (strict)", () => {
+      const input = {
+        query: "test",
+        scrapeOptions: {
+          formats: [{ type: "markdown" }],
+          notARealField: true,
+        },
+      };
+
+      expect(() => searchRequestSchema.parse(input)).toThrow();
+    });
+
     it("should accept search scrapeOptions with question and highlights formats", () => {
       const input: SearchRequestInput = {
         query: "test",

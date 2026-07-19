@@ -142,7 +142,10 @@ export async function searchController(
     const isZDR = req.body.enterprise?.includes("zdr");
     const isAnon = req.body.enterprise?.includes("anon");
     const isZDROrAnon = isZDR || isAnon;
-    zeroDataRetention = isZDROrAnon ?? false;
+    // Docs allow scrape-side ZDR via scrapeOptions.zeroDataRetention while
+    // top-level enterprise: ["zdr"] covers the search portion (#3441).
+    const scrapeOptionsZDR = req.body.scrapeOptions?.zeroDataRetention === true;
+    zeroDataRetention = Boolean(isZDROrAnon) || scrapeOptionsZDR;
     logger = logger.child({ zeroDataRetention });
     applyZdrScope(zeroDataRetention);
 

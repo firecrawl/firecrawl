@@ -2002,6 +2002,9 @@ export const searchRequestSchema = z
           .refine(x => {
             return x.filter(f => f.type === "screenshot").length <= 1;
           }, "You may only specify one screenshot format"),
+        // Search docs document scrape-side ZDR via scrapeOptions.zeroDataRetention
+        // (alongside top-level enterprise: ["zdr"] for the search portion).
+        zeroDataRetention: z.boolean().optional(),
       })
       .optional(),
     __agentInterop: z
