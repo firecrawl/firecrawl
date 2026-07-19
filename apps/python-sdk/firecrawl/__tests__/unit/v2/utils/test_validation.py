@@ -388,3 +388,13 @@ class TestPrepareScrapeOptions:
         result = prepare_scrape_options(options)
 
         assert result["parsers"][0]["maxPages"] == 5
+
+    def test_prepare_min_age_maps_to_camel_case(self):
+        """min_age must be sent as minAge; the server drops the snake_case key."""
+        options = ScrapeOptions(min_age=1000, max_age=5000)
+
+        result = prepare_scrape_options(options)
+
+        assert result["minAge"] == 1000
+        assert "min_age" not in result
+        assert result["maxAge"] == 5000
