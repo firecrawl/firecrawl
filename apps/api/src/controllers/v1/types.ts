@@ -1256,7 +1256,7 @@ export type AuthCreditUsageChunk = {
   api_key: string;
   api_key_id: number;
   team_id: string;
-  org_id?: string | null;
+  org_id: string;
   plan_priority: {
     bucketLimit: number;
     planModifier: number;

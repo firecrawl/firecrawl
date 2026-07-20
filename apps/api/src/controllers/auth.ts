@@ -79,6 +79,7 @@ const mockPreviewACUC: (
   api_key: "preview",
   api_key_id: 0,
   team_id,
+  org_id: "preview",
   rate_limits: {
     crawl: 2,
     scrape: 10,
@@ -104,6 +105,7 @@ const mockACUC: () => AuthCreditUsageChunk = () => ({
   api_key: "bypass",
   api_key_id: 0,
   team_id: "bypass",
+  org_id: "bypass",
   rate_limits: {
     crawl: 99999999,
     scrape: 99999999,
