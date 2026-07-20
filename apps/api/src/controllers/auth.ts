@@ -19,9 +19,7 @@ import { checkIpRestriction } from "../lib/ip-restriction";
 import { checkKeyEndpointRestriction } from "../lib/key-restriction";
 import { deleteKey, getValue, setValue } from "../services/redis";
 import { redlock } from "../services/redlock";
-import { eq } from "drizzle-orm";
 import { db, dbRr } from "../db/connection";
-import * as schema from "../db/schema";
 import {
   authCreditUsageChunk,
   authCreditUsageChunkFromTeam,
@@ -614,44 +612,6 @@ export async function authenticateUser(
   })(req, res, mode, options);
 }
 
-/**
- * Backfills org_id for stale cached auth chunks so Autumn check gating can run.
- */
-async function ensureChunkOrgId(
-  apiKey: string,
-  chunk: AuthCreditUsageChunk | null,
-): Promise<AuthCreditUsageChunk | null> {
-  if (!chunk || chunk.org_id || config.USE_DB_AUTHENTICATION !== true) {
-    return chunk;
-  }
-
-  let data: { org_id: string | null } | undefined;
-  try {
-    [data] = await dbRr
-      .select({ org_id: schema.teams.org_id })
-      .from(schema.teams)
-      .where(eq(schema.teams.id, chunk.team_id))
-      .limit(1);
-  } catch (error) {
-    logger.warn("Failed to backfill org_id for auth chunk", {
-      teamId: chunk.team_id,
-      error,
-    });
-    return chunk;
-  }
-
-  if (!data?.org_id) {
-    logger.warn("Failed to backfill org_id for auth chunk", {
-      teamId: chunk.team_id,
-    });
-    return chunk;
-  }
-
-  chunk.org_id = data.org_id;
-  await setCachedACUC(apiKey, !!chunk.is_extract, chunk);
-  return chunk;
-}
-
 async function supaAuthenticateUser(
   req,
   res,
@@ -714,7 +674,6 @@ async function supaAuthenticateUser(
     // Use the resolved fc- API key to get the normal ACUC chunk
     const resolvedApi = parseApi(introspection.api_key);
     chunk = await getACUC(resolvedApi, false, true, RateLimiterMode.Scrape);
-    chunk = await ensureChunkOrgId(resolvedApi, chunk);
 
     if (chunk === null) {
       return {
@@ -744,7 +703,6 @@ async function supaAuthenticateUser(
     }
 
     chunk = await getACUC(normalizedApi, false, true, RateLimiterMode.Scrape);
-    chunk = await ensureChunkOrgId(normalizedApi, chunk);
 
     if (chunk === null) {
       return {
