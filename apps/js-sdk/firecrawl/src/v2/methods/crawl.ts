@@ -28,7 +28,6 @@ function prepareCrawlPayload(request: CrawlRequest): Record<string, unknown> {
   if (request.maxDiscoveryDepth != null) data.maxDiscoveryDepth = request.maxDiscoveryDepth;
   if (request.sitemap != null) data.sitemap = request.sitemap;
   if (request.robotsUserAgent != null) data.robotsUserAgent = request.robotsUserAgent;
-  if (request.ignoreRobotsTxt != null) data.ignoreRobotsTxt = request.ignoreRobotsTxt;
   if (request.ignoreQueryParameters != null) data.ignoreQueryParameters = request.ignoreQueryParameters;
   if (request.deduplicateSimilarURLs != null) data.deduplicateSimilarURLs = request.deduplicateSimilarURLs;
   if (request.limit != null) data.limit = request.limit;
