@@ -12,6 +12,7 @@ import { logger as rootLogger } from "../lib/logger";
 
 // How far back into the index we're willing to reach for highlight source text.
 const HIGHLIGHTS_INDEX_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
+const HIGHLIGHTS_API_TIMEOUT_MS = 3000;
 const shadowLogger = createLogger({ silent: true });
 
 type SearchHighlightsMode = "apply" | "shadow";
@@ -180,7 +181,7 @@ async function generateIndexedSearchHighlights(
     logger,
     logPayload: false,
     requestId,
-    timeoutMs: null,
+    timeoutMs: HIGHLIGHTS_API_TIMEOUT_MS,
     onFailure: reason => {
       failureReason = reason;
     },

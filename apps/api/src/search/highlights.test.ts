@@ -105,7 +105,7 @@ describe("runIndexedSearchHighlights", () => {
         logger,
         logPayload: false,
         requestId: "request-1",
-        timeoutMs: null,
+        timeoutMs: 3000,
         onFailure: expect.any(Function),
       },
     );
