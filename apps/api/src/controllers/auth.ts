@@ -159,6 +159,7 @@ async function getACUC(
   cacheOnly = false,
   useCache = true,
   mode?: RateLimiterMode,
+  credentialPurpose: "general" | "hosted_mcp_oauth" = "general",
 ): Promise<AuthCreditUsageChunk | null> {
   let isExtract =
     mode === RateLimiterMode.Extract ||
@@ -177,7 +178,7 @@ async function getACUC(
     return acuc;
   }
 
-  const cacheKeyACUC = `acuc_${api_key}_${isExtract ? "extract" : "scrape"}`;
+  const cacheKeyACUC = `acuc_${credentialPurpose}_${api_key}_${isExtract ? "extract" : "scrape"}`;
 
   if (useCache) {
     const cachedACUC = await getValue(cacheKeyACUC);
@@ -193,7 +194,7 @@ async function getACUC(
     while (retries < maxRetries) {
       const database = Math.random() > 2 / 3 ? dbRr : db;
       try {
-        data = await authCreditUsageChunk(database, api_key);
+        data = await authCreditUsageChunk(database, api_key, credentialPurpose);
         break;
       } catch (error) {
         logger.warn(
@@ -615,7 +616,13 @@ async function supaAuthenticateUser(
 
     // Use the resolved fc- API key to get the normal ACUC chunk
     const resolvedApi = parseApi(introspection.api_key);
-    chunk = await getACUC(resolvedApi, false, true, RateLimiterMode.Scrape);
+    chunk = await getACUC(
+      resolvedApi,
+      false,
+      true,
+      RateLimiterMode.Scrape,
+      introspection.credential_purpose ?? "general",
+    );
 
     if (chunk === null) {
       return {

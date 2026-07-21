@@ -31,10 +31,11 @@ export type AuthCreditUsageChunkRow = Record<string, any> & {
 export async function authCreditUsageChunk(
   database: DB,
   input_key: string,
+  input_credential_purpose: "general" | "hosted_mcp_oauth" = "general",
 ): Promise<AuthCreditUsageChunkRow[]> {
   const rows = await execRows<AuthCreditUsageChunkRow>(
     database,
-    sql`select * from auth_credit_usage_chunk_56(input_key => ${input_key})`,
+    sql`select * from auth_credit_usage_chunk_57(input_key => ${input_key}, input_credential_purpose => ${input_credential_purpose})`,
   );
   // api_key_id is a bigint column, so the pg driver hands it back as a string.
   for (const row of rows) {
@@ -137,37 +138,6 @@ export function monitoringClaimDueMonitors<T = Record<string, any>>(params: {
     db,
     sql`select * from monitoring_claim_due_monitors(p_worker_id => ${params.workerId}, p_limit => ${params.limit}, p_lease_seconds => ${params.leaseSeconds})`,
   );
-}
-
-type OAuthCacheInvalidationRow = {
-  id: string;
-  access_token_hash: string;
-  access_token_expires_at: string | Date;
-  reason: string;
-  attempts: number;
-};
-
-export function oauthClaimCacheInvalidations(params: {
-  limit: number;
-  leaseSeconds: number;
-}): Promise<OAuthCacheInvalidationRow[]> {
-  return execRows(
-    db,
-    sql`select * from oauth_claim_cache_invalidations(p_limit => ${params.limit}, p_lease_seconds => ${params.leaseSeconds})`,
-  );
-}
-
-export async function oauthAckCacheInvalidation(params: {
-  id: string;
-  attempt: number;
-  succeeded: boolean;
-  error: string | null;
-}): Promise<boolean> {
-  const rows = await execRows<{ oauth_ack_cache_invalidation: boolean }>(
-    db,
-    sql`select oauth_ack_cache_invalidation(p_id => ${params.id}::bigint, p_claim_attempt => ${params.attempt}, p_succeeded => ${params.succeeded}, p_error => ${params.error})`,
-  );
-  return rows[0]?.oauth_ack_cache_invalidation === true;
 }
 
 // ============================================================================

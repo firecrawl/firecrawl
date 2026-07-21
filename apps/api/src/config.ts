@@ -1,7 +1,6 @@
 import "dotenv/config";
 import { z } from "zod";
 import { getMcpActionLogConfigErrors } from "./lib/mcp-action-log-config";
-import { getOAuthCacheInvalidationConfigErrors } from "./services/oauth-cache-invalidation-config";
 
 /* Codecs */
 const delimitedList = (separator = ",") => {
@@ -104,7 +103,6 @@ const configSchema = z.object({
   // OAuth token introspection
   OAUTH_INTROSPECT_URL: z.string().optional(),
   OAUTH_INTROSPECT_SECRET: z.string().optional(),
-  OAUTH_CACHE_INVALIDATION_ENABLED: z.stringbool().default(false),
   MCP_ACTION_LOG_SECRET: z.string().optional(),
   MCP_ACTION_LOG_STORAGE_ENABLED: z.stringbool().default(false),
   MCP_ACTION_LOG_WRITES_ENABLED: z.stringbool().default(false),
@@ -397,13 +395,6 @@ const configSchema = z.object({
 
 const validatedConfigSchema = configSchema.superRefine((value, context) => {
   for (const error of getMcpActionLogConfigErrors(value)) {
-    context.addIssue({
-      code: "custom",
-      path: [error.path],
-      message: error.message,
-    });
-  }
-  for (const error of getOAuthCacheInvalidationConfigErrors(value)) {
     context.addIssue({
       code: "custom",
       path: [error.path],

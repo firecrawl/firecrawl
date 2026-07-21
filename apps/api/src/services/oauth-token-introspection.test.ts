@@ -1,23 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const {
-  getOAuthTokenCacheState,
-  hashOAuthToken,
-  isOAuthTokenRevoked,
-  setOAuthTokenCache,
-} = vi.hoisted(() => ({
-  getOAuthTokenCacheState: vi.fn(),
-  hashOAuthToken: vi.fn(() => "a".repeat(64)),
-  isOAuthTokenRevoked: vi.fn(),
-  setOAuthTokenCache: vi.fn(),
+const { getValue, setValue } = vi.hoisted(() => ({
+  getValue: vi.fn(),
+  setValue: vi.fn(),
 }));
 
-vi.mock("./oauth-token-cache", () => ({
-  getOAuthTokenCacheState,
-  hashOAuthToken,
-  isOAuthTokenRevoked,
-  setOAuthTokenCache,
-}));
+vi.mock("./redis", () => ({ getValue, setValue }));
 
 import {
   FIRECRAWL_REST_RESOURCE,
@@ -32,73 +20,29 @@ const ACTIVE = {
   team_id: "team-1",
   exp: Math.floor(Date.now() / 1000) + 3600,
   aud: FIRECRAWL_REST_RESOURCE,
+  credential_purpose: "general" as const,
 };
+
+function response(body: unknown) {
+  return new Response(JSON.stringify(body), {
+    status: 200,
+    headers: { "Content-Type": "application/json" },
+  });
+}
 
 describe("OAuth token introspection", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    getOAuthTokenCacheState.mockResolvedValue({ revoked: false, cached: null });
-    isOAuthTokenRevoked.mockResolvedValue(false);
-    setOAuthTokenCache.mockResolvedValue(undefined);
+    getValue.mockResolvedValue(null);
+    setValue.mockResolvedValue(undefined);
   });
 
-  it("never uses a cached positive result when a tombstone exists", async () => {
-    getOAuthTokenCacheState.mockResolvedValue({ revoked: true, cached: null });
-    const fetchFn = vi.fn();
-    await expect(
-      resolveOAuthToken("fco_token", {
-        introspectUrl: "https://example.test/introspect",
-        introspectSecret: "secret",
-        expectedResource: "https://api.firecrawl.dev/",
-        fetchFn,
-      }),
-    ).resolves.toBeNull();
-    expect(fetchFn).not.toHaveBeenCalled();
-  });
-
-  it("re-checks revocation immediately before returning cached active data", async () => {
-    getOAuthTokenCacheState.mockResolvedValue({
-      revoked: false,
-      cached: JSON.stringify(ACTIVE),
-    });
-    isOAuthTokenRevoked.mockResolvedValue(true);
-    const fetchFn = vi.fn();
-    await expect(
-      resolveOAuthToken("fco_token", {
-        introspectUrl: "https://example.test/introspect",
-        introspectSecret: "secret",
-        expectedResource: "https://api.firecrawl.dev/",
-        fetchFn,
-      }),
-    ).resolves.toBeNull();
-    expect(isOAuthTokenRevoked).toHaveBeenCalledWith("a".repeat(64));
-    expect(fetchFn).not.toHaveBeenCalled();
-  });
-
-  it("rejects a cached active token for an MCP audience", async () => {
-    getOAuthTokenCacheState.mockResolvedValue({
-      revoked: false,
-      cached: JSON.stringify({
-        ...ACTIVE,
-        aud: "https://mcp.firecrawl.dev/v2/mcp",
-      }),
-    });
-    await expect(
-      resolveOAuthToken("fco_token", {
-        introspectUrl: "https://example.test/introspect",
-        introspectSecret: "secret",
-        expectedResource: "https://api.firecrawl.dev/",
-      }),
-    ).resolves.toBeNull();
-  });
-
-  it("rejects truthy non-boolean active values from cache", async () => {
-    getOAuthTokenCacheState.mockResolvedValue({
-      revoked: false,
-      cached: JSON.stringify({ ...ACTIVE, active: "false" }),
-    });
-    const fetchFn = vi.fn();
-
+  it("sends and enforces the expected resource", async () => {
+    const fetchFn = vi
+      .fn()
+      .mockResolvedValue(
+        response({ ...ACTIVE, aud: "https://mcp.firecrawl.dev/v2/mcp" }),
+      );
     await expect(
       resolveOAuthToken("fco_token", {
         introspectUrl: "https://example.test/introspect",
@@ -107,223 +51,82 @@ describe("OAuth token introspection", () => {
         fetchFn,
       }),
     ).resolves.toBeNull();
-    expect(fetchFn).not.toHaveBeenCalled();
-  });
-
-  it("rejects cached tokens whose embedded expiry has passed", async () => {
-    getOAuthTokenCacheState.mockResolvedValue({
-      revoked: false,
-      cached: JSON.stringify({
-        ...ACTIVE,
-        exp: Math.floor(Date.now() / 1000) - 1,
-      }),
-    });
-
-    await expect(
-      resolveOAuthToken("fco_token", {
-        introspectUrl: "https://example.test/introspect",
-        introspectSecret: "secret",
-        expectedResource: FIRECRAWL_REST_RESOURCE,
-      }),
-    ).resolves.toBeNull();
-    expect(isOAuthTokenRevoked).not.toHaveBeenCalled();
-  });
-
-  it("rejects a result revoked while introspection is in flight", async () => {
-    let finish: (() => void) | undefined;
-    const fetchFn = vi.fn(
-      () =>
-        new Promise<Response>(resolve => {
-          finish = () =>
-            resolve(
-              new Response(JSON.stringify(ACTIVE), {
-                status: 200,
-                headers: { "Content-Type": "application/json" },
-              }),
-            );
-        }),
-    );
-    const resolving = resolveOAuthToken("fco_token", {
-      introspectUrl: "https://example.test/introspect",
-      introspectSecret: "secret",
-      expectedResource: "https://api.firecrawl.dev/",
-      fetchFn,
-    });
-    await vi.waitFor(() => expect(fetchFn).toHaveBeenCalledTimes(1));
-    isOAuthTokenRevoked.mockResolvedValue(true);
-    finish?.();
-    await expect(resolving).resolves.toBeNull();
-    expect(setOAuthTokenCache).not.toHaveBeenCalled();
-  });
-
-  it("aborts introspection after ten seconds", async () => {
-    vi.useFakeTimers();
-    const fetchFn = vi.fn((_url: string, init?: RequestInit) => {
-      return new Promise<Response>((_resolve, reject) => {
-        init?.signal?.addEventListener("abort", () =>
-          reject(new DOMException("aborted", "AbortError")),
-        );
-      });
-    });
-    const resolving = resolveOAuthToken("fco_token", {
-      introspectUrl: "https://example.test/introspect",
-      introspectSecret: "secret",
-      expectedResource: "https://api.firecrawl.dev/",
-      fetchFn,
-    });
-    await vi.advanceTimersByTimeAsync(10_000);
-    await expect(resolving).resolves.toBeNull();
-    expect(fetchFn.mock.calls[0][1]?.signal?.aborted).toBe(true);
-    vi.useRealTimers();
-  });
-
-  it("sends and enforces the canonical REST resource", async () => {
-    const fetchFn = vi.fn().mockResolvedValue(
-      new Response(
-        JSON.stringify({
-          ...ACTIVE,
-          aud: "https://mcp.firecrawl.dev/v2/mcp-oauth",
-        }),
-        { status: 200, headers: { "Content-Type": "application/json" } },
-      ),
-    );
-    await expect(
-      resolveOAuthToken("fco_token", {
-        introspectUrl: "https://example.test/introspect",
-        introspectSecret: "secret",
-        expectedResource: "https://api.firecrawl.dev/",
-        fetchFn,
-      }),
-    ).resolves.toBeNull();
-    expect(JSON.parse(fetchFn.mock.calls[0][1]?.body as string)).toEqual({
+    expect(JSON.parse(fetchFn.mock.calls[0][1].body)).toEqual({
       token: "fco_token",
-      resource: "https://api.firecrawl.dev/",
+      resource: FIRECRAWL_REST_RESOURCE,
     });
-    expect(setOAuthTokenCache).not.toHaveBeenCalled();
   });
 
-  it("accepts a legacy active response with no audience as REST-compatible", async () => {
-    const { aud: _aud, ...legacy } = ACTIVE;
-    const fetchFn = vi.fn().mockResolvedValue(
-      new Response(JSON.stringify(legacy), {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      }),
-    );
-    await expect(
-      resolveOAuthToken("fco_token", {
-        introspectUrl: "https://example.test/introspect",
-        introspectSecret: "secret",
-        expectedResource: "https://api.firecrawl.dev/",
-        fetchFn,
-      }),
-    ).resolves.toEqual(legacy);
-  });
-
-  it("accepts a cached legacy response with no audience for REST", async () => {
-    const { aud: _aud, ...legacy } = ACTIVE;
-    getOAuthTokenCacheState.mockResolvedValue({
-      revoked: false,
-      cached: JSON.stringify(legacy),
-    });
-
+  it("keeps legacy audience-less REST tokens compatible", async () => {
+    const { aud: _aud, credential_purpose: _purpose, ...legacy } = ACTIVE;
+    const fetchFn = vi.fn().mockResolvedValue(response(legacy));
     await expect(
       resolveOAuthToken("fco_token", {
         introspectUrl: "https://example.test/introspect",
         introspectSecret: "secret",
         expectedResource: FIRECRAWL_REST_RESOURCE,
+        fetchFn,
       }),
     ).resolves.toEqual(legacy);
   });
 
-  it("rejects a cached response with no audience for an MCP resource", async () => {
-    const { aud: _aud, ...legacy } = ACTIVE;
-    getOAuthTokenCacheState.mockResolvedValue({
-      revoked: false,
-      cached: JSON.stringify(legacy),
-    });
-
+  it("rejects audience-less managed credentials", async () => {
+    const { aud: _aud, ...managed } = {
+      ...ACTIVE,
+      credential_purpose: "hosted_mcp_oauth" as const,
+    };
+    const fetchFn = vi.fn().mockResolvedValue(response(managed));
     await expect(
       resolveOAuthToken("fco_token", {
         introspectUrl: "https://example.test/introspect",
         introspectSecret: "secret",
-        expectedResource: "https://mcp.firecrawl.dev/v2/mcp",
-      }),
-    ).resolves.toBeNull();
-  });
-
-  it("rejects a fresh response with no audience for an MCP resource", async () => {
-    const { aud: _aud, ...legacy } = ACTIVE;
-    const fetchFn = vi.fn().mockResolvedValue(
-      new Response(JSON.stringify(legacy), {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      }),
-    );
-
-    await expect(
-      resolveOAuthToken("fco_token", {
-        introspectUrl: "https://example.test/introspect",
-        introspectSecret: "secret",
-        expectedResource: "https://mcp.firecrawl.dev/v2/mcp",
+        expectedResource: FIRECRAWL_REST_RESOURCE,
         fetchFn,
       }),
     ).resolves.toBeNull();
-    expect(setOAuthTokenCache).not.toHaveBeenCalled();
   });
 
-  it("caches active introspection for at most 300 seconds", async () => {
-    const fetchFn = vi.fn().mockResolvedValue(
-      new Response(JSON.stringify(ACTIVE), {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      }),
-    );
+  it("caches ordinary credentials for at most five minutes", async () => {
+    const fetchFn = vi.fn().mockResolvedValue(response(ACTIVE));
     await expect(
       resolveOAuthToken("fco_token", {
         introspectUrl: "https://example.test/introspect",
         introspectSecret: "secret",
-        expectedResource: "https://api.firecrawl.dev/",
+        expectedResource: FIRECRAWL_REST_RESOURCE,
         fetchFn,
       }),
     ).resolves.toEqual(ACTIVE);
-    expect(setOAuthTokenCache).toHaveBeenCalledWith(
-      "a".repeat(64),
+    expect(setValue).toHaveBeenCalledWith(
+      expect.stringMatching(/^oauth_token:[0-9a-f]{32}$/),
       JSON.stringify(ACTIVE),
       300,
     );
   });
 
-  it("caches inactive introspection for 60 seconds", async () => {
-    const fetchFn = vi.fn().mockResolvedValue(
-      new Response(JSON.stringify({ active: false }), {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      }),
-    );
+  it("never positive-caches managed credentials", async () => {
+    const managed = {
+      ...ACTIVE,
+      credential_purpose: "hosted_mcp_oauth" as const,
+    };
+    const fetchFn = vi.fn().mockResolvedValue(response(managed));
     await expect(
       resolveOAuthToken("fco_token", {
         introspectUrl: "https://example.test/introspect",
         introspectSecret: "secret",
-        expectedResource: "https://api.firecrawl.dev/",
+        expectedResource: FIRECRAWL_REST_RESOURCE,
         fetchFn,
       }),
-    ).resolves.toBeNull();
-    expect(setOAuthTokenCache).toHaveBeenCalledWith(
-      "a".repeat(64),
-      JSON.stringify({ active: false }),
-      60,
-    );
+    ).resolves.toEqual(managed);
+    expect(setValue).not.toHaveBeenCalled();
   });
 
-  it("fails closed on a truthy non-boolean active response", async () => {
-    const fetchFn = vi.fn().mockResolvedValue(
-      new Response(JSON.stringify({ ...ACTIVE, active: "false" }), {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      }),
-    );
-
+  it("ignores stale managed cache entries and re-introspects", async () => {
+    const managed = {
+      ...ACTIVE,
+      credential_purpose: "hosted_mcp_oauth" as const,
+    };
+    getValue.mockResolvedValue(JSON.stringify(managed));
+    const fetchFn = vi.fn().mockResolvedValue(response({ active: false }));
     await expect(
       resolveOAuthToken("fco_token", {
         introspectUrl: "https://example.test/introspect",
@@ -332,10 +135,44 @@ describe("OAuth token introspection", () => {
         fetchFn,
       }),
     ).resolves.toBeNull();
-    expect(setOAuthTokenCache).toHaveBeenCalledWith(
-      "a".repeat(64),
-      JSON.stringify({ active: false }),
-      60,
+    expect(fetchFn).toHaveBeenCalledTimes(1);
+  });
+
+  it("fails closed for malformed active values and expired tokens", async () => {
+    for (const body of [
+      { ...ACTIVE, active: "true" },
+      { ...ACTIVE, exp: Math.floor(Date.now() / 1000) - 1 },
+    ]) {
+      const fetchFn = vi.fn().mockResolvedValue(response(body));
+      await expect(
+        resolveOAuthToken("fco_token", {
+          introspectUrl: "https://example.test/introspect",
+          introspectSecret: "secret",
+          expectedResource: FIRECRAWL_REST_RESOURCE,
+          fetchFn,
+        }),
+      ).resolves.toBeNull();
+    }
+  });
+
+  it("aborts a stalled introspection request", async () => {
+    vi.useFakeTimers();
+    const fetchFn = vi.fn(
+      (_url: string, init?: RequestInit) =>
+        new Promise<Response>((_resolve, reject) => {
+          init?.signal?.addEventListener("abort", () =>
+            reject(new DOMException("aborted", "AbortError")),
+          );
+        }),
     );
+    const resolving = resolveOAuthToken("fco_token", {
+      introspectUrl: "https://example.test/introspect",
+      introspectSecret: "secret",
+      expectedResource: FIRECRAWL_REST_RESOURCE,
+      fetchFn,
+    });
+    await vi.advanceTimersByTimeAsync(10_000);
+    await expect(resolving).resolves.toBeNull();
+    vi.useRealTimers();
   });
 });

@@ -1,10 +1,6 @@
+import { createHash } from "node:crypto";
 import { logger } from "../lib/logger";
-import {
-  getOAuthTokenCacheState,
-  hashOAuthToken,
-  isOAuthTokenRevoked,
-  setOAuthTokenCache,
-} from "./oauth-token-cache";
+import { getValue, setValue } from "./redis";
 
 const ACTIVE_CACHE_TTL_SECONDS = 300;
 const INACTIVE_CACHE_TTL_SECONDS = 60;
@@ -20,6 +16,7 @@ export interface OAuthIntrospectionResponse {
   team_id: string;
   exp: number;
   aud?: string | null;
+  credential_purpose?: "general" | "hosted_mcp_oauth";
 }
 
 type Fetch = (
@@ -27,12 +24,32 @@ type Fetch = (
   init?: RequestInit,
 ) => Promise<Response>;
 
+function cacheKey(token: string): string {
+  const hash = createHash("sha256").update(token).digest("hex");
+  return `oauth_token:${hash.slice(0, 32)}`;
+}
+
 function hasExpectedAudience(
-  audience: string | null | undefined,
+  data: OAuthIntrospectionResponse,
   expectedResource: string,
 ): boolean {
-  if (audience != null) return audience === expectedResource;
-  return expectedResource === FIRECRAWL_REST_RESOURCE;
+  if (data.aud != null) return data.aud === expectedResource;
+  return (
+    expectedResource === FIRECRAWL_REST_RESOURCE &&
+    data.credential_purpose !== "hosted_mcp_oauth"
+  );
+}
+
+function isUsable(
+  data: OAuthIntrospectionResponse,
+  expectedResource: string,
+): boolean {
+  return (
+    data.active === true &&
+    Number.isFinite(data.exp) &&
+    data.exp > Math.floor(Date.now() / 1000) &&
+    hasExpectedAudience(data, expectedResource)
+  );
 }
 
 export async function resolveOAuthToken(
@@ -45,26 +62,17 @@ export async function resolveOAuthToken(
     timeoutMs?: number;
   },
 ): Promise<OAuthIntrospectionResponse | null> {
-  const tokenHash = hashOAuthToken(token);
-  const cache = await getOAuthTokenCacheState(tokenHash);
-  if (cache.revoked) return null;
-  if (cache.cached !== null) {
+  const key = cacheKey(token);
+  const cached = await getValue(key);
+  if (cached !== null) {
     try {
-      const parsed = JSON.parse(cache.cached) as OAuthIntrospectionResponse;
+      const parsed = JSON.parse(cached) as OAuthIntrospectionResponse;
       if (parsed.active !== true) return null;
-      if (
-        !Number.isFinite(parsed.exp) ||
-        parsed.exp <= Math.floor(Date.now() / 1000)
-      ) {
-        return null;
+      // Grant-backed credentials are resolved live so membership loss,
+      // revocation, and refresh-token reuse take effect immediately.
+      if (parsed.credential_purpose !== "hosted_mcp_oauth") {
+        return isUsable(parsed, options.expectedResource) ? parsed : null;
       }
-      // Tokens minted before resource indicators have no audience. That legacy
-      // compatibility applies only to the original REST resource; MCP resources
-      // always require an explicit, exact audience.
-      if (!hasExpectedAudience(parsed.aud, options.expectedResource)) {
-        return null;
-      }
-      return (await isOAuthTokenRevoked(tokenHash)) ? null : parsed;
     } catch {
       // Corrupt cache entries are treated as misses.
     }
@@ -95,35 +103,25 @@ export async function resolveOAuthToken(
     }
 
     const data = (await response.json()) as OAuthIntrospectionResponse;
-    if (await isOAuthTokenRevoked(tokenHash)) return null;
-
-    if (data.active !== true) {
-      await setOAuthTokenCache(
-        tokenHash,
-        JSON.stringify({ active: false }),
-        INACTIVE_CACHE_TTL_SECONDS,
-      );
+    if (!isUsable(data, options.expectedResource)) {
+      if (data.active !== true) {
+        await setValue(
+          key,
+          JSON.stringify({ active: false }),
+          INACTIVE_CACHE_TTL_SECONDS,
+        );
+      }
       return null;
     }
 
-    if (!hasExpectedAudience(data.aud, options.expectedResource)) {
-      logger.warn(
-        "OAuth introspection audience did not match expected resource",
+    if (data.credential_purpose !== "hosted_mcp_oauth") {
+      const remainingSeconds = data.exp - Math.floor(Date.now() / 1000);
+      await setValue(
+        key,
+        JSON.stringify(data),
+        Math.min(remainingSeconds, ACTIVE_CACHE_TTL_SECONDS),
       );
-      return null;
     }
-
-    if (!Number.isFinite(data.exp)) return null;
-    const remainingSeconds = Math.max(
-      0,
-      data.exp - Math.floor(Date.now() / 1000),
-    );
-    if (remainingSeconds <= 0) return null;
-    await setOAuthTokenCache(
-      tokenHash,
-      JSON.stringify(data),
-      Math.min(remainingSeconds, ACTIVE_CACHE_TTL_SECONDS),
-    );
     return data;
   } catch (error) {
     logger.error("OAuth introspection error", { error });

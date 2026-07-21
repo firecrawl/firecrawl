@@ -23,9 +23,16 @@ describe("auth credit usage database RPC", () => {
       ],
     });
 
-    const rows = await authCreditUsageChunk({ execute } as any, "fc-test");
+    const rows = await authCreditUsageChunk(
+      { execute } as any,
+      "fc-test",
+      "hosted_mcp_oauth",
+    );
 
     expect(rows[0].api_key_id_text).toBe("9007199254740993");
     expect(rows[0].api_key_id).toBe(Number("9007199254740993"));
+    expect(JSON.stringify(execute.mock.calls[0][0])).toContain(
+      "hosted_mcp_oauth",
+    );
   });
 });
