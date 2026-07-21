@@ -8,6 +8,13 @@ const DEFAULT_TIMEOUT_MS = 10_000;
 
 export const FIRECRAWL_REST_RESOURCE = "https://api.firecrawl.dev/";
 
+export class OAuthIntrospectionUnavailableError extends Error {
+  constructor(message = "OAuth introspection is temporarily unavailable") {
+    super(message);
+    this.name = "OAuthIntrospectionUnavailableError";
+  }
+}
+
 export interface OAuthIntrospectionResponse {
   active: boolean;
   api_key: string;
@@ -99,10 +106,19 @@ export async function resolveOAuthToken(
       logger.error("OAuth introspection request failed", {
         status: response.status,
       });
-      return null;
+      throw new OAuthIntrospectionUnavailableError();
     }
 
     const data = (await response.json()) as OAuthIntrospectionResponse;
+    if (
+      typeof data.active !== "boolean" ||
+      (data.active === true &&
+        (typeof data.api_key !== "string" || !Number.isFinite(data.exp)))
+    ) {
+      throw new OAuthIntrospectionUnavailableError(
+        "OAuth introspection returned an invalid response",
+      );
+    }
     if (!isUsable(data, options.expectedResource)) {
       if (data.active !== true) {
         await setValue(
@@ -124,8 +140,9 @@ export async function resolveOAuthToken(
     }
     return data;
   } catch (error) {
+    if (error instanceof OAuthIntrospectionUnavailableError) throw error;
     logger.error("OAuth introspection error", { error });
-    return null;
+    throw new OAuthIntrospectionUnavailableError();
   } finally {
     clearTimeout(timeout);
   }

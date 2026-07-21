@@ -28,6 +28,7 @@ import { AuthResponse, RateLimiterMode } from "../types";
 import { AuthCreditUsageChunk, AuthCreditUsageChunkFromTeam } from "./v1/types";
 import {
   FIRECRAWL_REST_RESOURCE,
+  OAuthIntrospectionUnavailableError,
   resolveOAuthToken as resolveOAuthTokenWithIntrospection,
 } from "../services/oauth-token-introspection";
 import type { OAuthIntrospectionResponse } from "../services/oauth-token-introspection";
@@ -146,7 +147,9 @@ async function resolveOAuthToken(
     logger.warn(
       "OAuth introspection not configured (OAUTH_INTROSPECT_URL / OAUTH_INTROSPECT_SECRET)",
     );
-    return null;
+    throw new OAuthIntrospectionUnavailableError(
+      "OAuth introspection is not configured",
+    );
   }
 
   return resolveOAuthTokenWithIntrospection(token, {
@@ -659,7 +662,19 @@ async function supaAuthenticateUser(
     );
   } else if (token.startsWith("fco_")) {
     // OAuth access token — resolve via introspection endpoint
-    const introspection = await resolveOAuthToken(token);
+    let introspection: OAuthIntrospectionResponse | null;
+    try {
+      introspection = await resolveOAuthToken(token);
+    } catch (error) {
+      if (error instanceof OAuthIntrospectionUnavailableError) {
+        return {
+          success: false,
+          error: "OAuth authentication is temporarily unavailable",
+          status: 503,
+        };
+      }
+      throw error;
+    }
     if (!introspection) {
       return {
         success: false,

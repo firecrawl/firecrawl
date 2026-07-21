@@ -52,10 +52,15 @@ vi.mock("../../services/agent-sponsor", () => ({
 describe("authenticateUser", () => {
   const originalUseDbAuth = config.USE_DB_AUTHENTICATION;
   const originalKeylessProxySecret = config.KEYLESS_PROXY_SECRET;
+  const originalIntrospectUrl = config.OAUTH_INTROSPECT_URL;
+  const originalIntrospectSecret = config.OAUTH_INTROSPECT_SECRET;
 
   afterEach(() => {
     config.USE_DB_AUTHENTICATION = originalUseDbAuth;
     config.KEYLESS_PROXY_SECRET = originalKeylessProxySecret;
+    config.OAUTH_INTROSPECT_URL = originalIntrospectUrl;
+    config.OAUTH_INTROSPECT_SECRET = originalIntrospectSecret;
+    vi.unstubAllGlobals();
     vi.clearAllMocks();
   });
 
@@ -184,6 +189,38 @@ describe("authenticateUser", () => {
     );
     expect(getValue).not.toHaveBeenCalled();
     expect(setValue).not.toHaveBeenCalled();
+  });
+
+  it("returns 503 rather than 401 when OAuth introspection is unavailable", async () => {
+    config.USE_DB_AUTHENTICATION = true;
+    config.OAUTH_INTROSPECT_URL = "https://example.test/introspect";
+    config.OAUTH_INTROSPECT_SECRET = "secret";
+    vi.mocked(getValue).mockResolvedValue(null);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(JSON.stringify({ error: "temporarily_unavailable" }), {
+          status: 503,
+          headers: { "Content-Type": "application/json" },
+        }),
+      ),
+    );
+
+    const auth = await authenticateUser(
+      {
+        headers: { authorization: "Bearer fco_access_token" },
+        socket: { remoteAddress: "127.0.0.1" },
+      },
+      {},
+      RateLimiterMode.Scrape,
+    );
+
+    expect(auth).toEqual({
+      success: false,
+      error: "OAuth authentication is temporarily unavailable",
+      status: 503,
+    });
+    expect(authCreditUsageChunk).not.toHaveBeenCalled();
   });
 
   it.each([

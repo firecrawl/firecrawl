@@ -9,6 +9,7 @@ vi.mock("./redis", () => ({ getValue, setValue }));
 
 import {
   FIRECRAWL_REST_RESOURCE,
+  OAuthIntrospectionUnavailableError,
   resolveOAuthToken,
 } from "./oauth-token-introspection";
 
@@ -138,21 +139,18 @@ describe("OAuth token introspection", () => {
     expect(fetchFn).toHaveBeenCalledTimes(1);
   });
 
-  it("fails closed for malformed active values and expired tokens", async () => {
-    for (const body of [
-      { ...ACTIVE, active: "true" },
-      { ...ACTIVE, exp: Math.floor(Date.now() / 1000) - 1 },
-    ]) {
-      const fetchFn = vi.fn().mockResolvedValue(response(body));
-      await expect(
-        resolveOAuthToken("fco_token", {
-          introspectUrl: "https://example.test/introspect",
-          introspectSecret: "secret",
-          expectedResource: FIRECRAWL_REST_RESOURCE,
-          fetchFn,
-        }),
-      ).resolves.toBeNull();
-    }
+  it("fails closed for expired tokens", async () => {
+    const fetchFn = vi.fn().mockResolvedValue(
+      response({ ...ACTIVE, exp: Math.floor(Date.now() / 1000) - 1 }),
+    );
+    await expect(
+      resolveOAuthToken("fco_token", {
+        introspectUrl: "https://example.test/introspect",
+        introspectSecret: "secret",
+        expectedResource: FIRECRAWL_REST_RESOURCE,
+        fetchFn,
+      }),
+    ).resolves.toBeNull();
   });
 
   it("aborts a stalled introspection request", async () => {
@@ -171,8 +169,54 @@ describe("OAuth token introspection", () => {
       expectedResource: FIRECRAWL_REST_RESOURCE,
       fetchFn,
     });
+    const rejection = expect(resolving).rejects.toBeInstanceOf(
+      OAuthIntrospectionUnavailableError,
+    );
     await vi.advanceTimersByTimeAsync(10_000);
-    await expect(resolving).resolves.toBeNull();
+    await rejection;
     vi.useRealTimers();
+  });
+
+  it("distinguishes an unavailable introspection service from an inactive token", async () => {
+    const unavailableFetch = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ error: "temporarily_unavailable" }), {
+        status: 503,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+    await expect(
+      resolveOAuthToken("fco_token", {
+        introspectUrl: "https://example.test/introspect",
+        introspectSecret: "secret",
+        expectedResource: FIRECRAWL_REST_RESOURCE,
+        fetchFn: unavailableFetch,
+      }),
+    ).rejects.toBeInstanceOf(OAuthIntrospectionUnavailableError);
+
+    const inactiveFetch = vi
+      .fn()
+      .mockResolvedValue(response({ active: false }));
+    await expect(
+      resolveOAuthToken("fco_token", {
+        introspectUrl: "https://example.test/introspect",
+        introspectSecret: "secret",
+        expectedResource: FIRECRAWL_REST_RESOURCE,
+        fetchFn: inactiveFetch,
+      }),
+    ).resolves.toBeNull();
+  });
+
+  it("treats malformed introspection responses as unavailable", async () => {
+    const fetchFn = vi
+      .fn()
+      .mockResolvedValue(response({ ...ACTIVE, active: "true" }));
+    await expect(
+      resolveOAuthToken("fco_token", {
+        introspectUrl: "https://example.test/introspect",
+        introspectSecret: "secret",
+        expectedResource: FIRECRAWL_REST_RESOURCE,
+        fetchFn,
+      }),
+    ).rejects.toBeInstanceOf(OAuthIntrospectionUnavailableError);
   });
 });
