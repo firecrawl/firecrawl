@@ -285,7 +285,7 @@ export async function scrapeURLWithFireEngineChromeCDP(
     const hasBranding = hasFormatOfType(meta.options.formats, "branding");
     const hasAudio = hasFormatOfType(meta.options.formats, "audio");
     const hasVideo = hasFormatOfType(meta.options.formats, "video");
-    const shouldRunYoutubePostprocessor = youtubePostprocessor.shouldRun(
+    const shouldRunYoutubePostprocessor = await youtubePostprocessor.shouldRun(
       meta,
       new URL(meta.rewrittenUrl ?? meta.url),
     );

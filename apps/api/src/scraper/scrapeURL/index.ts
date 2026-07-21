@@ -82,6 +82,7 @@ import {
 } from "../../lib/error";
 import { htmlTransform } from "./lib/removeUnwantedElements";
 import { postprocessors } from "./postprocessors";
+import { mergeResolvedMetadata } from "../../lib/url-resolver";
 import { rewriteUrl } from "./lib/rewriteUrl";
 import { writeFile } from "node:fs/promises";
 import path from "node:path";
@@ -988,7 +989,7 @@ async function scrapeURLLoop(meta: Meta): Promise<ScrapeUrlResponse> {
 
     for (const postprocessor of postprocessors) {
       if (
-        postprocessor.shouldRun(
+        await postprocessor.shouldRun(
           meta,
           new URL(engineResult.url),
           engineResult.postprocessorsUsed,
@@ -1068,6 +1069,10 @@ async function scrapeURLLoop(meta: Meta): Promise<ScrapeUrlResponse> {
 
     // NOTE: for sitemap, we don't need all the transformers, need to skip unused ones
     document = await executeTransformers(meta, document);
+    document.metadata = mergeResolvedMetadata(
+      engineResult.resolvedMetadata,
+      document.metadata,
+    );
 
     // Set final span attributes
     setSpanAttributes(span, {

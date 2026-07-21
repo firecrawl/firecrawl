@@ -165,6 +165,7 @@ export type EngineScrapeResult = {
 
   youtubeTranscriptContent?: any;
   postprocessorsUsed?: string[];
+  resolvedMetadata?: Record<string, unknown>;
   audioCookies?: BrowserCookie[];
 
   proxyUsed: "basic" | "stealth";
