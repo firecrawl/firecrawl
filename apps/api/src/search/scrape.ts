@@ -31,6 +31,7 @@ interface ScrapeItem {
 
 interface ScrapeSearchOptions {
   teamId: string;
+  orgId?: string | null;
   origin: string;
   timeout: number;
   scrapeOptions: ScrapeOptions;
@@ -79,6 +80,7 @@ async function scrapeSearchResultDirect(
         },
         internalOptions: {
           teamId: options.teamId,
+          orgId: options.orgId ?? null,
           bypassBilling: options.bypassBilling ?? true,
           zeroDataRetention,
           teamFlags: flags,
@@ -147,7 +149,11 @@ async function scrapeSearchResultDirect(
 export function getItemsToScrape(
   searchResponse: SearchV2Response,
   flags: TeamFlags,
-  context?: { team_id?: string | null; origin?: string | null },
+  context?: {
+    team_id?: string | null;
+    org_id?: string | null;
+    origin?: string | null;
+  },
 ): ScrapeItem[] {
   const items: ScrapeItem[] = [];
 

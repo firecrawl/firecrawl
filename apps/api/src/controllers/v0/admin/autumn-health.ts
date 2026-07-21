@@ -2,9 +2,10 @@ import { Request, Response } from "express";
 import { randomUUID } from "crypto";
 import { logger } from "../../../lib/logger";
 import { autumnClient } from "../../../services/autumn/client";
-
-const CREDITS_FEATURE_ID = "CREDITS";
-const TEAM_FEATURE_ID = "TEAM";
+import {
+  CREDITS_FEATURE_ID,
+  TEAM_FEATURE_ID,
+} from "../../../services/autumn/autumn.service";
 
 type StepStatus = "healthy" | "unhealthy" | "skipped";
 

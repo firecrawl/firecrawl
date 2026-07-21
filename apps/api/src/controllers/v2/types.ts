@@ -1560,7 +1560,6 @@ export type TeamFlags = {
   debugBranding?: boolean;
   maxBrowserSessions?: number;
   researchBeta?: boolean;
-  highlightsBeta?: boolean;
   menuBeta?: boolean;
   enrichBeta?: boolean;
   professionalProfileCompanyDataBeta?: boolean;
@@ -1664,6 +1663,7 @@ function fromV0CrawlerOptions(
     internalOptions: {
       v0CrawlOnlyUrls: x.returnOnlyUrls,
       teamId,
+      orgId: null,
     },
   };
 }
@@ -1728,6 +1728,7 @@ export function fromV0ScrapeOptions(
       atsv: pageOptions.atsv,
       v0DisableJsDom: pageOptions.disableJsDom,
       teamId,
+      orgId: null,
       ...(extractorOptions !== undefined &&
       extractorOptions.mode.includes("llm-extraction")
         ? {
@@ -1840,6 +1841,7 @@ export function fromV1ScrapeOptions(
     }),
     internalOptions: {
       teamId,
+      orgId: null,
       v1Agent: v1ScrapeOptions.agent,
       v1JSONSystemPrompt: (
         v1ScrapeOptions.jsonOptions || v1ScrapeOptions.extract
@@ -1960,10 +1962,10 @@ export const searchRequestSchema = z
     timeout: z.int().positive().finite().prefault(60000),
     ignoreInvalidURLs: z.boolean().optional().prefault(false),
     asyncScraping: z.boolean().optional().prefault(false),
-    // Experimental: replace each result's snippet with query-relevant
-    // highlights pulled from our index (last 30 days), out-of-line from
-    // scrapeURL. Falls back to the provider snippet when the URL isn't indexed.
-    highlights: z.boolean().optional().prefault(false),
+    // Replace each result's snippet with query-relevant highlights pulled from
+    // our index. When omitted, the caller integration and rollout cohort decide
+    // whether generated highlights are returned or only run in shadow mode.
+    highlights: z.boolean().optional(),
     __searchPreviewToken: z.string().optional(),
     threatProtection: threatProtectionOverrideSchema.optional(),
     scrapeOptions: baseScrapeOptions

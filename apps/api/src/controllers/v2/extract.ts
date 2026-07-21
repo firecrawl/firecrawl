@@ -67,6 +67,7 @@ export async function extractController(
     req.body.urls?.filter((url: string) =>
       isUrlBlocked(url, req.acuc?.flags ?? null, {
         team_id: req.auth.team_id,
+        org_id: req.acuc?.org_id ?? null,
         origin: req.body.origin ?? null,
       }),
     ) ?? [];

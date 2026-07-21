@@ -3,9 +3,9 @@ import { eq, inArray } from "drizzle-orm";
 import { dbRr } from "../../db/connection";
 import * as schema from "../../db/schema";
 import { autumnClient } from "./client";
+import { CREDITS_FEATURE_ID } from "./autumn.service";
 
-const CREDITS_FEATURE_ID = "CREDITS";
-const TOKENS_PER_CREDIT = 15;
+export const TOKENS_PER_CREDIT = 15;
 const HISTORICAL_RANGE = "90d";
 const HISTORICAL_BIN_SIZE = "day";
 

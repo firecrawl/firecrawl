@@ -493,6 +493,16 @@ export type InternalOptions = {
   bypassBilling?: boolean;
   zeroDataRetention?: boolean;
   teamFlags?: TeamFlags;
+  /** Team's org, snapshotted from the request ACUC at acceptance (same
+   * pattern as teamFlags). Rides the job payload so org-scoped blocklist
+   * checks work without re-fetching the chunk. Required so a payload
+   * builder cannot silently omit the org and skip org-scoped enforcement;
+   * pass null when the caller genuinely has no org (internal/system work). */
+  orgId: string | null;
+  /** Team's sold concurrency, snapshotted from the request ACUC at
+   * acceptance (same pattern as teamFlags). Rides the job payload so
+   * downstream engines (FirePDF async account context) never re-fetch. */
+  teamConcurrency?: number | null;
 
   /**
    * Effective threat protection policy for this scrape, resolved at the

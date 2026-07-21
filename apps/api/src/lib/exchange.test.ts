@@ -550,11 +550,13 @@ describe("Exchange routing", () => {
       status: 200,
     } as Awaited<ReturnType<typeof fetch>>);
 
-    await reportExchangeBilling({
-      accessEventId: "6f1f5aab-3f78-4d0a-8a3d-2b1d3c4e5f60",
-      status: "confirmed",
-      billingReference: "bill-1",
-    });
+    await expect(
+      reportExchangeBilling({
+        accessEventId: "6f1f5aab-3f78-4d0a-8a3d-2b1d3c4e5f60",
+        status: "confirmed",
+        billingReference: "bill-1",
+      }),
+    ).resolves.toBe(true);
 
     expect(fetch).toHaveBeenCalledWith(
       "https://exchange.example/v1/access-events/6f1f5aab-3f78-4d0a-8a3d-2b1d3c4e5f60/billing",
@@ -564,10 +566,12 @@ describe("Exchange routing", () => {
       }),
     );
 
-    await reportExchangeBilling({
-      accessEventId: "6f1f5aab-3f78-4d0a-8a3d-2b1d3c4e5f60",
-      status: "void",
-    });
+    await expect(
+      reportExchangeBilling({
+        accessEventId: "6f1f5aab-3f78-4d0a-8a3d-2b1d3c4e5f60",
+        status: "void",
+      }),
+    ).resolves.toBe(true);
 
     expect(fetch).toHaveBeenLastCalledWith(
       "https://exchange.example/v1/access-events/6f1f5aab-3f78-4d0a-8a3d-2b1d3c4e5f60/billing",
@@ -578,12 +582,84 @@ describe("Exchange routing", () => {
     );
 
     vi.mocked(fetch).mockRejectedValue(new Error("connect timeout"));
-    await expect(
-      reportExchangeBilling({
+    vi.useFakeTimers();
+    try {
+      const report = reportExchangeBilling({
         accessEventId: "6f1f5aab-3f78-4d0a-8a3d-2b1d3c4e5f60",
         status: "confirmed",
         billingReference: "bill-1",
+      });
+      await vi.runAllTimersAsync();
+      await expect(report).resolves.toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("retries transient billing report failures and stops on definitive rejections", async () => {
+    vi.mocked(fetch)
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 503,
+      } as Awaited<ReturnType<typeof fetch>>)
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+      } as Awaited<ReturnType<typeof fetch>>);
+
+    vi.useFakeTimers();
+    try {
+      const report = reportExchangeBilling({
+        accessEventId: "6f1f5aab-3f78-4d0a-8a3d-2b1d3c4e5f60",
+        status: "confirmed",
+      });
+      await vi.runAllTimersAsync();
+      await expect(report).resolves.toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+    expect(fetch).toHaveBeenCalledTimes(2);
+
+    // 429 is transient rate limiting, not a final answer: it retries.
+    vi.mocked(fetch).mockClear();
+    vi.mocked(fetch)
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 429,
+        headers: new Headers({ "retry-after": "1" }),
+      } as Awaited<ReturnType<typeof fetch>>)
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+      } as Awaited<ReturnType<typeof fetch>>);
+
+    vi.useFakeTimers();
+    try {
+      const report = reportExchangeBilling({
+        accessEventId: "6f1f5aab-3f78-4d0a-8a3d-2b1d3c4e5f60",
+        status: "confirmed",
+      });
+      await vi.runAllTimersAsync();
+      await expect(report).resolves.toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+    expect(fetch).toHaveBeenCalledTimes(2);
+
+    // Any other 4xx is the Exchange's final answer (conflict, unknown
+    // event): no retry, report failure to the caller.
+    vi.mocked(fetch).mockClear();
+    vi.mocked(fetch).mockResolvedValue({
+      ok: false,
+      status: 409,
+    } as Awaited<ReturnType<typeof fetch>>);
+
+    await expect(
+      reportExchangeBilling({
+        accessEventId: "6f1f5aab-3f78-4d0a-8a3d-2b1d3c4e5f60",
+        status: "void",
       }),
-    ).resolves.toBeUndefined();
+    ).resolves.toBe(false);
+    expect(fetch).toHaveBeenCalledTimes(1);
   });
 });

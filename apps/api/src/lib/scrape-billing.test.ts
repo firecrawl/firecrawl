@@ -13,6 +13,7 @@ describe("calculateCreditsToBeBilled", () => {
       } as any,
       {
         teamId: "team-id",
+        orgId: null,
       },
       {
         metadata: {
@@ -40,6 +41,7 @@ describe("calculateCreditsToBeBilled", () => {
       } as any,
       {
         teamId: "team-id",
+        orgId: null,
       },
       {
         metadata: {
@@ -64,6 +66,7 @@ describe("calculateCreditsToBeBilled", () => {
       } as any,
       {
         teamId: "team-id",
+        orgId: null,
       },
       {
         metadata: {
@@ -95,6 +98,7 @@ describe("calculateCreditsToBeBilled", () => {
       } as any,
       {
         teamId: "team-id",
+        orgId: null,
       },
       {
         metadata: {
@@ -163,7 +167,7 @@ const billWithDecisions = (args: {
 }) =>
   calculateCreditsToBeBilled(
     { formats: [{ type: "markdown" }] } as any,
-    { teamId: "team-id" },
+    { teamId: "team-id", orgId: null },
     args.document as any,
     { totalCost: 0 } as any,
     {} as any,

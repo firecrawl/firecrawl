@@ -20,6 +20,9 @@ type SubmitArgs = {
   pagesProcessed: number | undefined;
   mode: PDFMode | undefined;
   deadlineAt: string;
+  /** Team's sold concurrency from the ACUC (ENG-5049 account context).
+   * Optional: entitlement lookup must never block or fail a scrape. */
+  teamConcurrency: number | undefined;
   fetchImpl: typeof undiciFetch;
 };
 
@@ -56,6 +59,7 @@ export async function submitJob(args: SubmitArgs): Promise<SubmitOutcome> {
     pagesProcessed,
     mode,
     deadlineAt,
+    teamConcurrency,
     fetchImpl,
   } = args;
   const scrapeId = meta.id;
@@ -71,6 +75,12 @@ export async function submitJob(args: SubmitArgs): Promise<SubmitOutcome> {
     }),
     ...(meta.internalOptions.crawlId && {
       crawl_id: meta.internalOptions.crawlId,
+    }),
+    // FirePDF per-team admission observation (its ENG-5049): sold
+    // concurrency from the account context. Absence means FirePDF
+    // skips team observation for this submit — never a rejection.
+    ...(teamConcurrency !== undefined && {
+      team_concurrency: teamConcurrency,
     }),
     options: {
       ...(pagesProcessed !== undefined && { pages_estimate: pagesProcessed }),

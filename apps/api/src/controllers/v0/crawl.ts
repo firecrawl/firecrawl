@@ -180,6 +180,7 @@ export async function crawlController(req: Request, res: Response) {
     if (
       isUrlBlocked(url, auth.chunk?.flags ?? null, {
         team_id: auth.chunk?.team_id ?? team_id,
+        org_id: auth.chunk?.org_id ?? null,
         origin: req.body?.origin ?? null,
       })
     ) {
@@ -224,6 +225,7 @@ export async function crawlController(req: Request, res: Response) {
       team_id,
     );
     internalOptions.disableSmartWaitCache = true; // NOTE: smart wait disabled for crawls to ensure contentful scrape, speed does not matter
+    internalOptions.orgId = auth.chunk?.org_id ?? null;
     internalOptions.saveScrapeResultToGCS = process.env
       .GCS_FIRE_ENGINE_BUCKET_NAME
       ? true

@@ -88,6 +88,7 @@ const processBillingJobInternal = async (token: string, job: Job) => {
         is_extract,
         api_key_id,
         autumnTrackInRequest,
+        exchangeAccessEventId,
       } = job.data;
 
       logger.info(`Adding team ${team_id} billing operation to batch queue`, {
@@ -107,6 +108,13 @@ const processBillingJobInternal = async (token: string, job: Job) => {
         }),
         is_extract,
         autumnTrackInRequest,
+        typeof exchangeAccessEventId === "string" &&
+          exchangeAccessEventId.length > 0
+          ? {
+              accessEventId: exchangeAccessEventId,
+              billingReference: String(job.id),
+            }
+          : undefined,
       );
     } else {
       logger.warn(`Unknown billing job type: ${job.name}`);
@@ -495,6 +503,7 @@ const processPrecrawlJob = async (token: string, job: Job) => {
               internalOptions: {
                 disableSmartWaitCache: true, // NOTE: smart wait disabled for crawls to ensure contentful scrape, speed does not matter
                 teamId,
+                orgId: null, // internal pre-crawl team, no org applies
                 saveScrapeResultToGCS: !!config.GCS_FIRE_ENGINE_BUCKET_NAME,
                 zeroDataRetention: false,
                 isPreCrawl: true, // NOTE: must be added to internal options for indexing, if not it will be treated as a normal scrape in the index

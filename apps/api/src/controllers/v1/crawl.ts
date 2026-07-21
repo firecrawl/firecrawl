@@ -201,6 +201,7 @@ export async function crawlController(
       ...internalOptions,
       disableSmartWaitCache: true,
       teamId: req.auth.team_id,
+      orgId: req.acuc?.org_id ?? null,
       saveScrapeResultToGCS: config.GCS_FIRE_ENGINE_BUCKET_NAME ? true : false,
       zeroDataRetention,
       agentIndexOnly: (req as any).agentIndexOnly ?? false,

@@ -227,6 +227,7 @@ export async function scrapeController(
               bypassBilling: isDirectToBullMQ,
               zeroDataRetention,
               teamFlags: req.acuc?.flags ?? null,
+              orgId: req.acuc?.org_id ?? null,
               agentIndexOnly: (req as any).agentIndexOnly ?? false,
               threatProtection: threatProtection.policy ?? undefined,
             },

@@ -15,6 +15,7 @@ type BlocklistBlob = {
 
 type BlockContext = {
   team_id?: string | null;
+  org_id?: string | null;
   origin?: string | null;
 };
 
@@ -102,6 +103,40 @@ function allowedKeywordMatches(url: string, allowedKeyword: string): boolean {
 }
 
 let blob: BlocklistBlob | null = null;
+let orgBlobs: Map<string, BlocklistBlob> = new Map();
+
+// Rows are written by ops directly, so reads must survive a missing or
+// partial document — a bad row must never take down startup. Blank entries
+// can never match and would make an org register as scoped, so drop them.
+function parseStringEntries(value: unknown): string[] {
+  return Array.isArray(value)
+    ? value.filter(
+        (x): x is string => typeof x === "string" && x.trim().length > 0,
+      )
+    : [];
+}
+
+function parseBlob(data: unknown): BlocklistBlob {
+  const doc = (data ?? {}) as Record<string, unknown>;
+  return {
+    blocklist: parseStringEntries(doc.blocklist),
+    allowedKeywords: parseStringEntries(doc.allowedKeywords),
+  };
+}
+
+function mergeBlob(target: BlocklistBlob, source: BlocklistBlob): void {
+  target.blocklist.push(...source.blocklist);
+  target.allowedKeywords.push(...source.allowedKeywords);
+}
+
+// Rows may repeat entries; the match loops scan linearly, so dedupe once at
+// load instead of paying for duplicates on every check.
+function dedupeBlob(blob: BlocklistBlob): BlocklistBlob {
+  return {
+    blocklist: [...new Set(blob.blocklist)],
+    allowedKeywords: [...new Set(blob.allowedKeywords)],
+  };
+}
 
 export async function initializeBlocklist() {
   if (config.USE_DB_AUTHENTICATION !== true || config.DISABLE_BLOCKLIST) {
@@ -109,22 +144,126 @@ export async function initializeBlocklist() {
       blocklist: [],
       allowedKeywords: [],
     };
+    orgBlobs = new Map();
     return;
   }
 
-  let data: { data: any } | undefined;
+  let rows: { data: any; org_id: string | null }[];
   try {
-    [data] = await dbRr.select().from(schema.blocklist).limit(1);
+    rows = await dbRr.select().from(schema.blocklist);
   } catch (error) {
     throw new Error(
       `Error getting blocklist: ${error instanceof Error ? error.message : JSON.stringify(error)}`,
     );
   }
 
-  if (!data) {
+  if (rows.length === 0) {
     throw new Error("Error getting blocklist: No data returned from database");
   }
-  blob = data.data;
+
+  if (!rows.some(row => row.org_id === null)) {
+    throw new Error(
+      "Error getting blocklist: No global blocklist row (org_id IS NULL) found",
+    );
+  }
+
+  const globalBlob: BlocklistBlob = { blocklist: [], allowedKeywords: [] };
+  const perOrg = new Map<string, BlocklistBlob>();
+  for (const row of rows) {
+    if (row.org_id === null) {
+      mergeBlob(globalBlob, parseBlob(row.data));
+    } else {
+      const existing = perOrg.get(row.org_id);
+      if (existing) {
+        mergeBlob(existing, parseBlob(row.data));
+      } else {
+        perOrg.set(row.org_id, parseBlob(row.data));
+      }
+    }
+  }
+  for (const [orgId, orgBlob] of perOrg) {
+    const deduped = dedupeBlob(orgBlob);
+    // An org whose rows hold no blockable entries must not register as
+    // org-scoped at all — hasOrgScopedBlocklist consumers would otherwise
+    // pay cache opt-outs for an org that can never block anything.
+    if (deduped.blocklist.length === 0) {
+      perOrg.delete(orgId);
+    } else {
+      perOrg.set(orgId, deduped);
+    }
+  }
+  blob = dedupeBlob(globalBlob);
+  orgBlobs = perOrg;
+}
+
+function findBlockedMatch(
+  url: string,
+  lowerCaseUrl: string,
+  blockedlist: string[],
+  allowedKeywords: string[],
+): string | null {
+  const decryptedUrl =
+    blockedlist.find(decrypted => lowerCaseUrl === decrypted) || lowerCaseUrl;
+
+  // If the URL is empty or invalid, return no match
+  let parsedUrl: any;
+  try {
+    parsedUrl = parse(decryptedUrl);
+  } catch {
+    console.log("Error parsing URL:", url);
+    return null;
+  }
+
+  const domain = parsedUrl.domain;
+  const publicSuffix = parsedUrl.publicSuffix;
+
+  if (!domain) {
+    return null;
+  }
+
+  // Check if URL contains any allowed keyword
+  if (allowedKeywords.some(keyword => allowedKeywordMatches(url, keyword))) {
+    return null;
+  }
+
+  // Block exact matches
+  if (blockedlist.includes(domain)) {
+    return domain;
+  }
+
+  // Block subdomains
+  if (blockedlist.some(blocked => domain.endsWith(`.${blocked}`))) {
+    return domain;
+  }
+
+  // Block different TLDs of the same base domain
+  const baseDomain = domain.split(".")[0]; // Extract the base domain (e.g., "facebook" from "facebook.com")
+
+  if (
+    publicSuffix &&
+    baseDomain.length > 2 &&
+    blockedlist.some(
+      blocked => blocked.startsWith(baseDomain + ".") && blocked !== domain,
+    )
+  ) {
+    return domain;
+  }
+
+  return null;
+}
+
+/**
+ * Whether the org has any org-scoped blocklist entries at all. Lets shared
+ * caches opt such requesters out entirely: a per-URL check is not enough
+ * when the cached artifact covers other URLs than the one checked.
+ */
+export function hasOrgScopedBlocklist(
+  orgId: string | null | undefined,
+): boolean {
+  if (blob === null) {
+    throw new Error("Blocklist not initialized");
+  }
+  return typeof orgId === "string" && orgBlobs.has(orgId);
 }
 
 export function isUrlBlocked(
@@ -146,56 +285,36 @@ export function isUrlBlocked(
     );
   }
 
-  const decryptedUrl =
-    blockedlist.find(decrypted => lowerCaseUrl === decrypted) || lowerCaseUrl;
-
-  // If the URL is empty or invalid, return false
-  let parsedUrl: any;
-  try {
-    parsedUrl = parse(decryptedUrl);
-  } catch {
-    console.log("Error parsing URL:", url);
-    return false;
-  }
-
-  const domain = parsedUrl.domain;
-  const publicSuffix = parsedUrl.publicSuffix;
-
-  if (!domain) {
-    return false;
-  }
-
-  // Check if URL contains any allowed keyword
-  if (
-    blob.allowedKeywords.some(keyword => allowedKeywordMatches(url, keyword))
-  ) {
-    return false;
-  }
-
-  // Block exact matches
-  if (blockedlist.includes(domain)) {
-    recordHit(url, domain, context);
+  const globalMatch = findBlockedMatch(
+    url,
+    lowerCaseUrl,
+    blockedlist,
+    blob.allowedKeywords,
+  );
+  if (globalMatch !== null) {
+    recordHit(url, globalMatch, context);
     return true;
   }
 
-  // Block subdomains
-  if (blockedlist.some(blocked => domain.endsWith(`.${blocked}`))) {
-    recordHit(url, domain, context);
-    return true;
-  }
-
-  // Block different TLDs of the same base domain
-  const baseDomain = domain.split(".")[0]; // Extract the base domain (e.g., "facebook" from "facebook.com")
-
-  if (
-    publicSuffix &&
-    baseDomain.length > 2 &&
-    blockedlist.some(
-      blocked => blocked.startsWith(baseDomain + ".") && blocked !== domain,
-    )
-  ) {
-    recordHit(url, domain, context);
-    return true;
+  // The org blob's own allowedKeywords exempt URLs from the org list only.
+  const orgBlob = context?.org_id ? orgBlobs.get(context.org_id) : undefined;
+  if (orgBlob) {
+    let orgBlockedlist = orgBlob.blocklist;
+    if (flags?.unblockedDomains) {
+      orgBlockedlist = orgBlockedlist.filter(
+        blocked => !flags.unblockedDomains!.includes(blocked),
+      );
+    }
+    const orgMatch = findBlockedMatch(
+      url,
+      lowerCaseUrl,
+      orgBlockedlist,
+      orgBlob.allowedKeywords,
+    );
+    if (orgMatch !== null) {
+      recordHit(url, orgMatch, context);
+      return true;
+    }
   }
 
   return false;

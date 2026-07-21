@@ -50,12 +50,12 @@ export type ExchangeScrapeMetadata = {
   integrationId?: string;
 };
 
-export type ExchangeTerms = {
+type ExchangeTerms = {
   key: string;
   version: string;
 };
 
-export type ExchangeProvider = {
+type ExchangeProvider = {
   id: string;
   creditsCost: number;
   terms?: ExchangeTerms;
@@ -227,7 +227,10 @@ async function getExchangeProviders(): Promise<ExchangeProvider[] | null> {
   return providersRequest;
 }
 
-function providerMatchesUrl(provider: ExchangeProvider, inputUrl: string): boolean {
+function providerMatchesUrl(
+  provider: ExchangeProvider,
+  inputUrl: string,
+): boolean {
   let parsed: URL;
   try {
     parsed = new URL(inputUrl);
@@ -265,7 +268,9 @@ export async function resolveExchangeProvider(
     return null;
   }
 
-  return providers.find(provider => providerMatchesUrl(provider, inputUrl)) ?? null;
+  return (
+    providers.find(provider => providerMatchesUrl(provider, inputUrl)) ?? null
+  );
 }
 
 export function getExchangeRequestLogContext(inputUrl: string):
@@ -365,7 +370,9 @@ function getProviderAccessDecision(
   const entry = typeof access === "object" && access !== null ? access : null;
 
   if (provider.terms === undefined) {
-    return entry !== null && entry.status !== "enabled" ? "not_enabled" : "allowed";
+    return entry !== null && entry.status !== "enabled"
+      ? "not_enabled"
+      : "allowed";
   }
 
   if (entry === null) {
@@ -547,53 +554,119 @@ export function getExchangeSuccessCredits(input: {
 }
 
 const EXCHANGE_BILLING_TIMEOUT_MS = 5_000;
+const EXCHANGE_BILLING_ATTEMPTS = 3;
+const EXCHANGE_BILLING_RETRY_DELAY_MS = 2_000;
+const EXCHANGE_BILLING_RETRY_MAX_DELAY_MS = 15_000;
+
+// Retry-After from a 429, in milliseconds, when present and sane.
+// Accepts both delta-seconds and HTTP-date forms.
+function getRetryAfterMs(response: {
+  headers?: { get?: (name: string) => string | null };
+}): number | undefined {
+  const header = response.headers?.get?.("retry-after");
+  if (!header) {
+    return undefined;
+  }
+
+  const seconds = Number(header);
+  if (Number.isFinite(seconds)) {
+    return seconds > 0 ? seconds * 1_000 : undefined;
+  }
+
+  const resetAt = Date.parse(header);
+  if (Number.isNaN(resetAt)) {
+    return undefined;
+  }
+  const delayMs = resetAt - Date.now();
+  return delayMs > 0 ? delayMs : undefined;
+}
 
 /**
  * Report the billing outcome of a delivered Exchange access so the service
  * can reconcile its ledger: "confirmed" once the customer was billed, "void"
  * when the delivered access was ultimately discarded and never billed.
- * Failures only log - the service flags unresolved events for follow-up.
+ * Retries transient failures with a short backoff; never throws. Returns
+ * whether the report was accepted - a sustained failure leaves the event
+ * pending on the Exchange, which flags unresolved events for follow-up.
  */
 export async function reportExchangeBilling(input: {
   accessEventId: string;
   status: "confirmed" | "void";
   billingReference?: string;
-}): Promise<void> {
+}): Promise<boolean> {
   const baseUrl = getExchangeBaseUrl();
   if (!baseUrl) {
-    return;
+    return false;
   }
 
-  try {
-    const response = await fetch(
-      `${baseUrl}/v1/access-events/${encodeURIComponent(input.accessEventId)}/billing`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          status: input.status,
-          ...(input.billingReference === undefined
-            ? {}
-            : { billingReference: input.billingReference }),
-        }),
-        signal: AbortSignal.timeout(EXCHANGE_BILLING_TIMEOUT_MS),
-      },
-    );
+  for (let attempt = 1; attempt <= EXCHANGE_BILLING_ATTEMPTS; attempt++) {
+    let retryAfterMs: number | undefined;
 
-    if (!response.ok) {
+    try {
+      const response = await fetch(
+        `${baseUrl}/v1/access-events/${encodeURIComponent(input.accessEventId)}/billing`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            status: input.status,
+            ...(input.billingReference === undefined
+              ? {}
+              : { billingReference: input.billingReference }),
+          }),
+          signal: AbortSignal.timeout(EXCHANGE_BILLING_TIMEOUT_MS),
+        },
+      );
+
+      if (response.ok) {
+        return true;
+      }
+
+      // 4xx responses other than 429 are definitive (conflict, unknown
+      // event) - the Exchange has spoken and a retry cannot change the
+      // answer. 429 is transient rate limiting and retries.
+      if (response.status < 500 && response.status !== 429) {
+        rootLogger.warn("Exchange billing report rejected", {
+          accessEventId: input.accessEventId,
+          status: input.status,
+          statusCode: response.status,
+        });
+        return false;
+      }
+
+      if (response.status === 429) {
+        retryAfterMs = getRetryAfterMs(response);
+      }
+
       rootLogger.warn("Exchange billing report failed", {
         accessEventId: input.accessEventId,
         status: input.status,
         statusCode: response.status,
+        attempt,
+      });
+    } catch (error) {
+      rootLogger.warn("Exchange billing report errored", {
+        accessEventId: input.accessEventId,
+        status: input.status,
+        attempt,
+        error,
       });
     }
-  } catch (error) {
-    rootLogger.warn("Exchange billing report errored", {
-      accessEventId: input.accessEventId,
-      status: input.status,
-      error,
-    });
+
+    if (attempt < EXCHANGE_BILLING_ATTEMPTS) {
+      // Full jitter on the backoff so a batch of reports failing together
+      // does not retry against a degraded Exchange in synchronized bursts.
+      // Retry-After, when given, is the lower bound.
+      const backoff = EXCHANGE_BILLING_RETRY_DELAY_MS * attempt;
+      const delay = Math.min(
+        Math.max(retryAfterMs ?? 0, Math.random() * backoff),
+        EXCHANGE_BILLING_RETRY_MAX_DELAY_MS,
+      );
+      await new Promise(resolve => setTimeout(resolve, delay));
+    }
   }
+
+  return false;
 }
 
 /**

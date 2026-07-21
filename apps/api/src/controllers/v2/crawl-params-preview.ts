@@ -67,6 +67,7 @@ export async function crawlParamsPreviewController(
         basePrompt: parsedBody.prompt,
         url: parsedBody.url,
         teamId: req.auth.team_id,
+        orgId: req.acuc?.org_id ?? null,
         flags: req.acuc?.flags ?? null,
         logger,
         limit: 50,

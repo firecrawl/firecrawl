@@ -165,11 +165,13 @@ const configSchema = z.object({
   CLICKHOUSE_ANALYTICS_URL: z.string().optional(),
   CLICKHOUSE_ANALYTICS_DATABASE: z.string().optional(),
 
-  // Search highlights (beta): highlighter service base URL. TOKEN is optional
+  // Search highlights: highlighter service base URL. TOKEN is optional
   // bearer auth for legacy/external services; the in-cluster service omits it.
   HIGHLIGHT_MODEL_URL: z.string().optional(),
   HIGHLIGHT_MODEL_TOKEN: z.string().optional(),
-  HIGHLIGHT_SHADOW_RATE: z.coerce.number().min(0).max(1).default(0),
+  // Stable percentage of non-MCP/CLI cohorts whose generated highlights are
+  // returned. The remaining eligible traffic still runs in shadow mode.
+  HIGHLIGHT_ROLLOUT_PERCENT: z.coerce.number().min(0).max(100).default(0),
 
   // Exchange (routed data sources service)
   FIRE_EXCHANGE_URL: z.url().optional(),

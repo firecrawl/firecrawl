@@ -3,6 +3,7 @@ import { updateGeneratedLlmsTxt } from "./generate-llmstxt-redis";
 import { getMapResults } from "../../controllers/v1/map";
 import { z } from "zod";
 import { scrapeDocument } from "../extract/document-scraper";
+import { hasOrgScopedBlocklist } from "../../scraper/WebScraper/utils/blocklist";
 import {
   getLlmsTextFromCache,
   saveLlmsTextToCache,
@@ -87,10 +88,18 @@ export async function performGenerateLlmsTxt(
     // Enforce max URL limit
     const effectiveMaxUrls = Math.min(maxUrls, 5000);
 
+    // The cache is shared across teams, so a requester under org-scoped
+    // blocklist rules must not touch it at all: even with the origin URL
+    // itself unblocked, mapped child URLs may still be blocked, so a cached
+    // generation could hand them blocked content and their filtered output
+    // would poison the cache for everyone else.
+    const skipSharedCache = hasOrgScopedBlocklist(acuc?.org_id);
+
     // Check cache first, unless cache is set to false
-    const cachedResult = cache
-      ? await getLlmsTextFromCache(url, effectiveMaxUrls)
-      : null;
+    const cachedResult =
+      cache && !skipSharedCache
+        ? await getLlmsTextFromCache(url, effectiveMaxUrls)
+        : null;
     if (cachedResult) {
       logger.info("Found cached LLMs text", { url });
 
@@ -130,6 +139,7 @@ export async function performGenerateLlmsTxt(
     const mapResult = await getMapResults({
       url,
       teamId,
+      orgId: acuc?.org_id ?? null,
       limit: effectiveMaxUrls,
       includeSubdomains: false,
       ignoreSitemap: false,
@@ -159,6 +169,7 @@ export async function performGenerateLlmsTxt(
               {
                 url,
                 teamId,
+                orgId: acuc?.org_id ?? null,
                 origin: "llmstxt",
                 timeout: 30000,
                 isSingleUrl: true,
@@ -233,7 +244,9 @@ export async function performGenerateLlmsTxt(
     }
 
     // After successful generation, save to cache
-    await saveLlmsTextToCache(url, llmstxt, llmsFulltxt, effectiveMaxUrls);
+    if (!skipSharedCache) {
+      await saveLlmsTextToCache(url, llmstxt, llmsFulltxt, effectiveMaxUrls);
+    }
 
     // Limit pages and remove separators before final update
     const limitedFullText = limitPages(llmsFulltxt, effectiveMaxUrls);

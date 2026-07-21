@@ -87,3 +87,16 @@ class TestParseRequestPreparation:
 
         payload = json.loads(fields["options"])
         assert "lockdown" not in payload
+
+    def test_prepare_parse_request_strips_min_age(self):
+        options = ParseOptions(formats=["markdown"], min_age=1000)
+        fields, _ = _prepare_parse_request(
+            b"<html><body><h1>Parse</h1></body></html>",
+            options,
+            filename="upload.html",
+            content_type="text/html",
+        )
+
+        payload = json.loads(fields["options"])
+        assert "minAge" not in payload
+        assert "min_age" not in payload

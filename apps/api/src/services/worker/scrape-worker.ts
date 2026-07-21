@@ -185,7 +185,10 @@ async function billScrapeJob(
           },
         );
 
-        // Add directly to the billing queue - the billing worker will handle the rest
+        // Add directly to the billing queue - the billing worker will handle
+        // the rest, including confirming the Exchange access event once the
+        // debit actually commits. A failed commit leaves the event pending
+        // for reconciliation - it is never voided on an ambiguous outcome.
         await getBillingQueue().add(
           "bill_team",
           {
@@ -197,24 +200,15 @@ async function billScrapeJob(
             originating_job_id: job.id,
             api_key_id: job.data.apiKeyId,
             autumnTrackInRequest: trackedInRequest,
+            ...(exchange?.accessEventId === undefined
+              ? {}
+              : { exchangeAccessEventId: exchange.accessEventId }),
           },
           {
             jobId: billingJobId,
             priority: 10,
           },
         );
-
-        // Reconcile the Exchange ledger. Awaited so the confirmation lands
-        // before any later failure path could attempt to void this access -
-        // the service rejects confirmed->void, making the order decisive.
-        // reportExchangeBilling never throws and is bounded by its timeout.
-        if (exchange?.accessEventId !== undefined) {
-          await reportExchangeBilling({
-            accessEventId: exchange.accessEventId,
-            status: "confirmed",
-            billingReference: billingJobId,
-          });
-        }
 
         return creditsToBeBilled;
       } catch (error) {
@@ -228,6 +222,18 @@ async function billScrapeJob(
             value: creditsToBeBilled,
             properties: autumnProperties,
             featureId,
+          });
+        }
+        // The billing operation never reached the queue, so no debit will
+        // commit and no confirmation will ever arrive: void the Exchange
+        // access event instead of leaving it dangling. If the enqueue
+        // actually succeeded and only the acknowledgement was lost, the
+        // eventual confirmation repairs the void (void -> confirmed is
+        // legal on the Exchange). Fire-and-forget.
+        if (exchange?.accessEventId !== undefined) {
+          void reportExchangeBilling({
+            accessEventId: exchange.accessEventId,
+            status: "void",
           });
         }
         captureExceptionWithZdrCheck(error, {
@@ -458,15 +464,13 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
           await saveCrawl(job.data.crawl_id, sc);
         }
 
+        const teamChunk = await getACUCTeam(job.data.team_id);
         if (
-          isUrlBlocked(
-            doc.metadata.url,
-            (await getACUCTeam(job.data.team_id))?.flags ?? null,
-            {
-              team_id: job.data.team_id,
-              origin: job.data.origin,
-            },
-          )
+          isUrlBlocked(doc.metadata.url, teamChunk?.flags ?? null, {
+            team_id: job.data.team_id,
+            org_id: teamChunk?.org_id ?? null,
+            origin: job.data.origin,
+          })
         ) {
           throw new CrawlDenialError(UNSUPPORTED_SITE_MESSAGE); // TODO: make this its own error type that is ignored by error tracking
         }
@@ -982,10 +986,11 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
 
     // The Exchange delivered this access but the scrape ultimately failed,
     // so the customer was never billed for it - void the access event so
-    // the Exchange ledger reconciles. Fire-and-forget. If billing did
-    // happen before a later step failed, its confirmation was awaited
-    // above and the service rejects confirmed->void, so a paid access can
-    // never be marked void.
+    // the Exchange ledger reconciles. Fire-and-forget. If billing was in
+    // fact queued before a later step failed, the billing worker's
+    // confirmation authoritatively repairs this void (void -> confirmed is
+    // legal on the Exchange; confirmed -> void is not), so a paid access
+    // can never end up voided.
     if (pipeline?.success && pipeline.exchange?.accessEventId !== undefined) {
       void reportExchangeBilling({
         accessEventId: pipeline.exchange.accessEventId,

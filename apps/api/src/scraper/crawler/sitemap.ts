@@ -88,6 +88,7 @@ async function getSitemapXML(options: SitemapScrapeOptions): Promise<string> {
       v0DisableJsDom: true,
       // externalAbort: options.abort,
       teamId: "sitemap",
+      orgId: null,
       zeroDataRetention: options.zeroDataRetention,
       crawlId: options.crawlId,
       isPreCrawl: options.isPreCrawl,

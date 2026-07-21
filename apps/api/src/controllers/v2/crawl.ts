@@ -170,6 +170,7 @@ export async function crawlController(
         basePrompt: req.body.prompt,
         url: req.body.url,
         teamId: req.auth.team_id,
+        orgId: req.acuc?.org_id ?? null,
         flags: req.acuc?.flags ?? null,
         logger,
         limit: 50,
@@ -262,6 +263,7 @@ export async function crawlController(
     internalOptions: {
       disableSmartWaitCache: true,
       teamId: req.auth.team_id,
+      orgId: req.acuc?.org_id ?? null,
       saveScrapeResultToGCS: config.GCS_FIRE_ENGINE_BUCKET_NAME ? true : false,
       zeroDataRetention,
       agentIndexOnly: (req as any).agentIndexOnly ?? false,

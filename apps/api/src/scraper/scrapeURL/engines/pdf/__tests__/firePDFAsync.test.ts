@@ -7,6 +7,7 @@ vi.mock("../../../../../lib/gcs-pdf-cache", () => ({
   savePdfResultToCache: vi.fn(async () => null),
 }));
 
+
 import {
   FirePdfAsyncFailure,
   scrapePDFWithFirePDFAsync,
@@ -71,6 +72,7 @@ function makeMeta(overrides: Record<string, unknown> = {}) {
     internalOptions: {
       zeroDataRetention: false,
       teamId: "team-x",
+      teamConcurrency: 12,
       crawlId: undefined,
     },
     options: {
@@ -91,11 +93,18 @@ function makeFetchFromSequence(
     url: string;
     method: string;
     headers: Record<string, string> | undefined;
+    body: unknown;
   }> = [];
   const cursor = { idx: 0 };
   const fetchImpl: any = async (url: string, init: any) => {
     const method = (init?.method ?? "GET").toUpperCase();
-    calls.push({ url, method, headers: init?.headers });
+    let body: unknown;
+    try {
+      body = init?.body ? JSON.parse(init.body) : undefined;
+    } catch {
+      body = init?.body;
+    }
+    calls.push({ url, method, headers: init?.headers, body });
     const matcher = matchers[cursor.idx++];
     if (!matcher) {
       throw new Error(
@@ -136,6 +145,7 @@ describe("scrapePDFWithFirePDFAsync", () => {
       internalOptions: {
         zeroDataRetention: true,
         teamId: "team-x",
+      teamConcurrency: 12,
         crawlId: undefined,
       },
     });
@@ -241,6 +251,49 @@ describe("scrapePDFWithFirePDFAsync", () => {
     expect(result.pagesProcessed).toBe(12);
     expect(fallback).not.toHaveBeenCalled();
     expect(calls).toHaveLength(4);
+    // Account context rides the submit body (FirePDF ENG-5049).
+    expect((calls[0].body as { team_concurrency?: number }).team_concurrency).toBe(12);
+  });
+
+  it("submits without team context when the snapshot is absent", async () => {
+    const { fetchImpl, calls } = makeFetchFromSequence([
+      {
+        matchUrl: /\/jobs$/,
+        matchMethod: "POST",
+        response: {
+          status: 200,
+          body: { scrape_id: "scrape-id-test", status: "done", lane: "fast", retry_after_ms: 0 },
+        },
+      },
+      {
+        matchUrl: /\/jobs\/scrape-id-test\/result$/,
+        matchMethod: "GET",
+        response: {
+          status: 200,
+          body: {
+            schema_version: 1,
+            markdown: "# No context",
+            pages_processed: 1,
+            failed_pages: null,
+            partial_pages: null,
+          },
+        },
+      },
+    ]);
+    const fallback = vi.fn();
+
+    const meta = makeMeta();
+    meta.internalOptions.teamConcurrency = null;
+    const result = await scrapePDFWithFirePDFAsync(meta, "BASE64", undefined, undefined, undefined, {
+      fetchImpl,
+      fallbackImpl: fallback,
+      sleepImpl: noopSleep,
+    });
+
+    // Missing snapshot must never block the scrape — field simply absent.
+    expect(result.markdown).toBe("# No context");
+    expect((calls[0].body as { team_concurrency?: number }).team_concurrency).toBeUndefined();
+    expect(fallback).not.toHaveBeenCalled();
   });
 
   it("cancels accepted work when polling is abandoned", async () => {
@@ -282,7 +335,7 @@ describe("scrapePDFWithFirePDFAsync", () => {
 
     expect(error).toBeInstanceOf(FirePdfAsyncFailure);
     expect(error.reason).toBe("network_error");
-    expect(calls).toEqual([
+    expect(calls.map(({ url, method, headers }) => ({ url, method, ...(headers !== undefined && { headers }) }))).toEqual([
       {
         url: "http://fire-pdf.test/jobs",
         method: "POST",
@@ -401,7 +454,7 @@ describe("scrapePDFWithFirePDFAsync", () => {
     expect(err).toBeInstanceOf(FirePdfAsyncFailure);
     expect(err.reason).toBe("network_error");
     expect(fallback).not.toHaveBeenCalled();
-    expect(calls).toEqual([
+    expect(calls.map(({ url, method }) => ({ url, method }))).toEqual([
       { method: "POST", url: "http://fire-pdf.test/jobs" },
       {
         method: "DELETE",

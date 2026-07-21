@@ -37,6 +37,7 @@ async function searchHelper(
   pageOptions: PageOptions,
   searchOptions: SearchOptions,
   flags: TeamFlags,
+  org_id: string | null,
   api_key_id: number | null,
 ): Promise<{
   success: boolean;
@@ -81,6 +82,7 @@ async function searchHelper(
     crawlerOptions,
     team_id,
   );
+  internalOptions.orgId = org_id;
 
   if (justSearch) {
     const searchCredits = Math.ceil(res.length / 10) * 2;
@@ -103,6 +105,7 @@ async function searchHelper(
     r =>
       !isUrlBlocked(r.url, flags, {
         team_id,
+        org_id,
         origin: req.body?.origin ?? null,
       }),
   );
@@ -269,6 +272,7 @@ export async function searchController(req: Request, res: Response) {
       pageOptions,
       searchOptions,
       chunk?.flags ?? null,
+      chunk?.org_id ?? null,
       chunk?.api_key_id ?? null,
     );
     const endTime = new Date().getTime();

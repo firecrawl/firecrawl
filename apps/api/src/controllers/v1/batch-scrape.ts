@@ -121,6 +121,7 @@ export async function batchScrapeController(
         if (
           !isUrlBlocked(nu, req.acuc?.flags ?? null, {
             team_id: req.auth.team_id,
+            org_id: req.acuc?.org_id ?? null,
             origin: req.body.origin ?? null,
           })
         ) {
@@ -138,6 +139,7 @@ export async function batchScrapeController(
       req.body.urls?.some((url: string) =>
         isUrlBlocked(url, req.acuc?.flags ?? null, {
           team_id: req.auth.team_id,
+          org_id: req.acuc?.org_id ?? null,
           origin: req.body.origin ?? null,
         }),
       )
@@ -250,6 +252,7 @@ export async function batchScrapeController(
           ...internalOptions,
           disableSmartWaitCache: true,
           teamId: req.auth.team_id,
+          orgId: req.acuc?.org_id ?? null,
           saveScrapeResultToGCS: config.GCS_FIRE_ENGINE_BUCKET_NAME
             ? true
             : false,

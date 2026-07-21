@@ -3,6 +3,7 @@ vi.mock("../config", () => ({
     GCS_INDEX_BUCKET_NAME: "index-bucket",
     HIGHLIGHT_MODEL_URL: "https://highlight.test",
     HIGHLIGHT_MODEL_TOKEN: "secret-token",
+    HIGHLIGHT_ROLLOUT_PERCENT: 0,
   },
 }));
 
@@ -10,9 +11,6 @@ vi.mock("../services", () => ({
   useIndex: true,
   normalizeURLForIndex: vi.fn((url: string) => url),
   hashURL: vi.fn((url: string) => url),
-  getIndexFromGCS: vi.fn(async (key: string) => ({
-    html: `<main>${key}</main>`,
-  })),
 }));
 
 vi.mock("../db/rpc", () => ({
@@ -25,31 +23,24 @@ vi.mock("../db/rpc", () => ({
   ]),
 }));
 
-vi.mock("../lib/html-to-markdown", () => ({
-  parseMarkdown: vi.fn(async (html: string) => `markdown:${html}`),
-}));
-
-vi.mock("../scraper/scrapeURL/lib/removeUnwantedElements", () => ({
-  htmlTransform: vi.fn(async (html: string) => html),
+vi.mock("../lib/logger", () => ({
+  logger: {
+    info: vi.fn(),
+    warn: vi.fn(),
+  },
 }));
 
 vi.mock("./highlight-model", () => ({
-  generateHighlightsBatch: vi.fn(),
   generateHighlightsIndexedBatch: vi.fn(),
 }));
 
-import {
-  generateHighlightsBatch,
-  generateHighlightsIndexedBatch,
-} from "./highlight-model";
+import { generateHighlightsIndexedBatch } from "./highlight-model";
 import { config } from "../config";
-import { indexGetRecent5 } from "../db/rpc";
+import { logger as rootLogger } from "../lib/logger";
 import {
-  applyIndexedSearchHighlights,
-  applySearchHighlights,
   highlightsEnvReady,
-  runIndexedSearchHighlightsShadow,
-  searchHighlightURLs,
+  runIndexedSearchHighlights,
+  searchHighlightsMode,
 } from "./highlights";
 
 const logger = {
@@ -66,134 +57,7 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
-describe("runIndexedSearchHighlightsShadow", () => {
-  it("resolves lightweight index references without loading page content", async () => {
-    vi.mocked(generateHighlightsIndexedBatch).mockResolvedValue(
-      new Map([["0", { highlights: [], markdown: "shadow highlight" }]]),
-    );
-    const response = {
-      web: [{ url: "https://first.test", description: "fallback" }],
-      news: [{ url: "https://second.test", snippet: "fallback" }],
-    } as any;
-    const urls = searchHighlightURLs(response);
-
-    const result = await runIndexedSearchHighlightsShadow(
-      urls,
-      "query",
-      logger,
-      "request-1",
-    );
-
-    expect(generateHighlightsIndexedBatch).toHaveBeenCalledWith(
-      "query",
-      [
-        {
-          id: "0",
-          url: "https://first.test",
-          indexObject: "index:https://first.test.json",
-        },
-        {
-          id: "1",
-          url: "https://second.test",
-          indexObject: "index:https://second.test.json",
-        },
-      ],
-      {
-        logger,
-        logPayload: false,
-        requestId: "request-1",
-        timeoutMs: null,
-        onFailure: expect.any(Function),
-      },
-    );
-    expect(result).toEqual({
-      attempted: 2,
-      indexHits: 2,
-      replaced: 1,
-      succeeded: true,
-    });
-  });
-});
-
-describe("applyIndexedSearchHighlights", () => {
-  it("uses the shadow indexed request path and applies web and news responses by ID", async () => {
-    vi.mocked(generateHighlightsIndexedBatch).mockResolvedValue(
-      new Map([
-        ["0", { highlights: [], markdown: "first highlight" }],
-        ["1", { highlights: [], markdown: "second highlight" }],
-      ]),
-    );
-    const response = {
-      web: [{ url: "https://first.test", description: "first fallback" }],
-      news: [{ url: "https://second.test", snippet: "second fallback" }],
-    } as any;
-
-    const result = await applyIndexedSearchHighlights(
-      response,
-      "query",
-      logger,
-      "request-1",
-    );
-
-    expect(generateHighlightsIndexedBatch).toHaveBeenCalledWith(
-      "query",
-      [
-        {
-          id: "0",
-          url: "https://first.test",
-          indexObject: "index:https://first.test.json",
-        },
-        {
-          id: "1",
-          url: "https://second.test",
-          indexObject: "index:https://second.test.json",
-        },
-      ],
-      {
-        logger,
-        logPayload: false,
-        requestId: "request-1",
-        timeoutMs: null,
-        onFailure: expect.any(Function),
-      },
-    );
-    expect(generateHighlightsBatch).not.toHaveBeenCalled();
-    expect(response.web[0].description).toBe("first highlight");
-    expect(response.news[0].snippet).toBe("second highlight");
-    expect(result).toEqual({
-      attempted: 2,
-      indexHits: 2,
-      replaced: 2,
-      succeeded: true,
-    });
-  });
-
-  it("preserves provider snippets when the indexed Chain request fails", async () => {
-    vi.mocked(generateHighlightsIndexedBatch).mockResolvedValue(null);
-    const response = {
-      web: [{ url: "https://first.test", description: "first fallback" }],
-      news: [{ url: "https://second.test", snippet: "second fallback" }],
-    } as any;
-
-    const result = await applyIndexedSearchHighlights(
-      response,
-      "query",
-      logger,
-      "request-1",
-    );
-
-    expect(response.web[0].description).toBe("first fallback");
-    expect(response.news[0].snippet).toBe("second fallback");
-    expect(result).toEqual({
-      attempted: 2,
-      indexHits: 2,
-      replaced: 0,
-      succeeded: false,
-    });
-  });
-});
-
-describe("applySearchHighlights", () => {
+describe("runIndexedSearchHighlights", () => {
   it("enables the in-cluster service without requiring a bearer token", () => {
     const token = config.HIGHLIGHT_MODEL_TOKEN;
     config.HIGHLIGHT_MODEL_TOKEN = undefined;
@@ -205,8 +69,8 @@ describe("applySearchHighlights", () => {
     }
   });
 
-  it("sends indexed web and news results in one batch and applies responses by ID", async () => {
-    vi.mocked(generateHighlightsBatch).mockResolvedValue(
+  it("uses indexed references and applies web and news responses", async () => {
+    vi.mocked(generateHighlightsIndexedBatch).mockResolvedValue(
       new Map([
         ["0", { highlights: [], markdown: "first highlight" }],
         ["1", { highlights: [], markdown: "second highlight" }],
@@ -217,23 +81,31 @@ describe("applySearchHighlights", () => {
       news: [{ url: "https://second.test", snippet: "second fallback" }],
     } as any;
 
-    const result = await applySearchHighlights(response, "query", logger);
+    const result = await runIndexedSearchHighlights(response, "query", logger, {
+      mode: "apply",
+      requestId: "request-1",
+      teamId: "team-1",
+    });
 
-    expect(generateHighlightsBatch).toHaveBeenCalledTimes(1);
-    expect(generateHighlightsBatch).toHaveBeenCalledWith(
+    expect(generateHighlightsIndexedBatch).toHaveBeenCalledWith(
       "query",
       [
         {
           id: "0",
-          markdown: "markdown:<main>index:https://first.test.json</main>",
+          url: "https://first.test",
+          indexObject: "index:https://first.test.json",
         },
         {
           id: "1",
-          markdown: "markdown:<main>index:https://second.test.json</main>",
+          url: "https://second.test",
+          indexObject: "index:https://second.test.json",
         },
       ],
       {
         logger,
+        logPayload: false,
+        requestId: "request-1",
+        timeoutMs: 3000,
         onFailure: expect.any(Function),
       },
     );
@@ -245,69 +117,24 @@ describe("applySearchHighlights", () => {
       replaced: 2,
       succeeded: true,
     });
-  });
-
-  it("preserves individual fallbacks for missing and empty batch pages", async () => {
-    vi.mocked(generateHighlightsBatch).mockResolvedValue(
-      new Map([["0", { highlights: [], markdown: "   " }]]),
+    expect(logger.info).toHaveBeenCalledWith(
+      "Search highlights completed",
+      expect.objectContaining({ mode: "apply", applied: 2 }),
     );
-    const response = {
-      web: [
-        { url: "https://first.test", description: "first fallback" },
-        { url: "https://second.test", description: "second fallback" },
-      ],
-    } as any;
-
-    const result = await applySearchHighlights(response, "query", logger);
-
-    expect(response.web.map((item: any) => item.description)).toEqual([
-      "first fallback",
-      "second fallback",
-    ]);
-    expect(result).toEqual({
-      attempted: 2,
-      indexHits: 2,
-      replaced: 0,
-      succeeded: true,
-    });
   });
 
-  it("preserves every fallback when the batch request fails", async () => {
-    vi.mocked(generateHighlightsBatch).mockResolvedValue(null);
-    const response = {
-      web: [
-        { url: "https://first.test", description: "first fallback" },
-        { url: "https://second.test", description: "second fallback" },
-      ],
-    } as any;
-
-    const result = await applySearchHighlights(response, "query", logger);
-
-    expect(response.web.map((item: any) => item.description)).toEqual([
-      "first fallback",
-      "second fallback",
-    ]);
-    expect(result).toEqual({
-      attempted: 2,
-      indexHits: 2,
-      replaced: 0,
-      succeeded: false,
-    });
-  });
-
-  it("runs without mutating the response or logging payloads in shadow mode", async () => {
-    vi.mocked(generateHighlightsBatch).mockResolvedValue(
+  it("runs the same indexed path without mutating the response in shadow mode", async () => {
+    vi.mocked(generateHighlightsIndexedBatch).mockResolvedValue(
       new Map([["0", { highlights: [], markdown: "shadow highlight" }]]),
     );
     const response = {
       web: [{ url: "https://first.test", description: "fallback" }],
     } as any;
 
-    const result = await applySearchHighlights(response, "query", logger, {
-      applyResults: false,
-      suppressSummaryLog: true,
-      suppressPayloadLog: true,
-      allowLegacyFallback: false,
+    const result = await runIndexedSearchHighlights(response, "query", logger, {
+      mode: "shadow",
+      requestId: "request-1",
+      teamId: "team-1",
     });
 
     expect(response.web[0].description).toBe("fallback");
@@ -317,42 +144,71 @@ describe("applySearchHighlights", () => {
       replaced: 1,
       succeeded: true,
     });
-    expect(generateHighlightsBatch).toHaveBeenCalledWith(
+    expect(generateHighlightsIndexedBatch).toHaveBeenCalledWith(
       "query",
       expect.any(Array),
-      {
-        logger,
+      expect.objectContaining({
+        logger: expect.objectContaining({ silent: true }),
         logPayload: false,
-        allowLegacyFallback: false,
-        onFailure: expect.any(Function),
-      },
+      }),
     );
-    expect(logger.info).not.toHaveBeenCalledWith(
-      "Search highlights applied",
-      expect.anything(),
+    expect(rootLogger.info).toHaveBeenCalledWith(
+      "Search highlights completed",
+      expect.objectContaining({ mode: "shadow", wouldApply: 1 }),
     );
+    expect(logger.info).not.toHaveBeenCalled();
   });
 
-  it("omits result URLs from shadow lookup failures", async () => {
-    vi.mocked(indexGetRecent5).mockRejectedValueOnce(
-      new Error("lookup failed"),
-    );
+  it("preserves provider snippets when the indexed request fails", async () => {
+    vi.mocked(generateHighlightsIndexedBatch).mockResolvedValue(null);
     const response = {
-      web: [{ url: "https://private.test", description: "fallback" }],
+      web: [{ url: "https://first.test", description: "first fallback" }],
     } as any;
 
-    await applySearchHighlights(response, "query", logger, {
-      applyResults: false,
-      suppressSummaryLog: true,
-      suppressPayloadLog: true,
-      allowLegacyFallback: false,
+    const result = await runIndexedSearchHighlights(response, "query", logger, {
+      mode: "apply",
+      requestId: "request-1",
+      teamId: "team-1",
     });
 
-    expect(logger.warn).toHaveBeenCalledWith(
-      "highlights: index lookup failed",
-      {
-        error: "lookup failed",
-      },
+    expect(response.web[0].description).toBe("first fallback");
+    expect(result).toEqual({
+      attempted: 1,
+      indexHits: 1,
+      replaced: 0,
+      succeeded: false,
+    });
+  });
+});
+
+describe("searchHighlightsMode", () => {
+  const base = {
+    cohortKey: "api-key:123",
+    rolloutPercent: 0,
+  };
+
+  it("applies omitted highlights for MCP and CLI callers", () => {
+    expect(searchHighlightsMode({ ...base, origin: "mcp" })).toBe("apply");
+    expect(searchHighlightsMode({ ...base, origin: "mcp-fastmcp" })).toBe(
+      "apply",
     );
+    expect(searchHighlightsMode({ ...base, integration: "cli" })).toBe("apply");
+  });
+
+  it("honors explicit response selection before caller defaults", () => {
+    expect(searchHighlightsMode({ ...base, requested: true })).toBe("apply");
+    expect(
+      searchHighlightsMode({ ...base, requested: false, origin: "mcp" }),
+    ).toBe("shadow");
+  });
+
+  it("uses the rollout percentage for other callers", () => {
+    expect(searchHighlightsMode({ ...base, rolloutPercent: 0 })).toBe("shadow");
+    expect(searchHighlightsMode({ ...base, rolloutPercent: 100 })).toBe(
+      "apply",
+    );
+
+    const first = searchHighlightsMode({ ...base, rolloutPercent: 50 });
+    expect(searchHighlightsMode({ ...base, rolloutPercent: 50 })).toBe(first);
   });
 });
