@@ -1,7 +1,11 @@
 import { vi } from "vitest";
-import { authenticateUser } from "../auth";
+import { authenticateUser, clearACUC } from "../auth";
 import { config } from "../../config";
 import { RateLimiterMode } from "../../types";
+import { authCreditUsageChunk } from "../../db/rpc";
+import { redlock } from "../../services/redlock";
+import { deleteKey, getValue, setValue } from "../../services/redis";
+import { getRateLimiter } from "../../services/rate-limiter";
 
 vi.mock("../../services/queue-service", () => ({
   getRedisConnection: vi.fn(() => ({
@@ -48,6 +52,7 @@ describe("authenticateUser", () => {
 
   afterEach(() => {
     config.USE_DB_AUTHENTICATION = originalUseDbAuth;
+    vi.clearAllMocks();
   });
 
   it("keeps a mock ACUC chunk in no-auth mode", async () => {
@@ -69,6 +74,66 @@ describe("authenticateUser", () => {
         team_id: "bypass",
         is_extract: true,
       }),
+    );
+  });
+
+  it("writes normal API-key ACUC entries to the general-purpose cache", async () => {
+    config.USE_DB_AUTHENTICATION = true;
+    vi.mocked(getValue).mockResolvedValue(null);
+    vi.mocked(authCreditUsageChunk).mockResolvedValue([
+      {
+        api_key: "00000000-0000-4000-8000-000000000000",
+        api_key_id: 1,
+        team_id: "team-1",
+        org_id: "org-1",
+        rate_limits: { scrape: 10 },
+        plan_priority: {},
+        concurrency: 2,
+        flags: null,
+      },
+    ]);
+    vi.mocked(redlock.using).mockImplementation(
+      async (_keys, _ttl, _options, fn) => fn({ aborted: false } as never),
+    );
+    vi.mocked(getRateLimiter).mockReturnValue({
+      consume: vi.fn().mockResolvedValue(undefined),
+    } as never);
+
+    const auth = await authenticateUser(
+      {
+        headers: {
+          authorization: "Bearer 00000000-0000-4000-8000-000000000000",
+        },
+        socket: { remoteAddress: "127.0.0.1" },
+      },
+      {},
+      RateLimiterMode.Scrape,
+    );
+
+    expect(auth.success).toBe(true);
+    await vi.waitFor(() =>
+      expect(setValue).toHaveBeenCalledWith(
+        "acuc_general_00000000-0000-4000-8000-000000000000_scrape",
+        expect.any(String),
+        600,
+        true,
+      ),
+    );
+  });
+
+  it("clears purpose-qualified and legacy ACUC cache entries", async () => {
+    await clearACUC("api-key");
+
+    expect(vi.mocked(deleteKey).mock.calls.map(([key]) => key)).toEqual(
+      expect.arrayContaining([
+        "acuc_api-key_extract",
+        "acuc_api-key_scrape",
+        "acuc_general_api-key_extract",
+        "acuc_general_api-key_scrape",
+        "acuc_hosted_mcp_oauth_api-key_extract",
+        "acuc_hosted_mcp_oauth_api-key_scrape",
+        "acuc_api-key",
+      ]),
     );
   });
 });

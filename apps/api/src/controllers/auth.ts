@@ -44,8 +44,9 @@ async function setCachedACUC(
     | AuthCreditUsageChunk
     | null
     | ((acuc: AuthCreditUsageChunk) => AuthCreditUsageChunk | null),
+  credentialPurpose: "general" | "hosted_mcp_oauth" = "general",
 ) {
-  const cacheKeyACUC = `acuc_${api_key}_${is_extract ? "extract" : "scrape"}`;
+  const cacheKeyACUC = `acuc_${credentialPurpose}_${api_key}_${is_extract ? "extract" : "scrape"}`;
   const redLockKey = `lock_${cacheKeyACUC}`;
 
   try {
@@ -227,7 +228,7 @@ async function getACUC(
 
     // NOTE: Should we cache null chunks? - mogery
     if (chunk !== null && useCache) {
-      setCachedACUC(api_key, isExtract, chunk);
+      setCachedACUC(api_key, isExtract, chunk, credentialPurpose);
     }
 
     return chunk;
@@ -353,13 +354,19 @@ export async function getACUCTeam(
 }
 
 export async function clearACUC(api_key: string): Promise<void> {
-  // Delete cache for all rate limiter modes
+  // Clear both purpose-qualified keys and the legacy unqualified keys during
+  // rollout so credential-purpose isolation cannot leave stale auth entries.
   const modes = [true, false];
+  const credentialPurposes = ["general", "hosted_mcp_oauth"] as const;
   await Promise.all(
-    modes.map(async mode => {
-      const cacheKey = `acuc_${api_key}_${mode ? "extract" : "scrape"}`;
-      await deleteKey(cacheKey);
-    }),
+    modes.flatMap(mode => [
+      deleteKey(`acuc_${api_key}_${mode ? "extract" : "scrape"}`),
+      ...credentialPurposes.map(credentialPurpose =>
+        deleteKey(
+          `acuc_${credentialPurpose}_${api_key}_${mode ? "extract" : "scrape"}`,
+        ),
+      ),
+    ]),
   );
 
   // Also clear the base cache key
