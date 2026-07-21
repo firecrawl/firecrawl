@@ -13,9 +13,15 @@ export function parseApi(api: string) {
   return uuid;
 }
 
-function apiKeyToFcApiKey(apiKey: string | null | undefined) {
+export function apiKeyToFcApiKey(apiKey: string | null | undefined) {
   if (!apiKey) {
     return null;
+  }
+  // Defensive: if it's already an fc- key, return it as-is (mirrors parseApi's
+  // handling of non-fc input) so callers can't produce a double-prefixed
+  // `fc-fc-...` key.
+  if (apiKey.startsWith("fc-")) {
+    return apiKey;
   }
   const uuidWithoutDashes = apiKey.replace(/-/g, "");
   return `fc-${uuidWithoutDashes}`;

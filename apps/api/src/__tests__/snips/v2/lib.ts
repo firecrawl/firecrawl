@@ -133,6 +133,20 @@ export async function monitorCreateRaw(
     .send(body);
 }
 
+export async function createApiKeyRaw(body: unknown, identity: Identity) {
+  return await request(TEST_API_URL)
+    .post("/v2/team/api-keys")
+    .set("Authorization", `Bearer ${identity.apiKey}`)
+    .set("Content-Type", "application/json")
+    .send(body as object);
+}
+
+export async function creditUsageRaw(apiKey: string) {
+  return await request(TEST_API_URL)
+    .get("/v2/team/credit-usage")
+    .set("Authorization", `Bearer ${apiKey}`);
+}
+
 export async function monitorListRaw(identity: Identity) {
   return await request(TEST_API_URL)
     .get("/v2/monitor")

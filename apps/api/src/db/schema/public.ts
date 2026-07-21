@@ -75,11 +75,22 @@ export const api_keys = pgTable(
     agent_provisioned: boolean("agent_provisioned").default(false),
     // API-key-scoped concurrency limit; null = key inherits the team limit only
     concurrency: integer("concurrency"),
+    // API-key-scoped credit limit (source of truth). null = no limit;
+    // Autumn's filtered CREDITS usage limits are rebuilt from these columns.
+    credit_limit: integer("credit_limit"),
+    credit_limit_interval: text("credit_limit_interval"),
   },
   table => [
     // Target of key_restriction_config's composite FK, which pins a
     // restriction row's team_id to the key's actual team.
     unique("api_keys_id_team_id_key").on(table.id, table.team_id),
+    // Mirrors the DB constraint (firecrawl-db migration): a credit limit is
+    // either fully unset, or a positive credit count with a valid interval.
+    // Keeps these source-of-truth columns from holding invalid/half rows.
+    check(
+      "api_keys_credit_limit_check",
+      sql`(${table.credit_limit} IS NULL AND ${table.credit_limit_interval} IS NULL) OR (${table.credit_limit} > 0 AND ${table.credit_limit_interval} IN ('day', 'week', 'month'))`,
+    ),
   ],
 );
 

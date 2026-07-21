@@ -69,6 +69,7 @@ import {
   getTeamThreatProtectionController,
   putTeamThreatProtectionController,
 } from "../controllers/v2/team-threat-protection";
+import { createApiKeyController } from "../controllers/v2/team-api-keys";
 import { supportProxyController } from "../controllers/v2/support-proxy";
 import { createResearchRouter } from "../controllers/v2/research-proxy";
 import {
@@ -432,6 +433,12 @@ v2Router.put(
   "/team/threat-protection",
   authMiddleware(RateLimiterMode.Account),
   wrap(putTeamThreatProtectionController),
+);
+
+v2Router.post(
+  "/team/api-keys",
+  authMiddleware(RateLimiterMode.Account),
+  wrap(createApiKeyController),
 );
 
 v2Router.post(
