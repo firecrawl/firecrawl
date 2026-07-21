@@ -111,4 +111,48 @@ describe("decodeHtmlBuffer", () => {
     expect(result.charsetSource).toBe("meta");
     expect(result.text).toContain("héllo");
   });
+
+  // --- Regression tests for cubic-dev-ai P2 review findings (attribute order) ---
+
+  it("detects charset when a global attribute precedes charset= in <meta>", () => {
+    // <meta id="foo" charset="latin1"> — the id attribute comes before charset
+    const html =
+      '<html><head><meta id="foo" charset="latin1"></head><body>héllo</body></html>';
+    const buf = Buffer.from(html, "latin1");
+    const result = decodeHtmlBuffer(buf, "text/html");
+    expect(result.charset).toBe("latin1");
+    expect(result.charsetSource).toBe("meta");
+    expect(result.text).toContain("héllo");
+  });
+
+  it("detects charset from <meta http-equiv> with reversed attribute order", () => {
+    // content= before http-equiv= — order-independent parsing
+    const html =
+      '<html><head><meta content="text/html; charset=latin1" http-equiv="content-type"></head><body>héllo</body></html>';
+    const buf = Buffer.from(html, "latin1");
+    const result = decodeHtmlBuffer(buf, "text/html");
+    expect(result.charset).toBe("latin1");
+    expect(result.charsetSource).toBe("meta");
+    expect(result.text).toContain("héllo");
+  });
+
+  it("does not match charset= inside a data-* attribute value", () => {
+    // <meta data-config='charset=latin1'> should not be treated as charset decl
+    const html =
+      '<html><head><meta data-config="charset=latin1"></head><body>héllo</body></html>';
+    const buf = Buffer.from(html, "utf8");
+    const result = decodeHtmlBuffer(buf, "text/html");
+    expect(result.charset).toBeUndefined();
+    expect(result.text).toContain("héllo");
+  });
+
+  it("does not match charset= inside a non-meta tag", () => {
+    // <script charset="latin1"> should not be treated as a meta charset
+    const html =
+      '<html><head><script charset="latin1">var x=1;</script></head><body>héllo</body></html>';
+    const buf = Buffer.from(html, "utf8");
+    const result = decodeHtmlBuffer(buf, "text/html");
+    expect(result.charset).toBeUndefined();
+    expect(result.text).toContain("héllo");
+  });
 });
