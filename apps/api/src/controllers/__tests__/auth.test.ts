@@ -7,6 +7,7 @@ import { authCreditUsageChunk } from "../../db/rpc";
 import { redlock } from "../../services/redlock";
 import { deleteKey, getValue, setValue } from "../../services/redis";
 import { getRateLimiter } from "../../services/rate-limiter";
+import { db } from "../../db/connection";
 
 vi.mock("../../services/queue-service", () => ({
   getRedisConnection: vi.fn(() => ({
@@ -177,7 +178,7 @@ describe("authenticateUser", () => {
       expect.objectContaining({ success: true, team_id: "team-1" }),
     );
     expect(authCreditUsageChunk).toHaveBeenCalledWith(
-      expect.anything(),
+      db,
       "11111111-1111-1111-8111-111111111111",
       "hosted_mcp_oauth",
     );

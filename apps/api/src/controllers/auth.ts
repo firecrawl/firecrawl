@@ -163,6 +163,13 @@ async function getACUC(
   mode?: RateLimiterMode,
   credentialPurpose: "general" | "hosted_mcp_oauth" = "general",
 ): Promise<AuthCreditUsageChunk | null> {
+  // Managed OAuth credentials are connection-scoped and can be created or
+  // revoked immediately before this request. Never serve them from Redis or a
+  // lagging read replica: both authorization and revocation must observe the
+  // primary database.
+  const requiresPrimaryRead = credentialPurpose === "hosted_mcp_oauth";
+  if (requiresPrimaryRead) useCache = false;
+
   let isExtract =
     mode === RateLimiterMode.Extract ||
     mode === RateLimiterMode.ExtractStatus ||
@@ -194,7 +201,11 @@ async function getACUC(
     let retries = 0;
     const maxRetries = 5;
     while (retries < maxRetries) {
-      const database = Math.random() > 2 / 3 ? dbRr : db;
+      const database = requiresPrimaryRead
+        ? db
+        : Math.random() > 2 / 3
+          ? dbRr
+          : db;
       try {
         data = await authCreditUsageChunk(database, api_key, credentialPurpose);
         break;
