@@ -31,6 +31,7 @@ import {
   resolveOAuthToken as resolveOAuthTokenWithIntrospection,
 } from "../services/oauth-token-introspection";
 import type { OAuthIntrospectionResponse } from "../services/oauth-token-introspection";
+import { verifyMcpDelegatedCredential } from "../lib/mcp-delegated-credential";
 
 function normalizedApiIsUuid(potentialUuid: string): boolean {
   // Check if the string is a valid UUID
@@ -610,6 +611,41 @@ async function supaAuthenticateUser(
       rateLimiter = getRateLimiter(RateLimiterMode.Preview, token);
     }
     teamId = `preview_${iptoken}`;
+  } else if (token.startsWith("fcmcp_")) {
+    const delegation = verifyMcpDelegatedCredential(
+      token,
+      config.KEYLESS_PROXY_SECRET,
+    );
+    if (!delegation) {
+      return {
+        success: false,
+        error: "Unauthorized: Invalid token",
+        status: 401,
+      };
+    }
+
+    const resolvedApi = parseApi(delegation.api_key);
+    chunk = await getACUC(
+      resolvedApi,
+      false,
+      false,
+      RateLimiterMode.Scrape,
+      "hosted_mcp_oauth",
+    );
+    if (chunk === null) {
+      return {
+        success: false,
+        error: "Unauthorized: Invalid token",
+        status: 401,
+      };
+    }
+
+    teamId = chunk.team_id;
+    subscriptionData = { team_id: teamId };
+    rateLimiter = getRateLimiter(
+      mode ?? RateLimiterMode.Crawl,
+      chunk.rate_limits,
+    );
   } else if (token.startsWith("fco_")) {
     // OAuth access token — resolve via introspection endpoint
     const introspection = await resolveOAuthToken(token);

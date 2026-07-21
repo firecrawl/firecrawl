@@ -1,4 +1,5 @@
 import { vi } from "vitest";
+import { createHmac } from "node:crypto";
 import { authenticateUser, clearACUC } from "../auth";
 import { config } from "../../config";
 import { RateLimiterMode } from "../../types";
@@ -49,11 +50,34 @@ vi.mock("../../services/agent-sponsor", () => ({
 
 describe("authenticateUser", () => {
   const originalUseDbAuth = config.USE_DB_AUTHENTICATION;
+  const originalKeylessProxySecret = config.KEYLESS_PROXY_SECRET;
 
   afterEach(() => {
     config.USE_DB_AUTHENTICATION = originalUseDbAuth;
+    config.KEYLESS_PROXY_SECRET = originalKeylessProxySecret;
     vi.clearAllMocks();
   });
+
+  const signDelegation = (
+    overrides: Record<string, unknown> = {},
+    secret = "mcp-delegation-secret",
+  ) => {
+    const now = Math.floor(Date.now() / 1000);
+    const payload = {
+      v: 1,
+      aud: "firecrawl-core",
+      purpose: "hosted_mcp_oauth",
+      api_key: "fc-11111111111111118111111111111111",
+      iat: now,
+      exp: now + 60,
+      ...overrides,
+    };
+    const encoded = Buffer.from(JSON.stringify(payload)).toString("base64url");
+    const signature = createHmac("sha256", secret)
+      .update(encoded)
+      .digest("base64url");
+    return `fcmcp_${encoded}.${signature}`;
+  };
 
   it("keeps a mock ACUC chunk in no-auth mode", async () => {
     config.USE_DB_AUTHENTICATION = false;
@@ -119,6 +143,75 @@ describe("authenticateUser", () => {
         true,
       ),
     );
+  });
+
+  it("accepts a signed MCP delegation through the managed credential purpose without caching", async () => {
+    config.USE_DB_AUTHENTICATION = true;
+    config.KEYLESS_PROXY_SECRET = "mcp-delegation-secret";
+    vi.mocked(authCreditUsageChunk).mockResolvedValue([
+      {
+        api_key: "11111111-1111-1111-8111-111111111111",
+        api_key_id: 1,
+        team_id: "team-1",
+        org_id: "org-1",
+        rate_limits: { crawl: 10 },
+        plan_priority: {},
+        concurrency: 2,
+        flags: null,
+      },
+    ]);
+    vi.mocked(getRateLimiter).mockReturnValue({
+      consume: vi.fn().mockResolvedValue(undefined),
+    } as never);
+
+    const auth = await authenticateUser(
+      {
+        headers: { authorization: `Bearer ${signDelegation()}` },
+        socket: { remoteAddress: "127.0.0.1" },
+      },
+      {},
+      RateLimiterMode.Crawl,
+    );
+
+    expect(auth).toEqual(
+      expect.objectContaining({ success: true, team_id: "team-1" }),
+    );
+    expect(authCreditUsageChunk).toHaveBeenCalledWith(
+      expect.anything(),
+      "11111111-1111-1111-8111-111111111111",
+      "hosted_mcp_oauth",
+    );
+    expect(getValue).not.toHaveBeenCalled();
+    expect(setValue).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["a missing shared secret", undefined, signDelegation()],
+    ["a wrong signature", "mcp-delegation-secret", signDelegation({}, "wrong")],
+    [
+      "an expired assertion",
+      "mcp-delegation-secret",
+      signDelegation({ exp: Math.floor(Date.now() / 1000) }),
+    ],
+  ])("rejects an MCP delegation with %s", async (_label, secret, token) => {
+    config.USE_DB_AUTHENTICATION = true;
+    config.KEYLESS_PROXY_SECRET = secret;
+
+    const auth = await authenticateUser(
+      {
+        headers: { authorization: `Bearer ${token}` },
+        socket: { remoteAddress: "127.0.0.1" },
+      },
+      {},
+      RateLimiterMode.Crawl,
+    );
+
+    expect(auth).toEqual({
+      success: false,
+      error: "Unauthorized: Invalid token",
+      status: 401,
+    });
+    expect(authCreditUsageChunk).not.toHaveBeenCalled();
   });
 
   it("clears purpose-qualified and legacy ACUC cache entries", async () => {
