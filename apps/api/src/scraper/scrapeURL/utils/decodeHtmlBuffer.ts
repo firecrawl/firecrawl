@@ -3,30 +3,52 @@ import { TextDecoder } from "util";
 /**
  * Extracts a charset label from an HTML prologue fragment.
  *
- * Only matches the two standard declaration forms:
+ * Parses actual `<meta>` start tags and reads their attributes
+ * order-independently, supporting both declaration forms:
  *   1. <meta charset="...">           (HTML5)
  *   2. <meta http-equiv="content-type" content="...; charset=...">
  *
  * This avoids false positives where the text "charset=..." appears inside
- * an unrelated attribute value or in body/script content.
+ * an unrelated attribute value, a different tag, or in body/script content.
  *
  * @returns The trimmed charset label, or undefined if none found.
  */
 function extractMetaCharset(prologue: string): string | undefined {
-  // Form 1: <meta charset="utf-8">
-  const simpleMatch = prologue.match(
-    /<meta\s+charset\s*=\s*["']?([^"'\s\/>]+)/i,
-  );
-  if (simpleMatch?.[1]) {
-    return simpleMatch[1].trim();
-  }
+  // Match each <meta ...> start tag (self-closing or open tag).
+  const metaTagRe = /<meta\b[^>]*\/?>/gi;
+  let match: RegExpExecArray | null;
 
-  // Form 2: <meta http-equiv="content-type" content="text/html; charset=utf-8">
-  const httpEquivMatch = prologue.match(
-    /<meta\b[^>]*http-equiv\s*=\s*["']?content-type["']?[^>]*content\s*=\s*["'][^"']*charset\s*=\s*([^;"'\s]+)["']/i,
-  );
-  if (httpEquivMatch?.[1]) {
-    return httpEquivMatch[1].trim();
+  while ((match = metaTagRe.exec(prologue)) !== null) {
+    const tag = match[0];
+
+    // Extract all attributes into a map: name -> value (or name -> "" for
+    // boolean-like attributes).  Handles single/double/no quotes.
+    const attrs: Record<string, string> = {};
+    const attrRe = /(\w[-:\w]*)\s*=\s*(?:"([^"]*)"|'([^']*)'|(\S+))|(\w[-:\w]*)/gi;
+    let attrMatch: RegExpExecArray | null;
+    while ((attrMatch = attrRe.exec(tag)) !== null) {
+      const name = (attrMatch[1] || attrMatch[5]).toLowerCase();
+      const value = attrMatch[2] ?? attrMatch[3] ?? attrMatch[4] ?? "";
+      attrs[name] = value;
+    }
+
+    // Form 1: <meta charset="utf-8">
+    if (attrs["charset"]) {
+      return attrs["charset"].trim();
+    }
+
+    // Form 2: <meta http-equiv="content-type" content="...; charset=...">
+    if (
+      attrs["http-equiv"]?.toLowerCase() === "content-type" &&
+      attrs["content"]
+    ) {
+      const charsetInContent = attrs["content"].match(
+        /charset\s*=\s*([^;"'\s]+)/i,
+      );
+      if (charsetInContent?.[1]) {
+        return charsetInContent[1].trim();
+      }
+    }
   }
 
   return undefined;
