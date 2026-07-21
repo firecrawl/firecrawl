@@ -139,10 +139,69 @@ describe("OAuth token introspection", () => {
     expect(fetchFn).toHaveBeenCalledTimes(1);
   });
 
-  it("fails closed for expired tokens", async () => {
-    const fetchFn = vi.fn().mockResolvedValue(
-      response({ ...ACTIVE, exp: Math.floor(Date.now() / 1000) - 1 }),
+  it("bypasses an unavailable cache and uses live introspection", async () => {
+    getValue.mockRejectedValue(new Error("Redis unavailable"));
+    const fetchFn = vi.fn().mockResolvedValue(response(ACTIVE));
+    await expect(
+      resolveOAuthToken("fco_token", {
+        introspectUrl: "https://example.test/introspect",
+        introspectSecret: "secret",
+        expectedResource: FIRECRAWL_REST_RESOURCE,
+        fetchFn,
+      }),
+    ).resolves.toEqual(ACTIVE);
+    expect(fetchFn).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not fail authentication when a cache write fails", async () => {
+    setValue.mockRejectedValue(new Error("Redis unavailable"));
+    const fetchFn = vi.fn().mockResolvedValue(response(ACTIVE));
+    await expect(
+      resolveOAuthToken("fco_token", {
+        introspectUrl: "https://example.test/introspect",
+        introspectSecret: "secret",
+        expectedResource: FIRECRAWL_REST_RESOURCE,
+        fetchFn,
+      }),
+    ).resolves.toEqual(ACTIVE);
+  });
+
+  it("rejects unknown credential purposes from live introspection", async () => {
+    const fetchFn = vi
+      .fn()
+      .mockResolvedValue(response({ ...ACTIVE, credential_purpose: "admin" }));
+    await expect(
+      resolveOAuthToken("fco_token", {
+        introspectUrl: "https://example.test/introspect",
+        introspectSecret: "secret",
+        expectedResource: FIRECRAWL_REST_RESOURCE,
+        fetchFn,
+      }),
+    ).rejects.toBeInstanceOf(OAuthIntrospectionUnavailableError);
+  });
+
+  it("never trusts an unknown credential purpose from cache", async () => {
+    getValue.mockResolvedValue(
+      JSON.stringify({ ...ACTIVE, credential_purpose: "admin" }),
     );
+    const fetchFn = vi.fn().mockResolvedValue(response({ active: false }));
+    await expect(
+      resolveOAuthToken("fco_token", {
+        introspectUrl: "https://example.test/introspect",
+        introspectSecret: "secret",
+        expectedResource: FIRECRAWL_REST_RESOURCE,
+        fetchFn,
+      }),
+    ).resolves.toBeNull();
+    expect(fetchFn).toHaveBeenCalledTimes(1);
+  });
+
+  it("fails closed for expired tokens", async () => {
+    const fetchFn = vi
+      .fn()
+      .mockResolvedValue(
+        response({ ...ACTIVE, exp: Math.floor(Date.now() / 1000) - 1 }),
+      );
     await expect(
       resolveOAuthToken("fco_token", {
         introspectUrl: "https://example.test/introspect",

@@ -36,6 +36,29 @@ function cacheKey(token: string): string {
   return `oauth_token:${hash.slice(0, 32)}`;
 }
 
+function hasValidCredentialPurpose(data: OAuthIntrospectionResponse): boolean {
+  const purpose = (data as { credential_purpose?: unknown }).credential_purpose;
+  return (
+    purpose === undefined ||
+    purpose === "general" ||
+    purpose === "hosted_mcp_oauth"
+  );
+}
+
+async function writeCache(
+  key: string,
+  value: string,
+  ttlSeconds: number,
+): Promise<void> {
+  try {
+    await setValue(key, value, ttlSeconds);
+  } catch (error) {
+    // Introspection remains authoritative. A cache outage must not turn a
+    // valid credential into an authentication outage.
+    logger.warn("OAuth introspection cache write failed", { error });
+  }
+}
+
 function hasExpectedAudience(
   data: OAuthIntrospectionResponse,
   expectedResource: string,
@@ -70,11 +93,18 @@ export async function resolveOAuthToken(
   },
 ): Promise<OAuthIntrospectionResponse | null> {
   const key = cacheKey(token);
-  const cached = await getValue(key);
+  let cached: string | null = null;
+  try {
+    cached = await getValue(key);
+  } catch (error) {
+    // Treat Redis as an optimization: bypass it and use live introspection.
+    logger.warn("OAuth introspection cache read failed", { error });
+  }
   if (cached !== null) {
     try {
       const parsed = JSON.parse(cached) as OAuthIntrospectionResponse;
       if (parsed.active !== true) return null;
+      if (!hasValidCredentialPurpose(parsed)) throw new Error("invalid cache");
       // Grant-backed credentials are resolved live so membership loss,
       // revocation, and refresh-token reuse take effect immediately.
       if (parsed.credential_purpose !== "hosted_mcp_oauth") {
@@ -113,7 +143,9 @@ export async function resolveOAuthToken(
     if (
       typeof data.active !== "boolean" ||
       (data.active === true &&
-        (typeof data.api_key !== "string" || !Number.isFinite(data.exp)))
+        (typeof data.api_key !== "string" ||
+          !Number.isFinite(data.exp) ||
+          !hasValidCredentialPurpose(data)))
     ) {
       throw new OAuthIntrospectionUnavailableError(
         "OAuth introspection returned an invalid response",
@@ -121,7 +153,7 @@ export async function resolveOAuthToken(
     }
     if (!isUsable(data, options.expectedResource)) {
       if (data.active !== true) {
-        await setValue(
+        await writeCache(
           key,
           JSON.stringify({ active: false }),
           INACTIVE_CACHE_TTL_SECONDS,
@@ -132,7 +164,7 @@ export async function resolveOAuthToken(
 
     if (data.credential_purpose !== "hosted_mcp_oauth") {
       const remainingSeconds = data.exp - Math.floor(Date.now() / 1000);
-      await setValue(
+      await writeCache(
         key,
         JSON.stringify(data),
         Math.min(remainingSeconds, ACTIVE_CACHE_TTL_SECONDS),
