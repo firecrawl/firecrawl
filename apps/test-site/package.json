@@ -17,7 +17,7 @@
     "@astrojs/rss": "^4.0.19",
     "@astrojs/sitemap": "^3.7.2",
     "astro": "^7.1.2",
-    "sharp": "^0.34.5"
+    "sharp": "^0.35.3"
   },
   "devDependencies": {
     "prettier": "^3.8.1",
