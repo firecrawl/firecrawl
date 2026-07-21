@@ -1,19 +1,12 @@
 import {
   mergeResolvedMetadata,
-  parseUrlResolverResponse,
+  parseUrlResolverMetadataResponse,
 } from "./url-resolver";
 
-describe("parseUrlResolverResponse", () => {
-  it("preserves generic links and opaque metadata", () => {
+describe("parseUrlResolverMetadataResponse", () => {
+  it("preserves opaque metadata", () => {
     expect(
-      parseUrlResolverResponse({
-        links: [
-          {
-            url: "https://resolver.test/items/1",
-            title: "Item 1",
-            description: "Resolved item",
-          },
-        ],
+      parseUrlResolverMetadataResponse({
         metadata: {
           provider: "example",
           score: 42,
@@ -21,31 +14,18 @@ describe("parseUrlResolverResponse", () => {
         },
       }),
     ).toEqual({
-      links: [
-        {
-          url: "https://resolver.test/items/1",
-          title: "Item 1",
-          description: "Resolved item",
-        },
-      ],
-      metadata: {
-        provider: "example",
-        score: 42,
-        attributes: { verified: true },
-      },
+      provider: "example",
+      score: 42,
+      attributes: { verified: true },
     });
   });
 
-  it.each([
-    null,
-    {},
-    { links: "not-an-array" },
-    { links: [{}] },
-    { links: [{ url: "https://resolver.test", title: 123 }] },
-    { links: [], metadata: [] },
-  ])("rejects invalid resolver responses", value => {
-    expect(() => parseUrlResolverResponse(value)).toThrow();
-  });
+  it.each([null, {}, { metadata: null }, { metadata: [] }])(
+    "rejects invalid resolver metadata responses",
+    value => {
+      expect(() => parseUrlResolverMetadataResponse(value)).toThrow();
+    },
+  );
 });
 
 describe("mergeResolvedMetadata", () => {

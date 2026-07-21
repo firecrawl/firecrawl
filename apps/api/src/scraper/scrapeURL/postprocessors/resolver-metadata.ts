@@ -1,5 +1,8 @@
 import type { Meta } from "..";
-import { resolveUrl, supportsUrlResolver } from "../../../lib/url-resolver";
+import {
+  resolveUrlMetadata,
+  supportsUrlResolver,
+} from "../../../lib/url-resolver";
 import type { EngineScrapeResult } from "../engines";
 import type { Postprocessor } from ".";
 
@@ -18,14 +21,14 @@ export const resolverMetadataPostprocessor: Postprocessor = {
     return supportsUrlResolver(meta.url);
   },
   run: async (meta: Meta, engineResult: EngineScrapeResult) => {
-    const resolved = await resolveUrl(meta.url, 0, meta.logger);
-    if (!resolved?.metadata) {
+    const resolvedMetadata = await resolveUrlMetadata(meta.url, meta.logger);
+    if (!resolvedMetadata) {
       return engineResult;
     }
 
     return {
       ...engineResult,
-      resolvedMetadata: resolved.metadata,
+      resolvedMetadata,
       postprocessorsUsed: [
         ...(engineResult.postprocessorsUsed ?? []),
         POSTPROCESSOR_NAME,

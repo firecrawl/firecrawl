@@ -15,7 +15,7 @@ import { getMapResults, MapResult } from "../../lib/map-utils";
 import { v7 as uuidv7 } from "uuid";
 import { isBaseDomain, extractBaseDomain } from "../../lib/url-utils";
 import { getScrapeZDR } from "../../lib/zdr-helpers";
-import { resolveUrl } from "../../lib/url-resolver";
+import { resolveViaAvgrab } from "../../lib/avgrab-resolve";
 import {
   checkUrlsAgainstThreatPolicy,
   resolveThreatProtection,
@@ -89,16 +89,16 @@ export async function mapController(
     api_key_id: req.acuc?.api_key_id ?? null,
   });
 
-  // Short-circuit when the configured resolver advertises support for this URL.
+  // Short-circuit: if the URL matches avgrab's resolve pattern, delegate entirely
   try {
-    const resolverResult = await resolveUrl(
+    const avgrabResults = await resolveViaAvgrab(
       req.body.url,
       req.body.limit,
       logger,
     );
 
-    if (resolverResult !== null) {
-      const creditsCost = resolverResult.links.length;
+    if (avgrabResults !== null) {
+      const creditsCost = avgrabResults.length;
 
       billTeam(req.auth.team_id, creditsCost, req.acuc?.api_key_id ?? null, {
         endpoint: "map",
@@ -123,7 +123,7 @@ export async function mapController(
           timeout: req.body.timeout,
           location: req.body.location,
         },
-        results: resolverResult.links,
+        results: avgrabResults,
         credits_cost: creditsCost,
         zeroDataRetention: false,
       }).catch(error => {
@@ -135,7 +135,7 @@ export async function mapController(
       return res.status(200).json({
         success: true,
         id: mapId,
-        links: resolverResult.links,
+        links: avgrabResults,
       });
     }
   } catch (error) {
@@ -145,7 +145,7 @@ export async function mapController(
         error: error.message,
       });
     }
-    logger.warn("URL resolver failed, falling back to standard map", {
+    logger.warn("avgrab resolve failed, falling back to standard map", {
       error,
     });
   }

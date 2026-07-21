@@ -1,12 +1,15 @@
-import { resolveUrl, supportsUrlResolver } from "../../../../lib/url-resolver";
+import {
+  resolveUrlMetadata,
+  supportsUrlResolver,
+} from "../../../../lib/url-resolver";
 import { resolverMetadataPostprocessor } from "../resolver-metadata";
 
 vi.mock("../../../../lib/url-resolver", () => ({
-  resolveUrl: vi.fn(),
+  resolveUrlMetadata: vi.fn(),
   supportsUrlResolver: vi.fn(),
 }));
 
-const mockedResolveUrl = vi.mocked(resolveUrl);
+const mockedResolveUrlMetadata = vi.mocked(resolveUrlMetadata);
 const mockedSupportsUrlResolver = vi.mocked(supportsUrlResolver);
 
 const buildMeta = (lockdown = false) =>
@@ -69,12 +72,9 @@ describe("resolverMetadataPostprocessor", () => {
   });
 
   it("adds resolver metadata without changing scraped content", async () => {
-    mockedResolveUrl.mockResolvedValue({
-      links: [],
-      metadata: {
-        provider: "example",
-        score: 42,
-      },
+    mockedResolveUrlMetadata.mockResolvedValue({
+      provider: "example",
+      score: 42,
     });
     const engineResult = buildEngineResult();
 
@@ -83,9 +83,8 @@ describe("resolverMetadataPostprocessor", () => {
       engineResult,
     );
 
-    expect(mockedResolveUrl).toHaveBeenCalledWith(
+    expect(mockedResolveUrlMetadata).toHaveBeenCalledWith(
       "https://resolver.test/source",
-      0,
       expect.anything(),
     );
     expect(result).toEqual({
@@ -101,7 +100,7 @@ describe("resolverMetadataPostprocessor", () => {
   });
 
   it("leaves the scrape unchanged when no metadata is returned", async () => {
-    mockedResolveUrl.mockResolvedValue({ links: [] });
+    mockedResolveUrlMetadata.mockResolvedValue(null);
     const engineResult = buildEngineResult();
 
     await expect(
