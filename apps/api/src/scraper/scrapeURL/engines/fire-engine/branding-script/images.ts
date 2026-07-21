@@ -1028,7 +1028,9 @@ export const findImages = (): FindImagesResult => {
     });
   });
 
-  const allElementsWithBg = Array.from(document.querySelectorAll("div, span"));
+  const allElementsWithBg = Array.from(
+    document.querySelectorAll("a, div, span, hgroup, figure"),
+  );
 
   const allDivsWithBgImage = allElementsWithBg.filter(el => {
     const style = getComputedStyleCached(el);
@@ -1054,12 +1056,27 @@ export const findImages = (): FindImagesResult => {
     const inHeaderNavCheck =
       el.closest('header, nav, [role="banner"]') !== null;
 
+    // Check for child anchor linking to home (for elements like hgroup that contain site title links)
+    const childHomeLink = el.querySelector('a[href="/"], a[href="./"]');
+    const hasChildHomeLink = childHomeLink !== null;
+
+    // Check for common site branding ID patterns
+    const elId = (el.id || "").toLowerCase();
+    const hasSiteBrandingId = /site[-_]?(title|logo|brand|name)/i.test(elId);
+    const containsSiteBrandingId =
+      el.querySelector(
+        '[id*="site-title" i], [id*="site-logo" i], [id*="site_title" i], [id*="site_logo" i]',
+      ) !== null;
+
     return (
       hasLogoDataAttr ||
       hasLogoClass ||
+      hasSiteBrandingId ||
       (hasLogoAriaLabel && hasHomeHrefCheck) ||
       (hasLogoAriaLabel && inHeaderNavCheck) ||
-      (hasHomeHrefCheck && inHeaderNavCheck)
+      (hasHomeHrefCheck && inHeaderNavCheck) ||
+      (hasChildHomeLink && inHeaderNavCheck) ||
+      (containsSiteBrandingId && inHeaderNavCheck)
     );
   });
 
@@ -1350,5 +1367,219 @@ export const findImages = (): FindImagesResult => {
     }
   }
 
+  // Fallback: Try to find and convert text-only logos when no image/SVG logo found
+  const hasLogoImage = imgs.some(
+    img => img.type === "logo" || img.type === "logo-svg",
+  );
+
+  if (!hasLogoImage) {
+    const textLogo = findTextLogo();
+    if (textLogo) {
+      const textLogoSvg = convertElementToSvg(textLogo.element);
+      if (textLogoSvg) {
+        push(textLogoSvg, "logo-text");
+        const rect = textLogo.element.getBoundingClientRect();
+        logoCandidates.push({
+          src: textLogoSvg,
+          alt: textLogo.text,
+          isSvg: true,
+          isVisible: true,
+          location: "header",
+          position: {
+            top: rect.top,
+            left: rect.left,
+            width: rect.width,
+            height: rect.height,
+          },
+          indicators: {
+            inHeader: true,
+            altMatch: false,
+            srcMatch: false,
+            classMatch: false,
+            hrefMatch: true,
+          },
+          href: textLogo.href,
+          source: "text-logo-fallback",
+          logoSvgScore: 50,
+        });
+      }
+    }
+  }
+
   return { images: imgs, logoCandidates: uniqueCandidates };
+};
+
+/**
+ * Find text-only logo elements in header/nav that link to home
+ */
+const findTextLogo = (): {
+  element: Element;
+  text: string;
+  href: string;
+} | null => {
+  // Look for home links in header/nav areas
+  const headerNavSelector =
+    'header, nav, [role="banner"], [class*="header" i], [class*="navbar" i], [class*="nav-bar" i]';
+  const headerNav = document.querySelector(headerNavSelector);
+  if (!headerNav) return null;
+
+  // Find anchors linking to home within header/nav
+  const homeLinks = headerNav.querySelectorAll(
+    'a[href="/"], a[href="./"], a[href=""]',
+  );
+
+  for (const link of Array.from(homeLinks)) {
+    // Skip if link contains img or svg (already handled by image detection)
+    if (link.querySelector("img, svg")) continue;
+
+    // Skip if link has background-image (already handled)
+    const linkStyle = getComputedStyleCached(link);
+    const bgImage = linkStyle.getPropertyValue("background-image");
+    if (bgImage && bgImage !== "none") continue;
+
+    // Get text content
+    const text = link.textContent?.trim();
+    if (!text || text.length < 2 || text.length > 50) continue;
+
+    // Check if this looks like a brand name (not just "Home" or navigation text)
+    const lowerText = text.toLowerCase();
+    if (
+      lowerText === "home" ||
+      lowerText === "start" ||
+      lowerText === "main" ||
+      lowerText === "menu"
+    )
+      continue;
+
+    // Find the actual text container element (might be nested spans/divs)
+    let textElement: Element = link;
+    const firstChild = link.firstElementChild;
+    if (firstChild) {
+      // Prefer child element if it contains all the text
+      const childText = firstChild.textContent?.trim();
+      if (childText && childText.length >= text.length * 0.8) {
+        textElement = firstChild;
+      }
+    }
+
+    // Check for brand-like styling (bold, larger text)
+    const style = getComputedStyleCached(textElement);
+    const fontWeight = parseInt(style.fontWeight) || 400;
+    const fontSize = parseFloat(style.fontSize) || 16;
+
+    // Brand logos are typically bold or semi-bold and reasonably sized
+    const hasBrandStyling = fontWeight >= 500 || fontSize >= 18;
+
+    // Check if text might match site name
+    const siteName =
+      document
+        .querySelector('meta[property="og:site_name"]')
+        ?.getAttribute("content") || "";
+    const pageTitle = document.title || "";
+    const matchesSiteName =
+      siteName && text.toLowerCase().includes(siteName.toLowerCase());
+    const matchesTitle =
+      pageTitle && pageTitle.toLowerCase().includes(text.toLowerCase());
+
+    // Accept if it has brand styling or matches site name/title
+    if (hasBrandStyling || matchesSiteName || matchesTitle) {
+      return {
+        element: textElement,
+        text,
+        href: link.getAttribute("href") || "/",
+      };
+    }
+  }
+
+  return null;
+};
+
+/**
+ * Convert a DOM element to an SVG data URI using foreignObject
+ */
+const convertElementToSvg = (element: Element): string | null => {
+  try {
+    const rect = element.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) return null;
+
+    // Clone the element
+    const clone = element.cloneNode(true) as HTMLElement;
+
+    // Inline computed styles on the clone and all descendants
+    inlineStyles(element, clone);
+
+    // Create SVG with foreignObject
+    const width = Math.ceil(rect.width);
+    const height = Math.ceil(rect.height);
+
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}">
+      <foreignObject width="100%" height="100%">
+        <div xmlns="http://www.w3.org/1999/xhtml" style="display:inline-block;">${clone.outerHTML}</div>
+      </foreignObject>
+    </svg>`;
+
+    return "data:image/svg+xml;charset=utf-8," + encodeURIComponent(svg);
+  } catch (e) {
+    recordError("convertElementToSvg", e);
+    return null;
+  }
+};
+
+/**
+ * Inline computed styles from source element to cloned element
+ */
+const inlineStyles = (source: Element, clone: Element): void => {
+  try {
+    const sourceStyle = getComputedStyleCached(source);
+
+    // Key style properties to inline for text rendering
+    const styleProps = [
+      "font-family",
+      "font-size",
+      "font-weight",
+      "font-style",
+      "letter-spacing",
+      "text-transform",
+      "color",
+      "background-color",
+      "background",
+      "padding",
+      "margin",
+      "display",
+      "align-items",
+      "justify-content",
+      "gap",
+      "line-height",
+      "text-decoration",
+      "opacity",
+    ];
+
+    let inlineStyle = "";
+    for (const prop of styleProps) {
+      const value = sourceStyle.getPropertyValue(prop);
+      if (value && value !== "initial" && value !== "inherit") {
+        inlineStyle += `${prop}:${value};`;
+      }
+    }
+
+    // Apply to clone
+    if (clone instanceof HTMLElement) {
+      clone.style.cssText = inlineStyle;
+      // Remove classes to avoid external stylesheet dependencies
+      clone.removeAttribute("class");
+    }
+
+    // Recurse for children
+    const sourceChildren = source.children;
+    const cloneChildren = clone.children;
+    for (
+      let i = 0;
+      i < sourceChildren.length && i < cloneChildren.length;
+      i++
+    ) {
+      inlineStyles(sourceChildren[i], cloneChildren[i]);
+    }
+  } catch (e) {
+    recordError("inlineStyles", e);
+  }
 };
