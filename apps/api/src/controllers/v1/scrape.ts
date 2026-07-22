@@ -301,6 +301,14 @@ export async function scrapeController(
         });
       }
 
+      if (e.code === "SCRAPE_MEDIA_AGE_RESTRICTED") {
+        return res.status(403).json({
+          success: false,
+          code: e.code,
+          error: e.message,
+        });
+      }
+
       return res.status(e.code === "SCRAPE_TIMEOUT" ? 408 : 500).json({
         success: false,
         code: e.code,

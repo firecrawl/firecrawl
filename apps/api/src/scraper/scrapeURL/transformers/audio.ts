@@ -2,7 +2,7 @@ import { Meta } from "..";
 import { Document } from "../../../controllers/v2/types";
 import { config } from "../../../config";
 import { hasFormatOfType } from "../../../lib/format-utils";
-import { AudioUnsupportedUrlError } from "../error";
+import { AudioUnsupportedUrlError, throwIfMediaAgeRestricted } from "../error";
 
 let cachedUrlRegex: RegExp | null = null;
 let cacheTimestamp = 0;
@@ -78,6 +78,7 @@ export async function fetchAudio(
     const error = await response
       .json()
       .catch(() => ({ detail: "Unknown error" }));
+    throwIfMediaAgeRestricted(error);
     throw new Error(`Audio download failed: ${error.detail}`);
   }
 

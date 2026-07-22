@@ -1,4 +1,5 @@
 import { fetchAudio } from "../audio";
+import { MediaAgeRestrictedError } from "../../error";
 import { config } from "../../../../config";
 
 describe("fetchAudio lockdown guard", () => {
@@ -107,6 +108,78 @@ describe("fetchAudio lockdown guard", () => {
       url: "https://example.com/audio",
       cookies,
     });
+  });
+
+  it("throws MediaAgeRestrictedError when the service reports age-restricted content", async () => {
+    const fetchSpy = vi.fn(async (url: string, _init?: RequestInit) => {
+      if (url.endsWith("/supported-urls")) {
+        return {
+          ok: true,
+          json: async () => ({ regex: "https://example\\.com/audio" }),
+        };
+      }
+
+      return {
+        ok: false,
+        status: 403,
+        json: async () => ({
+          detail: {
+            code: "age_restricted",
+            message: "This content is age-restricted.",
+          },
+        }),
+      };
+    });
+    global.fetch = fetchSpy as any;
+    config.AVGRAB_SERVICE_URL = "https://avgrab.example";
+
+    const meta: any = {
+      url: "https://example.com/audio",
+      options: {
+        lockdown: false,
+        formats: [{ type: "audio" }],
+      },
+      logger: { warn: vi.fn(), info: vi.fn(), debug: vi.fn() },
+    };
+
+    const error = await fetchAudio(meta, {} as any).catch(e => e);
+    expect(error).toBeInstanceOf(MediaAgeRestrictedError);
+    expect(error.code).toBe("SCRAPE_MEDIA_AGE_RESTRICTED");
+  });
+
+  it("keeps the generic error for other service failures", async () => {
+    const fetchSpy = vi.fn(async (url: string, _init?: RequestInit) => {
+      if (url.endsWith("/supported-urls")) {
+        return {
+          ok: true,
+          json: async () => ({ regex: "https://example\\.com/audio" }),
+        };
+      }
+
+      return {
+        ok: false,
+        status: 400,
+        json: async () => ({ detail: "Download failed: some other error" }),
+      };
+    });
+    global.fetch = fetchSpy as any;
+    config.AVGRAB_SERVICE_URL = "https://avgrab.example";
+
+    const meta: any = {
+      url: "https://example.com/audio",
+      options: {
+        lockdown: false,
+        formats: [{ type: "audio" }],
+      },
+      logger: { warn: vi.fn(), info: vi.fn(), debug: vi.fn() },
+    };
+
+    const error = await fetchAudio(meta, {} as any).catch(e => e);
+    expect(error).toBeInstanceOf(Error);
+    expect(error).not.toBeInstanceOf(MediaAgeRestrictedError);
+    expect(error.message).toBe(
+      "Audio download failed: Download failed: some other error",
+    );
   });
 
   it("omits cookies from the avgrab request when no audio cookies are available", async () => {

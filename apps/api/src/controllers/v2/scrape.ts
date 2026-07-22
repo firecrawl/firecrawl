@@ -453,6 +453,17 @@ export async function scrapeController(
             });
           }
 
+          if (e.code === "SCRAPE_MEDIA_AGE_RESTRICTED") {
+            setSpanAttributes(span, {
+              "scrape.status_code": 403,
+            });
+            return res.status(403).json({
+              success: false,
+              code: e.code,
+              error: e.message,
+            });
+          }
+
           const statusCode = e.code === "SCRAPE_TIMEOUT" ? 408 : 500;
           setSpanAttributes(span, {
             "scrape.status_code": statusCode,

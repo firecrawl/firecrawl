@@ -535,6 +535,45 @@ export class AudioUnsupportedUrlError extends TransportableError {
   }
 }
 
+export class MediaAgeRestrictedError extends TransportableError {
+  constructor(message?: string) {
+    super(
+      "SCRAPE_MEDIA_AGE_RESTRICTED",
+      message ??
+        "The requested content is age-restricted and requires an authenticated session to access, so it cannot be retrieved.",
+    );
+  }
+
+  serialize() {
+    return super.serialize();
+  }
+
+  static deserialize(
+    _: ErrorCodes,
+    data: ReturnType<typeof this.prototype.serialize>,
+  ) {
+    const x = new MediaAgeRestrictedError(data.message);
+    x.stack = data.stack;
+    return x;
+  }
+}
+
+// The media service reports age-restricted content as a structured error:
+// { detail: { code: "age_restricted", message: "..." } }
+export function throwIfMediaAgeRestricted(errorBody: unknown): void {
+  if (
+    typeof errorBody === "object" &&
+    errorBody !== null &&
+    "detail" in errorBody &&
+    typeof errorBody.detail === "object" &&
+    errorBody.detail !== null &&
+    "code" in errorBody.detail &&
+    errorBody.detail.code === "age_restricted"
+  ) {
+    throw new MediaAgeRestrictedError();
+  }
+}
+
 export class VideoUnsupportedUrlError extends TransportableError {
   constructor(message?: string) {
     super(

@@ -2,6 +2,7 @@ import { config } from "../../../config";
 import type { BrowserCookie, Meta } from "..";
 import type { Postprocessor } from ".";
 import type { EngineScrapeResult } from "../engines";
+import { throwIfMediaAgeRestricted } from "../error";
 
 type YouTubeMetadataResponse = {
   thumbnail_image: {
@@ -117,6 +118,7 @@ async function getYouTubeMetadata(
     const error = await response
       .json()
       .catch(() => ({ detail: "Unknown error" }));
+    throwIfMediaAgeRestricted(error);
     throw new Error(`YouTube metadata extraction failed: ${error.detail}`);
   }
 
