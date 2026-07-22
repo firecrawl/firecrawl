@@ -86,7 +86,7 @@ export async function resolveUrlMetadata(
   const response = await fetch(`${config.AVGRAB_SERVICE_URL}/resolve`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ url, limit: 0 }),
+    body: JSON.stringify({ url }),
     signal: AbortSignal.timeout(5 * 60 * 1000),
     dispatcher: resolverAgent,
   });
