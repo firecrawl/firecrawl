@@ -82,7 +82,10 @@ import {
 } from "../../lib/error";
 import { htmlTransform } from "./lib/removeUnwantedElements";
 import { postprocessors } from "./postprocessors";
-import { mergeResolvedMetadata } from "../../lib/url-resolver";
+import {
+  mergeResolvedMetadata,
+  resolveUrlMetadata,
+} from "../../lib/url-resolver";
 import { rewriteUrl } from "./lib/rewriteUrl";
 import { writeFile } from "node:fs/promises";
 import path from "node:path";
@@ -989,7 +992,7 @@ async function scrapeURLLoop(meta: Meta): Promise<ScrapeUrlResponse> {
 
     for (const postprocessor of postprocessors) {
       if (
-        await postprocessor.shouldRun(
+        postprocessor.shouldRun(
           meta,
           new URL(engineResult.url),
           engineResult.postprocessorsUsed,
@@ -1069,10 +1072,21 @@ async function scrapeURLLoop(meta: Meta): Promise<ScrapeUrlResponse> {
 
     // NOTE: for sitemap, we don't need all the transformers, need to skip unused ones
     document = await executeTransformers(meta, document);
-    document.metadata = mergeResolvedMetadata(
-      engineResult.resolvedMetadata,
-      document.metadata,
-    );
+
+    if (!meta.options.lockdown) {
+      try {
+        const resolvedMetadata = await resolveUrlMetadata(
+          meta.url,
+          meta.logger.child({ method: "url-resolver" }),
+        );
+        document.metadata = mergeResolvedMetadata(
+          resolvedMetadata ?? undefined,
+          document.metadata,
+        );
+      } catch (error) {
+        meta.logger.warn("Failed to resolve URL metadata", { error });
+      }
+    }
 
     // Set final span attributes
     setSpanAttributes(span, {

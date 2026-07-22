@@ -61,7 +61,7 @@ async function getResolveRegex(): Promise<RegExp | null> {
   return cachedResolveRegex;
 }
 
-export async function supportsUrlResolver(url: string): Promise<boolean> {
+async function supportsUrlResolver(url: string): Promise<boolean> {
   if (!config.AVGRAB_SERVICE_URL) return false;
 
   try {
