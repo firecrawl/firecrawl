@@ -243,9 +243,10 @@ fn extract_document_text_singlebyte(
       current_run.push(ch);
     } else if byte == 0x0D || byte == 0x0A {
       // Carriage return or line feed - end of paragraph
-      if current_run.len() >= 20 && has_word_chars(&current_run) {
+      let run_chars = current_run.chars().count();
+      if run_chars >= 20 && has_word_chars(&current_run) {
         text_runs.push(current_run.clone());
-        total_chars += current_run.len();
+        total_chars += run_chars;
       }
       current_run.clear();
     } else if byte == 0x09 {
@@ -253,16 +254,17 @@ fn extract_document_text_singlebyte(
       current_run.push('\t');
     } else {
       // Non-text byte - might be end of a text run
-      if current_run.len() >= 20 && has_word_chars(&current_run) {
+      let run_chars = current_run.chars().count();
+      if run_chars >= 20 && has_word_chars(&current_run) {
         text_runs.push(current_run.clone());
-        total_chars += current_run.len();
+        total_chars += run_chars;
       }
       current_run.clear();
     }
   }
 
   // Don't forget the last run
-  if current_run.len() >= 20 && has_word_chars(&current_run) {
+  if current_run.chars().count() >= 20 && has_word_chars(&current_run) {
     text_runs.push(current_run);
   }
 
@@ -544,14 +546,15 @@ mod tests {
 
   #[test]
   fn picks_cyrillic_decode_for_cp1251_text() {
-    // "ПРЕЗИДЕНТ УКРАЇНИ" encoded as Windows-1251
+    // "ПРЕЗИДЕНТ УКРАЇНИ УКАЗ" encoded as Windows-1251 (>= 20 chars so the run
+    // survives the character-count filter)
     let bytes = [
       0xCF, 0xD0, 0xC5, 0xC7, 0xC8, 0xC4, 0xC5, 0xCD, 0xD2, 0x20, 0xD3, 0xCA, 0xD0, 0xC0, 0xAF,
-      0xCD, 0xC8, 0x0D,
+      0xCD, 0xC8, 0x20, 0xD3, 0xCA, 0xC0, 0xC7, 0x0D,
     ];
     let text = extract_best_singlebyte(&bytes, 0);
     assert!(
-      text.contains("УКРАЇНИ"),
+      text.contains("УКРАЇНИ УКАЗ"),
       "expected Cyrillic text, got mojibake: {text:?}"
     );
     // The naive cp1252 path would have produced Latin-1 mojibake instead.
