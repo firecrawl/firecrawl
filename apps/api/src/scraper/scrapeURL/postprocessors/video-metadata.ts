@@ -3,7 +3,7 @@ import type { BrowserCookie, Meta } from "..";
 import type { Postprocessor } from ".";
 import type { EngineScrapeResult } from "../engines";
 
-type YouTubeMetadataResponse = {
+type VideoMetadataResponse = {
   thumbnail_image: {
     url: string;
     width?: number | null;
@@ -25,11 +25,47 @@ type YouTubeMetadataResponse = {
   transcript?: string | null;
 };
 
-type YouTubeMetadataRequest = {
+type VideoMetadataRequest = {
   url: string;
   transcript_language: string;
   cookies?: BrowserCookie[];
 };
+
+let cachedMetadataUrlRegex: RegExp | null = null;
+let cacheTimestamp = 0;
+const CACHE_TTL_MS = 5 * 60 * 1000;
+
+export function resetVideoMetadataCacheForTests(): void {
+  cachedMetadataUrlRegex = null;
+  cacheTimestamp = 0;
+}
+
+// Which URLs avgrab can turn into video metadata + transcript is avgrab's
+// knowledge, advertised on /supported-urls as metadata_regex — platform
+// patterns are not hardcoded here.
+async function getMetadataUrlRegex(): Promise<RegExp> {
+  if (cachedMetadataUrlRegex && Date.now() - cacheTimestamp < CACHE_TTL_MS) {
+    return cachedMetadataUrlRegex;
+  }
+
+  const res = await fetch(`${config.AVGRAB_SERVICE_URL}/supported-urls`);
+  if (!res.ok) {
+    throw new Error("Failed to fetch supported URL patterns from avgrab");
+  }
+
+  const data = await res.json().catch(() => null);
+  if (!data || typeof data.metadata_regex !== "string") {
+    throw new Error("avgrab returned invalid supported URL patterns");
+  }
+
+  try {
+    cachedMetadataUrlRegex = new RegExp(data.metadata_regex);
+  } catch {
+    throw new Error("avgrab returned invalid supported URL patterns");
+  }
+  cacheTimestamp = Date.now();
+  return cachedMetadataUrlRegex;
+}
 
 function getTranscriptLanguage(meta: Meta): string {
   const requestedLanguage = meta.options.location?.languages?.[0];
@@ -40,7 +76,7 @@ function formatValue(value: string | number | null | undefined): string {
   return value === null || value === undefined ? "" : String(value);
 }
 
-function formatUploadedBy(metadata: YouTubeMetadataResponse): string {
+function formatUploadedBy(metadata: VideoMetadataResponse): string {
   const name = metadata.uploaded_by?.name ?? "";
   const url = metadata.uploaded_by?.url;
 
@@ -51,17 +87,8 @@ function formatUploadedBy(metadata: YouTubeMetadataResponse): string {
   return name || url || "";
 }
 
-function isYouTubeVideoPath(url: URL): boolean {
-  if (url.pathname === "/watch" && !!url.searchParams.get("v")) {
-    return true;
-  }
-
-  const pathParts = url.pathname.split("/").filter(Boolean);
-  return pathParts.length === 2 && pathParts[0] === "live";
-}
-
 function buildMarkdown(
-  metadata: YouTubeMetadataResponse,
+  metadata: VideoMetadataResponse,
   sourceUrl: string,
 ): string {
   const thumbnailDimensions =
@@ -96,12 +123,12 @@ ${metadata.transcript}`);
   return sections.join("\n\n");
 }
 
-async function getYouTubeMetadata(
+async function getVideoMetadata(
   meta: Meta,
   engineResult: EngineScrapeResult,
-): Promise<YouTubeMetadataResponse> {
+): Promise<VideoMetadataResponse> {
   const cookies = meta.audioCookies ?? engineResult.audioCookies;
-  const requestBody: YouTubeMetadataRequest = {
+  const requestBody: VideoMetadataRequest = {
     url: engineResult.url,
     transcript_language: getTranscriptLanguage(meta),
     ...(cookies && cookies.length > 0 ? { cookies } : {}),
@@ -117,12 +144,12 @@ async function getYouTubeMetadata(
     const error = await response
       .json()
       .catch(() => ({ detail: "Unknown error" }));
-    throw new Error(`YouTube metadata extraction failed: ${error.detail}`);
+    throw new Error(`Video metadata extraction failed: ${error.detail}`);
   }
 
   const data = (await response
     .json()
-    .catch(() => null)) as YouTubeMetadataResponse | null;
+    .catch(() => null)) as VideoMetadataResponse | null;
   if (
     !data ||
     typeof data.title !== "string" ||
@@ -130,50 +157,52 @@ async function getYouTubeMetadata(
     typeof data.thumbnail_image.url !== "string"
   ) {
     throw new Error(
-      "YouTube metadata extraction failed: avgrab service returned an invalid response",
+      "Video metadata extraction failed: avgrab returned an invalid response",
     );
   }
 
   return data;
 }
 
-export const youtubePostprocessor: Postprocessor = {
-  name: "youtube",
-  shouldRun: (_meta: Meta, url: URL, postProcessorsUsed?: string[]) => {
-    if (postProcessorsUsed?.includes("youtube")) {
+export const videoMetadataPostprocessor: Postprocessor = {
+  name: "video-metadata",
+  // Runs on index cache hits too (the stored raw HTML can't reproduce the
+  // transcript/metadata markdown, but avgrab only needs the URL).
+  shouldRun: async (meta: Meta, url: URL) => {
+    // Lockdown forbids any outbound request touching the target URL, and
+    // avgrab fetches the source on our behalf.
+    if (meta.options.lockdown) {
       return false;
     }
 
-    if (
-      url.hostname.endsWith(".youtube.com") ||
-      url.hostname === "youtube.com"
-    ) {
-      return isYouTubeVideoPath(url);
-    } else if (url.hostname === "youtu.be") {
-      return url.pathname !== "/";
-    } else {
+    if (!config.AVGRAB_SERVICE_URL) {
+      return false;
+    }
+
+    try {
+      const regex = await getMetadataUrlRegex();
+      return regex.test(url.href);
+    } catch (error) {
+      // Enrichment is implicit — an avgrab outage must degrade to a plain
+      // scrape, never fail it.
+      meta.logger.warn("Failed to check video metadata URL support", {
+        error,
+      });
       return false;
     }
   },
   run: async (meta: Meta, engineResult: EngineScrapeResult) => {
-    if (meta.options.lockdown) {
-      return engineResult;
-    }
-
-    if (!config.AVGRAB_SERVICE_URL) {
-      meta.logger.warn("AVGRAB_SERVICE_URL is not configured");
-      return engineResult;
-    }
-
-    const metadata = await getYouTubeMetadata(meta, engineResult);
+    const metadata = await getVideoMetadata(meta, engineResult);
     const markdown = buildMarkdown(metadata, engineResult.url);
 
     return {
       ...engineResult,
       markdown,
       postprocessorsUsed: [
-        ...(engineResult.postprocessorsUsed ?? []),
-        "youtube",
+        ...new Set([
+          ...(engineResult.postprocessorsUsed ?? []),
+          "video-metadata",
+        ]),
       ],
     };
   },

@@ -34,7 +34,7 @@ import { getInnerJson } from "@mendable/firecrawl-rs";
 import { hasFormatOfType } from "../../../../lib/format-utils";
 import { InternalAction } from "../../../../controllers/v1/types";
 import { AbortManagerThrownError } from "../../lib/abortManager";
-import { youtubePostprocessor } from "../../postprocessors/youtube";
+import { videoMetadataPostprocessor } from "../../postprocessors/video-metadata";
 import { withSpan, setSpanAttributes } from "../../../../lib/otel-tracer";
 import { getBrandingScript } from "./brandingScript";
 import { abTestFireEngine } from "../../../../services/ab-test";
@@ -285,10 +285,11 @@ export async function scrapeURLWithFireEngineChromeCDP(
     const hasBranding = hasFormatOfType(meta.options.formats, "branding");
     const hasAudio = hasFormatOfType(meta.options.formats, "audio");
     const hasVideo = hasFormatOfType(meta.options.formats, "video");
-    const shouldRunYoutubePostprocessor = youtubePostprocessor.shouldRun(
-      meta,
-      new URL(meta.rewrittenUrl ?? meta.url),
-    );
+    const shouldRunVideoMetadataPostprocessor =
+      await videoMetadataPostprocessor.shouldRun(
+        meta,
+        new URL(meta.rewrittenUrl ?? meta.url),
+      );
     const defaultWait = hasBranding ? BRANDING_DEFAULT_WAIT_MS : 0;
     const effectiveWait =
       meta.options.waitFor != null && meta.options.waitFor !== 0
@@ -341,7 +342,7 @@ export async function scrapeURLWithFireEngineChromeCDP(
             },
           ]
         : []),
-      ...(hasAudio || hasVideo || shouldRunYoutubePostprocessor
+      ...(hasAudio || hasVideo || shouldRunVideoMetadataPostprocessor
         ? ([
             {
               type: "getCookies",
@@ -358,7 +359,7 @@ export async function scrapeURLWithFireEngineChromeCDP(
 
     const shouldAllowMedia =
       hasFormatOfType(meta.options.formats, "branding") ||
-      shouldRunYoutubePostprocessor;
+      shouldRunVideoMetadataPostprocessor;
 
     const request: FireEngineScrapeRequestCommon &
       FireEngineScrapeRequestChromeCDP = {
@@ -490,7 +491,7 @@ export async function scrapeURLWithFireEngineChromeCDP(
       proxyUsed: response.usedMobileProxy ? "stealth" : "basic",
       youtubeTranscriptContent: response.youtubeTranscriptContent,
       timezone: response.timezone,
-      ...(hasAudio || hasVideo || shouldRunYoutubePostprocessor
+      ...(hasAudio || hasVideo || shouldRunVideoMetadataPostprocessor
         ? { audioCookies }
         : {}),
     };

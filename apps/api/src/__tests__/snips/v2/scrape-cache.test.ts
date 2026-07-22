@@ -157,6 +157,46 @@ describeIf(TEST_PRODUCTION)("V2 Scrape Default maxAge", () => {
   );
 
   test(
+    "should serve postprocessed YouTube markdown (transcript) on cache hits",
+    async () => {
+      const id = crypto.randomUUID();
+      // Cache-busting param so this test owns its index entry; YouTube
+      // ignores unknown query params.
+      const url = `https://www.youtube.com/watch?v=dQw4w9WgXcQ&testId=${id}`;
+
+      // First scrape runs the YouTube postprocessor live
+      const data1 = await scrape(
+        {
+          url,
+          maxAge: 0,
+        },
+        identity,
+      );
+
+      expect(data1.markdown).toContain("## Transcript");
+      expect(data1.markdown).toContain("Never gonna give you up");
+
+      // Wait for index to be populated
+      await new Promise(resolve => setTimeout(resolve, 20000));
+
+      // Cache hit must serve the stored postprocessed markdown, not
+      // markdown re-derived from the raw page HTML
+      const data2 = await scrape(
+        {
+          url,
+          maxAge: 3600000,
+        },
+        identity,
+      );
+
+      expect(data2.metadata.cacheState).toBe("hit");
+      expect(data2.markdown).toContain("## Transcript");
+      expect(data2.markdown).toContain("Never gonna give you up");
+    },
+    scrapeTimeout * 2 + 20000,
+  );
+
+  test(
     "should return cached data if it meets minAge requirement",
     async () => {
       const id = crypto.randomUUID();
