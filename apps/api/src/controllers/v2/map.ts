@@ -89,6 +89,8 @@ export async function mapController(
     api_key_id: req.acuc?.api_key_id ?? null,
   });
 
+  const timeoutDeadline =
+    req.body.timeout !== undefined ? Date.now() + req.body.timeout : null;
   const resolverAbort = new AbortController();
   const resolverTimeoutHandle =
     req.body.timeout !== undefined
@@ -172,6 +174,8 @@ export async function mapController(
 
   let result: MapResult;
   let timeoutHandle: NodeJS.Timeout | null = null;
+  const remainingTimeout =
+    timeoutDeadline !== null ? Math.max(0, timeoutDeadline - Date.now()) : null;
 
   const abort = new AbortController();
   try {
@@ -199,14 +203,14 @@ export async function mapController(
         headers: req.body.headers,
         id: mapId,
       }),
-      ...(req.body.timeout !== undefined
+      ...(remainingTimeout !== null
         ? [
             new Promise(
               (_resolve, reject) =>
                 (timeoutHandle = setTimeout(() => {
                   abort.abort(new MapTimeoutError());
                   reject(new MapTimeoutError());
-                }, req.body.timeout)),
+                }, remainingTimeout)),
             ),
           ]
         : []),
