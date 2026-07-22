@@ -190,30 +190,48 @@ fn extract_text_from_word_document(doc_data: &[u8]) -> Option<String> {
   }
 }
 
-/// Decode single-byte text runs, trying both Western (cp1252) and Cyrillic
-/// (cp1251) code pages. Legacy .doc stores 8-bit text in a code page that isn't
-/// recorded here, so we pick the Cyrillic decode only when it comes out
-/// predominantly as Cyrillic letters; otherwise we keep the cp1252 result.
-/// This avoids mojibake for non-Western documents (e.g. Ukrainian/Russian).
+/// Decode single-byte text runs. Legacy .doc stores 8-bit text in a code page
+/// that isn't recorded in the run data, so we default to Western (cp1252) — the
+/// common case, decoded in a single pass — and only re-decode as Cyrillic
+/// (cp1251) when the cp1252 output carries the tell-tale mojibake signature of
+/// misread Cyrillic (a run dominated by Latin-1 accented letters). This avoids
+/// garbled output for non-Western documents (e.g. Ukrainian/Russian) without
+/// decoding twice for ordinary Western/ASCII files.
 fn extract_best_singlebyte(data: &[u8], expected_chars: usize) -> String {
-  let cyrillic = extract_document_text_singlebyte(data, expected_chars, decode_cp1251);
-  if cyrillic_ratio(&cyrillic) >= 40 {
-    return cyrillic;
+  let western = extract_document_text_singlebyte(data, expected_chars, decode_cp1252);
+
+  // Cyrillic bytes (0xC0..=0xFF) read as cp1252 all land in the Latin-1
+  // supplement (U+00C0..U+00FF). Real Western text is dominated by ASCII
+  // letters, so a high accented ratio strongly implies a wrong code page.
+  if latin1_accented_ratio(&western) >= 40 {
+    let cyrillic = extract_document_text_singlebyte(data, expected_chars, decode_cp1251);
+    if cyrillic_ratio(&cyrillic) >= 40 {
+      return cyrillic;
+    }
   }
-  extract_document_text_singlebyte(data, expected_chars, decode_cp1252)
+
+  western
 }
 
 /// Fraction (0-100) of alphabetic characters that are in the Cyrillic block.
 fn cyrillic_ratio(s: &str) -> usize {
-  let cyrillic = s
-    .chars()
-    .filter(|&c| ('\u{0400}'..='\u{04FF}').contains(&c))
-    .count();
+  char_ratio(s, |c| ('\u{0400}'..='\u{04FF}').contains(&c))
+}
+
+/// Fraction (0-100) of alphabetic characters in the Latin-1 supplement block
+/// (U+00C0..U+00FF) — the signature of Cyrillic bytes misread as cp1252.
+fn latin1_accented_ratio(s: &str) -> usize {
+  char_ratio(s, |c| ('\u{00C0}'..='\u{00FF}').contains(&c))
+}
+
+/// Percentage of alphabetic characters in `s` that satisfy `pred`.
+fn char_ratio(s: &str, pred: impl Fn(char) -> bool) -> usize {
+  let matching = s.chars().filter(|&c| pred(c)).count();
   let alphabetic = s.chars().filter(|c| c.is_alphabetic()).count();
   if alphabetic == 0 {
     return 0;
   }
-  cyrillic * 100 / alphabetic
+  matching * 100 / alphabetic
 }
 
 fn extract_document_text_singlebyte(
@@ -573,5 +591,14 @@ mod tests {
     assert_eq!(cyrillic_ratio("Президент України"), 100);
     assert_eq!(cyrillic_ratio("Hello World"), 0);
     assert_eq!(cyrillic_ratio(""), 0);
+  }
+
+  #[test]
+  fn latin1_accented_ratio_distinguishes_mojibake_from_western() {
+    // Cyrillic bytes misread as cp1252 land entirely in the Latin-1 supplement.
+    assert!(latin1_accented_ratio("ÀÁÂÃÄÅ") >= 40);
+    // Ordinary Western text with the odd accent stays well below the threshold.
+    assert!(latin1_accented_ratio("a normal english sentence with one café") < 40);
+    assert_eq!(latin1_accented_ratio(""), 0);
   }
 }
