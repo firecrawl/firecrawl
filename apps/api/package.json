@@ -138,6 +138,7 @@
     "resend": "^3.5.0",
     "response-time": "^2.3.4",
     "robots-parser": "^3.0.1",
+    "safe-regex2": "^5.1.1",
     "stripe": "^16.1.0",
     "systeminformation": "^5.31.17",
     "tldts": "^6.1.75",

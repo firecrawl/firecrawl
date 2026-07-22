@@ -85,6 +85,7 @@ import { postprocessors } from "./postprocessors";
 import {
   mergeResolvedMetadata,
   resolveUrlMetadata,
+  UrlResolverHttpError,
 } from "../../lib/url-resolver";
 import { rewriteUrl } from "./lib/rewriteUrl";
 import { writeFile } from "node:fs/promises";
@@ -1078,13 +1079,17 @@ async function scrapeURLLoop(meta: Meta): Promise<ScrapeUrlResponse> {
         const resolvedMetadata = await resolveUrlMetadata(
           meta.url,
           meta.logger.child({ method: "url-resolver" }),
+          meta.abort.asSignal(),
         );
         document.metadata = mergeResolvedMetadata(
           resolvedMetadata ?? undefined,
           document.metadata,
         );
       } catch (error) {
-        meta.logger.warn("Failed to resolve URL metadata", { error });
+        meta.abort.throwIfAborted();
+        if (!(error instanceof UrlResolverHttpError)) {
+          meta.logger.warn("Failed to resolve URL metadata", { error });
+        }
       }
     }
 
