@@ -168,8 +168,8 @@ fn extract_text_from_word_document(doc_data: &[u8]) -> Option<String> {
   // .doc files typically store text as CP1252 (single-byte) or UTF-16LE
   // We'll try to detect which one by looking for patterns
 
-  // First, try to find substantial ASCII/CP1252 text runs
-  let ascii_text = extract_document_text_cp1252(doc_data, ccp_text);
+  // First, try to find substantial single-byte text runs (cp1252 or cp1251)
+  let ascii_text = extract_best_singlebyte(doc_data, ccp_text);
   if !ascii_text.trim().is_empty() && has_enough_words(&ascii_text, 10) {
     return Some(ascii_text);
   }
@@ -190,8 +190,38 @@ fn extract_text_from_word_document(doc_data: &[u8]) -> Option<String> {
   }
 }
 
-fn extract_document_text_cp1252(data: &[u8], expected_chars: usize) -> String {
-  // Find long runs of printable ASCII/CP1252 characters
+/// Decode single-byte text runs, trying both Western (cp1252) and Cyrillic
+/// (cp1251) code pages. Legacy .doc stores 8-bit text in a code page that isn't
+/// recorded here, so we pick the Cyrillic decode only when it comes out
+/// predominantly as Cyrillic letters; otherwise we keep the cp1252 result.
+/// This avoids mojibake for non-Western documents (e.g. Ukrainian/Russian).
+fn extract_best_singlebyte(data: &[u8], expected_chars: usize) -> String {
+  let cyrillic = extract_document_text_singlebyte(data, expected_chars, decode_cp1251);
+  if cyrillic_ratio(&cyrillic) >= 40 {
+    return cyrillic;
+  }
+  extract_document_text_singlebyte(data, expected_chars, decode_cp1252)
+}
+
+/// Fraction (0-100) of alphabetic characters that are in the Cyrillic block.
+fn cyrillic_ratio(s: &str) -> usize {
+  let cyrillic = s
+    .chars()
+    .filter(|&c| ('\u{0400}'..='\u{04FF}').contains(&c))
+    .count();
+  let alphabetic = s.chars().filter(|c| c.is_alphabetic()).count();
+  if alphabetic == 0 {
+    return 0;
+  }
+  cyrillic * 100 / alphabetic
+}
+
+fn extract_document_text_singlebyte(
+  data: &[u8],
+  expected_chars: usize,
+  decode: fn(u8) -> char,
+) -> String {
+  // Find long runs of printable single-byte characters
   // This works well for most .doc files where text is stored as single-byte
   let mut text_runs: Vec<String> = Vec::new();
   let mut current_run = String::new();
@@ -207,7 +237,7 @@ fn extract_document_text_cp1252(data: &[u8], expected_chars: usize) -> String {
       break;
     }
 
-    let ch = decode_cp1252(byte);
+    let ch = decode(byte);
 
     if is_text_char(ch) {
       current_run.push(ch);
@@ -340,7 +370,7 @@ fn extract_text_fallback<R: Read + std::io::Seek>(
     if let Ok(mut stream) = cfb.open_stream(&entry) {
       let mut buf = Vec::new();
       if stream.read_to_end(&mut buf).is_ok() {
-        let stream_text = extract_document_text_cp1252(&buf, 0);
+        let stream_text = extract_best_singlebyte(&buf, 0);
         if !stream_text.trim().is_empty() && has_enough_words(&stream_text, 5) {
           if !all_text.is_empty() {
             all_text.push('\n');
@@ -390,6 +420,82 @@ fn decode_cp1252(b: u8) -> char {
   }
 }
 
+fn decode_cp1251(b: u8) -> char {
+  if b < 0x80 {
+    return b as char;
+  }
+  // 0xC0..=0xFF map linearly onto the Cyrillic block А..я (U+0410..U+044F).
+  if (0xC0..=0xFF).contains(&b) {
+    return char::from_u32(0x0410 + (b as u32 - 0xC0)).unwrap_or('?');
+  }
+  match b {
+    0x80 => '\u{0402}', // Ђ
+    0x81 => '\u{0403}', // Ѓ
+    0x82 => '\u{201A}', // ‚
+    0x83 => '\u{0453}', // ѓ
+    0x84 => '\u{201E}', // „
+    0x85 => '\u{2026}', // …
+    0x86 => '\u{2020}', // †
+    0x87 => '\u{2021}', // ‡
+    0x88 => '\u{20AC}', // €
+    0x89 => '\u{2030}', // ‰
+    0x8A => '\u{0409}', // Љ
+    0x8B => '\u{2039}', // ‹
+    0x8C => '\u{040A}', // Њ
+    0x8D => '\u{040C}', // Ќ
+    0x8E => '\u{040B}', // Ћ
+    0x8F => '\u{040F}', // Џ
+    0x90 => '\u{0452}', // ђ
+    0x91 => '\u{2018}', // '
+    0x92 => '\u{2019}', // '
+    0x93 => '\u{201C}', // "
+    0x94 => '\u{201D}', // "
+    0x95 => '\u{2022}', // •
+    0x96 => '\u{2013}', // –
+    0x97 => '\u{2014}', // —
+    0x99 => '\u{2122}', // ™
+    0x9A => '\u{0459}', // љ
+    0x9B => '\u{203A}', // ›
+    0x9C => '\u{045A}', // њ
+    0x9D => '\u{045C}', // ќ
+    0x9E => '\u{045B}', // ћ
+    0x9F => '\u{045F}', // џ
+    0xA0 => '\u{00A0}', // NBSP
+    0xA1 => '\u{040E}', // Ў
+    0xA2 => '\u{045E}', // ў
+    0xA3 => '\u{0408}', // Ј
+    0xA4 => '\u{00A4}', // ¤
+    0xA5 => '\u{0490}', // Ґ
+    0xA6 => '\u{00A6}', // ¦
+    0xA7 => '\u{00A7}', // §
+    0xA8 => '\u{0401}', // Ё
+    0xA9 => '\u{00A9}', // ©
+    0xAA => '\u{0404}', // Є
+    0xAB => '\u{00AB}', // «
+    0xAC => '\u{00AC}', // ¬
+    0xAD => '\u{00AD}', // SHY
+    0xAE => '\u{00AE}', // ®
+    0xAF => '\u{0407}', // Ї
+    0xB0 => '\u{00B0}', // °
+    0xB1 => '\u{00B1}', // ±
+    0xB2 => '\u{0406}', // І
+    0xB3 => '\u{0456}', // і
+    0xB4 => '\u{0491}', // ґ
+    0xB5 => '\u{00B5}', // µ
+    0xB6 => '\u{00B6}', // ¶
+    0xB7 => '\u{00B7}', // ·
+    0xB8 => '\u{0451}', // ё
+    0xB9 => '\u{2116}', // №
+    0xBA => '\u{0454}', // є
+    0xBB => '\u{00BB}', // »
+    0xBC => '\u{0458}', // ј
+    0xBD => '\u{0405}', // Ѕ
+    0xBE => '\u{0455}', // ѕ
+    0xBF => '\u{0457}', // ї
+    _ => char::from_u32(b as u32).unwrap_or('?'),
+  }
+}
+
 fn text_to_blocks(text: &str) -> Vec<Block> {
   let mut blocks = Vec::new();
 
@@ -417,4 +523,52 @@ fn text_to_blocks(text: &str) -> Vec<Block> {
   }
 
   blocks
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  #[test]
+  fn decodes_cp1251_cyrillic_letters() {
+    // 0xC0..=0xFF map linearly onto А..я
+    assert_eq!(decode_cp1251(0xC0), 'А');
+    assert_eq!(decode_cp1251(0xFF), 'я');
+    // Ukrainian-specific letters live outside the linear range
+    assert_eq!(decode_cp1251(0xAF), 'Ї');
+    assert_eq!(decode_cp1251(0xBF), 'ї');
+    assert_eq!(decode_cp1251(0xA5), 'Ґ');
+    // ASCII passes through untouched
+    assert_eq!(decode_cp1251(b'A'), 'A');
+  }
+
+  #[test]
+  fn picks_cyrillic_decode_for_cp1251_text() {
+    // "ПРЕЗИДЕНТ УКРАЇНИ" encoded as Windows-1251
+    let bytes = [
+      0xCF, 0xD0, 0xC5, 0xC7, 0xC8, 0xC4, 0xC5, 0xCD, 0xD2, 0x20, 0xD3, 0xCA, 0xD0, 0xC0, 0xAF,
+      0xCD, 0xC8, 0x0D,
+    ];
+    let text = extract_best_singlebyte(&bytes, 0);
+    assert!(
+      text.contains("УКРАЇНИ"),
+      "expected Cyrillic text, got mojibake: {text:?}"
+    );
+    // The naive cp1252 path would have produced Latin-1 mojibake instead.
+    assert!(!text.contains('Ï'));
+  }
+
+  #[test]
+  fn keeps_cp1252_decode_for_western_text() {
+    let bytes = b"Hello World this is a plain ASCII test line.\r";
+    let text = extract_best_singlebyte(bytes, 0);
+    assert!(text.contains("Hello World this is a plain ASCII test line."));
+  }
+
+  #[test]
+  fn cyrillic_ratio_thresholds() {
+    assert_eq!(cyrillic_ratio("Президент України"), 100);
+    assert_eq!(cyrillic_ratio("Hello World"), 0);
+    assert_eq!(cyrillic_ratio(""), 0);
+  }
 }
