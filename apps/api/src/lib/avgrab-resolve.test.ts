@@ -26,6 +26,7 @@ describe("resolveViaAvgrab", () => {
   });
 
   it("maps shared resolver posts without changing map output", async () => {
+    const controller = new AbortController();
     vi.mocked(resolveUrl).mockResolvedValue({
       posts: [
         {
@@ -39,7 +40,12 @@ describe("resolveViaAvgrab", () => {
     });
 
     await expect(
-      resolveViaAvgrab("https://resolver.test/profile", 10, logger),
+      resolveViaAvgrab(
+        "https://resolver.test/profile",
+        10,
+        logger,
+        controller.signal,
+      ),
     ).resolves.toEqual([
       {
         url: "https://resolver.test/post",
@@ -54,7 +60,7 @@ describe("resolveViaAvgrab", () => {
     expect(resolveUrl).toHaveBeenCalledWith(
       "https://resolver.test/profile",
       logger,
-      { requestBody: { limit: 10 } },
+      { requestBody: { limit: 10 }, signal: controller.signal },
     );
   });
 

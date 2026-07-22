@@ -120,6 +120,19 @@ describe("URL resolver", () => {
     ).toHaveLength(1);
   });
 
+  it("releases failed capability response bodies", async () => {
+    const cancel = vi.fn().mockResolvedValue(undefined);
+    vi.mocked(fetch).mockResolvedValueOnce({
+      ...response(503, null),
+      body: { cancel },
+    });
+
+    await expect(
+      resolveUrlMetadata("https://resolver.test/profile", logger),
+    ).resolves.toBeNull();
+    expect(cancel).toHaveBeenCalledOnce();
+  });
+
   it("treats not found as an expected metadata miss", async () => {
     vi.mocked(fetch)
       .mockResolvedValueOnce(

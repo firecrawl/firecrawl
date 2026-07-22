@@ -89,12 +89,22 @@ export async function mapController(
     api_key_id: req.acuc?.api_key_id ?? null,
   });
 
+  const resolverAbort = new AbortController();
+  const resolverTimeoutHandle =
+    req.body.timeout !== undefined
+      ? setTimeout(
+          () => resolverAbort.abort(new MapTimeoutError()),
+          req.body.timeout,
+        )
+      : null;
+
   // Short-circuit: if the URL matches avgrab's resolve pattern, delegate entirely
   try {
     const avgrabResults = await resolveViaAvgrab(
       req.body.url,
       req.body.limit,
       logger,
+      resolverAbort.signal,
     );
 
     if (avgrabResults !== null) {
@@ -139,7 +149,13 @@ export async function mapController(
       });
     }
   } catch (error) {
-    if (error instanceof MapFailedError) {
+    if (error instanceof MapTimeoutError) {
+      return res.status(408).json({
+        success: false,
+        code: error.code,
+        error: error.message,
+      });
+    } else if (error instanceof MapFailedError) {
       return res.status(500).json({
         success: false,
         error: error.message,
@@ -148,6 +164,10 @@ export async function mapController(
     logger.warn("avgrab resolve failed, falling back to standard map", {
       error,
     });
+  } finally {
+    if (resolverTimeoutHandle) {
+      clearTimeout(resolverTimeoutHandle);
+    }
   }
 
   let result: MapResult;

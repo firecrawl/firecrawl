@@ -112,6 +112,7 @@ async function fetchResolveRegex(): Promise<RegExp> {
     dispatcher: capabilityAgent,
   });
   if (!response.ok) {
+    await response.body?.cancel();
     throw new Error("Failed to fetch URL resolver service capabilities");
   }
 

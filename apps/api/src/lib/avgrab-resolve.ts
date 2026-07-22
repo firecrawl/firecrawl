@@ -19,11 +19,13 @@ export async function resolveViaAvgrab(
   url: string,
   limit: number,
   logger: winston.Logger,
+  signal?: AbortSignal,
 ): Promise<MapDocument[] | null> {
   let data: AvgrabResolveResponse | null;
   try {
     data = (await resolveUrl(url, logger, {
       requestBody: { limit },
+      signal,
     })) as AvgrabResolveResponse | null;
   } catch (error) {
     if (error instanceof UrlResolverHttpError) {
