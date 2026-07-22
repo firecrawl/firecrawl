@@ -767,6 +767,16 @@ const extractTransformImpl = <T extends ScrapeOptionsBase | undefined>(
     result = { ...result, timeout: 60000 };
   }
 
+  // Branding always requires a full chrome-cdp render (no index cache), loads
+  // media, runs an in-page extraction script, and makes an LLM call — on heavy
+  // pages this routinely exceeds 30s, so give it the same headroom as stealth.
+  if (
+    obj.formats.find(x => typeof x === "object" && x.type === "branding") &&
+    obj.timeout === 30000
+  ) {
+    result = { ...result, timeout: 120000 };
+  }
+
   if (
     (obj.proxy === "stealth" ||
       obj.proxy === "enhanced" ||

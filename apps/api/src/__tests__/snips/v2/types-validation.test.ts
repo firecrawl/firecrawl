@@ -1523,6 +1523,30 @@ describe("V2 Types Validation", () => {
       expect(result.waitFor).toBeGreaterThanOrEqual(5000); // Should be at least 5000
     });
 
+    it("should handle branding format timeout transformation", () => {
+      const input: ScrapeRequestInput = {
+        url: "https://example.com",
+        formats: [{ type: "branding" }],
+        timeout: 30000,
+        proxy: "basic", // Use basic proxy to avoid auto/stealth timeout transformation
+      };
+
+      const result = scrapeRequestSchema.parse(input);
+      expect(result.timeout).toBe(120000); // Should be transformed
+    });
+
+    it("should not override an explicit timeout for branding format", () => {
+      const input: ScrapeRequestInput = {
+        url: "https://example.com",
+        formats: [{ type: "branding" }],
+        timeout: 90000,
+        proxy: "basic",
+      };
+
+      const result = scrapeRequestSchema.parse(input);
+      expect(result.timeout).toBe(90000); // Explicit timeout is respected
+    });
+
     it("should handle json format timeout transformation", () => {
       const input: ScrapeRequestInput = {
         url: "https://example.com",
