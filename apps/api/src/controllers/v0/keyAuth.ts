@@ -10,8 +10,6 @@ import { applyAgentAuthDiscoveryHeader } from "../../lib/agent-auth-discovery";
 export const keyAuthController = async (req: Request, res: Response) => {
   try {
     // make sure to authenticate user first, Bearer <token>
-    // Account mode: a key-validation ping shouldn't consume a scrape/crawl
-    // rate-limit bucket.
     const auth = await authenticateUser(req, res, RateLimiterMode.Account);
     if (!auth.success) {
       if (auth.status === 401) applyAgentAuthDiscoveryHeader(res);
