@@ -10,7 +10,11 @@ const delimitedList = (separator = ",") => {
 };
 
 const emptyStringAsUndefined = <T extends z.ZodTypeAny>(schema: T) =>
-  z.preprocess(value => (value === "" ? undefined : value), schema.optional());
+  z.preprocess(
+    value =>
+      typeof value === "string" && value.trim() === "" ? undefined : value,
+    schema.optional(),
+  );
 
 const emptyStringAsDefault = <T extends z.ZodTypeAny>(schema: T) =>
   z.preprocess(value => (value === "" ? undefined : value), schema);
