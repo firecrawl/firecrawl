@@ -37,6 +37,7 @@ import {
 import { projectScrapeCredits } from "../../lib/keyless-credit-projection";
 import { applyAgentAuthDiscoveryHeader } from "../../lib/agent-auth-discovery";
 import { resolveThreatProtection } from "../../lib/threat-protection/request";
+import { getEffectiveConcurrencyLimit } from "../../lib/concurrency-limit";
 
 export async function scrapeController(
   req: RequestWithAuth<{}, ScrapeResponse, ScrapeRequest>,
@@ -189,7 +190,10 @@ export async function scrapeController(
     doc = await teamConcurrencySemaphore.withSemaphore(
       req.auth.team_id,
       jobId,
-      req.acuc?.concurrency || 1,
+      (await getEffectiveConcurrencyLimit(
+        req.auth.team_id,
+        req.acuc?.org_id,
+      )) || 1,
       aborter.signal,
       timeout ?? 60_000,
       async limited => {

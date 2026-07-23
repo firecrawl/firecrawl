@@ -1,11 +1,11 @@
 import { Logger } from "winston";
 import { validate as isUUID } from "uuid";
-import { getACUCTeam } from "../controllers/auth";
 import { getRedisConnection } from "../services/queue-service";
 import { scrapeQueue, type NuQJob } from "../services/worker/nuq";
-import { RateLimiterMode, type ScrapeJobData } from "../types";
+import { type ScrapeJobData } from "../types";
 import {
   getConcurrencyLimitActiveJobs,
+  getEffectiveConcurrencyLimit,
   getNextConcurrentJob,
   MAX_BACKLOG_TIMEOUT_MS,
   pushConcurrencyLimitActiveJob,
@@ -106,12 +106,11 @@ async function reconcileTeam(
     return null;
   }
 
-  const maxCrawlConcurrency =
-    (await getACUCTeam(ownerId, false, true, RateLimiterMode.Crawl))
-      ?.concurrency ?? 2;
-  const maxExtractConcurrency =
-    (await getACUCTeam(ownerId, false, true, RateLimiterMode.Extract))
-      ?.concurrency ?? 2;
+  // Autumn is authoritative for the team's concurrency; it's a single per-team
+  // pool, so crawl and extract share the same effective limit.
+  const teamConcurrency = await getEffectiveConcurrencyLimit(ownerId);
+  const maxCrawlConcurrency = teamConcurrency;
+  const maxExtractConcurrency = teamConcurrency;
 
   // Split active count by type so one type's active jobs don't gate the other
   const activeJobIds = await getConcurrencyLimitActiveJobs(ownerId);
@@ -201,12 +200,11 @@ async function drainQueue(
   ownerId: string,
   teamLogger: Logger,
 ): Promise<{ jobsPromoted: number; staleSkipped: number }> {
-  const maxCrawlConcurrency =
-    (await getACUCTeam(ownerId, false, true, RateLimiterMode.Crawl))
-      ?.concurrency ?? 2;
-  const maxExtractConcurrency =
-    (await getACUCTeam(ownerId, false, true, RateLimiterMode.Extract))
-      ?.concurrency ?? 2;
+  // Autumn is authoritative for the team's concurrency; it's a single per-team
+  // pool, so crawl and extract share the same effective limit.
+  const teamConcurrency = await getEffectiveConcurrencyLimit(ownerId);
+  const maxCrawlConcurrency = teamConcurrency;
+  const maxExtractConcurrency = teamConcurrency;
 
   const activeIds = await getConcurrencyLimitActiveJobs(ownerId);
   const activeJobs = await scrapeQueue.getJobs(activeIds, teamLogger);

@@ -21,6 +21,8 @@ import type {
 export const TEAM_FEATURE_ID = "TEAM";
 export const CREDITS_FEATURE_ID = "CREDITS";
 export const SEARCH_CREDITS_FEATURE_ID = "SEARCH_CREDITS";
+const CONCURRENCY_FEATURE_ID = "CONCURRENCY";
+const RATE_LIMIT_FEATURE_ID = "rate_limits";
 
 /**
  * Maps a billing endpoint to the Autumn feature ID it should bill against.
@@ -507,6 +509,119 @@ export class AutumnService {
       );
       return false;
     }
+  }
+
+  // Cache the team's entity-derived limits briefly so concurrency enforcement
+  // and rate-limit gating on every scrape/crawl/browser request don't fan out
+  // to Autumn each time. Both the CONCURRENCY limit and the rate-limit
+  // multiplier come from a single entity.get, so one cache entry (and one
+  // Autumn round-trip per team per TTL window) serves both callers.
+  private entityLimitsCache = new BoundedMap<
+    string,
+    {
+      concurrency: number | null;
+      rateLimitMultiplier: number | null;
+      expiresAt: number;
+    }
+  >(50_000);
+  private static readonly ENTITY_LIMITS_TTL_MS = 60_000;
+
+  /**
+   * Fetches the team's Autumn entity once and derives both the CONCURRENCY
+   * limit and the rate-limit multiplier from it. Each team has its own Autumn
+   * entity, so the entity balances are per-team regardless of whether the org
+   * has one or many teams. Returns nulls when Autumn is unavailable, the entity
+   * is missing, or a balance isn't present — callers fall back accordingly.
+   */
+  private async getEntityLimits(
+    teamId: string,
+    orgId?: string | null,
+  ): Promise<{ concurrency: number | null; rateLimitMultiplier: number | null }> {
+    if (!autumnClient || this.isPreviewTeam(teamId)) {
+      return { concurrency: null, rateLimitMultiplier: null };
+    }
+
+    const now = Date.now();
+    const cached = this.entityLimitsCache.get(teamId);
+    if (cached && cached.expiresAt > now) {
+      return {
+        concurrency: cached.concurrency,
+        rateLimitMultiplier: cached.rateLimitMultiplier,
+      };
+    }
+
+    const store = (
+      concurrency: number | null,
+      rateLimitMultiplier: number | null,
+    ) => {
+      this.entityLimitsCache.set(teamId, {
+        concurrency,
+        rateLimitMultiplier,
+        expiresAt: now + AutumnService.ENTITY_LIMITS_TTL_MS,
+      });
+      return { concurrency, rateLimitMultiplier };
+    };
+
+    try {
+      const resolvedOrgId = orgId ?? (await this.resolveOrgId(teamId));
+      if (!resolvedOrgId) return { concurrency: null, rateLimitMultiplier: null };
+
+      const entity: any = await autumnClient.entities.get({
+        customerId: resolvedOrgId,
+        entityId: teamId,
+      });
+      const balances = entity?.balances ?? {};
+
+      // CONCURRENCY: use `remaining` (the post-drain effective per-team cap;
+      // `granted` would surface the pre-drain inherited customer total).
+      const concurrencyRemaining = balances[CONCURRENCY_FEATURE_ID]?.remaining;
+      const concurrency =
+        typeof concurrencyRemaining === "number" ? concurrencyRemaining : null;
+
+      // rate_limits: a static per-plan multiplier that is never consumed, so
+      // read `granted` (the entitled amount) rather than `remaining`.
+      const grantedMultiplier = balances[RATE_LIMIT_FEATURE_ID]?.granted;
+      const rateLimitMultiplier =
+        typeof grantedMultiplier === "number" ? grantedMultiplier : null;
+
+      return store(concurrency, rateLimitMultiplier);
+    } catch (error) {
+      const status = this.getErrorStatus(error);
+      if (status === 404) return store(null, null);
+      logger.error(
+        "Autumn getEntityLimits failed — billing API may be unavailable",
+        { teamId, error },
+      );
+      return { concurrency: null, rateLimitMultiplier: null };
+    }
+  }
+
+  /**
+   * Reads the team's allowed concurrent-browser count from Autumn's
+   * entity-scoped CONCURRENCY balance. Returns null when Autumn is unavailable,
+   * the entity is missing, or there's no balance — callers should take the max
+   * with the ACUC value.
+   */
+  async getConcurrencyLimit(
+    teamId: string,
+    orgId?: string | null,
+  ): Promise<number | null> {
+    return (await this.getEntityLimits(teamId, orgId)).concurrency;
+  }
+
+  /**
+   * Reads the team's rate-limit multiplier from Autumn's `rate_limits` feature
+   * (Free ×1, Hobby ×10, Standard ×50, Growth ×500, Scale ×1000, Enterprise
+   * ×2500, and off-tier custom values). Effective rate limits are
+   * `base × multiplier`. Returns null when Autumn is unavailable or the feature
+   * is missing — callers should default to a multiplier of 1. Shares a single
+   * cached entity fetch with getConcurrencyLimit, so it adds no Autumn call.
+   */
+  async getRateLimitMultiplier(
+    teamId: string,
+    orgId?: string | null,
+  ): Promise<number | null> {
+    return (await this.getEntityLimits(teamId, orgId)).rateLimitMultiplier;
   }
 
   /**
