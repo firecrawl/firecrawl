@@ -19,7 +19,7 @@ import {
 } from "../../monitoring/types";
 import { getTeamBalance } from "../../autumn/usage";
 import { autumnService } from "../../autumn/autumn.service";
-import { getConcurrencyLimitActiveJobsCount } from "../../../lib/concurrency-redis";
+import { getCombinedTeamActiveCount } from "../../worker/nuq-router";
 import type { SlackInstallationRow } from "./types";
 import { escapeSlackText, slackLink } from "./messages";
 
@@ -478,7 +478,7 @@ async function accountResponse(
   const [balance, concurrencyLimit, activeJobs] = await Promise.all([
     getTeamBalance(teamId).catch(() => null),
     autumnService.getConcurrencyLimit(teamId).catch(() => null),
-    getConcurrencyLimitActiveJobsCount(teamId).catch(() => null),
+    getCombinedTeamActiveCount(teamId).catch(() => null),
   ]);
 
   const lines: string[] = [":bar_chart: *Your Firecrawl account*"];
