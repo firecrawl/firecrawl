@@ -15,6 +15,49 @@ type ExistingFeedback = {
   credits_refunded: number | null;
 };
 
+type ValuableResultDocument = {
+  documentId: string;
+  searchId: string;
+  resultType: "web";
+  resultIndex: number;
+  position: number;
+  source: "position";
+};
+
+function searchFeedbackResultDocumentId(
+  searchId: string,
+  resultType: ValuableResultDocument["resultType"],
+  resultIndex: number,
+): string {
+  return `search:${searchId}:${resultType}:${resultIndex}`;
+}
+
+function valuableResultDocuments(
+  job: FeedbackJobRow,
+  positions: number[] | undefined,
+): ValuableResultDocument[] {
+  if (job.endpoint !== "search" || !positions?.length) return [];
+
+  const seenPositions = new Set<number>();
+  return positions.flatMap(position => {
+    if (!Number.isInteger(position) || position <= 0) return [];
+    if (seenPositions.has(position)) return [];
+    seenPositions.add(position);
+
+    const resultIndex = position - 1;
+    return [
+      {
+        documentId: searchFeedbackResultDocumentId(job.id, "web", resultIndex),
+        searchId: job.id,
+        resultType: "web" as const,
+        resultIndex,
+        position,
+        source: "position" as const,
+      },
+    ];
+  });
+}
+
 const JOB_TABLES = {
   search: schema.searches,
   scrape: schema.scrapes,
@@ -24,12 +67,21 @@ const JOB_TABLES = {
 
 function feedbackMetadata(
   options: FeedbackRecordOptions,
+  valuableResultDocs: ValuableResultDocument[],
 ): Record<string, unknown> {
   return {
     ...(options.feedback.metadata ?? {}),
     ...(options.feedback.url ? { url: options.feedback.url } : {}),
     ...(options.feedback.pageNumbers
       ? { pageNumbers: options.feedback.pageNumbers }
+      : {}),
+    ...(valuableResultDocs.length > 0
+      ? {
+          valuableResultPositions: valuableResultDocs.map(doc => doc.position),
+          valuableResultDocumentIds: valuableResultDocs.map(
+            doc => doc.documentId,
+          ),
+        }
       : {}),
   };
 }
@@ -76,6 +128,15 @@ export async function insertFeedback(params: {
   apiKeyId?: number | null;
 }): Promise<DbError | null> {
   const { feedbackId, options, job, dbTeamId, apiKeyId } = params;
+  const valuableResultDocs = valuableResultDocuments(
+    job,
+    options.feedback.valuableResultPositions,
+  );
+  const valuableSources = [
+    ...(options.feedback.valuableSources ?? []),
+    ...valuableResultDocs,
+  ];
+
   try {
     await db.insert(schema.search_feedback).values({
       id: feedbackId,
@@ -90,10 +151,10 @@ export async function insertFeedback(params: {
       issue_types: options.feedback.issues ?? [],
       tags: options.feedback.tags ?? [],
       comment: options.feedback.note ?? null,
-      valuable_sources: options.feedback.valuableSources ?? [],
+      valuable_sources: valuableSources,
       missing_content: options.feedback.missingContent ?? [],
       query_suggestions: options.feedback.querySuggestions ?? null,
-      metadata: feedbackMetadata(options),
+      metadata: feedbackMetadata(options, valuableResultDocs),
       job_status: job.is_successful === false ? "failed" : "completed",
       credits_billed: job.credits_cost ?? 0,
       credits_refunded: 0,

@@ -98,6 +98,22 @@ describe("feedback schema", () => {
     ).toBe(true);
 
     expect(
+      searchFeedbackSchema.safeParse({
+        rating: "good",
+        valuableResultPositions: [1, 2],
+      }).success,
+    ).toBe(true);
+
+    expect(
+      endpointFeedbackSchema.safeParse({
+        endpoint: "search",
+        jobId: "01933161-0000-7000-8000-000000000001",
+        rating: "good",
+        valuableResultPositions: [1],
+      }).success,
+    ).toBe(true);
+
+    expect(
       endpointFeedbackSchema.safeParse({
         endpoint: "search",
         jobId: "01933161-0000-7000-8000-000000000001",
@@ -114,5 +130,21 @@ describe("feedback schema", () => {
         note: "Generic endpoint feedback remains valid with a note.",
       }).success,
     ).toBe(true);
+
+    expect(
+      endpointFeedbackSchema.safeParse({
+        endpoint: "map",
+        jobId: "01933161-0000-7000-8000-000000000001",
+        rating: "good",
+        valuableResultPositions: [1],
+      }).success,
+    ).toBe(false);
+
+    expect(
+      searchFeedbackSchema.safeParse({
+        rating: "good",
+        valuableResultPositions: [0],
+      }).success,
+    ).toBe(false);
   });
 });

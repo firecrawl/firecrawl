@@ -3168,7 +3168,7 @@
       },
       "SearchFeedbackRequest": {
         "type": "object",
-        "description": "For 'good', include valuableSources. For 'partial', include valuableSources or missingContent. For 'bad', include missingContent or querySuggestions.",
+        "description": "For 'good', include valuableSources or valuableResultPositions. For 'partial', include valuableSources, valuableResultPositions, or missingContent. For 'bad', include missingContent or querySuggestions.",
         "properties": {
           "rating": {
             "type": "string",
@@ -3190,6 +3190,15 @@
                 }
               },
               "required": ["url"]
+            }
+          },
+          "valuableResultPositions": {
+            "type": "array",
+            "maxItems": 50,
+            "description": "1-indexed positions in the returned web results that were useful. The API stores these as stable search result document IDs for quantitative feedback.",
+            "items": {
+              "type": "integer",
+              "minimum": 1
             }
           },
           "missingContent": {
@@ -3232,7 +3241,7 @@
           },
           {
             "type": "object",
-            "description": "Submit feedback for a v2 job. Include at least one substantive signal such as issues, note, valuableSources, missingContent, querySuggestions, url, or pageNumbers.",
+            "description": "Submit feedback for a v2 job. Include at least one substantive signal such as issues, note, valuableSources, valuableResultPositions for search, missingContent, querySuggestions, url, or pageNumbers.",
             "properties": {
               "endpoint": {
                 "type": "string",

@@ -52,6 +52,7 @@ describeIf(TEST_PRODUCTION)("Search feedback tests", () => {
               reason: "Most directly answered the question.",
             },
           ],
+          valuableResultPositions: [1],
           missingContent: [
             {
               topic: "Enterprise pricing",
@@ -73,6 +74,37 @@ describeIf(TEST_PRODUCTION)("Search feedback tests", () => {
       expect(result.creditsRefunded).toBe(1);
       expect(result.alreadySubmitted).toBeFalsy();
       expect(typeof result.feedbackId).toBe("string");
+
+      const documentId = `search:${raw.body.id}:web:0`;
+      const [feedbackRow] = await db
+        .select({
+          valuable_sources: schema.search_feedback.valuable_sources,
+          metadata: schema.search_feedback.metadata,
+        })
+        .from(schema.search_feedback)
+        .where(eq(schema.search_feedback.id, result.feedbackId))
+        .limit(1);
+
+      expect(feedbackRow).toBeTruthy();
+      expect(feedbackRow.valuable_sources).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ url: raw.body.data.web[0].url }),
+          expect.objectContaining({
+            documentId,
+            searchId: raw.body.id,
+            resultType: "web",
+            resultIndex: 0,
+            position: 1,
+            source: "position",
+          }),
+        ]),
+      );
+      expect(feedbackRow.metadata).toEqual(
+        expect.objectContaining({
+          valuableResultPositions: [1],
+          valuableResultDocumentIds: [documentId],
+        }),
+      );
     },
     90000,
   );
