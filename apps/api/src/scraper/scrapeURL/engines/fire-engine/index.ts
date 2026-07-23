@@ -360,6 +360,20 @@ export async function scrapeURLWithFireEngineChromeCDP(
       hasFormatOfType(meta.options.formats, "branding") ||
       shouldRunYoutubePostprocessor;
 
+    // Branding needs media *loaded* (real image dimensions in the DOM), not
+    // *rendered* — but blockMedia: false routes to chrome-cdp-render, whose
+    // real-rendering browser runs the page's visual code on CPU and can stall
+    // the main thread for minutes on animation/filter-heavy pages. Opt out of
+    // render routing unless something actually needs visual output.
+    const needsVisualRendering =
+      hasFormatOfType(meta.options.formats, "screenshot") !== undefined ||
+      (meta.options.actions ?? []).some(a => a.type === "screenshot") ||
+      hasAudio ||
+      hasVideo ||
+      shouldRunYoutubePostprocessor;
+    const forceNonRender =
+      hasBranding && shouldAllowMedia && !needsVisualRendering;
+
     const request: FireEngineScrapeRequestCommon &
       FireEngineScrapeRequestChromeCDP = {
       url: meta.rewrittenUrl ?? meta.url,
@@ -385,6 +399,7 @@ export async function scrapeURLWithFireEngineChromeCDP(
         meta.internalOptions.saveScrapeResultToGCS,
       zeroDataRetention: meta.internalOptions.zeroDataRetention,
       ...(shouldAllowMedia ? { blockMedia: false } : {}),
+      ...(forceNonRender ? { forceNonRender: true } : {}),
       persistentStorage: meta.options.profile
         ? {
             uniqueId: `${createHash("sha256").update(meta.internalOptions.teamId).digest("hex").slice(0, 16)}_${meta.options.profile.name}`,
