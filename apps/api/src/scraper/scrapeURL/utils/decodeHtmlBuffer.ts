@@ -10,18 +10,29 @@ import { TextDecoder } from "util";
  *
  * This avoids false positives where the text "charset=..." appears inside
  * an unrelated attribute value, a different tag, or in body/script content.
+ * Raw-text elements (<script>, <style>, <textarea>) are stripped before
+ * scanning, so a literal `<meta charset=...>` inside a string or template
+ * literal cannot be mistaken for a real declaration.
  *
  * @returns The trimmed charset label, or undefined if none found.
  */
 function extractMetaCharset(prologue: string): string | undefined {
   // Strip HTML comments so that <meta ...> inside <!-- --> is ignored.
-  const withoutComments = prologue.replace(/<!--[\s\S]*?-->/g, "");
+  let sanitized = prologue.replace(/<!--[\s\S]*?-->/g, "");
+
+  // Strip <script>...</script> and <style>...</style> blocks so that a
+  // literal `<meta charset=...>` appearing inside a string, template literal,
+  // or comment within raw-text elements is not mistaken for a real tag.
+  sanitized = sanitized
+    .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, "")
+    .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, "")
+    .replace(/<textarea\b[^>]*>[\s\S]*?<\/textarea>/gi, "");
 
   // Match each <meta ...> start tag (self-closing or open tag).
   const metaTagRe = /<meta\b[^>]*\/?>/gi;
   let match: RegExpExecArray | null;
 
-  while ((match = metaTagRe.exec(withoutComments)) !== null) {
+  while ((match = metaTagRe.exec(sanitized)) !== null) {
     const tag = match[0];
 
     // Extract all attributes into a map: name -> value (or name -> "" for
