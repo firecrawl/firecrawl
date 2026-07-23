@@ -14,17 +14,22 @@ import { TextDecoder } from "util";
  * @returns The trimmed charset label, or undefined if none found.
  */
 function extractMetaCharset(prologue: string): string | undefined {
+  // Strip HTML comments so that <meta ...> inside <!-- --> is ignored.
+  const withoutComments = prologue.replace(/<!--[\s\S]*?-->/g, "");
+
   // Match each <meta ...> start tag (self-closing or open tag).
   const metaTagRe = /<meta\b[^>]*\/?>/gi;
   let match: RegExpExecArray | null;
 
-  while ((match = metaTagRe.exec(prologue)) !== null) {
+  while ((match = metaTagRe.exec(withoutComments)) !== null) {
     const tag = match[0];
 
     // Extract all attributes into a map: name -> value (or name -> "" for
     // boolean-like attributes).  Handles single/double/no quotes.
+    // The unquoted-value branch (\S+) must not consume the closing '>', so
+    // it is limited to characters that are not '>'.
     const attrs: Record<string, string> = {};
-    const attrRe = /(\w[-:\w]*)\s*=\s*(?:"([^"]*)"|'([^']*)'|(\S+))|(\w[-:\w]*)/gi;
+    const attrRe = /(\w[-:\w]*)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^>\s]+))|(\w[-:\w]*)/gi;
     let attrMatch: RegExpExecArray | null;
     while ((attrMatch = attrRe.exec(tag)) !== null) {
       const name = (attrMatch[1] || attrMatch[5]).toLowerCase();
