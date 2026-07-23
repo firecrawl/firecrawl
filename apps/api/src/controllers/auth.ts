@@ -615,6 +615,20 @@ export async function authenticateUser(
   })(req, res, mode, options);
 }
 
+/**
+ * Builds the rate limiter for an authenticated team from its Autumn rate-limit
+ * multiplier. Shared by the OAuth and API-key paths so their limiter setup
+ * can't diverge.
+ */
+async function buildAuthenticatedRateLimiter(
+  teamId: string,
+  orgId: string | null | undefined,
+  mode?: RateLimiterMode,
+): Promise<RateLimiterRedis> {
+  const multiplier = await autumnService.getRateLimitMultiplier(teamId, orgId);
+  return getAutumnRateLimiter(mode ?? RateLimiterMode.Crawl, multiplier);
+}
+
 async function supaAuthenticateUser(
   req,
   res,
@@ -691,13 +705,10 @@ async function supaAuthenticateUser(
     subscriptionData = {
       team_id: teamId,
     };
-    const rateLimitMultiplier = await autumnService.getRateLimitMultiplier(
+    rateLimiter = await buildAuthenticatedRateLimiter(
       teamId,
       chunk.org_id,
-    );
-    rateLimiter = getAutumnRateLimiter(
-      mode ?? RateLimiterMode.Crawl,
-      rateLimitMultiplier,
+      mode,
     );
   } else {
     normalizedApi = parseApi(token);
@@ -724,13 +735,10 @@ async function supaAuthenticateUser(
     subscriptionData = {
       team_id: teamId,
     };
-    const rateLimitMultiplier = await autumnService.getRateLimitMultiplier(
+    rateLimiter = await buildAuthenticatedRateLimiter(
       teamId,
       chunk.org_id,
-    );
-    rateLimiter = getAutumnRateLimiter(
-      mode ?? RateLimiterMode.Crawl,
-      rateLimitMultiplier,
+      mode,
     );
   }
 
