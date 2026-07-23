@@ -61,6 +61,8 @@ export type FireEngineScrapeRequestChromeCDP = {
   skipTlsVerification?: boolean;
   actions?: InternalAction[];
   blockMedia?: boolean;
+  /** Opt out of render-engine routing (blockMedia: false normally forces it). */
+  forceNonRender?: boolean;
   mobile?: boolean;
   disableSmartWaitCache?: boolean;
   persistentStorage?: { uniqueId: string };
