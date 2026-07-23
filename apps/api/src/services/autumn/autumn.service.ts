@@ -263,6 +263,7 @@ export class AutumnService {
         featureId,
         value,
         properties,
+        overageBehavior: "overflow",
       });
       logger.info("Autumn track succeeded", {
         customerId,

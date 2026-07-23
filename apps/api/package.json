@@ -97,7 +97,7 @@
     "ajv-formats": "^3.0.1",
     "amqplib": "^0.10.9",
     "async-mutex": "^0.5.0",
-    "autumn-js": "1.2.30",
+    "autumn-js": "1.2.43",
     "axios": "^1.18.0",
     "body-parser": "^1.20.6",
     "bullmq": "^5.56.7",
