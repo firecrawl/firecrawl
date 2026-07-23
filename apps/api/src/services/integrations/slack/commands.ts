@@ -18,7 +18,7 @@ import {
   type MonitorRow,
 } from "../../monitoring/types";
 import { getTeamBalance } from "../../autumn/usage";
-import { getACUCTeam } from "../../../controllers/auth";
+import { autumnService } from "../../autumn/autumn.service";
 import { getConcurrencyLimitActiveJobsCount } from "../../../lib/concurrency-redis";
 import type { SlackInstallationRow } from "./types";
 import { escapeSlackText, slackLink } from "./messages";
@@ -229,7 +229,8 @@ async function listResponse(
   }
 
   const lines = monitors.map(m => {
-    const statusEmoji = m.status === "active" ? ":green_circle:" : ":pause_button:";
+    const statusEmoji =
+      m.status === "active" ? ":green_circle:" : ":pause_button:";
     const slackOn =
       (m.notification as { slack?: { enabled?: boolean } } | null)?.slack
         ?.enabled === true
@@ -247,8 +248,9 @@ async function listResponse(
 // domains like "example.com/pricing" (prepends https://). Returns the
 // normalized URL, or null when the token isn't URL-like (→ web search monitor).
 function parseWatchUrl(token: string): string | null {
-  const looksLikeDomain =
-    /^([a-z0-9-]+\.)+[a-z]{2,}(\/\S*)?(\?\S*)?$/i.test(token);
+  const looksLikeDomain = /^([a-z0-9-]+\.)+[a-z]{2,}(\/\S*)?(\?\S*)?$/i.test(
+    token,
+  );
   const candidate = /^https?:\/\//i.test(token)
     ? token
     : looksLikeDomain
@@ -256,7 +258,8 @@ function parseWatchUrl(token: string): string | null {
       : token;
   try {
     const parsed = new URL(candidate);
-    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return null;
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:")
+      return null;
     return parsed.toString();
   } catch {
     return null;
@@ -272,7 +275,8 @@ async function watchResponse(
 ): Promise<SlackCommandResponse> {
   const trimmedArg = arg.trim();
   const spaceIdx = trimmedArg.search(/\s/);
-  const firstToken = spaceIdx === -1 ? trimmedArg : trimmedArg.slice(0, spaceIdx);
+  const firstToken =
+    spaceIdx === -1 ? trimmedArg : trimmedArg.slice(0, spaceIdx);
   const rest = spaceIdx === -1 ? "" : trimmedArg.slice(spaceIdx + 1).trim();
 
   const url = parseWatchUrl(firstToken);
@@ -302,7 +306,11 @@ async function createWebsiteMonitor(
       name: `Slack: ${host}`,
       schedule: { cron: DEFAULT_WATCH_CRON, timezone: "UTC" },
       targets: [
-        { type: "scrape", urls: [url], scrapeOptions: { formats: ["markdown"] } },
+        {
+          type: "scrape",
+          urls: [url],
+          scrapeOptions: { formats: ["markdown"] },
+        },
       ],
       notification: {
         slack: {
@@ -448,7 +456,9 @@ async function cancelResponse(
   });
 
   if (!updated) {
-    return ephemeral("Sorry, I couldn't pause that monitor. Try the dashboard.");
+    return ephemeral(
+      "Sorry, I couldn't pause that monitor. Try the dashboard.",
+    );
   }
 
   return ephemeral(
@@ -465,9 +475,9 @@ async function accountResponse(
   installation: SlackInstallationRow,
 ): Promise<SlackCommandResponse> {
   const teamId = installation.team_id;
-  const [balance, acuc, activeJobs] = await Promise.all([
+  const [balance, concurrencyLimit, activeJobs] = await Promise.all([
     getTeamBalance(teamId).catch(() => null),
-    getACUCTeam(teamId).catch(() => null),
+    autumnService.getConcurrencyLimit(teamId).catch(() => null),
     getConcurrencyLimitActiveJobsCount(teamId).catch(() => null),
   ]);
 
@@ -479,7 +489,10 @@ async function accountResponse(
     } else if (balance.planCredits > 0) {
       const pctLeft = Math.max(
         0,
-        Math.min(100, Math.round((balance.remaining / balance.planCredits) * 100)),
+        Math.min(
+          100,
+          Math.round((balance.remaining / balance.planCredits) * 100),
+        ),
       );
       lines.push(
         `*Credits:* ${formatNumber(balance.remaining)} / ${formatNumber(balance.planCredits)} (${pctLeft}% left this cycle)`,
@@ -498,13 +511,17 @@ async function accountResponse(
     lines.push("*Credits:* unavailable right now");
   }
 
-  if (typeof acuc?.concurrency === "number") {
-    lines.push(`*Concurrency:* ${activeJobs ?? 0} / ${acuc.concurrency} active`);
+  if (typeof concurrencyLimit === "number") {
+    lines.push(
+      `*Concurrency:* ${activeJobs ?? 0} / ${concurrencyLimit} active`,
+    );
   }
 
   const workspace = installation.slack_team_name ?? installation.slack_team_id;
   lines.push(`*Slack:* connected to *${escapeSlackText(workspace)}*`);
-  lines.push(`Open the ${slackLink(dashboardUrl("/app/monitoring"), "dashboard")}.`);
+  lines.push(
+    `Open the ${slackLink(dashboardUrl("/app/monitoring"), "dashboard")}.`,
+  );
 
   return ephemeral(lines.join("\n"));
 }
@@ -589,7 +606,9 @@ async function checksResponse(
     return `${checkStatusEmoji(c.status)} ${escapeSlackText(c.status)} · ${when} · ${c.changed_count}c ${c.new_count}n ${c.removed_count}r ${c.error_count}e`;
   });
   return ephemeral(
-    [`*Recent checks — ${escapeSlackText(monitor.name)}:*`, ...lines].join("\n"),
+    [`*Recent checks — ${escapeSlackText(monitor.name)}:*`, ...lines].join(
+      "\n",
+    ),
   );
 }
 
@@ -652,7 +671,9 @@ async function resumeResponse(
     input: { status: "active" },
   });
   if (!updated) {
-    return ephemeral("Sorry, I couldn't resume that monitor. Try the dashboard.");
+    return ephemeral(
+      "Sorry, I couldn't resume that monitor. Try the dashboard.",
+    );
   }
 
   return ephemeral(
