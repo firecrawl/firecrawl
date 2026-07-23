@@ -13,7 +13,7 @@ const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const POSTGRES_BIGINT_MAX = 9_223_372_036_854_775_807n;
 const SECRET_PATTERN =
-  /(?:\bBearer\s+\S+|\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b|\b(?:sk-|fc-|fco_|fcr_)[A-Za-z0-9_-]+)/i;
+  /(?:\bBearer\s+\S+|\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b|\b(?:sk-|fc-|fco_|fcr_|fcmcp_)[A-Za-z0-9_-]+)/i;
 const RETENTION_DAYS = 30;
 const CLEANUP_BATCH_SIZE = 500;
 const ALLOWED_FIELDS = new Set([
@@ -267,7 +267,6 @@ export function startMcpActionLogRetentionWorkerIfEnabled(options: {
 }
 
 export async function recordMcpActionLog(db: any, input: McpActionLogInput) {
-  await cleanupExpiredMcpActionLogs(db);
   const expiresAt = new Date(
     Date.now() + RETENTION_DAYS * 24 * 60 * 60 * 1000,
   ).toISOString();

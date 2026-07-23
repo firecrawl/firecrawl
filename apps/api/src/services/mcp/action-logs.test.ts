@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { PgDialect } from "drizzle-orm/pg-core";
 
 vi.mock("../../db/rpc", () => ({
   authCreditUsageChunkFromTeam: vi.fn((db: any, teamId: string) =>
@@ -125,6 +126,9 @@ describe("MCP action log contract", () => {
     expect(() => input({ client_name: "Bearer fco_secret" })).toThrow(
       "client_name must not contain secret-like values",
     );
+    expect(() => input({ client_name: "fcmcp_secret" })).toThrow(
+      "client_name must not contain secret-like values",
+    );
   });
 
   it("validates API-key and OAuth actors against the claimed team", async () => {
@@ -194,20 +198,24 @@ describe("MCP action log contract", () => {
     expect(primaryDb.getTeamPolicy).toHaveBeenCalledWith(TEAM_ID);
   });
 
-  it("treats duplicate delivery as a successful no-op and cleans expired rows", async () => {
-    const execute = vi.fn().mockResolvedValue(undefined);
+  it("reports stored and duplicate deliveries correctly", async () => {
     const returning = vi.fn().mockResolvedValue([]);
     const onConflictDoNothing = vi.fn(() => ({ returning }));
     const values = vi.fn(() => ({ onConflictDoNothing }));
-    const db = { execute, insert: () => ({ values }) };
+    const db = { insert: () => ({ values }) };
 
     await expect(recordMcpActionLog(db as any, input())).resolves.toEqual({
       disposition: "duplicate",
       id: null,
     });
-    expect(execute).toHaveBeenCalledTimes(1);
     expect(onConflictDoNothing).toHaveBeenCalledTimes(1);
     expect((values.mock.calls as any)[0][0]).not.toHaveProperty("user_agent");
+
+    returning.mockResolvedValueOnce([{ id: REQUEST_ID }]);
+    await expect(recordMcpActionLog(db as any, input())).resolves.toEqual({
+      disposition: "stored",
+      id: REQUEST_ID,
+    });
   });
 
   it("requires the API-key owner to be a team admin or owner for listing", async () => {
@@ -217,10 +225,14 @@ describe("MCP action log contract", () => {
       [{ owner_id: USER_ID }],
       [{ role: "admin" }],
     ];
+    const predicates: unknown[] = [];
     const db = {
       select: vi.fn(() => ({
         from: () => ({
-          where: () => ({ limit: () => Promise.resolve(rows.shift() ?? []) }),
+          where: (predicate: unknown) => {
+            predicates.push(predicate);
+            return { limit: () => Promise.resolve(rows.shift() ?? []) };
+          },
         }),
       })),
     };
@@ -231,6 +243,10 @@ describe("MCP action log contract", () => {
     await expect(
       authorizeMcpActionLogViewer(db as any, TEAM_ID, "9007199254740993"),
     ).resolves.toEqual({ userId: USER_ID, role: "admin" });
+    const keyLookup = new PgDialect().sqlToQuery(predicates[2] as any);
+    expect(keyLookup.params).toEqual(["9007199254740993", TEAM_ID]);
+    const membershipLookup = new PgDialect().sqlToQuery(predicates[3] as any);
+    expect(membershipLookup.params).toEqual([USER_ID, TEAM_ID]);
 
     const noOwner = {
       select: () => ({

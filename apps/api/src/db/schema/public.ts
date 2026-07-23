@@ -15,6 +15,7 @@ import {
   bytea,
   check,
   foreignKey,
+  index,
   unique,
 } from "drizzle-orm/pg-core";
 
@@ -583,6 +584,9 @@ export const mcp_action_logs = pgTable(
       table.team_id,
       table.request_id,
     ),
+    // Mirrors the DB migration and keeps the retention worker's bounded
+    // expiry scan indexed as the table grows.
+    index("mcp_action_logs_expires_idx").on(table.expires_at),
   ],
 );
 
