@@ -456,7 +456,7 @@ const KEYLESS_SUSPICIOUS_IP_MESSAGE = `Unfortunately, your IP address looks susp
  */
 async function handleKeylessAuth(
   req,
-  mode: RateLimiterMode | undefined,
+  mode: RateLimiterMode,
   allowKeyless: boolean | undefined,
 ): Promise<AuthResponse> {
   const unauthorized: AuthResponse = {
@@ -598,7 +598,7 @@ async function handleKeylessAuth(
 export async function authenticateUser(
   req,
   res,
-  mode?: RateLimiterMode,
+  mode: RateLimiterMode,
   options?: { allowKeyless?: boolean },
 ): Promise<AuthResponse> {
   const bypassChunk = mockACUC();
@@ -623,16 +623,16 @@ export async function authenticateUser(
 async function buildAuthenticatedRateLimiter(
   teamId: string,
   orgId: string | null | undefined,
-  mode?: RateLimiterMode,
+  mode: RateLimiterMode,
 ): Promise<RateLimiterRedis> {
   const multiplier = await autumnService.getRateLimitMultiplier(teamId, orgId);
-  return getAutumnRateLimiter(mode ?? RateLimiterMode.Crawl, multiplier);
+  return getAutumnRateLimiter(mode, multiplier);
 }
 
 async function supaAuthenticateUser(
   req,
   res,
-  mode?: RateLimiterMode,
+  mode: RateLimiterMode,
   options?: { allowKeyless?: boolean },
 ): Promise<AuthResponse> {
   const authHeader =
