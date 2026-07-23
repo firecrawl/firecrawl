@@ -57,11 +57,18 @@ export const findImages = (): FindImagesResult => {
       seenRoots.add(root);
       roots.push(root);
       try {
+        // Push discovered roots in reverse so pop() visits siblings in
+        // document order — preserving the previous recursive (pre-order DFS)
+        // traversal, which candidate dedup depends on for first-seen ties.
+        const discovered: ShadowRoot[] = [];
         root.querySelectorAll("*").forEach(el => {
           const shadow = (el as Element & { shadowRoot?: ShadowRoot })
             .shadowRoot;
-          if (shadow) pending.push(shadow);
+          if (shadow) discovered.push(shadow);
         });
+        for (let i = discovered.length - 1; i >= 0; i--) {
+          pending.push(discovered[i]);
+        }
       } catch (_) {
         // Ignore errors
       }
