@@ -319,7 +319,10 @@ def wait_for_batch_completion(
     start_time = time.monotonic()
     
     while True:
-        status_job = get_batch_scrape_status(client, job_id)
+        status_job = get_batch_scrape_status(
+            client, job_id,
+            pagination_config=PaginationConfig(auto_paginate=False)
+        )
         
         # Check if job is complete
         if status_job.status in ["completed", "failed", "cancelled"]:
