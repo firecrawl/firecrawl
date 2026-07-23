@@ -155,4 +155,50 @@ describe("decodeHtmlBuffer", () => {
     expect(result.charset).toBeUndefined();
     expect(result.text).toContain("héllo");
   });
+
+  // --- Regression: literal <meta charset=...> inside <script> raw-text context ---
+
+  it("does not match a literal <meta charset=...> inside a <script> string", () => {
+    // A script containing a string that looks like a meta tag should not
+    // be mistaken for a real charset declaration.
+    const html =
+      '<html><head><script>const meta = \'<meta charset="latin1">\';</script></head>' +
+      '<body>héllo</body></html>';
+    const buf = Buffer.from(html, "utf8");
+    const result = decodeHtmlBuffer(buf, "text/html");
+    expect(result.charset).toBeUndefined();
+    expect(result.text).toContain("héllo");
+  });
+
+  it("does not match a literal <meta charset=...> inside a <script> template literal", () => {
+    const html =
+      '<html><head><script>const meta = `<meta charset="latin1">`;</script></head>' +
+      '<body>héllo</body></html>';
+    const buf = Buffer.from(html, "utf8");
+    const result = decodeHtmlBuffer(buf, "text/html");
+    expect(result.charset).toBeUndefined();
+    expect(result.text).toContain("héllo");
+  });
+
+  it("does not match a literal <meta charset=...> inside a <style> block", () => {
+    const html =
+      '<html><head><style>/* <meta charset="latin1"> */</style></head>' +
+      '<body>héllo</body></html>';
+    const buf = Buffer.from(html, "utf8");
+    const result = decodeHtmlBuffer(buf, "text/html");
+    expect(result.charset).toBeUndefined();
+    expect(result.text).toContain("héllo");
+  });
+
+  it("still detects real meta charset when a <script> precedes it in the prologue", () => {
+    // A real meta tag after a script block should still be detected.
+    const html =
+      '<html><head><script>var x=1;</script><meta charset="latin1"></head>' +
+      '<body>héllo</body></html>';
+    const buf = Buffer.from(html, "latin1");
+    const result = decodeHtmlBuffer(buf, "text/html");
+    expect(result.charset).toBe("latin1");
+    expect(result.charsetSource).toBe("meta");
+    expect(result.text).toContain("héllo");
+  });
 });
