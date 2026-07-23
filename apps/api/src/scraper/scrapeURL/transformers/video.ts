@@ -2,6 +2,7 @@ import { Meta } from "..";
 import { Document, VideoItem } from "../../../controllers/v2/types";
 import { config } from "../../../config";
 import { hasFormatOfType } from "../../../lib/format-utils";
+import { throwIfMediaAccessDenied } from "../error";
 
 let cachedUrlRegex: RegExp | null = null;
 let cacheTimestamp = 0;
@@ -176,6 +177,7 @@ async function fetchLegacyVideoIfSupported(meta: Meta, document: Document) {
     const error = await response
       .json()
       .catch(() => ({ detail: "Unknown error" }));
+    throwIfMediaAccessDenied(error);
     throw new Error(`Video download failed: ${error.detail}`);
   }
 

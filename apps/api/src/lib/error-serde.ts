@@ -33,6 +33,7 @@ import {
   BrandingNotSupportedError,
   AudioUnsupportedUrlError,
   VideoUnsupportedUrlError,
+  MediaAccessDeniedError,
   XTwitterConfigurationError,
 } from "../scraper/scrapeURL/error";
 import { UnsafeDomainBlockedError } from "./threat-protection/error";
@@ -70,6 +71,7 @@ const errorMap: Record<ErrorCodes, any> = {
   CRAWL_DENIAL: CrawlDenialError,
   SCRAPE_AUDIO_UNSUPPORTED_URL: AudioUnsupportedUrlError,
   SCRAPE_VIDEO_UNSUPPORTED_URL: VideoUnsupportedUrlError,
+  SCRAPE_MEDIA_ACCESS_DENIED: MediaAccessDeniedError,
   SCRAPE_X_TWITTER_CONFIGURATION_ERROR: XTwitterConfigurationError,
   MAP_FAILED: MapFailedError,
   unsafe_domain_blocked: UnsafeDomainBlockedError,
