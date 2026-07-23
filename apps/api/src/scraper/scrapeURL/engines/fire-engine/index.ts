@@ -288,7 +288,9 @@ export function shouldForceNonRender(input: {
 
   const needsVisualRendering =
     hasFormatOfType(input.formats, "screenshot") !== undefined ||
-    (input.actions ?? []).some(a => a.type === "screenshot") ||
+    (input.actions ?? []).some(
+      a => a.type === "screenshot" || a.type === "pdf",
+    ) ||
     hasFormatOfType(input.formats, "audio") !== undefined ||
     hasFormatOfType(input.formats, "video") !== undefined ||
     input.youtubePostprocessorWillRun;

@@ -31,6 +31,16 @@ describe("shouldForceNonRender", () => {
     ).toBe(false);
   });
 
+  it("keeps render routing when a pdf action is requested", () => {
+    expect(
+      shouldForceNonRender({
+        formats: fmt(["branding"]),
+        actions: [{ type: "pdf" }],
+        youtubePostprocessorWillRun: false,
+      }),
+    ).toBe(false);
+  });
+
   it("keeps render routing for audio/video formats", () => {
     expect(
       shouldForceNonRender({
