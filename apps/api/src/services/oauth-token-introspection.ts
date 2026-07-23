@@ -2,7 +2,6 @@ import { createHash } from "node:crypto";
 import { logger } from "../lib/logger";
 import { getValue, setValue } from "./redis";
 
-const ACTIVE_CACHE_TTL_SECONDS = 300;
 const INACTIVE_CACHE_TTL_SECONDS = 60;
 const DEFAULT_TIMEOUT_MS = 10_000;
 
@@ -82,6 +81,21 @@ function isUsable(
   );
 }
 
+function isValidActiveResponse(data: OAuthIntrospectionResponse): boolean {
+  return (
+    data.active === true &&
+    typeof data.api_key === "string" &&
+    /^fc-[0-9a-f]{32}$/i.test(data.api_key) &&
+    typeof data.scope === "string" &&
+    typeof data.client_id === "string" &&
+    data.client_id.length > 0 &&
+    typeof data.team_id === "string" &&
+    data.team_id.length > 0 &&
+    hasValidCredentialPurpose(data) &&
+    Number.isFinite(data.exp)
+  );
+}
+
 export async function resolveOAuthToken(
   token: string,
   options: {
@@ -104,12 +118,8 @@ export async function resolveOAuthToken(
     try {
       const parsed = JSON.parse(cached) as OAuthIntrospectionResponse;
       if (parsed.active !== true) return null;
-      if (!hasValidCredentialPurpose(parsed)) throw new Error("invalid cache");
-      // Grant-backed credentials are resolved live so membership loss,
-      // revocation, and refresh-token reuse take effect immediately.
-      if (parsed.credential_purpose !== "hosted_mcp_oauth") {
-        return isUsable(parsed, options.expectedResource) ? parsed : null;
-      }
+      // Active OAuth credentials are always resolved live so revocation,
+      // membership loss, and refresh-token reuse take effect immediately.
     } catch {
       // Corrupt cache entries are treated as misses.
     }
@@ -142,10 +152,7 @@ export async function resolveOAuthToken(
     const data = (await response.json()) as OAuthIntrospectionResponse;
     if (
       typeof data.active !== "boolean" ||
-      (data.active === true &&
-        (typeof data.api_key !== "string" ||
-          !Number.isFinite(data.exp) ||
-          !hasValidCredentialPurpose(data)))
+      (data.active === true && !isValidActiveResponse(data))
     ) {
       throw new OAuthIntrospectionUnavailableError(
         "OAuth introspection returned an invalid response",
@@ -162,14 +169,6 @@ export async function resolveOAuthToken(
       return null;
     }
 
-    if (data.credential_purpose !== "hosted_mcp_oauth") {
-      const remainingSeconds = data.exp - Math.floor(Date.now() / 1000);
-      await writeCache(
-        key,
-        JSON.stringify(data),
-        Math.min(remainingSeconds, ACTIVE_CACHE_TTL_SECONDS),
-      );
-    }
     return data;
   } catch (error) {
     if (error instanceof OAuthIntrospectionUnavailableError) throw error;

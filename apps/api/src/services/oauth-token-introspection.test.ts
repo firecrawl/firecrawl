@@ -15,7 +15,7 @@ import {
 
 const ACTIVE = {
   active: true,
-  api_key: "fc-test",
+  api_key: "fc-11111111111111118111111111111111",
   scope: "firecrawl:global",
   client_id: "client-1",
   team_id: "team-1",
@@ -87,7 +87,7 @@ describe("OAuth token introspection", () => {
     ).resolves.toBeNull();
   });
 
-  it("caches ordinary credentials for at most five minutes", async () => {
+  it("does not positive-cache ordinary credentials", async () => {
     const fetchFn = vi.fn().mockResolvedValue(response(ACTIVE));
     await expect(
       resolveOAuthToken("fco_token", {
@@ -97,11 +97,7 @@ describe("OAuth token introspection", () => {
         fetchFn,
       }),
     ).resolves.toEqual(ACTIVE);
-    expect(setValue).toHaveBeenCalledWith(
-      expect.stringMatching(/^oauth_token:[0-9a-f]{32}$/),
-      JSON.stringify(ACTIVE),
-      300,
-    );
+    expect(setValue).not.toHaveBeenCalled();
   });
 
   it("never positive-caches managed credentials", async () => {
@@ -136,6 +132,22 @@ describe("OAuth token introspection", () => {
         fetchFn,
       }),
     ).resolves.toBeNull();
+    expect(fetchFn).toHaveBeenCalledTimes(1);
+  });
+
+  it("ignores an active general cache entry and observes live revocation", async () => {
+    getValue.mockResolvedValue(JSON.stringify(ACTIVE));
+    const fetchFn = vi.fn().mockResolvedValue(response({ active: false }));
+
+    await expect(
+      resolveOAuthToken("fco_token", {
+        introspectUrl: "https://example.test/introspect",
+        introspectSecret: "secret",
+        expectedResource: FIRECRAWL_REST_RESOURCE,
+        fetchFn,
+      }),
+    ).resolves.toBeNull();
+
     expect(fetchFn).toHaveBeenCalledTimes(1);
   });
 

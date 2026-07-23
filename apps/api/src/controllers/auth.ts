@@ -196,7 +196,20 @@ async function getACUC(
   if (useCache) {
     const cachedACUC = await getValue(cacheKeyACUC);
     if (cachedACUC !== null) {
-      return JSON.parse(cachedACUC);
+      try {
+        return JSON.parse(cachedACUC);
+      } catch (error) {
+        logger.warn("Ignoring malformed ACUC cache entry", {
+          cacheKey: cacheKeyACUC,
+          error,
+        });
+        void deleteKey(cacheKeyACUC).catch(deleteError => {
+          logger.warn("Failed to delete malformed ACUC cache entry", {
+            cacheKey: cacheKeyACUC,
+            error: deleteError,
+          });
+        });
+      }
     }
   }
 
@@ -643,7 +656,7 @@ async function supaAuthenticateUser(
   } else if (token.startsWith("fcmcp_")) {
     const delegation = verifyMcpDelegatedCredential(
       token,
-      config.KEYLESS_PROXY_SECRET,
+      config.MCP_DELEGATED_CREDENTIAL_SECRET,
     );
     if (!delegation) {
       return {
@@ -698,6 +711,16 @@ async function supaAuthenticateUser(
         status: 401,
       };
     }
+    if (
+      introspection.credential_purpose !== undefined &&
+      introspection.credential_purpose !== "general"
+    ) {
+      return {
+        success: false,
+        error: "Unauthorized: Invalid token",
+        status: 401,
+      };
+    }
 
     // Use the resolved fc- API key to get the normal ACUC chunk
     const resolvedApi = parseApi(introspection.api_key);
@@ -706,10 +729,17 @@ async function supaAuthenticateUser(
       false,
       true,
       RateLimiterMode.Scrape,
-      introspection.credential_purpose ?? "general",
+      "general",
     );
 
     if (chunk === null) {
+      return {
+        success: false,
+        error: "Unauthorized: Invalid token",
+        status: 401,
+      };
+    }
+    if (chunk.team_id !== introspection.team_id) {
       return {
         success: false,
         error: "Unauthorized: Invalid token",
