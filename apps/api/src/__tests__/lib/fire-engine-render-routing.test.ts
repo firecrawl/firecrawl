@@ -31,6 +31,34 @@ describe("shouldForceNonRender", () => {
     ).toBe(false);
   });
 
+  it("still opts out with DOM-only user actions", () => {
+    expect(
+      shouldForceNonRender({
+        formats: fmt(["branding"]),
+        actions: [
+          { type: "wait" },
+          { type: "click" },
+          { type: "scroll" },
+          { type: "write" },
+          { type: "press" },
+          { type: "scrape" },
+          { type: "executeJavascript" },
+        ],
+        youtubePostprocessorWillRun: false,
+      }),
+    ).toBe(true);
+  });
+
+  it("keeps render routing for unknown/future action types (fail safe)", () => {
+    expect(
+      shouldForceNonRender({
+        formats: fmt(["branding"]),
+        actions: [{ type: "someFutureVisualAction" }],
+        youtubePostprocessorWillRun: false,
+      }),
+    ).toBe(false);
+  });
+
   it("keeps render routing when a pdf action is requested", () => {
     expect(
       shouldForceNonRender({

@@ -273,6 +273,19 @@ async function performFireEngineScrape<
   });
 }
 
+// Action types that only read or drive the DOM and don't depend on rendered
+// output. Anything not listed here (screenshot, pdf, and any future visual
+// action) keeps render-engine routing — fail safe, not open.
+const DOM_SAFE_ACTION_TYPES: ReadonlySet<string> = new Set([
+  "wait",
+  "click",
+  "write",
+  "press",
+  "scroll",
+  "scrape",
+  "executeJavascript",
+]);
+
 // Branding needs media *loaded* (real image dimensions in the DOM), not
 // *rendered* — but blockMedia: false routes to the render engine, where
 // visually heavy pages can stall the renderer. Opt out of render routing
@@ -288,9 +301,7 @@ export function shouldForceNonRender(input: {
 
   const needsVisualRendering =
     hasFormatOfType(input.formats, "screenshot") !== undefined ||
-    (input.actions ?? []).some(
-      a => a.type === "screenshot" || a.type === "pdf",
-    ) ||
+    (input.actions ?? []).some(a => !DOM_SAFE_ACTION_TYPES.has(a.type)) ||
     hasFormatOfType(input.formats, "audio") !== undefined ||
     hasFormatOfType(input.formats, "video") !== undefined ||
     input.youtubePostprocessorWillRun;
