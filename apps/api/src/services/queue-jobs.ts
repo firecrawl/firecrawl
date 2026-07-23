@@ -408,6 +408,7 @@ async function addScrapeJobRaw(
       );
       maxConcurrency = await getEffectiveConcurrencyLimit(
         webScraperOptions.team_id,
+        acuc?.concurrency,
         acuc?.org_id,
       );
     }
@@ -703,8 +704,17 @@ export async function addScrapeJobs(
       addToCQ = jobsForcedToCQ;
     } else {
       const now = Date.now();
-      const acuc = await getACUCTeam(teamId, false, true, RateLimiterMode.Scrape);
-      maxConcurrency = await getEffectiveConcurrencyLimit(teamId, acuc?.org_id);
+      const acuc = await getACUCTeam(
+        teamId,
+        false,
+        true,
+        RateLimiterMode.Scrape,
+      );
+      maxConcurrency = await getEffectiveConcurrencyLimit(
+        teamId,
+        acuc?.concurrency,
+        acuc?.org_id,
+      );
       await cleanOldConcurrencyLimitEntries(teamId, now);
 
       currentActiveConcurrency = (

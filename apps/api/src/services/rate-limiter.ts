@@ -59,13 +59,31 @@ const BASE_RATE_LIMITS: Partial<Record<RateLimiterMode, number>> = {
 };
 
 /**
- * Builds the per-minute rate limiter for a mode. Autumn is authoritative: the
- * effective limit is `base × multiplier` for multiplier-scaled modes, where the
- * multiplier comes from Autumn's `rate_limits` feature (default ×1 when Autumn
- * can't tell us). ACUC rate limits are no longer consulted. Modes without a
- * base fall back to the static fallback table.
+ * Builds the per-minute rate limiter for a mode from the team's ACUC
+ * rate_limits (the default path). Used unless the Autumn-limits ramp is enabled
+ * for the org, in which case getAutumnRateLimiter is used instead.
  */
 export function getRateLimiter(
+  mode: RateLimiterMode,
+  rate_limits: AuthCreditUsageChunk["rate_limits"] | null,
+): RateLimiterRedis {
+  let rateLimit = rate_limits?.[mode] ?? fallbackRateLimits?.[mode] ?? 500;
+
+  if (mode === RateLimiterMode.Search || mode === RateLimiterMode.Scrape) {
+    // TEMP: Mogery
+    rateLimit = Math.max(rateLimit, 100);
+  }
+
+  return createRateLimiter(`${mode}`, rateLimit);
+}
+
+/**
+ * Builds the per-minute rate limiter for a mode from an Autumn rate-limit
+ * multiplier: the effective limit is `base × multiplier` for multiplier-scaled
+ * modes (default ×1). Modes without a base fall back to the static table. Used
+ * only when the Autumn-limits ramp is enabled for the org.
+ */
+export function getAutumnRateLimiter(
   mode: RateLimiterMode,
   multiplier: number = 1,
 ): RateLimiterRedis {

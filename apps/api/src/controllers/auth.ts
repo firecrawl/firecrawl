@@ -6,7 +6,7 @@ import { logger } from "../lib/logger";
 import { parseApi } from "../lib/parseApi";
 import { withAuth } from "../lib/withAuth";
 import { getAgentSponsorStatus } from "../services/agent-sponsor";
-import { getRateLimiter } from "../services/rate-limiter";
+import { getRateLimiter, getAutumnRateLimiter } from "../services/rate-limiter";
 import {
   KEYLESS_FREE_TIER_LIMIT_MESSAGE,
   consumeKeylessRequest,
@@ -27,7 +27,10 @@ import {
 } from "../db/rpc";
 import { AuthResponse, RateLimiterMode } from "../types";
 import { AuthCreditUsageChunk, AuthCreditUsageChunkFromTeam } from "./v1/types";
-import { autumnService } from "../services/autumn/autumn.service";
+import {
+  autumnService,
+  isAutumnLimitsEnabled,
+} from "../services/autumn/autumn.service";
 
 function normalizedApiIsUuid(potentialUuid: string): boolean {
   // Check if the string is a valid UUID
@@ -656,11 +659,11 @@ async function supaAuthenticateUser(
   }
   if (token == config.PREVIEW_TOKEN) {
     if (mode == RateLimiterMode.CrawlStatus) {
-      rateLimiter = getRateLimiter(RateLimiterMode.CrawlStatus);
+      rateLimiter = getRateLimiter(RateLimiterMode.CrawlStatus, null);
     } else if (mode == RateLimiterMode.ExtractStatus) {
-      rateLimiter = getRateLimiter(RateLimiterMode.ExtractStatus);
+      rateLimiter = getRateLimiter(RateLimiterMode.ExtractStatus, null);
     } else {
-      rateLimiter = getRateLimiter(RateLimiterMode.Preview);
+      rateLimiter = getRateLimiter(RateLimiterMode.Preview, null);
     }
     teamId = `preview_${iptoken}`;
   } else if (token.startsWith("fco_")) {
@@ -691,14 +694,21 @@ async function supaAuthenticateUser(
     subscriptionData = {
       team_id: teamId,
     };
-    const rateLimitMultiplier = await autumnService.getRateLimitMultiplier(
-      teamId,
-      chunk.org_id,
-    );
-    rateLimiter = getRateLimiter(
-      mode ?? RateLimiterMode.Crawl,
-      rateLimitMultiplier,
-    );
+    if (isAutumnLimitsEnabled(chunk.org_id)) {
+      const rateLimitMultiplier = await autumnService.getRateLimitMultiplier(
+        teamId,
+        chunk.org_id,
+      );
+      rateLimiter = getAutumnRateLimiter(
+        mode ?? RateLimiterMode.Crawl,
+        rateLimitMultiplier,
+      );
+    } else {
+      rateLimiter = getRateLimiter(
+        mode ?? RateLimiterMode.Crawl,
+        chunk.rate_limits,
+      );
+    }
   } else {
     normalizedApi = parseApi(token);
     if (!normalizedApiIsUuid(normalizedApi)) {
@@ -724,14 +734,21 @@ async function supaAuthenticateUser(
     subscriptionData = {
       team_id: teamId,
     };
-    const rateLimitMultiplier = await autumnService.getRateLimitMultiplier(
-      teamId,
-      chunk.org_id,
-    );
-    rateLimiter = getRateLimiter(
-      mode ?? RateLimiterMode.Crawl,
-      rateLimitMultiplier,
-    );
+    if (isAutumnLimitsEnabled(chunk.org_id)) {
+      const rateLimitMultiplier = await autumnService.getRateLimitMultiplier(
+        teamId,
+        chunk.org_id,
+      );
+      rateLimiter = getAutumnRateLimiter(
+        mode ?? RateLimiterMode.Crawl,
+        rateLimitMultiplier,
+      );
+    } else {
+      rateLimiter = getRateLimiter(
+        mode ?? RateLimiterMode.Crawl,
+        chunk.rate_limits,
+      );
+    }
   }
 
   if (chunk?.flags?.ipRestriction) {
