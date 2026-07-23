@@ -25,6 +25,19 @@ const CONCURRENCY_FEATURE_ID = "CONCURRENCY";
 const RATE_LIMIT_FEATURE_ID = "rate_limits";
 
 /**
+ * Coerces a raw Autumn balance figure into a usable non-negative number, or
+ * null when it's absent or not a sane finite value. These balances feed
+ * directly into rate-limit and concurrency controls, so NaN, Infinity, and
+ * negatives are rejected rather than passed through a bare `typeof` check.
+ */
+function sanitizeBalanceValue(value: unknown): number | null {
+  if (typeof value !== "number" || !Number.isFinite(value) || value < 0) {
+    return null;
+  }
+  return value;
+}
+
+/**
  * Maps a billing endpoint to the Autumn feature ID it should bill against.
  *
  * Search balance and usage are tracked against a dedicated SEARCH_CREDITS
@@ -536,7 +549,10 @@ export class AutumnService {
   private async getEntityLimits(
     teamId: string,
     orgId?: string | null,
-  ): Promise<{ concurrency: number | null; rateLimitMultiplier: number | null }> {
+  ): Promise<{
+    concurrency: number | null;
+    rateLimitMultiplier: number | null;
+  }> {
     if (!autumnClient || this.isPreviewTeam(teamId)) {
       return { concurrency: null, rateLimitMultiplier: null };
     }
@@ -564,7 +580,8 @@ export class AutumnService {
 
     try {
       const resolvedOrgId = orgId ?? (await this.resolveOrgId(teamId));
-      if (!resolvedOrgId) return { concurrency: null, rateLimitMultiplier: null };
+      if (!resolvedOrgId)
+        return { concurrency: null, rateLimitMultiplier: null };
 
       const entity: any = await autumnClient.entities.get({
         customerId: resolvedOrgId,
@@ -574,15 +591,15 @@ export class AutumnService {
 
       // CONCURRENCY: use `remaining` (the post-drain effective per-team cap;
       // `granted` would surface the pre-drain inherited customer total).
-      const concurrencyRemaining = balances[CONCURRENCY_FEATURE_ID]?.remaining;
-      const concurrency =
-        typeof concurrencyRemaining === "number" ? concurrencyRemaining : null;
+      const concurrency = sanitizeBalanceValue(
+        balances[CONCURRENCY_FEATURE_ID]?.remaining,
+      );
 
       // rate_limits: a static per-plan multiplier that is never consumed, so
       // read `granted` (the entitled amount) rather than `remaining`.
-      const grantedMultiplier = balances[RATE_LIMIT_FEATURE_ID]?.granted;
-      const rateLimitMultiplier =
-        typeof grantedMultiplier === "number" ? grantedMultiplier : null;
+      const rateLimitMultiplier = sanitizeBalanceValue(
+        balances[RATE_LIMIT_FEATURE_ID]?.granted,
+      );
 
       return store(concurrency, rateLimitMultiplier);
     } catch (error) {
@@ -599,8 +616,8 @@ export class AutumnService {
   /**
    * Reads the team's allowed concurrent-browser count from Autumn's
    * entity-scoped CONCURRENCY balance. Returns null when Autumn is unavailable,
-   * the entity is missing, or there's no balance — callers should take the max
-   * with the ACUC value.
+   * the entity is missing, or there's no balance — callers fall back to the
+   * default via getEffectiveConcurrencyLimit.
    */
   async getConcurrencyLimit(
     teamId: string,
@@ -610,18 +627,17 @@ export class AutumnService {
   }
 
   /**
-   * Reads the team's rate-limit multiplier from Autumn's `rate_limits` feature
-   * (Free ×1, Hobby ×10, Standard ×50, Growth ×500, Scale ×1000, Enterprise
-   * ×2500, and off-tier custom values). Effective rate limits are
-   * `base × multiplier`. Returns null when Autumn is unavailable or the feature
-   * is missing — callers should default to a multiplier of 1. Shares a single
-   * cached entity fetch with getConcurrencyLimit, so it adds no Autumn call.
+   * Reads the team's rate-limit multiplier from Autumn's `rate_limits` feature.
+   * Effective rate limits are `base × multiplier`. Falls back to a multiplier of
+   * 1 when Autumn is unavailable or the feature is missing, so callers don't
+   * have to. Shares a single cached entity fetch with getConcurrencyLimit, so it
+   * adds no Autumn call.
    */
   async getRateLimitMultiplier(
     teamId: string,
     orgId?: string | null,
-  ): Promise<number | null> {
-    return (await this.getEntityLimits(teamId, orgId)).rateLimitMultiplier;
+  ): Promise<number> {
+    return (await this.getEntityLimits(teamId, orgId)).rateLimitMultiplier ?? 1;
   }
 
   /**

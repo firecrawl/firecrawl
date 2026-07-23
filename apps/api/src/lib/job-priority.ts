@@ -51,8 +51,7 @@ export async function getJobPriority({
     // (ACUC is no longer consulted). A missing multiplier defaults to ×1, i.e.
     // the Free-tier bucket/modifier. The multiplier lookup reuses the cached
     // Autumn entity fetch, so it adds no extra Autumn call.
-    const multiplier =
-      (await autumnService.getRateLimitMultiplier(team_id)) ?? 1;
+    const multiplier = await autumnService.getRateLimitMultiplier(team_id);
     const { bucketLimit, planModifier } =
       inferPlanPriorityFromMultiplier(multiplier);
 

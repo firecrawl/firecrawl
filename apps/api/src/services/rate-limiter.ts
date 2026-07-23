@@ -37,10 +37,10 @@ const fallbackRateLimits: AuthCreditUsageChunk["rate_limits"] = {
 };
 
 /**
- * Per-minute base rate limits, i.e. the ×1 (Free tier) values. The effective
- * limit is `base × multiplier`, where the multiplier is read from Autumn's
- * `rate_limits` feature (Free ×1, Hobby ×10, Standard ×50, …). Modes absent
- * here are not multiplier-scaled and keep their ACUC / fallback value.
+ * Per-minute base rate limits, i.e. the ×1 values. The effective limit is
+ * `base × multiplier`, where the multiplier is read from Autumn's `rate_limits`
+ * feature. Modes absent here are not multiplier-scaled and use the fallback
+ * table.
  *
  * Endpoint → mode mapping: agent + extract share `Extract`; interact is
  * `Browser`; interactExecute is `BrowserExecute`; agentStatus is
@@ -88,10 +88,9 @@ export function getRateLimiter(
 
 /**
  * Plan-priority tiers keyed by the minimum Autumn rate-limit multiplier that
- * qualifies. Values mirror the tuned production `plan_priority` for each plan
- * (free ×1 … enterprise ×2500). A customer's multiplier selects the highest
- * tier they meet or exceed, so off-tier multipliers round down (an unusual
- * ×200 customer gets Standard's priority, not Growth's).
+ * qualifies. Values mirror the tuned production `plan_priority` for each plan.
+ * A customer's multiplier selects the highest tier they meet or exceed, so
+ * off-tier multipliers round down.
  *
  * `bucketLimit` / `planModifier` only affect internal job-scheduling priority
  * (see getJobPriority) — never request success — so inferring them from the

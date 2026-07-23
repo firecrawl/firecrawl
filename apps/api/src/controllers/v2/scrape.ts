@@ -265,11 +265,10 @@ export async function scrapeController(
         }
         req.on("close", () => aborter.abort());
 
-        const baseConcurrency =
-          (await getEffectiveConcurrencyLimit(
-            req.auth.team_id,
-            req.acuc?.org_id,
-          )) || 1;
+        const baseConcurrency = await getEffectiveConcurrencyLimit(
+          req.auth.team_id,
+          req.acuc?.org_id,
+        );
         const concurrency = boostConcurrency
           ? baseConcurrency * AGENT_INTEROP_CONCURRENCY_BOOST
           : baseConcurrency;

@@ -190,10 +190,7 @@ export async function scrapeController(
     doc = await teamConcurrencySemaphore.withSemaphore(
       req.auth.team_id,
       jobId,
-      (await getEffectiveConcurrencyLimit(
-        req.auth.team_id,
-        req.acuc?.org_id,
-      )) || 1,
+      await getEffectiveConcurrencyLimit(req.auth.team_id, req.acuc?.org_id),
       aborter.signal,
       timeout ?? 60_000,
       async limited => {

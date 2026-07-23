@@ -108,6 +108,9 @@ async function reconcileTeam(
 
   // Autumn is authoritative for the team's concurrency; it's a single per-team
   // pool, so crawl and extract share the same effective limit.
+  // TODO: gate crawl + extract against one combined pool (sum of both active
+  // counts vs the single limit) instead of applying the same limit to each type
+  // independently, which currently lets a team run up to 2x the limit.
   const teamConcurrency = await getEffectiveConcurrencyLimit(ownerId);
   const maxCrawlConcurrency = teamConcurrency;
   const maxExtractConcurrency = teamConcurrency;
@@ -202,6 +205,9 @@ async function drainQueue(
 ): Promise<{ jobsPromoted: number; staleSkipped: number }> {
   // Autumn is authoritative for the team's concurrency; it's a single per-team
   // pool, so crawl and extract share the same effective limit.
+  // TODO: gate crawl + extract against one combined pool (sum of both active
+  // counts vs the single limit) instead of applying the same limit to each type
+  // independently, which currently lets a team run up to 2x the limit.
   const teamConcurrency = await getEffectiveConcurrencyLimit(ownerId);
   const maxCrawlConcurrency = teamConcurrency;
   const maxExtractConcurrency = teamConcurrency;

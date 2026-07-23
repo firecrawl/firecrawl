@@ -691,8 +691,10 @@ async function supaAuthenticateUser(
     subscriptionData = {
       team_id: teamId,
     };
-    const rateLimitMultiplier =
-      (await autumnService.getRateLimitMultiplier(teamId, chunk.org_id)) ?? 1;
+    const rateLimitMultiplier = await autumnService.getRateLimitMultiplier(
+      teamId,
+      chunk.org_id,
+    );
     rateLimiter = getRateLimiter(
       mode ?? RateLimiterMode.Crawl,
       rateLimitMultiplier,
@@ -722,8 +724,10 @@ async function supaAuthenticateUser(
     subscriptionData = {
       team_id: teamId,
     };
-    const rateLimitMultiplier =
-      (await autumnService.getRateLimitMultiplier(teamId, chunk.org_id)) ?? 1;
+    const rateLimitMultiplier = await autumnService.getRateLimitMultiplier(
+      teamId,
+      chunk.org_id,
+    );
     rateLimiter = getRateLimiter(
       mode ?? RateLimiterMode.Crawl,
       rateLimitMultiplier,
