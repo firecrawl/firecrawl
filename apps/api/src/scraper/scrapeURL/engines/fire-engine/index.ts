@@ -273,6 +273,29 @@ async function performFireEngineScrape<
   });
 }
 
+// Branding needs media *loaded* (real image dimensions in the DOM), not
+// *rendered* — but blockMedia: false routes to the render engine, where
+// visually heavy pages can stall the renderer. Opt out of render routing
+// unless something actually needs visual output.
+export function shouldForceNonRender(input: {
+  formats: Meta["options"]["formats"];
+  actions?: Array<{ type: string }>;
+  youtubePostprocessorWillRun: boolean;
+}): boolean {
+  if (!hasFormatOfType(input.formats, "branding")) {
+    return false;
+  }
+
+  const needsVisualRendering =
+    hasFormatOfType(input.formats, "screenshot") !== undefined ||
+    (input.actions ?? []).some(a => a.type === "screenshot") ||
+    hasFormatOfType(input.formats, "audio") !== undefined ||
+    hasFormatOfType(input.formats, "video") !== undefined ||
+    input.youtubePostprocessorWillRun;
+
+  return !needsVisualRendering;
+}
+
 export async function scrapeURLWithFireEngineChromeCDP(
   meta: Meta,
 ): Promise<EngineScrapeResult> {
@@ -360,18 +383,11 @@ export async function scrapeURLWithFireEngineChromeCDP(
       hasFormatOfType(meta.options.formats, "branding") ||
       shouldRunYoutubePostprocessor;
 
-    // Branding needs media *loaded* (real image dimensions in the DOM), not
-    // *rendered* — but blockMedia: false routes to the render engine, where
-    // visually heavy pages can stall the renderer. Opt out of render routing
-    // unless something actually needs visual output.
-    const needsVisualRendering =
-      hasFormatOfType(meta.options.formats, "screenshot") !== undefined ||
-      (meta.options.actions ?? []).some(a => a.type === "screenshot") ||
-      hasAudio ||
-      hasVideo ||
-      shouldRunYoutubePostprocessor;
-    const forceNonRender =
-      hasBranding && shouldAllowMedia && !needsVisualRendering;
+    const forceNonRender = shouldForceNonRender({
+      formats: meta.options.formats,
+      actions: meta.options.actions ?? undefined,
+      youtubePostprocessorWillRun: shouldRunYoutubePostprocessor,
+    });
 
     const request: FireEngineScrapeRequestCommon &
       FireEngineScrapeRequestChromeCDP = {
