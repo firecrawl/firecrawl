@@ -167,7 +167,7 @@ describe("OAuth token introspection", () => {
 
   it("does not fail authentication when a cache write fails", async () => {
     setValue.mockRejectedValue(new Error("Redis unavailable"));
-    const fetchFn = vi.fn().mockResolvedValue(response(ACTIVE));
+    const fetchFn = vi.fn().mockResolvedValue(response({ active: false }));
     await expect(
       resolveOAuthToken("fco_token", {
         introspectUrl: "https://example.test/introspect",
@@ -175,7 +175,8 @@ describe("OAuth token introspection", () => {
         expectedResource: FIRECRAWL_REST_RESOURCE,
         fetchFn,
       }),
-    ).resolves.toEqual(ACTIVE);
+    ).resolves.toBeNull();
+    expect(setValue).toHaveBeenCalledTimes(1);
   });
 
   it("rejects unknown credential purposes from live introspection", async () => {

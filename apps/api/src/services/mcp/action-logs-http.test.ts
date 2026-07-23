@@ -106,6 +106,16 @@ describe("MCP action log ingest route", () => {
     expect(ingest).not.toHaveBeenCalled();
   });
 
+  it("enforces the body limit for non-JSON content types", async () => {
+    const response = await request(app())
+      .post("/v2/mcp/action-logs")
+      .set("Authorization", "Bearer test-secret")
+      .set("Content-Type", "text/plain")
+      .send("x".repeat(65 * 1024));
+    expect(response.status).toBe(413);
+    expect(ingest).not.toHaveBeenCalled();
+  });
+
   it("rate limits accepted writers with Retry-After", async () => {
     const server = app(
       createMcpActionLogRateLimitMiddleware({

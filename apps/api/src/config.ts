@@ -47,7 +47,7 @@ const configSchema = z.object({
   // Dedicated signer/verifier secret for short-lived MCP delegated credentials.
   // Keep separate from KEYLESS_PROXY_SECRET because delegated credentials can
   // authorize billed requests for a managed OAuth connection.
-  MCP_DELEGATED_CREDENTIAL_SECRET: z.string().min(32).optional(),
+  MCP_DELEGATED_CREDENTIAL_SECRET: emptyStringAsUndefined(z.string().min(32)),
   // Optional Spur Context API token (https://docs.spur.us/context-api). When
   // set, keyless requests have their client IP checked against Spur and are
   // refused if the IP fronts anonymizing/rotating infrastructure (VPN/proxy/

@@ -124,7 +124,10 @@ export function registerMcpActionLogIngestRoute(
     requireWritesEnabled,
     authenticate,
     options?.rateLimit ?? createMcpActionLogRateLimitMiddleware(),
-    express.json({ limit: BODY_LIMIT }),
+    // This is a JSON-only internal endpoint. Parse every media type here so
+    // callers cannot bypass the route-specific limit with a different
+    // Content-Type before the global parser runs.
+    express.json({ limit: BODY_LIMIT, type: () => true }),
     wrap(ingestMcpActionLogController),
   );
 }

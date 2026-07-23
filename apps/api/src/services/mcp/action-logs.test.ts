@@ -22,6 +22,7 @@ import {
 const TEAM_ID = "00000000-0000-4000-8000-000000000001";
 const USER_ID = "00000000-0000-4000-8000-000000000002";
 const REQUEST_ID = "00000000-0000-4000-8000-000000000003";
+const UUID_V7_REQUEST_ID = "0190a5d4-7b10-7cc3-98c4-0242ac120002";
 
 function input(overrides: Record<string, unknown> = {}) {
   return normalizeMcpActionLogInput({
@@ -88,6 +89,12 @@ describe("MCP action log contract", () => {
     ).toThrow("resource must be a canonical hosted MCP URL");
     expect(() => input({ resource: "https://example.com/v2/mcp" })).toThrow(
       "resource must be a canonical hosted MCP URL",
+    );
+  });
+
+  it("accepts UUIDv7 request IDs", () => {
+    expect(input({ request_id: UUID_V7_REQUEST_ID }).request_id).toBe(
+      UUID_V7_REQUEST_ID,
     );
   });
 
