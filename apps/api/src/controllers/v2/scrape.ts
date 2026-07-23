@@ -38,6 +38,7 @@ import {
 import { projectScrapeCredits } from "../../lib/keyless-credit-projection";
 import { applyAgentAuthDiscoveryHeader } from "../../lib/agent-auth-discovery";
 import { resolveThreatProtection } from "../../lib/threat-protection/request";
+import { getEffectiveConcurrencyLimit } from "../../lib/concurrency-limit";
 
 const AGENT_INTEROP_CONCURRENCY_BOOST = 3;
 
@@ -264,7 +265,10 @@ export async function scrapeController(
         }
         req.on("close", () => aborter.abort());
 
-        const baseConcurrency = req.acuc?.concurrency || 1;
+        const baseConcurrency = await getEffectiveConcurrencyLimit(
+          req.auth.team_id,
+          req.acuc?.org_id,
+        );
         const concurrency = boostConcurrency
           ? baseConcurrency * AGENT_INTEROP_CONCURRENCY_BOOST
           : baseConcurrency;
@@ -329,7 +333,7 @@ export async function scrapeController(
                       zeroDataRetention,
                       teamFlags: req.acuc?.flags ?? null,
                       orgId: req.acuc?.org_id ?? null,
-                      teamConcurrency: req.acuc?.concurrency ?? null,
+                      teamConcurrency: baseConcurrency,
                       agentIndexOnly: (req as any).agentIndexOnly ?? false,
                       threatProtection: threatProtection.policy ?? undefined,
                     },
@@ -443,6 +447,17 @@ export async function scrapeController(
           }
 
           if (e.code === "unsafe_domain_blocked") {
+            setSpanAttributes(span, {
+              "scrape.status_code": 403,
+            });
+            return res.status(403).json({
+              success: false,
+              code: e.code,
+              error: e.message,
+            });
+          }
+
+          if (e.code === "SCRAPE_MEDIA_ACCESS_DENIED") {
             setSpanAttributes(span, {
               "scrape.status_code": 403,
             });

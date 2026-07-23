@@ -5,7 +5,7 @@ import { logger } from "../lib/logger";
 import { parseApi } from "../lib/parseApi";
 import { withAuth } from "../lib/withAuth";
 import { getAgentSponsorStatus } from "../services/agent-sponsor";
-import { getRateLimiter } from "../services/rate-limiter";
+import { getRateLimiter, getAutumnRateLimiter } from "../services/rate-limiter";
 import {
   KEYLESS_FREE_TIER_LIMIT_MESSAGE,
   consumeKeylessRequest,
@@ -33,6 +33,7 @@ import {
 } from "../services/oauth-token-introspection";
 import type { OAuthIntrospectionResponse } from "../services/oauth-token-introspection";
 import { verifyMcpDelegatedCredential } from "../lib/mcp-delegated-credential";
+import { autumnService } from "../services/autumn/autumn.service";
 
 function normalizedApiIsUuid(potentialUuid: string): boolean {
   // Check if the string is a valid UUID
@@ -418,7 +419,7 @@ const KEYLESS_SUSPICIOUS_IP_MESSAGE = `Unfortunately, your IP address looks susp
  */
 async function handleKeylessAuth(
   req,
-  mode: RateLimiterMode | undefined,
+  mode: RateLimiterMode,
   allowKeyless: boolean | undefined,
 ): Promise<AuthResponse> {
   const unauthorized: AuthResponse = {
@@ -560,7 +561,7 @@ async function handleKeylessAuth(
 export async function authenticateUser(
   req,
   res,
-  mode?: RateLimiterMode,
+  mode: RateLimiterMode,
   options?: { allowKeyless?: boolean },
 ): Promise<AuthResponse> {
   const bypassChunk = mockACUC();
@@ -577,10 +578,24 @@ export async function authenticateUser(
   })(req, res, mode, options);
 }
 
+/**
+ * Builds the rate limiter for an authenticated team from its Autumn rate-limit
+ * multiplier. Shared by the OAuth and API-key paths so their limiter setup
+ * can't diverge.
+ */
+async function buildAuthenticatedRateLimiter(
+  teamId: string,
+  orgId: string | null | undefined,
+  mode: RateLimiterMode,
+): Promise<RateLimiterRedis> {
+  const multiplier = await autumnService.getRateLimitMultiplier(teamId, orgId);
+  return getAutumnRateLimiter(mode, multiplier);
+}
+
 async function supaAuthenticateUser(
   req,
   res,
-  mode?: RateLimiterMode,
+  mode: RateLimiterMode,
   options?: { allowKeyless?: boolean },
 ): Promise<AuthResponse> {
   const authHeader =
@@ -618,11 +633,11 @@ async function supaAuthenticateUser(
   }
   if (token == config.PREVIEW_TOKEN) {
     if (mode == RateLimiterMode.CrawlStatus) {
-      rateLimiter = getRateLimiter(RateLimiterMode.CrawlStatus, token);
+      rateLimiter = getRateLimiter(RateLimiterMode.CrawlStatus, null);
     } else if (mode == RateLimiterMode.ExtractStatus) {
-      rateLimiter = getRateLimiter(RateLimiterMode.ExtractStatus, token);
+      rateLimiter = getRateLimiter(RateLimiterMode.ExtractStatus, null);
     } else {
-      rateLimiter = getRateLimiter(RateLimiterMode.Preview, token);
+      rateLimiter = getRateLimiter(RateLimiterMode.Preview, null);
     }
     teamId = `preview_${iptoken}`;
   } else if (token.startsWith("fcmcp_")) {
@@ -656,9 +671,10 @@ async function supaAuthenticateUser(
 
     teamId = chunk.team_id;
     subscriptionData = { team_id: teamId };
-    rateLimiter = getRateLimiter(
-      mode ?? RateLimiterMode.Crawl,
-      chunk.rate_limits,
+    rateLimiter = await buildAuthenticatedRateLimiter(
+      teamId,
+      chunk.org_id,
+      mode,
     );
   } else if (token.startsWith("fco_")) {
     // OAuth access token — resolve via introspection endpoint
@@ -706,9 +722,10 @@ async function supaAuthenticateUser(
     subscriptionData = {
       team_id: teamId,
     };
-    rateLimiter = getRateLimiter(
-      mode ?? RateLimiterMode.Crawl,
-      chunk.rate_limits,
+    rateLimiter = await buildAuthenticatedRateLimiter(
+      teamId,
+      chunk.org_id,
+      mode,
     );
   } else {
     normalizedApi = parseApi(token);
@@ -735,9 +752,10 @@ async function supaAuthenticateUser(
     subscriptionData = {
       team_id: teamId,
     };
-    rateLimiter = getRateLimiter(
-      mode ?? RateLimiterMode.Crawl,
-      chunk.rate_limits,
+    rateLimiter = await buildAuthenticatedRateLimiter(
+      teamId,
+      chunk.org_id,
+      mode,
     );
   }
 

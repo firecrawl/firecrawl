@@ -102,9 +102,11 @@ export function buildSearchQuery(
 
   const includeDomains = domainOptions.includeDomains ?? [];
   const excludeDomains = domainOptions.excludeDomains ?? [];
+  // Bare `site:` operators, not a parenthesized group: some backends don't
+  // parse `(site:foo.com)` and drop the filter, leaking off-domain results.
   const includeFilter =
     includeDomains.length > 0
-      ? " (" + includeDomains.map(domain => `site:${domain}`).join(" OR ") + ")"
+      ? " " + includeDomains.map(domain => `site:${domain}`).join(" OR ")
       : "";
   const excludeFilter =
     excludeDomains.length > 0

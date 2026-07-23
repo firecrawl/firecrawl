@@ -273,6 +273,42 @@ async function performFireEngineScrape<
   });
 }
 
+// Action types that only read or drive the DOM and don't depend on rendered
+// output. Anything not listed here (screenshot, pdf, and any future visual
+// action) keeps render-engine routing — fail safe, not open.
+const DOM_SAFE_ACTION_TYPES: ReadonlySet<string> = new Set([
+  "wait",
+  "click",
+  "write",
+  "press",
+  "scroll",
+  "scrape",
+  "executeJavascript",
+]);
+
+// Branding needs media *loaded* (real image dimensions in the DOM), not
+// *rendered* — but blockMedia: false routes to the render engine, where
+// visually heavy pages can stall the renderer. Opt out of render routing
+// unless something actually needs visual output.
+export function shouldForceNonRender(input: {
+  formats: Meta["options"]["formats"];
+  actions?: Array<{ type: string }>;
+  youtubePostprocessorWillRun: boolean;
+}): boolean {
+  if (!hasFormatOfType(input.formats, "branding")) {
+    return false;
+  }
+
+  const needsVisualRendering =
+    hasFormatOfType(input.formats, "screenshot") !== undefined ||
+    (input.actions ?? []).some(a => !DOM_SAFE_ACTION_TYPES.has(a.type)) ||
+    hasFormatOfType(input.formats, "audio") !== undefined ||
+    hasFormatOfType(input.formats, "video") !== undefined ||
+    input.youtubePostprocessorWillRun;
+
+  return !needsVisualRendering;
+}
+
 export async function scrapeURLWithFireEngineChromeCDP(
   meta: Meta,
 ): Promise<EngineScrapeResult> {
@@ -360,6 +396,12 @@ export async function scrapeURLWithFireEngineChromeCDP(
       hasFormatOfType(meta.options.formats, "branding") ||
       shouldRunYoutubePostprocessor;
 
+    const forceNonRender = shouldForceNonRender({
+      formats: meta.options.formats,
+      actions: meta.options.actions ?? undefined,
+      youtubePostprocessorWillRun: shouldRunYoutubePostprocessor,
+    });
+
     const request: FireEngineScrapeRequestCommon &
       FireEngineScrapeRequestChromeCDP = {
       url: meta.rewrittenUrl ?? meta.url,
@@ -385,6 +427,7 @@ export async function scrapeURLWithFireEngineChromeCDP(
         meta.internalOptions.saveScrapeResultToGCS,
       zeroDataRetention: meta.internalOptions.zeroDataRetention,
       ...(shouldAllowMedia ? { blockMedia: false } : {}),
+      ...(forceNonRender ? { forceNonRender: true } : {}),
       persistentStorage: meta.options.profile
         ? {
             uniqueId: `${createHash("sha256").update(meta.internalOptions.teamId).digest("hex").slice(0, 16)}_${meta.options.profile.name}`,

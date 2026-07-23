@@ -111,13 +111,24 @@ describe("Search Query Builder", () => {
       expect(result.categoryMap.size).toBe(0);
     });
 
-    it("should add include domain filters", () => {
+    it("should add include domain filters without a parenthesized group", () => {
+      // Bare `site:` operators (no wrapping parens): some search backends drop
+      // a parenthesized `(site:...)` group, which would leak off-domain results.
       const result = buildSearchQuery("web scraping", undefined, {
         includeDomains: ["firecrawl.dev", "docs.firecrawl.dev"],
       });
       expect(result.query).toBe(
-        "web scraping (site:firecrawl.dev OR site:docs.firecrawl.dev)",
+        "web scraping site:firecrawl.dev OR site:docs.firecrawl.dev",
       );
+      expect(result.query).not.toContain("(");
+      expect(result.categoryMap.size).toBe(0);
+    });
+
+    it("should add a single include domain filter without parens or OR", () => {
+      const result = buildSearchQuery("web scraping", undefined, {
+        includeDomains: ["linkedin.com"],
+      });
+      expect(result.query).toBe("web scraping site:linkedin.com");
       expect(result.categoryMap.size).toBe(0);
     });
 
@@ -145,7 +156,7 @@ describe("Search Query Builder", () => {
         includeDomains: ["firecrawl.dev"],
       });
       expect(result.query).toBe(
-        "web scraping (site:github.com) (site:firecrawl.dev)",
+        "web scraping (site:github.com) site:firecrawl.dev",
       );
       expect(result.categoryMap.get("github.com")).toBe("github");
     });

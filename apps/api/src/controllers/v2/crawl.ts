@@ -36,6 +36,7 @@ import { checkUrl } from "../../lib/threat-protection";
 import { UnsafeDomainBlockedError } from "../../lib/threat-protection/error";
 import { calculateThreatScanCredits } from "../../lib/scrape-billing";
 import { billTeam } from "../../services/billing/credit_billing";
+import { getEffectiveConcurrencyLimit } from "../../lib/concurrency-limit";
 
 export async function crawlController(
   req: RequestWithAuth<{}, CrawlResponse, CrawlRequest>,
@@ -256,6 +257,10 @@ export async function crawlController(
     originalBodyLimit: preNormalizedBody.limit,
   });
 
+  const effectiveConcurrency = await getEffectiveConcurrencyLimit(
+    req.auth.team_id,
+    req.acuc?.org_id,
+  );
   const sc: StoredCrawl = {
     originUrl: req.body.url,
     crawlerOptions: toV0CrawlerOptions(finalCrawlerOptions),
@@ -273,9 +278,7 @@ export async function crawlController(
     createdAt: Date.now(),
     maxConcurrency:
       req.body.maxConcurrency !== undefined
-        ? req.acuc?.concurrency !== undefined
-          ? Math.min(req.body.maxConcurrency, req.acuc.concurrency)
-          : req.body.maxConcurrency
+        ? Math.min(req.body.maxConcurrency, effectiveConcurrency)
         : undefined,
     zeroDataRetention,
     v1: true,

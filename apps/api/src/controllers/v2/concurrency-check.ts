@@ -3,11 +3,9 @@ import {
   ConcurrencyCheckResponse,
   RequestWithAuth,
 } from "./types";
-import { AuthCreditUsageChunkFromTeam } from "../v1/types";
 import { Response } from "express";
-import { getACUCTeam } from "../auth";
-import { RateLimiterMode } from "../../types";
 import { getCombinedTeamActiveCount } from "../../services/worker/nuq-router";
+import { getEffectiveConcurrencyLimit } from "../../lib/concurrency-limit";
 
 // Basically just middleware and error wrapping
 export async function concurrencyCheckController(
@@ -21,28 +19,14 @@ export async function concurrencyCheckController(
     });
   }
 
-  let otherACUC: AuthCreditUsageChunkFromTeam | null = null;
-  if (!req.acuc.is_extract) {
-    otherACUC = await getACUCTeam(
-      req.auth.team_id,
-      false,
-      true,
-      RateLimiterMode.Extract,
-    );
-  } else {
-    otherACUC = await getACUCTeam(
-      req.auth.team_id,
-      false,
-      true,
-      RateLimiterMode.Crawl,
-    );
-  }
-
   const activeJobsOfTeam = await getCombinedTeamActiveCount(req.auth.team_id);
 
   return res.status(200).json({
     success: true,
     concurrency: activeJobsOfTeam,
-    maxConcurrency: Math.max(req.acuc.concurrency, otherACUC?.concurrency ?? 0),
+    maxConcurrency: await getEffectiveConcurrencyLimit(
+      req.auth.team_id,
+      req.acuc.org_id,
+    ),
   });
 }

@@ -92,6 +92,7 @@ vi.mock("../../../db/connection", () => ({
 }));
 
 vi.mock("../../../config", () => ({
+  // Stubbed so importing the real config (which parses env) is avoided.
   config: {},
 }));
 
@@ -473,6 +474,7 @@ describe("trackCredits", () => {
     );
     expect(usageCall).toBeDefined();
     expect((usageCall as any[])[0].properties?.endpoint).toBe("extract");
+    expect((usageCall as any[])[0].overageBehavior).toBe("overflow");
   });
 
   it("returns false when the Autumn track request fails", async () => {
@@ -548,6 +550,7 @@ describe("refundCredits", () => {
     expect((refundCall as any[])[0].properties?.source).toBe("autumn_refund");
     expect((refundCall as any[])[0].properties?.endpoint).toBe("extract");
     expect((refundCall as any[])[0].featureId).toBe("CREDITS");
+    expect((refundCall as any[])[0].overageBehavior).toBe("overflow");
   });
 
   it("refunds against SEARCH_CREDITS when featureId is provided", async () => {

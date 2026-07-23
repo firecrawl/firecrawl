@@ -45,27 +45,48 @@ export const findImages = (): FindImagesResult => {
     if (src) imgs.push({ type, src });
   };
 
-  const querySelectorAllIncludingShadowRoots = (
-    selector: string,
-  ): Element[] => {
-    const results: Element[] = [];
+  // Discover shadow roots once — walking every element per selector query is
+  // O(selectors × DOM) and stalls the renderer on large pages.
+  const allQueryRoots: Array<Document | ShadowRoot> = (() => {
+    const roots: Array<Document | ShadowRoot> = [];
     const seenRoots = new Set<Document | ShadowRoot>();
-    function walk(root: Document | ShadowRoot): void {
-      if (!root || seenRoots.has(root)) return;
+    const pending: Array<Document | ShadowRoot> = [document];
+    while (pending.length > 0) {
+      const root = pending.pop()!;
+      if (!root || seenRoots.has(root)) continue;
       seenRoots.add(root);
+      roots.push(root);
       try {
-        const list = root.querySelectorAll(selector);
-        list.forEach(el => results.push(el));
+        // Push discovered roots in reverse so pop() visits siblings in
+        // document order — preserving the previous recursive (pre-order DFS)
+        // traversal, which candidate dedup depends on for first-seen ties.
+        const discovered: ShadowRoot[] = [];
         root.querySelectorAll("*").forEach(el => {
-          if ((el as Element & { shadowRoot?: ShadowRoot }).shadowRoot) {
-            walk((el as Element & { shadowRoot: ShadowRoot }).shadowRoot);
-          }
+          const shadow = (el as Element & { shadowRoot?: ShadowRoot })
+            .shadowRoot;
+          if (shadow) discovered.push(shadow);
         });
+        for (let i = discovered.length - 1; i >= 0; i--) {
+          pending.push(discovered[i]);
+        }
       } catch (_) {
         // Ignore errors
       }
     }
-    walk(document);
+    return roots;
+  })();
+
+  const querySelectorAllIncludingShadowRoots = (
+    selector: string,
+  ): Element[] => {
+    const results: Element[] = [];
+    for (const root of allQueryRoots) {
+      try {
+        root.querySelectorAll(selector).forEach(el => results.push(el));
+      } catch (_) {
+        // Ignore errors
+      }
+    }
     return results;
   };
 
@@ -1031,12 +1052,9 @@ export const findImages = (): FindImagesResult => {
   const allElementsWithBg = Array.from(document.querySelectorAll("div, span"));
 
   const allDivsWithBgImage = allElementsWithBg.filter(el => {
-    const style = getComputedStyleCached(el);
-    const bgImage = style.getPropertyValue("background-image");
-    const bgImageUrl = extractBackgroundImageUrl(bgImage);
-
-    if (!bgImageUrl) return false;
-
+    // Cheap attribute/DOM checks first — reading computed style on every
+    // div/span forces style recalc across the page and stalls the renderer
+    // on style-heavy pages (e.g. lots of backdrop-filter).
     const className = el.className || "";
     const parentLink = el.closest("a");
 
@@ -1054,13 +1072,20 @@ export const findImages = (): FindImagesResult => {
     const inHeaderNavCheck =
       el.closest('header, nav, [role="banner"]') !== null;
 
-    return (
+    const hasLogoIndicators =
       hasLogoDataAttr ||
       hasLogoClass ||
       (hasLogoAriaLabel && hasHomeHrefCheck) ||
       (hasLogoAriaLabel && inHeaderNavCheck) ||
-      (hasHomeHrefCheck && inHeaderNavCheck)
-    );
+      (hasHomeHrefCheck && inHeaderNavCheck);
+
+    if (!hasLogoIndicators) return false;
+
+    const style = getComputedStyleCached(el);
+    const bgImage = style.getPropertyValue("background-image");
+    const bgImageUrl = extractBackgroundImageUrl(bgImage);
+
+    return !!bgImageUrl;
   });
 
   allDivsWithBgImage.forEach(el => {
