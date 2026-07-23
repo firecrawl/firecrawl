@@ -259,7 +259,6 @@ export async function browserCreateController(
   // 0b. Enforce concurrency limit (shared pool with scrape/crawl/interact)
   const concurrencyLimit = await getEffectiveConcurrencyLimit(
     req.auth.team_id,
-    req.acuc?.concurrency,
     req.acuc?.org_id,
   );
   const activeCount = await getCombinedTeamActiveCount(req.auth.team_id);

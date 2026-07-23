@@ -1,6 +1,4 @@
-import { RateLimiterMode } from "../types";
 import { getRedisConnection } from "../services/queue-service";
-import { getACUCTeam } from "../controllers/auth";
 import { getCrawl, StoredCrawl } from "./crawl-redis";
 import { logger } from "./logger";
 import { abTestJob } from "../services/ab-test";
@@ -22,21 +20,20 @@ import {
 } from "./concurrency-redis";
 import { autumnService } from "../services/autumn/autumn.service";
 
-// Fallback when neither Autumn nor ACUC gives us a concurrency value.
+// Fallback when Autumn can't give us a concurrency value.
 const DEFAULT_CONCURRENCY_LIMIT = 2;
 
 /**
  * Returns the team's effective concurrency limit from Autumn's CONCURRENCY
  * balance. Autumn is authoritative; when it can't answer (unavailable, or the
- * entity is missing) we fall back to the ACUC value, then the default of 2.
+ * entity is missing) we fall back to the default of 2.
  */
 export async function getEffectiveConcurrencyLimit(
   teamId: string,
-  acucConcurrency: number | null | undefined,
   orgId?: string | null,
 ): Promise<number> {
   const autumnValue = await autumnService.getConcurrencyLimit(teamId, orgId);
-  return autumnValue ?? acucConcurrency ?? DEFAULT_CONCURRENCY_LIMIT;
+  return autumnValue ?? DEFAULT_CONCURRENCY_LIMIT;
 }
 
 const constructKey = constructConcurrencyLimitKey;
@@ -322,16 +319,8 @@ export async function concurrentJobDone(job: NuQJob<any>) {
       await cleanOldCrawlConcurrencyLimitEntries(job.data.crawl_id);
     }
 
-    const acuc = await getACUCTeam(
-      job.data.team_id,
-      false,
-      true,
-      job.data.is_extract ? RateLimiterMode.Extract : RateLimiterMode.Crawl,
-    );
     const maxTeamConcurrency = await getEffectiveConcurrencyLimit(
       job.data.team_id,
-      acuc?.concurrency,
-      acuc?.org_id,
     );
 
     let staleSkipped = 0;

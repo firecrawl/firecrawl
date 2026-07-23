@@ -26,7 +26,6 @@ export async function concurrencyCheckController(
     concurrency: activeJobsOfTeam,
     maxConcurrency: await getEffectiveConcurrencyLimit(
       req.auth.team_id,
-      req.acuc.concurrency,
       req.acuc.org_id,
     ),
   });
