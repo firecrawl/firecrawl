@@ -92,8 +92,8 @@ vi.mock("../../../db/connection", () => ({
 }));
 
 vi.mock("../../../config", () => ({
-  // Read at module load by autumn.service.
-  config: { AUTUMN_LIMITS_ENABLED_ORG_IDS: "" },
+  // Stubbed so importing the real config (which parses env) is avoided.
+  config: {},
 }));
 
 // Import AFTER mocks are wired up.

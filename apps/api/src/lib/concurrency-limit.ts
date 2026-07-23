@@ -20,31 +20,23 @@ import {
   pushConcurrencyLimitActiveJob,
   removeConcurrencyLimitActiveJob,
 } from "./concurrency-redis";
-import {
-  autumnService,
-  isAutumnLimitsEnabled,
-} from "../services/autumn/autumn.service";
+import { autumnService } from "../services/autumn/autumn.service";
 
-// Legacy fallback when neither ACUC nor Autumn gives us a concurrency value.
+// Fallback when neither Autumn nor ACUC gives us a concurrency value.
 const DEFAULT_CONCURRENCY_LIMIT = 2;
 
 /**
- * Returns the team's effective concurrency limit. When the Autumn-limits ramp
- * is enabled for the org, this comes from Autumn's CONCURRENCY balance (falling
- * back to the ACUC value, then the default, if Autumn can't answer). Otherwise
- * it's the ACUC value — the old, default behavior.
+ * Returns the team's effective concurrency limit from Autumn's CONCURRENCY
+ * balance. Autumn is authoritative; when it can't answer (unavailable, or the
+ * entity is missing) we fall back to the ACUC value, then the default of 2.
  */
 export async function getEffectiveConcurrencyLimit(
   teamId: string,
   acucConcurrency: number | null | undefined,
   orgId?: string | null,
 ): Promise<number> {
-  const acucValue = acucConcurrency ?? DEFAULT_CONCURRENCY_LIMIT;
-  if (!isAutumnLimitsEnabled(orgId)) {
-    return acucValue;
-  }
   const autumnValue = await autumnService.getConcurrencyLimit(teamId, orgId);
-  return autumnValue ?? acucValue;
+  return autumnValue ?? acucConcurrency ?? DEFAULT_CONCURRENCY_LIMIT;
 }
 
 const constructKey = constructConcurrencyLimitKey;

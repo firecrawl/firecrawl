@@ -85,18 +85,6 @@ const configSchema = z.object({
   LLAMAPARSE_API_KEY: z.string().optional(),
   STRIPE_SECRET_KEY: z.string().optional(),
   AUTUMN_SECRET_KEY: z.string().optional(),
-  // Ramp control for sourcing rate limits / concurrency / job priority from
-  // Autumn instead of ACUC. Two independent knobs (an org is enabled if it
-  // matches either); both default to the old ACUC behavior:
-  //   - AUTUMN_LIMITS_ENABLED_ORG_IDS: comma-separated org IDs to always enable
-  //     (or "*" for all). Use to pin specific verified orgs on first.
-  //   - AUTUMN_LIMITS_EXPERIMENT_PERCENT: stable per-org bucket ramp in [0,100].
-  AUTUMN_LIMITS_ENABLED_ORG_IDS: z.string().default(""),
-  AUTUMN_LIMITS_EXPERIMENT_PERCENT: z.coerce
-    .number()
-    .min(0)
-    .max(100)
-    .default(0),
   RESEND_API_KEY: z.string().optional(),
   PREVIEW_TOKEN: z.string().optional(),
   SEARCH_PREVIEW_TOKEN: z.string().optional(),

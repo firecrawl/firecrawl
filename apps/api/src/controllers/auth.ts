@@ -27,10 +27,7 @@ import {
 } from "../db/rpc";
 import { AuthResponse, RateLimiterMode } from "../types";
 import { AuthCreditUsageChunk, AuthCreditUsageChunkFromTeam } from "./v1/types";
-import {
-  autumnService,
-  isAutumnLimitsEnabled,
-} from "../services/autumn/autumn.service";
+import { autumnService } from "../services/autumn/autumn.service";
 
 function normalizedApiIsUuid(potentialUuid: string): boolean {
   // Check if the string is a valid UUID
@@ -694,21 +691,14 @@ async function supaAuthenticateUser(
     subscriptionData = {
       team_id: teamId,
     };
-    if (isAutumnLimitsEnabled(chunk.org_id)) {
-      const rateLimitMultiplier = await autumnService.getRateLimitMultiplier(
-        teamId,
-        chunk.org_id,
-      );
-      rateLimiter = getAutumnRateLimiter(
-        mode ?? RateLimiterMode.Crawl,
-        rateLimitMultiplier,
-      );
-    } else {
-      rateLimiter = getRateLimiter(
-        mode ?? RateLimiterMode.Crawl,
-        chunk.rate_limits,
-      );
-    }
+    const rateLimitMultiplier = await autumnService.getRateLimitMultiplier(
+      teamId,
+      chunk.org_id,
+    );
+    rateLimiter = getAutumnRateLimiter(
+      mode ?? RateLimiterMode.Crawl,
+      rateLimitMultiplier,
+    );
   } else {
     normalizedApi = parseApi(token);
     if (!normalizedApiIsUuid(normalizedApi)) {
@@ -734,21 +724,14 @@ async function supaAuthenticateUser(
     subscriptionData = {
       team_id: teamId,
     };
-    if (isAutumnLimitsEnabled(chunk.org_id)) {
-      const rateLimitMultiplier = await autumnService.getRateLimitMultiplier(
-        teamId,
-        chunk.org_id,
-      );
-      rateLimiter = getAutumnRateLimiter(
-        mode ?? RateLimiterMode.Crawl,
-        rateLimitMultiplier,
-      );
-    } else {
-      rateLimiter = getRateLimiter(
-        mode ?? RateLimiterMode.Crawl,
-        chunk.rate_limits,
-      );
-    }
+    const rateLimitMultiplier = await autumnService.getRateLimitMultiplier(
+      teamId,
+      chunk.org_id,
+    );
+    rateLimiter = getAutumnRateLimiter(
+      mode ?? RateLimiterMode.Crawl,
+      rateLimitMultiplier,
+    );
   }
 
   if (chunk?.flags?.ipRestriction) {

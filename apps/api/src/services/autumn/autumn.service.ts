@@ -1,5 +1,4 @@
 import { randomUUID } from "crypto";
-import { config } from "../../config";
 import { logger } from "../../lib/logger";
 import { eq } from "drizzle-orm";
 import { dbRr } from "../../db/connection";
@@ -24,44 +23,6 @@ export const CREDITS_FEATURE_ID = "CREDITS";
 export const SEARCH_CREDITS_FEATURE_ID = "SEARCH_CREDITS";
 const CONCURRENCY_FEATURE_ID = "CONCURRENCY";
 const RATE_LIMIT_FEATURE_ID = "rate_limits";
-
-// Explicit allowlist of orgs for which rate limits / concurrency / job priority
-// are sourced from Autumn instead of ACUC. Parsed once from
-// AUTUMN_LIMITS_ENABLED_ORG_IDS: comma-separated org IDs, or "*" for all orgs.
-const autumnLimitsAllowlist = new Set(
-  config.AUTUMN_LIMITS_ENABLED_ORG_IDS.split(",")
-    .map(id => id.trim())
-    .filter(Boolean),
-);
-
-/**
- * Deterministic bucket for an org UUID in [0, 100). Takes the first 8 hex
- * digits (after stripping dashes) so the same org always lands in the same
- * bucket — the ramp decision is stable across requests, which matters for
- * rate-limit/concurrency limits that would otherwise flip request-to-request.
- */
-function orgBucket(orgId: string): number {
-  const hex = orgId.replace(/-/g, "").slice(0, 8);
-  return parseInt(hex, 16) % 100;
-}
-
-/**
- * Whether to source rate limits / concurrency / job priority from Autumn
- * (instead of ACUC) for this org. Enabled when the org is in the explicit
- * allowlist (AUTUMN_LIMITS_ENABLED_ORG_IDS, or "*") OR falls within the stable
- * percentage ramp (AUTUMN_LIMITS_EXPERIMENT_PERCENT). Defaults to false (old
- * ACUC behavior) and always requires a configured Autumn client.
- */
-export function isAutumnLimitsEnabled(orgId?: string | null): boolean {
-  if (!autumnClient) return false;
-  if (autumnLimitsAllowlist.has("*")) return true;
-  if (orgId && autumnLimitsAllowlist.has(orgId)) return true;
-
-  const percent = config.AUTUMN_LIMITS_EXPERIMENT_PERCENT;
-  if (percent <= 0) return false;
-  if (percent >= 100) return true;
-  return !!orgId && orgBucket(orgId) < percent;
-}
 
 /**
  * Coerces a raw Autumn balance figure into a usable non-negative number, or
