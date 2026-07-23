@@ -146,5 +146,19 @@ describe("feedback schema", () => {
         valuableResultPositions: [0],
       }).success,
     ).toBe(false);
+
+    expect(
+      searchFeedbackSchema.safeParse({
+        rating: "good",
+        valuableResultPositions: [101],
+      }).success,
+    ).toBe(false);
+
+    expect(
+      searchFeedbackSchema.safeParse({
+        rating: "good",
+        valuableResultPositions: [100],
+      }).success,
+    ).toBe(true);
   });
 });

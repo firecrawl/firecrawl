@@ -38,9 +38,18 @@ function valuableResultDocuments(
 ): ValuableResultDocument[] {
   if (job.endpoint !== "search" || !positions?.length) return [];
 
+  // num_results counts web+news+images combined, so this is an upper bound
+  // rather than an exact web-result count — but it still rejects hallucinated
+  // positions, which would otherwise become false-positive relevance labels.
+  const maxPosition =
+    typeof job.num_results === "number" && job.num_results > 0
+      ? job.num_results
+      : null;
+
   const seenPositions = new Set<number>();
   return positions.flatMap(position => {
     if (!Number.isInteger(position) || position <= 0) return [];
+    if (maxPosition !== null && position > maxPosition) return [];
     if (seenPositions.has(position)) return [];
     seenPositions.add(position);
 
@@ -101,6 +110,7 @@ export async function lookupFeedbackJob(
       created_at: table.created_at,
       options: table.options,
       ...(endpoint === "map" ? {} : { is_successful: table.is_successful }),
+      ...(endpoint === "search" ? { num_results: table.num_results } : {}),
     })
     .from(table)
     .where(and(eq(table.id, jobId), eq(table.team_id, dbTeamId)))
@@ -117,6 +127,7 @@ export async function lookupFeedbackJob(
     created_at: row.created_at,
     is_successful: endpoint === "map" ? true : (row.is_successful ?? null),
     options: row.options ?? null,
+    num_results: endpoint === "search" ? (row.num_results ?? null) : null,
   };
 }
 

@@ -3195,10 +3195,11 @@
           "valuableResultPositions": {
             "type": "array",
             "maxItems": 50,
-            "description": "1-indexed positions in the returned web results that were useful. The API stores these as stable search result document IDs for quantitative feedback.",
+            "description": "1-indexed positions into the returned `data.web` array (web results only) that were useful. List every useful web result — unlisted results are treated as not useful. Positions greater than the search's result count are ignored. The API stores these as stable search result document IDs for quantitative feedback.",
             "items": {
               "type": "integer",
-              "minimum": 1
+              "minimum": 1,
+              "maximum": 100
             }
           },
           "missingContent": {

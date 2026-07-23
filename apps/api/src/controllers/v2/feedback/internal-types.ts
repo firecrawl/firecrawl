@@ -33,6 +33,8 @@ export type FeedbackJobRow = {
   created_at: string;
   is_successful: boolean | null;
   options: unknown;
+  /** Total results returned by the job (search only; combined across web/news/images). */
+  num_results?: number | null;
 };
 
 export type FeedbackRecordOptions = {

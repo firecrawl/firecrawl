@@ -2195,7 +2195,9 @@ export const searchFeedbackSchema = z
       .max(50)
       .optional(),
     valuableResultPositions: z
-      .array(z.number().int().positive())
+      // 100 is the max search `limit`; positions beyond it can only be
+      // hallucinated and would be stored as false-positive relevance labels.
+      .array(z.number().int().positive().lte(100))
       .max(50)
       .optional(),
     missingContent: z.array(missingContentEntrySchema).max(20).optional(),
@@ -2287,7 +2289,9 @@ export const endpointFeedbackSchema = z
       .max(50)
       .optional(),
     valuableResultPositions: z
-      .array(z.number().int().positive())
+      // 100 is the max search `limit`; positions beyond it can only be
+      // hallucinated and would be stored as false-positive relevance labels.
+      .array(z.number().int().positive().lte(100))
       .max(50)
       .optional(),
     missingContent: z.array(missingContentEntrySchema).max(50).optional(),
