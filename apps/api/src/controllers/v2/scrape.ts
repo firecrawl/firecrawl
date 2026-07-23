@@ -334,7 +334,7 @@ export async function scrapeController(
                       zeroDataRetention,
                       teamFlags: req.acuc?.flags ?? null,
                       orgId: req.acuc?.org_id ?? null,
-                      teamConcurrency: req.acuc?.concurrency ?? null,
+                      teamConcurrency: baseConcurrency,
                       agentIndexOnly: (req as any).agentIndexOnly ?? false,
                       threatProtection: threatProtection.policy ?? undefined,
                     },

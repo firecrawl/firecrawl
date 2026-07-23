@@ -518,7 +518,7 @@ export async function parseController(
                       zeroDataRetention,
                       teamFlags: req.acuc?.flags ?? null,
                       orgId: req.acuc?.org_id ?? null,
-                      teamConcurrency: req.acuc?.concurrency ?? null,
+                      teamConcurrency: baseConcurrency,
                       uploadedFile: file,
                       forceEngine,
                       isParse: true,
