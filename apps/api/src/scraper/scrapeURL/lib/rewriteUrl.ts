@@ -17,7 +17,7 @@ export function rewriteUrl(url: string): string | undefined {
     url.startsWith("https://docs.google.com/presentation/d/") ||
     url.startsWith("http://docs.google.com/presentation/d/")
   ) {
-    // Skip rewriting for published presentations (/d/e/) - they're already public HTML pages
+    // Skip rewriting for published presentations (/d/e/) - they are already public HTML pages
     if (url.includes("/presentation/d/e/")) {
       return undefined;
     }
@@ -37,7 +37,7 @@ export function rewriteUrl(url: string): string | undefined {
     url.startsWith("https://docs.google.com/spreadsheets/d/") ||
     url.startsWith("http://docs.google.com/spreadsheets/d/")
   ) {
-    // Skip rewriting for published spreadsheets (/d/e/) - they're already public HTML pages
+    // Skip rewriting for published spreadsheets (/d/e/) - they are already public HTML pages
     if (url.includes("/spreadsheets/d/e/")) {
       return undefined;
     }
@@ -47,6 +47,20 @@ export function rewriteUrl(url: string): string | undefined {
       const gidMatch = url.match(/[?&#]gid=(\d+)/);
       const gidParam = gidMatch ? `&gid=${gidMatch[1]}` : "";
       return `https://docs.google.com/spreadsheets/d/${id}/gviz/tq?tqx=out:html${gidParam}`;
+    }
+  } else if (
+    url.startsWith("https://github.com/") ||
+    url.startsWith("http://github.com/")
+  ) {
+    // Rewrite blob (file) views to raw.githubusercontent.com — the blob page is a JS SPA,
+    // raw serves the same content as plain text in milliseconds.
+    // /tree/ (directories), /commit/, /pull/ etc. are left alone.
+    const match = url.match(
+      /^https?:\/\/github\.com\/([^/]+)\/([^/]+)\/blob\/([^?#]+)/,
+    );
+    if (match) {
+      const [, owner, repo, branchAndPath] = match;
+      return `https://raw.githubusercontent.com/${owner}/${repo}/${branchAndPath}`;
     }
   }
 

@@ -32,6 +32,10 @@ export const urlSpecificParams: Record<string, UrlSpecificParams> = {
   //         },
   //     },
   // },
+  "raw.githubusercontent.com": {
+    scrapeOptions: {},
+    internalOptions: { forceEngine: "fetch" },
+  },
   "digikey.com": {
     scrapeOptions: {},
     internalOptions: { forceEngine: "fire-engine;tlsclient" },

@@ -105,6 +105,64 @@ describe("rewriteUrl", () => {
     });
   });
 
+  describe("GitHub", () => {
+    it("should rewrite blob (file) URLs to raw.githubusercontent.com", () => {
+      const url =
+        "https://github.com/vllm-project/semantic-router/blob/main/website/blog/2025-12-14-halugate.md";
+      expect(rewriteUrl(url)).toBe(
+        "https://raw.githubusercontent.com/vllm-project/semantic-router/main/website/blog/2025-12-14-halugate.md",
+      );
+    });
+
+    it("should strip line-anchor fragments (#L42)", () => {
+      const url =
+        "https://github.com/user/repo/blob/main/src/components/Header.jsx#L42";
+      expect(rewriteUrl(url)).toBe(
+        "https://raw.githubusercontent.com/user/repo/main/src/components/Header.jsx",
+      );
+    });
+
+    it("should strip UI query params (?plain=1)", () => {
+      const url =
+        "https://github.com/user/repo/blob/main/README.md?plain=1";
+      expect(rewriteUrl(url)).toBe(
+        "https://raw.githubusercontent.com/user/repo/main/README.md",
+      );
+    });
+
+    it("should handle branch names with dots and slashes in path", () => {
+      const url =
+        "https://github.com/user/repo/blob/v1.2.3/pkg/dist/index.ts";
+      expect(rewriteUrl(url)).toBe(
+        "https://raw.githubusercontent.com/user/repo/v1.2.3/pkg/dist/index.ts",
+      );
+    });
+
+    it("should handle http:// URLs", () => {
+      const url = "http://github.com/user/repo/blob/main/file.md";
+      expect(rewriteUrl(url)).toBe(
+        "https://raw.githubusercontent.com/user/repo/main/file.md",
+      );
+    });
+
+    it("should NOT rewrite /tree/ (directory) URLs", () => {
+      const url = "https://github.com/user/repo/tree/main/src";
+      expect(rewriteUrl(url)).toBeUndefined();
+    });
+
+    it("should NOT rewrite /commit/, /pull/, /issues/ URLs", () => {
+      expect(
+        rewriteUrl("https://github.com/user/repo/commit/abc123"),
+      ).toBeUndefined();
+      expect(
+        rewriteUrl("https://github.com/user/repo/pull/42"),
+      ).toBeUndefined();
+      expect(
+        rewriteUrl("https://github.com/user/repo/issues/42"),
+      ).toBeUndefined();
+    });
+  });
+
   describe("Non-Google URLs", () => {
     it("should return undefined for non-Google URLs", () => {
       expect(rewriteUrl("https://example.com")).toBeUndefined();
