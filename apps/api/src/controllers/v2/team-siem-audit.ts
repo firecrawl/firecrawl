@@ -134,7 +134,9 @@ export async function testTeamSiemAuditController(
     team_id: req.auth.team_id,
     org_id: orgId,
     api_key: {
-      id: req.acuc?.api_key_id ? String(req.acuc.api_key_id) : null,
+      id:
+        req.acuc?.api_key_id_text ??
+        (req.acuc?.api_key_id == null ? null : String(req.acuc.api_key_id)),
       name: null,
     },
     audit_metadata: { synthetic: "true" },

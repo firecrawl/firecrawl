@@ -118,6 +118,40 @@ describe("ScrapeActivityEvent", () => {
     });
   });
 
+  it("preserves an exact decimal API-key ID from the job", () => {
+    const event = buildScrapeActivityEvent(
+      "scrape-id",
+      job({
+        apiKeyId: Number("9007199254740993"),
+        apiKeyIdText: "9007199254740993",
+      }),
+      "org-id",
+      "production",
+      {
+        success: true,
+        startedAt: 1_000,
+        completedAt: 2_000,
+      },
+    );
+
+    expect(event.api_key.id).toBe("9007199254740993");
+  });
+
+  it("serializes circular and bigint non-Error failures", () => {
+    const thrown: { count: bigint; self?: unknown } = { count: 42n };
+    thrown.self = thrown;
+    const event = buildScrapeActivityEvent("scrape-id", job(), "org-id", null, {
+      success: false,
+      error: thrown,
+      startedAt: 1_000,
+      completedAt: 2_000,
+    });
+
+    expect(event.result).toBe("failure");
+    expect(event.error?.message).toContain('"count":"42"');
+    expect(event.error?.message).toContain("[Circular]");
+  });
+
   it("builds blocked events for requests rejected before job creation", () => {
     const denied: ThreatDecision = {
       ...allowedDecision,

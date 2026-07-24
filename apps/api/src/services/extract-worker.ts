@@ -60,6 +60,7 @@ const processExtractJob = async (
       request: data.request,
       teamId: data.teamId,
       apiKeyId: data.apiKeyId ?? null,
+      apiKeyIdText: data.apiKeyIdText ?? null,
     });
 
     if (result && result.success) {

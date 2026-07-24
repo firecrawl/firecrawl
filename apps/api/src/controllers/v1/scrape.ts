@@ -240,6 +240,7 @@ export async function scrapeController(
             startTime: controllerStartTime,
             zeroDataRetention: zeroDataRetention ?? false,
             apiKeyId: req.acuc?.api_key_id ?? null,
+            apiKeyIdText: req.acuc?.api_key_id_text ?? null,
             concurrencyLimited: limited,
             keylessReserved: reservedKeylessCredits > 0,
             logRequestPromise: logRequestPromise,

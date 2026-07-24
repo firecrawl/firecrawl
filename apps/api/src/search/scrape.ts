@@ -37,6 +37,7 @@ interface ScrapeSearchOptions {
   scrapeOptions: ScrapeOptions;
   bypassBilling?: boolean;
   apiKeyId: number | null;
+  apiKeyIdText?: string | null;
   zeroDataRetention?: boolean;
   requestId?: string;
   billing?: BillingMetadata;
@@ -93,6 +94,7 @@ async function scrapeSearchResultDirect(
         startTime: Date.now(),
         zeroDataRetention,
         apiKeyId: options.apiKeyId,
+        apiKeyIdText: options.apiKeyIdText,
         keylessReserved: options.keylessReserved ?? false,
         requestId: options.requestId,
         billing: options.billing,

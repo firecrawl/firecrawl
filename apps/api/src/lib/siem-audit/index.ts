@@ -28,7 +28,10 @@ export function emitScrapeActivityEvent(
     const siemConfig = await getOrgSiemAuditConfig(orgId);
     if (!siemConfig?.enabled) return;
 
-    const apiKeyName = await getApiKeyName(job.team_id, job.apiKeyId);
+    const apiKeyName = await getApiKeyName(
+      job.team_id,
+      job.apiKeyIdText ?? job.apiKeyId,
+    );
     const event = buildScrapeActivityEvent(
       jobId,
       job,
@@ -73,19 +76,21 @@ export function emitRejectedScrapeActivityEvents(
       const siemConfig = await getOrgSiemAuditConfig(orgId);
       if (!siemConfig?.enabled) continue;
 
-      const apiKeyNames = new Map<number | null, string | null>();
+      const apiKeyNames = new Map<string | null, string | null>();
+      const apiKeyIds = teamInputs.map(input =>
+        input.apiKeyId == null ? null : String(input.apiKeyId),
+      );
       await Promise.all(
-        [...new Set(teamInputs.map(input => input.apiKeyId ?? null))].map(
-          async apiKeyId => {
-            apiKeyNames.set(apiKeyId, await getApiKeyName(teamId, apiKeyId));
-          },
-        ),
+        [...new Set(apiKeyIds)].map(async apiKeyId => {
+          apiKeyNames.set(apiKeyId, await getApiKeyName(teamId, apiKeyId));
+        }),
       );
       for (const input of teamInputs) {
+        const apiKeyId = input.apiKeyId == null ? null : String(input.apiKeyId);
         const event = buildRejectedScrapeActivityEvent(
           input,
           orgId,
-          apiKeyNames.get(input.apiKeyId ?? null) ?? null,
+          apiKeyNames.get(apiKeyId) ?? null,
         );
         enqueueForSiemDelivery(orgId, siemConfig.destination, event);
       }

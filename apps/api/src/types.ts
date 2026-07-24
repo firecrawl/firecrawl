@@ -23,6 +23,7 @@ type ScrapeJobCommon = {
   traceContext?: SerializedTraceContext;
   skipNuq?: boolean;
   requestId?: string;
+  apiKeyIdText?: string | null;
   auditMetadata?: AuditMetadata;
   monitoring?: {
     monitorId: string;

@@ -16,6 +16,7 @@ import {
   scrapeRequestSchema as scrapeRequestSchemaV1,
   searchRequestSchema as searchRequestSchemaV1,
 } from "../v1/types";
+import { siemAuditConfigInputSchema } from "../../lib/siem-audit/types";
 
 const auditMetadata = {
   username: "alice@example.com",
@@ -117,5 +118,54 @@ describe("auditMetadata request validation", () => {
         auditMetadata,
       }).auditMetadata,
     ).toEqual(auditMetadata);
+  });
+});
+
+describe("SIEM destination validation", () => {
+  const destination = {
+    type: "azure_sentinel" as const,
+    tenantId: "tenant",
+    clientId: "client",
+    clientSecret: "secret",
+    dceUrl: "https://example.eastus.ingest.monitor.azure.com",
+    dcrImmutableId: "dcr-id",
+    streamName: "Custom-FirecrawlScrapeActivity",
+  };
+
+  it("trims credential and destination fields", () => {
+    const parsed = siemAuditConfigInputSchema.parse({
+      enabled: true,
+      destination: {
+        ...destination,
+        tenantId: " tenant ",
+        clientId: " client ",
+        clientSecret: " secret ",
+      },
+    });
+
+    expect(parsed.destination).toMatchObject({
+      tenantId: "tenant",
+      clientId: "client",
+      clientSecret: "secret",
+    });
+  });
+
+  it("rejects whitespace-only credentials and endpoint userinfo", () => {
+    expect(() =>
+      siemAuditConfigInputSchema.parse({
+        enabled: true,
+        destination: { ...destination, clientSecret: "   " },
+      }),
+    ).toThrow();
+    expect(() =>
+      siemAuditConfigInputSchema.parse({
+        enabled: true,
+        destination: {
+          ...destination,
+          dceUrl:
+            "https://user:password@example.eastus.ingest.monitor.azure.com",
+        },
+      }),
+    ).toThrow("credential-free");
   });
 });

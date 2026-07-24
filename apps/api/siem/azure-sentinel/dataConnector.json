@@ -7,13 +7,13 @@
     "connectorDefinitionName": "FirecrawlScrapeActivityPush",
     "dcrConfig": {
       "streamName": "Custom-FirecrawlScrapeActivity",
-      "dataCollectionEndpoint": "[[parameters('dcrConfig').dataCollectionEndpoint]",
-      "dataCollectionRuleImmutableId": "[[parameters('dcrConfig').dataCollectionRuleImmutableId]"
+      "dataCollectionEndpoint": "[[parameters('dcrConfig').dataCollectionEndpoint]]",
+      "dataCollectionRuleImmutableId": "[[parameters('dcrConfig').dataCollectionRuleImmutableId]]"
     },
     "auth": {
       "type": "Push",
-      "AppId": "[[parameters('auth').appId]",
-      "ServicePrincipalId": "[[parameters('auth').servicePrincipalId]"
+      "AppId": "[[parameters('auth').appId]]",
+      "ServicePrincipalId": "[[parameters('auth').servicePrincipalId]]"
     },
     "request": {
       "RetryCount": 1

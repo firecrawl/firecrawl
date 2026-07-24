@@ -98,9 +98,6 @@ const configSchema = z.object({
     .int()
     .positive()
     .default(1000),
-  // Test-only override for the Entra token endpoint. Production uses the
-  // tenant-specific login.microsoftonline.com endpoint.
-  SIEM_AUDIT_TOKEN_URL: z.string().url().optional(),
 
   // API Keys & Authentication
   BULL_AUTH_KEY: z.string().optional(),

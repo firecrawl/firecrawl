@@ -107,7 +107,7 @@ export async function crawlController(
         requestId: id,
         endpoint: "crawl",
         teamId: req.auth.team_id,
-        apiKeyId: req.acuc?.api_key_id,
+        apiKeyId: req.acuc?.api_key_id_text ?? req.acuc?.api_key_id,
         auditMetadata: req.body.scrapeOptions?.auditMetadata,
         url: req.body.url,
         error,
@@ -348,6 +348,7 @@ export async function crawlController(
       v1: true,
       zeroDataRetention: zeroDataRetention || false,
       apiKeyId: req.acuc?.api_key_id ?? null,
+      apiKeyIdText: req.acuc?.api_key_id_text ?? null,
     },
     uuidv7(),
   );

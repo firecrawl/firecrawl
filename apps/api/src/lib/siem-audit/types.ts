@@ -14,20 +14,28 @@ export type AuditMetadata = z.infer<typeof auditMetadataSchema>;
 
 const azureSentinelDestinationInputSchema = z.strictObject({
   type: z.literal("azure_sentinel"),
-  tenantId: z.string().min(1).max(128),
-  clientId: z.string().min(1).max(128),
-  clientSecret: z.string().min(1).max(4096).optional(),
-  dceUrl: z.url().refine(value => {
-    const url = new URL(value);
-    return (
-      url.protocol === "https:" &&
-      (url.hostname === "ingest.monitor.azure.com" ||
-        url.hostname.endsWith(".ingest.monitor.azure.com"))
-    );
-  }, "dceUrl must be an Azure Monitor ingestion endpoint"),
-  dcrImmutableId: z.string().min(1).max(256),
+  tenantId: z.string().trim().min(1).max(128),
+  clientId: z.string().trim().min(1).max(128),
+  clientSecret: z.string().trim().min(1).max(4096).optional(),
+  dceUrl: z
+    .string()
+    .trim()
+    .pipe(
+      z.url().refine(value => {
+        const url = new URL(value);
+        return (
+          url.protocol === "https:" &&
+          url.username === "" &&
+          url.password === "" &&
+          (url.hostname === "ingest.monitor.azure.com" ||
+            url.hostname.endsWith(".ingest.monitor.azure.com"))
+        );
+      }, "dceUrl must be a credential-free Azure Monitor ingestion endpoint"),
+    ),
+  dcrImmutableId: z.string().trim().min(1).max(256),
   streamName: z
     .string()
+    .trim()
     .min(1)
     .max(256)
     .refine(value => value.startsWith("Custom-"), {

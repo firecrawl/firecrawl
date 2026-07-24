@@ -164,7 +164,7 @@
     },
     "dataCollectionEndpoint": {
       "type": "string",
-      "value": "[reference(resourceId('Microsoft.Insights/dataCollectionEndpoints', parameters('dataCollectionEndpointName')), '2022-06-01').properties.logsIngestion]"
+      "value": "[reference(resourceId('Microsoft.Insights/dataCollectionEndpoints', parameters('dataCollectionEndpointName')), '2022-06-01').properties.logsIngestion.endpoint]"
     },
     "dataCollectionRuleResourceId": {
       "type": "string",

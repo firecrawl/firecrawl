@@ -23,6 +23,7 @@ interface ScrapeDocumentOptions {
   isSingleUrl?: boolean;
   flags: TeamFlags | null;
   apiKeyId: number | null;
+  apiKeyIdText?: string | null;
   requestId?: string;
 }
 
@@ -78,6 +79,7 @@ export async function scrapeDocument(
         startTime: Date.now(),
         zeroDataRetention: false, // not supported
         apiKeyId: options.apiKeyId,
+        apiKeyIdText: options.apiKeyIdText,
         requestId: options.requestId,
       },
       jobId,

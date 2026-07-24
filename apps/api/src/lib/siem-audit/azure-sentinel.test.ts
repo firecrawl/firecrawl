@@ -142,6 +142,40 @@ describe("Azure Sentinel sender", () => {
     expect(sleep).toHaveBeenNthCalledWith(2, 2000);
   });
 
+  it("caps Retry-After and releases retry response bodies", async () => {
+    const sleep = vi.fn(async () => {});
+    const retryResponses: Response[] = [];
+    let ingestionAttempts = 0;
+    const fetchImpl: SenderDependencies["fetchImpl"] = async url => {
+      if (url.includes("/token")) {
+        return new Response(
+          JSON.stringify({ access_token: "token", expires_in: 3600 }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        );
+      }
+      ingestionAttempts++;
+      if (ingestionAttempts < 3) {
+        const response = new Response("try later", {
+          status: 503,
+          headers: { "retry-after": "86400" },
+        });
+        retryResponses.push(response);
+        return response;
+      }
+      return new Response(null, { status: 204 });
+    };
+
+    await sendAzureSentinelEvents(destination, [event()], {
+      fetchImpl,
+      sleep,
+      tokenUrl: "https://login.example.test/token",
+    });
+
+    expect(sleep).toHaveBeenNthCalledWith(1, 30_000);
+    expect(sleep).toHaveBeenNthCalledWith(2, 30_000);
+    expect(retryResponses.every(response => response.bodyUsed)).toBe(true);
+  });
+
   it("retries transient network failures three times", async () => {
     let ingestionAttempts = 0;
     const sleep = vi.fn(async () => {});
@@ -189,6 +223,64 @@ describe("Azure Sentinel sender", () => {
     });
   });
 
+  it("refreshes a rejected cached token once", async () => {
+    let tokenRequests = 0;
+    const ingestionTokens: string[] = [];
+    const fetchImpl: SenderDependencies["fetchImpl"] = async (url, init) => {
+      if (url.includes("/token")) {
+        tokenRequests++;
+        return new Response(
+          JSON.stringify({
+            access_token: `token-${tokenRequests}`,
+            expires_in: 3600,
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        );
+      }
+      ingestionTokens.push(init.headers.authorization);
+      return init.headers.authorization === "Bearer token-1"
+        ? new Response("revoked", { status: 401 })
+        : new Response(null, { status: 204 });
+    };
+
+    await sendAzureSentinelEvents(destination, [event()], {
+      fetchImpl,
+      tokenUrl: "https://login.example.test/token",
+    });
+
+    expect(tokenRequests).toBe(2);
+    expect(ingestionTokens).toEqual(["Bearer token-1", "Bearer token-2"]);
+  });
+
+  it("does not reuse a token after client-secret rotation", async () => {
+    let tokenRequests = 0;
+    const fetchImpl: SenderDependencies["fetchImpl"] = async url => {
+      if (url.includes("/token")) {
+        tokenRequests++;
+        return new Response(
+          JSON.stringify({
+            access_token: `token-${tokenRequests}`,
+            expires_in: 3600,
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        );
+      }
+      return new Response(null, { status: 204 });
+    };
+
+    await sendAzureSentinelEvents(destination, [event("first")], {
+      fetchImpl,
+      tokenUrl: "https://login.example.test/token",
+    });
+    await sendAzureSentinelEvents(
+      { ...destination, clientSecret: "rotated-secret" },
+      [event("second")],
+      { fetchImpl, tokenUrl: "https://login.example.test/token" },
+    );
+
+    expect(tokenRequests).toBe(2);
+  });
+
   it("splits compressed payloads at the configured byte ceiling", () => {
     const noisyEvents = Array.from({ length: 8 }, (_, index) =>
       event(
@@ -196,11 +288,17 @@ describe("Azure Sentinel sender", () => {
       ),
     );
     const batches = buildCompressedBatches(noisyEvents, 1200);
+    expect(Array.isArray(batches)).toBe(false);
+    const compressedBodies = [...batches];
 
-    expect(batches.length).toBeGreaterThan(1);
-    expect(batches.every(batch => batch.byteLength <= 1200)).toBe(true);
+    expect(compressedBodies.length).toBeGreaterThan(1);
+    expect(compressedBodies.every(batch => batch.byteLength <= 1200)).toBe(
+      true,
+    );
     expect(
-      batches.flatMap(batch => JSON.parse(gunzipSync(batch).toString("utf8"))),
+      compressedBodies.flatMap(batch =>
+        JSON.parse(gunzipSync(batch).toString("utf8")),
+      ),
     ).toHaveLength(noisyEvents.length);
   });
 });

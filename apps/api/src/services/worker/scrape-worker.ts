@@ -631,6 +631,7 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
                     v1: job.data.v1,
                     zeroDataRetention: job.data.zeroDataRetention,
                     apiKeyId: job.data.apiKeyId,
+                    apiKeyIdText: job.data.apiKeyIdText,
                     monitoring: job.data.monitoring
                       ? {
                           ...job.data.monitoring,
@@ -1142,6 +1143,7 @@ async function addKickoffSitemapJob(
       webhook: sourceJob.data.webhook,
       v1: sourceJob.data.v1,
       apiKeyId: sourceJob.data.apiKeyId,
+      apiKeyIdText: sourceJob.data.apiKeyIdText,
       monitoring: sourceJob.data.monitoring
         ? { ...sourceJob.data.monitoring, source: "discovered" as const }
         : undefined,
@@ -1200,6 +1202,7 @@ async function processKickoffJob(job: NuQJob<ScrapeJobKickoff>) {
         isCrawlSourceScrape: true,
         zeroDataRetention: job.data.zeroDataRetention,
         apiKeyId: job.data.apiKeyId,
+        apiKeyIdText: job.data.apiKeyIdText,
         monitoring: job.data.monitoring
           ? { ...job.data.monitoring, source: "discovered" as const }
           : undefined,
@@ -1337,6 +1340,7 @@ async function processKickoffJob(job: NuQJob<ScrapeJobKickoff>) {
             v1: job.data.v1,
             zeroDataRetention: job.data.zeroDataRetention,
             apiKeyId: job.data.apiKeyId,
+            apiKeyIdText: job.data.apiKeyIdText,
             monitoring: job.data.monitoring
               ? { ...job.data.monitoring, source: "discovered" as const }
               : undefined,
@@ -1501,6 +1505,7 @@ async function processKickoffSitemapJob(job: NuQJob<ScrapeJobKickoffSitemap>) {
           zeroDataRetention:
             job.data.zeroDataRetention || (sc.zeroDataRetention ?? false),
           apiKeyId: job.data.apiKeyId,
+          apiKeyIdText: job.data.apiKeyIdText,
           monitoring: job.data.monitoring
             ? { ...job.data.monitoring, source: "discovered" as const }
             : undefined,

@@ -107,7 +107,7 @@ export async function agentController(
           requestId: agentId,
           endpoint: "agent",
           teamId: req.auth.team_id,
-          apiKeyId: req.acuc?.api_key_id,
+          apiKeyId: req.acuc?.api_key_id_text ?? req.acuc?.api_key_id,
           auditMetadata: req.body.auditMetadata,
           url: blockedUrl.url,
           error: new UnsafeDomainBlockedError(

@@ -3,7 +3,6 @@ import { logger as _logger } from "../logger";
 import { sendAzureSentinelEvents } from "./azure-sentinel";
 import {
   siemAuditBufferedEvents,
-  siemAuditDeliveryBatchesTotal,
   siemAuditDeliveryFailuresTotal,
   siemAuditEventsTotal,
 } from "./metrics";
@@ -89,13 +88,9 @@ export class SiemAuditBuffer {
     siemAuditBufferedEvents.dec(batch.length);
     const destination = this.destination;
     this.flushing = this.deliver(destination, batch)
-      .then(() => {
-        siemAuditDeliveryBatchesTotal.inc({ result: "success" });
-      })
       .catch(error => {
         const reason =
           error instanceof SiemDeliveryError ? error.kind : "delivery_error";
-        siemAuditDeliveryBatchesTotal.inc({ result: "failure" });
         siemAuditDeliveryFailuresTotal.inc({ reason });
         logger.error("SIEM audit batch delivery failed", {
           error,

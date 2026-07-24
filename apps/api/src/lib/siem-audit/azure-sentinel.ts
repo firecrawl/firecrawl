@@ -1,5 +1,5 @@
 import { gzipSync } from "zlib";
-import { randomUUID } from "crypto";
+import { createHash, randomUUID } from "crypto";
 import {
   fetch as undiciFetch,
   ProxyAgent,
@@ -7,11 +7,14 @@ import {
   type Response,
 } from "undici";
 import { config } from "../../config";
+import { siemAuditDeliveryBatchesTotal } from "./metrics";
 import type { AzureSentinelDestination, ScrapeActivityEvent } from "./types";
 import { SiemDeliveryError } from "./types";
 
 const MAX_COMPRESSED_BODY_BYTES = 1_000_000;
 const MAX_ATTEMPTS = 3;
+const MAX_RETRY_DELAY_MS = 30_000;
+const MAX_TOKEN_CACHE_ENTRIES = 1000;
 const REQUEST_TIMEOUT_MS = 15_000;
 
 type FetchImpl = (
@@ -55,7 +58,28 @@ function getDispatcher(deps: SenderDependencies): Dispatcher | undefined {
 }
 
 function tokenCacheKey(destination: AzureSentinelDestination): string {
-  return `${destination.tenantId}:${destination.clientId}`;
+  const credentialDigest = createHash("sha256")
+    .update(destination.clientSecret)
+    .digest("base64url");
+  return `${destination.tenantId}:${destination.clientId}:${credentialDigest}`;
+}
+
+function cacheToken(cacheKey: string, token: CachedToken): void {
+  const now = Date.now();
+  for (const [key, cached] of tokenCache) {
+    if (cached.expiresAt <= now) tokenCache.delete(key);
+  }
+  tokenCache.delete(cacheKey);
+  while (tokenCache.size >= MAX_TOKEN_CACHE_ENTRIES) {
+    const oldestKey = tokenCache.keys().next().value;
+    if (oldestKey === undefined) break;
+    tokenCache.delete(oldestKey);
+  }
+  tokenCache.set(cacheKey, token);
+}
+
+function invalidateToken(destination: AzureSentinelDestination): void {
+  tokenCache.delete(tokenCacheKey(destination));
 }
 
 function retryAfterMs(response: Response): number | undefined {
@@ -78,8 +102,11 @@ async function waitBeforeRetry(
   response: Response,
   sleep: (ms: number) => Promise<void>,
 ): Promise<void> {
-  const delay =
-    retryAfterMs(response) ?? Math.min(250 * 2 ** (attempt - 1), 2000);
+  const delay = Math.min(
+    retryAfterMs(response) ?? Math.min(250 * 2 ** (attempt - 1), 2000),
+    MAX_RETRY_DELAY_MS,
+  );
+  await response.body?.cancel();
   await sleep(delay);
 }
 
@@ -102,7 +129,6 @@ async function getAccessToken(
   const dispatcher = getDispatcher(deps);
   const tokenUrl =
     deps.tokenUrl ??
-    config.SIEM_AUDIT_TOKEN_URL ??
     `https://login.microsoftonline.com/${encodeURIComponent(destination.tenantId)}/oauth2/v2.0/token`;
   const body = new URLSearchParams({
     client_id: destination.clientId,
@@ -146,7 +172,7 @@ async function getAccessToken(
       }
       const expiresIn =
         typeof payload.expires_in === "number" ? payload.expires_in : 3600;
-      tokenCache.set(cacheKey, {
+      cacheToken(cacheKey, {
         token: payload.access_token,
         expiresAt: Date.now() + expiresIn * 1000,
       });
@@ -187,11 +213,10 @@ async function getAccessToken(
   );
 }
 
-export function buildCompressedBatches(
+export function* buildCompressedBatches(
   events: ScrapeActivityEvent[],
   maxBytes = MAX_COMPRESSED_BODY_BYTES,
-): Buffer[] {
-  const batches: Buffer[] = [];
+): Generator<Buffer> {
   let pending: ScrapeActivityEvent[] = [];
 
   for (const event of events) {
@@ -208,7 +233,7 @@ export function buildCompressedBatches(
         `A single SIEM event exceeds the ${maxBytes}-byte compressed payload limit`,
       );
     }
-    batches.push(gzipSync(Buffer.from(JSON.stringify(pending), "utf8")));
+    yield gzipSync(Buffer.from(JSON.stringify(pending), "utf8"));
     pending = [event];
     const single = gzipSync(Buffer.from(JSON.stringify(pending), "utf8"));
     if (single.byteLength > maxBytes) {
@@ -220,9 +245,8 @@ export function buildCompressedBatches(
   }
 
   if (pending.length > 0) {
-    batches.push(gzipSync(Buffer.from(JSON.stringify(pending), "utf8")));
+    yield gzipSync(Buffer.from(JSON.stringify(pending), "utf8"));
   }
-  return batches;
 }
 
 async function sendBatch(
@@ -303,9 +327,35 @@ export async function sendAzureSentinelEvents(
   deps: SenderDependencies = {},
 ): Promise<void> {
   if (events.length === 0) return;
-  const token = await getAccessToken(destination, deps);
+  let token: string | undefined;
   for (const body of buildCompressedBatches(events)) {
-    await sendBatch(destination, token, body, deps);
+    try {
+      token ??= await getAccessToken(destination, deps);
+      try {
+        await sendBatch(destination, token, body, deps);
+      } catch (error) {
+        if (
+          error instanceof SiemDeliveryError &&
+          (error.statusCode === 401 || error.statusCode === 403)
+        ) {
+          invalidateToken(destination);
+          token = await getAccessToken(destination, deps);
+          await sendBatch(destination, token, body, deps);
+        } else {
+          throw error;
+        }
+      }
+      siemAuditDeliveryBatchesTotal.inc({ result: "success" });
+    } catch (error) {
+      if (
+        error instanceof SiemDeliveryError &&
+        (error.statusCode === 401 || error.statusCode === 403)
+      ) {
+        invalidateToken(destination);
+      }
+      siemAuditDeliveryBatchesTotal.inc({ result: "failure" });
+      throw error;
+    }
   }
 }
 

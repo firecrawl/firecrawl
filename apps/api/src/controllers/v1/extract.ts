@@ -73,6 +73,7 @@ async function oldExtract(
       request,
       teamId: req.auth.team_id,
       apiKeyId: req.acuc?.api_key_id ?? null,
+      apiKeyIdText: req.acuc?.api_key_id_text ?? null,
     });
 
     if (sender) {
@@ -141,7 +142,7 @@ export async function extractController(
       requestId: extractId,
       endpoint: "extract",
       teamId: req.auth.team_id,
-      apiKeyId: req.acuc?.api_key_id,
+      apiKeyId: req.acuc?.api_key_id_text ?? req.acuc?.api_key_id,
       auditMetadata: req.body.scrapeOptions?.auditMetadata,
       url,
       error: new CrawlDenialError(UNSUPPORTED_SITE_MESSAGE),
@@ -211,7 +212,7 @@ export async function extractController(
             requestId: extractId,
             endpoint: "extract",
             teamId: req.auth.team_id,
-            apiKeyId: req.acuc?.api_key_id,
+            apiKeyId: req.acuc?.api_key_id_text ?? req.acuc?.api_key_id,
             auditMetadata: req.body.scrapeOptions?.auditMetadata,
             url: blockedUrl.url,
             error: new UnsafeDomainBlockedError(
@@ -276,6 +277,7 @@ export async function extractController(
     extractId,
     agent: req.body.agent,
     apiKeyId: req.acuc?.api_key_id ?? null,
+    apiKeyIdText: req.acuc?.api_key_id_text ?? null,
     createdAt,
   };
 
