@@ -104,19 +104,13 @@ type ResearchEndpointConfig = {
     params: Record<string, any>,
     req: RequestWithAuth<any, any, any>,
   ) => string;
-  // How the credit cost is computed. "flat" charges a single scrape-like
-  // credit (paper reads/inspects fetch one document); "perResult" scales the
-  // charge with the number of returned results (search-style endpoints).
-  // This governs the *amount* only — the billing pool is always search
-  // credits (see RESEARCH_BILLING_ENDPOINT).
+  // Credit amount only: "flat" charges 1 (reads/inspects), "perResult" scales
+  // with returned results (searches). The pool is always search credits.
   costModel: "flat" | "perResult";
 };
 
-// Every endpoint mounted under /search/research is part of the search family
-// and draws from the shared SEARCH_CREDITS pool, so they all bill under the
-// "search" billing endpoint regardless of their cost model. The pool is
-// selected from this label by featureIdForBillingEndpoint, so keeping every
-// research endpoint on "search" is what routes them to SEARCH_CREDITS.
+// All research endpoints bill under "search" so featureIdForBillingEndpoint
+// routes them to SEARCH_CREDITS.
 export const RESEARCH_BILLING_ENDPOINT = "search" as const;
 
 type ResearchController = (req: Request, res: Response) => Promise<any>;
