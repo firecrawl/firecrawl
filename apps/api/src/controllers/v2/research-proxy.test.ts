@@ -1,3 +1,37 @@
+import { vi } from "vitest";
+import express from "express";
+import request from "supertest";
+
+// ---------------------------------------------------------------------------
+// Mocks — hoisted above imports by Vitest. The research controller is billed
+// fire-and-forget through billTeam and reaches an upstream service over undici;
+// stub both so the route-level tests can assert the billing metadata without a
+// live proxy or real Autumn/DB calls.
+// ---------------------------------------------------------------------------
+
+const billTeamMock = vi.fn().mockResolvedValue({ success: true });
+vi.mock("../../services/billing/credit_billing", () => ({
+  billTeam: (...args: any[]) => billTeamMock(...args),
+}));
+
+const fetchMock = vi.fn();
+// Only stub `fetch`; keep the real Agent/interceptors so other modules in the
+// import graph (e.g. safeFetch) that rely on `Agent.compose` still work.
+vi.mock("undici", async () => {
+  const actual = await vi.importActual<typeof import("undici")>("undici");
+  return { ...actual, fetch: (...args: any[]) => fetchMock(...args) };
+});
+
+vi.mock("../../services/logging/log_job", () => ({
+  logRequest: vi.fn().mockResolvedValue(undefined),
+  logResearchEndpoint: vi.fn().mockResolvedValue(undefined),
+}));
+
+vi.mock("../../lib/keyless", () => ({
+  chargeKeylessCredits: vi.fn().mockResolvedValue(undefined),
+}));
+
+import { config } from "../../config";
 import {
   featureIdForBillingEndpoint,
   SEARCH_CREDITS_FEATURE_ID,
@@ -6,6 +40,7 @@ import {
 import {
   RESEARCH_BILLING_ENDPOINT,
   computeResearchCredits,
+  createResearchRouter,
 } from "./research-proxy";
 import type { RequestWithAuth } from "../v1/types";
 
@@ -23,9 +58,9 @@ function reqWithFlags(flags?: Record<string, unknown>) {
 }
 
 describe("research proxy billing", () => {
-  it("bills every /search/research endpoint against the search-credits pool", () => {
-    // All research endpoints share this billing endpoint, and it must resolve
-    // to SEARCH_CREDITS so search credits pay for the special search endpoints.
+  it("bills the shared research billing endpoint against the search-credits pool", () => {
+    // The billing endpoint must resolve to SEARCH_CREDITS so search credits
+    // pay for the special search endpoints.
     expect(featureIdForBillingEndpoint(RESEARCH_BILLING_ENDPOINT)).toBe(
       SEARCH_CREDITS_FEATURE_ID,
     );
@@ -69,4 +104,79 @@ describe("research proxy billing", () => {
       ),
     ).toBe(20);
   });
+});
+
+// ---------------------------------------------------------------------------
+// Route-level coverage: exercise every mounted endpoint through the real
+// router and assert each one submits the search-credits billing endpoint.
+// ---------------------------------------------------------------------------
+
+describe("research proxy routes bill against search credits", () => {
+  let originalProxyUrl: string | undefined;
+
+  const buildApp = () => {
+    const app = express();
+    app.use((req, _res, next) => {
+      (req as any).auth = { team_id: "team-123" };
+      (req as any).acuc = { api_key_id: 42, flags: null };
+      next();
+    });
+    app.use("/search/research", createResearchRouter());
+    return app;
+  };
+
+  const upstreamResponse = (body: unknown) => ({
+    status: 200,
+    ok: true,
+    headers: { get: () => null },
+    text: async () => JSON.stringify(body),
+  });
+
+  beforeAll(() => {
+    originalProxyUrl = config.RESEARCH_PROXY_URL;
+    config.RESEARCH_PROXY_URL = "http://research.test";
+  });
+
+  afterAll(() => {
+    config.RESEARCH_PROXY_URL = originalProxyUrl;
+  });
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    billTeamMock.mockResolvedValue({ success: true });
+  });
+
+  // Each case returns at least one result so the per-result endpoints incur a
+  // charge; the flat read endpoint charges regardless of the body shape.
+  const cases: Array<{ name: string; path: string; query: Record<string, string> }> = [
+    { name: "papers search", path: "/search/research/papers", query: { query: "rag" } },
+    {
+      name: "similar papers",
+      path: "/search/research/papers/1706.03762/similar",
+      query: { intent: "attention" },
+    },
+    {
+      name: "paper read",
+      path: "/search/research/papers/1706.03762",
+      query: { query: "attention" },
+    },
+    { name: "github search", path: "/search/research/github", query: { query: "firecrawl" } },
+  ];
+
+  it.each(cases)(
+    "$name bills the search-credits endpoint",
+    async ({ path, query }) => {
+      fetchMock.mockResolvedValue(upstreamResponse({ results: [{ id: 1 }] }));
+
+      const res = await request(buildApp()).get(path).query(query);
+
+      expect(res.statusCode).toBe(200);
+      expect(billTeamMock).toHaveBeenCalledTimes(1);
+      const billing = billTeamMock.mock.calls[0][3];
+      expect(billing.endpoint).toBe(RESEARCH_BILLING_ENDPOINT);
+      expect(featureIdForBillingEndpoint(billing.endpoint)).toBe(
+        SEARCH_CREDITS_FEATURE_ID,
+      );
+    },
+  );
 });
