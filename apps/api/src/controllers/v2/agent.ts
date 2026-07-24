@@ -18,6 +18,10 @@ import {
 import { UnsafeDomainBlockedError } from "../../lib/threat-protection/error";
 import { calculateThreatScanCredits } from "../../lib/scrape-billing";
 import { billTeam } from "../../services/billing/credit_billing";
+import {
+  emitRejectedScrapeActivityEvents,
+  withoutAuditMetadata,
+} from "../../lib/siem-audit";
 
 export async function agentController(
   req: RequestWithAuth<{}, AgentResponse, AgentRequest>,
@@ -47,8 +51,8 @@ export async function agentController(
   }
 
   _logger.info("Agent starting...", {
-    request: req.body,
-    originalRequest,
+    request: withoutAuditMetadata(req.body),
+    originalRequest: withoutAuditMetadata(originalRequest),
     zeroDataRetention: getScrapeZDR(req.acuc?.flags) === "forced",
   });
 
@@ -97,6 +101,25 @@ export async function agentController(
       }
       const first = blocked[0];
       const error = new UnsafeDomainBlockedError(first.url, first.decision);
+      emitRejectedScrapeActivityEvents(
+        blocked.map(blockedUrl => ({
+          scrapeId: uuidv7(),
+          requestId: agentId,
+          endpoint: "agent",
+          teamId: req.auth.team_id,
+          apiKeyId: req.acuc?.api_key_id,
+          auditMetadata: req.body.auditMetadata,
+          url: blockedUrl.url,
+          error: new UnsafeDomainBlockedError(
+            blockedUrl.url,
+            blockedUrl.decision,
+          ),
+          threatDecisions: [blockedUrl.decision],
+          origin: req.body.origin ?? "api",
+          integration: req.body.integration,
+          zeroDataRetention: false,
+        })),
+      );
       return res.status(403).json({
         success: false,
         code: error.code,
@@ -158,6 +181,7 @@ export async function agentController(
         strictConstrainToURLs: req.body.strictConstrainToURLs ?? undefined,
         webhook: req.body.webhook ?? undefined,
         model: req.body.model,
+        auditMetadata: req.body.auditMetadata,
       }),
     },
   );

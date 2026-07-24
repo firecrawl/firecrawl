@@ -703,6 +703,16 @@ export const threat_protection_config = pgTable("threat_protection_config", {
   updated_at: ts("updated_at").notNull().defaultNow(),
 });
 
+export const siem_audit_config = pgTable("siem_audit_config", {
+  id: uuid("id").notNull().defaultRandom(),
+  org_id: uuid("org_id").notNull().unique(),
+  enabled: boolean("enabled").notNull().default(false),
+  destination: jsonb("destination").notNull().default({}),
+  secret_ciphertext: text("secret_ciphertext").notNull(),
+  created_at: ts("created_at").notNull().defaultNow(),
+  updated_at: ts("updated_at").notNull().defaultNow(),
+});
+
 export const user_notifications = pgTable("user_notifications", {
   id: uuid("id").notNull().defaultRandom(),
   team_id: uuid("team_id"),

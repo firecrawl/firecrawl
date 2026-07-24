@@ -20,6 +20,7 @@ import { BrandingProfile } from "../../types/branding";
 import { ProductProfile } from "../../types/product";
 import { MenuProfile } from "../../types/menu";
 import { threatProtectionOverrideSchema } from "../../lib/threat-protection/config";
+import { auditMetadataSchema } from "../../lib/siem-audit/types";
 
 type Format =
   | "markdown"
@@ -532,6 +533,7 @@ const baseScrapeOptions = z.strictObject({
   // Enterprise: per-request field-level override of the org's threat
   // protection policy. Gated on the team flag + org config (checkPermissions).
   threatProtection: threatProtectionOverrideSchema.optional(),
+  auditMetadata: auditMetadataSchema.optional(),
   // @deprecated
   __experimental_cache: z.boolean().prefault(false).optional(),
   __searchPreviewToken: z.string().optional(),
@@ -978,6 +980,7 @@ const mapRequestSchemaBase = crawlerOptions
     location: locationSchema,
     headers: z.record(z.string(), z.string()).optional(),
     threatProtection: threatProtectionOverrideSchema.optional(),
+    auditMetadata: auditMetadataSchema.optional(),
   });
 
 export const mapRequestSchema = mapRequestSchemaBase.strict();
@@ -1299,6 +1302,7 @@ export type TeamFlags = {
   ignoreRobots?: "disabled" | "allowed" | "forced";
   customRobotsAgent?: "disabled" | "allowed";
   threatProtection?: "disabled" | "allowed" | "forced";
+  siemAudit?: boolean;
   unblockedDomains?: string[];
   forceZDR?: boolean;
   allowZDR?: boolean;

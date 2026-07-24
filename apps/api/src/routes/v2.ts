@@ -70,6 +70,11 @@ import {
   getTeamThreatProtectionController,
   putTeamThreatProtectionController,
 } from "../controllers/v2/team-threat-protection";
+import {
+  getTeamSiemAuditController,
+  putTeamSiemAuditController,
+  testTeamSiemAuditController,
+} from "../controllers/v2/team-siem-audit";
 import { supportProxyController } from "../controllers/v2/support-proxy";
 import { createResearchRouter } from "../controllers/v2/research-proxy";
 import {
@@ -437,6 +442,24 @@ v2Router.put(
   "/team/threat-protection",
   authMiddleware(RateLimiterMode.Account),
   wrap(putTeamThreatProtectionController),
+);
+
+v2Router.get(
+  "/team/siem",
+  authMiddleware(RateLimiterMode.Account),
+  wrap(getTeamSiemAuditController),
+);
+
+v2Router.put(
+  "/team/siem",
+  authMiddleware(RateLimiterMode.Account),
+  wrap(putTeamSiemAuditController),
+);
+
+v2Router.post(
+  "/team/siem/test",
+  authMiddleware(RateLimiterMode.Account),
+  wrap(testTeamSiemAuditController),
 );
 
 v2Router.post(

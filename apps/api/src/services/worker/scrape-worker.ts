@@ -104,6 +104,10 @@ import {
   warmExchangeCatalog,
   type ExchangeScrapeMetadata,
 } from "../../lib/exchange";
+import {
+  emitScrapeActivityEvent,
+  withoutAuditMetadata,
+} from "../../lib/siem-audit";
 
 configDotenv();
 
@@ -295,6 +299,7 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
   applyZdrScope(job.data?.zeroDataRetention);
   logger.info(`🐂 Worker taking job ${job.id}`, { url: job.data.url });
   const start = job.data.startTime ?? Date.now();
+  const scrapeOptionsForLogging = withoutAuditMetadata(job.data.scrapeOptions);
   const remainingTime = job.data.scrapeOptions.timeout
     ? job.data.scrapeOptions.timeout - (Date.now() - start)
     : undefined;
@@ -703,7 +708,7 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
           doc,
           time_taken: timeTakenInSeconds,
           team_id: job.data.team_id,
-          options: job.data.scrapeOptions,
+          options: scrapeOptionsForLogging,
           cost_tracking: costTracking.toJSON(),
           pdf_num_pages: doc.metadata.numPages,
           content_type: doc.metadata.contentType,
@@ -794,7 +799,7 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
           doc,
           time_taken: timeTakenInSeconds,
           team_id: job.data.team_id,
-          options: job.data.scrapeOptions,
+          options: scrapeOptionsForLogging,
           cost_tracking: costTracking.toJSON(),
           pdf_num_pages: doc.metadata.numPages,
           content_type: doc.metadata.contentType,
@@ -836,9 +841,25 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
       }
     }
 
+    emitScrapeActivityEvent(job.id, job.data, {
+      success: true,
+      document: doc,
+      threatDecisions: pipeline.threatDecisions,
+      startedAt: start,
+      completedAt: Date.now(),
+    });
+
     logger.info(`🐂 Job done ${job.id}`);
     return data;
   } catch (error) {
+    emitScrapeActivityEvent(job.id, job.data, {
+      success: false,
+      error,
+      threatDecisions: pipeline?.threatDecisions,
+      startedAt: start,
+      completedAt: Date.now(),
+    });
+
     // Record top-level robots.txt rejections so crawl status can warn
     try {
       if (
@@ -1012,7 +1033,7 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
               "Something went wrong... Contact help@mendable.ai"),
         time_taken: timeTakenInSeconds,
         team_id: job.data.team_id,
-        options: job.data.scrapeOptions,
+        options: scrapeOptionsForLogging,
         cost_tracking: costTracking.toJSON(),
         credits_cost: credits_billed ?? 0,
         zeroDataRetention: job.data.zeroDataRetention,

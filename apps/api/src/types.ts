@@ -12,6 +12,7 @@ import type { CostTracking } from "./lib/cost-tracking";
 import type { BillingMetadata } from "./services/billing/types";
 import { webhookSchema } from "./services/webhook/schema";
 import { SerializedTraceContext } from "./lib/otel-tracer";
+import type { AuditMetadata } from "./lib/siem-audit/types";
 
 type ScrapeJobCommon = {
   concurrencyLimited?: boolean;
@@ -22,6 +23,7 @@ type ScrapeJobCommon = {
   traceContext?: SerializedTraceContext;
   skipNuq?: boolean;
   requestId?: string;
+  auditMetadata?: AuditMetadata;
   monitoring?: {
     monitorId: string;
     checkId: string;

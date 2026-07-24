@@ -36,6 +36,7 @@ import { projectScrapeCredits } from "../../lib/keyless-credit-projection";
 import { applyAgentAuthDiscoveryHeader } from "../../lib/agent-auth-discovery";
 import { getEffectiveConcurrencyLimit } from "../../lib/concurrency-limit";
 import path from "node:path";
+import { withoutAuditMetadata } from "../../lib/siem-audit";
 
 const AGENT_INTEROP_CONCURRENCY_BOOST = 3;
 const SUPPORTED_PARSE_FILE_TYPES =
@@ -132,17 +133,18 @@ function getParseForceEngine(
 function sanitizeParseRequestForLogs(
   body: ParseRequest | Record<string, unknown>,
 ): Record<string, unknown> {
+  const redacted = withoutAuditMetadata(body);
   const file =
-    typeof body === "object" && body !== null && "file" in body
-      ? (body as any).file
+    typeof redacted === "object" && redacted !== null && "file" in redacted
+      ? (redacted as any).file
       : null;
 
   if (!file || typeof file !== "object") {
-    return body as Record<string, unknown>;
+    return redacted as Record<string, unknown>;
   }
 
   return {
-    ...body,
+    ...redacted,
     file: {
       filename: file.filename,
       contentType: file.contentType,

@@ -38,6 +38,7 @@ import { projectScrapeCredits } from "../../lib/keyless-credit-projection";
 import { applyAgentAuthDiscoveryHeader } from "../../lib/agent-auth-discovery";
 import { resolveThreatProtection } from "../../lib/threat-protection/request";
 import { getEffectiveConcurrencyLimit } from "../../lib/concurrency-limit";
+import { withoutAuditMetadata } from "../../lib/siem-audit";
 
 export async function scrapeController(
   req: RequestWithAuth<{}, ScrapeResponse, ScrapeRequest>,
@@ -106,8 +107,8 @@ export async function scrapeController(
   logger.debug("Scrape " + jobId + " starting", {
     version: "v1",
     scrapeId: jobId,
-    request: req.body,
-    originalRequest: preNormalizedBody,
+    request: withoutAuditMetadata(req.body),
+    originalRequest: withoutAuditMetadata(preNormalizedBody),
     account: req.account,
   });
 

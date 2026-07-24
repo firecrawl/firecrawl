@@ -21,6 +21,7 @@ import {
   resolveThreatProtection,
 } from "../../lib/threat-protection/request";
 import { calculateThreatScanCredits } from "../../lib/scrape-billing";
+import { withoutAuditMetadata } from "../../lib/siem-audit";
 
 configDotenv();
 
@@ -71,8 +72,8 @@ export async function mapController(
   const mapId = uuidv7();
 
   logger.info("Map request", {
-    request: req.body,
-    originalRequest,
+    request: withoutAuditMetadata(req.body),
+    originalRequest: withoutAuditMetadata(originalRequest),
     teamId: req.auth.team_id,
     mapId,
   });
