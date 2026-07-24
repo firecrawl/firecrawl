@@ -104,14 +104,8 @@ type ResearchEndpointConfig = {
     params: Record<string, any>,
     req: RequestWithAuth<any, any, any>,
   ) => string;
-  // Credit amount only: "flat" charges 1 (reads/inspects), "perResult" scales
-  // with returned results (searches). The pool is always search credits.
-  costModel: "flat" | "perResult";
+  billAs: "scrape" | "search";
 };
-
-// All research endpoints bill under "search" so featureIdForBillingEndpoint
-// routes them to SEARCH_CREDITS.
-export const RESEARCH_BILLING_ENDPOINT = "search" as const;
 
 type ResearchController = (req: Request, res: Response) => Promise<any>;
 type ResearchQueryParams = Record<string, any> & {
@@ -194,12 +188,12 @@ function requestOrigin(params: ResearchQueryParams, req: Request) {
   return params.origin ?? firstHeaderValue(req, "x-origin") ?? "api";
 }
 
-export function computeResearchCredits(
-  endpoint: ResearchEndpointConfig,
+function creditsFor(
+  config: ResearchEndpointConfig,
   body: any,
   req: RequestWithAuth<any, any, any>,
 ) {
-  if (endpoint.costModel === "flat") return 1;
+  if (config.billAs === "scrape") return 1;
   const forcedKind = getSearchForcedKind(req.acuc?.flags);
   const perTen =
     forcedKind === "zdr"
@@ -322,14 +316,16 @@ function createResearchController(
       }
 
       if (upstream.ok) {
-        credits = computeResearchCredits(endpoint, responseBody, authedReq);
+        credits = creditsFor(endpoint, responseBody, authedReq);
         if (credits > 0) {
           billTeam(
             authedReq.auth.team_id,
             credits,
             authedReq.acuc?.api_key_id ?? null,
             {
-              endpoint: RESEARCH_BILLING_ENDPOINT,
+              // All /search/research endpoints draw from SEARCH_CREDITS, even
+              // read/inspect (billAs "scrape" sets the amount, not the pool).
+              endpoint: "search",
               jobId,
             },
           ).catch(billingError => {
@@ -416,7 +412,7 @@ export function createResearchRouter(options: { legacy?: boolean } = {}) {
           action: "searchPapers",
           targetHint: params => String(params.query),
           upstreamPath: () => "/v2/research/papers",
-          costModel: "perResult",
+          billAs: "search",
         },
         options,
       ),
@@ -437,7 +433,7 @@ export function createResearchRouter(options: { legacy?: boolean } = {}) {
             `${req.params.id}: ${String(params.intent)}`,
           upstreamPath: (_params, req) =>
             `/v2/research/papers/${encodeURIComponent(req.params.id)}/similar`,
-          costModel: "perResult",
+          billAs: "search",
         },
         options,
       ),
@@ -460,7 +456,7 @@ export function createResearchRouter(options: { legacy?: boolean } = {}) {
           targetHint: (_params, request) => request.params.id,
           upstreamPath: (_params, request) =>
             `/v2/research/papers/${encodeURIComponent(request.params.id)}`,
-          costModel: "flat",
+          billAs: "scrape",
         },
         options,
       );
@@ -480,7 +476,7 @@ export function createResearchRouter(options: { legacy?: boolean } = {}) {
           action: "searchGithub",
           targetHint: params => String(params.query),
           upstreamPath: () => "/v2/research/github",
-          costModel: "perResult",
+          billAs: "search",
         },
         options,
       ),
