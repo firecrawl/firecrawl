@@ -75,7 +75,7 @@ First, install the dependencies using pnpm.
 
 ```bash
 # cd apps/api # to make sure you're in the right folder
-pnpm install # make sure you have pnpm version 9+!
+pnpm install # make sure you have pnpm 11.4.0+!
 ```
 
 ### Running the project
