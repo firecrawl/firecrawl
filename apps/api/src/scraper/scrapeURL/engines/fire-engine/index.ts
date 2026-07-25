@@ -76,8 +76,8 @@ async function performFireEngineScrape<
       "fire-engine.url": request.url,
       "fire-engine.priority": request.priority,
       "fire-engine.wait": (request as any).wait,
-      "fire-engine.screenshot": (request as any).screenshot,
-      "fire-engine.fullpage": (request as any).fullPage,
+      "fire-engine.screenshot": request.screenshot,
+      "fire-engine.fullpage": request.fullPage,
       "fire-engine.proxy": (request as any).proxy,
       "fire-engine.mobile": (request as any).mobile,
       "fire-engine.skip_tls": (request as any).skipTlsVerification,
@@ -331,6 +331,20 @@ export async function scrapeURLWithFireEngineChromeCDP(
         ? meta.options.waitFor
         : defaultWait;
 
+    const screenshotFormat = hasFormatOfType(
+      meta.options.formats,
+      "screenshot",
+    );
+    const screenshotFromAction = (meta.options.actions ?? []).some(
+      a => a.type === "screenshot",
+    );
+    const fullPageFromAction = (meta.options.actions ?? []).some(
+      a => a.type === "screenshot" && a.fullPage,
+    );
+    const isScreenshot =
+      screenshotFormat !== undefined || screenshotFromAction;
+    const isFullPage = !!screenshotFormat?.fullPage || fullPageFromAction;
+
     const actions: InternalAction[] = [
       // Transform waitFor option into an action (unsupported by chrome-cdp).
       // When branding is requested and user didn't set waitFor, use a default wait so the page is ready and we avoid JS errors.
@@ -350,19 +364,14 @@ export async function scrapeURLWithFireEngineChromeCDP(
       }),
 
       // Transform screenshot format into an action (unsupported by chrome-cdp)
-      ...(hasFormatOfType(meta.options.formats, "screenshot")
+      ...(screenshotFormat
         ? [
             {
               type: "screenshot" as const,
-              fullPage:
-                hasFormatOfType(meta.options.formats, "screenshot")?.fullPage ||
-                false,
-              ...(hasFormatOfType(meta.options.formats, "screenshot")?.viewport
+              fullPage: screenshotFormat.fullPage || false,
+              ...(screenshotFormat.viewport
                 ? {
-                    viewport: hasFormatOfType(
-                      meta.options.formats,
-                      "screenshot",
-                    )!.viewport,
+                    viewport: screenshotFormat.viewport,
                   }
                 : {}),
             },
@@ -426,6 +435,8 @@ export async function scrapeURLWithFireEngineChromeCDP(
         !meta.internalOptions.zeroDataRetention &&
         meta.internalOptions.saveScrapeResultToGCS,
       zeroDataRetention: meta.internalOptions.zeroDataRetention,
+      screenshot: isScreenshot,
+      fullPage: isFullPage,
       ...(shouldAllowMedia ? { blockMedia: false } : {}),
       ...(forceNonRender ? { forceNonRender: true } : {}),
       persistentStorage: meta.options.profile

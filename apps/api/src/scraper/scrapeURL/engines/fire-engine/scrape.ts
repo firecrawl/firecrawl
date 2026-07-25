@@ -54,6 +54,11 @@ export type FireEngineScrapeRequestCommon = {
   maxAge?: number;
   saveScrapeResultToGCS?: boolean;
   zeroDataRetention?: boolean;
+
+  /** Whether the scrape should capture a screenshot. */
+  screenshot?: boolean;
+  /** When screenshot is true, capture the full page instead of the viewport. */
+  fullPage?: boolean;
 };
 
 export type FireEngineScrapeRequestChromeCDP = {
