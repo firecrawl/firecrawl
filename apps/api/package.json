@@ -113,7 +113,7 @@
     "express": "5.2.1",
     "express-ws": "^5.0.2",
     "foundationdb": "^2.0.1",
-    "geoip-country": "^5.0.202607150057",
+    "geoip-country": "^5.0.202607220102",
     "he": "^1.2.0",
     "http-cookie-agent": "^7.0.1",
     "ioredis": "^5.6.1",

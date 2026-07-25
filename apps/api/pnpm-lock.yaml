@@ -27,7 +27,7 @@ overrides:
   smol-toml@<1.6.1: '>=1.6.1'
   handlebars: '>=4.7.9'
   path-to-regexp@~0.1.12: 0.1.13
-  brace-expansion@>=5.0.0 <5.0.7: 5.0.7
+  brace-expansion@>=5.0.0 <5.0.8: 5.0.8
   ws@>=7.0.0 <7.5.11: 7.5.11
   ws@>=8.0.0 <8.21.0: 8.21.0
   form-data@>=2.0.0 <2.5.6: 2.5.6
@@ -166,8 +166,8 @@ importers:
         specifier: ^2.0.1
         version: 2.0.1
       geoip-country:
-        specifier: ^5.0.202607150057
-        version: 5.0.202607150057
+        specifier: ^5.0.202607220102
+        version: 5.0.202607220102
       he:
         specifier: ^1.2.0
         version: 1.2.0
@@ -2263,9 +2263,9 @@ packages:
   boolbase@1.0.0:
     resolution: {integrity: sha512-JZOSA7Mo9sNGB8+UjSgzdLtokWAky1zbztM3WRLCbZ70/3cTANmQmOdR7y2g+J0e2WXywy1yS468tY+IruqEww==}
 
-  brace-expansion@5.0.7:
-    resolution: {integrity: sha512-7oFy703dxfY3/NLxC1fh2SUCQ0H9rmAY+5EpDVfXjUTTs+HEwR2nYaqLv+GWcTsumwxPfiz6CzCNkwXwBUwqCA==}
-    engines: {node: 18 || 20 || >=22}
+  brace-expansion@5.0.8:
+    resolution: {integrity: sha512-JZyDyq3D4AUifKTPOB7DELf6XsB3WdPuNxCtob1vFXPsSXhdAiHBWJ/tJ8HAc9aH84BK+5JFZLNkJKx3G9kzQg==}
+    engines: {node: 20 || >=22}
 
   braces@3.0.3:
     resolution: {integrity: sha512-yQbXgO/OSZVD2IsiLlro+7Hf6Q18EJrKSEsdoMzKePKXct3gvD8oLcOQdIzGupr5Fj+EDe8gO/lxc1BzfMpxvA==}
@@ -2957,8 +2957,8 @@ packages:
     resolution: {integrity: sha512-zV/5HKTfCeKWnxG0Dmrw51hEWFGfcF2xiXqcA3+J90WDuP0SvoiSO5ORvcBsifmx/FoIjgQN3oNOGaQ5PhLFkg==}
     engines: {node: '>=18'}
 
-  geoip-country@5.0.202607150057:
-    resolution: {integrity: sha512-BsCnrL6DluGwo4CfvCys6q9P+1DJp7CxaJOCRHarkpHQmgjPDZu6n56euBRlullrcB5dwTRODNqlcNTP/Sv4zQ==}
+  geoip-country@5.0.202607220102:
+    resolution: {integrity: sha512-Pwfq8H/YneTSgfeTp8RgzYTYcqvP3mEOF7skjz3bSocgZLEEPyMUgjNVcS6L9hNNg9eJ3pGj973j45ayr/KfsA==}
     engines: {node: '>=10.20.0'}
 
   get-east-asian-width@1.3.1:
@@ -6160,7 +6160,7 @@ snapshots:
 
   boolbase@1.0.0: {}
 
-  brace-expansion@5.0.7:
+  brace-expansion@5.0.8:
     dependencies:
       balanced-match: 4.0.4
 
@@ -6778,7 +6778,7 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  geoip-country@5.0.202607150057:
+  geoip-country@5.0.202607220102:
     dependencies:
       async: 2.6.4
       countries-list: 3.1.1
@@ -7314,7 +7314,7 @@ snapshots:
 
   minimatch@10.2.5:
     dependencies:
-      brace-expansion: 5.0.7
+      brace-expansion: 5.0.8
 
   minimist@1.2.8: {}
 
