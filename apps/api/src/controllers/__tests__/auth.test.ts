@@ -138,9 +138,7 @@ describe("authenticateUser", () => {
         api_key_id: 1,
         team_id: "team-1",
         org_id: "org-1",
-        rate_limits: { scrape: 10 },
         plan_priority: {},
-        concurrency: 2,
         flags: null,
       },
     ]);
@@ -182,9 +180,7 @@ describe("authenticateUser", () => {
         api_key_id: 1,
         team_id: "team-1",
         org_id: "org-1",
-        rate_limits: { crawl: 10 },
         plan_priority: {},
-        concurrency: 2,
         flags: null,
       },
     ]);
@@ -361,9 +357,7 @@ describe("authenticateUser", () => {
         api_key_id: 1,
         team_id: "team-2",
         org_id: "org-2",
-        rate_limits: { scrape: 10 },
         plan_priority: {},
-        concurrency: 2,
         flags: null,
       },
     ]);

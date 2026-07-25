@@ -86,23 +86,10 @@ const mockPreviewACUC: (
   api_key_id: 0,
   team_id,
   org_id: "preview",
-  rate_limits: {
-    crawl: 2,
-    scrape: 10,
-    extract: 10,
-    search: 5,
-    map: 5,
-    preview: 5,
-    crawlStatus: 500,
-    extractStatus: 500,
-    extractAgentPreview: 1,
-    scrapeAgentPreview: 5,
-  },
   plan_priority: {
     bucketLimit: 25,
     planModifier: 0.1,
   },
-  concurrency: is_extract ? 200 : 2,
   flags: null,
   is_extract,
 });
@@ -112,23 +99,10 @@ const mockACUC: () => AuthCreditUsageChunk = () => ({
   api_key_id: 0,
   team_id: "bypass",
   org_id: "bypass",
-  rate_limits: {
-    crawl: 99999999,
-    scrape: 99999999,
-    extract: 99999999,
-    search: 99999999,
-    map: 99999999,
-    preview: 99999999,
-    crawlStatus: 99999999,
-    extractStatus: 99999999,
-    extractAgentPreview: 99999999,
-    scrapeAgentPreview: 99999999,
-  },
   plan_priority: {
     bucketLimit: 25,
     planModifier: 0.1,
   },
-  concurrency: 99999999,
   flags: null,
   is_extract: false,
 });
@@ -646,11 +620,11 @@ async function supaAuthenticateUser(
   }
   if (token == config.PREVIEW_TOKEN) {
     if (mode == RateLimiterMode.CrawlStatus) {
-      rateLimiter = getRateLimiter(RateLimiterMode.CrawlStatus, null);
+      rateLimiter = getRateLimiter(RateLimiterMode.CrawlStatus);
     } else if (mode == RateLimiterMode.ExtractStatus) {
-      rateLimiter = getRateLimiter(RateLimiterMode.ExtractStatus, null);
+      rateLimiter = getRateLimiter(RateLimiterMode.ExtractStatus);
     } else {
-      rateLimiter = getRateLimiter(RateLimiterMode.Preview, null);
+      rateLimiter = getRateLimiter(RateLimiterMode.Preview);
     }
     teamId = `preview_${iptoken}`;
   } else if (token.startsWith("fcmcp_")) {
@@ -829,7 +803,6 @@ async function supaAuthenticateUser(
     // logger.error(`Rate limit exceeded: ${rateLimiterRes}`, {
     //   teamId,
     //   mode,
-    //   rateLimits: chunk?.rate_limits,
     //   rateLimiterRes,
     // });
 

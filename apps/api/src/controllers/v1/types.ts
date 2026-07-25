@@ -1262,26 +1262,6 @@ export type AuthCreditUsageChunk = {
     bucketLimit: number;
     planModifier: number;
   };
-  rate_limits: {
-    crawl: number;
-    scrape: number;
-    search: number;
-    map: number;
-    extract: number;
-    preview: number;
-    crawlStatus: number;
-    extractStatus: number;
-    extractAgentPreview?: number;
-    scrapeAgentPreview?: number;
-    browser?: number;
-    browserExecute?: number;
-    browserReplay?: number;
-    account?: number;
-    supportAsk?: number;
-    supportDocsSearch?: number;
-    research?: number;
-  };
-  concurrency: number;
   flags: TeamFlags;
 
   // appended on JS-side
