@@ -15,27 +15,9 @@ const createRateLimiter = (keyPrefix, points) =>
     duration: 60, // Duration in seconds
   });
 
-type RateLimits = {
-  crawl: number;
-  scrape: number;
-  search: number;
-  map: number;
-  extract: number;
-  preview: number;
-  crawlStatus: number;
-  extractStatus: number;
-  extractAgentPreview?: number;
-  scrapeAgentPreview?: number;
-  browser?: number;
-  browserExecute?: number;
-  browserReplay?: number;
-  account?: number;
-  supportAsk?: number;
-  supportDocsSearch?: number;
-  research?: number;
-};
-
-const fallbackRateLimits: RateLimits = {
+// Keyed by RateLimiterMode so a new mode fails to compile until it has a
+// fallback here, rather than silently taking the 500 default below.
+const fallbackRateLimits: Record<RateLimiterMode, number> = {
   crawl: 15,
   scrape: 100,
   search: 100,
