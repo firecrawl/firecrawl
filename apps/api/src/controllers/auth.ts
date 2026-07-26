@@ -87,6 +87,7 @@ const mockPreviewACUC: (
   team_id,
   org_id: "preview",
   flags: null,
+  is_banned: false,
   is_extract,
 });
 
@@ -96,6 +97,7 @@ const mockACUC: () => AuthCreditUsageChunk = () => ({
   team_id: "bypass",
   org_id: "bypass",
   flags: null,
+  is_banned: false,
   is_extract: false,
 });
 
@@ -753,6 +755,20 @@ async function supaAuthenticateUser(
       chunk.org_id,
       mode,
     );
+  }
+
+  // Banned teams are rejected here, where the mcp / OAuth / API-key paths
+  // converge. Ban enforcement used to rely on auth_credit_usage_chunk zeroing
+  // the rate_limits payload, but authenticated limiting now derives from Autumn
+  // and never reads that field, so bans went unenforced. auth_chunk_1 surfaces
+  // teams.banned as is_banned and we deny it explicitly.
+  if (chunk?.is_banned) {
+    return {
+      success: false,
+      error:
+        "Unauthorized: This account has been banned. Contact support@firecrawl.com if you believe this is a mistake.",
+      status: 403,
+    };
   }
 
   if (chunk?.flags?.ipRestriction) {

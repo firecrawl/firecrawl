@@ -1260,6 +1260,11 @@ export type AuthCreditUsageChunk = {
   org_id: string;
   flags: TeamFlags;
 
+  // teams.banned surfaced from auth_chunk_1 — banned teams are rejected (403)
+  // in supaAuthenticateUser. Optional because pre-rollout cached ACUC entries
+  // and the bypass/preview mocks omit it (treated as not banned).
+  is_banned?: boolean;
+
   // appended on JS-side
   is_extract?: boolean;
 

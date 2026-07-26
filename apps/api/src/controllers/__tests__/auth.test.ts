@@ -170,6 +170,47 @@ describe("authenticateUser", () => {
     );
   });
 
+  it("rejects a banned team with 403", async () => {
+    config.USE_DB_AUTHENTICATION = true;
+    vi.mocked(getValue).mockResolvedValue(null);
+    vi.mocked(authCreditUsageChunk).mockResolvedValue([
+      {
+        api_key: "00000000-0000-4000-8000-000000000000",
+        api_key_id: 1,
+        team_id: "team-banned",
+        org_id: "org-1",
+        is_banned: true,
+        flags: null,
+      },
+    ]);
+    vi.mocked(redlock.using).mockImplementation(
+      async (_keys, _ttl, _options, fn) => fn({ aborted: false } as never),
+    );
+    vi.mocked(autumnService.getRateLimitMultiplier).mockResolvedValue(1);
+    const consume = vi.fn().mockResolvedValue(undefined);
+    vi.mocked(getAutumnRateLimiter).mockReturnValue({ consume } as never);
+
+    const auth = await authenticateUser(
+      {
+        headers: {
+          authorization: "Bearer 00000000-0000-4000-8000-000000000000",
+        },
+        socket: { remoteAddress: "127.0.0.1" },
+      },
+      {},
+      RateLimiterMode.Scrape,
+    );
+
+    expect(auth).toEqual({
+      success: false,
+      error:
+        "Unauthorized: This account has been banned. Contact support@firecrawl.com if you believe this is a mistake.",
+      status: 403,
+    });
+    // Ban is rejected before the rate limiter is consumed.
+    expect(consume).not.toHaveBeenCalled();
+  });
+
   it("accepts a signed MCP delegation through the managed credential purpose without caching", async () => {
     config.USE_DB_AUTHENTICATION = true;
     config.MCP_DELEGATED_CREDENTIAL_SECRET = "mcp-delegation-secret";
