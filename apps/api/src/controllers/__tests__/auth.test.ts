@@ -138,7 +138,6 @@ describe("authenticateUser", () => {
         api_key_id: 1,
         team_id: "team-1",
         org_id: "org-1",
-        plan_priority: {},
         flags: null,
       },
     ]);
@@ -180,7 +179,6 @@ describe("authenticateUser", () => {
         api_key_id: 1,
         team_id: "team-1",
         org_id: "org-1",
-        plan_priority: {},
         flags: null,
       },
     ]);
@@ -357,7 +355,6 @@ describe("authenticateUser", () => {
         api_key_id: 1,
         team_id: "team-2",
         org_id: "org-2",
-        plan_priority: {},
         flags: null,
       },
     ]);

@@ -86,10 +86,6 @@ const mockPreviewACUC: (
   api_key_id: 0,
   team_id,
   org_id: "preview",
-  plan_priority: {
-    bucketLimit: 25,
-    planModifier: 0.1,
-  },
   flags: null,
   is_extract,
 });
@@ -99,10 +95,6 @@ const mockACUC: () => AuthCreditUsageChunk = () => ({
   api_key_id: 0,
   team_id: "bypass",
   org_id: "bypass",
-  plan_priority: {
-    bucketLimit: 25,
-    planModifier: 0.1,
-  },
   flags: null,
   is_extract: false,
 });

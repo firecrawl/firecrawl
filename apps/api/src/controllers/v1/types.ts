@@ -1258,10 +1258,6 @@ export type AuthCreditUsageChunk = {
   api_key_id_text?: string;
   team_id: string;
   org_id: string;
-  plan_priority: {
-    bucketLimit: number;
-    planModifier: number;
-  };
   flags: TeamFlags;
 
   // appended on JS-side
