@@ -6,7 +6,8 @@ module Firecrawl
     class SearchOptions
       FIELDS = %i[
         sources categories include_domains exclude_domains limit tbs location
-        ignore_invalid_urls timeout highlights scrape_options integration enterprise
+        country ignore_invalid_urls timeout highlights scrape_options integration
+        enterprise
       ].freeze
 
       attr_reader(*FIELDS)
@@ -24,6 +25,8 @@ module Firecrawl
           "limit" => limit,
           "tbs" => tbs,
           "location" => location,
+          # ISO country code for geo-targeted search (e.g. "US", "DE")
+          "country" => country,
           "ignoreInvalidURLs" => ignore_invalid_urls,
           "timeout" => timeout,
           "highlights" => highlights,

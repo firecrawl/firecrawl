@@ -8,7 +8,7 @@ module Firecrawl
         formats headers include_tags exclude_tags only_main_content
         timeout wait_for mobile parsers actions location
         skip_tls_verification remove_base64_images block_ads proxy
-        max_age store_in_cache lockdown redact_pii integration
+        max_age min_age store_in_cache lockdown redact_pii profile integration
       ].freeze
 
       attr_reader(*FIELDS)
@@ -36,9 +36,11 @@ module Firecrawl
           "blockAds" => block_ads,
           "proxy" => proxy,
           "maxAge" => max_age,
+          "minAge" => min_age,
           "storeInCache" => store_in_cache,
           "lockdown" => lockdown,
           "redactPII" => redact_pii,
+          "profile" => serialize_profile,
           "integration" => integration,
         }.compact
       end
@@ -47,6 +49,11 @@ module Firecrawl
 
       def format_value(fmt)
         fmt.respond_to?(:to_h) ? fmt.to_h : fmt
+      end
+
+      def serialize_profile
+        return profile if profile.is_a?(Hash)
+        profile&.to_h
       end
     end
   end
