@@ -602,3 +602,67 @@ describe("featureIdForBillingEndpoint", () => {
     expect(featureIdForBillingEndpoint(undefined)).toBe("CREDITS");
   });
 });
+
+// ---------------------------------------------------------------------------
+// getEntityLimits fallback behavior (concurrency + rate-limit multiplier)
+// ---------------------------------------------------------------------------
+
+describe("entity limits fallback", () => {
+  it("returns the Autumn values on the happy path", async () => {
+    const svc = makeService();
+    mockEntityGet.mockResolvedValue({
+      balances: {
+        CONCURRENCY: { remaining: 7 },
+        rate_limits: { granted: 25 },
+      },
+    });
+
+    expect(await svc.getConcurrencyLimit("team-1", "org-1")).toBe(7);
+    expect(await svc.getRateLimitMultiplier("team-1", "org-1")).toBe(25);
+  });
+
+  it("falls back LOW (null / multiplier 1) when the entity is missing (404)", async () => {
+    const svc = makeService();
+    mockEntityGet.mockRejectedValue({ statusCode: 404 });
+
+    expect(await svc.getConcurrencyLimit("team-1", "org-1")).toBeNull();
+    expect(await svc.getRateLimitMultiplier("team-1", "org-1")).toBe(1);
+  });
+
+  it("falls back LOW when the entity exists but the balances are absent", async () => {
+    const svc = makeService();
+    mockEntityGet.mockResolvedValue({ balances: {} });
+
+    expect(await svc.getConcurrencyLimit("team-1", "org-1")).toBeNull();
+    expect(await svc.getRateLimitMultiplier("team-1", "org-1")).toBe(1);
+  });
+
+  it("fails OPEN with high limits when Autumn errors (not a 404)", async () => {
+    const svc = makeService();
+    mockEntityGet.mockRejectedValue({ statusCode: 500 });
+
+    expect(await svc.getConcurrencyLimit("team-1", "org-1")).toBe(100);
+    expect(await svc.getRateLimitMultiplier("team-1", "org-1")).toBe(100);
+  });
+
+  it("fails OPEN when Autumn throws a non-HTTP error", async () => {
+    const svc = makeService();
+    mockEntityGet.mockRejectedValue(new Error("ECONNREFUSED"));
+
+    expect(await svc.getConcurrencyLimit("team-1", "org-1")).toBe(100);
+    expect(await svc.getRateLimitMultiplier("team-1", "org-1")).toBe(100);
+  });
+
+  it("does NOT cache the error fail-open value — retries Autumn next call", async () => {
+    const svc = makeService();
+    mockEntityGet.mockRejectedValueOnce({ statusCode: 500 });
+    expect(await svc.getConcurrencyLimit("team-1", "org-1")).toBe(100);
+
+    // Autumn recovers on the next call; the earlier error must not be pinned.
+    mockEntityGet.mockResolvedValue({
+      balances: { CONCURRENCY: { remaining: 3 }, rate_limits: { granted: 10 } },
+    });
+    expect(await svc.getConcurrencyLimit("team-1", "org-1")).toBe(3);
+    expect(await svc.getRateLimitMultiplier("team-1", "org-1")).toBe(10);
+  });
+});

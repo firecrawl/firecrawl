@@ -25,8 +25,9 @@ const DEFAULT_CONCURRENCY_LIMIT = 2;
 
 /**
  * Returns the team's effective concurrency limit from Autumn's CONCURRENCY
- * balance. Autumn is authoritative; when it can't answer (unavailable, or the
- * entity is missing) we fall back to the default of 2.
+ * balance. Autumn is authoritative; when the entity is missing we fall back to
+ * the low default of 2. When Autumn errors, getConcurrencyLimit already returns
+ * a high fail-open value, so that carries through here.
  */
 export async function getEffectiveConcurrencyLimit(
   teamId: string,

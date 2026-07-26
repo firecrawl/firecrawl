@@ -540,12 +540,27 @@ export class AutumnService {
   >(50_000);
   private static readonly ENTITY_LIMITS_TTL_MS = 60_000;
 
+  // Fail-open fallbacks used ONLY when Autumn itself errors (network / 5xx /
+  // unexpected exception) so a billing-API outage doesn't throttle real
+  // customers down to the low defaults. A 404 or an absent balance is NOT an
+  // error — it legitimately means the team has no elevated entitlement, so
+  // those keep falling back low (concurrency 2, multiplier 1). These values are
+  // intentionally generous but bounded (the concurrency queue cap still
+  // applies).
+  private static readonly ERROR_FALLBACK_CONCURRENCY = 100;
+  private static readonly ERROR_FALLBACK_RATE_MULTIPLIER = 100;
+
   /**
    * Fetches the team's Autumn entity once and derives both the CONCURRENCY
    * limit and the rate-limit multiplier from it. Each team has its own Autumn
    * entity, so the entity balances are per-team regardless of whether the org
-   * has one or many teams. Returns nulls when Autumn is unavailable, the entity
-   * is missing, or a balance isn't present — callers fall back accordingly.
+   * has one or many teams.
+   *
+   * Returns nulls when Autumn is not configured, the entity is missing (404),
+   * or a balance isn't present — these mean "no elevated entitlement", so
+   * callers fall back to the low defaults. When Autumn itself errors (network /
+   * 5xx / unexpected exception) we instead fail OPEN, returning the high
+   * ERROR_FALLBACK_* limits so a billing outage doesn't throttle real teams.
    */
   private async getEntityLimits(
     teamId: string,
@@ -605,20 +620,31 @@ export class AutumnService {
       return store(concurrency, rateLimitMultiplier);
     } catch (error) {
       const status = this.getErrorStatus(error);
+      // 404 = the entity genuinely doesn't exist in Autumn (not an error):
+      // fall back low, and cache it so we don't re-query for a team we know is
+      // absent.
       if (status === 404) return store(null, null);
+      // Any other failure means we couldn't reach Autumn / it errored. Fail
+      // OPEN with high limits rather than throttling the team to the low
+      // defaults. Deliberately not cached, so we retry Autumn on the next
+      // request instead of pinning the team to the fallback for the TTL window.
       logger.error(
-        "Autumn getEntityLimits failed — billing API may be unavailable",
+        "Autumn getEntityLimits failed — billing API may be unavailable, falling back to high limits",
         { teamId, error },
       );
-      return { concurrency: null, rateLimitMultiplier: null };
+      return {
+        concurrency: AutumnService.ERROR_FALLBACK_CONCURRENCY,
+        rateLimitMultiplier: AutumnService.ERROR_FALLBACK_RATE_MULTIPLIER,
+      };
     }
   }
 
   /**
    * Reads the team's allowed concurrent-browser count from Autumn's
-   * entity-scoped CONCURRENCY balance. Returns null when Autumn is unavailable,
-   * the entity is missing, or there's no balance — callers fall back to the
-   * default via getEffectiveConcurrencyLimit.
+   * entity-scoped CONCURRENCY balance. Returns null when the entity is missing
+   * or there's no balance — callers fall back to the low default via
+   * getEffectiveConcurrencyLimit. On an Autumn error it returns the high
+   * ERROR_FALLBACK_CONCURRENCY (fail open) rather than null.
    */
   async getConcurrencyLimit(
     teamId: string,
@@ -630,9 +656,10 @@ export class AutumnService {
   /**
    * Reads the team's rate-limit multiplier from Autumn's `rate_limits` feature.
    * Effective rate limits are `base × multiplier`. Falls back to a multiplier of
-   * 1 when Autumn is unavailable or the feature is missing, so callers don't
-   * have to. Shares a single cached entity fetch with getConcurrencyLimit, so it
-   * adds no Autumn call.
+   * 1 when the feature is missing or the entity doesn't exist, so callers don't
+   * have to; on an Autumn error it fails open with the high
+   * ERROR_FALLBACK_RATE_MULTIPLIER instead. Shares a single cached entity fetch
+   * with getConcurrencyLimit, so it adds no Autumn call.
    */
   async getRateLimitMultiplier(
     teamId: string,
