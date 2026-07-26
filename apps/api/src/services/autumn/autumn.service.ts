@@ -547,8 +547,8 @@ export class AutumnService {
   // those keep falling back low (concurrency 2, multiplier 1). These values are
   // intentionally generous but bounded (the concurrency queue cap still
   // applies).
-  private static readonly ERROR_FALLBACK_CONCURRENCY = 100;
-  private static readonly ERROR_FALLBACK_RATE_MULTIPLIER = 100;
+  private static readonly ERROR_FALLBACK_CONCURRENCY = 200;
+  private static readonly ERROR_FALLBACK_RATE_MULTIPLIER = 2500;
 
   /**
    * Fetches the team's Autumn entity once and derives both the CONCURRENCY

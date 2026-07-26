@@ -641,22 +641,22 @@ describe("entity limits fallback", () => {
     const svc = makeService();
     mockEntityGet.mockRejectedValue({ statusCode: 500 });
 
-    expect(await svc.getConcurrencyLimit("team-1", "org-1")).toBe(100);
-    expect(await svc.getRateLimitMultiplier("team-1", "org-1")).toBe(100);
+    expect(await svc.getConcurrencyLimit("team-1", "org-1")).toBe(200);
+    expect(await svc.getRateLimitMultiplier("team-1", "org-1")).toBe(2500);
   });
 
   it("fails OPEN when Autumn throws a non-HTTP error", async () => {
     const svc = makeService();
     mockEntityGet.mockRejectedValue(new Error("ECONNREFUSED"));
 
-    expect(await svc.getConcurrencyLimit("team-1", "org-1")).toBe(100);
-    expect(await svc.getRateLimitMultiplier("team-1", "org-1")).toBe(100);
+    expect(await svc.getConcurrencyLimit("team-1", "org-1")).toBe(200);
+    expect(await svc.getRateLimitMultiplier("team-1", "org-1")).toBe(2500);
   });
 
   it("does NOT cache the error fail-open value — retries Autumn next call", async () => {
     const svc = makeService();
     mockEntityGet.mockRejectedValueOnce({ statusCode: 500 });
-    expect(await svc.getConcurrencyLimit("team-1", "org-1")).toBe(100);
+    expect(await svc.getConcurrencyLimit("team-1", "org-1")).toBe(200);
 
     // Autumn recovers on the next call; the earlier error must not be pinned.
     mockEntityGet.mockResolvedValue({
