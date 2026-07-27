@@ -837,7 +837,7 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
       }
     }
 
-    await emitScrapeActivityEvent(job.id, job.data, {
+    emitScrapeActivityEvent(job.id, job.data, {
       success: true,
       document: doc,
       threatDecisions: pipeline.threatDecisions,
@@ -848,7 +848,7 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
     logger.info(`🐂 Job done ${job.id}`);
     return data;
   } catch (error) {
-    await emitScrapeActivityEvent(job.id, job.data, {
+    emitScrapeActivityEvent(job.id, job.data, {
       success: false,
       error,
       threatDecisions: pipeline?.threatDecisions,

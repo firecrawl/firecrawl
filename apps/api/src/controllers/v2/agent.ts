@@ -98,7 +98,7 @@ export async function agentController(
       }
       const first = blocked[0];
       const error = new UnsafeDomainBlockedError(first.url, first.decision);
-      await emitRejectedScrapeActivityEvents(
+      emitRejectedScrapeActivityEvents(
         blocked.map(blockedUrl => ({
           scrapeId: uuidv7(),
           requestId: agentId,

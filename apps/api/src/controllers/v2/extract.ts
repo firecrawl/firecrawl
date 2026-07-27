@@ -74,7 +74,7 @@ export async function extractController(
       }),
     ) ?? [];
 
-  await emitRejectedScrapeActivityEvents(
+  emitRejectedScrapeActivityEvents(
     invalidURLs.map(url => ({
       scrapeId: uuidv7(),
       requestId: extractId,
@@ -140,7 +140,7 @@ export async function extractController(
       });
     }
     if (blocked.length > 0) {
-      await emitRejectedScrapeActivityEvents(
+      emitRejectedScrapeActivityEvents(
         blocked
           .filter(blockedUrl => !invalidURLs.includes(blockedUrl.url))
           .map(blockedUrl => ({

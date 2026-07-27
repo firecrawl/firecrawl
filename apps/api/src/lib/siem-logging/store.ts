@@ -18,6 +18,10 @@ const configCache = new Map<
   { expiresAt: number; value: SiemConfigRow | null }
 >();
 
+function enabledCacheKey(orgId: string): string {
+  return `{siemLoggingConfig:${orgId}}:enabled`;
+}
+
 const storedDestinationSchema = z.strictObject({
   type: z.literal("azure_sentinel"),
   tenantId: z.string(),
@@ -114,16 +118,21 @@ async function getOrgSiemLoggingConfigRow(
 }
 
 export async function isOrgSiemLoggingEnabled(orgId: string): Promise<boolean> {
-  const key = `{siemLoggingConfig}:enabled:${orgId}`;
+  const key = enabledCacheKey(orgId);
   const redis = getRedisConnection();
   const cached = await redis.get(key);
   if (cached !== null) return cached === "1";
 
-  const rows = await db
-    .select({ enabled: schema.siem_logging_config.enabled })
-    .from(schema.siem_logging_config)
-    .where(eq(schema.siem_logging_config.org_id, orgId))
-    .limit(1);
+  let rows: { enabled: boolean }[] = [];
+  try {
+    rows = await db
+      .select({ enabled: schema.siem_logging_config.enabled })
+      .from(schema.siem_logging_config)
+      .where(eq(schema.siem_logging_config.org_id, orgId))
+      .limit(1);
+  } catch (error) {
+    if (!isMissingTableError(error)) throw error;
+  }
   const enabled = rows[0]?.enabled === true;
   await redis.set(key, enabled ? "1" : "0", "EX", ENABLED_CACHE_TTL_SECONDS);
   return enabled;
@@ -183,7 +192,7 @@ export async function upsertOrgSiemLoggingConfig(
   cacheRow(orgId, row);
   await getRedisConnection()
     .set(
-      `{siemLoggingConfig}:enabled:${orgId}`,
+      enabledCacheKey(orgId),
       row.enabled ? "1" : "0",
       "EX",
       ENABLED_CACHE_TTL_SECONDS,

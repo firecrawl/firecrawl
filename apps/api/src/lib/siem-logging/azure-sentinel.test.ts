@@ -176,6 +176,33 @@ describe("Azure Sentinel sender", () => {
     expect(retryResponses.every(response => response.bodyUsed)).toBe(true);
   });
 
+  it("exposes the capped Retry-After delay after the final attempt", async () => {
+    const sleep = vi.fn(async () => {});
+    const fetchImpl: SenderDependencies["fetchImpl"] = async url => {
+      if (url.includes("/token")) {
+        return new Response(
+          JSON.stringify({ access_token: "token", expires_in: 3600 }),
+          { status: 200 },
+        );
+      }
+      return new Response("try later", {
+        status: 429,
+        headers: { "retry-after": "86400" },
+      });
+    };
+
+    await expect(
+      sendAzureSentinelEvents(destination, [event()], {
+        fetchImpl,
+        sleep,
+        tokenUrl: "https://login.example.test/token",
+      }),
+    ).rejects.toMatchObject({
+      kind: "rate_limited",
+      retryAfterMs: 30_000,
+    });
+  });
+
   it("retries transient network failures three times", async () => {
     let ingestionAttempts = 0;
     const sleep = vi.fn(async () => {});

@@ -86,10 +86,12 @@ function retryAfterMs(response: Response): number | undefined {
   const value = response.headers.get("retry-after");
   if (!value) return undefined;
   const seconds = Number(value);
-  if (Number.isFinite(seconds)) return Math.max(0, seconds * 1000);
+  if (Number.isFinite(seconds)) {
+    return Math.min(Math.max(0, seconds * 1000), MAX_RETRY_DELAY_MS);
+  }
   const date = Date.parse(value);
   if (Number.isNaN(date)) return undefined;
-  return Math.max(0, date - Date.now());
+  return Math.min(Math.max(0, date - Date.now()), MAX_RETRY_DELAY_MS);
 }
 
 async function errorText(response: Response): Promise<string> {
@@ -102,10 +104,8 @@ async function waitBeforeRetry(
   response: Response,
   sleep: (ms: number) => Promise<void>,
 ): Promise<void> {
-  const delay = Math.min(
-    retryAfterMs(response) ?? Math.min(250 * 2 ** (attempt - 1), 2000),
-    MAX_RETRY_DELAY_MS,
-  );
+  const delay =
+    retryAfterMs(response) ?? Math.min(250 * 2 ** (attempt - 1), 2000);
   await response.body?.cancel();
   await sleep(delay);
 }

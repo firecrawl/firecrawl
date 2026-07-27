@@ -149,7 +149,7 @@ export async function batchScrapeController(
       ) ?? [];
     if (blockedURLs.length > 0) {
       locallyBlockedURLs.push(...blockedURLs);
-      await emitRejectedScrapeActivityEvents(
+      emitRejectedScrapeActivityEvents(
         locallyBlockedURLs.map(url => ({
           scrapeId: uuidv7(),
           requestId: id,
@@ -174,7 +174,7 @@ export async function batchScrapeController(
     }
   }
 
-  await emitRejectedScrapeActivityEvents(
+  emitRejectedScrapeActivityEvents(
     locallyBlockedURLs.map(url => ({
       scrapeId: uuidv7(),
       requestId: id,
@@ -221,7 +221,7 @@ export async function batchScrapeController(
           );
         });
       }
-      await emitRejectedScrapeActivityEvents(
+      emitRejectedScrapeActivityEvents(
         blocked.map(blockedUrl => ({
           scrapeId: uuidv7(),
           requestId: id,

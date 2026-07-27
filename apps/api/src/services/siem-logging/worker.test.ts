@@ -55,6 +55,11 @@ function createJob() {
     moveToCompleted: vi.fn().mockResolvedValue(undefined),
     moveToFailed: vi.fn().mockResolvedValue(undefined),
     discard: vi.fn(),
+    attemptsMade: 0,
+    opts: {
+      attempts: 8,
+      backoff: { type: "exponential", delay: 1000 },
+    },
   } as unknown as Job<SiemLoggingJobData>;
 }
 
@@ -105,6 +110,22 @@ describe("SIEM logging worker", () => {
     });
 
     expect(job.discard).not.toHaveBeenCalled();
+    expect(job.moveToFailed).toHaveBeenCalledOnce();
+  });
+
+  it("does not retry before the provider's Retry-After delay", async () => {
+    const job = createJob();
+
+    await processSiemLoggingJob("token", job, {
+      getConfig: vi.fn().mockResolvedValue(config),
+      deliver: vi
+        .fn()
+        .mockRejectedValue(
+          new SiemDeliveryError("rate_limited", "retry", 429, 15_000),
+        ),
+    });
+
+    expect(job.opts.backoff).toEqual({ type: "fixed", delay: 15_000 });
     expect(job.moveToFailed).toHaveBeenCalledOnce();
   });
 

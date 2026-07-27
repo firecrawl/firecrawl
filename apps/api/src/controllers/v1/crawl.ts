@@ -95,7 +95,7 @@ export async function crawlController(
         });
       }
       const error = new UnsafeDomainBlockedError(req.body.url, decision);
-      await emitRejectedScrapeActivityEvent({
+      emitRejectedScrapeActivityEvent({
         scrapeId: uuidv7(),
         requestId: id,
         endpoint: "crawl",

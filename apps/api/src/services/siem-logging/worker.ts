@@ -39,6 +39,34 @@ function asError(error: unknown): Error {
   return error instanceof Error ? error : new Error(String(error));
 }
 
+function configuredRetryDelay(job: Job<SiemLoggingJobData>): number {
+  const backoff = job.opts.backoff;
+  if (typeof backoff === "number") return backoff;
+  if (!backoff) return 0;
+  const delay = backoff.delay ?? 0;
+  if (backoff.type === "exponential") {
+    return delay * 2 ** job.attemptsMade;
+  }
+  return delay;
+}
+
+function applyRetryAfter(
+  job: Job<SiemLoggingJobData>,
+  error: SiemDeliveryError,
+): void {
+  if (
+    error.kind !== "rate_limited" ||
+    error.retryAfterMs === undefined ||
+    error.retryAfterMs <= 0
+  ) {
+    return;
+  }
+  job.opts.backoff = {
+    type: "fixed",
+    delay: Math.max(configuredRetryDelay(job), error.retryAfterMs),
+  };
+}
+
 export async function processSiemLoggingJob(
   token: string,
   job: Job<SiemLoggingJobData>,
@@ -82,6 +110,9 @@ export async function processSiemLoggingJob(
       permanentFailureKinds.has(error.kind)
     ) {
       job.discard();
+    }
+    if (error instanceof SiemDeliveryError) {
+      applyRetryAfter(job, error);
     }
     await job.moveToFailed(asError(error), token, false);
   } finally {

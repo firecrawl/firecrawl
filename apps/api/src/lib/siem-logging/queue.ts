@@ -13,7 +13,6 @@ function jobIdFor(orgId: string, event: ScrapeActivityEvent): string {
         event.scrape_id,
         event.request_id,
         event.result,
-        event.completed_at,
       ]),
     )
     .digest("hex");

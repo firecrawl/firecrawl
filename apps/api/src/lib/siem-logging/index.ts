@@ -12,7 +12,15 @@ import { getApiKeyName, isOrgSiemLoggingEnabled } from "./store";
 
 const logger = _logger.child({ module: "siem-logging" });
 
-export async function emitScrapeActivityEvent(
+export function emitScrapeActivityEvent(
+  jobId: string,
+  job: ScrapeJobSingleUrls,
+  outcome: ScrapeActivityOutcome,
+): void {
+  void emitScrapeActivityEventAsync(jobId, job, outcome);
+}
+
+async function emitScrapeActivityEventAsync(
   jobId: string,
   job: ScrapeJobSingleUrls,
   outcome: ScrapeActivityOutcome,
@@ -43,16 +51,22 @@ export async function emitScrapeActivityEvent(
   }
 }
 
-export async function emitRejectedScrapeActivityEvent(
+export function emitRejectedScrapeActivityEvent(
   input: RejectedScrapeActivity,
-): Promise<void> {
-  await emitRejectedScrapeActivityEvents([input]);
+): void {
+  emitRejectedScrapeActivityEvents([input]);
 }
 
-export async function emitRejectedScrapeActivityEvents(
+export function emitRejectedScrapeActivityEvents(
+  inputs: RejectedScrapeActivity[],
+): void {
+  if (inputs.length === 0) return;
+  void emitRejectedScrapeActivityEventsAsync(inputs);
+}
+
+async function emitRejectedScrapeActivityEventsAsync(
   inputs: RejectedScrapeActivity[],
 ): Promise<void> {
-  if (inputs.length === 0) return;
   try {
     const byTeam = new Map<string, RejectedScrapeActivity[]>();
     for (const input of inputs) {
