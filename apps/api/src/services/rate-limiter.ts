@@ -65,12 +65,7 @@ const BASE_RATE_LIMITS: Partial<Record<RateLimiterMode, number>> = {
  * use getAutumnRateLimiter.
  */
 export function getRateLimiter(mode: RateLimiterMode): RateLimiterRedis {
-  let rateLimit = fallbackRateLimits?.[mode] ?? 500;
-
-  if (mode === RateLimiterMode.Search || mode === RateLimiterMode.Scrape) {
-    // TEMP: Mogery
-    rateLimit = Math.max(rateLimit, 100);
-  }
+  const rateLimit = fallbackRateLimits?.[mode] ?? 500;
 
   return createRateLimiter(`${mode}`, rateLimit);
 }
@@ -92,11 +87,6 @@ export function getAutumnRateLimiter(
     rateLimit = base * safeMultiplier;
   } else {
     rateLimit = fallbackRateLimits?.[mode] ?? 500;
-  }
-
-  if (mode === RateLimiterMode.Search || mode === RateLimiterMode.Scrape) {
-    // TEMP: Mogery
-    rateLimit = Math.max(rateLimit, 100);
   }
 
   return createRateLimiter(`${mode}`, rateLimit);
