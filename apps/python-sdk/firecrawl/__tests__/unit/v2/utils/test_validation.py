@@ -398,3 +398,38 @@ class TestPrepareScrapeOptions:
         assert result["minAge"] == 1000
         assert "min_age" not in result
         assert result["maxAge"] == 5000
+
+class TestSkipTlsVerificationDefault:
+    """The SDK must not send skipTlsVerification unless the caller set it.
+
+    The API decides the default itself: it turns certificate checking back on
+    when headers or actions are present, and only skips it for plain scrapes.
+    Sending a value from the SDK overrides that, so a scrape carrying
+    credentials in headers would silently stop verifying certificates.
+    """
+
+    def test_omitted_when_not_set(self):
+        """An unset option is left to the server."""
+        result = prepare_scrape_options(ScrapeOptions())
+
+        assert "skipTlsVerification" not in result
+
+    def test_omitted_when_headers_are_present(self):
+        """Headers are exactly the case the server wants to decide."""
+        result = prepare_scrape_options(
+            ScrapeOptions(headers={"Authorization": "Bearer token"})
+        )
+
+        assert "skipTlsVerification" not in result
+
+    def test_explicit_true_is_sent(self):
+        """Opting in is still honoured."""
+        result = prepare_scrape_options(ScrapeOptions(skip_tls_verification=True))
+
+        assert result["skipTlsVerification"] is True
+
+    def test_explicit_false_is_sent(self):
+        """Opting out is still honoured."""
+        result = prepare_scrape_options(ScrapeOptions(skip_tls_verification=False))
+
+        assert result["skipTlsVerification"] is False

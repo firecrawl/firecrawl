@@ -531,11 +531,14 @@ def prepare_scrape_options(options: Optional[ScrapeOptions]) -> Optional[Dict[st
     if validated_options is None:
         return None
     
-    # Apply default values for None fields
+    # Apply default values for None fields.
+    # skip_tls_verification is deliberately absent: the API turns it off by
+    # itself when headers or actions are present, and sending an explicit
+    # value here would override that and disable certificate checks for
+    # authenticated scrapes.
     default_values = {
         "only_main_content": True,
         "mobile": False,
-        "skip_tls_verification": True,
         "remove_base64_images": True,
         "fast_mode": False,
         "block_ads": True,
