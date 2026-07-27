@@ -51,6 +51,25 @@ describe("findDeclaredJsonLdLogo", () => {
     ).toBeNull();
   });
 
+  it("skips Product-family subtypes (schema.org allows logo on Product)", () => {
+    expect(
+      findDeclaredJsonLdLogo(
+        docWith({
+          "@type": "IndividualProduct",
+          logo: "https://maker.com/product-logo.png",
+        }),
+      ),
+    ).toBeNull();
+    expect(
+      findDeclaredJsonLdLogo(
+        docWith({
+          "@type": "ProductModel",
+          logo: "https://maker.com/model-logo.png",
+        }),
+      ),
+    ).toBeNull();
+  });
+
   it("finds the site org even when a product block comes first", () => {
     expect(
       findDeclaredJsonLdLogo(

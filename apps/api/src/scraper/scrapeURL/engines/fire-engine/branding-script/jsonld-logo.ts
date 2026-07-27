@@ -4,8 +4,13 @@
 // an Organization/WebSite allowlist) keeps coverage of schema.org's hundreds
 // of LocalBusiness subtypes (Restaurant, Dentist, ...), which small-business
 // sites commonly use.
-const WRONG_ENTITY_TYPE =
-  /^(brand|product|productgroup|offer|review|rating|aggregaterating|person|comment)$/i;
+// Substring family match so schema.org subtypes are covered without
+// enumerating the type tree: "product" catches Product, ProductModel,
+// IndividualProduct, ProductGroup, SomeProducts; "offer" catches Offer,
+// AggregateOffer; "review"/"rating" catch their Aggregate/User variants.
+// No Organization/WebSite/LocalBusiness-family type name contains any of
+// these words, so legitimate site entities are unaffected.
+const WRONG_ENTITY_TYPE = /product|offer|brand|review|rating|person|comment/i;
 
 function typeAllowsSiteLogo(t: unknown): boolean {
   const types = Array.isArray(t) ? t : t == null ? [] : [t];
