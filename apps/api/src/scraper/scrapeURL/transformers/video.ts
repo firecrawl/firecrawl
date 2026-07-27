@@ -2,7 +2,7 @@ import { Meta } from "..";
 import { Document, VideoItem } from "../../../controllers/v2/types";
 import { config } from "../../../config";
 import { hasFormatOfType } from "../../../lib/format-utils";
-import { throwIfMediaAccessDenied } from "../error";
+import { throwIfMediaAccessDenied, throwIfMediaBlocked } from "../error";
 
 // Video downloads can be large; generous but bounded so a hung fetch can't
 // silently consume the whole scrape budget.
@@ -183,6 +183,7 @@ async function fetchLegacyVideoIfSupported(meta: Meta, document: Document) {
       .json()
       .catch(() => ({ detail: "Unknown error" }));
     throwIfMediaAccessDenied(error);
+    throwIfMediaBlocked(error);
     throw new Error(`Video download failed: ${error.detail}`);
   }
 

@@ -1,5 +1,5 @@
 import { fetchAudio } from "../audio";
-import { MediaAccessDeniedError } from "../../error";
+import { MediaAccessDeniedError, MediaBlockedError } from "../../error";
 import { config } from "../../../../config";
 
 describe("fetchAudio lockdown guard", () => {
@@ -184,6 +184,86 @@ describe("fetchAudio lockdown guard", () => {
     expect(error.message).toBe(
       "Audio download failed: Download failed: some other error",
     );
+  });
+
+  it.each([
+    "Download failed: ERROR: unable to download video data: HTTP Error 403: Forbidden",
+    "Download failed: ERROR: [youtube] x: Sign in to confirm you’re not a bot.",
+    "Download failed: ERROR: [youtube] x: Please sign in.",
+  ])("classifies proxy/bot blocks as retryable: %s", async detail => {
+    const fetchSpy = vi.fn(async (url: string, _init?: RequestInit) => {
+      if (url.endsWith("/supported-urls")) {
+        return {
+          ok: true,
+          json: async () => ({ regex: "https://example\\.com/audio" }),
+        };
+      }
+      return { ok: false, status: 400, json: async () => ({ detail }) };
+    });
+    global.fetch = fetchSpy as any;
+    config.AVGRAB_SERVICE_URL = "https://avgrab.example";
+
+    const meta: any = {
+      url: "https://example.com/audio",
+      options: { lockdown: false, formats: [{ type: "audio" }] },
+      logger: { warn: vi.fn(), info: vi.fn(), debug: vi.fn() },
+    };
+
+    const error = await fetchAudio(meta, {} as any).catch(e => e);
+    expect(error).toBeInstanceOf(MediaBlockedError);
+    expect(error.code).toBe("SCRAPE_MEDIA_BLOCKED");
+  });
+
+  it("surfaces a connection failure to avgrab as retryable", async () => {
+    const fetchSpy = vi.fn(async (url: string, _init?: RequestInit) => {
+      if (url.endsWith("/supported-urls")) {
+        return {
+          ok: true,
+          json: async () => ({ regex: "https://example\\.com/audio" }),
+        };
+      }
+      throw new TypeError("fetch failed");
+    });
+    global.fetch = fetchSpy as any;
+    config.AVGRAB_SERVICE_URL = "https://avgrab.example";
+
+    const meta: any = {
+      url: "https://example.com/audio",
+      options: { lockdown: false, formats: [{ type: "audio" }] },
+      logger: { warn: vi.fn(), info: vi.fn(), debug: vi.fn() },
+    };
+
+    const error = await fetchAudio(meta, {} as any).catch(e => e);
+    expect(error).toBeInstanceOf(MediaBlockedError);
+  });
+
+  it("does NOT classify age-restricted sign-in as a retryable block", async () => {
+    const fetchSpy = vi.fn(async (url: string, _init?: RequestInit) => {
+      if (url.endsWith("/supported-urls")) {
+        return {
+          ok: true,
+          json: async () => ({ regex: "https://example\\.com/audio" }),
+        };
+      }
+      return {
+        ok: false,
+        status: 400,
+        json: async () => ({
+          detail: "Download failed: ERROR: Sign in to confirm your age.",
+        }),
+      };
+    });
+    global.fetch = fetchSpy as any;
+    config.AVGRAB_SERVICE_URL = "https://avgrab.example";
+
+    const meta: any = {
+      url: "https://example.com/audio",
+      options: { lockdown: false, formats: [{ type: "audio" }] },
+      logger: { warn: vi.fn(), info: vi.fn(), debug: vi.fn() },
+    };
+
+    const error = await fetchAudio(meta, {} as any).catch(e => e);
+    expect(error).not.toBeInstanceOf(MediaBlockedError);
   });
 
   it("omits cookies from the avgrab request when no audio cookies are available", async () => {

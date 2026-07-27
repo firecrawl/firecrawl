@@ -467,6 +467,18 @@ export async function scrapeController(
             });
           }
 
+          // Transient upstream/proxy block — signal retryable, not a server bug.
+          if (e.code === "SCRAPE_MEDIA_BLOCKED") {
+            setSpanAttributes(span, {
+              "scrape.status_code": 502,
+            });
+            return res.status(502).json({
+              success: false,
+              code: e.code,
+              error: e.message,
+            });
+          }
+
           const statusCode = e.code === "SCRAPE_TIMEOUT" ? 408 : 500;
           setSpanAttributes(span, {
             "scrape.status_code": statusCode,
