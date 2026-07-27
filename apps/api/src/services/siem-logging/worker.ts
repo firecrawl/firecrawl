@@ -18,10 +18,11 @@ import { logger as _logger } from "../../lib/logger";
 
 interface HandlerDependencies {
   getConfig: (orgId: string) => Promise<OrgSiemLoggingConfig | null>;
+  /** Resolves with the number of events the destination actually accepted. */
   deliver: (
     destination: AzureSentinelDestination,
     events: ScrapeActivityEvent[],
-  ) => Promise<void>;
+  ) => Promise<number>;
 }
 
 const defaultDependencies: HandlerDependencies = {
@@ -59,8 +60,12 @@ export async function deliverSiemLoggingBatch(
   }
 
   try {
-    await deps.deliver(config.destination, events);
-    siemLoggingEventsTotal.inc({ result: "delivered" }, events.length);
+    // Count what the destination took, not what we handed over: the sender skips
+    // events it can never deliver, and those are already counted as dropped.
+    const delivered = await deps.deliver(config.destination, events);
+    if (delivered > 0) {
+      siemLoggingEventsTotal.inc({ result: "delivered" }, delivered);
+    }
     return { disposition: "done" };
   } catch (error) {
     const reason =

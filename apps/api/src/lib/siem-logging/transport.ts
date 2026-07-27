@@ -641,6 +641,13 @@ export async function consumeSiemLoggingEvents(
   registeredOptions = options;
   try {
     const ch = await getConsumeChannel();
+    // Same race the reconnect path guards: a SIGTERM during a redeploy can land
+    // while the initial connection is still opening, and subscribing after that
+    // would leave a consumer attached to a transport shutdown already released.
+    if (closed) {
+      await closeConnection();
+      return;
+    }
     await subscribe(ch, handler, options);
   } catch (error) {
     // A broker that is unavailable at worker startup has to enter the same retry

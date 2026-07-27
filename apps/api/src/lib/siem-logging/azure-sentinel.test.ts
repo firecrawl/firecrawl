@@ -319,14 +319,18 @@ describe("Azure Sentinel sender", () => {
     const compressedBodies = [...batches];
 
     expect(compressedBodies.length).toBeGreaterThan(1);
-    expect(compressedBodies.every(batch => batch.byteLength <= 1200)).toBe(
+    expect(compressedBodies.every(batch => batch.body.byteLength <= 1200)).toBe(
       true,
     );
     expect(
       compressedBodies.flatMap(batch =>
-        JSON.parse(gunzipSync(batch).toString("utf8")),
+        JSON.parse(gunzipSync(batch.body).toString("utf8")),
       ),
     ).toHaveLength(noisyEvents.length);
+    // Each batch reports its own size so the caller can count what it delivered.
+    expect(
+      compressedBodies.reduce((total, batch) => total + batch.eventCount, 0),
+    ).toBe(noisyEvents.length);
   });
 
   // An event too large to ever deliver must not take its batch down with it: the
@@ -338,10 +342,16 @@ describe("Azure Sentinel sender", () => {
     );
     const events = [event("small-1"), oversized, event("small-2")];
 
-    const delivered = [...buildCompressedBatches(events, 1200)].flatMap(batch =>
-      JSON.parse(gunzipSync(batch).toString("utf8")),
+    const batches = [...buildCompressedBatches(events, 1200)];
+    const delivered = batches.flatMap(batch =>
+      JSON.parse(gunzipSync(batch.body).toString("utf8")),
     ) as ScrapeActivityEvent[];
 
     expect(delivered.map(e => e.scrape_id)).toEqual(["small-1", "small-2"]);
+    // The skipped event must not be counted as delivered — it is already
+    // counted as dropped, and double-counting it corrupts both metrics.
+    expect(batches.reduce((total, batch) => total + batch.eventCount, 0)).toBe(
+      2,
+    );
   });
 });

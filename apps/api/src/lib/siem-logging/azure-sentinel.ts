@@ -223,10 +223,24 @@ function gzipEvents(events: ScrapeActivityEvent[]): Buffer {
   return gzipSync(Buffer.from(JSON.stringify(events), "utf8"));
 }
 
+/**
+ * A gzipped request body plus how many events it carries, so the caller can
+ * report what was actually delivered rather than what it was handed — a batch
+ * can contain fewer events than the input if any were skipped as undeliverable.
+ */
+interface CompressedBatch {
+  body: Buffer;
+  eventCount: number;
+}
+
+function compressedBatch(events: ScrapeActivityEvent[]): CompressedBatch {
+  return { body: gzipEvents(events), eventCount: events.length };
+}
+
 export function* buildCompressedBatches(
   events: ScrapeActivityEvent[],
   maxBytes = MAX_COMPRESSED_BODY_BYTES,
-): Generator<Buffer> {
+): Generator<CompressedBatch> {
   let pending: ScrapeActivityEvent[] = [];
 
   for (const event of events) {
@@ -239,7 +253,7 @@ export function* buildCompressedBatches(
     // The event doesn't fit alongside what's pending — close that batch out and
     // consider the event on its own.
     if (pending.length > 0) {
-      yield gzipEvents(pending);
+      yield compressedBatch(pending);
       pending = [];
     }
 
@@ -259,7 +273,7 @@ export function* buildCompressedBatches(
     pending = [event];
   }
 
-  if (pending.length > 0) yield gzipEvents(pending);
+  if (pending.length > 0) yield compressedBatch(pending);
 }
 
 async function sendBatch(
@@ -334,14 +348,21 @@ async function sendBatch(
   }
 }
 
+/**
+ * Returns how many events were actually accepted by the destination, which is
+ * fewer than `events.length` when any were skipped as undeliverable. Callers
+ * must attribute their `delivered` metric to this count, not to what they
+ * passed in, or a skipped event gets counted as both dropped and delivered.
+ */
 export async function sendAzureSentinelEvents(
   destination: AzureSentinelDestination,
   events: ScrapeActivityEvent[],
   deps: SenderDependencies = {},
-): Promise<void> {
-  if (events.length === 0) return;
+): Promise<number> {
+  if (events.length === 0) return 0;
   let token: string | undefined;
-  for (const body of buildCompressedBatches(events)) {
+  let delivered = 0;
+  for (const { body, eventCount } of buildCompressedBatches(events)) {
     try {
       token ??= await getAccessToken(destination, deps);
       try {
@@ -358,6 +379,7 @@ export async function sendAzureSentinelEvents(
           throw error;
         }
       }
+      delivered += eventCount;
       siemLoggingDeliveryBatchesTotal.inc({ result: "success" });
     } catch (error) {
       if (
@@ -370,6 +392,7 @@ export async function sendAzureSentinelEvents(
       throw error;
     }
   }
+  return delivered;
 }
 
 export function clearAzureTokenCache(): void {

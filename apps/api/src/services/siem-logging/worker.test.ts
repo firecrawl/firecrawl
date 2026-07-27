@@ -50,7 +50,7 @@ const config: OrgSiemLoggingConfig = {
 
 describe("SIEM logging batch delivery", () => {
   it("loads the current secret at delivery time and sends one batch", async () => {
-    const deliver = vi.fn().mockResolvedValue(undefined);
+    const deliver = vi.fn().mockResolvedValue(2);
     const getConfig = vi.fn().mockResolvedValue(config);
 
     const outcome = await deliverSiemLoggingBatch("org-id", events, {

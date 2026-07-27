@@ -21,11 +21,12 @@ const { connectMock, channelMock, connectionMock } = vi.hoisted(() => {
     close: vi.fn(),
     on: vi.fn(),
   };
+  // Async like the real client, so a test can hold a connection open mid-connect.
   const connectionMock = {
-    createChannel: vi.fn(() => channelMock),
-    createConfirmChannel: vi.fn(() => channelMock),
+    createChannel: vi.fn(async () => channelMock),
+    createConfirmChannel: vi.fn(async () => channelMock),
     on: vi.fn(),
-    close: vi.fn(),
+    close: vi.fn(async () => {}),
   };
   const connectMock = vi.fn(() => connectionMock);
   return { connectMock, channelMock, connectionMock };
@@ -99,8 +100,8 @@ describe("SIEM logging transport", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     connectMock.mockReturnValue(connectionMock);
-    connectionMock.createChannel.mockReturnValue(channelMock);
-    connectionMock.createConfirmChannel.mockReturnValue(channelMock);
+    connectionMock.createChannel.mockResolvedValue(channelMock);
+    connectionMock.createConfirmChannel.mockResolvedValue(channelMock);
   });
 
   it("bounds the event queue in the broker instead of in memory", async () => {
@@ -434,6 +435,32 @@ describe("SIEM logging transport", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it("does not subscribe when shutdown races the initial connection", async () => {
+    const transport = await freshTransport();
+    let releaseChannel!: () => void;
+    connectionMock.createChannel.mockImplementationOnce(
+      () =>
+        new Promise(resolve => {
+          releaseChannel = () => resolve(channelMock);
+        }),
+    );
+
+    const subscribing = transport.consumeSiemLoggingEvents(vi.fn(), {
+      batchSize: 1,
+    });
+    await vi.waitFor(() =>
+      expect(connectionMock.createChannel).toHaveBeenCalled(),
+    );
+
+    // Shutdown lands while that first channel is still opening.
+    await transport.closeSiemLoggingTransport();
+    releaseChannel();
+    await subscribing;
+
+    expect(channelMock.consume).not.toHaveBeenCalled();
+    expect(connectionMock.close).toHaveBeenCalled();
   });
 
   it("does not reopen the transport when shutdown races a pending reconnect", async () => {
