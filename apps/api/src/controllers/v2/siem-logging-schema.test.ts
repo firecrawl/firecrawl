@@ -16,7 +16,7 @@ import {
   scrapeRequestSchema as scrapeRequestSchemaV1,
   searchRequestSchema as searchRequestSchemaV1,
 } from "../v1/types";
-import { siemAuditConfigInputSchema } from "../../lib/siem-audit/types";
+import { siemLoggingConfigInputSchema } from "../../lib/siem-logging/types";
 
 const auditMetadata = {
   username: "alice@example.com",
@@ -133,7 +133,7 @@ describe("SIEM destination validation", () => {
   };
 
   it("trims credential and destination fields", () => {
-    const parsed = siemAuditConfigInputSchema.parse({
+    const parsed = siemLoggingConfigInputSchema.parse({
       enabled: true,
       destination: {
         ...destination,
@@ -152,13 +152,13 @@ describe("SIEM destination validation", () => {
 
   it("rejects whitespace-only credentials and endpoint userinfo", () => {
     expect(() =>
-      siemAuditConfigInputSchema.parse({
+      siemLoggingConfigInputSchema.parse({
         enabled: true,
         destination: { ...destination, clientSecret: "   " },
       }),
     ).toThrow();
     expect(() =>
-      siemAuditConfigInputSchema.parse({
+      siemLoggingConfigInputSchema.parse({
         enabled: true,
         destination: {
           ...destination,

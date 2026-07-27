@@ -107,7 +107,7 @@ import {
 import {
   emitScrapeActivityEvent,
   withoutAuditMetadata,
-} from "../../lib/siem-audit";
+} from "../../lib/siem-logging";
 
 configDotenv();
 
@@ -842,7 +842,7 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
       }
     }
 
-    emitScrapeActivityEvent(job.id, job.data, {
+    await emitScrapeActivityEvent(job.id, job.data, {
       success: true,
       document: doc,
       threatDecisions: pipeline.threatDecisions,
@@ -853,7 +853,7 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
     logger.info(`🐂 Job done ${job.id}`);
     return data;
   } catch (error) {
-    emitScrapeActivityEvent(job.id, job.data, {
+    await emitScrapeActivityEvent(job.id, job.data, {
       success: false,
       error,
       threatDecisions: pipeline?.threatDecisions,

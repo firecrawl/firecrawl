@@ -21,7 +21,7 @@ import { billTeam } from "../../services/billing/credit_billing";
 import {
   emitRejectedScrapeActivityEvents,
   withoutAuditMetadata,
-} from "../../lib/siem-audit";
+} from "../../lib/siem-logging";
 
 export async function agentController(
   req: RequestWithAuth<{}, AgentResponse, AgentRequest>,
@@ -101,7 +101,7 @@ export async function agentController(
       }
       const first = blocked[0];
       const error = new UnsafeDomainBlockedError(first.url, first.decision);
-      emitRejectedScrapeActivityEvents(
+      await emitRejectedScrapeActivityEvents(
         blocked.map(blockedUrl => ({
           scrapeId: uuidv7(),
           requestId: agentId,

@@ -2,12 +2,16 @@ import { and, eq, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db, dbRr } from "../../db/connection";
 import * as schema from "../../db/schema";
+import { getRedisConnection } from "../../services/queue-service";
+import { logger as _logger } from "../logger";
 import { decryptSiemSecret, encryptSiemSecret } from "./crypto";
-import type { OrgSiemAuditConfig, SiemAuditConfigInput } from "./types";
+import type { OrgSiemLoggingConfig, SiemLoggingConfigInput } from "./types";
 
 const CACHE_TTL_MS = 60_000;
 const CACHE_MAX_ENTRIES = 1000;
-type SiemConfigRow = typeof schema.siem_audit_config.$inferSelect;
+const ENABLED_CACHE_TTL_SECONDS = 60;
+const logger = _logger.child({ module: "siem-logging-store" });
+type SiemConfigRow = typeof schema.siem_logging_config.$inferSelect;
 
 const configCache = new Map<
   string,
@@ -32,7 +36,7 @@ function isMissingTableError(error: unknown): boolean {
   return false;
 }
 
-function rowToConfig(row: SiemConfigRow): OrgSiemAuditConfig {
+function rowToConfig(row: SiemConfigRow): OrgSiemLoggingConfig {
   const destination = storedDestinationSchema.parse(row.destination);
   return {
     orgId: row.org_id,
@@ -75,18 +79,29 @@ function cacheRow(orgId: string, value: SiemConfigRow | null): void {
   });
 }
 
-export async function getOrgSiemAuditConfig(
+export async function getOrgSiemLoggingConfig(
   orgId: string,
-): Promise<OrgSiemAuditConfig | null> {
-  const cached = getCachedRow(orgId);
-  if (cached !== undefined) return cached ? rowToConfig(cached) : null;
+  options: { fresh?: boolean; primary?: boolean } = {},
+): Promise<OrgSiemLoggingConfig | null> {
+  const row = await getOrgSiemLoggingConfigRow(orgId, options);
+  return row ? rowToConfig(row) : null;
+}
+
+async function getOrgSiemLoggingConfigRow(
+  orgId: string,
+  options: { fresh?: boolean; primary?: boolean } = {},
+): Promise<SiemConfigRow | null> {
+  if (!options.fresh) {
+    const cached = getCachedRow(orgId);
+    if (cached !== undefined) return cached;
+  }
 
   let rows: SiemConfigRow[];
   try {
-    rows = await dbRr
+    rows = await (options.primary ? db : dbRr)
       .select()
-      .from(schema.siem_audit_config)
-      .where(eq(schema.siem_audit_config.org_id, orgId))
+      .from(schema.siem_logging_config)
+      .where(eq(schema.siem_logging_config.org_id, orgId))
       .limit(1);
   } catch (error) {
     if (!isMissingTableError(error)) throw error;
@@ -95,13 +110,29 @@ export async function getOrgSiemAuditConfig(
 
   const row = rows[0] ?? null;
   cacheRow(orgId, row);
-  return row ? rowToConfig(row) : null;
+  return row;
 }
 
-export async function upsertOrgSiemAuditConfig(
+export async function isOrgSiemLoggingEnabled(orgId: string): Promise<boolean> {
+  const key = `{siemLoggingConfig}:enabled:${orgId}`;
+  const redis = getRedisConnection();
+  const cached = await redis.get(key);
+  if (cached !== null) return cached === "1";
+
+  const rows = await db
+    .select({ enabled: schema.siem_logging_config.enabled })
+    .from(schema.siem_logging_config)
+    .where(eq(schema.siem_logging_config.org_id, orgId))
+    .limit(1);
+  const enabled = rows[0]?.enabled === true;
+  await redis.set(key, enabled ? "1" : "0", "EX", ENABLED_CACHE_TTL_SECONDS);
+  return enabled;
+}
+
+export async function upsertOrgSiemLoggingConfig(
   orgId: string,
-  input: SiemAuditConfigInput,
-): Promise<OrgSiemAuditConfig> {
+  input: SiemLoggingConfigInput,
+): Promise<OrgSiemLoggingConfig> {
   const destination = {
     type: input.destination.type,
     tenantId: input.destination.tenantId,
@@ -112,10 +143,10 @@ export async function upsertOrgSiemAuditConfig(
   };
   const existingRows = await db
     .select({
-      secret_ciphertext: schema.siem_audit_config.secret_ciphertext,
+      secret_ciphertext: schema.siem_logging_config.secret_ciphertext,
     })
-    .from(schema.siem_audit_config)
-    .where(eq(schema.siem_audit_config.org_id, orgId))
+    .from(schema.siem_logging_config)
+    .where(eq(schema.siem_logging_config.org_id, orgId))
     .limit(1);
 
   const existingCiphertext = existingRows[0]?.secret_ciphertext;
@@ -133,16 +164,16 @@ export async function upsertOrgSiemAuditConfig(
     secret_ciphertext: secretCiphertext,
   };
   const [row] = await db
-    .insert(schema.siem_audit_config)
+    .insert(schema.siem_logging_config)
     .values(values)
     .onConflictDoUpdate({
-      target: schema.siem_audit_config.org_id,
+      target: schema.siem_logging_config.org_id,
       set: {
         enabled: values.enabled,
         destination: values.destination,
         secret_ciphertext: input.destination.clientSecret
           ? values.secret_ciphertext
-          : sql`${schema.siem_audit_config.secret_ciphertext}`,
+          : sql`${schema.siem_logging_config.secret_ciphertext}`,
         updated_at: new Date().toISOString(),
       },
     })
@@ -150,6 +181,19 @@ export async function upsertOrgSiemAuditConfig(
 
   const updated = rowToConfig(row);
   cacheRow(orgId, row);
+  await getRedisConnection()
+    .set(
+      `{siemLoggingConfig}:enabled:${orgId}`,
+      row.enabled ? "1" : "0",
+      "EX",
+      ENABLED_CACHE_TTL_SECONDS,
+    )
+    .catch(error => {
+      logger.warn("Failed to update shared SIEM logging config cache", {
+        error,
+        orgId,
+      });
+    });
   return updated;
 }
 

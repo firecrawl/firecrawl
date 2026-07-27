@@ -81,23 +81,11 @@ const configSchema = z.object({
     .positive()
     .default(6 * 60 * 60),
 
-  // Organization SIEM audit delivery. The encryption key must decode to
+  // Organization SIEM logging delivery. The encryption key must decode to
   // exactly 32 bytes; validation happens when a secret is encrypted/decrypted
   // so self-hosted deployments that do not use this feature need no key.
-  SIEM_AUDIT_ENCRYPTION_KEY: z.string().optional(),
+  SIEM_LOGGING_ENCRYPTION_KEY: z.string().optional(),
   PARTNER_EGRESS_PROXY_URL: z.string().url().optional(),
-  // Process-wide event ceiling across all organization buffers.
-  SIEM_AUDIT_BUFFER_MAX_EVENTS: z.coerce
-    .number()
-    .int()
-    .positive()
-    .default(1000),
-  SIEM_AUDIT_BATCH_MAX_EVENTS: z.coerce.number().int().positive().default(100),
-  SIEM_AUDIT_FLUSH_INTERVAL_MS: z.coerce
-    .number()
-    .int()
-    .positive()
-    .default(1000),
 
   // API Keys & Authentication
   BULL_AUTH_KEY: z.string().optional(),

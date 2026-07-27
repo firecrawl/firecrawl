@@ -703,7 +703,7 @@ export const threat_protection_config = pgTable("threat_protection_config", {
   updated_at: ts("updated_at").notNull().defaultNow(),
 });
 
-export const siem_audit_config = pgTable("siem_audit_config", {
+export const siem_logging_config = pgTable("siem_logging_config", {
   id: uuid("id").notNull().defaultRandom(),
   org_id: uuid("org_id").notNull().unique(),
   enabled: boolean("enabled").notNull().default(false),

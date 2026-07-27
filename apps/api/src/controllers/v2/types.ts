@@ -29,7 +29,7 @@ import { BrandingProfile } from "../../types/branding";
 import { ProductProfile } from "../../types/product";
 import { MenuProfile } from "../../types/menu";
 import { threatProtectionOverrideSchema } from "../../lib/threat-protection/config";
-import { auditMetadataSchema } from "../../lib/siem-audit/types";
+import { auditMetadataSchema } from "../../lib/siem-logging/types";
 
 // Base URL schema with common validation logic
 export const URL = z.preprocess(
@@ -1547,7 +1547,7 @@ export type TeamFlags = {
   ignoreRobots?: "disabled" | "allowed" | "forced";
   customRobotsAgent?: "disabled" | "allowed";
   threatProtection?: "disabled" | "allowed" | "forced";
-  siemAudit?: boolean;
+  siemLogging?: boolean;
   unblockedDomains?: string[];
   forceZDR?: boolean;
   allowZDR?: boolean;

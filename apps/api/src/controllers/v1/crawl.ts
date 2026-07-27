@@ -38,7 +38,7 @@ import { getEffectiveConcurrencyLimit } from "../../lib/concurrency-limit";
 import {
   emitRejectedScrapeActivityEvent,
   withoutAuditMetadata,
-} from "../../lib/siem-audit";
+} from "../../lib/siem-logging";
 
 export async function crawlController(
   req: RequestWithAuth<{}, CrawlResponse, CrawlRequest>,
@@ -98,7 +98,7 @@ export async function crawlController(
         });
       }
       const error = new UnsafeDomainBlockedError(req.body.url, decision);
-      emitRejectedScrapeActivityEvent({
+      await emitRejectedScrapeActivityEvent({
         scrapeId: uuidv7(),
         requestId: id,
         endpoint: "crawl",

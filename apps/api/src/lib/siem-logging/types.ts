@@ -43,12 +43,14 @@ const azureSentinelDestinationInputSchema = z.strictObject({
     }),
 });
 
-export const siemAuditConfigInputSchema = z.strictObject({
+export const siemLoggingConfigInputSchema = z.strictObject({
   enabled: z.boolean(),
   destination: azureSentinelDestinationInputSchema,
 });
 
-export type SiemAuditConfigInput = z.infer<typeof siemAuditConfigInputSchema>;
+export type SiemLoggingConfigInput = z.infer<
+  typeof siemLoggingConfigInputSchema
+>;
 
 export interface AzureSentinelDestination {
   type: "azure_sentinel";
@@ -60,7 +62,7 @@ export interface AzureSentinelDestination {
   streamName: string;
 }
 
-export interface OrgSiemAuditConfig {
+export interface OrgSiemLoggingConfig {
   orgId: string;
   enabled: boolean;
   destination: AzureSentinelDestination;
@@ -121,6 +123,11 @@ export interface ScrapeActivityEvent {
   integration: string | null;
   zero_data_retention: boolean;
   threat?: ScrapeActivityThreat;
+}
+
+export interface SiemLoggingJobData {
+  orgId: string;
+  event: ScrapeActivityEvent;
 }
 
 type SiemDeliveryErrorKind =

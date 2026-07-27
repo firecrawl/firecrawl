@@ -44,7 +44,7 @@ import {
 } from "../../services/worker/nuq-router";
 import { logRequest } from "../../services/logging/log_job";
 import { getScrapeZDR } from "../../lib/zdr-helpers";
-import { emitRejectedScrapeActivityEvents } from "../../lib/siem-audit";
+import { emitRejectedScrapeActivityEvents } from "../../lib/siem-logging";
 import { CrawlDenialError } from "../../lib/error";
 
 export async function batchScrapeController(
@@ -149,7 +149,7 @@ export async function batchScrapeController(
       ) ?? [];
     if (blockedURLs.length > 0) {
       locallyBlockedURLs.push(...blockedURLs);
-      emitRejectedScrapeActivityEvents(
+      await emitRejectedScrapeActivityEvents(
         locallyBlockedURLs.map(url => ({
           scrapeId: uuidv7(),
           requestId: id,
@@ -174,7 +174,7 @@ export async function batchScrapeController(
     }
   }
 
-  emitRejectedScrapeActivityEvents(
+  await emitRejectedScrapeActivityEvents(
     locallyBlockedURLs.map(url => ({
       scrapeId: uuidv7(),
       requestId: id,
@@ -221,7 +221,7 @@ export async function batchScrapeController(
           );
         });
       }
-      emitRejectedScrapeActivityEvents(
+      await emitRejectedScrapeActivityEvents(
         blocked.map(blockedUrl => ({
           scrapeId: uuidv7(),
           requestId: id,

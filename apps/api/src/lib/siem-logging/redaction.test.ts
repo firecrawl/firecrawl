@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { withoutAuditMetadata } from "./redaction";
 
-describe("SIEM audit metadata redaction", () => {
+describe("SIEM logging metadata redaction", () => {
   it("removes top-level and nested audit metadata without mutating input", () => {
     const input = {
       auditMetadata: { username: "top@example.com" },

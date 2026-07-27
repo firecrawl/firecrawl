@@ -7,7 +7,7 @@ import {
   type Response,
 } from "undici";
 import { config } from "../../config";
-import { siemAuditDeliveryBatchesTotal } from "./metrics";
+import { siemLoggingDeliveryBatchesTotal } from "./metrics";
 import type { AzureSentinelDestination, ScrapeActivityEvent } from "./types";
 import { SiemDeliveryError } from "./types";
 
@@ -345,7 +345,7 @@ export async function sendAzureSentinelEvents(
           throw error;
         }
       }
-      siemAuditDeliveryBatchesTotal.inc({ result: "success" });
+      siemLoggingDeliveryBatchesTotal.inc({ result: "success" });
     } catch (error) {
       if (
         error instanceof SiemDeliveryError &&
@@ -353,7 +353,7 @@ export async function sendAzureSentinelEvents(
       ) {
         invalidateToken(destination);
       }
-      siemAuditDeliveryBatchesTotal.inc({ result: "failure" });
+      siemLoggingDeliveryBatchesTotal.inc({ result: "failure" });
       throw error;
     }
   }

@@ -39,7 +39,7 @@ import { projectScrapeCredits } from "../../lib/keyless-credit-projection";
 import { applyAgentAuthDiscoveryHeader } from "../../lib/agent-auth-discovery";
 import { resolveThreatProtection } from "../../lib/threat-protection/request";
 import { getEffectiveConcurrencyLimit } from "../../lib/concurrency-limit";
-import { withoutAuditMetadata } from "../../lib/siem-audit";
+import { withoutAuditMetadata } from "../../lib/siem-logging";
 
 const AGENT_INTEROP_CONCURRENCY_BOOST = 3;
 

@@ -21,24 +21,24 @@ async function putConfig(identity: Identity, body: unknown) {
     .send(body as object);
 }
 
-describeIf(TEST_PRODUCTION)("Team SIEM audit config API", () => {
+describeIf(TEST_PRODUCTION)("Team SIEM logging config API", () => {
   it("rejects a team without the enterprise flag", async () => {
-    const identity = await idmux({ name: "team-siem-audit/no-flag" });
+    const identity = await idmux({ name: "team-siem-logging/no-flag" });
     const response = await getConfig(identity);
 
     expect(response.statusCode).toBe(403);
     expect(response.body.error).toContain("enterprise feature");
   });
 
-  describeIf(!!process.env.SIEM_AUDIT_ENCRYPTION_KEY)(
+  describeIf(!!process.env.SIEM_LOGGING_ENCRYPTION_KEY)(
     "with the enterprise flag",
     () => {
       let identity: Identity;
 
       beforeAll(async () => {
         identity = await idmux({
-          name: "team-siem-audit/flagged",
-          flags: { siemAudit: true },
+          name: "team-siem-logging/flagged",
+          flags: { siemLogging: true },
         });
       });
 
@@ -60,7 +60,7 @@ describeIf(TEST_PRODUCTION)("Team SIEM audit config API", () => {
         // existing enterprise-config snips by making that state explicit.
         if (response.statusCode === 500) {
           console.warn(
-            "siem_audit_config table is unavailable; skipping config round-trip",
+            "siem_logging_config table is unavailable; skipping config round-trip",
           );
           return;
         }

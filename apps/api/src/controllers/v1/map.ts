@@ -36,7 +36,7 @@ import {
   resolveThreatProtection,
 } from "../../lib/threat-protection/request";
 import { calculateThreatScanCredits } from "../../lib/scrape-billing";
-import { withoutAuditMetadata } from "../../lib/siem-audit";
+import { withoutAuditMetadata } from "../../lib/siem-logging";
 
 configDotenv();
 const redis = new Redis(config.REDIS_URL!);

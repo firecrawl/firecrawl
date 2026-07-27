@@ -9,6 +9,7 @@ import {
   getRedisConnection,
   getBillingQueue,
   getPrecrawlQueue,
+  getSiemLoggingQueue,
   precrawlQueueName,
 } from "../queue-service";
 import {
@@ -42,6 +43,7 @@ import { crawlGroup, resolveNewGroupBackend } from "../worker/nuq-router";
 import { getACUCTeam } from "../../controllers/auth";
 import { processEngpickerJob } from "../../lib/engpicker";
 import { logRequest } from "../logging/log_job";
+import { processSiemLoggingJob } from "../siem-logging/worker";
 
 const workerLockDuration = config.WORKER_LOCK_DURATION;
 const workerStalledCheckInterval = config.WORKER_STALLED_CHECK_INTERVAL;
@@ -698,6 +700,10 @@ const BROWSER_ACTIVITY_INSERT_INTERVAL = 10000;
     : (async () => {
         logger.warn("PRECRAWL_TEAM_ID not set, skipping precrawl worker");
       })();
+  const siemLoggingWorkerPromise = workerFun(
+    getSiemLoggingQueue(),
+    processSiemLoggingJob,
+  );
 
   const indexInserterInterval = setInterval(async () => {
     if (isShuttingDown) {
@@ -779,6 +785,7 @@ const BROWSER_ACTIVITY_INSERT_INTERVAL = 10000;
   await Promise.all([
     billingWorkerPromise,
     precrawlWorkerPromise,
+    siemLoggingWorkerPromise,
     engpickerPromise,
   ]);
 

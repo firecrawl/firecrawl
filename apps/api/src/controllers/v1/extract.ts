@@ -33,7 +33,7 @@ import { billTeam } from "../../services/billing/credit_billing";
 import {
   emitRejectedScrapeActivityEvents,
   withoutAuditMetadata,
-} from "../../lib/siem-audit";
+} from "../../lib/siem-logging";
 import { CrawlDenialError } from "../../lib/error";
 async function oldExtract(
   req: RequestWithAuth<{}, ExtractResponse, ExtractRequest>,
@@ -136,7 +136,7 @@ export async function extractController(
       }),
     ) ?? [];
 
-  emitRejectedScrapeActivityEvents(
+  await emitRejectedScrapeActivityEvents(
     invalidURLs.map(url => ({
       scrapeId: uuidv7(),
       requestId: extractId,
@@ -204,7 +204,7 @@ export async function extractController(
       });
     }
     if (blocked.length > 0) {
-      emitRejectedScrapeActivityEvents(
+      await emitRejectedScrapeActivityEvents(
         blocked
           .filter(blockedUrl => !invalidURLs.includes(blockedUrl.url))
           .map(blockedUrl => ({

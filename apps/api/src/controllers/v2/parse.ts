@@ -36,7 +36,7 @@ import { projectScrapeCredits } from "../../lib/keyless-credit-projection";
 import { applyAgentAuthDiscoveryHeader } from "../../lib/agent-auth-discovery";
 import { getEffectiveConcurrencyLimit } from "../../lib/concurrency-limit";
 import path from "node:path";
-import { withoutAuditMetadata } from "../../lib/siem-audit";
+import { withoutAuditMetadata } from "../../lib/siem-logging";
 
 const AGENT_INTEROP_CONCURRENCY_BOOST = 3;
 const SUPPORTED_PARSE_FILE_TYPES =

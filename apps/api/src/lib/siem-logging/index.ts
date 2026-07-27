@@ -1,32 +1,31 @@
 import type { ScrapeJobSingleUrls } from "../../types";
 import { getACUCTeam } from "../../controllers/auth";
 import { logger as _logger } from "../logger";
-import { enqueueForSiemDelivery } from "./buffer";
 import {
   buildRejectedScrapeActivityEvent,
   buildScrapeActivityEvent,
   type RejectedScrapeActivity,
   type ScrapeActivityOutcome,
 } from "./event";
-import { getApiKeyName, getOrgSiemAuditConfig } from "./store";
+import { enqueueSiemLoggingEvent, enqueueSiemLoggingEvents } from "./queue";
+import { getApiKeyName, isOrgSiemLoggingEnabled } from "./store";
 
 export { withoutAuditMetadata } from "./redaction";
 
-const logger = _logger.child({ module: "siem-audit" });
+const logger = _logger.child({ module: "siem-logging" });
 
-export function emitScrapeActivityEvent(
+export async function emitScrapeActivityEvent(
   jobId: string,
   job: ScrapeJobSingleUrls,
   outcome: ScrapeActivityOutcome,
-): void {
-  void (async () => {
+): Promise<void> {
+  try {
     const team = await getACUCTeam(job.team_id);
-    if (team?.flags?.siemAudit !== true) return;
+    if (team?.flags?.siemLogging !== true) return;
     const orgId = job.internalOptions?.orgId ?? team.org_id;
     if (!orgId) return;
 
-    const siemConfig = await getOrgSiemAuditConfig(orgId);
-    if (!siemConfig?.enabled) return;
+    if (!(await isOrgSiemLoggingEnabled(orgId))) return;
 
     const apiKeyName = await getApiKeyName(
       job.team_id,
@@ -39,27 +38,27 @@ export function emitScrapeActivityEvent(
       apiKeyName,
       outcome,
     );
-    enqueueForSiemDelivery(orgId, siemConfig.destination, event);
-  })().catch(error => {
+    await enqueueSiemLoggingEvent(orgId, event);
+  } catch (error) {
     logger.error("Failed to enqueue scrape activity event", {
       error,
       jobId,
       teamId: job.team_id,
     });
-  });
+  }
 }
 
-export function emitRejectedScrapeActivityEvent(
+export async function emitRejectedScrapeActivityEvent(
   input: RejectedScrapeActivity,
-): void {
-  emitRejectedScrapeActivityEvents([input]);
+): Promise<void> {
+  await emitRejectedScrapeActivityEvents([input]);
 }
 
-export function emitRejectedScrapeActivityEvents(
+export async function emitRejectedScrapeActivityEvents(
   inputs: RejectedScrapeActivity[],
-): void {
+): Promise<void> {
   if (inputs.length === 0) return;
-  void (async () => {
+  try {
     const byTeam = new Map<string, RejectedScrapeActivity[]>();
     for (const input of inputs) {
       const teamInputs = byTeam.get(input.teamId) ?? [];
@@ -69,12 +68,11 @@ export function emitRejectedScrapeActivityEvents(
 
     for (const [teamId, teamInputs] of byTeam) {
       const team = await getACUCTeam(teamId);
-      if (team?.flags?.siemAudit !== true) continue;
+      if (team?.flags?.siemLogging !== true) continue;
       const orgId = team.org_id;
       if (!orgId) continue;
 
-      const siemConfig = await getOrgSiemAuditConfig(orgId);
-      if (!siemConfig?.enabled) continue;
+      if (!(await isOrgSiemLoggingEnabled(orgId))) continue;
 
       const apiKeyNames = new Map<string | null, string | null>();
       const apiKeyIds = teamInputs.map(input =>
@@ -85,21 +83,21 @@ export function emitRejectedScrapeActivityEvents(
           apiKeyNames.set(apiKeyId, await getApiKeyName(teamId, apiKeyId));
         }),
       );
-      for (const input of teamInputs) {
+      const events = teamInputs.map(input => {
         const apiKeyId = input.apiKeyId == null ? null : String(input.apiKeyId);
-        const event = buildRejectedScrapeActivityEvent(
+        return buildRejectedScrapeActivityEvent(
           input,
           orgId,
           apiKeyNames.get(apiKeyId) ?? null,
         );
-        enqueueForSiemDelivery(orgId, siemConfig.destination, event);
-      }
+      });
+      await enqueueSiemLoggingEvents(orgId, events);
     }
-  })().catch(error => {
+  } catch (error) {
     logger.error("Failed to enqueue rejected scrape activity events", {
       error,
       eventCount: inputs.length,
       teamIds: [...new Set(inputs.map(input => input.teamId))],
     });
-  });
+  }
 }

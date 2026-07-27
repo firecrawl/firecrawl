@@ -4,9 +4,9 @@ import { config } from "../../config";
 const GCM_PREFIX = "gcm:";
 
 function getEncryptionKey(): Buffer {
-  const raw = config.SIEM_AUDIT_ENCRYPTION_KEY?.trim();
+  const raw = config.SIEM_LOGGING_ENCRYPTION_KEY?.trim();
   if (!raw) {
-    throw new Error("SIEM_AUDIT_ENCRYPTION_KEY is not configured");
+    throw new Error("SIEM_LOGGING_ENCRYPTION_KEY is not configured");
   }
 
   let key: Buffer | null = null;
@@ -19,7 +19,7 @@ function getEncryptionKey(): Buffer {
 
   if (!key || key.length !== 32) {
     throw new Error(
-      "SIEM_AUDIT_ENCRYPTION_KEY must be a 32-byte hex or base64 value",
+      "SIEM_LOGGING_ENCRYPTION_KEY must be a 32-byte hex or base64 value",
     );
   }
   return key;

@@ -2,30 +2,30 @@ import { randomUUID } from "crypto";
 import type { Response } from "express";
 import type { RequestWithAuth } from "./types";
 import { logger as _logger } from "../../lib/logger";
-import { sendAzureSentinelEvents } from "../../lib/siem-audit/azure-sentinel";
+import { sendAzureSentinelEvents } from "../../lib/siem-logging/azure-sentinel";
 import {
-  getOrgSiemAuditConfig,
-  upsertOrgSiemAuditConfig,
-} from "../../lib/siem-audit/store";
+  getOrgSiemLoggingConfig,
+  upsertOrgSiemLoggingConfig,
+} from "../../lib/siem-logging/store";
 import {
   SiemDeliveryError,
-  siemAuditConfigInputSchema,
-  type OrgSiemAuditConfig,
+  siemLoggingConfigInputSchema,
+  type OrgSiemLoggingConfig,
   type ScrapeActivityEvent,
-} from "../../lib/siem-audit/types";
+} from "../../lib/siem-logging/types";
 import { getOrgIdForTeam } from "../../lib/threat-protection/store";
 
-const logger = _logger.child({ module: "team-siem-audit" });
+const logger = _logger.child({ module: "team-siem-logging" });
 const SUPPORT_EMAIL = "support@firecrawl.com";
 
 function rejectWithoutFlag(
   req: RequestWithAuth<any, any, any>,
   res: Response,
 ): boolean {
-  if (req.acuc?.flags?.siemAudit !== true) {
+  if (req.acuc?.flags?.siemLogging !== true) {
     res.status(403).json({
       success: false,
-      error: `SIEM audit streaming is an enterprise feature and is not enabled for your team. Contact ${SUPPORT_EMAIL} to explore whether it can be enabled for your team.`,
+      error: `SIEM Logging is an enterprise feature and is not enabled for your team. Contact ${SUPPORT_EMAIL} to explore whether it can be enabled for your team.`,
     });
     return true;
   }
@@ -48,7 +48,7 @@ async function resolveOrgId(
   return null;
 }
 
-function serializeConfig(config: OrgSiemAuditConfig | null) {
+function serializeConfig(config: OrgSiemLoggingConfig | null) {
   if (!config) return { configured: false, enabled: false, destination: null };
   const { clientSecret: _clientSecret, ...destination } = config.destination;
   return {
@@ -62,29 +62,29 @@ function serializeConfig(config: OrgSiemAuditConfig | null) {
   };
 }
 
-export async function getTeamSiemAuditController(
+export async function getTeamSiemLoggingController(
   req: RequestWithAuth,
   res: Response,
 ): Promise<void> {
   if (rejectWithoutFlag(req, res)) return;
   const orgId = await resolveOrgId(req, res);
   if (!orgId) return;
-  const config = await getOrgSiemAuditConfig(orgId);
+  const config = await getOrgSiemLoggingConfig(orgId);
   res.status(200).json({ success: true, data: serializeConfig(config) });
 }
 
-export async function putTeamSiemAuditController(
+export async function putTeamSiemLoggingController(
   req: RequestWithAuth<{}, any, unknown>,
   res: Response,
 ): Promise<void> {
   if (rejectWithoutFlag(req, res)) return;
-  const input = siemAuditConfigInputSchema.parse(req.body);
+  const input = siemLoggingConfigInputSchema.parse(req.body);
   const orgId = await resolveOrgId(req, res);
   if (!orgId) return;
 
   try {
-    const updated = await upsertOrgSiemAuditConfig(orgId, input);
-    logger.info("SIEM audit configuration updated", {
+    const updated = await upsertOrgSiemLoggingConfig(orgId, input);
+    logger.info("SIEM logging configuration updated", {
       teamId: req.auth.team_id,
       orgId,
       enabled: updated.enabled,
@@ -107,18 +107,18 @@ export async function putTeamSiemAuditController(
   }
 }
 
-export async function testTeamSiemAuditController(
+export async function testTeamSiemLoggingController(
   req: RequestWithAuth,
   res: Response,
 ): Promise<void> {
   if (rejectWithoutFlag(req, res)) return;
   const orgId = await resolveOrgId(req, res);
   if (!orgId) return;
-  const siemConfig = await getOrgSiemAuditConfig(orgId);
+  const siemConfig = await getOrgSiemLoggingConfig(orgId);
   if (!siemConfig?.enabled) {
     res.status(409).json({
       success: false,
-      error: "SIEM audit streaming is not configured and enabled.",
+      error: "SIEM Logging is not configured and enabled.",
     });
     return;
   }
