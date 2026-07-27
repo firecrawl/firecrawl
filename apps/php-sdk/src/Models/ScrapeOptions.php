@@ -264,4 +264,10 @@ final class ScrapeOptions
     {
         return $this->changeTracking;
     }
+
+    /** @return array<string, string>|null */
+    public function getAuditMetadata(): ?array
+    {
+        return $this->auditMetadata;
+    }
 }

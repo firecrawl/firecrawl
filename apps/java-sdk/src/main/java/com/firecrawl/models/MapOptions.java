@@ -1,6 +1,9 @@
 package com.firecrawl.models;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
+import com.fasterxml.jackson.annotation.JsonProperty;
+import java.util.Collections;
+import java.util.HashMap;
 import java.util.Map;
 
 /**
@@ -30,6 +33,7 @@ public class MapOptions {
     public Integer getTimeout() { return timeout; }
     public String getIntegration() { return integration; }
     public LocationConfig getLocation() { return location; }
+    @JsonProperty("auditMetadata")
     public Map<String, String> getAuditMetadata() { return auditMetadata; }
 
     public static Builder builder() { return new Builder(); }
@@ -76,7 +80,9 @@ public class MapOptions {
             o.timeout = this.timeout;
             o.integration = this.integration;
             o.location = this.location;
-            o.auditMetadata = this.auditMetadata;
+            o.auditMetadata = this.auditMetadata != null
+                    ? Collections.unmodifiableMap(new HashMap<>(this.auditMetadata))
+                    : null;
             return o;
         }
     }

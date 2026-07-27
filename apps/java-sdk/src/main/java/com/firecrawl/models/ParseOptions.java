@@ -49,6 +49,7 @@ public class ParseOptions {
     public String getIntegration() { return integration; }
     @JsonProperty("redactPII")
     public Boolean getRedactPII() { return redactPII; }
+    @JsonProperty("auditMetadata")
     public Map<String, String> getAuditMetadata() { return auditMetadata; }
 
     public static Builder builder() { return new Builder(); }

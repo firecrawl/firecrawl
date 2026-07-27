@@ -1237,9 +1237,8 @@ class FirecrawlClient:
                 store_in_cache=store_in_cache,
                 lockdown=lockdown,
                 threat_protection=threat_protection,
-                audit_metadata=audit_metadata,
             ).items() if v is not None}
-        ) if any(v is not None for v in [formats, headers, include_tags, exclude_tags, only_main_content, timeout, wait_for, mobile, parsers, actions, location, skip_tls_verification, remove_base64_images, fast_mode, use_mock, block_ads, proxy, max_age, store_in_cache, lockdown, threat_protection, audit_metadata]) else None
+        ) if any(v is not None for v in [formats, headers, include_tags, exclude_tags, only_main_content, timeout, wait_for, mobile, parsers, actions, location, skip_tls_verification, remove_base64_images, fast_mode, use_mock, block_ads, proxy, max_age, store_in_cache, lockdown, threat_protection]) else None
 
         return batch_module.start_batch_scrape(
             self.http_client,
@@ -1251,6 +1250,7 @@ class FirecrawlClient:
             max_concurrency=max_concurrency,
             zero_data_retention=zero_data_retention,
             integration=integration,
+            audit_metadata=audit_metadata,
             idempotency_key=idempotency_key,
         )
 
@@ -1641,9 +1641,8 @@ class FirecrawlClient:
                 store_in_cache=store_in_cache,
                 lockdown=lockdown,
                 threat_protection=threat_protection,
-                audit_metadata=audit_metadata,
             ).items() if v is not None}
-        ) if any(v is not None for v in [formats, headers, include_tags, exclude_tags, only_main_content, timeout, wait_for, mobile, parsers, actions, location, skip_tls_verification, remove_base64_images, fast_mode, use_mock, block_ads, proxy, max_age, store_in_cache, lockdown, threat_protection, audit_metadata]) else None
+        ) if any(v is not None for v in [formats, headers, include_tags, exclude_tags, only_main_content, timeout, wait_for, mobile, parsers, actions, location, skip_tls_verification, remove_base64_images, fast_mode, use_mock, block_ads, proxy, max_age, store_in_cache, lockdown, threat_protection]) else None
 
         return batch_module.batch_scrape(
             self.http_client,
@@ -1655,6 +1654,7 @@ class FirecrawlClient:
             max_concurrency=max_concurrency,
             zero_data_retention=zero_data_retention,
             integration=integration,
+            audit_metadata=audit_metadata,
             idempotency_key=idempotency_key,
             poll_interval=poll_interval,
             timeout=wait_timeout,

@@ -780,6 +780,10 @@ class ClientTest < Minitest::Test
                    audit_metadata: metadata
                  ).to_h["auditMetadata"]
     assert_equal metadata, Firecrawl::Models::ParseOptions.new(audit_metadata: metadata).to_h["auditMetadata"]
+    crawl = Firecrawl::Models::CrawlOptions.new(
+      scrape_options: Firecrawl::Models::ScrapeOptions.new(audit_metadata: metadata)
+    )
+    assert_equal metadata, crawl.to_h.dig("scrapeOptions", "auditMetadata")
   end
 
   def test_batch_scrape_options_to_h

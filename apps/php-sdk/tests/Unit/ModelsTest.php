@@ -346,14 +346,16 @@ it('serializes redactPII in ScrapeOptions', function (): void {
 it('serializes audit metadata across request options', function (): void {
     $metadata = ['requestId' => 'req-123'];
 
-    expect(ScrapeOptions::with(auditMetadata: $metadata)->toArray())
-        ->toMatchArray(['auditMetadata' => $metadata]);
+    $scrape = ScrapeOptions::with(auditMetadata: $metadata);
+    expect($scrape->toArray())->toMatchArray(['auditMetadata' => $metadata]);
+    expect($scrape->getAuditMetadata())->toBe($metadata);
     expect(MapOptions::with(auditMetadata: $metadata)->toArray())
         ->toMatchArray(['auditMetadata' => $metadata]);
     expect(AgentOptions::with(prompt: 'find pricing', auditMetadata: $metadata)->toArray())
         ->toMatchArray(['auditMetadata' => $metadata]);
-    expect(ParseOptions::with(auditMetadata: $metadata)->toArray())
-        ->toMatchArray(['auditMetadata' => $metadata]);
+    $parse = ParseOptions::with(auditMetadata: $metadata);
+    expect($parse->toArray())->toMatchArray(['auditMetadata' => $metadata]);
+    expect($parse->getAuditMetadata())->toBe($metadata);
 });
 
 it('serializes query format mode in ScrapeOptions', function (): void {

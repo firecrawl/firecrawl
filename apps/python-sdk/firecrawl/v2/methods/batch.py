@@ -53,6 +53,7 @@ def start_batch_scrape(
     max_concurrency: Optional[int] = None,
     zero_data_retention: Optional[bool] = None,
     integration: Optional[str] = None,
+    audit_metadata: Optional[Dict[str, str]] = None,
     idempotency_key: Optional[str] = None,
 ) -> BatchScrapeResponse:
     """
@@ -79,6 +80,7 @@ def start_batch_scrape(
         max_concurrency=max_concurrency,
         zero_data_retention=zero_data_retention,
         integration=integration,
+        audit_metadata=audit_metadata,
     )
     
     # Make the API request
@@ -341,6 +343,7 @@ def batch_scrape(
     max_concurrency: Optional[int] = None,
     zero_data_retention: Optional[bool] = None,
     integration: Optional[str] = None,
+    audit_metadata: Optional[Dict[str, str]] = None,
     idempotency_key: Optional[str] = None,
     poll_interval: int = 2,
     timeout: Optional[int] = None
@@ -373,6 +376,7 @@ def batch_scrape(
         max_concurrency=max_concurrency,
         zero_data_retention=zero_data_retention,
         integration=integration,
+        audit_metadata=audit_metadata,
         idempotency_key=idempotency_key,
     )
 
@@ -424,6 +428,7 @@ def prepare_batch_scrape_request(
     max_concurrency: Optional[int] = None,
     zero_data_retention: Optional[bool] = None,
     integration: Optional[str] = None,
+    audit_metadata: Optional[Dict[str, str]] = None,
 ) -> dict:
     """
     Prepare a batch scrape request payload.
@@ -443,6 +448,8 @@ def prepare_batch_scrape_request(
         scrape_data = prepare_scrape_options(options)
         if scrape_data:
             request_data.update(scrape_data)
+    if audit_metadata is not None:
+        request_data["auditMetadata"] = audit_metadata
 
     # Batch-specific fields
     if webhook is not None:

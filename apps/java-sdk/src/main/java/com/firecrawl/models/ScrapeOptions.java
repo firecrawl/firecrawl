@@ -60,6 +60,7 @@ public class ScrapeOptions {
     public Boolean getLockdown() { return lockdown; }
     @JsonProperty("redactPII")
     public Boolean getRedactPII() { return redactPII; }
+    @JsonProperty("auditMetadata")
     public Map<String, String> getAuditMetadata() { return auditMetadata; }
     public String getIntegration() { return integration; }
 

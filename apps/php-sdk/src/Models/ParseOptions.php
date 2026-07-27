@@ -241,4 +241,10 @@ final class ParseOptions
     {
         return $this->integration;
     }
+
+    /** @return array<string, string>|null */
+    public function getAuditMetadata(): ?array
+    {
+        return $this->auditMetadata;
+    }
 }

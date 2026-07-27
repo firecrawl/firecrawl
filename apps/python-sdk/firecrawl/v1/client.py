@@ -155,7 +155,6 @@ class V1ScrapeOptions(pydantic.BaseModel):
     maxAge: Optional[int] = None
     storeInCache: Optional[bool] = None
     parsePDF: Optional[bool] = None
-    auditMetadata: Optional[Dict[str, str]] = None
 
 class V1WaitAction(pydantic.BaseModel):
     """Wait action to perform during scraping."""
@@ -311,7 +310,6 @@ class V1MapParams(pydantic.BaseModel):
     timeout: Optional[int] = 30000
     useIndex: Optional[bool] = None
     location: Optional[V1LocationConfig] = None
-    auditMetadata: Optional[Dict[str, str]] = None
 
 class V1MapResponse(pydantic.BaseModel):
     """Response from mapping operations."""
@@ -563,7 +561,6 @@ class V1FirecrawlApp:
             max_age: Optional[int] = None,
             store_in_cache: Optional[bool] = None,
             zero_data_retention: Optional[bool] = None,
-            audit_metadata: Optional[Dict[str, str]] = None,
             **kwargs) -> V1ScrapeResponse[Any]:
         """
         Scrape and extract content from a URL.
@@ -588,7 +585,6 @@ class V1FirecrawlApp:
           actions (Optional[List[Union[WaitAction, ScreenshotAction, ClickAction, WriteAction, PressAction, ScrollAction, ScrapeAction, ExecuteJavascriptAction, PDFAction]]]): Actions to perform
           change_tracking_options (Optional[ChangeTrackingOptions]): Change tracking settings
           zero_data_retention (Optional[bool]): Whether to delete data after scrape is done
-          audit_metadata (Optional[Dict[str, str]]): Metadata to include in SIEM logging events
 
 
         Returns:
@@ -661,8 +657,6 @@ class V1FirecrawlApp:
             scrape_params['storeInCache'] = store_in_cache
         if zero_data_retention is not None:
             scrape_params['zeroDataRetention'] = zero_data_retention
-        if audit_metadata is not None:
-            scrape_params['auditMetadata'] = audit_metadata
         
         scrape_params.update(kwargs)
 
@@ -1360,7 +1354,6 @@ class V1FirecrawlApp:
             timeout: Optional[int] = 30000,
             use_index: Optional[bool] = None,
             location: Optional[V1LocationConfig] = None,
-            audit_metadata: Optional[Dict[str, str]] = None,
             **kwargs) -> V1MapResponse:
         """
         Map and discover links from a URL.
@@ -1373,7 +1366,6 @@ class V1FirecrawlApp:
             sitemap_only (Optional[bool]): Only use sitemap.xml
             limit (Optional[int]): Maximum URLs to return
             timeout (Optional[int]): Request timeout in milliseconds
-            audit_metadata (Optional[Dict[str, str]]): Metadata to include in SIEM logging events
             **kwargs: Additional parameters to pass to the API
 
         Returns:
@@ -1408,8 +1400,6 @@ class V1FirecrawlApp:
             map_params['useIndex'] = use_index
         if location is not None:
             map_params['location'] = location.dict(by_alias=True, exclude_none=True)
-        if audit_metadata is not None:
-            map_params['auditMetadata'] = audit_metadata
         
         # Add any additional kwargs
         map_params.update(kwargs)
@@ -1469,7 +1459,6 @@ class V1FirecrawlApp:
         poll_interval: Optional[int] = 2,
         max_concurrency: Optional[int] = None,
         zero_data_retention: Optional[bool] = None,
-        audit_metadata: Optional[Dict[str, str]] = None,
         idempotency_key: Optional[str] = None,
         **kwargs
     ) -> V1BatchScrapeStatusResponse:
@@ -1559,8 +1548,6 @@ class V1FirecrawlApp:
             scrape_params['maxConcurrency'] = max_concurrency
         if zero_data_retention is not None:
             scrape_params['zeroDataRetention'] = zero_data_retention
-        if audit_metadata is not None:
-            scrape_params['auditMetadata'] = audit_metadata
         
         # Add any additional kwargs
         scrape_params.update(kwargs)
@@ -1613,7 +1600,6 @@ class V1FirecrawlApp:
         max_concurrency: Optional[int] = None,
         idempotency_key: Optional[str] = None,
         zero_data_retention: Optional[bool] = None,
-        audit_metadata: Optional[Dict[str, str]] = None,
         **kwargs
     ) -> V1BatchScrapeResponse:
         """
@@ -1703,8 +1689,6 @@ class V1FirecrawlApp:
             scrape_params['maxConcurrency'] = max_concurrency
         if zero_data_retention is not None:
             scrape_params['zeroDataRetention'] = zero_data_retention
-        if audit_metadata is not None:
-            scrape_params['auditMetadata'] = audit_metadata
         
         # Add any additional kwargs
         scrape_params.update(kwargs)
@@ -3647,7 +3631,6 @@ class AsyncV1FirecrawlApp(V1FirecrawlApp):
             extract: Optional[V1JsonConfig] = None,
             json_options: Optional[V1JsonConfig] = None,
             actions: Optional[List[Union[V1WaitAction, V1ScreenshotAction, V1ClickAction, V1WriteAction, V1PressAction, V1ScrollAction, V1ScrapeAction, V1ExecuteJavascriptAction, V1PDFAction]]] = None,
-            audit_metadata: Optional[Dict[str, str]] = None,
             **kwargs) -> V1ScrapeResponse[Any]:
         """
         Scrape a single URL asynchronously.
@@ -3670,7 +3653,6 @@ class AsyncV1FirecrawlApp(V1FirecrawlApp):
           extract (Optional[V1JsonConfig]): Content extraction settings
           json_options (Optional[V1JsonConfig]): JSON extraction settings
           actions (Optional[List[Union[V1WaitAction, V1ScreenshotAction, V1ClickAction, V1WriteAction, V1PressAction, V1ScrollAction, V1ScrapeAction, V1ExecuteJavascriptAction, V1PDFAction]]]): Actions to perform
-          audit_metadata (Optional[Dict[str, str]]): Metadata to include in SIEM logging events
           **kwargs: Additional parameters to pass to the API
 
         Returns:
@@ -3740,8 +3722,6 @@ class AsyncV1FirecrawlApp(V1FirecrawlApp):
             scrape_params['jsonOptions'] = json_options if isinstance(json_options, dict) else json_options.dict(by_alias=True, exclude_none=True)
         if actions:
             scrape_params['actions'] = [action if isinstance(action, dict) else action.dict(by_alias=True, exclude_none=True) for action in actions]
-        if audit_metadata is not None:
-            scrape_params['auditMetadata'] = audit_metadata
         if 'extract' in scrape_params and scrape_params['extract'] and 'schema' in scrape_params['extract']:
             scrape_params['extract']['schema'] = self._ensure_schema_dict(scrape_params['extract']['schema'])
         if 'jsonOptions' in scrape_params and scrape_params['jsonOptions'] and 'schema' in scrape_params['jsonOptions']:
@@ -3787,7 +3767,6 @@ class AsyncV1FirecrawlApp(V1FirecrawlApp):
         agent: Optional[V1AgentOptions] = None,
         poll_interval: Optional[int] = 2,
         idempotency_key: Optional[str] = None,
-        audit_metadata: Optional[Dict[str, str]] = None,
         **kwargs
     ) -> V1BatchScrapeStatusResponse:
         """
@@ -3871,8 +3850,6 @@ class AsyncV1FirecrawlApp(V1FirecrawlApp):
             scrape_params['actions'] = [action.dict(by_alias=True, exclude_none=True) for action in actions]
         if agent is not None:
             scrape_params['agent'] = agent.dict(by_alias=True, exclude_none=True)
-        if audit_metadata is not None:
-            scrape_params['auditMetadata'] = audit_metadata
 
         # Add any additional kwargs
         scrape_params.update(kwargs)
@@ -3929,7 +3906,6 @@ class AsyncV1FirecrawlApp(V1FirecrawlApp):
         agent: Optional[V1AgentOptions] = None,
         zero_data_retention: Optional[bool] = None,
         idempotency_key: Optional[str] = None,
-        audit_metadata: Optional[Dict[str, str]] = None,
         **kwargs
     ) -> V1BatchScrapeResponse:
         """
@@ -4016,8 +3992,6 @@ class AsyncV1FirecrawlApp(V1FirecrawlApp):
             scrape_params['agent'] = agent.dict(by_alias=True, exclude_none=True)
         if zero_data_retention is not None:
             scrape_params['zeroDataRetention'] = zero_data_retention
-        if audit_metadata is not None:
-            scrape_params['auditMetadata'] = audit_metadata
         
         # Add any additional kwargs
         scrape_params.update(kwargs)
@@ -4403,7 +4377,6 @@ class AsyncV1FirecrawlApp(V1FirecrawlApp):
         limit: Optional[int] = None,
         timeout: Optional[int] = 30000,
         location: Optional[V1LocationConfig] = None,
-        audit_metadata: Optional[Dict[str, str]] = None,
         params: Optional[V1MapParams] = None) -> V1MapResponse:
         """
         Asynchronously map and discover links from a URL.
@@ -4448,8 +4421,6 @@ class AsyncV1FirecrawlApp(V1FirecrawlApp):
             map_params['timeout'] = timeout
         if location is not None:
             map_params['location'] = location.dict(by_alias=True, exclude_none=True)
-        if audit_metadata is not None:
-            map_params['auditMetadata'] = audit_metadata
 
         # Create final params object
         final_params = V1MapParams(**map_params)
