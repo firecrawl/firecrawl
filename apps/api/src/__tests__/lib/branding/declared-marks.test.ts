@@ -186,6 +186,103 @@ describe("findDeclaredJsonLdLogo", () => {
     });
   });
 
+  it("does not treat @context term definitions as logos", () => {
+    expect(
+      findDeclaredJsonLdLogo(
+        docWith(
+          {
+            "@context": { logo: "https://schema.org/logo" },
+            "@type": "Article",
+            headline: "Post",
+          },
+          { "@type": "Organization", logo: "https://x.com/real-logo.png" },
+        ),
+      ),
+    ).toBe("https://x.com/real-logo.png");
+  });
+
+  it("handles array-valued logos (first resolvable wins)", () => {
+    expect(
+      findDeclaredJsonLdLogo(
+        docWith({
+          "@type": "Organization",
+          logo: ["", "https://x.com/a.png", "https://x.com/b.png"],
+        }),
+      ),
+    ).toBe("https://x.com/a.png");
+    expect(
+      findDeclaredJsonLdLogo(
+        docWith({
+          "@type": "Organization",
+          logo: [{ "@type": "ImageObject", contentUrl: "https://x.com/c.png" }],
+        }),
+      ),
+    ).toBe("https://x.com/c.png");
+  });
+
+  it("dereferences @id node references (Yoast @graph pattern)", () => {
+    expect(
+      findDeclaredJsonLdLogo(
+        docWith({
+          "@context": "https://schema.org",
+          "@graph": [
+            {
+              "@type": "Organization",
+              "@id": "https://site.com/#organization",
+              logo: { "@id": "https://site.com/#/schema/logo/image/" },
+            },
+            {
+              "@type": "ImageObject",
+              "@id": "https://site.com/#/schema/logo/image/",
+              url: "https://site.com/wp-content/logo.png",
+              contentUrl: "https://site.com/wp-content/logo.png",
+            },
+          ],
+        }),
+      ),
+    ).toBe("https://site.com/wp-content/logo.png");
+  });
+
+  it("dereferences @id across separate JSON-LD blocks", () => {
+    expect(
+      findDeclaredJsonLdLogo(
+        docWith(
+          {
+            "@type": "Organization",
+            logo: { "@id": "https://site.com/#logo-node" },
+          },
+          {
+            "@type": "ImageObject",
+            "@id": "https://site.com/#logo-node",
+            contentUrl: "https://site.com/logo.svg",
+          },
+        ),
+      ),
+    ).toBe("https://site.com/logo.svg");
+  });
+
+  it("never uses a fragment @id as an image URL", () => {
+    expect(
+      findDeclaredJsonLdLogo(
+        docWith({
+          "@type": "Organization",
+          logo: { "@id": "https://site.com/#/schema/logo/image/" },
+        }),
+      ),
+    ).toBeNull();
+  });
+
+  it("uses a fragment-free @id URL directly when unresolvable", () => {
+    expect(
+      findDeclaredJsonLdLogo(
+        docWith({
+          "@type": "Organization",
+          logo: { "@id": "https://site.com/assets/logo.png" },
+        }),
+      ),
+    ).toBe("https://site.com/assets/logo.png");
+  });
+
   it("ignores malformed JSON and non-http schemes", () => {
     document.head.innerHTML =
       '<script type="application/ld+json">{broken</script>' +

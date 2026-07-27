@@ -26,41 +26,109 @@ function isAllowedImageUrl(href: string): boolean {
   return /^https?:\/\//i.test(href) || /^data:image\//i.test(href);
 }
 
-function resolveLogoUrl(logo: unknown, baseUrl: string): string | null {
-  let candidates: unknown[] = [];
+type IdMap = Map<string, Record<string, unknown>>;
+
+function validateUrl(raw: unknown, baseUrl: string): string | null {
+  if (typeof raw !== "string" || !raw.trim()) return null;
+  try {
+    const resolved = new URL(raw, baseUrl);
+    if (resolved.protocol === "http:" || resolved.protocol === "https:") {
+      return resolved.href;
+    }
+  } catch (_) {
+    // Invalid URL — ignore
+  }
+  return null;
+}
+
+function resolveLogoUrl(
+  logo: unknown,
+  baseUrl: string,
+  idMap: IdMap,
+  depth = 0,
+): string | null {
+  if (depth > 3) return null;
+  // Array-valued logo (legal JSON-LD): first item that resolves wins.
+  if (Array.isArray(logo)) {
+    for (const item of logo) {
+      const r = resolveLogoUrl(item, baseUrl, idMap, depth + 1);
+      if (r) return r;
+    }
+    return null;
+  }
   if (typeof logo === "string") {
-    candidates = [logo];
-  } else if (logo && typeof logo === "object" && !Array.isArray(logo)) {
+    return validateUrl(logo, baseUrl);
+  }
+  if (logo && typeof logo === "object") {
     const img = logo as Record<string, unknown>;
     // ImageObject: contentUrl is the actual media bytes; url is inherited
     // Thing.url and may point at a page *about* the image, so it's tried
     // second. A candidate that fails validation falls through to the next
     // rather than suppressing it.
-    candidates = [img.contentUrl, img.url];
-  }
-  for (const raw of candidates) {
-    if (typeof raw !== "string" || !raw.trim()) continue;
-    try {
-      const resolved = new URL(raw, baseUrl);
-      if (resolved.protocol === "http:" || resolved.protocol === "https:") {
-        return resolved.href;
+    const direct =
+      validateUrl(img.contentUrl, baseUrl) ?? validateUrl(img.url, baseUrl);
+    if (direct) return direct;
+    // Node reference ({"@id": ...}) — the Yoast/WordPress @graph pattern:
+    // the Organization's logo points at a separate ImageObject node carrying
+    // the actual URL. Dereference it. A fragment @id ("...#/schema/logo/...")
+    // names a node, never an image, so it's only usable via dereference.
+    const id = img["@id"];
+    if (typeof id === "string" && id.trim()) {
+      const referenced = idMap.get(id);
+      if (referenced && referenced !== logo) {
+        const deref =
+          validateUrl(referenced.contentUrl, baseUrl) ??
+          validateUrl(referenced.url, baseUrl);
+        if (deref) return deref;
       }
-    } catch (_) {
-      // Invalid URL — try the next candidate
+      if (!id.includes("#")) {
+        return validateUrl(id, baseUrl);
+      }
     }
   }
   return null;
+}
+
+// JSON-LD keyword properties must not be walked for entity content:
+// an inline @context can define a "logo" *term* (e.g. mapping to
+// https://schema.org/logo) which is vocabulary, not data.
+function isWalkableKey(key: string): boolean {
+  return !key.startsWith("@") || key === "@graph";
+}
+
+function collectIds(node: unknown, depth: number, idMap: IdMap): void {
+  if (!node || typeof node !== "object" || depth > 6) return;
+  if (Array.isArray(node)) {
+    for (const item of node) collectIds(item, depth + 1, idMap);
+    return;
+  }
+  const obj = node as Record<string, unknown>;
+  const id = obj["@id"];
+  // Register only node *definitions* — a bare {"@id": ...} is a reference
+  // stub, and indexing it would shadow the real node it points to.
+  if (
+    typeof id === "string" &&
+    id.trim() &&
+    Object.keys(obj).length > 1 &&
+    !idMap.has(id)
+  ) {
+    idMap.set(id, obj);
+  }
+  for (const [k, v] of Object.entries(obj)) {
+    if (isWalkableKey(k)) collectIds(v, depth + 1, idMap);
+  }
 }
 
 function findLogo(
   node: unknown,
   depth: number,
   baseUrl: string,
+  idMap: IdMap,
 ): string | null {
   if (!node || typeof node !== "object" || depth > 6) return null;
   if (Array.isArray(node)) {
     for (const item of node) {
-      const r = findLogo(item, depth + 1, baseUrl);
+      const r = findLogo(item, depth + 1, baseUrl, idMap);
       if (r) return r;
     }
     return null;
@@ -70,10 +138,11 @@ function findLogo(
   // objects, offers, sellers) frequently omit @type, so walking into them
   // would leak a manufacturer/third-party logo via an untyped child.
   if (!typeAllowsSiteLogo(obj["@type"])) return null;
-  const resolved = resolveLogoUrl(obj.logo, baseUrl);
+  const resolved = resolveLogoUrl(obj.logo, baseUrl, idMap);
   if (resolved) return resolved;
-  for (const v of Object.values(obj)) {
-    const r = findLogo(v, depth + 1, baseUrl);
+  for (const [k, v] of Object.entries(obj)) {
+    if (!isWalkableKey(k)) continue;
+    const r = findLogo(v, depth + 1, baseUrl, idMap);
     if (r) return r;
   }
   return null;
@@ -83,20 +152,29 @@ function findLogo(
  * Site-declared logo from JSON-LD structured data (Organization / WebSite /
  * LocalBusiness-family entities). Relative URLs are resolved against the
  * page URL; wrong-entity subtrees (products, third-party brands, people,
- * reviews) are skipped entirely.
+ * reviews) are skipped entirely; @id node references are dereferenced
+ * across all JSON-LD blocks on the page (the Yoast @graph pattern).
  */
 export function findDeclaredJsonLdLogo(doc: Document): string | null {
-  let declared: string | null = null;
   const baseUrl = doc.location ? doc.location.href : "";
+  const roots: unknown[] = [];
   doc.querySelectorAll('script[type="application/ld+json"]').forEach(el => {
-    if (declared) return;
     try {
-      declared = findLogo(JSON.parse(el.textContent || ""), 0, baseUrl);
+      roots.push(JSON.parse(el.textContent || ""));
     } catch (_) {
       // Malformed JSON-LD — ignore
     }
   });
-  return declared;
+  // Pass 1: index @id → node across every block, so references resolve even
+  // when the ImageObject lives in a different script tag than the Organization.
+  const idMap: IdMap = new Map();
+  for (const root of roots) collectIds(root, 0, idMap);
+  // Pass 2: find the first usable declared logo.
+  for (const root of roots) {
+    const r = findLogo(root, 0, baseUrl, idMap);
+    if (r) return r;
+  }
+  return null;
 }
 
 /**
