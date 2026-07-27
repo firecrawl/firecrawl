@@ -102,6 +102,21 @@ describe("findDeclaredJsonLdLogo", () => {
     ).toBe("https://r.com/l.png");
   });
 
+  it("prefers contentUrl over url when ImageObject declares both", () => {
+    expect(
+      findDeclaredJsonLdLogo(
+        docWith({
+          "@type": "Organization",
+          logo: {
+            "@type": "ImageObject",
+            url: "https://x.com/about-the-logo.html",
+            contentUrl: "https://x.com/logo-file.png",
+          },
+        }),
+      ),
+    ).toBe("https://x.com/logo-file.png");
+  });
+
   it("accepts ImageObject contentUrl (canonical media URL property)", () => {
     expect(
       findDeclaredJsonLdLogo(

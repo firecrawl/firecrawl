@@ -32,8 +32,10 @@ function resolveLogoUrl(logo: unknown, baseUrl: string): string | null {
     raw = logo;
   } else if (logo && typeof logo === "object" && !Array.isArray(logo)) {
     const img = logo as Record<string, unknown>;
-    // ImageObject: contentUrl is the canonical media URL; url is generic.
-    raw = typeof img.url === "string" ? img.url : img.contentUrl;
+    // ImageObject: contentUrl is the actual media bytes; url is inherited
+    // Thing.url and may point at a page *about* the image, so it's only a
+    // fallback.
+    raw = typeof img.contentUrl === "string" ? img.contentUrl : img.url;
   }
   if (typeof raw !== "string" || !raw.trim()) return null;
   try {
