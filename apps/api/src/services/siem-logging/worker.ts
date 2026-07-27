@@ -36,7 +36,6 @@ const defaultDependencies: HandlerDependencies = {
 const permanentFailureKinds = new Set([
   "invalid_credentials",
   "schema_rejection",
-  "payload_too_large",
 ]);
 
 export async function deliverSiemLoggingBatch(

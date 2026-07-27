@@ -328,4 +328,20 @@ describe("Azure Sentinel sender", () => {
       ),
     ).toHaveLength(noisyEvents.length);
   });
+
+  // An event too large to ever deliver must not take its batch down with it: the
+  // sender POSTs chunk by chunk, so failing the call would both lose the good
+  // events and duplicate any chunk already accepted when they were replayed.
+  it("skips an undeliverable event and still delivers the rest of the batch", () => {
+    const oversized = event(
+      Array.from({ length: 400 }, () => crypto.randomUUID()).join(""),
+    );
+    const events = [event("small-1"), oversized, event("small-2")];
+
+    const delivered = [...buildCompressedBatches(events, 1200)].flatMap(batch =>
+      JSON.parse(gunzipSync(batch).toString("utf8")),
+    ) as ScrapeActivityEvent[];
+
+    expect(delivered.map(e => e.scrape_id)).toEqual(["small-1", "small-2"]);
+  });
 });

@@ -113,11 +113,7 @@ describe("SIEM logging batch delivery", () => {
   });
 
   it("dead-letters permanent destination failures", async () => {
-    for (const kind of [
-      "invalid_credentials",
-      "schema_rejection",
-      "payload_too_large",
-    ] as const) {
+    for (const kind of ["invalid_credentials", "schema_rejection"] as const) {
       const outcome = await deliverSiemLoggingBatch("org-id", events, {
         getConfig: vi.fn().mockResolvedValue(config),
         deliver: vi.fn().mockRejectedValue(new SiemDeliveryError(kind, kind)),

@@ -7,9 +7,15 @@ import {
   type Response,
 } from "undici";
 import { config } from "../../config";
-import { siemLoggingDeliveryBatchesTotal } from "./metrics";
+import { logger as _logger } from "../logger";
+import {
+  siemLoggingDeliveryBatchesTotal,
+  siemLoggingEventsTotal,
+} from "./metrics";
 import type { AzureSentinelDestination, ScrapeActivityEvent } from "./types";
 import { SiemDeliveryError } from "./types";
+
+const logger = _logger.child({ module: "siem-logging-azure-sentinel" });
 
 const MAX_COMPRESSED_BODY_BYTES = 1_000_000;
 const MAX_ATTEMPTS = 3;
@@ -213,6 +219,10 @@ async function getAccessToken(
   );
 }
 
+function gzipEvents(events: ScrapeActivityEvent[]): Buffer {
+  return gzipSync(Buffer.from(JSON.stringify(events), "utf8"));
+}
+
 export function* buildCompressedBatches(
   events: ScrapeActivityEvent[],
   maxBytes = MAX_COMPRESSED_BODY_BYTES,
@@ -221,32 +231,35 @@ export function* buildCompressedBatches(
 
   for (const event of events) {
     const candidate = [...pending, event];
-    const compressed = gzipSync(Buffer.from(JSON.stringify(candidate), "utf8"));
-    if (compressed.byteLength <= maxBytes) {
+    if (gzipEvents(candidate).byteLength <= maxBytes) {
       pending = candidate;
       continue;
     }
 
-    if (pending.length === 0) {
-      throw new SiemDeliveryError(
-        "payload_too_large",
-        `A single SIEM event exceeds the ${maxBytes}-byte compressed payload limit`,
-      );
+    // The event doesn't fit alongside what's pending — close that batch out and
+    // consider the event on its own.
+    if (pending.length > 0) {
+      yield gzipEvents(pending);
+      pending = [];
     }
-    yield gzipSync(Buffer.from(JSON.stringify(pending), "utf8"));
+
+    if (gzipEvents([event]).byteLength > maxBytes) {
+      // Undeliverable at any batch size, and no retry will change that. Skip it
+      // and keep going: failing the call here would take down every other event
+      // in the batch, and dead-lettering the batch would duplicate the ones
+      // already POSTed in earlier chunks.
+      siemLoggingEventsTotal.inc({ result: "dropped_oversized" });
+      logger.error("Dropping a SIEM event larger than the payload limit", {
+        maxBytes,
+        scrapeId: event.scrape_id,
+        orgId: event.org_id,
+      });
+      continue;
+    }
     pending = [event];
-    const single = gzipSync(Buffer.from(JSON.stringify(pending), "utf8"));
-    if (single.byteLength > maxBytes) {
-      throw new SiemDeliveryError(
-        "payload_too_large",
-        `A single SIEM event exceeds the ${maxBytes}-byte compressed payload limit`,
-      );
-    }
   }
 
-  if (pending.length > 0) {
-    yield gzipSync(Buffer.from(JSON.stringify(pending), "utf8"));
-  }
+  if (pending.length > 0) yield gzipEvents(pending);
 }
 
 async function sendBatch(

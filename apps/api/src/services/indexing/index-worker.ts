@@ -589,15 +589,27 @@ const processPrecrawlJob = async (token: string, job: Job) => {
 
 let isShuttingDown = false;
 
+// The SIEM consumer is a subscription rather than a loop, so it has to be torn
+// down from the signal path: workerFun exits the process once its own jobs
+// drain, so anything after the worker Promise.all never runs. Unacked batches go
+// back to the broker for another replica.
+function shutdownSiemLoggingTransport(): void {
+  closeSiemLoggingTransport().catch(error => {
+    logger.warn("Failed to close the SIEM logging transport", { error });
+  });
+}
+
 if (require.main === module) {
   process.on("SIGINT", () => {
     logger.info("Received SIGINT. Shutting down gracefully...");
     isShuttingDown = true;
+    shutdownSiemLoggingTransport();
   });
 
   process.on("SIGTERM", () => {
     logger.info("Received SIGTERM. Shutting down gracefully...");
     isShuttingDown = true;
+    shutdownSiemLoggingTransport();
   });
 }
 
@@ -788,9 +800,6 @@ const BROWSER_ACTIVITY_INSERT_INTERVAL = 10000;
     precrawlWorkerPromise,
     engpickerPromise,
   ]);
-
-  // Unacked batches go back to the broker for another replica to deliver.
-  await closeSiemLoggingTransport();
 
   clearInterval(indexInserterInterval);
   clearInterval(webhookInserterInterval);

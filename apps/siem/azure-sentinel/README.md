@@ -40,16 +40,28 @@ secret takes effect on events already in flight.
 Operational shape of that queue:
 
 - Bounded at 100k messages with `drop-head`, so a destination outage sheds the
-  oldest events instead of growing without limit. Depth and drops come from
-  `rabbitmq_prometheus`; `firecrawl_siem_logging_events_total` breaks out
-  queued, delivered, retried, dead-lettered and skipped counts.
+  oldest events instead of growing without limit. The retry queues carry the
+  same cap, and `siem.logging.dlq` is capped at 50k with a 7-day TTL — it exists
+  for an operator to read, not as indefinite storage.
 - Transient failures ride a fixed-delay retry ladder (5s, 30s, 5m, 30m) built
   from TTL queues that dead-letter back onto the main queue; a destination's
   `Retry-After` rounds up to the smallest rung that satisfies it.
-- Bad credentials, a rejected DCR schema, or an oversized event dead-letter
-  straight to `siem.logging.dlq` rather than burning the ladder.
+- Bad credentials or a rejected DCR schema dead-letter straight to
+  `siem.logging.dlq` rather than burning the ladder. An event too large to
+  compress under 1 MB on its own is dropped and counted, not dead-lettered —
+  failing its batch would lose up to 199 deliverable events alongside it.
 - Retries are at-least-once: a batch that fails partway through its ≤1 MB
   sub-batches will resend the sub-batches that already landed.
+- Publishes are confirmed and `mandatory`, and at most 10k may await a confirm
+  at once. Beyond that the producer sheds events rather than accumulating them
+  in the API process, which is the same bound the queue has, applied upstream.
+
+Queue depth comes from `rabbitmq_prometheus`.
+`firecrawl_siem_logging_events_total` breaks out per-event outcomes: `queued`,
+`delivered`, `retried`, `dead_lettered`, `skipped_disabled`, `enqueue_failed`,
+`delivery_failed`, `unparseable`, `unroutable`, `dropped_oversized` and
+`dropped_producer_full`. The last three should normally be flat at zero; any of
+them moving means events are being lost rather than delayed.
 
 Set `SIEM_LOGGING_ENCRYPTION_KEY` in API and index-worker environments. If
 partner egress is required, also set `PARTNER_EGRESS_PROXY_URL` and allowlist

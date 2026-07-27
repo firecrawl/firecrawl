@@ -136,8 +136,7 @@ type SiemDeliveryErrorKind =
   | "invalid_credentials"
   | "schema_rejection"
   | "rate_limited"
-  | "delivery_error"
-  | "payload_too_large";
+  | "delivery_error";
 
 export class SiemDeliveryError extends Error {
   constructor(

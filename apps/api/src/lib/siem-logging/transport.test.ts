@@ -37,9 +37,8 @@ vi.mock("../../config", () => ({
 }));
 // Each test re-imports the module under test, and prom-client rejects a second
 // registration of the same counter name in one registry.
-vi.mock("./metrics", () => ({
-  siemLoggingEventsTotal: { inc: vi.fn() },
-}));
+const { metricsMock } = vi.hoisted(() => ({ metricsMock: { inc: vi.fn() } }));
+vi.mock("./metrics", () => ({ siemLoggingEventsTotal: metricsMock }));
 vi.mock("../logger", () => {
   const mk = (): Record<string, unknown> => ({
     info: vi.fn(),
@@ -318,7 +317,11 @@ describe("SIEM logging transport", () => {
 
     await expect(
       transport.enqueueSiemLoggingEvent("org-a", event("scrape-1")),
-    ).rejects.toThrow("nacked");
+    ).rejects.toThrow("Failed to publish 1 of 1");
+    expect(metricsMock.inc).toHaveBeenCalledWith(
+      { result: "enqueue_failed" },
+      1,
+    );
   });
 
   it("leaves a message unsettled when its retry republish is not confirmed", async () => {
@@ -367,6 +370,90 @@ describe("SIEM logging transport", () => {
 
     expect(handler).not.toHaveBeenCalled();
     expect(channelMock.nack).toHaveBeenCalledWith(msg, false, false);
+  });
+
+  it("counts the accepted events when only some publishes are nacked", async () => {
+    const transport = await freshTransport();
+    channelMock.publish.mockImplementationOnce((...args: unknown[]) => {
+      (args[4] as (error: Error | null) => void)(new Error("nacked"));
+      return true;
+    });
+
+    // Rejects, but the sibling event was accepted — the aggregate must not
+    // report the whole call as failed.
+    await expect(
+      transport.enqueueSiemLoggingEvents("org-a", [
+        event("scrape-1"),
+        event("scrape-2"),
+      ]),
+    ).rejects.toThrow("Failed to publish 1 of 2");
+    expect(metricsMock.inc).toHaveBeenCalledWith({ result: "queued" }, 1);
+    expect(metricsMock.inc).toHaveBeenCalledWith(
+      { result: "enqueue_failed" },
+      1,
+    );
+  });
+
+  it("publishes as mandatory and reports what the broker cannot route", async () => {
+    const transport = await freshTransport();
+    await transport.enqueueSiemLoggingEvent("org-a", event("scrape-1"));
+
+    expect(channelMock.publish.mock.calls[0][3]).toMatchObject({
+      mandatory: true,
+    });
+
+    const onReturn = (channelMock.on as Mock).mock.calls.find(
+      c => c[0] === "return",
+    )?.[1] as (msg: unknown) => void;
+    expect(onReturn).toBeTypeOf("function");
+    onReturn({
+      fields: { exchange: "siem.logging", routingKey: "siem.logging.events" },
+      properties: { messageId: "scrape-1" },
+    });
+    expect(metricsMock.inc).toHaveBeenCalledWith({ result: "unroutable" });
+  });
+
+  it("retries the subscribe when the broker is down at startup", async () => {
+    vi.useFakeTimers();
+    try {
+      const transport = await freshTransport();
+      connectMock.mockImplementationOnce(() => {
+        throw new Error("broker down");
+      });
+
+      // Must resolve, not reject: an unavailable broker at boot has to enter the
+      // reconnect loop instead of leaving the replica permanently deaf.
+      await expect(
+        transport.consumeSiemLoggingEvents(vi.fn(), { batchSize: 1 }),
+      ).resolves.toBeUndefined();
+      expect(channelMock.consume).not.toHaveBeenCalled();
+
+      await vi.advanceTimersByTimeAsync(1500);
+
+      expect(channelMock.consume).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("does not reopen the transport when shutdown races a pending reconnect", async () => {
+    vi.useFakeTimers();
+    try {
+      const transport = await freshTransport();
+      connectMock.mockImplementationOnce(() => {
+        throw new Error("broker down");
+      });
+      await transport.consumeSiemLoggingEvents(vi.fn(), { batchSize: 1 });
+
+      await transport.closeSiemLoggingTransport();
+      await vi.advanceTimersByTimeAsync(5000);
+
+      // The pending reconnect timer must not resurrect a connection that
+      // shutdown already tore down.
+      expect(channelMock.consume).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("re-subscribes the consumer after a channel drop (does not go deaf)", async () => {

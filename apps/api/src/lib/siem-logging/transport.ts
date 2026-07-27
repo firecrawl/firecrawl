@@ -35,6 +35,11 @@ const RETRY_DELAYS_MS = [5_000, 30_000, 300_000, 1_800_000] as const;
 // counters are scraped from rabbitmq_prometheus for alerting.
 const MAX_QUEUED_MESSAGES = 100_000;
 
+// The dead-letter queue holds what an operator needs to diagnose, so it gets a
+// smaller cap and a retention window rather than growing forever.
+const MAX_DEAD_LETTERED_MESSAGES = 50_000;
+const DLQ_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
+
 // A batch closes on whichever comes first. The linger is what turns per-scrape
 // messages into per-org batches; keep it short enough that a quiet org still
 // sees its audit events land promptly.
@@ -86,8 +91,20 @@ let registeredHandler: SiemLoggingBatchHandler | null = null;
 let registeredOptions: SiemLoggingConsumerOptions = {};
 let subscribed = false;
 let reconnectInFlight = false;
+let reconnectTimer: NodeJS.Timeout | null = null;
+// Set by close() so a reconnect already in flight can't resurrect the transport
+// after shutdown.
+let closed = false;
 const RECONNECT_BASE_DELAY_MS = 1000;
 const RECONNECT_MAX_DELAY_MS = 30_000;
+
+// Ceiling on publishes awaiting a broker confirm. Emission is fire-and-forget,
+// so nothing upstream throttles it: without this, a broker that accepts
+// connections but stops confirming would let unconfirmed events pile up in the
+// producer until the pod dies — the exact failure the queue bound exists to
+// prevent, just moved into the API process.
+const MAX_IN_FLIGHT_CONFIRMS = 10_000;
+let inFlightConfirms = 0;
 
 function retryQueueName(delayMs: number): string {
   return `${QUEUE}.retry.${delayMs}`;
@@ -98,7 +115,18 @@ async function assertTopology(ch: amqp.Channel): Promise<void> {
   await ch.assertExchange(RETRY_EXCHANGE, "direct", { durable: true });
   await ch.assertExchange(DLX, "direct", { durable: true });
 
-  await ch.assertQueue(DLQ, { durable: true });
+  // Bounded like everything else: a standing bad credential or rejected schema
+  // pushes every event here, and an unbounded durable queue would eventually
+  // fill the broker's disk. Retention is for an operator to read, not to replay
+  // indefinitely.
+  await ch.assertQueue(DLQ, {
+    durable: true,
+    arguments: {
+      "x-max-length": MAX_DEAD_LETTERED_MESSAGES,
+      "x-overflow": "drop-head",
+      "x-message-ttl": DLQ_RETENTION_MS,
+    },
+  });
   await ch.bindQueue(DLQ, DLX, QUEUE);
 
   // Classic, not quorum like the monitoring queues: x-max-length with drop-head
@@ -160,12 +188,20 @@ function handleConnectionDrop(reason: string, error?: unknown): void {
 }
 
 function scheduleReconnect(delayMs: number): void {
-  if (reconnectInFlight) return;
+  if (closed || reconnectInFlight) return;
   reconnectInFlight = true;
 
-  setTimeout(async () => {
+  reconnectTimer = setTimeout(async () => {
+    reconnectTimer = null;
     try {
       const ch = await getConsumeChannel();
+      // Shutdown can land while the channel was opening. Without this the
+      // connection we just opened outlives close() with nothing consuming it.
+      if (closed) {
+        reconnectInFlight = false;
+        await closeConnection();
+        return;
+      }
       if (registeredHandler) {
         await subscribe(ch, registeredHandler, registeredOptions);
       }
@@ -184,7 +220,8 @@ function scheduleReconnect(delayMs: number): void {
       resetCachedState();
       scheduleReconnect(nextDelay);
     }
-  }, delayMs).unref?.();
+  }, delayMs);
+  reconnectTimer.unref?.();
 }
 
 async function openConnection(): Promise<amqp.ChannelModel> {
@@ -245,6 +282,18 @@ async function createChannel(
   ch.on("error", error =>
     logger.error("SIEM logging transport channel error", { label, error }),
   );
+  // Only reachable if the bindings asserted above are removed out of band, but
+  // the failure mode is a silently discarded audit event, so make it loud.
+  if (label === "publish") {
+    ch.on("return", msg => {
+      siemLoggingEventsTotal.inc({ result: "unroutable" });
+      logger.error("Broker could not route a SIEM logging event", {
+        exchange: msg.fields.exchange,
+        routingKey: msg.fields.routingKey,
+        messageId: msg.properties.messageId,
+      });
+    });
+  }
   return ch;
 }
 
@@ -281,9 +330,9 @@ async function getConsumeChannel(): Promise<amqp.Channel> {
 }
 
 // Resolves once the broker has taken responsibility for the message, and rejects
-// if it nacks instead. Note this says nothing about routing: an unroutable
-// publish is still confirmed, so the queue bindings above are what keep events
-// from being silently discarded by the exchange.
+// if it nacks instead. A confirm says nothing about routing — an unroutable
+// publish is still confirmed — so publishes are `mandatory` and the channel's
+// "return" handler counts anything the exchange couldn't route.
 function publishConfirmed(
   ch: amqp.ConfirmChannel,
   exchange: string,
@@ -291,12 +340,32 @@ function publishConfirmed(
   content: Buffer,
   options: amqp.Options.Publish,
 ): Promise<void> {
+  if (inFlightConfirms >= MAX_IN_FLIGHT_CONFIRMS) {
+    siemLoggingEventsTotal.inc({ result: "dropped_producer_full" });
+    return Promise.reject(
+      new Error(
+        `Refusing to publish: ${inFlightConfirms} SIEM events are already awaiting a broker confirm`,
+      ),
+    );
+  }
+
   return new Promise((resolve, reject) => {
-    const sent = ch.publish(exchange, routingKey, content, options, error =>
-      error ? reject(error) : resolve(),
+    inFlightConfirms++;
+    const settle = (error: unknown): void => {
+      inFlightConfirms--;
+      if (error) reject(error);
+      else resolve();
+    };
+    const sent = ch.publish(
+      exchange,
+      routingKey,
+      content,
+      { ...options, mandatory: true },
+      settle,
     );
     // A false return only means the socket write buffer is full; the message is
-    // still queued client-side and the confirm callback still fires.
+    // still queued client-side and the confirm callback still fires. The
+    // in-flight ceiling above is what actually bounds producer memory.
     if (!sent) siemLoggingEventsTotal.inc({ result: "publish_backpressure" });
   });
 }
@@ -313,30 +382,50 @@ export async function enqueueSiemLoggingEvents(
   events: ScrapeActivityEvent[],
 ): Promise<void> {
   if (events.length === 0) return;
+
+  let ch: amqp.ConfirmChannel;
   try {
-    const ch = await getPublishChannel();
-    await Promise.all(
-      events.map(event =>
-        publishConfirmed(
-          ch,
-          EXCHANGE,
-          QUEUE,
-          Buffer.from(
-            JSON.stringify({ orgId, event } satisfies SiemLoggingMessage),
-          ),
-          {
-            persistent: true,
-            contentType: "application/json",
-            messageId: event.scrape_id,
-            headers: { "x-siem-attempt": 0 },
-          },
-        ),
-      ),
-    );
-    siemLoggingEventsTotal.inc({ result: "queued" }, events.length);
+    ch = await getPublishChannel();
   } catch (error) {
+    // No channel means nothing was published, so the whole call failed.
     siemLoggingEventsTotal.inc({ result: "enqueue_failed" }, events.length);
     throw error;
+  }
+
+  // allSettled, not all: these events are independent, and a single rejected
+  // confirm must not mislabel the ones the broker did accept. There is nowhere
+  // durable to park a rejected event — Firecrawl holds no scrape-derived state —
+  // so a failure here is a counted, logged loss rather than a retry.
+  const results = await Promise.allSettled(
+    events.map(event =>
+      publishConfirmed(
+        ch,
+        EXCHANGE,
+        QUEUE,
+        Buffer.from(
+          JSON.stringify({ orgId, event } satisfies SiemLoggingMessage),
+        ),
+        {
+          persistent: true,
+          contentType: "application/json",
+          messageId: event.scrape_id,
+          headers: { "x-siem-attempt": 0 },
+        },
+      ),
+    ),
+  );
+
+  const rejected = results.filter(
+    (result): result is PromiseRejectedResult => result.status === "rejected",
+  );
+  const queued = results.length - rejected.length;
+  if (queued > 0) siemLoggingEventsTotal.inc({ result: "queued" }, queued);
+  if (rejected.length > 0) {
+    siemLoggingEventsTotal.inc({ result: "enqueue_failed" }, rejected.length);
+    throw new AggregateError(
+      rejected.map(result => result.reason),
+      `Failed to publish ${rejected.length} of ${results.length} SIEM logging events`,
+    );
   }
 }
 
@@ -547,15 +636,36 @@ export async function consumeSiemLoggingEvents(
   handler: SiemLoggingBatchHandler,
   options: SiemLoggingConsumerOptions = {},
 ): Promise<void> {
+  closed = false;
   registeredHandler = handler;
   registeredOptions = options;
-  const ch = await getConsumeChannel();
-  await subscribe(ch, handler, options);
+  try {
+    const ch = await getConsumeChannel();
+    await subscribe(ch, handler, options);
+  } catch (error) {
+    // A broker that is unavailable at worker startup has to enter the same retry
+    // loop as one that drops later. Throwing here instead left the replica
+    // permanently deaf, because only an already-established channel closing
+    // scheduled a reconnect.
+    logger.error("Failed to subscribe to SIEM logging events; will retry", {
+      error,
+    });
+    scheduleReconnect(RECONNECT_BASE_DELAY_MS);
+  }
 }
 
-export async function closeSiemLoggingTransport(): Promise<void> {
-  registeredHandler = null;
+async function closeConnection(): Promise<void> {
   const conn = connection;
   resetCachedState();
   await conn?.close().catch(() => {});
+}
+
+export async function closeSiemLoggingTransport(): Promise<void> {
+  closed = true;
+  registeredHandler = null;
+  if (reconnectTimer) {
+    clearTimeout(reconnectTimer);
+    reconnectTimer = null;
+  }
+  await closeConnection();
 }
