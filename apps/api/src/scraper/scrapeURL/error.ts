@@ -604,12 +604,12 @@ export function throwIfMediaAccessDenied(errorBody: unknown): void {
   }
 }
 
-// Transient proxy/IP-reputation blocks (HTTP 403, "not a bot", sign-in walls)
-// come back as a plain string `detail` from the media service. They are not a
-// property of the content — a retry through a fresh proxy usually succeeds — so
-// classify them as retryable instead of letting them surface as an opaque
-// UNKNOWN_ERROR 500. Age-gated sign-ins are excluded: those are terminal and
-// handled by throwIfMediaAccessDenied.
+// Transient proxy/IP-reputation blocks come back as a plain string `detail`
+// from the media service. They are not a property of the content — a retry
+// through a fresh proxy usually succeeds — so classify them as retryable
+// instead of letting them surface as an opaque UNKNOWN_ERROR 500. Terminal,
+// content-specific denials arrive as a structured detail and are handled first
+// by throwIfMediaAccessDenied.
 const RETRYABLE_BLOCK_MARKERS = [
   "HTTP Error 403",
   "not a bot",
@@ -622,9 +622,6 @@ export function throwIfMediaBlocked(errorBody: unknown): void {
       ? errorBody.detail
       : undefined;
   if (typeof detail !== "string") {
-    return;
-  }
-  if (detail.includes("Sign in to confirm your age")) {
     return;
   }
   if (RETRYABLE_BLOCK_MARKERS.some(marker => detail.includes(marker))) {

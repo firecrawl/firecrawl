@@ -188,8 +188,8 @@ describe("fetchAudio lockdown guard", () => {
 
   it.each([
     "Download failed: ERROR: unable to download video data: HTTP Error 403: Forbidden",
-    "Download failed: ERROR: [youtube] x: Sign in to confirm you’re not a bot.",
-    "Download failed: ERROR: [youtube] x: Please sign in.",
+    "Download failed: ERROR: Sign in to confirm you’re not a bot.",
+    "Download failed: ERROR: Please sign in.",
   ])("classifies proxy/bot blocks as retryable: %s", async detail => {
     const fetchSpy = vi.fn(async (url: string, _init?: RequestInit) => {
       if (url.endsWith("/supported-urls")) {
@@ -237,7 +237,7 @@ describe("fetchAudio lockdown guard", () => {
     expect(error).toBeInstanceOf(MediaBlockedError);
   });
 
-  it("does NOT classify age-restricted sign-in as a retryable block", async () => {
+  it("does NOT classify a non-block failure as retryable", async () => {
     const fetchSpy = vi.fn(async (url: string, _init?: RequestInit) => {
       if (url.endsWith("/supported-urls")) {
         return {
@@ -249,7 +249,7 @@ describe("fetchAudio lockdown guard", () => {
         ok: false,
         status: 400,
         json: async () => ({
-          detail: "Download failed: ERROR: Sign in to confirm your age.",
+          detail: "Download failed: some other error",
         }),
       };
     });
