@@ -70,18 +70,28 @@ jobs:
               { tag: '#scrape-ocr-eval', eventType: 'firecrawl-ocr-eval' },
             ];
 
+            // Match case-insensitively, like the workflow-level contains() gate.
+            const lowerText = text.toLowerCase();
+            const failures = [];
             for (const { tag, eventType } of evals) {
-              if (!text.includes(tag)) continue;
-              await github.rest.repos.createDispatchEvent({
-                owner: 'firecrawl',
-                repo: 'scrape-evals',
-                event_type: eventType,
-                client_payload: {
-                  pr_number: prNumber,
-                  pr_branch: prBranch,
-                  commit_sha: commitSha,
-                  repo: headRepo,
-                },
-              });
-              core.info(`Dispatched ${eventType} for PR #${prNumber} (${commitSha})`);
+              if (!lowerText.includes(tag)) continue;
+              try {
+                await github.rest.repos.createDispatchEvent({
+                  owner: 'firecrawl',
+                  repo: 'scrape-evals',
+                  event_type: eventType,
+                  client_payload: {
+                    pr_number: prNumber,
+                    pr_branch: prBranch,
+                    commit_sha: commitSha,
+                    repo: headRepo,
+                  },
+                });
+                core.info(`Dispatched ${eventType} for PR #${prNumber} (${commitSha})`);
+              } catch (error) {
+                failures.push(`${eventType}: ${error.message}`);
+              }
+            }
+            if (failures.length > 0) {
+              core.setFailed(`Failed to dispatch: ${failures.join('; ')}`);
             }
