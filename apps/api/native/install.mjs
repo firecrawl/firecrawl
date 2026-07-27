@@ -18,7 +18,7 @@ import { dirname, join, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = dirname(fileURLToPath(import.meta.url));
-const repo = process.env.FIRECRAWL_RS_RELEASE_REPO ?? "firecrawl/firecrawl";
+const repo = process.env.FIRECRAWL_RS_RELEASE_REPO ?? "firecrawl/firecrawl-rs-prebuilds";
 const stampPath = join(root, ".prebuilt-hash");
 
 const EXCLUDED_DIRS = new Set(["node_modules", "target", "npm", ".git"]);
@@ -46,7 +46,7 @@ function sourceHash() {
     h.update(readFileSync(join(root, f)));
     h.update("\0");
   }
-  return h.digest("hex").slice(0, 16);
+  return h.digest("hex");
 }
 
 function platformName() {
@@ -101,9 +101,11 @@ function buildFromSource(hash) {
   const result = spawnSync("pnpm", ["exec", "napi", "build", "--platform", "--release"], {
     cwd: root,
     stdio: "inherit",
+    // pnpm is a .cmd shim on Windows; Node refuses to spawn those without a shell.
+    shell: process.platform === "win32",
   });
-  if (result.error?.code === "ENOENT") {
-    console.error("firecrawl-rs: pnpm not found; cannot build from source.");
+  if (result.error) {
+    console.error(`firecrawl-rs: failed to run pnpm (${result.error.message}); cannot build from source.`);
     process.exit(1);
   }
   if (result.status !== 0) {

@@ -1,9 +1,14 @@
 name: Build Native Binaries
 
 # Publishes prebuilt firecrawl-rs (apps/api/native) binaries to a GitHub
-# release tagged native-bin-<source hash>. apps/api/native/install.mjs
-# downloads from that release and falls back to a source build when no
-# release exists for the current sources (e.g. inside PRs changing them).
+# release tagged native-bin-<source hash> on the dedicated prebuilds repo
+# (PREBUILDS_REPO below — not this repo, to keep its releases feed and tag
+# namespace clean). apps/api/native/install.mjs downloads from that release
+# and falls back to a source build when no release exists for the current
+# sources (e.g. inside PRs changing them).
+#
+# Requires a PREBUILDS_GITHUB_TOKEN secret with contents:write on the
+# prebuilds repo (fine-grained PAT or GitHub App token).
 
 on:
   push:
@@ -16,6 +21,9 @@ on:
 
 permissions:
   contents: read
+
+env:
+  PREBUILDS_REPO: firecrawl/firecrawl-rs-prebuilds
 
 concurrency:
   group: build-native-${{ github.sha }}
@@ -30,7 +38,7 @@ jobs:
       hash: ${{ steps.hash.outputs.hash }}
       exists: ${{ steps.exists.outputs.exists }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
 
       - id: hash
         run: echo "hash=$(node apps/api/native/install.mjs --hash)" >> "$GITHUB_OUTPUT"
@@ -39,7 +47,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          if gh release view "native-bin-${{ steps.hash.outputs.hash }}" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
+          if gh release view "native-bin-${{ steps.hash.outputs.hash }}" --repo "$PREBUILDS_REPO" > /dev/null 2>&1; then
             echo "Release native-bin-${{ steps.hash.outputs.hash }} already exists; nothing to do."
             echo "exists=true" >> "$GITHUB_OUTPUT"
           else
@@ -69,23 +77,24 @@ jobs:
     runs-on: ${{ matrix.host }}
     timeout-minutes: 40
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
 
       - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4
         with:
           version: 11.4.0
 
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version: 22
           cache: pnpm
           cache-dependency-path: apps/api/pnpm-lock.yaml
 
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4 # stable
         with:
+          toolchain: stable
           targets: ${{ matrix.target }}
 
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
         with:
           workspaces: apps/api/native
           key: ${{ matrix.target }}
@@ -98,7 +107,7 @@ jobs:
         run: pnpm exec napi build --platform --release --target ${{ matrix.target }}
         working-directory: apps/api/native
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: native-${{ matrix.platform }}
           path: |
@@ -113,12 +122,8 @@ jobs:
     needs: [hash, build]
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    permissions:
-      contents: write
     steps:
-      - uses: actions/checkout@v5
-
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           path: artifacts
           merge-multiple: true
@@ -135,12 +140,18 @@ jobs:
 
       - name: Create release
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ secrets.PREBUILDS_GITHUB_TOKEN }}
           HASH: ${{ needs.hash.outputs.hash }}
         run: |
-          gh release create "native-bin-$HASH" \
-            --repo "$GITHUB_REPOSITORY" \
+          if gh release create "native-bin-$HASH" \
+            --repo "$PREBUILDS_REPO" \
             --title "firecrawl-rs prebuilt binaries ($HASH)" \
-            --notes "Prebuilt @mendable/firecrawl-rs binaries for apps/api/native source hash \`$HASH\` (built from $GITHUB_SHA). Consumed automatically by apps/api/native/install.mjs — not for direct use." \
+            --notes "Prebuilt @mendable/firecrawl-rs binaries for apps/api/native source hash \`$HASH\` (built from firecrawl/firecrawl@$GITHUB_SHA). Consumed automatically by apps/api/native/install.mjs — not for direct use." \
             --prerelease \
-            assets/*
+            assets/*; then
+            echo "Published native-bin-$HASH."
+          elif gh release view "native-bin-$HASH" --repo "$PREBUILDS_REPO" > /dev/null 2>&1; then
+            echo "Release native-bin-$HASH already exists (published by a concurrent run); nothing to do."
+          else
+            exit 1
+          fi
