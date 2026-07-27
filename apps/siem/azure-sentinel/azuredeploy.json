@@ -6,8 +6,12 @@
       "type": "string",
       "defaultValue": "[resourceGroup().location]"
     },
-    "workspaceName": {
-      "type": "string"
+    "workspaceResourceId": {
+      "type": "string",
+      "minLength": 1,
+      "metadata": {
+        "description": "Full resource ID of the Log Analytics workspace that receives these events, e.g. /subscriptions/<id>/resourceGroups/<rg>/providers/Microsoft.OperationalInsights/workspaces/<name>. Copy it from the workspace's Properties blade. A full ID rather than a name so the workspace does not have to live in the resource group this template is deployed into."
+      }
     },
     "dataCollectionEndpointName": {
       "type": "string",
@@ -19,7 +23,6 @@
     }
   },
   "variables": {
-    "workspaceResourceId": "[resourceId('Microsoft.OperationalInsights/workspaces', parameters('workspaceName'))]",
     "streamName": "Custom-FirecrawlScrapeActivity"
   },
   "resources": [
@@ -136,7 +139,7 @@
         "destinations": {
           "logAnalytics": [
             {
-              "workspaceResourceId": "[variables('workspaceResourceId')]",
+              "workspaceResourceId": "[parameters('workspaceResourceId')]",
               "name": "firecrawlWorkspace"
             }
           ]

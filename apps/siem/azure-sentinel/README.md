@@ -5,14 +5,59 @@ Sentinel through the Azure Monitor Logs Ingestion API.
 
 ## Files
 
-- `azuredeploy.json` creates the data collection endpoint and rule.
-- `DCR.json` contains the CCF data collection rule and ASIM transform.
+- `azuredeploy.json` creates the data collection endpoint and rule. This is the
+  only artifact needed to make ingestion work, and the only one the dashboard's
+  "Deploy to Azure" button uses.
+- `DCR.json` contains the CCF data collection rule and ASim transform. It is a
+  fragment of a Sentinel solution package — it references variables defined by
+  its container, so it is not independently deployable.
 - `connectorDefinition.json` and `dataConnector.json` define the CCF Push
-  connector.
+  connector, which only affects how the integration appears in Sentinel's data
+  connector gallery. Ingestion does not depend on them.
 - `sample-event.json` is a valid input-stream event.
 
 The database schema is maintained as a migration in the Firecrawl database
 repository, not in this package.
+
+## Customer setup
+
+Three steps, in this order — the credential step needs the rule's resource ID,
+which only exists after the deployment.
+
+1. **Deploy the resources.** Use the dashboard's "Deploy to Azure" button, or
+   deploy `azuredeploy.json` directly. It asks for the full resource ID of the
+   Log Analytics workspace that should receive the events (workspace →
+   Properties → Resource ID). It takes an ID rather than a name so the workspace
+   does not have to live in the same resource group as the deployment.
+
+2. **Create the identity and grant it access.** One command creates the app
+   registration and the role assignment together, scoped to the rule that was
+   just deployed:
+
+   ```
+   az ad sp create-for-rbac \
+     --name firecrawl-siem \
+     --role "Monitoring Metrics Publisher" \
+     --scopes <dataCollectionRuleResourceId from the deployment outputs>
+   ```
+
+   It prints `tenant`, `appId` and `password`, which are the Tenant ID, Client ID
+   and Client secret the dashboard asks for. Granting that role is not optional:
+   without it the token is valid but ingestion returns 403, which surfaces as
+   `invalid_credentials` and looks like a wrong secret.
+
+3. **Paste and verify.** Enter the deployment outputs and the credentials in the
+   dashboard, then save. The stream is only enabled after a test event is
+   actually accepted.
+
+### Deployment outputs
+
+| Output | Used for |
+| --- | --- |
+| `dataCollectionEndpoint` | Data collection endpoint URL |
+| `dataCollectionRuleImmutableId` | DCR immutable ID |
+| `streamName` | Stream name |
+| `dataCollectionRuleResourceId` | `--scopes` value in step 2 |
 
 ## Severity
 
