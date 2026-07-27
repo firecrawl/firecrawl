@@ -50,7 +50,6 @@ interface SearchContext {
   origin: string;
   integration?: string | null;
   apiKeyId: number | null;
-  apiKeyIdText?: string | null;
   flags: TeamFlags;
   requestId: string;
   jobId: string;
@@ -84,7 +83,6 @@ export async function executeSearch(
     orgId,
     origin,
     apiKeyId,
-    apiKeyIdText,
     flags,
     requestId,
     bypassBilling,
@@ -229,7 +227,6 @@ export async function executeSearch(
         scrapeOptions,
         bypassBilling: bypassBilling ?? false,
         apiKeyId,
-        apiKeyIdText,
         zeroDataRetention,
         requestId,
         billing,

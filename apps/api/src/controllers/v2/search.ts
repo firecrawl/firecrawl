@@ -222,7 +222,6 @@ export async function searchController(
         origin: req.body.origin,
         integration: req.body.integration,
         apiKeyId: req.acuc?.api_key_id ?? null,
-        apiKeyIdText: req.acuc?.api_key_id_text ?? null,
         flags: req.acuc?.flags ?? null,
         requestId: agentRequestId ?? jobId,
         jobId,

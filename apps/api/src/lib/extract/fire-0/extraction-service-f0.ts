@@ -47,7 +47,6 @@ interface ExtractServiceOptions {
   cacheMode?: "load" | "save" | "direct";
   cacheKey?: string;
   apiKeyId: number | null;
-  apiKeyIdText?: string | null;
   createdAt?: number;
 }
 
@@ -78,7 +77,7 @@ export async function performExtraction_F0(
   extractId: string,
   options: ExtractServiceOptions,
 ): Promise<ExtractResult> {
-  const { request, teamId, apiKeyId, apiKeyIdText } = options;
+  const { request, teamId, apiKeyId } = options;
   const createdAt = options.createdAt
     ? new Date(options.createdAt)
     : new Date();
@@ -355,7 +354,6 @@ export async function performExtraction_F0(
             timeout,
             flags: acuc?.flags ?? null,
             apiKeyId,
-            apiKeyIdText,
             requestId: extractId,
             threatProtectionPolicy,
           },
@@ -653,7 +651,6 @@ export async function performExtraction_F0(
             timeout,
             flags: acuc?.flags ?? null,
             apiKeyId,
-            apiKeyIdText,
             requestId: extractId,
             threatProtectionPolicy,
           },

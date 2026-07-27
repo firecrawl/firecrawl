@@ -37,10 +37,7 @@ import { UnsafeDomainBlockedError } from "../../lib/threat-protection/error";
 import { calculateThreatScanCredits } from "../../lib/scrape-billing";
 import { billTeam } from "../../services/billing/credit_billing";
 import { getEffectiveConcurrencyLimit } from "../../lib/concurrency-limit";
-import {
-  emitRejectedScrapeActivityEvent,
-  withoutAuditMetadata,
-} from "../../lib/siem-logging";
+import { emitRejectedScrapeActivityEvent } from "../../lib/siem-logging";
 
 export async function crawlController(
   req: RequestWithAuth<{}, CrawlResponse, CrawlRequest>,
@@ -107,7 +104,7 @@ export async function crawlController(
         requestId: id,
         endpoint: "crawl",
         teamId: req.auth.team_id,
-        apiKeyId: req.acuc?.api_key_id_text ?? req.acuc?.api_key_id,
+        apiKeyId: req.acuc?.api_key_id ?? null,
         auditMetadata: req.body.scrapeOptions?.auditMetadata,
         url: req.body.url,
         error,
@@ -146,8 +143,8 @@ export async function crawlController(
   });
 
   logger.debug("Crawl " + id + " starting", {
-    request: withoutAuditMetadata(req.body),
-    originalRequest: withoutAuditMetadata(preNormalizedBody),
+    request: req.body,
+    originalRequest: preNormalizedBody,
     account: req.account,
   });
 
@@ -348,7 +345,6 @@ export async function crawlController(
       v1: true,
       zeroDataRetention: zeroDataRetention || false,
       apiKeyId: req.acuc?.api_key_id ?? null,
-      apiKeyIdText: req.acuc?.api_key_id_text ?? null,
     },
     uuidv7(),
   );

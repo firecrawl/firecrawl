@@ -38,7 +38,6 @@ import { projectScrapeCredits } from "../../lib/keyless-credit-projection";
 import { applyAgentAuthDiscoveryHeader } from "../../lib/agent-auth-discovery";
 import { resolveThreatProtection } from "../../lib/threat-protection/request";
 import { getEffectiveConcurrencyLimit } from "../../lib/concurrency-limit";
-import { withoutAuditMetadata } from "../../lib/siem-logging";
 
 export async function scrapeController(
   req: RequestWithAuth<{}, ScrapeResponse, ScrapeRequest>,
@@ -107,8 +106,8 @@ export async function scrapeController(
   logger.debug("Scrape " + jobId + " starting", {
     version: "v1",
     scrapeId: jobId,
-    request: withoutAuditMetadata(req.body),
-    originalRequest: withoutAuditMetadata(preNormalizedBody),
+    request: req.body,
+    originalRequest: preNormalizedBody,
     account: req.account,
   });
 
@@ -240,7 +239,6 @@ export async function scrapeController(
             startTime: controllerStartTime,
             zeroDataRetention: zeroDataRetention ?? false,
             apiKeyId: req.acuc?.api_key_id ?? null,
-            apiKeyIdText: req.acuc?.api_key_id_text ?? null,
             concurrencyLimited: limited,
             keylessReserved: reservedKeylessCredits > 0,
             logRequestPromise: logRequestPromise,

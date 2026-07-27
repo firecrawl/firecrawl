@@ -202,14 +202,14 @@ export async function getApiKeyName(
   apiKeyId: string | number | null | undefined,
 ): Promise<string | null> {
   if (apiKeyId == null) return null;
-  const apiKeyIdText = String(apiKeyId);
-  if (!/^\d+$/.test(apiKeyIdText)) return null;
+  const normalizedApiKeyId = String(apiKeyId);
+  if (!/^\d+$/.test(normalizedApiKeyId)) return null;
   const rows = await dbRr
     .select({ name: schema.api_keys.name })
     .from(schema.api_keys)
     .where(
       and(
-        sql`${schema.api_keys.id} = cast(${apiKeyIdText} as bigint)`,
+        sql`${schema.api_keys.id} = cast(${normalizedApiKeyId} as bigint)`,
         eq(schema.api_keys.team_id, teamId),
       ),
     )

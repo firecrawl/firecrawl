@@ -30,10 +30,7 @@ import {
 import { UnsafeDomainBlockedError } from "../../lib/threat-protection/error";
 import { calculateThreatScanCredits } from "../../lib/scrape-billing";
 import { billTeam } from "../../services/billing/credit_billing";
-import {
-  emitRejectedScrapeActivityEvents,
-  withoutAuditMetadata,
-} from "../../lib/siem-logging";
+import { emitRejectedScrapeActivityEvents } from "../../lib/siem-logging";
 import { CrawlDenialError } from "../../lib/error";
 async function oldExtract(
   req: RequestWithAuth<{}, ExtractResponse, ExtractRequest>,
@@ -73,7 +70,6 @@ async function oldExtract(
       request,
       teamId: req.auth.team_id,
       apiKeyId: req.acuc?.api_key_id ?? null,
-      apiKeyIdText: req.acuc?.api_key_id_text ?? null,
     });
 
     if (sender) {
@@ -142,7 +138,7 @@ export async function extractController(
       requestId: extractId,
       endpoint: "extract",
       teamId: req.auth.team_id,
-      apiKeyId: req.acuc?.api_key_id_text ?? req.acuc?.api_key_id,
+      apiKeyId: req.acuc?.api_key_id ?? null,
       auditMetadata: req.body.scrapeOptions?.auditMetadata,
       url,
       error: new CrawlDenialError(UNSUPPORTED_SITE_MESSAGE),
@@ -212,7 +208,7 @@ export async function extractController(
             requestId: extractId,
             endpoint: "extract",
             teamId: req.auth.team_id,
-            apiKeyId: req.acuc?.api_key_id_text ?? req.acuc?.api_key_id,
+            apiKeyId: req.acuc?.api_key_id ?? null,
             auditMetadata: req.body.scrapeOptions?.auditMetadata,
             url: blockedUrl.url,
             error: new UnsafeDomainBlockedError(
@@ -240,8 +236,8 @@ export async function extractController(
   }
 
   _logger.info("Extract starting...", {
-    request: withoutAuditMetadata(req.body),
-    originalRequest: withoutAuditMetadata(originalRequest),
+    request: req.body,
+    originalRequest,
     teamId: req.auth.team_id,
     team_id: req.auth.team_id,
     extractId,
@@ -277,7 +273,6 @@ export async function extractController(
     extractId,
     agent: req.body.agent,
     apiKeyId: req.acuc?.api_key_id ?? null,
-    apiKeyIdText: req.acuc?.api_key_id_text ?? null,
     createdAt,
   };
 

@@ -104,10 +104,7 @@ import {
   warmExchangeCatalog,
   type ExchangeScrapeMetadata,
 } from "../../lib/exchange";
-import {
-  emitScrapeActivityEvent,
-  withoutAuditMetadata,
-} from "../../lib/siem-logging";
+import { emitScrapeActivityEvent } from "../../lib/siem-logging";
 
 configDotenv();
 
@@ -299,7 +296,6 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
   applyZdrScope(job.data?.zeroDataRetention);
   logger.info(`🐂 Worker taking job ${job.id}`, { url: job.data.url });
   const start = job.data.startTime ?? Date.now();
-  const scrapeOptionsForLogging = withoutAuditMetadata(job.data.scrapeOptions);
   const remainingTime = job.data.scrapeOptions.timeout
     ? job.data.scrapeOptions.timeout - (Date.now() - start)
     : undefined;
@@ -631,7 +627,6 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
                     v1: job.data.v1,
                     zeroDataRetention: job.data.zeroDataRetention,
                     apiKeyId: job.data.apiKeyId,
-                    apiKeyIdText: job.data.apiKeyIdText,
                     monitoring: job.data.monitoring
                       ? {
                           ...job.data.monitoring,
@@ -709,7 +704,7 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
           doc,
           time_taken: timeTakenInSeconds,
           team_id: job.data.team_id,
-          options: scrapeOptionsForLogging,
+          options: job.data.scrapeOptions,
           cost_tracking: costTracking.toJSON(),
           pdf_num_pages: doc.metadata.numPages,
           content_type: doc.metadata.contentType,
@@ -800,7 +795,7 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
           doc,
           time_taken: timeTakenInSeconds,
           team_id: job.data.team_id,
-          options: scrapeOptionsForLogging,
+          options: job.data.scrapeOptions,
           cost_tracking: costTracking.toJSON(),
           pdf_num_pages: doc.metadata.numPages,
           content_type: doc.metadata.contentType,
@@ -1034,7 +1029,7 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
               "Something went wrong... Contact help@mendable.ai"),
         time_taken: timeTakenInSeconds,
         team_id: job.data.team_id,
-        options: scrapeOptionsForLogging,
+        options: job.data.scrapeOptions,
         cost_tracking: costTracking.toJSON(),
         credits_cost: credits_billed ?? 0,
         zeroDataRetention: job.data.zeroDataRetention,
@@ -1143,7 +1138,6 @@ async function addKickoffSitemapJob(
       webhook: sourceJob.data.webhook,
       v1: sourceJob.data.v1,
       apiKeyId: sourceJob.data.apiKeyId,
-      apiKeyIdText: sourceJob.data.apiKeyIdText,
       monitoring: sourceJob.data.monitoring
         ? { ...sourceJob.data.monitoring, source: "discovered" as const }
         : undefined,
@@ -1202,7 +1196,6 @@ async function processKickoffJob(job: NuQJob<ScrapeJobKickoff>) {
         isCrawlSourceScrape: true,
         zeroDataRetention: job.data.zeroDataRetention,
         apiKeyId: job.data.apiKeyId,
-        apiKeyIdText: job.data.apiKeyIdText,
         monitoring: job.data.monitoring
           ? { ...job.data.monitoring, source: "discovered" as const }
           : undefined,
@@ -1340,7 +1333,6 @@ async function processKickoffJob(job: NuQJob<ScrapeJobKickoff>) {
             v1: job.data.v1,
             zeroDataRetention: job.data.zeroDataRetention,
             apiKeyId: job.data.apiKeyId,
-            apiKeyIdText: job.data.apiKeyIdText,
             monitoring: job.data.monitoring
               ? { ...job.data.monitoring, source: "discovered" as const }
               : undefined,
@@ -1505,7 +1497,6 @@ async function processKickoffSitemapJob(job: NuQJob<ScrapeJobKickoffSitemap>) {
           zeroDataRetention:
             job.data.zeroDataRetention || (sc.zeroDataRetention ?? false),
           apiKeyId: job.data.apiKeyId,
-          apiKeyIdText: job.data.apiKeyIdText,
           monitoring: job.data.monitoring
             ? { ...job.data.monitoring, source: "discovered" as const }
             : undefined,

@@ -52,7 +52,6 @@ export async function searchAndScrapeSearchResult(
     timeout: number;
     scrapeOptions: any;
     apiKeyId: number | null;
-    apiKeyIdText?: string | null;
     requestId?: string;
   },
   logger: Logger,
@@ -84,7 +83,6 @@ export async function searchAndScrapeSearchResult(
         timeout: options.timeout,
         scrapeOptions,
         apiKeyId: options.apiKeyId,
-        apiKeyIdText: options.apiKeyIdText,
         requestId: options.requestId,
       },
       logger,
@@ -243,7 +241,6 @@ export async function searchController(
         origin: req.body.origin,
         integration: req.body.integration,
         apiKeyId: req.acuc?.api_key_id ?? null,
-        apiKeyIdText: req.acuc?.api_key_id_text ?? null,
         flags: req.acuc?.flags ?? null,
         requestId: jobId,
         jobId,

@@ -18,10 +18,7 @@ import {
 import { UnsafeDomainBlockedError } from "../../lib/threat-protection/error";
 import { calculateThreatScanCredits } from "../../lib/scrape-billing";
 import { billTeam } from "../../services/billing/credit_billing";
-import {
-  emitRejectedScrapeActivityEvents,
-  withoutAuditMetadata,
-} from "../../lib/siem-logging";
+import { emitRejectedScrapeActivityEvents } from "../../lib/siem-logging";
 
 export async function agentController(
   req: RequestWithAuth<{}, AgentResponse, AgentRequest>,
@@ -51,8 +48,8 @@ export async function agentController(
   }
 
   _logger.info("Agent starting...", {
-    request: withoutAuditMetadata(req.body),
-    originalRequest: withoutAuditMetadata(originalRequest),
+    request: req.body,
+    originalRequest,
     zeroDataRetention: getScrapeZDR(req.acuc?.flags) === "forced",
   });
 
@@ -107,7 +104,7 @@ export async function agentController(
           requestId: agentId,
           endpoint: "agent",
           teamId: req.auth.team_id,
-          apiKeyId: req.acuc?.api_key_id_text ?? req.acuc?.api_key_id,
+          apiKeyId: req.acuc?.api_key_id ?? null,
           auditMetadata: req.body.auditMetadata,
           url: blockedUrl.url,
           error: new UnsafeDomainBlockedError(

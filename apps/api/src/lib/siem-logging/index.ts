@@ -10,8 +10,6 @@ import {
 import { enqueueSiemLoggingEvent, enqueueSiemLoggingEvents } from "./queue";
 import { getApiKeyName, isOrgSiemLoggingEnabled } from "./store";
 
-export { withoutAuditMetadata } from "./redaction";
-
 const logger = _logger.child({ module: "siem-logging" });
 
 export async function emitScrapeActivityEvent(
@@ -27,10 +25,7 @@ export async function emitScrapeActivityEvent(
 
     if (!(await isOrgSiemLoggingEnabled(orgId))) return;
 
-    const apiKeyName = await getApiKeyName(
-      job.team_id,
-      job.apiKeyIdText ?? job.apiKeyId,
-    );
+    const apiKeyName = await getApiKeyName(job.team_id, job.apiKeyId);
     const event = buildScrapeActivityEvent(
       jobId,
       job,
