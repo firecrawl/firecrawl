@@ -21,6 +21,12 @@ async function putConfig(identity: Identity, body: unknown) {
     .send(body as object);
 }
 
+async function testConfig(identity: Identity) {
+  return request(TEST_API_URL)
+    .post("/v2/team/siem/test")
+    .set("Authorization", `Bearer ${identity.apiKey}`);
+}
+
 describeIf(TEST_PRODUCTION)("Team SIEM logging config API", () => {
   it("rejects a team without the enterprise flag", async () => {
     const identity = await idmux({ name: "team-siem-logging/no-flag" });
@@ -83,6 +89,17 @@ describeIf(TEST_PRODUCTION)("Team SIEM logging config API", () => {
         expect(JSON.stringify(read.body)).not.toContain(
           "never-return-this-value",
         );
+      });
+
+      it("refuses a test event before a destination is saved", async () => {
+        const unconfigured = await idmux({
+          name: "team-siem-logging/untested",
+          flags: { siemLogging: true },
+        });
+        const response = await testConfig(unconfigured);
+
+        expect(response.statusCode).toBe(409);
+        expect(response.body.error).toContain("not configured");
       });
 
       it("rejects non-Azure ingestion endpoints", async () => {

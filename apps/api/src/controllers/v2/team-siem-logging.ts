@@ -115,10 +115,14 @@ export async function testTeamSiemLoggingController(
   const orgId = await resolveOrgId(req, res);
   if (!orgId) return;
   const siemConfig = await getOrgSiemLoggingConfig(orgId);
-  if (!siemConfig?.enabled) {
+  // Deliberately does not require `enabled`: verifying a destination before
+  // turning it on is the point of this endpoint, and the dashboard gates the
+  // enable toggle on a passing test.
+  if (!siemConfig) {
     res.status(409).json({
       success: false,
-      error: "SIEM Logging is not configured and enabled.",
+      error:
+        "SIEM Logging is not configured. Save a destination before sending a test event.",
     });
     return;
   }
