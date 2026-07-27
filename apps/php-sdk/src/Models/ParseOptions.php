@@ -32,7 +32,7 @@ final class ParseOptions
      * @param list<string>|null            $includeTags
      * @param list<string>|null            $excludeTags
      * @param list<mixed>|null             $parsers
-     * @param array<string, string>|null   $auditMetadata
+     * @param AuditMetadata|null           $auditMetadata
      */
     private function __construct(
         private readonly ?array $formats = null,
@@ -48,8 +48,7 @@ final class ParseOptions
         private readonly ?string $proxy = null,
         private readonly ?string $integration = null,
         private readonly ?bool $redactPII = null,
-        /** @var array<string, string>|null */
-        private readonly ?array $auditMetadata = null,
+        private readonly ?AuditMetadata $auditMetadata = null,
     ) {}
 
     /**
@@ -58,7 +57,7 @@ final class ParseOptions
      * @param list<string>|null            $includeTags
      * @param list<string>|null            $excludeTags
      * @param list<mixed>|null             $parsers
-     * @param array<string, string>|null   $auditMetadata
+     * @param AuditMetadata|null           $auditMetadata
      */
     public static function with(
         ?array $formats = null,
@@ -74,7 +73,7 @@ final class ParseOptions
         ?string $proxy = null,
         ?string $integration = null,
         ?bool $redactPII = null,
-        ?array $auditMetadata = null,
+        ?AuditMetadata $auditMetadata = null,
     ): self {
         if ($timeout !== null && $timeout <= 0) {
             throw new FirecrawlException('timeout must be positive');
@@ -142,7 +141,7 @@ final class ParseOptions
             'proxy' => $this->proxy,
             'integration' => $this->integration,
             'redactPII' => $this->redactPII,
-            'auditMetadata' => $this->auditMetadata,
+            'auditMetadata' => $this->auditMetadata?->toArray(),
         ];
 
         foreach ($fields as $key => $value) {
@@ -242,8 +241,7 @@ final class ParseOptions
         return $this->integration;
     }
 
-    /** @return array<string, string>|null */
-    public function getAuditMetadata(): ?array
+    public function getAuditMetadata(): ?AuditMetadata
     {
         return $this->auditMetadata;
     }

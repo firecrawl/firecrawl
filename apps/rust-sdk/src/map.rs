@@ -1,11 +1,9 @@
 //! Map endpoint for Firecrawl API v2.
 
-use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
-
 use crate::client::Client;
 use crate::types::{LocationConfig, SearchResultWeb, SitemapMode};
-use crate::FirecrawlError;
+use crate::{AuditMetadata, FirecrawlError};
+use serde::{Deserialize, Serialize};
 
 /// Options for mapping a URL.
 #[serde_with::skip_serializing_none]
@@ -36,8 +34,8 @@ pub struct MapOptions {
     /// Location configuration for proxy routing.
     pub location: Option<LocationConfig>,
 
-    /// Metadata to include with SIEM logging events.
-    pub audit_metadata: Option<HashMap<String, String>>,
+    /// User attribution to include with SIEM logging events.
+    pub audit_metadata: Option<AuditMetadata>,
 }
 
 /// Request body for map endpoint.

@@ -81,7 +81,7 @@ public class ScrapeOptions
 
     [JsonPropertyName("auditMetadata")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    public Dictionary<string, string>? AuditMetadata { get; set; }
+    public AuditMetadata? AuditMetadata { get; set; }
 
     [JsonPropertyName("integration")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]

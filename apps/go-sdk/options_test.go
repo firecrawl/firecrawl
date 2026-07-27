@@ -89,7 +89,7 @@ func TestSearchOptionsSerializesHighlights(t *testing.T) {
 }
 
 func TestAuditMetadataSerializesAcrossRequestOptions(t *testing.T) {
-	metadata := map[string]string{"requestId": "req-123"}
+	metadata := &AuditMetadata{Username: "alice@example.com"}
 	for name, options := range map[string]interface{}{
 		"scrape": ScrapeOptions{AuditMetadata: metadata},
 		"map":    MapOptions{AuditMetadata: metadata},
@@ -101,7 +101,7 @@ func TestAuditMetadataSerializesAcrossRequestOptions(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Marshal options: %v", err)
 			}
-			if !strings.Contains(string(payload), `"auditMetadata":{"requestId":"req-123"}`) {
+			if !strings.Contains(string(payload), `"auditMetadata":{"username":"alice@example.com"}`) {
 				t.Fatalf("serialized options = %s", payload)
 			}
 		})

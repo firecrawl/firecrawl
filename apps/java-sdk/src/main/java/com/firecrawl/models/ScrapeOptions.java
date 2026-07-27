@@ -35,7 +35,7 @@ public class ScrapeOptions {
     private Boolean lockdown;
     @JsonProperty("redactPII")
     private Boolean redactPII;
-    private Map<String, String> auditMetadata;
+    private AuditMetadata auditMetadata;
     private String integration;
 
     private ScrapeOptions() {}
@@ -61,7 +61,7 @@ public class ScrapeOptions {
     @JsonProperty("redactPII")
     public Boolean getRedactPII() { return redactPII; }
     @JsonProperty("auditMetadata")
-    public Map<String, String> getAuditMetadata() { return auditMetadata; }
+    public AuditMetadata getAuditMetadata() { return auditMetadata; }
     public String getIntegration() { return integration; }
 
     public static Builder builder() { return new Builder(); }
@@ -87,7 +87,7 @@ public class ScrapeOptions {
         b.storeInCache = this.storeInCache;
         b.lockdown = this.lockdown;
         b.redactPII = this.redactPII;
-        b.auditMetadata = this.auditMetadata != null ? new HashMap<>(this.auditMetadata) : null;
+        b.auditMetadata = this.auditMetadata;
         b.integration = this.integration;
         return b;
     }
@@ -112,7 +112,7 @@ public class ScrapeOptions {
         private Boolean storeInCache;
         private Boolean lockdown;
         private Boolean redactPII;
-        private Map<String, String> auditMetadata;
+        private AuditMetadata auditMetadata;
         private String integration;
 
         private Builder() {}
@@ -178,8 +178,8 @@ public class ScrapeOptions {
         /** Redact personally identifiable information from returned content. */
         public Builder redactPII(Boolean redactPII) { this.redactPII = redactPII; return this; }
 
-        /** Metadata to include with SIEM logging events. */
-        public Builder auditMetadata(Map<String, String> auditMetadata) { this.auditMetadata = auditMetadata; return this; }
+        /** User attribution to include with SIEM logging events. */
+        public Builder auditMetadata(AuditMetadata auditMetadata) { this.auditMetadata = auditMetadata; return this; }
 
         /** Integration identifier. */
         public Builder integration(String integration) { this.integration = integration; return this; }
@@ -205,7 +205,7 @@ public class ScrapeOptions {
             o.storeInCache = this.storeInCache;
             o.lockdown = this.lockdown;
             o.redactPII = this.redactPII;
-            o.auditMetadata = this.auditMetadata != null ? Collections.unmodifiableMap(new HashMap<>(this.auditMetadata)) : null;
+            o.auditMetadata = this.auditMetadata;
             o.integration = this.integration;
             return o;
         }

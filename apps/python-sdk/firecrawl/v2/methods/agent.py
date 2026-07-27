@@ -1,7 +1,7 @@
 from typing import Any, Dict, List, Literal, Optional, Union
 import time
 
-from ..types import AgentResponse, AgentWebhookConfig, ThreatProtectionOptions
+from ..types import AgentResponse, AgentWebhookConfig, AuditMetadata, ThreatProtectionOptions
 from ..utils.http_client import HttpClient
 from ..utils.error_handler import handle_response_error
 from ..utils.validation import _normalize_schema
@@ -18,7 +18,7 @@ def _prepare_agent_request(
     model: Optional[Literal["spark-1-pro", "spark-1-mini"]] = None,
     webhook: Optional[Union[str, AgentWebhookConfig]] = None,
     threat_protection: Optional[ThreatProtectionOptions] = None,
-    audit_metadata: Optional[Dict[str, str]] = None,
+    audit_metadata: Optional[AuditMetadata] = None,
 ) -> Dict[str, Any]:
     body: Dict[str, Any] = {}
     if urls is not None:
@@ -51,7 +51,7 @@ def _prepare_agent_request(
             by_alias=True, exclude_none=True
         )
     if audit_metadata is not None:
-        body["auditMetadata"] = audit_metadata
+        body["auditMetadata"] = audit_metadata.model_dump()
     return body
 
 
@@ -76,7 +76,7 @@ def start_agent(
     model: Optional[Literal["spark-1-pro", "spark-1-mini"]] = None,
     webhook: Optional[Union[str, AgentWebhookConfig]] = None,
     threat_protection: Optional[ThreatProtectionOptions] = None,
-    audit_metadata: Optional[Dict[str, str]] = None,
+    audit_metadata: Optional[AuditMetadata] = None,
 ) -> AgentResponse:
     body = _prepare_agent_request(
         urls,
@@ -136,7 +136,7 @@ def agent(
     model: Optional[Literal["spark-1-pro", "spark-1-mini"]] = None,
     webhook: Optional[Union[str, AgentWebhookConfig]] = None,
     threat_protection: Optional[ThreatProtectionOptions] = None,
-    audit_metadata: Optional[Dict[str, str]] = None,
+    audit_metadata: Optional[AuditMetadata] = None,
 ) -> AgentResponse:
     started = start_agent(
         client,

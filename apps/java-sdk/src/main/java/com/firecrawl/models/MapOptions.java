@@ -2,9 +2,6 @@ package com.firecrawl.models;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.Map;
 
 /**
  * Options for mapping (discovering URLs on) a website.
@@ -20,7 +17,7 @@ public class MapOptions {
     private Integer timeout;
     private String integration;
     private LocationConfig location;
-    private Map<String, String> auditMetadata;
+    private AuditMetadata auditMetadata;
 
     private MapOptions() {}
 
@@ -34,7 +31,7 @@ public class MapOptions {
     public String getIntegration() { return integration; }
     public LocationConfig getLocation() { return location; }
     @JsonProperty("auditMetadata")
-    public Map<String, String> getAuditMetadata() { return auditMetadata; }
+    public AuditMetadata getAuditMetadata() { return auditMetadata; }
 
     public static Builder builder() { return new Builder(); }
 
@@ -47,7 +44,7 @@ public class MapOptions {
         private Integer timeout;
         private String integration;
         private LocationConfig location;
-        private Map<String, String> auditMetadata;
+        private AuditMetadata auditMetadata;
 
         private Builder() {}
 
@@ -67,8 +64,8 @@ public class MapOptions {
         public Builder integration(String integration) { this.integration = integration; return this; }
         /** Geolocation configuration. */
         public Builder location(LocationConfig location) { this.location = location; return this; }
-        /** Metadata to include with SIEM logging events. */
-        public Builder auditMetadata(Map<String, String> auditMetadata) { this.auditMetadata = auditMetadata; return this; }
+        /** User attribution to include with SIEM logging events. */
+        public Builder auditMetadata(AuditMetadata auditMetadata) { this.auditMetadata = auditMetadata; return this; }
 
         public MapOptions build() {
             MapOptions o = new MapOptions();
@@ -80,9 +77,7 @@ public class MapOptions {
             o.timeout = this.timeout;
             o.integration = this.integration;
             o.location = this.location;
-            o.auditMetadata = this.auditMetadata != null
-                    ? Collections.unmodifiableMap(new HashMap<>(this.auditMetadata))
-                    : null;
+            o.auditMetadata = this.auditMetadata;
             return o;
         }
     }

@@ -20,7 +20,6 @@ import { siemLoggingConfigInputSchema } from "../../lib/siem-logging/types";
 
 const auditMetadata = {
   username: "alice@example.com",
-  session: "session-123",
 };
 
 describe("auditMetadata request validation", () => {
@@ -69,16 +68,25 @@ describe("auditMetadata request validation", () => {
     ).toEqual(auditMetadata);
   });
 
-  it("rejects oversized metadata", () => {
-    const tooManyFields = Object.fromEntries(
-      Array.from({ length: 33 }, (_, index) => [`field-${index}`, "value"]),
-    );
+  it("rejects unsupported audit metadata fields", () => {
     expect(() =>
       scrapeRequestSchema.parse({
         url: "https://example.com",
-        auditMetadata: tooManyFields,
+        auditMetadata: {
+          username: "alice@example.com",
+          session: "session-123",
+        },
       }),
-    ).toThrow("at most 32 fields");
+    ).toThrow();
+  });
+
+  it("requires username when audit metadata is provided", () => {
+    expect(() =>
+      scrapeRequestSchema.parse({
+        url: "https://example.com",
+        auditMetadata: {},
+      }),
+    ).toThrow();
   });
 
   it("accepts audit metadata on the corresponding v1 request schemas", () => {

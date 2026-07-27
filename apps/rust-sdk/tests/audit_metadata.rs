@@ -1,16 +1,16 @@
-use std::collections::HashMap;
-
-use firecrawl::{AgentOptions, MapOptions, ParseOptions, ScrapeOptions};
+use firecrawl::{AgentOptions, AuditMetadata, MapOptions, ParseOptions, ScrapeOptions};
 use serde::Serialize;
 
 fn assert_audit_metadata<T: Serialize>(options: T) {
     let value = serde_json::to_value(options).expect("options should serialize");
-    assert_eq!(value["auditMetadata"]["requestId"], "req-123");
+    assert_eq!(value["auditMetadata"]["username"], "alice@example.com");
 }
 
 #[test]
 fn serializes_audit_metadata_across_request_options() {
-    let metadata = HashMap::from([("requestId".to_string(), "req-123".to_string())]);
+    let metadata = AuditMetadata {
+        username: "alice@example.com".to_string(),
+    };
 
     assert_audit_metadata(ScrapeOptions {
         audit_metadata: Some(metadata.clone()),

@@ -7,7 +7,7 @@ import { map } from "../../../v2/methods/map";
 import { startExtract } from "../../../v2/methods/extract";
 import { startAgent } from "../../../v2/methods/agent";
 
-const auditMetadata = { requestId: "req-123" };
+const auditMetadata = { username: "alice@example.com" };
 
 function makeHttp(data: Record<string, unknown>) {
   const post = jest.fn(async () => ({ status: 200, data }));

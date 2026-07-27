@@ -25,7 +25,6 @@ const event: ScrapeActivityEvent = {
   team_id: "team-id",
   org_id: "org-id",
   api_key: { id: null, name: null },
-  audit_metadata: {},
   started_at: "2026-07-27T00:00:00.000Z",
   completed_at: "2026-07-27T00:00:01.000Z",
   url: "https://example.com",

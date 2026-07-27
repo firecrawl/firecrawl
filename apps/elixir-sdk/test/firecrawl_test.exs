@@ -332,7 +332,8 @@ defmodule FirecrawlTest do
       {request, resp}
     end
 
-    metadata = %{"requestId" => "req-123"}
+    metadata = [username: "alice@example.com"]
+    serialized_metadata = %{"username" => "alice@example.com"}
 
     requests = [
       fn ->
@@ -369,8 +370,20 @@ defmodule FirecrawlTest do
           true -> request.options[:json]
         end
 
-      assert body["auditMetadata"] == metadata
+      assert body["auditMetadata"] == serialized_metadata
     end)
+  end
+
+  test "audit_metadata rejects unsupported fields" do
+    assert_raise NimbleOptions.ValidationError, fn ->
+      Firecrawl.scrape_and_extract_from_url(
+        [
+          url: "https://example.com",
+          audit_metadata: [username: "alice@example.com", session: "session-123"]
+        ],
+        api_key: "test-key"
+      )
+    end
   end
 
   test "search maps highlights to highlights" do

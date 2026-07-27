@@ -38,6 +38,7 @@ from .types import (
     Location,
     PaginationConfig,
     ThreatProtectionOptions,
+    AuditMetadata,
     Monitor,
     MonitorCheck,
     MonitorCheckDetail,
@@ -399,7 +400,7 @@ class AsyncFirecrawlClient:
         timeout: Optional[int] = None,
         integration: Optional[str] = None,
         threat_protection: Optional[ThreatProtectionOptions] = None,
-        audit_metadata: Optional[Dict[str, str]] = None,
+        audit_metadata: Optional[AuditMetadata] = None,
     ) -> MapData:
         options = MapOptions(
             search=search,
@@ -682,7 +683,7 @@ class AsyncFirecrawlClient:
         model: Optional[Literal["spark-1-pro", "spark-1-mini"]] = None,
         webhook: Optional[Union[str, AgentWebhookConfig]] = None,
         threat_protection: Optional[ThreatProtectionOptions] = None,
-        audit_metadata: Optional[Dict[str, str]] = None,
+        audit_metadata: Optional[AuditMetadata] = None,
     ):
         return await async_agent.agent(
             self.async_http_client,
@@ -715,7 +716,7 @@ class AsyncFirecrawlClient:
         model: Optional[Literal["spark-1-pro", "spark-1-mini"]] = None,
         webhook: Optional[Union[str, AgentWebhookConfig]] = None,
         threat_protection: Optional[ThreatProtectionOptions] = None,
-        audit_metadata: Optional[Dict[str, str]] = None,
+        audit_metadata: Optional[AuditMetadata] = None,
     ):
         return await async_agent.start_agent(
             self.async_http_client,

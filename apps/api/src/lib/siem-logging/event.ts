@@ -171,7 +171,6 @@ function buildEvent(
       id: source.apiKeyId == null ? null : String(source.apiKeyId),
       name: apiKeyName,
     },
-    audit_metadata: source.auditMetadata ?? {},
     started_at: new Date(outcome.startedAt).toISOString(),
     completed_at: new Date(outcome.completedAt).toISOString(),
     url: source.url,
@@ -184,6 +183,7 @@ function buildEvent(
     integration: source.integration ?? null,
     zero_data_retention: source.zeroDataRetention,
   };
+  if (source.auditMetadata) event.audit_metadata = source.auditMetadata;
   const threat = threatForDecisions(outcome.threatDecisions);
   if (threat) event.threat = threat;
   return event;

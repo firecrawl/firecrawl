@@ -137,7 +137,7 @@ export async function testTeamSiemLoggingController(
       id: req.acuc?.api_key_id == null ? null : String(req.acuc.api_key_id),
       name: null,
     },
-    audit_metadata: { synthetic: "true" },
+    audit_metadata: { username: "siem-test" },
     started_at: now,
     completed_at: now,
     url: "https://example.com/siem-test",

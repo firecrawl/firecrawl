@@ -12,6 +12,7 @@ from ..types import (
     Document,
     WebhookConfig,
     PaginationConfig,
+    AuditMetadata,
 )
 from ..utils import HttpClient, handle_response_error, validate_scrape_options, prepare_scrape_options
 from ..utils.normalize import normalize_document_input
@@ -53,7 +54,7 @@ def start_batch_scrape(
     max_concurrency: Optional[int] = None,
     zero_data_retention: Optional[bool] = None,
     integration: Optional[str] = None,
-    audit_metadata: Optional[Dict[str, str]] = None,
+    audit_metadata: Optional[AuditMetadata] = None,
     idempotency_key: Optional[str] = None,
 ) -> BatchScrapeResponse:
     """
@@ -343,7 +344,7 @@ def batch_scrape(
     max_concurrency: Optional[int] = None,
     zero_data_retention: Optional[bool] = None,
     integration: Optional[str] = None,
-    audit_metadata: Optional[Dict[str, str]] = None,
+    audit_metadata: Optional[AuditMetadata] = None,
     idempotency_key: Optional[str] = None,
     poll_interval: int = 2,
     timeout: Optional[int] = None
@@ -428,7 +429,7 @@ def prepare_batch_scrape_request(
     max_concurrency: Optional[int] = None,
     zero_data_retention: Optional[bool] = None,
     integration: Optional[str] = None,
-    audit_metadata: Optional[Dict[str, str]] = None,
+    audit_metadata: Optional[AuditMetadata] = None,
 ) -> dict:
     """
     Prepare a batch scrape request payload.
@@ -449,7 +450,7 @@ def prepare_batch_scrape_request(
         if scrape_data:
             request_data.update(scrape_data)
     if audit_metadata is not None:
-        request_data["auditMetadata"] = audit_metadata
+        request_data["auditMetadata"] = audit_metadata.model_dump()
 
     # Batch-specific fields
     if webhook is not None:

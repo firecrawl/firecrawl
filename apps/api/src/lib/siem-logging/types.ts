@@ -4,11 +4,9 @@ import type {
   ThreatProvider,
 } from "../threat-protection/types";
 
-export const auditMetadataSchema = z
-  .record(z.string().min(1).max(64), z.string().max(1024))
-  .refine(value => Object.keys(value).length <= 32, {
-    message: "auditMetadata may contain at most 32 fields",
-  });
+export const auditMetadataSchema = z.strictObject({
+  username: z.string().max(1024),
+});
 
 export type AuditMetadata = z.infer<typeof auditMetadataSchema>;
 
@@ -107,7 +105,7 @@ export interface ScrapeActivityEvent {
     id: string | null;
     name: string | null;
   };
-  audit_metadata: AuditMetadata;
+  audit_metadata?: AuditMetadata;
   started_at: string;
   completed_at: string;
   url: string;

@@ -11,6 +11,7 @@ use Firecrawl\Models\BatchScrapeJob;
 use Firecrawl\Models\CrawlJob;
 use Firecrawl\Models\HighlightsFormat;
 use Firecrawl\Models\AgentOptions;
+use Firecrawl\Models\AuditMetadata;
 use Firecrawl\Models\MapOptions;
 use Firecrawl\Models\ParseOptions;
 use Firecrawl\Models\QueryFormat;
@@ -344,17 +345,18 @@ it('serializes redactPII in ScrapeOptions', function (): void {
 });
 
 it('serializes audit metadata across request options', function (): void {
-    $metadata = ['requestId' => 'req-123'];
+    $metadata = AuditMetadata::with('alice@example.com');
+    $serialized = ['username' => 'alice@example.com'];
 
     $scrape = ScrapeOptions::with(auditMetadata: $metadata);
-    expect($scrape->toArray())->toMatchArray(['auditMetadata' => $metadata]);
+    expect($scrape->toArray())->toMatchArray(['auditMetadata' => $serialized]);
     expect($scrape->getAuditMetadata())->toBe($metadata);
     expect(MapOptions::with(auditMetadata: $metadata)->toArray())
-        ->toMatchArray(['auditMetadata' => $metadata]);
+        ->toMatchArray(['auditMetadata' => $serialized]);
     expect(AgentOptions::with(prompt: 'find pricing', auditMetadata: $metadata)->toArray())
-        ->toMatchArray(['auditMetadata' => $metadata]);
+        ->toMatchArray(['auditMetadata' => $serialized]);
     $parse = ParseOptions::with(auditMetadata: $metadata);
-    expect($parse->toArray())->toMatchArray(['auditMetadata' => $metadata]);
+    expect($parse->toArray())->toMatchArray(['auditMetadata' => $serialized]);
     expect($parse->getAuditMetadata())->toBe($metadata);
 });
 

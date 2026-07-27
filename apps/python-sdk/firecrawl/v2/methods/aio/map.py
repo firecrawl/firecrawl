@@ -33,7 +33,7 @@ def _prepare_map_request(url: str, options: Optional[MapOptions] = None) -> Dict
                 by_alias=True, exclude_none=True
             )
         if options.audit_metadata is not None:
-            data["auditMetadata"] = options.audit_metadata
+            data["auditMetadata"] = options.audit_metadata.model_dump()
         payload.update(data)
     return payload
 

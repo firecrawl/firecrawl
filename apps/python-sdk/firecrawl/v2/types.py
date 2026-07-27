@@ -778,6 +778,14 @@ class ThreatProtectionOptions(BaseModel):
     model_config = {"populate_by_name": True}
 
 
+class AuditMetadata(BaseModel):
+    """User attribution included with SIEM logging events."""
+
+    username: str = Field(max_length=1024)
+
+    model_config = {"extra": "forbid"}
+
+
 class ScrapeOptions(BaseModel):
     """Options for scraping operations."""
 
@@ -822,7 +830,7 @@ class ScrapeOptions(BaseModel):
     threat_protection: Optional[ThreatProtectionOptions] = Field(
         default=None, alias="threatProtection"
     )
-    audit_metadata: Optional[Dict[str, str]] = Field(
+    audit_metadata: Optional[AuditMetadata] = Field(
         default=None, alias="auditMetadata"
     )
     profile: Optional[Dict[str, Any]] = None
@@ -1057,7 +1065,7 @@ class MapOptions(BaseModel):
     integration: Optional[str] = None
     location: Optional["Location"] = None
     threat_protection: Optional[ThreatProtectionOptions] = None
-    audit_metadata: Optional[Dict[str, str]] = None
+    audit_metadata: Optional[AuditMetadata] = None
 
 
 class MapRequest(BaseModel):

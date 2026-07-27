@@ -85,6 +85,22 @@ describe("ScrapeActivityEvent", () => {
     expect(JSON.stringify(event)).not.toContain("not included");
   });
 
+  it("omits audit metadata when no username is provided", () => {
+    const event = buildScrapeActivityEvent(
+      "scrape-id",
+      job({ scrapeOptions: scrapeOptions.parse({}) }),
+      "org-id",
+      null,
+      {
+        success: true,
+        startedAt: 1_000,
+        completedAt: 2_000,
+      },
+    );
+
+    expect(event).not.toHaveProperty("audit_metadata");
+  });
+
   it("normalizes a blocked threat decision and error", () => {
     const denied: ThreatDecision = {
       ...allowedDecision,

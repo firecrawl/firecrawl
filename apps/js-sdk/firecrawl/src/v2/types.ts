@@ -183,6 +183,10 @@ export type ActionOption =
   | ExecuteJavascriptAction
   | PDFAction;
 
+export interface AuditMetadata {
+  username: string;
+}
+
 export interface ScrapeOptions {
   formats?: FormatOption[];
   headers?: Record<string, string>;
@@ -209,7 +213,7 @@ export interface ScrapeOptions {
   lockdown?: boolean;
   redactPII?: boolean | RedactPIIOptions;
   threatProtection?: ThreatProtectionOptions;
-  auditMetadata?: Record<string, string>;
+  auditMetadata?: AuditMetadata;
   profile?: {
     name: string;
     saveChanges?: boolean;
@@ -797,7 +801,7 @@ export interface MapOptions {
   origin?: string;
   location?: LocationConfig;
   threatProtection?: ThreatProtectionOptions;
-  auditMetadata?: Record<string, string>;
+  auditMetadata?: AuditMetadata;
 }
 
 export type FeedbackRating = "good" | "partial" | "bad";

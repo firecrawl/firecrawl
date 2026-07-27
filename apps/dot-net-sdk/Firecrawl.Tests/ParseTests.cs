@@ -57,7 +57,7 @@ public class ParseTests
             Timeout = 30000,
             Proxy = "auto",
             RedactPII = true,
-            AuditMetadata = new Dictionary<string, string> { ["requestId"] = "req-123" },
+            AuditMetadata = new AuditMetadata { Username = "alice@example.com" },
         };
 
         var json = JsonSerializer.Serialize(options, FirecrawlHttpClient.JsonOptions);
@@ -66,7 +66,7 @@ public class ParseTests
         Assert.Contains("\"timeout\":30000", json);
         Assert.Contains("\"proxy\":\"auto\"", json);
         Assert.Contains("\"redactPII\":true", json);
-        Assert.Contains("\"auditMetadata\":{\"requestId\":\"req-123\"}", json);
+        Assert.Contains("\"auditMetadata\":{\"username\":\"alice@example.com\"}", json);
     }
 
     [Fact]

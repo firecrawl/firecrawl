@@ -41,7 +41,7 @@ defmodule Firecrawl do
   @type response :: {:ok, Req.Response.t()} | {:error, Exception.t() | Firecrawl.Error.t()}
 
   @base_url "https://api.firecrawl.dev/v2"
-  @sdk_origin "elixir-sdk@1.9.0"
+  @sdk_origin "elixir-sdk@1.9.1"
 
   defp client(opts) do
     api_key =
@@ -867,7 +867,7 @@ defmodule Firecrawl do
 
 
   @map_urls_schema NimbleOptions.new!([
-    audit_metadata: [type: :map, doc: "Metadata to include with SIEM logging events."],
+    audit_metadata: [type: :keyword_list, keys: [username: [type: :string, required: true]], doc: "User attribution to include with SIEM logging events."],
     ignore_cache: [type: :boolean, doc: "Bypass the sitemap cache to retrieve fresh URLs. Sitemap data is cached for up to 7 days; use this parameter when your sitemap has been recently updated."],
     ignore_query_parameters: [type: :boolean, doc: "Do not return URLs with query parameters"],
     include_subdomains: [type: :boolean, doc: "Include subdomains of the website"],
@@ -917,7 +917,7 @@ defmodule Firecrawl do
 
 
   @parse_file_schema NimbleOptions.new!([
-    audit_metadata: [type: :map, doc: "Metadata to include with SIEM logging events."],
+    audit_metadata: [type: :keyword_list, keys: [username: [type: :string, required: true]], doc: "User attribution to include with SIEM logging events."],
     block_ads: [type: :boolean, doc: "Enable ad and cookie popup blocking."],
     exclude_tags: [type: {:list, :string}, doc: "Tags to exclude from the output."],
     formats: [type: {:list, :any}, doc: "Output formats supported for `/parse` uploads. Browser-rendering formats and change tracking are not supported."],
@@ -1019,7 +1019,7 @@ defmodule Firecrawl do
 
   @scrape_and_extract_from_url_schema NimbleOptions.new!([
     url: [type: :string, required: true, doc: "The URL to scrape"],
-    audit_metadata: [type: :map, doc: "Metadata to include with SIEM logging events."],
+    audit_metadata: [type: :keyword_list, keys: [username: [type: :string, required: true]], doc: "User attribution to include with SIEM logging events."],
     actions: [type: {:list, :any}, doc: "Actions to perform on the page before grabbing the content"],
     block_ads: [type: :boolean, doc: "Enables ad-blocking and cookie popup blocking."],
     exclude_tags: [type: {:list, :string}, doc: "Tags to exclude from the output."],
@@ -1082,7 +1082,7 @@ defmodule Firecrawl do
 
 
   @scrape_and_extract_from_urls_schema NimbleOptions.new!([
-    audit_metadata: [type: :map, doc: "Metadata to include with SIEM logging events."],
+    audit_metadata: [type: :keyword_list, keys: [username: [type: :string, required: true]], doc: "User attribution to include with SIEM logging events."],
     ignore_invalid_urls: [type: :boolean, doc: "If invalid URLs are specified in the urls array, they will be ignored. Instead of them failing the entire request, a batch scrape using the remaining valid URLs will be created, and the invalid URLs will be returned in the invalidURLs field of the response."],
     max_concurrency: [type: :integer, doc: "Maximum number of concurrent scrapes. This parameter allows you to set a concurrency limit for this batch scrape. If not specified, the batch scrape adheres to your team's concurrency limit."],
     urls: [type: {:list, :string}, required: true],
@@ -1346,7 +1346,7 @@ defmodule Firecrawl do
 
 
   @start_agent_schema NimbleOptions.new!([
-    audit_metadata: [type: :map, doc: "Metadata to include with SIEM logging events."],
+    audit_metadata: [type: :keyword_list, keys: [username: [type: :string, required: true]], doc: "User attribution to include with SIEM logging events."],
     max_credits: [type: {:or, [:integer, :float]}, doc: "Maximum credits to spend on this agent task. Defaults to 2500 if not set. Values above 2,500 are always billed as paid requests."],
     model: [type: {:or, [{:in, [:"spark-1-mini", :"spark-1-pro"]}, :string]}, doc: "The model to use for the agent task. spark-1-mini (default) is 60% cheaper, spark-1-pro offers higher accuracy for complex tasks"],
     prompt: [type: :string, required: true, doc: "The prompt describing what data to extract"],

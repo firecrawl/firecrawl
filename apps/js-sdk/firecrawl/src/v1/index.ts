@@ -114,6 +114,10 @@ export interface LocationConfig {
   languages?: string[];
 }
 
+export interface AuditMetadata {
+  username: string;
+}
+
 /**
  * Parameters for scraping operations.
  * Defines the options and configurations available for scraping web content.
@@ -135,7 +139,7 @@ export interface CrawlScrapeOptions {
   storeInCache?: boolean;
   maxAge?: number;
   parsePDF?: boolean;
-  auditMetadata?: Record<string, string>;
+  auditMetadata?: AuditMetadata;
 }
 
 export type Action = {
@@ -311,7 +315,7 @@ export interface MapParams {
   timeout?: number;
   useIndex?: boolean;
   location?: LocationConfig;
-  auditMetadata?: Record<string, string>;
+  auditMetadata?: AuditMetadata;
 }
 
 /**

@@ -2,8 +2,6 @@ package com.firecrawl.models;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
-import java.util.Collections;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -21,7 +19,7 @@ public class AgentOptions {
     private Boolean strictConstrainToURLs;
     private String model;
     private WebhookConfig webhook;
-    private Map<String, String> auditMetadata;
+    private AuditMetadata auditMetadata;
 
     private AgentOptions() {}
 
@@ -34,7 +32,7 @@ public class AgentOptions {
     public String getModel() { return model; }
     public WebhookConfig getWebhook() { return webhook; }
     @JsonProperty("auditMetadata")
-    public Map<String, String> getAuditMetadata() { return auditMetadata; }
+    public AuditMetadata getAuditMetadata() { return auditMetadata; }
 
     public static Builder builder() { return new Builder(); }
 
@@ -47,7 +45,7 @@ public class AgentOptions {
         private Boolean strictConstrainToURLs;
         private String model;
         private WebhookConfig webhook;
-        private Map<String, String> auditMetadata;
+        private AuditMetadata auditMetadata;
 
         private Builder() {}
 
@@ -67,8 +65,8 @@ public class AgentOptions {
         public Builder model(String model) { this.model = model; return this; }
         /** Webhook configuration. */
         public Builder webhook(WebhookConfig webhook) { this.webhook = webhook; return this; }
-        /** Metadata to include with SIEM logging events. */
-        public Builder auditMetadata(Map<String, String> auditMetadata) { this.auditMetadata = auditMetadata; return this; }
+        /** User attribution to include with SIEM logging events. */
+        public Builder auditMetadata(AuditMetadata auditMetadata) { this.auditMetadata = auditMetadata; return this; }
 
         public AgentOptions build() {
             if (prompt == null || prompt.isEmpty()) {
@@ -83,9 +81,7 @@ public class AgentOptions {
             o.strictConstrainToURLs = this.strictConstrainToURLs;
             o.model = this.model;
             o.webhook = this.webhook;
-            o.auditMetadata = this.auditMetadata != null
-                    ? Collections.unmodifiableMap(new HashMap<>(this.auditMetadata))
-                    : null;
+            o.auditMetadata = this.auditMetadata;
             return o;
         }
     }

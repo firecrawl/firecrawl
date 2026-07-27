@@ -91,7 +91,7 @@ type ScrapeOptions struct {
 	StoreInCache        *bool                    `json:"storeInCache,omitempty"`
 	Lockdown            *bool                    `json:"lockdown,omitempty"`
 	RedactPII           *bool                    `json:"redactPII,omitempty"`
-	AuditMetadata       map[string]string        `json:"auditMetadata,omitempty"`
+	AuditMetadata       *AuditMetadata           `json:"auditMetadata,omitempty"`
 	Integration         *string                  `json:"integration,omitempty"`
 	JsonOptions         *JsonOptions             `json:"jsonOptions,omitempty"`
 }
@@ -151,15 +151,15 @@ type BatchScrapeOptions struct {
 
 // MapOptions configures a map (URL discovery) request.
 type MapOptions struct {
-	Search                *string           `json:"search,omitempty"`
-	Sitemap               *string           `json:"sitemap,omitempty"`
-	IncludeSubdomains     *bool             `json:"includeSubdomains,omitempty"`
-	IgnoreQueryParameters *bool             `json:"ignoreQueryParameters,omitempty"`
-	Limit                 *int              `json:"limit,omitempty"`
-	Timeout               *int              `json:"timeout,omitempty"`
-	Integration           *string           `json:"integration,omitempty"`
-	Location              *LocationConfig   `json:"location,omitempty"`
-	AuditMetadata         map[string]string `json:"auditMetadata,omitempty"`
+	Search                *string         `json:"search,omitempty"`
+	Sitemap               *string         `json:"sitemap,omitempty"`
+	IncludeSubdomains     *bool           `json:"includeSubdomains,omitempty"`
+	IgnoreQueryParameters *bool           `json:"ignoreQueryParameters,omitempty"`
+	Limit                 *int            `json:"limit,omitempty"`
+	Timeout               *int            `json:"timeout,omitempty"`
+	Integration           *string         `json:"integration,omitempty"`
+	Location              *LocationConfig `json:"location,omitempty"`
+	AuditMetadata         *AuditMetadata  `json:"auditMetadata,omitempty"`
 }
 
 // SearchOptions configures a search request.
@@ -188,7 +188,12 @@ type AgentOptions struct {
 	StrictConstrainToURLs *bool                  `json:"strictConstrainToURLs,omitempty"`
 	Model                 *string                `json:"model,omitempty"`
 	Webhook               *WebhookConfig         `json:"webhook,omitempty"`
-	AuditMetadata         map[string]string      `json:"auditMetadata,omitempty"`
+	AuditMetadata         *AuditMetadata         `json:"auditMetadata,omitempty"`
+}
+
+// AuditMetadata identifies the user associated with a SIEM logging event.
+type AuditMetadata struct {
+	Username string `json:"username"`
 }
 
 // LocationConfig specifies geolocation for requests.

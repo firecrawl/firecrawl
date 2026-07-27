@@ -9,7 +9,7 @@ use crate::types::{
     Action, AttributeSelector, ChangeTrackingOptions, Document, Format, JsonOptions,
     LocationConfig, ProfileConfig, ProxyType, ScreenshotOptions,
 };
-use crate::FirecrawlError;
+use crate::{AuditMetadata, FirecrawlError};
 
 /// Options for scraping a URL.
 #[serde_with::skip_serializing_none]
@@ -83,8 +83,8 @@ pub struct ScrapeOptions {
     #[serde(rename = "redactPII")]
     pub redact_pii: Option<bool>,
 
-    /// Metadata to include with SIEM logging events.
-    pub audit_metadata: Option<HashMap<String, String>>,
+    /// User attribution to include with SIEM logging events.
+    pub audit_metadata: Option<AuditMetadata>,
 
     /// Persistent browser profile for maintaining state across scrapes.
     pub profile: Option<ProfileConfig>,

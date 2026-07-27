@@ -42,6 +42,7 @@ from .types import (
     Location,
     PaginationConfig,
     AgentOptions,
+    AuditMetadata,
     ThreatProtectionOptions,
     Monitor,
     MonitorCheck,
@@ -161,7 +162,7 @@ class FirecrawlClient:
         lockdown: Optional[bool] = None,
         threat_protection: Optional[ThreatProtectionOptions] = None,
         profile: Optional[Dict[str, Any]] = None,
-        audit_metadata: Optional[Dict[str, str]] = None,
+        audit_metadata: Optional[AuditMetadata] = None,
         integration: Optional[str] = None,
     ) -> Document:
         """
@@ -486,7 +487,7 @@ class FirecrawlClient:
         lockdown: Optional[bool] = None,
         threat_protection: Optional[ThreatProtectionOptions] = None,
         profile: Optional[Dict[str, Any]] = None,
-        audit_metadata: Optional[Dict[str, str]] = None,
+        audit_metadata: Optional[AuditMetadata] = None,
         regex_on_full_url: bool = False,
         deduplicate_similar_urls: bool = True,
         zero_data_retention: bool = False,
@@ -648,7 +649,7 @@ class FirecrawlClient:
         lockdown: Optional[bool] = None,
         threat_protection: Optional[ThreatProtectionOptions] = None,
         profile: Optional[Dict[str, Any]] = None,
-        audit_metadata: Optional[Dict[str, str]] = None,
+        audit_metadata: Optional[AuditMetadata] = None,
         regex_on_full_url: bool = False,
         deduplicate_similar_urls: bool = True,
         zero_data_retention: bool = False,
@@ -852,7 +853,7 @@ class FirecrawlClient:
         integration: Optional[str] = None,
         location: Optional[Location] = None,
         threat_protection: Optional[ThreatProtectionOptions] = None,
-        audit_metadata: Optional[Dict[str, str]] = None,
+        audit_metadata: Optional[AuditMetadata] = None,
     ) -> MapData:
         """Map a URL and return discovered links.
 
@@ -1168,7 +1169,7 @@ class FirecrawlClient:
         store_in_cache: Optional[bool] = None,
         lockdown: Optional[bool] = None,
         threat_protection: Optional[ThreatProtectionOptions] = None,
-        audit_metadata: Optional[Dict[str, str]] = None,
+        audit_metadata: Optional[AuditMetadata] = None,
         webhook: Optional[Union[str, WebhookConfig]] = None,
         append_to_id: Optional[str] = None,
         ignore_invalid_urls: Optional[bool] = None,
@@ -1345,7 +1346,7 @@ class FirecrawlClient:
         model: Optional[Literal["spark-1-pro", "spark-1-mini"]] = None,
         webhook: Optional[Union[str, AgentWebhookConfig]] = None,
         threat_protection: Optional[ThreatProtectionOptions] = None,
-        audit_metadata: Optional[Dict[str, str]] = None,
+        audit_metadata: Optional[AuditMetadata] = None,
     ):
         """Start an agent job (non-blocking).
 
@@ -1391,7 +1392,7 @@ class FirecrawlClient:
         model: Optional[Literal["spark-1-pro", "spark-1-mini"]] = None,
         webhook: Optional[Union[str, AgentWebhookConfig]] = None,
         threat_protection: Optional[ThreatProtectionOptions] = None,
-        audit_metadata: Optional[Dict[str, str]] = None,
+        audit_metadata: Optional[AuditMetadata] = None,
     ):
         """Run an agent and wait until completion.
 
@@ -1604,7 +1605,7 @@ class FirecrawlClient:
         store_in_cache: Optional[bool] = None,
         lockdown: Optional[bool] = None,
         threat_protection: Optional[ThreatProtectionOptions] = None,
-        audit_metadata: Optional[Dict[str, str]] = None,
+        audit_metadata: Optional[AuditMetadata] = None,
         webhook: Optional[Union[str, WebhookConfig]] = None,
         append_to_id: Optional[str] = None,
         ignore_invalid_urls: Optional[bool] = None,

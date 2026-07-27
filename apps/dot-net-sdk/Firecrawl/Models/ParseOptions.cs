@@ -85,7 +85,7 @@ public class ParseOptions
 
     [JsonPropertyName("auditMetadata")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    public Dictionary<string, string>? AuditMetadata { get; set; }
+    public AuditMetadata? AuditMetadata { get; set; }
 
     /// <summary>
     /// Validate the options against /v2/parse's supported surface.

@@ -18,7 +18,7 @@ public class ModelsTests
             Timeout = 30000,
             Mobile = false,
             RedactPII = true,
-            AuditMetadata = new Dictionary<string, string> { ["requestId"] = "req-123" }
+            AuditMetadata = new AuditMetadata { Username = "alice@example.com" }
         };
 
         var json = JsonSerializer.Serialize(options, JsonOptions);
@@ -29,7 +29,7 @@ public class ModelsTests
         Assert.Contains("\"timeout\":30000", json);
         Assert.Contains("\"mobile\":false", json);
         Assert.Contains("\"redactPII\":true", json);
-        Assert.Contains("\"auditMetadata\":{\"requestId\":\"req-123\"}", json);
+        Assert.Contains("\"auditMetadata\":{\"username\":\"alice@example.com\"}", json);
     }
 
     [Fact]
@@ -73,14 +73,14 @@ public class ModelsTests
             Search = "pricing",
             Limit = 10,
             IncludeSubdomains = true,
-            AuditMetadata = new Dictionary<string, string> { ["requestId"] = "req-123" }
+            AuditMetadata = new AuditMetadata { Username = "alice@example.com" }
         };
 
         var json = JsonSerializer.Serialize(options, JsonOptions);
         Assert.Contains("\"search\":\"pricing\"", json);
         Assert.Contains("\"limit\":10", json);
         Assert.Contains("\"includeSubdomains\":true", json);
-        Assert.Contains("\"auditMetadata\":{\"requestId\":\"req-123\"}", json);
+        Assert.Contains("\"auditMetadata\":{\"username\":\"alice@example.com\"}", json);
     }
 
     [Fact]
