@@ -70,12 +70,24 @@ export async function deliverSiemLoggingBatch(
   } catch (error) {
     const reason =
       error instanceof SiemDeliveryError ? error.kind : "delivery_error";
-    siemLoggingEventsTotal.inc({ result: "delivery_failed" }, events.length);
-    siemLoggingDeliveryFailuresTotal.inc({ reason }, events.length);
+    // A batch goes out as several chunks, so a failure part-way through still
+    // left events with the destination. Count those as delivered and only the
+    // remainder as failed, or the retry double-counts them.
+    const delivered =
+      error instanceof SiemDeliveryError ? error.deliveredEvents : 0;
+    const failed = Math.max(0, events.length - delivered);
+    if (delivered > 0) {
+      siemLoggingEventsTotal.inc({ result: "delivered" }, delivered);
+    }
+    if (failed > 0) {
+      siemLoggingEventsTotal.inc({ result: "delivery_failed" }, failed);
+      siemLoggingDeliveryFailuresTotal.inc({ reason }, failed);
+    }
     logger.error("SIEM logging batch delivery failed", {
       error,
       reason,
       events: events.length,
+      deliveredBeforeFailure: delivered,
     });
 
     if (

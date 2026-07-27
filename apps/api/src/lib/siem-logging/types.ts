@@ -139,6 +139,14 @@ type SiemDeliveryErrorKind =
   | "delivery_error";
 
 export class SiemDeliveryError extends Error {
+  /**
+   * Events the destination accepted before this failure. A batch is sent as
+   * several compressed chunks, so a late chunk failing does not undo the earlier
+   * ones — without this the caller would count accepted events as failed and
+   * then count them again as delivered when the batch retries.
+   */
+  public deliveredEvents = 0;
+
   constructor(
     public readonly kind: SiemDeliveryErrorKind,
     message: string,

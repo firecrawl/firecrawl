@@ -1,4 +1,15 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+const { eventsTotal, failuresTotal } = vi.hoisted(() => ({
+  eventsTotal: { inc: vi.fn() },
+  failuresTotal: { inc: vi.fn() },
+}));
+vi.mock("../../lib/siem-logging/metrics", () => ({
+  siemLoggingEventsTotal: eventsTotal,
+  siemLoggingDeliveryFailuresTotal: failuresTotal,
+  siemLoggingDeliveryBatchesTotal: { inc: vi.fn() },
+}));
+
 import {
   SiemDeliveryError,
   type OrgSiemLoggingConfig,
@@ -49,6 +60,36 @@ const config: OrgSiemLoggingConfig = {
 };
 
 describe("SIEM logging batch delivery", () => {
+  beforeEach(() => {
+    eventsTotal.inc.mockClear();
+    failuresTotal.inc.mockClear();
+  });
+
+  it("counts only the events a partly-delivered batch actually landed", async () => {
+    const error = new SiemDeliveryError("delivery_error", "chunk 2 failed");
+    // Azure accepted the first chunk before the call blew up.
+    error.deliveredEvents = 1;
+
+    const outcome = await deliverSiemLoggingBatch("org-id", events, {
+      getConfig: vi.fn().mockResolvedValue(config),
+      deliver: vi.fn().mockRejectedValue(error),
+    });
+
+    expect(outcome).toEqual({
+      disposition: "retry",
+      retryAfterMs: undefined,
+    });
+    expect(eventsTotal.inc).toHaveBeenCalledWith({ result: "delivered" }, 1);
+    expect(eventsTotal.inc).toHaveBeenCalledWith(
+      { result: "delivery_failed" },
+      1,
+    );
+    expect(failuresTotal.inc).toHaveBeenCalledWith(
+      { reason: "delivery_error" },
+      1,
+    );
+  });
+
   it("loads the current secret at delivery time and sends one batch", async () => {
     const deliver = vi.fn().mockResolvedValue(2);
     const getConfig = vi.fn().mockResolvedValue(config);

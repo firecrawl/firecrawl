@@ -382,11 +382,13 @@ export async function sendAzureSentinelEvents(
       delivered += eventCount;
       siemLoggingDeliveryBatchesTotal.inc({ result: "success" });
     } catch (error) {
-      if (
-        error instanceof SiemDeliveryError &&
-        (error.statusCode === 401 || error.statusCode === 403)
-      ) {
-        invalidateToken(destination);
+      if (error instanceof SiemDeliveryError) {
+        if (error.statusCode === 401 || error.statusCode === 403) {
+          invalidateToken(destination);
+        }
+        // Tell the caller what already landed, so the chunks Azure accepted
+        // aren't counted as failures on the way out.
+        error.deliveredEvents = delivered;
       }
       siemLoggingDeliveryBatchesTotal.inc({ result: "failure" });
       throw error;
