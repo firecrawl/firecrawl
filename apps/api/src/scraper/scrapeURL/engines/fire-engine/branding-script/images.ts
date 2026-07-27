@@ -112,6 +112,69 @@ export const findImages = (): FindImagesResult => {
     "twitter",
   );
 
+  // Declared brand marks — used server-side as a fallback when no logo is
+  // selected from the DOM. Sites explicitly declare these, so they're the
+  // most trustworthy signal available when heuristics/LLM come up empty.
+
+  // Largest apple-touch icon (square brand mark by convention).
+  try {
+    let bestTouch: { href: string; size: number } | null = null;
+    document.querySelectorAll('link[rel*="apple-touch-icon" i]').forEach(el => {
+      const link = el as HTMLLinkElement;
+      if (!link.href) return;
+      const m = (link.getAttribute("sizes") || "").match(/(\d+)x\d+/i);
+      const size = m ? parseInt(m[1], 10) : 1;
+      if (!bestTouch || size > bestTouch.size) {
+        bestTouch = { href: link.href, size };
+      }
+    });
+    if (bestTouch) {
+      push((bestTouch as { href: string }).href, "apple-touch-icon");
+    }
+  } catch (_) {
+    // Ignore errors
+  }
+
+  // JSON-LD "logo" (Organization/WebSite/LocalBusiness structured data).
+  try {
+    let declared: string | null = null;
+    const findLogo = (node: unknown, depth: number): string | null => {
+      if (!node || typeof node !== "object" || depth > 6) return null;
+      if (Array.isArray(node)) {
+        for (const item of node) {
+          const r = findLogo(item, depth + 1);
+          if (r) return r;
+        }
+        return null;
+      }
+      const obj = node as Record<string, unknown>;
+      const logo = obj.logo;
+      if (typeof logo === "string" && /^https?:\/\//.test(logo)) return logo;
+      if (logo && typeof logo === "object" && !Array.isArray(logo)) {
+        const u = (logo as Record<string, unknown>).url;
+        if (typeof u === "string" && /^https?:\/\//.test(u)) return u;
+      }
+      for (const v of Object.values(obj)) {
+        const r = findLogo(v, depth + 1);
+        if (r) return r;
+      }
+      return null;
+    };
+    document
+      .querySelectorAll('script[type="application/ld+json"]')
+      .forEach(el => {
+        if (declared) return;
+        try {
+          declared = findLogo(JSON.parse(el.textContent || ""), 0);
+        } catch (_) {
+          // Malformed JSON-LD — ignore
+        }
+      });
+    if (declared) push(declared, "logo-jsonld");
+  } catch (_) {
+    // Ignore errors
+  }
+
   const ensureSvgEncoded = (
     url: string | null | undefined,
   ): string | null | undefined => {

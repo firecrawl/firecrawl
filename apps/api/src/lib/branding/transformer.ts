@@ -11,6 +11,7 @@ import {
   getTopCandidatesForLLM,
 } from "./logo-selector";
 import { extractHeaderHtmlChunk } from "./extractHeaderHtmlChunk";
+import { pickDeclaredLogo } from "./declared-logo";
 
 function isDebugBrandingEnabled(meta: Meta): boolean {
   return (
@@ -420,6 +421,22 @@ export async function brandingTransformer(
         error: error instanceof Error ? error.message : String(error),
       },
     };
+  }
+
+  // Last-resort fallback: when the candidate → heuristic → LLM pipeline ended
+  // with no logo (no candidates, LLM rejection, or LLM failure), use the
+  // site-declared brand mark. Never overrides a selected logo.
+  if (!brandingProfile.images?.logo) {
+    const declared = pickDeclaredLogo(rawBranding.images);
+    if (declared) {
+      brandingProfile.images = {
+        ...(brandingProfile.images ?? {}),
+        logo: declared.src,
+      };
+      meta.logger.info("Using declared logo fallback", {
+        source: declared.source,
+      });
+    }
   }
 
   if (!isDebugBrandingEnabled(meta)) {
