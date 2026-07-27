@@ -4,6 +4,11 @@ import { config } from "../../../config";
 import { hasFormatOfType } from "../../../lib/format-utils";
 import { AudioUnsupportedUrlError, throwIfMediaAccessDenied } from "../error";
 
+// Downloads can be large (long videos → hundreds of MB), so this is generous —
+// but an unbounded fetch that hangs would consume the whole scrape budget and
+// surface as an opaque timeout rather than a clean failure.
+const DOWNLOAD_FETCH_TIMEOUT_MS = 240_000;
+
 let cachedUrlRegex: RegExp | null = null;
 let cacheTimestamp = 0;
 const CACHE_TTL_MS = 5 * 60 * 1000;
@@ -72,6 +77,7 @@ export async function fetchAudio(
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(requestBody),
+    signal: AbortSignal.timeout(DOWNLOAD_FETCH_TIMEOUT_MS),
   });
 
   if (!response.ok) {
