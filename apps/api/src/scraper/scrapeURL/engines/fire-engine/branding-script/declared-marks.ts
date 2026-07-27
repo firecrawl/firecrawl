@@ -27,24 +27,27 @@ function isAllowedImageUrl(href: string): boolean {
 }
 
 function resolveLogoUrl(logo: unknown, baseUrl: string): string | null {
-  let raw: unknown = null;
+  let candidates: unknown[] = [];
   if (typeof logo === "string") {
-    raw = logo;
+    candidates = [logo];
   } else if (logo && typeof logo === "object" && !Array.isArray(logo)) {
     const img = logo as Record<string, unknown>;
     // ImageObject: contentUrl is the actual media bytes; url is inherited
-    // Thing.url and may point at a page *about* the image, so it's only a
-    // fallback.
-    raw = typeof img.contentUrl === "string" ? img.contentUrl : img.url;
+    // Thing.url and may point at a page *about* the image, so it's tried
+    // second. A candidate that fails validation falls through to the next
+    // rather than suppressing it.
+    candidates = [img.contentUrl, img.url];
   }
-  if (typeof raw !== "string" || !raw.trim()) return null;
-  try {
-    const resolved = new URL(raw, baseUrl);
-    if (resolved.protocol === "http:" || resolved.protocol === "https:") {
-      return resolved.href;
+  for (const raw of candidates) {
+    if (typeof raw !== "string" || !raw.trim()) continue;
+    try {
+      const resolved = new URL(raw, baseUrl);
+      if (resolved.protocol === "http:" || resolved.protocol === "https:") {
+        return resolved.href;
+      }
+    } catch (_) {
+      // Invalid URL — try the next candidate
     }
-  } catch (_) {
-    // Invalid URL — ignore
   }
   return null;
 }

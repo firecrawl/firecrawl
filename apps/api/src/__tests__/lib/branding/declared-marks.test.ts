@@ -117,6 +117,25 @@ describe("findDeclaredJsonLdLogo", () => {
     ).toBe("https://x.com/logo-file.png");
   });
 
+  it("falls back to url when contentUrl is present but unusable", () => {
+    expect(
+      findDeclaredJsonLdLogo(
+        docWith({
+          "@type": "Organization",
+          logo: { contentUrl: "", url: "https://x.com/logo.png" },
+        }),
+      ),
+    ).toBe("https://x.com/logo.png");
+    expect(
+      findDeclaredJsonLdLogo(
+        docWith({
+          "@type": "Organization",
+          logo: { contentUrl: "ipfs://Qm123", url: "https://x.com/logo.png" },
+        }),
+      ),
+    ).toBe("https://x.com/logo.png");
+  });
+
   it("accepts ImageObject contentUrl (canonical media URL property)", () => {
     expect(
       findDeclaredJsonLdLogo(
