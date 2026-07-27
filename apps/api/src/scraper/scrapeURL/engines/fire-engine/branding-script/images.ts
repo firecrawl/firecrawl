@@ -5,7 +5,10 @@ import {
   recordError,
 } from "./helpers";
 import { resolveSvgStyles } from "./svg-utils";
-import { findDeclaredJsonLdLogo } from "./jsonld-logo";
+import {
+  findDeclaredJsonLdLogo,
+  findLargestAppleTouchIcon,
+} from "./declared-marks";
 
 interface LogoCandidate {
   src: string;
@@ -119,27 +122,14 @@ export const findImages = (): FindImagesResult => {
 
   // Largest apple-touch icon (square brand mark by convention).
   try {
-    let bestTouch: { href: string; size: number } | null = null;
-    document.querySelectorAll('link[rel*="apple-touch-icon" i]').forEach(el => {
-      const link = el as HTMLLinkElement;
-      if (!link.href) return;
-      const m = (link.getAttribute("sizes") || "").match(/(\d+)x\d+/i);
-      const size = m ? parseInt(m[1], 10) : 1;
-      if (!bestTouch || size > bestTouch.size) {
-        bestTouch = { href: link.href, size };
-      }
-    });
-    if (bestTouch) {
-      push((bestTouch as { href: string }).href, "apple-touch-icon");
-    }
+    push(findLargestAppleTouchIcon(document), "apple-touch-icon");
   } catch (_) {
     // Ignore errors
   }
 
   // JSON-LD "logo" (Organization/WebSite/LocalBusiness structured data).
   try {
-    const declared = findDeclaredJsonLdLogo(document);
-    if (declared) push(declared, "logo-jsonld");
+    push(findDeclaredJsonLdLogo(document), "logo-jsonld");
   } catch (_) {
     // Ignore errors
   }

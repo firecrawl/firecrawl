@@ -1,6 +1,9 @@
 // @vitest-environment jsdom
 import { describe, it, expect } from "vitest";
-import { findDeclaredJsonLdLogo } from "../../../scraper/scrapeURL/engines/fire-engine/branding-script/jsonld-logo";
+import {
+  findDeclaredJsonLdLogo,
+  findLargestAppleTouchIcon,
+} from "../../../scraper/scrapeURL/engines/fire-engine/branding-script/declared-marks";
 
 function docWith(...blocks: unknown[]): Document {
   document.head.innerHTML = blocks
@@ -97,6 +100,56 @@ describe("findDeclaredJsonLdLogo", () => {
         }),
       ),
     ).toBe("https://r.com/l.png");
+  });
+
+  it("accepts ImageObject contentUrl (canonical media URL property)", () => {
+    expect(
+      findDeclaredJsonLdLogo(
+        docWith({
+          "@type": "Organization",
+          logo: { "@type": "ImageObject", contentUrl: "https://x.com/c.png" },
+        }),
+      ),
+    ).toBe("https://x.com/c.png");
+  });
+
+  it("does not leak logos of untyped children under denied entities", () => {
+    expect(
+      findDeclaredJsonLdLogo(
+        docWith({
+          "@type": "Product",
+          brand: { name: "Nike", logo: "https://nike.com/swoosh.png" },
+        }),
+      ),
+    ).toBeNull();
+  });
+
+  describe("findLargestAppleTouchIcon", () => {
+    function docWithLinks(...links: string[]): Document {
+      document.head.innerHTML = links.join("");
+      return document;
+    }
+
+    it("uses the max dimension across multi-token sizes attributes", () => {
+      expect(
+        findLargestAppleTouchIcon(
+          docWithLinks(
+            '<link rel="apple-touch-icon" sizes="57x57 180x180" href="/multi.png">',
+            '<link rel="apple-touch-icon" sizes="152x152" href="/single.png">',
+          ),
+        ),
+      ).toMatch(/multi\.png$/);
+    });
+
+    it("rejects non-image schemes", () => {
+      expect(
+        findLargestAppleTouchIcon(
+          docWithLinks(
+            '<link rel="apple-touch-icon" href="javascript:alert(1)">',
+          ),
+        ),
+      ).toBeNull();
+    });
   });
 
   it("ignores malformed JSON and non-http schemes", () => {
