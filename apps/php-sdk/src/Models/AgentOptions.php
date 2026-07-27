@@ -9,6 +9,7 @@ final class AgentOptions
     /**
      * @param list<string>|null          $urls
      * @param array<string, mixed>|null  $schema
+     * @param array<string, string>|null $auditMetadata
      */
     private function __construct(
         private readonly ?array $urls = null,
@@ -19,11 +20,14 @@ final class AgentOptions
         private readonly ?bool $strictConstrainToURLs = null,
         private readonly ?string $model = null,
         private readonly ?WebhookConfig $webhook = null,
+        /** @var array<string, string>|null */
+        private readonly ?array $auditMetadata = null,
     ) {}
 
     /**
      * @param list<string>|null         $urls
      * @param array<string, mixed>|null $schema
+     * @param array<string, string>|null $auditMetadata
      */
     public static function with(
         ?array $urls = null,
@@ -34,10 +38,11 @@ final class AgentOptions
         ?bool $strictConstrainToURLs = null,
         ?string $model = null,
         ?WebhookConfig $webhook = null,
+        ?array $auditMetadata = null,
     ): self {
         return new self(
             $urls, $prompt, $schema, $integration,
-            $maxCredits, $strictConstrainToURLs, $model, $webhook,
+            $maxCredits, $strictConstrainToURLs, $model, $webhook, $auditMetadata,
         );
     }
 
@@ -53,6 +58,7 @@ final class AgentOptions
             'strictConstrainToURLs' => $this->strictConstrainToURLs,
             'model' => $this->model,
             'webhook' => $this->webhook?->toArray(),
+            'auditMetadata' => $this->auditMetadata,
         ];
 
         return array_filter($fields, fn (mixed $v): bool => $v !== null);

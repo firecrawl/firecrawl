@@ -135,6 +135,7 @@ export interface CrawlScrapeOptions {
   storeInCache?: boolean;
   maxAge?: number;
   parsePDF?: boolean;
+  auditMetadata?: Record<string, string>;
 }
 
 export type Action = {
@@ -310,6 +311,7 @@ export interface MapParams {
   timeout?: number;
   useIndex?: boolean;
   location?: LocationConfig;
+  auditMetadata?: Record<string, string>;
 }
 
 /**

@@ -6,7 +6,7 @@ module Firecrawl
     class AgentOptions
       FIELDS = %i[
         urls prompt schema integration max_credits
-        strict_constrain_to_urls model webhook
+        strict_constrain_to_urls model webhook audit_metadata
       ].freeze
 
       attr_reader(*FIELDS)
@@ -26,6 +26,7 @@ module Firecrawl
           "strictConstrainToURLs" => strict_constrain_to_urls,
           "model" => model,
           "webhook" => webhook.is_a?(Hash) ? webhook : webhook&.to_h,
+          "auditMetadata" => audit_metadata,
         }.compact
       end
     end

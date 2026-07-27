@@ -15,6 +15,7 @@ function prepareAgentPayload(args: {
   model?: "spark-1-pro" | "spark-1-mini";
   webhook?: string | AgentWebhookConfig;
   threatProtection?: ThreatProtectionOptions;
+  auditMetadata?: Record<string, string>;
 }): Record<string, unknown> {
   const body: Record<string, unknown> = {};
   if (args.urls) body.urls = args.urls;
@@ -30,6 +31,8 @@ function prepareAgentPayload(args: {
   if (args.webhook != null) body.webhook = args.webhook;
   if (args.threatProtection != null)
     body.threatProtection = args.threatProtection;
+  if (args.auditMetadata != null)
+    body.auditMetadata = args.auditMetadata;
   return body;
 }
 

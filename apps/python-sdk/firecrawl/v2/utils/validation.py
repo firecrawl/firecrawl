@@ -569,6 +569,7 @@ def prepare_scrape_options(options: Optional[ScrapeOptions]) -> Optional[Dict[st
         "min_age": "minAge",
         "redact_pii": "redactPII",
         "threat_protection": "threatProtection",
+        "audit_metadata": "auditMetadata",
     }
     
     # Apply field mappings
@@ -818,4 +819,4 @@ def prepare_scrape_options(options: Optional[ScrapeOptions]) -> Optional[Dict[st
                 # For fields that don't need conversion, use as-is
                 scrape_data[key] = value
     
-    return scrape_data  
+    return scrape_data

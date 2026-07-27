@@ -5,6 +5,7 @@
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::collections::HashMap;
 
 use crate::client::Client;
 use crate::types::{AgentModel, AgentWebhookConfig};
@@ -38,6 +39,9 @@ pub struct AgentOptions {
 
     /// Webhook configuration for agent notifications.
     pub webhook: Option<AgentWebhookConfig>,
+
+    /// Metadata to include with SIEM logging events.
+    pub audit_metadata: Option<HashMap<String, String>>,
 
     /// Poll interval for synchronous agent execution (milliseconds).
     #[serde(skip)]

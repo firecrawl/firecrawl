@@ -13,7 +13,7 @@ module Firecrawl
       FIELDS = %i[
         formats headers include_tags exclude_tags only_main_content
         timeout parsers skip_tls_verification remove_base64_images
-        block_ads proxy integration redact_pii json_options
+        block_ads proxy integration redact_pii json_options audit_metadata
       ].freeze
 
       attr_reader(*FIELDS)
@@ -40,6 +40,7 @@ module Firecrawl
           "integration" => integration,
           "redactPII" => redact_pii,
           "jsonOptions" => json_options.is_a?(Hash) ? json_options : json_options&.to_h,
+          "auditMetadata" => audit_metadata,
         }.compact
       end
 

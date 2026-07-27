@@ -83,6 +83,9 @@ pub struct ScrapeOptions {
     #[serde(rename = "redactPII")]
     pub redact_pii: Option<bool>,
 
+    /// Metadata to include with SIEM logging events.
+    pub audit_metadata: Option<HashMap<String, String>>,
+
     /// Persistent browser profile for maintaining state across scrapes.
     pub profile: Option<ProfileConfig>,
 

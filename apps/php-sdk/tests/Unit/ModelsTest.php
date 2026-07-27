@@ -10,6 +10,9 @@ use Firecrawl\Models\MapData;
 use Firecrawl\Models\BatchScrapeJob;
 use Firecrawl\Models\CrawlJob;
 use Firecrawl\Models\HighlightsFormat;
+use Firecrawl\Models\AgentOptions;
+use Firecrawl\Models\MapOptions;
+use Firecrawl\Models\ParseOptions;
 use Firecrawl\Models\QueryFormat;
 use Firecrawl\Models\QuestionFormat;
 use Firecrawl\Models\ScrapeOptions;
@@ -338,6 +341,19 @@ it('serializes redactPII in ScrapeOptions', function (): void {
         'redactPII' => true,
     ]);
     expect(array_key_exists('formats', $options->toArray()))->toBeFalse();
+});
+
+it('serializes audit metadata across request options', function (): void {
+    $metadata = ['requestId' => 'req-123'];
+
+    expect(ScrapeOptions::with(auditMetadata: $metadata)->toArray())
+        ->toMatchArray(['auditMetadata' => $metadata]);
+    expect(MapOptions::with(auditMetadata: $metadata)->toArray())
+        ->toMatchArray(['auditMetadata' => $metadata]);
+    expect(AgentOptions::with(prompt: 'find pricing', auditMetadata: $metadata)->toArray())
+        ->toMatchArray(['auditMetadata' => $metadata]);
+    expect(ParseOptions::with(auditMetadata: $metadata)->toArray())
+        ->toMatchArray(['auditMetadata' => $metadata]);
 });
 
 it('serializes query format mode in ScrapeOptions', function (): void {

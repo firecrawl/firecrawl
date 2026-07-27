@@ -13,6 +13,7 @@ final class ScrapeOptions
      * @param list<string>|null            $excludeTags
      * @param list<mixed>|null             $parsers
      * @param list<array<string, mixed>>|null $actions
+     * @param array<string, string>|null   $auditMetadata
      */
     private function __construct(
         private readonly ?array $formats = null,
@@ -39,6 +40,8 @@ final class ScrapeOptions
         private readonly ?array $profile = null,
         private readonly ?bool $changeTracking = null,
         private readonly ?bool $redactPII = null,
+        /** @var array<string, string>|null */
+        private readonly ?array $auditMetadata = null,
     ) {}
 
     /**
@@ -49,6 +52,7 @@ final class ScrapeOptions
      * @param list<mixed>|null                              $parsers
      * @param list<array<string, mixed>>|null               $actions
      * @param array<string, string>|null                    $profile
+     * @param array<string, string>|null                    $auditMetadata
      */
     public static function with(
         ?array $formats = null,
@@ -74,13 +78,14 @@ final class ScrapeOptions
         ?array $profile = null,
         ?bool $changeTracking = null,
         ?bool $redactPII = null,
+        ?array $auditMetadata = null,
     ): self {
         return new self(
             $formats, $headers, $includeTags, $excludeTags, $onlyMainContent,
             $timeout, $waitFor, $mobile, $parsers, $actions, $location,
             $skipTlsVerification, $removeBase64Images, $blockAds, $proxy,
             $maxAge, $minAge, $storeInCache, $lockdown, $integration, $profile,
-            $changeTracking, $redactPII,
+            $changeTracking, $redactPII, $auditMetadata,
         );
     }
 
@@ -126,6 +131,7 @@ final class ScrapeOptions
             'profile' => $this->profile,
             'changeTracking' => $this->changeTracking,
             'redactPII' => $this->redactPII,
+            'auditMetadata' => $this->auditMetadata,
         ];
 
         foreach ($fields as $key => $value) {

@@ -209,6 +209,7 @@ export interface ScrapeOptions {
   lockdown?: boolean;
   redactPII?: boolean | RedactPIIOptions;
   threatProtection?: ThreatProtectionOptions;
+  auditMetadata?: Record<string, string>;
   profile?: {
     name: string;
     saveChanges?: boolean;
@@ -796,6 +797,7 @@ export interface MapOptions {
   origin?: string;
   location?: LocationConfig;
   threatProtection?: ThreatProtectionOptions;
+  auditMetadata?: Record<string, string>;
 }
 
 export type FeedbackRating = "good" | "partial" | "bad";

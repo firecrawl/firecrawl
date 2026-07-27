@@ -399,6 +399,7 @@ class AsyncFirecrawlClient:
         timeout: Optional[int] = None,
         integration: Optional[str] = None,
         threat_protection: Optional[ThreatProtectionOptions] = None,
+        audit_metadata: Optional[Dict[str, str]] = None,
     ) -> MapData:
         options = MapOptions(
             search=search,
@@ -408,7 +409,8 @@ class AsyncFirecrawlClient:
             timeout=timeout,
             integration=integration,
             threat_protection=threat_protection,
-        ) if any(v is not None for v in [search, include_subdomains, limit, sitemap, integration, timeout, threat_protection]) else None
+            audit_metadata=audit_metadata,
+        ) if any(v is not None for v in [search, include_subdomains, limit, sitemap, integration, timeout, threat_protection, audit_metadata]) else None
         return await async_map.map(self.async_http_client, url, options)
 
     async def create_monitor(
@@ -680,6 +682,7 @@ class AsyncFirecrawlClient:
         model: Optional[Literal["spark-1-pro", "spark-1-mini"]] = None,
         webhook: Optional[Union[str, AgentWebhookConfig]] = None,
         threat_protection: Optional[ThreatProtectionOptions] = None,
+        audit_metadata: Optional[Dict[str, str]] = None,
     ):
         return await async_agent.agent(
             self.async_http_client,
@@ -694,6 +697,7 @@ class AsyncFirecrawlClient:
             model=model,
             webhook=webhook,
             threat_protection=threat_protection,
+            audit_metadata=audit_metadata,
         )
 
     async def get_agent_status(self, job_id: str):
@@ -711,6 +715,7 @@ class AsyncFirecrawlClient:
         model: Optional[Literal["spark-1-pro", "spark-1-mini"]] = None,
         webhook: Optional[Union[str, AgentWebhookConfig]] = None,
         threat_protection: Optional[ThreatProtectionOptions] = None,
+        audit_metadata: Optional[Dict[str, str]] = None,
     ):
         return await async_agent.start_agent(
             self.async_http_client,
@@ -723,6 +728,7 @@ class AsyncFirecrawlClient:
             model=model,
             webhook=webhook,
             threat_protection=threat_protection,
+            audit_metadata=audit_metadata,
         )
 
     async def cancel_agent(self, job_id: str) -> bool:

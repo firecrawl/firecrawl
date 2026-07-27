@@ -1,6 +1,7 @@
 package com.firecrawl.models;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
+import java.util.Map;
 
 /**
  * Options for mapping (discovering URLs on) a website.
@@ -16,6 +17,7 @@ public class MapOptions {
     private Integer timeout;
     private String integration;
     private LocationConfig location;
+    private Map<String, String> auditMetadata;
 
     private MapOptions() {}
 
@@ -28,6 +30,7 @@ public class MapOptions {
     public Integer getTimeout() { return timeout; }
     public String getIntegration() { return integration; }
     public LocationConfig getLocation() { return location; }
+    public Map<String, String> getAuditMetadata() { return auditMetadata; }
 
     public static Builder builder() { return new Builder(); }
 
@@ -40,6 +43,7 @@ public class MapOptions {
         private Integer timeout;
         private String integration;
         private LocationConfig location;
+        private Map<String, String> auditMetadata;
 
         private Builder() {}
 
@@ -59,6 +63,8 @@ public class MapOptions {
         public Builder integration(String integration) { this.integration = integration; return this; }
         /** Geolocation configuration. */
         public Builder location(LocationConfig location) { this.location = location; return this; }
+        /** Metadata to include with SIEM logging events. */
+        public Builder auditMetadata(Map<String, String> auditMetadata) { this.auditMetadata = auditMetadata; return this; }
 
         public MapOptions build() {
             MapOptions o = new MapOptions();
@@ -70,6 +76,7 @@ public class MapOptions {
             o.timeout = this.timeout;
             o.integration = this.integration;
             o.location = this.location;
+            o.auditMetadata = this.auditMetadata;
             return o;
         }
     }

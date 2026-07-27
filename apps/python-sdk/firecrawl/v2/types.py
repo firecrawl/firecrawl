@@ -822,6 +822,9 @@ class ScrapeOptions(BaseModel):
     threat_protection: Optional[ThreatProtectionOptions] = Field(
         default=None, alias="threatProtection"
     )
+    audit_metadata: Optional[Dict[str, str]] = Field(
+        default=None, alias="auditMetadata"
+    )
     profile: Optional[Dict[str, Any]] = None
     integration: Optional[str] = None
 
@@ -1054,6 +1057,7 @@ class MapOptions(BaseModel):
     integration: Optional[str] = None
     location: Optional["Location"] = None
     threat_protection: Optional[ThreatProtectionOptions] = None
+    audit_metadata: Optional[Dict[str, str]] = None
 
 
 class MapRequest(BaseModel):

@@ -6,7 +6,7 @@ module Firecrawl
     class MapOptions
       FIELDS = %i[
         search sitemap include_subdomains ignore_query_parameters
-        limit timeout integration location
+        limit timeout integration location audit_metadata
       ].freeze
 
       attr_reader(*FIELDS)
@@ -25,6 +25,7 @@ module Firecrawl
           "timeout" => timeout,
           "integration" => integration,
           "location" => location.is_a?(Hash) ? location : location&.to_h,
+          "auditMetadata" => audit_metadata,
         }.compact
       end
     end

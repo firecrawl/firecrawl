@@ -6,6 +6,7 @@ namespace Firecrawl\Models;
 
 final class MapOptions
 {
+    /** @param array<string, string>|null $auditMetadata */
     private function __construct(
         private readonly ?string $search = null,
         private readonly ?string $sitemap = null,
@@ -15,8 +16,11 @@ final class MapOptions
         private readonly ?int $timeout = null,
         private readonly ?string $integration = null,
         private readonly ?LocationConfig $location = null,
+        /** @var array<string, string>|null */
+        private readonly ?array $auditMetadata = null,
     ) {}
 
+    /** @param array<string, string>|null $auditMetadata */
     public static function with(
         ?string $search = null,
         ?string $sitemap = null,
@@ -26,10 +30,11 @@ final class MapOptions
         ?int $timeout = null,
         ?string $integration = null,
         ?LocationConfig $location = null,
+        ?array $auditMetadata = null,
     ): self {
         return new self(
             $search, $sitemap, $includeSubdomains, $ignoreQueryParameters,
-            $limit, $timeout, $integration, $location,
+            $limit, $timeout, $integration, $location, $auditMetadata,
         );
     }
 
@@ -45,6 +50,7 @@ final class MapOptions
             'timeout' => $this->timeout,
             'integration' => $this->integration,
             'location' => $this->location?->toArray(),
+            'auditMetadata' => $this->auditMetadata,
         ];
 
         return array_filter($fields, fn (mixed $v): bool => $v !== null);

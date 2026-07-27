@@ -132,6 +132,8 @@ pub struct ParseOptions {
     /// Redact personally identifiable information from returned content.
     #[serde(rename = "redactPII")]
     pub redact_pii: Option<bool>,
+    /// Metadata to include with SIEM logging events.
+    pub audit_metadata: Option<HashMap<String, String>>,
     /// Request origin identifier.
     pub origin: Option<String>,
     /// Zero data retention mode.

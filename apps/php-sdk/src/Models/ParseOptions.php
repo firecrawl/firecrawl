@@ -32,6 +32,7 @@ final class ParseOptions
      * @param list<string>|null            $includeTags
      * @param list<string>|null            $excludeTags
      * @param list<mixed>|null             $parsers
+     * @param array<string, string>|null   $auditMetadata
      */
     private function __construct(
         private readonly ?array $formats = null,
@@ -47,6 +48,8 @@ final class ParseOptions
         private readonly ?string $proxy = null,
         private readonly ?string $integration = null,
         private readonly ?bool $redactPII = null,
+        /** @var array<string, string>|null */
+        private readonly ?array $auditMetadata = null,
     ) {}
 
     /**
@@ -55,6 +58,7 @@ final class ParseOptions
      * @param list<string>|null            $includeTags
      * @param list<string>|null            $excludeTags
      * @param list<mixed>|null             $parsers
+     * @param array<string, string>|null   $auditMetadata
      */
     public static function with(
         ?array $formats = null,
@@ -70,6 +74,7 @@ final class ParseOptions
         ?string $proxy = null,
         ?string $integration = null,
         ?bool $redactPII = null,
+        ?array $auditMetadata = null,
     ): self {
         if ($timeout !== null && $timeout <= 0) {
             throw new FirecrawlException('timeout must be positive');
@@ -102,6 +107,7 @@ final class ParseOptions
             $proxy,
             $integration,
             $redactPII,
+            $auditMetadata,
         );
     }
 
@@ -136,6 +142,7 @@ final class ParseOptions
             'proxy' => $this->proxy,
             'integration' => $this->integration,
             'redactPII' => $this->redactPII,
+            'auditMetadata' => $this->auditMetadata,
         ];
 
         foreach ($fields as $key => $value) {
