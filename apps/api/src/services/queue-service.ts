@@ -3,7 +3,6 @@ import { config } from "../config";
 import { logger } from "../lib/logger";
 import IORedis from "ioredis";
 import type { DeepResearchServiceOptions } from "../lib/deep-research/deep-research-service";
-import type { SiemLoggingJobData } from "../lib/siem-logging/types";
 import { addExtractJob, ExtractJobData } from "./extract-queue";
 
 let loggingQueue: Queue;
@@ -12,7 +11,6 @@ let deepResearchQueue: Queue;
 let generateLlmsTxtQueue: Queue;
 let billingQueue: Queue;
 let precrawlQueue: Queue;
-let siemLoggingQueue: Queue<SiemLoggingJobData>;
 let redisConnection: IORedis;
 
 export function getRedisConnection(): IORedis {
@@ -31,7 +29,6 @@ const generateLlmsTxtQueueName = "{generateLlmsTxtQueue}";
 const deepResearchQueueName = "{deepResearchQueue}";
 const billingQueueName = "{billingQueue}";
 export const precrawlQueueName = "{precrawlQueue}";
-const siemLoggingQueueName = "{siemLoggingQueue}";
 
 export async function addExtractJobToQueue(
   extractId: string,
@@ -109,26 +106,4 @@ export function getPrecrawlQueue() {
     });
   }
   return precrawlQueue;
-}
-
-export function getSiemLoggingQueue(): Queue<SiemLoggingJobData> {
-  if (!siemLoggingQueue) {
-    siemLoggingQueue = new Queue<SiemLoggingJobData>(siemLoggingQueueName, {
-      connection: getRedisConnection(),
-      defaultJobOptions: {
-        attempts: 8,
-        backoff: {
-          type: "exponential",
-          delay: 1000,
-        },
-        removeOnComplete: {
-          age: 60,
-        },
-        removeOnFail: {
-          age: 24 * 60 * 60,
-        },
-      },
-    });
-  }
-  return siemLoggingQueue;
 }

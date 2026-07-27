@@ -29,11 +29,7 @@
       "decision": "allow",
       "rule": "default-allow",
       "provider": "google-web-risk",
-      "categories": [],
-      "security_alert": {
-        "detected": false,
-        "category": null
-      }
+      "categories": []
     }
   }
 ]

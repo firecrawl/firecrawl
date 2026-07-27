@@ -78,6 +78,12 @@ function resultForOutcome(
   return "failure";
 }
 
+// One scrape can take several decisions (the initial URL plus a re-check per
+// redirect hop). Report the deciding one — the first deny, else the last allow —
+// and take its categories and provider from that same decision. Unioning
+// categories across decisions would let a local-rule deny (which never calls a
+// provider, so carries no categories) inherit another hop's threat categories
+// and be scored as a provider-confirmed threat downstream.
 function threatForDecisions(
   decisions: ThreatDecision[] | undefined,
 ): ScrapeActivityThreat | undefined {
@@ -85,20 +91,11 @@ function threatForDecisions(
   const decision =
     decisions.find(candidate => !candidate.allowed) ??
     decisions[decisions.length - 1];
-  const categories = [
-    ...new Set(
-      decisions.flatMap(candidate => candidate.verdict?.categories ?? []),
-    ),
-  ];
   return {
     decision: decision.allowed ? "allow" : "deny",
     rule: decision.rule,
     provider: decision.verdict?.provider ?? null,
-    categories,
-    security_alert: {
-      detected: categories.length > 0,
-      category: categories[0] ?? null,
-    },
+    categories: [...new Set(decision.verdict?.categories ?? [])],
   };
 }
 

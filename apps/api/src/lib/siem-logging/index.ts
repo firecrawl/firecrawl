@@ -7,7 +7,7 @@ import {
   type RejectedScrapeActivity,
   type ScrapeActivityOutcome,
 } from "./event";
-import { enqueueSiemLoggingEvent, enqueueSiemLoggingEvents } from "./queue";
+import { enqueueSiemLoggingEvent, enqueueSiemLoggingEvents } from "./transport";
 import { getApiKeyName, isOrgSiemLoggingEnabled } from "./store";
 
 const logger = _logger.child({ module: "siem-logging" });

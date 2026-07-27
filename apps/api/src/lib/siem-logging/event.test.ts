@@ -126,11 +126,47 @@ describe("ScrapeActivityEvent", () => {
 
     expect(event.result).toBe("blocked");
     expect(event.error?.code).toBe("unsafe_domain_blocked");
-    expect(event.threat).toMatchObject({
+    expect(event.threat).toEqual({
       decision: "deny",
       rule: "risk-score",
+      provider: "google-web-risk",
       categories: ["MALWARE"],
-      security_alert: { detected: true, category: "MALWARE" },
+    });
+  });
+
+  // A local-rule deny never calls a provider, so it must not inherit the
+  // categories of a redirect hop that did — downstream that would score a
+  // policy block as a provider-confirmed threat.
+  it("scopes the threat block to the deciding decision", () => {
+    const provider: ThreatDecision = {
+      ...allowedDecision,
+      url: "https://redirect.example.com/",
+      verdict: {
+        ...allowedDecision.verdict!,
+        riskScore: 100,
+        categories: ["MALWARE"],
+      },
+    };
+    const localDeny: ThreatDecision = {
+      ...allowedDecision,
+      allowed: false,
+      rule: "blacklist",
+      providerConsulted: false,
+      verdict: null,
+    };
+    const event = buildScrapeActivityEvent("scrape-id", job(), "org-id", null, {
+      success: false,
+      error: new UnsafeDomainBlockedError(localDeny.url, localDeny),
+      threatDecisions: [provider, localDeny],
+      startedAt: 1_000,
+      completedAt: 2_000,
+    });
+
+    expect(event.threat).toEqual({
+      decision: "deny",
+      rule: "blacklist",
+      provider: null,
+      categories: [],
     });
   });
 

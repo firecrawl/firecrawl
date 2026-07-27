@@ -17,7 +17,7 @@ vi.mock("./store", () => ({
   getApiKeyName: mocks.getApiKeyName,
 }));
 
-vi.mock("./queue", () => ({
+vi.mock("./transport", () => ({
   enqueueSiemLoggingEvent: mocks.enqueue,
   enqueueSiemLoggingEvents: vi.fn().mockResolvedValue(undefined),
 }));

@@ -1,5 +1,3 @@
-import type { Job } from "bullmq";
-import { config } from "../../config";
 import { sendAzureSentinelEvents } from "../../lib/siem-logging/azure-sentinel";
 import {
   siemLoggingDeliveryFailuresTotal,
@@ -7,15 +5,18 @@ import {
 } from "../../lib/siem-logging/metrics";
 import { getOrgSiemLoggingConfig } from "../../lib/siem-logging/store";
 import {
+  consumeSiemLoggingEvents,
+  type SiemLoggingBatchOutcome,
+} from "../../lib/siem-logging/transport";
+import {
   SiemDeliveryError,
   type AzureSentinelDestination,
   type OrgSiemLoggingConfig,
   type ScrapeActivityEvent,
-  type SiemLoggingJobData,
 } from "../../lib/siem-logging/types";
 import { logger as _logger } from "../../lib/logger";
 
-interface WorkerDependencies {
+interface HandlerDependencies {
   getConfig: (orgId: string) => Promise<OrgSiemLoggingConfig | null>;
   deliver: (
     destination: AzureSentinelDestination,
@@ -23,7 +24,10 @@ interface WorkerDependencies {
   ) => Promise<void>;
 }
 
-const defaultDependencies: WorkerDependencies = {
+const defaultDependencies: HandlerDependencies = {
+  // Read the destination at delivery time from the primary, never from the
+  // queued message: a rotated secret or a disabled config has to take effect on
+  // events that were already in flight.
   getConfig: orgId =>
     getOrgSiemLoggingConfig(orgId, { fresh: true, primary: true }),
   deliver: sendAzureSentinelEvents,
@@ -35,87 +39,59 @@ const permanentFailureKinds = new Set([
   "payload_too_large",
 ]);
 
-function asError(error: unknown): Error {
-  return error instanceof Error ? error : new Error(String(error));
-}
+export async function deliverSiemLoggingBatch(
+  orgId: string,
+  events: ScrapeActivityEvent[],
+  deps: HandlerDependencies = defaultDependencies,
+): Promise<SiemLoggingBatchOutcome> {
+  const logger = _logger.child({ module: "siem-logging-worker", orgId });
 
-function configuredRetryDelay(job: Job<SiemLoggingJobData>): number {
-  const backoff = job.opts.backoff;
-  if (typeof backoff === "number") return backoff;
-  if (!backoff) return 0;
-  const delay = backoff.delay ?? 0;
-  if (backoff.type === "exponential") {
-    return delay * 2 ** job.attemptsMade;
+  let config: OrgSiemLoggingConfig | null;
+  try {
+    config = await deps.getConfig(orgId);
+  } catch (error) {
+    logger.error("Failed to load SIEM logging configuration", { error });
+    return { disposition: "retry" };
   }
-  return delay;
-}
 
-function applyRetryAfter(
-  job: Job<SiemLoggingJobData>,
-  error: SiemDeliveryError,
-): void {
-  if (
-    error.kind !== "rate_limited" ||
-    error.retryAfterMs === undefined ||
-    error.retryAfterMs <= 0
-  ) {
-    return;
+  if (!config?.enabled) {
+    siemLoggingEventsTotal.inc({ result: "skipped_disabled" }, events.length);
+    return { disposition: "done" };
   }
-  job.opts.backoff = {
-    type: "fixed",
-    delay: Math.max(configuredRetryDelay(job), error.retryAfterMs),
-  };
-}
-
-export async function processSiemLoggingJob(
-  token: string,
-  job: Job<SiemLoggingJobData>,
-  deps: WorkerDependencies = defaultDependencies,
-): Promise<void> {
-  const logger = _logger.child({
-    module: "siem-logging-worker",
-    jobId: job.id,
-    orgId: job.data.orgId,
-  });
-  const extendLockInterval = setInterval(() => {
-    void job.extendLock(token, config.JOB_LOCK_EXTENSION_TIME).catch(error => {
-      logger.warn("Failed to extend SIEM logging job lock", { error });
-    });
-  }, config.JOB_LOCK_EXTEND_INTERVAL);
-  extendLockInterval.unref?.();
 
   try {
-    const currentConfig = await deps.getConfig(job.data.orgId);
-    if (!currentConfig?.enabled) {
-      siemLoggingEventsTotal.inc({ result: "skipped_disabled" });
-      await job.moveToCompleted({ skipped: true }, token, false);
-      return;
-    }
-
-    await deps.deliver(currentConfig.destination, [job.data.event]);
-    siemLoggingEventsTotal.inc({ result: "delivered" });
-    await job.moveToCompleted({ delivered: true }, token, false);
+    await deps.deliver(config.destination, events);
+    siemLoggingEventsTotal.inc({ result: "delivered" }, events.length);
+    return { disposition: "done" };
   } catch (error) {
     const reason =
       error instanceof SiemDeliveryError ? error.kind : "delivery_error";
-    siemLoggingEventsTotal.inc({ result: "delivery_failed" });
-    siemLoggingDeliveryFailuresTotal.inc({ reason });
-    logger.error("SIEM logging event delivery failed", {
+    siemLoggingEventsTotal.inc({ result: "delivery_failed" }, events.length);
+    siemLoggingDeliveryFailuresTotal.inc({ reason }, events.length);
+    logger.error("SIEM logging batch delivery failed", {
       error,
       reason,
-      scrapeId: job.data.event.scrape_id,
+      events: events.length,
     });
+
     if (
       error instanceof SiemDeliveryError &&
       permanentFailureKinds.has(error.kind)
     ) {
-      job.discard();
+      // Bad credentials or a rejected schema will fail identically forever;
+      // dead-letter so an operator sees it instead of burning the ladder.
+      return { disposition: "drop" };
     }
-    if (error instanceof SiemDeliveryError) {
-      applyRetryAfter(job, error);
-    }
-    await job.moveToFailed(asError(error), token, false);
-  } finally {
-    clearInterval(extendLockInterval);
+    return {
+      disposition: "retry",
+      retryAfterMs:
+        error instanceof SiemDeliveryError ? error.retryAfterMs : undefined,
+    };
   }
+}
+
+export async function startSiemLoggingConsumer(): Promise<void> {
+  await consumeSiemLoggingEvents((orgId, events) =>
+    deliverSiemLoggingBatch(orgId, events),
+  );
 }

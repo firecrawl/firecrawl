@@ -14,15 +14,46 @@ Sentinel through the Azure Monitor Logs Ingestion API.
 The database schema is maintained as a migration in the Firecrawl database
 repository, not in this package.
 
+## Severity
+
+The DCR transform derives ASim `EventSeverity` from how a block was decided,
+not from whether a category happens to be present:
+
+- `High` — denied by `risk-score` with a classifier verdict, i.e. a
+  provider-confirmed threat.
+- `Low` — denied by any other rule (local blacklist, blocked TLD, classifier
+  unavailable under a closed failure policy).
+- `Informational` — everything else, including scrapes that simply failed.
+
+`Medium` is left unused so a workspace can claim it without colliding.
+
 ## Runtime
 
 `PUT /v2/team/siem` stores an organization destination and its encrypted,
-write-only client secret. Scrape activity is placed on a shared BullMQ queue;
-index-worker replicas consume that queue and retry transient delivery failures.
-Queue jobs contain the organization ID and event, never the destination secret.
+write-only client secret. Scrape activity is published to the RabbitMQ queue
+`siem.logging.events`; index-worker replicas consume it, group events by
+organization, and deliver one gzip batch per org. Messages carry the
+organization ID and event, never the destination secret — the destination and
+its secret are read fresh at delivery time, so disabling logging or rotating a
+secret takes effect on events already in flight.
+
+Operational shape of that queue:
+
+- Bounded at 100k messages with `drop-head`, so a destination outage sheds the
+  oldest events instead of growing without limit. Depth and drops come from
+  `rabbitmq_prometheus`; `firecrawl_siem_logging_events_total` breaks out
+  queued, delivered, retried, dead-lettered and skipped counts.
+- Transient failures ride a fixed-delay retry ladder (5s, 30s, 5m, 30m) built
+  from TTL queues that dead-letter back onto the main queue; a destination's
+  `Retry-After` rounds up to the smallest rung that satisfies it.
+- Bad credentials, a rejected DCR schema, or an oversized event dead-letter
+  straight to `siem.logging.dlq` rather than burning the ladder.
+- Retries are at-least-once: a batch that fails partway through its ≤1 MB
+  sub-batches will resend the sub-batches that already landed.
 
 Set `SIEM_LOGGING_ENCRYPTION_KEY` in API and index-worker environments. If
-partner egress is required, also set `PARTNER_EGRESS_PROXY_URL`.
+partner egress is required, also set `PARTNER_EGRESS_PROXY_URL` and allowlist
+`login.microsoftonline.com` plus `*.ingest.monitor.azure.com` on the proxy.
 
 Use `POST /v2/team/siem/test` to validate credentials and the destination
 schema after deploying the Azure artifacts.

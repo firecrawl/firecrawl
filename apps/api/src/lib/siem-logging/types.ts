@@ -76,13 +76,17 @@ export type ScrapeActivityResult =
 
 export interface ScrapeActivityThreat {
   decision: "allow" | "deny";
+  /**
+   * The rule that produced {@link decision}. Local-policy rules (blacklist,
+   * blocked-tld) deny without consulting a provider; only "risk-score" with a
+   * non-null {@link provider} is a provider-confirmed threat. The destination
+   * DCR transform keys ASim EventSeverity off exactly that distinction, so the
+   * three fields below always describe one decision — never a union across the
+   * decisions taken for one scrape.
+   */
   rule: ThreatDecisionRule;
   provider: ThreatProvider | null;
   categories: string[];
-  security_alert: {
-    detected: boolean;
-    category: string | null;
-  };
 }
 
 export interface ScrapeActivityEvent {
@@ -123,7 +127,7 @@ export interface ScrapeActivityEvent {
   threat?: ScrapeActivityThreat;
 }
 
-export interface SiemLoggingJobData {
+export interface SiemLoggingMessage {
   orgId: string;
   event: ScrapeActivityEvent;
 }

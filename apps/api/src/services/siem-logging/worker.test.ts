@@ -1,34 +1,36 @@
-import type { Job } from "bullmq";
 import { describe, expect, it, vi } from "vitest";
 import {
   SiemDeliveryError,
   type OrgSiemLoggingConfig,
   type ScrapeActivityEvent,
-  type SiemLoggingJobData,
 } from "../../lib/siem-logging/types";
-import { processSiemLoggingJob } from "./worker";
+import { deliverSiemLoggingBatch } from "./worker";
 
-const event: ScrapeActivityEvent = {
-  schema_version: 1,
-  event_type: "scrape_activity",
-  scrape_id: "scrape-id",
-  request_id: "request-id",
-  endpoint: "scrape",
-  team_id: "team-id",
-  org_id: "org-id",
-  api_key: { id: null, name: null },
-  started_at: "2026-07-27T00:00:00.000Z",
-  completed_at: "2026-07-27T00:00:01.000Z",
-  url: "https://example.com",
-  domain: "example.com",
-  http_method: "GET",
-  http_status: 200,
-  result: "success",
-  error: null,
-  origin: "api",
-  integration: null,
-  zero_data_retention: false,
-};
+function event(scrapeId: string): ScrapeActivityEvent {
+  return {
+    schema_version: 1,
+    event_type: "scrape_activity",
+    scrape_id: scrapeId,
+    request_id: "request-id",
+    endpoint: "scrape",
+    team_id: "team-id",
+    org_id: "org-id",
+    api_key: { id: null, name: null },
+    started_at: "2026-07-27T00:00:00.000Z",
+    completed_at: "2026-07-27T00:00:01.000Z",
+    url: "https://example.com",
+    domain: "example.com",
+    http_method: "GET",
+    http_status: 200,
+    result: "success",
+    error: null,
+    origin: "api",
+    integration: null,
+    zero_data_retention: false,
+  };
+}
+
+const events = [event("scrape-1"), event("scrape-2")];
 
 const config: OrgSiemLoggingConfig = {
   orgId: "org-id",
@@ -46,76 +48,59 @@ const config: OrgSiemLoggingConfig = {
   updatedAt: null,
 };
 
-function createJob() {
-  return {
-    id: "job-id",
-    data: { orgId: "org-id", event },
-    extendLock: vi.fn().mockResolvedValue(1),
-    moveToCompleted: vi.fn().mockResolvedValue(undefined),
-    moveToFailed: vi.fn().mockResolvedValue(undefined),
-    discard: vi.fn(),
-    attemptsMade: 0,
-    opts: {
-      attempts: 8,
-      backoff: { type: "exponential", delay: 1000 },
-    },
-  } as unknown as Job<SiemLoggingJobData>;
-}
-
-describe("SIEM logging worker", () => {
-  it("loads the current secret at delivery time and completes the job", async () => {
-    const job = createJob();
+describe("SIEM logging batch delivery", () => {
+  it("loads the current secret at delivery time and sends one batch", async () => {
     const deliver = vi.fn().mockResolvedValue(undefined);
+    const getConfig = vi.fn().mockResolvedValue(config);
 
-    await processSiemLoggingJob("token", job, {
-      getConfig: vi.fn().mockResolvedValue(config),
+    const outcome = await deliverSiemLoggingBatch("org-id", events, {
+      getConfig,
       deliver,
     });
 
-    expect(deliver).toHaveBeenCalledWith(config.destination, [event]);
-    expect(job.moveToCompleted).toHaveBeenCalledWith(
-      { delivered: true },
-      "token",
-      false,
-    );
-    expect(job.moveToFailed).not.toHaveBeenCalled();
+    expect(getConfig).toHaveBeenCalledWith("org-id");
+    expect(deliver).toHaveBeenCalledOnce();
+    expect(deliver).toHaveBeenCalledWith(config.destination, events);
+    expect(outcome).toEqual({ disposition: "done" });
   });
 
-  it("skips queued events after logging is disabled", async () => {
-    const job = createJob();
+  it("acks queued events after logging is disabled", async () => {
     const deliver = vi.fn();
 
-    await processSiemLoggingJob("token", job, {
+    const outcome = await deliverSiemLoggingBatch("org-id", events, {
       getConfig: vi.fn().mockResolvedValue({ ...config, enabled: false }),
       deliver,
     });
 
     expect(deliver).not.toHaveBeenCalled();
-    expect(job.moveToCompleted).toHaveBeenCalledWith(
-      { skipped: true },
-      "token",
-      false,
-    );
+    expect(outcome).toEqual({ disposition: "done" });
   });
 
-  it("leaves transient delivery failures retryable", async () => {
-    const job = createJob();
+  it("retries when the configuration lookup fails", async () => {
+    const outcome = await deliverSiemLoggingBatch("org-id", events, {
+      getConfig: vi.fn().mockRejectedValue(new Error("db down")),
+      deliver: vi.fn(),
+    });
 
-    await processSiemLoggingJob("token", job, {
+    expect(outcome).toEqual({ disposition: "retry" });
+  });
+
+  it("retries transient delivery failures", async () => {
+    const outcome = await deliverSiemLoggingBatch("org-id", events, {
       getConfig: vi.fn().mockResolvedValue(config),
       deliver: vi
         .fn()
-        .mockRejectedValue(new SiemDeliveryError("rate_limited", "retry")),
+        .mockRejectedValue(new SiemDeliveryError("delivery_error", "boom")),
     });
 
-    expect(job.discard).not.toHaveBeenCalled();
-    expect(job.moveToFailed).toHaveBeenCalledOnce();
+    expect(outcome).toEqual({
+      disposition: "retry",
+      retryAfterMs: undefined,
+    });
   });
 
-  it("does not retry before the provider's Retry-After delay", async () => {
-    const job = createJob();
-
-    await processSiemLoggingJob("token", job, {
+  it("surfaces the provider's Retry-After to the retry ladder", async () => {
+    const outcome = await deliverSiemLoggingBatch("org-id", events, {
       getConfig: vi.fn().mockResolvedValue(config),
       deliver: vi
         .fn()
@@ -124,23 +109,21 @@ describe("SIEM logging worker", () => {
         ),
     });
 
-    expect(job.opts.backoff).toEqual({ type: "fixed", delay: 15_000 });
-    expect(job.moveToFailed).toHaveBeenCalledOnce();
+    expect(outcome).toEqual({ disposition: "retry", retryAfterMs: 15_000 });
   });
 
-  it("discards permanent destination failures", async () => {
-    const job = createJob();
+  it("dead-letters permanent destination failures", async () => {
+    for (const kind of [
+      "invalid_credentials",
+      "schema_rejection",
+      "payload_too_large",
+    ] as const) {
+      const outcome = await deliverSiemLoggingBatch("org-id", events, {
+        getConfig: vi.fn().mockResolvedValue(config),
+        deliver: vi.fn().mockRejectedValue(new SiemDeliveryError(kind, kind)),
+      });
 
-    await processSiemLoggingJob("token", job, {
-      getConfig: vi.fn().mockResolvedValue(config),
-      deliver: vi
-        .fn()
-        .mockRejectedValue(
-          new SiemDeliveryError("invalid_credentials", "invalid"),
-        ),
-    });
-
-    expect(job.discard).toHaveBeenCalledOnce();
-    expect(job.moveToFailed).toHaveBeenCalledOnce();
+      expect(outcome).toEqual({ disposition: "drop" });
+    }
   });
 });
