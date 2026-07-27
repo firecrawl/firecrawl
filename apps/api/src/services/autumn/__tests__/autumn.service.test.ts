@@ -457,6 +457,17 @@ describe("trackCredits", () => {
     expect(mockTrack).not.toHaveBeenCalled();
   });
 
+  it("returns false (skips) for an unknown team with no teams row", async () => {
+    state.supabaseStubData = { data: null, error: null };
+    const svc = makeService();
+    const result = await svc.trackCredits({
+      teamId: "1b64735e-9876-590b-b1ea-1481cfc6bac7",
+      value: 10,
+    });
+    expect(result).toBe(false);
+    expect(mockTrack).not.toHaveBeenCalled();
+  });
+
   it("calls track with correct feature and value on happy path", async () => {
     const svc = makeService();
 

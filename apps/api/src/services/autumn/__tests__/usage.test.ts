@@ -15,7 +15,7 @@ let autumnClientRef: {
 };
 
 let teamLookup = {
-  data: { org_id: "org-1" },
+  data: { org_id: "org-1" } as { org_id: string } | null,
   error: null as unknown,
 };
 
@@ -66,6 +66,36 @@ beforeEach(() => {
 // ---------------------------------------------------------------------------
 // getTeamBalance — covers all four billing-period / planCredits bug fixes
 // ---------------------------------------------------------------------------
+
+describe("unknown team id (no teams row)", () => {
+  // A synthetic/derived id that isn't a real team must be skipped, not error.
+  beforeEach(() => {
+    teamLookup = { data: null, error: null };
+  });
+
+  it("getTeamBalance returns null without calling Autumn", async () => {
+    const result = await getTeamBalance("1b64735e-9876-590b-b1ea-1481cfc6bac7");
+    expect(result).toBeNull();
+    expect(mockEntitiesGet).not.toHaveBeenCalled();
+    expect(mockCustomersGetOrCreate).not.toHaveBeenCalled();
+  });
+
+  it("getTeamHistoricalUsage returns [] without calling Autumn", async () => {
+    const result = await getTeamHistoricalUsage(
+      "1b64735e-9876-590b-b1ea-1481cfc6bac7",
+    );
+    expect(result).toEqual([]);
+    expect(mockAggregate).not.toHaveBeenCalled();
+  });
+
+  it("getTeamHistoricalUsageByApiKey returns [] without calling Autumn", async () => {
+    const result = await getTeamHistoricalUsageByApiKey(
+      "1b64735e-9876-590b-b1ea-1481cfc6bac7",
+    );
+    expect(result).toEqual([]);
+    expect(mockAggregate).not.toHaveBeenCalled();
+  });
+});
 
 describe("getTeamBalance", () => {
   // Bug 1: Autumn returns currentPeriodStart/End as ms timestamps.

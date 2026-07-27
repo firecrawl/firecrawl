@@ -26,14 +26,22 @@ interface TeamBalance {
 // Helpers
 // ---------------------------------------------------------------------------
 
-async function lookupOrgId(teamId: string): Promise<string> {
+async function lookupOrgId(teamId: string): Promise<string | null> {
   const [data] = await dbRr
     .select({ org_id: schema.teams.org_id })
     .from(schema.teams)
     .where(eq(schema.teams.id, teamId))
     .limit(1);
 
-  if (!data?.org_id) {
+  if (!data) {
+    // No such team row: this is not a real team (e.g. a synthetic/derived id
+    // that leaked into a billing path), so there's nothing to look up in
+    // Autumn. Skip rather than erroring. A team row that exists but has a null
+    // org_id is a genuine provisioning gap and still throws below.
+    logger.warn("Skipping Autumn lookup for unknown team id", { teamId });
+    return null;
+  }
+  if (!data.org_id) {
     throw new Error(`Missing org_id for team ${teamId}`);
   }
   return data.org_id;
@@ -202,6 +210,7 @@ export async function getTeamBalance(
   }
 
   const orgId = await lookupOrgId(teamId);
+  if (!orgId) return null;
 
   // Try entity-scoped balance first
   let balances: Record<string, any> | undefined;
@@ -381,6 +390,7 @@ export async function getTeamHistoricalUsage(
   }
 
   const orgId = await lookupOrgId(teamId);
+  if (!orgId) return [];
 
   let response: any;
   try {
@@ -417,6 +427,7 @@ export async function getTeamHistoricalUsageByApiKey(
   }
 
   const orgId = await lookupOrgId(teamId);
+  if (!orgId) return [];
 
   let response: any;
   try {

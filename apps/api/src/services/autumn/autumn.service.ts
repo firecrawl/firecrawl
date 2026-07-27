@@ -96,14 +96,23 @@ export class AutumnService {
     return teamId === "preview" || teamId.startsWith("preview_");
   }
 
-  private async lookupOrgIdForTeam(teamId: string): Promise<string> {
+  private async lookupOrgIdForTeam(teamId: string): Promise<string | null> {
     const [data] = await dbRr
       .select({ org_id: schema.teams.org_id })
       .from(schema.teams)
       .where(eq(schema.teams.id, teamId))
       .limit(1);
 
-    if (!data?.org_id) {
+    if (!data) {
+      // No such team row: not a real team (e.g. a synthetic/derived id that
+      // leaked into a billing path), so there's nothing to provision or track
+      // in Autumn. Skip rather than erroring. A team row that exists but has a
+      // null org_id is a genuine provisioning gap and still throws below.
+      logger.warn("Skipping Autumn lookup for unknown team id", { teamId });
+      return null;
+    }
+
+    if (!data.org_id) {
       throw new Error(`Missing org_id for team ${teamId}`);
     }
 
@@ -282,6 +291,8 @@ export class AutumnService {
 
     try {
       const resolvedOrgId = orgId ?? (await this.lookupOrgIdForTeam(teamId));
+      // Unknown team (no org_id): nothing to provision in Autumn.
+      if (!resolvedOrgId) return;
       this.customerOrgCache.set(teamId, resolvedOrgId);
       await this.ensureOrgProvisioned({ orgId: resolvedOrgId });
 
@@ -319,11 +330,11 @@ export class AutumnService {
    * Resolves the orgId for a team, returning the cached value when available
    * and populating the cache on miss.  Does NOT provision anything.
    */
-  private async resolveOrgId(teamId: string): Promise<string> {
+  private async resolveOrgId(teamId: string): Promise<string | null> {
     const cached = this.customerOrgCache.get(teamId);
     if (cached) return cached;
     const orgId = await this.lookupOrgIdForTeam(teamId);
-    this.customerOrgCache.set(teamId, orgId);
+    if (orgId) this.customerOrgCache.set(teamId, orgId);
     return orgId;
   }
 
@@ -334,8 +345,9 @@ export class AutumnService {
    * immediately without calling ensureTeamProvisioned, avoiding redundant
    * map/set lookups on every billing operation.
    */
-  private async ensureTrackingContext(teamId: string): Promise<string> {
+  private async ensureTrackingContext(teamId: string): Promise<string | null> {
     const orgId = await this.resolveOrgId(teamId);
+    if (!orgId) return null;
     if (!this.ensuredTeams.has(teamId)) {
       await this.ensureTeamProvisioned({ teamId, orgId });
     }
@@ -360,6 +372,7 @@ export class AutumnService {
     }
     try {
       const customerId = await this.ensureTrackingContext(teamId);
+      if (!customerId) return null;
       const { allowed, balance } = await autumnClient.check({
         customerId,
         entityId: teamId,
@@ -410,6 +423,7 @@ export class AutumnService {
 
     try {
       const customerId = await this.ensureTrackingContext(teamId);
+      if (!customerId) return { status: "skipped" };
       const { allowed } = await autumnClient.check({
         customerId,
         entityId: teamId,
@@ -505,6 +519,7 @@ export class AutumnService {
 
     try {
       const customerId = await this.ensureTrackingContext(teamId);
+      if (!customerId) return false;
       return await this.track({
         customerId,
         entityId: teamId,
@@ -682,6 +697,7 @@ export class AutumnService {
 
     try {
       const customerId = await this.ensureTrackingContext(teamId);
+      if (!customerId) return;
       await this.track({
         customerId,
         entityId: teamId,
