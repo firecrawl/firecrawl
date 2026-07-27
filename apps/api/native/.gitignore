@@ -117,3 +117,4 @@ dist
 index.js
 index.d.ts
 browser.js
+.prebuilt-hash
