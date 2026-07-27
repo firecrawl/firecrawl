@@ -5,6 +5,7 @@ import {
   recordError,
 } from "./helpers";
 import { resolveSvgStyles } from "./svg-utils";
+import { findDeclaredJsonLdLogo } from "./jsonld-logo";
 
 interface LogoCandidate {
   src: string;
@@ -137,39 +138,7 @@ export const findImages = (): FindImagesResult => {
 
   // JSON-LD "logo" (Organization/WebSite/LocalBusiness structured data).
   try {
-    let declared: string | null = null;
-    const findLogo = (node: unknown, depth: number): string | null => {
-      if (!node || typeof node !== "object" || depth > 6) return null;
-      if (Array.isArray(node)) {
-        for (const item of node) {
-          const r = findLogo(item, depth + 1);
-          if (r) return r;
-        }
-        return null;
-      }
-      const obj = node as Record<string, unknown>;
-      const logo = obj.logo;
-      if (typeof logo === "string" && /^https?:\/\//.test(logo)) return logo;
-      if (logo && typeof logo === "object" && !Array.isArray(logo)) {
-        const u = (logo as Record<string, unknown>).url;
-        if (typeof u === "string" && /^https?:\/\//.test(u)) return u;
-      }
-      for (const v of Object.values(obj)) {
-        const r = findLogo(v, depth + 1);
-        if (r) return r;
-      }
-      return null;
-    };
-    document
-      .querySelectorAll('script[type="application/ld+json"]')
-      .forEach(el => {
-        if (declared) return;
-        try {
-          declared = findLogo(JSON.parse(el.textContent || ""), 0);
-        } catch (_) {
-          // Malformed JSON-LD — ignore
-        }
-      });
+    const declared = findDeclaredJsonLdLogo(document);
     if (declared) push(declared, "logo-jsonld");
   } catch (_) {
     // Ignore errors
