@@ -604,28 +604,28 @@ export function throwIfMediaAccessDenied(errorBody: unknown): void {
   }
 }
 
-// Transient proxy/IP-reputation blocks come back as a plain string `detail`
-// from the media service. They are not a property of the content — a retry
-// through a fresh proxy usually succeeds — so classify them as retryable
-// instead of letting them surface as an opaque UNKNOWN_ERROR 500. Terminal,
-// content-specific denials arrive as a structured detail and are handled first
-// by throwIfMediaAccessDenied.
-const RETRYABLE_BLOCK_MARKERS = [
-  "HTTP Error 403",
-  "not a bot",
-  "Please sign in",
-];
-
+// The media service flags a failure it considers transient (e.g. a proxy/IP
+// reputation block that a retry usually clears) with `retryable: true` in its
+// structured error. Classify those as retryable rather than letting them
+// surface as an opaque UNKNOWN_ERROR 500. All detection of *why* a failure is
+// transient lives in the media service; here we only read the flag. Checked
+// before throwIfMediaAccessDenied, which handles the terminal remainder.
 export function throwIfMediaBlocked(errorBody: unknown): void {
-  const detail =
-    typeof errorBody === "object" && errorBody !== null && "detail" in errorBody
-      ? errorBody.detail
-      : undefined;
-  if (typeof detail !== "string") {
-    return;
-  }
-  if (RETRYABLE_BLOCK_MARKERS.some(marker => detail.includes(marker))) {
-    throw new MediaBlockedError();
+  if (
+    typeof errorBody === "object" &&
+    errorBody !== null &&
+    "detail" in errorBody &&
+    typeof errorBody.detail === "object" &&
+    errorBody.detail !== null &&
+    "retryable" in errorBody.detail &&
+    errorBody.detail.retryable === true
+  ) {
+    const message =
+      "message" in errorBody.detail &&
+      typeof errorBody.detail.message === "string"
+        ? errorBody.detail.message.slice(0, MAX_MEDIA_SERVICE_MESSAGE_LENGTH)
+        : undefined;
+    throw new MediaBlockedError(message);
   }
 }
 

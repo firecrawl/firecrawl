@@ -186,11 +186,7 @@ describe("fetchAudio lockdown guard", () => {
     );
   });
 
-  it.each([
-    "Download failed: ERROR: unable to download video data: HTTP Error 403: Forbidden",
-    "Download failed: ERROR: Sign in to confirm you’re not a bot.",
-    "Download failed: ERROR: Please sign in.",
-  ])("classifies proxy/bot blocks as retryable: %s", async detail => {
+  it("classifies a retryable-flagged service error as retryable", async () => {
     const fetchSpy = vi.fn(async (url: string, _init?: RequestInit) => {
       if (url.endsWith("/supported-urls")) {
         return {
@@ -198,7 +194,17 @@ describe("fetchAudio lockdown guard", () => {
           json: async () => ({ regex: "https://example\\.com/audio" }),
         };
       }
-      return { ok: false, status: 400, json: async () => ({ detail }) };
+      return {
+        ok: false,
+        status: 502,
+        json: async () => ({
+          detail: {
+            code: "temporarily_blocked",
+            message: "Temporarily blocked. Retry the scrape.",
+            retryable: true,
+          },
+        }),
+      };
     });
     global.fetch = fetchSpy as any;
     config.AVGRAB_SERVICE_URL = "https://avgrab.example";
@@ -212,6 +218,36 @@ describe("fetchAudio lockdown guard", () => {
     const error = await fetchAudio(meta, {} as any).catch(e => e);
     expect(error).toBeInstanceOf(MediaBlockedError);
     expect(error.code).toBe("SCRAPE_MEDIA_BLOCKED");
+  });
+
+  it("keeps a non-retryable structured error terminal (access denied)", async () => {
+    const fetchSpy = vi.fn(async (url: string, _init?: RequestInit) => {
+      if (url.endsWith("/supported-urls")) {
+        return {
+          ok: true,
+          json: async () => ({ regex: "https://example\\.com/audio" }),
+        };
+      }
+      return {
+        ok: false,
+        status: 403,
+        json: async () => ({
+          detail: { code: "content_unavailable", message: "Not available." },
+        }),
+      };
+    });
+    global.fetch = fetchSpy as any;
+    config.AVGRAB_SERVICE_URL = "https://avgrab.example";
+
+    const meta: any = {
+      url: "https://example.com/audio",
+      options: { lockdown: false, formats: [{ type: "audio" }] },
+      logger: { warn: vi.fn(), info: vi.fn(), debug: vi.fn() },
+    };
+
+    const error = await fetchAudio(meta, {} as any).catch(e => e);
+    expect(error).toBeInstanceOf(MediaAccessDeniedError);
+    expect(error).not.toBeInstanceOf(MediaBlockedError);
   });
 
   it("surfaces a connection failure to avgrab as retryable", async () => {

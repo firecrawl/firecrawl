@@ -182,8 +182,8 @@ async function fetchLegacyVideoIfSupported(meta: Meta, document: Document) {
     const error = await response
       .json()
       .catch(() => ({ detail: "Unknown error" }));
-    throwIfMediaAccessDenied(error);
     throwIfMediaBlocked(error);
+    throwIfMediaAccessDenied(error);
     throw new Error(`Video download failed: ${error.detail}`);
   }
 
