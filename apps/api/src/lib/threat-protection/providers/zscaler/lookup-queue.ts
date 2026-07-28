@@ -1,6 +1,5 @@
 import { randomUUID } from "crypto";
 import { RateLimiterRedis, RateLimiterRes } from "rate-limiter-flexible";
-import { config } from "../../../../config";
 import { logger as _logger } from "../../../logger";
 import { redisRateLimitClient } from "../../../../services/rate-limiter";
 import { redlock } from "../../../../services/redlock";
@@ -49,6 +48,15 @@ const drainLockKey = (orgId: string) =>
   `threat-protection:zscaler:drain-lock:${orgId}`;
 
 const BATCH_SIZE = 100;
+// ZIA's published urlLookup quota is 400 calls/hour per tenant; keep headroom
+// for connection tests.
+const LOOKUP_HOURLY_BUDGET = 380;
+// How long one queued lookup may wait for its batched verdict before the
+// org's failurePolicy decides.
+export const ZSCALER_LOOKUP_TIMEOUT_MS = 15_000;
+// Queued-URL depth per org above which new lookups fail fast into the
+// failurePolicy instead of waiting in a line they cannot exit.
+const MAX_QUEUE_DEPTH = 500;
 const REPLY_TTL_SECONDS = 120;
 const REPLY_POLL_INTERVAL_MS = 150;
 /** Re-attempt to become the drainer this often while waiting (drainer death recovery). */
@@ -91,7 +99,7 @@ function getHourlyBudget(): RateLimiterRedis {
     hourlyBudget = new RateLimiterRedis({
       storeClient: redisRateLimitClient,
       keyPrefix: "threat-protection:zscaler:lookup-budget",
-      points: config.ZSCALER_LOOKUP_HOURLY_BUDGET,
+      points: LOOKUP_HOURLY_BUDGET,
       duration: 3600,
     });
   }
@@ -158,7 +166,7 @@ export async function enqueueZscalerLookup(
   // heuristic, and a brief overshoot from concurrent enqueuers is bounded
   // by their count and harmless.
   const depth = await redisRateLimitClient.llen(queueKey(orgId));
-  if (depth >= config.ZSCALER_LOOKUP_MAX_QUEUE_DEPTH) {
+  if (depth >= MAX_QUEUE_DEPTH) {
     throw new ZscalerError(
       "quota",
       `Zscaler lookup queue is over capacity (${depth} URLs waiting)`,
@@ -173,10 +181,7 @@ export async function enqueueZscalerLookup(
     const budgetState = await getHourlyBudget()
       .get(zscalerBudgetKey(credentials))
       .catch(() => null);
-    if (
-      budgetState &&
-      budgetState.consumedPoints >= config.ZSCALER_LOOKUP_HOURLY_BUDGET
-    ) {
+    if (budgetState && budgetState.consumedPoints >= LOOKUP_HOURLY_BUDGET) {
       throw new ZscalerError(
         "quota",
         "Zscaler urlLookup hourly budget is exhausted",
@@ -301,8 +306,7 @@ const ENTRY_EXPIRY_GRACE_MS = 2000;
 
 function isExpired(entry: QueueEntry): boolean {
   return (
-    Date.now() - entry.at >
-    config.ZSCALER_LOOKUP_TIMEOUT_MS + ENTRY_EXPIRY_GRACE_MS
+    Date.now() - entry.at > ZSCALER_LOOKUP_TIMEOUT_MS + ENTRY_EXPIRY_GRACE_MS
   );
 }
 

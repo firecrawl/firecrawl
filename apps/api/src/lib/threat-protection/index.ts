@@ -1,8 +1,8 @@
-import { config } from "../../config";
 import { logger } from "../logger";
 import { fetchGoogleWebRiskVerdict } from "./providers/google-web-risk";
 import { canonicalizeUrl } from "./providers/web-risk/canonicalize";
 import { fetchZscalerVerdict } from "./providers/zscaler";
+import { ZSCALER_LOOKUP_TIMEOUT_MS } from "./providers/zscaler/lookup-queue";
 import { evaluateZscalerSyncedRules } from "./providers/zscaler/sync";
 import type {
   RawVerdict,
@@ -102,7 +102,7 @@ async function fetchProviderVerdict(
 ): Promise<RawVerdict> {
   const attempts = mode === "zscaler" ? 1 : PROVIDER_ATTEMPTS;
   const timeoutMs =
-    mode === "zscaler" ? config.ZSCALER_LOOKUP_TIMEOUT_MS : PROVIDER_TIMEOUT_MS;
+    mode === "zscaler" ? ZSCALER_LOOKUP_TIMEOUT_MS : PROVIDER_TIMEOUT_MS;
 
   let lastError: unknown;
   for (let attempt = 1; attempt <= attempts; attempt++) {

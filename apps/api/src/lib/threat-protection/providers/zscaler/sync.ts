@@ -1,6 +1,5 @@
 import { RateLimiterRedis, RateLimiterRes } from "rate-limiter-flexible";
 import { z } from "zod";
-import { config } from "../../../../config";
 import { logger as _logger } from "../../../logger";
 import { redisRateLimitClient } from "../../../../services/rate-limiter";
 import { redlock } from "../../../../services/redlock";
@@ -175,7 +174,8 @@ function getCategoriesBudget(): RateLimiterRedis {
     categoriesBudget = new RateLimiterRedis({
       storeClient: redisRateLimitClient,
       keyPrefix: "threat-protection:zscaler:categories-budget",
-      points: config.ZSCALER_CATEGORIES_HOURLY_BUDGET,
+      // ZIA's published urlCategories quota is 1,000 calls/hour per tenant.
+      points: 900,
       duration: 3600,
     });
   }
