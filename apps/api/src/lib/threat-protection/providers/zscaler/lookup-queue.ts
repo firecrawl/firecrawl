@@ -281,7 +281,10 @@ async function popBatch(orgId: string): Promise<QueueEntry[]> {
       if (typeof parsed.id === "string" && typeof parsed.url === "string") {
         entries.push({
           ...parsed,
-          at: typeof parsed.at === "number" ? parsed.at : 0,
+          // Entries from a pre-`at` process (deploy rollout window) are of
+          // unknown age; treat them as fresh so their requesters still get a
+          // verdict instead of an immediate expiry error.
+          at: typeof parsed.at === "number" ? parsed.at : Date.now(),
         });
       }
     } catch {

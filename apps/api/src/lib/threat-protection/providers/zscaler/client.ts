@@ -424,10 +424,19 @@ interface ZscalerConnectionTestResult {
  * taxonomy read, and a lookup probe (a View Only role can read the taxonomy
  * but may be refused the read-semantic POST /urlLookup — surfacing that here
  * beats surfacing it on the first scrape).
+ *
+ * The optional stage hooks run immediately before their API call and abort
+ * the stage by throwing — the caller charges its shared tenant budgets there,
+ * so a test that dies at an earlier stage never spends points for calls that
+ * were never made.
  */
 export async function zscalerTestConnection(
   credentials: ZscalerCredentials,
-  options?: { signal?: AbortSignal },
+  options?: {
+    signal?: AbortSignal;
+    beforeCategories?: () => Promise<void>;
+    beforeLookup?: () => Promise<void>;
+  },
 ): Promise<ZscalerConnectionTestResult> {
   const result: ZscalerConnectionTestResult = {
     ok: false,
@@ -458,6 +467,7 @@ export async function zscalerTestConnection(
   }
 
   try {
+    await options?.beforeCategories?.();
     const categories = await zscalerGetUrlCategories(credentials, options);
     result.categoriesOk = true;
     result.categoryCount = categories.length;
@@ -466,6 +476,7 @@ export async function zscalerTestConnection(
   }
 
   try {
+    await options?.beforeLookup?.();
     await zscalerLookupUrls(credentials, ["example.com"], options);
     result.lookupOk = true;
   } catch (error) {

@@ -17,10 +17,7 @@ import {
   ZscalerSecretRequiredError,
   type OrgThreatProtectionConfig,
 } from "../../lib/threat-protection/store";
-import {
-  ZscalerError,
-  zscalerTestConnection,
-} from "../../lib/threat-protection/providers/zscaler/client";
+import { zscalerTestConnection } from "../../lib/threat-protection/providers/zscaler/client";
 import { consumeZscalerLookupBudget } from "../../lib/threat-protection/providers/zscaler/lookup-queue";
 import {
   clearZscalerSyncState,
@@ -321,21 +318,13 @@ export async function testTeamZscalerConnectionController(
   }
 
   // The probe spends one urlCategories call and one urlLookup call of the
-  // tenant's quota; charge the shared budgets so repeated tests can never
-  // starve real scrapes.
-  try {
-    await consumeZscalerCategoriesBudget(credentials);
-    await consumeZscalerLookupBudget(credentials);
-  } catch (error) {
-    if (error instanceof ZscalerError && error.kind === "quota") {
-      res.status(429).json({ success: false, error: error.message });
-      return;
-    }
-    throw error;
-  }
-
+  // tenant's quota. Each stage charges the shared budget right before its
+  // own API call, so repeated tests can never starve real scrapes — and a
+  // test that dies earlier (bad credentials) spends nothing.
   const result = await zscalerTestConnection(credentials, {
     signal: AbortSignal.timeout(30_000),
+    beforeCategories: () => consumeZscalerCategoriesBudget(credentials),
+    beforeLookup: () => consumeZscalerLookupBudget(credentials),
   });
 
   logger.info("Zscaler connection test", {
