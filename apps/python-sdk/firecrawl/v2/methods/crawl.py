@@ -181,9 +181,11 @@ def get_crawl_status(
     Args:
         client: HTTP client instance
         job_id: ID of the crawl job
-        pagination_config: Optional configuration for pagination behavior
-        request_timeout: Timeout (in seconds) for each individual HTTP request. When auto-pagination 
-            is enabled (default) and there are multiple pages of results, this timeout applies to 
+        pagination_config: Optional configuration for pagination behavior. When
+            pagination_config is provided and auto_paginate is enabled (defaults to
+            False when no config is given), the SDK fetches all pages automatically.
+        request_timeout: Timeout (in seconds) for each individual HTTP request. When auto-pagination
+            is enabled and there are multiple pages of results, this timeout applies to
             each page request separately, not to the entire operation
 
     Returns:
