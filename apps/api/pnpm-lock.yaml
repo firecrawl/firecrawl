@@ -148,8 +148,8 @@ importers:
         specifier: ^16.3.1
         version: 16.4.5
       drizzle-orm:
-        specifier: 1.0.0-rc.3
-        version: 1.0.0-rc.3(@opentelemetry/api@1.9.1)(@types/pg@8.15.5)(pg@8.16.3)(zod@4.1.12)
+        specifier: 0.45.2
+        version: 0.45.2(@opentelemetry/api@1.9.1)(@types/pg@8.15.5)(pg@8.16.3)
       esbuild:
         specifier: ^0.28.1
         version: 0.28.1
@@ -2539,12 +2539,11 @@ packages:
     resolution: {integrity: sha512-ZmdL2rui+eB2YwhsWzjInR8LldtZHGDoQ1ugH85ppHKwpUHL7j7rN0Ti9NCnGiQbhaZ11FpR+7ao1dNsmduNUg==}
     engines: {node: '>=12'}
 
-  drizzle-orm@1.0.0-rc.3:
-    resolution: {integrity: sha512-akZOa5UxapFbdBG8IDkfBRpSZJpMHaOJtGgp7oi1oHaiU8S3KN92waHo2l5aRuv1D9tMGYpv3BQFOsiGcNjLTQ==}
+  drizzle-orm@0.45.2:
+    resolution: {integrity: sha512-kY0BSaTNYWnoDMVoyY8uxmyHjpJW1geOmBMdSSicKo9CIIWkSxMIj2rkeSR51b8KAPB7m+qysjuHme5nKP+E5Q==}
     peerDependencies:
       '@aws-sdk/client-rds-data': '>=3'
       '@cloudflare/workers-types': '>=4'
-      '@effect/sql-pg': '>=4.0.0-beta.58 || >=4.0.0'
       '@electric-sql/pglite': '>=0.2.0'
       '@libsql/client': '>=0.10.0'
       '@libsql/client-wasm': '>=0.10.0'
@@ -2552,39 +2551,30 @@ packages:
       '@op-engineering/op-sqlite': '>=2'
       '@opentelemetry/api': ^1.4.1
       '@planetscale/database': '>=1.13'
-      '@sinclair/typebox': '>=0.34.8'
-      '@sqlitecloud/drivers': '>=1.0.653'
+      '@prisma/client': '*'
       '@tidbcloud/serverless': '*'
-      '@tursodatabase/database': '>=0.2.1'
-      '@tursodatabase/database-common': '>=0.2.1'
-      '@tursodatabase/database-wasm': '>=0.2.1'
       '@types/better-sqlite3': '*'
-      '@types/mssql': ^9.1.4
       '@types/pg': '*'
       '@types/sql.js': '*'
       '@upstash/redis': '>=1.34.7'
       '@vercel/postgres': '>=0.8.0'
       '@xata.io/client': '*'
-      arktype: '>=2.0.0'
-      better-sqlite3: '>=9.3.0'
+      better-sqlite3: '>=7'
       bun-types: '*'
-      effect: '>=4.0.0-beta.58 || >=4.0.0'
       expo-sqlite: '>=14.0.0'
-      mssql: ^11.0.1
+      gel: '>=2'
+      knex: '*'
+      kysely: '*'
       mysql2: '>=2'
       pg: '>=8'
       postgres: '>=3'
+      prisma: '*'
       sql.js: '>=1'
       sqlite3: '>=5'
-      typebox: '>=1.0.0'
-      valibot: '>=1.0.0-beta.7'
-      zod: ^3.25.0 || ^4.0.0
     peerDependenciesMeta:
       '@aws-sdk/client-rds-data':
         optional: true
       '@cloudflare/workers-types':
-        optional: true
-      '@effect/sql-pg':
         optional: true
       '@electric-sql/pglite':
         optional: true
@@ -2600,21 +2590,11 @@ packages:
         optional: true
       '@planetscale/database':
         optional: true
-      '@sinclair/typebox':
-        optional: true
-      '@sqlitecloud/drivers':
+      '@prisma/client':
         optional: true
       '@tidbcloud/serverless':
         optional: true
-      '@tursodatabase/database':
-        optional: true
-      '@tursodatabase/database-common':
-        optional: true
-      '@tursodatabase/database-wasm':
-        optional: true
       '@types/better-sqlite3':
-        optional: true
-      '@types/mssql':
         optional: true
       '@types/pg':
         optional: true
@@ -2626,17 +2606,17 @@ packages:
         optional: true
       '@xata.io/client':
         optional: true
-      arktype:
-        optional: true
       better-sqlite3:
         optional: true
       bun-types:
         optional: true
-      effect:
-        optional: true
       expo-sqlite:
         optional: true
-      mssql:
+      gel:
+        optional: true
+      knex:
+        optional: true
+      kysely:
         optional: true
       mysql2:
         optional: true
@@ -2644,15 +2624,11 @@ packages:
         optional: true
       postgres:
         optional: true
+      prisma:
+        optional: true
       sql.js:
         optional: true
       sqlite3:
-        optional: true
-      typebox:
-        optional: true
-      valibot:
-        optional: true
-      zod:
         optional: true
 
   dunder-proto@1.0.1:
@@ -6416,12 +6392,11 @@ snapshots:
 
   dotenv@16.4.5: {}
 
-  drizzle-orm@1.0.0-rc.3(@opentelemetry/api@1.9.1)(@types/pg@8.15.5)(pg@8.16.3)(zod@4.1.12):
+  drizzle-orm@0.45.2(@opentelemetry/api@1.9.1)(@types/pg@8.15.5)(pg@8.16.3):
     optionalDependencies:
       '@opentelemetry/api': 1.9.1
       '@types/pg': 8.15.5
       pg: 8.16.3
-      zod: 4.1.12
 
   dunder-proto@1.0.1:
     dependencies:
