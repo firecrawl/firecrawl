@@ -69,7 +69,16 @@ const zscalerCategoryIdSchema = z
  */
 export const zscalerConfigSchema = z.strictObject({
   clientId: z.string().trim().min(1).max(256),
-  clientSecret: z.string().min(1).max(1024).optional(),
+  // Not trimmed (the secret is stored verbatim), but a whitespace-only value
+  // must not be persisted as a "configured" secret that can never mint tokens.
+  clientSecret: z
+    .string()
+    .min(1)
+    .max(1024)
+    .refine(value => value.trim().length > 0, {
+      error: "clientSecret must not be blank",
+    })
+    .optional(),
   /** Zidentity vanity domain: tokens come from https://<vanityDomain>.zslogin.net */
   vanityDomain: dnsLabelSchema,
   /** Optional OneAPI cloud name (api.<cloud>.zsapi.net); null = default cloud. */
@@ -138,11 +147,14 @@ export const threatProtectionOverrideSchema = z.strictObject({
 
 type ThreatProtectionOverride = z.infer<typeof threatProtectionOverrideSchema>;
 
-// Compile-time assertion that the override shape stays assignable to
-// Partial<ThreatProtectionPolicy> (what `resolveEffectivePolicy` consumes).
+// Compile-time assertion that the override shape stays assignable to what
+// `resolveEffectivePolicy` consumes. The Omit is deliberate: the Zscaler
+// connection is org-owned and never request-settable, and typing it out of
+// the override surface makes passing one a compile error instead of a
+// silently ignored field.
 const _overrideContractCheck = (
   x: ThreatProtectionOverride,
-): Partial<ThreatProtectionPolicy> => x;
+): Partial<Omit<ThreatProtectionPolicy, "zscaler">> => x;
 void _overrideContractCheck;
 
 /**

@@ -278,9 +278,21 @@ export async function syncOrgZscalerRules(
     lock = await redlock.acquire([syncLockKey(orgId)], 120_000, {
       retryCount: 0,
     });
-  } catch {
-    // Someone else is syncing right now.
-    return await getZscalerSyncDocument(orgId);
+  } catch (error) {
+    // Redlock reports contention and infrastructure failure with the same
+    // error; the lock key existing is what distinguishes "someone else is
+    // syncing" (return their in-progress state) from a Redis outage (which
+    // must surface, not masquerade as a successful no-op).
+    let lockHeld = false;
+    try {
+      lockHeld = (await redisRateLimitClient.exists(syncLockKey(orgId))) === 1;
+    } catch {
+      // Redis is down; fall through to rethrow the original error.
+    }
+    if (lockHeld) {
+      return await getZscalerSyncDocument(orgId);
+    }
+    throw error;
   }
 
   try {

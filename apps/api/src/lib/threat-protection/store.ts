@@ -335,7 +335,9 @@ export async function getOrgIdForTeam(teamId: string): Promise<string | null> {
  */
 export function resolveEffectivePolicy(
   orgConfig: OrgThreatProtectionConfig | null,
-  requestOverride?: Partial<ThreatProtectionPolicy>,
+  // Omit is deliberate: the Zscaler connection is org-owned and never
+  // request-settable — passing one is a compile error, not an ignored field.
+  requestOverride?: Partial<Omit<ThreatProtectionPolicy, "zscaler">>,
 ): ThreatProtectionPolicy {
   const base: ThreatProtectionPolicy = orgConfig
     ? { ...orgConfig.policy }
@@ -399,6 +401,10 @@ const concurrencyCapCacheKey = (teamId: string) =>
  * crawl outruns the budget, every lookup times out, and the failurePolicy
  * fires for everything.
  *
+ * The budget is org-scoped while concurrency admission is team-scoped, so
+ * the org-level cap is split across the org's teams — otherwise an org with
+ * N teams would run at N× the intended concurrency.
+ *
  * Cached in Redis for 60s per team; fails open (null) so a Redis or DB
  * hiccup never blocks job admission.
  */
@@ -427,8 +433,16 @@ export async function getThreatProtectionConcurrencyCap(
   try {
     const orgId = await getOrgIdForTeam(teamId);
     const orgConfig = orgId ? await getOrgThreatProtectionConfig(orgId) : null;
-    if (orgConfig?.policy.mode === "zscaler") {
-      cap = appConfig.ZSCALER_MODE_CONCURRENCY_CAP;
+    if (orgId && orgConfig?.policy.mode === "zscaler") {
+      const teamRows = await dbRr
+        .select({ id: schema.teams.id })
+        .from(schema.teams)
+        .where(eq(schema.teams.org_id, orgId));
+      const teamCount = Math.max(teamRows.length, 1);
+      cap = Math.max(
+        1,
+        Math.floor(appConfig.ZSCALER_MODE_CONCURRENCY_CAP / teamCount),
+      );
     }
   } catch (error) {
     logger.warn("Failed to resolve the threat protection concurrency cap", {
