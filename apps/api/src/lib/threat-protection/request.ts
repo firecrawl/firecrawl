@@ -166,9 +166,18 @@ export async function checkUrlsAgainstThreatPolicy(
     dedup: ctx.dedup ?? new Map(),
   };
 
+  // "zscaler" mode checks resolve through a shared per-org lookup queue
+  // whose budget is spent per CALL (≤100 URLs each) — checking only 16 at a
+  // time would cap batch fill at ~16 URLs per budgeted call. Run a full
+  // batch's worth concurrently so the queue drainer can pack real batches.
+  const concurrency =
+    policy.mode === "zscaler" && !ctx.localRulesOnly
+      ? 100
+      : URL_CHECK_CONCURRENCY;
+
   const decisionsByUrl = new Map<string, ThreatDecision>();
-  for (let i = 0; i < uniqueUrls.length; i += URL_CHECK_CONCURRENCY) {
-    const batch = uniqueUrls.slice(i, i + URL_CHECK_CONCURRENCY);
+  for (let i = 0; i < uniqueUrls.length; i += concurrency) {
+    const batch = uniqueUrls.slice(i, i + concurrency);
     const decisions = await Promise.all(
       batch.map(url => checkUrl(url, policy, dedupCtx)),
     );

@@ -26,6 +26,12 @@ const CATEGORIES: ZscalerUrlCategory[] = [
     dbCategorizedUrls: ["sweepstakes.example.com"],
   },
   {
+    id: "CUSTOM_03",
+    configuredName: "Port-Scoped",
+    customCategory: true,
+    urls: ["internal.example.com:8443"],
+  },
+  {
     // Pure taxonomy entry: no custom content, so no local rule.
     id: "ENTERTAINMENT",
   },
@@ -35,10 +41,11 @@ describe("materializeCategories", () => {
   const { taxonomy, rules } = materializeCategories(CATEGORIES);
 
   it("keeps every category in the taxonomy for the picker", () => {
-    expect(taxonomy).toHaveLength(4);
+    expect(taxonomy).toHaveLength(5);
     expect(taxonomy.map(entry => entry.id).sort()).toEqual([
       "CUSTOM_01",
       "CUSTOM_02",
+      "CUSTOM_03",
       "ENTERTAINMENT",
       "GAMBLING",
     ]);
@@ -60,6 +67,7 @@ describe("materializeCategories", () => {
     expect(rules.map(rule => rule.id).sort()).toEqual([
       "CUSTOM_01",
       "CUSTOM_02",
+      "CUSTOM_03",
       "GAMBLING",
     ]);
   });
@@ -110,6 +118,15 @@ describe("matchSyncedRules", () => {
     ]);
     expect(match("https://anything.example.org/?q=retainedword")).toEqual([
       { id: "CUSTOM_02", reclassifies: false },
+    ]);
+  });
+
+  it("ignores ports on both the entry and the checked URL", () => {
+    expect(match("https://internal.example.com:8443/console")).toEqual([
+      { id: "CUSTOM_03", reclassifies: true },
+    ]);
+    expect(match("https://internal.example.com/console")).toEqual([
+      { id: "CUSTOM_03", reclassifies: true },
     ]);
   });
 

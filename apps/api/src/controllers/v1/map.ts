@@ -490,12 +490,20 @@ export async function mapController(
   // Threat protection: remove blocked links from the returned URL list
   // entirely. Checks are URL-level; scan fees bill +2 per unique scanned
   // URL (see calculateThreatScanCredits).
+  //
+  // "zscaler" mode evaluates map results against local rules only, same as
+  // the v2 map controller: one map can return thousands of URLs, and inline
+  // classification would burn the tenant's 400/hour urlLookup budget on
+  // links that may never be fetched.
   let threatScanCredits = 0;
   if (threatProtection.policy && result.links.length > 0) {
     const { decisionsByUrl } = await checkUrlsAgainstThreatPolicy(
       result.links,
       threatProtection.policy,
-      { teamId: req.auth.team_id },
+      {
+        teamId: req.auth.team_id,
+        localRulesOnly: threatProtection.policy.mode === "zscaler",
+      },
     );
     threatScanCredits = calculateThreatScanCredits(decisionsByUrl.values());
     result.links = result.links.filter(x => {

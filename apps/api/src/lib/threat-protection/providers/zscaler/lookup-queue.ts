@@ -271,41 +271,52 @@ async function drainQueue(orgId: string): Promise<void> {
         if (entries.length === 0) return;
       }
 
-      lock = await lock.extend(DRAIN_LOCK_TTL_MS);
-
-      if (!credentials) {
-        await replyAll(entries, () => ({
-          status: "error",
-          message: "No Zscaler credentials are configured for this org",
-        }));
-        continue;
-      }
-
-      // Hourly budget: one point per urlLookup CALL. When it is gone, this
-      // loop keeps popping and answers everything "quota" without touching
-      // the tenant, so waiting scrapes resolve immediately via failurePolicy.
+      // From here on the popped entries are this drainer's responsibility:
+      // an unexpected throw (Redis blip, expired lock) must not orphan them
+      // into their full wait timeout — reply an error first, then unwind.
       try {
-        await getHourlyBudget().consume(orgId, 1);
-      } catch (rejection) {
-        if (rejection instanceof RateLimiterRes) {
-          await replyAll(entries, () => ({ status: "quota" }));
+        lock = await lock.extend(DRAIN_LOCK_TTL_MS);
+
+        if (!credentials) {
+          await replyAll(entries, () => ({
+            status: "error",
+            message: "No Zscaler credentials are configured for this org",
+          }));
           continue;
         }
-        throw rejection;
-      }
 
-      // 1 call/second pacer.
-      for (;;) {
+        // Hourly budget: one point per urlLookup CALL. When it is gone, this
+        // loop keeps popping and answers everything "quota" without touching
+        // the tenant, so waiting scrapes resolve immediately via failurePolicy.
         try {
-          await getPerSecondPacer().consume(orgId, 1);
-          break;
+          await getHourlyBudget().consume(orgId, 1);
         } catch (rejection) {
           if (rejection instanceof RateLimiterRes) {
-            await sleep(Math.max(rejection.msBeforeNext, 50));
+            await replyAll(entries, () => ({ status: "quota" }));
             continue;
           }
           throw rejection;
         }
+
+        // 1 call/second pacer.
+        for (;;) {
+          try {
+            await getPerSecondPacer().consume(orgId, 1);
+            break;
+          } catch (rejection) {
+            if (rejection instanceof RateLimiterRes) {
+              await sleep(Math.max(rejection.msBeforeNext, 50));
+              continue;
+            }
+            throw rejection;
+          }
+        }
+      } catch (error) {
+        await replyAll(entries, () => ({
+          status: "error",
+          message: "Zscaler lookup drainer failed before the batch was sent",
+        })).catch(() => {});
+        throw error;
       }
 
       const uniqueUrls = [...new Set(entries.map(entry => entry.url))];

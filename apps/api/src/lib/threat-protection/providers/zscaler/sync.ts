@@ -366,16 +366,20 @@ function parseUrlParts(url: string): UrlParts {
 }
 
 /**
- * Whether a URL-list entry ("example.com", "sub.example.com/path") matches.
- * Host matching follows Zscaler list semantics: an entry matches the host
- * itself and its subdomains. An entry with a path component additionally
- * requires the URL path to sit under it.
+ * Whether a URL-list entry ("example.com", "sub.example.com/path",
+ * "internal.example.com:8443") matches. Host matching follows Zscaler list
+ * semantics: an entry matches the host itself and its subdomains. An entry
+ * with a path component additionally requires the URL path to sit under it.
+ * Ports are ignored on both sides — the checked host comes from splitUrl
+ * (port already stripped), so a port kept in the entry could never match
+ * and the rule would silently not enforce.
  */
 function matchesZscalerUrlEntry(parts: UrlParts, entry: string): boolean {
   const slash = entry.indexOf("/");
-  const entryHost = canonicalizeHost(
-    slash === -1 ? entry : entry.slice(0, slash),
-  );
+  let entryHostRaw = slash === -1 ? entry : entry.slice(0, slash);
+  const portMatch = entryHostRaw.match(/^(.*):(\d+)$/);
+  if (portMatch) entryHostRaw = portMatch[1];
+  const entryHost = canonicalizeHost(entryHostRaw);
   if (entryHost.length === 0) return false;
   if (parts.host !== entryHost && !parts.host.endsWith(`.${entryHost}`)) {
     return false;
