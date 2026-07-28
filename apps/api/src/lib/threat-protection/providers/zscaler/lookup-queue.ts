@@ -35,10 +35,10 @@ import {
 // sit in a line it cannot exit. Verdicts live only in the short-TTL reply
 // keys consumed moments later; there is no verdict cache (ZDR).
 //
-// Capacity note: the sustained ceiling is ~11 URLs/second per org (400
-// calls/hour × 100 URLs). The "zscaler"-mode concurrency cap (see
-// getThreatProtectionConcurrencyCap) keeps URL demand near this budget;
-// this queue only absorbs bursts.
+// Capacity note: the sustained ceiling is ~11 URLs/second per tenant (400
+// calls/hour × 100 URLs). Demand above that resolves through the fail-fast
+// paths below (queue depth cap, exhausted hourly budget) into the org's
+// failurePolicy — scrape concurrency is deliberately NOT throttled.
 
 const logger = _logger.child({ module: "threat-protection-zscaler-lookup" });
 

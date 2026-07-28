@@ -1,6 +1,5 @@
 import { eq } from "drizzle-orm";
 import { z } from "zod";
-import { config as appConfig } from "../../config";
 import { db, dbRr } from "../../db/connection";
 import * as schema from "../../db/schema";
 import { deleteKey, getValue, setValue } from "../../services/redis";
@@ -388,74 +387,4 @@ export async function getOrgZscalerCredentials(
     });
     return null;
   }
-}
-
-const concurrencyCapCacheKey = (teamId: string) =>
-  `threat-protection-concurrency-cap:${teamId}`;
-
-/**
- * Scrape-concurrency cap imposed by the team's threat protection mode, or
- * null when none applies. "zscaler" mode caps concurrency so URL demand
- * stays near the tenant's classification budget (POST /urlLookup allows 1
- * request/second × 100 URLs, 400 requests/hour) — without the cap, a large
- * crawl outruns the budget, every lookup times out, and the failurePolicy
- * fires for everything.
- *
- * The budget is org-scoped while concurrency admission is team-scoped, so
- * the org-level cap is split across the org's teams — otherwise an org with
- * N teams would run at N× the intended concurrency.
- *
- * Cached in Redis for 60s per team; fails open (null) so a Redis or DB
- * hiccup never blocks job admission.
- */
-export async function getThreatProtectionConcurrencyCap(
-  teamId: string,
-): Promise<number | null> {
-  // Self-hosted deployments have no org config database (and no enterprise
-  // threat protection) — skip the lookup instead of warning on every job.
-  if (!appConfig.USE_DB_AUTHENTICATION) return null;
-
-  const key = concurrencyCapCacheKey(teamId);
-  try {
-    const cached = await getValue(key);
-    if (cached === "none") return null;
-    if (cached !== null) {
-      const parsed = Number(cached);
-      // A malformed cache entry must not become a NaN/zero cap that breaks
-      // job admission — fall through and resolve from the source instead.
-      if (Number.isFinite(parsed) && parsed > 0) return parsed;
-    }
-  } catch (error) {
-    logger.warn("Failed to read the concurrency cap cache", { error, teamId });
-  }
-
-  let cap: number | null = null;
-  try {
-    const orgId = await getOrgIdForTeam(teamId);
-    const orgConfig = orgId ? await getOrgThreatProtectionConfig(orgId) : null;
-    if (orgId && orgConfig?.policy.mode === "zscaler") {
-      const teamRows = await dbRr
-        .select({ id: schema.teams.id })
-        .from(schema.teams)
-        .where(eq(schema.teams.org_id, orgId));
-      const teamCount = Math.max(teamRows.length, 1);
-      cap = Math.max(
-        1,
-        Math.floor(appConfig.ZSCALER_MODE_CONCURRENCY_CAP / teamCount),
-      );
-    }
-  } catch (error) {
-    logger.warn("Failed to resolve the threat protection concurrency cap", {
-      error,
-      teamId,
-    });
-    return null;
-  }
-
-  try {
-    await setValue(key, cap === null ? "none" : String(cap), 60);
-  } catch (error) {
-    logger.warn("Failed to write the concurrency cap cache", { error, teamId });
-  }
-  return cap;
 }

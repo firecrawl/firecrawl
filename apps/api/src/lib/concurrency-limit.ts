@@ -19,7 +19,6 @@ import {
   removeConcurrencyLimitActiveJob,
 } from "./concurrency-redis";
 import { autumnService } from "../services/autumn/autumn.service";
-import { getThreatProtectionConcurrencyCap } from "./threat-protection/store";
 
 // Fallback when Autumn can't give us a concurrency value.
 const DEFAULT_CONCURRENCY_LIMIT = 2;
@@ -29,22 +28,13 @@ const DEFAULT_CONCURRENCY_LIMIT = 2;
  * balance. Autumn is authoritative; when the entity is missing we fall back to
  * the low default of 2. When Autumn errors, getConcurrencyLimit already returns
  * a high fail-open value, so that carries through here.
- *
- * Threat protection can clamp the result: "zscaler" mode caps concurrency so
- * URL demand stays near the tenant's classification budget — otherwise a
- * large crawl outruns the 400-lookups/hour budget and every scrape resolves
- * through the failurePolicy instead of a verdict.
  */
 export async function getEffectiveConcurrencyLimit(
   teamId: string,
   orgId?: string | null,
 ): Promise<number> {
   const autumnValue = await autumnService.getConcurrencyLimit(teamId, orgId);
-  const limit = autumnValue ?? DEFAULT_CONCURRENCY_LIMIT;
-  const threatProtectionCap = await getThreatProtectionConcurrencyCap(teamId);
-  return threatProtectionCap !== null
-    ? Math.min(limit, threatProtectionCap)
-    : limit;
+  return autumnValue ?? DEFAULT_CONCURRENCY_LIMIT;
 }
 
 const constructKey = constructConcurrencyLimitKey;

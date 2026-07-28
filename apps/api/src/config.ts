@@ -105,10 +105,6 @@ const configSchema = z.object({
     .int()
     .positive()
     .default(500),
-  // Effective scrape concurrency cap for teams in "zscaler" mode, keeping URL
-  // demand near the classification budget (≤100 URLs/s burst, ~11 URLs/s
-  // sustained at 400 lookups/hour).
-  ZSCALER_MODE_CONCURRENCY_CAP: z.coerce.number().int().positive().default(15),
 
   // Organization SIEM logging delivery. The encryption key must decode to
   // exactly 32 bytes; validation happens when a secret is encrypted/decrypted
