@@ -8,6 +8,7 @@ import { getOrgZscalerCredentials } from "../../store";
 import {
   ZscalerError,
   zscalerLookupUrls,
+  type ZscalerCredentials,
   type ZscalerUrlLookupResult,
 } from "./client";
 
@@ -63,6 +64,16 @@ const DRAIN_LOCK_TTL_MS = LOOKUP_CALL_TIMEOUT_MS + 15_000;
 interface QueueEntry {
   id: string;
   url: string;
+  /** Enqueue time (epoch ms): the drainer drops entries whose requester has given up. */
+  at: number;
+}
+
+/**
+ * Budget keys are tenant-scoped, not org-scoped: ZIA rate limits apply to the
+ * customer's tenant, and several Firecrawl orgs may share one.
+ */
+export function zscalerBudgetKey(credentials: ZscalerCredentials): string {
+  return `${credentials.vanityDomain}:${credentials.cloud ?? "default"}`;
 }
 
 type ReplyPayload =
@@ -104,6 +115,29 @@ function sleep(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
+/**
+ * Spend one point of the tenant's urlLookup budget outside the queue (the
+ * connection test's lookup probe). Throws a quota ZscalerError when the
+ * budget is exhausted, so ad-hoc tests can never starve real scrapes.
+ */
+export async function consumeZscalerLookupBudget(
+  credentials: ZscalerCredentials,
+): Promise<void> {
+  try {
+    await getHourlyBudget().consume(zscalerBudgetKey(credentials), 1);
+  } catch (rejection) {
+    if (rejection instanceof RateLimiterRes) {
+      throw new ZscalerError(
+        "quota",
+        "Zscaler urlLookup hourly budget is exhausted",
+        undefined,
+        rejection.msBeforeNext,
+      );
+    }
+    throw rejection;
+  }
+}
+
 // =========================================
 // Requester side
 // =========================================
@@ -119,7 +153,10 @@ export async function enqueueZscalerLookup(
   lookupUrl: string,
   signal?: AbortSignal,
 ): Promise<ZscalerUrlLookupResult> {
-  // Fail fast on a queue that cannot drain before the wait timeout.
+  // Fail fast on a queue that cannot drain before the wait timeout. The
+  // LLEN/RPUSH pair is deliberately non-atomic: this is a fail-fast
+  // heuristic, and a brief overshoot from concurrent enqueuers is bounded
+  // by their count and harmless.
   const depth = await redisRateLimitClient.llen(queueKey(orgId));
   if (depth >= config.ZSCALER_LOOKUP_MAX_QUEUE_DEPTH) {
     throw new ZscalerError(
@@ -129,23 +166,31 @@ export async function enqueueZscalerLookup(
   }
 
   // Fail fast when the hourly budget is already spent — enqueueing would
-  // only park the scrape until the timeout.
-  const budgetState = await getHourlyBudget()
-    .get(orgId)
-    .catch(() => null);
-  if (
-    budgetState &&
-    budgetState.consumedPoints >= config.ZSCALER_LOOKUP_HOURLY_BUDGET
-  ) {
-    throw new ZscalerError(
-      "quota",
-      "Zscaler urlLookup hourly budget is exhausted",
-      undefined,
-      budgetState.msBeforeNext,
-    );
+  // only park the scrape until the timeout. Budget state is keyed by the
+  // ZIA tenant, which needs the org's credentials (60s-cached read).
+  const credentials = await getOrgZscalerCredentials(orgId);
+  if (credentials) {
+    const budgetState = await getHourlyBudget()
+      .get(zscalerBudgetKey(credentials))
+      .catch(() => null);
+    if (
+      budgetState &&
+      budgetState.consumedPoints >= config.ZSCALER_LOOKUP_HOURLY_BUDGET
+    ) {
+      throw new ZscalerError(
+        "quota",
+        "Zscaler urlLookup hourly budget is exhausted",
+        undefined,
+        budgetState.msBeforeNext,
+      );
+    }
   }
 
-  const entry: QueueEntry = { id: randomUUID(), url: lookupUrl };
+  const entry: QueueEntry = {
+    id: randomUUID(),
+    url: lookupUrl,
+    at: Date.now(),
+  };
   await redisRateLimitClient.rpush(queueKey(orgId), JSON.stringify(entry));
   ensureQueueDrainer(orgId);
 
@@ -168,11 +213,23 @@ export async function enqueueZscalerLookup(
         throw new ZscalerError("api", "Malformed Zscaler lookup reply");
       }
       if (payload.status === "ok") {
+        // A parseable but malformed reply must become a provider failure,
+        // not invalid category data inside policy evaluation.
+        if (
+          !Array.isArray(payload.urlClassifications) ||
+          !Array.isArray(payload.urlClassificationsWithSecurityAlert)
+        ) {
+          throw new ZscalerError("api", "Malformed Zscaler lookup reply");
+        }
         return {
           url: lookupUrl,
-          urlClassifications: payload.urlClassifications,
+          urlClassifications: payload.urlClassifications.filter(
+            (value): value is string => typeof value === "string",
+          ),
           urlClassificationsWithSecurityAlert:
-            payload.urlClassificationsWithSecurityAlert,
+            payload.urlClassificationsWithSecurityAlert.filter(
+              (value): value is string => typeof value === "string",
+            ),
         };
       }
       if (payload.status === "quota") {
@@ -222,13 +279,28 @@ async function popBatch(orgId: string): Promise<QueueEntry[]> {
     try {
       const parsed = JSON.parse(item) as QueueEntry;
       if (typeof parsed.id === "string" && typeof parsed.url === "string") {
-        entries.push(parsed);
+        entries.push({
+          ...parsed,
+          at: typeof parsed.at === "number" ? parsed.at : 0,
+        });
       }
     } catch {
       // Skip malformed entries; their requesters time out into failurePolicy.
     }
   }
   return entries;
+}
+
+// Entries whose requester has certainly stopped polling (its wait timeout
+// plus a grace period has passed). Spending budget on them would classify
+// URLs nobody is waiting for.
+const ENTRY_EXPIRY_GRACE_MS = 2000;
+
+function isExpired(entry: QueueEntry): boolean {
+  return (
+    Date.now() - entry.at >
+    config.ZSCALER_LOOKUP_TIMEOUT_MS + ENTRY_EXPIRY_GRACE_MS
+  );
 }
 
 async function replyAll(
@@ -271,6 +343,18 @@ async function drainQueue(orgId: string): Promise<void> {
         if (entries.length === 0) return;
       }
 
+      // Abandoned entries (requester timed out) get a free error reply
+      // instead of a budgeted classification.
+      const expired = entries.filter(isExpired);
+      if (expired.length > 0) {
+        await replyAll(expired, () => ({
+          status: "error",
+          message: "The lookup request expired before the batch was sent",
+        })).catch(() => {});
+        entries = entries.filter(entry => !isExpired(entry));
+        if (entries.length === 0) continue;
+      }
+
       // From here on the popped entries are this drainer's responsibility:
       // an unexpected throw (Redis blip, expired lock) must not orphan them
       // into their full wait timeout — reply an error first, then unwind.
@@ -285,11 +369,13 @@ async function drainQueue(orgId: string): Promise<void> {
           continue;
         }
 
-        // Hourly budget: one point per urlLookup CALL. When it is gone, this
-        // loop keeps popping and answers everything "quota" without touching
-        // the tenant, so waiting scrapes resolve immediately via failurePolicy.
+        // Hourly budget: one point per urlLookup CALL, keyed by the ZIA
+        // tenant. When it is gone, this loop keeps popping and answers
+        // everything "quota" without touching the tenant, so waiting scrapes
+        // resolve immediately via failurePolicy.
+        const budgetKey = zscalerBudgetKey(credentials);
         try {
-          await getHourlyBudget().consume(orgId, 1);
+          await getHourlyBudget().consume(budgetKey, 1);
         } catch (rejection) {
           if (rejection instanceof RateLimiterRes) {
             await replyAll(entries, () => ({ status: "quota" }));
@@ -301,7 +387,7 @@ async function drainQueue(orgId: string): Promise<void> {
         // 1 call/second pacer.
         for (;;) {
           try {
-            await getPerSecondPacer().consume(orgId, 1);
+            await getPerSecondPacer().consume(budgetKey, 1);
             break;
           } catch (rejection) {
             if (rejection instanceof RateLimiterRes) {

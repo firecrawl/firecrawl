@@ -11,7 +11,13 @@ import type {
   ZscalerPolicySettings,
 } from "../../types";
 import { canonicalizeHost, splitUrl } from "../web-risk/canonicalize";
-import { zscalerGetUrlCategories, type ZscalerUrlCategory } from "./client";
+import {
+  ZscalerError,
+  zscalerGetUrlCategories,
+  type ZscalerCredentials,
+  type ZscalerUrlCategory,
+} from "./client";
+import { zscalerBudgetKey } from "./lookup-queue";
 
 // Synchronization plane for the Zscaler ZIA provider.
 //
@@ -176,6 +182,29 @@ function getCategoriesBudget(): RateLimiterRedis {
   return categoriesBudget;
 }
 
+/**
+ * Spend one point of the tenant's urlCategories budget (interval syncs,
+ * "Sync now", and the connection test's taxonomy read all share it). Throws
+ * a quota ZscalerError when exhausted.
+ */
+export async function consumeZscalerCategoriesBudget(
+  credentials: ZscalerCredentials,
+): Promise<void> {
+  try {
+    await getCategoriesBudget().consume(zscalerBudgetKey(credentials), 1);
+  } catch (rejection) {
+    if (rejection instanceof RateLimiterRes) {
+      throw new ZscalerError(
+        "quota",
+        "Zscaler urlCategories hourly budget is exhausted",
+        undefined,
+        rejection.msBeforeNext,
+      );
+    }
+    throw rejection;
+  }
+}
+
 const MAX_LIST_ENTRY_LENGTH = 2048;
 
 function cleanEntries(values: string[] | undefined): string[] {
@@ -267,7 +296,7 @@ export async function syncOrgZscalerRules(
     }
 
     try {
-      await getCategoriesBudget().consume(orgId, 1);
+      await consumeZscalerCategoriesBudget(credentials);
       const categories = await zscalerGetUrlCategories(credentials, {
         signal: AbortSignal.timeout(60_000),
       });
@@ -289,12 +318,7 @@ export async function syncOrgZscalerRules(
       });
       return doc;
     } catch (error) {
-      const message =
-        error instanceof RateLimiterRes
-          ? "The hourly urlCategories budget is exhausted; the sync will retry next interval"
-          : error instanceof Error
-            ? error.message
-            : String(error);
+      const message = error instanceof Error ? error.message : String(error);
       logger.warn("Zscaler category sync failed", { error, orgId });
       // Keep the last good rules — stale custom lists beat no custom lists —
       // but surface the failure and its time for the dashboard.
@@ -403,6 +427,12 @@ interface ZscalerSyncedMatch {
   rule: ZscalerSyncedRule;
   /** True when the matching entry reclassifies (non-"retaining") the URL. */
   reclassifies: boolean;
+  /**
+   * True when the match came from a URL-list entry (exact semantics). A
+   * keyword match is a best-effort approximation and must never be the
+   * reason a URL SKIPS the provider lookup — only exact matches may allow.
+   */
+  exact: boolean;
 }
 
 /** All synced categories the URL falls into. Exported for tests. */
@@ -413,39 +443,60 @@ export function matchSyncedRules(
   const parts = parseUrlParts(url);
   const matches: ZscalerSyncedMatch[] = [];
   for (const rule of rules) {
-    const reclassifies =
-      rule.urls.some(entry => matchesZscalerUrlEntry(parts, entry)) ||
+    const exactReclassify = rule.urls.some(entry =>
+      matchesZscalerUrlEntry(parts, entry),
+    );
+    const keywordReclassify =
+      !exactReclassify &&
       rule.keywords.some(keyword => matchesKeyword(parts, keyword));
-    const retains =
+    const reclassifies = exactReclassify || keywordReclassify;
+    const exactRetain =
       !reclassifies &&
-      (rule.retainingUrls.some(entry => matchesZscalerUrlEntry(parts, entry)) ||
-        rule.retainingKeywords.some(keyword => matchesKeyword(parts, keyword)));
-    if (reclassifies || retains) {
-      matches.push({ rule, reclassifies });
+      rule.retainingUrls.some(entry => matchesZscalerUrlEntry(parts, entry));
+    const keywordRetain =
+      !reclassifies &&
+      !exactRetain &&
+      rule.retainingKeywords.some(keyword => matchesKeyword(parts, keyword));
+    if (reclassifies || exactRetain || keywordRetain) {
+      matches.push({
+        rule,
+        reclassifies,
+        exact: exactReclassify || exactRetain,
+      });
     }
   }
   return matches;
 }
 
+// Custom category IDs follow this shape; Zscaler-defined categories never do.
+const CUSTOM_CATEGORY_ID_REGEX = /^CUSTOM_\d+$/i;
+
 /**
  * Evaluates the org's synced Zscaler rules for a URL.
  *
  * - A match in a denied category → deny ("denied-category"), no provider call.
- * - A reclassifying match in a non-denied category → allow
+ * - An exact (URL-list) reclassifying match in a non-denied category → allow
  *   ("custom-category"), no provider call: ZIA reclassifies such URLs out of
  *   their Zscaler-defined categories, so a lookup verdict would not apply.
+ *   Keyword matches are approximate and never allow on their own — the
+ *   provider lookup still runs.
  * - Only "retaining parent category" matches in non-denied categories →
  *   null: the URL also keeps its Zscaler-defined categories, so the provider
  *   lookup still decides.
  * - No match → null (provider lookup decides).
  *
- * Never throws; on storage failure it returns null and the provider path
- * (and ultimately the org's failurePolicy) takes over. Also kicks the lazy
- * background re-sync.
+ * When the org denies custom categories but no sync has ever succeeded, the
+ * custom rules cannot be evaluated AND the lookup cannot see them (urlLookup
+ * never returns custom classifications) — that resolves through the org's
+ * failurePolicy instead of silently allowing. A previously synced (stale)
+ * document keeps enforcing.
+ *
+ * Never throws on storage failure; also kicks the lazy background re-sync.
  */
 export async function evaluateZscalerSyncedRules(
   url: string,
   zscaler: ZscalerPolicySettings,
+  failurePolicy: ThreatProtectionPolicy["failurePolicy"],
   base: {
     url: string;
     domain: string;
@@ -462,7 +513,23 @@ export async function evaluateZscalerSyncedRules(
     });
   }
   ensureZscalerSyncFresh(zscaler.orgId, zscaler.syncIntervalMinutes, doc);
-  if (!doc || doc.rules.length === 0) return null;
+
+  if (!doc || doc.syncedAt === null) {
+    const deniesCustomCategories = zscaler.deniedCategories.some(id =>
+      CUSTOM_CATEGORY_ID_REGEX.test(id),
+    );
+    if (deniesCustomCategories) {
+      return {
+        allowed: failurePolicy === "open",
+        rule: "provider-failure",
+        providerConsulted: false,
+        verdict: null,
+        ...base,
+      };
+    }
+    return null;
+  }
+  if (doc.rules.length === 0) return null;
 
   const matches = matchSyncedRules(url, doc.rules);
   if (matches.length === 0) return null;
@@ -492,7 +559,7 @@ export async function evaluateZscalerSyncedRules(
     };
   }
 
-  if (matches.some(match => match.reclassifies)) {
+  if (matches.some(match => match.reclassifies && match.exact)) {
     return {
       allowed: true,
       rule: "custom-category",

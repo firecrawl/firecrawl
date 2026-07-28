@@ -110,6 +110,8 @@ describe("zscalerLookupUrls", () => {
   });
 
   it("reuses the cached token across calls", async () => {
+    // Prime the cache explicitly instead of relying on test order.
+    await zscalerLookupUrls(credentials(), ["casino.example.com"]);
     const tokenCallsBefore = counters.tokenCalls;
     await zscalerLookupUrls(credentials(), ["casino.example.com"]);
     await zscalerLookupUrls(credentials(), ["casino.example.com"]);
@@ -191,8 +193,9 @@ describe("toLookupUrl", () => {
     expect(toLookupUrl(input)).toBe(expected);
   });
 
-  it("caps entries at the ZIA limit of 1024 characters", () => {
+  it("rejects entries over the ZIA limit instead of truncating them", () => {
     const long = `example.com/${"a".repeat(2000)}`;
-    expect(toLookupUrl(long).length).toBe(1024);
+    // Truncating would classify a different URL; the failurePolicy decides.
+    expect(() => toLookupUrl(long)).toThrow(ZscalerError);
   });
 });

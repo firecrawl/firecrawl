@@ -121,8 +121,15 @@ export function createZscalerMockHandler(
           json(res, 400, { message: "Invalid JSON body" });
           return;
         }
-        if (!Array.isArray(urls) || urls.length > 100) {
-          json(res, 400, { message: "Expected an array of at most 100 URLs" });
+        if (
+          !Array.isArray(urls) ||
+          urls.length > 100 ||
+          urls.some(entry => typeof entry !== "string" || entry.length > 1024)
+        ) {
+          json(res, 400, {
+            message:
+              "Expected an array of at most 100 URL strings of at most 1024 characters",
+          });
           return;
         }
         counters.lookupUrls += urls.length;

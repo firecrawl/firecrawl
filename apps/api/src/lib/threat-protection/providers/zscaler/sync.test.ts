@@ -139,6 +139,21 @@ describe("matchSyncedRules", () => {
     ]);
   });
 
+  it("flags keyword matches as inexact so they can never allow on their own", () => {
+    const matches = matchSyncedRules(
+      "https://anything.example.org/ForbiddenWord-page",
+      rules,
+    );
+    expect(matches).toHaveLength(1);
+    expect(matches[0]).toMatchObject({ reclassifies: true, exact: false });
+
+    const exactMatches = matchSyncedRules(
+      "https://vendor-blocked.example.com/",
+      rules,
+    );
+    expect(exactMatches[0]).toMatchObject({ reclassifies: true, exact: true });
+  });
+
   it("collects every matching category", () => {
     expect(match("https://tool.example.com/forbiddenword")).toEqual(
       expect.arrayContaining([

@@ -144,6 +144,12 @@ function retryAfterMs(response: Response): number | undefined {
   return Math.max(0, date - Date.now());
 }
 
+// Error responses must have their bodies consumed, or undici cannot reuse
+// the connection and sockets pile up under repeated failures.
+function drainBody(response: Response): void {
+  response.body?.cancel().catch(() => {});
+}
+
 async function fetchAccessToken(
   credentials: ZscalerCredentials,
   signal: AbortSignal | undefined,
@@ -179,6 +185,7 @@ async function fetchAccessToken(
   }
 
   if (response.status === 400 || response.status === 401) {
+    drainBody(response);
     throw new ZscalerError(
       "auth",
       "Zscaler rejected the OAuth client credentials",
@@ -186,6 +193,7 @@ async function fetchAccessToken(
     );
   }
   if (response.status === 429) {
+    drainBody(response);
     throw new ZscalerError(
       "rate-limit",
       "Zscaler token endpoint rate limit hit",
@@ -194,6 +202,7 @@ async function fetchAccessToken(
     );
   }
   if (!response.ok) {
+    drainBody(response);
     throw new ZscalerError(
       "api",
       `Zscaler token endpoint returned status ${response.status}`,
@@ -254,11 +263,13 @@ async function apiRequest<T>(
     if (response.status === 401 && attempt === 1) {
       // Token expired or was revoked mid-flight: drop it and retry once with
       // a fresh one. A second 401 is a real auth problem.
+      drainBody(response);
       tokenCache.delete(tokenCacheKey(credentials));
       token = await fetchAccessToken(credentials, signal);
       continue;
     }
     if (response.status === 401) {
+      drainBody(response);
       throw new ZscalerError(
         "auth",
         "Zscaler API rejected the access token",
@@ -266,6 +277,7 @@ async function apiRequest<T>(
       );
     }
     if (response.status === 403) {
+      drainBody(response);
       throw new ZscalerError(
         "scope",
         `Zscaler API denied access to ${path} — the API client's role does not cover it`,
@@ -273,6 +285,7 @@ async function apiRequest<T>(
       );
     }
     if (response.status === 429) {
+      drainBody(response);
       throw new ZscalerError(
         "rate-limit",
         `Zscaler API rate limit hit on ${path}`,
@@ -281,6 +294,7 @@ async function apiRequest<T>(
       );
     }
     if (!response.ok) {
+      drainBody(response);
       throw new ZscalerError(
         "api",
         `Zscaler API returned status ${response.status} for ${path}`,
@@ -304,8 +318,9 @@ const MAX_LOOKUP_URL_LENGTH = 1024;
 
 /**
  * Shape a URL the way POST /urlLookup expects: no scheme, no fragment,
- * lowercased host, capped length. Accepts anything checkUrl's canonicalizer
- * produces.
+ * lowercased host. Accepts anything checkUrl's canonicalizer produces.
+ * URLs over the ZIA length limit throw (a truncated URL would classify a
+ * DIFFERENT URL); the caller resolves that through the failurePolicy.
  */
 export function toLookupUrl(url: string): string {
   let value = url.trim();
@@ -318,7 +333,13 @@ export function toLookupUrl(url: string): string {
   // A bare host needs no trailing slash; strip one so "example.com/" and
   // "example.com" share a verdict key.
   const combined = `${host}${rest === "/" ? "" : rest}`;
-  return combined.slice(0, MAX_LOOKUP_URL_LENGTH);
+  if (combined.length > MAX_LOOKUP_URL_LENGTH) {
+    throw new ZscalerError(
+      "api",
+      `URL exceeds the ${MAX_LOOKUP_URL_LENGTH}-character ZIA lookup limit`,
+    );
+  }
+  return combined;
 }
 
 /**

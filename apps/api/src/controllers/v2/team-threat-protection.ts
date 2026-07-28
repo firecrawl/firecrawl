@@ -17,9 +17,14 @@ import {
   ZscalerSecretRequiredError,
   type OrgThreatProtectionConfig,
 } from "../../lib/threat-protection/store";
-import { zscalerTestConnection } from "../../lib/threat-protection/providers/zscaler/client";
+import {
+  ZscalerError,
+  zscalerTestConnection,
+} from "../../lib/threat-protection/providers/zscaler/client";
+import { consumeZscalerLookupBudget } from "../../lib/threat-protection/providers/zscaler/lookup-queue";
 import {
   clearZscalerSyncState,
+  consumeZscalerCategoriesBudget,
   getZscalerSyncDocument,
   syncOrgZscalerRules,
   type ZscalerSyncDocument,
@@ -188,13 +193,22 @@ export async function putTeamThreatProtectionController(
   }
 
   // Keep the sync plane consistent with the connection: a removed connection
-  // drops the synced rules; a (re)configured one syncs in the background so
+  // drops the synced rules, and so does a change of connection identity — the
+  // old tenant's custom rules must not keep enforcing while the new tenant's
+  // first sync runs. A (re)configured connection syncs in the background so
   // custom-list rules and the category picker are ready shortly after save.
-  if (previous?.zscaler && !updated.zscaler) {
+  const connectionIdentityChanged =
+    previous?.zscaler &&
+    updated.zscaler &&
+    (previous.zscaler.clientId !== updated.zscaler.clientId ||
+      previous.zscaler.vanityDomain !== updated.zscaler.vanityDomain ||
+      previous.zscaler.cloud !== updated.zscaler.cloud);
+  if (previous?.zscaler && (!updated.zscaler || connectionIdentityChanged)) {
     await clearZscalerSyncState(orgId).catch(error => {
       logger.warn("Failed to clear Zscaler sync state", { error, orgId });
     });
-  } else if (updated.zscaler) {
+  }
+  if (updated.zscaler) {
     syncOrgZscalerRules(orgId).catch(error => {
       logger.warn("Background Zscaler sync after config save failed", {
         error,
@@ -203,12 +217,17 @@ export async function putTeamThreatProtectionController(
     });
   }
 
-  // Audit log — org-level security configuration change.
+  // Audit log — org-level security configuration change. The serialized view
+  // never carries the secret, so a rotation gets an explicit marker.
+  const auditChangedFields = changedFields(previous, updated);
+  if (input.zscaler?.clientSecret) {
+    auditChangedFields.push("zscaler.clientSecret");
+  }
   logger.info("Threat protection config updated", {
     teamId: req.auth.team_id,
     orgId,
     mode: updated.policy.mode,
-    changedFields: changedFields(previous, updated),
+    changedFields: auditChangedFields,
   });
 
   res.status(200).json({
@@ -248,6 +267,20 @@ export async function testTeamZscalerConnectionController(
   const orgId = await resolveOrgId(req, res);
   if (!orgId) return;
 
+  // Primitive JSON bodies (0, false, "x") must not silently become "test the
+  // stored connection" — only an object body (or none) is valid.
+  if (
+    req.body !== undefined &&
+    (typeof req.body !== "object" ||
+      req.body === null ||
+      Array.isArray(req.body))
+  ) {
+    res.status(400).json({
+      success: false,
+      error: "The request body must be a JSON object.",
+    });
+    return;
+  }
   const body = testConnectionBodySchema.parse(
     req.body && Object.keys(req.body as object).length > 0
       ? req.body
@@ -285,6 +318,20 @@ export async function testTeamZscalerConnectionController(
         "No Zscaler connection is configured; provide credentials in the request body to test them.",
     });
     return;
+  }
+
+  // The probe spends one urlCategories call and one urlLookup call of the
+  // tenant's quota; charge the shared budgets so repeated tests can never
+  // starve real scrapes.
+  try {
+    await consumeZscalerCategoriesBudget(credentials);
+    await consumeZscalerLookupBudget(credentials);
+  } catch (error) {
+    if (error instanceof ZscalerError && error.kind === "quota") {
+      res.status(429).json({ success: false, error: error.message });
+      return;
+    }
+    throw error;
   }
 
   const result = await zscalerTestConnection(credentials, {

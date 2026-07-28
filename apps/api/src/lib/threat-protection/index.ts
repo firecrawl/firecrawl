@@ -153,6 +153,7 @@ async function checkUrlFresh(
     const synced = await evaluateZscalerSyncedRules(
       canonicalUrl,
       policy.zscaler,
+      policy.failurePolicy,
       {
         url: canonicalUrl,
         domain: normalizeDomain(canonicalUrl),

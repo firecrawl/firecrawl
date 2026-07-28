@@ -408,8 +408,12 @@ export async function getThreatProtectionConcurrencyCap(
   const key = concurrencyCapCacheKey(teamId);
   try {
     const cached = await getValue(key);
+    if (cached === "none") return null;
     if (cached !== null) {
-      return cached === "none" ? null : Number(cached);
+      const parsed = Number(cached);
+      // A malformed cache entry must not become a NaN/zero cap that breaks
+      // job admission — fall through and resolve from the source instead.
+      if (Number.isFinite(parsed) && parsed > 0) return parsed;
     }
   } catch (error) {
     logger.warn("Failed to read the concurrency cap cache", { error, teamId });
