@@ -405,6 +405,10 @@ const concurrencyCapCacheKey = (teamId: string) =>
 export async function getThreatProtectionConcurrencyCap(
   teamId: string,
 ): Promise<number | null> {
+  // Self-hosted deployments have no org config database (and no enterprise
+  // threat protection) — skip the lookup instead of warning on every job.
+  if (!appConfig.USE_DB_AUTHENTICATION) return null;
+
   const key = concurrencyCapCacheKey(teamId);
   try {
     const cached = await getValue(key);
