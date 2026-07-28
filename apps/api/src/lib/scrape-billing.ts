@@ -10,10 +10,7 @@ import { hasFormatOfType } from "./format-utils";
 import { TransportableError } from "./error";
 import { FeatureFlag } from "../scraper/scrapeURL/engines";
 import { isUrlBlocked } from "../scraper/WebScraper/utils/blocklist";
-import {
-  ExchangeScrapeMetadata,
-  getExchangeSuccessCredits,
-} from "./exchange";
+import { ExchangeScrapeMetadata, getExchangeSuccessCredits } from "./exchange";
 import type { ThreatDecision } from "./threat-protection/types";
 import { UnsafeDomainBlockedError } from "./threat-protection/error";
 
@@ -38,6 +35,9 @@ const threatScanCost = 2;
  * Sums the scan fees for a set of threat protection decisions. Only decisions
  * that consulted the provider bill; the fee is +2 per unique scanned
  * canonical URL across the given decisions.
+ *
+ * "zscaler" mode is exempt: classification runs against the customer's own
+ * ZIA tenant (their credentials, their quota), so no scan fee applies.
  */
 export function calculateThreatScanCredits(
   decisions: Iterable<ThreatDecision>,
@@ -46,6 +46,7 @@ export function calculateThreatScanCredits(
   let credits = 0;
   for (const decision of decisions) {
     if (!decision.providerConsulted) continue;
+    if (decision.mode === "zscaler") continue;
     // Decisions serialized by a pre-URL-level deploy have no `url`; bill
     // them individually (the old per-decision behavior) rather than letting
     // them all collapse onto one `undefined` key.

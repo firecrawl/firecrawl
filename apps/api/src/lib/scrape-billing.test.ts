@@ -245,6 +245,28 @@ describe("calculateThreatScanCredits", () => {
     ).toBe(0);
   });
 
+  it("never bills zscaler-mode decisions, consulted or not", () => {
+    const zscalerConsulted: ThreatDecision = {
+      ...consulted(false),
+      mode: "zscaler",
+      verdict: {
+        provider: "zscaler-zia",
+        riskScore: null,
+        categories: ["GAMBLING"],
+        fromCache: false,
+        raw: {},
+      },
+    };
+    expect(calculateThreatScanCredits([zscalerConsulted])).toBe(0);
+    // Mixed with a billable normal-mode decision, only that one bills.
+    expect(
+      calculateThreatScanCredits([
+        zscalerConsulted,
+        consulted(true, "http://a.example/"),
+      ]),
+    ).toBe(2);
+  });
+
   it("sums mixed decisions across URLs", () => {
     expect(
       calculateThreatScanCredits([

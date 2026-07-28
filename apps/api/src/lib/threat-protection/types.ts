@@ -117,7 +117,11 @@ export interface ThreatDecision {
   url: string;
   /** Canonicalized host of the checked URL (for logs and error surfaces). */
   domain: string;
-  /** True if a provider verdict (fresh OR cached) was consulted — this drives billing (+2 per scanned URL). */
+  /**
+   * True if a provider verdict (fresh OR cached) was consulted — this drives
+   * billing (+2 per scanned URL; "zscaler" mode is exempt because the
+   * customer's own tenant does the classification).
+   */
   providerConsulted: boolean;
   verdict: RawVerdict | null;
   mode: ThreatProtectionMode;
