@@ -68,7 +68,10 @@ import {
 import { activityController } from "../controllers/v1/activity";
 import {
   getTeamThreatProtectionController,
+  getTeamZscalerCategoriesController,
   putTeamThreatProtectionController,
+  syncTeamZscalerController,
+  testTeamZscalerConnectionController,
 } from "../controllers/v2/team-threat-protection";
 import {
   getTeamSiemLoggingController,
@@ -442,6 +445,24 @@ v2Router.put(
   "/team/threat-protection",
   authMiddleware(RateLimiterMode.Account),
   wrap(putTeamThreatProtectionController),
+);
+
+v2Router.post(
+  "/team/threat-protection/zscaler/test-connection",
+  authMiddleware(RateLimiterMode.Account),
+  wrap(testTeamZscalerConnectionController),
+);
+
+v2Router.get(
+  "/team/threat-protection/zscaler/categories",
+  authMiddleware(RateLimiterMode.Account),
+  wrap(getTeamZscalerCategoriesController),
+);
+
+v2Router.post(
+  "/team/threat-protection/zscaler/sync",
+  authMiddleware(RateLimiterMode.Account),
+  wrap(syncTeamZscalerController),
 );
 
 v2Router.get(

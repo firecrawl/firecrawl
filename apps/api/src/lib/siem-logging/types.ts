@@ -87,6 +87,13 @@ export interface ScrapeActivityThreat {
   rule: ThreatDecisionRule;
   provider: ThreatProvider | null;
   categories: string[];
+  /**
+   * Present only for providers with the concept (Zscaler): true when the
+   * URL carried a security-alert classification
+   * (`urlClassificationsWithSecurityAlert`). Only this normalized flag is
+   * exported — never the provider's raw response payload.
+   */
+  security_alert?: boolean;
 }
 
 export interface ScrapeActivityEvent {

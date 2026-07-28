@@ -4,7 +4,7 @@ import { db, dbRr } from "../../db/connection";
 import * as schema from "../../db/schema";
 import { getRedisConnection } from "../../services/queue-service";
 import { logger as _logger } from "../logger";
-import { decryptSiemSecret, encryptSiemSecret } from "./crypto";
+import { decryptOrgSecret, encryptOrgSecret } from "../org-secret-crypto";
 import type { OrgSiemLoggingConfig, SiemLoggingConfigInput } from "./types";
 
 const CACHE_TTL_MS = 60_000;
@@ -47,7 +47,7 @@ function rowToConfig(row: SiemConfigRow): OrgSiemLoggingConfig {
     enabled: row.enabled,
     destination: {
       ...destination,
-      clientSecret: decryptSiemSecret(row.secret_ciphertext, row.org_id),
+      clientSecret: decryptOrgSecret(row.secret_ciphertext, row.org_id),
     },
     createdAt: row.created_at,
     updatedAt: row.updated_at,
@@ -164,7 +164,7 @@ export async function upsertOrgSiemLoggingConfig(
   }
 
   const secretCiphertext = input.destination.clientSecret
-    ? encryptSiemSecret(input.destination.clientSecret, orgId)
+    ? encryptOrgSecret(input.destination.clientSecret, orgId)
     : existingCiphertext!;
   const values = {
     org_id: orgId,

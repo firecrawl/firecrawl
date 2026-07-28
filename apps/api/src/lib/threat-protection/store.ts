@@ -1,9 +1,12 @@
 import { eq } from "drizzle-orm";
 import { z } from "zod";
+import { config as appConfig } from "../../config";
 import { db, dbRr } from "../../db/connection";
 import * as schema from "../../db/schema";
 import { deleteKey, getValue, setValue } from "../../services/redis";
 import { logger as _logger } from "../logger";
+import { decryptOrgSecret, encryptOrgSecret } from "../org-secret-crypto";
+import type { ZscalerCredentials } from "./providers/zscaler/client";
 import {
   THREAT_PROTECTION_POLICY_DEFAULTS,
   type ThreatProtectionPolicy,
@@ -41,10 +44,26 @@ function isMissingTableError(error: unknown): boolean {
   return false;
 }
 
+/**
+ * Stored (non-secret-decrypted) Zscaler settings. `secretCiphertext` is the
+ * AES-256-GCM output of the write-only client secret — decrypted only by
+ * {@link getOrgZscalerCredentials} at call time, never serialized to the API
+ * or into job payloads.
+ */
+export interface OrgZscalerSettings {
+  clientId: string;
+  secretCiphertext: string;
+  vanityDomain: string;
+  cloud: string | null;
+  deniedCategories: string[];
+  syncIntervalMinutes: number;
+}
+
 export interface OrgThreatProtectionConfig {
   orgId: string;
   policy: ThreatProtectionPolicy;
   allowRequestOverrides: boolean;
+  zscaler: OrgZscalerSettings | null;
   createdAt: string | null;
   updatedAt: string | null;
 }
@@ -60,6 +79,20 @@ type ThreatProtectionConfigRow =
  * field defaults instead of throwing — a bad row must never take down the
  * enforcement hot path.
  */
+const storedZscalerSchema = z
+  .object({
+    clientId: z.string().min(1),
+    secretCiphertext: z.string().min(1),
+    vanityDomain: z.string().min(1),
+    cloud: z.string().nullable().catch(null),
+    deniedCategories: z.array(z.string()).catch([]),
+    syncIntervalMinutes: z.number().int().positive().catch(60),
+  })
+  // A malformed block degrades to "no Zscaler connection" (lookups then fail
+  // per the org's failurePolicy) instead of throwing on the hot path.
+  .nullable()
+  .catch(null);
+
 const storedConfigDocumentSchema = z
   .object({
     riskScoreThreshold: z
@@ -75,10 +108,12 @@ const storedConfigDocumentSchema = z
       .enum(["open", "closed"])
       .catch(THREAT_PROTECTION_POLICY_DEFAULTS.failurePolicy),
     allowRequestOverrides: z.boolean().catch(true),
+    zscaler: storedZscalerSchema.optional().catch(null),
   })
   .catch({
     ...THREAT_PROTECTION_POLICY_DEFAULTS,
     allowRequestOverrides: true,
+    zscaler: null,
   });
 
 /**
@@ -91,17 +126,33 @@ export function rowToConfig(
   row: ThreatProtectionConfigRow,
 ): OrgThreatProtectionConfig {
   const doc = storedConfigDocumentSchema.parse(row.config ?? {});
+  const zscaler = doc.zscaler ?? null;
   return {
     orgId: row.org_id,
     policy: {
-      mode: row.mode === "normal" ? "normal" : "off",
+      mode:
+        row.mode === "normal"
+          ? "normal"
+          : row.mode === "zscaler"
+            ? "zscaler"
+            : "off",
       riskScoreThreshold: doc.riskScoreThreshold,
       blacklist: doc.blacklist,
       whitelist: doc.whitelist,
       blockedTlds: doc.blockedTlds,
       failurePolicy: doc.failurePolicy,
+      ...(zscaler
+        ? {
+            zscaler: {
+              orgId: row.org_id,
+              deniedCategories: zscaler.deniedCategories,
+              syncIntervalMinutes: zscaler.syncIntervalMinutes,
+            },
+          }
+        : {}),
     },
     allowRequestOverrides: doc.allowRequestOverrides,
+    zscaler,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -164,13 +215,63 @@ export async function getOrgThreatProtectionConfig(
 }
 
 /**
+ * The PUT config document needs a client secret we do not have: thrown when a
+ * Zscaler block is first configured without one, or when the client ID
+ * changes without a matching new secret. Mapped to a 400 by the controller.
+ */
+export class ZscalerSecretRequiredError extends Error {
+  constructor() {
+    super(
+      "zscaler.clientSecret is required when configuring a Zscaler connection or changing its client ID",
+    );
+    this.name = "ZscalerSecretRequiredError";
+  }
+}
+
+/**
  * Full-document upsert of the org's threat protection config. Invalidates
  * the read cache on success.
+ *
+ * The Zscaler client secret is write-only: when the input block omits it,
+ * the stored ciphertext is kept — but only while the client ID is unchanged
+ * (pairing a new client with an old secret is always a mistake, so that
+ * throws {@link ZscalerSecretRequiredError} instead).
  */
 export async function upsertOrgThreatProtectionConfig(
   orgId: string,
   config: ThreatProtectionConfigInput,
 ): Promise<OrgThreatProtectionConfig> {
+  let zscaler: z.infer<typeof storedZscalerSchema> = null;
+  if (config.zscaler) {
+    let secretCiphertext: string;
+    if (config.zscaler.clientSecret) {
+      secretCiphertext = encryptOrgSecret(config.zscaler.clientSecret, orgId);
+    } else {
+      // Primary read: the upsert below writes to the primary, and a stale
+      // replica must not make us discard a just-saved secret.
+      const existingRows = await db
+        .select({ config: schema.threat_protection_config.config })
+        .from(schema.threat_protection_config)
+        .where(eq(schema.threat_protection_config.org_id, orgId))
+        .limit(1);
+      const existing = existingRows[0]
+        ? storedConfigDocumentSchema.parse(existingRows[0].config ?? {}).zscaler
+        : null;
+      if (!existing || existing.clientId !== config.zscaler.clientId) {
+        throw new ZscalerSecretRequiredError();
+      }
+      secretCiphertext = existing.secretCiphertext;
+    }
+    zscaler = {
+      clientId: config.zscaler.clientId,
+      secretCiphertext,
+      vanityDomain: config.zscaler.vanityDomain,
+      cloud: config.zscaler.cloud,
+      deniedCategories: config.zscaler.deniedCategories,
+      syncIntervalMinutes: config.zscaler.syncIntervalMinutes,
+    };
+  }
+
   const values = {
     org_id: orgId,
     mode: config.mode,
@@ -182,6 +283,7 @@ export async function upsertOrgThreatProtectionConfig(
       blockedTlds: config.blockedTlds,
       failurePolicy: config.failurePolicy,
       allowRequestOverrides: config.allowRequestOverrides,
+      zscaler,
     },
   };
 
@@ -246,6 +348,10 @@ export function resolveEffectivePolicy(
   for (const key of Object.keys(requestOverride) as Array<
     keyof ThreatProtectionPolicy
   >) {
+    // The Zscaler connection settings come from the org config only — the
+    // override schema has no such field, and this guard keeps it that way
+    // even if a wider Partial ever reaches here.
+    if (key === "zscaler") continue;
     const value = requestOverride[key];
     if (value !== undefined) {
       (base as unknown as Record<string, unknown>)[key] = value;
@@ -253,4 +359,81 @@ export function resolveEffectivePolicy(
   }
 
   return base;
+}
+
+/**
+ * Decrypted Zscaler API credentials for an org, or null when the org has no
+ * (valid) Zscaler connection. Backed by the 60s org-config cache, so a saved
+ * secret rotation is picked up within a minute — the plaintext itself lives
+ * only in this return value, never in a cache or a job payload.
+ */
+export async function getOrgZscalerCredentials(
+  orgId: string,
+): Promise<ZscalerCredentials | null> {
+  const orgConfig = await getOrgThreatProtectionConfig(orgId);
+  if (!orgConfig?.zscaler) return null;
+  try {
+    return {
+      clientId: orgConfig.zscaler.clientId,
+      clientSecret: decryptOrgSecret(orgConfig.zscaler.secretCiphertext, orgId),
+      vanityDomain: orgConfig.zscaler.vanityDomain,
+      cloud: orgConfig.zscaler.cloud,
+    };
+  } catch (error) {
+    logger.error("Failed to decrypt the stored Zscaler client secret", {
+      error,
+      orgId,
+    });
+    return null;
+  }
+}
+
+const concurrencyCapCacheKey = (teamId: string) =>
+  `threat-protection-concurrency-cap:${teamId}`;
+
+/**
+ * Scrape-concurrency cap imposed by the team's threat protection mode, or
+ * null when none applies. "zscaler" mode caps concurrency so URL demand
+ * stays near the tenant's classification budget (POST /urlLookup allows 1
+ * request/second × 100 URLs, 400 requests/hour) — without the cap, a large
+ * crawl outruns the budget, every lookup times out, and the failurePolicy
+ * fires for everything.
+ *
+ * Cached in Redis for 60s per team; fails open (null) so a Redis or DB
+ * hiccup never blocks job admission.
+ */
+export async function getThreatProtectionConcurrencyCap(
+  teamId: string,
+): Promise<number | null> {
+  const key = concurrencyCapCacheKey(teamId);
+  try {
+    const cached = await getValue(key);
+    if (cached !== null) {
+      return cached === "none" ? null : Number(cached);
+    }
+  } catch (error) {
+    logger.warn("Failed to read the concurrency cap cache", { error, teamId });
+  }
+
+  let cap: number | null = null;
+  try {
+    const orgId = await getOrgIdForTeam(teamId);
+    const orgConfig = orgId ? await getOrgThreatProtectionConfig(orgId) : null;
+    if (orgConfig?.policy.mode === "zscaler") {
+      cap = appConfig.ZSCALER_MODE_CONCURRENCY_CAP;
+    }
+  } catch (error) {
+    logger.warn("Failed to resolve the threat protection concurrency cap", {
+      error,
+      teamId,
+    });
+    return null;
+  }
+
+  try {
+    await setValue(key, cap === null ? "none" : String(cap), 60);
+  } catch (error) {
+    logger.warn("Failed to write the concurrency cap cache", { error, teamId });
+  }
+  return cap;
 }

@@ -31,6 +31,9 @@ export const THREAT_PROTECTION_CANNOT_TURN_OFF_MESSAGE =
 export const THREAT_PROTECTION_V0_UNSUPPORTED_MESSAGE =
   "Threat protection is enforced for your team and is not supported on the deprecated v0 API. Please update your code to use the v1 or v2 API.";
 
+const THREAT_PROTECTION_ZSCALER_NOT_CONFIGURED_MESSAGE =
+  'Threat protection mode "zscaler" requires a configured Zscaler connection. Configure one via PUT /v2/team/threat-protection first.';
+
 /**
  * The deprecated v0 endpoints never resolve a threat protection policy, so
  * teams whose flag is "forced" must not be able to fetch content through
@@ -105,6 +108,19 @@ export async function resolveThreatProtection(args: {
   }
 
   const policy = resolveEffectivePolicy(orgConfig, args.override);
+
+  // "zscaler" mode without a connection can only happen via a per-request
+  // override on an org that never saved credentials (the config API refuses
+  // to store that combination). Reject clearly instead of failing every
+  // lookup into the failurePolicy.
+  if (policy.mode === "zscaler" && !policy.zscaler) {
+    return {
+      error: THREAT_PROTECTION_ZSCALER_NOT_CONFIGURED_MESSAGE,
+      policy: null,
+      orgConfig,
+    };
+  }
+
   return {
     policy: policy.mode === "off" ? null : policy,
     orgConfig,

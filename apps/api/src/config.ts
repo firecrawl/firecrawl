@@ -81,6 +81,35 @@ const configSchema = z.object({
     .positive()
     .default(6 * 60 * 60),
 
+  // Zscaler ZIA provider ("zscaler" threat protection mode). Base-URL
+  // overrides exist for tests (mock ZIA server); production always uses the
+  // real endpoints derived from the org's vanity domain and cloud name.
+  ZSCALER_TOKEN_URL_OVERRIDE: z.string().url().optional(),
+  ZSCALER_API_URL_OVERRIDE: z.string().url().optional(),
+  // Per-org hourly budget for POST /urlLookup calls. ZIA allows 400/hour;
+  // the default keeps headroom for connection tests.
+  ZSCALER_LOOKUP_HOURLY_BUDGET: z.coerce.number().int().positive().default(380),
+  // Per-org hourly budget for GET /urlCategories calls (ZIA allows 1,000/hour).
+  ZSCALER_CATEGORIES_HOURLY_BUDGET: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(900),
+  // How long one queued urlLookup may wait for its batched verdict before the
+  // org's failurePolicy decides.
+  ZSCALER_LOOKUP_TIMEOUT_MS: z.coerce.number().int().positive().default(15000),
+  // Queued-URL depth per org above which new lookups fail fast into the
+  // failurePolicy instead of waiting in a line they cannot exit.
+  ZSCALER_LOOKUP_MAX_QUEUE_DEPTH: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(500),
+  // Effective scrape concurrency cap for teams in "zscaler" mode, keeping URL
+  // demand near the classification budget (≤100 URLs/s burst, ~11 URLs/s
+  // sustained at 400 lookups/hour).
+  ZSCALER_MODE_CONCURRENCY_CAP: z.coerce.number().int().positive().default(15),
+
   // Organization SIEM logging delivery. The encryption key must decode to
   // exactly 32 bytes; validation happens when a secret is encrypted/decrypted
   // so self-hosted deployments that do not use this feature need no key.

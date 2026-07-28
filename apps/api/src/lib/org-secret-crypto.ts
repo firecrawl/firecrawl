@@ -1,5 +1,10 @@
 import crypto from "crypto";
-import { config } from "../../config";
+import { config } from "../config";
+
+// AES-256-GCM encryption for org-scoped partner credentials at rest (SIEM
+// destination secrets, Zscaler OAuth client secrets). The key lives outside
+// the database (env), and the org ID is bound in as AAD so a ciphertext
+// pasted onto another org's row fails authentication instead of decrypting.
 
 const GCM_PREFIX = "gcm:";
 
@@ -25,7 +30,7 @@ function getEncryptionKey(): Buffer {
   return key;
 }
 
-export function encryptSiemSecret(secret: string, orgId: string): string {
+export function encryptOrgSecret(secret: string, orgId: string): string {
   const key = getEncryptionKey();
   const iv = crypto.randomBytes(12);
   const cipher = crypto.createCipheriv("aes-256-gcm", key, iv);
@@ -38,16 +43,16 @@ export function encryptSiemSecret(secret: string, orgId: string): string {
   return `${GCM_PREFIX}${iv.toString("base64")}:${tag.toString("base64")}:${ciphertext.toString("base64")}`;
 }
 
-export function decryptSiemSecret(stored: string, orgId: string): string {
+export function decryptOrgSecret(stored: string, orgId: string): string {
   if (!stored.startsWith(GCM_PREFIX)) {
-    throw new Error("SIEM client secret is not encrypted with AES-256-GCM");
+    throw new Error("Stored secret is not encrypted with AES-256-GCM");
   }
 
   const [ivB64, tagB64, ciphertextB64] = stored
     .slice(GCM_PREFIX.length)
     .split(":");
   if (!ivB64 || !tagB64 || !ciphertextB64) {
-    throw new Error("Malformed encrypted SIEM client secret");
+    throw new Error("Malformed encrypted secret");
   }
 
   const decipher = crypto.createDecipheriv(

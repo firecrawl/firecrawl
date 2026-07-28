@@ -96,6 +96,9 @@ function threatForDecisions(
     rule: decision.rule,
     provider: decision.verdict?.provider ?? null,
     categories: [...new Set(decision.verdict?.categories ?? [])],
+    ...(typeof decision.verdict?.securityAlert === "boolean"
+      ? { security_alert: decision.verdict.securityAlert }
+      : {}),
   };
 }
 

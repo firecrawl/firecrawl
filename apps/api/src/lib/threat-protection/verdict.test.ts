@@ -425,3 +425,119 @@ describe("normalizeDomain", () => {
     ).toMatchObject({ allowed: false, rule: "blacklist" });
   });
 });
+
+describe("evaluatePolicy — zscaler denied categories", () => {
+  function zscalerPolicy(
+    overrides: Partial<ThreatProtectionPolicy> = {},
+  ): ThreatProtectionPolicy {
+    return policy({
+      mode: "zscaler",
+      zscaler: {
+        orgId: "00000000-0000-0000-0000-000000000000",
+        deniedCategories: ["GAMBLING", "CUSTOM_01"],
+        syncIntervalMinutes: 60,
+      },
+      ...overrides,
+    });
+  }
+
+  function zscalerVerdict(overrides: Partial<RawVerdict> = {}): RawVerdict {
+    return verdict({
+      provider: "zscaler-zia",
+      riskScore: null,
+      ...overrides,
+    });
+  }
+
+  test("blocks when a verdict category is on the denied list", () => {
+    const decision = evaluatePolicy(
+      "https://casino.example.com/",
+      zscalerVerdict({ categories: ["GAMBLING", "ENTERTAINMENT"] }),
+      zscalerPolicy(),
+    );
+    expect(decision).toMatchObject({
+      allowed: false,
+      rule: "denied-category",
+      providerConsulted: true,
+    });
+  });
+
+  test("blocks on a denied custom category ID in the verdict", () => {
+    const decision = evaluatePolicy(
+      "https://vendor.example.com/",
+      zscalerVerdict({ categories: ["CUSTOM_01"] }),
+      zscalerPolicy(),
+    );
+    expect(decision).toMatchObject({ allowed: false, rule: "denied-category" });
+  });
+
+  test("allows when no verdict category is denied", () => {
+    const decision = evaluatePolicy(
+      "https://news.example.com/",
+      zscalerVerdict({ categories: ["NEWS_AND_MEDIA"] }),
+      zscalerPolicy(),
+    );
+    expect(decision).toMatchObject({ allowed: true, rule: "default-allow" });
+  });
+
+  test("uncategorized URLs block only when the org denies the unknown bucket", () => {
+    const uncategorized = zscalerVerdict({
+      categories: ["MISCELLANEOUS_OR_UNKNOWN"],
+    });
+    expect(
+      evaluatePolicy(
+        "https://new.example.com/",
+        uncategorized,
+        zscalerPolicy(),
+      ),
+    ).toMatchObject({ allowed: true, rule: "default-allow" });
+    expect(
+      evaluatePolicy(
+        "https://new.example.com/",
+        uncategorized,
+        zscalerPolicy({
+          zscaler: {
+            orgId: "00000000-0000-0000-0000-000000000000",
+            deniedCategories: ["MISCELLANEOUS_OR_UNKNOWN"],
+            syncIntervalMinutes: 60,
+          },
+        }),
+      ),
+    ).toMatchObject({ allowed: false, rule: "denied-category" });
+  });
+
+  test("whitelist wins over a denied category", () => {
+    const decision = evaluatePolicy(
+      "https://casino.example.com/",
+      zscalerVerdict({ categories: ["GAMBLING"] }),
+      zscalerPolicy({ whitelist: ["casino.example.com"] }),
+    );
+    expect(decision).toMatchObject({ allowed: true, rule: "whitelist" });
+  });
+
+  test("a null verdict resolves through the failurePolicy", () => {
+    expect(
+      evaluatePolicy(
+        "https://example.com/",
+        null,
+        zscalerPolicy({ failurePolicy: "closed" }),
+      ),
+    ).toMatchObject({ allowed: false, rule: "provider-failure" });
+    expect(
+      evaluatePolicy(
+        "https://example.com/",
+        null,
+        zscalerPolicy({ failurePolicy: "open" }),
+      ),
+    ).toMatchObject({ allowed: true, rule: "provider-failure" });
+  });
+
+  test("the null risk score never trips the score threshold", () => {
+    const decision = evaluatePolicy(
+      "https://example.com/",
+      zscalerVerdict({ categories: [], riskScore: null }),
+      zscalerPolicy({ riskScoreThreshold: 0 }),
+    );
+    expect(decision).toMatchObject({ allowed: true, rule: "default-allow" });
+  });
+});
