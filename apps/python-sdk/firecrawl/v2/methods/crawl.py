@@ -207,7 +207,7 @@ def get_crawl_status(
     documents = payload["data"]
 
     # Handle pagination if requested
-    auto_paginate = pagination_config.auto_paginate if pagination_config else True
+    auto_paginate = pagination_config.auto_paginate if pagination_config else False
     if auto_paginate and payload["next"] and not (
         pagination_config
         and pagination_config.max_results is not None
