@@ -282,118 +282,265 @@ fn children<'a, 'b>(
     .filter(move |n| n.is_element() && n.tag_name().name() == local)
 }
 
-fn normalize_inline(inline: Inline) -> Inline {
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum MergeableFormat {
+  Strong,
+  Em,
+  Del,
+  Sup,
+  Sub,
+}
+
+struct NormalizedInline {
+  inline: Inline,
+  has_merge_boundary: bool,
+}
+
+fn mergeable_format(inline: &Inline) -> Option<MergeableFormat> {
   match inline {
-    Inline::Link { href, children } => Inline::Link {
-      href,
-      children: normalize_inlines(children),
-    },
-    Inline::Strong(children) => Inline::Strong(normalize_inlines(children)),
-    Inline::Em(children) => Inline::Em(normalize_inlines(children)),
-    Inline::Del(children) => Inline::Del(normalize_inlines(children)),
-    Inline::Sup(children) => Inline::Sup(normalize_inlines(children)),
-    Inline::Sub(children) => Inline::Sub(normalize_inlines(children)),
-    inline => inline,
+    Inline::Strong(_) => Some(MergeableFormat::Strong),
+    Inline::Em(_) => Some(MergeableFormat::Em),
+    Inline::Del(_) => Some(MergeableFormat::Del),
+    Inline::Sup(_) => Some(MergeableFormat::Sup),
+    Inline::Sub(_) => Some(MergeableFormat::Sub),
+    _ => None,
   }
 }
 
-fn is_mergeable_format(inline: &Inline) -> bool {
-  matches!(
+fn normalized_mergeable_format(inline: &NormalizedInline) -> Option<MergeableFormat> {
+  if inline.has_merge_boundary {
+    None
+  } else {
+    mergeable_format(&inline.inline)
+  }
+}
+
+fn normalize_formatted_children(children: Vec<Inline>) -> (Vec<Inline>, bool) {
+  let normalized = normalize_inline_sequence(children);
+  let has_merge_boundary = normalized.iter().any(|inline| inline.has_merge_boundary);
+  let children = normalized.into_iter().map(|inline| inline.inline).collect();
+  (children, has_merge_boundary)
+}
+
+fn normalize_formatted_inline(format: MergeableFormat, children: Vec<Inline>) -> NormalizedInline {
+  let (children, has_merge_boundary) = normalize_formatted_children(children);
+  let inline = match format {
+    MergeableFormat::Strong => Inline::Strong(children),
+    MergeableFormat::Em => Inline::Em(children),
+    MergeableFormat::Del => Inline::Del(children),
+    MergeableFormat::Sup => Inline::Sup(children),
+    MergeableFormat::Sub => Inline::Sub(children),
+  };
+  NormalizedInline {
     inline,
-    Inline::Strong(_) | Inline::Em(_) | Inline::Del(_) | Inline::Sup(_) | Inline::Sub(_)
-  )
+    has_merge_boundary,
+  }
 }
 
-fn has_same_mergeable_format(left: &Inline, right: &Inline) -> bool {
-  matches!(
-    (left, right),
-    (Inline::Strong(_), Inline::Strong(_))
-      | (Inline::Em(_), Inline::Em(_))
-      | (Inline::Del(_), Inline::Del(_))
-      | (Inline::Sup(_), Inline::Sup(_))
-      | (Inline::Sub(_), Inline::Sub(_))
-  )
+fn normalize_inline(inline: Inline) -> NormalizedInline {
+  match inline {
+    Inline::Link { href, children } => NormalizedInline {
+      inline: Inline::Link {
+        href,
+        children: normalize_inlines(children),
+      },
+      has_merge_boundary: true,
+    },
+    Inline::Strong(children) => normalize_formatted_inline(MergeableFormat::Strong, children),
+    Inline::Em(children) => normalize_formatted_inline(MergeableFormat::Em, children),
+    Inline::Del(children) => normalize_formatted_inline(MergeableFormat::Del, children),
+    Inline::Sup(children) => normalize_formatted_inline(MergeableFormat::Sup, children),
+    Inline::Sub(children) => normalize_formatted_inline(MergeableFormat::Sub, children),
+    inline @ (Inline::LineBreak
+    | Inline::FootnoteRef(_)
+    | Inline::EndnoteRef(_)
+    | Inline::CommentRef(_)
+    | Inline::Bookmark(_)) => NormalizedInline {
+      inline,
+      has_merge_boundary: true,
+    },
+    inline => NormalizedInline {
+      inline,
+      has_merge_boundary: false,
+    },
+  }
 }
 
-fn merge_formatted_inlines(target: &mut Inline, source: Inline, separator: Option<String>) {
-  let (target_children, mut source_children) = match (target, source) {
+// Both sequences passed here have already been normalized and are known not
+// to contain semantic merge boundaries. Only their shared edge can require
+// more merging, which keeps fragmented-run normalization linear.
+fn append_boundary_free_inline(output: &mut Vec<Inline>, inline: Inline) {
+  let source_format = mergeable_format(&inline);
+
+  if source_format.is_some() && output.last().and_then(mergeable_format) == source_format {
+    let Some(target) = output.last_mut() else {
+      output.push(inline);
+      return;
+    };
+    match merge_formatted_inlines(target, inline, None) {
+      Ok(()) => return,
+      Err(inline) => {
+        output.push(inline);
+        return;
+      }
+    }
+  }
+
+  let previous_format = output
+    .get(output.len().saturating_sub(2))
+    .and_then(mergeable_format);
+  let has_whitespace_separator = matches!(
+    output.last(),
+    Some(Inline::Text(value))
+      if !value.is_empty() && value.chars().all(char::is_whitespace)
+  );
+
+  if source_format.is_some() && has_whitespace_separator && previous_format == source_format {
+    let Some(separator_inline) = output.pop() else {
+      output.push(inline);
+      return;
+    };
+    let Inline::Text(separator) = separator_inline else {
+      output.push(separator_inline);
+      output.push(inline);
+      return;
+    };
+    let Some(target) = output.last_mut() else {
+      output.push(Inline::Text(separator));
+      output.push(inline);
+      return;
+    };
+    match merge_formatted_inlines(target, inline, Some(separator.clone())) {
+      Ok(()) => return,
+      Err(inline) => {
+        output.push(Inline::Text(separator));
+        output.push(inline);
+        return;
+      }
+    }
+  }
+
+  output.push(inline);
+}
+
+fn merge_formatted_inlines(
+  target: &mut Inline,
+  source: Inline,
+  separator: Option<String>,
+) -> Result<(), Inline> {
+  let (target_children, source_children) = match (target, source) {
     (Inline::Strong(target), Inline::Strong(source)) => (target, source),
     (Inline::Em(target), Inline::Em(source)) => (target, source),
     (Inline::Del(target), Inline::Del(source)) => (target, source),
     (Inline::Sup(target), Inline::Sup(source)) => (target, source),
     (Inline::Sub(target), Inline::Sub(source)) => (target, source),
-    _ => unreachable!("formatted inline variants must match before merging"),
+    (_, source) => return Err(source),
   };
 
   if let Some(separator) = separator {
-    target_children.push(Inline::Text(separator));
+    append_boundary_free_inline(target_children, Inline::Text(separator));
   }
-  target_children.append(&mut source_children);
-
-  let children = std::mem::take(target_children);
-  *target_children = normalize_inlines(children);
+  for inline in source_children {
+    append_boundary_free_inline(target_children, inline);
+  }
+  Ok(())
 }
 
-fn normalize_inlines(inlines: Vec<Inline>) -> Vec<Inline> {
+fn try_merge_last(
+  output: &mut Vec<NormalizedInline>,
+  source: NormalizedInline,
+  separator: Option<String>,
+) -> Result<(), NormalizedInline> {
+  let source_format = normalized_mergeable_format(&source);
+  let target_format = output.last().and_then(normalized_mergeable_format);
+
+  if source_format.is_none() || source_format != target_format {
+    return Err(source);
+  }
+
+  let source_has_merge_boundary = source.has_merge_boundary;
+  let Some(target) = output.last_mut() else {
+    return Err(source);
+  };
+  match merge_formatted_inlines(&mut target.inline, source.inline, separator) {
+    Ok(()) => Ok(()),
+    Err(inline) => Err(NormalizedInline {
+      inline,
+      has_merge_boundary: source_has_merge_boundary,
+    }),
+  }
+}
+
+fn normalize_inline_sequence(inlines: Vec<Inline>) -> Vec<NormalizedInline> {
   // Word may split visually identical formatting into arbitrary runs. Collapse
   // those run boundaries before HTML rendering so Markdown does not emit
   // adjacent delimiters such as `**10****th**`.
-  let mut output: Vec<Inline> = Vec::with_capacity(inlines.len());
+  let mut output: Vec<NormalizedInline> = Vec::with_capacity(inlines.len());
   let mut pending_whitespace: Option<String> = None;
 
   for inline in inlines.into_iter().map(normalize_inline) {
-    let is_whitespace_after_format = match &inline {
-      Inline::Text(value) => {
-        !value.is_empty()
+    let is_whitespace_after_format = matches!(
+      &inline.inline,
+      Inline::Text(value)
+        if !value.is_empty()
           && value.chars().all(char::is_whitespace)
-          && output.last().map(is_mergeable_format).unwrap_or(false)
-      }
-      _ => false,
-    };
+          && output.last().and_then(normalized_mergeable_format).is_some()
+    );
 
     if is_whitespace_after_format {
-      let Inline::Text(value) = inline else {
-        unreachable!();
-      };
-      pending_whitespace
-        .get_or_insert_with(String::new)
-        .push_str(&value);
+      let has_merge_boundary = inline.has_merge_boundary;
+      match inline.inline {
+        Inline::Text(value) => {
+          pending_whitespace
+            .get_or_insert_with(String::new)
+            .push_str(&value);
+        }
+        inline => output.push(NormalizedInline {
+          inline,
+          has_merge_boundary,
+        }),
+      }
       continue;
     }
 
     if let Some(separator) = pending_whitespace.take() {
-      let can_merge_across_whitespace = output
-        .last()
-        .map(|previous| has_same_mergeable_format(previous, &inline))
-        .unwrap_or(false);
-
-      if can_merge_across_whitespace {
-        let previous = output.last_mut().expect("checked above");
-        merge_formatted_inlines(previous, inline, Some(separator));
-        continue;
+      match try_merge_last(&mut output, inline, Some(separator.clone())) {
+        Ok(()) => continue,
+        Err(inline) => {
+          output.push(NormalizedInline {
+            inline: Inline::Text(separator),
+            has_merge_boundary: false,
+          });
+          match try_merge_last(&mut output, inline, None) {
+            Ok(()) => continue,
+            Err(inline) => output.push(inline),
+          }
+        }
       }
-
-      output.push(Inline::Text(separator));
+      continue;
     }
 
-    let can_merge_directly = output
-      .last()
-      .map(|previous| has_same_mergeable_format(previous, &inline))
-      .unwrap_or(false);
-
-    if can_merge_directly {
-      let previous = output.last_mut().expect("checked above");
-      merge_formatted_inlines(previous, inline, None);
-    } else {
-      output.push(inline);
+    match try_merge_last(&mut output, inline, None) {
+      Ok(()) => {}
+      Err(inline) => output.push(inline),
     }
   }
 
   if let Some(whitespace) = pending_whitespace {
-    output.push(Inline::Text(whitespace));
+    output.push(NormalizedInline {
+      inline: Inline::Text(whitespace),
+      has_merge_boundary: false,
+    });
   }
 
   output
+}
+
+fn normalize_inlines(inlines: Vec<Inline>) -> Vec<Inline> {
+  normalize_inline_sequence(inlines)
+    .into_iter()
+    .map(|inline| inline.inline)
+    .collect()
 }
 
 fn parse_paragraph_with_listinfo(
@@ -1325,6 +1472,82 @@ mod tests {
     assert!(matches!(normalized[2], Inline::Strong(_)));
     assert!(matches!(normalized[3], Inline::Link { .. }));
     assert!(matches!(normalized[4], Inline::Strong(_)));
+  }
+
+  #[test]
+  fn does_not_merge_formatted_word_breaks_or_references() {
+    let xml = XmlDoc::parse(
+      r#"
+        <w:p xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+          <w:r>
+            <w:rPr><w:b/></w:rPr>
+            <w:t>before</w:t>
+          </w:r>
+          <w:r>
+            <w:rPr><w:b/></w:rPr>
+            <w:br/>
+          </w:r>
+          <w:r>
+            <w:rPr><w:b/></w:rPr>
+            <w:footnoteReference w:id="1"/>
+          </w:r>
+          <w:r>
+            <w:rPr><w:b/></w:rPr>
+            <w:endnoteReference w:id="2"/>
+          </w:r>
+          <w:r>
+            <w:rPr><w:b/></w:rPr>
+            <w:commentReference w:id="3"/>
+          </w:r>
+          <w:r>
+            <w:rPr><w:b/></w:rPr>
+            <w:t>after</w:t>
+          </w:r>
+        </w:p>
+      "#,
+    )
+    .expect("valid WordprocessingML fixture");
+    let size_buckets = std::collections::HashMap::new();
+    let (paragraph, _) = parse_paragraph_with_listinfo(
+      &xml.root_element(),
+      &Relationships::default(),
+      &StylesInfo::default(),
+      &size_buckets,
+      &NumberingInfo::default(),
+    )
+    .expect("paragraph should parse");
+
+    let [Inline::Strong(before), Inline::Strong(line_break), Inline::Strong(footnote), Inline::Strong(endnote), Inline::Strong(comment), Inline::Strong(after)] =
+      paragraph.inlines.as_slice()
+    else {
+      panic!("expected formatted semantic boundaries to remain separate");
+    };
+    assert_eq!(inlines_text(before), "before");
+    assert!(matches!(line_break.as_slice(), [Inline::LineBreak]));
+    assert!(matches!(
+      footnote.as_slice(),
+      [Inline::FootnoteRef(NoteId(id))] if id == "1"
+    ));
+    assert!(matches!(
+      endnote.as_slice(),
+      [Inline::EndnoteRef(NoteId(id))] if id == "2"
+    ));
+    assert!(matches!(
+      comment.as_slice(),
+      [Inline::CommentRef(CommentId(id))] if id == "3"
+    ));
+    assert_eq!(inlines_text(after), "after");
+  }
+
+  #[test]
+  fn merges_heavily_fragmented_runs_incrementally() {
+    let normalized = normalize_inlines((0..10_000).map(|_| strong("x")).collect());
+
+    let [Inline::Strong(children)] = normalized.as_slice() else {
+      panic!("expected heavily fragmented runs to become one strong inline");
+    };
+    assert_eq!(children.len(), 10_000);
+    assert_eq!(inlines_text(children).len(), 10_000);
   }
 
   #[test]
