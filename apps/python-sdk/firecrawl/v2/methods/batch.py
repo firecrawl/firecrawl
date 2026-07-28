@@ -135,7 +135,7 @@ def get_batch_scrape_status(
     documents = payload["data"]
 
     # Handle pagination if requested
-    auto_paginate = pagination_config.auto_paginate if pagination_config else True
+    auto_paginate = pagination_config.auto_paginate if pagination_config else False
     if auto_paginate and payload["next"]:
         documents = _fetch_all_batch_pages(
             client, 
