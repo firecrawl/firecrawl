@@ -10,6 +10,37 @@ from .get_version import get_version
 
 version = get_version()
 
+
+def build_url(api_url: str, endpoint: str) -> str:
+    """Resolve ``endpoint`` against ``api_url``, never leaving the configured host.
+
+    Absolute URLs pointing at a different host (e.g. a ``next`` pagination URL
+    returned by a proxied or self-hosted deployment) are rewritten onto the
+    configured ``api_url`` host/scheme so credentials are never sent to a
+    foreign host.
+    """
+    base = urlparse(api_url)
+    ep = urlparse(endpoint)
+
+    # Absolute or protocol-relative (has netloc)
+    if ep.netloc:
+        # Different host: keep path/query but force base host/scheme (no token leakage)
+        path = ep.path or "/"
+        if (ep.hostname or "") != (base.hostname or ""):
+            return urlunparse((base.scheme or "https", base.netloc, path, "", ep.query, ""))
+        # Same host: normalize scheme to base
+        return urlunparse((base.scheme or "https", base.netloc, path, "", ep.query, ""))
+
+    # Relative (including leading slash or not)
+    base_str = api_url if api_url.endswith("/") else f"{api_url}/"
+    # Guard protocol-relative like //host/path slipping through as “relative”
+    if endpoint.startswith("//"):
+        ep2 = urlparse(f"https:{endpoint}")
+        path = ep2.path or "/"
+        return urlunparse((base.scheme or "https", base.netloc, path, "", ep2.query, ""))
+    return urljoin(base_str, endpoint)
+
+
 class HttpClient:
     """HTTP client with retry logic and error handling."""
 
@@ -28,26 +59,7 @@ class HttpClient:
         self.backoff_factor = backoff_factor
 
     def _build_url(self, endpoint: str) -> str:
-        base = urlparse(self.api_url)
-        ep = urlparse(endpoint)
-
-        # Absolute or protocol-relative (has netloc)
-        if ep.netloc:
-            # Different host: keep path/query but force base host/scheme (no token leakage)
-            path = ep.path or "/"
-            if (ep.hostname or "") != (base.hostname or ""):
-                return urlunparse((base.scheme or "https", base.netloc, path, "", ep.query, ""))
-            # Same host: normalize scheme to base
-            return urlunparse((base.scheme or "https", base.netloc, path, "", ep.query, ""))
-
-        # Relative (including leading slash or not)
-        base_str = self.api_url if self.api_url.endswith("/") else f"{self.api_url}/"
-        # Guard protocol-relative like //host/path slipping through as “relative”
-        if endpoint.startswith("//"):
-            ep2 = urlparse(f"https:{endpoint}")
-            path = ep2.path or "/"
-            return urlunparse((base.scheme or "https", base.netloc, path, "", ep2.query, ""))
-        return urljoin(base_str, endpoint)
+        return build_url(self.api_url, endpoint)
     
     def _prepare_headers(
         self,
