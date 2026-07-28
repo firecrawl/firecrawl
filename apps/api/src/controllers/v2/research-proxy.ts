@@ -92,6 +92,48 @@ const githubSearchSchema = z.strictObject({
   ...commonQuery,
 });
 
+const starsSchema = z.coerce.number().int().nonnegative().optional();
+
+const booleanFlag = z
+  .union([z.boolean(), z.enum(["true", "false"])])
+  .optional()
+  .transform(value =>
+    value === undefined ? undefined : value === true || value === "true",
+  );
+
+const codeSearchSchema = z.strictObject({
+  query: z.string().min(1),
+  k: kSchema(100),
+  types: multiString,
+  repos: multiString,
+  sources: multiString,
+  passages: kSchema(5),
+  language: z.string().min(1).optional(),
+  topic: multiString,
+  license: z.string().min(1).optional(),
+  min_stars: starsSchema,
+  max_stars: starsSchema,
+  archived: booleanFlag,
+  fork: booleanFlag,
+  ...commonQuery,
+});
+
+const CODE_SEARCH_QUERY_KEYS = [
+  "query",
+  "k",
+  "types",
+  "repos",
+  "sources",
+  "passages",
+  "language",
+  "topic",
+  "license",
+  "min_stars",
+  "max_stars",
+  "archived",
+  "fork",
+];
+
 type ResearchEndpointConfig = {
   kind: ResearchRequestKind;
   table: ResearchTableName;
@@ -259,7 +301,8 @@ function createResearchController(
       teamId: authedReq.auth.team_id,
     });
 
-    const parsed = schema.safeParse(req.query);
+    const source = req.method === "POST" ? (req.body ?? {}) : req.query;
+    const parsed = schema.safeParse(source);
     if (!parsed.success) {
       logger.warn("Invalid research query", { error: parsed.error.issues });
       return researchError(
@@ -480,6 +523,26 @@ export function createResearchRouter(options: { legacy?: boolean } = {}) {
       ),
     ),
   );
+
+  return router;
+}
+
+export function createCodeRouter() {
+  const router = express.Router();
+
+  const controller = wrap(
+    createResearchController(codeSearchSchema, CODE_SEARCH_QUERY_KEYS, {
+      kind: "research_code_search",
+      table: "research_code_searches",
+      action: "searchCode",
+      targetHint: params => String(params.query),
+      upstreamPath: () => "/v2/code/search",
+      billAs: "search",
+    }),
+  );
+
+  router.get("/search", controller);
+  router.post("/search", controller);
 
   return router;
 }

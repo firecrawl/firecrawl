@@ -84,6 +84,15 @@ describe("classifyEndpoint", () => {
     expect(classifyEndpoint("/v2/search")).toMatchObject({ group: "search" });
   });
 
+  it("groups code search with research on both mounts", () => {
+    expect(classifyEndpoint("/v2/search/code/search")).toMatchObject({
+      group: "research",
+    });
+    expect(classifyEndpoint("/v2/code/search")).toMatchObject({
+      group: "research",
+    });
+  });
+
   it("marks account/metadata endpoints as always allowed", () => {
     expect(classifyEndpoint("/v2/team/credit-usage")).toMatchObject({
       alwaysAllowed: true,
@@ -134,6 +143,19 @@ describe("isEndpointAllowed", () => {
       status: 403,
     });
     expect(isEndpointAllowed("/v2/search", c).allowed).toBe(false);
+  });
+
+  it("gates code search on the research group, not the web-search group", () => {
+    const research = config({ allowedEndpoints: ["research"] });
+    expect(isEndpointAllowed("/v2/search/code/search", research).allowed).toBe(
+      true,
+    );
+    expect(isEndpointAllowed("/v2/code/search", research).allowed).toBe(true);
+
+    const webSearch = config({ allowedEndpoints: ["search"] });
+    expect(isEndpointAllowed("/v2/search/code/search", webSearch).allowed).toBe(
+      false,
+    );
   });
 
   it("always allows account/metadata endpoints for restricted keys", () => {
