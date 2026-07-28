@@ -198,13 +198,29 @@ fn extract_text_from_word_document(doc_data: &[u8]) -> Option<String> {
 /// garbled output for non-Western documents (e.g. Ukrainian/Russian) without
 /// decoding twice for ordinary Western/ASCII files.
 fn extract_best_singlebyte(data: &[u8], expected_chars: usize) -> String {
-  let western = extract_document_text_singlebyte(data, expected_chars, decode_cp1252);
+  extract_singlebyte_runs(data, expected_chars)
+    .iter()
+    .map(|run| decode_run_best(run))
+    .collect::<Vec<_>>()
+    .join("\n")
+}
+
+/// Decode one single-byte text run, choosing its code page independently.
+/// Default to Western (cp1252) — one pass, the common case — and only re-decode
+/// as Cyrillic (cp1251) when the cp1252 output is dominated by Latin-1 accented
+/// letters (the mojibake signature of misread Cyrillic) and the cp1251 decode is
+/// then predominantly Cyrillic. Deciding per run (rather than over one aggregate
+/// ratio for the whole document) keeps Cyrillic sections intact in
+/// mixed-language documents, where a long Western section could otherwise dilute
+/// a Cyrillic section below the threshold and leave it as mojibake.
+fn decode_run_best(run: &[u8]) -> String {
+  let western: String = run.iter().map(|&b| decode_cp1252(b)).collect();
 
   // Cyrillic bytes (0xC0..=0xFF) read as cp1252 all land in the Latin-1
   // supplement (U+00C0..U+00FF). Real Western text is dominated by ASCII
   // letters, so a high accented ratio strongly implies a wrong code page.
   if latin1_accented_ratio(&western) >= 40 {
-    let cyrillic = extract_document_text_singlebyte(data, expected_chars, decode_cp1251);
+    let cyrillic: String = run.iter().map(|&b| decode_cp1251(b)).collect();
     if cyrillic_ratio(&cyrillic) >= 40 {
       return cyrillic;
     }
@@ -224,25 +240,27 @@ fn latin1_accented_ratio(s: &str) -> usize {
   char_ratio(s, |c| ('\u{00C0}'..='\u{00FF}').contains(&c))
 }
 
-/// Percentage of alphabetic characters in `s` that satisfy `pred`.
+/// Percentage of alphabetic characters in `s` that are also matched by `pred`.
+/// Both numerator and denominator count alphabetic characters only, so symbols
+/// in the tested ranges (e.g. × U+00D7, ÷ U+00F7) never inflate the ratio.
 fn char_ratio(s: &str, pred: impl Fn(char) -> bool) -> usize {
-  let matching = s.chars().filter(|&c| pred(c)).count();
   let alphabetic = s.chars().filter(|c| c.is_alphabetic()).count();
   if alphabetic == 0 {
     return 0;
   }
+  let matching = s.chars().filter(|&c| c.is_alphabetic() && pred(c)).count();
   matching * 100 / alphabetic
 }
 
-fn extract_document_text_singlebyte(
-  data: &[u8],
-  expected_chars: usize,
-  decode: fn(u8) -> char,
-) -> String {
-  // Find long runs of printable single-byte characters
+/// Scan for long runs of printable single-byte text, returning each run's raw
+/// bytes (the code page is chosen later, per run, by `decode_run_best`). Run
+/// boundaries are detected with cp1252 classification; since every byte decodes
+/// to exactly one character in any single-byte code page, a run's byte length
+/// equals its character length.
+fn extract_singlebyte_runs(data: &[u8], expected_chars: usize) -> Vec<Vec<u8>> {
   // This works well for most .doc files where text is stored as single-byte
-  let mut text_runs: Vec<String> = Vec::new();
-  let mut current_run = String::new();
+  let mut runs: Vec<Vec<u8>> = Vec::new();
+  let mut current: Vec<u8> = Vec::new();
   let mut total_chars = 0;
   let max_chars = if expected_chars > 0 && expected_chars < 10_000_000 {
     expected_chars * 2 // Allow some extra for headers/footers
@@ -255,39 +273,31 @@ fn extract_document_text_singlebyte(
       break;
     }
 
-    let ch = decode(byte);
-
-    if is_text_char(ch) {
-      current_run.push(ch);
-    } else if byte == 0x0D || byte == 0x0A {
-      // Carriage return or line feed - end of paragraph
-      let run_chars = current_run.chars().count();
-      if run_chars >= 20 && has_word_chars(&current_run) {
-        text_runs.push(current_run.clone());
-        total_chars += run_chars;
-      }
-      current_run.clear();
-    } else if byte == 0x09 {
-      // Tab
-      current_run.push('\t');
+    // is_text_char covers tab (0x09); CR/LF and other control/non-text bytes
+    // fall through and close the current run.
+    if is_text_char(decode_cp1252(byte)) {
+      current.push(byte);
     } else {
-      // Non-text byte - might be end of a text run
-      let run_chars = current_run.chars().count();
-      if run_chars >= 20 && has_word_chars(&current_run) {
-        text_runs.push(current_run.clone());
-        total_chars += run_chars;
-      }
-      current_run.clear();
+      flush_run(&mut current, &mut runs, &mut total_chars);
     }
   }
 
-  // Don't forget the last run
-  if current_run.chars().count() >= 20 && has_word_chars(&current_run) {
-    text_runs.push(current_run);
-  }
+  flush_run(&mut current, &mut runs, &mut total_chars);
+  runs
+}
 
-  // Join text runs with newlines
-  text_runs.join("\n")
+/// Accept `current` as a text run if it is long enough (>= 20 characters) and
+/// word-like, measured on its cp1252 decode. Resets `current` either way.
+fn flush_run(current: &mut Vec<u8>, runs: &mut Vec<Vec<u8>>, total_chars: &mut usize) {
+  if current.len() >= 20 {
+    let decoded: String = current.iter().map(|&b| decode_cp1252(b)).collect();
+    if has_word_chars(&decoded) {
+      *total_chars += current.len();
+      runs.push(std::mem::take(current));
+      return;
+    }
+  }
+  current.clear();
 }
 
 fn extract_document_text_utf16(data: &[u8], expected_chars: usize) -> String {
@@ -600,5 +610,38 @@ mod tests {
     // Ordinary Western text with the odd accent stays well below the threshold.
     assert!(latin1_accented_ratio("a normal english sentence with one café") < 40);
     assert_eq!(latin1_accented_ratio(""), 0);
+  }
+
+  #[test]
+  fn latin1_ratio_ignores_non_letter_symbols() {
+    // ×÷ (U+00D7/U+00F7) sit in the Latin-1 supplement range but are symbols,
+    // not letters — a symbol-heavy Western expression must not be mistaken for
+    // the misread-Cyrillic signature.
+    assert_eq!(latin1_accented_ratio("a × b ÷ c ×÷×÷"), 0);
+  }
+
+  #[test]
+  fn decodes_cyrillic_run_even_when_western_text_dominates() {
+    // A long English section followed by a shorter Cyrillic (cp1251) section.
+    // A single aggregate ratio over the whole document would be diluted below
+    // the threshold by the English text; deciding per run keeps the Cyrillic
+    // section intact without disturbing the English one.
+    let mut bytes: Vec<u8> = Vec::new();
+    bytes.extend_from_slice(
+      b"This is a fairly long English paragraph that dominates the document length.\r",
+    );
+    bytes.extend_from_slice(&[
+      0xCF, 0xD0, 0xC5, 0xC7, 0xC8, 0xC4, 0xC5, 0xCD, 0xD2, 0x20, 0xD3, 0xCA, 0xD0, 0xC0, 0xAF,
+      0xCD, 0xC8, 0x20, 0xD3, 0xCA, 0xC0, 0xC7, 0x0D,
+    ]);
+    let text = extract_best_singlebyte(&bytes, 0);
+    assert!(
+      text.contains("This is a fairly long English paragraph"),
+      "expected English text preserved, got: {text:?}"
+    );
+    assert!(
+      text.contains("УКРАЇНИ УКАЗ"),
+      "expected Cyrillic run decoded, got mojibake: {text:?}"
+    );
   }
 }
