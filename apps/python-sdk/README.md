@@ -137,7 +137,7 @@ print(crawl_status)
 
 ### Manual Pagination (v2)
 
-Crawl and batch scrape status responses may include a `next` URL when more data is available. The SDK auto-paginates by default; to page manually, disable auto-pagination and pass the opaque `next` URL back to the SDK.
+Crawl and batch scrape status responses may include a `next` URL when more data is available. By default, the SDK returns a single page; to auto-paginate through all results, enable `auto_paginate=True`. To page manually, pass the opaque `next` URL back to the SDK.
 
 ```python
 from firecrawl.v2.types import PaginationConfig
