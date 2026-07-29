@@ -531,7 +531,7 @@ class AsyncFirecrawlClient:
     async def start_batch_scrape(self, urls: List[str], **kwargs) -> Any:
         return await async_batch.start_batch_scrape(self.async_http_client, urls, **kwargs)
 
-    async def wait_batch_scrape(self, job_id: str, poll_interval: int = 2, timeout: Optional[int] = None) -> Any:
+    async def wait_batch_scrape(self, job_id: str, poll_interval: int = 2, timeout: Optional[int] = None, pagination_config: Optional[PaginationConfig] = None) -> Any:
         start = asyncio.get_event_loop().time()
         while True:
             status = await async_batch.get_batch_scrape_status(
@@ -539,18 +539,25 @@ class AsyncFirecrawlClient:
                 pagination_config=PaginationConfig(auto_paginate=False)
             )
             if status.status in ["completed", "failed", "cancelled"]:
-                return status
+                # Re-fetch with the caller's pagination config so the returned
+                # job contains all documents when auto_paginate is enabled.
+                effective_config = pagination_config or PaginationConfig(auto_paginate=True)
+                return await async_batch.get_batch_scrape_status(
+                    self.async_http_client, job_id,
+                    pagination_config=effective_config
+                )
             if timeout and (asyncio.get_event_loop().time() - start) > timeout:
                 raise TimeoutError("Batch wait timed out")
             await asyncio.sleep(poll_interval)
 
     async def batch_scrape(self, urls: List[str], **kwargs) -> Any:
         # waiter wrapper
-        start = await self.start_batch_scrape(urls, **{k: v for k, v in kwargs.items() if k not in ("poll_interval", "timeout")})
+        start = await self.start_batch_scrape(urls, **{k: v for k, v in kwargs.items() if k not in ("poll_interval", "timeout", "pagination_config")})
         job_id = start.id
         poll_interval = kwargs.get("poll_interval", 2)
         timeout = kwargs.get("timeout")
-        return await self.wait_batch_scrape(job_id, poll_interval=poll_interval, timeout=timeout)
+        pagination_config = kwargs.get("pagination_config")
+        return await self.wait_batch_scrape(job_id, poll_interval=poll_interval, timeout=timeout, pagination_config=pagination_config)
 
     async def get_batch_scrape_status(
         self, 
