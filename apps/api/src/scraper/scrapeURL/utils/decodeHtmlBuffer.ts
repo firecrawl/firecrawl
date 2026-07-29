@@ -23,10 +23,12 @@ function extractMetaCharset(prologue: string): string | undefined {
   // Strip <script>...</script> and <style>...</style> blocks so that a
   // literal `<meta charset=...>` appearing inside a string, template literal,
   // or comment within raw-text elements is not mistaken for a real tag.
+  // If the closing tag falls outside the prologue fragment, consume through
+  // the end of the fragment to avoid leaving raw-text content unstripped.
   sanitized = sanitized
-    .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, "")
-    .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, "")
-    .replace(/<textarea\b[^>]*>[\s\S]*?<\/textarea>/gi, "");
+    .replace(/<script\b[^>]*>[\s\S]*?(<\/script>|$)/gi, "")
+    .replace(/<style\b[^>]*>[\s\S]*?(<\/style>|$)/gi, "")
+    .replace(/<textarea\b[^>]*>[\s\S]*?(<\/textarea>|$)/gi, "");
 
   // Match each <meta ...> start tag (self-closing or open tag).
   const metaTagRe = /<meta\b[^>]*\/?>/gi;
