@@ -1306,6 +1306,7 @@ export type TeamFlags = {
   searchFeedbackOptOut?: boolean;
   researchBeta?: boolean;
   enrichBeta?: boolean;
+  labsSearch?: boolean;
   professionalProfileCompanyDataBeta?: boolean;
   organizationDataSourceAccess?: Record<
     string,
