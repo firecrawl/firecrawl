@@ -8,7 +8,7 @@ import {
   FireEngineScrapeRequestCommon,
   FireEngineScrapeRequestTLSClient,
 } from "./scrape";
-import { EngineScrapeResult } from "..";
+import { EngineScrapeResult, resolveProxyUsed } from "..";
 import {
   fireEngineCheckStatus,
   FireEngineCheckStatusSuccess,
@@ -201,6 +201,7 @@ async function performFireEngineScrape<
       }),
       status.responseHeaders,
       status,
+      meta.options.proxy,
     );
 
     const contentType =
@@ -530,7 +531,7 @@ export async function scrapeURLWithFireEngineChromeCDP(
           }
         : {}),
 
-      proxyUsed: response.usedMobileProxy ? "stealth" : "basic",
+      proxyUsed: resolveProxyUsed(response.usedMobileProxy, meta.options.proxy),
       youtubeTranscriptContent: response.youtubeTranscriptContent,
       timezone: response.timezone,
       ...(hasAudio || hasVideo || shouldRunYoutubePostprocessor
@@ -607,7 +608,7 @@ export async function scrapeURLWithFireEngineTLSClient(
 
       contentType,
 
-      proxyUsed: response.usedMobileProxy ? "stealth" : "basic",
+      proxyUsed: resolveProxyUsed(response.usedMobileProxy, meta.options.proxy),
       timezone: response.timezone,
     };
   });

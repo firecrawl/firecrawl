@@ -167,10 +167,20 @@ export type EngineScrapeResult = {
   postprocessorsUsed?: string[];
   audioCookies?: BrowserCookie[];
 
-  proxyUsed: "basic" | "stealth";
+  proxyUsed: "basic" | "stealth" | "enhanced";
   timezone?: string;
   exchange?: ExchangeScrapeMetadata;
 };
+
+type ProxyUsed = "basic" | "stealth" | "enhanced";
+
+export function resolveProxyUsed(
+  usedStealthProxy: boolean | undefined,
+  proxyOption?: string,
+): ProxyUsed {
+  if (!usedStealthProxy) return "basic";
+  return proxyOption === "enhanced" ? "enhanced" : "stealth";
+}
 
 const engineHandlers: {
   [E in Engine]: (meta: Meta) => Promise<EngineScrapeResult>;

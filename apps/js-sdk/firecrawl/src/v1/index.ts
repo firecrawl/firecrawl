@@ -51,7 +51,7 @@ export interface FirecrawlDocumentMetadata {
   statusCode?: number;
   timezone?: string;
   error?: string;
-  proxyUsed?: "basic" | "stealth";
+  proxyUsed?: "basic" | "stealth" | "enhanced";
   cacheState?: "miss" | "hit";
   cachedAt?: string;
   creditsUsed?: number;

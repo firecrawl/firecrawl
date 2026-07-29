@@ -63,8 +63,10 @@ export async function scrape(
 ): Promise<Document> {
   const raw = await scrapeRaw(body, identity);
   expectScrapeToSucceed(raw);
-  if (body.proxy === "stealth" || body.proxy === "enhanced") {
+  if (body.proxy === "stealth") {
     expect(raw.body.data.metadata.proxyUsed).toBe("stealth");
+  } else if (body.proxy === "enhanced") {
+    expect(raw.body.data.metadata.proxyUsed).toBe("enhanced");
   } else if (!body.proxy || body.proxy === "basic") {
     expect(raw.body.data.metadata.proxyUsed).toBe("basic");
   }

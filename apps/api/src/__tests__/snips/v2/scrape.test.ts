@@ -955,6 +955,26 @@ describe("Scrape tests", () => {
       );
 
       it.concurrent(
+        "respects proxy: enhanced",
+        async () => {
+          const url = createTestIdUrl();
+
+          const response1 = await scrape(
+            {
+              url,
+              proxy: "enhanced",
+              maxAge: scrapeTimeout,
+            },
+            identity,
+          );
+
+          expect(response1.metadata.proxyUsed).toBe("enhanced");
+          expect(response1.metadata.cacheState).not.toBeDefined();
+        },
+        scrapeTimeout * 2,
+      );
+
+      it.concurrent(
         "works properly on pages returning 200",
         async () => {
           const url = createTestIdUrl();

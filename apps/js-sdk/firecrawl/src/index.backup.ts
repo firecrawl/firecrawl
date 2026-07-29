@@ -50,7 +50,7 @@ export interface FirecrawlDocumentMetadata {
   sourceURL?: string;
   statusCode?: number;
   error?: string;
-  proxyUsed?: "basic" | "stealth";
+  proxyUsed?: "basic" | "stealth" | "enhanced";
   cacheState?: "miss" | "hit";
   cachedAt?: string;
   [key: string]: any; // Allows for additional metadata properties not explicitly defined.

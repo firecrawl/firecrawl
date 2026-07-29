@@ -1,7 +1,7 @@
 import crypto from "crypto";
 import { config } from "../../../../config";
 import { Document } from "../../../../controllers/v1/types";
-import { EngineScrapeResult } from "..";
+import { EngineScrapeResult, resolveProxyUsed } from "..";
 import { Meta } from "../..";
 import {
   getIndexFromGCS,
@@ -574,7 +574,10 @@ export async function scrapeURLWithIndex(
 
     proxyUsed:
       doc.proxyUsed ??
-      (meta.featureFlags.has("stealthProxy") ? "stealth" : "basic"), // this can be dropped after june 2026, it's here to backfill proxyUsed for older index entries that don't have it
+      resolveProxyUsed(
+        meta.featureFlags.has("stealthProxy"),
+        meta.options.proxy,
+      ), // this can be dropped after june 2026, it's here to backfill proxyUsed for older index entries that don't have it
   };
 }
 

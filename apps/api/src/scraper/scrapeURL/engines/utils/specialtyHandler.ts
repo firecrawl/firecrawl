@@ -5,6 +5,7 @@ import path from "path";
 import os from "os";
 import { writeFile } from "fs/promises";
 import { Meta } from "../..";
+import { resolveProxyUsed } from "..";
 
 async function feResToFilePrefetch(
   logger: Logger,
@@ -12,6 +13,7 @@ async function feResToFilePrefetch(
   fileExtension: string,
   fileType: string,
   contentType?: string,
+  proxyOption?: string,
 ): Promise<Meta["pdfPrefetch"] | Meta["documentPrefetch"]> {
   if (!feRes?.file) {
     logger.warn(`No file in ${fileType} prefetch`);
@@ -28,7 +30,7 @@ async function feResToFilePrefetch(
     status: feRes.pageStatusCode,
     url: feRes.url,
     filePath,
-    proxyUsed: feRes.usedMobileProxy ? "stealth" : "basic",
+    proxyUsed: resolveProxyUsed(feRes.usedMobileProxy, proxyOption),
     contentType,
   };
 }
@@ -36,14 +38,23 @@ async function feResToFilePrefetch(
 async function feResToPdfPrefetch(
   logger: Logger,
   feRes: FireEngineCheckStatusSuccess | undefined,
+  proxyOption?: string,
 ): Promise<Meta["pdfPrefetch"]> {
-  return feResToFilePrefetch(logger, feRes, "pdf", "pdf");
+  return feResToFilePrefetch(
+    logger,
+    feRes,
+    "pdf",
+    "pdf",
+    undefined,
+    proxyOption,
+  );
 }
 
 async function feResToDocumentPrefetch(
   logger: Logger,
   feRes: FireEngineCheckStatusSuccess | undefined,
   contentType: string,
+  proxyOption?: string,
 ): Promise<Meta["documentPrefetch"]> {
   // Determine file extension from content type
   let extension = "tmp";
@@ -64,13 +75,21 @@ async function feResToDocumentPrefetch(
     extension = "rtf";
   }
 
-  return feResToFilePrefetch(logger, feRes, extension, "document", contentType);
+  return feResToFilePrefetch(
+    logger,
+    feRes,
+    extension,
+    "document",
+    contentType,
+    proxyOption,
+  );
 }
 
 export async function specialtyScrapeCheck(
   logger: Logger,
   headers: Record<string, string> | undefined,
   feRes?: FireEngineCheckStatusSuccess,
+  proxyOption?: string,
 ) {
   const contentType = (Object.entries(headers ?? {}).find(
     x => x[0].toLowerCase() === "content-type",
@@ -104,7 +123,7 @@ export async function specialtyScrapeCheck(
     throw new AddFeatureError(
       ["document"],
       undefined,
-      await feResToDocumentPrefetch(logger, feRes, contentType),
+      await feResToDocumentPrefetch(logger, feRes, contentType, proxyOption),
     );
   }
 
@@ -123,7 +142,7 @@ export async function specialtyScrapeCheck(
       throw new AddFeatureError(
         ["document"],
         undefined,
-        await feResToDocumentPrefetch(logger, feRes, contentType),
+        await feResToDocumentPrefetch(logger, feRes, contentType, proxyOption),
       );
     }
     if (isOleSignature) {
@@ -137,14 +156,22 @@ export async function specialtyScrapeCheck(
       throw new AddFeatureError(
         ["document"],
         undefined,
-        await feResToDocumentPrefetch(logger, feRes, effectiveContentType),
+        await feResToDocumentPrefetch(
+          logger,
+          feRes,
+          effectiveContentType,
+          proxyOption,
+        ),
       );
     }
   }
 
   // Check for PDF
   if (isPdf) {
-    throw new AddFeatureError(["pdf"], await feResToPdfPrefetch(logger, feRes));
+    throw new AddFeatureError(
+      ["pdf"],
+      await feResToPdfPrefetch(logger, feRes, proxyOption),
+    );
   }
 
   // Check for octet-stream with PDF signature
@@ -153,7 +180,10 @@ export async function specialtyScrapeCheck(
     (feRes?.file?.content.startsWith("JVBERi0") ||
       feRes?.content.startsWith("%PDF-"))
   ) {
-    throw new AddFeatureError(["pdf"], await feResToPdfPrefetch(logger, feRes));
+    throw new AddFeatureError(
+      ["pdf"],
+      await feResToPdfPrefetch(logger, feRes, proxyOption),
+    );
   }
 
   // Reject unsupported binary content types (images, video, audio, archives, etc.)
