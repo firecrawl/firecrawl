@@ -300,7 +300,8 @@ def wait_for_batch_completion(
     client: HttpClient,
     job_id: str,
     poll_interval: int = 2,
-    timeout: Optional[int] = None
+    timeout: Optional[int] = None,
+    pagination_config: Optional[PaginationConfig] = None
 ) -> BatchScrapeJob:
     """
     Wait for a batch scrape job to complete, polling for status updates.
@@ -310,6 +311,10 @@ def wait_for_batch_completion(
         job_id: ID of the batch scrape job
         poll_interval: Seconds between status checks
         timeout: Maximum seconds to wait (None for no timeout)
+        pagination_config: Optional configuration for pagination behavior.
+            When auto_paginate is enabled, the final status response includes
+            all documents. Defaults to auto_paginate=True so callers of the
+            convenience methods receive the full result set.
         
     Returns:
         BatchScrapeStatusResponse when job completes
@@ -318,6 +323,10 @@ def wait_for_batch_completion(
         FirecrawlError: If the job fails or timeout is reached
         TimeoutError: If timeout is reached
     """
+    # During polling we always fetch a single page (auto_paginate=False)
+    # to avoid fetching all documents on every poll. The final status
+    # response is re-fetched with the caller's pagination_config so the
+    # returned job contains the full document set when auto_paginate=True.
     start_time = time.monotonic()
     
     while True:
@@ -328,7 +337,13 @@ def wait_for_batch_completion(
         
         # Check if job is complete
         if status_job.status in ["completed", "failed", "cancelled"]:
-            return status_job
+            # Re-fetch with the caller's pagination config so the returned
+            # job contains all documents when auto_paginate is enabled.
+            effective_config = pagination_config or PaginationConfig(auto_paginate=True)
+            return get_batch_scrape_status(
+                client, job_id,
+                pagination_config=effective_config
+            )
         
         # Check timeout
         if timeout and (time.monotonic() - start_time) > timeout:
@@ -352,7 +367,8 @@ def batch_scrape(
     audit_metadata: Optional[AuditMetadata] = None,
     idempotency_key: Optional[str] = None,
     poll_interval: int = 2,
-    timeout: Optional[int] = None
+    timeout: Optional[int] = None,
+    pagination_config: Optional[PaginationConfig] = None
 ) -> BatchScrapeJob:
     """
     Start a batch scrape job and wait for it to complete.
@@ -363,7 +379,12 @@ def batch_scrape(
         options: Scraping options
         poll_interval: Seconds between status checks
         timeout: Maximum seconds to wait (None for no timeout)
-        
+        pagination_config: Optional configuration for pagination behavior.
+            Defaults to auto_paginate=True so the returned job includes all
+            documents. Pass PaginationConfig(auto_paginate=False) to receive
+            only the first page and page through manually via
+            get_batch_scrape_status_page.
+    
     Returns:
         BatchScrapeStatusResponse when job completes
         
@@ -390,7 +411,7 @@ def batch_scrape(
 
     # Wait for completion
     return wait_for_batch_completion(
-        client, job_id, poll_interval, timeout
+        client, job_id, poll_interval, timeout, pagination_config
     )
 
 
