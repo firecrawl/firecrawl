@@ -146,10 +146,10 @@ impl<'a> Tokens<'a> {
   }
 }
 
-/// Fallback byte count for \uc. Real documents use 0..=4; the clamp keeps a
-/// malformed value from swallowing the rest of the text.
-fn clamp_uc(value: Option<i32>) -> usize {
-  value.unwrap_or(1).clamp(0, 8) as usize
+/// Fallback byte count declared by \uc. Kept as declared: skipping consumes
+/// at most one byte per input token, so it is bounded by the input length.
+fn uc_count(value: Option<i32>) -> usize {
+  value.unwrap_or(1).max(0) as usize
 }
 
 fn hex_val(b: u8) -> Option<u8> {
@@ -449,7 +449,7 @@ impl BodyParser {
           self.pending_uc_skip = self.uc_skip;
         }
       }
-      "uc" => self.uc_skip = clamp_uc(value),
+      "uc" => self.uc_skip = uc_count(value),
       "b" => {
         self.flush_text();
         self.state.bold = on(value);
@@ -659,7 +659,7 @@ fn group_text(group: &[u8], encoding: &'static Encoding) -> Option<String> {
         }
         pending_uc_skip = uc_skip;
       }
-      Token::Control("uc", value) => uc_skip = clamp_uc(value),
+      Token::Control("uc", value) => uc_skip = uc_count(value),
       _ => {}
     }
   }
@@ -810,9 +810,15 @@ mod tests {
   }
 
   #[test]
-  fn huge_uc_value_is_clamped() {
-    let rtf = b"{\\rtf1\\ansi\\uc2000000000\\u1059 abcdefghij\\par}";
-    assert_eq!(paragraphs(rtf), vec!["Уij"]);
+  fn uc_above_eight_skips_declared_fallback_bytes() {
+    let rtf = b"{\\rtf1\\ansi\\uc10\\u1059 abcdefghijkl\\par}";
+    assert_eq!(paragraphs(rtf), vec!["Уkl"]);
+  }
+
+  #[test]
+  fn huge_uc_value_stays_bounded_by_input() {
+    let rtf = b"{\\rtf1\\ansi\\uc2000000000\\u1059 abc\\par done\\par}";
+    assert_eq!(paragraphs(rtf), vec!["У", "done"]);
   }
 }
 
