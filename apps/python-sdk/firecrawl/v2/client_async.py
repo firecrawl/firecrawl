@@ -270,6 +270,7 @@ class AsyncFirecrawlClient:
         timeout: Optional[int] = None,
         *,
         request_timeout: Optional[float] = None,
+        pagination_config: Optional[PaginationConfig] = None,
     ) -> CrawlJob:
         """
         Polls the status of a crawl job until it reaches a terminal state.
@@ -279,6 +280,10 @@ class AsyncFirecrawlClient:
             poll_interval (int, optional): Number of seconds to wait between polling attempts. Defaults to 2.
             timeout (Optional[int], optional): Maximum number of seconds to wait for the entire crawl job to complete before timing out. If None, waits indefinitely. Defaults to None.
             request_timeout (Optional[float], optional): Timeout (in seconds) for each individual HTTP request, including pagination requests when fetching results. If there are multiple pages, each page request gets this timeout. If None, no per-request timeout is set. Defaults to None.
+            pagination_config: Optional configuration for pagination behavior.
+                Defaults to auto_paginate=True so the returned job includes all
+                documents. Pass PaginationConfig(auto_paginate=False) to receive
+                only the first page.
 
         Returns:
             CrawlJob: The final status of the crawl job when it reaches a terminal state.
@@ -293,13 +298,23 @@ class AsyncFirecrawlClient:
         """
         start = time.monotonic()
         while True:
+            # Poll with auto_paginate=False for efficiency
             status = await async_crawl.get_crawl_status(
                 self.async_http_client,
                 job_id,
+                pagination_config=PaginationConfig(auto_paginate=False),
                 request_timeout=request_timeout,
             )
             if status.status in ["completed", "failed", "cancelled"]:
-                return status
+                # Re-fetch with the caller's pagination config so the returned
+                # job contains all documents when auto_paginate is enabled.
+                effective_config = pagination_config or PaginationConfig(auto_paginate=True)
+                return await async_crawl.get_crawl_status(
+                    self.async_http_client,
+                    job_id,
+                    pagination_config=effective_config,
+                    request_timeout=request_timeout,
+                )
             if timeout and (time.monotonic() - start) > timeout:
                 raise TimeoutError("Crawl wait timed out")
             await asyncio.sleep(poll_interval)
@@ -307,17 +322,19 @@ class AsyncFirecrawlClient:
     async def crawl(self, **kwargs) -> CrawlJob:
         # wrapper combining start and wait
         resp = await self.start_crawl(
-            **{k: v for k, v in kwargs.items() if k not in ("poll_interval", "timeout", "request_timeout")}
+            **{k: v for k, v in kwargs.items() if k not in ("poll_interval", "timeout", "request_timeout", "pagination_config")}
         )
         poll_interval = kwargs.get("poll_interval", 2)
         timeout = kwargs.get("timeout")
         request_timeout = kwargs.get("request_timeout")
+        pagination_config = kwargs.get("pagination_config")
         effective_request_timeout = request_timeout if request_timeout is not None else timeout
         return await self.wait_crawl(
             resp.id,
             poll_interval=poll_interval,
             timeout=timeout,
             request_timeout=effective_request_timeout,
+            pagination_config=pagination_config,
         )
 
     async def get_crawl_status(
@@ -332,9 +349,11 @@ class AsyncFirecrawlClient:
         
         Args:
             job_id: ID of the crawl job
-            pagination_config: Optional configuration for pagination behavior
+            pagination_config: Optional configuration for pagination behavior.
+                Defaults to auto_paginate=False (returns a single page).
+                Pass PaginationConfig(auto_paginate=True) to fetch all pages.
             request_timeout: Timeout (in seconds) for each individual HTTP request. When auto-pagination 
-                is enabled (default) and there are multiple pages of results, this timeout applies to 
+                is enabled and there are multiple pages of results, this timeout applies to 
                 each page request separately, not to the entire operation
             
         Returns:

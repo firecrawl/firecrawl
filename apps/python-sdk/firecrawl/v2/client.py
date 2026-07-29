@@ -495,6 +495,7 @@ class FirecrawlClient:
         timeout: Optional[int] = None,
         request_timeout: Optional[float] = None,
         integration: Optional[str] = None,
+        pagination_config: Optional[PaginationConfig] = None,
     ) -> CrawlJob:
         """
         Start a crawl job and wait for it to complete.
@@ -605,6 +606,7 @@ class FirecrawlClient:
             poll_interval=poll_interval,
             timeout=timeout,
             request_timeout=request_timeout,
+            pagination_config=pagination_config,
         )
     
     def start_crawl(
@@ -770,9 +772,11 @@ class FirecrawlClient:
         
         Args:
             job_id: ID of the crawl job
-            pagination_config: Optional configuration for pagination behavior
+            pagination_config: Optional configuration for pagination behavior.
+                Defaults to auto_paginate=False (returns a single page).
+                Pass PaginationConfig(auto_paginate=True) to fetch all pages.
             request_timeout: Timeout (in seconds) for each individual HTTP request. When auto-pagination 
-                is enabled (default) and there are multiple pages of results, this timeout applies to 
+                is enabled and there are multiple pages of results, this timeout applies to 
                 each page request separately, not to the entire operation
             
         Returns:
