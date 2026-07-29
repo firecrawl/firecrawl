@@ -87,7 +87,6 @@ export async function specialtyScrapeCheck(
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     "application/vnd.ms-excel",
-    "application/msword",
     "application/rtf",
     "text/rtf",
     "application/vnd.oasis.opendocument.text",
@@ -127,18 +126,10 @@ export async function specialtyScrapeCheck(
       );
     }
     if (isOleSignature) {
-      // OLE2 signature is shared by .doc/.xls/.ppt files
-      // Only override to application/msword if URL suggests it's a .doc file
-      const url = feRes?.url?.toLowerCase() ?? "";
-      const isDocUrl = url.endsWith(".doc") || url.includes(".doc?");
-      const effectiveContentType = isDocUrl
-        ? "application/msword"
-        : contentType;
-      throw new AddFeatureError(
-        ["document"],
-        undefined,
-        await feResToDocumentPrefetch(logger, feRes, effectiveContentType),
-      );
+      // OLE2/CFB is the legacy Office binary container (.doc/.xls/.ppt pre-2007).
+      // None of these formats have a reliable native parser, so reject rather than
+      // emit garbled bytes. Customers should convert to PDF, .docx, or .xlsx.
+      throw new UnsupportedFileError("application/x-ole-storage");
     }
   }
 
@@ -161,6 +152,7 @@ export async function specialtyScrapeCheck(
     "image/",
     "video/",
     "audio/",
+    "application/msword",
     "application/zip",
     "application/x-tar",
     "application/x-rar",
