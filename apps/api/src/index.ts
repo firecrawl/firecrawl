@@ -28,7 +28,6 @@ import {
 import { ZodError } from "zod";
 import { QueueFullError } from "./lib/queue-full-error";
 import { v7 as uuidv7 } from "uuid";
-import { attachWsProxy } from "./services/agentLivecastWS";
 import { cacheableLookup } from "./scraper/scrapeURL/lib/cacheableLookup";
 import { v2Router } from "./routes/v2";
 import { labsRouter } from "./routes/labs";
@@ -149,9 +148,6 @@ async function startServer(port = DEFAULT_PORT) {
     });
     throw error;
   }
-
-  // Attach WebSocket proxy to the Express app
-  attachWsProxy(app);
 
   const mcpActionLogRetention = startMcpActionLogRetentionWorkerIfEnabled({
     enabled: config.MCP_ACTION_LOG_STORAGE_ENABLED,
