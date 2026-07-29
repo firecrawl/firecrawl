@@ -76,6 +76,10 @@ services:
       MAX_CONCURRENT_PAGES: ${CRAWL_CONCURRENT_REQUESTS:-10}
     networks:
       - backend
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
     # Resource limits for Docker Compose (not Swarm)
     cpus: 2.0
     mem_limit: 4G
