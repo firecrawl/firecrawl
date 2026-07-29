@@ -688,6 +688,26 @@ export async function buildFallbackList(meta: Meta): Promise<
     }
   }
 
+  // When fire-engine is available, drop tlsclient and fetch from the general
+  // waterfall: once chrome-cdp (and its retry) fail, degrading to a plain
+  // HTTP client tends to produce bot-walled or otherwise low-quality content,
+  // so we'd rather fail the scrape outright. They stay reachable when the
+  // request asks for them: fastMode/atsv set feature flags that chrome-cdp
+  // can't satisfy (and are handled here), and forceEngine bypasses _engines
+  // entirely, reading straight from internalOptions.
+  if (
+    useFireEngine &&
+    !meta.featureFlags.has("useFastMode") &&
+    !meta.featureFlags.has("atsv")
+  ) {
+    for (const engine of ["fire-engine;tlsclient", "fetch"] as Engine[]) {
+      const index = _engines.indexOf(engine);
+      if (index !== -1) {
+        _engines.splice(index, 1);
+      }
+    }
+  }
+
   if (!isWikimediaUrl(meta.url) || Math.random() >= 0.5) {
     const wikiIndex = _engines.indexOf("wikipedia");
     if (wikiIndex !== -1) {
