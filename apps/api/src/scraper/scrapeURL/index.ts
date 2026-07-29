@@ -43,7 +43,6 @@ import {
   NoCachedDataError,
   LockdownMissError,
   DNSResolutionError,
-  ZDRViolationError,
   PDFPrefetchFailed,
   DocumentPrefetchFailed,
   FEPageLoadFailed,
@@ -687,30 +686,6 @@ async function scrapeURLLoop(meta: Meta): Promise<ScrapeUrlResponse> {
       "engine.url": meta.rewrittenUrl ?? meta.url,
       "engine.features": Array.from(meta.featureFlags).join(","),
     });
-
-    if (meta.internalOptions.zeroDataRetention) {
-      if (meta.featureFlags.has("screenshot")) {
-        throw new ZDRViolationError("screenshot");
-      }
-
-      if (meta.featureFlags.has("screenshot@fullScreen")) {
-        throw new ZDRViolationError("screenshot@fullScreen");
-      }
-
-      if (
-        meta.options.actions &&
-        meta.options.actions.find(x => x.type === "screenshot")
-      ) {
-        throw new ZDRViolationError("screenshot action");
-      }
-
-      if (
-        meta.options.actions &&
-        meta.options.actions.find(x => x.type === "pdf")
-      ) {
-        throw new ZDRViolationError("pdf action");
-      }
-    }
 
     // TODO: handle sitemap data, see WebScraper/index.ts:280
     // TODO: ScrapeEvents

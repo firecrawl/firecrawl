@@ -8,7 +8,7 @@ import {
   idmux,
   searchRaw,
 } from "./lib";
-import { describeIf, TEST_PRODUCTION } from "../lib";
+import { describeIf, TEST_PRODUCTION, scrapeTimeout } from "../lib";
 import {
   getLogs,
   expectScrapeIsCleanedUp,
@@ -149,6 +149,63 @@ describeIf(TEST_PRODUCTION)("Zero Data Retention", () => {
       600000 + 20000,
     );
   });
+
+  it(
+    "should allow screenshots and clean them up",
+    async () => {
+      const identity = await idmux({
+        name: "zdr/screenshot",
+        credits: 10000,
+        flags: { scrapeZDR: "allowed" },
+      });
+
+      const scrape1 = await scrape(
+        {
+          url: "https://firecrawl.dev",
+          formats: ["screenshot"],
+          zeroDataRetention: true,
+        },
+        identity,
+      );
+
+      expect(scrape1.screenshot).toBeDefined();
+
+      const gcsJob = await getJobFromGCS(scrape1.metadata.scrapeId!);
+      expect(gcsJob).toBeNull();
+
+      await expectScrapeIsCleanedUp(scrape1.metadata.scrapeId!);
+    },
+    scrapeTimeout,
+  );
+
+  it(
+    "should allow pdf actions and clean them up",
+    async () => {
+      const identity = await idmux({
+        name: "zdr/pdf-action",
+        credits: 10000,
+        flags: { scrapeZDR: "allowed" },
+      });
+
+      const scrape1 = await scrape(
+        {
+          url: "https://firecrawl.dev",
+          actions: [{ type: "pdf" }],
+          zeroDataRetention: true,
+        },
+        identity,
+      );
+
+      expect(scrape1.actions?.pdfs).toBeDefined();
+      expect(scrape1.actions?.pdfs?.length).toBe(1);
+
+      const gcsJob = await getJobFromGCS(scrape1.metadata.scrapeId!);
+      expect(gcsJob).toBeNull();
+
+      await expectScrapeIsCleanedUp(scrape1.metadata.scrapeId!);
+    },
+    scrapeTimeout,
+  );
 
   it("should allow search when searchZDR is forced", async () => {
     const identity = await idmux({
