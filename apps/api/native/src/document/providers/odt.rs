@@ -384,7 +384,11 @@ impl Parser<'_> {
       } else if is_tag(&c, "line-break") {
         out.push(Inline::LineBreak);
       } else if is_tag(&c, "s") {
-        let count = attr(&c, "c").and_then(|v| v.parse::<usize>().ok()).unwrap_or(1);
+        // clamped so a malformed count cannot force a huge allocation
+        let count = attr(&c, "c")
+          .and_then(|v| v.parse::<usize>().ok())
+          .unwrap_or(1)
+          .min(1000);
         out.push(Inline::Text(" ".repeat(count)));
       } else if is_tag(&c, "tab") {
         out.push(Inline::Text("\t".to_string()));
@@ -572,5 +576,39 @@ fn image_from_paragraph(p: &Node) -> Option<Image> {
     })
   } else {
     None
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+  use std::io::Write;
+
+  #[test]
+  fn huge_space_count_is_clamped() {
+    let content = r#"<?xml version="1.0"?>
+<office:document-content xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0">
+<office:body><office:text><text:p>a<text:s text:c="4000000000"/>b</text:p></office:text></office:body>
+</office:document-content>"#;
+    let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
+    zip
+      .start_file("content.xml", zip::write::SimpleFileOptions::default())
+      .unwrap();
+    zip.write_all(content.as_bytes()).unwrap();
+    let data = zip.finish().unwrap().into_inner();
+
+    let document = OdtProvider::new().parse_buffer(&data).unwrap();
+    let Block::Paragraph(p) = &document.blocks[0] else {
+      panic!("expected paragraph");
+    };
+    let text: String = p
+      .inlines
+      .iter()
+      .map(|i| match i {
+        Inline::Text(t) => t.as_str(),
+        _ => "",
+      })
+      .collect();
+    assert_eq!(text.len(), "ab".len() + 1000);
   }
 }

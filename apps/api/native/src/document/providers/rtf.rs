@@ -121,12 +121,14 @@ impl<'a> Tokens<'a> {
           num_end += 1;
         }
         if num_end > num_start {
+          // consume the digit run even when it overflows i32, so malformed
+          // parameters do not leak digits into the text
+          self.pos = num_end;
           if let Some(n) = std::str::from_utf8(&self.src[num_start..num_end])
             .ok()
             .and_then(|s| s.parse::<i32>().ok())
           {
             value = Some(if negative { -n } else { n });
-            self.pos = num_end;
           }
         }
         if self.src.get(self.pos) == Some(&b' ') {
@@ -142,6 +144,12 @@ impl<'a> Tokens<'a> {
       }
     }
   }
+}
+
+/// Fallback byte count for \uc. Real documents use 0..=4; the clamp keeps a
+/// malformed value from swallowing the rest of the text.
+fn clamp_uc(value: Option<i32>) -> usize {
+  value.unwrap_or(1).clamp(0, 8) as usize
 }
 
 fn hex_val(b: u8) -> Option<u8> {
@@ -441,7 +449,7 @@ impl BodyParser {
           self.pending_uc_skip = self.uc_skip;
         }
       }
-      "uc" => self.uc_skip = value.unwrap_or(1).max(0) as usize,
+      "uc" => self.uc_skip = clamp_uc(value),
       "b" => {
         self.flush_text();
         self.state.bold = on(value);
@@ -651,7 +659,7 @@ fn group_text(group: &[u8], encoding: &'static Encoding) -> Option<String> {
         }
         pending_uc_skip = uc_skip;
       }
-      Token::Control("uc", value) => uc_skip = value.unwrap_or(1).max(0) as usize,
+      Token::Control("uc", value) => uc_skip = clamp_uc(value),
       _ => {}
     }
   }
@@ -794,6 +802,19 @@ mod tests {
     let rtf = b"{\\rtf1\\ansi text \\\\ansicpg1251 \\'e9\\par}";
     assert_eq!(paragraphs(rtf), vec!["text \\ansicpg1251 é"]);
   }
+
+  #[test]
+  fn overflowing_control_parameter_digits_do_not_leak() {
+    let rtf = b"{\\rtf1\\ansi a\\u99999999999999x b\\par}";
+    assert_eq!(paragraphs(rtf), vec!["ax b"]);
+  }
+
+  #[test]
+  fn huge_uc_value_is_clamped() {
+    let rtf = b"{\\rtf1\\ansi\\uc2000000000\\u1059 abcdefghij\\par}";
+    assert_eq!(paragraphs(rtf), vec!["Уij"]);
+  }
 }
+
 
 
