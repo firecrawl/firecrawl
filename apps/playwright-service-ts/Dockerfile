@@ -19,7 +19,9 @@ RUN pnpm exec playwright install chromium --with-deps
 
 RUN pnpm run build
 
-ARG PORT
+# Default fallback to prevent build crashes in podman-compose and other builders that drop .env args
+ARG PORT=3000
+
 ENV PORT=${PORT}
 
 EXPOSE ${PORT}
