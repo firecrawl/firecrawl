@@ -693,12 +693,15 @@ export async function buildFallbackList(meta: Meta): Promise<
   // HTTP client tends to produce bot-walled or otherwise low-quality content,
   // so we'd rather fail the scrape outright. They stay reachable when the
   // request asks for them: fastMode/atsv set feature flags that chrome-cdp
-  // can't satisfy (and are handled here), and forceEngine bypasses _engines
+  // can't satisfy (and are handled here), audio/video keep tlsclient as the
+  // avgrab fallback behind chrome-cdp, and forceEngine bypasses _engines
   // entirely, reading straight from internalOptions.
   if (
     useFireEngine &&
     !meta.featureFlags.has("useFastMode") &&
-    !meta.featureFlags.has("atsv")
+    !meta.featureFlags.has("atsv") &&
+    !meta.featureFlags.has("audio") &&
+    !meta.featureFlags.has("video")
   ) {
     for (const engine of ["fire-engine;tlsclient", "fetch"] as Engine[]) {
       const index = _engines.indexOf(engine);
