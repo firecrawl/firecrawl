@@ -61,6 +61,9 @@ USE_DB_AUTHENTICATION=false
 # Experimental: Use any OpenAI-compatible API
 # OPENAI_BASE_URL=https://example.com/v1
 # OPENAI_API_KEY=
+# Set this to false when your provider does not support the Responses API.
+# Examples include many OpenAI-compatible self-hosted gateways and proxies.
+# USE_RESPONSES_ENDPOINT=false
 
 ## === Proxy ===
 # PROXY_SERVER can be a full URL (e.g. http://0.1.2.3:1234) or just an IP and port combo (e.g. 0.1.2.3:1234)
