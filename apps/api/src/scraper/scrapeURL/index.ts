@@ -257,11 +257,20 @@ function buildFeatureFlags(
     lowerPath.includes(".xlsx/") ||
     lowerPath.includes(".xls/");
 
+  const needsFireEngine =
+    options.proxy === "stealth" ||
+    options.proxy === "enhanced" ||
+    !!options.location;
+
   if (isDocument) {
-    flags.add("document");
+    if (!needsFireEngine) {
+      flags.add("document");
+    }
   } else if (lowerPath.endsWith(".pdf") || lowerPath.includes(".pdf/")) {
     // Only add PDF flag if it's not a document
-    flags.add("pdf");
+    if (!needsFireEngine) {
+      flags.add("pdf");
+    }
   }
 
   if (options.blockAds === false) {
