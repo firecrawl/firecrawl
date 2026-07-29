@@ -20,8 +20,10 @@ import * as schema from "../../../db/schema";
 import { config } from "../../../config";
 import { getRedisConnection } from "../../../services/queue-service";
 
+// Minimal DOCX whose second paragraph is one bold heading split across five
+// Word formatting runs, including both mid-word and whitespace boundaries.
 const DOCX_FIXTURE_BASE64 =
-  "UEsDBBQAAAAIAKtlbVzXeYTq8QAAALgBAAATAAAAW0NvbnRlbnRfVHlwZXNdLnhtbH2QzU7DMBCE730Ky9cqccoBIZSkB36OwKE8wMreJFb9J69b2rdn00KREOVozXwz62nXB+/EHjPZGDq5qhspMOhobBg7+b55ru6koALBgIsBO3lEkut+0W6OCUkwHKiTUynpXinSE3qgOiYMrAwxeyj8zKNKoLcworppmlulYygYSlXmDNkvhGgfcYCdK+LpwMr5loyOpHg4e+e6TkJKzmoorKt9ML+Kqq+SmsmThyabaMkGqa6VzOL1jh/0lSfK1qB4g1xewLNRfcRslIl65xmu/0/649o4DFbjhZ/TUo4aiXh77+qL4sGG71+06jR8/wlQSwMEFAAAAAgAq2VtXCAbhuqyAAAALgEAAAsAAABfcmVscy8ucmVsc43Puw6CMBQG4J2naM4uBQdjDIXFmLAafICmPZRGeklbL7y9HRzEODie23fyN93TzOSOIWpnGdRlBQStcFJbxeAynDZ7IDFxK/nsLDJYMELXFs0ZZ57yTZy0jyQjNjKYUvIHSqOY0PBYOo82T0YXDE+5DIp6Lq5cId1W1Y6GTwPagpAVS3rJIPSyBjIsHv/h3ThqgUcnbgZt+vHlayPLPChMDB4uSCrf7TKzQHNKuorZvgBQSwMEFAAAAAgAq2VtXCCNfXOwAAAA7AAAABEAAAB3b3JkL2RvY3VtZW50LnhtbDWOMQvCMBCFd3/FkV1THURKGwfFVQcF19icWmjuQi5a/fcmBZeP93jw3TXbjx/gjVF6plYtF5UCpI5dT49WXc6H+UaBJEvODkzYqi+K2ppZM9aOu5dHSpANJPXYqmdKodZauid6KwsOSHm7c/Q25RofeuToQuQORfIBP+hVVa21tz0pMwPI1hu7b4lTCSYjFiRzslEQ9sfdFS5hYOvgjJIaXbbCODFMGv33lPT/0/wAUEsBAhQDFAAAAAgAq2VtXNd5hOrxAAAAuAEAABMAAAAAAAAAAAAAAIABAAAAAFtDb250ZW50X1R5cGVzXS54bWxQSwECFAMUAAAACACrZW1cIBuG6rIAAAAuAQAACwAAAAAAAAAAAAAAgAEiAQAAX3JlbHMvLnJlbHNQSwECFAMUAAAACACrZW1cII19c7AAAADsAAAAEQAAAAAAAAAAAAAAgAH9AQAAd29yZC9kb2N1bWVudC54bWxQSwUGAAAAAAMAAwC5AAAA3AIAAAAA";
+  "UEsDBBQAAAAIAFWb/Fx5bjPX6AAAAK0BAAATAAAAW0NvbnRlbnRfVHlwZXNdLnhtbH1QyU7DMBD9FWuuKHHggBCK0wPLETiUDxjZk8SqN3nc0v49Tlt6QIXjzFv1+tXeO7GjzDYGBbdtB4KCjsaGScHn+rV5AMEFg0EXAyk4EMNq6NeHRCyqNrCCuZT0KCXrmTxyGxOFiowxeyz1zJNMqDc4kbzrunupYygUSlMWDxj6Zxpx64p42df3qUcmxyCeTsQlSwGm5KzGUnG5C+ZXSnNOaKvyyOHZJr6pBJBXExbk74Cz7r0Ok60h8YG5vKGvLPkVs5Em6q2vyvZ/mys94zhaTRf94pZy1MRcF/euvSAebfjpL49zD99QSwMEFAAAAAgAVZv8XJv9N+qtAAAAKQEAAAsAAABfcmVscy8ucmVsc43POw7CMAwG4KtE3mlaBoRQ0y4IqSsqB7ASN61oHkrCo7cnAwNFDIy2f3+W6/ZpZnanECdnBVRFCYysdGqyWsClP232wGJCq3B2lgQsFKFt6jPNmPJKHCcfWTZsFDCm5A+cRzmSwVg4TzZPBhcMplwGzT3KK2ri27Lc8fBpwNpknRIQOlUB6xdP/9huGCZJRydvhmz6ceIrkWUMmpKAhwuKq3e7yCzwpuarF5sXUEsDBBQAAAAIAFWb/FwJr8tEJQEAAHMCAAARAAAAd29yZC9kb2N1bWVudC54bWylUk1LA0EM/SthTnpoZ1tEZOluDxYRRVxsC16ns3F3YDczJNPW/nv34yCFIoqXFx5J3stMslh+tg0ckMV5ytRsmihAsr50VGVqu3mY3CmQaKg0jSfM1AlFLfPFMS293bdIEToBkvSYqTrGkGottsbWyNQHpC734bk1saNc6aPnMrC3KNLpt42eJ8mtbo0j1UvufHnqY+iBe4h5YVgQVq/377ANjTclbFDiQve5HnnAcN7GxRB2eiwZ2TBpKsHY7hmBUZAPqPIX10RP8IwnQoEtueEz4gkevQQXTQMTuJolZ44/2uSx/n3x5ZngaU8If7CcJ/Obf5tOoOgJxWtYIznPsA5onWmcRFg5U5GX6Cy8mdL5ik2okS8uQtDGgkfPcaf6+17yL1BLAQIUAxQAAAAIAFWb/Fx5bjPX6AAAAK0BAAATAAAAAAAAAAAAAACAAQAAAABbQ29udGVudF9UeXBlc10ueG1sUEsBAhQDFAAAAAgAVZv8XJv9N+qtAAAAKQEAAAsAAAAAAAAAAAAAAIABGQEAAF9yZWxzLy5yZWxzUEsBAhQDFAAAAAgAVZv8XAmvy0QlAQAAcwIAABEAAAAAAAAAAAAAAIAB7wEAAHdvcmQvZG9jdW1lbnQueG1sUEsFBgAAAAADAAMAuQAAAEMDAAAAAA==";
 
 const htmlFixture = `
 <!DOCTYPE html>
@@ -555,7 +557,7 @@ describe("/v2/parse", () => {
   );
 
   it(
-    "parses an uploaded DOCX file into markdown",
+    "parses DOCX uploads and merges adjacent formatting runs",
     async () => {
       const result = await parse(
         {
@@ -573,6 +575,9 @@ describe("/v2/parse", () => {
       );
 
       expect(result.markdown).toMatch(/Parse DOCX Upload Test/i);
+      expect(result.markdown).toContain(
+        "**Milton Keynes University Hospital - (10th June 2024 - Present) Senior Specialist Diagnostic Radiographer**",
+      );
       expect(result.metadata.creditsUsed).toBe(1);
     },
     scrapeTimeout,
