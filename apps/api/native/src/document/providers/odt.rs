@@ -57,8 +57,12 @@ impl DocumentProvider for OdtProvider {
 fn read_meta<R: Read + Seek>(zip: &mut ZipArchive<R>) -> Option<DocumentMetadata> {
   let text = read_zip_text(zip, "meta.xml")?;
   let xml = XmlDoc::parse(strip_bom(&text)).ok()?;
-  let element_text =
-    |local: &str| xml.descendants().find(|n| is_tag(n, local)).and_then(|n| n.text());
+  let element_text = |local: &str| {
+    xml
+      .descendants()
+      .find(|n| is_tag(n, local))
+      .and_then(|n| n.text())
+  };
 
   let mut meta = DocumentMetadata::default();
   if let Some(title) = element_text("title") {
@@ -384,7 +388,6 @@ impl Parser<'_> {
       } else if is_tag(&c, "line-break") {
         out.push(Inline::LineBreak);
       } else if is_tag(&c, "s") {
-        // clamped so a malformed count cannot force a huge allocation
         let count = attr(&c, "c")
           .and_then(|v| v.parse::<usize>().ok())
           .unwrap_or(1)

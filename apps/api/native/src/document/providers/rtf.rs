@@ -36,8 +36,7 @@ impl DocumentProvider for RtfProvider {
   }
 }
 
-/// Code page declared by the first \ansicpg control word. Token-based so
-/// escaped literals like "\\ansicpg" in body text cannot match.
+/// Code page declared by the first \ansicpg control word.
 fn detect_encoding(src: &[u8]) -> &'static Encoding {
   for token in Tokens::new(src) {
     if let Token::Control("ansicpg", Some(codepage)) = token {
@@ -121,8 +120,7 @@ impl<'a> Tokens<'a> {
           num_end += 1;
         }
         if num_end > num_start {
-          // consume the digit run even when it overflows i32, so malformed
-          // parameters do not leak digits into the text
+          // consumed even when the value overflows i32
           self.pos = num_end;
           if let Some(n) = std::str::from_utf8(&self.src[num_start..num_end])
             .ok()
@@ -146,8 +144,7 @@ impl<'a> Tokens<'a> {
   }
 }
 
-/// Fallback byte count declared by \uc. Kept as declared: skipping consumes
-/// at most one byte per input token, so it is bounded by the input length.
+/// Fallback byte count declared by \uc.
 fn uc_count(value: Option<i32>) -> usize {
   value.unwrap_or(1).max(0) as usize
 }
@@ -161,8 +158,7 @@ fn hex_val(b: u8) -> Option<u8> {
   }
 }
 
-/// Accumulates text, buffering raw bytes so multi-byte code pages decode
-/// across adjacent bytes.
+/// Text accumulator; raw bytes are buffered and decoded as a unit.
 struct TextAccum {
   encoding: &'static Encoding,
   pending: Vec<u8>,
@@ -486,7 +482,10 @@ impl BodyParser {
         self.state = CharState::default();
       }
       "trowd" => {
-        self.table.get_or_insert_with(TableBuilder::default).start_row();
+        self
+          .table
+          .get_or_insert_with(TableBuilder::default)
+          .start_row();
         self.in_table_cell = false;
       }
       "intbl" => self.in_table_cell = true,
@@ -756,7 +755,8 @@ mod tests {
 
   #[test]
   fn styles_and_tables_still_parse() {
-    let rtf = b"{\\rtf1\\ansi {\\b Bold} and {\\i italic}\\par\\trowd\\intbl A\\cell B\\cell\\row\\par}";
+    let rtf =
+      b"{\\rtf1\\ansi {\\b Bold} and {\\i italic}\\par\\trowd\\intbl A\\cell B\\cell\\row\\par}";
     let document = RtfProvider::new().parse_buffer(rtf).unwrap();
     assert!(matches!(document.blocks[0], Block::Paragraph(_)));
     assert!(document
@@ -779,8 +779,7 @@ mod tests {
 
   #[test]
   fn metadata_keeps_text_of_nested_formatting_groups() {
-    let rtf =
-      b"{\\rtf1{\\info{\\title Some {\\b Bold} Title{\\*\\junk secret}}}Body\\par}";
+    let rtf = b"{\\rtf1{\\info{\\title Some {\\b Bold} Title{\\*\\junk secret}}}Body\\par}";
     let document = RtfProvider::new().parse_buffer(rtf).unwrap();
     assert_eq!(document.metadata.title.as_deref(), Some("Some Bold Title"));
   }
@@ -821,6 +820,3 @@ mod tests {
     assert_eq!(paragraphs(rtf), vec!["У", "done"]);
   }
 }
-
-
-

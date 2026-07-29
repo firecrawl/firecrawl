@@ -1,7 +1,7 @@
 use encoding_rs::{Encoding, WINDOWS_1252};
 
-/// Encoding for a Windows code page. Rejects the Unicode pseudo code pages,
-/// which never describe single-byte legacy text.
+/// Encoding for a Windows code page, excluding the Unicode pseudo code
+/// pages.
 pub fn encoding_for_codepage(codepage: u16) -> Option<&'static Encoding> {
   match codepage {
     0 | 1200 | 1201 | 65000 | 65001 => None,
