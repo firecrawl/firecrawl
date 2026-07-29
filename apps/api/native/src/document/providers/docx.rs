@@ -102,8 +102,12 @@ fn read_relationships<R: Read + Seek>(zip: &mut ZipArchive<R>, path: &str) -> Re
 fn read_core_properties<R: Read + Seek>(zip: &mut ZipArchive<R>) -> Option<DocumentMetadata> {
   let text = read_zip_text(zip, "docProps/core.xml")?;
   let xml = XmlDoc::parse(strip_bom(&text)).ok()?;
-  let element_text =
-    |local: &str| xml.descendants().find(|n| is_tag(n, local)).and_then(|n| n.text());
+  let element_text = |local: &str| {
+    xml
+      .descendants()
+      .find(|n| is_tag(n, local))
+      .and_then(|n| n.text())
+  };
 
   let mut meta = DocumentMetadata::default();
   if let Some(title) = element_text("title") {
@@ -643,7 +647,10 @@ fn parse_list(nodes: &[Node], mut i: usize, ctx: Ctx) -> (List, usize) {
     items: Vec::new(),
     list_type: ListType::Unordered,
   };
-  let Some(base) = nodes.get(i).and_then(|n| paragraph_list_info(n, ctx.numbering)) else {
+  let Some(base) = nodes
+    .get(i)
+    .and_then(|n| paragraph_list_info(n, ctx.numbering))
+  else {
     return (list, i + 1);
   };
   list.list_type = base.list_type;
@@ -748,7 +755,11 @@ fn read_notes<R: Read + Seek>(zip: &mut ZipArchive<R>, kind: NoteKind, ctx: Ctx)
       "word/_rels/footnotes.xml.rels",
       "footnote",
     ),
-    NoteKind::Endnote => ("word/endnotes.xml", "word/_rels/endnotes.xml.rels", "endnote"),
+    NoteKind::Endnote => (
+      "word/endnotes.xml",
+      "word/_rels/endnotes.xml.rels",
+      "endnote",
+    ),
   };
   let Some(text) = read_zip_text(zip, xml_path) else {
     return Vec::new();
@@ -764,7 +775,10 @@ fn read_notes<R: Read + Seek>(zip: &mut ZipArchive<R>, kind: NoteKind, ctx: Ctx)
     let Some(id) = attr(&n, "id") else {
       continue;
     };
-    if matches!(attr(&n, "type"), Some("separator" | "continuationSeparator")) {
+    if matches!(
+      attr(&n, "type"),
+      Some("separator" | "continuationSeparator")
+    ) {
       continue;
     }
     notes.push(Note {
@@ -800,4 +814,3 @@ fn read_comments<R: Read + Seek>(zip: &mut ZipArchive<R>, ctx: Ctx) -> Vec<Comme
   }
   comments
 }
-
