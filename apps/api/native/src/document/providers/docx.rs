@@ -537,8 +537,8 @@ fn parse_table(node: &Node, ctx: Ctx) -> Table {
     let cells = children(&tr, "tc")
       .map(|tc| TableCell {
         blocks: parse_blocks(&tc, ctx),
-        colspan: NonZeroU32::new(1).unwrap(),
-        rowspan: NonZeroU32::new(1).unwrap(),
+        colspan: NonZeroU32::MIN,
+        rowspan: NonZeroU32::MIN,
       })
       .collect();
     rows.push(TableRow {
@@ -639,13 +639,14 @@ fn paragraph_list_info(p: &Node, numbering: &NumberingInfo) -> Option<ListInfo> 
 /// recursing for deeper levels. Returns the list and the next unconsumed
 /// node index.
 fn parse_list(nodes: &[Node], mut i: usize, ctx: Ctx) -> (List, usize) {
-  let base = paragraph_list_info(&nodes[i], ctx.numbering)
-    .expect("parse_list called at non-list paragraph");
-
   let mut list = List {
     items: Vec::new(),
-    list_type: base.list_type,
+    list_type: ListType::Unordered,
   };
+  let Some(base) = nodes.get(i).and_then(|n| paragraph_list_info(n, ctx.numbering)) else {
+    return (list, i + 1);
+  };
+  list.list_type = base.list_type;
 
   while i < nodes.len() {
     let node = &nodes[i];

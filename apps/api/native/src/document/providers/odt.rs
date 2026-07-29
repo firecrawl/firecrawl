@@ -482,7 +482,7 @@ fn span_attr(node: &Node, local: &str) -> NonZeroU32 {
   attr(node, local)
     .and_then(|v| v.parse::<u32>().ok())
     .and_then(NonZeroU32::new)
-    .unwrap_or_else(|| NonZeroU32::new(1).unwrap())
+    .unwrap_or(NonZeroU32::MIN)
 }
 
 fn unwrap_single_nested_list<'a>(list: &Node<'a, 'a>) -> Option<Node<'a, 'a>> {

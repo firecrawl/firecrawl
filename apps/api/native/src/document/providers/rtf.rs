@@ -36,22 +36,18 @@ impl DocumentProvider for RtfProvider {
   }
 }
 
+/// Code page declared by the first \ansicpg control word. Token-based so
+/// escaped literals like "\\ansicpg" in body text cannot match.
 fn detect_encoding(src: &[u8]) -> &'static Encoding {
-  const NEEDLE: &[u8] = b"\\ansicpg";
-  let start = match src.windows(NEEDLE.len()).position(|w| w == NEEDLE) {
-    Some(pos) => pos + NEEDLE.len(),
-    None => return WINDOWS_1252,
-  };
-  let digits: String = src[start..]
-    .iter()
-    .take_while(|b| b.is_ascii_digit())
-    .map(|&b| b as char)
-    .collect();
-  digits
-    .parse::<u16>()
-    .ok()
-    .and_then(encoding_for_codepage)
-    .unwrap_or(WINDOWS_1252)
+  for token in Tokens::new(src) {
+    if let Token::Control("ansicpg", Some(codepage)) = token {
+      return u16::try_from(codepage)
+        .ok()
+        .and_then(encoding_for_codepage)
+        .unwrap_or(WINDOWS_1252);
+    }
+  }
+  WINDOWS_1252
 }
 
 #[derive(Debug, PartialEq)]
@@ -99,10 +95,16 @@ impl<'a> Tokens<'a> {
     self.pos += 1;
     match b {
       b'\'' => {
-        let hi = hex_val(*self.src.get(self.pos)?)?;
-        let lo = hex_val(*self.src.get(self.pos + 1)?)?;
-        self.pos += 2;
-        Some(Token::Hex((hi << 4) | lo))
+        let hi = self.src.get(self.pos).copied().and_then(hex_val);
+        let lo = self.src.get(self.pos + 1).copied().and_then(hex_val);
+        match (hi, lo) {
+          (Some(hi), Some(lo)) => {
+            self.pos += 2;
+            Some(Token::Hex((hi << 4) | lo))
+          }
+          // malformed escape; drop it and keep tokenizing
+          _ => Some(Token::Symbol(b'\'')),
+        }
       }
       b'a'..=b'z' | b'A'..=b'Z' => {
         let start = self.pos - 1;
@@ -119,7 +121,10 @@ impl<'a> Tokens<'a> {
           num_end += 1;
         }
         if num_end > num_start {
-          if let Ok(n) = std::str::from_utf8(&self.src[num_start..num_end]).unwrap().parse::<i32>() {
+          if let Some(n) = std::str::from_utf8(&self.src[num_start..num_end])
+            .ok()
+            .and_then(|s| s.parse::<i32>().ok())
+          {
             value = Some(if negative { -n } else { n });
             self.pos = num_end;
           }
@@ -236,8 +241,8 @@ impl TableBuilder {
     }
     self.current_row.push(TableCell {
       blocks: std::mem::take(&mut self.current_cell_blocks),
-      colspan: NonZeroU32::new(1).unwrap(),
-      rowspan: NonZeroU32::new(1).unwrap(),
+      colspan: NonZeroU32::MIN,
+      rowspan: NonZeroU32::MIN,
     });
   }
 
@@ -403,12 +408,11 @@ impl BodyParser {
       }
     }
 
-    // paragraph marks apply even inside skipped destinations
-    if word == "par" {
-      self.flush_paragraph();
+    if self.skipping() {
       return;
     }
-    if self.skipping() {
+    if word == "par" {
+      self.flush_paragraph();
       return;
     }
 
@@ -590,14 +594,42 @@ fn find_group<'a>(buf: &'a [u8], start_tag: &[u8]) -> Option<&'a [u8]> {
   None
 }
 
-/// Plain text of a destination group, ignoring nested groups.
+/// Plain text of a destination group, flattening nested formatting groups
+/// and ignoring \*-prefixed destinations.
 fn group_text(group: &[u8], encoding: &'static Encoding) -> Option<String> {
   let mut accum = TextAccum::new(encoding);
   let mut depth = 0usize;
+  let mut ignored_depth: Option<usize> = None;
+  let mut just_opened = false;
   let mut pending_uc_skip = 0usize;
   let mut uc_skip = 1usize;
 
   for token in Tokens::new(group) {
+    if just_opened {
+      just_opened = false;
+      if matches!(token, Token::Symbol(b'*')) && ignored_depth.is_none() {
+        ignored_depth = Some(depth);
+        continue;
+      }
+    }
+    match token {
+      Token::Open => {
+        depth += 1;
+        just_opened = true;
+        continue;
+      }
+      Token::Close => {
+        depth = depth.saturating_sub(1);
+        if ignored_depth.is_some_and(|d| depth < d) {
+          ignored_depth = None;
+        }
+        continue;
+      }
+      _ => {}
+    }
+    if ignored_depth.is_some() {
+      continue;
+    }
     if pending_uc_skip > 0 {
       match token {
         Token::Byte(_) | Token::Hex(_) => {
@@ -608,11 +640,9 @@ fn group_text(group: &[u8], encoding: &'static Encoding) -> Option<String> {
       }
     }
     match token {
-      Token::Open => depth += 1,
-      Token::Close => depth = depth.saturating_sub(1),
-      Token::Byte(b) | Token::Hex(b) if depth <= 1 => accum.push_byte(b),
-      Token::Symbol(b @ (b'\\' | b'{' | b'}')) if depth <= 1 => accum.push_byte(b),
-      Token::Control("u", Some(mut code)) if depth <= 1 => {
+      Token::Byte(b) | Token::Hex(b) => accum.push_byte(b),
+      Token::Symbol(b @ (b'\\' | b'{' | b'}')) => accum.push_byte(b),
+      Token::Control("u", Some(mut code)) => {
         if code < 0 {
           code += 65536;
         }
@@ -738,5 +768,32 @@ mod tests {
       "2022-06-09T15:24:00+00:00"
     );
   }
+
+  #[test]
+  fn metadata_keeps_text_of_nested_formatting_groups() {
+    let rtf =
+      b"{\\rtf1{\\info{\\title Some {\\b Bold} Title{\\*\\junk secret}}}Body\\par}";
+    let document = RtfProvider::new().parse_buffer(rtf).unwrap();
+    assert_eq!(document.metadata.title.as_deref(), Some("Some Bold Title"));
+  }
+
+  #[test]
+  fn par_inside_ignored_destination_does_not_split_paragraphs() {
+    let rtf = b"{\\rtf1\\ansi Hello{\\*\\junkdest gone\\par gone too} world\\par}";
+    assert_eq!(paragraphs(rtf), vec!["Hello world"]);
+  }
+
+  #[test]
+  fn malformed_hex_escape_does_not_truncate_document() {
+    let rtf = b"{\\rtf1\\ansi before \\'zz after\\par}";
+    assert_eq!(paragraphs(rtf), vec!["before zz after"]);
+  }
+
+  #[test]
+  fn escaped_ansicpg_literal_does_not_change_encoding() {
+    let rtf = b"{\\rtf1\\ansi text \\\\ansicpg1251 \\'e9\\par}";
+    assert_eq!(paragraphs(rtf), vec!["text \\ansicpg1251 é"]);
+  }
 }
+
 

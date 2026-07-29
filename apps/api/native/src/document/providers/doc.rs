@@ -13,6 +13,10 @@ use std::io::{Cursor, Read, Seek};
 const MAGIC_WORD_97: u16 = 0xA5EC;
 const MAGIC_WORD_6_95: u16 = 0xA5DC;
 
+/// Caps text extraction so a malformed piece table cannot force
+/// multi-gigabyte output from a small file.
+const MAX_TEXT_CHARS: usize = 10_000_000;
+
 pub struct DocProvider;
 
 impl DocProvider {
@@ -228,6 +232,9 @@ fn decode_pieces(
   ccp_text: usize,
   ansi: &'static Encoding,
 ) -> String {
+  // piece CP ranges are contiguous and ascending, so clamping ccpText bounds
+  // the total output no matter how many pieces the table declares
+  let ccp_text = ccp_text.min(MAX_TEXT_CHARS);
   let mut out = String::new();
   for piece in pieces {
     // main document body only; headers, footnotes etc. live past ccpText
@@ -593,6 +600,40 @@ mod tests {
       paragraph_texts(&parse(&data)),
       vec!["Стаття перша.", "Стаття друга."]
     );
+  }
+
+  #[test]
+  fn malformed_piece_table_output_is_capped() {
+    // 200 pieces of 100k chars all mapped to the same 100k file bytes; the
+    // claimed 20M chars must clamp to MAX_TEXT_CHARS
+    let text_len = 100_000u32;
+    let num_pieces = 200u32;
+    let mut word_doc = vec![0u8; TEXT_START];
+    word_doc.extend_from_slice(&vec![b'A'; text_len as usize]);
+
+    let mut plc = Vec::new();
+    for k in 0..=num_pieces {
+      plc.extend_from_slice(&(k * text_len).to_le_bytes());
+    }
+    let fc = (TEXT_START as u32 * 2) | 0x4000_0000;
+    for _ in 0..num_pieces {
+      plc.extend_from_slice(&0u16.to_le_bytes());
+      plc.extend_from_slice(&fc.to_le_bytes());
+      plc.extend_from_slice(&0u16.to_le_bytes());
+    }
+    let mut table = vec![0x02];
+    table.extend_from_slice(&(plc.len() as u32).to_le_bytes());
+    table.extend_from_slice(&plc);
+
+    word_doc[0x00..0x02].copy_from_slice(&MAGIC_WORD_97.to_le_bytes());
+    word_doc[0x0A..0x0C].copy_from_slice(&0x0200u16.to_le_bytes());
+    word_doc[0x4C..0x50].copy_from_slice(&(num_pieces * text_len).to_le_bytes());
+    word_doc[0x1A6..0x1AA].copy_from_slice(&(table.len() as u32).to_le_bytes());
+
+    let data = build_cfb(&[("WordDocument", &word_doc), ("1Table", &table)]);
+    let total: usize = paragraph_texts(&parse(&data)).iter().map(|t| t.len()).sum();
+    assert!(total > 0);
+    assert!(total <= MAX_TEXT_CHARS);
   }
 
   #[test]
