@@ -14,16 +14,16 @@ import {
   processSitemap,
   SitemapProcessingResult,
 } from "@mendable/firecrawl-rs";
-import { gunzip } from "node:zlib";
-import { promisify } from "node:util";
-import { fetchFileToBuffer } from "../scrapeURL/engines/utils/downloadFile";
+import {
+  decodeSitemapFileBuffer,
+  fetchFileToBuffer,
+  SITEMAP_FILE_HEADERS,
+} from "../scrapeURL/engines/utils/downloadFile";
 import { useIndex } from "../../services";
 
 const useFireEngine =
   config.FIRE_ENGINE_BETA_URL !== "" &&
   config.FIRE_ENGINE_BETA_URL !== undefined;
-
-const gunzipAsync = promisify(gunzip);
 
 export async function getLinksFromSitemap(
   {
@@ -67,10 +67,9 @@ export async function getLinksFromSitemap(
     if (isGzip) {
       try {
         const { buffer } = await fetchFileToBuffer(sitemapUrl, false, {
-          headers,
+          headers: { ...SITEMAP_FILE_HEADERS, ...headers },
         });
-        const decompressed = await gunzipAsync(buffer);
-        content = decompressed.toString("utf-8");
+        content = await decodeSitemapFileBuffer(buffer);
       } catch (error) {
         logger.error("Failed to download/decompress gzip sitemap", {
           sitemapUrl,

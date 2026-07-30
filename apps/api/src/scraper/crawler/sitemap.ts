@@ -9,9 +9,11 @@ import {
   processSitemap,
   SitemapProcessingResult,
 } from "@mendable/firecrawl-rs";
-import { fetchFileToBuffer } from "../scrapeURL/engines/utils/downloadFile";
-import { gunzip } from "node:zlib";
-import { promisify } from "node:util";
+import {
+  decodeSitemapFileBuffer,
+  fetchFileToBuffer,
+  SITEMAP_FILE_HEADERS,
+} from "../scrapeURL/engines/utils/downloadFile";
 import { SitemapError } from "../../lib/error";
 import { useIndex } from "../../services";
 
@@ -34,14 +36,13 @@ type SitemapData = {
   sitemaps: URL[];
 };
 
-const gunzipAsync = promisify(gunzip);
-
 async function _getSitemapXMLGZ(
   options: SitemapScrapeOptions,
 ): Promise<string> {
-  const { buffer } = await fetchFileToBuffer(options.url);
-  const decompressed = await gunzipAsync(buffer);
-  return decompressed.toString("utf-8");
+  const { buffer } = await fetchFileToBuffer(options.url, false, {
+    headers: SITEMAP_FILE_HEADERS,
+  });
+  return await decodeSitemapFileBuffer(buffer);
 }
 
 async function getSitemapXML(options: SitemapScrapeOptions): Promise<string> {

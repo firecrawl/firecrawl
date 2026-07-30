@@ -2,7 +2,6 @@ import path from "path";
 import os from "os";
 import { createWriteStream, promises as fs } from "node:fs";
 import {
-  AddFeatureError,
   DNSResolutionError,
   EngineError,
   SiteError,
@@ -13,8 +12,37 @@ import { Writable } from "stream";
 import { TransformStream as NodeTransformStream } from "node:stream/web";
 import { v7 as uuid } from "uuid";
 import * as undici from "undici";
+import { gunzip } from "node:zlib";
+import { promisify } from "node:util";
 import { getSecureDispatcher } from "./safeFetch";
 import { logger } from "../../../../lib/logger";
+
+const gunzipAsync = promisify(gunzip);
+
+// Browser-like headers for fetching sitemap files directly (e.g. .xml.gz).
+// The default undici User-Agent is frequently rejected by basic bot filters,
+// which made gzipped sitemaps silently resolve to zero links.
+export const SITEMAP_FILE_HEADERS: Record<string, string> = {
+  "User-Agent":
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+  Accept: "application/xml,text/xml,application/gzip,*/*",
+};
+
+// gzip streams start with the magic bytes 0x1f 0x8b.
+function isGzipBuffer(buffer: Buffer): boolean {
+  return buffer.length >= 2 && buffer[0] === 0x1f && buffer[1] === 0x8b;
+}
+
+// Decode a downloaded sitemap file into XML text. Decompresses gzip content;
+// if the server returned already-decompressed XML despite a .gz URL (or any
+// other non-gzip body), it is returned as-is rather than fed into gunzip.
+export async function decodeSitemapFileBuffer(buffer: Buffer): Promise<string> {
+  if (isGzipBuffer(buffer)) {
+    const decompressed = await gunzipAsync(buffer);
+    return decompressed.toString("utf-8");
+  }
+  return buffer.toString("utf-8");
+}
 
 const mapUndiciError = (url: string, skipTlsVerification: boolean, e: any) => {
   const code = e?.code ?? e?.cause?.code ?? e?.errno ?? e?.name;
