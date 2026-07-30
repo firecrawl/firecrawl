@@ -21,6 +21,12 @@ import type {
 export const TEAM_FEATURE_ID = "TEAM";
 export const CREDITS_FEATURE_ID = "CREDITS";
 export const SEARCH_CREDITS_FEATURE_ID = "SEARCH_CREDITS";
+// Specialized credit pools. Each is configured in Autumn to fall back to
+// CREDITS once depleted, so a team without a dedicated allowance still bills
+// normally against its general credits. New billable dimensions (formats,
+// document parsing, ...) get a feature id here and a tag in credit-lines.ts.
+export const DOCUMENT_CREDITS_FEATURE_ID = "DOCUMENT_CREDITS";
+export const JSON_CREDITS_FEATURE_ID = "JSON_CREDITS";
 const CONCURRENCY_FEATURE_ID = "CONCURRENCY";
 const RATE_LIMIT_FEATURE_ID = "rate_limits";
 

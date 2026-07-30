@@ -40,8 +40,13 @@ import {
 } from "../billing/types";
 import {
   autumnService,
-  featureIdForBillingEndpoint,
+  SEARCH_CREDITS_FEATURE_ID,
 } from "../autumn/autumn.service";
+import {
+  groupCreditsByFeature,
+  retagAllLines,
+  sumCreditLines,
+} from "../../lib/credit-lines";
 import {
   _addScrapeJobToBullMQ,
   addScrapeJob,
@@ -63,7 +68,7 @@ import { UNSUPPORTED_SITE_MESSAGE } from "../../lib/strings";
 import { generateURLSplits, queryIndexAtSplitLevel } from "../index";
 import { WebCrawler } from "../../scraper/WebScraper/crawler";
 import {
-  calculateCreditsToBeBilled,
+  calculateCreditLines,
   calculateThreatScanCredits,
 } from "../../lib/scrape-billing";
 import { billTeam } from "../billing/credit_billing";
@@ -139,14 +144,10 @@ async function billScrapeJob(
     ...toAutumnBillingProperties(billing),
     apiKeyId: job.data.apiKeyId,
   };
-  // Scrapes initiated by a search (billing.endpoint === "search", e.g. search +
-  // scrapeOptions) are metered against SEARCH_CREDITS, matching the search
-  // request's own credits. Standalone scrapes stay on CREDITS.
-  const featureId = featureIdForBillingEndpoint(billing.endpoint);
   let trackedInRequest = false;
 
   if (job.data.is_scrape !== true && !job.data.internalOptions?.bypassBilling) {
-    creditsToBeBilled = await calculateCreditsToBeBilled(
+    let creditLines = await calculateCreditLines(
       job.data.scrapeOptions,
       job.data.internalOptions,
       document,
@@ -157,6 +158,18 @@ async function billScrapeJob(
       exchange,
       threatDecisions,
     );
+
+    // Endpoint precedence: scrapes performed as part of a search meter
+    // entirely against SEARCH_CREDITS, matching the search request's own
+    // credits, regardless of the format/document tags the scrape earned.
+    if (billing.endpoint === "search") {
+      creditLines = retagAllLines(creditLines, SEARCH_CREDITS_FEATURE_ID);
+    }
+
+    // Per-feature breakdown for Autumn (e.g. { CREDITS: 1, JSON_CREDITS: 4 });
+    // the ledger commits the plain sum.
+    const creditsByFeature = groupCreditsByFeature(creditLines);
+    creditsToBeBilled = sumCreditLines(creditLines);
 
     // Charge the keyless free tier's per-IP daily credit budget unless this
     // request reserved credits in the controller and will reconcile there.
@@ -169,12 +182,21 @@ async function billScrapeJob(
       config.USE_DB_AUTHENTICATION
     ) {
       try {
-        trackedInRequest = await autumnService.trackCredits({
-          teamId: job.data.team_id,
-          value: creditsToBeBilled,
-          properties: autumnProperties,
-          featureId,
-        });
+        // Track each credit pool the scrape touched. trackedInRequest is true
+        // only when every pool's debit was recorded, so the batch refund path
+        // knows the request-time tracking is fully accounted for.
+        const features = Object.keys(creditsByFeature);
+        const trackResults = await Promise.all(
+          features.map(feature =>
+            autumnService.trackCredits({
+              teamId: job.data.team_id,
+              value: creditsByFeature[feature],
+              properties: autumnProperties,
+              featureId: feature,
+            }),
+          ),
+        );
+        trackedInRequest = features.length > 0 && trackResults.every(Boolean);
         const billingJobId = uuidv7();
         logger.debug(
           `Adding billing job to queue for team ${job.data.team_id}`,
@@ -182,6 +204,7 @@ async function billScrapeJob(
             billingJobId,
             billing,
             credits: creditsToBeBilled,
+            creditsByFeature,
             is_extract: false,
           },
         );
@@ -195,6 +218,7 @@ async function billScrapeJob(
           {
             team_id: job.data.team_id,
             credits: creditsToBeBilled,
+            creditLines: creditsByFeature,
             billing,
             is_extract: false,
             timestamp: new Date().toISOString(),
@@ -217,13 +241,19 @@ async function billScrapeJob(
           `Failed to add billing job to queue for team ${job.data.team_id} for ${creditsToBeBilled} credits`,
           { error },
         );
-        if (trackedInRequest && creditsToBeBilled !== null) {
-          await autumnService.refundCredits({
-            teamId: job.data.team_id,
-            value: creditsToBeBilled,
-            properties: autumnProperties,
-            featureId,
-          });
+        // Reverse whichever pools were actually debited above.
+        const trackedFeatures = Object.keys(creditsByFeature);
+        if (trackedInRequest && trackedFeatures.length > 0) {
+          await Promise.all(
+            trackedFeatures.map(feature =>
+              autumnService.refundCredits({
+                teamId: job.data.team_id,
+                value: creditsByFeature[feature],
+                properties: autumnProperties,
+                featureId: feature,
+              }),
+            ),
+          );
         }
         // The billing operation never reached the queue, so no debit will
         // commit and no confirmation will ever arrive: void the Exchange

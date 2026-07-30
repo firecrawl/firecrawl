@@ -13,6 +13,16 @@ import { isUrlBlocked } from "../scraper/WebScraper/utils/blocklist";
 import { ExchangeScrapeMetadata, getExchangeSuccessCredits } from "./exchange";
 import type { ThreatDecision } from "./threat-protection/types";
 import { UnsafeDomainBlockedError } from "./threat-protection/error";
+import {
+  CreditLine,
+  sumCreditLines,
+  isDocumentContentType,
+  applyDocumentTag,
+} from "./credit-lines";
+import {
+  CREDITS_FEATURE_ID,
+  JSON_CREDITS_FEATURE_ID,
+} from "../services/autumn/autumn.service";
 
 const creditsPerPDFPage = 1;
 const stealthProxyCostBonus = 4;
@@ -70,6 +80,49 @@ export async function calculateCreditsToBeBilled(
   error?: Error | null,
   unsupportedFeatures?: Set<FeatureFlag>,
   exchange?: ExchangeScrapeMetadata,
+  threatDecisions?: ThreatDecision[],
+): Promise<number> {
+  return sumCreditLines(
+    await calculateCreditLines(
+      options,
+      internalOptions,
+      document,
+      costTracking,
+      flags,
+      error,
+      unsupportedFeatures,
+      exchange,
+      threatDecisions,
+    ),
+  );
+}
+
+/**
+ * Computes a scrape's charge as a list of tagged {@link CreditLine}s — the
+ * per-feature breakdown behind {@link calculateCreditsToBeBilled}, whose scalar
+ * total is exactly `sumCreditLines(...)` of this.
+ *
+ * Each surcharge is tagged with the Autumn feature it meters against: the base
+ * scrape and most premiums against CREDITS, the JSON-output premium against
+ * JSON_CREDITS, and — when the scrape resolved to a document — the whole
+ * CREDITS portion is re-tagged onto DOCUMENT_CREDITS (format premiums such as
+ * JSON keep their own pool). The ledger total is unaffected by tagging; only
+ * which Autumn feature each portion debits changes.
+ *
+ * Override-style premiums (json, deterministicJson, fire-1) replace the charge
+ * accrued so far and then let subsequent additive premiums apply, mirroring the
+ * previous scalar semantics exactly (including that json wipes a preceding
+ * lockdown surcharge).
+ */
+export async function calculateCreditLines(
+  options: ScrapeOptions,
+  internalOptions: InternalOptions,
+  document: Document | null,
+  costTracking: CostTracking | ReturnType<typeof CostTracking.prototype.toJSON>,
+  flags: TeamFlags,
+  error?: Error | null,
+  unsupportedFeatures?: Set<FeatureFlag>,
+  exchange?: ExchangeScrapeMetadata,
   // Threat protection decisions for this scrape (initial + redirect checks,
   // in order). Each decision with `providerConsulted` bills a scan fee (+2
   // per unique scanned URL) on top of the scrape's own cost — on both success
@@ -78,7 +131,7 @@ export async function calculateCreditsToBeBilled(
   // UnsafeDomainBlockedError in `error` also carries its decision, which is
   // used as a fallback when the decisions array did not make it here.
   threatDecisions?: ThreatDecision[],
-) {
+): Promise<CreditLine[]> {
   const costTrackingJSON: ReturnType<typeof CostTracking.prototype.toJSON> =
     costTracking instanceof CostTracking ? costTracking.toJSON() : costTracking;
 
@@ -91,16 +144,28 @@ export async function calculateCreditsToBeBilled(
   const threatScanCredits = calculateThreatScanCredits(
     effectiveThreatDecisions,
   );
+  // Threat scans meter against general credits (re-tagged to DOCUMENT_CREDITS
+  // below when the scrape is a document, like the rest of the base charge).
+  const threatLines: CreditLine[] =
+    threatScanCredits > 0
+      ? [
+          {
+            feature: CREDITS_FEATURE_ID,
+            credits: threatScanCredits,
+            reason: "threat-scan",
+          },
+        ]
+      : [];
 
   if (document === null) {
     // Failure -- check cost tracking if FIRE-1
-    let creditsToBeBilled = 0;
+    let failureBase = 0;
 
     if (
       internalOptions.v1Agent?.model?.toLowerCase() === "fire-1" ||
       internalOptions.v1JSONAgent?.model?.toLowerCase() === "fire-1"
     ) {
-      creditsToBeBilled = Math.ceil((costTrackingJSON.totalCost ?? 1) * 1800);
+      failureBase = Math.ceil((costTrackingJSON.totalCost ?? 1) * 1800);
     }
 
     // Bill for DNS resolution errors
@@ -109,13 +174,23 @@ export async function calculateCreditsToBeBilled(
       (error.code === "SCRAPE_DNS_RESOLUTION_ERROR" ||
         error.code === "SCRAPE_LOCKDOWN_CACHE_MISS")
     ) {
-      creditsToBeBilled = 1;
+      failureBase = 1;
     }
 
     // Failed scrapes bill no base cost (except the cases above), but threat
     // protection scans that already happened still bill — including scrapes
     // blocked by the policy itself.
-    return creditsToBeBilled + threatScanCredits;
+    const failureLines: CreditLine[] =
+      failureBase > 0
+        ? [
+            {
+              feature: CREDITS_FEATURE_ID,
+              credits: failureBase,
+              reason: "failure-base",
+            },
+          ]
+        : [];
+    return [...failureLines, ...threatLines];
   }
 
   const exchangeCredits = getExchangeSuccessCredits({
@@ -123,13 +198,22 @@ export async function calculateCreditsToBeBilled(
     statusCode: document.metadata?.statusCode,
   });
   if (exchangeCredits !== null) {
-    return exchangeCredits + threatScanCredits;
+    return [
+      {
+        feature: CREDITS_FEATURE_ID,
+        credits: exchangeCredits,
+        reason: "exchange",
+      },
+      ...threatLines,
+    ];
   }
 
-  let creditsToBeBilled = 1; // Assuming 1 credit per document
+  let lines: CreditLine[] = [
+    { feature: CREDITS_FEATURE_ID, credits: 1, reason: "base" },
+  ];
 
   if (options.lockdown) {
-    creditsToBeBilled += 4;
+    lines.push({ feature: CREDITS_FEATURE_ID, credits: 4, reason: "lockdown" });
   }
 
   const changeTrackingFormat = hasFormatOfType(
@@ -140,7 +224,13 @@ export async function calculateCreditsToBeBilled(
     hasFormatOfType(options.formats, "json") ||
     changeTrackingFormat?.modes?.includes("json")
   ) {
-    creditsToBeBilled = 5;
+    // Total 5, split so the JSON-output premium meters against JSON_CREDITS
+    // while the base scrape stays on general credits. Replaces prior lines,
+    // matching the old `= 5` override (which wiped a preceding lockdown).
+    lines = [
+      { feature: CREDITS_FEATURE_ID, credits: 1, reason: "base" },
+      { feature: JSON_CREDITS_FEATURE_ID, credits: 4, reason: "json" },
+    ];
   }
 
   if (hasFormatOfType(options.formats, "deterministicJson")) {
@@ -151,41 +241,65 @@ export async function calculateCreditsToBeBilled(
         call.metadata?.module === "deterministic-json" &&
         call.metadata?.role === "codegen",
     );
-    creditsToBeBilled = generatedScript ? 10 : 3;
+    lines = [
+      {
+        feature: CREDITS_FEATURE_ID,
+        credits: generatedScript ? 10 : 3,
+        reason: "deterministic-json",
+      },
+    ];
   }
 
   if (
     internalOptions.v1Agent?.model === "fire-1" ||
     internalOptions.v1JSONAgent?.model?.toLowerCase() === "fire-1"
   ) {
-    creditsToBeBilled = Math.ceil((costTrackingJSON.totalCost ?? 1) * 1800);
+    lines = [
+      {
+        feature: CREDITS_FEATURE_ID,
+        credits: Math.ceil((costTrackingJSON.totalCost ?? 1) * 1800),
+        reason: "fire-1",
+      },
+    ];
   }
 
   const hasQuestionFormat =
     hasFormatOfType(options.formats, "question") ||
     hasFormatOfType(options.formats, "query");
   if (hasQuestionFormat) {
-    creditsToBeBilled += 4;
+    lines.push({ feature: CREDITS_FEATURE_ID, credits: 4, reason: "question" });
   }
 
   if (hasFormatOfType(options.formats, "highlights")) {
-    creditsToBeBilled += 4;
+    lines.push({
+      feature: CREDITS_FEATURE_ID,
+      credits: 4,
+      reason: "highlights",
+    });
   }
 
   if (hasFormatOfType(options.formats, "audio")) {
-    creditsToBeBilled += 4;
+    lines.push({ feature: CREDITS_FEATURE_ID, credits: 4, reason: "audio" });
   }
 
   if (hasFormatOfType(options.formats, "video")) {
-    creditsToBeBilled += 4;
+    lines.push({ feature: CREDITS_FEATURE_ID, credits: 4, reason: "video" });
   }
 
   if (document.metadata?.postprocessorsUsed?.includes("x-twitter")) {
-    creditsToBeBilled += xTwitterCostBonus;
+    lines.push({
+      feature: CREDITS_FEATURE_ID,
+      credits: xTwitterCostBonus,
+      reason: "x-twitter",
+    });
   }
 
   if (internalOptions.zeroDataRetention && !options.lockdown) {
-    creditsToBeBilled += flags?.zdrCost ?? 1;
+    lines.push({
+      feature: CREDITS_FEATURE_ID,
+      credits: flags?.zdrCost ?? 1,
+      reason: "zdr",
+    });
   }
 
   const shouldParse = shouldParsePDF(options.parsers);
@@ -196,7 +310,11 @@ export async function calculateCreditsToBeBilled(
       ? document.metadata.numPages - 1
       : 0;
   if (extraPdfPages > 0) {
-    creditsToBeBilled += creditsPerPDFPage * extraPdfPages;
+    lines.push({
+      feature: CREDITS_FEATURE_ID,
+      credits: creditsPerPDFPage * extraPdfPages,
+      reason: "pdf-pages",
+    });
   }
 
   if (options.redactPII) {
@@ -204,9 +322,17 @@ export async function calculateCreditsToBeBilled(
     // is a peer premium feature, not a cost-based one. PDF pages all
     // pass through redaction too, so each additional page picks up
     // another +4 on top of the +1 page parse cost.
-    creditsToBeBilled += redactPIICostBonus;
+    lines.push({
+      feature: CREDITS_FEATURE_ID,
+      credits: redactPIICostBonus,
+      reason: "redact-pii",
+    });
     if (extraPdfPages > 0) {
-      creditsToBeBilled += redactPIIPdfPageCostBonus * extraPdfPages;
+      lines.push({
+        feature: CREDITS_FEATURE_ID,
+        credits: redactPIIPdfPageCostBonus * extraPdfPages,
+        reason: "redact-pii-pdf-pages",
+      });
     }
   }
 
@@ -214,7 +340,11 @@ export async function calculateCreditsToBeBilled(
     document?.metadata?.proxyUsed === "stealth" &&
     !unsupportedFeatures?.has("stealthProxy") // if stealth proxy was unsupported, don't bill for it
   ) {
-    creditsToBeBilled += stealthProxyCostBonus;
+    lines.push({
+      feature: CREDITS_FEATURE_ID,
+      credits: stealthProxyCostBonus,
+      reason: "stealth-proxy",
+    });
   }
 
   const urlsToCheck = [
@@ -222,10 +352,21 @@ export async function calculateCreditsToBeBilled(
     document.metadata?.sourceURL,
   ].filter((u): u is string => !!u);
   if (urlsToCheck.some(u => isUrlBlocked(u, null) && !isUrlBlocked(u, flags))) {
-    creditsToBeBilled += unblockedDomainCostBonus;
+    lines.push({
+      feature: CREDITS_FEATURE_ID,
+      credits: unblockedDomainCostBonus,
+      reason: "unblocked-domain",
+    });
   }
 
-  creditsToBeBilled += threatScanCredits;
+  lines.push(...threatLines);
 
-  return creditsToBeBilled;
+  // A document scrape meters its whole general-credit charge (base + premiums
+  // tagged CREDITS) against DOCUMENT_CREDITS. Format pools like JSON_CREDITS
+  // keep their tag, so a JSON extraction over a PDF splits across both.
+  if (isDocumentContentType(document.metadata?.contentType)) {
+    lines = applyDocumentTag(lines);
+  }
+
+  return lines;
 }

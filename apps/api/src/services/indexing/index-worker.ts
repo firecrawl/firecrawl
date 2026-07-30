@@ -85,6 +85,7 @@ const processBillingJobInternal = async (token: string, job: Job) => {
       const {
         team_id,
         credits,
+        creditLines,
         billing,
         endpoint,
         is_extract,
@@ -117,6 +118,7 @@ const processBillingJobInternal = async (token: string, job: Job) => {
               billingReference: String(job.id),
             }
           : undefined,
+        creditLines,
       );
     } else {
       logger.warn(`Unknown billing job type: ${job.name}`);

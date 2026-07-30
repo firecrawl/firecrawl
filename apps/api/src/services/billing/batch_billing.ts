@@ -53,10 +53,7 @@ async function confirmExchangeOutcomes(
   // Exchange queues at most EXCHANGE_CONFIRM_CONCURRENCY waiters per
   // invocation on the shared budget instead of one per operation.
   let nextIndex = 0;
-  const workerCount = Math.min(
-    EXCHANGE_CONFIRM_CONCURRENCY,
-    operations.length,
-  );
+  const workerCount = Math.min(EXCHANGE_CONFIRM_CONCURRENCY, operations.length);
   await Promise.all(
     Array.from({ length: workerCount }, async () => {
       while (true) {
@@ -90,6 +87,10 @@ const LOCK_TIMEOUT = 30000; // 30 seconds lock timeout
 interface BillingOperation {
   team_id: string;
   credits: number;
+  // Per-Autumn-feature breakdown of `credits` (e.g. { CREDITS: 1,
+  // JSON_CREDITS: 4 }), when the charge spans multiple credit pools. Absent for
+  // single-pool (non-scrape) billing, which falls back to the endpoint feature.
+  creditLines?: Record<string, number>;
   billing?: BillingMetadata;
   endpoint?: BillingEndpoint;
   is_extract: boolean;
@@ -133,37 +134,55 @@ async function releaseLock() {
 }
 
 async function refundRequestTrackedCredits(group: GroupedBillingOperation) {
-  const requestTrackedCredits = group.operations
-    .filter(op => op.autumnTrackInRequest)
-    .reduce((sum, op) => sum + op.credits, 0);
+  // Sum the request-tracked credits per Autumn feature so each pool is refunded
+  // against the same feature it was debited. Ops carry a `creditLines`
+  // breakdown (feature -> credits); ops without one (single-pool, non-scrape
+  // billing) fall back to the endpoint's feature.
+  const refundByFeature: Record<string, number> = {};
+  for (const op of group.operations) {
+    if (!op.autumnTrackInRequest) continue;
+    if (op.creditLines && Object.keys(op.creditLines).length > 0) {
+      for (const [feature, credits] of Object.entries(op.creditLines)) {
+        refundByFeature[feature] = (refundByFeature[feature] ?? 0) + credits;
+      }
+    } else {
+      const feature = featureIdForBillingEndpoint(group.billing.endpoint);
+      refundByFeature[feature] = (refundByFeature[feature] ?? 0) + op.credits;
+    }
+  }
 
-  if (requestTrackedCredits <= 0) return;
+  const properties = {
+    source: "processBillingBatch",
+    ...toAutumnBillingProperties(group.billing),
+    apiKeyId: group.api_key_id,
+  };
 
-  try {
-    await autumnService.refundCredits({
-      teamId: group.team_id,
-      value: requestTrackedCredits,
-      properties: {
-        source: "processBillingBatch",
-        ...toAutumnBillingProperties(group.billing),
-        apiKeyId: group.api_key_id,
-      },
-      featureId: featureIdForBillingEndpoint(group.billing.endpoint),
-    });
-  } catch (error) {
-    logger.warn("Failed to refund Autumn request-tracked credits", {
-      error,
-      team_id: group.team_id,
-      credits: requestTrackedCredits,
-      billing: group.billing,
-    });
-    Sentry.captureException(error, {
-      data: {
-        operation: "batch_billing_refund",
+  for (const [featureId, value] of Object.entries(refundByFeature)) {
+    if (value <= 0) continue;
+    try {
+      await autumnService.refundCredits({
+        teamId: group.team_id,
+        value,
+        properties,
+        featureId,
+      });
+    } catch (error) {
+      logger.warn("Failed to refund Autumn request-tracked credits", {
+        error,
         team_id: group.team_id,
-        credits: requestTrackedCredits,
-      },
-    });
+        credits: value,
+        featureId,
+        billing: group.billing,
+      });
+      Sentry.captureException(error, {
+        data: {
+          operation: "batch_billing_refund",
+          team_id: group.team_id,
+          credits: value,
+          featureId,
+        },
+      });
+    }
   }
 }
 
@@ -354,6 +373,7 @@ export async function queueBillingOperation(
   is_extract: boolean = false,
   autumnTrackInRequest: boolean = false,
   exchange?: { accessEventId: string; billingReference?: string },
+  creditLines?: Record<string, number>,
 ) {
   // Skip queuing for preview teams
   if (team_id === "preview" || team_id.startsWith("preview_")) {
@@ -372,6 +392,7 @@ export async function queueBillingOperation(
     const operation: BillingOperation = {
       team_id,
       credits,
+      ...(creditLines === undefined ? {} : { creditLines }),
       billing,
       is_extract,
       timestamp: new Date().toISOString(),
