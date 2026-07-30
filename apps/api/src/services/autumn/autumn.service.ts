@@ -21,6 +21,7 @@ import type {
 export const TEAM_FEATURE_ID = "TEAM";
 export const CREDITS_FEATURE_ID = "CREDITS";
 export const SEARCH_CREDITS_FEATURE_ID = "SEARCH_CREDITS";
+export const DOCUMENT_CREDITS_FEATURE_ID = "DOCUMENT_CREDITS";
 const CONCURRENCY_FEATURE_ID = "CONCURRENCY";
 const RATE_LIMIT_FEATURE_ID = "rate_limits";
 
@@ -47,6 +48,25 @@ function sanitizeBalanceValue(value: unknown): number | null {
  */
 export function featureIdForBillingEndpoint(endpoint?: string): string {
   return endpoint === "search" ? SEARCH_CREDITS_FEATURE_ID : CREDITS_FEATURE_ID;
+}
+
+/**
+ * Resolves the Autumn feature ID for a billing operation.
+ *
+ * Search always meters against SEARCH_CREDITS (and takes precedence — a scrape
+ * performed as part of a search stays on SEARCH_CREDITS even if it parses a
+ * document). Otherwise, document scrapes (PDFs and office documents) meter
+ * against DOCUMENT_CREDITS, and everything else uses the general CREDITS
+ * feature. DOCUMENT_CREDITS is configured in Autumn to fall back to CREDITS
+ * once depleted, so a team without a document allowance still bills normally.
+ */
+export function featureIdForBilling(billing: {
+  endpoint?: string;
+  isDocument?: boolean;
+}): string {
+  if (billing.endpoint === "search") return SEARCH_CREDITS_FEATURE_ID;
+  if (billing.isDocument) return DOCUMENT_CREDITS_FEATURE_ID;
+  return CREDITS_FEATURE_ID;
 }
 
 const AUTUMN_DEFAULT_PLAN_ID = "free";

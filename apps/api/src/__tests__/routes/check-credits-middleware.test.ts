@@ -6,6 +6,7 @@ vi.mock("../../services/autumn/autumn.service", () => ({
     checkCredits: vi.fn(),
   },
   CREDITS_FEATURE_ID: "CREDITS",
+  DOCUMENT_CREDITS_FEATURE_ID: "DOCUMENT_CREDITS",
 }));
 
 vi.mock("../../services/autumn/usage", () => ({
@@ -137,6 +138,70 @@ describe("checkCreditsMiddleware – Autumn overage handling", () => {
       expect.objectContaining({
         properties: expect.objectContaining({ apiKeyId: null }),
       }),
+    );
+  });
+});
+
+describe("checkCreditsMiddleware – document credit routing", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("gates a .pdf url against DOCUMENT_CREDITS", async () => {
+    checkCreditsMock.mockResolvedValue({ allowed: true, remaining: 100 });
+
+    const req = buildReq({
+      path: "/v1/scrape",
+      body: { url: "https://example.com/report.pdf" },
+    });
+    await runMiddleware(req);
+
+    expect(checkCreditsMock).toHaveBeenCalledWith(
+      expect.objectContaining({ featureId: "DOCUMENT_CREDITS" }),
+    );
+  });
+
+  it("gates a .docx url against DOCUMENT_CREDITS", async () => {
+    checkCreditsMock.mockResolvedValue({ allowed: true, remaining: 100 });
+
+    const req = buildReq({
+      path: "/v1/scrape",
+      body: { url: "https://example.com/files/spec.docx" },
+    });
+    await runMiddleware(req);
+
+    expect(checkCreditsMock).toHaveBeenCalledWith(
+      expect.objectContaining({ featureId: "DOCUMENT_CREDITS" }),
+    );
+  });
+
+  it("routes a batch containing a document url against DOCUMENT_CREDITS", async () => {
+    checkCreditsMock.mockResolvedValue({ allowed: true, remaining: 100 });
+
+    const req = buildReq({
+      path: "/v1/batch/scrape",
+      body: {
+        urls: ["https://example.com/page", "https://example.com/a.xlsx"],
+      },
+    });
+    await runMiddleware(req);
+
+    expect(checkCreditsMock).toHaveBeenCalledWith(
+      expect.objectContaining({ featureId: "DOCUMENT_CREDITS" }),
+    );
+  });
+
+  it("keeps ordinary html scrapes on CREDITS", async () => {
+    checkCreditsMock.mockResolvedValue({ allowed: true, remaining: 100 });
+
+    const req = buildReq({
+      path: "/v1/scrape",
+      body: { url: "https://example.com/article" },
+    });
+    await runMiddleware(req);
+
+    expect(checkCreditsMock).toHaveBeenCalledWith(
+      expect.objectContaining({ featureId: "CREDITS" }),
     );
   });
 });

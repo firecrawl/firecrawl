@@ -101,6 +101,7 @@ import {
   AutumnService,
   BoundedMap,
   BoundedSet,
+  featureIdForBilling,
   featureIdForBillingEndpoint,
 } from "../autumn.service";
 
@@ -600,6 +601,36 @@ describe("featureIdForBillingEndpoint", () => {
 
   it("maps an undefined endpoint to CREDITS", () => {
     expect(featureIdForBillingEndpoint(undefined)).toBe("CREDITS");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// featureIdForBilling
+// ---------------------------------------------------------------------------
+
+describe("featureIdForBilling", () => {
+  it("prefers SEARCH_CREDITS, even for a document scrape under search", () => {
+    expect(featureIdForBilling({ endpoint: "search", isDocument: true })).toBe(
+      "SEARCH_CREDITS",
+    );
+    expect(featureIdForBilling({ endpoint: "search" })).toBe("SEARCH_CREDITS");
+  });
+
+  it("routes document scrapes to DOCUMENT_CREDITS", () => {
+    expect(featureIdForBilling({ endpoint: "scrape", isDocument: true })).toBe(
+      "DOCUMENT_CREDITS",
+    );
+    expect(featureIdForBilling({ endpoint: "crawl", isDocument: true })).toBe(
+      "DOCUMENT_CREDITS",
+    );
+  });
+
+  it("defaults non-document, non-search billing to CREDITS", () => {
+    expect(featureIdForBilling({ endpoint: "scrape" })).toBe("CREDITS");
+    expect(featureIdForBilling({ endpoint: "scrape", isDocument: false })).toBe(
+      "CREDITS",
+    );
+    expect(featureIdForBilling({})).toBe("CREDITS");
   });
 });
 

@@ -27,7 +27,9 @@ import { getAgentFreeRequestsLeft } from "../db/rpc";
 import {
   autumnService,
   CREDITS_FEATURE_ID,
+  DOCUMENT_CREDITS_FEATURE_ID,
 } from "../services/autumn/autumn.service";
+import { requestLooksLikeDocument } from "../lib/document-detection";
 import { getTeamBalance } from "../services/autumn/usage";
 import { getThirdPartyDataTermsRequiredResponse } from "../lib/exchange";
 import { getExchangeAccessForRequestBody } from "../lib/exchange-request";
@@ -140,6 +142,17 @@ export function checkCreditsMiddleware(
 
       const requestedCredits = minimum ?? 1;
 
+      // Likely-document requests gate against DOCUMENT_CREDITS, which falls
+      // back to CREDITS in Autumn, so a team with a document allowance but no
+      // general credits isn't false-blocked before the scrape. Routes that pin
+      // a non-default feature (e.g. search → SEARCH_CREDITS) keep it. This is
+      // a best-effort URL sniff; documents at extension-less URLs are only
+      // caught at billing time, when the content type is known.
+      const effectiveFeatureId =
+        featureId === CREDITS_FEATURE_ID && requestLooksLikeDocument(req.body)
+          ? DOCUMENT_CREDITS_FEATURE_ID
+          : featureId;
+
       const autumnResult = await autumnService.checkCredits({
         teamId: req.auth.team_id,
         value: requestedCredits,
@@ -148,7 +161,7 @@ export function checkCreditsMiddleware(
           path: req.path,
           apiKeyId: req.acuc?.api_key_id ?? null,
         },
-        featureId,
+        featureId: effectiveFeatureId,
       });
 
       // Autumn is the source of truth for credits. If it's unavailable

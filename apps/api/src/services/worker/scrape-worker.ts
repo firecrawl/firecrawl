@@ -38,10 +38,8 @@ import {
   toAutumnBillingProperties,
   type BillingMetadata,
 } from "../billing/types";
-import {
-  autumnService,
-  featureIdForBillingEndpoint,
-} from "../autumn/autumn.service";
+import { autumnService, featureIdForBilling } from "../autumn/autumn.service";
+import { isDocumentContentType } from "../../lib/document-detection";
 import {
   _addScrapeJobToBullMQ,
   addScrapeJob,
@@ -129,11 +127,18 @@ async function billScrapeJob(
   threatDecisions?: ThreatDecision[],
 ) {
   let creditsToBeBilled: number | null = null;
-  const billing = resolveBillingMetadata({
-    billing: job.data.billing,
-    crawlId: job.data.crawl_id,
-    crawlerOptions: job.data.crawlerOptions,
-  });
+  // Document scrapes (PDFs/office documents) meter against DOCUMENT_CREDITS.
+  // The resolved content type is the authoritative signal, so it covers
+  // extension-less URLs and uploads that the pre-scrape gate cannot detect.
+  const isDocument = isDocumentContentType(document?.metadata?.contentType);
+  const billing = {
+    ...resolveBillingMetadata({
+      billing: job.data.billing,
+      crawlId: job.data.crawl_id,
+      crawlerOptions: job.data.crawlerOptions,
+    }),
+    ...(isDocument ? { isDocument: true } : {}),
+  };
   const autumnProperties = {
     source: "billScrapeJob",
     ...toAutumnBillingProperties(billing),
@@ -141,8 +146,9 @@ async function billScrapeJob(
   };
   // Scrapes initiated by a search (billing.endpoint === "search", e.g. search +
   // scrapeOptions) are metered against SEARCH_CREDITS, matching the search
-  // request's own credits. Standalone scrapes stay on CREDITS.
-  const featureId = featureIdForBillingEndpoint(billing.endpoint);
+  // request's own credits. Document scrapes meter against DOCUMENT_CREDITS.
+  // Everything else stays on CREDITS.
+  const featureId = featureIdForBilling(billing);
   let trackedInRequest = false;
 
   if (job.data.is_scrape !== true && !job.data.internalOptions?.bypassBilling) {

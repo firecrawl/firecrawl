@@ -3,10 +3,7 @@ import { getRedisConnection } from "../queue-service";
 import { billTeam7 } from "../../db/rpc";
 import * as Sentry from "@sentry/node";
 import { withAuth } from "../../lib/withAuth";
-import {
-  autumnService,
-  featureIdForBillingEndpoint,
-} from "../autumn/autumn.service";
+import { autumnService, featureIdForBilling } from "../autumn/autumn.service";
 import {
   resolveBillingMetadata,
   toAutumnBillingProperties,
@@ -53,10 +50,7 @@ async function confirmExchangeOutcomes(
   // Exchange queues at most EXCHANGE_CONFIRM_CONCURRENCY waiters per
   // invocation on the shared budget instead of one per operation.
   let nextIndex = 0;
-  const workerCount = Math.min(
-    EXCHANGE_CONFIRM_CONCURRENCY,
-    operations.length,
-  );
+  const workerCount = Math.min(EXCHANGE_CONFIRM_CONCURRENCY, operations.length);
   await Promise.all(
     Array.from({ length: workerCount }, async () => {
       while (true) {
@@ -148,7 +142,7 @@ async function refundRequestTrackedCredits(group: GroupedBillingOperation) {
         ...toAutumnBillingProperties(group.billing),
         apiKeyId: group.api_key_id,
       },
-      featureId: featureIdForBillingEndpoint(group.billing.endpoint),
+      featureId: featureIdForBilling(group.billing),
     });
   } catch (error) {
     logger.warn("Failed to refund Autumn request-tracked credits", {
@@ -210,7 +204,10 @@ export async function processBillingBatch() {
           op.billing ?? (op.endpoint ? { endpoint: op.endpoint } : undefined),
         isExtract: op.is_extract,
       });
-      const key = `${op.team_id}:${billing.endpoint}:${op.is_extract}:${op.api_key_id}`;
+      // isDocument participates in the key so document and non-document charges
+      // for the same team/endpoint form separate groups and refund against the
+      // correct Autumn feature (DOCUMENT_CREDITS vs CREDITS).
+      const key = `${op.team_id}:${billing.endpoint}:${!!billing.isDocument}:${op.is_extract}:${op.api_key_id}`;
 
       if (!groupedOperations.has(key)) {
         groupedOperations.set(key, {

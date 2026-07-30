@@ -17,6 +17,12 @@ export type BillingEndpoint =
 export type BillingMetadata = {
   endpoint: BillingEndpoint;
   jobId?: string;
+  // Set when the billed job scraped a document (PDF/office document). Routes
+  // the charge to the DOCUMENT_CREDITS Autumn feature and participates in the
+  // batch-billing grouping key so document and non-document charges for the
+  // same team/endpoint refund against the correct pool. Only known after the
+  // scrape resolves, so it is absent for endpoint-level (non-scrape) billing.
+  isDocument?: boolean;
 };
 
 export function resolveBillingMetadata({
