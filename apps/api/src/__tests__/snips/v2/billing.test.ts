@@ -669,6 +669,80 @@ describeIf(TEST_PRODUCTION)("Billing tests", () => {
     60000,
   );
 
+  // The `?byApiKey=true` path drives a grouped Autumn `events.aggregate` scan
+  // that used to time out against the 2s hot-path client and surface a 500.
+  // Assert it responds 200 with a well-formed (per-API-key) payload so a
+  // regression back onto the short-timeout client is caught.
+  it.concurrent(
+    "returns historical credit usage grouped by API key",
+    async () => {
+      const identity = await idmux({
+        name: "billing/returns historical credit usage byApiKey",
+        credits: 100,
+      });
+
+      const result = await creditUsageHistorical(identity, true);
+
+      expect(result.success).toBe(true);
+      expect(Array.isArray(result.periods)).toBe(true);
+
+      for (const period of result.periods) {
+        expect(typeof period.apiKey).toBe("string");
+        expect(typeof period.creditsUsed).toBe("number");
+        expect(period.creditsUsed).toBeGreaterThanOrEqual(0);
+      }
+
+      // Verify periods are sorted by startDate ascending (null dates last)
+      for (let i = 1; i < result.periods.length; i++) {
+        const prevRaw = result.periods[i - 1].startDate
+          ? Date.parse(result.periods[i - 1].startDate!)
+          : NaN;
+        const currRaw = result.periods[i].startDate
+          ? Date.parse(result.periods[i].startDate!)
+          : NaN;
+        if (!Number.isNaN(prevRaw) && !Number.isNaN(currRaw)) {
+          expect(currRaw).toBeGreaterThanOrEqual(prevRaw);
+        }
+      }
+    },
+    60000,
+  );
+
+  it.concurrent(
+    "returns historical token usage grouped by API key",
+    async () => {
+      const identity = await idmux({
+        name: "billing/returns historical token usage byApiKey",
+        credits: 100,
+      });
+
+      const result = await tokenUsageHistorical(identity, true);
+
+      expect(result.success).toBe(true);
+      expect(Array.isArray(result.periods)).toBe(true);
+
+      for (const period of result.periods) {
+        expect(typeof period.apiKey).toBe("string");
+        expect(typeof period.tokensUsed).toBe("number");
+        expect(period.tokensUsed).toBeGreaterThanOrEqual(0);
+      }
+
+      // Verify periods are sorted by startDate ascending (null dates last)
+      for (let i = 1; i < result.periods.length; i++) {
+        const prevRaw = result.periods[i - 1].startDate
+          ? Date.parse(result.periods[i - 1].startDate!)
+          : NaN;
+        const currRaw = result.periods[i].startDate
+          ? Date.parse(result.periods[i].startDate!)
+          : NaN;
+        if (!Number.isNaN(prevRaw) && !Number.isNaN(currRaw)) {
+          expect(currRaw).toBeGreaterThanOrEqual(prevRaw);
+        }
+      }
+    },
+    60000,
+  );
+
   it.concurrent(
     "bills custom-cost ZDR scrape correctly",
     async () => {
