@@ -42,7 +42,12 @@ export async function searchDeveloperCategory(
       .slice(0, options.limit)
       .map((result, index) => ({
         url: typeof result?.url === "string" ? result.url : "",
-        title: typeof result?.url === "string" ? result.url : "",
+        title:
+          typeof result?.title === "string" && result.title.trim().length > 0
+            ? result.title
+            : typeof result?.url === "string"
+              ? result.url
+              : "",
         description:
           typeof result?.passages?.[0]?.text === "string"
             ? result.passages[0].text

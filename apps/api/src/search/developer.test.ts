@@ -65,6 +65,7 @@ describe("searchDeveloperCategory", () => {
             id: "abc",
             type: "issue",
             url: "https://github.com/a/b/issues/1",
+            title: "Retries drop the backoff",
             passages: [{ text: "first passage" }],
           },
           { id: "def", type: "readme", url: "", passages: [] },
@@ -80,11 +81,43 @@ describe("searchDeveloperCategory", () => {
     expect(results).toEqual([
       {
         url: "https://github.com/a/b/issues/1",
-        title: "https://github.com/a/b/issues/1",
+        title: "Retries drop the backoff",
         description: "first passage",
         position: 1,
         category: "developer",
       },
+    ]);
+  });
+
+  it("falls back to the url when the upstream sends no usable title", async () => {
+    fetchMock.mockResolvedValue(
+      upstreamOk({
+        results: [
+          {
+            id: "abc",
+            type: "pull_request",
+            url: "https://github.com/a/b/pull/1",
+            passages: [{ text: "first passage" }],
+          },
+          {
+            id: "def",
+            type: "pull_request",
+            url: "https://github.com/a/b/pull/2",
+            title: "   ",
+            passages: [],
+          },
+        ],
+      }),
+    );
+
+    const results = await searchDeveloperCategory(
+      { query: "retries", limit: 5, teamId: "t1", timeout: 500 },
+      logger,
+    );
+
+    expect(results.map(result => result.title)).toEqual([
+      "https://github.com/a/b/pull/1",
+      "https://github.com/a/b/pull/2",
     ]);
   });
 
