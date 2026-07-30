@@ -232,7 +232,9 @@ describeIf(HAS_RESEARCH)("Code Search API", () => {
         k: 1,
       });
 
-      expect(res.statusCode).not.toBe(401);
+      expect(res.statusCode).toBe(200);
+      expect(res.body.success).toBe(true);
+      expect(Array.isArray(res.body.results)).toBe(true);
     }, 120000);
 
     it("refuses keyless access on the upstream-mirror mount", async () => {

@@ -29,6 +29,7 @@ export async function searchCodeCategory(
       return [];
     }
     if (!upstream.ok) {
+      await upstream.body?.cancel().catch(() => {});
       logger.warn("Code category upstream failed", {
         status: upstream.status,
       });

@@ -126,6 +126,13 @@ export async function executeSearch(
     enterprise: options.enterprise,
   })) as SearchV2Response;
 
+  if (codeResults) {
+    const code = await codeResults;
+    if (code.length > 0) {
+      searchResponse.code = code;
+    }
+  }
+
   // Threat protection: remove blocked results entirely — before
   // slicing/counting, before scraping, and before returning. Checks are
   // URL-level and deduped within this request; scan fees bill +2 per unique
@@ -138,6 +145,7 @@ export async function executeSearch(
       ...(searchResponse.web ?? []).map(x => x.url),
       ...(searchResponse.news ?? []).map(x => x.url),
       ...(searchResponse.images ?? []).map(x => x.url),
+      ...(searchResponse.code ?? []).map(x => x.url),
     ].filter((x): x is string => !!x);
 
     if (urlsToCheck.length > 0) {
@@ -162,6 +170,9 @@ export async function executeSearch(
         searchResponse.images = searchResponse.images.filter(x =>
           isAllowed(x.url),
         );
+      }
+      if (searchResponse.code) {
+        searchResponse.code = searchResponse.code.filter(x => isAllowed(x.url));
       }
     }
   }
@@ -205,12 +216,8 @@ export async function executeSearch(
     totalResultsCount += searchResponse.news.length;
   }
 
-  if (codeResults) {
-    const code = await codeResults;
-    if (code.length > 0) {
-      searchResponse.code = code;
-      totalResultsCount += code.length;
-    }
+  if (searchResponse.code && searchResponse.code.length > 0) {
+    totalResultsCount += searchResponse.code.length;
   }
 
   const isZDR = options.enterprise?.includes("zdr");

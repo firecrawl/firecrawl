@@ -88,8 +88,13 @@ describe("searchCodeCategory", () => {
     ]);
   });
 
-  it("returns no results when the upstream fails", async () => {
-    fetchMock.mockResolvedValue({ ok: false, status: 503 } as any);
+  it("returns no results and drains the body when the upstream fails", async () => {
+    const cancel = vi.fn(async () => {});
+    fetchMock.mockResolvedValue({
+      ok: false,
+      status: 503,
+      body: { cancel },
+    } as any);
 
     await expect(
       searchCodeCategory(
@@ -97,6 +102,7 @@ describe("searchCodeCategory", () => {
         logger,
       ),
     ).resolves.toEqual([]);
+    expect(cancel).toHaveBeenCalledTimes(1);
   });
 
   it("returns no results when the upstream throws", async () => {
