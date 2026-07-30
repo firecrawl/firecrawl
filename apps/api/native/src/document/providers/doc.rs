@@ -2,6 +2,7 @@
 //! formatting bin table (FKP) formats.
 
 use crate::document::encoding::{encoding_for_codepage, encoding_for_lid};
+use crate::document::fields::hyperlink_target;
 use crate::document::model::*;
 use crate::document::oleps::parse_summary_information;
 use crate::document::providers::DocumentProvider;
@@ -108,6 +109,10 @@ struct Fib {
   lcb_plcf_bte_chpx: usize,
   fc_plcf_bte_papx: usize,
   lcb_plcf_bte_papx: usize,
+  fc_plcf_lst: usize,
+  lcb_plcf_lst: usize,
+  fc_plf_lfo: usize,
+  lcb_plf_lfo: usize,
 }
 
 impl Fib {
@@ -149,6 +154,10 @@ impl Fib {
       lcb_plcf_bte_chpx: u32_at(0xFE),
       fc_plcf_bte_papx: u32_at(0x102),
       lcb_plcf_bte_papx: u32_at(0x106),
+      fc_plcf_lst: u32_at(0x2E2),
+      lcb_plcf_lst: u32_at(0x2E6),
+      fc_plf_lfo: u32_at(0x2EA),
+      lcb_plf_lfo: u32_at(0x2EE),
     })
   }
 }
@@ -299,6 +308,8 @@ struct CharProps {
   bold: bool,
   italic: bool,
   strike: bool,
+  // 0 = baseline, 1 = superscript, 2 = subscript
+  iss: u8,
 }
 
 #[derive(Clone, Copy, Default)]
@@ -306,6 +317,8 @@ struct ParaProps {
   in_table: bool,
   row_end: bool,
   heading: Option<u8>,
+  ilfo: u16,
+  ilvl: u8,
 }
 
 struct FcRun<T> {
@@ -318,6 +331,7 @@ struct FcRun<T> {
 struct Formatting {
   char_runs: Vec<FcRun<CharProps>>,
   para_runs: Vec<FcRun<ParaProps>>,
+  list_types: ListTypes,
 }
 
 impl Formatting {
@@ -337,8 +351,89 @@ impl Formatting {
         fib.lcb_plcf_bte_papx,
         parse_papx_fkp,
       ),
+      list_types: ListTypes::parse(table, fib),
     }
   }
+}
+
+/// List definitions from the PlfLfo and PlfLst structures: maps a
+/// paragraph's list override index (ilfo) and level to bullet or numbered.
+#[derive(Default)]
+struct ListTypes {
+  lfo_lsids: Vec<u32>,
+  lists: Vec<(u32, Vec<ListType>)>,
+}
+
+impl ListTypes {
+  fn parse(table: &[u8], fib: &Fib) -> Self {
+    let mut out = Self::default();
+
+    // PlfLfo: count, then 16-byte LFO records starting with the list id
+    if let Some(plf) = slice_at(table, fib.fc_plf_lfo, fib.lcb_plf_lfo) {
+      if plf.len() >= 4 {
+        let n = (read_u32(plf, 0) as usize).min((plf.len() - 4) / 16);
+        for k in 0..n {
+          out.lfo_lsids.push(read_u32(plf, 4 + 16 * k));
+        }
+      }
+    }
+
+    // PlfLst: count, then 28-byte LSTF records, then the LVL structures of
+    // each list in order (1 level for simple lists, 9 otherwise)
+    let Some(plf) = slice_at(table, fib.fc_plcf_lst, fib.lcb_plcf_lst) else {
+      return out;
+    };
+    if plf.len() < 2 {
+      return out;
+    }
+    let count = (read_u16(plf, 0) as usize).min((plf.len() - 2) / 28);
+    let mut lists = Vec::with_capacity(count);
+    for k in 0..count {
+      let offset = 2 + 28 * k;
+      let lsid = read_u32(plf, offset);
+      let simple = plf[offset + 26] & 0x01 != 0;
+      lists.push((lsid, simple));
+    }
+
+    let mut pos = 2 + 28 * count;
+    for (lsid, simple) in lists {
+      let mut levels = Vec::new();
+      for _ in 0..if simple { 1 } else { 9 } {
+        // LVL: 28-byte LVLF, papx and chpx grpprls, then the number text
+        let Some(lvlf) = plf.get(pos..pos + 28) else {
+          break;
+        };
+        let nfc = lvlf[4];
+        levels.push(if nfc == 0x17 || nfc == 0xFF {
+          ListType::Unordered
+        } else {
+          ListType::Ordered
+        });
+        pos += 28 + lvlf[24] as usize + lvlf[25] as usize;
+        let Some(xst) = plf.get(pos..pos + 2) else {
+          break;
+        };
+        pos += 2 + read_u16(xst, 0) as usize * 2;
+      }
+      if !levels.is_empty() {
+        out.lists.push((lsid, levels));
+      }
+    }
+    out
+  }
+
+  fn lookup(&self, ilfo: u16, ilvl: u8) -> Option<ListType> {
+    let lsid = *self.lfo_lsids.get((ilfo as usize).checked_sub(1)?)?;
+    let (_, levels) = self.lists.iter().find(|(id, _)| *id == lsid)?;
+    levels
+      .get(ilvl as usize)
+      .or_else(|| levels.first())
+      .copied()
+  }
+}
+
+fn slice_at(data: &[u8], offset: usize, len: usize) -> Option<&[u8]> {
+  data.get(offset..offset.checked_add(len)?)
 }
 
 /// Walks a bin table: a PLC of page numbers of FKPs in the WordDocument
@@ -452,6 +547,8 @@ fn char_props_from_grpprl(grpprl: &[u8]) -> CharProps {
       0x0835 => props.bold = on,
       0x0836 => props.italic = on,
       0x0837 => props.strike = on,
+      // sprmCIss
+      0x2A48 => props.iss = operand.first().copied().unwrap_or(0).min(2),
       _ => {}
     }
   });
@@ -482,6 +579,13 @@ fn para_props_from_grpprl(grpprl: &[u8]) -> ParaProps {
         }
       }
     }
+    // sprmPIlfo, sprmPIlvl
+    0x460B => {
+      if operand.len() >= 2 {
+        props.ilfo = read_u16(operand, 0);
+      }
+    }
+    0x260A => props.ilvl = operand.first().copied().unwrap_or(0).min(8),
     _ => {}
   });
   props
@@ -561,6 +665,7 @@ fn build_blocks(segments: &[TextSegment], formatting: &Formatting) -> Vec<Block>
     table_rows: Vec::new(),
     row_cells: Vec::new(),
     cell_blocks: Vec::new(),
+    list_stack: Vec::new(),
   };
 
   for segment in segments {
@@ -594,6 +699,7 @@ struct BlockBuilder<'a> {
   table_rows: Vec<TableRow>,
   row_cells: Vec<TableCell>,
   cell_blocks: Vec<Block>,
+  list_stack: Vec<(u8, List)>,
 }
 
 impl BlockBuilder<'_> {
@@ -689,6 +795,11 @@ impl BlockBuilder<'_> {
     if self.run_props.bold {
       node = Inline::Strong(vec![node]);
     }
+    match self.run_props.iss {
+      1 => node = Inline::Sup(vec![node]),
+      2 => node = Inline::Sub(vec![node]),
+      _ => {}
+    }
     self.inlines.push(node);
   }
 
@@ -742,11 +853,72 @@ impl BlockBuilder<'_> {
       if let Some(paragraph) = paragraph {
         self.cell_blocks.push(paragraph);
       }
-    } else {
-      self.flush_table();
-      if let Some(paragraph) = paragraph {
+      return;
+    }
+    self.flush_table();
+    let Some(paragraph) = paragraph else {
+      return;
+    };
+    // headings win over list membership (numbered headings)
+    let list_type = (props.ilfo != 0 && props.heading.is_none())
+      .then(|| self.formatting.list_types.lookup(props.ilfo, props.ilvl))
+      .flatten();
+    match list_type {
+      Some(list_type) => self.push_list_item(paragraph, props.ilvl, list_type),
+      None => {
+        self.flush_lists();
         self.blocks.push(paragraph);
       }
+    }
+  }
+
+  fn push_list_item(&mut self, paragraph: Block, ilvl: u8, list_type: ListType) {
+    while self
+      .list_stack
+      .last()
+      .is_some_and(|(level, _)| *level > ilvl)
+    {
+      self.collapse_list();
+    }
+    let start_new = match self.list_stack.last() {
+      Some((level, _)) => *level < ilvl,
+      None => true,
+    };
+    if start_new {
+      self.list_stack.push((
+        ilvl,
+        List {
+          items: Vec::new(),
+          list_type,
+        },
+      ));
+    }
+    if let Some((_, list)) = self.list_stack.last_mut() {
+      list.items.push(ListItem {
+        blocks: vec![paragraph],
+      });
+    }
+  }
+
+  fn collapse_list(&mut self) {
+    let Some((_, list)) = self.list_stack.pop() else {
+      return;
+    };
+    let block = Block::List(list);
+    match self.list_stack.last_mut() {
+      Some((_, parent)) => match parent.items.last_mut() {
+        Some(item) => item.blocks.push(block),
+        None => parent.items.push(ListItem {
+          blocks: vec![block],
+        }),
+      },
+      None => self.blocks.push(block),
+    }
+  }
+
+  fn flush_lists(&mut self) {
+    while !self.list_stack.is_empty() {
+      self.collapse_list();
     }
   }
 
@@ -781,6 +953,10 @@ impl BlockBuilder<'_> {
   }
 
   fn flush_table(&mut self) {
+    if self.cell_blocks.is_empty() && self.row_cells.is_empty() && self.table_rows.is_empty() {
+      return;
+    }
+    self.flush_lists();
     if !self.cell_blocks.is_empty() || !self.row_cells.is_empty() {
       self.end_row();
     }
@@ -794,74 +970,9 @@ impl BlockBuilder<'_> {
   fn finish(mut self) -> Vec<Block> {
     self.end_paragraph(ParaProps::default());
     self.flush_table();
+    self.flush_lists();
     self.blocks
   }
-}
-
-/// Target of a HYPERLINK field instruction.
-fn hyperlink_target(instruction: &str) -> Option<String> {
-  let rest = instruction.trim_start();
-  if !rest
-    .get(..9)
-    .is_some_and(|p| p.eq_ignore_ascii_case("HYPERLINK"))
-  {
-    return None;
-  }
-  let mut tokens = field_tokens(&rest[9..]);
-  let mut anchor = false;
-  while let Some(token) = tokens.next() {
-    match token.as_str() {
-      "\\l" => anchor = true,
-      // switches whose argument is not the target
-      "\\o" | "\\t" => {
-        tokens.next();
-      }
-      t if t.starts_with('\\') => {}
-      t => {
-        return Some(if anchor {
-          format!("#{t}")
-        } else {
-          t.to_string()
-        });
-      }
-    }
-  }
-  None
-}
-
-/// Whitespace-separated tokens; quoted strings stay together, unquoted.
-fn field_tokens(input: &str) -> impl Iterator<Item = String> + '_ {
-  let mut chars = input.chars().peekable();
-  std::iter::from_fn(move || {
-    while chars.peek().is_some_and(|c| c.is_whitespace()) {
-      chars.next();
-    }
-    match chars.peek() {
-      None => None,
-      Some('"') => {
-        chars.next();
-        let mut token = String::new();
-        for c in chars.by_ref() {
-          if c == '"' {
-            break;
-          }
-          token.push(c);
-        }
-        Some(token)
-      }
-      Some(_) => {
-        let mut token = String::new();
-        while let Some(&c) = chars.peek() {
-          if c.is_whitespace() {
-            break;
-          }
-          token.push(c);
-          chars.next();
-        }
-        Some(token)
-      }
-    }
-  })
 }
 
 fn read_u16(data: &[u8], offset: usize) -> u16 {
@@ -893,17 +1004,26 @@ mod tests {
   struct TestFmt {
     char_runs: Vec<(u32, u32, Vec<u8>)>,
     para_runs: Vec<(u32, u32, Vec<u8>)>,
+    // one list per entry, addressed by ilfo = index + 1; inner values are
+    // per-level nfc codes (0x17 = bullet)
+    lists: Vec<Vec<u8>>,
   }
 
   fn utf16_bytes(text: &str) -> Vec<u8> {
     text.encode_utf16().flat_map(u16::to_le_bytes).collect()
   }
 
-  const TEXT_START: usize = 0x200;
+  const TEXT_START: usize = 0x400;
 
   /// FC of the i-th UTF-16 unit of a single Unicode test piece.
   fn ufc(i: usize) -> u32 {
     (TEXT_START + 2 * i) as u32
+  }
+
+  fn sprm2(code: u16, value: u16) -> Vec<u8> {
+    let mut out = code.to_le_bytes().to_vec();
+    out.extend_from_slice(&value.to_le_bytes());
+    out
   }
 
   fn sprm1(code: u16, value: u8) -> Vec<u8> {
@@ -1043,6 +1163,40 @@ mod tests {
       append_fkp(&mut word_doc, &mut table, page, &fmt.para_runs)
     });
 
+    let list_bt = (!fmt.lists.is_empty()).then(|| {
+      let mut plst = (fmt.lists.len() as u16).to_le_bytes().to_vec();
+      for (i, levels) in fmt.lists.iter().enumerate() {
+        let mut lstf = [0u8; 28];
+        lstf[0..4].copy_from_slice(&(1000 + i as u32).to_le_bytes());
+        if levels.len() == 1 {
+          lstf[26] = 1;
+        }
+        plst.extend_from_slice(&lstf);
+      }
+      for levels in &fmt.lists {
+        for &nfc in levels {
+          let mut lvlf = [0u8; 28];
+          lvlf[4] = nfc;
+          plst.extend_from_slice(&lvlf);
+          plst.extend_from_slice(&0u16.to_le_bytes());
+        }
+      }
+      let fc_lst = table.len() as u32;
+      let lcb_lst = plst.len() as u32;
+      table.extend_from_slice(&plst);
+
+      let mut plfo = (fmt.lists.len() as u32).to_le_bytes().to_vec();
+      for i in 0..fmt.lists.len() {
+        let mut lfo = [0u8; 16];
+        lfo[0..4].copy_from_slice(&(1000 + i as u32).to_le_bytes());
+        plfo.extend_from_slice(&lfo);
+      }
+      let fc_lfo = table.len() as u32;
+      let lcb_lfo = plfo.len() as u32;
+      table.extend_from_slice(&plfo);
+      (fc_lst, lcb_lst, fc_lfo, lcb_lfo)
+    });
+
     word_doc[0x00..0x02].copy_from_slice(&MAGIC_WORD_97.to_le_bytes());
     word_doc[0x02..0x04].copy_from_slice(&0x00C1u16.to_le_bytes());
     word_doc[0x06..0x08].copy_from_slice(&lid.to_le_bytes());
@@ -1057,6 +1211,12 @@ mod tests {
     if let Some((fc, lcb)) = papx_bt {
       word_doc[0x102..0x106].copy_from_slice(&fc.to_le_bytes());
       word_doc[0x106..0x10A].copy_from_slice(&lcb.to_le_bytes());
+    }
+    if let Some((fc_lst, lcb_lst, fc_lfo, lcb_lfo)) = list_bt {
+      word_doc[0x2E2..0x2E6].copy_from_slice(&fc_lst.to_le_bytes());
+      word_doc[0x2E6..0x2EA].copy_from_slice(&lcb_lst.to_le_bytes());
+      word_doc[0x2EA..0x2EE].copy_from_slice(&fc_lfo.to_le_bytes());
+      word_doc[0x2EE..0x2F2].copy_from_slice(&lcb_lfo.to_le_bytes());
     }
 
     (word_doc, table)
@@ -1136,6 +1296,8 @@ mod tests {
         Inline::Strong(c) => format!("<b>{}</b>", inline_markup(c)),
         Inline::Em(c) => format!("<i>{}</i>", inline_markup(c)),
         Inline::Del(c) => format!("<del>{}</del>", inline_markup(c)),
+        Inline::Sup(c) => format!("<sup>{}</sup>", inline_markup(c)),
+        Inline::Sub(c) => format!("<sub>{}</sub>", inline_markup(c)),
         Inline::Link { href, children } => {
           format!("<a href={}>{}</a>", href, inline_markup(children))
         }
@@ -1424,6 +1586,88 @@ mod tests {
       .collect();
     assert_eq!(cells, vec![vec!["A1", "B1"], vec!["A2", "B2"]]);
     assert_eq!(paragraph_texts(&parse(&data)).last().unwrap(), "after");
+  }
+
+  #[test]
+  fn superscript_and_subscript_runs() {
+    let text = "x2 and H2O\r";
+    let fmt = TestFmt {
+      char_runs: vec![
+        (ufc(0), ufc(1), vec![]),
+        (ufc(1), ufc(2), sprm1(0x2A48, 1)),
+        (ufc(2), ufc(8), vec![]),
+        (ufc(8), ufc(9), sprm1(0x2A48, 2)),
+        (ufc(9), ufc(11), vec![]),
+      ],
+      ..TestFmt::default()
+    };
+    let data = build_doc_fmt(&[TestPiece::Unicode("x2 and H2O\r")], 0x0409, None, &fmt);
+    let _ = text;
+    let document = parse(&data);
+    let Block::Paragraph(p) = &document.blocks[0] else {
+      panic!("expected paragraph");
+    };
+    assert_eq!(
+      inline_markup(&p.inlines),
+      "x<sup>2</sup> and H<sub>2</sub>O"
+    );
+  }
+
+  #[test]
+  fn bulleted_list_from_ilfo() {
+    let text = "One\rTwo\rAfter\r";
+    let item = papx(0, &[sprm2(0x460B, 1), sprm1(0x260A, 0)]);
+    let fmt = TestFmt {
+      para_runs: vec![
+        (ufc(0), ufc(4), item.clone()),
+        (ufc(4), ufc(8), item),
+        (ufc(8), ufc(14), papx(0, &[])),
+      ],
+      lists: vec![vec![0x17]],
+      ..TestFmt::default()
+    };
+    let data = build_doc_fmt(
+      &[TestPiece::Unicode("One\rTwo\rAfter\r")],
+      0x0409,
+      None,
+      &fmt,
+    );
+    let _ = text;
+    let document = parse(&data);
+    let Block::List(list) = &document.blocks[0] else {
+      panic!("expected list, got {:?}", document.blocks[0]);
+    };
+    assert_eq!(list.list_type, ListType::Unordered);
+    assert_eq!(list.items.len(), 2);
+    assert!(
+      matches!(&document.blocks[1], Block::Paragraph(p) if inline_text(&p.inlines) == "After")
+    );
+  }
+
+  #[test]
+  fn nested_numbered_list() {
+    let item0 = papx(0, &[sprm2(0x460B, 1), sprm1(0x260A, 0)]);
+    let item1 = papx(0, &[sprm2(0x460B, 1), sprm1(0x260A, 1)]);
+    let fmt = TestFmt {
+      para_runs: vec![
+        (ufc(0), ufc(2), item0.clone()),
+        (ufc(2), ufc(5), item1),
+        (ufc(5), ufc(7), item0),
+      ],
+      lists: vec![vec![0u8; 9]],
+      ..TestFmt::default()
+    };
+    let data = build_doc_fmt(&[TestPiece::Unicode("A\rB1\rC\r")], 0x0409, None, &fmt);
+    let document = parse(&data);
+    let Block::List(list) = &document.blocks[0] else {
+      panic!("expected list, got {:?}", document.blocks[0]);
+    };
+    assert_eq!(list.list_type, ListType::Ordered);
+    assert_eq!(list.items.len(), 2);
+    let Some(Block::List(sublist)) = list.items[0].blocks.get(1) else {
+      panic!("expected nested list in first item");
+    };
+    assert_eq!(sublist.items.len(), 1);
   }
 
   #[test]

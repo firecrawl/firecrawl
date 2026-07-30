@@ -2,10 +2,12 @@
 //! through the code page the document declares with \ansicpg.
 
 use crate::document::encoding::encoding_for_codepage;
+use crate::document::fields::hyperlink_target;
 use crate::document::model::*;
 use crate::document::providers::DocumentProvider;
 use chrono::{DateTime, NaiveDate, NaiveDateTime, Utc};
 use encoding_rs::{Encoding, WINDOWS_1252};
+use std::collections::HashMap;
 use std::error::Error;
 use std::num::NonZeroU32;
 
@@ -21,7 +23,8 @@ impl DocumentProvider for RtfProvider {
   fn parse_buffer(&self, data: &[u8]) -> Result<Document, Box<dyn Error + Send + Sync>> {
     let encoding = detect_encoding(data);
     let metadata = extract_metadata(data, encoding);
-    let blocks = parse_body(data, encoding);
+    let heading_styles = parse_heading_styles(data);
+    let blocks = parse_body(data, encoding, &heading_styles);
 
     Ok(Document {
       blocks,
@@ -220,6 +223,8 @@ struct Group {
   saved: CharState,
   skip: bool,
   name_seen: bool,
+  starred: bool,
+  dest: GroupDest,
 }
 
 #[derive(Default)]
@@ -300,7 +305,21 @@ const SKIP_DESTS: &[&str] = &[
   "info",
 ];
 
-struct BodyParser {
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum GroupDest {
+  None,
+  Field,
+  FldInst,
+  ListText,
+}
+
+struct RtfField {
+  instruction: String,
+  result_start: usize,
+}
+
+struct BodyParser<'a> {
+  heading_styles: &'a HashMap<i32, u8>,
   state: CharState,
   stack: Vec<Group>,
   blocks: Vec<Block>,
@@ -310,10 +329,23 @@ struct BodyParser {
   in_table_cell: bool,
   uc_skip: usize,
   pending_uc_skip: usize,
+  para_style: Option<i32>,
+  para_outline: Option<u8>,
+  para_list: Option<ListType>,
+  para_ilvl: u8,
+  list_stack: Vec<(u8, List)>,
+  fields: Vec<RtfField>,
+  instr: TextAccum,
+  marker: TextAccum,
 }
 
-fn parse_body(src: &[u8], encoding: &'static Encoding) -> Vec<Block> {
+fn parse_body(
+  src: &[u8],
+  encoding: &'static Encoding,
+  heading_styles: &HashMap<i32, u8>,
+) -> Vec<Block> {
   let mut p = BodyParser {
+    heading_styles,
     state: CharState::default(),
     stack: Vec::new(),
     blocks: Vec::new(),
@@ -323,6 +355,14 @@ fn parse_body(src: &[u8], encoding: &'static Encoding) -> Vec<Block> {
     in_table_cell: false,
     uc_skip: 1,
     pending_uc_skip: 0,
+    para_style: None,
+    para_outline: None,
+    para_list: None,
+    para_ilvl: 0,
+    list_stack: Vec::new(),
+    fields: Vec::new(),
+    instr: TextAccum::new(encoding),
+    marker: TextAccum::new(encoding),
   };
 
   for token in Tokens::new(src) {
@@ -333,12 +373,17 @@ fn parse_body(src: &[u8], encoding: &'static Encoding) -> Vec<Block> {
     p.flush_paragraph();
   }
   p.flush_table();
+  p.flush_lists();
   p.blocks
 }
 
-impl BodyParser {
+impl BodyParser<'_> {
   fn skipping(&self) -> bool {
     self.stack.last().map(|g| g.skip).unwrap_or(false)
+  }
+
+  fn in_dest(&self, dest: GroupDest) -> bool {
+    self.stack.iter().any(|g| g.dest == dest)
   }
 
   fn handle_token(&mut self, token: Token) {
@@ -359,6 +404,8 @@ impl BodyParser {
           saved: self.state.clone(),
           skip: inherited_skip,
           name_seen: false,
+          starred: false,
+          dest: GroupDest::None,
         });
       }
       Token::Close => {
@@ -367,24 +414,52 @@ impl BodyParser {
         }
         if let Some(group) = self.stack.pop() {
           self.state = group.saved;
+          match group.dest {
+            GroupDest::FldInst => {
+              let instruction = self.instr.take();
+              if let Some(field) = self.fields.last_mut() {
+                field.instruction.push_str(&instruction);
+              }
+            }
+            GroupDest::ListText => {
+              let marker = self.marker.take();
+              self.para_list = Some(if marker.chars().any(|c| c.is_ascii_digit()) {
+                ListType::Ordered
+              } else {
+                ListType::Unordered
+              });
+            }
+            GroupDest::Field => self.close_field(),
+            GroupDest::None => {}
+          }
         }
       }
       Token::Byte(b) | Token::Hex(b) => {
-        if !self.skipping() {
+        if self.skipping() {
+          return;
+        }
+        if self.in_dest(GroupDest::FldInst) {
+          self.instr.push_byte(b);
+        } else if self.in_dest(GroupDest::ListText) {
+          self.marker.push_byte(b);
+        } else {
           self.text.push_byte(b);
         }
       }
       Token::Symbol(b'*') => {
         if let Some(group) = self.stack.last_mut() {
           if !group.name_seen {
-            group.name_seen = true;
-            group.skip = true;
+            group.starred = true;
           }
         }
       }
       Token::Symbol(b @ (b'\\' | b'{' | b'}')) => {
-        if !self.skipping() {
-          self.text.push_byte(b);
+        if !self.skipping() && !self.in_dest(GroupDest::ListText) {
+          if self.in_dest(GroupDest::FldInst) {
+            self.instr.push_byte(b);
+          } else {
+            self.text.push_byte(b);
+          }
         }
       }
       Token::Symbol(b'~') => {
@@ -402,17 +477,56 @@ impl BodyParser {
     }
   }
 
-  fn handle_control(&mut self, word: &str, value: Option<i32>) {
-    if let Some(group) = self.stack.last_mut() {
-      if !group.name_seen {
-        group.name_seen = true;
-        if SKIP_DESTS.contains(&word) {
-          group.skip = true;
-        }
-      }
+  /// First control word of a group decides what the group is.
+  fn name_group(&mut self, word: &str) {
+    let Some(group) = self.stack.last_mut() else {
+      return;
+    };
+    if group.name_seen {
+      return;
     }
+    group.name_seen = true;
+
+    if group.starred {
+      if word == "fldinst" && !self.fields.is_empty() {
+        group.dest = GroupDest::FldInst;
+      } else {
+        group.skip = true;
+      }
+      return;
+    }
+    if SKIP_DESTS.contains(&word) {
+      group.skip = true;
+      return;
+    }
+    match word {
+      "field" => {
+        group.dest = GroupDest::Field;
+        self.fields.push(RtfField {
+          instruction: String::new(),
+          result_start: usize::MAX,
+        });
+      }
+      "listtext" | "pntext" => group.dest = GroupDest::ListText,
+      _ => {}
+    }
+  }
+
+  fn handle_control(&mut self, word: &str, value: Option<i32>) {
+    self.name_group(word);
 
     if self.skipping() {
+      return;
+    }
+    if word == "fldrslt" {
+      self.flush_text();
+      let start = self.inlines.len();
+      if let Some(field) = self.fields.last_mut() {
+        field.result_start = start;
+      }
+      return;
+    }
+    if self.in_dest(GroupDest::FldInst) || self.in_dest(GroupDest::ListText) {
       return;
     }
     if word == "par" {
@@ -481,6 +595,22 @@ impl BodyParser {
         self.flush_text();
         self.state = CharState::default();
       }
+      "pard" => {
+        self.para_style = None;
+        self.para_outline = None;
+        self.para_list = None;
+        self.para_ilvl = 0;
+      }
+      "s" => self.para_style = value,
+      "outlinelevel" => {
+        self.para_outline = value
+          .and_then(|v| u8::try_from(v).ok())
+          .filter(|v| *v < 9)
+          .map(|v| (v + 1).min(6));
+      }
+      "ilvl" => {
+        self.para_ilvl = value.and_then(|v| u8::try_from(v).ok()).unwrap_or(0).min(8);
+      }
       "trowd" => {
         self
           .table
@@ -530,11 +660,47 @@ impl BodyParser {
     self.inlines.push(node);
   }
 
+  fn close_field(&mut self) {
+    self.flush_text();
+    let Some(field) = self.fields.pop() else {
+      return;
+    };
+    let Some(href) = hyperlink_target(&field.instruction) else {
+      return;
+    };
+    let start = field.result_start.min(self.inlines.len());
+    let children = self.inlines.split_off(start);
+    if has_visible_content(&children) {
+      self.inlines.push(Inline::Link { href, children });
+    } else {
+      self.inlines.extend(children);
+    }
+  }
+
+  fn paragraph_kind(&self) -> ParagraphKind {
+    if let Some(level) = self.para_outline {
+      return ParagraphKind::Heading(level);
+    }
+    match self
+      .para_style
+      .and_then(|style| self.heading_styles.get(&style))
+    {
+      Some(level) => ParagraphKind::Heading(*level),
+      None => ParagraphKind::Normal,
+    }
+  }
+
   fn flush_paragraph(&mut self) {
     self.flush_text();
+    // links cannot span paragraphs
+    for field in &mut self.fields {
+      field.result_start = 0;
+    }
+    let kind = self.paragraph_kind();
+    let list_type = self.para_list.take();
     if has_visible_content(&self.inlines) {
       let block = Block::Paragraph(Paragraph {
-        kind: ParagraphKind::Normal,
+        kind,
         inlines: std::mem::take(&mut self.inlines),
       });
       if self.in_table_cell {
@@ -543,8 +709,12 @@ impl BodyParser {
         } else {
           self.blocks.push(block);
         }
+      } else if let (Some(list_type), ParagraphKind::Normal) = (list_type, kind) {
+        self.flush_table();
+        self.push_list_item(block, self.para_ilvl, list_type);
       } else {
         self.flush_table();
+        self.flush_lists();
         self.blocks.push(block);
       }
     } else {
@@ -555,13 +725,112 @@ impl BodyParser {
     }
   }
 
+  fn push_list_item(&mut self, paragraph: Block, ilvl: u8, list_type: ListType) {
+    while self
+      .list_stack
+      .last()
+      .is_some_and(|(level, _)| *level > ilvl)
+    {
+      self.collapse_list();
+    }
+    let start_new = match self.list_stack.last() {
+      Some((level, _)) => *level < ilvl,
+      None => true,
+    };
+    if start_new {
+      self.list_stack.push((
+        ilvl,
+        List {
+          items: Vec::new(),
+          list_type,
+        },
+      ));
+    }
+    if let Some((_, list)) = self.list_stack.last_mut() {
+      list.items.push(ListItem {
+        blocks: vec![paragraph],
+      });
+    }
+  }
+
+  fn collapse_list(&mut self) {
+    let Some((_, list)) = self.list_stack.pop() else {
+      return;
+    };
+    let block = Block::List(list);
+    match self.list_stack.last_mut() {
+      Some((_, parent)) => match parent.items.last_mut() {
+        Some(item) => item.blocks.push(block),
+        None => parent.items.push(ListItem {
+          blocks: vec![block],
+        }),
+      },
+      None => self.blocks.push(block),
+    }
+  }
+
+  fn flush_lists(&mut self) {
+    while !self.list_stack.is_empty() {
+      self.collapse_list();
+    }
+  }
+
   fn flush_table(&mut self) {
     if let Some(table) = self.table.take() {
       if let Some(block) = table.finalize() {
+        self.flush_lists();
         self.blocks.push(block);
       }
     }
   }
+}
+
+/// Style numbers of heading styles, from the stylesheet's style names.
+fn parse_heading_styles(src: &[u8]) -> HashMap<i32, u8> {
+  let mut map = HashMap::new();
+  let Some(sheet) = find_group(src, b"{\\stylesheet") else {
+    return map;
+  };
+  let mut depth = 0usize;
+  let mut style: Option<i32> = None;
+  let mut name = String::new();
+  for token in Tokens::new(sheet) {
+    match token {
+      Token::Open => {
+        depth += 1;
+        if depth == 2 {
+          style = None;
+          name.clear();
+        }
+      }
+      Token::Close => {
+        if depth == 2 {
+          if let (Some(id), Some(level)) = (style, heading_level_from_style_name(&name)) {
+            map.insert(id, level);
+          }
+        }
+        depth = depth.saturating_sub(1);
+      }
+      Token::Control("s", Some(id)) if depth == 2 && style.is_none() => style = Some(id),
+      Token::Byte(b) if depth == 2 && name.len() < 64 => name.push(b as char),
+      _ => {}
+    }
+  }
+  map
+}
+
+fn heading_level_from_style_name(name: &str) -> Option<u8> {
+  let lower = name
+    .trim()
+    .trim_end_matches(';')
+    .trim()
+    .to_ascii_lowercase();
+  if lower.contains("title") {
+    return Some(1);
+  }
+  let tail = &lower[lower.find("heading")? + "heading".len()..];
+  let digits: String = tail.chars().filter(|c| c.is_ascii_digit()).collect();
+  digits.parse::<u8>().ok().map(|n| n.clamp(1, 6))
 }
 
 fn extract_metadata(src: &[u8], encoding: &'static Encoding) -> DocumentMetadata {
@@ -721,6 +990,7 @@ mod tests {
       .iter()
       .map(|inline| match inline {
         Inline::Text(t) => t.clone(),
+        Inline::Link { children, .. } => inline_text(children),
         Inline::Strong(c) | Inline::Em(c) | Inline::Del(c) | Inline::Sup(c) | Inline::Sub(c) => {
           inline_text(c)
         }
@@ -818,5 +1088,77 @@ mod tests {
   fn huge_uc_value_stays_bounded_by_input() {
     let rtf = b"{\\rtf1\\ansi\\uc2000000000\\u1059 abc\\par done\\par}";
     assert_eq!(paragraphs(rtf), vec!["У", "done"]);
+  }
+
+  #[test]
+  fn headings_from_stylesheet_and_outline_level() {
+    let rtf = b"{\\rtf1\\ansi{\\stylesheet{Normal;}{\\s1 heading 1;}{\\s2 heading 2;}}\\pard\\s1 Title\\par\\pard\\s2 Section\\par\\pard Body\\par\\pard\\outlinelevel2 Deep\\par}";
+    let document = RtfProvider::new().parse_buffer(rtf).unwrap();
+    let kinds: Vec<ParagraphKind> = document
+      .blocks
+      .iter()
+      .filter_map(|b| match b {
+        Block::Paragraph(p) => Some(p.kind),
+        _ => None,
+      })
+      .collect();
+    assert_eq!(
+      kinds,
+      vec![
+        ParagraphKind::Heading(1),
+        ParagraphKind::Heading(2),
+        ParagraphKind::Normal,
+        ParagraphKind::Heading(3)
+      ]
+    );
+  }
+
+  #[test]
+  fn hyperlink_fields_become_links() {
+    let rtf = b"{\\rtf1\\ansi See {\\field{\\*\\fldinst HYPERLINK \"https://example.com\"}{\\fldrslt the site}} now\\par}";
+    let document = RtfProvider::new().parse_buffer(rtf).unwrap();
+    let Block::Paragraph(p) = &document.blocks[0] else {
+      panic!("expected paragraph");
+    };
+    let link = p.inlines.iter().find_map(|i| match i {
+      Inline::Link { href, children } => Some((href.clone(), inline_text(children))),
+      _ => None,
+    });
+    assert_eq!(
+      link,
+      Some(("https://example.com".to_string(), "the site".to_string()))
+    );
+    assert_eq!(inline_text(&p.inlines), "See the site now");
+  }
+
+  #[test]
+  fn non_hyperlink_fields_keep_result_text() {
+    let rtf = b"{\\rtf1\\ansi Page {\\field{\\*\\fldinst PAGE}{\\fldrslt 7}} of 9\\par}";
+    assert_eq!(paragraphs(rtf), vec!["Page 7 of 9"]);
+  }
+
+  #[test]
+  fn listtext_markers_build_lists() {
+    let rtf = b"{\\rtf1\\ansi\\pard{\\listtext \\'95\\tab}First\\par\\pard{\\listtext \\'95\\tab}Second\\par\\pard After\\par}";
+    let document = RtfProvider::new().parse_buffer(rtf).unwrap();
+    let Block::List(list) = &document.blocks[0] else {
+      panic!("expected list, got {:?}", document.blocks[0]);
+    };
+    assert_eq!(list.list_type, ListType::Unordered);
+    assert_eq!(list.items.len(), 2);
+    assert!(
+      matches!(&document.blocks[1], Block::Paragraph(p) if inline_text(&p.inlines) == "After")
+    );
+  }
+
+  #[test]
+  fn numbered_listtext_markers_build_ordered_lists() {
+    let rtf = b"{\\rtf1\\ansi\\pard{\\listtext 1.\\tab}One\\par\\pard{\\listtext 2.\\tab}Two\\par}";
+    let document = RtfProvider::new().parse_buffer(rtf).unwrap();
+    let Block::List(list) = &document.blocks[0] else {
+      panic!("expected list, got {:?}", document.blocks[0]);
+    };
+    assert_eq!(list.list_type, ListType::Ordered);
+    assert_eq!(list.items.len(), 2);
   }
 }

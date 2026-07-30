@@ -1,4 +1,5 @@
 pub mod encoding;
+pub mod fields;
 pub mod model;
 pub mod oleps;
 pub mod providers;

@@ -532,22 +532,83 @@ fn parse_blocks(parent: &Node, ctx: Ctx) -> Vec<Block> {
   out
 }
 
+#[derive(PartialEq, Eq, Clone, Copy)]
+enum VMerge {
+  None,
+  Restart,
+  Continue,
+}
+
+struct RawCell {
+  blocks: Vec<Block>,
+  colspan: u32,
+  grid_col: u32,
+  vmerge: VMerge,
+}
+
 fn parse_table(node: &Node, ctx: Ctx) -> Table {
-  let mut rows = Vec::new();
+  let mut raw_rows: Vec<(bool, Vec<RawCell>)> = Vec::new();
   for tr in children(node, "tr") {
     let header = child(&tr, "trPr")
       .and_then(|trpr| child(&trpr, "tblHeader"))
       .is_some();
-    let cells = children(&tr, "tc")
-      .map(|tc| TableCell {
+    let mut grid_col = 0u32;
+    let mut cells = Vec::new();
+    for tc in children(&tr, "tc") {
+      let tc_pr = child(&tc, "tcPr");
+      let colspan = tc_pr
+        .and_then(|pr| child(&pr, "gridSpan"))
+        .and_then(|n| attr(&n, "val"))
+        .and_then(|v| v.parse::<u32>().ok())
+        .unwrap_or(1)
+        .clamp(1, 1000);
+      let vmerge = match tc_pr.and_then(|pr| child(&pr, "vMerge")) {
+        None => VMerge::None,
+        // vMerge without val continues the merge started above
+        Some(n) => match attr(&n, "val") {
+          Some("restart") => VMerge::Restart,
+          _ => VMerge::Continue,
+        },
+      };
+      cells.push(RawCell {
         blocks: parse_blocks(&tc, ctx),
-        colspan: NonZeroU32::MIN,
-        rowspan: NonZeroU32::MIN,
-      })
-      .collect();
+        colspan,
+        grid_col,
+        vmerge,
+      });
+      grid_col += colspan;
+    }
+    raw_rows.push((header, cells));
+  }
+
+  let mut rows = Vec::new();
+  for (i, (header, raw_cells)) in raw_rows.iter().enumerate() {
+    let mut cells = Vec::new();
+    for cell in raw_cells {
+      if cell.vmerge == VMerge::Continue {
+        continue;
+      }
+      let mut rowspan = 1u32;
+      if cell.vmerge == VMerge::Restart {
+        for (_, below) in raw_rows.iter().skip(i + 1) {
+          let continued = below
+            .iter()
+            .any(|c| c.grid_col == cell.grid_col && c.vmerge == VMerge::Continue);
+          if !continued {
+            break;
+          }
+          rowspan += 1;
+        }
+      }
+      cells.push(TableCell {
+        blocks: cell.blocks.clone(),
+        colspan: NonZeroU32::new(cell.colspan).unwrap_or(NonZeroU32::MIN),
+        rowspan: NonZeroU32::new(rowspan).unwrap_or(NonZeroU32::MIN),
+      });
+    }
     rows.push(TableRow {
       cells,
-      kind: if header {
+      kind: if *header {
         TableRowKind::Header
       } else {
         TableRowKind::Body
@@ -813,4 +874,50 @@ fn read_comments<R: Read + Seek>(zip: &mut ZipArchive<R>, ctx: Ctx) -> Vec<Comme
     });
   }
   comments
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+  use std::io::Write;
+
+  fn build_docx(document_xml: &str) -> Vec<u8> {
+    let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
+    zip
+      .start_file(
+        "word/document.xml",
+        zip::write::SimpleFileOptions::default(),
+      )
+      .unwrap();
+    zip.write_all(document_xml.as_bytes()).unwrap();
+    zip.finish().unwrap().into_inner()
+  }
+
+  #[test]
+  fn table_cells_carry_grid_span_and_vertical_merge() {
+    let xml = r#"<?xml version="1.0"?>
+<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+<w:body><w:tbl>
+<w:tr>
+  <w:tc><w:tcPr><w:gridSpan w:val="2"/></w:tcPr><w:p><w:r><w:t>Wide</w:t></w:r></w:p></w:tc>
+  <w:tc><w:tcPr><w:vMerge w:val="restart"/></w:tcPr><w:p><w:r><w:t>Tall</w:t></w:r></w:p></w:tc>
+</w:tr>
+<w:tr>
+  <w:tc><w:p><w:r><w:t>A</w:t></w:r></w:p></w:tc>
+  <w:tc><w:p><w:r><w:t>B</w:t></w:r></w:p></w:tc>
+  <w:tc><w:tcPr><w:vMerge/></w:tcPr><w:p/></w:tc>
+</w:tr>
+</w:tbl></w:body></w:document>"#;
+
+    let document = DocxProvider::new().parse_buffer(&build_docx(xml)).unwrap();
+    let Block::Table(table) = &document.blocks[0] else {
+      panic!("expected table, got {:?}", document.blocks[0]);
+    };
+    assert_eq!(table.rows[0].cells.len(), 2);
+    assert_eq!(table.rows[0].cells[0].colspan.get(), 2);
+    assert_eq!(table.rows[0].cells[0].rowspan.get(), 1);
+    assert_eq!(table.rows[0].cells[1].colspan.get(), 1);
+    assert_eq!(table.rows[0].cells[1].rowspan.get(), 2);
+    assert_eq!(table.rows[1].cells.len(), 2);
+  }
 }
