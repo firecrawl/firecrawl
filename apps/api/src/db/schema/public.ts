@@ -206,9 +206,7 @@ export const research_github_searches = researchEndpointTable(
   "research_github_searches",
 );
 
-export const research_code_searches = researchEndpointTable(
-  "research_code_searches",
-);
+export const code_searches = researchEndpointTable("code_searches");
 
 export const deterministic_json_scripts = pgTable(
   "deterministic_json_scripts",

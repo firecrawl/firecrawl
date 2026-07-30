@@ -174,7 +174,7 @@ describeIf(HAS_RESEARCH)("Code Search API", () => {
         .where(
           and(
             eq(schema.requests.team_id, identity.teamId),
-            eq(schema.requests.kind, "research_code_search"),
+            eq(schema.requests.kind, "code_search"),
             eq(schema.requests.target_hint, query),
           ),
         )
@@ -208,13 +208,13 @@ describeIf(HAS_RESEARCH)("Code Search API", () => {
     }>(async () => {
       const data = await db
         .select({
-          credits_cost: schema.research_code_searches.credits_cost,
-          num_results: schema.research_code_searches.num_results,
-          is_successful: schema.research_code_searches.is_successful,
+          credits_cost: schema.code_searches.credits_cost,
+          num_results: schema.code_searches.num_results,
+          is_successful: schema.code_searches.is_successful,
         })
-        .from(schema.research_code_searches)
-        .where(eq(schema.research_code_searches.target, query))
-        .orderBy(desc(schema.research_code_searches.created_at))
+        .from(schema.code_searches)
+        .where(eq(schema.code_searches.target, query))
+        .orderBy(desc(schema.code_searches.created_at))
         .limit(1);
       return data[0] ?? null;
     });

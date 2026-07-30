@@ -494,8 +494,8 @@ export function createCodeRouter() {
 
   const controller = wrap(
     createResearchController(codeSearchSchema, CODE_SEARCH_QUERY_KEYS, {
-      kind: "research_code_search",
-      table: "research_code_searches",
+      kind: "code_search",
+      table: "code_searches",
       action: "searchCode",
       targetHint: params => String(params.query),
       upstreamPath: () => "/v2/code/search",
