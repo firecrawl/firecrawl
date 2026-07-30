@@ -2,8 +2,8 @@ use super::doc::DocProvider;
 use super::docx::DocxProvider;
 use super::odt::OdtProvider;
 use super::rtf::RtfProvider;
-use super::DocumentProvider;
 use super::xlsx::XlsxProvider;
+use super::DocumentProvider;
 use napi_derive::napi;
 
 #[napi]

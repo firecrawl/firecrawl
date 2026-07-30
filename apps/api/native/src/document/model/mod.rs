@@ -65,6 +65,21 @@ pub enum Inline {
   Bookmark(BookmarkId),
 }
 
+/// True when the inlines would render something the reader can see.
+pub fn has_visible_content(inlines: &[Inline]) -> bool {
+  inlines.iter().any(|inline| match inline {
+    Inline::Text(t) => !t.trim().is_empty(),
+    Inline::LineBreak => false,
+    Inline::Link { children, .. } => has_visible_content(children),
+    Inline::Strong(c) | Inline::Em(c) | Inline::Del(c) | Inline::Sup(c) | Inline::Sub(c) => {
+      has_visible_content(c)
+    }
+    Inline::Code(t) => !t.trim().is_empty(),
+    Inline::FootnoteRef(_) | Inline::EndnoteRef(_) | Inline::CommentRef(_) => true,
+    Inline::Bookmark(_) => false,
+  })
+}
+
 #[derive(Debug, Clone)]
 pub struct Image {
   pub src: String,

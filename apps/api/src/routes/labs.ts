@@ -139,6 +139,10 @@ export const labsRouter = express.Router();
 // No credit check or billing here on purpose: the service behind this proxy
 // makes its own calls to the public API with the caller's own key, so usage is
 // billed on those existing paths instead.
+//
+// This list mirrors the upstream service one route at a time; there is no
+// catch-all. An endpoint added upstream stays a 404 here until it is also
+// listed below, so keep the two in sync when the service grows.
 labsRouter.post(
   "/search",
   authMiddleware(RateLimiterMode.Search),
@@ -157,14 +161,32 @@ labsRouter.post(
   wrap(labsProxyController),
 );
 
+labsRouter.post(
+  "/search/data/pages",
+  authMiddleware(RateLimiterMode.Search),
+  wrap(labsProxyController),
+);
+
 labsRouter.get(
   "/search/data",
   authMiddleware(RateLimiterMode.Search),
   wrap(labsProxyController),
 );
 
+labsRouter.patch(
+  "/search/data/:sourceId",
+  authMiddleware(RateLimiterMode.Search),
+  wrap(labsProxyController),
+);
+
 labsRouter.delete(
   "/search/data/:sourceId",
+  authMiddleware(RateLimiterMode.Search),
+  wrap(labsProxyController),
+);
+
+labsRouter.post(
+  "/search/data/:sourceId/refresh",
   authMiddleware(RateLimiterMode.Search),
   wrap(labsProxyController),
 );

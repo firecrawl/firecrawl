@@ -28,6 +28,8 @@ url = "2.5.7"
 zip = "5.0.0"
 calamine = { git = "https://github.com/firecrawl/calamine", branch = "fc-prod" }
 cfb = "0.10"
+codepage = "0.1"
+encoding_rs = "0.8"
 tokio = "1.48.0"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", default-features = false, features = ["registry"] }
