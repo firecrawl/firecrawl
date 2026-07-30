@@ -21,6 +21,13 @@
   </a>
 </div>
 
+<div align="center">
+  <p>
+    <a href="README.md">English</a> |
+    <a href="README.ru.md">Русский</a>
+  </p>
+</div>
+
 <div>
   <p align="center">
     <a href="https://twitter.com/firecrawl">
@@ -35,18 +42,11 @@
   </p>
 </div>
 
-<div align="center">
-  <p>
-    <a href="README.md">English</a> |
-    <a href="README.ru.md">Русский</a>
-  </p>
-</div>
-
 ---
 
 # **🔥 Firecrawl**
 
-**The API to search, scrape, and interact with the web at scale. 🔥** The web context API to find sources, extract content, and turn it into clean Markdown or structured data your agents can ship with. Open source and available as a [hosted service](https://firecrawl.dev/?ref=github).
+**API для поиска, скрапинга и взаимодействия с вебом в масштабе. 🔥** Web context API: находить источники, извлекать контент и превращать его в чистый Markdown или структурированные данные, с которыми могут работать ваши агенты. Open source и доступен как [hosted-сервис](https://firecrawl.dev/?ref=github).
 
 _Pst. Hey, you, join our stargazers :)_
 
@@ -56,47 +56,47 @@ _Pst. Hey, you, join our stargazers :)_
 
 ---
 
-## Why Firecrawl?
+## Зачем Firecrawl?
 
-- **Industry-leading reliability**: Covers 96% of the web, including JS-heavy pages — no proxy headaches, just clean data ([see benchmarks](https://www.firecrawl.dev/blog/the-worlds-best-web-data-api-v25))
-- **Blazingly fast**: P95 latency of 3.4s across millions of pages, built for real-time agents and dynamic apps
-- **LLM-ready output**: Clean markdown, structured JSON, screenshots, and more — spend fewer tokens, build better AI apps
-- **We handle the hard stuff**: Rotating proxies, orchestration, rate limits, JS-blocked content, and more — zero configuration
-- **Agent ready**: Connect Firecrawl to any AI agent or MCP client with a single command
-- **Media parsing**: Parse and extract content from web-hosted PDFs, DOCX, and more
-- **Actions**: Click, scroll, write, wait, and press before extracting content
-- **Open source**: Developed transparently and collaboratively — [join our community](https://discord.gg/firecrawl)
+- **Надёжность уровня индустрии**: покрывает 96% веба, включая JS-heavy страницы — без головной боли с прокси, только чистые данные ([benchmarks](https://www.firecrawl.dev/blog/the-worlds-best-web-data-api-v25))
+- **Очень быстро**: P95 latency 3.4s на миллионах страниц — для real-time агентов и динамических приложений
+- **LLM-ready output**: чистый markdown, structured JSON, скриншоты и другое — меньше токенов, лучше AI-приложения
+- **Сложную часть берём на себя**: rotating proxies, orchestration, rate limits, JS-blocked content — zero configuration
+- **Agent ready**: подключение к любому AI-агенту или MCP-клиенту одной командой
+- **Media parsing**: PDF, DOCX и другие web-hosted документы
+- **Actions**: click, scroll, write, wait, press — до извлечения контента
+- **Open source**: прозрачная разработка — [сообщество](https://discord.gg/firecrawl)
 
 ---
 
-## Feature Overview
+## Обзор возможностей
 
 **Core Endpoints**
 
-| Feature | Description |
+| Возможность | Описание |
 |---------|-------------|
-| [**Search**](#search) | Search the web and get full page content from results |
-| [**Scrape**](#scrape) | Convert any URL to markdown, HTML, screenshots, or structured JSON |
-| [**Interact**](#interact) | Scrape a page, then interact with it using AI prompts or code |
+| [**Search**](#search) | Поиск в вебе + полный контент страниц из результатов |
+| [**Scrape**](#scrape) | Любой URL → markdown, HTML, screenshots или structured JSON |
+| [**Interact**](#interact) | Scrape страницы, затем взаимодействие через AI-промпты или код |
 
-**More**
+**Ещё**
 
-| Feature | Description |
+| Возможность | Описание |
 |---------|-------------|
-| [**Agent**](#agent) | Automated data gathering, just describe what you need |
-| [**Crawl**](#crawl) | Scrape all URLs of a website with a single request |
-| [**Map**](#map) | Discover all URLs on a website instantly |
-| [**Batch Scrape**](#batch-scrape) | Scrape thousands of URLs asynchronously |
+| [**Agent**](#agent) | Автосбор данных — просто опишите, что нужно |
+| [**Crawl**](#crawl) | Все URL сайта одним запросом |
+| [**Map**](#map) | Мгновенное обнаружение всех URL сайта |
+| [**Batch Scrape**](#batch-scrape) | Асинхронный scrape тысяч URL |
 
 ---
 
-## Quick Start
+## Быстрый старт
 
-Sign up at [firecrawl.dev](https://firecrawl.dev) to get your API key. Try the [playground](https://firecrawl.dev/playground) to test it out.
+Зарегистрируйтесь на [firecrawl.dev](https://firecrawl.dev), получите API key. Попробуйте [playground](https://firecrawl.dev/playground).
 
 ### Search
 
-Search the web and get full content from results.
+Поиск в вебе с полным контентом результатов.
 
 ```python
 from firecrawl import Firecrawl
@@ -135,7 +135,7 @@ firecrawl search "firecrawl" --limit 5
 ```
 </details>
 
-Output:
+Вывод:
 ```json
 [
   {
@@ -153,7 +153,7 @@ Output:
 
 ### Scrape
 
-Get LLM-ready data from any website — markdown, JSON, screenshots, and more.
+LLM-ready данные с любого сайта — markdown, JSON, screenshots и другое.
 
 ```python
 from firecrawl import Firecrawl
@@ -192,7 +192,7 @@ firecrawl https://firecrawl.dev --only-main-content
 ```
 </details>
 
-Output:
+Вывод:
 ```
 # Firecrawl
 
@@ -207,7 +207,7 @@ Firecrawl helps AI agents search, scrape, and interact with the web.
 
 ### Interact
 
-Scrape a page, then interact with it using AI prompts or code.
+Scrape страницы, затем взаимодействие через AI-промпты или код.
 
 ```python
 from firecrawl import Firecrawl
@@ -263,7 +263,7 @@ firecrawl interact exec --prompt "Click the first result"
 ```
 </details>
 
-Output:
+Вывод:
 ```json
 {
   "success": true,
@@ -274,23 +274,23 @@ Output:
 
 ---
 
-## Power Your Agent
+## Усильте своего агента
 
-Connect Firecrawl to any AI agent or MCP client in minutes.
+Подключите Firecrawl к любому AI-агенту или MCP-клиенту за минуты.
 
 ### Skill
 
-Give your agent easy access to real-time web data with one command.
+Доступ агента к real-time web data одной командой.
 
 ```bash
 npx -y firecrawl-cli@latest init --all --browser
 ```
 
-Restart your agent after installing. Works with [Claude Code](https://claude.ai/code), [Antigravity](https://antigravity.google), [OpenCode](https://opencode.ai), and more.
+После установки перезапустите агента. Работает с [Claude Code](https://claude.ai/code), [Antigravity](https://antigravity.google), [OpenCode](https://opencode.ai) и другими.
 
 ### MCP
 
-Connect any MCP-compatible client to the web in seconds.
+Любой MCP-совместимый клиент — к вебу за секунды.
 
 ```json
 {
@@ -308,23 +308,23 @@ Connect any MCP-compatible client to the web in seconds.
 
 ### Agent Onboarding
 
-Are you an AI agent? Fetch this skill to sign up your user, get an API key, and start building with Firecrawl.
+Вы AI-агент? Загрузите этот skill: signup пользователя, API key и старт с Firecrawl.
 
 ```bash
 curl -s https://firecrawl.dev/agent-onboarding/SKILL.md
 ```
 
-See the [Skill + CLI documentation](https://docs.firecrawl.dev/sdks/cli) for all available commands. For MCP, see [firecrawl-mcp-server](https://github.com/firecrawl/firecrawl-mcp-server).
+Документация Skill + CLI: [docs](https://docs.firecrawl.dev/sdks/cli). MCP: [firecrawl-mcp-server](https://github.com/firecrawl/firecrawl-mcp-server).
 
 ---
 
-## More Endpoints
+## Другие endpoints
 
 ### Agent
 
-**The easiest way to get data from the web.** Describe what you need, and our AI agent searches, navigates, and retrieves it. No URLs required.
+**Самый простой способ получить данные из веба.** Опишите задачу — AI-агент ищет, навигирует и возвращает результат. URL знать не обязательно.
 
-Agent is the evolution of our `/extract` endpoint: faster, more reliable, and doesn't require you to know the URLs upfront.
+Agent — эволюция endpoint `/extract`: быстрее, надёжнее, без обязательных URL заранее.
 ```bash
 curl -X POST 'https://api.firecrawl.dev/v2/agent' \
   -H 'Authorization: Bearer fc-YOUR_API_KEY' \
@@ -334,7 +334,7 @@ curl -X POST 'https://api.firecrawl.dev/v2/agent' \
   }'
 ```
 
-Response:
+Ответ:
 ```json
 {
   "success": true,
@@ -345,9 +345,9 @@ Response:
 }
 ```
 
-#### Agent with Structured Output
+#### Agent со structured output
 
-Use a schema to get structured data:
+Схема для структурированных данных:
 ```python
 from firecrawl import Firecrawl
 from pydantic import BaseModel, Field
@@ -379,9 +379,9 @@ print(result.data)
 }
 ```
 
-#### Agent with URLs (Optional)
+#### Agent с URL (опционально)
 
-Focus the agent on specific pages:
+Сфокусировать агента на конкретных страницах:
 ```python
 result = app.agent(
     urls=["https://docs.firecrawl.dev", "https://firecrawl.dev/pricing"],
@@ -389,14 +389,12 @@ result = app.agent(
 )
 ```
 
-#### Model Selection
-
-Choose between two models based on your needs:
+#### Выбор модели
 
 | Model | Cost | Best For |
 |-------|------|----------|
-| `spark-1-mini` (default) | 60% cheaper | Most tasks |
-| `spark-1-pro` | Standard | Complex research, critical data gathering |
+| `spark-1-mini` (default) | на 60% дешевле | Большинство задач |
+| `spark-1-pro` | standard | Сложный research, критичный сбор данных |
 ```python
 result = app.agent(
     prompt="Compare enterprise features across Firecrawl, Apify, and ScrapingBee",
@@ -404,18 +402,17 @@ result = app.agent(
 )
 ```
 
+**Когда брать Pro:**
+- сравнение данных по нескольким сайтам;
+- сайты со сложной навигацией / auth;
+- research с несколькими путями;
+- задачи, где критична точность.
 
-**When to use Pro:**
-- Comparing data across multiple websites
-- Extracting from sites with complex navigation or auth
-- Research tasks where the agent needs to explore multiple paths
-- Critical data where accuracy is paramount
-
-Learn more about Spark models in our [Agent documentation](https://docs.firecrawl.dev/features/agent).
+Подробнее: [Agent documentation](https://docs.firecrawl.dev/features/agent).
 
 ### Crawl
 
-Crawl an entire website and get content from all pages.
+Crawl всего сайта и контент со всех страниц.
 ```bash
 curl -X POST 'https://api.firecrawl.dev/v2/crawl' \
   -H 'Authorization: Bearer fc-YOUR_API_KEY' \
@@ -429,7 +426,7 @@ curl -X POST 'https://api.firecrawl.dev/v2/crawl' \
   }'
 ```
 
-Returns a job ID:
+Возвращает job ID:
 ```json
 {
   "success": true,
@@ -438,7 +435,7 @@ Returns a job ID:
 }
 ```
 
-#### Check Crawl Status
+#### Статус crawl
 ```bash
 curl -X GET 'https://api.firecrawl.dev/v2/crawl/123-456-789' \
   -H 'Authorization: Bearer fc-YOUR_API_KEY'
@@ -458,11 +455,11 @@ curl -X GET 'https://api.firecrawl.dev/v2/crawl/123-456-789' \
 }
 ```
 
-**Note:** The [SDKs](#sdks) handle polling automatically for a better developer experience.
+**Примечание:** [SDK](#sdks) сами делают polling — удобнее для разработчика.
 
 ### Map
 
-Discover all URLs on a website instantly.
+Мгновенно обнаружить все URL сайта.
 ```bash
 curl -X POST 'https://api.firecrawl.dev/v2/map' \
   -H 'Authorization: Bearer fc-YOUR_API_KEY' \
@@ -470,7 +467,7 @@ curl -X POST 'https://api.firecrawl.dev/v2/map' \
   -d '{"url": "https://firecrawl.dev"}'
 ```
 
-Response:
+Ответ:
 ```json
 {
   "success": true,
@@ -482,9 +479,9 @@ Response:
 }
 ```
 
-#### Map with Search
+#### Map с search
 
-Find specific URLs within a site:
+Найти конкретные URL внутри сайта:
 ```python
 from firecrawl import Firecrawl
 
@@ -496,7 +493,7 @@ result = app.map("https://firecrawl.dev", search="pricing")
 
 ### Batch Scrape
 
-Scrape multiple URLs at once:
+Scrape нескольких URL сразу:
 ```python
 from firecrawl import Firecrawl
 
@@ -514,13 +511,12 @@ for doc in job.data:
 
 ---
 
-## SDKs
+## SDK
 
-Our SDKs provide a convenient way to use all Firecrawl features and automatically handle polling for async operations.
+SDK упрощают все возможности Firecrawl и автоматически обрабатывают polling для async-операций.
 
 ### Python
 
-Install the SDK:
 ```bash
 pip install firecrawl-py
 ```
@@ -549,7 +545,6 @@ print(results)
 
 ### Node.js
 
-Install the SDK:
 ```bash
 npm install firecrawl
 ```
@@ -581,7 +576,6 @@ results.data.web.forEach(result => {
 
 ### Go
 
-Install the SDK:
 ```bash
 go get github.com/firecrawl/firecrawl/apps/go-sdk
 ```
@@ -646,7 +640,7 @@ func main() {
 
 ### Java
 
-Add the dependency ([Gradle/Maven](https://docs.firecrawl.dev/sdks/java#installation)):
+Зависимость ([Gradle/Maven](https://docs.firecrawl.dev/sdks/java#installation)):
 ```groovy
 repositories {
     mavenCentral()
@@ -696,7 +690,6 @@ for (SearchResult r : results.getResults()) {
 
 ### Elixir
 
-Add the dependency:
 ```elixir
 def deps do
   [
@@ -729,7 +722,6 @@ end
 
 ### Rust
 
-Add the dependency:
 ```toml
 [dependencies]
 firecrawl = "2"
@@ -764,7 +756,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 ### Ruby
 
-Install the SDK:
 ```bash
 gem install firecrawl-sdk
 ```
@@ -796,7 +787,6 @@ puts results
 
 ### .NET
 
-Install the SDK:
 ```bash
 dotnet add package firecrawl-sdk
 ```
@@ -824,7 +814,6 @@ Console.WriteLine(results);
 
 ### PHP
 
-Install the SDK:
 ```bash
 composer require firecrawl/firecrawl-sdk
 ```
@@ -857,7 +846,7 @@ print_r($results);
 
 ---
 
-## Integrations
+## Интеграции
 
 **Agents & AI Tools**
 - [Firecrawl Skill](https://docs.firecrawl.dev/sdks/cli)
@@ -870,15 +859,15 @@ print_r($results);
 - [Zapier](https://zapier.com/apps/firecrawl/integrations)
 - [n8n](https://n8n.io/integrations/firecrawl/)
 
-[View all integrations →](https://www.firecrawl.dev/integrations)
+[Все интеграции →](https://www.firecrawl.dev/integrations)
 
-**Missing your favorite tool?** [Open an issue](https://github.com/mendableai/firecrawl/issues) and let us know!
+**Нет вашего инструмента?** [Откройте issue](https://github.com/mendableai/firecrawl/issues)!
 
 ---
 
-## Resources
+## Ресурсы
 
-- [Documentation](https://docs.firecrawl.dev)
+- [Документация](https://docs.firecrawl.dev)
 - [API Reference](https://docs.firecrawl.dev/api-reference/introduction)
 - [Playground](https://firecrawl.dev/playground)
 - [Changelog](https://firecrawl.dev/changelog)
@@ -887,17 +876,17 @@ print_r($results);
 
 ## Open Source vs Cloud
 
-Firecrawl is open source under the AGPL-3.0 license. The cloud version at [firecrawl.dev](https://firecrawl.dev) includes additional features:
+Firecrawl — open source под лицензией AGPL-3.0. Cloud-версия на [firecrawl.dev](https://firecrawl.dev) включает дополнительные возможности:
 
 ![Open Source vs Cloud](https://raw.githubusercontent.com/firecrawl/firecrawl/main/img/open-source-cloud.png)
 
-To run locally, see the [Contributing Guide](https://github.com/firecrawl/firecrawl/blob/main/CONTRIBUTING.md). To self-host, see [Self-Hosting Guide](https://docs.firecrawl.dev/contributing/self-host).
+Локальный запуск: [Contributing Guide](https://github.com/firecrawl/firecrawl/blob/main/CONTRIBUTING.md). Self-host: [Self-Hosting Guide](https://docs.firecrawl.dev/contributing/self-host).
 
 ---
 
-## Contributing
+## Участие (Contributing)
 
-We love contributions! Please read our [Contributing Guide](https://github.com/firecrawl/firecrawl/blob/main/CONTRIBUTING.md) before submitting a pull request.
+Мы любим contributions! Перед PR прочитайте [Contributing Guide](https://github.com/firecrawl/firecrawl/blob/main/CONTRIBUTING.md).
 
 ### Contributors
 
@@ -907,16 +896,16 @@ We love contributions! Please read our [Contributing Guide](https://github.com/f
 
 ---
 
-## License
+## Лицензия
 
-This project is primarily licensed under the GNU Affero General Public License v3.0 (AGPL-3.0). The SDKs and some UI components are licensed under the MIT License. See the LICENSE files in specific directories for details.
+Проект в основном под GNU Affero General Public License v3.0 (AGPL-3.0). SDK и часть UI-компонентов — MIT. См. LICENSE в конкретных директориях.
 
 ---
 
-**It is the sole responsibility of end users to respect websites' policies when scraping.** Users are advised to adhere to applicable privacy policies and terms of use. By default, Firecrawl respects robots.txt directives. By using Firecrawl, you agree to comply with these conditions.
+**Пользователь сам отвечает за соблюдение политик сайтов при scraping.** Соблюдайте privacy policy и terms of use. По умолчанию Firecrawl уважает robots.txt. Используя Firecrawl, вы соглашаетесь с этими условиями.
 
 <p align="right" style="font-size: 14px; color: #555; margin-top: 20px;">
   <a href="#readme-top" style="text-decoration: none; color: #007bff; font-weight: bold;">
-    ↑ Back to Top ↑
+    ↑ Наверх ↑
   </a>
 </p>
