@@ -197,6 +197,18 @@ labsRouter.get(
   wrap(labsProxyController),
 );
 
+labsRouter.get(
+  "/search/packs",
+  authMiddleware(RateLimiterMode.Search),
+  wrap(labsProxyController),
+);
+
+labsRouter.patch(
+  "/search/packs/:packId",
+  authMiddleware(RateLimiterMode.Search),
+  wrap(labsProxyController),
+);
+
 labsRouter.post(
   "/search/configs",
   authMiddleware(RateLimiterMode.Search),
@@ -220,4 +232,3 @@ labsRouter.delete(
   authMiddleware(RateLimiterMode.Search),
   wrap(labsProxyController),
 );
-
