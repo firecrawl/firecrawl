@@ -1025,6 +1025,27 @@ describe("V2 Types Validation", () => {
       ]);
     });
 
+    it("should accept the code category and reject code search params", () => {
+      expect(
+        searchRequestSchema.parse({ query: "test", categories: ["code"] })
+          .categories,
+      ).toEqual([{ type: "code" }]);
+
+      expect(
+        searchRequestSchema.parse({
+          query: "test",
+          categories: [{ type: "code" }],
+        }).categories,
+      ).toEqual([{ type: "code" }]);
+
+      expect(() =>
+        searchRequestSchema.parse({
+          query: "test",
+          categories: [{ type: "code", repos: ["firecrawl/firecrawl"] }],
+        }),
+      ).toThrow();
+    });
+
     it("should accept search request with advanced categories format", () => {
       const input: SearchRequestInput = {
         query: "test",

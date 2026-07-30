@@ -13,6 +13,7 @@ import {
   mergeScrapedContent,
   calculateScrapeCredits,
 } from "./scrape";
+import { searchCodeCategory, wantsCodeCategory } from "./code";
 import {
   highlightsEnvReady,
   runIndexedSearchHighlights,
@@ -103,6 +104,13 @@ export async function executeSearch(
       excludeDomains: options.excludeDomains,
     },
   );
+
+  const codeResults = wantsCodeCategory(categories)
+    ? searchCodeCategory(
+        { query, limit, teamId, timeout: options.timeout },
+        logger,
+      )
+    : null;
 
   const searchResponse = (await search({
     query: searchQuery,
@@ -195,6 +203,14 @@ export async function executeSearch(
       searchResponse.news = searchResponse.news.slice(0, limit);
     }
     totalResultsCount += searchResponse.news.length;
+  }
+
+  if (codeResults) {
+    const code = await codeResults;
+    if (code.length > 0) {
+      searchResponse.code = code;
+      totalResultsCount += code.length;
+    }
   }
 
   const isZDR = options.enterprise?.includes("zdr");

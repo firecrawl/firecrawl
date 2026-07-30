@@ -31,9 +31,11 @@ import { applyAgentAuthDiscoveryHeader } from "../../lib/agent-auth-discovery";
 import { resolveThreatProtection } from "../../lib/threat-protection/request";
 import {
   actionTypesOf,
+  checkKeyEndpointRestriction,
   checkKeyFormatRestriction,
   formatTypesOf,
 } from "../../lib/key-restriction";
+import { wantsCodeCategory } from "../../search/code";
 
 export async function searchController(
   req: RequestWithAuth<{}, SearchResponse, SearchRequest>,
@@ -83,6 +85,20 @@ export async function searchController(
         success: false,
         error: keyRestriction.error,
       });
+    }
+
+    if (wantsCodeCategory(req.body.categories as CategoryOption[])) {
+      const codeRestriction = await checkKeyEndpointRestriction(
+        "/v2/code/search",
+        req.acuc?.api_key_id,
+        req.acuc?.flags ?? null,
+      );
+      if (!codeRestriction.allowed) {
+        return res.status(codeRestriction.status).json({
+          success: false,
+          error: codeRestriction.error,
+        });
+      }
     }
 
     if (

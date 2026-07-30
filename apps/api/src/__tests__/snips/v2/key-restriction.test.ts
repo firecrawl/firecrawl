@@ -1,5 +1,5 @@
 import { eq } from "drizzle-orm";
-import { idmux, map, scrape, scrapeRaw, scrapeTimeout } from "./lib";
+import { idmux, map, scrape, scrapeRaw, scrapeTimeout, searchRaw } from "./lib";
 import { createTestIdUrl, describeIf, Identity, TEST_PRODUCTION } from "../lib";
 import { db } from "../../../db/connection";
 import * as schema from "../../../db/schema";
@@ -131,6 +131,32 @@ describeIf(TEST_PRODUCTION)(
         expect(response.statusCode).toBe(403);
         expect(response.body.success).toBe(false);
         expect(response.body.error).toContain(
+          "restricted to the following endpoints",
+        );
+      },
+      scrapeTimeout * 2,
+    );
+
+    it.concurrent(
+      "gates the code search category on the research group",
+      async () => {
+        const identity = await idmux({
+          name: "key-restriction/code-category",
+          credits: 10000,
+          flags: { keyRestriction: true },
+        });
+        await seedRestriction(identity, { allowedEndpoints: ["search"] });
+
+        const plain = await searchRaw({ query: "retries" }, identity);
+        expect(plain.statusCode).toBe(200);
+
+        const withCode = await searchRaw(
+          { query: "retries", categories: ["code"] },
+          identity,
+        );
+        expect(withCode.statusCode).toBe(403);
+        expect(withCode.body.success).toBe(false);
+        expect(withCode.body.error).toContain(
           "restricted to the following endpoints",
         );
       },

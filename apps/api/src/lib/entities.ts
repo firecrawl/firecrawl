@@ -167,6 +167,7 @@ export interface SearchV2Response {
   web?: WebSearchResult[];
   images?: ImageSearchResult[];
   news?: NewsSearchResult[];
+  code?: WebSearchResult[];
 }
 
 export interface ScrapeActionContent {

@@ -4,7 +4,7 @@
  */
 
 interface CategoryInput {
-  type: "github" | "research" | "pdf";
+  type: "github" | "research" | "pdf" | "code";
   sites?: string[];
 }
 

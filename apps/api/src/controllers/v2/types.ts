@@ -1909,6 +1909,10 @@ const pdfCategoryOptions = z.strictObject({
   type: z.literal("pdf"),
 });
 
+const codeCategoryOptions = z.strictObject({
+  type: z.literal("code"),
+});
+
 const searchDomainSchema = z
   .string()
   .trim()
@@ -1945,13 +1949,14 @@ export const searchRequestSchema = z
     categories: z
       .union([
         // Array of strings (simple format)
-        z.array(z.enum(["github", "research", "pdf"])),
+        z.array(z.enum(["github", "research", "pdf", "code"])),
         // Array of objects (advanced format)
         z.array(
           z.union([
             githubCategoryOptions,
             researchCategoryOptions,
             pdfCategoryOptions,
+            codeCategoryOptions,
           ]),
         ),
       ])
@@ -2085,6 +2090,10 @@ export const searchRequestSchema = z
             case "pdf":
               return {
                 type: "pdf" as const,
+              };
+            case "code":
+              return {
+                type: "code" as const,
               };
             default:
               return { type: c as any };

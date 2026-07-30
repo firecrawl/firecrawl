@@ -1,0 +1,112 @@
+vi.mock("undici", () => ({
+  Agent: class {},
+  fetch: vi.fn(),
+}));
+
+vi.mock("../config", () => ({
+  config: { RESEARCH_PROXY_URL: "https://research.test/" },
+}));
+
+import { fetch } from "undici";
+import { searchCodeCategory, wantsCodeCategory } from "./code";
+
+const fetchMock = vi.mocked(fetch);
+
+const logger = {
+  info: vi.fn(),
+  warn: vi.fn(),
+  error: vi.fn(),
+} as any;
+
+function upstreamOk(body: unknown) {
+  return { ok: true, status: 200, json: async () => body } as any;
+}
+
+function firstCall(): any[] {
+  return fetchMock.mock.calls[0] as any[];
+}
+
+afterEach(() => {
+  vi.clearAllMocks();
+});
+
+describe("wantsCodeCategory", () => {
+  it("reads both the string form and the object form", () => {
+    expect(wantsCodeCategory(["code"])).toBe(true);
+    expect(wantsCodeCategory([{ type: "code" }])).toBe(true);
+    expect(wantsCodeCategory(["github", "research"])).toBe(false);
+    expect(wantsCodeCategory(undefined)).toBe(false);
+  });
+});
+
+describe("searchCodeCategory", () => {
+  it("sends the query and the result count, and nothing else", async () => {
+    fetchMock.mockResolvedValue(upstreamOk({ results: [] }));
+
+    await searchCodeCategory(
+      { query: '"exact phrase" retries', limit: 7, teamId: "t1", timeout: 500 },
+      logger,
+    );
+
+    const url = firstCall()[0] as URL;
+    expect(url.pathname).toBe("/v2/code/search");
+    expect(url.searchParams.get("query")).toBe('"exact phrase" retries');
+    expect(url.searchParams.get("k")).toBe("7");
+    expect([...url.searchParams.keys()]).toEqual(["query", "k"]);
+    expect(firstCall()[1].method).toBe("GET");
+    expect(firstCall()[1].headers).toEqual({ "firecrawl-team-id": "t1" });
+  });
+
+  it("maps upstream results into web result shape", async () => {
+    fetchMock.mockResolvedValue(
+      upstreamOk({
+        results: [
+          {
+            id: "abc",
+            type: "issue",
+            url: "https://github.com/a/b/issues/1",
+            passages: [{ text: "first passage" }],
+          },
+          { id: "def", type: "readme", url: "", passages: [] },
+        ],
+      }),
+    );
+
+    const results = await searchCodeCategory(
+      { query: "retries", limit: 5, teamId: "t1", timeout: 500 },
+      logger,
+    );
+
+    expect(results).toEqual([
+      {
+        url: "https://github.com/a/b/issues/1",
+        title: "https://github.com/a/b/issues/1",
+        description: "first passage",
+        position: 1,
+        category: "code",
+      },
+    ]);
+  });
+
+  it("returns no results when the upstream fails", async () => {
+    fetchMock.mockResolvedValue({ ok: false, status: 503 } as any);
+
+    await expect(
+      searchCodeCategory(
+        { query: "retries", limit: 5, teamId: "t1", timeout: 500 },
+        logger,
+      ),
+    ).resolves.toEqual([]);
+  });
+
+  it("returns no results when the upstream throws", async () => {
+    fetchMock.mockRejectedValue(new Error("connection reset"));
+
+    await expect(
+      searchCodeCategory(
+        { query: "retries", limit: 5, teamId: "t1", timeout: 500 },
+        logger,
+      ),
+    ).resolves.toEqual([]);
+  });
+});

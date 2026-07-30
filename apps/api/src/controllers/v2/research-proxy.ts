@@ -1,9 +1,8 @@
 import express, { Request, Response } from "express";
-import { Agent, fetch } from "undici";
 import { z } from "zod";
 import { v7 as uuidv7 } from "uuid";
-import { config } from "../../config";
 import { logger as rootLogger } from "../../lib/logger";
+import { fetchResearchUpstream } from "../../lib/research-upstream";
 import { chargeKeylessCredits } from "../../lib/keyless";
 import { billTeam } from "../../services/billing/credit_billing";
 import { getSearchForcedKind } from "../../lib/zdr-helpers";
@@ -19,18 +18,11 @@ import type { RequestWithAuth } from "../v1/types";
 import { wrap } from "../../routes/shared";
 import { integrationSchema } from "../../utils/integration";
 
-const TIMEOUT_MS = 120_000;
 const SEARCH_CREDITS_PER_TEN_RESULTS = 2;
 const ZDR_SEARCH_CREDITS_PER_TEN_RESULTS = 10;
 
 const FORWARDED_REQUEST_HEADERS = ["accept", "x-request-id"];
 const FORWARDED_RESPONSE_HEADERS = ["content-type", "x-request-id"];
-
-const dispatcher = new Agent({
-  connectTimeout: TIMEOUT_MS,
-  headersTimeout: TIMEOUT_MS,
-  bodyTimeout: TIMEOUT_MS,
-});
 
 const multiString = z
   .union([z.string(), z.array(z.string())])
@@ -197,25 +189,6 @@ function addLegacySnakeCaseAliases<T>(value: T): T {
   return object as T;
 }
 
-function appendQuery(
-  url: URL,
-  params: Record<string, unknown>,
-  allowed: string[],
-) {
-  for (const key of allowed) {
-    const value = params[key];
-    if (Array.isArray(value)) {
-      for (const item of value) {
-        if (item !== undefined && item !== null) {
-          url.searchParams.append(key, String(item));
-        }
-      }
-    } else if (value !== undefined && value !== null) {
-      url.searchParams.append(key, String(value));
-    }
-  }
-}
-
 function resultCount(body: any): number {
   return Array.isArray(body?.results) ? body.results.length : 0;
 }
@@ -257,18 +230,12 @@ function researchError(
   });
 }
 
-async function fetchResearchUpstream(
+async function fetchForRequest(
   req: RequestWithAuth<any, any, any>,
   path: string,
   params: Record<string, unknown>,
   queryKeys: string[],
 ) {
-  const base = config.RESEARCH_PROXY_URL;
-  if (!base) return null;
-
-  const url = new URL(base.replace(/\/+$/, "") + path);
-  appendQuery(url, params, queryKeys);
-
   const headers: Record<string, string> = {};
   for (const h of FORWARDED_REQUEST_HEADERS) {
     const v = req.headers[h];
@@ -276,12 +243,7 @@ async function fetchResearchUpstream(
   }
   headers["firecrawl-team-id"] = req.auth.team_id;
 
-  return fetch(url, {
-    method: "GET",
-    headers,
-    signal: AbortSignal.timeout(TIMEOUT_MS),
-    dispatcher,
-  });
+  return fetchResearchUpstream({ path, params, queryKeys, headers });
 }
 
 function createResearchController(
@@ -333,7 +295,7 @@ function createResearchController(
     let credits = 0;
 
     try {
-      const upstream = await fetchResearchUpstream(
+      const upstream = await fetchForRequest(
         authedReq,
         endpoint.upstreamPath(params, authedReq),
         params,
