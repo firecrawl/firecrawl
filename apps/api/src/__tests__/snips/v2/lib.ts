@@ -871,16 +871,21 @@ export async function creditUsage(
   return req.body.data;
 }
 
-export async function creditUsageHistorical(identity: Identity): Promise<{
+export async function creditUsageHistorical(
+  identity: Identity,
+  byApiKey: boolean = false,
+): Promise<{
   success: boolean;
   periods: {
     startDate: string | null;
     endDate: string | null;
+    apiKey?: string;
     creditsUsed: number;
   }[];
 }> {
   const req = await request(TEST_API_URL)
     .get("/v2/team/credit-usage/historical")
+    .query(byApiKey ? { byApiKey: "true" } : {})
     .set("Authorization", `Bearer ${identity.apiKey}`)
     .set("Content-Type", "application/json");
 
@@ -891,16 +896,21 @@ export async function creditUsageHistorical(identity: Identity): Promise<{
   return req.body;
 }
 
-export async function tokenUsageHistorical(identity: Identity): Promise<{
+export async function tokenUsageHistorical(
+  identity: Identity,
+  byApiKey: boolean = false,
+): Promise<{
   success: boolean;
   periods: {
     startDate: string | null;
     endDate: string | null;
+    apiKey?: string;
     tokensUsed: number;
   }[];
 }> {
   const req = await request(TEST_API_URL)
     .get("/v2/team/token-usage/historical")
+    .query(byApiKey ? { byApiKey: "true" } : {})
     .set("Authorization", `Bearer ${identity.apiKey}`)
     .set("Content-Type", "application/json");
 
