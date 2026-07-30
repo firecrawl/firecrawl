@@ -159,7 +159,7 @@ export enum RateLimiterMode {
   SupportAsk = "supportAsk",
   SupportDocsSearch = "supportDocsSearch",
   Research = "research",
-  CodeSearch = "codeSearch",
+  DeveloperSearch = "developerSearch",
 }
 
 export type AuthResponse =

@@ -10,8 +10,8 @@ const KEYLESS_ENABLED =
   process.env.KEYLESS_REQUESTS_PER_DAY !== undefined &&
   process.env.KEYLESS_CREDITS_PER_DAY !== undefined;
 
-const CANONICAL_PATH = "/v2/search/code/search";
-const UPSTREAM_MIRROR_PATH = "/v2/code/search";
+const CANONICAL_PATH = "/v2/search/developer/search";
+const UPSTREAM_MIRROR_PATH = "/v2/developer/search";
 
 const COVERAGE_STATUSES = ["ok", "degraded", "unavailable", "skipped"];
 
@@ -32,10 +32,10 @@ async function waitForSingleRow<T>(
   return null;
 }
 
-describeIf(HAS_RESEARCH)("Code Search API", () => {
-  it("serves code search from the canonical mount", async () => {
+describeIf(HAS_RESEARCH)("Developer Search API", () => {
+  it("serves developer search from the canonical mount", async () => {
     const identity = await idmux({
-      name: "code/canonical search",
+      name: "developer/canonical search",
       credits: 100,
     });
 
@@ -64,7 +64,7 @@ describeIf(HAS_RESEARCH)("Code Search API", () => {
 
   it("serves the same search from a POST body", async () => {
     const identity = await idmux({
-      name: "code/post body",
+      name: "developer/post body",
       credits: 100,
     });
 
@@ -84,9 +84,9 @@ describeIf(HAS_RESEARCH)("Code Search API", () => {
     expect(res.body.coverage.pull_request).toBe("skipped");
   }, 120000);
 
-  it("serves code search from the upstream-mirror mount", async () => {
+  it("serves developer search from the upstream-mirror mount", async () => {
     const identity = await idmux({
-      name: "code/mirror mount",
+      name: "developer/mirror mount",
       credits: 100,
     });
 
@@ -103,7 +103,7 @@ describeIf(HAS_RESEARCH)("Code Search API", () => {
 
   it("keeps the upstream casing on repo enrollment status", async () => {
     const identity = await idmux({
-      name: "code/repo status casing",
+      name: "developer/repo status casing",
       credits: 100,
     });
 
@@ -128,7 +128,7 @@ describeIf(HAS_RESEARCH)("Code Search API", () => {
 
   it("rejects unknown params and an out-of-bound k", async () => {
     const identity = await idmux({
-      name: "code/invalid input",
+      name: "developer/invalid input",
       credits: 100,
     });
 
@@ -142,14 +142,14 @@ describeIf(HAS_RESEARCH)("Code Search API", () => {
     }
   });
 
-  it("logs the code search request kind with origin and integration", async () => {
+  it("logs the developer search request kind with origin and integration", async () => {
     if (!config.USE_DB_AUTHENTICATION) return;
 
     const identity = await idmux({
-      name: "code/logs metadata",
+      name: "developer/logs metadata",
       credits: 100,
     });
-    const query = `code metadata ${Date.now()}`;
+    const query = `developer metadata ${Date.now()}`;
 
     const res = await researchRaw(
       CANONICAL_PATH,
@@ -192,10 +192,10 @@ describeIf(HAS_RESEARCH)("Code Search API", () => {
     if (!config.USE_DB_AUTHENTICATION) return;
 
     const identity = await idmux({
-      name: "code/logs usage",
+      name: "developer/logs usage",
       credits: 100,
     });
-    const query = `code usage ${Date.now()}`;
+    const query = `developer usage ${Date.now()}`;
 
     const res = await researchRaw(CANONICAL_PATH, { query, k: 3 }, identity);
     expect(res.statusCode).toBe(200);
@@ -225,7 +225,7 @@ describeIf(HAS_RESEARCH)("Code Search API", () => {
     expect(usageLog?.credits_cost).toBe(expected);
   }, 120000);
 
-  describeIf(KEYLESS_ENABLED)("keyless code search", () => {
+  describeIf(KEYLESS_ENABLED)("keyless developer search", () => {
     it("permits keyless access on the canonical mount", async () => {
       const res = await researchRaw(CANONICAL_PATH, {
         query: "retry backoff",
@@ -247,10 +247,10 @@ describeIf(HAS_RESEARCH)("Code Search API", () => {
     }, 120000);
   });
 
-  describeIf(TEST_PRODUCTION)("code search billing", () => {
+  describeIf(TEST_PRODUCTION)("developer search billing", () => {
     it("bills by returned result count", async () => {
       const identity = await idmux({
-        name: "code/bills by results",
+        name: "developer/bills by results",
         credits: 100,
       });
       const before = (await creditUsage(identity)).remainingCredits;

@@ -478,8 +478,8 @@ async function handleKeylessAuth(
       ? "search"
       : mode === RateLimiterMode.Research
         ? "research"
-        : mode === RateLimiterMode.CodeSearch
-          ? "code"
+        : mode === RateLimiterMode.DeveloperSearch
+          ? "developer"
           : mode === RateLimiterMode.BrowserExecute
             ? "interact"
             : "scrape";

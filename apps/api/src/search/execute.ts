@@ -13,7 +13,7 @@ import {
   mergeScrapedContent,
   calculateScrapeCredits,
 } from "./scrape";
-import { searchCodeCategory, wantsCodeCategory } from "./code";
+import { searchDeveloperCategory, wantsDeveloperCategory } from "./developer";
 import {
   highlightsEnvReady,
   runIndexedSearchHighlights,
@@ -105,8 +105,8 @@ export async function executeSearch(
     },
   );
 
-  const codeResults = wantsCodeCategory(categories)
-    ? searchCodeCategory(
+  const developerResults = wantsDeveloperCategory(categories)
+    ? searchDeveloperCategory(
         { query, limit, teamId, timeout: options.timeout },
         logger,
       )
@@ -126,10 +126,10 @@ export async function executeSearch(
     enterprise: options.enterprise,
   })) as SearchV2Response;
 
-  if (codeResults) {
-    const code = await codeResults;
-    if (code.length > 0) {
-      searchResponse.code = code;
+  if (developerResults) {
+    const developer = await developerResults;
+    if (developer.length > 0) {
+      searchResponse.developer = developer;
     }
   }
 
@@ -145,7 +145,7 @@ export async function executeSearch(
       ...(searchResponse.web ?? []).map(x => x.url),
       ...(searchResponse.news ?? []).map(x => x.url),
       ...(searchResponse.images ?? []).map(x => x.url),
-      ...(searchResponse.code ?? []).map(x => x.url),
+      ...(searchResponse.developer ?? []).map(x => x.url),
     ].filter((x): x is string => !!x);
 
     if (urlsToCheck.length > 0) {
@@ -171,8 +171,10 @@ export async function executeSearch(
           isAllowed(x.url),
         );
       }
-      if (searchResponse.code) {
-        searchResponse.code = searchResponse.code.filter(x => isAllowed(x.url));
+      if (searchResponse.developer) {
+        searchResponse.developer = searchResponse.developer.filter(x =>
+          isAllowed(x.url),
+        );
       }
     }
   }
@@ -216,8 +218,8 @@ export async function executeSearch(
     totalResultsCount += searchResponse.news.length;
   }
 
-  if (searchResponse.code && searchResponse.code.length > 0) {
-    totalResultsCount += searchResponse.code.length;
+  if (searchResponse.developer && searchResponse.developer.length > 0) {
+    totalResultsCount += searchResponse.developer.length;
   }
 
   const isZDR = options.enterprise?.includes("zdr");

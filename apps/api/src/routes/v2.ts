@@ -80,7 +80,7 @@ import {
 } from "../controllers/v2/team-siem-logging";
 import { supportProxyController } from "../controllers/v2/support-proxy";
 import {
-  createCodeRouter,
+  createDeveloperRouter,
   createResearchRouter,
 } from "../controllers/v2/research-proxy";
 import {
@@ -647,14 +647,14 @@ if (config.RESEARCH_PROXY_URL) {
   );
 
   v2Router.use(
-    "/search/code",
-    authMiddleware(RateLimiterMode.CodeSearch, { allowKeyless: true }),
-    createCodeRouter(),
+    "/search/developer",
+    authMiddleware(RateLimiterMode.DeveloperSearch, { allowKeyless: true }),
+    createDeveloperRouter(),
   );
 
   v2Router.use(
-    "/code",
-    authMiddleware(RateLimiterMode.CodeSearch),
-    createCodeRouter(),
+    "/developer",
+    authMiddleware(RateLimiterMode.DeveloperSearch),
+    createDeveloperRouter(),
   );
 }

@@ -35,7 +35,7 @@ import {
   checkKeyFormatRestriction,
   formatTypesOf,
 } from "../../lib/key-restriction";
-import { wantsCodeCategory } from "../../search/code";
+import { wantsDeveloperCategory } from "../../search/developer";
 
 export async function searchController(
   req: RequestWithAuth<{}, SearchResponse, SearchRequest>,
@@ -87,16 +87,16 @@ export async function searchController(
       });
     }
 
-    if (wantsCodeCategory(req.body.categories as CategoryOption[])) {
-      const codeRestriction = await checkKeyEndpointRestriction(
-        "/v2/code/search",
+    if (wantsDeveloperCategory(req.body.categories as CategoryOption[])) {
+      const developerRestriction = await checkKeyEndpointRestriction(
+        "/v2/developer/search",
         req.acuc?.api_key_id,
         req.acuc?.flags ?? null,
       );
-      if (!codeRestriction.allowed) {
-        return res.status(codeRestriction.status).json({
+      if (!developerRestriction.allowed) {
+        return res.status(developerRestriction.status).json({
           success: false,
-          error: codeRestriction.error,
+          error: developerRestriction.error,
         });
       }
     }

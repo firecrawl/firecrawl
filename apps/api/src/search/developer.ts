@@ -3,17 +3,17 @@ import type { WebSearchResult } from "../lib/entities";
 import { fetchResearchUpstream } from "../lib/research-upstream";
 import type { CategoryOption } from "../lib/search-query-builder";
 
-const CODE_QUERY_KEYS = ["query", "k"];
+const DEVELOPER_QUERY_KEYS = ["query", "k"];
 
-export function wantsCodeCategory(categories?: CategoryOption[]): boolean {
+export function wantsDeveloperCategory(categories?: CategoryOption[]): boolean {
   return (categories ?? []).some(category =>
     typeof category === "string"
-      ? category === "code"
-      : category.type === "code",
+      ? category === "developer"
+      : category.type === "developer",
   );
 }
 
-export async function searchCodeCategory(
+export async function searchDeveloperCategory(
   options: { query: string; limit: number; teamId: string; timeout: number },
   logger: Logger,
 ): Promise<WebSearchResult[]> {
@@ -21,7 +21,7 @@ export async function searchCodeCategory(
     const upstream = await fetchResearchUpstream({
       path: "/v2/code/search",
       params: { query: options.query, k: options.limit },
-      queryKeys: CODE_QUERY_KEYS,
+      queryKeys: DEVELOPER_QUERY_KEYS,
       headers: { "firecrawl-team-id": options.teamId },
       timeoutMs: options.timeout,
     });
@@ -30,7 +30,7 @@ export async function searchCodeCategory(
     }
     if (!upstream.ok) {
       await upstream.body?.cancel().catch(() => {});
-      logger.warn("Code category upstream failed", {
+      logger.warn("Developer category upstream failed", {
         status: upstream.status,
       });
       return [];
@@ -48,11 +48,11 @@ export async function searchCodeCategory(
             ? result.passages[0].text
             : "",
         position: index + 1,
-        category: "code",
+        category: "developer",
       }))
       .filter(result => result.url.length > 0);
   } catch (error) {
-    logger.warn("Code category upstream error", { error });
+    logger.warn("Developer category upstream error", { error });
     return [];
   }
 }

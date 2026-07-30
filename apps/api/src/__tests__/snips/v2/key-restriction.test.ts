@@ -138,10 +138,10 @@ describeIf(TEST_PRODUCTION)(
     );
 
     it.concurrent(
-      "gates the code search category on the research group",
+      "gates the developer search category on the research group",
       async () => {
         const identity = await idmux({
-          name: "key-restriction/code-category",
+          name: "key-restriction/developer-category",
           credits: 10000,
           flags: { keyRestriction: true },
         });
@@ -150,13 +150,13 @@ describeIf(TEST_PRODUCTION)(
         const plain = await searchRaw({ query: "retries" }, identity);
         expect(plain.statusCode).toBe(200);
 
-        const withCode = await searchRaw(
-          { query: "retries", categories: ["code"] },
+        const withDeveloper = await searchRaw(
+          { query: "retries", categories: ["developer"] },
           identity,
         );
-        expect(withCode.statusCode).toBe(403);
-        expect(withCode.body.success).toBe(false);
-        expect(withCode.body.error).toContain(
+        expect(withDeveloper.statusCode).toBe(403);
+        expect(withDeveloper.body.success).toBe(false);
+        expect(withDeveloper.body.error).toContain(
           "restricted to the following endpoints",
         );
       },

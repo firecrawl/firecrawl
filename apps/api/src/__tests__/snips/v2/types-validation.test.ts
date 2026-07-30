@@ -1025,23 +1025,23 @@ describe("V2 Types Validation", () => {
       ]);
     });
 
-    it("should accept the code category and reject code search params", () => {
+    it("should accept the developer category and reject its params", () => {
       expect(
-        searchRequestSchema.parse({ query: "test", categories: ["code"] })
+        searchRequestSchema.parse({ query: "test", categories: ["developer"] })
           .categories,
-      ).toEqual([{ type: "code" }]);
+      ).toEqual([{ type: "developer" }]);
 
       expect(
         searchRequestSchema.parse({
           query: "test",
-          categories: [{ type: "code" }],
+          categories: [{ type: "developer" }],
         }).categories,
-      ).toEqual([{ type: "code" }]);
+      ).toEqual([{ type: "developer" }]);
 
       expect(() =>
         searchRequestSchema.parse({
           query: "test",
-          categories: [{ type: "code", repos: ["firecrawl/firecrawl"] }],
+          categories: [{ type: "developer", repos: ["firecrawl/firecrawl"] }],
         }),
       ).toThrow();
     });

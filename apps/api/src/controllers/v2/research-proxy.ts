@@ -93,7 +93,7 @@ const booleanFlag = z
     value === undefined ? undefined : value === true || value === "true",
   );
 
-const codeSearchSchema = z.strictObject({
+const developerSearchSchema = z.strictObject({
   query: z.string().min(1),
   k: kSchema(100),
   types: multiString,
@@ -110,7 +110,7 @@ const codeSearchSchema = z.strictObject({
   ...commonQuery,
 });
 
-const CODE_SEARCH_QUERY_KEYS = [
+const DEVELOPER_SEARCH_QUERY_KEYS = [
   "query",
   "k",
   "types",
@@ -489,18 +489,22 @@ export function createResearchRouter(options: { legacy?: boolean } = {}) {
   return router;
 }
 
-export function createCodeRouter() {
+export function createDeveloperRouter() {
   const router = express.Router();
 
   const controller = wrap(
-    createResearchController(codeSearchSchema, CODE_SEARCH_QUERY_KEYS, {
-      kind: "code_search",
-      table: "code_searches",
-      action: "searchCode",
-      targetHint: params => String(params.query),
-      upstreamPath: () => "/v2/code/search",
-      billAs: "search",
-    }),
+    createResearchController(
+      developerSearchSchema,
+      DEVELOPER_SEARCH_QUERY_KEYS,
+      {
+        kind: "code_search",
+        table: "code_searches",
+        action: "searchDeveloper",
+        targetHint: params => String(params.query),
+        upstreamPath: () => "/v2/code/search",
+        billAs: "search",
+      },
+    ),
   );
 
   router.get("/search", controller);

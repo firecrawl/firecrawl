@@ -8,7 +8,7 @@ vi.mock("../config", () => ({
 }));
 
 import { fetch } from "undici";
-import { searchCodeCategory, wantsCodeCategory } from "./code";
+import { searchDeveloperCategory, wantsDeveloperCategory } from "./developer";
 
 const fetchMock = vi.mocked(fetch);
 
@@ -30,20 +30,20 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
-describe("wantsCodeCategory", () => {
+describe("wantsDeveloperCategory", () => {
   it("reads both the string form and the object form", () => {
-    expect(wantsCodeCategory(["code"])).toBe(true);
-    expect(wantsCodeCategory([{ type: "code" }])).toBe(true);
-    expect(wantsCodeCategory(["github", "research"])).toBe(false);
-    expect(wantsCodeCategory(undefined)).toBe(false);
+    expect(wantsDeveloperCategory(["developer"])).toBe(true);
+    expect(wantsDeveloperCategory([{ type: "developer" }])).toBe(true);
+    expect(wantsDeveloperCategory(["github", "research"])).toBe(false);
+    expect(wantsDeveloperCategory(undefined)).toBe(false);
   });
 });
 
-describe("searchCodeCategory", () => {
+describe("searchDeveloperCategory", () => {
   it("sends the query and the result count, and nothing else", async () => {
     fetchMock.mockResolvedValue(upstreamOk({ results: [] }));
 
-    await searchCodeCategory(
+    await searchDeveloperCategory(
       { query: '"exact phrase" retries', limit: 7, teamId: "t1", timeout: 500 },
       logger,
     );
@@ -72,7 +72,7 @@ describe("searchCodeCategory", () => {
       }),
     );
 
-    const results = await searchCodeCategory(
+    const results = await searchDeveloperCategory(
       { query: "retries", limit: 5, teamId: "t1", timeout: 500 },
       logger,
     );
@@ -83,7 +83,7 @@ describe("searchCodeCategory", () => {
         title: "https://github.com/a/b/issues/1",
         description: "first passage",
         position: 1,
-        category: "code",
+        category: "developer",
       },
     ]);
   });
@@ -97,7 +97,7 @@ describe("searchCodeCategory", () => {
     } as any);
 
     await expect(
-      searchCodeCategory(
+      searchDeveloperCategory(
         { query: "retries", limit: 5, teamId: "t1", timeout: 500 },
         logger,
       ),
@@ -109,7 +109,7 @@ describe("searchCodeCategory", () => {
     fetchMock.mockRejectedValue(new Error("connection reset"));
 
     await expect(
-      searchCodeCategory(
+      searchDeveloperCategory(
         { query: "retries", limit: 5, teamId: "t1", timeout: 500 },
         logger,
       ),
