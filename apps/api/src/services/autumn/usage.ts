@@ -1,21 +1,12 @@
-import { logger } from "../../lib/logger";
 import { eq, inArray } from "drizzle-orm";
 import { dbRr } from "../../db/connection";
 import * as schema from "../../db/schema";
-import { autumnClient } from "./client";
+import { autumnClient, autumnHistoricalClient } from "./client";
 import { CREDITS_FEATURE_ID } from "./autumn.service";
 
 export const TOKENS_PER_CREDIT = 15;
 const HISTORICAL_RANGE = "90d";
 const HISTORICAL_BIN_SIZE = "day";
-
-// The historical/analytics aggregations below are bucketed by day (and
-// optionally grouped by API key), so Autumn has to walk raw events and their
-// cost scales with the team's event volume. That routinely takes several
-// seconds. The Autumn client's global 2s timeout is sized for the
-// latency-sensitive balance checks on the request hot path, and it is far too
-// tight here, so these calls override it per call.
-const HISTORICAL_AGGREGATE_TIMEOUT_MS = 15000;
 
 // ---------------------------------------------------------------------------
 // Types
@@ -382,7 +373,7 @@ interface HistoricalPeriodByApiKey {
 export async function getTeamHistoricalUsage(
   teamId: string,
 ): Promise<HistoricalPeriod[]> {
-  if (!autumnClient) {
+  if (!autumnHistoricalClient) {
     throw new Error(
       "Autumn client is not configured (AUTUMN_SECRET_KEY missing)",
     );
@@ -392,16 +383,13 @@ export async function getTeamHistoricalUsage(
 
   let response: any;
   try {
-    response = await autumnClient.events.aggregate(
-      {
-        customerId: orgId,
-        entityId: teamId,
-        featureId: CREDITS_FEATURE_ID,
-        range: HISTORICAL_RANGE,
-        binSize: HISTORICAL_BIN_SIZE,
-      },
-      { timeoutMs: HISTORICAL_AGGREGATE_TIMEOUT_MS },
-    );
+    response = await autumnHistoricalClient.events.aggregate({
+      customerId: orgId,
+      entityId: teamId,
+      featureId: CREDITS_FEATURE_ID,
+      range: HISTORICAL_RANGE,
+      binSize: HISTORICAL_BIN_SIZE,
+    });
   } catch (err: any) {
     const status = err?.statusCode ?? err?.status ?? err?.response?.status;
     if (status !== 404) throw err;
@@ -421,7 +409,7 @@ export async function getTeamHistoricalUsage(
 export async function getTeamHistoricalUsageByApiKey(
   teamId: string,
 ): Promise<HistoricalPeriodByApiKey[]> {
-  if (!autumnClient) {
+  if (!autumnHistoricalClient) {
     throw new Error(
       "Autumn client is not configured (AUTUMN_SECRET_KEY missing)",
     );
@@ -431,17 +419,14 @@ export async function getTeamHistoricalUsageByApiKey(
 
   let response: any;
   try {
-    response = await autumnClient.events.aggregate(
-      {
-        customerId: orgId,
-        entityId: teamId,
-        featureId: CREDITS_FEATURE_ID,
-        range: HISTORICAL_RANGE,
-        binSize: HISTORICAL_BIN_SIZE,
-        groupBy: "properties.apiKeyId",
-      },
-      { timeoutMs: HISTORICAL_AGGREGATE_TIMEOUT_MS },
-    );
+    response = await autumnHistoricalClient.events.aggregate({
+      customerId: orgId,
+      entityId: teamId,
+      featureId: CREDITS_FEATURE_ID,
+      range: HISTORICAL_RANGE,
+      binSize: HISTORICAL_BIN_SIZE,
+      groupBy: "properties.apiKeyId",
+    });
   } catch (err: any) {
     const status = err?.statusCode ?? err?.status ?? err?.response?.status;
     if (status !== 404) throw err;
