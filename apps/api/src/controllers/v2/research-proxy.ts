@@ -501,9 +501,10 @@ export function createDeveloperRouter(options: { root?: boolean } = {}) {
   if (options.root) {
     router.get("/", controller);
     router.post("/", controller);
+  } else {
+    router.get("/search", controller);
+    router.post("/search", controller);
   }
-  router.get("/search", controller);
-  router.post("/search", controller);
 
   return router;
 }

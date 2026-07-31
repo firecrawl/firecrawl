@@ -10,7 +10,7 @@ const KEYLESS_ENABLED =
   process.env.KEYLESS_REQUESTS_PER_DAY !== undefined &&
   process.env.KEYLESS_CREDITS_PER_DAY !== undefined;
 
-const CANONICAL_PATH = "/v2/search/developer/search";
+const CANONICAL_PATH = "/v2/search/developer";
 const UPSTREAM_MIRROR_PATH = "/v2/developer/search";
 
 const COVERAGE_STATUSES = ["ok", "degraded", "unavailable", "skipped"];
