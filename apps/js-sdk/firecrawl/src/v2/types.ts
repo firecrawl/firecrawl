@@ -679,6 +679,16 @@ export interface ExchangeCall {
   idempotencyKey: string;
 }
 
+/** A discovered Exchange capability, shaped like a search result. */
+export interface ExchangeProviderResult {
+  url: string;
+  title: string;
+  description: string;
+  provider: string;
+  capability: string;
+  creditsPerCall?: number;
+}
+
 export interface ExchangeResultError {
   code: string;
   message: string;
@@ -702,7 +712,7 @@ export interface SearchData {
   news?: Array<SearchResultNews | Document>;
   images?: Array<SearchResultImages | Document>;
   developer?: Array<SearchResultWeb | Document>;
-  providers?: Array<SearchResultWeb | Document>;
+  providers?: ExchangeProviderResult[];
   exchange?: ExchangeResult[];
 }
 

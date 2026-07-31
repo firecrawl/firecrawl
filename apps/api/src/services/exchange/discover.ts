@@ -1,5 +1,5 @@
 import { config } from "../../config";
-import type { WebSearchResult } from "../../lib/entities";
+import type { ExchangeProviderResult } from "../../lib/entities";
 
 interface CapabilityMatch {
   capability: string;
@@ -27,7 +27,7 @@ export async function discoverExchangeCapabilities(input: {
   filters?: ExchangeDiscoveryFilters;
   limit: number;
   query: string;
-}): Promise<WebSearchResult[]> {
+}): Promise<ExchangeProviderResult[]> {
   if (!config.EXCHANGE_API_URL || !input.query.trim()) return [];
 
   const url = new URL("/v1/router", config.EXCHANGE_API_URL);
@@ -64,20 +64,19 @@ export async function discoverExchangeCapabilities(input: {
       url: `https://www.firecrawl.dev/exchange/${match.provider}`,
       title: `${match.providerName ?? match.provider} — ${match.name ?? match.capability}`,
       description: describe(match),
+      provider: match.provider,
+      capability: match.capability,
+      ...(typeof match.creditsPerCall === "number"
+        ? { creditsPerCall: match.creditsPerCall }
+        : {}),
     }));
 }
 
-/** States the keys a caller needs rather than pasting a snippet into prose. */
+/** The keys travel as structured fields, so prose carries only the human parts. */
 function describe(match: CapabilityMatch): string {
   const price =
     typeof match.creditsPerCall === "number"
       ? `${match.creditsPerCall} credits per call.`
       : undefined;
-  return [
-    match.summary?.trim(),
-    price,
-    `Run it with provider "${match.provider}" and capability "${match.capability}".`,
-  ]
-    .filter(Boolean)
-    .join(" ");
+  return [match.summary?.trim(), price].filter(Boolean).join(" ");
 }

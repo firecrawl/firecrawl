@@ -107,8 +107,9 @@ export async function search(
       out.images = transformArray<SearchResultImages>(data.images);
     if (data.developer)
       out.developer = transformArray<SearchResultWeb>(data.developer);
-    if (data.providers)
-      out.providers = transformArray<SearchResultWeb>(data.providers);
+    // Discovery results carry provider keys and a price, so they pass through
+    // rather than being reshaped as web results.
+    if (data.providers) out.providers = data.providers;
     if (data.exchange) out.exchange = data.exchange;
     Object.defineProperty(out, "data", {
       get() {

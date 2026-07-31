@@ -179,13 +179,23 @@ export interface ExchangeSearchResult {
   };
 }
 
+/**
+ * A discovered Exchange capability. Shaped like a search result so a caller
+ * reads it the same way, with the keys and price it needs to run it.
+ */
+export interface ExchangeProviderResult extends WebSearchResult {
+  capability: string;
+  creditsPerCall?: number;
+  provider: string;
+}
+
 export interface SearchV2Response {
   web?: WebSearchResult[];
   images?: ImageSearchResult[];
   news?: NewsSearchResult[];
   developer?: WebSearchResult[];
   /** Exchange capabilities matching the query, shaped like ordinary results. */
-  providers?: WebSearchResult[];
+  providers?: ExchangeProviderResult[];
   exchange?: ExchangeSearchResult[];
 }
 
