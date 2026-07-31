@@ -647,7 +647,22 @@ async function aggregateWindow(opts: {
     return response.list ?? [];
   } catch (err: any) {
     const status = err?.statusCode ?? err?.status ?? err?.response?.status;
-    if (status !== 404) throw err;
+    if (status !== 404) {
+      // Without this, an Autumn failure reaches the client as a bare exception
+      // ID with no way to tell which window, team or status was involved —
+      // which is why the original 500s on this endpoint went untriaged for two
+      // months. Adapted from #3592.
+      logger.error("Autumn events.aggregate failed for historical usage", {
+        teamId: opts.teamId,
+        orgId: opts.orgId,
+        grouped: opts.grouped,
+        windowStart: opts.start.toISOString(),
+        windowEnd: opts.end.toISOString(),
+        status,
+        error: err,
+      });
+      throw err;
+    }
     // Entity not found — the team has no usage of its own to report.
     return null;
   }
