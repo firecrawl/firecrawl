@@ -10,8 +10,9 @@ const KEYLESS_ENABLED =
   process.env.KEYLESS_REQUESTS_PER_DAY !== undefined &&
   process.env.KEYLESS_CREDITS_PER_DAY !== undefined;
 
-const CANONICAL_PATH = "/v2/search/developer";
-const UPSTREAM_MIRROR_PATH = "/v2/developer/search";
+const CANONICAL_PATH = "/v2/developer/search";
+const ALIAS_PATH = "/v2/search/developer";
+const SERVING_PATHS = [CANONICAL_PATH, ALIAS_PATH];
 
 const COVERAGE_STATUSES = ["ok", "degraded", "unavailable", "skipped"];
 
@@ -33,73 +34,60 @@ async function waitForSingleRow<T>(
 }
 
 describeIf(HAS_RESEARCH)("Developer Search API", () => {
-  it("serves developer search from the canonical mount", async () => {
-    const identity = await idmux({
-      name: "developer/canonical search",
-      credits: 100,
-    });
+  describe.each(SERVING_PATHS)("developer search on %s", path => {
+    it("serves developer search", async () => {
+      const identity = await idmux({
+        name: `developer/get ${path}`,
+        credits: 100,
+      });
 
-    const res = await researchRaw(
-      CANONICAL_PATH,
-      { query: "how do I configure retries", k: 3 },
-      identity,
-    );
+      const res = await researchRaw(
+        path,
+        { query: "how do I configure retries", k: 3 },
+        identity,
+      );
 
-    expect(res.statusCode).toBe(200);
-    expect(res.body.success).toBe(true);
-    expect(Array.isArray(res.body.results)).toBe(true);
-    for (const type of ["doc", "issue", "pull_request", "readme"]) {
-      expect(COVERAGE_STATUSES).toContain(res.body.coverage[type]);
-    }
-    expect(typeof res.body.reranked).toBe("boolean");
+      expect(res.statusCode).toBe(200);
+      expect(res.body.success).toBe(true);
+      expect(Array.isArray(res.body.results)).toBe(true);
+      for (const type of ["doc", "issue", "pull_request", "readme"]) {
+        expect(COVERAGE_STATUSES).toContain(res.body.coverage[type]);
+      }
+      expect(typeof res.body.reranked).toBe("boolean");
 
-    for (const result of res.body.results) {
-      expect(typeof result.id).toBe("string");
-      expect(typeof result.url).toBe("string");
-      expect(["doc", "issue", "pull_request", "readme"]).toContain(result.type);
-      expect(Array.isArray(result.passages)).toBe(true);
-      expect(result.license).toBeUndefined();
-    }
-  }, 120000);
+      for (const result of res.body.results) {
+        expect(typeof result.id).toBe("string");
+        expect(typeof result.url).toBe("string");
+        expect(["doc", "issue", "pull_request", "readme"]).toContain(
+          result.type,
+        );
+        expect(Array.isArray(result.passages)).toBe(true);
+        expect(result.license).toBeUndefined();
+      }
+    }, 120000);
 
-  it("serves the same search from a POST body", async () => {
-    const identity = await idmux({
-      name: "developer/post body",
-      credits: 100,
-    });
+    it("serves the same search from a POST body", async () => {
+      const identity = await idmux({
+        name: `developer/post ${path}`,
+        credits: 100,
+      });
 
-    const res = await researchPostRaw(
-      CANONICAL_PATH,
-      { query: "graceful shutdown", k: 2, types: ["issue", "readme"] },
-      identity,
-    );
+      const res = await researchPostRaw(
+        path,
+        { query: "graceful shutdown", k: 2, types: ["issue", "readme"] },
+        identity,
+      );
 
-    expect(res.statusCode).toBe(200);
-    expect(res.body.success).toBe(true);
-    expect(Array.isArray(res.body.results)).toBe(true);
-    for (const result of res.body.results) {
-      expect(["issue", "readme"]).toContain(result.type);
-    }
-    expect(res.body.coverage.doc).toBe("skipped");
-    expect(res.body.coverage.pull_request).toBe("skipped");
-  }, 120000);
-
-  it("serves developer search from the upstream-mirror mount", async () => {
-    const identity = await idmux({
-      name: "developer/mirror mount",
-      credits: 100,
-    });
-
-    const res = await researchRaw(
-      UPSTREAM_MIRROR_PATH,
-      { query: "connection pool sizing", k: 1 },
-      identity,
-    );
-
-    expect(res.statusCode).toBe(200);
-    expect(res.body.success).toBe(true);
-    expect(Array.isArray(res.body.results)).toBe(true);
-  }, 120000);
+      expect(res.statusCode).toBe(200);
+      expect(res.body.success).toBe(true);
+      expect(Array.isArray(res.body.results)).toBe(true);
+      for (const result of res.body.results) {
+        expect(["issue", "readme"]).toContain(result.type);
+      }
+      expect(res.body.coverage.doc).toBe("skipped");
+      expect(res.body.coverage.pull_request).toBe("skipped");
+    }, 120000);
+  });
 
   it("keeps the upstream casing on repo enrollment status", async () => {
     const identity = await idmux({
@@ -226,8 +214,8 @@ describeIf(HAS_RESEARCH)("Developer Search API", () => {
   }, 120000);
 
   describeIf(KEYLESS_ENABLED)("keyless developer search", () => {
-    it("permits keyless access on the canonical mount", async () => {
-      const res = await researchRaw(CANONICAL_PATH, {
+    it("permits keyless access on the alias mount", async () => {
+      const res = await researchRaw(ALIAS_PATH, {
         query: "retry backoff",
         k: 1,
       });
@@ -237,8 +225,8 @@ describeIf(HAS_RESEARCH)("Developer Search API", () => {
       expect(Array.isArray(res.body.results)).toBe(true);
     }, 120000);
 
-    it("refuses keyless access on the upstream-mirror mount", async () => {
-      const res = await researchRaw(UPSTREAM_MIRROR_PATH, {
+    it("refuses keyless access on the canonical mount", async () => {
+      const res = await researchRaw(CANONICAL_PATH, {
         query: "retry backoff",
         k: 1,
       });
