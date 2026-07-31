@@ -857,6 +857,7 @@ print_r($results);
 - [Firecrawl CLI Skills](https://github.com/firecrawl/cli#agent-skills)
 - [Firecrawl Workflows](https://github.com/firecrawl/firecrawl-workflows)
 - [Firecrawl MCP](https://github.com/mendableai/firecrawl-mcp-server)
+- [AdaL](https://github.com/SylphAI-Inc/adal)
 
 **Platforms**
 - [Lovable](https://docs.lovable.dev/integrations/firecrawl)
