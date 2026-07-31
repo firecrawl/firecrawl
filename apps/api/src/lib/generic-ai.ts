@@ -16,6 +16,7 @@ type Provider =
   | "groq"
   | "google"
   | "openrouter"
+  | "orcarouter"
   | "fireworks"
   | "deepinfra"
   | "vertex";
@@ -35,6 +36,12 @@ const providerList: Record<Provider, any> = {
   openrouter: createOpenRouter({
     apiKey: config.OPENROUTER_API_KEY,
   }),
+  // OrcaRouter is an OpenAI-compatible routing gateway, so reuse createOpenAI
+  // pointed at its base URL (same shape as the `openai` provider).
+  orcarouter: createOpenAI({
+    apiKey: config.ORCAROUTER_API_KEY,
+    baseURL: "https://api.orcarouter.ai/v1",
+  }), //ORCAROUTER_API_KEY
   fireworks, //FIREWORKS_API_KEY
   deepinfra, //DEEPINFRA_API_KEY
   vertex: createVertex({
