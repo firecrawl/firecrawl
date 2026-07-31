@@ -115,8 +115,17 @@ function normalizeId(id: string, baseUrl: string): string {
   }
 }
 
-function hasImageUrl(obj: Record<string, unknown>): boolean {
-  return typeof obj.contentUrl === "string" || typeof obj.url === "string";
+// Uses the same validation as dereferencing: a definition whose URLs are
+// unusable (empty, ipfs://, malformed) must not win the index slot over a
+// later definition that dereferencing could actually use.
+function hasUsableImageUrl(
+  obj: Record<string, unknown>,
+  baseUrl: string,
+): boolean {
+  return (
+    validateUrl(obj.contentUrl, baseUrl) !== null ||
+    validateUrl(obj.url, baseUrl) !== null
+  );
 }
 
 function collectIds(
@@ -139,7 +148,10 @@ function collectIds(
   if (typeof id === "string" && id.trim() && Object.keys(obj).length > 1) {
     const key = normalizeId(id, baseUrl);
     const existing = idMap.get(key);
-    if (!existing || (!hasImageUrl(existing) && hasImageUrl(obj))) {
+    if (
+      !existing ||
+      (!hasUsableImageUrl(existing, baseUrl) && hasUsableImageUrl(obj, baseUrl))
+    ) {
       idMap.set(key, obj);
     }
   }

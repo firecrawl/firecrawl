@@ -337,6 +337,31 @@ describe("findDeclaredJsonLdLogo", () => {
     ).toBe("https://site.com/full-logo.png");
   });
 
+  it("split definition with unusable URLs does not shadow a usable one", () => {
+    expect(
+      findDeclaredJsonLdLogo(
+        docWith({
+          "@graph": [
+            {
+              "@type": "Organization",
+              logo: { "@id": "https://site.com/#logo" },
+            },
+            {
+              "@type": "ImageObject",
+              "@id": "https://site.com/#logo",
+              contentUrl: "ipfs://Qm123",
+            },
+            {
+              "@type": "ImageObject",
+              "@id": "https://site.com/#logo",
+              contentUrl: "https://site.com/usable-logo.png",
+            },
+          ],
+        }),
+      ),
+    ).toBe("https://site.com/usable-logo.png");
+  });
+
   it("matches relative and absolute @id spellings", () => {
     const abs = new URL("/#logo-rel", document.location.href).href;
     expect(
