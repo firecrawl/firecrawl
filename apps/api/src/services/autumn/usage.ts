@@ -113,7 +113,7 @@ async function lookupApiKeyNames(
   for (const id of apiKeyIds) {
     if (nameMap[id]) continue;
     nameMap[id] =
-      id === AUTUMN_OVERFLOW_GROUP ? AUTUMN_OVERFLOW_GROUP : "Unknown";
+      id === AUTUMN_OVERFLOW_GROUP ? "Other (unattributed)" : "Unknown";
   }
 
   return nameMap;
