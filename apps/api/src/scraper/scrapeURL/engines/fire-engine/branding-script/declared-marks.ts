@@ -74,8 +74,15 @@ function resolveLogoUrl(
     // names a node, never an image, so it's only usable via dereference.
     const id = img["@id"];
     if (typeof id === "string" && id.trim()) {
-      const referenced = idMap.get(id);
-      if (referenced && referenced !== logo) {
+      const referenced = idMap.get(normalizeId(id, baseUrl));
+      // The referenced node must itself pass the wrong-entity filter — a
+      // logo reference into e.g. a Brand node must not leak that entity's
+      // URL past the type check.
+      if (
+        referenced &&
+        referenced !== logo &&
+        typeAllowsSiteLogo(referenced["@type"])
+      ) {
         const deref =
           validateUrl(referenced.contentUrl, baseUrl) ??
           validateUrl(referenced.url, baseUrl);
@@ -91,31 +98,53 @@ function resolveLogoUrl(
 
 // JSON-LD keyword properties must not be walked for entity content:
 // an inline @context can define a "logo" *term* (e.g. mapping to
-// https://schema.org/logo) which is vocabulary, not data.
+// https://schema.org/logo) which is vocabulary, not data. @graph and
+// @included are the keywords that legitimately contain node objects.
 function isWalkableKey(key: string): boolean {
-  return !key.startsWith("@") || key === "@graph";
+  return !key.startsWith("@") || key === "@graph" || key === "@included";
 }
 
-function collectIds(node: unknown, depth: number, idMap: IdMap): void {
+// Reference and definition may spell the same @id differently (relative
+// "/#logo" vs absolute "https://site.com/#logo") — index and look up by the
+// resolved form.
+function normalizeId(id: string, baseUrl: string): string {
+  try {
+    return new URL(id, baseUrl).href;
+  } catch (_) {
+    return id;
+  }
+}
+
+function hasImageUrl(obj: Record<string, unknown>): boolean {
+  return typeof obj.contentUrl === "string" || typeof obj.url === "string";
+}
+
+function collectIds(
+  node: unknown,
+  depth: number,
+  idMap: IdMap,
+  baseUrl: string,
+): void {
   if (!node || typeof node !== "object" || depth > 6) return;
   if (Array.isArray(node)) {
-    for (const item of node) collectIds(item, depth + 1, idMap);
+    for (const item of node) collectIds(item, depth + 1, idMap, baseUrl);
     return;
   }
   const obj = node as Record<string, unknown>;
   const id = obj["@id"];
   // Register only node *definitions* — a bare {"@id": ...} is a reference
-  // stub, and indexing it would shadow the real node it points to.
-  if (
-    typeof id === "string" &&
-    id.trim() &&
-    Object.keys(obj).length > 1 &&
-    !idMap.has(id)
-  ) {
-    idMap.set(id, obj);
+  // stub, and indexing it would shadow the real node it points to. When the
+  // same @id is defined more than once (split definitions), prefer the one
+  // that actually carries an image URL.
+  if (typeof id === "string" && id.trim() && Object.keys(obj).length > 1) {
+    const key = normalizeId(id, baseUrl);
+    const existing = idMap.get(key);
+    if (!existing || (!hasImageUrl(existing) && hasImageUrl(obj))) {
+      idMap.set(key, obj);
+    }
   }
   for (const [k, v] of Object.entries(obj)) {
-    if (isWalkableKey(k)) collectIds(v, depth + 1, idMap);
+    if (isWalkableKey(k)) collectIds(v, depth + 1, idMap, baseUrl);
   }
 }
 
@@ -168,7 +197,7 @@ export function findDeclaredJsonLdLogo(doc: Document): string | null {
   // Pass 1: index @id → node across every block, so references resolve even
   // when the ImageObject lives in a different script tag than the Organization.
   const idMap: IdMap = new Map();
-  for (const root of roots) collectIds(root, 0, idMap);
+  for (const root of roots) collectIds(root, 0, idMap, baseUrl);
   // Pass 2: find the first usable declared logo.
   for (const root of roots) {
     const r = findLogo(root, 0, baseUrl, idMap);

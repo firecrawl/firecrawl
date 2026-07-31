@@ -283,6 +283,78 @@ describe("findDeclaredJsonLdLogo", () => {
     ).toBe("https://site.com/assets/logo.png");
   });
 
+  it("walks @included blocks", () => {
+    expect(
+      findDeclaredJsonLdLogo(
+        docWith({
+          "@type": "WebPage",
+          "@included": [
+            { "@type": "Organization", logo: "https://x.com/inc-logo.png" },
+          ],
+        }),
+      ),
+    ).toBe("https://x.com/inc-logo.png");
+  });
+
+  it("does not dereference into denied entities", () => {
+    expect(
+      findDeclaredJsonLdLogo(
+        docWith({
+          "@graph": [
+            {
+              "@type": "Organization",
+              logo: { "@id": "https://site.com/#brandnode" },
+            },
+            {
+              "@type": "Brand",
+              "@id": "https://site.com/#brandnode",
+              url: "https://nike.com/swoosh.png",
+            },
+          ],
+        }),
+      ),
+    ).toBeNull();
+  });
+
+  it("prefers the @id definition carrying an image URL (split definitions)", () => {
+    expect(
+      findDeclaredJsonLdLogo(
+        docWith({
+          "@graph": [
+            {
+              "@type": "Organization",
+              logo: { "@id": "https://site.com/#logo" },
+            },
+            { "@id": "https://site.com/#logo", caption: "Logo" },
+            {
+              "@type": "ImageObject",
+              "@id": "https://site.com/#logo",
+              contentUrl: "https://site.com/full-logo.png",
+            },
+          ],
+        }),
+      ),
+    ).toBe("https://site.com/full-logo.png");
+  });
+
+  it("matches relative and absolute @id spellings", () => {
+    const abs = new URL("/#logo-rel", document.location.href).href;
+    expect(
+      findDeclaredJsonLdLogo(
+        docWith({
+          "@graph": [
+            { "@type": "Organization", logo: { "@id": "/#logo-rel" } },
+            {
+              "@type": "ImageObject",
+              "@id": abs,
+              contentUrl: "https://site.com/rel-logo.png",
+            },
+          ],
+        }),
+      ),
+    ).toBe("https://site.com/rel-logo.png");
+  });
+
   it("ignores malformed JSON and non-http schemes", () => {
     document.head.innerHTML =
       '<script type="application/ld+json">{broken</script>' +
