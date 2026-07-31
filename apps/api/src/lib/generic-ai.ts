@@ -18,7 +18,8 @@ type Provider =
   | "openrouter"
   | "fireworks"
   | "deepinfra"
-  | "vertex";
+  | "vertex"
+  | "novita";
 const defaultProvider: Provider = config.OLLAMA_BASE_URL ? "ollama" : "openai";
 
 const providerList: Record<Provider, any> = {
@@ -37,6 +38,10 @@ const providerList: Record<Provider, any> = {
   }),
   fireworks, //FIREWORKS_API_KEY
   deepinfra, //DEEPINFRA_API_KEY
+  novita: createOpenAI({
+    apiKey: config.NOVITA_API_KEY,
+    baseURL: "https://api.novita.ai/v3/openai",
+  }), //NOVITA_API_KEY
   vertex: createVertex({
     project: "firecrawl",
     //https://github.com/vercel/ai/issues/6644 bug
