@@ -9,19 +9,29 @@ import { CREDITS_FEATURE_ID } from "./autumn.service";
 export const TOKENS_PER_CREDIT = 15;
 const HISTORICAL_BIN_SIZE = "day";
 
-// How many calendar months of history the endpoints report, including the
-// current (open) one. Replaces the previous rolling `range: "90d"` window,
-// which had two problems: the oldest month was silently truncated (a 90d
-// window opened mid-month, so e.g. May reported May 2 onward while still
-// being labelled as all of May), and a window that shifts every day makes
-// every month look mutable, which defeats caching.
-const HISTORICAL_MONTHS = 3;
+// The reported window starts at the beginning of the calendar month containing
+// (now - HISTORICAL_MIN_DAYS), so it always covers at least as much history as
+// the previous rolling `range: "90d"` did, and never less on the 1st of a
+// month. Snapping to a month boundary is what makes the rollup cacheable: a
+// window that shifts every day makes every month look mutable. It also fixes
+// under-reporting at the old window's edge, where a 90d span opened mid-month
+// (e.g. May counted from May 2) but was still labelled as the whole month.
+const HISTORICAL_MIN_DAYS = 90;
 
 // Autumn caps the number of distinct `groupBy` values per bin and buckets the
-// rest into "Other" (default 9). Teams routinely have more API keys than that,
-// and with per-day bins the top-9 differs day to day, so the default silently
-// scrambles per-key monthly totals. Ask for a ceiling no real team reaches.
+// rest into an overflow group (default 9). Teams routinely have more API keys
+// than that, and with per-day bins the top-9 differs day to day, so the default
+// silently scrambles per-key monthly totals. Ask for a ceiling no real team
+// reaches.
 const HISTORICAL_MAX_GROUPS = 250;
+
+// Autumn's label for the bucket holding every group beyond `maxGroups`. Its
+// credits are real but can no longer be attributed to individual keys, so it is
+// surfaced under its own name rather than folded into "Unknown" (which means
+// "this ID did not resolve to a key") — those are different facts and a caller
+// reconciling per-key totals needs to tell them apart. API key IDs are numeric,
+// so this can never collide with a real one.
+const AUTUMN_OVERFLOW_GROUP = "Other";
 
 // Bump when the cached payload shape changes, so old entries are ignored
 // rather than misread.
@@ -85,7 +95,9 @@ async function lookupApiKeyNames(
     .map(id => Number(id))
     .filter(n => Number.isInteger(n) && n > 0);
 
-  const nameMap: Record<string, string> = {};
+  // Prototype-free: group values come from Autumn, so an id like "constructor"
+  // must not resolve to an inherited property instead of a name.
+  const nameMap: Record<string, string> = Object.create(null);
 
   if (numericIds.length > 0) {
     const rows = await dbRr
@@ -99,7 +111,9 @@ async function lookupApiKeyNames(
   }
 
   for (const id of apiKeyIds) {
-    if (!nameMap[id]) nameMap[id] = "Unknown";
+    if (nameMap[id]) continue;
+    nameMap[id] =
+      id === AUTUMN_OVERFLOW_GROUP ? AUTUMN_OVERFLOW_GROUP : "Unknown";
   }
 
   return nameMap;
@@ -496,7 +510,7 @@ function sliceKey(teamId: string, grouped: boolean, suffix: string): string {
  *   - today so far — the only window re-queried during the day
  *
  * So the steady-state request scans a single day of events rather than ~90
- * days, and a fully cold cache costs HISTORICAL_MONTHS + 1 parallel queries.
+ * days, and a fully cold cache costs one parallel query per window.
  */
 function buildRollupSlices(
   teamId: string,
@@ -507,14 +521,23 @@ function buildRollupSlices(
   const todayStart = startOfDayUtc(now);
   const slices: RollupSlice[] = [];
 
-  for (let back = HISTORICAL_MONTHS - 1; back >= 1; back--) {
-    const start = addMonthsUtc(currentMonthStart, -back);
-    const end = addMonthsUtc(start, 1);
+  // Start at the month containing the oldest day the endpoint must still cover,
+  // so the reported span is never shorter than HISTORICAL_MIN_DAYS — including
+  // on the 1st of a month, when a fixed month count would fall short.
+  const oldestRequiredDay = new Date(
+    now.getTime() - HISTORICAL_MIN_DAYS * 24 * 60 * 60 * 1000,
+  );
+
+  for (
+    let start = startOfMonthUtc(oldestRequiredDay);
+    start.getTime() < currentMonthStart.getTime();
+    start = addMonthsUtc(start, 1)
+  ) {
     slices.push({
       key: sliceKey(teamId, grouped, `m:${isoMonth(start)}`),
       ttlSeconds: CLOSED_MONTHS_MAX_TTL_SECONDS,
       start,
-      end,
+      end: addMonthsUtc(start, 1),
     });
   }
 

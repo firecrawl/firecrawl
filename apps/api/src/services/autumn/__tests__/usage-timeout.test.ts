@@ -57,9 +57,16 @@ import { autumnClient } from "../client";
 
 const realFetch = globalThis.fetch;
 
-/** Answers after RESPONSE_DELAY_MS, honouring whatever signal the SDK attached. */
-function slowFetch(input: any): Promise<Response> {
-  const signal: AbortSignal | undefined = input?.signal;
+/**
+ * Answers after RESPONSE_DELAY_MS, honouring whatever signal the SDK attached.
+ *
+ * The SDK currently calls `fetch(request)` with the signal on the Request, but
+ * read it from the init argument too: if that ever changes, this stub must
+ * still abort, or the timeout tests below would pass for the wrong reason (the
+ * response arriving rather than the budget expiring).
+ */
+function slowFetch(input: any, init?: any): Promise<Response> {
+  const signal: AbortSignal | undefined = input?.signal ?? init?.signal;
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => {
       resolve(
@@ -80,6 +87,28 @@ function slowFetch(input: any): Promise<Response> {
 beforeEach(() => {
   globalThis.fetch = slowFetch as unknown as typeof fetch;
 });
+
+it("the stub actually sees the SDK's abort signal", async () => {
+  // Guards the two timeout tests: if the stub could not observe a signal, they
+  // would pass because the response arrived, not because the budget expired.
+  let sawSignal = false;
+  globalThis.fetch = ((input: any, init?: any) => {
+    sawSignal = Boolean(input?.signal ?? init?.signal);
+    return slowFetch(input, init);
+  }) as unknown as typeof fetch;
+
+  await expect(
+    autumnClient!.events.aggregate({
+      customerId: "org-1",
+      entityId: "team-1",
+      featureId: "CREDITS",
+      binSize: "day",
+      customRange: { start: 0, end: 1 },
+    }),
+  ).rejects.toThrow();
+
+  expect(sawSignal).toBe(true);
+}, 20000);
 
 afterAll(() => {
   globalThis.fetch = realFetch;

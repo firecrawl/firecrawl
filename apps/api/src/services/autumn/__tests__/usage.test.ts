@@ -84,13 +84,13 @@ import {
   getTeamHistoricalUsageByApiKey,
 } from "../usage";
 
-// Fixed clock so the calendar-month windows the rollup derives are
-// deterministic. With HISTORICAL_MONTHS = 3 this makes the reported window
-// [2026-05-01, 2026-07-20) and the current-month boundary 2026-07-01.
+// Fixed clock so the windows the rollup derives are deterministic. 90 days
+// before 2026-07-20 is 2026-04-21, so the window snaps back to 2026-04-01 and
+// the current-month boundary is 2026-07-01.
 const NOW = new Date("2026-07-20T12:00:00.000Z");
 const CURRENT_MONTH_START = Date.parse("2026-07-01T00:00:00.000Z");
 const TODAY_START = Date.parse("2026-07-20T00:00:00.000Z");
-const WINDOW_START = Date.parse("2026-05-01T00:00:00.000Z");
+const WINDOW_START = Date.parse("2026-04-01T00:00:00.000Z");
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -820,14 +820,18 @@ describe("historical usage rollup windows", () => {
 
     await getTeamHistoricalUsage("team-1");
 
-    // 2 closed months + month-to-date + today
-    expect(mockAggregate).toHaveBeenCalledTimes(4);
+    // 3 closed months (Apr, May, Jun) + month-to-date + today
+    expect(mockAggregate).toHaveBeenCalledTimes(5);
     const ranges = mockAggregate.mock.calls.map(
       ([args]: any[]) => args.customRange,
     );
     expect(ranges).toEqual(
       expect.arrayContaining([
-        { start: WINDOW_START, end: Date.parse("2026-06-01T00:00:00.000Z") },
+        { start: WINDOW_START, end: Date.parse("2026-05-01T00:00:00.000Z") },
+        {
+          start: Date.parse("2026-05-01T00:00:00.000Z"),
+          end: Date.parse("2026-06-01T00:00:00.000Z"),
+        },
         {
           start: Date.parse("2026-06-01T00:00:00.000Z"),
           end: CURRENT_MONTH_START,
@@ -932,6 +936,30 @@ describe("historical usage rollup windows", () => {
     );
     await expect(getTeamHistoricalUsage("team-1")).rejects.toThrow("boom");
   });
+
+  // Snapping the window to a month boundary must never report LESS history than
+  // the rolling 90d window it replaced. The 1st of a month is the tight case: a
+  // fixed count of calendar months would fall short there.
+  it.each([
+    "2026-01-01T00:00:00.000Z",
+    "2026-03-01T00:00:00.000Z",
+    "2026-05-01T00:00:00.000Z",
+    "2026-07-01T00:00:00.000Z",
+    "2026-07-15T12:00:00.000Z",
+    "2027-03-01T00:00:00.000Z",
+  ])("covers at least 90 days when now is %s", async iso => {
+    vi.setSystemTime(new Date(iso));
+    serveBins([]);
+
+    await getTeamHistoricalUsage("team-1");
+
+    const starts = mockAggregate.mock.calls.map(
+      ([args]: any[]) => args.customRange.start,
+    );
+    const earliest = Math.min(...starts);
+    const daysCovered = (Date.parse(iso) - earliest) / (24 * 60 * 60 * 1000);
+    expect(daysCovered).toBeGreaterThanOrEqual(90);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -952,12 +980,12 @@ describe("historical usage rollup caching", () => {
     ]);
 
     const first = await getTeamHistoricalUsage("team-1");
-    expect(mockAggregate).toHaveBeenCalledTimes(4);
+    expect(mockAggregate).toHaveBeenCalledTimes(5);
 
     const second = await getTeamHistoricalUsage("team-1");
     expect(second).toEqual(first);
     // No further Autumn work for the second request.
-    expect(mockAggregate).toHaveBeenCalledTimes(4);
+    expect(mockAggregate).toHaveBeenCalledTimes(5);
   });
 
   // Closed months can never change, so they are cached until the month rolls
@@ -972,6 +1000,7 @@ describe("historical usage rollup caching", () => {
     const keys = redisSets.map(s => s.key);
     expect(keys).toEqual(
       expect.arrayContaining([
+        expect.stringContaining(":m:2026-04"),
         expect.stringContaining(":m:2026-05"),
         expect.stringContaining(":m:2026-06"),
         expect.stringContaining(":mtd:2026-07:2026-07-20"),
@@ -981,7 +1010,7 @@ describe("historical usage rollup caching", () => {
 
     // Only today is short-lived; the immutable windows are held much longer.
     const today = redisSets.find(s => s.key.includes(":d:2026-07-20"))!;
-    const closedMonth = redisSets.find(s => s.key.includes(":m:2026-05"))!;
+    const closedMonth = redisSets.find(s => s.key.includes(":m:2026-04"))!;
     expect(today.ttl).toBe(60);
     expect(closedMonth.ttl).toBeGreaterThan(today.ttl!);
   });
@@ -1049,8 +1078,8 @@ describe("historical usage rollup caching", () => {
 
     expect(b).toEqual(a);
     expect(c).toEqual(a);
-    // One call per window, not one per request (3 requests × 4 windows = 12).
-    expect(mockAggregate).toHaveBeenCalledTimes(4);
+    // One call per window, not one per request (3 requests × 5 windows = 15).
+    expect(mockAggregate).toHaveBeenCalledTimes(5);
   });
 
   it("still answers when the cache is unavailable", async () => {
@@ -1128,7 +1157,7 @@ describe("getTeamHistoricalUsageByApiKey", () => {
 
     await getTeamHistoricalUsageByApiKey("team-1");
 
-    expect(mockAggregate).toHaveBeenCalledTimes(4);
+    expect(mockAggregate).toHaveBeenCalledTimes(5);
     for (const [args] of mockAggregate.mock.calls as any[][]) {
       expect(args.groupBy).toBe("properties.apiKeyId");
       expect(args.maxGroups).toBeGreaterThanOrEqual(100);
@@ -1143,6 +1172,48 @@ describe("getTeamHistoricalUsageByApiKey", () => {
     for (const [args] of mockAggregate.mock.calls as any[][]) {
       expect(args.groupBy).toBeUndefined();
       expect(args.maxGroups).toBeUndefined();
+    }
+  });
+
+  // Beyond maxGroups Autumn bundles the remainder into an "Other" group. Those
+  // credits are real but unattributable, which is a different fact from "this ID
+  // did not resolve to a key" — a caller reconciling per-key totals must be able
+  // to tell them apart, so "Other" is not folded into "Unknown".
+  it("surfaces Autumn's overflow group separately from unresolvable IDs", async () => {
+    apiKeysData = [{ id: 101, name: "Default" }];
+
+    serveBins([
+      {
+        period: Date.parse("2026-07-15T00:00:00.000Z"),
+        grouped_values: {
+          CREDITS: { "101": 5, Other: 40, "99999999": 2 },
+        },
+      },
+    ]);
+
+    await expect(getTeamHistoricalUsageByApiKey("team-1")).resolves.toEqual([
+      expect.objectContaining({ apiKey: "Default", creditsUsed: 5 }),
+      expect.objectContaining({ apiKey: "Other", creditsUsed: 40 }),
+      expect.objectContaining({ apiKey: "Unknown", creditsUsed: 2 }),
+    ]);
+  });
+
+  // Group values come from Autumn, so an inherited property name must not leak
+  // through as a "resolved" key name.
+  it("does not resolve prototype property names as API key names", async () => {
+    apiKeysData = [];
+
+    serveBins([
+      {
+        period: Date.parse("2026-07-15T00:00:00.000Z"),
+        grouped_values: { CREDITS: { constructor: 3, __proto__: 4 } },
+      },
+    ]);
+
+    const periods = await getTeamHistoricalUsageByApiKey("team-1");
+    for (const period of periods) {
+      expect(typeof period.apiKey).toBe("string");
+      expect(period.apiKey).toBe("Unknown");
     }
   });
 
