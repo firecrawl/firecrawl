@@ -53,6 +53,7 @@ describe("searchDeveloperCategory", () => {
     expect(url.searchParams.get("query")).toBe('"exact phrase" retries');
     expect(url.searchParams.get("k")).toBe("7");
     expect([...url.searchParams.keys()]).toEqual(["query", "k"]);
+    expect(url.searchParams.has("skills")).toBe(false);
     expect(firstCall()[1].method).toBe("GET");
     expect(firstCall()[1].headers).toEqual({ "firecrawl-team-id": "t1" });
   });
