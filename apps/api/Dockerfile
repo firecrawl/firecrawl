@@ -5,7 +5,7 @@ ENV PNPM_HOME="/pnpm"
 ENV PATH="$PNPM_HOME:$PATH"
 ENV CI=true
 
-RUN corepack enable
+RUN corepack enable && corepack prepare pnpm@11.4.0 --activate
 
 # Build Go shared library
 FROM golang:1.24 AS go-build

@@ -83,6 +83,10 @@ public class ParseOptions
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public bool? RedactPII { get; set; }
 
+    [JsonPropertyName("auditMetadata")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public AuditMetadata? AuditMetadata { get; set; }
+
     /// <summary>
     /// Validate the options against /v2/parse's supported surface.
     /// </summary>

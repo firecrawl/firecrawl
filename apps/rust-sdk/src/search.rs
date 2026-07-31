@@ -41,6 +41,9 @@ pub struct SearchOptions {
     /// Timeout in milliseconds.
     pub timeout: Option<u32>,
 
+    /// Whether to generate query-relevant highlights. Defaults to true.
+    pub highlights: Option<bool>,
+
     /// Scrape options to apply to each search result.
     pub scrape_options: Option<ScrapeOptions>,
 
@@ -264,6 +267,19 @@ impl Client {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn serializes_highlights_option() {
+        let options = SearchOptions {
+            highlights: Some(false),
+            ..Default::default()
+        };
+
+        assert_eq!(
+            serde_json::to_value(options).unwrap(),
+            json!({ "highlights": false })
+        );
+    }
 
     #[tokio::test]
     async fn test_search_with_mock() {

@@ -30,9 +30,6 @@ vi.mock("../../autumn/autumn.service", () => ({
 vi.mock("../../notification/email_notification", () => ({
   sendNotification: vi.fn(),
 }));
-vi.mock("../auto_charge", () => ({
-  autoCharge: vi.fn(),
-}));
 vi.mock("../../redis", () => ({
   getValue: vi.fn(),
   setValue: vi.fn(),

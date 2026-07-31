@@ -53,6 +53,7 @@ interface ProcessUrlOptions {
   prompt?: string;
   schema?: any;
   teamId: string;
+  orgId?: string | null;
   allowExternalLinks?: boolean;
   origin?: string;
   limit?: number;
@@ -80,6 +81,7 @@ export async function processUrl_F0(
     if (
       !isUrlBlocked(options.url, teamFlags, {
         team_id: options.teamId,
+        org_id: options.orgId ?? null,
         origin: options.origin ?? null,
       })
     ) {
@@ -117,6 +119,7 @@ export async function processUrl_F0(
       url: baseUrl,
       search: searchQuery,
       teamId: options.teamId,
+      orgId: options.orgId ?? null,
       allowExternalLinks: options.allowExternalLinks,
       origin: options.origin,
       limit: options.limit,
@@ -154,6 +157,7 @@ export async function processUrl_F0(
       const retryMapResults = await getMapResults({
         url: baseUrl,
         teamId: options.teamId,
+        orgId: options.orgId ?? null,
         allowExternalLinks: options.allowExternalLinks,
         origin: options.origin,
         limit: options.limit,

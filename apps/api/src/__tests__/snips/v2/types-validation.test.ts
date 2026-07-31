@@ -1049,6 +1049,27 @@ describe("V2 Types Validation", () => {
       ]);
     });
 
+    it("should accept the developer category and reject its params", () => {
+      expect(
+        searchRequestSchema.parse({ query: "test", categories: ["developer"] })
+          .categories,
+      ).toEqual([{ type: "developer" }]);
+
+      expect(
+        searchRequestSchema.parse({
+          query: "test",
+          categories: [{ type: "developer" }],
+        }).categories,
+      ).toEqual([{ type: "developer" }]);
+
+      expect(() =>
+        searchRequestSchema.parse({
+          query: "test",
+          categories: [{ type: "developer", repos: ["firecrawl/firecrawl"] }],
+        }),
+      ).toThrow();
+    });
+
     it("should accept search request with advanced categories format", () => {
       const input: SearchRequestInput = {
         query: "test",

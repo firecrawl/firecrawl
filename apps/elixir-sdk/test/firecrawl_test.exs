@@ -317,6 +317,109 @@ defmodule FirecrawlTest do
     assert body["urls"] == ["https://example.com"]
   end
 
+  test "request endpoints map audit_metadata to auditMetadata" do
+    parent = self()
+
+    adapter = fn request ->
+      send(parent, {:request, request})
+
+      resp = Req.Response.new(
+        status: 200,
+        headers: %{"content-type" => ["application/json"]},
+        body: Jason.encode!(%{"success" => true, "id" => "job", "links" => []})
+      )
+
+      {request, resp}
+    end
+
+    metadata = [username: "alice@example.com"]
+    serialized_metadata = %{"username" => "alice@example.com"}
+
+    requests = [
+      fn ->
+        Firecrawl.scrape_and_extract_from_url(
+          [url: "https://example.com", audit_metadata: metadata],
+          api_key: "test-key",
+          adapter: adapter
+        )
+      end,
+      fn ->
+        Firecrawl.map_urls(
+          [url: "https://example.com", audit_metadata: metadata],
+          api_key: "test-key",
+          adapter: adapter
+        )
+      end,
+      fn ->
+        Firecrawl.start_agent(
+          [prompt: "find pricing", audit_metadata: metadata],
+          api_key: "test-key",
+          adapter: adapter
+        )
+      end
+    ]
+
+    Enum.each(requests, fn make_request ->
+      assert {:ok, %Req.Response{status: 200}} = make_request.()
+      assert_receive {:request, request}
+
+      body =
+        cond do
+          is_binary(request.body) -> Jason.decode!(request.body)
+          is_map(request.body) -> request.body
+          true -> request.options[:json]
+        end
+
+      assert body["auditMetadata"] == serialized_metadata
+    end)
+  end
+
+  test "audit_metadata rejects unsupported fields" do
+    assert_raise NimbleOptions.ValidationError, fn ->
+      Firecrawl.scrape_and_extract_from_url(
+        [
+          url: "https://example.com",
+          audit_metadata: [username: "alice@example.com", session: "session-123"]
+        ],
+        api_key: "test-key"
+      )
+    end
+  end
+
+  test "search maps highlights to highlights" do
+    parent = self()
+
+    adapter = fn request ->
+      send(parent, {:request, request})
+
+      resp = Req.Response.new(
+        status: 200,
+        headers: %{"content-type" => ["application/json"]},
+        body: Jason.encode!(%{"success" => true, "data" => %{}})
+      )
+
+      {request, resp}
+    end
+
+    assert {:ok, %Req.Response{status: 200}} =
+             Firecrawl.search_and_scrape(
+               [query: "firecrawl", highlights: false],
+               api_key: "test-key",
+               adapter: adapter
+             )
+
+    assert_receive {:request, request}
+
+    body =
+      cond do
+        is_binary(request.body) -> Jason.decode!(request.body)
+        is_map(request.body) -> request.body
+        true -> request.options[:json]
+      end
+
+    assert body["highlights"] == false
+  end
+
   test "all expected API functions are defined with bang variants" do
     functions = Firecrawl.__info__(:functions)
 

@@ -216,6 +216,11 @@ export async function enhanceBrandingWithLLM(
       });
     }
 
+    // On LLM failure return only the fields that have honest fallback values.
+    // Omitting logoSelection lets the transformer restore the heuristic's
+    // pick (a failure object with confidence 0 used to override it and drop
+    // the logo entirely); omitting personality/designSystem avoids stamping
+    // fabricated values into the output.
     return {
       cleanedFonts: [],
       buttonClassification: {
@@ -230,20 +235,6 @@ export async function enhanceBrandingWithLLM(
         accentColor: "",
         backgroundColor: "",
         textPrimary: "",
-        confidence: 0,
-      },
-      personality: {
-        tone: "professional",
-        energy: "medium",
-        targetAudience: "unknown",
-      },
-      designSystem: {
-        framework: "unknown",
-        componentLibrary: "",
-      },
-      logoSelection: {
-        selectedLogoIndex: -1,
-        selectedLogoReasoning: "LLM failed",
         confidence: 0,
       },
     };

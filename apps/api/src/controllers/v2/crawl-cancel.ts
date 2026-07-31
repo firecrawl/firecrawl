@@ -41,6 +41,7 @@ export async function crawlCancelController(
       scrapeOptions: scrapeOptions.parse({}),
       internalOptions: {
         teamId: req.auth.team_id,
+        orgId: req.acuc?.org_id ?? null,
       },
     };
 

@@ -1,6 +1,6 @@
 use napi::bindgen_prelude::*;
 use napi_derive::napi;
-use pdf_inspector::{PdfOptions, PdfType, process_pdf_with_options as rust_process_pdf};
+use pdf_inspector::{process_pdf_with_options as rust_process_pdf, PdfOptions, PdfType};
 
 use crate::logging::{embed_logs_in_error, with_native_tracing, NativeContext, NativeLogEntry};
 
@@ -59,7 +59,10 @@ pub fn process_pdf(
 
     let result = rust_process_pdf(&path, opts).map_err(|e| {
       tracing::error!(error = %e, "PDF processing failed");
-      Error::new(Status::GenericFailure, format!("Failed to process PDF: {e}"))
+      Error::new(
+        Status::GenericFailure,
+        format!("Failed to process PDF: {e}"),
+      )
     })?;
 
     tracing::info!(
@@ -86,10 +89,7 @@ pub fn process_pdf(
 /// Skips text extraction, markdown generation, and layout analysis.
 /// Pass `ctx` (NativeContext) for structured tracing with scrape_id/url.
 #[napi]
-pub fn detect_pdf(
-  path: String,
-  ctx: Option<NativeContext>,
-) -> Result<PdfProcessResult> {
+pub fn detect_pdf(path: String, ctx: Option<NativeContext>) -> Result<PdfProcessResult> {
   let traced = with_native_tracing(ctx.as_ref(), "pdf", || {
     tracing::info!("starting PDF detection");
 

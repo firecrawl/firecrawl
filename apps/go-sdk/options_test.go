@@ -76,3 +76,34 @@ func TestScrapeOptionsSerializesRedactPII(t *testing.T) {
 		t.Fatalf("serialized redactPII = %s", payload)
 	}
 }
+
+func TestSearchOptionsSerializesHighlights(t *testing.T) {
+	payload, err := json.Marshal(SearchOptions{Highlights: Bool(false)})
+	if err != nil {
+		t.Fatalf("Marshal SearchOptions: %v", err)
+	}
+
+	if !strings.Contains(string(payload), `"highlights":false`) {
+		t.Fatalf("serialized search options = %s", payload)
+	}
+}
+
+func TestAuditMetadataSerializesAcrossRequestOptions(t *testing.T) {
+	metadata := &AuditMetadata{Username: "alice@example.com"}
+	for name, options := range map[string]interface{}{
+		"scrape": ScrapeOptions{AuditMetadata: metadata},
+		"map":    MapOptions{AuditMetadata: metadata},
+		"agent":  AgentOptions{Prompt: "find pricing", AuditMetadata: metadata},
+		"parse":  ParseOptions{AuditMetadata: metadata},
+	} {
+		t.Run(name, func(t *testing.T) {
+			payload, err := json.Marshal(options)
+			if err != nil {
+				t.Fatalf("Marshal options: %v", err)
+			}
+			if !strings.Contains(string(payload), `"auditMetadata":{"username":"alice@example.com"}`) {
+				t.Fatalf("serialized options = %s", payload)
+			}
+		})
+	}
+}

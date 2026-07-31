@@ -118,6 +118,20 @@ async function resolveDistinctId(
   }
 }
 
+/** The org a team belongs to, for the PostHog `company` ($group_0) group. */
+async function resolveOrgId(teamId: string): Promise<string | null> {
+  try {
+    const rows = await dbRr
+      .select({ orgId: schema.teams.org_id })
+      .from(schema.teams)
+      .where(eq(schema.teams.id, teamId))
+      .limit(1);
+    return rows[0]?.orgId ?? null;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Emit a one-time `api_surface_first_used` event the first time a team makes a
  * request from a given surface (playground / sdk / mcp / cli / api / ...).
@@ -162,7 +176,10 @@ export function trackFirstSurfaceUse(args: {
 
       // Key to the person (api-key owner email) so the event attributes to the
       // same PostHog person the dashboard identifies, e.g. for experiments.
-      const distinctId = await resolveDistinctId(teamId, apiKeyId);
+      const [distinctId, orgId] = await Promise.all([
+        resolveDistinctId(teamId, apiKeyId),
+        resolveOrgId(teamId),
+      ]);
 
       capturePostHog("api_surface_first_used", distinctId, {
         surface,
@@ -171,8 +188,9 @@ export function trackFirstSurfaceUse(args: {
         kind,
         api_version: apiVersion,
         team_id: teamId,
-        // Associate with the PostHog `team` group for team-level analysis.
-        $groups: { team: teamId },
+        // Associate with the PostHog `team` ($group_1) and, when resolvable, the
+        // `company` ($group_0) groups for group-level analysis.
+        $groups: { team: teamId, ...(orgId ? { company: orgId } : {}) },
       });
     } catch (error) {
       _logger.debug("trackFirstSurfaceUse failed", {

@@ -41,7 +41,7 @@ defmodule Firecrawl do
   @type response :: {:ok, Req.Response.t()} | {:error, Exception.t() | Firecrawl.Error.t()}
 
   @base_url "https://api.firecrawl.dev/v2"
-  @sdk_origin "elixir-sdk@1.6.1"
+  @sdk_origin "elixir-sdk@1.9.1"
 
   defp client(opts) do
     api_key =
@@ -867,6 +867,7 @@ defmodule Firecrawl do
 
 
   @map_urls_schema NimbleOptions.new!([
+    audit_metadata: [type: :keyword_list, keys: [username: [type: :string, required: true]], doc: "User attribution to include with SIEM logging events."],
     ignore_cache: [type: :boolean, doc: "Bypass the sitemap cache to retrieve fresh URLs. Sitemap data is cached for up to 7 days; use this parameter when your sitemap has been recently updated."],
     ignore_query_parameters: [type: :boolean, doc: "Do not return URLs with query parameters"],
     include_subdomains: [type: :boolean, doc: "Include subdomains of the website"],
@@ -878,7 +879,7 @@ defmodule Firecrawl do
     url: [type: :string, required: true, doc: "The base URL to start crawling from"]
   ])
 
-  @map_urls_key_mapping %{ignore_cache: "ignoreCache", ignore_query_parameters: "ignoreQueryParameters", include_subdomains: "includeSubdomains", limit: "limit", location: "location", search: "search", sitemap: "sitemap", timeout: "timeout", url: "url"}
+  @map_urls_key_mapping %{audit_metadata: "auditMetadata", ignore_cache: "ignoreCache", ignore_query_parameters: "ignoreQueryParameters", include_subdomains: "includeSubdomains", limit: "limit", location: "location", search: "search", sitemap: "sitemap", timeout: "timeout", url: "url"}
 
   @doc """
   Map multiple URLs based on options
@@ -916,6 +917,7 @@ defmodule Firecrawl do
 
 
   @parse_file_schema NimbleOptions.new!([
+    audit_metadata: [type: :keyword_list, keys: [username: [type: :string, required: true]], doc: "User attribution to include with SIEM logging events."],
     block_ads: [type: :boolean, doc: "Enable ad and cookie popup blocking."],
     exclude_tags: [type: {:list, :string}, doc: "Tags to exclude from the output."],
     formats: [type: {:list, :any}, doc: "Output formats supported for `/parse` uploads. Browser-rendering formats and change tracking are not supported."],
@@ -933,7 +935,7 @@ defmodule Firecrawl do
     zero_data_retention: [type: :boolean, doc: "If true, this will enable zero data retention for this parse. To enable this feature, please contact help@firecrawl.dev"]
   ])
 
-  @parse_file_key_mapping %{block_ads: "blockAds", exclude_tags: "excludeTags", formats: "formats", headers: "headers", include_tags: "includeTags", integration: "integration", only_main_content: "onlyMainContent", origin: "origin", parsers: "parsers", proxy: "proxy", redact_pii: "redactPII", remove_base64_images: "removeBase64Images", skip_tls_verification: "skipTlsVerification", timeout: "timeout", zero_data_retention: "zeroDataRetention"}
+  @parse_file_key_mapping %{audit_metadata: "auditMetadata", block_ads: "blockAds", exclude_tags: "excludeTags", formats: "formats", headers: "headers", include_tags: "includeTags", integration: "integration", only_main_content: "onlyMainContent", origin: "origin", parsers: "parsers", proxy: "proxy", redact_pii: "redactPII", remove_base64_images: "removeBase64Images", skip_tls_verification: "skipTlsVerification", timeout: "timeout", zero_data_retention: "zeroDataRetention"}
 
   @doc """
   Upload and parse a file
@@ -1017,6 +1019,7 @@ defmodule Firecrawl do
 
   @scrape_and_extract_from_url_schema NimbleOptions.new!([
     url: [type: :string, required: true, doc: "The URL to scrape"],
+    audit_metadata: [type: :keyword_list, keys: [username: [type: :string, required: true]], doc: "User attribution to include with SIEM logging events."],
     actions: [type: {:list, :any}, doc: "Actions to perform on the page before grabbing the content"],
     block_ads: [type: :boolean, doc: "Enables ad-blocking and cookie popup blocking."],
     exclude_tags: [type: {:list, :string}, doc: "Tags to exclude from the output."],
@@ -1041,7 +1044,7 @@ defmodule Firecrawl do
     zero_data_retention: [type: :boolean, doc: "If true, this will enable zero data retention for this scrape. To enable this feature, please contact help@firecrawl.dev"]
   ])
 
-  @scrape_and_extract_from_url_key_mapping %{url: "url", actions: "actions", block_ads: "blockAds", exclude_tags: "excludeTags", formats: "formats", headers: "headers", include_tags: "includeTags", location: "location", max_age: "maxAge", min_age: "minAge", mobile: "mobile", only_main_content: "onlyMainContent", parsers: "parsers", profile: "profile", proxy: "proxy", redact_pii: "redactPII", remove_base64_images: "removeBase64Images", skip_tls_verification: "skipTlsVerification", store_in_cache: "storeInCache", lockdown: "lockdown", timeout: "timeout", wait_for: "waitFor", zero_data_retention: "zeroDataRetention"}
+  @scrape_and_extract_from_url_key_mapping %{url: "url", audit_metadata: "auditMetadata", actions: "actions", block_ads: "blockAds", exclude_tags: "excludeTags", formats: "formats", headers: "headers", include_tags: "includeTags", location: "location", max_age: "maxAge", min_age: "minAge", mobile: "mobile", only_main_content: "onlyMainContent", parsers: "parsers", profile: "profile", proxy: "proxy", redact_pii: "redactPII", remove_base64_images: "removeBase64Images", skip_tls_verification: "skipTlsVerification", store_in_cache: "storeInCache", lockdown: "lockdown", timeout: "timeout", wait_for: "waitFor", zero_data_retention: "zeroDataRetention"}
 
   @doc """
   Scrape a single URL and optionally extract information using an LLM
@@ -1079,6 +1082,7 @@ defmodule Firecrawl do
 
 
   @scrape_and_extract_from_urls_schema NimbleOptions.new!([
+    audit_metadata: [type: :keyword_list, keys: [username: [type: :string, required: true]], doc: "User attribution to include with SIEM logging events."],
     ignore_invalid_urls: [type: :boolean, doc: "If invalid URLs are specified in the urls array, they will be ignored. Instead of them failing the entire request, a batch scrape using the remaining valid URLs will be created, and the invalid URLs will be returned in the invalidURLs field of the response."],
     max_concurrency: [type: :integer, doc: "Maximum number of concurrent scrapes. This parameter allows you to set a concurrency limit for this batch scrape. If not specified, the batch scrape adheres to your team's concurrency limit."],
     urls: [type: {:list, :string}, required: true],
@@ -1107,7 +1111,7 @@ defmodule Firecrawl do
     zero_data_retention: [type: :boolean, doc: "If true, this will enable zero data retention for this batch scrape. To enable this feature, please contact help@firecrawl.dev"]
   ])
 
-  @scrape_and_extract_from_urls_key_mapping %{ignore_invalid_urls: "ignoreInvalidURLs", max_concurrency: "maxConcurrency", urls: "urls", webhook: "webhook", actions: "actions", block_ads: "blockAds", exclude_tags: "excludeTags", formats: "formats", headers: "headers", include_tags: "includeTags", location: "location", max_age: "maxAge", min_age: "minAge", mobile: "mobile", only_main_content: "onlyMainContent", parsers: "parsers", profile: "profile", proxy: "proxy", redact_pii: "redactPII", remove_base64_images: "removeBase64Images", skip_tls_verification: "skipTlsVerification", store_in_cache: "storeInCache", lockdown: "lockdown", timeout: "timeout", wait_for: "waitFor", zero_data_retention: "zeroDataRetention"}
+  @scrape_and_extract_from_urls_key_mapping %{audit_metadata: "auditMetadata", ignore_invalid_urls: "ignoreInvalidURLs", max_concurrency: "maxConcurrency", urls: "urls", webhook: "webhook", actions: "actions", block_ads: "blockAds", exclude_tags: "excludeTags", formats: "formats", headers: "headers", include_tags: "includeTags", location: "location", max_age: "maxAge", min_age: "minAge", mobile: "mobile", only_main_content: "onlyMainContent", parsers: "parsers", profile: "profile", proxy: "proxy", redact_pii: "redactPII", remove_base64_images: "removeBase64Images", skip_tls_verification: "skipTlsVerification", store_in_cache: "storeInCache", lockdown: "lockdown", timeout: "timeout", wait_for: "waitFor", zero_data_retention: "zeroDataRetention"}
 
   @doc """
   Scrape multiple URLs and optionally extract information using an LLM
@@ -1150,6 +1154,7 @@ defmodule Firecrawl do
     enterprise: [type: {:list, :string}, doc: "Enterprise search options for Zero Data Retention (ZDR). Use `[\"zdr\"]` for end-to-end ZDR (10 credits / 10 results) or `[\"anon\"]` for anonymized ZDR (2 credits / 10 results). Must be enabled for your team."],
     exclude_domains: [type: {:list, :string}, doc: "Domains to exclude from search results."],
     ignore_invalid_urls: [type: :boolean, doc: "Excludes URLs from the search results that are invalid for other Firecrawl endpoints. This helps reduce errors if you are piping data from search into other Firecrawl API endpoints."],
+    highlights: [type: :boolean, doc: "Generate query-relevant highlights for search results. Defaults to true."],
     include_domains: [type: {:list, :string}, doc: "Domains to include in search results."],
     limit: [type: :integer, doc: "Maximum number of results to return"],
     location: [type: :string, doc: "Location parameter for search results (e.g. `San Francisco,California,United States`). For best results, set both this and the `country` parameter."],
@@ -1160,7 +1165,7 @@ defmodule Firecrawl do
     timeout: [type: :integer, doc: "Timeout in milliseconds"]
   ])
 
-  @search_and_scrape_key_mapping %{categories: "categories", country: "country", enterprise: "enterprise", exclude_domains: "excludeDomains", ignore_invalid_urls: "ignoreInvalidURLs", include_domains: "includeDomains", limit: "limit", location: "location", query: "query", scrape_options: "scrapeOptions", sources: "sources", tbs: "tbs", timeout: "timeout"}
+  @search_and_scrape_key_mapping %{categories: "categories", country: "country", enterprise: "enterprise", exclude_domains: "excludeDomains", highlights: "highlights", ignore_invalid_urls: "ignoreInvalidURLs", include_domains: "includeDomains", limit: "limit", location: "location", query: "query", scrape_options: "scrapeOptions", sources: "sources", tbs: "tbs", timeout: "timeout"}
 
   @doc """
   Search and optionally scrape search results
@@ -1341,6 +1346,7 @@ defmodule Firecrawl do
 
 
   @start_agent_schema NimbleOptions.new!([
+    audit_metadata: [type: :keyword_list, keys: [username: [type: :string, required: true]], doc: "User attribution to include with SIEM logging events."],
     max_credits: [type: {:or, [:integer, :float]}, doc: "Maximum credits to spend on this agent task. Defaults to 2500 if not set. Values above 2,500 are always billed as paid requests."],
     model: [type: {:or, [{:in, [:"spark-1-mini", :"spark-1-pro"]}, :string]}, doc: "The model to use for the agent task. spark-1-mini (default) is 60% cheaper, spark-1-pro offers higher accuracy for complex tasks"],
     prompt: [type: :string, required: true, doc: "The prompt describing what data to extract"],
@@ -1349,7 +1355,7 @@ defmodule Firecrawl do
     urls: [type: {:list, :string}, doc: "Optional list of URLs to constrain the agent to"]
   ])
 
-  @start_agent_key_mapping %{max_credits: "maxCredits", model: "model", prompt: "prompt", schema: "schema", strict_constrain_to_urls: "strictConstrainToURLs", urls: "urls"}
+  @start_agent_key_mapping %{audit_metadata: "auditMetadata", max_credits: "maxCredits", model: "model", prompt: "prompt", schema: "schema", strict_constrain_to_urls: "strictConstrainToURLs", urls: "urls"}
 
   @doc """
   Start an agent task for agentic data extraction

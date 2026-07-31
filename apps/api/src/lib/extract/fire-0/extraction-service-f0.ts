@@ -180,6 +180,7 @@ export async function performExtraction_F0(
         url,
         prompt: request.prompt,
         teamId,
+        orgId: acuc?.org_id ?? null,
         allowExternalLinks: request.allowExternalLinks,
         origin: request.origin,
         limit: request.limit,
@@ -348,6 +349,7 @@ export async function performExtraction_F0(
           {
             url,
             teamId,
+            orgId: acuc?.org_id ?? null,
             origin: "extract",
             timeout,
             flags: acuc?.flags ?? null,
@@ -644,6 +646,7 @@ export async function performExtraction_F0(
           {
             url,
             teamId,
+            orgId: acuc?.org_id ?? null,
             origin: "extract",
             timeout,
             flags: acuc?.flags ?? null,

@@ -34,6 +34,62 @@ const tldSchema = z
       `Invalid TLD ${JSON.stringify(iss.input)}: must be a lowercase alphanumeric TLD without the leading dot, e.g. "zip"`,
   });
 
+// A single DNS label, as used for the Zidentity vanity domain
+// (<vanityDomain>.zslogin.net) and the optional OneAPI cloud name
+// (api.<cloud>.zsapi.net).
+const dnsLabelSchema = z
+  .string()
+  .trim()
+  .toLowerCase()
+  .refine(value => new RegExp(`^${DOMAIN_LABEL}$`).test(value), {
+    error: iss =>
+      `Invalid value ${JSON.stringify(iss.input)}: must be a single DNS label (letters, digits, inner hyphens)`,
+  });
+
+/**
+ * Zscaler category IDs: predefined ("GAMBLING", "OTHER_ADULT_MATERIAL") and
+ * custom ("CUSTOM_01") IDs are uppercase with digits/underscores.
+ */
+const zscalerCategoryIdSchema = z
+  .string()
+  .trim()
+  .refine(value => /^[A-Z0-9_]{1,128}$/.test(value), {
+    error: iss =>
+      `Invalid category ID ${JSON.stringify(iss.input)}: must be an uppercase Zscaler category ID like "GAMBLING" or "CUSTOM_01"`,
+  });
+
+/**
+ * Zscaler connection + policy block, accepted by
+ * `PUT /v2/team/threat-protection` when the org uses mode "zscaler".
+ *
+ * `clientSecret` is write-only: it is encrypted at rest, never serialized
+ * back, and may be omitted on update to keep the stored secret (only when
+ * `clientId` is unchanged — pairing a new client ID with an old secret is
+ * always a mistake).
+ */
+export const zscalerConfigSchema = z.strictObject({
+  clientId: z.string().trim().min(1).max(256),
+  // Not trimmed (the secret is stored verbatim), but a whitespace-only value
+  // must not be persisted as a "configured" secret that can never mint tokens.
+  clientSecret: z
+    .string()
+    .min(1)
+    .max(1024)
+    .refine(value => value.trim().length > 0, {
+      error: "clientSecret must not be blank",
+    })
+    .optional(),
+  /** Zidentity vanity domain: tokens come from https://<vanityDomain>.zslogin.net */
+  vanityDomain: dnsLabelSchema,
+  /** Optional OneAPI cloud name (api.<cloud>.zsapi.net); null = default cloud. */
+  cloud: dnsLabelSchema.nullable().prefault(null),
+  deniedCategories: z.array(zscalerCategoryIdSchema).max(512).prefault([]),
+  /** How often the category taxonomy + custom lists re-sync. */
+  syncIntervalMinutes: z.number().int().min(5).max(1440).prefault(60),
+});
+
+type ZscalerConfigInput = z.infer<typeof zscalerConfigSchema>;
+
 // =========================================
 // Policy + org config schemas
 // =========================================
@@ -43,7 +99,7 @@ const tldSchema = z
  * except `mode` defaults to {@link THREAT_PROTECTION_POLICY_DEFAULTS}.
  */
 export const threatProtectionPolicySchema = z.strictObject({
-  mode: z.enum(["off", "normal"]),
+  mode: z.enum(["off", "normal", "zscaler"]),
   riskScoreThreshold: z
     .number()
     .int()
@@ -81,7 +137,7 @@ void _policyContractCheck;
  * provides replace the org policy's values (see `resolveEffectivePolicy`).
  */
 export const threatProtectionOverrideSchema = z.strictObject({
-  mode: z.enum(["off", "normal"]).optional(),
+  mode: z.enum(["off", "normal", "zscaler"]).optional(),
   riskScoreThreshold: z.number().int().min(0).max(100).optional(),
   blacklist: z.array(domainGlobSchema).max(1000).optional(),
   whitelist: z.array(domainGlobSchema).max(1000).optional(),
@@ -91,11 +147,14 @@ export const threatProtectionOverrideSchema = z.strictObject({
 
 type ThreatProtectionOverride = z.infer<typeof threatProtectionOverrideSchema>;
 
-// Compile-time assertion that the override shape stays assignable to
-// Partial<ThreatProtectionPolicy> (what `resolveEffectivePolicy` consumes).
+// Compile-time assertion that the override shape stays assignable to what
+// `resolveEffectivePolicy` consumes. The Omit is deliberate: the Zscaler
+// connection is org-owned and never request-settable, and typing it out of
+// the override surface makes passing one a compile error instead of a
+// silently ignored field.
 const _overrideContractCheck = (
   x: ThreatProtectionOverride,
-): Partial<ThreatProtectionPolicy> => x;
+): Partial<Omit<ThreatProtectionPolicy, "zscaler">> => x;
 void _overrideContractCheck;
 
 /**
@@ -105,6 +164,13 @@ void _overrideContractCheck;
 export const threatProtectionConfigSchema = threatProtectionPolicySchema.extend(
   {
     allowRequestOverrides: z.boolean().prefault(true),
+    /**
+     * Zscaler connection block. Absent = no Zscaler connection (clears any
+     * stored one, consistent with the full-document PUT semantics). Required
+     * when mode is "zscaler" — enforced in the controller, where the stored
+     * secret is available for the omitted-secret update path.
+     */
+    zscaler: zscalerConfigSchema.optional(),
   },
 );
 

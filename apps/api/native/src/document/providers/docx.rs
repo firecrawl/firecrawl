@@ -1,10 +1,13 @@
+//! DOCX (Office Open XML) provider.
+
 use crate::document::model::*;
 use crate::document::providers::DocumentProvider;
+use crate::document::xml::{attr, child, children, is_tag, read_zip_text, strip_bom};
 use chrono::{DateTime, Utc};
 use roxmltree::{Document as XmlDoc, Node};
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 use std::error::Error;
-use std::io::{Read, Seek};
+use std::io::{Cursor, Read, Seek};
 use std::num::NonZeroU32;
 use zip::read::ZipArchive;
 
@@ -16,62 +19,45 @@ impl DocxProvider {
   }
 }
 
+/// Everything block parsing needs besides the XML itself.
+#[derive(Clone, Copy)]
+struct Ctx<'a> {
+  rels: &'a Relationships,
+  styles: &'a StylesInfo,
+  size_buckets: &'a HashMap<String, Vec<u32>>,
+  numbering: &'a NumberingInfo,
+}
+
 impl DocumentProvider for DocxProvider {
   fn parse_buffer(&self, data: &[u8]) -> Result<Document, Box<dyn Error + Send + Sync>> {
-    let cursor = std::io::Cursor::new(data);
-    let mut zip = ZipArchive::new(cursor)?;
+    let mut zip = ZipArchive::new(Cursor::new(data))?;
 
-    let relationships = read_relationships(&mut zip, "word/_rels/document.xml.rels");
+    let metadata = read_core_properties(&mut zip).unwrap_or_default();
     let styles = read_styles(&mut zip);
     let numbering = read_numbering(&mut zip);
+    let rels = read_relationships(&mut zip, "word/_rels/document.xml.rels");
 
     let document_xml = read_zip_text(&mut zip, "word/document.xml")
       .ok_or("Missing word/document.xml in document")?;
     let xml = XmlDoc::parse(strip_bom(&document_xml))?;
 
-    let metadata = read_core_properties(&mut zip).unwrap_or_default();
+    let size_buckets = compute_style_size_buckets(&xml, &styles);
+    let ctx = Ctx {
+      rels: &rels,
+      styles: &styles,
+      size_buckets: &size_buckets,
+      numbering: &numbering,
+    };
 
-    let size_buckets = compute_style_size_buckets_for_doc(&xml, &styles);
-    let mut blocks = Vec::new();
-    if let Some(body) = xml.descendants().find(|n| is_tag(n, "body")) {
-      blocks = parse_block_children(
-        &body,
-        &relationships,
-        &styles,
-        &size_buckets,
-        &numbering,
-        &mut zip,
-      );
-    }
+    let blocks = xml
+      .descendants()
+      .find(|n| is_tag(n, "body"))
+      .map(|body| parse_blocks(&body, ctx))
+      .unwrap_or_default();
 
-    let mut notes = Vec::new();
-    notes.extend(read_notes(
-      &mut zip,
-      "word/footnotes.xml",
-      "word/_rels/footnotes.xml.rels",
-      NoteKind::Footnote,
-      &styles,
-      &size_buckets,
-      &numbering,
-    ));
-    notes.extend(read_notes(
-      &mut zip,
-      "word/endnotes.xml",
-      "word/_rels/endnotes.xml.rels",
-      NoteKind::Endnote,
-      &styles,
-      &size_buckets,
-      &numbering,
-    ));
-
-    let comments = read_comments(
-      &mut zip,
-      "word/comments.xml",
-      "word/_rels/comments.xml.rels",
-      &styles,
-      &size_buckets,
-      &numbering,
-    );
+    let mut notes = read_notes(&mut zip, NoteKind::Footnote, ctx);
+    notes.extend(read_notes(&mut zip, NoteKind::Endnote, ctx));
+    let comments = read_comments(&mut zip, ctx);
 
     Ok(Document {
       blocks,
@@ -86,18 +72,6 @@ impl DocumentProvider for DocxProvider {
   }
 }
 
-fn read_zip_text<R: Read + std::io::Seek>(zip: &mut ZipArchive<R>, path: &str) -> Option<String> {
-  let mut file = zip.by_name(path).ok()?;
-  let mut s = String::new();
-  file.read_to_string(&mut s).ok()?;
-  Some(s)
-}
-
-fn strip_bom(s: &str) -> &str {
-  const BOM: char = '\u{FEFF}';
-  s.strip_prefix(BOM).unwrap_or(s)
-}
-
 #[derive(Debug, Clone, Default)]
 struct Relationships {
   targets: HashMap<String, String>,
@@ -109,359 +83,239 @@ impl Relationships {
   }
 }
 
-fn read_relationships<R: Read + std::io::Seek>(
-  zip: &mut ZipArchive<R>,
-  path: &str,
-) -> Relationships {
-  let xml_text = match read_zip_text(zip, path) {
-    Some(s) => s,
-    None => return Relationships::default(),
+fn read_relationships<R: Read + Seek>(zip: &mut ZipArchive<R>, path: &str) -> Relationships {
+  let mut rels = Relationships::default();
+  let Some(text) = read_zip_text(zip, path) else {
+    return rels;
   };
-  let xml = match XmlDoc::parse(strip_bom(&xml_text)) {
-    Ok(d) => d,
-    Err(_) => return Relationships::default(),
+  let Ok(xml) = XmlDoc::parse(strip_bom(&text)) else {
+    return rels;
   };
-  let mut map = HashMap::new();
   for rel in xml.descendants().filter(|n| is_tag(n, "Relationship")) {
-    if let (Some(id), Some(target)) = (get_attr_local(&rel, "Id"), get_attr_local(&rel, "Target")) {
-      map.insert(id.to_string(), target.to_string());
+    if let (Some(id), Some(target)) = (attr(&rel, "Id"), attr(&rel, "Target")) {
+      rels.targets.insert(id.to_string(), target.to_string());
     }
   }
-  Relationships { targets: map }
+  rels
 }
 
-fn read_core_properties<R: Read + std::io::Seek>(
-  zip: &mut ZipArchive<R>,
-) -> Option<DocumentMetadata> {
+fn read_core_properties<R: Read + Seek>(zip: &mut ZipArchive<R>) -> Option<DocumentMetadata> {
   let text = read_zip_text(zip, "docProps/core.xml")?;
   let xml = XmlDoc::parse(strip_bom(&text)).ok()?;
-  let mut meta = DocumentMetadata::default();
+  let element_text = |local: &str| {
+    xml
+      .descendants()
+      .find(|n| is_tag(n, local))
+      .and_then(|n| n.text())
+  };
 
-  if let Some(title) = xml
-    .descendants()
-    .find(|n| is_tag(n, "title"))
-    .and_then(|n| n.text())
-  {
+  let mut meta = DocumentMetadata::default();
+  if let Some(title) = element_text("title") {
     let trimmed = title.trim();
     if !trimmed.is_empty() {
       meta.title = Some(trimmed.to_string());
     }
   }
-  if let Some(author) = xml
-    .descendants()
-    .find(|n| is_tag(n, "creator"))
-    .and_then(|n| n.text())
-  {
+  if let Some(author) = element_text("creator") {
     let trimmed = author.trim();
     if !trimmed.is_empty() && !trimmed.eq_ignore_ascii_case("unknown") {
       meta.author = Some(trimmed.to_string());
     }
   }
-  if let Some(created) = xml
-    .descendants()
-    .find(|n| is_tag(n, "created"))
-    .and_then(|n| n.text())
-  {
-    if let Ok(dt) = chrono::DateTime::parse_from_rfc3339(created) {
+  if let Some(created) = element_text("created") {
+    if let Ok(dt) = DateTime::parse_from_rfc3339(created) {
       meta.created = Some(DateTime::<Utc>::from(dt));
     }
   }
-
   Some(meta)
 }
 
 #[derive(Debug, Default)]
 struct StylesInfo {
-  heading_level_by_style_id: HashMap<String, u8>,
+  outline_level_by_style_id: HashMap<String, u8>,
   name_by_style_id: HashMap<String, String>,
   default_size_by_style_id: HashMap<String, u32>,
 }
 
 fn read_styles<R: Read + Seek>(zip: &mut ZipArchive<R>) -> StylesInfo {
-  let text = match read_zip_text(zip, "word/styles.xml") {
-    Some(t) => t,
-    None => return StylesInfo::default(),
-  };
-  let doc = match XmlDoc::parse(strip_bom(&text)) {
-    Ok(d) => d,
-    Err(_) => return StylesInfo::default(),
-  };
   let mut info = StylesInfo::default();
+  let Some(text) = read_zip_text(zip, "word/styles.xml") else {
+    return info;
+  };
+  let Ok(xml) = XmlDoc::parse(strip_bom(&text)) else {
+    return info;
+  };
 
-  for style in doc.descendants().filter(|n| is_tag(n, "style")) {
-    if get_attr_local(&style, "type") != Some("paragraph") {
+  for style in xml.descendants().filter(|n| is_tag(n, "style")) {
+    if attr(&style, "type") != Some("paragraph") {
       continue;
     }
-    let Some(style_id) = get_attr_local(&style, "styleId") else {
+    let Some(style_id) = attr(&style, "styleId") else {
       continue;
     };
-    let style_id = style_id.to_string();
 
-    if let Some(name) = child(&style, "name").and_then(|n| get_attr_local(&n, "val")) {
+    if let Some(name) = child(&style, "name").and_then(|n| attr(&n, "val")) {
       info
         .name_by_style_id
-        .insert(style_id.clone(), name.to_string());
+        .insert(style_id.to_string(), name.to_string());
     }
-
-    if let Some(rpr) = child(&style, "rPr") {
-      if let Some(sz) = child(&rpr, "sz").and_then(|n| get_attr_local(&n, "val")) {
-        if let Ok(v) = sz.parse::<u32>() {
-          info.default_size_by_style_id.insert(style_id.clone(), v);
-        }
-      }
+    if let Some(size) = child(&style, "rPr")
+      .and_then(|rpr| child(&rpr, "sz"))
+      .and_then(|n| attr(&n, "val"))
+      .and_then(|v| v.parse::<u32>().ok())
+    {
+      info
+        .default_size_by_style_id
+        .insert(style_id.to_string(), size);
     }
-
-    if let Some(ppr) = child(&style, "pPr") {
-      if let Some(ol) = child(&ppr, "outlineLvl").and_then(|n| get_attr_local(&n, "val")) {
-        if let Ok(v) = ol.parse::<u8>() {
-          info
-            .heading_level_by_style_id
-            .insert(style_id.clone(), (v + 1).min(6));
-        }
-      }
-    }
-
-    if !info.heading_level_by_style_id.contains_key(&style_id) {
-      let mut assigned: Option<u8> = None;
-      if let Some(name) = info.name_by_style_id.get(&style_id) {
-        assigned = parse_heading_level(name);
-      }
-      if assigned.is_none() {
-        assigned = parse_heading_level(&style_id);
-      }
-      if assigned.is_none() {
-        let name_l = info
-          .name_by_style_id
-          .get(&style_id)
-          .map(|s| s.to_ascii_lowercase())
-          .unwrap_or_default();
-        let id_l = style_id.to_ascii_lowercase();
-        if name_l.contains("title") || id_l.contains("title") {
-          assigned = Some(1);
-        } else if name_l.contains("heading") || id_l.contains("heading") {
-          assigned = Some(2);
-        }
-      }
-      if let Some(l) = assigned {
-        info.heading_level_by_style_id.insert(style_id, l);
-      }
+    if let Some(level) = child(&style, "pPr")
+      .and_then(|ppr| child(&ppr, "outlineLvl"))
+      .and_then(|n| attr(&n, "val"))
+      .and_then(|v| v.parse::<u8>().ok())
+    {
+      info
+        .outline_level_by_style_id
+        .insert(style_id.to_string(), (level + 1).min(6));
     }
   }
   info
 }
 
-fn is_tag(node: &Node, local: &str) -> bool {
-  node.is_element() && node.tag_name().name() == local
+enum StyleKind {
+  Heading(u8),
+  Blockquote,
 }
 
-fn get_attr_local<'a>(node: &Node<'a, 'a>, local: &str) -> Option<&'a str> {
-  node
-    .attributes()
-    .find(|a| {
-      let name = a.name();
-      match name.rsplit_once(':') {
-        Some((_, l)) => l == local,
-        None => name == local,
-      }
-    })
-    .map(|a| a.value())
-}
-
-fn child<'a>(node: &Node<'a, 'a>, local: &str) -> Option<Node<'a, 'a>> {
-  node
-    .children()
-    .find(|n| n.is_element() && n.tag_name().name() == local)
-}
-
-fn children<'a, 'b>(
-  node: &Node<'a, 'a>,
-  local: &'b str,
-) -> impl Iterator<Item = Node<'a, 'a>> + use<'a, 'b> {
-  node
-    .children()
-    .filter(move |n| n.is_element() && n.tag_name().name() == local)
-}
-
-fn parse_paragraph_with_listinfo(
-  node: &Node,
-  rels: &Relationships,
-  styles: &StylesInfo,
-  size_buckets: &HashMap<String, Vec<u32>>,
-  numbering: &NumberingInfo,
-) -> Option<(Paragraph, Option<ListInfo>)> {
-  let kind = paragraph_kind(node, styles, size_buckets);
-  let base_style = paragraph_run_style(node);
-  let mut inlines = Vec::new();
-
-  for child in node.children().filter(|n| n.is_element()) {
-    if is_tag(&child, "r") {
-      let run_inlines = parse_run(&child, rels, &base_style);
-      inlines.extend(run_inlines);
-    } else if is_tag(&child, "hyperlink") {
-      if let Some(link) = parse_hyperlink(&child, rels, &base_style) {
-        inlines.push(link);
-      }
-    } else if is_tag(&child, "bookmarkStart") {
-      if let Some(name) = get_attr_local(&child, "name") {
-        inlines.push(Inline::Bookmark(BookmarkId(name.to_string())));
-      }
-    } else if is_tag(&child, "br") {
-      inlines.push(Inline::LineBreak);
-    }
+/// Heading or quote semantics of a paragraph style, from the style's outline
+/// level when declared and name/id conventions otherwise.
+fn style_kind(style_id: &str, styles: &StylesInfo) -> Option<StyleKind> {
+  if let Some(level) = styles.outline_level_by_style_id.get(style_id) {
+    return Some(StyleKind::Heading(*level));
   }
 
-  let list_info = paragraph_list_info(node, numbering);
-  Some((Paragraph { kind, inlines }, list_info))
-}
-
-fn paragraph_kind(
-  p: &Node,
-  styles: &StylesInfo,
-  size_buckets: &HashMap<String, Vec<u32>>,
-) -> ParagraphKind {
-  let Some(ppr) = child(p, "pPr") else {
-    return ParagraphKind::Normal;
-  };
-
-  if let Some(level) = child(&ppr, "outlineLvl").and_then(|n| get_attr_local(&n, "val")) {
-    if let Ok(v) = level.parse::<u8>() {
-      return ParagraphKind::Heading((v + 1).min(6));
+  let name = styles.name_by_style_id.get(style_id);
+  if let Some(name) = name {
+    if let Some(level) = parse_heading_level(name) {
+      return Some(StyleKind::Heading(level));
+    }
+    if name.to_ascii_lowercase().contains("quote") {
+      return Some(StyleKind::Blockquote);
     }
   }
-
-  if let Some(style_id) = child(&ppr, "pStyle").and_then(|n| get_attr_local(&n, "val")) {
-    let mut base_level: Option<u8> = styles.heading_level_by_style_id.get(style_id).copied();
-
-    if base_level.is_none() {
-      if let Some(name) = styles.name_by_style_id.get(style_id) {
-        if let Some(l) = parse_heading_level(name) {
-          base_level = Some(l);
-        }
-        if base_level.is_none() && name.to_ascii_lowercase().contains("quote") {
-          return ParagraphKind::Blockquote;
-        }
-      }
-    }
-    if base_level.is_none() {
-      if let Some(l) = parse_heading_level(style_id) {
-        base_level = Some(l);
-      }
-    }
-    if base_level.is_none() {
-      let id_l = style_id.to_ascii_lowercase();
-      let name_l = styles
-        .name_by_style_id
-        .get(style_id)
-        .map(|s| s.to_ascii_lowercase())
-        .unwrap_or_default();
-      if name_l.contains("title") || id_l.contains("title") {
-        base_level = Some(1);
-      } else if name_l.contains("heading") || id_l.contains("heading") {
-        base_level = Some(2);
-      } else if name_l.contains("quote") || id_l.contains("quote") {
-        return ParagraphKind::Blockquote;
-      }
-    }
-
-    if let Some(mut level) = base_level {
-      let para_size = paragraph_effective_size(p, styles, style_id);
-      if let Some(buckets) = size_buckets.get(style_id) {
-        if let Some(size) = para_size {
-          if let Some(index) = buckets.iter().position(|&s| s == size) {
-            level = (level + index as u8).min(6);
-          }
-        }
-      }
-      return ParagraphKind::Heading(level);
-    }
+  if let Some(level) = parse_heading_level(style_id) {
+    return Some(StyleKind::Heading(level));
   }
 
-  ParagraphKind::Normal
+  let id_lower = style_id.to_ascii_lowercase();
+  let name_lower = name.map(|s| s.to_ascii_lowercase()).unwrap_or_default();
+  if name_lower.contains("title") || id_lower.contains("title") {
+    Some(StyleKind::Heading(1))
+  } else if name_lower.contains("heading") || id_lower.contains("heading") {
+    Some(StyleKind::Heading(2))
+  } else if name_lower.contains("quote") || id_lower.contains("quote") {
+    Some(StyleKind::Blockquote)
+  } else {
+    None
+  }
 }
 
 fn parse_heading_level(s: &str) -> Option<u8> {
   let lower = s.to_ascii_lowercase();
-  let idx = lower.find("heading")?;
-  let rest = &lower[idx + "heading".len()..];
+  let rest = &lower[lower.find("heading")? + "heading".len()..];
   let digits: String = rest
     .chars()
     .skip_while(|c| c.is_whitespace() || *c == '-')
     .take_while(|c| c.is_ascii_digit())
     .collect();
-  if let Ok(n) = digits.parse::<u8>() {
-    if n >= 1 {
-      return Some(n.min(6));
-    }
+  match digits.parse::<u8>() {
+    Ok(n) if n >= 1 => Some(n.min(6)),
+    _ => None,
   }
-  None
+}
+
+fn paragraph_style_id<'a>(p: &Node<'a, 'a>) -> Option<&'a str> {
+  child(p, "pPr")
+    .and_then(|ppr| child(&ppr, "pStyle"))
+    .and_then(|n| attr(&n, "val"))
+}
+
+fn paragraph_kind(p: &Node, ctx: Ctx) -> ParagraphKind {
+  let Some(ppr) = child(p, "pPr") else {
+    return ParagraphKind::Normal;
+  };
+
+  if let Some(level) = child(&ppr, "outlineLvl")
+    .and_then(|n| attr(&n, "val"))
+    .and_then(|v| v.parse::<u8>().ok())
+  {
+    return ParagraphKind::Heading((level + 1).min(6));
+  }
+
+  let Some(style_id) = paragraph_style_id(p) else {
+    return ParagraphKind::Normal;
+  };
+  match style_kind(style_id, ctx.styles) {
+    Some(StyleKind::Blockquote) => ParagraphKind::Blockquote,
+    Some(StyleKind::Heading(mut level)) => {
+      // Same style at distinct font sizes: demote the smaller sizes.
+      if let (Some(buckets), Some(size)) = (
+        ctx.size_buckets.get(style_id),
+        paragraph_effective_size(p, ctx.styles, style_id),
+      ) {
+        if let Some(index) = buckets.iter().position(|&s| s == size) {
+          level = (level + index as u8).min(6);
+        }
+      }
+      ParagraphKind::Heading(level)
+    }
+    None => ParagraphKind::Normal,
+  }
 }
 
 fn paragraph_effective_size(p: &Node, styles: &StylesInfo, style_id: &str) -> Option<u32> {
-  let mut max_sz: Option<u32> = None;
-
-  if let Some(ppr) = child(p, "pPr") {
-    if let Some(rpr) = child(&ppr, "rPr") {
-      if let Some(sz) = child(&rpr, "sz").and_then(|n| get_attr_local(&n, "val")) {
-        if let Ok(v) = sz.parse::<u32>() {
-          max_sz = Some(max_sz.map_or(v, |m| m.max(v)));
-        }
-      }
-    }
-  }
-
-  for r in children(p, "r") {
-    if let Some(rpr) = child(&r, "rPr") {
-      if let Some(sz) = child(&rpr, "sz").and_then(|n| get_attr_local(&n, "val")) {
-        if let Ok(v) = sz.parse::<u32>() {
-          max_sz = Some(max_sz.map_or(v, |m| m.max(v)));
-        }
-      }
-    }
-  }
-
-  max_sz.or_else(|| styles.default_size_by_style_id.get(style_id).copied())
+  let run_sizes = children(p, "r")
+    .filter_map(|r| child(&r, "rPr"))
+    .chain(child(p, "pPr").and_then(|ppr| child(&ppr, "rPr")))
+    .filter_map(|rpr| child(&rpr, "sz"))
+    .filter_map(|n| attr(&n, "val"))
+    .filter_map(|v| v.parse::<u32>().ok());
+  run_sizes
+    .max()
+    .or_else(|| styles.default_size_by_style_id.get(style_id).copied())
 }
 
-fn compute_style_size_buckets_for_doc(
-  xml: &XmlDoc,
-  styles: &StylesInfo,
-) -> HashMap<String, Vec<u32>> {
-  let mut sets: HashMap<String, std::collections::BTreeSet<u32>> = HashMap::new();
+/// Distinct font sizes seen per heading/title style, largest first.
+fn compute_style_size_buckets(xml: &XmlDoc, styles: &StylesInfo) -> HashMap<String, Vec<u32>> {
+  let mut sets: HashMap<String, BTreeSet<u32>> = HashMap::new();
 
   for p in xml.descendants().filter(|n| is_tag(n, "p")) {
-    let Some(style_id) = child(&p, "pPr")
-      .and_then(|n| child(&n, "pStyle"))
-      .and_then(|n| get_attr_local(&n, "val"))
-    else {
+    let Some(style_id) = paragraph_style_id(&p) else {
       continue;
     };
-
-    let id_l = style_id.to_ascii_lowercase();
-    let name_l = styles
+    let id_lower = style_id.to_ascii_lowercase();
+    let name_lower = styles
       .name_by_style_id
       .get(style_id)
       .map(|s| s.to_ascii_lowercase())
       .unwrap_or_default();
-
-    if !(id_l.contains("heading")
-      || id_l.contains("title")
-      || name_l.contains("heading")
-      || name_l.contains("title"))
+    if !(id_lower.contains("heading")
+      || id_lower.contains("title")
+      || name_lower.contains("heading")
+      || name_lower.contains("title"))
     {
       continue;
     }
-
-    if let Some(sz) = paragraph_effective_size(&p, styles, style_id) {
-      sets.entry(style_id.to_string()).or_default().insert(sz);
+    if let Some(size) = paragraph_effective_size(&p, styles, style_id) {
+      sets.entry(style_id.to_string()).or_default().insert(size);
     }
   }
 
   sets
     .into_iter()
-    .map(|(k, vset)| {
-      let mut v: Vec<u32> = vset.into_iter().collect();
-      v.sort_by(|a, b| b.cmp(a));
-      (k, v)
+    .map(|(style_id, sizes)| {
+      let mut sizes: Vec<u32> = sizes.into_iter().collect();
+      sizes.reverse();
+      (style_id, sizes)
     })
     .collect()
 }
@@ -482,15 +336,6 @@ enum VerticalAlign {
   Subscript,
 }
 
-#[derive(Clone, Copy)]
-struct ResolvedRunStyle {
-  bold: bool,
-  italic: bool,
-  strike: bool,
-  code: bool,
-  vert_align: VerticalAlign,
-}
-
 impl RunStyle {
   fn merged(&self, overrides: &RunStyle) -> RunStyle {
     RunStyle {
@@ -502,32 +347,32 @@ impl RunStyle {
     }
   }
 
-  fn resolve_with(&self, local: &RunStyle) -> ResolvedRunStyle {
-    ResolvedRunStyle {
-      bold: local.bold.or(self.bold).unwrap_or(false),
-      italic: local.italic.or(self.italic).unwrap_or(false),
-      strike: local.strike.or(self.strike).unwrap_or(false),
-      code: local.code.or(self.code).unwrap_or(false),
-      vert_align: local
-        .vert_align
-        .or(self.vert_align)
-        .unwrap_or(VerticalAlign::Baseline),
-    }
-  }
-}
+  fn apply(&self, local: &RunStyle, mut inlines: Vec<Inline>) -> Vec<Inline> {
+    let resolved = self.merged(local);
 
-impl ResolvedRunStyle {
-  fn apply(self, mut inlines: Vec<Inline>) -> Vec<Inline> {
-    if self.strike {
+    if resolved.code.unwrap_or(false) {
+      let code_text: String = inlines
+        .iter()
+        .filter_map(|i| match i {
+          Inline::Text(s) => Some(s.as_str()),
+          _ => None,
+        })
+        .collect();
+      if !code_text.is_empty() {
+        return vec![Inline::Code(code_text)];
+      }
+    }
+
+    if resolved.strike.unwrap_or(false) {
       inlines = vec![Inline::Del(inlines)];
     }
-    if self.italic {
+    if resolved.italic.unwrap_or(false) {
       inlines = vec![Inline::Em(inlines)];
     }
-    if self.bold {
+    if resolved.bold.unwrap_or(false) {
       inlines = vec![Inline::Strong(inlines)];
     }
-    match self.vert_align {
+    match resolved.vert_align.unwrap_or(VerticalAlign::Baseline) {
       VerticalAlign::Superscript => vec![Inline::Sup(inlines)],
       VerticalAlign::Subscript => vec![Inline::Sub(inlines)],
       VerticalAlign::Baseline => inlines,
@@ -535,44 +380,36 @@ impl ResolvedRunStyle {
   }
 }
 
-fn read_on_off(node: &Node) -> Option<bool> {
-  let value = get_attr_local(node, "val").map(|v| v.to_ascii_lowercase());
-  match value.as_deref() {
-    None => Some(true),
-    Some("0") | Some("false") | Some("off") => Some(false),
-    Some(_) => Some(true),
-  }
+fn read_on_off(node: &Node) -> bool {
+  !matches!(
+    attr(node, "val").map(|v| v.to_ascii_lowercase()).as_deref(),
+    Some("0") | Some("false") | Some("off")
+  )
 }
 
 fn run_style_from_rpr(rpr: &Node) -> RunStyle {
   let mut style = RunStyle::default();
-
-  if let Some(b) = child(rpr, "b").and_then(|n| read_on_off(&n)) {
-    style.bold = Some(b);
+  if let Some(b) = child(rpr, "b") {
+    style.bold = Some(read_on_off(&b));
   }
-  if let Some(i) = child(rpr, "i").and_then(|n| read_on_off(&n)) {
-    style.italic = Some(i);
+  if let Some(i) = child(rpr, "i") {
+    style.italic = Some(read_on_off(&i));
   }
-  if let Some(s) = child(rpr, "strike").and_then(|n| read_on_off(&n)) {
-    style.strike = Some(s);
+  if let Some(s) = child(rpr, "strike") {
+    style.strike = Some(read_on_off(&s));
   }
-  if let Some(rstyle) = child(rpr, "rStyle").and_then(|n| get_attr_local(&n, "val")) {
+  if let Some(rstyle) = child(rpr, "rStyle").and_then(|n| attr(&n, "val")) {
     if rstyle.to_ascii_lowercase().contains("code") {
       style.code = Some(true);
     }
   }
-  if let Some(va) = child(rpr, "vertAlign").and_then(|n| get_attr_local(&n, "val")) {
-    let lower = va.to_ascii_lowercase();
-    let val = if lower == "sup" || lower == "superscript" {
-      VerticalAlign::Superscript
-    } else if lower == "sub" || lower == "subscript" {
-      VerticalAlign::Subscript
-    } else {
-      VerticalAlign::Baseline
-    };
-    style.vert_align = Some(val);
+  if let Some(va) = child(rpr, "vertAlign").and_then(|n| attr(&n, "val")) {
+    style.vert_align = Some(match va.to_ascii_lowercase().as_str() {
+      "sup" | "superscript" => VerticalAlign::Superscript,
+      "sub" | "subscript" => VerticalAlign::Subscript,
+      _ => VerticalAlign::Baseline,
+    });
   }
-
   style
 }
 
@@ -583,14 +420,36 @@ fn paragraph_run_style(p: &Node) -> RunStyle {
     .unwrap_or_default()
 }
 
-fn parse_run(run: &Node, _rels: &Relationships, base_style: &RunStyle) -> Vec<Inline> {
+fn parse_paragraph(node: &Node, ctx: Ctx) -> Paragraph {
+  let kind = paragraph_kind(node, ctx);
+  let base_style = paragraph_run_style(node);
+  let mut inlines = Vec::new();
+
+  for c in node.children().filter(|n| n.is_element()) {
+    if is_tag(&c, "r") {
+      inlines.extend(parse_run(&c, &base_style));
+    } else if is_tag(&c, "hyperlink") {
+      if let Some(link) = parse_hyperlink(&c, ctx.rels, &base_style) {
+        inlines.push(link);
+      }
+    } else if is_tag(&c, "bookmarkStart") {
+      if let Some(name) = attr(&c, "name") {
+        inlines.push(Inline::Bookmark(BookmarkId(name.to_string())));
+      }
+    } else if is_tag(&c, "br") {
+      inlines.push(Inline::LineBreak);
+    }
+  }
+
+  Paragraph { kind, inlines }
+}
+
+fn parse_run(run: &Node, base_style: &RunStyle) -> Vec<Inline> {
   let local_style = child(run, "rPr")
     .map(|rpr| run_style_from_rpr(&rpr))
     .unwrap_or_default();
-  let resolved = base_style.resolve_with(&local_style);
 
   let mut out = Vec::new();
-
   for c in run.children().filter(|n| n.is_element()) {
     if is_tag(&c, "t") {
       if let Some(text) = c.text() {
@@ -601,41 +460,28 @@ fn parse_run(run: &Node, _rels: &Relationships, base_style: &RunStyle) -> Vec<In
     } else if is_tag(&c, "tab") {
       out.push(Inline::Text("\t".to_string()));
     } else if is_tag(&c, "footnoteReference") {
-      if let Some(id) = get_attr_local(&c, "id") {
+      if let Some(id) = attr(&c, "id") {
         out.push(Inline::FootnoteRef(NoteId(id.to_string())));
       }
     } else if is_tag(&c, "endnoteReference") {
-      if let Some(id) = get_attr_local(&c, "id") {
+      if let Some(id) = attr(&c, "id") {
         out.push(Inline::EndnoteRef(NoteId(id.to_string())));
       }
     } else if is_tag(&c, "commentReference") {
-      if let Some(id) = get_attr_local(&c, "id") {
+      if let Some(id) = attr(&c, "id") {
         out.push(Inline::CommentRef(CommentId(id.to_string())));
       }
     }
   }
 
-  if resolved.code {
-    let code_text: String = out
-      .iter()
-      .filter_map(|i| match i {
-        Inline::Text(s) => Some(s.as_str()),
-        _ => None,
-      })
-      .collect();
-    if !code_text.is_empty() {
-      return vec![Inline::Code(code_text)];
-    }
-  }
-
-  resolved.apply(out)
+  base_style.apply(&local_style, out)
 }
 
 fn parse_hyperlink(node: &Node, rels: &Relationships, base_style: &RunStyle) -> Option<Inline> {
-  let href = if let Some(id) = get_attr_local(node, "id") {
+  let href = if let Some(id) = attr(node, "id") {
     rels.get(id).map(|s| s.to_string())
   } else {
-    get_attr_local(node, "anchor").map(|anchor| format!("#{anchor}"))
+    attr(node, "anchor").map(|anchor| format!("#{anchor}"))
   }?;
 
   let link_style = child(node, "rPr")
@@ -643,55 +489,78 @@ fn parse_hyperlink(node: &Node, rels: &Relationships, base_style: &RunStyle) -> 
     .unwrap_or_default();
   let combined_style = base_style.merged(&link_style);
 
-  let mut children = Vec::new();
-  for child in node.children().filter(|n| n.is_element()) {
-    if is_tag(&child, "r") {
-      children.extend(parse_run(&child, rels, &combined_style));
-    }
+  let mut link_children = Vec::new();
+  for run in children(node, "r") {
+    link_children.extend(parse_run(&run, &combined_style));
   }
 
-  Some(Inline::Link { href, children })
+  Some(Inline::Link {
+    href,
+    children: link_children,
+  })
 }
 
-fn parse_table<R: Read + Seek>(
-  node: &Node,
-  rels: &Relationships,
-  styles: &StylesInfo,
-  size_buckets: &HashMap<String, Vec<u32>>,
-  numbering: &NumberingInfo,
-  zip: &mut ZipArchive<R>,
-) -> Option<Table> {
+fn parse_blocks(parent: &Node, ctx: Ctx) -> Vec<Block> {
+  let nodes: Vec<Node> = parent.children().filter(|n| n.is_element()).collect();
+  let mut out = Vec::new();
+  let mut i = 0;
+
+  while i < nodes.len() {
+    let node = &nodes[i];
+    if is_tag(node, "p") {
+      if paragraph_list_info(node, ctx.numbering).is_some() {
+        let (list, next_i) = parse_list(&nodes, i, ctx);
+        if !list.items.is_empty() {
+          out.push(Block::List(list));
+        }
+        i = next_i;
+        continue;
+      }
+      if let Some(image) = parse_image_paragraph(node, ctx.rels) {
+        out.push(Block::Image(image));
+      } else {
+        let para = parse_paragraph(node, ctx);
+        if has_visible_content(&para.inlines) {
+          out.push(Block::Paragraph(para));
+        }
+      }
+    } else if is_tag(node, "tbl") {
+      out.push(Block::Table(parse_table(node, ctx)));
+    }
+    i += 1;
+  }
+  out
+}
+
+fn parse_table(node: &Node, ctx: Ctx) -> Table {
   let mut rows = Vec::new();
   for tr in children(node, "tr") {
-    let kind = table_row_kind(&tr);
-    let mut cells = Vec::new();
-    for tc in children(&tr, "tc") {
-      let cell_blocks = parse_block_children(&tc, rels, styles, size_buckets, numbering, zip);
-      let cell = TableCell {
-        blocks: cell_blocks,
-        colspan: NonZeroU32::new(1).unwrap(),
-        rowspan: NonZeroU32::new(1).unwrap(),
-      };
-      cells.push(cell);
-    }
-    rows.push(TableRow { cells, kind });
+    let header = child(&tr, "trPr")
+      .and_then(|trpr| child(&trpr, "tblHeader"))
+      .is_some();
+    let cells = children(&tr, "tc")
+      .map(|tc| TableCell {
+        blocks: parse_blocks(&tc, ctx),
+        colspan: NonZeroU32::MIN,
+        rowspan: NonZeroU32::MIN,
+      })
+      .collect();
+    rows.push(TableRow {
+      cells,
+      kind: if header {
+        TableRowKind::Header
+      } else {
+        TableRowKind::Body
+      },
+    });
   }
 
-  if !rows.is_empty() && rows.iter().any(|r| matches!(r.kind, TableRowKind::Header)) {
+  if rows.iter().any(|r| matches!(r.kind, TableRowKind::Header)) {
     if let Some(last) = rows.last_mut() {
       last.kind = TableRowKind::Footer;
     }
   }
-  Some(Table { rows })
-}
-
-fn table_row_kind(tr: &Node) -> TableRowKind {
-  if let Some(trpr) = child(tr, "trPr") {
-    if child(&trpr, "tblHeader").is_some() {
-      return TableRowKind::Header;
-    }
-  }
-  TableRowKind::Body
+  Table { rows }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -709,224 +578,136 @@ struct NumberingInfo {
 
 impl NumberingInfo {
   fn list_type(&self, num_id: &str, ilvl: &str) -> Option<ListType> {
-    let abs = self.num_to_abstract.get(num_id)?;
-    let levels = self.abstract_levels.get(abs)?;
-    levels.get(ilvl).copied()
+    self
+      .abstract_levels
+      .get(self.num_to_abstract.get(num_id)?)?
+      .get(ilvl)
+      .copied()
   }
 }
 
 fn read_numbering<R: Read + Seek>(zip: &mut ZipArchive<R>) -> NumberingInfo {
-  let text = match read_zip_text(zip, "word/numbering.xml") {
-    Some(t) => t,
-    None => return NumberingInfo::default(),
-  };
-  let doc = match XmlDoc::parse(strip_bom(&text)) {
-    Ok(d) => d,
-    Err(_) => return NumberingInfo::default(),
-  };
-
   let mut info = NumberingInfo::default();
+  let Some(text) = read_zip_text(zip, "word/numbering.xml") else {
+    return info;
+  };
+  let Ok(xml) = XmlDoc::parse(strip_bom(&text)) else {
+    return info;
+  };
 
-  for num in doc.descendants().filter(|n| is_tag(n, "num")) {
-    if let Some(num_id) = get_attr_local(&num, "numId") {
-      if let Some(abs) = child(&num, "abstractNumId").and_then(|n| get_attr_local(&n, "val")) {
-        info
-          .num_to_abstract
-          .insert(num_id.to_string(), abs.to_string());
-      }
+  for num in xml.descendants().filter(|n| is_tag(n, "num")) {
+    if let (Some(num_id), Some(abs)) = (
+      attr(&num, "numId"),
+      child(&num, "abstractNumId").and_then(|n| attr(&n, "val")),
+    ) {
+      info
+        .num_to_abstract
+        .insert(num_id.to_string(), abs.to_string());
     }
   }
 
-  for abs in doc.descendants().filter(|n| is_tag(n, "abstractNum")) {
-    if let Some(abs_id) = get_attr_local(&abs, "abstractNumId") {
-      let mut levels: HashMap<String, ListType> = HashMap::new();
-      for lvl in children(&abs, "lvl") {
-        if let Some(ilvl) = get_attr_local(&lvl, "ilvl") {
-          let fmt = child(&lvl, "numFmt").and_then(|n| get_attr_local(&n, "val"));
-          let list_type = match fmt.unwrap_or("") {
-            "bullet" => ListType::Unordered,
-            _ => ListType::Ordered,
-          };
-          levels.insert(ilvl.to_string(), list_type);
-        }
+  for abs in xml.descendants().filter(|n| is_tag(n, "abstractNum")) {
+    let Some(abs_id) = attr(&abs, "abstractNumId") else {
+      continue;
+    };
+    let mut levels = HashMap::new();
+    for lvl in children(&abs, "lvl") {
+      if let Some(ilvl) = attr(&lvl, "ilvl") {
+        let fmt = child(&lvl, "numFmt").and_then(|n| attr(&n, "val"));
+        let list_type = match fmt.unwrap_or("") {
+          "bullet" => ListType::Unordered,
+          _ => ListType::Ordered,
+        };
+        levels.insert(ilvl.to_string(), list_type);
       }
-      info.abstract_levels.insert(abs_id.to_string(), levels);
     }
+    info.abstract_levels.insert(abs_id.to_string(), levels);
   }
-
   info
 }
 
 fn paragraph_list_info(p: &Node, numbering: &NumberingInfo) -> Option<ListInfo> {
-  let ppr = child(p, "pPr")?;
-  let numpr = child(&ppr, "numPr")?;
-  let ilvl_str = child(&numpr, "ilvl").and_then(|n| get_attr_local(&n, "val"))?;
-  let num_id = child(&numpr, "numId").and_then(|n| get_attr_local(&n, "val"))?;
-  let ilvl: u32 = ilvl_str.parse().unwrap_or(0);
-  let list_type = numbering
-    .list_type(num_id, ilvl_str)
-    .unwrap_or(ListType::Unordered);
+  let numpr = child(p, "pPr").and_then(|ppr| child(&ppr, "numPr"))?;
+  let ilvl_str = child(&numpr, "ilvl").and_then(|n| attr(&n, "val"))?;
+  let num_id = child(&numpr, "numId").and_then(|n| attr(&n, "val"))?;
   Some(ListInfo {
-    list_type,
+    list_type: numbering
+      .list_type(num_id, ilvl_str)
+      .unwrap_or(ListType::Unordered),
     num_id: num_id.to_string(),
-    ilvl,
+    ilvl: ilvl_str.parse().unwrap_or(0),
   })
 }
 
-fn parse_block_children<R: Read + Seek>(
-  parent: &Node,
-  rels: &Relationships,
-  styles: &StylesInfo,
-  size_buckets: &HashMap<String, Vec<u32>>,
-  numbering: &NumberingInfo,
-  zip: &mut ZipArchive<R>,
-) -> Vec<Block> {
-  let nodes: Vec<Node> = parent.children().filter(|n| n.is_element()).collect();
-  let mut out: Vec<Block> = Vec::new();
-  let mut i = 0usize;
-
-  while i < nodes.len() {
-    let node = &nodes[i];
-    if is_tag(node, "p") {
-      if paragraph_list_info(node, numbering).is_some() {
-        let (list, new_i) = parse_list(&nodes, i, rels, styles, size_buckets, numbering, zip);
-        if !list.items.is_empty() {
-          out.push(Block::List(list));
-        }
-        i = new_i;
-        continue;
-      }
-      if let Some(image) = parse_image_paragraph(node, rels, zip) {
-        out.push(Block::Image(image));
-        i += 1;
-        continue;
-      }
-      if let Some((para, _)) =
-        parse_paragraph_with_listinfo(node, rels, styles, size_buckets, numbering)
-      {
-        if paragraph_has_visible_content(&para) {
-          out.push(Block::Paragraph(para));
-        }
-      }
-      i += 1;
-    } else if is_tag(node, "tbl") {
-      if let Some(table) = parse_table(node, rels, styles, size_buckets, numbering, zip) {
-        out.push(Block::Table(table));
-      }
-      i += 1;
-    } else {
-      i += 1;
-    }
-  }
-  out
-}
-
-fn parse_list<R: Read + Seek>(
-  nodes: &[Node],
-  mut i: usize,
-  rels: &Relationships,
-  styles: &StylesInfo,
-  size_buckets: &HashMap<String, Vec<u32>>,
-  numbering: &NumberingInfo,
-  zip: &mut ZipArchive<R>,
-) -> (List, usize) {
-  let first_info =
-    paragraph_list_info(&nodes[i], numbering).expect("parse_list called at non-list paragraph");
-  let base_ilvl = first_info.ilvl;
-  let base_num_id = first_info.num_id.clone();
-  let base_type = first_info.list_type;
-
+/// Consumes consecutive numbered paragraphs at one level into a list,
+/// recursing for deeper levels. Returns the list and the next unconsumed
+/// node index.
+fn parse_list(nodes: &[Node], mut i: usize, ctx: Ctx) -> (List, usize) {
   let mut list = List {
     items: Vec::new(),
-    list_type: base_type,
+    list_type: ListType::Unordered,
   };
+  let Some(base) = nodes
+    .get(i)
+    .and_then(|n| paragraph_list_info(n, ctx.numbering))
+  else {
+    return (list, i + 1);
+  };
+  list.list_type = base.list_type;
 
   while i < nodes.len() {
     let node = &nodes[i];
     if !is_tag(node, "p") {
       break;
     }
-    let info = match paragraph_list_info(node, numbering) {
-      Some(x) => x,
-      None => break,
+    let Some(info) = paragraph_list_info(node, ctx.numbering) else {
+      break;
     };
-    if info.ilvl < base_ilvl {
+    if info.ilvl < base.ilvl
+      || (info.ilvl == base.ilvl
+        && (info.list_type != base.list_type || info.num_id != base.num_id))
+    {
       break;
     }
-    if info.ilvl == base_ilvl && (info.list_type != base_type || info.num_id != base_num_id) {
+    if info.ilvl > base.ilvl {
+      // deeper level with no parent item yet; let the caller handle it
       break;
     }
 
-    if info.ilvl == base_ilvl {
-      let mut blocks: Vec<Block> = Vec::new();
-      if let Some(image) = parse_image_paragraph(node, rels, zip) {
-        blocks.push(Block::Image(image));
-      } else if let Some((para, _)) =
-        parse_paragraph_with_listinfo(node, rels, styles, size_buckets, numbering)
-      {
-        if paragraph_has_visible_content(&para) {
-          blocks.push(Block::Paragraph(para));
-        }
+    let mut blocks = Vec::new();
+    if let Some(image) = parse_image_paragraph(node, ctx.rels) {
+      blocks.push(Block::Image(image));
+    } else {
+      let para = parse_paragraph(node, ctx);
+      if has_visible_content(&para.inlines) {
+        blocks.push(Block::Paragraph(para));
       }
-      list.items.push(ListItem { blocks });
-      i += 1;
+    }
+    list.items.push(ListItem { blocks });
+    i += 1;
 
-      loop {
-        if i >= nodes.len() {
-          break;
-        }
-        let node2 = &nodes[i];
-        if !is_tag(node2, "p") {
-          break;
-        }
-        match paragraph_list_info(node2, numbering) {
-          Some(sub) if sub.ilvl > base_ilvl => {
-            let (sublist, new_i) = parse_list(nodes, i, rels, styles, size_buckets, numbering, zip);
-            if let Some(last) = list.items.last_mut() {
-              last.blocks.push(Block::List(sublist));
-            }
-            i = new_i;
+    while i < nodes.len() && is_tag(&nodes[i], "p") {
+      match paragraph_list_info(&nodes[i], ctx.numbering) {
+        Some(sub) if sub.ilvl > base.ilvl => {
+          let (sublist, next_i) = parse_list(nodes, i, ctx);
+          if let Some(last) = list.items.last_mut() {
+            last.blocks.push(Block::List(sublist));
           }
-          _ => break,
+          i = next_i;
         }
+        _ => break,
       }
+    }
 
-      if list.items.last().is_some_and(|last| last.blocks.is_empty()) {
-        list.items.pop();
-      }
+    if list.items.last().is_some_and(|last| last.blocks.is_empty()) {
+      list.items.pop();
     }
   }
 
   (list, i)
 }
 
-fn paragraph_has_visible_content(p: &Paragraph) -> bool {
-  inlines_have_visible_content(&p.inlines)
-}
-
-fn inlines_have_visible_content(inlines: &[Inline]) -> bool {
-  inlines.iter().any(inline_is_visible)
-}
-
-fn inline_is_visible(i: &Inline) -> bool {
-  match i {
-    Inline::Text(t) => !t.trim().is_empty(),
-    Inline::LineBreak => false,
-    Inline::Link { children, .. } => inlines_have_visible_content(children),
-    Inline::Strong(c) | Inline::Em(c) | Inline::Del(c) | Inline::Sup(c) | Inline::Sub(c) => {
-      inlines_have_visible_content(c)
-    }
-    Inline::Code(c) => !c.trim().is_empty(),
-    Inline::FootnoteRef(_) | Inline::EndnoteRef(_) | Inline::CommentRef(_) => true,
-    Inline::Bookmark(_) => false,
-  }
-}
-
-fn parse_image_paragraph<R: Read + Seek>(
-  p: &Node,
-  rels: &Relationships,
-  zip: &mut ZipArchive<R>,
-) -> Option<Image> {
+fn parse_image_paragraph(p: &Node, rels: &Relationships) -> Option<Image> {
   let has_text = p
     .descendants()
     .filter(|n| is_tag(n, "t"))
@@ -936,139 +717,100 @@ fn parse_image_paragraph<R: Read + Seek>(
   }
 
   if let Some(drawing) = p.descendants().find(|n| is_tag(n, "drawing")) {
-    if let Some(img) = image_from_drawing(&drawing, rels, zip) {
-      return Some(img);
-    }
+    let blip = drawing.descendants().find(|n| is_tag(n, "blip"))?;
+    let rel_id = attr(&blip, "embed").or_else(|| attr(&blip, "link"))?;
+    let alt = drawing
+      .descendants()
+      .find(|n| is_tag(n, "docPr"))
+      .and_then(|n| attr(&n, "descr").or_else(|| attr(&n, "title")))
+      .map(|s| s.to_string());
+    return external_image(rels.get(rel_id)?, alt);
   }
 
   if let Some(pict) = p.descendants().find(|n| is_tag(n, "pict")) {
-    if let Some(img) = image_from_vml(&pict, rels, zip) {
-      return Some(img);
-    }
+    let imagedata = pict.descendants().find(|n| is_tag(n, "imagedata"))?;
+    let rel_id = attr(&imagedata, "id")?;
+    let alt = attr(&imagedata, "title").map(|s| s.to_string());
+    return external_image(rels.get(rel_id)?, alt);
   }
   None
 }
 
-fn image_from_drawing<R: Read + Seek>(
-  drawing: &Node,
-  rels: &Relationships,
-  zip: &mut ZipArchive<R>,
-) -> Option<Image> {
-  let blip = drawing.descendants().find(|n| is_tag(n, "blip"))?;
-  let rel_id = get_attr_local(&blip, "embed").or_else(|| get_attr_local(&blip, "link"))?;
-  let alt = drawing
-    .descendants()
-    .find(|n| is_tag(n, "docPr"))
-    .and_then(|n| get_attr_local(&n, "descr").or_else(|| get_attr_local(&n, "title")))
-    .map(|s| s.to_string());
-  image_from_relationship_id(rel_id, rels, zip, alt)
-}
-
-fn image_from_vml<R: Read + Seek>(
-  pict: &Node,
-  rels: &Relationships,
-  zip: &mut ZipArchive<R>,
-) -> Option<Image> {
-  let imagedata = pict.descendants().find(|n| is_tag(n, "imagedata"))?;
-  let rel_id = get_attr_local(&imagedata, "id")?;
-  let alt = get_attr_local(&imagedata, "title").map(|s| s.to_string());
-  image_from_relationship_id(rel_id, rels, zip, alt)
-}
-
-fn image_from_relationship_id<R: Read + Seek>(
-  rid: &str,
-  rels: &Relationships,
-  _zip: &mut ZipArchive<R>,
-  alt: Option<String>,
-) -> Option<Image> {
-  let target = rels.get(rid)?;
-  // only include external images (http/https URLs)
+/// Only external (http/https) images are representable in the output.
+fn external_image(target: &str, alt: Option<String>) -> Option<Image> {
   if target.starts_with("http://") || target.starts_with("https://") {
-    return Some(Image {
+    Some(Image {
       src: target.to_string(),
       alt,
-    });
+    })
+  } else {
+    None
   }
-  None
 }
 
-fn read_notes<R: Read + Seek>(
-  zip: &mut ZipArchive<R>,
-  xml_path: &str,
-  rels_path: &str,
-  kind: NoteKind,
-  styles: &StylesInfo,
-  size_buckets: &HashMap<String, Vec<u32>>,
-  numbering: &NumberingInfo,
-) -> Vec<Note> {
-  let text = match read_zip_text(zip, xml_path) {
-    Some(t) => t,
-    None => return Vec::new(),
+fn read_notes<R: Read + Seek>(zip: &mut ZipArchive<R>, kind: NoteKind, ctx: Ctx) -> Vec<Note> {
+  let (xml_path, rels_path, root_tag) = match kind {
+    NoteKind::Footnote => (
+      "word/footnotes.xml",
+      "word/_rels/footnotes.xml.rels",
+      "footnote",
+    ),
+    NoteKind::Endnote => (
+      "word/endnotes.xml",
+      "word/_rels/endnotes.xml.rels",
+      "endnote",
+    ),
   };
-  let doc = match XmlDoc::parse(strip_bom(&text)) {
-    Ok(d) => d,
-    Err(_) => return Vec::new(),
+  let Some(text) = read_zip_text(zip, xml_path) else {
+    return Vec::new();
+  };
+  let Ok(xml) = XmlDoc::parse(strip_bom(&text)) else {
+    return Vec::new();
   };
   let rels = read_relationships(zip, rels_path);
+  let ctx = Ctx { rels: &rels, ..ctx };
 
   let mut notes = Vec::new();
-  let root_tag = match kind {
-    NoteKind::Footnote => "footnote",
-    NoteKind::Endnote => "endnote",
-  };
-  for n in doc.descendants().filter(|n| is_tag(n, root_tag)) {
-    let Some(id) = get_attr_local(&n, "id") else {
+  for n in xml.descendants().filter(|n| is_tag(n, root_tag)) {
+    let Some(id) = attr(&n, "id") else {
       continue;
     };
-
-    if let Some(t) = get_attr_local(&n, "type") {
-      if t == "separator" || t == "continuationSeparator" {
-        continue;
-      }
+    if matches!(
+      attr(&n, "type"),
+      Some("separator" | "continuationSeparator")
+    ) {
+      continue;
     }
-    let blocks = parse_block_children(&n, &rels, styles, size_buckets, numbering, zip);
     notes.push(Note {
       id: NoteId(id.to_string()),
       kind,
-      blocks,
+      blocks: parse_blocks(&n, ctx),
     });
   }
   notes
 }
 
-fn read_comments<R: Read + Seek>(
-  zip: &mut ZipArchive<R>,
-  xml_path: &str,
-  rels_path: &str,
-  styles: &StylesInfo,
-  size_buckets: &HashMap<String, Vec<u32>>,
-  numbering: &NumberingInfo,
-) -> Vec<Comment> {
-  let text = match read_zip_text(zip, xml_path) {
-    Some(t) => t,
-    None => return Vec::new(),
+fn read_comments<R: Read + Seek>(zip: &mut ZipArchive<R>, ctx: Ctx) -> Vec<Comment> {
+  let Some(text) = read_zip_text(zip, "word/comments.xml") else {
+    return Vec::new();
   };
-  let doc = match XmlDoc::parse(strip_bom(&text)) {
-    Ok(d) => d,
-    Err(_) => return Vec::new(),
+  let Ok(xml) = XmlDoc::parse(strip_bom(&text)) else {
+    return Vec::new();
   };
-  let rels = read_relationships(zip, rels_path);
+  let rels = read_relationships(zip, "word/_rels/comments.xml.rels");
+  let ctx = Ctx { rels: &rels, ..ctx };
 
-  let mut out = Vec::new();
-  for c in doc.descendants().filter(|n| is_tag(n, "comment")) {
-    let Some(id) = get_attr_local(&c, "id") else {
+  let mut comments = Vec::new();
+  for c in xml.descendants().filter(|n| is_tag(n, "comment")) {
+    let Some(id) = attr(&c, "id") else {
       continue;
     };
-
-    let author = get_attr_local(&c, "author").map(|s| s.to_string());
-    let initials = get_attr_local(&c, "initials").map(|s| s.to_string());
-    let blocks = parse_block_children(&c, &rels, styles, size_buckets, numbering, zip);
-    out.push(Comment {
+    comments.push(Comment {
       id: CommentId(id.to_string()),
-      author_name: author,
-      author_initials: initials,
-      blocks,
+      author_name: attr(&c, "author").map(|s| s.to_string()),
+      author_initials: attr(&c, "initials").map(|s| s.to_string()),
+      blocks: parse_blocks(&c, ctx),
     });
   }
-  out
+  comments
 }

@@ -6,13 +6,16 @@ module Firecrawl
     class AgentOptions
       FIELDS = %i[
         urls prompt schema integration max_credits
-        strict_constrain_to_urls model webhook
+        strict_constrain_to_urls model webhook audit_metadata
       ].freeze
 
       attr_reader(*FIELDS)
 
       def initialize(**kwargs)
         FIELDS.each { |f| instance_variable_set(:"@#{f}", kwargs[f]) }
+        if audit_metadata && !audit_metadata.is_a?(AuditMetadata)
+          raise ArgumentError, "audit_metadata must be an AuditMetadata"
+        end
         raise ArgumentError, "Agent prompt is required" if prompt.nil? || prompt.empty?
       end
 
@@ -26,6 +29,7 @@ module Firecrawl
           "strictConstrainToURLs" => strict_constrain_to_urls,
           "model" => model,
           "webhook" => webhook.is_a?(Hash) ? webhook : webhook&.to_h,
+          "auditMetadata" => audit_metadata&.to_h,
         }.compact
       end
     end

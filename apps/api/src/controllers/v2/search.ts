@@ -31,12 +31,14 @@ import { applyAgentAuthDiscoveryHeader } from "../../lib/agent-auth-discovery";
 import { resolveThreatProtection } from "../../lib/threat-protection/request";
 import {
   actionTypesOf,
+  checkKeyEndpointRestriction,
   checkKeyFormatRestriction,
   formatTypesOf,
 } from "../../lib/key-restriction";
 import type { SearchV2Response } from "../../lib/entities";
 import { executeExchangeCalls } from "../../services/exchange/execute";
 import { redactExchangeCredentials } from "../../services/exchange/invoke";
+import { wantsDeveloperCategory } from "../../search/developer";
 
 export async function searchController(
   req: RequestWithAuth<{}, SearchResponse, SearchRequest>,
@@ -86,6 +88,20 @@ export async function searchController(
         success: false,
         error: keyRestriction.error,
       });
+    }
+
+    if (wantsDeveloperCategory(req.body.categories as CategoryOption[])) {
+      const developerRestriction = await checkKeyEndpointRestriction(
+        "/v2/developer/search",
+        req.acuc?.api_key_id,
+        req.acuc?.flags ?? null,
+      );
+      if (!developerRestriction.allowed) {
+        return res.status(developerRestriction.status).json({
+          success: false,
+          error: developerRestriction.error,
+        });
+      }
     }
 
     if (
@@ -223,7 +239,9 @@ export async function searchController(
           },
           {
             teamId: req.auth.team_id,
+            orgId: req.acuc?.org_id ?? null,
             origin: req.body.origin,
+            integration: req.body.integration,
             apiKeyId: req.acuc?.api_key_id ?? null,
             flags: req.acuc?.flags ?? null,
             requestId: agentRequestId ?? jobId,

@@ -31,6 +31,7 @@ public class ParseOptions {
     private String integration;
     @JsonProperty("redactPII")
     private Boolean redactPII;
+    private AuditMetadata auditMetadata;
 
     private ParseOptions() {}
 
@@ -48,6 +49,8 @@ public class ParseOptions {
     public String getIntegration() { return integration; }
     @JsonProperty("redactPII")
     public Boolean getRedactPII() { return redactPII; }
+    @JsonProperty("auditMetadata")
+    public AuditMetadata getAuditMetadata() { return auditMetadata; }
 
     public static Builder builder() { return new Builder(); }
 
@@ -66,6 +69,7 @@ public class ParseOptions {
         b.proxy = this.proxy;
         b.integration = this.integration;
         b.redactPII = this.redactPII;
+        b.auditMetadata = this.auditMetadata;
         return b;
     }
 
@@ -113,6 +117,7 @@ public class ParseOptions {
         private String proxy;
         private String integration;
         private Boolean redactPII;
+        private AuditMetadata auditMetadata;
 
         private Builder() {}
 
@@ -129,6 +134,7 @@ public class ParseOptions {
         public Builder proxy(String proxy) { this.proxy = proxy; return this; }
         public Builder integration(String integration) { this.integration = integration; return this; }
         public Builder redactPII(Boolean redactPII) { this.redactPII = redactPII; return this; }
+        public Builder auditMetadata(AuditMetadata auditMetadata) { this.auditMetadata = auditMetadata; return this; }
 
         public ParseOptions build() {
             if (timeout != null && timeout <= 0) {
@@ -162,6 +168,7 @@ public class ParseOptions {
             o.proxy = this.proxy;
             o.integration = this.integration;
             o.redactPII = this.redactPII;
+            o.auditMetadata = this.auditMetadata;
             return o;
         }
     }

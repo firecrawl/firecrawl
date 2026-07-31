@@ -20,6 +20,7 @@ import { BrandingProfile } from "../../types/branding";
 import { ProductProfile } from "../../types/product";
 import { MenuProfile } from "../../types/menu";
 import { threatProtectionOverrideSchema } from "../../lib/threat-protection/config";
+import { auditMetadataSchema } from "../../lib/siem-logging/types";
 
 type Format =
   | "markdown"
@@ -532,6 +533,7 @@ const baseScrapeOptions = z.strictObject({
   // Enterprise: per-request field-level override of the org's threat
   // protection policy. Gated on the team flag + org config (checkPermissions).
   threatProtection: threatProtectionOverrideSchema.optional(),
+  auditMetadata: auditMetadataSchema.optional(),
   // @deprecated
   __experimental_cache: z.boolean().prefault(false).optional(),
   __searchPreviewToken: z.string().optional(),
@@ -978,6 +980,7 @@ const mapRequestSchemaBase = crawlerOptions
     location: locationSchema,
     headers: z.record(z.string(), z.string()).optional(),
     threatProtection: threatProtectionOverrideSchema.optional(),
+    auditMetadata: auditMetadataSchema.optional(),
   });
 
 export const mapRequestSchema = mapRequestSchemaBase.strict();
@@ -1255,33 +1258,15 @@ type Account = {
 export type AuthCreditUsageChunk = {
   api_key: string;
   api_key_id: number;
+  api_key_id_text?: string;
   team_id: string;
-  org_id?: string | null;
-  plan_priority: {
-    bucketLimit: number;
-    planModifier: number;
-  };
-  rate_limits: {
-    crawl: number;
-    scrape: number;
-    search: number;
-    map: number;
-    extract: number;
-    preview: number;
-    crawlStatus: number;
-    extractStatus: number;
-    extractAgentPreview?: number;
-    scrapeAgentPreview?: number;
-    browser?: number;
-    browserExecute?: number;
-    browserReplay?: number;
-    account?: number;
-    supportAsk?: number;
-    supportDocsSearch?: number;
-    research?: number;
-  };
-  concurrency: number;
+  org_id: string;
   flags: TeamFlags;
+
+  // teams.banned surfaced from auth_chunk_1 — banned teams are rejected (403)
+  // in supaAuthenticateUser. Optional because pre-rollout cached ACUC entries
+  // and the bypass/preview mocks omit it (treated as not banned).
+  is_banned?: boolean;
 
   // appended on JS-side
   is_extract?: boolean;
@@ -1298,6 +1283,7 @@ export type TeamFlags = {
   ignoreRobots?: "disabled" | "allowed" | "forced";
   customRobotsAgent?: "disabled" | "allowed";
   threatProtection?: "disabled" | "allowed" | "forced";
+  siemLogging?: boolean;
   unblockedDomains?: string[];
   forceZDR?: boolean;
   allowZDR?: boolean;
@@ -1319,8 +1305,8 @@ export type TeamFlags = {
   // POST /v2/search/:jobId/feedback returns 403 TEAM_OPTED_OUT when true.
   searchFeedbackOptOut?: boolean;
   researchBeta?: boolean;
-  highlightsBeta?: boolean;
   enrichBeta?: boolean;
+  labsSearch?: boolean;
   professionalProfileCompanyDataBeta?: boolean;
   organizationDataSourceAccess?: Record<
     string,
@@ -1453,6 +1439,7 @@ function fromLegacyCrawlerOptions(
     internalOptions: {
       v0CrawlOnlyUrls: x.returnOnlyUrls,
       teamId,
+      orgId: null,
     },
   };
 }
@@ -1518,6 +1505,7 @@ export function fromLegacyScrapeOptions(
       atsv: pageOptions.atsv,
       v0DisableJsDom: pageOptions.disableJsDom,
       teamId,
+      orgId: null,
     },
     // TODO: fallback, fetchPageContent, replaceAllPathsWithAbsolutePaths, includeLinks
   };

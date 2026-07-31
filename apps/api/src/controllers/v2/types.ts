@@ -29,6 +29,7 @@ import { BrandingProfile } from "../../types/branding";
 import { ProductProfile } from "../../types/product";
 import { MenuProfile } from "../../types/menu";
 import { threatProtectionOverrideSchema } from "../../lib/threat-protection/config";
+import { auditMetadataSchema } from "../../lib/siem-logging/types";
 
 // Base URL schema with common validation logic
 export const URL = z.preprocess(
@@ -696,6 +697,7 @@ const baseScrapeOptions = z.strictObject({
   // Enterprise: per-request field-level override of the org's threat
   // protection policy. Gated on the team flag + org config (checkPermissions).
   threatProtection: threatProtectionOverrideSchema.optional(),
+  auditMetadata: auditMetadataSchema.optional(),
 
   profile: z
     .object({
@@ -946,6 +948,7 @@ export const agentRequestSchema = z.strictObject({
   overrideWhitelist: z.string().optional(),
   model: z.enum(["spark-1-pro", "spark-1-mini"]).default("spark-1-pro"),
   threatProtection: threatProtectionOverrideSchema.optional(),
+  auditMetadata: auditMetadataSchema.optional(),
 });
 
 export type AgentRequest = z.infer<typeof agentRequestSchema>;
@@ -1198,6 +1201,7 @@ const mapRequestSchemaBase = crawlerOptions
     location: locationSchema,
     headers: z.record(z.string(), z.string()).optional(),
     threatProtection: threatProtectionOverrideSchema.optional(),
+    auditMetadata: auditMetadataSchema.optional(),
   });
 
 export const mapRequestSchema = strictWithMessage(mapRequestSchemaBase);
@@ -1543,6 +1547,7 @@ export type TeamFlags = {
   ignoreRobots?: "disabled" | "allowed" | "forced";
   customRobotsAgent?: "disabled" | "allowed";
   threatProtection?: "disabled" | "allowed" | "forced";
+  siemLogging?: boolean;
   unblockedDomains?: string[];
   forceZDR?: boolean;
   allowZDR?: boolean;
@@ -1560,7 +1565,6 @@ export type TeamFlags = {
   debugBranding?: boolean;
   maxBrowserSessions?: number;
   researchBeta?: boolean;
-  highlightsBeta?: boolean;
   menuBeta?: boolean;
   enrichBeta?: boolean;
   professionalProfileCompanyDataBeta?: boolean;
@@ -1664,6 +1668,7 @@ function fromV0CrawlerOptions(
     internalOptions: {
       v0CrawlOnlyUrls: x.returnOnlyUrls,
       teamId,
+      orgId: null,
     },
   };
 }
@@ -1728,6 +1733,7 @@ export function fromV0ScrapeOptions(
       atsv: pageOptions.atsv,
       v0DisableJsDom: pageOptions.disableJsDom,
       teamId,
+      orgId: null,
       ...(extractorOptions !== undefined &&
       extractorOptions.mode.includes("llm-extraction")
         ? {
@@ -1840,6 +1846,7 @@ export function fromV1ScrapeOptions(
     }),
     internalOptions: {
       teamId,
+      orgId: null,
       v1Agent: v1ScrapeOptions.agent,
       v1JSONSystemPrompt: (
         v1ScrapeOptions.jsonOptions || v1ScrapeOptions.extract
@@ -1902,6 +1909,10 @@ const pdfCategoryOptions = z.strictObject({
   type: z.literal("pdf"),
 });
 
+const developerCategoryOptions = z.strictObject({
+  type: z.literal("developer"),
+});
+
 const searchDomainSchema = z
   .string()
   .trim()
@@ -1959,13 +1970,14 @@ export const searchRequestSchema = z
     categories: z
       .union([
         // Array of strings (simple format)
-        z.array(z.enum(["github", "research", "pdf"])),
+        z.array(z.enum(["github", "research", "pdf", "developer"])),
         // Array of objects (advanced format)
         z.array(
           z.union([
             githubCategoryOptions,
             researchCategoryOptions,
             pdfCategoryOptions,
+            developerCategoryOptions,
           ]),
         ),
       ])
@@ -1981,10 +1993,10 @@ export const searchRequestSchema = z
     timeout: z.int().positive().finite().prefault(60000),
     ignoreInvalidURLs: z.boolean().optional().prefault(false),
     asyncScraping: z.boolean().optional().prefault(false),
-    // Experimental: replace each result's snippet with query-relevant
-    // highlights pulled from our index (last 30 days), out-of-line from
-    // scrapeURL. Falls back to the provider snippet when the URL isn't indexed.
-    highlights: z.boolean().optional().prefault(false),
+    // Replace each result's snippet with query-relevant highlights pulled from
+    // our index. When omitted, the caller integration and rollout cohort decide
+    // whether generated highlights are returned or only run in shadow mode.
+    highlights: z.boolean().optional(),
     exchange: z.array(exchangeCallSchema).max(10).optional().prefault([]),
     __searchPreviewToken: z.string().optional(),
     threatProtection: threatProtectionOverrideSchema.optional(),
@@ -2110,6 +2122,10 @@ export const searchRequestSchema = z
             case "pdf":
               return {
                 type: "pdf" as const,
+              };
+            case "developer":
+              return {
+                type: "developer" as const,
               };
             default:
               return { type: c as any };

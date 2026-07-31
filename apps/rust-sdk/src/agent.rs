@@ -3,12 +3,11 @@
 //! The Agent endpoint provides autonomous web browsing capabilities using AI
 //! to accomplish complex tasks that may require multiple page interactions.
 
-use serde::{Deserialize, Serialize};
-use serde_json::Value;
-
 use crate::client::Client;
 use crate::types::{AgentModel, AgentWebhookConfig};
-use crate::FirecrawlError;
+use crate::{AuditMetadata, FirecrawlError};
+use serde::{Deserialize, Serialize};
+use serde_json::Value;
 
 /// Options for running an agent task.
 #[serde_with::skip_serializing_none]
@@ -38,6 +37,9 @@ pub struct AgentOptions {
 
     /// Webhook configuration for agent notifications.
     pub webhook: Option<AgentWebhookConfig>,
+
+    /// User attribution to include with SIEM logging events.
+    pub audit_metadata: Option<AuditMetadata>,
 
     /// Poll interval for synchronous agent execution (milliseconds).
     #[serde(skip)]

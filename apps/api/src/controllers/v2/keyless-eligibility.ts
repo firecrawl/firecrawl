@@ -3,11 +3,11 @@ import { config } from "../../config";
 import { checkKeylessEligibility } from "../../lib/keyless";
 
 /**
- * Internal endpoint for trusted proxies (the hosted MCP) to check, at connect
- * time, whether a client IP can currently use the keyless tier — without
+ * Internal endpoint for trusted proxies (the hosted MCP) to check, before a
+ * keyless tool call, whether a client IP can currently use the tier — without
  * consuming quota. Gated by the shared KEYLESS_PROXY_SECRET; the client IP is
  * supplied via x-firecrawl-keyless-ip. Lets the MCP serve keyless when eligible
- * and throw (→ OAuth 401 challenge) when the IP is out of free quota.
+ * and return a structured recovery action when the IP is not eligible.
  */
 export async function keylessEligibilityController(
   req: Request,

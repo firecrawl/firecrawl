@@ -10,9 +10,14 @@ use Firecrawl\Models\MapData;
 use Firecrawl\Models\BatchScrapeJob;
 use Firecrawl\Models\CrawlJob;
 use Firecrawl\Models\HighlightsFormat;
+use Firecrawl\Models\AgentOptions;
+use Firecrawl\Models\AuditMetadata;
+use Firecrawl\Models\MapOptions;
+use Firecrawl\Models\ParseOptions;
 use Firecrawl\Models\QueryFormat;
 use Firecrawl\Models\QuestionFormat;
 use Firecrawl\Models\ScrapeOptions;
+use Firecrawl\Models\SearchOptions;
 use Firecrawl\Models\Monitor;
 use Firecrawl\Models\MonitorCheck;
 
@@ -259,6 +264,12 @@ it('returns null menu when absent in Document', function (): void {
     expect($doc->getMenu())->toBeNull();
 });
 
+it('serializes the search highlights option', function (): void {
+    $options = SearchOptions::with(highlights: false);
+
+    expect($options->toArray())->toBe(['highlights' => false]);
+});
+
 it('coerces non-string scalar identity fields without a TypeError under strict_types', function (): void {
     // Defensive: upstream data could carry a non-string scalar (e.g. a numeric
     // brand). Under declare(strict_types=1) these must be cast, not passed raw.
@@ -331,6 +342,22 @@ it('serializes redactPII in ScrapeOptions', function (): void {
         'redactPII' => true,
     ]);
     expect(array_key_exists('formats', $options->toArray()))->toBeFalse();
+});
+
+it('serializes audit metadata across request options', function (): void {
+    $metadata = AuditMetadata::with('alice@example.com');
+    $serialized = ['username' => 'alice@example.com'];
+
+    $scrape = ScrapeOptions::with(auditMetadata: $metadata);
+    expect($scrape->toArray())->toMatchArray(['auditMetadata' => $serialized]);
+    expect($scrape->getAuditMetadata())->toBe($metadata);
+    expect(MapOptions::with(auditMetadata: $metadata)->toArray())
+        ->toMatchArray(['auditMetadata' => $serialized]);
+    expect(AgentOptions::with(prompt: 'find pricing', auditMetadata: $metadata)->toArray())
+        ->toMatchArray(['auditMetadata' => $serialized]);
+    $parse = ParseOptions::with(auditMetadata: $metadata);
+    expect($parse->toArray())->toMatchArray(['auditMetadata' => $serialized]);
+    expect($parse->getAuditMetadata())->toBe($metadata);
 });
 
 it('serializes query format mode in ScrapeOptions', function (): void {

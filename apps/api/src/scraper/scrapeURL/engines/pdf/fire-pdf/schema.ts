@@ -21,7 +21,10 @@ export const TERMINAL_STATUSES = new Set([
 export const submitResponseSchema = z.object({
   scrape_id: z.string(),
   status: z.enum(["queued", "published", "running", "done"]),
-  lane: z.string().optional(),
+  lane: z
+    .enum(["fast", "standard", "heavy", "xl", "unknown"])
+    .optional()
+    .default("unknown"),
   retry_after_ms: z.number().optional(),
 });
 

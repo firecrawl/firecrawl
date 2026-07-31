@@ -133,6 +133,7 @@ export async function performDeepResearch(options: DeepResearchServiceOptions) {
           searchQuery.query,
           {
             teamId: options.teamId,
+            orgId: acuc?.org_id ?? null,
             origin: "deep-research",
             timeout: 10000,
             scrapeOptions: {

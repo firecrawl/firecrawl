@@ -43,7 +43,6 @@ import {
   NoCachedDataError,
   LockdownMissError,
   DNSResolutionError,
-  ZDRViolationError,
   PDFPrefetchFailed,
   DocumentPrefetchFailed,
   FEPageLoadFailed,
@@ -87,7 +86,7 @@ import { writeFile } from "node:fs/promises";
 import path from "node:path";
 import { tmpdir } from "node:os";
 import { randomUUID } from "node:crypto";
-import type { DataLayerScrapeMetadata } from "../../lib/data-layer";
+import type { ExchangeScrapeMetadata } from "../../lib/exchange";
 import {
   checkUrl,
   type ThreatCheckDedup,
@@ -102,7 +101,7 @@ export type ScrapeUrlResponse =
       success: true;
       document: Document;
       unsupportedFeatures?: Set<FeatureFlag>;
-      dataLayer?: DataLayerScrapeMetadata;
+      exchange?: ExchangeScrapeMetadata;
       /**
        * Threat protection decisions made for this scrape (initial domain
        * check + any redirect re-checks, in order). Read by the billing layer
@@ -493,6 +492,16 @@ export type InternalOptions = {
   bypassBilling?: boolean;
   zeroDataRetention?: boolean;
   teamFlags?: TeamFlags;
+  /** Team's org, snapshotted from the request ACUC at acceptance (same
+   * pattern as teamFlags). Rides the job payload so org-scoped blocklist
+   * checks work without re-fetching the chunk. Required so a payload
+   * builder cannot silently omit the org and skip org-scoped enforcement;
+   * pass null when the caller genuinely has no org (internal/system work). */
+  orgId: string | null;
+  /** Team's sold concurrency, snapshotted from the request ACUC at
+   * acceptance (same pattern as teamFlags). Rides the job payload so
+   * downstream engines (FirePDF async account context) never re-fetch. */
+  teamConcurrency?: number | null;
 
   /**
    * Effective threat protection policy for this scrape, resolved at the
@@ -677,30 +686,6 @@ async function scrapeURLLoop(meta: Meta): Promise<ScrapeUrlResponse> {
       "engine.url": meta.rewrittenUrl ?? meta.url,
       "engine.features": Array.from(meta.featureFlags).join(","),
     });
-
-    if (meta.internalOptions.zeroDataRetention) {
-      if (meta.featureFlags.has("screenshot")) {
-        throw new ZDRViolationError("screenshot");
-      }
-
-      if (meta.featureFlags.has("screenshot@fullScreen")) {
-        throw new ZDRViolationError("screenshot@fullScreen");
-      }
-
-      if (
-        meta.options.actions &&
-        meta.options.actions.find(x => x.type === "screenshot")
-      ) {
-        throw new ZDRViolationError("screenshot action");
-      }
-
-      if (
-        meta.options.actions &&
-        meta.options.actions.find(x => x.type === "pdf")
-      ) {
-        throw new ZDRViolationError("pdf action");
-      }
-    }
 
     // TODO: handle sitemap data, see WebScraper/index.ts:280
     // TODO: ScrapeEvents
@@ -1073,7 +1058,7 @@ async function scrapeURLLoop(meta: Meta): Promise<ScrapeUrlResponse> {
       success: true,
       document,
       unsupportedFeatures: result.unsupportedFeatures,
-      dataLayer: engineResult.dataLayer,
+      exchange: engineResult.exchange,
     };
   });
 }

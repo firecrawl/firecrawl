@@ -723,6 +723,20 @@ export async function researchRaw(
   return query ? req.query(query) : req;
 }
 
+export async function researchPostRaw(
+  path: string,
+  body: Record<string, unknown>,
+  identity?: Identity,
+) {
+  const req = request(TEST_API_URL)
+    .post(path)
+    .set("Content-Type", "application/json");
+  if (identity) {
+    req.set("Authorization", `Bearer ${identity.apiKey}`);
+  }
+  return req.send(body);
+}
+
 export async function searchRawFull(
   body: SearchRequestInput,
   identity: Identity,

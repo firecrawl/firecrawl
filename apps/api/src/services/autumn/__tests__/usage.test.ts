@@ -1,8 +1,11 @@
 import { vi, beforeEach } from "vitest";
 
-const mockAggregate = vi.fn<(args: any) => Promise<any>>();
+const mockAggregate = vi.fn<(args: any, options?: any) => Promise<any>>();
 const mockEntitiesGet = vi.fn<(args: any) => Promise<any>>();
 const mockCustomersGetOrCreate = vi.fn<(args: any) => Promise<any>>();
+
+// Historical aggregations override the Autumn client's global 2s timeout.
+const EXPECTED_HISTORICAL_TIMEOUT_MS = 15000;
 
 let autumnClientRef: {
   events: { aggregate: typeof mockAggregate };
@@ -329,9 +332,8 @@ describe("getTeamBalance", () => {
     // planCredits should be 100,000 (only from planId: "standard")
     // NOT 100,525 (which includes the one-off grants)
     expect(result!.planCredits).toBe(100000);
-    // But remaining/granted reflects the full amount including grants
+    // But remaining reflects the full amount including grants
     expect(result!.remaining).toBe(100525);
-    expect(result!.granted).toBe(100525);
   });
 
   it("Bug 4 — sums credits from multiple plans correctly", async () => {
@@ -732,7 +734,6 @@ describe("getTeamBalance", () => {
 
     expect(result).not.toBeNull();
     expect(result!.remaining).toBe(-4438178);
-    expect(result!.granted).toBe(25250000);
     expect(result!.usage).toBe(29688178);
   });
 });
@@ -781,6 +782,7 @@ describe("getTeamHistoricalUsage", () => {
         range: "90d",
         binSize: "day",
       }),
+      expect.objectContaining({ timeoutMs: EXPECTED_HISTORICAL_TIMEOUT_MS }),
     );
   });
 
@@ -804,6 +806,7 @@ describe("getTeamHistoricalUsage", () => {
         range: "90d",
         binSize: "day",
       }),
+      expect.objectContaining({ timeoutMs: EXPECTED_HISTORICAL_TIMEOUT_MS }),
     );
   });
 
@@ -897,6 +900,7 @@ describe("getTeamHistoricalUsageByApiKey", () => {
         binSize: "day",
         groupBy: "properties.apiKeyId",
       }),
+      expect.objectContaining({ timeoutMs: EXPECTED_HISTORICAL_TIMEOUT_MS }),
     );
   });
 
@@ -974,6 +978,50 @@ describe("getTeamHistoricalUsageByApiKey", () => {
         entityId: "team-1",
         groupBy: "properties.apiKeyId",
       }),
+      expect.objectContaining({ timeoutMs: EXPECTED_HISTORICAL_TIMEOUT_MS }),
     );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Per-call Autumn timeout for the historical aggregations
+// ---------------------------------------------------------------------------
+
+// These aggregations bin by day (and optionally group by API key), so Autumn
+// walks raw events and the call cost scales with the team's event volume. The
+// Autumn client's global 2s timeout is sized for the latency-sensitive balance
+// checks, so each historical call must override it or high-volume teams get a
+// timeout error surfaced as a 500.
+describe("historical usage Autumn timeout override", () => {
+  it("passes a 15s per-call timeout for the ungrouped aggregate", async () => {
+    mockAggregate.mockResolvedValue({ list: [] });
+
+    await getTeamHistoricalUsage("team-1");
+
+    expect(mockAggregate).toHaveBeenCalledTimes(1);
+    const [, options] = mockAggregate.mock.calls[0];
+    expect(options).toEqual({ timeoutMs: 15000 });
+  });
+
+  it("passes a 15s per-call timeout for the grouped byApiKey aggregate", async () => {
+    mockAggregate.mockResolvedValue({ list: [] });
+
+    await getTeamHistoricalUsageByApiKey("team-1");
+
+    expect(mockAggregate).toHaveBeenCalledTimes(1);
+    const [, options] = mockAggregate.mock.calls[0];
+    expect(options).toEqual({ timeoutMs: 15000 });
+  });
+
+  it("overrides the Autumn client's global 2s timeout with a larger value", async () => {
+    mockAggregate.mockResolvedValue({ list: [] });
+
+    await getTeamHistoricalUsage("team-1");
+    await getTeamHistoricalUsageByApiKey("team-1");
+
+    expect(mockAggregate).toHaveBeenCalledTimes(2);
+    for (const [, options] of mockAggregate.mock.calls) {
+      expect(options?.timeoutMs).toBeGreaterThan(2000);
+    }
   });
 });

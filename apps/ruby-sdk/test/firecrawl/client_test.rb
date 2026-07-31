@@ -742,6 +742,7 @@ class ClientTest < Minitest::Test
       limit: 10,
       location: "US",
       tbs: "qdr:w",
+      highlights: false,
       include_domains: ["firecrawl.dev"],
       exclude_domains: ["example.com"]
     )
@@ -749,6 +750,7 @@ class ClientTest < Minitest::Test
     assert_equal 10, h["limit"]
     assert_equal "US", h["location"]
     assert_equal "qdr:w", h["tbs"]
+    assert_equal false, h["highlights"]
     assert_equal ["firecrawl.dev"], h["includeDomains"]
     assert_equal ["example.com"], h["excludeDomains"]
   end
@@ -765,6 +767,30 @@ class ClientTest < Minitest::Test
     assert_equal ["https://example.com"], h["urls"]
     assert_equal 100, h["maxCredits"]
     assert_equal "spark-1-pro", h["model"]
+  end
+
+  def test_audit_metadata_to_h
+    metadata = Firecrawl::Models::AuditMetadata.new(username: "alice@example.com")
+    serialized = { "username" => "alice@example.com" }
+
+    assert_equal serialized, Firecrawl::Models::ScrapeOptions.new(audit_metadata: metadata).to_h["auditMetadata"]
+    assert_equal serialized, Firecrawl::Models::MapOptions.new(audit_metadata: metadata).to_h["auditMetadata"]
+    assert_equal serialized,
+                 Firecrawl::Models::AgentOptions.new(
+                   prompt: "find pricing",
+                   audit_metadata: metadata
+                 ).to_h["auditMetadata"]
+    assert_equal serialized, Firecrawl::Models::ParseOptions.new(audit_metadata: metadata).to_h["auditMetadata"]
+    crawl = Firecrawl::Models::CrawlOptions.new(
+      scrape_options: Firecrawl::Models::ScrapeOptions.new(audit_metadata: metadata)
+    )
+    assert_equal serialized, crawl.to_h.dig("scrapeOptions", "auditMetadata")
+  end
+
+  def test_audit_metadata_rejects_arbitrary_hashes
+    assert_raises(ArgumentError) do
+      Firecrawl::Models::ScrapeOptions.new(audit_metadata: { "session" => "session-123" })
+    end
   end
 
   def test_batch_scrape_options_to_h

@@ -1,6 +1,9 @@
+pub mod encoding;
 pub mod model;
+pub mod oleps;
 pub mod providers;
 pub mod renderers;
+pub mod xml;
 
 pub use providers::factory::DocumentType;
 

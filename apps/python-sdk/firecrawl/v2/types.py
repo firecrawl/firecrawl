@@ -560,6 +560,8 @@ class Category(BaseModel):
     - "github": Filter results to GitHub repositories
     - "research": Filter results to research papers and academic sites
     - "pdf": Filter results to PDF files (adds filetype:pdf to search)
+    - "developer": Add developer results (issues, pull requests, READMEs and
+      documentation) under `.developer`
     """
 
     type: str
@@ -778,6 +780,14 @@ class ThreatProtectionOptions(BaseModel):
     model_config = {"populate_by_name": True}
 
 
+class AuditMetadata(BaseModel):
+    """User attribution included with SIEM logging events."""
+
+    username: str = Field(max_length=1024)
+
+    model_config = {"extra": "forbid"}
+
+
 class ScrapeOptions(BaseModel):
     """Options for scraping operations."""
 
@@ -821,6 +831,9 @@ class ScrapeOptions(BaseModel):
     )
     threat_protection: Optional[ThreatProtectionOptions] = Field(
         default=None, alias="threatProtection"
+    )
+    audit_metadata: Optional[AuditMetadata] = Field(
+        default=None, alias="auditMetadata"
     )
     profile: Optional[Dict[str, Any]] = None
     integration: Optional[str] = None
@@ -919,11 +932,12 @@ class CrawlStatusRequest(BaseModel):
 
 
 class SearchResultWeb(BaseModel):
-    """A web search result with URL, title, and description."""
+    """A web search result with URL, title, description, and position."""
 
     url: str
     title: Optional[str] = None
     description: Optional[str] = None
+    position: Optional[int] = None
     category: Optional[str] = None
 
 
@@ -1054,6 +1068,7 @@ class MapOptions(BaseModel):
     integration: Optional[str] = None
     location: Optional["Location"] = None
     threat_protection: Optional[ThreatProtectionOptions] = None
+    audit_metadata: Optional[AuditMetadata] = None
 
 
 class MapRequest(BaseModel):
@@ -1602,6 +1617,7 @@ class SearchRequest(BaseModel):
     location: Optional[str] = None
     ignore_invalid_urls: Optional[bool] = None
     timeout: Optional[int] = 300000
+    highlights: Optional[bool] = None
     scrape_options: Optional[ScrapeOptions] = None
     # Enterprise search options. Use ["zdr"] for end-to-end Zero Data
     # Retention or ["anon"] for anonymized search. Must be enabled for your team.
@@ -1679,6 +1695,7 @@ class SearchData(BaseModel):
     web: Optional[List[Union[SearchResultWeb, Document]]] = None
     news: Optional[List[Union[SearchResultNews, Document]]] = None
     images: Optional[List[Union[SearchResultImages, Document]]] = None
+    developer: Optional[List[Union[SearchResultWeb, Document]]] = None
 
     @property
     def data(self):
@@ -1689,6 +1706,8 @@ class SearchData(BaseModel):
             parts.append(f".news ({len(self.news)} results)")
         if self.images:
             parts.append(f".images ({len(self.images)} results)")
+        if self.developer:
+            parts.append(f".developer ({len(self.developer)} results)")
         available = ", ".join(parts) if parts else ".web, .news, or .images"
         raise AttributeError(
             f"SearchData has no '.data'. Results are grouped by source: {available}"

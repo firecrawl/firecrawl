@@ -1,0 +1,181 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "location": {
+      "type": "string",
+      "defaultValue": "[resourceGroup().location]"
+    },
+    "workspaceResourceId": {
+      "type": "string",
+      "minLength": 1,
+      "metadata": {
+        "description": "Full resource ID of the Log Analytics workspace that receives these events, e.g. /subscriptions/<id>/resourceGroups/<rg>/providers/Microsoft.OperationalInsights/workspaces/<name>. Copy it from the workspace's Properties blade. A full ID rather than a name so the workspace does not have to live in the resource group this template is deployed into."
+      }
+    },
+    "dataCollectionEndpointName": {
+      "type": "string",
+      "defaultValue": "firecrawl-scrape-activity"
+    },
+    "dataCollectionRuleName": {
+      "type": "string",
+      "defaultValue": "FirecrawlScrapeActivityPushDCR"
+    }
+  },
+  "variables": {
+    "streamName": "Custom-FirecrawlScrapeActivity"
+  },
+  "resources": [
+    {
+      "type": "Microsoft.Insights/dataCollectionEndpoints",
+      "apiVersion": "2022-06-01",
+      "name": "[parameters('dataCollectionEndpointName')]",
+      "location": "[parameters('location')]",
+      "properties": {
+        "networkAcls": {
+          "publicNetworkAccess": "Enabled"
+        }
+      }
+    },
+    {
+      "type": "Microsoft.Insights/dataCollectionRules",
+      "apiVersion": "2021-09-01-preview",
+      "name": "[parameters('dataCollectionRuleName')]",
+      "location": "[parameters('location')]",
+      "dependsOn": [
+        "[resourceId('Microsoft.Insights/dataCollectionEndpoints', parameters('dataCollectionEndpointName'))]"
+      ],
+      "properties": {
+        "streamDeclarations": {
+          "Custom-FirecrawlScrapeActivity": {
+            "columns": [
+              {
+                "name": "schema_version",
+                "type": "int"
+              },
+              {
+                "name": "event_type",
+                "type": "string"
+              },
+              {
+                "name": "scrape_id",
+                "type": "string"
+              },
+              {
+                "name": "request_id",
+                "type": "string"
+              },
+              {
+                "name": "endpoint",
+                "type": "string"
+              },
+              {
+                "name": "team_id",
+                "type": "string"
+              },
+              {
+                "name": "org_id",
+                "type": "string"
+              },
+              {
+                "name": "api_key",
+                "type": "dynamic"
+              },
+              {
+                "name": "audit_metadata",
+                "type": "dynamic"
+              },
+              {
+                "name": "started_at",
+                "type": "datetime"
+              },
+              {
+                "name": "completed_at",
+                "type": "datetime"
+              },
+              {
+                "name": "url",
+                "type": "string"
+              },
+              {
+                "name": "domain",
+                "type": "string"
+              },
+              {
+                "name": "http_method",
+                "type": "string"
+              },
+              {
+                "name": "http_status",
+                "type": "int"
+              },
+              {
+                "name": "result",
+                "type": "string"
+              },
+              {
+                "name": "error",
+                "type": "dynamic"
+              },
+              {
+                "name": "origin",
+                "type": "string"
+              },
+              {
+                "name": "integration",
+                "type": "string"
+              },
+              {
+                "name": "zero_data_retention",
+                "type": "bool"
+              },
+              {
+                "name": "threat",
+                "type": "dynamic"
+              }
+            ]
+          }
+        },
+        "destinations": {
+          "logAnalytics": [
+            {
+              "workspaceResourceId": "[parameters('workspaceResourceId')]",
+              "name": "firecrawlWorkspace"
+            }
+          ]
+        },
+        "dataFlows": [
+          {
+            "streams": ["Custom-FirecrawlScrapeActivity"],
+            "destinations": ["firecrawlWorkspace"],
+            "transformKql": "source | project TimeGenerated = completed_at, EventStartTime = started_at, EventEndTime = completed_at, EventOriginalUid = scrape_id, NetworkSessionId = request_id, EventVendor = \"Firecrawl\", EventProduct = \"Firecrawl\", EventSchema = \"WebSession\", EventSchemaVersion = \"0.2.7\", EventType = \"HTTPsession\", EventCount = 1, EventResult = iff(result == \"success\", \"Success\", \"Failure\"), EventResultDetails = iff(isnull(http_status), \"\", tostring(http_status)), EventOriginalResultDetails = coalesce(tostring(error.code), result), EventOriginalType = endpoint, EventMessage = tostring(error.message), EventSeverity = case(tostring(threat.decision) == \"deny\" and tostring(threat.rule) == \"risk-score\" and isnotempty(tostring(threat.provider)), \"High\", tostring(threat.decision) == \"deny\", \"Low\", \"Informational\"), Dvc = \"Firecrawl\", DvcAction = case(isnull(threat), \"\", tostring(threat.decision) == \"deny\", \"Deny\", \"Allow\"), RuleName = tostring(threat.rule), ThreatCategory = tostring(threat.categories[0]), Url = url, DstDomain = domain, DstFQDN = domain, HttpHost = domain, HttpRequestMethod = http_method, NetworkApplicationProtocol = iff(url startswith \"https://\", \"HTTPS\", \"HTTP\"), NetworkDuration = toint(datetime_diff(\"millisecond\", completed_at, started_at)), SrcUsername = tostring(audit_metadata.username), AdditionalFields = pack(\"schema_version\", schema_version, \"event_type\", event_type, \"team_id\", team_id, \"org_id\", org_id, \"api_key_id\", tostring(api_key.id), \"api_key_name\", tostring(api_key.name), \"origin\", origin, \"integration\", integration, \"zero_data_retention\", zero_data_retention, \"threat\", threat)",
+            "outputStream": "Microsoft-ASimWebSessionLogs"
+          }
+        ],
+        "dataCollectionEndpointId": "[resourceId('Microsoft.Insights/dataCollectionEndpoints', parameters('dataCollectionEndpointName'))]"
+      }
+    }
+  ],
+  "outputs": {
+    "streamName": {
+      "type": "string",
+      "value": "[variables('streamName')]"
+    },
+    "dataCollectionEndpointResourceId": {
+      "type": "string",
+      "value": "[resourceId('Microsoft.Insights/dataCollectionEndpoints', parameters('dataCollectionEndpointName'))]"
+    },
+    "dataCollectionEndpoint": {
+      "type": "string",
+      "value": "[reference(resourceId('Microsoft.Insights/dataCollectionEndpoints', parameters('dataCollectionEndpointName')), '2022-06-01').properties.logsIngestion.endpoint]"
+    },
+    "dataCollectionRuleResourceId": {
+      "type": "string",
+      "value": "[resourceId('Microsoft.Insights/dataCollectionRules', parameters('dataCollectionRuleName'))]"
+    },
+    "dataCollectionRuleImmutableId": {
+      "type": "string",
+      "value": "[reference(resourceId('Microsoft.Insights/dataCollectionRules', parameters('dataCollectionRuleName')), '2021-09-01-preview').properties.immutableId]"
+    }
+  }
+}

@@ -21,6 +21,8 @@ import {
 import { UnsafeDomainBlockedError } from "../../lib/threat-protection/error";
 import { calculateThreatScanCredits } from "../../lib/scrape-billing";
 import { billTeam } from "../../services/billing/credit_billing";
+import { emitRejectedScrapeActivityEvents } from "../../lib/siem-logging";
+import { CrawlDenialError } from "../../lib/error";
 
 /**
  * Extracts data from the provided URLs based on the request parameters.
@@ -67,9 +69,26 @@ export async function extractController(
     req.body.urls?.filter((url: string) =>
       isUrlBlocked(url, req.acuc?.flags ?? null, {
         team_id: req.auth.team_id,
+        org_id: req.acuc?.org_id ?? null,
         origin: req.body.origin ?? null,
       }),
     ) ?? [];
+
+  emitRejectedScrapeActivityEvents(
+    invalidURLs.map(url => ({
+      scrapeId: uuidv7(),
+      requestId: extractId,
+      endpoint: "extract",
+      teamId: req.auth.team_id,
+      apiKeyId: req.acuc?.api_key_id ?? null,
+      auditMetadata: req.body.scrapeOptions?.auditMetadata,
+      url,
+      error: new CrawlDenialError(UNSUPPORTED_SITE_MESSAGE),
+      origin: req.body.origin ?? "api",
+      integration: req.body.integration,
+      zeroDataRetention: false,
+    })),
+  );
 
   if (invalidURLs.length > 0 && !req.body.ignoreInvalidURLs) {
     if (!res.headersSent) {
@@ -121,6 +140,27 @@ export async function extractController(
       });
     }
     if (blocked.length > 0) {
+      emitRejectedScrapeActivityEvents(
+        blocked
+          .filter(blockedUrl => !invalidURLs.includes(blockedUrl.url))
+          .map(blockedUrl => ({
+            scrapeId: uuidv7(),
+            requestId: extractId,
+            endpoint: "extract",
+            teamId: req.auth.team_id,
+            apiKeyId: req.acuc?.api_key_id ?? null,
+            auditMetadata: req.body.scrapeOptions?.auditMetadata,
+            url: blockedUrl.url,
+            error: new UnsafeDomainBlockedError(
+              blockedUrl.url,
+              blockedUrl.decision,
+            ),
+            threatDecisions: [blockedUrl.decision],
+            origin: req.body.origin ?? "api",
+            integration: req.body.integration,
+            zeroDataRetention: false,
+          })),
+      );
       if (req.body.ignoreInvalidURLs) {
         invalidURLs.push(...blocked.map(x => x.url));
       } else {

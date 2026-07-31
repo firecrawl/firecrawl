@@ -91,6 +91,7 @@ type ScrapeOptions struct {
 	StoreInCache        *bool                    `json:"storeInCache,omitempty"`
 	Lockdown            *bool                    `json:"lockdown,omitempty"`
 	RedactPII           *bool                    `json:"redactPII,omitempty"`
+	AuditMetadata       *AuditMetadata           `json:"auditMetadata,omitempty"`
 	Integration         *string                  `json:"integration,omitempty"`
 	JsonOptions         *JsonOptions             `json:"jsonOptions,omitempty"`
 }
@@ -158,6 +159,7 @@ type MapOptions struct {
 	Timeout               *int            `json:"timeout,omitempty"`
 	Integration           *string         `json:"integration,omitempty"`
 	Location              *LocationConfig `json:"location,omitempty"`
+	AuditMetadata         *AuditMetadata  `json:"auditMetadata,omitempty"`
 }
 
 // SearchOptions configures a search request.
@@ -171,6 +173,7 @@ type SearchOptions struct {
 	Location          *string        `json:"location,omitempty"`
 	IgnoreInvalidURLs *bool          `json:"ignoreInvalidURLs,omitempty"`
 	Timeout           *int           `json:"timeout,omitempty"`
+	Highlights        *bool          `json:"highlights,omitempty"`
 	ScrapeOptions     *ScrapeOptions `json:"scrapeOptions,omitempty"`
 	Integration       *string        `json:"integration,omitempty"`
 }
@@ -185,6 +188,12 @@ type AgentOptions struct {
 	StrictConstrainToURLs *bool                  `json:"strictConstrainToURLs,omitempty"`
 	Model                 *string                `json:"model,omitempty"`
 	Webhook               *WebhookConfig         `json:"webhook,omitempty"`
+	AuditMetadata         *AuditMetadata         `json:"auditMetadata,omitempty"`
+}
+
+// AuditMetadata identifies the user associated with a SIEM logging event.
+type AuditMetadata struct {
+	Username string `json:"username"`
 }
 
 // LocationConfig specifies geolocation for requests.

@@ -3,11 +3,19 @@ import { eq, inArray } from "drizzle-orm";
 import { dbRr } from "../../db/connection";
 import * as schema from "../../db/schema";
 import { autumnClient } from "./client";
+import { CREDITS_FEATURE_ID } from "./autumn.service";
 
-const CREDITS_FEATURE_ID = "CREDITS";
-const TOKENS_PER_CREDIT = 15;
+export const TOKENS_PER_CREDIT = 15;
 const HISTORICAL_RANGE = "90d";
 const HISTORICAL_BIN_SIZE = "day";
+
+// The historical/analytics aggregations below are bucketed by day (and
+// optionally grouped by API key), so Autumn has to walk raw events and their
+// cost scales with the team's event volume. That routinely takes several
+// seconds. The Autumn client's global 2s timeout is sized for the
+// latency-sensitive balance checks on the request hot path, and it is far too
+// tight here, so these calls override it per call.
+const HISTORICAL_AGGREGATE_TIMEOUT_MS = 15000;
 
 // ---------------------------------------------------------------------------
 // Types
@@ -15,7 +23,6 @@ const HISTORICAL_BIN_SIZE = "day";
 
 interface TeamBalance {
   remaining: number;
-  granted: number;
   planCredits: number;
   usage: number;
   unlimited: boolean;
@@ -319,7 +326,6 @@ export async function getTeamBalance(
 
   return {
     remaining: signedRemaining(creditBalance),
-    granted: creditBalance?.granted ?? 0,
     planCredits,
     usage: creditBalance?.usage ?? 0,
     unlimited: creditBalance?.unlimited ?? false,
@@ -386,13 +392,16 @@ export async function getTeamHistoricalUsage(
 
   let response: any;
   try {
-    response = await autumnClient.events.aggregate({
-      customerId: orgId,
-      entityId: teamId,
-      featureId: CREDITS_FEATURE_ID,
-      range: HISTORICAL_RANGE,
-      binSize: HISTORICAL_BIN_SIZE,
-    });
+    response = await autumnClient.events.aggregate(
+      {
+        customerId: orgId,
+        entityId: teamId,
+        featureId: CREDITS_FEATURE_ID,
+        range: HISTORICAL_RANGE,
+        binSize: HISTORICAL_BIN_SIZE,
+      },
+      { timeoutMs: HISTORICAL_AGGREGATE_TIMEOUT_MS },
+    );
   } catch (err: any) {
     const status = err?.statusCode ?? err?.status ?? err?.response?.status;
     if (status !== 404) throw err;
@@ -422,14 +431,17 @@ export async function getTeamHistoricalUsageByApiKey(
 
   let response: any;
   try {
-    response = await autumnClient.events.aggregate({
-      customerId: orgId,
-      entityId: teamId,
-      featureId: CREDITS_FEATURE_ID,
-      range: HISTORICAL_RANGE,
-      binSize: HISTORICAL_BIN_SIZE,
-      groupBy: "properties.apiKeyId",
-    });
+    response = await autumnClient.events.aggregate(
+      {
+        customerId: orgId,
+        entityId: teamId,
+        featureId: CREDITS_FEATURE_ID,
+        range: HISTORICAL_RANGE,
+        binSize: HISTORICAL_BIN_SIZE,
+        groupBy: "properties.apiKeyId",
+      },
+      { timeoutMs: HISTORICAL_AGGREGATE_TIMEOUT_MS },
+    );
   } catch (err: any) {
     const status = err?.statusCode ?? err?.status ?? err?.response?.status;
     if (status !== 404) throw err;

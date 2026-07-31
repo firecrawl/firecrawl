@@ -50,6 +50,7 @@ const tableMap: Record<string, PgTable> = {
   research_paper_reads: schema.research_paper_reads,
   research_related_papers: schema.research_related_papers,
   research_github_searches: schema.research_github_searches,
+  code_searches: schema.code_searches,
   extracts: schema.extracts,
   maps: schema.maps,
   llmstxts: schema.llmstxts,
@@ -176,7 +177,8 @@ type LoggedRequest = {
     | "research_paper_inspect"
     | "research_paper_read"
     | "research_related_papers"
-    | "research_github_search";
+    | "research_github_search"
+    | "code_search";
   api_version: string;
   team_id: string;
   origin?: string;
@@ -506,14 +508,16 @@ export type ResearchRequestKind =
   | "research_paper_inspect"
   | "research_paper_read"
   | "research_related_papers"
-  | "research_github_search";
+  | "research_github_search"
+  | "code_search";
 
 export type ResearchTableName =
   | "research_paper_searches"
   | "research_paper_inspects"
   | "research_paper_reads"
   | "research_related_papers"
-  | "research_github_searches";
+  | "research_github_searches"
+  | "code_searches";
 
 type LoggedResearchEndpoint = {
   table: ResearchTableName;

@@ -61,6 +61,12 @@ interface HighlightPage {
   markdown: string;
 }
 
+export interface HighlightIndexedPage {
+  id: string;
+  url: string;
+  indexObject: string;
+}
+
 // Result for one page in the batch: the service's highlight entries plus the
 // reassembled markdown document.
 interface HighlightResult {
@@ -149,28 +155,38 @@ function requestHeaders(requestId?: string): Record<string, string> {
  * its provider snippet without discarding successful pages. Returns null when
  * the whole call fails.
  */
-export async function generateHighlightsBatch(
+interface HighlightBatchOptions {
+  logger: Logger;
+  logPayload?: boolean;
+  allowLegacyFallback?: boolean;
+  requestId?: string;
+  timeoutMs?: number | null;
+  onFailure?: (reason: HighlightFailureReason) => void;
+}
+
+async function generateHighlightsBatchRequest(
+  endpoint: "/batch_highlight" | "/batch_highlight_indexed",
   query: string,
-  pages: HighlightPage[],
-  opts: {
-    logger: Logger;
-    logPayload?: boolean;
-    allowLegacyFallback?: boolean;
-    requestId?: string;
-    onFailure?: (reason: HighlightFailureReason) => void;
-  },
+  pages: Array<HighlightPage | HighlightIndexedPage>,
+  opts: HighlightBatchOptions,
+  legacyPages?: HighlightPage[],
 ): Promise<Map<string, HighlightResult> | null> {
   if (pages.length === 0) {
     return new Map();
   }
 
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  const timeoutMs =
+    opts.timeoutMs === undefined ? REQUEST_TIMEOUT_MS : opts.timeoutMs;
+  const timer =
+    timeoutMs === null
+      ? undefined
+      : setTimeout(() => controller.abort(), timeoutMs);
   const start = Date.now();
   try {
     const baseUrl = config.HIGHLIGHT_MODEL_URL!.replace(/\/$/, "");
     const res = await fetchBatchWithRetry(
-      `${baseUrl}/batch_highlight`,
+      `${baseUrl}${endpoint}`,
       {
         method: "POST",
         headers: requestHeaders(opts.requestId),
@@ -186,6 +202,7 @@ export async function generateHighlightsBatch(
       // endpoint, whose /batch_highlight contract uses {requests: [...]}. Keep
       // highlights available until infra switches the URL to GCP Stage 1.
       if (
+        legacyPages &&
         opts.allowLegacyFallback !== false &&
         (res.status === 400 || res.status === 404)
       ) {
@@ -196,7 +213,7 @@ export async function generateHighlightsBatch(
         return await generateLegacyHighlightsBatch(
           baseUrl,
           query,
-          pages,
+          legacyPages,
           controller.signal,
           opts,
         );
@@ -249,8 +266,37 @@ export async function generateHighlightsBatch(
     });
     return null;
   } finally {
-    clearTimeout(timer);
+    if (timer !== undefined) {
+      clearTimeout(timer);
+    }
   }
+}
+
+export async function generateHighlightsBatch(
+  query: string,
+  pages: HighlightPage[],
+  opts: HighlightBatchOptions,
+): Promise<Map<string, HighlightResult> | null> {
+  return generateHighlightsBatchRequest(
+    "/batch_highlight",
+    query,
+    pages,
+    opts,
+    pages,
+  );
+}
+
+export async function generateHighlightsIndexedBatch(
+  query: string,
+  pages: HighlightIndexedPage[],
+  opts: Omit<HighlightBatchOptions, "allowLegacyFallback">,
+): Promise<Map<string, HighlightResult> | null> {
+  return generateHighlightsBatchRequest(
+    "/batch_highlight_indexed",
+    query,
+    pages,
+    { ...opts, allowLegacyFallback: false },
+  );
 }
 
 async function generateLegacyHighlightsBatch(

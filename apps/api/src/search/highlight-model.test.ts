@@ -5,7 +5,10 @@ vi.mock("../config", () => ({
   },
 }));
 
-import { generateHighlightsBatch } from "./highlight-model";
+import {
+  generateHighlightsBatch,
+  generateHighlightsIndexedBatch,
+} from "./highlight-model";
 import { config } from "../config";
 
 const logger = {
@@ -33,6 +36,35 @@ afterEach(() => {
 });
 
 describe("generateHighlightsBatch", () => {
+  it("posts lightweight index references to the indexed Stage 1 endpoint", async () => {
+    const fetchMock = mockFetchOnce({ pages: [] });
+
+    await generateHighlightsIndexedBatch(
+      "q1",
+      [
+        {
+          id: "0",
+          url: "https://first.test/path",
+          indexObject: "index-object.json",
+        },
+      ],
+      { logger, logPayload: false, requestId: "request-1" },
+    );
+
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe("https://highlight.test/batch_highlight_indexed");
+    expect(JSON.parse(init.body)).toEqual({
+      query: "q1",
+      pages: [
+        {
+          id: "0",
+          url: "https://first.test/path",
+          indexObject: "index-object.json",
+        },
+      ],
+    });
+  });
+
   it("posts every page to one /batch_highlight call with the bearer token", async () => {
     const fetchMock = mockFetchOnce({ pages: [] });
 

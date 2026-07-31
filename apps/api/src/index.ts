@@ -28,12 +28,16 @@ import {
 import { ZodError } from "zod";
 import { QueueFullError } from "./lib/queue-full-error";
 import { v7 as uuidv7 } from "uuid";
-import { attachWsProxy } from "./services/agentLivecastWS";
 import { cacheableLookup } from "./scraper/scrapeURL/lib/cacheableLookup";
 import { v2Router } from "./routes/v2";
+import { labsRouter } from "./routes/labs";
+import { registerMcpActionLogIngestRoute } from "./routes/mcp-action-logs";
+import { startMcpActionLogRetentionWorkerIfEnabled } from "./services/mcp/action-logs";
+import { db } from "./db/connection";
 import { nuqShutdown } from "./services/worker/nuq";
 import { getErrorContactMessage } from "./lib/deployment";
 import { initializeBlocklist } from "./scraper/WebScraper/utils/blocklist";
+import { warmExchangeCatalog } from "./lib/exchange";
 import { initializeEngineForcing } from "./scraper/WebScraper/utils/engine-forcing";
 import responseTime from "response-time";
 import { shutdownWebhookQueue } from "./services/webhook";
@@ -76,6 +80,8 @@ const captureRawBody = (
   }
 };
 
+registerMcpActionLogIngestRoute(app);
+
 app.use(bodyParser.urlencoded({ extended: true, verify: captureRawBody }));
 app.use(bodyParser.json({ limit: "10mb", verify: captureRawBody }));
 
@@ -97,6 +103,8 @@ const { addQueue, removeQueue, setQueues, replaceQueues } = createBullBoard({
     new BullMQAdapter(getDeepResearchQueue()),
     new BullMQAdapter(getBillingQueue()),
     new BullMQAdapter(getPrecrawlQueue()),
+    // SIEM audit delivery runs on RabbitMQ; inspect it in the broker's
+    // management UI, not here.
   ],
   serverAdapter: serverAdapter,
 });
@@ -123,6 +131,7 @@ app.get("/e2e-test", (_, res) => {
 app.use(v0Router);
 app.use("/v1", v1Router);
 app.use("/v2", v2Router);
+app.use("/labs", labsRouter);
 app.use(adminRouter);
 
 const DEFAULT_PORT = config.PORT;
@@ -132,6 +141,7 @@ async function startServer(port = DEFAULT_PORT) {
   try {
     await initializeBlocklist();
     initializeEngineForcing();
+    warmExchangeCatalog();
   } catch (error) {
     logger.error("Failed to initialize API startup dependencies", {
       error,
@@ -139,9 +149,10 @@ async function startServer(port = DEFAULT_PORT) {
     throw error;
   }
 
-  // Attach WebSocket proxy to the Express app
-  attachWsProxy(app);
-
+  const mcpActionLogRetention = startMcpActionLogRetentionWorkerIfEnabled({
+    enabled: config.MCP_ACTION_LOG_STORAGE_ENABLED,
+    db,
+  });
   const server = app.listen(Number(port), HOST, (error?: Error) => {
     if (error) {
       logger.error("Failed to start HTTP server", { error, port, host: HOST });
@@ -153,6 +164,7 @@ async function startServer(port = DEFAULT_PORT) {
 
   const exitHandler = async () => {
     logger.info("SIGTERM signal received: closing HTTP server");
+    mcpActionLogRetention?.stop();
     if (config.IS_KUBERNETES) {
       // Account for GCE load balancer drain timeout
       logger.info("Waiting 60s for GCE load balancer drain timeout");
@@ -256,6 +268,17 @@ app.use(
         success: false,
         code: "BAD_REQUEST_INVALID_JSON",
         error: "Bad request, malformed JSON",
+      });
+    }
+    if (
+      typeof err === "object" &&
+      err !== null &&
+      "status" in err &&
+      (err as { status?: number }).status === 413
+    ) {
+      return res.status(413).json({
+        success: false,
+        error: "Request body is too large",
       });
     }
 

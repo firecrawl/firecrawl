@@ -2,6 +2,7 @@ import express from "express";
 import multer from "multer";
 import { config } from "../config";
 import { RateLimiterMode } from "../types";
+import { registerMcpActionLogReadRoute } from "./mcp-action-logs";
 import { SEARCH_CREDITS_FEATURE_ID } from "../services/autumn/autumn.service";
 import expressWs from "express-ws";
 import { searchController } from "../controllers/v2/search";
@@ -40,6 +41,7 @@ import {
   authMiddleware,
   checkCreditsMiddleware,
   blocklistMiddleware,
+  scrapeBlocklistMiddleware,
   countryCheck,
   idempotencyMiddleware,
   requestTimingMiddleware,
@@ -68,10 +70,21 @@ import {
 import { activityController } from "../controllers/v1/activity";
 import {
   getTeamThreatProtectionController,
+  getTeamZscalerCategoriesController,
   putTeamThreatProtectionController,
+  syncTeamZscalerController,
+  testTeamZscalerConnectionController,
 } from "../controllers/v2/team-threat-protection";
+import {
+  getTeamSiemLoggingController,
+  putTeamSiemLoggingController,
+  testTeamSiemLoggingController,
+} from "../controllers/v2/team-siem-logging";
 import { supportProxyController } from "../controllers/v2/support-proxy";
-import { createResearchRouter } from "../controllers/v2/research-proxy";
+import {
+  createDeveloperRouter,
+  createResearchRouter,
+} from "../controllers/v2/research-proxy";
 import {
   scrapeInteractController,
   scrapeStopInteractiveBrowserController,
@@ -97,7 +110,6 @@ import {
   slackOAuthStartController,
   slackStatusController,
 } from "../controllers/v2/slack";
-
 export const v2Router = express.Router();
 expressWs(express()).applyTo(v2Router);
 
@@ -161,6 +173,11 @@ v2Router.use(requestTimingMiddleware("v2"));
 // Internal: trusted-proxy (hosted MCP) keyless eligibility probe. Secret-gated
 // inside the controller; no auth middleware.
 v2Router.get("/keyless/eligibility", wrap(keylessEligibilityController));
+
+registerMcpActionLogReadRoute(
+  v2Router,
+  authMiddleware(RateLimiterMode.Account),
+);
 
 // Discovery is authenticated but has no credit admission or billing.
 v2Router.get(
@@ -231,7 +248,7 @@ v2Router.post(
   authMiddleware(RateLimiterMode.Scrape, { allowKeyless: true }),
   countryCheck,
   checkCreditsMiddleware(1),
-  blocklistMiddleware,
+  scrapeBlocklistMiddleware,
   wrap(scrapeController),
 );
 
@@ -278,7 +295,7 @@ v2Router.post(
   authMiddleware(RateLimiterMode.Crawl),
   countryCheck,
   checkCreditsMiddleware(),
-  blocklistMiddleware,
+  scrapeBlocklistMiddleware,
   idempotencyMiddleware,
   wrap(crawlController),
 );
@@ -455,6 +472,42 @@ v2Router.put(
 );
 
 v2Router.post(
+  "/team/threat-protection/zscaler/test-connection",
+  authMiddleware(RateLimiterMode.Account),
+  wrap(testTeamZscalerConnectionController),
+);
+
+v2Router.get(
+  "/team/threat-protection/zscaler/categories",
+  authMiddleware(RateLimiterMode.Account),
+  wrap(getTeamZscalerCategoriesController),
+);
+
+v2Router.post(
+  "/team/threat-protection/zscaler/sync",
+  authMiddleware(RateLimiterMode.Account),
+  wrap(syncTeamZscalerController),
+);
+
+v2Router.get(
+  "/team/siem",
+  authMiddleware(RateLimiterMode.Account),
+  wrap(getTeamSiemLoggingController),
+);
+
+v2Router.put(
+  "/team/siem",
+  authMiddleware(RateLimiterMode.Account),
+  wrap(putTeamSiemLoggingController),
+);
+
+v2Router.post(
+  "/team/siem/test",
+  authMiddleware(RateLimiterMode.Account),
+  wrap(testTeamSiemLoggingController),
+);
+
+v2Router.post(
   "/monitor",
   authMiddleware(RateLimiterMode.Crawl),
   countryCheck,
@@ -612,5 +665,17 @@ if (config.RESEARCH_PROXY_URL) {
     "/research",
     authMiddleware(RateLimiterMode.Research),
     createResearchRouter({ legacy: true }),
+  );
+
+  v2Router.use(
+    "/search/developer",
+    authMiddleware(RateLimiterMode.DeveloperSearch, { allowKeyless: true }),
+    createDeveloperRouter(),
+  );
+
+  v2Router.use(
+    "/developer",
+    authMiddleware(RateLimiterMode.DeveloperSearch),
+    createDeveloperRouter(),
   );
 }

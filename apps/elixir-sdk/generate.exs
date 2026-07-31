@@ -145,7 +145,7 @@ defmodule Firecrawl.Generator do
       @type response :: {:ok, Req.Response.t()} | {:error, Exception.t() | Firecrawl.Error.t()}
 
       @base_url "#{base_url}"
-      @sdk_origin "elixir-sdk@1.6.1"
+      @sdk_origin "elixir-sdk@1.9.1"
 
       defp client(opts) do
         api_key =
@@ -663,11 +663,10 @@ defmodule Firecrawl.Generator do
       properties
       |> Enum.map(fn {name, prop_schema} ->
         snake = to_snake_case(name)
-        type = openapi_to_nimble_type(prop_schema)
         required = name in required_keys
         doc = Map.get(prop_schema, "description", "")
 
-        parts = ["type: #{type}"]
+        parts = openapi_to_nimble_parts(name, prop_schema)
         parts = if required, do: parts ++ ["required: true"], else: parts
         parts = if doc != "", do: parts ++ ["doc: #{inspect(doc)}"], else: parts
 
@@ -732,6 +731,28 @@ defmodule Firecrawl.Generator do
   # ---------------------------------------------------------------------------
   # OpenAPI → NimbleOptions type mapping
   # ---------------------------------------------------------------------------
+
+  defp openapi_to_nimble_parts(
+         "auditMetadata",
+         %{"type" => "object", "properties" => properties} = schema
+       ) do
+    required = Map.get(schema, "required", [])
+
+    keys =
+      properties
+      |> Enum.map(fn {name, property_schema} ->
+        parts = ["type: #{openapi_to_nimble_type(property_schema)}"]
+        parts = if name in required, do: parts ++ ["required: true"], else: parts
+        "#{to_snake_case(name)}: [#{Enum.join(parts, ", ")}]"
+      end)
+      |> Enum.join(", ")
+
+    ["type: :keyword_list", "keys: [#{keys}]"]
+  end
+
+  defp openapi_to_nimble_parts(_name, schema) do
+    ["type: #{openapi_to_nimble_type(schema)}"]
+  end
 
   defp openapi_to_nimble_type(%{"type" => "string", "enum" => values}) do
     inspected = values |> Enum.map(&atom_literal/1) |> Enum.join(", ")

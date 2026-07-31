@@ -6,18 +6,19 @@ import { UnsafeDomainBlockedError } from "./threat-protection/error";
 import type { ThreatDecision } from "./threat-protection/types";
 
 describe("calculateCreditsToBeBilled", () => {
-  it("bills handled data layer successes at 15 credits", async () => {
+  it("bills handled Exchange successes at the reported credit cost", async () => {
     const credits = await calculateCreditsToBeBilled(
       {
         formats: [{ type: "markdown" }],
       } as any,
       {
         teamId: "team-id",
+        orgId: null,
       },
       {
         metadata: {
           statusCode: 200,
-          url: "https://profiles.example/in/example-person",
+          url: "https://profiles.example/person/example-person",
           proxyUsed: "basic",
         },
       } as any,
@@ -27,10 +28,10 @@ describe("calculateCreditsToBeBilled", () => {
       {} as any,
       undefined,
       undefined,
-      { handled: true },
+      { handled: true, creditsCost: 12 },
     );
 
-    expect(credits).toBe(15);
+    expect(credits).toBe(12);
   });
 
   it("bills X/Twitter scrapes at 30 credits", async () => {
@@ -40,6 +41,7 @@ describe("calculateCreditsToBeBilled", () => {
       } as any,
       {
         teamId: "team-id",
+        orgId: null,
       },
       {
         metadata: {
@@ -64,6 +66,7 @@ describe("calculateCreditsToBeBilled", () => {
       } as any,
       {
         teamId: "team-id",
+        orgId: null,
       },
       {
         metadata: {
@@ -95,6 +98,7 @@ describe("calculateCreditsToBeBilled", () => {
       } as any,
       {
         teamId: "team-id",
+        orgId: null,
       },
       {
         metadata: {
@@ -163,7 +167,7 @@ const billWithDecisions = (args: {
 }) =>
   calculateCreditsToBeBilled(
     { formats: [{ type: "markdown" }] } as any,
-    { teamId: "team-id" },
+    { teamId: "team-id", orgId: null },
     args.document as any,
     { totalCost: 0 } as any,
     {} as any,
@@ -239,6 +243,28 @@ describe("calculateThreatScanCredits", () => {
         localOnly("provider-failure", false),
       ]),
     ).toBe(0);
+  });
+
+  it("never bills zscaler-mode decisions, consulted or not", () => {
+    const zscalerConsulted: ThreatDecision = {
+      ...consulted(false),
+      mode: "zscaler",
+      verdict: {
+        provider: "zscaler-zia",
+        riskScore: null,
+        categories: ["GAMBLING"],
+        fromCache: false,
+        raw: {},
+      },
+    };
+    expect(calculateThreatScanCredits([zscalerConsulted])).toBe(0);
+    // Mixed with a billable normal-mode decision, only that one bills.
+    expect(
+      calculateThreatScanCredits([
+        zscalerConsulted,
+        consulted(true, "http://a.example/"),
+      ]),
+    ).toBe(2);
   });
 
   it("sums mixed decisions across URLs", () => {

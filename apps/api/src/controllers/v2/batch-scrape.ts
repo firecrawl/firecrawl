@@ -45,6 +45,8 @@ import {
 import { UnsafeDomainBlockedError } from "../../lib/threat-protection/error";
 import { calculateThreatScanCredits } from "../../lib/scrape-billing";
 import { billTeam } from "../../services/billing/credit_billing";
+import { emitRejectedScrapeActivityEvents } from "../../lib/siem-logging";
+import { CrawlDenialError } from "../../lib/error";
 
 export async function batchScrapeController(
   req: RequestWithAuth<{}, BatchScrapeResponse, BatchScrapeRequest>,
@@ -129,6 +131,7 @@ export async function batchScrapeController(
   let urls: string[] = req.body.urls;
   let unnormalizedURLs = preNormalizedBody.urls;
   let invalidURLs: string[] | undefined = undefined;
+  const locallyBlockedURLs: string[] = [];
 
   if (req.body.ignoreInvalidURLs) {
     invalidURLs = [];
@@ -142,6 +145,7 @@ export async function batchScrapeController(
         if (
           !isUrlBlocked(nu, req.acuc?.flags ?? null, {
             team_id: req.auth.team_id,
+            org_id: req.acuc?.org_id ?? null,
             origin: req.body.origin ?? null,
           })
         ) {
@@ -149,20 +153,39 @@ export async function batchScrapeController(
           unnormalizedURLs.push(u);
         } else {
           invalidURLs.push(u);
+          locallyBlockedURLs.push(nu);
         }
       } catch (_) {
         invalidURLs.push(u);
       }
     }
   } else {
-    if (
-      req.body.urls?.some((url: string) =>
+    const blockedURLs =
+      req.body.urls?.filter((url: string) =>
         isUrlBlocked(url, req.acuc?.flags ?? null, {
           team_id: req.auth.team_id,
+          org_id: req.acuc?.org_id ?? null,
           origin: req.body.origin ?? null,
         }),
-      )
-    ) {
+      ) ?? [];
+    if (blockedURLs.length > 0) {
+      locallyBlockedURLs.push(...blockedURLs);
+      emitRejectedScrapeActivityEvents(
+        locallyBlockedURLs.map(url => ({
+          scrapeId: uuidv7(),
+          requestId: req.body.__agentInterop?.requestId ?? id,
+          endpoint: req.body.__agentInterop ? "agent" : "batch_scrape",
+          teamId: req.auth.team_id,
+          apiKeyId: req.acuc?.api_key_id ?? null,
+          auditMetadata: req.body.auditMetadata,
+          url,
+          error: new CrawlDenialError(UNSUPPORTED_SITE_MESSAGE),
+          origin: req.body.origin ?? "api",
+          integration: req.body.integration,
+          zeroDataRetention,
+        })),
+      );
+      locallyBlockedURLs.length = 0;
       if (!res.headersSent) {
         return res.status(403).json({
           success: false,
@@ -171,6 +194,22 @@ export async function batchScrapeController(
       }
     }
   }
+
+  emitRejectedScrapeActivityEvents(
+    locallyBlockedURLs.map(url => ({
+      scrapeId: uuidv7(),
+      requestId: req.body.__agentInterop?.requestId ?? id,
+      endpoint: req.body.__agentInterop ? "agent" : "batch_scrape",
+      teamId: req.auth.team_id,
+      apiKeyId: req.acuc?.api_key_id ?? null,
+      auditMetadata: req.body.auditMetadata,
+      url,
+      error: new CrawlDenialError(UNSUPPORTED_SITE_MESSAGE),
+      origin: req.body.origin ?? "api",
+      integration: req.body.integration,
+      zeroDataRetention,
+    })),
+  );
 
   // Threat protection: reject/report blocked URLs at enqueue time so they
   // never consume scrape slots. Mirrors the isUrlBlocked handling above:
@@ -210,6 +249,25 @@ export async function batchScrapeController(
           );
         });
       }
+      emitRejectedScrapeActivityEvents(
+        blocked.map(blockedUrl => ({
+          scrapeId: uuidv7(),
+          requestId: req.body.__agentInterop?.requestId ?? id,
+          endpoint: req.body.__agentInterop ? "agent" : "batch_scrape",
+          teamId: req.auth.team_id,
+          apiKeyId: req.acuc?.api_key_id ?? null,
+          auditMetadata: req.body.auditMetadata,
+          url: blockedUrl.url,
+          error: new UnsafeDomainBlockedError(
+            blockedUrl.url,
+            blockedUrl.decision,
+          ),
+          threatDecisions: [blockedUrl.decision],
+          origin: req.body.origin ?? "api",
+          integration: req.body.integration,
+          zeroDataRetention,
+        })),
+      );
       if (req.body.ignoreInvalidURLs) {
         const blockedSet = new Set(blocked.map(x => x.url));
         const keptUnnormalized: string[] = [];
@@ -271,6 +329,7 @@ export async function batchScrapeController(
         internalOptions: {
           disableSmartWaitCache: true,
           teamId: req.auth.team_id,
+          orgId: req.acuc?.org_id ?? null,
           saveScrapeResultToGCS: config.GCS_FIRE_ENGINE_BUCKET_NAME
             ? true
             : false,

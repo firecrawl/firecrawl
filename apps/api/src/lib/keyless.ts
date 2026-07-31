@@ -214,8 +214,8 @@ return next
 
 /**
  * Read-only check of whether an IP could currently use the keyless tier (no
- * consumption). Used by the hosted MCP to decide, at connect time, whether to
- * serve keyless (eligible) or throw so FastMCP emits the OAuth challenge (not).
+ * consumption). Used by the hosted MCP before a keyless tool call so an
+ * ineligible caller receives structured recovery without an OAuth challenge.
  */
 export async function checkKeylessEligibility(
   ip: string,
@@ -225,8 +225,8 @@ export async function checkKeylessEligibility(
     return { eligible: false, reason: "ineligible_ip" };
   }
   // Optional Spur Context check (only when SPUR_API_KEY is set): treat IPs on
-  // anonymizing/rotating infrastructure as ineligible so the hosted MCP issues
-  // an OAuth challenge instead of serving keyless that auth would then reject.
+  // anonymizing/rotating infrastructure as ineligible so the hosted MCP can
+  // return a bounded recovery result instead of serving a request auth rejects.
   if (await isKeylessIpSuspicious(ip)) {
     return { eligible: false, reason: "suspicious" };
   }
@@ -247,8 +247,8 @@ export async function checkKeylessEligibility(
     }
     return { eligible: true };
   } catch {
-    // Limiter store unavailable — fail closed so the MCP issues an OAuth
-    // challenge rather than granting unbounded keyless.
+    // Limiter store unavailable — fail closed so the MCP returns structured
+    // recovery rather than granting unbounded keyless access.
     return { eligible: false, reason: "error" };
   }
 }

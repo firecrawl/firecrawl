@@ -32,10 +32,15 @@ jobs:
         with:
           ref: ${{ github.event.repository.default_branch }}
 
+      - name: Install Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+
       - name: Install pnpm
         uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4
         with:
-          version: 10
+          version: 11.4.0
 
       - name: Scan default branch audit failures
         id: scan

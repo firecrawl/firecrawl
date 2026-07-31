@@ -17,7 +17,8 @@ public class ModelsTests
             OnlyMainContent = true,
             Timeout = 30000,
             Mobile = false,
-            RedactPII = true
+            RedactPII = true,
+            AuditMetadata = new AuditMetadata { Username = "alice@example.com" }
         };
 
         var json = JsonSerializer.Serialize(options, JsonOptions);
@@ -28,6 +29,7 @@ public class ModelsTests
         Assert.Contains("\"timeout\":30000", json);
         Assert.Contains("\"mobile\":false", json);
         Assert.Contains("\"redactPII\":true", json);
+        Assert.Contains("\"auditMetadata\":{\"username\":\"alice@example.com\"}", json);
     }
 
     [Fact]
@@ -70,13 +72,15 @@ public class ModelsTests
         {
             Search = "pricing",
             Limit = 10,
-            IncludeSubdomains = true
+            IncludeSubdomains = true,
+            AuditMetadata = new AuditMetadata { Username = "alice@example.com" }
         };
 
         var json = JsonSerializer.Serialize(options, JsonOptions);
         Assert.Contains("\"search\":\"pricing\"", json);
         Assert.Contains("\"limit\":10", json);
         Assert.Contains("\"includeSubdomains\":true", json);
+        Assert.Contains("\"auditMetadata\":{\"username\":\"alice@example.com\"}", json);
     }
 
     [Fact]
@@ -87,6 +91,7 @@ public class ModelsTests
             Limit = 5,
             Location = "US",
             Tbs = "qdr:w",
+            Highlights = false,
             IncludeDomains = new() { "firecrawl.dev" },
             ExcludeDomains = new() { "example.com" }
         };
@@ -95,6 +100,7 @@ public class ModelsTests
         Assert.Contains("\"limit\":5", json);
         Assert.Contains("\"location\":\"US\"", json);
         Assert.Contains("\"tbs\":\"qdr:w\"", json);
+        Assert.Contains("\"highlights\":false", json);
         Assert.Contains("\"includeDomains\":[\"firecrawl.dev\"]", json);
         Assert.Contains("\"excludeDomains\":[\"example.com\"]", json);
     }
