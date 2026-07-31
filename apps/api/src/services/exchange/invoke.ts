@@ -1,12 +1,15 @@
 import { config } from "../../config";
 import type { ExchangeSearchResult } from "../../lib/entities";
 
+/** A call once the executor has guaranteed it an idempotency key. */
+export type ResolvedExchangeCall = ExchangeCall & { idempotencyKey: string };
+
 export interface ExchangeCall {
   provider: string;
   capability: string;
   options: Record<string, unknown>;
   providerApiKey?: string;
-  idempotencyKey: string;
+  idempotencyKey?: string;
 }
 
 interface ExchangeInvokeResponse {
@@ -159,7 +162,7 @@ export async function quoteExchangeCalls(
 
 /** Executes independent provider calls without mixing them into web search result handling. */
 export async function invokeExchangeCalls(input: {
-  calls: ExchangeCall[];
+  calls: ResolvedExchangeCall[];
   quotes: ExchangeQuote[];
   teamId: string;
   timeoutMs: number;

@@ -107,6 +107,8 @@ export async function search(
       out.images = transformArray<SearchResultImages>(data.images);
     if (data.developer)
       out.developer = transformArray<SearchResultWeb>(data.developer);
+    if (data.providers)
+      out.providers = transformArray<SearchResultWeb>(data.providers);
     if (data.exchange) out.exchange = data.exchange;
     Object.defineProperty(out, "data", {
       get() {

@@ -9,7 +9,6 @@ import { searchController } from "../controllers/v2/search";
 import { feedbackController } from "../controllers/v2/feedback/controller";
 import { searchFeedbackController } from "../controllers/v2/search-feedback";
 import { scrapeController } from "../controllers/v2/scrape";
-import { exchangeDiscoveryController } from "../controllers/v2/exchange";
 import { keylessEligibilityController } from "../controllers/v2/keyless-eligibility";
 import {
   parseController,
@@ -176,18 +175,6 @@ v2Router.get("/keyless/eligibility", wrap(keylessEligibilityController));
 registerMcpActionLogReadRoute(
   v2Router,
   authMiddleware(RateLimiterMode.Account),
-);
-
-// Discovery is authenticated but has no credit admission or billing.
-v2Router.get(
-  "/exchange",
-  authMiddleware(RateLimiterMode.Account),
-  wrap(exchangeDiscoveryController),
-);
-v2Router.get(
-  "/exchange/{*path}",
-  authMiddleware(RateLimiterMode.Account),
-  wrap(exchangeDiscoveryController),
 );
 
 v2Router.post(

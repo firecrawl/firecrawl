@@ -1935,7 +1935,9 @@ const exchangeCallSchema = z.strictObject({
   capability: z.string().trim().min(1).max(100),
   options: z.record(z.string(), z.unknown()),
   providerApiKey: z.string().trim().min(1).max(4096).optional(),
-  idempotencyKey: z.string().trim().min(8).max(200),
+  /** Optional. Supply one to make a retry safe: the same key returns the original
+   * result instead of calling the provider and billing a second time. */
+  idempotencyKey: z.string().trim().min(8).max(200).optional(),
 });
 
 export const searchRequestSchema = z
@@ -1949,7 +1951,7 @@ export const searchRequestSchema = z
     sources: z
       .union([
         // Array of strings (simple format)
-        z.array(z.enum(["web", "images", "news"])),
+        z.array(z.enum(["web", "images", "news", "exchange"])),
         // Array of objects (advanced format)
         z.array(
           z.union([

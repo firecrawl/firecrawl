@@ -702,6 +702,7 @@ export interface SearchData {
   news?: Array<SearchResultNews | Document>;
   images?: Array<SearchResultImages | Document>;
   developer?: Array<SearchResultWeb | Document>;
+  providers?: Array<SearchResultWeb | Document>;
   exchange?: ExchangeResult[];
 }
 

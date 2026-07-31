@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import type { Logger } from "winston";
 import type { ExchangeSearchResult } from "../../lib/entities";
 import type { BillingMetadata } from "../billing/types";
@@ -6,6 +7,7 @@ import {
   invokeExchangeCalls,
   quoteExchangeCalls,
   type ExchangeCall,
+  type ResolvedExchangeCall,
 } from "./invoke";
 
 interface ExchangeExecutionInput {
@@ -32,11 +34,18 @@ export async function executeExchangeCalls(
     return { billedCredits: 0, results: [] };
   }
 
-  const policyError = validateExecutionPolicy(input);
+  // A caller that does not care about exactly-once gets a fresh key per call, so
+  // a repeated request re-executes exactly like a repeated /v2/search does.
+  const calls: ResolvedExchangeCall[] = input.calls.map(call => ({
+    ...call,
+    idempotencyKey: call.idempotencyKey ?? randomUUID(),
+  }));
+
+  const policyError = validateExecutionPolicy({ ...input, calls });
   if (policyError) {
     return {
       billedCredits: 0,
-      results: input.calls.map(call => ({
+      results: calls.map(call => ({
         provider: call.provider,
         capability: call.capability,
         error: policyError,
@@ -44,9 +53,9 @@ export async function executeExchangeCalls(
     };
   }
 
-  const quotes = await quoteExchangeCalls(input.calls);
+  const quotes = await quoteExchangeCalls(calls);
   const results = await invokeExchangeCalls({
-    calls: input.calls,
+    calls,
     quotes,
     teamId: input.teamId,
     timeoutMs: input.timeoutMs,

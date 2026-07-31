@@ -36,6 +36,7 @@ import {
   formatTypesOf,
 } from "../../lib/key-restriction";
 import type { SearchV2Response } from "../../lib/entities";
+import { discoverExchangeCapabilities } from "../../services/exchange/discover";
 import { executeExchangeCalls } from "../../services/exchange/execute";
 import { redactExchangeCredentials } from "../../services/exchange/invoke";
 import { wantsDeveloperCategory } from "../../search/developer";
@@ -264,6 +265,20 @@ export async function searchController(
           totalCredits: 0,
           shouldScrape: false,
         };
+
+    // `sources: ["exchange"]` searches the provider catalog; the `exchange`
+    // array executes a capability. Discovery is free and additive.
+    const wantsProviders = (req.body.sources ?? []).some(
+      source =>
+        (typeof source === "string" ? source : source?.type) === "exchange",
+    );
+    if (wantsProviders && req.body.query) {
+      const providers = await discoverExchangeCapabilities({
+        limit: req.body.limit,
+        query: req.body.query,
+      });
+      if (providers.length > 0) result.response.providers = providers;
+    }
 
     const exchangeExecution = await executeExchangeCalls({
       agentIndexOnly: Boolean((req as any).agentIndexOnly),

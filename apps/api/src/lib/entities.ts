@@ -184,6 +184,8 @@ export interface SearchV2Response {
   images?: ImageSearchResult[];
   news?: NewsSearchResult[];
   developer?: WebSearchResult[];
+  /** Exchange capabilities matching the query, shaped like ordinary results. */
+  providers?: WebSearchResult[];
   exchange?: ExchangeSearchResult[];
 }
 
