@@ -17,6 +17,7 @@ import type {
 import type { RequestWithAuth } from "../v1/types";
 import { wrap } from "../../routes/shared";
 import { integrationSchema } from "../../utils/integration";
+import { requestOrigin } from "../../lib/request-origin";
 
 const SEARCH_CREDITS_PER_TEN_RESULTS = 2;
 const ZDR_SEARCH_CREDITS_PER_TEN_RESULTS = 10;
@@ -191,16 +192,6 @@ function addLegacySnakeCaseAliases<T>(value: T): T {
 
 function resultCount(body: any): number {
   return Array.isArray(body?.results) ? body.results.length : 0;
-}
-
-function firstHeaderValue(req: Request, key: string): string | undefined {
-  const value = req.headers[key];
-  if (Array.isArray(value)) return value[0];
-  return typeof value === "string" ? value : undefined;
-}
-
-function requestOrigin(params: ResearchQueryParams, req: Request) {
-  return params.origin ?? firstHeaderValue(req, "x-origin") ?? "api";
 }
 
 function creditsFor(

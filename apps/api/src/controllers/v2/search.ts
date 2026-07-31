@@ -14,7 +14,11 @@ import {
   reserveKeylessCredits,
 } from "../../lib/keyless";
 import { v7 as uuidv7 } from "uuid";
-import { logSearch, logRequest } from "../../services/logging/log_job";
+import {
+  logSearch,
+  logRequest,
+  logResearchEndpoint,
+} from "../../services/logging/log_job";
 import { logger as _logger } from "../../lib/logger";
 import { ScrapeJobTimeoutError } from "../../lib/error";
 import { z } from "zod";
@@ -36,6 +40,7 @@ import {
   formatTypesOf,
 } from "../../lib/key-restriction";
 import { wantsDeveloperCategory } from "../../search/developer";
+import { requestOrigin } from "../../lib/request-origin";
 
 export async function searchController(
   req: RequestWithAuth<{}, SearchResponse, SearchRequest>,
@@ -67,6 +72,8 @@ export async function searchController(
   let reconciledKeylessCredits = false;
 
   try {
+    const rawOrigin =
+      typeof req.body?.origin === "string" ? req.body.origin : undefined;
     req.body = searchRequestSchema.parse(req.body);
 
     const requestedFormats = formatTypesOf(req.body.scrapeOptions?.formats);
@@ -299,6 +306,33 @@ export async function searchController(
       },
       false,
     );
+
+    if (wantsDeveloperCategory(req.body.categories as CategoryOption[])) {
+      logResearchEndpoint({
+        table: "code_searches",
+        id: uuidv7(),
+        request_id: agentRequestId ?? jobId,
+        team_id: req.auth.team_id,
+        target: req.body.query,
+        options: {
+          origin: requestOrigin({ origin: rawOrigin }, req),
+          integration: req.body.integration ?? null,
+          api_version: "v2",
+          categories: req.body.categories,
+          via: "search_category",
+        },
+        response: null,
+        num_results: result.response.developer?.length ?? 0,
+        time_taken: timeTakenInSeconds,
+        credits_cost: 0,
+        is_successful: true,
+        zeroDataRetention,
+      }).catch(ledgerError => {
+        logger.warn("Failed to log developer category usage", {
+          error: ledgerError,
+        });
+      });
+    }
 
     const totalRequestTime = new Date().getTime() - middlewareStartTime;
     const controllerTime = new Date().getTime() - controllerStartTime;
