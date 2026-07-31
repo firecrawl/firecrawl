@@ -5,6 +5,7 @@ import { db } from "../db/connection";
 import * as schema from "../db/schema";
 import { redisRateLimitClient } from "../services/rate-limiter";
 import { isKeylessIpSuspicious } from "./spur";
+import { logger } from "./logger";
 
 // Keyless free tier: scrape, search, and interact can be used without an API key
 // from the official MCP server, CLI, or SDKs. It's gated per-IP/day by TWO
@@ -98,6 +99,36 @@ type KeylessConsumeResult = {
 
 function positiveRedisTtl(ttl: number): number | undefined {
   return ttl > 0 ? ttl : undefined;
+}
+
+/** Structured response for projected-credit reservation exhaustion. */
+export async function keylessLimitBody(
+  teamId: string,
+  mode: string,
+): Promise<{
+  success: false;
+  error: string;
+  reason: "credits";
+  retry_after_seconds?: number;
+}> {
+  const ip = keylessIpFromTeamId(teamId);
+  const retryAfterSeconds = ip
+    ? positiveRedisTtl(await redisRateLimitClient.ttl(creditsKey(ip)))
+    : undefined;
+  logger.warn("Keyless request blocked", {
+    canonicalLog: "keyless/consume",
+    event: "keyless_exhausted",
+    blocked: true,
+    reason: "credits",
+    mode,
+    retryAfterSeconds,
+  });
+  return {
+    success: false,
+    error: KEYLESS_FREE_TIER_LIMIT_MESSAGE,
+    reason: "credits",
+    ...(retryAfterSeconds ? { retry_after_seconds: retryAfterSeconds } : {}),
+  };
 }
 
 type KeylessCreditReservationResult = {

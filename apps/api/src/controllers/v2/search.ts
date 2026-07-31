@@ -8,8 +8,8 @@ import {
 } from "./types";
 import { billTeam } from "../../services/billing/credit_billing";
 import {
-  KEYLESS_FREE_TIER_LIMIT_MESSAGE,
   adjustKeylessCredits,
+  keylessLimitBody,
   logKeylessCreditUsage,
   reserveKeylessCredits,
 } from "../../lib/keyless";
@@ -235,10 +235,9 @@ export async function searchController(
       );
       if (!reservation.ok) {
         applyAgentAuthDiscoveryHeader(res);
-        return res.status(429).json({
-          success: false,
-          error: KEYLESS_FREE_TIER_LIMIT_MESSAGE,
-        });
+        return res.status(429).json(
+          await keylessLimitBody(req.auth.team_id, "v2_search"),
+        );
       }
       reservedKeylessCredits = projectedKeylessCredits;
     }

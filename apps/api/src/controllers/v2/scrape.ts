@@ -30,8 +30,8 @@ import { captureExceptionWithZdrCheck } from "../../services/sentry";
 import type { BillingMetadata } from "../../services/billing/types";
 import { getScrapeZDR } from "../../lib/zdr-helpers";
 import {
-  KEYLESS_FREE_TIER_LIMIT_MESSAGE,
   adjustKeylessCredits,
+  keylessLimitBody,
   logKeylessCreditUsage,
   reserveKeylessCredits,
 } from "../../lib/keyless";
@@ -186,10 +186,9 @@ export async function scrapeController(
         );
         if (!reservation.ok) {
           applyAgentAuthDiscoveryHeader(res);
-          return res.status(429).json({
-            success: false,
-            error: KEYLESS_FREE_TIER_LIMIT_MESSAGE,
-          });
+          return res.status(429).json(
+            await keylessLimitBody(req.auth.team_id, "v2_scrape"),
+          );
         }
         reservedKeylessCredits = projectedKeylessCredits;
       }

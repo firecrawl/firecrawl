@@ -34,8 +34,8 @@ import {
 import { fromV1ScrapeOptions } from "../v2/types";
 import { getSearchForcedKind } from "../../lib/zdr-helpers";
 import {
-  KEYLESS_FREE_TIER_LIMIT_MESSAGE,
   adjustKeylessCredits,
+  keylessLimitBody,
   logKeylessCreditUsage,
   reserveKeylessCredits,
 } from "../../lib/keyless";
@@ -212,10 +212,9 @@ export async function searchController(
       );
       if (!reservation.ok) {
         applyAgentAuthDiscoveryHeader(res);
-        return res.status(429).json({
-          success: false,
-          error: KEYLESS_FREE_TIER_LIMIT_MESSAGE,
-        });
+        return res.status(429).json(
+          await keylessLimitBody(req.auth.team_id, "v1_search"),
+        );
       }
       reservedKeylessCredits = projectedKeylessCredits;
     }

@@ -49,6 +49,7 @@ import {
   KEYLESS_FREE_TIER_LIMIT_MESSAGE,
   adjustKeylessCredits,
   keylessTeamUuid,
+  keylessLimitBody,
   logKeylessCreditUsage,
   reserveKeylessCredits,
 } from "../../lib/keyless";
@@ -558,10 +559,7 @@ async function createSessionForScrape(
   if (!reservation.ok) {
     return {
       status: 429,
-      body: {
-        success: false,
-        error: KEYLESS_FREE_TIER_LIMIT_MESSAGE,
-      },
+      body: await keylessLimitBody(req.auth.team_id, "v2_browser"),
       error: true,
     };
   }

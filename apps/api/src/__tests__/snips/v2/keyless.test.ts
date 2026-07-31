@@ -252,6 +252,7 @@ describeIf(KEYLESS_ENABLED)("Keyless free tier", () => {
         });
 
       expect(blocked.statusCode).toBe(429);
+      expect(blocked.body.reason).toBe("credits");
       expect(blocked.body.error).toContain("keyless free tier rate limit");
       expect(blocked.body.error).toContain("https://www.firecrawl.dev/signin");
       expect(blocked.body.error).toContain(
@@ -296,6 +297,7 @@ describeIf(KEYLESS_ENABLED)("Keyless free tier", () => {
         });
 
       expect(blocked.statusCode).toBe(429);
+      expect(blocked.body.reason).toBe("credits");
       expect(blocked.body.error).toContain("keyless free tier rate limit");
       expect(blocked.body.error).toContain("https://www.firecrawl.dev/signin");
       expect(blocked.body.error).toContain(
