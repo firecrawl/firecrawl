@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto";
 import type { Logger } from "winston";
 import type { ExchangeSearchResult } from "../../lib/entities";
 import type { BillingMetadata } from "../billing/types";
@@ -7,7 +6,6 @@ import {
   invokeExchangeCalls,
   quoteExchangeCalls,
   type ExchangeCall,
-  type ResolvedExchangeCall,
 } from "./invoke";
 
 interface ExchangeExecutionInput {
@@ -34,14 +32,9 @@ export async function executeExchangeCalls(
     return { billedCredits: 0, results: [] };
   }
 
-  // A caller that does not care about exactly-once gets a fresh key per call, so
-  // a repeated request re-executes exactly like a repeated /v2/search does.
-  const calls: ResolvedExchangeCall[] = input.calls.map(call => ({
-    ...call,
-    idempotencyKey: call.idempotencyKey ?? randomUUID(),
-  }));
+  const calls = input.calls;
 
-  const policyError = validateExecutionPolicy({ ...input, calls });
+  const policyError = validateExecutionPolicy(input);
   if (policyError) {
     return {
       billedCredits: 0,
@@ -105,16 +98,6 @@ function validateExecutionPolicy(
       message: "Exchange cannot be invoked with billing disabled.",
       retryable: false,
       status: 403,
-    };
-  }
-  const keys = new Set(input.calls.map(call => call.idempotencyKey));
-  if (keys.size !== input.calls.length) {
-    return {
-      code: "exchange_duplicate_idempotency_key",
-      message:
-        "Each Exchange call in a batch must use a distinct idempotency key.",
-      retryable: false,
-      status: 400,
     };
   }
   return null;

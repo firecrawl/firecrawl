@@ -5,7 +5,6 @@ const call = {
   provider: "hello",
   capability: "echo",
   options: { value: "test" },
-  idempotencyKey: "hello-echo-test",
 };
 
 describe("v2 Exchange", () => {

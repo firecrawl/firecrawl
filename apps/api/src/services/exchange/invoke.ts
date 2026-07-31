@@ -1,15 +1,12 @@
+import { randomUUID } from "node:crypto";
 import { config } from "../../config";
 import type { ExchangeSearchResult } from "../../lib/entities";
-
-/** A call once the executor has guaranteed it an idempotency key. */
-export type ResolvedExchangeCall = ExchangeCall & { idempotencyKey: string };
 
 export interface ExchangeCall {
   provider: string;
   capability: string;
   options: Record<string, unknown>;
   providerApiKey?: string;
-  idempotencyKey?: string;
 }
 
 interface ExchangeInvokeResponse {
@@ -162,7 +159,7 @@ export async function quoteExchangeCalls(
 
 /** Executes independent provider calls without mixing them into web search result handling. */
 export async function invokeExchangeCalls(input: {
-  calls: ResolvedExchangeCall[];
+  calls: ExchangeCall[];
   quotes: ExchangeQuote[];
   teamId: string;
   timeoutMs: number;
@@ -207,7 +204,7 @@ export async function invokeExchangeCalls(input: {
               ...(call.providerApiKey === undefined
                 ? {}
                 : { providerApiKey: call.providerApiKey }),
-              requestId: call.idempotencyKey,
+              requestId: randomUUID(),
               teamId: input.teamId,
               zeroDataRetention: input.zeroDataRetention,
             }),

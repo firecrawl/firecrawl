@@ -218,6 +218,23 @@ export async function searchController(
       reservedKeylessCredits = projectedSearchCredits;
     }
 
+    // The Exchange source is served by the catalog, not the web engine. Passing
+    // it through would make the engine emit web results under an `exchange`
+    // key, colliding with the results of executed Exchange calls.
+    // An Exchange-only `sources` leaves nothing for the engine, so fall back to
+    // its default rather than asking it for no sources at all.
+    const nonExchangeSources = (
+      req.body.sources as Array<{ type: string }> | undefined
+    )
+      ?.map(source => (typeof source === "string" ? { type: source } : source))
+      .filter(source => source.type !== "exchange");
+    const webSources =
+      nonExchangeSources === undefined
+        ? undefined
+        : nonExchangeSources.length > 0
+          ? nonExchangeSources
+          : [{ type: "web" }];
+
     const hasWebSearch = req.body.query !== undefined;
     const result = hasWebSearch
       ? await executeSearch(
@@ -229,7 +246,7 @@ export async function searchController(
             lang: req.body.lang,
             country: req.body.country,
             location: req.body.location,
-            sources: req.body.sources as Array<{ type: string }>,
+            sources: webSources as Array<{ type: string }>,
             categories: req.body.categories as CategoryOption[],
             includeDomains: req.body.includeDomains,
             excludeDomains: req.body.excludeDomains,
@@ -268,14 +285,24 @@ export async function searchController(
 
     // `sources: ["exchange"]` searches the provider catalog; the `exchange`
     // array executes a capability. Discovery is free and additive.
-    const wantsProviders = (req.body.sources ?? []).some(
+    const exchangeSource = (req.body.sources ?? []).find(
       source =>
         (typeof source === "string" ? source : source?.type) === "exchange",
     );
-    if (wantsProviders && req.body.query) {
+    if (exchangeSource) {
+      // The string form carries no filters; only the object form scopes discovery.
+      const scope =
+        typeof exchangeSource === "string" || exchangeSource.type !== "exchange"
+          ? undefined
+          : exchangeSource;
       const providers = await discoverExchangeCapabilities({
         limit: req.body.limit,
         ...(req.body.query ? { query: req.body.query } : {}),
+        filters: {
+          ...(scope?.categories ? { categories: scope.categories } : {}),
+          ...(scope?.providers ? { providers: scope.providers } : {}),
+          ...(scope?.capabilities ? { capabilities: scope.capabilities } : {}),
+        },
       });
       if (providers.length > 0) result.response.providers = providers;
     }

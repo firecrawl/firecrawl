@@ -672,11 +672,6 @@ export interface ExchangeCall {
    * access. It is forwarded to the provider and never stored.
    */
   providerApiKey?: string;
-  /**
-   * Stable caller-generated key for this provider call. Reuse the same key
-   * when retrying the same logical operation.
-   */
-  idempotencyKey: string;
 }
 
 /** A discovered Exchange capability, shaped like a search result. */

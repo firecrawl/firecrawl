@@ -971,7 +971,6 @@ describe("V2 Types Validation", () => {
             provider: "hello",
             capability: "echo",
             options: { value: "test" },
-            idempotencyKey: "hello-echo-test",
           },
         ],
       });

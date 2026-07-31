@@ -18,7 +18,6 @@ const call = {
   provider: "acme",
   capability: "company",
   options: { domain: "firecrawl.dev" },
-  idempotencyKey: "company-firecrawl-dev",
 };
 
 beforeEach(() => {
@@ -81,16 +80,24 @@ describe("Exchange quote and invoke", () => {
       2,
       new URL("/v1/invoke", "http://exchange.local"),
       expect.objectContaining({
-        body: JSON.stringify({
-          provider: call.provider,
-          capability: call.capability,
-          options: call.options,
-          requestId: call.idempotencyKey,
-          teamId: "team-1",
-          zeroDataRetention: true,
-        }),
+        body: expect.any(String),
       }),
     );
+    const sent = JSON.parse(
+      (providerFetch.mock.calls[1]?.[1] as { body: string }).body,
+    );
+    expect(sent).toMatchObject({
+      provider: call.provider,
+      capability: call.capability,
+      options: call.options,
+      teamId: "team-1",
+      zeroDataRetention: true,
+    });
+    // The caller never supplies one; the service generates it for the audit trail.
+    expect(sent.requestId).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/,
+    );
+    expect(sent).not.toHaveProperty("idempotencyKey");
   });
 
   it("does not invoke when an exact published quote is unavailable", async () => {
@@ -156,7 +163,7 @@ describe("redactExchangeCredentials", () => {
       query: "acme",
       exchange: [
         { ...call, providerApiKey: "caller-secret" },
-        { ...call, idempotencyKey: "second" },
+        { ...call, capability: "second" },
       ],
     };
 

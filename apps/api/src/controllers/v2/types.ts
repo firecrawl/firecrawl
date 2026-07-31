@@ -2018,9 +2018,6 @@ const exchangeCallSchema = z.strictObject({
   capability: z.string().trim().min(1).max(100),
   options: z.record(z.string(), z.unknown()),
   providerApiKey: z.string().trim().min(1).max(4096).optional(),
-  /** Optional. Supply one to make a retry safe: the same key returns the original
-   * result instead of calling the provider and billing a second time. */
-  idempotencyKey: z.string().trim().min(8).max(200).optional(),
 });
 
 export const searchRequestSchema = z
