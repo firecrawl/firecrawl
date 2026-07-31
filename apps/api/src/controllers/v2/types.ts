@@ -1896,6 +1896,46 @@ const newsSearchSourceOptions = z.strictObject({
   type: z.literal("news"),
 });
 
+const slugList = (max: number) =>
+  z
+    .array(
+      z
+        .string()
+        .trim()
+        .min(1)
+        .max(120)
+        .regex(/^[a-z0-9][a-z0-9-]*$/, "Use a lowercase slug"),
+    )
+    .min(1)
+    .max(max)
+    .optional();
+
+/**
+ * Narrows Exchange discovery. `categories` scopes to a cohort such as people or
+ * finance, `providers` to named providers, and `capabilities` to
+ * "provider/capability" pairs. Combining them narrows further.
+ */
+const exchangeSearchSourceOptions = z.strictObject({
+  type: z.literal("exchange"),
+  categories: slugList(20),
+  providers: slugList(50),
+  capabilities: z
+    .array(
+      z
+        .string()
+        .trim()
+        .min(3)
+        .max(240)
+        .regex(
+          /^[a-z0-9][a-z0-9-]*\/[a-z0-9][a-z0-9-]*$/,
+          "Use provider/capability",
+        ),
+    )
+    .min(1)
+    .max(50)
+    .optional(),
+});
+
 // Category source type definitions
 const githubCategoryOptions = z.strictObject({
   type: z.literal("github"),
@@ -1958,6 +1998,7 @@ export const searchRequestSchema = z
             webSearchSourceOptions,
             imagesSearchSourceOptions,
             newsSearchSourceOptions,
+            exchangeSearchSourceOptions,
           ]),
         ),
       ])

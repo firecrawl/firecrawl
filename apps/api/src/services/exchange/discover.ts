@@ -17,7 +17,14 @@ const DISCOVERY_TIMEOUT_MS = 10_000;
  * Finds Exchange capabilities matching a query and shapes them as ordinary
  * search results, so a caller reads a provider the same way it reads a page.
  */
+interface ExchangeDiscoveryFilters {
+  capabilities?: string[];
+  categories?: string[];
+  providers?: string[];
+}
+
 export async function discoverExchangeCapabilities(input: {
+  filters?: ExchangeDiscoveryFilters;
   limit: number;
   query: string;
 }): Promise<WebSearchResult[]> {
@@ -26,6 +33,9 @@ export async function discoverExchangeCapabilities(input: {
   const url = new URL("/v1/router", config.EXCHANGE_API_URL);
   url.searchParams.set("q", input.query);
   url.searchParams.set("limit", String(input.limit));
+  for (const [key, values] of Object.entries(input.filters ?? {})) {
+    if (values?.length) url.searchParams.set(key, values.join(","));
+  }
 
   type DiscoveryPayload = { results?: CapabilityMatch[] };
   let payload: DiscoveryPayload | null = null;

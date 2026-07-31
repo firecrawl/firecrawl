@@ -714,7 +714,20 @@ export interface SearchRequest {
   query?: string;
   exchange?: ExchangeCall[];
   sources?: Array<
-    "web" | "news" | "images" | { type: "web" | "news" | "images" }
+    | "web"
+    | "news"
+    | "images"
+    | "exchange"
+    | { type: "web" | "news" | "images" }
+    | {
+        type: "exchange";
+        /** Cohort slugs, e.g. "people" or "finance". */
+        categories?: string[];
+        /** Provider slugs. */
+        providers?: string[];
+        /** "provider/capability" pairs. */
+        capabilities?: string[];
+      }
   >;
   categories?: Array<
     "github" | "research" | "pdf" | "developer" | CategoryOption
