@@ -16,7 +16,7 @@ RUN cd sharedLibs/go-html-to-md && \
     go mod download && \
     go build -o libhtml-to-markdown.so -buildmode=c-shared html-to-markdown.go
 
-FROM base AS build
+FROM base AS build-deps
 WORKDIR /app
 
 # Install system dependencies
@@ -65,6 +65,11 @@ ARG GIT_SHA=unknown
 RUN test -s dist/src/harness.js && \
     test -s dist/src/controllers/v0/crawl-status.js && \
     printf '%s\n' "$GIT_SHA" > BUILD_SHA
+
+# Keep a named layer with development dependencies so focused tests can run in
+# the same reproducible environment used by the production compile:
+#   docker build --target build-deps -t firecrawl-api-test apps/api
+FROM build-deps AS build
 
 # Remove dev dependencies
 RUN pnpm prune --prod --ignore-scripts

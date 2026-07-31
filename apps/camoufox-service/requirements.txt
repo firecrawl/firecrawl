@@ -1,0 +1,6 @@
+# Exact pins only — an unbounded `latest` here would silently change the
+# browser fingerprint (and therefore the detection profile) on every rebuild.
+camoufox[geoip]==0.5.4
+# camoufox requires playwright<1.61; pin the exact patch it was validated against.
+playwright==1.60.0
+aiohttp==3.13.2

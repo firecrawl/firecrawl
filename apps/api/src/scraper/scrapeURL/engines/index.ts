@@ -14,6 +14,26 @@ import {
   playwrightMaxReasonableTime,
   scrapeURLWithPlaywright,
 } from "./playwright";
+import {
+  isPlaywrightProxyConfigured,
+  playwrightProxyMaxReasonableTime,
+  scrapeURLWithPlaywrightProxy,
+} from "./playwright-proxy";
+import {
+  camoufoxMaxReasonableTime,
+  isCamoufoxConfigured,
+  scrapeURLWithCamoufox,
+} from "./camoufox";
+import {
+  flaresolverrMaxReasonableTime,
+  isFlaresolverrConfigured,
+  scrapeURLWithFlaresolverr,
+} from "./flaresolverr";
+import {
+  isPmcArticleUrl,
+  pmcBiocMaxReasonableTime,
+  scrapeURLWithPmcBioc,
+} from "./pmc";
 import { indexMaxReasonableTime, scrapeURLWithIndex } from "./index/index";
 import {
   scrapeURLWithWikipedia,
@@ -46,13 +66,17 @@ export type Engine =
   | "fire-engine;tlsclient"
   | "fire-engine;tlsclient;stealth"
   | "playwright"
+  | "playwright-proxy"
+  | "camoufox"
+  | "flaresolverr"
   | "fetch"
   | "pdf"
   | "document"
   | "index"
   | "index;documents"
   | "wikipedia"
-  | "x-twitter";
+  | "x-twitter"
+  | "pmc-bioc";
 
 const useFireEngine =
   config.FIRE_ENGINE_BETA_URL !== "" &&
@@ -60,6 +84,7 @@ const useFireEngine =
 const usePlaywright =
   config.PLAYWRIGHT_MICROSERVICE_URL !== "" &&
   config.PLAYWRIGHT_MICROSERVICE_URL !== undefined;
+const usePlaywrightProxy = isPlaywrightProxyConfigured();
 const useWikipedia =
   config.WIKIPEDIA_ENTERPRISE_USERNAME !== undefined &&
   config.WIKIPEDIA_ENTERPRISE_USERNAME !== "" &&
@@ -69,9 +94,14 @@ const useXTwitter =
   (config.XAI_API_KEY !== undefined && config.XAI_API_KEY !== "") ||
   config.USE_DB_AUTHENTICATION === true;
 
+const useCamoufox = isCamoufoxConfigured();
+const useFlaresolverr = isFlaresolverrConfigured();
+const usePmcBioc = config.PMC_BIOC_ADAPTER_ENABLED === true;
+
 const engines: Engine[] = [
   ...(useXTwitter ? ["x-twitter" as const] : []),
   ...(useWikipedia ? ["wikipedia" as const] : []),
+  ...(usePmcBioc ? ["pmc-bioc" as const] : []),
   ...(useIndex ? ["index" as const, "index;documents" as const] : []),
   ...(useFireEngine
     ? [
@@ -84,6 +114,14 @@ const engines: Engine[] = [
       ]
     : []),
   ...(usePlaywright ? ["playwright" as const] : []),
+  ...(usePlaywrightProxy ? ["playwright-proxy" as const] : []),
+  // Negative quality keeps Camoufox out of the ordinary list entirely; it can
+  // only be selected once the stealthProxy flag is set, which happens after a
+  // blocking status.
+  ...(useCamoufox ? ["camoufox" as const] : []),
+  // Same negative-quality trick as Camoufox, one notch lower: FlareSolverr is
+  // the last resort, tried only if Camoufox is absent or also failed.
+  ...(useFlaresolverr ? ["flaresolverr" as const] : []),
   "fetch",
   "pdf",
   "document",
@@ -185,11 +223,15 @@ const engineHandlers: {
   "fire-engine;tlsclient": scrapeURLWithFireEngineTLSClient,
   "fire-engine;tlsclient;stealth": scrapeURLWithFireEngineTLSClient,
   playwright: scrapeURLWithPlaywright,
+  "playwright-proxy": scrapeURLWithPlaywrightProxy,
+  camoufox: scrapeURLWithCamoufox,
+  flaresolverr: scrapeURLWithFlaresolverr,
   fetch: scrapeURLWithFetch,
   pdf: scrapePDF,
   document: scrapeDocument,
   wikipedia: scrapeURLWithWikipedia,
   "x-twitter": scrapeURLWithXTwitter,
+  "pmc-bioc": scrapeURLWithPmcBioc,
 };
 
 const engineMRTs: {
@@ -211,11 +253,15 @@ const engineMRTs: {
   "fire-engine;tlsclient;stealth": meta =>
     fireEngineMaxReasonableTime(meta, "tlsclient"),
   playwright: playwrightMaxReasonableTime,
+  "playwright-proxy": playwrightProxyMaxReasonableTime,
+  camoufox: camoufoxMaxReasonableTime,
+  flaresolverr: flaresolverrMaxReasonableTime,
   fetch: fetchMaxReasonableTime,
   pdf: pdfMaxReasonableTime,
   document: documentMaxReasonableTime,
   wikipedia: wikipediaMaxReasonableTime,
   "x-twitter": xTwitterMaxReasonableTime,
+  "pmc-bioc": pmcBiocMaxReasonableTime,
 };
 
 const engineOptions: {
@@ -396,6 +442,87 @@ const engineOptions: {
     },
     quality: 20,
   },
+  "playwright-proxy": {
+    features: {
+      actions: false,
+      waitFor: true,
+      screenshot: false,
+      "screenshot@fullScreen": false,
+      pdf: false,
+      document: false,
+      audio: false,
+      video: false,
+      atsv: false,
+      location: false,
+      mobile: false,
+      skipTlsVerification: true,
+      useFastMode: false,
+      stealthProxy: true,
+      branding: false,
+      disableAdblock: false,
+    },
+    // First self-hosted anti-bot fallback: same browser behavior as the direct
+    // service, but with a residential exit. Camoufox and FlareSolverr follow.
+    quality: -2,
+  },
+  camoufox: {
+    features: {
+      actions: false,
+      waitFor: true,
+      screenshot: false,
+      "screenshot@fullScreen": false,
+      pdf: false,
+      document: false,
+      audio: false,
+      video: false,
+      atsv: false,
+      location: false,
+      mobile: false,
+      skipTlsVerification: true,
+      useFastMode: false,
+      // The whole point of the engine: it is the stealth-capable option in a
+      // self-hosted deployment that has no fire-engine.
+      stealthProxy: true,
+      branding: false,
+      disableAdblock: false,
+    },
+    // Negative, so the quality filter drops it from ordinary scrapes; above
+    // pdf/document (-20) so a confirmed anti-bot block tries stealth before
+    // falling into the document-prefetch path that produced the observed
+    // SCRAPE_RETRY_LIMIT(document_antibot) failures. Below fire-engine stealth
+    // (-2) so a cloud deployment still prefers fire-engine.
+    quality: -3,
+  },
+  flaresolverr: {
+    features: {
+      actions: false,
+      // FlareSolverr's request.get takes no post-load wait parameter, so a
+      // caller asking for one would silently not get it.
+      waitFor: false,
+      screenshot: false,
+      "screenshot@fullScreen": false,
+      pdf: false,
+      document: false,
+      audio: false,
+      video: false,
+      atsv: false,
+      location: false,
+      mobile: false,
+      // request.get exposes no TLS-verification switch.
+      skipTlsVerification: false,
+      useFastMode: false,
+      // The reason it is in the waterfall at all.
+      stealthProxy: true,
+      branding: false,
+      disableAdblock: false,
+    },
+    // One notch below Camoufox (-3): both are stealth-capable, but FlareSolverr
+    // is markedly slower (measured 27-45s on a solve, and a full timeout burn
+    // when it cannot clear the challenge), so it should only be reached when
+    // Camoufox is unavailable or has already failed. Still above pdf/document
+    // (-20) so it is preferred over the document-prefetch dead end.
+    quality: -4,
+  },
   "fire-engine;tlsclient": {
     features: {
       actions: false,
@@ -543,6 +670,30 @@ const engineOptions: {
     },
     quality: 1500,
   },
+  "pmc-bioc": {
+    features: {
+      actions: false,
+      waitFor: false,
+      screenshot: false,
+      "screenshot@fullScreen": false,
+      pdf: false,
+      document: false,
+      audio: false,
+      video: false,
+      atsv: false,
+      location: false,
+      mobile: false,
+      skipTlsVerification: true,
+      useFastMode: true,
+      stealthProxy: false,
+      branding: false,
+      disableAdblock: true,
+    },
+    // Below index (1000) so the cache is still consulted first, above every
+    // browser engine: for a PMC article the official machine-readable source
+    // beats automating the reCAPTCHA-gated HTML page.
+    quality: 900,
+  },
 };
 
 export function shouldUseIndex(meta: Meta) {
@@ -685,6 +836,15 @@ export async function buildFallbackList(meta: Meta): Promise<
     const indexDocumentsIndex = _engines.indexOf("index;documents");
     if (indexDocumentsIndex !== -1) {
       _engines.splice(indexDocumentsIndex, 1);
+    }
+  }
+
+  // The PMC adapter only understands PMC article URLs; drop it for anything
+  // else so it never occupies a slot in the waterfall.
+  if (!isPmcArticleUrl(meta.rewrittenUrl ?? meta.url)) {
+    const pmcIndex = _engines.indexOf("pmc-bioc");
+    if (pmcIndex !== -1) {
+      _engines.splice(pmcIndex, 1);
     }
   }
 

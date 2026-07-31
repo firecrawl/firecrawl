@@ -30,6 +30,11 @@ import {
   shouldSkipPersistenceForForcedZdr,
   shouldSkipPersistenceForJobZdr,
 } from "./zdr-persistence";
+import {
+  createSelfHostedSearchFeedbackSubmission,
+  getSelfHostedSearchFeedbackJob,
+  getSelfHostedSearchFeedbackSubmission,
+} from "../../../lib/search-feedback-redis";
 
 const PREVIEW_TEAM_ID = "3adefd26-77ec-5968-8dcf-c94b5630d1de";
 const POSTGRES_UNIQUE_VIOLATION = "23505";
@@ -76,6 +81,118 @@ function zdrFeedbackSuccess(
       dailyRefundCap: dailyCapFor(options),
     },
   };
+}
+
+function selfHostedFeedbackSuccess(
+  feedbackId: string,
+  alreadySubmitted = false,
+): FeedbackRecordResult {
+  return {
+    status: 200,
+    body: {
+      success: true,
+      feedbackId,
+      creditsRefunded: 0,
+      alreadySubmitted: alreadySubmitted || undefined,
+      creditsRefundedToday: 0,
+      dailyRefundCap: 0,
+      warning: alreadySubmitted
+        ? "Feedback was already submitted for this search; no additional submission was recorded."
+        : "Feedback was recorded in this deployment's Redis store. Credit refunds are unavailable when database authentication is disabled.",
+    },
+  };
+}
+
+async function recordSelfHostedSearchFeedback(
+  req: RequestWithAuth<any, any, any>,
+  options: FeedbackRecordOptions,
+  logger: FeedbackLogger,
+): Promise<FeedbackRecordResult> {
+  if (isPreviewTeam(req.auth.team_id)) {
+    return feedbackFailure(
+      403,
+      "PREVIEW_TEAM_NOT_ALLOWED",
+      "Feedback is not available for preview teams.",
+    );
+  }
+
+  if (req.acuc?.flags?.searchFeedbackOptOut === true) {
+    logger.info("Rejected self-hosted feedback: team opted out");
+    return feedbackFailure(
+      403,
+      "TEAM_OPTED_OUT",
+      "Feedback is disabled for this team.",
+    );
+  }
+
+  try {
+    let job = await getSelfHostedSearchFeedbackJob(options.jobId);
+    if (!job) {
+      await new Promise(resolve => setTimeout(resolve, LOOKUP_RACE_RETRY_MS));
+      job = await getSelfHostedSearchFeedbackJob(options.jobId);
+    }
+
+    if (!job || job.teamId !== req.auth.team_id) {
+      return feedbackFailure(
+        404,
+        options.notFoundCode ?? "SEARCH_NOT_FOUND",
+        "search job not found for this team.",
+      );
+    }
+
+    if (job.zeroDataRetention) {
+      logger.info("Skipping self-hosted feedback persistence for ZDR search");
+      return zdrFeedbackSuccess(options);
+    }
+
+    if (options.requireSuccessfulJob && !job.isSuccessful) {
+      return feedbackFailure(
+        409,
+        options.failedJobCode ?? "SEARCH_FAILED",
+        "Cannot submit feedback for a search job that did not succeed.",
+      );
+    }
+
+    const maxAgeSec = options.maxAgeSec ?? config.FEEDBACK_MAX_AGE_SEC;
+    if (Date.now() - job.createdAt > maxAgeSec * 1000) {
+      return feedbackFailure(
+        409,
+        "FEEDBACK_WINDOW_EXPIRED",
+        options.windowExpiredMessage ??
+          `Feedback must be submitted within ${maxAgeSec} seconds of the job.`,
+      );
+    }
+
+    const feedbackId = uuidv7();
+    const created = await createSelfHostedSearchFeedbackSubmission({
+      id: feedbackId,
+      jobId: options.jobId,
+      teamId: req.auth.team_id,
+      createdAt: Date.now(),
+      feedback: options.feedback,
+    });
+
+    if (!created) {
+      const existing = await getSelfHostedSearchFeedbackSubmission(
+        options.jobId,
+      );
+      return selfHostedFeedbackSuccess(existing?.id ?? "", true);
+    }
+
+    logger.info("Self-hosted search feedback recorded", {
+      feedbackId,
+      rating: options.feedback.rating,
+      issueTypes: options.feedback.issues ?? [],
+    });
+    return selfHostedFeedbackSuccess(feedbackId);
+  } catch (error) {
+    logger.error("Failed to record self-hosted search feedback", { error });
+    return feedbackFailure(
+      503,
+      "INTERNAL",
+      "The self-hosted feedback store is unavailable.",
+    );
+  }
 }
 
 function validateAccess(
@@ -250,6 +367,10 @@ export async function recordEndpointFeedback(
   if (shouldSkipPersistenceForForcedZdr(req, options)) {
     logger.info("Skipping feedback persistence for forced ZDR team");
     return zdrFeedbackSuccess(options);
+  }
+
+  if (config.USE_DB_AUTHENTICATION !== true && options.endpoint === "search") {
+    return recordSelfHostedSearchFeedback(req, options, logger);
   }
 
   const accessFailure = validateAccess(req, options, logger);

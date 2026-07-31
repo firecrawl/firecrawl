@@ -8,8 +8,20 @@ import { getInnerJson } from "@mendable/firecrawl-rs";
 export async function scrapeURLWithPlaywright(
   meta: Meta,
 ): Promise<EngineScrapeResult> {
+  return scrapeURLWithPlaywrightEndpoint(
+    meta,
+    config.PLAYWRIGHT_MICROSERVICE_URL!,
+    "basic",
+  );
+}
+
+export async function scrapeURLWithPlaywrightEndpoint(
+  meta: Meta,
+  endpoint: string,
+  proxyUsed: "basic" | "stealth",
+): Promise<EngineScrapeResult> {
   const response = await robustFetch({
-    url: config.PLAYWRIGHT_MICROSERVICE_URL!,
+    url: endpoint,
     headers: {
       "Content-Type": "application/json",
     },
@@ -43,7 +55,7 @@ export async function scrapeURLWithPlaywright(
     error: response.pageError,
     contentType: response.contentType,
 
-    proxyUsed: "basic",
+    proxyUsed,
   };
 }
 

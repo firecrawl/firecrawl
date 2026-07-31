@@ -1,0 +1,3 @@
+# The limiter is disabled in settings.yml because SearXNG is reachable only on
+# the private Compose network. Keeping a valid file suppresses the startup
+# warning emitted even when limiter=false.

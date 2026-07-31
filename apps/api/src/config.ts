@@ -237,8 +237,58 @@ const configSchema = z.object({
   PROXY_USERNAME: z.string().optional(),
   PROXY_PASSWORD: z.string().optional(),
 
+  // Camoufox stealth fallback (self-hosted, no paid dependency).
+  // Off by default: the engine is only registered when the fallback is enabled
+  // AND a service URL is set, so an existing deployment is unaffected.
+  CAMOUFOX_FALLBACK_ENABLED: z.stringbool().default(false),
+  CAMOUFOX_SERVICE_URL: z.string().optional(),
+  CAMOUFOX_MAX_CONCURRENCY: z.coerce.number().int().positive().default(2),
+  CAMOUFOX_TIMEOUT_MS: z.coerce.number().int().positive().default(60000),
+  // Comma-separated hosts (matched exactly or as a parent domain). An empty
+  // allowlist means "any host"; the denylist always wins.
+  CAMOUFOX_DOMAIN_ALLOWLIST: delimitedList(",").optional(),
+  CAMOUFOX_DOMAIN_DENYLIST: delimitedList(",").optional(),
+  // "confirmed" restricts the fallback to responses carrying a known challenge
+  // fingerprint; "suspected" also allows bare 403/429 blocks.
+  CAMOUFOX_MIN_CONFIDENCE: z
+    .enum(["confirmed", "suspected"])
+    .default("suspected"),
+
+  // FlareSolverr challenge-solver fallback (self-hosted, no paid dependency).
+  // Off by default, same contract as Camoufox: registered only when enabled AND
+  // a URL is set. Sits *below* Camoufox in quality so it is the last resort --
+  // it is materially slower (measured 27-45s on a solve, and a full
+  // maxTimeout burn when it cannot).
+  FLARESOLVERR_ENABLED: z.stringbool().default(false),
+  FLARESOLVERR_URL: z.string().optional(),
+  FLARESOLVERR_TIMEOUT_MS: z.coerce.number().int().positive().default(120000),
+  FLARESOLVERR_MAX_RESPONSE_BYTES: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(8 * 1024 * 1024),
+  // Comma-separated hosts (matched exactly or as a parent domain). An empty
+  // allowlist means "any host"; the denylist always wins.
+  FLARESOLVERR_DOMAIN_ALLOWLIST: delimitedList(",").optional(),
+  FLARESOLVERR_DOMAIN_DENYLIST: delimitedList(",").optional(),
+  FLARESOLVERR_MIN_CONFIDENCE: z
+    .enum(["confirmed", "suspected"])
+    .default("confirmed"),
+
+  // PMC official-source (BioC) adapter
+  PMC_BIOC_ADAPTER_ENABLED: z.stringbool().default(true),
+  PMC_BIOC_TIMEOUT_MS: z.coerce.number().int().positive().default(20000),
+  PMC_BIOC_MAX_RESPONSE_BYTES: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(16 * 1024 * 1024),
+
   // External Services
   PLAYWRIGHT_MICROSERVICE_URL: z.string().optional(),
+  // Optional second Playwright service configured with a residential proxy.
+  // It is admitted only after `proxy:auto` observes a retryable block.
+  PLAYWRIGHT_PROXY_MICROSERVICE_URL: z.string().optional(),
   HTML_TO_MARKDOWN_SERVICE_URL: z.string().optional(),
   SMART_SCRAPE_API_URL: z.string().optional(),
 

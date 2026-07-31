@@ -1,0 +1,106 @@
+# Local self-host overrides.
+#
+# 1. Adds SearXNG as Firecrawl's /search backend (SEARXNG_ENDPOINT in .env).
+# 2. Parks the experimental FoundationDB services behind a profile so they
+#    don't start — upstream leaves them profile-less, so a plain
+#    `docker compose up` would boot a queue backend we aren't using
+#    (NUQ_BACKEND is unset, so the API talks to nuq-postgres).
+services:
+  searxng:
+    image: docker.io/searxng/searxng:latest
+    container_name: firecrawl-searxng
+    restart: unless-stopped
+    networks:
+      - backend
+    ports:
+      # 8080 on this host is taken by Bifrost; SearXNG's UI lands on 8999.
+      - "127.0.0.1:8999:8080"
+    volumes:
+      - ./searxng/settings.yml:/etc/searxng/settings.yml:ro
+      - ./searxng/limiter.toml:/etc/searxng/limiter.toml:ro
+      - ./searxng/github_authenticated.py:/usr/local/searxng/searx/engines/github_authenticated.py:ro
+      - ./searxng/braveapi_authenticated.py:/usr/local/searxng/searx/engines/braveapi_authenticated.py:ro
+      - searxng-data:/var/cache/searxng:rw
+    environment:
+      SEARXNG_BASE_URL: http://localhost:8999/
+      SEARXNG_GITHUB_TOKEN: ${SEARXNG_GITHUB_TOKEN}
+      SEARXNG_BRAVE_API_KEY: ${SEARXNG_BRAVE_API_KEY:-}
+      SEARXNG_BRAVE_MIN_INTERVAL_SECONDS: ${SEARXNG_BRAVE_MIN_INTERVAL_SECONDS:-2.1}
+      SEARXNG_BRAVE_MAX_QUEUE_SECONDS: ${SEARXNG_BRAVE_MAX_QUEUE_SECONDS:-4.5}
+      BIND_ADDRESS: "[::]:8080"
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "wget -qO- --header='X-Forwarded-For: 127.0.0.1' --header='X-Real-IP: 127.0.0.1' http://127.0.0.1:8080/config >/dev/null",
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - SETGID
+      - SETUID
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "5m"
+        max-file: "2"
+
+  # 3. Restart policies. Upstream leaves these unset, so a container that dies
+  #    (or a host reboot) leaves the stack down until someone notices. This is a
+  #    long-running self-hosted deployment, so every service comes back on its
+  #    own; `unless-stopped` still respects a deliberate `docker compose stop`.
+  api:
+    restart: unless-stopped
+    depends_on:
+      searxng:
+        condition: service_healthy
+      # Upstream omits this, so the API races Postgres on a cold start and its
+      # nuq-prefetch-worker dies on `getaddrinfo ENOTFOUND nuq-postgres`,
+      # taking the whole harness down with it.
+      nuq-postgres:
+        condition: service_healthy
+
+  playwright-service:
+    restart: unless-stopped
+
+  camoufox-service:
+    restart: unless-stopped
+
+  playwright-proxy-service:
+    restart: unless-stopped
+
+  flaresolverr:
+    restart: unless-stopped
+
+  redis:
+    restart: unless-stopped
+
+  rabbitmq:
+    restart: unless-stopped
+
+  nuq-postgres:
+    restart: unless-stopped
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U $${POSTGRES_USER:-postgres} -d $${POSTGRES_DB:-postgres}",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
+  foundationdb:
+    profiles: ["fdb"]
+
+  foundationdb-init:
+    profiles: ["fdb"]
+
+volumes:
+  searxng-data:

@@ -39,6 +39,10 @@ export async function searchController(
   req: RequestWithAuth<{}, SearchResponse, SearchRequest>,
   res: Response<SearchResponse>,
 ) {
+  const callerSpecifiedIgnoreInvalidURLs = Object.prototype.hasOwnProperty.call(
+    req.body,
+    "ignoreInvalidURLs",
+  );
   const middlewareStartTime =
     (req as any).requestTiming?.startTime || new Date().getTime();
   const controllerStartTime = new Date().getTime();
@@ -123,12 +127,17 @@ export async function searchController(
     const billing: BillingMetadata = req.body.__agentInterop
       ? { endpoint: "agent" as const, jobId }
       : { endpoint: "search" as const, jobId };
-
-    logger = logger.child({
-      version: "v2",
-      query: req.body.query,
-      origin: req.body.origin,
-    });
+    const agentLikeRequest =
+      req.body.__agentInterop !== undefined ||
+      /(?:^|[-_])(mcp|agent|codex|hermes|cli)(?:$|[-_])/i.test(
+        req.body.origin ?? "",
+      ) ||
+      ["hermes", "cli", "crewai", "langchain", "llamaindex"].includes(
+        req.body.integration ?? "",
+      );
+    const ignoreInvalidSearchResults = callerSpecifiedIgnoreInvalidURLs
+      ? req.body.ignoreInvalidURLs
+      : agentLikeRequest;
 
     // Inject the team-forced enterprise mode so downstream billing,
     // upstream routing, and ZDR cleanup all see it.
@@ -143,7 +152,12 @@ export async function searchController(
     const isAnon = req.body.enterprise?.includes("anon");
     const isZDROrAnon = isZDR || isAnon;
     zeroDataRetention = isZDROrAnon ?? false;
-    logger = logger.child({ zeroDataRetention });
+    logger = logger.child({
+      version: "v2",
+      origin: req.body.origin,
+      zeroDataRetention,
+      ...(zeroDataRetention ? {} : { query: req.body.query }),
+    });
     applyZdrScope(zeroDataRetention);
 
     // Verify the team has searchZDR enabled before allowing enterprise ZDR/anon
@@ -215,6 +229,7 @@ export async function searchController(
         scrapeOptions: req.body.scrapeOptions,
         highlights: req.body.highlights,
         timeout: req.body.timeout,
+        ignoreInvalidURLs: ignoreInvalidSearchResults,
       },
       {
         teamId: req.auth.team_id,

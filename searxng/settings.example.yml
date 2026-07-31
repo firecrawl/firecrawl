@@ -1,0 +1,74 @@
+# Copy this file to settings.yml and replace the secret before starting:
+#   cp searxng/settings.example.yml searxng/settings.yml
+#   sed -i "s/REPLACE_WITH_A_RANDOM_SECRET/$(openssl rand -hex 32)/" searxng/settings.yml
+#
+# settings.yml is ignored because it becomes deployment-specific and may
+# contain credentials. GitHub and Brave credentials stay in environment
+# variables and are loaded by the local engine wrappers.
+
+use_default_settings:
+  engines:
+    remove:
+      - ahmia
+      - torch
+      - wikidata
+
+server:
+  secret_key: "REPLACE_WITH_A_RANDOM_SECRET"
+  limiter: false
+  image_proxy: false
+
+search:
+  formats:
+    - html
+    - json
+  safe_search: 0
+  autocomplete: ""
+  suspended_times:
+    SearxEngineTooManyRequests: 2
+
+outgoing:
+  request_timeout: 10.0
+  max_request_timeout: 15.0
+  pool_connections: 100
+  pool_maxsize: 20
+
+engines:
+  - name: github
+    engine: github_authenticated
+    shortcut: gh
+    categories:
+      - it
+      - repos
+    disabled: false
+    enable_http2: false
+    timeout: 10.0
+
+  - name: braveapi
+    engine: braveapi_authenticated
+    shortcut: braveapi
+    categories:
+      - general
+      - web
+    disabled: false
+
+  - name: semantic scholar
+    disabled: true
+  - name: google scholar
+    disabled: true
+  - name: duckduckgo
+    disabled: true
+  - name: brave
+    disabled: true
+  - name: startpage
+    disabled: true
+  - name: qwant
+    disabled: true
+  - name: mojeek
+    disabled: true
+  - name: yep
+    disabled: true
+  - name: resulthunter
+    disabled: true
+  - name: naver
+    disabled: true

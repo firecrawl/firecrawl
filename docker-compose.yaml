@@ -22,9 +22,10 @@ x-common-service: &common-service
       compress: "true"
 
 x-common-env: &common-env
-  REDIS_URL: ${REDIS_URL:-redis://redis:6379}
-  REDIS_RATE_LIMIT_URL: ${REDIS_RATE_LIMIT_URL:-${REDIS_URL:-redis://redis:6379}}
+  REDIS_URL: ${REDIS_URL:-redis://:${REDIS_PASSWORD:-}@redis:6379}
+  REDIS_RATE_LIMIT_URL: ${REDIS_RATE_LIMIT_URL:-${REDIS_URL:-redis://:${REDIS_PASSWORD:-}@redis:6379}}
   PLAYWRIGHT_MICROSERVICE_URL: ${PLAYWRIGHT_MICROSERVICE_URL:-http://playwright-service:3000/scrape}
+  PLAYWRIGHT_PROXY_MICROSERVICE_URL: ${PLAYWRIGHT_PROXY_MICROSERVICE_URL:-}
   POSTGRES_USER: ${POSTGRES_USER:-postgres}
   POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:-postgres}"
   POSTGRES_DB: ${POSTGRES_DB:-postgres}
@@ -35,29 +36,52 @@ x-common-env: &common-env
   CRAWL_CONCURRENT_REQUESTS: ${CRAWL_CONCURRENT_REQUESTS:-10}
   MAX_CONCURRENT_JOBS: ${MAX_CONCURRENT_JOBS:-5}
   BROWSER_POOL_SIZE: ${BROWSER_POOL_SIZE:-5}
-  OPENAI_API_KEY: ${OPENAI_API_KEY}
-  OPENAI_BASE_URL: ${OPENAI_BASE_URL}
-  MODEL_NAME: ${MODEL_NAME}
-  MODEL_EMBEDDING_NAME: ${MODEL_EMBEDDING_NAME}
-  OLLAMA_BASE_URL: ${OLLAMA_BASE_URL}
-  AUTUMN_SECRET_KEY: ${AUTUMN_SECRET_KEY}
-  SLACK_WEBHOOK_URL: ${SLACK_WEBHOOK_URL}
-  BULL_AUTH_KEY: ${BULL_AUTH_KEY}
-  TEST_API_KEY: ${TEST_API_KEY}
-  SUPABASE_ANON_TOKEN: ${SUPABASE_ANON_TOKEN}
-  SUPABASE_URL: ${SUPABASE_URL}
-  SUPABASE_SERVICE_TOKEN: ${SUPABASE_SERVICE_TOKEN}
-  SELF_HOSTED_WEBHOOK_URL: ${SELF_HOSTED_WEBHOOK_URL}
-  LOGGING_LEVEL: ${LOGGING_LEVEL}
-  PROXY_SERVER: ${PROXY_SERVER}
-  PROXY_USERNAME: ${PROXY_USERNAME}
-  PROXY_PASSWORD: ${PROXY_PASSWORD}
-  SEARXNG_ENDPOINT: ${SEARXNG_ENDPOINT}
-  SEARXNG_ENGINES: ${SEARXNG_ENGINES}
-  SEARXNG_CATEGORIES: ${SEARXNG_CATEGORIES}
+  OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+  OPENAI_BASE_URL: ${OPENAI_BASE_URL:-}
+  MODEL_NAME: ${MODEL_NAME:-}
+  MODEL_EMBEDDING_NAME: ${MODEL_EMBEDDING_NAME:-}
+  OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-}
+  AUTUMN_SECRET_KEY: ${AUTUMN_SECRET_KEY:-}
+  SLACK_WEBHOOK_URL: ${SLACK_WEBHOOK_URL:-}
+  BULL_AUTH_KEY: ${BULL_AUTH_KEY:-}
+  TEST_API_KEY: ${TEST_API_KEY:-}
+  SUPABASE_ANON_TOKEN: ${SUPABASE_ANON_TOKEN:-}
+  SUPABASE_URL: ${SUPABASE_URL:-}
+  SUPABASE_SERVICE_TOKEN: ${SUPABASE_SERVICE_TOKEN:-}
+  SELF_HOSTED_WEBHOOK_URL: ${SELF_HOSTED_WEBHOOK_URL:-}
+  LOGGING_LEVEL: ${LOGGING_LEVEL:-INFO}
+  SEARXNG_ENDPOINT: ${SEARXNG_ENDPOINT:-}
+  SEARXNG_ENGINES: ${SEARXNG_ENGINES:-}
+  SEARXNG_CATEGORIES: ${SEARXNG_CATEGORIES:-}
+  # Camoufox stealth fallback. Off unless BOTH the flag and the URL are set, so
+  # an existing deployment is unchanged by upgrading. Start the service with
+  # COMPOSE_PROFILES=camoufox.
+  CAMOUFOX_FALLBACK_ENABLED: ${CAMOUFOX_FALLBACK_ENABLED:-false}
+  CAMOUFOX_SERVICE_URL: ${CAMOUFOX_SERVICE_URL:-}
+  CAMOUFOX_MAX_CONCURRENCY: ${CAMOUFOX_MAX_CONCURRENCY:-2}
+  CAMOUFOX_TIMEOUT_MS: ${CAMOUFOX_TIMEOUT_MS:-60000}
+  CAMOUFOX_MIN_CONFIDENCE: ${CAMOUFOX_MIN_CONFIDENCE:-suspected}
+  CAMOUFOX_DOMAIN_ALLOWLIST: ${CAMOUFOX_DOMAIN_ALLOWLIST:-}
+  CAMOUFOX_DOMAIN_DENYLIST: ${CAMOUFOX_DOMAIN_DENYLIST:-}
+  # FlareSolverr challenge solver. Same off-unless-both-set contract as
+  # Camoufox, and it sits one quality notch below it, so this is only reached
+  # when Camoufox is absent or already failed. Not a compose service: it runs
+  # wherever FLARESOLVERR_URL points (a host process reached via
+  # host.docker.internal is fine).
+  FLARESOLVERR_ENABLED: ${FLARESOLVERR_ENABLED:-false}
+  FLARESOLVERR_URL: ${FLARESOLVERR_URL:-}
+  FLARESOLVERR_TIMEOUT_MS: ${FLARESOLVERR_TIMEOUT_MS:-120000}
+  FLARESOLVERR_MIN_CONFIDENCE: ${FLARESOLVERR_MIN_CONFIDENCE:-confirmed}
+  FLARESOLVERR_MAX_RESPONSE_BYTES: ${FLARESOLVERR_MAX_RESPONSE_BYTES:-8388608}
+  FLARESOLVERR_DOMAIN_ALLOWLIST: ${FLARESOLVERR_DOMAIN_ALLOWLIST:-}
+  FLARESOLVERR_DOMAIN_DENYLIST: ${FLARESOLVERR_DOMAIN_DENYLIST:-}
+  # PMC official-source (BioC) adapter. On by default: it only activates for
+  # pmc.ncbi.nlm.nih.gov article URLs and falls back to the normal engines.
+  PMC_BIOC_ADAPTER_ENABLED: ${PMC_BIOC_ADAPTER_ENABLED:-true}
+  PMC_BIOC_TIMEOUT_MS: ${PMC_BIOC_TIMEOUT_MS:-20000}
   # Set NUQ_BACKEND=fdb to run the queue on FoundationDB instead of Postgres
-  NUQ_BACKEND: ${NUQ_BACKEND}
-  FDB_CLUSTER_FILE: ${NUQ_BACKEND:+/var/fdb/fdb.cluster}
+  NUQ_BACKEND: ${NUQ_BACKEND:-}
+  FDB_CLUSTER_FILE: ${FDB_CLUSTER_FILE:-}
 
 services:
   playwright-service:
@@ -67,15 +91,26 @@ services:
     build: apps/playwright-service-ts
     environment:
       PORT: 3000
-      PROXY_SERVER: ${PROXY_SERVER}
-      PROXY_USERNAME: ${PROXY_USERNAME}
-      PROXY_PASSWORD: ${PROXY_PASSWORD}
-      ALLOW_LOCAL_WEBHOOKS: ${ALLOW_LOCAL_WEBHOOKS}
-      BLOCK_MEDIA: ${BLOCK_MEDIA}
+      # This service is intentionally direct. Residential credentials belong
+      # only to playwright-proxy-service so `proxy:auto` remains direct-first.
+      ALLOW_LOCAL_WEBHOOKS: ${ALLOW_LOCAL_WEBHOOKS:-false}
+      BLOCK_MEDIA: ${BLOCK_MEDIA:-false}
       # Configure maximum concurrent pages for Playwright browser instances
       MAX_CONCURRENT_PAGES: ${CRAWL_CONCURRENT_REQUESTS:-10}
     networks:
       - backend
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:3000/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))",
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
     # Resource limits for Docker Compose (not Swarm)
     cpus: 2.0
     mem_limit: 4G
@@ -88,6 +123,103 @@ services:
         compress: "true"
     tmpfs:
       - /tmp/.cache:noexec,nosuid,size=1g
+
+  playwright-proxy-service:
+    build: apps/playwright-service-ts
+    profiles: ["proxy"]
+    restart: unless-stopped
+    environment:
+      PORT: 3000
+      PROXY_SERVER: ${PROXY_SERVER:-}
+      PROXY_USERNAME: ${PROXY_USERNAME:-}
+      PROXY_PASSWORD: ${PROXY_PASSWORD:-}
+      ALLOW_LOCAL_WEBHOOKS: ${ALLOW_LOCAL_WEBHOOKS:-false}
+      BLOCK_MEDIA: ${BLOCK_MEDIA:-false}
+      MAX_CONCURRENT_PAGES: ${CAMOUFOX_MAX_CONCURRENCY:-2}
+    networks:
+      - backend
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:3000/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))",
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    cpus: 2.0
+    mem_limit: 4G
+    memswap_limit: 4G
+    tmpfs:
+      - /tmp/.cache:noexec,nosuid,size=1g
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+        compress: "true"
+
+  # Stealth fallback browser, invoked by the API only after an ordinary engine
+  # returned confirmed anti-bot evidence. Behind a profile so a plain
+  # `docker compose up` does not start it: enable with COMPOSE_PROFILES=camoufox.
+  camoufox-service:
+    build: apps/camoufox-service
+    profiles: ["camoufox"]
+    # The browser is long-lived and can die on a wedged page; come back
+    # automatically rather than leaving the fallback permanently unavailable.
+    restart: unless-stopped
+    environment:
+      PORT: 3000
+      MAX_CONCURRENT_PAGES: ${CAMOUFOX_MAX_CONCURRENCY:-2}
+      NAVIGATION_TIMEOUT_MS: ${CAMOUFOX_TIMEOUT_MS:-60000}
+      BLOCK_MEDIA: ${BLOCK_MEDIA:-false}
+      CAMOUFOX_OS: ${CAMOUFOX_OS:-windows}
+      CAMOUFOX_HUMANIZE: ${CAMOUFOX_HUMANIZE:-true}
+      CAMOUFOX_GEOIP: ${CAMOUFOX_GEOIP:-true}
+      CAMOUFOX_FINGERPRINT_PRESET: ${CAMOUFOX_FINGERPRINT_PRESET:-true}
+      CAMOUFOX_WAIT_UNTIL: ${CAMOUFOX_WAIT_UNTIL:-domcontentloaded}
+      CAMOUFOX_SETTLE_MS: ${CAMOUFOX_SETTLE_MS:-1200}
+      LOG_LEVEL: ${LOGGING_LEVEL:-INFO}
+    networks:
+      - backend
+    # No `ports:` on purpose — the service stays on the Docker-internal network
+    # and is only reachable from the API container.
+    cpus: 2.0
+    mem_limit: 4G
+    memswap_limit: 4G
+    # Firefox needs more than Docker's default 64 MB of shared memory.
+    shm_size: 2gb
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+        compress: "true"
+
+  flaresolverr:
+    image: ghcr.io/flaresolverr/flaresolverr:latest
+    profiles: ["flaresolverr"]
+    restart: unless-stopped
+    environment:
+      LOG_LEVEL: ${LOGGING_LEVEL:-info}
+      TZ: ${TZ:-UTC}
+    networks:
+      - backend
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8191/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+        compress: "true"
 
   api:
     <<: *common-service
@@ -102,9 +234,9 @@ services:
       ENV: local
     depends_on:
       redis:
-        condition: service_started
+        condition: service_healthy
       playwright-service:
-        condition: service_started
+        condition: service_healthy
       rabbitmq:
         condition: service_healthy
     ports:
@@ -112,6 +244,16 @@ services:
     volumes:
       - fdb-cluster-file:/var/fdb:ro
     command: node dist/src/harness.js --start-docker
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          'curl -fsS "http://127.0.0.1:$${INTERNAL_PORT:-3002}/" >/dev/null',
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
     # Resource limits for Docker Compose (not Swarm)
     # Increase if you have more CPU cores/RAM available
     cpus: 4.0
@@ -127,7 +269,24 @@ services:
 
     networks:
       - backend
-    command: redis-server --bind 0.0.0.0
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+    command:
+      [
+        "sh",
+        "-c",
+        'exec redis-server --bind 0.0.0.0 --requirepass "$$REDIS_PASSWORD"',
+      ]
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          'REDISCLI_AUTH="$$REDIS_PASSWORD" redis-cli --no-auth-warning ping | grep -q PONG',
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 5s
     logging:
       driver: "json-file"
       options:

@@ -22,6 +22,7 @@ import type { CostTracking } from "../../lib/cost-tracking";
 import type { Logger } from "winston";
 import { saveExtractResult } from "../../lib/extract/extract-redis";
 import { trackFirstSurfaceUse } from "../posthog";
+import { saveSelfHostedSearchFeedbackJob } from "../../lib/search-feedback-redis";
 configDotenv();
 
 const previewTeamId = "3adefd26-77ec-5968-8dcf-c94b5630d1de";
@@ -470,6 +471,24 @@ export async function logSearch(search: LoggedSearch, force: boolean = false) {
     search.zeroDataRetention || typeof search.options?.query !== "string"
       ? search.options
       : { ...search.options, query: sanitizeString(search.options.query) };
+
+  if (config.USE_DB_AUTHENTICATION !== true) {
+    try {
+      await saveSelfHostedSearchFeedbackJob({
+        id: search.id,
+        requestId: search.request_id,
+        teamId: search.team_id,
+        creditsCost: search.credits_cost,
+        createdAt: Date.now(),
+        isSuccessful: search.is_successful,
+        zeroDataRetention: search.zeroDataRetention,
+      });
+    } catch (error) {
+      logger.error("Failed to cache self-hosted search for feedback", {
+        error,
+      });
+    }
+  }
 
   await robustInsert(
     "searches",

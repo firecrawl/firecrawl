@@ -4,6 +4,13 @@ import { fire_engine_search_v2 } from "./fireEngine-v2";
 import { searxng_search } from "./searxng";
 import { ddgSearch } from "./ddgsearch";
 import { Logger } from "winston";
+import type { CategoryOption } from "../../lib/search-query-builder";
+import {
+  buildSearchProfileRequests,
+  profileNames,
+  resolveSearchProfiles,
+} from "../profiles";
+import type { InternalWebSearchResult } from "../quality";
 
 export async function search({
   query,
@@ -20,6 +27,8 @@ export async function search({
   timeout = 5000,
   type = undefined,
   enterprise = undefined,
+  routingQuery = undefined,
+  categories = undefined,
 }: {
   query: string;
   logger: Logger;
@@ -35,6 +44,8 @@ export async function search({
   timeout?: number;
   type?: SearchResultType | SearchResultType[];
   enterprise?: ("default" | "anon" | "zdr")[];
+  routingQuery?: string;
+  categories?: CategoryOption[];
 }): Promise<SearchV2Response> {
   try {
     if (config.FIRE_ENGINE_BETA_URL) {
@@ -54,16 +65,36 @@ export async function search({
     }
 
     if (config.SEARXNG_ENDPOINT) {
-      logger.info("Using searxng search");
-      const results = await searxng_search(query, {
-        num_results,
-        tbs,
-        filter,
-        lang,
-        country,
-        location,
+      const rawQuery = routingQuery ?? query;
+      const profiles = resolveSearchProfiles(rawQuery, categories);
+      const requests = profiles.flatMap(profile =>
+        buildSearchProfileRequests(rawQuery, profile),
+      );
+      logger.info("Using intent-routed SearXNG search", {
+        profiles: profileNames(profiles),
+        engineGroups: requests.map(request => request.engines),
       });
-      if (results.web && results.web.length > 0) return results;
+
+      const responses = await Promise.all(
+        requests.map(request =>
+          searxng_search(request.query, {
+            num_results,
+            tbs,
+            filter,
+            lang,
+            country,
+            location,
+            engines: request.engines,
+            profile: request.profile,
+            timeout,
+            logger,
+          }),
+        ),
+      );
+      const web = responses.flatMap(
+        response => (response.web ?? []) as InternalWebSearchResult[],
+      );
+      if (web.length > 0) return { web };
     }
 
     logger.info("Using DuckDuckGo search");

@@ -25,6 +25,13 @@ import { checkUrlsAgainstThreatPolicy } from "../lib/threat-protection/request";
 import { calculateThreatScanCredits } from "../lib/scrape-billing";
 import { config } from "../config";
 import { logger as rootLogger } from "../lib/logger";
+import {
+  filterAndRankWebResults,
+  stripSearchDiagnostics,
+  type InternalWebSearchResult,
+} from "./quality";
+import { profileNames, resolveSearchProfiles } from "./profiles";
+import { isSuccessfulScrapedResult } from "./result-policy";
 
 interface SearchOptions {
   query: string;
@@ -42,6 +49,7 @@ interface SearchOptions {
   scrapeOptions?: ScrapeOptions;
   highlights?: boolean;
   timeout: number;
+  ignoreInvalidURLs?: boolean;
 }
 
 interface SearchContext {
@@ -90,11 +98,12 @@ export async function executeSearch(
     billing,
   } = context;
 
-  const num_results_buffer = Math.floor(limit * 2);
+  const num_results_buffer = Math.max(limit + 5, Math.floor(limit * 2));
 
   logger.info("Searching for results");
 
   const searchTypes = [...new Set(sources.map((s: any) => s.type))];
+  const profiles = resolveSearchProfiles(query, categories);
   const { query: searchQuery, categoryMap } = buildSearchQuery(
     query,
     categories,
@@ -116,7 +125,29 @@ export async function executeSearch(
     location: options.location,
     type: searchTypes,
     enterprise: options.enterprise,
+    routingQuery: query,
+    categories,
+    timeout: options.timeout,
   })) as SearchV2Response;
+
+  if (searchResponse.web && searchResponse.web.length > 0) {
+    const beforeCount = searchResponse.web.length;
+    searchResponse.web = filterAndRankWebResults(
+      searchResponse.web as InternalWebSearchResult[],
+      {
+        query,
+        profiles: profileNames(profiles),
+        categories,
+        includeDomains: options.includeDomains,
+        excludeDomains: options.excludeDomains,
+      },
+    );
+    logger.info("Search results normalized and ranked", {
+      profiles: profileNames(profiles),
+      beforeCount,
+      afterCount: searchResponse.web.length,
+    });
+  }
 
   // Threat protection: remove blocked results entirely — before
   // slicing/counting, before scraping, and before returning. Checks are
@@ -173,6 +204,11 @@ export async function executeSearch(
         : undefined,
     }));
   }
+
+  // Keep the ranked buffer for agent/MCP backfill. The public response is
+  // still sliced to `limit`; candidates beyond it are only scraped if an
+  // earlier result fails.
+  const webCandidates = [...(searchResponse.web ?? [])];
 
   let totalResultsCount = 0;
 
@@ -248,6 +284,77 @@ export async function executeSearch(
         allDocsWithCostTracking,
       );
       scrapeCredits = calculateScrapeCredits(allDocsWithCostTracking);
+
+      if (options.ignoreInvalidURLs) {
+        if (searchResponse.web) {
+          searchResponse.web = searchResponse.web.filter(
+            isSuccessfulScrapedResult,
+          );
+        }
+        if (searchResponse.news) {
+          searchResponse.news = searchResponse.news.filter(
+            isSuccessfulScrapedResult,
+          );
+        }
+        if (searchResponse.images) {
+          searchResponse.images = searchResponse.images.filter(
+            isSuccessfulScrapedResult,
+          );
+        }
+
+        let candidateOffset = Math.min(limit, webCandidates.length);
+        while (
+          (searchResponse.web?.length ?? 0) < limit &&
+          candidateOffset < webCandidates.length
+        ) {
+          const needed = limit - (searchResponse.web?.length ?? 0);
+          const replacements = webCandidates.slice(
+            candidateOffset,
+            candidateOffset + needed,
+          );
+          candidateOffset += replacements.length;
+
+          const replacementResponse: SearchV2Response = {
+            web: replacements,
+          };
+          const replacementItems = getItemsToScrape(
+            replacementResponse,
+            flags,
+            {
+              team_id: teamId,
+              org_id: orgId ?? null,
+              origin,
+            },
+          );
+          if (replacementItems.length === 0) continue;
+
+          const replacementDocs = await scrapeSearchResults(
+            replacementItems.map(item => item.scrapeInput),
+            scrapeOpts,
+            logger,
+            flags,
+          );
+          mergeScrapedContent(
+            replacementResponse,
+            replacementItems,
+            replacementDocs,
+          );
+          scrapeCredits += calculateScrapeCredits(replacementDocs);
+          const validReplacements = (replacementResponse.web ?? []).filter(
+            isSuccessfulScrapedResult,
+          );
+          searchResponse.web = [
+            ...(searchResponse.web ?? []),
+            ...validReplacements,
+          ].slice(0, limit);
+        }
+
+        logger.info("Invalid scraped search results removed and backfilled", {
+          requested: limit,
+          returnedWeb: searchResponse.web?.length ?? 0,
+          candidatesExamined: candidateOffset,
+        });
+      }
     }
   }
 
@@ -299,6 +406,12 @@ export async function executeSearch(
         typeof f === "string" ? f : f.type,
       )
     : [];
+
+  if (searchResponse.web) {
+    searchResponse.web = stripSearchDiagnostics(
+      searchResponse.web as InternalWebSearchResult[],
+    );
+  }
 
   trackSearchRequest({
     searchId: context.jobId,

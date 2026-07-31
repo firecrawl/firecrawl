@@ -61,6 +61,92 @@ describeIf(TEST_PRODUCTION || HAS_SEARCH || HAS_PROXY)("Search tests", () => {
   );
 
   it.concurrent(
+    "hard-enforces the GitHub category and does not expose engine diagnostics",
+    async () => {
+      const res = await search(
+        {
+          query: "firecrawl web scraping sdk",
+          categories: ["github"],
+          limit: 5,
+        },
+        identity,
+      );
+
+      expect(res.web?.length).toBeGreaterThan(0);
+      for (const result of res.web ?? []) {
+        const hostname = new URL(result.url).hostname;
+        expect(
+          hostname === "github.com" ||
+            hostname.endsWith(".github.com") ||
+            hostname.endsWith(".githubusercontent.com"),
+        ).toBe(true);
+        expect((result as any).__search).toBeUndefined();
+      }
+    },
+    60000,
+  );
+
+  it.concurrent(
+    "routes research searches to scholarly domains",
+    async () => {
+      const res = await search(
+        {
+          query: "large language model context compression paper",
+          categories: ["research"],
+          limit: 5,
+        },
+        identity,
+      );
+
+      expect(res.web?.length).toBeGreaterThan(0);
+      for (const result of res.web ?? []) {
+        const hostname = new URL(result.url).hostname;
+        expect(
+          [
+            "arxiv.org",
+            "doi.org",
+            "semanticscholar.org",
+            "openalex.org",
+            "acm.org",
+            "ieee.org",
+            "springer.com",
+            "nature.com",
+          ].some(
+            domain => hostname === domain || hostname.endsWith(`.${domain}`),
+          ),
+        ).toBe(true);
+      }
+    },
+    60000,
+  );
+
+  it.concurrent(
+    "returns PDF-like URLs for the PDF category",
+    async () => {
+      const res = await search(
+        {
+          query: "attention is all you need",
+          categories: ["pdf"],
+          limit: 3,
+        },
+        identity,
+      );
+
+      expect(res.web?.length).toBeGreaterThan(0);
+      for (const result of res.web ?? []) {
+        const parsed = new URL(result.url);
+        expect(
+          parsed.pathname.toLowerCase().endsWith(".pdf") ||
+            (parsed.hostname.endsWith("arxiv.org") &&
+              parsed.pathname.startsWith("/pdf/")) ||
+            parsed.searchParams.get("format")?.toLowerCase() === "pdf",
+        ).toBe(true);
+      }
+    },
+    60000,
+  );
+
+  it.concurrent(
     "rejects includeDomains with excludeDomains",
     async () => {
       const res = await searchWithFailure(

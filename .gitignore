@@ -61,3 +61,5 @@ _local/
 
 
 apps/api/src/lib/scrape-interact/*.md
+# Contains SearXNG secret_key and engine API keys
+searxng/settings.yml

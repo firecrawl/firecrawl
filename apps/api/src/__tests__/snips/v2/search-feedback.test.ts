@@ -1,4 +1,9 @@
-import { describeIf, TEST_PRODUCTION } from "../lib";
+import {
+  describeIf,
+  HAS_SEARCH,
+  TEST_PRODUCTION,
+  TEST_SELF_HOST,
+} from "../lib";
 import {
   searchRawFull,
   searchFeedback,
@@ -445,3 +450,51 @@ describeIf(TEST_PRODUCTION)("Search feedback tests", () => {
     90000,
   );
 });
+
+describeIf(TEST_SELF_HOST && HAS_SEARCH)(
+  "Self-hosted search feedback tests",
+  () => {
+    it("records feedback in Redis without database authentication and remains idempotent", async () => {
+      const raw = await searchRawFull(
+        { query: "firecrawl self-hosted feedback", limit: 3 },
+        identity,
+      );
+      expect(raw.statusCode).toBe(200);
+      expect(typeof raw.body.id).toBe("string");
+      expect((raw.body.data?.web ?? []).length).toBeGreaterThan(0);
+
+      const body = {
+        rating: "good" as const,
+        valuableSources: [{ url: raw.body.data.web[0].url }],
+      };
+      const first = await searchFeedbackRaw(raw.body.id, body, identity);
+      expect(first.statusCode).toBe(200);
+      expect(first.body.success).toBe(true);
+      expect(first.body.creditsRefunded).toBe(0);
+      expect(typeof first.body.feedbackId).toBe("string");
+      expect(first.body.feedbackId.length).toBeGreaterThan(0);
+      expect(String(first.body.warning)).toContain("Redis");
+
+      const second = await searchFeedbackRaw(raw.body.id, body, identity);
+      expect(second.statusCode).toBe(200);
+      expect(second.body.success).toBe(true);
+      expect(second.body.alreadySubmitted).toBe(true);
+      expect(second.body.feedbackId).toBe(first.body.feedbackId);
+    }, 90000);
+
+    it("rejects feedback for a search that is not in the self-hosted store", async () => {
+      const failed = await searchFeedbackRaw(
+        "00000000-0000-7000-8000-000000000000",
+        {
+          rating: "bad",
+          missingContent: [{ topic: "Any search results" }],
+        },
+        identity,
+      );
+
+      expect(failed.statusCode).toBe(404);
+      expect(failed.body.success).toBe(false);
+      expect(failed.body.feedbackErrorCode).toBe("SEARCH_NOT_FOUND");
+    }, 30000);
+  },
+);

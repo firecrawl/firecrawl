@@ -56,6 +56,17 @@ import {
   XTwitterConfigurationError,
 } from "./error";
 import { ScrapeRetryTracker } from "./retryTracker";
+import {
+  type AntibotFallbackState,
+  classifyAntibotResponse,
+  createAntibotFallbackState,
+} from "./lib/antibot";
+import {
+  antibotFailureCounter,
+  scrapeEngineAttemptCounter,
+  terminalNotFoundCounter,
+} from "../../lib/antibot-fallback-metrics";
+import { isArxivPdfUrl } from "../../search/quality";
 import { executeTransformers } from "./transformers";
 import { LLMRefusalError } from "./transformers/llmExtract";
 import { urlSpecificParams } from "./lib/urlSpecificParams";
@@ -170,6 +181,13 @@ export type Meta = {
     | null
     | undefined; // undefined: no prefetch yet, null: prefetch came back empty
   costTracking: CostTracking;
+  /**
+   * Anti-bot fallback bookkeeping. A shared mutable holder on purpose: engine
+   * attempts run against a shallow `{...meta}` copy, so a plain field would not
+   * survive back to the outer retry loop — and "one Camoufox attempt per job"
+   * depends on it doing exactly that.
+   */
+  antibot: AntibotFallbackState;
   winnerEngine?: Engine;
   abortHandle?: NodeJS.Timeout;
   audioCookies?: BrowserCookie[];
@@ -260,7 +278,11 @@ function buildFeatureFlags(
 
   if (isDocument) {
     flags.add("document");
-  } else if (lowerPath.endsWith(".pdf") || lowerPath.includes(".pdf/")) {
+  } else if (
+    lowerPath.endsWith(".pdf") ||
+    lowerPath.includes(".pdf/") ||
+    isArxivPdfUrl(url)
+  ) {
     // Only add PDF flag if it's not a document
     flags.add("pdf");
   }
@@ -469,6 +491,7 @@ async function buildMetaObject(
     documentPrefetch,
     fetchPrefetch,
     costTracking,
+    antibot: createAntibotFallbackState(),
     threatDecisions: [],
   };
 }
@@ -535,6 +558,56 @@ type EngineScrapeResultWithContext = {
 };
 
 const MAX_HTML_SIZE_FOR_MARKDOWN_CHECK = 300 * 1024; // 300KB
+
+/**
+ * One structured, secret-free line per scrape summarising the anti-bot path:
+ * what was asked for, which engine won, what blocked us first, whether the
+ * stealth fallback ran and how it went. Deliberately a single event so it can
+ * be aggregated without joining across log lines.
+ */
+function logAntibotSummary(
+  meta: Meta,
+  startTime: number,
+  finalFailureClass: string | null,
+): void {
+  const state = meta.antibot;
+  // Nothing interesting happened: no block was seen and no fallback ran.
+  if (state.detection === undefined && state.camoufoxAttempts === 0) {
+    return;
+  }
+
+  let host: string | null = null;
+  try {
+    host = new URL(meta.rewrittenUrl ?? meta.url).hostname;
+  } catch {
+    host = null;
+  }
+
+  // The console transport only serialises metadata for warn/error (see
+  // lib/logger.ts), so a summary that nobody can read is worse than useless
+  // for the cases that matter. Notable outcomes — the scrape failed, or the
+  // stealth fallback did not recover it — are logged at warn so the fields
+  // actually render; clean recoveries stay at info.
+  const isNotable =
+    finalFailureClass !== null ||
+    (state.camoufoxAttempts > 0 && state.camoufoxOutcome !== "success");
+
+  meta.logger[isNotable ? "warn" : "info"]("scrapeURL antibot summary", {
+    module: "scrapeURL/antibot-metrics",
+    url: meta.rewrittenUrl ?? meta.url,
+    host,
+    selectedEngine: meta.winnerEngine ?? null,
+    initialFailureClass: state.detection?.failureClass ?? null,
+    initialFailureConfidence: state.detection?.confidence ?? null,
+    antibotVendor: state.detection?.vendor ?? null,
+    camoufoxFallbackRan: state.camoufoxAttempts > 0,
+    camoufoxOutcome: state.camoufoxOutcome ?? null,
+    camoufoxDetail: state.camoufoxDetail ?? null,
+    camoufoxElapsedMs: state.camoufoxElapsedMs ?? null,
+    elapsedMs: Date.now() - startTime,
+    finalFailureClass,
+  });
+}
 
 async function scrapeURLLoopIter(
   meta: Meta,
@@ -627,6 +700,96 @@ async function scrapeURLLoopIter(
       engineResult.statusCode,
     );
 
+    // Record what actually blocked us before escalating, so the stealth
+    // fallback can decide on response evidence rather than on the status code
+    // alone.
+    //
+    // Classification is NOT gated on the status code. A challenge page does not
+    // have to arrive with a blocking status: pmc.ncbi.nlm.nih.gov serves its
+    // reCAPTCHA interstitial as a perfectly ordinary HTTP 200 carrying 185
+    // bytes of "Checking your browser...", and ieeexplore/jstor do the same
+    // with AWS WAF and PerimeterX. Gating on [401,403,429] meant
+    // `classifyAntibotResponse` was never even called for those, so a rule that
+    // matches the body (antibot.ts already carries reCAPTCHA, awswaf and
+    // perimeterx fingerprints) could never fire. The classifier is
+    // body-evidence-first and cheap on a miss, so run it whenever there is
+    // either a body to inspect or a blocking status to explain.
+    const detection =
+      isLikelyProxyError || engineResult.html !== undefined
+        ? classifyAntibotResponse({
+            statusCode: engineResult.statusCode,
+            html: engineResult.html,
+            contentType: engineResult.contentType,
+            pageError: engineResult.error,
+          })
+        : undefined;
+
+    // Only the first *meaningful* block is kept: that is the failure that
+    // characterises the job. `confidence: "none"` covers ordinary pages, so a
+    // successful 200 later in the waterfall cannot overwrite the real evidence.
+    if (
+      detection !== undefined &&
+      detection.confidence !== "none" &&
+      meta.antibot.detection === undefined
+    ) {
+      meta.antibot.detection = detection;
+      antibotFailureCounter.inc({
+        confidence: detection.confidence,
+        vendor: detection.vendor ?? "unknown",
+      });
+      meta.logger.info("Classified blocking response", {
+        engine,
+        statusCode: engineResult.statusCode,
+        failureClass: detection.failureClass,
+        confidence: detection.confidence,
+        vendor: detection.vendor,
+      });
+    }
+
+    // 404/410 are terminal: no amount of browser stealth conjures a page that
+    // is not there, and we track them separately so they never get counted as
+    // anti-bot failures.
+    if (engineResult.statusCode === 404 || engineResult.statusCode === 410) {
+      terminalNotFoundCounter.inc({ status: String(engineResult.statusCode) });
+    }
+
+    // A confirmed challenge fingerprint on an otherwise-successful status is a
+    // challenge page wearing a 200. Left alone it sails through the
+    // `isLongEnough` check below and is handed to the caller as a successful
+    // scrape -- observed on PMC, which returned 185 chars of reCAPTCHA text as
+    // `success: true`. That is worse than an error: it silently poisons the
+    // result with interstitial text instead of triggering a fallback.
+    //
+    // Deliberately scoped to `confirmed`. A bare "suspected" verdict is only a
+    // status-code guess, and 2xx responses never produce one, so this cannot
+    // fire on an ordinary page. The body-size ceiling in the classifier
+    // (400 KB) keeps a large real document that merely mentions a vendor string
+    // from being caught.
+    if (isGoodStatusCode && detection?.confidence === "confirmed") {
+      meta.logger.warn(
+        "Scrape via " + engine + " returned a challenge page under a 2xx status.",
+        {
+          statusCode: engineResult.statusCode,
+          failureClass: detection.failureClass,
+          vendor: detection.vendor,
+          length: engineResult.html?.trim().length ?? 0,
+        },
+      );
+      scrapeEngineAttemptCounter.inc({ engine, outcome: "failure" });
+
+      // Escalate the same way a 403/429 would. Without this the stealth engines
+      // are never even in the fallback list: they carry negative quality and are
+      // only admitted once `stealthProxy` is set, and that flag was previously
+      // reachable only via the isLikelyProxyError branch below. Observed on
+      // ieeexplore, which serves its AWS WAF challenge with HTTP *202* -- the
+      // page was correctly rejected but the waterfall then ran out of engines
+      // (fallbackList: [playwright, fetch]) instead of trying Camoufox.
+      if (meta.options.proxy === "auto" && !meta.featureFlags.has("stealthProxy")) {
+        throw new AddFeatureError(["stealthProxy"]);
+      }
+      throw new EngineUnsuccessfulError(engine);
+    }
+
     if (
       isLikelyProxyError &&
       meta.options.proxy === "auto" &&
@@ -652,12 +815,14 @@ async function scrapeURLLoopIter(
       meta.logger.info("Scrape via " + engine + " deemed successful.", {
         factors: { isLongEnough, isGoodStatusCode, hasNoPageError },
       });
+      scrapeEngineAttemptCounter.inc({ engine, outcome: "success" });
       return engineResult;
     } else {
       meta.logger.warn("Scrape via " + engine + " deemed unsuccessful.", {
         factors: { isLongEnough, isGoodStatusCode, hasNoPageError },
         length: engineResult.html?.trim().length ?? 0,
       });
+      scrapeEngineAttemptCounter.inc({ engine, outcome: "failure" });
       throw new EngineUnsuccessfulError(engine);
     }
   } finally {
@@ -1419,6 +1584,8 @@ export async function scrapeURL(
           result.success && result.document.metadata.cacheState === "hit",
       });
 
+      logAntibotSummary(meta, startTime, null);
+
       return meta.threatDecisions.length > 0
         ? { ...result, threatDecisions: meta.threatDecisions }
         : result;
@@ -1568,6 +1735,8 @@ export async function scrapeURL(
         "scrape.error_type": errorType,
         "scrape.duration_ms": Date.now() - startTime,
       });
+
+      logAntibotSummary(meta, startTime, errorType);
 
       return {
         success: false,
