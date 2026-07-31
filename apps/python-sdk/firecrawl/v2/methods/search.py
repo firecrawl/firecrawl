@@ -3,7 +3,7 @@ Search functionality for Firecrawl v2 API.
 """
 
 from typing import Dict, Any, Union, List, TypeVar, Type
-from ..types import SearchRequest, SearchData, Document, SearchResultWeb, SearchResultNews, SearchResultImages
+from ..types import SearchRequest, SearchData, Document, SearchResultWeb, SearchResultNews, SearchResultImages, ExchangeProviderResult, ExchangeResult
 from ..utils.normalize import normalize_document_input, _map_search_result_keys
 from ..utils import HttpClient, handle_response_error, validate_scrape_options, prepare_scrape_options
 
@@ -44,6 +44,15 @@ def search(
             out.images = _transform_array(data["images"], SearchResultImages)
         if "developer" in data:
             out.developer = _transform_array(data["developer"], SearchResultWeb)
+        if "providers" in data:
+            out.providers = [
+                ExchangeProviderResult(**_map_exchange_keys(item))
+                for item in data["providers"]
+            ]
+        if "exchange" in data:
+            out.exchange = [
+                ExchangeResult(**_map_exchange_keys(item)) for item in data["exchange"]
+            ]
         return out
     except Exception as err:
         # If the error is an HTTP error from requests, handle it
@@ -51,6 +60,12 @@ def search(
         if hasattr(err, "response"):
             handle_response_error(getattr(err, "response"), "search")
         raise err
+
+def _map_exchange_keys(item: Dict[str, Any]) -> Dict[str, Any]:
+    """Maps the API's camelCase Exchange fields onto the snake_case models."""
+    mapping = {"creditsCost": "credits_cost", "creditsPerCall": "credits_per_call"}
+    return {mapping.get(key, key): value for key, value in item.items()}
+
 
 def _transform_array(arr: List[Any], result_type: Type[T]) -> List[Union[T, 'Document']]:
     """
@@ -104,9 +119,17 @@ def _validate_search_request(request: SearchRequest) -> SearchRequest:
     Raises:
         ValueError: If request is invalid
     """
-    # Validate query
-    if not request.query or not request.query.strip():
+    # A request may target the Exchange catalog instead of the web, so a query
+    # is only required when there is nothing else to do.
+    has_exchange_source = any(
+        getattr(source, "type", None) == "exchange" for source in (request.sources or [])
+    )
+    if request.query is not None and not request.query.strip():
         raise ValueError("Query cannot be empty")
+    if not request.query and not has_exchange_source and not request.exchange:
+        raise ValueError(
+            "Provide a query, an exchange source, or at least one exchange call"
+        )
     
     # Validate limit
     if request.limit is not None:
@@ -124,7 +147,7 @@ def _validate_search_request(request: SearchRequest) -> SearchRequest:
     
     # Validate sources (if provided)
     if request.sources is not None:
-        valid_sources = {"web", "news", "images"}
+        valid_sources = {"web", "news", "images", "exchange"}
         for source in request.sources:
             if isinstance(source, str):
                 if source not in valid_sources:
@@ -192,6 +215,12 @@ def _prepare_search_request(request: SearchRequest) -> Dict[str, Any]:
     if validated_request.ignore_invalid_urls is not None:
         data["ignoreInvalidURLs"] = validated_request.ignore_invalid_urls
         data.pop("ignore_invalid_urls", None)
+
+    # provider_api_key → providerApiKey on each Exchange call
+    if data.get("exchange"):
+        for call in data["exchange"]:
+            if "provider_api_key" in call:
+                call["providerApiKey"] = call.pop("provider_api_key")
 
     # include_domains → includeDomains
     if validated_request.include_domains is not None:

@@ -545,9 +545,17 @@ class WebhookData(BaseModel):
 
 
 class Source(BaseModel):
-    """Configuration for a search source."""
+    """Configuration for a search source.
+
+    The ``exchange`` source searches the catalog of data providers. Its filters
+    narrow discovery to a cohort, to named providers, or to specific
+    ``provider/capability`` pairs.
+    """
 
     type: str
+    categories: Optional[List[str]] = None
+    providers: Optional[List[str]] = None
+    capabilities: Optional[List[str]] = None
 
 
 SourceOption = Union[str, Source]
@@ -1604,11 +1612,43 @@ class Location(BaseModel):
     languages: Optional[List[str]] = None
 
 
+class ExchangeCall(BaseModel):
+    """One Exchange capability to execute as part of a search."""
+
+    provider: str
+    capability: str
+    options: Dict[str, Any] = {}
+    provider_api_key: Optional[str] = None
+
+
+class ExchangeResult(BaseModel):
+    """The outcome of one executed Exchange capability."""
+
+    provider: str
+    capability: str
+    delivery: Optional[str] = None
+    credits_cost: Optional[int] = None
+    data: Optional[Any] = None
+    error: Optional[Dict[str, Any]] = None
+
+
+class ExchangeProviderResult(BaseModel):
+    """A capability discovered through the ``exchange`` source."""
+
+    url: str
+    title: Optional[str] = None
+    description: Optional[str] = None
+    provider: str
+    capability: str
+    credits_per_call: Optional[int] = None
+
+
 class SearchRequest(BaseModel):
     """Request for search operations."""
 
-    query: str
+    query: Optional[str] = None
     sources: Optional[List[SourceOption]] = None
+    exchange: Optional[List[ExchangeCall]] = None
     categories: Optional[List[CategoryOption]] = None
     include_domains: Optional[List[str]] = None
     exclude_domains: Optional[List[str]] = None
@@ -1696,6 +1736,8 @@ class SearchData(BaseModel):
     news: Optional[List[Union[SearchResultNews, Document]]] = None
     images: Optional[List[Union[SearchResultImages, Document]]] = None
     developer: Optional[List[Union[SearchResultWeb, Document]]] = None
+    providers: Optional[List[ExchangeProviderResult]] = None
+    exchange: Optional[List[ExchangeResult]] = None
 
     @property
     def data(self):
