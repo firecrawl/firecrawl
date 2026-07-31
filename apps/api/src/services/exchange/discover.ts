@@ -67,12 +67,17 @@ export async function discoverExchangeCapabilities(input: {
     }));
 }
 
+/** States the keys a caller needs rather than pasting a snippet into prose. */
 function describe(match: CapabilityMatch): string {
-  const parts = [match.summary?.trim()].filter(Boolean) as string[];
-  const call = `Call with exchange: [{ provider: "${match.provider}", capability: "${match.capability}", options: { ... } }]`;
   const price =
     typeof match.creditsPerCall === "number"
       ? `${match.creditsPerCall} credits per call.`
       : undefined;
-  return [...parts, price, call].filter(Boolean).join(" ");
+  return [
+    match.summary?.trim(),
+    price,
+    `Run it with provider "${match.provider}" and capability "${match.capability}".`,
+  ]
+    .filter(Boolean)
+    .join(" ");
 }
