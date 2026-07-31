@@ -61,7 +61,7 @@ export async function discoverExchangeCapabilities(input: {
   return (payload?.results ?? [])
     .filter(match => match.provider && match.capability)
     .map(match => ({
-      url: `https://www.firecrawl.dev/exchange/${match.provider}`,
+      url: `https://www.firecrawl.dev/exchange/providers/${match.provider}/${match.capability}`,
       title: `${match.providerName ?? match.provider} — ${match.name ?? match.capability}`,
       description: describe(match),
       provider: match.provider,
@@ -72,11 +72,17 @@ export async function discoverExchangeCapabilities(input: {
     }));
 }
 
-/** The keys travel as structured fields, so prose carries only the human parts. */
+/** What a reader needs inline; the result url resolves the full contract. */
 function describe(match: CapabilityMatch): string {
   const price =
     typeof match.creditsPerCall === "number"
       ? `${match.creditsPerCall} credits per call.`
       : undefined;
-  return [match.summary?.trim(), price].filter(Boolean).join(" ");
+  return [
+    match.summary?.trim(),
+    price,
+    "Fetch the url for the full request and response contract.",
+  ]
+    .filter(Boolean)
+    .join(" ");
 }
