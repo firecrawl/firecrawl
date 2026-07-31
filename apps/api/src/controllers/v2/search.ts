@@ -275,7 +275,7 @@ export async function searchController(
     if (wantsProviders && req.body.query) {
       const providers = await discoverExchangeCapabilities({
         limit: req.body.limit,
-        query: req.body.query,
+        ...(req.body.query ? { query: req.body.query } : {}),
       });
       if (providers.length > 0) result.response.providers = providers;
     }

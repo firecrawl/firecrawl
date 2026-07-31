@@ -23,15 +23,19 @@ interface ExchangeDiscoveryFilters {
   providers?: string[];
 }
 
+/**
+ * A query ranks the catalog; without one the filters alone decide, which is how
+ * a caller browses a cohort rather than searching it.
+ */
 export async function discoverExchangeCapabilities(input: {
   filters?: ExchangeDiscoveryFilters;
   limit: number;
-  query: string;
+  query?: string;
 }): Promise<ExchangeProviderResult[]> {
-  if (!config.EXCHANGE_API_URL || !input.query.trim()) return [];
+  if (!config.EXCHANGE_API_URL) return [];
 
   const url = new URL("/v1/router", config.EXCHANGE_API_URL);
-  url.searchParams.set("q", input.query);
+  if (input.query?.trim()) url.searchParams.set("q", input.query.trim());
   url.searchParams.set("limit", String(input.limit));
   for (const [key, values] of Object.entries(input.filters ?? {})) {
     if (values?.length) url.searchParams.set(key, values.join(","));

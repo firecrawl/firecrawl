@@ -2131,11 +2131,23 @@ export const searchRequestSchema = z
     "includeDomains and excludeDomains cannot both be specified",
   )
   .refine(
-    x => Boolean(x.query) || x.exchange.length > 0,
-    "Provide a query, at least one Exchange call, or both",
+    x =>
+      Boolean(x.query) ||
+      x.exchange.length > 0 ||
+      (x.sources ?? []).some(
+        source =>
+          (typeof source === "string" ? source : source?.type) === "exchange",
+      ),
+    "Provide a query, an Exchange source, at least one Exchange call, or a combination",
   )
   .refine(
-    x => Boolean(x.query) || x.sources === undefined,
+    x =>
+      Boolean(x.query) ||
+      x.sources === undefined ||
+      x.sources.every(
+        source =>
+          (typeof source === "string" ? source : source?.type) === "exchange",
+      ),
     "sources requires a query",
   )
   .refine(x => waitForRefine(x.scrapeOptions), waitForRefineOpts)

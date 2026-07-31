@@ -981,10 +981,21 @@ describe("V2 Types Validation", () => {
       expect(result.exchange).toHaveLength(1);
     });
 
-    it("rejects a search request with neither query nor Exchange calls", () => {
+    it("rejects a search request with nothing to search or call", () => {
       expect(() => searchRequestSchema.parse({})).toThrow(
-        "Provide a query, at least one Exchange call, or both",
+        "Provide a query, an Exchange source, at least one Exchange call, or a combination",
       );
+    });
+
+    it("accepts an Exchange source with no query, which browses the catalog", () => {
+      const result = searchRequestSchema.parse({
+        sources: [{ type: "exchange", categories: ["people"] }],
+      });
+
+      expect(result.query).toBeUndefined();
+      expect(result.sources).toEqual([
+        { type: "exchange", categories: ["people"] },
+      ]);
     });
 
     it("should accept search request with simple sources array", () => {
