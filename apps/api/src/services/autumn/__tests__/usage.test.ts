@@ -1193,7 +1193,10 @@ describe("getTeamHistoricalUsageByApiKey", () => {
 
     await expect(getTeamHistoricalUsageByApiKey("team-1")).resolves.toEqual([
       expect.objectContaining({ apiKey: "Default", creditsUsed: 5 }),
-      expect.objectContaining({ apiKey: "Other", creditsUsed: 40 }),
+      expect.objectContaining({
+        apiKey: "Other (unattributed)",
+        creditsUsed: 40,
+      }),
       expect.objectContaining({ apiKey: "Unknown", creditsUsed: 2 }),
     ]);
   });

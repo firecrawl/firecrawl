@@ -25,12 +25,12 @@ const HISTORICAL_MIN_DAYS = 90;
 // reaches.
 const HISTORICAL_MAX_GROUPS = 250;
 
-// Autumn's label for the bucket holding every group beyond `maxGroups`. Its
-// credits are real but can no longer be attributed to individual keys, so it is
-// surfaced under its own name rather than folded into "Unknown" (which means
-// "this ID did not resolve to a key") — those are different facts and a caller
-// reconciling per-key totals needs to tell them apart. API key IDs are numeric,
-// so this can never collide with a real one.
+// Autumn's group name for the bucket holding everything beyond `maxGroups`.
+// Those credits are real but can no longer be attributed to individual keys, so
+// the row is labelled "Other (unattributed)" rather than folded into "Unknown"
+// (which means "this ID did not resolve to a key") — different facts, and a
+// caller reconciling per-key totals needs to tell them apart. API key IDs are
+// numeric, so this can never collide with a real one.
 const AUTUMN_OVERFLOW_GROUP = "Other";
 
 // Bump when the cached payload shape changes, so old entries are ignored
