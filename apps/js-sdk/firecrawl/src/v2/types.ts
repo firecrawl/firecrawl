@@ -697,19 +697,6 @@ export interface ExchangeResult {
   error?: ExchangeResultError;
 }
 
-export interface ExchangeInvokeRequest {
-  calls: ExchangeCall[];
-  timeout?: number;
-  zeroDataRetention?: boolean;
-}
-
-export interface ExchangeInvokeData {
-  exchange: ExchangeResult[];
-  creditsUsed: number;
-  id: string;
-  partial: boolean;
-}
-
 export interface SearchData {
   web?: Array<SearchResultWeb | Document>;
   news?: Array<SearchResultNews | Document>;

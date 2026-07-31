@@ -1938,13 +1938,6 @@ const exchangeCallSchema = z.strictObject({
   idempotencyKey: z.string().trim().min(8).max(200),
 });
 
-export const exchangeInvokeRequestSchema = z.strictObject({
-  calls: z.array(exchangeCallSchema).min(1).max(10),
-  timeout: z.int().positive().finite().max(30_000).optional().prefault(15_000),
-  zeroDataRetention: z.boolean().optional().prefault(false),
-  origin: z.string().optional().prefault("api"),
-});
-
 export const searchRequestSchema = z
   .strictObject({
     // A request may be an Exchange-only capability invocation. Keep web search
@@ -2146,20 +2139,6 @@ export const searchRequestSchema = z
 
 export type SearchRequest = z.infer<typeof searchRequestSchema>;
 export type SearchRequestInput = z.input<typeof searchRequestSchema>;
-export type ExchangeInvokeRequest = z.infer<typeof exchangeInvokeRequestSchema>;
-
-export type ExchangeInvokeResponse =
-  | ErrorResponse
-  | {
-      success: true;
-      partial: boolean;
-      data: {
-        exchange: import("../../lib/entities").ExchangeSearchResult[];
-      };
-      creditsUsed: number;
-      id: string;
-    };
-
 export type SearchResponse =
   | ErrorResponse
   | {

@@ -1,5 +1,4 @@
 import { describe, expect, jest, test } from "@jest/globals";
-import { exchangeInvoke } from "../../../v2/methods/exchange";
 import { search } from "../../../v2/methods/search";
 
 const call = {
@@ -10,59 +9,6 @@ const call = {
 };
 
 describe("v2 Exchange", () => {
-  test("invokes the canonical Exchange endpoint", async () => {
-    const http = {
-      post: jest.fn(async () => ({
-        status: 200,
-        data: {
-          success: true,
-          partial: false,
-          creditsUsed: 2,
-          id: "job-1",
-          data: {
-            exchange: [
-              {
-                provider: "hello",
-                capability: "echo",
-                delivery: "direct",
-                creditsCost: 2,
-                data: { value: "test" },
-              },
-            ],
-          },
-        },
-      })),
-    } as any;
-
-    const result = await exchangeInvoke(http, {
-      calls: [call],
-      timeout: 10_000,
-      zeroDataRetention: true,
-    });
-
-    expect(http.post).toHaveBeenCalledWith(
-      "/v2/exchange/invoke",
-      {
-        calls: [call],
-        timeout: 10_000,
-        zeroDataRetention: true,
-      },
-      { timeoutMs: 15_000 },
-    );
-    expect(result).toEqual({
-      exchange: [
-        expect.objectContaining({
-          provider: "hello",
-          capability: "echo",
-          data: { value: "test" },
-        }),
-      ],
-      creditsUsed: 2,
-      id: "job-1",
-      partial: false,
-    });
-  });
-
   test("supports an Exchange-only composed search", async () => {
     const http = {
       post: jest.fn(async () => ({

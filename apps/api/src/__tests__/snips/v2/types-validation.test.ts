@@ -6,7 +6,6 @@ import {
   crawlRequestSchema,
   mapRequestSchema,
   batchScrapeRequestSchema,
-  exchangeInvokeRequestSchema,
   searchRequestSchema,
   ScrapeRequest,
   ScrapeRequestInput,
@@ -1252,39 +1251,6 @@ describe("V2 Types Validation", () => {
             formats: [{ type: "highlights", query: "a".repeat(10001) }],
           },
         } satisfies SearchRequestInput),
-      ).toThrow();
-    });
-  });
-
-  describe("exchangeInvokeRequestSchema", () => {
-    it("accepts a direct Exchange request with a stable idempotency key", () => {
-      const result = exchangeInvokeRequestSchema.parse({
-        calls: [
-          {
-            provider: "hello",
-            capability: "echo",
-            options: { value: "test" },
-            idempotencyKey: "hello-echo-test",
-          },
-        ],
-      });
-
-      expect(result.timeout).toBe(15_000);
-      expect(result.zeroDataRetention).toBe(false);
-      expect(result.origin).toBe("api");
-    });
-
-    it("rejects a call without a stable idempotency key", () => {
-      expect(() =>
-        exchangeInvokeRequestSchema.parse({
-          calls: [
-            {
-              provider: "hello",
-              capability: "echo",
-              options: { value: "test" },
-            },
-          ],
-        }),
       ).toThrow();
     });
   });

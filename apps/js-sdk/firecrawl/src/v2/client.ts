@@ -6,9 +6,11 @@ import {
 } from "./methods/scrape";
 import { parse as parseMethod } from "./methods/parse";
 import { search } from "./methods/search";
-import { exchangeInvoke as exchangeInvokeMethod } from "./methods/exchange";
 import { map as mapMethod } from "./methods/map";
-import { feedback as feedbackMethod, searchFeedback as searchFeedbackMethod } from "./methods/feedback";
+import {
+  feedback as feedbackMethod,
+  searchFeedback as searchFeedbackMethod,
+} from "./methods/feedback";
 import {
   startCrawl,
   getCrawlStatus,
@@ -25,15 +27,31 @@ import {
   cancelBatchScrape,
   batchScrape as batchWaiter,
 } from "./methods/batch";
-import { startExtract, getExtractStatus, extract as extractWaiter } from "./methods/extract";
-import { startAgent, getAgentStatus, cancelAgent, agent as agentWaiter } from "./methods/agent";
+import {
+  startExtract,
+  getExtractStatus,
+  extract as extractWaiter,
+} from "./methods/extract";
+import {
+  startAgent,
+  getAgentStatus,
+  cancelAgent,
+  agent as agentWaiter,
+} from "./methods/agent";
 import {
   browser as browserMethod,
   browserExecute,
   deleteBrowser,
   listBrowsers,
 } from "./methods/browser";
-import { getConcurrency, getCreditUsage, getQueueStatus, getTokenUsage, getCreditUsageHistorical, getTokenUsageHistorical } from "./methods/usage";
+import {
+  getConcurrency,
+  getCreditUsage,
+  getQueueStatus,
+  getTokenUsage,
+  getCreditUsageHistorical,
+  getTokenUsageHistorical,
+} from "./methods/usage";
 import { ResearchClient } from "./methods/research";
 import {
   createMonitor as createMonitorMethod,
@@ -52,8 +70,6 @@ import type {
   ScrapeOptions,
   SearchData,
   SearchRequest,
-  ExchangeInvokeData,
-  ExchangeInvokeRequest,
   EndpointFeedbackRequest,
   FeedbackResponse,
   SearchFeedbackRequest,
@@ -130,7 +146,7 @@ export class FirecrawlClient {
   private _research?: ResearchClient;
 
   private isCloudService(url: string): boolean {
-    return url.includes('api.firecrawl.dev');
+    return url.includes("api.firecrawl.dev");
   }
 
   /**
@@ -142,7 +158,11 @@ export class FirecrawlClient {
       typeof options === "string" ? { apiKey: options } : options;
 
     const apiKey = (opts.apiKey ?? process.env.FIRECRAWL_API_KEY ?? "").trim();
-    const apiUrl = (opts.apiUrl ?? process.env.FIRECRAWL_API_URL ?? "https://api.firecrawl.dev").replace(/\/$/, "");
+    const apiUrl = (
+      opts.apiUrl ??
+      process.env.FIRECRAWL_API_URL ??
+      "https://api.firecrawl.dev"
+    ).replace(/\/$/, "");
 
     // No API key is allowed: scrape, search, and interact fall back to the
     // keyless free tier (rate-limited per IP). Other methods will return 401
@@ -166,7 +186,7 @@ export class FirecrawlClient {
    */
   async scrape<Opts extends ScrapeOptions>(
     url: string,
-    options: Opts
+    options: Opts,
   ): Promise<Omit<Document, "json"> & { json?: InferredJsonFromOptions<Opts> }>;
   async scrape(url: string, options?: ScrapeOptions): Promise<Document>;
   async scrape(url: string, options?: ScrapeOptions): Promise<Document> {
@@ -180,7 +200,7 @@ export class FirecrawlClient {
    */
   async interact(
     jobId: string,
-    args: ScrapeExecuteRequest
+    args: ScrapeExecuteRequest,
   ): Promise<ScrapeExecuteResponse> {
     return interactMethod(this.http, jobId, args);
   }
@@ -196,20 +216,24 @@ export class FirecrawlClient {
    */
   async scrapeExecute(
     jobId: string,
-    args: ScrapeExecuteRequest
+    args: ScrapeExecuteRequest,
   ): Promise<ScrapeExecuteResponse> {
     return this.interact(jobId, args);
   }
   /**
    * @deprecated Use stopInteraction().
    */
-  async stopInteractiveBrowser(jobId: string): Promise<ScrapeBrowserDeleteResponse> {
+  async stopInteractiveBrowser(
+    jobId: string,
+  ): Promise<ScrapeBrowserDeleteResponse> {
     return this.stopInteraction(jobId);
   }
   /**
    * @deprecated Use stopInteraction().
    */
-  async deleteScrapeBrowser(jobId: string): Promise<ScrapeBrowserDeleteResponse> {
+  async deleteScrapeBrowser(
+    jobId: string,
+  ): Promise<ScrapeBrowserDeleteResponse> {
     return this.stopInteraction(jobId);
   }
 
@@ -225,7 +249,7 @@ export class FirecrawlClient {
    */
   async parse<Opts extends ParseOptions>(
     file: ParseFile,
-    options: Opts
+    options: Opts,
   ): Promise<Omit<Document, "json"> & { json?: InferredJsonFromOptions<Opts> }>;
   async parse(file: ParseFile, options?: ParseOptions): Promise<Document>;
   async parse(file: ParseFile, options?: ParseOptions): Promise<Document> {
@@ -257,15 +281,6 @@ export class FirecrawlClient {
   }
 
   /**
-   * Invoke one or more direct, read-only Exchange capabilities.
-   */
-  async exchangeInvoke(
-    request: ExchangeInvokeRequest,
-  ): Promise<ExchangeInvokeData> {
-    return exchangeInvokeMethod(this.http, request);
-  }
-
-  /**
    * Submit feedback for a v2 job.
    * @param request Feedback payload with endpoint, job id, rating, and supporting signals.
    * @returns Feedback record and refund details.
@@ -280,7 +295,10 @@ export class FirecrawlClient {
    * @param request Search feedback payload.
    * @returns Feedback record and refund details.
    */
-  async searchFeedback(jobId: string, request: SearchFeedbackRequest): Promise<FeedbackResponse> {
+  async searchFeedback(
+    jobId: string,
+    request: SearchFeedbackRequest,
+  ): Promise<FeedbackResponse> {
     return searchFeedbackMethod(this.http, jobId, request);
   }
 
@@ -312,14 +330,20 @@ export class FirecrawlClient {
    * @param req Crawl configuration (paths, limits, scrapeOptions, webhook, etc.).
    * @returns Job id and url.
    */
-  async startCrawl(url: string, req: CrawlOptions = {}): Promise<CrawlResponse> {
+  async startCrawl(
+    url: string,
+    req: CrawlOptions = {},
+  ): Promise<CrawlResponse> {
     return startCrawl(this.http, { url, ...req });
   }
   /**
    * Get the status and partial data of a crawl job.
    * @param jobId Crawl job id.
    */
-  async getCrawlStatus(jobId: string, pagination?: PaginationConfig): Promise<CrawlJob> {
+  async getCrawlStatus(
+    jobId: string,
+    pagination?: PaginationConfig,
+  ): Promise<CrawlJob> {
     return getCrawlStatus(this.http, jobId, pagination);
   }
   /**
@@ -336,8 +360,16 @@ export class FirecrawlClient {
    * @param req Crawl configuration plus waiter controls (pollInterval, timeout seconds).
    * @returns Final job snapshot.
    */
-  async crawl(url: string, req: CrawlOptions & { pollInterval?: number; timeout?: number } = {}): Promise<CrawlJob> {
-    return crawlWaiter(this.http, { url, ...req }, req.pollInterval, req.timeout);
+  async crawl(
+    url: string,
+    req: CrawlOptions & { pollInterval?: number; timeout?: number } = {},
+  ): Promise<CrawlJob> {
+    return crawlWaiter(
+      this.http,
+      { url, ...req },
+      req.pollInterval,
+      req.timeout,
+    );
   }
   /**
    * Retrieve crawl errors and robots.txt blocks.
@@ -357,7 +389,10 @@ export class FirecrawlClient {
    * @param url Root URL.
    * @param prompt Natural-language instruction.
    */
-  async crawlParamsPreview(url: string, prompt: string): Promise<Record<string, unknown>> {
+  async crawlParamsPreview(
+    url: string,
+    prompt: string,
+  ): Promise<Record<string, unknown>> {
     return crawlParamsPreview(this.http, url, prompt);
   }
 
@@ -435,14 +470,20 @@ export class FirecrawlClient {
    * @param opts Batch options (scrape options, webhook, concurrency, idempotency key, etc.).
    * @returns Job id and url.
    */
-  async startBatchScrape(urls: string[], opts?: BatchScrapeOptions): Promise<BatchScrapeResponse> {
+  async startBatchScrape(
+    urls: string[],
+    opts?: BatchScrapeOptions,
+  ): Promise<BatchScrapeResponse> {
     return startBatchScrape(this.http, urls, opts);
   }
   /**
    * Get the status and partial data of a batch scrape job.
    * @param jobId Batch job id.
    */
-  async getBatchScrapeStatus(jobId: string, pagination?: PaginationConfig): Promise<BatchScrapeJob> {
+  async getBatchScrapeStatus(
+    jobId: string,
+    pagination?: PaginationConfig,
+  ): Promise<BatchScrapeJob> {
     return getBatchScrapeStatus(this.http, jobId, pagination);
   }
   /**
@@ -466,7 +507,10 @@ export class FirecrawlClient {
    * @param opts Batch options plus waiter controls (pollInterval, timeout seconds).
    * @returns Final job snapshot.
    */
-  async batchScrape(urls: string[], opts?: BatchScrapeOptions & { pollInterval?: number; timeout?: number }): Promise<BatchScrapeJob> {
+  async batchScrape(
+    urls: string[],
+    opts?: BatchScrapeOptions & { pollInterval?: number; timeout?: number },
+  ): Promise<BatchScrapeJob> {
     return batchWaiter(this.http, urls, opts);
   }
 
@@ -478,7 +522,9 @@ export class FirecrawlClient {
    * @deprecated The extract endpoint is in maintenance mode and its use is discouraged.
    * Review https://docs.firecrawl.dev/developer-guides/usage-guides/choosing-the-data-extractor to find a replacement.
    */
-  async startExtract(args: Parameters<typeof startExtract>[1]): Promise<ExtractResponse> {
+  async startExtract(
+    args: Parameters<typeof startExtract>[1],
+  ): Promise<ExtractResponse> {
     return startExtract(this.http, args);
   }
   /**
@@ -497,7 +543,12 @@ export class FirecrawlClient {
    * @deprecated The extract endpoint is in maintenance mode and its use is discouraged.
    * Review https://docs.firecrawl.dev/developer-guides/usage-guides/choosing-the-data-extractor to find a replacement.
    */
-  async extract(args: Parameters<typeof startExtract>[1] & { pollInterval?: number; timeout?: number }): Promise<ExtractResponse> {
+  async extract(
+    args: Parameters<typeof startExtract>[1] & {
+      pollInterval?: number;
+      timeout?: number;
+    },
+  ): Promise<ExtractResponse> {
     return extractWaiter(this.http, args);
   }
 
@@ -507,7 +558,9 @@ export class FirecrawlClient {
    * @param args Agent request (urls, prompt, schema).
    * @returns Job id or processing state.
    */
-  async startAgent(args: Parameters<typeof startAgent>[1]): Promise<AgentResponse> {
+  async startAgent(
+    args: Parameters<typeof startAgent>[1],
+  ): Promise<AgentResponse> {
     return startAgent(this.http, args);
   }
   /**
@@ -522,7 +575,12 @@ export class FirecrawlClient {
    * @param args Agent request plus waiter controls (pollInterval, timeout seconds).
    * @returns Final agent response.
    */
-  async agent(args: Parameters<typeof startAgent>[1] & { pollInterval?: number; timeout?: number }): Promise<AgentStatusResponse> {
+  async agent(
+    args: Parameters<typeof startAgent>[1] & {
+      pollInterval?: number;
+      timeout?: number;
+    },
+  ): Promise<AgentStatusResponse> {
     return agentWaiter(this.http, args);
   }
   /**
@@ -541,7 +599,7 @@ export class FirecrawlClient {
    * @returns Session id, CDP URL, live view URL, and expiration time.
    */
   async browser(
-    args: Parameters<typeof browserMethod>[1] = {}
+    args: Parameters<typeof browserMethod>[1] = {},
   ): Promise<BrowserCreateResponse> {
     return browserMethod(this.http, args);
   }
@@ -553,7 +611,7 @@ export class FirecrawlClient {
    */
   async browserExecute(
     sessionId: string,
-    args: Parameters<typeof browserExecute>[2]
+    args: Parameters<typeof browserExecute>[2],
   ): Promise<BrowserExecuteResponse> {
     return browserExecute(this.http, sessionId, args);
   }
@@ -570,7 +628,7 @@ export class FirecrawlClient {
    * @returns List of browser sessions.
    */
   async listBrowsers(
-    args: Parameters<typeof listBrowsers>[1] = {}
+    args: Parameters<typeof listBrowsers>[1] = {},
   ): Promise<BrowserListResponse> {
     return listBrowsers(this.http, args);
   }
@@ -620,17 +678,26 @@ export class FirecrawlClient {
   }
 
   /** @deprecated V1 compatibility alias for agent recovery. Prefer crawl(). */
-  async crawlUrl(url: string, req: CrawlOptions & { pollInterval?: number; timeout?: number } = {}): Promise<CrawlJob> {
+  async crawlUrl(
+    url: string,
+    req: CrawlOptions & { pollInterval?: number; timeout?: number } = {},
+  ): Promise<CrawlJob> {
     return this.crawl(url, req);
   }
 
   /** @deprecated V1 compatibility alias for agent recovery. Prefer startCrawl(). */
-  async asyncCrawlUrl(url: string, req: CrawlOptions = {}): Promise<CrawlResponse> {
+  async asyncCrawlUrl(
+    url: string,
+    req: CrawlOptions = {},
+  ): Promise<CrawlResponse> {
     return this.startCrawl(url, req);
   }
 
   /** @deprecated V1 compatibility alias for agent recovery. Prefer getCrawlStatus(). */
-  async checkCrawlStatus(jobId: string, pagination?: PaginationConfig): Promise<CrawlJob> {
+  async checkCrawlStatus(
+    jobId: string,
+    pagination?: PaginationConfig,
+  ): Promise<CrawlJob> {
     return this.getCrawlStatus(jobId, pagination);
   }
 
@@ -645,17 +712,26 @@ export class FirecrawlClient {
   }
 
   /** @deprecated V1 compatibility alias for agent recovery. Prefer batchScrape(). */
-  async batchScrapeUrls(urls: string[], opts?: BatchScrapeOptions & { pollInterval?: number; timeout?: number }): Promise<BatchScrapeJob> {
+  async batchScrapeUrls(
+    urls: string[],
+    opts?: BatchScrapeOptions & { pollInterval?: number; timeout?: number },
+  ): Promise<BatchScrapeJob> {
     return this.batchScrape(urls, opts);
   }
 
   /** @deprecated V1 compatibility alias for agent recovery. Prefer startBatchScrape(). */
-  async asyncBatchScrapeUrls(urls: string[], opts?: BatchScrapeOptions): Promise<BatchScrapeResponse> {
+  async asyncBatchScrapeUrls(
+    urls: string[],
+    opts?: BatchScrapeOptions,
+  ): Promise<BatchScrapeResponse> {
     return this.startBatchScrape(urls, opts);
   }
 
   /** @deprecated V1 compatibility alias for agent recovery. Prefer getBatchScrapeStatus(). */
-  async checkBatchScrapeStatus(jobId: string, pagination?: PaginationConfig): Promise<BatchScrapeJob> {
+  async checkBatchScrapeStatus(
+    jobId: string,
+    pagination?: PaginationConfig,
+  ): Promise<BatchScrapeJob> {
     return this.getBatchScrapeStatus(jobId, pagination);
   }
 

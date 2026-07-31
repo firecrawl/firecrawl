@@ -10,7 +10,6 @@ import { feedbackController } from "../controllers/v2/feedback/controller";
 import { searchFeedbackController } from "../controllers/v2/search-feedback";
 import { scrapeController } from "../controllers/v2/scrape";
 import { exchangeDiscoveryController } from "../controllers/v2/exchange";
-import { exchangeInvokeController } from "../controllers/v2/exchange-invoke";
 import { keylessEligibilityController } from "../controllers/v2/keyless-eligibility";
 import {
   parseController,
@@ -189,13 +188,6 @@ v2Router.get(
   "/exchange/{*path}",
   authMiddleware(RateLimiterMode.Account),
   wrap(exchangeDiscoveryController),
-);
-v2Router.post(
-  "/exchange/invoke",
-  authMiddleware(RateLimiterMode.Search),
-  countryCheck,
-  checkCreditsMiddleware(1),
-  wrap(exchangeInvokeController),
 );
 
 v2Router.post(
