@@ -218,12 +218,7 @@ export interface ScrapeOptions {
 }
 
 export type RedactPIIEntity =
-  | "PERSON"
-  | "EMAIL"
-  | "PHONE"
-  | "LOCATION"
-  | "FINANCIAL"
-  | "SECRET";
+  "PERSON" | "EMAIL" | "PHONE" | "LOCATION" | "FINANCIAL" | "SECRET";
 
 export interface RedactPIIOptions {
   /**
@@ -264,12 +259,7 @@ export interface ThreatProtectionOptions {
 }
 
 export type ParseFileData =
-  | Blob
-  | File
-  | Buffer
-  | Uint8Array
-  | ArrayBuffer
-  | string;
+  Blob | File | Buffer | Uint8Array | ArrayBuffer | string;
 
 export interface ParseFile {
   data: ParseFileData;
@@ -304,11 +294,7 @@ export interface WebhookConfig {
 
 // Agent webhook events differ from crawl: has 'action' and 'cancelled', no 'page'
 export type AgentWebhookEvent =
-  | "started"
-  | "action"
-  | "completed"
-  | "failed"
-  | "cancelled";
+  "started" | "action" | "completed" | "failed" | "cancelled";
 
 export interface AgentWebhookConfig {
   url: string;
@@ -428,10 +414,7 @@ export interface BrandingProfile {
     headerHeight?: string;
     footerHeight?: string;
     [key: string]:
-      | number
-      | string
-      | Record<string, number | string | undefined>
-      | undefined;
+      number | string | Record<string, number | string | undefined> | undefined;
   };
   tone?: {
     voice?: string;
@@ -674,10 +657,58 @@ export interface SearchResultImages {
   position?: number;
 }
 
+export interface ExchangeCall {
+  provider: string;
+  capability: string;
+  options: Record<string, unknown>;
+  /**
+   * Your own credential for providers published with bring-your-own-key
+   * access. It is forwarded to the provider and never stored.
+   */
+  providerApiKey?: string;
+  /**
+   * Stable caller-generated key for this provider call. Reuse the same key
+   * when retrying the same logical operation.
+   */
+  idempotencyKey: string;
+}
+
+export interface ExchangeResultError {
+  code: string;
+  message: string;
+  retryable: boolean;
+  status?: number;
+}
+
+export interface ExchangeResult {
+  provider: string;
+  capability: string;
+  accessEventId?: string;
+  exchangeRequestId?: string;
+  delivery?: "direct";
+  creditsCost?: number;
+  data?: unknown;
+  error?: ExchangeResultError;
+}
+
+export interface ExchangeInvokeRequest {
+  calls: ExchangeCall[];
+  timeout?: number;
+  zeroDataRetention?: boolean;
+}
+
+export interface ExchangeInvokeData {
+  exchange: ExchangeResult[];
+  creditsUsed: number;
+  id: string;
+  partial: boolean;
+}
+
 export interface SearchData {
   web?: Array<SearchResultWeb | Document>;
   news?: Array<SearchResultNews | Document>;
   images?: Array<SearchResultImages | Document>;
+  exchange?: ExchangeResult[];
 }
 
 export interface CategoryOption {
@@ -685,7 +716,8 @@ export interface CategoryOption {
 }
 
 export interface SearchRequest {
-  query: string;
+  query?: string;
+  exchange?: ExchangeCall[];
   sources?: Array<
     "web" | "news" | "images" | { type: "web" | "news" | "images" }
   >;
@@ -921,9 +953,7 @@ export interface MonitorSearchTarget {
 }
 
 export type MonitorTarget =
-  | MonitorScrapeTarget
-  | MonitorCrawlTarget
-  | MonitorSearchTarget;
+  MonitorScrapeTarget | MonitorCrawlTarget | MonitorSearchTarget;
 
 export interface CreateMonitorRequest {
   name: string;
@@ -1046,11 +1076,7 @@ export interface MonitorCheck {
   reservedCredits?: number | null;
   actualCredits?: number | null;
   billingStatus:
-    | "not_applicable"
-    | "reserved"
-    | "confirmed"
-    | "released"
-    | "failed";
+    "not_applicable" | "reserved" | "confirmed" | "released" | "failed";
   summary: MonitorSummary;
   targetResults?: MonitorTargetResult[];
   notificationStatus?: unknown;

@@ -6,6 +6,7 @@ import {
   crawlRequestSchema,
   mapRequestSchema,
   batchScrapeRequestSchema,
+  exchangeInvokeRequestSchema,
   searchRequestSchema,
   ScrapeRequest,
   ScrapeRequestInput,
@@ -964,6 +965,29 @@ describe("V2 Types Validation", () => {
       ]);
     });
 
+    it("accepts an Exchange-only request without creating a web source", () => {
+      const result = searchRequestSchema.parse({
+        exchange: [
+          {
+            provider: "hello",
+            capability: "echo",
+            options: { value: "test" },
+            idempotencyKey: "hello-echo-test",
+          },
+        ],
+      });
+
+      expect(result.query).toBeUndefined();
+      expect(result.sources).toBeUndefined();
+      expect(result.exchange).toHaveLength(1);
+    });
+
+    it("rejects a search request with neither query nor Exchange calls", () => {
+      expect(() => searchRequestSchema.parse({})).toThrow(
+        "Provide a query, at least one Exchange call, or both",
+      );
+    });
+
     it("should accept search request with simple sources array", () => {
       const input: SearchRequestInput = {
         query: "test",
@@ -1207,6 +1231,39 @@ describe("V2 Types Validation", () => {
             formats: [{ type: "highlights", query: "a".repeat(10001) }],
           },
         } satisfies SearchRequestInput),
+      ).toThrow();
+    });
+  });
+
+  describe("exchangeInvokeRequestSchema", () => {
+    it("accepts a direct Exchange request with a stable idempotency key", () => {
+      const result = exchangeInvokeRequestSchema.parse({
+        calls: [
+          {
+            provider: "hello",
+            capability: "echo",
+            options: { value: "test" },
+            idempotencyKey: "hello-echo-test",
+          },
+        ],
+      });
+
+      expect(result.timeout).toBe(15_000);
+      expect(result.zeroDataRetention).toBe(false);
+      expect(result.origin).toBe("api");
+    });
+
+    it("rejects a call without a stable idempotency key", () => {
+      expect(() =>
+        exchangeInvokeRequestSchema.parse({
+          calls: [
+            {
+              provider: "hello",
+              capability: "echo",
+              options: { value: "test" },
+            },
+          ],
+        }),
       ).toThrow();
     });
   });

@@ -6,6 +6,7 @@ import {
 } from "./methods/scrape";
 import { parse as parseMethod } from "./methods/parse";
 import { search } from "./methods/search";
+import { exchangeInvoke as exchangeInvokeMethod } from "./methods/exchange";
 import { map as mapMethod } from "./methods/map";
 import { feedback as feedbackMethod, searchFeedback as searchFeedbackMethod } from "./methods/feedback";
 import {
@@ -51,6 +52,8 @@ import type {
   ScrapeOptions,
   SearchData,
   SearchRequest,
+  ExchangeInvokeData,
+  ExchangeInvokeRequest,
   EndpointFeedbackRequest,
   FeedbackResponse,
   SearchFeedbackRequest,
@@ -231,13 +234,35 @@ export class FirecrawlClient {
 
   // Search
   /**
-   * Search the web and optionally scrape each result.
-   * @param query Search query string.
-   * @param req Additional search options (sources, limit, scrapeOptions, etc.).
+   * Search the web, invoke Exchange capabilities, or compose both.
+   * @param query Search query string, or the complete search request.
+   * @param req Additional search options when the first argument is a string.
    * @returns Structured search results.
    */
-  async search(query: string, req: Omit<SearchRequest, "query"> = {}): Promise<SearchData> {
-    return search(this.http, { query, ...req });
+  async search(
+    query: string,
+    req?: Omit<SearchRequest, "query">,
+  ): Promise<SearchData>;
+  async search(request: SearchRequest): Promise<SearchData>;
+  async search(
+    queryOrRequest: string | SearchRequest,
+    req: Omit<SearchRequest, "query"> = {},
+  ): Promise<SearchData> {
+    return search(
+      this.http,
+      typeof queryOrRequest === "string"
+        ? { query: queryOrRequest, ...req }
+        : queryOrRequest,
+    );
+  }
+
+  /**
+   * Invoke one or more direct, read-only Exchange capabilities.
+   */
+  async exchangeInvoke(
+    request: ExchangeInvokeRequest,
+  ): Promise<ExchangeInvokeData> {
+    return exchangeInvokeMethod(this.http, request);
   }
 
   /**

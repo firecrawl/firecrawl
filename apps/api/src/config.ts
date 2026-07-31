@@ -31,6 +31,8 @@ const configSchema = z.object({
   SUPPORT_AGENT_URL: z.string().url().optional(),
   SUPPORT_AGENT_VERCEL_BYPASS_SECRET: z.string().optional(),
   RESEARCH_PROXY_URL: z.string().url().optional(),
+  EXCHANGE_API_URL: z.string().url().optional(),
+  EXCHANGE_API_TOKEN: z.string().optional(),
 
   // Express
   EXPRESS_TRUST_PROXY: z.coerce.number().optional(),

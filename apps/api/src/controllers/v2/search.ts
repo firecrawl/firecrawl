@@ -34,6 +34,9 @@ import {
   checkKeyFormatRestriction,
   formatTypesOf,
 } from "../../lib/key-restriction";
+import type { SearchV2Response } from "../../lib/entities";
+import { executeExchangeCalls } from "../../services/exchange/execute";
+import { redactExchangeCredentials } from "../../services/exchange/invoke";
 
 export async function searchController(
   req: RequestWithAuth<{}, SearchResponse, SearchRequest>,
@@ -165,14 +168,14 @@ export async function searchController(
         team_id: req.auth.team_id,
         origin: req.body.origin ?? "api",
         integration: req.body.integration,
-        target_hint: req.body.query,
+        target_hint: req.body.query ?? "",
         zeroDataRetention,
         api_key_id: req.acuc?.api_key_id ?? null,
       });
     }
 
-    const projectedKeylessCredits =
-      !isSearchPreview && shouldBill
+    const projectedSearchCredits =
+      req.body.query !== undefined && !isSearchPreview && shouldBill
         ? projectSearchTotalCredits(
             {
               limit: req.body.limit,
@@ -183,10 +186,10 @@ export async function searchController(
             zeroDataRetention,
           )
         : 0;
-    if (projectedKeylessCredits > 0) {
+    if (projectedSearchCredits > 0) {
       const reservation = await reserveKeylessCredits(
         req.auth.team_id,
-        projectedKeylessCredits,
+        projectedSearchCredits,
       );
       if (!reservation.ok) {
         applyAgentAuthDiscoveryHeader(res);
@@ -195,47 +198,95 @@ export async function searchController(
           error: KEYLESS_FREE_TIER_LIMIT_MESSAGE,
         });
       }
-      reservedKeylessCredits = projectedKeylessCredits;
+      reservedKeylessCredits = projectedSearchCredits;
     }
 
-    const result = await executeSearch(
-      {
-        query: req.body.query,
-        limit: req.body.limit,
-        tbs: req.body.tbs,
-        filter: req.body.filter,
-        lang: req.body.lang,
-        country: req.body.country,
-        location: req.body.location,
-        sources: req.body.sources as Array<{ type: string }>,
-        categories: req.body.categories as CategoryOption[],
-        includeDomains: req.body.includeDomains,
-        excludeDomains: req.body.excludeDomains,
-        enterprise: req.body.enterprise,
-        scrapeOptions: req.body.scrapeOptions,
-        highlights: req.body.highlights,
-        timeout: req.body.timeout,
-      },
-      {
-        teamId: req.auth.team_id,
-        origin: req.body.origin,
-        apiKeyId: req.acuc?.api_key_id ?? null,
-        flags: req.acuc?.flags ?? null,
-        requestId: agentRequestId ?? jobId,
-        jobId,
-        apiVersion: "v2",
-        bypassBilling: !shouldBill,
-        zeroDataRetention,
-        billing,
-        agentIndexOnly: (req as any).agentIndexOnly ?? false,
-        keylessReserved: reservedKeylessCredits > 0,
-        threatProtectionPolicy: threatProtection.policy,
-      },
+    const hasWebSearch = req.body.query !== undefined;
+    const result = hasWebSearch
+      ? await executeSearch(
+          {
+            query: req.body.query!,
+            limit: req.body.limit,
+            tbs: req.body.tbs,
+            filter: req.body.filter,
+            lang: req.body.lang,
+            country: req.body.country,
+            location: req.body.location,
+            sources: req.body.sources as Array<{ type: string }>,
+            categories: req.body.categories as CategoryOption[],
+            includeDomains: req.body.includeDomains,
+            excludeDomains: req.body.excludeDomains,
+            enterprise: req.body.enterprise,
+            scrapeOptions: req.body.scrapeOptions,
+            highlights: req.body.highlights,
+            timeout: req.body.timeout,
+          },
+          {
+            teamId: req.auth.team_id,
+            origin: req.body.origin,
+            apiKeyId: req.acuc?.api_key_id ?? null,
+            flags: req.acuc?.flags ?? null,
+            requestId: agentRequestId ?? jobId,
+            jobId,
+            apiVersion: "v2",
+            bypassBilling: !shouldBill,
+            zeroDataRetention,
+            billing,
+            agentIndexOnly: (req as any).agentIndexOnly ?? false,
+            keylessReserved: reservedKeylessCredits > 0,
+            threatProtectionPolicy: threatProtection.policy,
+          },
+          logger,
+        )
+      : {
+          response: {} as SearchV2Response,
+          totalResultsCount: 0,
+          searchCredits: 0,
+          scrapeCredits: 0,
+          totalCredits: 0,
+          shouldScrape: false,
+        };
+
+    const exchangeExecution = await executeExchangeCalls({
+      agentIndexOnly: Boolean((req as any).agentIndexOnly),
+      apiKeyId: req.acuc?.api_key_id ?? null,
+      billing: { endpoint: "exchange", jobId },
+      calls: req.body.exchange,
       logger,
-    );
+      shouldBill: shouldBill && !isSearchPreview,
+      teamId: req.auth.team_id,
+      timeoutMs: Math.min(req.body.timeout, 30_000),
+      zeroDataRetention,
+    });
+    const exchange = exchangeExecution.results;
+    if (exchange.length > 0) {
+      result.response.exchange = exchange;
+    }
+
+    const exchangeCredits = exchangeExecution.billedCredits;
+    const billableCredits = result.searchCredits + exchangeCredits;
+    const totalCredits = result.totalCredits + exchangeCredits;
+    if (
+      !hasWebSearch &&
+      exchange.length > 0 &&
+      exchange.every(item => item.error)
+    ) {
+      const firstError = exchange.find(item => item.error)?.error;
+      const status =
+        firstError?.status &&
+        firstError.status >= 400 &&
+        firstError.status < 600
+          ? firstError.status
+          : 502;
+      return res.status(status).json({
+        success: false,
+        error: firstError?.message ?? "All Exchange calls failed.",
+        details: exchange,
+      });
+    }
 
     // Bill team for search credits only (scrape jobs bill themselves)
-    if (!isSearchPreview && shouldBill) {
+    if (!isSearchPreview && shouldBill && result.searchCredits > 0) {
       billTeam(
         req.auth.team_id,
         result.searchCredits,
@@ -254,11 +305,9 @@ export async function searchController(
       reconciledKeylessCredits = true;
       adjustKeylessCredits(
         req.auth.team_id,
-        result.totalCredits - reservedKeylessCredits,
+        totalCredits - reservedKeylessCredits,
       ).catch(() => {});
-      logKeylessCreditUsage(req.auth.team_id, result.totalCredits).catch(
-        () => {},
-      );
+      logKeylessCreditUsage(req.auth.team_id, totalCredits).catch(() => {});
     }
 
     const endTime = new Date().getTime();
@@ -268,15 +317,15 @@ export async function searchController(
       {
         id: jobId,
         request_id: agentRequestId ?? jobId,
-        query: req.body.query,
+        query: req.body.query ?? "",
         is_successful: true,
         error: undefined,
         results: result.response as any,
         num_results: result.totalResultsCount,
         time_taken: timeTakenInSeconds,
         team_id: req.auth.team_id,
-        options: req.body,
-        credits_cost: shouldBill ? result.searchCredits : 0,
+        options: redactExchangeCredentials(req.body),
+        credits_cost: shouldBill ? billableCredits : 0,
         zeroDataRetention,
       },
       false,
@@ -296,14 +345,14 @@ export async function searchController(
       totalRequestTime,
       searchCredits: result.searchCredits,
       scrapeCredits: result.scrapeCredits,
-      totalCredits: result.totalCredits,
+      totalCredits,
       scrapeful: result.shouldScrape,
     });
 
     return res.status(200).json({
       success: true,
       data: result.response,
-      creditsUsed: result.totalCredits,
+      creditsUsed: totalCredits,
       id: jobId,
     });
   } catch (error) {

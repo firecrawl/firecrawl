@@ -8,6 +8,8 @@ import { searchController } from "../controllers/v2/search";
 import { feedbackController } from "../controllers/v2/feedback/controller";
 import { searchFeedbackController } from "../controllers/v2/search-feedback";
 import { scrapeController } from "../controllers/v2/scrape";
+import { exchangeDiscoveryController } from "../controllers/v2/exchange";
+import { exchangeInvokeController } from "../controllers/v2/exchange-invoke";
 import { keylessEligibilityController } from "../controllers/v2/keyless-eligibility";
 import {
   parseController,
@@ -159,6 +161,25 @@ v2Router.use(requestTimingMiddleware("v2"));
 // Internal: trusted-proxy (hosted MCP) keyless eligibility probe. Secret-gated
 // inside the controller; no auth middleware.
 v2Router.get("/keyless/eligibility", wrap(keylessEligibilityController));
+
+// Discovery is authenticated but has no credit admission or billing.
+v2Router.get(
+  "/exchange",
+  authMiddleware(RateLimiterMode.Account),
+  wrap(exchangeDiscoveryController),
+);
+v2Router.get(
+  "/exchange/{*path}",
+  authMiddleware(RateLimiterMode.Account),
+  wrap(exchangeDiscoveryController),
+);
+v2Router.post(
+  "/exchange/invoke",
+  authMiddleware(RateLimiterMode.Search),
+  countryCheck,
+  checkCreditsMiddleware(1),
+  wrap(exchangeInvokeController),
+);
 
 v2Router.post(
   "/search",

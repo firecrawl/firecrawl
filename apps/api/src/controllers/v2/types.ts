@@ -1914,9 +1914,31 @@ const searchDomainSchema = z
     "Domain must be a valid hostname without protocol or path",
   );
 
+const exchangeCallSchema = z.strictObject({
+  provider: z
+    .string()
+    .trim()
+    .min(1)
+    .max(100)
+    .regex(/^[a-z0-9][a-z0-9-]*$/, "Invalid Exchange provider slug"),
+  capability: z.string().trim().min(1).max(100),
+  options: z.record(z.string(), z.unknown()),
+  providerApiKey: z.string().trim().min(1).max(4096).optional(),
+  idempotencyKey: z.string().trim().min(8).max(200),
+});
+
+export const exchangeInvokeRequestSchema = z.strictObject({
+  calls: z.array(exchangeCallSchema).min(1).max(10),
+  timeout: z.int().positive().finite().max(30_000).optional().prefault(15_000),
+  zeroDataRetention: z.boolean().optional().prefault(false),
+  origin: z.string().optional().prefault("api"),
+});
+
 export const searchRequestSchema = z
   .strictObject({
-    query: z.string(),
+    // A request may be an Exchange-only capability invocation. Keep web search
+    // opt-in when there is no query rather than silently searching the web.
+    query: z.string().trim().min(1).optional(),
     limit: z.int().positive().finite().max(100).optional().prefault(10),
     tbs: z.string().optional(),
     filter: z.string().optional(),
@@ -1933,8 +1955,7 @@ export const searchRequestSchema = z
           ]),
         ),
       ])
-      .optional()
-      .prefault(["web"]),
+      .optional(),
     categories: z
       .union([
         // Array of strings (simple format)
@@ -1964,6 +1985,7 @@ export const searchRequestSchema = z
     // highlights pulled from our index (last 30 days), out-of-line from
     // scrapeURL. Falls back to the provider snippet when the URL isn't indexed.
     highlights: z.boolean().optional().prefault(false),
+    exchange: z.array(exchangeCallSchema).max(10).optional().prefault([]),
     __searchPreviewToken: z.string().optional(),
     threatProtection: threatProtectionOverrideSchema.optional(),
     scrapeOptions: baseScrapeOptions
@@ -2016,13 +2038,23 @@ export const searchRequestSchema = z
     x => !(x.includeDomains?.length && x.excludeDomains?.length),
     "includeDomains and excludeDomains cannot both be specified",
   )
+  .refine(
+    x => Boolean(x.query) || x.exchange.length > 0,
+    "Provide a query, at least one Exchange call, or both",
+  )
+  .refine(
+    x => Boolean(x.query) || x.sources === undefined,
+    "sources requires a query",
+  )
   .refine(x => waitForRefine(x.scrapeOptions), waitForRefineOpts)
   .transform(x => {
     const country =
       x.country !== undefined ? x.country : x.location ? undefined : "us";
 
     // Transform string array sources to object format
-    let sources = x.sources;
+    // Preserve the conventional query-only default, but never manufacture a
+    // web source for an Exchange-only request.
+    let sources = x.sources ?? (x.query ? ["web"] : undefined);
     if (sources && Array.isArray(sources) && sources.length > 0) {
       // Check if it's a string array by checking the first element
       if (typeof sources[0] === "string") {
@@ -2098,6 +2130,19 @@ export const searchRequestSchema = z
 
 export type SearchRequest = z.infer<typeof searchRequestSchema>;
 export type SearchRequestInput = z.input<typeof searchRequestSchema>;
+export type ExchangeInvokeRequest = z.infer<typeof exchangeInvokeRequestSchema>;
+
+export type ExchangeInvokeResponse =
+  | ErrorResponse
+  | {
+      success: true;
+      partial: boolean;
+      data: {
+        exchange: import("../../lib/entities").ExchangeSearchResult[];
+      };
+      creditsUsed: number;
+      id: string;
+    };
 
 export type SearchResponse =
   | ErrorResponse

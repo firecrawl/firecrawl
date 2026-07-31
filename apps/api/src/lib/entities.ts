@@ -163,10 +163,27 @@ export interface WebSearchResult {
 
 export type SearchResultType = "web" | "images" | "news";
 
+export interface ExchangeSearchResult {
+  provider: string;
+  capability: string;
+  accessEventId?: string;
+  exchangeRequestId?: string;
+  delivery?: "direct";
+  creditsCost?: number;
+  data?: unknown;
+  error?: {
+    code: string;
+    message: string;
+    retryable: boolean;
+    status?: number;
+  };
+}
+
 export interface SearchV2Response {
   web?: WebSearchResult[];
   images?: ImageSearchResult[];
   news?: NewsSearchResult[];
+  exchange?: ExchangeSearchResult[];
 }
 
 export interface ScrapeActionContent {

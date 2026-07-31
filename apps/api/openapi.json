@@ -1702,6 +1702,189 @@
         }
       }
     },
+    "/exchange/invoke": {
+      "post": {
+        "summary": "Invoke direct, read-only Exchange capabilities",
+        "operationId": "invokeExchange",
+        "tags": ["Exchange"],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["calls"],
+                "properties": {
+                  "calls": {
+                    "type": "array",
+                    "minItems": 1,
+                    "maxItems": 10,
+                    "items": {
+                      "type": "object",
+                      "required": [
+                        "provider",
+                        "capability",
+                        "options",
+                        "idempotencyKey"
+                      ],
+                      "properties": {
+                        "provider": {
+                          "type": "string",
+                          "pattern": "^[a-z0-9][a-z0-9-]*$",
+                          "maxLength": 100
+                        },
+                        "capability": {
+                          "type": "string",
+                          "maxLength": 100
+                        },
+                        "options": {
+                          "type": "object",
+                          "additionalProperties": true
+                        },
+                        "idempotencyKey": {
+                          "type": "string",
+                          "minLength": 8,
+                          "maxLength": 200,
+                          "description": "Stable caller-generated key. Reuse it when retrying the same logical call."
+                        }
+                      }
+                    }
+                  },
+                  "timeout": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 30000,
+                    "default": 15000
+                  },
+                  "zeroDataRetention": {
+                    "type": "boolean",
+                    "default": false
+                  },
+                  "origin": {
+                    "type": "string",
+                    "description": "Client integration identifier."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "At least one Exchange call succeeded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["success", "data", "creditsUsed", "id"],
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "enum": [true]
+                    },
+                    "partial": {
+                      "type": "boolean"
+                    },
+                    "creditsUsed": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "id": {
+                      "type": "string"
+                    },
+                    "data": {
+                      "type": "object",
+                      "required": ["exchange"],
+                      "properties": {
+                        "exchange": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "required": ["provider", "capability"],
+                            "properties": {
+                              "provider": {
+                                "type": "string"
+                              },
+                              "capability": {
+                                "type": "string"
+                              },
+                              "accessEventId": {
+                                "type": "string"
+                              },
+                              "exchangeRequestId": {
+                                "type": "string"
+                              },
+                              "delivery": {
+                                "type": "string",
+                                "enum": ["direct"]
+                              },
+                              "creditsCost": {
+                                "type": "integer",
+                                "minimum": 0
+                              },
+                              "billingStatus": {
+                                "type": "string",
+                                "enum": [
+                                  "pending",
+                                  "confirmed",
+                                  "refunded",
+                                  "void"
+                                ]
+                              },
+                              "data": {},
+                              "error": {
+                                "type": "object",
+                                "properties": {
+                                  "code": {
+                                    "type": "string"
+                                  },
+                                  "message": {
+                                    "type": "string"
+                                  },
+                                  "retryable": {
+                                    "type": "boolean"
+                                  },
+                                  "status": {
+                                    "type": "integer"
+                                  }
+                                }
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request or duplicate idempotency key"
+          },
+          "401": {
+            "description": "A verified API key is required"
+          },
+          "402": {
+            "description": "Insufficient credits"
+          },
+          "403": {
+            "description": "Exchange or Zero Data Retention is unavailable for this key"
+          },
+          "502": {
+            "description": "All Exchange calls failed"
+          },
+          "503": {
+            "description": "Exchange billing is unavailable"
+          }
+        }
+      }
+    },
     "/search": {
       "post": {
         "summary": "Search and optionally scrape search results",
@@ -1722,6 +1905,38 @@
                   "query": {
                     "type": "string",
                     "description": "The search query"
+                  },
+                  "exchange": {
+                    "type": "array",
+                    "minItems": 1,
+                    "maxItems": 10,
+                    "description": "Direct, read-only Exchange capability calls composed with web search.",
+                    "items": {
+                      "type": "object",
+                      "required": [
+                        "provider",
+                        "capability",
+                        "options",
+                        "idempotencyKey"
+                      ],
+                      "properties": {
+                        "provider": {
+                          "type": "string"
+                        },
+                        "capability": {
+                          "type": "string"
+                        },
+                        "options": {
+                          "type": "object",
+                          "additionalProperties": true
+                        },
+                        "idempotencyKey": {
+                          "type": "string",
+                          "minLength": 8,
+                          "maxLength": 200
+                        }
+                      }
+                    }
                   },
                   "limit": {
                     "type": "integer",
@@ -1774,7 +1989,14 @@
                     "default": {}
                   }
                 },
-                "required": ["query"]
+                "anyOf": [
+                  {
+                    "required": ["query"]
+                  },
+                  {
+                    "required": ["exchange"]
+                  }
+                ]
               }
             }
           }
@@ -1791,72 +2013,85 @@
                       "type": "boolean"
                     },
                     "data": {
-                      "type": "array",
-                      "items": {
-                        "type": "object",
-                        "properties": {
-                          "title": {
-                            "type": "string",
-                            "description": "Title from search result"
-                          },
-                          "description": {
-                            "type": "string",
-                            "description": "Description from search result"
-                          },
-                          "url": {
-                            "type": "string",
-                            "description": "URL of the search result"
-                          },
-                          "markdown": {
-                            "type": "string",
-                            "nullable": true,
-                            "description": "Markdown content if scraping was requested"
-                          },
-                          "html": {
-                            "type": "string",
-                            "nullable": true,
-                            "description": "HTML content if requested in formats"
-                          },
-                          "rawHtml": {
-                            "type": "string",
-                            "nullable": true,
-                            "description": "Raw HTML content if requested in formats"
-                          },
-                          "links": {
-                            "type": "array",
-                            "items": {
-                              "type": "string"
-                            },
-                            "description": "Links found if requested in formats"
-                          },
-                          "screenshot": {
-                            "type": "string",
-                            "nullable": true,
-                            "description": "Screenshot URL if requested in formats"
-                          },
-                          "metadata": {
+                      "type": "object",
+                      "description": "Results grouped by source.",
+                      "properties": {
+                        "web": {
+                          "type": "array",
+                          "items": {
                             "type": "object",
+                            "additionalProperties": true
+                          }
+                        },
+                        "news": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "additionalProperties": true
+                          }
+                        },
+                        "images": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "additionalProperties": true
+                          }
+                        },
+                        "exchange": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "required": ["provider", "capability"],
                             "properties": {
-                              "title": {
+                              "provider": {
                                 "type": "string"
                               },
-                              "description": {
+                              "capability": {
                                 "type": "string"
                               },
-                              "sourceURL": {
-                                "type": "string"
-                              },
-                              "statusCode": {
-                                "type": "integer"
-                              },
-                              "error": {
+                              "delivery": {
                                 "type": "string",
-                                "nullable": true
+                                "enum": ["direct"]
+                              },
+                              "creditsCost": {
+                                "type": "integer",
+                                "minimum": 0
+                              },
+                              "billingStatus": {
+                                "type": "string",
+                                "enum": [
+                                  "pending",
+                                  "confirmed",
+                                  "refunded",
+                                  "void"
+                                ]
+                              },
+                              "data": {},
+                              "error": {
+                                "type": "object",
+                                "properties": {
+                                  "code": {
+                                    "type": "string"
+                                  },
+                                  "message": {
+                                    "type": "string"
+                                  },
+                                  "retryable": {
+                                    "type": "boolean"
+                                  }
+                                }
                               }
                             }
                           }
                         }
                       }
+                    },
+                    "creditsUsed": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "id": {
+                      "type": "string"
                     },
                     "warning": {
                       "type": "string",

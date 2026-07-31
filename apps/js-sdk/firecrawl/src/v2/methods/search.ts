@@ -15,7 +15,10 @@ import {
 } from "../utils/errorHandler";
 
 function prepareSearchPayload(req: SearchRequest): Record<string, unknown> {
-  if (!req.query || !req.query.trim()) throw new Error("Query cannot be empty");
+  const hasQuery = typeof req.query === "string" && req.query.trim().length > 0;
+  const hasExchange = Array.isArray(req.exchange) && req.exchange.length > 0;
+  if (!hasQuery && !hasExchange)
+    throw new Error("Search requires a query or at least one Exchange call");
   if (req.limit != null && req.limit <= 0)
     throw new Error("limit must be positive");
   if (req.timeout != null && req.timeout <= 0)
@@ -24,9 +27,9 @@ function prepareSearchPayload(req: SearchRequest): Record<string, unknown> {
     throw new Error(
       "includeDomains and excludeDomains cannot both be specified",
     );
-  const payload: Record<string, unknown> = {
-    query: req.query,
-  };
+  const payload: Record<string, unknown> = {};
+  if (hasQuery) payload.query = req.query;
+  if (hasExchange) payload.exchange = req.exchange;
   if (req.sources) payload.sources = req.sources;
   if (req.categories) payload.categories = req.categories;
   if (req.includeDomains) payload.includeDomains = req.includeDomains;
@@ -101,13 +104,18 @@ export async function search(
     if (data.news) out.news = transformArray<SearchResultNews>(data.news);
     if (data.images)
       out.images = transformArray<SearchResultImages>(data.images);
+    if (data.exchange) out.exchange = data.exchange;
     Object.defineProperty(out, "data", {
       get() {
         const parts: string[] = [];
         if (out.web?.length) parts.push(`.web (${out.web.length} results)`);
         if (out.news?.length) parts.push(`.news (${out.news.length} results)`);
         if (out.images?.length) parts.push(`.images (${out.images.length} results)`);
-        const available = parts.length ? parts.join(", ") : ".web, .news, or .images";
+        if (out.exchange?.length)
+          parts.push(`.exchange (${out.exchange.length} results)`);
+        const available = parts.length
+          ? parts.join(", ")
+          : ".web, .news, .images, or .exchange";
         throw new Error(
           `SearchData has no '.data'. Results are grouped by source: ${available}`,
         );
