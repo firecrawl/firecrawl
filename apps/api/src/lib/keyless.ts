@@ -112,9 +112,15 @@ export async function keylessLimitBody(
   retry_after_seconds?: number;
 }> {
   const ip = keylessIpFromTeamId(teamId);
-  const retryAfterSeconds = ip
-    ? positiveRedisTtl(await redisRateLimitClient.ttl(creditsKey(ip)))
-    : undefined;
+  let retryAfterSeconds: number | undefined;
+  try {
+    retryAfterSeconds = ip
+      ? positiveRedisTtl(await redisRateLimitClient.ttl(creditsKey(ip)))
+      : undefined;
+  } catch {
+    // The reservation already proved the limit; missing TTL must not turn its
+    // controlled 429 into a server error.
+  }
   logger.warn("Keyless request blocked", {
     canonicalLog: "keyless/consume",
     event: "keyless_exhausted",
