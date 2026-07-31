@@ -1069,6 +1069,75 @@ describe("V2 Types Validation", () => {
       ).toThrow();
     });
 
+    it("should normalize every developer category alias to developer", () => {
+      const aliases = [
+        "repo",
+        "code",
+        "developer",
+        "docs",
+        "devdex",
+        "repo_search",
+        "developer_index",
+      ];
+
+      for (const alias of aliases) {
+        expect(
+          searchRequestSchema.parse({ query: "test", categories: [alias] })
+            .categories,
+        ).toEqual([{ type: "developer" }]);
+
+        expect(
+          searchRequestSchema.parse({
+            query: "test",
+            categories: [{ type: alias }],
+          }).categories,
+        ).toEqual([{ type: "developer" }]);
+      }
+    });
+
+    it("should deduplicate developer aliases into one developer category", () => {
+      expect(
+        searchRequestSchema.parse({
+          query: "test",
+          categories: ["code", "developer"],
+        }).categories,
+      ).toEqual([{ type: "developer" }]);
+
+      expect(
+        searchRequestSchema.parse({
+          query: "test",
+          categories: [{ type: "repo_search" }, { type: "developer" }],
+        }).categories,
+      ).toEqual([{ type: "developer" }]);
+
+      expect(
+        searchRequestSchema.parse({
+          query: "test",
+          categories: ["docs", "github", "developer_index"],
+        }).categories,
+      ).toEqual([{ type: "developer" }, { type: "github" }]);
+    });
+
+    it("should reject developer alias params and unknown categories", () => {
+      expect(() =>
+        searchRequestSchema.parse({
+          query: "test",
+          categories: [{ type: "code", repos: ["firecrawl/firecrawl"] }],
+        }),
+      ).toThrow();
+
+      expect(() =>
+        searchRequestSchema.parse({ query: "test", categories: ["bogus"] }),
+      ).toThrow();
+
+      expect(() =>
+        searchRequestSchema.parse({
+          query: "test",
+          categories: [{ type: "bogus" }],
+        }),
+      ).toThrow();
+    });
+
     it("should accept search request with advanced categories format", () => {
       const input: SearchRequestInput = {
         query: "test",
