@@ -248,7 +248,14 @@ export function authMiddleware(
           }
           return res
             .status(auth.status)
-            .json({ success: false, error: auth.error });
+            .json({
+              success: false,
+              error: auth.error,
+              ...(auth.keylessReason ? { reason: auth.keylessReason } : {}),
+              ...(auth.retryAfterSeconds
+                ? { retry_after_seconds: auth.retryAfterSeconds }
+                : {}),
+            });
         } else {
           return;
         }

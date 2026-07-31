@@ -515,15 +515,18 @@ async function handleKeylessAuth(
     logger.warn("Keyless request blocked", {
       ...baseLog,
       blocked: true,
+      event: "keyless_exhausted",
       reason: result.reason,
+      retryAfterSeconds: result.retryAfterSeconds,
     });
     return {
       success: false,
       error: KEYLESS_FREE_TIER_LIMIT_MESSAGE,
       status: 429,
-      // Out of free quota — emit the OAuth-discovery header so agents can find
-      // the key/signup flow at the moment they actually need a key.
+      // Direct API callers receive discovery metadata; MCP maps this in-band.
       agentAuthDiscovery: true,
+      keylessReason: result.reason,
+      retryAfterSeconds: result.retryAfterSeconds,
     };
   }
 

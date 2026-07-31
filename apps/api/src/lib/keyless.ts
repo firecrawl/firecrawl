@@ -86,12 +86,19 @@ export function isKeylessIpEligible(ip: string): boolean {
 const requestsKey = (ip: string) => `keyless_requests:${ip}`;
 const creditsKey = (ip: string) => `keyless_credits:${ip}`;
 
+export type KeylessQuotaReason = "requests" | "credits";
+
 type KeylessConsumeResult = {
   ok: boolean;
-  reason?: "requests" | "credits";
+  reason?: KeylessQuotaReason;
   requestsUsed: number;
   creditsUsed: number;
+  retryAfterSeconds?: number;
 };
+
+function positiveRedisTtl(ttl: number): number | undefined {
+  return ttl > 0 ? ttl : undefined;
+}
 
 type KeylessCreditReservationResult = {
   ok: boolean;
@@ -122,10 +129,22 @@ export async function consumeKeylessRequest(
   );
 
   if (requestsUsed > requestLimit) {
-    return { ok: false, reason: "requests", requestsUsed, creditsUsed };
+    return {
+      ok: false,
+      reason: "requests",
+      requestsUsed,
+      creditsUsed,
+      retryAfterSeconds: positiveRedisTtl(await redisRateLimitClient.ttl(rKey)),
+    };
   }
   if (creditsUsed >= creditLimit) {
-    return { ok: false, reason: "credits", requestsUsed, creditsUsed };
+    return {
+      ok: false,
+      reason: "credits",
+      requestsUsed,
+      creditsUsed,
+      retryAfterSeconds: positiveRedisTtl(await redisRateLimitClient.ttl(creditsKey(ip))),
+    };
   }
   return { ok: true, requestsUsed, creditsUsed };
 }
@@ -219,7 +238,11 @@ return next
  */
 export async function checkKeylessEligibility(
   ip: string,
-): Promise<{ eligible: boolean; reason?: string }> {
+): Promise<{
+  eligible: boolean;
+  reason?: KeylessQuotaReason | "disabled" | "ineligible_ip" | "suspicious" | "error";
+  retryAfterSeconds?: number;
+}> {
   if (!isKeylessConfigured()) return { eligible: false, reason: "disabled" };
   if (!ip || !isKeylessIpEligible(ip)) {
     return { eligible: false, reason: "ineligible_ip" };
@@ -236,14 +259,25 @@ export async function checkKeylessEligibility(
       10,
     );
     if (requestsUsed >= (KEYLESS_REQUESTS_PER_DAY ?? 0)) {
-      return { eligible: false, reason: "requests" };
+      return {
+        eligible: false,
+        reason: "requests",
+        retryAfterSeconds: positiveRedisTtl(
+          await redisRateLimitClient.ttl(requestsKey(ip)),
+        ),
+      };
     }
+    const creditKey = creditsKey(ip);
     const creditsUsed = parseInt(
-      (await redisRateLimitClient.get(creditsKey(ip))) ?? "0",
+      (await redisRateLimitClient.get(creditKey)) ?? "0",
       10,
     );
     if (creditsUsed >= (KEYLESS_CREDITS_PER_DAY ?? 0)) {
-      return { eligible: false, reason: "credits" };
+      return {
+        eligible: false,
+        reason: "credits",
+        retryAfterSeconds: positiveRedisTtl(await redisRateLimitClient.ttl(creditKey)),
+      };
     }
     return { eligible: true };
   } catch {
