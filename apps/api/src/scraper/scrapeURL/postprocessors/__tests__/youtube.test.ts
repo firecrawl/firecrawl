@@ -12,7 +12,7 @@ describe("youtubePostprocessor /metadata fetch timeout", () => {
   });
 
   it("passes an abort signal so a slow /metadata call can't hang the scrape", async () => {
-    const spy = vi.fn(async () => ({
+    const spy = vi.fn(async (_url: string, _init?: RequestInit) => ({
       ok: true,
       json: async () => ({ uploaded_by: {}, transcript: "hi", title: "t" }),
     }));
@@ -34,10 +34,8 @@ describe("youtubePostprocessor /metadata fetch timeout", () => {
       } as any)
       .catch(() => {});
 
-    const call = spy.mock.calls.find(([u]: any[]) =>
-      String(u).endsWith("/metadata"),
-    );
-    expect(call![1].signal).toBeInstanceOf(AbortSignal);
+    const call = spy.mock.calls.find(([u]) => String(u).endsWith("/metadata"));
+    expect(call?.[1]?.signal).toBeInstanceOf(AbortSignal);
   });
 
   it("degrades gracefully: a rejected /metadata fetch returns the page unchanged", async () => {
