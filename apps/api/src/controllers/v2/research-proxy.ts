@@ -480,7 +480,7 @@ export function createResearchRouter(options: { legacy?: boolean } = {}) {
   return router;
 }
 
-export function createDeveloperRouter() {
+export function createDeveloperRouter(options: { root?: boolean } = {}) {
   const router = express.Router();
 
   const controller = wrap(
@@ -498,6 +498,10 @@ export function createDeveloperRouter() {
     ),
   );
 
+  if (options.root) {
+    router.get("/", controller);
+    router.post("/", controller);
+  }
   router.get("/search", controller);
   router.post("/search", controller);
 

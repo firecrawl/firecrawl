@@ -649,7 +649,7 @@ if (config.RESEARCH_PROXY_URL) {
   v2Router.use(
     "/search/developer",
     authMiddleware(RateLimiterMode.DeveloperSearch, { allowKeyless: true }),
-    createDeveloperRouter(),
+    createDeveloperRouter({ root: true }),
   );
 
   v2Router.use(
