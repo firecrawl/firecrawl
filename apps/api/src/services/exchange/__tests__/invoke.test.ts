@@ -121,7 +121,7 @@ describe("Exchange quote and invoke", () => {
     });
   });
 
-  it("returns the event for voiding when the price changes after admission", async () => {
+  it("honours the quote when the price rises after admission", async () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValue(
       new Response(
         JSON.stringify({
@@ -149,11 +149,45 @@ describe("Exchange quote and invoke", () => {
       zeroDataRetention: false,
     });
 
+    // The provider already ran, so the result is delivered and the quote is
+    // honoured rather than the higher price the provider reported.
     expect(result).toMatchObject({
       accessEventId: "event-1",
-      error: { code: "exchange_price_changed" },
+      creditsCost: 7,
+      data: { name: "Firecrawl" },
     });
-    expect(result).not.toHaveProperty("data");
+    expect(result).not.toHaveProperty("error");
+  });
+
+  it("passes on a price drop rather than charging the stale quote", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          success: true,
+          accessEventId: "event-2",
+          exchangeRequestId: "exchange-request-2",
+          data: {
+            provider: "acme",
+            capability: "company",
+            delivery: "direct",
+            creditsCost: 3,
+            result: { name: "Firecrawl" },
+          },
+        }),
+        { status: 200 },
+      ),
+    );
+
+    const [result] = await invokeExchangeCalls({
+      calls: [call],
+      quotes: [{ call, creditsCost: 7 }],
+      teamId: "team-1",
+      timeoutMs: 15_000,
+      zeroDataRetention: false,
+    });
+
+    expect(result).toMatchObject({ creditsCost: 3 });
+    expect(result).not.toHaveProperty("error");
   });
 });
 

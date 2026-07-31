@@ -243,28 +243,17 @@ export async function invokeExchangeCalls(input: {
             "The Exchange provider returned an invalid response.",
           );
         }
-        if (payload.data.creditsCost !== quote.creditsCost) {
-          return {
-            provider: payload.data.provider,
-            capability: payload.data.capability,
-            accessEventId: payload.accessEventId,
-            exchangeRequestId: payload.exchangeRequestId,
-            creditsCost: payload.data.creditsCost,
-            error: {
-              code: "exchange_price_changed",
-              message:
-                "The Exchange capability price changed before execution.",
-              retryable: true,
-            },
-          };
-        }
         return {
           provider: payload.data.provider,
           capability: payload.data.capability,
           accessEventId: payload.accessEventId,
           exchangeRequestId: payload.exchangeRequestId,
           delivery: payload.data.delivery,
-          creditsCost: payload.data.creditsCost,
+          // The provider has already run by this point. If its price moved
+          // between the quote and the call, honour the quote rather than
+          // discarding work the caller has effectively paid for: never charge
+          // more than was quoted, and pass on a drop.
+          creditsCost: Math.min(quote.creditsCost, payload.data.creditsCost),
           data: payload.data.result,
         };
       } catch {
