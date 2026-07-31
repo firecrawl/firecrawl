@@ -1,12 +1,43 @@
 import { eq, inArray } from "drizzle-orm";
 import { dbRr } from "../../db/connection";
 import * as schema from "../../db/schema";
+import { logger } from "../../lib/logger";
+import { getValue, setValue } from "../redis";
 import { autumnClient, autumnHistoricalClient } from "./client";
 import { CREDITS_FEATURE_ID } from "./autumn.service";
 
 export const TOKENS_PER_CREDIT = 15;
-const HISTORICAL_RANGE = "90d";
 const HISTORICAL_BIN_SIZE = "day";
+
+// How many calendar months of history the endpoints report, including the
+// current (open) one. Replaces the previous rolling `range: "90d"` window,
+// which had two problems: the oldest month was silently truncated (a 90d
+// window opened mid-month, so e.g. May reported May 2 onward while still
+// being labelled as all of May), and a window that shifts every day makes
+// every month look mutable, which defeats caching.
+const HISTORICAL_MONTHS = 3;
+
+// Autumn caps the number of distinct `groupBy` values per bin and buckets the
+// rest into "Other" (default 9). Teams routinely have more API keys than that,
+// and with per-day bins the top-9 differs day to day, so the default silently
+// scrambles per-key monthly totals. Ask for a ceiling no real team reaches.
+const HISTORICAL_MAX_GROUPS = 250;
+
+// Bump when the cached payload shape changes, so old entries are ignored
+// rather than misread.
+const ROLLUP_CACHE_VERSION = "v1";
+
+// Today is still accruing usage, so its slice is only cached briefly — new
+// charges show up in the endpoint within this window.
+const TODAY_TTL_SECONDS = 60;
+
+// Elapsed days of the current month can no longer change, but the slice covers
+// a growing number of days, so it is re-keyed (not just re-read) each day.
+const MONTH_TO_DATE_TTL_SECONDS = 2 * 24 * 60 * 60;
+
+// Closed months can never change. The key names the month, so this TTL only
+// reclaims space once the month leaves the reported window.
+const CLOSED_MONTHS_MAX_TTL_SECONDS = 40 * 24 * 60 * 60;
 
 // ---------------------------------------------------------------------------
 // Types
@@ -92,27 +123,31 @@ function nextMonthIso(monthStartIso: string): string {
   ).toISOString();
 }
 
-function aggregateHistoricalPeriodsByMonth(list: any[]): HistoricalPeriod[] {
-  const monthTotals = new Map<string, number>();
+/**
+ * Per-month credit totals, keyed by the month's UTC start as an ISO string.
+ * This is the cached rollup shape for the ungrouped endpoints.
+ */
+type MonthTotals = Record<string, number>;
+
+/**
+ * Per-month, per-API-key credit totals. Keyed by raw `apiKeyId` rather than
+ * display name so renaming a key is reflected immediately instead of being
+ * frozen into a cache entry for the rest of the month.
+ */
+type MonthApiKeyTotals = Record<string, Record<string, number>>;
+
+function sumByMonth(list: any[]): MonthTotals {
+  const totals: MonthTotals = Object.create(null);
 
   for (const entry of list) {
     const monthStart = toMonthStartIso(entry.period);
     if (!monthStart) continue;
 
-    monthTotals.set(
-      monthStart,
-      (monthTotals.get(monthStart) ?? 0) +
-        (entry.values?.[CREDITS_FEATURE_ID] ?? 0),
-    );
+    totals[monthStart] =
+      (totals[monthStart] ?? 0) + (entry.values?.[CREDITS_FEATURE_ID] ?? 0);
   }
 
-  const monthStarts = [...monthTotals.keys()].sort();
-
-  return monthStarts.map((startDate, i) => ({
-    startDate,
-    endDate: i < monthStarts.length - 1 ? nextMonthIso(startDate) : null,
-    creditsUsed: monthTotals.get(startDate) ?? 0,
-  }));
+  return totals;
 }
 
 function getGroupedCredits(entry: any): Record<string, number> | undefined {
@@ -122,11 +157,8 @@ function getGroupedCredits(entry: any): Record<string, number> | undefined {
   );
 }
 
-async function aggregateHistoricalPeriodsByApiKeyMonth(
-  list: any[],
-): Promise<HistoricalPeriodByApiKey[]> {
-  const monthApiKeyTotals = new Map<string, Map<string, number>>();
-  const allApiKeyIds = new Set<string>();
+function sumByMonthAndApiKey(list: any[]): MonthApiKeyTotals {
+  const totals: MonthApiKeyTotals = Object.create(null);
 
   for (const entry of list) {
     const monthStart = toMonthStartIso(entry.period);
@@ -135,25 +167,71 @@ async function aggregateHistoricalPeriodsByApiKeyMonth(
     const grouped = getGroupedCredits(entry);
     if (!grouped) continue;
 
-    const monthTotals =
-      monthApiKeyTotals.get(monthStart) ?? new Map<string, number>();
+    const monthTotals = totals[monthStart] ?? Object.create(null);
 
     for (const [apiKeyId, creditsUsed] of Object.entries(grouped)) {
-      allApiKeyIds.add(apiKeyId);
-      monthTotals.set(apiKeyId, (monthTotals.get(apiKeyId) ?? 0) + creditsUsed);
+      monthTotals[apiKeyId] = (monthTotals[apiKeyId] ?? 0) + creditsUsed;
     }
 
-    monthApiKeyTotals.set(monthStart, monthTotals);
+    totals[monthStart] = monthTotals;
+  }
+
+  return totals;
+}
+
+/** Merges rollup slices (closed months + current month) into one map. */
+function mergeMonthTotals(slices: MonthTotals[]): MonthTotals {
+  const merged: MonthTotals = Object.create(null);
+  for (const slice of slices) {
+    for (const [month, credits] of Object.entries(slice)) {
+      merged[month] = (merged[month] ?? 0) + credits;
+    }
+  }
+  return merged;
+}
+
+function mergeMonthApiKeyTotals(
+  slices: MonthApiKeyTotals[],
+): MonthApiKeyTotals {
+  const merged: MonthApiKeyTotals = Object.create(null);
+  for (const slice of slices) {
+    for (const [month, byKey] of Object.entries(slice)) {
+      const target = merged[month] ?? Object.create(null);
+      for (const [apiKeyId, credits] of Object.entries(byKey)) {
+        target[apiKeyId] = (target[apiKeyId] ?? 0) + credits;
+      }
+      merged[month] = target;
+    }
+  }
+  return merged;
+}
+
+function toHistoricalPeriods(totals: MonthTotals): HistoricalPeriod[] {
+  const monthStarts = Object.keys(totals).sort();
+
+  return monthStarts.map((startDate, i) => ({
+    startDate,
+    endDate: i < monthStarts.length - 1 ? nextMonthIso(startDate) : null,
+    creditsUsed: totals[startDate] ?? 0,
+  }));
+}
+
+async function toHistoricalPeriodsByApiKey(
+  totals: MonthApiKeyTotals,
+): Promise<HistoricalPeriodByApiKey[]> {
+  const allApiKeyIds = new Set<string>();
+  for (const byKey of Object.values(totals)) {
+    for (const apiKeyId of Object.keys(byKey)) allApiKeyIds.add(apiKeyId);
   }
 
   const nameMap = await lookupApiKeyNames([...allApiKeyIds]);
-  const monthStarts = [...monthApiKeyTotals.keys()].sort();
+  const monthStarts = Object.keys(totals).sort();
   const results: HistoricalPeriodByApiKey[] = [];
 
   for (let i = 0; i < monthStarts.length; i++) {
     const startDate = monthStarts[i];
     const endDate = i < monthStarts.length - 1 ? nextMonthIso(startDate) : null;
-    const monthTotals = monthApiKeyTotals.get(startDate);
+    const monthTotals = totals[startDate];
 
     if (!monthTotals) continue;
 
@@ -161,7 +239,7 @@ async function aggregateHistoricalPeriodsByApiKeyMonth(
     // unresolved IDs all show as "Unknown") so the response has one row per
     // name per month.
     const byName = new Map<string, number>();
-    for (const [apiKeyId, creditsUsed] of monthTotals) {
+    for (const [apiKeyId, creditsUsed] of Object.entries(monthTotals)) {
       const name = nameMap[apiKeyId];
       byName.set(name, (byName.get(name) ?? 0) + creditsUsed);
     }
@@ -361,80 +439,284 @@ interface HistoricalPeriodByApiKey {
   creditsUsed: number;
 }
 
+// ---------------------------------------------------------------------------
+// Rollup cache
+// ---------------------------------------------------------------------------
+
+function startOfMonthUtc(date: Date): Date {
+  return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), 1));
+}
+
+function addMonthsUtc(date: Date, months: number): Date {
+  return new Date(
+    Date.UTC(date.getUTCFullYear(), date.getUTCMonth() + months, 1),
+  );
+}
+
+function startOfDayUtc(date: Date): Date {
+  return new Date(
+    Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()),
+  );
+}
+
+function isoDay(date: Date): string {
+  return date.toISOString().slice(0, 10);
+}
+
+function isoMonth(date: Date): string {
+  return date.toISOString().slice(0, 7);
+}
+
 /**
- * Fetches a team's historical credit usage across billing periods from Autumn.
+ * One cacheable window of the reported history.
+ *
+ * The cache key encodes the window's own boundaries, so a stale entry can
+ * never be served for a different window — correctness comes from the key, and
+ * the TTL only reclaims space. When the day or month rolls over, the affected
+ * slices simply get new keys.
+ */
+interface RollupSlice {
+  key: string;
+  ttlSeconds: number;
+  start: Date;
+  end: Date;
+}
+
+function sliceKey(teamId: string, grouped: boolean, suffix: string): string {
+  return `usage-rollup:${ROLLUP_CACHE_VERSION}:${grouped ? "by-key" : "total"}:${teamId}:${suffix}`;
+}
+
+/**
+ * Splits the reported history into windows ordered by how often each can
+ * change, which is what keeps the recurring cost off the team's total event
+ * volume:
+ *
+ *   - one window per closed calendar month — immutable, computed once ever
+ *   - the current month up to midnight today — immutable, once per day
+ *   - today so far — the only window re-queried during the day
+ *
+ * So the steady-state request scans a single day of events rather than ~90
+ * days, and a fully cold cache costs HISTORICAL_MONTHS + 1 parallel queries.
+ */
+function buildRollupSlices(
+  teamId: string,
+  grouped: boolean,
+  now: Date,
+): RollupSlice[] {
+  const currentMonthStart = startOfMonthUtc(now);
+  const todayStart = startOfDayUtc(now);
+  const slices: RollupSlice[] = [];
+
+  for (let back = HISTORICAL_MONTHS - 1; back >= 1; back--) {
+    const start = addMonthsUtc(currentMonthStart, -back);
+    const end = addMonthsUtc(start, 1);
+    slices.push({
+      key: sliceKey(teamId, grouped, `m:${isoMonth(start)}`),
+      ttlSeconds: CLOSED_MONTHS_MAX_TTL_SECONDS,
+      start,
+      end,
+    });
+  }
+
+  // Empty on the 1st of the month, when there is no elapsed-but-closed part.
+  if (todayStart.getTime() > currentMonthStart.getTime()) {
+    slices.push({
+      key: sliceKey(
+        teamId,
+        grouped,
+        `mtd:${isoMonth(currentMonthStart)}:${isoDay(todayStart)}`,
+      ),
+      ttlSeconds: MONTH_TO_DATE_TTL_SECONDS,
+      start: currentMonthStart,
+      end: todayStart,
+    });
+  }
+
+  slices.push({
+    key: sliceKey(teamId, grouped, `d:${isoDay(todayStart)}`),
+    ttlSeconds: TODAY_TTL_SECONDS,
+    start: todayStart,
+    end: now,
+  });
+
+  return slices;
+}
+
+// Coalesces concurrent computations of the same key inside this process, so a
+// burst of dashboard requests on a cold cache produces one Autumn call rather
+// than one per request.
+const inFlightRollups = new Map<string, Promise<unknown>>();
+
+/**
+ * Reads a rollup slice from Redis, computing and caching it on a miss.
+ *
+ * Cache faults are never fatal: a Redis outage degrades to querying Autumn
+ * directly, which is the pre-cache behaviour.
+ */
+async function cachedRollup<T>(
+  key: string,
+  ttlSeconds: number,
+  compute: () => Promise<T>,
+): Promise<T> {
+  try {
+    const cached = await getValue(key);
+    if (cached !== null) {
+      const parsed = JSON.parse(cached);
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+        return parsed as T;
+      }
+      logger.warn("Ignoring malformed usage rollup cache entry", { key });
+    }
+  } catch (error) {
+    logger.warn("Failed to read usage rollup cache", { key, error });
+  }
+
+  const existing = inFlightRollups.get(key);
+  if (existing) return existing as Promise<T>;
+
+  const pending = (async () => {
+    const value = await compute();
+    try {
+      await setValue(key, JSON.stringify(value), ttlSeconds);
+    } catch (error) {
+      logger.warn("Failed to cache usage rollup", { key, error });
+    }
+    return value;
+  })();
+
+  inFlightRollups.set(key, pending);
+  try {
+    return await pending;
+  } finally {
+    inFlightRollups.delete(key);
+  }
+}
+
+/**
+ * Runs one `events.aggregate` over an explicit half-open [start, end) window.
+ *
+ * Returns the raw bin list, or `null` when the team has no Autumn entity (a
+ * team that was never provisioned has no usage of its own to report, and we
+ * must not fall back to the org total).
+ */
+async function aggregateWindow(opts: {
+  client: NonNullable<typeof autumnHistoricalClient>;
+  orgId: string;
+  teamId: string;
+  start: Date;
+  end: Date;
+  grouped: boolean;
+}): Promise<any[] | null> {
+  try {
+    const response = await opts.client.events.aggregate({
+      customerId: opts.orgId,
+      entityId: opts.teamId,
+      featureId: CREDITS_FEATURE_ID,
+      customRange: { start: opts.start.getTime(), end: opts.end.getTime() },
+      binSize: HISTORICAL_BIN_SIZE,
+      ...(opts.grouped
+        ? {
+            groupBy: "properties.apiKeyId",
+            maxGroups: HISTORICAL_MAX_GROUPS,
+          }
+        : {}),
+    });
+    return response.list ?? [];
+  } catch (err: any) {
+    const status = err?.statusCode ?? err?.status ?? err?.response?.status;
+    if (status !== 404) throw err;
+    // Entity not found — the team has no usage of its own to report.
+    return null;
+  }
+}
+
+/**
+ * Builds a team's per-month credit rollup over the reported window.
+ *
+ * Every slice from buildRollupSlices is fetched (or served from cache) in
+ * parallel and summed. That is what keeps this endpoint's cost off the team's
+ * total event volume: previously every request made Autumn walk ~90 days of raw
+ * events, and the `byApiKey=true` variant did so per group per daily bin, which
+ * is why high-volume teams timed out. Now only today's slice is re-queried
+ * during a day.
+ */
+async function getMonthlyRollup<T extends MonthTotals | MonthApiKeyTotals>(
+  teamId: string,
+  grouped: boolean,
+  summarize: (list: any[]) => T,
+  merge: (slices: T[]) => T,
+): Promise<T> {
+  const client = autumnHistoricalClient;
+  if (!client) {
+    throw new Error(
+      "Autumn client is not configured (AUTUMN_SECRET_KEY missing)",
+    );
+  }
+
+  const orgId = await lookupOrgId(teamId);
+  const empty = merge([]);
+
+  // A missing entity is cached as an empty slice on purpose: a team with no
+  // Autumn entity had no usage in those windows either, and once it is
+  // provisioned its usage lands in today's slice, which refreshes within a
+  // minute.
+  const fetchSlice = async (slice: RollupSlice): Promise<T> => {
+    if (slice.end.getTime() <= slice.start.getTime()) return empty;
+    const list = await aggregateWindow({
+      client,
+      orgId,
+      teamId,
+      start: slice.start,
+      end: slice.end,
+      grouped,
+    });
+    return list === null ? empty : summarize(list);
+  };
+
+  const results = await Promise.all(
+    buildRollupSlices(teamId, grouped, new Date()).map(slice =>
+      cachedRollup(slice.key, slice.ttlSeconds, () => fetchSlice(slice)),
+    ),
+  );
+
+  return merge(results);
+}
+
+/**
+ * Fetches a team's historical credit usage by calendar month.
  *
  * Scopes the aggregate to the team's Autumn entity so the response reflects
- * only that team's usage, not the whole org. Uses `events.aggregate` with the
- * last 90 days of daily usage and rolls those daily totals into calendar-month
- * buckets in API code. A team with no entity (never provisioned) has no
- * team-scoped usage, so we return an empty history rather than the org total.
+ * only that team's usage, not the whole org, and serves it from a cached
+ * per-month rollup (see getMonthlyRollup). A team with no entity (never
+ * provisioned) has no team-scoped usage, so we return an empty history rather
+ * than the org total.
  */
 export async function getTeamHistoricalUsage(
   teamId: string,
 ): Promise<HistoricalPeriod[]> {
-  if (!autumnHistoricalClient) {
-    throw new Error(
-      "Autumn client is not configured (AUTUMN_SECRET_KEY missing)",
-    );
-  }
-
-  const orgId = await lookupOrgId(teamId);
-
-  let response: any;
-  try {
-    response = await autumnHistoricalClient.events.aggregate({
-      customerId: orgId,
-      entityId: teamId,
-      featureId: CREDITS_FEATURE_ID,
-      range: HISTORICAL_RANGE,
-      binSize: HISTORICAL_BIN_SIZE,
-    });
-  } catch (err: any) {
-    const status = err?.statusCode ?? err?.status ?? err?.response?.status;
-    if (status !== 404) throw err;
-    // Entity not found — the team has no usage of its own to report.
-    return [];
-  }
-
-  return aggregateHistoricalPeriodsByMonth(response.list ?? []);
+  const totals = await getMonthlyRollup<MonthTotals>(
+    teamId,
+    false,
+    sumByMonth,
+    mergeMonthTotals,
+  );
+  return toHistoricalPeriods(totals);
 }
 
 /**
- * Fetches a team's historical credit usage grouped by API key from Autumn.
- *
- * Uses the last 90 days of daily usage plus `groupBy: "properties.apiKeyId"`
- * and rolls those daily totals into calendar-month buckets in API code.
+ * Fetches a team's historical credit usage by calendar month, broken down per
+ * API key. Served from the same cached rollup as the ungrouped variant.
  */
 export async function getTeamHistoricalUsageByApiKey(
   teamId: string,
 ): Promise<HistoricalPeriodByApiKey[]> {
-  if (!autumnHistoricalClient) {
-    throw new Error(
-      "Autumn client is not configured (AUTUMN_SECRET_KEY missing)",
-    );
-  }
-
-  const orgId = await lookupOrgId(teamId);
-
-  let response: any;
-  try {
-    response = await autumnHistoricalClient.events.aggregate({
-      customerId: orgId,
-      entityId: teamId,
-      featureId: CREDITS_FEATURE_ID,
-      range: HISTORICAL_RANGE,
-      binSize: HISTORICAL_BIN_SIZE,
-      groupBy: "properties.apiKeyId",
-    });
-  } catch (err: any) {
-    const status = err?.statusCode ?? err?.status ?? err?.response?.status;
-    if (status !== 404) throw err;
-    // Entity not found — the team has no usage of its own to report.
-    return [];
-  }
-
-  return aggregateHistoricalPeriodsByApiKeyMonth(response.list ?? []);
+  const totals = await getMonthlyRollup<MonthApiKeyTotals>(
+    teamId,
+    true,
+    sumByMonthAndApiKey,
+    mergeMonthApiKeyTotals,
+  );
+  return toHistoricalPeriodsByApiKey(totals);
 }
 
 /**

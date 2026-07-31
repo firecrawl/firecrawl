@@ -1,4 +1,4 @@
-import { vi, beforeEach } from "vitest";
+import { vi, beforeEach, afterEach } from "vitest";
 
 // Historical aggregations run on the dedicated `autumnHistoricalClient` (which
 // carries a longer client-level timeout), NOT the hot-path `autumnClient`.
@@ -59,14 +59,43 @@ vi.mock("../../../db/connection", () => ({
   },
 }));
 
+// In-memory stand-in for the rollup cache. `redisSets` records the TTL each
+// slice was written with, which is what the closed-vs-current caching contract
+// is asserted on.
+const redisStore = new Map<string, string>();
+const redisSets: Array<{ key: string; ttl?: number }> = [];
+let redisEnabled = true;
+
+vi.mock("../../redis", () => ({
+  getValue: async (key: string) => {
+    if (!redisEnabled) throw new Error("redis down");
+    return redisStore.get(key) ?? null;
+  },
+  setValue: async (key: string, value: string, ttl?: number) => {
+    if (!redisEnabled) throw new Error("redis down");
+    redisStore.set(key, value);
+    redisSets.push({ key, ttl });
+  },
+}));
+
 import {
   getTeamBalance,
   getTeamHistoricalUsage,
   getTeamHistoricalUsageByApiKey,
 } from "../usage";
 
+// Fixed clock so the calendar-month windows the rollup derives are
+// deterministic. With HISTORICAL_MONTHS = 3 this makes the reported window
+// [2026-05-01, 2026-07-20) and the current-month boundary 2026-07-01.
+const NOW = new Date("2026-07-20T12:00:00.000Z");
+const CURRENT_MONTH_START = Date.parse("2026-07-01T00:00:00.000Z");
+const TODAY_START = Date.parse("2026-07-20T00:00:00.000Z");
+const WINDOW_START = Date.parse("2026-05-01T00:00:00.000Z");
+
 beforeEach(() => {
   vi.clearAllMocks();
+  vi.useFakeTimers();
+  vi.setSystemTime(NOW);
   autumnClientRef = {
     events: { aggregate: mockHotPathAggregate },
     entities: { get: mockEntitiesGet },
@@ -77,7 +106,30 @@ beforeEach(() => {
   };
   teamLookup = { data: { org_id: "org-1" }, error: null };
   apiKeysData = [];
+  redisStore.clear();
+  redisSets.length = 0;
+  redisEnabled = true;
 });
+
+afterEach(() => {
+  vi.useRealTimers();
+});
+
+/**
+ * Serves `bins` from Autumn, honouring the half-open [start, end) window each
+ * call asks for. The rollup queries closed months and the current month
+ * separately, so this both feeds the tests and asserts the windowing is real:
+ * a bin outside a window is not returned for it.
+ */
+function serveBins(bins: any[]) {
+  mockAggregate.mockImplementation(async (args: any) => ({
+    list: bins.filter(
+      b =>
+        b.period >= args.customRange.start && b.period < args.customRange.end,
+    ),
+    total: {},
+  }));
+}
 
 // ---------------------------------------------------------------------------
 // getTeamBalance — covers all four billing-period / planCredits bug fixes
@@ -752,188 +804,366 @@ describe("getTeamBalance", () => {
 });
 
 // ---------------------------------------------------------------------------
-// getTeamHistoricalUsage
+// Monthly rollup windowing
 // ---------------------------------------------------------------------------
 
-describe("getTeamHistoricalUsage", () => {
-  it("aggregates 90 days of daily usage into calendar-month buckets", async () => {
-    mockAggregate.mockResolvedValue({
-      list: [
+// The endpoints no longer ask Autumn for a rolling 90-day span on every
+// request. The reported window is split at the start of the current calendar
+// month: closed months are immutable and cached until the month rolls over,
+// and only the current month is re-queried. That is what takes this endpoint's
+// cost off the team's total event volume — the grouped `byApiKey` variant used
+// to make Autumn walk ~90 days of raw events per group per daily bin, which is
+// what timed out for high-volume teams.
+describe("historical usage rollup windows", () => {
+  it("queries each closed month, the month to date, and today separately", async () => {
+    serveBins([]);
+
+    await getTeamHistoricalUsage("team-1");
+
+    // 2 closed months + month-to-date + today
+    expect(mockAggregate).toHaveBeenCalledTimes(4);
+    const ranges = mockAggregate.mock.calls.map(
+      ([args]: any[]) => args.customRange,
+    );
+    expect(ranges).toEqual(
+      expect.arrayContaining([
+        { start: WINDOW_START, end: Date.parse("2026-06-01T00:00:00.000Z") },
         {
-          period: Date.parse("2026-03-30T00:00:00.000Z"),
-          values: { CREDITS: 20 },
+          start: Date.parse("2026-06-01T00:00:00.000Z"),
+          end: CURRENT_MONTH_START,
         },
-        {
-          period: Date.parse("2026-03-31T00:00:00.000Z"),
-          values: { CREDITS: 333 },
-        },
-        {
-          period: Date.parse("2026-04-01T00:00:00.000Z"),
-          values: { CREDITS: 1 },
-        },
-      ],
-    });
+        { start: CURRENT_MONTH_START, end: TODAY_START },
+        { start: TODAY_START, end: NOW.getTime() },
+      ]),
+    );
+    // The rolling window is gone; nothing may fall back to `range`.
+    for (const [args] of mockAggregate.mock.calls as any[][]) {
+      expect(args.range).toBeUndefined();
+      expect(args.customerId).toBe("org-1");
+      expect(args.entityId).toBe("team-1");
+      expect(args.binSize).toBe("day");
+    }
+  });
+
+  it("stitches closed-month and current-month slices into one series", async () => {
+    serveBins([
+      {
+        period: Date.parse("2026-05-31T00:00:00.000Z"),
+        values: { CREDITS: 20 },
+      },
+      {
+        period: Date.parse("2026-06-01T00:00:00.000Z"),
+        values: { CREDITS: 333 },
+      },
+      {
+        period: Date.parse("2026-06-30T00:00:00.000Z"),
+        values: { CREDITS: 7 },
+      },
+      {
+        period: Date.parse("2026-07-02T00:00:00.000Z"),
+        values: { CREDITS: 1 },
+      },
+    ]);
 
     await expect(getTeamHistoricalUsage("team-1")).resolves.toEqual([
       {
-        startDate: "2026-03-01T00:00:00.000Z",
-        endDate: "2026-04-01T00:00:00.000Z",
-        creditsUsed: 353,
+        startDate: "2026-05-01T00:00:00.000Z",
+        endDate: "2026-06-01T00:00:00.000Z",
+        creditsUsed: 20,
       },
       {
-        startDate: "2026-04-01T00:00:00.000Z",
+        startDate: "2026-06-01T00:00:00.000Z",
+        endDate: "2026-07-01T00:00:00.000Z",
+        creditsUsed: 340,
+      },
+      {
+        startDate: "2026-07-01T00:00:00.000Z",
         endDate: null,
         creditsUsed: 1,
       },
     ]);
+  });
 
-    expect(mockAggregate).toHaveBeenCalledWith(
-      expect.objectContaining({
-        customerId: "org-1",
-        entityId: "team-1",
-        featureId: "CREDITS",
-        range: "90d",
-        binSize: "day",
-      }),
-    );
+  it("uses the next calendar month as endDate when a month has zero usage", async () => {
+    serveBins([
+      {
+        period: Date.parse("2026-05-31T00:00:00.000Z"),
+        values: { CREDITS: 12 },
+      },
+      {
+        period: Date.parse("2026-07-01T00:00:00.000Z"),
+        values: { CREDITS: 7 },
+      },
+    ]);
+
+    await expect(getTeamHistoricalUsage("team-1")).resolves.toEqual([
+      {
+        startDate: "2026-05-01T00:00:00.000Z",
+        endDate: "2026-06-01T00:00:00.000Z",
+        creditsUsed: 12,
+      },
+      {
+        startDate: "2026-07-01T00:00:00.000Z",
+        endDate: null,
+        creditsUsed: 7,
+      },
+    ]);
   });
 
   // The aggregate is scoped strictly to the team's entity. When the entity is
   // missing the team simply has no usage of its own — we return an empty
   // history rather than falling back to the org-wide total.
   it("returns an empty history (no org fallback) when the entity is missing", async () => {
-    mockAggregate.mockRejectedValueOnce(
+    mockAggregate.mockRejectedValue(
       Object.assign(new Error("not found"), { statusCode: 404 }),
     );
 
     await expect(getTeamHistoricalUsage("team-1")).resolves.toEqual([]);
 
-    // Only the entity-scoped call is made; no customer-level retry.
-    expect(mockAggregate).toHaveBeenCalledTimes(1);
-    expect(mockAggregate).toHaveBeenNthCalledWith(
-      1,
-      expect.objectContaining({
-        customerId: "org-1",
-        entityId: "team-1",
-        range: "90d",
-        binSize: "day",
-      }),
-    );
+    // Only entity-scoped calls are made; no customer-level retry.
+    for (const [args] of mockAggregate.mock.calls as any[][]) {
+      expect(args.entityId).toBe("team-1");
+    }
   });
 
   it("rethrows non-404 aggregate errors", async () => {
-    mockAggregate.mockRejectedValueOnce(
+    mockAggregate.mockRejectedValue(
       Object.assign(new Error("boom"), { statusCode: 500 }),
     );
     await expect(getTeamHistoricalUsage("team-1")).rejects.toThrow("boom");
   });
+});
 
-  it("uses the next calendar month as endDate when a month has zero usage", async () => {
-    mockAggregate.mockResolvedValue({
-      list: [
-        {
-          period: Date.parse("2026-01-31T00:00:00.000Z"),
-          values: { CREDITS: 12 },
-        },
-        {
-          period: Date.parse("2026-03-01T00:00:00.000Z"),
-          values: { CREDITS: 7 },
-        },
-      ],
+// ---------------------------------------------------------------------------
+// Rollup caching
+// ---------------------------------------------------------------------------
+
+describe("historical usage rollup caching", () => {
+  it("serves a repeat request entirely from cache", async () => {
+    serveBins([
+      {
+        period: Date.parse("2026-06-10T00:00:00.000Z"),
+        values: { CREDITS: 5 },
+      },
+      {
+        period: Date.parse("2026-07-10T00:00:00.000Z"),
+        values: { CREDITS: 9 },
+      },
+    ]);
+
+    const first = await getTeamHistoricalUsage("team-1");
+    expect(mockAggregate).toHaveBeenCalledTimes(4);
+
+    const second = await getTeamHistoricalUsage("team-1");
+    expect(second).toEqual(first);
+    // No further Autumn work for the second request.
+    expect(mockAggregate).toHaveBeenCalledTimes(4);
+  });
+
+  // Closed months can never change, so they are cached until the month rolls
+  // over; the current month is still accruing and gets a short TTL.
+  // Correctness comes from the key naming its own window, not from the TTL: a
+  // stale entry can never be served for a different day or month.
+  it("keys each slice by the window it covers", async () => {
+    serveBins([]);
+
+    await getTeamHistoricalUsage("team-1");
+
+    const keys = redisSets.map(s => s.key);
+    expect(keys).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining(":m:2026-05"),
+        expect.stringContaining(":m:2026-06"),
+        expect.stringContaining(":mtd:2026-07:2026-07-20"),
+        expect.stringContaining(":d:2026-07-20"),
+      ]),
+    );
+
+    // Only today is short-lived; the immutable windows are held much longer.
+    const today = redisSets.find(s => s.key.includes(":d:2026-07-20"))!;
+    const closedMonth = redisSets.find(s => s.key.includes(":m:2026-05"))!;
+    expect(today.ttl).toBe(60);
+    expect(closedMonth.ttl).toBeGreaterThan(today.ttl!);
+  });
+
+  // The steady-state cost: with the immutable windows already cached, a request
+  // during the day re-queries one day of events, not ~90.
+  it("re-queries only today once the immutable windows are cached", async () => {
+    serveBins([]);
+
+    await getTeamHistoricalUsage("team-1");
+    mockAggregate.mockClear();
+
+    // Drop only today's entry, as its 60s TTL would.
+    for (const key of [...redisStore.keys()]) {
+      if (key.includes(":d:")) redisStore.delete(key);
+    }
+
+    await getTeamHistoricalUsage("team-1");
+
+    expect(mockAggregate).toHaveBeenCalledTimes(1);
+    expect(mockAggregate.mock.calls[0][0].customRange).toEqual({
+      start: TODAY_START,
+      end: NOW.getTime(),
     });
+  });
+
+  it("keys the grouped and ungrouped rollups separately", async () => {
+    apiKeysData = [{ id: 101, name: "Default" }];
+    serveBins([
+      {
+        period: Date.parse("2026-07-10T00:00:00.000Z"),
+        values: { CREDITS: 9 },
+        grouped_values: { CREDITS: { "101": 9 } },
+      },
+    ]);
+
+    await getTeamHistoricalUsage("team-1");
+    const afterUngrouped = mockAggregate.mock.calls.length;
+
+    // Must not be served the ungrouped entry, which carries no per-key data.
+    await expect(getTeamHistoricalUsageByApiKey("team-1")).resolves.toEqual([
+      {
+        startDate: "2026-07-01T00:00:00.000Z",
+        endDate: null,
+        apiKey: "Default",
+        creditsUsed: 9,
+      },
+    ]);
+    expect(mockAggregate.mock.calls.length).toBeGreaterThan(afterUngrouped);
+  });
+
+  it("coalesces concurrent cold-cache requests into one Autumn call per window", async () => {
+    serveBins([
+      {
+        period: Date.parse("2026-07-10T00:00:00.000Z"),
+        values: { CREDITS: 9 },
+      },
+    ]);
+
+    const [a, b, c] = await Promise.all([
+      getTeamHistoricalUsage("team-1"),
+      getTeamHistoricalUsage("team-1"),
+      getTeamHistoricalUsage("team-1"),
+    ]);
+
+    expect(b).toEqual(a);
+    expect(c).toEqual(a);
+    // One call per window, not one per request (3 requests × 4 windows = 12).
+    expect(mockAggregate).toHaveBeenCalledTimes(4);
+  });
+
+  it("still answers when the cache is unavailable", async () => {
+    redisEnabled = false;
+    serveBins([
+      {
+        period: Date.parse("2026-07-10T00:00:00.000Z"),
+        values: { CREDITS: 9 },
+      },
+    ]);
 
     await expect(getTeamHistoricalUsage("team-1")).resolves.toEqual([
       {
-        startDate: "2026-01-01T00:00:00.000Z",
-        endDate: "2026-02-01T00:00:00.000Z",
-        creditsUsed: 12,
-      },
-      {
-        startDate: "2026-03-01T00:00:00.000Z",
+        startDate: "2026-07-01T00:00:00.000Z",
         endDate: null,
-        creditsUsed: 7,
+        creditsUsed: 9,
       },
     ]);
   });
 });
 
+// ---------------------------------------------------------------------------
+// getTeamHistoricalUsageByApiKey
+// ---------------------------------------------------------------------------
+
 describe("getTeamHistoricalUsageByApiKey", () => {
-  it("aggregates daily grouped usage into calendar-month buckets", async () => {
+  it("aggregates grouped usage into calendar-month buckets across windows", async () => {
     apiKeysData = [
       { id: 101, name: "Default" },
       { id: 202, name: "postman" },
     ];
 
-    mockAggregate.mockResolvedValue({
-      list: [
-        {
-          period: Date.parse("2026-03-30T00:00:00.000Z"),
-          grouped_values: { CREDITS: { "101": 10, "202": 3 } },
-        },
-        {
-          period: Date.parse("2026-03-31T00:00:00.000Z"),
-          grouped_values: { CREDITS: { "101": 26 } },
-        },
-        {
-          period: Date.parse("2026-04-02T00:00:00.000Z"),
-          grouped_values: { CREDITS: { "202": 5 } },
-        },
-      ],
-    });
+    serveBins([
+      {
+        period: Date.parse("2026-06-30T00:00:00.000Z"),
+        grouped_values: { CREDITS: { "101": 10, "202": 3 } },
+      },
+      {
+        period: Date.parse("2026-06-29T00:00:00.000Z"),
+        grouped_values: { CREDITS: { "101": 26 } },
+      },
+      {
+        period: Date.parse("2026-07-02T00:00:00.000Z"),
+        grouped_values: { CREDITS: { "202": 5 } },
+      },
+    ]);
 
     await expect(getTeamHistoricalUsageByApiKey("team-1")).resolves.toEqual([
       {
-        startDate: "2026-03-01T00:00:00.000Z",
-        endDate: "2026-04-01T00:00:00.000Z",
+        startDate: "2026-06-01T00:00:00.000Z",
+        endDate: "2026-07-01T00:00:00.000Z",
         apiKey: "Default",
         creditsUsed: 36,
       },
       {
-        startDate: "2026-03-01T00:00:00.000Z",
-        endDate: "2026-04-01T00:00:00.000Z",
+        startDate: "2026-06-01T00:00:00.000Z",
+        endDate: "2026-07-01T00:00:00.000Z",
         apiKey: "postman",
         creditsUsed: 3,
       },
       {
-        startDate: "2026-04-01T00:00:00.000Z",
+        startDate: "2026-07-01T00:00:00.000Z",
         endDate: null,
         apiKey: "postman",
         creditsUsed: 5,
       },
     ]);
+  });
 
-    expect(mockAggregate).toHaveBeenCalledWith(
-      expect.objectContaining({
-        customerId: "org-1",
-        entityId: "team-1",
-        featureId: "CREDITS",
-        range: "90d",
-        binSize: "day",
-        groupBy: "properties.apiKeyId",
-      }),
-    );
+  // Autumn's default `maxGroups` is 9 and applies per bin, so with per-day bins
+  // the top-9 keys differ day to day and per-key monthly totals get silently
+  // scrambled into "Other". Ask for a ceiling no real team reaches.
+  it("requests a group ceiling well above the Autumn default", async () => {
+    serveBins([]);
+
+    await getTeamHistoricalUsageByApiKey("team-1");
+
+    expect(mockAggregate).toHaveBeenCalledTimes(4);
+    for (const [args] of mockAggregate.mock.calls as any[][]) {
+      expect(args.groupBy).toBe("properties.apiKeyId");
+      expect(args.maxGroups).toBeGreaterThanOrEqual(100);
+    }
+  });
+
+  it("does not send groupBy on the ungrouped path", async () => {
+    serveBins([]);
+
+    await getTeamHistoricalUsage("team-1");
+
+    for (const [args] of mockAggregate.mock.calls as any[][]) {
+      expect(args.groupBy).toBeUndefined();
+      expect(args.maxGroups).toBeUndefined();
+    }
   });
 
   it("labels unresolvable apiKeyIds as 'Unknown' instead of echoing raw values", async () => {
     apiKeysData = [];
 
-    mockAggregate.mockResolvedValue({
-      list: [
-        {
-          period: Date.parse("2026-04-15T00:00:00.000Z"),
-          grouped_values: {
-            CREDITS: {
-              ba9045fffbd34fc8aabc2597df6ba044: 11,
-              "99999999": 7,
-            },
+    serveBins([
+      {
+        period: Date.parse("2026-07-15T00:00:00.000Z"),
+        grouped_values: {
+          CREDITS: {
+            ba9045fffbd34fc8aabc2597df6ba044: 11,
+            "99999999": 7,
           },
         },
-      ],
-    });
+      },
+    ]);
 
     await expect(getTeamHistoricalUsageByApiKey("team-1")).resolves.toEqual([
       {
-        startDate: "2026-04-01T00:00:00.000Z",
+        startDate: "2026-07-01T00:00:00.000Z",
         endDate: null,
         apiKey: "Unknown",
         creditsUsed: 18,
@@ -941,54 +1171,34 @@ describe("getTeamHistoricalUsageByApiKey", () => {
     ]);
   });
 
-  it("uses the next calendar month as endDate for grouped data when a month has zero usage", async () => {
+  // Names are resolved on read, not baked into the cache, so renaming a key is
+  // reflected immediately instead of being frozen for the rest of the month.
+  it("reflects an API key rename without waiting for the cache to expire", async () => {
     apiKeysData = [{ id: 101, name: "Default" }];
-
-    mockAggregate.mockResolvedValue({
-      list: [
-        {
-          period: Date.parse("2026-01-31T00:00:00.000Z"),
-          grouped_values: { CREDITS: { "101": 12 } },
-        },
-        {
-          period: Date.parse("2026-03-01T00:00:00.000Z"),
-          grouped_values: { CREDITS: { "101": 7 } },
-        },
-      ],
-    });
+    serveBins([
+      {
+        period: Date.parse("2026-07-10T00:00:00.000Z"),
+        grouped_values: { CREDITS: { "101": 9 } },
+      },
+    ]);
 
     await expect(getTeamHistoricalUsageByApiKey("team-1")).resolves.toEqual([
-      {
-        startDate: "2026-01-01T00:00:00.000Z",
-        endDate: "2026-02-01T00:00:00.000Z",
-        apiKey: "Default",
-        creditsUsed: 12,
-      },
-      {
-        startDate: "2026-03-01T00:00:00.000Z",
-        endDate: null,
-        apiKey: "Default",
-        creditsUsed: 7,
-      },
+      expect.objectContaining({ apiKey: "Default", creditsUsed: 9 }),
+    ]);
+
+    apiKeysData = [{ id: 101, name: "renamed" }];
+
+    await expect(getTeamHistoricalUsageByApiKey("team-1")).resolves.toEqual([
+      expect.objectContaining({ apiKey: "renamed", creditsUsed: 9 }),
     ]);
   });
 
   it("returns an empty history (no org fallback) when the entity is missing", async () => {
-    mockAggregate.mockRejectedValueOnce(
+    mockAggregate.mockRejectedValue(
       Object.assign(new Error("not found"), { statusCode: 404 }),
     );
 
     await expect(getTeamHistoricalUsageByApiKey("team-1")).resolves.toEqual([]);
-
-    expect(mockAggregate).toHaveBeenCalledTimes(1);
-    expect(mockAggregate).toHaveBeenNthCalledWith(
-      1,
-      expect.objectContaining({
-        customerId: "org-1",
-        entityId: "team-1",
-        groupBy: "properties.apiKeyId",
-      }),
-    );
   });
 });
 
@@ -996,30 +1206,27 @@ describe("getTeamHistoricalUsageByApiKey", () => {
 // Historical aggregations run on the dedicated (longer-timeout) client
 // ---------------------------------------------------------------------------
 
-// These aggregations bin by day (and optionally group by API key), so Autumn
-// walks raw events and the call cost scales with the team's event volume —
-// routinely several seconds. The Autumn SDK only honors a timeout set at the
-// client level (a per-call timeoutMs/signal does NOT override a lower client
-// default), so historical calls must go through `autumnHistoricalClient`, not
-// the hot-path `autumnClient` whose 2s budget is sized for balance checks. If
-// they regressed to the hot-path client, high-volume teams would time out and
-// surface a 500.
+// The Autumn SDK only honors a timeout set at the client level (a per-call
+// timeoutMs/signal does NOT override a lower client default), so historical
+// calls must go through `autumnHistoricalClient`, not the hot-path
+// `autumnClient` whose 2s budget is sized for balance checks. If they regressed
+// to the hot-path client, slow teams would time out and surface a 500.
 describe("historical usage routes through the dedicated Autumn client", () => {
   it("uses autumnHistoricalClient, not the hot-path client, for the ungrouped aggregate", async () => {
-    mockAggregate.mockResolvedValue({ list: [] });
+    serveBins([]);
 
     await getTeamHistoricalUsage("team-1");
 
-    expect(mockAggregate).toHaveBeenCalledTimes(1);
+    expect(mockAggregate).toHaveBeenCalled();
     expect(mockHotPathAggregate).not.toHaveBeenCalled();
   });
 
   it("uses autumnHistoricalClient, not the hot-path client, for the grouped byApiKey aggregate", async () => {
-    mockAggregate.mockResolvedValue({ list: [] });
+    serveBins([]);
 
     await getTeamHistoricalUsageByApiKey("team-1");
 
-    expect(mockAggregate).toHaveBeenCalledTimes(1);
+    expect(mockAggregate).toHaveBeenCalled();
     expect(mockHotPathAggregate).not.toHaveBeenCalled();
   });
 });

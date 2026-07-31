@@ -19,6 +19,24 @@ export const autumnClient = config.AUTUMN_SECRET_KEY
 // or `fetchOptions.signal` does NOT override a lower client default — so these
 // calls need their own client with a longer timeout. The hot-path client above
 // keeps its tight 2s budget for latency-sensitive balance checks.
+//
+// A cold rollup also fans out one aggregate per cached window, so a transient
+// 429/5xx from any one of them would fail the whole response. The SDK defaults
+// to no retries, so give this client a short backoff. Retries stay inside the
+// 15s client budget.
 export const autumnHistoricalClient = config.AUTUMN_SECRET_KEY
-  ? new Autumn({ secretKey: config.AUTUMN_SECRET_KEY, timeoutMs: 15000 })
+  ? new Autumn({
+      secretKey: config.AUTUMN_SECRET_KEY,
+      timeoutMs: 15000,
+      retryConfig: {
+        strategy: "backoff",
+        backoff: {
+          initialInterval: 200,
+          maxInterval: 1000,
+          exponent: 2,
+          maxElapsedTime: 5000,
+        },
+        retryConnectionErrors: true,
+      },
+    })
   : null;
