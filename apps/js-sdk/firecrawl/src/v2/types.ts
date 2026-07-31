@@ -657,6 +657,7 @@ export interface SearchResultWeb {
   url: string;
   title?: string;
   description?: string;
+  position?: number;
   category?: string;
 }
 

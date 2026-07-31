@@ -40,6 +40,7 @@ class TestSearchDeveloperResults:
         assert len(result.developer) == 1
         assert isinstance(result.developer[0], SearchResultWeb)
         assert result.developer[0].url == "https://github.com/firecrawl/firecrawl/issues/1"
+        assert result.developer[0].position == 1
         assert result.developer[0].category == "developer"
 
     def test_developer_absent_when_not_returned(self):

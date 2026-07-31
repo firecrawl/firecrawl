@@ -932,11 +932,12 @@ class CrawlStatusRequest(BaseModel):
 
 
 class SearchResultWeb(BaseModel):
-    """A web search result with URL, title, and description."""
+    """A web search result with URL, title, description, and position."""
 
     url: str
     title: Optional[str] = None
     description: Optional[str] = None
+    position: Optional[int] = None
     category: Optional[str] = None
 
 
