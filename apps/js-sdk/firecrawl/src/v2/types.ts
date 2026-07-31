@@ -683,10 +683,11 @@ export interface SearchData {
   web?: Array<SearchResultWeb | Document>;
   news?: Array<SearchResultNews | Document>;
   images?: Array<SearchResultImages | Document>;
+  developer?: Array<SearchResultWeb | Document>;
 }
 
 export interface CategoryOption {
-  type: "github" | "research" | "pdf";
+  type: "github" | "research" | "pdf" | "developer";
 }
 
 export interface SearchRequest {
@@ -694,7 +695,9 @@ export interface SearchRequest {
   sources?: Array<
     "web" | "news" | "images" | { type: "web" | "news" | "images" }
   >;
-  categories?: Array<"github" | "research" | "pdf" | CategoryOption>;
+  categories?: Array<
+    "github" | "research" | "pdf" | "developer" | CategoryOption
+  >;
   includeDomains?: string[];
   excludeDomains?: string[];
   limit?: number;

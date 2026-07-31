@@ -560,6 +560,8 @@ class Category(BaseModel):
     - "github": Filter results to GitHub repositories
     - "research": Filter results to research papers and academic sites
     - "pdf": Filter results to PDF files (adds filetype:pdf to search)
+    - "developer": Add developer results (issues, pull requests, READMEs and
+      documentation) under `.developer`
     """
 
     type: str
@@ -1692,6 +1694,7 @@ class SearchData(BaseModel):
     web: Optional[List[Union[SearchResultWeb, Document]]] = None
     news: Optional[List[Union[SearchResultNews, Document]]] = None
     images: Optional[List[Union[SearchResultImages, Document]]] = None
+    developer: Optional[List[Union[SearchResultWeb, Document]]] = None
 
     @property
     def data(self):
@@ -1702,6 +1705,8 @@ class SearchData(BaseModel):
             parts.append(f".news ({len(self.news)} results)")
         if self.images:
             parts.append(f".images ({len(self.images)} results)")
+        if self.developer:
+            parts.append(f".developer ({len(self.developer)} results)")
         available = ", ".join(parts) if parts else ".web, .news, or .images"
         raise AttributeError(
             f"SearchData has no '.data'. Results are grouped by source: {available}"

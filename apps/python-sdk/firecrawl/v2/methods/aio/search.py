@@ -47,6 +47,8 @@ async def search(
             out.news = _transform_array(data["news"], SearchResultNews)
         if "images" in data:
             out.images = _transform_array(data["images"], SearchResultImages)
+        if "developer" in data:
+            out.developer = _transform_array(data["developer"], SearchResultWeb)
         return out
     except Exception as err:
         if hasattr(err, "response"):
