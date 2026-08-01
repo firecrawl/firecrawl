@@ -72,6 +72,10 @@ const EXCHANGE_BETA_FLAG = "professionalProfileCompanyDataBeta";
 const THIRD_PARTY_DATA_TERMS_REQUIRED_CODE = "THIRD_PARTY_DATA_TERMS_REQUIRED";
 const THIRD_PARTY_DATA_TERMS_REQUIRED_MESSAGE =
   "An organization admin must accept this data source's terms before this URL can be processed.";
+const THIRD_PARTY_DATA_SOURCE_NOT_ENABLED_CODE =
+  "THIRD_PARTY_DATA_SOURCE_NOT_ENABLED";
+const THIRD_PARTY_DATA_SOURCE_NOT_ENABLED_MESSAGE =
+  "This organization's access to the data source covering this URL is switched off.";
 
 const EXCHANGE_PROVIDERS_PATH = "/v1/providers";
 const EXCHANGE_PROVIDERS_TIMEOUT_MS = 2_000;
@@ -474,6 +478,16 @@ export type ExchangeAccess =
   | {
       allowed: false;
       termsRequired: false;
+      /**
+       * Set only when a provider covers this URL and the organization's access
+       * to it is switched off. Every other refusal collapses into this same
+       * variant - an unconfigured Exchange, an unreachable catalog, a URL no
+       * provider claims, a request shape the Exchange cannot serve - and none
+       * of those is a fact about the organization. A caller that cannot tell
+       * the two apart has to guess, and the only guess it can make from a bare
+       * refusal is the accusatory one.
+       */
+      notEnabled?: { dataSourceId: string };
     };
 
 export async function getExchangeAccessForRequest(
@@ -495,6 +509,13 @@ export async function getExchangeAccessForRequest(
     const decision = getProviderAccessDecision(provider, input.flags);
     if (decision === "terms_required" && provider.terms !== undefined) {
       return { allowed: false, termsRequired: true, terms: provider.terms };
+    }
+    if (decision === "not_enabled") {
+      return {
+        allowed: false,
+        termsRequired: false,
+        notEnabled: { dataSourceId: provider.id },
+      };
     }
     if (decision !== "allowed") {
       return { allowed: false, termsRequired: false };
@@ -528,6 +549,25 @@ export function getThirdPartyDataTermsRequiredResponse(terms: ExchangeTerms) {
       type: "accept_terms",
       terms: terms.key,
       version: terms.version,
+      url: getThirdPartyDataTermsSettingsUrl(),
+    },
+  };
+}
+
+/**
+ * The refusal for a URL a provider covers whose data source the organization
+ * has switched off. Carries a code for the same reason the terms refusal does:
+ * it shares a status with the blocklist refusal beside it, and only the code
+ * says which of the two happened.
+ */
+export function getThirdPartyDataSourceNotEnabledResponse(dataSourceId: string) {
+  return {
+    success: false as const,
+    code: THIRD_PARTY_DATA_SOURCE_NOT_ENABLED_CODE as "THIRD_PARTY_DATA_SOURCE_NOT_ENABLED",
+    error: THIRD_PARTY_DATA_SOURCE_NOT_ENABLED_MESSAGE,
+    requiresAction: {
+      type: "enable_data_source",
+      dataSource: dataSourceId,
       url: getThirdPartyDataTermsSettingsUrl(),
     },
   };

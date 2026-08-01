@@ -29,7 +29,10 @@ import {
   CREDITS_FEATURE_ID,
 } from "../services/autumn/autumn.service";
 import { getTeamBalance } from "../services/autumn/usage";
-import { getThirdPartyDataTermsRequiredResponse } from "../lib/exchange";
+import {
+  getThirdPartyDataSourceNotEnabledResponse,
+  getThirdPartyDataTermsRequiredResponse,
+} from "../lib/exchange";
 import { getExchangeAccessForRequestBody } from "../lib/exchange-request";
 import { getScrapeZDR } from "../lib/zdr-helpers";
 
@@ -346,10 +349,27 @@ function blocklistGate(
       })
     ) {
       if (!res.headersSent) {
-        return res.status(403).json({
-          success: false,
-          error: UNSUPPORTED_SITE_MESSAGE,
-        });
+        // Which requests get refused here does not change with what follows:
+        // only what the refusal says. A blocked URL that a provider covers is
+        // refused for two quite different reasons - the site is unsupported,
+        // or the org switched that provider off - and answering both with the
+        // same bare 403 leaves every caller to guess between them.
+        const notEnabled =
+          typeof exchangeAccess === "object" &&
+          !exchangeAccess.allowed &&
+          !exchangeAccess.termsRequired
+            ? exchangeAccess.notEnabled
+            : undefined;
+
+        return res
+          .status(403)
+          .json(
+            notEnabled === undefined
+              ? { success: false, error: UNSUPPORTED_SITE_MESSAGE }
+              : getThirdPartyDataSourceNotEnabledResponse(
+                  notEnabled.dataSourceId,
+                ),
+          );
       }
     }
     next();
