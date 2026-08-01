@@ -40,7 +40,7 @@ const providerList: Record<Provider, any> = {
   deepinfra, //DEEPINFRA_API_KEY
   novita: createOpenAI({
     apiKey: config.NOVITA_API_KEY,
-    baseURL: "https://api.novita.ai/v3/openai",
+    baseURL: "https://api.novita.ai/openai",
   }), //NOVITA_API_KEY
   vertex: createVertex({
     project: "firecrawl",
