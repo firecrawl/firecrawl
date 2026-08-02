@@ -38,8 +38,15 @@ type Format =
   | "product"
   | "menu";
 
-export const url = z.preprocess(
-  x => {
+export const url = z
+  .string()
+  // .overwrite must stay after .string(). It interpolates x into a template, so
+  // a non-string url would become the string "http://undefined" — a valid URL
+  // whose only failure is the TLD check below, which would blame a field the
+  // caller never sent. Letting .string() reject it first gives the real error.
+  // .overwrite rather than .transform, so this stays a ZodString and .url() /
+  // .regex() can still chain onto it.
+  .overwrite(x => {
     if (!protocolIncluded(x as string)) {
       x = `http://${x}`;
     }
@@ -55,35 +62,33 @@ export const url = z.preprocess(
     // }
 
     return x;
-  },
-  z
-    .url()
-    .regex(/^https?:\/\//i, "URL uses unsupported protocol")
-    .refine(x => {
-      if (config.TEST_SUITE_SELF_HOSTED && config.ALLOW_LOCAL_WEBHOOKS) {
-        if (
-          /^https?:\/\/(localhost|127\.0\.0\.1|10\.\d{1,3}\.\d{1,3}\.\d{1,3}|192\.168\.\d{1,3}\.\d{1,3}|172\.(1[6-9]|2\d|3[0-1])\.\d{1,3}\.\d{1,3})(:\d+)?([\/?#]|$)/i.test(
-            x as string,
-          )
-        ) {
-          return true;
-        }
-      }
-      // Same TLD-shaped check as before, plus IP literals — which the old
-      // inline regex accepted only when the last octet had 2+ digits, so
-      // 8.8.8.8 was rejected while 169.254.169.254 passed.
-      return hasReachableHost(x as string);
-    }, "URL must have a valid top-level domain or be an IP address")
-    .refine(x => {
-      try {
-        checkUrl(x as string);
+  })
+  .url()
+  .regex(/^https?:\/\//i, "URL uses unsupported protocol")
+  .refine(x => {
+    if (config.TEST_SUITE_SELF_HOSTED && config.ALLOW_LOCAL_WEBHOOKS) {
+      if (
+        /^https?:\/\/(localhost|127\.0\.0\.1|10\.\d{1,3}\.\d{1,3}\.\d{1,3}|192\.168\.\d{1,3}\.\d{1,3}|172\.(1[6-9]|2\d|3[0-1])\.\d{1,3}\.\d{1,3})(:\d+)?([\/?#]|$)/i.test(
+          x as string,
+        )
+      ) {
         return true;
-      } catch (_) {
-        return false;
       }
-    }, "Invalid URL"),
-  // .refine((x) => !isUrlBlocked(x as string), UNSUPPORTED_SITE_MESSAGE),
-);
+    }
+    // Same TLD-shaped check as before, plus IP literals — which the old
+    // inline regex accepted only when the last octet had 2+ digits, so
+    // 8.8.8.8 was rejected while 169.254.169.254 passed.
+    return hasReachableHost(x as string);
+  }, "URL must have a valid top-level domain or be an IP address")
+  .refine(x => {
+    try {
+      checkUrl(x as string);
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }, "Invalid URL");
+// .refine((x) => !isUrlBlocked(x as string), UNSUPPORTED_SITE_MESSAGE)
 
 const agentExtractModelValue = "fire-1";
 export const isAgentExtractModelValid = (x: string | undefined) =>
