@@ -903,7 +903,15 @@ export class WebCrawler {
                     urls.filter(link => {
                       try {
                         const linkUrl = new URL(link);
-                        return linkUrl.hostname.endsWith(hostname);
+                        // Match on a DNS-label boundary. A bare endsWith also
+                        // accepts sibling hosts that merely share a suffix of the
+                        // final label — evilcrm.danetcomm.co.il "ends with"
+                        // crm.danetcomm.co.il — which would pull an unrelated
+                        // host into this crawl. Real child subdomains still pass.
+                        return (
+                          linkUrl.hostname === hostname ||
+                          linkUrl.hostname.endsWith(`.${hostname}`)
+                        );
                       } catch {}
                     }),
                   );

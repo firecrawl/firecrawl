@@ -108,3 +108,25 @@ describe("URL Utils", () => {
     });
   });
 });
+
+describe("parent-sitemap host filter", () => {
+  // Mirrors the filter in crawler.ts tryFetchSitemapLinks: when a subdomain crawl
+  // pulls the parent domain's sitemap, only the crawled host and its own children
+  // may be kept. A bare endsWith would also admit sibling hosts sharing a suffix
+  // of the final label.
+  const keeps = (host: string, linkHost: string) =>
+    linkHost === host || linkHost.endsWith(`.${host}`);
+
+  const host = "crm.danetcomm.co.il";
+
+  it("keeps the host itself and real child subdomains", () => {
+    expect(keeps(host, "crm.danetcomm.co.il")).toBe(true);
+    expect(keeps(host, "a.crm.danetcomm.co.il")).toBe(true);
+  });
+
+  it("rejects sibling hosts that merely end with the same string", () => {
+    expect(keeps(host, "evilcrm.danetcomm.co.il")).toBe(false);
+    expect(keeps(host, "xcrm.danetcomm.co.il")).toBe(false);
+    expect(keeps(host, "other.danetcomm.co.il")).toBe(false);
+  });
+});

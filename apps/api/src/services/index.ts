@@ -258,8 +258,9 @@ export function generateDomainSplits(
   }
 
   const parsed = parseHostname(hostname);
-  // No registrable domain (IP literal, localhost, unknown suffix) means there are
-  // no domain splits to generate.
+  // No registrable domain (IP literal, or a single label such as localhost) means
+  // there are no domain splits to generate. Note an unrecognised suffix still
+  // yields one — tldts reports domain.unknown as its own registrable domain.
   const domain = parsed.domain;
   if (domain === null) {
     return [];
