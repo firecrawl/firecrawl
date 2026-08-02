@@ -101,7 +101,7 @@ _SCRAPE_KWARGS = _sync_kwargs(_SyncClient.scrape)
 _SEARCH_KWARGS = _sync_kwargs(_SyncClient.search)
 _START_CRAWL_KWARGS = _sync_kwargs(_SyncClient.start_crawl) | frozenset(_SCRAPE_OPTION_KEYS) | {"ignore_sitemap"}
 _CRAWL_KWARGS = _START_CRAWL_KWARGS | {"poll_interval", "timeout", "request_timeout"}
-_START_BATCH_KWARGS = _sync_kwargs(_SyncClient.start_batch_scrape)
+_START_BATCH_KWARGS = _sync_kwargs(_SyncClient.start_batch_scrape) | {"options"}
 _BATCH_KWARGS = _START_BATCH_KWARGS | {"poll_interval", "timeout"}
 from .watcher_async import AsyncWatcher
 
@@ -572,6 +572,22 @@ class AsyncFirecrawlClient:
 
     async def start_batch_scrape(self, urls: List[str], **kwargs) -> Any:
         _reject_unknown("start_batch_scrape", kwargs, _START_BATCH_KWARGS)
+        # Fold flat scrape options into ScrapeOptions, as the sync client and
+        # start_crawl above both do. Without this they stay loose keywords and the
+        # batch payload builder, which only reads `options` plus a fixed key list,
+        # drops them: formats=["markdown"] silently returned the default format.
+        if kwargs.get("options") is None:
+            scrape_kwargs = {
+                k: kwargs.pop(k)
+                for k in list(kwargs)
+                if k in _SCRAPE_OPTION_KEYS and kwargs[k] is not None
+            }
+            if scrape_kwargs:
+                kwargs["options"] = ScrapeOptions(**scrape_kwargs)
+        else:
+            for k in list(kwargs):
+                if k in _SCRAPE_OPTION_KEYS:
+                    kwargs.pop(k)
         return await async_batch.start_batch_scrape(self.async_http_client, urls, **kwargs)
 
     async def wait_batch_scrape(self, job_id: str, poll_interval: int = 2, timeout: Optional[int] = None) -> Any:

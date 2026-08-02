@@ -98,3 +98,61 @@ def test_crawl_still_accepts_its_polling_arguments(clients):
     finally:
         aio_crawl.start_crawl, aio_crawl.get_crawl_status = starts, statuses
     assert job.status == "completed"
+
+
+def test_batch_scrape_folds_flat_options_like_the_sync_client(clients):
+    """Flat scrape options must reach the request, not sit in loose kwargs.
+
+    The batch payload builder reads `options` plus a fixed key list, so a loose
+    `formats=["markdown"]` was dropped and the caller got the default format.
+    """
+    sync, async_ = clients
+    import firecrawl.v2.client as sync_mod
+    import firecrawl.v2.client_async as async_mod
+
+    captured = {}
+    real_sync = sync_mod.batch_module.start_batch_scrape
+    real_async = async_mod.async_batch.start_batch_scrape
+
+    async def fake_async(client, urls, **kwargs):
+        captured["async"] = kwargs
+
+    sync_mod.batch_module.start_batch_scrape = lambda client, urls, **kw: captured.__setitem__("sync", kw)
+    async_mod.async_batch.start_batch_scrape = fake_async
+    try:
+        kwargs = {"formats": ["markdown"], "only_main_content": True}
+        sync.start_batch_scrape(["https://example.com"], **kwargs)
+        asyncio.run(async_.start_batch_scrape(["https://example.com"], **kwargs))
+    finally:
+        sync_mod.batch_module.start_batch_scrape = real_sync
+        async_mod.async_batch.start_batch_scrape = real_async
+
+    assert captured["async"]["options"].formats == captured["sync"]["options"].formats
+    assert captured["async"]["options"].only_main_content is True
+
+
+def test_explicit_batch_options_win_over_flat_ones(clients):
+    _, async_ = clients
+    import firecrawl.v2.client_async as async_mod
+    from firecrawl.v2.types import ScrapeOptions
+
+    captured = {}
+
+    async def fake_async(client, urls, **kwargs):
+        captured.update(kwargs)
+
+    real = async_mod.async_batch.start_batch_scrape
+    async_mod.async_batch.start_batch_scrape = fake_async
+    try:
+        asyncio.run(
+            async_.start_batch_scrape(
+                ["https://example.com"],
+                options=ScrapeOptions(formats=["html"]),
+                only_main_content=True,
+            )
+        )
+    finally:
+        async_mod.async_batch.start_batch_scrape = real
+
+    assert captured["options"].formats == ["html"]
+    assert "only_main_content" not in captured
