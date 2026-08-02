@@ -2,6 +2,7 @@ import { Request, Response } from "express";
 import { config } from "../../config";
 import { z } from "zod";
 import { protocolIncluded, checkUrl } from "../../lib/validateUrl";
+import { hasReachableHost } from "../../lib/url-utils";
 import { countries } from "../../lib/validate-country";
 import {
   ExtractorOptions,
@@ -68,10 +69,11 @@ export const url = z.preprocess(
           return true;
         }
       }
-      return /(\.[a-zA-Z0-9-\u0400-\u04FF\u0500-\u052F\u2DE0-\u2DFF\uA640-\uA69F]{2,}|\.xn--[a-zA-Z0-9-]{1,})(:\d+)?([\/?#]|$)/i.test(
-        x,
-      );
-    }, "URL must have a valid top-level domain or be a valid path")
+      // Same TLD-shaped check as before, plus IP literals — which the old
+      // inline regex accepted only when the last octet had 2+ digits, so
+      // 8.8.8.8 was rejected while 169.254.169.254 passed.
+      return hasReachableHost(x as string);
+    }, "URL must have a valid top-level domain or be an IP address")
     .refine(x => {
       try {
         checkUrl(x as string);

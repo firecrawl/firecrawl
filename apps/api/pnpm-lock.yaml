@@ -222,9 +222,6 @@ importers:
       prom-client:
         specifier: ^15.1.3
         version: 15.1.3
-      psl:
-        specifier: ^1.15.0
-        version: 1.15.0
       rate-limiter-flexible:
         specifier: 2.4.2
         version: 2.4.2
@@ -247,8 +244,8 @@ importers:
         specifier: ^5.31.17
         version: 5.31.17
       tldts:
-        specifier: ^6.1.75
-        version: 6.1.75
+        specifier: ^7.4.10
+        version: 7.4.10
       tough-cookie:
         specifier: ^4.1.4
         version: 4.1.4
@@ -2431,6 +2428,7 @@ packages:
   cron-parser@4.9.0:
     resolution: {integrity: sha512-p0SaNjrHOnQeR8/VnfGbmg9te2kfyYSQ7Sc/j/6DtPL3JQvKxmjO9TSjNFpujqV3vEYYBvNNvXSxzyksBWAx1Q==}
     engines: {node: '>=12.0.0'}
+    deprecated: v4 is no longer maintained, upgrade to v5
 
   cross-spawn@7.0.6:
     resolution: {integrity: sha512-uV2QOWP2nWzsy2aMp8aRibhi9dlzF5Hgh5SHaB9OiTGEyDTiJJyx0uy51QXdyWbtAHNua4XJzUKca3OzKUd3vA==}
@@ -4186,14 +4184,14 @@ packages:
     resolution: {integrity: sha512-Bf+ILmBgretUrdJxzXM0SgXLZ3XfiaUuOj/IKQHuTXip+05Xn+uyEYdVg0kYDipTBcLrCVyUzAPz7QmArb0mmw==}
     engines: {node: '>=14.0.0'}
 
-  tldts-core@6.1.75:
-    resolution: {integrity: sha512-AOvV5YYIAFFBfransBzSTyztkc3IMfz5Eq3YluaRiEu55nn43Fzaufx70UqEKYr8BoLCach4q8g/bg6e5+/aFw==}
+  tldts-core@7.4.10:
+    resolution: {integrity: sha512-KnQjp53ZekKgm/r3l+u8kJGGzYgrWdP8+Mql7a4vijh2WE0IrZWspQj/TpTxDho/YxO+AnOZnIjQcCD+q6iJsw==}
 
   tldts-core@7.4.2:
     resolution: {integrity: sha512-nwEyF4vl4RSJjwSjBUmOSxc3BFPoIFdlRthJ6e+5v9P3bHNsoD06UjuqMUspqp7vsEZ1beaHi1km+optiE17yA==}
 
-  tldts@6.1.75:
-    resolution: {integrity: sha512-+lFzEXhpl7JXgWYaXcB6DqTYXbUArvrWAE/5ioq/X3CdWLbDjpPP4XTrQBmEJ91y3xbe4Fkw7Lxv4P3GWeJaNg==}
+  tldts@7.4.10:
+    resolution: {integrity: sha512-GgouD1B+sWwvkaEq8vXC15DjQitxbvs12oIXELpconwm+Tg3zfcEv4jgzq3vtKverDXsg3VI8aRgNL2Nra0Iog==}
     hasBin: true
 
   tldts@7.4.2:
@@ -8040,13 +8038,13 @@ snapshots:
 
   tinyrainbow@3.1.0: {}
 
-  tldts-core@6.1.75: {}
+  tldts-core@7.4.10: {}
 
   tldts-core@7.4.2: {}
 
-  tldts@6.1.75:
+  tldts@7.4.10:
     dependencies:
-      tldts-core: 6.1.75
+      tldts-core: 7.4.10
 
   tldts@7.4.2:
     dependencies:

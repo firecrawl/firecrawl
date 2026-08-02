@@ -47,7 +47,7 @@ import {
   addScrapeJob,
   addScrapeJobs,
 } from "../queue-jobs";
-import psl from "psl";
+import { parseHostname } from "../../lib/url-utils";
 import { getJobPriority } from "../../lib/job-priority";
 import { Document, scrapeOptions, TeamFlags } from "../../controllers/v2/types";
 import { hasFormatOfType } from "../../lib/format-utils";
@@ -1242,10 +1242,15 @@ async function processKickoffJob(job: NuQJob<ScrapeJobKickoff>) {
         // Base sitemap.xml
         attempts.push(new URL("/sitemap.xml", urlObj.href).href);
 
-        // Root domain sitemap.xml
-        const urlRootSitemap = new URL("/sitemap.xml", urlObj.href);
-        urlRootSitemap.hostname = psl.parse(urlObj.hostname).domain;
-        attempts.push(urlRootSitemap.href);
+        // Root domain sitemap.xml. Skipped when the host has no registrable domain
+        // (IP literals, localhost): assigning a null domain would stringify to the
+        // literal hostname "null" and produce https://null/sitemap.xml.
+        const rootDomain = parseHostname(urlObj.hostname).domain;
+        if (rootDomain && rootDomain !== urlObj.hostname) {
+          const urlRootSitemap = new URL("/sitemap.xml", urlObj.href);
+          urlRootSitemap.hostname = rootDomain;
+          attempts.push(urlRootSitemap.href);
+        }
 
         for (const attempt of attempts) {
           await addKickoffSitemapJob(attempt, job, sc, logger);

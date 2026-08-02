@@ -16,6 +16,7 @@ import {
 import { ScrapeJobTimeoutError } from "../../lib/error";
 import { ScrapeOptions } from "../../controllers/v2/types";
 import { filterLinks, filterUrl } from "@mendable/firecrawl-rs";
+import { extractBaseDomain } from "../../lib/url-utils";
 
 export const SITEMAP_LIMIT = 25;
 const SITEMAP_MAX_AGE = 7 * 24 * 60 * 60 * 1000;
@@ -875,12 +876,20 @@ export class WebCrawler {
       if (isIPv4 || isIPv6) {
         // IP addresses don't have subdomains, skip this logic
       } else {
-        const domainParts = hostname.split(".");
+        // Resolve the registrable domain via the public suffix list rather than
+        // taking the last two labels: multi-part suffixes (co.uk, co.il, co.jp,
+        // com.au) have three labels, so slicing produced the bare suffix and we
+        // ended up requesting https://co.il/sitemap.xml, which cannot resolve.
+        // Returns null for hosts with no registrable domain (e.g. localhost).
+        const mainDomain = extractBaseDomain(url);
 
-        // Check if this is a subdomain (has more than 2 parts and not www)
-        if (domainParts.length > 2 && domainParts[0] !== "www") {
-          // Get the main domain by taking the last two parts
-          const mainDomain = domainParts.slice(-2).join(".");
+        // Only worth a second fetch when the host actually *is* a subdomain of
+        // that domain; skip www, which serves the same sitemap.
+        if (
+          mainDomain &&
+          mainDomain !== hostname &&
+          hostname !== `www.${mainDomain}`
+        ) {
           const mainDomainUrl = `${urlObj.protocol}//${mainDomain}`;
           const mainDomainSitemapUrl = `${mainDomainUrl}/sitemap.xml`;
 
