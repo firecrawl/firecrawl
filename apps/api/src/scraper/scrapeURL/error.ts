@@ -400,9 +400,17 @@ export class ZDRViolationError extends TransportableError {
 
 export class PDFOCRRequiredError extends TransportableError {
   constructor(public pdfType: string) {
+    const description =
+      pdfType === "Scanned"
+        ? "scanned"
+        : pdfType === "ImageBased"
+          ? "image-based"
+          : pdfType === "Mixed"
+            ? "mixed text/image-based"
+            : "text-based but contains pages that require OCR";
     super(
       "SCRAPE_PDF_OCR_REQUIRED",
-      `This PDF is ${pdfType === "Scanned" ? "scanned" : "image-based"} and requires OCR for text extraction, but the requested PDF mode is "fast" which only supports text-based PDFs. To process this PDF, use mode "auto" (which falls back to OCR automatically) or mode "ocr" (which forces OCR processing). Example: parsers: [{ type: "pdf", mode: "auto" }]`,
+      `This PDF is ${description} and requires OCR for text extraction, but the requested PDF mode is "fast" which only supports fully text-based PDFs. To process this PDF, use mode "auto" (which falls back to OCR automatically) or mode "ocr" (which forces OCR processing). Example: parsers: [{ type: "pdf", mode: "auto" }]`,
     );
   }
 

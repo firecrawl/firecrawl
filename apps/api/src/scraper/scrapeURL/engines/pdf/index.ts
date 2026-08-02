@@ -42,18 +42,7 @@ import { scrapePDFWithParsePDF } from "./pdfParse";
 import { captureExceptionWithZdrCheck } from "../../../../services/sentry";
 import { isPdfBuffer, PDF_SNIFF_WINDOW } from "./pdfUtils";
 import { comparePdfOutputs } from "./shadowComparison";
-
-/** Check if the PDF is eligible for Rust extraction, returning a rejection reason or null. */
-function getIneligibleReason(
-  result: ReturnType<typeof processPdf>,
-): string | null {
-  if (result.pdfType !== "TextBased") return `pdfType=${result.pdfType}`;
-  if (result.confidence < 0.95) return `confidence=${result.confidence}`;
-  if (result.isComplex) return "complex layout (tables/columns)";
-  if (!result.markdown?.length)
-    return "empty markdown (unexpected for TextBased)";
-  return null;
-}
+import { getIneligibleReason } from "./eligibility";
 
 export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
   const shouldParse = shouldParsePDF(meta.options.parsers);
@@ -271,6 +260,7 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
           pageCount: pdfResult.pageCount,
           confidence: pdfResult.confidence,
           isComplex: pdfResult.isComplex,
+          pagesNeedingOcr: pdfResult.pagesNeedingOcr.length,
           markdownLength: pdfResult.markdown?.length ?? 0,
           url: meta.rewrittenUrl ?? meta.url,
           mode,
@@ -284,6 +274,11 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
 
         const ineligibleReason = getIneligibleReason(pdfResult);
         const eligible = !ineligibleReason;
+        const ocrPageCount = pdfResult.pagesNeedingOcr.length;
+        const ocrPageRatio =
+          pdfResult.pageCount > 0
+            ? Math.round((ocrPageCount * 100) / pdfResult.pageCount) / 100
+            : 0;
 
         logger.info("Rust PDF eligibility", {
           rust_pdf_eligible: eligible,
@@ -293,8 +288,27 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
           isComplex: pdfResult.isComplex,
           pageCount: pdfResult.pageCount,
           confidence: pdfResult.confidence,
+          ocrPageCount,
+          ocrPageRatio,
           mode,
         });
+
+        if (ocrPageCount > 0 && pdfResult.pdfType === "TextBased") {
+          logger.info("PDF text quality requires OCR", {
+            event: "pdf_text_quality_ocr_required",
+            issue: "suspected_garbled_text",
+            issueSource: "pdf_inspector_pages_needing_ocr",
+            url: meta.rewrittenUrl ?? meta.url,
+            pdfType: pdfResult.pdfType,
+            pageCount: pdfResult.pageCount,
+            confidence: pdfResult.confidence,
+            isComplex: pdfResult.isComplex,
+            pagesNeedingOcr: pdfResult.pagesNeedingOcr,
+            ocrPageCount,
+            ocrPageRatio,
+            mode,
+          });
+        }
 
         // Shadow-compare when Rust produced meaningful output but wasn't
         // eligible for direct serving. Includes:
@@ -323,7 +337,8 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
         if (
           mode === "fast" &&
           (pdfResult.pdfType === "Scanned" ||
-            pdfResult.pdfType === "ImageBased")
+            pdfResult.pdfType === "ImageBased" ||
+            ocrPageCount > 0)
         ) {
           throw new PDFOCRRequiredError(pdfResult.pdfType);
         }
