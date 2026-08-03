@@ -36,8 +36,7 @@ vi.mock("../../../lib/keyless", () => ({
 }));
 
 vi.mock("../../../lib/keyless-credit-projection", () => ({
-  projectSearchTotalCredits: (...args: any[]) =>
-    mockProjectSearchTotalCredits(...args),
+  projectSearchTotalCredits: () => mockProjectSearchTotalCredits(),
 }));
 
 vi.mock("../../../lib/threat-protection/request", () => ({
