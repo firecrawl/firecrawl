@@ -3,7 +3,11 @@ import { EngineScrapeResult } from "..";
 import { fetchFileToBuffer } from "../utils/downloadFile";
 import { DocumentConverter, DocumentType } from "@mendable/firecrawl-rs";
 import type { Response } from "undici";
-import { DocumentAntibotError, DocumentPrefetchFailed } from "../../error";
+import {
+  DocumentAntibotError,
+  DocumentPrefetchFailed,
+  EngineUnsuccessfulError,
+} from "../../error";
 import { readFile, unlink } from "node:fs/promises";
 
 const converter = new DocumentConverter();
@@ -146,6 +150,21 @@ export async function scrapeDocument(meta: Meta): Promise<EngineScrapeResult> {
       // Validate content type only when fetching directly (not using prefetch)
       const ct = response.headers.get("Content-Type");
       if (ct && !isValidDocumentContentType(ct)) {
+        // The server declared a non-document type and nothing asked for a
+        // document (no `document` flag means neither a document URL extension nor
+        // a caller-requested format), so this engine is just the tail of the
+        // stealth fallback list running against an ordinary HTML page.
+        //
+        // Escalating here is unrecoverable: DocumentAntibotError's remedy is to
+        // clear the `document` flag and re-run the waterfall, which is a no-op
+        // when the flag was never set, so the next attempt fetches the same page,
+        // raises the same error, and burns attempts until SCRAPE_MAX_ATTEMPTS.
+        // Fail this engine instead and let the waterfall move on. Mirrors the pdf
+        // engine's guard, which is why pdf never developed this loop.
+        if (!meta.featureFlags.has("document")) {
+          throw new EngineUnsuccessfulError("document");
+        }
+
         // if downloaded file wasn't a valid document, throw antibot error
         throw new DocumentAntibotError();
       }
