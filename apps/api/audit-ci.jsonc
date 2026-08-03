@@ -2,12 +2,13 @@
     "$schema": "https://github.com/IBM/audit-ci/raw/main/docs/schema.json",
     "low": true,
     "allowlist": [
-        // GHSA-v2v4-37r5-5v8g (ip-address):
-        // geoip-country 5.0.202607250106 still depends on ip-address 6.x; the
-        // non-affected line is a multi-major jump outside the upstream range.
+        // GHSA-v2v4-37r5-5v8g / GHSA-mwp4-54f8-5fhr (ip-address):
+        // geoip-country still depends on ip-address 6.x; the non-affected
+        // line is a multi-major jump outside the upstream range.
         // Do not override across majors without compatibility approval.
         // Owner: team-engineering-reviewers. Tracking: create internal ticket.
-        // Expires: 2026-08-03.
-        "GHSA-v2v4-37r5-5v8g"
+        // Expires: 2026-08-17.
+        "GHSA-v2v4-37r5-5v8g",
+        "GHSA-mwp4-54f8-5fhr"
     ]
 }

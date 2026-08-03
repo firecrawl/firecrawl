@@ -8,9 +8,9 @@ overrides:
   fast-xml-builder: '>=1.1.6 <2.0.0'
   fast-xml-parser: ^5.7.0
   minimatch@<10.2.3: '>=10.2.3'
-  undici@>=7.0.0 <7.28.0: 7.28.0
+  undici@>=7.0.0 <7.29.0: 7.29.0
   picomatch@<4.0.4: '>=4.0.4'
-  brace-expansion@>=5.0.0 <5.0.8: 5.0.8
+  brace-expansion@>=5.0.0 <5.0.9: 5.0.9
   js-yaml@>=3.0.0 <3.15.0: 3.15.0
   ws@>=7.0.0 <7.5.11: 7.5.11
   ws@>=8.0.0 <8.21.0: 8.21.0
@@ -18,7 +18,8 @@ overrides:
   lodash: '>=4.18.0'
   protobufjs@>=7.0.0 <7.6.5: 7.6.5
   uuid@<11.1.1: 11.1.1
-  postcss@<8.5.18: '>=8.5.18 <9.0.0'
+  postcss@<8.5.23: '>=8.5.23 <9.0.0'
+  socket.io-parser@>=4.0.0 <4.2.7: 4.2.7
   '@grpc/grpc-js@>=1.14.0 <2.0.0': 1.14.4
   '@opentelemetry/core@>=2.0.0 <2.8.0': 2.8.0
 
@@ -830,8 +831,8 @@ packages:
   bowser@2.14.1:
     resolution: {integrity: sha512-tzPjzCxygAKWFOJP011oxFHs57HzIhOEracIgAePE4pqB3LikALKnSzUyU4MGs9/iCEUuHlAJTjTc5M+u7YEGg==}
 
-  brace-expansion@5.0.8:
-    resolution: {integrity: sha512-JZyDyq3D4AUifKTPOB7DELf6XsB3WdPuNxCtob1vFXPsSXhdAiHBWJ/tJ8HAc9aH84BK+5JFZLNkJKx3G9kzQg==}
+  brace-expansion@5.0.9:
+    resolution: {integrity: sha512-ScQ4IuvIEF1TMlP7Zt+vjJ//9zlPb2SDcxWxM3bk8s6t6GGdJ7KO1dCcTidOPJKePW30LE/2cT7wCyPho9/Wxg==}
     engines: {node: 20 || >=22}
 
   braces@3.0.3:
@@ -1673,8 +1674,8 @@ packages:
     resolution: {integrity: sha512-uP0bpjWrjQmUt5DTHq9RuoCBdFJF10cdX9X+a368j/Ft0wmaVgxlrjvK3kjvgCODOMMOz9lcaRzxmso0bTWZ/g==}
     engines: {node: '>=10.0.0'}
 
-  socket.io-parser@4.2.6:
-    resolution: {integrity: sha512-asJqbVBDsBCJx0pTqw3WfesSY0iRX+2xzWEWzrpcH7L6fLzrhyF8WPI8UaeM4YCuDfpwA/cgsdugMsmtz8EJeg==}
+  socket.io-parser@4.2.7:
+    resolution: {integrity: sha512-IH/iSeO9T6gz1KkFleGDWkG9N3dl4jXVYUtMhIqH10Md0ttMer8nUNWiP1DKuNrybD2xBrixLJdCC9J6ECoYkg==}
     engines: {node: '>=10.0.0'}
 
   socketio-wildcard@2.0.0:
@@ -1773,8 +1774,8 @@ packages:
   undici-types@7.18.2:
     resolution: {integrity: sha512-AsuCzffGHJybSaRrmr5eHr81mwJU3kjw6M+uprWvCXiNeN9SOGwQ3Jn8jb8m3Z6izVgknn1R0FTCEAP2QrLY/w==}
 
-  undici@7.28.0:
-    resolution: {integrity: sha512-cRZYrTDwWznlnRiPjggAGxZXanty6M8RV1ff8Wm4LWXBp7/IG8v5DnOm74DtUBp9OONpK75YlPnIjQqX0dBDtA==}
+  undici@7.29.0:
+    resolution: {integrity: sha512-IDxfleLmmbSskfWSUATiN1nfn2rDuvnMOqb5CWR92iIfojA0Ud+ulOAAEQ57LPr9rWmsreUyf5lwyao+7GNNVw==}
     engines: {node: '>=20.18.1'}
 
   unique-string@3.0.0:
@@ -3226,7 +3227,7 @@ snapshots:
 
   bowser@2.14.1: {}
 
-  brace-expansion@5.0.8:
+  brace-expansion@5.0.9:
     dependencies:
       balanced-match: 4.0.4
 
@@ -3299,7 +3300,7 @@ snapshots:
       parse5: 7.3.0
       parse5-htmlparser2-tree-adapter: 7.1.0
       parse5-parser-stream: 7.1.2
-      undici: 7.28.0
+      undici: 7.29.0
       whatwg-mimetype: 4.0.0
 
   chokidar@3.6.0:
@@ -3900,7 +3901,7 @@ snapshots:
 
   minimatch@10.2.4:
     dependencies:
-      brace-expansion: 5.0.8
+      brace-expansion: 5.0.9
 
   minimist@1.2.8: {}
 
@@ -4063,13 +4064,13 @@ snapshots:
       '@socket.io/component-emitter': 3.1.2
       debug: 4.4.3(supports-color@8.1.1)
       engine.io-client: 6.6.4
-      socket.io-parser: 4.2.6
+      socket.io-parser: 4.2.7
     transitivePeerDependencies:
       - bufferutil
       - supports-color
       - utf-8-validate
 
-  socket.io-parser@4.2.6:
+  socket.io-parser@4.2.7:
     dependencies:
       '@socket.io/component-emitter': 3.1.2
       debug: 4.4.3(supports-color@8.1.1)
@@ -4161,7 +4162,7 @@ snapshots:
 
   undici-types@7.18.2: {}
 
-  undici@7.28.0: {}
+  undici@7.29.0: {}
 
   unique-string@3.0.0:
     dependencies:

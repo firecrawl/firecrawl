@@ -14,7 +14,7 @@ overrides:
   defu: '>=6.1.5'
   vite@>=7.0.0 <7.3.5: 7.3.5
   js-yaml@>=4.0.0 <4.3.0: 4.3.0
-  postcss@<8.5.10: '>=8.5.10 <9.0.0'
+  postcss@<8.5.23: '>=8.5.23 <9.0.0'
   esbuild@>=0.17.0 <0.28.1: 0.28.1
   svgo@>=4.0.0 <4.0.2: 4.0.2
   sharp@<0.35.0: 0.35.3
@@ -1465,8 +1465,8 @@ packages:
     resolution: {integrity: sha512-RvwwcruNjI1ncT5xRakeyS9Lf8lcItv34KD+aif+VH9kduAyfYBipGh12274xtenIPZ119/R9BdTBa8gAwSh0A==}
     engines: {node: '>=12'}
 
-  postcss@8.5.20:
-    resolution: {integrity: sha512-lW616l85ucIQL+FocMmL7pQFPqBmwejrCMg+iPxyImlrANNJG9NHq/RkyCZopDhd8C3LA03PHRJDjkbGu8vvug==}
+  postcss@8.5.25:
+    resolution: {integrity: sha512-DTPx3RWSSnWyzLxQnlH0rJP+EW5ekl16ZU4/psbIhA0e53kJfdgaN5vKM+xP7yJtXVu+nfdVFmlgFDEKAe4Pyw==}
     engines: {node: ^10 || ^12 || >=14}
 
   prettier-plugin-astro@0.14.1:
@@ -3587,7 +3587,7 @@ snapshots:
 
   picomatch@4.0.5: {}
 
-  postcss@8.5.20:
+  postcss@8.5.25:
     dependencies:
       nanoid: 3.3.16
       picocolors: 1.1.1
@@ -4007,7 +4007,7 @@ snapshots:
     dependencies:
       lightningcss: 1.33.0
       picomatch: 4.0.5
-      postcss: 8.5.20
+      postcss: 8.5.25
       rolldown: 1.1.5
       tinyglobby: 0.2.17
     optionalDependencies:
