@@ -101,6 +101,19 @@ function positiveRedisTtl(ttl: number): number | undefined {
   return ttl > 0 ? ttl : undefined;
 }
 
+/**
+ * Quota denials remain valid when Redis cannot provide the optional TTL hint.
+ * Keep that secondary lookup from changing a controlled 429 into a generic
+ * authentication failure.
+ */
+async function retryAfterSecondsFor(key: string): Promise<number | undefined> {
+  try {
+    return positiveRedisTtl(await redisRateLimitClient.ttl(key));
+  } catch {
+    return undefined;
+  }
+}
+
 /** Structured response for projected-credit reservation exhaustion. */
 export async function keylessLimitBody(
   teamId: string,
@@ -171,7 +184,7 @@ export async function consumeKeylessRequest(
       reason: "requests",
       requestsUsed,
       creditsUsed,
-      retryAfterSeconds: positiveRedisTtl(await redisRateLimitClient.ttl(rKey)),
+      retryAfterSeconds: await retryAfterSecondsFor(rKey),
     };
   }
   if (creditsUsed >= creditLimit) {
@@ -180,7 +193,7 @@ export async function consumeKeylessRequest(
       reason: "credits",
       requestsUsed,
       creditsUsed,
-      retryAfterSeconds: positiveRedisTtl(await redisRateLimitClient.ttl(creditsKey(ip))),
+      retryAfterSeconds: await retryAfterSecondsFor(creditsKey(ip)),
     };
   }
   return { ok: true, requestsUsed, creditsUsed };
@@ -299,9 +312,7 @@ export async function checkKeylessEligibility(
       return {
         eligible: false,
         reason: "requests",
-        retryAfterSeconds: positiveRedisTtl(
-          await redisRateLimitClient.ttl(requestsKey(ip)),
-        ),
+        retryAfterSeconds: await retryAfterSecondsFor(requestsKey(ip)),
       };
     }
     const creditKey = creditsKey(ip);
@@ -313,7 +324,7 @@ export async function checkKeylessEligibility(
       return {
         eligible: false,
         reason: "credits",
-        retryAfterSeconds: positiveRedisTtl(await redisRateLimitClient.ttl(creditKey)),
+        retryAfterSeconds: await retryAfterSecondsFor(creditKey),
       };
     }
     return { eligible: true };

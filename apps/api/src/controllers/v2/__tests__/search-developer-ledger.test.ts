@@ -3,6 +3,13 @@ import { vi } from "vitest";
 const mockLogRequest = vi.fn();
 const mockLogSearch = vi.fn();
 const mockLogResearchEndpoint = vi.fn();
+const mockReserveKeylessCredits = vi.fn().mockResolvedValue({ ok: true });
+const mockKeylessLimitBody = vi.fn().mockResolvedValue({
+  success: false,
+  error: "keyless limit reached",
+  reason: "credits",
+});
+const mockProjectSearchTotalCredits = vi.fn(() => 0);
 
 vi.mock("../../../services/logging/log_job", () => ({
   logRequest: (...args: any[]) => mockLogRequest(...args),
@@ -23,12 +30,14 @@ vi.mock("../../../services/billing/credit_billing", () => ({
 vi.mock("../../../lib/keyless", () => ({
   KEYLESS_FREE_TIER_LIMIT_MESSAGE: "keyless limit reached",
   adjustKeylessCredits: vi.fn().mockResolvedValue(undefined),
+  keylessLimitBody: (...args: any[]) => mockKeylessLimitBody(...args),
   logKeylessCreditUsage: vi.fn().mockResolvedValue(undefined),
-  reserveKeylessCredits: vi.fn().mockResolvedValue({ ok: true }),
+  reserveKeylessCredits: (...args: any[]) => mockReserveKeylessCredits(...args),
 }));
 
 vi.mock("../../../lib/keyless-credit-projection", () => ({
-  projectSearchTotalCredits: () => 0,
+  projectSearchTotalCredits: (...args: any[]) =>
+    mockProjectSearchTotalCredits(...args),
 }));
 
 vi.mock("../../../lib/threat-protection/request", () => ({
@@ -120,9 +129,34 @@ beforeEach(() => {
   mockLogSearch.mockResolvedValue(undefined);
   mockLogResearchEndpoint.mockResolvedValue(undefined);
   mockExecuteSearch.mockResolvedValue(executeResult());
+  mockReserveKeylessCredits.mockResolvedValue({ ok: true });
+  mockKeylessLimitBody.mockResolvedValue({
+    success: false,
+    error: "keyless limit reached",
+    reason: "credits",
+  });
+  mockProjectSearchTotalCredits.mockReturnValue(0);
 });
 
 describe("developer category code_searches ledger", () => {
+  it("returns the structured keyless 429 when projected credits cannot be reserved", async () => {
+    mockProjectSearchTotalCredits.mockReturnValue(2);
+    mockReserveKeylessCredits.mockResolvedValue({ ok: false });
+    const req = makeReq({ query: "http client", categories: ["developer"] });
+    const res = makeRes();
+
+    await searchController(req, res);
+
+    expect(res.status).toHaveBeenCalledWith(429);
+    expect(mockKeylessLimitBody).toHaveBeenCalledWith(TEAM_ID, "v2_search");
+    expect(res.json).toHaveBeenCalledWith({
+      success: false,
+      error: "keyless limit reached",
+      reason: "credits",
+    });
+    expect(mockExecuteSearch).not.toHaveBeenCalled();
+  });
+
   it("writes exactly one code_searches row for a developer category search", async () => {
     const req = makeReq({
       query: "vector database client",
