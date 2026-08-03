@@ -50,7 +50,7 @@ export const pollResponseSchema = z.object({
 export const resultResponseSchema = z.object({
   schema_version: z.literal(1).optional(),
   markdown: z.string(),
-  page_markdown: z
+  pages: z
     .array(
       z.object({ page: z.number().int().positive(), markdown: z.string() }),
     )

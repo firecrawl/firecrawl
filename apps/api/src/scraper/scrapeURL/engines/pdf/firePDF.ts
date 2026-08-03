@@ -137,7 +137,7 @@ export async function scrapePDFWithFirePDF(
       markdown: z.string(),
       failed_pages: z.array(z.number()).nullable(),
       pages_processed: z.number().optional(),
-      page_markdown: z
+      pages: z
         .array(
           z.object({ page: z.number().int().positive(), markdown: z.string() }),
         )
@@ -148,7 +148,7 @@ export async function scrapePDFWithFirePDF(
   });
 
   const durationMs = Date.now() - startedAt;
-  if (includePageMarkdown && resp.page_markdown === undefined) {
+  if (includePageMarkdown && resp.pages === undefined) {
     throw new Error(
       "FirePDF response did not include requested physical page markdown",
     );
@@ -169,7 +169,7 @@ export async function scrapePDFWithFirePDF(
     markdown: resp.markdown,
     html: await safeMarkdownToHtml(resp.markdown, logger, meta.id),
     pagesProcessed: pages,
-    ...(resp.page_markdown ? { pageMarkdown: resp.page_markdown } : {}),
+    ...(resp.pages ? { pageMarkdown: resp.pages } : {}),
   };
 
   if (cacheable) {

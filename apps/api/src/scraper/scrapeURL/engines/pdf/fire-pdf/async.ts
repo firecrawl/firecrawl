@@ -177,7 +177,7 @@ export async function scrapePDFWithFirePDFAsync(
   // ── Assemble + cache save ─────────────────────────────────────────────
   const pages =
     fetched.pages_processed ?? polled.poll.pages_processed ?? pagesProcessed;
-  if (includePageMarkdown && fetched.page_markdown === undefined) {
+  if (includePageMarkdown && fetched.pages === undefined) {
     failAsync(meta, "http_5xx", {
       note: "FirePDF result omitted requested physical page markdown",
     });
@@ -190,7 +190,7 @@ export async function scrapePDFWithFirePDFAsync(
     durationMs,
     markdownLength: fetched.markdown.length,
     pagesProcessed: pages,
-    pageMarkdownPages: fetched.page_markdown?.length,
+    pageMarkdownPages: fetched.pages?.length,
     failedPages: fetched.failed_pages,
     partialPages: fetched.partial_pages,
     pollCount: polled.pollCount,
@@ -200,7 +200,7 @@ export async function scrapePDFWithFirePDFAsync(
     markdown: fetched.markdown,
     html: await safeMarkdownToHtml(fetched.markdown, meta.logger, meta.id),
     pagesProcessed: pages,
-    ...(fetched.page_markdown ? { pageMarkdown: fetched.page_markdown } : {}),
+    ...(fetched.pages ? { pageMarkdown: fetched.pages } : {}),
   };
 
   await maybeSaveResult({

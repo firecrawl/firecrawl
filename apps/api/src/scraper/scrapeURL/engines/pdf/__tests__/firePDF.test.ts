@@ -88,7 +88,7 @@ describe("scrapePDFWithFirePDF page markdown", () => {
       markdown: "continued paragraph",
       failed_pages: null,
       pages_processed: 2,
-      page_markdown: [
+      pages: [
         { page: 1, markdown: "continued" },
         { page: 2, markdown: "paragraph" },
       ],
