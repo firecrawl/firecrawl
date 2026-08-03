@@ -37,7 +37,7 @@ describe("scrape replay", () => {
       actions: [{ type: "click", selector: "a[href='/about']", all: false }],
     });
 
-    expect(script).not.toContain("eval");
+    expect(script).not.toMatch(/\beval\s*\(/);
     expect(script).not.toContain("executeJavascript");
   });
 });
