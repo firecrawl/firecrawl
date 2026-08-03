@@ -389,6 +389,26 @@ class TestPrepareScrapeOptions:
 
         assert result["parsers"][0]["maxPages"] == 5
 
+    def test_prepare_parsers_page_markdown_dict(self):
+        """Ensure parser dicts convert page_markdown to pageMarkdown."""
+        options = ScrapeOptions(
+            parsers=[{"type": "pdf", "page_markdown": True}]
+        )
+
+        result = prepare_scrape_options(options)
+
+        assert result["parsers"][0]["pageMarkdown"] is True
+        assert "page_markdown" not in result["parsers"][0]
+
+    def test_prepare_parsers_page_markdown_model(self):
+        """Ensure parser models convert page_markdown to pageMarkdown."""
+        parser = PDFParser(page_markdown=True)
+        options = ScrapeOptions(parsers=[parser])
+
+        result = prepare_scrape_options(options)
+
+        assert result["parsers"][0]["pageMarkdown"] is True
+
     def test_prepare_min_age_maps_to_camel_case(self):
         """min_age must be sent as minAge; the server drops the snake_case key."""
         options = ScrapeOptions(min_age=1000, max_age=5000)

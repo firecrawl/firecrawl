@@ -1,6 +1,13 @@
+export type PdfPageMarkdown = {
+  /** 1-based physical PDF page number returned by fire-pdf. */
+  page: number;
+  markdown: string;
+};
+
 export type PDFProcessorResult = {
   html: string;
   markdown?: string;
+  pageMarkdown?: PdfPageMarkdown[];
   /**
    * Pages the underlying engine actually processed for this request.
    * Currently populated only by fire-pdf (via OcrSuccessBody.pages_processed).

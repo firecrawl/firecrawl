@@ -197,7 +197,13 @@ export interface ScrapeOptions {
   waitFor?: number;
   mobile?: boolean;
   parsers?: Array<
-    string | { type: "pdf"; mode?: "fast" | "auto" | "ocr"; maxPages?: number }
+    | string
+    | {
+        type: "pdf";
+        mode?: "fast" | "auto" | "ocr";
+        maxPages?: number;
+        pageMarkdown?: boolean;
+      }
   >;
   actions?: ActionOption[];
   location?: LocationConfig;
@@ -616,6 +622,7 @@ export interface DocumentMetadata {
 
 export interface Document {
   markdown?: string;
+  pages?: Array<{ pageNumber: number; markdown: string }>;
   html?: string;
   rawHtml?: string;
   json?: unknown;

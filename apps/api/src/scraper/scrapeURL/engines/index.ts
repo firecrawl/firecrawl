@@ -27,7 +27,10 @@ import {
 } from "./x-twitter";
 import { queryEngpickerVerdict, useIndex } from "../../../services";
 import { hasFormatOfType } from "../../../lib/format-utils";
-import { getPDFMaxPages } from "../../../controllers/v2/types";
+import {
+  getPDFMaxPages,
+  getPDFPageMarkdown,
+} from "../../../controllers/v2/types";
 import type { PdfMetadata } from "./pdf/types";
 import { BrandingProfile } from "../../../types/branding";
 import { BrandingNotSupportedError } from "../error";
@@ -138,6 +141,7 @@ export type EngineScrapeResult = {
 
   html: string;
   markdown?: string;
+  pages?: Array<{ pageNumber: number; markdown: string }>;
   json?: unknown;
   statusCode: number;
   error?: string;
@@ -563,6 +567,8 @@ export function shouldUseIndex(meta: Meta) {
     !hasFormatOfType(meta.options.formats, "branding") &&
     // Skip index if a non-default PDF maxPages is specified
     getPDFMaxPages(meta.options.parsers) === undefined &&
+    // The URL index does not yet persist physical-page capability metadata.
+    !getPDFPageMarkdown(meta.options.parsers) &&
     !hasCustomScreenshotSettings &&
     meta.options.maxAge !== 0 &&
     (meta.options.headers === undefined ||

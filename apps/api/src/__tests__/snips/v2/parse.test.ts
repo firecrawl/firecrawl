@@ -606,6 +606,43 @@ describe("/v2/parse", () => {
     );
   });
 
+  describeIf(ALLOW_TEST_SUITE_WEBSITE && !!config.FIRE_PDF_BASE_URL)(
+    "PDF upload physical page markdown",
+    () => {
+      it(
+        "returns physical pages for an uploaded PDF",
+        async () => {
+          expect(pdfFixture).not.toBeNull();
+
+          const result = await parse(
+            {
+              options: {
+                formats: ["markdown"],
+                parsers: [{ type: "pdf", mode: "auto", pageMarkdown: true }],
+              },
+              file: {
+                content: pdfFixture!,
+                filename: "upload.pdf",
+                contentType: "application/pdf",
+              },
+            },
+            identity,
+          );
+
+          expect(result.markdown).toContain("PDF Test File");
+          expect(result.pages?.[0]).toEqual(
+            expect.objectContaining({
+              pageNumber: 1,
+              markdown: expect.any(String),
+            }),
+          );
+          expect(result.pages).toHaveLength(result.metadata.numPages!);
+        },
+        scrapeTimeout * 3,
+      );
+    },
+  );
+
   it(
     "returns a validation error when file is missing",
     async () => {

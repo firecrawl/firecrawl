@@ -435,6 +435,24 @@ describe("V2 Types Validation", () => {
       expect((result.parsers as any)[0].maxPages).toBe(100);
     });
 
+    it("should accept physical page markdown for PDF parsers", () => {
+      const result = scrapeRequestSchema.parse({
+        url: "https://example.com/file.pdf",
+        parsers: [{ type: "pdf", mode: "auto", pageMarkdown: true }],
+      });
+
+      expect((result.parsers as any)[0].pageMarkdown).toBe(true);
+    });
+
+    it("should reject non-boolean physical page markdown", () => {
+      expect(() =>
+        scrapeRequestSchema.parse({
+          url: "https://example.com/file.pdf",
+          parsers: [{ type: "pdf", pageMarkdown: "yes" }],
+        }),
+      ).toThrow();
+    });
+
     it("should reject PDF parser with maxPages exceeding limit", () => {
       const input: ScrapeRequestInput = {
         url: "https://example.com",

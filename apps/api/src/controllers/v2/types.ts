@@ -482,6 +482,8 @@ const pdfParserWithOptions = z.strictObject({
   type: z.literal("pdf"),
   mode: pdfModeSchema.optional(),
   maxPages: z.int().positive().finite().max(10000).optional(),
+  /** Include physical per-page markdown alongside document markdown. */
+  pageMarkdown: z.boolean().optional(),
   // Experimental: route this request through the fire-pdf async pipeline
   // (POST /jobs + poll) instead of the sync POST /ocr endpoint. Falls back
   // to sync on any async-path failure, so user-visible behavior is unchanged
@@ -529,6 +531,16 @@ export function getPDFMode(parsers?: Parsers): PDFMode {
     }
   }
   return "auto";
+}
+
+export function getPDFPageMarkdown(parsers?: Parsers): boolean {
+  if (!parsers) return false;
+  for (const parser of parsers) {
+    if (typeof parser === "object" && parser.type === "pdf") {
+      return parser.pageMarkdown === true;
+    }
+  }
+  return false;
 }
 
 export function getFirePdfAsync(parsers?: Parsers): boolean {
@@ -1226,6 +1238,8 @@ export type Document = {
   description?: string;
   url?: string;
   markdown?: string;
+  /** Physical PDF pages, present only for `parsers[].pageMarkdown`. */
+  pages?: Array<{ pageNumber: number; markdown: string }>;
   html?: string;
   rawHtml?: string;
   links?: string[];

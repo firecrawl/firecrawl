@@ -7,7 +7,6 @@ vi.mock("../../../../../lib/gcs-pdf-cache", () => ({
   savePdfResultToCache: vi.fn(async () => null),
 }));
 
-
 import {
   FirePdfAsyncFailure,
   scrapePDFWithFirePDFAsync,
@@ -145,7 +144,7 @@ describe("scrapePDFWithFirePDFAsync", () => {
       internalOptions: {
         zeroDataRetention: true,
         teamId: "team-x",
-      teamConcurrency: 12,
+        teamConcurrency: 12,
         crawlId: undefined,
       },
     });
@@ -252,7 +251,101 @@ describe("scrapePDFWithFirePDFAsync", () => {
     expect(fallback).not.toHaveBeenCalled();
     expect(calls).toHaveLength(4);
     // Account context rides the submit body (FirePDF ENG-5049).
-    expect((calls[0].body as { team_concurrency?: number }).team_concurrency).toBe(12);
+    expect(
+      (calls[0].body as { team_concurrency?: number }).team_concurrency,
+    ).toBe(12);
+  });
+
+  it("requests and returns physical page markdown", async () => {
+    const { fetchImpl, calls } = makeFetchFromSequence([
+      {
+        matchUrl: /\/jobs$/,
+        matchMethod: "POST",
+        response: {
+          status: 200,
+          body: {
+            scrape_id: "scrape-id-test",
+            status: "done",
+            lane: "fast",
+          },
+        },
+      },
+      {
+        matchUrl: /\/jobs\/scrape-id-test\/result$/,
+        matchMethod: "GET",
+        response: {
+          status: 200,
+          body: {
+            schema_version: 1,
+            markdown: "continued paragraph",
+            page_markdown: [
+              { page: 1, markdown: "continued" },
+              { page: 2, markdown: "paragraph" },
+            ],
+            pages_processed: 2,
+          },
+        },
+      },
+    ]);
+
+    const result = await scrapePDFWithFirePDFAsync(
+      makeMeta(),
+      "BASE64",
+      undefined,
+      undefined,
+      "auto",
+      { fetchImpl, sleepImpl: noopSleep },
+      true,
+    );
+
+    expect((calls[0].body as any).options.include_page_markdown).toBe(true);
+    expect(result.markdown).toBe("continued paragraph");
+    expect(result.pageMarkdown).toEqual([
+      { page: 1, markdown: "continued" },
+      { page: 2, markdown: "paragraph" },
+    ]);
+  });
+
+  it("fails a page-aware request when FirePDF omits the page payload", async () => {
+    const { fetchImpl } = makeFetchFromSequence([
+      {
+        matchUrl: /\/jobs$/,
+        matchMethod: "POST",
+        response: {
+          status: 200,
+          body: {
+            scrape_id: "scrape-id-test",
+            status: "done",
+            lane: "fast",
+          },
+        },
+      },
+      {
+        matchUrl: /\/jobs\/scrape-id-test\/result$/,
+        matchMethod: "GET",
+        response: {
+          status: 200,
+          body: {
+            schema_version: 1,
+            markdown: "document only",
+            pages_processed: 1,
+          },
+        },
+      },
+    ]);
+
+    const error = await scrapePDFWithFirePDFAsync(
+      makeMeta(),
+      "BASE64",
+      undefined,
+      undefined,
+      "auto",
+      { fetchImpl, sleepImpl: noopSleep },
+      true,
+    ).catch(error => error);
+
+    expect(error).toBeInstanceOf(FirePdfAsyncFailure);
+    expect(error.reason).toBe("http_5xx");
   });
 
   it("submits without team context when the snapshot is absent", async () => {
@@ -262,7 +355,12 @@ describe("scrapePDFWithFirePDFAsync", () => {
         matchMethod: "POST",
         response: {
           status: 200,
-          body: { scrape_id: "scrape-id-test", status: "done", lane: "fast", retry_after_ms: 0 },
+          body: {
+            scrape_id: "scrape-id-test",
+            status: "done",
+            lane: "fast",
+            retry_after_ms: 0,
+          },
         },
       },
       {
@@ -284,15 +382,24 @@ describe("scrapePDFWithFirePDFAsync", () => {
 
     const meta = makeMeta();
     meta.internalOptions.teamConcurrency = null;
-    const result = await scrapePDFWithFirePDFAsync(meta, "BASE64", undefined, undefined, undefined, {
-      fetchImpl,
-      fallbackImpl: fallback,
-      sleepImpl: noopSleep,
-    });
+    const result = await scrapePDFWithFirePDFAsync(
+      meta,
+      "BASE64",
+      undefined,
+      undefined,
+      undefined,
+      {
+        fetchImpl,
+        fallbackImpl: fallback,
+        sleepImpl: noopSleep,
+      },
+    );
 
     // Missing snapshot must never block the scrape — field simply absent.
     expect(result.markdown).toBe("# No context");
-    expect((calls[0].body as { team_concurrency?: number }).team_concurrency).toBeUndefined();
+    expect(
+      (calls[0].body as { team_concurrency?: number }).team_concurrency,
+    ).toBeUndefined();
     expect(fallback).not.toHaveBeenCalled();
   });
 
@@ -335,7 +442,13 @@ describe("scrapePDFWithFirePDFAsync", () => {
 
     expect(error).toBeInstanceOf(FirePdfAsyncFailure);
     expect(error.reason).toBe("network_error");
-    expect(calls.map(({ url, method, headers }) => ({ url, method, ...(headers !== undefined && { headers }) }))).toEqual([
+    expect(
+      calls.map(({ url, method, headers }) => ({
+        url,
+        method,
+        ...(headers !== undefined && { headers }),
+      })),
+    ).toEqual([
       {
         url: "http://fire-pdf.test/jobs",
         method: "POST",

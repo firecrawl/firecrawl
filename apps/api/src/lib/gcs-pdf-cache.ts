@@ -13,6 +13,8 @@ type CachedPdfResult = {
   markdown: string;
   html: string;
   pagesProcessed?: number;
+  /** Physical page markdown; present only in page-capable cache variants. */
+  pageMarkdown?: Array<{ page: number; markdown: string }>;
 };
 
 const PROVIDER_PREFIXES: Record<PdfCacheProvider, string> = {

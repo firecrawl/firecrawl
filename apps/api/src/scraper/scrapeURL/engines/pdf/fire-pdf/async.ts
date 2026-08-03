@@ -37,6 +37,7 @@ export async function scrapePDFWithFirePDFAsync(
   pagesProcessed?: number,
   mode?: PDFMode,
   deps: FirePdfAsyncDeps = {},
+  includePageMarkdown = false,
 ): Promise<PDFProcessorResult> {
   const fetchImpl = deps.fetchImpl ?? undiciFetch;
   const fallbackImpl = deps.fallbackImpl ?? scrapePDFWithFirePDF;
@@ -47,7 +48,14 @@ export async function scrapePDFWithFirePDFAsync(
   // Async persists inputs and queue state, so ZDR is excluded until that
   // lifecycle has an explicit delete-on-completion contract.
   if (meta.internalOptions.zeroDataRetention) {
-    return fallbackImpl(meta, base64Content, maxPages, pagesProcessed, mode);
+    return fallbackImpl(
+      meta,
+      base64Content,
+      maxPages,
+      pagesProcessed,
+      mode,
+      includePageMarkdown,
+    );
   }
 
   const cached = await tryGetCached(
@@ -56,6 +64,7 @@ export async function scrapePDFWithFirePDFAsync(
     mode,
     maxPages,
     pagesProcessed,
+    includePageMarkdown,
   );
   if (cached) return cached;
 
@@ -73,7 +82,14 @@ export async function scrapePDFWithFirePDFAsync(
   if (!baseUrl) {
     // Should be unreachable — call site checks this — but fall back rather
     // than crash if a route somehow bypasses the gate.
-    return fallbackImpl(meta, base64Content, maxPages, pagesProcessed, mode);
+    return fallbackImpl(
+      meta,
+      base64Content,
+      maxPages,
+      pagesProcessed,
+      mode,
+      includePageMarkdown,
+    );
   }
 
   const overallStartedAt = now();
@@ -105,6 +121,7 @@ export async function scrapePDFWithFirePDFAsync(
       maxPages,
       pagesProcessed,
       mode,
+      includePageMarkdown,
       deadlineAt,
       teamConcurrency,
       fetchImpl,
@@ -160,6 +177,11 @@ export async function scrapePDFWithFirePDFAsync(
   // ── Assemble + cache save ─────────────────────────────────────────────
   const pages =
     fetched.pages_processed ?? polled.poll.pages_processed ?? pagesProcessed;
+  if (includePageMarkdown && fetched.page_markdown === undefined) {
+    failAsync(meta, "http_5xx", {
+      note: "FirePDF result omitted requested physical page markdown",
+    });
+  }
   const durationMs = now() - overallStartedAt;
   firePdfAsyncTotalDurationSeconds.observe(durationMs / 1000);
 
@@ -168,6 +190,7 @@ export async function scrapePDFWithFirePDFAsync(
     durationMs,
     markdownLength: fetched.markdown.length,
     pagesProcessed: pages,
+    pageMarkdownPages: fetched.page_markdown?.length,
     failedPages: fetched.failed_pages,
     partialPages: fetched.partial_pages,
     pollCount: polled.pollCount,
@@ -177,6 +200,7 @@ export async function scrapePDFWithFirePDFAsync(
     markdown: fetched.markdown,
     html: await safeMarkdownToHtml(fetched.markdown, meta.logger, meta.id),
     pagesProcessed: pages,
+    ...(fetched.page_markdown ? { pageMarkdown: fetched.page_markdown } : {}),
   };
 
   await maybeSaveResult({
@@ -184,6 +208,7 @@ export async function scrapePDFWithFirePDFAsync(
     base64Content,
     mode,
     maxPages,
+    includePageMarkdown,
     result: processorResult,
   });
 

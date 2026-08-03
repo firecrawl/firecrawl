@@ -36,7 +36,10 @@ import {
   IndexMissError,
   NoCachedDataError,
 } from "../../error";
-import { shouldParsePDF } from "../../../../controllers/v2/types";
+import {
+  getPDFPageMarkdown,
+  shouldParsePDF,
+} from "../../../../controllers/v2/types";
 import { hasFormatOfType } from "../../../../lib/format-utils";
 
 export async function sendDocumentToIndex(meta: Meta, document: Document) {
@@ -56,6 +59,10 @@ export async function sendDocumentToIndex(meta: Meta, document: Document) {
     // every access must go through the Exchange and its ledger.
     meta.winnerEngine !== "exchange" &&
     !(meta.winnerEngine === "pdf" && !shouldParsePDF(meta.options.parsers)) &&
+    // Page-aware results are capability-specific and are not represented in
+    // the URL index schema yet. Do not write an entry that could later be
+    // served without its required pages payload.
+    !getPDFPageMarkdown(meta.options.parsers) &&
     !meta.options.parsers?.some(parser => {
       if (
         typeof parser === "object" &&

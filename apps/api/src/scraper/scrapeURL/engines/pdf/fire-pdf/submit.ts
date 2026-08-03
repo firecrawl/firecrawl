@@ -19,6 +19,7 @@ type SubmitArgs = {
   maxPages: number | undefined;
   pagesProcessed: number | undefined;
   mode: PDFMode | undefined;
+  includePageMarkdown: boolean;
   deadlineAt: string;
   /** Team's sold concurrency from the ACUC (ENG-5049 account context).
    * Optional: entitlement lookup must never block or fail a scrape. */
@@ -58,6 +59,7 @@ export async function submitJob(args: SubmitArgs): Promise<SubmitOutcome> {
     maxPages,
     pagesProcessed,
     mode,
+    includePageMarkdown,
     deadlineAt,
     teamConcurrency,
     fetchImpl,
@@ -86,6 +88,7 @@ export async function submitJob(args: SubmitArgs): Promise<SubmitOutcome> {
       ...(pagesProcessed !== undefined && { pages_estimate: pagesProcessed }),
       ...(maxPages !== undefined && { max_pages: maxPages }),
       ...(mode !== undefined && { mode }),
+      ...(includePageMarkdown && { include_page_markdown: true }),
     },
   };
 
