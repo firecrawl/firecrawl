@@ -834,6 +834,19 @@ async function scrapeURLLoop(meta: Meta): Promise<ScrapeUrlResponse> {
                   error: error.error,
                 },
               );
+            } else if (error.error instanceof EngineUnsuccessfulError) {
+              // An engine declining the page is a normal waterfall outcome, not
+              // an anomaly: it is raised both by the success-factor check above
+              // (which already logs "deemed unsuccessful" with its reasoning) and
+              // by engines that recognise the body as none of their business, such
+              // as pdf/document finding HTML. Debug-level here keeps it from
+              // double-logging as an unexpected error.
+              meta.logger.debug(
+                "Engine " + error.engine + " was unsuccessful, waterfalling.",
+                {
+                  error: error.error,
+                },
+              );
             } else if (
               error.error instanceof AddFeatureError ||
               error.error instanceof RemoveFeatureError ||
