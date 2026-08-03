@@ -95,7 +95,7 @@ const booleanFlag = z
     value === undefined ? undefined : value === true || value === "true",
   );
 
-export const developerSearchSchema = z.strictObject({
+const developerSearchSchema = z.strictObject({
   query: z.string().min(1),
   k: kSchema(100),
   types: multiString,
@@ -113,7 +113,7 @@ export const developerSearchSchema = z.strictObject({
   ...commonQuery,
 });
 
-export const DEVELOPER_SEARCH_QUERY_KEYS = [
+const DEVELOPER_SEARCH_QUERY_KEYS = [
   "query",
   "k",
   "types",
