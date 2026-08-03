@@ -17,7 +17,6 @@ type ReplayAction =
   | { type: "write"; text: string }
   | { type: "press"; key: string }
   | { type: "scroll"; direction?: "up" | "down"; selector?: string }
-  | { type: "executeJavascript"; script: string }
   | { type: "screenshot" | "pdf" | "scrape" };
 
 interface ScrapeReplayContext {
@@ -113,12 +112,6 @@ function sanitizeReplayActions(rawActions: unknown): ReplayAction[] {
         direction,
         ...(selector ? { selector } : {}),
       });
-      continue;
-    }
-
-    if (type === "executeJavascript") {
-      if (typeof rawAction.script !== "string") continue;
-      actions.push({ type, script: rawAction.script });
       continue;
     }
 
@@ -344,11 +337,6 @@ for (let i = 0; i < replay.actions.length; i += 1) {
           await page.mouse.wheel(0, action.direction === "up" ? -800 : 800);
         }
         break;
-      case "executeJavascript": {
-        const wrapped = \`(async () => { \${action.script} })()\`;
-        await page.evaluate(script => (0, eval)(script), wrapped);
-        break;
-      }
       case "screenshot":
       case "pdf":
       case "scrape":
