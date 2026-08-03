@@ -7,7 +7,7 @@ overrides:
   "rollup@<4.59.0": ">=4.59.0"
   "picomatch@<4.0.4": ">=4.0.4"
   handlebars: ">=4.7.9"
-  "brace-expansion@>=5.0.0 <5.0.8": "5.0.8"
+  "brace-expansion@>=5.0.0 <5.0.9": "5.0.9"
   "js-yaml@>=3.0.0 <3.15.0": "3.15.0"
   "axios@>=1.0.0 <1.16.0": "1.16.1"
   "follow-redirects@<1.16.0": ">=1.16.0 <2.0.0"
