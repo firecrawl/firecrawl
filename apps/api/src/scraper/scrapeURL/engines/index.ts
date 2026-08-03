@@ -703,7 +703,11 @@ export async function buildFallbackList(meta: Meta): Promise<
     !meta.featureFlags.has("audio") &&
     !meta.featureFlags.has("video")
   ) {
-    for (const engine of ["fire-engine;tlsclient", "fetch"] as Engine[]) {
+    for (const engine of [
+      "fire-engine;tlsclient",
+      "fire-engine;tlsclient;stealth",
+      "fetch",
+    ] as Engine[]) {
       const index = _engines.indexOf(engine);
       if (index !== -1) {
         _engines.splice(index, 1);
