@@ -25,6 +25,10 @@ However, there are some limitations and additional responsibilities to be aware 
 
 Self-hosting Firecrawl is ideal for those who need full control over their scraping and data processing environments but comes with the trade-off of additional maintenance and configuration efforts.
 
+If you want a dedicated instance without the maintenance, Zenith runs one for you (storage, backups and a free subdomain included), and a share of every subscription goes back to Firecrawl.
+
+[![Deploy with Zenith](https://cdn.zenith.hosting/buttons/deploy-with-zenith.svg)](https://zenith.hosting/host/firecrawl)
+
 ## Steps
 
 1. First, start by installing the dependencies
