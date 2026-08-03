@@ -1,14 +1,13 @@
 # Self-hosting Firecrawl
 
-Use the [Firecrawl self-hosting guide](https://docs.firecrawl.dev/contributing/self-host)
-when your goal is a first successful Docker Compose deployment. It recommends
-an evaluation path, explains the tradeoffs, and ends with a functional scrape.
+Want to get Firecrawl running? Start with the
+[Firecrawl self-hosting guide](https://docs.firecrawl.dev/contributing/self-host).
+It takes you from checkout to a successful scrape with Docker Compose.
 
-Use this file when you need revision-specific context before changing that
-baseline. It travels with the source and intentionally does not duplicate the
-quickstart.
+Use this file when you are changing the baseline. It stays with the source, so
+the services and configuration match the revision you checked out.
 
-## Choose the right source
+## Pick the guide for the job
 
 | If you need to decide or do this | Start here |
 | --- | --- |
@@ -17,36 +16,39 @@ quickstart.
 | Adapt a Kubernetes deployment | [Kubernetes manifests](./examples/kubernetes/cluster-install/) or [Helm chart](./examples/kubernetes/firecrawl-helm/) |
 | Change Firecrawl product code | [Contributing guide](./CONTRIBUTING.md) |
 
-## Keep these defaults for the first run
+## Keep the first run simple
 
-- **Source revision → exact release tag.** Change it after reviewing the Compose
-  file from the target release. A checkout of `main` and floating image tags can
-  change independently.
-- **API authentication → `USE_DB_AUTHENTICATION=false`.** Change it after
-  provisioning the additional database schema and application configuration.
-  Changing this variable alone is not a complete authenticated deployment.
-- **Queue backend → NuQ PostgreSQL.** Change it when you intentionally set
-  `NUQ_BACKEND=fdb` and are prepared to operate the FoundationDB backend.
-- **Scraping engines → bundled Playwright with basic fetch fallback.** Change
-  them after supplying and configuring a separate engine such as Fire-engine.
-- **AI-backed features → no model provider.** Change this after configuring
-  OpenAI, an OpenAI-compatible endpoint, or Ollama.
-- **Queue administration UI → disabled.** Enable it only with a strong
+- **Release: an exact tag.** Review the target release's Compose file before
+  changing it. A checkout of `main` and floating image tags can change
+  independently.
+- **API authentication: `USE_DB_AUTHENTICATION=false`.** Add authentication
+  after provisioning the required database schema and application
+  configuration. Changing this variable alone is not a complete authenticated
+  deployment.
+- **Queue: NuQ PostgreSQL.** Keep it unless you intentionally set
+  `NUQ_BACKEND=fdb` and are prepared to operate FoundationDB.
+- **Scraping: bundled Playwright with basic fetch fallback.** Connect and
+  configure a separate engine such as Fire-engine only when you need it.
+- **AI-backed features: no model provider.** Connect OpenAI, an OpenAI-compatible
+  endpoint, or Ollama when a feature needs it.
+- **Queue administration UI: off.** Enable it only with a strong
   `BULL_AUTH_KEY` and restricted network access.
+
+Get this baseline working before swapping backends or adding providers.
 
 The root `.env` overrides only variables referenced by `docker-compose.yaml`.
 Do not use `apps/api/.env.example` as a drop-in Compose contract.
 
-## What the default stack commits you to
+## What the stack runs
 
 At this revision, Compose runs the Firecrawl API and workers, Playwright, Redis,
 RabbitMQ, NuQ PostgreSQL, and FoundationDB services for the optional queue
 backend. Only the API is published to the host by default, on port `3002`.
 
-Self-hosting gives you source and infrastructure control. In return, you own
+Self-hosting gives you source and infrastructure control. You also own
 security, availability, capacity, upgrades, data retention, and compliance.
 
-## Decide before production
+## Before production
 
 - **If the API will leave a trusted network,** add a complete authentication
   design, TLS termination, and network policy first. The default API is
@@ -67,6 +69,6 @@ security, availability, capacity, upgrades, data retention, and compliance.
 Treat the Kubernetes and Helm examples as versioned starting points, not as
 evidence that these production decisions have been made for you.
 
-For help, use the
+Stuck? Open a
 [self-host issue template](https://github.com/firecrawl/firecrawl/issues/new?template=self_host_issue.md)
 or join the [Firecrawl Discord community](https://discord.gg/firecrawl).
