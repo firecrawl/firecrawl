@@ -703,11 +703,21 @@ export async function buildFallbackList(meta: Meta): Promise<
     !meta.featureFlags.has("audio") &&
     !meta.featureFlags.has("video")
   ) {
-    for (const engine of [
-      "fire-engine;tlsclient",
-      "fire-engine;tlsclient;stealth",
-      "fetch",
-    ] as Engine[]) {
+    // The sort-time quality boost below cannot resurrect an engine that was
+    // spliced out here, so dropping tlsclient unconditionally would silently
+    // neuter the engpicker opt-in on exactly the TlsClientOk domains where
+    // engpicker measured its output to match chrome-cdp's. Keep both variants
+    // when that verdict is in hand; regular scrapes never set the flag, so they
+    // drop tlsclient as intended.
+    const enginesToDrop: Engine[] = ["fetch"];
+    if (!shouldPrioritizeTlsClient) {
+      enginesToDrop.push(
+        "fire-engine;tlsclient",
+        "fire-engine;tlsclient;stealth",
+      );
+    }
+
+    for (const engine of enginesToDrop) {
       const index = _engines.indexOf(engine);
       if (index !== -1) {
         _engines.splice(index, 1);
