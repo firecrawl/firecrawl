@@ -83,8 +83,8 @@ async function crawlStatusWS(
   const loop = async () => {
     if (finished) return;
 
-    const jobIDs = await getCrawlJobs(req.params.jobId);
     const kickoffFinished = await isCrawlKickoffFinished(req.params.jobId);
+    const jobIDs = await getCrawlJobs(req.params.jobId);
 
     if (
       shouldCloseCrawlStatusWS(
