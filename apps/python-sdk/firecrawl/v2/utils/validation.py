@@ -790,16 +790,12 @@ def prepare_scrape_options(options: Optional[ScrapeOptions]) -> Optional[Dict[st
                         parser_data = dict(parser)
                         if "max_pages" in parser_data:
                             parser_data["maxPages"] = parser_data.pop("max_pages")
-                        if "page_markdown" in parser_data:
-                            parser_data["pageMarkdown"] = parser_data.pop("page_markdown")
                         converted_parsers.append(parser_data)
                     else:
                         parser_data = parser.model_dump(exclude_none=True)
                         # Convert snake_case to camelCase for API
                         if "max_pages" in parser_data:
                             parser_data["maxPages"] = parser_data.pop("max_pages")
-                        if "page_markdown" in parser_data:
-                            parser_data["pageMarkdown"] = parser_data.pop("page_markdown")
                         converted_parsers.append(parser_data)
                 scrape_data["parsers"] = converted_parsers
             elif key == "location":

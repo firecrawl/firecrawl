@@ -435,20 +435,10 @@ RedactPIIEntity = Literal[
 ]
 
 
-class DocumentPage(BaseModel):
-    """Markdown extracted from one physical PDF page."""
-
-    model_config = {"populate_by_name": True}
-
-    page_number: int = Field(alias="pageNumber")
-    markdown: str
-
-
 class Document(BaseModel):
     """A scraped document."""
 
     markdown: Optional[str] = None
-    pages: Optional[List[DocumentPage]] = None
     html: Optional[str] = None
     raw_html: Optional[str] = None
     json: Optional[Any] = None
@@ -1604,7 +1594,6 @@ class PDFParser(BaseModel):
     type: Literal["pdf"] = "pdf"
     mode: Optional[Literal["fast", "auto", "ocr"]] = None
     max_pages: Optional[int] = None
-    page_markdown: Optional[bool] = None
 
 
 # Location types
