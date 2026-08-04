@@ -646,12 +646,15 @@ if (config.RESEARCH_PROXY_URL) {
     createResearchRouter({ legacy: true }),
   );
 
+  // Canonical: developer search is a subset of search, so it lives under it.
   v2Router.use(
     "/search/developer",
     authMiddleware(RateLimiterMode.DeveloperSearch, { allowKeyless: true }),
     createDeveloperRouter({ root: true }),
   );
 
+  // Compatibility only: the pre-GA path. Published CLI and MCP builds still
+  // call it. Delete once those ship on /search/developer. Not documented.
   v2Router.use(
     "/developer",
     authMiddleware(RateLimiterMode.DeveloperSearch),

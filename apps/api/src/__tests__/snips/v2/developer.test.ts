@@ -10,9 +10,10 @@ const KEYLESS_ENABLED =
   process.env.KEYLESS_REQUESTS_PER_DAY !== undefined &&
   process.env.KEYLESS_CREDITS_PER_DAY !== undefined;
 
-const CANONICAL_PATH = "/v2/developer/search";
-const ALIAS_PATH = "/v2/search/developer";
-const SERVING_PATHS = [CANONICAL_PATH, ALIAS_PATH];
+const CANONICAL_PATH = "/v2/search/developer";
+/** Compatibility mount kept for published CLI/MCP builds; removed once they ship on CANONICAL_PATH. */
+const LEGACY_PATH = "/v2/developer/search";
+const SERVING_PATHS = [CANONICAL_PATH, LEGACY_PATH];
 
 const COVERAGE_STATUSES = ["ok", "degraded", "unavailable", "skipped"];
 
@@ -214,8 +215,8 @@ describeIf(HAS_RESEARCH)("Developer Search API", () => {
   }, 120000);
 
   describeIf(KEYLESS_ENABLED)("keyless developer search", () => {
-    it("permits keyless access on the alias mount", async () => {
-      const res = await researchRaw(ALIAS_PATH, {
+    it("permits keyless access on the canonical mount", async () => {
+      const res = await researchRaw(CANONICAL_PATH, {
         query: "retry backoff",
         k: 1,
       });
@@ -225,8 +226,8 @@ describeIf(HAS_RESEARCH)("Developer Search API", () => {
       expect(Array.isArray(res.body.results)).toBe(true);
     }, 120000);
 
-    it("refuses keyless access on the canonical mount", async () => {
-      const res = await researchRaw(CANONICAL_PATH, {
+    it("refuses keyless access on the legacy mount", async () => {
+      const res = await researchRaw(LEGACY_PATH, {
         query: "retry backoff",
         k: 1,
       });
