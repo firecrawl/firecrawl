@@ -13,16 +13,25 @@ describe("shouldCloseCrawlStatusWS", () => {
 
 describe("deriveCrawlStatus", () => {
   it("does not mark an empty job list as completed", () => {
-    expect(deriveCrawlStatus(false, 0, 0, [])).toBe("scraping");
+    expect(deriveCrawlStatus(false, false, 0, 0, [])).toBe("scraping");
+  });
+
+  it("keeps completed visible jobs scraping while kickoff is unfinished", () => {
+    expect(
+      deriveCrawlStatus(false, false, 2, 0, [
+        ["job-1", "completed"],
+        ["job-2", "completed"],
+      ]),
+    ).toBe("scraping");
   });
 
   it("marks an all-failed crawl as completed", () => {
-    expect(deriveCrawlStatus(false, 2, 2, [])).toBe("completed");
+    expect(deriveCrawlStatus(false, true, 2, 2, [])).toBe("completed");
   });
 
   it("marks a non-empty all-completed job list as completed", () => {
     expect(
-      deriveCrawlStatus(false, 2, 2, [
+      deriveCrawlStatus(false, true, 2, 2, [
         ["job-1", "completed"],
         ["job-2", "completed"],
       ]),
@@ -30,12 +39,12 @@ describe("deriveCrawlStatus", () => {
   });
 
   it("keeps cancelled crawls cancelled", () => {
-    expect(deriveCrawlStatus(true, 0, 0, [])).toBe("cancelled");
+    expect(deriveCrawlStatus(true, false, 0, 0, [])).toBe("cancelled");
   });
 
   it("keeps active jobs scraping", () => {
     expect(
-      deriveCrawlStatus(false, 2, 1, [
+      deriveCrawlStatus(false, true, 2, 1, [
         ["job-1", "completed"],
         ["job-2", "active"],
       ]),

@@ -93,6 +93,7 @@ async function crawlStatusWS(
         kickoffFinished,
       )
     ) {
+      finished = true;
       return close(ws, 1000, { type: "done" });
     }
 
@@ -127,11 +128,13 @@ async function crawlStatusWS(
 
   setTimeout(loop, 1000);
 
-  let [_doneJobIDs, jobIDs, throttledJobsSet] = await Promise.all([
-    getDoneJobsOrdered(req.params.jobId),
-    getCrawlJobs(req.params.jobId),
-    getConcurrencyLimitedJobs(req.auth.team_id),
-  ]);
+  let [_doneJobIDs, jobIDs, throttledJobsSet, kickoffFinished] =
+    await Promise.all([
+      getDoneJobsOrdered(req.params.jobId),
+      getCrawlJobs(req.params.jobId),
+      getConcurrencyLimitedJobs(req.auth.team_id),
+      isCrawlKickoffFinished(req.params.jobId),
+    ]);
 
   doneJobIDs = _doneJobIDs;
   const jobs = new Map((await scrapeQueue.getJobs(jobIDs)).map(x => [x.id, x]));
@@ -160,6 +163,7 @@ async function crawlStatusWS(
 
   let status: CrawlWebSocketStatus = deriveCrawlStatus(
     sc.cancelled === true,
+    kickoffFinished,
     jobIDs.length,
     failedJobCount,
     validJobStatuses,

@@ -16,11 +16,14 @@ export function shouldCloseCrawlStatusWS(
 
 export function deriveCrawlStatus(
   cancelled: boolean,
+  kickoffFinished: boolean,
   jobCount: number,
   failedJobCount: number,
   validJobStatuses: ReadonlyArray<readonly [string, NuQJobStatus]>,
 ): CrawlWebSocketStatus {
   if (cancelled) return "cancelled";
+
+  if (!kickoffFinished) return "scraping";
 
   if (jobCount > 0 && jobCount === failedJobCount) {
     return "completed";
