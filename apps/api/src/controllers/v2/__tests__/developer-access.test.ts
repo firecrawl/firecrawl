@@ -32,8 +32,12 @@ vi.mock("../../../lib/logger", () => ({
 }));
 
 import { createDeveloperRouter } from "../research-proxy";
+import { billTeam } from "../../../services/billing/credit_billing";
 
 const TEAM_ID = "11111111-1111-1111-1111-111111111111";
+
+/** Lets the un-awaited controller (wrapped by `wrap`) and its `finally` run. */
+const flush = () => new Promise(resolve => setImmediate(resolve));
 
 /** Pulls the GET handler out of the router's stack for either mount shape. */
 function developerHandler(options: { root?: boolean } = {}) {
@@ -57,9 +61,16 @@ function makeReq(flags: Record<string, unknown> | null) {
 }
 
 function makeRes() {
-  const res: any = { status: vi.fn(), json: vi.fn(), end: vi.fn() };
+  const res: any = {
+    status: vi.fn(),
+    json: vi.fn(),
+    send: vi.fn(),
+    end: vi.fn(),
+    setHeader: vi.fn(),
+  };
   res.status.mockReturnValue(res);
   res.json.mockReturnValue(res);
+  res.send.mockReturnValue(res);
   return res;
 }
 
@@ -67,9 +78,17 @@ beforeEach(() => {
   vi.clearAllMocks();
   mocks.logRequest.mockResolvedValue(undefined);
   mocks.logResearchEndpoint.mockResolvedValue(undefined);
+  // The controller consumes this as a `fetch` Response: `.ok`, `.status`,
+  // `.headers.get()` and `await .text()`. A plain body object makes
+  // `.headers.get()` throw and the handler answer 502 from its catch block,
+  // which would let these tests pass without ever serving a real response.
+  // At least one result is required for the request to bill any credits.
   mocks.fetchResearchUpstream.mockResolvedValue({
-    success: true,
-    results: [],
+    ok: true,
+    status: 200,
+    headers: new Headers(),
+    text: async () =>
+      JSON.stringify({ success: true, results: [{ id: "repo-one" }] }),
   });
 });
 
@@ -80,16 +99,28 @@ describe.each([
   it("serves a team with no flags at all", async () => {
     const res = makeRes();
     await developerHandler(options)(makeReq({}), res);
+    await flush();
 
     expect(res.status).not.toHaveBeenCalledWith(403);
     expect(mocks.fetchResearchUpstream).toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(200);
+    expect(res.json).toHaveBeenCalledWith(
+      expect.objectContaining({ success: true }),
+    );
+    expect(billTeam).toHaveBeenCalled();
   });
 
   it("serves a keyless caller (no acuc at all)", async () => {
     const res = makeRes();
     await developerHandler(options)(makeReq(null), res);
+    await flush();
 
     expect(res.status).not.toHaveBeenCalledWith(403);
     expect(mocks.fetchResearchUpstream).toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(200);
+    expect(res.json).toHaveBeenCalledWith(
+      expect.objectContaining({ success: true }),
+    );
+    expect(billTeam).toHaveBeenCalled();
   });
 });
