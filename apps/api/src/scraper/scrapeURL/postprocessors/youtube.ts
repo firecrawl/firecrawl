@@ -30,6 +30,7 @@ type YouTubeMetadataRequest = {
   url: string;
   transcript_language: string;
   cookies?: BrowserCookie[];
+  max_age_seconds?: number;
 };
 
 function getTranscriptLanguage(meta: Meta): string {
@@ -102,10 +103,19 @@ async function getYouTubeMetadata(
   engineResult: EngineScrapeResult,
 ): Promise<YouTubeMetadataResponse> {
   const cookies = meta.audioCookies ?? engineResult.audioCookies;
+  // Forward the scrape's maxAge (ms) to avgrab's metadata cache as a seconds
+  // freshness bound. Only when explicitly set: unset leaves avgrab on its
+  // default TTL (so normal scrapes still benefit from the cache), while
+  // maxAge:0 forces a live extraction — which is how the E2E probe bypasses
+  // the cache so a stale hit can't mask a broken extraction path.
+  const maxAge = meta.options.maxAge;
   const requestBody: YouTubeMetadataRequest = {
     url: engineResult.url,
     transcript_language: getTranscriptLanguage(meta),
     ...(cookies && cookies.length > 0 ? { cookies } : {}),
+    ...(maxAge !== undefined
+      ? { max_age_seconds: Math.floor(maxAge / 1000) }
+      : {}),
   };
 
   const response = await fetch(`${config.AVGRAB_SERVICE_URL}/metadata`, {
