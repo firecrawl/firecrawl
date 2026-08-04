@@ -146,16 +146,25 @@ export async function maybeSaveResult(args: {
   try {
     await savePdfResultToCache(base64Content, result, "firepdf", ownVariant);
     // A page-capable parse is also a valid legacy result. Populate the compact
-    // base key so a later legacy request never repeats the conversion. Strip
-    // the page payload to keep the hot-path cache object small.
+    // base key when it is missing so a later legacy request never repeats the
+    // conversion. A page-sidecar miss can coexist with a warm legacy key during
+    // rollout, so avoid rewriting that object. Strip the page payload to keep
+    // the hot-path cache object small.
     if (includePageMarkdown && ownVariant !== baseVariant) {
-      const { pageMarkdown: _pageMarkdown, ...baseResult } = result;
-      await savePdfResultToCache(
+      const existingBase = await getPdfResultFromCache(
         base64Content,
-        baseResult,
         "firepdf",
         baseVariant,
       );
+      if (!existingBase || !isValidCachedDocument(existingBase)) {
+        const { pageMarkdown: _pageMarkdown, ...baseResult } = result;
+        await savePdfResultToCache(
+          base64Content,
+          baseResult,
+          "firepdf",
+          baseVariant,
+        );
+      }
     }
   } catch (error) {
     meta.logger.warn("Error saving FirePDF result to cache (continuing)", {
