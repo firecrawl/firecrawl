@@ -31,7 +31,7 @@ describe("deriveCrawlStatus", () => {
 
   it("marks a non-empty all-completed job list as completed", () => {
     expect(
-      deriveCrawlStatus(false, true, 2, 2, [
+      deriveCrawlStatus(false, true, 2, 0, [
         ["job-1", "completed"],
         ["job-2", "completed"],
       ]),
