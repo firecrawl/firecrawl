@@ -14,13 +14,21 @@ export function shouldCloseCrawlStatusWS(
   return kickoffFinished && jobCount === completedJobCount;
 }
 
-export function deriveCrawlStatus(
-  cancelled: boolean,
-  kickoffFinished: boolean,
-  jobCount: number,
-  failedJobCount: number,
-  validJobStatuses: ReadonlyArray<readonly [string, NuQJobStatus]>,
-): CrawlWebSocketStatus {
+type DeriveCrawlStatusOptions = {
+  cancelled: boolean;
+  kickoffFinished: boolean;
+  jobCount: number;
+  failedJobCount: number;
+  validJobStatuses: ReadonlyArray<readonly [string, NuQJobStatus]>;
+};
+
+export function deriveCrawlStatus({
+  cancelled,
+  kickoffFinished,
+  jobCount,
+  failedJobCount,
+  validJobStatuses,
+}: DeriveCrawlStatusOptions): CrawlWebSocketStatus {
   if (cancelled) return "cancelled";
 
   if (!kickoffFinished) return "scraping";

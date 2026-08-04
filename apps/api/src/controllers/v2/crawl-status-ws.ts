@@ -161,13 +161,13 @@ async function crawlStatusWS(
   // Check if the crawl failed during kickoff (e.g. queue full)
   const crawlError = await getCrawlError(req.params.jobId);
 
-  let status: CrawlWebSocketStatus = deriveCrawlStatus(
-    sc.cancelled === true,
+  let status: CrawlWebSocketStatus = deriveCrawlStatus({
+    cancelled: sc.cancelled === true,
     kickoffFinished,
-    jobIDs.length,
+    jobCount: jobIDs.length,
     failedJobCount,
     validJobStatuses,
-  );
+  });
 
   if (crawlError && jobIDs.length === 0 && status !== "cancelled") {
     status = "failed";
