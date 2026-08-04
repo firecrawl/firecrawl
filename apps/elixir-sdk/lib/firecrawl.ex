@@ -41,7 +41,7 @@ defmodule Firecrawl do
   @type response :: {:ok, Req.Response.t()} | {:error, Exception.t() | Firecrawl.Error.t()}
 
   @base_url "https://api.firecrawl.dev/v2"
-  @sdk_origin "elixir-sdk@1.9.1"
+  @sdk_origin "elixir-sdk@1.9.2"
 
   defp client(opts) do
     api_key =

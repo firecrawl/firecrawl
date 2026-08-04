@@ -10,6 +10,9 @@ public class Document
     [JsonPropertyName("markdown")]
     public string? Markdown { get; set; }
 
+    [JsonPropertyName("pages")]
+    public List<DocumentPage>? Pages { get; set; }
+
     [JsonPropertyName("html")]
     public string? Html { get; set; }
 

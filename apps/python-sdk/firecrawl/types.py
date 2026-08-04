@@ -11,6 +11,7 @@ from .v2.types import (
     
     # Document types
     Document,
+    DocumentPage,
     DocumentMetadata,
     
     # Scrape types
@@ -20,6 +21,7 @@ from .v2.types import (
     ScrapeData,
     ScrapeResponse,
     ThreatProtectionOptions,
+    PDFParser,
     
     # Crawl types
     CrawlRequest,
@@ -95,6 +97,7 @@ __all__ = [
     
     # Document types
     'Document',
+    'DocumentPage',
     'DocumentMetadata',
     
     # Scrape types
@@ -104,6 +107,7 @@ __all__ = [
     'ScrapeData',
     'ScrapeResponse',
     'ThreatProtectionOptions',
+    'PDFParser',
     
     # Crawl types
     'CrawlRequest',
@@ -172,4 +176,4 @@ __all__ = [
     # Configuration types
     'ClientConfig',
     'AgentOptions',
-]  
+]

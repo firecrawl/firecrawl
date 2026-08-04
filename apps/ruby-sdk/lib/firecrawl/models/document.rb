@@ -7,10 +7,11 @@ module Firecrawl
       attr_reader :markdown, :html, :raw_html, :json, :summary,
                   :metadata, :links, :images, :screenshot, :audio,
                   :video, :attributes, :actions, :answer, :highlights,
-                  :warning, :change_tracking, :branding, :product, :menu
+                  :warning, :change_tracking, :branding, :product, :menu, :pages
 
       def initialize(data)
         @markdown = data["markdown"]
+        @pages = data["pages"]&.map { |page| DocumentPage.new(page) }
         @html = data["html"]
         @raw_html = data["rawHtml"]
         @json = data["json"]

@@ -10,6 +10,7 @@ from typing import Any, Dict, Generic, List, Literal, Optional, TypeVar, Union
 import logging
 from pydantic import (
     BaseModel,
+    ConfigDict,
     Field,
     field_validator,
     ValidationError,
@@ -435,10 +436,20 @@ RedactPIIEntity = Literal[
 ]
 
 
+class DocumentPage(BaseModel):
+    """Markdown extracted from a physical PDF page."""
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    page_number: int = Field(alias="pageNumber")
+    markdown: str
+
+
 class Document(BaseModel):
     """A scraped document."""
 
     markdown: Optional[str] = None
+    pages: Optional[List[DocumentPage]] = None
     html: Optional[str] = None
     raw_html: Optional[str] = None
     json: Optional[Any] = None
@@ -1589,11 +1600,12 @@ class PDFAction(BaseModel):
 
 
 class PDFParser(BaseModel):
-    """PDF parser configuration with optional page limit and processing mode."""
+    """PDF parser configuration with optional page output."""
 
     type: Literal["pdf"] = "pdf"
     mode: Optional[Literal["fast", "auto", "ocr"]] = None
     max_pages: Optional[int] = None
+    page_markdown: Optional[bool] = None
 
 
 # Location types

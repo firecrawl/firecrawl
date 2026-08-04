@@ -31,7 +31,7 @@ final class ParseOptions
      * @param array<string, string>|null   $headers
      * @param list<string>|null            $includeTags
      * @param list<string>|null            $excludeTags
-     * @param list<mixed>|null             $parsers
+     * @param list<string|array<string, mixed>|PdfParser>|null $parsers
      * @param AuditMetadata|null           $auditMetadata
      */
     private function __construct(
@@ -56,7 +56,7 @@ final class ParseOptions
      * @param array<string, string>|null   $headers
      * @param list<string>|null            $includeTags
      * @param list<string>|null            $excludeTags
-     * @param list<mixed>|null             $parsers
+     * @param list<string|array<string, mixed>|PdfParser>|null $parsers
      * @param AuditMetadata|null           $auditMetadata
      */
     public static function with(
@@ -128,13 +128,19 @@ final class ParseOptions
             );
         }
 
+        if ($this->parsers !== null) {
+            $data['parsers'] = array_map(
+                static fn (mixed $parser): mixed => $parser instanceof PdfParser ? $parser->toArray() : $parser,
+                $this->parsers,
+            );
+        }
+
         $fields = [
             'headers' => $this->headers,
             'includeTags' => $this->includeTags,
             'excludeTags' => $this->excludeTags,
             'onlyMainContent' => $this->onlyMainContent,
             'timeout' => $this->timeout,
-            'parsers' => $this->parsers,
             'skipTlsVerification' => $this->skipTlsVerification,
             'removeBase64Images' => $this->removeBase64Images,
             'blockAds' => $this->blockAds,
@@ -210,7 +216,7 @@ final class ParseOptions
         return $this->timeout;
     }
 
-    /** @return list<mixed>|null */
+    /** @return list<string|array<string, mixed>|PdfParser>|null */
     public function getParsers(): ?array
     {
         return $this->parsers;

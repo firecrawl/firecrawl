@@ -33,6 +33,25 @@ type HighlightsFormat struct {
 	Query string `json:"query"`
 }
 
+// PDFParser configures PDF parsing for scrape and parse requests.
+type PDFParser struct {
+	Mode         string `json:"mode,omitempty"`
+	MaxPages     *int   `json:"maxPages,omitempty"`
+	PageMarkdown *bool  `json:"pageMarkdown,omitempty"`
+}
+
+// MarshalJSON always emits the API-required PDF parser type.
+func (p PDFParser) MarshalJSON() ([]byte, error) {
+	type pdfParser PDFParser
+	return json.Marshal(struct {
+		Type string `json:"type"`
+		pdfParser
+	}{
+		Type:      "pdf",
+		pdfParser: pdfParser(p),
+	})
+}
+
 // MarshalJSON always emits the API-required highlights format type.
 func (h HighlightsFormat) MarshalJSON() ([]byte, error) {
 	type highlightsFormat struct {

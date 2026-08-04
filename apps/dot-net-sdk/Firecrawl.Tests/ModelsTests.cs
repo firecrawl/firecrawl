@@ -48,6 +48,26 @@ public class ModelsTests
     }
 
     [Fact]
+    public void ScrapeOptions_SerializesPdfPageMarkdown()
+    {
+        var options = new ScrapeOptions
+        {
+            Parsers = new List<object>
+            {
+                new PdfParser
+                {
+                    Mode = "auto",
+                    MaxPages = 5,
+                    PageMarkdown = true
+                }
+            }
+        };
+
+        var json = JsonSerializer.Serialize(options, JsonOptions);
+        Assert.Contains("\"parsers\":[{\"type\":\"pdf\",\"mode\":\"auto\",\"maxPages\":5,\"pageMarkdown\":true}]", json);
+    }
+
+    [Fact]
     public void CrawlOptions_SerializesCorrectly()
     {
         var options = new CrawlOptions
@@ -127,6 +147,10 @@ public class ModelsTests
         {
             "markdown": "# Hello World",
             "html": "<h1>Hello World</h1>",
+            "pages": [
+                { "pageNumber": 1, "markdown": "# First" },
+                { "pageNumber": 2, "markdown": "# Second" }
+            ],
             "video": "https://storage.googleapis.com/firecrawl/video.mp4",
             "metadata": {
                 "title": "Test",
@@ -140,6 +164,10 @@ public class ModelsTests
         Assert.NotNull(doc);
         Assert.Equal("# Hello World", doc.Markdown);
         Assert.Equal("<h1>Hello World</h1>", doc.Html);
+        Assert.NotNull(doc.Pages);
+        Assert.Equal(2, doc.Pages.Count);
+        Assert.Equal(2, doc.Pages[1].PageNumber);
+        Assert.Equal("# Second", doc.Pages[1].Markdown);
         Assert.Equal("https://storage.googleapis.com/firecrawl/video.mp4", doc.Video);
         Assert.NotNull(doc.Metadata);
         Assert.Null(doc.Warning);

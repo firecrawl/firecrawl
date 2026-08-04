@@ -77,6 +77,38 @@ func TestScrapeOptionsSerializesRedactPII(t *testing.T) {
 	}
 }
 
+func TestScrapeOptionsSerializesPDFPageMarkdown(t *testing.T) {
+	payload, err := json.Marshal(ScrapeOptions{
+		Parsers: []interface{}{
+			PDFParser{
+				Mode:         "auto",
+				MaxPages:     Int(5),
+				PageMarkdown: Bool(true),
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Marshal ScrapeOptions: %v", err)
+	}
+
+	want := `"parsers":[{"type":"pdf","mode":"auto","maxPages":5,"pageMarkdown":true}]`
+	if !strings.Contains(string(payload), want) {
+		t.Fatalf("serialized PDF parser = %s, want to contain %s", payload, want)
+	}
+}
+
+func TestDocumentDeserializesPDFPages(t *testing.T) {
+	var document Document
+	err := json.Unmarshal([]byte(`{"pages":[{"pageNumber":1,"markdown":"# First"},{"pageNumber":2,"markdown":"# Second"}]}`), &document)
+	if err != nil {
+		t.Fatalf("Unmarshal Document: %v", err)
+	}
+
+	if len(document.Pages) != 2 || document.Pages[1].PageNumber != 2 || document.Pages[1].Markdown != "# Second" {
+		t.Fatalf("deserialized pages = %#v", document.Pages)
+	}
+}
+
 func TestSearchOptionsSerializesHighlights(t *testing.T) {
 	payload, err := json.Marshal(SearchOptions{Highlights: Bool(false)})
 	if err != nil {
