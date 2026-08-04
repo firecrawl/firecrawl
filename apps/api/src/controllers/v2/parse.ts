@@ -42,8 +42,8 @@ import {
 } from "../../lib/document-formats";
 
 const AGENT_INTEROP_CONCURRENCY_BOOST = 3;
-const SUPPORTED_PARSE_FILE_TYPES =
-  ".html, .htm, .pdf, .docx, .doc, .docm, .odt, .ods, .odp, .rtf, .xlsx, .xls, .xlsm, .xlsb, .pptx, .ppt, .pptm, .epub, .csv";
+export const SUPPORTED_PARSE_FILE_TYPES =
+  ".html, .htm, .xhtml, .pdf, .docx, .doc, .docm, .odt, .ods, .odp, .rtf, .xlsx, .xls, .xlsm, .xlsb, .pptx, .ppt, .pptm, .epub, .csv";
 
 export function detectUploadedFileKind(
   filename: string,

@@ -9,7 +9,7 @@ import { logger as _logger } from "../../lib/logger";
 import { withSpan, setSpanAttributes } from "../../lib/otel-tracer";
 import { getRedisConnection } from "../../services/queue-service";
 import { RequestWithAuth, UploadedParseFile } from "./types";
-import { detectUploadedFileKind } from "./parse";
+import { detectUploadedFileKind, SUPPORTED_PARSE_FILE_TYPES } from "./parse";
 
 const PARSE_UPLOAD_MAX_BYTES = 50 * 1024 * 1024;
 const PARSE_UPLOAD_TTL_MS = 10 * 60 * 1000;
@@ -273,8 +273,7 @@ export async function parseUploadUrlController(
       return res.status(400).json({
         success: false,
         code: "UNSUPPORTED_FILE_TYPE",
-        error:
-          "Unsupported upload type. Supported file extensions include .html, .htm, .xhtml, .pdf, .docx, .doc, .docm, .odt, .ods, .odp, .rtf, .xlsx, .xls, .xlsm, .xlsb, .pptx, .ppt, .pptm, .epub, .csv, or matching supported MIME types.",
+        error: `Unsupported upload type. Supported file extensions include ${SUPPORTED_PARSE_FILE_TYPES}, or matching supported MIME types.`,
       });
     }
 

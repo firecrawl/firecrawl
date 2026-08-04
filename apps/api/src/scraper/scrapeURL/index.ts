@@ -84,6 +84,7 @@ import { postprocessors } from "./postprocessors";
 import { rewriteUrl } from "./lib/rewriteUrl";
 import {
   DOCUMENT_EXTENSIONS,
+  documentContentTypeFromExtension,
   documentExtensionFromContentType,
   documentExtensionFromUrlPath,
 } from "../../lib/document-formats";
@@ -392,6 +393,7 @@ async function buildMetaObject(
         proxyUsed: "basic",
         contentType:
           contentType ||
+          documentContentTypeFromExtension(fallbackExtension) ||
           "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
       };
     } else if (isHtmlUpload(filename, contentType)) {

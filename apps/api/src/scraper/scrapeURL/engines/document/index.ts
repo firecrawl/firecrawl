@@ -75,7 +75,7 @@ export async function scrapeDocument(meta: Meta): Promise<EngineScrapeResult> {
 
     const extension =
       documentExtensionFromContentType(response.headers.get("content-type")) ??
-      documentExtensionFromUrlPath(response.url);
+      documentExtensionFromUrlPath(new URL(response.url).pathname);
 
     const markdown = await convertDocumentToMarkdown(
       new Uint8Array(buffer),
