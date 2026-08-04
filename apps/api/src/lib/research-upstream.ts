@@ -9,7 +9,7 @@ const dispatcher = new Agent({
   bodyTimeout: TIMEOUT_MS,
 });
 
-export function appendQuery(
+function appendQuery(
   url: URL,
   params: Record<string, unknown>,
   allowed: string[],

@@ -87,7 +87,7 @@ export function isKeylessIpEligible(ip: string): boolean {
 const requestsKey = (ip: string) => `keyless_requests:${ip}`;
 const creditsKey = (ip: string) => `keyless_credits:${ip}`;
 
-export type KeylessQuotaReason = "requests" | "credits";
+type KeylessQuotaReason = "requests" | "credits";
 
 type KeylessConsumeResult = {
   ok: boolean;
@@ -286,11 +286,14 @@ return next
  * consumption). Used by the hosted MCP before a keyless tool call so an
  * ineligible caller receives structured recovery without an OAuth challenge.
  */
-export async function checkKeylessEligibility(
-  ip: string,
-): Promise<{
+export async function checkKeylessEligibility(ip: string): Promise<{
   eligible: boolean;
-  reason?: KeylessQuotaReason | "disabled" | "ineligible_ip" | "suspicious" | "error";
+  reason?:
+    | KeylessQuotaReason
+    | "disabled"
+    | "ineligible_ip"
+    | "suspicious"
+    | "error";
   retryAfterSeconds?: number;
 }> {
   if (!isKeylessConfigured()) return { eligible: false, reason: "disabled" };

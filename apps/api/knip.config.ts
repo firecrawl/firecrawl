@@ -15,9 +15,6 @@ const config: KnipConfig = {
   ignore: [
     "native/**",
     "src/scraper/scrapeURL/engines/fire-engine/branding-script/**",
-    // Shared type contract co-owned by concurrent threat-protection branches;
-    // the provider/verdict types are consumed by the core-lib branch.
-    "src/lib/threat-protection/types.ts",
   ],
   ignoreDependencies: ["undici-types", "stripe"],
 };
