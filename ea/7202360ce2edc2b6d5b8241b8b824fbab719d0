@@ -1,0 +1,33 @@
+apps/api/src/scraper/scrapeURL/engines/pdf/fire-pdf/cache.ts
+  s_94caeccd0aec7d::t_a7ef41bc609db8 16-31,81
+apps/python-sdk/firecrawl/__tests__/unit/v2/utils/test_validation.py
+  s_94caeccd0aec7d::t_be32dcc6d86e97 411
+apps/python-sdk/firecrawl/__tests__/unit/v2/utils/test_pdf_pages.py
+  s_94caeccd0aec7d::t_a7ef41bc609db8 22
+apps/api/src/scraper/scrapeURL/engines/pdf/index.ts
+  s_94caeccd0aec7d::t_46945128720bf8 454-456,464-488,493,495-505
+apps/api/src/scraper/scrapeURL/engines/pdf/__tests__/firePDFAsync.test.ts
+  s_94caeccd0aec7d::t_a7ef41bc609db8 279
+apps/api/src/scraper/scrapeURL/engines/pdf/fire-pdf/schema.ts
+  s_94caeccd0aec7d::t_a7ef41bc609db8 51-53
+apps/api/src/scraper/scrapeURL/engines/pdf/__tests__/firePDFCache.test.ts
+  s_94caeccd0aec7d::t_a7ef41bc609db8 76-101
+apps/api/src/__tests__/snips/v2/parse.test.ts
+  s_94caeccd0aec7d::t_a7ef41bc609db8 634-641
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "ea7202360ce2edc2b6d5b8241b8b824fbab719d0",
+  "prompts": {},
+  "sessions": {
+    "s_94caeccd0aec7d": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fc962-36af-7d71-80af-9f63422991a4",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "Abimael Martell <1450169+abimaelmartell@users.noreply.github.com>"
+    }
+  }
+}
