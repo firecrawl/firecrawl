@@ -16,11 +16,19 @@ const OCR_PAGE_MARKDOWN_VARIANT = "ocr-page-markdown-v1";
 function isValidCachedDocument(
   value: unknown,
 ): value is Pick<PDFProcessorResult, "html"> & { markdown: string } {
+  if (typeof value !== "object" || value === null) return false;
+  const cached = value as {
+    markdown?: unknown;
+    html?: unknown;
+    pagesProcessed?: unknown;
+  };
   return (
-    typeof value === "object" &&
-    value !== null &&
-    typeof (value as { markdown?: unknown }).markdown === "string" &&
-    typeof (value as { html?: unknown }).html === "string"
+    typeof cached.markdown === "string" &&
+    typeof cached.html === "string" &&
+    (cached.pagesProcessed === undefined ||
+      (typeof cached.pagesProcessed === "number" &&
+        Number.isInteger(cached.pagesProcessed) &&
+        cached.pagesProcessed >= 0))
   );
 }
 

@@ -142,6 +142,34 @@ describe("FirePDF page-markdown cache capabilities", () => {
     expect(result).toMatchObject({ markdown: "", html: "" });
   });
 
+  it("rejects invalid cached page counts", async () => {
+    getCached
+      .mockResolvedValueOnce({
+        markdown: "wrong type",
+        html: "<p>wrong type</p>",
+        pagesProcessed: "1",
+        pageMarkdown: [{ page: 1, markdown: "one" }],
+      } as never)
+      .mockResolvedValueOnce({
+        markdown: "negative",
+        html: "<p>negative</p>",
+        pagesProcessed: -1,
+        pageMarkdown: [{ page: 1, markdown: "one" }],
+      });
+
+    const result = await tryGetCached(
+      makeMeta(),
+      "BASE64",
+      "auto",
+      undefined,
+      1,
+      true,
+    );
+
+    expect(result).toBeNull();
+    expect(getCached).toHaveBeenCalledTimes(2);
+  });
+
   it("serves page-capable entries and preserves the page-count fallback", async () => {
     getCached.mockResolvedValueOnce({
       markdown: "whole",
