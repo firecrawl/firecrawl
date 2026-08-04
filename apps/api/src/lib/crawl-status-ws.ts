@@ -16,12 +16,16 @@ export function shouldCloseCrawlStatusWS(
 
 export function deriveCrawlStatus(
   cancelled: boolean,
+  jobCount: number,
+  failedJobCount: number,
   validJobStatuses: ReadonlyArray<readonly [string, NuQJobStatus]>,
 ): CrawlWebSocketStatus {
   if (cancelled) return "cancelled";
 
-  // An empty list means the crawl is still being initialized. Require at least
-  // one visible job before reporting a crawl as completed.
+  if (jobCount > 0 && jobCount === failedJobCount) {
+    return "completed";
+  }
+
   if (
     validJobStatuses.length > 0 &&
     validJobStatuses.every(([, status]) => status === "completed")

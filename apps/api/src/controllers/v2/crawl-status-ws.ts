@@ -138,6 +138,7 @@ async function crawlStatusWS(
 
   const validJobStatuses: [string, NuQJobStatus][] = [];
   const validJobIDs: string[] = [];
+  let failedJobCount = 0;
 
   for (const id of jobIDs) {
     if (throttledJobsSet.has(id)) {
@@ -148,6 +149,8 @@ async function crawlStatusWS(
       if (job && job.status !== "failed") {
         validJobStatuses.push([id, job.status]);
         validJobIDs.push(id);
+      } else if (job?.status === "failed") {
+        failedJobCount++;
       }
     }
   }
@@ -157,6 +160,8 @@ async function crawlStatusWS(
 
   let status: CrawlWebSocketStatus = deriveCrawlStatus(
     sc.cancelled === true,
+    jobIDs.length,
+    failedJobCount,
     validJobStatuses,
   );
 
