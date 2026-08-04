@@ -13,6 +13,22 @@ import {
 const PAGE_MARKDOWN_VARIANT = "page-markdown-v1";
 const OCR_PAGE_MARKDOWN_VARIANT = "ocr-page-markdown-v1";
 
+function isValidPageMarkdown(
+  value: unknown,
+): value is NonNullable<PDFProcessorResult["pageMarkdown"]> {
+  return (
+    Array.isArray(value) &&
+    value.every(
+      page =>
+        typeof page === "object" &&
+        page !== null &&
+        Number.isInteger((page as { page?: unknown }).page) &&
+        Number((page as { page: number }).page) > 0 &&
+        typeof (page as { markdown?: unknown }).markdown === "string",
+    )
+  );
+}
+
 export function cacheKeyShape(
   mode: PDFMode | undefined,
   maxPages: number | undefined,
@@ -62,7 +78,7 @@ export async function tryGetCached(
         variant,
       );
       if (cached) {
-        if (includePageMarkdown && cached.pageMarkdown === undefined) {
+        if (includePageMarkdown && !isValidPageMarkdown(cached.pageMarkdown)) {
           // Defense in depth: variant names are the capability boundary, but
           // never let a malformed/old sidecar satisfy a page-aware request.
           continue;

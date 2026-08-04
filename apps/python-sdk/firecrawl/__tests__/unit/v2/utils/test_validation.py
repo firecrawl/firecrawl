@@ -408,6 +408,7 @@ class TestPrepareScrapeOptions:
         result = prepare_scrape_options(options)
 
         assert result["parsers"][0]["pageMarkdown"] is True
+        assert "page_markdown" not in result["parsers"][0]
 
     def test_prepare_min_age_maps_to_camel_case(self):
         """min_age must be sent as minAge; the server drops the snake_case key."""

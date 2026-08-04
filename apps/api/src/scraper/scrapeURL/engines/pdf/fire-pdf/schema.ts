@@ -48,7 +48,9 @@ export const pollResponseSchema = z.object({
 });
 
 export const resultResponseSchema = z.object({
-  schema_version: z.literal(1).optional(),
+  schema_version: z
+    .union([z.literal(1), z.literal(2), z.literal(3)])
+    .optional(),
   markdown: z.string(),
   pages: z
     .array(

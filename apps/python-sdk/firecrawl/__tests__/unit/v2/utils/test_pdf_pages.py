@@ -19,3 +19,4 @@ def test_document_parses_physical_pdf_pages_from_api_shape():
     assert document.pages is not None
     assert [page.page_number for page in document.pages] == [1, 2]
     assert document.pages[0].markdown == "one"
+    assert document.pages[1].markdown == "two"

@@ -451,8 +451,9 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
               method: useAsync ? "scrapePDF/firePDFAsync" : "scrapePDF/firePDF",
             }),
           };
-          result = useAsync
-            ? await scrapePDFWithFirePDFAsync(
+          if (useAsync) {
+            try {
+              result = await scrapePDFWithFirePDFAsync(
                 firePdfMeta,
                 base64Content,
                 maxPages,
@@ -460,15 +461,48 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
                 mode,
                 undefined,
                 includePageMarkdown,
-              )
-            : await scrapePDFWithFirePDF(
-                firePdfMeta,
+              );
+            } catch (error) {
+              if (
+                !includePageMarkdown ||
+                error instanceof RemoveFeatureError ||
+                error instanceof AbortManagerThrownError
+              ) {
+                throw error;
+              }
+              meta.logger.warn(
+                "FirePDF async page markdown failed -- retrying synchronously",
+                {
+                  method: "scrapePDF/firePDFFallback",
+                  error,
+                  scrape_id: meta.id,
+                  team_id: meta.internalOptions.teamId,
+                },
+              );
+              result = await scrapePDFWithFirePDF(
+                {
+                  ...firePdfMeta,
+                  logger: meta.logger.child({
+                    method: "scrapePDF/firePDFSyncFallback",
+                  }),
+                },
                 base64Content,
                 maxPages,
                 effectivePageCount,
                 mode,
-                includePageMarkdown,
+                true,
               );
+            }
+          } else {
+            result = await scrapePDFWithFirePDF(
+              firePdfMeta,
+              base64Content,
+              maxPages,
+              effectivePageCount,
+              mode,
+              includePageMarkdown,
+            );
+          }
           effectivePageCount = reconcilePageCountWithFirePdf(
             effectivePageCount,
             result,

@@ -630,13 +630,15 @@ describe("/v2/parse", () => {
           );
 
           expect(result.markdown).toContain("PDF Test File");
-          expect(result.pages?.[0]).toEqual(
-            expect.objectContaining({
-              pageNumber: 1,
-              markdown: expect.any(String),
-            }),
-          );
           expect(result.pages).toHaveLength(result.metadata.numPages!);
+          result.pages?.forEach((page, index) => {
+            expect(page).toEqual(
+              expect.objectContaining({
+                pageNumber: index + 1,
+                markdown: expect.any(String),
+              }),
+            );
+          });
         },
         scrapeTimeout * 3,
       );

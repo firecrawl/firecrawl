@@ -276,7 +276,7 @@ describe("scrapePDFWithFirePDFAsync", () => {
         response: {
           status: 200,
           body: {
-            schema_version: 1,
+            schema_version: 3,
             markdown: "continued paragraph",
             pages: [
               { page: 1, markdown: "continued" },
