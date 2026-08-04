@@ -67,34 +67,29 @@ beforeEach(() => {
   vi.clearAllMocks();
   mocks.logRequest.mockResolvedValue(undefined);
   mocks.logResearchEndpoint.mockResolvedValue(undefined);
+  mocks.fetchResearchUpstream.mockResolvedValue({
+    success: true,
+    results: [],
+  });
 });
 
 describe.each([
-  { name: "/v2/developer/search", options: {} },
-  { name: "/v2/search/developer (root alias)", options: { root: true } },
-])("developer endpoint beta gate on $name", ({ options }) => {
-  it("403s a team without developerBeta and never calls upstream", async () => {
+  { name: "/v2/search/developer", options: { root: true } },
+  { name: "/v2/developer/search (compatibility mount)", options: {} },
+])("developer endpoint access on $name", ({ options }) => {
+  it("serves a team with no flags at all", async () => {
     const res = makeRes();
-    await developerHandler(options)(makeReq({ developerBeta: false }), res);
+    await developerHandler(options)(makeReq({}), res);
 
-    expect(res.status).toHaveBeenCalledWith(403);
-    expect(mocks.fetchResearchUpstream).not.toHaveBeenCalled();
-    expect(mocks.logRequest).not.toHaveBeenCalled();
+    expect(res.status).not.toHaveBeenCalledWith(403);
+    expect(mocks.fetchResearchUpstream).toHaveBeenCalled();
   });
 
-  it("403s a keyless caller (no acuc at all)", async () => {
+  it("serves a keyless caller (no acuc at all)", async () => {
     const res = makeRes();
     await developerHandler(options)(makeReq(null), res);
 
-    expect(res.status).toHaveBeenCalledWith(403);
-    expect(mocks.fetchResearchUpstream).not.toHaveBeenCalled();
-  });
-
-  it("does not 403 a team with developerBeta", async () => {
-    mocks.fetchResearchUpstream.mockResolvedValue(null); // 404 path, past the gate
-    const res = makeRes();
-    await developerHandler(options)(makeReq({ developerBeta: true }), res);
-
     expect(res.status).not.toHaveBeenCalledWith(403);
+    expect(mocks.fetchResearchUpstream).toHaveBeenCalled();
   });
 });

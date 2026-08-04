@@ -104,7 +104,7 @@ function makeReq(body: Record<string, any>, headers: Record<string, any> = {}) {
     body,
     headers,
     auth: { team_id: TEAM_ID },
-    acuc: { api_key_id: 7, flags: { developerBeta: true } },
+    acuc: { api_key_id: 7, flags: {} },
   } as any;
 }
 
@@ -299,20 +299,22 @@ describe("developer category code_searches ledger", () => {
     expect(body.creditsUsed).toBe(2);
   });
 
-  it("drops the developer category for a team without developerBeta", async () => {
+  it("keeps the developer category for a team with no flags", async () => {
     mockExecuteSearch.mockResolvedValue(executeResult({ response: { web: [] } }));
     const req = makeReq({ query: "http client", categories: ["developer"] });
-    req.acuc = { api_key_id: 7, flags: null }; // unentitled, and keyless-equivalent
+    req.acuc = { api_key_id: 7, flags: null }; // keyless-equivalent: no org flags
     const res = makeRes();
 
     await searchController(req, res);
     await flushAsync();
 
-    // Category stripped before execution -> no developer arm, no ledger row,
-    // and the search still succeeds (no error status).
+    // The category survives to execution — no entitlement check any more.
+    // (searchRequestSchema normalizes string categories to { type } objects
+    // before they reach executeSearch, same as every other test in this file.)
     expect(mockExecuteSearch).toHaveBeenCalled();
-    expect(mockExecuteSearch.mock.calls[0][0].categories).toEqual([]);
-    expect(mockLogResearchEndpoint).not.toHaveBeenCalled();
+    expect(mockExecuteSearch.mock.calls[0][0].categories).toEqual([
+      { type: "developer" },
+    ]);
     expect(res.status).not.toHaveBeenCalledWith(403);
   });
 });

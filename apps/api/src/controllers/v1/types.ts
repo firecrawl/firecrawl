@@ -1313,7 +1313,6 @@ export type TeamFlags = {
   searchFeedbackOptOut?: boolean;
   researchBeta?: boolean;
   enrichBeta?: boolean;
-  developerBeta?: boolean;
   labsSearch?: boolean;
   professionalProfileCompanyDataBeta?: boolean;
   organizationDataSourceAccess?: Record<

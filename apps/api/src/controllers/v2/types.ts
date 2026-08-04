@@ -1574,7 +1574,6 @@ export type TeamFlags = {
   researchBeta?: boolean;
   menuBeta?: boolean;
   enrichBeta?: boolean;
-  developerBeta?: boolean;
   professionalProfileCompanyDataBeta?: boolean;
   organizationDataSourceAccess?: Record<
     string,
