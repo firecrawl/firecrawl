@@ -9,11 +9,11 @@ version = "0.1.0"
 crate-type = ["cdylib"]
 
 [dependencies]
+anydoc = "0.1.1"
 chrono = { version = "0.4", features = ["serde"] }
 kuchikiki = "0.8.2"
 lol_html = "2.6.0"
 pdf-inspector = "0.1.0"
-maud = "0.27.0"
 napi = { version = "3.0.0", features = ["serde-json", "tokio_rt"] }
 napi-derive = "3.0.0"
 nodesig = { git = "https://github.com/firecrawl/nodesig" }
@@ -25,11 +25,6 @@ serde_json = "1.0.143"
 strsim = "0.11"
 texting_robots = "0.2.2"
 url = "2.5.7"
-zip = "5.0.0"
-calamine = { git = "https://github.com/firecrawl/calamine", branch = "fc-prod" }
-cfb = "0.10"
-codepage = "0.1"
-encoding_rs = "0.8"
 tokio = "1.48.0"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", default-features = false, features = ["registry"] }

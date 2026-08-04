@@ -36,19 +36,14 @@ import { projectScrapeCredits } from "../../lib/keyless-credit-projection";
 import { applyAgentAuthDiscoveryHeader } from "../../lib/agent-auth-discovery";
 import { getEffectiveConcurrencyLimit } from "../../lib/concurrency-limit";
 import path from "node:path";
+import {
+  DOCUMENT_EXTENSIONS,
+  documentExtensionFromContentType,
+} from "../../lib/document-formats";
 
 const AGENT_INTEROP_CONCURRENCY_BOOST = 3;
 const SUPPORTED_PARSE_FILE_TYPES =
-  ".html, .htm, .pdf, .docx, .doc, .odt, .rtf, .xlsx, .xls";
-
-const DOCUMENT_EXTENSIONS = new Set([
-  ".docx",
-  ".doc",
-  ".odt",
-  ".rtf",
-  ".xlsx",
-  ".xls",
-]);
+  ".html, .htm, .pdf, .docx, .doc, .docm, .odt, .ods, .odp, .rtf, .xlsx, .xls, .xlsm, .xlsb, .pptx, .ppt, .pptm, .epub, .csv";
 
 export function detectUploadedFileKind(
   filename: string,
@@ -68,17 +63,7 @@ export function detectUploadedFileKind(
 
   const isDocument =
     DOCUMENT_EXTENSIONS.has(extension) ||
-    normalizedType.includes(
-      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-    ) ||
-    normalizedType.includes("application/vnd.ms-excel") ||
-    normalizedType.includes(
-      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    ) ||
-    normalizedType.includes("application/msword") ||
-    normalizedType.includes("application/vnd.oasis.opendocument.text") ||
-    normalizedType.includes("application/rtf") ||
-    normalizedType.includes("text/rtf");
+    documentExtensionFromContentType(normalizedType) !== null;
 
   if (isDocument) {
     return "document";
@@ -378,9 +363,9 @@ export async function parseController(
         );
         if (!reservation.ok) {
           applyAgentAuthDiscoveryHeader(res);
-          return res.status(429).json(
-            await keylessLimitBody(req.auth.team_id, "v2_parse"),
-          );
+          return res
+            .status(429)
+            .json(await keylessLimitBody(req.auth.team_id, "v2_parse"));
         }
         reservedKeylessCredits = projectedKeylessCredits;
       }

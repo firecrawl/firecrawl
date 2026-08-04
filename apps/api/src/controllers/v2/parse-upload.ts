@@ -274,7 +274,7 @@ export async function parseUploadUrlController(
         success: false,
         code: "UNSUPPORTED_FILE_TYPE",
         error:
-          "Unsupported upload type. Supported file extensions include .html, .htm, .xhtml, .pdf, .docx, .doc, .odt, .rtf, .xlsx, .xls, or matching supported MIME types.",
+          "Unsupported upload type. Supported file extensions include .html, .htm, .xhtml, .pdf, .docx, .doc, .docm, .odt, .ods, .odp, .rtf, .xlsx, .xls, .xlsm, .xlsb, .pptx, .ppt, .pptm, .epub, .csv, or matching supported MIME types.",
       });
     }
 

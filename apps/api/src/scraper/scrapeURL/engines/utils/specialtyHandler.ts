@@ -5,6 +5,7 @@ import path from "path";
 import os from "os";
 import { writeFile } from "fs/promises";
 import { Meta } from "../..";
+import { documentExtensionFromContentType } from "../../../../lib/document-formats";
 
 async function feResToFilePrefetch(
   logger: Logger,
@@ -46,23 +47,8 @@ async function feResToDocumentPrefetch(
   contentType: string,
 ): Promise<Meta["documentPrefetch"]> {
   // Determine file extension from content type
-  let extension = "tmp";
-  if (contentType.includes("wordprocessingml")) {
-    // Modern .docx format (Office Open XML)
-    extension = "docx";
-  } else if (contentType.includes("msword")) {
-    // Legacy .doc format (OLE2/CFB binary)
-    extension = "doc";
-  } else if (
-    contentType.includes("spreadsheetml") ||
-    contentType.includes("ms-excel")
-  ) {
-    extension = "xlsx";
-  } else if (contentType.includes("opendocument.text")) {
-    extension = "odt";
-  } else if (contentType.includes("rtf")) {
-    extension = "rtf";
-  }
+  const extension =
+    documentExtensionFromContentType(contentType)?.slice(1) ?? "tmp";
 
   return feResToFilePrefetch(logger, feRes, extension, "document", contentType);
 }
@@ -83,17 +69,7 @@ export async function specialtyScrapeCheck(
     return;
   }
 
-  const documentTypes = [
-    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    "application/vnd.ms-excel",
-    "application/msword",
-    "application/rtf",
-    "text/rtf",
-    "application/vnd.oasis.opendocument.text",
-  ];
-
-  const isDocument = documentTypes.some(type => contentType.startsWith(type));
+  const isDocument = documentExtensionFromContentType(contentType) !== null;
   const isPdf =
     contentType === "application/pdf" ||
     contentType.startsWith("application/pdf;");

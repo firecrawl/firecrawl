@@ -82,6 +82,11 @@ import {
 import { htmlTransform } from "./lib/removeUnwantedElements";
 import { postprocessors } from "./postprocessors";
 import { rewriteUrl } from "./lib/rewriteUrl";
+import {
+  DOCUMENT_EXTENSIONS,
+  documentExtensionFromContentType,
+  documentExtensionFromUrlPath,
+} from "../../lib/document-formats";
 import { writeFile } from "node:fs/promises";
 import path from "node:path";
 import { tmpdir } from "node:os";
@@ -245,19 +250,7 @@ function buildFeatureFlags(
   const lowerPath = urlO.pathname.toLowerCase();
 
   // Check for document types first (they take precedence over PDF)
-  const isDocument =
-    lowerPath.endsWith(".docx") ||
-    lowerPath.endsWith(".odt") ||
-    lowerPath.endsWith(".rtf") ||
-    lowerPath.endsWith(".xlsx") ||
-    lowerPath.endsWith(".xls") ||
-    lowerPath.includes(".docx/") ||
-    lowerPath.includes(".odt/") ||
-    lowerPath.includes(".rtf/") ||
-    lowerPath.includes(".xlsx/") ||
-    lowerPath.includes(".xls/");
-
-  if (isDocument) {
+  if (documentExtensionFromUrlPath(lowerPath) !== null) {
     flags.add("document");
   } else if (lowerPath.endsWith(".pdf") || lowerPath.includes(".pdf/")) {
     // Only add PDF flag if it's not a document
@@ -276,15 +269,6 @@ function buildFeatureFlags(
 // The meta object is usually immutable, except for the logs array, and in edge cases (e.g. a new feature is suddenly required)
 // Having a meta object that is treated as immutable helps the code stay clean and easily tracable,
 // while also retaining the benefits that WebScraper had from its OOP design.
-const DOCUMENT_EXTENSIONS = new Set([
-  ".docx",
-  ".doc",
-  ".odt",
-  ".rtf",
-  ".xlsx",
-  ".xls",
-]);
-
 const HTML_EXTENSIONS = new Set([".html", ".htm", ".xhtml"]);
 
 async function writeUploadedFileToTemp(
@@ -314,20 +298,9 @@ function isPdfUpload(filename: string, contentType?: string): boolean {
 
 function isDocumentUpload(filename: string, contentType?: string): boolean {
   const ext = path.extname(filename).toLowerCase();
-  const normalizedType = contentType?.toLowerCase() ?? "";
   return (
     DOCUMENT_EXTENSIONS.has(ext) ||
-    normalizedType.includes(
-      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-    ) ||
-    normalizedType.includes("application/vnd.ms-excel") ||
-    normalizedType.includes(
-      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    ) ||
-    normalizedType.includes("application/msword") ||
-    normalizedType.includes("application/vnd.oasis.opendocument.text") ||
-    normalizedType.includes("application/rtf") ||
-    normalizedType.includes("text/rtf")
+    documentExtensionFromContentType(contentType) !== null
   );
 }
 
