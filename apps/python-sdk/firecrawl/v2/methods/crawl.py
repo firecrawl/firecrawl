@@ -10,7 +10,7 @@ from ..types import (
     CrawlResponse, Document, CrawlParamsRequest, CrawlParamsResponse, CrawlParamsData,
     WebhookConfig, CrawlErrorsResponse, ActiveCrawlsResponse, ActiveCrawl, PaginationConfig
 )
-from ..utils import HttpClient, handle_response_error, validate_scrape_options, prepare_scrape_options
+from ..utils import HttpClient, FirecrawlError, handle_response_error, validate_scrape_options, prepare_scrape_options
 from ..utils.normalize import normalize_document_input
 
 
@@ -392,7 +392,7 @@ def wait_for_crawl_completion(
         CrawlJob when job completes
         
     Raises:
-        Exception: If the job fails
+        FirecrawlError: If the job fails or is cancelled
         TimeoutError: If timeout is reached
     """
     start_time = time.monotonic()
@@ -404,9 +404,13 @@ def wait_for_crawl_completion(
             request_timeout=request_timeout,
         )
         
-        # Check if job is complete
-        if crawl_job.status in ["completed", "failed", "cancelled"]:
+        if crawl_job.status == "completed":
             return crawl_job
+
+        if crawl_job.status in ("failed", "cancelled"):
+            raise FirecrawlError(
+                f"Crawl job {job_id} ended with status '{crawl_job.status}'"
+            )
         
         # Check timeout
         if timeout is not None and (time.monotonic() - start_time) > timeout:
@@ -440,7 +444,7 @@ def crawl(
         
     Raises:
         ValueError: If request is invalid
-        Exception: If the crawl fails to start or complete
+        FirecrawlError: If the crawl fails to start or complete
         TimeoutError: If timeout is reached
     """
     # Start the crawl

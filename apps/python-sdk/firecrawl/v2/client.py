@@ -551,7 +551,7 @@ class FirecrawlClient:
 
         Raises:
             ValueError: If request is invalid
-            Exception: If the crawl fails to start or complete
+            FirecrawlError: If the crawl fails to start or complete
             TimeoutError: If timeout is reached
         """
         if scrape_options is None:
@@ -1618,6 +1618,10 @@ class FirecrawlClient:
     ):
         """
         Start a batch scrape job and wait until completion.
+
+        Raises:
+            FirecrawlError: If the batch scrape fails to start or complete
+            TimeoutError: If the wait timeout is reached
         """
         options = ScrapeOptions(
             **{k: v for k, v in dict(
