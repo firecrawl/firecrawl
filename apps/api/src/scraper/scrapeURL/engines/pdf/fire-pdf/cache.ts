@@ -13,6 +13,17 @@ import {
 const PAGE_MARKDOWN_VARIANT = "page-markdown-v1";
 const OCR_PAGE_MARKDOWN_VARIANT = "ocr-page-markdown-v1";
 
+function isValidCachedDocument(
+  value: unknown,
+): value is Pick<PDFProcessorResult, "html"> & { markdown: string } {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    typeof (value as { markdown?: unknown }).markdown === "string" &&
+    typeof (value as { html?: unknown }).html === "string"
+  );
+}
+
 function isValidPageMarkdown(
   value: unknown,
 ): value is NonNullable<PDFProcessorResult["pageMarkdown"]> {
@@ -78,9 +89,12 @@ export async function tryGetCached(
         variant,
       );
       if (cached) {
-        if (includePageMarkdown && !isValidPageMarkdown(cached.pageMarkdown)) {
+        if (
+          !isValidCachedDocument(cached) ||
+          (includePageMarkdown && !isValidPageMarkdown(cached.pageMarkdown))
+        ) {
           // Defense in depth: variant names are the capability boundary, but
-          // never let a malformed/old sidecar satisfy a page-aware request.
+          // never let a malformed/old artifact satisfy a cache lookup.
           continue;
         }
         meta.logger.info("Using cached FirePDF result", {

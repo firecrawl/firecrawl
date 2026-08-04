@@ -99,6 +99,49 @@ describe("FirePDF page-markdown cache capabilities", () => {
     expect(getCached).toHaveBeenCalledTimes(2);
   });
 
+  it("rejects page-capable variants missing required document fields", async () => {
+    getCached
+      .mockResolvedValueOnce({
+        html: "<p>missing markdown</p>",
+        pageMarkdown: [{ page: 1, markdown: "one" }],
+      } as never)
+      .mockResolvedValueOnce({
+        markdown: "missing html",
+        pageMarkdown: [{ page: 1, markdown: "one" }],
+      } as never);
+
+    const result = await tryGetCached(
+      makeMeta(),
+      "BASE64",
+      "auto",
+      undefined,
+      1,
+      true,
+    );
+
+    expect(result).toBeNull();
+    expect(getCached).toHaveBeenCalledTimes(2);
+  });
+
+  it("accepts an explicitly empty cached markdown string", async () => {
+    getCached.mockResolvedValueOnce({
+      markdown: "",
+      html: "",
+      pageMarkdown: [{ page: 1, markdown: "" }],
+    });
+
+    const result = await tryGetCached(
+      makeMeta(),
+      "BASE64",
+      "auto",
+      undefined,
+      1,
+      true,
+    );
+
+    expect(result).toMatchObject({ markdown: "", html: "" });
+  });
+
   it("serves page-capable entries and preserves the page-count fallback", async () => {
     getCached.mockResolvedValueOnce({
       markdown: "whole",
