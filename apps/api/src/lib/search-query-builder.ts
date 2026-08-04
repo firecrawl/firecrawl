@@ -20,6 +20,104 @@ interface QueryBuilderResult {
   categoryMap: Map<string, string>;
 }
 
+interface SitePathFilterResult {
+  query: string;
+  pathPrefixes: string[];
+}
+
+/**
+ * Rewrites path-scoped `site:` operators to their hostname.
+ *
+ * Google treats `site:host/path` as a URL-prefix restriction, but the search
+ * backends here only understand hostnames — a path makes the filter match
+ * nothing, so the whole search returns zero results. Rewriting to `site:host`
+ * keeps the domain restriction; the extracted prefixes let the caller rank
+ * results under the requested path first (see rankSitePathMatchesFirst).
+ *
+ * Negated operators (`-site:`) are left untouched: widening an exclusion to
+ * the whole domain would drop results the user wanted.
+ */
+export function extractSitePathFilters(query: string): SitePathFilterResult {
+  const pathPrefixes: string[] = [];
+  const rewritten = query.replace(
+    /(^|[^-\w])site:([^\s()"']+)/gi,
+    (match, boundary: string, rawValue: string) => {
+      const value = rawValue.replace(/^https?:\/\//i, "");
+      const slash = value.indexOf("/");
+      const host = slash === -1 ? value : value.slice(0, slash);
+      const path = slash === -1 ? "" : value.slice(slash).replace(/\/+$/, "");
+      if (!host.includes(".")) {
+        return match;
+      }
+      if (path.length > 0) {
+        pathPrefixes.push(
+          host.toLowerCase().replace(/^www\./, "") + path.toLowerCase(),
+        );
+      }
+      return `${boundary}site:${host}`;
+    },
+  );
+  return { query: rewritten, pathPrefixes };
+}
+
+function urlMatchesSitePathPrefix(
+  url: string | undefined,
+  pathPrefixes: string[],
+): boolean {
+  if (!url) return false;
+  let hostname: string;
+  let pathname: string;
+  try {
+    const parsed = new URL(url);
+    hostname = parsed.hostname.toLowerCase().replace(/^www\./, "");
+    pathname = parsed.pathname.toLowerCase().replace(/\/+$/, "");
+  } catch {
+    return false;
+  }
+  for (const prefix of pathPrefixes) {
+    const slash = prefix.indexOf("/");
+    const prefixHost = slash === -1 ? prefix : prefix.slice(0, slash);
+    const prefixPath = slash === -1 ? "" : prefix.slice(slash);
+    if (hostname !== prefixHost && !hostname.endsWith("." + prefixHost)) {
+      continue;
+    }
+    if (
+      prefixPath === "" ||
+      pathname === prefixPath ||
+      pathname.startsWith(prefixPath + "/")
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Reorders results so that URLs under a requested `site:host/path` prefix come
+ * first, preserving relative order within each group. Results are never
+ * dropped: the hostname rewrite in extractSitePathFilters already constrains
+ * them to the right domain, and off-path pages are still better than the
+ * zero results the unrewritten query produced.
+ */
+export function rankSitePathMatchesFirst<T extends { url?: string }>(
+  results: T[],
+  pathPrefixes: string[],
+): T[] {
+  if (pathPrefixes.length === 0 || results.length === 0) {
+    return results;
+  }
+  const onPath: T[] = [];
+  const offPath: T[] = [];
+  for (const result of results) {
+    if (urlMatchesSitePathPrefix(result.url, pathPrefixes)) {
+      onPath.push(result);
+    } else {
+      offPath.push(result);
+    }
+  }
+  return onPath.length > 0 ? [...onPath, ...offPath] : results;
+}
+
 // Default research sites
 const DEFAULT_RESEARCH_SITES = [
   "arxiv.org",

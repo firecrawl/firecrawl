@@ -61,6 +61,35 @@ describeIf(TEST_PRODUCTION || HAS_SEARCH || HAS_PROXY)("Search tests", () => {
   );
 
   it.concurrent(
+    "works with a path-scoped site: operator",
+    async () => {
+      // Google-style `site:host/path` filters used to be passed through to
+      // backends that only understand hostnames, matching nothing and
+      // returning zero results. The path is now stripped for the backend
+      // (and used to rank on-path results first), so the domain restriction
+      // must still hold and results must be non-empty.
+      const res = await search(
+        {
+          query: "site:github.com/firecrawl/firecrawl scraping",
+          limit: 5,
+        },
+        identity,
+      );
+
+      expect(res.web).toBeDefined();
+      expect(res.web?.length).toBeGreaterThan(0);
+      for (const result of res.web ?? []) {
+        expect(result.url).toBeDefined();
+        const hostname = new URL(result.url!).hostname;
+        expect(
+          hostname === "github.com" || hostname.endsWith(".github.com"),
+        ).toBe(true);
+      }
+    },
+    60000,
+  );
+
+  it.concurrent(
     "rejects includeDomains with excludeDomains",
     async () => {
       const res = await searchWithFailure(

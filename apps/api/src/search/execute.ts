@@ -3,7 +3,9 @@ import { search } from "./v2";
 import { SearchV2Response } from "../lib/entities";
 import {
   buildSearchQuery,
+  extractSitePathFilters,
   getCategoryFromUrl,
+  rankSitePathMatchesFirst,
   CategoryOption,
 } from "../lib/search-query-builder";
 import { ScrapeOptions, TeamFlags } from "../controllers/v2/types";
@@ -96,8 +98,10 @@ export async function executeSearch(
   logger.info("Searching for results");
 
   const searchTypes = [...new Set(sources.map((s: any) => s.type))];
+  const { query: siteScopedQuery, pathPrefixes } =
+    extractSitePathFilters(query);
   const { query: searchQuery, categoryMap } = buildSearchQuery(
-    query,
+    siteScopedQuery,
     categories,
     {
       includeDomains: options.includeDomains,
@@ -176,6 +180,30 @@ export async function executeSearch(
           isAllowed(x.url),
         );
       }
+    }
+  }
+
+  // Path-scoped site: filters were rewritten to their hostname for the
+  // backend; surface results under the requested path first, before the
+  // result sets are sliced down to the requested limit.
+  if (pathPrefixes.length > 0) {
+    if (searchResponse.web) {
+      searchResponse.web = rankSitePathMatchesFirst(
+        searchResponse.web,
+        pathPrefixes,
+      );
+    }
+    if (searchResponse.news) {
+      searchResponse.news = rankSitePathMatchesFirst(
+        searchResponse.news,
+        pathPrefixes,
+      );
+    }
+    if (searchResponse.images) {
+      searchResponse.images = rankSitePathMatchesFirst(
+        searchResponse.images,
+        pathPrefixes,
+      );
     }
   }
 
