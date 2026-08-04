@@ -193,6 +193,39 @@ describe("FirePDF page-markdown cache capabilities", () => {
     expect(result?.pagesProcessed).toBe(2);
   });
 
+  it("strips page payloads when a legacy request reuses an enriched sidecar", async () => {
+    getCached.mockResolvedValueOnce(null).mockResolvedValueOnce({
+      markdown: "whole",
+      html: "<p>whole</p>",
+      pageMarkdown: [
+        { page: 1, markdown: "one" },
+        { page: 2, markdown: "two" },
+      ],
+    });
+
+    const result = await tryGetCached(
+      makeMeta(),
+      "BASE64",
+      "auto",
+      undefined,
+      2,
+      false,
+    );
+
+    expect(result).toMatchObject({
+      markdown: "whole",
+      html: "<p>whole</p>",
+      pagesProcessed: 2,
+    });
+    expect(result?.pageMarkdown).toBeUndefined();
+    expect(getCached).toHaveBeenNthCalledWith(
+      2,
+      "BASE64",
+      "firepdf",
+      "page-markdown-v1",
+    );
+  });
+
   it("writes an enriched sidecar plus a compact legacy entry", async () => {
     const pageMarkdown = [
       { page: 1, markdown: "one" },

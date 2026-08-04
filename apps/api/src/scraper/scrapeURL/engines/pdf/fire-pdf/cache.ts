@@ -110,6 +110,13 @@ export async function tryGetCached(
           requestedMode: mode,
           cacheVariant: variant ?? "base",
         });
+        if (!includePageMarkdown) {
+          const { pageMarkdown: _pageMarkdown, ...compactCached } = cached;
+          return {
+            ...compactCached,
+            pagesProcessed: cached.pagesProcessed ?? pagesProcessed,
+          };
+        }
         return {
           ...cached,
           pagesProcessed: cached.pagesProcessed ?? pagesProcessed,
