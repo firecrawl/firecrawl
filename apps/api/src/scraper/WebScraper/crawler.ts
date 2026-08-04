@@ -37,7 +37,6 @@ enum DenialReason {
   BACKWARD_CRAWLING = "This URL is outside the initial URL's path hierarchy, and backward crawling is disabled. By default, Firecrawl only crawls URLs that are 'below' or 'within' the starting URL path. To crawl this URL, either set allowBackwardCrawling: true or set crawlEntireDomain: true to crawl the entire domain.",
   SOCIAL_MEDIA = "This URL points to a social media platform or is an email link. Firecrawl automatically skips social media links and mailto: links during crawling.",
   EXTERNAL_LINK = "This URL points to a different domain than the one being crawled, and external links are disabled. By default, Firecrawl only crawls URLs on the same domain as the starting URL. To crawl external links, set allowExternalLinks: true in your crawl request.",
-  SECTION_LINK = "This URL contains a section anchor (#) and points to a specific section of a page rather than a separate page. Firecrawl treats these as duplicates of the base URL and skips them to avoid crawling the same content multiple times.",
   NON_WEB_PROTOCOL = "This URL uses a non-web protocol (such as mailto:, tel:, ftp:, ssh:, file:, or telnet:) that Firecrawl cannot scrape. Firecrawl only supports HTTP and HTTPS protocols.",
 }
 
@@ -287,8 +286,13 @@ export class WebCrawler {
       });
     }
 
+    const seenLinks = new Set<string>();
     const filteredLinks = sitemapLinks
-      .filter(link => {
+      .map(originalLink => ({
+        originalLink,
+        link: this.normalizeSectionLink(originalLink),
+      }))
+      .filter(({ originalLink, link }) => {
         let url: URL;
         try {
           url = new URL(link.trim(), this.baseUrl);
@@ -301,6 +305,9 @@ export class WebCrawler {
           return false;
         }
         const path = url.pathname;
+        const isInternal =
+          url.hostname.replace(/^www\./, "") ===
+          new URL(this.baseUrl).hostname.replace(/^www\./, "");
 
         const urlStr = url.toString();
         const nonWebProtocols = [
@@ -316,7 +323,7 @@ export class WebCrawler {
           if (config.FIRECRAWL_DEBUG_FILTER_LINKS) {
             this.logger.debug(`${link} NON-WEB PROTOCOL FAIL`);
           }
-          denialReasons.set(link, DenialReason.NON_WEB_PROTOCOL);
+          denialReasons.set(originalLink, DenialReason.NON_WEB_PROTOCOL);
           return false;
         }
 
@@ -328,7 +335,7 @@ export class WebCrawler {
             this.logger.debug(`${link} DEPTH FAIL`);
           }
           denialReasons.set(
-            link,
+            originalLink,
             `This URL exceeds the maximum crawl depth you configured. The URL's depth is ${depth}, but maxDepth is set to ${maxDepth}. To crawl this URL, increase the maxDepth value in your crawl request.`,
           );
           return false;
@@ -346,7 +353,7 @@ export class WebCrawler {
               this.logger.debug(`${link} EXCLUDE FAIL`);
             }
             denialReasons.set(
-              link,
+              originalLink,
               `This URL's path ("${excincPath}") matches the exclude pattern "${matchingPattern}" you provided in the excludePaths parameter. URLs matching excludePaths are intentionally skipped during crawling. If this URL should be crawled, adjust your excludePaths patterns.`,
             );
             return false;
@@ -364,7 +371,7 @@ export class WebCrawler {
               this.logger.debug(`${link} INCLUDE FAIL`);
             }
             denialReasons.set(
-              link,
+              originalLink,
               `This URL's path ("${excincPath}") does not match any of the regex patterns you provided in the includePaths parameter: [${this.includes.map(p => `"${p}"`).join(", ")}]. When includePaths is specified, only URLs matching at least one pattern are crawled. If this URL should be crawled, add a matching pattern to includePaths or remove the includePaths restriction.`,
             );
             return false;
@@ -375,7 +382,7 @@ export class WebCrawler {
         const normalizedInitialUrl = new URL(this.initialUrl);
         let normalizedLink;
         try {
-          normalizedLink = new URL(link);
+          normalizedLink = new URL(link, this.baseUrl);
         } catch (_) {
           if (config.FIRECRAWL_DEBUG_FILTER_LINKS) {
             this.logger.debug(`${link} URL PARSE FAIL`);
@@ -404,7 +411,7 @@ export class WebCrawler {
               );
             }
             denialReasons.set(
-              link,
+              originalLink,
               `This URL's path ("${normalizedLink.pathname}") is outside the initial URL's path hierarchy ("${normalizedInitialUrl.pathname}"), and backward crawling is disabled. By default, Firecrawl only crawls URLs that are 'below' or 'within' the starting URL path. To crawl this URL, either set allowBackwardCrawling: true or set crawlEntireDomain: true to crawl the entire domain.`,
             );
             return false;
@@ -425,7 +432,7 @@ export class WebCrawler {
             this.logger.debug(`${link} ROBOTS FAIL`);
           }
           denialReasons.set(
-            link,
+            originalLink,
             `This URL is blocked by the website's robots.txt file, which instructs crawlers not to access this page. Firecrawl respects robots.txt by default. To crawl this URL anyway, set ignoreRobotsTxt: true in your crawl request (note: this may violate the website's crawling policies).`,
           );
           return false;
@@ -437,7 +444,7 @@ export class WebCrawler {
           }
           const extension = link.split("?")[0].split(".").pop()?.toLowerCase();
           denialReasons.set(
-            link,
+            originalLink,
             `This URL points to a file with extension ".${extension}" that Firecrawl does not crawl. Firecrawl automatically skips non-document file extensions like .png, .jpg, .mp4, .zip, .css, .js, etc. to focus on web pages with textual content.`,
           );
           return false;
@@ -446,8 +453,16 @@ export class WebCrawler {
         if (config.FIRECRAWL_DEBUG_FILTER_LINKS) {
           this.logger.debug(`${link} OK`);
         }
+
+        if (isInternal) {
+          if (seenLinks.has(urlStr)) {
+            return false;
+          }
+          seenLinks.add(urlStr);
+        }
         return true;
       })
+      .map(({ link }) => link)
       .slice(0, limit);
 
     return { links: filteredLinks, denialReasons };
@@ -753,6 +768,32 @@ export class WebCrawler {
     }
 
     return await this.extractLinksFromHTMLCheerio(html, url);
+  }
+
+  private normalizeSectionLink(link: string): string {
+    try {
+      const url = new URL(link.trim(), this.baseUrl);
+      const baseUrl = new URL(this.baseUrl);
+      const hostname = url.hostname.replace(/^www\./, "");
+      const baseHostname = baseUrl.hostname.replace(/^www\./, "");
+
+      if (hostname === baseHostname && !this.noSections(url.toString())) {
+        url.hash = "";
+        return url.toString();
+      }
+    } catch (_) {}
+
+    return link;
+  }
+
+  private noSections(link: string): boolean {
+    if (!link.includes("#")) {
+      return true;
+    }
+
+    // Preserve hash fragments that represent SPA routes rather than sections.
+    const hashPart = link.split("#")[1];
+    return Boolean(hashPart && hashPart.length > 1 && hashPart.includes("/"));
   }
 
   private isRobotsAllowed(

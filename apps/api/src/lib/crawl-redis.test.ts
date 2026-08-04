@@ -1,4 +1,61 @@
-import { generateURLPermutations } from "./crawl-redis";
+import {
+  generateURLPermutations,
+  normalizeURL,
+  type StoredCrawl,
+} from "./crawl-redis";
+
+describe("normalizeURL crawl dedupe keys", () => {
+  const storedCrawl = (ignoreQueryParameters: boolean) =>
+    ({ crawlerOptions: { ignoreQueryParameters } }) as StoredCrawl;
+
+  it("deduplicates plain and section-anchor URLs while preserving the query", () => {
+    const sc = storedCrawl(false);
+
+    expect(normalizeURL("https://example.com/page#overview", sc)).toBe(
+      normalizeURL("https://example.com/page#details", sc),
+    );
+    expect(normalizeURL("https://example.com/page#overview", sc)).toBe(
+      normalizeURL("https://example.com/page", sc),
+    );
+    expect(normalizeURL("https://example.com/page?lang=en#details", sc)).toBe(
+      "https://example.com/page?lang=en",
+    );
+  });
+
+  it("also deduplicates query variants when ignoreQueryParameters is enabled", () => {
+    const sc = storedCrawl(true);
+    const plainPage = normalizeURL("https://example.com/page", sc);
+
+    expect(normalizeURL("https://example.com/page?lang=en#overview", sc)).toBe(
+      plainPage,
+    );
+    expect(normalizeURL("https://example.com/page?lang=ja#details", sc)).toBe(
+      plainPage,
+    );
+  });
+
+  it("keeps hash routes distinct after query normalization", () => {
+    const sc = storedCrawl(true);
+
+    expect(normalizeURL("https://example.com/app?lang=en#/route/1", sc)).toBe(
+      "https://example.com/app#/route/1",
+    );
+    expect(normalizeURL("https://example.com/app#nested/route", sc)).toBe(
+      "https://example.com/app#nested/route",
+    );
+    expect(normalizeURL("https://example.com/app#/route/1", sc)).not.toBe(
+      normalizeURL("https://example.com/app#/route/2", sc),
+    );
+  });
+
+  it("uses the already-visited page key for a fragment-only link", () => {
+    const sc = storedCrawl(false);
+    const page = "https://example.com/page";
+    const visited = new Set([normalizeURL(page, sc)]);
+
+    expect(visited.has(normalizeURL(`${page}#details`, sc))).toBe(true);
+  });
+});
 
 describe("generateURLPermutations", () => {
   it("generates permutations correctly", () => {

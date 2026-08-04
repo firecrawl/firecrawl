@@ -122,7 +122,6 @@ const ROBOTS_TXT: &str = "ROBOTS_TXT";
 const FILE_TYPE: &str = "FILE_TYPE";
 const SOCIAL_MEDIA: &str = "SOCIAL_MEDIA";
 const EXTERNAL_LINK: &str = "EXTERNAL_LINK";
-const SECTION_LINK: &str = "SECTION_LINK";
 const NON_WEB_PROTOCOL: &str = "NON_WEB_PROTOCOL";
 
 #[inline]
@@ -277,6 +276,7 @@ fn _filter_links(data: FilterLinksCall) -> std::result::Result<FilterLinksResult
   );
 
   let mut result_links = Vec::new();
+  let mut seen_result_links = HashSet::new();
   let mut denial_reasons = HashMap::new();
 
   for link in data.links {
@@ -284,12 +284,20 @@ fn _filter_links(data: FilterLinksCall) -> std::result::Result<FilterLinksResult
       break;
     }
 
-    let url = match base_url.join(&link) {
+    let mut url = match base_url.join(&link) {
       Ok(url) => url,
       Err(_) => {
         denial_reasons.insert(link, URL_PARSE_ERROR.to_string());
         continue;
       }
+    };
+
+    let is_internal = is_internal_link(&url, &base_url);
+    let result_link = if is_internal && !no_sections(url.as_str()) {
+      url.set_fragment(None);
+      url.to_string()
+    } else {
+      link.clone()
     };
 
     let path = url.path();
@@ -310,13 +318,8 @@ fn _filter_links(data: FilterLinksCall) -> std::result::Result<FilterLinksResult
       continue;
     }
 
-    if is_internal_link(&url, &base_url) {
+    if is_internal {
       // INTERNAL LINKS
-      if !no_sections(url_str) {
-        denial_reasons.insert(link, SECTION_LINK.to_string());
-        continue;
-      }
-
       if !data.allow_backward_crawling && !path.starts_with(initial_path) {
         denial_reasons.insert(link, BACKWARD_CRAWLING.to_string());
         continue;
@@ -345,7 +348,9 @@ fn _filter_links(data: FilterLinksCall) -> std::result::Result<FilterLinksResult
         }
       }
 
-      result_links.push(link);
+      if seen_result_links.insert(url_str.to_string()) {
+        result_links.push(result_link);
+      }
     } else {
       // EXTERNAL LINKS
       if is_social_media_or_email(url_str) {
@@ -435,7 +440,7 @@ fn _filter_url(data: FilterUrlCall) -> std::result::Result<FilterUrlResult, Stri
     }
   }
 
-  let url = match Url::parse(&full_url) {
+  let mut url = match Url::parse(&full_url) {
     Ok(url) => url,
     Err(_) => {
       return Ok(FilterUrlResult {
@@ -456,6 +461,12 @@ fn _filter_url(data: FilterUrlCall) -> std::result::Result<FilterUrlResult, Stri
       });
     }
   };
+
+  let is_internal = is_internal_link(&url, &base_url);
+  if is_internal && !no_sections(url.as_str()) {
+    url.set_fragment(None);
+    full_url = url.to_string();
+  }
 
   let path = url.path();
   let url_str = url.as_str();
@@ -480,16 +491,8 @@ fn _filter_url(data: FilterUrlCall) -> std::result::Result<FilterUrlResult, Stri
     data.robots_user_agent.as_deref(),
   );
 
-  if is_internal_link(&url, &base_url) {
+  if is_internal {
     // INTERNAL LINKS
-    if !no_sections(url_str) {
-      return Ok(FilterUrlResult {
-        allowed: false,
-        url: None,
-        denial_reason: Some(SECTION_LINK.to_string()),
-      });
-    }
-
     if !excludes_regex.is_empty() && excludes_regex.iter().any(|r| r.is_match(path)) {
       return Ok(FilterUrlResult {
         allowed: false,
@@ -752,6 +755,122 @@ pub async fn process_sitemap(xml_content: String) -> Result<SitemapProcessingRes
 #[cfg(test)]
 mod tests {
   use super::*;
+
+  fn filter_links_call(links: Vec<String>) -> FilterLinksCall {
+    FilterLinksCall {
+      links,
+      limit: Some(10),
+      max_depth: 10,
+      base_url: "https://example.com".to_string(),
+      initial_url: "https://example.com".to_string(),
+      regex_on_full_url: false,
+      excludes: vec![],
+      includes: vec![],
+      allow_backward_crawling: true,
+      ignore_robots_txt: true,
+      robots_txt: String::new(),
+      robots_user_agent: None,
+      allow_external_content_links: false,
+      allow_subdomains: false,
+    }
+  }
+
+  fn filter_url_call(href: &str, current_url: &str) -> FilterUrlCall {
+    FilterUrlCall {
+      href: href.to_string(),
+      url: current_url.to_string(),
+      base_url: "https://example.com".to_string(),
+      excludes: vec![],
+      ignore_robots_txt: true,
+      robots_txt: String::new(),
+      robots_user_agent: None,
+      allow_external_content_links: false,
+      allow_subdomains: false,
+    }
+  }
+
+  fn discover_links(hrefs: &[&str], current_url: &str) -> Vec<String> {
+    let links = hrefs
+      .iter()
+      .filter_map(|href| {
+        let result = _filter_url(filter_url_call(href, current_url)).unwrap();
+        assert!(result.allowed);
+        result.url
+      })
+      .collect();
+
+    _filter_links(filter_links_call(links)).unwrap().links
+  }
+
+  #[test]
+  fn test_section_only_link_discovers_base_page() {
+    assert_eq!(
+      discover_links(&["/page#section"], "https://example.com/index"),
+      vec!["https://example.com/page"]
+    );
+  }
+
+  #[test]
+  fn test_multiple_section_links_collapse_to_one_base_page() {
+    assert_eq!(
+      discover_links(
+        &["/page#overview", "/page#details", "/page#faq"],
+        "https://example.com/index"
+      ),
+      vec!["https://example.com/page"]
+    );
+  }
+
+  #[test]
+  fn test_plain_and_section_links_collapse_to_one_page() {
+    assert_eq!(
+      discover_links(
+        &["/page", "/page#overview", "/page#details"],
+        "https://example.com/index"
+      ),
+      vec!["https://example.com/page"]
+    );
+  }
+
+  #[test]
+  fn test_hash_routes_remain_distinct_crawlable_urls() {
+    assert_eq!(
+      discover_links(
+        &["/app#/route/1", "/app#/route/2", "/app#nested/route"],
+        "https://example.com/index"
+      ),
+      vec![
+        "https://example.com/app#/route/1",
+        "https://example.com/app#/route/2",
+        "https://example.com/app#nested/route"
+      ]
+    );
+  }
+
+  #[test]
+  fn test_fragment_only_link_normalizes_to_already_visited_page() {
+    let page = "https://example.com/page";
+    let result = _filter_url(filter_url_call("#details", page)).unwrap();
+    assert!(result.allowed);
+    assert_eq!(result.url.as_deref(), Some(page));
+
+    let mut visited = HashSet::from([page.to_string()]);
+    assert!(!visited.insert(result.url.unwrap()));
+  }
+
+  #[test]
+  fn test_section_link_base_still_passes_through_filters() {
+    let original_link = "https://example.com/page#details";
+    let mut data = filter_links_call(vec![original_link.to_string()]);
+    data.excludes = vec!["^/page$".to_string()];
+
+    let result = _filter_links(data).unwrap();
+    assert!(result.links.is_empty());
+    assert_eq!(
+      result.denial_reasons.get(original_link).map(String::as_str),
+      Some(EXCLUDE_PATTERN)
+    );
+  }
 
   #[test]
   fn test_parse_sitemap_xml_urlset() {
