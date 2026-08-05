@@ -543,6 +543,7 @@ export class WebCrawler {
       method: "tryGetSitemap",
     });
     let leftOfLimit = this.limit;
+    let deliveredCount = 0;
 
     const normalizeUrl = (url: string) => {
       url = url.replace(/^https?:\/\//, "").replace(/^www\./, "");
@@ -555,6 +556,7 @@ export class WebCrawler {
     const _urlsHandler = async (urls: string[]) => {
       this.logger.debug("urlsHandler invoked");
       if (fromMap && onlySitemap) {
+        deliveredCount += urls.length;
         return await urlsHandler(urls);
       } else {
         let filteredLinksResult = await this.filterLinks(
@@ -590,6 +592,7 @@ export class WebCrawler {
         );
 
         if (uniqueURLs.length > 0) {
+          deliveredCount += uniqueURLs.length;
           return await urlsHandler(uniqueURLs);
         }
       }
@@ -613,45 +616,42 @@ export class WebCrawler {
         hasRobotsTxt: this.robotsTxt.length > 0,
       });
 
-      // Limited concurrency so children of early sitemap indexes claim
+      // Fetched in batches so children of early sitemap indexes claim
       // SITEMAP_LIMIT slots before later top-level sitemaps do.
       const sitemapSources = [this.initialUrl, ...robotsSitemaps];
-      let sourceIndex = 0;
-      let linkCount = 0;
 
-      const worker = async () => {
-        while (
-          sourceIndex < sitemapSources.length &&
+      const fetchSources = async () => {
+        let linkCount = 0;
+        for (
+          let i = 0;
+          i < sitemapSources.length &&
           this.sitemapsHit.size < SITEMAP_LIMIT &&
-          !abort?.aborted
+          !abort?.aborted;
+          i += SITEMAP_FETCH_CONCURRENCY
         ) {
-          const source = sitemapSources[sourceIndex++];
-          linkCount += await this.tryFetchSitemapLinks(
-            source,
-            _urlsHandler,
-            abort,
-            mock,
-            maxAge,
+          const results = await Promise.all(
+            sitemapSources
+              .slice(i, i + SITEMAP_FETCH_CONCURRENCY)
+              .map(source =>
+                this.tryFetchSitemapLinks(
+                  source,
+                  _urlsHandler,
+                  abort,
+                  mock,
+                  maxAge,
+                ),
+              ),
           );
+          linkCount += results.reduce((a, x) => a + x, 0);
         }
+        return linkCount;
       };
 
-      let count = (await Promise.race([
-        Promise.all(
-          Array.from(
-            {
-              length: Math.min(
-                SITEMAP_FETCH_CONCURRENCY,
-                sitemapSources.length,
-              ),
-            },
-            () => worker(),
-          ),
-        ).then(() => linkCount),
-        timeoutPromise,
-      ]).finally(() => {
-        clearTimeout(timeoutHandle);
-      })) as number;
+      let count = (await Promise.race([fetchSources(), timeoutPromise]).finally(
+        () => {
+          clearTimeout(timeoutHandle);
+        },
+      )) as number;
 
       if (count > 0) {
         if (
@@ -677,14 +677,15 @@ export class WebCrawler {
         this.logger.warn("Sitemap fetch timed out", {
           method: "tryGetSitemap",
           timeout,
+          deliveredCount,
         });
-        return 0;
+      } else {
+        this.logger.error("Error fetching sitemap", {
+          method: "tryGetSitemap",
+          error,
+        });
       }
-      this.logger.error("Error fetching sitemap", {
-        method: "tryGetSitemap",
-        error,
-      });
-      return 0;
+      return deliveredCount;
     }
   }
 
