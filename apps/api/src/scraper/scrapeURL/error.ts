@@ -559,11 +559,12 @@ export class MediaAccessDeniedError extends TransportableError {
 }
 
 export class MediaBlockedError extends TransportableError {
-  constructor(message?: string) {
+  constructor(message?: string, options?: ErrorOptions) {
     super(
       "SCRAPE_MEDIA_BLOCKED",
       message ??
         "The media host temporarily blocked this request (rate limit or proxy reputation). This is transient — retry the scrape.",
+      options,
     );
   }
 

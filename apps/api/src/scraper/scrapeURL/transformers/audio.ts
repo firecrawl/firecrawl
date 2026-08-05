@@ -18,12 +18,27 @@ let cachedUrlRegex: RegExp | null = null;
 let cacheTimestamp = 0;
 const CACHE_TTL_MS = 5 * 60 * 1000;
 
+export function resetAudioTransformerCacheForTests() {
+  cachedUrlRegex = null;
+  cacheTimestamp = 0;
+}
+
 async function getSupportedUrlRegex(): Promise<RegExp> {
   if (cachedUrlRegex && Date.now() - cacheTimestamp < CACHE_TTL_MS) {
     return cachedUrlRegex;
   }
 
-  const res = await fetch(`${config.AVGRAB_SERVICE_URL}/supported-urls`);
+  let res: Response;
+  try {
+    res = await fetch(`${config.AVGRAB_SERVICE_URL}/supported-urls`);
+  } catch (error) {
+    // Runs before the download; a connection failure here (unreachable /
+    // overloaded avgrab) must be retryable too, not an opaque UNKNOWN_ERROR.
+    throw new MediaBlockedError(
+      "The audio service was temporarily unreachable. This is transient — retry the scrape.",
+      { cause: error },
+    );
+  }
   if (!res.ok) {
     throw new Error(
       "Failed to fetch supported URL patterns from audio service",
@@ -89,9 +104,10 @@ export async function fetchAudio(
   } catch (error) {
     // Connection-level failure or timeout reaching avgrab (unreachable /
     // overloaded). Transient — surface as retryable rather than an opaque
-    // UNKNOWN_ERROR.
+    // UNKNOWN_ERROR. The original error is preserved as `cause` for logging.
     throw new MediaBlockedError(
       "The audio service was temporarily unreachable. This is transient — retry the scrape.",
+      { cause: error },
     );
   }
 

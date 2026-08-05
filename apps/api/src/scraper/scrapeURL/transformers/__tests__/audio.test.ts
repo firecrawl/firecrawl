@@ -1,4 +1,4 @@
-import { fetchAudio } from "../audio";
+import { fetchAudio, resetAudioTransformerCacheForTests } from "../audio";
 import { MediaAccessDeniedError, MediaBlockedError } from "../../error";
 import { config } from "../../../../config";
 
@@ -250,7 +250,7 @@ describe("fetchAudio lockdown guard", () => {
     expect(error).not.toBeInstanceOf(MediaBlockedError);
   });
 
-  it("surfaces a connection failure to avgrab as retryable", async () => {
+  it("surfaces a download connection failure to avgrab as retryable", async () => {
     const fetchSpy = vi.fn(async (url: string, _init?: RequestInit) => {
       if (url.endsWith("/supported-urls")) {
         return {
@@ -271,6 +271,28 @@ describe("fetchAudio lockdown guard", () => {
 
     const error = await fetchAudio(meta, {} as any).catch(e => e);
     expect(error).toBeInstanceOf(MediaBlockedError);
+  });
+
+  it("surfaces a /supported-urls connection failure as retryable", async () => {
+    // /supported-urls runs before the download; an unreachable avgrab here
+    // must also be retryable, not an opaque UNKNOWN_ERROR. Reset the module
+    // cache so this call actually hits the (throwing) fetch.
+    resetAudioTransformerCacheForTests();
+    const original = TypeError;
+    global.fetch = vi.fn(async () => {
+      throw new original("fetch failed");
+    }) as any;
+    config.AVGRAB_SERVICE_URL = "https://avgrab.example";
+
+    const meta: any = {
+      url: "https://example.com/audio",
+      options: { lockdown: false, formats: [{ type: "audio" }] },
+      logger: { warn: vi.fn(), info: vi.fn(), debug: vi.fn() },
+    };
+
+    const error = await fetchAudio(meta, {} as any).catch(e => e);
+    expect(error).toBeInstanceOf(MediaBlockedError);
+    expect((error as MediaBlockedError).cause).toBeInstanceOf(original);
   });
 
   it("does NOT classify a non-block failure as retryable", async () => {
