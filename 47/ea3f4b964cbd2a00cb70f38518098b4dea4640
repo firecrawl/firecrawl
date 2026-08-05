@@ -1,0 +1,31 @@
+apps/api/src/scraper/scrapeURL/transformers/audio.ts
+  s_054471dfb6d74b::t_915cbf26e2ea8c 107,110
+  s_054471dfb6d74b::t_ff278865785cbb 21-25
+  s_054471dfb6d74b::t_d553248ce05659 31-41
+apps/api/src/scraper/scrapeURL/transformers/__tests__/audio.test.ts
+  s_054471dfb6d74b::t_309f6581e4c4df 1
+  s_054471dfb6d74b::t_ba6b893855ef7c 253,276-277,281-295
+  s_054471dfb6d74b::t_5132a633d835d4 278-280
+apps/api/src/scraper/scrapeURL/error.ts
+  s_054471dfb6d74b::t_95feed3ee8a611 562,567
+apps/api/src/scraper/scrapeURL/transformers/video.ts
+  s_054471dfb6d74b::t_d85d7db15474de 29-39
+  s_054471dfb6d74b::t_30759d6d8c3430 5-9
+  s_054471dfb6d74b::t_f949872cd389d1 188-203
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "47ea3f4b964cbd2a00cb70f38518098b4dea4640",
+  "prompts": {},
+  "sessions": {
+    "s_054471dfb6d74b": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "438bf066-38de-44b2-85f1-39022b8f7edd",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Abimael Martell <1450169+abimaelmartell@users.noreply.github.com>"
+    }
+  }
+}
