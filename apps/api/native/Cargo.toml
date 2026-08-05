@@ -9,7 +9,7 @@ version = "0.1.0"
 crate-type = ["cdylib"]
 
 [dependencies]
-anydoc = "0.1.2"
+anydoc = "0.1.6"
 chrono = { version = "0.4", features = ["serde"] }
 kuchikiki = "0.8.2"
 lol_html = "2.6.0"

@@ -6,10 +6,7 @@ use napi_derive::napi;
 /// from the file content; `extension_hint` (with or without a leading dot) is
 /// only consulted for signature-less formats like CSV.
 #[napi]
-pub fn convert_document_to_markdown(
-  data: &[u8],
-  extension_hint: Option<String>,
-) -> Result<String> {
+pub fn convert_document_to_markdown(data: &[u8], extension_hint: Option<String>) -> Result<String> {
   let format = anydoc::Format::from_bytes(data).or_else(|| {
     extension_hint
       .as_deref()
