@@ -1,0 +1,25 @@
+apps/api/src/lib/search-query-builder.ts
+  s_a0082ad573f520::t_8bda5ad649df60 31-39
+  s_a0082ad573f520::t_38ff42e84b6a28 103-104
+apps/api/src/__tests__/snips/v2/search.test.ts
+  s_a0082ad573f520::t_40745c7a3ad68c 64,66-69,72,84
+apps/api/src/search/execute.ts
+  s_a0082ad573f520::t_3d1909df950e25 117,131-190
+  s_a0082ad573f520::t_e20132894557c9 102
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "9fdcbffa341093360a768e80fbfcede85bb7c6d8",
+  "prompts": {},
+  "sessions": {
+    "s_a0082ad573f520": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "fa54cde5-7c72-4fbe-8ef1-97100d0a7e19",
+        "model": "claude-fable-5"
+      },
+      "human_author": "Abimael Martell <1450169+abimaelmartell@users.noreply.github.com>"
+    }
+  }
+}
