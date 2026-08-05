@@ -378,7 +378,13 @@ export async function extractData({
     logger.error("failed during extractSmartScrape.ts:generateCompletions", {
       error,
     });
-    // console.log("failed during extractSmartScrape.ts:generateCompletions", error);
+    // Surface the failure to the caller: swallowing it here made a failed
+    // extraction indistinguishable from a successful-but-empty one — the
+    // scrape returned 200 with the json field silently absent (and billed).
+    const reason = error instanceof Error ? error.message : String(error);
+    warning =
+      `JSON extraction failed: ${reason.slice(0, 300)}` +
+      (warning ? " " + warning : "");
   }
 
   let extractedData = extract?.extractedData;

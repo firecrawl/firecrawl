@@ -1029,6 +1029,16 @@ export async function performLLMExtract(
     const extractedData =
       extractedDataArray[extractedDataArray.length - 1] ?? undefined;
 
+    // A requested format must never vanish silently: when extraction
+    // produced nothing, keep the key (null) and say why in `warning` —
+    // otherwise the response is a 200 with the json field absent and no
+    // signal to the caller that anything failed.
+    if (extractedData === undefined && !warning) {
+      document.warning =
+        "JSON extraction did not produce a result." +
+        (document.warning ? " " + document.warning : "");
+    }
+
     // // Prepare the schema, potentially wrapping it
     // const { schemaToUse, schemaWasWrapped } = prepareSmartScrapeSchema(
     //   originalOptions.schema,
@@ -1114,12 +1124,12 @@ export async function performLLMExtract(
     });
 
     if (meta.internalOptions.v1OriginalFormat === "extract") {
-      document.extract = extractedData;
+      document.extract = extractedData ?? null;
     } else if (meta.internalOptions.v1OriginalFormat === "json") {
-      document.json = extractedData;
+      document.json = extractedData ?? null;
     } else {
       // v2 API or no v1OriginalFormat - use json field
-      document.json = extractedData;
+      document.json = extractedData ?? null;
     }
     // document.warning = warning;
   }
