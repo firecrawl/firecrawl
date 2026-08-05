@@ -42,6 +42,7 @@ import { initializeEngineForcing } from "./scraper/WebScraper/utils/engine-forci
 import responseTime from "response-time";
 import { shutdownWebhookQueue } from "./services/webhook";
 import { shutdownIndexerQueue } from "./services/indexing/indexer-queue";
+import { isKeylessConfigured } from "./lib/keyless";
 
 const { createBullBoard } = require("@bull-board/api");
 const { BullMQAdapter } = require("@bull-board/api/bullMQAdapter");
@@ -53,6 +54,12 @@ logger.info(`Number of CPUs: ${numCPUs} available`);
 logger.info("Network info dump", {
   networkInterfaces: os.networkInterfaces(),
 });
+
+if (isKeylessConfigured() && !config.KEYLESS_CONVERSION_HMAC_SECRET) {
+  logger.warn(
+    "Keyless conversion cohort logging is disabled: set KEYLESS_CONVERSION_HMAC_SECRET to enable privacy-safe quota-to-account measurement",
+  );
+}
 
 // Install cacheable lookup for all other requests
 cacheableLookup.install(http.globalAgent);

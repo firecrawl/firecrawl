@@ -10,6 +10,7 @@ import {
   KEYLESS_FREE_TIER_LIMIT_MESSAGE,
   consumeKeylessRequest,
   isKeylessConfigured,
+  keylessExhaustionTelemetry,
   isKeylessIpEligible,
   keylessTeamId,
 } from "../lib/keyless";
@@ -518,6 +519,7 @@ async function handleKeylessAuth(
       event: "keyless_exhausted",
       reason: result.reason,
       retryAfterSeconds: result.retryAfterSeconds,
+      ...keylessExhaustionTelemetry(ip),
     });
     return {
       success: false,
