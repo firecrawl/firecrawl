@@ -6,12 +6,26 @@ export type CrawlWebSocketStatus =
   | "failed"
   | "scraping";
 
-export function shouldCloseCrawlStatusWS(
-  jobCount: number,
-  completedJobCount: number,
-  kickoffFinished: boolean,
-): boolean {
-  return kickoffFinished && jobCount === completedJobCount;
+type ShouldCloseCrawlStatusWSOptions = {
+  jobCount: number;
+  completedJobCount: number;
+  kickoffFinished: boolean;
+  cancelled: boolean;
+  hasCrawlError: boolean;
+};
+
+export function shouldCloseCrawlStatusWS({
+  jobCount,
+  completedJobCount,
+  kickoffFinished,
+  cancelled,
+  hasCrawlError,
+}: ShouldCloseCrawlStatusWSOptions): boolean {
+  return (
+    cancelled ||
+    hasCrawlError ||
+    (kickoffFinished && jobCount === completedJobCount)
+  );
 }
 
 type DeriveCrawlStatusOptions = {

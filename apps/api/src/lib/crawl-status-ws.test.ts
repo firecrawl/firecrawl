@@ -3,11 +3,51 @@ import { deriveCrawlStatus, shouldCloseCrawlStatusWS } from "./crawl-status-ws";
 
 describe("shouldCloseCrawlStatusWS", () => {
   it("does not close while kickoff is still initializing an empty crawl", () => {
-    expect(shouldCloseCrawlStatusWS(0, 0, false)).toBe(false);
+    expect(
+      shouldCloseCrawlStatusWS({
+        jobCount: 0,
+        completedJobCount: 0,
+        kickoffFinished: false,
+        cancelled: false,
+        hasCrawlError: false,
+      }),
+    ).toBe(false);
   });
 
   it("closes an empty crawl after kickoff has finished", () => {
-    expect(shouldCloseCrawlStatusWS(0, 0, true)).toBe(true);
+    expect(
+      shouldCloseCrawlStatusWS({
+        jobCount: 0,
+        completedJobCount: 0,
+        kickoffFinished: true,
+        cancelled: false,
+        hasCrawlError: false,
+      }),
+    ).toBe(true);
+  });
+
+  it("closes a cancelled crawl even if kickoff never finishes", () => {
+    expect(
+      shouldCloseCrawlStatusWS({
+        jobCount: 2,
+        completedJobCount: 0,
+        kickoffFinished: false,
+        cancelled: true,
+        hasCrawlError: false,
+      }),
+    ).toBe(true);
+  });
+
+  it("closes a crawl with a kickoff error", () => {
+    expect(
+      shouldCloseCrawlStatusWS({
+        jobCount: 0,
+        completedJobCount: 0,
+        kickoffFinished: false,
+        cancelled: false,
+        hasCrawlError: true,
+      }),
+    ).toBe(true);
   });
 });
 

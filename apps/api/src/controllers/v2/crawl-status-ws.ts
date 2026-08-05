@@ -80,19 +80,66 @@ async function crawlStatusWS(
   let doneJobIDs: string[] = [];
   let finished = false;
 
+  const closeWithTerminalStatus = async (
+    status: "cancelled" | "failed",
+    jobCount: number,
+    error?: string,
+  ) => {
+    const expiresAt = (await getCrawlExpiry(req.params.jobId)).toISOString();
+    await send(ws, {
+      type: "catchup",
+      data:
+        status === "failed"
+          ? {
+              success: false,
+              error: error ?? "Crawl failed during kickoff",
+              status: "failed",
+              total: 0,
+              completed: 0,
+              creditsUsed: 0,
+              expiresAt,
+              data: [],
+            }
+          : {
+              success: true,
+              status: "cancelled",
+              total: jobCount,
+              completed: doneJobIDs.length,
+              creditsUsed: jobCount,
+              expiresAt,
+              data: [],
+            },
+    });
+
+    finished = true;
+    return close(ws, 1000, { type: "done" });
+  };
+
   const loop = async () => {
     if (finished) return;
 
     const kickoffFinished = await isCrawlKickoffFinished(req.params.jobId);
     const jobIDs = await getCrawlJobs(req.params.jobId);
+    const currentCrawl = await getCrawl(req.params.jobId);
+    const crawlError = await getCrawlError(req.params.jobId);
 
     if (
-      shouldCloseCrawlStatusWS(
-        jobIDs.length,
-        doneJobIDs.length,
+      shouldCloseCrawlStatusWS({
+        jobCount: jobIDs.length,
+        completedJobCount: doneJobIDs.length,
         kickoffFinished,
-      )
+        cancelled: currentCrawl?.cancelled === true,
+        hasCrawlError: crawlError !== null,
+      })
     ) {
+      if (currentCrawl?.cancelled === true) {
+        return closeWithTerminalStatus("cancelled", jobIDs.length);
+      }
+
+      if (crawlError !== null) {
+        return closeWithTerminalStatus("failed", jobIDs.length, crawlError);
+      }
+
       finished = true;
       return close(ws, 1000, { type: "done" });
     }
