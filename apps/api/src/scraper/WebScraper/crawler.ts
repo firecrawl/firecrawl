@@ -19,6 +19,7 @@ import { filterLinks, filterUrl } from "@mendable/firecrawl-rs";
 import { extractBaseDomain } from "../../lib/url-utils";
 
 export const SITEMAP_LIMIT = 25;
+const SITEMAP_FETCH_CONCURRENCY = 3;
 const SITEMAP_MAX_AGE = 7 * 24 * 60 * 60 * 1000;
 
 interface FilterResult {
@@ -612,19 +613,41 @@ export class WebCrawler {
         hasRobotsTxt: this.robotsTxt.length > 0,
       });
 
-      let count = (await Promise.race([
-        Promise.all([
-          this.tryFetchSitemapLinks(
-            this.initialUrl,
+      // Limited concurrency so children of early sitemap indexes claim
+      // SITEMAP_LIMIT slots before later top-level sitemaps do.
+      const sitemapSources = [this.initialUrl, ...robotsSitemaps];
+      let sourceIndex = 0;
+      let linkCount = 0;
+
+      const worker = async () => {
+        while (
+          sourceIndex < sitemapSources.length &&
+          this.sitemapsHit.size < SITEMAP_LIMIT &&
+          !abort?.aborted
+        ) {
+          const source = sitemapSources[sourceIndex++];
+          linkCount += await this.tryFetchSitemapLinks(
+            source,
             _urlsHandler,
             abort,
             mock,
             maxAge,
+          );
+        }
+      };
+
+      let count = (await Promise.race([
+        Promise.all(
+          Array.from(
+            {
+              length: Math.min(
+                SITEMAP_FETCH_CONCURRENCY,
+                sitemapSources.length,
+              ),
+            },
+            () => worker(),
           ),
-          ...robotsSitemaps.map(x =>
-            this.tryFetchSitemapLinks(x, _urlsHandler, abort, mock, maxAge),
-          ),
-        ]).then(results => results.reduce((a, x) => a + x, 0)),
+        ).then(() => linkCount),
         timeoutPromise,
       ]).finally(() => {
         clearTimeout(timeoutHandle);
