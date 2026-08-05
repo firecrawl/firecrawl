@@ -23,7 +23,7 @@ export function shouldCloseCrawlStatusWS({
 }: ShouldCloseCrawlStatusWSOptions): boolean {
   return (
     cancelled ||
-    hasCrawlError ||
+    (hasCrawlError && jobCount === 0) ||
     (kickoffFinished && jobCount === completedJobCount)
   );
 }

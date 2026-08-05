@@ -49,6 +49,18 @@ describe("shouldCloseCrawlStatusWS", () => {
       }),
     ).toBe(true);
   });
+
+  it("keeps visible jobs open when a kickoff error is present", () => {
+    expect(
+      shouldCloseCrawlStatusWS({
+        jobCount: 2,
+        completedJobCount: 0,
+        kickoffFinished: false,
+        cancelled: false,
+        hasCrawlError: true,
+      }),
+    ).toBe(false);
+  });
 });
 
 describe("deriveCrawlStatus", () => {
