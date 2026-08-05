@@ -98,10 +98,8 @@ export async function executeSearch(
   logger.info("Searching for results");
 
   const searchTypes = [...new Set(sources.map((s: any) => s.type))];
-  const { query: siteScopedQuery, pathPrefixes } =
-    extractSitePathFilters(query);
   const { query: searchQuery, categoryMap } = buildSearchQuery(
-    siteScopedQuery,
+    query,
     categories,
     {
       includeDomains: options.includeDomains,
@@ -116,7 +114,7 @@ export async function executeSearch(
       )
     : null;
 
-  const searchResponse = (await search({
+  let searchResponse = (await search({
     query: searchQuery,
     logger,
     advanced: false,
@@ -129,6 +127,67 @@ export async function executeSearch(
     type: searchTypes,
     enterprise: options.enterprise,
   })) as SearchV2Response;
+
+  // `site:host/path` acts as a strict URL-prefix filter, so a stale or
+  // guessed path returns zero results even when the site has relevant
+  // pages. When that happens, retry once with the filters
+  // widened to their hostname and rank on-path results first. Queries whose
+  // prefix does match indexed pages keep the provider's strict filtering and
+  // never pay for the retry.
+  const hasNoResults =
+    !searchResponse.web?.length &&
+    !searchResponse.news?.length &&
+    !searchResponse.images?.length;
+  if (hasNoResults) {
+    const { query: siteScopedQuery, pathPrefixes } =
+      extractSitePathFilters(query);
+    if (pathPrefixes.length > 0) {
+      logger.info(
+        "Path-scoped site: query returned no results; retrying with hostname-only filters",
+        { pathPrefixCount: pathPrefixes.length },
+      );
+      const { query: fallbackQuery } = buildSearchQuery(
+        siteScopedQuery,
+        categories,
+        {
+          includeDomains: options.includeDomains,
+          excludeDomains: options.excludeDomains,
+        },
+      );
+      searchResponse = (await search({
+        query: fallbackQuery,
+        logger,
+        advanced: false,
+        num_results: num_results_buffer,
+        tbs: options.tbs,
+        filter: options.filter,
+        lang: options.lang,
+        country: options.country,
+        location: options.location,
+        type: searchTypes,
+        enterprise: options.enterprise,
+      })) as SearchV2Response;
+
+      if (searchResponse.web) {
+        searchResponse.web = rankSitePathMatchesFirst(
+          searchResponse.web,
+          pathPrefixes,
+        );
+      }
+      if (searchResponse.news) {
+        searchResponse.news = rankSitePathMatchesFirst(
+          searchResponse.news,
+          pathPrefixes,
+        );
+      }
+      if (searchResponse.images) {
+        searchResponse.images = rankSitePathMatchesFirst(
+          searchResponse.images,
+          pathPrefixes,
+        );
+      }
+    }
+  }
 
   if (developerResults) {
     const developer = await developerResults;
@@ -180,30 +239,6 @@ export async function executeSearch(
           isAllowed(x.url),
         );
       }
-    }
-  }
-
-  // Path-scoped site: filters were rewritten to their hostname for the
-  // backend; surface results under the requested path first, before the
-  // result sets are sliced down to the requested limit.
-  if (pathPrefixes.length > 0) {
-    if (searchResponse.web) {
-      searchResponse.web = rankSitePathMatchesFirst(
-        searchResponse.web,
-        pathPrefixes,
-      );
-    }
-    if (searchResponse.news) {
-      searchResponse.news = rankSitePathMatchesFirst(
-        searchResponse.news,
-        pathPrefixes,
-      );
-    }
-    if (searchResponse.images) {
-      searchResponse.images = rankSitePathMatchesFirst(
-        searchResponse.images,
-        pathPrefixes,
-      );
     }
   }
 

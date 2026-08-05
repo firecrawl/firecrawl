@@ -61,16 +61,14 @@ describeIf(TEST_PRODUCTION || HAS_SEARCH || HAS_PROXY)("Search tests", () => {
   );
 
   it.concurrent(
-    "works with a path-scoped site: operator",
+    "falls back to the hostname when a path-scoped site: filter matches nothing",
     async () => {
-      // Google-style `site:host/path` filters used to be passed through to
-      // backends that only understand hostnames, matching nothing and
-      // returning zero results. The path is now stripped for the backend
-      // (and used to rank on-path results first), so the domain restriction
-      // must still hold and results must be non-empty.
+      // `site:host/path` acts as a strict URL-prefix filter, so a path with
+      // no indexed pages under it returns zero results. The fallback retries with `site:host`, so this query must
+      // return non-empty, domain-constrained results instead of nothing.
       const res = await search(
         {
-          query: "site:github.com/firecrawl/firecrawl scraping",
+          query: "site:firecrawl.dev/this-path-does-not-exist firecrawl",
           limit: 5,
         },
         identity,
@@ -82,7 +80,7 @@ describeIf(TEST_PRODUCTION || HAS_SEARCH || HAS_PROXY)("Search tests", () => {
         expect(result.url).toBeDefined();
         const hostname = new URL(result.url!).hostname;
         expect(
-          hostname === "github.com" || hostname.endsWith(".github.com"),
+          hostname === "firecrawl.dev" || hostname.endsWith(".firecrawl.dev"),
         ).toBe(true);
       }
     },

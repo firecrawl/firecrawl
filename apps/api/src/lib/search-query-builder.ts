@@ -28,11 +28,15 @@ interface SitePathFilterResult {
 /**
  * Rewrites path-scoped `site:` operators to their hostname.
  *
- * Google treats `site:host/path` as a URL-prefix restriction, but the search
- * backends here only understand hostnames — a path makes the filter match
- * nothing, so the whole search returns zero results. Rewriting to `site:host`
- * keeps the domain restriction; the extracted prefixes let the caller rank
- * results under the requested path first (see rankSitePathMatchesFirst).
+ * `site:host/path` acts as a strict URL-prefix restriction, so a stale or
+ * guessed path (or one with query parameters) returns zero results even when
+ * the site has relevant pages. This rewrite is
+ * the fallback for that case: `site:host` keeps the domain restriction, and
+ * the extracted prefixes let the caller rank results under the requested path
+ * first (see rankSitePathMatchesFirst). Callers should only fall back to the
+ * rewritten query when the original one returned nothing — when the prefix
+ * does match indexed pages, the provider's strict filtering is the better
+ * result set.
  *
  * Negated operators (`-site:`) are left untouched: widening an exclusion to
  * the whole domain would drop results the user wanted.
@@ -96,8 +100,8 @@ function urlMatchesSitePathPrefix(
  * Reorders results so that URLs under a requested `site:host/path` prefix come
  * first, preserving relative order within each group. Results are never
  * dropped: the hostname rewrite in extractSitePathFilters already constrains
- * them to the right domain, and off-path pages are still better than the
- * zero results the unrewritten query produced.
+ * them to the right domain, and off-path pages are still better than the zero
+ * results the original path-scoped query produced.
  */
 export function rankSitePathMatchesFirst<T extends { url?: string }>(
   results: T[],
