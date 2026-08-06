@@ -100,10 +100,12 @@ async function crawlStatusWS(
 
     for (const job of newlyDoneJobs) {
       if (job.returnvalue) {
-        send(ws, {
+        // Await/catch so a late close between readyState check and ws.send
+        // callback cannot escape as an unhandledRejection (Node 15+ exit).
+        await send(ws, {
           type: "document",
           data: job.returnvalue,
-        });
+        }).catch(() => {});
       } else {
         // Crawl errors are ignored.
       }
