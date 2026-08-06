@@ -58,8 +58,6 @@ function upstreamHeaders(req: RequestWithAuth<any, any, any>) {
   if (apiKey) headers["x-labs-search-key"] = apiKey;
 
   if (isMultipart(req)) {
-    // The body is piped through unparsed, so the multipart boundary and length
-    // have to travel with it.
     for (const h of ["content-type", "content-length"]) {
       const value = req.headers[h];
       if (typeof value === "string") headers[h] = value;
@@ -136,14 +134,6 @@ async function labsProxyController(req: Request, res: Response) {
 
 export const labsRouter = express.Router();
 
-// No credit check or billing here on purpose: the service behind this proxy
-// makes its own calls to the public API with the caller's own key, so usage is
-// billed on those existing paths instead.
-//
-// This list mirrors the upstream service one route at a time; there is no
-// catch-all proxy. An endpoint added upstream stays a 404 here until it is also
-// listed below, so keep the two in sync when the service grows. LABS_ROUTES in
-// labs.routes.test.ts locks the list so a route cannot be dropped unnoticed.
 labsRouter.post(
   "/search",
   authMiddleware(RateLimiterMode.Labs),
@@ -234,12 +224,6 @@ labsRouter.delete(
   wrap(labsProxyController),
 );
 
-// A path missing from the list above falls to Express, which answers with an HTML
-// "Cannot GET" page. Callers parse these responses as JSON, so that page decays into an
-// empty body and a bare 404 — indistinguishable from the upstream service reporting that
-// a pack or a config does not exist. The two want opposite responses: one is a deploy gap
-// to report, the other is a record to stop asking for. Name the gap so the difference
-// survives the trip back to the browser.
 labsRouter.all(/(.*)/, (req: Request, res: Response) => {
   rootLogger.warn("Labs path is not proxied by this API", {
     module: "api/labs",
