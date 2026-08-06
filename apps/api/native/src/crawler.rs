@@ -135,6 +135,45 @@ fn is_file(path: &str) -> bool {
   }
 }
 
+static DOCUMENT_SEGMENT: LazyLock<Regex> =
+  LazyLock::new(|| Regex::new(r"\.[A-Za-z0-9]{2,}$").unwrap());
+
+struct CrawlScope {
+  prefix: String,
+  exact: Option<String>,
+}
+
+/// Resolves the path a crawl is scoped to when backward crawling is disabled.
+/// Keep in sync with getCrawlScope() in apps/api/src/lib/crawl-scope.ts.
+fn crawl_scope(initial_url: &Url) -> CrawlScope {
+  let path = initial_url.path();
+
+  if path.ends_with('/') {
+    return CrawlScope {
+      prefix: path.to_string(),
+      exact: None,
+    };
+  }
+
+  let last_slash = path.rfind('/').map_or(0, |i| i + 1);
+  if DOCUMENT_SEGMENT.is_match(&path[last_slash..]) {
+    return CrawlScope {
+      prefix: path[..last_slash].to_string(),
+      exact: None,
+    };
+  }
+
+  CrawlScope {
+    prefix: format!("{path}/"),
+    exact: Some(path.to_string()),
+  }
+}
+
+#[inline]
+fn is_within_crawl_scope(path: &str, scope: &CrawlScope) -> bool {
+  scope.exact.as_deref() == Some(path) || path.starts_with(&scope.prefix)
+}
+
 #[inline]
 fn get_url_depth(path: &str) -> u32 {
   path
@@ -257,7 +296,7 @@ fn _filter_links(data: FilterLinksCall) -> std::result::Result<FilterLinksResult
   let base_url = Url::parse(&data.base_url).map_err(|e| format!("Base URL parse error: {e}"))?;
   let initial_url =
     Url::parse(&data.initial_url).map_err(|e| format!("Initial URL parse error: {e}"))?;
-  let initial_path = initial_url.path();
+  let scope = crawl_scope(&initial_url);
 
   let excludes_regex: Vec<Regex> = data
     .excludes
@@ -317,7 +356,7 @@ fn _filter_links(data: FilterLinksCall) -> std::result::Result<FilterLinksResult
         continue;
       }
 
-      if !data.allow_backward_crawling && !path.starts_with(initial_path) {
+      if !data.allow_backward_crawling && !is_within_crawl_scope(path, &scope) {
         denial_reasons.insert(link, BACKWARD_CRAWLING.to_string());
         continue;
       }
