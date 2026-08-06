@@ -135,6 +135,14 @@ BULL_AUTH_KEY=CHANGEME
     docker compose up
     ```
 
+    To run the self-hosted stack with pinned prebuilt images instead of
+    building the API, Playwright service, and NuQ Postgres images locally, use
+    the opt-in prebuilt override:
+
+    ```bash
+    docker compose -f docker-compose.yaml -f docker-compose.prebuilt.yaml up
+    ```
+
     If you encounter an error, make sure you're using `docker compose` and not `docker-compose`.
     
     This will run a local instance of Firecrawl which can be accessed at `http://localhost:3002`.
