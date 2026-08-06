@@ -229,7 +229,7 @@ export async function searchController(
         lang: req.body.lang,
         country: req.body.country,
         location: req.body.location,
-        safeSearch: req.body.safeSearch,
+        safe: req.body.safe,
         sources: req.body.sources as Array<{ type: string }>,
         categories: req.body.categories as CategoryOption[],
         includeDomains: req.body.includeDomains,

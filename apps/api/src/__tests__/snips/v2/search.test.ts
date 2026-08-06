@@ -261,12 +261,12 @@ describeIf(TEST_PRODUCTION || HAS_SEARCH || HAS_PROXY)("Search tests", () => {
   );
 
   concurrentIf(TEST_PRODUCTION)(
-    "works with safeSearch",
+    "works with safe",
     async () => {
       const res = await search(
         {
           query: "firecrawl",
-          safeSearch: true,
+          safe: true,
         },
         identity,
       );
@@ -277,12 +277,12 @@ describeIf(TEST_PRODUCTION || HAS_SEARCH || HAS_PROXY)("Search tests", () => {
   );
 
   it.concurrent(
-    "rejects non-boolean safeSearch",
+    "rejects non-boolean safe",
     async () => {
       const res = await searchWithFailure(
         {
           query: "firecrawl",
-          safeSearch: "active",
+          safe: "active",
         } as any,
         identity,
       );
