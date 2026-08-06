@@ -792,6 +792,54 @@ pub async fn process_sitemap(xml_content: String) -> Result<SitemapProcessingRes
 mod tests {
   use super::*;
 
+  fn scope_of(url: &str) -> CrawlScope {
+    crawl_scope(&Url::parse(url).unwrap())
+  }
+
+  #[test]
+  fn test_crawl_scope_document_seed_scopes_to_directory() {
+    let scope = scope_of("https://example.com/docs/guide.md");
+    assert_eq!(scope.prefix, "/docs/");
+    assert_eq!(scope.exact, None);
+
+    assert!(is_within_crawl_scope("/docs/other.md", &scope));
+    assert!(is_within_crawl_scope("/docs/nested/deep.md", &scope));
+    assert!(!is_within_crawl_scope("/blog/post.md", &scope));
+    assert!(!is_within_crawl_scope("/", &scope));
+  }
+
+  #[test]
+  fn test_crawl_scope_directory_seed() {
+    let scope = scope_of("https://example.com/docs/");
+    assert_eq!(scope.prefix, "/docs/");
+    assert_eq!(scope.exact, None);
+
+    assert!(is_within_crawl_scope("/docs/guide.md", &scope));
+    assert!(!is_within_crawl_scope("/docs", &scope));
+    assert!(!is_within_crawl_scope("/docsearch/x", &scope));
+  }
+
+  #[test]
+  fn test_crawl_scope_extensionless_seed_allows_seed_and_children() {
+    let scope = scope_of("https://example.com/docs");
+    assert_eq!(scope.prefix, "/docs/");
+    assert_eq!(scope.exact.as_deref(), Some("/docs"));
+
+    assert!(is_within_crawl_scope("/docs", &scope));
+    assert!(is_within_crawl_scope("/docs/guide", &scope));
+    // Sibling paths sharing the seed's prefix must not sneak in.
+    assert!(!is_within_crawl_scope("/docsearch", &scope));
+  }
+
+  #[test]
+  fn test_crawl_scope_root_seed() {
+    let scope = scope_of("https://example.com");
+    assert_eq!(scope.prefix, "/");
+    assert_eq!(scope.exact, None);
+
+    assert!(is_within_crawl_scope("/anything/at/all", &scope));
+  }
+
   #[test]
   fn test_parse_sitemap_xml_urlset() {
     let xml_content = r#"<?xml version="1.0" encoding="UTF-8"?>

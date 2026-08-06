@@ -225,8 +225,10 @@ async function deriveLinksFromHTML(
     return document;
   }
 
+  // Engines that carry markdown natively (exchange) put synthetic metadata in
+  // rawHtml, so the markdown field is the only place their links live.
   document.links = await extractLinks(
-    isMarkdown ? (document.rawHtml ?? "") : document.html!,
+    isMarkdown ? (document.markdown ?? document.rawHtml ?? "") : document.html!,
     document.metadata.url ??
       document.metadata.sourceURL ??
       meta.rewrittenUrl ??
