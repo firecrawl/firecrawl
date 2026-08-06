@@ -139,6 +139,11 @@ export const labsRouter = express.Router();
 // No credit check or billing here on purpose: the service behind this proxy
 // makes its own calls to the public API with the caller's own key, so usage is
 // billed on those existing paths instead.
+//
+// This list mirrors the upstream service one route at a time; there is no
+// catch-all proxy. An endpoint added upstream stays a 404 here until it is also
+// listed below, so keep the two in sync when the service grows. LABS_ROUTES in
+// labs.routes.test.ts locks the list so a route cannot be dropped unnoticed.
 labsRouter.post(
   "/search",
   authMiddleware(RateLimiterMode.Labs),
@@ -157,8 +162,20 @@ labsRouter.post(
   wrap(labsProxyController),
 );
 
+labsRouter.post(
+  "/search/data/pages",
+  authMiddleware(RateLimiterMode.Labs),
+  wrap(labsProxyController),
+);
+
 labsRouter.get(
   "/search/data",
+  authMiddleware(RateLimiterMode.Labs),
+  wrap(labsProxyController),
+);
+
+labsRouter.patch(
+  "/search/data/:sourceId",
   authMiddleware(RateLimiterMode.Labs),
   wrap(labsProxyController),
 );
@@ -169,8 +186,26 @@ labsRouter.delete(
   wrap(labsProxyController),
 );
 
+labsRouter.post(
+  "/search/data/:sourceId/refresh",
+  authMiddleware(RateLimiterMode.Labs),
+  wrap(labsProxyController),
+);
+
 labsRouter.get(
   "/search/providers",
+  authMiddleware(RateLimiterMode.Labs),
+  wrap(labsProxyController),
+);
+
+labsRouter.get(
+  "/search/packs",
+  authMiddleware(RateLimiterMode.Labs),
+  wrap(labsProxyController),
+);
+
+labsRouter.patch(
+  "/search/packs/:packId",
   authMiddleware(RateLimiterMode.Labs),
   wrap(labsProxyController),
 );
@@ -198,3 +233,24 @@ labsRouter.delete(
   authMiddleware(RateLimiterMode.Labs),
   wrap(labsProxyController),
 );
+
+// A path missing from the list above falls to Express, which answers with an HTML
+// "Cannot GET" page. Callers parse these responses as JSON, so that page decays into an
+// empty body and a bare 404 — indistinguishable from the upstream service reporting that
+// a pack or a config does not exist. The two want opposite responses: one is a deploy gap
+// to report, the other is a record to stop asking for. Name the gap so the difference
+// survives the trip back to the browser.
+labsRouter.all(/(.*)/, (req: Request, res: Response) => {
+  rootLogger.warn("Labs path is not proxied by this API", {
+    module: "api/labs",
+    method: req.method,
+    path: req.originalUrl,
+  });
+  return res.status(404).json({
+    success: false,
+    code: "LABS_ROUTE_NOT_PROXIED",
+    error:
+      `${req.method} ${req.baseUrl}${req.path} is not routed by this API. The Labs Search ` +
+      `service may serve it, but this proxy does not forward it yet.`,
+  });
+});
