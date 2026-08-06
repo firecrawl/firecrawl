@@ -105,15 +105,40 @@ This will start the workers who are responsible for processing crawl jobs.
 
 Alright: now let’s send our first request.
 
-```curl
-curl -X GET http://localhost:3002/test
+```bash
+curl -X GET http://localhost:3002/
 ```
 
-This should return the response Hello, world!
+This should return JSON like:
 
-If you’d like to test the crawl endpoint, you can run this
+```json
+{
+  "message": "Firecrawl API",
+  "documentation_url": "https://docs.firecrawl.dev"
+}
+```
 
-```curl
+You can also hit the lightweight liveness probe:
+
+```bash
+curl -X GET http://localhost:3002/e2e-test
+```
+
+This should return `OK`.
+
+If you’d like to test the scrape endpoint (works without an API key when `USE_DB_AUTHENTICATION=false`):
+
+```bash
+curl -X POST http://localhost:3002/v1/scrape \
+    -H 'Content-Type: application/json' \
+    -d '{
+      "url": "https://example.com"
+    }'
+```
+
+If you’d like to test the crawl endpoint, you can run this:
+
+```bash
 curl -X POST http://localhost:3002/v1/crawl \
     -H 'Content-Type: application/json' \
     -d '{
@@ -137,4 +162,10 @@ This will start Redis, the API server, and workers automatically in the correct 
 
 ## Tests:
 
-The best way to do this is run the test with `npm run test:snips`.
+From `apps/api`, the preferred way to run the snip (E2E) suite is:
+
+```bash
+pnpm harness vitest run src/__tests__/snips/v2
+```
+
+`pnpm harness` boots the API and workers for you — do not start them with a separate `pnpm start` while using harness. Run only the relevant test files locally when possible; let CI run the full suite.
