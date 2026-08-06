@@ -43,11 +43,19 @@ const DAY_SECONDS = 86400;
 // logging. Rotation intentionally creates a new cohort namespace.
 export const KEYLESS_CONVERSION_COHORT_VERSION = "v1";
 
+function normalizeKeylessIpv4(ip: string): string {
+  const trimmed = ip.trim();
+  const lower = trimmed.toLowerCase();
+  return lower.startsWith("::ffff:") && isIPv4(trimmed.slice(7))
+    ? trimmed.slice(7)
+    : trimmed;
+}
+
 export function keylessConversionCohort(ip: string): string | undefined {
   const secret = config.KEYLESS_CONVERSION_HMAC_SECRET;
   if (!secret || !ip) return undefined;
   return `${KEYLESS_CONVERSION_COHORT_VERSION}:${createHmac("sha256", secret)
-    .update(ip)
+    .update(normalizeKeylessIpv4(ip))
     .digest("base64url")}`;
 }
 
@@ -100,8 +108,7 @@ export function keylessTeamUuid(
  * is treated as IPv4.
  */
 export function isKeylessIpEligible(ip: string): boolean {
-  const normalized = ip.startsWith("::ffff:") ? ip.slice("::ffff:".length) : ip;
-  return isIPv4(normalized);
+  return isIPv4(normalizeKeylessIpv4(ip));
 }
 
 const requestsKey = (ip: string) => `keyless_requests:${ip}`;

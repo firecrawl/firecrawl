@@ -32,6 +32,8 @@ describe("keyless conversion cohort telemetry", () => {
     expect(cohort).not.toContain("203.0.113.8");
     expect(keylessConversionCohort("203.0.113.8")).toBe(cohort);
     expect(keylessConversionCohort("203.0.113.9")).not.toBe(cohort);
+    expect(keylessConversionCohort("::ffff:203.0.113.8")).toBe(cohort);
+    expect(keylessConversionCohort("::FFFF:203.0.113.8")).toBe(cohort);
     expect(keylessExhaustionTelemetry("203.0.113.8")).toEqual({
       conversionCohort: cohort,
     });
