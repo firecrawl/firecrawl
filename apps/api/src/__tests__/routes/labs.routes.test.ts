@@ -26,13 +26,6 @@ vi.mock("../../routes/shared", () => ({
 
 import { labsRouter } from "../../routes/labs";
 
-/**
- * Every path the Labs Search service serves, because this proxy forwards one route at a
- * time and a path missing here is a 404 no matter what the service does. The list was
- * pruned by accident once — a rate-limit change rewrote every route in the file and lost
- * five of them, taking provider packs off the dashboard until it was noticed by hand.
- * Adding a route upstream means adding it here too, and this list is the reminder.
- */
 const LABS_ROUTES = [
   "POST /search",
   "POST /search/data/sites",
@@ -51,18 +44,13 @@ const LABS_ROUTES = [
   "DELETE /search/configs/:id",
 ];
 
-// Express populates `methods` on every route but does not declare it on IRoute.
-type RouteWithMethods = { path: unknown; methods: Record<string, boolean> };
-
 function registeredRoutes(): string[] {
   return labsRouter.stack.flatMap(layer => {
-    const route = layer.route as RouteWithMethods | undefined;
-    // The catch-all matches by regex and has no literal path; only named routes count.
+    const route = layer.route;
     if (route === undefined || typeof route.path !== "string") return [];
     const path = route.path;
-    return Object.keys(route.methods)
-      .filter(method => method !== "_all")
-      .map(method => `${method.toUpperCase()} ${path}`);
+    const methods = new Set(route.stack.map(entry => entry.method));
+    return [...methods].map(method => `${method.toUpperCase()} ${path}`);
   });
 }
 
@@ -78,7 +66,6 @@ describe("labs router", () => {
   });
 
   it("keeps the provider pack routes the dashboard reads", () => {
-    // Called out separately from the list above so a deletion names what it broke.
     expect(registeredRoutes()).toContain("GET /search/packs");
     expect(registeredRoutes()).toContain("PATCH /search/packs/:packId");
   });
@@ -96,7 +83,6 @@ describe("labs router", () => {
   });
 
   it("names the method so a wrong-verb route is not read as a missing record", async () => {
-    // GET /search/configs is proxied; PUT is not. The reply has to say which.
     const response = await request(appWithLabs()).put("/labs/search/configs");
 
     expect(response.status).toBe(404);
@@ -107,8 +93,6 @@ describe("labs router", () => {
   it("lets proxied routes through rather than swallowing them in the catch-all", async () => {
     const response = await request(appWithLabs()).get("/labs/search/packs");
 
-    // The upstream fetch is unmocked and fails, but reaching the proxy at all proves the
-    // catch-all sits behind the real routes instead of shadowing them.
     expect(response.body.code).not.toBe("LABS_ROUTE_NOT_PROXIED");
   });
 });
