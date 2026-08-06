@@ -6,7 +6,7 @@ describe("Document Converter tests", () => {
   const samplesDir = path.join(process.cwd(), "samples");
 
   const expectedMarkdownBase = (documentText: string) =>
-    `**Hello!**\n\n${documentText} file to test the Firecrawl Document Converter.\n\n*Italic*\n\n**Bold**\n\nUnderlined\n\n~~Strikethrough~~\n\n|  |  |\n| --- | --- |\n| Header 1 | Header 2 |\n| Value 1 | Value 2 |\n`;
+    `**Hello!**\n\n${documentText} file to test the Firecrawl Document Converter.\n\n*Italic*\n\n**Bold**\n\nUnderlined\n\n~~Strikethrough~~\n\n| Header 1 | Header 2 |\n| --- | --- |\n| Value 1 | Value 2 |\n`;
 
   const sampleFiles = [
     { file: "sample.docx", name: "DOCX" },
@@ -38,7 +38,7 @@ describe("Document Converter tests", () => {
   });
 
   describe("XLSX document conversion", () => {
-    const expectedMarkdown = `## Sheet1\n\n|  |  |\n| --- | --- |\n| sample file | test |\n|  |  |\n| Name | Price |\n| iPhone | 1000 |\n| iPad | 800 |\n| Macbook | 1200 |\n\n## Sheet2\n\n|  |  |\n| --- | --- |\n| other tab |  |\n|  |  |\n| Name | Price |\n| ChatGPT | 20 |\n| Claude | 17 |\n| Perplexity | 20 |\n`;
+    const expectedMarkdown = `## Sheet1\n\n| sample file | test |\n| --- | --- |\n|  |  |\n| Name | Price |\n| iPhone | 1000 |\n| iPad | 800 |\n| Macbook | 1200 |\n\n## Sheet2\n\n|  |  |\n| --- | --- |\n| other tab |  |\n|  |  |\n| Name | Price |\n| ChatGPT | 20 |\n| Claude | 17 |\n| Perplexity | 20 |\n`;
 
     it("should convert XLSX document and return expected markdown", () => {
       const filePath = path.join(samplesDir, "sample.xlsx");
@@ -54,7 +54,7 @@ describe("Document Converter tests", () => {
       const csv = Buffer.from("Name,Price\niPhone,1000\niPad,800\n");
       const markdown = convertDocumentToMarkdown(new Uint8Array(csv), ".csv");
       expect(markdown).toBe(
-        "|  |  |\n| --- | --- |\n| Name | Price |\n| iPhone | 1000 |\n| iPad | 800 |\n",
+        "| Name | Price |\n| --- | --- |\n| iPhone | 1000 |\n| iPad | 800 |\n",
       );
     });
   });
