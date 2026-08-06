@@ -53,9 +53,10 @@ function normalizeKeylessIpv4(ip: string): string {
 
 export function keylessConversionCohort(ip: string): string | undefined {
   const secret = config.KEYLESS_CONVERSION_HMAC_SECRET;
-  if (!secret || !ip) return undefined;
+  const normalizedIp = normalizeKeylessIpv4(ip);
+  if (!secret || !normalizedIp) return undefined;
   return `${KEYLESS_CONVERSION_COHORT_VERSION}:${createHmac("sha256", secret)
-    .update(normalizeKeylessIpv4(ip))
+    .update(normalizedIp)
     .digest("base64url")}`;
 }
 

@@ -46,6 +46,13 @@ describe("keyless conversion cohort telemetry", () => {
     expect(keylessExhaustionTelemetry("203.0.113.8")).toEqual({});
   });
 
+  it("does not mint a cohort for a blank IP value", () => {
+    config.KEYLESS_CONVERSION_HMAC_SECRET = "a".repeat(32);
+
+    expect(keylessConversionCohort("   ")).toBeUndefined();
+    expect(keylessExhaustionTelemetry("   ")).toEqual({});
+  });
+
   it("adds the cohort to reservation-limit exhaustion telemetry", async () => {
     config.KEYLESS_CONVERSION_HMAC_SECRET = "b".repeat(32);
     vi.spyOn(redisRateLimitClient, "ttl").mockResolvedValue(42);
