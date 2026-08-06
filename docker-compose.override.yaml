@@ -1,0 +1,10 @@
+services:
+  api:
+    image: ghcr.io/firecrawl/firecrawl:latest
+    build: null
+  playwright-service:
+    image: ghcr.io/firecrawl/playwright-service:latest
+    build: null
+  nuq-postgres:
+    image: ghcr.io/firecrawl/nuq-postgres:latest
+    build: null
