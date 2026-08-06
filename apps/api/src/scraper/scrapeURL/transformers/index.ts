@@ -228,6 +228,7 @@ async function deriveLinksFromHTML(
       document.metadata.sourceURL ??
       meta.rewrittenUrl ??
       meta.url,
+    document.metadata.contentType,
   );
 
   if (forwardToIndexer) {

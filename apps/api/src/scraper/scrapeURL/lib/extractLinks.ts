@@ -5,6 +5,7 @@ import {
   extractLinks as _extractLinks,
   extractBaseHref as _extractBaseHref,
 } from "@mendable/firecrawl-rs";
+import { extractMarkdownLinks } from "./extractMarkdownLinks";
 
 function resolveUrlWithBaseHref(
   href: string,
@@ -67,9 +68,21 @@ async function extractLinksRust(
 export async function extractLinks(
   html: string,
   baseUrl: string,
+  contentType?: string,
 ): Promise<string[]> {
+  // text/plain bodies (e.g. llms.txt) hold their links as markdown, which the
+  // HTML extractor can't see; union them in so the links format surfaces them.
+  const markdownLinks = contentType?.toLowerCase().includes("text/plain")
+    ? extractMarkdownLinks(html, baseUrl)
+    : [];
+
   try {
-    return await extractLinksRust(html, baseUrl);
+    return [
+      ...new Set([
+        ...markdownLinks,
+        ...(await extractLinksRust(html, baseUrl)),
+      ]),
+    ];
   } catch (error) {
     logger.warn("Failed to call html-transformer! Falling back to cheerio...", {
       error,
@@ -80,7 +93,7 @@ export async function extractLinks(
 
   const $ = load(html);
   const baseHref = $("base[href]").first().attr("href") || "";
-  const links: string[] = [];
+  const links: string[] = [...markdownLinks];
 
   $("a").each((_, element) => {
     let href = $(element).attr("href");

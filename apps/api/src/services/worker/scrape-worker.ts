@@ -512,6 +512,7 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
               await crawler.extractLinksFromHTML(
                 rawHtml ?? "",
                 doc.metadata?.url ?? doc.metadata?.sourceURL ?? sc.originUrl!,
+                doc.metadata?.contentType,
               ),
               Infinity,
               sc.crawlerOptions?.maxDepth ?? 10,

@@ -432,6 +432,27 @@ describe("Scrape tests", () => {
       },
       scrapeTimeout,
     );
+
+    it.concurrent(
+      "surfaces markdown links from text/plain bodies in the links format",
+      async () => {
+        const response = await scrape(
+          {
+            url: `${base}/llms-underscore.txt`,
+            formats: ["links"],
+          },
+          identity,
+        );
+
+        expect(response.links).toContain(
+          "https://docs.langchain.com/langsmith/smith-api/access_policies/create-an-access-policy.md",
+        );
+        expect(response.links).toContain(
+          "https://docs.langchain.com/langsmith/smith-api/access_policies/list-access-policies.md",
+        );
+      },
+      scrapeTimeout,
+    );
   });
 
   describeIf(TEST_PRODUCTION)("Fire-Engine scraping", () => {

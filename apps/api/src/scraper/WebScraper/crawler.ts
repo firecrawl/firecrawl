@@ -8,6 +8,7 @@ import { getURLDepth } from "./utils/maxDepthUtils";
 import { logger as _logger } from "../../lib/logger";
 import { redisEvictConnection } from "../../services/redis";
 import { extractLinks } from "@mendable/firecrawl-rs";
+import { extractMarkdownLinks } from "../scrapeURL/lib/extractMarkdownLinks";
 import {
   fetchRobotsTxt,
   createRobotsChecker,
@@ -726,11 +727,33 @@ export class WebCrawler {
     return links;
   }
 
-  public async extractLinksFromHTML(html: string, url: string) {
+  private async extractMarkdownLinksFiltered(text: string, url: string) {
+    const filtered: string[] = [];
+    for (const link of extractMarkdownLinks(text, url)) {
+      const filterResult = await this.filterURL(link, url);
+      if (filterResult.allowed && filterResult.url) {
+        filtered.push(filterResult.url);
+      }
+    }
+    return filtered;
+  }
+
+  public async extractLinksFromHTML(
+    html: string,
+    url: string,
+    contentType?: string,
+  ) {
+    // text/plain bodies (e.g. llms.txt) list their links as markdown, which the
+    // HTML anchor extractor can't see; union them so crawl follows them.
+    const markdownLinks = contentType?.toLowerCase().includes("text/plain")
+      ? await this.extractMarkdownLinksFiltered(html, url)
+      : [];
+
     try {
       return [
-        ...new Set(
-          (await this.extractLinksFromHTMLRust(html, url))
+        ...new Set([
+          ...markdownLinks,
+          ...((await this.extractLinksFromHTMLRust(html, url))
             .map(x => {
               try {
                 return new URL(x, url).href;
@@ -738,8 +761,8 @@ export class WebCrawler {
                 return null;
               }
             })
-            .filter(x => x !== null) as string[],
-        ),
+            .filter(x => x !== null) as string[]),
+        ]),
       ];
     } catch (error) {
       this.logger.warn(
@@ -752,7 +775,12 @@ export class WebCrawler {
       );
     }
 
-    return await this.extractLinksFromHTMLCheerio(html, url);
+    return [
+      ...new Set([
+        ...markdownLinks,
+        ...(await this.extractLinksFromHTMLCheerio(html, url)),
+      ]),
+    ];
   }
 
   private isRobotsAllowed(
