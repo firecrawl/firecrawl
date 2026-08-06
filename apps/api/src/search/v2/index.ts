@@ -15,6 +15,7 @@ export async function search({
   lang = "en",
   country = "us",
   location = undefined,
+  safeSearch = undefined,
   proxy = undefined,
   sleep_interval = 0,
   timeout = 5000,
@@ -30,6 +31,7 @@ export async function search({
   lang?: string;
   country?: string;
   location?: string;
+  safeSearch?: boolean;
   proxy?: string;
   sleep_interval?: number;
   timeout?: number;
@@ -46,6 +48,7 @@ export async function search({
         lang,
         country,
         location,
+        safeSearch,
         type,
         enterprise,
       });

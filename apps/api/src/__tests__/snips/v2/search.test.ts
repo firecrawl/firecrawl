@@ -260,6 +260,38 @@ describeIf(TEST_PRODUCTION || HAS_SEARCH || HAS_PROXY)("Search tests", () => {
     60000,
   );
 
+  concurrentIf(TEST_PRODUCTION)(
+    "works with safeSearch",
+    async () => {
+      const res = await search(
+        {
+          query: "firecrawl",
+          safeSearch: true,
+        },
+        identity,
+      );
+      expect(res.web).toBeDefined();
+      expect(res.web?.length).toBeGreaterThan(0);
+    },
+    60000,
+  );
+
+  it.concurrent(
+    "rejects non-boolean safeSearch",
+    async () => {
+      const res = await searchWithFailure(
+        {
+          query: "firecrawl",
+          safeSearch: "active",
+        } as any,
+        identity,
+      );
+
+      expect(res.error).toBe("Invalid request body");
+    },
+    60000,
+  );
+
   it.concurrent(
     "country defaults to undefined when location is set",
     async () => {

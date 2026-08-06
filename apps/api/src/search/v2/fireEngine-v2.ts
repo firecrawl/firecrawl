@@ -45,6 +45,7 @@ export async function fire_engine_search_v2(
     lang?: string;
     country?: string;
     location?: string;
+    safeSearch?: boolean;
     numResults: number;
     page?: number;
     type?: SearchResultType | SearchResultType[];
@@ -69,6 +70,7 @@ export async function fire_engine_search_v2(
     page: options.page ?? 1,
     type: options.type || "web",
     enterprise: options.enterprise,
+    safe: options.safeSearch ? ("active" as const) : undefined,
   };
 
   const requestedTypes = normalizeSearchTypes(options.type);

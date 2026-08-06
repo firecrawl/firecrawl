@@ -2029,6 +2029,7 @@ export const searchRequestSchema = z
     includeDomains: z.array(searchDomainSchema).optional(),
     excludeDomains: z.array(searchDomainSchema).optional(),
     lang: z.string().optional().prefault("en"),
+    safeSearch: z.boolean().optional(),
     enterprise: z.array(z.enum(["default", "anon", "zdr"])).optional(),
     country: z.string().optional(),
     location: z.string().optional(),

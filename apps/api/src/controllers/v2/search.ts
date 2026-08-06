@@ -213,9 +213,9 @@ export async function searchController(
       );
       if (!reservation.ok) {
         applyAgentAuthDiscoveryHeader(res);
-        return res.status(429).json(
-          await keylessLimitBody(req.auth.team_id, "v2_search"),
-        );
+        return res
+          .status(429)
+          .json(await keylessLimitBody(req.auth.team_id, "v2_search"));
       }
       reservedKeylessCredits = projectedKeylessCredits;
     }
@@ -229,6 +229,7 @@ export async function searchController(
         lang: req.body.lang,
         country: req.body.country,
         location: req.body.location,
+        safeSearch: req.body.safeSearch,
         sources: req.body.sources as Array<{ type: string }>,
         categories: req.body.categories as CategoryOption[],
         includeDomains: req.body.includeDomains,
