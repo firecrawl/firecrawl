@@ -14,6 +14,7 @@ First, start by installing dependencies:
 4. redis [instructions](https://redis.io/docs/latest/operate/oss_and_stack/install/install-redis/)
 5. postgresql
 6. Docker (optional) (for running postgres)
+7. [FoundationDB client library](https://www.foundationdb.org/download/) (the API's native `foundationdb` dependency is built during `pnpm install`, even when using PostgreSQL for the queue). Install the client package for your platform and make sure its `foundationdb/fdb_c.h` header and `libfdb_c` library are available to the compiler and linker. The FoundationDB server is not required for the default PostgreSQL setup.
 
 You need to set up the PostgreSQL database by running the SQL file at `apps/nuq-postgres/nuq.sql`. Easiest way is to use the docker image inside `apps/nuq-postgres`. With Docker running, build the image:
 
