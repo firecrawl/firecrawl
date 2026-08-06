@@ -1,0 +1,13 @@
+# Opt-in override for running Firecrawl with pinned prebuilt images instead of local builds.
+# Usage:
+#   docker compose -f docker-compose.yaml -f docker-compose.prebuilt.yaml up
+services:
+  api:
+    image: ghcr.io/firecrawl/firecrawl@sha256:20ea02d51fb5e1063637d7e43b5dcdf429bf69b7e1c1615b48b24bff1d0c13ae
+    build: !reset null
+  playwright-service:
+    image: ghcr.io/firecrawl/playwright-service@sha256:468009bae00911d40d7120d58489a1d529362c22c45585cb9076094fe61b0025
+    build: !reset null
+  nuq-postgres:
+    image: ghcr.io/firecrawl/nuq-postgres@sha256:aed86f62858f29bd971abddcdeb301c12888098d2cf5d33c1ba42b053bc460f6
+    build: !reset null
