@@ -237,7 +237,9 @@ export async function fireEngineCheckStatus(
       typeof status.error === "string" &&
       status.error.includes("File exceeds size limit")
     ) {
-      throw new UnsupportedFileError(status.error);
+      throw new UnsupportedFileError(
+        status.error.slice(status.error.indexOf("File exceeds size limit")),
+      );
     } else if (
       typeof status.error === "string" &&
       status.error.includes("failed to finish without timing out")
