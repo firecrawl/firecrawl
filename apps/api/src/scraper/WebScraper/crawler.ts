@@ -658,7 +658,7 @@ export class WebCrawler {
         },
       )) as number;
     } catch (error) {
-      if (error.message === "Sitemap fetch timeout") {
+      if (error instanceof Error && error.message === "Sitemap fetch timeout") {
         this.logger.warn("Sitemap fetch timed out", {
           method: "tryGetSitemap",
           timeout,
