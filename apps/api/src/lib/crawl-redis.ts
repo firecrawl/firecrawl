@@ -385,12 +385,10 @@ export function normalizeURL(url: string, sc: StoredCrawl): string {
   if (sc && sc.crawlerOptions && sc.crawlerOptions.ignoreQueryParameters) {
     urlO.search = "";
   }
-  // allow hash-based routes
-  if (
-    !urlO.hash ||
-    urlO.hash.length <= 2 ||
-    (!urlO.hash.startsWith("#/") && !urlO.hash.startsWith("#!/"))
-  ) {
+  // Keep this in sync with the crawler's SPA hash-route exception: fragments
+  // with substantial content and a slash represent routes, not page sections.
+  const hashPart = urlO.hash.slice(1);
+  if (!(hashPart.length > 1 && hashPart.includes("/"))) {
     urlO.hash = "";
   }
   return urlO.href;

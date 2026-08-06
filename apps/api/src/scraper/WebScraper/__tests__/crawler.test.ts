@@ -3,16 +3,23 @@ import type { Mocked, MockedFunction } from "vitest";
 import { WebCrawler } from "../crawler";
 import axios from "axios";
 import robotsParser from "robots-parser";
+import * as firecrawlRs from "@mendable/firecrawl-rs";
 
 vi.mock("axios");
 vi.mock("robots-parser");
+vi.mock("@mendable/firecrawl-rs", async importOriginal => {
+  const actual =
+    await importOriginal<typeof import("@mendable/firecrawl-rs")>();
+  return {
+    ...actual,
+    filterLinks: vi.fn(actual.filterLinks),
+  };
+});
 
 describe("WebCrawler", () => {
   let crawler: WebCrawler;
   const mockAxios = axios as Mocked<typeof axios>;
-  const mockRobotsParser = robotsParser as MockedFunction<
-    typeof robotsParser
-  >;
+  const mockRobotsParser = robotsParser as MockedFunction<typeof robotsParser>;
 
   let maxCrawledDepth: number;
 
@@ -180,5 +187,92 @@ describe("WebCrawler", () => {
       true,
     );
     expect(sourceValidationResult.links).toEqual([initialUrl]);
+  });
+
+  describe("section anchors in the TypeScript fallback", () => {
+    beforeEach(() => {
+      crawler = new WebCrawler({
+        jobId: "TEST",
+        initialUrl: "https://example.com",
+        includes: [],
+        excludes: [],
+        maxCrawledDepth: 10,
+      });
+    });
+
+    const filterWithFallback = async (links: string[]) => {
+      vi.mocked(firecrawlRs.filterLinks).mockRejectedValueOnce(
+        new Error("force TypeScript fallback"),
+      );
+      return crawler["filterLinks"](links, 10, 10);
+    };
+
+    it("discovers a page linked only through a section anchor", async () => {
+      const result = await filterWithFallback([
+        "https://example.com/page#section",
+      ]);
+
+      expect(result.links).toEqual(["https://example.com/page"]);
+      expect(result.denialReasons).toEqual(new Map());
+    });
+
+    it("collapses multiple section anchors to one base page", async () => {
+      const result = await filterWithFallback([
+        "https://example.com/page#overview",
+        "https://example.com/page#details",
+        "https://example.com/page#faq",
+      ]);
+
+      expect(result.links).toEqual(["https://example.com/page"]);
+    });
+
+    it("collapses plain and section links to one page", async () => {
+      const result = await filterWithFallback([
+        "https://example.com/page",
+        "https://example.com/page#overview",
+        "https://example.com/page#details",
+      ]);
+
+      expect(result.links).toEqual(["https://example.com/page"]);
+    });
+
+    it("keeps hash routes as distinct crawlable URLs", async () => {
+      const result = await filterWithFallback([
+        "https://example.com/app#/route/1",
+        "https://example.com/app#/route/2",
+        "https://example.com/app#nested/route",
+      ]);
+
+      expect(result.links).toEqual([
+        "https://example.com/app#/route/1",
+        "https://example.com/app#/route/2",
+        "https://example.com/app#nested/route",
+      ]);
+    });
+
+    it("does not re-enqueue an already-crawled page through a fragment-only link", async () => {
+      const page = "https://example.com/page";
+      crawler.setBaseUrl(page);
+
+      const result = await filterWithFallback([page, "#details"]);
+
+      expect(result.links).toEqual([page]);
+    });
+
+    it("applies the normal filter pipeline to the stripped base URL", async () => {
+      crawler = new WebCrawler({
+        jobId: "TEST",
+        initialUrl: "https://example.com",
+        includes: [],
+        excludes: ["^/page$"],
+        maxCrawledDepth: 10,
+      });
+      const originalLink = "https://example.com/page#details";
+
+      const result = await filterWithFallback([originalLink]);
+
+      expect(result.links).toEqual([]);
+      expect(result.denialReasons.has(originalLink)).toBe(true);
+    });
   });
 });
