@@ -103,11 +103,9 @@ export async function calculateCreditsToBeBilled(
       creditsToBeBilled = Math.ceil((costTrackingJSON.totalCost ?? 1) * 1800);
     }
 
-    // Bill for DNS resolution errors
     if (
       error instanceof TransportableError &&
-      (error.code === "SCRAPE_DNS_RESOLUTION_ERROR" ||
-        error.code === "SCRAPE_LOCKDOWN_CACHE_MISS")
+      error.code === "SCRAPE_LOCKDOWN_CACHE_MISS"
     ) {
       creditsToBeBilled = 1;
     }

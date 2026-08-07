@@ -4,6 +4,10 @@ import {
 } from "./scrape-billing";
 import { UnsafeDomainBlockedError } from "./threat-protection/error";
 import type { ThreatDecision } from "./threat-protection/types";
+import {
+  DNSResolutionError,
+  LockdownMissError,
+} from "../scraper/scrapeURL/error";
 
 describe("calculateCreditsToBeBilled", () => {
   it("bills handled Exchange successes at the reported credit cost", async () => {
@@ -89,6 +93,46 @@ describe("calculateCreditsToBeBilled", () => {
     );
 
     expect(credits).toBe(10);
+  });
+
+  it("bills nothing for DNS resolution failures", async () => {
+    const credits = await calculateCreditsToBeBilled(
+      {
+        formats: [{ type: "markdown" }],
+      } as any,
+      {
+        teamId: "team-id",
+        orgId: null,
+      },
+      null,
+      {
+        totalCost: 0,
+      } as any,
+      {} as any,
+      new DNSResolutionError("nonexistent.example.com"),
+    );
+
+    expect(credits).toBe(0);
+  });
+
+  it("bills 1 credit for lockdown cache misses", async () => {
+    const credits = await calculateCreditsToBeBilled(
+      {
+        formats: [{ type: "markdown" }],
+      } as any,
+      {
+        teamId: "team-id",
+        orgId: null,
+      },
+      null,
+      {
+        totalCost: 0,
+      } as any,
+      {} as any,
+      new LockdownMissError(),
+    );
+
+    expect(credits).toBe(1);
   });
 
   it("bills deterministic JSON at 3 credits when a cached script was reused", async () => {
