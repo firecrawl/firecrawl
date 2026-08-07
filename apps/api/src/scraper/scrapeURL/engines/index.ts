@@ -57,7 +57,7 @@ export type Engine =
   | "wikipedia"
   | "x-twitter";
 
-const useFireEngine =
+export const useFireEngine =
   config.FIRE_ENGINE_BETA_URL !== "" &&
   config.FIRE_ENGINE_BETA_URL !== undefined;
 const usePlaywright =

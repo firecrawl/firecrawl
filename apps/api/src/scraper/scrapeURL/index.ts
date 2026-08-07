@@ -22,6 +22,7 @@ import {
   getEngineMaxReasonableTime,
   scrapeURLWithEngine,
   shouldUseIndex,
+  useFireEngine,
 } from "./engines";
 import { parseMarkdown } from "../../lib/html-to-markdown";
 import { hasFormatOfType } from "../../lib/format-utils";
@@ -673,9 +674,12 @@ async function scrapeURLLoop(meta: Meta): Promise<ScrapeUrlResponse> {
         fallbackList.length === 0 ||
         fallbackList.every(engine => engine.unsupportedFeatures.has("actions"))
       ) {
+        // Only blame the content type when actions would otherwise be
+        // available — on a deployment without Fire Engine, actions are
+        // unsupported regardless of what the URL points at.
         if (
-          meta.featureFlags.has("pdf") ||
-          meta.featureFlags.has("document")
+          useFireEngine &&
+          (meta.featureFlags.has("pdf") || meta.featureFlags.has("document"))
         ) {
           throw new ActionsNotSupportedError(
             "Actions are only supported on HTML pages.",
