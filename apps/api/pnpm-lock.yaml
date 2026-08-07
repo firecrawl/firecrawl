@@ -14,8 +14,8 @@ overrides:
   fast-xml-parser: ^5.7.0
   fast-uri: '>=3.1.5 <4.0.0'
   glob@>=10.2.0 <10.5.0: '>=10.5.0'
-  js-yaml@<3.14.2: 4.2.0
-  js-yaml@>=4.0.0 <4.3.0: 4.3.0
+  js-yaml@<3.15.1: 3.15.1
+  js-yaml@>=4.0.0 <4.3.1: 4.3.1
   qs@<6.15.2: '>=6.15.2 <7.0.0'
   minimatch@<10.2.3: '>=10.2.3'
   bn.js@<5.2.3: '>=5.2.3'
@@ -3180,8 +3180,8 @@ packages:
   js-tokens@4.0.0:
     resolution: {integrity: sha512-RdJUflcE3cUzKiMqQgsCu06FPu9UdIJO0beYbPhHN4k6apgJtifcoCtT9bcxOpYBtpD2kCM6Sbzg4CausW/PKQ==}
 
-  js-yaml@4.3.0:
-    resolution: {integrity: sha512-1td788aAnnZ5qs7V2QIRl1owjtYpbKt749Y3xauqQgwIIGF/xXWz1wMTEBx5O3LK3lXLVuqXPdPxj2BoFHaW9Q==}
+  js-yaml@4.3.1:
+    resolution: {integrity: sha512-CY6crGq313MX8GkwvB7tzgp99vjQxY1++5y10/BKN/GUfHqWaOGQMNZkBvqSzsZKWk/ijwHlWzzkLulsGHhjWQ==}
     hasBin: true
 
   jsbn@1.1.0:
@@ -5097,7 +5097,7 @@ snapshots:
       colorette: 2.0.20
       emnapi: 1.11.2
       es-toolkit: 1.49.0
-      js-yaml: 4.3.0
+      js-yaml: 4.3.1
       obug: 2.1.4
       semver: 7.8.5
       typanion: 3.14.0
@@ -7046,7 +7046,7 @@ snapshots:
 
   js-tokens@4.0.0: {}
 
-  js-yaml@4.3.0:
+  js-yaml@4.3.1:
     dependencies:
       argparse: 2.0.1
 

@@ -66,6 +66,7 @@ import {
   calculateCreditsToBeBilled,
   calculateThreatScanCredits,
 } from "../../lib/scrape-billing";
+import { getCrawlScope } from "../../lib/crawl-scope";
 import { billTeam } from "../billing/credit_billing";
 import { getBillingQueue } from "../queue-service";
 import type { Logger } from "winston";
@@ -74,6 +75,7 @@ import {
   JobCancelledError,
   RacedRedirectError,
   ScrapeJobTimeoutError,
+  SitemapError,
   TransportableError,
   UnknownError,
 } from "../../lib/error";
@@ -509,9 +511,10 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
 
           if (!sc.crawlerOptions?.sitemapOnly) {
             const links = await crawler.filterLinks(
-              await crawler.extractLinksFromHTML(
+              await crawler.extractLinksFromContent(
                 rawHtml ?? "",
                 doc.metadata?.url ?? doc.metadata?.sourceURL ?? sc.originUrl!,
+                doc.metadata?.contentType,
               ),
               Infinity,
               sc.crawlerOptions?.maxDepth ?? 10,
@@ -1229,12 +1232,10 @@ async function processKickoffJob(job: NuQJob<ScrapeJobKickoff>) {
 
         const attempts: string[] = crawler.robots.getSitemaps();
 
-        // Append sitemap.xml
+        // sitemap.xml in the directory the crawl is scoped to
         const urlWithSitemap = new URL(urlObj.href);
         urlWithSitemap.pathname =
-          urlWithSitemap.pathname +
-          (urlObj.pathname.endsWith("/") ? "" : "/") +
-          "sitemap.xml";
+          getCrawlScope(urlObj.href).prefix + "sitemap.xml";
         urlWithSitemap.search = "";
         urlWithSitemap.hash = "";
         attempts.push(urlWithSitemap.href);
@@ -1252,7 +1253,7 @@ async function processKickoffJob(job: NuQJob<ScrapeJobKickoff>) {
           attempts.push(urlRootSitemap.href);
         }
 
-        for (const attempt of attempts) {
+        for (const attempt of new Set(attempts)) {
           await addKickoffSitemapJob(attempt, job, sc, logger);
         }
       }
@@ -1539,7 +1540,11 @@ async function processKickoffSitemapJob(job: NuQJob<ScrapeJobKickoffSitemap>) {
     }
     return { success: true };
   } catch (error) {
-    logger.error("An error occurred!", { error });
+    if (error instanceof SitemapError && error.cause === 404) {
+      logger.debug("Sitemap not found", { sitemapUrl: job.data.sitemapUrl });
+    } else {
+      logger.error("An error occurred!", { error });
+    }
     return { success: false, error };
   } finally {
     await redisEvictConnection.sadd(

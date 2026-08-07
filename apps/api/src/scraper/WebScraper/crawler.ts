@@ -17,6 +17,15 @@ import { ScrapeJobTimeoutError } from "../../lib/error";
 import { ScrapeOptions } from "../../controllers/v2/types";
 import { filterLinks, filterUrl } from "@mendable/firecrawl-rs";
 import { extractBaseDomain } from "../../lib/url-utils";
+import {
+  describeCrawlScope,
+  getCrawlScope,
+  isWithinCrawlScope,
+} from "../../lib/crawl-scope";
+import {
+  extractLinksFromMarkdown,
+  isMarkdownContentType,
+} from "../scrapeURL/lib/extractLinksFromMarkdown";
 
 export const SITEMAP_LIMIT = 25;
 const SITEMAP_FETCH_CONCURRENCY = 3;
@@ -153,7 +162,7 @@ export class WebCrawler {
 
   public setBaseUrl(newBase: string): void {
     this.baseUrl = newBase;
-    this.robotsTxtUrl = `${this.baseUrl}${this.baseUrl.endsWith("/") ? "" : "/"}robots.txt`;
+    this.robotsTxtUrl = new URL("/robots.txt", newBase).href;
   }
 
   public async filterLinks(
@@ -245,7 +254,9 @@ export class WebCrawler {
             );
             break;
           case "BACKWARD_CRAWLING":
-            const initialPath = new URL(this.initialUrl).pathname;
+            const initialPath = describeCrawlScope(
+              getCrawlScope(this.initialUrl),
+            );
             fancyDenialReasons.set(
               key,
               `This URL's path ("${urlPath}") is outside the initial URL's path hierarchy ("${initialPath}"), and backward crawling is disabled. By default, Firecrawl only crawls URLs that are 'below' or 'within' the starting URL path. To crawl this URL, either set allowBackwardCrawling: true or set crawlEntireDomain: true to crawl the entire domain.`,
@@ -287,6 +298,8 @@ export class WebCrawler {
         method: "filterLinks",
       });
     }
+
+    const scope = getCrawlScope(this.initialUrl);
 
     const filteredLinks = sitemapLinks
       .filter(link => {
@@ -396,17 +409,15 @@ export class WebCrawler {
         // }
 
         if (!this.allowBackwardCrawling) {
-          if (
-            !normalizedLink.pathname.startsWith(normalizedInitialUrl.pathname)
-          ) {
+          if (!isWithinCrawlScope(normalizedLink.pathname, scope)) {
             if (config.FIRECRAWL_DEBUG_FILTER_LINKS) {
               this.logger.debug(
-                `${link} BACKWARDS FAIL ${normalizedLink.pathname} ${normalizedInitialUrl.pathname}`,
+                `${link} BACKWARDS FAIL ${normalizedLink.pathname} ${describeCrawlScope(scope)}`,
               );
             }
             denialReasons.set(
               link,
-              `This URL's path ("${normalizedLink.pathname}") is outside the initial URL's path hierarchy ("${normalizedInitialUrl.pathname}"), and backward crawling is disabled. By default, Firecrawl only crawls URLs that are 'below' or 'within' the starting URL path. To crawl this URL, either set allowBackwardCrawling: true or set crawlEntireDomain: true to crawl the entire domain.`,
+              `This URL's path ("${normalizedLink.pathname}") is outside the initial URL's path hierarchy ("${describeCrawlScope(scope)}"), and backward crawling is disabled. By default, Firecrawl only crawls URLs that are 'below' or 'within' the starting URL path. To crawl this URL, either set allowBackwardCrawling: true or set crawlEntireDomain: true to crawl the entire domain.`,
             );
             return false;
           }
@@ -762,7 +773,26 @@ export class WebCrawler {
     return links;
   }
 
-  public async extractLinksFromHTML(html: string, url: string) {
+  private async extractLinksFromMarkdownContent(text: string, url: string) {
+    const filteredLinks: string[] = [];
+    for (const link of extractLinksFromMarkdown(text, url)) {
+      const filterResult = await this.filterURL(link, url);
+      if (filterResult.allowed && filterResult.url) {
+        filteredLinks.push(filterResult.url);
+      }
+    }
+    return filteredLinks;
+  }
+
+  public async extractLinksFromContent(
+    html: string,
+    url: string,
+    contentType?: string,
+  ) {
+    if (isMarkdownContentType(contentType)) {
+      return await this.extractLinksFromMarkdownContent(html, url);
+    }
+
     try {
       return [
         ...new Set(

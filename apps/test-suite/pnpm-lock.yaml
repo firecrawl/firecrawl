@@ -11,7 +11,8 @@ overrides:
   undici@>=7.0.0 <7.29.0: 7.29.0
   picomatch@<4.0.4: '>=4.0.4'
   brace-expansion@>=5.0.0 <5.0.9: 5.0.9
-  js-yaml@>=3.0.0 <3.15.0: 3.15.0
+  js-yaml@>=3.0.0 <3.15.1: 3.15.1
+  js-yaml@>=4.0.0 <4.3.1: 4.3.1
   ws@>=7.0.0 <7.5.11: 7.5.11
   ws@>=8.0.0 <8.21.0: 8.21.0
   form-data@>=4.0.0 <4.0.6: 4.0.6
@@ -1385,8 +1386,8 @@ packages:
   joi@17.13.4:
     resolution: {integrity: sha512-1RuuER6kmt8K8I3nIWvPZKi5RQCb568ZPyY4Pwjlua+yo+63ZTmIwxLZH0heBmiKN4uxjvCiarDrjaeH84xicQ==}
 
-  js-yaml@3.15.0:
-    resolution: {integrity: sha512-ttBQIIQPDeLjpPOohtUdXuXUVoA2uIB6fEH9HyJ7234s5mBJ5wTx20njxplLZQgLaOfpmPQA7X2t5AX6tIPbog==}
+  js-yaml@3.15.1:
+    resolution: {integrity: sha512-S99WuO3HlhO3XN41EtYUNl9zzXjoJx7QvmipxsJVxtCBT0YHEFy+iOJhjSvrmV12nYhWpZaM8lPHkJm0yUMbag==}
     hasBin: true
 
   jsep@1.4.0:
@@ -3184,7 +3185,7 @@ snapshots:
       fs-extra: 11.3.4
       got: 14.6.6
       joi: 17.13.4
-      js-yaml: 3.15.0
+      js-yaml: 3.15.1
       jsonwebtoken: 9.0.3
       lodash: 4.18.1
       moment: 2.30.1
@@ -3800,7 +3801,7 @@ snapshots:
       '@sideway/formula': 3.0.1
       '@sideway/pinpoint': 2.0.0
 
-  js-yaml@3.15.0:
+  js-yaml@3.15.1:
     dependencies:
       argparse: 1.0.10
       esprima: 4.0.1

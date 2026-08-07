@@ -5,6 +5,10 @@ import {
   extractLinks as _extractLinks,
   extractBaseHref as _extractBaseHref,
 } from "@mendable/firecrawl-rs";
+import {
+  extractLinksFromMarkdown,
+  isMarkdownContentType,
+} from "./extractLinksFromMarkdown";
 
 function resolveUrlWithBaseHref(
   href: string,
@@ -67,7 +71,12 @@ async function extractLinksRust(
 export async function extractLinks(
   html: string,
   baseUrl: string,
+  contentType?: string,
 ): Promise<string[]> {
+  if (isMarkdownContentType(contentType)) {
+    return extractLinksFromMarkdown(html, baseUrl);
+  }
+
   try {
     return await extractLinksRust(html, baseUrl);
   } catch (error) {

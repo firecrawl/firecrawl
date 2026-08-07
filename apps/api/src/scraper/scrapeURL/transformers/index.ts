@@ -3,6 +3,7 @@ import { Meta } from "..";
 import { Document } from "../../../controllers/v2/types";
 import { htmlTransform } from "../lib/removeUnwantedElements";
 import { extractLinks } from "../lib/extractLinks";
+import { isMarkdownContentType } from "../lib/extractLinksFromMarkdown";
 import { extractImages } from "../lib/extractImages";
 import { extractMetadata } from "../lib/extractMetadata";
 import {
@@ -196,7 +197,9 @@ async function deriveLinksFromHTML(
   meta: Meta,
   document: Document,
 ): Promise<Document> {
-  if (document.html === undefined) {
+  const isMarkdown = isMarkdownContentType(document.metadata.contentType);
+
+  if (document.html === undefined && !isMarkdown) {
     throw new Error(
       "html is undefined -- this transformer is being called out of order",
     );
@@ -222,12 +225,15 @@ async function deriveLinksFromHTML(
     return document;
   }
 
+  // Engines that carry markdown natively (exchange) put synthetic metadata in
+  // rawHtml, so the markdown field is the only place their links live.
   document.links = await extractLinks(
-    document.html,
+    isMarkdown ? (document.markdown ?? document.rawHtml ?? "") : document.html!,
     document.metadata.url ??
       document.metadata.sourceURL ??
       meta.rewrittenUrl ??
       meta.url,
+    document.metadata.contentType,
   );
 
   if (forwardToIndexer) {

@@ -11,7 +11,8 @@ overrides:
   picomatch@<4.0.4: '>=4.0.4'
   handlebars: '>=4.7.9'
   brace-expansion@>=5.0.0 <5.0.9: 5.0.9
-  js-yaml@>=3.0.0 <3.15.0: 3.15.0
+  js-yaml@>=3.0.0 <3.15.1: 3.15.1
+  js-yaml@>=4.0.0 <4.3.1: 4.3.1
   axios@>=1.0.0 <1.16.0: 1.16.1
   follow-redirects@<1.16.0: '>=1.16.0 <2.0.0'
   form-data@>=4.0.0 <4.0.6: 4.0.6
@@ -1511,8 +1512,8 @@ packages:
   js-tokens@4.0.0:
     resolution: {integrity: sha512-RdJUflcE3cUzKiMqQgsCu06FPu9UdIJO0beYbPhHN4k6apgJtifcoCtT9bcxOpYBtpD2kCM6Sbzg4CausW/PKQ==}
 
-  js-yaml@3.15.0:
-    resolution: {integrity: sha512-ttBQIIQPDeLjpPOohtUdXuXUVoA2uIB6fEH9HyJ7234s5mBJ5wTx20njxplLZQgLaOfpmPQA7X2t5AX6tIPbog==}
+  js-yaml@3.15.1:
+    resolution: {integrity: sha512-S99WuO3HlhO3XN41EtYUNl9zzXjoJx7QvmipxsJVxtCBT0YHEFy+iOJhjSvrmV12nYhWpZaM8lPHkJm0yUMbag==}
     hasBin: true
 
   jsesc@3.1.0:
@@ -2390,7 +2391,7 @@ snapshots:
       camelcase: 5.3.1
       find-up: 4.1.0
       get-package-type: 0.1.0
-      js-yaml: 3.15.0
+      js-yaml: 3.15.1
       resolve-from: 5.0.0
 
   '@istanbuljs/schema@0.1.3': {}
@@ -3697,7 +3698,7 @@ snapshots:
 
   js-tokens@4.0.0: {}
 
-  js-yaml@3.15.0:
+  js-yaml@3.15.1:
     dependencies:
       argparse: 1.0.10
       esprima: 4.0.1
