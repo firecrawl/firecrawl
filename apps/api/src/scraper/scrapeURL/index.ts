@@ -64,6 +64,10 @@ import { CostTracking } from "../../lib/cost-tracking";
 import { getEngineForUrl } from "../WebScraper/utils/engine-forcing";
 import { useIndex } from "../../services/index";
 import {
+  cacheDnsFailure,
+  isDnsFailureCached,
+} from "../../lib/dns-negative-cache";
+import {
   fetchRobotsTxt,
   createRobotsChecker,
   isUrlAllowedByRobots,
@@ -1121,6 +1125,28 @@ export async function scrapeURL(
       });
     }
 
+    {
+      let hostname: string | null = null;
+      try {
+        hostname = new URL(meta.rewrittenUrl ?? meta.url).hostname;
+      } catch {}
+      if (hostname && (await isDnsFailureCached(hostname, meta.logger))) {
+        meta.logger.info("Hostname is in the negative DNS cache", {
+          hostname,
+        });
+        setSpanAttributes(span, {
+          "scrape.dns_negative_cache_hit": true,
+        });
+        return {
+          success: false,
+          error: new DNSResolutionError(hostname),
+          ...(meta.threatDecisions.length > 0
+            ? { threatDecisions: meta.threatDecisions }
+            : {}),
+        };
+      }
+    }
+
     if (internalOptions.isPreCrawl === true) {
       setSpanAttributes(span, {
         "scrape.is_precrawl": true,
@@ -1493,6 +1519,9 @@ export async function scrapeURL(
       } else if (error instanceof DNSResolutionError) {
         errorType = "DNSResolutionError";
         meta.logger.warn("scrapeURL: DNS resolution error", { error });
+        if (!internalOptions.zeroDataRetention) {
+          await cacheDnsFailure(error.hostname, meta.logger);
+        }
       } else if (error instanceof ScrapeRetryLimitError) {
         errorType = "ScrapeRetryLimitError";
         meta.logger.warn("scrapeURL: Retry limit reached", {
