@@ -30,6 +30,7 @@ import { QueueFullError } from "./lib/queue-full-error";
 import { v7 as uuidv7 } from "uuid";
 import { cacheableLookup } from "./scraper/scrapeURL/lib/cacheableLookup";
 import { v2Router } from "./routes/v2";
+import { exchangeRouter } from "./routes/exchange";
 import { labsRouter } from "./routes/labs";
 import { registerMcpActionLogIngestRoute } from "./routes/mcp-action-logs";
 import { startMcpActionLogRetentionWorkerIfEnabled } from "./services/mcp/action-logs";
@@ -139,6 +140,7 @@ app.use(v0Router);
 app.use("/v1", v1Router);
 app.use("/v2", v2Router);
 app.use("/labs", labsRouter);
+app.use("/exchange", exchangeRouter);
 app.use(adminRouter);
 
 const DEFAULT_PORT = config.PORT;
