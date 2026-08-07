@@ -80,16 +80,24 @@ async function crawlStatusWS(
     }
   };
 
+  // Prefer stop() on every early-exit path so a CLOSING socket clears any
+  // pending poll timeout even before the async `close` event runs.
+  const bailIfDisconnected = () => {
+    if (finished) return true;
+    if (!isSocketOpen(ws)) {
+      stop();
+      return true;
+    }
+    return false;
+  };
+
   // Client disconnect / socket error must stop Redis+BullMQ polling (#4242).
   ws.on("close", stop);
   ws.on("error", stop);
-  if (!isSocketOpen(ws)) {
-    stop();
-    return;
-  }
+  if (bailIfDisconnected()) return;
 
   const sc = await getCrawl(req.params.jobId);
-  if (finished || !isSocketOpen(ws)) return;
+  if (bailIfDisconnected()) return;
   if (!sc) {
     return close(ws, 1008, { type: "error", error: "Job not found" });
   }
@@ -99,15 +107,15 @@ async function crawlStatusWS(
   }
 
   const scheduleLoop = () => {
-    if (finished || !isSocketOpen(ws)) return;
+    if (bailIfDisconnected()) return;
     loopTimeout = setTimeout(loop, 1000);
   };
 
   const loop = async () => {
-    if (finished || !isSocketOpen(ws)) return;
+    if (bailIfDisconnected()) return;
 
     const jobIDs = await getCrawlJobs(req.params.jobId);
-    if (finished || !isSocketOpen(ws)) return;
+    if (bailIfDisconnected()) return;
 
     if (jobIDs.length === doneJobIDs.length) {
       stop();
@@ -122,10 +130,10 @@ async function crawlStatusWS(
         "failed",
       ])
     ).map(x => x.id);
-    if (finished || !isSocketOpen(ws)) return;
+    if (bailIfDisconnected()) return;
 
     const newlyDoneJobs: PseudoJob<any>[] = await getJobs(newlyDoneJobIDs);
-    if (finished || !isSocketOpen(ws)) return;
+    if (bailIfDisconnected()) return;
 
     for (const job of newlyDoneJobs) {
       if (job.returnvalue) {
@@ -149,11 +157,11 @@ async function crawlStatusWS(
     getCrawlJobs(req.params.jobId),
     getConcurrencyLimitedJobs(req.auth.team_id),
   ]);
-  if (finished || !isSocketOpen(ws)) return;
+  if (bailIfDisconnected()) return;
 
   doneJobIDs = _doneJobIDs;
   const jobs = new Map((await scrapeQueue.getJobs(jobIDs)).map(x => [x.id, x]));
-  if (finished || !isSocketOpen(ws)) return;
+  if (bailIfDisconnected()) return;
 
   const validJobStatuses: [string, NuQJobStatus][] = [];
   const validJobIDs: string[] = [];
@@ -181,7 +189,7 @@ async function crawlStatusWS(
   jobIDs = validJobIDs; // Use validJobIDs instead of jobIDs for further processing
 
   const doneJobs = await getJobs(doneJobIDs);
-  if (finished || !isSocketOpen(ws)) return;
+  if (bailIfDisconnected()) return;
   const data = doneJobs.map(x => x.returnvalue);
 
   await send(ws, {
@@ -196,7 +204,7 @@ async function crawlStatusWS(
       data: data,
     },
   });
-  if (finished || !isSocketOpen(ws)) return;
+  if (bailIfDisconnected()) return;
 
   if (status !== "scraping") {
     stop();
