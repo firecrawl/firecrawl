@@ -73,6 +73,19 @@ async function crawlStatusWS(
 
   let doneJobIDs: string[] = [];
   let finished = false;
+  let loopTimeout: ReturnType<typeof setTimeout> | null = null;
+
+  const stop = () => {
+    finished = true;
+    if (loopTimeout !== null) {
+      clearTimeout(loopTimeout);
+      loopTimeout = null;
+    }
+  };
+
+  // Client disconnect / socket error must stop Redis+BullMQ polling (#4242).
+  ws.on("close", stop);
+  ws.on("error", stop);
 
   const loop = async () => {
     if (finished) return;
@@ -80,6 +93,7 @@ async function crawlStatusWS(
     const jobIDs = await getCrawlJobs(req.params.jobId);
 
     if (jobIDs.length === doneJobIDs.length) {
+      stop();
       return close(ws, 1000, { type: "done" });
     }
 
@@ -106,10 +120,12 @@ async function crawlStatusWS(
     }
 
     doneJobIDs.push(...newlyDoneJobIDs);
-    setTimeout(loop, 1000);
+    if (!finished) {
+      loopTimeout = setTimeout(loop, 1000);
+    }
   };
 
-  setTimeout(loop, 1000);
+  loopTimeout = setTimeout(loop, 1000);
 
   let [_doneJobIDs, jobIDs, throttledJobsSet] = await Promise.all([
     getDoneJobsOrdered(req.params.jobId),
@@ -162,7 +178,7 @@ async function crawlStatusWS(
   });
 
   if (status !== "scraping") {
-    finished = true;
+    stop();
     return close(ws, 1000, { type: "done" });
   }
 }
