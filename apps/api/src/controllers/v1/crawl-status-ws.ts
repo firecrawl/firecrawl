@@ -41,7 +41,7 @@ type DoneMessage = { type: "done" };
 
 type Message = ErrorMessage | CatchupMessage | DoneMessage | DocumentMessage;
 
-function send(ws: WebSocket, msg: Message) {
+function send(ws: WebSocket, msg: Message): Promise<null> {
   if (ws.readyState === 1) {
     return new Promise((resolve, reject) => {
       ws.send(JSON.stringify(msg), err => {
@@ -50,6 +50,9 @@ function send(ws: WebSocket, msg: Message) {
       });
     });
   }
+  // Always return a Promise so callers can safely await / .catch() when
+  // the socket is already closed (readyState !== OPEN).
+  return Promise.resolve(null);
 }
 
 function close(ws: WebSocket, code: number, msg: Message) {
