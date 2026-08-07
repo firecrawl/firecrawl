@@ -60,4 +60,28 @@ describe.each([
     expect(result.success).toBe(false);
     expect(result.error!.issues[0].message).toContain("top-level domain");
   });
+
+  it.each([
+    ["a leading dot", "http://.bloomingdales.com"],
+    ["an empty label", "http://www..example.com"],
+    ["a file name as host", "http://image_000000279753.jpg"],
+    ["a bare file path fragment", "sitemap.xml"],
+  ])("rejects a hostname with %s", (_case, url) => {
+    const result = parse({ url });
+
+    expect(result.success).toBe(false);
+    expect(result.error!.issues[0].message).toContain("top-level domain");
+  });
+
+  it.each([
+    ["a file-extension TLD that is delegated", "https://weather.mov"],
+    ["a registrable .zip domain", "https://update.zip"],
+    ["a ccTLD abbreviating a file extension", "https://docs.md"],
+    ["an IP literal", "http://8.8.8.8/"],
+    ["a file extension in the path", "https://example.com/report.pdf"],
+  ])("still accepts %s", (_case, url) => {
+    const result = parse({ url });
+
+    expect(result.success).toBe(true);
+  });
 });

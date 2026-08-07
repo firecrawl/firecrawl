@@ -171,6 +171,24 @@ describe("Scrape tests", () => {
     scrapeTimeout,
   );
 
+  it.concurrent(
+    "returns 400 for hostnames that are URL-construction bugs",
+    async () => {
+      for (const url of [
+        "http://.bloomingdales.com",
+        "http://image_000000279753.jpg",
+        "sitemap.xml",
+      ]) {
+        const raw = await scrapeRaw({ url }, identity);
+
+        expect(raw.statusCode).toBe(400);
+        expect(raw.body.success).toBe(false);
+        expect(JSON.stringify(raw.body)).toContain("top-level domain");
+      }
+    },
+    scrapeTimeout,
+  );
+
   // TEMP: domain broken
   // it.concurrent("works with Punycode domains", async () => {
   //   await scrape({

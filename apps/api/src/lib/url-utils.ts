@@ -28,9 +28,7 @@ const REGISTRABLE_DOMAIN_OPTIONS = {
  * Parses a hostname against the public suffix list to find its registrable domain.
  * @param hostname - The hostname to parse (not a full URL)
  */
-export function parseHostname(
-  hostname: string,
-): ReturnType<typeof parseTld> {
+export function parseHostname(hostname: string): ReturnType<typeof parseTld> {
   return parseTld(hostname, REGISTRABLE_DOMAIN_OPTIONS);
 }
 
@@ -40,6 +38,69 @@ export function parseHostname(
  */
 const LOOKS_LIKE_TLD =
   /(\.[a-zA-Z0-9-Ѐ-ӿԀ-ԯⷠ-ⷿꙀ-ꚟ]{2,}|\.xn--[a-zA-Z0-9-]{1,})(:\d+)?([\/?#]|$)/i;
+
+// File extensions that are NOT delegated TLDs. zip, mov, md, sh, rs, py,
+// pl, app, dev, page, new, docs, map, foo, ing are real TLDs and must stay
+// out of this list.
+const FILE_EXTENSION_FINAL_LABELS = new Set([
+  "jpg",
+  "jpeg",
+  "png",
+  "gif",
+  "webp",
+  "svg",
+  "ico",
+  "bmp",
+  "tif",
+  "tiff",
+  "avif",
+  "heic",
+  "pdf",
+  "doc",
+  "docx",
+  "xls",
+  "xlsx",
+  "ppt",
+  "pptx",
+  "csv",
+  "txt",
+  "rtf",
+  "odt",
+  "html",
+  "htm",
+  "xml",
+  "json",
+  "css",
+  "js",
+  "php",
+  "asp",
+  "aspx",
+  "jsp",
+  "mp3",
+  "mp4",
+  "m4a",
+  "avi",
+  "mkv",
+  "wav",
+  "ogg",
+  "webm",
+  "flac",
+  "rar",
+  "gz",
+  "tgz",
+  "bz2",
+  "7z",
+  "tar",
+  "woff",
+  "woff2",
+  "ttf",
+  "otf",
+  "eot",
+  "exe",
+  "msi",
+  "dmg",
+  "apk",
+]);
 
 /**
  * Whether a URL's host is plausibly reachable. Used only for request validation.
@@ -58,10 +119,23 @@ const LOOKS_LIKE_TLD =
  * pattern is that a typo'd TLD such as example.invalidtld still passes, exactly as
  * it did before.
  *
+ * Hostnames that can only come from client-side URL-construction bugs are
+ * rejected: leading-dot/empty labels and a bare file name as the host
+ * (image_0001.jpg).
+ *
  * @param url - A full URL string; tldts extracts the host itself.
  */
 export function hasReachableHost(url: string): boolean {
-  if (parseTld(url).isIp === true) return true;
+  const parsed = parseTld(url);
+  if (parsed.isIp === true) return true;
+  if (
+    parsed.hostname === null ||
+    parsed.hostname.startsWith(".") ||
+    parsed.publicSuffix === null ||
+    FILE_EXTENSION_FINAL_LABELS.has(parsed.publicSuffix)
+  ) {
+    return false;
+  }
   return LOOKS_LIKE_TLD.test(url);
 }
 
