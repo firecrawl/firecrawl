@@ -65,6 +65,7 @@ export async function search({
         lang,
         country,
         location,
+        safe,
       });
       if (results.web && results.web.length > 0) return results;
     }
