@@ -1393,9 +1393,12 @@ async function processKickoffSitemapJob(job: NuQJob<ScrapeJobKickoffSitemap>) {
     zeroDataRetention: job.data.zeroDataRetention ?? false,
   });
 
-  const sc = await getCrawl(job.data.crawl_id);
-
+  // getCrawl must stay inside try/finally: if Redis throws here, the crawl's
+  // sitemap_jobs vs sitemap_jobs_done counters permanently disagree and the
+  // crawl hangs in scraping forever.
   try {
+    const sc = await getCrawl(job.data.crawl_id);
+
     if (!sc) {
       logger.error("Crawl not found");
       return { success: false, error: "Crawl not found" };
