@@ -143,72 +143,80 @@ class NuQ<JobData = any, JobReturnValue = any> {
           },
         );
 
+        // Register the consumer BEFORE publishing this.listener so a
+        // consume() failure cannot leave a consumer-less channel that
+        // permanently trips the early-return guard (#4244).
+        let reconnectTimeout: NodeJS.Timeout | null = null;
+
+        const onClose = function onClose() {
+          logger.info("NuQ listener channel closed", {
+            module: "nuq/rabbitmq",
+          });
+          this.listener = null;
+
+          if (reconnectTimeout) clearTimeout(reconnectTimeout);
+          reconnectTimeout = setTimeout(
+            (() => {
+              this.startListener().catch(err =>
+                logger.error("Error in NuQ listener reconnect", {
+                  err,
+                  module: "nuq/rabbitmq",
+                }),
+              );
+            }).bind(this),
+            250,
+          );
+          return;
+        }.bind(this);
+
+        await channel.consume(
+          queue.queue,
+          (msg => {
+            if (msg === null) {
+              onClose();
+              return;
+            }
+
+            logger.info("NuQ job received", {
+              module: "nuq/rabbitmq",
+              jobId: msg.properties.correlationId,
+              status: msg.content.toString(),
+            });
+
+            const jobId = msg.properties.correlationId as string;
+            const status = msg.content.toString() as "completed" | "failed";
+
+            if (jobId in this.listens) {
+              this.listens[jobId].forEach(listener => listener(status));
+            }
+            delete this.listens[jobId];
+
+            if (this.listener && this.listener.type === "rabbitmq") {
+              this.listener.channel.ack(msg);
+            }
+          }).bind(this),
+          {
+            noAck: false,
+          },
+        );
+
         this.listener = {
           type: "rabbitmq",
           connection,
           channel,
           queue: queue.queue,
         };
+
+        this.listener.connection.on("close", onClose);
+        this.listener.channel.on("close", onClose);
+      } catch (err) {
+        // Ensure the early-exit guard cannot lock out retries after a
+        // half-initialized (no consumer) channel (#4244).
+        this.listener = null;
+        throw err;
       } finally {
         this.listenerStarting = false;
       }
-
-      let reconnectTimeout: NodeJS.Timeout | null = null;
-
-      const onClose = function onClose() {
-        logger.info("NuQ listener channel closed", {
-          module: "nuq/rabbitmq",
-        });
-        this.listener = null;
-
-        if (reconnectTimeout) clearTimeout(reconnectTimeout);
-        reconnectTimeout = setTimeout(
-          (() => {
-            this.startListener().catch(err =>
-              logger.error("Error in NuQ listener reconnect", {
-                err,
-                module: "nuq/rabbitmq",
-              }),
-            );
-          }).bind(this),
-          250,
-        );
-        return;
-      }.bind(this);
-
-      this.listener.connection.on("close", onClose);
-      this.listener.channel.on("close", onClose);
-
-      await this.listener.channel.consume(
-        this.listener.queue,
-        (msg => {
-          if (msg === null) {
-            onClose();
-            return;
-          }
-
-          logger.info("NuQ job received", {
-            module: "nuq/rabbitmq",
-            jobId: msg.properties.correlationId,
-            status: msg.content.toString(),
-          });
-
-          const jobId = msg.properties.correlationId as string;
-          const status = msg.content.toString() as "completed" | "failed";
-
-          if (jobId in this.listens) {
-            this.listens[jobId].forEach(listener => listener(status));
-          }
-          delete this.listens[jobId];
-
-          if (this.listener && this.listener.type === "rabbitmq") {
-            this.listener.channel.ack(msg);
-          }
-        }).bind(this),
-        {
-          noAck: false,
-        },
-      );
     } else {
       this.listenerStarting = true;
 
