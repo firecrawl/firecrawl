@@ -258,6 +258,33 @@ describe("Scrape tests", () => {
     scrapeTimeout,
   );
 
+  itIf(!TEST_SELF_HOST || HAS_FIRE_ENGINE)(
+    "rejects actions on PDF URLs with an HTML-only message",
+    async () => {
+      const raw = await scrapeRaw(
+        {
+          url: "https://www.orimi.com/pdf-test.pdf",
+          timeout: scrapeTimeout,
+          actions: [
+            {
+              type: "wait",
+              milliseconds: 1000,
+            },
+          ],
+        },
+        identity,
+      );
+
+      expect(raw.statusCode).toBe(400);
+      expect(raw.body.success).toBe(false);
+      expect(raw.body.code).toBe("SCRAPE_ACTIONS_NOT_SUPPORTED");
+      expect(raw.body.error).toBe(
+        "Actions are only supported on HTML pages.",
+      );
+    },
+    scrapeTimeout,
+  );
+
   describe("JSON scrape support", () => {
     concurrentIf(ALLOW_TEST_SUITE_WEBSITE)(
       "returns parseable JSON",

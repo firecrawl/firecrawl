@@ -673,6 +673,14 @@ async function scrapeURLLoop(meta: Meta): Promise<ScrapeUrlResponse> {
         fallbackList.length === 0 ||
         fallbackList.every(engine => engine.unsupportedFeatures.has("actions"))
       ) {
+        if (
+          meta.featureFlags.has("pdf") ||
+          meta.featureFlags.has("document")
+        ) {
+          throw new ActionsNotSupportedError(
+            "Actions are only supported on HTML pages.",
+          );
+        }
         throw new ActionsNotSupportedError(
           "Actions are not supported by any available engines. Actions require Fire Engine (fire-engine) to be enabled.",
         );
