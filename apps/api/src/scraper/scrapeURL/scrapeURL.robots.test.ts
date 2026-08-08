@@ -51,7 +51,7 @@ async function runScrape(url = TEST_URL) {
 
 describe("scrapeURL robots.txt enforcement", () => {
   beforeEach(() => {
-    vi.clearAllMocks();
+    vi.resetAllMocks();
 
     mocks.fetchRobotsTxt.mockResolvedValue({
       content: "User-agent: *\nDisallow: /blocked",
@@ -104,6 +104,7 @@ describe("scrapeURL robots.txt enforcement", () => {
     const out = await runScrape();
 
     expect(out.success).toBe(true);
+    expect(mocks.isUrlAllowedByRobots).not.toHaveBeenCalled();
     expect(mocks.scrapeURLWithEngine).toHaveBeenCalled();
   });
 });
