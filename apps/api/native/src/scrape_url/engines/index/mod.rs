@@ -1,6 +1,7 @@
 use std::{net::IpAddr, time::Duration};
 
 use chrono::{DateTime, Utc};
+use regex::Regex;
 use sha2::{Digest, Sha256};
 use url::Url;
 
@@ -106,12 +107,12 @@ enum MaxAgeSource {
   Default,
 }
 
-enum IndexEntrySource {
-  Cache(IndexCache),
+enum IndexEntrySource<'a> {
+  Cache(&'a IndexCache),
   Db,
 }
 
-impl PartialEq for IndexEntrySource {
+impl<'a> PartialEq for IndexEntrySource<'a> {
   fn eq(&self, other: &Self) -> bool {
     match self {
       IndexEntrySource::Cache(_) => matches!(other, IndexEntrySource::Cache(_)),
@@ -120,7 +121,7 @@ impl PartialEq for IndexEntrySource {
   }
 }
 
-impl Eq for IndexEntrySource {}
+impl<'a> Eq for IndexEntrySource<'a> {}
 
 pub(self) struct IndexEntryVariant {
   pub url_hash: Vec<u8>,
@@ -176,32 +177,15 @@ impl IndexEntryFilter {
   }
 }
 
-async fn query_max_age(domain_hash: &[u8]) -> (i32, MaxAgeSource) {
-  // check cache first
-  if let Some(index_cache) = IndexCache::get().await
-    && let Some(max_age) = index_cache.get_max_age(&domain_hash).await
-  {
-    return (max_age, MaxAgeSource::DynamicCached);
-  }
-
-  if let Some(index_db) = IndexDb::get().await
-    && let Some(max_age) = index_db.get_max_age(&domain_hash).await
-  {
-    if let Some(index_cache) = IndexCache::get().await {
-      index_cache.set_max_age(&domain_hash, max_age).await;
-    }
-
-    return (max_age, MaxAgeSource::DynamicDb);
-  }
-
-  (DEFAULT_MAX_AGE, MaxAgeSource::Default)
+pub struct IndexEngine {
+  db: IndexDb,
+  gcs: IndexGcs,
+  cache: Option<IndexCache>,
 }
-
-pub struct IndexEngine;
 
 impl Engine for IndexEngine {
   const NAME: &'static str = "index";
-  const IS_SPECIAL: bool = false;
+  const SPECIAL_REGEX: Option<&'static Regex> = None;
   const FEATURES: ConstFeatureFlags = ConstFeatureFlags::new(&[
     FeatureFlag::WaitFor,
     FeatureFlag::Screenshot,
@@ -211,7 +195,22 @@ impl Engine for IndexEngine {
     FeatureFlag::DisableAdblock,
   ]);
 
+  async fn get() -> Option<super::EngineKind> {
+    if let Some(gcs) = IndexGcs::get().await {
+      if let Some(db) = IndexDb::get().await {
+        return Some(super::EngineKind::Index(Self {
+          db,
+          gcs,
+          cache: IndexCache::get().await,
+        }));
+      }
+    }
+
+    None
+  }
+
   async fn scrape(
+    &self,
     meta: &Meta,
     proxy: EngineScrapeProxy,
   ) -> Result<EngineScrapeResult, ScrapeURLError> {
@@ -230,8 +229,23 @@ impl Engine for IndexEngine {
         if let Some(domain_hash) = domain_splits_hash.last()
           && std::env::var("USE_DB_AUTHENTICATION").ok() == Some("true".to_string())
         {
+          let query_max_age = async {
+            if let Some(index_cache) = &self.cache
+              && let Some(max_age) = index_cache.get_max_age(&domain_hash).await
+            {
+              (max_age, MaxAgeSource::DynamicCached)
+            } else if let Some(max_age) = self.db.get_max_age(&domain_hash).await {
+              if let Some(index_cache) = &self.cache {
+                index_cache.set_max_age(&domain_hash, max_age).await;
+              }
+              (max_age, MaxAgeSource::DynamicDb)
+            } else {
+              (DEFAULT_MAX_AGE, MaxAgeSource::Default)
+            }
+          };
+
           tokio::select! {
-            (max_age, max_age_source) = query_max_age(&domain_hash) => {
+            (max_age, max_age_source) = query_max_age => {
               (max_age, max_age_source)
             }
             _ = tokio::time::sleep(tokio::time::Duration::from_millis(200)) => {
@@ -251,7 +265,7 @@ impl Engine for IndexEngine {
     let filter = IndexEntryFilter::new(max_age, &meta);
 
     let (entries, source) = match {
-      if let Some(index_cache) = IndexCache::get().await {
+      if let Some(index_cache) = &self.cache {
         Some((
           index_cache.get_entries(&variant, &filter).await,
           index_cache,
@@ -266,36 +280,36 @@ impl Engine for IndexEngine {
       Some((IndexCacheResult::NegativeHit, index_cache)) => {
         (None, IndexEntrySource::Cache(index_cache))
       }
-      Some((IndexCacheResult::Miss, _)) | None => (
-        if let Some(index_db) = IndexDb::get().await
-          && let entries = index_db.get_entries(&variant, &filter).await
-          && !entries.is_empty()
-        {
-          if meta.options.min_age.is_none()
-            && let Some(index_cache) = IndexCache::get().await
-          {
-            index_cache.upsert_entries(&variant, &entries).await;
-          }
+      Some((IndexCacheResult::Miss, _)) | None => {
+        let entries = self.db.get_entries(&variant, &filter).await;
+        (
+          if !entries.is_empty() {
+            if meta.options.min_age.is_none()
+              && let Some(index_cache) = &self.cache
+            {
+              index_cache.upsert_entries(&variant, &entries).await;
+            }
 
-          Some(entries)
-        } else {
-          if meta.options.min_age.is_none()
-            && let Some(index_cache) = IndexCache::get().await
-          {
-            // TODO: this is suboptimal as it can overwrite a more broader negative hit signal
-            index_cache
-              .set_negative(
-                &variant,
-                &filter,
-                Utc::now() - Duration::from_millis(filter.max_age as u64),
-              )
-              .await;
-          }
+            Some(entries)
+          } else {
+            if meta.options.min_age.is_none()
+              && let Some(index_cache) = &self.cache
+            {
+              // TODO: this is suboptimal as it can overwrite a more broader negative hit signal
+              index_cache
+                .set_negative(
+                  &variant,
+                  &filter,
+                  Utc::now() - Duration::from_millis(filter.max_age as u64),
+                )
+                .await;
+            }
 
-          None
-        },
-        IndexEntrySource::Db,
-      ),
+            None
+          },
+          IndexEntrySource::Db,
+        )
+      }
     };
 
     let selected_row: Option<IndexEntry> = if let Some(entries) = entries {
@@ -325,34 +339,30 @@ impl Engine for IndexEngine {
     };
 
     if let Some(selected_row) = selected_row {
-      if let Some(index_gcs) = IndexGcs::get().await {
-        if let Some(doc) = index_gcs.get_document(selected_row.id).await {
-          // TODO: isCachedPdfBase64 buffoonery
+      if let Some(doc) = self.gcs.get_document(selected_row.id).await {
+        // TODO: isCachedPdfBase64 stuff
 
-          Ok(EngineScrapeResult {
-            url: doc.url,
-            content: EngineScrapeContent::DecodedText(doc.html),
-            // json???
-            status_code: doc.status_code,
-            screenshot: doc.screenshot,
-            actions: None,
-            content_type: doc
-              .content_type
-              .unwrap_or_else(|| "application/octet-stream".to_string()),
-            cached_at: Some(selected_row.created_at),
-            proxy_used: doc.proxy_used,
-            timezone: None,
-            filename: None,
-          })
-        } else {
-          if let IndexEntrySource::Cache(index_cache) = source {
-            // drop poisoned cache
-            index_cache.delete_entry(&variant, selected_row.id).await;
-          }
-          Err(ScrapeURLError::IndexMissError)
-        }
+        Ok(EngineScrapeResult {
+          url: doc.url,
+          content: EngineScrapeContent::DecodedText(doc.html),
+          // json???
+          status_code: doc.status_code,
+          screenshot: doc.screenshot,
+          actions: None,
+          content_type: doc
+            .content_type
+            .unwrap_or_else(|| "application/octet-stream".to_string()),
+          cached_at: Some(selected_row.created_at),
+          proxy_used: doc.proxy_used,
+          timezone: None,
+          filename: None,
+        })
       } else {
-        unreachable!()
+        if let IndexEntrySource::Cache(index_cache) = source {
+          // drop poisoned cache
+          index_cache.delete_entry(&variant, selected_row.id).await;
+        }
+        Err(ScrapeURLError::IndexMissError)
       }
     } else {
       Err(ScrapeURLError::IndexMissError)

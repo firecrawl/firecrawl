@@ -9,6 +9,8 @@ pub enum ScrapeURLError {
   ReliableRetrievalError,
   InsecureConnectionError,
   InvalidURLError,
+  PDFFetchFailed,
+  PDFOCRRequiredError(pdf_inspector::PdfType),
 }
 
 impl Display for ScrapeURLError {
@@ -21,6 +23,8 @@ impl Display for ScrapeURLError {
       Self::ReliableRetrievalError => f.write_str("RELIABLE_RETRIEVAL_ERROR"),
       Self::InsecureConnectionError => f.write_str("INSECURE_CONNECTION_ERROR"),
       Self::InvalidURLError => f.write_str("INVALID_URL_ERROR"),
+      Self::PDFFetchFailed => f.write_str("PDF_FETCH_FAILED"),
+      Self::PDFOCRRequiredError(_) => f.write_str("PDF_OCR_REQUIRED_ERROR"),
     }
   }
 }

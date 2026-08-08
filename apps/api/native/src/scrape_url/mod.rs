@@ -5,6 +5,8 @@ use napi_derive::napi;
 use tracing::{Span, field::Empty, instrument};
 use url::Url;
 
+use crate::scrape_url::engines::get_main_engine;
+
 use self::{
   document::{Document, DocumentMetadataCacheState},
   engines::{EngineKind, EngineScrapeProxy, EngineScrapeResult, should_use_index},
@@ -73,13 +75,11 @@ async fn _scrape_url(meta: Meta) -> Result<Document, ScrapeURLError> {
     let index_attempted =
       meta.options.lockdown || meta.internal_options.agent_index_only || should_use_index;
 
-    if !index_attempted {
-      Ok(None)
-    } else {
-      let result = EngineKind::Index.scrape(&meta, discrete_proxy).await;
+    if index_attempted && let Some(index) = EngineKind::index().await {
+      let result = index.scrape(&meta, discrete_proxy).await;
       match result {
         Ok(result) => Ok(Some(EngineRun {
-          engine: EngineKind::Index,
+          engine: index,
           result,
           unsupported_features: HashSet::new(), // TODO
           index_attempted: true,
@@ -87,6 +87,8 @@ async fn _scrape_url(meta: Meta) -> Result<Document, ScrapeURLError> {
         Err(ScrapeURLError::IndexMissError) => Ok(None),
         Err(e) => Err(e),
       }
+    } else {
+      Ok(None)
     }
   }?;
 
@@ -95,9 +97,10 @@ async fn _scrape_url(meta: Meta) -> Result<Document, ScrapeURLError> {
     None if meta.options.lockdown => Err(ScrapeURLError::LockdownMissError),
     None if meta.internal_options.agent_index_only => Err(ScrapeURLError::AgentIndexOnlyError),
     None => {
-      match engines::MAIN_ENGINE.scrape(&meta, discrete_proxy).await {
+      let main_engine = get_main_engine().await;
+      match get_main_engine().await.scrape(&meta, discrete_proxy).await {
         Ok(result) => Ok(EngineRun {
-          engine: *engines::MAIN_ENGINE,
+          engine: main_engine,
           result,
           unsupported_features: HashSet::new(), // TODO
           index_attempted: should_use_index,
@@ -109,11 +112,11 @@ async fn _scrape_url(meta: Meta) -> Result<Document, ScrapeURLError> {
           if meta.options.proxy == ProxyMode::Auto
             && discrete_proxy == EngineScrapeProxy::Basic =>
         {
-          engines::MAIN_ENGINE
+          main_engine
             .scrape(&meta, EngineScrapeProxy::Enhanced)
             .await
             .map(|result| EngineRun {
-              engine: *engines::MAIN_ENGINE,
+              engine: main_engine,
               result,
               unsupported_features: HashSet::new(), // TODO
               index_attempted: should_use_index,

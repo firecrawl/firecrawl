@@ -44,6 +44,8 @@ tracing-subscriber = { version = "0.3", default-features = false, features = ["r
 wreq = { version = "6.0.0-rc", features = ["cookies", "gzip", "brotli", "zstd", "deflate", "webpki-roots"] }
 wreq-util = "3.0.0-rc"
 google-cloud-storage = "1.17.0"
+base64 = "0.23.1"
+markdown = "1.0.0"
 
 [build-dependencies]
 napi-build = "2"

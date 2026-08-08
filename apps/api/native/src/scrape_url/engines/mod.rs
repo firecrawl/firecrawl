@@ -1,9 +1,12 @@
-use std::{fmt::Display, sync::LazyLock};
-
 use bytes::Bytes;
 use chrono::{DateTime, Utc};
+use regex::Regex;
 use serde::{Deserialize, Serialize};
 use url::Url;
+
+use self::{
+  fetch::FetchEngine, fire_engine::FireEngine, index::IndexEngine, playwright::PlaywrightEngine,
+};
 
 use super::{
   error::ScrapeURLError, feature_flags::ConstFeatureFlags, formats::FormatKind, meta::Meta,
@@ -41,6 +44,7 @@ impl ToString for EngineScrapeProxy {
 pub enum EngineScrapeContent {
   Bytes(Bytes),
   DecodedText(String),
+  GeneratedMarkdown(String),
 }
 
 pub struct EngineScrapeResult {
@@ -50,7 +54,6 @@ pub struct EngineScrapeResult {
   pub screenshot: Option<String>,
   pub actions: Option<EngineScrapeResultActions>,
   // pub branding:
-  // pub pdf_metadata:
   pub cached_at: Option<DateTime<Utc>>,
   pub content_type: String, // CFR rework TODO
   // pub youtube_transcript_content:
@@ -62,76 +65,68 @@ pub struct EngineScrapeResult {
 
 pub trait Engine {
   const NAME: &'static str;
-  const IS_SPECIAL: bool;
+  const SPECIAL_REGEX: Option<&'static Regex>;
   const FEATURES: ConstFeatureFlags;
 
+  async fn get() -> Option<EngineKind>;
+
   async fn scrape(
+    &self,
     meta: &Meta,
     proxy: EngineScrapeProxy,
   ) -> Result<EngineScrapeResult, ScrapeURLError>;
-
-  #[allow(unused_variables)]
-  fn special_matches(url: &Url) -> bool {
-    false
-  }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
 pub enum EngineKind {
-  Fetch,
-  FireEngine,
-  Index,
-  Playwright,
+  Fetch(FetchEngine),
+  FireEngine(FireEngine),
+  Index(IndexEngine),
+  Playwright(PlaywrightEngine),
 }
 
 impl EngineKind {
   pub fn get_name(self) -> &'static str {
     match self {
-      EngineKind::Fetch => fetch::FetchEngine::NAME,
-      EngineKind::FireEngine => fire_engine::FireEngine::NAME,
-      EngineKind::Index => index::IndexEngine::NAME,
-      EngineKind::Playwright => playwright::PlaywrightEngine::NAME,
+      EngineKind::Fetch(_) => fetch::FetchEngine::NAME,
+      EngineKind::FireEngine(_) => fire_engine::FireEngine::NAME,
+      EngineKind::Index(_) => index::IndexEngine::NAME,
+      EngineKind::Playwright(_) => playwright::PlaywrightEngine::NAME,
     }
   }
 
   pub fn get_features(self) -> ConstFeatureFlags {
     match self {
-      EngineKind::Fetch => fetch::FetchEngine::FEATURES,
-      EngineKind::FireEngine => fire_engine::FireEngine::FEATURES,
-      EngineKind::Index => index::IndexEngine::FEATURES,
-      EngineKind::Playwright => playwright::PlaywrightEngine::FEATURES,
+      EngineKind::Fetch(_) => fetch::FetchEngine::FEATURES,
+      EngineKind::FireEngine(_) => fire_engine::FireEngine::FEATURES,
+      EngineKind::Index(_) => index::IndexEngine::FEATURES,
+      EngineKind::Playwright(_) => playwright::PlaywrightEngine::FEATURES,
     }
   }
 
-  pub fn is_special(self) -> bool {
+  pub fn special_regex(self) -> Option<&'static Regex> {
     match self {
-      EngineKind::Fetch => fetch::FetchEngine::IS_SPECIAL,
-      EngineKind::FireEngine => fire_engine::FireEngine::IS_SPECIAL,
-      EngineKind::Index => index::IndexEngine::IS_SPECIAL,
-      EngineKind::Playwright => playwright::PlaywrightEngine::IS_SPECIAL,
+      EngineKind::Fetch(_) => fetch::FetchEngine::SPECIAL_REGEX,
+      EngineKind::FireEngine(_) => fire_engine::FireEngine::SPECIAL_REGEX,
+      EngineKind::Index(_) => index::IndexEngine::SPECIAL_REGEX,
+      EngineKind::Playwright(_) => playwright::PlaywrightEngine::SPECIAL_REGEX,
     }
   }
 
   pub async fn scrape(
-    self,
+    &self,
     meta: &Meta,
     proxy: EngineScrapeProxy,
   ) -> Result<EngineScrapeResult, ScrapeURLError> {
     match self {
-      EngineKind::Fetch => fetch::FetchEngine::scrape(meta, proxy).await,
-      EngineKind::FireEngine => fire_engine::FireEngine::scrape(meta, proxy).await,
-      EngineKind::Index => index::IndexEngine::scrape(meta, proxy).await,
-      EngineKind::Playwright => playwright::PlaywrightEngine::scrape(meta, proxy).await,
+      EngineKind::Fetch(x) => x.scrape(meta, proxy).await,
+      EngineKind::FireEngine(x) => x.scrape(meta, proxy).await,
+      EngineKind::Index(x) => x.scrape(meta, proxy).await,
+      EngineKind::Playwright(x) => x.scrape(meta, proxy).await,
     }
   }
 
-  pub fn special_matches(self, url: &Url) -> bool {
-    match self {
-      EngineKind::Fetch => fetch::FetchEngine::special_matches(url),
-      EngineKind::FireEngine => fire_engine::FireEngine::special_matches(url),
-      EngineKind::Index => index::IndexEngine::special_matches(url),
-      EngineKind::Playwright => playwright::PlaywrightEngine::special_matches(url),
-    }
+  pub async fn index() -> Option<Self> {
+    IndexEngine::get().await
   }
 }
 
@@ -142,7 +137,6 @@ pub fn should_use_index(meta: &Meta) -> bool {
     false
   };
 
-  *USE_INDEX &&
   !meta.options.formats.contains(FormatKind::ChangeTracking) &&
   !meta.options.formats.contains(FormatKind::Branding) &&
   // getPDFMaxPages(meta.options.parsers) === undefined &&
@@ -153,28 +147,12 @@ pub fn should_use_index(meta: &Meta) -> bool {
   // && meta.options.profile.is_none()
 }
 
-pub static MAIN_ENGINE: LazyLock<EngineKind> = LazyLock::new(|| {
-  let use_fire_engine = !std::env::var("FIRE_ENGINE_BETA_URL")
-    .unwrap_or("".to_string())
-    .is_empty();
-  let use_playwright = !std::env::var("PLAYWRIGHT_MICROSERVICE_URL")
-    .unwrap_or("".to_string())
-    .is_empty();
-
-  if use_fire_engine {
-    EngineKind::FireEngine
-  } else if use_playwright {
-    EngineKind::Playwright
+pub async fn get_main_engine() -> EngineKind {
+  if let Some(fire_engine) = FireEngine::get().await {
+    fire_engine
+  } else if let Some(playwright) = PlaywrightEngine::get().await {
+    playwright
   } else {
-    EngineKind::Fetch
+    FetchEngine::get_guaranteed()
   }
-});
-
-pub static USE_INDEX: LazyLock<bool> = LazyLock::new(|| {
-  !std::env::var("INDEX_DATABASE_URL")
-    .unwrap_or("".to_string())
-    .is_empty()
-    && !std::env::var("GCS_INDEX_BUCKET_NAME")
-      .unwrap_or("".to_string())
-      .is_empty()
-});
+}

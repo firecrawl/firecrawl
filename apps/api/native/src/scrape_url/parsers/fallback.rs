@@ -12,11 +12,11 @@ use super::super::{
   meta::Meta,
 };
 
-fn deduce_encoding(result: &EngineScrapeResult, content: &Bytes) -> &'static Encoding {
+fn deduce_encoding(content: &Bytes, content_type: &str) -> &'static Encoding {
   let lossy_text = String::from_utf8_lossy(content.as_ref());
 
   {
-    if let Some(content_type_charset) = Mime::from_str(&result.content_type)
+    if let Some(content_type_charset) = Mime::from_str(content_type)
       .ok()
       .and_then(|m| m.get_param(mime::CHARSET).map(|v| v.to_string()))
     {
@@ -36,16 +36,21 @@ fn deduce_encoding(result: &EngineScrapeResult, content: &Bytes) -> &'static Enc
 }
 
 pub fn parse_fallback(meta: &Meta, result: EngineScrapeResult) -> Result<Document, ScrapeURLError> {
-  let content = match &result.content {
+  let (content, markdown): (String, Option<String>) = match result.content {
     EngineScrapeContent::Bytes(bytes) => {
-      let encoding = deduce_encoding(&result, bytes);
-      &encoding.decode(bytes.as_ref()).0.to_string()
+      let encoding = deduce_encoding(&bytes, &result.content_type);
+      (encoding.decode(bytes.as_ref()).0.to_string(), None)
     }
-    EngineScrapeContent::DecodedText(text) => text,
+    EngineScrapeContent::DecodedText(text) => (text, None),
+    EngineScrapeContent::GeneratedMarkdown(md) => (
+      markdown::to_html_with_options(&md, &markdown::Options::gfm())
+        .expect("this error is impossible"),
+      Some(md),
+    ),
   };
 
   Ok(Document {
-    markdown: None,
+    markdown: markdown,
     html: None,
     raw_html: Some(content.to_owned()),
     screenshot: result.screenshot,
