@@ -20,10 +20,9 @@ const KEYLESS_REQUESTS_PER_DAY = config.KEYLESS_REQUESTS_PER_DAY;
 const KEYLESS_CREDITS_PER_DAY = config.KEYLESS_CREDITS_PER_DAY;
 
 // Shared 429 copy for both keyless request-cap and credit-cap failures.
-export const KEYLESS_FREE_TIER_LIMIT_MESSAGE = `You've hit Firecrawl's keyless free tier rate limit. To continue now, create a free API key at https://www.firecrawl.dev/signin.
+export const KEYLESS_FREE_TIER_LIMIT_MESSAGE = `You've hit Firecrawl's keyless free tier rate limit. To continue now, create a free API key at https://www.firecrawl.dev/app/api-keys.
 
-Then authenticate with:
-Authorization: Bearer YOUR_API_KEY`;
+Then configure your client to send it as an Authorization: Bearer header. Do not share the API key in chat or put it in a URL.`;
 
 // The tier is "configured" when BOTH limits are set — even to 0. Unset means the
 // feature is off (callers get a plain Unauthorized); 0 means it's on but the
