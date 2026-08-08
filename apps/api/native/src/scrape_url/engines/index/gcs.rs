@@ -2,6 +2,7 @@ use google_cloud_storage::client::Storage;
 use serde::{Deserialize, Serialize};
 use tokio::sync::OnceCell;
 use url::Url;
+use uuid::Uuid;
 
 use super::super::EngineScrapeProxy;
 
@@ -42,11 +43,11 @@ impl IndexGcs {
       .map(Self)
   }
 
-  pub async fn get_document(&self, id: &str) -> Option<IndexDocument> {
+  pub async fn get_document(&self, id: Uuid) -> Option<IndexDocument> {
     let mut resp = self
       .0
       .0
-      .read_object(&self.0.1, format!("{id}.json"))
+      .read_object(&self.0.1, format!("{}.json", id))
       .send()
       .await
       .ok()?; // TODO: error handling

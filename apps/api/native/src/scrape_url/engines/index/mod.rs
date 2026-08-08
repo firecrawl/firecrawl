@@ -217,7 +217,7 @@ impl Engine for IndexEngine {
   ) -> Result<EngineScrapeResult, ScrapeURLError> {
     let normalized_url = normalize_url_for_index(meta.get_url().clone());
 
-    let (max_age, max_age_source): (i32, MaxAgeSource) = {
+    let (max_age, _max_age_source): (i32, MaxAgeSource) = {
       if let Some(max_age) = meta.options.max_age {
         (max_age, MaxAgeSource::Explicit)
       } else {
@@ -326,7 +326,7 @@ impl Engine for IndexEngine {
 
     if let Some(selected_row) = selected_row {
       if let Some(index_gcs) = IndexGcs::get().await {
-        if let Some(doc) = index_gcs.get_document(&selected_row.id).await {
+        if let Some(doc) = index_gcs.get_document(selected_row.id).await {
           // TODO: isCachedPdfBase64 buffoonery
 
           Ok(EngineScrapeResult {
@@ -347,7 +347,7 @@ impl Engine for IndexEngine {
         } else {
           if let IndexEntrySource::Cache(index_cache) = source {
             // drop poisoned cache
-            index_cache.delete_entry(&variant, &selected_row.id).await;
+            index_cache.delete_entry(&variant, selected_row.id).await;
           }
           Err(ScrapeURLError::IndexMissError)
         }

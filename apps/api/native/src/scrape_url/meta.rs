@@ -35,11 +35,8 @@ impl Meta {
   ) -> Self {
     // TODO: abortController + abortHandle, figure out how aborts will work in general
 
-    // TODO: effectiveOptions / applyScrapeOptionsDefaults
-
-    let ff = build_feature_flags(&options, &internal_options);
-
     // NOTE: isn't this fixed by rafa?
+    // let ff = build_feature_flags(&options, &internal_options);
     // if internal_options.zero_data_retention {
     //   if ff.contains(&FeatureFlag::Screenshot) {
     //     // THROW

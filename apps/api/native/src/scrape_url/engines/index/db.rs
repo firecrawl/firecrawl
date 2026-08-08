@@ -1,7 +1,14 @@
+use std::str::FromStr;
+
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use sqlx::{PgPool, postgres::PgPoolOptions, prelude::FromRow};
+use sqlx::{
+  PgPool,
+  postgres::{PgConnectOptions, PgPoolOptions},
+  prelude::FromRow,
+};
 use tokio::sync::OnceCell;
+use uuid::Uuid;
 
 use super::{IndexEntryFilter, IndexEntryVariant};
 
@@ -12,7 +19,7 @@ pub struct MaxAgeRow {
 
 #[derive(FromRow, Deserialize, Serialize)]
 pub struct IndexEntry {
-  pub id: String,
+  pub id: Uuid,
   pub created_at: DateTime<Utc>,
   pub status: i32,
   pub has_screenshot: bool,
@@ -33,11 +40,18 @@ impl IndexDb {
         if let Some(index_database_url) = std::env::var("INDEX_DATABASE_URL").ok()
           && !index_database_url.is_empty()
         {
+          let index_database_url =
+            index_database_url.replace("sslmode=no-verify", "sslmode=require");
+
+          let options = PgConnectOptions::from_str(&index_database_url)
+            .expect("Failed to parse INDEX_DATABASE_URL")
+            .statement_cache_capacity(0); // tx pooler does not like statement cache
+
           Some(
             PgPoolOptions::new()
               .min_connections(0)
               .max_connections(6)
-              .connect(&index_database_url)
+              .connect_with(options)
               .await
               .expect("Failed to connect to index DB"),
           )
@@ -51,14 +65,16 @@ impl IndexDb {
   }
 
   pub async fn get_max_age(&self, domain_hash: &[u8]) -> Option<i32> {
-    (sqlx::query_as(r#"select max_age from query_max_age(i_domain_hash => $1)"#)
+    let mut tx = self.0.begin().await.ok()?;
+    let row = sqlx::query_as(r#"select max_age from query_max_age(i_domain_hash => $1)"#)
       .bind(domain_hash)
-      .fetch_optional(self.0)
+      .persistent(false)
+      .fetch_optional(&mut *tx)
       .await // TODO: timeout
       .ok() // TODO: error handling
-      .flatten() as Option<MaxAgeRow>)
-      .map(|x| x.max_age)
-      .flatten()
+      .flatten() as Option<MaxAgeRow>;
+    let _ = tx.commit().await;
+    row.map(|x| x.max_age).flatten()
   }
 
   pub async fn get_entries(
@@ -66,8 +82,12 @@ impl IndexDb {
     variant: &IndexEntryVariant,
     filter: &IndexEntryFilter,
   ) -> Vec<IndexEntry> {
-    sqlx::query_as(r#"
-      select id, created_at, status, has_screenshot, has_screenshot_fullscreen, COALESCE(wait_time_ms, 0)
+    let mut tx = match self.0.begin().await {
+      Ok(tx) => tx,
+      Err(_) => return Vec::with_capacity(0), // TODO: error handling
+    };
+    let entries = sqlx::query_as(r#"
+      select id, created_at, status, has_screenshot, has_screenshot_fullscreen, COALESCE(wait_time_ms, 0)::int4 as wait_time_ms
       from index_get_recent_5(
         p_url_hash => $1,
         p_max_age_ms => $2,
@@ -93,8 +113,11 @@ impl IndexDb {
       .bind(filter.wait_time_ms)
       .bind(variant.is_stealth)
       .bind(filter.min_age)
-      .fetch_all(self.0)
+      .persistent(false)
+      .fetch_all(&mut *tx)
       .await // TODO: timeout
-      .ok().unwrap_or_else(|| Vec::with_capacity(0)) // TODO: error handling
+      .ok().unwrap_or_else(|| Vec::with_capacity(0)); // TODO: error handling
+    let _ = tx.commit().await;
+    entries
   }
 }
