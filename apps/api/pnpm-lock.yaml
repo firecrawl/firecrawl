@@ -41,6 +41,7 @@ overrides:
   shell-quote@<=1.8.4: 1.10.0
   esbuild@>=0.17.0 <0.28.1: 0.28.1
   '@opentelemetry/core@>=2.0.0 <2.8.0': 2.8.0
+  nanoid@<3.3.17: 3.3.18
 
 patchedDependencies:
   node-fetch@2.7.0: cf2058381802eaf328e1cb26b185762ba41e2157a5545e7ed9bba56b7de0c49b
@@ -3516,8 +3517,8 @@ packages:
     resolution: {integrity: sha512-21t+ozMQDAL/UGgQVBbZ/xXvNO10++ZPuTmKRO8k9V3AClVRht49ahtDjfY8l1q6nSHOrE5ASfthzH3ol6R/hg==}
     engines: {node: '>=20.17'}
 
-  nanoid@3.3.16:
-    resolution: {integrity: sha512-bzlKTyNJ7+LdGIIwy8ijFpIqEQIvafahV7eYykJ8Cvh42EdJeODoJ6gUJXpQJvej1BddH8OqTXZNE/KfbWAu8Q==}
+  nanoid@3.3.18:
+    resolution: {integrity: sha512-DTg4MJbGMWkfi6VZFdNt2/caMbQy4Ou+Op/hJQvGEWcnVfoA1QA+xzRKAzw9jD6+GVOOeYr/mIcuDSdug6F6+w==}
     engines: {node: ^10 || ^12 || ^13.7 || ^14 || >=15.0.1}
     hasBin: true
 
@@ -7352,7 +7353,7 @@ snapshots:
 
   nano-spawn@1.0.2: {}
 
-  nanoid@3.3.16: {}
+  nanoid@3.3.18: {}
 
   negotiator@1.0.0: {}
 
@@ -7580,7 +7581,7 @@ snapshots:
 
   postcss@8.5.23:
     dependencies:
-      nanoid: 3.3.16
+      nanoid: 3.3.18
       picocolors: 1.1.1
       source-map-js: 1.2.1
 
