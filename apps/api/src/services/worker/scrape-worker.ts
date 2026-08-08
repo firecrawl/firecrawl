@@ -1587,9 +1587,10 @@ async function processJobWithTracing(job: NuQJob<ScrapeJobData>, logger: any) {
   // FDB-backed jobs hold their concurrency slot through the queue lease; the
   // Redis slot mirror and promotion-on-done below are PG-backend machinery
   const isFdbJob = (job as any).backend === "fdb";
+  // Hoisted so the finally that clears it can see the binding (cubic P0 / #4246).
+  let extendLockInterval: NodeJS.Timeout | null = null;
   try {
     try {
-      let extendLockInterval: NodeJS.Timeout | null = null;
       if (
         !isFdbJob &&
         job.data?.mode !== "kickoff" &&
