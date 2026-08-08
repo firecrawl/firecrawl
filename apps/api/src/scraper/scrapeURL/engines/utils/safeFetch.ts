@@ -34,18 +34,34 @@ export const rejectPrivateIPLiteralTargets: undici.Dispatcher.DispatcherComposeI
       return dispatch(options, handler);
     }
 
+    let privateIPLiteral = false;
+
     try {
       const origin =
         options.origin instanceof URL
           ? options.origin
           : new URL(options.origin.toString());
       const hostname = origin.hostname.replace(/^\[|\]$/g, "");
-      if (isIPPrivate(hostname)) {
-        handler.onError(new InsecureConnectionError());
-        return true;
-      }
+      privateIPLiteral = isIPPrivate(hostname);
     } catch {
       // Let Undici report malformed origins through its normal path.
+    }
+
+    if (privateIPLiteral) {
+      const error = new InsecureConnectionError();
+      const compatibleHandler = handler as typeof handler & {
+        onResponseError?: (controller: unknown, error: Error) => void;
+      };
+
+      if (typeof compatibleHandler.onError === "function") {
+        compatibleHandler.onError(error);
+      } else if (typeof compatibleHandler.onResponseError === "function") {
+        compatibleHandler.onResponseError(null, error);
+      } else {
+        throw error;
+      }
+
+      return true;
     }
 
     return dispatch(options, handler);
