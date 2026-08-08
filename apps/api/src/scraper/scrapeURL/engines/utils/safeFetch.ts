@@ -19,6 +19,38 @@ export function isIPPrivate(address: string): boolean {
   return addr.range() !== "unicast";
 }
 
+/**
+ * Reject private IP literals before a ProxyAgent opens a CONNECT tunnel.
+ *
+ * The socket-level check below sees the proxy socket when PROXY_SERVER is
+ * configured, not the requested destination. This interceptor therefore
+ * closes the deterministic IP-literal gap for both the initial request and
+ * redirects. Hostnames resolved by the proxy still require destination
+ * filtering at the proxy, because local DNS may not match proxy-side DNS.
+ */
+export const rejectPrivateIPLiteralTargets: undici.Dispatcher.DispatcherComposeInterceptor =
+  dispatch => (options, handler) => {
+    if (config.ALLOW_LOCAL_WEBHOOKS === true || options.origin === undefined) {
+      return dispatch(options, handler);
+    }
+
+    try {
+      const origin =
+        options.origin instanceof URL
+          ? options.origin
+          : new URL(options.origin.toString());
+      const hostname = origin.hostname.replace(/^\[|\]$/g, "");
+      if (isIPPrivate(hostname)) {
+        handler.onError(new InsecureConnectionError());
+        return true;
+      }
+    } catch {
+      // Let Undici report malformed origins through its normal path.
+    }
+
+    return dispatch(options, handler);
+  };
+
 function createBaseAgent(skipTlsVerification: boolean) {
   const baseAgent = config.PROXY_SERVER
     ? new undici.ProxyAgent({
@@ -39,7 +71,10 @@ function createBaseAgent(skipTlsVerification: boolean) {
       });
 
   // Add redirect interceptor for handling redirects
-  return baseAgent.compose(interceptors.redirect({ maxRedirections: 5000 }));
+  return baseAgent.compose(
+    rejectPrivateIPLiteralTargets,
+    interceptors.redirect({ maxRedirections: 5000 }),
+  );
 }
 
 function attachSecurityCheck(agent: undici.Dispatcher) {
