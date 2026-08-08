@@ -127,93 +127,107 @@ class NuQ<JobData = any, JobReturnValue = any> {
       this.listenerStarting = true;
 
       try {
-        const connection = await amqp.connect(config.NUQ_RABBITMQ_URL);
-        const channel = await connection.createChannel();
-        await channel.prefetch(5);
-        const queue = await channel.assertQueue(
-          this.queueName + ".listen." + this.listenChannelId,
-          {
-            exclusive: true,
-            autoDelete: true,
-            durable: false,
-            arguments: {
-              "x-queue-type": "classic",
-              "x-message-ttl": 60000,
+        let connection: Awaited<ReturnType<typeof amqp.connect>> | undefined;
+        let channel: Awaited<
+          ReturnType<Awaited<ReturnType<typeof amqp.connect>>["createChannel"]>
+        > | undefined;
+        try {
+          connection = await amqp.connect(config.NUQ_RABBITMQ_URL);
+          channel = await connection.createChannel();
+          await channel.prefetch(5);
+          const queue = await channel.assertQueue(
+            this.queueName + ".listen." + this.listenChannelId,
+            {
+              exclusive: true,
+              autoDelete: true,
+              durable: false,
+              arguments: {
+                "x-queue-type": "classic",
+                "x-message-ttl": 60000,
+              },
             },
-          },
-        );
-
-        // Register the consumer BEFORE publishing this.listener so a
-        // consume() failure cannot leave a consumer-less channel that
-        // permanently trips the early-return guard (#4244).
-        let reconnectTimeout: NodeJS.Timeout | null = null;
-
-        const onClose = function onClose() {
-          logger.info("NuQ listener channel closed", {
-            module: "nuq/rabbitmq",
-          });
-          this.listener = null;
-
-          if (reconnectTimeout) clearTimeout(reconnectTimeout);
-          reconnectTimeout = setTimeout(
-            (() => {
-              this.startListener().catch(err =>
-                logger.error("Error in NuQ listener reconnect", {
-                  err,
-                  module: "nuq/rabbitmq",
-                }),
-              );
-            }).bind(this),
-            250,
           );
-          return;
-        }.bind(this);
 
-        await channel.consume(
-          queue.queue,
-          (msg => {
-            if (msg === null) {
-              onClose();
-              return;
-            }
+          // Register the consumer BEFORE publishing this.listener so a
+          // consume() failure cannot leave a consumer-less channel that
+          // permanently trips the early-return guard (#4244).
+          let reconnectTimeout: NodeJS.Timeout | null = null;
 
-            logger.info("NuQ job received", {
+          const onClose = function onClose() {
+            logger.info("NuQ listener channel closed", {
               module: "nuq/rabbitmq",
-              jobId: msg.properties.correlationId,
-              status: msg.content.toString(),
             });
+            this.listener = null;
 
-            const jobId = msg.properties.correlationId as string;
-            const status = msg.content.toString() as "completed" | "failed";
+            if (reconnectTimeout) clearTimeout(reconnectTimeout);
+            reconnectTimeout = setTimeout(
+              (() => {
+                this.startListener().catch(err =>
+                  logger.error("Error in NuQ listener reconnect", {
+                    err,
+                    module: "nuq/rabbitmq",
+                  }),
+                );
+              }).bind(this),
+              250,
+            );
+            return;
+          }.bind(this);
 
-            if (jobId in this.listens) {
-              this.listens[jobId].forEach(listener => listener(status));
-            }
-            delete this.listens[jobId];
+          await channel.consume(
+            queue.queue,
+            (msg => {
+              if (msg === null) {
+                onClose();
+                return;
+              }
 
-            if (this.listener && this.listener.type === "rabbitmq") {
-              this.listener.channel.ack(msg);
-            }
-          }).bind(this),
-          {
-            noAck: false,
-          },
-        );
+              logger.info("NuQ job received", {
+                module: "nuq/rabbitmq",
+                jobId: msg.properties.correlationId,
+                status: msg.content.toString(),
+              });
 
-        this.listener = {
-          type: "rabbitmq",
-          connection,
-          channel,
-          queue: queue.queue,
-        };
+              const jobId = msg.properties.correlationId as string;
+              const status = msg.content.toString() as "completed" | "failed";
 
-        this.listener.connection.on("close", onClose);
-        this.listener.channel.on("close", onClose);
-      } catch (err) {
-        // Ensure the early-exit guard cannot lock out retries after a
-        // half-initialized (no consumer) channel (#4244).
-        this.listener = null;
-        throw err;
+              if (jobId in this.listens) {
+                this.listens[jobId].forEach(listener => listener(status));
+              }
+              delete this.listens[jobId];
+
+              if (this.listener && this.listener.type === "rabbitmq") {
+                this.listener.channel.ack(msg);
+              }
+            }).bind(this),
+            {
+              noAck: false,
+            },
+          );
+
+          this.listener = {
+            type: "rabbitmq",
+            connection,
+            channel,
+            queue: queue.queue,
+          };
+
+          this.listener.connection.on("close", onClose);
+          this.listener.channel.on("close", onClose);
+        } catch (err) {
+          // Ensure the early-exit guard cannot lock out retries after a
+          // half-initialized (no consumer) channel (#4244). Close any broker
+          // resources acquired before the failure so retries do not leak
+          // connections/channels.
+          this.listener = null;
+          if (channel) {
+            await channel.close().catch(() => {});
+          }
+          if (connection) {
+            await connection.close().catch(() => {});
+          }
+          throw err;
+        }
       } finally {
         this.listenerStarting = false;
       }
