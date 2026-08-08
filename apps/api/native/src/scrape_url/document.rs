@@ -1,4 +1,3 @@
-use napi_derive::napi;
 use serde::Serialize;
 use url::Url;
 
@@ -28,7 +27,7 @@ pub struct DocumentMetadata {
   pub source_url: String,
   pub url: Url,
   pub status_code: u16,
-  pub num_pages: Option<u64>,
+  pub num_pages: Option<u32>,
   pub content_type: String,
   pub timezone: Option<String>,
   pub proxy_used: EngineScrapeProxy,

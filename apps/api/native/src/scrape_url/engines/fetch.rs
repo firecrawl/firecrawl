@@ -4,6 +4,7 @@ use std::{
   sync::Arc,
 };
 
+use regex::Regex;
 use url::Url;
 use wreq::header::{HeaderMap, HeaderName, HeaderValue};
 
@@ -113,12 +114,23 @@ fn safe_wreq_builder(skip_tls_verification: bool, cookies: bool) -> wreq::Client
   builder.build().expect("failed to build client")
 }
 
+impl FetchEngine {
+  pub fn get_guaranteed() -> super::EngineKind {
+    super::EngineKind::Fetch(Self)
+  }
+}
+
 impl Engine for FetchEngine {
   const NAME: &'static str = "fetch";
-  const IS_SPECIAL: bool = false;
+  const SPECIAL_REGEX: Option<&'static Regex> = None;
   const FEATURES: ConstFeatureFlags = ConstFeatureFlags::EMPTY;
 
+  async fn get() -> Option<super::EngineKind> {
+    Some(Self::get_guaranteed())
+  }
+
   async fn scrape(
+    &self,
     meta: &Meta,
     proxy: EngineScrapeProxy,
   ) -> Result<EngineScrapeResult, ScrapeURLError> {

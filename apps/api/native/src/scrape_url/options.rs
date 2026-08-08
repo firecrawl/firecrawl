@@ -1,5 +1,7 @@
 use std::collections::HashMap;
 
+use crate::scrape_url::parsers::Parsers;
+
 use super::formats::Formats;
 
 #[derive(PartialEq, Eq)]
@@ -25,7 +27,7 @@ pub struct ScrapeOptions {
   pub timeout: Option<u64>,
   pub wait_for: u64,
   pub mobile: bool,
-  // parsers:
+  pub parsers: Parsers,
   pub actions: Vec<()>, // TODO
   // location:
   /// Never read this directly, always use .should_skip_tls_verification() -> bool
@@ -62,6 +64,7 @@ impl Default for ScrapeOptions {
       timeout: None,
       wait_for: 0,
       mobile: false,
+      parsers: Default::default(),
       actions: Vec::with_capacity(0),
       skip_tls_verification: None,
       remove_base64_images: true,
