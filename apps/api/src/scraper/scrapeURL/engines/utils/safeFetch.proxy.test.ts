@@ -1,5 +1,7 @@
+import { once } from "node:events";
+import { createServer, type Server } from "node:http";
+import { Agent, interceptors, request, type Dispatcher } from "undici";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { Dispatcher } from "undici";
 
 const config = vi.hoisted(() => ({
   ALLOW_LOCAL_WEBHOOKS: false as boolean | undefined,
@@ -36,6 +38,23 @@ function invoke(origin: string) {
   );
 
   return { accepted, inner, onError };
+}
+
+async function listen(server: Server, host?: string) {
+  server.listen(0, host);
+  await once(server, "listening");
+
+  const address = server.address();
+  if (!address || typeof address === "string") {
+    throw new Error("Expected a TCP test server");
+  }
+
+  return address.port;
+}
+
+async function close(server: Server) {
+  server.close();
+  await once(server, "close");
 }
 
 describe("proxy destination IP-literal guard", () => {
@@ -75,5 +94,40 @@ describe("proxy destination IP-literal guard", () => {
 
     expect(inner).toHaveBeenCalledOnce();
     expect(onError).not.toHaveBeenCalled();
+  });
+
+  it("re-applies the guard when the redirect interceptor follows a Location", async () => {
+    config.ALLOW_LOCAL_WEBHOOKS = false;
+    let privateTargetHits = 0;
+
+    const privateTarget = createServer((_req, res) => {
+      privateTargetHits += 1;
+      res.end("private target reached");
+    });
+    const privateTargetPort = await listen(privateTarget, "127.0.0.1");
+
+    const redirector = createServer((_req, res) => {
+      res.writeHead(302, {
+        location: `http://127.0.0.1:${privateTargetPort}/secret`,
+      });
+      res.end();
+    });
+    const redirectorPort = await listen(redirector);
+
+    const dispatcher = new Agent().compose(
+      rejectPrivateIPLiteralTargets,
+      interceptors.redirect({ maxRedirections: 5 }),
+    );
+
+    try {
+      await expect(
+        request(`http://localhost:${redirectorPort}/start`, { dispatcher }),
+      ).rejects.toBeInstanceOf(InsecureConnectionError);
+      expect(privateTargetHits).toBe(0);
+    } finally {
+      await dispatcher.close();
+      await close(redirector);
+      await close(privateTarget);
+    }
   });
 });
