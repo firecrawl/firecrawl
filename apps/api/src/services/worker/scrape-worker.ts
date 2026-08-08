@@ -1656,11 +1656,13 @@ async function processJobWithTracing(job: NuQJob<ScrapeJobData>, logger: any) {
         }
       } finally {
         await deleteJobPriority(job.data.team_id, job.id);
-        if (extendLockInterval) {
-          clearInterval(extendLockInterval);
-        }
       }
     } finally {
+      // Clear outside the addJobPriority try so a Redis throw after setInterval
+      // cannot leave the lock-renewal timer firing forever (#4246).
+      if (extendLockInterval) {
+        clearInterval(extendLockInterval);
+      }
       if (!job.data.skipNuq && !isFdbJob) {
         await concurrentJobDone(job);
       }
