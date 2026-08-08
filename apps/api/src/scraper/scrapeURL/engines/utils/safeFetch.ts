@@ -39,7 +39,7 @@ function createBaseAgent(skipTlsVerification: boolean) {
       });
 
   // Add redirect interceptor for handling redirects
-  return baseAgent.compose(interceptors.redirect({ maxRedirections: 5000 }));
+  return baseAgent.compose(interceptors.redirect({ maxRedirections: 20 }));
 }
 
 function attachSecurityCheck(agent: undici.Dispatcher) {
