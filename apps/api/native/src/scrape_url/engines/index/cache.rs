@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 use tokio::sync::{Mutex, OnceCell};
+use uuid::Uuid;
 
 use crate::scrape_url::engines::index::IndexEntryFilter;
 
@@ -207,7 +208,7 @@ impl IndexCache {
 
     let map: Vec<(String, String)> = entries
       .iter()
-      .filter_map(|x| serde_json::to_string(x).ok().map(|y| (x.id.clone(), y)))
+      .filter_map(|x| serde_json::to_string(x).ok().map(|y| (x.id.to_string(), y)))
       .collect();
 
     let hlen: i32 = {
@@ -260,14 +261,14 @@ impl IndexCache {
     }
   }
 
-  pub async fn delete_entry(&self, variant: &IndexEntryVariant, id: &str) {
+  pub async fn delete_entry(&self, variant: &IndexEntryVariant, id: Uuid) {
     let key = variant.to_redis_key();
 
     {
       // TODO: timeout
       let mut index_cache = self.0.lock().await;
 
-      index_cache.hdel(&key, id).await.unwrap(); // TODO: error handling
+      index_cache.hdel(&key, id.to_string()).await.unwrap(); // TODO: error handling
     }
   }
 

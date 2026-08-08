@@ -186,6 +186,17 @@ async fn _scrape_url(meta: Meta) -> Result<Document, ScrapeURLError> {
   Ok(document)
 }
 
+// Several dependencies (sqlx, the GCS client's HTTP stack) link rustls but
+// leave the process-level CryptoProvider ambiguous, which makes rustls panic on
+// the first TLS handshake. Install the ring provider once before any TLS runs.
+static CRYPTO_PROVIDER_INIT: std::sync::Once = std::sync::Once::new();
+
+fn ensure_crypto_provider() {
+  CRYPTO_PROVIDER_INIT.call_once(|| {
+    let _ = rustls::crypto::ring::default_provider().install_default();
+  });
+}
+
 // wrapper that lets us avoid exposing Meta in JS-land
 #[napi]
 pub async fn scrape_url(
@@ -197,6 +208,8 @@ pub async fn scrape_url(
   // internal_options: InternalOptions,
   // cost_tracking:
 ) -> Result<serde_json::Map<String, serde_json::Value>, napi::Error> {
+  ensure_crypto_provider();
+
   match _scrape_url(Meta::new(
     id,
     Url::parse(&url).unwrap(), // TODO: Better handling
