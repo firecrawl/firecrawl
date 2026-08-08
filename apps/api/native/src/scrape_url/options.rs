@@ -1,0 +1,140 @@
+use std::collections::HashMap;
+
+use super::formats::Formats;
+
+#[derive(PartialEq, Eq)]
+pub enum ProxyMode {
+  Basic,
+  Enhanced, // aka stealth
+  Auto,
+}
+
+impl Default for ProxyMode {
+  fn default() -> Self {
+    Self::Auto
+  }
+}
+
+pub struct ScrapeOptions {
+  pub formats: Formats,
+  pub headers: HashMap<String, String>,
+  pub include_tags: Vec<String>,
+  pub exclude_tags: Vec<String>,
+  pub only_main_content: bool,
+  pub only_clean_content: bool,
+  pub timeout: Option<u64>,
+  pub wait_for: u64,
+  pub mobile: bool,
+  // parsers:
+  pub actions: Vec<()>, // TODO
+  // location:
+  /// Never read this directly, always use .should_skip_tls_verification() -> bool
+  skip_tls_verification: Option<bool>,
+  pub remove_base64_images: bool,
+  // fast_mode: bool, // candidate for removal
+  // use_mock: bool, // candidate for removal
+  pub block_ads: bool,
+  pub proxy: ProxyMode,
+  pub max_age: Option<i32>,
+  pub min_age: Option<i32>,
+  pub store_in_cache: bool,
+  pub lockdown: bool,
+  // redact_pii:
+  // threat_protection:
+  // audit_metadata:
+  // profile:
+  pub __search_preview_token: Option<String>,
+  pub __experimental_omce: bool,
+  pub __experiemntal_omce_domain: Option<String>,
+  pub __experiemntal_engpicker: bool,
+  pub __force_fire_pdf: bool,
+}
+
+impl Default for ScrapeOptions {
+  fn default() -> Self {
+    Self {
+      formats: Default::default(),
+      headers: Default::default(),
+      include_tags: Vec::with_capacity(0),
+      exclude_tags: Vec::with_capacity(0),
+      only_main_content: true,
+      only_clean_content: false,
+      timeout: None,
+      wait_for: 0,
+      mobile: false,
+      actions: Vec::with_capacity(0),
+      skip_tls_verification: None,
+      remove_base64_images: true,
+      block_ads: true,
+      proxy: Default::default(),
+      max_age: None,
+      min_age: None,
+      store_in_cache: true,
+      lockdown: false,
+      __search_preview_token: None,
+      __experimental_omce: false,
+      __experiemntal_omce_domain: None,
+      __experiemntal_engpicker: false,
+      __force_fire_pdf: false,
+    }
+  }
+}
+
+impl ScrapeOptions {
+  pub fn should_skip_tls_verification(&self) -> bool {
+    match self.skip_tls_verification {
+      Some(x) => x,
+
+      // If the user does not send headers or actions to the site, we deem it safe
+      // to disable TLS verification by default.
+      None => self.headers.is_empty() && self.actions.is_empty(),
+    }
+  }
+}
+
+pub struct InternalOptions {
+  pub crawl_id: Option<String>,
+  pub priority: Option<u64>, // passed to fire-engine
+  // force_engine: // candidate for removal
+  // atsv: // candidate for removal
+  pub v0_crawl_only_urls: bool,
+  pub v0_disable_jsdom: bool,
+  pub disable_smart_wait_cache: bool, // passed to fire-engine
+  pub is_background_index: bool,
+  // external_abort: // TODO
+  pub url_invisible_in_current_crawl: bool,
+  pub unnormalized_source_url: Option<String>,
+
+  pub save_scrape_result_to_gcs: bool, // passed to fire-engine
+  pub bypass_billing: bool,
+  pub zero_data_retention: bool,
+  // team_flags: Option<TeamFlags>, // TODO
+
+  // v1_agent:
+  // v1_json_agent:
+  // v1_json_system_prompt: String
+  // v1_original_format: extract | json
+  pub agent_index_only: bool, // pre-confirmation agent key: serve from index only, never touch web/Fire Engine // CFR
+  // is_parse:
+  pub is_pre_crawl: bool, // whether this scrape is part of a precrawl job
+}
+
+impl Default for InternalOptions {
+  fn default() -> Self {
+    Self {
+      crawl_id: None,
+      priority: None,
+      v0_crawl_only_urls: false,
+      v0_disable_jsdom: false,
+      disable_smart_wait_cache: false,
+      is_background_index: false,
+      url_invisible_in_current_crawl: false,
+      unnormalized_source_url: None,
+      save_scrape_result_to_gcs: false, // not used anymore i think
+      bypass_billing: false,
+      zero_data_retention: false,
+      agent_index_only: false,
+      is_pre_crawl: false,
+    }
+  }
+}

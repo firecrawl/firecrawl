@@ -1,7 +1,7 @@
 
 [package]
 authors = ["Firecrawl"]
-edition = "2021"
+edition = "2024"
 name = "firecrawl_rs"
 version = "0.1.0"
 
@@ -10,24 +10,38 @@ crate-type = ["cdylib"]
 
 [dependencies]
 anydoc = "0.2.2"
+bytes = "1.12.1"
 chrono = { version = "0.4", features = ["serde"] }
+encoding_rs = "0.8"
+hex = "0.4"
 kuchikiki = "0.8.2"
 lol_html = "2.6.0"
 pdf-inspector = "1.14.2"
-napi = { version = "3.0.0", features = ["serde-json", "tokio_rt"] }
-napi-derive = "3.0.0"
+mime = "0.3"
+napi = { version = "3.12.0", features = ["serde-json", "tokio_rt"] }
+napi-derive = "3.6.2"
 nodesig = { git = "https://github.com/firecrawl/nodesig" }
-psl = "2.1.140"
-regex = "1.11.2"
+nom = "8"
+psl = "2"
+redis = { version = "1", features = ["tokio-comp"] }
+regex = "1.13"
+reqwest = { version = "0.13", features = ["rustls", "json"] }
 roxmltree = "0.20.0"
 serde = { version = "1.0.219", features = ["derive"] }
 serde_json = "1.0.143"
+sha2 = "0.11"
 strsim = "0.11"
+strum = { version = "0.28", features = ["derive"] }
+sqlx = { version = "0.8", features = [ "runtime-tokio", "tls-rustls-ring-webpki", "postgres", "json", "uuid", "chrono" ] }
 texting_robots = "0.2.2"
-url = "2.5.7"
-tokio = "1.48.0"
+url = { version = "2.5.7", features = ["serde"] }
+url-macro = "0.2.4"
+tokio = { version = "1.48.0", features = ["macros"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", default-features = false, features = ["registry"] }
+wreq = { version = "6.0.0-rc", features = ["cookies", "gzip", "brotli", "zstd", "deflate", "webpki-roots"] }
+wreq-util = "3.0.0-rc"
+google-cloud-storage = "1.17.0"
 
 [build-dependencies]
 napi-build = "2"
