@@ -2,7 +2,13 @@ import { TokenUsage } from "../../../../controllers/v1/types";
 import { config } from "../../../../config";
 import { logger } from "../../../../lib/logger";
 import { modelPrices } from "../../usage/model-prices";
-import { type ModelPricing, resolveTokenPricing } from "../../usage/llm-cost";
+
+interface ModelPricing {
+  input_cost_per_token?: number;
+  output_cost_per_token?: number;
+  input_cost_per_request?: number;
+  mode: string;
+}
 const tokenPerCharacter = 4;
 const baseTokenCost = 300;
 
@@ -44,18 +50,13 @@ export function estimateCost_F0(tokenUsage: TokenUsage): number {
       totalCost += pricing.input_cost_per_request;
     }
 
-    const { inputCostPerToken, outputCostPerToken } = resolveTokenPricing(
-      pricing,
-      tokenUsage.promptTokens,
-    );
-
     // Add token-based costs
-    if (inputCostPerToken) {
-      totalCost += tokenUsage.promptTokens * inputCostPerToken;
+    if (pricing.input_cost_per_token) {
+      totalCost += tokenUsage.promptTokens * pricing.input_cost_per_token;
     }
 
-    if (outputCostPerToken) {
-      totalCost += tokenUsage.completionTokens * outputCostPerToken;
+    if (pricing.output_cost_per_token) {
+      totalCost += tokenUsage.completionTokens * pricing.output_cost_per_token;
     }
 
     return Number(totalCost.toFixed(7));

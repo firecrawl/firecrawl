@@ -1,5 +1,6 @@
 import { generateText } from "ai";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { modelPrices } from "./extract/usage/model-prices";
 import { getMiniMaxBaseURL, minimaxEndpoints } from "./minimax";
 
 afterEach(() => {
@@ -66,4 +67,24 @@ describe("getMiniMaxBaseURL", () => {
       expect(requestURL).toBe(expectedURL);
     },
   );
+});
+
+describe("MiniMax model configuration", () => {
+  it("uses the configured context windows and token prices", () => {
+    expect(modelPrices["MiniMax-M3"]).toMatchObject({
+      max_input_tokens: 1000000,
+      input_cost_per_token: 6e-7,
+      output_cost_per_token: 0.0000024,
+      cache_read_input_token_cost: 1.2e-7,
+      supported_modalities: ["text", "image", "video"],
+    });
+    expect(modelPrices["MiniMax-M2.7"]).toMatchObject({
+      max_input_tokens: 204800,
+      input_cost_per_token: 3e-7,
+      output_cost_per_token: 0.0000012,
+      cache_read_input_token_cost: 6e-8,
+      cache_creation_input_token_cost: 3.75e-7,
+      supported_modalities: ["text"],
+    });
+  });
 });

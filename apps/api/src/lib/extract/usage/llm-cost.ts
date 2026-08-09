@@ -4,44 +4,11 @@ import { logger } from "../../../lib/logger";
 import { CostTracking } from "../../cost-tracking";
 import { modelPrices } from "./model-prices";
 
-type ServiceTier = "standard" | "priority";
-
-interface PricingTier {
-  service_tier: ServiceTier;
-  input_tokens_lte?: number;
-  input_tokens_gt?: number;
-  input_cost_per_token: number;
-  output_cost_per_token: number;
-}
-
-export interface ModelPricing {
+interface ModelPricing {
   input_cost_per_token?: number;
   output_cost_per_token?: number;
   input_cost_per_request?: number;
-  pricing_tiers?: PricingTier[];
   mode: string;
-}
-
-export function resolveTokenPricing(
-  pricing: ModelPricing,
-  promptTokens: number,
-  serviceTier: ServiceTier = "standard",
-) {
-  const tier = pricing.pricing_tiers?.find(
-    candidate =>
-      candidate.service_tier === serviceTier &&
-      (candidate.input_tokens_lte === undefined ||
-        promptTokens <= candidate.input_tokens_lte) &&
-      (candidate.input_tokens_gt === undefined ||
-        promptTokens > candidate.input_tokens_gt),
-  );
-
-  return {
-    inputCostPerToken:
-      tier?.input_cost_per_token ?? pricing.input_cost_per_token,
-    outputCostPerToken:
-      tier?.output_cost_per_token ?? pricing.output_cost_per_token,
-  };
 }
 const tokenPerCharacter = 0.5;
 const baseTokenCost = 300;
@@ -88,18 +55,13 @@ function estimateCost(tokenUsage: TokenUsage): number {
       totalCost += pricing.input_cost_per_request;
     }
 
-    const { inputCostPerToken, outputCostPerToken } = resolveTokenPricing(
-      pricing,
-      tokenUsage.promptTokens,
-    );
-
     // Add token-based costs
-    if (inputCostPerToken) {
-      totalCost += tokenUsage.promptTokens * inputCostPerToken;
+    if (pricing.input_cost_per_token) {
+      totalCost += tokenUsage.promptTokens * pricing.input_cost_per_token;
     }
 
-    if (outputCostPerToken) {
-      totalCost += tokenUsage.completionTokens * outputCostPerToken;
+    if (pricing.output_cost_per_token) {
+      totalCost += tokenUsage.completionTokens * pricing.output_cost_per_token;
     }
 
     return Number(totalCost.toFixed(7));
