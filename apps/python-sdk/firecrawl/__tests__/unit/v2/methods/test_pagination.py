@@ -4,6 +4,7 @@ Unit tests for Firecrawl v2 pagination functionality.
 
 import pytest
 import time
+import asyncio
 from unittest.mock import Mock, patch, AsyncMock
 from typing import Dict, Any, List
 
@@ -15,7 +16,12 @@ from firecrawl.v2.types import (
     DocumentMetadata
 )
 from firecrawl.v2.methods.crawl import get_crawl_status, get_crawl_status_page, _fetch_all_pages
-from firecrawl.v2.methods.batch import get_batch_scrape_status, get_batch_scrape_status_page, _fetch_all_batch_pages
+from firecrawl.v2.methods.batch import (
+    get_batch_scrape_status,
+    get_batch_scrape_status_page,
+    _fetch_all_batch_pages,
+    wait_for_batch_completion,
+)
 from firecrawl.v2.methods.aio.crawl import (
     get_crawl_status as get_crawl_status_async,
     get_crawl_status_page as get_crawl_status_page_async,
@@ -481,6 +487,74 @@ class TestBatchScrapePagination:
         assert result.next is None  # Should be None when auto_paginate=True
         assert len(result.data) == 2
         assert self.mock_client.get.call_count == 2
+
+    def test_wait_for_batch_completion_does_not_paginate_polls(self):
+        """Status polls must be cheap (no pagination); the full result set is
+        only materialized once the job has completed."""
+        import firecrawl.v2.methods.batch as batch_module
+
+        # Poll 1: job still running
+        in_progress = Mock()
+        in_progress.ok = True
+        in_progress.json.return_value = {
+            "success": True,
+            "status": "scraping",
+            "completed": 5,
+            "total": 10,
+            "creditsUsed": 2,
+            "expiresAt": "2024-01-01T00:00:00Z",
+            "next": "https://api.firecrawl.dev/v2/batch/scrape/test-batch-123?page=2",
+            "data": [],
+        }
+
+        # Poll 2: completed, first page of results
+        completed_page1 = Mock()
+        completed_page1.ok = True
+        completed_page1.json.return_value = {
+            "success": True,
+            "status": "completed",
+            "completed": 10,
+            "total": 10,
+            "creditsUsed": 4,
+            "expiresAt": "2024-01-01T00:00:00Z",
+            "next": "https://api.firecrawl.dev/v2/batch/scrape/test-batch-123?page=2",
+            "data": [self.sample_doc],
+        }
+
+        # Second page of the completed job
+        completed_page2 = Mock()
+        completed_page2.ok = True
+        completed_page2.json.return_value = {
+            "success": True,
+            "status": "completed",
+            "completed": 10,
+            "total": 10,
+            "creditsUsed": 4,
+            "expiresAt": "2024-01-01T00:00:00Z",
+            "next": None,
+            "data": [self.sample_doc],
+        }
+
+        self.mock_client.get.side_effect = [in_progress, completed_page1, completed_page1, completed_page2]
+
+        configs_seen = []
+        real_get = batch_module.get_batch_scrape_status
+
+        def tracking_get(client, job_id, pagination_config=None):
+            configs_seen.append(pagination_config)
+            return real_get(client, job_id, pagination_config)
+
+        with patch.object(batch_module, "get_batch_scrape_status", side_effect=tracking_get), \
+                patch.object(batch_module.time, "sleep"):
+            result = wait_for_batch_completion(self.mock_client, self.job_id)
+
+        # All status polls used auto_paginate=False (cheap status checks)
+        assert all(c is not None and c.auto_paginate is False for c in configs_seen[:-1])
+        # The final completed fetch used auto_paginate=True (full result set)
+        assert configs_seen[-1].auto_paginate is True
+        # Callers still receive the full result set
+        assert result.status == "completed"
+        assert len(result.data) == 2
     
     def test_fetch_all_batch_pages_limits(self):
         """Test _fetch_all_batch_pages with various limits."""
@@ -703,6 +777,78 @@ class TestAsyncPagination:
         assert result.next is None
         assert len(result.data) == 2
         assert self.mock_client.get.call_count == 2
+
+    @pytest.mark.asyncio
+    async def test_wait_batch_scrape_does_not_paginate_polls(self):
+        """Async wait polls must be cheap (no pagination); the full result set
+        is only materialized once the job has completed."""
+        from firecrawl.v2.client_async import AsyncFirecrawlClient, async_batch
+
+        app = AsyncFirecrawlClient(api_key="test")
+        app.async_http_client = self.mock_client
+
+        # Poll 1: job still running
+        in_progress = Mock()
+        in_progress.status_code = 200
+        in_progress.json.return_value = {
+            "success": True,
+            "status": "scraping",
+            "completed": 5,
+            "total": 10,
+            "creditsUsed": 2,
+            "expiresAt": "2024-01-01T00:00:00Z",
+            "next": "https://api.firecrawl.dev/v2/batch/scrape/test-async-123?page=2",
+            "data": [],
+        }
+
+        # Poll 2: completed, first page of results
+        completed_page1 = Mock()
+        completed_page1.status_code = 200
+        completed_page1.json.return_value = {
+            "success": True,
+            "status": "completed",
+            "completed": 10,
+            "total": 10,
+            "creditsUsed": 4,
+            "expiresAt": "2024-01-01T00:00:00Z",
+            "next": "https://api.firecrawl.dev/v2/batch/scrape/test-async-123?page=2",
+            "data": [self.sample_doc],
+        }
+
+        # Second page of the completed job
+        completed_page2 = Mock()
+        completed_page2.status_code = 200
+        completed_page2.json.return_value = {
+            "success": True,
+            "status": "completed",
+            "completed": 10,
+            "total": 10,
+            "creditsUsed": 4,
+            "expiresAt": "2024-01-01T00:00:00Z",
+            "next": None,
+            "data": [self.sample_doc],
+        }
+
+        self.mock_client.get.side_effect = [in_progress, completed_page1, completed_page1, completed_page2]
+
+        configs_seen = []
+        real_get = async_batch.get_batch_scrape_status
+
+        async def tracking_get(client, job_id, pagination_config=None):
+            configs_seen.append(pagination_config)
+            return await real_get(client, job_id, pagination_config)
+
+        with patch.object(async_batch, "get_batch_scrape_status", new=AsyncMock(side_effect=tracking_get)), \
+                patch.object(asyncio, "sleep", new=AsyncMock()):
+            result = await app.wait_batch_scrape("test-async-123")
+
+        # All status polls used auto_paginate=False (cheap status checks)
+        assert all(c is not None and c.auto_paginate is False for c in configs_seen[:-1])
+        # The final completed fetch used auto_paginate=True (full result set)
+        assert configs_seen[-1].auto_paginate is True
+        # Callers still receive the full result set
+        assert result.status == "completed"
+        assert len(result.data) == 2
 
     @pytest.mark.asyncio
     async def test_get_batch_scrape_status_page_async(self):
