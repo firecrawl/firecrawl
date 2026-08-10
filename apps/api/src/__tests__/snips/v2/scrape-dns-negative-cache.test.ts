@@ -7,6 +7,7 @@ import { redisEvictConnection } from "../../../services/redis";
 import {
   cacheDnsFailure,
   isDnsFailureCached,
+  dnsNegativeCacheRedis,
 } from "../../../lib/dns-negative-cache";
 
 let identity: Identity;
@@ -21,6 +22,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   redisEvictConnection.disconnect();
+  dnsNegativeCacheRedis?.disconnect();
 });
 
 describeIf(config.DNS_NEGATIVE_CACHE_TTL_MS > 0)("negative DNS cache", () => {
@@ -33,7 +35,9 @@ describeIf(config.DNS_NEGATIVE_CACHE_TTL_MS > 0)("negative DNS cache", () => {
       async () => {
         const hostname = `${crypto.randomUUID()}-dead.invalid`;
 
-        for (let i = 0; i < 2; i++) {
+        // Two real DNS failures reach the block threshold; the third scrape
+        // is served by the fail-fast path and must be indistinguishable.
+        for (let i = 0; i < 3; i++) {
           const response = await scrapeRaw(
             { url: `https://${hostname}/` },
             identity,
@@ -43,7 +47,7 @@ describeIf(config.DNS_NEGATIVE_CACHE_TTL_MS > 0)("negative DNS cache", () => {
           expect(response.body.code).toBe("SCRAPE_DNS_RESOLUTION_ERROR");
         }
       },
-      scrapeTimeout * 2,
+      scrapeTimeout * 3,
     );
   });
 
