@@ -67,6 +67,10 @@ export function getModel(name: string, provider: Provider = defaultProvider) {
   if (provider === "openai" && modelName.startsWith("o3-mini")) {
     return providerList.openai.chat(modelName);
   }
+  // Novita only supports the Chat Completions path, not Responses
+  if (provider === "novita") {
+    return providerList.novita.chat(modelName);
+  }
   return providerList[provider](modelName);
 }
 
