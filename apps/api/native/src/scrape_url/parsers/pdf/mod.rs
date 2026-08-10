@@ -3,6 +3,7 @@ use std::fmt::Display;
 use base64::Engine;
 use bytes::Bytes;
 use pdf_inspector::{PdfProcessResult, PdfType, process_pdf_mem_with_options};
+use serde::Deserialize;
 use tracing::warn;
 
 use self::firepdf::FirePDF;
@@ -15,7 +16,8 @@ use super::super::{
 
 mod firepdf;
 
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub enum PdfMode {
   #[default]
   Auto,
@@ -24,7 +26,7 @@ pub enum PdfMode {
   Ocr,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq, Default, Deserialize)]
 pub struct PdfOptions {
   pub mode: PdfMode,
   pub max_pages: Option<u32>,

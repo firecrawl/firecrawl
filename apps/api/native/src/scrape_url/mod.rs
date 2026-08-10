@@ -20,6 +20,7 @@ pub(self) mod engines;
 pub(self) mod error;
 pub(self) mod feature_flags;
 pub(self) mod formats;
+pub(self) mod kinded;
 pub(self) mod meta;
 pub(self) mod options;
 pub(self) mod parsers;

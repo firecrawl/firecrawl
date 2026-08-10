@@ -1,4 +1,7 @@
 
+[workspace]
+members = ["kinded-macro"]
+
 [package]
 authors = ["Firecrawl"]
 edition = "2024"
@@ -14,6 +17,7 @@ bytes = "1.12.1"
 chrono = { version = "0.4", features = ["serde"] }
 encoding_rs = "0.8"
 hex = "0.4"
+kinded-macro = { path = "kinded-macro" }
 kuchikiki = "0.8.2"
 lol_html = "2.6.0"
 pdf-inspector = "1.14.2"
