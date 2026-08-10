@@ -100,7 +100,7 @@ const configSchema = z.object({
   OPENAI_API_KEY: z.string().optional(),
   OPENAI_BASE_URL: z.string().optional(),
   OPENROUTER_API_KEY: z.string().optional(),
-  NOVITA_API_KEY: z.string().optional(),
+  NOVITA_API_KEY: emptyStringAsUndefined(z.string().trim().min(1)),
   XAI_API_KEY: z.string().optional(),
   LLAMAPARSE_API_KEY: z.string().optional(),
   STRIPE_SECRET_KEY: z.string().optional(),
