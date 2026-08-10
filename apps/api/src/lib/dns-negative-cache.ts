@@ -21,7 +21,10 @@ export const dnsNegativeCacheRedis: IORedis | null = useDnsNegativeCache
   ? new IORedis((config.REDIS_EVICT_URL ?? config.REDIS_RATE_LIMIT_URL)!, {
       enableAutoPipelining: true,
       enableOfflineQueue: false,
-      maxRetriesPerRequest: 1,
+      // Callers time out in 150ms, so a retried or resent command can only
+      // ever deliver a stale write after the scrape has moved on.
+      maxRetriesPerRequest: 0,
+      autoResendUnfulfilledCommands: false,
     })
   : null;
 
