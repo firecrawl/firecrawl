@@ -1,3 +1,4 @@
+use chrono::{DateTime, Utc};
 use serde::Serialize;
 use url::Url;
 
@@ -32,7 +33,7 @@ pub struct DocumentMetadata {
   pub timezone: Option<String>,
   pub proxy_used: EngineScrapeProxy,
   pub cache_state: DocumentMetadataCacheState,
-  pub cached_at: Option<String>, // TODO: chrono date
+  pub cached_at: Option<DateTime<Utc>>,
   pub index_id: Option<String>,
   pub credits_used: Option<u64>,
   pub concurrency_limited: bool,

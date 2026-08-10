@@ -169,7 +169,8 @@ pub async fn parse_pdf(
           {
             Ok((
               Some(PdfResult {
-                html: markdown.clone(), // TODO: md to html
+                html: markdown::to_html_with_options(&markdown, &markdown::Options::gfm())
+                  .expect("this cannot error"),
                 markdown: markdown.clone(),
               }),
               process,

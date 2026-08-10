@@ -26,11 +26,7 @@ impl IndexEntryVariant {
       Value::Bool(self.is_mobile),
       Value::Bool(self.block_ads),
       Value::Bool(self.is_stealth),
-      if let Some(location_country) = &self.location_country {
-        Value::String(location_country.to_string())
-      } else {
-        Value::Null
-      },
+      Value::String(self.location_country.clone()),
       if !self.location_languages.is_empty() {
         Value::Array(
           self

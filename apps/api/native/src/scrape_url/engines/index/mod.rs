@@ -128,7 +128,7 @@ pub(self) struct IndexEntryVariant {
   pub is_mobile: bool,
   pub block_ads: bool,
   pub is_stealth: bool,
-  pub location_country: Option<String>,
+  pub location_country: String,
 
   /// The sanity of the variant depends on this being
   /// deduplicated and sorted ascending.
@@ -138,7 +138,7 @@ pub(self) struct IndexEntryVariant {
 
 impl IndexEntryVariant {
   pub fn new(url_hash: Vec<u8>, meta: &Meta, proxy: EngineScrapeProxy) -> Self {
-    let mut location_languages: Vec<String> = Vec::with_capacity(0); // TODO: meta.options.location.languages.clone();
+    let mut location_languages: Vec<String> = meta.options.location.languages.clone();
     location_languages.dedup();
     location_languages.sort();
 
@@ -147,7 +147,7 @@ impl IndexEntryVariant {
       is_mobile: meta.options.mobile,
       block_ads: meta.options.block_ads,
       is_stealth: proxy == EngineScrapeProxy::Enhanced,
-      location_country: None, // TODO: meta.options.location.country
+      location_country: meta.options.location.country.to_string(),
       location_languages,
     }
   }
