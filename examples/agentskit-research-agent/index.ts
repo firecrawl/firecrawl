@@ -2,8 +2,8 @@ import { gemini } from '@agentskit/adapters'
 import { createRuntime } from '@agentskit/runtime'
 import { firecrawl } from '@agentskit/tools/integrations'
 
-const firecrawlApiKey = process.env.FIRECRAWL_API_KEY
-const googleApiKey = process.env.GOOGLE_API_KEY
+const firecrawlApiKey = process.env.FIRECRAWL_API_KEY?.trim()
+const googleApiKey = process.env.GOOGLE_API_KEY?.trim()
 const targetUrl = process.env.TARGET_URL ?? 'https://www.firecrawl.dev/blog'
 
 if (!firecrawlApiKey || !googleApiKey) {
