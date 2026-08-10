@@ -1134,12 +1134,17 @@ export async function scrapeURL(
         meta.logger.info("Hostname is in the negative DNS cache", {
           hostname,
         });
+        const error = new DNSResolutionError(hostname);
         setSpanAttributes(span, {
           "scrape.dns_negative_cache_hit": true,
+          "scrape.success": false,
+          "scrape.error": error.message,
+          "scrape.error_type": "DNSResolutionError",
+          "scrape.duration_ms": Date.now() - startTime,
         });
         return {
           success: false,
-          error: new DNSResolutionError(hostname),
+          error,
           ...(meta.threatDecisions.length > 0
             ? { threatDecisions: meta.threatDecisions }
             : {}),

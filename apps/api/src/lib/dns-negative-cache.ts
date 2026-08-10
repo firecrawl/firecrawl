@@ -3,13 +3,30 @@ import { redisEvictConnection } from "../services/redis";
 import { logger as _logger } from "./logger";
 import type { Logger } from "winston";
 
-// Markers are never refreshed on read, so a dead hostname re-probes once
-// per TTL window.
+// A hostname fails fast only after BLOCK_THRESHOLD DNS failures within the
+// TTL window, so a single transient resolver failure never blocks a host.
+// Reads never extend the TTL, so a blocked hostname re-probes once per
+// window. Reads and writes are bounded by a timeout and fail open — the
+// shared evict Redis client queues commands while disconnected, and the
+// scrape path must not hang on it.
 
 const KEY_PREFIX = "dnsneg:";
 const TTL_MS = config.DNS_NEGATIVE_CACHE_TTL_MS;
+const BLOCK_THRESHOLD = 2;
+const TIMEOUT_MS = 150;
 
 const useDnsNegativeCache = TTL_MS > 0;
+
+const TIMED_OUT = Symbol("dns-negative-cache-timeout");
+
+function withTimeout<T>(promise: Promise<T>): Promise<T | typeof TIMED_OUT> {
+  return Promise.race([
+    promise,
+    new Promise<typeof TIMED_OUT>(resolve =>
+      setTimeout(() => resolve(TIMED_OUT), TIMEOUT_MS).unref?.(),
+    ),
+  ]);
+}
 
 function keyFor(hostname: string): string {
   return KEY_PREFIX + hostname.toLowerCase();
@@ -23,7 +40,15 @@ export async function isDnsFailureCached(
     return false;
   }
   try {
-    return (await redisEvictConnection.exists(keyFor(hostname))) === 1;
+    const raw = await withTimeout(redisEvictConnection.get(keyFor(hostname)));
+    if (raw === TIMED_OUT) {
+      logger.warn("Negative DNS cache read timed out", {
+        module: "dns-negative-cache",
+        hostname,
+      });
+      return false;
+    }
+    return raw !== null && parseInt(raw, 10) >= BLOCK_THRESHOLD;
   } catch (error) {
     logger.warn("Negative DNS cache read failed", {
       module: "dns-negative-cache",
@@ -42,7 +67,19 @@ export async function cacheDnsFailure(
     return;
   }
   try {
-    await redisEvictConnection.set(keyFor(hostname), "1", "PX", TTL_MS);
+    const result = await withTimeout(
+      redisEvictConnection
+        .pipeline()
+        .incr(keyFor(hostname))
+        .pexpire(keyFor(hostname), TTL_MS)
+        .exec(),
+    );
+    if (result === TIMED_OUT) {
+      logger.warn("Negative DNS cache write timed out", {
+        module: "dns-negative-cache",
+        hostname,
+      });
+    }
   } catch (error) {
     logger.warn("Negative DNS cache write failed", {
       module: "dns-negative-cache",
