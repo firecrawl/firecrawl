@@ -20,7 +20,7 @@ type Provider =
   | "deepinfra"
   | "vertex";
 const defaultProvider: Provider = config.OLLAMA_BASE_URL ? "ollama" : "openai";
-const responsesOnlyOpenAIModelPrefixes = ["o3-pro", "gpt-5-pro"];
+const responsesOnlyOpenAIModelPrefixes = ["o1-pro", "o3-pro", "gpt-5-pro"];
 
 const providerList: Record<Provider, any> = {
   openai: createOpenAI({
