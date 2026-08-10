@@ -220,11 +220,40 @@ class NuQ<JobData = any, JobReturnValue = any> {
           // resources acquired before the failure so retries do not leak
           // connections/channels.
           this.listener = null;
+          // Prefer the shared close helper (expected AMQP close errors are soft).
+          // Keep the original consume failure as the thrown error so retries stay
+          // tied to the real cause; log unexpected close failures instead.
           if (channel) {
-            await channel.close().catch(() => {});
+            try {
+              await closeAmqpResource(
+                () => channel.close(),
+                "listener channel",
+              );
+            } catch (closeErr) {
+              logger.warn(
+                "NuQ failed to close channel after consume failure",
+                {
+                  module: "nuq/rabbitmq",
+                  error: closeErr,
+                },
+              );
+            }
           }
           if (connection) {
-            await connection.close().catch(() => {});
+            try {
+              await closeAmqpResource(
+                () => connection.close(),
+                "listener connection",
+              );
+            } catch (closeErr) {
+              logger.warn(
+                "NuQ failed to close connection after consume failure",
+                {
+                  module: "nuq/rabbitmq",
+                  error: closeErr,
+                },
+              );
+            }
           }
           throw err;
         }
