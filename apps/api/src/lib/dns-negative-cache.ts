@@ -6,9 +6,9 @@ import type { Logger } from "winston";
 // A hostname fails fast only after BLOCK_THRESHOLD DNS failures within the
 // TTL window, so a single transient resolver failure never blocks a host.
 // Reads never extend the TTL, so a blocked hostname re-probes once per
-// window. Reads and writes are bounded by a timeout and fail open — the
-// shared evict Redis client queues commands while disconnected, and the
-// scrape path must not hang on it.
+// window. Reads and writes fail open: skipped while the client is
+// disconnected (never queued for later delivery) and bounded by a timeout,
+// so the scrape path can neither hang nor backlog on cache trouble.
 
 const KEY_PREFIX = "dnsneg:";
 const TTL_MS = config.DNS_NEGATIVE_CACHE_TTL_MS;
@@ -36,7 +36,7 @@ export async function isDnsFailureCached(
   hostname: string,
   logger: Logger = _logger,
 ): Promise<boolean> {
-  if (!useDnsNegativeCache) {
+  if (!useDnsNegativeCache || redisEvictConnection.status !== "ready") {
     return false;
   }
   try {
@@ -48,7 +48,7 @@ export async function isDnsFailureCached(
       });
       return false;
     }
-    return raw !== null && parseInt(raw, 10) >= BLOCK_THRESHOLD;
+    return raw !== null && Number(raw) >= BLOCK_THRESHOLD;
   } catch (error) {
     logger.warn("Negative DNS cache read failed", {
       module: "dns-negative-cache",
@@ -63,7 +63,7 @@ export async function cacheDnsFailure(
   hostname: string,
   logger: Logger = _logger,
 ): Promise<void> {
-  if (!useDnsNegativeCache) {
+  if (!useDnsNegativeCache || redisEvictConnection.status !== "ready") {
     return;
   }
   try {

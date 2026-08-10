@@ -1,8 +1,13 @@
-import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { it, expect, beforeAll, afterAll } from "vitest";
 import crypto from "crypto";
+import { config } from "../../../config";
 import { describeIf, TEST_PRODUCTION } from "../lib";
 import { scrapeRaw, scrapeTimeout, idmux, Identity } from "./lib";
 import { redisEvictConnection } from "../../../services/redis";
+import {
+  cacheDnsFailure,
+  isDnsFailureCached,
+} from "../../../lib/dns-negative-cache";
 
 let identity: Identity;
 
@@ -18,76 +23,81 @@ afterAll(async () => {
   redisEvictConnection.disconnect();
 });
 
-describe("negative DNS cache", () => {
-  // Population needs a real DNS failure classified as
-  // SCRAPE_DNS_RESOLUTION_ERROR, which self-hosted engines don't produce.
+describeIf(config.DNS_NEGATIVE_CACHE_TTL_MS > 0)("negative DNS cache", () => {
+  // Needs a real DNS failure classified as SCRAPE_DNS_RESOLUTION_ERROR,
+  // which self-hosted engines don't produce. Asserts behavior only — the
+  // test process must never touch the production evict Redis.
   describeIf(TEST_PRODUCTION)("population", () => {
     it(
-      "counts failures per hostname and keeps failing with the same error",
+      "keeps failing a dead hostname with the same error",
       async () => {
         const hostname = `${crypto.randomUUID()}-dead.invalid`;
 
-        const first = await scrapeRaw(
-          { url: `https://${hostname}/` },
-          identity,
-        );
-        expect(first.statusCode).toBe(200);
-        expect(first.body.success).toBe(false);
-        expect(first.body.code).toBe("SCRAPE_DNS_RESOLUTION_ERROR");
-
-        expect(await redisEvictConnection.get(`dnsneg:${hostname}`)).toBe("1");
-
-        const second = await scrapeRaw(
-          { url: `https://${hostname}/` },
-          identity,
-        );
-        expect(second.statusCode).toBe(200);
-        expect(second.body.success).toBe(false);
-        expect(second.body.code).toBe("SCRAPE_DNS_RESOLUTION_ERROR");
-
-        expect(await redisEvictConnection.get(`dnsneg:${hostname}`)).toBe("2");
+        for (let i = 0; i < 2; i++) {
+          const response = await scrapeRaw(
+            { url: `https://${hostname}/` },
+            identity,
+          );
+          expect(response.statusCode).toBe(200);
+          expect(response.body.success).toBe(false);
+          expect(response.body.code).toBe("SCRAPE_DNS_RESOLUTION_ERROR");
+        }
       },
       scrapeTimeout * 2,
     );
   });
 
-  it(
-    "fails fast without engines when the hostname is at the block threshold",
-    async () => {
-      // iana.org resolves fine — a DNS error can only come from the cache.
-      const hostname = "iana.org";
-      await redisEvictConnection.set(`dnsneg:${hostname}`, "2", "PX", 60000);
-      try {
-        const response = await scrapeRaw(
-          { url: `https://${hostname}/` },
-          identity,
-        );
-        expect(response.statusCode).toBe(200);
-        expect(response.body.success).toBe(false);
-        expect(response.body.code).toBe("SCRAPE_DNS_RESOLUTION_ERROR");
-      } finally {
-        await redisEvictConnection.del(`dnsneg:${hostname}`);
-      }
-    },
-    scrapeTimeout,
-  );
+  // These write markers directly, so they only run against the local
+  // harness Redis — never against production.
+  describeIf(!TEST_PRODUCTION)("fail-fast", () => {
+    it("blocks only after two recorded failures", async () => {
+      const hostname = `${crypto.randomUUID()}-dead.invalid`;
 
-  it(
-    "does not block a hostname after a single failure",
-    async () => {
-      const hostname = "example.com";
-      await redisEvictConnection.set(`dnsneg:${hostname}`, "1", "PX", 60000);
-      try {
-        const response = await scrapeRaw(
-          { url: `https://${hostname}/` },
-          identity,
-        );
-        expect(response.statusCode).toBe(200);
-        expect(response.body.success).toBe(true);
-      } finally {
-        await redisEvictConnection.del(`dnsneg:${hostname}`);
-      }
-    },
-    scrapeTimeout,
-  );
+      expect(await isDnsFailureCached(hostname)).toBe(false);
+      await cacheDnsFailure(hostname);
+      expect(await isDnsFailureCached(hostname)).toBe(false);
+      await cacheDnsFailure(hostname);
+      expect(await isDnsFailureCached(hostname)).toBe(true);
+    });
+
+    it(
+      "fails fast without engines when the hostname is at the block threshold",
+      async () => {
+        // iana.org resolves fine — a DNS error can only come from the cache.
+        const hostname = "iana.org";
+        await redisEvictConnection.set(`dnsneg:${hostname}`, "2", "PX", 60000);
+        try {
+          const response = await scrapeRaw(
+            { url: `https://${hostname}/` },
+            identity,
+          );
+          expect(response.statusCode).toBe(200);
+          expect(response.body.success).toBe(false);
+          expect(response.body.code).toBe("SCRAPE_DNS_RESOLUTION_ERROR");
+        } finally {
+          await redisEvictConnection.del(`dnsneg:${hostname}`);
+        }
+      },
+      scrapeTimeout,
+    );
+
+    it(
+      "does not block a hostname after a single failure",
+      async () => {
+        const hostname = "example.com";
+        await redisEvictConnection.set(`dnsneg:${hostname}`, "1", "PX", 60000);
+        try {
+          const response = await scrapeRaw(
+            { url: `https://${hostname}/` },
+            identity,
+          );
+          expect(response.statusCode).toBe(200);
+          expect(response.body.success).toBe(true);
+        } finally {
+          await redisEvictConnection.del(`dnsneg:${hostname}`);
+        }
+      },
+      scrapeTimeout,
+    );
+  });
 });
