@@ -1,8 +1,9 @@
 use std::collections::HashMap;
 
-use crate::scrape_url::parsers::Parsers;
+use serde::Deserialize;
 
 use super::formats::Formats;
+use crate::scrape_url::parsers::Parsers;
 
 #[derive(PartialEq, Eq)]
 pub enum ProxyMode {
@@ -17,6 +18,49 @@ impl Default for ProxyMode {
   }
 }
 
+#[derive(Default, Deserialize)]
+#[serde(try_from = "String")]
+pub enum ScrapeOptionsLocationCountry {
+  #[default]
+  USGeneric, // "us-generic"
+
+  USWhitelist,                     // "us-whitelist"
+  CCA2(rust_iso3166::CountryCode), // "us", "hu", etc...
+}
+
+impl TryFrom<String> for ScrapeOptionsLocationCountry {
+  type Error = String;
+
+  fn try_from(s: String) -> Result<Self, Self::Error> {
+    match s.as_str() {
+      "us-generic" => Ok(Self::USGeneric),
+      "us-whitelist" => Ok(Self::USWhitelist),
+      other => rust_iso3166::from_alpha2(&s.to_ascii_uppercase())
+        .map(Self::CCA2)
+        .ok_or_else(|| format!("unknown country code: {other}")),
+    }
+  }
+}
+
+impl ToString for ScrapeOptionsLocationCountry {
+  fn to_string(&self) -> String {
+    match self {
+      Self::CCA2(x) => x.alpha2.to_lowercase(),
+      Self::USGeneric => "us-generic".to_string(),
+      Self::USWhitelist => "us-whitelist".to_string(),
+    }
+  }
+}
+
+#[derive(Deserialize, Default)]
+pub struct ScrapeOptionsLocation {
+  #[serde(default)]
+  pub country: ScrapeOptionsLocationCountry,
+
+  #[serde(default)]
+  pub languages: Vec<String>,
+}
+
 pub struct ScrapeOptions {
   pub formats: Formats,
   pub headers: HashMap<String, String>,
@@ -29,9 +73,11 @@ pub struct ScrapeOptions {
   pub mobile: bool,
   pub parsers: Parsers,
   pub actions: Vec<()>, // TODO
-  // location:
+  // #[serde(default)]
+  pub location: ScrapeOptionsLocation,
   /// Never read this directly, always use .should_skip_tls_verification() -> bool
   skip_tls_verification: Option<bool>,
+
   pub remove_base64_images: bool,
   // fast_mode: bool, // candidate for removal
   // use_mock: bool, // candidate for removal
@@ -66,6 +112,7 @@ impl Default for ScrapeOptions {
       mobile: false,
       parsers: Default::default(),
       actions: Vec::with_capacity(0),
+      location: Default::default(),
       skip_tls_verification: None,
       remove_base64_images: true,
       block_ads: true,

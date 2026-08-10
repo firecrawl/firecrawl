@@ -46,6 +46,7 @@ wreq-util = "3.0.0-rc"
 google-cloud-storage = "1.17.0"
 base64 = "0.23.1"
 markdown = "1.0.0"
+rust_iso3166 = { version = "0.2.0", features = ["serde"] }
 
 [build-dependencies]
 napi-build = "2"

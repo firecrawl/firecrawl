@@ -5,17 +5,15 @@ use napi_derive::napi;
 use tracing::{Span, field::Empty, instrument};
 use url::Url;
 
-use crate::scrape_url::engines::get_main_engine;
-
 use self::{
   document::{Document, DocumentMetadataCacheState},
   engines::{EngineKind, EngineScrapeProxy, EngineScrapeResult, should_use_index},
   error::ScrapeURLError,
   feature_flags::FeatureFlags,
+  meta::Meta,
   options::{InternalOptions, ProxyMode, ScrapeOptions},
 };
-
-use self::meta::Meta;
+use crate::scrape_url::engines::get_main_engine;
 
 pub(self) mod document;
 pub(self) mod engines;
@@ -145,7 +143,7 @@ async fn _scrape_url(meta: Meta) -> Result<Document, ScrapeURLError> {
   if run.index_attempted {
     if let Some(cached_at) = cached_at {
       document.metadata.cache_state = DocumentMetadataCacheState::Hit;
-      document.metadata.cached_at = Some(cached_at.to_rfc3339());
+      document.metadata.cached_at = Some(cached_at);
     } else {
       document.metadata.cache_state = DocumentMetadataCacheState::Miss;
     }
