@@ -79,7 +79,7 @@ async function closeAmqpResource(
     await close();
   } catch (error) {
     if (isExpectedAmqpCloseError(error)) {
-      logger.info(`NuQ ${resource} already closing during shutdown`, {
+      logger.info(`NuQ ${resource} already closing`, {
         module: "nuq/rabbitmq",
       });
       return;
