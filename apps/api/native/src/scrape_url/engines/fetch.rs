@@ -9,7 +9,7 @@ use url::Url;
 use wreq::header::{HeaderMap, HeaderName, HeaderValue};
 
 use super::super::{error::ScrapeURLError, feature_flags::ConstFeatureFlags, meta::Meta};
-use super::{Engine, EngineScrapeContent, EngineScrapeProxy, EngineScrapeResult};
+use super::{Engine, EngineScrapeContent, EngineScrapeProxy, EngineScrapeResult, EngineSignal};
 
 pub struct FetchEngine;
 
@@ -133,7 +133,7 @@ impl Engine for FetchEngine {
     &self,
     meta: &Meta,
     proxy: EngineScrapeProxy,
-  ) -> Result<EngineScrapeResult, ScrapeURLError> {
+  ) -> Result<EngineScrapeResult, EngineSignal> {
     // Not sure how safe or performant it is to construct a new wreq every turn? - mogery
     let client = safe_wreq_builder(meta.options.should_skip_tls_verification(), true);
 

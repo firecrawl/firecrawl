@@ -1,13 +1,14 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, fmt::Display};
 
 use serde::{Deserialize, Serialize};
 
 use super::{
-  formats::{Formats, ScreenshotOptionsViewport},
+  actions::Action,
+  formats::{FormatKind, Formats},
   parsers::Parsers,
 };
 
-#[derive(PartialEq, Eq, Deserialize)]
+#[derive(Debug, PartialEq, Eq, Deserialize, Default, Clone, Copy)]
 #[serde(rename_all = "camelCase")]
 pub enum ProxyMode {
   Basic,
@@ -15,13 +16,8 @@ pub enum ProxyMode {
   #[serde(alias = "stealth")]
   Enhanced,
 
+  #[default]
   Auto,
-}
-
-impl Default for ProxyMode {
-  fn default() -> Self {
-    Self::Auto
-  }
 }
 
 #[derive(Default, Deserialize)]
@@ -32,6 +28,19 @@ pub enum ScrapeOptionsLocationCountry {
 
   USWhitelist,                     // "us-whitelist"
   CCA2(rust_iso3166::CountryCode), // "us", "hu", etc...
+}
+
+impl Serialize for ScrapeOptionsLocationCountry {
+  fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+  where
+    S: serde::Serializer,
+  {
+    match self {
+      Self::USGeneric => serializer.serialize_str("us-generic"),
+      Self::USWhitelist => serializer.serialize_str("us-whitelist"),
+      Self::CCA2(x) => serializer.serialize_str(&x.alpha2.to_lowercase()),
+    }
+  }
 }
 
 impl TryFrom<String> for ScrapeOptionsLocationCountry {
@@ -48,106 +57,40 @@ impl TryFrom<String> for ScrapeOptionsLocationCountry {
   }
 }
 
-impl ToString for ScrapeOptionsLocationCountry {
-  fn to_string(&self) -> String {
+impl Display for ScrapeOptionsLocationCountry {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     match self {
-      Self::CCA2(x) => x.alpha2.to_lowercase(),
-      Self::USGeneric => "us-generic".to_string(),
-      Self::USWhitelist => "us-whitelist".to_string(),
+      Self::CCA2(x) => f.write_str(&x.alpha2.to_lowercase()),
+      Self::USGeneric => f.write_str("us-generic"),
+      Self::USWhitelist => f.write_str("us-whitelist"),
     }
   }
 }
 
-#[derive(Deserialize, Default)]
+#[derive(Deserialize, Serialize, Default)]
 pub struct ScrapeOptionsLocation {
   #[serde(default)]
   pub country: ScrapeOptionsLocationCountry,
 
-  #[serde(default)]
+  #[serde(default, skip_serializing_if = "Vec::is_empty")]
   pub languages: Vec<String>,
 }
 
-#[derive(Serialize, Deserialize, Default)]
-#[serde(rename_all = "camelCase")]
-pub enum ActionScrollDirection {
-  Up,
-
-  #[default]
-  Down,
+fn save_changes_default() -> bool {
+  true
 }
 
-fn default_scale() -> f64 {
-  1.
-}
+#[derive(Deserialize, Serialize, Default)]
+pub struct ScrapeOptionsProfile {
+  // len 1-128
+  pub name: String,
 
-#[derive(Serialize, Deserialize, Default)]
-pub enum ActionPdfFormat {
-  A0,
-  A1,
-  A2,
-  A3,
-  A4,
-  A5,
-  A6,
-
-  #[default]
-  Letter,
-
-  Legal,
-  Tabloid,
-  Ledger,
-}
-
-#[derive(Serialize, Deserialize)]
-#[serde(untagged, deny_unknown_fields)]
-pub enum WaitAction {
-  Selector { selector: String },
-  Milliseconds { milliseconds: u32 },
-}
-
-#[derive(Serialize, Deserialize)]
-#[serde(tag = "type", rename_all = "camelCase")]
-pub enum Action {
-  Wait(WaitAction),
-  Click {
-    selector: String,
-    #[serde(default)]
-    all: bool,
-  },
-  Screenshot {
-    full_page: bool,
-    quality: Option<u8>,
-    viewport: Option<ScreenshotOptionsViewport>,
-  },
-  Write {
-    text: String,
-  },
-  Press {
-    key: String,
-  },
-  Scroll {
-    #[serde(default)]
-    direction: ActionScrollDirection,
-
-    selector: Option<String>,
-  },
-  Scrape,
-  ExecuteJavascript {
-    script: String,
-  },
-  Pdf {
-    #[serde(default)]
-    landscape: bool,
-
-    #[serde(default = "default_scale")]
-    scale: f64,
-
-    #[serde(default)]
-    format: ActionPdfFormat,
-  },
+  #[serde(default = "save_changes_default")]
+  pub save_changes: bool,
 }
 
 #[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ScrapeOptions {
   pub formats: Formats,
   pub headers: HashMap<String, String>,
@@ -156,9 +99,14 @@ pub struct ScrapeOptions {
   pub only_main_content: bool,
   pub only_clean_content: bool,
   pub timeout: Option<u64>,
-  pub wait_for: u64,
+
+  /// Never read this directly, always use .effective_wait_for() -> u32
+  wait_for: Option<u32>,
+
   pub mobile: bool,
   pub parsers: Parsers,
+
+  #[serde(default)]
   pub actions: Vec<Action>,
 
   // #[serde(default)]
@@ -172,18 +120,25 @@ pub struct ScrapeOptions {
   // use_mock: bool, // candidate for removal
   pub block_ads: bool,
   pub proxy: ProxyMode,
-  pub max_age: Option<i32>,
-  pub min_age: Option<i32>,
+  pub max_age: Option<u32>,
+  pub min_age: Option<u32>,
   pub store_in_cache: bool,
   pub lockdown: bool,
+  // #[serde(rename = "redactPII")]
   // redact_pii:
   // threat_protection:
   // audit_metadata:
-  // profile:
+  pub profile: Option<ScrapeOptionsProfile>,
+
+  #[serde(rename = "__searchPreviewToken")]
   pub __search_preview_token: Option<String>,
+  #[serde(rename = "__experimental_omce")]
   pub __experimental_omce: bool,
+  #[serde(rename = "__experimental_omceDomain")]
   pub __experiemntal_omce_domain: Option<String>,
+  #[serde(rename = "__experimental_engpicker")]
   pub __experiemntal_engpicker: bool,
+  #[serde(rename = "__forceFirePDF")]
   pub __force_fire_pdf: bool,
 }
 
@@ -197,7 +152,7 @@ impl Default for ScrapeOptions {
       only_main_content: true,
       only_clean_content: false,
       timeout: None,
-      wait_for: 0,
+      wait_for: None,
       mobile: false,
       parsers: Default::default(),
       actions: Vec::with_capacity(0),
@@ -210,6 +165,7 @@ impl Default for ScrapeOptions {
       min_age: None,
       store_in_cache: true,
       lockdown: false,
+      profile: None,
       __search_preview_token: None,
       __experimental_omce: false,
       __experiemntal_omce_domain: None,
@@ -229,11 +185,26 @@ impl ScrapeOptions {
       None => self.headers.is_empty() && self.actions.is_empty(),
     }
   }
+
+  pub fn effective_wait_for(&self) -> u32 {
+    match self.wait_for {
+      Some(x) => u32::min(30000, x), // cap at 30s
+      None => {
+        if self.formats.contains(FormatKind::Branding) {
+          2000 // add some wait time for branding to avoid js errors
+        } else {
+          0
+        }
+      }
+    }
+  }
 }
 
+#[derive(Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
 pub struct InternalOptions {
   pub crawl_id: Option<String>,
-  pub priority: Option<u64>, // passed to fire-engine
+  pub priority: Option<u32>, // passed to fire-engine
   // force_engine: // candidate for removal
   // atsv: // candidate for removal
   pub v0_crawl_only_urls: bool,
@@ -256,24 +227,4 @@ pub struct InternalOptions {
   pub agent_index_only: bool, // pre-confirmation agent key: serve from index only, never touch web/Fire Engine // CFR
   // is_parse:
   pub is_pre_crawl: bool, // whether this scrape is part of a precrawl job
-}
-
-impl Default for InternalOptions {
-  fn default() -> Self {
-    Self {
-      crawl_id: None,
-      priority: None,
-      v0_crawl_only_urls: false,
-      v0_disable_jsdom: false,
-      disable_smart_wait_cache: false,
-      is_background_index: false,
-      url_invisible_in_current_crawl: false,
-      unnormalized_source_url: None,
-      save_scrape_result_to_gcs: false, // not used anymore i think
-      bypass_billing: false,
-      zero_data_retention: false,
-      agent_index_only: false,
-      is_pre_crawl: false,
-    }
-  }
 }

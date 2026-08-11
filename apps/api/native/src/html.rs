@@ -2,9 +2,9 @@ use std::collections::{HashMap, HashSet};
 
 use std::sync::LazyLock;
 
-use kuchikiki::{iter::NodeEdge, parse_html, traits::TendrilSink, NodeRef};
+use kuchikiki::{NodeRef, iter::NodeEdge, parse_html, traits::TendrilSink};
 use napi_derive::napi;
-use nodesig::{get_node_signature, SignatureMode};
+use nodesig::{SignatureMode, get_node_signature};
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -671,7 +671,7 @@ pub async fn transform_html(opts: TransformHtmlOptions) -> napi::Result<String> 
   res.map_err(to_napi_err)
 }
 
-fn _get_inner_json(html: &str) -> Result<String, ()> {
+pub fn _get_inner_json(html: &str) -> Result<String, ()> {
   Ok(parse_html().one(html).select_first("body")?.text_contents())
 }
 

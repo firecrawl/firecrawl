@@ -63,10 +63,7 @@ impl Eligibility {
   }
 
   fn is_eligible(&self) -> bool {
-    match self {
-      Eligibility::Eligible => true,
-      _ => false,
-    }
+    matches!(self, Eligibility::Eligible)
   }
 }
 
@@ -104,7 +101,7 @@ pub fn has_pdf_signal(result: &EngineScrapeResult) -> bool {
   let is_pdf_content_type = pdf_content_type_match(&result.content_type);
 
   let is_pdf_binary = match &result.content {
-    EngineScrapeContent::Bytes(bytes) => pdf_binary_match(&bytes),
+    EngineScrapeContent::Bytes(bytes) => pdf_binary_match(bytes),
     _ => false,
   };
 
@@ -171,7 +168,7 @@ pub async fn parse_pdf(
           {
             Ok((
               Some(PdfResult {
-                html: markdown::to_html_with_options(&markdown, &markdown::Options::gfm())
+                html: markdown::to_html_with_options(markdown, &markdown::Options::gfm())
                   .expect("this cannot error"),
                 markdown: markdown.clone(),
               }),

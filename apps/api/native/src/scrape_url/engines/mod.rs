@@ -1,3 +1,5 @@
+use std::{error::Error, fmt::Display};
+
 use bytes::Bytes;
 use chrono::{DateTime, Utc};
 use regex::Regex;
@@ -17,10 +19,22 @@ mod fire_engine;
 mod index;
 mod playwright;
 
+#[derive(Deserialize)]
+pub struct ScrapeActionContent {
+  pub url: String,
+  pub html: String,
+}
+
+#[derive(Deserialize)]
+pub struct JavascriptActionContent {
+  pub r#type: String,
+  pub value: serde_json::Value,
+}
+
 pub struct EngineScrapeResultActions {
   pub screenshots: Vec<Url>,
-  // pub scrapes:
-  // pub javascript_returns:
+  pub scrapes: Vec<ScrapeActionContent>,
+  pub javascript_returns: Vec<JavascriptActionContent>,
   pub pdfs: Vec<Url>,
 }
 
@@ -32,11 +46,11 @@ pub enum EngineScrapeProxy {
   Enhanced,
 }
 
-impl ToString for EngineScrapeProxy {
-  fn to_string(&self) -> String {
+impl Display for EngineScrapeProxy {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     match self {
-      Self::Basic => "basic".to_string(),
-      Self::Enhanced => "enhanced".to_string(),
+      Self::Basic => f.write_str("basic"),
+      Self::Enhanced => f.write_str("enhanced"),
     }
   }
 }
@@ -51,7 +65,7 @@ pub struct EngineScrapeResult {
   pub url: Url,
   pub status_code: u16,
   pub content: EngineScrapeContent,
-  pub screenshot: Option<String>,
+  pub screenshot: Option<Url>,
   pub actions: Option<EngineScrapeResultActions>,
   // pub branding:
   pub cached_at: Option<DateTime<Utc>>,
@@ -74,7 +88,7 @@ pub trait Engine {
     &self,
     meta: &Meta,
     proxy: EngineScrapeProxy,
-  ) -> Result<EngineScrapeResult, ScrapeURLError>;
+  ) -> Result<EngineScrapeResult, EngineSignal>;
 }
 
 pub enum EngineKind {
@@ -116,7 +130,7 @@ impl EngineKind {
     &self,
     meta: &Meta,
     proxy: EngineScrapeProxy,
-  ) -> Result<EngineScrapeResult, ScrapeURLError> {
+  ) -> Result<EngineScrapeResult, EngineSignal> {
     match self {
       EngineKind::Fetch(x) => x.scrape(meta, proxy).await,
       EngineKind::FireEngine(x) => x.scrape(meta, proxy).await,
@@ -141,7 +155,7 @@ pub fn should_use_index(meta: &Meta) -> bool {
   !meta.options.formats.contains(FormatKind::Branding) &&
   // getPDFMaxPages(meta.options.parsers) === undefined &&
   !has_custom_screenshot_settings &&
-  meta.options.max_age.map_or(true, |max_age| max_age != 0) &&
+  meta.options.max_age != Some(0) &&
   meta.options.headers.is_empty() &&
   meta.options.actions.is_empty()
   // && meta.options.profile.is_none()
@@ -154,5 +168,18 @@ pub async fn get_main_engine() -> EngineKind {
     playwright
   } else {
     FetchEngine::get_guaranteed()
+  }
+}
+
+pub enum EngineSignal {
+  FatalError(ScrapeURLError),
+  EngineError(Box<dyn Error + Send + Sync>),
+  ProxyElevationNeeded,
+  IndexMiss,
+}
+
+impl Into<EngineSignal> for ScrapeURLError {
+  fn into(self) -> EngineSignal {
+    EngineSignal::FatalError(self)
   }
 }

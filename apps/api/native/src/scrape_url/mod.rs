@@ -13,8 +13,9 @@ use self::{
   meta::Meta,
   options::{InternalOptions, ProxyMode, ScrapeOptions},
 };
-use crate::scrape_url::engines::get_main_engine;
+use crate::scrape_url::engines::{EngineSignal, get_main_engine};
 
+pub(self) mod actions;
 pub(self) mod document;
 pub(self) mod engines;
 pub(self) mod error;
@@ -83,8 +84,10 @@ async fn _scrape_url(meta: Meta) -> Result<Document, ScrapeURLError> {
           unsupported_features: HashSet::new(), // TODO
           index_attempted: true,
         })),
-        Err(ScrapeURLError::IndexMissError) => Ok(None),
-        Err(e) => Err(e),
+        Err(EngineSignal::IndexMiss) => Ok(None),
+        Err(EngineSignal::FatalError(e)) => Err(e),
+        Err(EngineSignal::EngineError(_)) => unimplemented!(),
+        Err(EngineSignal::ProxyElevationNeeded) => unreachable!(),
       }
     } else {
       Ok(None)
@@ -107,7 +110,7 @@ async fn _scrape_url(meta: Meta) -> Result<Document, ScrapeURLError> {
 
         // If basic proxy failed due to proxy error, and proxy mode is auto,
         // retry the main engine with enhanced proxies.
-        Err(ScrapeURLError::ReliableRetrievalError)
+        Err(EngineSignal::ProxyElevationNeeded)
           if meta.options.proxy == ProxyMode::Auto
             && discrete_proxy == EngineScrapeProxy::Basic =>
         {
@@ -120,9 +123,21 @@ async fn _scrape_url(meta: Meta) -> Result<Document, ScrapeURLError> {
               unsupported_features: HashSet::new(), // TODO
               index_attempted: should_use_index,
             })
+            .map_err(|e| match e {
+              EngineSignal::FatalError(e) => e,
+              EngineSignal::EngineError(_) => unimplemented!(),
+              EngineSignal::ProxyElevationNeeded => {
+                ScrapeURLError::ReliableRetrievalError(meta.options.proxy)
+              }
+              EngineSignal::IndexMiss => unreachable!(),
+            })
         }
-
-        Err(x) => Err(x),
+        Err(EngineSignal::ProxyElevationNeeded) => {
+          Err(ScrapeURLError::ReliableRetrievalError(meta.options.proxy))
+        }
+        Err(EngineSignal::FatalError(e)) => Err(e),
+        Err(EngineSignal::EngineError(_)) => unimplemented!(),
+        Err(EngineSignal::IndexMiss) => unreachable!(),
       }
     }
   }?;
@@ -205,19 +220,22 @@ pub async fn scrape_url(
   id: String,
   url: String,
   team_id: String,
-  // TODO: figure out ScrapeOptions, InternalOptions from NAPI
-  // options: ScrapeOptions,
-  // internal_options: InternalOptions,
-  // cost_tracking:
+  options: serde_json::Map<String, serde_json::Value>,
+  internal_options: serde_json::Map<String, serde_json::Value>,
+  // cost_tracking: // TODO:
 ) -> Result<serde_json::Map<String, serde_json::Value>, napi::Error> {
   ensure_crypto_provider();
+
+  let options: ScrapeOptions = serde_json::from_value(serde_json::Value::Object(options)).unwrap();
+  let internal_options: InternalOptions =
+    serde_json::from_value(serde_json::Value::Object(internal_options)).unwrap();
 
   match _scrape_url(Meta::new(
     id,
     Url::parse(&url).unwrap(), // TODO: Better handling
     team_id,
-    ScrapeOptions::default(),
-    InternalOptions::default(),
+    options,
+    internal_options,
   ))
   .await
   {
@@ -225,6 +243,7 @@ pub async fn scrape_url(
       serde_json::Value::Object(x) => x,
       _ => unreachable!(),
     }),
+    // TODO: better transportable errors
     Err(e) => Err(napi::Error::new(
       napi::Status::GenericFailure,
       format!("{:?}", e),
