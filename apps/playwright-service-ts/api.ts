@@ -9,7 +9,6 @@ import {
 } from 'playwright';
 import dotenv from 'dotenv';
 import UserAgent from 'user-agents';
-import { getError } from './helpers/get_error';
 import { lookup } from 'dns/promises';
 import IPAddr from 'ipaddr.js';
 import { Server, RequestError } from 'proxy-chain';
@@ -399,13 +398,6 @@ app.post('/scrape', async (req: Request, res: Response) => {
   try {
     await assertSafeTargetUrl(url);
   } catch (error) {
-    if (error instanceof InsecureConnectionError) {
-      return res.json({
-        content: '',
-        pageStatusCode: 403,
-        pageError: error.message,
-      });
-    }
     throw error;
   }
 
@@ -522,14 +514,12 @@ app.post('/scrape', async (req: Request, res: Response) => {
       check_selector,
       securityState,
     );
-    const pageError =
-      result.status !== 200 ? getError(result.status) : undefined;
 
-    if (!pageError) {
+    if (result.status >= 200 && result.status < 300) {
       console.log(`✅ Scrape successful!`);
     } else {
       console.log(
-        `🚨 Scrape failed with status code: ${result.status} ${pageError}`,
+        `🚨 Scrape failed with status code: ${result.status}`,
       );
     }
 
@@ -537,16 +527,8 @@ app.post('/scrape', async (req: Request, res: Response) => {
       content: result.content,
       pageStatusCode: result.status,
       contentType: result.contentType,
-      ...(pageError && { pageError }),
     });
   } catch (error) {
-    if (error instanceof InsecureConnectionError) {
-      return res.json({
-        content: '',
-        pageStatusCode: 403,
-        pageError: error.message,
-      });
-    }
     console.error('Scrape error:', error);
     res
       .status(500)
