@@ -11,7 +11,7 @@ final class ScrapeOptions
      * @param array<string, string>|null   $headers
      * @param list<string>|null            $includeTags
      * @param list<string>|null            $excludeTags
-     * @param list<mixed>|null             $parsers
+     * @param list<string|array<string, mixed>|PdfParser>|null $parsers
      * @param list<array<string, mixed>>|null $actions
      * @param AuditMetadata|null           $auditMetadata
      */
@@ -48,7 +48,7 @@ final class ScrapeOptions
      * @param array<string, string>|null                    $headers
      * @param list<string>|null                             $includeTags
      * @param list<string>|null                             $excludeTags
-     * @param list<mixed>|null                              $parsers
+     * @param list<string|array<string, mixed>|PdfParser>|null $parsers
      * @param list<array<string, mixed>>|null               $actions
      * @param array<string, string>|null                    $profile
      * @param AuditMetadata|null                            $auditMetadata
@@ -107,6 +107,13 @@ final class ScrapeOptions
             );
         }
 
+        if ($this->parsers !== null) {
+            $data['parsers'] = array_map(
+                static fn (mixed $parser): mixed => $parser instanceof PdfParser ? $parser->toArray() : $parser,
+                $this->parsers,
+            );
+        }
+
         $fields = [
             'headers' => $this->headers,
             'includeTags' => $this->includeTags,
@@ -115,7 +122,6 @@ final class ScrapeOptions
             'timeout' => $this->timeout,
             'waitFor' => $this->waitFor,
             'mobile' => $this->mobile,
-            'parsers' => $this->parsers,
             'actions' => $this->actions,
             'location' => $this->location?->toArray(),
             'skipTlsVerification' => $this->skipTlsVerification,
@@ -191,7 +197,7 @@ final class ScrapeOptions
         return $this->redactPII;
     }
 
-    /** @return list<mixed>|null */
+    /** @return list<string|array<string, mixed>|PdfParser>|null */
     public function getParsers(): ?array
     {
         return $this->parsers;

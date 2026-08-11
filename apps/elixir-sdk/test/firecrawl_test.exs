@@ -282,6 +282,57 @@ defmodule FirecrawlTest do
     refute Map.has_key?(body, "formats")
   end
 
+  test "scrape maps PDF page markdown and preserves pages in the response" do
+    parent = self()
+
+    adapter = fn request ->
+      send(parent, {:request, request})
+
+      resp = Req.Response.new(
+        status: 200,
+        headers: %{"content-type" => ["application/json"]},
+        body:
+          Jason.encode!(%{
+            "success" => true,
+            "data" => %{
+              "pages" => [
+                %{"pageNumber" => 1, "markdown" => "# First"},
+                %{"pageNumber" => 2, "markdown" => "# Second"}
+              ]
+            }
+          })
+      )
+
+      {request, resp}
+    end
+
+    assert {:ok, %Req.Response{status: 200, body: response_body}} =
+             Firecrawl.scrape_and_extract_from_url(
+               [
+                 url: "https://example.com/report.pdf",
+                 parsers: [[type: :pdf, page_markdown: true]]
+               ],
+               api_key: "test-key",
+               adapter: adapter
+             )
+
+    assert_receive {:request, request}
+
+    response_body =
+      if is_binary(response_body), do: Jason.decode!(response_body), else: response_body
+
+    request_body =
+      cond do
+        is_binary(request.body) -> Jason.decode!(request.body)
+        is_map(request.body) -> request.body
+        true -> request.options[:json]
+      end
+
+    assert request_body["parsers"] == [%{"type" => "pdf", "pageMarkdown" => true}]
+    second_page = response_body["data"]["pages"] |> Enum.at(1)
+    assert second_page["markdown"] == "# Second"
+  end
+
   test "batch scrape maps redact_pii to redactPII" do
     parent = self()
 

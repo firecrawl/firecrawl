@@ -31,7 +31,7 @@ module Firecrawl
           "timeout" => timeout,
           "waitFor" => wait_for,
           "mobile" => mobile,
-          "parsers" => parsers,
+          "parsers" => parsers&.map { |parser| parser_value(parser) },
           "actions" => actions,
           "location" => location.is_a?(Hash) ? location : location&.to_h,
           "skipTlsVerification" => skip_tls_verification,
@@ -51,6 +51,10 @@ module Firecrawl
 
       def format_value(fmt)
         fmt.respond_to?(:to_h) ? fmt.to_h : fmt
+      end
+
+      def parser_value(parser)
+        parser.respond_to?(:to_h) ? parser.to_h : parser
       end
     end
   end

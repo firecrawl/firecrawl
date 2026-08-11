@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use Firecrawl\Models\CreditUsage;
 use Firecrawl\Models\Document;
+use Firecrawl\Models\PdfParser;
 use Firecrawl\Models\Product;
 use Firecrawl\Models\Menu;
 use Firecrawl\Models\MapData;
@@ -111,6 +112,33 @@ it('hydrates video URL in Document', function (): void {
 
     expect($doc->getMarkdown())->toBe('# Video');
     expect($doc->getVideo())->toBe('https://storage.googleapis.com/firecrawl/video.mp4');
+});
+
+it('serializes PDF page markdown in scrape and parse options', function (): void {
+    $parser = PdfParser::with(mode: 'auto', maxPages: 5, pageMarkdown: true);
+
+    $expected = [[
+        'type' => 'pdf',
+        'mode' => 'auto',
+        'maxPages' => 5,
+        'pageMarkdown' => true,
+    ]];
+
+    expect(ScrapeOptions::with(parsers: [$parser])->toArray()['parsers'])->toBe($expected);
+    expect(ParseOptions::with(parsers: [$parser])->toArray()['parsers'])->toBe($expected);
+});
+
+it('hydrates PDF pages in Document', function (): void {
+    $doc = Document::fromArray([
+        'pages' => [
+            ['pageNumber' => 1, 'markdown' => '# First'],
+            ['pageNumber' => 2, 'markdown' => '# Second'],
+        ],
+    ]);
+
+    expect($doc->getPages())->toHaveCount(2);
+    expect($doc->getPages()[1]->getPageNumber())->toBe(2);
+    expect($doc->getPages()[1]->getMarkdown())->toBe('# Second');
 });
 
 it('hydrates product into Product model in Document', function (): void {

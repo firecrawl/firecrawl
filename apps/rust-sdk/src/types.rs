@@ -645,6 +645,16 @@ pub struct AttributeResult {
     pub values: Vec<String>,
 }
 
+/// Markdown extracted from a single PDF page.
+#[derive(Deserialize, Serialize, Debug, Default, Clone, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct DocumentPage {
+    /// One-based PDF page number.
+    pub page_number: u32,
+    /// Markdown extracted from this page.
+    pub markdown: String,
+}
+
 /// Document returned from scrape operations.
 #[serde_with::skip_serializing_none]
 #[derive(Deserialize, Serialize, Debug, Default, Clone)]
@@ -652,6 +662,8 @@ pub struct AttributeResult {
 pub struct Document {
     /// Markdown content of the page.
     pub markdown: Option<String>,
+    /// Per-page markdown when PDF page markdown is requested.
+    pub pages: Option<Vec<DocumentPage>>,
     /// Filtered HTML content.
     pub html: Option<String>,
     /// Raw HTML content.
@@ -1057,6 +1069,30 @@ mod tests {
         assert_eq!(meta.og_image, Some("https://img.jpg".to_string()));
         assert_eq!(meta.language, Some("en".to_string()));
         assert_eq!(meta.keywords, Some("rust, sdk, firecrawl".to_string()));
+    }
+
+    #[test]
+    fn test_document_with_pdf_pages() {
+        let json = json!({
+            "pages": [
+                { "pageNumber": 1, "markdown": "# First" },
+                { "pageNumber": 2, "markdown": "# Second" }
+            ]
+        });
+        let doc: Document = serde_json::from_value(json).unwrap();
+        assert_eq!(
+            doc.pages,
+            Some(vec![
+                DocumentPage {
+                    page_number: 1,
+                    markdown: "# First".to_string()
+                },
+                DocumentPage {
+                    page_number: 2,
+                    markdown: "# Second".to_string()
+                }
+            ])
+        );
     }
 
     #[test]

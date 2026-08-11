@@ -85,8 +85,12 @@ All params are passed as keyword lists with snake_case keys. Invalid keys, missi
 # Parse a file (PDF, DOCX, HTML, etc.)
 {:ok, response} = Firecrawl.parse_file(
   [filename: "report.pdf", data: File.read!("report.pdf"), content_type: "application/pdf"],
-  formats: ["markdown"]
+  formats: ["markdown"],
+  parsers: [[type: :pdf, page_markdown: true]]
 )
+
+# Per-page markdown is returned in response.body["data"]["pages"] as
+# [%{"pageNumber" => 1, "markdown" => "..."}, ...].
 
 # Self-hosted instance
 {:ok, response} = Firecrawl.scrape_and_extract_from_url(

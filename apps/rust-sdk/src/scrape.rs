@@ -117,8 +117,10 @@ pub enum ParserConfig {
         parser_type: String,
         #[serde(skip_serializing_if = "Option::is_none")]
         mode: Option<String>,
-        #[serde(skip_serializing_if = "Option::is_none")]
+        #[serde(rename = "maxPages", skip_serializing_if = "Option::is_none")]
         max_pages: Option<u32>,
+        #[serde(rename = "pageMarkdown", skip_serializing_if = "Option::is_none")]
+        page_markdown: Option<bool>,
     },
 }
 
@@ -518,6 +520,30 @@ mod tests {
         let payload = serde_json::to_value(options).unwrap();
         assert_eq!(payload["redactPII"], json!(true));
         assert!(payload.get("formats").is_none());
+    }
+
+    #[test]
+    fn test_pdf_parser_serializes_page_markdown() {
+        let options = ScrapeOptions {
+            parsers: Some(vec![ParserConfig::Pdf {
+                parser_type: "pdf".to_string(),
+                mode: Some("auto".to_string()),
+                max_pages: Some(5),
+                page_markdown: Some(true),
+            }]),
+            ..Default::default()
+        };
+
+        let payload = serde_json::to_value(options).unwrap();
+        assert_eq!(
+            payload["parsers"][0],
+            json!({
+                "type": "pdf",
+                "mode": "auto",
+                "maxPages": 5,
+                "pageMarkdown": true
+            })
+        );
     }
 
     #[tokio::test]

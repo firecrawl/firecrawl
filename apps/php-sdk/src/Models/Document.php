@@ -10,6 +10,7 @@ final class Document
      * @param array<string, mixed>|null               $metadata
      * @param list<string>|null                        $links
      * @param list<string>|null                        $images
+     * @param list<DocumentPage>|null                  $pages
      * @param list<array<string, mixed>>|null          $attributes
      * @param array<string, mixed>|null               $actions
      * @param array<string, mixed>|null               $changeTracking
@@ -36,6 +37,7 @@ final class Document
         private readonly ?array $branding = null,
         private readonly ?Product $product = null,
         private readonly ?Menu $menu = null,
+        private readonly ?array $pages = null,
     ) {}
 
     /** @param array<string, mixed> $data */
@@ -43,6 +45,12 @@ final class Document
     {
         return new self(
             markdown: $data['markdown'] ?? null,
+            pages: isset($data['pages']) && is_array($data['pages'])
+                ? array_map(
+                    static fn (array $page): DocumentPage => DocumentPage::fromArray($page),
+                    array_values(array_filter($data['pages'], 'is_array')),
+                )
+                : null,
             html: $data['html'] ?? null,
             rawHtml: $data['rawHtml'] ?? null,
             json: $data['json'] ?? null,
@@ -72,6 +80,12 @@ final class Document
     public function getMarkdown(): ?string
     {
         return $this->markdown;
+    }
+
+    /** @return list<DocumentPage>|null */
+    public function getPages(): ?array
+    {
+        return $this->pages;
     }
 
     public function getHtml(): ?string

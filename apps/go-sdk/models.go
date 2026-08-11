@@ -5,6 +5,7 @@ import "encoding/json"
 // Document represents a scraped web page.
 type Document struct {
 	Markdown       string                   `json:"markdown,omitempty"`
+	Pages          []DocumentPage           `json:"pages,omitempty"`
 	HTML           string                   `json:"html,omitempty"`
 	RawHTML        string                   `json:"rawHtml,omitempty"`
 	JSON           interface{}              `json:"json,omitempty"`
@@ -26,15 +27,21 @@ type Document struct {
 	Menu           *MenuProfile             `json:"menu,omitempty"`
 }
 
+// DocumentPage contains the markdown extracted from one PDF page.
+type DocumentPage struct {
+	PageNumber int    `json:"pageNumber"`
+	Markdown   string `json:"markdown"`
+}
+
 // ProductProfile represents structured product data extracted from a page
 // via the `product` scrape format.
 type ProductProfile struct {
-	Title         string               `json:"title"`
-	Brand         string               `json:"brand,omitempty"`
-	Category      string               `json:"category,omitempty"`
-	URL           string               `json:"url"`
-	Description   string               `json:"description,omitempty"`
-	Variants      []ProductVariant     `json:"variants,omitempty"`
+	Title       string           `json:"title"`
+	Brand       string           `json:"brand,omitempty"`
+	Category    string           `json:"category,omitempty"`
+	URL         string           `json:"url"`
+	Description string           `json:"description,omitempty"`
+	Variants    []ProductVariant `json:"variants,omitempty"`
 }
 
 // ProductImage is a single product image.

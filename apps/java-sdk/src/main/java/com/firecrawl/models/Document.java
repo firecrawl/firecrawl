@@ -11,6 +11,7 @@ import java.util.Map;
 public class Document {
 
     private String markdown;
+    private List<DocumentPage> pages;
     private String html;
     private String rawHtml;
     private Object json;
@@ -32,6 +33,7 @@ public class Document {
     private Menu menu;
 
     public String getMarkdown() { return markdown; }
+    public List<DocumentPage> getPages() { return pages; }
     public String getHtml() { return html; }
     public String getRawHtml() { return rawHtml; }
     public Object getJson() { return json; }

@@ -907,6 +907,31 @@ class ClientTest < Minitest::Test
     assert_equal true, h["redactPII"]
   end
 
+  def test_pdf_page_markdown_models
+    parser = Firecrawl::Models::PdfParser.new(mode: "auto", max_pages: 5, page_markdown: true)
+    expected = {
+      "type" => "pdf",
+      "mode" => "auto",
+      "maxPages" => 5,
+      "pageMarkdown" => true,
+    }
+
+    scrape = Firecrawl::Models::ScrapeOptions.new(parsers: [parser])
+    parse = Firecrawl::Models::ParseOptions.new(parsers: [parser])
+    assert_equal [expected], scrape.to_h["parsers"]
+    assert_equal [expected], parse.to_h["parsers"]
+
+    document = Firecrawl::Models::Document.new(
+      "pages" => [
+        { "pageNumber" => 1, "markdown" => "# First" },
+        { "pageNumber" => 2, "markdown" => "# Second" },
+      ]
+    )
+    assert_equal 2, document.pages.length
+    assert_equal 2, document.pages[1].page_number
+    assert_equal "# Second", document.pages[1].markdown
+  end
+
   def test_parse_options_rejects_unsupported_format
     assert_raises(ArgumentError) do
       Firecrawl::Models::ParseOptions.new(formats: ["screenshot"])

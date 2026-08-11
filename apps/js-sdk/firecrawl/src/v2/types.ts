@@ -187,6 +187,14 @@ export interface AuditMetadata {
   username: string;
 }
 
+export interface PDFParser {
+  type: "pdf";
+  mode?: "fast" | "auto" | "ocr";
+  maxPages?: number;
+  /** Include physical per-page markdown alongside document markdown. */
+  pageMarkdown?: boolean;
+}
+
 export interface ScrapeOptions {
   formats?: FormatOption[];
   headers?: Record<string, string>;
@@ -196,9 +204,7 @@ export interface ScrapeOptions {
   timeout?: number;
   waitFor?: number;
   mobile?: boolean;
-  parsers?: Array<
-    string | { type: "pdf"; mode?: "fast" | "auto" | "ocr"; maxPages?: number }
-  >;
+  parsers?: Array<string | PDFParser>;
   actions?: ActionOption[];
   location?: LocationConfig;
   skipTlsVerification?: boolean;
@@ -623,6 +629,8 @@ export interface DocumentMetadata {
 
 export interface Document {
   markdown?: string;
+  /** Physical PDF pages, present when the PDF parser requests pageMarkdown. */
+  pages?: DocumentPage[];
   html?: string;
   rawHtml?: string;
   json?: unknown;
@@ -646,6 +654,11 @@ export interface Document {
   branding?: BrandingProfile;
   product?: ProductProfile;
   menu?: MenuProfile;
+}
+
+export interface DocumentPage {
+  pageNumber: number;
+  markdown: string;
 }
 
 // Pagination configuration for auto-fetching pages from v2 endpoints that return a `next` URL
