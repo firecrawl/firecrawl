@@ -26,8 +26,9 @@ use super::{
   EngineSignal, JavascriptActionContent,
 };
 
-pub(self) mod actions;
+mod actions;
 mod check_status;
+mod delete;
 mod scrape;
 
 static FIRE_ENGINE_BETA_URL: LazyLock<Option<String>> = LazyLock::new(|| {
@@ -40,6 +41,7 @@ static FIRE_ENGINE_BETA_URL: LazyLock<Option<String>> = LazyLock::new(|| {
   }
 });
 
+#[derive(Clone, Copy)]
 pub struct FireEngine {
   url: &'static String,
 }
@@ -146,19 +148,26 @@ impl FireEngine {
 
     let scrape = self.call_scrape(request).await;
 
-    let result = match scrape {
-      FireEngineScrapeResponse::Completed(x) => Ok(x),
+    let (job_id, result) = match scrape {
+      FireEngineScrapeResponse::Completed(x) => (x.job_id.clone(), Ok(x)),
       FireEngineScrapeResponse::Processing(x) => loop {
         match self.call_check_status(&x.job_id).await {
-          FireEngineScrapeStatus::Completed(x) => break Ok(x),
+          FireEngineScrapeStatus::Completed(y) => break (Some(x.job_id), Ok(y)),
           FireEngineScrapeStatus::Processing(_) => {}
-          FireEngineScrapeStatus::Failed(e) => break Err(e),
+          FireEngineScrapeStatus::Failed(e) => break (Some(x.job_id.clone()), Err(e)),
         }
       },
-      FireEngineScrapeResponse::Failed(e) => Err(e),
+      FireEngineScrapeResponse::Failed(e) => (None, Err(e)),
     };
 
-    // TODO: dispatch fire-engine delete
+    // Dispatch delete if deleting the job is our responsibility
+    if let Some(job_id) = job_id {
+      let self2 = self.clone();
+      // TODO: do we need to do some sort of error handling here?
+      tokio::task::spawn(async move {
+        self2.call_delete(&job_id).await;
+      });
+    }
 
     let result = match result {
       Ok(x)

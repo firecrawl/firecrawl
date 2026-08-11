@@ -2,7 +2,7 @@ use url::Url;
 
 use self::google_doc::GoogleDocLink;
 
-pub(self) mod google_doc;
+mod google_doc;
 
 #[allow(clippy::manual_map)] // implemented in this fashion to allow easy extendability, remove this #[allow] when more elseif cases are added
 pub fn rewrite_url(url: &Url) -> Option<Url> {

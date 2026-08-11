@@ -18,9 +18,9 @@ use super::super::{
 };
 use super::{Engine, EngineScrapeProxy, EngineScrapeResult, EngineSignal};
 
-pub(self) mod cache;
-pub(self) mod db;
-pub(self) mod gcs;
+mod cache;
+mod db;
+mod gcs;
 
 const DEFAULT_MAX_AGE: i32 = 2 * 24 * 60 * 60 * 1000;
 
@@ -123,7 +123,7 @@ impl<'a> PartialEq for IndexEntrySource<'a> {
 
 impl<'a> Eq for IndexEntrySource<'a> {}
 
-pub(self) struct IndexEntryVariant {
+struct IndexEntryVariant {
   pub url_hash: Vec<u8>,
   pub is_mobile: bool,
   pub block_ads: bool,
@@ -153,7 +153,7 @@ impl IndexEntryVariant {
   }
 }
 
-pub(self) struct IndexEntryFilter {
+struct IndexEntryFilter {
   pub max_age: i32,
   pub min_age: Option<i32>,
   pub needs_screenshot: bool,

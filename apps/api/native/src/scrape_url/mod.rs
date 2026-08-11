@@ -15,18 +15,18 @@ use self::{
 };
 use crate::scrape_url::engines::{EngineSignal, get_main_engine};
 
-pub(self) mod actions;
-pub(self) mod document;
-pub(self) mod engines;
-pub(self) mod error;
-pub(self) mod feature_flags;
-pub(self) mod formats;
-pub(self) mod kinded;
-pub(self) mod meta;
-pub(self) mod options;
-pub(self) mod parsers;
-pub(self) mod rewrite_url;
-pub(self) mod robots;
+mod actions;
+mod document;
+mod engines;
+mod error;
+mod feature_flags;
+mod formats;
+mod kinded;
+mod meta;
+mod options;
+mod parsers;
+mod rewrite_url;
+mod robots;
 
 struct EngineRun {
   engine: EngineKind,
@@ -87,6 +87,8 @@ async fn _scrape_url(meta: Meta) -> Result<Document, ScrapeURLError> {
         Err(EngineSignal::IndexMiss) => Ok(None),
         Err(EngineSignal::FatalError(e)) => Err(e),
         Err(EngineSignal::EngineError(_)) => unimplemented!(),
+
+        // TODO: this pattern is disgusting and proof that the index and an engine should be separate primitives
         Err(EngineSignal::ProxyElevationNeeded) => unreachable!(),
       }
     } else {
