@@ -7,7 +7,6 @@ use url::Url;
 use crate::scrape_url::engines::EngineScrapeContent;
 
 use super::super::{
-  error::ScrapeURLError,
   feature_flags::{ConstFeatureFlags, FeatureFlag},
   meta::Meta,
 };
