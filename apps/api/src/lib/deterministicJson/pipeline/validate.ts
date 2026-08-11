@@ -143,10 +143,42 @@ function validateTopLevelShape(
   }
 }
 
-// Crude check for forbidden runtime references. The generated code runs inside
-// jsdom's VM context (see sandbox/harness.ts), which has no access to certain
-// globals like fetch or XMLHttpRequest.
-const FORBIDDEN_GLOBALS = new Set(["fetch", "XMLHttpRequest"]);
+// Reject references a generated DOM extractor has no legitimate reason to use.
+// The extractor runs inside jsdom's VM context (see sandbox/harness.ts); this is
+// a validation/robustness layer over that, not an isolation boundary. It checks
+// the syntactic forms that reach a disallowed name (member, computed-string, and
+// destructuring access, plus `with`); it deliberately does not chase indirected
+// forms such as computed access through a variable (`x[k]`), which need dataflow.
+//
+// Globals the sandbox doesn't provide, plus code-eval primitives (`Function`/
+// `eval`) and ambient objects (`process`/`globalThis`) extractors never need.
+const FORBIDDEN_GLOBALS = new Set([
+  "fetch",
+  "XMLHttpRequest",
+  "Function",
+  "eval",
+  "process",
+  "globalThis",
+  "require",
+  "Reflect",
+  "Proxy",
+]);
+
+// Property names a DOM extractor should never read off an object, checked
+// wherever a property is *reached* — `obj.NAME`, `obj["NAME"]`, and
+// `const { NAME } = obj` destructuring. `constructor`/`__proto__` reach
+// constructors and prototypes, `getBuiltinModule`/`mainModule` are Node module
+// internals, and `Function`/`eval` read off an object are code-eval primitives.
+// None have a place in reading data out of a document.
+const FORBIDDEN_PROPERTIES = new Set([
+  "constructor",
+  "__proto__",
+  "getBuiltinModule",
+  "mainModule",
+  "Function",
+  "eval",
+  "XMLHttpRequest",
+]);
 
 function detectForbiddenGlobals(
   source: ts.SourceFile,
@@ -154,7 +186,23 @@ function detectForbiddenGlobals(
 ): void {
   const seen = new Set<string>();
 
+  const flag = (name: string, kind: "global" | "property" | "with"): void => {
+    if (seen.has(name)) return;
+    seen.add(name);
+    const reason =
+      kind === "global"
+        ? `references disallowed global '${name}' (not available in the sandbox; will throw at runtime)`
+        : kind === "with"
+          ? "uses a `with` statement, which is not allowed in generated extractors"
+          : `references disallowed property '${name}' (not permitted in generated extractors)`;
+    issues.push({ field: "source", reason, excerpt: name });
+  };
+
   const visit = (node: ts.Node): void => {
+    // `with (x) { ... }` resolves bare identifiers against x's properties, which
+    // would sidestep the property checks below; extractor code never needs it.
+    if (ts.isWithStatement(node)) flag("with", "with");
+
     if (ts.isIdentifier(node) && FORBIDDEN_GLOBALS.has(node.text)) {
       // Skip identifiers that are property names of access expressions
       // (`foo.fetch` doesn't reference the global fetch) or local bindings.
@@ -164,15 +212,38 @@ function detectForbiddenGlobals(
         ((ts.isPropertyAccessExpression(parent) && parent.name === node) ||
           (ts.isPropertyAssignment(parent) && parent.name === node) ||
           (ts.isBindingElement(parent) && parent.propertyName === node));
-      if (!isPropertyName && !seen.has(node.text)) {
-        seen.add(node.text);
-        issues.push({
-          field: "source",
-          reason: `references forbidden global '${node.text}' (not available in the sandbox; will throw at runtime)`,
-          excerpt: node.text,
-        });
-      }
+      if (!isPropertyName) flag(node.text, "global");
     }
+
+    // member access: `obj.constructor`, `obj.getBuiltinModule`, `obj.Function`
+    if (
+      ts.isPropertyAccessExpression(node) &&
+      FORBIDDEN_PROPERTIES.has(node.name.text)
+    ) {
+      flag(node.name.text, "property");
+    }
+
+    // computed string access: `obj["constructor"]` — the form around the dot above.
+    if (
+      ts.isElementAccessExpression(node) &&
+      ts.isStringLiteralLike(node.argumentExpression) &&
+      FORBIDDEN_PROPERTIES.has(node.argumentExpression.text)
+    ) {
+      flag(node.argumentExpression.text, "property");
+    }
+
+    // destructuring: `const { constructor: C } = obj` / shorthand `const { NAME }
+    // = obj` — reads the property just like member access does.
+    if (ts.isBindingElement(node)) {
+      const nameNode = node.propertyName ?? node.name;
+      const text = ts.isIdentifier(nameNode)
+        ? nameNode.text
+        : ts.isStringLiteralLike(nameNode)
+          ? nameNode.text
+          : undefined;
+      if (text && FORBIDDEN_PROPERTIES.has(text)) flag(text, "property");
+    }
+
     ts.forEachChild(node, visit);
   };
 
