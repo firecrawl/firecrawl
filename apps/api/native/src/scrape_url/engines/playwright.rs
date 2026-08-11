@@ -11,7 +11,7 @@ use super::super::{
   feature_flags::{ConstFeatureFlags, FeatureFlag},
   meta::Meta,
 };
-use super::{Engine, EngineScrapeProxy, EngineScrapeResult};
+use super::{Engine, EngineScrapeProxy, EngineScrapeResult, EngineSignal};
 
 static PLAYWRIGHT_MICROSERVICE_URL: LazyLock<Option<String>> = LazyLock::new(|| {
   if let Some(url) = std::env::var("PLAYWRIGHT_MICROSERVICE_URL").ok()
@@ -26,7 +26,7 @@ static PLAYWRIGHT_MICROSERVICE_URL: LazyLock<Option<String>> = LazyLock::new(|| 
 #[derive(Serialize)]
 struct PlaywrightRequest<'a> {
   url: &'a Url,
-  wait_after_load: u64,
+  wait_after_load: u32,
   #[serde(skip_serializing_if = "Option::is_none")]
   timeout: Option<u32>,
   headers: &'a HashMap<String, String>,
@@ -60,14 +60,14 @@ impl Engine for PlaywrightEngine {
     &self,
     meta: &Meta,
     _proxy: EngineScrapeProxy,
-  ) -> Result<EngineScrapeResult, ScrapeURLError> {
+  ) -> Result<EngineScrapeResult, EngineSignal> {
     let client = reqwest::Client::new(); // TODO: cache this maybe?
 
     let res = client
       .post(self.url)
       .json(&PlaywrightRequest {
         url: meta.get_url(),
-        wait_after_load: meta.options.wait_for,
+        wait_after_load: meta.options.effective_wait_for(),
         // timeout: meta.options.timeout // TODO:
         timeout: None,
         headers: &meta.options.headers,

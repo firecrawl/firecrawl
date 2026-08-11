@@ -18,7 +18,7 @@ pub struct IndexDocument {
   pub json: Option<String>,
   pub status_code: u16,
   // pub error: Option<String>,
-  pub screenshot: Option<String>,
+  pub screenshot: Option<Url>,
   // pub pdf_metadata: Option<...>,
   pub content_type: Option<String>,
   // pub postprocessors_used: Vec<...>,

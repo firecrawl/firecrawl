@@ -120,8 +120,7 @@ impl IndexCache {
 
     unparsed
       .and_then(|x| serde_json::from_str::<MaxAgeRow>(&x).ok())
-      .map(|x| x.max_age)
-      .flatten()
+      .and_then(|x| x.max_age)
   }
 
   pub async fn set_max_age(&self, domain_hash: &[u8], max_age: i32) {
@@ -181,18 +180,18 @@ impl IndexCache {
     };
 
     if let Some(unparsed) = unparsed
-      && unparsed.len() > 0
+      && !unparsed.is_empty()
       && let mut parsed = unparsed
         .values()
-        .filter_map(|x| serde_json::from_str(&x).ok())
+        .filter_map(|x| serde_json::from_str(x).ok())
         .filter(|x| filter.evaluate_entry(x))
         .collect::<Vec<IndexEntry>>()
-      && parsed.len() > 0
+      && !parsed.is_empty()
     {
-      parsed.sort_unstable_by(|a, b| b.created_at.cmp(&a.created_at));
+      parsed.sort_unstable_by_key(|x| std::cmp::Reverse(x.created_at));
       parsed.truncate(5);
       IndexCacheResult::PositiveHit(parsed)
-    } else if filter.min_age.is_none() && self._get_negative_hit(&variant, &filter).await {
+    } else if filter.min_age.is_none() && self._get_negative_hit(variant, filter).await {
       IndexCacheResult::NegativeHit
     } else {
       IndexCacheResult::Miss

@@ -74,7 +74,7 @@ impl IndexDb {
       .ok() // TODO: error handling
       .flatten() as Option<MaxAgeRow>;
     let _ = tx.commit().await;
-    row.map(|x| x.max_age).flatten()
+    row.and_then(|x| x.max_age)
   }
 
   pub async fn get_entries(

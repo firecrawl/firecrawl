@@ -3,7 +3,7 @@ use serde::Serialize;
 use url::Url;
 
 use super::engines::EngineScrapeProxy;
-use std::collections::HashMap;
+use std::{collections::HashMap, fmt::Display};
 
 #[derive(Debug, Clone, Copy, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -12,11 +12,11 @@ pub enum DocumentMetadataCacheState {
   Miss,
 }
 
-impl ToString for DocumentMetadataCacheState {
-  fn to_string(&self) -> String {
+impl Display for DocumentMetadataCacheState {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     match self {
-      Self::Hit => "hit".to_string(),
-      Self::Miss => "miss".to_string(),
+      Self::Hit => f.write_str("hit"),
+      Self::Miss => f.write_str("miss"),
     }
   }
 }
@@ -47,11 +47,11 @@ pub struct Document {
   pub markdown: Option<String>,
   pub html: Option<String>,
   pub raw_html: Option<String>,
-  pub links: Option<Vec<String>>,
-  pub images: Option<Vec<String>>,
-  pub screenshot: Option<String>,
-  pub audio: Option<String>,
-  pub video: Option<String>,
+  pub links: Option<Vec<Url>>,
+  pub images: Option<Vec<Url>>,
+  pub screenshot: Option<Url>,
+  pub audio: Option<Url>,
+  pub video: Option<Url>,
   // videos:
   // extract:
   // json:

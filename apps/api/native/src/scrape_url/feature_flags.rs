@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::{collections::HashSet, fmt::Display};
 
 use super::{
   formats::FormatKind,
@@ -21,19 +21,19 @@ pub enum FeatureFlag {
   // Atsv, // CFR
 }
 
-impl ToString for FeatureFlag {
-  fn to_string(&self) -> String {
+impl Display for FeatureFlag {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     match self {
-      Self::Actions => "actions".to_string(),
-      Self::WaitFor => "waitFor".to_string(),
-      Self::Screenshot => "screenshot".to_string(),
-      Self::ScreenshotFullScreen => "screenshot@fullScreen".to_string(),
-      Self::Audio => "audio".to_string(),
-      Self::Video => "video".to_string(),
-      Self::Location => "location".to_string(),
-      Self::Mobile => "mobile".to_string(),
-      Self::Branding => "branding".to_string(),
-      Self::DisableAdblock => "disableAdblock".to_string(),
+      Self::Actions => f.write_str("actions"),
+      Self::WaitFor => f.write_str("waitFor"),
+      Self::Screenshot => f.write_str("screenshot"),
+      Self::ScreenshotFullScreen => f.write_str("screenshot@fullScreen"),
+      Self::Audio => f.write_str("audio"),
+      Self::Video => f.write_str("video"),
+      Self::Location => f.write_str("location"),
+      Self::Mobile => f.write_str("mobile"),
+      Self::Branding => f.write_str("branding"),
+      Self::DisableAdblock => f.write_str("disableAdblock"),
     }
   }
 }
@@ -107,7 +107,7 @@ pub fn build_feature_flags(
     flags.insert(FeatureFlag::Video);
   }
 
-  if options.wait_for != 0 {
+  if options.effective_wait_for() != 0 {
     flags.insert(FeatureFlag::WaitFor);
   }
 
@@ -121,7 +121,7 @@ pub fn build_feature_flags(
 
   // if options.fast_mode // CFR
 
-  if options.block_ads == false {
+  if !options.block_ads {
     flags.insert(FeatureFlag::DisableAdblock);
   }
 

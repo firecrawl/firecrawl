@@ -39,7 +39,7 @@ pub fn has_document_signal(result: &EngineScrapeResult) -> bool {
   let is_document_content_type = document_content_type_match(&result.content_type);
 
   let is_document_binary = match &result.content {
-    EngineScrapeContent::Bytes(bytes) => document_binary_match(&bytes),
+    EngineScrapeContent::Bytes(bytes) => document_binary_match(bytes),
     _ => false,
   };
 

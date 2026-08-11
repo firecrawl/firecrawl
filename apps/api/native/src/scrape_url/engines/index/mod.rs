@@ -16,7 +16,7 @@ use super::super::{
   feature_flags::{ConstFeatureFlags, FeatureFlag},
   meta::Meta,
 };
-use super::{Engine, EngineScrapeProxy, EngineScrapeResult};
+use super::{Engine, EngineScrapeProxy, EngineScrapeResult, EngineSignal};
 
 pub(self) mod cache;
 pub(self) mod db;
@@ -47,7 +47,7 @@ fn normalize_url_for_index(mut url: Url) -> Url {
 
   let last_seg: Option<String> = url
     .path_segments()
-    .and_then(|x| x.last())
+    .and_then(|mut x| x.next_back()) // x.last() but more performant
     .map(|x| x.to_string());
   if let Some(last_seg) = last_seg
     && (last_seg == "index.html"
@@ -55,7 +55,7 @@ fn normalize_url_for_index(mut url: Url) -> Url {
       || last_seg == "index.html"
       || last_seg == "index.shtml"
       || last_seg == "index.xml"
-      || last_seg == "")
+      || last_seg.is_empty())
   {
     url.path_segments_mut().unwrap().pop();
   }
@@ -165,13 +165,13 @@ pub(self) struct IndexEntryFilter {
 impl IndexEntryFilter {
   pub fn new(max_age: i32, meta: &Meta) -> Self {
     Self {
-      max_age,
-      min_age: meta.options.min_age,
+      max_age: max_age,
+      min_age: meta.options.min_age.map(|x| x as i32),
       needs_screenshot: meta.feature_flags.contains(&FeatureFlag::Screenshot),
       needs_screenshot_fullscreen: meta
         .feature_flags
         .contains(&FeatureFlag::ScreenshotFullScreen),
-      wait_time_ms: meta.options.wait_for as i32,
+      wait_time_ms: meta.options.effective_wait_for() as i32,
       now: Utc::now(),
     }
   }
@@ -196,14 +196,14 @@ impl Engine for IndexEngine {
   ]);
 
   async fn get() -> Option<super::EngineKind> {
-    if let Some(gcs) = IndexGcs::get().await {
-      if let Some(db) = IndexDb::get().await {
-        return Some(super::EngineKind::Index(Self {
-          db,
-          gcs,
-          cache: IndexCache::get().await,
-        }));
-      }
+    if let Some(gcs) = IndexGcs::get().await
+      && let Some(db) = IndexDb::get().await
+    {
+      return Some(super::EngineKind::Index(Self {
+        db,
+        gcs,
+        cache: IndexCache::get().await,
+      }));
     }
 
     None
@@ -213,12 +213,12 @@ impl Engine for IndexEngine {
     &self,
     meta: &Meta,
     proxy: EngineScrapeProxy,
-  ) -> Result<EngineScrapeResult, ScrapeURLError> {
+  ) -> Result<EngineScrapeResult, EngineSignal> {
     let normalized_url = normalize_url_for_index(meta.get_url().clone());
 
     let (max_age, _max_age_source): (i32, MaxAgeSource) = {
       if let Some(max_age) = meta.options.max_age {
-        (max_age, MaxAgeSource::Explicit)
+        (max_age as i32, MaxAgeSource::Explicit)
       } else {
         let domain_splits_hash: Vec<Vec<u8>> =
           generate_domain_splits(normalized_url.host_str().unwrap())
@@ -231,12 +231,12 @@ impl Engine for IndexEngine {
         {
           let query_max_age = async {
             if let Some(index_cache) = &self.cache
-              && let Some(max_age) = index_cache.get_max_age(&domain_hash).await
+              && let Some(max_age) = index_cache.get_max_age(domain_hash).await
             {
               (max_age, MaxAgeSource::DynamicCached)
-            } else if let Some(max_age) = self.db.get_max_age(&domain_hash).await {
+            } else if let Some(max_age) = self.db.get_max_age(domain_hash).await {
               if let Some(index_cache) = &self.cache {
-                index_cache.set_max_age(&domain_hash, max_age).await;
+                index_cache.set_max_age(domain_hash, max_age).await;
               }
               (max_age, MaxAgeSource::DynamicDb)
             } else {
@@ -261,18 +261,16 @@ impl Engine for IndexEngine {
 
     let url_hash = hash_url(&normalized_url);
 
-    let variant = IndexEntryVariant::new(url_hash, &meta, proxy);
-    let filter = IndexEntryFilter::new(max_age, &meta);
+    let variant = IndexEntryVariant::new(url_hash, meta, proxy);
+    let filter = IndexEntryFilter::new(max_age, meta);
 
-    let (entries, source) = match {
-      if let Some(index_cache) = &self.cache {
-        Some((
-          index_cache.get_entries(&variant, &filter).await,
-          index_cache,
-        ))
-      } else {
-        None
-      }
+    let (entries, source) = match if let Some(index_cache) = &self.cache {
+      Some((
+        index_cache.get_entries(&variant, &filter).await,
+        index_cache,
+      ))
+    } else {
+      None
     } {
       Some((IndexCacheResult::PositiveHit(entries), index_cache)) => {
         (Some(entries), IndexEntrySource::Cache(index_cache))
@@ -362,10 +360,10 @@ impl Engine for IndexEngine {
           // drop poisoned cache
           index_cache.delete_entry(&variant, selected_row.id).await;
         }
-        Err(ScrapeURLError::IndexMissError)
+        Err(EngineSignal::IndexMiss)
       }
     } else {
-      Err(ScrapeURLError::IndexMissError)
+      Err(EngineSignal::IndexMiss)
     }
   }
 }
