@@ -145,13 +145,19 @@ function validateTopLevelShape(
 
 // Reject references a generated DOM extractor has no legitimate reason to use.
 // The extractor runs inside jsdom's VM context (see sandbox/harness.ts); this is
-// a validation/robustness layer over that, not an isolation boundary. It checks
-// the syntactic forms that reach a disallowed name (member, computed-string, and
-// destructuring access, plus `with`); it deliberately does not chase indirected
-// forms such as computed access through a variable (`x[k]`), which need dataflow.
+// a best-effort validation/robustness layer over that sandbox, NOT the isolation
+// boundary. It flags the disallowed names where they are *statically* reachable:
+// member (`x.NAME`), computed-string (`x["NAME"]`), and destructuring access in
+// both declaration (`const { NAME } = x`) and assignment (`({ NAME } = x)`)
+// forms, plus `with`. It is deliberately not exhaustive — forms that would need
+// dataflow or interprocedural analysis are out of scope and left to the sandbox:
+// computed access through a variable (`x[k]`), and a name passed as a string to a
+// reflection API (`Reflect.get(o, "NAME")`, `Object.getOwnPropertyDescriptor(o,
+// "NAME")`).
 //
 // Globals the sandbox doesn't provide, plus code-eval primitives (`Function`/
-// `eval`) and ambient objects (`process`/`globalThis`) extractors never need.
+// `eval`) and ambient objects (`globalThis`/`Reflect`/`Proxy`) extractors never
+// need.
 const FORBIDDEN_GLOBALS = new Set([
   "fetch",
   "XMLHttpRequest",
@@ -165,13 +171,15 @@ const FORBIDDEN_GLOBALS = new Set([
 ]);
 
 // Property names a DOM extractor should never read off an object, checked
-// wherever a property is *reached* — `obj.NAME`, `obj["NAME"]`, and
-// `const { NAME } = obj` destructuring. `constructor`/`__proto__` reach
-// constructors and prototypes, `getBuiltinModule`/`mainModule` are Node module
-// internals, `Function`/`eval` are code-eval primitives, and `fetch`/
-// `XMLHttpRequest` are network primitives. These mirror the same names in
-// FORBIDDEN_GLOBALS so the member/computed forms (e.g. `window.fetch`) are
-// covered too. None belong in reading data out of a document.
+// wherever a property is *reached* — `obj.NAME`, `obj["NAME"]`, and destructuring.
+// `constructor`/`__proto__` reach constructors and prototypes,
+// `getBuiltinModule`/`mainModule` are Node module internals, `Function`/`eval`
+// are code-eval primitives, `fetch`/`XMLHttpRequest` are network primitives, and
+// `globalThis`/`require`/`Reflect`/`Proxy` are ambient objects. These mirror
+// FORBIDDEN_GLOBALS so the member/computed forms (e.g. `window.Reflect`) are
+// covered too. `process` is intentionally omitted: it is a common data-field
+// name, and unlike the others is not reachable as a member in the sandbox
+// (`window.process` is undefined), so flagging it would be false positives only.
 const FORBIDDEN_PROPERTIES = new Set([
   "constructor",
   "__proto__",
@@ -181,6 +189,10 @@ const FORBIDDEN_PROPERTIES = new Set([
   "eval",
   "fetch",
   "XMLHttpRequest",
+  "globalThis",
+  "require",
+  "Reflect",
+  "Proxy",
 ]);
 
 // A forbidden global name only matters as a *free reference*. Skip it when the
@@ -211,6 +223,59 @@ function isNameToken(id: ts.Identifier): boolean {
     (ts.isClassExpression(p) && p.name === id) ||
     (ts.isBindingElement(p) && (p.name === id || p.propertyName === id))
   );
+}
+
+// The statically-known property name a name node reads: `NAME`, `"NAME"`, or a
+// computed `["NAME"]` whose expression is a string literal. A name built from a
+// variable (`[k]`) is not statically known — returns undefined (out of scope).
+function staticPropertyName(nameNode: ts.Node): string | undefined {
+  if (ts.isComputedPropertyName(nameNode)) {
+    return ts.isStringLiteralLike(nameNode.expression)
+      ? nameNode.expression.text
+      : undefined;
+  }
+  return ts.isIdentifier(nameNode) || ts.isStringLiteralLike(nameNode)
+    ? nameNode.text
+    : undefined;
+}
+
+// True when an object literal is a destructuring *assignment target* — the LHS of
+// `=`, possibly nested inside an outer pattern — rather than a value being built.
+// `({ constructor: C } = obj)` reads obj.constructor; `return { constructor: v }`
+// does not, so only the former is treated as a property read.
+function isDestructuringTarget(node: ts.Node): boolean {
+  let current: ts.Node = node;
+  for (let parent = current.parent; parent; parent = current.parent) {
+    if (ts.isBinaryExpression(parent)) {
+      return (
+        parent.operatorToken.kind === ts.SyntaxKind.EqualsToken &&
+        parent.left === current
+      );
+    }
+    // Climb out of a nested destructuring pattern toward its assignment root.
+    if (
+      (ts.isPropertyAssignment(parent) ||
+        ts.isShorthandPropertyAssignment(parent) ||
+        ts.isSpreadAssignment(parent)) &&
+      ts.isObjectLiteralExpression(parent.parent)
+    ) {
+      current = parent.parent;
+      continue;
+    }
+    if (
+      ts.isSpreadElement(parent) &&
+      ts.isArrayLiteralExpression(parent.parent)
+    ) {
+      current = parent.parent;
+      continue;
+    }
+    if (ts.isArrayLiteralExpression(parent)) {
+      current = parent;
+      continue;
+    }
+    return false;
+  }
+  return false;
 }
 
 function detectForbiddenGlobals(
@@ -263,25 +328,31 @@ function detectForbiddenGlobals(
       flag(node.argumentExpression.text, "property");
     }
 
-    // destructuring: `const { constructor: C } = obj`, shorthand `const { NAME } =
-    // obj`, and computed `const { ["constructor"]: C } = obj` — each reads the
-    // named property just like member access does. Only object-pattern, non-rest
-    // elements read a named property; an array element binds by position and a
-    // rest element binds the remainder, so neither is a property read — skip them
-    // so a local merely named after a disallowed word isn't rejected.
+    // declaration destructuring: `const { constructor: C } = obj`, shorthand, and
+    // computed `const { ["constructor"]: C } = obj` read the named property just
+    // like member access. Only object-pattern, non-rest elements read a named
+    // property — an array element binds by position and a rest element binds the
+    // remainder, so neither is a property read; skip them so a local merely named
+    // after a disallowed word isn't rejected.
     if (
       ts.isBindingElement(node) &&
       ts.isObjectBindingPattern(node.parent) &&
       !node.dotDotDotToken
     ) {
-      const nameNode = node.propertyName ?? node.name;
-      const text = ts.isComputedPropertyName(nameNode)
-        ? ts.isStringLiteralLike(nameNode.expression)
-          ? nameNode.expression.text
-          : undefined
-        : ts.isIdentifier(nameNode) || ts.isStringLiteralLike(nameNode)
-          ? nameNode.text
-          : undefined;
+      const text = staticPropertyName(node.propertyName ?? node.name);
+      if (text && FORBIDDEN_PROPERTIES.has(text)) flag(text, "property");
+    }
+
+    // assignment destructuring: `({ constructor: C } = obj)` / `({ constructor } =
+    // obj)` reads obj.constructor, unlike an object literal built as a value
+    // (`return { constructor: v }`), which isDestructuringTarget rules out.
+    if (
+      (ts.isPropertyAssignment(node) ||
+        ts.isShorthandPropertyAssignment(node)) &&
+      ts.isObjectLiteralExpression(node.parent) &&
+      isDestructuringTarget(node.parent)
+    ) {
+      const text = staticPropertyName(node.name);
       if (text && FORBIDDEN_PROPERTIES.has(text)) flag(text, "property");
     }
 

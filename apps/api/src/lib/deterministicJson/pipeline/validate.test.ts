@@ -166,6 +166,55 @@ describe("validateGeneratedExtractor — disallowed reference rejection", () => 
     expect(validateGeneratedExtractor(code)).toEqual([]);
   });
 
+  it.each([
+    ["named", `let C; ({ constructor: C } = doc); return { x: typeof C };`],
+    [
+      "computed",
+      `let C; ({ ["constructor"]: C } = doc); return { x: typeof C };`,
+    ],
+  ])(
+    "rejects assignment destructuring of a disallowed property (%s)",
+    (_k, body) => {
+      const code = `async function extract(doc, askLlm) { ${body} }`;
+      expect(reasons(validateGeneratedExtractor(code))).toContain(
+        "constructor",
+      );
+    },
+  );
+
+  it("does not flag a value object literal with a disallowed key", () => {
+    // `return { constructor: v }` builds data; it is not a destructuring target,
+    // so it must stay allowed (distinct from `({ constructor: v } = obj)`).
+    const code = `async function extract(doc, askLlm) {
+      return { constructor: doc.title };
+    }`;
+    expect(validateGeneratedExtractor(code)).toEqual([]);
+  });
+
+  it.each([
+    ["Reflect", `return typeof window.Reflect;`],
+    ["Proxy", `return typeof window["Proxy"];`],
+    ["require", `const { require: r } = globalThis; return { x: typeof r };`],
+  ])(
+    "rejects the ambient name %s reached off a global object",
+    (name, body) => {
+      const code = `async function extract(doc, askLlm) { ${body} }`;
+      expect(reasons(validateGeneratedExtractor(code))).toContain(name);
+    },
+  );
+
+  it.each([
+    [
+      "reflection via a string argument",
+      `const F = Object.getOwnPropertyDescriptor(window, "constructor").value;
+       return { x: typeof F };`,
+    ],
+    ["a data field named process", `return { p: doc.body.process ?? null };`],
+  ])("does not flag %s (out of scope by design)", (_k, body) => {
+    const code = `async function extract(doc, askLlm) { ${body} }`;
+    expect(validateGeneratedExtractor(code)).toEqual([]);
+  });
+
   it("does not catch computed access through a variable (documented limitation)", () => {
     // Computed access through a variable is out of scope for this static check —
     // resolving `k` would need dataflow. Pinned so the gap is known, not a miss.
