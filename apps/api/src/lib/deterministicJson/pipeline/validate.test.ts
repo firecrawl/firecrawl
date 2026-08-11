@@ -145,6 +145,20 @@ describe("validateGeneratedExtractor — disallowed reference rejection", () => 
       return { x: o.process() };
     }`,
     ],
+    [
+      "an array-binding element",
+      `async function extract(doc, askLlm) {
+      const [fetch, constructor] = [doc.title, doc.URL];
+      return { title: doc.title };
+    }`,
+    ],
+    [
+      "an object rest binding",
+      `async function extract(doc, askLlm) {
+      const { title, ...fetch } = doc;
+      return { title };
+    }`,
+    ],
   ])("does not flag a forbidden name shadowed as %s", (_kind, code) => {
     // Only free references are flagged; a name introduced in a binding/member
     // position is not (a *use* of such a local would still be conservatively

@@ -265,8 +265,15 @@ function detectForbiddenGlobals(
 
     // destructuring: `const { constructor: C } = obj`, shorthand `const { NAME } =
     // obj`, and computed `const { ["constructor"]: C } = obj` — each reads the
-    // property just like member access does.
-    if (ts.isBindingElement(node)) {
+    // named property just like member access does. Only object-pattern, non-rest
+    // elements read a named property; an array element binds by position and a
+    // rest element binds the remainder, so neither is a property read — skip them
+    // so a local merely named after a disallowed word isn't rejected.
+    if (
+      ts.isBindingElement(node) &&
+      ts.isObjectBindingPattern(node.parent) &&
+      !node.dotDotDotToken
+    ) {
       const nameNode = node.propertyName ?? node.name;
       const text = ts.isComputedPropertyName(nameNode)
         ? ts.isStringLiteralLike(nameNode.expression)
