@@ -11,7 +11,11 @@ const delimitedList = (separator = ",") => {
 };
 
 const emptyStringAsUndefined = <T extends z.ZodTypeAny>(schema: T) =>
-  z.preprocess(value => (value === "" ? undefined : value), schema.optional());
+  z.preprocess(
+    value =>
+      typeof value === "string" && value.trim() === "" ? undefined : value,
+    schema.optional(),
+  );
 
 const emptyStringAsDefault = <T extends z.ZodTypeAny>(schema: T) =>
   z.preprocess(value => (value === "" ? undefined : value), schema);
@@ -109,8 +113,10 @@ const configSchema = z.object({
 
   // API Keys & Authentication
   BULL_AUTH_KEY: z.string().optional(),
-  OPENAI_API_KEY: z.string().optional(),
-  OPENAI_BASE_URL: z.string().optional(),
+  // Empty strings from docker-compose ${VAR} passthrough must become undefined
+  // so loadApiKey / createOpenAI fall back correctly (see #4083).
+  OPENAI_API_KEY: emptyStringAsUndefined(z.string()),
+  OPENAI_BASE_URL: emptyStringAsUndefined(z.string()),
   OPENROUTER_API_KEY: z.string().optional(),
   XAI_API_KEY: z.string().optional(),
   LLAMAPARSE_API_KEY: z.string().optional(),
