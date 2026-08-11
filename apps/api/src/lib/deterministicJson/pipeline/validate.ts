@@ -168,8 +168,10 @@ const FORBIDDEN_GLOBALS = new Set([
 // wherever a property is *reached* — `obj.NAME`, `obj["NAME"]`, and
 // `const { NAME } = obj` destructuring. `constructor`/`__proto__` reach
 // constructors and prototypes, `getBuiltinModule`/`mainModule` are Node module
-// internals, and `Function`/`eval` read off an object are code-eval primitives.
-// None have a place in reading data out of a document.
+// internals, `Function`/`eval` are code-eval primitives, and `fetch`/
+// `XMLHttpRequest` are network primitives. These mirror the same names in
+// FORBIDDEN_GLOBALS so the member/computed forms (e.g. `window.fetch`) are
+// covered too. None belong in reading data out of a document.
 const FORBIDDEN_PROPERTIES = new Set([
   "constructor",
   "__proto__",
@@ -177,8 +179,39 @@ const FORBIDDEN_PROPERTIES = new Set([
   "mainModule",
   "Function",
   "eval",
+  "fetch",
   "XMLHttpRequest",
 ]);
+
+// A forbidden global name only matters as a *free reference*. Skip it when the
+// identifier is instead a name being introduced or a property key: a member name
+// (`x.fetch`), an object/class member (`{ fetch() {} }`), a declared binding
+// (`const fetch = ...`, a parameter, a function/class name), or a destructuring
+// target (`const { fetch } = x`). Otherwise a benign extractor that merely
+// shadows the name would be rejected.
+function isNameToken(id: ts.Identifier): boolean {
+  const p = id.parent;
+  if (!p) return false;
+  if (
+    (ts.isPropertyAccessExpression(p) && p.name === id) ||
+    (ts.isPropertyAssignment(p) && p.name === id) ||
+    (ts.isMethodDeclaration(p) && p.name === id) ||
+    (ts.isGetAccessorDeclaration(p) && p.name === id) ||
+    (ts.isSetAccessorDeclaration(p) && p.name === id) ||
+    (ts.isPropertyDeclaration(p) && p.name === id)
+  ) {
+    return true;
+  }
+  return (
+    (ts.isVariableDeclaration(p) && p.name === id) ||
+    (ts.isParameter(p) && p.name === id) ||
+    (ts.isFunctionDeclaration(p) && p.name === id) ||
+    (ts.isFunctionExpression(p) && p.name === id) ||
+    (ts.isClassDeclaration(p) && p.name === id) ||
+    (ts.isClassExpression(p) && p.name === id) ||
+    (ts.isBindingElement(p) && (p.name === id || p.propertyName === id))
+  );
+}
 
 function detectForbiddenGlobals(
   source: ts.SourceFile,
@@ -203,16 +236,14 @@ function detectForbiddenGlobals(
     // would sidestep the property checks below; extractor code never needs it.
     if (ts.isWithStatement(node)) flag("with", "with");
 
-    if (ts.isIdentifier(node) && FORBIDDEN_GLOBALS.has(node.text)) {
-      // Skip identifiers that are property names of access expressions
-      // (`foo.fetch` doesn't reference the global fetch) or local bindings.
-      const parent = node.parent;
-      const isPropertyName =
-        parent &&
-        ((ts.isPropertyAccessExpression(parent) && parent.name === node) ||
-          (ts.isPropertyAssignment(parent) && parent.name === node) ||
-          (ts.isBindingElement(parent) && parent.propertyName === node));
-      if (!isPropertyName) flag(node.text, "global");
+    // Only a *free reference* to a forbidden global counts — not an identifier in
+    // a name/declaration position (see isNameToken), so shadowing stays allowed.
+    if (
+      ts.isIdentifier(node) &&
+      FORBIDDEN_GLOBALS.has(node.text) &&
+      !isNameToken(node)
+    ) {
+      flag(node.text, "global");
     }
 
     // member access: `obj.constructor`, `obj.getBuiltinModule`, `obj.Function`
@@ -232,13 +263,16 @@ function detectForbiddenGlobals(
       flag(node.argumentExpression.text, "property");
     }
 
-    // destructuring: `const { constructor: C } = obj` / shorthand `const { NAME }
-    // = obj` — reads the property just like member access does.
+    // destructuring: `const { constructor: C } = obj`, shorthand `const { NAME } =
+    // obj`, and computed `const { ["constructor"]: C } = obj` — each reads the
+    // property just like member access does.
     if (ts.isBindingElement(node)) {
       const nameNode = node.propertyName ?? node.name;
-      const text = ts.isIdentifier(nameNode)
-        ? nameNode.text
-        : ts.isStringLiteralLike(nameNode)
+      const text = ts.isComputedPropertyName(nameNode)
+        ? ts.isStringLiteralLike(nameNode.expression)
+          ? nameNode.expression.text
+          : undefined
+        : ts.isIdentifier(nameNode) || ts.isStringLiteralLike(nameNode)
           ? nameNode.text
           : undefined;
       if (text && FORBIDDEN_PROPERTIES.has(text)) flag(text, "property");

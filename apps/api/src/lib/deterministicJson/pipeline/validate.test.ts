@@ -115,6 +115,43 @@ describe("validateGeneratedExtractor — disallowed reference rejection", () => 
     expect(reasons(issues)).toContain(token.split(".")[1]);
   });
 
+  it("rejects computed-string destructuring of a disallowed property", () => {
+    const code = `async function extract(doc, askLlm) {
+      const { ["constructor"]: C } = askLlm;
+      return { x: typeof C };
+    }`;
+    expect(reasons(validateGeneratedExtractor(code))).toContain("constructor");
+  });
+
+  it.each([
+    ["member", `return typeof window.fetch;`],
+    ["computed", `return typeof window["fetch"];`],
+  ])("rejects fetch reached off a global object (%s)", (_kind, body) => {
+    const code = `async function extract(doc, askLlm) { ${body} }`;
+    expect(reasons(validateGeneratedExtractor(code))).toContain("fetch");
+  });
+
+  it.each([
+    [
+      "an unused parameter",
+      `async function extract(doc, process) {
+      return { title: doc.title };
+    }`,
+    ],
+    [
+      "an object method name",
+      `async function extract(doc, askLlm) {
+      const o = { process() { return doc.title; } };
+      return { x: o.process() };
+    }`,
+    ],
+  ])("does not flag a forbidden name shadowed as %s", (_kind, code) => {
+    // Only free references are flagged; a name introduced in a binding/member
+    // position is not (a *use* of such a local would still be conservatively
+    // flagged — static checks can't resolve scope).
+    expect(validateGeneratedExtractor(code)).toEqual([]);
+  });
+
   it("does not catch computed access through a variable (documented limitation)", () => {
     // Computed access through a variable is out of scope for this static check —
     // resolving `k` would need dataflow. Pinned so the gap is known, not a miss.
