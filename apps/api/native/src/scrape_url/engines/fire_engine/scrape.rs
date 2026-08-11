@@ -102,7 +102,10 @@ pub struct FireEngineScrapeCompleted {
 #[serde(rename_all = "camelCase")]
 pub struct FireEngineScrapeProcessing {
   pub job_id: String,
-  // pub processing: bool, // TODO: unnecessary to parse. remove?
+
+  // yeah sure we don't read this but we still need it for untagged to work properly
+  #[allow(dead_code)]
+  pub processing: bool,
 }
 
 #[derive(Deserialize)]

@@ -5,6 +5,8 @@ use encoding_rs::{Encoding, UTF_8};
 use mime::Mime;
 use regex::regex;
 
+use crate::_get_inner_json;
+
 use super::super::{
   document::{Document, DocumentMetadata, DocumentMetadataCacheState},
   engines::{EngineScrapeContent, EngineScrapeResult},
@@ -41,7 +43,14 @@ pub fn parse_fallback(meta: &Meta, result: EngineScrapeResult) -> Result<Documen
       let encoding = deduce_encoding(&bytes, &result.content_type);
       (encoding.decode(bytes.as_ref()).0.to_string(), None)
     }
-    EngineScrapeContent::DecodedText(text) => (text, None),
+    EngineScrapeContent::ChromeRenderedDOM(text) => {
+      let text = if result.content_type.contains("application/json") {
+        _get_inner_json(&text).unwrap_or(text)
+      } else {
+        text
+      };
+      (text, None)
+    }
     EngineScrapeContent::GeneratedMarkdown(md) => (
       markdown::to_html_with_options(&md, &markdown::Options::gfm())
         .expect("this error is impossible"),

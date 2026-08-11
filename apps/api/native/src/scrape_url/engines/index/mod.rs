@@ -12,7 +12,6 @@ use self::{
   db::{IndexDb, IndexEntry},
 };
 use super::super::{
-  error::ScrapeURLError,
   feature_flags::{ConstFeatureFlags, FeatureFlag},
   meta::Meta,
 };
@@ -342,7 +341,7 @@ impl Engine for IndexEngine {
 
         Ok(EngineScrapeResult {
           url: doc.url,
-          content: EngineScrapeContent::DecodedText(doc.html),
+          content: EngineScrapeContent::ChromeRenderedDOM(doc.html), // TODO: is this the right type for this?
           // json???
           status_code: doc.status_code,
           screenshot: doc.screenshot,

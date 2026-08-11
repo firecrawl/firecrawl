@@ -85,7 +85,7 @@ impl Engine for PlaywrightEngine {
 
     Ok(EngineScrapeResult {
       url: meta.get_url().clone(), // TODO: improve redirect following
-      content: EngineScrapeContent::DecodedText(body.content), // TODO: improve binary file handling
+      content: EngineScrapeContent::ChromeRenderedDOM(body.content), // TODO: improve binary file handling
       status_code: body.page_status_code,
       content_type: body
         .content_type

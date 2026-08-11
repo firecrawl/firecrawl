@@ -3,12 +3,9 @@ use std::sync::LazyLock;
 use regex::Regex;
 use sha2::{Digest, Sha256};
 
-use crate::{
-  _get_inner_json, scrape_url::engines::fire_engine::check_status::FireEngineScrapeStatus,
-};
-
 use self::{
   actions::{FireEngineActionResultCookie, FireEngineActionResultKind},
+  check_status::FireEngineScrapeStatus,
   scrape::{
     FireEnginePersistentStorage, FireEngineScrapeRequest, FireEngineScrapeRequestEngine,
     FireEngineScrapeResponse,
@@ -223,11 +220,7 @@ impl FireEngine {
       }),
     }?;
 
-    let content_type = result
-      .response_headers
-      .into_iter()
-      .find(|(k, _)| k.eq_ignore_ascii_case("content-type"))
-      .map_or_else(|| "application/octet-stream".to_string(), |(_, v)| v);
+    let mut screenshots_iter = result.screenshots.into_iter();
 
     Ok(FireEngineScrape {
       result: EngineScrapeResult {
@@ -243,20 +236,18 @@ impl FireEngine {
             .into(),
           )
         } else {
-          let html = if content_type.contains("application/json") {
-            _get_inner_json(&result.content).unwrap_or(result.content)
-          } else {
-            result.content
-          };
-
-          EngineScrapeContent::DecodedText(html)
+          EngineScrapeContent::ChromeRenderedDOM(result.content)
         },
         status_code: result.page_status_code,
 
-        content_type,
+        content_type: result
+          .response_headers
+          .into_iter()
+          .find(|(k, _)| k.eq_ignore_ascii_case("content-type"))
+          .map_or_else(|| "application/octet-stream".to_string(), |(_, v)| v),
 
         screenshot: if meta.options.formats.contains(FormatKind::Screenshot)
-          && let Some(screenshot) = result.screenshots.get(0)
+          && let Some(screenshot) = screenshots_iter.next()
         {
           Some(screenshot.to_owned())
         } else {
@@ -265,7 +256,7 @@ impl FireEngine {
 
         actions: if had_actions {
           Some(EngineScrapeResultActions {
-            screenshots: result.screenshots,
+            screenshots: screenshots_iter.collect(),
             scrapes: result.action_content,
             javascript_returns: result
               .action_results
