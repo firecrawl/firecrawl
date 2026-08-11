@@ -166,6 +166,73 @@ const mapResult = await app.map('https://example.com');
 console.log(mapResult);
 ```
 
+### Search
+
+Use `search` to search the web and optionally scrape the results in the same call.
+
+```js
+const results = await app.search('what is retrieval augmented generation?', { limit: 5 });
+for (const result of results.web ?? []) {
+  console.log(result.url, '-', result.title);
+}
+
+// Scrape every result as part of the search:
+const scraped = await app.search('firecrawl changelog', {
+  limit: 3,
+  scrapeOptions: { formats: ['markdown'] },
+});
+```
+
+Results are grouped by source: `.web`, `.news`, `.images` and `.developer`.
+
+Use `categories` to narrow web search to a kind of site:
+
+```js
+const results = await app.search('nanopore basecalling accuracy', {
+  categories: ['research'],
+});
+```
+
+> **`categories: ['research']` is a website filter, not the paper index.** It
+> restricts ordinary web search to roughly 14 academic domains (arxiv.org,
+> pubmed.ncbi.nlm.nih.gov, nature.com, biorxiv.org, ...) and returns web page
+> results. To search papers themselves, use `research.searchPapers` below.
+
+### Research / paper search
+
+Use `app.research` to search Firecrawl's research paper index: ~43M paper
+abstracts, roughly 90% biomedical and life sciences (PubMed, bioRxiv, medRxiv),
+plus arXiv for physics, mathematics and computer science.
+
+```js
+// Search the paper index (semantic search over abstracts):
+const papers = await app.research.searchPapers(
+  'CRISPR base editing off-target effects in primary human T cells',
+  { k: 10 },
+);
+for (const paper of papers.results) {
+  console.log(paper.primaryId, '-', paper.title);
+}
+
+// Inspect one paper's metadata (accepts pmid:, pmcid:, doi: or arxiv: ids):
+const paper = await app.research.getPaper('pmid:<id>');
+
+// Read the passages inside a paper that answer a specific question:
+const read = await app.research.getPaper('pmid:<id>', {
+  query: 'what was the primary endpoint and the reported hazard ratio?',
+  k: 4,
+});
+
+// Expand along the citation graph, re-ranked for your stated intent:
+const related = await app.research.similarPapers('pmid:<id>', {
+  intent: 'replication attempts in larger cohorts',
+  k: 20,
+});
+```
+
+A companion `app.research.searchGithub` searches indexed GitHub issue/PR history
+and repository readmes.
+
 ### Scrape-bound interactive browsing (v2)
 
 Use a scrape job ID to keep interacting with the replayed browser context:

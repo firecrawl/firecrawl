@@ -225,19 +225,113 @@ class FirecrawlClient:
         ) if any(v is not None for v in [formats, headers, include_tags, exclude_tags, only_main_content, timeout, wait_for, mobile, parsers, actions, location, skip_tls_verification, remove_base64_images, fast_mode, use_mock, block_ads, proxy, max_age, store_in_cache, lockdown, threat_protection, profile, audit_metadata, integration]) else None
         return scrape_module.scrape(self.http_client, url, options)
 
+    # Research paper index (/v2/search/research)
     def search_papers(self, query: str, **kwargs):
+        """
+        Search the research paper index by abstract relevance.
+
+        Queries ~43M paper abstracts: PubMed, bioRxiv and medRxiv (about 90% of
+        the corpus — biomedical and life sciences) plus arXiv (physics,
+        mathematics, computer science). Use this for literature search.
+
+        Not to be confused with ``search(categories=["research"])``: that is a
+        website/domain filter on ordinary web search (it narrows Google-style
+        results to ~14 academic domains and returns page snippets). This method
+        searches the paper index itself and returns ranked paper records.
+
+        Args:
+            query: Natural-language query, e.g. ``"CRISPR base editing
+                off-target effects in primary human T cells"``.
+            **kwargs: ``k``, ``authors``, ``categories``, ``from_date``,
+                ``to_date``.
+
+        Returns:
+            Raw API ``dict`` with ``success`` and ``results``. These research
+            responses are **not** normalized to snake_case like the rest of the
+            SDK — keys are camelCase (``paperId``, ``primaryId``, ...).
+
+        Example:
+            >>> firecrawl.search_papers("GLP-1 receptor agonists cardiovascular outcomes", k=10)
+        """
         return research_module.search_papers(self.http_client, query, **kwargs)
 
     def inspect_paper(self, paper_id: str):
+        """
+        Fetch metadata for one paper in the research paper index.
+
+        Args:
+            paper_id: Canonical ``paperId`` from ``search_papers``, or a
+                namespaced id key such as ``pmid:<id>``, ``pmcid:<id>``,
+                ``doi:<doi>`` or ``arxiv:<id>``.
+
+        Returns:
+            Raw API ``dict`` with ``success`` and ``paper``. Keys are camelCase,
+            **not** snake_case-normalized (``paperId``, ``createdDate``, ...).
+        """
         return research_module.inspect_paper(self.http_client, paper_id)
 
     def read_paper(self, paper_id: str, query: str, **kwargs):
+        """
+        Read inside a paper: return the body passages that best match a query.
+
+        Full-text passage retrieval over the research paper index (PubMed /
+        bioRxiv / medRxiv / arXiv).
+
+        Args:
+            paper_id: Canonical ``paperId`` or namespaced id key
+                (``pmid:<id>``, ``pmcid:<id>``, ``doi:<doi>``, ``arxiv:<id>``).
+            query: What to look for inside the paper, e.g. ``"primary endpoint
+                and hazard ratio"``.
+            **kwargs: ``k`` (max passages).
+
+        Returns:
+            Raw API ``dict`` with ``success``, ``paper``, ``paperId``, ``query``
+            and ``passages``. Keys are camelCase, **not** snake_case-normalized.
+        """
         return research_module.read_paper(self.http_client, paper_id, query, **kwargs)
 
     def related_papers(self, paper_id: str, intent: str, **kwargs):
+        """
+        Find papers related to a seed paper via the citation graph.
+
+        Candidates are re-ranked against ``intent``, so "related" means related
+        for your stated purpose rather than merely co-cited.
+
+        Args:
+            paper_id: Seed paper — canonical ``paperId`` or namespaced id key
+                (``pmid:<id>``, ``pmcid:<id>``, ``doi:<doi>``, ``arxiv:<id>``).
+            intent: What you want the related papers for, e.g. ``"replication
+                attempts in larger cohorts"``.
+            **kwargs: ``mode``, ``k``, ``rerank``, ``anchor``.
+
+        Returns:
+            Raw API ``dict`` with ``success``, ``results``, ``poolSize``,
+            ``truncated`` and optional ``note``. Keys are camelCase, **not**
+            snake_case-normalized (``articleRank``, ``seedOverlap``, ...).
+
+        Note:
+            The JS SDK exposes this same endpoint as
+            ``research.similarPapers()``.
+        """
         return research_module.related_papers(self.http_client, paper_id, intent, **kwargs)
 
     def search_github(self, query: str, **kwargs):
+        """
+        Search the developer index: GitHub issue/PR history and repo readmes.
+
+        The code-and-discussion companion to ``search_papers``, served by the
+        same ``/v2/search/research`` surface. It does not search the paper
+        corpus, and it is not ``search(categories=["github"])`` (which is just a
+        ``site:github.com`` filter on ordinary web search).
+
+        Args:
+            query: Natural-language query, e.g. ``"pysam VCF parsing memory leak"``.
+            **kwargs: ``k``.
+
+        Returns:
+            Raw API ``dict`` with ``success`` and ``results``. Keys are
+            camelCase, **not** snake_case-normalized.
+        """
         return research_module.search_github(self.http_client, query, **kwargs)
 
     def interact(

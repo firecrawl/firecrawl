@@ -2631,7 +2631,7 @@ class V1FirecrawlApp:
         Initiates a deep research operation on a given query and polls until completion.
 
         .. deprecated::
-            /v1/deep-research is deprecated. Use /v2/search instead.
+            /v1/deep-research is deprecated. Use /v2/search for web research, or the v2 research paper index (search_papers()) for scientific literature.
 
         Args:
             query (str): Research query or topic to investigate
@@ -2660,7 +2660,7 @@ class V1FirecrawlApp:
         """
         import warnings
         warnings.warn(
-            "/v1/deep-research is deprecated. Use /v2/search instead.",
+            "/v1/deep-research is deprecated. Use /v2/search for web research, or the v2 research paper index (search_papers()) for scientific literature.",
             DeprecationWarning,
             stacklevel=2,
         )
@@ -2734,7 +2734,7 @@ class V1FirecrawlApp:
         Initiates an asynchronous deep research operation.
 
         .. deprecated::
-            /v1/deep-research is deprecated. Use /v2/search instead.
+            /v1/deep-research is deprecated. Use /v2/search for web research, or the v2 research paper index (search_papers()) for scientific literature.
 
         Args:
             query (str): Research query or topic to investigate
@@ -2756,7 +2756,7 @@ class V1FirecrawlApp:
         """
         import warnings
         warnings.warn(
-            "/v1/deep-research is deprecated. Use /v2/search instead.",
+            "/v1/deep-research is deprecated. Use /v2/search for web research, or the v2 research paper index (search_papers()) for scientific literature.",
             DeprecationWarning,
             stacklevel=2,
         )
@@ -2805,7 +2805,7 @@ class V1FirecrawlApp:
         Check the status of a deep research operation.
 
         .. deprecated::
-            /v1/deep-research is deprecated. Use /v2/search instead.
+            /v1/deep-research is deprecated. Use /v2/search for web research, or the v2 research paper index (search_papers()) for scientific literature.
 
         Args:
             id (str): The ID of the deep research operation.
@@ -2830,7 +2830,7 @@ class V1FirecrawlApp:
         """
         import warnings
         warnings.warn(
-            "/v1/deep-research is deprecated. Use /v2/search instead.",
+            "/v1/deep-research is deprecated. Use /v2/search for web research, or the v2 research paper index (search_papers()) for scientific literature.",
             DeprecationWarning,
             stacklevel=2,
         )
@@ -4994,7 +4994,7 @@ class AsyncV1FirecrawlApp(V1FirecrawlApp):
         Initiates a deep research operation on a given query and polls until completion.
 
         .. deprecated::
-            /v1/deep-research is deprecated. Use /v2/search instead.
+            /v1/deep-research is deprecated. Use /v2/search for web research, or the v2 research paper index (search_papers()) for scientific literature.
 
         Args:
             query (str): Research query or topic to investigate
@@ -5023,7 +5023,7 @@ class AsyncV1FirecrawlApp(V1FirecrawlApp):
         """
         import warnings
         warnings.warn(
-            "/v1/deep-research is deprecated. Use /v2/search instead.",
+            "/v1/deep-research is deprecated. Use /v2/search for web research, or the v2 research paper index (search_papers()) for scientific literature.",
             DeprecationWarning,
             stacklevel=2,
         )
@@ -5097,7 +5097,7 @@ class AsyncV1FirecrawlApp(V1FirecrawlApp):
         Initiates an asynchronous deep research operation.
 
         .. deprecated::
-            /v1/deep-research is deprecated. Use /v2/search instead.
+            /v1/deep-research is deprecated. Use /v2/search for web research, or the v2 research paper index (search_papers()) for scientific literature.
 
         Args:
             query (str): Research query or topic to investigate
@@ -5119,7 +5119,7 @@ class AsyncV1FirecrawlApp(V1FirecrawlApp):
         """
         import warnings
         warnings.warn(
-            "/v1/deep-research is deprecated. Use /v2/search instead.",
+            "/v1/deep-research is deprecated. Use /v2/search for web research, or the v2 research paper index (search_papers()) for scientific literature.",
             DeprecationWarning,
             stacklevel=2,
         )
@@ -5157,7 +5157,7 @@ class AsyncV1FirecrawlApp(V1FirecrawlApp):
         Check the status of a deep research operation.
 
         .. deprecated::
-            /v1/deep-research is deprecated. Use /v2/search instead.
+            /v1/deep-research is deprecated. Use /v2/search for web research, or the v2 research paper index (search_papers()) for scientific literature.
 
         Args:
             id (str): The ID of the deep research operation.
@@ -5182,7 +5182,7 @@ class AsyncV1FirecrawlApp(V1FirecrawlApp):
         """
         import warnings
         warnings.warn(
-            "/v1/deep-research is deprecated. Use /v2/search instead.",
+            "/v1/deep-research is deprecated. Use /v2/search for web research, or the v2 research paper index (search_papers()) for scientific literature.",
             DeprecationWarning,
             stacklevel=2,
         )

@@ -180,6 +180,80 @@ map_result = firecrawl.map('https://firecrawl.dev')
 print(map_result)
 ```
 
+### Search
+
+Use `search` to search the web and optionally scrape the results in the same call.
+
+```python
+# Search the web (v2):
+results = firecrawl.search("what is retrieval augmented generation?", limit=5)
+for result in results.web or []:
+    print(result.url, "-", result.title)
+
+# Scrape every result as part of the search:
+results = firecrawl.search(
+    "firecrawl changelog",
+    limit=3,
+    scrape_options={"formats": ["markdown"]},
+)
+```
+
+Results are grouped by source: `.web`, `.news`, `.images` and `.developer`.
+
+Use `categories` to narrow web search to a kind of site:
+
+```python
+results = firecrawl.search("nanopore basecalling accuracy", categories=["research"])
+```
+
+> **`categories=["research"]` is a website filter, not the paper index.** It
+> restricts ordinary web search to roughly 14 academic domains (arxiv.org,
+> pubmed.ncbi.nlm.nih.gov, nature.com, biorxiv.org, ...) and returns web page
+> results. To search papers themselves, use `search_papers` below.
+
+### Research / paper search
+
+Use `search_papers` to search Firecrawl's research paper index: ~43M paper
+abstracts, roughly 90% biomedical and life sciences (PubMed, bioRxiv, medRxiv),
+plus arXiv for physics, mathematics and computer science.
+
+```python
+# Search the paper index (semantic search over abstracts):
+papers = firecrawl.search_papers(
+    "CRISPR base editing off-target effects in primary human T cells",
+    k=10,
+)
+for paper in papers["results"]:
+    print(paper["primaryId"], "-", paper["title"])
+
+# Inspect one paper's metadata (accepts pmid:, pmcid:, doi: or arxiv: ids):
+paper = firecrawl.inspect_paper("pmid:<id>")
+
+# Read the passages inside a paper that answer a specific question:
+passages = firecrawl.read_paper(
+    "pmid:<id>",
+    "what was the primary endpoint and the reported hazard ratio?",
+    k=4,
+)
+
+# Expand along the citation graph, re-ranked for your stated intent:
+related = firecrawl.related_papers(
+    "pmid:<id>",
+    intent="replication attempts in larger cohorts",
+    k=20,
+)
+```
+
+A companion `search_github` searches indexed GitHub issue/PR history and repo
+readmes.
+
+> **Response keys are camelCase.** Unlike the rest of the SDK, the research
+> methods return the raw JSON body as a `dict` — they are not parsed into typed
+> models and not normalized to snake_case. Expect `paperId`, `primaryId`,
+> `createdDate`, `articleRank`, `poolSize`, and so on.
+
+Every method above is also available on `AsyncFirecrawl` with the same name.
+
 ### Scrape-bound interactive browsing (v2)
 
 Use a scrape job ID to keep interacting with the replayed browser context:

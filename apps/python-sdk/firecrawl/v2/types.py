@@ -559,12 +559,30 @@ SourceOption = Union[str, Source]
 class Category(BaseModel):
     """Configuration for a search category.
 
+    Categories narrow ordinary **web search**. They do not switch `search()` to
+    a different index.
+
     Supported categories:
-    - "github": Filter results to GitHub repositories
-    - "research": Filter results to research papers and academic sites
+    - "github": Restrict web results to github.com (a `site:` filter)
+    - "research": Restrict web results to a fixed list of ~14 academic
+      *websites* (arxiv.org, pubmed.ncbi.nlm.nih.gov, nature.com, science.org,
+      ieee.org, sciencedirect.com, biorxiv.org, medrxiv.org, ...). This is a
+      website/domain filter and it returns ordinary web page results for those
+      domains — **not** paper records.
     - "pdf": Filter results to PDF files (adds filetype:pdf to search)
     - "developer": Add developer results (issues, pull requests, READMEs and
       documentation) under `.developer`
+
+    .. warning::
+       ``categories=["research"]`` is **not** Firecrawl's research paper index.
+       To search papers themselves — ~43M abstracts, about 90% biomedical
+       (PubMed, bioRxiv, medRxiv) plus arXiv — with full abstracts, in-body
+       passage reads and citation-graph expansion, use
+       :meth:`Firecrawl.search_papers` (and ``inspect_paper``, ``read_paper``,
+       ``related_papers``), which call ``/v2/search/research``.
+
+       Rule of thumb: literature search → ``search_papers()``; web pages that
+       happen to live on academic domains → ``search(categories=["research"])``.
     """
 
     type: str

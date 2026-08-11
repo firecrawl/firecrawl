@@ -63,16 +63,47 @@ function normalizeResearchError(err: any, action: string): never {
 }
 
 /**
- * Client for the v2 research endpoints (arXiv papers + GitHub history/readmes).
+ * Client for the v2 research endpoints — Firecrawl's **research paper index**
+ * (~43M paper abstracts) plus GitHub history/readmes.
+ *
+ * The paper corpus is roughly 90% biomedical and life sciences — PubMed,
+ * bioRxiv and medRxiv — with arXiv covering physics, mathematics and computer
+ * science. Supports abstract search, paper metadata, in-body passage reads and
+ * citation-graph expansion.
+ *
+ * ⚠️ This is **not** the same as `search({ categories: ["research"] })`. That
+ * option is a website/domain filter on ordinary web search: it narrows
+ * Google-style results to ~14 academic domains and returns page snippets. The
+ * methods here query the paper index itself and return ranked paper records.
+ *
  * Accessed via `firecrawl.research`.
+ *
+ * @example
+ * ```ts
+ * const res = await firecrawl.research.searchPapers(
+ *   "tau aggregation inhibitors in Alzheimer's disease",
+ *   { k: 10 },
+ * );
+ * ```
  */
 export class ResearchClient {
   constructor(private readonly http: HttpClient) {}
 
   /**
-   * Search papers by abstract relevance.
-   * @param query Natural-language search query.
-   * @param options Optional filters (k, authors, categories, from, to).
+   * Search the research paper index by abstract relevance.
+   *
+   * Queries ~43M paper abstracts: PubMed, bioRxiv and medRxiv (about 90% of the
+   * corpus — biomedical and life sciences) plus arXiv (physics, mathematics,
+   * computer science). Semantic search over abstracts, not keyword matching.
+   *
+   * This is **not** `search({ categories: ["research"] })`, which only narrows
+   * ordinary web search to ~14 academic websites.
+   *
+   * @param query Natural-language search query, e.g. `"CRISPR base editing
+   *   off-target effects in primary human T cells"`.
+   * @param options Optional filters (k, authors, categories, from, to). Note
+   *   `categories` here filters *paper* subject categories (e.g. `"q-bio.GN"`)
+   *   and is unrelated to the `categories` option of `search()`.
    */
   async searchPapers(
     query: string,
@@ -102,8 +133,9 @@ export class ResearchClient {
   /**
    * Get paper metadata (detail mode), or read in-body passages (when `query` is
    * supplied). `k` is only valid together with `query`.
-   * @param id Paper reference: a canonical `paper_id`, an `arxiv:<id>` key, or a
-   *   bare arXiv id / URL.
+   * @param id Paper reference: a canonical `paperId`, or a namespaced id key
+   *   such as `pmid:<id>`, `pmcid:<id>`, `doi:<doi>` or `arxiv:<id>`. Bare
+   *   arXiv ids and arXiv URLs are also accepted.
    * @param options Optional `query` (switches to read mode) and `k`.
    */
   async getPaper(
