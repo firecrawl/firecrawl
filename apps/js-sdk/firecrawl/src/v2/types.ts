@@ -1459,7 +1459,7 @@ export interface GitHubScoreBreakdown {
 }
 
 export interface GitHubSearchItem {
-  resultType: "github_history" | "repo_readme" | "web";
+  resultType?: "github_history" | "repo_readme" | "web";
   /** `owner/name`; empty for web results whose URL is not a repo page. */
   repo: string;
   url: string;

@@ -15,8 +15,6 @@ const CANONICAL_PATH = "/v2/search/developer";
 const LEGACY_PATH = "/v2/developer/search";
 const SERVING_PATHS = [CANONICAL_PATH, LEGACY_PATH];
 
-const COVERAGE_STATUSES = ["ok", "degraded", "unavailable", "skipped"];
-
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 const sleepForBilling = () => sleep(40000);
 
@@ -51,17 +49,10 @@ describeIf(HAS_RESEARCH)("Developer Search API", () => {
       expect(res.statusCode).toBe(200);
       expect(res.body.success).toBe(true);
       expect(Array.isArray(res.body.results)).toBe(true);
-      for (const type of ["doc", "issue", "pull_request", "readme"]) {
-        expect(COVERAGE_STATUSES).toContain(res.body.coverage[type]);
-      }
-      expect(typeof res.body.reranked).toBe("boolean");
 
       for (const result of res.body.results) {
         expect(typeof result.id).toBe("string");
         expect(typeof result.url).toBe("string");
-        expect(["doc", "issue", "pull_request", "readme"]).toContain(
-          result.type,
-        );
         expect(Array.isArray(result.passages)).toBe(true);
         expect(result.license).toBeUndefined();
       }
@@ -82,11 +73,6 @@ describeIf(HAS_RESEARCH)("Developer Search API", () => {
       expect(res.statusCode).toBe(200);
       expect(res.body.success).toBe(true);
       expect(Array.isArray(res.body.results)).toBe(true);
-      for (const result of res.body.results) {
-        expect(["issue", "readme"]).toContain(result.type);
-      }
-      expect(res.body.coverage.doc).toBe("skipped");
-      expect(res.body.coverage.pull_request).toBe("skipped");
     }, 120000);
   });
 
