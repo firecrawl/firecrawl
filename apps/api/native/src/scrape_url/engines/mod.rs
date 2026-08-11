@@ -57,7 +57,7 @@ impl Display for EngineScrapeProxy {
 
 pub enum EngineScrapeContent {
   Bytes(Bytes),
-  DecodedText(String),
+  ChromeRenderedDOM(String),
   GeneratedMarkdown(String),
 }
 
