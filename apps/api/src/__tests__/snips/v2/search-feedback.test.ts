@@ -109,6 +109,123 @@ describeIf(TEST_PRODUCTION)("Search feedback tests", () => {
     90000,
   );
 
+  // A search that returned nothing can have no valuable positions, so zero is a
+  // real bound rather than an "unknown count" that permits any position.
+  it.concurrent(
+    "drops result positions when the search returned no results",
+    async () => {
+      const raw = await searchRawFull(
+        { query: "firecrawl zero results bound", limit: 3 },
+        identity,
+      );
+      expect(raw.statusCode).toBe(200);
+      const searchId = raw.body.id;
+
+      await db
+        .update(schema.searches)
+        .set({ num_results: 0 })
+        .where(
+          and(
+            eq(schema.searches.id, searchId),
+            eq(schema.searches.team_id, identity.teamId),
+          ),
+        );
+
+      const result = await searchFeedback(
+        searchId,
+        { rating: "good", valuableResultPositions: [1] },
+        identity,
+      );
+      expect(result.success).toBe(true);
+
+      const [feedbackRow] = await db
+        .select({
+          valuable_sources: schema.search_feedback.valuable_sources,
+          metadata: schema.search_feedback.metadata,
+        })
+        .from(schema.search_feedback)
+        .where(eq(schema.search_feedback.id, result.feedbackId))
+        .limit(1);
+
+      expect(feedbackRow).toBeTruthy();
+      expect(feedbackRow.valuable_sources).toEqual([]);
+      expect(feedbackRow.metadata).not.toHaveProperty(
+        "valuableResultPositions",
+      );
+      expect(feedbackRow.metadata).not.toHaveProperty(
+        "valuableResultDocumentIds",
+      );
+    },
+    90000,
+  );
+
+  // num_results is web+news+images combined, so on a multi-source search it
+  // over-counts the web list; `limit` caps each source list independently.
+  it.concurrent(
+    "bounds result positions by limit when other sources inflate num_results",
+    async () => {
+      const raw = await searchRawFull(
+        { query: "firecrawl multi source bound", limit: 3 },
+        identity,
+      );
+      expect(raw.statusCode).toBe(200);
+      const searchId = raw.body.id;
+      expect((raw.body.data?.web ?? []).length).toBeGreaterThan(0);
+
+      const [searchRow] = await db
+        .select({ options: schema.searches.options })
+        .from(schema.searches)
+        .where(
+          and(
+            eq(schema.searches.id, searchId),
+            eq(schema.searches.team_id, identity.teamId),
+          ),
+        )
+        .limit(1);
+      expect(searchRow).toBeTruthy();
+
+      // Stand in for a web+news search that returned 3 of each.
+      await db
+        .update(schema.searches)
+        .set({
+          num_results: 6,
+          options: {
+            ...((searchRow.options as Record<string, unknown> | null) ?? {}),
+            limit: 3,
+            sources: [{ type: "web" }, { type: "news" }],
+          },
+        })
+        .where(
+          and(
+            eq(schema.searches.id, searchId),
+            eq(schema.searches.team_id, identity.teamId),
+          ),
+        );
+
+      const result = await searchFeedback(
+        searchId,
+        { rating: "good", valuableResultPositions: [1, 5] },
+        identity,
+      );
+      expect(result.success).toBe(true);
+
+      const [feedbackRow] = await db
+        .select({ metadata: schema.search_feedback.metadata })
+        .from(schema.search_feedback)
+        .where(eq(schema.search_feedback.id, result.feedbackId))
+        .limit(1);
+
+      expect(feedbackRow).toBeTruthy();
+      expect(feedbackRow.metadata).toEqual(
+        expect.objectContaining({
+          valuableResultPositions: [1],
+          valuableResultDocumentIds: [`search:${searchId}:web:0`],
+        }),
+      );
+    },
+    90000,
+  );
+
   it.concurrent(
     "is idempotent — second submission returns 0 refund",
     async () => {

@@ -32,19 +32,68 @@ function searchFeedbackResultDocumentId(
   return `search:${searchId}:${resultType}:${resultIndex}`;
 }
 
+/**
+ * Source types the search returned, normalised from the stored request body.
+ * Returns null when the shape is unrecognised so callers fall back to a looser
+ * bound instead of guessing.
+ */
+function searchSourceTypes(options: unknown): string[] | null {
+  const sources = (options as { sources?: unknown } | null)?.sources;
+  // `sources` prefaults to ["web"], so an absent value means web-only.
+  if (sources === undefined || sources === null) return ["web"];
+  if (!Array.isArray(sources)) return null;
+
+  const types = sources.map(source =>
+    typeof source === "string"
+      ? source
+      : (source as { type?: unknown } | null)?.type,
+  );
+  return types.every((type): type is string => typeof type === "string")
+    ? types
+    : null;
+}
+
+/**
+ * Highest 1-indexed `data.web` position the job could plausibly have returned,
+ * or null when the job row carries no usable bound.
+ *
+ * `num_results` counts web+news+images combined, so it only bounds the web list
+ * exactly when web was the sole source. For multi-source searches, news/images
+ * inflate it, so we additionally clamp to the request's `limit` — every source
+ * list is sliced to `limit` independently in `search/execute.ts`.
+ */
+function maxWebResultPosition(job: FeedbackJobRow): number | null {
+  const numResults = job.num_results;
+  if (
+    typeof numResults !== "number" ||
+    !Number.isInteger(numResults) ||
+    numResults < 0
+  ) {
+    return null;
+  }
+
+  const sourceTypes = searchSourceTypes(job.options);
+  if (sourceTypes !== null && sourceTypes.every(type => type === "web")) {
+    return numResults;
+  }
+
+  const limit = (job.options as { limit?: unknown } | null)?.limit;
+  if (typeof limit !== "number" || !Number.isInteger(limit) || limit <= 0) {
+    return numResults;
+  }
+  return Math.min(numResults, limit);
+}
+
 function valuableResultDocuments(
   job: FeedbackJobRow,
   positions: number[] | undefined,
 ): ValuableResultDocument[] {
   if (job.endpoint !== "search" || !positions?.length) return [];
 
-  // num_results counts web+news+images combined, so this is an upper bound
-  // rather than an exact web-result count — but it still rejects hallucinated
-  // positions, which would otherwise become false-positive relevance labels.
-  const maxPosition =
-    typeof job.num_results === "number" && job.num_results > 0
-      ? job.num_results
-      : null;
+  // Rejects hallucinated positions, which would otherwise be stored as
+  // false-positive relevance labels. Zero is a real bound: a search that
+  // returned nothing can have no valuable positions.
+  const maxPosition = maxWebResultPosition(job);
 
   const seenPositions = new Set<number>();
   return positions.flatMap(position => {
