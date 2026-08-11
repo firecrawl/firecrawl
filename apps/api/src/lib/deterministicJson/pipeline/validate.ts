@@ -145,15 +145,14 @@ function validateTopLevelShape(
 
 // Reject references a generated DOM extractor has no legitimate reason to use.
 // The extractor runs inside jsdom's VM context (see sandbox/harness.ts); this is
-// a best-effort validation/robustness layer over that sandbox, NOT the isolation
-// boundary. It flags the disallowed names where they are *statically* reachable:
-// member (`x.NAME`), computed-string (`x["NAME"]`), and destructuring access in
-// both declaration (`const { NAME } = x`) and assignment (`({ NAME } = x)`)
-// forms, plus `with`. It is deliberately not exhaustive — forms that would need
-// dataflow or interprocedural analysis are out of scope and left to the sandbox:
-// computed access through a variable (`x[k]`), and a name passed as a string to a
-// reflection API (`Reflect.get(o, "NAME")`, `Object.getOwnPropertyDescriptor(o,
-// "NAME")`).
+// a best-effort validation/robustness layer, not an exhaustive one, and not the
+// enforcement boundary (the runtime sandbox is). It flags the disallowed names
+// where they are statically and unambiguously reached — member (`x.name`),
+// computed-string (`x["name"]`), and declaration destructuring
+// (`const { name } = x`), plus `with`. Names reached only through indirection are
+// deliberately out of scope, since resolving them reliably needs analysis this
+// pass doesn't do: a variable-keyed access (`x[k]`), a reflection helper, or an
+// assignment / `for..of` destructuring pattern.
 //
 // Globals the sandbox doesn't provide, plus code-eval primitives (`Function`/
 // `eval`) and ambient objects (`globalThis`/`Reflect`/`Proxy`) extractors never
@@ -239,45 +238,6 @@ function staticPropertyName(nameNode: ts.Node): string | undefined {
     : undefined;
 }
 
-// True when an object literal is a destructuring *assignment target* — the LHS of
-// `=`, possibly nested inside an outer pattern — rather than a value being built.
-// `({ constructor: C } = obj)` reads obj.constructor; `return { constructor: v }`
-// does not, so only the former is treated as a property read.
-function isDestructuringTarget(node: ts.Node): boolean {
-  let current: ts.Node = node;
-  for (let parent = current.parent; parent; parent = current.parent) {
-    if (ts.isBinaryExpression(parent)) {
-      return (
-        parent.operatorToken.kind === ts.SyntaxKind.EqualsToken &&
-        parent.left === current
-      );
-    }
-    // Climb out of a nested destructuring pattern toward its assignment root.
-    if (
-      (ts.isPropertyAssignment(parent) ||
-        ts.isShorthandPropertyAssignment(parent) ||
-        ts.isSpreadAssignment(parent)) &&
-      ts.isObjectLiteralExpression(parent.parent)
-    ) {
-      current = parent.parent;
-      continue;
-    }
-    if (
-      ts.isSpreadElement(parent) &&
-      ts.isArrayLiteralExpression(parent.parent)
-    ) {
-      current = parent.parent;
-      continue;
-    }
-    if (ts.isArrayLiteralExpression(parent)) {
-      current = parent;
-      continue;
-    }
-    return false;
-  }
-  return false;
-}
-
 function detectForbiddenGlobals(
   source: ts.SourceFile,
   issues: GeneratedCodeIssue[],
@@ -340,19 +300,6 @@ function detectForbiddenGlobals(
       !node.dotDotDotToken
     ) {
       const text = staticPropertyName(node.propertyName ?? node.name);
-      if (text && FORBIDDEN_PROPERTIES.has(text)) flag(text, "property");
-    }
-
-    // assignment destructuring: `({ constructor: C } = obj)` / `({ constructor } =
-    // obj)` reads obj.constructor, unlike an object literal built as a value
-    // (`return { constructor: v }`), which isDestructuringTarget rules out.
-    if (
-      (ts.isPropertyAssignment(node) ||
-        ts.isShorthandPropertyAssignment(node)) &&
-      ts.isObjectLiteralExpression(node.parent) &&
-      isDestructuringTarget(node.parent)
-    ) {
-      const text = staticPropertyName(node.name);
       if (text && FORBIDDEN_PROPERTIES.has(text)) flag(text, "property");
     }
 

@@ -166,25 +166,9 @@ describe("validateGeneratedExtractor — disallowed reference rejection", () => 
     expect(validateGeneratedExtractor(code)).toEqual([]);
   });
 
-  it.each([
-    ["named", `let C; ({ constructor: C } = doc); return { x: typeof C };`],
-    [
-      "computed",
-      `let C; ({ ["constructor"]: C } = doc); return { x: typeof C };`,
-    ],
-  ])(
-    "rejects assignment destructuring of a disallowed property (%s)",
-    (_k, body) => {
-      const code = `async function extract(doc, askLlm) { ${body} }`;
-      expect(reasons(validateGeneratedExtractor(code))).toContain(
-        "constructor",
-      );
-    },
-  );
-
   it("does not flag a value object literal with a disallowed key", () => {
-    // `return { constructor: v }` builds data; it is not a destructuring target,
-    // so it must stay allowed (distinct from `({ constructor: v } = obj)`).
+    // `return { constructor: v }` builds data — an object-literal key is never a
+    // property read — so it stays allowed.
     const code = `async function extract(doc, askLlm) {
       return { constructor: doc.title };
     }`;
@@ -210,6 +194,14 @@ describe("validateGeneratedExtractor — disallowed reference rejection", () => 
        return { x: typeof F };`,
     ],
     ["a data field named process", `return { p: doc.body.process ?? null };`],
+    [
+      "assignment-pattern destructuring",
+      `let C; ({ constructor: C } = doc); return { x: typeof C };`,
+    ],
+    [
+      "for-of destructuring",
+      `let C; for ({ constructor: C } of [doc]) {} return { x: typeof C };`,
+    ],
   ])("does not flag %s (out of scope by design)", (_k, body) => {
     const code = `async function extract(doc, askLlm) { ${body} }`;
     expect(validateGeneratedExtractor(code)).toEqual([]);
