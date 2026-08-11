@@ -83,7 +83,7 @@ pub struct FireEngineScrapeCompleted {
   // TODO: this needs to be non-optional, might need fixes on f-e side to ensure reliability
   #[serde(default)]
   pub response_headers: HashMap<String, String>,
-  pub meta: Option<serde_json::Map<String, serde_json::Value>>,
+  pub meta: Option<serde_json::Map<String, serde_json::Value>>, // TODO: wtf is this?
 
   #[serde(default)]
   pub screenshots: Vec<Url>,
@@ -92,7 +92,7 @@ pub struct FireEngineScrapeCompleted {
   #[serde(default)]
   pub action_results: Vec<FireEngineActionResult>,
   pub file: Option<FireEngineScrapeFile>,
-  pub doc_url: Option<String>,
+  pub doc_url: Option<String>, // TODO: wtf is this?
   #[serde(default)]
   pub used_mobile_proxy: bool,
   pub timezone: Option<String>,
@@ -102,7 +102,7 @@ pub struct FireEngineScrapeCompleted {
 #[serde(rename_all = "camelCase")]
 pub struct FireEngineScrapeProcessing {
   pub job_id: String,
-  pub processing: bool,
+  // pub processing: bool, // TODO: unnecessary to parse. remove?
 }
 
 #[derive(Deserialize)]
