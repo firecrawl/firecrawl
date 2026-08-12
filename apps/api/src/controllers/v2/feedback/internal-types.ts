@@ -1,4 +1,5 @@
 import { logger as _logger } from "../../../lib/logger";
+import type { SearchResultType } from "../../../lib/entities";
 import {
   EndpointFeedbackEndpoint,
   EndpointFeedbackErrorCode,
@@ -8,13 +9,20 @@ import {
 
 export type FeedbackRating = "good" | "partial" | "bad";
 
+/** A valuable result addressed by its group and 1-indexed position in it. */
+export type ValuableResultInput = {
+  source: SearchResultType;
+  position: number;
+  reason?: string;
+};
+
 export type FeedbackInput = {
   rating: FeedbackRating;
   issues?: string[];
   tags?: string[];
   note?: string;
   valuableSources?: Array<{ url: string; reason?: string }>;
-  valuableResultPositions?: number[];
+  valuableResults?: ValuableResultInput[];
   missingContent?: Array<{ topic: string; description?: string }>;
   querySuggestions?: string;
   url?: string;
@@ -35,6 +43,11 @@ export type FeedbackJobRow = {
   options: unknown;
   /** Total results returned by the job (search only; combined across web/news/images). */
   num_results?: number | null;
+  /**
+   * Per-source result counts (search only), e.g. `{"web":3,"images":0}`. Null on
+   * rows written before the column existed, and on searches logged by v0/v1.
+   */
+  num_results_by_source?: unknown;
 };
 
 export type FeedbackRecordOptions = {

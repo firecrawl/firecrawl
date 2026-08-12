@@ -52,7 +52,7 @@ describeIf(TEST_PRODUCTION)("Search feedback tests", () => {
               reason: "Most directly answered the question.",
             },
           ],
-          valuableResultPositions: [1],
+          valuableResults: [{ source: "web", position: 1 }],
           missingContent: [
             {
               topic: "Enterprise pricing",
@@ -101,7 +101,7 @@ describeIf(TEST_PRODUCTION)("Search feedback tests", () => {
       );
       expect(feedbackRow.metadata).toEqual(
         expect.objectContaining({
-          valuableResultPositions: [1],
+          valuableResults: [{ source: "web", position: 1 }],
           valuableResultDocumentIds: [documentId],
         }),
       );
@@ -109,31 +109,33 @@ describeIf(TEST_PRODUCTION)("Search feedback tests", () => {
     90000,
   );
 
-  // A search that returned nothing can have no valuable positions, so zero is a
-  // real bound rather than an "unknown count" that permits any position.
+  // Each group is numbered from 1 independently, so the same position in two
+  // groups is two different results.
   it.concurrent(
-    "drops result positions when the search returned no results",
+    "records mixed-source positions against the right group",
     async () => {
       const raw = await searchRawFull(
-        { query: "firecrawl zero results bound", limit: 3 },
+        {
+          query: "firecrawl mixed source feedback",
+          limit: 3,
+          sources: ["web", "news"],
+        },
         identity,
       );
       expect(raw.statusCode).toBe(200);
       const searchId = raw.body.id;
-
-      await db
-        .update(schema.searches)
-        .set({ num_results: 0 })
-        .where(
-          and(
-            eq(schema.searches.id, searchId),
-            eq(schema.searches.team_id, identity.teamId),
-          ),
-        );
+      expect((raw.body.data?.web ?? []).length).toBeGreaterThan(0);
+      expect((raw.body.data?.news ?? []).length).toBeGreaterThan(0);
 
       const result = await searchFeedback(
         searchId,
-        { rating: "good", valuableResultPositions: [1] },
+        {
+          rating: "good",
+          valuableResults: [
+            { source: "web", position: 1 },
+            { source: "news", position: 1, reason: "Broke the story." },
+          ],
+        },
         identity,
       );
       expect(result.success).toBe(true);
@@ -148,29 +150,111 @@ describeIf(TEST_PRODUCTION)("Search feedback tests", () => {
         .limit(1);
 
       expect(feedbackRow).toBeTruthy();
-      expect(feedbackRow.valuable_sources).toEqual([]);
-      expect(feedbackRow.metadata).not.toHaveProperty(
-        "valuableResultPositions",
+      expect(feedbackRow.valuable_sources).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            documentId: `search:${searchId}:web:0`,
+            resultType: "web",
+            resultIndex: 0,
+            position: 1,
+          }),
+          expect.objectContaining({
+            documentId: `search:${searchId}:news:0`,
+            resultType: "news",
+            resultIndex: 0,
+            position: 1,
+            reason: "Broke the story.",
+          }),
+        ]),
       );
-      expect(feedbackRow.metadata).not.toHaveProperty(
-        "valuableResultDocumentIds",
+      expect(feedbackRow.metadata).toEqual(
+        expect.objectContaining({
+          valuableResults: [
+            { source: "web", position: 1 },
+            { source: "news", position: 1 },
+          ],
+          valuableResultDocumentIds: [
+            `search:${searchId}:web:0`,
+            `search:${searchId}:news:0`,
+          ],
+        }),
       );
     },
     90000,
   );
 
-  // num_results is web+news+images combined, so on a multi-source search it
-  // over-counts the web list; `limit` caps each source list independently.
+  // A group that returned nothing — or was never requested — can have no
+  // valuable positions, so zero is a real bound rather than "unknown count".
   it.concurrent(
-    "bounds result positions by limit when other sources inflate num_results",
+    "bounds each group by its own result count",
     async () => {
       const raw = await searchRawFull(
-        { query: "firecrawl multi source bound", limit: 3 },
+        { query: "firecrawl per source bound", limit: 3 },
         identity,
       );
       expect(raw.statusCode).toBe(200);
       const searchId = raw.body.id;
       expect((raw.body.data?.web ?? []).length).toBeGreaterThan(0);
+
+      // A web-only search: news/images returned nothing, and the combined
+      // num_results is deliberately left high enough that a combined bound
+      // would have let every one of these positions through.
+      await db
+        .update(schema.searches)
+        .set({
+          num_results: 20,
+          num_results_by_source: { web: 2, images: 0, news: 0 },
+        })
+        .where(
+          and(
+            eq(schema.searches.id, searchId),
+            eq(schema.searches.team_id, identity.teamId),
+          ),
+        );
+
+      const result = await searchFeedback(
+        searchId,
+        {
+          rating: "good",
+          valuableResults: [
+            { source: "web", position: 2 },
+            { source: "web", position: 3 },
+            { source: "news", position: 1 },
+            { source: "images", position: 1 },
+          ],
+        },
+        identity,
+      );
+      expect(result.success).toBe(true);
+
+      const [feedbackRow] = await db
+        .select({ metadata: schema.search_feedback.metadata })
+        .from(schema.search_feedback)
+        .where(eq(schema.search_feedback.id, result.feedbackId))
+        .limit(1);
+
+      expect(feedbackRow).toBeTruthy();
+      expect(feedbackRow.metadata).toEqual(
+        expect.objectContaining({
+          valuableResults: [{ source: "web", position: 2 }],
+          valuableResultDocumentIds: [`search:${searchId}:web:1`],
+        }),
+      );
+    },
+    90000,
+  );
+
+  // Rows written before num_results_by_source existed still have to reject
+  // hallucinated positions.
+  it.concurrent(
+    "falls back to limit when per-source counts are missing",
+    async () => {
+      const raw = await searchRawFull(
+        { query: "firecrawl legacy bound", limit: 3 },
+        identity,
+      );
+      expect(raw.statusCode).toBe(200);
+      const searchId = raw.body.id;
 
       const [searchRow] = await db
         .select({ options: schema.searches.options })
@@ -184,11 +268,12 @@ describeIf(TEST_PRODUCTION)("Search feedback tests", () => {
         .limit(1);
       expect(searchRow).toBeTruthy();
 
-      // Stand in for a web+news search that returned 3 of each.
+      // Stand in for a pre-migration row from a web+news search.
       await db
         .update(schema.searches)
         .set({
           num_results: 6,
+          num_results_by_source: null,
           options: {
             ...((searchRow.options as Record<string, unknown> | null) ?? {}),
             limit: 3,
@@ -204,7 +289,13 @@ describeIf(TEST_PRODUCTION)("Search feedback tests", () => {
 
       const result = await searchFeedback(
         searchId,
-        { rating: "good", valuableResultPositions: [1, 5] },
+        {
+          rating: "good",
+          valuableResults: [
+            { source: "web", position: 1 },
+            { source: "web", position: 5 },
+          ],
+        },
         identity,
       );
       expect(result.success).toBe(true);
@@ -218,7 +309,7 @@ describeIf(TEST_PRODUCTION)("Search feedback tests", () => {
       expect(feedbackRow).toBeTruthy();
       expect(feedbackRow.metadata).toEqual(
         expect.objectContaining({
-          valuableResultPositions: [1],
+          valuableResults: [{ source: "web", position: 1 }],
           valuableResultDocumentIds: [`search:${searchId}:web:0`],
         }),
       );

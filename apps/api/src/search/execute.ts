@@ -1,6 +1,10 @@
 import type { Logger } from "winston";
 import { search } from "./v2";
-import { SearchV2Response } from "../lib/entities";
+import {
+  SearchV2Response,
+  SearchResultCountsBySource,
+  countSearchResultsBySource,
+} from "../lib/entities";
 import {
   buildSearchQuery,
   getCategoryFromUrl,
@@ -66,6 +70,7 @@ interface SearchContext {
 interface SearchExecuteResult {
   response: SearchV2Response;
   totalResultsCount: number;
+  resultCountsBySource: SearchResultCountsBySource;
   searchCredits: number;
   scrapeCredits: number;
   totalCredits: number;
@@ -335,6 +340,9 @@ export async function executeSearch(
   return {
     response: searchResponse,
     totalResultsCount,
+    // Counted from the final response — after scraping and highlights — so it
+    // matches exactly what the client can address by position.
+    resultCountsBySource: countSearchResultsBySource(searchResponse),
     searchCredits,
     scrapeCredits,
     totalCredits: searchCredits + scrapeCredits,

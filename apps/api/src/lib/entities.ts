@@ -169,6 +169,24 @@ export interface SearchV2Response {
   news?: NewsSearchResult[];
 }
 
+/**
+ * Length of each `SearchV2Response` group as returned to the client. Every
+ * group is present and non-negative — a source that was not requested, or that
+ * returned nothing, counts 0. Persisted per search so position-based feedback
+ * can be bounded exactly per source rather than against a combined total.
+ */
+export type SearchResultCountsBySource = Record<SearchResultType, number>;
+
+export function countSearchResultsBySource(
+  response: SearchV2Response,
+): SearchResultCountsBySource {
+  return {
+    web: response.web?.length ?? 0,
+    images: response.images?.length ?? 0,
+    news: response.news?.length ?? 0,
+  };
+}
+
 export interface ScrapeActionContent {
   url: string;
   html: string;
