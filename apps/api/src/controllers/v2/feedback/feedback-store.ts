@@ -80,13 +80,35 @@ function resultCountsBySource(
 }
 
 /**
+ * Source types the search requested, normalised from the stored request body.
+ * Returns null when the shape is unrecognised, so callers fall back to a looser
+ * bound instead of guessing.
+ */
+function requestedSourceTypes(options: unknown): Set<string> | null {
+  const sources = (options as { sources?: unknown } | null)?.sources;
+  // `sources` prefaults to ["web"], so an absent value means web-only.
+  if (sources === undefined || sources === null) return new Set(["web"]);
+  if (!Array.isArray(sources)) return null;
+
+  const types = sources.map(entry =>
+    typeof entry === "string"
+      ? entry
+      : (entry as { type?: unknown } | null)?.type,
+  );
+  return types.every((type): type is string => typeof type === "string")
+    ? new Set(types)
+    : null;
+}
+
+/**
  * Highest 1-indexed position addressable in `data[source]`, or null when the
  * job row carries no usable bound.
  *
  * Prefers the exact per-source count. Rows written before that column existed
  * fall back to the request's `limit` — every group is sliced to `limit`
  * independently in `search/execute.ts`, so it bounds each group even though the
- * combined `num_results` does not.
+ * combined `num_results` does not. A source the request never asked for is
+ * bounded to 0 either way: it cannot have returned results.
  */
 function maxResultPosition(
   job: FeedbackJobRow,
@@ -94,6 +116,11 @@ function maxResultPosition(
 ): number | null {
   const counts = resultCountsBySource(job);
   if (counts !== null) return counts[source] ?? 0;
+
+  // Without per-source counts, the requested source list is the only thing
+  // separating "this group was empty" from "this group is unbounded".
+  const requested = requestedSourceTypes(job.options);
+  if (requested !== null && !requested.has(source)) return 0;
 
   const numResults =
     typeof job.num_results === "number" &&

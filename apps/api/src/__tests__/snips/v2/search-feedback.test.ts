@@ -294,6 +294,9 @@ describeIf(TEST_PRODUCTION)("Search feedback tests", () => {
           valuableResults: [
             { source: "web", position: 1 },
             { source: "web", position: 5 },
+            // images was never requested, so it cannot have returned anything
+            // even though the combined num_results leaves room for it.
+            { source: "images", position: 1 },
           ],
         },
         identity,
