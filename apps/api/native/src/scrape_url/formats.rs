@@ -16,6 +16,7 @@ pub struct ScreenshotOptionsViewport {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ScreenshotOptions {
   pub full_page: bool,
   pub quality: Option<u8>, // 1-100

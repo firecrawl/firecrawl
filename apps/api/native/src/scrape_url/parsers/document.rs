@@ -74,12 +74,13 @@ pub fn parse_document(meta: &Meta, result: EngineScrapeResult) -> Result<Documen
     raw_html: None, // TODO: md -> html
     links: None,
     images: None,
-    screenshot: None,
+    screenshot: result.screenshot,
     audio: None,
     video: None,
     summary: None,
     answer: None,
     highlights: None,
+    actions: result.actions,
     warning: None,
     metadata: DocumentMetadata {
       scrape_id: meta.id.clone(),

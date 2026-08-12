@@ -227,6 +227,7 @@ pub async fn parse_pdf(
         summary: None,
         answer: None,
         highlights: None,
+        actions: result.actions,
         warning: None,
         // TODO: pages
         metadata: DocumentMetadata {
@@ -259,12 +260,13 @@ pub async fn parse_pdf(
       html: Some(encoded.clone()),
       links: None,
       images: None,
-      screenshot: None,
+      screenshot: result.screenshot,
       audio: None,
       video: None,
       summary: None,
       answer: None,
       highlights: None,
+      actions: result.actions,
       warning: None,
       metadata: DocumentMetadata {
         scrape_id: meta.id.clone(),

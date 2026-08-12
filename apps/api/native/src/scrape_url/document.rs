@@ -2,6 +2,8 @@ use chrono::{DateTime, Utc};
 use serde::Serialize;
 use url::Url;
 
+use crate::scrape_url::engines::EngineScrapeResultActions;
+
 use super::engines::EngineScrapeProxy;
 use std::{collections::HashMap, fmt::Display};
 
@@ -47,11 +49,11 @@ pub struct Document {
   pub markdown: Option<String>,
   pub html: Option<String>,
   pub raw_html: Option<String>,
-  pub links: Option<Vec<Url>>,
-  pub images: Option<Vec<Url>>,
+  pub links: Option<Vec<String>>,
+  pub images: Option<Vec<String>>,
   pub screenshot: Option<Url>,
-  pub audio: Option<Url>,
-  pub video: Option<Url>,
+  pub audio: Option<String>,
+  pub video: Option<String>,
   // videos:
   // extract:
   // json:
@@ -63,7 +65,7 @@ pub struct Document {
   // menu:
   pub warning: Option<String>,
   // attributes:
-  // actions:
+  pub actions: Option<EngineScrapeResultActions>,
   // change_tracking:
   pub metadata: DocumentMetadata,
 }

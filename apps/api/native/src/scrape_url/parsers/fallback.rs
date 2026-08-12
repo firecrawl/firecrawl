@@ -44,12 +44,22 @@ pub fn parse_fallback(meta: &Meta, result: EngineScrapeResult) -> Result<Documen
       (encoding.decode(bytes.as_ref()).0.to_string(), None)
     }
     EngineScrapeContent::ChromeRenderedDOM(text) => {
-      let text = if result.content_type.contains("application/json") {
-        _get_inner_json(&text).unwrap_or(text)
+      if result.content_type.contains("application/json") {
+        // JSON needs to be extracted from <html><body> wrapping done by Chrome to
+        // still be valid. We can also add some Markdown flavoring.
+        let json = _get_inner_json(&text).unwrap_or(text);
+        let markdown = Some(format!("```json\n{}\n```", json));
+        (json, markdown)
+      } else if result.content_type.contains("text/plain") {
+        // text/plain responses (e.g. llms.txt) are already plain text/markdown.
+        // Running them through the HTML-to-markdown converter escapes markdown
+        // punctuation like "_", which corrupts underscores inside link URLs. Pass
+        // the raw body through untouched instead.
+        let text = _get_inner_json(&text).unwrap_or(text);
+        (text.clone(), Some(text))
       } else {
-        text
-      };
-      (text, None)
+        (text, None)
+      }
     }
     EngineScrapeContent::GeneratedMarkdown(md) => (
       markdown::to_html_with_options(&md, &markdown::Options::gfm())
@@ -71,7 +81,7 @@ pub fn parse_fallback(meta: &Meta, result: EngineScrapeResult) -> Result<Documen
     answer: None,
     highlights: None,
     warning: None,
-    // actions:
+    actions: result.actions,
     // branding:
     metadata: DocumentMetadata {
       scrape_id: meta.id.clone(),

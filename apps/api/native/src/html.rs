@@ -412,7 +412,7 @@ struct ImageSource {
   is_x: bool,
 }
 
-fn _transform_html_inner(
+pub fn _transform_html_inner(
   opts: TransformHtmlOptions,
 ) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
   let mut document = parse_html().one(opts.html.as_ref());
@@ -777,7 +777,7 @@ pub async fn extract_attributes(
   res.map_err(to_napi_err)
 }
 
-fn _extract_images(
+pub fn _extract_images(
   html: &str,
   base_url: &str,
 ) -> Result<Vec<String>, Box<dyn std::error::Error + Send + Sync>> {
@@ -954,42 +954,44 @@ pub async fn extract_images(html: String, base_url: String) -> napi::Result<Vec<
   res.map_err(to_napi_err)
 }
 
+pub fn _post_process_markdown(markdown: String) -> String {
+  let mut link_open_count = 0usize;
+  let mut out = String::with_capacity(markdown.len());
+
+  for ch in markdown.chars() {
+    match ch {
+      '[' => {
+        link_open_count += 1;
+      }
+      ']' => {
+        link_open_count = link_open_count.saturating_sub(1);
+      }
+      _ => {}
+    }
+
+    let inside_link_content = link_open_count > 0;
+    if inside_link_content && ch == '\n' {
+      out.push('\\');
+      out.push('\n');
+    } else {
+      out.push(ch);
+    }
+  }
+
+  remove_skip_to_content_links(&out)
+}
+
 /// Process multi-line links in markdown.
 #[napi]
 pub async fn post_process_markdown(markdown: String) -> napi::Result<String> {
-  let res = task::spawn_blocking(move || {
-    let mut link_open_count = 0usize;
-    let mut out = String::with_capacity(markdown.len());
-
-    for ch in markdown.chars() {
-      match ch {
-        '[' => {
-          link_open_count += 1;
-        }
-        ']' => {
-          link_open_count = link_open_count.saturating_sub(1);
-        }
-        _ => {}
-      }
-
-      let inside_link_content = link_open_count > 0;
-      if inside_link_content && ch == '\n' {
-        out.push('\\');
-        out.push('\n');
-      } else {
-        out.push(ch);
-      }
-    }
-
-    remove_skip_to_content_links(&out)
-  })
-  .await
-  .map_err(|e| {
-    napi::Error::new(
-      napi::Status::GenericFailure,
-      format!("post_process_markdown join error: {e}"),
-    )
-  })?;
+  let res = task::spawn_blocking(move || _post_process_markdown(markdown))
+    .await
+    .map_err(|e| {
+      napi::Error::new(
+        napi::Status::GenericFailure,
+        format!("post_process_markdown join error: {e}"),
+      )
+    })?;
 
   Ok(res)
 }

@@ -13,7 +13,10 @@ use self::{
   meta::Meta,
   options::{InternalOptions, ProxyMode, ScrapeOptions},
 };
-use crate::scrape_url::engines::{EngineSignal, get_main_engine};
+use crate::scrape_url::{
+  engines::{EngineSignal, get_main_engine},
+  transformers::execute_tranformers,
+};
 
 mod actions;
 mod document;
@@ -27,6 +30,7 @@ mod options;
 mod parsers;
 mod rewrite_url;
 mod robots;
+mod transformers;
 
 struct EngineRun {
   engine: EngineKind,
@@ -179,7 +183,7 @@ async fn _scrape_url(meta: Meta) -> Result<Document, ScrapeURLError> {
     ));
   }
 
-  // execute transformers
+  let document = execute_tranformers(&meta, document).await.unwrap(); // TODO: error handling
 
   Span::current()
     .record("engine.final_status_code", document.metadata.status_code)
