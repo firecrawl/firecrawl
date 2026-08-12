@@ -77,6 +77,7 @@ describe("MiniMax model configuration", () => {
       output_cost_per_token: 0.0000024,
       cache_read_input_token_cost: 1.2e-7,
       supported_modalities: ["text", "image", "video"],
+      thinking_modes: ["adaptive", "disabled"],
     });
     expect(modelPrices["MiniMax-M2.7"]).toMatchObject({
       max_input_tokens: 204800,
@@ -85,6 +86,7 @@ describe("MiniMax model configuration", () => {
       cache_read_input_token_cost: 6e-8,
       cache_creation_input_token_cost: 3.75e-7,
       supported_modalities: ["text"],
+      thinking_modes: ["always_on"],
     });
   });
 });
