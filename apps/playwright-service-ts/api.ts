@@ -44,7 +44,7 @@ class InsecureConnectionError extends Error {
   }
 }
 
-const isInternalHost = async (hostname: string): Promise<boolean> => {
+export const isInternalHost = async (hostname: string): Promise<boolean> => {
   const host = hostname.toLowerCase().replace(/\.$/, '');
   if (!host) return true;
 
@@ -565,12 +565,12 @@ const start = async () => {
     console.log(`Server is running on port ${port}`);
   });
 };
-start().catch((error) => {
-  console.error('Failed to start server:', error);
-  process.exit(1);
-});
-
 if (require.main === module) {
+  start().catch((error) => {
+    console.error('Failed to start server:', error);
+    process.exit(1);
+  });
+
   process.on('SIGINT', () => {
     shutdownBrowser().then(() => {
       console.log('Browser closed');
