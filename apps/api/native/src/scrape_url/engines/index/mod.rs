@@ -127,7 +127,11 @@ struct IndexEntryVariant {
   pub is_mobile: bool,
   pub block_ads: bool,
   pub is_stealth: bool,
-  pub location_country: String,
+
+  /// `None` for the default `us-generic` country, which the index treats as
+  /// "no country specified" (stored/queried as NULL) -- matches the TS pipeline
+  /// which sends `location?.country ?? null`.
+  pub location_country: Option<String>,
 
   /// The sanity of the variant depends on this being
   /// deduplicated and sorted ascending.
@@ -146,7 +150,7 @@ impl IndexEntryVariant {
       is_mobile: meta.options.mobile,
       block_ads: meta.options.block_ads,
       is_stealth: proxy == EngineScrapeProxy::Enhanced,
-      location_country: meta.options.location.country.to_string(),
+      location_country: meta.options.location.country.to_index_value(),
       location_languages,
     }
   }
@@ -165,12 +169,12 @@ impl IndexEntryFilter {
   pub fn new(max_age: i32, meta: &Meta) -> Self {
     Self {
       max_age: max_age,
-      min_age: meta.options.min_age.map(|x| x as i32),
+      min_age: meta.options.min_age,
       needs_screenshot: meta.feature_flags.contains(&FeatureFlag::Screenshot),
       needs_screenshot_fullscreen: meta
         .feature_flags
         .contains(&FeatureFlag::ScreenshotFullScreen),
-      wait_time_ms: meta.options.effective_wait_for() as i32,
+      wait_time_ms: meta.options.effective_wait_for(),
       now: Utc::now(),
     }
   }
@@ -217,7 +221,7 @@ impl Engine for IndexEngine {
 
     let (max_age, _max_age_source): (i32, MaxAgeSource) = {
       if let Some(max_age) = meta.options.max_age {
-        (max_age as i32, MaxAgeSource::Explicit)
+        (max_age, MaxAgeSource::Explicit)
       } else {
         let domain_splits_hash: Vec<Vec<u8>> =
           generate_domain_splits(normalized_url.host_str().unwrap())

@@ -26,7 +26,11 @@ impl IndexEntryVariant {
       Value::Bool(self.is_mobile),
       Value::Bool(self.block_ads),
       Value::Bool(self.is_stealth),
-      Value::String(self.location_country.clone()),
+      self
+        .location_country
+        .clone()
+        .map(Value::String)
+        .unwrap_or(Value::Null),
       if !self.location_languages.is_empty() {
         Value::Array(
           self

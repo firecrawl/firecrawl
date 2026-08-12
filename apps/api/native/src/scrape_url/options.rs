@@ -67,6 +67,18 @@ impl Display for ScrapeOptionsLocationCountry {
   }
 }
 
+impl ScrapeOptionsLocationCountry {
+  /// The value the index keys on for this country. The default `us-generic` is
+  /// represented as absent (stored/queried as NULL), matching the TS pipeline
+  /// which sends `location?.country ?? null`.
+  pub fn to_index_value(&self) -> Option<String> {
+    match self {
+      Self::USGeneric => None,
+      other => Some(other.to_string()),
+    }
+  }
+}
+
 #[derive(Deserialize, Serialize, Default)]
 pub struct ScrapeOptionsLocation {
   #[serde(default)]
@@ -101,7 +113,7 @@ pub struct ScrapeOptions {
   pub timeout: Option<u64>,
 
   /// Never read this directly, always use .effective_wait_for() -> u32
-  wait_for: Option<u32>,
+  wait_for: Option<i32>,
 
   pub mobile: bool,
   pub parsers: Parsers,
@@ -120,8 +132,8 @@ pub struct ScrapeOptions {
   // use_mock: bool, // candidate for removal
   pub block_ads: bool,
   pub proxy: ProxyMode,
-  pub max_age: Option<u32>,
-  pub min_age: Option<u32>,
+  pub max_age: Option<i32>,
+  pub min_age: Option<i32>,
   pub store_in_cache: bool,
   pub lockdown: bool,
   // #[serde(rename = "redactPII")]
@@ -186,9 +198,9 @@ impl ScrapeOptions {
     }
   }
 
-  pub fn effective_wait_for(&self) -> u32 {
+  pub fn effective_wait_for(&self) -> i32 {
     match self.wait_for {
-      Some(x) => u32::min(30000, x), // cap at 30s
+      Some(x) => i32::min(30000, x), // cap at 30s
       None => {
         if self.formats.contains(FormatKind::Branding) {
           2000 // add some wait time for branding to avoid js errors

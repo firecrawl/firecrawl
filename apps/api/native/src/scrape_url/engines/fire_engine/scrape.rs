@@ -53,7 +53,7 @@ pub struct FireEngineScrapeRequest<'a> {
 
   pub timeout: u32,
   #[serde(skip_serializing_if = "Option::is_none")]
-  pub max_age: Option<u32>, // TODO: why the fuck is this in here?
+  pub max_age: Option<i32>, // TODO: why the fuck is this in here?
   pub save_scrape_result_to_gcs: bool,
   pub zero_data_retention: bool,
   pub disable_smart_wait_cache: bool,
