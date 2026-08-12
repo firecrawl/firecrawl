@@ -141,7 +141,7 @@ macro_rules! insert_meta_property {
   };
 }
 
-fn _extract_metadata(
+pub fn _extract_metadata(
   html: &str,
 ) -> Result<HashMap<String, Value>, Box<dyn std::error::Error + Send + Sync>> {
   let document = parse_html().one(html);

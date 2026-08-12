@@ -1,5 +1,6 @@
 use chrono::{DateTime, Utc};
 use serde::Serialize;
+use serde_json::Value;
 use url::Url;
 
 use crate::scrape_url::engines::EngineScrapeResultActions;
@@ -41,7 +42,7 @@ pub struct DocumentMetadata {
   pub concurrency_limited: bool,
   pub concurrency_queue_duration_ms: Option<u64>,
 
-  pub extra: HashMap<String, String>,
+  pub extra: HashMap<String, Value>,
 }
 
 #[derive(Debug, Serialize)]

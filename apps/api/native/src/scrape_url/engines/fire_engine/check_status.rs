@@ -18,6 +18,7 @@ pub enum FireEngineScrapeStatus {
   #[serde(alias = "unknown")]
   #[serde(alias = "prioritized")]
   #[serde(alias = "pending")]
+  #[allow(dead_code)] // while never read it's still required for parsing properly
   Processing(FireEngineScrapeProcessing),
 
   Failed(FireEngineScrapeFailed),
