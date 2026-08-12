@@ -7,10 +7,11 @@ import { logger } from "../../lib/logger";
 import { config } from "../../config";
 
 const withTimeout = <T>(promise: Promise<T>, timeoutMs: number, name: string): Promise<T> => {
-  return Promise.race([
-    promise,
-    new Promise<T>((_, reject) => setTimeout(() => reject(new Error(`${name} check timed out after ${timeoutMs}ms`)), timeoutMs))
-  ]);
+  let timer: NodeJS.Timeout;
+  const timeoutPromise = new Promise<T>((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`${name} check timed out after ${timeoutMs}ms`)), timeoutMs);
+  });
+  return Promise.race([promise, timeoutPromise]).finally(() => clearTimeout(timer));
 };
 
 export async function readinessController(req: Request, res: Response) {
