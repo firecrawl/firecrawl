@@ -15,10 +15,12 @@ macro_rules! generate_execute_tranformers {
 use html::derive_html_from_raw_html;
 use images::derive_images_from_html;
 use markdown::derive_markdown_from_html;
+use metadata::derive_metadata_from_raw_html;
 
 mod html;
 mod images;
 mod markdown;
+mod metadata;
 
 #[derive(Debug)]
 pub enum TransformerError {
@@ -33,7 +35,7 @@ generate_execute_tranformers!(
   // TODO: derive_links_from_html
   derive_images_from_html,
   // TODO: derive_branding_from_actions
-  // TODO: derive_metadata_from_raw_html
+  derive_metadata_from_raw_html,
   // TODO: fetch_product
   // TODO: fetch_menu
   // TODO: send_document_to_index
