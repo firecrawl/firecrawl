@@ -33,8 +33,7 @@ export async function readinessController(req: Request, res: Response) {
     logger.error("Readiness probe failed", { error: error instanceof Error ? error.message : error });
     res.status(503).json({ 
       status: "error", 
-      message: "Service is not ready",
-      detail: error instanceof Error ? error.message : "Unknown error"
+      message: "Service is not ready"
     });
   }
 }
