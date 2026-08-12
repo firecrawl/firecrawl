@@ -51,7 +51,9 @@ pub enum Action {
   },
   Screenshot {
     full_page: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
     quality: Option<u8>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     viewport: Option<ScreenshotOptionsViewport>,
   },
   Write {

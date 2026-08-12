@@ -206,10 +206,17 @@ impl FireEngine {
         .into()
       } else if err.error.contains("failed to finish without timing out") {
         ScrapeURLError::PageLoadFailed.into()
-      } else if err.error.contains("Element") || err.error.contains("Javascript execution failed") {
+      } else if err.error.contains("Element")
+        || err.error.contains("Javascript execution failed")
+        || err.error.starts_with("ActionError: ")
+      {
         // TODO: improve conditions later
         ScrapeURLError::ActionError {
-          error: err.error.trim_start_matches("Error: ").to_string(),
+          error: err
+            .error
+            .trim_start_matches("Error: ")
+            .trim_start_matches("ActionError: ")
+            .to_string(),
         }
         .into()
       } else if err.error.contains("proxies available for") {

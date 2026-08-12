@@ -19,22 +19,27 @@ mod fire_engine;
 mod index;
 mod playwright;
 
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct ScrapeActionContent {
   pub url: String,
   pub html: String,
 }
 
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct JavascriptActionContent {
   pub r#type: String,
   pub value: serde_json::Value,
 }
 
+#[derive(Debug, Serialize)]
 pub struct EngineScrapeResultActions {
+  #[serde(skip_serializing_if = "Vec::is_empty")]
   pub screenshots: Vec<Url>,
+  #[serde(skip_serializing_if = "Vec::is_empty")]
   pub scrapes: Vec<ScrapeActionContent>,
+  #[serde(skip_serializing_if = "Vec::is_empty")]
   pub javascript_returns: Vec<JavascriptActionContent>,
+  #[serde(skip_serializing_if = "Vec::is_empty")]
   pub pdfs: Vec<Url>,
 }
 
