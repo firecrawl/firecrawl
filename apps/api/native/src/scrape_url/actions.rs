@@ -37,7 +37,7 @@ pub enum ActionPdfFormat {
 #[serde(untagged, deny_unknown_fields)]
 pub enum WaitAction {
   Selector { selector: String },
-  Milliseconds { milliseconds: u32 },
+  Milliseconds { milliseconds: i32 },
 }
 
 #[derive(Serialize, Deserialize, Clone)]

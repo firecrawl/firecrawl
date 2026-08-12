@@ -1,8 +1,8 @@
 use napi::bindgen_prelude::*;
 use napi_derive::napi;
-use pdf_inspector::{process_pdf_with_options as rust_process_pdf, PdfOptions, PdfType};
+use pdf_inspector::{PdfOptions, PdfType, process_pdf_with_options as rust_process_pdf};
 
-use crate::logging::{embed_logs_in_error, with_native_tracing, NativeContext, NativeLogEntry};
+use crate::logging::{NativeContext, NativeLogEntry, embed_logs_in_error, with_native_tracing};
 
 #[napi(object)]
 pub struct PdfProcessResult {

@@ -25,7 +25,7 @@ static PLAYWRIGHT_MICROSERVICE_URL: LazyLock<Option<String>> = LazyLock::new(|| 
 #[derive(Serialize)]
 struct PlaywrightRequest<'a> {
   url: &'a Url,
-  wait_after_load: u32,
+  wait_after_load: i32,
   #[serde(skip_serializing_if = "Option::is_none")]
   timeout: Option<u32>,
   headers: &'a HashMap<String, String>,
