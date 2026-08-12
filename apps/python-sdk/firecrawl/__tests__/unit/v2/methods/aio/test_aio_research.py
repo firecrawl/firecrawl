@@ -109,8 +109,11 @@ async def test_search_papers_returns_body_verbatim_in_camel_case():
 async def test_inspect_paper_encodes_namespaced_ids(paper_id, expected_path):
     client = FakeAsyncHttpClient(FakeResponse(200, {"success": True, "paper": {}}))
     await aio_research.inspect_paper(client, paper_id)
-    assert client.last_path == expected_path
-    assert "?" not in client.last_path
+    path, qs = split(client.last_path)
+    assert path == expected_path
+    # detail mode carries origin, like the other four research methods
+    assert sorted(qs.keys()) == ["origin"]
+    assert qs["origin"][0].startswith("python-sdk@")
 
 
 @pytest.mark.asyncio

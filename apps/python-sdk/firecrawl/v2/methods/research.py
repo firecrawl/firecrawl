@@ -144,7 +144,10 @@ def inspect_paper(client: HttpClient, paper_id: str) -> Dict[str, Any]:
     See Also:
         ``read_paper`` to search inside the body of a paper.
     """
-    return _get(client, f"{BASE}/papers/{quote(paper_id, safe='')}")
+    return _get(
+        client,
+        f"{BASE}/papers/{quote(paper_id, safe='')}" + _query({"origin": ORIGIN}),
+    )
 
 
 def read_paper(

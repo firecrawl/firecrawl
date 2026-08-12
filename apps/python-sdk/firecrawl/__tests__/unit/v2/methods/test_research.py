@@ -141,13 +141,16 @@ class TestInspectPaper:
     def test_encodes_namespaced_ids_in_the_path(self, paper_id, expected_path):
         client = FakeHttpClient(FakeResponse(200, {"success": True, "paper": {}}))
         research.inspect_paper(client, paper_id)
-        assert client.last_path == expected_path
+        path, _ = split(client.last_path)
+        assert path == expected_path
 
-    def test_sends_no_query_params(self):
-        """Detail mode currently sends no query string at all (not even origin)."""
+    def test_sends_origin_like_the_other_research_methods(self):
+        """Detail mode sends ``origin`` too — same attribution as the other four."""
         client = FakeHttpClient(FakeResponse(200, {"success": True, "paper": {}}))
         research.inspect_paper(client, "pmid:12345678")
-        assert "?" not in client.last_path
+        _, qs = split(client.last_path)
+        assert sorted(qs.keys()) == ["origin"]
+        assert qs["origin"][0].startswith("python-sdk@")
 
 
 class TestReadPaper:

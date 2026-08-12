@@ -145,7 +145,10 @@ async def inspect_paper(client: AsyncHttpClient, paper_id: str) -> Dict[str, Any
     See Also:
         ``read_paper`` to search inside the body of a paper.
     """
-    return await _get(client, f"{BASE}/papers/{quote(paper_id, safe='')}")
+    return await _get(
+        client,
+        f"{BASE}/papers/{quote(paper_id, safe='')}" + _query({"origin": ORIGIN}),
+    )
 
 
 async def read_paper(
