@@ -306,3 +306,88 @@ class TestClientWiring:
         doc = FirecrawlClient.search_papers.__doc__ or ""
         assert "PubMed" in doc
         assert 'categories=["research"]' in doc
+
+
+RESEARCH_METHODS = (
+    "search_papers",
+    "inspect_paper",
+    "read_paper",
+    "related_papers",
+    "search_github",
+)
+
+
+class TestUnifiedClientWiring:
+    """The top-level ``Firecrawl`` client is what the README instantiates.
+
+    ``Firecrawl`` does not inherit from the v2 client (unlike the JS SDK, where
+    ``Firecrawl extends FirecrawlClient``) — it delegates method by method. Any
+    method missing from that list is simply absent from the documented surface,
+    so pin all five here.
+    """
+
+    def _client(self, response=None):
+        from firecrawl import Firecrawl
+
+        client = Firecrawl(api_key="fc-test")
+        client._v2_client.http_client = FakeHttpClient(
+            response or FakeResponse(200, {"success": True})
+        )
+        return client
+
+    def test_unified_client_exposes_research_methods(self):
+        from firecrawl import Firecrawl
+
+        for name in RESEARCH_METHODS:
+            assert callable(getattr(Firecrawl, name, None)), name
+
+    def test_search_papers_delegates_to_the_paper_index(self):
+        client = self._client(FakeResponse(200, {"success": True, "results": []}))
+        client.search_papers("tau aggregation inhibitors", k=5)
+        path, qs = split(client._v2_client.http_client.last_path)
+        assert path == "/v2/search/research/papers"
+        assert qs["query"] == ["tau aggregation inhibitors"]
+        assert qs["k"] == ["5"]
+
+    def test_inspect_paper_delegates(self):
+        client = self._client(FakeResponse(200, {"success": True, "paper": {}}))
+        client.inspect_paper("pmid:12345678")
+        path, _ = split(client._v2_client.http_client.last_path)
+        assert path == "/v2/search/research/papers/pmid%3A12345678"
+
+    def test_read_paper_delegates(self):
+        client = self._client(FakeResponse(200, {"success": True, "passages": []}))
+        client.read_paper("pmid:12345678", "primary endpoint", k=4)
+        path, qs = split(client._v2_client.http_client.last_path)
+        assert path == "/v2/search/research/papers/pmid%3A12345678"
+        assert qs["query"] == ["primary endpoint"]
+        assert qs["k"] == ["4"]
+
+    def test_related_papers_delegates(self):
+        client = self._client(FakeResponse(200, {"success": True, "results": []}))
+        client.related_papers("pmid:12345678", intent="replication attempts", k=20)
+        path, qs = split(client._v2_client.http_client.last_path)
+        assert path == "/v2/search/research/papers/pmid%3A12345678/similar"
+        assert qs["intent"] == ["replication attempts"]
+        assert qs["k"] == ["20"]
+
+    def test_search_github_delegates(self):
+        client = self._client(FakeResponse(200, {"success": True, "results": []}))
+        client.search_github("pysam VCF parsing memory leak", k=3)
+        path, qs = split(client._v2_client.http_client.last_path)
+        assert path == "/v2/search/research/github"
+        assert qs["query"] == ["pysam VCF parsing memory leak"]
+
+    def test_returns_the_v2_response_verbatim(self):
+        payload = {"success": True, "results": [{"paperId": "1", "primaryId": "pmid:1"}]}
+        client = self._client(FakeResponse(200, payload))
+        assert client.search_papers("q") == payload
+
+    def test_delegated_docstrings_carry_the_disambiguation(self):
+        from firecrawl import Firecrawl
+
+        doc = Firecrawl.search_papers.__doc__ or ""
+        assert "PubMed" in doc
+        assert 'categories=["research"]' in doc
+        for name in RESEARCH_METHODS:
+            assert (getattr(Firecrawl, name).__doc__ or "").strip(), name

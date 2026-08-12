@@ -214,3 +214,73 @@ async def test_async_research_methods_are_documented():
     doc = AsyncFirecrawlClient.search_papers.__doc__ or ""
     assert "PubMed" in doc
     assert 'categories=["research"]' in doc
+
+
+RESEARCH_METHODS = (
+    "search_papers",
+    "inspect_paper",
+    "read_paper",
+    "related_papers",
+    "search_github",
+)
+
+
+def _unified_client(response=None):
+    """Top-level ``AsyncFirecrawl`` with its v2 HTTP layer mocked."""
+    from firecrawl import AsyncFirecrawl
+
+    client = AsyncFirecrawl(api_key="fc-test")
+    client._v2_client.async_http_client = FakeAsyncHttpClient(
+        response or FakeResponse(200, {"success": True})
+    )
+    return client
+
+
+def test_unified_async_client_exposes_research_methods():
+    """``AsyncFirecrawl`` delegates method by method; pin all five."""
+    from firecrawl import AsyncFirecrawl
+
+    for name in RESEARCH_METHODS:
+        assert callable(getattr(AsyncFirecrawl, name, None)), name
+        assert (getattr(AsyncFirecrawl, name).__doc__ or "").strip(), name
+
+    doc = AsyncFirecrawl.search_papers.__doc__ or ""
+    assert "PubMed" in doc
+    assert 'categories=["research"]' in doc
+
+
+@pytest.mark.asyncio
+async def test_unified_async_client_delegates_all_research_methods():
+    client = _unified_client(FakeResponse(200, {"success": True, "results": []}))
+    http = client._v2_client.async_http_client
+
+    await client.search_papers("tau aggregation inhibitors", k=5)
+    path, qs = split(http.last_path)
+    assert path == "/v2/search/research/papers"
+    assert qs["k"] == ["5"]
+
+    await client.inspect_paper("pmid:12345678")
+    path, _ = split(http.last_path)
+    assert path == "/v2/search/research/papers/pmid%3A12345678"
+
+    await client.read_paper("pmid:12345678", "primary endpoint", k=4)
+    path, qs = split(http.last_path)
+    assert path == "/v2/search/research/papers/pmid%3A12345678"
+    assert qs["query"] == ["primary endpoint"]
+
+    await client.related_papers("pmid:12345678", intent="replication attempts")
+    path, qs = split(http.last_path)
+    assert path == "/v2/search/research/papers/pmid%3A12345678/similar"
+    assert qs["intent"] == ["replication attempts"]
+
+    await client.search_github("pysam VCF parsing memory leak")
+    path, qs = split(http.last_path)
+    assert path == "/v2/search/research/github"
+    assert qs["query"] == ["pysam VCF parsing memory leak"]
+
+
+@pytest.mark.asyncio
+async def test_unified_async_client_returns_response_verbatim():
+    payload = {"success": True, "results": [{"paperId": "1", "primaryId": "pmid:1"}]}
+    client = _unified_client(FakeResponse(200, payload))
+    assert await client.search_papers("q") == payload
