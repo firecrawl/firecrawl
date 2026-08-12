@@ -391,3 +391,44 @@ class TestUnifiedClientWiring:
         assert 'categories=["research"]' in doc
         for name in RESEARCH_METHODS:
             assert (getattr(Firecrawl, name).__doc__ or "").strip(), name
+
+
+class TestDocstringSingleSourceOfTruth:
+    """The five docstrings live once, in ``v2/methods/research_docs.py``.
+
+    Six layers surface the same five methods. Each keeps a full docstring, but
+    the prose is applied from the canonical constants, so a correction to a
+    factual claim is a one-place edit. These tests fail if a layer forks its
+    own copy again.
+    """
+
+    def _layers(self):
+        from firecrawl import AsyncFirecrawl, Firecrawl
+        from firecrawl.v2.client import FirecrawlClient
+        from firecrawl.v2.client_async import AsyncFirecrawlClient
+        from firecrawl.v2.methods import research as sync_research
+        from firecrawl.v2.methods import research_docs as docs
+        from firecrawl.v2.methods.aio import research as aio_research
+
+        return docs, {
+            "impl": (sync_research, ""),
+            "impl_aio": (aio_research, "AIO_"),
+            "v2_client": (FirecrawlClient, "CLIENT_"),
+            "v2_client_async": (AsyncFirecrawlClient, "ASYNC_CLIENT_"),
+            "unified": (Firecrawl, "CLIENT_"),
+            "unified_async": (AsyncFirecrawl, "ASYNC_CLIENT_"),
+        }
+
+    def test_every_layer_uses_the_canonical_docstring(self):
+        docs, layers = self._layers()
+        for name in RESEARCH_METHODS:
+            for label, (obj, prefix) in layers.items():
+                canonical = getattr(docs, f"{prefix}{name.upper()}_DOC")
+                assert getattr(obj, name).__doc__ == canonical, f"{label}.{name}"
+
+    def test_no_unresolved_placeholders_ship_to_users(self):
+        """A template placeholder leaking into ``help()`` would be user-visible."""
+        docs, layers = self._layers()
+        for name in RESEARCH_METHODS:
+            for obj, _ in layers.values():
+                assert "|" not in (getattr(obj, name).__doc__ or "")

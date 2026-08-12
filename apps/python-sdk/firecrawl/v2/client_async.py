@@ -63,6 +63,14 @@ from .methods.aio import agent as async_agent  # type: ignore[attr-defined]
 from .methods.aio import browser as async_browser  # type: ignore[attr-defined]
 from .methods.aio import monitor as async_monitor  # type: ignore[attr-defined]
 from .methods.aio import research as async_research  # type: ignore[attr-defined]
+from .methods.research_docs import (
+    ASYNC_CLIENT_INSPECT_PAPER_DOC,
+    ASYNC_CLIENT_READ_PAPER_DOC,
+    ASYNC_CLIENT_RELATED_PAPERS_DOC,
+    ASYNC_CLIENT_SEARCH_GITHUB_DOC,
+    ASYNC_CLIENT_SEARCH_PAPERS_DOC,
+    doc,
+)
 
 from .client import _SCRAPE_OPTION_KEYS
 from .watcher_async import AsyncWatcher
@@ -109,112 +117,24 @@ class AsyncFirecrawlClient:
         return await async_scrape.scrape(self.async_http_client, url, options)
 
     # Research paper index (/v2/search/research)
+    @doc(ASYNC_CLIENT_SEARCH_PAPERS_DOC)
     async def search_papers(self, query: str, **kwargs):
-        """
-        Search the research paper index by abstract relevance.
-
-        Queries ~43M paper abstracts: PubMed, bioRxiv and medRxiv (about 90% of
-        the corpus — biomedical and life sciences) plus arXiv (physics,
-        mathematics, computer science). Use this for literature search.
-
-        Not to be confused with ``search(categories=["research"])``: that is a
-        website/domain filter on ordinary web search (it narrows Google-style
-        results to ~14 academic domains and returns page snippets). This method
-        searches the paper index itself and returns ranked paper records.
-
-        Args:
-            query: Natural-language query, e.g. ``"CRISPR base editing
-                off-target effects in primary human T cells"``.
-            **kwargs: ``k``, ``authors``, ``categories``, ``from_date``,
-                ``to_date``.
-
-        Returns:
-            Raw API ``dict`` with ``success`` and ``results``. These research
-            responses are **not** normalized to snake_case like the rest of the
-            SDK — keys are camelCase (``paperId``, ``primaryId``, ...).
-
-        Example:
-            >>> await firecrawl.search_papers("GLP-1 receptor agonists cardiovascular outcomes", k=10)
-        """
         return await async_research.search_papers(self.async_http_client, query, **kwargs)
 
+    @doc(ASYNC_CLIENT_INSPECT_PAPER_DOC)
     async def inspect_paper(self, paper_id: str):
-        """
-        Fetch metadata for one paper in the research paper index.
-
-        Args:
-            paper_id: Canonical ``paperId`` from ``search_papers``, or a
-                namespaced id key such as ``pmid:<id>``, ``pmcid:<id>``,
-                ``doi:<doi>`` or ``arxiv:<id>``.
-
-        Returns:
-            Raw API ``dict`` with ``success`` and ``paper``. Keys are camelCase,
-            **not** snake_case-normalized (``paperId``, ``createdDate``, ...).
-        """
         return await async_research.inspect_paper(self.async_http_client, paper_id)
 
+    @doc(ASYNC_CLIENT_READ_PAPER_DOC)
     async def read_paper(self, paper_id: str, query: str, **kwargs):
-        """
-        Read inside a paper: return the body passages that best match a query.
-
-        Full-text passage retrieval over the research paper index (PubMed /
-        bioRxiv / medRxiv / arXiv).
-
-        Args:
-            paper_id: Canonical ``paperId`` or namespaced id key
-                (``pmid:<id>``, ``pmcid:<id>``, ``doi:<doi>``, ``arxiv:<id>``).
-            query: What to look for inside the paper, e.g. ``"primary endpoint
-                and hazard ratio"``.
-            **kwargs: ``k`` (max passages).
-
-        Returns:
-            Raw API ``dict`` with ``success``, ``paper``, ``paperId``, ``query``
-            and ``passages``. Keys are camelCase, **not** snake_case-normalized.
-        """
         return await async_research.read_paper(self.async_http_client, paper_id, query, **kwargs)
 
+    @doc(ASYNC_CLIENT_RELATED_PAPERS_DOC)
     async def related_papers(self, paper_id: str, intent: str, **kwargs):
-        """
-        Find papers related to a seed paper via the citation graph.
-
-        Candidates are re-ranked against ``intent``, so "related" means related
-        for your stated purpose rather than merely co-cited.
-
-        Args:
-            paper_id: Seed paper — canonical ``paperId`` or namespaced id key
-                (``pmid:<id>``, ``pmcid:<id>``, ``doi:<doi>``, ``arxiv:<id>``).
-            intent: What you want the related papers for, e.g. ``"replication
-                attempts in larger cohorts"``.
-            **kwargs: ``mode``, ``k``, ``rerank``, ``anchor``.
-
-        Returns:
-            Raw API ``dict`` with ``success``, ``results``, ``poolSize``,
-            ``truncated`` and optional ``note``. Keys are camelCase, **not**
-            snake_case-normalized (``articleRank``, ``seedOverlap``, ...).
-
-        Note:
-            The JS SDK exposes this same endpoint as
-            ``research.similarPapers()``.
-        """
         return await async_research.related_papers(self.async_http_client, paper_id, intent, **kwargs)
 
+    @doc(ASYNC_CLIENT_SEARCH_GITHUB_DOC)
     async def search_github(self, query: str, **kwargs):
-        """
-        Search the developer index: GitHub issue/PR history and repo readmes.
-
-        The code-and-discussion companion to ``search_papers``, served by the
-        same ``/v2/search/research`` surface. It does not search the paper
-        corpus, and it is not ``search(categories=["github"])`` (which is just a
-        ``site:github.com`` filter on ordinary web search).
-
-        Args:
-            query: Natural-language query, e.g. ``"pysam VCF parsing memory leak"``.
-            **kwargs: ``k``.
-
-        Returns:
-            Raw API ``dict`` with ``success`` and ``results``. Keys are
-            camelCase, **not** snake_case-normalized.
-        """
         return await async_research.search_github(self.async_http_client, query, **kwargs)
 
     async def interact(
