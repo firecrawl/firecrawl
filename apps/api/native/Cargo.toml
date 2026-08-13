@@ -13,7 +13,7 @@ anydoc = "0.1.9"
 chrono = { version = "0.4", features = ["serde"] }
 kuchikiki = "0.8.2"
 lol_html = "2.6.0"
-pdf-inspector = "1.14.2"
+pdf-inspector = "0.1.0"
 napi = { version = "3.0.0", features = ["serde-json", "tokio_rt"] }
 napi-derive = "3.0.0"
 nodesig = { git = "https://github.com/firecrawl/nodesig" }
