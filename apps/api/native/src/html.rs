@@ -59,6 +59,34 @@ pub async fn extract_base_href(html: String, url: String) -> napi::Result<String
   res.map_err(to_napi_err)
 }
 
+pub fn _extract_links(html: &str) -> Result<Vec<String>, String> {
+  let document = parse_html().one(html);
+
+  let anchors: Vec<_> = document
+    .select("a[href]")
+    .map_err(|_| "Failed to select links".to_string())?
+    .collect();
+
+  let mut out: Vec<String> = Vec::new();
+
+  for anchor in anchors {
+    let mut href = match anchor.attributes.borrow().get("href") {
+      Some(x) => x.to_string(),
+      None => continue,
+    };
+
+    if href.starts_with("http:/") && !href.starts_with("http://") {
+      href = format!("http://{}", &href[6..]);
+    } else if href.starts_with("https:/") && !href.starts_with("https://") {
+      href = format!("https://{}", &href[7..]);
+    }
+
+    out.push(href);
+  }
+
+  Ok(out)
+}
+
 /// Extract all links from HTML document.
 #[napi]
 pub async fn extract_links(html: Option<String>) -> napi::Result<Vec<String>> {
@@ -68,31 +96,7 @@ pub async fn extract_links(html: Option<String>) -> napi::Result<Vec<String>> {
       None => return Ok(Vec::new()),
     };
 
-    let document = parse_html().one(html.as_str());
-
-    let anchors: Vec<_> = document
-      .select("a[href]")
-      .map_err(|_| to_napi_err("Failed to select links"))?
-      .collect();
-
-    let mut out: Vec<String> = Vec::new();
-
-    for anchor in anchors {
-      let mut href = match anchor.attributes.borrow().get("href") {
-        Some(x) => x.to_string(),
-        None => continue,
-      };
-
-      if href.starts_with("http:/") && !href.starts_with("http://") {
-        href = format!("http://{}", &href[6..]);
-      } else if href.starts_with("https:/") && !href.starts_with("https://") {
-        href = format!("https://{}", &href[7..]);
-      }
-
-      out.push(href);
-    }
-
-    Ok(out)
+    _extract_links(html.as_str())
   })
   .await
   .map_err(|e| {
@@ -101,6 +105,12 @@ pub async fn extract_links(html: Option<String>) -> napi::Result<Vec<String>> {
       format!("extract_links join error: {e}"),
     )
   })?
+  .map_err(|e| {
+    napi::Error::new(
+      napi::Status::GenericFailure,
+      format!("extract_links error: {e}"),
+    )
+  })
 }
 
 macro_rules! insert_meta_name {
@@ -711,7 +721,7 @@ pub struct ExtractedAttributeResult {
   pub values: Vec<String>,
 }
 
-fn _extract_attributes(
+pub fn _extract_attributes(
   html: &str,
   options: &ExtractAttributesOptions,
 ) -> Result<Vec<ExtractedAttributeResult>, Box<dyn std::error::Error + Send + Sync>> {

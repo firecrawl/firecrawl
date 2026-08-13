@@ -3,6 +3,7 @@ use std::{net::IpAddr, time::Duration};
 use chrono::{DateTime, Utc};
 use regex::Regex;
 use sha2::{Digest, Sha256};
+use tracing::instrument;
 use url::Url;
 
 use crate::scrape_url::engines::{EngineScrapeContent, index::gcs::IndexGcs};
@@ -122,6 +123,7 @@ impl<'a> PartialEq for IndexEntrySource<'a> {
 
 impl<'a> Eq for IndexEntrySource<'a> {}
 
+#[derive(Debug)]
 struct IndexEntryVariant {
   pub url_hash: Vec<u8>,
   pub is_mobile: bool,
@@ -156,6 +158,7 @@ impl IndexEntryVariant {
   }
 }
 
+#[derive(Debug)]
 struct IndexEntryFilter {
   pub max_age: i32,
   pub min_age: Option<i32>,
@@ -212,6 +215,7 @@ impl Engine for IndexEngine {
     None
   }
 
+  #[instrument(name = "IndexEngine::scrape", skip(meta, self))]
   async fn scrape(
     &self,
     meta: &Meta,

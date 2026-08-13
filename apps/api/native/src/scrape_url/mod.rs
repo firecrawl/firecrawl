@@ -50,9 +50,13 @@ struct EngineRun {
     features = meta.feature_flags.iter().cloned().map(|x| x.to_string()).collect::<Vec<String>>().join(","),
     rewritten_url = Empty,
     is_pre_crawl = meta.internal_options.is_pre_crawl,
+    scrape.success = Empty,
     engine.winner = Empty,
     engine.unsupported_features = Empty,
     engine.final_status_code = Empty,
+    engine.final_url = Empty,
+    engine.proxy_used = Empty,
+    engine.cache_state = Empty,
   ),
   skip(meta)
 )]
@@ -201,6 +205,10 @@ async fn _scrape_url(meta: Meta) -> Result<Document, ScrapeURLError> {
   // log metrics
 
   // set span attribs
+  Span::current().record("scrape.success", true).record(
+    "scrape.index_hit",
+    document.metadata.cache_state == DocumentMetadataCacheState::Hit,
+  );
 
   // return result
 
@@ -231,20 +239,25 @@ pub async fn scrape_url(
   // cost_tracking: // TODO:
 ) -> Result<serde_json::Map<String, serde_json::Value>, napi::Error> {
   ensure_crypto_provider();
+  crate::telemetry::init_telemetry();
+  // Flushes on scope exit AND on panic unwind, so even a panicking scrape
+  // exports the spans it produced before the process tears down.
+  let _flush = crate::telemetry::FlushGuard;
 
   let options: ScrapeOptions = serde_json::from_value(serde_json::Value::Object(options)).unwrap();
   let internal_options: InternalOptions =
     serde_json::from_value(serde_json::Value::Object(internal_options)).unwrap();
 
-  match _scrape_url(Meta::new(
+  let result = _scrape_url(Meta::new(
     id,
     Url::parse(&url).unwrap(), // TODO: Better handling
     team_id,
     options,
     internal_options,
   ))
-  .await
-  {
+  .await;
+
+  match result {
     Ok(x) => Ok(match serde_json::to_value(x).unwrap() {
       serde_json::Value::Object(x) => x,
       _ => unreachable!(),

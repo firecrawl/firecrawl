@@ -2,6 +2,7 @@ use std::sync::LazyLock;
 
 use regex::Regex;
 use sha2::{Digest, Sha256};
+use tracing::instrument;
 
 use self::{
   actions::{FireEngineActionResultCookie, FireEngineActionResultKind},
@@ -38,7 +39,7 @@ static FIRE_ENGINE_BETA_URL: LazyLock<Option<String>> = LazyLock::new(|| {
   }
 });
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub struct FireEngine {
   url: &'static String,
 }
@@ -49,6 +50,7 @@ pub struct FireEngineScrape {
 }
 
 impl FireEngine {
+  #[instrument(name = "FireEngine::do_scrape", skip(meta))]
   pub async fn do_scrape(
     &self,
     meta: &Meta,

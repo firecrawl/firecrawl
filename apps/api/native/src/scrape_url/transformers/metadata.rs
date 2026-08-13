@@ -1,8 +1,14 @@
+use tracing::instrument;
+
 use crate::_extract_metadata;
 
 use super::super::{document::Document, meta::Meta};
 use super::TransformerError;
 
+#[instrument(
+  name = "transformers::metadata::derive_metadata_from_raw_html",
+  skip(meta, document)
+)]
 pub async fn derive_metadata_from_raw_html(
   meta: &Meta,
   mut document: Document,
@@ -21,5 +27,5 @@ pub async fn derive_metadata_from_raw_html(
   // TODO: unmerge stuff like `title` and other defined tags (or rework metadata completely...)
   document.metadata.extra = metadata;
 
-  unimplemented!()
+  Ok(document)
 }

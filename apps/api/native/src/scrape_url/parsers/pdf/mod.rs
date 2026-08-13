@@ -227,6 +227,7 @@ pub async fn parse_pdf(
         summary: None,
         answer: None,
         highlights: None,
+        attributes: None,
         actions: result.actions,
         warning: None,
         // TODO: pages
@@ -266,6 +267,7 @@ pub async fn parse_pdf(
       summary: None,
       answer: None,
       highlights: None,
+      attributes: None,
       actions: result.actions,
       warning: None,
       metadata: DocumentMetadata {

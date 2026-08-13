@@ -1,5 +1,6 @@
 use reqwest::Client;
 use serde::Deserialize;
+use tracing::instrument;
 
 use super::{
   FireEngine,
@@ -25,6 +26,7 @@ pub enum FireEngineScrapeStatus {
 }
 
 impl FireEngine {
+  #[instrument(name = "FireEngine::call_check_status")]
   pub(super) async fn call_check_status(&self, job_id: &str) -> FireEngineScrapeStatus {
     let client = Client::new(); // TODO: should we cache this
     // TODO: retries may be good here

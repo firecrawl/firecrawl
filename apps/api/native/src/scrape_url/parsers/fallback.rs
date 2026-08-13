@@ -80,8 +80,9 @@ pub fn parse_fallback(meta: &Meta, result: EngineScrapeResult) -> Result<Documen
     summary: None,
     answer: None,
     highlights: None,
-    warning: None,
+    attributes: None,
     actions: result.actions,
+    warning: None,
     // branding:
     metadata: DocumentMetadata {
       scrape_id: meta.id.clone(),
