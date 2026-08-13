@@ -20,7 +20,7 @@ overrides:
   protobufjs@>=7.0.0 <7.6.5: 7.6.5
   uuid@<11.1.1: 11.1.1
   postcss@<8.5.26: '>=8.5.26 <9.0.0'
-  nanoid@>=3.0.0 <3.3.17: 3.3.17
+  nanoid@>=3.0.0 <3.3.18: 3.3.18
   socket.io-parser@>=4.0.0 <4.2.7: 4.2.7
   '@grpc/grpc-js@>=1.14.0 <2.0.0': 1.14.4
   '@opentelemetry/core@>=2.0.0 <2.8.0': 2.8.0
@@ -1519,8 +1519,8 @@ packages:
   nan@2.26.0:
     resolution: {integrity: sha512-/h3yIdxzdv4Z+S3Q2Q84gAtOrYW7a6g0WGBcTlWkztRHqGv9e4uOZkHmX90wipfzDbRhmyxyxLiIzq0k2EoBTQ==}
 
-  nanoid@3.3.17:
-    resolution: {integrity: sha512-xQLf0A3HOMlgHq0n247/LRuAOYmB7dXJ/DvAxGvsSBij45XtBSmQycu+F8ODbHwns/XyFZagyL1+J0Offw1E0g==}
+  nanoid@3.3.18:
+    resolution: {integrity: sha512-DTg4MJbGMWkfi6VZFdNt2/caMbQy4Ou+Op/hJQvGEWcnVfoA1QA+xzRKAzw9jD6+GVOOeYr/mIcuDSdug6F6+w==}
     engines: {node: ^10 || ^12 || ^13.7 || ^14 || >=15.0.1}
     hasBin: true
 
@@ -3190,7 +3190,7 @@ snapshots:
       jsonwebtoken: 9.0.3
       lodash: 4.18.1
       moment: 2.30.1
-      nanoid: 3.3.17
+      nanoid: 3.3.18
       ora: 4.1.1
       rc: 1.2.8
       sqs-consumer: 6.0.2(@aws-sdk/client-sqs@3.1068.0)
@@ -3924,7 +3924,7 @@ snapshots:
   nan@2.26.0:
     optional: true
 
-  nanoid@3.3.17: {}
+  nanoid@3.3.18: {}
 
   nanotimer@0.3.14: {}
 
