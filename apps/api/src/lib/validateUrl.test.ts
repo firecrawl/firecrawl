@@ -17,6 +17,22 @@ describe("isSameDomain", () => {
     expect(result).toBe(false);
   });
 
+  it("should return false for different domains sharing a multi-part TLD", () => {
+    const result = isSameDomain(
+      "https://example.co.uk",
+      "https://attacker.co.uk",
+    );
+    expect(result).toBe(false);
+  });
+
+  it("should return true for a subdomain on a multi-part TLD", () => {
+    const result = isSameDomain(
+      "https://sub.example.co.uk",
+      "https://example.co.uk",
+    );
+    expect(result).toBe(true);
+  });
+
   it("should return true for a subdomain with different protocols", () => {
     const result = isSameDomain(
       "https://sub.example.com",
@@ -70,6 +86,14 @@ describe("isSameSubdomain", () => {
     const result = isSameSubdomain(
       "http://docs.example.com",
       "http://blog.example.com",
+    );
+    expect(result).toBe(false);
+  });
+
+  it("should return false for different domains sharing a multi-part TLD", () => {
+    const result = isSameSubdomain(
+      "https://a.example.co.uk",
+      "https://b.example.co.uk",
     );
     expect(result).toBe(false);
   });
