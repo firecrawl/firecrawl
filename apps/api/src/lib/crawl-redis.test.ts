@@ -115,4 +115,27 @@ describe("lockURL", () => {
       );
     }
   });
+
+  it("rejects all locks when crawlerOptions.limit is negative", async () => {
+    const id = "test-lockurl-negative-limit";
+    const sc = {
+      crawlerOptions: { limit: -1 },
+    } as StoredCrawl;
+
+    await redisEvictConnection.del(
+      "crawl:" + id + ":visited",
+      "crawl:" + id + ":visited_unique",
+    );
+
+    try {
+      const result = await lockURL(id, sc, "https://firecrawl.dev/page-0");
+
+      expect(result).toBe(false);
+    } finally {
+      await redisEvictConnection.del(
+        "crawl:" + id + ":visited",
+        "crawl:" + id + ":visited_unique",
+      );
+    }
+  });
 });

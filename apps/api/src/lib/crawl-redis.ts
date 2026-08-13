@@ -532,7 +532,7 @@ export async function lockURL(
 
     const limit =
       typeof sc.crawlerOptions?.limit === "number"
-        ? sc.crawlerOptions.limit
+        ? Math.max(sc.crawlerOptions.limit, 0)
         : -1;
 
     const added = (await redisEvictConnection.eval(
