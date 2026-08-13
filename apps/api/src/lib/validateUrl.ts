@@ -1,5 +1,6 @@
 import * as undici from "undici";
 import { getSecureDispatcher } from "../scraper/scrapeURL/engines/utils/safeFetch";
+import { parseHostname } from "./url-utils";
 
 export const protocolIncluded = (url: string) => {
   // if :// not in the start of the url assume http (maybe https?)
@@ -57,6 +58,24 @@ export const checkUrl = (url: string) => {
   return url;
 };
 
+// A leading "www." is treated as part of the registrable name, matching the
+// previous behavior where it was stripped before comparison.
+const stripWww = (hostname: string) =>
+  hostname.startsWith("www.") ? hostname.slice(4) : hostname;
+
+// Registrable domain via the public suffix list. The old split/slice logic
+// was wrong for multi-part TLDs: it collapsed example.co.uk to its suffix, so
+// example.co.uk and attacker.co.uk compared equal. Falls back to the bare
+// hostname for inputs with no registrable domain (IPs, localhost) so those
+// keep comparing by hostname.
+const registrableDomain = (hostname: string) => {
+  const cleaned = stripWww(hostname);
+  return parseHostname(cleaned).domain ?? cleaned;
+};
+
+const subdomainOf = (hostname: string) =>
+  parseHostname(stripWww(hostname)).subdomain ?? "";
+
 /**
  * Same domain check
  * It checks if the domain of the url is the same as the base url
@@ -73,21 +92,8 @@ export function isSameDomain(url: string, baseUrl: string) {
     return false;
   }
 
-  const typedUrlObj1 = urlObj1 as URL;
-  const typedUrlObj2 = urlObj2 as URL;
-
-  const cleanHostname = (hostname: string) => {
-    return hostname.startsWith("www.") ? hostname.slice(4) : hostname;
-  };
-
-  const domain1 = cleanHostname(typedUrlObj1.hostname)
-    .split(".")
-    .slice(-2)
-    .join(".");
-  const domain2 = cleanHostname(typedUrlObj2.hostname)
-    .split(".")
-    .slice(-2)
-    .join(".");
+  const domain1 = registrableDomain((urlObj1 as URL).hostname);
+  const domain2 = registrableDomain((urlObj2 as URL).hostname);
 
   return domain1 === domain2;
 }
@@ -100,33 +106,14 @@ export function isSameSubdomain(url: string, baseUrl: string) {
     return false;
   }
 
-  const typedUrlObj1 = urlObj1 as URL;
-  const typedUrlObj2 = urlObj2 as URL;
-
-  const cleanHostname = (hostname: string) => {
-    return hostname.startsWith("www.") ? hostname.slice(4) : hostname;
-  };
-
-  const domain1 = cleanHostname(typedUrlObj1.hostname)
-    .split(".")
-    .slice(-2)
-    .join(".");
-  const domain2 = cleanHostname(typedUrlObj2.hostname)
-    .split(".")
-    .slice(-2)
-    .join(".");
-
-  const subdomain1 = cleanHostname(typedUrlObj1.hostname)
-    .split(".")
-    .slice(0, -2)
-    .join(".");
-  const subdomain2 = cleanHostname(typedUrlObj2.hostname)
-    .split(".")
-    .slice(0, -2)
-    .join(".");
+  const hostname1 = (urlObj1 as URL).hostname;
+  const hostname2 = (urlObj2 as URL).hostname;
 
   // Check if the domains are the same and the subdomains are the same
-  return domain1 === domain2 && subdomain1 === subdomain2;
+  return (
+    registrableDomain(hostname1) === registrableDomain(hostname2) &&
+    subdomainOf(hostname1) === subdomainOf(hostname2)
+  );
 }
 
 export const checkAndUpdateURLForMap = (
