@@ -27,10 +27,7 @@ import {
 } from "./x-twitter";
 import { queryEngpickerVerdict, useIndex } from "../../../services";
 import { hasFormatOfType } from "../../../lib/format-utils";
-import {
-  getPDFMaxPages,
-  getPDFPageMarkdown,
-} from "../../../controllers/v2/types";
+import { getPDFPageMarkdown } from "../../../controllers/v2/types";
 import type { PdfMetadata } from "./pdf/types";
 import { BrandingProfile } from "../../../types/branding";
 import { BrandingNotSupportedError } from "../error";
@@ -565,8 +562,6 @@ export function shouldUseIndex(meta: Meta) {
     config.FIRECRAWL_INDEX_WRITE_ONLY !== true &&
     !hasFormatOfType(meta.options.formats, "changeTracking") &&
     !hasFormatOfType(meta.options.formats, "branding") &&
-    // Skip index if a non-default PDF maxPages is specified
-    getPDFMaxPages(meta.options.parsers) === undefined &&
     // The URL index does not yet persist physical-page capability metadata.
     !getPDFPageMarkdown(meta.options.parsers) &&
     !hasCustomScreenshotSettings &&

@@ -37,6 +37,7 @@ import {
   NoCachedDataError,
 } from "../../error";
 import {
+  getPDFMaxPages,
   getPDFPageMarkdown,
   shouldParsePDF,
 } from "../../../../controllers/v2/types";
@@ -545,6 +546,18 @@ export async function scrapeURLWithIndex(
     if (isPdfUrl) {
       // This is likely a parsed PDF cached, but we want unparsed - report cache miss
       logLookup("debug", "hit", { pdfMismatch: "cached_parsed_want_unparsed" });
+      throw new IndexMissError();
+    }
+  }
+
+  // Check if returned PDF has a higher numPages than what the user's parsers[pdf].maxPages config allows.
+  let numPages = doc.pdfMetadata.numPages ?? doc.numPages;
+  if (numPages !== undefined) {
+    let maxPages = getPDFMaxPages(meta.options.parsers);
+    if (maxPages !== undefined && numPages > maxPages) {
+      logLookup("debug", "hit", {
+        pdfMismatch: "cached_pdf_overflows_parsers_max_pages",
+      });
       throw new IndexMissError();
     }
   }
