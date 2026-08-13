@@ -551,7 +551,7 @@ export async function scrapeURLWithIndex(
   }
 
   // Check if returned PDF has a higher numPages than what the user's parsers[pdf].maxPages config allows.
-  let numPages = doc.pdfMetadata.numPages ?? doc.numPages;
+  let numPages = doc.pdfMetadata?.numPages ?? doc.numPages;
   if (numPages !== undefined) {
     let maxPages = getPDFMaxPages(meta.options.parsers);
     if (maxPages !== undefined && numPages > maxPages) {
