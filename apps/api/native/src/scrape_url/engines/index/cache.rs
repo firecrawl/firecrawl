@@ -1,4 +1,4 @@
-use std::time::Duration;
+use std::{fmt::Debug, time::Duration};
 
 use chrono::{DateTime, Utc};
 use redis::{AsyncTypedCommands, aio::MultiplexedConnection};
@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 use tokio::sync::{Mutex, OnceCell};
+use tracing::instrument;
 use uuid::Uuid;
 
 use crate::scrape_url::engines::index::IndexEntryFilter;
@@ -18,6 +19,12 @@ use super::{
 static INDEX_CACHE: OnceCell<Option<Mutex<MultiplexedConnection>>> = OnceCell::const_new();
 
 pub struct IndexCache(&'static Mutex<MultiplexedConnection>);
+
+impl Debug for IndexCache {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    f.write_str("IndexCache")
+  }
+}
 
 impl IndexEntryVariant {
   fn to_redis_hash(&self) -> String {
@@ -88,28 +95,28 @@ impl IndexEntryFilter {
 }
 
 impl IndexCache {
-  pub async fn get() -> Option<Self> {
-    INDEX_CACHE
-      .get_or_init(|| async {
-        if let Some(index_cache_redis_url) = std::env::var("INDEX_CACHE_REDIS_URL").ok()
-          && !index_cache_redis_url.is_empty()
-        {
-          Some(Mutex::new(
-            redis::Client::open(index_cache_redis_url)
-              .expect("Failed to connect to Redis")
-              .get_multiplexed_async_connection()
-              .await
-              .expect("Failed to connect to Redis"),
-          ))
-        } else {
-          None
-        }
-      })
-      .await
-      .as_ref()
-      .map(Self)
+  #[instrument(name = "IndexCache::init")]
+  async fn init() -> Option<Mutex<MultiplexedConnection>> {
+    if let Some(index_cache_redis_url) = std::env::var("INDEX_CACHE_REDIS_URL").ok()
+      && !index_cache_redis_url.is_empty()
+    {
+      Some(Mutex::new(
+        redis::Client::open(index_cache_redis_url)
+          .expect("Failed to connect to Redis")
+          .get_multiplexed_async_connection()
+          .await
+          .expect("Failed to connect to Redis"),
+      ))
+    } else {
+      None
+    }
   }
 
+  pub async fn get() -> Option<Self> {
+    INDEX_CACHE.get_or_init(Self::init).await.as_ref().map(Self)
+  }
+
+  #[instrument(name = "IndexCache::get_max_age")]
   pub async fn get_max_age(&self, domain_hash: &[u8]) -> Option<i32> {
     let unparsed = {
       // TODO: timeout
@@ -127,6 +134,7 @@ impl IndexCache {
       .and_then(|x| x.max_age)
   }
 
+  #[instrument(name = "IndexCache::set_max_age")]
   pub async fn set_max_age(&self, domain_hash: &[u8], max_age: i32) {
     let mut index_cache = self.0.lock().await;
     // TODO: timeout
@@ -142,6 +150,7 @@ impl IndexCache {
       .await; // TODO: error logging
   }
 
+  #[instrument(name = "IndexCache::_get_negative_hit")]
   async fn _get_negative_hit(
     &self,
     variant: &IndexEntryVariant,
@@ -169,6 +178,7 @@ impl IndexCache {
       .unwrap_or(false)
   }
 
+  #[instrument(name = "IndexCache::get_entries")]
   pub async fn get_entries(
     &self,
     variant: &IndexEntryVariant,
@@ -202,6 +212,7 @@ impl IndexCache {
     }
   }
 
+  #[instrument(name = "IndexCache::upsert_entries")]
   pub async fn upsert_entries(&self, variant: &IndexEntryVariant, entries: &[IndexEntry]) {
     let key = variant.to_redis_key();
 
@@ -260,6 +271,7 @@ impl IndexCache {
     }
   }
 
+  #[instrument(name = "IndexCache::delete_entry")]
   pub async fn delete_entry(&self, variant: &IndexEntryVariant, id: Uuid) {
     let key = variant.to_redis_key();
 

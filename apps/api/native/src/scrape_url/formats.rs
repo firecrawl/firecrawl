@@ -24,7 +24,16 @@ pub struct ScreenshotOptions {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Default, Deserialize)]
-pub struct AttributesOptions;
+pub struct AttributesSelector {
+  pub selector: String,
+  pub attribute: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default, Deserialize)]
+pub struct AttributesOptions {
+  pub selectors: Vec<AttributesSelector>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Default, Deserialize)]
 pub struct QuestionOptions;
 #[derive(Debug, Clone, PartialEq, Eq, Default, Deserialize)]

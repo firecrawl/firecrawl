@@ -16,6 +16,7 @@ mod html;
 mod logging;
 mod pdf;
 mod scrape_url;
+mod telemetry;
 mod utils;
 
 pub use napi::bindgen_prelude::*;

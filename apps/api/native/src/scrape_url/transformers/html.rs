@@ -1,15 +1,23 @@
 use tokio::task;
+use tracing::instrument;
 
 use crate::{_transform_html_inner, TransformHtmlOptions};
 
 use super::super::{document::Document, meta::Meta};
 use super::TransformerError;
 
+#[instrument(
+  name = "transformers::html::_derive_html_from_raw_html",
+  skip(meta, document)
+)]
 pub async fn _derive_html_from_raw_html(
   meta: &Meta,
   document: &Document,
   only_main_content: bool,
 ) -> Result<String, TransformerError> {
+  // NOTE: html is a common dependency of other transformers and
+  // should always be converted, do not gate on format here - Mogery
+
   let Some(raw_html) = document.raw_html.as_ref() else {
     return Err(TransformerError::CalledOutOfOrder(
       "raw_html is None".to_string(),
@@ -20,7 +28,9 @@ pub async fn _derive_html_from_raw_html(
   let url = meta.get_url().to_string();
   let include_tags = meta.options.include_tags.clone();
   let exclude_tags = meta.options.exclude_tags.clone();
+  let parent = tracing::Span::current();
   let html = task::spawn_blocking(move || {
+    let _guard = parent.enter();
     _transform_html_inner(TransformHtmlOptions {
       html: raw_html,
       url: url,
@@ -39,6 +49,10 @@ pub async fn _derive_html_from_raw_html(
   Ok(html)
 }
 
+#[instrument(
+  name = "transformers::html::derive_html_from_raw_html",
+  skip(meta, document)
+)]
 pub async fn derive_html_from_raw_html(
   meta: &Meta,
   mut document: Document,

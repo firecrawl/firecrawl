@@ -48,7 +48,11 @@ tokio = { version = "1.48.0", features = ["macros"] }
 # and Cargo.lock is not committed, so fresh builds would otherwise pick it up.
 tinyvec = ">=1.12, <1.13"
 tracing = "0.1"
-tracing-subscriber = { version = "0.3", default-features = false, features = ["registry"] }
+tracing-subscriber = { version = "0.3", default-features = false, features = ["registry", "fmt", "env-filter"] }
+tracing-opentelemetry = "0.33"
+opentelemetry = "0.32"
+opentelemetry_sdk = "0.32"
+opentelemetry-otlp = { version = "0.32", default-features = false, features = ["trace", "http-proto", "reqwest-blocking-client"] }
 wreq = { version = "6.0.0-rc", features = ["cookies", "gzip", "brotli", "zstd", "deflate", "webpki-roots"] }
 wreq-util = "3.0.0-rc"
 google-cloud-storage = "1.17.0"

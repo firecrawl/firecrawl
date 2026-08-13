@@ -1,7 +1,10 @@
+use tracing::instrument;
+
 use super::{document::Document, meta::Meta};
 
 macro_rules! generate_execute_tranformers {
     ($($f:path),+ $(,)?) => {
+        #[instrument(name = "transformers::execute_transformers", skip(meta, document))]
         pub async fn execute_tranformers(
           meta: &Meta,
           mut document: Document,
@@ -12,13 +15,17 @@ macro_rules! generate_execute_tranformers {
     };
 }
 
+use attributes::derive_attributes_from_html;
 use html::derive_html_from_raw_html;
 use images::derive_images_from_html;
+use links::derive_links_from_html;
 use markdown::derive_markdown_from_html;
 use metadata::derive_metadata_from_raw_html;
 
+mod attributes;
 mod html;
 mod images;
+mod links;
 mod markdown;
 mod metadata;
 
@@ -32,7 +39,7 @@ generate_execute_tranformers!(
   derive_markdown_from_html,
   // TODO: perform_clean_content
   // TODO: perform_redact_pii
-  // TODO: derive_links_from_html
+  derive_links_from_html,
   derive_images_from_html,
   // TODO: derive_branding_from_actions
   derive_metadata_from_raw_html,
@@ -44,7 +51,7 @@ generate_execute_tranformers!(
   // TODO: perform_deterministic_json
   // TODO: perform_summary
   // TODO: perform_query
-  // TODO: perform_attributes
+  derive_attributes_from_html,
   // TODO: perform_agent
   // TODO: remove_base64_images
   // TODO: derive_diff

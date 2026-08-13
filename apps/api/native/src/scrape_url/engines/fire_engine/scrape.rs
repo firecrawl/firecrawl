@@ -2,6 +2,7 @@ use std::collections::HashMap;
 
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
+use tracing::instrument;
 use url::Url;
 
 use super::super::super::{
@@ -12,20 +13,20 @@ use super::super::super::{
 
 use super::FireEngine;
 
-#[derive(Serialize)]
+#[derive(Debug, Serialize)]
 pub enum FireEngineScrapeRequestEngine {
   #[serde(rename = "chrome-cdp")]
   ChromeCDP,
   // everything else is deprecated
 }
 
-#[derive(Serialize)]
+#[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FireEnginePersistentStorage {
   pub unique_id: String,
 }
 
-#[derive(Serialize)]
+#[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FireEngineScrapeRequest<'a> {
   pub engine: FireEngineScrapeRequestEngine,
@@ -83,7 +84,6 @@ pub struct FireEngineScrapeCompleted {
   // TODO: this needs to be non-optional, might need fixes on f-e side to ensure reliability
   #[serde(default)]
   pub response_headers: HashMap<String, String>,
-  pub meta: Option<serde_json::Map<String, serde_json::Value>>, // TODO: wtf is this?
 
   #[serde(default)]
   pub screenshots: Vec<Url>,
@@ -92,7 +92,7 @@ pub struct FireEngineScrapeCompleted {
   #[serde(default)]
   pub action_results: Vec<FireEngineActionResult>,
   pub file: Option<FireEngineScrapeFile>,
-  pub doc_url: Option<String>, // TODO: wtf is this?
+  // pub doc_url: Option<String>, // TODO: GCS doc if using saveScrapeResultToGCS, but if this is present than the others aren't. Need to fix type
   #[serde(default)]
   pub used_mobile_proxy: bool,
   pub timezone: Option<String>,
@@ -125,6 +125,7 @@ pub enum FireEngineScrapeResponse {
 }
 
 impl FireEngine {
+  #[instrument(name = "FireEngine::call_scrape")]
   pub(super) async fn call_scrape<'a>(
     &self,
     request: FireEngineScrapeRequest<'a>,

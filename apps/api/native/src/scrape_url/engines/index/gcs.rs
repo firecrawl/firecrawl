@@ -1,6 +1,9 @@
+use std::fmt::Debug;
+
 use google_cloud_storage::client::Storage;
 use serde::{Deserialize, Serialize};
 use tokio::sync::OnceCell;
+use tracing::instrument;
 use url::Url;
 use uuid::Uuid;
 
@@ -9,6 +12,12 @@ use super::super::EngineScrapeProxy;
 static INDEX_GCS: OnceCell<Option<(Storage, String)>> = OnceCell::const_new();
 
 pub struct IndexGcs(&'static (Storage, String));
+
+impl Debug for IndexGcs {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    write!(f, "IndexGcs({:?})", self.0.1)
+  }
+}
 
 #[derive(Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -26,23 +35,23 @@ pub struct IndexDocument {
 }
 
 impl IndexGcs {
-  pub async fn get() -> Option<Self> {
-    INDEX_GCS
-      .get_or_init(|| async {
-        if let Some(bucket_name) = std::env::var("GCS_INDEX_BUCKET_NAME").ok()
-          && !bucket_name.is_empty()
-          && let Some(storage) = Storage::builder().build().await.ok()
-        {
-          Some((storage, format!("projects/_/buckets/{}", bucket_name)))
-        } else {
-          None
-        }
-      })
-      .await
-      .as_ref()
-      .map(Self)
+  #[instrument(name = "IndexGcs::init")]
+  async fn init() -> Option<(Storage, String)> {
+    if let Some(bucket_name) = std::env::var("GCS_INDEX_BUCKET_NAME").ok()
+      && !bucket_name.is_empty()
+      && let Some(storage) = Storage::builder().build().await.ok()
+    {
+      Some((storage, format!("projects/_/buckets/{}", bucket_name)))
+    } else {
+      None
+    }
   }
 
+  pub async fn get() -> Option<Self> {
+    INDEX_GCS.get_or_init(Self::init).await.as_ref().map(Self)
+  }
+
+  #[instrument(name = "IndexGcs::get_document")]
   pub async fn get_document(&self, id: Uuid) -> Option<IndexDocument> {
     let mut resp = self
       .0

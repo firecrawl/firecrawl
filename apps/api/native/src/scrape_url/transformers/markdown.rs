@@ -5,6 +5,7 @@ use reqwest::{
   header::{HeaderMap, HeaderValue},
 };
 use serde::{Deserialize, Serialize};
+use tracing::instrument;
 
 use crate::{_post_process_markdown, scrape_url::transformers::html::_derive_html_from_raw_html};
 
@@ -40,6 +41,10 @@ enum ConvertResponse {
   },
 }
 
+#[instrument(
+  name = "transformers::markdown::convert_markdown_to_html",
+  skip(meta, html)
+)]
 async fn convert_markdown_to_html(meta: &Meta, html: &str) -> String {
   let client = Client::new(); // TODO: cache and share
 
@@ -81,6 +86,10 @@ async fn convert_markdown_to_html(meta: &Meta, html: &str) -> String {
     .unwrap() // TODO: error handling
 }
 
+#[instrument(
+  name = "transformers::markdown:derive_markdown_from_html",
+  skip(meta, document)
+)]
 pub async fn derive_markdown_from_html(
   meta: &Meta,
   mut document: Document,

@@ -8,7 +8,7 @@ use crate::scrape_url::engines::EngineScrapeResultActions;
 use super::engines::EngineScrapeProxy;
 use std::{collections::HashMap, fmt::Display};
 
-#[derive(Debug, Clone, Copy, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub enum DocumentMetadataCacheState {
   Hit,
@@ -46,6 +46,13 @@ pub struct DocumentMetadata {
 }
 
 #[derive(Debug, Serialize)]
+pub struct DocumentAttribute {
+  pub selector: String,
+  pub attribute: String,
+  pub values: Vec<String>,
+}
+
+#[derive(Debug, Serialize)]
 pub struct Document {
   pub markdown: Option<String>,
   pub html: Option<String>,
@@ -65,7 +72,7 @@ pub struct Document {
   // product:
   // menu:
   pub warning: Option<String>,
-  // attributes:
+  pub attributes: Option<Vec<DocumentAttribute>>,
   pub actions: Option<EngineScrapeResultActions>,
   // change_tracking:
   pub metadata: DocumentMetadata,

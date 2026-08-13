@@ -80,6 +80,7 @@ pub fn parse_document(meta: &Meta, result: EngineScrapeResult) -> Result<Documen
     summary: None,
     answer: None,
     highlights: None,
+    attributes: None,
     actions: result.actions,
     warning: None,
     metadata: DocumentMetadata {

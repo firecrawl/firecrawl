@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 
 use super::formats::ScreenshotOptionsViewport;
 
-#[derive(Serialize, Deserialize, Default, Clone, Copy)]
+#[derive(Debug, Serialize, Deserialize, Default, Clone, Copy)]
 #[serde(rename_all = "camelCase")]
 pub enum ActionScrollDirection {
   Up,
@@ -15,7 +15,7 @@ fn default_scale() -> f64 {
   1.
 }
 
-#[derive(Serialize, Deserialize, Default, Clone, Copy)]
+#[derive(Debug, Serialize, Deserialize, Default, Clone, Copy)]
 pub enum ActionPdfFormat {
   A0,
   A1,
@@ -33,14 +33,14 @@ pub enum ActionPdfFormat {
   Ledger,
 }
 
-#[derive(Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(untagged, deny_unknown_fields)]
 pub enum WaitAction {
   Selector { selector: String },
   Milliseconds { milliseconds: i32 },
 }
 
-#[derive(Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(tag = "type", rename_all = "camelCase")]
 pub enum Action {
   Wait(WaitAction),
@@ -87,13 +87,13 @@ pub enum Action {
   GetCookies,
 }
 
-#[derive(Serialize)]
+#[derive(Debug, Serialize)]
 pub struct InternalActionMetadata {
   #[serde(skip_serializing_if = "Option::is_none")]
   pub __firecrawl_internal: Option<bool>,
 }
 
-#[derive(Serialize)]
+#[derive(Debug, Serialize)]
 pub struct InternalAction {
   #[serde(flatten)]
   pub action: Action,

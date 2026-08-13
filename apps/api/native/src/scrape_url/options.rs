@@ -20,7 +20,7 @@ pub enum ProxyMode {
   Auto,
 }
 
-#[derive(Default, Deserialize)]
+#[derive(Debug, Default, Deserialize)]
 #[serde(try_from = "String")]
 pub enum ScrapeOptionsLocationCountry {
   #[default]
@@ -79,7 +79,7 @@ impl ScrapeOptionsLocationCountry {
   }
 }
 
-#[derive(Deserialize, Serialize, Default)]
+#[derive(Debug, Deserialize, Serialize, Default)]
 pub struct ScrapeOptionsLocation {
   #[serde(default)]
   pub country: ScrapeOptionsLocationCountry,

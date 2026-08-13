@@ -1,4 +1,4 @@
-use std::str::FromStr;
+use std::{fmt::Debug, str::FromStr};
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -8,6 +8,7 @@ use sqlx::{
   prelude::FromRow,
 };
 use tokio::sync::OnceCell;
+use tracing::instrument;
 use uuid::Uuid;
 
 use super::{IndexEntryFilter, IndexEntryVariant};
@@ -17,7 +18,7 @@ pub struct MaxAgeRow {
   pub max_age: Option<i32>,
 }
 
-#[derive(FromRow, Deserialize, Serialize)]
+#[derive(Debug, FromRow, Deserialize, Serialize)]
 pub struct IndexEntry {
   pub id: Uuid,
   pub created_at: DateTime<Utc>,
@@ -33,37 +34,42 @@ static INDEX_DB: OnceCell<Option<PgPool>> = OnceCell::const_new();
 
 pub struct IndexDb(&'static PgPool);
 
+impl Debug for IndexDb {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    f.write_str("IndexDb")
+  }
+}
+
 impl IndexDb {
-  pub async fn get() -> Option<Self> {
-    INDEX_DB
-      .get_or_init(|| async {
-        if let Some(index_database_url) = std::env::var("INDEX_DATABASE_URL").ok()
-          && !index_database_url.is_empty()
-        {
-          let index_database_url =
-            index_database_url.replace("sslmode=no-verify", "sslmode=require");
+  #[instrument(name = "IndexDb::init")]
+  async fn init() -> Option<PgPool> {
+    if let Some(index_database_url) = std::env::var("INDEX_DATABASE_URL").ok()
+      && !index_database_url.is_empty()
+    {
+      let index_database_url = index_database_url.replace("sslmode=no-verify", "sslmode=require");
 
-          let options = PgConnectOptions::from_str(&index_database_url)
-            .expect("Failed to parse INDEX_DATABASE_URL")
-            .statement_cache_capacity(0); // tx pooler does not like statement cache
+      let options = PgConnectOptions::from_str(&index_database_url)
+        .expect("Failed to parse INDEX_DATABASE_URL")
+        .statement_cache_capacity(0); // tx pooler does not like statement cache
 
-          Some(
-            PgPoolOptions::new()
-              .min_connections(0)
-              .max_connections(6)
-              .connect_with(options)
-              .await
-              .expect("Failed to connect to index DB"),
-          )
-        } else {
-          None
-        }
-      })
-      .await
-      .as_ref()
-      .map(Self)
+      Some(
+        PgPoolOptions::new()
+          .min_connections(0)
+          .max_connections(6)
+          .connect_with(options)
+          .await
+          .expect("Failed to connect to index DB"),
+      )
+    } else {
+      None
+    }
   }
 
+  pub async fn get() -> Option<Self> {
+    INDEX_DB.get_or_init(Self::init).await.as_ref().map(Self)
+  }
+
+  #[instrument(name = "IndexDb::get_max_age")]
   pub async fn get_max_age(&self, domain_hash: &[u8]) -> Option<i32> {
     let mut tx = self.0.begin().await.ok()?;
     let row = sqlx::query_as(r#"select max_age from query_max_age(i_domain_hash => $1)"#)
@@ -77,6 +83,7 @@ impl IndexDb {
     row.and_then(|x| x.max_age)
   }
 
+  #[instrument(name = "IndexDb::get_entries")]
   pub async fn get_entries(
     &self,
     variant: &IndexEntryVariant,
