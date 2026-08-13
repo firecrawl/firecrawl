@@ -1,4 +1,5 @@
-import { generateURLPermutations } from "./crawl-redis";
+import { generateURLPermutations, lockURL, StoredCrawl } from "./crawl-redis";
+import { redisEvictConnection } from "../services/redis";
 
 describe("generateURLPermutations", () => {
   it("generates permutations correctly", () => {
@@ -79,5 +80,39 @@ describe("generateURLPermutations", () => {
     expect(wwwHttp.includes("http://www.firecrawl.dev/")).toBe(true);
     expect(wwwHttp.includes("http://www.firecrawl.dev/index.html")).toBe(true);
     expect(wwwHttp.includes("http://www.firecrawl.dev/index.php")).toBe(true);
+  });
+});
+
+describe("lockURL", () => {
+  it("does not let concurrent callers exceed crawlerOptions.limit", async () => {
+    const id = "test-lockurl-concurrency-limit";
+    const limit = 5;
+    const concurrency = 20;
+    const sc = {
+      crawlerOptions: { limit },
+    } as StoredCrawl;
+
+    await redisEvictConnection.del(
+      "crawl:" + id + ":visited",
+      "crawl:" + id + ":visited_unique",
+    );
+
+    try {
+      const results = await Promise.all(
+        Array.from({ length: concurrency }, (_, i) =>
+          lockURL(id, sc, `https://firecrawl.dev/page-${i}`),
+        ),
+      );
+
+      expect(results.filter(Boolean).length).toBe(limit);
+      expect(
+        await redisEvictConnection.scard("crawl:" + id + ":visited_unique"),
+      ).toBe(limit);
+    } finally {
+      await redisEvictConnection.del(
+        "crawl:" + id + ":visited",
+        "crawl:" + id + ":visited_unique",
+      );
+    }
   });
 });
