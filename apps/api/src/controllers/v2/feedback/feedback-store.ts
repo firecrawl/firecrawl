@@ -104,11 +104,21 @@ function requestedSourceTypes(options: unknown): Set<string> | null {
  * Highest 1-indexed position addressable in `data[source]`, or null when the
  * job row carries no usable bound.
  *
- * Prefers the exact per-source count. Rows written before that column existed
- * fall back to the request's `limit` — every group is sliced to `limit`
- * independently in `search/execute.ts`, so it bounds each group even though the
- * combined `num_results` does not. A source the request never asked for is
- * bounded to 0 either way: it cannot have returned results.
+ * Prefers the exact per-source count, which bounds every group exactly.
+ *
+ * Rows written before that column existed fall back to `min(limit, num_results)`
+ * per group — each group is sliced to `limit` independently in
+ * `search/execute.ts`, so that bounds a group even though the combined
+ * `num_results` does not — and a source the request never asked for is bounded
+ * to 0, since it cannot have returned anything.
+ *
+ * That fallback is deliberately not exact: a source that *was* requested but
+ * returned nothing still gets a positive bound, so a hallucinated position in
+ * an empty group can slip through. Reconstructing the real count is impossible
+ * for those rows (the response bodies live in GCS, not Postgres). The exposure
+ * is bounded by FEEDBACK_MAX_AGE_SEC — feedback is only accepted within ~2
+ * minutes of the search — so this path only covers searches run in the couple
+ * of minutes spanning the migration deploy, and closes on its own after that.
  */
 function maxResultPosition(
   job: FeedbackJobRow,
