@@ -1,4 +1,5 @@
 import { BrandingProfile } from "../../types/branding";
+import { normalizeRoleHex, shouldApplyLlmColorRoles } from "./color-roles";
 import { LogoCandidate } from "./logo-selector";
 import { BrandingEnhancement } from "./schema";
 import { ButtonSnapshot, calculateLogoArea } from "./types";
@@ -263,21 +264,32 @@ export function mergeBrandingResults(
     }
   }
 
-  if (llm.colorRoles.confidence > 0.7) {
+  if (
+    shouldApplyLlmColorRoles(
+      llm.colorRoles.confidence,
+      llm.colorRoles.primaryColor,
+      merged.colors?.primary,
+      merged.colorScheme,
+    )
+  ) {
+    const llmPrimary = normalizeRoleHex(llm.colorRoles.primaryColor);
+    const llmSecondary = normalizeRoleHex(llm.colorRoles.secondaryColor);
+    const llmAccent = normalizeRoleHex(llm.colorRoles.accentColor);
+    const llmBackground = normalizeRoleHex(llm.colorRoles.backgroundColor);
+    const llmText = normalizeRoleHex(llm.colorRoles.textPrimary);
+
     merged.colors = {
       ...merged.colors,
-      primary: llm.colorRoles.primaryColor || merged.colors?.primary,
-      ...(llm.colorRoles.secondaryColor
-        ? { secondary: llm.colorRoles.secondaryColor }
-        : {}),
-      accent: llm.colorRoles.accentColor || merged.colors?.accent,
-      background: llm.colorRoles.backgroundColor || merged.colors?.background,
-      textPrimary: llm.colorRoles.textPrimary || merged.colors?.textPrimary,
+      primary: llmPrimary || merged.colors?.primary,
+      ...(llmSecondary ? { secondary: llmSecondary } : {}),
+      accent: llmAccent || merged.colors?.accent,
+      background: llmBackground || merged.colors?.background,
+      textPrimary: llmText || merged.colors?.textPrimary,
     };
 
     // When the LLM omits secondaryColor, remove the JS-heuristic secondary
     // to avoid propagating spurious colors from CSS presets (e.g. WordPress themes)
-    if (!llm.colorRoles.secondaryColor && merged.colors?.secondary) {
+    if (!llmSecondary && merged.colors?.secondary) {
       delete merged.colors.secondary;
     }
 

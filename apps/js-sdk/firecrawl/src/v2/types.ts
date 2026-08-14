@@ -328,6 +328,7 @@ export interface AgentWebhookConfig {
 
 export interface BrandingProfile {
   colorScheme?: "light" | "dark";
+  brandName?: string;
   logo?: string | null;
   fonts?: Array<{
     family: string;

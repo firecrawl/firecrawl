@@ -258,9 +258,10 @@ class AttributeResult(BaseModel):
 class BrandingProfile(BaseModel):
     """Branding information extracted from a website."""
 
-    model_config = {"extra": "allow"}
+    model_config = {"extra": "allow", "populate_by_name": True}
 
     color_scheme: Optional[Literal["light", "dark"]] = None
+    brand_name: Optional[str] = Field(default=None, alias="brandName")
     logo: Optional[str] = None
     fonts: Optional[List[Dict[str, Any]]] = None
     colors: Optional[Dict[str, str]] = None

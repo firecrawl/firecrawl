@@ -1,4 +1,10 @@
 import { BrandingProfile } from "../../types/branding";
+import {
+  contrastYIQ,
+  isGrayish,
+  isNearBlack,
+  pickBrandPrimary,
+} from "./color-roles";
 import { BrandingScriptReturn, InputSnapshot } from "./types";
 import { parse, rgb, formatHex } from "culori";
 
@@ -102,17 +108,6 @@ function calculateRepresentativeBorderRadius(borderRadius?: {
   return maxCorner > 0 ? `${maxCorner}px` : "0px";
 }
 
-// Calculate contrast for text readability
-function contrastYIQ(hex: string): number {
-  if (!hex) return 0;
-  const h = hex.replace("#", "");
-  if (h.length < 6) return 0;
-  const r = parseInt(h.slice(0, 2), 16),
-    g = parseInt(h.slice(2, 4), 16),
-    b = parseInt(h.slice(4, 6), 16);
-  return (r * 299 + g * 587 + b * 114) / 1000;
-}
-
 // Infer color palette from snapshots
 function inferPalette(
   snapshots: BrandingScriptReturn["snapshots"],
@@ -143,6 +138,12 @@ function inferPalette(
     );
     bump(hexify(s.colors.text, pageBackground), 1.0);
     bump(hexify(s.colors.border, pageBackground), 0.3);
+    if (s.isButton) {
+      const buttonBg = hexify(s.colors.background, pageBackground);
+      if (buttonBg && !isGrayish(buttonBg)) {
+        bump(buttonBg, s.hasCTAIndicator ? 80 : 25);
+      }
+    }
   }
 
   for (const c of cssColors) bump(hexify(c, pageBackground), 0.5);
@@ -150,17 +151,6 @@ function inferPalette(
   const ranked = Array.from(freq.entries())
     .sort((a, b) => b[1] - a[1])
     .map(([h]) => h);
-
-  const isGrayish = (hex: string) => {
-    const h = hex.replace("#", "");
-    if (h.length < 6) return true;
-    const r = parseInt(h.slice(0, 2), 16),
-      g = parseInt(h.slice(2, 4), 16),
-      b = parseInt(h.slice(4, 6), 16);
-    const max = Math.max(r, g, b),
-      min = Math.min(r, g, b);
-    return max - min < 15;
-  };
 
   // Improved background detection that considers color scheme
   let background = "#FFFFFF"; // Default fallback
@@ -189,13 +179,21 @@ function inferPalette(
     }
   }
 
+  const primary = pickBrandPrimary(ranked, {
+    background,
+    colorScheme,
+  });
   const textPrimary =
-    ranked.find(h => !/^#FFFFFF$/i.test(h) && contrastYIQ(h) < 160) ||
-    (colorScheme === "dark" ? "#FFFFFF" : "#111111");
-  const primary =
-    ranked.find(h => !isGrayish(h) && h !== textPrimary && h !== background) ||
-    (colorScheme === "dark" ? "#FFFFFF" : "#000000");
-  const accent = ranked.find(h => h !== primary && !isGrayish(h)) || primary;
+    ranked.find(
+      h => h !== primary && !/^#FFFFFF$/i.test(h) && contrastYIQ(h) < 160,
+    ) || (colorScheme === "dark" ? "#FFFFFF" : "#111111");
+  const accent =
+    ranked.find(
+      h =>
+        h !== primary &&
+        !isGrayish(h) &&
+        !(colorScheme !== "dark" && isNearBlack(h)),
+    ) || primary;
 
   // Collect all detected colors with their frequencies for debugging
   const allDetectedColors = Array.from(freq.entries())

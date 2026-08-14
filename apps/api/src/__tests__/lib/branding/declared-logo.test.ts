@@ -1,5 +1,8 @@
 import { describe, it, expect } from "vitest";
-import { pickDeclaredLogo } from "../../../lib/branding/declared-logo";
+import {
+  declaredLogoCandidate,
+  pickDeclaredLogo,
+} from "../../../lib/branding/declared-logo";
 
 describe("pickDeclaredLogo", () => {
   it("prefers JSON-LD declared logo over apple-touch icon", () => {
@@ -30,5 +33,18 @@ describe("pickDeclaredLogo", () => {
     ).toBeNull();
     expect(pickDeclaredLogo(undefined)).toBeNull();
     expect(pickDeclaredLogo([])).toBeNull();
+  });
+
+  it("builds a selectable candidate from a declared mark", () => {
+    expect(
+      declaredLogoCandidate("https://x.com/logo.svg", "logo-jsonld", "Example"),
+    ).toMatchObject({
+      src: "https://x.com/logo.svg",
+      alt: "Example",
+      isSvg: true,
+      isVisible: true,
+      source: "logo-jsonld",
+      indicators: { inHeader: true, srcMatch: true, hrefMatch: true },
+    });
   });
 });

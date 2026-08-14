@@ -4,6 +4,8 @@ const config: KnipConfig = {
   workspaces: {
     ".": {
       entry: [
+        "src/index.ts",
+        "src/harness.ts",
         "src/services/worker/**/*.ts",
         "src/services/**/*-worker.ts",
         "src/**/*.test.ts",

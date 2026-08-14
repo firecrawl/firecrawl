@@ -11,7 +11,7 @@ import {
   getTopCandidatesForLLM,
 } from "./logo-selector";
 import { extractHeaderHtmlChunk } from "./extractHeaderHtmlChunk";
-import { pickDeclaredLogo } from "./declared-logo";
+import { declaredLogoCandidate, pickDeclaredLogo } from "./declared-logo";
 
 function isDebugBrandingEnabled(meta: Meta): boolean {
   return (
@@ -37,8 +37,14 @@ export async function brandingTransformer(
   const buttonSnapshots: ButtonSnapshot[] =
     (jsBranding as any).__button_snapshots || [];
   const inputSnapshots = (jsBranding as any).__input_snapshots || [];
-  const logoCandidates = rawBranding.logoCandidates || [];
-  const brandName = rawBranding.brandName;
+  const logoCandidates = [...(rawBranding.logoCandidates || [])];
+  const brandName = rawBranding.brandName?.trim() || undefined;
+  const declared = pickDeclaredLogo(rawBranding.images);
+  if (declared && !logoCandidates.some(c => c.src === declared.src)) {
+    logoCandidates.push(
+      declaredLogoCandidate(declared.src, declared.source, brandName),
+    );
+  }
   const backgroundCandidates = rawBranding.backgroundCandidates || [];
 
   // Initialize metadata tracking variables
@@ -426,17 +432,14 @@ export async function brandingTransformer(
   // Last-resort fallback: when the candidate → heuristic → LLM pipeline ended
   // with no logo (no candidates, LLM rejection, or LLM failure), use the
   // site-declared brand mark. Never overrides a selected logo.
-  if (!brandingProfile.images?.logo) {
-    const declared = pickDeclaredLogo(rawBranding.images);
-    if (declared) {
-      brandingProfile.images = {
-        ...(brandingProfile.images ?? {}),
-        logo: declared.src,
-      };
-      meta.logger.info("Using declared logo fallback", {
-        source: declared.source,
-      });
-    }
+  if (!brandingProfile.images?.logo && declared) {
+    brandingProfile.images = {
+      ...(brandingProfile.images ?? {}),
+      logo: declared.src,
+    };
+    meta.logger.info("Using declared logo fallback", {
+      source: declared.source,
+    });
   }
 
   if (!isDebugBrandingEnabled(meta)) {
@@ -444,6 +447,13 @@ export async function brandingTransformer(
     delete (brandingProfile as any).__input_snapshots;
     delete (brandingProfile as any).__logo_candidates;
     delete (brandingProfile as any).__framework_hints;
+  }
+
+  if (brandName) {
+    brandingProfile.brandName = brandName;
+  }
+  if (brandingProfile.images?.logo) {
+    brandingProfile.logo = brandingProfile.images.logo;
   }
 
   return brandingProfile;
