@@ -101,23 +101,19 @@ describe("merge color roles", () => {
   });
 });
 
+type Snapshot = BrandingScriptReturn["snapshots"][number];
+
 function snap(
-  partial: Partial<BrandingScriptReturn["snapshots"][number]> & {
-    colors?: Partial<BrandingScriptReturn["snapshots"][number]["colors"]>;
+  partial: Omit<Partial<Snapshot>, "colors"> & {
+    colors?: Partial<Snapshot["colors"]>;
   },
-): BrandingScriptReturn["snapshots"][number] {
+): Snapshot {
+  const { colors, ...rest } = partial;
   return {
     tag: "div",
     classes: "",
     text: "",
     rect: { w: 100, h: 40 },
-    colors: {
-      text: "rgb(0, 0, 0)",
-      background: "rgb(255, 255, 255)",
-      border: "transparent",
-      borderWidth: 0,
-      ...partial.colors,
-    },
     typography: { fontStack: ["Inter"], size: "16px", weight: 400 },
     radius: 0,
     borderRadius: { topLeft: 0, topRight: 0, bottomRight: 0, bottomLeft: 0 },
@@ -125,13 +121,13 @@ function snap(
     isButton: false,
     isInput: false,
     isLink: false,
-    ...partial,
+    ...rest,
     colors: {
       text: "rgb(0, 0, 0)",
       background: "rgb(255, 255, 255)",
       border: "transparent",
       borderWidth: 0,
-      ...partial.colors,
+      ...colors,
     },
   };
 }
