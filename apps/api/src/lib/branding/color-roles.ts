@@ -65,7 +65,7 @@ export function pickBrandPrimary(
   );
 }
 
-/** Same bar as button classification. Also accept a slightly weaker LLM pick when it rescues header chrome. */
+/** Inclusive 0.5 bar — models often return exactly 0.5 when uncertain. Rescue header chrome down to 0.4. */
 const LLM_COLOR_CONFIDENCE = 0.5;
 
 export function shouldApplyLlmColorRoles(
@@ -74,7 +74,7 @@ export function shouldApplyLlmColorRoles(
   heuristicPrimary?: string,
   colorScheme?: "light" | "dark",
 ): boolean {
-  if (confidence > LLM_COLOR_CONFIDENCE) return true;
+  if (confidence >= LLM_COLOR_CONFIDENCE) return true;
   if (confidence < 0.4) return false;
   const llm = normalizeRoleHex(llmPrimary);
   if (!llm || isGrayish(llm) || isNearBlack(llm)) return false;

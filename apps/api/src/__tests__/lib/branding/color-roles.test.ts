@@ -51,6 +51,9 @@ describe("normalizeRoleHex / LLM gate", () => {
     expect(shouldApplyLlmColorRoles(0.6, "#635BFF", "#061B31", "light")).toBe(
       true,
     );
+    expect(shouldApplyLlmColorRoles(0.5, "#635BFF", "#FF4C00", "light")).toBe(
+      true,
+    );
     expect(shouldApplyLlmColorRoles(0.45, "#635BFF", "#061B31", "light")).toBe(
       true,
     );
