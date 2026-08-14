@@ -1,0 +1,21 @@
+apps/api/src/lib/branding/color-roles.ts
+  s_276b4c08717d82::t_dc3903992a3e2d 68,77
+apps/api/src/__tests__/lib/branding/color-roles.test.ts
+  s_276b4c08717d82::t_059ec8ce9a2142 54-56
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "69b6ad139ad8ee588bd81aa6e93711024e0c0c3a",
+  "prompts": {},
+  "sessions": {
+    "s_276b4c08717d82": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "1d304c28-c922-49de-99ff-ecb38727bc8a",
+        "model": "grok-4.6"
+      },
+      "human_author": "Abimael Martell <1450169+abimaelmartell@users.noreply.github.com>"
+    }
+  }
+}
