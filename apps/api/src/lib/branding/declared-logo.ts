@@ -17,17 +17,25 @@ export function pickDeclaredLogo(
   return null;
 }
 
-/** Inject declared marks only when no rendered header logo is already in the race. */
+type DeclaredRaceCandidate = Pick<
+  LogoCandidate,
+  "src" | "isVisible" | "location" | "indicators"
+>;
+
+function hasStrongVisibleHeaderLogo(c: DeclaredRaceCandidate): boolean {
+  if (!c.isVisible) return false;
+  if (!(c.location === "header" || c.indicators.inHeader)) return false;
+  const { altMatch, srcMatch, classMatch, hrefMatch } = c.indicators;
+  return altMatch || srcMatch || classMatch || hrefMatch;
+}
+
+/** Inject declared marks only when no strong rendered header logo is already in the race. */
 export function shouldAddDeclaredLogoCandidate(
-  existing: Array<
-    Pick<LogoCandidate, "src" | "isVisible" | "location" | "indicators">
-  >,
+  existing: DeclaredRaceCandidate[],
   declaredSrc: string,
 ): boolean {
-  if (existing.some(c => c.src === declaredSrc)) return false;
-  return !existing.some(
-    c => c.isVisible && (c.location === "header" || c.indicators.inHeader),
-  );
+  if (existing.some(c => c.src === declaredSrc && c.isVisible)) return false;
+  return !existing.some(hasStrongVisibleHeaderLogo);
 }
 
 /** Turn a declared mark into a logo candidate so it can win selection, not only last-resort fallback. */

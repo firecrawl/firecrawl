@@ -27,8 +27,9 @@ export function isNearBlack(hex: string): boolean {
     parseInt(h.slice(4, 6), 16),
   );
   // YIQ alone treats saturated blue (#0000FF) as near-black. Require a dark
-  // channel max so navy chrome matches and real brand blues do not.
-  return contrastYIQ(hex) < 40 && max < 80;
+  // channel max so navy chrome (#000080 max 128, #061B31 max 49) matches
+  // and full-bright brand blues do not.
+  return contrastYIQ(hex) < 40 && max < 140;
 }
 
 /** Chromatic brand color — not gray chrome, and not a near-black nav on light pages. */

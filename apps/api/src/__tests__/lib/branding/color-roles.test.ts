@@ -43,12 +43,19 @@ describe("pickBrandPrimary", () => {
   it("does not treat saturated blue as near-black chrome", () => {
     expect(isNearBlack("#0000FF")).toBe(false);
     expect(isNearBlack("#061B31")).toBe(true);
+    expect(isNearBlack("#000080")).toBe(true);
     expect(
       pickBrandPrimary(["#061B31", "#0000FF"], {
         background: "#FFFFFF",
         colorScheme: "light",
       }),
     ).toBe("#0000FF");
+    expect(
+      pickBrandPrimary(["#000080", "#635BFF"], {
+        background: "#FFFFFF",
+        colorScheme: "light",
+      }),
+    ).toBe("#635BFF");
   });
 });
 

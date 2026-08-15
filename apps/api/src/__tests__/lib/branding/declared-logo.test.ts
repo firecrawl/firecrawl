@@ -75,6 +75,72 @@ describe("pickDeclaredLogo", () => {
     ).toBe(false);
   });
 
+  it("injects a declared mark when the header image has no logo indicators", () => {
+    expect(
+      shouldAddDeclaredLogoCandidate(
+        [
+          {
+            src: "https://x.com/hero.png",
+            isVisible: true,
+            location: "header",
+            indicators: {
+              inHeader: true,
+              altMatch: false,
+              srcMatch: false,
+              classMatch: false,
+              hrefMatch: false,
+            },
+          },
+        ],
+        "https://x.com/jsonld.png",
+      ),
+    ).toBe(true);
+  });
+
+  it("injects a declared mark when the same URL exists only as a hidden candidate", () => {
+    expect(
+      shouldAddDeclaredLogoCandidate(
+        [
+          {
+            src: "https://x.com/jsonld.png",
+            isVisible: false,
+            location: "body",
+            indicators: {
+              inHeader: false,
+              altMatch: false,
+              srcMatch: true,
+              classMatch: false,
+              hrefMatch: false,
+            },
+          },
+        ],
+        "https://x.com/jsonld.png",
+      ),
+    ).toBe(true);
+  });
+
+  it("does not inject a declared mark when the same URL is already visible", () => {
+    expect(
+      shouldAddDeclaredLogoCandidate(
+        [
+          {
+            src: "https://x.com/jsonld.png",
+            isVisible: true,
+            location: "body",
+            indicators: {
+              inHeader: false,
+              altMatch: false,
+              srcMatch: true,
+              classMatch: false,
+              hrefMatch: false,
+            },
+          },
+        ],
+        "https://x.com/jsonld.png",
+      ),
+    ).toBe(false);
+  });
+
   it("injects a declared mark when nothing rendered is in the header", () => {
     expect(
       shouldAddDeclaredLogoCandidate(
