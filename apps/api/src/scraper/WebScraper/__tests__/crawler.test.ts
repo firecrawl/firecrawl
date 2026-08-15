@@ -3,9 +3,13 @@ import type { Mocked, MockedFunction } from "vitest";
 import { WebCrawler } from "../crawler";
 import axios from "axios";
 import robotsParser from "robots-parser";
+import { getLinksFromSitemap } from "../sitemap";
 
 vi.mock("axios");
 vi.mock("robots-parser");
+vi.mock("../sitemap", () => ({
+  getLinksFromSitemap: vi.fn(),
+}));
 
 describe("WebCrawler", () => {
   let crawler: WebCrawler;
@@ -13,10 +17,14 @@ describe("WebCrawler", () => {
   const mockRobotsParser = robotsParser as MockedFunction<
     typeof robotsParser
   >;
+  const mockGetLinksFromSitemap = getLinksFromSitemap as MockedFunction<
+    typeof getLinksFromSitemap
+  >;
 
   let maxCrawledDepth: number;
 
   beforeEach(() => {
+    mockGetLinksFromSitemap.mockReset();
     // Setup default mocks
     mockAxios.get.mockImplementation(url => {
       if (url.includes("robots.txt")) {
@@ -35,6 +43,24 @@ describe("WebCrawler", () => {
       getSitemaps: vi.fn().mockReturnValue([]),
       getPreferredHost: vi.fn().mockReturnValue("example.com"),
     });
+  });
+
+  it("does not retry a failed base sitemap fetch", async () => {
+    crawler = new WebCrawler({
+      jobId: "TEST",
+      initialUrl: "http://example.com",
+      includes: [],
+      excludes: [],
+      limit: 10,
+      maxCrawledDepth: 10,
+    });
+    mockGetLinksFromSitemap
+      .mockResolvedValueOnce(0)
+      .mockRejectedValueOnce(new Error("temporary upstream failure"));
+
+    await crawler["tryFetchSitemapLinks"]("http://example.com", vi.fn());
+
+    expect(mockGetLinksFromSitemap).toHaveBeenCalledTimes(2);
   });
 
   it("should respect the limit parameter by not returning more links than specified", async () => {
