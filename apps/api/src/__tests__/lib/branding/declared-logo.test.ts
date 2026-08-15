@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   declaredLogoCandidate,
   pickDeclaredLogo,
+  shouldAddDeclaredLogoCandidate,
 } from "../../../lib/branding/declared-logo";
 
 describe("pickDeclaredLogo", () => {
@@ -36,9 +37,12 @@ describe("pickDeclaredLogo", () => {
   });
 
   it("builds a selectable candidate from a declared mark", () => {
-    expect(
-      declaredLogoCandidate("https://x.com/logo.svg", "logo-jsonld", "Example"),
-    ).toMatchObject({
+    const candidate = declaredLogoCandidate(
+      "https://x.com/logo.svg",
+      "logo-jsonld",
+      "Example",
+    );
+    expect(candidate).toMatchObject({
       src: "https://x.com/logo.svg",
       alt: "Example",
       isSvg: true,
@@ -46,5 +50,50 @@ describe("pickDeclaredLogo", () => {
       source: "logo-jsonld",
       indicators: { inHeader: true, srcMatch: true, hrefMatch: true },
     });
+    expect(candidate.href).toBeUndefined();
+  });
+
+  it("does not inject a declared mark when a visible header logo exists", () => {
+    expect(
+      shouldAddDeclaredLogoCandidate(
+        [
+          {
+            src: "https://x.com/header.svg",
+            isVisible: true,
+            location: "header",
+            indicators: {
+              inHeader: true,
+              altMatch: true,
+              srcMatch: true,
+              classMatch: false,
+              hrefMatch: true,
+            },
+          },
+        ],
+        "https://x.com/jsonld.png",
+      ),
+    ).toBe(false);
+  });
+
+  it("injects a declared mark when nothing rendered is in the header", () => {
+    expect(
+      shouldAddDeclaredLogoCandidate(
+        [
+          {
+            src: "https://x.com/og.png",
+            isVisible: false,
+            location: "body",
+            indicators: {
+              inHeader: false,
+              altMatch: false,
+              srcMatch: false,
+              classMatch: false,
+              hrefMatch: false,
+            },
+          },
+        ],
+        "https://x.com/jsonld.png",
+      ),
+    ).toBe(true);
   });
 });

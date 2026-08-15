@@ -17,6 +17,19 @@ export function pickDeclaredLogo(
   return null;
 }
 
+/** Inject declared marks only when no rendered header logo is already in the race. */
+export function shouldAddDeclaredLogoCandidate(
+  existing: Array<
+    Pick<LogoCandidate, "src" | "isVisible" | "location" | "indicators">
+  >,
+  declaredSrc: string,
+): boolean {
+  if (existing.some(c => c.src === declaredSrc)) return false;
+  return !existing.some(
+    c => c.isVisible && (c.location === "header" || c.indicators.inHeader),
+  );
+}
+
 /** Turn a declared mark into a logo candidate so it can win selection, not only last-resort fallback. */
 export function declaredLogoCandidate(
   src: string,
@@ -40,7 +53,6 @@ export function declaredLogoCandidate(
       classMatch: false,
       hrefMatch: true,
     },
-    href: "/",
     source,
   };
 }

@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import { mergeBrandingResults } from "../../../lib/branding/merge";
 import { processRawBranding } from "../../../lib/branding/processor";
 import {
+  isNearBlack,
   normalizeRoleHex,
   pickBrandPrimary,
   shouldApplyLlmColorRoles,
@@ -37,6 +38,17 @@ describe("pickBrandPrimary", () => {
         colorScheme: "dark",
       }),
     ).toBe("#22C55E");
+  });
+
+  it("does not treat saturated blue as near-black chrome", () => {
+    expect(isNearBlack("#0000FF")).toBe(false);
+    expect(isNearBlack("#061B31")).toBe(true);
+    expect(
+      pickBrandPrimary(["#061B31", "#0000FF"], {
+        background: "#FFFFFF",
+        colorScheme: "light",
+      }),
+    ).toBe("#0000FF");
   });
 });
 
@@ -101,6 +113,68 @@ describe("merge color roles", () => {
       [],
     );
     expect(merged.colors?.primary).toBe("#FF4C00");
+  });
+
+  it("does not let a high-confidence navy LLM primary overwrite a brand color", () => {
+    const merged = mergeBrandingResults(
+      { colorScheme: "light", colors: { primary: "#635BFF" } },
+      {
+        ...emptyLlm,
+        colorRoles: {
+          primaryColor: "#061B31",
+          accentColor: "#635BFF",
+          backgroundColor: "#FFFFFF",
+          textPrimary: "#0A2540",
+          confidence: 0.9,
+        },
+      },
+      [],
+    );
+    expect(merged.colors?.primary).toBe("#635BFF");
+    expect(merged.colors?.background).toBe("#FFFFFF");
+  });
+
+  it("keeps heuristic secondary when the LLM returns a non-hex secondary", () => {
+    const merged = mergeBrandingResults(
+      {
+        colorScheme: "light",
+        colors: { primary: "#635BFF", secondary: "#00D4FF" },
+      },
+      {
+        ...emptyLlm,
+        colorRoles: {
+          primaryColor: "#635BFF",
+          secondaryColor: "navy",
+          accentColor: "#635BFF",
+          backgroundColor: "#FFFFFF",
+          textPrimary: "#0A2540",
+          confidence: 0.9,
+        },
+      },
+      [],
+    );
+    expect(merged.colors?.secondary).toBe("#00D4FF");
+  });
+
+  it("drops heuristic secondary when the LLM omits secondaryColor", () => {
+    const merged = mergeBrandingResults(
+      {
+        colorScheme: "light",
+        colors: { primary: "#635BFF", secondary: "#00D4FF" },
+      },
+      {
+        ...emptyLlm,
+        colorRoles: {
+          primaryColor: "#635BFF",
+          accentColor: "#635BFF",
+          backgroundColor: "#FFFFFF",
+          textPrimary: "#0A2540",
+          confidence: 0.9,
+        },
+      },
+      [],
+    );
+    expect(merged.colors?.secondary).toBeUndefined();
   });
 });
 

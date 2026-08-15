@@ -11,7 +11,11 @@ import {
   getTopCandidatesForLLM,
 } from "./logo-selector";
 import { extractHeaderHtmlChunk } from "./extractHeaderHtmlChunk";
-import { declaredLogoCandidate, pickDeclaredLogo } from "./declared-logo";
+import {
+  declaredLogoCandidate,
+  pickDeclaredLogo,
+  shouldAddDeclaredLogoCandidate,
+} from "./declared-logo";
 
 function isDebugBrandingEnabled(meta: Meta): boolean {
   return (
@@ -40,7 +44,10 @@ export async function brandingTransformer(
   const logoCandidates = [...(rawBranding.logoCandidates || [])];
   const brandName = rawBranding.brandName?.trim() || undefined;
   const declared = pickDeclaredLogo(rawBranding.images);
-  if (declared && !logoCandidates.some(c => c.src === declared.src)) {
+  if (
+    declared &&
+    shouldAddDeclaredLogoCandidate(logoCandidates, declared.src)
+  ) {
     logoCandidates.push(
       declaredLogoCandidate(declared.src, declared.source, brandName),
     );

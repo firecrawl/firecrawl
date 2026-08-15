@@ -19,7 +19,26 @@ export function isGrayish(hex: string): boolean {
 }
 
 export function isNearBlack(hex: string): boolean {
-  return contrastYIQ(hex) < 40;
+  const h = hex.replace("#", "");
+  if (h.length < 6) return contrastYIQ(hex) < 40;
+  const max = Math.max(
+    parseInt(h.slice(0, 2), 16),
+    parseInt(h.slice(2, 4), 16),
+    parseInt(h.slice(4, 6), 16),
+  );
+  // YIQ alone treats saturated blue (#0000FF) as near-black. Require a dark
+  // channel max so navy chrome matches and real brand blues do not.
+  return contrastYIQ(hex) < 40 && max < 80;
+}
+
+/** Chromatic brand color — not gray chrome, and not a near-black nav on light pages. */
+export function isUsableBrandPrimary(
+  hex: string,
+  colorScheme?: "light" | "dark",
+): boolean {
+  if (isGrayish(hex)) return false;
+  if (colorScheme !== "dark" && isNearBlack(hex)) return false;
+  return true;
 }
 
 const HEX = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i;

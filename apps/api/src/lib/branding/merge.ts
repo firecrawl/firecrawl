@@ -1,5 +1,9 @@
 import { BrandingProfile } from "../../types/branding";
-import { normalizeRoleHex, shouldApplyLlmColorRoles } from "./color-roles";
+import {
+  isUsableBrandPrimary,
+  normalizeRoleHex,
+  shouldApplyLlmColorRoles,
+} from "./color-roles";
 import { LogoCandidate } from "./logo-selector";
 import { BrandingEnhancement } from "./schema";
 import { ButtonSnapshot, calculateLogoArea } from "./types";
@@ -277,10 +281,17 @@ export function mergeBrandingResults(
     const llmAccent = normalizeRoleHex(llm.colorRoles.accentColor);
     const llmBackground = normalizeRoleHex(llm.colorRoles.backgroundColor);
     const llmText = normalizeRoleHex(llm.colorRoles.textPrimary);
+    const usablePrimary =
+      llmPrimary && isUsableBrandPrimary(llmPrimary, merged.colorScheme)
+        ? llmPrimary
+        : undefined;
+    const rawSecondary = llm.colorRoles.secondaryColor;
+    const omittedSecondary =
+      rawSecondary == null || String(rawSecondary).trim() === "";
 
     merged.colors = {
       ...merged.colors,
-      primary: llmPrimary || merged.colors?.primary,
+      primary: usablePrimary || merged.colors?.primary,
       ...(llmSecondary ? { secondary: llmSecondary } : {}),
       accent: llmAccent || merged.colors?.accent,
       background: llmBackground || merged.colors?.background,
@@ -288,8 +299,9 @@ export function mergeBrandingResults(
     };
 
     // When the LLM omits secondaryColor, remove the JS-heuristic secondary
-    // to avoid propagating spurious colors from CSS presets (e.g. WordPress themes)
-    if (!llmSecondary && merged.colors?.secondary) {
+    // to avoid propagating spurious colors from CSS presets (e.g. WordPress themes).
+    // Invalid values (color names) must not look like an omission.
+    if (omittedSecondary && merged.colors?.secondary) {
       delete merged.colors.secondary;
     }
 
