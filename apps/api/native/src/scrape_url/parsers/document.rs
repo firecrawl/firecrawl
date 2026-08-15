@@ -40,6 +40,7 @@ pub fn has_document_signal(result: &EngineScrapeResult) -> bool {
 
   let is_document_binary = match &result.content {
     EngineScrapeContent::Bytes(bytes) => document_binary_match(bytes),
+    EngineScrapeContent::IndexFakeHTML(_, _) => false, // it is impossible to identify an indexed document
     _ => false,
   };
 
@@ -53,53 +54,93 @@ pub fn has_document_signal(result: &EngineScrapeResult) -> bool {
 }
 
 pub fn parse_document(meta: &Meta, result: EngineScrapeResult) -> Result<Document, ScrapeURLError> {
-  let bytes = match &result.content {
-    EngineScrapeContent::Bytes(bytes) => bytes,
+  match result.content {
+    EngineScrapeContent::Bytes(bytes) => {
+      let format = anydoc::Format::from_bytes(bytes.as_ref()).or_else(|| {
+        result
+          .filename
+          .as_deref()
+          .map(|ext| ext.trim_start_matches('.'))
+          .and_then(anydoc::Format::from_extension)
+      });
+
+      let markdown = anydoc::to_markdown_bytes(bytes.as_ref(), format).unwrap();
+      let html = markdown::to_html_with_options(&markdown, &markdown::Options::gfm())
+        .expect("this error is impossible, since GFM cannot error");
+
+      Ok(Document {
+        markdown: Some(markdown),
+        html: None,
+        raw_html: Some(html),
+        links: None,
+        images: None,
+        screenshot: result.screenshot,
+        audio: None,
+        video: None,
+        summary: None,
+        answer: None,
+        highlights: None,
+        attributes: None,
+        actions: result.actions,
+        warning: None,
+        metadata: DocumentMetadata {
+          scrape_id: meta.id.clone(),
+          source_url: meta.source_url(),
+          url: result.url,
+          status_code: result.status_code,
+          num_pages: None, // TODO: should we set this in document? on prod we don't. will this mess with billing?
+          title: None,     // TODO: ^
+          content_type: result.content_type,
+          timezone: result.timezone,
+          proxy_used: result.proxy_used,
+          cache_state: DocumentMetadataCacheState::Miss, // TODO:
+          cached_at: None,                               // TODO:
+          index_id: None,                                // TODO:
+          credits_used: None,                            // TODO:
+          concurrency_limited: false,                    // TODO:
+          concurrency_queue_duration_ms: None,           // TODO:
+          total_pages: None,
+          extra: HashMap::new(),
+        },
+      })
+    }
+    EngineScrapeContent::IndexFakeHTML(html, _) => {
+      Ok(Document {
+        markdown: None,
+        html: None,
+        raw_html: Some(html),
+        links: None,
+        images: None,
+        screenshot: result.screenshot,
+        audio: None,
+        video: None,
+        summary: None,
+        answer: None,
+        highlights: None,
+        attributes: None,
+        actions: result.actions,
+        warning: None,
+        metadata: DocumentMetadata {
+          scrape_id: meta.id.clone(),
+          source_url: meta.source_url(),
+          url: result.url,
+          status_code: result.status_code,
+          num_pages: None, // TODO: should we set this in document? on prod we don't. will this mess with billing?
+          title: None,     // TODO: ^
+          content_type: result.content_type,
+          timezone: result.timezone,
+          proxy_used: result.proxy_used,
+          cache_state: DocumentMetadataCacheState::Miss, // TODO:
+          cached_at: None,                               // TODO:
+          index_id: None,                                // TODO:
+          credits_used: None,                            // TODO:
+          concurrency_limited: false,                    // TODO:
+          concurrency_queue_duration_ms: None,           // TODO:
+          total_pages: None,
+          extra: HashMap::new(),
+        },
+      })
+    }
     _ => unreachable!(),
-  };
-
-  let format = anydoc::Format::from_bytes(bytes.as_ref()).or_else(|| {
-    result
-      .filename
-      .as_deref()
-      .map(|ext| ext.trim_start_matches('.'))
-      .and_then(anydoc::Format::from_extension)
-  });
-
-  let markdown = anydoc::to_markdown_bytes(bytes.as_ref(), format).unwrap();
-
-  Ok(Document {
-    markdown: Some(markdown),
-    html: None,
-    raw_html: None, // TODO: md -> html
-    links: None,
-    images: None,
-    screenshot: result.screenshot,
-    audio: None,
-    video: None,
-    summary: None,
-    answer: None,
-    highlights: None,
-    attributes: None,
-    actions: result.actions,
-    warning: None,
-    metadata: DocumentMetadata {
-      scrape_id: meta.id.clone(),
-      source_url: meta.source_url(),
-      url: result.url,
-      status_code: result.status_code,
-      num_pages: None, // TODO: should we set this in document? on prod we don't. will this mess with billing?
-      title: None,     // TODO: ^
-      content_type: result.content_type,
-      timezone: result.timezone,
-      proxy_used: result.proxy_used,
-      cache_state: DocumentMetadataCacheState::Miss, // TODO:
-      cached_at: None,                               // TODO:
-      index_id: None,                                // TODO:
-      credits_used: None,                            // TODO:
-      concurrency_limited: false,                    // TODO:
-      concurrency_queue_duration_ms: None,           // TODO:
-      extra: HashMap::new(),
-    },
-  })
+  }
 }

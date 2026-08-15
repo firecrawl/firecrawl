@@ -25,6 +25,7 @@ impl Display for DocumentMetadataCacheState {
 }
 
 #[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct DocumentMetadata {
   pub title: Option<String>,
   pub scrape_id: String,
@@ -32,6 +33,7 @@ pub struct DocumentMetadata {
   pub url: Url,
   pub status_code: u16,
   pub num_pages: Option<u32>,
+  pub total_pages: Option<u32>,
   pub content_type: String,
   pub timezone: Option<String>,
   pub proxy_used: EngineScrapeProxy,
@@ -53,6 +55,7 @@ pub struct DocumentAttribute {
 }
 
 #[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Document {
   pub markdown: Option<String>,
   pub html: Option<String>,

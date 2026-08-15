@@ -21,14 +21,34 @@ impl Debug for IndexGcs {
 
 #[derive(Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
+pub struct IndexPDFMetadata {
+  pub num_pages: u32,
+  #[serde(skip_serializing_if = "Option::is_none")]
+  pub total_pages: Option<u32>,
+  #[serde(skip_serializing_if = "Option::is_none")]
+  pub title: Option<String>,
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct IndexDocument {
   pub url: Url,
   pub html: String,
+  #[serde(skip_serializing_if = "Option::is_none")]
   pub json: Option<String>,
   pub status_code: u16,
   // pub error: Option<String>,
+  #[serde(skip_serializing_if = "Option::is_none")]
   pub screenshot: Option<Url>,
-  // pub pdf_metadata: Option<...>,
+
+  // Legacy num_pages thing
+  #[serde(skip_serializing_if = "Option::is_none")]
+  pub num_pages: Option<u32>,
+
+  #[serde(skip_serializing_if = "Option::is_none")]
+  pub pdf_metadata: Option<IndexPDFMetadata>,
+
+  #[serde(skip_serializing_if = "Option::is_none")]
   pub content_type: Option<String>,
   // pub postprocessors_used: Vec<...>,
   pub proxy_used: EngineScrapeProxy,

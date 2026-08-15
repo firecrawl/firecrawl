@@ -61,6 +61,7 @@ pub fn parse_fallback(meta: &Meta, result: EngineScrapeResult) -> Result<Documen
         (text, None)
       }
     }
+    EngineScrapeContent::IndexFakeHTML(html, _) => (html, None),
     EngineScrapeContent::GeneratedMarkdown(md) => (
       markdown::to_html_with_options(&md, &markdown::Options::gfm())
         .expect("this error is impossible"),
@@ -89,6 +90,7 @@ pub fn parse_fallback(meta: &Meta, result: EngineScrapeResult) -> Result<Documen
       source_url: meta.source_url(),
       url: result.url,
       status_code: result.status_code,
+      total_pages: None,
       num_pages: None,
       title: None,
       content_type: result.content_type,

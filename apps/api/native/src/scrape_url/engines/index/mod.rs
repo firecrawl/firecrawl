@@ -6,17 +6,18 @@ use sha2::{Digest, Sha256};
 use tracing::instrument;
 use url::Url;
 
-use crate::scrape_url::engines::{EngineScrapeContent, index::gcs::IndexGcs};
-
 use self::{
   cache::{IndexCache, IndexCacheResult},
   db::{IndexDb, IndexEntry},
+  gcs::IndexGcs,
 };
 use super::super::{
   feature_flags::{ConstFeatureFlags, FeatureFlag},
   meta::Meta,
 };
-use super::{Engine, EngineScrapeProxy, EngineScrapeResult, EngineSignal};
+use super::{Engine, EngineScrapeContent, EngineScrapeProxy, EngineScrapeResult, EngineSignal};
+
+pub use self::gcs::IndexPDFMetadata;
 
 mod cache;
 mod db;
@@ -346,12 +347,28 @@ impl Engine for IndexEngine {
 
     if let Some(selected_row) = selected_row {
       if let Some(doc) = self.gcs.get_document(selected_row.id).await {
-        // TODO: isCachedPdfBase64 stuff
+        let normalized_pdf_metadata = doc.pdf_metadata.or_else(|| {
+          doc.num_pages.map(|x| IndexPDFMetadata {
+            num_pages: x,
+            total_pages: None,
+            title: None, // TODO: is doc.title a thing?
+          })
+        });
+
+        // If parsers.pdf().max_pages is defined, and the resulting document has a
+        // num_pages value (therefore it's a PDF), enforce the max_pages via
+        // simulating an index miss. I hate this - Mogery
+        if let Some(num_pages) = normalized_pdf_metadata.as_ref().map(|x| x.num_pages)
+          && let Some(pdf_parser) = meta.options.parsers.pdf()
+          && let Some(max_pages) = pdf_parser.max_pages
+          && num_pages > max_pages
+        {
+          return Err(EngineSignal::IndexMiss);
+        }
 
         Ok(EngineScrapeResult {
           url: doc.url,
-          content: EngineScrapeContent::ChromeRenderedDOM(doc.html), // TODO: is this the right type for this?
-          // json???
+          content: EngineScrapeContent::IndexFakeHTML(doc.html, normalized_pdf_metadata),
           status_code: doc.status_code,
           screenshot: doc.screenshot,
           actions: None,
