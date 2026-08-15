@@ -93,6 +93,10 @@ fn pdf_binary_match(bytes: &Bytes) -> bool {
     .any(|w| w == b"%PDF")
 }
 
+fn pdf_base64_match(base64: &str) -> bool {
+  base64.starts_with("JVBERi")
+}
+
 fn pdf_file_extension_match(filename: &str) -> bool {
   filename.ends_with(".pdf")
 }
@@ -125,6 +129,53 @@ pub async fn parse_pdf(
 ) -> Result<Document, ScrapeURLError> {
   let bytes = match result.content {
     EngineScrapeContent::Bytes(x) => x,
+    EngineScrapeContent::IndexFakeHTML(html, pdf_metadata) => {
+      if pdf_base64_match(&html) && pdf_metadata.is_none() {
+        // An undecoded PDF got dumped into the index. Simply run it through our pipeline.
+        base64::engine::general_purpose::STANDARD
+          .decode(&html)
+          .unwrap() // TODO: error handling
+          .into()
+      } else {
+        // This PDF got decoded and the decoded version got saved to the index.
+        // Let's serve it as a done document.
+        return Ok(Document {
+          markdown: None,
+          raw_html: Some(html),
+          html: None,
+          links: None,
+          images: None,
+          screenshot: result.screenshot,
+          audio: None,
+          video: None,
+          summary: None,
+          answer: None,
+          highlights: None,
+          attributes: None,
+          actions: result.actions,
+          warning: None,
+          metadata: DocumentMetadata {
+            scrape_id: meta.id.clone(),
+            source_url: meta.source_url(),
+            url: result.url,
+            status_code: result.status_code,
+            content_type: result.content_type,
+            timezone: result.timezone,
+            proxy_used: result.proxy_used,
+            cache_state: DocumentMetadataCacheState::Miss,
+            cached_at: None,
+            index_id: None,
+            credits_used: None,
+            concurrency_limited: false,
+            concurrency_queue_duration_ms: None,
+            num_pages: pdf_metadata.as_ref().map(|x| x.num_pages),
+            total_pages: pdf_metadata.as_ref().and_then(|x| x.total_pages),
+            title: pdf_metadata.and_then(|x| x.title),
+            extra: Default::default(),
+          },
+        });
+      }
+    }
     _ => unreachable!(),
   };
 
@@ -247,6 +298,7 @@ pub async fn parse_pdf(
           concurrency_queue_duration_ms: None,
           title: pdf_result.title,
           num_pages: Some(effective_page_count),
+          total_pages: Some(pdf_result.page_count),
           extra: Default::default(),
         },
       })
@@ -286,6 +338,7 @@ pub async fn parse_pdf(
         concurrency_queue_duration_ms: None,
         title: None,
         num_pages: None,
+        total_pages: None,
         extra: Default::default(),
       },
     })

@@ -7,7 +7,10 @@ use serde::{Deserialize, Serialize};
 use url::Url;
 
 use self::{
-  fetch::FetchEngine, fire_engine::FireEngine, index::IndexEngine, playwright::PlaywrightEngine,
+  fetch::FetchEngine,
+  fire_engine::FireEngine,
+  index::{IndexEngine, IndexPDFMetadata},
+  playwright::PlaywrightEngine,
 };
 
 use super::{
@@ -63,6 +66,7 @@ impl Display for EngineScrapeProxy {
 pub enum EngineScrapeContent {
   Bytes(Bytes),
   ChromeRenderedDOM(String),
+  IndexFakeHTML(String, Option<IndexPDFMetadata>),
   GeneratedMarkdown(String),
 }
 
@@ -156,14 +160,13 @@ pub fn should_use_index(meta: &Meta) -> bool {
     false
   };
 
-  !meta.options.formats.contains(FormatKind::ChangeTracking) &&
-  !meta.options.formats.contains(FormatKind::Branding) &&
-  // getPDFMaxPages(meta.options.parsers) === undefined &&
-  !has_custom_screenshot_settings &&
-  meta.options.max_age != Some(0) &&
-  meta.options.headers.is_empty() &&
-  meta.options.actions.is_empty()
-  // && meta.options.profile.is_none()
+  !meta.options.formats.contains(FormatKind::ChangeTracking)
+    && !meta.options.formats.contains(FormatKind::Branding)
+    && !has_custom_screenshot_settings
+    && meta.options.max_age != Some(0)
+    && meta.options.headers.is_empty()
+    && meta.options.actions.is_empty()
+    && meta.options.profile.is_none()
 }
 
 pub async fn get_main_engine() -> EngineKind {

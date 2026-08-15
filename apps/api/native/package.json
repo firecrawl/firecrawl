@@ -52,7 +52,7 @@
     "install": "pnpm build"
   },
   "devDependencies": {
-    "@emnapi/runtime": "^1.5.0",
+    "@emnapi/runtime": "^1.7.1",
     "@napi-rs/cli": "^3.8.2",
     "@taplo/cli": "^0.7.0",
     "npm-run-all2": "^8.0.4",

@@ -18,7 +18,6 @@ pub enum FeatureFlag {
   Mobile,
   Branding,
   DisableAdblock,
-  // Atsv, // CFR
 }
 
 impl Display for FeatureFlag {
