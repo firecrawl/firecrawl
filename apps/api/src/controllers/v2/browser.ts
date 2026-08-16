@@ -55,7 +55,7 @@ const browserCreateRequestSchema = z.object({
   __agentInterop: z
     .object({
       auth: z.string(),
-      requestId: z.string(),
+      requestId: z.string().uuid(),
       shouldBill: z.boolean(),
     })
     .optional(),
