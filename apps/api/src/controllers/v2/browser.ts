@@ -96,6 +96,7 @@ interface BrowserDeleteResponse {
   success: boolean;
   sessionDurationMs?: number;
   creditsBilled?: number;
+  cleanupQueued?: boolean;
   error?: string;
 }
 
@@ -194,6 +195,7 @@ interface BrowserServiceExecResponse {
 interface BrowserServiceDeleteResponse {
   ok: boolean;
   sessionDurationMs: number;
+  cleanupQueued: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -583,20 +585,39 @@ export async function browserDeleteController(
 
   logger.info("Deleting browser session");
 
-  // Release the browser session via the browser service
-  let sessionDurationMs: number | undefined;
+  let deleteResult: BrowserServiceDeleteResponse;
   try {
-    const deleteResult =
-      await browserServiceRequest<BrowserServiceDeleteResponse>(
-        "DELETE",
-        `/browsers/${session.browser_id}`,
-      );
-    sessionDurationMs = deleteResult?.sessionDurationMs;
+    deleteResult = await browserServiceRequest<BrowserServiceDeleteResponse>(
+      "DELETE",
+      `/browsers/${session.browser_id}`,
+    );
   } catch (err) {
-    logger.warn("Failed to delete browser session via browser service", {
+    logger.error("Browser service did not confirm session release", {
       error: err,
     });
+    return res.status(502).json({
+      success: false,
+      error: "Browser session release was not confirmed.",
+    });
   }
+
+  if (
+    !deleteResult ||
+    !deleteResult.ok ||
+    !deleteResult.cleanupQueued ||
+    !Number.isFinite(deleteResult.sessionDurationMs) ||
+    deleteResult.sessionDurationMs < 0
+  ) {
+    logger.error("Browser service returned an invalid release confirmation", {
+      deleteResult,
+    });
+    return res.status(502).json({
+      success: false,
+      error: "Browser session release was not confirmed.",
+    });
+  }
+
+  const durationMs = deleteResult.sessionDurationMs;
 
   const claimed = await claimBrowserSessionDestroyed(session.id);
 
@@ -620,14 +641,10 @@ export async function browserDeleteController(
     });
     return res.status(200).json({
       success: true,
+      sessionDurationMs: durationMs,
+      cleanupQueued: true,
     });
   }
-
-  const wallClockMs = Date.now() - new Date(session.created_at).getTime();
-  const durationMs =
-    sessionDurationMs && sessionDurationMs > 0
-      ? sessionDurationMs
-      : wallClockMs;
 
   const usedPrompt = await didBrowserSessionUsePrompt(session.id);
   const rate = usedPrompt
@@ -667,6 +684,7 @@ export async function browserDeleteController(
     success: true,
     sessionDurationMs: durationMs,
     creditsBilled,
+    cleanupQueued: true,
   });
 }
 
@@ -733,9 +751,18 @@ export async function browserWebhookDestroyedController(
     return res.status(401).json({ error: "Unauthorized" });
   }
 
-  const { sessionId } = req.body as { sessionId?: string };
+  const { sessionId, sessionDurationMs } = req.body as {
+    sessionId?: string;
+    sessionDurationMs?: number;
+  };
   if (!sessionId) {
     return res.status(400).json({ error: "Missing browserId" });
+  }
+  if (
+    !Number.isFinite(sessionDurationMs) ||
+    (sessionDurationMs as number) < 0
+  ) {
+    return res.status(400).json({ error: "Missing sessionDurationMs" });
   }
   let browserId = sessionId;
 
@@ -769,7 +796,7 @@ export async function browserWebhookDestroyedController(
     return res.status(200).json({ ok: true });
   }
 
-  const durationMs = Date.now() - new Date(session.created_at).getTime();
+  const durationMs = sessionDurationMs as number;
 
   const usedPrompt = await didBrowserSessionUsePrompt(session.id);
   const rate = usedPrompt

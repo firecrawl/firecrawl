@@ -23,7 +23,8 @@ export interface BrowserServiceExecResponse {
 
 export interface BrowserServiceDeleteResponse {
   ok: boolean;
-  sessionDurationMs?: number;
+  sessionDurationMs: number;
+  cleanupQueued: boolean;
 }
 
 // ---------------------------------------------------------------------------
