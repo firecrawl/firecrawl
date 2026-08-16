@@ -32,6 +32,7 @@ import { getTeamBalance } from "../services/autumn/usage";
 import { getThirdPartyDataTermsRequiredResponse } from "../lib/exchange";
 import { getExchangeAccessForRequestBody } from "../lib/exchange-request";
 import { getScrapeZDR } from "../lib/zdr-helpers";
+import { isAgentInteropSecretValid } from "../lib/agent-interop";
 
 export function checkCreditsMiddleware(
   _minimum?: number,
@@ -45,7 +46,7 @@ export function checkCreditsMiddleware(
         req.body &&
         (req.body as any).__agentInterop &&
         (req.body as any).__agentInterop.auth &&
-        (req.body as any).__agentInterop.auth === config.AGENT_INTEROP_SECRET &&
+        isAgentInteropSecretValid((req.body as any).__agentInterop.auth) &&
         (req.body as any).__agentInterop.shouldBill === false
       ) {
         return next();
@@ -246,16 +247,14 @@ export function authMiddleware(
           if (auth.status === 401 || auth.agentAuthDiscovery) {
             applyAgentAuthDiscoveryHeader(res);
           }
-          return res
-            .status(auth.status)
-            .json({
-              success: false,
-              error: auth.error,
-              ...(auth.keylessReason ? { reason: auth.keylessReason } : {}),
-              ...(auth.retryAfterSeconds
-                ? { retry_after_seconds: auth.retryAfterSeconds }
-                : {}),
-            });
+          return res.status(auth.status).json({
+            success: false,
+            error: auth.error,
+            ...(auth.keylessReason ? { reason: auth.keylessReason } : {}),
+            ...(auth.retryAfterSeconds
+              ? { retry_after_seconds: auth.retryAfterSeconds }
+              : {}),
+          });
         } else {
           return;
         }

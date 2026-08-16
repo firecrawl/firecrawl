@@ -40,6 +40,7 @@ import {
   DOCUMENT_EXTENSIONS,
   documentExtensionFromContentType,
 } from "../../lib/document-formats";
+import { isAgentInteropSecretValid } from "../../lib/agent-interop";
 
 const AGENT_INTEROP_CONCURRENCY_BOOST = 3;
 export const SUPPORTED_PARSE_FILE_TYPES =
@@ -325,7 +326,7 @@ export async function parseController(
       if (
         req.body.__agentInterop &&
         config.AGENT_INTEROP_SECRET &&
-        req.body.__agentInterop.auth !== config.AGENT_INTEROP_SECRET
+        !isAgentInteropSecretValid(req.body.__agentInterop.auth)
       ) {
         return res.status(403).json({
           success: false,

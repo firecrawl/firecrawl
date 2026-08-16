@@ -43,6 +43,7 @@ import {
   resolveThreatProtection,
 } from "../../lib/threat-protection/request";
 import { UnsafeDomainBlockedError } from "../../lib/threat-protection/error";
+import { isAgentInteropSecretValid } from "../../lib/agent-interop";
 import { calculateThreatScanCredits } from "../../lib/scrape-billing";
 import { billTeam } from "../../services/billing/credit_billing";
 import { emitRejectedScrapeActivityEvents } from "../../lib/siem-logging";
@@ -102,7 +103,7 @@ export async function batchScrapeController(
   if (
     req.body.__agentInterop &&
     config.AGENT_INTEROP_SECRET &&
-    req.body.__agentInterop.auth !== config.AGENT_INTEROP_SECRET
+    !isAgentInteropSecretValid(req.body.__agentInterop.auth)
   ) {
     return res.status(403).json({
       success: false,

@@ -41,6 +41,7 @@ import {
 } from "../../lib/key-restriction";
 import { wantsDeveloperCategory } from "../../search/developer";
 import { requestOrigin } from "../../lib/request-origin";
+import { isAgentInteropSecretValid } from "../../lib/agent-interop";
 
 export async function searchController(
   req: RequestWithAuth<{}, SearchResponse, SearchRequest>,
@@ -111,7 +112,7 @@ export async function searchController(
     if (
       req.body.__agentInterop &&
       config.AGENT_INTEROP_SECRET &&
-      req.body.__agentInterop.auth !== config.AGENT_INTEROP_SECRET
+      !isAgentInteropSecretValid(req.body.__agentInterop.auth)
     ) {
       return res.status(403).json({
         success: false,

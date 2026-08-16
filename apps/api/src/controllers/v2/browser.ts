@@ -34,6 +34,7 @@ import {
   calculateBrowserSessionCredits,
 } from "../../lib/browser-billing";
 import { autumnService } from "../../services/autumn/autumn.service";
+import { isAgentInteropSecretValid } from "../../lib/agent-interop";
 
 // ---------------------------------------------------------------------------
 // Zod schemas
@@ -224,7 +225,7 @@ export async function browserCreateController(
   if (
     req.body.__agentInterop &&
     config.AGENT_INTEROP_SECRET &&
-    req.body.__agentInterop.auth !== config.AGENT_INTEROP_SECRET
+    !isAgentInteropSecretValid(req.body.__agentInterop.auth)
   ) {
     return res.status(403).json({
       success: false,
