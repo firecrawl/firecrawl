@@ -804,6 +804,8 @@ async function createSessionForScrape(
     const session = await insertBrowserSession({
       id: sessionId,
       team_id: req.auth.team_id,
+      request_id: sessionId,
+      should_bill: true,
       scrape_id: scrapeId,
       browser_id: svcResponse.sessionId,
       workspace_id: "",

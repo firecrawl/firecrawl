@@ -127,6 +127,8 @@ export const browser_session_activities = pgTable(
 export const browser_sessions = pgTable("browser_sessions", {
   id: uuid("id").notNull(),
   team_id: text("team_id").notNull(),
+  request_id: uuid("request_id"),
+  should_bill: boolean("should_bill").notNull().default(true),
   browser_id: text("browser_id").notNull(),
   workspace_id: text("workspace_id").notNull(),
   context_id: text("context_id").notNull(),

@@ -15,6 +15,8 @@ type BrowserSessionStatus = "active" | "destroyed" | "error";
 interface BrowserSessionRow {
   id: string;
   team_id: string;
+  request_id: string | null;
+  should_bill: boolean;
   scrape_id?: string | null; // linked scrape job id for /scrape/:jobId/interact sessions
   browser_id: string; // browser service sessionId
   workspace_id: string; // unused (legacy), stored as ""
