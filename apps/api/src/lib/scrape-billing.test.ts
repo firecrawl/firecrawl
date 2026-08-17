@@ -63,7 +63,7 @@ describe("calculateCreditsToBeBilled", () => {
     expect(credits).toBe(30);
   });
 
-  it("bills stealth (enhanced) proxy scrapes the same as basic ones", async () => {
+  it("bills enhanced proxy scrapes the same as basic ones", async () => {
     const bill = (unsupportedFeatures?: Set<any>) =>
       calculateCreditsToBeBilled(
         {
@@ -87,13 +87,14 @@ describe("calculateCreditsToBeBilled", () => {
         unsupportedFeatures,
       );
 
-    // No surcharge, whether or not the engine could honour stealth (the old
-    // waiver for unsupported stealth is moot now there is nothing to waive).
+    // No surcharge, whether or not the engine could honour Enhanced Mode (the
+    // old waiver for an unsupported enhanced proxy is moot now there is
+    // nothing to waive).
     expect(await bill()).toBe(1);
     expect(await bill(new Set(["stealthProxy"]))).toBe(1);
   });
 
-  it("still bills stealth proxy scrapes with json at 5 credits", async () => {
+  it("still bills enhanced proxy scrapes with json at 5 credits", async () => {
     const credits = await calculateCreditsToBeBilled(
       {
         formats: [{ type: "json", schema: {} }],

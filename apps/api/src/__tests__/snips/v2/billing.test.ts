@@ -94,7 +94,7 @@ describeIf(TEST_PRODUCTION)("Billing tests", () => {
   );
 
   it.concurrent(
-    "bills enhanced (stealth) proxy scrapes at the base rate",
+    "bills enhanced proxy scrapes at the base rate",
     async () => {
       const identity = await idmux({
         name: "billing/bills enhanced proxy scrapes at the base rate",
@@ -122,7 +122,8 @@ describeIf(TEST_PRODUCTION)("Billing tests", () => {
       ]);
 
       // Guard against a vacuous pass: the enhanced request must actually have
-      // run through the stealth proxy for the credit assertion to mean anything.
+      // run on the enhanced proxy for the credit assertion to mean anything.
+      // `proxyUsed` still reports that proxy under its original wire value.
       expect(basicScrape.metadata.proxyUsed).toBe("basic");
       expect(enhancedScrape.metadata.proxyUsed).toBe("stealth");
 

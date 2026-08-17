@@ -67,7 +67,7 @@ export async function calculateCreditsToBeBilled(
   costTracking: CostTracking | ReturnType<typeof CostTracking.prototype.toJSON>,
   flags: TeamFlags,
   error?: Error | null,
-  // Unused by billing today (enhanced/stealth proxies no longer carry a
+  // Unused by billing today (Enhanced Mode proxies no longer carry a
   // surcharge, so there is nothing to waive when the engine could not honour
   // the feature). Kept because callers pass `exchange` and `threatDecisions`
   // positionally after it.
