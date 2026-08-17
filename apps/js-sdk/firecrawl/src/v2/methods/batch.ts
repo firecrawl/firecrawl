@@ -177,9 +177,13 @@ export async function waitForBatchCompletion(
 
   while (true) {
     try {
-      const status = await getBatchScrapeStatus(http, jobId);
+      const status = await getBatchScrapeStatus(http, jobId, { autoPaginate: false });
 
       if (["completed", "failed", "cancelled"].includes(status.status)) {
+        if (status.status === "completed" && status.next) {
+          const data = await fetchAllPages(http, status.next, status.data);
+          return { ...status, next: null, data };
+        }
         return status;
       }
     } catch (err: any) {
