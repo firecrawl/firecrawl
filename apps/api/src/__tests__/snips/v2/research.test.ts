@@ -1,3 +1,4 @@
+import os from "os";
 import { config } from "../../../config";
 import { describeIf, itIf, TEST_PRODUCTION } from "../lib";
 import { creditUsage, idmux, researchRaw } from "./lib";
@@ -43,12 +44,29 @@ function keylessHeaders(forwardedIp: string): Record<string, string> {
     : {};
 }
 
-async function snapshotKeylessCounts(): Promise<Map<string, number>> {
-  const keys = await redisRateLimitClient.keys("keyless_requests:*");
-  const counts = new Map<string, number>();
-  for (const key of keys) {
-    counts.set(key, Number((await redisRateLimitClient.get(key)) ?? "0"));
+// Without the trusted-proxy secret the server keys keyless requests on the
+// real client IP, which for these tests is the loopback or a local interface
+// address. Snapshotting only those candidate keys (plain MGET) avoids the
+// blocking KEYS scan on the shared rate-limit Redis, and stays deterministic
+// under concurrency: every parallel no-secret snip bumps the same client-IP
+// key, so the diff below still identifies exactly one bumped candidate.
+function candidateKeylessIps(): string[] {
+  const ips = new Set<string>(["127.0.0.1"]);
+  for (const addrs of Object.values(os.networkInterfaces())) {
+    for (const addr of addrs ?? []) {
+      if (addr.family === "IPv4") ips.add(addr.address);
+    }
   }
+  return [...ips];
+}
+
+async function snapshotKeylessCounts(): Promise<Map<string, number>> {
+  const candidates = candidateKeylessIps();
+  const values = await redisRateLimitClient.mget(
+    candidates.map(ip => `keyless_requests:${ip}`),
+  );
+  const counts = new Map<string, number>();
+  candidates.forEach((ip, i) => counts.set(ip, Number(values[i] ?? "0")));
   return counts;
 }
 
@@ -59,8 +77,8 @@ async function resolveKeylessIp(
   if (KEYLESS_PROXY_SECRET) return forwardedIp;
   const after = await snapshotKeylessCounts();
   const bumped = [...after.entries()]
-    .filter(([key, count]) => count > (before.get(key) ?? 0))
-    .map(([key]) => key.slice("keyless_requests:".length));
+    .filter(([ip, count]) => count > (before.get(ip) ?? 0))
+    .map(([ip]) => ip);
   expect(bumped.length).toBe(1);
   return bumped[0];
 }
