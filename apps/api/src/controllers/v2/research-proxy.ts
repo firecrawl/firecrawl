@@ -272,6 +272,10 @@ function createResearchController(
     const parsed = schema.safeParse(source);
     if (!parsed.success) {
       logger.warn("Invalid research query", { error: parsed.error.issues });
+      // The outer finally below never runs for validation failures, but a
+      // malformed keyless request must still leave the canonical keyless/usage
+      // trail — ID-enumeration abuse produces plenty of 400s.
+      chargeKeylessCredits(authedReq.auth.team_id, 0).catch(() => {});
       return researchError(
         res,
         400,
@@ -371,13 +375,15 @@ function createResearchController(
     } finally {
       const timeTaken = (Date.now() - started) / 1000;
 
-      // No-op for keyed teams. For keyless callers this both charges the per-IP
-      // daily credit budget and records the client IP in `keyless_credit_usage`.
-      // It runs on every outcome, not just billable successes: the paper
-      // endpoints cost 0 credits and ID enumeration mostly produces upstream
-      // misses, so gating this on `credits > 0` left those requests with no IP
-      // recorded anywhere. `credits` is still 0 on every non-2xx path, so
-      // nothing extra is charged.
+      // No-op for keyed teams. For keyless callers: billable credits are added
+      // to the per-IP daily budget and land as a `keyless_credit_usage` row;
+      // zero-credit outcomes emit the canonical `keyless/usage` log line
+      // instead (the durable zero-credit row waits on the firecrawl-db
+      // migration). It runs on every outcome, not just billable successes: the
+      // paper endpoints cost 0 credits and ID enumeration mostly produces
+      // upstream misses, so gating this on `credits > 0` left those requests
+      // with no IP recorded anywhere. `credits` is still 0 on every non-2xx
+      // path, so nothing extra is charged.
       chargeKeylessCredits(authedReq.auth.team_id, credits).catch(() => {});
 
       logResearchEndpoint({

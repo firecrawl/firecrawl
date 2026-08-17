@@ -3,7 +3,10 @@
 // end-to-end coverage for the zero-credit Research Index endpoints lives in
 // snips/v2/research.test.ts, but that suite only runs where a research upstream
 // is configured. These tests pin the library-level contract everywhere: a
-// zero-credit keyless request still writes a row, and it still charges nothing.
+// zero-credit keyless request emits the canonical `keyless/usage` log line
+// carrying the client IP (the durable `keyless_credit_usage` row is deferred
+// to the firecrawl-db migration), writes no DB row, and charges nothing;
+// billable requests keep writing rows exactly as before.
 const { dbInsert, insertValues, redisIncrby, redisExpire } = vi.hoisted(() => {
   const insertValues = vi.fn().mockResolvedValue(undefined);
   return {

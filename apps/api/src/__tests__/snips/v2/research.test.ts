@@ -31,9 +31,9 @@ async function waitForSingleRow<T>(
 
 // Keyless requests are keyed on the client IP. When the trusted-proxy secret is
 // configured we forward a unique documentation-range (RFC 5737) IP so each test
-// owns an isolated per-IP bucket; otherwise we fall back to the loopback IP the
-// server actually keyed on, recovered from the limiter keyspace the same way
-// keyless.test.ts does.
+// owns an isolated per-IP bucket; otherwise we fall back to the IP the server
+// actually keyed on, identified deterministically by diffing the limiter
+// keyspace counters around the request rather than picking an arbitrary key.
 function keylessHeaders(forwardedIp: string): Record<string, string> {
   return KEYLESS_PROXY_SECRET
     ? {
@@ -43,11 +43,26 @@ function keylessHeaders(forwardedIp: string): Record<string, string> {
     : {};
 }
 
-async function resolveKeylessIp(forwardedIp: string): Promise<string> {
-  if (KEYLESS_PROXY_SECRET) return forwardedIp;
+async function snapshotKeylessCounts(): Promise<Map<string, number>> {
   const keys = await redisRateLimitClient.keys("keyless_requests:*");
-  expect(keys.length).toBeGreaterThan(0);
-  return keys[0].slice("keyless_requests:".length);
+  const counts = new Map<string, number>();
+  for (const key of keys) {
+    counts.set(key, Number((await redisRateLimitClient.get(key)) ?? "0"));
+  }
+  return counts;
+}
+
+async function resolveKeylessIp(
+  forwardedIp: string,
+  before: Map<string, number>,
+): Promise<string> {
+  if (KEYLESS_PROXY_SECRET) return forwardedIp;
+  const after = await snapshotKeylessCounts();
+  const bumped = [...after.entries()]
+    .filter(([key, count]) => count > (before.get(key) ?? 0))
+    .map(([key]) => key.slice("keyless_requests:".length));
+  expect(bumped.length).toBe(1);
+  return bumped[0];
 }
 
 // Zero-credit keyless usage is recorded as a canonical log line for now (the
@@ -216,6 +231,7 @@ describeIf(HAS_RESEARCH)("Research API", () => {
       "a zero-credit paper search writes no usage row and charges nothing",
       async () => {
         const forwardedIp = "198.51.100.11";
+        const before = await snapshotKeylessCounts();
 
         const res = await researchRaw(
           "/v2/search/research/papers",
@@ -227,7 +243,7 @@ describeIf(HAS_RESEARCH)("Research API", () => {
         expect(res.statusCode).toBe(200);
         expect(res.body.success).toBe(true);
 
-        const ip = await resolveKeylessIp(forwardedIp);
+        const ip = await resolveKeylessIp(forwardedIp, before);
         // Give the fire-and-forget charge path time to run before asserting
         // it stayed out of the DB.
         await sleep(2000);
@@ -253,6 +269,7 @@ describeIf(HAS_RESEARCH)("Research API", () => {
       "a keyless paper lookup miss also writes no usage row",
       async () => {
         const forwardedIp = "198.51.100.12";
+        const before = await snapshotKeylessCounts();
 
         const res = await researchRaw(
           "/v2/search/research/papers/0000.00000",
@@ -264,7 +281,7 @@ describeIf(HAS_RESEARCH)("Research API", () => {
         expect(res.statusCode).not.toBe(401);
         expect(res.statusCode).toBeGreaterThanOrEqual(400);
 
-        const ip = await resolveKeylessIp(forwardedIp);
+        const ip = await resolveKeylessIp(forwardedIp, before);
         await sleep(2000);
         expect(await keylessUsageRowCount(ip)).toBe(0);
       },
