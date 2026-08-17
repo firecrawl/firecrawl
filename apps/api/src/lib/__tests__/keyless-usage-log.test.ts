@@ -38,6 +38,7 @@ import {
   keylessTeamUuid,
   logKeylessCreditUsage,
 } from "../keyless";
+import { logger } from "../logger";
 
 const IP = "203.0.113.99";
 const KEYLESS_TEAM = keylessTeamId(IP);
@@ -56,15 +57,24 @@ afterEach(() => {
 });
 
 describe("logKeylessCreditUsage", () => {
-  it("records the client IP for a zero-credit keyless operation", async () => {
+  // Zero-credit operations are recorded as a canonical log line for now; the
+  // durable `keyless_credit_usage` row is deferred to the firecrawl-db
+  // migration (high write volume needs its own review).
+  it("logs the client IP for a zero-credit keyless operation without a DB write", async () => {
+    const info = vi.spyOn(logger, "info").mockImplementation(() => logger);
+
     await logKeylessCreditUsage(KEYLESS_TEAM, 0);
 
-    expect(dbInsert).toHaveBeenCalledTimes(1);
-    expect(insertValues).toHaveBeenCalledWith({
-      team_id: keylessTeamUuid(KEYLESS_TEAM),
-      ip: IP,
-      credits_used: 0,
-    });
+    expect(dbInsert).not.toHaveBeenCalled();
+    expect(info).toHaveBeenCalledWith(
+      "Keyless zero-credit usage",
+      expect.objectContaining({
+        canonicalLog: "keyless/usage",
+        ip: IP,
+        teamId: keylessTeamUuid(KEYLESS_TEAM),
+        creditsUsed: 0,
+      }),
+    );
   });
 
   it("still records the actual credits for a billable keyless operation", async () => {
@@ -75,24 +85,31 @@ describe("logKeylessCreditUsage", () => {
     );
   });
 
-  it("never writes a negative row for a reconciliation refund", async () => {
+  it("treats a reconciliation refund as zero-credit: log line, no negative row", async () => {
+    const info = vi.spyOn(logger, "info").mockImplementation(() => logger);
+
     await logKeylessCreditUsage(KEYLESS_TEAM, -5);
 
-    expect(insertValues).toHaveBeenCalledWith(
-      expect.objectContaining({ ip: IP, credits_used: 0 }),
+    expect(dbInsert).not.toHaveBeenCalled();
+    expect(info).toHaveBeenCalledWith(
+      "Keyless zero-credit usage",
+      expect.objectContaining({ creditsUsed: 0 }),
     );
   });
 
-  it("writes nothing for a team that is not keyless", async () => {
+  it("writes and logs nothing for a team that is not keyless", async () => {
+    const info = vi.spyOn(logger, "info").mockImplementation(() => logger);
+
     await logKeylessCreditUsage("some-real-team-id", 0);
 
     expect(dbInsert).not.toHaveBeenCalled();
+    expect(info).not.toHaveBeenCalled();
   });
 
-  it("writes nothing when DB auth is off", async () => {
+  it("writes no billable row when DB auth is off", async () => {
     config.USE_DB_AUTHENTICATION = false;
 
-    await logKeylessCreditUsage(KEYLESS_TEAM, 0);
+    await logKeylessCreditUsage(KEYLESS_TEAM, 3);
 
     expect(dbInsert).not.toHaveBeenCalled();
   });
@@ -101,18 +118,22 @@ describe("logKeylessCreditUsage", () => {
     insertValues.mockRejectedValue(new Error("db down"));
 
     await expect(
-      logKeylessCreditUsage(KEYLESS_TEAM, 0),
+      logKeylessCreditUsage(KEYLESS_TEAM, 3),
     ).resolves.toBeUndefined();
   });
 });
 
 describe("chargeKeylessCredits", () => {
   it("records a zero-credit request without drawing down the credit budget", async () => {
+    const info = vi.spyOn(logger, "info").mockImplementation(() => logger);
+
     await chargeKeylessCredits(KEYLESS_TEAM, 0);
 
     expect(redisIncrby).not.toHaveBeenCalled();
-    expect(insertValues).toHaveBeenCalledWith(
-      expect.objectContaining({ ip: IP, credits_used: 0 }),
+    expect(dbInsert).not.toHaveBeenCalled();
+    expect(info).toHaveBeenCalledWith(
+      "Keyless zero-credit usage",
+      expect.objectContaining({ ip: IP, creditsUsed: 0 }),
     );
   });
 

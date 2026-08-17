@@ -368,18 +368,22 @@ export async function checkKeylessEligibility(ip: string): Promise<{
 }
 
 /**
- * Append a row to `keyless_credit_usage` recording a completed keyless request:
- * the per-IP keyless team UUID, the raw IP, and the credits it consumed — the
- * only place a keyless caller's IP is persisted (`requests.team_id` collapses
- * all keyless traffic onto one preview team).
+ * Record a completed keyless request — the only place a keyless caller's IP is
+ * persisted (`requests.team_id` collapses all keyless traffic onto one preview
+ * team).
  *
- * Zero-credit operations are recorded too. The free Research Index paper
- * endpoints bill nothing, so skipping them meant their client IP was never
- * written anywhere and abuse on them was invisible. A `credits_used = 0` row
- * cannot move any credit total; it only makes the request countable.
+ * Billable requests append a row to `keyless_credit_usage` exactly as before.
  *
- * No-op for non-keyless teams or when DB auth is off. Best-effort — never
- * throws.
+ * Zero-credit operations are recorded too, but as a canonical log line rather
+ * than a DB row: the free Research Index paper endpoints bill nothing, so
+ * skipping them meant their client IP was never written anywhere and abuse on
+ * them was invisible (during the corpus-harvest incident only 3.0% of the
+ * traffic had a resolvable IP). Zero-credit volume is orders of magnitude
+ * higher than billable volume, so the durable row for it is deferred until the
+ * companion firecrawl-db migration lands; until then the log line carries the
+ * same fields.
+ *
+ * No-op for non-keyless teams. Best-effort — never throws.
  */
 export async function logKeylessCreditUsage(
   teamId: string,
@@ -388,14 +392,30 @@ export async function logKeylessCreditUsage(
   const ip = keylessIpFromTeamId(teamId);
   if (!ip || !Number.isFinite(credits)) return;
   const teamUuid = keylessTeamUuid(teamId);
-  if (config.USE_DB_AUTHENTICATION !== true || !teamUuid) return;
+  if (!teamUuid) return;
+
+  // The column records consumption, so a negative reconciliation delta must
+  // not land as a negative value.
+  const creditsUsed = Math.max(0, Math.ceil(credits));
+
+  if (creditsUsed <= 0) {
+    // TODO(firecrawl-db): switch to a `keyless_credit_usage` row once the
+    // zero-credit usage migration is merged.
+    logger.info("Keyless zero-credit usage", {
+      canonicalLog: "keyless/usage",
+      ip,
+      teamId: teamUuid,
+      creditsUsed: 0,
+    });
+    return;
+  }
+
+  if (config.USE_DB_AUTHENTICATION !== true) return;
   try {
     await db.insert(schema.keyless_credit_usage).values({
       team_id: teamUuid,
       ip,
-      // The column records consumption, so a negative reconciliation delta must
-      // not land as a negative row.
-      credits_used: Math.max(0, Math.ceil(credits)),
+      credits_used: creditsUsed,
     });
   } catch {
     // Logging is best-effort.

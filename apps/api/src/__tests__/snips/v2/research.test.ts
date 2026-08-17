@@ -1,7 +1,7 @@
 import { config } from "../../../config";
 import { describeIf, itIf, TEST_PRODUCTION } from "../lib";
 import { creditUsage, idmux, researchRaw } from "./lib";
-import { and, desc, eq, gt } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import { db } from "../../../db/connection";
 import * as schema from "../../../db/schema";
 import { redisRateLimitClient } from "../../../services/rate-limiter";
@@ -50,36 +50,16 @@ async function resolveKeylessIp(forwardedIp: string): Promise<string> {
   return keys[0].slice("keyless_requests:".length);
 }
 
-async function maxKeylessUsageId(): Promise<number | undefined> {
+// Zero-credit keyless usage is recorded as a canonical log line for now (the
+// durable keyless_credit_usage row waits on the firecrawl-db migration), so
+// these tests assert no row is written and no credit budget moves. The
+// library-level log-line contract is pinned in lib/__tests__/keyless-usage-log.
+async function keylessUsageRowCount(ip: string): Promise<number> {
   const rows = await db
     .select({ id: schema.keyless_credit_usage.id })
     .from(schema.keyless_credit_usage)
-    .orderBy(desc(schema.keyless_credit_usage.id))
-    .limit(1);
-  return rows[0]?.id;
-}
-
-// The audit insert is fire-and-forget in the controller, so callers snapshot the
-// latest id first and then poll for a newer row for their IP.
-async function waitForKeylessUsageRow(ip: string, afterId: number | undefined) {
-  return waitForSingleRow<typeof schema.keyless_credit_usage.$inferSelect>(
-    async () => {
-      const rows = await db
-        .select()
-        .from(schema.keyless_credit_usage)
-        .where(
-          and(
-            eq(schema.keyless_credit_usage.ip, ip),
-            afterId !== undefined
-              ? gt(schema.keyless_credit_usage.id, afterId)
-              : undefined,
-          ),
-        )
-        .orderBy(desc(schema.keyless_credit_usage.id))
-        .limit(1);
-      return rows[0] ?? null;
-    },
-  );
+    .where(eq(schema.keyless_credit_usage.ip, ip));
+  return rows.length;
 }
 
 describeIf(HAS_RESEARCH)("Research API", () => {
@@ -226,16 +206,16 @@ describeIf(HAS_RESEARCH)("Research API", () => {
       expect(res.statusCode).not.toBe(401);
     }, 120000);
 
-    // The Research Index paper endpoints cost 0 credits. Until now the whole
-    // keyless usage log was skipped for zero-credit operations, so these
-    // requests left no client IP anywhere: during a distributed
-    // corpus-harvest incident only 3.0% of the traffic had a resolvable IP.
-    // The IP must be recorded even though nothing is billed.
+    // The Research Index paper endpoints cost 0 credits. The zero-credit
+    // charge path must run for them (it emits the canonical keyless/usage log
+    // line carrying the client IP — during a distributed corpus-harvest
+    // incident only 3.0% of the traffic had a resolvable IP) without touching
+    // either durable store: no keyless_credit_usage row (that lands with the
+    // firecrawl-db migration) and no credit-budget draw-down.
     itIf(config.USE_DB_AUTHENTICATION === true)(
-      "records the keyless client IP for a zero-credit paper search",
+      "a zero-credit paper search writes no usage row and charges nothing",
       async () => {
         const forwardedIp = "198.51.100.11";
-        const beforeMaxId = await maxKeylessUsageId();
 
         const res = await researchRaw(
           "/v2/search/research/papers",
@@ -248,12 +228,10 @@ describeIf(HAS_RESEARCH)("Research API", () => {
         expect(res.body.success).toBe(true);
 
         const ip = await resolveKeylessIp(forwardedIp);
-        const row = await waitForKeylessUsageRow(ip, beforeMaxId);
-
-        expect(row).not.toBeNull();
-        expect(row!.ip).toBe(ip);
-        // Observability only: the row exists, but nothing was charged.
-        expect(row!.credits_used).toBe(0);
+        // Give the fire-and-forget charge path time to run before asserting
+        // it stayed out of the DB.
+        await sleep(2000);
+        expect(await keylessUsageRowCount(ip)).toBe(0);
 
         // The keyless *credit* budget must not be drawn down by a free
         // operation. Only meaningful on the isolated forwarded IP — the
@@ -269,12 +247,12 @@ describeIf(HAS_RESEARCH)("Research API", () => {
     );
 
     // Failure path: ID enumeration — the exact shape of the incident — mostly
-    // produces upstream misses, so a miss must record the IP too.
+    // produces upstream misses. The charge path must run there too (credits
+    // are 0 on every non-2xx path) and stay equally free of DB writes.
     itIf(config.USE_DB_AUTHENTICATION === true)(
-      "records the keyless client IP when a paper lookup misses",
+      "a keyless paper lookup miss also writes no usage row",
       async () => {
         const forwardedIp = "198.51.100.12";
-        const beforeMaxId = await maxKeylessUsageId();
 
         const res = await researchRaw(
           "/v2/search/research/papers/0000.00000",
@@ -287,10 +265,8 @@ describeIf(HAS_RESEARCH)("Research API", () => {
         expect(res.statusCode).toBeGreaterThanOrEqual(400);
 
         const ip = await resolveKeylessIp(forwardedIp);
-        const row = await waitForKeylessUsageRow(ip, beforeMaxId);
-
-        expect(row).not.toBeNull();
-        expect(row!.credits_used).toBe(0);
+        await sleep(2000);
+        expect(await keylessUsageRowCount(ip)).toBe(0);
       },
       120000,
     );
