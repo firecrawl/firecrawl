@@ -487,7 +487,7 @@ async function handleKeylessAuth(
 
   let result: Awaited<ReturnType<typeof consumeKeylessRequest>>;
   try {
-    result = await consumeKeylessRequest(ip);
+    result = await consumeKeylessRequest(ip, mode === RateLimiterMode.Research);
   } catch (error) {
     // Limiter store (Redis) unavailable — fail closed with a controlled auth
     // response instead of surfacing a 500, and shed the free traffic while the

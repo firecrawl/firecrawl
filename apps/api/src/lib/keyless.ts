@@ -112,7 +112,8 @@ export function isKeylessIpEligible(ip: string): boolean {
   return isIPv4(normalizeKeylessIpv4(ip));
 }
 
-const requestsKey = (ip: string) => `keyless_requests:${ip}`;
+const requestsKey = (ip: string, research = false) =>
+  `keyless_requests${research ? ":research" : ""}:${ip}`;
 const creditsKey = (ip: string) => `keyless_credits:${ip}`;
 
 type KeylessQuotaReason = "requests" | "credits";
@@ -192,11 +193,14 @@ type KeylessCreditReservationResult = {
  */
 export async function consumeKeylessRequest(
   ip: string,
+  research = false,
 ): Promise<KeylessConsumeResult> {
-  const requestLimit = KEYLESS_REQUESTS_PER_DAY ?? 0;
+  const requestLimit = research
+    ? Math.floor((KEYLESS_REQUESTS_PER_DAY ?? 0) / 4)
+    : (KEYLESS_REQUESTS_PER_DAY ?? 0);
   const creditLimit = KEYLESS_CREDITS_PER_DAY ?? 0;
 
-  const rKey = requestsKey(ip);
+  const rKey = requestsKey(ip, research);
   const requestsUsed = await redisRateLimitClient.incr(rKey);
   if (requestsUsed === 1) {
     await redisRateLimitClient.expire(rKey, DAY_SECONDS);
