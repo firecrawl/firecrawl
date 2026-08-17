@@ -455,7 +455,10 @@ async function handleKeylessAuth(
   // for IPs fronting anonymizing/rotating infrastructure (VPN/proxy/TOR), the
   // main way the per-IP caps get bypassed. Fails open on any Spur error, and
   // runs before consuming quota so a flagged IP doesn't burn a request slot.
-  if (await isKeylessIpSuspicious(ip)) {
+  const strictSpur =
+    mode === RateLimiterMode.Research ||
+    mode === RateLimiterMode.DeveloperSearch;
+  if (await isKeylessIpSuspicious(ip, strictSpur)) {
     logger.warn("Keyless request blocked: suspicious IP", {
       canonicalLog: "keyless/consume",
       ip,

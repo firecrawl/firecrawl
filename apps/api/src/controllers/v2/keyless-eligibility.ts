@@ -23,9 +23,10 @@ export async function keylessEligibilityController(
   const ip =
     (typeof ipHeader === "string" ? ipHeader.trim() : "") || req.ip || "";
 
-  const result = await checkKeylessEligibility(
-    ip,
-    req.query.mode === "research",
-  );
+  const mode =
+    req.query.mode === "research" || req.query.mode === "developer"
+      ? req.query.mode
+      : undefined;
+  const result = await checkKeylessEligibility(ip, mode);
   res.status(200).json(result);
 }

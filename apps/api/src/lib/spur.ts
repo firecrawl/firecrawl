@@ -122,7 +122,7 @@ async function getSpurContext(ip: string): Promise<SpurContext | null> {
 // cloud/CGNAT, and the per-IP caps already cover those.
 const SUSPICIOUS_RISKS = new Set(["CALLBACK_PROXY", "TUNNEL"]);
 
-function isSuspiciousContext(ctx: SpurContext): boolean {
+function isSuspiciousContext(ctx: SpurContext, strict: boolean): boolean {
   // A live VPN/proxy/TOR tunnel — the canonical IP-rotation vector.
   if (Array.isArray(ctx.tunnels) && ctx.tunnels.length > 0) return true;
   // Residential / rotating proxy networks observed exiting this IP.
@@ -136,6 +136,17 @@ function isSuspiciousContext(ctx: SpurContext): boolean {
   ) {
     return true;
   }
+  // Research/developer indices are unusually valuable bulk-enumeration targets.
+  // On those keyless routes, reject any Spur risk or observed abusive client
+  // behavior rather than only known proxy operators.
+  if (
+    strict &&
+    ((Array.isArray(ctx.risks) && ctx.risks.length > 0) ||
+      (Array.isArray(ctx.client?.behaviors) &&
+        ctx.client.behaviors.length > 0))
+  ) {
+    return true;
+  }
   return false;
 }
 
@@ -144,13 +155,18 @@ function isSuspiciousContext(ctx: SpurContext): boolean {
  * anonymizing/rotating infrastructure. No-op (false) when Spur is disabled, and
  * fails open (false) on any lookup error so a Spur outage never breaks keyless.
  */
-export async function isKeylessIpSuspicious(ip: string): Promise<boolean> {
+export async function isKeylessIpSuspicious(
+  ip: string,
+  strict = false,
+): Promise<boolean> {
   if (!isSpurEnabled()) return false;
 
   const ctx = await getSpurContext(ip);
-  if (!ctx) return false;
+  // Preserve fail-open behavior for general keyless traffic, but index access
+  // fails closed when Spur cannot classify the caller.
+  if (!ctx) return strict;
 
-  const suspicious = isSuspiciousContext(ctx);
+  const suspicious = isSuspiciousContext(ctx, strict);
   if (suspicious) {
     logger.info("Keyless IP flagged suspicious by Spur", {
       canonicalLog: "spur/lookup",

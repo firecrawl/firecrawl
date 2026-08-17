@@ -18,6 +18,7 @@ import {
 import { logger } from "../../lib/logger";
 import { db } from "../../db/connection";
 import { autumnService } from "../../services/autumn/autumn.service";
+import { isKeylessIpSuspicious } from "../../lib/spur";
 
 vi.mock("../../services/queue-service", () => ({
   getRedisConnection: vi.fn(() => ({
@@ -191,6 +192,40 @@ describe("authenticateUser", () => {
       }),
     );
   });
+
+  it.each([
+    [RateLimiterMode.Research, true, true],
+    [RateLimiterMode.DeveloperSearch, true, false],
+    [RateLimiterMode.Search, false, false],
+  ])(
+    "uses strict Spur checks for keyless index mode %s",
+    async (mode, strictSpur, researchQuota) => {
+      config.USE_DB_AUTHENTICATION = true;
+      vi.mocked(isKeylessConfigured).mockReturnValue(true);
+      vi.mocked(consumeKeylessRequest).mockResolvedValue({
+        ok: true,
+        requestsUsed: 1,
+        creditsUsed: 0,
+      });
+
+      const auth = await authenticateUser(
+        { headers: {}, socket: { remoteAddress: "203.0.113.8" } },
+        {},
+        mode,
+        { allowKeyless: true },
+      );
+
+      expect(auth.success).toBe(true);
+      expect(isKeylessIpSuspicious).toHaveBeenCalledWith(
+        "203.0.113.8",
+        strictSpur,
+      );
+      expect(consumeKeylessRequest).toHaveBeenCalledWith(
+        "203.0.113.8",
+        researchQuota,
+      );
+    },
+  );
 
   it("writes normal API-key ACUC entries to the general-purpose cache", async () => {
     config.USE_DB_AUTHENTICATION = true;

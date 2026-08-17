@@ -323,7 +323,7 @@ return next
  */
 export async function checkKeylessEligibility(
   ip: string,
-  research = false,
+  indexMode?: "research" | "developer",
 ): Promise<{
   eligible: boolean;
   reason?:
@@ -341,10 +341,11 @@ export async function checkKeylessEligibility(
   // Optional Spur Context check (only when SPUR_API_KEY is set): treat IPs on
   // anonymizing/rotating infrastructure as ineligible so the hosted MCP can
   // return a bounded recovery result instead of serving a request auth rejects.
-  if (await isKeylessIpSuspicious(ip)) {
+  if (await isKeylessIpSuspicious(ip, indexMode !== undefined)) {
     return { eligible: false, reason: "suspicious" };
   }
   try {
+    const research = indexMode === "research";
     const requestKey = requestsKey(ip, research);
     const requestsUsed = parseInt(
       (await redisRateLimitClient.get(requestKey)) ?? "0",
