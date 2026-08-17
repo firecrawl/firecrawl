@@ -265,10 +265,16 @@ describeIf(HAS_RESEARCH)("Research API", () => {
         expect(res.body.success).toBe(true);
 
         const ip = await resolveKeylessIp(forwardedIp, before);
-        // Give the fire-and-forget charge path time to run before asserting
-        // it stayed out of the DB.
-        await sleep(2000);
-        expect(await keylessUsageRowsAfter(ip, afterId)).toBe(0);
+        // The charge path is fire-and-forget, so poll for the *wrong* outcome
+        // (a row appearing) across a generous window and require it never
+        // materializes — a fixed sleep can pass while a late write still
+        // lands, masking exactly the regression this test exists to catch.
+        const strayRow = await waitForSingleRow(
+          async () => (await keylessUsageRowsAfter(ip, afterId)) > 0 || null,
+          6000,
+          500,
+        );
+        expect(strayRow).toBeNull();
 
         // The keyless *credit* budget must not be drawn down by a free
         // operation. Only meaningful on the isolated forwarded IP — the
@@ -304,8 +310,14 @@ describeIf(HAS_RESEARCH)("Research API", () => {
         expect(res.statusCode).toBeGreaterThanOrEqual(400);
 
         const ip = await resolveKeylessIp(forwardedIp, before);
-        await sleep(2000);
-        expect(await keylessUsageRowsAfter(ip, afterId)).toBe(0);
+        // Same polled absence check as the success path: a late write must
+        // fail the test, not slip past a fixed sleep.
+        const strayRow = await waitForSingleRow(
+          async () => (await keylessUsageRowsAfter(ip, afterId)) > 0 || null,
+          6000,
+          500,
+        );
+        expect(strayRow).toBeNull();
       },
       120000,
     );
