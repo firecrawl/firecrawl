@@ -118,15 +118,22 @@ async function keylessUsageRowsAfter(
   ip: string,
   afterId: number,
 ): Promise<number> {
+  // With the proxy secret the IP is an isolated RFC 5737 bucket, so ANY new
+  // row is a regression. Without it the IP is the shared loopback: a
+  // concurrently running keyless snip can legitimately land a *billable* row
+  // for the same IP inside our window, so only zero-credit rows — the actual
+  // regression signature of the log-only contract — count against us there.
+  const conditions = [
+    eq(schema.keyless_credit_usage.ip, ip),
+    gt(schema.keyless_credit_usage.id, afterId),
+  ];
+  if (!KEYLESS_PROXY_SECRET) {
+    conditions.push(eq(schema.keyless_credit_usage.credits_used, 0));
+  }
   const rows = await db
     .select({ id: schema.keyless_credit_usage.id })
     .from(schema.keyless_credit_usage)
-    .where(
-      and(
-        eq(schema.keyless_credit_usage.ip, ip),
-        gt(schema.keyless_credit_usage.id, afterId),
-      ),
-    );
+    .where(and(...conditions));
   return rows.length;
 }
 
