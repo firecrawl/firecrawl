@@ -152,8 +152,9 @@ function isSuspiciousContext(ctx: SpurContext, strict: boolean): boolean {
 
 /**
  * Whether the keyless tier should refuse this IP because Spur flags it as
- * anonymizing/rotating infrastructure. No-op (false) when Spur is disabled, and
- * fails open (false) on any lookup error so a Spur outage never breaks keyless.
+ * anonymizing/rotating infrastructure. No-op when Spur is disabled. General
+ * keyless traffic fails open on lookup errors; strict research/developer index
+ * traffic fails closed so a Spur outage cannot grant unbounded index access.
  */
 export async function isKeylessIpSuspicious(
   ip: string,

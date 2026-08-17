@@ -200,6 +200,8 @@ describe("authenticateUser", () => {
   ])(
     "uses strict Spur checks for keyless index mode %s",
     async (mode, strictSpur, researchQuota) => {
+      vi.mocked(isKeylessIpSuspicious).mockClear();
+      vi.mocked(consumeKeylessRequest).mockClear();
       config.USE_DB_AUTHENTICATION = true;
       vi.mocked(isKeylessConfigured).mockReturnValue(true);
       vi.mocked(consumeKeylessRequest).mockResolvedValue({
