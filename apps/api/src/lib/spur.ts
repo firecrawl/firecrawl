@@ -1,3 +1,4 @@
+import { randomUUID } from "crypto";
 import { config } from "../config";
 import { logger } from "./logger";
 import { redisRateLimitClient } from "../services/rate-limiter";
@@ -10,13 +11,34 @@ import { redisRateLimitClient } from "../services/rate-limiter";
 // refuse keyless for them and steer the caller to sign up for an API key.
 //
 // Lookups are cached in Redis for 30 days so a given IP costs at most one Spur
-// API call per month. The integration is entirely optional: with no key set the
-// keyless tier behaves exactly as before, and any Spur error fails open (the
-// request is allowed) so a Spur outage can't take down the free tier.
+// API call per month. Concurrent misses for the same IP are collapsed with a
+// Redis single-flight lock so a burst from one IP triggers a single upstream
+// call — the loser callers briefly wait for that result instead of each hitting
+// Spur. The integration is entirely optional: with no key set the keyless tier
+// behaves exactly as before, and any Spur error (timeout, lock failure, outage)
+// fails open — the request is allowed — so Spur can never take down the free tier.
 
 const SPUR_API_BASE = "https://api.spur.us/v2/context";
 const CACHE_TTL_SECONDS = 30 * 24 * 60 * 60; // 30 days
 const cacheKey = (ip: string) => `spur_context:${ip}`;
+
+// Everything below is bounded so a request can never get stuck on the upstream
+// call, on holding the lock, or on waiting for another request's result.
+//
+// - FETCH_TIMEOUT_MS aborts the Spur HTTP call.
+// - LOCK_TTL_MS is the single-flight lock's auto-expiry; it sits ~1s above the
+//   fetch timeout (headroom for the surrounding Redis round-trips) so the winner
+//   isn't preempted mid-fetch, and it caps how long a dead winner can block
+//   others (Redis expires the lock even if the process crashes before releasing).
+// - LOCK_WAIT_MS caps how long a loser waits for the winner's result before
+//   failing open; POLL_INTERVAL_MS is how often it re-checks the result cache.
+const FETCH_TIMEOUT_MS = 5000;
+const LOCK_TTL_MS = FETCH_TIMEOUT_MS + 1000;
+const LOCK_WAIT_MS = LOCK_TTL_MS;
+const POLL_INTERVAL_MS = 200;
+const lockKey = (ip: string) => `spur_lock:${ip}`;
+
+const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
 // Subset of the Spur IP Context Object we read. See the API docs for the full
 // shape; everything here is optional because Spur omits empty fields.
@@ -67,8 +89,20 @@ async function cacheContext(ip: string, ctx: SpurContext): Promise<void> {
   }
 }
 
+// Compact summary of a context for logs — never dump the full object.
+function summarize(ctx: SpurContext) {
+  return {
+    infrastructure: ctx.infrastructure,
+    risks: ctx.risks,
+    tunnels: ctx.tunnels?.map(t => t.type),
+    proxies: ctx.client?.proxies,
+  };
+}
+
 async function fetchContext(ip: string): Promise<SpurContext | null> {
   // Cache miss → hit the real Spur API. Logged so we can track real spend.
+  // The request is bounded by FETCH_TIMEOUT_MS; an abort throws and the caller
+  // fails open.
   logger.info("Spur Context API request (cache miss)", {
     canonicalLog: "spur/lookup",
     ip,
@@ -76,6 +110,7 @@ async function fetchContext(ip: string): Promise<SpurContext | null> {
   const response = await fetch(`${SPUR_API_BASE}/${encodeURIComponent(ip)}`, {
     method: "GET",
     headers: { Token: config.SPUR_API_KEY! },
+    signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
   });
   if (!response.ok) {
     logger.warn("Spur Context API request failed", {
@@ -85,13 +120,68 @@ async function fetchContext(ip: string): Promise<SpurContext | null> {
     });
     return null;
   }
-  return (await response.json()) as SpurContext;
+  const ctx = (await response.json()) as SpurContext;
+  logger.info("Spur Context API response", {
+    canonicalLog: "spur/lookup",
+    ip,
+    ...summarize(ctx),
+  });
+  return ctx;
+}
+
+// Single-flight lock: the winner (returns a token) is the only caller that hits
+// Spur for this IP; everyone else waits for its cached result. `null` means we
+// lost the race. Redis errors propagate so the caller fails open rather than
+// waiting on a lock we never held.
+async function acquireLock(ip: string): Promise<string | null> {
+  const token = randomUUID();
+  const result = await redisRateLimitClient.set(
+    lockKey(ip),
+    token,
+    "PX",
+    LOCK_TTL_MS,
+    "NX",
+  );
+  return result === "OK" ? token : null;
+}
+
+// Best-effort release (get-compare-del so we only clear our own lock). Failures
+// are swallowed: the PX TTL guarantees the lock frees itself regardless, so a
+// release error can never wedge future lookups.
+async function releaseLock(ip: string, token: string): Promise<void> {
+  try {
+    const current = await redisRateLimitClient.get(lockKey(ip));
+    if (current === token) await redisRateLimitClient.del(lockKey(ip));
+  } catch (error) {
+    logger.warn("Failed to release Spur single-flight lock", {
+      canonicalLog: "spur/lookup",
+      ip,
+      error,
+    });
+  }
+}
+
+// Loser path: poll for the winner's cached result every POLL_INTERVAL_MS,
+// bounded by LOCK_WAIT_MS. If the result never lands (winner failed or is still
+// running at the deadline), give up and fail open.
+async function waitForResult(ip: string): Promise<SpurContext | null> {
+  const deadline = Date.now() + LOCK_WAIT_MS;
+  while (Date.now() < deadline) {
+    await sleep(POLL_INTERVAL_MS);
+    const cached = await getCachedContext(ip);
+    if (cached) return cached;
+  }
+  return null;
 }
 
 /**
  * Look up an IP's Spur context, preferring the 30-day Redis cache and only
- * caching successful (non-error) responses. Returns null when Spur is disabled
- * or the lookup fails — callers then fail open (treat the IP as not suspicious).
+ * caching successful (non-error) responses. Concurrent misses for the same IP
+ * are collapsed via a Redis single-flight lock: one caller fetches, the rest
+ * wait (bounded) for its result. Returns null when Spur is disabled or anything
+ * goes wrong (lock error, timeout, upstream failure) — callers then fail open
+ * (treat the IP as not suspicious). Every wait here is bounded, so a request can
+ * never get stuck on the lock or on another request's in-flight lookup.
  */
 async function getSpurContext(ip: string): Promise<SpurContext | null> {
   if (!isSpurEnabled()) return null;
@@ -99,21 +189,47 @@ async function getSpurContext(ip: string): Promise<SpurContext | null> {
   const cached = await getCachedContext(ip);
   if (cached) return cached;
 
-  let ctx: SpurContext | null;
   try {
-    ctx = await fetchContext(ip);
+    const token = await acquireLock(ip);
+    if (!token) {
+      // Lost the race → a lookup for this IP is already in flight. Wait for its
+      // result instead of making our own call. Logged so we can measure how many
+      // Spur calls the single-flight coalescing saves (savedApiCall === true).
+      const result = await waitForResult(ip);
+      logger.info("Spur lookup coalesced by single-flight", {
+        canonicalLog: "spur/lookup",
+        ip,
+        savedApiCall: result !== null,
+      });
+      return result;
+    }
+
+    try {
+      // Another winner may have populated the cache between our miss and
+      // winning the lock — re-check before spending a Spur call.
+      const fresh = await getCachedContext(ip);
+      if (fresh) return fresh;
+
+      const ctx = await fetchContext(ip);
+      // Only cache non-error responses.
+      if (ctx) await cacheContext(ip, ctx);
+      return ctx;
+    } finally {
+      await releaseLock(ip, token);
+    }
   } catch (error) {
-    logger.warn("Spur Context API request errored", {
+    // Lock error, fetch timeout/abort, or any upstream failure → fail open.
+    // AbortSignal.timeout rejects with a TimeoutError; flag it so the timeout
+    // rate is countable separately from other failures.
+    const timedOut = error instanceof Error && error.name === "TimeoutError";
+    logger.warn("Spur context lookup failed; failing open", {
       canonicalLog: "spur/lookup",
       ip,
+      timedOut,
       error,
     });
     return null;
   }
-
-  // Only cache non-error responses.
-  if (ctx) await cacheContext(ip, ctx);
-  return ctx;
 }
 
 // Risk flags that, on their own, mark an IP as fronting proxy/tunnel
