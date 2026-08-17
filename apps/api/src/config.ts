@@ -81,6 +81,15 @@ const configSchema = z.object({
   // refused if the IP fronts anonymizing/rotating infrastructure (VPN/proxy/
   // TOR). Unset disables the check entirely (keyless behaves as before).
   SPUR_API_KEY: z.string().optional(),
+  // A Spur lookup that is *attempted and fails* (timeout, non-2xx, transport
+  // error) normally fails open: no verdict, request proceeds. Turning this on
+  // makes such a failure reject instead, but only on the keyless Research
+  // routes (see controllers/auth.ts) — the surface distributed
+  // residential-proxy harvesting targets. Availability tradeoff: while Spur is
+  // unreachable, keyless Research is refused. An unset SPUR_API_KEY is not a
+  // failure and always passes, so this is a no-op wherever Spur isn't
+  // configured (self-hosted included). Off by default.
+  SPUR_RESEARCH_FAIL_CLOSED: z.stringbool().default(false),
 
   // Threat protection (enterprise domain risk blocking). "normal" mode uses
   // Google Web Risk. An unset key disables the provider (lookups then fail

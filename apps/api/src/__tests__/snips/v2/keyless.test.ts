@@ -764,6 +764,8 @@ const SPUR_ENABLED =
   KEYLESS_ENABLED &&
   !!process.env.SPUR_API_KEY &&
   !!process.env.KEYLESS_PROXY_SECRET;
+// The Research Index routes are only mounted when the upstream proxy is set.
+const HAS_RESEARCH = !!process.env.RESEARCH_PROXY_URL;
 
 describeIf(SPUR_ENABLED)("Keyless free tier — Spur IP reputation", () => {
   const spurKey = (ip: string) => `spur_context:${ip}`;
@@ -806,6 +808,64 @@ describeIf(SPUR_ENABLED)("Keyless free tier — Spur IP reputation", () => {
       expect(response.body.success).toBe(false);
       expect(response.body.error).toContain("suspicious");
       // Out of the keyless path → emit the OAuth-discovery header.
+      expect(response.headers["www-authenticate"]).toContain(
+        "resource_metadata",
+      );
+    },
+    scrapeTimeout,
+  );
+
+  it(
+    "refuses keyless for an IP Spur classifies as a residential proxy (403)",
+    async () => {
+      const ip = "203.0.113.68";
+      // `client.proxies` is how Spur reports residential/rotating proxy networks
+      // exiting an IP — the vector behind distributed corpus harvesting, where
+      // each individual IP looks like an ordinary home connection.
+      await redisRateLimitClient.set(
+        spurKey(ip),
+        JSON.stringify({ ip, client: { proxies: ["IPROYAL"] } }),
+      );
+
+      const response = await request(TEST_API_URL)
+        .post("/v2/scrape")
+        .set("Content-Type", "application/json")
+        .set("x-firecrawl-keyless-secret", process.env.KEYLESS_PROXY_SECRET!)
+        .set("x-firecrawl-keyless-ip", ip)
+        .send({
+          url: TEST_SUITE_WEBSITE,
+          origin: "mcp",
+          formats: ["markdown"],
+        });
+
+      expect(response.statusCode).toBe(403);
+      expect(response.body.success).toBe(false);
+      expect(response.body.error).toContain("suspicious");
+    },
+    scrapeTimeout,
+  );
+
+  itIf(HAS_RESEARCH)(
+    "refuses keyless Research Index access from a proxy-classified IP (403)",
+    async () => {
+      // The Research Index paper endpoints are keyless-eligible, which is what
+      // made them harvestable. The Spur gate has to hold on this surface too.
+      const ip = "203.0.113.69";
+      await redisRateLimitClient.set(
+        spurKey(ip),
+        JSON.stringify({ ip, client: { proxies: ["IPROYAL"] } }),
+      );
+
+      const response = await request(TEST_API_URL)
+        .get("/v2/search/research/papers")
+        .set("Content-Type", "application/json")
+        .set("x-firecrawl-keyless-secret", process.env.KEYLESS_PROXY_SECRET!)
+        .set("x-firecrawl-keyless-ip", ip)
+        .query({ query: "attention is all you need", k: 1 });
+
+      expect(response.statusCode).toBe(403);
+      expect(response.body.success).toBe(false);
+      expect(response.body.error).toContain("suspicious");
       expect(response.headers["www-authenticate"]).toContain(
         "resource_metadata",
       );

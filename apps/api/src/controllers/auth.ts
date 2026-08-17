@@ -453,9 +453,19 @@ async function handleKeylessAuth(
 
   // Optional Spur Context check (only when SPUR_API_KEY is set): refuse keyless
   // for IPs fronting anonymizing/rotating infrastructure (VPN/proxy/TOR), the
-  // main way the per-IP caps get bypassed. Fails open on any Spur error, and
-  // runs before consuming quota so a flagged IP doesn't burn a request slot.
-  if (await isKeylessIpSuspicious(ip)) {
+  // main way the per-IP caps get bypassed. Runs before consuming quota so a
+  // flagged IP doesn't burn a request slot.
+  //
+  // A Spur lookup that fails outright fails open everywhere except the keyless
+  // Research routes, where SPUR_RESEARCH_FAIL_CLOSED (off by default) can turn
+  // it into a rejection. Scoping it to Research keeps the availability cost of
+  // that switch to the surface distributed corpus harvesting actually targets,
+  // instead of shedding all keyless traffic whenever Spur is unreachable.
+  if (
+    await isKeylessIpSuspicious(ip, {
+      failClosed: mode === RateLimiterMode.Research,
+    })
+  ) {
     logger.warn("Keyless request blocked: suspicious IP", {
       canonicalLog: "keyless/consume",
       ip,
