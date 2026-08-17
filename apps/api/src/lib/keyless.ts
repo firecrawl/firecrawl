@@ -368,24 +368,34 @@ export async function checkKeylessEligibility(ip: string): Promise<{
 }
 
 /**
- * Append a row to `keyless_credit_usage` recording the actual credits a completed
- * keyless request consumed (per-IP keyless team UUID + raw IP), for abuse
- * monitoring. No-op for non-keyless teams, non-positive credits, or when DB auth
- * is off. Best-effort — never throws.
+ * Append a row to `keyless_credit_usage` recording a completed keyless request:
+ * the per-IP keyless team UUID, the raw IP, and the credits it consumed — the
+ * only place a keyless caller's IP is persisted (`requests.team_id` collapses
+ * all keyless traffic onto one preview team).
+ *
+ * Zero-credit operations are recorded too. The free Research Index paper
+ * endpoints bill nothing, so skipping them meant their client IP was never
+ * written anywhere and abuse on them was invisible. A `credits_used = 0` row
+ * cannot move any credit total; it only makes the request countable.
+ *
+ * No-op for non-keyless teams or when DB auth is off. Best-effort — never
+ * throws.
  */
 export async function logKeylessCreditUsage(
   teamId: string,
   credits: number,
 ): Promise<void> {
   const ip = keylessIpFromTeamId(teamId);
-  if (!ip || !Number.isFinite(credits) || credits <= 0) return;
+  if (!ip || !Number.isFinite(credits)) return;
   const teamUuid = keylessTeamUuid(teamId);
   if (config.USE_DB_AUTHENTICATION !== true || !teamUuid) return;
   try {
     await db.insert(schema.keyless_credit_usage).values({
       team_id: teamUuid,
       ip,
-      credits_used: Math.ceil(credits),
+      // The column records consumption, so a negative reconciliation delta must
+      // not land as a negative row.
+      credits_used: Math.max(0, Math.ceil(credits)),
     });
   } catch {
     // Logging is best-effort.
@@ -394,26 +404,31 @@ export async function logKeylessCreditUsage(
 
 /**
  * Add the actual credits a completed request consumed to the IP's daily credit
- * counter. No-op for non-keyless teams. Best-effort; never throws. Used by the
- * worker for the non-reserved path; the controllers reserve up front and call
- * `logKeylessCreditUsage` directly at reconciliation.
+ * counter, and record the request in `keyless_credit_usage`. The counter is only
+ * touched for positive credits, so a zero-credit operation becomes observable
+ * without drawing down any budget. No-op for non-keyless teams. Best-effort;
+ * never throws. Used by the worker for the non-reserved path; the controllers
+ * reserve up front and call `logKeylessCreditUsage` directly at reconciliation.
  */
 export async function chargeKeylessCredits(
   teamId: string,
   credits: number,
 ): Promise<void> {
   const ip = keylessIpFromTeamId(teamId);
-  if (!ip || !Number.isFinite(credits) || credits <= 0) return;
-  const inc = Math.ceil(credits);
-  try {
-    const key = creditsKey(ip);
-    const total = await redisRateLimitClient.incrby(key, inc);
-    if (total === inc) {
-      await redisRateLimitClient.expire(key, DAY_SECONDS);
+  if (!ip || !Number.isFinite(credits)) return;
+
+  if (credits > 0) {
+    const inc = Math.ceil(credits);
+    try {
+      const key = creditsKey(ip);
+      const total = await redisRateLimitClient.incrby(key, inc);
+      if (total === inc) {
+        await redisRateLimitClient.expire(key, DAY_SECONDS);
+      }
+    } catch {
+      // Counter is best-effort; a missed charge just means the IP gets a few
+      // extra free credits today.
     }
-  } catch {
-    // Counter is best-effort; a missed charge just means the IP gets a few
-    // extra free credits today.
   }
 
   // Log the usage to keyless_credit_usage for abuse monitoring. Best-effort.

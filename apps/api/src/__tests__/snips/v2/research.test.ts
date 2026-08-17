@@ -1,14 +1,16 @@
 import { config } from "../../../config";
-import { describeIf, TEST_PRODUCTION } from "../lib";
+import { describeIf, itIf, TEST_PRODUCTION } from "../lib";
 import { creditUsage, idmux, researchRaw } from "./lib";
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, gt } from "drizzle-orm";
 import { db } from "../../../db/connection";
 import * as schema from "../../../db/schema";
+import { redisRateLimitClient } from "../../../services/rate-limiter";
 
 const HAS_RESEARCH = !!config.RESEARCH_PROXY_URL;
 const KEYLESS_ENABLED =
   process.env.KEYLESS_REQUESTS_PER_DAY !== undefined &&
   process.env.KEYLESS_CREDITS_PER_DAY !== undefined;
+const KEYLESS_PROXY_SECRET = process.env.KEYLESS_PROXY_SECRET;
 
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 const sleepForBilling = () => sleep(40000);
@@ -25,6 +27,59 @@ async function waitForSingleRow<T>(
     await sleep(intervalMs);
   }
   return null;
+}
+
+// Keyless requests are keyed on the client IP. When the trusted-proxy secret is
+// configured we forward a unique documentation-range (RFC 5737) IP so each test
+// owns an isolated per-IP bucket; otherwise we fall back to the loopback IP the
+// server actually keyed on, recovered from the limiter keyspace the same way
+// keyless.test.ts does.
+function keylessHeaders(forwardedIp: string): Record<string, string> {
+  return KEYLESS_PROXY_SECRET
+    ? {
+        "x-firecrawl-keyless-secret": KEYLESS_PROXY_SECRET,
+        "x-firecrawl-keyless-ip": forwardedIp,
+      }
+    : {};
+}
+
+async function resolveKeylessIp(forwardedIp: string): Promise<string> {
+  if (KEYLESS_PROXY_SECRET) return forwardedIp;
+  const keys = await redisRateLimitClient.keys("keyless_requests:*");
+  expect(keys.length).toBeGreaterThan(0);
+  return keys[0].slice("keyless_requests:".length);
+}
+
+async function maxKeylessUsageId(): Promise<number | undefined> {
+  const rows = await db
+    .select({ id: schema.keyless_credit_usage.id })
+    .from(schema.keyless_credit_usage)
+    .orderBy(desc(schema.keyless_credit_usage.id))
+    .limit(1);
+  return rows[0]?.id;
+}
+
+// The audit insert is fire-and-forget in the controller, so callers snapshot the
+// latest id first and then poll for a newer row for their IP.
+async function waitForKeylessUsageRow(ip: string, afterId: number | undefined) {
+  return waitForSingleRow<typeof schema.keyless_credit_usage.$inferSelect>(
+    async () => {
+      const rows = await db
+        .select()
+        .from(schema.keyless_credit_usage)
+        .where(
+          and(
+            eq(schema.keyless_credit_usage.ip, ip),
+            afterId !== undefined
+              ? gt(schema.keyless_credit_usage.id, afterId)
+              : undefined,
+          ),
+        )
+        .orderBy(desc(schema.keyless_credit_usage.id))
+        .limit(1);
+      return rows[0] ?? null;
+    },
+  );
 }
 
 describeIf(HAS_RESEARCH)("Research API", () => {
@@ -170,6 +225,75 @@ describeIf(HAS_RESEARCH)("Research API", () => {
 
       expect(res.statusCode).not.toBe(401);
     }, 120000);
+
+    // The Research Index paper endpoints cost 0 credits. Until now the whole
+    // keyless usage log was skipped for zero-credit operations, so these
+    // requests left no client IP anywhere: during a distributed
+    // corpus-harvest incident only 3.0% of the traffic had a resolvable IP.
+    // The IP must be recorded even though nothing is billed.
+    itIf(config.USE_DB_AUTHENTICATION === true)(
+      "records the keyless client IP for a zero-credit paper search",
+      async () => {
+        const forwardedIp = "198.51.100.11";
+        const beforeMaxId = await maxKeylessUsageId();
+
+        const res = await researchRaw(
+          "/v2/search/research/papers",
+          { query: "sparse attention", k: 1 },
+          undefined,
+          keylessHeaders(forwardedIp),
+        );
+
+        expect(res.statusCode).toBe(200);
+        expect(res.body.success).toBe(true);
+
+        const ip = await resolveKeylessIp(forwardedIp);
+        const row = await waitForKeylessUsageRow(ip, beforeMaxId);
+
+        expect(row).not.toBeNull();
+        expect(row!.ip).toBe(ip);
+        // Observability only: the row exists, but nothing was charged.
+        expect(row!.credits_used).toBe(0);
+
+        // The keyless *credit* budget must not be drawn down by a free
+        // operation. Only meaningful on the isolated forwarded IP — the
+        // loopback bucket is shared with the other keyless snips.
+        if (KEYLESS_PROXY_SECRET) {
+          const creditsUsed = Number(
+            (await redisRateLimitClient.get(`keyless_credits:${ip}`)) ?? "0",
+          );
+          expect(creditsUsed).toBe(0);
+        }
+      },
+      120000,
+    );
+
+    // Failure path: ID enumeration — the exact shape of the incident — mostly
+    // produces upstream misses, so a miss must record the IP too.
+    itIf(config.USE_DB_AUTHENTICATION === true)(
+      "records the keyless client IP when a paper lookup misses",
+      async () => {
+        const forwardedIp = "198.51.100.12";
+        const beforeMaxId = await maxKeylessUsageId();
+
+        const res = await researchRaw(
+          "/v2/search/research/papers/0000.00000",
+          undefined,
+          undefined,
+          keylessHeaders(forwardedIp),
+        );
+
+        expect(res.statusCode).not.toBe(401);
+        expect(res.statusCode).toBeGreaterThanOrEqual(400);
+
+        const ip = await resolveKeylessIp(forwardedIp);
+        const row = await waitForKeylessUsageRow(ip, beforeMaxId);
+
+        expect(row).not.toBeNull();
+        expect(row!.credits_used).toBe(0);
+      },
+      120000,
+    );
   });
 
   describeIf(TEST_PRODUCTION)("research billing", () => {

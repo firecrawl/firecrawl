@@ -342,7 +342,6 @@ function createResearchController(
               credits,
             });
           });
-          chargeKeylessCredits(authedReq.auth.team_id, credits).catch(() => {});
         }
       } else {
         error =
@@ -371,6 +370,16 @@ function createResearchController(
       return res.status(502).end();
     } finally {
       const timeTaken = (Date.now() - started) / 1000;
+
+      // No-op for keyed teams. For keyless callers this both charges the per-IP
+      // daily credit budget and records the client IP in `keyless_credit_usage`.
+      // It runs on every outcome, not just billable successes: the paper
+      // endpoints cost 0 credits and ID enumeration mostly produces upstream
+      // misses, so gating this on `credits > 0` left those requests with no IP
+      // recorded anywhere. `credits` is still 0 on every non-2xx path, so
+      // nothing extra is charged.
+      chargeKeylessCredits(authedReq.auth.team_id, credits).catch(() => {});
+
       logResearchEndpoint({
         table: endpoint.table,
         id: jobId,
