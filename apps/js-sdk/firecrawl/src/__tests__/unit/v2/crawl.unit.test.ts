@@ -21,16 +21,19 @@ describe("v2.crawl unit", () => {
   });
 
   test("waitForCrawlCompletion paginates only after the job completes", async () => {
+    const nextUrl = "https://api/n1";
+    let polls = 0;
     const get = jest.fn(async (url: string) => {
       if (String(url).includes("/v2/crawl/")) {
+        polls += 1;
         return {
           status: 200,
           data: {
             success: true,
-            status: "completed",
-            completed: 1,
+            status: polls === 1 ? "scraping" : "completed",
+            completed: polls === 1 ? 1 : 2,
             total: 2,
-            next: "https://api/n1",
+            next: nextUrl,
             data: [{ markdown: "a" }],
           },
         };
@@ -41,26 +44,30 @@ describe("v2.crawl unit", () => {
       };
     });
 
-    const res = await waitForCrawlCompletion({ get } as any, "job1");
+    const res = await waitForCrawlCompletion({ get } as any, "job1", 0);
     expect(res.data.map((d) => d.markdown)).toEqual(["a", "b"]);
     expect(res.next).toBeNull();
     expect(get.mock.calls.map((c) => c[0])).toEqual([
       "/v2/crawl/job1",
-      "https://api/n1",
+      "/v2/crawl/job1",
+      nextUrl,
     ]);
   });
 
-  test("waitForBatchCompletion paginates only after the job completes", async () => {
+  test("waitForBatchCompletion paginates after failed jobs that still have a next page", async () => {
+    const nextUrl = "https://api/b1";
+    let polls = 0;
     const get = jest.fn(async (url: string) => {
       if (String(url).includes("/v2/batch/scrape/")) {
+        polls += 1;
         return {
           status: 200,
           data: {
             success: true,
-            status: "completed",
+            status: polls === 1 ? "scraping" : "failed",
             completed: 1,
             total: 2,
-            next: "https://api/b1",
+            next: nextUrl,
             data: [{ markdown: "a" }],
           },
         };
@@ -71,12 +78,14 @@ describe("v2.crawl unit", () => {
       };
     });
 
-    const res = await waitForBatchCompletion({ get } as any, "jobB");
+    const res = await waitForBatchCompletion({ get } as any, "jobB", 0);
+    expect(res.status).toBe("failed");
     expect(res.data.map((d) => d.markdown)).toEqual(["a", "b"]);
     expect(res.next).toBeNull();
     expect(get.mock.calls.map((c) => c[0])).toEqual([
       "/v2/batch/scrape/jobB",
-      "https://api/b1",
+      "/v2/batch/scrape/jobB",
+      nextUrl,
     ]);
   });
 });

@@ -127,7 +127,7 @@ export async function waitForCrawlCompletion(http: HttpClient, jobId: string, po
       const status = await getCrawlStatus(http, jobId, { autoPaginate: false });
 
       if (["completed", "failed", "cancelled"].includes(status.status)) {
-        if (status.status === "completed" && status.next) {
+        if (status.next) {
           const data = await fetchAllPages(http, status.next, status.data);
           return { ...status, next: null, data };
         }
