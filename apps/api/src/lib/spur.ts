@@ -145,13 +145,18 @@ async function acquireLock(ip: string): Promise<string | null> {
   return result === "OK" ? token : null;
 }
 
-// Best-effort release (get-compare-del so we only clear our own lock). Failures
-// are swallowed: the PX TTL guarantees the lock frees itself regardless, so a
-// release error can never wedge future lookups.
+// Atomic compare-and-delete so we only ever clear our own lock — a plain
+// get-then-del could delete a successor's lock if our lease expired in between.
+// Best-effort: failures are swallowed since the PX TTL frees the lock regardless.
+const RELEASE_LOCK_SCRIPT = `
+if redis.call("get", KEYS[1]) == ARGV[1] then
+  return redis.call("del", KEYS[1])
+end
+return 0`;
+
 async function releaseLock(ip: string, token: string): Promise<void> {
   try {
-    const current = await redisRateLimitClient.get(lockKey(ip));
-    if (current === token) await redisRateLimitClient.del(lockKey(ip));
+    await redisRateLimitClient.eval(RELEASE_LOCK_SCRIPT, 1, lockKey(ip), token);
   } catch (error) {
     logger.warn("Failed to release Spur single-flight lock", {
       canonicalLog: "spur/lookup",
@@ -167,7 +172,9 @@ async function releaseLock(ip: string, token: string): Promise<void> {
 async function waitForResult(ip: string): Promise<SpurContext | null> {
   const deadline = Date.now() + LOCK_WAIT_MS;
   while (Date.now() < deadline) {
-    await sleep(POLL_INTERVAL_MS);
+    // Clamp the last sleep to the remaining budget so we never overshoot the
+    // LOCK_WAIT_MS ceiling.
+    await sleep(Math.min(POLL_INTERVAL_MS, deadline - Date.now()));
     const cached = await getCachedContext(ip);
     if (cached) return cached;
   }

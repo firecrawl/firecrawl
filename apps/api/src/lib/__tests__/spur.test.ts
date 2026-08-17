@@ -13,7 +13,7 @@ vi.mock("../logger", () => ({
 }));
 
 vi.mock("../../services/rate-limiter", () => ({
-  redisRateLimitClient: { get: vi.fn(), set: vi.fn(), del: vi.fn() },
+  redisRateLimitClient: { get: vi.fn(), set: vi.fn(), eval: vi.fn() },
 }));
 
 // Minimal in-memory Redis backing the mock: enough SET semantics (NX guard,
@@ -30,9 +30,16 @@ function installFakeRedis(): Map<string, string> {
       return "OK";
     },
   );
-  (redisRateLimitClient.del as Mock).mockImplementation(async (k: string) => {
-    return store.delete(k) ? 1 : 0;
-  });
+  // Atomic compare-and-delete used by releaseLock: KEYS[1]=lock key, ARGV[1]=token.
+  (redisRateLimitClient.eval as Mock).mockImplementation(
+    async (_script: string, _numKeys: number, key: string, token: string) => {
+      if (store.get(key) === token) {
+        store.delete(key);
+        return 1;
+      }
+      return 0;
+    },
+  );
   return store;
 }
 
