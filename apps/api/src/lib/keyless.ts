@@ -222,7 +222,7 @@ export async function consumeKeylessRequest(
       retryAfterSeconds: await retryAfterSecondsFor(rKey),
     };
   }
-  if (!research && creditsUsed >= creditLimit) {
+  if (creditsUsed >= creditLimit) {
     return {
       ok: false,
       reason: "credits",
@@ -362,7 +362,7 @@ export async function checkKeylessEligibility(
       (await redisRateLimitClient.get(creditKey)) ?? "0",
       10,
     );
-    if (!research && creditsUsed >= (KEYLESS_CREDITS_PER_DAY ?? 0)) {
+    if (creditsUsed >= (KEYLESS_CREDITS_PER_DAY ?? 0)) {
       return {
         eligible: false,
         reason: "credits",
