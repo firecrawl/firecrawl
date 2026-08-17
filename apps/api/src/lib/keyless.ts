@@ -114,6 +114,10 @@ export function isKeylessIpEligible(ip: string): boolean {
 
 const requestsKey = (ip: string, research = false) =>
   `keyless_requests${research ? ":research" : ""}:${ip}`;
+const requestLimit = (research: boolean) =>
+  research
+    ? Math.floor((KEYLESS_REQUESTS_PER_DAY ?? 0) / 4)
+    : (KEYLESS_REQUESTS_PER_DAY ?? 0);
 const creditsKey = (ip: string) => `keyless_credits:${ip}`;
 
 type KeylessQuotaReason = "requests" | "credits";
@@ -195,9 +199,7 @@ export async function consumeKeylessRequest(
   ip: string,
   research = false,
 ): Promise<KeylessConsumeResult> {
-  const requestLimit = research
-    ? Math.floor((KEYLESS_REQUESTS_PER_DAY ?? 0) / 4)
-    : (KEYLESS_REQUESTS_PER_DAY ?? 0);
+  const requestsLimit = requestLimit(research);
   const creditLimit = KEYLESS_CREDITS_PER_DAY ?? 0;
 
   const rKey = requestsKey(ip, research);
@@ -211,7 +213,7 @@ export async function consumeKeylessRequest(
     10,
   );
 
-  if (requestsUsed > requestLimit) {
+  if (requestsUsed > requestsLimit) {
     return {
       ok: false,
       reason: "requests",
@@ -319,7 +321,10 @@ return next
  * consumption). Used by the hosted MCP before a keyless tool call so an
  * ineligible caller receives structured recovery without an OAuth challenge.
  */
-export async function checkKeylessEligibility(ip: string): Promise<{
+export async function checkKeylessEligibility(
+  ip: string,
+  research = false,
+): Promise<{
   eligible: boolean;
   reason?:
     | KeylessQuotaReason
@@ -340,15 +345,16 @@ export async function checkKeylessEligibility(ip: string): Promise<{
     return { eligible: false, reason: "suspicious" };
   }
   try {
+    const requestKey = requestsKey(ip, research);
     const requestsUsed = parseInt(
-      (await redisRateLimitClient.get(requestsKey(ip))) ?? "0",
+      (await redisRateLimitClient.get(requestKey)) ?? "0",
       10,
     );
-    if (requestsUsed >= (KEYLESS_REQUESTS_PER_DAY ?? 0)) {
+    if (requestsUsed >= requestLimit(research)) {
       return {
         eligible: false,
         reason: "requests",
-        retryAfterSeconds: await retryAfterSecondsFor(requestsKey(ip)),
+        retryAfterSeconds: await retryAfterSecondsFor(requestKey),
       };
     }
     const creditKey = creditsKey(ip);
