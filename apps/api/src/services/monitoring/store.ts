@@ -49,7 +49,6 @@ const MONITOR_CHECK_PAGE_BATCH_SIZE = 1000;
 type MonitorCreditMetadata = {
   creditsUsed?: unknown;
   numPages?: unknown;
-  proxyUsed?: unknown;
   postprocessorsUsed?: unknown;
 };
 
@@ -95,10 +94,8 @@ function requestsJsonChangeTracking(formats: unknown): boolean {
 
 function estimateBaseCreditsPerPage(
   options: MonitorTarget["scrapeOptions"],
-  params: { includeProxy?: boolean } = {},
 ): number {
   const formats = options?.formats;
-  const includeProxy = params.includeProxy ?? true;
   const usesDeterministicJson = hasFormatOfType(formats, "deterministicJson");
   const usesJsonCredits =
     hasFormatOfType(formats, "json") || requestsJsonChangeTracking(formats);
@@ -128,13 +125,6 @@ function estimateBaseCreditsPerPage(
   }
 
   if (hasFormatOfType(formats, "video")) {
-    credits += SCRAPE_OPTION_CREDIT_BONUS;
-  }
-
-  if (
-    includeProxy &&
-    (options?.proxy === "stealth" || options?.proxy === "enhanced")
-  ) {
     credits += SCRAPE_OPTION_CREDIT_BONUS;
   }
 
@@ -230,9 +220,7 @@ export function calculateMonitorCheckActualCreditsFromPages(
   const baseCreditsByTarget = new Map(
     targets.map(target => [
       target.id,
-      estimateBaseCreditsPerPage(target.scrapeOptions, {
-        includeProxy: false,
-      }),
+      estimateBaseCreditsPerPage(target.scrapeOptions),
     ]),
   );
   const targetsById = new Map(targets.map(target => [target.id, target]));
@@ -261,18 +249,6 @@ export function calculateMonitorCheckActualCreditsFromPages(
       metadata.numPages > 1
     ) {
       credits += metadata.numPages - 1;
-    }
-
-    const requestedPremiumProxy =
-      target?.scrapeOptions?.proxy === "stealth" ||
-      target?.scrapeOptions?.proxy === "enhanced";
-    const usedPremiumProxy =
-      metadata?.proxyUsed === "stealth" || metadata?.proxyUsed === "enhanced";
-    if (
-      usedPremiumProxy ||
-      (metadata?.proxyUsed == null && requestedPremiumProxy)
-    ) {
-      credits += SCRAPE_OPTION_CREDIT_BONUS;
     }
 
     if (

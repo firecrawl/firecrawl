@@ -15,7 +15,6 @@ import type { ThreatDecision } from "./threat-protection/types";
 import { UnsafeDomainBlockedError } from "./threat-protection/error";
 
 const creditsPerPDFPage = 1;
-const stealthProxyCostBonus = 4;
 const unblockedDomainCostBonus = 4;
 const xTwitterCostBonus = 29;
 const redactPIICostBonus = 4;
@@ -68,7 +67,11 @@ export async function calculateCreditsToBeBilled(
   costTracking: CostTracking | ReturnType<typeof CostTracking.prototype.toJSON>,
   flags: TeamFlags,
   error?: Error | null,
-  unsupportedFeatures?: Set<FeatureFlag>,
+  // Unused by billing today (enhanced/stealth proxies no longer carry a
+  // surcharge, so there is nothing to waive when the engine could not honour
+  // the feature). Kept because callers pass `exchange` and `threatDecisions`
+  // positionally after it.
+  _unsupportedFeatures?: Set<FeatureFlag>,
   exchange?: ExchangeScrapeMetadata,
   // Threat protection decisions for this scrape (initial + redirect checks,
   // in order). Each decision with `providerConsulted` bills a scan fee (+2
@@ -198,7 +201,7 @@ export async function calculateCreditsToBeBilled(
   }
 
   if (options.redactPII) {
-    // Flat +4 to match lockdown / audio / video / stealth — fire-privacy
+    // Flat +4 to match lockdown / audio / video — fire-privacy
     // is a peer premium feature, not a cost-based one. PDF pages all
     // pass through redaction too, so each additional page picks up
     // another +4 on top of the +1 page parse cost.
@@ -206,13 +209,6 @@ export async function calculateCreditsToBeBilled(
     if (extraPdfPages > 0) {
       creditsToBeBilled += redactPIIPdfPageCostBonus * extraPdfPages;
     }
-  }
-
-  if (
-    document?.metadata?.proxyUsed === "stealth" &&
-    !unsupportedFeatures?.has("stealthProxy") // if stealth proxy was unsupported, don't bill for it
-  ) {
-    creditsToBeBilled += stealthProxyCostBonus;
   }
 
   const urlsToCheck = [

@@ -63,6 +63,60 @@ describe("calculateCreditsToBeBilled", () => {
     expect(credits).toBe(30);
   });
 
+  it("bills stealth (enhanced) proxy scrapes the same as basic ones", async () => {
+    const bill = (unsupportedFeatures?: Set<any>) =>
+      calculateCreditsToBeBilled(
+        {
+          formats: [{ type: "markdown" }],
+        } as any,
+        {
+          teamId: "team-id",
+          orgId: null,
+        },
+        {
+          metadata: {
+            statusCode: 200,
+            proxyUsed: "stealth",
+          },
+        } as any,
+        {
+          totalCost: 0,
+        } as any,
+        {} as any,
+        undefined,
+        unsupportedFeatures,
+      );
+
+    // No surcharge, whether or not the engine could honour stealth (the old
+    // waiver for unsupported stealth is moot now there is nothing to waive).
+    expect(await bill()).toBe(1);
+    expect(await bill(new Set(["stealthProxy"]))).toBe(1);
+  });
+
+  it("still bills stealth proxy scrapes with json at 5 credits", async () => {
+    const credits = await calculateCreditsToBeBilled(
+      {
+        formats: [{ type: "json", schema: {} }],
+      } as any,
+      {
+        teamId: "team-id",
+        orgId: null,
+      },
+      {
+        metadata: {
+          statusCode: 200,
+          proxyUsed: "stealth",
+        },
+      } as any,
+      {
+        totalCost: 0,
+      } as any,
+      {} as any,
+    );
+
+    expect(credits).toBe(5);
+  });
+
   it("bills deterministic JSON at 10 credits when the script was generated", async () => {
     const credits = await calculateCreditsToBeBilled(
       {

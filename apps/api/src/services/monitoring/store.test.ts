@@ -24,8 +24,9 @@ describe("monitoring store credit helpers", () => {
       },
     ];
 
-    expect(estimateMonitorCreditsPerRun(targets, false)).toBe(18);
-    expect(estimateMonitorCreditsPerRun(targets, true)).toBe(20);
+    // 2 URLs x 5 (json change tracking). Enhanced proxies add nothing.
+    expect(estimateMonitorCreditsPerRun(targets, false)).toBe(10);
+    expect(estimateMonitorCreditsPerRun(targets, true)).toBe(12);
   });
 
   it("adds predictable lockdown costs and judge credits separately", () => {
@@ -69,7 +70,7 @@ describe("monitoring store credit helpers", () => {
         ],
         targets,
       ),
-    ).toBe(10);
+    ).toBe(6);
   });
 
   it("uses monitor metadata for fallback PDF credits when recorded usage is missing", () => {
@@ -96,7 +97,7 @@ describe("monitoring store credit helpers", () => {
     ).toBe(5);
   });
 
-  it("uses monitor metadata for fallback proxy and postprocessor credits", () => {
+  it("uses monitor metadata for fallback postprocessor credits and never for proxies", () => {
     const targets: MonitorTarget[] = [
       {
         id: "target-1",
@@ -120,10 +121,10 @@ describe("monitoring store credit helpers", () => {
         ],
         targets,
       ),
-    ).toBe(34);
+    ).toBe(30);
   });
 
-  it("treats enhanced proxy metadata as premium for fallback billing", () => {
+  it("does not bill extra when enhanced proxy metadata is present", () => {
     const targets: MonitorTarget[] = [
       {
         id: "target-1",
@@ -146,10 +147,10 @@ describe("monitoring store credit helpers", () => {
         ],
         targets,
       ),
-    ).toBe(5);
+    ).toBe(1);
   });
 
-  it("does not add fallback proxy credits when runtime metadata says basic was used", () => {
+  it("bills json and extra PDF pages in fallback billing, whatever proxy ran", () => {
     const targets: MonitorTarget[] = [
       {
         id: "target-1",
