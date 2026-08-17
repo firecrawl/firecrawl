@@ -69,8 +69,11 @@ describe("logKeylessCreditUsage", () => {
     await logKeylessCreditUsage(KEYLESS_TEAM, 0);
 
     expect(dbInsert).not.toHaveBeenCalled();
+    // The IP rides in the message body (console transports only serialize
+    // metadata for warn/error) AND in the structured fields (the Cloud
+    // Logging query contract).
     expect(info).toHaveBeenCalledWith(
-      "Keyless zero-credit usage",
+      expect.stringContaining(`Keyless zero-credit usage ip=${IP}`),
       expect.objectContaining({
         canonicalLog: "keyless/usage",
         ip: IP,
@@ -78,6 +81,16 @@ describe("logKeylessCreditUsage", () => {
         creditsUsed: 0,
       }),
     );
+  });
+
+  it("logs no zero-credit line when DB auth is off (same gate as billable rows)", async () => {
+    config.USE_DB_AUTHENTICATION = false;
+    const info = vi.spyOn(logger, "info").mockImplementation(() => logger);
+
+    await logKeylessCreditUsage(KEYLESS_TEAM, 0);
+
+    expect(dbInsert).not.toHaveBeenCalled();
+    expect(info).not.toHaveBeenCalled();
   });
 
   it("still records the actual credits for a billable keyless operation", async () => {
@@ -95,7 +108,7 @@ describe("logKeylessCreditUsage", () => {
 
     expect(dbInsert).not.toHaveBeenCalled();
     expect(info).toHaveBeenCalledWith(
-      "Keyless zero-credit usage",
+      expect.stringContaining("Keyless zero-credit usage"),
       expect.objectContaining({ creditsUsed: 0 }),
     );
   });
@@ -135,7 +148,7 @@ describe("chargeKeylessCredits", () => {
     expect(redisIncrby).not.toHaveBeenCalled();
     expect(dbInsert).not.toHaveBeenCalled();
     expect(info).toHaveBeenCalledWith(
-      "Keyless zero-credit usage",
+      expect.stringContaining("Keyless zero-credit usage"),
       expect.objectContaining({ ip: IP, creditsUsed: 0 }),
     );
   });

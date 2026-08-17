@@ -398,10 +398,17 @@ export async function logKeylessCreditUsage(
   // not land as a negative value.
   const creditsUsed = Math.max(0, Math.ceil(credits));
 
+  // Both branches sit behind the same gate as every other keyless usage
+  // record: self-hosted deployments without DB auth track nothing.
+  if (config.USE_DB_AUTHENTICATION !== true) return;
+
   if (creditsUsed <= 0) {
     // TODO(firecrawl-db): switch to a `keyless_credit_usage` row once the
-    // zero-credit usage migration is merged.
-    logger.info("Keyless zero-credit usage", {
+    // zero-credit usage migration is merged. The IP is repeated in the
+    // message body because the console transport only serializes metadata
+    // for warn/error lines; the structured fields are the contract for
+    // Cloud Logging queries.
+    logger.info(`Keyless zero-credit usage ip=${ip} team=${teamUuid}`, {
       canonicalLog: "keyless/usage",
       ip,
       teamId: teamUuid,
@@ -410,7 +417,6 @@ export async function logKeylessCreditUsage(
     return;
   }
 
-  if (config.USE_DB_AUTHENTICATION !== true) return;
   try {
     await db.insert(schema.keyless_credit_usage).values({
       team_id: teamUuid,

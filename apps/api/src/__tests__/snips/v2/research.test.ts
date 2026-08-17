@@ -1,7 +1,7 @@
 import { config } from "../../../config";
 import { describeIf, itIf, TEST_PRODUCTION } from "../lib";
 import { creditUsage, idmux, researchRaw } from "./lib";
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, gt } from "drizzle-orm";
 import { db } from "../../../db/connection";
 import * as schema from "../../../db/schema";
 import { redisRateLimitClient } from "../../../services/rate-limiter";
@@ -69,11 +69,31 @@ async function resolveKeylessIp(
 // durable keyless_credit_usage row waits on the firecrawl-db migration), so
 // these tests assert no row is written and no credit budget moves. The
 // library-level log-line contract is pinned in lib/__tests__/keyless-usage-log.
-async function keylessUsageRowCount(ip: string): Promise<number> {
+// Row assertions are isolated against rows accumulated by earlier runs (the
+// pre-log-only version of these tests wrote durable rows for these very IPs):
+// snapshot the max id up front and only count rows past it.
+async function maxKeylessUsageRowId(): Promise<number> {
   const rows = await db
     .select({ id: schema.keyless_credit_usage.id })
     .from(schema.keyless_credit_usage)
-    .where(eq(schema.keyless_credit_usage.ip, ip));
+    .orderBy(desc(schema.keyless_credit_usage.id))
+    .limit(1);
+  return rows[0]?.id ?? 0;
+}
+
+async function keylessUsageRowsAfter(
+  ip: string,
+  afterId: number,
+): Promise<number> {
+  const rows = await db
+    .select({ id: schema.keyless_credit_usage.id })
+    .from(schema.keyless_credit_usage)
+    .where(
+      and(
+        eq(schema.keyless_credit_usage.ip, ip),
+        gt(schema.keyless_credit_usage.id, afterId),
+      ),
+    );
   return rows.length;
 }
 
@@ -232,6 +252,7 @@ describeIf(HAS_RESEARCH)("Research API", () => {
       async () => {
         const forwardedIp = "198.51.100.11";
         const before = await snapshotKeylessCounts();
+        const afterId = await maxKeylessUsageRowId();
 
         const res = await researchRaw(
           "/v2/search/research/papers",
@@ -247,7 +268,7 @@ describeIf(HAS_RESEARCH)("Research API", () => {
         // Give the fire-and-forget charge path time to run before asserting
         // it stayed out of the DB.
         await sleep(2000);
-        expect(await keylessUsageRowCount(ip)).toBe(0);
+        expect(await keylessUsageRowsAfter(ip, afterId)).toBe(0);
 
         // The keyless *credit* budget must not be drawn down by a free
         // operation. Only meaningful on the isolated forwarded IP — the
@@ -270,6 +291,7 @@ describeIf(HAS_RESEARCH)("Research API", () => {
       async () => {
         const forwardedIp = "198.51.100.12";
         const before = await snapshotKeylessCounts();
+        const afterId = await maxKeylessUsageRowId();
 
         const res = await researchRaw(
           "/v2/search/research/papers/0000.00000",
@@ -283,7 +305,7 @@ describeIf(HAS_RESEARCH)("Research API", () => {
 
         const ip = await resolveKeylessIp(forwardedIp, before);
         await sleep(2000);
-        expect(await keylessUsageRowCount(ip)).toBe(0);
+        expect(await keylessUsageRowsAfter(ip, afterId)).toBe(0);
       },
       120000,
     );
