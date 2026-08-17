@@ -40,6 +40,26 @@ describe("pickBrandPrimary", () => {
     ).toBe("#22C55E");
   });
 
+  it("uses a black CTA as primary instead of a chromatic wash", () => {
+    expect(
+      pickBrandPrimary(["#CB9FD2", "#000000", "#FFFFFF"], {
+        background: "#FFFFFF",
+        colorScheme: "light",
+        cta: "#000000",
+      }),
+    ).toBe("#000000");
+  });
+
+  it("still prefers a chromatic CTA over navy header chrome", () => {
+    expect(
+      pickBrandPrimary(["#061B31", "#635BFF", "#FFFFFF"], {
+        background: "#FFFFFF",
+        colorScheme: "light",
+        cta: "#635BFF",
+      }),
+    ).toBe("#635BFF");
+  });
+
   it("does not treat saturated blue as near-black chrome", () => {
     expect(isNearBlack("#0000FF")).toBe(false);
     expect(isNearBlack("#061B31")).toBe(true);
@@ -120,6 +140,41 @@ describe("merge color roles", () => {
       [],
     );
     expect(merged.colors?.primary).toBe("#FF4C00");
+  });
+
+  it("promotes a black primary button over an LLM wash", () => {
+    const merged = mergeBrandingResults(
+      { colorScheme: "light", colors: { primary: "#CB9FD2" } },
+      {
+        ...emptyLlm,
+        buttonClassification: {
+          primaryButtonIndex: 0,
+          primaryButtonReasoning: "black get started",
+          secondaryButtonIndex: -1,
+          secondaryButtonReasoning: "n/a",
+          confidence: 0.9,
+        },
+        colorRoles: {
+          primaryColor: "#CB9FD2",
+          accentColor: "#1A73E8",
+          backgroundColor: "#FFFFFF",
+          textPrimary: "#000000",
+          confidence: 0.9,
+        },
+      },
+      [
+        {
+          index: 0,
+          text: "Get started",
+          html: "",
+          classes: "",
+          background: "#000000",
+          textColor: "#FFFFFF",
+        },
+      ],
+    );
+    expect(merged.colors?.primary).toBe("#000000");
+    expect(merged.components?.buttonPrimary?.background).toBe("#000000");
   });
 
   it("does not let a high-confidence navy LLM primary overwrite a brand color", () => {
@@ -249,5 +304,39 @@ describe("processRawBranding primary", () => {
     });
 
     expect(profile.colors?.primary).toBe("#635BFF");
+  });
+
+  it("uses a black CTA as primary instead of a large lilac wash", () => {
+    const profile = processRawBranding({
+      cssData: { colors: [], spacings: [], radii: [] },
+      snapshots: [
+        snap({
+          tag: "section",
+          rect: { w: 1400, h: 600 },
+          colors: { background: "rgb(203, 159, 210)", text: "rgb(0, 0, 0)" },
+        }),
+        snap({
+          tag: "button",
+          text: "Get started",
+          isButton: true,
+          hasCTAIndicator: true,
+          rect: { w: 140, h: 44 },
+          colors: {
+            background: "rgb(0, 0, 0)",
+            text: "rgb(255, 255, 255)",
+          },
+        }),
+      ],
+      images: [],
+      typography: {
+        stacks: { body: ["Inter"], heading: ["Inter"], paragraph: ["Inter"] },
+        sizes: { h1: "32px", h2: "24px", body: "16px" },
+      },
+      frameworkHints: [],
+      colorScheme: "light",
+      pageBackground: "rgb(255, 255, 255)",
+    });
+
+    expect(profile.colors?.primary).toBe("#000000");
   });
 });
