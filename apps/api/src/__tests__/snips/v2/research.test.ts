@@ -10,6 +10,15 @@ const KEYLESS_ENABLED =
   process.env.KEYLESS_REQUESTS_PER_DAY !== undefined &&
   process.env.KEYLESS_CREDITS_PER_DAY !== undefined;
 
+// Temporary keyless mitigation. The harness passes the shell env to the server,
+// so parsing RESEARCH_KEYLESS_DISABLED here (via the same config schema) tells
+// us which paper operations the server refuses without an API key.
+const KEYLESS_DISABLED_OPERATIONS = config.RESEARCH_KEYLESS_DISABLED;
+const KEYLESS_SEARCH_ENABLED =
+  KEYLESS_ENABLED && !KEYLESS_DISABLED_OPERATIONS.includes("search");
+const KEYLESS_INSPECT_DISABLED =
+  KEYLESS_ENABLED && KEYLESS_DISABLED_OPERATIONS.includes("inspect");
+
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 const sleepForBilling = () => sleep(40000);
 
@@ -161,7 +170,44 @@ describeIf(HAS_RESEARCH)("Research API", () => {
     expect(res.body.success).toBe(false);
   });
 
-  describeIf(KEYLESS_ENABLED)("keyless research", () => {
+  it("serves every paper operation to an API key holder", async () => {
+    const identity = await idmux({
+      name: "research/keyed paper operations",
+      credits: 100,
+    });
+
+    const search = await researchRaw(
+      "/v2/search/research/papers",
+      { query: "attention is all you need", k: 1 },
+      identity,
+    );
+    expect(search.statusCode).toBe(200);
+    expect(search.body.success).toBe(true);
+
+    const inspect = await researchRaw(
+      "/v2/search/research/papers/1706.03762",
+      undefined,
+      identity,
+    );
+    expect(inspect.statusCode).toBe(200);
+
+    const read = await researchRaw(
+      "/v2/search/research/papers/1706.03762",
+      { query: "attention", k: 1 },
+      identity,
+    );
+    expect(read.statusCode).toBe(200);
+    expect(read.body.success).toBe(true);
+
+    const similar = await researchRaw(
+      "/v2/search/research/papers/1706.03762/similar",
+      { intent: "transformer architectures", k: 2 },
+      identity,
+    );
+    expect(similar.statusCode).toBe(200);
+  }, 120000);
+
+  describeIf(KEYLESS_SEARCH_ENABLED)("keyless research", () => {
     it("permits keyless access on the canonical research index", async () => {
       const res = await researchRaw("/v2/search/research/papers", {
         query: "transformers",
@@ -169,6 +215,37 @@ describeIf(HAS_RESEARCH)("Research API", () => {
       });
 
       expect(res.statusCode).not.toBe(401);
+    }, 120000);
+  });
+
+  // Win condition for the temporary RESEARCH_KEYLESS_DISABLED mitigation: the
+  // operations it covers require an API key, and keyed callers are untouched.
+  describeIf(KEYLESS_INSPECT_DISABLED)("keyless research disabled", () => {
+    it("refuses keyless paper inspect with a 401 telling the caller to use an API key", async () => {
+      const res = await researchRaw(
+        "/v2/search/research/papers/1706.03762",
+        undefined,
+      );
+
+      expect(res.statusCode).toBe(401);
+      expect(res.body.success).toBe(false);
+      expect(res.body.error).toContain("API key");
+      expect(res.body.results).toBeUndefined();
+    }, 120000);
+
+    it("keeps serving the same paper inspect to an API key holder", async () => {
+      const identity = await idmux({
+        name: "research/keyed inspect while keyless disabled",
+        credits: 100,
+      });
+
+      const res = await researchRaw(
+        "/v2/search/research/papers/1706.03762",
+        undefined,
+        identity,
+      );
+
+      expect(res.statusCode).toBe(200);
     }, 120000);
   });
 

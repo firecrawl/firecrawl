@@ -219,10 +219,19 @@ export function checkCreditsMiddleware(
 
 export function authMiddleware(
   rateLimiterMode: RateLimiterMode,
-  options: { allowKeyless?: boolean } = {},
+  options: {
+    // A predicate lets a router that mounts several operations behind one
+    // middleware allow keyless per request (see lib/research-keyless.ts).
+    allowKeyless?: boolean | ((req: RequestWithMaybeAuth) => boolean);
+  } = {},
 ): (req: RequestWithMaybeAuth, res: Response, next: NextFunction) => void {
   return (req, res, next) => {
     (async () => {
+      const allowKeyless =
+        typeof options.allowKeyless === "function"
+          ? options.allowKeyless(req)
+          : options.allowKeyless;
+
       let currentRateLimiterMode = rateLimiterMode;
       if (
         currentRateLimiterMode === RateLimiterMode.Extract &&
@@ -235,12 +244,10 @@ export function authMiddleware(
       //   currentRateLimiterMode = RateLimiterMode.ScrapeAgentPreview;
       // }
 
-      const auth = await authenticateUser(
-        req,
-        res,
-        currentRateLimiterMode,
-        options,
-      );
+      const auth = await authenticateUser(req, res, currentRateLimiterMode, {
+        ...options,
+        allowKeyless,
+      });
 
       if (!auth.success) {
         if (!res.headersSent) {

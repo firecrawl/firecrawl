@@ -16,6 +16,48 @@ const emptyStringAsUndefined = <T extends z.ZodTypeAny>(schema: T) =>
 const emptyStringAsDefault = <T extends z.ZodTypeAny>(schema: T) =>
   z.preprocess(value => (value === "" ? undefined : value), schema);
 
+/* Research Index keyless mitigation */
+// The paper operations served by the Research Index router. `/papers/:id` is
+// two operations: `read` when a `query` is present, `inspect` when it isn't.
+const RESEARCH_PAPER_OPERATIONS = [
+  "search",
+  "inspect",
+  "read",
+  "similar",
+] as const;
+
+// Scope used when the flag is switched on without naming operations. Keyless
+// paper search stays open: that is where playground and pre-signup discovery
+// traffic lives, so blocking it has real funnel cost, while keyless
+// inspect/read/similar traffic is negligible.
+const DEFAULT_RESEARCH_KEYLESS_DISABLED = [
+  "inspect",
+  "read",
+  "similar",
+] as const;
+
+// TEMPORARY (see lib/research-keyless.ts): reject keyless (unauthenticated)
+// requests to Research Index paper operations. Accepts an on/off value or an
+// explicit comma-separated scope so the blast radius can be widened or narrowed
+// without a deploy. Unset/empty keeps today's behaviour, so unsetting it is the
+// full revert.
+const researchKeylessDisabled = z.preprocess(
+  value => {
+    if (typeof value !== "string") return value;
+    const raw = value.trim().toLowerCase();
+    if (["", "false", "0", "off", "no", "none"].includes(raw)) return [];
+    if (["true", "1", "on", "yes"].includes(raw)) {
+      return [...DEFAULT_RESEARCH_KEYLESS_DISABLED];
+    }
+    if (raw === "all") return [...RESEARCH_PAPER_OPERATIONS];
+    return raw
+      .split(",")
+      .map(operation => operation.trim())
+      .filter(Boolean);
+  },
+  z.array(z.enum(RESEARCH_PAPER_OPERATIONS)).default([]),
+);
+
 const containsLoneSurrogate = (value: string): boolean => {
   for (let index = 0; index < value.length; index++) {
     const codeUnit = value.charCodeAt(index);
@@ -54,6 +96,13 @@ const configSchema = z.object({
     z.string().trim().optional(),
   ),
   RESEARCH_PROXY_URL: z.string().url().optional(),
+  // Temporary abuse mitigation for the Research Index paper endpoints: which
+  // paper operations refuse keyless (unauthenticated) callers. Unset or empty
+  // leaves keyless access exactly as it is today; "true" applies the default
+  // scope (inspect, read, similar); "all" covers every paper operation; a
+  // comma-separated list of search|inspect|read|similar sets the scope
+  // explicitly. API-key callers are never affected.
+  RESEARCH_KEYLESS_DISABLED: researchKeylessDisabled,
   LABS_SEARCH_URL: z.string().url().optional(),
   LABS_SEARCH_SECRET: z.string().optional(),
 

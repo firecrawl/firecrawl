@@ -51,6 +51,7 @@ import { queueStatusController } from "../controllers/v2/queue-status";
 import { creditUsageHistoricalController } from "../controllers/v2/credit-usage-historical";
 import { tokenUsageHistoricalController } from "../controllers/v2/token-usage-historical";
 import { deprecationMiddleware } from "../lib/deprecations";
+import { isResearchKeylessDisabled } from "../lib/research-keyless";
 import { agentController } from "../controllers/v2/agent";
 import { agentStatusController } from "../controllers/v2/agent-status";
 import { agentCancelController } from "../controllers/v2/agent-cancel";
@@ -650,9 +651,13 @@ v2Router.post(
 );
 
 if (config.RESEARCH_PROXY_URL) {
+  // Keyless access here is temporarily revocable per paper operation via
+  // RESEARCH_KEYLESS_DISABLED; API-key callers are unaffected.
   v2Router.use(
     "/search/research",
-    authMiddleware(RateLimiterMode.Research, { allowKeyless: true }),
+    authMiddleware(RateLimiterMode.Research, {
+      allowKeyless: req => !isResearchKeylessDisabled(req),
+    }),
     createResearchRouter(),
   );
 
