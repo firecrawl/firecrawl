@@ -15,6 +15,7 @@ import type { ThreatDecision } from "./threat-protection/types";
 import { UnsafeDomainBlockedError } from "./threat-protection/error";
 
 const creditsPerPDFPage = 1;
+const jsonCostBonus = 4;
 const stealthProxyCostBonus = 4;
 const unblockedDomainCostBonus = 4;
 const xTwitterCostBonus = 29;
@@ -138,7 +139,9 @@ export async function calculateCreditsToBeBilled(
     hasFormatOfType(options.formats, "json") ||
     changeTrackingFormat?.modes?.includes("json")
   ) {
-    creditsToBeBilled = 5;
+    // Additive premium on top of the base credit (1 + 4 = 5 for a plain json
+    // scrape), so it stacks with lockdown rather than overwriting it.
+    creditsToBeBilled += jsonCostBonus;
   }
 
   if (hasFormatOfType(options.formats, "deterministicJson")) {

@@ -63,6 +63,80 @@ describe("calculateCreditsToBeBilled", () => {
     expect(credits).toBe(30);
   });
 
+  it("bills a json scrape at 5 credits (base + json premium)", async () => {
+    const credits = await calculateCreditsToBeBilled(
+      {
+        formats: [{ type: "json", prompt: "extract" }],
+      } as any,
+      {
+        teamId: "team-id",
+        orgId: null,
+      },
+      {
+        metadata: {
+          statusCode: 200,
+          proxyUsed: "basic",
+        },
+      } as any,
+      {
+        totalCost: 0,
+      } as any,
+      {} as any,
+    );
+
+    expect(credits).toBe(5);
+  });
+
+  it("bills a lockdown scrape at 5 credits (base + lockdown premium)", async () => {
+    const credits = await calculateCreditsToBeBilled(
+      {
+        lockdown: true,
+        formats: [{ type: "markdown" }],
+      } as any,
+      {
+        teamId: "team-id",
+        orgId: null,
+      },
+      {
+        metadata: {
+          statusCode: 200,
+          proxyUsed: "basic",
+        },
+      } as any,
+      {
+        totalCost: 0,
+      } as any,
+      {} as any,
+    );
+
+    expect(credits).toBe(5);
+  });
+
+  it("stacks the json premium on top of lockdown instead of overwriting it", async () => {
+    const credits = await calculateCreditsToBeBilled(
+      {
+        lockdown: true,
+        formats: [{ type: "json", prompt: "extract" }],
+      } as any,
+      {
+        teamId: "team-id",
+        orgId: null,
+      },
+      {
+        metadata: {
+          statusCode: 200,
+          proxyUsed: "basic",
+        },
+      } as any,
+      {
+        totalCost: 0,
+      } as any,
+      {} as any,
+    );
+
+    expect(credits).toBe(9);
+  });
+
   it("bills deterministic JSON at 10 credits when the script was generated", async () => {
     const credits = await calculateCreditsToBeBilled(
       {
