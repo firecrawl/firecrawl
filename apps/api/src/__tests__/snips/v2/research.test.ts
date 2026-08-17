@@ -10,9 +10,6 @@ const KEYLESS_ENABLED =
   process.env.KEYLESS_REQUESTS_PER_DAY !== undefined &&
   process.env.KEYLESS_CREDITS_PER_DAY !== undefined;
 
-// Temporary keyless mitigation. The harness passes the shell env to the server,
-// so parsing RESEARCH_KEYLESS_DISABLED here (via the same config schema) tells
-// us which paper operations the server refuses without an API key.
 const KEYLESS_DISABLED_OPERATIONS = config.RESEARCH_KEYLESS_DISABLED;
 const KEYLESS_SEARCH_ENABLED =
   KEYLESS_ENABLED && !KEYLESS_DISABLED_OPERATIONS.includes("search");
@@ -218,8 +215,6 @@ describeIf(HAS_RESEARCH)("Research API", () => {
     }, 120000);
   });
 
-  // Win condition for the temporary RESEARCH_KEYLESS_DISABLED mitigation: the
-  // operations it covers require an API key, and keyed callers are untouched.
   describeIf(KEYLESS_INSPECT_DISABLED)("keyless research disabled", () => {
     it("refuses keyless paper inspect with a 401 telling the caller to use an API key", async () => {
       const res = await researchRaw(

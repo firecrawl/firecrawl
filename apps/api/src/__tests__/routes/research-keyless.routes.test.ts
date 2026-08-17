@@ -1,14 +1,6 @@
 import express from "express";
 import request from "supertest";
 
-// Temporary Research Index keyless mitigation (RESEARCH_KEYLESS_DISABLED).
-//
-// The end-to-end coverage lives in snips/v2/research.test.ts, which needs a
-// running API. These tests own the parts a live server can't vary per-request:
-// how the env flag parses, how a request path maps onto a paper operation, and
-// that the real auth middleware refuses a keyless call to a disabled operation
-// with the "bring an API key" 401 rather than a 500 or a rate-limit error.
-
 const KEYLESS_ENV = {
   KEYLESS_REQUESTS_PER_DAY: "100",
   KEYLESS_CREDITS_PER_DAY: "100",
@@ -33,8 +25,6 @@ async function loadWithFlag(flag: string | undefined) {
   return { config, isResearchKeylessDisabled };
 }
 
-// Mirrors the Research Index mount in routes/v2.ts, so the gate sees the same
-// paths (mount prefix stripped) that production hands it.
 async function appWithResearchGate(flag: string | undefined) {
   const { isResearchKeylessDisabled } = await loadWithFlag(flag);
   const { authMiddleware } = await import("../../routes/shared.js");
@@ -64,34 +54,8 @@ function fakeRequest(path: string, query: Record<string, unknown> = {}) {
 }
 
 describe("RESEARCH_KEYLESS_DISABLED parsing", () => {
-  it("leaves keyless untouched when unset", async () => {
+  it("covers every paper operation by default when unset", async () => {
     const { config, isResearchKeylessDisabled } = await loadWithFlag(undefined);
-
-    expect(config.RESEARCH_KEYLESS_DISABLED).toEqual([]);
-    expect(isResearchKeylessDisabled(fakeRequest("/papers/2401.00001"))).toBe(
-      false,
-    );
-  });
-
-  it("treats an empty value as unset, so clearing it is the revert", async () => {
-    const { config } = await loadWithFlag("");
-
-    expect(config.RESEARCH_KEYLESS_DISABLED).toEqual([]);
-  });
-
-  it("applies the default scope when switched on, keeping paper search keyless", async () => {
-    const { config } = await loadWithFlag("true");
-
-    expect(config.RESEARCH_KEYLESS_DISABLED).toEqual([
-      "inspect",
-      "read",
-      "similar",
-    ]);
-    expect(config.RESEARCH_KEYLESS_DISABLED).not.toContain("search");
-  });
-
-  it("covers every paper operation with all", async () => {
-    const { config } = await loadWithFlag("all");
 
     expect(config.RESEARCH_KEYLESS_DISABLED).toEqual([
       "search",
@@ -99,6 +63,47 @@ describe("RESEARCH_KEYLESS_DISABLED parsing", () => {
       "read",
       "similar",
     ]);
+    expect(isResearchKeylessDisabled(fakeRequest("/papers/2401.00001"))).toBe(
+      true,
+    );
+    expect(
+      isResearchKeylessDisabled(fakeRequest("/papers", { query: "rag" })),
+    ).toBe(true);
+  });
+
+  it("treats an empty value as unset, so it also gets the default scope", async () => {
+    const { config } = await loadWithFlag("");
+
+    expect(config.RESEARCH_KEYLESS_DISABLED).toEqual([
+      "search",
+      "inspect",
+      "read",
+      "similar",
+    ]);
+  });
+
+  it("restores keyless access when explicitly switched off", async () => {
+    for (const flag of ["false", "none", "0", "off", "no"]) {
+      const { config, isResearchKeylessDisabled } = await loadWithFlag(flag);
+
+      expect(config.RESEARCH_KEYLESS_DISABLED).toEqual([]);
+      expect(isResearchKeylessDisabled(fakeRequest("/papers/2401.00001"))).toBe(
+        false,
+      );
+    }
+  });
+
+  it("covers every paper operation when switched on explicitly", async () => {
+    for (const flag of ["true", "all", "on", "1", "yes"]) {
+      const { config } = await loadWithFlag(flag);
+
+      expect(config.RESEARCH_KEYLESS_DISABLED).toEqual([
+        "search",
+        "inspect",
+        "read",
+        "similar",
+      ]);
+    }
   });
 
   it("accepts an explicit operation list", async () => {
@@ -118,7 +123,6 @@ describe("Research Index paper operation gate", () => {
       "inspect,read,similar",
     );
 
-    // /papers/:id is inspect without a query and read with one.
     expect(isResearchKeylessDisabled(fakeRequest("/papers/2401.00001"))).toBe(
       true,
     );
@@ -130,11 +134,9 @@ describe("Research Index paper operation gate", () => {
     expect(
       isResearchKeylessDisabled(fakeRequest("/papers/2401.00001/similar")),
     ).toBe(true);
-    // Paper search is deliberately outside the default scope.
     expect(
       isResearchKeylessDisabled(fakeRequest("/papers", { query: "rag" })),
     ).toBe(false);
-    // GitHub search is not a paper operation.
     expect(
       isResearchKeylessDisabled(fakeRequest("/github", { query: "x" })),
     ).toBe(false);
@@ -174,12 +176,10 @@ describe("Research Index paper operation gate", () => {
 });
 
 describe("keyless Research Index requests through the auth middleware", () => {
-  // routes/shared registers process-wide Prometheus metrics on import, so this
-  // file may only build the app once. It uses the default scope.
   let app: express.Express;
 
   beforeAll(async () => {
-    app = await appWithResearchGate("inspect,read,similar");
+    app = await appWithResearchGate(undefined);
   });
 
   it("refuses a disabled operation with a 401 that asks for an API key", async () => {
@@ -200,13 +200,22 @@ describe("keyless Research Index requests through the auth middleware", () => {
     }
   });
 
-  it("does not refuse keyless paper search under the default scope", async () => {
+  it("refuses keyless paper search too, now that it is in the default scope", async () => {
     const response = await request(app).get(
       "/v2/search/research/papers?query=transformers",
     );
 
-    // Whatever the keyless quota decides, search is never turned away for
-    // needing a key.
+    expect(response.statusCode).toBe(401);
+    expect(response.body.success).toBe(false);
+    expect(response.body.error).toContain(
+      "not supported by the keyless free tier",
+    );
+    expect(response.body.reachedController).toBeUndefined();
+  });
+
+  it("leaves the non-paper github operation keyless", async () => {
+    const response = await request(app).get("/v2/search/research/github?q=x");
+
     expect(response.body?.error ?? "").not.toContain(
       "not supported by the keyless free tier",
     );

@@ -651,8 +651,6 @@ v2Router.post(
 );
 
 if (config.RESEARCH_PROXY_URL) {
-  // Keyless access here is temporarily revocable per paper operation via
-  // RESEARCH_KEYLESS_DISABLED; API-key callers are unaffected.
   v2Router.use(
     "/search/research",
     authMiddleware(RateLimiterMode.Research, {

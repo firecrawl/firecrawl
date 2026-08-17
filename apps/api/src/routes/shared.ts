@@ -220,8 +220,6 @@ export function checkCreditsMiddleware(
 export function authMiddleware(
   rateLimiterMode: RateLimiterMode,
   options: {
-    // A predicate lets a router that mounts several operations behind one
-    // middleware allow keyless per request (see lib/research-keyless.ts).
     allowKeyless?: boolean | ((req: RequestWithMaybeAuth) => boolean);
   } = {},
 ): (req: RequestWithMaybeAuth, res: Response, next: NextFunction) => void {
