@@ -70,17 +70,32 @@ async function snapshotKeylessCounts(): Promise<Map<string, number>> {
   return counts;
 }
 
-async function resolveKeylessIp(
-  forwardedIp: string,
-  before: Map<string, number>,
-): Promise<string> {
-  if (KEYLESS_PROXY_SECRET) return forwardedIp;
-  const after = await snapshotKeylessCounts();
-  const bumped = [...after.entries()]
-    .filter(([ip, count]) => count > (before.get(ip) ?? 0))
-    .map(([ip]) => ip);
-  expect(bumped.length).toBe(1);
-  return bumped[0];
+// Issues the request via `issue` and resolves the keyless IP the server keyed
+// it on. With the proxy secret the forwarded IP is authoritative. Without it,
+// the counter diff can be transiently ambiguous: keyless.test.ts flushes the
+// whole keyless_* keyspace around its own tests, and a flush landing inside
+// our snapshot window resets the counters. Ambiguity retries the whole probe
+// (the requests under test are idempotent zero-credit GETs) instead of
+// asserting on a poisoned window.
+async function issueAndResolveKeylessIp<
+  T extends { statusCode: number },
+>(forwardedIp: string, issue: () => Promise<T>): Promise<{ res: T; ip: string }> {
+  if (KEYLESS_PROXY_SECRET) {
+    return { res: await issue(), ip: forwardedIp };
+  }
+  let last: T | undefined;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const before = await snapshotKeylessCounts();
+    last = await issue();
+    const after = await snapshotKeylessCounts();
+    const bumped = [...after.entries()]
+      .filter(([ip, count]) => count > (before.get(ip) ?? 0))
+      .map(([ip]) => ip);
+    if (bumped.length === 1) return { res: last, ip: bumped[0] };
+  }
+  throw new Error(
+    "keyless IP resolution stayed ambiguous across 3 probes - is another suite flushing keyless_*?",
+  );
 }
 
 // Zero-credit keyless usage is recorded as a canonical log line for now (the
@@ -269,20 +284,19 @@ describeIf(HAS_RESEARCH)("Research API", () => {
       "a zero-credit paper search writes no usage row and charges nothing",
       async () => {
         const forwardedIp = "198.51.100.11";
-        const before = await snapshotKeylessCounts();
         const afterId = await maxKeylessUsageRowId();
 
-        const res = await researchRaw(
-          "/v2/search/research/papers",
-          { query: "sparse attention", k: 1 },
-          undefined,
-          keylessHeaders(forwardedIp),
+        const { res, ip } = await issueAndResolveKeylessIp(forwardedIp, () =>
+          researchRaw(
+            "/v2/search/research/papers",
+            { query: "sparse attention", k: 1 },
+            undefined,
+            keylessHeaders(forwardedIp),
+          ),
         );
 
         expect(res.statusCode).toBe(200);
         expect(res.body.success).toBe(true);
-
-        const ip = await resolveKeylessIp(forwardedIp, before);
         // The charge path is fire-and-forget, so poll for the *wrong* outcome
         // (a row appearing) across a generous window and require it never
         // materializes — a fixed sleep can pass while a late write still
@@ -296,12 +310,20 @@ describeIf(HAS_RESEARCH)("Research API", () => {
 
         // The keyless *credit* budget must not be drawn down by a free
         // operation. Only meaningful on the isolated forwarded IP — the
-        // loopback bucket is shared with the other keyless snips.
+        // loopback bucket is shared with the other keyless snips. Polled like
+        // the row check: the charge path is fire-and-forget, so a single
+        // immediate read could pass on a stale 0 before a buggy increment.
         if (KEYLESS_PROXY_SECRET) {
-          const creditsUsed = Number(
-            (await redisRateLimitClient.get(`keyless_credits:${ip}`)) ?? "0",
+          const strayCharge = await waitForSingleRow(
+            async () =>
+              Number(
+                (await redisRateLimitClient.get(`keyless_credits:${ip}`)) ??
+                  "0",
+              ) > 0 || null,
+            6000,
+            500,
           );
-          expect(creditsUsed).toBe(0);
+          expect(strayCharge).toBeNull();
         }
       },
       120000,
@@ -314,20 +336,19 @@ describeIf(HAS_RESEARCH)("Research API", () => {
       "a keyless paper lookup miss also writes no usage row",
       async () => {
         const forwardedIp = "198.51.100.12";
-        const before = await snapshotKeylessCounts();
         const afterId = await maxKeylessUsageRowId();
 
-        const res = await researchRaw(
-          "/v2/search/research/papers/0000.00000",
-          undefined,
-          undefined,
-          keylessHeaders(forwardedIp),
+        const { res, ip } = await issueAndResolveKeylessIp(forwardedIp, () =>
+          researchRaw(
+            "/v2/search/research/papers/0000.00000",
+            undefined,
+            undefined,
+            keylessHeaders(forwardedIp),
+          ),
         );
 
         expect(res.statusCode).not.toBe(401);
         expect(res.statusCode).toBeGreaterThanOrEqual(400);
-
-        const ip = await resolveKeylessIp(forwardedIp, before);
         // Same polled absence check as the success path: a late write must
         // fail the test, not slip past a fixed sleep.
         const strayRow = await waitForSingleRow(
