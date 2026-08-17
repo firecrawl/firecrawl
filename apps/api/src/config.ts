@@ -23,6 +23,8 @@ const RESEARCH_PAPER_OPERATIONS = [
   "similar",
 ] as const;
 
+export type ResearchPaperOperation = (typeof RESEARCH_PAPER_OPERATIONS)[number];
+
 const researchKeylessDisabled = z.preprocess(
   value => {
     if (typeof value !== "string") return value;

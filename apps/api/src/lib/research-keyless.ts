@@ -1,7 +1,5 @@
 import type { Request } from "express";
-import { config } from "../config";
-
-type ResearchPaperOperation = "search" | "inspect" | "read" | "similar";
+import { config, type ResearchPaperOperation } from "../config";
 
 function researchPaperOperation(req: Request): ResearchPaperOperation | null {
   const segments = req.path.toLowerCase().split("/").filter(Boolean);
