@@ -628,6 +628,7 @@ class NuQ<JobData = any, JobReturnValue = any> {
   public async getGroupAnyJob(
     groupId: string,
     ownerId: string,
+    mode: string = "single_urls",
   ): Promise<NuQJob<JobData, JobReturnValue> | null> {
     return this.rowToJob(
       (
@@ -637,10 +638,10 @@ class NuQ<JobData = any, JobReturnValue = any> {
             FROM ${this.queueName}
             WHERE ${this.queueName}.group_id = $1
               AND ${this.queueName}.owner_id = $2
-              AND ${this.queueName}.data->>'mode' = 'single_urls'
+              AND ${this.queueName}.data->>'mode' = $3
             LIMIT 1;
           `,
-          [groupId, normalizeOwnerId(ownerId)],
+          [groupId, normalizeOwnerId(ownerId), mode],
         )
       ).rows[0],
     );
@@ -649,6 +650,7 @@ class NuQ<JobData = any, JobReturnValue = any> {
   public async getGroupNumericStats(
     groupId: string,
     _logger: Logger = logger,
+    mode: string = "single_urls",
   ): Promise<Record<NuQJobStatus, number>> {
     const start = Date.now();
     try {
@@ -659,15 +661,15 @@ class NuQ<JobData = any, JobReturnValue = any> {
               SELECT ${this.queueName}.status::text as status, COUNT(*) as count
               FROM ${this.queueName}
               WHERE ${this.queueName}.group_id = $1
-              AND ${this.queueName}.data->>'mode' = 'single_urls'
+              AND ${this.queueName}.data->>'mode' = $2
               GROUP BY ${this.queueName}.status
               UNION ALL
               SELECT 'backlog'::text as status, COUNT(*) as count
               FROM ${this.queueName}_backlog
               WHERE ${this.queueName}_backlog.group_id = $1
-              AND ${this.queueName}_backlog.data->>'mode' = 'single_urls'
+              AND ${this.queueName}_backlog.data->>'mode' = $2
             `,
-            [groupId],
+            [groupId, mode],
           )
         ).rows.map(row => [row.status, parseInt(row.count, 10)]),
       );
@@ -728,6 +730,7 @@ class NuQ<JobData = any, JobReturnValue = any> {
     limit: number,
     offset: number,
     _logger: Logger = logger,
+    mode: string = "single_urls",
   ): Promise<NuQJob<JobData, JobReturnValue>[]> {
     const start = Date.now();
     try {
@@ -738,11 +741,11 @@ class NuQ<JobData = any, JobReturnValue = any> {
             FROM ${this.queueName}
             WHERE ${this.queueName}.group_id = $1
             AND ${this.queueName}.status = 'completed'
-            AND ${this.queueName}.data->>'mode' = 'single_urls'
+            AND ${this.queueName}.data->>'mode' = $4
             ORDER BY finished_at ASC, created_at ASC
             LIMIT $2 OFFSET $3;
           `,
-          [groupId, limit, offset],
+          [groupId, limit, offset, mode],
         )
       ).rows.map(row => this.rowToJob(row)!);
     } finally {

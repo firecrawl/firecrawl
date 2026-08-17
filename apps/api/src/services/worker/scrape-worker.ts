@@ -71,6 +71,7 @@ import { billTeam } from "../billing/credit_billing";
 import { getBillingQueue } from "../queue-service";
 import type { Logger } from "winston";
 import {
+  BlockedSiteError,
   CrawlDenialError,
   JobCancelledError,
   RacedRedirectError,
@@ -462,9 +463,31 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
           normalizeUrlOnlyHostname(doc.metadata.url) !==
           normalizeUrlOnlyHostname(doc.metadata.sourceURL);
         if (job.data.isCrawlSourceScrape && isHostnameDifferent) {
-          // TODO: re-fetch sitemap for redirect target domain
           sc.originUrl = doc.metadata.url;
           await saveCrawl(job.data.crawl_id, sc);
+
+          if (!sc.crawlerOptions?.ignoreSitemap) {
+            const redirectHostname = normalizeUrlOnlyHostname(doc.metadata.url);
+            if (redirectHostname) {
+              const domainSitemapEnqueued = await redisEvictConnection.sadd(
+                "crawl:" + job.data.crawl_id + ":redirected_sitemap_domains",
+                redirectHostname,
+              );
+              await redisEvictConnection.expire(
+                "crawl:" + job.data.crawl_id + ":redirected_sitemap_domains",
+                24 * 60 * 60,
+              );
+
+              if (domainSitemapEnqueued === 1) {
+                const sitemapUrl = new URL("/sitemap.xml", doc.metadata.url)
+                  .href;
+                logger.info(
+                  `Redirected to different domain ${redirectHostname}. Enqueuing sitemap job: ${sitemapUrl}`,
+                );
+                await addKickoffSitemapJob(sitemapUrl, job, sc, logger);
+              }
+            }
+          }
         }
 
         const teamChunk = await getACUCTeam(job.data.team_id);
@@ -475,7 +498,7 @@ async function processJob(job: NuQJob<ScrapeJobSingleUrls>) {
             origin: job.data.origin,
           })
         ) {
-          throw new CrawlDenialError(UNSUPPORTED_SITE_MESSAGE); // TODO: make this its own error type that is ignored by error tracking
+          throw new BlockedSiteError();
         }
 
         const p1 = generateURLPermutations(normalizeURL(doc.metadata.url, sc));
@@ -1097,15 +1120,25 @@ async function kickoffGetIndexLinks(
 
 async function addKickoffSitemapJob(
   sitemapUrl: string,
-  sourceJob: NuQJob<ScrapeJobKickoff | ScrapeJobKickoffSitemap>,
+  sourceJob: NuQJob<
+    ScrapeJobKickoff | ScrapeJobKickoffSitemap | ScrapeJobSingleUrls
+  >,
   sc: StoredCrawl,
   logger: Logger,
 ) {
+  const crawlId = sourceJob.data.crawl_id;
+  if (!crawlId) {
+    logger.warn("Attempted to add sitemap job but crawl_id is undefined");
+    return;
+  }
+
+  const zeroDataRetention =
+    (sourceJob.data.zeroDataRetention ?? false) ||
+    (sc.zeroDataRetention ?? false);
+
   // TEMP: max 20 sitemaps per crawl
   if (
-    (await redisEvictConnection.scard(
-      "crawl:" + sourceJob.data.crawl_id + ":sitemaps",
-    )) >= 20
+    (await redisEvictConnection.scard("crawl:" + crawlId + ":sitemaps")) >= 20
   ) {
     logger.debug("Sitemap limit reached, skipping...", { sitemap: sitemapUrl });
     return;
@@ -1113,11 +1146,11 @@ async function addKickoffSitemapJob(
 
   const sitemapLocked =
     (await redisEvictConnection.sadd(
-      "crawl:" + sourceJob.data.crawl_id + ":sitemaps",
+      "crawl:" + crawlId + ":sitemaps",
       sitemapUrl,
     )) === 1;
   await redisEvictConnection.expire(
-    "crawl:" + sourceJob.data.crawl_id + ":sitemaps",
+    "crawl:" + crawlId + ":sitemaps",
     24 * 60 * 60,
   );
   if (!sitemapLocked) {
@@ -1130,30 +1163,26 @@ async function addKickoffSitemapJob(
     {
       mode: "kickoff_sitemap" as const,
       team_id: sourceJob.data.team_id,
-      zeroDataRetention:
-        sourceJob.data.zeroDataRetention || (sc.zeroDataRetention ?? false),
+      zeroDataRetention: zeroDataRetention,
       sitemapUrl: sitemapUrl,
       origin: sourceJob.data.origin,
       integration: sourceJob.data.integration,
-      crawl_id: sourceJob.data.crawl_id,
+      crawl_id: crawlId,
       requestId: sourceJob.data.requestId,
       billing: sourceJob.data.billing,
       webhook: sourceJob.data.webhook,
-      v1: sourceJob.data.v1,
+      v1: !!sourceJob.data.v1,
       apiKeyId: sourceJob.data.apiKeyId,
       monitoring: sourceJob.data.monitoring
         ? { ...sourceJob.data.monitoring, source: "discovered" as const }
         : undefined,
-    } satisfies ScrapeJobKickoffSitemap,
+    } as ScrapeJobKickoffSitemap,
     jobId,
     21,
   );
-  await redisEvictConnection.sadd(
-    "crawl:" + sourceJob.data.crawl_id + ":sitemap_jobs",
-    jobId,
-  );
+  await redisEvictConnection.sadd("crawl:" + crawlId + ":sitemap_jobs", jobId);
   await redisEvictConnection.expire(
-    "crawl:" + sourceJob.data.crawl_id + ":sitemap_jobs",
+    "crawl:" + crawlId + ":sitemap_jobs",
     24 * 60 * 60,
   );
 }
