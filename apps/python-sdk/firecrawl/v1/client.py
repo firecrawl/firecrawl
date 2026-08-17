@@ -579,7 +579,7 @@ class V1FirecrawlApp:
           skip_tls_verification (Optional[bool]): Skip TLS verification
           remove_base64_images (Optional[bool]): Remove base64 images
           block_ads (Optional[bool]): Block ads
-          proxy (Optional[Literal["basic", "stealth", "auto"]]): Proxy type (basic/stealth)
+          proxy (Optional[Literal["basic", "stealth", "enhanced", "auto"]]): Proxy type (basic/enhanced)
           extract (Optional[JsonConfig]): Content extraction settings
           json_options (Optional[JsonConfig]): JSON extraction settings
           actions (Optional[List[Union[WaitAction, ScreenshotAction, ClickAction, WriteAction, PressAction, ScrollAction, ScrapeAction, ExecuteJavascriptAction, PDFAction]]]): Actions to perform
@@ -3649,7 +3649,7 @@ class AsyncV1FirecrawlApp(V1FirecrawlApp):
           skip_tls_verification (Optional[bool]): Skip TLS verification
           remove_base64_images (Optional[bool]): Remove base64 images
           block_ads (Optional[bool]): Block ads
-          proxy (Optional[Literal["basic", "stealth", "auto"]]): Proxy type (basic/stealth)
+          proxy (Optional[Literal["basic", "stealth", "enhanced", "auto"]]): Proxy type (basic/enhanced)
           extract (Optional[V1JsonConfig]): Content extraction settings
           json_options (Optional[V1JsonConfig]): JSON extraction settings
           actions (Optional[List[Union[V1WaitAction, V1ScreenshotAction, V1ClickAction, V1WriteAction, V1PressAction, V1ScrollAction, V1ScrapeAction, V1ExecuteJavascriptAction, V1PDFAction]]]): Actions to perform
