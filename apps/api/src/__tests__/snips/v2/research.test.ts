@@ -292,6 +292,16 @@ describeIf(HAS_RESEARCH)("Research API", () => {
       async () => {
         const forwardedIp = "198.51.100.11";
         const afterId = await maxKeylessUsageRowId();
+        // Delta-isolated like the row check: the keyless_credits key on this
+        // fixed IP lives for a day, so a leftover increment from an earlier
+        // run must not read as a stray charge now.
+        const creditsBefore = KEYLESS_PROXY_SECRET
+          ? Number(
+              (await redisRateLimitClient.get(
+                `keyless_credits:${forwardedIp}`,
+              )) ?? "0",
+            )
+          : 0;
 
         const { res, ip } = await issueAndResolveKeylessIp(forwardedIp, () =>
           researchRaw(
@@ -326,7 +336,7 @@ describeIf(HAS_RESEARCH)("Research API", () => {
               Number(
                 (await redisRateLimitClient.get(`keyless_credits:${ip}`)) ??
                   "0",
-              ) > 0 || null,
+              ) > creditsBefore || null,
             6000,
             500,
           );
