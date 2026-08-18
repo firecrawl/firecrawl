@@ -779,7 +779,7 @@ describe("Scrape tests", () => {
       );
 
       it.concurrent(
-        "respects proxy: stealth",
+        "proxy mode no longer forks the cache variant",
         async () => {
           const url = createTestIdUrl();
 
@@ -793,14 +793,17 @@ describe("Scrape tests", () => {
             identity,
           );
 
-          expect(response1.metadata.proxyUsed).toBe("stealth");
           expect(response1.metadata.cacheState).not.toBeDefined();
 
           await new Promise(resolve => setTimeout(resolve, indexCooldown));
 
+          // A follow-up asking for a different proxy mode must hit the same
+          // cache entry: every request runs in auto now, so on a non-stealth
+          // site they share the basic-proxy variant.
           const response2 = await scrape(
             {
               url,
+              proxy: "basic",
               timeout: scrapeTimeout,
               maxAge: scrapeTimeout * 2 + indexCooldown,
             },
@@ -808,18 +811,6 @@ describe("Scrape tests", () => {
           );
 
           expect(response2.metadata.cacheState).toBe("hit");
-
-          const response3 = await scrape(
-            {
-              url,
-              proxy: "stealth",
-              timeout: scrapeTimeout,
-              maxAge: scrapeTimeout * 3 + indexCooldown,
-            },
-            identity,
-          );
-
-          expect(response3.metadata.cacheState).not.toBeDefined();
         },
         scrapeTimeout * 3 + indexCooldown,
       );

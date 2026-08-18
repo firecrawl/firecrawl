@@ -931,7 +931,7 @@ describe("Scrape tests", () => {
       );
 
       it.concurrent(
-        "respects proxy: stealth",
+        "proxy mode no longer forks the cache variant",
         async () => {
           const url = createTestIdUrl();
 
@@ -944,31 +944,23 @@ describe("Scrape tests", () => {
             identity,
           );
 
-          expect(response1.metadata.proxyUsed).toBe("stealth");
           expect(response1.metadata.cacheState).not.toBeDefined();
 
           await new Promise(resolve => setTimeout(resolve, indexCooldown));
 
+          // A follow-up asking for a different proxy mode must hit the same
+          // cache entry: every request runs in auto now, so on a non-stealth
+          // site they share the basic-proxy variant.
           const response2 = await scrape(
             {
               url,
+              proxy: "basic",
               maxAge: scrapeTimeout * 2 + indexCooldown,
             },
             identity,
           );
 
           expect(response2.metadata.cacheState).toBe("hit");
-
-          const response3 = await scrape(
-            {
-              url,
-              proxy: "stealth",
-              maxAge: scrapeTimeout * 3 + indexCooldown,
-            },
-            identity,
-          );
-
-          expect(response3.metadata.cacheState).not.toBeDefined();
         },
         scrapeTimeout * 3 + indexCooldown,
       );
@@ -1363,13 +1355,11 @@ describe("Scrape tests", () => {
         scrapeTimeout * 2,
       );
 
-      // Regression: an explicit stealth/enhanced proxy must still use stealth
-      // even when another feature flag (e.g. actions) is requested. The engine
-      // picker used to drop the negative-quality stealth engines via the quality
-      // filter, so a request with a non-stealth flag would silently fall back to
-      // a basic proxy.
+      // Proxy mode is ignored now: enhanced/stealth collapse to auto, which on
+      // a non-stealth site resolves to a basic proxy even when another feature
+      // flag (e.g. actions) is present.
       it.concurrent(
-        "enhanced uses stealth alongside other feature flags",
+        "enhanced collapses to auto alongside other feature flags",
         async () => {
           const res = await scrape(
             {
@@ -1385,13 +1375,13 @@ describe("Scrape tests", () => {
             identity,
           );
 
-          expect(res.metadata.proxyUsed).toBe("stealth");
+          expect(res.metadata.proxyUsed).toBe("basic");
         },
         scrapeTimeout * 2,
       );
 
       it.concurrent(
-        "stealth uses stealth alongside other feature flags",
+        "stealth collapses to auto alongside other feature flags",
         async () => {
           const res = await scrape(
             {
@@ -1407,7 +1397,7 @@ describe("Scrape tests", () => {
             identity,
           );
 
-          expect(res.metadata.proxyUsed).toBe("stealth");
+          expect(res.metadata.proxyUsed).toBe("basic");
         },
         scrapeTimeout * 2,
       );

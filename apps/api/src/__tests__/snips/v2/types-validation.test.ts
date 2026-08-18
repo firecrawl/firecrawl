@@ -116,13 +116,14 @@ describe("V2 Types Validation", () => {
           },
         ],
         timeout: 30000,
-        proxy: "basic", // Use basic proxy to avoid auto/stealth timeout transformation
       };
 
       const result = scrapeRequestSchema.parse(input);
       expect(result.formats).toHaveLength(1);
       expect(result.formats[0].type).toBe("json");
-      expect(result.timeout).toBe(60000); // Should be transformed from 30000
+      // Proxy is always auto, so the default timeout bumps to 120s (auto's bump
+      // supersedes the json format's 60s bump).
+      expect(result.timeout).toBe(120000);
     });
 
     it("should accept query format without markdown", () => {
@@ -229,12 +230,11 @@ describe("V2 Types Validation", () => {
           },
         ],
         timeout: 30000,
-        proxy: "basic", // Use basic proxy to avoid auto/stealth timeout transformation
       };
 
       const result = scrapeRequestSchema.parse(input);
       expect(result.formats).toHaveLength(2);
-      expect(result.timeout).toBe(60000); // Should be transformed
+      expect(result.timeout).toBe(120000); // Auto proxy bumps the default timeout
       expect(result.waitFor).toBeGreaterThanOrEqual(5000); // Should be at least 5000
     });
 
@@ -488,6 +488,17 @@ describe("V2 Types Validation", () => {
       const result = scrapeRequestSchema.parse(input);
       expect(result.timeout).toBe(120000); // Should be transformed
     });
+
+    it.each(["basic", "stealth", "enhanced", "auto"] as const)(
+      "collapses proxy '%s' to auto",
+      proxy => {
+        const result = scrapeRequestSchema.parse({
+          url: "https://example.com",
+          proxy,
+        });
+        expect(result.proxy).toBe("auto");
+      },
+    );
 
     it("should handle location schema with valid country code", () => {
       const input: ScrapeRequestInput = {
@@ -1623,11 +1634,10 @@ describe("V2 Types Validation", () => {
           },
         ],
         timeout: 30000,
-        proxy: "basic", // Use basic proxy to avoid auto/stealth timeout transformation
       };
 
       const result = scrapeRequestSchema.parse(input);
-      expect(result.timeout).toBe(60000); // Should be transformed
+      expect(result.timeout).toBe(120000); // Auto proxy bumps the default timeout
       expect(result.waitFor).toBeGreaterThanOrEqual(5000); // Should be at least 5000
     });
 
@@ -1646,11 +1656,10 @@ describe("V2 Types Validation", () => {
           },
         ],
         timeout: 30000,
-        proxy: "basic", // Use basic proxy to avoid auto/stealth timeout transformation
       };
 
       const result = scrapeRequestSchema.parse(input);
-      expect(result.timeout).toBe(60000); // Should be transformed
+      expect(result.timeout).toBe(120000); // Auto proxy bumps the default timeout
     });
 
     it("should handle changeTrackingOptions with null tag", () => {

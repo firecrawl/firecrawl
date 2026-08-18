@@ -788,12 +788,12 @@ const extractTransformImpl = <T extends ScrapeOptionsBase | undefined>(
     result = { ...result, timeout: 60000 };
   }
 
-  if (
-    (obj.proxy === "stealth" ||
-      obj.proxy === "enhanced" ||
-      obj.proxy === "auto") &&
-    obj.timeout === 30000
-  ) {
+  // Proxy mode is no longer user-selectable in effect: basic/stealth/enhanced
+  // all collapse to auto, which starts on a basic proxy and escalates to
+  // stealth only when a proxy error is hit. Enhanced Mode carries no surcharge,
+  // so forcing auto only improves success rates.
+  result = { ...result, proxy: "auto" };
+  if (obj.timeout === 30000) {
     result = { ...result, timeout: 120000 };
   }
 
