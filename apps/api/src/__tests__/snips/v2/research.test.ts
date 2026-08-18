@@ -14,6 +14,16 @@ const KEYLESS_ENABLED =
 const KEYLESS_PROXY_SECRET = process.env.KEYLESS_PROXY_SECRET;
 
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
+// Unique-per-run forwarded IPs inside TEST-NET-3 (RFC 5737): the keyless
+// request/credit counters live for a day per IP, so a fixed constant would
+// inherit counts from earlier runs — enough leftover requests would trip the
+// daily limit and 429 a test that hard-requires 200. One octet of entropy
+// per run plus a distinct final octet per test keeps buckets disjoint
+// across runs and across the two zero-credit tests.
+const TEST_NET_RUN_OCTET = 1 + Math.floor(Math.random() * 250);
+const testNetIp = (finalOctet: number) =>
+  `203.0.113.${((TEST_NET_RUN_OCTET + finalOctet) % 254) + 1}`;
 const sleepForBilling = () => sleep(40000);
 
 async function waitForSingleRow<T>(
@@ -50,12 +60,22 @@ function keylessHeaders(forwardedIp: string): Record<string, string> {
 // blocking KEYS scan on the shared rate-limit Redis, and stays deterministic
 // under concurrency: every parallel no-secret snip bumps the same client-IP
 // key, so the diff below still identifies exactly one bumped candidate.
+// The server keys counters on the RAW client-IP string: only keyless
+// *eligibility* strips the ::ffff: prefix (lib/keyless.ts normalizeKeylessIpv4
+// is not applied before consumeKeylessRequest/keylessTeamId), so an
+// IPv6-mapped connection legitimately produces keys like
+// `keyless_requests:::ffff:127.0.0.1`. Cover both spellings per candidate.
 function candidateKeylessIps(): string[] {
-  const ips = new Set<string>(["127.0.0.1"]);
+  const bare = new Set<string>(["127.0.0.1"]);
   for (const addrs of Object.values(os.networkInterfaces())) {
     for (const addr of addrs ?? []) {
-      if (addr.family === "IPv4") ips.add(addr.address);
+      if (addr.family === "IPv4") bare.add(addr.address);
     }
+  }
+  const ips = new Set<string>();
+  for (const ip of bare) {
+    ips.add(ip);
+    ips.add(`::ffff:${ip}`);
   }
   return [...ips];
 }
@@ -83,18 +103,25 @@ async function issueAndResolveKeylessIp<
   if (KEYLESS_PROXY_SECRET) {
     return { res: await issue(), ip: forwardedIp };
   }
-  let last: T | undefined;
+  const attempts: string[] = [];
   for (let attempt = 0; attempt < 3; attempt++) {
     const before = await snapshotKeylessCounts();
-    last = await issue();
+    const res = await issue();
     const after = await snapshotKeylessCounts();
     const bumped = [...after.entries()]
       .filter(([ip, count]) => count > (before.get(ip) ?? 0))
       .map(([ip]) => ip);
-    if (bumped.length === 1) return { res: last, ip: bumped[0] };
+    if (bumped.length === 1) return { res, ip: bumped[0] };
+    attempts.push(bumped.length === 0 ? "none" : `multiple[${bumped.join(", ")}]`);
   }
+  // Distinguish the two failure modes: "none" means the request was never
+  // counted against any candidate key (not treated as keyless, or the server
+  // keyed on an IP outside the candidate set - check candidateKeylessIps
+  // covers how this environment connects); "multiple" means concurrent
+  // keyless traffic or a keyless_* flush landed inside the window every time.
   throw new Error(
-    "keyless IP resolution stayed ambiguous across 3 probes - is another suite flushing keyless_*?",
+    `keyless IP resolution failed across 3 probes (${attempts.join("; ")}); ` +
+      `candidates checked: ${candidateKeylessIps().join(", ")}`,
   );
 }
 
@@ -290,7 +317,7 @@ describeIf(HAS_RESEARCH)("Research API", () => {
     itIf(config.USE_DB_AUTHENTICATION === true)(
       "a zero-credit paper search writes no usage row and charges nothing",
       async () => {
-        const forwardedIp = "198.51.100.11";
+        const forwardedIp = testNetIp(0);
         const afterId = await maxKeylessUsageRowId();
         // Delta-isolated like the row check: the keyless_credits key on this
         // fixed IP lives for a day, so a leftover increment from an earlier
@@ -352,7 +379,7 @@ describeIf(HAS_RESEARCH)("Research API", () => {
     itIf(config.USE_DB_AUTHENTICATION === true)(
       "a keyless paper lookup miss also writes no usage row",
       async () => {
-        const forwardedIp = "198.51.100.12";
+        const forwardedIp = testNetIp(1);
         const afterId = await maxKeylessUsageRowId();
 
         const { res, ip } = await issueAndResolveKeylessIp(forwardedIp, () =>
