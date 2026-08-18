@@ -15,6 +15,7 @@ import {
   keylessTeamId,
 } from "../lib/keyless";
 import { isKeylessIpSuspicious } from "../lib/spur";
+import { recordKeylessRequest } from "../lib/keyless-metrics";
 import { checkIpRestriction } from "../lib/ip-restriction";
 import { checkKeyEndpointRestriction } from "../lib/key-restriction";
 import { deleteKey, getValue, setValue } from "../services/redis";
@@ -451,11 +452,23 @@ async function handleKeylessAuth(
   // usable as arbitrary limiter buckets. Anything else falls through to 401.
   if (!isKeylessIpEligible(ip)) return unauthorized;
 
+  const modeLabel =
+    mode === RateLimiterMode.Search
+      ? "search"
+      : mode === RateLimiterMode.Research
+        ? "research"
+        : mode === RateLimiterMode.DeveloperSearch
+          ? "developer"
+          : mode === RateLimiterMode.BrowserExecute
+            ? "interact"
+            : "scrape";
+
   // Optional Spur Context check (only when SPUR_API_KEY is set): refuse keyless
   // for IPs fronting anonymizing/rotating infrastructure (VPN/proxy/TOR), the
   // main way the per-IP caps get bypassed. Fails open on any Spur error, and
   // runs before consuming quota so a flagged IP doesn't burn a request slot.
   if (await isKeylessIpSuspicious(ip)) {
+    recordKeylessRequest(modeLabel, "suspicious", "suspicious");
     logger.warn("Keyless request blocked: suspicious IP", {
       canonicalLog: "keyless/consume",
       ip,
@@ -474,17 +487,6 @@ async function handleKeylessAuth(
   }
 
   const teamId = keylessTeamId(ip);
-  const modeLabel =
-    mode === RateLimiterMode.Search
-      ? "search"
-      : mode === RateLimiterMode.Research
-        ? "research"
-        : mode === RateLimiterMode.DeveloperSearch
-          ? "developer"
-          : mode === RateLimiterMode.BrowserExecute
-            ? "interact"
-            : "scrape";
-
   let result: Awaited<ReturnType<typeof consumeKeylessRequest>>;
   try {
     result = await consumeKeylessRequest(ip);
@@ -492,6 +494,7 @@ async function handleKeylessAuth(
     // Limiter store (Redis) unavailable — fail closed with a controlled auth
     // response instead of surfacing a 500, and shed the free traffic while the
     // limiter can't enforce quotas.
+    recordKeylessRequest(modeLabel, "error", "limiter");
     logger.warn("Keyless quota check failed", {
       canonicalLog: "keyless/consume",
       ip,
@@ -513,6 +516,7 @@ async function handleKeylessAuth(
   };
 
   if (!result.ok) {
+    recordKeylessRequest(modeLabel, "exhausted", result.reason);
     logger.warn("Keyless request blocked", {
       ...baseLog,
       blocked: true,
@@ -532,6 +536,7 @@ async function handleKeylessAuth(
     };
   }
 
+  recordKeylessRequest(modeLabel, "accepted");
   logger.debug("Keyless request consumed", { ...baseLog, blocked: false });
 
   // Tag as a preview team so billing (autumn isPreviewTeam) and GCS persistence

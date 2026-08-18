@@ -3,6 +3,7 @@ import { isKeylessIpSuspicious } from "../spur";
 import { redisRateLimitClient } from "../../services/rate-limiter";
 import { config } from "../../config";
 import { logger } from "../logger";
+import { spurLookupsTotal } from "../keyless-metrics";
 
 vi.mock("../../config", () => ({
   config: { SPUR_API_KEY: "test-key" },
@@ -50,6 +51,13 @@ function mockFetch(impl: () => Promise<unknown>): Mock {
 }
 
 const okResponse = (body: unknown) => ({ ok: true, json: async () => body });
+
+async function spurMetricValue(outcome: string): Promise<number> {
+  const metric = await spurLookupsTotal.get();
+  return (
+    metric.values.find(value => value.labels.outcome === outcome)?.value ?? 0
+  );
+}
 
 describe("Spur keyless IP reputation", () => {
   let store: Map<string, string>;
@@ -119,11 +127,14 @@ describe("Spur keyless IP reputation", () => {
     expect(results).toEqual([false, false, false, false, false]);
   });
 
-  it("fails open on a non-200 Spur response and caches nothing", async () => {
+  it("fails open on a non-200 Spur response, records it, and caches nothing", async () => {
     const fetchFn = mockFetch(async () => ({ ok: false, status: 429 }));
+    const failuresBefore = await spurMetricValue("failed_open");
+
     expect(await isKeylessIpSuspicious("1.2.3.7")).toBe(false);
     expect(fetchFn).toHaveBeenCalledTimes(1);
     expect(store.has("spur_context:1.2.3.7")).toBe(false);
+    expect(await spurMetricValue("failed_open")).toBe(failuresBefore + 1);
   });
 
   it("fails open when the Spur call throws, and releases the lock so a later call retries", async () => {

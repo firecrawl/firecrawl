@@ -18,6 +18,7 @@ import {
 import { logger } from "../../lib/logger";
 import { db } from "../../db/connection";
 import { autumnService } from "../../services/autumn/autumn.service";
+import { keylessRequestsTotal } from "../../lib/keyless-metrics";
 
 vi.mock("../../services/queue-service", () => ({
   getRedisConnection: vi.fn(() => ({
@@ -78,6 +79,22 @@ vi.mock("../../services/autumn/autumn.service", () => ({
 vi.mock("../../services/agent-sponsor", () => ({
   getAgentSponsorStatus: vi.fn(),
 }));
+
+async function keylessMetricValue(
+  mode: string,
+  outcome: string,
+  reason: string,
+): Promise<number> {
+  const metric = await keylessRequestsTotal.get();
+  return (
+    metric.values.find(
+      value =>
+        value.labels.mode === mode &&
+        value.labels.outcome === outcome &&
+        value.labels.reason === reason,
+    )?.value ?? 0
+  );
+}
 
 describe("authenticateUser", () => {
   const originalUseDbAuth = config.USE_DB_AUTHENTICATION;
@@ -164,6 +181,11 @@ describe("authenticateUser", () => {
       retryAfterSeconds: 42,
     });
     const warn = vi.spyOn(logger, "warn").mockImplementation(() => logger);
+    const exhaustedBefore = await keylessMetricValue(
+      "scrape",
+      "exhausted",
+      "requests",
+    );
 
     const auth = await authenticateUser(
       {
@@ -189,6 +211,9 @@ describe("authenticateUser", () => {
         reason: "requests",
         conversionCohort: keylessConversionCohort("203.0.113.8"),
       }),
+    );
+    expect(await keylessMetricValue("scrape", "exhausted", "requests")).toBe(
+      exhaustedBefore + 1,
     );
   });
 

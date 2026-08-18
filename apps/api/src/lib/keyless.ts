@@ -7,6 +7,7 @@ import * as schema from "../db/schema";
 import { redisRateLimitClient } from "../services/rate-limiter";
 import { isKeylessIpSuspicious } from "./spur";
 import { logger } from "./logger";
+import { normalizeKeylessMode, recordKeylessRequest } from "./keyless-metrics";
 
 // Keyless free tier: scrape, search, and interact can be used without an API key
 // from the official MCP server, CLI, or SDKs. It's gated per-IP/day by TWO
@@ -162,6 +163,7 @@ export async function keylessLimitBody(
     // The reservation already proved the limit; missing TTL must not turn its
     // controlled 429 into a server error.
   }
+  recordKeylessRequest(normalizeKeylessMode(mode), "exhausted", "credits");
   logger.warn("Keyless request blocked", {
     canonicalLog: "keyless/consume",
     event: "keyless_exhausted",

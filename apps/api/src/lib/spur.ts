@@ -1,6 +1,7 @@
 import { randomUUID } from "crypto";
 import { config } from "../config";
 import { logger } from "./logger";
+import { recordSpurLookup } from "./keyless-metrics";
 import { redisRateLimitClient } from "../services/rate-limiter";
 
 // Optional Spur Context API integration for the keyless free tier. When
@@ -271,9 +272,13 @@ export async function isKeylessIpSuspicious(ip: string): Promise<boolean> {
   if (!isSpurEnabled()) return false;
 
   const ctx = await getSpurContext(ip);
-  if (!ctx) return false;
+  if (!ctx) {
+    recordSpurLookup("failed_open");
+    return false;
+  }
 
   const suspicious = isSuspiciousContext(ctx);
+  recordSpurLookup(suspicious ? "suspicious" : "clean");
   if (suspicious) {
     logger.info("Keyless IP flagged suspicious by Spur", {
       canonicalLog: "spur/lookup",
