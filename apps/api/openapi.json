@@ -3168,7 +3168,7 @@
       },
       "SearchFeedbackRequest": {
         "type": "object",
-        "description": "For 'good', include valuableSources. For 'partial', include valuableSources or missingContent. For 'bad', include missingContent or querySuggestions.",
+        "description": "For 'good', include valuableSources or valuableResults. For 'partial', include valuableSources, valuableResults, or missingContent. For 'bad', include missingContent or querySuggestions.",
         "properties": {
           "rating": {
             "type": "string",
@@ -3190,6 +3190,30 @@
                 }
               },
               "required": ["url"]
+            }
+          },
+          "valuableResults": {
+            "type": "array",
+            "maxItems": 50,
+            "description": "Results that were useful, each addressed by the `data` group it appears in and its 1-indexed position within that group. Results are returned grouped (`data.web`, `data.images`, `data.news`) and each group is numbered from 1 independently, so `source` is required. List every useful result — unlisted results are treated as not useful. Positions beyond what the group actually returned are ignored. The API stores these as stable search result document IDs for quantitative feedback.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "source": {
+                  "type": "string",
+                  "enum": ["web", "images", "news"]
+                },
+                "position": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 100
+                },
+                "reason": {
+                  "type": "string",
+                  "maxLength": 1000
+                }
+              },
+              "required": ["source", "position"]
             }
           },
           "missingContent": {
@@ -3232,7 +3256,7 @@
           },
           {
             "type": "object",
-            "description": "Submit feedback for a v2 job. Include at least one substantive signal such as issues, note, valuableSources, missingContent, querySuggestions, url, or pageNumbers.",
+            "description": "Submit feedback for a v2 job. Include at least one substantive signal such as issues, note, valuableSources, valuableResults for search, missingContent, querySuggestions, url, or pageNumbers.",
             "properties": {
               "endpoint": {
                 "type": "string",

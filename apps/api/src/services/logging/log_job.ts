@@ -18,6 +18,7 @@ import {
 import { hasFormatOfType } from "../../lib/format-utils";
 import { keylessTeamUuid } from "../../lib/keyless";
 import type { Document, ScrapeOptions } from "../../controllers/v2/types";
+import type { SearchResultCountsBySource } from "../../lib/entities";
 import type { CostTracking } from "../../lib/cost-tracking";
 import type { Logger } from "winston";
 import { saveExtractResult } from "../../lib/extract/extract-redis";
@@ -454,6 +455,7 @@ export type LoggedSearch = {
   is_successful: boolean;
   error?: string;
   num_results: number;
+  num_results_by_source?: SearchResultCountsBySource;
   results: any;
   zeroDataRetention: boolean;
 };
@@ -492,6 +494,7 @@ export async function logSearch(search: LoggedSearch, force: boolean = false) {
       is_successful: search.is_successful,
       error: search.zeroDataRetention ? null : (search.error ?? null),
       num_results: search.num_results,
+      num_results_by_source: search.num_results_by_source ?? null,
       time_taken: search.time_taken,
     },
     force,
