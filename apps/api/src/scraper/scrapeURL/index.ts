@@ -612,6 +612,25 @@ async function scrapeURLLoopIter(
       throw new AddFeatureError(["stealthProxy"]);
     }
 
+    if (
+      isLikelyProxyError &&
+      meta.options.proxy === "auto" &&
+      !meta.featureFlags.has("stealthProxy")
+    ) {
+      // A proxy error that would have escalated, but cannot because a single
+      // engine is pinned: fail rather than return the blocked page.
+      meta.logger.warn(
+        "Scrape via " +
+          engine +
+          " deemed unsuccessful due to proxy inadequacy, without an escalation path.",
+        {
+          statusCode: engineResult.statusCode,
+          length: engineResult.html?.trim().length ?? 0,
+        },
+      );
+      throw new EngineUnsuccessfulError(engine);
+    }
+
     // NOTE: TODO: what to do when status code is bad is tough...
     // we cannot just rely on text because error messages can be brief and not hit the limit
     // should we just use all the fallbacks and pick the one with the longest text? - mogery
