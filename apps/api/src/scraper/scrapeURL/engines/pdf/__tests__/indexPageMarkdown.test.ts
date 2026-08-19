@@ -29,6 +29,16 @@ describe("PDF page-markdown URL index policy", () => {
           ...baseMeta,
           options: {
             ...baseMeta.options,
+            parsers: [{ type: "pdf", pages: true }],
+          },
+        }),
+      ).toBe(false);
+      // Deprecated pre-rename alias must keep working.
+      expect(
+        shouldUseIndex({
+          ...baseMeta,
+          options: {
+            ...baseMeta.options,
             parsers: [{ type: "pdf", pageMarkdown: true }],
           },
         }),

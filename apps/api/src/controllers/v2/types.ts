@@ -483,10 +483,18 @@ const pdfParserWithOptions = z.strictObject({
   type: z.literal("pdf"),
   mode: pdfModeSchema.optional(),
   maxPages: z.int().positive().finite().max(10000).optional(),
-  /** Include physical per-page markdown alongside document markdown. */
+  /** Include physical per-page markdown alongside document markdown —
+   * populates `document.pages`. */
+  pages: z.boolean().optional(),
+  /**
+   * @deprecated Renamed to `pages` (2026-08). Accepted as a silent alias for
+   * callers that adopted the option pre-rename; never documented. `pages`
+   * wins when both are set.
+   */
   pageMarkdown: z.boolean().optional(),
   /** Include per-page typed layout blocks (bounding boxes, block types,
-   * reading order) alongside document markdown. */
+   * reading order) alongside document markdown — populates
+   * `document.blocks`. */
   blocks: z.boolean().optional(),
   // Experimental: route this request through the fire-pdf async pipeline
   // (POST /jobs + poll) instead of the sync POST /ocr endpoint. Falls back
@@ -541,7 +549,9 @@ export function getPDFPageMarkdown(parsers?: Parsers): boolean {
   if (!parsers) return false;
   for (const parser of parsers) {
     if (typeof parser === "object" && parser.type === "pdf") {
-      return parser.pageMarkdown === true;
+      // `pages` is the public name; `pageMarkdown` is the deprecated
+      // pre-rename alias and only consulted when `pages` is unset.
+      return (parser.pages ?? parser.pageMarkdown) === true;
     }
   }
   return false;
@@ -1254,7 +1264,7 @@ export type Document = {
   description?: string;
   url?: string;
   markdown?: string;
-  /** Physical PDF pages, present only for `parsers[].pageMarkdown`. */
+  /** Physical PDF pages, present only for the `parsers[].pages` option. */
   pages?: Array<{ pageNumber: number; markdown: string }>;
   /** Typed PDF layout blocks with bounding boxes, present only for
    * `parsers[].blocks`. */
