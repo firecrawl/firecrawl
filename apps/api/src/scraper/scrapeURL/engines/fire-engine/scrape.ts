@@ -17,6 +17,7 @@ import {
   UnsupportedFileError,
 } from "../../error";
 import { Meta } from "../..";
+import { canEscalateToStealthProxy } from "../../lib/stealthEscalation";
 
 import { config } from "../../../../config";
 
@@ -237,11 +238,7 @@ export async function fireEngineScrape<
     logger.debug("Scrape job failed", {
       status,
     });
-    if (
-      failedParse.data.retryWithStealth &&
-      meta.options.proxy === "auto" &&
-      !meta.featureFlags.has("stealthProxy")
-    ) {
+    if (failedParse.data.retryWithStealth && canEscalateToStealthProxy(meta)) {
       logger.info(
         "Scrape signaled retryWithStealth. Adding stealthProxy flag.",
       );
