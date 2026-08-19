@@ -63,7 +63,22 @@ function isValidBlocks(
         page !== null &&
         Number.isInteger((page as { page?: unknown }).page) &&
         Number((page as { page: number }).page) > 0 &&
-        Array.isArray((page as { items?: unknown }).items),
+        Array.isArray((page as { items?: unknown }).items) &&
+        (page as { items: unknown[] }).items.every(item => {
+          if (typeof item !== "object" || item === null) return false;
+          const block = item as {
+            id?: unknown;
+            type?: unknown;
+            content?: unknown;
+            reading_order?: unknown;
+          };
+          return (
+            typeof block.id === "string" &&
+            typeof block.type === "string" &&
+            typeof block.content === "string" &&
+            typeof block.reading_order === "number"
+          );
+        }),
     )
   );
 }

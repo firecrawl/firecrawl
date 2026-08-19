@@ -363,9 +363,16 @@ describe("FirePDF page-markdown cache capabilities", () => {
         blocks: "not-an-array" as never,
       })
       .mockResolvedValueOnce({
+        markdown: "wrong page",
+        html: "<p>wrong page</p>",
+        blocks: [{ page: 0, items: null }] as never,
+      })
+      .mockResolvedValueOnce({
         markdown: "wrong item",
         html: "<p>wrong item</p>",
-        blocks: [{ page: 0, items: null }] as never,
+        blocks: [
+          { page: 1, width: 800, height: 1100, status: "ok", items: [null] },
+        ] as never,
       });
 
     const result = await tryGetCached(
