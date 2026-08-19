@@ -64,8 +64,14 @@ export const firePdfPagesSchema = z
     ),
     z
       .array(
+        // Full documented alias shape (LegacyPageBlocks) — requiring every
+        // field keeps the union discriminating: a payload that is neither
+        // valid page markdown nor a complete alias fails the parse.
         z.object({
           page: z.number().int().positive(),
+          width: z.number().nullable(),
+          height: z.number().nullable(),
+          status: z.string(),
           blocks: z.array(z.unknown()),
         }),
       )

@@ -680,6 +680,17 @@ export async function buildFallbackList(meta: Meta): Promise<
     _engines.push(...indexEngines);
     meta.internalOptions.forceEngine = indexEngines;
   } else if (meta.internalOptions.agentIndexOnly) {
+    // Index documents carry no physical-page or typed-block payloads, so an
+    // index-only request that demands them can only be answered wrong. Fail
+    // loud instead of silently serving a document without the capability.
+    if (
+      getPDFPageMarkdown(meta.options.parsers) ||
+      getPDFBlocks(meta.options.parsers)
+    ) {
+      throw new Error(
+        "PDF pageMarkdown/blocks cannot be served from the URL index (agentIndexOnly request)",
+      );
+    }
     const indexEngines: Engine[] = useIndex ? ["index", "index;documents"] : [];
     _engines.length = 0;
     _engines.push(...indexEngines);
