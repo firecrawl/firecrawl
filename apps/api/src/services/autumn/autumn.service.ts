@@ -1,4 +1,5 @@
 import { randomUUID } from "crypto";
+import { config } from "../../config";
 import { logger } from "../../lib/logger";
 import { eq } from "drizzle-orm";
 import { dbRr } from "../../db/connection";
@@ -29,6 +30,10 @@ export const CREDITS_FEATURE_ID = "CREDITS";
 export const SEARCH_CREDITS_FEATURE_ID = "SEARCH_CREDITS";
 const CONCURRENCY_FEATURE_ID = "CONCURRENCY";
 const RATE_LIMIT_FEATURE_ID = "rate_limits";
+// Static per-plan grant (minutes): monitor checks whose schedule interval is
+// at or above this threshold do not bill unchanged pages. Never consumed, so
+// read `granted` like rate_limits. Missing grant -> config default.
+const MONITOR_UNCHANGED_FREE_FEATURE_ID = "monitor_unchanged_free_min_interval";
 
 /**
  * Coerces a raw Autumn balance figure into a usable non-negative number, or
@@ -617,6 +622,7 @@ export class AutumnService {
     {
       concurrency: number | null;
       rateLimitMultiplier: number | null;
+      monitorUnchangedFreeMinIntervalMinutes: number | null;
       expiresAt: number;
     }
   >(50_000);
@@ -650,9 +656,14 @@ export class AutumnService {
   ): Promise<{
     concurrency: number | null;
     rateLimitMultiplier: number | null;
+    monitorUnchangedFreeMinIntervalMinutes: number | null;
   }> {
     if (!autumnClient || this.isPreviewTeam(teamId)) {
-      return { concurrency: null, rateLimitMultiplier: null };
+      return {
+        concurrency: null,
+        rateLimitMultiplier: null,
+        monitorUnchangedFreeMinIntervalMinutes: null,
+      };
     }
 
     const now = Date.now();
@@ -661,25 +672,37 @@ export class AutumnService {
       return {
         concurrency: cached.concurrency,
         rateLimitMultiplier: cached.rateLimitMultiplier,
+        monitorUnchangedFreeMinIntervalMinutes:
+          cached.monitorUnchangedFreeMinIntervalMinutes,
       };
     }
 
     const store = (
       concurrency: number | null,
       rateLimitMultiplier: number | null,
+      monitorUnchangedFreeMinIntervalMinutes: number | null,
     ) => {
       this.entityLimitsCache.set(teamId, {
         concurrency,
         rateLimitMultiplier,
+        monitorUnchangedFreeMinIntervalMinutes,
         expiresAt: now + AutumnService.ENTITY_LIMITS_TTL_MS,
       });
-      return { concurrency, rateLimitMultiplier };
+      return {
+        concurrency,
+        rateLimitMultiplier,
+        monitorUnchangedFreeMinIntervalMinutes,
+      };
     };
 
     try {
       const resolvedOrgId = orgId ?? (await this.resolveOrgId(teamId));
       if (!resolvedOrgId)
-        return { concurrency: null, rateLimitMultiplier: null };
+        return {
+          concurrency: null,
+          rateLimitMultiplier: null,
+          monitorUnchangedFreeMinIntervalMinutes: null,
+        };
 
       const entity: any = await autumnClient.entities.get({
         customerId: resolvedOrgId,
@@ -699,13 +722,21 @@ export class AutumnService {
         balances[RATE_LIMIT_FEATURE_ID]?.granted,
       );
 
-      return store(concurrency, rateLimitMultiplier);
+      const monitorUnchangedFreeMinIntervalMinutes = sanitizeBalanceValue(
+        balances[MONITOR_UNCHANGED_FREE_FEATURE_ID]?.granted,
+      );
+
+      return store(
+        concurrency,
+        rateLimitMultiplier,
+        monitorUnchangedFreeMinIntervalMinutes,
+      );
     } catch (error) {
       const status = this.getErrorStatus(error);
       // 404 = the entity genuinely doesn't exist in Autumn (not an error):
       // fall back low, and cache it so we don't re-query for a team we know is
       // absent.
-      if (status === 404) return store(null, null);
+      if (status === 404) return store(null, null, null);
       // Any other failure means we couldn't reach Autumn / it errored. Fail
       // OPEN with high limits rather than throttling the team to the low
       // defaults. Deliberately not cached, so we retry Autumn on the next
@@ -717,6 +748,10 @@ export class AutumnService {
       return {
         concurrency: AutumnService.ERROR_FALLBACK_CONCURRENCY,
         rateLimitMultiplier: AutumnService.ERROR_FALLBACK_RATE_MULTIPLIER,
+        // Unlike the limits above, this threshold is a discount: failing
+        // "open" here would under-bill, so an Autumn error falls back to the
+        // config default (status-quo billing) via the caller's ?? instead.
+        monitorUnchangedFreeMinIntervalMinutes: null,
       };
     }
   }
@@ -748,6 +783,26 @@ export class AutumnService {
     orgId?: string | null,
   ): Promise<number> {
     return (await this.getEntityLimits(teamId, orgId)).rateLimitMultiplier ?? 1;
+  }
+
+  /**
+   * Minutes threshold for the monitor "unchanged pages are free" rule: checks
+   * of monitors scheduled at or slower than this interval do not bill pages
+   * whose content did not change. Read from the entity's per-plan
+   * monitor_unchanged_free_min_interval grant; a missing grant, missing
+   * entity, or Autumn error falls back to the config default (the free-plan
+   * tier), keeping billing at the status quo rather than under-charging.
+   * Shares the cached entity fetch, so it adds no Autumn call.
+   */
+  async getMonitorUnchangedFreeMinIntervalMinutes(
+    teamId: string,
+    orgId?: string | null,
+  ): Promise<number> {
+    return (
+      (await this.getEntityLimits(teamId, orgId))
+        .monitorUnchangedFreeMinIntervalMinutes ??
+      config.MONITOR_UNCHANGED_FREE_DEFAULT_MIN_INTERVAL_MINUTES
+    );
   }
 
   /**

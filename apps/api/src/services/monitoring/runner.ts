@@ -15,6 +15,7 @@ import { includesFormat } from "../../lib/format-utils";
 import { normalizeMonitorFormats } from "./diff";
 import { autumnService } from "../autumn/autumn.service";
 import { getBillingQueue } from "../queue-service";
+import { monitorUnchangedPagesFree } from "./unchanged-billing";
 import {
   crawlToCrawler,
   markCrawlActive,
@@ -1424,11 +1425,16 @@ export async function reconcileRunningMonitorChecks(
         countMonitorCheckPages({ checkId: check.id, status: "error" }),
       ]);
       const totalPages = same + changed + newCount + removed + errorCount;
+      // Resolved at finalize from the monitor's current schedule and the
+      // team's plan grant: a mid-check cron or plan change shifts eligibility
+      // for this settle only, bounded to one check.
+      const unchangedPagesFree = await monitorUnchangedPagesFree(monitor);
       const actualCredits = await calculateMonitorCheckActualCredits({
         checkId: check.id,
         targets: monitor.targets,
         // Flat search credits come from target_results, not page metadata.
         targetResults,
+        unchangedPagesFree,
       });
 
       let finalized = await updateMonitorCheck(check.id, {

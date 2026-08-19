@@ -553,4 +553,91 @@ describeIf(ALLOW_TEST_SUITE_WEBSITE && !TEST_SELF_HOST)("/v2/monitor", () => {
     },
     2 * scrapeTimeout,
   );
+
+  async function runCheckToCompletion(monitorId: string) {
+    const run = await monitorRunRaw(monitorId, identity);
+    expect(run.statusCode).toBe(200);
+    const checkId = run.body.id;
+
+    let check: any;
+    for (let i = 0; i < 90; i++) {
+      const raw = await monitorCheckRaw(monitorId, checkId, identity);
+      expect(raw.statusCode).toBe(200);
+      check = raw.body.data;
+      if (["completed", "partial", "failed"].includes(check.status)) break;
+      await new Promise(resolve => setTimeout(resolve, 1000));
+    }
+    expect(["completed", "partial"]).toContain(check.status);
+    return check;
+  }
+
+  it(
+    "does not bill unchanged pages when the schedule meets the plan threshold",
+    async () => {
+      // Daily meets the default threshold (1440m) that applies when the team
+      // has no monitor_unchanged_free_min_interval grant.
+      const create = await monitorCreateRaw(
+        {
+          name: "unchanged-free monitor",
+          schedule: { cron: "0 0 * * *", timezone: "UTC" },
+          targets: [
+            {
+              type: "scrape",
+              urls: [createTestIdUrl()],
+              scrapeOptions: { formats: ["markdown"] },
+            },
+          ],
+        },
+        identity,
+      );
+      expect(create.statusCode).toBe(200);
+      expect(create.body.data.unchangedPagesFree).toBe(true);
+      const monitorId = create.body.data.id;
+
+      const first = await runCheckToCompletion(monitorId);
+      expect(first.summary.new).toBeGreaterThanOrEqual(1);
+      expect(first.actualCredits).toBeGreaterThanOrEqual(1);
+
+      const second = await runCheckToCompletion(monitorId);
+      expect(second.summary.same).toBeGreaterThanOrEqual(1);
+      expect(second.summary.changed).toBe(0);
+      expect(second.actualCredits).toBe(0);
+
+      await monitorDeleteRaw(monitorId, identity);
+    },
+    4 * scrapeTimeout,
+  );
+
+  it(
+    "keeps billing unchanged pages when the schedule is faster than the threshold",
+    async () => {
+      const create = await monitorCreateRaw(
+        {
+          name: "sub-threshold monitor",
+          schedule: { cron: "*/30 * * * *", timezone: "UTC" },
+          targets: [
+            {
+              type: "scrape",
+              urls: [createTestIdUrl()],
+              scrapeOptions: { formats: ["markdown"] },
+            },
+          ],
+        },
+        identity,
+      );
+      expect(create.statusCode).toBe(200);
+      expect(create.body.data.unchangedPagesFree).toBe(false);
+      const monitorId = create.body.data.id;
+
+      const first = await runCheckToCompletion(monitorId);
+      expect(first.actualCredits).toBeGreaterThanOrEqual(1);
+
+      const second = await runCheckToCompletion(monitorId);
+      expect(second.summary.same).toBeGreaterThanOrEqual(1);
+      expect(second.actualCredits).toBeGreaterThanOrEqual(1);
+
+      await monitorDeleteRaw(monitorId, identity);
+    },
+    4 * scrapeTimeout,
+  );
 });

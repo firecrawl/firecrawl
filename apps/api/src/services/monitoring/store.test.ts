@@ -370,3 +370,52 @@ describe("FLAT deterministic search-monitor billing", () => {
     ).toBe(0);
   });
 });
+
+describe("unchanged pages free", () => {
+  it("skips same pages and keeps billing everything else when eligible", () => {
+    const pages = [
+      { metadata: { creditsUsed: 1 }, status: "same" },
+      {
+        metadata: { creditsUsed: 1 },
+        status: "changed",
+        judgment: { meaningful: false },
+      },
+      { metadata: {}, status: "new" },
+      { metadata: { creditsUsed: 1 }, status: "error" },
+      { status: "removed", metadata: {} },
+    ];
+    // changed(1) + its judge(1) + new(1) + error(1); same and removed free.
+    expect(
+      calculateMonitorCheckActualCreditsFromPages(pages, [], {
+        unchangedPagesFree: true,
+      }),
+    ).toBe(4);
+    // Without the discount the same page bills as before.
+    expect(calculateMonitorCheckActualCreditsFromPages(pages, [])).toBe(5);
+    expect(
+      calculateMonitorCheckActualCreditsFromPages(pages, [], {
+        unchangedPagesFree: false,
+      }),
+    ).toBe(5);
+  });
+
+  it("frees json-format same pages at their full fallback rate", () => {
+    const targets: MonitorTarget[] = [
+      {
+        id: "target-1",
+        type: "scrape",
+        urls: ["https://example.com/a"],
+        scrapeOptions: {
+          formats: [{ type: "changeTracking", modes: ["json"] }],
+        },
+      },
+    ];
+    const pages = [{ target_id: "target-1", metadata: {}, status: "same" }];
+    expect(
+      calculateMonitorCheckActualCreditsFromPages(pages, targets, {
+        unchangedPagesFree: true,
+      }),
+    ).toBe(0);
+    expect(calculateMonitorCheckActualCreditsFromPages(pages, targets)).toBe(5);
+  });
+});

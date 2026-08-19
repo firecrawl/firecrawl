@@ -436,6 +436,15 @@ const configSchema = z.object({
   RESTRICTED_COUNTRIES: delimitedList(",").optional(),
   DISABLE_ENGPICKER: z.stringbool().optional(),
   DISABLE_MONITORING: z.stringbool().default(false),
+  // Threshold (minutes) for the monitor "unchanged pages are free" rule when
+  // the team's Autumn entity carries no monitor_unchanged_free_min_interval
+  // grant. 1440 = daily, the free-plan tier, so ungranted teams get the least
+  // generous threshold rather than a discount they weren't sold.
+  MONITOR_UNCHANGED_FREE_DEFAULT_MIN_INTERVAL_MINUTES: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(1440),
 
   EXTRACT_V3_BETA_URL: z.string().optional(),
   AGENT_INTEROP_SECRET: z

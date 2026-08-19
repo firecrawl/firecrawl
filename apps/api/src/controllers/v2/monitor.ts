@@ -38,6 +38,7 @@ import {
   trackMonitorConfiguredInterest,
   trackMonitorDeactivatedInterest,
 } from "../../services/monitoring/interest";
+import { monitorUnchangedPagesFree } from "../../services/monitoring/unchanged-billing";
 import {
   getLatestWebhookLog,
   getLatestWebhookLogsByJob,
@@ -86,6 +87,7 @@ function serializeMonitor(
       source: "team" | "opt_in" | "legacy";
       confirmationEmailSent?: boolean;
     }>;
+    unchangedPagesFree?: boolean;
   },
 ) {
   return {
@@ -107,6 +109,9 @@ function serializeMonitor(
       : {}),
     retentionDays: monitor.retention_days,
     estimatedCreditsPerMonth: monitor.estimated_credits_per_month,
+    ...(options?.unchangedPagesFree !== undefined
+      ? { unchangedPagesFree: options.unchangedPagesFree }
+      : {}),
     lastCheckSummary: monitor.last_check_summary,
     goal: monitor.goal ?? null,
     judgeEnabled: Boolean(monitor.judge_enabled),
@@ -235,6 +240,7 @@ export async function createMonitorController(
     success: true,
     data: serializeMonitor(monitor, {
       emailRecipientSubscriptions: sync.recipients,
+      unchangedPagesFree: await monitorUnchangedPagesFree(monitor),
     }),
   });
 }
@@ -252,7 +258,13 @@ export async function listMonitorsController(
 
   res.status(200).json({
     success: true,
-    data: monitors.map(monitor => serializeMonitor(monitor)),
+    data: await Promise.all(
+      monitors.map(async monitor =>
+        serializeMonitor(monitor, {
+          unchangedPagesFree: await monitorUnchangedPagesFree(monitor),
+        }),
+      ),
+    ),
   });
 }
 
@@ -280,6 +292,7 @@ export async function getMonitorController(
     success: true,
     data: serializeMonitor(monitor, {
       emailRecipientSubscriptions: subscriptions,
+      unchangedPagesFree: await monitorUnchangedPagesFree(monitor),
     }),
   });
 }
@@ -397,6 +410,7 @@ export async function updateMonitorController(
     success: true,
     data: serializeMonitor(monitor, {
       emailRecipientSubscriptions: subscriptions,
+      unchangedPagesFree: await monitorUnchangedPagesFree(monitor),
     }),
   });
 }

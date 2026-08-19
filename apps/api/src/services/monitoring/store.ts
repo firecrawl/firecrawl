@@ -216,6 +216,7 @@ export function calculateMonitorCheckActualCreditsFromPages(
     status?: string;
   }>,
   targets: MonitorTarget[] = [],
+  options?: { unchangedPagesFree?: boolean },
 ): number {
   const baseCreditsByTarget = new Map(
     targets.map(target => [
@@ -278,6 +279,14 @@ export function calculateMonitorCheckActualCreditsFromPages(
     // Search pages carry no per-page credit; billed at check level.
     const target = targetsById.get(page.target_id ?? "");
     if (target?.type === "search") {
+      return total;
+    }
+
+    // Plan-gated discount: unchanged pages are free for eligible schedules.
+    // Only the aggregation skips them — the per-page creditsUsed record stays
+    // intact. Judged pages are never "same" (the judge runs on diffs), so no
+    // judge credit is lost here.
+    if (options?.unchangedPagesFree && page.status === "same") {
       return total;
     }
 
@@ -947,6 +956,7 @@ export async function calculateMonitorCheckActualCredits(params: {
   checkId: string;
   targets: MonitorTarget[];
   targetResults?: unknown;
+  unchangedPagesFree?: boolean;
 }): Promise<number> {
   let total = flatSearchTargetCredits(params.targetResults);
   let offset = 0;
@@ -969,7 +979,11 @@ export async function calculateMonitorCheckActualCredits(params: {
       "Failed to calculate monitor check credits",
     );
 
-    total += calculateMonitorCheckActualCreditsFromPages(batch, params.targets);
+    total += calculateMonitorCheckActualCreditsFromPages(
+      batch,
+      params.targets,
+      { unchangedPagesFree: params.unchangedPagesFree },
+    );
 
     if (batch.length < MONITOR_CHECK_PAGE_BATCH_SIZE) break;
     offset += MONITOR_CHECK_PAGE_BATCH_SIZE;
