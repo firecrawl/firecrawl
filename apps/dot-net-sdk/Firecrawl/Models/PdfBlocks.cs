@@ -3,6 +3,18 @@ using System.Text.Json.Serialization;
 namespace Firecrawl.Models;
 
 /// <summary>
+/// Physical markdown for a single PDF page.
+/// </summary>
+public class PdfPage
+{
+    [JsonPropertyName("pageNumber")]
+    public int PageNumber { get; set; }
+
+    [JsonPropertyName("markdown")]
+    public string Markdown { get; set; } = "";
+}
+
+/// <summary>
 /// Layout and OCR confidence scores for a PDF block.
 /// </summary>
 public class PdfBlockConfidence

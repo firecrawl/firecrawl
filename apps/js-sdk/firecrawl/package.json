@@ -1,6 +1,6 @@
 {
   "name": "@mendable/firecrawl-js",
-  "version": "4.33.0",
+  "version": "4.34.0",
   "description": "JavaScript SDK for the Firecrawl API: web scraping, crawling, web search, and scientific literature search over a research paper index of PubMed, bioRxiv, medRxiv and arXiv abstracts",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",

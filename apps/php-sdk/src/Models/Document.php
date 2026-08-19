@@ -14,6 +14,7 @@ final class Document
      * @param array<string, mixed>|null               $actions
      * @param array<string, mixed>|null               $changeTracking
      * @param array<string, mixed>|null               $branding
+     * @param list<array<string, mixed>>|null         $pages
      * @param list<array<string, mixed>>|null         $blocks
      */
     public function __construct(
@@ -37,6 +38,7 @@ final class Document
         private readonly ?array $branding = null,
         private readonly ?Product $product = null,
         private readonly ?Menu $menu = null,
+        private readonly ?array $pages = null,
         private readonly ?array $blocks = null,
     ) {}
 
@@ -67,6 +69,9 @@ final class Document
                 : null,
             menu: isset($data['menu']) && is_array($data['menu'])
                 ? Menu::fromArray($data['menu'])
+                : null,
+            pages: isset($data['pages']) && is_array($data['pages'])
+                ? $data['pages']
                 : null,
             blocks: isset($data['blocks']) && is_array($data['blocks'])
                 ? $data['blocks']
@@ -179,6 +184,16 @@ final class Document
     public function getMenu(): ?Menu
     {
         return $this->menu;
+    }
+
+    /**
+     * Physical PDF pages, present only when parsers[].pages is true.
+     *
+     * @return list<array<string, mixed>>|null
+     */
+    public function getPages(): ?array
+    {
+        return $this->pages;
     }
 
     /**

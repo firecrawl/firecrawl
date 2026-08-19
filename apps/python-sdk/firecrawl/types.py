@@ -15,6 +15,7 @@ from .v2.types import (
     PdfBlockConfidence,
     PdfBlockItem,
     PdfPageBlocks,
+    PdfPage,
     
     # Scrape types
     ScrapeFormats,
@@ -103,6 +104,7 @@ __all__ = [
     'PdfBlockConfidence',
     'PdfBlockItem',
     'PdfPageBlocks',
+    'PdfPage',
     
     # Scrape types
     'ScrapeFormats',

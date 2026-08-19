@@ -119,8 +119,8 @@ pub enum ParserConfig {
         mode: Option<String>,
         #[serde(rename = "maxPages", skip_serializing_if = "Option::is_none")]
         max_pages: Option<u32>,
-        #[serde(rename = "pageMarkdown", skip_serializing_if = "Option::is_none")]
-        page_markdown: Option<bool>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        pages: Option<bool>,
         #[serde(skip_serializing_if = "Option::is_none")]
         blocks: Option<bool>,
     },
@@ -531,7 +531,7 @@ mod tests {
                 parser_type: "pdf".to_string(),
                 mode: Some("auto".to_string()),
                 max_pages: None,
-                page_markdown: Some(true),
+                pages: Some(true),
                 blocks: Some(true),
             }]),
             ..Default::default()
@@ -543,7 +543,7 @@ mod tests {
             json!({
                 "type": "pdf",
                 "mode": "auto",
-                "pageMarkdown": true,
+                "pages": true,
                 "blocks": true
             })
         );

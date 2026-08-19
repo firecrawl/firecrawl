@@ -8,7 +8,7 @@ module Firecrawl
                   :metadata, :links, :images, :screenshot, :audio,
                   :video, :attributes, :actions, :answer, :highlights,
                   :warning, :change_tracking, :branding, :product, :menu,
-                  :blocks
+                  :pages, :blocks
 
       def initialize(data)
         @markdown = data["markdown"]
@@ -31,6 +31,7 @@ module Firecrawl
         @branding = data["branding"]
         @product = data["product"] && ProductProfile.new(data["product"])
         @menu = data["menu"] && MenuProfile.new(data["menu"])
+        @pages = data["pages"]
         @blocks = data["blocks"]
       end
 

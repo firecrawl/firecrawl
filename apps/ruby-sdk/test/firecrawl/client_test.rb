@@ -85,6 +85,27 @@ class ClientTest < Minitest::Test
     assert_equal "Example", doc.metadata["title"]
   end
 
+  def test_scrape_hydrates_pdf_pages
+    stub_request(:post, "#{BASE_URL}/v2/scrape")
+      .to_return(
+        status: 200,
+        body: JSON.generate(data: {
+          markdown: "# Annual Report 2025",
+          pages: [
+            { pageNumber: 1, markdown: "# Cover" },
+            { pageNumber: 2, markdown: "## Intro" }
+          ]
+        }),
+        headers: { "Content-Type" => "application/json" }
+      )
+
+    doc = @client.scrape("https://example.com/report.pdf")
+    assert_equal "# Annual Report 2025", doc.markdown
+    assert_equal 2, doc.pages.length
+    assert_equal 1, doc.pages[0]["pageNumber"]
+    assert_equal "# Cover", doc.pages[0]["markdown"]
+  end
+
   def test_scrape_hydrates_pdf_blocks
     stub_request(:post, "#{BASE_URL}/v2/scrape")
       .to_return(

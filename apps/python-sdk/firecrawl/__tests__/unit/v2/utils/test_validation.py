@@ -389,9 +389,9 @@ class TestPrepareScrapeOptions:
 
         assert result["parsers"][0]["maxPages"] == 5
 
-    def test_prepare_parsers_blocks_and_page_markdown(self):
-        """PDF parser blocks and page_markdown are sent in API camelCase."""
-        parser = PDFParser(mode="auto", page_markdown=True, blocks=True)
+    def test_prepare_parsers_blocks_and_pages(self):
+        """PDF parser blocks and pages are forwarded to the API."""
+        parser = PDFParser(mode="auto", pages=True, blocks=True)
         options = ScrapeOptions(parsers=[parser])
 
         result = prepare_scrape_options(options)
@@ -399,7 +399,7 @@ class TestPrepareScrapeOptions:
         assert result["parsers"][0] == {
             "type": "pdf",
             "mode": "auto",
-            "pageMarkdown": True,
+            "pages": True,
             "blocks": True,
         }
 
@@ -407,9 +407,10 @@ class TestPrepareScrapeOptions:
             parsers=[{"type": "pdf", "page_markdown": True, "blocks": True}]
         )
         dict_result = prepare_scrape_options(dict_options)
-        assert dict_result["parsers"][0]["pageMarkdown"] is True
+        assert dict_result["parsers"][0]["pages"] is True
         assert dict_result["parsers"][0]["blocks"] is True
         assert "page_markdown" not in dict_result["parsers"][0]
+        assert "pageMarkdown" not in dict_result["parsers"][0]
 
     def test_prepare_min_age_maps_to_camel_case(self):
         """min_age must be sent as minAge; the server drops the snake_case key."""

@@ -146,6 +146,30 @@ public class ModelsTests
     }
 
     [Fact]
+    public void Document_DeserializesPagesCorrectly()
+    {
+        var json = """
+        {
+            "markdown": "# Annual Report 2025",
+            "pages": [
+                { "pageNumber": 1, "markdown": "# Cover" },
+                { "pageNumber": 2, "markdown": "## Intro" }
+            ]
+        }
+        """;
+
+        var doc = JsonSerializer.Deserialize<Document>(json, JsonOptions);
+        Assert.NotNull(doc);
+        Assert.Equal("# Annual Report 2025", doc.Markdown);
+        Assert.NotNull(doc.Pages);
+        Assert.Equal(2, doc.Pages.Count);
+        Assert.Equal(1, doc.Pages[0].PageNumber);
+        Assert.Equal("# Cover", doc.Pages[0].Markdown);
+        Assert.Equal(2, doc.Pages[1].PageNumber);
+        Assert.Equal("## Intro", doc.Pages[1].Markdown);
+    }
+
+    [Fact]
     public void Document_DeserializesBlocksCorrectly()
     {
         var json = """

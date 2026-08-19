@@ -24,17 +24,25 @@ type Document struct {
 	Branding       map[string]interface{}   `json:"branding,omitempty"`
 	Product        *ProductProfile          `json:"product,omitempty"`
 	Menu           *MenuProfile             `json:"menu,omitempty"`
+	// Pages is per-page PDF markdown, present only when parsers[].pages is true.
+	Pages []PdfPage `json:"pages,omitempty"`
 	// Blocks is typed PDF layout data, present only when parsers[].blocks is true.
 	Blocks []PdfPageBlocks `json:"blocks,omitempty"`
 }
 
 // PDFParser configures PDF parsing. Use in ScrapeOptions.Parsers / ParseOptions.Parsers.
 type PDFParser struct {
-	Type         string `json:"type"`
-	Mode         string `json:"mode,omitempty"`
-	MaxPages     *int   `json:"maxPages,omitempty"`
-	PageMarkdown *bool  `json:"pageMarkdown,omitempty"`
-	Blocks       *bool  `json:"blocks,omitempty"`
+	Type     string `json:"type"`
+	Mode     string `json:"mode,omitempty"`
+	MaxPages *int   `json:"maxPages,omitempty"`
+	Pages    *bool  `json:"pages,omitempty"`
+	Blocks   *bool  `json:"blocks,omitempty"`
+}
+
+// PdfPage is physical markdown for a single PDF page.
+type PdfPage struct {
+	PageNumber int    `json:"pageNumber"`
+	Markdown   string `json:"markdown"`
 }
 
 // PdfBlockConfidence is layout and OCR confidence for a PDF block.

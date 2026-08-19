@@ -103,6 +103,21 @@ it('preserves null creditsUsed in CrawlJob', function (): void {
     expect($job->getCreditsUsed())->toBeNull();
 });
 
+it('hydrates PDF pages in Document', function (): void {
+    $doc = Document::fromArray([
+        'markdown' => '# Annual Report 2025',
+        'pages' => [
+            ['pageNumber' => 1, 'markdown' => '# Cover'],
+            ['pageNumber' => 2, 'markdown' => '## Intro'],
+        ],
+    ]);
+
+    expect($doc->getMarkdown())->toBe('# Annual Report 2025');
+    expect($doc->getPages())->toHaveCount(2);
+    expect($doc->getPages()[0]['pageNumber'])->toBe(1);
+    expect($doc->getPages()[0]['markdown'])->toBe('# Cover');
+});
+
 it('hydrates PDF blocks in Document', function (): void {
     $doc = Document::fromArray([
         'markdown' => '# Annual Report 2025',

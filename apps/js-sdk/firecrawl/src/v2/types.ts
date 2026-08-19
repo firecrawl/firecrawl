@@ -191,11 +191,20 @@ export type PDFParser = {
   type: "pdf";
   mode?: "fast" | "auto" | "ocr";
   maxPages?: number;
-  /** Include physical per-page markdown alongside document markdown. */
+  /** Include physical per-page markdown alongside document markdown. Populates `document.pages`. */
+  pages?: boolean;
+  /**
+   * @deprecated Renamed to `pages`. The API still accepts this as a silent alias.
+   */
   pageMarkdown?: boolean;
   /** Include per-page typed layout blocks (bounding boxes, block types, reading order). */
   blocks?: boolean;
 };
+
+export interface PdfPage {
+  pageNumber: number;
+  markdown: string;
+}
 
 export interface PdfBlockConfidence {
   layout: number | null;
@@ -680,6 +689,8 @@ export interface Document {
   branding?: BrandingProfile;
   product?: ProductProfile;
   menu?: MenuProfile;
+  /** Physical PDF pages, present only when `parsers[].pages` is true. */
+  pages?: PdfPage[];
   /** Typed PDF layout blocks, present only when `parsers[].blocks` is true. */
   blocks?: PdfPageBlocks[];
 }

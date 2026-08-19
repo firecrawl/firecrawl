@@ -690,8 +690,19 @@ pub struct Document {
     pub product: Option<Product>,
     /// Menu extraction result.
     pub menu: Option<Menu>,
+    /// Physical PDF page markdown, present only when `parsers[].pages` is true.
+    pub pages: Option<Vec<PdfPage>>,
     /// Typed PDF layout blocks, present only when `parsers[].blocks` is true.
     pub blocks: Option<Vec<PdfPageBlocks>>,
+}
+
+/// Physical markdown for a single PDF page.
+#[serde_with::skip_serializing_none]
+#[derive(Deserialize, Serialize, Debug, Default, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct PdfPage {
+    pub page_number: u32,
+    pub markdown: String,
 }
 
 /// Layout and OCR confidence scores for a PDF block.
@@ -1205,5 +1216,23 @@ mod tests {
         assert_eq!(pages[0].items[0].reading_order, 0);
         assert_eq!(pages[0].items[0].confidence.layout, Some(0.97));
         assert_eq!(pages[0].items[0].confidence.ocr, None);
+    }
+
+    #[test]
+    fn test_document_with_pages() {
+        let json = json!({
+            "markdown": "# Annual Report 2025",
+            "pages": [
+                { "pageNumber": 1, "markdown": "# Cover" },
+                { "pageNumber": 2, "markdown": "## Intro" }
+            ]
+        });
+        let doc: Document = serde_json::from_value(json).unwrap();
+        let pages = doc.pages.expect("pages should be present");
+        assert_eq!(pages.len(), 2);
+        assert_eq!(pages[0].page_number, 1);
+        assert_eq!(pages[0].markdown, "# Cover");
+        assert_eq!(pages[1].page_number, 2);
+        assert_eq!(pages[1].markdown, "## Intro");
     }
 }

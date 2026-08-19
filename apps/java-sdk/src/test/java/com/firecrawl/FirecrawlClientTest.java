@@ -262,6 +262,24 @@ class FirecrawlClientTest {
     }
 
     @Test
+    void testDocumentDeserializesPages() throws Exception {
+        String json = "{\"markdown\":\"# Annual Report 2025\",\"pages\":["
+                + "{\"pageNumber\":1,\"markdown\":\"# Cover\"},"
+                + "{\"pageNumber\":2,\"markdown\":\"## Intro\"}]}";
+
+        com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+        Document doc = mapper.readValue(json, Document.class);
+
+        assertEquals("# Annual Report 2025", doc.getMarkdown());
+        assertNotNull(doc.getPages());
+        assertEquals(2, doc.getPages().size());
+        assertEquals(1, doc.getPages().get(0).getPageNumber());
+        assertEquals("# Cover", doc.getPages().get(0).getMarkdown());
+        assertEquals(2, doc.getPages().get(1).getPageNumber());
+        assertEquals("## Intro", doc.getPages().get(1).getMarkdown());
+    }
+
+    @Test
     void testDocumentDeserializesBlocks() throws Exception {
         String json = "{\"markdown\":\"# Annual Report 2025\",\"blocks\":[{"
                 + "\"pageNumber\":1,\"width\":1700,\"height\":2200,\"status\":\"ok\","

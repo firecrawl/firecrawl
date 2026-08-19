@@ -1,5 +1,12 @@
 ## CHANGELOG
 
+## [2.14.0] - 2026-08-19
+
+### Added
+
+- Added `ParserConfig::Pdf.pages` to request per-page PDF markdown.
+- Added `Document.pages` (`PdfPage`) for physical page markdown.
+
 ## [2.13.0] - 2026-08-19
 
 ### Added
