@@ -1,0 +1,21 @@
+apps/api/src/scraper/scrapeURL/engines/pdf/__tests__/firePDFCache.test.ts
+  s_edcf855cfeef70::t_255c835c48d8e4 366-369,373-375
+apps/api/src/scraper/scrapeURL/engines/pdf/fire-pdf/cache.ts
+  s_edcf855cfeef70::t_49d7c147135b89 66-81
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "932c21e502ed4656863371c267658df123e3a3b2",
+  "prompts": {},
+  "sessions": {
+    "s_edcf855cfeef70": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "529fbe9e-d6da-4900-98db-8eb4691701dc",
+        "model": "claude-fable-5"
+      },
+      "human_author": "Abimael Martell <1450169+abimaelmartell@users.noreply.github.com>"
+    }
+  }
+}
