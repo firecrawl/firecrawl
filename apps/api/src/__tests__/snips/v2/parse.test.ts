@@ -618,7 +618,7 @@ describe("/v2/parse", () => {
             {
               options: {
                 formats: ["markdown"],
-                parsers: [{ type: "pdf", mode: "auto", pageMarkdown: true }],
+                parsers: [{ type: "pdf", mode: "auto", pages: true }],
               },
               file: {
                 content: pdfFixture!,
