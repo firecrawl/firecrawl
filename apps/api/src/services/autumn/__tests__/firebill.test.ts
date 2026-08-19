@@ -1,4 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { firebillTrack, shouldRouteToFirebill } from "../firebill";
+import { firebillRetryTotal, firebillTrackTotal } from "../metrics";
 
 const { configState } = vi.hoisted(() => ({
   configState: {
@@ -13,9 +15,6 @@ vi.mock("../../../config", () => ({ config: configState }));
 vi.mock("../../../lib/logger", () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
 }));
-
-const { firebillTrack, shouldRouteToFirebill } = await import("../firebill");
-const { firebillTrackTotal, firebillRetryTotal } = await import("../metrics");
 
 const ok = () =>
   new Response(JSON.stringify({ success: true }), { status: 200 });
