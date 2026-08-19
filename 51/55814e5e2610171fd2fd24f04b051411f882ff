@@ -1,0 +1,25 @@
+apps/api/src/scraper/scrapeURL/engines/pdf/fire-pdf/cache.ts
+  s_edcf855cfeef70::t_1e08fa851f789a 8
+  s_edcf855cfeef70::t_0660fd90ad25b9 56-58,62
+apps/api/src/scraper/scrapeURL/engines/pdf/fire-pdf/schema.ts
+  s_edcf855cfeef70::t_561535dae1c38c 54-58,61-66,68-69,71-73,76-110
+apps/api/src/scraper/scrapeURL/engines/pdf/types.ts
+  s_edcf855cfeef70::t_835f37ffcf4b55 10-13
+  s_edcf855cfeef70::t_3c23eea6432cbd 1-3
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "5155814e5e2610171fd2fd24f04b051411f882ff",
+  "prompts": {},
+  "sessions": {
+    "s_edcf855cfeef70": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "529fbe9e-d6da-4900-98db-8eb4691701dc",
+        "model": "claude-fable-5"
+      },
+      "human_author": "Abimael Martell <1450169+abimaelmartell@users.noreply.github.com>"
+    }
+  }
+}
