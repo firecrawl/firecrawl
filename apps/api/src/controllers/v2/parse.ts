@@ -138,7 +138,13 @@ function sanitizeParseRequestForLogs(
   };
 }
 
-function getUnsupportedParseOptionError(reqBody: ParseRequest): string | null {
+function getUnsupportedParseOptionError(
+  reqBody: ParseRequest,
+  // The scrape options transform collapses every proxy value to "auto", so the
+  // value the caller actually sent has to be read off the request before
+  // validation and passed in here.
+  requestedProxy: ParseRequest["proxy"] | undefined,
+): string | null {
   if (reqBody.actions !== undefined && reqBody.actions.length > 0) {
     return "Parse uploads do not support actions.";
   }
@@ -167,7 +173,11 @@ function getUnsupportedParseOptionError(reqBody: ParseRequest): string | null {
     return "Parse uploads do not support mobile rendering.";
   }
 
-  if (reqBody.proxy && reqBody.proxy !== "auto" && reqBody.proxy !== "basic") {
+  if (
+    requestedProxy &&
+    requestedProxy !== "auto" &&
+    requestedProxy !== "basic"
+  ) {
     return "Parse uploads only support proxy values of auto or basic.";
   }
 
@@ -261,6 +271,8 @@ export async function parseController(
 
       const jobId = uuidv7();
       const preNormalizedBody = sanitizeParseRequestForLogs(req.body);
+      // Read before validation: the transform rewrites proxy to "auto".
+      const requestedProxy = req.body?.proxy;
 
       setSpanAttributes(span, {
         "parse.job_id": jobId,
@@ -280,7 +292,10 @@ export async function parseController(
         });
       });
 
-      const unsupportedOptionError = getUnsupportedParseOptionError(req.body);
+      const unsupportedOptionError = getUnsupportedParseOptionError(
+        req.body,
+        requestedProxy,
+      );
       if (unsupportedOptionError) {
         setSpanAttributes(span, {
           "parse.status_code": 400,

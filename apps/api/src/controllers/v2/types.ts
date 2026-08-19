@@ -735,12 +735,22 @@ const baseScrapeOptions = z.strictObject({
 
 type ScrapeOptionsBase = z.infer<typeof baseScrapeOptions>;
 
+// The timeout a request will actually run with, derived from the timeout it
+// asked for. Single source of truth for the bump applied by
+// extractTransformImpl, so waitForRefine (which runs before the transform) can
+// validate waitFor against the effective timeout rather than the requested one.
+const effectiveTimeout = (obj: ScrapeOptionsBase): number | undefined =>
+  obj.timeout === 30000 ? 120000 : obj.timeout;
+
 const waitForRefine = (obj?: ScrapeOptionsBase): boolean => {
   if (obj && obj.waitFor && obj.timeout) {
     if (typeof obj.timeout !== "number" || obj.timeout <= 0) {
       return false;
     }
-    return obj.waitFor <= obj.timeout / 2;
+    // Refinements run before the transform, so compare against the timeout the
+    // request will actually use. effectiveTimeout never lowers the requested
+    // timeout, so this only ever accepts more than before.
+    return obj.waitFor <= (effectiveTimeout(obj) ?? obj.timeout) / 2;
   }
   return true;
 };
@@ -793,8 +803,9 @@ const extractTransformImpl = <T extends ScrapeOptionsBase | undefined>(
   // stealth only when a proxy error is hit. Enhanced Mode carries no surcharge,
   // so forcing auto only improves success rates.
   result = { ...result, proxy: "auto" };
-  if (obj.timeout === 30000) {
-    result = { ...result, timeout: 120000 };
+  const timeout = effectiveTimeout(obj);
+  if (timeout !== undefined && timeout !== obj.timeout) {
+    result = { ...result, timeout };
   }
 
   if (obj.lockdown && obj.maxAge === undefined) {

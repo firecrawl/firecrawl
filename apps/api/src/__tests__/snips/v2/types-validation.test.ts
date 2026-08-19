@@ -348,6 +348,32 @@ describe("V2 Types Validation", () => {
       expect(result.timeout).toBe(1000);
     });
 
+    it("should accept waitFor measured against the effective timeout", () => {
+      const input: ScrapeRequestInput = {
+        url: "https://example.com",
+        timeout: 30000,
+        waitFor: 20000,
+      };
+
+      // A requested 30000 runs with an effective 120000, so waitFor is checked
+      // against 120000/2 instead of the pre-transform 30000/2.
+      const result = scrapeRequestSchema.parse(input);
+      expect(result.waitFor).toBe(20000);
+      expect(result.timeout).toBe(120000);
+    });
+
+    it("should reject waitFor exceeding half of a timeout that is not bumped", () => {
+      const input: ScrapeRequestInput = {
+        url: "https://example.com",
+        timeout: 40000,
+        waitFor: 30000,
+      };
+
+      expect(() => scrapeRequestSchema.parse(input)).toThrow(
+        "waitFor must not exceed half of timeout",
+      );
+    });
+
     it("should apply default values correctly", () => {
       const input: ScrapeRequestInput = {
         url: "https://example.com",
