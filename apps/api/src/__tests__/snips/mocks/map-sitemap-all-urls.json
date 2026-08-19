@@ -1,0 +1,18 @@
+[
+  {
+    "time": 1740000000000,
+    "options": {
+      "url": "https://www.hfea.gov.uk/sitemap.xml",
+      "method": "GET",
+      "ignoreResponse": false,
+      "ignoreFailure": false,
+      "tryCount": 1
+    },
+    "result": {
+      "url": "https://www.hfea.gov.uk/sitemap.xml",
+      "body": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<urlset xmlns=\"http://www.sitemaps.org/schemas/sitemap/0.9\">\n  <url><loc>https://www.hfea.gov.uk/first-page</loc></url>\n  <url><loc>https://www.hfea.gov.uk/second-page</loc></url>\n  <url><loc>https://www.hfea.gov.uk/third-page</loc></url>\n</urlset>\n",
+      "status": 200,
+      "headers": [["content-type", "text/xml; charset=utf-8"]]
+    }
+  }
+]
