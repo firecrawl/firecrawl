@@ -560,8 +560,14 @@ export function getPDFPageMarkdown(parsers?: Parsers): boolean {
   for (const parser of parsers) {
     if (typeof parser === "object" && parser.type === "pdf") {
       // The deprecated `pageMarkdown` alias is folded into `pages` at the
-      // schema boundary, so parsed parsers only carry the canonical name.
-      return parser.pages === true;
+      // schema boundary, so freshly parsed parsers only carry the canonical
+      // name. Serialized options bypass re-parsing (queued jobs and crawl
+      // option snapshots from before the rename), so read the legacy key
+      // defensively too; `pages` wins when both are present.
+      return (
+        (parser.pages ??
+          (parser as { pageMarkdown?: boolean }).pageMarkdown) === true
+      );
     }
   }
   return false;
