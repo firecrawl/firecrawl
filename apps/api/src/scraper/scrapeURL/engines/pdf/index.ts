@@ -41,6 +41,7 @@ import { reconcilePageCountWithFirePdf, scrapePDFWithFirePDF } from "./firePDF";
 import { scrapePDFWithFirePDFAsync } from "./fire-pdf/async";
 import { decideFirePdfAsyncRoute } from "./fire-pdf/routing";
 import { scrapePDFWithParsePDF } from "./pdfParse";
+import { toPublicBlocks } from "./blocks";
 import { captureExceptionWithZdrCheck } from "../../../../services/sentry";
 import { isPdfBuffer, PDF_SNIFF_WINDOW } from "./pdfUtils";
 import { comparePdfOutputs } from "./shadowComparison";
@@ -702,25 +703,7 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
           }
         : {}),
       ...(includeBlocks && result?.blocks
-        ? {
-            blocks: result.blocks.map(page => ({
-              pageNumber: page.page,
-              width: page.width,
-              height: page.height,
-              status: page.status,
-              items: page.items.map(item => ({
-                id: item.id,
-                type: item.type,
-                label: item.label,
-                bbox: item.bbox,
-                content: item.content,
-                markdownSpan: item.markdown_span,
-                readingOrder: item.reading_order,
-                source: item.source,
-                confidence: item.confidence,
-              })),
-            })),
-          }
+        ? { blocks: toPublicBlocks(result.blocks) }
         : {}),
       pdfMetadata: {
         numPages: effectivePageCount,
