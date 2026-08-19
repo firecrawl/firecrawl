@@ -78,7 +78,7 @@ if (config.BULL_AUTH_KEY) {
   );
 }
 
-if (config.FIRECRAWL_INTEGRATIONS_S2S_KEY) {
+if (config.S2S_FIRECRAWL_INTEGRATIONS_KEY) {
   function bearerToken(value: string | string[] | undefined): string | null {
     const header = Array.isArray(value) ? value[0] : value;
     return header?.startsWith("Bearer ") ? header.slice(7) : null;
@@ -93,7 +93,7 @@ if (config.FIRECRAWL_INTEGRATIONS_S2S_KEY) {
 
   function firecrawlIntegrationsMiddleware(req: Request, res: Response, next: NextFunction) {
     if (
-      !secretsMatch(bearerToken(req.headers.authorization), config.FIRECRAWL_INTEGRATIONS_S2S_KEY)
+      !secretsMatch(bearerToken(req.headers.authorization), config.S2S_FIRECRAWL_INTEGRATIONS_KEY)
     ) {
       return res.status(401).json({ error: "Unauthorized" });
     }
