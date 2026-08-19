@@ -790,8 +790,8 @@ export class AutumnService {
    * of monitors scheduled at or slower than this interval do not bill pages
    * whose content did not change. Read from the entity's per-plan
    * monitor_unchanged_free_min_interval grant; a missing grant, missing
-   * entity, or Autumn error falls back to the config default (the free-plan
-   * tier), keeping billing at the status quo rather than under-charging.
+   * entity, or Autumn error falls back to the config default rather than a
+   * per-request guess, so billing stays deterministic during outages.
    * Shares the cached entity fetch, so it adds no Autumn call.
    */
   async getMonitorUnchangedFreeMinIntervalMinutes(
