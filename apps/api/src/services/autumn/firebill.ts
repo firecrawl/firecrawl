@@ -1,6 +1,8 @@
 import { config } from "../../config";
 import { logger } from "../../lib/logger";
+import { sampled } from "../../lib/rollout";
 import type { TrackParams } from "./types";
+import { firebillRetryTotal, firebillTrackTotal } from "./metrics";
 
 /**
  * Outcome of a firebill `/v1/lock` call, mirroring firebill's three-state
@@ -17,6 +19,13 @@ type FirebillLockResult =
 // ~3.5s worst case, so this is deliberately looser than the 2s timeout on the
 // direct Autumn client.
 const FIREBILL_TIMEOUT_MS = 5000;
+
+// Safe to retry because the idempotency key is stable across attempts: if the
+// first attempt did land (ambiguous confirm timeout), Autumn dedupes the second.
+// Small because a caller may be waiting, and a firebill refusing events usually
+// cannot reach the broker — which more attempts will not fix.
+const FIREBILL_ATTEMPTS = 2;
+const FIREBILL_RETRY_DELAY_MS = 150;
 
 // FIREBILL_ORG_IDS is decoded once at startup by the config schema; the Set is
 // built lazily on first use and cached, keyed on the decoded array reference.
@@ -37,13 +46,15 @@ function firebillOrgIds(): Set<string> {
 }
 
 /**
- * Whether usage tracking for this org should be routed through firebill
- * instead of directly to Autumn. Requires firebill to be fully configured AND
- * the org to be on the rollout allowlist.
+ * Whether this org's usage goes through firebill rather than straight to Autumn.
+ * Needs firebill configured, then either the allowlist or the sticky percentage.
  */
 export function shouldRouteToFirebill(orgId: string): boolean {
   if (!config.FIREBILL_URL || !config.FIREBILL_SECRET) return false;
-  return firebillOrgIds().has(orgId);
+  // Always-on set: test orgs stay routed even at 0 percent.
+  if (firebillOrgIds().has(orgId)) return true;
+  // Sticky by org, so a ramp only ever adds and 0 is the kill switch.
+  return sampled(orgId, config.FIREBILL_ROLLOUT_PERCENT);
 }
 
 // Plain concatenation rather than new URL(path, base): a leading-slash path
@@ -53,26 +64,71 @@ function firebillUrl(path: string): string {
 }
 
 /**
- * Sends a usage event to firebill, which records it durably in Postgres and
- * forwards it to Autumn (replaying failed deliveries instead of losing them).
+ * Sends a usage event to firebill, which publishes it to a durable quorum queue
+ * and answers once the broker has confirmed it, then forwards it to Autumn from
+ * a consumer (retrying failed deliveries instead of losing them).
  *
  * A negative value is a refund (refundCredits negates before calling track);
  * firebill's /v1/refund endpoint expects the POSITIVE amount and negates it
  * itself, so the absolute value is sent either way.
  *
  * Returns true when firebill accepted the event, mirroring the boolean
- * contract of the direct Autumn track path. A `false` here means "not billed
- * yet" — firebill keeps retrying delivery on its side.
+ * contract of the direct Autumn track path. A `false` means firebill never
+ * took it: nothing is retrying, and the usage goes unbilled.
  */
-export async function firebillTrack({
-  customerId,
-  entityId,
-  featureId,
-  value,
-  properties,
-  idempotencyKey,
-}: TrackParams): Promise<boolean> {
-  const path = value < 0 ? "/v1/refund" : "/v1/track";
+export async function firebillTrack(params: TrackParams): Promise<boolean> {
+  const path = params.value < 0 ? "/v1/refund" : "/v1/track";
+
+  for (let attempt = 1; attempt <= FIREBILL_ATTEMPTS; attempt++) {
+    const result = await firebillAttempt(path, params);
+    if (result.ok) {
+      firebillTrackTotal.labels(path, "accepted").inc();
+      return true;
+    }
+
+    if (attempt < FIREBILL_ATTEMPTS) {
+      firebillRetryTotal.labels(result.reason).inc();
+      await new Promise(resolve =>
+        setTimeout(resolve, FIREBILL_RETRY_DELAY_MS),
+      );
+      continue;
+    }
+
+    // Nobody owns this event now, so the usage is gone unless someone acts on
+    // it. A counter, not a throw: billing must not fail the customer's request,
+    // and a log alone is too quiet to alert on.
+    firebillTrackTotal.labels(path, "refused").inc();
+    logger.error("firebill refused a usage event; it will not be billed", {
+      customerId: params.customerId,
+      entityId: params.entityId,
+      featureId: params.featureId,
+      value: params.value,
+      idempotencyKey: params.idempotencyKey,
+      path,
+      attempts: FIREBILL_ATTEMPTS,
+      reason: result.reason,
+    });
+    return false;
+  }
+
+  return false;
+}
+
+type AttemptResult =
+  | { ok: true }
+  | { ok: false; reason: "not_ok" | "not_success" | "exception" };
+
+async function firebillAttempt(
+  path: string,
+  {
+    customerId,
+    entityId,
+    featureId,
+    value,
+    properties,
+    idempotencyKey,
+  }: TrackParams,
+): Promise<AttemptResult> {
   const url = firebillUrl(path);
   try {
     const response = await fetch(url, {
@@ -90,17 +146,17 @@ export async function firebillTrack({
         feature_id: featureId,
         value: Math.abs(value),
         properties,
-        // Stable per-charge key: firebill makes it the intent row's primary
-        // key, so a caller retry (or a requeued job re-billing the same work)
-        // is answered from the existing row instead of charged again. Omitted
-        // → firebill mints a per-request UUID (dedupes only its own retries).
+        // firebill carries this to Autumn as the Idempotency-Key on every
+        // attempt, so a requeued job re-billing the same work is deduped rather
+        // than charged twice. Omitted → firebill mints a per-request UUID,
+        // which dedupes only its own retries.
         ...(idempotencyKey ? { idempotency_key: idempotencyKey } : {}),
       }),
       signal: AbortSignal.timeout(FIREBILL_TIMEOUT_MS),
     });
 
     if (!response.ok) {
-      logger.error("firebill track failed — non-OK response", {
+      logger.warn("firebill track attempt failed — non-OK response", {
         customerId,
         entityId,
         featureId,
@@ -108,19 +164,19 @@ export async function firebillTrack({
         path,
         status: response.status,
       });
-      return false;
+      return { ok: false, reason: "not_ok" };
     }
 
     const body = (await response.json()) as { success?: boolean };
     if (body.success !== true) {
-      logger.error("firebill track did not succeed", {
+      logger.warn("firebill track attempt did not succeed", {
         customerId,
         entityId,
         featureId,
         value,
         path,
       });
-      return false;
+      return { ok: false, reason: "not_success" };
     }
 
     logger.info("firebill track succeeded", {
@@ -130,14 +186,12 @@ export async function firebillTrack({
       value,
       path,
     });
-    return true;
+    return { ok: true };
   } catch (error) {
-    // DO NOT fall back to calling Autumn directly here: firebill may have
-    // durably recorded the event before this call failed and will deliver it
-    // to Autumn later, so a direct-Autumn fallback could double-bill the
-    // customer. A firebill failure (timeout, 5xx, connection refused) is
-    // treated exactly like an Autumn track failure: log and return false.
-    logger.error("firebill track failed — firebill may be unavailable", {
+    // DO NOT fall back to Autumn directly: firebill may have accepted the event
+    // before this failed, and the Autumn SDK sends no idempotency key, so the
+    // pair could not be deduped and the customer would be billed twice.
+    logger.warn("firebill track attempt failed — firebill may be unavailable", {
       customerId,
       entityId,
       featureId,
@@ -145,7 +199,7 @@ export async function firebillTrack({
       path,
       error,
     });
-    return false;
+    return { ok: false, reason: "exception" };
   }
 }
 

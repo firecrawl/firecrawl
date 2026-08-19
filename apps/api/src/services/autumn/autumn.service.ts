@@ -10,6 +10,7 @@ import {
   firebillTrack,
   shouldRouteToFirebill,
 } from "./firebill";
+import { billingRouteTotal } from "./metrics";
 import type {
   CreateEntityParams,
   CreateEntityResult,
@@ -238,13 +239,12 @@ export class AutumnService {
     properties,
     idempotencyKey,
   }: TrackParams): Promise<boolean> {
-    // Gradual firebill rollout: allowlisted orgs record usage via firebill (a
-    // durable store that forwards to Autumn) instead of calling Autumn
-    // directly. If the firebill call fails we must NOT fall back to Autumn —
-    // firebill may have durably recorded the event and will deliver it later,
-    // so a direct-Autumn fallback could double-bill the customer. firebillTrack
-    // returns false on failure, exactly like an Autumn track failure.
+    // Gradual rollout: allowlisted orgs, and those in the sticky
+    // FIREBILL_ROLLOUT_PERCENT bucket, bill through firebill. No fallback to
+    // Autumn on failure — firebill may already own the event, and the SDK sends
+    // no idempotency key, so the pair could not be deduped.
     if (shouldRouteToFirebill(customerId)) {
+      billingRouteTotal.labels("firebill").inc();
       return await firebillTrack({
         customerId,
         entityId,
@@ -254,6 +254,8 @@ export class AutumnService {
         idempotencyKey,
       });
     }
+
+    billingRouteTotal.labels("direct").inc();
 
     if (!autumnClient) return false;
 

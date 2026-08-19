@@ -53,9 +53,9 @@ export async function billTeam(
         if (await autumnService.isRoutedThroughFirebill(team_id)) {
           // No compensating refund on the firebill route: the tracked charge
           // is durable and correct, and a refund here poisons a retried
-          // request — its track would dedupe against the intent row (no new
-          // charge) while the ledger enqueue succeeds, leaving Autumn
-          // net-zero for billed work.
+          // request — its track would be deduped by Autumn against the same
+          // idempotency key (no new charge) while the ledger enqueue succeeds,
+          // leaving Autumn net-zero for billed work.
           logger?.warn(
             "billing enqueue failed on the firebill route; charge stands",
             { team_id, credits, billing },

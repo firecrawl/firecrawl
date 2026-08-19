@@ -405,6 +405,12 @@ const configSchema = z.object({
   FIREBILL_URL: emptyStringAsUndefined(z.string().url()),
   FIREBILL_SECRET: emptyStringAsUndefined(z.string().trim().min(1)),
   FIREBILL_ORG_IDS: delimitedList(",").optional(),
+  // Sticky percentage ramp, on top of the allowlist above. The bucket is a
+  // hash of the org id, so an org that is in at 5 is still in at 30 — a ramp
+  // only ever adds, and never reshuffles who is on which path mid-rollout.
+  // 0 (the default) is also the kill switch: the allowlist still routes, and
+  // nothing else does.
+  FIREBILL_ROLLOUT_PERCENT: z.coerce.number().min(0).max(100).default(0),
 
   // Miscellaneous
   IDMUX_URL: z.string().optional(),
