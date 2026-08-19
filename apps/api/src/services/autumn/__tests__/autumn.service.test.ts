@@ -715,7 +715,7 @@ describe("firebill routing", () => {
     expect(String(url)).toBe("http://proxy.test/firebill/v1/track");
   });
 
-  it("sends a caller-supplied idempotency key to firebill, and omits the field otherwise", async () => {
+  it("sends a caller-supplied idempotency key to firebill, and mints one otherwise", async () => {
     state.configRef = firebillConfig();
     const svc = makeService();
 
@@ -734,9 +734,14 @@ describe("firebill routing", () => {
       value: 5,
       properties: { source: "billTeam", endpoint: "search" },
     });
-    expect(
-      "idempotency_key" in JSON.parse(mockFetch.mock.calls[1]![1].body),
-    ).toBe(false);
+    // A key is always sent, even when the caller has none: firebillTrack retries
+    // once, and both attempts have to be the same event or an accepted-but-lost
+    // first attempt would be billed twice. firebill would have minted an
+    // equivalent UUID itself; minting it here is what makes it stable across
+    // the retry.
+    const minted = JSON.parse(mockFetch.mock.calls[1]![1].body).idempotency_key;
+    expect(minted).toEqual(expect.any(String));
+    expect(minted).not.toBe("fc:track:scrape:job-123");
   });
 
   it("a track/refund pair for one charge carries two distinct keys", async () => {
@@ -794,6 +799,9 @@ describe("firebill routing", () => {
       feature_id: "CREDITS",
       value: 42,
       properties: { source: "test", endpoint: "extract" },
+      // Minted when the caller has none, so the retry inside firebillTrack is
+      // the same event rather than a second charge.
+      idempotency_key: expect.any(String),
     });
   });
 

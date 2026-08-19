@@ -13,14 +13,17 @@ export const billingRouteTotal = new Counter({
 });
 
 /**
- * What firebill said. `refused` is the one that matters: firebill answered
- * `success: false`, so it does NOT own the event and nobody else does either —
- * usage is being dropped. Alert on it.
+ * What firebill said. `refused` is an explicit `success: false` — firebill does
+ * not own the event and nobody else does, so usage is being dropped.
+ * `ambiguous` is a transport failure: firebill may have accepted it before the
+ * answer was lost. Both mean the caller was told false; only `refused` is proof
+ * the usage is gone. Alert on the pair.
  */
 export const firebillTrackTotal = new Counter({
   name: "firecrawl_firebill_track_total",
   help: "Outcomes of usage events sent to firebill",
-  labelNames: ["path", "outcome"] as const, // track|refund × accepted|refused
+  // operation: track|refund   outcome: accepted|refused|ambiguous
+  labelNames: ["operation", "outcome"] as const,
 });
 
 /** Retries of a firebill call that answered `false` or threw. */

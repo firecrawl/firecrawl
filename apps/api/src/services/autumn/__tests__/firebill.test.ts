@@ -16,6 +16,8 @@ vi.mock("../../../lib/logger", () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
 }));
 
+// Built fresh per call: a Response body can only be read once, so a shared
+// instance would make the second attempt look like a transport failure.
 const ok = () =>
   new Response(JSON.stringify({ success: true }), { status: 200 });
 const refused = () =>
@@ -69,8 +71,8 @@ describe("firebillTrack", () => {
   it("retries a refusal and reports success if the retry lands", async () => {
     const fetchMock = vi
       .fn()
-      .mockResolvedValueOnce(refused())
-      .mockResolvedValueOnce(ok());
+      .mockImplementationOnce(async () => refused())
+      .mockImplementationOnce(async () => ok());
     vi.stubGlobal("fetch", fetchMock);
 
     await expect(firebillTrack(params)).resolves.toBe(true);
@@ -83,18 +85,72 @@ describe("firebillTrack", () => {
   });
 
   it("gives up after the attempt limit and reports false", async () => {
-    const fetchMock = vi.fn().mockResolvedValue(refused());
+    const fetchMock = vi.fn().mockImplementation(async () => refused());
     vi.stubGlobal("fetch", fetchMock);
 
     await expect(firebillTrack(params)).resolves.toBe(false);
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
+  it("reuses one key across attempts even when the caller supplies none", async () => {
+    // Without this the retry is a second event: firebill mints its own key per
+    // request, so an accepted-but-lost first attempt would be billed twice.
+    const fetchMock = vi
+      .fn()
+      .mockRejectedValueOnce(new Error("timeout"))
+      .mockImplementationOnce(async () => ok());
+    vi.stubGlobal("fetch", fetchMock);
+
+    await firebillTrack({ ...params, idempotencyKey: undefined });
+
+    const keys = fetchMock.mock.calls.map(
+      c => JSON.parse(c[1].body).idempotency_key,
+    );
+    expect(keys[0]).toBeTruthy();
+    expect(keys[0]).toBe(keys[1]);
+  });
+
+  it("mints a different key for each keyless call", async () => {
+    const fetchMock = vi.fn().mockImplementation(async () => ok());
+    vi.stubGlobal("fetch", fetchMock);
+
+    await firebillTrack({ ...params, idempotencyKey: undefined });
+    await firebillTrack({ ...params, idempotencyKey: undefined });
+
+    const [first, second] = fetchMock.mock.calls.map(
+      c => JSON.parse(c[1].body).idempotency_key,
+    );
+    expect(first).not.toBe(second);
+  });
+
+  it("separates an explicit refusal from an ambiguous transport failure", async () => {
+    const outcomes = async () =>
+      Object.fromEntries(
+        (await firebillTrackTotal.get()).values.map(v => [
+          v.labels.outcome,
+          v.value,
+        ]),
+      );
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation(async () => refused()),
+    );
+    await firebillTrack(params);
+    expect(await outcomes()).toEqual({ refused: 1 });
+
+    firebillTrackTotal.reset();
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("timeout")));
+    await firebillTrack(params);
+    // A timeout is not proof the usage was lost — firebill may have taken it.
+    expect(await outcomes()).toEqual({ ambiguous: 1 });
+  });
+
   it("retries a thrown error too", async () => {
     const fetchMock = vi
       .fn()
       .mockRejectedValueOnce(new Error("connection refused"))
-      .mockResolvedValueOnce(ok());
+      .mockImplementationOnce(async () => ok());
     vi.stubGlobal("fetch", fetchMock);
 
     await expect(firebillTrack(params)).resolves.toBe(true);
@@ -102,7 +158,7 @@ describe("firebillTrack", () => {
   });
 
   it("sends a refund to /v1/refund with the value made positive", async () => {
-    const fetchMock = vi.fn().mockResolvedValue(ok());
+    const fetchMock = vi.fn().mockImplementation(async () => ok());
     vi.stubGlobal("fetch", fetchMock);
 
     await firebillTrack({ ...params, value: -7 });

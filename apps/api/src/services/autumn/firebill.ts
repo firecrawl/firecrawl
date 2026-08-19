@@ -1,3 +1,4 @@
+import { randomUUID } from "crypto";
 import { config } from "../../config";
 import { logger } from "../../lib/logger";
 import { sampled } from "../../lib/rollout";
@@ -77,40 +78,57 @@ function firebillUrl(path: string): string {
  * took it: nothing is retrying, and the usage goes unbilled.
  */
 export async function firebillTrack(params: TrackParams): Promise<boolean> {
-  const path = params.value < 0 ? "/v1/refund" : "/v1/track";
+  const operation = params.value < 0 ? "refund" : "track";
+  const path = `/v1/${operation}`;
+  // Both attempts must be the same event. Without a caller key firebill mints
+  // one per request, so a retry after an accepted-but-lost first attempt would
+  // be a second charge; minting here instead keeps one identity per call while
+  // separate calls stay distinct, exactly as before.
+  const attempted = {
+    ...params,
+    idempotencyKey: params.idempotencyKey ?? randomUUID(),
+  };
 
-  for (let attempt = 1; attempt <= FIREBILL_ATTEMPTS; attempt++) {
-    const result = await firebillAttempt(path, params);
+  for (let attempt = 1; attempt < FIREBILL_ATTEMPTS; attempt++) {
+    const result = await firebillAttempt(path, attempted);
     if (result.ok) {
-      firebillTrackTotal.labels(path, "accepted").inc();
+      firebillTrackTotal.labels(operation, "accepted").inc();
       return true;
     }
+    firebillRetryTotal.labels(result.reason).inc();
+    await new Promise(resolve => setTimeout(resolve, FIREBILL_RETRY_DELAY_MS));
+  }
 
-    if (attempt < FIREBILL_ATTEMPTS) {
-      firebillRetryTotal.labels(result.reason).inc();
-      await new Promise(resolve =>
-        setTimeout(resolve, FIREBILL_RETRY_DELAY_MS),
-      );
-      continue;
-    }
+  const last = await firebillAttempt(path, attempted);
+  if (last.ok) {
+    firebillTrackTotal.labels(operation, "accepted").inc();
+    return true;
+  }
 
-    // Nobody owns this event now, so the usage is gone unless someone acts on
-    // it. A counter, not a throw: billing must not fail the customer's request,
-    // and a log alone is too quiet to alert on.
-    firebillTrackTotal.labels(path, "refused").inc();
-    logger.error("firebill refused a usage event; it will not be billed", {
+  // `refused` only for an explicit `success: false`, which is firebill saying it
+  // did not take the event. A transport failure is `ambiguous`: firebill may
+  // have accepted it and be delivering it right now, so this is not proof of
+  // lost usage. Either way the caller is told false and must not assume a
+  // charge landed. A counter rather than a throw: billing must not fail the
+  // customer's request, and a log alone is too quiet to alert on.
+  const outcome = last.reason === "not_success" ? "refused" : "ambiguous";
+  logger.error(
+    outcome === "refused"
+      ? "firebill refused a usage event; it will not be billed"
+      : "firebill did not answer; the event may or may not have been accepted",
+    {
       customerId: params.customerId,
       entityId: params.entityId,
       featureId: params.featureId,
       value: params.value,
-      idempotencyKey: params.idempotencyKey,
+      idempotencyKey: attempted.idempotencyKey,
+      callerSuppliedKey: params.idempotencyKey !== undefined,
       path,
       attempts: FIREBILL_ATTEMPTS,
-      reason: result.reason,
-    });
-    return false;
-  }
-
+      reason: last.reason,
+    },
+  );
+  firebillTrackTotal.labels(operation, outcome).inc();
   return false;
 }
 
