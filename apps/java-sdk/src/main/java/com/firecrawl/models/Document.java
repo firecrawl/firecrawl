@@ -31,7 +31,7 @@ public class Document {
     private Product product;
     private Menu menu;
     /** Typed PDF layout blocks, present only when parsers[].blocks is true. */
-    private List<Map<String, Object>> blocks;
+    private List<PdfPageBlocks> blocks;
 
     public String getMarkdown() { return markdown; }
     public String getHtml() { return html; }
@@ -53,7 +53,7 @@ public class Document {
     public Map<String, Object> getBranding() { return branding; }
     public Product getProduct() { return product; }
     public Menu getMenu() { return menu; }
-    public List<Map<String, Object>> getBlocks() { return blocks; }
+    public List<PdfPageBlocks> getBlocks() { return blocks; }
 
     @Override
     public String toString() {

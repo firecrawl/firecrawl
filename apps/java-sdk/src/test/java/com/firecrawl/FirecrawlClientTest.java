@@ -276,8 +276,25 @@ class FirecrawlClientTest {
         assertEquals("# Annual Report 2025", doc.getMarkdown());
         assertNotNull(doc.getBlocks());
         assertEquals(1, doc.getBlocks().size());
-        assertEquals(1, ((Number) doc.getBlocks().get(0).get("pageNumber")).intValue());
-        assertEquals("ok", doc.getBlocks().get(0).get("status"));
+
+        PdfPageBlocks page = doc.getBlocks().get(0);
+        assertEquals(1, page.getPageNumber());
+        assertEquals(1700.0, page.getWidth());
+        assertEquals(2200.0, page.getHeight());
+        assertEquals("ok", page.getStatus());
+        assertEquals(1, page.getItems().size());
+
+        PdfBlockItem item = page.getItems().get(0);
+        assertEquals("p1.b0", item.getId());
+        assertEquals("title", item.getType());
+        assertEquals("doc_title", item.getLabel());
+        assertEquals(List.of(0.118, 0.054, 0.882, 0.092), item.getBbox());
+        assertEquals("# Annual Report 2025", item.getContent());
+        assertEquals(List.of(0, 21), item.getMarkdownSpan());
+        assertEquals(0, item.getReadingOrder());
+        assertEquals("native_text", item.getSource());
+        assertEquals(0.97, item.getConfidence().getLayout());
+        assertNull(item.getConfidence().getOcr());
     }
 
     @Test
