@@ -5,6 +5,7 @@ import {
   getPdfResultFromCache,
   savePdfResultToCache,
 } from "../../../../../lib/gcs-pdf-cache";
+import { firePdfBlockPagesSchema } from "./schema";
 
 // Cache layout mirrors the sync `scrapePDFWithFirePDF` so async/sync share
 // entries. `fast` mode bypasses entirely (hard cost ceiling — must fail on
@@ -52,35 +53,13 @@ function isValidPageMarkdown(
   );
 }
 
+// Cached block sidecars must satisfy the full wire contract before being
+// served — a malformed or stale GCS artifact is skipped (and regenerated)
+// rather than surfaced as invalid public block data.
 function isValidBlocks(
   value: unknown,
 ): value is NonNullable<PDFProcessorResult["blocks"]> {
-  return (
-    Array.isArray(value) &&
-    value.every(
-      page =>
-        typeof page === "object" &&
-        page !== null &&
-        Number.isInteger((page as { page?: unknown }).page) &&
-        Number((page as { page: number }).page) > 0 &&
-        Array.isArray((page as { items?: unknown }).items) &&
-        (page as { items: unknown[] }).items.every(item => {
-          if (typeof item !== "object" || item === null) return false;
-          const block = item as {
-            id?: unknown;
-            type?: unknown;
-            content?: unknown;
-            reading_order?: unknown;
-          };
-          return (
-            typeof block.id === "string" &&
-            typeof block.type === "string" &&
-            typeof block.content === "string" &&
-            typeof block.reading_order === "number"
-          );
-        }),
-    )
-  );
+  return firePdfBlockPagesSchema.safeParse(value).success;
 }
 
 export function cacheKeyShape(

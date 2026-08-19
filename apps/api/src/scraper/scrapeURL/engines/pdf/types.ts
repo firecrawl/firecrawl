@@ -1,43 +1,16 @@
+import type { z } from "zod";
+import type { firePdfBlockPagesSchema } from "./fire-pdf/schema";
+
 export type PdfPageMarkdown = {
   /** 1-based physical PDF page number returned by fire-pdf. */
   page: number;
   markdown: string;
 };
 
-/** Typed layout block as fire-pdf returns it (snake_case wire shape,
- * fire-pdf docs/blocks-schema.md). Cached artifacts store this shape. */
-export type FirePdfBlock = {
-  /** Stable within a response: p<page>.b<index in reading order>. */
-  id: string;
-  /** Public block taxonomy: title, section_header, text, table, formula,
-   * figure, caption, page_number, ... New types may appear over time. */
-  type: string;
-  /** Raw layout-model label, passthrough for forward compatibility. */
-  label: string | null;
-  /** [x0,y0,x1,y1] normalized 0-1 to page dims; null when the page has no
-   * known dims and the raw bbox isn't already normalized. */
-  bbox: [number, number, number, number] | null;
-  /** Markdown fragment this block contributed. */
-  content: string;
-  /** [start,end) char offsets into the document markdown; null when a
-   * post-join transform rewrote the fragment. */
-  markdown_span: [number, number] | null;
-  reading_order: number;
-  source: string | null;
-  confidence: { layout: number | null; ocr: number | null };
-};
-
-export type FirePdfPageBlocks = {
-  /** 1-based, matches `<!-- page N -->` markers in the document markdown. */
-  page: number;
-  /** Render dims in px — the bbox denormalization anchor. Null for pages
-   * that never rendered (direct-extraction-only pages). */
-  width: number | null;
-  height: number | null;
-  /** Page-level rollup: "ok" | "partial" | "failed" (open set). */
-  status: string;
-  items: FirePdfBlock[];
-};
+/** Typed layout blocks as fire-pdf returns them (snake_case wire shape,
+ * fire-pdf docs/blocks-schema.md). Inferred from the zod wire schema so the
+ * contract lives in exactly one place. Cached artifacts store this shape. */
+export type FirePdfPageBlocks = z.infer<typeof firePdfBlockPagesSchema>[number];
 
 /** Public camelCase shape surfaced on `Document.blocks`. */
 export type PdfBlockItem = {

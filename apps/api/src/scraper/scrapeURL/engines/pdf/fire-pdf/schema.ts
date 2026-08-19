@@ -51,48 +51,63 @@ export const pollResponseSchema = z.object({
  * Physical page markdown payload, shared by the sync `/ocr` and async
  * `/jobs/:id/result` response schemas. When `include_blocks` is requested
  * without `include_page_markdown`, fire-pdf returns `pages` in a legacy
- * block-alias shape (`{page, width, height, status, blocks}` — no markdown);
- * `.catch(undefined)` drops that alias instead of failing the whole response
- * parse. The callers' "requested page markdown missing" checks still fire
- * when page markdown was actually requested but came back malformed.
+ * block-alias shape (`{page, width, height, status, blocks}` — no markdown).
+ * The union matches that alias explicitly and drops it to `undefined`, so
+ * genuine protocol corruption still fails the response parse, and the
+ * callers' "requested page markdown missing" checks still fire when page
+ * markdown was requested but absent.
  */
 export const firePdfPagesSchema = z
-  .array(z.object({ page: z.number().int().positive(), markdown: z.string() }))
-  .optional()
-  .catch(undefined);
+  .union([
+    z.array(
+      z.object({ page: z.number().int().positive(), markdown: z.string() }),
+    ),
+    z
+      .array(
+        z.object({
+          page: z.number().int().positive(),
+          blocks: z.array(z.unknown()),
+        }),
+      )
+      .transform((): undefined => undefined),
+  ])
+  .optional();
 
 /** Typed layout blocks (fire-pdf docs/blocks-schema.md), present only when
- * the request set `include_blocks`. Wire shape — snake_case passthrough. */
-export const firePdfBlocksSchema = z
-  .array(
-    z.object({
-      page: z.number().int().positive(),
-      width: z.number().nullable(),
-      height: z.number().nullable(),
-      // Documented values: ok | partial | failed. Kept open so a new
-      // page status never fails an otherwise-valid scrape.
-      status: z.string(),
-      items: z.array(
-        z.object({
-          id: z.string(),
-          type: z.string(),
-          label: z.string().nullable(),
-          bbox: z
-            .tuple([z.number(), z.number(), z.number(), z.number()])
-            .nullable(),
-          content: z.string(),
-          markdown_span: z.tuple([z.number(), z.number()]).nullable(),
-          reading_order: z.number(),
-          source: z.string().nullable(),
-          confidence: z.object({
-            layout: z.number().nullable(),
-            ocr: z.number().nullable(),
-          }),
+ * the request set `include_blocks`. Wire shape — snake_case passthrough.
+ * Single source of truth for the block contract: the response parsers and
+ * the GCS cache validator both use it, and the wire TS types are inferred
+ * from it. */
+export const firePdfBlockPagesSchema = z.array(
+  z.object({
+    page: z.number().int().positive(),
+    width: z.number().nullable(),
+    height: z.number().nullable(),
+    // Documented values: ok | partial | failed. Kept open so a new
+    // page status never fails an otherwise-valid scrape.
+    status: z.string(),
+    items: z.array(
+      z.object({
+        id: z.string(),
+        type: z.string(),
+        label: z.string().nullable(),
+        bbox: z
+          .tuple([z.number(), z.number(), z.number(), z.number()])
+          .nullable(),
+        content: z.string(),
+        markdown_span: z.tuple([z.number(), z.number()]).nullable(),
+        reading_order: z.number(),
+        source: z.string().nullable(),
+        confidence: z.object({
+          layout: z.number().nullable(),
+          ocr: z.number().nullable(),
         }),
-      ),
-    }),
-  )
-  .optional();
+      }),
+    ),
+  }),
+);
+
+export const firePdfBlocksSchema = firePdfBlockPagesSchema.optional();
 
 export const resultResponseSchema = z.object({
   schema_version: z
