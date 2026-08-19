@@ -60,7 +60,7 @@ import { LLMRefusalError } from "./transformers/llmExtract";
 import { urlSpecificParams } from "./lib/urlSpecificParams";
 import { shouldCheckRobots } from "./shouldCheckRobots";
 import { loadMock, MockState } from "./lib/mock";
-import { canEscalateToStealthProxy } from "./lib/stealthEscalation";
+import { shouldEscalateToStealthProxy } from "./lib/stealthEscalation";
 import { CostTracking } from "../../lib/cost-tracking";
 import { getEngineForUrl } from "../WebScraper/utils/engine-forcing";
 import { useIndex } from "../../services/index";
@@ -598,7 +598,7 @@ async function scrapeURLLoopIter(
       engineResult.statusCode,
     );
 
-    if (isLikelyProxyError && canEscalateToStealthProxy(meta)) {
+    if (isLikelyProxyError && shouldEscalateToStealthProxy(meta)) {
       meta.logger.info(
         "Scrape via " +
           engine +

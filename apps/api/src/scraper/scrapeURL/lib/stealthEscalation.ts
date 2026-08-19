@@ -1,18 +1,12 @@
 import type { Meta } from "..";
 
 /**
- * Whether a scrape that looks proxy-blocked may escalate to a stealth proxy.
- *
- * Escalation works by throwing AddFeatureError so the scrape loop re-runs with
- * the stealthProxy flag, which only happens when the engine is not pinned to a
- * single one — with a pinned engine the error propagates and fails the scrape
- * instead.
+ * Whether a proxy-blocked response should escalate to a stealth proxy, by
+ * throwing AddFeatureError so the scrape loop re-runs with the stealthProxy
+ * flag. Only auto escalates, and only once.
  */
-export function canEscalateToStealthProxy(meta: Meta): boolean {
+export function shouldEscalateToStealthProxy(meta: Meta): boolean {
   return (
-    meta.options.proxy === "auto" &&
-    !meta.featureFlags.has("stealthProxy") &&
-    (meta.internalOptions.forceEngine === undefined ||
-      Array.isArray(meta.internalOptions.forceEngine))
+    meta.options.proxy === "auto" && !meta.featureFlags.has("stealthProxy")
   );
 }
