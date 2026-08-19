@@ -14,6 +14,7 @@ final class Document
      * @param array<string, mixed>|null               $actions
      * @param array<string, mixed>|null               $changeTracking
      * @param array<string, mixed>|null               $branding
+     * @param list<array<string, mixed>>|null         $blocks
      */
     public function __construct(
         private readonly ?string $markdown = null,
@@ -36,6 +37,7 @@ final class Document
         private readonly ?array $branding = null,
         private readonly ?Product $product = null,
         private readonly ?Menu $menu = null,
+        private readonly ?array $blocks = null,
     ) {}
 
     /** @param array<string, mixed> $data */
@@ -65,6 +67,9 @@ final class Document
                 : null,
             menu: isset($data['menu']) && is_array($data['menu'])
                 ? Menu::fromArray($data['menu'])
+                : null,
+            blocks: isset($data['blocks']) && is_array($data['blocks'])
+                ? $data['blocks']
                 : null,
         );
     }
@@ -174,5 +179,15 @@ final class Document
     public function getMenu(): ?Menu
     {
         return $this->menu;
+    }
+
+    /**
+     * Typed PDF layout blocks, present only when parsers[].blocks is true.
+     *
+     * @return list<array<string, mixed>>|null
+     */
+    public function getBlocks(): ?array
+    {
+        return $this->blocks;
     }
 }

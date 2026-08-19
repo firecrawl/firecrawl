@@ -262,6 +262,25 @@ class FirecrawlClientTest {
     }
 
     @Test
+    void testDocumentDeserializesBlocks() throws Exception {
+        String json = "{\"markdown\":\"# Annual Report 2025\",\"blocks\":[{"
+                + "\"pageNumber\":1,\"width\":1700,\"height\":2200,\"status\":\"ok\","
+                + "\"items\":[{\"id\":\"p1.b0\",\"type\":\"title\",\"label\":\"doc_title\","
+                + "\"bbox\":[0.118,0.054,0.882,0.092],\"content\":\"# Annual Report 2025\","
+                + "\"markdownSpan\":[0,21],\"readingOrder\":0,\"source\":\"native_text\","
+                + "\"confidence\":{\"layout\":0.97,\"ocr\":null}}]}]}";
+
+        com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+        Document doc = mapper.readValue(json, Document.class);
+
+        assertEquals("# Annual Report 2025", doc.getMarkdown());
+        assertNotNull(doc.getBlocks());
+        assertEquals(1, doc.getBlocks().size());
+        assertEquals(1, ((Number) doc.getBlocks().get(0).get("pageNumber")).intValue());
+        assertEquals("ok", doc.getBlocks().get(0).get("status"));
+    }
+
+    @Test
     void testDocumentDeserializesMenu() throws Exception {
         String json = "{\"menu\":{"
                 + "\"isMenu\":true,"

@@ -690,6 +690,46 @@ pub struct Document {
     pub product: Option<Product>,
     /// Menu extraction result.
     pub menu: Option<Menu>,
+    /// Typed PDF layout blocks, present only when `parsers[].blocks` is true.
+    pub blocks: Option<Vec<PdfPageBlocks>>,
+}
+
+/// Layout and OCR confidence scores for a PDF block.
+#[serde_with::skip_serializing_none]
+#[derive(Deserialize, Serialize, Debug, Default, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct PdfBlockConfidence {
+    pub layout: Option<f64>,
+    pub ocr: Option<f64>,
+}
+
+/// A typed PDF layout block (bounding box, type, reading order).
+#[serde_with::skip_serializing_none]
+#[derive(Deserialize, Serialize, Debug, Default, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct PdfBlockItem {
+    pub id: String,
+    #[serde(rename = "type")]
+    pub block_type: String,
+    pub label: Option<String>,
+    pub bbox: Option<[f64; 4]>,
+    pub content: String,
+    pub markdown_span: Option<[i64; 2]>,
+    pub reading_order: i64,
+    pub source: Option<String>,
+    pub confidence: PdfBlockConfidence,
+}
+
+/// Typed layout blocks for a single PDF page.
+#[serde_with::skip_serializing_none]
+#[derive(Deserialize, Serialize, Debug, Default, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct PdfPageBlocks {
+    pub page_number: u32,
+    pub width: Option<f64>,
+    pub height: Option<f64>,
+    pub status: String,
+    pub items: Vec<PdfBlockItem>,
 }
 
 /// Product extraction result for a page.

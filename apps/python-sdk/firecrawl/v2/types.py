@@ -439,6 +439,43 @@ RedactPIIEntity = Literal[
 ]
 
 
+class PdfBlockConfidence(BaseModel):
+    """Layout and OCR confidence scores for a PDF block."""
+
+    model_config = {"extra": "allow", "populate_by_name": True}
+
+    layout: Optional[float] = None
+    ocr: Optional[float] = None
+
+
+class PdfBlockItem(BaseModel):
+    """A typed PDF layout block (bounding box, type, reading order)."""
+
+    model_config = {"extra": "allow", "populate_by_name": True}
+
+    id: str
+    type: str
+    label: Optional[str] = None
+    bbox: Optional[List[float]] = None
+    content: str
+    markdown_span: Optional[List[int]] = Field(default=None, alias="markdownSpan")
+    reading_order: int = Field(alias="readingOrder")
+    source: Optional[str] = None
+    confidence: PdfBlockConfidence
+
+
+class PdfPageBlocks(BaseModel):
+    """Typed layout blocks for a single PDF page."""
+
+    model_config = {"extra": "allow", "populate_by_name": True}
+
+    page_number: int = Field(alias="pageNumber")
+    width: Optional[float] = None
+    height: Optional[float] = None
+    status: str
+    items: List[PdfBlockItem] = Field(default_factory=list)
+
+
 class Document(BaseModel):
     """A scraped document."""
 
@@ -461,6 +498,7 @@ class Document(BaseModel):
     branding: Optional[BrandingProfile] = None
     product: Optional[ProductProfile] = None
     menu: Optional[MenuProfile] = None
+    blocks: Optional[List[PdfPageBlocks]] = None
 
     @property
     def metadata_typed(self) -> DocumentMetadata:
@@ -1618,6 +1656,8 @@ class PDFParser(BaseModel):
     type: Literal["pdf"] = "pdf"
     mode: Optional[Literal["fast", "auto", "ocr"]] = None
     max_pages: Optional[int] = None
+    page_markdown: Optional[bool] = None
+    blocks: Optional[bool] = None
 
 
 # Location types

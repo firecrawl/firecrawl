@@ -146,6 +146,49 @@ public class ModelsTests
     }
 
     [Fact]
+    public void Document_DeserializesBlocksCorrectly()
+    {
+        var json = """
+        {
+            "markdown": "# Annual Report 2025",
+            "blocks": [
+                {
+                    "pageNumber": 1,
+                    "width": 1700,
+                    "height": 2200,
+                    "status": "ok",
+                    "items": [
+                        {
+                            "id": "p1.b0",
+                            "type": "title",
+                            "label": "doc_title",
+                            "bbox": [0.118, 0.054, 0.882, 0.092],
+                            "content": "# Annual Report 2025",
+                            "markdownSpan": [0, 21],
+                            "readingOrder": 0,
+                            "source": "native_text",
+                            "confidence": { "layout": 0.97, "ocr": null }
+                        }
+                    ]
+                }
+            ]
+        }
+        """;
+
+        var doc = JsonSerializer.Deserialize<Document>(json, JsonOptions);
+        Assert.NotNull(doc);
+        Assert.Equal("# Annual Report 2025", doc.Markdown);
+        Assert.NotNull(doc.Blocks);
+        Assert.Single(doc.Blocks);
+        Assert.Equal(1, doc.Blocks[0].PageNumber);
+        Assert.Equal("ok", doc.Blocks[0].Status);
+        Assert.Single(doc.Blocks[0].Items);
+        Assert.Equal("title", doc.Blocks[0].Items[0].Type);
+        Assert.Equal(0, doc.Blocks[0].Items[0].ReadingOrder);
+        Assert.Equal(0.97, doc.Blocks[0].Items[0].Confidence?.Layout);
+    }
+
+    [Fact]
     public void Document_DeserializesProductCorrectly()
     {
         var json = """

@@ -63,4 +63,10 @@ public class Document
 
     [JsonPropertyName("menu")]
     public MenuProfile? Menu { get; set; }
+
+    /// <summary>
+    /// Typed PDF layout blocks, present only when parsers[].blocks is true.
+    /// </summary>
+    [JsonPropertyName("blocks")]
+    public List<PdfPageBlocks>? Blocks { get; set; }
 }

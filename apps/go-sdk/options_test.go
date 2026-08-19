@@ -64,6 +64,65 @@ func TestScrapeOptionsPreservesStringFormats(t *testing.T) {
 	}
 }
 
+func TestScrapeOptionsSerializesPDFParserBlocks(t *testing.T) {
+	blocks := true
+	payload, err := json.Marshal(ScrapeOptions{
+		Parsers: []interface{}{
+			PDFParser{Type: "pdf", Mode: "auto", Blocks: &blocks},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Marshal ScrapeOptions: %v", err)
+	}
+
+	want := `"parsers":[{"type":"pdf","mode":"auto","blocks":true}]`
+	if !strings.Contains(string(payload), want) {
+		t.Fatalf("serialized parsers = %s, want to contain %s", payload, want)
+	}
+}
+
+func TestDocumentDeserializesBlocks(t *testing.T) {
+	raw := []byte(`{
+		"markdown": "# Annual Report 2025",
+		"blocks": [{
+			"pageNumber": 1,
+			"width": 1700,
+			"height": 2200,
+			"status": "ok",
+			"items": [{
+				"id": "p1.b0",
+				"type": "title",
+				"label": "doc_title",
+				"bbox": [0.118, 0.054, 0.882, 0.092],
+				"content": "# Annual Report 2025",
+				"markdownSpan": [0, 21],
+				"readingOrder": 0,
+				"source": "native_text",
+				"confidence": {"layout": 0.97, "ocr": null}
+			}]
+		}]
+	}`)
+
+	var doc Document
+	if err := json.Unmarshal(raw, &doc); err != nil {
+		t.Fatalf("Unmarshal Document: %v", err)
+	}
+	if len(doc.Blocks) != 1 {
+		t.Fatalf("blocks len = %d, want 1", len(doc.Blocks))
+	}
+	page := doc.Blocks[0]
+	if page.PageNumber != 1 || page.Status != "ok" || len(page.Items) != 1 {
+		t.Fatalf("page = %+v", page)
+	}
+	item := page.Items[0]
+	if item.ID != "p1.b0" || item.Type != "title" || item.ReadingOrder != 0 {
+		t.Fatalf("item = %+v", item)
+	}
+	if item.Confidence.Layout == nil || *item.Confidence.Layout != 0.97 {
+		t.Fatalf("layout confidence = %+v", item.Confidence.Layout)
+	}
+}
+
 func TestScrapeOptionsSerializesRedactPII(t *testing.T) {
 	payload, err := json.Marshal(ScrapeOptions{
 		RedactPII: Bool(true),

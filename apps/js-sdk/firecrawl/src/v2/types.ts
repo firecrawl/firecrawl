@@ -187,6 +187,41 @@ export interface AuditMetadata {
   username: string;
 }
 
+export type PDFParser = {
+  type: "pdf";
+  mode?: "fast" | "auto" | "ocr";
+  maxPages?: number;
+  /** Include physical per-page markdown alongside document markdown. */
+  pageMarkdown?: boolean;
+  /** Include per-page typed layout blocks (bounding boxes, block types, reading order). */
+  blocks?: boolean;
+};
+
+export interface PdfBlockConfidence {
+  layout: number | null;
+  ocr: number | null;
+}
+
+export interface PdfBlockItem {
+  id: string;
+  type: string;
+  label: string | null;
+  bbox: [number, number, number, number] | null;
+  content: string;
+  markdownSpan: [number, number] | null;
+  readingOrder: number;
+  source: string | null;
+  confidence: PdfBlockConfidence;
+}
+
+export interface PdfPageBlocks {
+  pageNumber: number;
+  width: number | null;
+  height: number | null;
+  status: string;
+  items: PdfBlockItem[];
+}
+
 export interface ScrapeOptions {
   formats?: FormatOption[];
   headers?: Record<string, string>;
@@ -196,9 +231,7 @@ export interface ScrapeOptions {
   timeout?: number;
   waitFor?: number;
   mobile?: boolean;
-  parsers?: Array<
-    string | { type: "pdf"; mode?: "fast" | "auto" | "ocr"; maxPages?: number }
-  >;
+  parsers?: Array<string | PDFParser>;
   actions?: ActionOption[];
   location?: LocationConfig;
   skipTlsVerification?: boolean;
@@ -647,6 +680,8 @@ export interface Document {
   branding?: BrandingProfile;
   product?: ProductProfile;
   menu?: MenuProfile;
+  /** Typed PDF layout blocks, present only when `parsers[].blocks` is true. */
+  blocks?: PdfPageBlocks[];
 }
 
 // Pagination configuration for auto-fetching pages from v2 endpoints that return a `next` URL

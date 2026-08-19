@@ -117,8 +117,12 @@ pub enum ParserConfig {
         parser_type: String,
         #[serde(skip_serializing_if = "Option::is_none")]
         mode: Option<String>,
-        #[serde(skip_serializing_if = "Option::is_none")]
+        #[serde(rename = "maxPages", skip_serializing_if = "Option::is_none")]
         max_pages: Option<u32>,
+        #[serde(rename = "pageMarkdown", skip_serializing_if = "Option::is_none")]
+        page_markdown: Option<bool>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        blocks: Option<bool>,
     },
 }
 

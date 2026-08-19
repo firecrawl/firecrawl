@@ -12,6 +12,9 @@ from .v2.types import (
     # Document types
     Document,
     DocumentMetadata,
+    PdfBlockConfidence,
+    PdfBlockItem,
+    PdfPageBlocks,
     
     # Scrape types
     ScrapeFormats,
@@ -67,6 +70,7 @@ from .v2.types import (
     ScrapeAction,
     ExecuteJavascriptAction,
     PDFAction,
+    PDFParser,
     
     # Usage types
     QueueStatusResponse,
@@ -96,6 +100,9 @@ __all__ = [
     # Document types
     'Document',
     'DocumentMetadata',
+    'PdfBlockConfidence',
+    'PdfBlockItem',
+    'PdfPageBlocks',
     
     # Scrape types
     'ScrapeFormats',
@@ -152,6 +159,7 @@ __all__ = [
     'ScrapeAction',
     'ExecuteJavascriptAction',
     'PDFAction',
+    'PDFParser',
 
     # Usage types
     'QueueStatusResponse',
