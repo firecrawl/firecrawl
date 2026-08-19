@@ -33,7 +33,7 @@ import {
 } from "../../../controllers/v2/types";
 import type { PdfMetadata, PdfPageBlocks } from "./pdf/types";
 import { BrandingProfile } from "../../../types/branding";
-import { BrandingNotSupportedError } from "../error";
+import { AgentIndexOnlyError, BrandingNotSupportedError } from "../error";
 import { isUrlBlocked } from "../../WebScraper/utils/blocklist";
 import {
   canUseExchangeForRequest,
@@ -682,14 +682,18 @@ export async function buildFallbackList(meta: Meta): Promise<
   } else if (meta.internalOptions.agentIndexOnly) {
     // Index documents carry no physical-page or typed-block payloads, so an
     // index-only request that demands them can only be answered wrong. Fail
-    // loud instead of silently serving a document without the capability.
+    // loud with the canonical index-only error (maps to a clean 4xx and
+    // tells the caller how to unlock live scraping) instead of silently
+    // serving a document without the capability.
     if (
       getPDFPageMarkdown(meta.options.parsers) ||
       getPDFBlocks(meta.options.parsers)
     ) {
-      throw new Error(
-        "PDF pageMarkdown/blocks cannot be served from the URL index (agentIndexOnly request)",
+      meta.logger.warn(
+        "agentIndexOnly request demands pageMarkdown/blocks, which the URL index cannot serve",
+        { parsers: meta.options.parsers },
       );
+      throw new AgentIndexOnlyError();
     }
     const indexEngines: Engine[] = useIndex ? ["index", "index;documents"] : [];
     _engines.length = 0;
