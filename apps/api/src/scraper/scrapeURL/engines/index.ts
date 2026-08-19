@@ -27,8 +27,11 @@ import {
 } from "./x-twitter";
 import { queryEngpickerVerdict, useIndex } from "../../../services";
 import { hasFormatOfType } from "../../../lib/format-utils";
-import { getPDFPageMarkdown } from "../../../controllers/v2/types";
-import type { PdfMetadata } from "./pdf/types";
+import {
+  getPDFBlocks,
+  getPDFPageMarkdown,
+} from "../../../controllers/v2/types";
+import type { PdfMetadata, PdfPageBlocks } from "./pdf/types";
 import { BrandingProfile } from "../../../types/branding";
 import { BrandingNotSupportedError } from "../error";
 import { isUrlBlocked } from "../../WebScraper/utils/blocklist";
@@ -139,6 +142,7 @@ export type EngineScrapeResult = {
   html: string;
   markdown?: string;
   pages?: Array<{ pageNumber: number; markdown: string }>;
+  blocks?: PdfPageBlocks[];
   json?: unknown;
   statusCode: number;
   error?: string;
@@ -562,8 +566,10 @@ export function shouldUseIndex(meta: Meta) {
     config.FIRECRAWL_INDEX_WRITE_ONLY !== true &&
     !hasFormatOfType(meta.options.formats, "changeTracking") &&
     !hasFormatOfType(meta.options.formats, "branding") &&
-    // The URL index does not yet persist physical-page capability metadata.
+    // The URL index does not yet persist physical-page or typed-block
+    // capability metadata.
     !getPDFPageMarkdown(meta.options.parsers) &&
+    !getPDFBlocks(meta.options.parsers) &&
     !hasCustomScreenshotSettings &&
     meta.options.maxAge !== 0 &&
     (meta.options.headers === undefined ||

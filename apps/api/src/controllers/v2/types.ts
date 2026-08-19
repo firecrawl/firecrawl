@@ -18,6 +18,7 @@ import {
   ScrapeOptions as V1ScrapeOptions,
 } from "../v1/types";
 import type { InternalOptions } from "../../scraper/scrapeURL";
+import type { PdfPageBlocks } from "../../scraper/scrapeURL/engines/pdf/types";
 import { ErrorCodes } from "../../lib/error";
 import Ajv from "ajv";
 import addFormats from "ajv-formats";
@@ -484,6 +485,9 @@ const pdfParserWithOptions = z.strictObject({
   maxPages: z.int().positive().finite().max(10000).optional(),
   /** Include physical per-page markdown alongside document markdown. */
   pageMarkdown: z.boolean().optional(),
+  /** Include per-page typed layout blocks (bounding boxes, block types,
+   * reading order) alongside document markdown. */
+  blocks: z.boolean().optional(),
   // Experimental: route this request through the fire-pdf async pipeline
   // (POST /jobs + poll) instead of the sync POST /ocr endpoint. Falls back
   // to sync on any async-path failure, so user-visible behavior is unchanged
@@ -538,6 +542,16 @@ export function getPDFPageMarkdown(parsers?: Parsers): boolean {
   for (const parser of parsers) {
     if (typeof parser === "object" && parser.type === "pdf") {
       return parser.pageMarkdown === true;
+    }
+  }
+  return false;
+}
+
+export function getPDFBlocks(parsers?: Parsers): boolean {
+  if (!parsers) return false;
+  for (const parser of parsers) {
+    if (typeof parser === "object" && parser.type === "pdf") {
+      return parser.blocks === true;
     }
   }
   return false;
@@ -1242,6 +1256,9 @@ export type Document = {
   markdown?: string;
   /** Physical PDF pages, present only for `parsers[].pageMarkdown`. */
   pages?: Array<{ pageNumber: number; markdown: string }>;
+  /** Typed PDF layout blocks with bounding boxes, present only for
+   * `parsers[].blocks`. */
+  blocks?: PdfPageBlocks[];
   html?: string;
   rawHtml?: string;
   links?: string[];

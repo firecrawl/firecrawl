@@ -7,6 +7,7 @@ import type { PDFMode } from "../../../../controllers/v2/types";
 import { safeMarkdownToHtml } from "./markdownToHtml";
 import { createPdfCacheKey } from "../../../../lib/gcs-pdf-cache";
 import { maybeSaveResult, tryGetCached } from "./fire-pdf/cache";
+import { firePdfBlocksSchema, firePdfPagesSchema } from "./fire-pdf/schema";
 
 /**
  * Reconcile an existing page count with what fire-pdf reported.
@@ -45,6 +46,7 @@ export async function scrapePDFWithFirePDF(
   pagesProcessed?: number,
   mode?: PDFMode,
   includePageMarkdown = false,
+  includeBlocks = false,
 ): Promise<PDFProcessorResult> {
   const logger = meta.logger;
 
@@ -70,6 +72,7 @@ export async function scrapePDFWithFirePDF(
         maxPages,
         pagesProcessed,
         includePageMarkdown,
+        includeBlocks,
       )
     : null;
   if (cached) return cached;
@@ -120,6 +123,7 @@ export async function scrapePDFWithFirePDF(
       ...(maxPages !== undefined && { max_pages: maxPages }),
       ...(mode !== undefined && { mode }),
       ...(includePageMarkdown && { include_page_markdown: true }),
+      ...(includeBlocks && { include_blocks: true }),
       // Enrichment for the fire-pdf jobs DB / dashboard. fire-pdf treats
       // these as optional — older fire-pdf builds will ignore unknown fields.
       team_id: meta.internalOptions.teamId,
@@ -137,11 +141,8 @@ export async function scrapePDFWithFirePDF(
       markdown: z.string(),
       failed_pages: z.array(z.number()).nullable(),
       pages_processed: z.number().optional(),
-      pages: z
-        .array(
-          z.object({ page: z.number().int().positive(), markdown: z.string() }),
-        )
-        .optional(),
+      pages: firePdfPagesSchema,
+      blocks: firePdfBlocksSchema,
     }),
     mock: meta.mock,
     abort: meta.abort.asSignal(),
@@ -152,6 +153,9 @@ export async function scrapePDFWithFirePDF(
     throw new Error(
       "FirePDF response did not include requested physical page markdown",
     );
+  }
+  if (includeBlocks && resp.blocks === undefined) {
+    throw new Error("FirePDF response did not include requested typed blocks");
   }
   const pages = resp.pages_processed ?? pagesProcessed;
 
@@ -170,6 +174,7 @@ export async function scrapePDFWithFirePDF(
     html: await safeMarkdownToHtml(resp.markdown, logger, meta.id),
     pagesProcessed: pages,
     ...(resp.pages ? { pageMarkdown: resp.pages } : {}),
+    ...(resp.blocks ? { blocks: resp.blocks } : {}),
   };
 
   if (cacheable) {
@@ -179,6 +184,7 @@ export async function scrapePDFWithFirePDF(
       mode,
       maxPages,
       includePageMarkdown,
+      includeBlocks,
       result: processorResult,
     });
   }
