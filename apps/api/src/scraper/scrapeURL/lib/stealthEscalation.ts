@@ -7,6 +7,10 @@ import type { Meta } from "..";
  */
 export function shouldEscalateToStealthProxy(meta: Meta): boolean {
   return (
-    meta.options.proxy === "auto" && !meta.featureFlags.has("stealthProxy")
+  return (
+    meta.options.proxy === "auto" &&
+    !meta.featureFlags.has("stealthProxy") &&
+    (meta.internalOptions.forceEngine === undefined ||
+      Array.isArray(meta.internalOptions.forceEngine))
   );
 }
