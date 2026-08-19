@@ -41,6 +41,21 @@ async function feResToPdfPrefetch(
   return feResToFilePrefetch(logger, feRes, "pdf", "pdf");
 }
 
+async function feResToImagePrefetch(
+  logger: Logger,
+  feRes: FireEngineCheckStatusSuccess | undefined,
+  contentType: string,
+): Promise<Meta["imagePrefetch"]> {
+  // Extension is only used for the temp filename, so a best-effort derivation
+  // from the mime subtype (e.g. image/svg+xml -> "svg") is sufficient.
+  const extension =
+    contentType
+      .split("/")[1]
+      ?.split(/[;+]/)[0]
+      ?.replace(/[^a-z0-9]/gi, "") || "img";
+  return feResToFilePrefetch(logger, feRes, extension, "image", contentType);
+}
+
 async function feResToDocumentPrefetch(
   logger: Logger,
   feRes: FireEngineCheckStatusSuccess | undefined,
@@ -57,6 +72,7 @@ export async function specialtyScrapeCheck(
   logger: Logger,
   headers: Record<string, string> | undefined,
   feRes?: FireEngineCheckStatusSuccess,
+  allowImageBase64?: boolean,
 ) {
   const contentType = (Object.entries(headers ?? {}).find(
     x => x[0].toLowerCase() === "content-type",
@@ -130,6 +146,18 @@ export async function specialtyScrapeCheck(
       feRes?.content.startsWith("%PDF-"))
   ) {
     throw new AddFeatureError(["pdf"], await feResToPdfPrefetch(logger, feRes));
+  }
+
+  // Images: when the caller opted into the rawBase64 format, route to the image
+  // engine (which returns the raw bytes as a base64 data URI) instead of
+  // rejecting. Any other binary type still falls through to the rejection below.
+  if (allowImageBase64 && contentType.startsWith("image/")) {
+    throw new AddFeatureError(
+      ["image"],
+      undefined,
+      undefined,
+      await feResToImagePrefetch(logger, feRes, contentType),
+    );
   }
 
   // Reject unsupported binary content types (images, video, audio, archives, etc.)

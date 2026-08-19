@@ -16,7 +16,8 @@ export type FormatString =
   | "product"
   | "menu"
   | "audio"
-  | "video";
+  | "video"
+  | "rawBase64";
 
 export interface Viewport {
   width: number;
@@ -90,7 +91,7 @@ export type FormatOption =
 
 export type ParseFormatString = Exclude<
   FormatString,
-  "screenshot" | "changeTracking" | "branding" | "audio" | "video"
+  "screenshot" | "changeTracking" | "branding" | "audio" | "video" | "rawBase64"
 >;
 
 export interface ParseFormat {
@@ -631,6 +632,8 @@ export interface Document {
   metadata?: DocumentMetadata;
   links?: string[];
   images?: string[];
+  /** Raw bytes of a scraped image URL, as a base64 data URI. Requested via the `rawBase64` format. */
+  rawBase64?: string;
   screenshot?: string;
   audio?: string;
   video?: string;

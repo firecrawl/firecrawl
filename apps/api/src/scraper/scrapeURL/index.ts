@@ -164,6 +164,16 @@ export type Meta = {
       }
     | null
     | undefined; // undefined: no prefetch yet, null: prefetch came back empty
+  imagePrefetch:
+    | {
+        filePath: string;
+        url?: string;
+        status: number;
+        proxyUsed: "basic" | "stealth";
+        contentType?: string;
+      }
+    | null
+    | undefined; // undefined: no prefetch yet, null: prefetch came back empty
   fetchPrefetch:
     | {
         url?: string;
@@ -362,6 +372,7 @@ async function buildMetaObject(
 
   let pdfPrefetch: Meta["pdfPrefetch"] = undefined;
   let documentPrefetch: Meta["documentPrefetch"] = undefined;
+  let imagePrefetch: Meta["imagePrefetch"] = undefined;
   let fetchPrefetch: Meta["fetchPrefetch"] = undefined;
 
   if (internalOptions.uploadedFile) {
@@ -441,6 +452,7 @@ async function buildMetaObject(
         : null,
     pdfPrefetch,
     documentPrefetch,
+    imagePrefetch,
     fetchPrefetch,
     costTracking,
     threatDecisions: [],
@@ -987,6 +999,7 @@ async function scrapeURLLoop(meta: Meta): Promise<ScrapeUrlResponse> {
       pages: engineResult.pages,
       rawHtml: engineResult.html,
       json: engineResult.json,
+      rawBase64: engineResult.rawBase64,
       screenshot: engineResult.screenshot,
       actions: engineResult.actions,
       branding: engineResult.branding,
@@ -1247,6 +1260,9 @@ export async function scrapeURL(
             }
             if (error.documentPrefetch) {
               meta.documentPrefetch = error.documentPrefetch;
+            }
+            if (error.imagePrefetch) {
+              meta.imagePrefetch = error.imagePrefetch;
             }
           } else if (
             error instanceof RemoveFeatureError &&

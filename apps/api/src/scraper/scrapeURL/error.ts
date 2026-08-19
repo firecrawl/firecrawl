@@ -65,16 +65,19 @@ export class AddFeatureError extends Error {
   public featureFlags: FeatureFlag[];
   public pdfPrefetch: Meta["pdfPrefetch"];
   public documentPrefetch: Meta["documentPrefetch"];
+  public imagePrefetch: Meta["imagePrefetch"];
 
   constructor(
     featureFlags: FeatureFlag[],
     pdfPrefetch?: Meta["pdfPrefetch"],
     documentPrefetch?: Meta["documentPrefetch"],
+    imagePrefetch?: Meta["imagePrefetch"],
   ) {
     super("New feature flags have been discovered: " + featureFlags.join(", "));
     this.featureFlags = featureFlags;
     this.pdfPrefetch = pdfPrefetch;
     this.documentPrefetch = documentPrefetch;
+    this.imagePrefetch = imagePrefetch;
   }
 }
 
@@ -229,7 +232,10 @@ export class UnsupportedFileError extends TransportableError {
   constructor(public reason: string) {
     super(
       "SCRAPE_UNSUPPORTED_FILE_ERROR",
-      `The URL returned a file type that Firecrawl cannot process: ${reason}. Firecrawl supports HTML web pages, PDFs, and common document formats. Binary files like images, videos, executables, and archives are not supported. If you expected this URL to return a web page, the server may be misconfigured or returning the wrong content type.`,
+      `The URL returned a file type that Firecrawl cannot process: ${reason}. Firecrawl supports HTML web pages, PDFs, and common document formats. Binary files like images, videos, executables, and archives are not supported. If you expected this URL to return a web page, the server may be misconfigured or returning the wrong content type.` +
+        (reason.startsWith("image/")
+          ? ` To fetch the raw image bytes as a base64 data URI, add the "rawBase64" format to your request.`
+          : ""),
     );
   }
 

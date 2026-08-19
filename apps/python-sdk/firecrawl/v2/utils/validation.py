@@ -19,6 +19,7 @@ def _convert_format_string(format_str: str) -> str:
     format_mapping = {
         "raw_html": "rawHtml",
         "change_tracking": "changeTracking",
+        "raw_base64": "rawBase64",
         "screenshot_full_page": "screenshot@fullPage"
     }
     return format_mapping.get(format_str, format_str)

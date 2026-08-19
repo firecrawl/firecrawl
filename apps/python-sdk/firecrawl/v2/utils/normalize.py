@@ -84,6 +84,9 @@ def normalize_document_input(doc: Dict[str, Any]) -> Dict[str, Any]:
     if "changeTracking" in normalized and "change_tracking" not in normalized:
         normalized["change_tracking"] = normalized.pop("changeTracking")
 
+    if "rawBase64" in normalized and "raw_base64" not in normalized:
+        normalized["raw_base64"] = normalized.pop("rawBase64")
+
     md = normalized.get("metadata")
     if isinstance(md, dict):
         mapped = _map_metadata_keys(md)

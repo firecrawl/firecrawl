@@ -3,6 +3,7 @@ import { EngineScrapeResult } from "..";
 import { Meta } from "../..";
 import { SSLError } from "../../error";
 import { specialtyScrapeCheck } from "../utils/specialtyHandler";
+import { hasFormatOfType } from "../../../../lib/format-utils";
 import {
   getSecureDispatcher,
   InsecureConnectionError,
@@ -214,6 +215,8 @@ export async function scrapeURLWithFetch(
   await specialtyScrapeCheck(
     meta.logger.child({ method: "scrapeURLWithFetch/specialtyScrapeCheck" }),
     Object.fromEntries(response.headers as any),
+    undefined,
+    hasFormatOfType(meta.options.formats, "rawBase64") !== undefined,
   );
 
   return {
