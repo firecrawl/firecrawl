@@ -1172,4 +1172,38 @@ mod tests {
         assert_eq!(item_json["availability"]["inStock"], true);
         assert_eq!(item_json["identifiers"]["merchantItemId"], "abc123");
     }
+
+    #[test]
+    fn test_document_with_blocks() {
+        let json = json!({
+            "markdown": "# Annual Report 2025",
+            "blocks": [{
+                "pageNumber": 1,
+                "width": 1700.0,
+                "height": 2200.0,
+                "status": "ok",
+                "items": [{
+                    "id": "p1.b0",
+                    "type": "title",
+                    "label": "doc_title",
+                    "bbox": [0.118, 0.054, 0.882, 0.092],
+                    "content": "# Annual Report 2025",
+                    "markdownSpan": [0, 21],
+                    "readingOrder": 0,
+                    "source": "native_text",
+                    "confidence": { "layout": 0.97, "ocr": null }
+                }]
+            }]
+        });
+        let doc: Document = serde_json::from_value(json).unwrap();
+        let pages = doc.blocks.expect("blocks should be present");
+        assert_eq!(pages.len(), 1);
+        assert_eq!(pages[0].page_number, 1);
+        assert_eq!(pages[0].status, "ok");
+        assert_eq!(pages[0].items[0].id, "p1.b0");
+        assert_eq!(pages[0].items[0].block_type, "title");
+        assert_eq!(pages[0].items[0].reading_order, 0);
+        assert_eq!(pages[0].items[0].confidence.layout, Some(0.97));
+        assert_eq!(pages[0].items[0].confidence.ocr, None);
+    }
 }

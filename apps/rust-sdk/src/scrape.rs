@@ -524,6 +524,31 @@ mod tests {
         assert!(payload.get("formats").is_none());
     }
 
+    #[test]
+    fn test_pdf_parser_serializes_blocks() {
+        let options = ScrapeOptions {
+            parsers: Some(vec![ParserConfig::Pdf {
+                parser_type: "pdf".to_string(),
+                mode: Some("auto".to_string()),
+                max_pages: None,
+                page_markdown: Some(true),
+                blocks: Some(true),
+            }]),
+            ..Default::default()
+        };
+
+        let payload = serde_json::to_value(options).unwrap();
+        assert_eq!(
+            payload["parsers"][0],
+            json!({
+                "type": "pdf",
+                "mode": "auto",
+                "pageMarkdown": true,
+                "blocks": true
+            })
+        );
+    }
+
     #[tokio::test]
     async fn test_scrape_with_mock() {
         let mut server = mockito::Server::new_async().await;
