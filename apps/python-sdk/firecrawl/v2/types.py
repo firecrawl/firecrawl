@@ -1669,6 +1669,20 @@ class PDFParser(BaseModel):
     pages: Optional[bool] = None
     blocks: Optional[bool] = None
 
+    @model_validator(mode="before")
+    @classmethod
+    def _fold_deprecated_page_markdown(cls, data: Any) -> Any:
+        """Accept the pre-rename pageMarkdown alias and fold it into pages."""
+        if not isinstance(data, dict):
+            return data
+        folded = dict(data)
+        alias = folded.pop("page_markdown", None)
+        if alias is None:
+            alias = folded.pop("pageMarkdown", None)
+        if folded.get("pages") is None and alias is not None:
+            folded["pages"] = alias
+        return folded
+
 
 # Location types
 class Location(BaseModel):

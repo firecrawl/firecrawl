@@ -412,6 +412,13 @@ class TestPrepareScrapeOptions:
         assert "page_markdown" not in dict_result["parsers"][0]
         assert "pageMarkdown" not in dict_result["parsers"][0]
 
+        camel_options = ScrapeOptions(
+            parsers=[{"type": "pdf", "pageMarkdown": True}]
+        )
+        camel_result = prepare_scrape_options(camel_options)
+        assert camel_result["parsers"][0]["pages"] is True
+        assert "pageMarkdown" not in camel_result["parsers"][0]
+
     def test_prepare_min_age_maps_to_camel_case(self):
         """min_age must be sent as minAge; the server drops the snake_case key."""
         options = ScrapeOptions(min_age=1000, max_age=5000)
