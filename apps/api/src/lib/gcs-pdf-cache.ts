@@ -19,6 +19,11 @@ type CachedPdfResult = {
   /** Typed layout blocks (fire-pdf wire shape); present only in
    * block-capable cache variants. */
   blocks?: FirePdfPageBlocks[];
+  /** ISO timestamp of when this entry was parsed. Stamped into the body on
+   * save; reads on pre-existing entries fall back to the GCS object's
+   * timeCreated. Undefined only when that fallback also failed — callers
+   * enforcing a freshness window must treat that as expired. */
+  createdAt?: string;
 };
 
 const PROVIDER_PREFIXES: Record<PdfCacheProvider, string> = {
@@ -47,9 +52,21 @@ export async function savePdfResultToCache(
     const bucket = storage.bucket(config.GCS_BUCKET_NAME);
     const blob = bucket.file(`${prefix}${objectKey}.json`);
 
+    // Only the firepdf tier enforces freshness windows; keep RunPod payloads
+    // unchanged so its callers (which return the cached object directly) never
+    // see cache bookkeeping fields.
+    const body = JSON.stringify(
+      provider === "firepdf"
+        ? ({
+            ...result,
+            createdAt: new Date().toISOString(),
+          } satisfies CachedPdfResult)
+        : result,
+    );
+
     for (let i = 0; i < 3; i++) {
       try {
-        await blob.save(JSON.stringify(result), {
+        await blob.save(body, {
           contentType: "application/json",
           metadata: {
             source: `${provider}_pdf_conversion`,
@@ -106,6 +123,31 @@ export async function getPdfResultFromCache(
 
     const [content] = await blob.download();
     const result = JSON.parse(content.toString());
+
+    // Entries written before createdAt was stamped into the body: recover the
+    // parse time from the object itself so freshness windows apply to the
+    // whole corpus, not just new writes. On failure createdAt stays undefined
+    // and window-enforcing callers treat the entry as expired (fail-fresh).
+    // Only the firepdf tier enforces freshness — don't tax the legacy RunPod
+    // path with an extra metadata request it never uses. The extra HEAD on
+    // unstamped firepdf hits is transient by construction: every legacy entry
+    // either expires within the freshness window (and its re-parse writes a
+    // stamped body) or ages out entirely, and the sequential cost is dwarfed
+    // by the parse it avoids.
+    if (provider === "firepdf" && typeof result.createdAt !== "string") {
+      try {
+        const [objectMetadata] = await blob.getMetadata();
+        if (typeof objectMetadata.timeCreated === "string") {
+          result.createdAt = objectMetadata.timeCreated;
+        }
+      } catch (error) {
+        logger.warn(`Failed to read PDF cache entry metadata for age`, {
+          error,
+          cacheKey,
+          provider,
+        });
+      }
+    }
 
     logger.info(`Retrieved PDF result from GCS cache`, {
       cacheKey,

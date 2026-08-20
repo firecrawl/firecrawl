@@ -46,3 +46,21 @@ export type FallbackReason =
   | "terminal_cancelled"
   | "polling_timeout"
   | "result_503";
+
+export const pdfCacheLookupCounter = new Counter({
+  name: "firecrawl_pdf_cache_lookup_total",
+  help: "FirePDF result cache lookups by outcome",
+  labelNames: ["outcome"],
+});
+
+export const pdfCacheWriteCounter = new Counter({
+  name: "firecrawl_pdf_cache_write_total",
+  help: "FirePDF result cache write decisions by outcome",
+  labelNames: ["outcome"],
+});
+
+export const pdfCacheServedAgeDays = new Histogram({
+  name: "firecrawl_pdf_cache_served_age_days",
+  help: "Age in days of FirePDF cache entries served to requests",
+  buckets: [1, 3, 7, 14, 30, 60, 90, 180],
+});

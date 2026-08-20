@@ -1,10 +1,16 @@
 import type { Meta } from "../../..";
 import type { PDFMode } from "../../../../../controllers/v2/types";
 import type { PDFProcessorResult } from "../types";
+import { config } from "../../../../../config";
 import {
   getPdfResultFromCache,
   savePdfResultToCache,
 } from "../../../../../lib/gcs-pdf-cache";
+import {
+  pdfCacheLookupCounter,
+  pdfCacheServedAgeDays,
+  pdfCacheWriteCounter,
+} from "./metrics";
 import { firePdfBlockPagesSchema } from "./schema";
 
 // Cache layout mirrors the sync `scrapePDFWithFirePDF` so async/sync share
@@ -119,6 +125,36 @@ export function cacheKeyShape(
   return { cacheable, ownVariant, baseVariant, lookupVariants };
 }
 
+/**
+ * Freshness window for PDF cache reads. Entries older than the window are
+ * treated as misses and re-parsed, which is how parser improvements reach
+ * documents that were first parsed long ago.
+ *
+ * - An explicit `maxAge` from the caller wins (and `maxAge: 0` is a true
+ *   bypass of this tier, matching the index tier's contract).
+ * - `/v2/parse` hard-codes `maxAge: 0` to skip the URL index — that value is
+ *   plumbing, not a customer freshness signal, so the parse path gets its own
+ *   configured window instead of an unintended full bypass.
+ */
+function resolveCacheWindowMs(meta: Meta): number {
+  if (meta.internalOptions.isParse) {
+    return config.PARSE_PDF_CACHE_MAX_AGE_MS;
+  }
+  if (meta.options?.maxAge !== undefined) {
+    return meta.options.maxAge;
+  }
+  return config.PDF_CACHE_MAX_AGE_MS;
+}
+
+function entryAgeMs(cached: { createdAt?: string }): number {
+  const createdAtMs = cached.createdAt ? Date.parse(cached.createdAt) : NaN;
+  // Unknown age (no body stamp and the GCS metadata fallback failed) reads as
+  // infinitely old: fail-fresh rather than serving an unbounded-staleness
+  // entry past the window.
+  if (!Number.isFinite(createdAtMs)) return Number.POSITIVE_INFINITY;
+  return Math.max(0, Date.now() - createdAtMs);
+}
+
 export async function tryGetCached(
   meta: Meta,
   base64Content: string,
@@ -137,6 +173,13 @@ export async function tryGetCached(
   );
   if (!cacheable) return null;
 
+  const windowMs = resolveCacheWindowMs(meta);
+  if (windowMs <= 0) {
+    pdfCacheLookupCounter.inc({ outcome: "bypass" });
+    return null;
+  }
+
+  let sawExpired = false;
   for (const variant of lookupVariants) {
     try {
       const cached = await getPdfResultFromCache(
@@ -154,14 +197,28 @@ export async function tryGetCached(
           // never let a malformed/old artifact satisfy a cache lookup.
           continue;
         }
+        const ageMs = entryAgeMs(cached);
+        if (ageMs > windowMs) {
+          sawExpired = true;
+          continue;
+        }
+        pdfCacheLookupCounter.inc({ outcome: "hit" });
+        pdfCacheServedAgeDays.observe(ageMs / (24 * 60 * 60 * 1000));
         meta.logger.info("Using cached FirePDF result", {
           scrapeId: meta.id,
           requestedMode: mode,
           cacheVariant: variant ?? "base",
+          cacheAgeMs: Math.round(ageMs),
         });
         // Strip payloads the request didn't ask for so a richer sidecar
         // serves a poorer request without leaking extra capabilities.
-        const { pageMarkdown, blocks, ...compactCached } = cached;
+        // createdAt is cache bookkeeping, not document data.
+        const {
+          pageMarkdown,
+          blocks,
+          createdAt: _createdAt,
+          ...compactCached
+        } = cached;
         return {
           ...compactCached,
           ...(includePageMarkdown ? { pageMarkdown } : {}),
@@ -176,6 +233,7 @@ export async function tryGetCached(
       });
     }
   }
+  pdfCacheLookupCounter.inc({ outcome: sawExpired ? "expired" : "miss" });
   return null;
 }
 
@@ -187,6 +245,8 @@ export async function maybeSaveResult(args: {
   includePageMarkdown: boolean;
   includeBlocks: boolean;
   result: PDFProcessorResult & { markdown: string };
+  failedPages?: number[] | null;
+  partialPages?: number[] | null;
 }): Promise<void> {
   const {
     meta,
@@ -196,6 +256,8 @@ export async function maybeSaveResult(args: {
     includePageMarkdown,
     includeBlocks,
     result,
+    failedPages,
+    partialPages,
   } = args;
   if (meta.internalOptions.zeroDataRetention) return;
   const { cacheable, ownVariant, baseVariant } = cacheKeyShape(
@@ -206,12 +268,46 @@ export async function maybeSaveResult(args: {
   );
   if (!cacheable) return;
 
+  // Never persist a degraded parse: pages that failed or were cut short are a
+  // property of this request's conditions (fleet pressure, deadlines), not of
+  // the document. Serve the partial result, but let the next request re-parse
+  // instead of freezing the holes into the cache. Block sidecars carry their
+  // own per-page status, which can report degradation the marker arrays
+  // don't — gate on that independently.
+  const degradedBlockPages =
+    result.blocks?.filter(page => page.status !== "ok").length ?? 0;
+  if (
+    (failedPages?.length ?? 0) > 0 ||
+    (partialPages?.length ?? 0) > 0 ||
+    degradedBlockPages > 0
+  ) {
+    pdfCacheWriteCounter.inc({ outcome: "degraded_skip" });
+    meta.logger.info("Skipping FirePDF cache write for degraded result", {
+      scrapeId: meta.id,
+      failedPages: failedPages?.length ?? 0,
+      partialPages: partialPages?.length ?? 0,
+      degradedBlockPages,
+    });
+    return;
+  }
+
   try {
-    await savePdfResultToCache(base64Content, result, "firepdf", ownVariant);
+    const savedKey = await savePdfResultToCache(
+      base64Content,
+      result,
+      "firepdf",
+      ownVariant,
+    );
+    // savePdfResultToCache swallows storage errors and returns null — only
+    // count a save when an entry was actually written.
+    pdfCacheWriteCounter.inc({
+      outcome: savedKey !== null ? "saved" : "write_failed",
+    });
     // An enriched (page/block-capable) parse is also a valid legacy result.
-    // Populate the compact base key when it is missing so a later legacy
-    // request never repeats the conversion. A sidecar miss can coexist with
-    // a warm legacy key during rollout, so avoid rewriting that object.
+    // Populate the compact base key when it is missing (or aged out of the
+    // request's freshness window) so a later legacy request never repeats
+    // the conversion. A sidecar miss can coexist with a warm legacy key
+    // during rollout, so avoid rewriting a still-fresh object.
     // Strip the enriched payloads to keep the hot-path cache object small.
     if ((includePageMarkdown || includeBlocks) && ownVariant !== baseVariant) {
       const existingBase = await getPdfResultFromCache(
@@ -219,7 +315,11 @@ export async function maybeSaveResult(args: {
         "firepdf",
         baseVariant,
       );
-      if (!existingBase || !isValidCachedDocument(existingBase)) {
+      if (
+        !existingBase ||
+        !isValidCachedDocument(existingBase) ||
+        entryAgeMs(existingBase) > resolveCacheWindowMs(meta)
+      ) {
         const {
           pageMarkdown: _pageMarkdown,
           blocks: _blocks,

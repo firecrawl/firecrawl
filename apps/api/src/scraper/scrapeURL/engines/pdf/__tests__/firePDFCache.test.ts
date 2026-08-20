@@ -16,16 +16,28 @@ vi.mock("../../../../../lib/gcs-pdf-cache", () => ({
 const getCached = vi.mocked(getPdfResultFromCache);
 const saveCached = vi.mocked(savePdfResultToCache);
 
-function makeMeta(zeroDataRetention = false) {
+function makeMeta(
+  zeroDataRetention = false,
+  { maxAge, isParse }: { maxAge?: number; isParse?: boolean } = {},
+) {
   return {
     id: "page-cache-test",
     logger: {
       info: vi.fn(),
       warn: vi.fn(),
     },
-    internalOptions: { zeroDataRetention },
+    options: { maxAge },
+    internalOptions: { zeroDataRetention, isParse },
   } as any;
 }
+
+function daysAgo(days: number): string {
+  return new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+}
+
+// Served fixtures must carry a fresh createdAt — entries with no resolvable
+// age are deliberately treated as expired.
+const freshCreatedAt = () => new Date().toISOString();
 
 describe("FirePDF page-markdown cache capabilities", () => {
   beforeEach(() => {
@@ -189,6 +201,7 @@ describe("FirePDF page-markdown cache capabilities", () => {
       markdown: "",
       html: "",
       pageMarkdown: [{ page: 1, markdown: "" }],
+      createdAt: freshCreatedAt(),
     });
 
     const result = await tryGetCached(
@@ -241,6 +254,7 @@ describe("FirePDF page-markdown cache capabilities", () => {
         { page: 1, markdown: "one" },
         { page: 2, markdown: "two" },
       ],
+      createdAt: freshCreatedAt(),
     });
 
     const result = await tryGetCached(
@@ -265,6 +279,7 @@ describe("FirePDF page-markdown cache capabilities", () => {
         { page: 1, markdown: "one" },
         { page: 2, markdown: "two" },
       ],
+      createdAt: freshCreatedAt(),
     });
 
     const result = await tryGetCached(
@@ -333,6 +348,7 @@ describe("FirePDF page-markdown cache capabilities", () => {
       pagesProcessed: 1,
       pageMarkdown: [{ page: 1, markdown: "one" }],
       blocks,
+      createdAt: freshCreatedAt(),
     });
 
     const result = await tryGetCached(
@@ -432,6 +448,7 @@ describe("FirePDF page-markdown cache capabilities", () => {
       markdown: "existing",
       html: "<p>existing</p>",
       pagesProcessed: 2,
+      createdAt: freshCreatedAt(),
     });
 
     await maybeSaveResult({
@@ -503,5 +520,288 @@ describe("FirePDF page-markdown cache capabilities", () => {
       "firepdf",
       undefined,
     );
+  });
+});
+
+describe("FirePDF cache freshness window", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    getCached.mockResolvedValue(null);
+    saveCached.mockResolvedValue(null);
+  });
+
+  it("treats entries older than the default window as misses", async () => {
+    // Default PDF_CACHE_MAX_AGE_MS is 60d; a 100d-old entry must not serve.
+    getCached.mockResolvedValue({
+      markdown: "stale",
+      html: "<p>stale</p>",
+      createdAt: daysAgo(100),
+    });
+
+    const result = await tryGetCached(
+      makeMeta(),
+      "BASE64",
+      "ocr",
+      undefined,
+      1,
+      false,
+      false,
+    );
+
+    expect(result).toBeNull();
+    // Both ocr-path variants were probed and rejected on age.
+    expect(getCached).toHaveBeenCalledTimes(2);
+  });
+
+  it("treats entries with no resolvable age as expired", async () => {
+    getCached.mockResolvedValueOnce({
+      markdown: "unknown age",
+      html: "<p>unknown age</p>",
+    });
+
+    const result = await tryGetCached(
+      makeMeta(),
+      "BASE64",
+      "ocr",
+      undefined,
+      1,
+      false,
+      false,
+    );
+
+    expect(result).toBeNull();
+  });
+
+  it("serves entries within the default window", async () => {
+    getCached.mockResolvedValueOnce({
+      markdown: "recent",
+      html: "<p>recent</p>",
+      createdAt: daysAgo(30),
+    });
+
+    const result = await tryGetCached(
+      makeMeta(),
+      "BASE64",
+      "ocr",
+      undefined,
+      1,
+      false,
+      false,
+    );
+
+    expect(result).toMatchObject({ markdown: "recent" });
+    expect(result).not.toHaveProperty("createdAt");
+  });
+
+  it("honors an explicit maxAge tighter than the default", async () => {
+    getCached.mockResolvedValue({
+      markdown: "week old",
+      html: "<p>week old</p>",
+      createdAt: daysAgo(7),
+    });
+
+    const result = await tryGetCached(
+      makeMeta(false, { maxAge: 24 * 60 * 60 * 1000 }),
+      "BASE64",
+      "ocr",
+      undefined,
+      1,
+      false,
+      false,
+    );
+
+    expect(result).toBeNull();
+  });
+
+  it("honors an explicit maxAge wider than the default", async () => {
+    getCached.mockResolvedValueOnce({
+      markdown: "old but requested",
+      html: "<p>old but requested</p>",
+      createdAt: daysAgo(100),
+    });
+
+    const result = await tryGetCached(
+      makeMeta(false, { maxAge: 120 * 24 * 60 * 60 * 1000 }),
+      "BASE64",
+      "ocr",
+      undefined,
+      1,
+      false,
+      false,
+    );
+
+    expect(result).toMatchObject({ markdown: "old but requested" });
+  });
+
+  it("bypasses the cache entirely on maxAge: 0", async () => {
+    const result = await tryGetCached(
+      makeMeta(false, { maxAge: 0 }),
+      "BASE64",
+      "ocr",
+      undefined,
+      1,
+      false,
+      false,
+    );
+
+    expect(result).toBeNull();
+    expect(getCached).not.toHaveBeenCalled();
+  });
+
+  it("gives the parse path its own window instead of parse's synthetic maxAge: 0", async () => {
+    getCached.mockResolvedValueOnce({
+      markdown: "parsed yesterday",
+      html: "<p>parsed yesterday</p>",
+      createdAt: daysAgo(1),
+    });
+
+    const result = await tryGetCached(
+      makeMeta(false, { maxAge: 0, isParse: true }),
+      "BASE64",
+      "ocr",
+      undefined,
+      1,
+      false,
+      false,
+    );
+
+    expect(result).toMatchObject({ markdown: "parsed yesterday" });
+  });
+
+  it("expires parse-path entries beyond the parse window", async () => {
+    // Default PARSE_PDF_CACHE_MAX_AGE_MS is 7d.
+    getCached.mockResolvedValue({
+      markdown: "too old for parse",
+      html: "<p>too old for parse</p>",
+      createdAt: daysAgo(10),
+    });
+
+    const result = await tryGetCached(
+      makeMeta(false, { maxAge: 0, isParse: true }),
+      "BASE64",
+      "ocr",
+      undefined,
+      1,
+      false,
+      false,
+    );
+
+    expect(result).toBeNull();
+  });
+
+  it("rewrites an expired compact legacy entry during sidecar backfill", async () => {
+    getCached.mockResolvedValueOnce({
+      markdown: "expired base",
+      html: "<p>expired base</p>",
+      createdAt: daysAgo(100),
+    });
+
+    await maybeSaveResult({
+      meta: makeMeta(),
+      base64Content: "BASE64",
+      mode: "auto",
+      maxPages: undefined,
+      includePageMarkdown: true,
+      includeBlocks: false,
+      result: {
+        markdown: "whole",
+        html: "<p>whole</p>",
+        pagesProcessed: 2,
+        pageMarkdown: [
+          { page: 1, markdown: "one" },
+          { page: 2, markdown: "two" },
+        ],
+      },
+    });
+
+    expect(saveCached).toHaveBeenCalledTimes(2);
+    expect(saveCached).toHaveBeenNthCalledWith(
+      2,
+      "BASE64",
+      expect.not.objectContaining({ pageMarkdown: expect.anything() }),
+      "firepdf",
+      undefined,
+    );
+  });
+});
+
+describe("FirePDF cache degraded-result gate", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    getCached.mockResolvedValue(null);
+    saveCached.mockResolvedValue(null);
+  });
+
+  const result = {
+    markdown: "partial",
+    html: "<p>partial</p>",
+    pagesProcessed: 5,
+  };
+
+  it("does not persist results with failed pages", async () => {
+    await maybeSaveResult({
+      meta: makeMeta(),
+      base64Content: "BASE64",
+      mode: "auto",
+      maxPages: undefined,
+      includePageMarkdown: false,
+      includeBlocks: false,
+      result,
+      failedPages: [3],
+    });
+
+    expect(saveCached).not.toHaveBeenCalled();
+  });
+
+  it("does not persist results with partial pages", async () => {
+    await maybeSaveResult({
+      meta: makeMeta(),
+      base64Content: "BASE64",
+      mode: "auto",
+      maxPages: undefined,
+      includePageMarkdown: false,
+      includeBlocks: false,
+      result,
+      failedPages: null,
+      partialPages: [1, 2],
+    });
+
+    expect(saveCached).not.toHaveBeenCalled();
+  });
+
+  it("does not persist results whose block pages report degradation", async () => {
+    await maybeSaveResult({
+      meta: makeMeta(),
+      base64Content: "BASE64",
+      mode: "auto",
+      maxPages: undefined,
+      includePageMarkdown: false,
+      includeBlocks: true,
+      result: {
+        ...result,
+        blocks: [
+          { page: 1, width: 800, height: 1100, status: "ok", items: [] },
+          { page: 2, width: 800, height: 1100, status: "partial", items: [] },
+        ],
+      },
+    });
+
+    expect(saveCached).not.toHaveBeenCalled();
+  });
+
+  it("persists clean results with empty/null degraded markers", async () => {
+    await maybeSaveResult({
+      meta: makeMeta(),
+      base64Content: "BASE64",
+      mode: "auto",
+      maxPages: undefined,
+      includePageMarkdown: false,
+      includeBlocks: false,
+      result,
+      failedPages: [],
+      partialPages: null,
+    });
+
+    expect(saveCached).toHaveBeenCalledOnce();
   });
 });
