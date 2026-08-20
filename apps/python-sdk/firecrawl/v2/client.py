@@ -1370,7 +1370,7 @@ class FirecrawlClient:
             schema: Target JSON schema for the output (dict or Pydantic BaseModel)
             integration: Integration tag/name
             max_credits: Maximum credits to use (optional)
-            model: Model to use for the agent ("spark-2" (default), "spark-1-pro", or "spark-1-mini")
+            model: Model to use for the agent ("spark-1-pro" (default), "spark-1-mini", or "spark-2")
             webhook: Webhook URL or configuration for notifications
             threat_protection: Enterprise per-request override of the team's
                 threat protection policy
@@ -1418,7 +1418,7 @@ class FirecrawlClient:
             poll_interval: Seconds between status checks
             timeout: Maximum seconds to wait (None for no timeout)
             max_credits: Maximum credits to use (optional)
-            model: Model to use for the agent ("spark-2" (default), "spark-1-pro", or "spark-1-mini")
+            model: Model to use for the agent ("spark-1-pro" (default), "spark-1-mini", or "spark-2")
             webhook: Webhook URL or configuration for notifications
             threat_protection: Enterprise per-request override of the team's
                 threat protection policy

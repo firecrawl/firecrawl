@@ -352,7 +352,7 @@ class TestAgentResponseParsing:
     def test_status_payload_parses_known_models(self, model):
         """A status payload naming any current model parses.
 
-        /v2/agent/:id always returns `model`, and it defaults to spark-2, so a
+        /v2/agent/:id always returns `model`, and it defaults to spark-1-pro, so a
         narrow type here breaks every poll of a default-model job.
         """
         response = AgentResponse(
