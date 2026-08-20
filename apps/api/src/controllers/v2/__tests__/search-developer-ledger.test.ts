@@ -72,25 +72,26 @@ const TEAM_ID = "11111111-1111-1111-1111-111111111111";
 
 const developerResults = [
   {
+    id: "readme:example/repo",
     url: "https://github.com/example/repo",
     title: "example/repo",
     description: "a repo",
-    position: 1,
-    category: "developer",
+    passages: [{ text: "a repo" }],
   },
   {
+    id: "readme:example/other",
     url: "https://github.com/example/other",
     title: "example/other",
     description: "another repo",
-    position: 2,
-    category: "developer",
+    passages: [{ text: "another repo" }],
   },
 ];
 
 function executeResult(overrides: Record<string, any> = {}) {
   return {
-    response: { web: [], developer: developerResults },
+    response: { web: developerResults },
     totalResultsCount: 2,
+    developerResultsCount: 2,
     searchCredits: 2,
     scrapeCredits: 0,
     totalCredits: 2,
@@ -269,7 +270,11 @@ describe("developer category code_searches ledger", () => {
 
   it("records zero results when the developer arm returns nothing", async () => {
     mockExecuteSearch.mockResolvedValue(
-      executeResult({ response: { web: [] }, totalResultsCount: 0 }),
+      executeResult({
+        response: { web: [] },
+        totalResultsCount: 0,
+        developerResultsCount: 0,
+      }),
     );
     const req = makeReq({ query: "http client", categories: ["developer"] });
     const res = makeRes();
@@ -295,12 +300,15 @@ describe("developer category code_searches ledger", () => {
     expect(res.status).toHaveBeenCalledWith(200);
     const body = res.json.mock.calls[0][0];
     expect(body.success).toBe(true);
-    expect(body.data.developer).toEqual(developerResults);
+    expect(body.data.web).toEqual(developerResults);
+    expect(body.data).not.toHaveProperty("developer");
     expect(body.creditsUsed).toBe(2);
   });
 
   it("keeps the developer category for a team with no flags", async () => {
-    mockExecuteSearch.mockResolvedValue(executeResult({ response: { web: [] } }));
+    mockExecuteSearch.mockResolvedValue(
+      executeResult({ response: { web: [] } }),
+    );
     const req = makeReq({ query: "http client", categories: ["developer"] });
     req.acuc = { api_key_id: 7, flags: null }; // keyless-equivalent: no org flags
     const res = makeRes();

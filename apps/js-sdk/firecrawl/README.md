@@ -183,7 +183,8 @@ const scraped = await app.search('firecrawl changelog', {
 });
 ```
 
-Results are grouped by source: `.web`, `.news`, `.images` and `.developer`.
+Results are grouped by source: `.web`, `.news` and `.images`. Developer
+category results are served inside `.web`.
 
 Use `categories` to narrow web search to a kind of site:
 
@@ -202,8 +203,8 @@ const results = await app.search('nanopore basecalling accuracy', {
 
 Use `developerSearch` for the dedicated developer index and its complete filter
 and response contract. Generic `search(..., { categories: ['developer'] })`
-returns only the first passage as a description and does not accept these
-filters.
+returns developer results inside `.web` in the ordinary web-result shape
+(first passage as the description) and does not accept these filters.
 
 ```js
 const evidence = await app.developerSearch('configure retry backoff', {

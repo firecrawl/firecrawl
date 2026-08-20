@@ -327,7 +327,7 @@ export async function searchController(
           via: "search_category",
         },
         response: null,
-        num_results: result.response.developer?.length ?? 0,
+        num_results: result.developerResultsCount,
         time_taken: timeTakenInSeconds,
         // Ensure preview-mode searches don't get a non-zero credits_cost
         // in the research ledger when preview tokens are used.

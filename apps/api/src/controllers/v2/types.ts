@@ -2165,6 +2165,18 @@ export const searchRequestSchema = z
     x => !(x.includeDomains?.length && x.excludeDomains?.length),
     "includeDomains and excludeDomains cannot both be specified",
   )
+  .refine(
+    x => {
+      const categories = x.categories ?? [];
+      const hasDeveloper = categories.some(category =>
+        typeof category === "string"
+          ? category === "developer"
+          : category.type === "developer",
+      );
+      return !hasDeveloper || categories.length === 1;
+    },
+    "the developer category cannot be combined with other categories",
+  )
   .refine(x => waitForRefine(x.scrapeOptions), waitForRefineOpts)
   .transform(x => {
     const country =

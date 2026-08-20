@@ -808,7 +808,6 @@ export interface SearchData {
   web?: Array<SearchResultWeb | Document>;
   news?: Array<SearchResultNews | Document>;
   images?: Array<SearchResultImages | Document>;
-  developer?: Array<SearchResultWeb | Document>;
 }
 
 /**
@@ -821,8 +820,8 @@ export interface SearchData {
  *   ieee.org, sciencedirect.com, biorxiv.org, medrxiv.org, ...). It returns
  *   ordinary web page results from those domains, **not** paper records.
  * - `pdf` — restrict results to PDFs (adds `filetype:pdf`).
- * - `developer` — add developer results (issues, pull requests, READMEs and
- *   documentation) under `.developer`.
+ * - `developer` — developer-index results (issues, pull requests, READMEs and
+ *   documentation) served in `web`; cannot be combined with other categories.
  *
  * ⚠️ `categories: ["research"]` is **not** Firecrawl's research paper index.
  * To search papers themselves — ~43M abstracts, roughly 90% biomedical

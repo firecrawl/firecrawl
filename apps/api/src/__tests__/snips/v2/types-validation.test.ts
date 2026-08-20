@@ -1124,9 +1124,18 @@ describe("V2 Types Validation", () => {
       expect(
         searchRequestSchema.parse({
           query: "test",
-          categories: ["docs", "github", "developer_index"],
+          categories: ["docs", "developer_index"],
         }).categories,
-      ).toEqual([{ type: "developer" }, { type: "github" }]);
+      ).toEqual([{ type: "developer" }]);
+
+      // Developer (and its aliases) is exclusive: combining with any other
+      // category is rejected at the schema.
+      expect(() =>
+        searchRequestSchema.parse({
+          query: "test",
+          categories: ["docs", "github", "developer_index"],
+        }),
+      ).toThrow(/cannot be combined/);
     });
 
     it("should reject developer alias params and unknown categories", () => {

@@ -13,61 +13,51 @@ def _response(data):
     return response
 
 
-DEVELOPER_PAYLOAD = {
-    "web": [{"title": "W", "url": "http://a.com", "description": "d"}],
-    "developer": [
-        {
-            "title": "https://github.com/firecrawl/firecrawl/issues/1",
-            "url": "https://github.com/firecrawl/firecrawl/issues/1",
-            "description": "passage",
-            "position": 1,
-            "category": "developer",
-        }
-    ],
+# Developer results arrive in the exact web schema; nothing extra on the wire.
+DEVELOPER_RESULT = {
+    "title": "Retry requests",
+    "url": "https://github.com/firecrawl/firecrawl/issues/1",
+    "description": "passage",
+    "position": 1,
+    "category": "developer",
 }
 
 
 class TestSearchDeveloperResults:
-    """Unit tests for the developer category results."""
+    """Unit tests for developer category results in the web group."""
 
-    def test_developer_results_are_parsed(self):
+    def test_developer_results_are_parsed_inside_web(self):
         client = Mock()
-        client.post.return_value = _response(DEVELOPER_PAYLOAD)
+        client.post.return_value = _response({"web": [DEVELOPER_RESULT]})
 
         result = search(client, SearchRequest(query="test", categories=["developer"]))
 
         assert len(result.web) == 1
-        assert len(result.developer) == 1
-        assert isinstance(result.developer[0], SearchResultWeb)
-        assert result.developer[0].url == "https://github.com/firecrawl/firecrawl/issues/1"
-        assert result.developer[0].position == 1
-        assert result.developer[0].category == "developer"
+        assert isinstance(result.web[0], SearchResultWeb)
+        assert result.web[0].url.endswith("/issues/1")
+        assert result.web[0].category == "developer"
+        assert not hasattr(result.web[0], "passages")
+        assert not hasattr(result, "developer")
 
-    def test_developer_absent_when_not_returned(self):
+    def test_data_property_lists_developer_results_as_web(self):
         client = Mock()
-        client.post.return_value = _response({"web": []})
-
-        result = search(client, SearchRequest(query="test"))
-
-        assert result.developer is None
-
-    def test_data_property_lists_developer(self):
-        client = Mock()
-        client.post.return_value = _response({"developer": DEVELOPER_PAYLOAD["developer"]})
+        client.post.return_value = _response({"web": [DEVELOPER_RESULT]})
 
         result = search(client, SearchRequest(query="test", categories=["developer"]))
 
-        with pytest.raises(AttributeError, match=r"\.developer \(1 results\)"):
+        with pytest.raises(AttributeError, match=r"\.web \(1 results\)"):
             result.data
 
     @pytest.mark.asyncio
-    async def test_developer_results_are_parsed_async(self):
+    async def test_developer_results_are_parsed_inside_web_async(self):
         client = Mock()
-        client.post = AsyncMock(return_value=_response(DEVELOPER_PAYLOAD))
+        client.post = AsyncMock(return_value=_response({"web": [DEVELOPER_RESULT]}))
 
         result = await search_async(
             client, SearchRequest(query="test", categories=["developer"])
         )
 
-        assert len(result.developer) == 1
-        assert result.developer[0].url == "https://github.com/firecrawl/firecrawl/issues/1"
+        assert len(result.web) == 1
+        assert isinstance(result.web[0], SearchResultWeb)
+        assert result.web[0].category == "developer"
+        assert not hasattr(result, "developer")
