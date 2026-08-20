@@ -1,5 +1,6 @@
 import { describe, expect, jest, test } from "@jest/globals";
 import { FirecrawlClient } from "../../../v2/client";
+import { SdkError } from "../../../v2/types";
 
 const response = {
   success: true,
@@ -72,6 +73,27 @@ describe("developerSearch", () => {
       skills: "only",
     });
     expect(result).toEqual(response);
+  });
+
+  test("normalizes transport errors to SdkError", async () => {
+    const http = {
+      post: jest.fn(async () => {
+        throw {
+          isAxiosError: true,
+          code: "ECONNABORTED",
+          message: "request timed out",
+        };
+      }),
+    } as any;
+    const client = new FirecrawlClient({
+      apiKey: "test",
+      apiUrl: "http://localhost",
+    });
+    (client as any).http = http;
+
+    await expect(
+      client.developerSearch("network failure"),
+    ).rejects.toBeInstanceOf(SdkError);
   });
 
   test("accepts the flattened SPDX license response shape", async () => {
