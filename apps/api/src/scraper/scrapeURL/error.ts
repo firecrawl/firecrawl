@@ -233,7 +233,7 @@ export class UnsupportedFileError extends TransportableError {
     super(
       "SCRAPE_UNSUPPORTED_FILE_ERROR",
       `The URL returned a file type that Firecrawl cannot process: ${reason}. Firecrawl supports HTML web pages, PDFs, and common document formats. Binary files like images, videos, executables, and archives are not supported. If you expected this URL to return a web page, the server may be misconfigured or returning the wrong content type.` +
-        (reason.startsWith("image/")
+        (reason.toLowerCase().startsWith("image/")
           ? ` To fetch the raw image bytes as a base64 data URI, add the "rawBase64" format to your request.`
           : ""),
     );

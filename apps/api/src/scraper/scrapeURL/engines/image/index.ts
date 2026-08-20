@@ -1,8 +1,8 @@
 import { Meta } from "../..";
 import { EngineScrapeResult } from "..";
 import { fetchFileToBuffer } from "../utils/downloadFile";
-import { readFile } from "node:fs/promises";
-import { EngineUnsuccessfulError } from "../../error";
+import { readFile, unlink } from "node:fs/promises";
+import { EngineUnsuccessfulError, UnsupportedFileError } from "../../error";
 
 // Base64 inflates the payload by ~33%, so cap the download to bound memory and
 // response size. Kept in line with the PDF download cap for consistency.
@@ -10,6 +10,11 @@ const IMAGE_DOWNLOAD_MAX_FILE_SIZE = 50 * 1024 * 1024;
 
 export function imageMaxReasonableTime(_meta: Meta): number {
   return 60000;
+}
+
+function isImageContentType(contentType: string | undefined): boolean {
+  // HTTP media types are case-insensitive (RFC 9110), so normalize before test.
+  return contentType?.toLowerCase().startsWith("image/") ?? false;
 }
 
 function toDataUri(contentType: string | undefined, buffer: Buffer): string {
@@ -26,18 +31,28 @@ function toDataUri(contentType: string | undefined, buffer: Buffer): string {
  */
 export async function scrapeImage(meta: Meta): Promise<EngineScrapeResult> {
   if (meta.imagePrefetch !== undefined && meta.imagePrefetch !== null) {
-    const buffer = await readFile(meta.imagePrefetch.filePath);
-    const contentType = meta.imagePrefetch.contentType;
-    return {
-      url: meta.imagePrefetch.url ?? meta.rewrittenUrl ?? meta.url,
-      statusCode: meta.imagePrefetch.status,
+    const filePath = meta.imagePrefetch.filePath;
+    try {
+      const buffer = await readFile(filePath);
+      // Enforce the same size cap on prefetched bytes as on direct downloads.
+      if (buffer.length > IMAGE_DOWNLOAD_MAX_FILE_SIZE) {
+        throw new UnsupportedFileError("File exceeds size limit");
+      }
+      const contentType = meta.imagePrefetch.contentType;
+      return {
+        url: meta.imagePrefetch.url ?? meta.rewrittenUrl ?? meta.url,
+        statusCode: meta.imagePrefetch.status,
 
-      html: "",
-      rawBase64: toDataUri(contentType, buffer),
+        html: "",
+        rawBase64: toDataUri(contentType, buffer),
 
-      contentType,
-      proxyUsed: meta.imagePrefetch.proxyUsed,
-    };
+        contentType,
+        proxyUsed: meta.imagePrefetch.proxyUsed,
+      };
+    } finally {
+      // Don't leave the prefetched payload behind in os.tmpdir().
+      await unlink(filePath).catch(() => {});
+    }
   }
 
   const file = await fetchFileToBuffer(
@@ -56,7 +71,7 @@ export async function scrapeImage(meta: Meta): Promise<EngineScrapeResult> {
   // means the URL wasn't actually an image (e.g. content-type changed between
   // detection and download); let the waterfall report failure rather than
   // return arbitrary bytes.
-  if (!contentType || !contentType.startsWith("image/")) {
+  if (!isImageContentType(contentType)) {
     throw new EngineUnsuccessfulError("image");
   }
 

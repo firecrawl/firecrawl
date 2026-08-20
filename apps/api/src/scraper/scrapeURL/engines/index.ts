@@ -536,9 +536,14 @@ const engineOptions: {
       atsv: false,
       location: false,
       mobile: false,
-      skipTlsVerification: false,
+      // The direct-download path uses a basic fetch that honors
+      // skipTlsVerification. When an image is prefetched by an upstream engine
+      // (incl. stealth), that engine already applied the proxy and the prefetch
+      // carries the real proxyUsed — so the image engine itself only advertises
+      // what its own download does.
+      skipTlsVerification: true,
       useFastMode: true,
-      stealthProxy: true, // kinda...
+      stealthProxy: false,
       branding: false,
       disableAdblock: true,
       image: true,
@@ -607,6 +612,9 @@ export function shouldUseIndex(meta: Meta) {
     config.FIRECRAWL_INDEX_WRITE_ONLY !== true &&
     !hasFormatOfType(meta.options.formats, "changeTracking") &&
     !hasFormatOfType(meta.options.formats, "branding") &&
+    // The index serves cached HTML/markdown documents, which never carry the
+    // raw image bytes — so a rawBase64 request must fetch the image directly.
+    !hasFormatOfType(meta.options.formats, "rawBase64") &&
     // The URL index does not yet persist physical-page capability metadata.
     !getPDFPageMarkdown(meta.options.parsers) &&
     !hasCustomScreenshotSettings &&

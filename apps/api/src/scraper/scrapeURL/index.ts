@@ -605,6 +605,10 @@ async function scrapeURLLoopIter(
 
     // Success factors
     const isLongEnough = checkMarkdown.trim().length > 0;
+    // Binary formats (e.g. rawBase64 for images) carry no markdown/html, so the
+    // length-based check above never passes for them. Treat their presence as a
+    // success signal so the engine result isn't rejected.
+    const hasBinaryContent = engineResult.rawBase64 !== undefined;
     const isGoodStatusCode =
       (engineResult.statusCode >= 200 && engineResult.statusCode < 300) ||
       engineResult.statusCode === 304;
@@ -634,9 +638,14 @@ async function scrapeURLLoopIter(
     // NOTE: TODO: what to do when status code is bad is tough...
     // we cannot just rely on text because error messages can be brief and not hit the limit
     // should we just use all the fallbacks and pick the one with the longest text? - mogery
-    if (isLongEnough || !isGoodStatusCode) {
+    if (isLongEnough || !isGoodStatusCode || hasBinaryContent) {
       meta.logger.info("Scrape via " + engine + " deemed successful.", {
-        factors: { isLongEnough, isGoodStatusCode, hasNoPageError },
+        factors: {
+          isLongEnough,
+          isGoodStatusCode,
+          hasNoPageError,
+          hasBinaryContent,
+        },
       });
       return engineResult;
     } else {

@@ -151,7 +151,8 @@ export async function specialtyScrapeCheck(
   // Images: when the caller opted into the rawBase64 format, route to the image
   // engine (which returns the raw bytes as a base64 data URI) instead of
   // rejecting. Any other binary type still falls through to the rejection below.
-  if (allowImageBase64 && contentType.startsWith("image/")) {
+  // HTTP media types are case-insensitive (RFC 9110), so normalize before test.
+  if (allowImageBase64 && contentType.toLowerCase().startsWith("image/")) {
     throw new AddFeatureError(
       ["image"],
       undefined,
