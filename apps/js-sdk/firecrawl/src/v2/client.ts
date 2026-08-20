@@ -6,6 +6,7 @@ import {
 } from "./methods/scrape";
 import { parse as parseMethod } from "./methods/parse";
 import { search } from "./methods/search";
+import { developerSearch as developerSearchMethod } from "./methods/developer";
 import { map as mapMethod } from "./methods/map";
 import { feedback as feedbackMethod, searchFeedback as searchFeedbackMethod } from "./methods/feedback";
 import {
@@ -51,6 +52,8 @@ import type {
   ScrapeOptions,
   SearchData,
   SearchRequest,
+  DeveloperSearchOptions,
+  DeveloperSearchResponse,
   EndpointFeedbackRequest,
   FeedbackResponse,
   SearchFeedbackRequest,
@@ -238,6 +241,19 @@ export class FirecrawlClient {
    */
   async search(query: string, req: Omit<SearchRequest, "query"> = {}): Promise<SearchData> {
     return search(this.http, { query, ...req });
+  }
+
+  /**
+   * Search the dedicated developer index with repository, documentation,
+   * artifact, language, topic, license, star, archive, and fork filters.
+   * Unlike `search(query, { categories: ["developer"] })`, this returns all
+   * requested passages, citations, license disclosures, and indexing echoes.
+   */
+  async developerSearch(
+    query: string,
+    options: DeveloperSearchOptions = {},
+  ): Promise<DeveloperSearchResponse> {
+    return developerSearchMethod(this.http, query, options);
   }
 
   /**

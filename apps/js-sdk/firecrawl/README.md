@@ -198,6 +198,36 @@ const results = await app.search('nanopore basecalling accuracy', {
 > pubmed.ncbi.nlm.nih.gov, nature.com, biorxiv.org, ...) and returns web page
 > results. To search papers themselves, use `research.searchPapers` below.
 
+### Developer search
+
+Use `developerSearch` for the dedicated developer index and its complete filter
+and response contract. Generic `search(..., { categories: ['developer'] })`
+returns only the first passage as a description and does not accept these
+filters.
+
+```js
+const evidence = await app.developerSearch('configure retry backoff', {
+  repos: ['firecrawl/firecrawl'],
+  types: ['issue', 'pull_request', 'readme'],
+  passages: 3,
+  language: 'TypeScript',
+  license: 'MIT',
+});
+
+for (const result of evidence.results) {
+  // Result kind is the id prefix; the API intentionally omits a type field.
+  console.log(result.id, result.license);
+  for (const passage of result.passages) {
+    console.log(passage.text, passage.citation_url);
+  }
+}
+console.log(evidence.repos); // indexed-status echoes for requested repos
+```
+
+`developerSearch` also supports `sources`, `topic`, `minStars`, `maxStars`,
+`archived`, `fork`, and `skills: 'only'`. Supplying both `repos` and `sources`
+OR-combines GitHub-backed and documentation results.
+
 ### Research / paper search
 
 Use `app.research` to search Firecrawl's research paper index: ~43M paper

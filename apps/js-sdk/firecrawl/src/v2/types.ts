@@ -707,6 +707,76 @@ export interface PaginationConfig {
   maxWaitTime?: number;
 }
 
+export type DeveloperSearchType = "doc" | "issue" | "pull_request" | "readme";
+
+export interface DeveloperSearchOptions {
+  /** Total ranked results, 1–100 (default 10). */
+  k?: number;
+  /** Passages per result, 1–5 (default 1). */
+  passages?: number;
+  /** Result kinds to search (default all). */
+  types?: DeveloperSearchType[];
+  /** GitHub owner/name filters, at most 20. */
+  repos?: string[];
+  /** Developer documentation source IDs, at most 20. */
+  sources?: string[];
+  /** One case-insensitive GitHub Linguist primary language. */
+  language?: string;
+  /** Repository topics that must all match, at most 8. */
+  topic?: string[];
+  /** One case-insensitive SPDX repository license identifier. */
+  license?: string;
+  /** Minimum repository stars. */
+  minStars?: number;
+  /** Maximum repository stars. */
+  maxStars?: number;
+  /** Filter by repository archived status. */
+  archived?: boolean;
+  /** Filter by repository fork status. */
+  fork?: boolean;
+  /** Return packaged agent-skill evidence only. */
+  skills?: "only";
+}
+
+export interface DeveloperSearchLicenseDisclosure {
+  state: "licensed" | "known_absent" | "unknown";
+  spdx_id: string | null;
+}
+
+export interface DeveloperSearchPassage {
+  text: string;
+  citation_url?: string;
+}
+
+export interface DeveloperSearchResult {
+  id: string;
+  url: string;
+  title?: string;
+  passages: DeveloperSearchPassage[];
+  // Accept both shapes while the API flattens license objects to SPDX strings.
+  license?: DeveloperSearchLicenseDisclosure | string;
+}
+
+export interface DeveloperSearchRepoStatus {
+  repo: string;
+  indexed: boolean;
+  types: { issue: boolean; pullRequest: boolean; readme: boolean };
+}
+
+export interface DeveloperSearchSourceStatus {
+  source: string;
+  indexed: boolean;
+}
+
+export interface DeveloperSearchResponse {
+  success: boolean;
+  results: DeveloperSearchResult[];
+  /** Present only when repos were requested. */
+  repos?: DeveloperSearchRepoStatus[];
+  /** Present only when sources were requested. */
+  sources?: DeveloperSearchSourceStatus[];
+}
+
 export interface SearchResultWeb {
   url: string;
   title?: string;
