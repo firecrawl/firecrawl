@@ -5,23 +5,28 @@ import { getMcpActionLogConfigErrors } from "./lib/mcp-action-log-config";
 /* Codecs */
 const delimitedList = (separator = ",") => {
   return z.codec(z.string(), z.array(z.string()), {
-    decode: (str) => (str ? str.split(separator).map((s) => s.trim()) : []),
-    encode: (arr) => arr.join(separator),
+    decode: str => (str ? str.split(separator).map(s => s.trim()) : []),
+    encode: arr => arr.join(separator),
   });
 };
 
 const emptyStringAsUndefined = <T extends z.ZodTypeAny>(schema: T) =>
-  z.preprocess((value) => (value === "" ? undefined : value), schema.optional());
+  z.preprocess(value => (value === "" ? undefined : value), schema.optional());
 
 const emptyStringAsDefault = <T extends z.ZodTypeAny>(schema: T) =>
-  z.preprocess((value) => (value === "" ? undefined : value), schema);
+  z.preprocess(value => (value === "" ? undefined : value), schema);
 
-const RESEARCH_PAPER_OPERATIONS = ["search", "inspect", "read", "similar"] as const;
+const RESEARCH_PAPER_OPERATIONS = [
+  "search",
+  "inspect",
+  "read",
+  "similar",
+] as const;
 
 export type ResearchPaperOperation = (typeof RESEARCH_PAPER_OPERATIONS)[number];
 
 const researchKeylessDisabled = z.preprocess(
-  (value) => {
+  value => {
     if (typeof value !== "string") return value;
     const raw = value.trim().toLowerCase();
     if (raw === "") return undefined;
@@ -31,10 +36,12 @@ const researchKeylessDisabled = z.preprocess(
     }
     return raw
       .split(",")
-      .map((operation) => operation.trim())
+      .map(operation => operation.trim())
       .filter(Boolean);
   },
-  z.array(z.enum(RESEARCH_PAPER_OPERATIONS)).default([...RESEARCH_PAPER_OPERATIONS]),
+  z
+    .array(z.enum(RESEARCH_PAPER_OPERATIONS))
+    .default([...RESEARCH_PAPER_OPERATIONS]),
 );
 
 const containsLoneSurrogate = (value: string): boolean => {
@@ -67,11 +74,11 @@ const configSchema = z.object({
   SUPPORT_AGENT_URL: z.string().url().optional(),
   SUPPORT_AGENT_VERCEL_BYPASS_SECRET: z.string().optional(),
   FIREBRAIN_TRACKS_URL: z.preprocess(
-    (v) => (typeof v === "string" && v.trim() === "" ? undefined : v),
+    v => (typeof v === "string" && v.trim() === "" ? undefined : v),
     z.string().url().optional(),
   ),
   FIREBRAIN_TRACKS_API_KEY: z.preprocess(
-    (v) => (typeof v === "string" && v.trim() === "" ? undefined : v),
+    v => (typeof v === "string" && v.trim() === "" ? undefined : v),
     z.string().trim().optional(),
   ),
   RESEARCH_PROXY_URL: z.string().url().optional(),
@@ -108,14 +115,21 @@ const configSchema = z.object({
   // Google Web Risk. An unset key disables the provider (lookups then fail
   // per the org's failurePolicy).
   GOOGLE_WEB_RISK_API_KEY: z.string().optional(),
-  GOOGLE_WEB_RISK_API_URL: z.string().url().default("https://webrisk.googleapis.com"),
+  GOOGLE_WEB_RISK_API_URL: z
+    .string()
+    .url()
+    .default("https://webrisk.googleapis.com"),
   // Google Web Risk Update API sync tuning. ZDR: "normal" mode checks run
   // against a locally synced hash-prefix database (threatLists:computeDiff)
   // instead of sending URLs to Google, and verdicts are never persisted.
   //
   // Floor for how often threatLists:computeDiff may run per list. Google's
   // recommendedNextDiff is respected when it is later than this floor.
-  THREAT_LIST_SYNC_MIN_INTERVAL_SECONDS: z.coerce.number().int().positive().default(60),
+  THREAT_LIST_SYNC_MIN_INTERVAL_SECONDS: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(60),
   // A synced threat list older than this is treated as unavailable
   // (provider-failure semantics → the org's failurePolicy decides).
   THREAT_LIST_STALENESS_SECONDS: z.coerce
@@ -138,7 +152,9 @@ const configSchema = z.object({
 
   // API Keys & Authentication
   BULL_AUTH_KEY: z.string().optional(),
-  S2S_FIRECRAWL_INTEGRATIONS_TO_FIRECRAWL_API_KEY: emptyStringAsUndefined(z.string().trim().min(1)),
+  S2S_FIRECRAWL_INTEGRATIONS_TO_FIRECRAWL_API_KEY: emptyStringAsUndefined(
+    z.string().trim().min(1),
+  ),
   OPENAI_API_KEY: z.string().optional(),
   OPENAI_BASE_URL: z.string().optional(),
   OPENROUTER_API_KEY: z.string().optional(),
@@ -151,7 +167,11 @@ const configSchema = z.object({
   SEARCH_PREVIEW_TOKEN: z.string().optional(),
   SEARCH_SERVICE_API_SECRET: z.string().optional(),
   SEARCH_FEEDBACK_MAX_AGE_SEC: z.coerce.number().int().positive().default(120),
-  SEARCH_FEEDBACK_DAILY_CAP_CREDITS: z.coerce.number().int().nonnegative().default(100),
+  SEARCH_FEEDBACK_DAILY_CAP_CREDITS: z.coerce
+    .number()
+    .int()
+    .nonnegative()
+    .default(100),
   FEEDBACK_MAX_AGE_SEC: z.coerce.number().int().positive().default(120),
   FEEDBACK_DAILY_CAP_CREDITS: z.coerce.number().int().nonnegative().default(50),
   FEEDBACK_REFUND_ENABLED: z.stringbool().default(true),
@@ -191,11 +211,17 @@ const configSchema = z.object({
   NUQ_RABBITMQ_URL: z.string().optional(),
   FDB_CLUSTER_FILE: emptyStringAsUndefined(z.string()),
   NUQ_BACKEND: emptyStringAsUndefined(z.enum(["pg", "fdb"])),
-  NUQ_FDB_READY_SHARDS: emptyStringAsDefault(z.coerce.number().int().positive().default(2048)),
+  NUQ_FDB_READY_SHARDS: emptyStringAsDefault(
+    z.coerce.number().int().positive().default(2048),
+  ),
   // 1 = strict (priority, FIFO) promotion order per team; raise for teams with
   // extreme finish rates at the cost of approximate cross-shard ordering
-  NUQ_FDB_TEAM_PENDING_SHARDS: emptyStringAsDefault(z.coerce.number().int().positive().default(1)),
-  NUQ_FDB_TIME_BUCKETS: emptyStringAsDefault(z.coerce.number().int().positive().default(16)),
+  NUQ_FDB_TEAM_PENDING_SHARDS: emptyStringAsDefault(
+    z.coerce.number().int().positive().default(1),
+  ),
+  NUQ_FDB_TIME_BUCKETS: emptyStringAsDefault(
+    z.coerce.number().int().positive().default(16),
+  ),
 
   // Google Cloud Storage
   GCS_BUCKET_NAME: z.string().optional(),
@@ -316,6 +342,11 @@ const configSchema = z.object({
   // PDF Rust Extraction (pdf-inspector)
   PDF_RUST_EXTRACT_ENABLE: z.stringbool().optional(),
   PDF_SHADOW_COMPARISON_ENABLE: z.stringbool().optional(),
+  // Serve high-confidence TextBased PDFs from Rust even when the layout is
+  // complex (tables/columns), instead of falling through to the OCR path.
+  // OCR reconstruction can substitute text on text-bearing PDFs (notably RTL);
+  // Rust reads the embedded text layer faithfully. Off by default.
+  PDF_RUST_SERVE_COMPLEX_TEXTBASED: z.stringbool().optional(),
 
   // Webhooks
   SELF_HOSTED_WEBHOOK_URL: z.string().optional(),
@@ -417,10 +448,10 @@ const configSchema = z.object({
   EXTRACT_V3_BETA_URL: z.string().optional(),
   AGENT_INTEROP_SECRET: z
     .string()
-    .refine((value) => value.trim().length > 0, {
+    .refine(value => value.trim().length > 0, {
       error: "AGENT_INTEROP_SECRET must not be blank",
     })
-    .refine((value) => !containsLoneSurrogate(value), {
+    .refine(value => !containsLoneSurrogate(value), {
       error: "AGENT_INTEROP_SECRET must not contain lone surrogates",
     })
     .optional(),
