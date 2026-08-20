@@ -1244,7 +1244,12 @@ export interface AgentStatusResponse {
   status: "processing" | "completed" | "failed";
   error?: string;
   data?: unknown;
-  model?: "spark-1-pro" | "spark-1-mini";
+  /**
+   * Server-provided model name. Widened past the request-side union on
+   * purpose: new models ship without an SDK release, so pinning this to known
+   * names makes every future model a type error at the call site.
+   */
+  model?: "spark-1-pro" | "spark-1-mini" | "spark-2" | (string & {});
   expiresAt: string;
   creditsUsed?: number;
 }

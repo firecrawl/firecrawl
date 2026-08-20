@@ -25,9 +25,6 @@ export async function agentStatusController(
 
   const agent = await supabaseGetAgentByIdDirect(req.params.jobId);
 
-  // Jobs whose stored options carry no model predate the model option and ran
-  // on spark-1-pro, so the fallback here stays spark-1-pro even though the
-  // agent request schema now defaults new jobs to spark-2.
   let model: "spark-1-pro" | "spark-1-mini" | "spark-2";
   // The agent service persists the effort of a run that used it. Older rows
   // and runs that picked a model have no effort, so this stays undefined.
@@ -59,7 +56,7 @@ export async function agentStatusController(
           module: "api/v2",
           text: await optionsRequest.text(),
         });
-        model = "spark-1-pro"; // fall back to the pre-model-option default
+        model = "spark-1-pro"; // fall back to this value
       } else {
         const options = await optionsRequest.json();
         model = (options.model ?? "spark-1-pro") as
@@ -75,7 +72,7 @@ export async function agentStatusController(
         module: "api/v2",
         extractId: req.params.jobId,
       });
-      model = "spark-1-pro"; // fall back to the pre-model-option default
+      model = "spark-1-pro"; // fall back to this value
     }
   }
 

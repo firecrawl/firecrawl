@@ -1022,10 +1022,11 @@ export const agentRequestSchema = z
   // snapshot endpoint and use a different credit ladder, so spreading effort
   // across presets would change features and price per level. Effort sets the
   // reasoning budget inside spark-2 instead. A request that sends neither
-  // field also lands on spark-2, which is the endpoint's default preset.
+  // field keeps the endpoint's own default preset, so this schema introduces
+  // no default of its own.
   .transform(x => ({
     ...x,
-    model: x.model ?? "spark-2",
+    model: x.model ?? (x.effort !== undefined ? "spark-2" : "spark-1-pro"),
   }));
 
 export type AgentRequest = z.infer<typeof agentRequestSchema>;

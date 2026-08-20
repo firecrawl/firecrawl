@@ -140,7 +140,7 @@ describeIf(REQUIRES_FIRE_ENGINE && REQUIRES_AI && HAS_AGENT_BETA)(
 
         const status = await statusOf(response.body.id);
         expect(status.statusCode).toBe(200);
-        expect(status.body.model).toBe("spark-2");
+        expect(status.body.model).toBe("spark-1-pro");
 
         await cancel(response.body.id);
       },

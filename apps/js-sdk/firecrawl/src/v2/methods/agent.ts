@@ -12,7 +12,7 @@ function prepareAgentPayload(args: {
   origin?: string;
   maxCredits?: number;
   strictConstrainToURLs?: boolean;
-  model?: "spark-1-pro" | "spark-1-mini";
+  model?: "spark-1-pro" | "spark-1-mini" | "spark-2";
   webhook?: string | AgentWebhookConfig;
   threatProtection?: ThreatProtectionOptions;
   auditMetadata?: AuditMetadata;

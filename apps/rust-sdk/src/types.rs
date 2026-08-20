@@ -991,6 +991,17 @@ pub enum AgentModel {
     Spark1Pro,
     #[serde(rename = "spark-1-mini")]
     Spark1Mini,
+    #[serde(rename = "spark-2")]
+    Spark2,
+    /// A model this SDK release does not know about.
+    ///
+    /// Read-only catch-all: the server ships models without an SDK release, so
+    /// an exhaustive enum would fail the whole `AgentStatusResponse` parse — and
+    /// therefore the status wait loop — the first time an unrecognized name came
+    /// back. Do not send this variant in a request; it serializes to `"unknown"`,
+    /// which the API rejects.
+    #[serde(other)]
+    Unknown,
 }
 
 /// Search source types.
@@ -1075,6 +1086,32 @@ pub struct CrawlErrorsResponse {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn test_agent_model_round_trips_every_known_model() {
+        for (name, expected) in [
+            ("spark-2", AgentModel::Spark2),
+            ("spark-1-pro", AgentModel::Spark1Pro),
+            ("spark-1-mini", AgentModel::Spark1Mini),
+        ] {
+            let parsed: AgentModel = serde_json::from_str(&format!("\"{name}\""))
+                .unwrap_or_else(|e| panic!("{name} should deserialize: {e}"));
+            assert_eq!(parsed, expected);
+            assert_eq!(
+                serde_json::to_string(&expected).unwrap(),
+                format!("\"{name}\"")
+            );
+        }
+    }
+
+    #[test]
+    fn test_agent_model_unknown_degrades_instead_of_failing_the_parse() {
+        // /v2/agent/:id always returns `model`. A model the server ships before
+        // this SDK knows about must not take down status polling.
+        let parsed: AgentModel = serde_json::from_str("\"spark-9-unreleased\"")
+            .expect("unknown model should deserialize");
+        assert_eq!(parsed, AgentModel::Unknown);
+    }
 
     #[test]
     fn test_full_document_with_array_metadata() {

@@ -7,7 +7,7 @@ from pydantic import BaseModel, Field
 from typing import List, Optional
 
 from firecrawl.v2.methods.agent import _prepare_agent_request
-from firecrawl.v2.types import AgentWebhookConfig
+from firecrawl.v2.types import AgentResponse, AgentWebhookConfig
 
 
 class TestAgentRequestPreparation:
@@ -337,3 +337,34 @@ class TestAgentRequestPreparation:
         assert data["model"] == "spark-1-pro"
         assert data["webhook"]["url"] == "https://example.com/webhook"
 
+    @pytest.mark.parametrize("model", ["spark-2", "spark-1-pro", "spark-1-mini"])
+    def test_model_forwarded_verbatim(self, model):
+        """Every documented model, including spark-2, reaches the request body."""
+        data = _prepare_agent_request(None, prompt="Model test", model=model)
+
+        assert data["model"] == model
+
+
+class TestAgentResponseParsing:
+    """Unit tests for parsing agent status payloads."""
+
+    @pytest.mark.parametrize("model", ["spark-2", "spark-1-pro", "spark-1-mini"])
+    def test_status_payload_parses_known_models(self, model):
+        """A status payload naming any current model parses.
+
+        /v2/agent/:id always returns `model`, and it defaults to spark-2, so a
+        narrow type here breaks every poll of a default-model job.
+        """
+        response = AgentResponse(
+            **{"success": True, "id": "job-1", "status": "completed", "model": model}
+        )
+
+        assert response.model == model
+
+    def test_status_payload_parses_unreleased_model(self):
+        """An unknown model name must not raise; the server ships models first."""
+        response = AgentResponse(
+            **{"success": True, "id": "job-1", "status": "completed", "model": "spark-3"}
+        )
+
+        assert response.model == "spark-3"

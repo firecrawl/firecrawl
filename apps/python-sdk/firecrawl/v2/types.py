@@ -1447,7 +1447,10 @@ class AgentResponse(BaseModel):
     status: Optional[Literal["processing", "completed", "failed"]] = None
     data: Optional[Any] = None
     error: Optional[str] = None
-    model: Optional[Literal["spark-1-pro", "spark-1-mini"]] = None
+    # Deliberately a plain str, not a Literal: this is server-provided and new
+    # models ship without an SDK release, so a narrow type turns an unknown
+    # model name into a ValidationError on every status poll.
+    model: Optional[str] = None
     expires_at: Optional[datetime] = None
     credits_used: Optional[int] = None
 

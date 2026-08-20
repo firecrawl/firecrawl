@@ -155,7 +155,7 @@ describe("agentRequestSchema model and effort resolution", () => {
   it("falls back to the default model when the caller sends neither field", () => {
     const parsed = agentRequestSchema.parse({ ...base });
 
-    expect(parsed.model).toBe("spark-2");
+    expect(parsed.model).toBe("spark-1-pro");
     expect(parsed.effort).toBeUndefined();
   });
 
