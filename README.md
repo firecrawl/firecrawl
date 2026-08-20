@@ -384,11 +384,12 @@ result = app.agent(
 
 #### Model Selection
 
-Choose between two models based on your needs:
+Choose a model based on your needs:
 
 | Model | Cost | Best For |
 |-------|------|----------|
-| `spark-1-mini` (default) | 60% cheaper | Most tasks |
+| `spark-2` (default) | See [pricing](https://docs.firecrawl.dev/features/agent) | Most tasks |
+| `spark-1-mini` | 60% cheaper than `spark-1-pro` | Cost-sensitive tasks |
 | `spark-1-pro` | Standard | Complex research, critical data gathering |
 ```python
 result = app.agent(
