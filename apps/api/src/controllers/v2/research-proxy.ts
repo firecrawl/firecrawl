@@ -23,6 +23,13 @@ import { requestOrigin } from "../../lib/request-origin";
 const SEARCH_CREDITS_PER_TEN_RESULTS = 2;
 const ZDR_SEARCH_CREDITS_PER_TEN_RESULTS = 10;
 
+const DEVELOPER_SEARCH_TIMEOUT_MS = 15_000;
+const PAPER_SEARCH_TIMEOUT_MS = 30_000;
+const PAPER_INSPECT_TIMEOUT_MS = 5_000;
+const SIMILAR_PAPERS_TIMEOUT_MS = 10_000;
+const GITHUB_SEARCH_TIMEOUT_MS = 12_000;
+const PAPER_READ_TIMEOUT_MS = 120_000;
+
 const FORWARDED_REQUEST_HEADERS = ["accept", "x-request-id"];
 const FORWARDED_RESPONSE_HEADERS = ["content-type", "x-request-id"];
 
@@ -142,6 +149,7 @@ type ResearchEndpointConfig = {
     params: Record<string, any>,
     req: RequestWithAuth<any, any, any>,
   ) => string;
+  timeoutMs?: number;
   billAs: "scrape" | "search";
 };
 
@@ -240,6 +248,7 @@ async function fetchForRequest(
   path: string,
   params: Record<string, unknown>,
   queryKeys: string[],
+  timeoutMs?: number,
 ) {
   const headers: Record<string, string> = {};
   for (const h of FORWARDED_REQUEST_HEADERS) {
@@ -248,7 +257,13 @@ async function fetchForRequest(
   }
   headers["firecrawl-team-id"] = req.auth.team_id;
 
-  return fetchResearchUpstream({ path, params, queryKeys, headers });
+  return fetchResearchUpstream({
+    path,
+    params,
+    queryKeys,
+    headers,
+    timeoutMs,
+  });
 }
 
 function createResearchController(
@@ -311,6 +326,7 @@ function createResearchController(
         endpoint.upstreamPath(params, authedReq),
         params,
         queryKeys,
+        endpoint.timeoutMs,
       );
       if (!upstream) {
         statusCode = 404;
@@ -438,6 +454,7 @@ export function createResearchRouter(options: { legacy?: boolean } = {}) {
           action: "searchPapers",
           targetHint: params => String(params.query),
           upstreamPath: () => "/v2/research/papers",
+          timeoutMs: PAPER_SEARCH_TIMEOUT_MS,
           billAs: "search",
         },
         options,
@@ -459,6 +476,7 @@ export function createResearchRouter(options: { legacy?: boolean } = {}) {
             `${req.params.id}: ${String(params.intent)}`,
           upstreamPath: (_params, req) =>
             `/v2/research/papers/${encodeURIComponent(req.params.id)}/similar`,
+          timeoutMs: SIMILAR_PAPERS_TIMEOUT_MS,
           billAs: "search",
         },
         options,
@@ -482,6 +500,7 @@ export function createResearchRouter(options: { legacy?: boolean } = {}) {
           targetHint: (_params, request) => request.params.id,
           upstreamPath: (_params, request) =>
             `/v2/research/papers/${encodeURIComponent(request.params.id)}`,
+          timeoutMs: isRead ? PAPER_READ_TIMEOUT_MS : PAPER_INSPECT_TIMEOUT_MS,
           billAs: "scrape",
         },
         options,
@@ -502,6 +521,7 @@ export function createResearchRouter(options: { legacy?: boolean } = {}) {
           action: "searchGithub",
           targetHint: params => String(params.query),
           upstreamPath: () => "/v2/research/github",
+          timeoutMs: GITHUB_SEARCH_TIMEOUT_MS,
           billAs: "search",
         },
         options,
@@ -525,6 +545,7 @@ export function createDeveloperRouter(options: { root?: boolean } = {}) {
         action: "searchDeveloper",
         targetHint: params => String(params.query),
         upstreamPath: () => "/v2/code/search",
+        timeoutMs: DEVELOPER_SEARCH_TIMEOUT_MS,
         billAs: "search",
       },
     ),
