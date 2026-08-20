@@ -61,7 +61,7 @@ public class AgentOptions {
         public Builder maxCredits(Integer maxCredits) { this.maxCredits = maxCredits; return this; }
         /** Don't navigate outside provided URLs. */
         public Builder strictConstrainToURLs(Boolean strictConstrainToURLs) { this.strictConstrainToURLs = strictConstrainToURLs; return this; }
-        /** Agent model: "spark-2" (default), "spark-1-pro", or "spark-1-mini". */
+        /** Agent model: "spark-1-pro" (default), "spark-1-mini", or "spark-2". */
         public Builder model(String model) { this.model = model; return this; }
         /** Webhook configuration. */
         public Builder webhook(WebhookConfig webhook) { this.webhook = webhook; return this; }

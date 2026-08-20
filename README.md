@@ -388,8 +388,8 @@ Choose between two models based on your needs:
 
 | Model | Cost | Best For |
 |-------|------|----------|
-| `spark-1-mini` (default) | 60% cheaper | Most tasks |
-| `spark-1-pro` | Standard | Complex research, critical data gathering |
+| `spark-1-mini` | 60% cheaper | Most tasks |
+| `spark-1-pro` (default) | Standard | Complex research, critical data gathering |
 ```python
 result = app.agent(
     prompt="Compare enterprise features across Firecrawl, Apify, and ScrapingBee",

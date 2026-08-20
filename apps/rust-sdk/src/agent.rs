@@ -32,7 +32,7 @@ pub struct AgentOptions {
     /// Strictly constrain the agent to the provided URLs.
     pub strict_constrain_to_urls: Option<bool>,
 
-    /// Agent model to use. Defaults to `spark-2` server-side when unset.
+    /// Agent model to use. Defaults to `spark-1-pro` server-side when unset.
     pub model: Option<AgentModel>,
 
     /// Webhook configuration for agent notifications.

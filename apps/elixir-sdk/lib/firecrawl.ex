@@ -1348,7 +1348,7 @@ defmodule Firecrawl do
   @start_agent_schema NimbleOptions.new!([
     audit_metadata: [type: :keyword_list, keys: [username: [type: :string, required: true]], doc: "User attribution to include with SIEM logging events."],
     max_credits: [type: {:or, [:integer, :float]}, doc: "Maximum credits to spend on this agent task. Defaults to 2500 if not set. Values above 2,500 are always billed as paid requests."],
-    model: [type: {:or, [{:in, [:"spark-1-mini", :"spark-1-pro", :"spark-2"]}, :string]}, doc: "The model to use for the agent task. spark-2 (default) handles most tasks, spark-1-mini is 60% cheaper than spark-1-pro, spark-1-pro offers higher accuracy for complex tasks"],
+    model: [type: {:or, [{:in, [:"spark-1-mini", :"spark-1-pro", :"spark-2"]}, :string]}, doc: "The model to use for the agent task. spark-1-pro (default) offers higher accuracy for complex tasks, spark-1-mini is 60% cheaper than spark-1-pro, spark-2 handles most tasks"],
     prompt: [type: :string, required: true, doc: "The prompt describing what data to extract"],
     schema: [type: :any, doc: "Optional JSON schema to structure the extracted data"],
     strict_constrain_to_urls: [type: :boolean, doc: "If true, agent will only visit URLs provided in the urls array"],
