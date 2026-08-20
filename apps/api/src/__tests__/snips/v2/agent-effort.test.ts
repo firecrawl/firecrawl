@@ -120,7 +120,7 @@ describeIf(REQUIRES_FIRE_ENGINE && REQUIRES_AI && HAS_AGENT_BETA)(
     );
 
     it(
-      "still keeps spark-1-pro when the caller sends neither field",
+      "still uses the default model when the caller sends neither field",
       async () => {
         const response = await agentRaw({
           urls: [TEST_SUITE_WEBSITE],
@@ -140,7 +140,7 @@ describeIf(REQUIRES_FIRE_ENGINE && REQUIRES_AI && HAS_AGENT_BETA)(
 
         const status = await statusOf(response.body.id);
         expect(status.statusCode).toBe(200);
-        expect(status.body.model).toBe("spark-1-pro");
+        expect(status.body.model).toBe("spark-2");
 
         await cancel(response.body.id);
       },

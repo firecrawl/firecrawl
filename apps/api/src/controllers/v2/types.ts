@@ -1006,8 +1006,9 @@ export const agentRequestSchema = z
     webhook: agentWebhookSchema.optional(),
 
     overrideWhitelist: z.string().optional(),
-    // Optional, not defaulted: the resolver below must tell "the caller sent
-    // spark-1-pro" apart from "the caller sent nothing".
+    // Optional, not defaulted: the resolver below must tell "the caller sent a
+    // model" apart from "the caller sent nothing", because sending both model
+    // and effort is an error rather than a precedence rule.
     model: z.enum(["spark-1-pro", "spark-1-mini", "spark-2"]).optional(),
     effort: z.enum(["low", "medium", "high"]).optional(),
     threatProtection: threatProtectionOverrideSchema.optional(),
@@ -1020,10 +1021,11 @@ export const agentRequestSchema = z
   // Every effort level runs spark-2. The older presets have no trace or
   // snapshot endpoint and use a different credit ladder, so spreading effort
   // across presets would change features and price per level. Effort sets the
-  // reasoning budget inside spark-2 instead.
+  // reasoning budget inside spark-2 instead. A request that sends neither
+  // field also lands on spark-2, which is the endpoint's default preset.
   .transform(x => ({
     ...x,
-    model: x.model ?? (x.effort !== undefined ? "spark-2" : "spark-1-pro"),
+    model: x.model ?? "spark-2",
   }));
 
 export type AgentRequest = z.infer<typeof agentRequestSchema>;

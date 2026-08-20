@@ -409,9 +409,9 @@ both. A request with both fields returns a 400 error.
 
 | Model | Cost | Best For |
 |-------|------|----------|
-| `spark-1-pro` (default) | Standard | Complex research, critical data gathering |
-| `spark-1-mini` | 60% cheaper | Most tasks |
-| `spark-2` | Standard | Latest model, and the target of `effort` |
+| `spark-2` (default) | See [pricing](https://docs.firecrawl.dev/features/agent) | Most tasks, and the target of `effort` |
+| `spark-1-mini` | 60% cheaper than `spark-1-pro` | Cost-sensitive tasks |
+| `spark-1-pro` | Standard | Complex research, critical data gathering |
 
 ```python
 result = app.agent(
@@ -420,7 +420,7 @@ result = app.agent(
 )
 ```
 
-A request without `model` and without `effort` runs `spark-1-pro`.
+A request without `model` and without `effort` runs `spark-2`.
 
 **When to use Pro:**
 - Comparing data across multiple websites
