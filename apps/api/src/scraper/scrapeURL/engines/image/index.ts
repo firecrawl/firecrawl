@@ -1,7 +1,7 @@
 import { Meta } from "../..";
 import { EngineScrapeResult } from "..";
 import { fetchFileToBuffer } from "../utils/downloadFile";
-import { readFile, unlink } from "node:fs/promises";
+import { readFile, stat, unlink } from "node:fs/promises";
 import { EngineUnsuccessfulError, UnsupportedFileError } from "../../error";
 
 // Base64 inflates the payload by ~33%, so cap the download to bound memory and
@@ -33,11 +33,13 @@ export async function scrapeImage(meta: Meta): Promise<EngineScrapeResult> {
   if (meta.imagePrefetch !== undefined && meta.imagePrefetch !== null) {
     const filePath = meta.imagePrefetch.filePath;
     try {
-      const buffer = await readFile(filePath);
-      // Enforce the same size cap on prefetched bytes as on direct downloads.
-      if (buffer.length > IMAGE_DOWNLOAD_MAX_FILE_SIZE) {
+      // Enforce the size cap before reading, so an oversized prefetch never
+      // loads its full payload into worker memory.
+      const { size } = await stat(filePath);
+      if (size > IMAGE_DOWNLOAD_MAX_FILE_SIZE) {
         throw new UnsupportedFileError("File exceeds size limit");
       }
+      const buffer = await readFile(filePath);
       const contentType = meta.imagePrefetch.contentType;
       return {
         url: meta.imagePrefetch.url ?? meta.rewrittenUrl ?? meta.url,

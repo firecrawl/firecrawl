@@ -612,9 +612,6 @@ export function shouldUseIndex(meta: Meta) {
     config.FIRECRAWL_INDEX_WRITE_ONLY !== true &&
     !hasFormatOfType(meta.options.formats, "changeTracking") &&
     !hasFormatOfType(meta.options.formats, "branding") &&
-    // The index serves cached HTML/markdown documents, which never carry the
-    // raw image bytes — so a rawBase64 request must fetch the image directly.
-    !hasFormatOfType(meta.options.formats, "rawBase64") &&
     // The URL index does not yet persist physical-page capability metadata.
     !getPDFPageMarkdown(meta.options.parsers) &&
     !hasCustomScreenshotSettings &&
