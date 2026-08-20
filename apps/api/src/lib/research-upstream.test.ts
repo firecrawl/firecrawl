@@ -44,6 +44,25 @@ describe("fetchResearchUpstream", () => {
     );
   });
 
+  it("uses a supplied operation timeout", async () => {
+    const signal = new AbortController().signal;
+    const timeout = vi.spyOn(AbortSignal, "timeout").mockReturnValue(signal);
+
+    await fetchResearchUpstream({
+      path: "/v2/research/papers",
+      params: { query: "graph databases" },
+      queryKeys: ["query"],
+      headers: {},
+      timeoutMs: 30_000,
+    });
+
+    expect(timeout).toHaveBeenCalledWith(30_000);
+    expect(mocks.fetch).toHaveBeenCalledWith(
+      new URL("https://research.test/v2/research/papers?query=graph+databases"),
+      expect.objectContaining({ signal }),
+    );
+  });
+
   it("limits connection setup without dispatcher headers or body timeouts", () => {
     expect(mocks.agent).toHaveBeenCalledWith({ connectTimeout: 10_000 });
   });
