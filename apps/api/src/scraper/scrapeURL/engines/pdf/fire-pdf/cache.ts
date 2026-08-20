@@ -5,6 +5,7 @@ import {
   getPdfResultFromCache,
   savePdfResultToCache,
 } from "../../../../../lib/gcs-pdf-cache";
+import { firePdfBlockPagesSchema } from "./schema";
 
 // Cache layout mirrors the sync `scrapePDFWithFirePDF` so async/sync share
 // entries. `fast` mode bypasses entirely (hard cost ceiling — must fail on
@@ -12,6 +13,10 @@ import {
 // `maxPages` (the cached entry may have been written with a different cap).
 const PAGE_MARKDOWN_VARIANT = "page-markdown-v1";
 const OCR_PAGE_MARKDOWN_VARIANT = "ocr-page-markdown-v1";
+const BLOCKS_VARIANT = "blocks-v1";
+const OCR_BLOCKS_VARIANT = "ocr-blocks-v1";
+const PAGE_MARKDOWN_BLOCKS_VARIANT = "page-markdown-blocks-v1";
+const OCR_PAGE_MARKDOWN_BLOCKS_VARIANT = "ocr-page-markdown-blocks-v1";
 
 function isValidCachedDocument(
   value: unknown,
@@ -48,28 +53,69 @@ function isValidPageMarkdown(
   );
 }
 
+// Cached block sidecars must satisfy the full wire contract before being
+// served — a malformed or stale GCS artifact is skipped (and regenerated)
+// rather than surfaced as invalid public block data.
+function isValidBlocks(
+  value: unknown,
+): value is NonNullable<PDFProcessorResult["blocks"]> {
+  return firePdfBlockPagesSchema.safeParse(value).success;
+}
+
 export function cacheKeyShape(
   mode: PDFMode | undefined,
   maxPages: number | undefined,
   includePageMarkdown: boolean,
+  includeBlocks: boolean,
 ) {
   const cacheable = mode !== "fast" && !maxPages;
-  const baseVariant: string | undefined = mode === "ocr" ? "ocr" : undefined;
-  const ownVariant: string | undefined = includePageMarkdown
-    ? mode === "ocr"
-      ? OCR_PAGE_MARKDOWN_VARIANT
-      : PAGE_MARKDOWN_VARIANT
-    : baseVariant;
+  const isOcr = mode === "ocr";
+  const baseVariant: string | undefined = isOcr ? "ocr" : undefined;
+  const ownVariant: string | undefined =
+    includePageMarkdown && includeBlocks
+      ? isOcr
+        ? OCR_PAGE_MARKDOWN_BLOCKS_VARIANT
+        : PAGE_MARKDOWN_BLOCKS_VARIANT
+      : includeBlocks
+        ? isOcr
+          ? OCR_BLOCKS_VARIANT
+          : BLOCKS_VARIANT
+        : includePageMarkdown
+          ? isOcr
+            ? OCR_PAGE_MARKDOWN_VARIANT
+            : PAGE_MARKDOWN_VARIANT
+          : baseVariant;
 
-  // Page-aware requests may only consume page-capable artifacts. Legacy
-  // requests prefer their compact entry but can reuse an enriched sidecar.
-  const lookupVariants: (string | undefined)[] = includePageMarkdown
-    ? mode === "ocr"
-      ? [OCR_PAGE_MARKDOWN_VARIANT]
-      : [PAGE_MARKDOWN_VARIANT, OCR_PAGE_MARKDOWN_VARIANT]
-    : mode === "ocr"
-      ? ["ocr", OCR_PAGE_MARKDOWN_VARIANT]
-      : [undefined, PAGE_MARKDOWN_VARIANT, "ocr", OCR_PAGE_MARKDOWN_VARIANT];
+  // Capability rule: a request may only consume artifacts carrying every
+  // capability it asked for (pages/blocks), but can reuse a richer sidecar.
+  // Compact entries are preferred, and `auto` may fall back to ocr-written
+  // artifacts. Plain requests keep the historical 4-variant probe list —
+  // the hot path is not taxed with block-sidecar lookups.
+  const lookupVariants: (string | undefined)[] = includeBlocks
+    ? includePageMarkdown
+      ? isOcr
+        ? [OCR_PAGE_MARKDOWN_BLOCKS_VARIANT]
+        : [PAGE_MARKDOWN_BLOCKS_VARIANT, OCR_PAGE_MARKDOWN_BLOCKS_VARIANT]
+      : isOcr
+        ? [OCR_BLOCKS_VARIANT, OCR_PAGE_MARKDOWN_BLOCKS_VARIANT]
+        : [
+            BLOCKS_VARIANT,
+            PAGE_MARKDOWN_BLOCKS_VARIANT,
+            OCR_BLOCKS_VARIANT,
+            OCR_PAGE_MARKDOWN_BLOCKS_VARIANT,
+          ]
+    : includePageMarkdown
+      ? isOcr
+        ? [OCR_PAGE_MARKDOWN_VARIANT, OCR_PAGE_MARKDOWN_BLOCKS_VARIANT]
+        : [
+            PAGE_MARKDOWN_VARIANT,
+            PAGE_MARKDOWN_BLOCKS_VARIANT,
+            OCR_PAGE_MARKDOWN_VARIANT,
+            OCR_PAGE_MARKDOWN_BLOCKS_VARIANT,
+          ]
+      : isOcr
+        ? ["ocr", OCR_PAGE_MARKDOWN_VARIANT]
+        : [undefined, PAGE_MARKDOWN_VARIANT, "ocr", OCR_PAGE_MARKDOWN_VARIANT];
   return { cacheable, ownVariant, baseVariant, lookupVariants };
 }
 
@@ -80,12 +126,14 @@ export async function tryGetCached(
   maxPages: number | undefined,
   pagesProcessed: number | undefined,
   includePageMarkdown: boolean,
+  includeBlocks: boolean,
 ): Promise<PDFProcessorResult | null> {
   if (meta.internalOptions.zeroDataRetention) return null;
   const { cacheable, lookupVariants } = cacheKeyShape(
     mode,
     maxPages,
     includePageMarkdown,
+    includeBlocks,
   );
   if (!cacheable) return null;
 
@@ -99,7 +147,8 @@ export async function tryGetCached(
       if (cached) {
         if (
           !isValidCachedDocument(cached) ||
-          (includePageMarkdown && !isValidPageMarkdown(cached.pageMarkdown))
+          (includePageMarkdown && !isValidPageMarkdown(cached.pageMarkdown)) ||
+          (includeBlocks && !isValidBlocks(cached.blocks))
         ) {
           // Defense in depth: variant names are the capability boundary, but
           // never let a malformed/old artifact satisfy a cache lookup.
@@ -110,15 +159,13 @@ export async function tryGetCached(
           requestedMode: mode,
           cacheVariant: variant ?? "base",
         });
-        if (!includePageMarkdown) {
-          const { pageMarkdown: _pageMarkdown, ...compactCached } = cached;
-          return {
-            ...compactCached,
-            pagesProcessed: cached.pagesProcessed ?? pagesProcessed,
-          };
-        }
+        // Strip payloads the request didn't ask for so a richer sidecar
+        // serves a poorer request without leaking extra capabilities.
+        const { pageMarkdown, blocks, ...compactCached } = cached;
         return {
-          ...cached,
+          ...compactCached,
+          ...(includePageMarkdown ? { pageMarkdown } : {}),
+          ...(includeBlocks ? { blocks } : {}),
           pagesProcessed: cached.pagesProcessed ?? pagesProcessed,
         };
       }
@@ -138,33 +185,46 @@ export async function maybeSaveResult(args: {
   mode: PDFMode | undefined;
   maxPages: number | undefined;
   includePageMarkdown: boolean;
+  includeBlocks: boolean;
   result: PDFProcessorResult & { markdown: string };
 }): Promise<void> {
-  const { meta, base64Content, mode, maxPages, includePageMarkdown, result } =
-    args;
+  const {
+    meta,
+    base64Content,
+    mode,
+    maxPages,
+    includePageMarkdown,
+    includeBlocks,
+    result,
+  } = args;
   if (meta.internalOptions.zeroDataRetention) return;
   const { cacheable, ownVariant, baseVariant } = cacheKeyShape(
     mode,
     maxPages,
     includePageMarkdown,
+    includeBlocks,
   );
   if (!cacheable) return;
 
   try {
     await savePdfResultToCache(base64Content, result, "firepdf", ownVariant);
-    // A page-capable parse is also a valid legacy result. Populate the compact
-    // base key when it is missing so a later legacy request never repeats the
-    // conversion. A page-sidecar miss can coexist with a warm legacy key during
-    // rollout, so avoid rewriting that object. Strip the page payload to keep
-    // the hot-path cache object small.
-    if (includePageMarkdown && ownVariant !== baseVariant) {
+    // An enriched (page/block-capable) parse is also a valid legacy result.
+    // Populate the compact base key when it is missing so a later legacy
+    // request never repeats the conversion. A sidecar miss can coexist with
+    // a warm legacy key during rollout, so avoid rewriting that object.
+    // Strip the enriched payloads to keep the hot-path cache object small.
+    if ((includePageMarkdown || includeBlocks) && ownVariant !== baseVariant) {
       const existingBase = await getPdfResultFromCache(
         base64Content,
         "firepdf",
         baseVariant,
       );
       if (!existingBase || !isValidCachedDocument(existingBase)) {
-        const { pageMarkdown: _pageMarkdown, ...baseResult } = result;
+        const {
+          pageMarkdown: _pageMarkdown,
+          blocks: _blocks,
+          ...baseResult
+        } = result;
         await savePdfResultToCache(
           base64Content,
           baseResult,

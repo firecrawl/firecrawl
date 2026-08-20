@@ -35,18 +35,69 @@ describe("FirePDF page-markdown cache capabilities", () => {
   });
 
   it("uses versioned page-capable variants", () => {
-    expect(cacheKeyShape("auto", undefined, true)).toMatchObject({
+    expect(cacheKeyShape("auto", undefined, true, false)).toMatchObject({
       cacheable: true,
       ownVariant: "page-markdown-v1",
-      lookupVariants: ["page-markdown-v1", "ocr-page-markdown-v1"],
+      lookupVariants: [
+        "page-markdown-v1",
+        "page-markdown-blocks-v1",
+        "ocr-page-markdown-v1",
+        "ocr-page-markdown-blocks-v1",
+      ],
     });
-    expect(cacheKeyShape("ocr", undefined, true)).toMatchObject({
+    expect(cacheKeyShape("ocr", undefined, true, false)).toMatchObject({
       cacheable: true,
       ownVariant: "ocr-page-markdown-v1",
-      lookupVariants: ["ocr-page-markdown-v1"],
+      lookupVariants: ["ocr-page-markdown-v1", "ocr-page-markdown-blocks-v1"],
     });
-    expect(cacheKeyShape("fast", undefined, true).cacheable).toBe(false);
-    expect(cacheKeyShape("auto", 5, true).cacheable).toBe(false);
+    expect(cacheKeyShape("fast", undefined, true, false).cacheable).toBe(false);
+    expect(cacheKeyShape("auto", 5, true, false).cacheable).toBe(false);
+  });
+
+  it("uses versioned block-capable variants", () => {
+    expect(cacheKeyShape("auto", undefined, false, true)).toMatchObject({
+      cacheable: true,
+      ownVariant: "blocks-v1",
+      lookupVariants: [
+        "blocks-v1",
+        "page-markdown-blocks-v1",
+        "ocr-blocks-v1",
+        "ocr-page-markdown-blocks-v1",
+      ],
+    });
+    expect(cacheKeyShape("ocr", undefined, false, true)).toMatchObject({
+      cacheable: true,
+      ownVariant: "ocr-blocks-v1",
+      lookupVariants: ["ocr-blocks-v1", "ocr-page-markdown-blocks-v1"],
+    });
+    expect(cacheKeyShape("auto", undefined, true, true)).toMatchObject({
+      cacheable: true,
+      ownVariant: "page-markdown-blocks-v1",
+      lookupVariants: [
+        "page-markdown-blocks-v1",
+        "ocr-page-markdown-blocks-v1",
+      ],
+    });
+    expect(cacheKeyShape("fast", undefined, false, true).cacheable).toBe(false);
+    expect(cacheKeyShape("auto", 5, false, true).cacheable).toBe(false);
+  });
+
+  it("keeps the historical probe list for plain requests", () => {
+    expect(cacheKeyShape("auto", undefined, false, false)).toMatchObject({
+      cacheable: true,
+      ownVariant: undefined,
+      lookupVariants: [
+        undefined,
+        "page-markdown-v1",
+        "ocr",
+        "ocr-page-markdown-v1",
+      ],
+    });
+    expect(cacheKeyShape("ocr", undefined, false, false)).toMatchObject({
+      cacheable: true,
+      ownVariant: "ocr",
+      lookupVariants: ["ocr", "ocr-page-markdown-v1"],
+    });
   });
 
   it("never serves a document-only cache entry to a page-aware request", async () => {
@@ -62,14 +113,22 @@ describe("FirePDF page-markdown cache capabilities", () => {
       undefined,
       2,
       true,
+      false,
     );
 
     expect(result).toBeNull();
-    expect(getCached).toHaveBeenCalledOnce();
-    expect(getCached).toHaveBeenCalledWith(
+    expect(getCached).toHaveBeenCalledTimes(2);
+    expect(getCached).toHaveBeenNthCalledWith(
+      1,
       "BASE64",
       "firepdf",
       "ocr-page-markdown-v1",
+    );
+    expect(getCached).toHaveBeenNthCalledWith(
+      2,
+      "BASE64",
+      "firepdf",
+      "ocr-page-markdown-blocks-v1",
     );
   });
 
@@ -93,10 +152,11 @@ describe("FirePDF page-markdown cache capabilities", () => {
       undefined,
       2,
       true,
+      false,
     );
 
     expect(result).toBeNull();
-    expect(getCached).toHaveBeenCalledTimes(2);
+    expect(getCached).toHaveBeenCalledTimes(4);
   });
 
   it("rejects page-capable variants missing required document fields", async () => {
@@ -117,10 +177,11 @@ describe("FirePDF page-markdown cache capabilities", () => {
       undefined,
       1,
       true,
+      false,
     );
 
     expect(result).toBeNull();
-    expect(getCached).toHaveBeenCalledTimes(2);
+    expect(getCached).toHaveBeenCalledTimes(4);
   });
 
   it("accepts an explicitly empty cached markdown string", async () => {
@@ -137,6 +198,7 @@ describe("FirePDF page-markdown cache capabilities", () => {
       undefined,
       1,
       true,
+      false,
     );
 
     expect(result).toMatchObject({ markdown: "", html: "" });
@@ -164,10 +226,11 @@ describe("FirePDF page-markdown cache capabilities", () => {
       undefined,
       1,
       true,
+      false,
     );
 
     expect(result).toBeNull();
-    expect(getCached).toHaveBeenCalledTimes(2);
+    expect(getCached).toHaveBeenCalledTimes(4);
   });
 
   it("serves page-capable entries and preserves the page-count fallback", async () => {
@@ -187,6 +250,7 @@ describe("FirePDF page-markdown cache capabilities", () => {
       undefined,
       2,
       true,
+      false,
     );
 
     expect(result?.pageMarkdown).toHaveLength(2);
@@ -210,6 +274,7 @@ describe("FirePDF page-markdown cache capabilities", () => {
       undefined,
       2,
       false,
+      false,
     );
 
     expect(result).toMatchObject({
@@ -226,6 +291,104 @@ describe("FirePDF page-markdown cache capabilities", () => {
     );
   });
 
+  it("never serves a block-less cache entry to a block-aware request", async () => {
+    getCached.mockResolvedValueOnce({
+      markdown: "no blocks",
+      html: "<p>no blocks</p>",
+    });
+
+    const result = await tryGetCached(
+      makeMeta(),
+      "BASE64",
+      "ocr",
+      undefined,
+      1,
+      false,
+      true,
+    );
+
+    expect(result).toBeNull();
+    expect(getCached).toHaveBeenCalledTimes(2);
+    expect(getCached).toHaveBeenNthCalledWith(
+      1,
+      "BASE64",
+      "firepdf",
+      "ocr-blocks-v1",
+    );
+    expect(getCached).toHaveBeenNthCalledWith(
+      2,
+      "BASE64",
+      "firepdf",
+      "ocr-page-markdown-blocks-v1",
+    );
+  });
+
+  it("serves block-capable entries and strips payloads the request skipped", async () => {
+    const blocks = [
+      { page: 1, width: 800, height: 1100, status: "ok", items: [] },
+    ];
+    getCached.mockResolvedValueOnce(null).mockResolvedValueOnce({
+      markdown: "whole",
+      html: "<p>whole</p>",
+      pagesProcessed: 1,
+      pageMarkdown: [{ page: 1, markdown: "one" }],
+      blocks,
+    });
+
+    const result = await tryGetCached(
+      makeMeta(),
+      "BASE64",
+      "auto",
+      undefined,
+      1,
+      false,
+      true,
+    );
+
+    expect(getCached).toHaveBeenNthCalledWith(
+      2,
+      "BASE64",
+      "firepdf",
+      "page-markdown-blocks-v1",
+    );
+    expect(result?.blocks).toEqual(blocks);
+    expect(result?.pageMarkdown).toBeUndefined();
+  });
+
+  it("rejects malformed block payloads in block-capable variants", async () => {
+    getCached
+      .mockResolvedValueOnce({
+        markdown: "wrong type",
+        html: "<p>wrong type</p>",
+        blocks: "not-an-array" as never,
+      })
+      .mockResolvedValueOnce({
+        markdown: "wrong page",
+        html: "<p>wrong page</p>",
+        blocks: [{ page: 0, items: null }] as never,
+      })
+      .mockResolvedValueOnce({
+        markdown: "wrong item",
+        html: "<p>wrong item</p>",
+        blocks: [
+          { page: 1, width: 800, height: 1100, status: "ok", items: [null] },
+        ] as never,
+      });
+
+    const result = await tryGetCached(
+      makeMeta(),
+      "BASE64",
+      "auto",
+      undefined,
+      1,
+      false,
+      true,
+    );
+
+    expect(result).toBeNull();
+    expect(getCached).toHaveBeenCalledTimes(4);
+  });
+
   it("writes an enriched sidecar plus a compact legacy entry", async () => {
     const pageMarkdown = [
       { page: 1, markdown: "one" },
@@ -238,6 +401,7 @@ describe("FirePDF page-markdown cache capabilities", () => {
       mode: "auto",
       maxPages: undefined,
       includePageMarkdown: true,
+      includeBlocks: false,
       result: {
         markdown: "whole",
         html: "<p>whole</p>",
@@ -276,6 +440,7 @@ describe("FirePDF page-markdown cache capabilities", () => {
       mode: "auto",
       maxPages: undefined,
       includePageMarkdown: true,
+      includeBlocks: false,
       result: {
         markdown: "whole",
         html: "<p>whole</p>",
@@ -294,6 +459,49 @@ describe("FirePDF page-markdown cache capabilities", () => {
       expect.objectContaining({ pageMarkdown: expect.any(Array) }),
       "firepdf",
       "page-markdown-v1",
+    );
+  });
+
+  it("writes a block sidecar plus a compact legacy entry", async () => {
+    const blocks = [
+      {
+        page: 1,
+        width: 800,
+        height: 1100,
+        status: "ok",
+        items: [],
+      },
+    ];
+
+    await maybeSaveResult({
+      meta: makeMeta(),
+      base64Content: "BASE64",
+      mode: "auto",
+      maxPages: undefined,
+      includePageMarkdown: false,
+      includeBlocks: true,
+      result: {
+        markdown: "whole",
+        html: "<p>whole</p>",
+        pagesProcessed: 1,
+        blocks,
+      },
+    });
+
+    expect(saveCached).toHaveBeenCalledTimes(2);
+    expect(saveCached).toHaveBeenNthCalledWith(
+      1,
+      "BASE64",
+      expect.objectContaining({ blocks }),
+      "firepdf",
+      "blocks-v1",
+    );
+    expect(saveCached).toHaveBeenNthCalledWith(
+      2,
+      "BASE64",
+      expect.not.objectContaining({ blocks: expect.anything() }),
+      "firepdf",
+      undefined,
     );
   });
 });

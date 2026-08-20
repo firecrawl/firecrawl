@@ -133,3 +133,81 @@ describe("scrapePDFWithFirePDF page markdown", () => {
     ).rejects.toThrow(/did not include requested physical page markdown/);
   });
 });
+
+describe("scrapePDFWithFirePDF typed blocks", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("requests and returns the block payload", async () => {
+    const blocks = [
+      {
+        page: 1,
+        width: 800,
+        height: 1100,
+        status: "ok",
+        items: [
+          {
+            id: "p1.b0",
+            type: "title",
+            label: "doc_title",
+            bbox: [0.1, 0.05, 0.9, 0.1],
+            content: "# Annual Report",
+            markdown_span: [0, 15],
+            reading_order: 0,
+            source: "native_text",
+            confidence: { layout: 0.97, ocr: null },
+          },
+        ],
+      },
+    ];
+    mockedRobustFetch.mockResolvedValue({
+      markdown: "# Annual Report",
+      failed_pages: null,
+      pages_processed: 1,
+      blocks,
+    } as any);
+
+    const result = await scrapePDFWithFirePDF(
+      makeMeta(),
+      "BASE64",
+      undefined,
+      undefined,
+      "auto",
+      false,
+      true,
+    );
+
+    expect(mockedRobustFetch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        body: expect.objectContaining({ include_blocks: true }),
+      }),
+    );
+    expect(
+      ((mockedRobustFetch.mock.calls[0][0] as any).body as any)
+        .include_page_markdown,
+    ).toBeUndefined();
+    expect(result.blocks).toEqual(blocks);
+    expect(result.pageMarkdown).toBeUndefined();
+  });
+
+  it("rejects block-less FirePDF responses for block-aware requests", async () => {
+    mockedRobustFetch.mockResolvedValue({
+      markdown: "document only",
+      failed_pages: null,
+      pages_processed: 1,
+    } as any);
+
+    await expect(
+      scrapePDFWithFirePDF(
+        makeMeta(),
+        "BASE64",
+        undefined,
+        undefined,
+        "auto",
+        false,
+        true,
+      ),
+    ).rejects.toThrow(/did not include requested typed blocks/);
+  });
+});

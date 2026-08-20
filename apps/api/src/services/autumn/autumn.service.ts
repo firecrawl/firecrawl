@@ -4,7 +4,12 @@ import { eq } from "drizzle-orm";
 import { dbRr } from "../../db/connection";
 import * as schema from "../../db/schema";
 import { autumnClient } from "./client";
-import { firebillTrack, shouldRouteToFirebill } from "./firebill";
+import {
+  firebillFinalize,
+  firebillLock,
+  firebillTrack,
+  shouldRouteToFirebill,
+} from "./firebill";
 import type {
   CreateEntityParams,
   CreateEntityResult,
@@ -445,6 +450,34 @@ export class AutumnService {
 
     try {
       const customerId = await this.ensureTrackingContext(teamId);
+
+      // Gradual firebill rollout, mirroring track(): allowlisted orgs take
+      // their holds through firebill. The hold still lives in Autumn (firebill
+      // keeps no lock state), but only firebill pins the retry/timeout budget
+      // around the call. An unavailable answer maps to "skipped" — proceed
+      // unlocked — exactly like a direct-Autumn check failure below.
+      if (shouldRouteToFirebill(customerId)) {
+        const result = await firebillLock({
+          customerId,
+          entityId: teamId,
+          featureId,
+          value,
+          lockId: resolvedLockId,
+          // firebill requires an expiry (Autumn releasing the hold by itself
+          // is what makes firebill lock-table-free); default to an hour, the
+          // monitor runner's convention, when the caller sets none.
+          expiresAt: expiresAt ?? Date.now() + 60 * 60 * 1000,
+          properties,
+        });
+        if (result.status === "locked") {
+          return { status: "locked", lockId: result.lockId };
+        }
+        if (result.status === "denied") {
+          return { status: "denied" };
+        }
+        return { status: "skipped" };
+      }
+
       const { allowed } = await autumnClient.check({
         customerId,
         entityId: teamId,
@@ -492,13 +525,25 @@ export class AutumnService {
 
   /**
    * Finalizes a previously-acquired Autumn lock.
+   *
+   * When the caller supplies the lock's teamId and that team's org is on the
+   * firebill rollout, the settle goes through firebill, which queues it
+   * durably and retries delivery — a dropped direct finalize means the hold
+   * just expires, leaving a confirm's work unbilled. Either route lands on the
+   * same Autumn lock, so routing is a durability choice, not a correctness one.
    */
   async finalizeCreditsLock({
     lockId,
     action,
     overrideValue,
     properties,
+    teamId,
   }: FinalizeCreditsLockParams): Promise<void> {
+    if (teamId && (await this.isRoutedThroughFirebill(teamId))) {
+      await firebillFinalize({ lockId, action, overrideValue, properties });
+      return;
+    }
+
     if (!autumnClient) return;
 
     try {

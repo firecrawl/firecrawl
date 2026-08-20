@@ -37,6 +37,7 @@ import {
   NoCachedDataError,
 } from "../../error";
 import {
+  getPDFBlocks,
   getPDFMaxPages,
   getPDFPageMarkdown,
   shouldParsePDF,
@@ -60,10 +61,11 @@ export async function sendDocumentToIndex(meta: Meta, document: Document) {
     // every access must go through the Exchange and its ledger.
     meta.winnerEngine !== "exchange" &&
     !(meta.winnerEngine === "pdf" && !shouldParsePDF(meta.options.parsers)) &&
-    // Page-aware results are capability-specific and are not represented in
-    // the URL index schema yet. Do not write an entry that could later be
-    // served without its required pages payload.
+    // Page-aware and block-aware results are capability-specific and are not
+    // represented in the URL index schema yet. Do not write an entry that
+    // could later be served without its required pages/blocks payload.
     !getPDFPageMarkdown(meta.options.parsers) &&
+    !getPDFBlocks(meta.options.parsers) &&
     !meta.options.parsers?.some(parser => {
       if (
         typeof parser === "object" &&

@@ -2,6 +2,17 @@ import { config } from "../../config";
 import { logger } from "../../lib/logger";
 import type { TrackParams } from "./types";
 
+/**
+ * Outcome of a firebill `/v1/lock` call, mirroring firebill's three-state
+ * answer: `denied` is Autumn saying no (a real answer — the caller must not
+ * proceed), while `unavailable` means firebill couldn't get an answer out of
+ * Autumn at all and the caller decides how its endpoint fails.
+ */
+type FirebillLockResult =
+  | { status: "locked"; lockId: string }
+  | { status: "denied" }
+  | { status: "unavailable" };
+
 // firebill's own internal budget (durable write + forward attempt) is up to
 // ~3.5s worst case, so this is deliberately looser than the 2s timeout on the
 // direct Autumn client.
@@ -35,6 +46,12 @@ export function shouldRouteToFirebill(orgId: string): boolean {
   return firebillOrgIds().has(orgId);
 }
 
+// Plain concatenation rather than new URL(path, base): a leading-slash path
+// would drop any base-path prefix (e.g. a reverse proxy at /firebill).
+function firebillUrl(path: string): string {
+  return `${config.FIREBILL_URL!.replace(/\/+$/, "")}${path}`;
+}
+
 /**
  * Sends a usage event to firebill, which records it durably in Postgres and
  * forwards it to Autumn (replaying failed deliveries instead of losing them).
@@ -56,9 +73,7 @@ export async function firebillTrack({
   idempotencyKey,
 }: TrackParams): Promise<boolean> {
   const path = value < 0 ? "/v1/refund" : "/v1/track";
-  // Plain concatenation rather than new URL(path, base): a leading-slash path
-  // would drop any base-path prefix (e.g. a reverse proxy at /firebill).
-  const url = `${config.FIREBILL_URL!.replace(/\/+$/, "")}${path}`;
+  const url = firebillUrl(path);
   try {
     const response = await fetch(url, {
       method: "POST",
@@ -128,6 +143,217 @@ export async function firebillTrack({
       featureId,
       value,
       path,
+      error,
+    });
+    return false;
+  }
+}
+
+/**
+ * Holds balance via firebill's `/v1/lock`, the one synchronous firebill route:
+ * firebill calls Autumn inline (it keeps no lock state of its own — Autumn
+ * expires the hold by itself at `expiresAt`) and answers in three states.
+ *
+ * `unavailable` covers everything that isn't a real answer — firebill down,
+ * non-OK response, or firebill reporting it couldn't reach Autumn. As with
+ * track, there is deliberately no direct-Autumn fallback here: splitting one
+ * lock's lifecycle across two routes would let a firebill-side hold and a
+ * fallback hold coexist under retries.
+ */
+export async function firebillLock({
+  customerId,
+  entityId,
+  featureId,
+  value,
+  lockId,
+  expiresAt,
+  properties,
+}: {
+  customerId: string;
+  entityId: string;
+  featureId: string;
+  value: number;
+  lockId: string;
+  expiresAt: number;
+  properties?: Record<string, unknown>;
+}): Promise<FirebillLockResult> {
+  const url = firebillUrl("/v1/lock");
+  try {
+    const response = await fetch(url, {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${config.FIREBILL_SECRET}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        customer_id: customerId,
+        entity_id: entityId,
+        feature_id: featureId,
+        value,
+        // Caller-chosen and deterministic — firebill never mints one, because
+        // a minted id would be lost on a timeout, leaving a hold nobody can
+        // finalize. Autumn enforces it as the lock's idempotency key.
+        lock_id: lockId,
+        expires_at: expiresAt,
+        properties,
+      }),
+      signal: AbortSignal.timeout(FIREBILL_TIMEOUT_MS),
+    });
+
+    if (!response.ok) {
+      logger.error("firebill lock failed — non-OK response", {
+        customerId,
+        entityId,
+        featureId,
+        value,
+        lockId,
+        status: response.status,
+      });
+      return { status: "unavailable" };
+    }
+
+    const body = (await response.json()) as {
+      success?: boolean;
+      allowed?: boolean;
+      lock_id?: string;
+    };
+
+    if (body.success !== true) {
+      logger.error("firebill lock did not succeed", {
+        customerId,
+        entityId,
+        featureId,
+        value,
+        lockId,
+      });
+      return { status: "unavailable" };
+    }
+
+    if (body.allowed === false) {
+      logger.info("firebill lock denied", {
+        customerId,
+        entityId,
+        featureId,
+        value,
+        lockId,
+      });
+      return { status: "denied" };
+    }
+
+    // Only an explicit `allowed: false` is a denial. `success: true` with a
+    // missing or mis-shaped `allowed` is not an answer firebill sends today;
+    // treating it as a denial would hard-stop the check (skipped_no_credits),
+    // so it maps to unavailable — proceed unlocked — instead.
+    if (body.allowed !== true) {
+      logger.error("firebill lock answered without a usable `allowed`", {
+        customerId,
+        entityId,
+        featureId,
+        value,
+        lockId,
+      });
+      return { status: "unavailable" };
+    }
+
+    logger.info("firebill lock succeeded", {
+      customerId,
+      entityId,
+      featureId,
+      value,
+      lockId,
+    });
+    return { status: "locked", lockId: body.lock_id ?? lockId };
+  } catch (error) {
+    logger.error("firebill lock failed — firebill may be unavailable", {
+      customerId,
+      entityId,
+      featureId,
+      value,
+      lockId,
+      error,
+    });
+    return { status: "unavailable" };
+  }
+}
+
+/**
+ * Settles a lock via firebill's `/v1/finalize`: `confirm` bills the hold,
+ * `release` gives the balance back. firebill queues the settle durably and
+ * retries it until it lands in Autumn, instead of dropping it when Autumn
+ * blinks (the direct-Autumn path's failure mode — the lock then just expires,
+ * which for a confirm means the work goes unbilled).
+ *
+ * Returns true when firebill accepted the settle for delivery, mirroring the
+ * void-and-log contract of the direct finalize path. No direct-Autumn
+ * fallback, for the same reason as track: firebill may have durably queued
+ * the settle before the call failed.
+ */
+export async function firebillFinalize({
+  lockId,
+  action,
+  overrideValue,
+  properties,
+}: {
+  lockId: string;
+  action: "confirm" | "release";
+  overrideValue?: number;
+  properties?: Record<string, unknown>;
+}): Promise<boolean> {
+  const url = firebillUrl("/v1/finalize");
+  try {
+    const response = await fetch(url, {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${config.FIREBILL_SECRET}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        lock_id: lockId,
+        action,
+        ...(overrideValue !== undefined
+          ? { override_value: overrideValue }
+          : {}),
+        properties,
+        // Deterministic per (lock, action): the lock id is itself caller-chosen
+        // and stable (`monitor_${check.id}`), so a re-finalize of the same
+        // settle — e.g. the reconciler re-running a check it raced — dedupes
+        // upstream instead of settling twice.
+        idempotency_key: `fc:finalize:${action}:${lockId}`,
+      }),
+      signal: AbortSignal.timeout(FIREBILL_TIMEOUT_MS),
+    });
+
+    if (!response.ok) {
+      logger.error("firebill finalize failed — non-OK response", {
+        lockId,
+        action,
+        overrideValue,
+        status: response.status,
+      });
+      return false;
+    }
+
+    const body = (await response.json()) as { success?: boolean };
+    if (body.success !== true) {
+      logger.error("firebill finalize did not succeed", {
+        lockId,
+        action,
+        overrideValue,
+      });
+      return false;
+    }
+
+    logger.info("firebill finalize succeeded", {
+      lockId,
+      action,
+      overrideValue,
+    });
+    return true;
+  } catch (error) {
+    logger.error("firebill finalize failed — firebill may be unavailable", {
+      lockId,
+      action,
+      overrideValue,
       error,
     });
     return false;

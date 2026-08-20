@@ -89,6 +89,19 @@ describe("v2 utils: validation", () => {
     expect(options.parsers).toEqual(before);
   });
 
+  test("ensureValidScrapeOptions: leaves PDF parser pages and blocks options untouched", () => {
+    const options = {
+      parsers: [{ type: "pdf", mode: "auto", blocks: true, pages: true }],
+    } as any;
+    expect(() => ensureValidScrapeOptions(options)).not.toThrow();
+    expect(options.parsers[0]).toEqual({
+      type: "pdf",
+      mode: "auto",
+      blocks: true,
+      pages: true,
+    });
+  });
+
   test("ensureValidFormats: detects mistaken use of zod schema.shape", () => {
     const schema = z.object({ title: z.string(), count: z.number() });
     // User mistakenly passes schema.shape instead of schema

@@ -18,6 +18,7 @@ import {
   ScrapeOptions as V1ScrapeOptions,
 } from "../v1/types";
 import type { InternalOptions } from "../../scraper/scrapeURL";
+import type { PdfPageBlocks } from "../../scraper/scrapeURL/engines/pdf/types";
 import { ErrorCodes } from "../../lib/error";
 import Ajv from "ajv";
 import addFormats from "ajv-formats";
@@ -478,18 +479,39 @@ const pdfModeSchema = z.enum(["fast", "auto", "ocr"]);
 
 export type PDFMode = z.infer<typeof pdfModeSchema>;
 
-const pdfParserWithOptions = z.strictObject({
-  type: z.literal("pdf"),
-  mode: pdfModeSchema.optional(),
-  maxPages: z.int().positive().finite().max(10000).optional(),
-  /** Include physical per-page markdown alongside document markdown. */
-  pageMarkdown: z.boolean().optional(),
-  // Experimental: route this request through the fire-pdf async pipeline
-  // (POST /jobs + poll) instead of the sync POST /ocr endpoint. Falls back
-  // to sync on any async-path failure, so user-visible behavior is unchanged
-  // beyond latency variance. Underscored to mark as internal/experimental.
-  __firePdfAsync: z.boolean().optional(),
-});
+const pdfParserWithOptions = z
+  .strictObject({
+    type: z.literal("pdf"),
+    mode: pdfModeSchema.optional(),
+    maxPages: z.int().positive().finite().max(10000).optional(),
+    /** Include physical per-page markdown alongside document markdown —
+     * populates `document.pages`. */
+    pages: z.boolean().optional(),
+    /**
+     * @deprecated Renamed to `pages` (2026-08). Accepted as a silent alias
+     * for callers that adopted the option pre-rename; never documented.
+     * Normalized into `pages` below — internal code never sees this field.
+     */
+    pageMarkdown: z.boolean().optional(),
+    /** Include per-page typed layout blocks (bounding boxes, block types,
+     * reading order) alongside document markdown — populates
+     * `document.blocks`. */
+    blocks: z.boolean().optional(),
+    // Experimental: route this request through the fire-pdf async pipeline
+    // (POST /jobs + poll) instead of the sync POST /ocr endpoint. Falls back
+    // to sync on any async-path failure, so user-visible behavior is unchanged
+    // beyond latency variance. Underscored to mark as internal/experimental.
+    __firePdfAsync: z.boolean().optional(),
+  })
+  .transform(({ pageMarkdown, pages, ...parser }) => {
+    // Fold the deprecated alias into the canonical name at the schema
+    // boundary; `pages` wins when both are set. Keep the key optional so
+    // plain `{ type: "pdf" }` parser literals stay assignable.
+    const normalized: typeof parser & { pages?: boolean } = { ...parser };
+    const effective = pages ?? pageMarkdown;
+    if (effective !== undefined) normalized.pages = effective;
+    return normalized;
+  });
 
 const parsersSchema = z
   .array(z.union([z.literal("pdf"), pdfParserWithOptions]))
@@ -537,7 +559,25 @@ export function getPDFPageMarkdown(parsers?: Parsers): boolean {
   if (!parsers) return false;
   for (const parser of parsers) {
     if (typeof parser === "object" && parser.type === "pdf") {
-      return parser.pageMarkdown === true;
+      // The deprecated `pageMarkdown` alias is folded into `pages` at the
+      // schema boundary, so freshly parsed parsers only carry the canonical
+      // name. Serialized options bypass re-parsing (queued jobs and crawl
+      // option snapshots from before the rename), so read the legacy key
+      // defensively too; `pages` wins when both are present.
+      return (
+        (parser.pages ??
+          (parser as { pageMarkdown?: boolean }).pageMarkdown) === true
+      );
+    }
+  }
+  return false;
+}
+
+export function getPDFBlocks(parsers?: Parsers): boolean {
+  if (!parsers) return false;
+  for (const parser of parsers) {
+    if (typeof parser === "object" && parser.type === "pdf") {
+      return parser.blocks === true;
     }
   }
   return false;
@@ -1240,8 +1280,11 @@ export type Document = {
   description?: string;
   url?: string;
   markdown?: string;
-  /** Physical PDF pages, present only for `parsers[].pageMarkdown`. */
+  /** Physical PDF pages, present only for the `parsers[].pages` option. */
   pages?: Array<{ pageNumber: number; markdown: string }>;
+  /** Typed PDF layout blocks with bounding boxes, present only for
+   * `parsers[].blocks`. */
+  blocks?: PdfPageBlocks[];
   html?: string;
   rawHtml?: string;
   links?: string[];

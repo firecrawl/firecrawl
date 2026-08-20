@@ -202,6 +202,7 @@ async function clearFinishedOrStaleCurrentCheck(
             endpoint: "monitor",
             jobId: current.id,
           },
+          teamId: monitor.team_id,
         })
         .catch(error => {
           logger.warn("Failed to release stale monitor check credit lock", {

@@ -1,13 +1,45 @@
+import type { z } from "zod";
+import type { firePdfBlockPagesSchema } from "./fire-pdf/schema";
+
 export type PdfPageMarkdown = {
   /** 1-based physical PDF page number returned by fire-pdf. */
   page: number;
   markdown: string;
 };
 
+/** Typed layout blocks as fire-pdf returns them (snake_case wire shape,
+ * fire-pdf docs/blocks-schema.md). Inferred from the zod wire schema so the
+ * contract lives in exactly one place. Cached artifacts store this shape. */
+export type FirePdfPageBlocks = z.infer<typeof firePdfBlockPagesSchema>[number];
+
+/** Public camelCase shape surfaced on `Document.blocks`. */
+export type PdfBlockItem = {
+  id: string;
+  type: string;
+  label: string | null;
+  bbox: [number, number, number, number] | null;
+  content: string;
+  markdownSpan: [number, number] | null;
+  readingOrder: number;
+  source: string | null;
+  confidence: { layout: number | null; ocr: number | null };
+};
+
+export type PdfPageBlocks = {
+  pageNumber: number;
+  width: number | null;
+  height: number | null;
+  status: string;
+  items: PdfBlockItem[];
+};
+
 export type PDFProcessorResult = {
   html: string;
   markdown?: string;
   pageMarkdown?: PdfPageMarkdown[];
+  /** Typed layout blocks (fire-pdf wire shape); present only when the
+   * request set the `blocks` parser option. */
+  blocks?: FirePdfPageBlocks[];
   /**
    * Pages the underlying engine actually processed for this request.
    * Currently populated only by fire-pdf (via OcrSuccessBody.pages_processed).

@@ -26,7 +26,7 @@ describeIf(SHOULD_RUN)("PDF physical page markdown", () => {
         {
           url: `${TEST_SUITE_WEBSITE}/example.pdf`,
           formats: ["markdown"],
-          parsers: [{ type: "pdf", mode: "auto", pageMarkdown: true }],
+          parsers: [{ type: "pdf", mode: "auto", pages: true }],
         },
         identity,
       );

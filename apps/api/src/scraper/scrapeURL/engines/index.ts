@@ -27,10 +27,13 @@ import {
 } from "./x-twitter";
 import { queryEngpickerVerdict, useIndex } from "../../../services";
 import { hasFormatOfType } from "../../../lib/format-utils";
-import { getPDFPageMarkdown } from "../../../controllers/v2/types";
-import type { PdfMetadata } from "./pdf/types";
+import {
+  getPDFBlocks,
+  getPDFPageMarkdown,
+} from "../../../controllers/v2/types";
+import type { PdfMetadata, PdfPageBlocks } from "./pdf/types";
 import { BrandingProfile } from "../../../types/branding";
-import { BrandingNotSupportedError } from "../error";
+import { AgentIndexOnlyError, BrandingNotSupportedError } from "../error";
 import { isUrlBlocked } from "../../WebScraper/utils/blocklist";
 import {
   canUseExchangeForRequest,
@@ -139,6 +142,7 @@ export type EngineScrapeResult = {
   html: string;
   markdown?: string;
   pages?: Array<{ pageNumber: number; markdown: string }>;
+  blocks?: PdfPageBlocks[];
   json?: unknown;
   statusCode: number;
   error?: string;
@@ -562,8 +566,10 @@ export function shouldUseIndex(meta: Meta) {
     config.FIRECRAWL_INDEX_WRITE_ONLY !== true &&
     !hasFormatOfType(meta.options.formats, "changeTracking") &&
     !hasFormatOfType(meta.options.formats, "branding") &&
-    // The URL index does not yet persist physical-page capability metadata.
+    // The URL index does not yet persist physical-page or typed-block
+    // capability metadata.
     !getPDFPageMarkdown(meta.options.parsers) &&
+    !getPDFBlocks(meta.options.parsers) &&
     !hasCustomScreenshotSettings &&
     meta.options.maxAge !== 0 &&
     (meta.options.headers === undefined ||
@@ -674,6 +680,21 @@ export async function buildFallbackList(meta: Meta): Promise<
     _engines.push(...indexEngines);
     meta.internalOptions.forceEngine = indexEngines;
   } else if (meta.internalOptions.agentIndexOnly) {
+    // Index documents carry no physical-page or typed-block payloads, so an
+    // index-only request that demands them can only be answered wrong. Fail
+    // loud with the canonical index-only error (maps to a clean 4xx and
+    // tells the caller how to unlock live scraping) instead of silently
+    // serving a document without the capability.
+    if (
+      getPDFPageMarkdown(meta.options.parsers) ||
+      getPDFBlocks(meta.options.parsers)
+    ) {
+      meta.logger.warn(
+        "agentIndexOnly request demands pageMarkdown/blocks, which the URL index cannot serve",
+        { parsers: meta.options.parsers },
+      );
+      throw new AgentIndexOnlyError();
+    }
     const indexEngines: Engine[] = useIndex ? ["index", "index;documents"] : [];
     _engines.length = 0;
     _engines.push(...indexEngines);

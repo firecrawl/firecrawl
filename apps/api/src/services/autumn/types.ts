@@ -72,6 +72,14 @@ export type FinalizeCreditsLockParams = {
   action: "confirm" | "release";
   overrideValue?: number;
   properties?: Record<string, unknown>;
+  /**
+   * The team the lock was taken for. Needed to route the settle through
+   * firebill for allowlisted orgs — a finalize carries no customer context of
+   * its own. When omitted, the settle goes directly to Autumn (which also
+   * works for a firebill-taken lock: the hold lives in Autumn either way, but
+   * loses firebill's durable retry).
+   */
+  teamId?: string;
 };
 
 export type TrackCreditsParams = {

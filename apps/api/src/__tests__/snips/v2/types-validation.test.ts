@@ -438,13 +438,29 @@ describe("V2 Types Validation", () => {
     it("should accept physical page markdown for PDF parsers", () => {
       const result = scrapeRequestSchema.parse({
         url: "https://example.com/file.pdf",
+        parsers: [{ type: "pdf", mode: "auto", pages: true }],
+      });
+
+      expect((result.parsers as any)[0].pages).toBe(true);
+    });
+
+    it("should fold the deprecated pageMarkdown alias into pages", () => {
+      const result = scrapeRequestSchema.parse({
+        url: "https://example.com/file.pdf",
         parsers: [{ type: "pdf", mode: "auto", pageMarkdown: true }],
       });
 
-      expect((result.parsers as any)[0].pageMarkdown).toBe(true);
+      expect((result.parsers as any)[0].pages).toBe(true);
+      expect("pageMarkdown" in (result.parsers as any)[0]).toBe(false);
     });
 
     it("should reject non-boolean physical page markdown", () => {
+      expect(() =>
+        scrapeRequestSchema.parse({
+          url: "https://example.com/file.pdf",
+          parsers: [{ type: "pdf", pages: "yes" }],
+        }),
+      ).toThrow();
       expect(() =>
         scrapeRequestSchema.parse({
           url: "https://example.com/file.pdf",

@@ -103,6 +103,48 @@ it('preserves null creditsUsed in CrawlJob', function (): void {
     expect($job->getCreditsUsed())->toBeNull();
 });
 
+it('hydrates PDF pages in Document', function (): void {
+    $doc = Document::fromArray([
+        'markdown' => '# Annual Report 2025',
+        'pages' => [
+            ['pageNumber' => 1, 'markdown' => '# Cover'],
+            ['pageNumber' => 2, 'markdown' => '## Intro'],
+        ],
+    ]);
+
+    expect($doc->getMarkdown())->toBe('# Annual Report 2025');
+    expect($doc->getPages())->toHaveCount(2);
+    expect($doc->getPages()[0]['pageNumber'])->toBe(1);
+    expect($doc->getPages()[0]['markdown'])->toBe('# Cover');
+});
+
+it('hydrates PDF blocks in Document', function (): void {
+    $doc = Document::fromArray([
+        'markdown' => '# Annual Report 2025',
+        'blocks' => [
+            [
+                'pageNumber' => 1,
+                'width' => 1700,
+                'height' => 2200,
+                'status' => 'ok',
+                'items' => [
+                    [
+                        'id' => 'p1.b0',
+                        'type' => 'title',
+                        'content' => '# Annual Report 2025',
+                        'readingOrder' => 0,
+                    ],
+                ],
+            ],
+        ],
+    ]);
+
+    expect($doc->getMarkdown())->toBe('# Annual Report 2025');
+    expect($doc->getBlocks())->toHaveCount(1);
+    expect($doc->getBlocks()[0]['pageNumber'])->toBe(1);
+    expect($doc->getBlocks()[0]['items'][0]['type'])->toBe('title');
+});
+
 it('hydrates video URL in Document', function (): void {
     $doc = Document::fromArray([
         'markdown' => '# Video',

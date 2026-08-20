@@ -1,6 +1,6 @@
 [package]
 name = "firecrawl"
-version = "2.12.1"
+version = "2.14.0"
 edition = "2021"
 license = "MIT"
 homepage = "https://www.firecrawl.dev/"

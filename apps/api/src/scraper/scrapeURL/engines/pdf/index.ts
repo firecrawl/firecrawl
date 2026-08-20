@@ -19,6 +19,7 @@ import {
   getPDFMaxPages,
   getPDFMode,
   getPDFPageMarkdown,
+  getPDFBlocks,
   getFirePdfAsync,
 } from "../../../../controllers/v2/types";
 import type { PDFMode } from "../../../../controllers/v2/types";
@@ -40,6 +41,7 @@ import { reconcilePageCountWithFirePdf, scrapePDFWithFirePDF } from "./firePDF";
 import { scrapePDFWithFirePDFAsync } from "./fire-pdf/async";
 import { decideFirePdfAsyncRoute } from "./fire-pdf/routing";
 import { scrapePDFWithParsePDF } from "./pdfParse";
+import { toPublicBlocks } from "./blocks";
 import { captureExceptionWithZdrCheck } from "../../../../services/sentry";
 import { isPdfBuffer, PDF_SNIFF_WINDOW } from "./pdfUtils";
 import { comparePdfOutputs } from "./shadowComparison";
@@ -61,10 +63,17 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
   const maxPages = getPDFMaxPages(meta.options.parsers);
   const mode: PDFMode = getPDFMode(meta.options.parsers);
   const includePageMarkdown = getPDFPageMarkdown(meta.options.parsers);
+  const includeBlocks = getPDFBlocks(meta.options.parsers);
 
   if (includePageMarkdown && !config.FIRE_PDF_BASE_URL) {
     throw new Error(
       "Physical page markdown is unavailable because FirePDF is not configured",
+    );
+  }
+
+  if (includeBlocks && !config.FIRE_PDF_BASE_URL) {
+    throw new Error(
+      "Typed blocks are unavailable because FirePDF is not configured",
     );
   }
 
@@ -178,7 +187,7 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
     let shadowPagesNeedingOcr: number[] | undefined;
 
     const forceFirePDF =
-      (!!meta.options.__forceFirePDF || includePageMarkdown) &&
+      (!!meta.options.__forceFirePDF || includePageMarkdown || includeBlocks) &&
       !!config.FIRE_PDF_BASE_URL;
     const rustEnabled = !!config.PDF_RUST_EXTRACT_ENABLE;
     const logger = meta.logger.child({ method: "scrapePDF/processPdf" });
@@ -461,17 +470,18 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
                 mode,
                 undefined,
                 includePageMarkdown,
+                includeBlocks,
               );
             } catch (error) {
               if (
-                !includePageMarkdown ||
+                (!includePageMarkdown && !includeBlocks) ||
                 error instanceof RemoveFeatureError ||
                 error instanceof AbortManagerThrownError
               ) {
                 throw error;
               }
               meta.logger.warn(
-                "FirePDF async page markdown failed -- retrying synchronously",
+                "FirePDF async page markdown/blocks failed -- retrying synchronously",
                 {
                   method: "scrapePDF/firePDFFallback",
                   error,
@@ -490,7 +500,8 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
                 maxPages,
                 effectivePageCount,
                 mode,
-                true,
+                includePageMarkdown,
+                includeBlocks,
               );
             }
           } else {
@@ -501,6 +512,7 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
               effectivePageCount,
               mode,
               includePageMarkdown,
+              includeBlocks,
             );
           }
           effectivePageCount = reconcilePageCountWithFirePdf(
@@ -689,6 +701,9 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
               markdown: page.markdown,
             })),
           }
+        : {}),
+      ...(includeBlocks && result?.blocks
+        ? { blocks: toPublicBlocks(result.blocks) }
         : {}),
       pdfMetadata: {
         numPages: effectivePageCount,

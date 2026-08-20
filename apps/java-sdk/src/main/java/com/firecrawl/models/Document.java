@@ -30,6 +30,10 @@ public class Document {
     private Map<String, Object> branding;
     private Product product;
     private Menu menu;
+    /** Physical PDF pages, present only when parsers[].pages is true. */
+    private List<PdfPage> pages;
+    /** Typed PDF layout blocks, present only when parsers[].blocks is true. */
+    private List<PdfPageBlocks> blocks;
 
     public String getMarkdown() { return markdown; }
     public String getHtml() { return html; }
@@ -51,6 +55,8 @@ public class Document {
     public Map<String, Object> getBranding() { return branding; }
     public Product getProduct() { return product; }
     public Menu getMenu() { return menu; }
+    public List<PdfPage> getPages() { return pages; }
+    public List<PdfPageBlocks> getBlocks() { return blocks; }
 
     @Override
     public String toString() {

@@ -358,6 +358,7 @@ async function billMonitorCheck(params: {
         endpoint: "monitor",
         jobId: params.check.id,
       },
+      teamId: params.monitor.team_id,
     });
   }
 
@@ -1057,6 +1058,7 @@ export async function processMonitorCheckJob(
           endpoint: "monitor",
           jobId: check.id,
         },
+        teamId: monitor.team_id,
       });
     }
 
@@ -1232,6 +1234,7 @@ async function failStaleMonitorCheck(params: {
           endpoint: "monitor",
           jobId: params.check.id,
         },
+        teamId: params.monitor.team_id,
       })
       .catch(releaseError => {
         logger.warn("Failed to release stale monitor check credit lock", {
@@ -1338,6 +1341,7 @@ export async function reconcileRunningMonitorChecks(
                 endpoint: "monitor",
                 jobId: check.id,
               },
+              teamId: check.team_id,
             })
             .catch(error => {
               logger.warn(

@@ -890,4 +890,207 @@ describe("firebill routing", () => {
     expect(result).toBe(false);
     expect(mockTrack).not.toHaveBeenCalled();
   });
+
+  // -------------------------------------------------------------------------
+  // lockCredits / finalizeCreditsLock (the monitor check flow)
+  // -------------------------------------------------------------------------
+
+  const lockResponse = (body: Record<string, unknown>) =>
+    new Response(JSON.stringify(body), { status: 200 });
+
+  it("routes lockCredits for an allowlisted org to /v1/lock, not Autumn", async () => {
+    state.configRef = firebillConfig();
+    mockFetch.mockResolvedValue(
+      lockResponse({
+        success: true,
+        allowed: true,
+        lock_id: "monitor_check-1",
+      }),
+    );
+    const svc = makeService();
+
+    const expiresAt = Date.now() + 60 * 60 * 1000;
+    const result = await svc.lockCredits({
+      teamId: "team-1",
+      value: 10,
+      lockId: "monitor_check-1",
+      expiresAt,
+      properties: { source: "monitorCheck", endpoint: "monitor" },
+    });
+
+    expect(result).toEqual({ status: "locked", lockId: "monitor_check-1" });
+    expect(mockCheck).not.toHaveBeenCalled();
+
+    const lockCall = mockFetch.mock.calls.find(([url]) =>
+      String(url).endsWith("/v1/lock"),
+    );
+    expect(lockCall).toBeDefined();
+    expect(lockCall![1].headers.authorization).toBe("Bearer fb-secret");
+    expect(JSON.parse(lockCall![1].body)).toEqual({
+      customer_id: "org-1",
+      entity_id: "team-1",
+      feature_id: "CREDITS",
+      value: 10,
+      lock_id: "monitor_check-1",
+      expires_at: expiresAt,
+      properties: { source: "monitorCheck", endpoint: "monitor" },
+    });
+  });
+
+  it("defaults the lock expiry when the caller sets none — firebill requires one", async () => {
+    state.configRef = firebillConfig();
+    mockFetch.mockResolvedValue(
+      lockResponse({ success: true, allowed: true, lock_id: "lock-1" }),
+    );
+    const svc = makeService();
+
+    const before = Date.now();
+    await svc.lockCredits({ teamId: "team-1", value: 1, lockId: "lock-1" });
+
+    const lockCall = mockFetch.mock.calls.find(([url]) =>
+      String(url).endsWith("/v1/lock"),
+    );
+    const body = JSON.parse(lockCall![1].body);
+    expect(body.expires_at).toBeGreaterThanOrEqual(before + 60 * 60 * 1000);
+  });
+
+  it("maps a firebill lock denial to denied", async () => {
+    state.configRef = firebillConfig();
+    mockFetch.mockResolvedValue(
+      lockResponse({ success: true, allowed: false }),
+    );
+    const svc = makeService();
+
+    const result = await svc.lockCredits({
+      teamId: "team-1",
+      value: 10,
+      lockId: "lock-1",
+    });
+
+    expect(result).toEqual({ status: "denied" });
+    expect(mockCheck).not.toHaveBeenCalled();
+  });
+
+  it("maps success without a usable allowed to skipped, not denied", async () => {
+    state.configRef = firebillConfig();
+    // Not a shape firebill sends today; a denial here would hard-stop the
+    // monitor check (skipped_no_credits) on what is really a non-answer.
+    mockFetch.mockResolvedValue(lockResponse({ success: true }));
+    const svc = makeService();
+
+    const result = await svc.lockCredits({
+      teamId: "team-1",
+      value: 10,
+      lockId: "lock-1",
+    });
+
+    expect(result).toEqual({ status: "skipped" });
+    expect(mockCheck).not.toHaveBeenCalled();
+  });
+
+  it("maps firebill lock unavailability to skipped — proceed unlocked, no Autumn fallback", async () => {
+    state.configRef = firebillConfig();
+    const svc = makeService();
+
+    mockFetch.mockResolvedValueOnce(lockResponse({ success: false }));
+    expect(
+      await svc.lockCredits({ teamId: "team-1", value: 10, lockId: "lock-1" }),
+    ).toEqual({ status: "skipped" });
+
+    mockFetch.mockRejectedValueOnce(new Error("ECONNREFUSED"));
+    expect(
+      await svc.lockCredits({ teamId: "team-1", value: 10, lockId: "lock-1" }),
+    ).toEqual({ status: "skipped" });
+
+    // A firebill-side hold may exist under this lock id; a direct-Autumn
+    // retry of the same lock must never be attempted.
+    expect(mockCheck).not.toHaveBeenCalled();
+  });
+
+  it("uses the direct Autumn lock path for orgs NOT on the allowlist", async () => {
+    state.configRef = {
+      ...firebillConfig(),
+      FIREBILL_ORG_IDS: ["some-other-org"],
+    };
+    const svc = makeService();
+
+    const result = await svc.lockCredits({
+      teamId: "team-1",
+      value: 10,
+      lockId: "lock-1",
+    });
+
+    expect(result).toEqual({ status: "locked", lockId: "lock-1" });
+    expect(mockFetch).not.toHaveBeenCalled();
+    expect(mockCheck).toHaveBeenCalledTimes(1);
+  });
+
+  it("routes finalizeCreditsLock through /v1/finalize when teamId is on the rollout", async () => {
+    state.configRef = firebillConfig();
+    const svc = makeService();
+
+    await svc.finalizeCreditsLock({
+      lockId: "monitor_check-1",
+      action: "confirm",
+      overrideValue: 7,
+      properties: { source: "monitorCheck", endpoint: "monitor" },
+      teamId: "team-1",
+    });
+
+    expect(mockFinalize).not.toHaveBeenCalled();
+    const finalizeCall = mockFetch.mock.calls.find(([url]) =>
+      String(url).endsWith("/v1/finalize"),
+    );
+    expect(finalizeCall).toBeDefined();
+    expect(JSON.parse(finalizeCall![1].body)).toEqual({
+      lock_id: "monitor_check-1",
+      action: "confirm",
+      override_value: 7,
+      properties: { source: "monitorCheck", endpoint: "monitor" },
+      // Deterministic per (lock, action) so a reconciler re-finalize dedupes.
+      idempotency_key: "fc:finalize:confirm:monitor_check-1",
+    });
+  });
+
+  it("omits override_value on a release and keys it separately from a confirm", async () => {
+    state.configRef = firebillConfig();
+    const svc = makeService();
+
+    await svc.finalizeCreditsLock({
+      lockId: "monitor_check-1",
+      action: "release",
+      teamId: "team-1",
+    });
+
+    const body = JSON.parse(mockFetch.mock.calls[0]![1].body);
+    expect("override_value" in body).toBe(false);
+    expect(body.idempotency_key).toBe("fc:finalize:release:monitor_check-1");
+  });
+
+  it("finalizes directly in Autumn when no teamId is supplied", async () => {
+    state.configRef = firebillConfig();
+    const svc = makeService();
+
+    await svc.finalizeCreditsLock({ lockId: "lock-1", action: "release" });
+
+    expect(mockFetch).not.toHaveBeenCalled();
+    expect(mockFinalize).toHaveBeenCalledTimes(1);
+  });
+
+  it("finalizes directly in Autumn when the team's org is NOT on the allowlist", async () => {
+    state.configRef = {
+      ...firebillConfig(),
+      FIREBILL_ORG_IDS: ["some-other-org"],
+    };
+    const svc = makeService();
+
+    await svc.finalizeCreditsLock({
+      lockId: "lock-1",
+      action: "confirm",
+      teamId: "team-1",
+    });
+
+    expect(mockFetch).not.toHaveBeenCalled();
+    expect(mockFinalize).toHaveBeenCalledTimes(1);
+  });
 });

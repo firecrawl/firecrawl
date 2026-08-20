@@ -348,6 +348,125 @@ describe("scrapePDFWithFirePDFAsync", () => {
     expect(error.reason).toBe("http_5xx");
   });
 
+  it("requests and returns typed blocks, tolerating the legacy pages alias", async () => {
+    const blocks = [
+      {
+        page: 1,
+        width: 800,
+        height: 1100,
+        status: "ok",
+        items: [
+          {
+            id: "p1.b0",
+            type: "text",
+            label: "text",
+            bbox: [0.1, 0.1, 0.9, 0.2],
+            content: "hello",
+            markdown_span: [0, 5],
+            reading_order: 0,
+            source: "native_text",
+            confidence: { layout: 0.97, ocr: null },
+          },
+        ],
+      },
+    ];
+    const { fetchImpl, calls } = makeFetchFromSequence([
+      {
+        matchUrl: /\/jobs$/,
+        matchMethod: "POST",
+        response: {
+          status: 200,
+          body: {
+            scrape_id: "scrape-id-test",
+            status: "done",
+            lane: "fast",
+          },
+        },
+      },
+      {
+        matchUrl: /\/jobs\/scrape-id-test\/result$/,
+        matchMethod: "GET",
+        response: {
+          status: 200,
+          body: {
+            schema_version: 2,
+            markdown: "hello",
+            blocks,
+            // Block-only jobs return `pages` as the legacy block alias
+            // (no per-page markdown). The result parser must drop it
+            // rather than fail the whole response.
+            pages: [
+              { page: 1, width: 800, height: 1100, status: "ok", blocks: [] },
+            ],
+            pages_processed: 1,
+          },
+        },
+      },
+    ]);
+
+    const result = await scrapePDFWithFirePDFAsync(
+      makeMeta(),
+      "BASE64",
+      undefined,
+      undefined,
+      "auto",
+      { fetchImpl, sleepImpl: noopSleep },
+      false,
+      true,
+    );
+
+    expect((calls[0].body as any).options.include_blocks).toBe(true);
+    expect((calls[0].body as any).options.include_page_markdown).toBe(
+      undefined,
+    );
+    expect(result.markdown).toBe("hello");
+    expect(result.blocks).toEqual(blocks);
+    expect(result.pageMarkdown).toBeUndefined();
+  });
+
+  it("fails a block-aware request when FirePDF omits the block payload", async () => {
+    const { fetchImpl } = makeFetchFromSequence([
+      {
+        matchUrl: /\/jobs$/,
+        matchMethod: "POST",
+        response: {
+          status: 200,
+          body: {
+            scrape_id: "scrape-id-test",
+            status: "done",
+            lane: "fast",
+          },
+        },
+      },
+      {
+        matchUrl: /\/jobs\/scrape-id-test\/result$/,
+        matchMethod: "GET",
+        response: {
+          status: 200,
+          body: {
+            schema_version: 1,
+            markdown: "document only",
+            pages_processed: 1,
+          },
+        },
+      },
+    ]);
+
+    const error = await scrapePDFWithFirePDFAsync(
+      makeMeta(),
+      "BASE64",
+      undefined,
+      undefined,
+      "auto",
+      { fetchImpl, sleepImpl: noopSleep },
+      false,
+      true,
+    ).catch(error => error);
+
+    expect(error).toBeInstanceOf(FirePdfAsyncFailure);
+    expect(error.reason).toBe("http_5xx");
+  });
+
   it("submits without team context when the snapshot is absent", async () => {
     const { fetchImpl, calls } = makeFetchFromSequence([
       {

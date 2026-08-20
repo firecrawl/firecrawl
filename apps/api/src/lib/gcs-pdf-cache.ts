@@ -1,4 +1,5 @@
 import { ApiError } from "@google-cloud/storage";
+import type { FirePdfPageBlocks } from "../scraper/scrapeURL/engines/pdf/types";
 import { logger } from "./logger";
 import { config } from "../config";
 import crypto from "crypto";
@@ -15,6 +16,9 @@ type CachedPdfResult = {
   pagesProcessed?: number;
   /** Physical page markdown; present only in page-capable cache variants. */
   pageMarkdown?: Array<{ page: number; markdown: string }>;
+  /** Typed layout blocks (fire-pdf wire shape); present only in
+   * block-capable cache variants. */
+  blocks?: FirePdfPageBlocks[];
 };
 
 const PROVIDER_PREFIXES: Record<PdfCacheProvider, string> = {

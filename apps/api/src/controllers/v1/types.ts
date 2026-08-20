@@ -4,6 +4,7 @@ import { z } from "zod";
 import { protocolIncluded, checkUrl } from "../../lib/validateUrl";
 import { hasReachableHost } from "../../lib/url-utils";
 import { countries } from "../../lib/validate-country";
+import type { PdfPageBlocks } from "../../scraper/scrapeURL/engines/pdf/types";
 import {
   ExtractorOptions,
   PageOptions,
@@ -1005,8 +1006,11 @@ export type Document = {
   description?: string;
   url?: string;
   markdown?: string;
-  /** Physical PDF pages, populated by the v2 pageMarkdown parser option. */
+  /** Physical PDF pages, populated by the v2 `pages` parser option. */
   pages?: Array<{ pageNumber: number; markdown: string }>;
+  /** Typed PDF layout blocks with bounding boxes, populated by the v2
+   * `blocks` parser option. */
+  blocks?: PdfPageBlocks[];
   html?: string;
   rawHtml?: string;
   links?: string[];
