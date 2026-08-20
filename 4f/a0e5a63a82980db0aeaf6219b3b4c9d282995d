@@ -1,0 +1,19 @@
+apps/api/src/lib/gcs-pdf-cache.ts
+  s_40a68cf4d2ff3b::t_3b1942fba7e1cb 55-65
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "4fa0e5a63a82980db0aeaf6219b3b4c9d282995d",
+  "prompts": {},
+  "sessions": {
+    "s_40a68cf4d2ff3b": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "dfd1431c-e8ec-4a00-b942-01e6cf47afbb",
+        "model": "claude-fable-5"
+      },
+      "human_author": "Abimael Martell <1450169+abimaelmartell@users.noreply.github.com>"
+    }
+  }
+}
