@@ -14,6 +14,8 @@ from .types import (
     Document,
     SearchRequest,
     SearchData,
+    DeveloperSearchResponse,
+    DeveloperSearchType,
     SourceOption,
     CategoryOption,
     CrawlRequest,
@@ -60,6 +62,7 @@ from .methods import parse as parse_module
 from .methods import crawl as crawl_module  
 from .methods import batch as batch_module
 from .methods import search as search_module
+from .methods import developer as developer_module
 from .methods import map as map_module
 from .methods import batch as batch_methods
 from .methods import usage as usage_methods
@@ -459,6 +462,43 @@ class FirecrawlClient:
         )
 
         return search_module.search(self.http_client, request)
+
+    def developer_search(
+        self,
+        query: str,
+        *,
+        k: Optional[int] = None,
+        passages: Optional[int] = None,
+        types: Optional[List[DeveloperSearchType]] = None,
+        repos: Optional[List[str]] = None,
+        sources: Optional[List[str]] = None,
+        language: Optional[str] = None,
+        topic: Optional[List[str]] = None,
+        license: Optional[str] = None,
+        min_stars: Optional[int] = None,
+        max_stars: Optional[int] = None,
+        archived: Optional[bool] = None,
+        fork: Optional[bool] = None,
+        skills: Optional[Literal["only"]] = None,
+    ) -> DeveloperSearchResponse:
+        """Search the dedicated developer index with full filters and evidence."""
+        return developer_module.developer_search(
+            self.http_client,
+            query,
+            k=k,
+            passages=passages,
+            types=types,
+            repos=repos,
+            sources=sources,
+            language=language,
+            topic=topic,
+            license=license,
+            min_stars=min_stars,
+            max_stars=max_stars,
+            archived=archived,
+            fork=fork,
+            skills=skills,
+        )
     
     def crawl(
         self,

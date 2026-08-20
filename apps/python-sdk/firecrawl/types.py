@@ -60,6 +60,15 @@ from .v2.types import (
     SearchResultNews,
     SearchResultImages,
     SearchData,
+    DeveloperSearchType,
+    DeveloperSearchRequest,
+    DeveloperSearchLicenseDisclosure,
+    DeveloperSearchPassage,
+    DeveloperSearchResult,
+    DeveloperSearchRepoTypes,
+    DeveloperSearchRepoStatus,
+    DeveloperSearchSourceStatus,
+    DeveloperSearchResponse,
     
     # Action types
     WaitAction,
@@ -150,6 +159,15 @@ __all__ = [
     'SearchResultNews',
     'SearchResultImages',
     'SearchData',
+    'DeveloperSearchType',
+    'DeveloperSearchRequest',
+    'DeveloperSearchLicenseDisclosure',
+    'DeveloperSearchPassage',
+    'DeveloperSearchResult',
+    'DeveloperSearchRepoTypes',
+    'DeveloperSearchRepoStatus',
+    'DeveloperSearchSourceStatus',
+    'DeveloperSearchResponse',
     
     # Action types
     'WaitAction',

@@ -16,6 +16,8 @@ from .types import (
     MonitorWebhookConfig,
     SearchRequest,
     SearchData,
+    DeveloperSearchResponse,
+    DeveloperSearchType,
     SourceOption,
     CrawlResponse,
     CrawlJob,
@@ -56,6 +58,7 @@ from .methods.aio import parse as async_parse  # type: ignore[attr-defined]
 from .methods.aio import batch as async_batch  # type: ignore[attr-defined]
 from .methods.aio import crawl as async_crawl  # type: ignore[attr-defined]
 from .methods.aio import search as async_search  # type: ignore[attr-defined]
+from .methods.aio import developer as async_developer  # type: ignore[attr-defined]
 from .methods.aio import map as async_map # type: ignore[attr-defined]
 from .methods.aio import usage as async_usage # type: ignore[attr-defined]
 from .methods.aio import extract as async_extract  # type: ignore[attr-defined]
@@ -256,6 +259,43 @@ class AsyncFirecrawlClient:
     ) -> SearchData:
         request = SearchRequest(query=query, **{k: v for k, v in kwargs.items() if v is not None})
         return await async_search.search(self.async_http_client, request)
+
+    async def developer_search(
+        self,
+        query: str,
+        *,
+        k: Optional[int] = None,
+        passages: Optional[int] = None,
+        types: Optional[List[DeveloperSearchType]] = None,
+        repos: Optional[List[str]] = None,
+        sources: Optional[List[str]] = None,
+        language: Optional[str] = None,
+        topic: Optional[List[str]] = None,
+        license: Optional[str] = None,
+        min_stars: Optional[int] = None,
+        max_stars: Optional[int] = None,
+        archived: Optional[bool] = None,
+        fork: Optional[bool] = None,
+        skills: Optional[Literal["only"]] = None,
+    ) -> DeveloperSearchResponse:
+        """Search the dedicated developer index with full filters and evidence."""
+        return await async_developer.developer_search(
+            self.async_http_client,
+            query,
+            k=k,
+            passages=passages,
+            types=types,
+            repos=repos,
+            sources=sources,
+            language=language,
+            topic=topic,
+            license=license,
+            min_stars=min_stars,
+            max_stars=max_stars,
+            archived=archived,
+            fork=fork,
+            skills=skills,
+        )
 
     async def start_crawl(self, url: str, **kwargs) -> CrawlResponse:
         if kwargs.get("scrape_options") is None:

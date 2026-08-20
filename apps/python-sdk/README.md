@@ -211,6 +211,35 @@ results = firecrawl.search("nanopore basecalling accuracy", categories=["researc
 > pubmed.ncbi.nlm.nih.gov, nature.com, biorxiv.org, ...) and returns web page
 > results. To search papers themselves, use `search_papers` below.
 
+### Developer search
+
+Use `developer_search` for the dedicated developer index and its complete
+filter and response contract. Generic `search(categories=["developer"])`
+returns only the first passage as a description and does not accept these
+filters.
+
+```python
+evidence = firecrawl.developer_search(
+    "configure retry backoff",
+    repos=["firecrawl/firecrawl"],
+    types=["issue", "pull_request", "readme"],
+    passages=3,
+    language="TypeScript",
+    license="MIT",
+)
+
+for result in evidence.results:
+    # Result kind is the id prefix; the API intentionally omits a type field.
+    print(result.id, result.license)
+    for passage in result.passages:
+        print(passage.text, passage.citation_url)
+print(evidence.repos)  # indexed-status echoes for requested repos
+```
+
+`developer_search` also supports `sources`, `topic`, `min_stars`, `max_stars`,
+`archived`, `fork`, and `skills="only"`. Supplying both `repos` and `sources`
+OR-combines GitHub-backed and documentation results.
+
 ### Research / paper search
 
 Use `search_papers` to search Firecrawl's research paper index: ~43M paper
