@@ -1,6 +1,7 @@
 import {
   getPDFBlocks,
   getPDFPageMarkdown,
+  getPDFPageMarkers,
   scrapeOptions,
 } from "../controllers/v2/types";
 
@@ -22,6 +23,27 @@ describe("PDF parser option getters", () => {
     expect(getPDFBlocks([{ type: "pdf", blocks: true }])).toBe(true);
     expect(getPDFBlocks([{ type: "pdf" }])).toBe(false);
     expect(getPDFBlocks(undefined)).toBe(false);
+  });
+
+  it("reads the `pageMarkers` option", () => {
+    expect(getPDFPageMarkers([{ type: "pdf", pageMarkers: true }])).toBe(true);
+    expect(getPDFPageMarkers([{ type: "pdf", pageMarkers: false }])).toBe(
+      false,
+    );
+    expect(getPDFPageMarkers([{ type: "pdf" }])).toBe(false);
+    expect(getPDFPageMarkers(["pdf"])).toBe(false);
+    expect(getPDFPageMarkers(undefined)).toBe(false);
+  });
+
+  it("keeps `pageMarkers` flowing through the alias-normalizing transform", () => {
+    const parser = parsePdfParser({
+      type: "pdf",
+      pageMarkers: true,
+      pageMarkdown: true,
+    });
+    expect(parser.pageMarkers).toBe(true);
+    expect(parser.pages).toBe(true);
+    expect(getPDFPageMarkers([parser as any])).toBe(true);
   });
 });
 

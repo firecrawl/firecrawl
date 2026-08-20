@@ -52,6 +52,15 @@ describe("PDF page-markdown URL index policy", () => {
           },
         }),
       ).toBe(false);
+      expect(
+        shouldUseIndex({
+          ...baseMeta,
+          options: {
+            ...baseMeta.options,
+            parsers: [{ type: "pdf", pageMarkers: true }],
+          },
+        }),
+      ).toBe(false);
     } finally {
       (
         config as { FIRECRAWL_INDEX_WRITE_ONLY?: boolean }
@@ -104,6 +113,33 @@ describe("PDF page-markdown URL index policy", () => {
       options: {
         storeInCache: true,
         parsers: [{ type: "pdf", blocks: true }],
+      },
+      internalOptions: {
+        isParse: false,
+        zeroDataRetention: false,
+      },
+    } as any;
+
+    const result = await sendDocumentToIndex(meta, document);
+
+    expect(result).toBe(document);
+    expect(result.metadata.indexId).toBeUndefined();
+  });
+
+  it("does not write marker-bearing markdown to the URL index", async () => {
+    const document = {
+      markdown: "Page 1\n\n---\n\n<!-- page 2 -->\n\nPage 2",
+      rawHtml: "<p>whole document</p>",
+      metadata: {
+        sourceURL: "https://example.com/file.pdf",
+      },
+    } as any;
+    const meta = {
+      url: "https://example.com/file.pdf",
+      winnerEngine: "pdf",
+      options: {
+        storeInCache: true,
+        parsers: [{ type: "pdf", pageMarkers: true }],
       },
       internalOptions: {
         isParse: false,

@@ -21,6 +21,7 @@ type SubmitArgs = {
   mode: PDFMode | undefined;
   includePageMarkdown: boolean;
   includeBlocks: boolean;
+  pageMarkers: boolean;
   deadlineAt: string;
   /** Team's sold concurrency from the ACUC (ENG-5049 account context).
    * Optional: entitlement lookup must never block or fail a scrape. */
@@ -62,6 +63,7 @@ export async function submitJob(args: SubmitArgs): Promise<SubmitOutcome> {
     mode,
     includePageMarkdown,
     includeBlocks,
+    pageMarkers,
     deadlineAt,
     teamConcurrency,
     fetchImpl,
@@ -92,6 +94,7 @@ export async function submitJob(args: SubmitArgs): Promise<SubmitOutcome> {
       ...(mode !== undefined && { mode }),
       ...(includePageMarkdown && { include_page_markdown: true }),
       ...(includeBlocks && { include_blocks: true }),
+      ...(pageMarkers && { pageMarkers: true }),
     },
   };
 

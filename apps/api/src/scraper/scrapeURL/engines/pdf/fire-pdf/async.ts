@@ -39,6 +39,7 @@ export async function scrapePDFWithFirePDFAsync(
   deps: FirePdfAsyncDeps = {},
   includePageMarkdown = false,
   includeBlocks = false,
+  pageMarkers = false,
 ): Promise<PDFProcessorResult> {
   const fetchImpl = deps.fetchImpl ?? undiciFetch;
   const fallbackImpl = deps.fallbackImpl ?? scrapePDFWithFirePDF;
@@ -57,6 +58,7 @@ export async function scrapePDFWithFirePDFAsync(
       mode,
       includePageMarkdown,
       includeBlocks,
+      pageMarkers,
     );
   }
 
@@ -68,6 +70,7 @@ export async function scrapePDFWithFirePDFAsync(
     pagesProcessed,
     includePageMarkdown,
     includeBlocks,
+    pageMarkers,
   );
   if (cached) return cached;
 
@@ -93,6 +96,7 @@ export async function scrapePDFWithFirePDFAsync(
       mode,
       includePageMarkdown,
       includeBlocks,
+      pageMarkers,
     );
   }
 
@@ -127,6 +131,7 @@ export async function scrapePDFWithFirePDFAsync(
       mode,
       includePageMarkdown,
       includeBlocks,
+      pageMarkers,
       deadlineAt,
       teamConcurrency,
       fetchImpl,
@@ -222,6 +227,7 @@ export async function scrapePDFWithFirePDFAsync(
     maxPages,
     includePageMarkdown,
     includeBlocks,
+    pageMarkers,
     result: processorResult,
   });
 

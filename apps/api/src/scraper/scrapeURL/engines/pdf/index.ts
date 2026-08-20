@@ -20,6 +20,7 @@ import {
   getPDFMode,
   getPDFPageMarkdown,
   getPDFBlocks,
+  getPDFPageMarkers,
   getFirePdfAsync,
 } from "../../../../controllers/v2/types";
 import type { PDFMode } from "../../../../controllers/v2/types";
@@ -64,6 +65,7 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
   const mode: PDFMode = getPDFMode(meta.options.parsers);
   const includePageMarkdown = getPDFPageMarkdown(meta.options.parsers);
   const includeBlocks = getPDFBlocks(meta.options.parsers);
+  const pageMarkers = getPDFPageMarkers(meta.options.parsers);
 
   if (includePageMarkdown && !config.FIRE_PDF_BASE_URL) {
     throw new Error(
@@ -74,6 +76,12 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
   if (includeBlocks && !config.FIRE_PDF_BASE_URL) {
     throw new Error(
       "Typed blocks are unavailable because FirePDF is not configured",
+    );
+  }
+
+  if (pageMarkers && !config.FIRE_PDF_BASE_URL) {
+    throw new Error(
+      "Page markers are unavailable because FirePDF is not configured",
     );
   }
 
@@ -187,7 +195,10 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
     let shadowPagesNeedingOcr: number[] | undefined;
 
     const forceFirePDF =
-      (!!meta.options.__forceFirePDF || includePageMarkdown || includeBlocks) &&
+      (!!meta.options.__forceFirePDF ||
+        includePageMarkdown ||
+        includeBlocks ||
+        pageMarkers) &&
       !!config.FIRE_PDF_BASE_URL;
     const rustEnabled = !!config.PDF_RUST_EXTRACT_ENABLE;
     const logger = meta.logger.child({ method: "scrapePDF/processPdf" });
@@ -471,10 +482,11 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
                 undefined,
                 includePageMarkdown,
                 includeBlocks,
+                pageMarkers,
               );
             } catch (error) {
               if (
-                (!includePageMarkdown && !includeBlocks) ||
+                (!includePageMarkdown && !includeBlocks && !pageMarkers) ||
                 error instanceof RemoveFeatureError ||
                 error instanceof AbortManagerThrownError
               ) {
@@ -502,6 +514,7 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
                 mode,
                 includePageMarkdown,
                 includeBlocks,
+                pageMarkers,
               );
             }
           } else {
@@ -513,6 +526,7 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
               mode,
               includePageMarkdown,
               includeBlocks,
+              pageMarkers,
             );
           }
           effectivePageCount = reconcilePageCountWithFirePdf(

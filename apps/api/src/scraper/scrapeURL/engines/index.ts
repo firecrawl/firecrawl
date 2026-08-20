@@ -30,6 +30,7 @@ import { hasFormatOfType } from "../../../lib/format-utils";
 import {
   getPDFBlocks,
   getPDFPageMarkdown,
+  getPDFPageMarkers,
 } from "../../../controllers/v2/types";
 import type { PdfMetadata, PdfPageBlocks } from "./pdf/types";
 import { BrandingProfile } from "../../../types/branding";
@@ -567,9 +568,10 @@ export function shouldUseIndex(meta: Meta) {
     !hasFormatOfType(meta.options.formats, "changeTracking") &&
     !hasFormatOfType(meta.options.formats, "branding") &&
     // The URL index does not yet persist physical-page or typed-block
-    // capability metadata.
+    // capability metadata, and its markdown never carries page markers.
     !getPDFPageMarkdown(meta.options.parsers) &&
     !getPDFBlocks(meta.options.parsers) &&
+    !getPDFPageMarkers(meta.options.parsers) &&
     !hasCustomScreenshotSettings &&
     meta.options.maxAge !== 0 &&
     (meta.options.headers === undefined ||
@@ -680,17 +682,19 @@ export async function buildFallbackList(meta: Meta): Promise<
     _engines.push(...indexEngines);
     meta.internalOptions.forceEngine = indexEngines;
   } else if (meta.internalOptions.agentIndexOnly) {
-    // Index documents carry no physical-page or typed-block payloads, so an
-    // index-only request that demands them can only be answered wrong. Fail
-    // loud with the canonical index-only error (maps to a clean 4xx and
-    // tells the caller how to unlock live scraping) instead of silently
-    // serving a document without the capability.
+    // Index documents carry no physical-page or typed-block payloads, and
+    // their markdown never carries page markers, so an index-only request
+    // that demands them can only be answered wrong. Fail loud with the
+    // canonical index-only error (maps to a clean 4xx and tells the caller
+    // how to unlock live scraping) instead of silently serving a document
+    // without the capability.
     if (
       getPDFPageMarkdown(meta.options.parsers) ||
-      getPDFBlocks(meta.options.parsers)
+      getPDFBlocks(meta.options.parsers) ||
+      getPDFPageMarkers(meta.options.parsers)
     ) {
       meta.logger.warn(
-        "agentIndexOnly request demands pageMarkdown/blocks, which the URL index cannot serve",
+        "agentIndexOnly request demands pageMarkdown/blocks/pageMarkers, which the URL index cannot serve",
         { parsers: meta.options.parsers },
       );
       throw new AgentIndexOnlyError();

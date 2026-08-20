@@ -47,6 +47,7 @@ export async function scrapePDFWithFirePDF(
   mode?: PDFMode,
   includePageMarkdown = false,
   includeBlocks = false,
+  pageMarkers = false,
 ): Promise<PDFProcessorResult> {
   const logger = meta.logger;
 
@@ -62,6 +63,11 @@ export async function scrapePDFWithFirePDF(
   //     running fire-pdf again.
   //   - `fast` is bypassed entirely (hard cost ceiling — must fail on
   //     scanned PDFs, not serve a cached OCR result).
+  //   - `page_markers` rewrites the document markdown itself (inter-page
+  //     `<!-- page N -->` separators), so marker requests read/write a
+  //     fully disjoint `…markers…` variant family — a base-variant entry
+  //     must never be served for a marker request and vice versa. See
+  //     cacheKeyShape in fire-pdf/cache.ts.
   const cacheable =
     mode !== "fast" && !maxPages && !meta.internalOptions.zeroDataRetention;
   const cached = cacheable
@@ -73,6 +79,7 @@ export async function scrapePDFWithFirePDF(
         pagesProcessed,
         includePageMarkdown,
         includeBlocks,
+        pageMarkers,
       )
     : null;
   if (cached) return cached;
@@ -124,6 +131,7 @@ export async function scrapePDFWithFirePDF(
       ...(mode !== undefined && { mode }),
       ...(includePageMarkdown && { include_page_markdown: true }),
       ...(includeBlocks && { include_blocks: true }),
+      ...(pageMarkers && { page_markers: true }),
       // Enrichment for the fire-pdf jobs DB / dashboard. fire-pdf treats
       // these as optional — older fire-pdf builds will ignore unknown fields.
       team_id: meta.internalOptions.teamId,
@@ -185,6 +193,7 @@ export async function scrapePDFWithFirePDF(
       maxPages,
       includePageMarkdown,
       includeBlocks,
+      pageMarkers,
       result: processorResult,
     });
   }

@@ -40,6 +40,7 @@ import {
   getPDFBlocks,
   getPDFMaxPages,
   getPDFPageMarkdown,
+  getPDFPageMarkers,
   shouldParsePDF,
 } from "../../../../controllers/v2/types";
 import { hasFormatOfType } from "../../../../lib/format-utils";
@@ -64,8 +65,10 @@ export async function sendDocumentToIndex(meta: Meta, document: Document) {
     // Page-aware and block-aware results are capability-specific and are not
     // represented in the URL index schema yet. Do not write an entry that
     // could later be served without its required pages/blocks payload.
+    // Marker-bearing markdown is mutated output — never index it either.
     !getPDFPageMarkdown(meta.options.parsers) &&
     !getPDFBlocks(meta.options.parsers) &&
+    !getPDFPageMarkers(meta.options.parsers) &&
     !meta.options.parsers?.some(parser => {
       if (
         typeof parser === "object" &&

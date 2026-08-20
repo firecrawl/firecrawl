@@ -211,3 +211,79 @@ describe("scrapePDFWithFirePDF typed blocks", () => {
     ).rejects.toThrow(/did not include requested typed blocks/);
   });
 });
+
+describe("scrapePDFWithFirePDF page markers", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("requests marker-joined markdown and returns it verbatim", async () => {
+    const marked = "Page 1\n\n---\n\n<!-- page 2 -->\n\nPage 2";
+    mockedRobustFetch.mockResolvedValue({
+      markdown: marked,
+      failed_pages: null,
+      pages_processed: 2,
+    } as any);
+
+    const result = await scrapePDFWithFirePDF(
+      makeMeta(),
+      "BASE64",
+      undefined,
+      undefined,
+      "auto",
+      false,
+      false,
+      true,
+    );
+
+    expect(mockedRobustFetch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        body: expect.objectContaining({ page_markers: true }),
+      }),
+    );
+    expect(result.markdown).toBe(marked);
+  });
+
+  it("does not send page_markers for plain requests", async () => {
+    mockedRobustFetch.mockResolvedValue({
+      markdown: "plain",
+      failed_pages: null,
+      pages_processed: 1,
+    } as any);
+
+    await scrapePDFWithFirePDF(makeMeta(), "BASE64");
+
+    expect(
+      ((mockedRobustFetch.mock.calls[0][0] as any).body as any).page_markers,
+    ).toBeUndefined();
+  });
+
+  it("composes page_markers with include_blocks on the wire", async () => {
+    mockedRobustFetch.mockResolvedValue({
+      markdown: "Page 1\n\n---\n\n<!-- page 2 -->\n\nPage 2",
+      failed_pages: null,
+      pages_processed: 2,
+      blocks: [],
+    } as any);
+
+    await scrapePDFWithFirePDF(
+      makeMeta(),
+      "BASE64",
+      undefined,
+      undefined,
+      "auto",
+      false,
+      true,
+      true,
+    );
+
+    expect(mockedRobustFetch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        body: expect.objectContaining({
+          include_blocks: true,
+          page_markers: true,
+        }),
+      }),
+    );
+  });
+});

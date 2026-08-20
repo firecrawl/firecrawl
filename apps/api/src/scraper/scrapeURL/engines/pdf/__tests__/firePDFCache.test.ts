@@ -82,6 +82,43 @@ describe("FirePDF page-markdown cache capabilities", () => {
     expect(cacheKeyShape("auto", 5, false, true).cacheable).toBe(false);
   });
 
+  it("maps page-marker requests into a fully disjoint variant family", () => {
+    // pageMarkers rewrites the markdown itself, so no marker lookup may ever
+    // name a non-marker variant (and vice versa — see the plain-request test:
+    // its probe list is unchanged and marker-free).
+    expect(cacheKeyShape("auto", undefined, false, false, true)).toMatchObject({
+      cacheable: true,
+      ownVariant: "markers-v1",
+      baseVariant: "markers-v1",
+      lookupVariants: [
+        "markers-v1",
+        "page-markdown-markers-v1",
+        "ocr-markers-v1",
+        "ocr-page-markdown-markers-v1",
+      ],
+    });
+    expect(cacheKeyShape("ocr", undefined, false, false, true)).toMatchObject({
+      cacheable: true,
+      ownVariant: "ocr-markers-v1",
+      lookupVariants: ["ocr-markers-v1", "ocr-page-markdown-markers-v1"],
+    });
+    expect(cacheKeyShape("auto", undefined, false, true, true)).toMatchObject({
+      cacheable: true,
+      ownVariant: "blocks-markers-v1",
+      baseVariant: "markers-v1",
+      lookupVariants: [
+        "blocks-markers-v1",
+        "page-markdown-blocks-markers-v1",
+        "ocr-blocks-markers-v1",
+        "ocr-page-markdown-blocks-markers-v1",
+      ],
+    });
+    expect(cacheKeyShape("fast", undefined, false, false, true).cacheable).toBe(
+      false,
+    );
+    expect(cacheKeyShape("auto", 5, false, false, true).cacheable).toBe(false);
+  });
+
   it("keeps the historical probe list for plain requests", () => {
     expect(cacheKeyShape("auto", undefined, false, false)).toMatchObject({
       cacheable: true,
@@ -502,6 +539,75 @@ describe("FirePDF page-markdown cache capabilities", () => {
       expect.not.objectContaining({ blocks: expect.anything() }),
       "firepdf",
       undefined,
+    );
+  });
+
+  it("saves marker results only under marker variants (never the base key)", async () => {
+    const marked = "Page 1\n\n---\n\n<!-- page 2 -->\n\nPage 2";
+
+    await maybeSaveResult({
+      meta: makeMeta(),
+      base64Content: "BASE64",
+      mode: "auto",
+      maxPages: undefined,
+      includePageMarkdown: false,
+      includeBlocks: false,
+      pageMarkers: true,
+      result: {
+        markdown: marked,
+        html: "<p>marked</p>",
+        pagesProcessed: 2,
+      },
+    });
+
+    // Marker markdown must never back-fill the non-marker base key: a later
+    // plain request would silently receive marker-mutated markdown.
+    expect(saveCached).toHaveBeenCalledOnce();
+    expect(saveCached).toHaveBeenCalledWith(
+      "BASE64",
+      expect.objectContaining({ markdown: marked }),
+      "firepdf",
+      "markers-v1",
+    );
+  });
+
+  it("back-fills enriched marker results within the marker family only", async () => {
+    const marked = "Page 1\n\n---\n\n<!-- page 2 -->\n\nPage 2";
+    const blocks = [
+      { page: 1, width: 800, height: 1100, status: "ok", items: [] },
+    ];
+
+    await maybeSaveResult({
+      meta: makeMeta(),
+      base64Content: "BASE64",
+      mode: "auto",
+      maxPages: undefined,
+      includePageMarkdown: false,
+      includeBlocks: true,
+      pageMarkers: true,
+      result: {
+        markdown: marked,
+        html: "<p>marked</p>",
+        pagesProcessed: 2,
+        blocks,
+      },
+    });
+
+    expect(getCached).toHaveBeenCalledWith("BASE64", "firepdf", "markers-v1");
+    expect(saveCached).toHaveBeenCalledTimes(2);
+    expect(saveCached).toHaveBeenNthCalledWith(
+      1,
+      "BASE64",
+      expect.objectContaining({ blocks }),
+      "firepdf",
+      "blocks-markers-v1",
+    );
+    expect(saveCached).toHaveBeenNthCalledWith(
+      2,
+      "BASE64",
+      expect.not.objectContaining({ blocks: expect.anything() }),
+      "firepdf",
+      "markers-v1",
     );
   });
 });

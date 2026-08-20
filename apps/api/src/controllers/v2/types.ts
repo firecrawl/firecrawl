@@ -497,6 +497,13 @@ const pdfParserWithOptions = z
      * reading order) alongside document markdown — populates
      * `document.blocks`. */
     blocks: z.boolean().optional(),
+    /** Join PDF pages in `document.markdown` with
+     * `\n\n---\n\n<!-- page N -->\n\n` where N is the 1-based physical page
+     * of the content that follows. Markers appear between pages only (no
+     * leading marker for page 1), and numbering may skip pages merged by
+     * cross-page stitching — callers that need every physical page should
+     * use `pages: true` instead. No new response field. */
+    pageMarkers: z.boolean().optional(),
     // Experimental: route this request through the fire-pdf async pipeline
     // (POST /jobs + poll) instead of the sync POST /ocr endpoint. Falls back
     // to sync on any async-path failure, so user-visible behavior is unchanged
@@ -578,6 +585,16 @@ export function getPDFBlocks(parsers?: Parsers): boolean {
   for (const parser of parsers) {
     if (typeof parser === "object" && parser.type === "pdf") {
       return parser.blocks === true;
+    }
+  }
+  return false;
+}
+
+export function getPDFPageMarkers(parsers?: Parsers): boolean {
+  if (!parsers) return false;
+  for (const parser of parsers) {
+    if (typeof parser === "object" && parser.type === "pdf") {
+      return parser.pageMarkers === true;
     }
   }
   return false;

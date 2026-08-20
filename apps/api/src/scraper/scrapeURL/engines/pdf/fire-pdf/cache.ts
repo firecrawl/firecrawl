@@ -18,6 +18,19 @@ const OCR_BLOCKS_VARIANT = "ocr-blocks-v1";
 const PAGE_MARKDOWN_BLOCKS_VARIANT = "page-markdown-blocks-v1";
 const OCR_PAGE_MARKDOWN_BLOCKS_VARIANT = "ocr-page-markdown-blocks-v1";
 
+// `page_markers` rewrites the document markdown itself (inter-page
+// `<!-- page N -->` separators), unlike pages/blocks which are extra
+// payloads beside unchanged markdown. Marker and non-marker artifacts can
+// therefore never serve each other. Follow the `mode: ocr` dedicated-variant
+// precedent: map every variant name into a disjoint `…markers…` family.
+// Within that family the ocr/pages/blocks capability lattice applies
+// unchanged, because those artifacts differ only in sidecars again.
+function withPageMarkers(variant: string | undefined): string {
+  if (variant === undefined) return "markers-v1";
+  if (variant === "ocr") return "ocr-markers-v1";
+  return variant.replace(/-v1$/, "-markers-v1");
+}
+
 function isValidCachedDocument(
   value: unknown,
 ): value is Pick<PDFProcessorResult, "html"> & { markdown: string } {
@@ -67,6 +80,7 @@ export function cacheKeyShape(
   maxPages: number | undefined,
   includePageMarkdown: boolean,
   includeBlocks: boolean,
+  pageMarkers = false,
 ) {
   const cacheable = mode !== "fast" && !maxPages;
   const isOcr = mode === "ocr";
@@ -116,6 +130,14 @@ export function cacheKeyShape(
       : isOcr
         ? ["ocr", OCR_PAGE_MARKDOWN_VARIANT]
         : [undefined, PAGE_MARKDOWN_VARIANT, "ocr", OCR_PAGE_MARKDOWN_VARIANT];
+  if (pageMarkers) {
+    return {
+      cacheable,
+      ownVariant: withPageMarkers(ownVariant),
+      baseVariant: withPageMarkers(baseVariant),
+      lookupVariants: lookupVariants.map(withPageMarkers),
+    };
+  }
   return { cacheable, ownVariant, baseVariant, lookupVariants };
 }
 
@@ -127,6 +149,7 @@ export async function tryGetCached(
   pagesProcessed: number | undefined,
   includePageMarkdown: boolean,
   includeBlocks: boolean,
+  pageMarkers = false,
 ): Promise<PDFProcessorResult | null> {
   if (meta.internalOptions.zeroDataRetention) return null;
   const { cacheable, lookupVariants } = cacheKeyShape(
@@ -134,6 +157,7 @@ export async function tryGetCached(
     maxPages,
     includePageMarkdown,
     includeBlocks,
+    pageMarkers,
   );
   if (!cacheable) return null;
 
@@ -186,6 +210,7 @@ export async function maybeSaveResult(args: {
   maxPages: number | undefined;
   includePageMarkdown: boolean;
   includeBlocks: boolean;
+  pageMarkers?: boolean;
   result: PDFProcessorResult & { markdown: string };
 }): Promise<void> {
   const {
@@ -195,6 +220,7 @@ export async function maybeSaveResult(args: {
     maxPages,
     includePageMarkdown,
     includeBlocks,
+    pageMarkers = false,
     result,
   } = args;
   if (meta.internalOptions.zeroDataRetention) return;
@@ -203,6 +229,7 @@ export async function maybeSaveResult(args: {
     maxPages,
     includePageMarkdown,
     includeBlocks,
+    pageMarkers,
   );
   if (!cacheable) return;
 
