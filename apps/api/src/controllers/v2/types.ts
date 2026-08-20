@@ -975,42 +975,56 @@ const agentWebhookSchema = createWebhookSchema([
   "cancelled",
 ]);
 
-export const agentRequestSchema = z.strictObject({
-  urls: URL.array().optional(),
-  prompt: z.string().max(10000),
-  schema: z
-    .any()
-    .optional()
-    .superRefine((val, ctx) => {
-      if (!val) return; // Allow undefined schema
-      try {
-        agentAjv.compile(val);
-      } catch (e) {
-        const message =
-          e instanceof Error
-            ? e.message
-            : typeof e === "string"
-              ? e
-              : "Unknown error";
-        ctx.addIssue({
-          code: "custom",
-          message: `Invalid JSON schema: ${message}`,
-        });
-      }
-    }),
-  origin: z.string().optional().prefault("api"),
-  integration: integrationSchema.optional().transform(val => val || null),
-  maxCredits: z.number().optional(),
-  strictConstrainToURLs: z.boolean().optional(),
-  webhook: agentWebhookSchema.optional(),
+export const agentRequestSchema = z
+  .strictObject({
+    urls: URL.array().optional(),
+    prompt: z.string().max(10000),
+    schema: z
+      .any()
+      .optional()
+      .superRefine((val, ctx) => {
+        if (!val) return; // Allow undefined schema
+        try {
+          agentAjv.compile(val);
+        } catch (e) {
+          const message =
+            e instanceof Error
+              ? e.message
+              : typeof e === "string"
+                ? e
+                : "Unknown error";
+          ctx.addIssue({
+            code: "custom",
+            message: `Invalid JSON schema: ${message}`,
+          });
+        }
+      }),
+    origin: z.string().optional().prefault("api"),
+    integration: integrationSchema.optional().transform(val => val || null),
+    maxCredits: z.number().optional(),
+    strictConstrainToURLs: z.boolean().optional(),
+    webhook: agentWebhookSchema.optional(),
 
-  overrideWhitelist: z.string().optional(),
-  model: z
-    .enum(["spark-1-pro", "spark-1-mini", "spark-2"])
-    .default("spark-1-pro"),
-  threatProtection: threatProtectionOverrideSchema.optional(),
-  auditMetadata: auditMetadataSchema.optional(),
-});
+    overrideWhitelist: z.string().optional(),
+    // Optional, not defaulted: the resolver below must tell "the caller sent
+    // spark-1-pro" apart from "the caller sent nothing".
+    model: z.enum(["spark-1-pro", "spark-1-mini", "spark-2"]).optional(),
+    effort: z.enum(["low", "medium", "high"]).optional(),
+    threatProtection: threatProtectionOverrideSchema.optional(),
+    auditMetadata: auditMetadataSchema.optional(),
+  })
+  .refine(x => !(x.model !== undefined && x.effort !== undefined), {
+    error:
+      "Send either 'model' or 'effort', not both. 'model' picks a preset and 'effort' picks a reasoning budget.",
+  })
+  // Every effort level runs spark-2. The older presets have no trace or
+  // snapshot endpoint and use a different credit ladder, so spreading effort
+  // across presets would change features and price per level. Effort sets the
+  // reasoning budget inside spark-2 instead.
+  .transform(x => ({
+    ...x,
+    model: x.model ?? (x.effort !== undefined ? "spark-2" : "spark-1-pro"),
+  }));
 
 export type AgentRequest = z.infer<typeof agentRequestSchema>;
 // export type AgentRequestInput = z.input<typeof agentRequestSchema>;
@@ -1484,6 +1498,7 @@ export type AgentStatusResponse =
       error?: string;
       data?: any;
       model?: "spark-1-pro" | "spark-1-mini" | "spark-2";
+      effort?: "low" | "medium" | "high";
       expiresAt: string;
       creditsUsed?: number;
     };

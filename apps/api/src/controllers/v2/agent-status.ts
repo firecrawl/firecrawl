@@ -26,11 +26,15 @@ export async function agentStatusController(
   const agent = await supabaseGetAgentByIdDirect(req.params.jobId);
 
   let model: "spark-1-pro" | "spark-1-mini" | "spark-2";
+  // The agent service persists the effort of a run that used it. Older rows
+  // and runs that picked a model have no effort, so this stays undefined.
+  let effort: "low" | "medium" | "high" | undefined;
   if (agent) {
     model = (agent.options?.model ?? "spark-1-pro") as
       | "spark-1-pro"
       | "spark-1-mini"
       | "spark-2";
+    effort = agent.options?.effort as "low" | "medium" | "high" | undefined;
   } else {
     try {
       const optionsRequest = await fetch(
@@ -54,10 +58,12 @@ export async function agentStatusController(
         });
         model = "spark-1-pro"; // fall back to this value
       } else {
-        model = ((await optionsRequest.json()).model ?? "spark-1-pro") as
+        const options = await optionsRequest.json();
+        model = (options.model ?? "spark-1-pro") as
           | "spark-1-pro"
           | "spark-1-mini"
           | "spark-2";
+        effort = options.effort as "low" | "medium" | "high" | undefined;
       }
     } catch (error) {
       logger.warn("Failed to get agent request details", {
@@ -85,6 +91,7 @@ export async function agentStatusController(
     error: agent?.error || undefined,
     data,
     model,
+    effort,
     expiresAt: new Date(
       new Date(agent?.created_at ?? agentRequest.created_at).getTime() +
         1000 * 60 * 60 * 24,

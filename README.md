@@ -382,14 +382,37 @@ result = app.agent(
 )
 ```
 
-#### Model Selection
+#### Effort Selection
 
-Choose between two models based on your needs:
+Set how much reasoning the agent spends on the task:
+
+| Effort | Best For |
+|--------|----------|
+| `low` | Simple lookups on one site |
+| `medium` | Multi-step tasks on a few pages |
+| `high` | Deep research, complex navigation, critical data |
+
+```python
+result = app.agent(
+    prompt="Compare enterprise features across Firecrawl, Apify, and ScrapingBee",
+    effort="high"
+)
+```
+
+Every effort level runs the `spark-2` model. Effort changes the reasoning
+budget, not the model.
+
+#### Model Selection (Legacy)
+
+`model` still works, and it stays supported. Send `model` or `effort`, not
+both. A request with both fields returns a 400 error.
 
 | Model | Cost | Best For |
 |-------|------|----------|
-| `spark-1-mini` (default) | 60% cheaper | Most tasks |
-| `spark-1-pro` | Standard | Complex research, critical data gathering |
+| `spark-1-pro` (default) | Standard | Complex research, critical data gathering |
+| `spark-1-mini` | 60% cheaper | Most tasks |
+| `spark-2` | Standard | Latest model, and the target of `effort` |
+
 ```python
 result = app.agent(
     prompt="Compare enterprise features across Firecrawl, Apify, and ScrapingBee",
@@ -397,6 +420,7 @@ result = app.agent(
 )
 ```
 
+A request without `model` and without `effort` runs `spark-1-pro`.
 
 **When to use Pro:**
 - Comparing data across multiple websites
