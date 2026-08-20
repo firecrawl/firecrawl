@@ -159,13 +159,22 @@ describe("research upstream timeouts", () => {
     );
   });
 
-  it("maps an operation timeout to 504", async () => {
-    mocks.fetchResearchUpstream.mockRejectedValue(
-      new DOMException(
+  it.each([
+    {
+      name: "request",
+      error: new DOMException(
         "The operation was aborted due to timeout",
         "TimeoutError",
       ),
-    );
+    },
+    {
+      name: "connect",
+      error: Object.assign(new Error("Connect Timeout Error"), {
+        name: "ConnectTimeoutError",
+      }),
+    },
+  ])("maps a $name timeout to 504", async ({ error }) => {
+    mocks.fetchResearchUpstream.mockRejectedValue(error);
 
     const res = await callRoute(createResearchRouter(), "/github", {
       query: "retry logic",

@@ -243,6 +243,13 @@ function researchError(
   });
 }
 
+function isResearchTimeoutError(error: unknown): boolean {
+  return (
+    (error instanceof DOMException && error.name === "TimeoutError") ||
+    (error instanceof Error && error.name === "ConnectTimeoutError")
+  );
+}
+
 async function fetchForRequest(
   req: RequestWithAuth<any, any, any>,
   path: string,
@@ -382,7 +389,7 @@ function createResearchController(
           : responseBody;
       return res.status(statusCode).json(response);
     } catch (err: unknown) {
-      if (err instanceof DOMException && err.name === "TimeoutError") {
+      if (isResearchTimeoutError(err)) {
         statusCode = 504;
         error = "Research service timed out";
         return res.status(504).end();
