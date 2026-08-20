@@ -30,11 +30,23 @@ interface SearchOptions {
   timeout?: number;
 }
 
-function cleanUrl(href: string): string {
+export function cleanUrl(href: string): string {
   if (href.includes("uddg=")) {
     const url = new URL(href, "https://duckduckgo.com");
     const uddg = url.searchParams.get("uddg");
-    return uddg ? decodeURIComponent(uddg) : href;
+    if (!uddg) return href;
+    try {
+      return decodeURIComponent(uddg);
+    } catch (err) {
+      logger.warn(
+        "DuckDuckGo: malformed percent escape in uddg, skipping decode",
+        {
+          href,
+          error: (err as Error).message,
+        },
+      );
+      return href;
+    }
   }
   return href;
 }
