@@ -169,8 +169,10 @@ describe("research upstream timeouts", () => {
     },
     {
       name: "connect",
-      error: Object.assign(new Error("Connect Timeout Error"), {
-        name: "ConnectTimeoutError",
+      error: new TypeError("fetch failed", {
+        cause: Object.assign(new Error("Connect Timeout Error"), {
+          name: "ConnectTimeoutError",
+        }),
       }),
     },
   ])("maps a $name timeout to 504", async ({ error }) => {

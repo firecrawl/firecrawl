@@ -246,7 +246,10 @@ function researchError(
 function isResearchTimeoutError(error: unknown): boolean {
   return (
     (error instanceof DOMException && error.name === "TimeoutError") ||
-    (error instanceof Error && error.name === "ConnectTimeoutError")
+    (error instanceof Error &&
+      (error.name === "ConnectTimeoutError" ||
+        (error.cause instanceof Error &&
+          error.cause.name === "ConnectTimeoutError")))
   );
 }
 
