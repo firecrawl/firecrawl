@@ -43,6 +43,7 @@ export const pollResponseSchema = z.object({
   pages_processed: z.number().optional(),
   failed_pages: z.array(z.number()).nullable().optional(),
   partial_pages: z.array(z.number()).nullable().optional(),
+  parser_version: z.number().optional(),
   error_class: z.string().optional(),
   error_message: z.string().optional(),
 });
@@ -125,6 +126,7 @@ export const resultResponseSchema = z.object({
   pages_processed: z.number().optional(),
   failed_pages: z.array(z.number()).nullable().optional(),
   partial_pages: z.array(z.number()).nullable().optional(),
+  parser_version: z.number().optional(),
 });
 
 export type PollResponse = z.infer<typeof pollResponseSchema>;

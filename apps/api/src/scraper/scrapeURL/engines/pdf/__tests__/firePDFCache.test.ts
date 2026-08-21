@@ -572,6 +572,43 @@ describe("FirePDF cache freshness window", () => {
     expect(result).toBeNull();
   });
 
+  it("stamps parserVersion into cache writes and strips it on serve", async () => {
+    await maybeSaveResult({
+      meta: makeMeta(),
+      base64Content: "BASE64",
+      mode: "auto",
+      maxPages: undefined,
+      includePageMarkdown: false,
+      includeBlocks: false,
+      result: { markdown: "v7", html: "<p>v7</p>", pagesProcessed: 1 },
+      parserVersion: 7,
+    });
+    expect(saveCached).toHaveBeenCalledWith(
+      "BASE64",
+      expect.objectContaining({ parserVersion: 7 }),
+      "firepdf",
+      undefined,
+    );
+
+    getCached.mockResolvedValueOnce({
+      markdown: "v7",
+      html: "<p>v7</p>",
+      parserVersion: 7,
+      createdAt: freshCreatedAt(),
+    });
+    const served = await tryGetCached(
+      makeMeta(),
+      "BASE64",
+      "ocr",
+      undefined,
+      1,
+      false,
+      false,
+    );
+    expect(served).toMatchObject({ markdown: "v7" });
+    expect(served).not.toHaveProperty("parserVersion");
+  });
+
   it("serves entries within the default window", async () => {
     getCached.mockResolvedValueOnce({
       markdown: "recent",

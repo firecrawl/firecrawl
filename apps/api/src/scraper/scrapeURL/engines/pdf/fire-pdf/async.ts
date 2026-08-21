@@ -240,6 +240,7 @@ export async function scrapePDFWithFirePDFAsync(
     result: processorResult,
     failedPages,
     partialPages,
+    parserVersion: fetched.parser_version,
   });
 
   return processorResult;

@@ -209,6 +209,7 @@ export async function tryGetCached(
           requestedMode: mode,
           cacheVariant: variant ?? "base",
           cacheAgeMs: Math.round(ageMs),
+          cacheParserVersion: cached.parserVersion ?? null,
         });
         // Strip payloads the request didn't ask for so a richer sidecar
         // serves a poorer request without leaking extra capabilities.
@@ -217,6 +218,7 @@ export async function tryGetCached(
           pageMarkdown,
           blocks,
           createdAt: _createdAt,
+          parserVersion: _parserVersion,
           ...compactCached
         } = cached;
         return {
@@ -247,6 +249,9 @@ export async function maybeSaveResult(args: {
   result: PDFProcessorResult & { markdown: string };
   failedPages?: number[] | null;
   partialPages?: number[] | null;
+  /** fire-pdf parser quality version from the response that produced this
+   * result; stamped into the cache entry (older fire-pdf builds omit it). */
+  parserVersion?: number;
 }): Promise<void> {
   const {
     meta,
@@ -258,6 +263,7 @@ export async function maybeSaveResult(args: {
     result,
     failedPages,
     partialPages,
+    parserVersion,
   } = args;
   if (meta.internalOptions.zeroDataRetention) return;
   const { cacheable, ownVariant, baseVariant } = cacheKeyShape(
@@ -292,9 +298,13 @@ export async function maybeSaveResult(args: {
   }
 
   try {
+    const stampedResult = {
+      ...result,
+      ...(parserVersion !== undefined ? { parserVersion } : {}),
+    };
     const savedKey = await savePdfResultToCache(
       base64Content,
-      result,
+      stampedResult,
       "firepdf",
       ownVariant,
     );
@@ -324,7 +334,7 @@ export async function maybeSaveResult(args: {
           pageMarkdown: _pageMarkdown,
           blocks: _blocks,
           ...baseResult
-        } = result;
+        } = stampedResult;
         await savePdfResultToCache(
           base64Content,
           baseResult,

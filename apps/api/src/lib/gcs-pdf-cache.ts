@@ -24,6 +24,10 @@ type CachedPdfResult = {
    * timeCreated. Undefined only when that fallback also failed — callers
    * enforcing a freshness window must treat that as expired. */
   createdAt?: string;
+  /** fire-pdf parser quality version that produced this entry (firepdf tier
+   * only). Absent on entries written before fire-pdf surfaced it — readers
+   * treat absence as "old parser". */
+  parserVersion?: number;
 };
 
 const PROVIDER_PREFIXES: Record<PdfCacheProvider, string> = {

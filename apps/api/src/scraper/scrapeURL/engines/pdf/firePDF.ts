@@ -141,6 +141,7 @@ export async function scrapePDFWithFirePDF(
       markdown: z.string(),
       failed_pages: z.array(z.number()).nullable(),
       partial_pages: z.array(z.number()).nullable().optional(),
+      parser_version: z.number().optional(),
       pages_processed: z.number().optional(),
       pages: firePdfPagesSchema,
       blocks: firePdfBlocksSchema,
@@ -189,6 +190,7 @@ export async function scrapePDFWithFirePDF(
       result: processorResult,
       failedPages: resp.failed_pages,
       partialPages: resp.partial_pages,
+      parserVersion: resp.parser_version,
     });
   }
 
