@@ -49,6 +49,7 @@ export type FireEngineScrapeRequestCommon = {
   geolocation?: { country?: string; languages?: string[] };
 
   mobileProxy?: boolean; // leave it undefined if user doesn't specify
+  autoProxy?: boolean;
 
   timeout?: number;
   maxAge?: number;
