@@ -59,6 +59,30 @@ const BASE_RATE_LIMITS: Partial<Record<RateLimiterMode, number>> = {
   [RateLimiterMode.BrowserExecute]: 10,
   [RateLimiterMode.CrawlStatus]: 500,
   [RateLimiterMode.ExtractStatus]: 500,
+  // Research's historical flat limit becomes its x1 base, so free-tier teams
+  // (multiplier x1) see no change while paid tiers scale like every other
+  // mode. Bounded by MAX_RATE_LIMITS: unlike scrape/crawl, research requests
+  // are a direct upstream proxy with no per-team concurrency queue behind
+  // them, so this limiter is the only per-team backstop.
+  [RateLimiterMode.Research]: 100,
+};
+
+/**
+ * Optional ceilings on `base x multiplier`, per minute. Only needed for modes
+ * that bypass the concurrency queue, where nothing else bounds a team.
+ *
+ * `getRateLimitMultiplier` fails OPEN at x2500 when Autumn is unreachable
+ * (`ERROR_FALLBACK_RATE_MULTIPLIER`). That is safe for queued modes, whose
+ * comment notes the concurrency cap still applies, but research has no such
+ * cap -- without a ceiling an Autumn outage would lift every team to
+ * 250k/min simultaneously on an unmetered endpoint.
+ *
+ * Provisional value: sized for headroom over the historical flat limit rather
+ * than derived from measured upstream capacity. Revisit once research latency
+ * and sustainable concurrency are known.
+ */
+const MAX_RATE_LIMITS: Partial<Record<RateLimiterMode, number>> = {
+  [RateLimiterMode.Research]: 10_000,
 };
 
 /**
@@ -87,6 +111,8 @@ export function getAutumnRateLimiter(
   if (base !== undefined) {
     const safeMultiplier = multiplier > 0 ? multiplier : 1;
     rateLimit = base * safeMultiplier;
+    const ceiling = MAX_RATE_LIMITS[mode];
+    if (ceiling !== undefined) rateLimit = Math.min(rateLimit, ceiling);
   } else {
     rateLimit = fallbackRateLimits?.[mode] ?? 500;
   }
