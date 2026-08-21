@@ -197,6 +197,16 @@ export async function scrapePDFWithFirePDFAsync(
       note: "FirePDF result omitted requested typed blocks",
     });
   }
+  if (pageMarkers && fetched.page_markers !== true) {
+    // Markers are baked into the markdown, so the missing echo is the only
+    // signal the worker build ignored the option; accepting the result
+    // would cache unmarked markdown under a marker cache variant. Fail the
+    // async attempt — the caller retries synchronously, where the same
+    // echo contract applies.
+    failAsync(meta, "http_5xx", {
+      note: "FirePDF result did not acknowledge requested page markers",
+    });
+  }
   const durationMs = now() - overallStartedAt;
   firePdfAsyncTotalDurationSeconds.observe(durationMs / 1000);
 

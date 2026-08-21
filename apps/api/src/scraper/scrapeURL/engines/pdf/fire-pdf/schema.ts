@@ -125,6 +125,11 @@ export const resultResponseSchema = z.object({
   pages_processed: z.number().optional(),
   failed_pages: z.array(z.number()).nullable().optional(),
   partial_pages: z.array(z.number()).nullable().optional(),
+  // Echo of an honored pageMarkers job option. Markers are baked into
+  // `markdown` and their absence is not detectable by content, so the echo
+  // is the only proof the fire-pdf worker build understood the option —
+  // older workers ignore unknown option keys and omit it.
+  page_markers: z.literal(true).optional(),
 });
 
 export type PollResponse = z.infer<typeof pollResponseSchema>;

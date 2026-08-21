@@ -348,6 +348,99 @@ describe("scrapePDFWithFirePDFAsync", () => {
     expect(error.reason).toBe("http_5xx");
   });
 
+  it("requests page markers and returns the acknowledged marked markdown", async () => {
+    const marked = "Page 1\n\n---\n\n<!-- page 2 -->\n\nPage 2";
+    const { fetchImpl, calls } = makeFetchFromSequence([
+      {
+        matchUrl: /\/jobs$/,
+        matchMethod: "POST",
+        response: {
+          status: 200,
+          body: {
+            scrape_id: "scrape-id-test",
+            status: "done",
+            lane: "fast",
+          },
+        },
+      },
+      {
+        matchUrl: /\/jobs\/scrape-id-test\/result$/,
+        matchMethod: "GET",
+        response: {
+          status: 200,
+          body: {
+            schema_version: 1,
+            markdown: marked,
+            pages_processed: 2,
+            page_markers: true,
+          },
+        },
+      },
+    ]);
+
+    const result = await scrapePDFWithFirePDFAsync(
+      makeMeta(),
+      "BASE64",
+      undefined,
+      undefined,
+      "auto",
+      { fetchImpl, sleepImpl: noopSleep },
+      false,
+      false,
+      true,
+    );
+
+    expect((calls[0].body as any).options.pageMarkers).toBe(true);
+    expect(result.markdown).toBe(marked);
+  });
+
+  it("fails a marker request when the result lacks the page_markers echo", async () => {
+    // An older worker ignores the unknown pageMarkers option and persists
+    // ordinary markdown; without the echo this must fail (and fall back to
+    // the sync path) rather than cache unmarked markdown as marked output.
+    const { fetchImpl } = makeFetchFromSequence([
+      {
+        matchUrl: /\/jobs$/,
+        matchMethod: "POST",
+        response: {
+          status: 200,
+          body: {
+            scrape_id: "scrape-id-test",
+            status: "done",
+            lane: "fast",
+          },
+        },
+      },
+      {
+        matchUrl: /\/jobs\/scrape-id-test\/result$/,
+        matchMethod: "GET",
+        response: {
+          status: 200,
+          body: {
+            schema_version: 1,
+            markdown: "Page 1\n\n---\n\nPage 2",
+            pages_processed: 2,
+          },
+        },
+      },
+    ]);
+
+    const error = await scrapePDFWithFirePDFAsync(
+      makeMeta(),
+      "BASE64",
+      undefined,
+      undefined,
+      "auto",
+      { fetchImpl, sleepImpl: noopSleep },
+      false,
+      false,
+      true,
+    ).catch(error => error);
+
+    expect(error).toBeInstanceOf(FirePdfAsyncFailure);
+    expect(error.reason).toBe("http_5xx");
+  });
+
   it("requests and returns typed blocks, tolerating the legacy pages alias", async () => {
     const blocks = [
       {
