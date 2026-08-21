@@ -31,6 +31,30 @@ function isNonMatchingBranch(issues: readonly $ZodIssue[]): boolean {
 }
 
 /**
+ * How far into the structure a branch got before failing. A branch that failed
+ * at its own root (`expected array, received object`) never matched the input's
+ * shape; one that failed at `["mode"]` did match and is complaining about a real
+ * field. Prefer the deeper branch, so object-shaped input with a bad nested
+ * field reports that field rather than a sibling branch's shape mismatch.
+ */
+function branchDepth(issues: readonly $ZodIssue[]): number {
+  return issues.reduce((max, issue) => Math.max(max, issue.path.length), 0);
+}
+
+function pickBranch(branches: $ZodIssue[][]): $ZodIssue[] {
+  let best = branches[0];
+  let bestDepth = branchDepth(best);
+  for (const branch of branches.slice(1)) {
+    const depth = branchDepth(branch);
+    if (depth > bestDepth) {
+      best = branch;
+      bestDepth = depth;
+    }
+  }
+  return best;
+}
+
+/**
  * Flatten zod issues into `{ path, message }` pairs, descending into
  * `invalid_union` branches. Branch paths are relative to the union node, so the
  * union's own path is prefixed back on as we recurse.
@@ -51,7 +75,7 @@ function flattenIssues(
       );
       const chosen = informative.length > 0 ? informative : branches;
       if (chosen.length > 0) {
-        flattened.push(...flattenIssues(chosen[0], path));
+        flattened.push(...flattenIssues(pickBranch(chosen), path));
         continue;
       }
     }

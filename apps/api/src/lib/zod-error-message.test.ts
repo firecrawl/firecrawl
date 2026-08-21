@@ -68,6 +68,26 @@ describe("formatZodIssues", () => {
     expect(message).not.toContain("targets.0.urls");
   });
 
+  it("prefers the branch that got furthest into the structure", () => {
+    // No literal discriminator here, so both branches are "informative" and the
+    // discriminator rule cannot break the tie. The array branch fails at its own
+    // root (it never matched the shape); the object branch matched and is
+    // complaining about a real field, which is what the caller needs to see.
+    const schema = z.object({
+      field: z.union([
+        z.array(z.string()),
+        z.strictObject({ mode: z.enum(["a", "b"]), depth: z.number() }),
+      ]),
+    });
+
+    const message = formatZodIssues(
+      issuesFor(schema, { field: { mode: "zzz", depth: 1 } }),
+    );
+
+    expect(message).toContain("field.mode");
+    expect(message).not.toContain("expected array");
+  });
+
   it("caps the message and reports how many issues were elided", () => {
     const schema = z.object({
       a: z.string(),
