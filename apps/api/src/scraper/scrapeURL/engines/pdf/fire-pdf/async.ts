@@ -230,6 +230,21 @@ export async function scrapePDFWithFirePDFAsync(
     ...(fetched.blocks ? { blocks: fetched.blocks } : {}),
   };
 
+  // Degradation may be reported by the terminal poll, the result fetch, or
+  // both — union the markers so either source gates the cache write.
+  const failedPages = [
+    ...new Set([
+      ...(fetched.failed_pages ?? []),
+      ...(polled.poll.failed_pages ?? []),
+    ]),
+  ];
+  const partialPages = [
+    ...new Set([
+      ...(fetched.partial_pages ?? []),
+      ...(polled.poll.partial_pages ?? []),
+    ]),
+  ];
+
   await maybeSaveResult({
     meta,
     base64Content,
@@ -239,6 +254,8 @@ export async function scrapePDFWithFirePDFAsync(
     includeBlocks,
     pageMarkers,
     result: processorResult,
+    failedPages,
+    partialPages,
   });
 
   return processorResult;
