@@ -137,9 +137,10 @@ describeIf(ALLOW_TEST_SUITE_WEBSITE && !TEST_SELF_HOST)("/v2/monitor", () => {
   });
 
   it("still rejects an empty patch body once integration is declared", async () => {
-    // `integration` carries a .transform() on the create path, which fires even
-    // when the key is absent. Left unoverridden on the update schema it would
-    // materialize `integration: null` on every PATCH and defeat the
+    // Guards the reason `integration` is declared without the
+    // .transform(val => val || null) the sibling v2 schemas carry: that
+    // transform fires even on an absent key, so inherited through .partial() it
+    // would materialize `integration: null` on every PATCH and defeat this
     // "Update body cannot be empty" guard.
     const create = await monitorCreateRaw(
       {
