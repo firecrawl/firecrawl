@@ -199,14 +199,6 @@ export type PDFParser = {
   pageMarkdown?: boolean;
   /** Include per-page typed layout blocks (bounding boxes, block types, reading order). */
   blocks?: boolean;
-  /**
-   * Join PDF pages in `document.markdown` with `\n\n---\n\n<!-- page N -->\n\n`,
-   * where N is the 1-based physical page of the content that follows. Markers
-   * appear between pages only (no leading marker for page 1), and numbering may
-   * skip pages merged by cross-page stitching — use `pages: true` when every
-   * physical page is needed.
-   */
-  pageMarkers?: boolean;
 };
 
 export interface PdfPage {

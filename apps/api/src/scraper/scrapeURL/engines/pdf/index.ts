@@ -493,7 +493,7 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
                 throw error;
               }
               meta.logger.warn(
-                "FirePDF async page markdown/blocks failed -- retrying synchronously",
+                "FirePDF async page markdown/blocks/markers failed -- retrying synchronously",
                 {
                   method: "scrapePDF/firePDFFallback",
                   error,

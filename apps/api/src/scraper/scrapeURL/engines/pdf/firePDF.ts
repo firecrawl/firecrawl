@@ -151,6 +151,12 @@ export async function scrapePDFWithFirePDF(
       pages_processed: z.number().optional(),
       pages: firePdfPagesSchema,
       blocks: firePdfBlocksSchema,
+      // Echo of an honored page_markers request. Markers are baked into
+      // `markdown` and their absence is not reliably detectable there (a
+      // single-page or fully-stitched document legitimately has none), so
+      // the echo is the only proof the fire-pdf build understood the
+      // option — older builds ignore unknown request fields and omit it.
+      page_markers: z.literal(true).optional(),
     }),
     mock: meta.mock,
     abort: meta.abort.asSignal(),
@@ -164,6 +170,13 @@ export async function scrapePDFWithFirePDF(
   }
   if (includeBlocks && resp.blocks === undefined) {
     throw new Error("FirePDF response did not include requested typed blocks");
+  }
+  if (pageMarkers && resp.page_markers !== true) {
+    // Without the echo, the markdown is ordinary unmarked output; caching
+    // it under a marker variant would silently poison the marker cache.
+    throw new Error(
+      "FirePDF response did not acknowledge requested page markers",
+    );
   }
   const pages = resp.pages_processed ?? pagesProcessed;
 

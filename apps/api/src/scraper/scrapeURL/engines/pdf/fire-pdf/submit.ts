@@ -94,6 +94,11 @@ export async function submitJob(args: SubmitArgs): Promise<SubmitOutcome> {
       ...(mode !== undefined && { mode }),
       ...(includePageMarkdown && { include_page_markdown: true }),
       ...(includeBlocks && { include_blocks: true }),
+      // Intentionally camelCase, unlike its siblings: the fire-pdf async
+      // /jobs options schema named this key `pageMarkers` (fire-pdf
+      // api/src/http/schemas/jobs.ts) while the sync /ocr path uses
+      // `page_markers`. Sending snake_case here would be rejected as an
+      // unknown option.
       ...(pageMarkers && { pageMarkers: true }),
     },
   };

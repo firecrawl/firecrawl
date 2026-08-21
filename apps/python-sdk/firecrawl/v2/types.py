@@ -1671,11 +1671,6 @@ class PDFParser(BaseModel):
     max_pages: Optional[int] = None
     pages: Optional[bool] = None
     blocks: Optional[bool] = None
-    # Join PDF pages in document markdown with `\n\n---\n\n<!-- page N -->\n\n`
-    # (N = 1-based physical page of the content that follows). Markers appear
-    # between pages only, and numbering may skip pages merged by cross-page
-    # stitching — use `pages=True` when every physical page is needed.
-    page_markers: Optional[bool] = None
 
     @model_validator(mode="before")
     @classmethod
