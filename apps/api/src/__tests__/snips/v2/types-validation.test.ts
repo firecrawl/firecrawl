@@ -1,6 +1,7 @@
 import { z } from "zod";
 import {
   scrapeRequestSchema,
+  parseRequestSchema,
   scrapeOptions,
   extractRequestSchema,
   crawlRequestSchema,
@@ -698,6 +699,22 @@ describe("V2 Types Validation", () => {
         const result = scrapeRequestSchema.parse(input);
         expect(result.lockdown).toBe(true);
       });
+    });
+  });
+
+  describe("parseRequestSchema", () => {
+    it("should reject rawBase64 for file uploads", () => {
+      expect(() =>
+        parseRequestSchema.parse({
+          formats: ["rawBase64"],
+          file: {
+            buffer: Buffer.from("raw upload"),
+            filename: "upload.html",
+            contentType: "text/html",
+            kind: "html",
+          },
+        }),
+      ).toThrow("The rawBase64 format is not supported for parse uploads");
     });
   });
 

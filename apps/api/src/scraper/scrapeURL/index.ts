@@ -341,12 +341,6 @@ async function buildMetaObject(
     }
   }
 
-  if (hasFormatOfType(options.formats, "rawBase64")) {
-    internalOptions = Object.assign(internalOptions, {
-      forceEngine: "fire-engine;chrome-cdp" as const,
-    });
-  }
-
   const logger = _logger.child({
     module: "ScrapeURL",
     scrapeId: id,
@@ -606,6 +600,9 @@ async function scrapeURLLoopIter(
       (engineResult.statusCode >= 200 && engineResult.statusCode < 300) ||
       engineResult.statusCode === 304;
     const hasNoPageError = engineResult.error === undefined;
+    const hasRequiredOutput = hasRawBase64
+      ? engineResult.rawBase64 !== undefined
+      : isLongEnough || !isGoodStatusCode;
     const isLikelyProxyError = [401, 403, 429].includes(
       engineResult.statusCode,
     );
@@ -631,7 +628,7 @@ async function scrapeURLLoopIter(
     // NOTE: TODO: what to do when status code is bad is tough...
     // we cannot just rely on text because error messages can be brief and not hit the limit
     // should we just use all the fallbacks and pick the one with the longest text? - mogery
-    if (isLongEnough || !isGoodStatusCode) {
+    if (hasRequiredOutput) {
       meta.logger.info("Scrape via " + engine + " deemed successful.", {
         factors: { isLongEnough, isGoodStatusCode, hasNoPageError },
       });
@@ -963,6 +960,7 @@ async function scrapeURLLoop(meta: Meta): Promise<ScrapeUrlResponse> {
 
     for (const postprocessor of postprocessors) {
       if (
+        !hasFormatOfType(meta.options.formats, "rawBase64") &&
         postprocessor.shouldRun(
           meta,
           new URL(engineResult.url),

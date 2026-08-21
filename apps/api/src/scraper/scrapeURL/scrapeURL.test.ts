@@ -34,28 +34,54 @@ const testEnginesScreenshot: (Engine | undefined)[] = [
 ];
 
 describe("Standalone scrapeURL tests", () => {
-  it("returns rawBase64 and forces the fire-engine Chrome path", async () => {
+  it.each([
+    ["https://example.com/raw", "text/html; charset=utf-8"],
+    ["https://example.com/raw.pdf", "application/pdf"],
+    [
+      "https://example.com/raw.docx",
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    ],
+  ])(
+    "returns rawBase64 through fire-engine Chrome for %s",
+    async (url, contentType) => {
+      const out = await scrapeURL(
+        "test:raw-base64",
+        url,
+        scrapeOptions.parse({
+          formats: ["rawBase64"],
+          useMock: "raw-base64",
+          fastMode: true,
+          blockAds: false,
+          proxy: "stealth",
+        }),
+        { forceEngine: "fetch", teamId: "test", orgId: null },
+        new CostTracking(),
+      );
+
+      expect(out.success).toBe(true);
+      if (out.success) {
+        expect(out.document.rawBase64).toBe("PGh0bWw+cmF3PC9odG1sPg==");
+        expect(out.document).not.toHaveProperty("markdown");
+        expect(out.document).not.toHaveProperty("html");
+        expect(out.document).not.toHaveProperty("rawHtml");
+        expect(out.document.metadata.contentType).toBe(contentType);
+      }
+    },
+  );
+
+  it("rejects a rawBase64 engine response without file content", async () => {
     const out = await scrapeURL(
-      "test:raw-base64",
-      "https://example.com/raw",
+      "test:raw-base64-missing",
+      "https://example.com/raw-error",
       scrapeOptions.parse({
         formats: ["rawBase64"],
         useMock: "raw-base64",
       }),
-      { forceEngine: "fetch", teamId: "test", orgId: null },
+      { teamId: "test", orgId: null },
       new CostTracking(),
     );
 
-    expect(out.success).toBe(true);
-    if (out.success) {
-      expect(out.document.rawBase64).toBe("PGh0bWw+cmF3PC9odG1sPg==");
-      expect(out.document).not.toHaveProperty("markdown");
-      expect(out.document).not.toHaveProperty("html");
-      expect(out.document).not.toHaveProperty("rawHtml");
-      expect(out.document.metadata.contentType).toBe(
-        "text/html; charset=utf-8",
-      );
-    }
+    expect(out.success).toBe(false);
   });
 
   describe.each(testEngines)("Engine %s", (forceEngine: Engine | undefined) => {

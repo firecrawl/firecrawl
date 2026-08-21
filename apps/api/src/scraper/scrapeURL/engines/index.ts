@@ -588,6 +588,23 @@ export async function buildFallbackList(meta: Meta): Promise<
     unsupportedFeatures: Set<FeatureFlag>;
   }[]
 > {
+  if (hasFormatOfType(meta.options.formats, "rawBase64")) {
+    if (
+      meta.options.lockdown ||
+      meta.internalOptions.agentIndexOnly ||
+      (!useFireEngine && meta.mock === null)
+    ) {
+      return [];
+    }
+
+    return [
+      {
+        engine: "fire-engine;chrome-cdp",
+        unsupportedFeatures: new Set(),
+      },
+    ];
+  }
+
   if (
     !meta.internalOptions.agentIndexOnly &&
     meta.internalOptions.forceEngine === undefined

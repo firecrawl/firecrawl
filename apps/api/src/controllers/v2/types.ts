@@ -1111,6 +1111,10 @@ const parseRequestSchemaBase = baseScrapeOptions.extend({
 });
 
 export const parseRequestSchema = strictWithMessage(parseRequestSchemaBase)
+  .refine(
+    x => !x.formats.some(format => format.type === "rawBase64"),
+    "The rawBase64 format is not supported for parse uploads",
+  )
   .refine(waitForRefine, waitForRefineOpts)
   .transform(x => {
     const { file, ...scrapeLike } = x;
