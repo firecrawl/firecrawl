@@ -4,6 +4,7 @@ import {
   URL as urlSchema,
   type ScrapeOptions,
 } from "../../controllers/v2/types";
+import { integrationSchema } from "../../utils/integration";
 import { createWebhookSchema } from "../webhook/schema";
 import { parseMonitorScheduleText } from "./cron";
 
@@ -197,6 +198,10 @@ const createMonitorBaseSchema = z.strictObject({
   goal: z.string().max(2000).nullish(),
   judgeEnabled: z.boolean().optional(),
   origin: z.string().optional().prefault("api"),
+  // Declared for the same reason as `origin` above (see 4d2f303e): clients
+  // tag requests with `integration`, every other v2 request schema accepts
+  // it, and this schema is strict -- so omitting it 400s the whole request.
+  integration: integrationSchema.optional().transform(val => val || null),
 });
 
 function requireGoalForSearchTargets(
@@ -261,6 +266,9 @@ export const updateMonitorSchema = createMonitorBaseSchema
     retentionDays: z.number().int().positive().max(365).optional(),
     // Drop the create-path .prefault("api") so an empty PATCH stays empty (the guard below fires).
     origin: z.string().optional(),
+    // Same reason: the create-path .transform() fires even when the key is absent,
+    // which would materialize `integration: null` on every PATCH and defeat the guard.
+    integration: integrationSchema.optional(),
   })
   .superRefine(rejectGoalClearedWithSearchTargets)
   .refine(x => Object.keys(x).length > 0, "Update body cannot be empty");

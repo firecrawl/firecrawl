@@ -93,6 +93,77 @@ describeIf(ALLOW_TEST_SUITE_WEBSITE && !TEST_SELF_HOST)("/v2/monitor", () => {
     await monitorDeleteRaw(id, identity);
   });
 
+  it("accepts an integration field in the create body", async () => {
+    const create = await monitorCreateRaw(
+      {
+        name: "integration monitor",
+        schedule: { cron: "*/30 * * * *", timezone: "UTC" },
+        targets: [
+          {
+            type: "scrape",
+            urls: [createTestIdUrl()],
+          },
+        ],
+        integration: "dify",
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      } as any,
+      identity,
+    );
+
+    expect(create.statusCode).toBe(200);
+    expect(create.body.success).toBe(true);
+    await monitorDeleteRaw(create.body.data.id, identity);
+  });
+
+  it("rejects an unknown integration value", async () => {
+    const create = await monitorCreateRaw(
+      {
+        name: "bad integration monitor",
+        schedule: { cron: "*/30 * * * *", timezone: "UTC" },
+        targets: [
+          {
+            type: "scrape",
+            urls: [createTestIdUrl()],
+          },
+        ],
+        integration: "not-a-real-integration",
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      } as any,
+      identity,
+    );
+
+    expect(create.statusCode).toBe(400);
+    expect(create.body.success).toBe(false);
+  });
+
+  it("still rejects an empty patch body once integration is declared", async () => {
+    // `integration` carries a .transform() on the create path, which fires even
+    // when the key is absent. Left unoverridden on the update schema it would
+    // materialize `integration: null` on every PATCH and defeat the
+    // "Update body cannot be empty" guard.
+    const create = await monitorCreateRaw(
+      {
+        name: "empty patch monitor",
+        schedule: { cron: "*/30 * * * *", timezone: "UTC" },
+        targets: [
+          {
+            type: "scrape",
+            urls: [createTestIdUrl()],
+          },
+        ],
+      },
+      identity,
+    );
+    expect(create.statusCode).toBe(200);
+    const id = create.body.data.id;
+
+    const patch = await monitorPatchRaw(id, {}, identity);
+    expect(patch.statusCode).toBe(400);
+    expect(patch.body.success).toBe(false);
+
+    await monitorDeleteRaw(id, identity);
+  });
+
   it("still rejects unknown keys in the create body", async () => {
     const create = await monitorCreateRaw(
       {
