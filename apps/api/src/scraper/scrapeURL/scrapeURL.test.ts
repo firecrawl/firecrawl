@@ -103,13 +103,12 @@ describe("Standalone scrapeURL tests", () => {
     }
   });
 
-  it("does not bypass minAge with a live rawBase64 scrape", async () => {
+  it("rejects rawBase64 when minAge is set", async () => {
     const out = await scrapeURL(
       "test:raw-base64-min-age",
       "https://example.com/raw",
       scrapeOptions.parse({
         formats: ["rawBase64"],
-        useMock: "raw-base64",
         minAge: 0,
       }),
       { teamId: "test", orgId: null },
