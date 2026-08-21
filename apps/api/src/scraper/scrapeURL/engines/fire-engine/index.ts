@@ -201,6 +201,7 @@ async function performFireEngineScrape<
       }),
       status.responseHeaders,
       status,
+      hasFormatOfType(meta.options.formats, "rawBase64") !== undefined,
     );
 
     const contentType =

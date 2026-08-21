@@ -473,7 +473,8 @@ export type FormatObject =
   | { type: "product" }
   | { type: "menu" }
   | { type: "audio" }
-  | { type: "video" };
+  | { type: "video" }
+  | { type: "rawBase64" };
 
 const pdfModeSchema = z.enum(["fast", "auto", "ocr"]);
 
@@ -718,6 +719,7 @@ const baseScrapeOptions = z.strictObject({
           queryFormatWithOptions,
           z.strictObject({ type: z.literal("audio") }),
           z.strictObject({ type: z.literal("video") }),
+          z.strictObject({ type: z.literal("rawBase64") }),
         ])
         .array()
         .optional()
@@ -1306,6 +1308,8 @@ export type Document = {
   rawHtml?: string;
   links?: string[];
   images?: string[];
+  /** Raw bytes of a scraped image URL, as a base64 data URI. Requested via the `rawBase64` format. */
+  rawBase64?: string;
   screenshot?: string;
   audio?: string;
   video?: string;

@@ -369,6 +369,7 @@ function coerceFieldsToFormats(meta: Meta, document: Document): Document {
   const hasHtml = hasFormatOfType(meta.options.formats, "html");
   const hasLinks = hasFormatOfType(meta.options.formats, "links");
   const hasImages = hasFormatOfType(meta.options.formats, "images");
+  const hasRawBase64 = hasFormatOfType(meta.options.formats, "rawBase64");
   const hasChangeTracking = hasFormatOfType(
     meta.options.formats,
     "changeTracking",
@@ -448,6 +449,14 @@ function coerceFieldsToFormats(meta: Meta, document: Document): Document {
       "Request had format: images, but there was no images field in the result.",
       { hasImages, hasImagesField: document.images !== undefined },
     );
+  }
+
+  // rawBase64 is only populated when the scraped URL is an image. When the
+  // format wasn't requested, drop it. When it was requested but the URL wasn't
+  // an image, the field is simply absent -- this is expected (graceful), so we
+  // don't warn like the other formats do.
+  if (!hasRawBase64 && document.rawBase64 !== undefined) {
+    delete document.rawBase64;
   }
 
   // Handle v1 backward compatibility - don't delete fields based on v1OriginalFormat

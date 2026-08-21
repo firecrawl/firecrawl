@@ -9,6 +9,7 @@ import {
 } from "./fire-engine";
 import { exchangeMaxReasonableTime, scrapeURLWithExchange } from "./exchange";
 import { pdfMaxReasonableTime, scrapePDF } from "./pdf";
+import { imageMaxReasonableTime, scrapeImage } from "./image";
 import { fetchMaxReasonableTime, scrapeURLWithFetch } from "./fetch";
 import {
   playwrightMaxReasonableTime,
@@ -53,6 +54,7 @@ export type Engine =
   | "fetch"
   | "pdf"
   | "document"
+  | "image"
   | "index"
   | "index;documents"
   | "wikipedia"
@@ -91,6 +93,7 @@ const engines: Engine[] = [
   "fetch",
   "pdf",
   "document",
+  "image",
 ];
 
 const featureFlags = [
@@ -110,6 +113,7 @@ const featureFlags = [
   "stealthProxy",
   "branding",
   "disableAdblock",
+  "image",
 ] as const;
 
 export type FeatureFlag = (typeof featureFlags)[number];
@@ -135,6 +139,7 @@ const featureFlagOptions: {
   stealthProxy: { priority: 20 },
   branding: { priority: 20 }, // Requires CDP executeJavascript
   disableAdblock: { priority: 10 },
+  image: { priority: 100 },
 } as const;
 
 export type EngineScrapeResult = {
@@ -149,6 +154,7 @@ export type EngineScrapeResult = {
   error?: string;
 
   screenshot?: string;
+  rawBase64?: string;
   actions?: {
     screenshots: string[];
     scrapes: ScrapeActionContent[];
@@ -194,6 +200,7 @@ const engineHandlers: {
   fetch: scrapeURLWithFetch,
   pdf: scrapePDF,
   document: scrapeDocument,
+  image: scrapeImage,
   wikipedia: scrapeURLWithWikipedia,
   "x-twitter": scrapeURLWithXTwitter,
 };
@@ -220,6 +227,7 @@ const engineMRTs: {
   fetch: fetchMaxReasonableTime,
   pdf: pdfMaxReasonableTime,
   document: documentMaxReasonableTime,
+  image: imageMaxReasonableTime,
   wikipedia: wikipediaMaxReasonableTime,
   "x-twitter": xTwitterMaxReasonableTime,
 };
@@ -252,6 +260,7 @@ const engineOptions: {
       stealthProxy: false,
       branding: false,
       disableAdblock: false,
+      image: false,
     },
     quality: 2000,
   },
@@ -273,6 +282,7 @@ const engineOptions: {
       stealthProxy: true,
       branding: false,
       disableAdblock: true,
+      image: false,
     },
     quality: 1000, // index should always be tried first
   },
@@ -294,6 +304,7 @@ const engineOptions: {
       stealthProxy: false,
       branding: true,
       disableAdblock: false,
+      image: false,
     },
     quality: 50,
   },
@@ -315,6 +326,7 @@ const engineOptions: {
       stealthProxy: false,
       branding: true,
       disableAdblock: false,
+      image: false,
     },
     quality: 45,
   },
@@ -336,6 +348,7 @@ const engineOptions: {
       stealthProxy: true,
       branding: false,
       disableAdblock: false,
+      image: false,
     },
     quality: -1,
   },
@@ -357,6 +370,7 @@ const engineOptions: {
       stealthProxy: true,
       branding: true,
       disableAdblock: false,
+      image: false,
     },
     quality: -2,
   },
@@ -378,6 +392,7 @@ const engineOptions: {
       stealthProxy: true,
       branding: true,
       disableAdblock: false,
+      image: false,
     },
     quality: -5,
   },
@@ -399,6 +414,7 @@ const engineOptions: {
       stealthProxy: false,
       branding: false,
       disableAdblock: false,
+      image: false,
     },
     quality: 20,
   },
@@ -420,6 +436,7 @@ const engineOptions: {
       stealthProxy: false,
       branding: false,
       disableAdblock: false,
+      image: false,
     },
     quality: 10,
   },
@@ -441,6 +458,7 @@ const engineOptions: {
       stealthProxy: true,
       branding: false,
       disableAdblock: false,
+      image: false,
     },
     quality: -15,
   },
@@ -462,6 +480,7 @@ const engineOptions: {
       stealthProxy: false,
       branding: false,
       disableAdblock: false,
+      image: false,
     },
     quality: 5,
   },
@@ -483,6 +502,7 @@ const engineOptions: {
       stealthProxy: true, // kinda...
       branding: false,
       disableAdblock: true,
+      image: false,
     },
     quality: -20,
   },
@@ -504,6 +524,34 @@ const engineOptions: {
       stealthProxy: true, // kinda...
       branding: false,
       disableAdblock: true,
+      image: false,
+    },
+    quality: -20,
+  },
+  image: {
+    features: {
+      actions: false,
+      waitFor: false,
+      screenshot: false,
+      "screenshot@fullScreen": false,
+      pdf: false,
+      document: false,
+      audio: false,
+      video: false,
+      atsv: false,
+      location: false,
+      mobile: false,
+      // The direct-download path uses a basic fetch that honors
+      // skipTlsVerification. When an image is prefetched by an upstream engine
+      // (incl. stealth), that engine already applied the proxy and the prefetch
+      // carries the real proxyUsed — so the image engine itself only advertises
+      // what its own download does.
+      skipTlsVerification: true,
+      useFastMode: true,
+      stealthProxy: false,
+      branding: false,
+      disableAdblock: true,
+      image: true,
     },
     quality: -20,
   },
@@ -525,6 +573,7 @@ const engineOptions: {
       stealthProxy: false,
       branding: false,
       disableAdblock: true,
+      image: false,
     },
     quality: 500, // below index (1000) so cache is tried first, above fire-engine (50)
   },
@@ -546,6 +595,7 @@ const engineOptions: {
       stealthProxy: false,
       branding: false,
       disableAdblock: true,
+      image: false,
     },
     quality: 1500,
   },

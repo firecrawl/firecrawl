@@ -496,6 +496,7 @@ class Document(BaseModel):
     metadata: Optional[DocumentMetadata] = None
     links: Optional[List[str]] = None
     images: Optional[List[str]] = None
+    raw_base64: Optional[str] = None
     screenshot: Optional[str] = None
     audio: Optional[str] = None
     video: Optional[str] = None
@@ -657,9 +658,11 @@ FormatString = Literal[
     "query",
     "audio",
     "video",
+    "rawBase64",
     # snake_case versions (user-friendly)
     "raw_html",
     "change_tracking",
+    "raw_base64",
 ]
 
 
