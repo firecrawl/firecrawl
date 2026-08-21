@@ -28,6 +28,7 @@ type Format =
   | "markdown"
   | "html"
   | "rawHtml"
+  | "rawBase64"
   | "links"
   | "screenshot"
   | "screenshot@fullPage"
@@ -435,6 +436,7 @@ const baseScrapeOptions = z.strictObject({
       "markdown",
       "html",
       "rawHtml",
+      "rawBase64",
       "links",
       "screenshot",
       "screenshot@fullPage",
@@ -456,6 +458,10 @@ const baseScrapeOptions = z.strictObject({
     .refine(
       x => !x.includes("changeTracking") || x.includes("markdown"),
       "The changeTracking format requires the markdown format to be specified as well",
+    )
+    .refine(
+      x => !x.includes("rawBase64") || x.length === 1,
+      "The rawBase64 format cannot be combined with other formats",
     ),
   headers: z.record(z.string(), z.string()).optional(),
   includeTags: z
@@ -1013,6 +1019,7 @@ export type Document = {
   blocks?: PdfPageBlocks[];
   html?: string;
   rawHtml?: string;
+  rawBase64?: string;
   links?: string[];
   images?: string[];
   screenshot?: string;

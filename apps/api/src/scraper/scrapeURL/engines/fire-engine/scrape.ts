@@ -30,6 +30,7 @@ const browserCookieSchema = z
 export type FireEngineScrapeRequestCommon = {
   url: string;
   scrapeId?: string;
+  format?: "html" | "rawBase64";
 
   headers?: { [K: string]: string };
 

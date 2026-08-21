@@ -2097,6 +2097,7 @@
                 "markdown",
                 "html",
                 "rawHtml",
+                "rawBase64",
                 "links",
                 "screenshot",
                 "screenshot@fullPage",
@@ -2105,7 +2106,7 @@
                 "branding"
               ]
             },
-            "description": "Formats to include in the output.",
+            "description": "Formats to include in the output. `rawBase64` must be requested by itself.",
             "default": ["markdown"]
           },
           "onlyMainContent": {
@@ -2426,6 +2427,11 @@
                 "nullable": true,
                 "description": "Raw HTML content of the page if `rawHtml` is in `formats`"
               },
+              "rawBase64": {
+                "type": "string",
+                "nullable": true,
+                "description": "Base64-encoded original response body if `rawBase64` is in `formats`"
+              },
               "screenshot": {
                 "type": "string",
                 "nullable": true,
@@ -2672,6 +2678,11 @@
                   "nullable": true,
                   "description": "Raw HTML content of the page if `includeRawHtml`  is true"
                 },
+                "rawBase64": {
+                  "type": "string",
+                  "nullable": true,
+                  "description": "Base64-encoded original response body if `rawBase64` is in `formats`"
+                },
                 "links": {
                   "type": "array",
                   "items": {
@@ -2808,6 +2819,11 @@
                   "type": "string",
                   "nullable": true,
                   "description": "Raw HTML content of the page if `includeRawHtml`  is true"
+                },
+                "rawBase64": {
+                  "type": "string",
+                  "nullable": true,
+                  "description": "Base64-encoded original response body if `rawBase64` is in `formats`"
                 },
                 "links": {
                   "type": "array",

@@ -141,6 +141,7 @@ export type EngineScrapeResult = {
   url: string;
 
   html: string;
+  rawBase64?: string;
   markdown?: string;
   pages?: Array<{ pageNumber: number; markdown: string }>;
   blocks?: PdfPageBlocks[];

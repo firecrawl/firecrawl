@@ -59,6 +59,22 @@ describe("V1 Types Validation", () => {
       expect(result.timeout).toBe(60000);
     });
 
+    it("should only allow rawBase64 as the sole format", () => {
+      expect(
+        scrapeRequestSchema.parse({
+          url: "https://example.com/file",
+          formats: ["rawBase64"],
+        }).formats,
+      ).toEqual(["rawBase64"]);
+
+      expect(() =>
+        scrapeRequestSchema.parse({
+          url: "https://example.com/file",
+          formats: ["markdown", "rawBase64"],
+        }),
+      ).toThrow("The rawBase64 format cannot be combined with other formats");
+    });
+
     it("should reject invalid URL", () => {
       const input = {
         url: "not-a-url",

@@ -195,24 +195,29 @@ async function performFireEngineScrape<
       status = scrape as FireEngineCheckStatusSuccess;
     }
 
-    await specialtyScrapeCheck(
-      logger.child({
-        method: "performFireEngineScrape/specialtyScrapeCheck",
-      }),
-      status.responseHeaders,
-      status,
-    );
+    const wantsRawBase64 =
+      hasFormatOfType(meta.options.formats, "rawBase64") !== undefined;
+
+    if (!wantsRawBase64) {
+      await specialtyScrapeCheck(
+        logger.child({
+          method: "performFireEngineScrape/specialtyScrapeCheck",
+        }),
+        status.responseHeaders,
+        status,
+      );
+    }
 
     const contentType =
       (Object.entries(status.responseHeaders ?? {}).find(
         x => x[0].toLowerCase() === "content-type",
       ) ?? [])[1] ?? "";
 
-    if (contentType.includes("application/json")) {
+    if (!wantsRawBase64 && contentType.includes("application/json")) {
       status.content = await getInnerJson(status.content);
     }
 
-    if (status.file) {
+    if (status.file && !wantsRawBase64) {
       const content = status.file.content;
       delete status.file;
       let buffer = Buffer.from(content, "base64");
@@ -407,6 +412,9 @@ export async function scrapeURLWithFireEngineChromeCDP(
       url: meta.rewrittenUrl ?? meta.url,
       scrapeId: meta.id,
       engine: "chrome-cdp",
+      ...(hasFormatOfType(meta.options.formats, "rawBase64") !== undefined
+        ? { format: "rawBase64" as const }
+        : {}),
       instantReturn: false,
       skipTlsVerification: meta.options.skipTlsVerification,
       headers: meta.options.headers,
@@ -508,6 +516,7 @@ export async function scrapeURLWithFireEngineChromeCDP(
       url: response.url ?? meta.url,
 
       html: response.content,
+      rawBase64: response.file?.content,
       markdown: contentType?.includes("text/markdown")
         ? response.content
         : undefined,

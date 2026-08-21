@@ -83,6 +83,22 @@ describe("V2 Types Validation", () => {
       expect(result.formats).toEqual([{ type: "markdown" }, { type: "html" }]);
     });
 
+    it("should only allow rawBase64 as the sole format", () => {
+      expect(
+        scrapeRequestSchema.parse({
+          url: "https://example.com/file",
+          formats: ["rawBase64"],
+        }).formats,
+      ).toEqual([{ type: "rawBase64" }]);
+
+      expect(() =>
+        scrapeRequestSchema.parse({
+          url: "https://example.com/file",
+          formats: ["markdown", "rawBase64"],
+        }),
+      ).toThrow("The rawBase64 format cannot be combined with other formats");
+    });
+
     it("should accept video format as string and object", () => {
       const stringInput: ScrapeRequestInput = {
         url: "https://example.com",

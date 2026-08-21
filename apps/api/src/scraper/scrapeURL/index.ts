@@ -341,6 +341,12 @@ async function buildMetaObject(
     }
   }
 
+  if (hasFormatOfType(options.formats, "rawBase64")) {
+    internalOptions = Object.assign(internalOptions, {
+      forceEngine: "fire-engine;chrome-cdp" as const,
+    });
+  }
+
   const logger = _logger.child({
     module: "ScrapeURL",
     scrapeId: id,
@@ -535,6 +541,7 @@ async function scrapeURLLoopIter(
     const hasQuestion = hasFormatOfType(meta.options.formats, "question");
     const hasHighlights = hasFormatOfType(meta.options.formats, "highlights");
     const hasQuery = hasFormatOfType(meta.options.formats, "query");
+    const hasRawBase64 = hasFormatOfType(meta.options.formats, "rawBase64");
     const needsMarkdown =
       hasMarkdown ||
       hasChangeTracking ||
@@ -548,7 +555,9 @@ async function scrapeURLLoopIter(
     const htmlSize = engineResult.html?.length ?? 0;
     const shouldSkipMarkdownCheck = htmlSize > MAX_HTML_SIZE_FOR_MARKDOWN_CHECK;
 
-    if (
+    if (hasRawBase64) {
+      checkMarkdown = engineResult.rawBase64 !== undefined ? "rawBase64" : "";
+    } else if (
       meta.internalOptions.teamId === "sitemap" ||
       meta.internalOptions.teamId === "robots-txt"
     ) {
@@ -987,6 +996,7 @@ async function scrapeURLLoop(meta: Meta): Promise<ScrapeUrlResponse> {
       pages: engineResult.pages,
       blocks: engineResult.blocks,
       rawHtml: engineResult.html,
+      rawBase64: engineResult.rawBase64,
       json: engineResult.json,
       screenshot: engineResult.screenshot,
       actions: engineResult.actions,

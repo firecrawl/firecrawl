@@ -34,6 +34,30 @@ const testEnginesScreenshot: (Engine | undefined)[] = [
 ];
 
 describe("Standalone scrapeURL tests", () => {
+  it("returns rawBase64 and forces the fire-engine Chrome path", async () => {
+    const out = await scrapeURL(
+      "test:raw-base64",
+      "https://example.com/raw",
+      scrapeOptions.parse({
+        formats: ["rawBase64"],
+        useMock: "raw-base64",
+      }),
+      { forceEngine: "fetch", teamId: "test", orgId: null },
+      new CostTracking(),
+    );
+
+    expect(out.success).toBe(true);
+    if (out.success) {
+      expect(out.document.rawBase64).toBe("PGh0bWw+cmF3PC9odG1sPg==");
+      expect(out.document).not.toHaveProperty("markdown");
+      expect(out.document).not.toHaveProperty("html");
+      expect(out.document).not.toHaveProperty("rawHtml");
+      expect(out.document.metadata.contentType).toBe(
+        "text/html; charset=utf-8",
+      );
+    }
+  });
+
   describe.each(testEngines)("Engine %s", (forceEngine: Engine | undefined) => {
     it("Basic scrape", async () => {
       const out = await scrapeURL(

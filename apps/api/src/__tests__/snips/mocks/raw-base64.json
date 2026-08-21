@@ -1,0 +1,19 @@
+[
+  {
+    "time": 1,
+    "options": {
+      "url": "<fire-engine>/scrape",
+      "method": "POST",
+      "body": {
+        "url": "https://example.com/raw",
+        "engine": "chrome-cdp",
+        "format": "rawBase64"
+      }
+    },
+    "result": {
+      "status": 200,
+      "headers": {},
+      "body": "{\"timeTaken\":0.1,\"content\":\"\",\"url\":\"https://example.com/raw\",\"pageStatusCode\":200,\"responseHeaders\":{\"content-type\":\"text/html; charset=utf-8\"},\"file\":{\"name\":\"raw.html\",\"content\":\"PGh0bWw+cmF3PC9odG1sPg==\"}}"
+    }
+  }
+]

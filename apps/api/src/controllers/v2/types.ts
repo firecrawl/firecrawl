@@ -458,6 +458,7 @@ export type FormatObject =
   | { type: "markdown" }
   | { type: "html" }
   | { type: "rawHtml" }
+  | { type: "rawBase64" }
   | { type: "links" }
   | { type: "images" }
   | { type: "summary" }
@@ -702,6 +703,7 @@ const baseScrapeOptions = z.strictObject({
           z.strictObject({ type: z.literal("markdown") }),
           z.strictObject({ type: z.literal("html") }),
           z.strictObject({ type: z.literal("rawHtml") }),
+          z.strictObject({ type: z.literal("rawBase64") }),
           z.strictObject({ type: z.literal("links") }),
           z.strictObject({ type: z.literal("images") }),
           z.strictObject({ type: z.literal("summary") }),
@@ -737,7 +739,11 @@ const baseScrapeOptions = z.strictObject({
       const hasJson = x.some(f => f.type === "json");
       const hasDeterministicJson = x.some(f => f.type === "deterministicJson");
       return !(hasJson && hasDeterministicJson);
-    }, "Cannot specify both json and deterministicJson formats"),
+    }, "Cannot specify both json and deterministicJson formats")
+    .refine(
+      x => !x.some(f => f.type === "rawBase64") || x.length === 1,
+      "The rawBase64 format cannot be combined with other formats",
+    ),
   headers: z.record(z.string(), z.string()).optional(),
   includeTags: z
     .string()
@@ -1304,6 +1310,7 @@ export type Document = {
   blocks?: PdfPageBlocks[];
   html?: string;
   rawHtml?: string;
+  rawBase64?: string;
   links?: string[];
   images?: string[];
   screenshot?: string;
