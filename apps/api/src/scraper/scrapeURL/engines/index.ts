@@ -34,7 +34,11 @@ import {
 } from "../../../controllers/v2/types";
 import type { PdfMetadata, PdfPageBlocks } from "./pdf/types";
 import { BrandingProfile } from "../../../types/branding";
-import { AgentIndexOnlyError, BrandingNotSupportedError } from "../error";
+import {
+  AgentIndexOnlyError,
+  BrandingNotSupportedError,
+  NoCachedDataError,
+} from "../error";
 import { isUrlBlocked } from "../../WebScraper/utils/blocklist";
 import {
   canUseExchangeForRequest,
@@ -589,11 +593,15 @@ export async function buildFallbackList(meta: Meta): Promise<
   }[]
 > {
   if (hasFormatOfType(meta.options.formats, "rawBase64")) {
-    if (
-      meta.options.lockdown ||
-      meta.internalOptions.agentIndexOnly ||
-      (!useFireEngine && meta.mock === null)
-    ) {
+    if (meta.internalOptions.agentIndexOnly) {
+      throw new AgentIndexOnlyError();
+    }
+
+    if (meta.options.minAge !== undefined) {
+      throw new NoCachedDataError();
+    }
+
+    if (meta.options.lockdown || (!useFireEngine && meta.mock === null)) {
       return [];
     }
 

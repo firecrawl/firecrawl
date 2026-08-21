@@ -8,6 +8,7 @@ import { scrapeURL } from ".";
 import { scrapeOptions } from "../../controllers/v2/types";
 import { Engine } from "./engines";
 import { CostTracking } from "../../lib/cost-tracking";
+import { AgentIndexOnlyError, NoCachedDataError } from "./error";
 
 // Mock parseMarkdown but delegate to real implementation for other tests
 vi.mock("../../lib/html-to-markdown", async importOriginal => {
@@ -82,6 +83,43 @@ describe("Standalone scrapeURL tests", () => {
     );
 
     expect(out.success).toBe(false);
+  });
+
+  it("returns the canonical agent-index-only error for rawBase64", async () => {
+    const out = await scrapeURL(
+      "test:raw-base64-agent-index-only",
+      "https://example.com/raw",
+      scrapeOptions.parse({
+        formats: ["rawBase64"],
+        useMock: "raw-base64",
+      }),
+      { teamId: "test", orgId: null, agentIndexOnly: true },
+      new CostTracking(),
+    );
+
+    expect(out.success).toBe(false);
+    if (!out.success) {
+      expect(out.error).toBeInstanceOf(AgentIndexOnlyError);
+    }
+  });
+
+  it("does not bypass minAge with a live rawBase64 scrape", async () => {
+    const out = await scrapeURL(
+      "test:raw-base64-min-age",
+      "https://example.com/raw",
+      scrapeOptions.parse({
+        formats: ["rawBase64"],
+        useMock: "raw-base64",
+        minAge: 0,
+      }),
+      { teamId: "test", orgId: null },
+      new CostTracking(),
+    );
+
+    expect(out.success).toBe(false);
+    if (!out.success) {
+      expect(out.error).toBeInstanceOf(NoCachedDataError);
+    }
   });
 
   describe.each(testEngines)("Engine %s", (forceEngine: Engine | undefined) => {

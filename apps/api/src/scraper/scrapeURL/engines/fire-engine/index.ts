@@ -325,6 +325,19 @@ export async function scrapeURLWithFireEngineChromeCDP(
     });
     const wantsRawBase64 =
       hasFormatOfType(meta.options.formats, "rawBase64") !== undefined;
+    if (
+      wantsRawBase64 &&
+      ((meta.options.waitFor ?? 0) > 0 ||
+        (meta.options.actions?.length ?? 0) > 0)
+    ) {
+      meta.logger.warn(
+        "rawBase64 returns the original response body; waitFor and actions are ignored.",
+        {
+          waitFor: meta.options.waitFor,
+          actionTypes: meta.options.actions?.map(action => action.type),
+        },
+      );
+    }
     const hasBranding = hasFormatOfType(meta.options.formats, "branding");
     const hasAudio = hasFormatOfType(meta.options.formats, "audio");
     const hasVideo = hasFormatOfType(meta.options.formats, "video");
