@@ -135,6 +135,38 @@ class ClientTest < Minitest::Test
     assert_equal "title", doc.blocks[0]["items"][0]["type"]
   end
 
+  def test_scrape_serializes_pdf_parser_page_markers
+    stub_request(:post, "#{BASE_URL}/v2/scrape")
+      .with { |req|
+        body = JSON.parse(req.body)
+        body["parsers"] == [{
+          "type" => "pdf",
+          "mode" => "auto",
+          "pages" => true,
+          "blocks" => true,
+          "pageMarkers" => true
+        }]
+      }
+      .to_return(
+        status: 200,
+        body: JSON.generate(data: { markdown: "# Cover" }),
+        headers: { "Content-Type" => "application/json" }
+      )
+
+    options = Firecrawl::Models::ScrapeOptions.new(
+      parsers: [
+        Firecrawl::Models::PDFParser.new(
+          mode: "auto",
+          pages: true,
+          blocks: true,
+          page_markers: true
+        )
+      ]
+    )
+    doc = @client.scrape("https://example.com/report.pdf", options)
+    assert_equal "# Cover", doc.markdown
+  end
+
   def test_scrape_with_options
     stub_request(:post, "#{BASE_URL}/v2/scrape")
       .with { |req| body = JSON.parse(req.body); body["formats"] == ["markdown", "html"] && body["onlyMainContent"] == true }

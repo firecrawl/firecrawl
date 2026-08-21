@@ -390,8 +390,8 @@ class TestPrepareScrapeOptions:
         assert result["parsers"][0]["maxPages"] == 5
 
     def test_prepare_parsers_blocks_and_pages(self):
-        """PDF parser blocks and pages are forwarded to the API."""
-        parser = PDFParser(mode="auto", pages=True, blocks=True)
+        """PDF parser blocks, pages, and page_markers are forwarded to the API."""
+        parser = PDFParser(mode="auto", pages=True, blocks=True, page_markers=True)
         options = ScrapeOptions(parsers=[parser])
 
         result = prepare_scrape_options(options)
@@ -401,7 +401,15 @@ class TestPrepareScrapeOptions:
             "mode": "auto",
             "pages": True,
             "blocks": True,
+            "pageMarkers": True,
         }
+
+        markers_options = ScrapeOptions(
+            parsers=[{"type": "pdf", "page_markers": True}]
+        )
+        markers_result = prepare_scrape_options(markers_options)
+        assert markers_result["parsers"][0]["pageMarkers"] is True
+        assert "page_markers" not in markers_result["parsers"][0]
 
         dict_options = ScrapeOptions(
             parsers=[{"type": "pdf", "page_markdown": True, "blocks": True}]

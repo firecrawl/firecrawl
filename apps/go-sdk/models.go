@@ -37,6 +37,11 @@ type PDFParser struct {
 	MaxPages *int   `json:"maxPages,omitempty"`
 	Pages    *bool  `json:"pages,omitempty"`
 	Blocks   *bool  `json:"blocks,omitempty"`
+	// PageMarkers joins PDF pages in document.markdown with
+	// `\n\n---\n\n<!-- page N -->\n\n`. Markers appear between pages only;
+	// numbering may skip pages merged by cross-page stitching — use Pages
+	// when every physical page is needed. No new response field.
+	PageMarkers *bool `json:"pageMarkers,omitempty"`
 }
 
 // PdfPage is physical markdown for a single PDF page.
@@ -76,12 +81,12 @@ type PdfPageBlocks struct {
 // ProductProfile represents structured product data extracted from a page
 // via the `product` scrape format.
 type ProductProfile struct {
-	Title         string               `json:"title"`
-	Brand         string               `json:"brand,omitempty"`
-	Category      string               `json:"category,omitempty"`
-	URL           string               `json:"url"`
-	Description   string               `json:"description,omitempty"`
-	Variants      []ProductVariant     `json:"variants,omitempty"`
+	Title       string           `json:"title"`
+	Brand       string           `json:"brand,omitempty"`
+	Category    string           `json:"category,omitempty"`
+	URL         string           `json:"url"`
+	Description string           `json:"description,omitempty"`
+	Variants    []ProductVariant `json:"variants,omitempty"`
 }
 
 // ProductImage is a single product image.

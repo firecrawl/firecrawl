@@ -11,7 +11,7 @@ final class ScrapeOptions
      * @param array<string, string>|null   $headers
      * @param list<string>|null            $includeTags
      * @param list<string>|null            $excludeTags
-     * @param list<mixed>|null             $parsers
+     * @param list<string|PDFParser|array<string, mixed>>|null $parsers
      * @param list<array<string, mixed>>|null $actions
      * @param AuditMetadata|null           $auditMetadata
      */
@@ -48,7 +48,7 @@ final class ScrapeOptions
      * @param array<string, string>|null                    $headers
      * @param list<string>|null                             $includeTags
      * @param list<string>|null                             $excludeTags
-     * @param list<mixed>|null                              $parsers
+     * @param list<string|PDFParser|array<string, mixed>>|null $parsers
      * @param list<array<string, mixed>>|null               $actions
      * @param array<string, string>|null                    $profile
      * @param AuditMetadata|null                            $auditMetadata
@@ -115,7 +115,10 @@ final class ScrapeOptions
             'timeout' => $this->timeout,
             'waitFor' => $this->waitFor,
             'mobile' => $this->mobile,
-            'parsers' => $this->parsers,
+            'parsers' => $this->parsers === null ? null : array_map(
+                fn (mixed $parser): mixed => $parser instanceof PDFParser ? $parser->toArray() : $parser,
+                $this->parsers,
+            ),
             'actions' => $this->actions,
             'location' => $this->location?->toArray(),
             'skipTlsVerification' => $this->skipTlsVerification,
@@ -191,7 +194,7 @@ final class ScrapeOptions
         return $this->redactPII;
     }
 
-    /** @return list<mixed>|null */
+    /** @return list<string|PDFParser|array<string, mixed>>|null */
     public function getParsers(): ?array
     {
         return $this->parsers;

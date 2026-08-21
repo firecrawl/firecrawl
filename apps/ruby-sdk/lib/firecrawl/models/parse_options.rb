@@ -35,7 +35,7 @@ module Firecrawl
           "excludeTags" => exclude_tags,
           "onlyMainContent" => only_main_content,
           "timeout" => timeout,
-          "parsers" => parsers,
+          "parsers" => parsers&.map { |parser| parser.respond_to?(:to_h) ? parser.to_h : parser },
           "skipTlsVerification" => skip_tls_verification,
           "removeBase64Images" => remove_base64_images,
           "blockAds" => block_ads,

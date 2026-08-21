@@ -123,6 +123,9 @@ pub enum ParserConfig {
         pages: Option<bool>,
         #[serde(skip_serializing_if = "Option::is_none")]
         blocks: Option<bool>,
+        /// Join PDF pages in document markdown with `\n\n---\n\n<!-- page N -->\n\n`.
+        #[serde(rename = "pageMarkers", skip_serializing_if = "Option::is_none")]
+        page_markers: Option<bool>,
     },
 }
 
@@ -533,6 +536,7 @@ mod tests {
                 max_pages: None,
                 pages: Some(true),
                 blocks: Some(true),
+                page_markers: Some(true),
             }]),
             ..Default::default()
         };
@@ -544,7 +548,8 @@ mod tests {
                 "type": "pdf",
                 "mode": "auto",
                 "pages": true,
-                "blocks": true
+                "blocks": true,
+                "pageMarkers": true
             })
         );
     }

@@ -127,6 +127,7 @@ public class ParseOptions {
         public Builder excludeTags(List<String> excludeTags) { this.excludeTags = excludeTags; return this; }
         public Builder onlyMainContent(Boolean onlyMainContent) { this.onlyMainContent = onlyMainContent; return this; }
         public Builder timeout(Integer timeout) { this.timeout = timeout; return this; }
+        /** Parsers to use (e.g., "pdf" or PdfParser with maxPages, pages, blocks, pageMarkers). */
         public Builder parsers(List<Object> parsers) { this.parsers = parsers; return this; }
         public Builder skipTlsVerification(Boolean skipTlsVerification) { this.skipTlsVerification = skipTlsVerification; return this; }
         public Builder removeBase64Images(Boolean removeBase64Images) { this.removeBase64Images = removeBase64Images; return this; }

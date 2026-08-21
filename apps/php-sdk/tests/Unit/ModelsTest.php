@@ -14,6 +14,7 @@ use Firecrawl\Models\AgentOptions;
 use Firecrawl\Models\AuditMetadata;
 use Firecrawl\Models\MapOptions;
 use Firecrawl\Models\ParseOptions;
+use Firecrawl\Models\PDFParser;
 use Firecrawl\Models\QueryFormat;
 use Firecrawl\Models\QuestionFormat;
 use Firecrawl\Models\ScrapeOptions;
@@ -358,6 +359,20 @@ it('preserves positional integration in ScrapeOptions::with', function (): void 
     expect($options->toArray())->toMatchArray([
         'storeInCache' => false,
         'integration' => 'php-sdk',
+    ]);
+});
+
+it('serializes PDF parser pageMarkers in ScrapeOptions', function (): void {
+    $options = ScrapeOptions::with(
+        parsers: [PDFParser::with(mode: 'auto', pages: true, blocks: true, pageMarkers: true)],
+    );
+
+    expect($options->toArray()['parsers'][0])->toMatchArray([
+        'type' => 'pdf',
+        'mode' => 'auto',
+        'pages' => true,
+        'blocks' => true,
+        'pageMarkers' => true,
     ]);
 });
 

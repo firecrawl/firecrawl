@@ -262,6 +262,25 @@ class FirecrawlClientTest {
     }
 
     @Test
+    void testPdfParserSerializesPageMarkers() throws Exception {
+        PdfParser parser = PdfParser.builder()
+                .mode("auto")
+                .pages(true)
+                .blocks(true)
+                .pageMarkers(true)
+                .build();
+
+        com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+        String json = mapper.writeValueAsString(parser);
+
+        assertTrue(json.contains("\"type\":\"pdf\""));
+        assertTrue(json.contains("\"mode\":\"auto\""));
+        assertTrue(json.contains("\"pages\":true"));
+        assertTrue(json.contains("\"blocks\":true"));
+        assertTrue(json.contains("\"pageMarkers\":true"));
+    }
+
+    @Test
     void testDocumentDeserializesPages() throws Exception {
         String json = "{\"markdown\":\"# Annual Report 2025\",\"pages\":["
                 + "{\"pageNumber\":1,\"markdown\":\"# Cover\"},"

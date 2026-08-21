@@ -67,16 +67,17 @@ func TestScrapeOptionsPreservesStringFormats(t *testing.T) {
 func TestScrapeOptionsSerializesPDFParserPagesAndBlocks(t *testing.T) {
 	pages := true
 	blocks := true
+	pageMarkers := true
 	payload, err := json.Marshal(ScrapeOptions{
 		Parsers: []interface{}{
-			PDFParser{Type: "pdf", Mode: "auto", Pages: &pages, Blocks: &blocks},
+			PDFParser{Type: "pdf", Mode: "auto", Pages: &pages, Blocks: &blocks, PageMarkers: &pageMarkers},
 		},
 	})
 	if err != nil {
 		t.Fatalf("Marshal ScrapeOptions: %v", err)
 	}
 
-	want := `"parsers":[{"type":"pdf","mode":"auto","pages":true,"blocks":true}]`
+	want := `"parsers":[{"type":"pdf","mode":"auto","pages":true,"blocks":true,"pageMarkers":true}]`
 	if !strings.Contains(string(payload), want) {
 		t.Fatalf("serialized parsers = %s, want to contain %s", payload, want)
 	}

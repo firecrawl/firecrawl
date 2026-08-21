@@ -89,9 +89,9 @@ describe("v2 utils: validation", () => {
     expect(options.parsers).toEqual(before);
   });
 
-  test("ensureValidScrapeOptions: leaves PDF parser pages and blocks options untouched", () => {
+  test("ensureValidScrapeOptions: leaves PDF parser pages, blocks, and pageMarkers options untouched", () => {
     const options = {
-      parsers: [{ type: "pdf", mode: "auto", blocks: true, pages: true }],
+      parsers: [{ type: "pdf", mode: "auto", blocks: true, pages: true, pageMarkers: true }],
     } as any;
     expect(() => ensureValidScrapeOptions(options)).not.toThrow();
     expect(options.parsers[0]).toEqual({
@@ -99,6 +99,7 @@ describe("v2 utils: validation", () => {
       mode: "auto",
       blocks: true,
       pages: true,
+      pageMarkers: true,
     });
   });
 

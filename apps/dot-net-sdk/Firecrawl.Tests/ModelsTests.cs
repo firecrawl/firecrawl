@@ -427,6 +427,25 @@ public class ModelsTests
     }
 
     [Fact]
+    public void PdfParser_SerializesPageMarkers()
+    {
+        var parser = new PdfParser
+        {
+            Mode = "auto",
+            Pages = true,
+            Blocks = true,
+            PageMarkers = true
+        };
+
+        var json = JsonSerializer.Serialize(parser, JsonOptions);
+        Assert.Contains("\"type\":\"pdf\"", json);
+        Assert.Contains("\"mode\":\"auto\"", json);
+        Assert.Contains("\"pages\":true", json);
+        Assert.Contains("\"blocks\":true", json);
+        Assert.Contains("\"pageMarkers\":true", json);
+    }
+
+    [Fact]
     public void JsonFormat_HasCorrectType()
     {
         var format = new JsonFormat

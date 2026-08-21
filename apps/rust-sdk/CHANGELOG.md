@@ -1,5 +1,12 @@
 ## CHANGELOG
 
+## [2.16.0] - 2026-08-21
+
+### Added
+
+- Added `ParserConfig::Pdf.page_markers` to join PDF pages in
+  `document.markdown` with `\n\n---\n\n<!-- page N -->\n\n`.
+
 ## [2.15.0] - 2026-08-21
 
 ### Added
