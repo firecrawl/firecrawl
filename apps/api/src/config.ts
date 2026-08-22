@@ -240,18 +240,6 @@ const configSchema = z.object({
   SCRAPEURL_AB_RATE: z.coerce.number().optional(),
   SCRAPEURL_AB_EXTEND_MAXAGE: z.stringbool().optional(),
   SCRAPEURL_ENGINE_WATERFALL_DELAY_MS: z.coerce.number().default(0),
-  // fire-engine job budget when the caller set no scrape timeout: engine
-  // max-reasonable-time plus slack, capped.
-  SCRAPEURL_FIRE_ENGINE_TIMEOUT_SLACK_MS: z.coerce
-    .number()
-    .int()
-    .positive()
-    .default(30000),
-  SCRAPEURL_FIRE_ENGINE_MAX_DEFAULT_TIMEOUT_MS: z.coerce
-    .number()
-    .int()
-    .positive()
-    .default(300000),
 
   // Scrape Retry Limits
   SCRAPE_MAX_ATTEMPTS: z.coerce.number().int().positive().default(6),

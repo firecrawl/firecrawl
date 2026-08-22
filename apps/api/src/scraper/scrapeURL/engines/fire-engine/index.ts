@@ -40,7 +40,6 @@ import { getBrandingScript } from "./brandingScript";
 import { abTestFireEngine } from "../../../../services/ab-test";
 import { scheduleABComparison } from "../../../../services/ab-test-comparison";
 import { createHash } from "node:crypto";
-import { config } from "../../../../config";
 
 /** Default wait (ms) before running the branding script when user did not set waitFor. Lets the page settle so DOM/images are ready and reduces JS errors. */
 const BRANDING_DEFAULT_WAIT_MS = 2000;
@@ -641,26 +640,14 @@ export async function scrapeURLWithFireEngineTLSClient(
   });
 }
 
-/**
- * Job budget handed to fire-engine. Without an explicit scrape timeout it
- * follows what the waterfall waits for (max reasonable time plus slack): a
- * longer budget only keeps a worker slot busy after the waterfall has moved on.
- */
+/** Without a scrape timeout, give fire-engine the waterfall's wait plus slack rather than 300 s. */
 export function fireEngineJobTimeout(
   meta: Meta,
   engine: "chrome-cdp" | "tlsclient",
 ): number {
-  const explicit = meta.abort.scrapeTimeout();
-  if (explicit !== undefined) {
-    return explicit;
-  }
-  return Math.min(
-    config.SCRAPEURL_FIRE_ENGINE_MAX_DEFAULT_TIMEOUT_MS,
-    fireEngineMaxReasonableTime(meta, engine) +
-      Math.max(
-        config.SCRAPEURL_FIRE_ENGINE_TIMEOUT_SLACK_MS,
-        config.SCRAPEURL_ENGINE_WATERFALL_DELAY_MS,
-      ),
+  return (
+    meta.abort.scrapeTimeout() ??
+    Math.min(fireEngineMaxReasonableTime(meta, engine) + 30000, 300000)
   );
 }
 
