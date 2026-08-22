@@ -2,7 +2,7 @@ import {
   ALLOW_TEST_SUITE_WEBSITE,
   describeIf,
   HAS_AI,
-  testIf,
+  concurrentIf,
   TEST_PRODUCTION,
   TEST_SUITE_WEBSITE,
 } from "../lib";
@@ -98,10 +98,8 @@ describeIf(TEST_PRODUCTION || (HAS_AI && ALLOW_TEST_SUITE_WEBSITE))(
       scrapeTimeout,
     );
 
-    // Credit-delta assertions need real per-team isolation, which self-hosted
-    // idmux doesn't provide (it falls back to one shared static identity) --
-    // same reason billing.test.ts's whole suite is TEST_PRODUCTION-only.
-    testIf(TEST_PRODUCTION)(
+    // Self-hosted idmux has no per-team isolation, like billing.test.ts.
+    concurrentIf(TEST_PRODUCTION)(
       "bills 5 credits when checkPromptInjection blocks a prompt injection",
       async () => {
         const blockedIdentity = await idmux({

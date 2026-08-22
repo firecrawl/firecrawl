@@ -113,15 +113,12 @@ export async function calculateCreditsToBeBilled(
       creditsToBeBilled = 1;
     }
 
-    // The guard call cost money even if extraction then failed separately.
-    if (
-      creditsToBeBilled === 0 &&
-      costTrackingJSON.calls?.some(
-        call =>
-          call.metadata?.module === "scrapeURL" &&
-          call.metadata?.method === "checkForPromptInjection",
-      )
-    ) {
+    const promptInjectionGuardRan = costTrackingJSON.calls?.some(
+      call =>
+        call.metadata?.module === "scrapeURL" &&
+        call.metadata?.method === "checkForPromptInjection",
+    );
+    if (creditsToBeBilled === 0 && promptInjectionGuardRan) {
       creditsToBeBilled = 5;
     }
 
@@ -157,7 +154,14 @@ export async function calculateCreditsToBeBilled(
   }
 
   if (hasFormatOfType(options.formats, "json")?.checkPromptInjection) {
-    creditsToBeBilled += 4;
+    const promptInjectionGuardRan = costTrackingJSON.calls?.some(
+      call =>
+        call.metadata?.module === "scrapeURL" &&
+        call.metadata?.method === "checkForPromptInjection",
+    );
+    if (promptInjectionGuardRan) {
+      creditsToBeBilled += 4;
+    }
   }
 
   if (hasFormatOfType(options.formats, "deterministicJson")) {

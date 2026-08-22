@@ -23,6 +23,7 @@ import {
   Identity,
   scrapeRaw,
   extractRaw,
+  creditUsage,
   TEST_API_URL,
 } from "./lib";
 import request from "./lib";
@@ -380,7 +381,7 @@ describe("Scrape tests", () => {
   );
 
   itIf(TEST_PRODUCTION || (HAS_AI && ALLOW_TEST_SUITE_WEBSITE))(
-    "blocks and bills 5 credits when checkPromptInjection detects a prompt injection",
+    "blocks when checkPromptInjection detects a prompt injection",
     async () => {
       const raw = await scrapeRaw(
         {
@@ -407,6 +408,42 @@ describe("Scrape tests", () => {
       expect(typeof raw.body.error).toBe("string");
     },
     scrapeTimeout,
+  );
+
+  // Self-hosted idmux has no per-team isolation, like billing.test.ts.
+  concurrentIf(TEST_PRODUCTION)(
+    "bills 5 credits when checkPromptInjection blocks a prompt injection",
+    async () => {
+      const blockedIdentity = await idmux({
+        name: "v2-scrape/prompt-injection-blocked",
+        credits: 1000,
+      });
+      const rc1 = (await creditUsage(blockedIdentity)).remainingCredits;
+
+      await scrapeRaw(
+        {
+          url: `${TEST_SUITE_WEBSITE}/prompt-injection`,
+          formats: [
+            {
+              type: "json",
+              schema: {
+                type: "object",
+                properties: { title: { type: "string" } },
+                required: ["title"],
+              },
+              checkPromptInjection: true,
+            },
+          ],
+          timeout: scrapeTimeout,
+        },
+        blockedIdentity,
+      );
+
+      await new Promise(resolve => setTimeout(resolve, 40000));
+      const rc2 = (await creditUsage(blockedIdentity)).remainingCredits;
+      expect(rc1 - rc2).toBe(5);
+    },
+    scrapeTimeout + 40000,
   );
 
   itIf(TEST_SELF_HOST && !HAS_FIRE_ENGINE && ALLOW_TEST_SUITE_WEBSITE)(
