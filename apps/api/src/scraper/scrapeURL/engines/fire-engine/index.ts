@@ -657,7 +657,10 @@ export function fireEngineJobTimeout(
   return Math.min(
     config.SCRAPEURL_FIRE_ENGINE_MAX_DEFAULT_TIMEOUT_MS,
     fireEngineMaxReasonableTime(meta, engine) +
-      config.SCRAPEURL_FIRE_ENGINE_TIMEOUT_SLACK_MS,
+      Math.max(
+        config.SCRAPEURL_FIRE_ENGINE_TIMEOUT_SLACK_MS,
+        config.SCRAPEURL_ENGINE_WATERFALL_DELAY_MS,
+      ),
   );
 }
 

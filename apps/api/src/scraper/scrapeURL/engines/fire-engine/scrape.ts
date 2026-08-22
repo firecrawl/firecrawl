@@ -203,9 +203,7 @@ export async function fireEngineScrape<
     headers: {},
     body: request,
     logger: logger.child({ method: "fireEngineScrape/robustFetch" }),
-    // A retried POST creates a second fire-engine job whose id is never
-    // learned, so it can't be cancelled; the waterfall retries above this.
-    tryCount: 1,
+    tryCount: 3,
     ignoreFailureStatus: true, // sends 500 on processing and various codes on errors
     mock,
     abort,
