@@ -40,6 +40,7 @@ import { getBrandingScript } from "./brandingScript";
 import { abTestFireEngine } from "../../../../services/ab-test";
 import { scheduleABComparison } from "../../../../services/ab-test-comparison";
 import { createHash } from "node:crypto";
+import { config } from "../../../../config";
 
 /** Default wait (ms) before running the branding script when user did not set waitFor. Lets the page settle so DOM/images are ready and reduces JS errors. */
 const BRANDING_DEFAULT_WAIT_MS = 2000;
@@ -442,7 +443,7 @@ export async function scrapeURLWithFireEngineChromeCDP(
       priority: meta.internalOptions.priority,
       geolocation: meta.options.location,
       mobile: meta.options.mobile,
-      timeout: meta.abort.scrapeTimeout() ?? 300000,
+      timeout: fireEngineJobTimeout(meta, "chrome-cdp"),
       disableSmartWaitCache: meta.internalOptions.disableSmartWaitCache,
       mobileProxy: meta.featureFlags.has("stealthProxy"),
       autoProxy: meta.options.proxy === "auto",
@@ -591,7 +592,7 @@ export async function scrapeURLWithFireEngineTLSClient(
       mobileProxy: meta.featureFlags.has("stealthProxy"),
       autoProxy: meta.options.proxy === "auto",
 
-      timeout: meta.abort.scrapeTimeout() ?? 300000,
+      timeout: fireEngineJobTimeout(meta, "tlsclient"),
       maxAge: meta.options.maxAge,
       saveScrapeResultToGCS:
         !meta.internalOptions.zeroDataRetention &&
@@ -638,6 +639,26 @@ export async function scrapeURLWithFireEngineTLSClient(
       timezone: response.timezone,
     };
   });
+}
+
+/**
+ * Job budget handed to fire-engine. Without an explicit scrape timeout it
+ * follows what the waterfall waits for (max reasonable time plus slack): a
+ * longer budget only keeps a worker slot busy after the waterfall has moved on.
+ */
+export function fireEngineJobTimeout(
+  meta: Meta,
+  engine: "chrome-cdp" | "tlsclient",
+): number {
+  const explicit = meta.abort.scrapeTimeout();
+  if (explicit !== undefined) {
+    return explicit;
+  }
+  return Math.min(
+    config.SCRAPEURL_FIRE_ENGINE_MAX_DEFAULT_TIMEOUT_MS,
+    fireEngineMaxReasonableTime(meta, engine) +
+      config.SCRAPEURL_FIRE_ENGINE_TIMEOUT_SLACK_MS,
+  );
 }
 
 export function fireEngineMaxReasonableTime(
