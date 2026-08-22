@@ -650,7 +650,8 @@ export function fireEngineJobTimeout(
     meta.abort.scrapeTimeout() ??
     Math.min(
       fireEngineMaxReasonableTime(meta, engine) +
-        Math.max(30000, config.SCRAPEURL_ENGINE_WATERFALL_DELAY_MS),
+        config.SCRAPEURL_ENGINE_WATERFALL_DELAY_MS +
+        30000,
       300000,
     )
   );
