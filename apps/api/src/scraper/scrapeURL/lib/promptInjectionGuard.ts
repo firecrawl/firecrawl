@@ -1,7 +1,15 @@
 import crypto from "crypto";
 import { Logger } from "winston";
 import { z } from "zod";
-import { APICallError, generateObject, NoObjectGeneratedError } from "ai";
+import {
+  generateObject,
+  InvalidPromptError,
+  LoadAPIKeyError,
+  LoadSettingError,
+  NoObjectGeneratedError,
+  NoSuchModelError,
+  UnsupportedFunctionalityError,
+} from "ai";
 import { getModel } from "../../../lib/generic-ai";
 import { CostLimitExceededError, CostTracking } from "../../../lib/cost-tracking";
 import { calculateCost, trimToTokenLimit } from "../transformers/llmExtract";
@@ -127,10 +135,16 @@ export async function checkForPromptInjection({
       throw error;
     }
 
-    const dispatched =
-      NoObjectGeneratedError.isInstance(error) ||
-      APICallError.isInstance(error);
-    if (dispatched) {
+    // Bill for anything except errors known to never reach the network --
+    // new SDK error types default to "billed" rather than needing allowlisting.
+    const neverDispatched = [
+      InvalidPromptError,
+      NoSuchModelError,
+      UnsupportedFunctionalityError,
+      LoadAPIKeyError,
+      LoadSettingError,
+    ].some(ErrorClass => ErrorClass.isInstance(error));
+    if (!neverDispatched) {
       recordGuardCall(costTracking, modelId, 0, 0);
     }
 
