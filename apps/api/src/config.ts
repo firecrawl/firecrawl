@@ -239,7 +239,7 @@ const configSchema = z.object({
   SCRAPEURL_AB_HOST: z.string().optional(),
   SCRAPEURL_AB_RATE: z.coerce.number().optional(),
   SCRAPEURL_AB_EXTEND_MAXAGE: z.stringbool().optional(),
-  SCRAPEURL_ENGINE_WATERFALL_DELAY_MS: z.coerce.number().default(0),
+  SCRAPEURL_ENGINE_WATERFALL_DELAY_MS: z.coerce.number().nonnegative().default(0),
 
   // Scrape Retry Limits
   SCRAPE_MAX_ATTEMPTS: z.coerce.number().int().positive().default(6),
