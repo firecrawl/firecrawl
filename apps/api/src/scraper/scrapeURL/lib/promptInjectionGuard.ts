@@ -1,7 +1,7 @@
 import crypto from "crypto";
 import { Logger } from "winston";
 import { z } from "zod";
-import { generateObject, NoObjectGeneratedError } from "ai";
+import { APICallError, generateObject, NoObjectGeneratedError } from "ai";
 import { getModel } from "../../../lib/generic-ai";
 import { CostLimitExceededError, CostTracking } from "../../../lib/cost-tracking";
 import { calculateCost, trimToTokenLimit } from "../transformers/llmExtract";
@@ -127,8 +127,12 @@ export async function checkForPromptInjection({
       throw error;
     }
 
-    // The dispatched request is likely billed by the provider regardless.
-    recordGuardCall(costTracking, modelId, 0, 0);
+    const dispatched =
+      NoObjectGeneratedError.isInstance(error) ||
+      APICallError.isInstance(error);
+    if (dispatched) {
+      recordGuardCall(costTracking, modelId, 0, 0);
+    }
 
     if (!NoObjectGeneratedError.isInstance(error)) {
       captureExceptionWithZdrCheck(error, {
