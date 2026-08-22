@@ -222,6 +222,7 @@ export const extractOptions = z
     systemPrompt: z.string().max(10000).prefault(""),
     prompt: z.string().max(10000).optional(),
     temperature: z.number().optional(),
+    checkPromptInjection: z.boolean().optional(),
   })
   .transform(data => ({
     ...data,
@@ -256,6 +257,7 @@ const extractOptionsWithAgent = z
     systemPrompt: z.string().max(10000).prefault(""),
     prompt: z.string().max(10000).optional(),
     temperature: z.number().optional(),
+    checkPromptInjection: z.boolean().optional(),
     agent: z
       .strictObject({
         model: z.string().prefault(agentExtractModelValue),

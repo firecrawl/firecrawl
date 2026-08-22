@@ -113,6 +113,18 @@ export async function calculateCreditsToBeBilled(
       creditsToBeBilled = 1;
     }
 
+    // The guard call cost money even if extraction then failed separately.
+    if (
+      creditsToBeBilled === 0 &&
+      costTrackingJSON.calls?.some(
+        call =>
+          call.metadata?.module === "scrapeURL" &&
+          call.metadata?.method === "checkForPromptInjection",
+      )
+    ) {
+      creditsToBeBilled = 5;
+    }
+
     // Failed scrapes bill no base cost (except the cases above), but threat
     // protection scans that already happened still bill — including scrapes
     // blocked by the policy itself.
@@ -142,6 +154,10 @@ export async function calculateCreditsToBeBilled(
     changeTrackingFormat?.modes?.includes("json")
   ) {
     creditsToBeBilled = 5;
+  }
+
+  if (hasFormatOfType(options.formats, "json")?.checkPromptInjection) {
+    creditsToBeBilled += 4;
   }
 
   if (hasFormatOfType(options.formats, "deterministicJson")) {

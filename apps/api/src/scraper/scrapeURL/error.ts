@@ -558,6 +558,29 @@ export class MediaAccessDeniedError extends TransportableError {
   }
 }
 
+export class PromptInjectionDetectedError extends TransportableError {
+  constructor(message?: string) {
+    super(
+      "SCRAPE_PROMPT_INJECTION_DETECTED",
+      message ??
+        "The scraped page content appears to contain a prompt injection attempt, so JSON extraction was aborted for safety.",
+    );
+  }
+
+  serialize() {
+    return super.serialize();
+  }
+
+  static deserialize(
+    _: ErrorCodes,
+    data: ReturnType<typeof this.prototype.serialize>,
+  ) {
+    const x = new PromptInjectionDetectedError(data.message);
+    x.stack = data.stack;
+    return x;
+  }
+}
+
 const MAX_MEDIA_SERVICE_MESSAGE_LENGTH = 500;
 
 // The media service reports terminal, user-facing failures as a structured

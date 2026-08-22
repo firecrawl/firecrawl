@@ -6,6 +6,7 @@ import {
   generateSchemaFromPrompt,
 } from "../transformers/llmExtract";
 import { smartScrape } from "./smartScrape";
+import { checkForPromptInjection } from "./promptInjectionGuard";
 import { parseMarkdown } from "../../../lib/html-to-markdown";
 import { getModel } from "../../../lib/generic-ai";
 import { TokenUsage } from "../../../controllers/v1/types";
@@ -349,6 +350,15 @@ export async function extractData({
   let extract: any,
     warning: string | undefined,
     totalUsage: TokenUsage | undefined;
+
+  if (extractOptions.options.checkPromptInjection) {
+    await checkForPromptInjection({
+      markdown: extractOptions.markdown,
+      logger,
+      costTracking: extractOptions.costTrackingOptions.costTracking,
+      metadata,
+    });
+  }
 
   // checks if using smartScrape is needed for this case
   try {

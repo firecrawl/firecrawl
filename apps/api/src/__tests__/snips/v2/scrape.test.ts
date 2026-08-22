@@ -379,6 +379,36 @@ describe("Scrape tests", () => {
     scrapeTimeout,
   );
 
+  itIf(TEST_PRODUCTION || (HAS_AI && ALLOW_TEST_SUITE_WEBSITE))(
+    "blocks and bills 5 credits when checkPromptInjection detects a prompt injection",
+    async () => {
+      const raw = await scrapeRaw(
+        {
+          url: `${TEST_SUITE_WEBSITE}/prompt-injection`,
+          formats: [
+            {
+              type: "json",
+              schema: {
+                type: "object",
+                properties: { title: { type: "string" } },
+                required: ["title"],
+              },
+              checkPromptInjection: true,
+            },
+          ],
+          timeout: scrapeTimeout,
+        },
+        identity,
+      );
+
+      expect(raw.statusCode).toBe(403);
+      expect(raw.body.success).toBe(false);
+      expect(raw.body.code).toBe("SCRAPE_PROMPT_INJECTION_DETECTED");
+      expect(typeof raw.body.error).toBe("string");
+    },
+    scrapeTimeout,
+  );
+
   itIf(TEST_SELF_HOST && !HAS_FIRE_ENGINE && ALLOW_TEST_SUITE_WEBSITE)(
     "does not reject empty actions array without fire-engine",
     async () => {
