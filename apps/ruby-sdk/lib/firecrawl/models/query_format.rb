@@ -42,6 +42,30 @@ module Firecrawl
       end
     end
 
+    # JSON format for extracting structured data from page content using a schema.
+    class JsonFormat
+      attr_reader :schema, :prompt, :check_prompt_injection
+
+      def initialize(schema: nil, prompt: nil, check_prompt_injection: nil)
+        @schema = schema
+        @prompt = prompt
+        @check_prompt_injection = check_prompt_injection
+      end
+
+      def to_h
+        {
+          "type" => "json",
+          "schema" => schema,
+          "prompt" => prompt,
+          "checkPromptInjection" => check_prompt_injection,
+        }.compact
+      end
+
+      def type
+        "json"
+      end
+    end
+
     # Deprecated query format for asking a question about page content.
     class QueryFormat
       MODE_FREEFORM = "freeform"

@@ -10,6 +10,7 @@ final class JsonFormat
         private readonly ?string $prompt = null,
         /** @var array<string, mixed>|null */
         private readonly ?array $schema = null,
+        private readonly ?bool $checkPromptInjection = null,
     ) {}
 
     /**
@@ -18,8 +19,9 @@ final class JsonFormat
     public static function with(
         ?string $prompt = null,
         ?array $schema = null,
+        ?bool $checkPromptInjection = null,
     ): self {
-        return new self($prompt, $schema);
+        return new self($prompt, $schema, $checkPromptInjection);
     }
 
     /** @return array<string, mixed> */
@@ -29,6 +31,7 @@ final class JsonFormat
             'type' => 'json',
             'prompt' => $this->prompt,
             'schema' => $this->schema,
+            'checkPromptInjection' => $this->checkPromptInjection,
         ], fn (mixed $v): bool => $v !== null);
     }
 
@@ -41,5 +44,10 @@ final class JsonFormat
     public function getSchema(): ?array
     {
         return $this->schema;
+    }
+
+    public function getCheckPromptInjection(): ?bool
+    {
+        return $this->checkPromptInjection;
     }
 }

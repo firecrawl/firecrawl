@@ -212,8 +212,9 @@ type WebhookConfig struct {
 
 // JsonOptions configures JSON extraction within formats.
 type JsonOptions struct {
-	Prompt string                 `json:"prompt,omitempty"`
-	Schema map[string]interface{} `json:"schema,omitempty"`
+	Prompt               string                 `json:"prompt,omitempty"`
+	Schema               map[string]interface{} `json:"schema,omitempty"`
+	CheckPromptInjection *bool                  `json:"checkPromptInjection,omitempty"`
 }
 
 // Pointer helpers for optional fields.

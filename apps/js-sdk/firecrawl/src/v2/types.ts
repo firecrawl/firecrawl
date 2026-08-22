@@ -31,6 +31,7 @@ export interface JsonFormat extends Format {
   type: "json";
   prompt?: string;
   schema?: Record<string, unknown> | ZodTypeAny;
+  checkPromptInjection?: boolean;
 }
 
 export interface ScreenshotFormat {

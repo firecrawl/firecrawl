@@ -682,6 +682,7 @@ class JsonFormat(Format):
     type: Literal["json"] = "json"
     prompt: Optional[str] = None
     schema: Optional[Any] = None
+    check_prompt_injection: Optional[bool] = None
 
 
 class ChangeTrackingFormat(Format):

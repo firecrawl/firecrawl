@@ -333,6 +333,8 @@ pub struct JsonOptions {
     pub system_prompt: Option<String>,
     /// Extraction prompt for the LLM agent.
     pub prompt: Option<String>,
+    /// Whether to check scraped content for prompt-injection attempts before extraction.
+    pub check_prompt_injection: Option<bool>,
 }
 
 /// Location configuration for proxy routing.
