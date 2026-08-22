@@ -40,6 +40,7 @@ import { getBrandingScript } from "./brandingScript";
 import { abTestFireEngine } from "../../../../services/ab-test";
 import { scheduleABComparison } from "../../../../services/ab-test-comparison";
 import { createHash } from "node:crypto";
+import { config } from "../../../../config";
 
 /** Default wait (ms) before running the branding script when user did not set waitFor. Lets the page settle so DOM/images are ready and reduces JS errors. */
 const BRANDING_DEFAULT_WAIT_MS = 2000;
@@ -647,7 +648,11 @@ export function fireEngineJobTimeout(
 ): number {
   return (
     meta.abort.scrapeTimeout() ??
-    Math.min(fireEngineMaxReasonableTime(meta, engine) + 30000, 300000)
+    Math.min(
+      fireEngineMaxReasonableTime(meta, engine) +
+        Math.max(30000, config.SCRAPEURL_ENGINE_WATERFALL_DELAY_MS),
+      300000,
+    )
   );
 }
 
