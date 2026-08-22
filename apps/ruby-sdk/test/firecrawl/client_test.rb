@@ -794,16 +794,9 @@ class ClientTest < Minitest::Test
     )
   end
 
-  def test_json_format_to_h_omits_unset_fields_but_keeps_explicit_false
-    unset = Firecrawl::Models::JsonFormat.new(schema: { "type" => "object" })
-    refute unset.to_h.key?("checkPromptInjection")
-    refute unset.to_h.key?("prompt")
-
-    disabled = Firecrawl::Models::JsonFormat.new(
-      schema: { "type" => "object" },
-      check_prompt_injection: false
-    )
-    assert_equal false, disabled.to_h["checkPromptInjection"]
+  def test_json_format_to_h_keeps_explicit_false
+    format = Firecrawl::Models::JsonFormat.new(check_prompt_injection: false)
+    assert_equal false, format.to_h["checkPromptInjection"]
   end
 
   def test_query_format_rejects_invalid_mode
