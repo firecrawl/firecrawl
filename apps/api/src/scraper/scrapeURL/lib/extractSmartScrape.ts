@@ -473,6 +473,15 @@ export async function extractData({
       // console.log("markdowns", markdowns);
       extractedData = await Promise.all(
         markdowns.map(async markdown => {
+          if (extractOptions.options.checkPromptInjection) {
+            await checkForPromptInjection({
+              markdown,
+              logger,
+              costTracking: extractOptions.costTrackingOptions.costTracking,
+              metadata,
+            });
+          }
+
           const newExtractOptions = {
             ...extractOptions,
             markdown: markdown,

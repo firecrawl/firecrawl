@@ -155,6 +155,8 @@ export async function checkForPromptInjection({
       });
     }
 
+    // Deliberately fail-open: a guard outage shouldn't take down the whole
+    // scrape just because the opt-in security check couldn't run.
     logger.warn(
       "Prompt injection guard call failed; proceeding without a guard verdict (fail-open)",
       { error },
