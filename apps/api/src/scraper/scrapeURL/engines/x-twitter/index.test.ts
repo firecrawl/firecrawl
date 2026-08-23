@@ -1,8 +1,11 @@
 import { generateText } from "ai";
 import { config } from "../../../../config";
-import { EngineError, XTwitterConfigurationError } from "../../error";
+import {
+  XTwitterConfigurationError,
+  XTwitterProfileNotFoundError,
+} from "../../error";
 import { safeMarkdownToHtml } from "../pdf/markdownToHtml";
-import { scrapeURLWithXTwitter } from "./index";
+import { scrapeURLWithXTwitter, xTwitterMaxReasonableTime } from "./index";
 
 const sdk = vi.hoisted(() => ({
   constructor: vi.fn(),
@@ -33,15 +36,15 @@ vi.mock("x-twitter-scraper", () => ({
 
 vi.mock("@ai-sdk/xai", () => ({
   xai: {
-    responses: vi.fn(() => "grok-model"),
-    tools: { xSearch: vi.fn(() => "x-search-tool") },
+    responses: () => "grok-model",
+    tools: { xSearch: () => "x-search-tool" },
   },
 }));
 
 vi.mock("ai", () => ({
   generateText: vi.fn(),
-  jsonSchema: vi.fn(schema => schema),
-  Output: { object: vi.fn(options => options) },
+  jsonSchema: (schema: unknown) => schema,
+  Output: { object: (options: unknown) => options },
 }));
 
 vi.mock("../pdf/markdownToHtml", () => ({
@@ -101,10 +104,13 @@ function searchTweet(
 
 describe("X/Twitter engine with Xquik", () => {
   beforeEach(() => {
-    vi.clearAllMocks();
+    vi.resetAllMocks();
     mutableConfig.X_TWITTER_SCRAPER_API_KEY = "xquik-test-key";
     mutableConfig.X_TWITTER_SCRAPER_BASE_URL = "https://xquik.test/api/v1";
     mutableConfig.XAI_API_KEY = undefined;
+    vi.mocked(safeMarkdownToHtml).mockImplementation(
+      async markdown => `<article>${markdown}</article>`,
+    );
     sdk.getReplies.mockResolvedValue({
       has_next_page: false,
       next_cursor: "",
@@ -146,7 +152,7 @@ describe("X/Twitter engine with Xquik", () => {
     });
 
     const result = await scrapeURLWithXTwitter(meta);
-    const signal = meta.abort.asSignal.mock.results[0].value;
+    const signal = sdk.retrieve.mock.calls[0][1].signal;
 
     expect(sdk.constructor).toHaveBeenCalledWith({
       apiKey: "xquik-test-key",
@@ -178,6 +184,11 @@ describe("X/Twitter engine with Xquik", () => {
       meta.id,
     );
     expect(generateText).not.toHaveBeenCalled();
+    expect(meta.logger.info).toHaveBeenCalledWith("Fetching X/Twitter data", {
+      kind: "post",
+      provider: "Xquik",
+      url: "https://x.com/firecrawl/status/123456789",
+    });
   });
 
   it("resolves an exact profile and returns its latest top-level posts", async () => {
@@ -204,7 +215,7 @@ describe("X/Twitter engine with Xquik", () => {
     });
 
     const result = await scrapeURLWithXTwitter(meta);
-    const signal = meta.abort.asSignal.mock.results[0].value;
+    const signal = sdk.searchUsers.mock.calls[0][1].signal;
 
     expect(sdk.searchUsers).toHaveBeenCalledWith(
       { q: "Firecrawl", usernameContains: "Firecrawl" },
@@ -227,6 +238,8 @@ describe("X/Twitter engine with Xquik", () => {
     expect(result.markdown).toContain(
       "https://x.com/firecrawl/status/223456789",
     );
+    expect(sdk.search.mock.calls[0][1].signal).toBe(signal);
+    expect(xTwitterMaxReasonableTime(meta)).toBe(31000);
   });
 
   it("rejects a fuzzy user-search result", async () => {
@@ -238,9 +251,7 @@ describe("X/Twitter engine with Xquik", () => {
 
     await expect(
       scrapeURLWithXTwitter(makeMeta("https://x.com/firecrawl")),
-    ).rejects.toEqual(
-      new EngineError("X/Twitter profile not found: @firecrawl"),
-    );
+    ).rejects.toEqual(new XTwitterProfileNotFoundError("firecrawl"));
     expect(sdk.search).not.toHaveBeenCalled();
   });
 

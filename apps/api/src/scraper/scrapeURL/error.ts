@@ -9,6 +9,12 @@ export class EngineError extends Error {
   }
 }
 
+export class XTwitterProfileNotFoundError extends EngineError {
+  constructor(handle: string) {
+    super(`X/Twitter profile not found: @${handle}`);
+  }
+}
+
 export class XTwitterConfigurationError extends TransportableError {
   constructor() {
     super(

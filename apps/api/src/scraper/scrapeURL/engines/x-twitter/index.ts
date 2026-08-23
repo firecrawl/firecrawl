@@ -4,11 +4,16 @@ import XTwitterScraper from "x-twitter-scraper";
 import { config } from "../../../../config";
 import { Meta } from "../..";
 import { EngineScrapeResult } from "..";
-import { EngineError, XTwitterConfigurationError } from "../../error";
+import {
+  EngineError,
+  XTwitterConfigurationError,
+  XTwitterProfileNotFoundError,
+} from "../../error";
 import { safeMarkdownToHtml } from "../pdf/markdownToHtml";
 
 const XAI_RESPONSES_MODEL = "grok-4-1-fast-non-reasoning";
 const XQUIK_REQUEST_TIMEOUT_MS = 30000;
+const XQUIK_WATERFALL_GRACE_MS = 1000;
 
 const RESERVED_PROFILE_PATHS = new Set([
   "compose",
@@ -337,13 +342,11 @@ export async function scrapeURLWithXTwitter(
     throw new XTwitterConfigurationError();
   }
 
-  meta.logger.info(
-    `Fetching X/Twitter data through ${useXquik ? "Xquik" : "Grok"}`,
-    {
-      kind: xUrl.kind,
-      url: xUrl.normalizedUrl,
-    },
-  );
+  meta.logger.info("Fetching X/Twitter data", {
+    kind: xUrl.kind,
+    provider: useXquik ? "Xquik" : "Grok",
+    url: xUrl.normalizedUrl,
+  });
 
   const markdown =
     xUrl.kind === "profile"
@@ -376,7 +379,9 @@ export async function scrapeURLWithXTwitter(
 }
 
 export function xTwitterMaxReasonableTime(_meta: Meta): number {
-  return 30000;
+  return config.X_TWITTER_SCRAPER_API_KEY
+    ? XQUIK_REQUEST_TIMEOUT_MS + XQUIK_WATERFALL_GRACE_MS
+    : 30000;
 }
 
 function buildProfileMarkdown(profile: XTwitterProfileData): string {
@@ -621,7 +626,7 @@ async function fetchProfileWithXquik(
   meta: Meta,
 ): Promise<XTwitterProfileData> {
   const client = createXquikClient(meta);
-  const signal = meta.abort.asSignal();
+  const signal = createXquikSignal(meta);
   const profiles = await client.x.users.retrieveSearch(
     { q: xUrl.handle, usernameContains: xUrl.handle },
     { signal },
@@ -631,7 +636,7 @@ async function fetchProfileWithXquik(
   );
 
   if (!profile) {
-    throw new EngineError(`X/Twitter profile not found: @${xUrl.handle}`);
+    throw new XTwitterProfileNotFoundError(xUrl.handle);
   }
 
   const latestPosts = await client.x.tweets.search(
@@ -665,7 +670,7 @@ async function fetchPostWithXquik(
   meta: Meta,
 ): Promise<XTwitterPostData> {
   const client = createXquikClient(meta);
-  const signal = meta.abort.asSignal();
+  const signal = createXquikSignal(meta);
   const retrieved = await client.x.tweets.retrieve(xUrl.postId, { signal });
   const author = retrieved.author ?? retrieved.tweet.author;
   const authorUsername = author?.username ?? xUrl.handle;
@@ -753,6 +758,13 @@ function buildXquikTweetUrl(tweetId: string, username?: string): string {
   return handle
     ? `https://x.com/${handle}/status/${tweetId}`
     : `https://x.com/i/web/status/${tweetId}`;
+}
+
+function createXquikSignal(meta: Meta): AbortSignal {
+  return AbortSignal.any([
+    meta.abort.asSignal(),
+    AbortSignal.timeout(XQUIK_REQUEST_TIMEOUT_MS),
+  ]);
 }
 
 function isHandle(value: string): boolean {
