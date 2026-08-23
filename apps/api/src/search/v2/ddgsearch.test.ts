@@ -35,4 +35,11 @@ describe("cleanUrl", () => {
     expect(() => cleanUrl(href)).not.toThrow();
     expect(cleanUrl(href)).toBe(href);
   });
+
+  it("returns href unchanged when the DDG redirect URL itself is unparseable", () => {
+    // `new URL` throws TypeError for an invalid absolute URL.
+    const href = "http://[bad?uddg=https%3A%2F%2Fexample.com";
+    expect(() => cleanUrl(href)).not.toThrow();
+    expect(cleanUrl(href)).toBe(href);
+  });
 });
