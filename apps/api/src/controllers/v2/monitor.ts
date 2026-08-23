@@ -262,10 +262,11 @@ export async function listMonitorsController(
 
   // Every monitor here belongs to one team, so the plan threshold is resolved
   // once rather than per monitor -- a cold Autumn cache would otherwise fan
-  // one list request out into an entity fetch per monitor.
-  const thresholdMinutes = await monitorUnchangedFreeThresholdMinutes(
-    req.auth.team_id,
-  );
+  // one list request out into an entity fetch per monitor. An empty page
+  // needs no threshold at all.
+  const thresholdMinutes = monitors.length
+    ? await monitorUnchangedFreeThresholdMinutes(req.auth.team_id)
+    : null;
 
   res.status(200).json({
     success: true,
