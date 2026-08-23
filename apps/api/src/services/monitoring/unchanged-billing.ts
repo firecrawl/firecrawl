@@ -11,7 +11,7 @@ export function unchangedPagesFreeForInterval(
 /**
  * Whether this monitor's checks bill unchanged ("same") pages. Plan-gated:
  * eligible only when the schedule interval is at or above the team's Autumn
- * monitor_unchanged_free_min_interval grant (config default when ungranted).
+ * MONITOR_UNCHANGED_MIN_THRESHOLD grant (config default when ungranted).
  * Eligibility is a discount, so any failure resolves to false — billing stays
  * at the status quo rather than under-charging.
  */

@@ -437,7 +437,7 @@ const configSchema = z.object({
   DISABLE_ENGPICKER: z.stringbool().optional(),
   DISABLE_MONITORING: z.stringbool().default(false),
   // Threshold (minutes) for the monitor "unchanged pages are free" rule when
-  // the team's Autumn entity carries no monitor_unchanged_free_min_interval
+  // the team's Autumn entity carries no MONITOR_UNCHANGED_MIN_THRESHOLD
   // grant. Per-plan grants in Autumn override this; the default applies to
   // ungranted teams and during Autumn errors.
   MONITOR_UNCHANGED_FREE_DEFAULT_MIN_INTERVAL_MINUTES: z.coerce

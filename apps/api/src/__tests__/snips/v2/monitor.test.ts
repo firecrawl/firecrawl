@@ -575,7 +575,7 @@ describeIf(ALLOW_TEST_SUITE_WEBSITE && !TEST_SELF_HOST)("/v2/monitor", () => {
     "does not bill unchanged pages when the schedule meets the plan threshold",
     async () => {
       // Daily meets the default threshold (15m) that applies when the team
-      // has no monitor_unchanged_free_min_interval grant.
+      // has no MONITOR_UNCHANGED_MIN_THRESHOLD grant.
       const create = await monitorCreateRaw(
         {
           name: "unchanged-free monitor",

@@ -33,7 +33,7 @@ const RATE_LIMIT_FEATURE_ID = "rate_limits";
 // Static per-plan grant (minutes): monitor checks whose schedule interval is
 // at or above this threshold do not bill unchanged pages. Never consumed, so
 // read `granted` like rate_limits. Missing grant -> config default.
-const MONITOR_UNCHANGED_FREE_FEATURE_ID = "monitor_unchanged_free_min_interval";
+const MONITOR_UNCHANGED_FREE_FEATURE_ID = "MONITOR_UNCHANGED_MIN_THRESHOLD";
 
 /**
  * Coerces a raw Autumn balance figure into a usable non-negative number, or
@@ -789,7 +789,7 @@ export class AutumnService {
    * Minutes threshold for the monitor "unchanged pages are free" rule: checks
    * of monitors scheduled at or slower than this interval do not bill pages
    * whose content did not change. Read from the entity's per-plan
-   * monitor_unchanged_free_min_interval grant; a missing grant, missing
+   * MONITOR_UNCHANGED_MIN_THRESHOLD grant; a missing grant, missing
    * entity, or Autumn error falls back to the config default rather than a
    * per-request guess, so billing stays deterministic during outages.
    * Shares the cached entity fetch, so it adds no Autumn call.
