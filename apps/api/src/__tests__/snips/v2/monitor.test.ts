@@ -607,4 +607,40 @@ describeIf(ALLOW_TEST_SUITE_WEBSITE && !TEST_SELF_HOST)("/v2/monitor", () => {
     },
     4 * scrapeTimeout,
   );
+
+  it(
+    "keeps billing unchanged pages when the schedule is faster than the threshold",
+    async () => {
+      // 5 minutes is the fastest schedule the create-time floor allows, and it
+      // sits below the default threshold (15m) that applies when the team has
+      // no MONITOR_UNCHANGED_MIN_THRESHOLD grant.
+      const create = await monitorCreateRaw(
+        {
+          name: "sub-threshold monitor",
+          schedule: { cron: "*/5 * * * *", timezone: "UTC" },
+          targets: [
+            {
+              type: "scrape",
+              urls: [createTestIdUrl()],
+              scrapeOptions: { formats: ["markdown"] },
+            },
+          ],
+        },
+        identity,
+      );
+      expect(create.statusCode).toBe(200);
+      expect(create.body.data.unchangedPagesFree).toBe(false);
+      const monitorId = create.body.data.id;
+
+      const first = await runCheckToCompletion(monitorId);
+      expect(first.actualCredits).toBeGreaterThanOrEqual(1);
+
+      const second = await runCheckToCompletion(monitorId);
+      expect(second.summary.same).toBeGreaterThanOrEqual(1);
+      expect(second.actualCredits).toBeGreaterThanOrEqual(1);
+
+      await monitorDeleteRaw(monitorId, identity);
+    },
+    4 * scrapeTimeout,
+  );
 });

@@ -38,7 +38,11 @@ import {
   trackMonitorConfiguredInterest,
   trackMonitorDeactivatedInterest,
 } from "../../services/monitoring/interest";
-import { monitorUnchangedPagesFree } from "../../services/monitoring/unchanged-billing";
+import {
+  monitorUnchangedFreeThresholdMinutes,
+  monitorUnchangedPagesFree,
+  unchangedPagesFreeForMonitor,
+} from "../../services/monitoring/unchanged-billing";
 import {
   getLatestWebhookLog,
   getLatestWebhookLogsByJob,
@@ -256,14 +260,22 @@ export async function listMonitorsController(
     offset: query.offset,
   });
 
+  // Every monitor here belongs to one team, so the plan threshold is resolved
+  // once rather than per monitor -- a cold Autumn cache would otherwise fan
+  // one list request out into an entity fetch per monitor.
+  const thresholdMinutes = await monitorUnchangedFreeThresholdMinutes(
+    req.auth.team_id,
+  );
+
   res.status(200).json({
     success: true,
-    data: await Promise.all(
-      monitors.map(async monitor =>
-        serializeMonitor(monitor, {
-          unchangedPagesFree: await monitorUnchangedPagesFree(monitor),
-        }),
-      ),
+    data: monitors.map(monitor =>
+      serializeMonitor(monitor, {
+        unchangedPagesFree: unchangedPagesFreeForMonitor(
+          monitor,
+          thresholdMinutes,
+        ),
+      }),
     ),
   });
 }
