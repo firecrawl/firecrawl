@@ -1,5 +1,6 @@
 import { xai } from "@ai-sdk/xai";
 import { generateText, jsonSchema, Output } from "ai";
+import XTwitterScraper from "x-twitter-scraper";
 import { config } from "../../../../config";
 import { Meta } from "../..";
 import { EngineScrapeResult } from "..";
@@ -7,6 +8,7 @@ import { EngineError, XTwitterConfigurationError } from "../../error";
 import { safeMarkdownToHtml } from "../pdf/markdownToHtml";
 
 const XAI_RESPONSES_MODEL = "grok-4-1-fast-non-reasoning";
+const XQUIK_REQUEST_TIMEOUT_MS = 30000;
 
 const RESERVED_PROFILE_PATHS = new Set([
   "compose",
@@ -87,7 +89,24 @@ type XTwitterPostData = {
   retweets?: number | null;
   thread?: ThreadPost[] | null;
   comments?: PostComment[] | null;
+  textIsMarkdown?: boolean;
 };
+
+type XquikSearchResponse = Awaited<
+  ReturnType<XTwitterScraper["x"]["tweets"]["search"]>
+>;
+type XquikSearchTweet = XquikSearchResponse["tweets"][number];
+type XquikProfileSearchResponse = Awaited<
+  ReturnType<XTwitterScraper["x"]["users"]["retrieveSearch"]>
+>;
+type XquikUser = XquikProfileSearchResponse["users"][number];
+type XquikRetrieveResponse = Awaited<
+  ReturnType<XTwitterScraper["x"]["tweets"]["retrieve"]>
+>;
+type XquikTweetDetail = XquikRetrieveResponse["tweet"];
+type XquikAuthor = NonNullable<
+  XquikRetrieveResponse["author"] | XquikTweetDetail["author"]
+>;
 
 const nullableString = { type: ["string", "null"] };
 const nullableNumber = { type: ["number", "null"] };
@@ -312,19 +331,32 @@ export async function scrapeURLWithXTwitter(
     );
   }
 
-  if (!config.XAI_API_KEY) {
+  const useXquik = config.X_TWITTER_SCRAPER_API_KEY !== undefined;
+
+  if (!useXquik && !config.XAI_API_KEY) {
     throw new XTwitterConfigurationError();
   }
 
-  meta.logger.info("Fetching X/Twitter data through Grok", {
-    kind: xUrl.kind,
-    url: xUrl.normalizedUrl,
-  });
+  meta.logger.info(
+    `Fetching X/Twitter data through ${useXquik ? "Xquik" : "Grok"}`,
+    {
+      kind: xUrl.kind,
+      url: xUrl.normalizedUrl,
+    },
+  );
 
   const markdown =
     xUrl.kind === "profile"
-      ? buildProfileMarkdown(await fetchProfile(xUrl, meta))
-      : buildPostMarkdown(await fetchPost(xUrl, meta));
+      ? buildProfileMarkdown(
+          useXquik
+            ? await fetchProfileWithXquik(xUrl, meta)
+            : await fetchProfileWithGrok(xUrl, meta),
+        )
+      : buildPostMarkdown(
+          useXquik
+            ? await fetchPostWithXquik(xUrl, meta)
+            : await fetchPostWithGrok(xUrl, meta),
+        );
 
   if (markdown.trim().length === 0) {
     throw new EngineError(`No X/Twitter content returned for: ${urlToScrape}`);
@@ -442,7 +474,14 @@ function buildPostMarkdown(post: XTwitterPostData): string {
     lines.push(metrics.join(" | "));
   }
 
-  lines.push("", "## Post", "", escapeMarkdownBlock(post.text.trim()));
+  lines.push(
+    "",
+    "## Post",
+    "",
+    post.textIsMarkdown
+      ? escapeMarkdownBlock(post.text.trim())
+      : formatBlockquote(post.text),
+  );
 
   const thread = (post.thread ?? []).filter(item => item.text?.trim());
   if (thread.length > 0) {
@@ -507,7 +546,7 @@ function buildPostMarkdown(post: XTwitterPostData): string {
   return trimMarkdown(lines.join("\n"));
 }
 
-async function fetchProfile(
+async function fetchProfileWithGrok(
   xUrl: XTwitterProfileUrl,
   meta: Meta,
 ): Promise<XTwitterProfileData> {
@@ -531,7 +570,7 @@ async function fetchProfile(
   return output as XTwitterProfileData;
 }
 
-async function fetchPost(
+async function fetchPostWithGrok(
   xUrl: XTwitterPostUrl,
   meta: Meta,
 ): Promise<XTwitterPostData> {
@@ -564,7 +603,156 @@ async function fetchPost(
     prompt: `Fetch the public X/Twitter post${handlePart} with post id ${xUrl.postId} at ${xUrl.normalizedUrl}. Return the post body in text as GitHub-flavored Markdown, preserving its original structure like headings and lists. Also return author, URL, created date, likes, and retweets. If this post is part of a thread, return the unrolled thread in chronological order under thread. Return the top 5 public comments or replies to the post under comments. Use the current public X data available to x_search.`,
   });
 
-  return output as XTwitterPostData;
+  return { ...(output as XTwitterPostData), textIsMarkdown: true };
+}
+
+function createXquikClient(meta: Meta): XTwitterScraper {
+  return new XTwitterScraper({
+    apiKey: config.X_TWITTER_SCRAPER_API_KEY,
+    baseURL: config.X_TWITTER_SCRAPER_BASE_URL,
+    logger: meta.logger,
+    maxRetries: 0,
+    timeout: XQUIK_REQUEST_TIMEOUT_MS,
+  });
+}
+
+async function fetchProfileWithXquik(
+  xUrl: XTwitterProfileUrl,
+  meta: Meta,
+): Promise<XTwitterProfileData> {
+  const client = createXquikClient(meta);
+  const signal = meta.abort.asSignal();
+  const profiles = await client.x.users.retrieveSearch(
+    { q: xUrl.handle, usernameContains: xUrl.handle },
+    { signal },
+  );
+  const profile = profiles.users.find(
+    user => user.username.toLowerCase() === xUrl.handle.toLowerCase(),
+  );
+
+  if (!profile) {
+    throw new EngineError(`X/Twitter profile not found: @${xUrl.handle}`);
+  }
+
+  const latestPosts = await client.x.tweets.search(
+    {
+      q: `from:${profile.username}`,
+      fromUser: profile.username,
+      limit: 5,
+      queryType: "Latest",
+      replies: "exclude",
+      retweets: "exclude",
+    },
+    { signal },
+  );
+
+  return {
+    displayName: profile.name,
+    username: profile.username,
+    profilePicUrl: profile.profilePicture,
+    bio: profile.description,
+    followers: profile.followers,
+    accountVerified: isXquikUserVerified(profile),
+    url: xUrl.normalizedUrl,
+    latestPosts: latestPosts.tweets
+      .slice(0, 5)
+      .map(tweet => mapXquikProfilePost(tweet, profile.username)),
+  };
+}
+
+async function fetchPostWithXquik(
+  xUrl: XTwitterPostUrl,
+  meta: Meta,
+): Promise<XTwitterPostData> {
+  const client = createXquikClient(meta);
+  const signal = meta.abort.asSignal();
+  const retrieved = await client.x.tweets.retrieve(xUrl.postId, { signal });
+  const author = retrieved.author ?? retrieved.tweet.author;
+  const authorUsername = author?.username ?? xUrl.handle;
+  const [thread, replies] = await Promise.all([
+    client.x.tweets.getThread(
+      xUrl.postId,
+      {
+        ...(authorUsername ? { fromUser: authorUsername } : {}),
+        pageSize: 100,
+      },
+      { signal },
+    ),
+    client.x.tweets.getReplies(
+      xUrl.postId,
+      { excludeOriginalAuthor: true, pageSize: 5, sort: "likes" },
+      { signal },
+    ),
+  ]);
+
+  return {
+    authorDisplayName: author?.name,
+    authorUsername,
+    text: retrieved.tweet.text,
+    url: xUrl.normalizedUrl,
+    createdAt: retrieved.tweet.createdAt,
+    likes: retrieved.tweet.likeCount,
+    retweets: retrieved.tweet.retweetCount,
+    thread: thread.tweets
+      .filter(tweet => tweet.id !== xUrl.postId)
+      .map(tweet => mapXquikThreadPost(tweet, authorUsername)),
+    comments: replies.tweets.slice(0, 5).map(tweet => mapXquikComment(tweet)),
+    textIsMarkdown: false,
+  };
+}
+
+function mapXquikProfilePost(
+  tweet: XquikSearchTweet,
+  fallbackUsername: string,
+): ProfilePost {
+  return {
+    text: tweet.text,
+    url: buildXquikTweetUrl(
+      tweet.id,
+      tweet.author?.username ?? fallbackUsername,
+    ),
+    createdAt: tweet.createdAt,
+    likes: tweet.likeCount,
+    retweets: tweet.retweetCount,
+  };
+}
+
+function mapXquikThreadPost(
+  tweet: XquikSearchTweet,
+  fallbackUsername?: string,
+): ThreadPost {
+  const username = tweet.author?.username ?? fallbackUsername;
+  return {
+    authorDisplayName: tweet.author?.name,
+    authorUsername: username,
+    text: tweet.text,
+    url: buildXquikTweetUrl(tweet.id, username),
+    createdAt: tweet.createdAt,
+    likes: tweet.likeCount,
+    retweets: tweet.retweetCount,
+  };
+}
+
+function mapXquikComment(tweet: XquikSearchTweet): PostComment {
+  return {
+    authorDisplayName: tweet.author?.name,
+    authorUsername: tweet.author?.username,
+    text: tweet.text,
+    url: buildXquikTweetUrl(tweet.id, tweet.author?.username),
+    createdAt: tweet.createdAt,
+    likes: tweet.likeCount,
+  };
+}
+
+function isXquikUserVerified(user: XquikUser | XquikAuthor): boolean {
+  return Boolean(user.isVerified || user.verified || user.isBlueVerified);
+}
+
+function buildXquikTweetUrl(tweetId: string, username?: string): string {
+  const handle = stripAt(username);
+  return handle
+    ? `https://x.com/${handle}/status/${tweetId}`
+    : `https://x.com/i/web/status/${tweetId}`;
 }
 
 function isHandle(value: string): boolean {

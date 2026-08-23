@@ -143,6 +143,8 @@ const configSchema = z.object({
   OPENAI_BASE_URL: z.string().optional(),
   OPENROUTER_API_KEY: z.string().optional(),
   XAI_API_KEY: z.string().optional(),
+  X_TWITTER_SCRAPER_API_KEY: emptyStringAsUndefined(z.string().trim().min(1)),
+  X_TWITTER_SCRAPER_BASE_URL: emptyStringAsUndefined(z.string().url()),
   LLAMAPARSE_API_KEY: z.string().optional(),
   STRIPE_SECRET_KEY: z.string().optional(),
   AUTUMN_SECRET_KEY: z.string().optional(),

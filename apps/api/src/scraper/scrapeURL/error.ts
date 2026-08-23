@@ -13,7 +13,7 @@ export class XTwitterConfigurationError extends TransportableError {
   constructor() {
     super(
       "SCRAPE_X_TWITTER_CONFIGURATION_ERROR",
-      "X/Twitter scraping requires XAI_API_KEY to be configured.",
+      "X/Twitter scraping requires X_TWITTER_SCRAPER_API_KEY or XAI_API_KEY.",
     );
   }
 

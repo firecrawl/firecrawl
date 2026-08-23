@@ -74,6 +74,8 @@ const useWikipedia =
   config.WIKIPEDIA_ENTERPRISE_PASSWORD !== undefined &&
   config.WIKIPEDIA_ENTERPRISE_PASSWORD !== "";
 const useXTwitter =
+  (config.X_TWITTER_SCRAPER_API_KEY !== undefined &&
+    config.X_TWITTER_SCRAPER_API_KEY !== "") ||
   (config.XAI_API_KEY !== undefined && config.XAI_API_KEY !== "") ||
   config.USE_DB_AUTHENTICATION === true;
 
