@@ -22,7 +22,6 @@ const LOCK_WAIT_MS = LOCK_TTL_MS;
 const LOCK_POLL_MS = 200;
 const CONTEXT_TTL_SEC = 30 * 24 * 60 * 60;
 const FAILED_TTL_SEC = 10 * 60;
-const EXHAUSTED_TTL_SEC = 60 * 60;
 
 const RELEASE_LOCK_SCRIPT =
   'if redis.call("get", KEYS[1]) == ARGV[1] then return redis.call("del", KEYS[1]) end return 0';
@@ -42,7 +41,6 @@ type CacheState =
 const contextKey = (ip: string) => `spur_context:${ip}`;
 const failedKey = (ip: string) => `spur_context_failed:${ip}`;
 const lockKey = (ip: string) => `spur_lock:${ip}`;
-const EXHAUSTED_KEY = "spur_exhausted";
 
 const meta = (ip: string) => ({ canonicalLog: "spur/lookup", ip });
 
@@ -116,12 +114,10 @@ function parseContext(raw: string | null): SpurContext | null {
 async function readCache(ip: string): Promise<CacheState> {
   let raw: string | null;
   let failed: string | null;
-  let exhausted: string | null;
   try {
-    [raw, failed, exhausted] = await redisRateLimitClient.mget(
+    [raw, failed] = await redisRateLimitClient.mget(
       contextKey(ip),
       failedKey(ip),
-      EXHAUSTED_KEY,
     );
   } catch (error) {
     logger.warn("Spur cache read failed", { ...meta(ip), error });
@@ -129,7 +125,7 @@ async function readCache(ip: string): Promise<CacheState> {
   }
   const ctx = parseContext(raw);
   if (ctx) return { state: "hit", ctx };
-  if (failed !== null || exhausted !== null) return { state: "failed" };
+  if (failed !== null) return { state: "failed" };
   return { state: "miss" };
 }
 
@@ -171,10 +167,6 @@ async function fetchContext(
       ...meta(ip),
       status: res.status,
     });
-    // 429 means the account's query balance is spent, so every IP would fail.
-    if (res.status === 429) {
-      await writeCache(ip, EXHAUSTED_KEY, "1", EXHAUSTED_TTL_SEC);
-    }
     return null;
   }
   const ctx = toContext(await res.json());

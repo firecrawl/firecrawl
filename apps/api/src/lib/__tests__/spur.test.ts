@@ -160,13 +160,6 @@ describe("Spur keyless IP reputation", () => {
     expect(fetchFn).toHaveBeenCalledTimes(1);
   });
 
-  it("stops looking up any IP once Spur reports the query balance is spent", async () => {
-    const fetchFn = mockFetch(async () => ({ ok: false, status: 429 }));
-    expect(await isKeylessIpSuspicious("1.2.3.15")).toBe(false);
-    expect(await isKeylessIpSuspicious("1.2.3.16")).toBe(false);
-    expect(fetchFn).toHaveBeenCalledTimes(1);
-  });
-
   it("fails open when the Spur call throws, and retries once the negative cache expires", async () => {
     const fetchFn = mockFetch(async () => {
       throw new Error("network down");
