@@ -30,12 +30,21 @@ def get_version():
   try:
       from pathlib import Path
       package_path = os.path.dirname(__file__)
-      version_file = Path(os.path.join(package_path, '__init__.py')).read_text()
-      version_match = re.search(r"^__version__ = ['\"]([^'\"]*)['\"]", version_file, re.M)
+      version_file = Path(os.path.join(package_path, '__init__.py'))
+      if not version_file.exists():
+          version_file = Path(os.path.join(os.path.dirname(package_path), '__init__.py'))
+      content = version_file.read_text()
+      version_match = re.search(r"^__version__ = ['\"]([^'\"]*)['\"]", content, re.M)
       if version_match:
           return version_match.group(1).strip()
+      # Fallback to parent package if __version__ wasn't in current directory
+      parent_version_file = Path(os.path.join(os.path.dirname(package_path), '__init__.py'))
+      if parent_version_file.exists():
+          parent_match = re.search(r"^__version__ = ['\"]([^'\"]*)['\"]", parent_version_file.read_text(), re.M)
+          if parent_match:
+              return parent_match.group(1).strip()
   except Exception:
-      print("Failed to get version from __init__.py")
+      logger.debug("Failed to get version from __init__.py")
       return None
 
 version = get_version()
