@@ -351,22 +351,17 @@ export async function extractData({
     warning: string | undefined,
     totalUsage: TokenUsage | undefined;
 
-  if (extractOptions.options.checkPromptInjection) {
-    await checkForPromptInjection({
-      markdown: extractOptions.markdown,
-      logger,
-      costTracking: extractOptions.costTrackingOptions.costTracking,
-      metadata,
-    });
-  }
-
-  // checks if using smartScrape is needed for this case
-  try {
-    const {
-      extract: e,
-      warning: w,
-      totalUsage: t,
-    } = await generateCompletions({
+  // Runs concurrently with extraction; guard verdict is checked before `extract` is used.
+  const [guardSettled, generateSettled] = await Promise.allSettled([
+    extractOptions.options.checkPromptInjection
+      ? checkForPromptInjection({
+          markdown: extractOptions.markdown,
+          logger,
+          costTracking: extractOptions.costTrackingOptions.costTracking,
+          metadata,
+        })
+      : Promise.resolve(),
+    generateCompletions({
       ...extractOptionsNewSchema,
       costTrackingOptions: {
         costTracking: extractOptions.costTrackingOptions.costTracking,
@@ -376,11 +371,19 @@ export async function extractData({
           description: "Check if using smartScrape is needed for this case",
         },
       },
-    });
-    extract = e;
-    warning = w;
-    totalUsage = t;
-  } catch (error) {
+    }),
+  ]);
+
+  if (guardSettled.status === "rejected") {
+    throw guardSettled.reason;
+  }
+
+  if (generateSettled.status === "fulfilled") {
+    extract = generateSettled.value.extract;
+    warning = generateSettled.value.warning;
+    totalUsage = generateSettled.value.totalUsage;
+  } else {
+    const error = generateSettled.reason;
     if (error instanceof CostLimitExceededError) {
       throw error;
     }
