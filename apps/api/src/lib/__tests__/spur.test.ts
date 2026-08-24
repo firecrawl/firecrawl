@@ -13,7 +13,12 @@ vi.mock("../logger", () => ({
 }));
 
 vi.mock("../../services/rate-limiter", () => ({
-  redisRateLimitClient: { get: vi.fn(), set: vi.fn(), eval: vi.fn() },
+  redisRateLimitClient: {
+    get: vi.fn(),
+    mget: vi.fn(),
+    set: vi.fn(),
+    eval: vi.fn(),
+  },
 }));
 
 // Minimal in-memory Redis backing the mock: enough SET semantics (NX guard,
@@ -22,6 +27,10 @@ function installFakeRedis(): Map<string, string> {
   const store = new Map<string, string>();
   (redisRateLimitClient.get as Mock).mockImplementation(async (k: string) =>
     store.has(k) ? store.get(k)! : null,
+  );
+  (redisRateLimitClient.mget as Mock).mockImplementation(
+    async (...keys: (string | string[])[]) =>
+      keys.flat().map(k => (store.has(k) ? store.get(k)! : null)),
   );
   (redisRateLimitClient.set as Mock).mockImplementation(
     async (k: string, v: string, ...args: unknown[]) => {
@@ -119,32 +128,25 @@ describe("Spur keyless IP reputation", () => {
     expect(results).toEqual([false, false, false, false, false]);
   });
 
-  it("fails open on a non-200 Spur response and negative-caches the failure", async () => {
+  it("fails open on a non-200 Spur response and does not retry within the negative-cache window", async () => {
     const fetchFn = mockFetch(async () => ({ ok: false, status: 429 }));
     expect(await isKeylessIpSuspicious("1.2.3.7")).toBe(false);
-    expect(store.get("spur_context:1.2.3.7")).toBe(
-      JSON.stringify({ __failed: true }),
-    );
-
-    // Within the negative-cache window: fail open from Redis, no upstream call.
     expect(await isKeylessIpSuspicious("1.2.3.7")).toBe(false);
     expect(fetchFn).toHaveBeenCalledTimes(1);
   });
 
-  it("fails open when the Spur call throws, negative-caches, and retries once the marker expires", async () => {
+  it("fails open when the Spur call throws, and retries once the negative cache expires", async () => {
     const fetchFn = mockFetch(async () => {
       throw new Error("network down");
     });
     expect(await isKeylessIpSuspicious("1.2.3.8")).toBe(false);
 
-    // The failure is remembered: a second call inside the negative-cache
-    // window never reaches Spur.
     expect(await isKeylessIpSuspicious("1.2.3.8")).toBe(false);
     expect(fetchFn).toHaveBeenCalledTimes(1);
 
-    // Simulate the negative TTL expiring (the fake redis ignores EX). The lock
-    // was released, so a later call gets to fetch again.
-    store.delete("spur_context:1.2.3.8");
+    // The fake redis ignores EX; clearing it stands in for the negative TTL
+    // expiring. The lock was released, so a later call gets to fetch again.
+    store.clear();
     fetchFn.mockImplementation(async () =>
       okResponse({ ip: "1.2.3.8", tunnels: [{ type: "TOR" }] }),
     );
