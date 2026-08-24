@@ -22,15 +22,16 @@ const LOCK_WAIT_MS = LOCK_TTL_MS;
 const LOCK_POLL_MS = 200;
 const CONTEXT_TTL_SEC = 30 * 24 * 60 * 60;
 const FAILED_TTL_SEC = 10 * 60;
+const EXHAUSTED_TTL_SEC = 60 * 60;
 
 const RELEASE_LOCK_SCRIPT =
   'if redis.call("get", KEYS[1]) == ARGV[1] then return redis.call("del", KEYS[1]) end return 0';
 
 type SpurContext = {
   infrastructure?: string;
-  risks?: string[];
-  tunnels?: { anonymous?: boolean; operator?: string; type?: string }[];
-  client?: { behaviors?: string[]; proxies?: string[] };
+  risks: string[];
+  tunnels: { anonymous?: boolean; operator?: string; type?: string }[];
+  client: { proxies: string[] };
 };
 
 type CacheState =
@@ -41,6 +42,7 @@ type CacheState =
 const contextKey = (ip: string) => `spur_context:${ip}`;
 const failedKey = (ip: string) => `spur_context_failed:${ip}`;
 const lockKey = (ip: string) => `spur_lock:${ip}`;
+const EXHAUSTED_KEY = "spur_exhausted";
 
 const meta = (ip: string) => ({ canonicalLog: "spur/lookup", ip });
 
@@ -50,20 +52,40 @@ function summarize(ctx: SpurContext) {
   return {
     infrastructure: ctx.infrastructure,
     risks: ctx.risks,
-    tunnels: ctx.tunnels?.map(t => t.type),
-    proxies: ctx.client?.proxies,
+    tunnels: ctx.tunnels.map(t => t.type),
+    proxies: ctx.client.proxies,
   };
 }
 
-// DATACENTER infrastructure and GEO_MISMATCH are deliberately not signals:
-// legit users hit free tiers from cloud and CGNAT, and per-IP caps cover those.
+const strings = (v: unknown): string[] =>
+  Array.isArray(v) ? v.filter(x => typeof x === "string") : [];
+
+const objects = <T>(v: unknown): T[] =>
+  Array.isArray(v) ? v.filter(x => x && typeof x === "object") : [];
+
+// Both Redis and Spur feed this; the verdict code must never see an
+// unvalidated shape, since a throw here would fail the request closed.
+function toContext(raw: unknown): SpurContext | null {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
+  const r = raw as Record<string, unknown>;
+  const client = r.client as Record<string, unknown> | undefined;
+  return {
+    infrastructure:
+      typeof r.infrastructure === "string" ? r.infrastructure : undefined,
+    risks: strings(r.risks),
+    tunnels: objects(r.tunnels),
+    client: { proxies: strings(client?.proxies) },
+  };
+}
+
+// Only IP-rotation infrastructure counts. DATACENTER, GEO_MISMATCH and
+// non-anonymous tunnels (enterprise VPN, ZTNA) are legit developer traffic.
 function isSuspicious(ctx: SpurContext): boolean {
-  const risks = ctx.risks ?? [];
   return (
-    (ctx.tunnels?.length ?? 0) > 0 ||
-    (ctx.client?.proxies?.length ?? 0) > 0 ||
-    risks.includes("CALLBACK_PROXY") ||
-    risks.includes("TUNNEL")
+    ctx.tunnels.some(t => t.anonymous === true) ||
+    ctx.client.proxies.length > 0 ||
+    ctx.risks.includes("CALLBACK_PROXY") ||
+    ctx.risks.includes("TUNNEL")
   );
 }
 
@@ -85,10 +107,7 @@ function cachedVerdict(ip: string, cached: CacheState): boolean {
 function parseContext(raw: string | null): SpurContext | null {
   if (raw === null) return null;
   try {
-    const parsed = JSON.parse(raw);
-    return parsed && typeof parsed === "object" && !Array.isArray(parsed)
-      ? parsed
-      : null;
+    return toContext(JSON.parse(raw));
   } catch {
     return null;
   }
@@ -97,10 +116,12 @@ function parseContext(raw: string | null): SpurContext | null {
 async function readCache(ip: string): Promise<CacheState> {
   let raw: string | null;
   let failed: string | null;
+  let exhausted: string | null;
   try {
-    [raw, failed] = await redisRateLimitClient.mget(
+    [raw, failed, exhausted] = await redisRateLimitClient.mget(
       contextKey(ip),
       failedKey(ip),
+      EXHAUSTED_KEY,
     );
   } catch (error) {
     logger.warn("Spur cache read failed", { ...meta(ip), error });
@@ -108,7 +129,7 @@ async function readCache(ip: string): Promise<CacheState> {
   }
   const ctx = parseContext(raw);
   if (ctx) return { state: "hit", ctx };
-  if (failed !== null) return { state: "failed" };
+  if (failed !== null || exhausted !== null) return { state: "failed" };
   return { state: "miss" };
 }
 
@@ -150,9 +171,17 @@ async function fetchContext(
       ...meta(ip),
       status: res.status,
     });
+    // 429 means the account's query balance is spent, so every IP would fail.
+    if (res.status === 429) {
+      await writeCache(ip, EXHAUSTED_KEY, "1", EXHAUSTED_TTL_SEC);
+    }
     return null;
   }
-  const ctx = (await res.json()) as SpurContext;
+  const ctx = toContext(await res.json());
+  if (!ctx) {
+    logger.warn("Spur Context API returned a malformed body", meta(ip));
+    return null;
+  }
   logger.info("Spur Context API response", { ...meta(ip), ...summarize(ctx) });
   return ctx;
 }

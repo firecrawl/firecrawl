@@ -72,9 +72,34 @@ describe("Spur keyless IP reputation", () => {
 
   it("flags an IP fronting a live VPN/proxy tunnel", async () => {
     mockFetch(async () =>
-      okResponse({ ip: "1.2.3.4", tunnels: [{ type: "VPN" }] }),
+      okResponse({
+        ip: "1.2.3.4",
+        tunnels: [{ anonymous: true, type: "VPN" }],
+      }),
     );
     expect(await isKeylessIpSuspicious("1.2.3.4")).toBe(true);
+  });
+
+  it("allows a non-anonymous tunnel such as an enterprise VPN", async () => {
+    mockFetch(async () =>
+      okResponse({
+        ip: "1.2.3.14",
+        tunnels: [{ anonymous: false, operator: "ZSCALER", type: "VPN" }],
+      }),
+    );
+    expect(await isKeylessIpSuspicious("1.2.3.14")).toBe(false);
+  });
+
+  it("fails open on a malformed cached context instead of throwing", async () => {
+    store.set(
+      "spur_context:1.2.3.17",
+      JSON.stringify({ tunnels: 5, risks: "TUNNEL", client: { proxies: {} } }),
+    );
+    const fetchFn = mockFetch(async () =>
+      okResponse({ tunnels: [{ anonymous: true, type: "VPN" }] }),
+    );
+    expect(await isKeylessIpSuspicious("1.2.3.17")).toBe(false);
+    expect(fetchFn).not.toHaveBeenCalled();
   });
 
   it("allows a clean (datacenter-only) IP", async () => {
@@ -135,6 +160,13 @@ describe("Spur keyless IP reputation", () => {
     expect(fetchFn).toHaveBeenCalledTimes(1);
   });
 
+  it("stops looking up any IP once Spur reports the query balance is spent", async () => {
+    const fetchFn = mockFetch(async () => ({ ok: false, status: 429 }));
+    expect(await isKeylessIpSuspicious("1.2.3.15")).toBe(false);
+    expect(await isKeylessIpSuspicious("1.2.3.16")).toBe(false);
+    expect(fetchFn).toHaveBeenCalledTimes(1);
+  });
+
   it("fails open when the Spur call throws, and retries once the negative cache expires", async () => {
     const fetchFn = mockFetch(async () => {
       throw new Error("network down");
@@ -148,7 +180,10 @@ describe("Spur keyless IP reputation", () => {
     // expiring. The lock was released, so a later call gets to fetch again.
     store.clear();
     fetchFn.mockImplementation(async () =>
-      okResponse({ ip: "1.2.3.8", tunnels: [{ type: "TOR" }] }),
+      okResponse({
+        ip: "1.2.3.8",
+        tunnels: [{ anonymous: true, type: "TOR" }],
+      }),
     );
     expect(await isKeylessIpSuspicious("1.2.3.8")).toBe(true);
     expect(fetchFn).toHaveBeenCalledTimes(2);
