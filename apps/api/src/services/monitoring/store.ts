@@ -284,8 +284,15 @@ export function calculateMonitorCheckActualCreditsFromPages(
 
     // Plan-gated discount: unchanged pages are free for eligible schedules.
     // Only the aggregation skips them — the per-page creditsUsed record stays
-    // intact. Judged pages are never "same" (the judge runs on diffs), so no
-    // judge credit is lost here.
+    // intact. Judged "same" pages do exist (~12% of same pages in prod), but
+    // they are virtually all search results, which returned above and are
+    // billed flat via flatSearchTargetCredits — so their judge credit is not
+    // lost here. A judged "same" page on a non-search target does forfeit its
+    // judge credit; that is a handful of pages a day.
+    //
+    // Not covered by the per-page record: a JSON/extract format runs its LLM
+    // during the scrape, before the diff is known, so an unchanged page can
+    // cost inference and bill nothing.
     if (options?.unchangedPagesFree && page.status === "same") {
       return total;
     }
