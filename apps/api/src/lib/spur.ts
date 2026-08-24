@@ -1,4 +1,5 @@
 import { randomUUID } from "crypto";
+import { isIPv4 } from "net";
 import { config } from "../config";
 import { logger } from "./logger";
 import { redisRateLimitClient } from "../services/rate-limiter";
@@ -11,15 +12,19 @@ import { redisRateLimitClient } from "../services/rate-limiter";
 // refuse keyless for them and steer the caller to sign up for an API key.
 //
 // Lookups are cached in Redis for 30 days so a given IP costs at most one Spur
-// API call per month. Concurrent misses for the same IP are collapsed with a
-// Redis single-flight lock so a burst from one IP triggers a single upstream
-// call — the loser callers briefly wait for that result instead of each hitting
-// Spur. The integration is entirely optional: with no key set the keyless tier
-// behaves exactly as before, and any Spur error (timeout, lock failure, outage)
-// fails open — the request is allowed — so Spur can never take down the free tier.
+// API call per month. Failed lookups (non-200, network error, timeout) are
+// negative-cached for a short TTL, so a failing or rate-limiting upstream is
+// re-hit at most once per IP per window instead of on every request.
+// Concurrent misses for the same IP are collapsed with a Redis single-flight
+// lock so a burst from one IP triggers a single upstream call; the loser
+// callers briefly wait for that result instead of each hitting Spur. The
+// integration is entirely optional: with no key set the keyless tier behaves
+// exactly as before, and any Spur error (timeout, lock failure, outage) fails
+// open, so Spur can never take down the free tier.
 
 const SPUR_API_BASE = "https://api.spur.us/v2/context";
 const CACHE_TTL_SECONDS = 30 * 24 * 60 * 60; // 30 days
+const NEGATIVE_CACHE_TTL_SECONDS = 10 * 60; // failed lookups: retry after 10 min
 const cacheKey = (ip: string) => `spur_context:${ip}`;
 
 // Everything below is bounded so a request can never get stuck on the upstream
@@ -56,10 +61,16 @@ function isSpurEnabled(): boolean {
   );
 }
 
-async function getCachedContext(ip: string): Promise<SpurContext | null> {
+// Returns "failed" when the entry is the negative-cache marker: a recent
+// lookup errored, so fail open without spending another Spur call.
+async function getCachedContext(
+  ip: string,
+): Promise<SpurContext | "failed" | null> {
   try {
     const raw = await redisRateLimitClient.get(cacheKey(ip));
-    return raw ? (JSON.parse(raw) as SpurContext) : null;
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as SpurContext & { __failed?: boolean };
+    return parsed.__failed ? "failed" : parsed;
   } catch (error) {
     // Cache read failed (store down or corrupt value) — treat as a miss.
     logger.warn("Failed to read Spur context from cache", {
@@ -82,6 +93,24 @@ async function cacheContext(ip: string, ctx: SpurContext): Promise<void> {
   } catch (error) {
     // Best-effort: a failed cache write just means we look the IP up again.
     logger.warn("Failed to cache Spur context", {
+      canonicalLog: "spur/lookup",
+      ip,
+      error,
+    });
+  }
+}
+
+// Short TTL so a transient Spur outage recovers quickly.
+async function cacheFailure(ip: string): Promise<void> {
+  try {
+    await redisRateLimitClient.set(
+      cacheKey(ip),
+      JSON.stringify({ __failed: true }),
+      "EX",
+      NEGATIVE_CACHE_TTL_SECONDS,
+    );
+  } catch (error) {
+    logger.warn("Failed to negative-cache Spur lookup failure", {
       canonicalLog: "spur/lookup",
       ip,
       error,
@@ -176,24 +205,36 @@ async function waitForResult(ip: string): Promise<SpurContext | null> {
     // LOCK_WAIT_MS ceiling.
     await sleep(Math.min(POLL_INTERVAL_MS, deadline - Date.now()));
     const cached = await getCachedContext(ip);
+    // The winner's fetch failed: fail open now instead of burning the rest of
+    // the wait budget.
+    if (cached === "failed") return null;
     if (cached) return cached;
   }
   return null;
 }
 
 /**
- * Look up an IP's Spur context, preferring the 30-day Redis cache and only
- * caching successful (non-error) responses. Concurrent misses for the same IP
- * are collapsed via a Redis single-flight lock: one caller fetches, the rest
- * wait (bounded) for its result. Returns null when Spur is disabled or anything
- * goes wrong (lock error, timeout, upstream failure) — callers then fail open
- * (treat the IP as not suspicious). Every wait here is bounded, so a request can
- * never get stuck on the lock or on another request's in-flight lookup.
+ * Look up an IP's Spur context, preferring the 30-day Redis cache. Every lookup
+ * outcome is cached: successes for CACHE_TTL_SECONDS, failures (non-200,
+ * network error, timeout) as a short-TTL negative entry, so a given IP costs at
+ * most one upstream call per cache window no matter what Spur returns.
+ * Concurrent misses for the same IP are collapsed via a Redis single-flight
+ * lock: one caller fetches, the rest wait (bounded) for its result. Returns
+ * null when Spur is disabled or anything goes wrong (lock error, timeout,
+ * upstream failure); callers then fail open (treat the IP as not suspicious).
+ * Every wait here is bounded, so a request can never get stuck on the lock or
+ * on another request's in-flight lookup.
  */
 async function getSpurContext(ip: string): Promise<SpurContext | null> {
   if (!isSpurEnabled()) return null;
 
+  // Callers already gate on isKeylessIpEligible, but a call site passing raw
+  // IPv6 (rotatable per-request) would explode cache cardinality and Spur
+  // spend, so refuse non-IPv4 here too and fail open.
+  if (!isIPv4(ip)) return null;
+
   const cached = await getCachedContext(ip);
+  if (cached === "failed") return null;
   if (cached) return cached;
 
   try {
@@ -215,11 +256,22 @@ async function getSpurContext(ip: string): Promise<SpurContext | null> {
       // Another winner may have populated the cache between our miss and
       // winning the lock — re-check before spending a Spur call.
       const fresh = await getCachedContext(ip);
+      if (fresh === "failed") return null;
       if (fresh) return fresh;
 
-      const ctx = await fetchContext(ip);
-      // Only cache non-error responses.
-      if (ctx) await cacheContext(ip, ctx);
+      let ctx: SpurContext | null;
+      try {
+        ctx = await fetchContext(ip);
+      } catch (error) {
+        // Negative-cache before rethrowing so waiting losers unblock now.
+        await cacheFailure(ip);
+        throw error;
+      }
+      if (ctx) {
+        await cacheContext(ip, ctx);
+      } else {
+        await cacheFailure(ip);
+      }
       return ctx;
     } finally {
       await releaseLock(ip, token);
