@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { createReadStream } from "node:fs";
+import { pipeline } from "node:stream/promises";
 import type { Meta } from "../../..";
 import { config } from "../../../../../config";
 import { storage } from "../../../../../lib/gcs-jobs";
@@ -26,7 +27,9 @@ async function sha256OfFile(path: string): Promise<string> {
 
 /**
  * Stream a downloaded PDF from its temp file into the fire-pdf input bucket
- * so the async pipeline can fetch it by reference. Never buffers the file.
+ * so the async pipeline can fetch it by reference. Never buffers the file,
+ * and a timeout aborts the transfer itself (both streams are destroyed) —
+ * the caller may unlink the temp file as soon as this returns.
  *
  * Returns null on any failure (missing bucket grant, timeout, transport):
  * the caller falls back to the pre-by-reference behavior for oversized
@@ -42,30 +45,29 @@ export async function uploadPdfInputForFirePdf(
   const startedAt = Date.now();
   try {
     const sha256 = await sha256OfFile(tempFilePath);
-    let timer: NodeJS.Timeout | undefined;
-    const timeout = new Promise<never>((_, reject) => {
-      timer = setTimeout(
-        () =>
-          reject(
-            new Error(
-              `GCS input upload timed out after ${UPLOAD_TIMEOUT_MS}ms`,
-            ),
-          ),
-        UPLOAD_TIMEOUT_MS,
-      );
-    });
+    const abort = new AbortController();
+    const timer = setTimeout(
+      () =>
+        abort.abort(
+          new Error(`GCS input upload timed out after ${UPLOAD_TIMEOUT_MS}ms`),
+        ),
+      UPLOAD_TIMEOUT_MS,
+    );
     try {
-      await Promise.race([
-        storage.bucket(bucketName).upload(tempFilePath, {
-          destination: objectKey,
-          resumable: true,
-          metadata: {
-            contentType: "application/pdf",
-            metadata: { scrape_id: meta.id, source: "firecrawl" },
-          },
-        }),
-        timeout,
-      ]);
+      await pipeline(
+        createReadStream(tempFilePath),
+        storage
+          .bucket(bucketName)
+          .file(objectKey)
+          .createWriteStream({
+            resumable: true,
+            metadata: {
+              contentType: "application/pdf",
+              metadata: { scrape_id: meta.id, source: "firecrawl" },
+            },
+          }),
+        { signal: abort.signal },
+      );
     } finally {
       clearTimeout(timer);
     }

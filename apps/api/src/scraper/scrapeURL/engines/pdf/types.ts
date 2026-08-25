@@ -68,6 +68,11 @@ export const MAX_FILE_SIZE = 19 * 1024 * 1024; // 19MB
  * `input_gcs_uri`) instead of inline base64 — inline bodies are capped by
  * fire-pdf's JSON body limit and V8 string ceilings. */
 export const FIRE_PDF_MAX_FILE_SIZE = 30 * 1024 * 1024; // 30MB
+/** Absolute ceiling for inline (base64 JSON) FirePDF submits, forced or
+ * not: fire-pdf's 100MB body limit divided by base64 inflation is ~74MB
+ * raw; 70MB leaves margin for the JSON envelope. Beyond this the inline
+ * path is a guaranteed 413, so callers shouldn't even build the string. */
+export const FIRE_PDF_INLINE_HARD_MAX_FILE_SIZE = 70 * 1024 * 1024; // 70MB
 /** Ceiling for by-reference FirePDF submits, and therefore for parse-path
  * downloads (which stream to disk and hand large files to FirePDF by GCS
  * reference). Mirrors fire-pdf's FIRE_PDF_GCS_INPUT_MAX_BYTES default —

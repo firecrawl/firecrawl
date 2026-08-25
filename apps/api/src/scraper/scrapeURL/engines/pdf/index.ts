@@ -27,6 +27,7 @@ import type { PDFMode } from "../../../../controllers/v2/types";
 import { processPdf, detectPdf } from "@mendable/firecrawl-rs";
 import {
   FIRE_PDF_BY_REFERENCE_MAX_FILE_SIZE,
+  FIRE_PDF_INLINE_HARD_MAX_FILE_SIZE,
   FIRE_PDF_MAX_FILE_SIZE,
   MAX_FILE_SIZE,
   MILLISECONDS_PER_PAGE,
@@ -416,13 +417,19 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
     // buffered. ZDR stays out: the by-reference input object persists in
     // GCS. MinerU-diverted traffic keeps its route decision (MinerU can't
     // take these sizes, so the legacy chain below just skips through).
+    // FIRE_PDF_PERCENT acts as an on/off switch here rather than a sample
+    // rate: there is no alternative engine at this size, so sampling a
+    // cohort "out" would only degrade those documents to text-only
+    // extraction. forceFirePDF mirrors the inline path's rule and needs
+    // only FIRE_PDF_BASE_URL.
     if (!result && !skipOCR) {
       const fileSizeBytes = (await stat(tempFilePath)).size;
       const useFirePdfByReference =
         !routeToMinerU &&
         !meta.internalOptions.zeroDataRetention &&
-        !!config.FIRE_PDF_ENABLE &&
         !!config.FIRE_PDF_BASE_URL &&
+        (forceFirePDF ||
+          (!!config.FIRE_PDF_ENABLE && config.FIRE_PDF_PERCENT > 0)) &&
         fileSizeBytes >= FIRE_PDF_MAX_FILE_SIZE &&
         fileSizeBytes <= FIRE_PDF_BY_REFERENCE_MAX_FILE_SIZE;
 
@@ -494,9 +501,29 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
     }
 
     if (!result && !skipOCR) {
-      const pdfBuffer = await readFile(tempFilePath);
-      const fileSizeBytes = pdfBuffer.length;
-      const base64Content = pdfBuffer.toString("base64");
+      const fileSizeBytes = (await stat(tempFilePath)).size;
+      // Only materialize the base64 payload for engines that can accept it
+      // inline: FirePDF (<30MB, or forced up to fire-pdf's wire ceiling)
+      // and MinerU (<19MB). Files above that reach this chain only as
+      // fallthrough (ZDR, MinerU-diverted, by-reference failure) and go
+      // straight to pdf-parse, which reads from disk — buffering and
+      // base64-encoding hundreds of MB here would only burn worker memory.
+      const inlineEligible =
+        fileSizeBytes < FIRE_PDF_MAX_FILE_SIZE ||
+        (forceFirePDF && fileSizeBytes <= FIRE_PDF_INLINE_HARD_MAX_FILE_SIZE);
+      const base64Content = inlineEligible
+        ? (await readFile(tempFilePath)).toString("base64")
+        : undefined;
+
+      if (!result && forceFirePDF && base64Content === undefined) {
+        // Forced FirePDF (pages/blocks/markers) with no viable transport:
+        // the file exceeds the inline ceiling and the by-reference path was
+        // unavailable (ZDR) or failed. Erroring beats returning an empty
+        // document as a 200.
+        throw new Error(
+          `PDF (${fileSizeBytes} bytes) exceeds the FirePDF inline ceiling and by-reference submission was unavailable`,
+        );
+      }
 
       if (
         !forceFirePDF &&
@@ -520,12 +547,13 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
       // forceFirePDF always wins; skip percentage-based Fire PDF when
       // we explicitly routed to MinerU via MINERU_PERCENT.
       const useFirePDF =
-        forceFirePDF ||
-        (!routeToMinerU &&
-          config.FIRE_PDF_ENABLE &&
-          config.FIRE_PDF_BASE_URL &&
-          fileSizeBytes < FIRE_PDF_MAX_FILE_SIZE &&
-          Math.random() * 100 < config.FIRE_PDF_PERCENT);
+        base64Content !== undefined &&
+        (forceFirePDF ||
+          (!routeToMinerU &&
+            config.FIRE_PDF_ENABLE &&
+            config.FIRE_PDF_BASE_URL &&
+            fileSizeBytes < FIRE_PDF_MAX_FILE_SIZE &&
+            Math.random() * 100 < config.FIRE_PDF_PERCENT));
 
       if (useFirePDF) {
         // Async is a server-controlled cohort within traffic already selected
@@ -684,6 +712,7 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
         !result &&
         !forceFirePDF &&
         fileSizeBytes < MAX_FILE_SIZE &&
+        base64Content !== undefined &&
         config.RUNPOD_MU_API_KEY &&
         config.RUNPOD_MU_POD_ID
       ) {
