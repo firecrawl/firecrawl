@@ -142,6 +142,20 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
     }
   }
 
+  // Only admit large downloads when the by-reference FirePDF path is even
+  // reachable for this request (mirrors the routing gate below, minus the
+  // signals that need the file first). Otherwise keep the historical cap —
+  // an oversized file would only burn bandwidth and temp disk to fall
+  // through to text-only extraction.
+  const byReferenceReachable =
+    !meta.internalOptions.zeroDataRetention &&
+    !!config.FIRE_PDF_BASE_URL &&
+    (!!meta.options.__forceFirePDF ||
+      includePageMarkdown ||
+      includeBlocks ||
+      pageMarkers ||
+      (!!config.FIRE_PDF_ENABLE && config.FIRE_PDF_BY_REFERENCE_ENABLE));
+
   const { response, tempFilePath } =
     meta.pdfPrefetch !== undefined && meta.pdfPrefetch !== null
       ? { response: meta.pdfPrefetch, tempFilePath: meta.pdfPrefetch.filePath }
@@ -155,7 +169,9 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
           },
           // Parse path streams to disk and can hand large files to FirePDF
           // by GCS reference, so it admits more than the raw fetch path.
-          FIRE_PDF_BY_REFERENCE_MAX_FILE_SIZE,
+          byReferenceReachable
+            ? FIRE_PDF_BY_REFERENCE_MAX_FILE_SIZE
+            : PDF_DOWNLOAD_MAX_FILE_SIZE,
         );
 
   try {

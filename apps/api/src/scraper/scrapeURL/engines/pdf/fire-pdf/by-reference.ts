@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { createReadStream } from "node:fs";
+import { Transform } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import type { Meta } from "../../..";
 import { config } from "../../../../../config";
@@ -17,22 +18,20 @@ export type FirePdfByReferenceInput = {
  * stuck stream cannot hold a scrape slot indefinitely. */
 const UPLOAD_TIMEOUT_MS = 120_000;
 
-async function sha256OfFile(
-  path: string,
-  signal: AbortSignal,
-): Promise<string> {
-  const hash = createHash("sha256");
-  for await (const chunk of createReadStream(path, { signal })) {
-    hash.update(chunk as Buffer);
-  }
-  return hash.digest("hex");
-}
-
 /**
  * Stream a downloaded PDF from its temp file into the fire-pdf input bucket
- * so the async pipeline can fetch it by reference. Never buffers the file,
- * and a timeout aborts the transfer itself (both streams are destroyed) —
- * the caller may unlink the temp file as soon as this returns.
+ * so the async pipeline can fetch it by reference. Single pass: the sha-256
+ * (fire-pdf's idempotency identity) is computed through a transform inside
+ * the upload pipeline, so the file is read exactly once and never buffered.
+ * A timeout or scrape cancellation aborts the transfer itself (both streams
+ * are destroyed) — the caller may unlink the temp file as soon as this
+ * returns.
+ *
+ * Cleanup contract: the uploaded object is deliberately NOT deleted here or
+ * on job completion. fire-pdf's committed-retry replay depends on the input
+ * object outliving the job, and the bucket's prefix-scoped lifecycle policy
+ * (inputs/ deleted after 1 day, owned with the bucket in infra) is the
+ * cleanup mechanism.
  *
  * Returns null on any failure (missing bucket grant, timeout, transport):
  * the caller falls back to the pre-by-reference behavior for oversized
@@ -62,11 +61,17 @@ export async function uploadPdfInputForFirePdf(
         ),
       UPLOAD_TIMEOUT_MS,
     );
-    let sha256: string;
+    const hash = createHash("sha256");
+    const hashThrough = new Transform({
+      transform(chunk, _encoding, callback) {
+        hash.update(chunk as Buffer);
+        callback(null, chunk);
+      },
+    });
     try {
-      sha256 = await sha256OfFile(tempFilePath, signal);
       await pipeline(
         createReadStream(tempFilePath),
+        hashThrough,
         storage
           .bucket(bucketName)
           .file(objectKey)
@@ -82,6 +87,7 @@ export async function uploadPdfInputForFirePdf(
     } finally {
       clearTimeout(timer);
     }
+    const sha256 = hash.digest("hex");
     meta.logger.info("Uploaded large PDF for by-reference FirePDF submit", {
       method: "scrapePDF/firePdfByReference",
       event: "fire_pdf_by_reference_uploaded",
