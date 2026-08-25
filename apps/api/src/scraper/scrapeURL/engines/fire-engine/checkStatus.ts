@@ -117,6 +117,9 @@ const successSchema = z.object({
       sha256: z.string().optional(),
       size_bytes: z.number().optional(),
     })
+    .refine(f => (f.content !== undefined) !== (f.gcs_uri !== undefined), {
+      message: "file must carry exactly one of content or gcs_uri",
+    })
     .optional()
     .or(z.null()),
 

@@ -547,16 +547,33 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
           // bucket without the bytes transiting this process; otherwise
           // (or if the rewrite fails) stream-upload the local temp file.
           const handoff = meta.pdfPrefetch?.gcsReference;
+          // The handoff hash becomes fire-pdf's idempotency identity, so it
+          // must match the raw-byte sha already computed for the cache
+          // check above (no second disk read needed); any mismatch falls
+          // back to the hashing upload.
+          const handoffShaMatches =
+            handoff?.sha256 !== undefined &&
+            handoff.sha256.toLowerCase() === localSha256;
+          if (handoff?.sha256 !== undefined && !handoffShaMatches) {
+            meta.logger.warn(
+              "fire-engine handoff sha256 does not match local bytes; using streaming upload",
+              {
+                method: "scrapePDF/firePdfByReference",
+                event: "fire_pdf_handoff_sha_mismatch",
+                scrape_id: meta.id,
+              },
+            );
+          }
           const rewriteEligible =
             !result &&
-            handoff?.sha256 !== undefined &&
-            handoff.sizeBytes === fileSizeBytes;
+            handoffShaMatches &&
+            handoff!.sizeBytes === fileSizeBytes;
           const uploaded = result
             ? null
             : ((rewriteEligible && handoff
                 ? await rewritePdfInputForFirePdf(meta, {
                     uri: handoff.uri,
-                    sha256: handoff.sha256!,
+                    sha256: localSha256,
                     sizeBytes: fileSizeBytes,
                     generation: handoff.generation,
                   })

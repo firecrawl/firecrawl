@@ -542,6 +542,19 @@ export async function scrapeURLWithFireEngineChromeCDP(
         x => x[0].toLowerCase() === "content-type",
       ) ?? [])[1] ?? undefined;
 
+    // A GCS-reference file cannot serve rawBase64 (the caller wants inline
+    // bytes). fire-engine never grants the large-PDF raise to rawBase64
+    // requests, so this is defense in depth with a clear error rather than
+    // a silent rawBase64: undefined.
+    if (
+      hasFormatOfType(meta.options.formats, "rawBase64") !== undefined &&
+      response.file &&
+      response.file.content === undefined &&
+      response.file.gcs_uri !== undefined
+    ) {
+      throw new UnsupportedFileError("File exceeds size limit");
+    }
+
     return {
       url: response.url ?? meta.url,
 
