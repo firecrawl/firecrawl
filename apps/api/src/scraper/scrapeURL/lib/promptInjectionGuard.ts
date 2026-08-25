@@ -17,7 +17,6 @@ import { PromptInjectionDetectedError } from "../error";
 import { captureExceptionWithZdrCheck } from "../../../services/sentry";
 
 const GUARD_MODEL = "gpt-4o-mini";
-// Character-based (not tiktoken, which can hang or crash on pathological input); conservative even for dense scripts.
 const GUARD_MAX_CHUNK_CHARS = 32000;
 const GUARD_CHUNK_OVERLAP_CHARS = 2000;
 const GUARD_CONCURRENCY_LIMIT = 5;
@@ -137,8 +136,7 @@ async function classifyChunk(
       throw error;
     }
 
-    // Bill for anything except errors known to never reach the network --
-    // new SDK error types default to "billed" rather than needing allowlisting.
+    // Denylist, not allowlist: unknown future SDK error types default to "billed".
     const neverDispatched = [
       InvalidPromptError,
       NoSuchModelError,
@@ -165,8 +163,7 @@ async function classifyChunk(
       });
     }
 
-    // Deliberately fail-open: a guard outage shouldn't take down the whole
-    // scrape just because the opt-in security check couldn't run.
+    // Deliberately fail-open so a guard outage doesn't take down the whole scrape.
     logger.warn(
       "Prompt injection guard call failed; proceeding without a guard verdict (fail-open)",
       { error },
