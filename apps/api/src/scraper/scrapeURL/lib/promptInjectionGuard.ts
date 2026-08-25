@@ -12,12 +12,21 @@ import {
 } from "ai";
 import { getModel } from "../../../lib/generic-ai";
 import { CostLimitExceededError, CostTracking } from "../../../lib/cost-tracking";
-import { calculateCost, chunkByTokenLimit } from "../transformers/llmExtract";
+import { calculateCost } from "../transformers/llmExtract";
 import { PromptInjectionDetectedError } from "../error";
 import { captureExceptionWithZdrCheck } from "../../../services/sentry";
 
 const GUARD_MODEL = "gpt-4o-mini";
-const GUARD_MAX_INPUT_TOKENS = 120000;
+// Character-based (not tiktoken): encode() can take minutes or crash on pathological input.
+const GUARD_MAX_CHUNK_CHARS = 100000;
+
+export function chunkByChars(text: string, maxCharsPerChunk: number): string[] {
+  const chunks: string[] = [];
+  for (let i = 0; i < text.length; i += maxCharsPerChunk) {
+    chunks.push(text.slice(i, i + maxCharsPerChunk));
+  }
+  return chunks;
+}
 
 const injectionGuardSchema = z.object({
   isInjection: z
@@ -165,7 +174,7 @@ export async function checkForPromptInjection({
   }
 
   // Chunked, not trimmed -- extraction has no length cap, so a single trim window would be bypassable.
-  const chunks = chunkByTokenLimit(markdown, GUARD_MAX_INPUT_TOKENS, GUARD_MODEL);
+  const chunks = chunkByChars(markdown, GUARD_MAX_CHUNK_CHARS);
 
   const model = getModel(GUARD_MODEL, "openai");
   const modelId = typeof model === "string" ? model : model.modelId;
