@@ -33,24 +33,21 @@ class HttpClient:
 
         # Absolute or protocol-relative (has netloc)
         if ep.netloc:
-            # Different host: keep path/query but force base host/scheme (no token leakage)
+            # Different host: keep path/params/query but force base host/scheme (no token leakage)
             path = ep.path or "/"
-            if (ep.hostname or "") != (base.hostname or ""):
-                return urlunparse((base.scheme or "https", base.netloc, path, "", ep.query, ""))
-            # Same host: normalize scheme to base
-            return urlunparse((base.scheme or "https", base.netloc, path, "", ep.query, ""))
+            return urlunparse((base.scheme or "https", base.netloc, path, ep.params, ep.query, ""))
 
         # Relative (including leading slash or not)
         # Guard protocol-relative like //host/path slipping through as “relative”
         if endpoint.startswith("//"):
             ep2 = urlparse(f"https:{endpoint}")
             path = ep2.path or "/"
-            return urlunparse((base.scheme or "https", base.netloc, path, "", ep2.query, ""))
+            return urlunparse((base.scheme or "https", base.netloc, path, ep2.params, ep2.query, ""))
 
         base_path = base.path.rstrip("/")
         ep_path = ep.path.lstrip("/")
         combined_path = f"{base_path}/{ep_path}" if base_path else f"/{ep_path}"
-        return urlunparse((base.scheme or "https", base.netloc, combined_path, "", ep.query, ""))
+        return urlunparse((base.scheme or "https", base.netloc, combined_path, ep.params, ep.query, ""))
     
     def _prepare_headers(
         self,
