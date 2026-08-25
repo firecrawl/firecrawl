@@ -235,6 +235,47 @@ export function trimToTokenLimit(
   }
 }
 
+// Like trimToTokenLimit, but covers the whole input as a series of chunks instead of discarding the remainder.
+export function chunkByTokenLimit(
+  text: string,
+  maxTokensPerChunk: number,
+  modelId: string = "gpt-4o-mini",
+): string[] {
+  const maxChars = maxTokensPerChunk * MAX_CHARS_PER_TOKEN;
+  const chunks: string[] = [];
+  let remaining = text;
+
+  while (remaining.length > 0) {
+    const candidate = remaining.slice(0, maxChars);
+
+    try {
+      const encoder = encoding_for_model(modelId as TiktokenModel);
+      try {
+        const tokens = encoder.encode(candidate);
+        if (tokens.length <= maxTokensPerChunk) {
+          chunks.push(candidate);
+          remaining = remaining.slice(candidate.length);
+        } else {
+          const trimmedText = new TextDecoder().decode(
+            encoder.decode(tokens.slice(0, maxTokensPerChunk)),
+          );
+          chunks.push(trimmedText);
+          remaining = remaining.slice(trimmedText.length);
+        }
+      } finally {
+        encoder.free();
+      }
+    } catch {
+      const estimatedCharsPerToken = 2.8;
+      const safeLength = Math.floor(maxTokensPerChunk * estimatedCharsPerToken);
+      chunks.push(remaining.slice(0, safeLength));
+      remaining = remaining.slice(safeLength);
+    }
+  }
+
+  return chunks;
+}
+
 export function calculateCost(
   model: string,
   inputTokens: number,

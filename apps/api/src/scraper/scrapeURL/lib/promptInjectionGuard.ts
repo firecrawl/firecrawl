@@ -12,7 +12,7 @@ import {
 } from "ai";
 import { getModel } from "../../../lib/generic-ai";
 import { CostLimitExceededError, CostTracking } from "../../../lib/cost-tracking";
-import { calculateCost, trimToTokenLimit } from "../transformers/llmExtract";
+import { calculateCost, chunkByTokenLimit } from "../transformers/llmExtract";
 import { PromptInjectionDetectedError } from "../error";
 import { captureExceptionWithZdrCheck } from "../../../services/sentry";
 
@@ -65,29 +65,14 @@ function recordGuardCall(
   });
 }
 
-export async function checkForPromptInjection({
-  markdown,
-  logger,
-  costTracking,
-  metadata,
-}: {
-  markdown: string | undefined;
-  logger: Logger;
-  costTracking: CostTracking;
-  metadata: { teamId: string; functionId?: string };
-}): Promise<void> {
-  if (!markdown || markdown.trim().length === 0) {
-    return;
-  }
-
-  const { text: content } = trimToTokenLimit(
-    markdown,
-    GUARD_MAX_INPUT_TOKENS,
-    GUARD_MODEL,
-  );
-
-  const model = getModel(GUARD_MODEL, "openai");
-  const modelId = typeof model === "string" ? model : model.modelId;
+async function classifyChunk(
+  content: string,
+  model: Awaited<ReturnType<typeof getModel>>,
+  modelId: string,
+  logger: Logger,
+  costTracking: CostTracking,
+  metadata: { teamId: string; functionId?: string },
+): Promise<void> {
   const tagName = `untrusted_page_content_${crypto.randomUUID()}`;
 
   try {
@@ -162,4 +147,32 @@ export async function checkForPromptInjection({
       { error },
     );
   }
+}
+
+export async function checkForPromptInjection({
+  markdown,
+  logger,
+  costTracking,
+  metadata,
+}: {
+  markdown: string | undefined;
+  logger: Logger;
+  costTracking: CostTracking;
+  metadata: { teamId: string; functionId?: string };
+}): Promise<void> {
+  if (!markdown || markdown.trim().length === 0) {
+    return;
+  }
+
+  // Chunked, not trimmed -- extraction has no length cap, so a single trim window would be bypassable.
+  const chunks = chunkByTokenLimit(markdown, GUARD_MAX_INPUT_TOKENS, GUARD_MODEL);
+
+  const model = getModel(GUARD_MODEL, "openai");
+  const modelId = typeof model === "string" ? model : model.modelId;
+
+  await Promise.all(
+    chunks.map(chunk =>
+      classifyChunk(chunk, model, modelId, logger, costTracking, metadata),
+    ),
+  );
 }
