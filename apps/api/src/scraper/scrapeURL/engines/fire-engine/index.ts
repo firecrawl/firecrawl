@@ -205,6 +205,7 @@ async function performFireEngineScrape<
         }),
         status.responseHeaders,
         status,
+        meta.abort.asSignal(),
       );
     }
 

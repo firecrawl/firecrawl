@@ -21,14 +21,16 @@ const UPLOAD_TIMEOUT_MS = 120_000;
 /** Server-side rewrites are metadata-speed regardless of object size. */
 const REWRITE_TIMEOUT_MS = 30_000;
 
-function firePdfInputObjectKey(scrapeId: string): string {
+function firePdfInputObjectKey(scrapeId: string, variant?: string): string {
   // Scrape ids are UUIDv7 (time-ordered); a short hash prefix spreads the
-  // keys across GCS partitions, same convention as gcs-jobs.ts.
+  // keys across GCS partitions, same convention as gcs-jobs.ts. The variant
+  // suffix keeps transports on distinct keys: a timed-out (but still
+  // running) rewrite must never race a fallback upload on the same object.
   const keyPrefix = createHash("sha256")
     .update(scrapeId)
     .digest("hex")
     .slice(0, 8);
-  return `inputs/${keyPrefix}-${scrapeId}.pdf`;
+  return `inputs/${keyPrefix}-${scrapeId}${variant ? `-${variant}` : ""}.pdf`;
 }
 
 /**
@@ -172,10 +174,13 @@ export async function uploadPdfInputForFirePdf(
     /** sha-256 already computed over this exact file (e.g. for the
      * pre-upload cache check) — skips the in-pipeline hash pass. */
     precomputedSha256?: string;
+    /** Distinct object-key suffix — pass when another transport (e.g. a
+     * timed-out rewrite) may still be writing this scrape's default key. */
+    keyVariant?: string;
   },
 ): Promise<FirePdfByReferenceInput | null> {
   const bucketName = config.FIRE_PDF_GCS_INPUT_BUCKET;
-  const objectKey = firePdfInputObjectKey(meta.id);
+  const objectKey = firePdfInputObjectKey(meta.id, opts?.keyVariant);
   const startedAt = Date.now();
   try {
     // Both the hash pass and the upload stop on scrape cancellation as

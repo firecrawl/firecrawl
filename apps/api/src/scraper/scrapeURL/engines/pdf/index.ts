@@ -546,21 +546,30 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
           // bucket without the bytes transiting this process; otherwise
           // (or if the rewrite fails) stream-upload the local temp file.
           const handoff = meta.pdfPrefetch?.gcsReference;
+          const rewriteEligible =
+            !result &&
+            handoff?.sha256 !== undefined &&
+            handoff.sizeBytes === fileSizeBytes;
           const uploaded = result
             ? null
-            : ((handoff?.sha256 !== undefined &&
-              handoff.sizeBytes === fileSizeBytes
+            : ((rewriteEligible && handoff
                 ? await rewritePdfInputForFirePdf(meta, {
                     uri: handoff.uri,
-                    sha256: handoff.sha256,
+                    sha256: handoff.sha256!,
                     sizeBytes: fileSizeBytes,
                   })
                 : null) ??
+              // A distinct key when a rewrite was attempted: a timed-out
+              // copy may still complete and must never overwrite this
+              // upload.
               (await uploadPdfInputForFirePdf(
                 meta,
                 tempFilePath,
                 fileSizeBytes,
-                { precomputedSha256: localSha256 },
+                {
+                  keyVariant: rewriteEligible ? "s" : undefined,
+                  precomputedSha256: localSha256,
+                },
               )));
           if (uploaded) {
             try {

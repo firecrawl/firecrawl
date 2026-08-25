@@ -14,6 +14,7 @@ async function feResToFilePrefetch(
   fileExtension: string,
   fileType: string,
   contentType?: string,
+  signal?: AbortSignal,
 ): Promise<Meta["pdfPrefetch"] | Meta["documentPrefetch"]> {
   const file = feRes?.file;
   if (!file || (file.content === undefined && file.gcs_uri === undefined)) {
@@ -39,6 +40,7 @@ async function feResToFilePrefetch(
       logger,
       { uri: file.gcs_uri!, sha256: file.sha256, sizeBytes: file.size_bytes },
       filePath,
+      signal,
     );
     if (downloaded === null) {
       return null;
@@ -65,8 +67,9 @@ async function feResToFilePrefetch(
 async function feResToPdfPrefetch(
   logger: Logger,
   feRes: FireEngineCheckStatusSuccess | undefined,
+  signal?: AbortSignal,
 ): Promise<Meta["pdfPrefetch"]> {
-  return feResToFilePrefetch(logger, feRes, "pdf", "pdf");
+  return feResToFilePrefetch(logger, feRes, "pdf", "pdf", undefined, signal);
 }
 
 async function feResToDocumentPrefetch(
@@ -85,6 +88,9 @@ export async function specialtyScrapeCheck(
   logger: Logger,
   headers: Record<string, string> | undefined,
   feRes?: FireEngineCheckStatusSuccess,
+  /** Scrape abort signal — stops a large-PDF handoff download when the
+   * request has been cancelled or timed out. */
+  signal?: AbortSignal,
 ) {
   const contentType = (Object.entries(headers ?? {}).find(
     x => x[0].toLowerCase() === "content-type",
@@ -151,7 +157,10 @@ export async function specialtyScrapeCheck(
   // reference-shaped file has no inline base64 for the signature sniffs.
   const isPdfReference = feRes?.file?.gcs_uri !== undefined;
   if (isPdf || isPdfReference) {
-    throw new AddFeatureError(["pdf"], await feResToPdfPrefetch(logger, feRes));
+    throw new AddFeatureError(
+      ["pdf"],
+      await feResToPdfPrefetch(logger, feRes, signal),
+    );
   }
 
   // Check for octet-stream with PDF signature
@@ -160,7 +169,10 @@ export async function specialtyScrapeCheck(
     (feRes?.file?.content?.startsWith("JVBERi0") ||
       feRes?.content.startsWith("%PDF-"))
   ) {
-    throw new AddFeatureError(["pdf"], await feResToPdfPrefetch(logger, feRes));
+    throw new AddFeatureError(
+      ["pdf"],
+      await feResToPdfPrefetch(logger, feRes, signal),
+    );
   }
 
   // Reject unsupported binary content types (images, video, audio, archives, etc.)

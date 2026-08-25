@@ -1,4 +1,5 @@
 import { createWriteStream } from "node:fs";
+import { unlink } from "node:fs/promises";
 import { pipeline } from "node:stream/promises";
 import type { Logger } from "winston";
 import { config } from "../../../../config";
@@ -52,6 +53,7 @@ export async function downloadFireEngineGcsFile(
     const object = storage.bucket(parsed.bucket).file(parsed.objectKey);
     const [metadata] = await object.getMetadata();
     const sizeBytes = Number(metadata.size ?? file.sizeBytes ?? 0);
+    const generation = Number(metadata.generation);
     if (!(sizeBytes > 0) || sizeBytes > FIRE_PDF_BY_REFERENCE_MAX_FILE_SIZE) {
       logger.warn("fire-engine GCS file reference has unusable size", {
         uri: file.uri,
@@ -75,7 +77,12 @@ export async function downloadFireEngineGcsFile(
       DOWNLOAD_TIMEOUT_MS,
     );
     try {
-      await pipeline(object.createReadStream(), createWriteStream(destPath), {
+      // Pin the read to the generation whose size was just validated, so a
+      // concurrent replacement of the object cannot bypass the size gate.
+      const pinned = Number.isFinite(generation)
+        ? storage.bucket(parsed.bucket).file(parsed.objectKey, { generation })
+        : object;
+      await pipeline(pinned.createReadStream(), createWriteStream(destPath), {
         signal: combined,
       });
     } finally {
@@ -87,6 +94,9 @@ export async function downloadFireEngineGcsFile(
       uri: file.uri,
       error,
     });
+    // A failed stream may have written a partial file that no prefetch
+    // cleanup will ever see — remove it here.
+    await unlink(destPath).catch(() => {});
     return null;
   }
 }
