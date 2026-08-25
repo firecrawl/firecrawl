@@ -156,7 +156,12 @@ export type Meta = {
          * can server-side copy it instead of re-uploading the bytes. The
          * local filePath is still materialized (sniffing and page-count
          * detection need bytes on disk). */
-        gcsReference?: { uri: string; sha256?: string; sizeBytes?: number };
+        gcsReference?: {
+          uri: string;
+          sha256?: string;
+          sizeBytes?: number;
+          generation?: number;
+        };
       }
     | null
     | undefined; // undefined: no prefetch yet, null: prefetch came back empty

@@ -16,6 +16,26 @@ type FireEngineGcsFile = {
   sizeBytes?: number;
 };
 
+/** Reject when `signal` fires while `promise` is pending — for GCS RPCs
+ * that accept no AbortSignal of their own. The RPC itself may briefly
+ * outlive the rejection; we stop waiting and never use its result. */
+async function raceWithSignal<T>(
+  promise: Promise<T>,
+  signal: AbortSignal,
+): Promise<T> {
+  if (signal.aborted) throw signal.reason ?? new Error("aborted");
+  let onAbort: (() => void) | undefined;
+  const abortP = new Promise<never>((_, reject) => {
+    onAbort = () => reject(signal.reason ?? new Error("aborted"));
+    signal.addEventListener("abort", onAbort, { once: true });
+  });
+  try {
+    return await Promise.race([promise, abortP]);
+  } finally {
+    if (onAbort) signal.removeEventListener("abort", onAbort);
+  }
+}
+
 function parseGcsUri(
   uri: string,
 ): { bucket: string; objectKey: string } | null {
@@ -39,7 +59,12 @@ export async function downloadFireEngineGcsFile(
   file: FireEngineGcsFile,
   destPath: string,
   signal?: AbortSignal,
-): Promise<{ sizeBytes: number } | null> {
+  /** Admission cap for this request — pass the historical download cap when
+   * the FirePDF by-reference route is unreachable, so an unusable large
+   * handoff never consumes network and temp disk. Clamped to the
+   * by-reference ceiling. */
+  maxBytes?: number,
+): Promise<{ sizeBytes: number; generation?: number } | null> {
   const parsed = parseGcsUri(file.uri);
   if (!parsed || parsed.bucket !== config.FIRE_ENGINE_PDF_GCS_BUCKET) {
     logger.warn("fire-engine GCS file reference outside the handoff bucket", {
@@ -48,35 +73,37 @@ export async function downloadFireEngineGcsFile(
     });
     return null;
   }
+  const effectiveMaxBytes = Math.min(
+    maxBytes ?? FIRE_PDF_BY_REFERENCE_MAX_FILE_SIZE,
+    FIRE_PDF_BY_REFERENCE_MAX_FILE_SIZE,
+  );
 
+  const timeoutAbort = new AbortController();
+  const combined = signal
+    ? AbortSignal.any([timeoutAbort.signal, signal])
+    : timeoutAbort.signal;
+  const timer = setTimeout(
+    () =>
+      timeoutAbort.abort(
+        new Error(`GCS file download timed out after ${DOWNLOAD_TIMEOUT_MS}ms`),
+      ),
+    DOWNLOAD_TIMEOUT_MS,
+  );
   try {
     const object = storage.bucket(parsed.bucket).file(parsed.objectKey);
-    const [metadata] = await object.getMetadata();
+    const [metadata] = await raceWithSignal(object.getMetadata(), combined);
     const sizeBytes = Number(metadata.size ?? file.sizeBytes ?? 0);
     const generation = Number(metadata.generation);
-    if (!(sizeBytes > 0) || sizeBytes > FIRE_PDF_BY_REFERENCE_MAX_FILE_SIZE) {
+    if (!(sizeBytes > 0) || sizeBytes > effectiveMaxBytes) {
       logger.warn("fire-engine GCS file reference has unusable size", {
         uri: file.uri,
         sizeBytes,
-        maxBytes: FIRE_PDF_BY_REFERENCE_MAX_FILE_SIZE,
+        maxBytes: effectiveMaxBytes,
       });
       return null;
     }
 
-    const timeoutAbort = new AbortController();
-    const combined = signal
-      ? AbortSignal.any([timeoutAbort.signal, signal])
-      : timeoutAbort.signal;
-    const timer = setTimeout(
-      () =>
-        timeoutAbort.abort(
-          new Error(
-            `GCS file download timed out after ${DOWNLOAD_TIMEOUT_MS}ms`,
-          ),
-        ),
-      DOWNLOAD_TIMEOUT_MS,
-    );
-    try {
+    {
       // Pin the read to the generation whose size was just validated, so a
       // concurrent replacement of the object cannot bypass the size gate.
       const pinned = Number.isFinite(generation)
@@ -85,10 +112,11 @@ export async function downloadFireEngineGcsFile(
       await pipeline(pinned.createReadStream(), createWriteStream(destPath), {
         signal: combined,
       });
-    } finally {
-      clearTimeout(timer);
     }
-    return { sizeBytes };
+    return {
+      sizeBytes,
+      generation: Number.isFinite(generation) ? generation : undefined,
+    };
   } catch (error) {
     logger.warn("fire-engine GCS file download failed", {
       uri: file.uri,
@@ -98,5 +126,7 @@ export async function downloadFireEngineGcsFile(
     // cleanup will ever see — remove it here.
     await unlink(destPath).catch(() => {});
     return null;
+  } finally {
+    clearTimeout(timer);
   }
 }

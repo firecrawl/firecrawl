@@ -45,6 +45,7 @@ import { reconcilePageCountWithFirePdf, scrapePDFWithFirePDF } from "./firePDF";
 import { scrapePDFWithFirePDFAsync } from "./fire-pdf/async";
 import {
   byReferenceConfigured,
+  byReferenceReachableForRequest,
   rewritePdfInputForFirePdf,
   sha256OfFile,
   uploadPdfInputForFirePdf,
@@ -185,7 +186,7 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
   const byReferenceReachable =
     !routeToMinerU &&
     mode !== "fast" &&
-    byReferenceConfigured(meta, forceFirePDF);
+    byReferenceReachableForRequest(meta);
 
   const { response, tempFilePath } =
     meta.pdfPrefetch !== undefined && meta.pdfPrefetch !== null
@@ -557,6 +558,7 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
                     uri: handoff.uri,
                     sha256: handoff.sha256!,
                     sizeBytes: fileSizeBytes,
+                    generation: handoff.generation,
                   })
                 : null) ??
               // A distinct key when a rewrite was attempted: a timed-out

@@ -28,6 +28,11 @@ import {
 import * as Sentry from "@sentry/node";
 import { gunzipSync } from "node:zlib";
 import { specialtyScrapeCheck } from "../utils/specialtyHandler";
+import { byReferenceReachableForRequest } from "../pdf/fire-pdf/by-reference";
+import {
+  FIRE_PDF_BY_REFERENCE_MAX_FILE_SIZE,
+  PDF_DOWNLOAD_MAX_FILE_SIZE,
+} from "../pdf/types";
 import { fireEngineDelete } from "./delete";
 import { MockState } from "../../lib/mock";
 import { getInnerJson } from "@mendable/firecrawl-rs";
@@ -206,6 +211,11 @@ async function performFireEngineScrape<
         status.responseHeaders,
         status,
         meta.abort.asSignal(),
+        // Handoff downloads only admit large files when the FirePDF
+        // by-reference route can actually take them.
+        byReferenceReachableForRequest(meta)
+          ? FIRE_PDF_BY_REFERENCE_MAX_FILE_SIZE
+          : PDF_DOWNLOAD_MAX_FILE_SIZE,
       );
     }
 

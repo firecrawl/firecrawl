@@ -15,6 +15,7 @@ async function feResToFilePrefetch(
   fileType: string,
   contentType?: string,
   signal?: AbortSignal,
+  maxFileBytes?: number,
 ): Promise<Meta["pdfPrefetch"] | Meta["documentPrefetch"]> {
   const file = feRes?.file;
   if (!file || (file.content === undefined && file.gcs_uri === undefined)) {
@@ -41,6 +42,7 @@ async function feResToFilePrefetch(
       { uri: file.gcs_uri!, sha256: file.sha256, sizeBytes: file.size_bytes },
       filePath,
       signal,
+      maxFileBytes,
     );
     if (downloaded === null) {
       return null;
@@ -49,6 +51,7 @@ async function feResToFilePrefetch(
       uri: file.gcs_uri!,
       sha256: file.sha256,
       sizeBytes: downloaded.sizeBytes,
+      generation: downloaded.generation,
     };
   }
 
@@ -68,8 +71,17 @@ async function feResToPdfPrefetch(
   logger: Logger,
   feRes: FireEngineCheckStatusSuccess | undefined,
   signal?: AbortSignal,
+  maxFileBytes?: number,
 ): Promise<Meta["pdfPrefetch"]> {
-  return feResToFilePrefetch(logger, feRes, "pdf", "pdf", undefined, signal);
+  return feResToFilePrefetch(
+    logger,
+    feRes,
+    "pdf",
+    "pdf",
+    undefined,
+    signal,
+    maxFileBytes,
+  );
 }
 
 async function feResToDocumentPrefetch(
@@ -91,6 +103,10 @@ export async function specialtyScrapeCheck(
   /** Scrape abort signal — stops a large-PDF handoff download when the
    * request has been cancelled or timed out. */
   signal?: AbortSignal,
+  /** Admission cap for handoff downloads — the historical download cap when
+   * the FirePDF by-reference route is unreachable for this request, so an
+   * unusable large handoff never consumes network and temp disk. */
+  maxFileBytes?: number,
 ) {
   const contentType = (Object.entries(headers ?? {}).find(
     x => x[0].toLowerCase() === "content-type",
@@ -159,7 +175,7 @@ export async function specialtyScrapeCheck(
   if (isPdf || isPdfReference) {
     throw new AddFeatureError(
       ["pdf"],
-      await feResToPdfPrefetch(logger, feRes, signal),
+      await feResToPdfPrefetch(logger, feRes, signal, maxFileBytes),
     );
   }
 
@@ -171,7 +187,7 @@ export async function specialtyScrapeCheck(
   ) {
     throw new AddFeatureError(
       ["pdf"],
-      await feResToPdfPrefetch(logger, feRes, signal),
+      await feResToPdfPrefetch(logger, feRes, signal, maxFileBytes),
     );
   }
 

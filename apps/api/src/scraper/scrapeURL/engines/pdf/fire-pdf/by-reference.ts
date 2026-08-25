@@ -4,6 +4,11 @@ import { Transform } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import type { Meta } from "../../..";
 import { config } from "../../../../../config";
+import {
+  getPDFBlocks,
+  getPDFPageMarkdown,
+  getPDFPageMarkers,
+} from "../../../../../controllers/v2/types";
 import { storage } from "../../../../../lib/gcs-jobs";
 
 /** Input handle for a FirePDF async submit that travels by GCS reference
@@ -45,7 +50,15 @@ function firePdfInputObjectKey(scrapeId: string, variant?: string): string {
  */
 export async function rewritePdfInputForFirePdf(
   meta: Meta,
-  source: { uri: string; sha256: string; sizeBytes: number },
+  source: {
+    uri: string;
+    sha256: string;
+    sizeBytes: number;
+    /** Generation validated (and read) by the prefetch download — the copy
+     * is pinned to it so a replaced object can never smuggle different
+     * bytes past the local size/sniff checks. */
+    generation?: number;
+  },
 ): Promise<FirePdfByReferenceInput | null> {
   const match = /^gs:\/\/([^/]+)\/(.+)$/.exec(source.uri);
   if (!match || match[1] !== config.FIRE_ENGINE_PDF_GCS_BUCKET) {
@@ -59,6 +72,10 @@ export async function rewritePdfInputForFirePdf(
   try {
     const destFile = storage.bucket(destBucket).file(destKey);
     let timer: NodeJS.Timeout | undefined;
+    // copy() accepts no AbortSignal, so this only stops the wait (timeout or
+    // scrape cancellation); a late copy cannot clobber anything because the
+    // fallback upload uses a distinct object key.
+    const abortSignal = meta.abort.asSignal();
     const timeout = new Promise<never>((_, reject) => {
       timer = setTimeout(
         () =>
@@ -67,14 +84,26 @@ export async function rewritePdfInputForFirePdf(
           ),
         REWRITE_TIMEOUT_MS,
       );
+      if (abortSignal.aborted) {
+        reject(abortSignal.reason ?? new Error("aborted"));
+        return;
+      }
+      abortSignal.addEventListener(
+        "abort",
+        () => reject(abortSignal.reason ?? new Error("aborted")),
+        { once: true },
+      );
     });
     try {
       // The rewrite carries the source object's metadata (fire-engine sets
       // contentType application/pdf at upload), so no overrides needed.
-      await Promise.race([
-        storage.bucket(match[1]).file(match[2]).copy(destFile),
-        timeout,
-      ]);
+      const sourceFile =
+        source.generation !== undefined
+          ? storage
+              .bucket(match[1])
+              .file(match[2], { generation: source.generation })
+          : storage.bucket(match[1]).file(match[2]);
+      await Promise.race([sourceFile.copy(destFile), timeout]);
     } finally {
       clearTimeout(timer);
     }
@@ -120,6 +149,20 @@ export async function rewritePdfInputForFirePdf(
  * mirroring the inline path's rule; otherwise both the master switch and
  * the by-reference switch must be on.
  */
+/** The full request-level reachability check — byReferenceConfigured plus
+ * the parser options that force FirePDF. One definition shared by the PDF
+ * engine's download admission/routing gate AND the fire-engine handoff
+ * download cap, so the two can never drift. */
+export function byReferenceReachableForRequest(meta: Meta): boolean {
+  return byReferenceConfigured(
+    meta,
+    !!meta.options.__forceFirePDF ||
+      getPDFPageMarkdown(meta.options.parsers) ||
+      getPDFBlocks(meta.options.parsers) ||
+      getPDFPageMarkers(meta.options.parsers),
+  );
+}
+
 export function byReferenceConfigured(
   meta: Meta,
   forceFirePdfRequested: boolean,
