@@ -17,13 +17,21 @@ import { PromptInjectionDetectedError } from "../error";
 import { captureExceptionWithZdrCheck } from "../../../services/sentry";
 
 const GUARD_MODEL = "gpt-4o-mini";
-// Character-based (not tiktoken): encode() can take minutes or crash on pathological input.
-const GUARD_MAX_CHUNK_CHARS = 100000;
+// Character-based (not tiktoken, which can hang or crash on pathological input); conservative even for dense scripts.
+const GUARD_MAX_CHUNK_CHARS = 32000;
+const GUARD_CHUNK_OVERLAP_CHARS = 2000;
+const GUARD_CONCURRENCY_LIMIT = 5;
 
-export function chunkByChars(text: string, maxCharsPerChunk: number): string[] {
+export function chunkByChars(
+  text: string,
+  maxCharsPerChunk: number,
+  overlap: number = 0,
+): string[] {
   const chunks: string[] = [];
-  for (let i = 0; i < text.length; i += maxCharsPerChunk) {
+  const stride = maxCharsPerChunk - overlap;
+  for (let i = 0; i < text.length; i += stride) {
     chunks.push(text.slice(i, i + maxCharsPerChunk));
+    if (i + maxCharsPerChunk >= text.length) break;
   }
   return chunks;
 }
@@ -139,7 +147,15 @@ async function classifyChunk(
       LoadSettingError,
     ].some(ErrorClass => ErrorClass.isInstance(error));
     if (!neverDispatched) {
-      recordGuardCall(costTracking, modelId, 0, 0);
+      const usage = NoObjectGeneratedError.isInstance(error)
+        ? error.usage
+        : undefined;
+      recordGuardCall(
+        costTracking,
+        modelId,
+        usage?.inputTokens ?? 0,
+        usage?.outputTokens ?? 0,
+      );
     }
 
     if (!NoObjectGeneratedError.isInstance(error)) {
@@ -173,15 +189,23 @@ export async function checkForPromptInjection({
     return;
   }
 
-  // Chunked, not trimmed -- extraction has no length cap, so a single trim window would be bypassable.
-  const chunks = chunkByChars(markdown, GUARD_MAX_CHUNK_CHARS);
+  // Chunked and overlapping: a single trim window is bypassable, and a non-overlapping split could hide an injection at a boundary.
+  const chunks = chunkByChars(
+    markdown,
+    GUARD_MAX_CHUNK_CHARS,
+    GUARD_CHUNK_OVERLAP_CHARS,
+  );
 
   const model = getModel(GUARD_MODEL, "openai");
   const modelId = typeof model === "string" ? model : model.modelId;
 
-  await Promise.all(
-    chunks.map(chunk =>
-      classifyChunk(chunk, model, modelId, logger, costTracking, metadata),
-    ),
-  );
+  // Batched so a detection stops later batches from ever being scheduled, and so a huge page can't burst past rate limits.
+  for (let i = 0; i < chunks.length; i += GUARD_CONCURRENCY_LIMIT) {
+    const batch = chunks.slice(i, i + GUARD_CONCURRENCY_LIMIT);
+    await Promise.all(
+      batch.map(chunk =>
+        classifyChunk(chunk, model, modelId, logger, costTracking, metadata),
+      ),
+    );
+  }
 }
