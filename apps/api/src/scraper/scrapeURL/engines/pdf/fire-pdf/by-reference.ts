@@ -18,6 +18,94 @@ export type FirePdfByReferenceInput = {
  * stuck stream cannot hold a scrape slot indefinitely. */
 const UPLOAD_TIMEOUT_MS = 120_000;
 
+/** Server-side rewrites are metadata-speed regardless of object size. */
+const REWRITE_TIMEOUT_MS = 30_000;
+
+function firePdfInputObjectKey(scrapeId: string): string {
+  // Scrape ids are UUIDv7 (time-ordered); a short hash prefix spreads the
+  // keys across GCS partitions, same convention as gcs-jobs.ts.
+  const keyPrefix = createHash("sha256")
+    .update(scrapeId)
+    .digest("hex")
+    .slice(0, 8);
+  return `inputs/${keyPrefix}-${scrapeId}.pdf`;
+}
+
+/**
+ * Server-side copy a fire-engine-uploaded PDF (the large-file GCS handoff)
+ * into the fire-pdf input bucket, so the bytes never transit this process
+ * at all. Requires the handoff to carry a sha256 (fire-pdf's idempotency
+ * identity) — without one the caller must fall back to
+ * {@link uploadPdfInputForFirePdf}, which computes it while streaming.
+ *
+ * Returns null on any failure; callers fall back to the streaming upload
+ * (the bytes are already on local disk for detection anyway).
+ */
+export async function rewritePdfInputForFirePdf(
+  meta: Meta,
+  source: { uri: string; sha256: string; sizeBytes: number },
+): Promise<FirePdfByReferenceInput | null> {
+  const match = /^gs:\/\/([^/]+)\/(.+)$/.exec(source.uri);
+  if (!match || match[1] !== config.FIRE_ENGINE_PDF_GCS_BUCKET) {
+    // Only copy out of fire-engine's handoff bucket — never an arbitrary
+    // bucket named by response data.
+    return null;
+  }
+  const destBucket = config.FIRE_PDF_GCS_INPUT_BUCKET;
+  const destKey = firePdfInputObjectKey(meta.id);
+  const startedAt = Date.now();
+  try {
+    const destFile = storage.bucket(destBucket).file(destKey);
+    let timer: NodeJS.Timeout | undefined;
+    const timeout = new Promise<never>((_, reject) => {
+      timer = setTimeout(
+        () =>
+          reject(
+            new Error(`GCS rewrite timed out after ${REWRITE_TIMEOUT_MS}ms`),
+          ),
+        REWRITE_TIMEOUT_MS,
+      );
+    });
+    try {
+      // The rewrite carries the source object's metadata (fire-engine sets
+      // contentType application/pdf at upload), so no overrides needed.
+      await Promise.race([
+        storage.bucket(match[1]).file(match[2]).copy(destFile),
+        timeout,
+      ]);
+    } finally {
+      clearTimeout(timer);
+    }
+    meta.logger.info("Rewrote fire-engine PDF handoff into fire-pdf inputs", {
+      method: "scrapePDF/firePdfByReference",
+      event: "fire_pdf_by_reference_rewritten",
+      scrape_id: meta.id,
+      size_bytes: source.sizeBytes,
+      duration_ms: Date.now() - startedAt,
+      source_uri: source.uri,
+      gcs_uri: `gs://${destBucket}/${destKey}`,
+    });
+    return {
+      gcsUri: `gs://${destBucket}/${destKey}`,
+      sha256: source.sha256,
+      sizeBytes: source.sizeBytes,
+    };
+  } catch (error) {
+    meta.abort.throwIfAborted();
+    meta.logger.warn(
+      "GCS rewrite of fire-engine PDF handoff failed; falling back to streaming upload",
+      {
+        method: "scrapePDF/firePdfByReference",
+        event: "fire_pdf_by_reference_rewrite_failed",
+        scrape_id: meta.id,
+        source_uri: source.uri,
+        error,
+      },
+    );
+    return null;
+  }
+}
+
 /**
  * Whether by-reference FirePDF routing is configured and permitted for this
  * request, judged from signals available before the file is downloaded.
@@ -87,13 +175,7 @@ export async function uploadPdfInputForFirePdf(
   },
 ): Promise<FirePdfByReferenceInput | null> {
   const bucketName = config.FIRE_PDF_GCS_INPUT_BUCKET;
-  // Scrape ids are UUIDv7 (time-ordered); a short hash prefix spreads the
-  // keys across GCS partitions, same convention as gcs-jobs.ts.
-  const keyPrefix = createHash("sha256")
-    .update(meta.id)
-    .digest("hex")
-    .slice(0, 8);
-  const objectKey = `inputs/${keyPrefix}-${meta.id}.pdf`;
+  const objectKey = firePdfInputObjectKey(meta.id);
   const startedAt = Date.now();
   try {
     // Both the hash pass and the upload stop on scrape cancellation as

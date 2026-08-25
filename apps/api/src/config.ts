@@ -359,6 +359,17 @@ const configSchema = z.object({
     .trim()
     .min(1)
     .default("firecrawl-pdf-pipeline"),
+  // Bucket fire-engine uses for its large-PDF handoff (files too big to
+  // inline as base64 in its response). Acts as the allowlist for inbound
+  // `file.gcs_uri` references — objects outside it are never fetched. Must
+  // match fire-engine's GCS_PDF_BUCKET_NAME. Nonblank for the same reason
+  // as the input bucket above: a blank value would silently disable the
+  // path instead of failing at startup.
+  FIRE_ENGINE_PDF_GCS_BUCKET: z
+    .string()
+    .trim()
+    .min(1)
+    .default("fire-engine-scrape-storage"),
 
   // RunPod
   RUNPOD_MU_API_KEY: z.string().optional(),

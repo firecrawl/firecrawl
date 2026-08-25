@@ -10,6 +10,7 @@ import {
   PDFPrefetchFailed,
   RemoveFeatureError,
   EngineUnsuccessfulError,
+  UnsupportedFileError,
 } from "../../error";
 import { open, readFile, stat, unlink } from "node:fs/promises";
 import type { Response } from "undici";
@@ -44,6 +45,7 @@ import { reconcilePageCountWithFirePdf, scrapePDFWithFirePDF } from "./firePDF";
 import { scrapePDFWithFirePDFAsync } from "./fire-pdf/async";
 import {
   byReferenceConfigured,
+  rewritePdfInputForFirePdf,
   sha256OfFile,
   uploadPdfInputForFirePdf,
 } from "./fire-pdf/by-reference";
@@ -95,6 +97,13 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
 
   if (!shouldParse) {
     if (meta.pdfPrefetch !== undefined && meta.pdfPrefetch !== null) {
+      // The raw path returns the file base64'd inline in the response, so it
+      // keeps the historical cap even when a large prefetch (fire-engine GCS
+      // handoff) materialized a bigger file on disk for the parse path.
+      const prefetchSize = (await stat(meta.pdfPrefetch.filePath)).size;
+      if (prefetchSize > PDF_DOWNLOAD_MAX_FILE_SIZE) {
+        throw new UnsupportedFileError("File exceeds size limit");
+      }
       const content = (await readFile(meta.pdfPrefetch.filePath)).toString(
         "base64",
       );
@@ -532,16 +541,27 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
               result,
             );
           }
+          // On a miss: when fire-engine already handed the file off via
+          // GCS, a server-side rewrite moves it into the fire-pdf input
+          // bucket without the bytes transiting this process; otherwise
+          // (or if the rewrite fails) stream-upload the local temp file.
+          const handoff = meta.pdfPrefetch?.gcsReference;
           const uploaded = result
             ? null
-            : await uploadPdfInputForFirePdf(
+            : ((handoff?.sha256 !== undefined &&
+              handoff.sizeBytes === fileSizeBytes
+                ? await rewritePdfInputForFirePdf(meta, {
+                    uri: handoff.uri,
+                    sha256: handoff.sha256,
+                    sizeBytes: fileSizeBytes,
+                  })
+                : null) ??
+              (await uploadPdfInputForFirePdf(
                 meta,
                 tempFilePath,
                 fileSizeBytes,
-                {
-                  precomputedSha256: localSha256,
-                },
-              );
+                { precomputedSha256: localSha256 },
+              )));
           if (uploaded) {
             try {
               result = await scrapePDFWithFirePDFAsync(

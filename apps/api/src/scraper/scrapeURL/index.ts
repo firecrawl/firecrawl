@@ -151,6 +151,12 @@ export type Meta = {
         status: number;
         proxyUsed: "basic" | "stealth";
         contentType?: string;
+        /** Set when fire-engine handed the file off by GCS reference (large
+         * PDFs): the object it uploaded, so the FirePDF by-reference path
+         * can server-side copy it instead of re-uploading the bytes. The
+         * local filePath is still materialized (sniffing and page-count
+         * detection need bytes on disk). */
+        gcsReference?: { uri: string; sha256?: string; sizeBytes?: number };
       }
     | null
     | undefined; // undefined: no prefetch yet, null: prefetch came back empty

@@ -217,7 +217,10 @@ async function performFireEngineScrape<
       status.content = await getInnerJson(status.content);
     }
 
-    if (status.file && !wantsRawBase64) {
+    // Reference-shaped files (gcs_uri without content) belong to the
+    // specialty prefetch path above and never reach this inline-decode
+    // block; guard on `content` so one slipping through can't crash it.
+    if (status.file?.content !== undefined && !wantsRawBase64) {
       const content = status.file.content;
       delete status.file;
       let buffer = Buffer.from(content, "base64");
