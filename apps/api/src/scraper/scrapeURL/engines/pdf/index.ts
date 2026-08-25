@@ -11,7 +11,7 @@ import {
   RemoveFeatureError,
   EngineUnsuccessfulError,
 } from "../../error";
-import { open, readFile, unlink } from "node:fs/promises";
+import { open, readFile, stat, unlink } from "node:fs/promises";
 import type { Response } from "undici";
 import { AbortManagerThrownError } from "../../lib/abortManager";
 import {
@@ -26,6 +26,7 @@ import {
 import type { PDFMode } from "../../../../controllers/v2/types";
 import { processPdf, detectPdf } from "@mendable/firecrawl-rs";
 import {
+  FIRE_PDF_BY_REFERENCE_MAX_FILE_SIZE,
   FIRE_PDF_MAX_FILE_SIZE,
   MAX_FILE_SIZE,
   MILLISECONDS_PER_PAGE,
@@ -40,6 +41,7 @@ import { withSpan, setSpanAttributes } from "../../../../lib/otel-tracer";
 import { scrapePDFWithRunPodMU } from "./runpodMU";
 import { reconcilePageCountWithFirePdf, scrapePDFWithFirePDF } from "./firePDF";
 import { scrapePDFWithFirePDFAsync } from "./fire-pdf/async";
+import { uploadPdfInputForFirePdf } from "./fire-pdf/by-reference";
 import { decideFirePdfAsyncRoute } from "./fire-pdf/routing";
 import { scrapePDFWithParsePDF } from "./pdfParse";
 import { toPublicBlocks } from "./blocks";
@@ -150,7 +152,9 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
             headers: meta.options.headers,
             signal: meta.abort.asSignal(),
           },
-          PDF_DOWNLOAD_MAX_FILE_SIZE,
+          // Parse path streams to disk and can hand large files to FirePDF
+          // by GCS reference, so it admits more than the raw fetch path.
+          FIRE_PDF_BY_REFERENCE_MAX_FILE_SIZE,
         );
 
   try {
@@ -405,6 +409,90 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
     // unless we explicitly routed to MinerU via MINERU_PERCENT.
     const skipOCR =
       rustEnabled && mode === "fast" && !routeToMinerU && !forceFirePDF;
+
+    // Large PDFs can't travel inline as base64 JSON (fire-pdf's body limit,
+    // V8 string ceilings, worker memory), so they go to the fire-pdf async
+    // pipeline by GCS reference — streamed from the temp file, never
+    // buffered. ZDR stays out: the by-reference input object persists in
+    // GCS. MinerU-diverted traffic keeps its route decision (MinerU can't
+    // take these sizes, so the legacy chain below just skips through).
+    if (!result && !skipOCR) {
+      const fileSizeBytes = (await stat(tempFilePath)).size;
+      const useFirePdfByReference =
+        !routeToMinerU &&
+        !meta.internalOptions.zeroDataRetention &&
+        !!config.FIRE_PDF_ENABLE &&
+        !!config.FIRE_PDF_BASE_URL &&
+        fileSizeBytes >= FIRE_PDF_MAX_FILE_SIZE &&
+        fileSizeBytes <= FIRE_PDF_BY_REFERENCE_MAX_FILE_SIZE;
+
+      if (useFirePdfByReference) {
+        if (effectivePageCount <= 0) {
+          // fire-pdf can't probe pages without the bytes, so by-reference
+          // submits require our page count. Fall through to the legacy
+          // chain (status quo for oversized files).
+          meta.logger.warn(
+            "Large PDF has no page-count estimate; cannot submit by reference",
+            {
+              method: "scrapePDF",
+              event: "fire_pdf_by_reference_no_pages",
+              file_size_bytes: fileSizeBytes,
+              scrape_id: meta.id,
+              team_id: meta.internalOptions.teamId,
+            },
+          );
+        } else {
+          const uploaded = await uploadPdfInputForFirePdf(
+            meta,
+            tempFilePath,
+            fileSizeBytes,
+          );
+          if (uploaded) {
+            try {
+              result = await scrapePDFWithFirePDFAsync(
+                {
+                  ...meta,
+                  logger: meta.logger.child({
+                    method: "scrapePDF/firePDFAsyncByReference",
+                  }),
+                },
+                uploaded,
+                maxPages,
+                effectivePageCount,
+                mode,
+                undefined,
+                includePageMarkdown,
+                includeBlocks,
+                pageMarkers,
+              );
+              effectivePageCount = reconcilePageCountWithFirePdf(
+                effectivePageCount,
+                result,
+              );
+            } catch (error) {
+              // No inline retry exists at this size, and the legacy chain
+              // below would silently degrade a large document to text-only
+              // extraction. Surface the failure instead.
+              meta.logger.error(
+                "FirePDF by-reference scrape failed (no fallback at this size)",
+                {
+                  method: "scrapePDF/firePDFAsyncByReference",
+                  error,
+                  file_size_bytes: fileSizeBytes,
+                  scrape_id: meta.id,
+                  team_id: meta.internalOptions.teamId,
+                },
+              );
+              throw error;
+            }
+          }
+          // Upload failure: fall through to the legacy chain — the
+          // oversized-skip warning below still fires, preserving the
+          // pre-by-reference behavior.
+        }
+      }
+    }
+
     if (!result && !skipOCR) {
       const pdfBuffer = await readFile(tempFilePath);
       const fileSizeBytes = pdfBuffer.length;

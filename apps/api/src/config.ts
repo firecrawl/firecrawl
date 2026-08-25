@@ -342,6 +342,13 @@ const configSchema = z.object({
   FIRE_PDF_ASYNC_FORCE_TEAM_IDS: z.string().optional(),
   FIRE_PDF_ASYNC_DISABLE_TEAM_IDS: z.string().optional(),
   FIRE_PDF_ASYNC_ALLOW_REQUEST_OVERRIDE: z.stringbool().default(false),
+  // Bucket that receives large-PDF inputs for by-reference async submits
+  // (fire-pdf reads them back via `input_gcs_uri`). fire-pdf only accepts
+  // URIs inside its own configured bucket + `inputs/` prefix, so this must
+  // match fire-pdf's FIRE_PDF_GCS_BUCKET. Upload failures (e.g. missing
+  // IAM grant) fall back to the pre-by-reference behavior for oversized
+  // files rather than failing the scrape.
+  FIRE_PDF_GCS_INPUT_BUCKET: z.string().default("firecrawl-pdf-pipeline"),
 
   // RunPod
   RUNPOD_MU_API_KEY: z.string().optional(),

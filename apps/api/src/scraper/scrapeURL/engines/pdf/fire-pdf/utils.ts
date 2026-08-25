@@ -38,11 +38,22 @@ export function nextPollDelay(
   return Math.min(POLL_CAP_MS, jittered);
 }
 
-export function computeDeadlineMs(scrapeTimeoutMs: number | undefined): number {
+export function computeDeadlineMs(
+  scrapeTimeoutMs: number | undefined,
+  /** No-budget default override; used by by-reference submits to scale the
+   * deadline with page count instead of the flat 5 minutes. Ignored when
+   * the caller supplied a scrape timeout, and never below the flat default
+   * or above MAX_DEADLINE_MS. */
+  noBudgetFallbackMs?: number,
+): number {
   // 5min default when there's no scrape budget (CLI/tests). Routing rejects
   // budgets that are too short; only cap the upper bound here so we never
   // advertise more time to FirePDF than the caller actually has.
-  const fallback = 5 * 60 * 1_000;
+  const flatFallback = 5 * 60 * 1_000;
+  const fallback =
+    noBudgetFallbackMs !== undefined
+      ? Math.max(flatFallback, noBudgetFallbackMs)
+      : flatFallback;
   const candidate = scrapeTimeoutMs ?? fallback;
   return Math.min(MAX_DEADLINE_MS, candidate);
 }

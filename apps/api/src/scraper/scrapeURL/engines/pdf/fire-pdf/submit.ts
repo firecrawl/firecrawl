@@ -12,10 +12,18 @@ type SubmitOutcome = {
   alreadyDone: boolean;
 };
 
+/** How the PDF bytes reach fire-pdf: inline base64 for small files, or a
+ * GCS reference (pre-uploaded to fire-pdf's input bucket) for large ones.
+ * By-reference submits require a positive `pages_estimate` — fire-pdf has
+ * no bytes to probe at admission time. */
+type FirePdfSubmitInput =
+  | { kind: "inline"; base64Content: string }
+  | { kind: "byReference"; gcsUri: string; sha256: string };
+
 type SubmitArgs = {
   meta: Meta;
   baseUrl: string;
-  base64Content: string;
+  input: FirePdfSubmitInput;
   maxPages: number | undefined;
   pagesProcessed: number | undefined;
   mode: PDFMode | undefined;
@@ -57,7 +65,7 @@ export async function submitJob(args: SubmitArgs): Promise<SubmitOutcome> {
   const {
     meta,
     baseUrl,
-    base64Content,
+    input,
     maxPages,
     pagesProcessed,
     mode,
@@ -70,8 +78,22 @@ export async function submitJob(args: SubmitArgs): Promise<SubmitOutcome> {
   } = args;
   const scrapeId = meta.id;
 
+  if (
+    input.kind === "byReference" &&
+    (pagesProcessed === undefined || pagesProcessed <= 0)
+  ) {
+    // fire-pdf rejects by-reference submits without a positive
+    // pages_estimate (400 missing_pages_estimate); fail here with the
+    // clearer local error instead of a wire round-trip.
+    throw new Error(
+      "fire-pdf by-reference submit requires a positive pages estimate",
+    );
+  }
+
   const body = {
-    pdf_b64: base64Content,
+    ...(input.kind === "inline"
+      ? { pdf_b64: input.base64Content }
+      : { input_gcs_uri: input.gcsUri, input_sha256: input.sha256 }),
     scrape_id: scrapeId,
     source: "firecrawl" as const,
     zdr: false as const,

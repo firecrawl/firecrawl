@@ -1136,4 +1136,137 @@ describe("scrapePDFWithFirePDFAsync", () => {
     expect(delta).toBeGreaterThanOrEqual(5_000 - 100);
     expect(delta).toBeLessThanOrEqual(30 * 60 * 1_000);
   });
+
+  describe("by-reference input (large PDFs)", () => {
+    const BY_REF = {
+      gcsUri: "gs://firecrawl-pdf-pipeline/inputs/scrape-id-test.pdf",
+      sha256: "ab".repeat(32),
+      sizeBytes: 200 * 1024 * 1024,
+    };
+
+    it("submits input_gcs_uri + input_sha256 instead of pdf_b64", async () => {
+      const { fetchImpl, calls } = makeFetchFromSequence([
+        {
+          matchUrl: /\/jobs$/,
+          matchMethod: "POST",
+          response: {
+            status: 202,
+            body: { scrape_id: "scrape-id-test", status: "queued", lane: "xl" },
+          },
+        },
+        {
+          matchUrl: /\/jobs\/scrape-id-test$/,
+          matchMethod: "GET",
+          response: {
+            status: 200,
+            body: { scrape_id: "x", status: "done", pages_processed: 6543 },
+          },
+        },
+        {
+          matchUrl: /\/jobs\/scrape-id-test\/result$/,
+          matchMethod: "GET",
+          response: {
+            status: 200,
+            body: {
+              schema_version: 1,
+              markdown: "# big doc",
+              pages_processed: 6543,
+              failed_pages: null,
+              partial_pages: null,
+            },
+          },
+        },
+      ]);
+
+      const result = await scrapePDFWithFirePDFAsync(
+        makeMeta(),
+        BY_REF,
+        undefined,
+        6543,
+        undefined,
+        { fetchImpl, fallbackImpl: vi.fn(), sleepImpl: noopSleep },
+      );
+
+      expect(result.markdown).toBe("# big doc");
+      const body = calls[0].body as Record<string, unknown>;
+      expect(body.input_gcs_uri).toBe(BY_REF.gcsUri);
+      expect(body.input_sha256).toBe(BY_REF.sha256);
+      expect(body.pdf_b64).toBeUndefined();
+      expect((body.options as { pages_estimate?: number }).pages_estimate).toBe(
+        6543,
+      );
+    });
+
+    it("scales the no-budget deadline with page count, capped at 30min", async () => {
+      let submittedBody: any;
+      const fetchImpl: any = async (url: string, init: any) => {
+        if (/\/jobs$/.test(url) && (init?.method ?? "GET") === "POST") {
+          submittedBody = JSON.parse(init.body as string);
+          return jsonResp({
+            status: 200,
+            body: { scrape_id: "x", status: "done", pages_processed: 800 },
+          });
+        }
+        return jsonResp({
+          status: 200,
+          body: { markdown: "ok", pages_processed: 800 },
+        });
+      };
+      // No caller timeout: 800 pages × 2s = 1,600s > flat 5min fallback.
+      const meta = makeMeta();
+      meta.abort.scrapeTimeout = vi.fn(() => undefined);
+
+      await scrapePDFWithFirePDFAsync(
+        meta,
+        { ...BY_REF },
+        undefined,
+        800,
+        undefined,
+        {
+          fetchImpl,
+          fallbackImpl: vi.fn(),
+          sleepImpl: noopSleep,
+        },
+      );
+
+      const delta = new Date(submittedBody.deadline_at).getTime() - Date.now();
+      expect(delta).toBeGreaterThan(1_500_000);
+      expect(delta).toBeLessThanOrEqual(30 * 60 * 1_000);
+    });
+
+    it("throws (never falls back) for by-reference under ZDR", async () => {
+      const fallback = vi.fn();
+      await expect(
+        scrapePDFWithFirePDFAsync(
+          makeMeta({
+            internalOptions: {
+              zeroDataRetention: true,
+              teamId: "team-x",
+              teamConcurrency: 12,
+              crawlId: undefined,
+            },
+          }),
+          { ...BY_REF },
+          undefined,
+          100,
+          undefined,
+          { fetchImpl: vi.fn(), fallbackImpl: fallback, sleepImpl: noopSleep },
+        ),
+      ).rejects.toThrow(/zero data retention/);
+      expect(fallback).not.toHaveBeenCalled();
+    });
+
+    it("rejects a by-reference submit without a positive pages estimate", async () => {
+      await expect(
+        scrapePDFWithFirePDFAsync(
+          makeMeta(),
+          { ...BY_REF },
+          undefined,
+          undefined,
+          undefined,
+          { fetchImpl: vi.fn(), fallbackImpl: vi.fn(), sleepImpl: noopSleep },
+        ),
+      ).rejects.toThrow(/pages estimate/);
+    });
+  });
 });
