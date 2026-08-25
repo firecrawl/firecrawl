@@ -79,10 +79,7 @@ export async function fire_engine_search_v2(
   const data = JSON.stringify(payload);
 
   const result = await executeWithRetry<SearchV2Response>(
-    () =>
-      attemptRequest<SearchV2Response>(url, data, abort, {
-        ...(options.requestId ? { "X-Request-ID": options.requestId } : {}),
-      }),
+    () => attemptRequest<SearchV2Response>(url, data, abort, options.requestId),
     (response): response is SearchV2Response => response !== null,
     abort,
   );

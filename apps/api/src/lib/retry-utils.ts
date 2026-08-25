@@ -11,7 +11,7 @@ export async function attemptRequest<T>(
   url: string,
   data: string,
   abort?: AbortSignal,
-  headers?: Record<string, string>,
+  requestId?: string,
 ): Promise<T | null> {
   try {
     const response = await fetch(url, {
@@ -19,7 +19,7 @@ export async function attemptRequest<T>(
       headers: {
         "Content-Type": "application/json",
         "X-Disable-Cache": "true",
-        ...headers,
+        ...(requestId ? { "X-Request-ID": requestId } : {}),
       },
       body: data,
       signal: abort,
