@@ -167,19 +167,41 @@ export function checkCreditsMiddleware(
       const remainingCredits = success ? Infinity : autumnResult.remaining;
       req.account = { remainingCredits };
       if (!success) {
+        const requestedLimit = Number((req.body as any)?.limit);
+        const clampedLimit = Math.min(requestedLimit, remainingCredits);
         if (
           !_minimum &&
           req.body &&
           (req.body as any).limit !== undefined &&
-          remainingCredits > 0
+          Number.isFinite(clampedLimit) &&
+          clampedLimit > 0
         ) {
-          logger.warn("Adjusting limit to remaining credits", {
+          // `remaining` is the team's credit balance, and a per-API-key spend
+          // limit never lowers it, so a key over its own cap still reports a
+          // healthy balance here. Re-check the clamped limit so only a genuinely
+          // low team balance gets shrunk to fit; a per-key denial falls through
+          // to the 402 below. A null re-check keeps the fail-open behavior.
+          const clampedResult = await autumnService.checkCredits({
             teamId: req.auth.team_id,
-            remainingCredits,
-            request: req.body,
+            value: clampedLimit,
+            properties: {
+              source: "checkCreditsMiddleware:clamp",
+              path: req.path,
+              apiKeyId: req.acuc?.api_key_id ?? null,
+            },
+            featureId,
           });
-          (req.body as any).limit = remainingCredits;
-          return next();
+
+          if (clampedResult === null || clampedResult.allowed) {
+            logger.warn("Adjusting limit to remaining credits", {
+              teamId: req.auth.team_id,
+              remainingCredits,
+              clampedLimit,
+              request: req.body,
+            });
+            (req.body as any).limit = clampedLimit;
+            return next();
+          }
         }
 
         const currencyName = req.acuc?.is_extract ? "tokens" : "credits";
