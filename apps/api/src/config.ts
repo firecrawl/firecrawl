@@ -342,6 +342,12 @@ const configSchema = z.object({
   FIRE_PDF_ASYNC_FORCE_TEAM_IDS: z.string().optional(),
   FIRE_PDF_ASYNC_DISABLE_TEAM_IDS: z.string().optional(),
   FIRE_PDF_ASYNC_ALLOW_REQUEST_OVERRIDE: z.stringbool().default(false),
+  // Large-PDF by-reference submits (30-256MB files uploaded to GCS and
+  // handed to fire-pdf via `input_gcs_uri`). This is an explicit on/off
+  // switch, not a percentage: no alternative engine exists at this size,
+  // so there is no cohort to sample "out" — only text-only degradation.
+  // FIRE_PDF_ENABLE remains the master switch for both paths.
+  FIRE_PDF_BY_REFERENCE_ENABLE: z.stringbool().default(true),
   // Bucket that receives large-PDF inputs for by-reference async submits
   // (fire-pdf reads them back via `input_gcs_uri`). fire-pdf only accepts
   // URIs inside its own configured bucket + `inputs/` prefix, so this must

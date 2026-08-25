@@ -417,11 +417,11 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
     // buffered. ZDR stays out: the by-reference input object persists in
     // GCS. MinerU-diverted traffic keeps its route decision (MinerU can't
     // take these sizes, so the legacy chain below just skips through).
-    // FIRE_PDF_PERCENT acts as an on/off switch here rather than a sample
-    // rate: there is no alternative engine at this size, so sampling a
-    // cohort "out" would only degrade those documents to text-only
-    // extraction. forceFirePDF mirrors the inline path's rule and needs
-    // only FIRE_PDF_BASE_URL.
+    // By-reference has its own explicit switch instead of riding
+    // FIRE_PDF_PERCENT: there is no alternative engine at this size, so a
+    // sampled-out cohort would only degrade to text-only extraction.
+    // forceFirePDF mirrors the inline path's rule and needs only
+    // FIRE_PDF_BASE_URL.
     if (!result && !skipOCR) {
       const fileSizeBytes = (await stat(tempFilePath)).size;
       const useFirePdfByReference =
@@ -429,7 +429,7 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
         !meta.internalOptions.zeroDataRetention &&
         !!config.FIRE_PDF_BASE_URL &&
         (forceFirePDF ||
-          (!!config.FIRE_PDF_ENABLE && config.FIRE_PDF_PERCENT > 0)) &&
+          (!!config.FIRE_PDF_ENABLE && config.FIRE_PDF_BY_REFERENCE_ENABLE)) &&
         fileSizeBytes >= FIRE_PDF_MAX_FILE_SIZE &&
         fileSizeBytes <= FIRE_PDF_BY_REFERENCE_MAX_FILE_SIZE;
 

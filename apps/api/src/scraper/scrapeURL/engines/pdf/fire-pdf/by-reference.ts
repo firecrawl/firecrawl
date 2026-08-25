@@ -17,9 +17,12 @@ export type FirePdfByReferenceInput = {
  * stuck stream cannot hold a scrape slot indefinitely. */
 const UPLOAD_TIMEOUT_MS = 120_000;
 
-async function sha256OfFile(path: string): Promise<string> {
+async function sha256OfFile(
+  path: string,
+  signal: AbortSignal,
+): Promise<string> {
   const hash = createHash("sha256");
-  for await (const chunk of createReadStream(path)) {
+  for await (const chunk of createReadStream(path, { signal })) {
     hash.update(chunk as Buffer);
   }
   return hash.digest("hex");
@@ -44,16 +47,24 @@ export async function uploadPdfInputForFirePdf(
   const objectKey = `inputs/${meta.id}.pdf`;
   const startedAt = Date.now();
   try {
-    const sha256 = await sha256OfFile(tempFilePath);
-    const abort = new AbortController();
+    // Both the hash pass and the upload stop on scrape cancellation as
+    // well as the local timeout — a cancelled request must not keep
+    // reading and uploading hundreds of MB it can no longer use.
+    const timeoutAbort = new AbortController();
+    const signal = AbortSignal.any([
+      timeoutAbort.signal,
+      meta.abort.asSignal(),
+    ]);
     const timer = setTimeout(
       () =>
-        abort.abort(
+        timeoutAbort.abort(
           new Error(`GCS input upload timed out after ${UPLOAD_TIMEOUT_MS}ms`),
         ),
       UPLOAD_TIMEOUT_MS,
     );
+    let sha256: string;
     try {
+      sha256 = await sha256OfFile(tempFilePath, signal);
       await pipeline(
         createReadStream(tempFilePath),
         storage
@@ -66,7 +77,7 @@ export async function uploadPdfInputForFirePdf(
               metadata: { scrape_id: meta.id, source: "firecrawl" },
             },
           }),
-        { signal: abort.signal },
+        { signal },
       );
     } finally {
       clearTimeout(timer);
@@ -85,6 +96,9 @@ export async function uploadPdfInputForFirePdf(
       sizeBytes,
     };
   } catch (error) {
+    // A cancelled scrape propagates as an abort, not a fallback — the
+    // legacy chain must not keep processing a request nobody is waiting on.
+    meta.abort.throwIfAborted();
     meta.logger.warn(
       "Large-PDF GCS input upload failed; falling back to legacy handling",
       {
