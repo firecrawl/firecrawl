@@ -1197,7 +1197,7 @@ describe("scrapePDFWithFirePDFAsync", () => {
       );
     });
 
-    it("scales the no-budget deadline with page count, capped at 30min", async () => {
+    it("honors an explicit caller timeout up to the 30min ceiling", async () => {
       let submittedBody: any;
       const fetchImpl: any = async (url: string, init: any) => {
         if (/\/jobs$/.test(url) && (init?.method ?? "GET") === "POST") {
@@ -1212,9 +1212,11 @@ describe("scrapePDFWithFirePDFAsync", () => {
           body: { markdown: "ok", pages_processed: 800 },
         });
       };
-      // No caller timeout: 800 pages × 2s = 1,600s > flat 5min fallback.
+      // Long documents need an explicit timeout: the no-budget default
+      // stays at 5 minutes because scrapeURLLoop kills no-timeout scrapes
+      // at 5 minutes regardless of the advertised FirePDF deadline.
       const meta = makeMeta();
-      meta.abort.scrapeTimeout = vi.fn(() => undefined);
+      meta.abort.scrapeTimeout = vi.fn(() => 20 * 60 * 1_000);
 
       await scrapePDFWithFirePDFAsync(
         meta,
@@ -1230,7 +1232,7 @@ describe("scrapePDFWithFirePDFAsync", () => {
       );
 
       const delta = new Date(submittedBody.deadline_at).getTime() - Date.now();
-      expect(delta).toBeGreaterThan(1_500_000);
+      expect(delta).toBeGreaterThan(19 * 60 * 1_000);
       expect(delta).toBeLessThanOrEqual(30 * 60 * 1_000);
     });
 

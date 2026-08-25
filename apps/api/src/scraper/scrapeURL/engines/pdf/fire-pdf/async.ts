@@ -126,15 +126,11 @@ export async function scrapePDFWithFirePDFAsync(
 
   const overallStartedAt = now();
   const submitTime = now();
-  // By-reference documents are large by definition and their callers rarely
-  // pass a timeout, so the no-budget default scales with page count (2s/page,
-  // fire-pdf's own deadline heuristic) instead of the flat 5 minutes. An
-  // explicit caller timeout still wins inside computeDeadlineMs.
-  const byReferenceFallbackMs =
-    typeof input !== "string" && pagesProcessed !== undefined
-      ? pagesProcessed * 2_000
-      : undefined;
-  const deadlineFromNow = computeDeadlineMs(remainingMs, byReferenceFallbackMs);
+  // Note for large by-reference documents: the no-budget fallback inside
+  // computeDeadlineMs is 5 minutes because scrapeURLLoop kills no-timeout
+  // scrapes at 5 minutes anyway. Callers wanting the full multi-minute
+  // window for big documents must pass an explicit `timeout`.
+  const deadlineFromNow = computeDeadlineMs(remainingMs);
   const deadlineAt = new Date(submitTime + deadlineFromNow).toISOString();
   const pollingDeadline = submitTime + deadlineFromNow + POLL_TIMEOUT_BUFFER_MS;
 
