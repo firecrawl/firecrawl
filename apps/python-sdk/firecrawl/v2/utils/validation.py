@@ -561,6 +561,7 @@ def prepare_scrape_options(options: Optional[ScrapeOptions]) -> Optional[Dict[st
         "wait_for": "waitFor",
         "skip_tls_verification": "skipTlsVerification",
         "remove_base64_images": "removeBase64Images",
+        "only_clean_content": "onlyCleanContent",
         "fast_mode": "fastMode",
         "use_mock": "useMock",
         "block_ads": "blockAds",
