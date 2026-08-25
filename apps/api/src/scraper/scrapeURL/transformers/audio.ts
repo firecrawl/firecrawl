@@ -2,7 +2,12 @@ import { Meta } from "..";
 import { Document } from "../../../controllers/v2/types";
 import { config } from "../../../config";
 import { hasFormatOfType } from "../../../lib/format-utils";
-import { AudioUnsupportedUrlError, throwIfMediaAccessDenied } from "../error";
+import {
+  AudioUnsupportedUrlError,
+  MediaBlockedError,
+  throwIfMediaAccessDenied,
+  throwIfMediaBlocked,
+} from "../error";
 
 // Downloads can be large (long videos → hundreds of MB), so this is generous —
 // but an unbounded fetch that hangs would consume the whole scrape budget and
@@ -13,12 +18,27 @@ let cachedUrlRegex: RegExp | null = null;
 let cacheTimestamp = 0;
 const CACHE_TTL_MS = 5 * 60 * 1000;
 
+export function resetAudioTransformerCacheForTests() {
+  cachedUrlRegex = null;
+  cacheTimestamp = 0;
+}
+
 async function getSupportedUrlRegex(): Promise<RegExp> {
   if (cachedUrlRegex && Date.now() - cacheTimestamp < CACHE_TTL_MS) {
     return cachedUrlRegex;
   }
 
-  const res = await fetch(`${config.AVGRAB_SERVICE_URL}/supported-urls`);
+  let res: Response;
+  try {
+    res = await fetch(`${config.AVGRAB_SERVICE_URL}/supported-urls`);
+  } catch (error) {
+    // Runs before the download; a connection failure here (unreachable /
+    // overloaded avgrab) must be retryable too, not an opaque UNKNOWN_ERROR.
+    throw new MediaBlockedError(
+      "The audio service was temporarily unreachable. This is transient — retry the scrape.",
+      { cause: error },
+    );
+  }
   if (!res.ok) {
     throw new Error(
       "Failed to fetch supported URL patterns from audio service",
@@ -73,17 +93,29 @@ export async function fetchAudio(
       : {}),
   };
 
-  const response = await fetch(`${config.AVGRAB_SERVICE_URL}/download`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(requestBody),
-    signal: AbortSignal.timeout(DOWNLOAD_FETCH_TIMEOUT_MS),
-  });
+  let response: Response;
+  try {
+    response = await fetch(`${config.AVGRAB_SERVICE_URL}/download`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(requestBody),
+      signal: AbortSignal.timeout(DOWNLOAD_FETCH_TIMEOUT_MS),
+    });
+  } catch (error) {
+    // Connection-level failure or timeout reaching avgrab (unreachable /
+    // overloaded). Transient — surface as retryable rather than an opaque
+    // UNKNOWN_ERROR. The original error is preserved as `cause` for logging.
+    throw new MediaBlockedError(
+      "The audio service was temporarily unreachable. This is transient — retry the scrape.",
+      { cause: error },
+    );
+  }
 
   if (!response.ok) {
     const error = await response
       .json()
       .catch(() => ({ detail: "Unknown error" }));
+    throwIfMediaBlocked(error);
     throwIfMediaAccessDenied(error);
     throw new Error(`Audio download failed: ${error.detail}`);
   }

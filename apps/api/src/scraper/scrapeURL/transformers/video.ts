@@ -2,7 +2,11 @@ import { Meta } from "..";
 import { Document, VideoItem } from "../../../controllers/v2/types";
 import { config } from "../../../config";
 import { hasFormatOfType } from "../../../lib/format-utils";
-import { throwIfMediaAccessDenied } from "../error";
+import {
+  MediaBlockedError,
+  throwIfMediaAccessDenied,
+  throwIfMediaBlocked,
+} from "../error";
 
 // Video downloads can be large; generous but bounded so a hung fetch can't
 // silently consume the whole scrape budget.
@@ -22,7 +26,17 @@ async function getSupportedUrlRegex(): Promise<RegExp> {
     return cachedUrlRegex;
   }
 
-  const res = await fetch(`${config.AVGRAB_SERVICE_URL}/supported-urls`);
+  let res: Response;
+  try {
+    res = await fetch(`${config.AVGRAB_SERVICE_URL}/supported-urls`);
+  } catch (error) {
+    // Runs before the download; a connection failure here (unreachable /
+    // overloaded avgrab) must be retryable too, not an opaque UNKNOWN_ERROR.
+    throw new MediaBlockedError(
+      "The video service was temporarily unreachable. This is transient — retry the scrape.",
+      { cause: error },
+    );
+  }
   if (!res.ok) {
     throw new Error(
       "Failed to fetch supported URL patterns from video service",
@@ -171,17 +185,28 @@ async function fetchLegacyVideoIfSupported(meta: Meta, document: Document) {
       : {}),
   };
 
-  const response = await fetch(`${config.AVGRAB_SERVICE_URL}/download-video`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(requestBody),
-    signal: AbortSignal.timeout(DOWNLOAD_FETCH_TIMEOUT_MS),
-  });
+  let response: Response;
+  try {
+    response = await fetch(`${config.AVGRAB_SERVICE_URL}/download-video`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(requestBody),
+      signal: AbortSignal.timeout(DOWNLOAD_FETCH_TIMEOUT_MS),
+    });
+  } catch (error) {
+    // Connection-level failure or timeout reaching avgrab. Transient —
+    // surface as retryable rather than an opaque UNKNOWN_ERROR.
+    throw new MediaBlockedError(
+      "The video service was temporarily unreachable. This is transient — retry the scrape.",
+      { cause: error },
+    );
+  }
 
   if (!response.ok) {
     const error = await response
       .json()
       .catch(() => ({ detail: "Unknown error" }));
+    throwIfMediaBlocked(error);
     throwIfMediaAccessDenied(error);
     throw new Error(`Video download failed: ${error.detail}`);
   }

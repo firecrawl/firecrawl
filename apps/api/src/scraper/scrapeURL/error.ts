@@ -558,6 +558,30 @@ export class MediaAccessDeniedError extends TransportableError {
   }
 }
 
+export class MediaBlockedError extends TransportableError {
+  constructor(message?: string, options?: ErrorOptions) {
+    super(
+      "SCRAPE_MEDIA_BLOCKED",
+      message ??
+        "The media host temporarily blocked this request (rate limit or proxy reputation). This is transient — retry the scrape.",
+      options,
+    );
+  }
+
+  serialize() {
+    return super.serialize();
+  }
+
+  static deserialize(
+    _: ErrorCodes,
+    data: ReturnType<typeof this.prototype.serialize>,
+  ) {
+    const x = new MediaBlockedError(data.message);
+    x.stack = data.stack;
+    return x;
+  }
+}
+
 const MAX_MEDIA_SERVICE_MESSAGE_LENGTH = 500;
 
 // The media service reports terminal, user-facing failures as a structured
@@ -578,6 +602,31 @@ export function throwIfMediaAccessDenied(errorBody: unknown): void {
     throw new MediaAccessDeniedError(
       errorBody.detail.message.slice(0, MAX_MEDIA_SERVICE_MESSAGE_LENGTH),
     );
+  }
+}
+
+// The media service flags a failure it considers transient (e.g. a proxy/IP
+// reputation block that a retry usually clears) with `retryable: true` in its
+// structured error. Classify those as retryable rather than letting them
+// surface as an opaque UNKNOWN_ERROR 500. All detection of *why* a failure is
+// transient lives in the media service; here we only read the flag. Checked
+// before throwIfMediaAccessDenied, which handles the terminal remainder.
+export function throwIfMediaBlocked(errorBody: unknown): void {
+  if (
+    typeof errorBody === "object" &&
+    errorBody !== null &&
+    "detail" in errorBody &&
+    typeof errorBody.detail === "object" &&
+    errorBody.detail !== null &&
+    "retryable" in errorBody.detail &&
+    errorBody.detail.retryable === true
+  ) {
+    const message =
+      "message" in errorBody.detail &&
+      typeof errorBody.detail.message === "string"
+        ? errorBody.detail.message.slice(0, MAX_MEDIA_SERVICE_MESSAGE_LENGTH)
+        : undefined;
+    throw new MediaBlockedError(message);
   }
 }
 
