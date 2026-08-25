@@ -48,14 +48,35 @@ const {
   };
 
   // Minimal Drizzle query-builder stub: .select().from().where().limit() → rows.
-  const makeDbStub = (data: unknown) => ({
-    select: () => ({
-      from: () => ({
-        where: () => ({
-          limit: () => Promise.resolve(data ? [data] : []),
+  //
+  // Table-aware by the selected columns, because two different lookups share it:
+  // the team → org_id resolution, and the gateway-provisioning check. Returning
+  // one row for both would make every team look partner-provisioned.
+  const makeDbStub = (
+    data: unknown,
+    gatewayRow: unknown,
+    gatewayThrows = false,
+  ) => ({
+    select: (fields?: Record<string, unknown>) => {
+      const isGatewayLookup = !!fields && "team_id" in fields;
+      if (isGatewayLookup && gatewayThrows) {
+        throw new Error("replica unavailable");
+      }
+      const rows = isGatewayLookup
+        ? gatewayRow
+          ? [gatewayRow]
+          : []
+        : data
+          ? [data]
+          : [];
+      return {
+        from: () => ({
+          where: () => ({
+            limit: () => Promise.resolve(rows),
+          }),
         }),
-      }),
-    }),
+      };
+    },
   });
 
   return {
@@ -75,6 +96,11 @@ const {
         data: unknown;
         error: unknown;
       },
+      // Row the partner_provisioned_accounts lookup finds. null = not
+      // which is what almost every team is.
+      gatewayStubRow: null as unknown,
+      // Makes the gateway lookup throw, to prove a failure is never cached.
+      gatewayStubThrows: false,
       configRef: {} as Record<string, unknown>,
     },
   };
@@ -88,7 +114,11 @@ vi.mock("../client", () => ({
 
 vi.mock("../../../db/connection", () => ({
   get dbRr() {
-    return makeDbStub(state.supabaseStubData.data);
+    return makeDbStub(
+      state.supabaseStubData.data,
+      state.gatewayStubRow,
+      state.gatewayStubThrows,
+    );
   },
 }));
 
@@ -692,6 +722,9 @@ describe("firebill routing", () => {
     mockFetch.mockReset();
     mockFetch.mockResolvedValue(firebillResponse(true));
     vi.stubGlobal("fetch", mockFetch);
+    // Default every test to not partner-provisioned, which almost every team is.
+    state.gatewayStubRow = null;
+    state.gatewayStubThrows = false;
   });
 
   afterEach(() => {
@@ -825,6 +858,68 @@ describe("firebill routing", () => {
     expect(body.value).toBe(30);
     expect(body.properties.source).toBe("autumn_refund");
     expect(body.properties.endpoint).toBe("extract");
+  });
+
+  it("routes a gateway-provisioned team even when it is off the allowlist and at 0 percent", async () => {
+    // The property the whole branch exists for: a partner's usage cannot depend
+    // on a sampling bucket. Only firebill knows how to split it between the
+    // provisioned org's balance and the partner's pool.
+    state.configRef = {
+      ...firebillConfig(),
+      FIREBILL_ORG_IDS: ["some-other-org"],
+      FIREBILL_ROLLOUT_PERCENT: 0,
+    };
+    state.gatewayStubRow = { team_id: "team-1" };
+    const svc = makeService();
+
+    const result = await svc.trackCredits({ teamId: "team-1", value: 42 });
+
+    expect(result).toBe(true);
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+    expect(mockTrack).not.toHaveBeenCalled();
+  });
+
+  it("caches a positive without re-querying, since provisioning is one-way", async () => {
+    state.configRef = {
+      ...firebillConfig(),
+      FIREBILL_ORG_IDS: [],
+      FIREBILL_ROLLOUT_PERCENT: 0,
+    };
+    state.gatewayStubRow = { team_id: "team-1" };
+    // A fresh Response per call: firebill reads the body, and a reused one looks
+    // like a failure and triggers its retry.
+    mockFetch.mockImplementation(async () => firebillResponse(true));
+    const svc = makeService();
+
+    await svc.trackCredits({ teamId: "team-1", value: 1 });
+    // The row vanishing must not un-route the team: provisioning is one-way,
+    // and re-reading would put a query on every billing event.
+    state.gatewayStubRow = null;
+    await svc.trackCredits({ teamId: "team-1", value: 1 });
+
+    expect(mockFetch).toHaveBeenCalledTimes(2);
+    expect(mockTrack).not.toHaveBeenCalled();
+  });
+
+  it("does not cache a negative when the lookup fails", async () => {
+    // A blip must not become a TTL's worth of partner usage billed to the
+    // provisioned account alone: that event routes direct, the next asks again.
+    state.configRef = {
+      ...firebillConfig(),
+      FIREBILL_ORG_IDS: [],
+      FIREBILL_ROLLOUT_PERCENT: 0,
+    };
+    state.gatewayStubThrows = true;
+    state.gatewayStubRow = { team_id: "team-1" };
+    mockFetch.mockImplementation(async () => firebillResponse(true));
+    const svc = makeService();
+
+    await svc.trackCredits({ teamId: "team-1", value: 1 });
+    expect(mockFetch).not.toHaveBeenCalled();
+
+    state.gatewayStubThrows = false;
+    await svc.trackCredits({ teamId: "team-1", value: 1 });
+    expect(mockFetch).toHaveBeenCalledTimes(1);
   });
 
   it("uses the direct Autumn path for orgs NOT on the allowlist", async () => {

@@ -405,6 +405,14 @@ const configSchema = z.object({
   FIREBILL_URL: emptyStringAsUndefined(z.string().url()),
   FIREBILL_SECRET: emptyStringAsUndefined(z.string().trim().min(1)),
   FIREBILL_ORG_IDS: delimitedList(",").optional(),
+  // How long "this team is not partner-provisioned" is trusted. Only the
+  // negative is bounded: provisioning is one-way, so a positive cannot go
+  // stale, while a negative does the moment a partner provisions an account.
+  // Capped at firebill's own gateway lookup TTL (300s) — the two sides answer
+  // the same question, and trusting a negative for longer than firebill trusts
+  // an answer turns this cache back into the stale allowlist it replaced. 0
+  // disables caching negatives entirely.
+  FIREBILL_GATEWAY_NEGATIVE_TTL_SECONDS: z.coerce.number().int().min(0).max(300).default(60),
   // Sticky percentage ramp, on top of the allowlist above. The bucket is a
   // hash of the org id, so an org that is in at 5 is still in at 30 — a ramp
   // only ever adds, and never reshuffles who is on which path mid-rollout.

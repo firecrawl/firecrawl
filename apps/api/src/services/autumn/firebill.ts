@@ -48,12 +48,37 @@ function firebillOrgIds(): Set<string> {
 
 /**
  * Whether this org's usage goes through firebill rather than straight to Autumn.
- * Needs firebill configured, then either the allowlist or the sticky percentage.
+ * Needs firebill configured, then any of: the allowlist, being
+ * partner-provisioned, or the sticky percentage.
+ *
+ * `gatewayProvisioned` is deliberately a parameter rather than a lookup in here:
+ * this stays a pure function of config so it can be reasoned about and tested
+ * without a database, and the caller already has the answer cached.
+ *
+ * It arrives in an options object rather than as a second positional argument
+ * because this predicate is used as a callback — `orgs.filter(shouldRouteToFirebill)`
+ * would otherwise pass the array *index* as it, routing everything but element
+ * zero. Destructuring a field off a number yields undefined, so the object form
+ * cannot be fooled that way.
+ *
+ * **This whole gateway branch is meant to be deleted.** It exists only because
+ * the ramp is below 100: a gateway partner's usage must route deterministically,
+ * and a sticky sample is a probability. At `FIREBILL_ROLLOUT_PERCENT=100` every
+ * org routes anyway, the branch stops changing any outcome, and it — along with
+ * the lookup feeding it — should go.
  */
-export function shouldRouteToFirebill(orgId: string): boolean {
+export function shouldRouteToFirebill(
+  orgId: string,
+  opts?: { gatewayProvisioned?: boolean },
+): boolean {
   if (!config.FIREBILL_URL || !config.FIREBILL_SECRET) return false;
   // Always-on set: test orgs stay routed even at 0 percent.
   if (firebillOrgIds().has(orgId)) return true;
+  // A partner-provisioned org always routes: firebill is the only thing that
+  // knows how to split its usage between that org's own balance and the
+  // partner's, so a charge that misses firebill is billed wholly to an account
+  // nobody pays for, and the partner is silently never charged.
+  if (opts?.gatewayProvisioned) return true;
   // Sticky by org, so a ramp only ever adds and 0 is the kill switch.
   return sampled(orgId, config.FIREBILL_ROLLOUT_PERCENT);
 }

@@ -680,6 +680,16 @@ export const subscriptions = pgTable("subscriptions", {
   pending_schedule_id: text("pending_schedule_id"),
 });
 
+export const partner_provisioned_accounts = pgTable(
+  "partner_provisioned_accounts",
+  {
+    id: bigintNum("id").notNull().generatedByDefaultAsIdentity(),
+    integration_id: bigintNum("integration_id").notNull(),
+    team_id: uuid("team_id").notNull(),
+    org_id: uuid("org_id").notNull(),
+  },
+);
+
 export const teams = pgTable("teams", {
   id: uuid("id").notNull().defaultRandom(),
   created_at: ts("created_at").defaultNow(),

@@ -3,6 +3,7 @@ import { logger } from "../../lib/logger";
 import { eq } from "drizzle-orm";
 import { dbRr } from "../../db/connection";
 import * as schema from "../../db/schema";
+import { config } from "../../config";
 import { autumnClient } from "./client";
 import {
   firebillFinalize,
@@ -96,6 +97,8 @@ export class BoundedSet<V> extends Set<V> {
  */
 export class AutumnService {
   private customerOrgCache = new BoundedMap<string, string>(50_000);
+  private gatewayTeams = new BoundedSet<string>(50_000);
+  private nonGatewayTeamsUntil = new BoundedMap<string, number>(50_000);
   private ensuredOrgs = new BoundedSet<string>(50_000);
   private ensuredTeams = new BoundedSet<string>(50_000);
 
@@ -115,6 +118,62 @@ export class AutumnService {
     }
 
     return data.org_id;
+  }
+
+  /**
+   * Whether this team is an account a gateway partner provisioned, which is
+   * what makes the partner responsible for part of its usage, and forces it
+   * through firebill.
+   *
+   * Reads `partner_provisioned_accounts` rather than any config, because these
+   * are created at runtime by the partner API — an allowlist of org ids cannot
+   * keep up, and every new one would otherwise need a config change and a
+   * fleet restart before its usage billed correctly.
+   *
+   * Existence of the row is the question, deliberately — not the integration's
+   * `gateway_enabled` flag. Provisioning is the durable fact; whether to split
+   * right now is firebill's to decide, and keeping the kill switch there means
+   * flipping it stops splitting without also changing which service bills.
+   *
+   * Never throws: an unanswerable lookup falls back to "not gateway", which is
+   * the same outcome as this code not existing. Wrong in the direction of a
+   * missed split rather than a failed customer request.
+   */
+  private async isGatewayProvisioned(teamId: string): Promise<boolean> {
+    if (this.gatewayTeams.has(teamId)) return true;
+
+    const trustedUntil = this.nonGatewayTeamsUntil.get(teamId);
+    if (trustedUntil !== undefined && trustedUntil > Date.now()) return false;
+
+    try {
+      const [row] = await dbRr
+        .select({ team_id: schema.partner_provisioned_accounts.team_id })
+        .from(schema.partner_provisioned_accounts)
+        .where(eq(schema.partner_provisioned_accounts.team_id, teamId))
+        .limit(1);
+
+      if (row) {
+        this.gatewayTeams.add(teamId);
+        return true;
+      }
+
+      const ttlMs = config.FIREBILL_GATEWAY_NEGATIVE_TTL_SECONDS * 1000;
+      if (ttlMs > 0) {
+        this.nonGatewayTeamsUntil.set(teamId, Date.now() + ttlMs);
+      }
+      return false;
+    } catch (error) {
+      // Do not cache a failure as a negative: that would turn one blip into a
+      // TTL's worth of partner usage billed to the wrong account.
+      logger.warn(
+        "gateway provisioning lookup failed; treating as not gateway",
+        {
+          teamId,
+          error,
+        },
+      );
+      return false;
+    }
   }
 
   private getErrorStatus(error: unknown): number | undefined {
@@ -225,7 +284,11 @@ export class AutumnService {
   async isRoutedThroughFirebill(teamId: string): Promise<boolean> {
     if (this.isPreviewTeam(teamId)) return false;
     try {
-      return shouldRouteToFirebill(await this.resolveOrgId(teamId));
+      const [orgId, gatewayProvisioned] = await Promise.all([
+        this.resolveOrgId(teamId),
+        this.isGatewayProvisioned(teamId),
+      ]);
+      return shouldRouteToFirebill(orgId, { gatewayProvisioned });
     } catch {
       return false;
     }
@@ -239,11 +302,16 @@ export class AutumnService {
     properties,
     idempotencyKey,
   }: TrackParams): Promise<boolean> {
-    // Gradual rollout: allowlisted orgs, and those in the sticky
-    // FIREBILL_ROLLOUT_PERCENT bucket, bill through firebill. No fallback to
-    // Autumn on failure — firebill may already own the event, and the SDK sends
-    // no idempotency key, so the pair could not be deduped.
-    if (shouldRouteToFirebill(customerId)) {
+    // Gradual rollout: allowlisted orgs, partner-provisioned orgs, and those in
+    // sticky FIREBILL_ROLLOUT_PERCENT bucket bill through firebill. No fallback
+    // to Autumn on failure — firebill may already own the event, and the SDK
+    // sends no idempotency key, so the pair could not be deduped.
+    // No entity means no team, and every provisioned account has one — so there
+    // is nothing to look up.
+    const gatewayProvisioned = entityId
+      ? await this.isGatewayProvisioned(entityId)
+      : false;
+    if (shouldRouteToFirebill(customerId, { gatewayProvisioned })) {
       billingRouteTotal.labels("firebill").inc();
       return await firebillTrack({
         customerId,
@@ -458,7 +526,11 @@ export class AutumnService {
       // keeps no lock state), but only firebill pins the retry/timeout budget
       // around the call. An unavailable answer maps to "skipped" — proceed
       // unlocked — exactly like a direct-Autumn check failure below.
-      if (shouldRouteToFirebill(customerId)) {
+      if (
+        shouldRouteToFirebill(customerId, {
+          gatewayProvisioned: await this.isGatewayProvisioned(teamId),
+        })
+      ) {
         const result = await firebillLock({
           customerId,
           entityId: teamId,
