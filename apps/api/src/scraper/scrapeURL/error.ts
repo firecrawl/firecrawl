@@ -581,6 +581,29 @@ export class PromptInjectionDetectedError extends TransportableError {
   }
 }
 
+export class JsonExtractionContentTooLargeError extends TransportableError {
+  constructor(message?: string) {
+    super(
+      "SCRAPE_JSON_CONTENT_TOO_LARGE",
+      message ??
+        "The scraped page content is too large for JSON extraction, so extraction was aborted.",
+    );
+  }
+
+  serialize() {
+    return super.serialize();
+  }
+
+  static deserialize(
+    _: ErrorCodes,
+    data: ReturnType<typeof this.prototype.serialize>,
+  ) {
+    const x = new JsonExtractionContentTooLargeError(data.message);
+    x.stack = data.stack;
+    return x;
+  }
+}
+
 const MAX_MEDIA_SERVICE_MESSAGE_LENGTH = 500;
 
 // The media service reports terminal, user-facing failures as a structured

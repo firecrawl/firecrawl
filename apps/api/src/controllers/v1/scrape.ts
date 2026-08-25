@@ -311,7 +311,10 @@ export async function scrapeController(
         });
       }
 
-      if (e.code === "SCRAPE_PROMPT_INJECTION_DETECTED") {
+      if (
+        e.code === "SCRAPE_PROMPT_INJECTION_DETECTED" ||
+        e.code === "SCRAPE_JSON_CONTENT_TOO_LARGE"
+      ) {
         return res.status(403).json({
           success: false,
           code: e.code,

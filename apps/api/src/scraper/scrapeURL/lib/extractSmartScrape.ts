@@ -15,6 +15,11 @@ import {
   CostLimitExceededError,
   CostTracking,
 } from "../../../lib/cost-tracking";
+import { JsonExtractionContentTooLargeError } from "../error";
+
+// ~2MB of markdown, well past typical page sizes -- caps worst-case JSON extraction cost/latency.
+const MAX_JSON_EXTRACTION_MARKDOWN_CHARS = 2_000_000;
+
 const commonSmartScrapeProperties = {
   shouldUseSmartscrape: {
     type: "boolean",
@@ -261,6 +266,14 @@ export async function extractData({
   const logger = extractOptions.logger;
   const isSingleUrl = urls.length === 1;
   let costLimitExceededTokenUsage: number | null = null;
+
+  if (
+    extractOptions.markdown &&
+    extractOptions.markdown.length > MAX_JSON_EXTRACTION_MARKDOWN_CHARS
+  ) {
+    throw new JsonExtractionContentTooLargeError();
+  }
+
   // TODO: remove the "required" fields here!! it breaks o3-mini
 
   if (!schema && extractOptions.options.prompt) {

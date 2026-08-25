@@ -470,7 +470,10 @@ export async function scrapeController(
             });
           }
 
-          if (e.code === "SCRAPE_PROMPT_INJECTION_DETECTED") {
+          if (
+            e.code === "SCRAPE_PROMPT_INJECTION_DETECTED" ||
+            e.code === "SCRAPE_JSON_CONTENT_TOO_LARGE"
+          ) {
             setSpanAttributes(span, {
               "scrape.status_code": 403,
             });
