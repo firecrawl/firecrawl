@@ -42,7 +42,10 @@ import { withSpan, setSpanAttributes } from "../../../../lib/otel-tracer";
 import { scrapePDFWithRunPodMU } from "./runpodMU";
 import { reconcilePageCountWithFirePdf, scrapePDFWithFirePDF } from "./firePDF";
 import { scrapePDFWithFirePDFAsync } from "./fire-pdf/async";
-import { uploadPdfInputForFirePdf } from "./fire-pdf/by-reference";
+import {
+  byReferenceConfigured,
+  uploadPdfInputForFirePdf,
+} from "./fire-pdf/by-reference";
 import { decideFirePdfAsyncRoute } from "./fire-pdf/routing";
 import { scrapePDFWithParsePDF } from "./pdfParse";
 import { toPublicBlocks } from "./blocks";
@@ -143,18 +146,17 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
   }
 
   // Only admit large downloads when the by-reference FirePDF path is even
-  // reachable for this request (mirrors the routing gate below, minus the
-  // signals that need the file first). Otherwise keep the historical cap —
-  // an oversized file would only burn bandwidth and temp disk to fall
-  // through to text-only extraction.
-  const byReferenceReachable =
-    !meta.internalOptions.zeroDataRetention &&
-    !!config.FIRE_PDF_BASE_URL &&
-    (!!meta.options.__forceFirePDF ||
+  // reachable for this request (same predicate the routing gate uses; the
+  // gate adds the signals that need the file first). Otherwise keep the
+  // historical cap — an oversized file would only burn bandwidth and temp
+  // disk to fall through to text-only extraction.
+  const byReferenceReachable = byReferenceConfigured(
+    meta,
+    !!meta.options.__forceFirePDF ||
       includePageMarkdown ||
       includeBlocks ||
-      pageMarkers ||
-      (!!config.FIRE_PDF_ENABLE && config.FIRE_PDF_BY_REFERENCE_ENABLE));
+      pageMarkers,
+  );
 
   const { response, tempFilePath } =
     meta.pdfPrefetch !== undefined && meta.pdfPrefetch !== null
@@ -435,17 +437,14 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
     // take these sizes, so the legacy chain below just skips through).
     // By-reference has its own explicit switch instead of riding
     // FIRE_PDF_PERCENT: there is no alternative engine at this size, so a
-    // sampled-out cohort would only degrade to text-only extraction.
-    // forceFirePDF mirrors the inline path's rule and needs only
-    // FIRE_PDF_BASE_URL.
+    // sampled-out cohort would only degrade to text-only extraction. The
+    // shared predicate matches the download-admission decision above; only
+    // the file-dependent conditions are added here.
     if (!result && !skipOCR) {
       const fileSizeBytes = (await stat(tempFilePath)).size;
       const useFirePdfByReference =
         !routeToMinerU &&
-        !meta.internalOptions.zeroDataRetention &&
-        !!config.FIRE_PDF_BASE_URL &&
-        (forceFirePDF ||
-          (!!config.FIRE_PDF_ENABLE && config.FIRE_PDF_BY_REFERENCE_ENABLE)) &&
+        byReferenceConfigured(meta, forceFirePDF) &&
         fileSizeBytes >= FIRE_PDF_MAX_FILE_SIZE &&
         fileSizeBytes <= FIRE_PDF_BY_REFERENCE_MAX_FILE_SIZE;
 

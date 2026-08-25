@@ -19,6 +19,30 @@ export type FirePdfByReferenceInput = {
 const UPLOAD_TIMEOUT_MS = 120_000;
 
 /**
+ * Whether by-reference FirePDF routing is configured and permitted for this
+ * request, judged from signals available before the file is downloaded.
+ * Both the download-size admission and the routing gate use this ONE
+ * predicate; the routing gate then adds the file-dependent conditions
+ * (size window, page count, MinerU diversion).
+ *
+ * ZDR is excluded because the by-reference input object persists in GCS.
+ * A forced FirePDF request (pages/blocks/markers) needs only the base URL,
+ * mirroring the inline path's rule; otherwise both the master switch and
+ * the by-reference switch must be on.
+ */
+export function byReferenceConfigured(
+  meta: Meta,
+  forceFirePdfRequested: boolean,
+): boolean {
+  return (
+    !meta.internalOptions.zeroDataRetention &&
+    !!config.FIRE_PDF_BASE_URL &&
+    (forceFirePdfRequested ||
+      (!!config.FIRE_PDF_ENABLE && config.FIRE_PDF_BY_REFERENCE_ENABLE))
+  );
+}
+
+/**
  * Stream a downloaded PDF from its temp file into the fire-pdf input bucket
  * so the async pipeline can fetch it by reference. Single pass: the sha-256
  * (fire-pdf's idempotency identity) is computed through a transform inside
@@ -43,7 +67,13 @@ export async function uploadPdfInputForFirePdf(
   sizeBytes: number,
 ): Promise<FirePdfByReferenceInput | null> {
   const bucketName = config.FIRE_PDF_GCS_INPUT_BUCKET;
-  const objectKey = `inputs/${meta.id}.pdf`;
+  // Scrape ids are UUIDv7 (time-ordered); a short hash prefix spreads the
+  // keys across GCS partitions, same convention as gcs-jobs.ts.
+  const keyPrefix = createHash("sha256")
+    .update(meta.id)
+    .digest("hex")
+    .slice(0, 8);
+  const objectKey = `inputs/${keyPrefix}-${meta.id}.pdf`;
   const startedAt = Date.now();
   try {
     // Both the hash pass and the upload stop on scrape cancellation as
