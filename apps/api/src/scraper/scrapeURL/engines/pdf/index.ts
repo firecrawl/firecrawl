@@ -452,6 +452,8 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
           forceTeamIds: config.FIRE_PDF_ASYNC_FORCE_TEAM_IDS,
           disableTeamIds: config.FIRE_PDF_ASYNC_DISABLE_TEAM_IDS,
           allowRequestOverride: config.FIRE_PDF_ASYNC_ALLOW_REQUEST_OVERRIDE,
+          bulkOrigin: Boolean(meta.internalOptions.crawlId),
+          bulkOriginPercentage: config.FIRE_PDF_ASYNC_BULK_ORIGIN_PERCENT,
         });
         const useAsync = asyncDecision.enabled;
         if (useAsync) {
@@ -460,8 +462,10 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
             event: "fire_pdf_async_routed",
             reason: asyncDecision.reason,
             percentage: config.FIRE_PDF_ASYNC_PERCENT,
+            bulk_origin_percentage: config.FIRE_PDF_ASYNC_BULK_ORIGIN_PERCENT,
             scrape_id: meta.id,
             team_id: meta.internalOptions.teamId,
+            crawl_id: meta.internalOptions.crawlId,
           });
         }
         try {

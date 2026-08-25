@@ -80,6 +80,63 @@ describe("FirePDF async routing", () => {
       reason: "percentage",
     });
   });
+
+  it("routes crawl/batch children on their own cohort", () => {
+    expect(
+      decideFirePdfAsyncRoute({
+        ...baseInput,
+        bulkOrigin: true,
+        bulkOriginPercentage: 100,
+      }),
+    ).toEqual({ enabled: true, reason: "bulk_origin" });
+    // Traffic-neutral by default, like every other cohort.
+    expect(decideFirePdfAsyncRoute({ ...baseInput, bulkOrigin: true })).toEqual(
+      { enabled: false, reason: "percentage_disabled" },
+    );
+    // Never applies to non-bulk scrapes.
+    expect(
+      decideFirePdfAsyncRoute({ ...baseInput, bulkOriginPercentage: 100 }),
+    ).toEqual({ enabled: false, reason: "percentage_disabled" });
+  });
+
+  it("keeps the hard exclusions ahead of the bulk cohort", () => {
+    const bulk = {
+      ...baseInput,
+      bulkOrigin: true,
+      bulkOriginPercentage: 100,
+    };
+    expect(
+      decideFirePdfAsyncRoute({ ...bulk, zeroDataRetention: true }),
+    ).toEqual({ enabled: false, reason: "zdr" });
+    expect(
+      decideFirePdfAsyncRoute({
+        ...bulk,
+        remainingMs: FIRE_PDF_ASYNC_MIN_REMAINING_MS - 1,
+      }),
+    ).toEqual({ enabled: false, reason: "deadline_too_close" });
+    expect(
+      decideFirePdfAsyncRoute({ ...bulk, disableTeamIds: "team-1" }),
+    ).toEqual({ enabled: false, reason: "team_disabled" });
+  });
+
+  it("cohorts bulk and general percentages independently", () => {
+    // The bulk cohort hashes a prefixed key, so a scrape's position in
+    // one cohort says nothing about its position in the other.
+    const scrapeId = "cohort-independence-probe";
+    expect(deterministicPercentage(`bulk-origin:${scrapeId}`)).not.toBe(
+      deterministicPercentage(scrapeId),
+    );
+    // A bulk scrape outside its cohort still falls through to the
+    // general percentage.
+    expect(
+      decideFirePdfAsyncRoute({
+        ...baseInput,
+        bulkOrigin: true,
+        bulkOriginPercentage: 0,
+        percentage: 100,
+      }),
+    ).toEqual({ enabled: true, reason: "percentage" });
+  });
 });
 
 describe("FirePDF async transport helpers", () => {
