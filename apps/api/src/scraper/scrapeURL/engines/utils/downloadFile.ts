@@ -58,13 +58,44 @@ const mapUndiciError = (url: string, skipTlsVerification: boolean, e: any) => {
   }
 };
 
-function createSizeLimiter(maxSize: number) {
+export class DownloadSizeLimitError extends UnsupportedFileError {
+  public readonly max_size_bytes: number;
+  public readonly size_source: "content_length" | "stream";
+  public readonly declared_size_bytes?: number;
+  public readonly observed_size_bytes?: number;
+
+  constructor({
+    maxSizeBytes,
+    sizeSource,
+    declaredSizeBytes,
+    observedSizeBytes,
+  }: {
+    maxSizeBytes: number;
+    sizeSource: "content_length" | "stream";
+    declaredSizeBytes?: number;
+    observedSizeBytes?: number;
+  }) {
+    super("File exceeds size limit");
+    this.max_size_bytes = maxSizeBytes;
+    this.size_source = sizeSource;
+    this.declared_size_bytes = declaredSizeBytes;
+    this.observed_size_bytes = observedSizeBytes;
+  }
+}
+
+export function createSizeLimiter(maxSize: number) {
   let bytesRead = 0;
   return new NodeTransformStream<Uint8Array, Uint8Array>({
     transform(chunk, controller) {
       bytesRead += chunk.byteLength;
       if (bytesRead > maxSize) {
-        controller.error(new UnsupportedFileError("File exceeds size limit"));
+        controller.error(
+          new DownloadSizeLimitError({
+            maxSizeBytes: maxSize,
+            sizeSource: "stream",
+            observedSizeBytes: bytesRead,
+          }),
+        );
         return;
       }
       controller.enqueue(chunk);
@@ -72,12 +103,19 @@ function createSizeLimiter(maxSize: number) {
   });
 }
 
-function checkContentLength(response: undici.Response, maxSize: number) {
+export function checkContentLength(
+  response: { headers: { get(name: string): string | null } },
+  maxSize: number,
+) {
   const header = response.headers.get("content-length");
   if (header === null) return;
   const declared = Number(header);
   if (Number.isFinite(declared) && declared > maxSize) {
-    throw new UnsupportedFileError("File exceeds size limit");
+    throw new DownloadSizeLimitError({
+      maxSizeBytes: maxSize,
+      sizeSource: "content_length",
+      declaredSizeBytes: declared,
+    });
   }
 }
 
@@ -114,7 +152,11 @@ export async function fetchFileToBuffer(
       bytesRead += value.byteLength;
       if (bytesRead > maxSize) {
         await reader.cancel().catch(() => {});
-        throw new UnsupportedFileError("File exceeds size limit");
+        throw new DownloadSizeLimitError({
+          maxSizeBytes: maxSize,
+          sizeSource: "stream",
+          observedSizeBytes: bytesRead,
+        });
       }
       chunks.push(value);
     }

@@ -11,7 +11,7 @@ import {
   RemoveFeatureError,
   EngineUnsuccessfulError,
 } from "../../error";
-import { open, readFile, unlink } from "node:fs/promises";
+import { open, readFile, stat, unlink } from "node:fs/promises";
 import type { Response } from "undici";
 import { AbortManagerThrownError } from "../../lib/abortManager";
 import {
@@ -59,6 +59,16 @@ function getIneligibleReason(
   return null;
 }
 
+function logPdfDownload(meta: Meta, fileSizeBytes: number) {
+  meta.logger.info("PDF download complete", {
+    method: "scrapePDF",
+    event: "pdf_download_complete",
+    file_size_bytes: fileSizeBytes,
+    scrape_id: meta.id,
+    team_id: meta.internalOptions.teamId,
+  });
+}
+
 export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
   const shouldParse = shouldParsePDF(meta.options.parsers);
   const maxPages = getPDFMaxPages(meta.options.parsers);
@@ -87,9 +97,9 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
 
   if (!shouldParse) {
     if (meta.pdfPrefetch !== undefined && meta.pdfPrefetch !== null) {
-      const content = (await readFile(meta.pdfPrefetch.filePath)).toString(
-        "base64",
-      );
+      const pdfBuffer = await readFile(meta.pdfPrefetch.filePath);
+      logPdfDownload(meta, pdfBuffer.length);
+      const content = pdfBuffer.toString("base64");
       return {
         url: meta.pdfPrefetch.url ?? meta.rewrittenUrl ?? meta.url,
         statusCode: meta.pdfPrefetch.status,
@@ -124,6 +134,8 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
           throw new PDFPrefetchFailed();
         }
       }
+
+      logPdfDownload(meta, file.buffer.length);
 
       const content = file.buffer.toString("base64");
       return {
@@ -180,6 +192,8 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
         throw new PDFPrefetchFailed();
       }
     }
+
+    logPdfDownload(meta, (await stat(tempFilePath)).size);
 
     let result: PDFProcessorResult | null = null;
     let effectivePageCount: number = 0;
