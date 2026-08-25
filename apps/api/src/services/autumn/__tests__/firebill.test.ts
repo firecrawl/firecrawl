@@ -1,6 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { firebillTrack, shouldRouteToFirebill } from "../firebill";
-import { firebillRetryTotal, firebillTrackTotal } from "../metrics";
+import {
+  firebillCheck,
+  firebillTrack,
+  shouldRouteToFirebill,
+} from "../firebill";
+import {
+  firebillCheckTotal,
+  firebillRetryTotal,
+  firebillTrackTotal,
+} from "../metrics";
 
 const { configState } = vi.hoisted(() => ({
   configState: {
@@ -39,6 +47,7 @@ beforeEach(() => {
   configState.FIREBILL_ROLLOUT_PERCENT = 0;
   firebillTrackTotal.reset();
   firebillRetryTotal.reset();
+  firebillCheckTotal.reset();
 });
 afterEach(() => vi.unstubAllGlobals());
 
@@ -178,5 +187,102 @@ describe("firebillTrack", () => {
     await firebillTrack({ ...params, value: -7 });
     expect(fetchMock.mock.calls[0][0]).toBe("https://firebill.test/v1/refund");
     expect(JSON.parse(fetchMock.mock.calls[0][1].body).value).toBe(7);
+  });
+});
+
+describe("firebillCheck", () => {
+  const checkParams = {
+    customerId: "org-1",
+    entityId: "team-1",
+    featureId: "CREDITS",
+    value: 10,
+    properties: { source: "checkCreditsMiddleware" },
+  };
+
+  const answer = (body: unknown, status = 200) =>
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(new Response(JSON.stringify(body), { status })),
+    );
+
+  it("passes through a yes, with the funder's pool as remaining", async () => {
+    answer({ success: true, allowed: true, remaining: 500 });
+    await expect(firebillCheck(checkParams)).resolves.toEqual({
+      status: "answered",
+      allowed: true,
+      remaining: 500,
+    });
+  });
+
+  it("passes through a no — this is the only thing that may 402", async () => {
+    answer({ success: true, allowed: false, remaining: 3 });
+    await expect(firebillCheck(checkParams)).resolves.toEqual({
+      status: "answered",
+      allowed: false,
+      remaining: 3,
+    });
+  });
+
+  // The asymmetry with firebillTrack, which fails closed. Refusing to answer an
+  // authorization question must not become a 402.
+  it.each([
+    ["firebill could not answer", { success: false }, 200],
+    ["a non-OK response", { success: true, allowed: true }, 503],
+    ["a missing allowed", { success: true }, 200],
+    ["a non-boolean allowed", { success: true, allowed: "yes" }, 200],
+  ])("fails open on %s", async (_label, body, status) => {
+    answer(body, status);
+    await expect(firebillCheck(checkParams)).resolves.toEqual({
+      status: "unavailable",
+    });
+  });
+
+  it("fails open when the request throws", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("boom")));
+    await expect(firebillCheck(checkParams)).resolves.toEqual({
+      status: "unavailable",
+    });
+  });
+
+  // A missing figure must not read as zero: callers clamp crawl limits with
+  // it, so zero would silently shrink an allowed crawl to nothing.
+  it("treats an absent remaining as unbounded, not as zero", async () => {
+    answer({ success: true, allowed: true });
+    await expect(firebillCheck(checkParams)).resolves.toEqual({
+      status: "answered",
+      allowed: true,
+      remaining: Infinity,
+    });
+  });
+
+  it("sends the caller's context so Autumn records the decision", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(
+        new Response(
+          JSON.stringify({ success: true, allowed: true, remaining: 1 }),
+          { status: 200 },
+        ),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await firebillCheck(checkParams);
+
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe("https://firebill.test/v1/check");
+    expect(JSON.parse(init.body)).toEqual({
+      customer_id: "org-1",
+      entity_id: "team-1",
+      feature_id: "CREDITS",
+      value: 10,
+      properties: { source: "checkCreditsMiddleware" },
+    });
+  });
+
+  it("does not retry — this is on the request path", async () => {
+    const fetchMock = vi.fn().mockRejectedValue(new Error("boom"));
+    vi.stubGlobal("fetch", fetchMock);
+    await firebillCheck(checkParams);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 });

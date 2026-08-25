@@ -3,7 +3,11 @@ import { config } from "../../config";
 import { logger } from "../../lib/logger";
 import { sampled } from "../../lib/rollout";
 import type { TrackParams } from "./types";
-import { firebillRetryTotal, firebillTrackTotal } from "./metrics";
+import {
+  firebillCheckTotal,
+  firebillRetryTotal,
+  firebillTrackTotal,
+} from "./metrics";
 
 /**
  * Outcome of a firebill `/v1/lock` call, mirroring firebill's three-state
@@ -158,8 +162,7 @@ export async function firebillTrack(params: TrackParams): Promise<boolean> {
 }
 
 type AttemptResult =
-  | { ok: true }
-  | { ok: false; reason: "not_ok" | "not_success" | "exception" };
+  { ok: true } | { ok: false; reason: "not_ok" | "not_success" | "exception" };
 
 async function firebillAttempt(
   path: string,
@@ -257,6 +260,119 @@ async function firebillAttempt(
  * lock's lifecycle across two routes would let a firebill-side hold and a
  * fallback hold coexist under retries.
  */
+/**
+ * Three outcomes, and callers must tell them apart: `answered` carries a real
+ * yes/no, `unavailable` means firebill could not answer at all.
+ */
+export type FirebillCheckResult =
+  | { status: "answered"; allowed: boolean; remaining: number }
+  | { status: "unavailable" };
+
+/**
+ * Asks firebill whether a customer can afford a charge.
+ *
+ * For a gateway-funded org this counts the funder's pool, which is the reason
+ * it exists: a ghost spends credits it does not have, so a gate reading the
+ * ghost's balance alone refuses the requests the partner pool is there to pay
+ * for. firebill answers with the same arithmetic settlement uses.
+ *
+ * **Fails open, unlike {@link firebillTrack}.** Every failure maps to
+ * `unavailable`, and the caller's contract is to let the request through.
+ * Declining to charge loses nothing that cannot be replayed; declining to
+ * *answer* an authorization question would turn a firebill blip into a
+ * customer-facing outage. There is deliberately no retry either — this sits on
+ * the request path, and a second round trip buys less than failing open fast.
+ */
+export async function firebillCheck({
+  customerId,
+  entityId,
+  featureId,
+  value,
+  properties,
+}: {
+  customerId: string;
+  entityId: string;
+  featureId: string;
+  value: number;
+  properties?: Record<string, unknown>;
+}): Promise<FirebillCheckResult> {
+  const unavailable = (
+    reason: string,
+    extra?: Record<string, unknown>,
+  ): FirebillCheckResult => {
+    logger.error(`firebill check unavailable — ${reason}`, {
+      customerId,
+      entityId,
+      featureId,
+      value,
+      ...extra,
+    });
+    firebillCheckTotal.labels("unavailable").inc();
+    return { status: "unavailable" };
+  };
+
+  try {
+    const response = await fetch(firebillUrl("/v1/check"), {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${config.FIREBILL_SECRET}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        customer_id: customerId,
+        entity_id: entityId,
+        feature_id: featureId,
+        value,
+        properties,
+      }),
+      signal: AbortSignal.timeout(FIREBILL_TIMEOUT_MS),
+    });
+
+    if (!response.ok) {
+      return unavailable("non-OK response", { status: response.status });
+    }
+
+    const body = (await response.json()) as {
+      success?: boolean;
+      allowed?: boolean;
+      remaining?: number;
+    };
+
+    // `success: false` is firebill saying it does not know — an unanswered
+    // balance, or a gateway lookup that failed. Never a denial.
+    if (body.success !== true) {
+      return unavailable("firebill could not answer");
+    }
+    // A missing or mis-shaped `allowed` is not something firebill sends today.
+    // Reading it as a denial would 402 a paying customer, so it fails open.
+    if (typeof body.allowed !== "boolean") {
+      return unavailable("answered without a usable `allowed`");
+    }
+
+    // `remaining` clamps downstream limits, so a missing one must not read as
+    // zero — that would silently shrink a crawl to nothing. Absent means "no
+    // usable figure", which for an allowed request is unbounded.
+    const remaining =
+      typeof body.remaining === "number" && Number.isFinite(body.remaining)
+        ? body.remaining
+        : Infinity;
+
+    firebillCheckTotal.labels(body.allowed ? "allowed" : "denied").inc();
+    if (!body.allowed) {
+      logger.info("firebill check denied", {
+        customerId,
+        entityId,
+        featureId,
+        value,
+        remaining,
+      });
+    }
+    return { status: "answered", allowed: body.allowed, remaining };
+  } catch (error) {
+    return unavailable("request threw", { error });
+  }
+}
+
 export async function firebillLock({
   customerId,
   entityId,

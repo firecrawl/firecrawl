@@ -838,6 +838,70 @@ describe("firebill routing", () => {
     });
   });
 
+  // The gate, not the charge. Before this branch existed checkCredits asked
+  // Autumn about the ghost's balance alone — and a gateway ghost is designed to
+  // spend credits it does not have, so it 402'd exactly the requests the
+  // partner pool exists to fund.
+  it("routes checkCredits for an allowlisted org to /v1/check, not Autumn", async () => {
+    state.configRef = firebillConfig();
+    mockFetch.mockResolvedValue(
+      new Response(
+        JSON.stringify({ success: true, allowed: true, remaining: 500 }),
+        { status: 200 },
+      ),
+    );
+    const svc = makeService();
+
+    const result = await svc.checkCredits({
+      teamId: "team-1",
+      value: 100,
+      properties: { source: "checkCreditsMiddleware" },
+    });
+
+    // 500 is the funder's pool, not the ghost's balance — the whole point.
+    expect(result).toEqual({ allowed: true, remaining: 500 });
+    expect(mockCheck).not.toHaveBeenCalled();
+
+    const [url, init] = mockFetch.mock.calls[0];
+    expect(String(url)).toBe("http://firebill.test/v1/check");
+    expect(JSON.parse(init.body)).toEqual({
+      customer_id: "org-1",
+      entity_id: "team-1",
+      feature_id: "CREDITS",
+      value: 100,
+      properties: { source: "checkCreditsMiddleware" },
+      // A read: no lock, no idempotency key, nothing to dedupe.
+    });
+  });
+
+  // Fails OPEN, unlike the charge paths. `null` is the contract the middleware
+  // already treats as "proceed", so a firebill wobble cannot 402 a customer.
+  it("returns null when firebill cannot answer a check", async () => {
+    state.configRef = firebillConfig();
+    mockFetch.mockResolvedValue(
+      new Response(JSON.stringify({ success: false }), { status: 200 }),
+    );
+    const svc = makeService();
+
+    await expect(
+      svc.checkCredits({ teamId: "team-1", value: 100, properties: {} }),
+    ).resolves.toBeNull();
+    expect(mockCheck).not.toHaveBeenCalled();
+  });
+
+  it("checks directly in Autumn for orgs NOT on the allowlist", async () => {
+    state.configRef = {
+      ...firebillConfig(),
+      FIREBILL_ORG_IDS: ["some-other-org"],
+    };
+    const svc = makeService();
+
+    await svc.checkCredits({ teamId: "team-1", value: 1, properties: {} });
+
+    expect(mockCheck).toHaveBeenCalledTimes(1);
+    expect(mockFetch).not.toHaveBeenCalled();
+  });
+
   it("routes refundCredits to /v1/refund with the POSITIVE value", async () => {
     state.configRef = firebillConfig();
     const svc = makeService();

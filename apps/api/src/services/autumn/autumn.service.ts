@@ -9,6 +9,7 @@ import {
   firebillFinalize,
   firebillLock,
   firebillTrack,
+  firebillCheck,
   shouldRouteToFirebill,
 } from "./firebill";
 import { billingRouteTotal } from "./metrics";
@@ -470,6 +471,28 @@ export class AutumnService {
     }
     try {
       const customerId = await this.ensureTrackingContext(teamId);
+
+      // Mirrors track() and lockCredits(). Without this branch the gate reads
+      // the ghost's balance alone, and a gateway ghost is designed to spend
+      // credits it does not have — so it would 402 exactly the requests the
+      // partner pool exists to fund. firebill answers with the same arithmetic
+      // settlement uses.
+      //
+      // `unavailable` becomes `null`, which this method's existing contract
+      // already means "fail open" — the same answer a null from Autumn gets
+      // below, for the same reason.
+      if (shouldRouteToFirebill(customerId)) {
+        const result = await firebillCheck({
+          customerId,
+          entityId: teamId,
+          featureId,
+          value,
+          properties,
+        });
+        if (result.status === "unavailable") return null;
+        return { allowed: result.allowed, remaining: result.remaining };
+      }
+
       const { allowed, balance } = await autumnClient.check({
         customerId,
         entityId: teamId,
