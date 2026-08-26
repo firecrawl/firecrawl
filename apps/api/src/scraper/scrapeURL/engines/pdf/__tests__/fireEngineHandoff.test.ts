@@ -75,7 +75,12 @@ import {
 } from "../fire-pdf/by-reference";
 import { downloadFireEngineGcsFile } from "../../utils/downloadGcsFile";
 import { config } from "../../../../../config";
-import { stat, readFile as readFileAsync, writeFile } from "node:fs/promises";
+import {
+  stat,
+  readFile as readFileAsync,
+  unlink,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
@@ -300,6 +305,12 @@ describe("fire-engine GCS handoff (positive paths, mocked storage)", () => {
 describe("per-team cap enforcement at the placement functions", () => {
   const ORIGINAL_BUCKET = config.FIRE_ENGINE_PDF_GCS_BUCKET;
   const ORIGINAL_IDS = config.PDF_BY_REFERENCE_PRIVILEGED_TEAM_IDS;
+  const ORIGINAL_DEFAULT = config.PDF_BY_REFERENCE_MAX_BYTES_DEFAULT;
+  const ORIGINAL_PRIVILEGED = config.PDF_BY_REFERENCE_MAX_BYTES_PRIVILEGED;
+  // Explicit caps, so the size assertions below can never drift from the
+  // schema defaults or be skewed by env overrides.
+  const DEFAULT_CAP = 50 * 1024 * 1024;
+  const PRIVILEGED_CAP = 200 * 1024 * 1024;
   beforeAll(() => {
     (config as any).FIRE_ENGINE_PDF_GCS_BUCKET = "fire-engine-scrape-storage";
   });
@@ -309,9 +320,13 @@ describe("per-team cap enforcement at the placement functions", () => {
   beforeEach(() => {
     gcsFake.reset();
     (config as any).PDF_BY_REFERENCE_PRIVILEGED_TEAM_IDS = "team-privileged";
+    (config as any).PDF_BY_REFERENCE_MAX_BYTES_DEFAULT = DEFAULT_CAP;
+    (config as any).PDF_BY_REFERENCE_MAX_BYTES_PRIVILEGED = PRIVILEGED_CAP;
   });
   afterEach(() => {
     (config as any).PDF_BY_REFERENCE_PRIVILEGED_TEAM_IDS = ORIGINAL_IDS;
+    (config as any).PDF_BY_REFERENCE_MAX_BYTES_DEFAULT = ORIGINAL_DEFAULT;
+    (config as any).PDF_BY_REFERENCE_MAX_BYTES_PRIVILEGED = ORIGINAL_PRIVILEGED;
   });
 
   const HANDOFF = {
@@ -326,11 +341,15 @@ describe("per-team cap enforcement at the placement functions", () => {
     return meta;
   }
 
+  // Over the default tier, under the privileged one — the size that tells
+  // the two caps apart.
+  const OVER_DEFAULT_BYTES = DEFAULT_CAP + 1024 * 1024;
+
   it("rewrite refuses a handoff above the default cap for an unlisted team", async () => {
     await expect(
       rewritePdfInputForFirePdf(metaForTeam("team-x"), {
         ...HANDOFF,
-        sizeBytes: 60 * 1024 * 1024,
+        sizeBytes: OVER_DEFAULT_BYTES,
       }),
     ).resolves.toBeNull();
     expect(gcsFake.copies).toEqual([]);
@@ -341,10 +360,10 @@ describe("per-team cap enforcement at the placement functions", () => {
       metaForTeam("team-privileged"),
       {
         ...HANDOFF,
-        sizeBytes: 60 * 1024 * 1024,
+        sizeBytes: OVER_DEFAULT_BYTES,
       },
     );
-    expect(res).toMatchObject({ sizeBytes: 60 * 1024 * 1024 });
+    expect(res).toMatchObject({ sizeBytes: OVER_DEFAULT_BYTES });
     expect(gcsFake.copies).toHaveLength(1);
   });
 
@@ -352,7 +371,7 @@ describe("per-team cap enforcement at the placement functions", () => {
     await expect(
       rewritePdfInputForFirePdf(metaForTeam("team-privileged"), {
         ...HANDOFF,
-        sizeBytes: 205 * 1024 * 1024,
+        sizeBytes: PRIVILEGED_CAP + 1024 * 1024,
       }),
     ).resolves.toBeNull();
     expect(gcsFake.copies).toEqual([]);
@@ -365,7 +384,7 @@ describe("per-team cap enforcement at the placement functions", () => {
       uploadPdfInputForFirePdf(
         metaForTeam("team-x"),
         path.join(tmpdir(), "does-not-exist.pdf"),
-        60 * 1024 * 1024,
+        OVER_DEFAULT_BYTES,
       ),
     ).resolves.toBeNull();
   });
@@ -376,13 +395,17 @@ describe("per-team cap enforcement at the placement functions", () => {
       `upload-test-${crypto.randomUUID()}.pdf`,
     );
     await writeFile(filePath, Buffer.alloc(1024, 7));
-    const res = await uploadPdfInputForFirePdf(
-      metaForTeam("team-privileged"),
-      filePath,
-      // Declared size sits over the default tier but under the privileged
-      // one — the guard must use the team's own cap.
-      60 * 1024 * 1024,
-    );
-    expect(res).toMatchObject({ sizeBytes: 60 * 1024 * 1024 });
+    try {
+      const res = await uploadPdfInputForFirePdf(
+        metaForTeam("team-privileged"),
+        filePath,
+        // Declared size sits over the default tier but under the privileged
+        // one — the guard must use the team's own cap.
+        OVER_DEFAULT_BYTES,
+      );
+      expect(res).toMatchObject({ sizeBytes: OVER_DEFAULT_BYTES });
+    } finally {
+      await unlink(filePath);
+    }
   });
 });
