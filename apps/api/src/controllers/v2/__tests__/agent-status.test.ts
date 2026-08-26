@@ -131,7 +131,7 @@ describe("agentStatusController", () => {
     ["js-sdk@4.0.0", "spark-2"],
     ["api", "spark-2"],
   ] as const)(
-    "reports a spark-2 job as %s to origin %s",
+    "reports a spark-2 job to %s as %s",
     async (origin, expectedModel) => {
       (supabaseGetAgentRequestByIdDirect as Mock).mockResolvedValue({
         team_id: "team-123",
