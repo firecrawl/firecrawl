@@ -1030,35 +1030,20 @@ export const agentRequestSchema = z
     webhook: agentWebhookSchema.optional(),
 
     overrideWhitelist: z.string().optional(),
-    // Optional, not defaulted: the resolver below must tell "the caller sent a
-    // model" apart from "the caller sent nothing", because effort without a
-    // model resolves to spark-2 while effort against another preset is an
-    // error.
+    // The spark-1 preset names stay accepted so existing callers keep working,
+    // but spark-1 is retired: the transform below runs every request on
+    // spark-2 regardless of what was sent.
     model: z.enum(["spark-1-pro", "spark-1-mini", "spark-2"]).optional(),
     effort: z.enum(["low", "medium", "high"]).optional(),
     threatProtection: threatProtectionOverrideSchema.optional(),
     auditMetadata: auditMetadataSchema.optional(),
   })
-  // spark-2 is the first model with a reasoning budget, so effort only pairs
-  // with spark-2. Effort against an older preset is rejected rather than
-  // silently upgrading the model the caller asked for.
-  .refine(
-    x =>
-      x.effort === undefined || x.model === undefined || x.model === "spark-2",
-    {
-      error:
-        "'effort' is only supported with model 'spark-2'. The spark-1 presets have no reasoning budget; omit 'model' or send 'spark-2' to set one.",
-    },
-  )
-  // Every effort level runs spark-2. The older presets have no trace or
-  // snapshot endpoint and use a different credit ladder, so spreading effort
-  // across presets would change features and price per level. Effort sets the
-  // reasoning budget inside spark-2 instead. A request that sends neither
-  // field keeps the endpoint's own default preset, so this schema introduces
-  // no default of its own.
+  // spark-1 is retired and spark-2 is the default. The spark-1 preset names
+  // remain valid input and silently resolve to spark-2, so every request —
+  // with or without effort, with or without a model — runs spark-2.
   .transform(x => ({
     ...x,
-    model: x.model ?? (x.effort !== undefined ? "spark-2" : "spark-1-pro"),
+    model: "spark-2" as const,
   }));
 
 export type AgentRequest = z.infer<typeof agentRequestSchema>;

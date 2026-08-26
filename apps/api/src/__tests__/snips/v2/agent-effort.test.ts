@@ -41,20 +41,17 @@ const agentRaw = (body: Record<string, unknown>) =>
 // request therefore needs only the API server and an authenticated team, so
 // these cases run everywhere instead of skipping with the live runs below.
 describe("Agent effort parameter validation", () => {
-  it.each(["spark-1-pro", "spark-1-mini"] as const)(
-    "rejects effort with %s, which has no reasoning budget",
-    async model => {
+  it(
+    "rejects an unknown model name",
+    async () => {
       const response = await agentRaw({
         urls: [TEST_SUITE_WEBSITE],
         prompt: "What does this page offer?",
-        model,
-        effort: "low",
+        model: "spark-9-unreleased",
       });
 
       expect(response.statusCode).toBe(400);
       expect(response.body.success).toBe(false);
-      expect(response.body.error).toContain("effort");
-      expect(response.body.error).toContain("spark-2");
     },
     scrapeTimeout,
   );
@@ -151,7 +148,7 @@ describeIf(REQUIRES_FIRE_ENGINE && REQUIRES_AI && HAS_AGENT_BETA)(
     );
 
     it(
-      "still uses the default model when the caller sends neither field",
+      "defaults to spark-2 when the caller sends neither field",
       async () => {
         const response = await agentRaw({
           urls: [TEST_SUITE_WEBSITE],
@@ -171,7 +168,98 @@ describeIf(REQUIRES_FIRE_ENGINE && REQUIRES_AI && HAS_AGENT_BETA)(
 
         const status = await statusOf(response.body.id);
         expect(status.statusCode).toBe(200);
+        expect(status.body.model).toBe("spark-2");
+
+        await cancel(response.body.id);
+      },
+      scrapeTimeout,
+    );
+
+    it(
+      "redirects a retired spark-1 preset to spark-2",
+      async () => {
+        const response = await agentRaw({
+          urls: [TEST_SUITE_WEBSITE],
+          prompt: "What does this page offer?",
+          model: "spark-1-pro",
+        });
+
+        if (response.statusCode !== 200) {
+          console.warn(
+            "Agent request with model spark-1-pro did not succeed",
+            JSON.stringify(response.body, null, 2),
+          );
+        }
+
+        expect(response.statusCode).toBe(200);
+        expect(response.body.success).toBe(true);
+        expect(typeof response.body.id).toBe("string");
+
+        const status = await statusOf(response.body.id);
+        expect(status.statusCode).toBe(200);
+        expect(status.body.model).toBe("spark-2");
+
+        await cancel(response.body.id);
+      },
+      scrapeTimeout,
+    );
+
+    // python-sdk < 4.37.1 crashes parsing a "spark-2" status response, so the
+    // status endpoint reports the old default to those clients instead. The
+    // origin tag is the only signal the server has, so these cases set it
+    // the way the real SDK would.
+    it(
+      "reports spark-1-pro to an incompatible python-sdk origin",
+      async () => {
+        const response = await agentRaw({
+          urls: [TEST_SUITE_WEBSITE],
+          prompt: "What does this page offer?",
+          origin: "python-sdk@4.37.0",
+        });
+
+        if (response.statusCode !== 200) {
+          console.warn(
+            "Agent request with python-sdk origin did not succeed",
+            JSON.stringify(response.body, null, 2),
+          );
+        }
+
+        expect(response.statusCode).toBe(200);
+        expect(response.body.success).toBe(true);
+        expect(typeof response.body.id).toBe("string");
+
+        const status = await statusOf(response.body.id);
+        expect(status.statusCode).toBe(200);
         expect(status.body.model).toBe("spark-1-pro");
+
+        await cancel(response.body.id);
+      },
+      scrapeTimeout,
+    );
+
+    it(
+      "reports spark-2 to a compatible python-sdk origin",
+      async () => {
+        const response = await agentRaw({
+          urls: [TEST_SUITE_WEBSITE],
+          prompt: "What does this page offer?",
+          origin: "python-sdk@4.37.1",
+        });
+
+        if (response.statusCode !== 200) {
+          console.warn(
+            "Agent request with python-sdk origin did not succeed",
+            JSON.stringify(response.body, null, 2),
+          );
+        }
+
+        expect(response.statusCode).toBe(200);
+        expect(response.body.success).toBe(true);
+        expect(typeof response.body.id).toBe("string");
+
+        const status = await statusOf(response.body.id);
+        expect(status.statusCode).toBe(200);
+        expect(status.body.model).toBe("spark-2");
 
         await cancel(response.body.id);
       },

@@ -118,17 +118,95 @@ describe("agentStatusController", () => {
     expect(body.model).toBe("spark-2");
     expect(body.effort).toBeUndefined();
   });
+
+  it.each(["python-sdk@4.37.0", "python-sdk@4.0.0", "python-sdk@3.99.99"])(
+    "reports spark-2 as spark-1-pro to incompatible %s clients",
+    async origin => {
+      (supabaseGetAgentRequestByIdDirect as Mock).mockResolvedValue({
+        team_id: "team-123",
+        created_at: "2025-01-01T00:00:00Z",
+        origin,
+      });
+      (supabaseGetAgentByIdDirect as Mock).mockResolvedValue({
+        id: "job-123",
+        is_successful: false,
+        options: { model: "spark-2" },
+        created_at: "2025-01-01T00:00:00Z",
+      });
+
+      const res = buildRes();
+      await agentStatusController(baseReq, res);
+
+      expect(res.status).toHaveBeenCalledWith(200);
+      expect(res.json).toHaveBeenCalledWith(
+        expect.objectContaining({ model: "spark-1-pro" }),
+      );
+    },
+  );
+
+  it.each([
+    "python-sdk@4.37.1",
+    "python-sdk@4.38.0",
+    "python-sdk@5.0.0",
+    "js-sdk@4.0.0",
+    "api",
+  ])("reports spark-2 truthfully to %s", async origin => {
+    (supabaseGetAgentRequestByIdDirect as Mock).mockResolvedValue({
+      team_id: "team-123",
+      created_at: "2025-01-01T00:00:00Z",
+      origin,
+    });
+    (supabaseGetAgentByIdDirect as Mock).mockResolvedValue({
+      id: "job-123",
+      is_successful: false,
+      options: { model: "spark-2" },
+      created_at: "2025-01-01T00:00:00Z",
+    });
+
+    const res = buildRes();
+    await agentStatusController(baseReq, res);
+
+    expect(res.status).toHaveBeenCalledWith(200);
+    expect(res.json).toHaveBeenCalledWith(
+      expect.objectContaining({ model: "spark-2" }),
+    );
+  });
+
+  it("keeps a genuine spark-1 model truthful even for old python-sdk clients", async () => {
+    (supabaseGetAgentRequestByIdDirect as Mock).mockResolvedValue({
+      team_id: "team-123",
+      created_at: "2025-01-01T00:00:00Z",
+      origin: "python-sdk@4.37.0",
+    });
+    (supabaseGetAgentByIdDirect as Mock).mockResolvedValue({
+      id: "job-123",
+      is_successful: false,
+      options: { model: "spark-1-mini" },
+      created_at: "2025-01-01T00:00:00Z",
+    });
+
+    const res = buildRes();
+    await agentStatusController(baseReq, res);
+
+    expect(res.status).toHaveBeenCalledWith(200);
+    expect(res.json).toHaveBeenCalledWith(
+      expect.objectContaining({ model: "spark-1-mini" }),
+    );
+  });
 });
 
 describe("agentRequestSchema model and effort resolution", () => {
   const base = { prompt: "Find the pricing page" };
 
-  it("keeps the sent model and leaves effort undefined", () => {
-    const parsed = agentRequestSchema.parse({ ...base, model: "spark-1-mini" });
+  it.each(["spark-1-pro", "spark-1-mini", "spark-2"] as const)(
+    "redirects %s to spark-2 and leaves effort undefined",
+    model => {
+      const parsed = agentRequestSchema.parse({ ...base, model });
 
-    expect(parsed.model).toBe("spark-1-mini");
-    expect(parsed.effort).toBeUndefined();
-  });
+      expect(parsed.model).toBe("spark-2");
+      expect(parsed.effort).toBeUndefined();
+    },
+  );
 
   it.each(["low", "medium", "high"] as const)(
     "resolves effort %s to spark-2 and keeps the effort",
@@ -152,26 +230,30 @@ describe("agentRequestSchema model and effort resolution", () => {
   });
 
   it.each(["spark-1-pro", "spark-1-mini"] as const)(
-    "rejects effort with %s, naming spark-2",
+    "accepts effort with retired preset %s, redirecting to spark-2",
     model => {
-      let message = "";
-      try {
-        agentRequestSchema.parse({ ...base, model, effort: "low" });
-      } catch (error) {
-        message = (error as { issues: { message: string }[] }).issues[0]
-          .message;
-      }
+      const parsed = agentRequestSchema.parse({
+        ...base,
+        model,
+        effort: "low",
+      });
 
-      expect(message).toContain("effort");
-      expect(message).toContain("spark-2");
+      expect(parsed.model).toBe("spark-2");
+      expect(parsed.effort).toBe("low");
     },
   );
 
-  it("falls back to the default model when the caller sends neither field", () => {
+  it("defaults to spark-2 when the caller sends neither field", () => {
     const parsed = agentRequestSchema.parse({ ...base });
 
-    expect(parsed.model).toBe("spark-1-pro");
+    expect(parsed.model).toBe("spark-2");
     expect(parsed.effort).toBeUndefined();
+  });
+
+  it("rejects an unknown model name", () => {
+    expect(() =>
+      agentRequestSchema.parse({ ...base, model: "spark-9-unreleased" }),
+    ).toThrow();
   });
 
   it("rejects an unknown effort level", () => {
