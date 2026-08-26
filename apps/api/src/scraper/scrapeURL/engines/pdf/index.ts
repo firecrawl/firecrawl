@@ -449,8 +449,12 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
     // the file-dependent conditions are added here.
     if (!result && !skipOCR) {
       const fileSizeBytes = (await stat(tempFilePath)).size;
+      // mode !== "fast" mirrors the admission gate above: fast mode keeps
+      // its pre-by-reference behavior on every path (with Rust extraction
+      // disabled, skipOCR alone would not exclude it here).
       const useFirePdfByReference =
         !routeToMinerU &&
+        mode !== "fast" &&
         byReferenceConfigured(meta, forceFirePDF) &&
         fileSizeBytes >= FIRE_PDF_MAX_FILE_SIZE &&
         fileSizeBytes <= FIRE_PDF_BY_REFERENCE_MAX_FILE_SIZE;
