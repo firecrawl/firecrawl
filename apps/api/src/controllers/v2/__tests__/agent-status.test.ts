@@ -124,6 +124,9 @@ describe("agentStatusController", () => {
     ["python-sdk@4.37.0", "spark-1-pro"],
     ["python-sdk@4.0.0", "spark-1-pro"],
     ["python-sdk@3.99.99", "spark-1-pro"],
+    // a prerelease of the fix may predate the Literal widening, so it
+    // gets the lie too
+    ["python-sdk@4.37.1rc0", "spark-1-pro"],
     // everything else sees the real model
     ["python-sdk@4.37.1", "spark-2"],
     ["python-sdk@4.38.0", "spark-2"],

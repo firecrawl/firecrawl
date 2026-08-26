@@ -15,8 +15,11 @@ import { config } from "../../config";
 // first status check. Those versions predate spark-2, so a job they started
 // can only have requested a spark-1 preset or nothing at all; reporting the
 // old default back to them is wrong in telemetry but keeps their poll loop
-// alive. A python-sdk origin whose version does not parse is treated as
-// incompatible: the lie is cosmetic, the crash is not.
+// alive. A python-sdk origin whose version does not parse cleanly is
+// treated as incompatible: the lie is cosmetic, the crash is not. The
+// version regex is end-anchored so a prerelease of the fix (e.g.
+// "4.37.1rc0", which may predate the Literal widening) also fails to
+// parse and gets lied to rather than crashed.
 const PYTHON_SDK_ORIGIN = /^python-sdk@(.+)$/;
 const PYTHON_SDK_SPARK_2_FIX = [4, 37, 1];
 
@@ -24,7 +27,7 @@ function isIncompatiblePythonSdkOrigin(origin: unknown): boolean {
   if (typeof origin !== "string") return false;
   const sdk = PYTHON_SDK_ORIGIN.exec(origin);
   if (!sdk) return false;
-  const version = /^(\d+)\.(\d+)\.(\d+)/.exec(sdk[1]);
+  const version = /^(\d+)\.(\d+)\.(\d+)$/.exec(sdk[1]);
   if (!version) return true;
   const [major, minor, patch] = version.slice(1).map(Number);
   return (
