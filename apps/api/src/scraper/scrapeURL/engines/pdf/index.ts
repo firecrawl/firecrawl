@@ -56,12 +56,14 @@ import { isPdfBuffer, PDF_SNIFF_WINDOW } from "./pdfUtils";
 import { comparePdfOutputs } from "./shadowComparison";
 
 /** Check if the PDF is eligible for Rust extraction, returning a rejection reason or null. */
-function getIneligibleReason(
+export function getIneligibleReason(
   result: ReturnType<typeof processPdf>,
+  serveComplexTextBased: boolean = false,
 ): string | null {
   if (result.pdfType !== "TextBased") return `pdfType=${result.pdfType}`;
   if (result.confidence < 0.95) return `confidence=${result.confidence}`;
-  if (result.isComplex) return "complex layout (tables/columns)";
+  if (result.isComplex && !serveComplexTextBased)
+    return "complex layout (tables/columns)";
   if (!result.markdown?.length)
     return "empty markdown (unexpected for TextBased)";
   return null;
@@ -341,7 +343,10 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
           : pdfResult.pageCount;
         metadataTitle = pdfResult.title ?? undefined;
 
-        const ineligibleReason = getIneligibleReason(pdfResult);
+        const ineligibleReason = getIneligibleReason(
+          pdfResult,
+          !!config.PDF_RUST_SERVE_COMPLEX_TEXTBASED,
+        );
         const eligible = !ineligibleReason;
 
         logger.info("Rust PDF eligibility", {

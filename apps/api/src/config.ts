@@ -367,6 +367,11 @@ const configSchema = z.object({
   // PDF Rust Extraction (pdf-inspector)
   PDF_RUST_EXTRACT_ENABLE: z.stringbool().optional(),
   PDF_SHADOW_COMPARISON_ENABLE: z.stringbool().optional(),
+  // Serve high-confidence TextBased PDFs from Rust even when the layout is
+  // complex (tables/columns), instead of falling through to the OCR path.
+  // OCR reconstruction can substitute text on text-bearing PDFs (notably RTL);
+  // Rust reads the embedded text layer faithfully. Off by default.
+  PDF_RUST_SERVE_COMPLEX_TEXTBASED: z.stringbool().optional(),
 
   // Webhooks
   SELF_HOSTED_WEBHOOK_URL: z.string().optional(),
