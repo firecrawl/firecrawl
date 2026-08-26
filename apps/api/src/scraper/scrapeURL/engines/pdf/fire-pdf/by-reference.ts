@@ -104,6 +104,10 @@ export async function uploadPdfInputForFirePdf(
       timeoutAbort.signal,
       meta.abort.asSignal(),
     ]);
+    // A first asSignal() call AFTER cancellation returns a signal whose
+    // abort listeners were attached post-abort and never fire — check the
+    // manager directly before starting the timer or any stream.
+    meta.abort.throwIfAborted();
     const timer = setTimeout(
       () =>
         timeoutAbort.abort(

@@ -169,8 +169,14 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
   // gate adds the signals that need the file first). Otherwise keep the
   // historical cap — an oversized file would only burn bandwidth and temp
   // disk to fall through to text-only extraction.
+  // Fast mode is excluded: its hard cost ceiling skips the whole OCR/
+  // FirePDF chain (skipOCR), so the by-reference route it would justify is
+  // unreachable and the raised admission would only buffer bytes for the
+  // native path.
   const byReferenceReachable =
-    !routeToMinerU && byReferenceConfigured(meta, forceFirePDF);
+    !routeToMinerU &&
+    mode !== "fast" &&
+    byReferenceConfigured(meta, forceFirePDF);
 
   const { response, tempFilePath } =
     meta.pdfPrefetch !== undefined && meta.pdfPrefetch !== null
@@ -586,9 +592,18 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
       // fallthrough (ZDR, MinerU-diverted, by-reference failure) and go
       // straight to pdf-parse, which reads from disk — buffering and
       // base64-encoding hundreds of MB here would only burn worker memory.
+      // Inline bytes are only worth materializing when an engine that
+      // accepts them is actually configured; otherwise even small files go
+      // straight to disk-based pdf-parse without a wasted base64 pass.
+      const inlineEngineAvailable =
+        forceFirePDF ||
+        (!!config.FIRE_PDF_ENABLE && !!config.FIRE_PDF_BASE_URL) ||
+        (!!config.RUNPOD_MU_API_KEY && !!config.RUNPOD_MU_POD_ID);
       const inlineEligible =
-        fileSizeBytes < FIRE_PDF_MAX_FILE_SIZE ||
-        (forceFirePDF && fileSizeBytes <= FIRE_PDF_INLINE_HARD_MAX_FILE_SIZE);
+        inlineEngineAvailable &&
+        (fileSizeBytes < FIRE_PDF_MAX_FILE_SIZE ||
+          (forceFirePDF &&
+            fileSizeBytes <= FIRE_PDF_INLINE_HARD_MAX_FILE_SIZE));
       const base64Content = inlineEligible
         ? (await readFile(tempFilePath)).toString("base64")
         : undefined;
