@@ -1389,7 +1389,8 @@ export interface AgentTraceRunCancelRequestedEvent extends AgentTraceEventBase {
 export interface AgentTraceRunFinishedEvent extends AgentTraceEventBase {
   type: "run.finished";
   outcome: "succeeded" | "failed" | "cancelled" | "refused" | "credit_limit_reached";
-  error: AgentTraceError | null;
+  /** The canonical schema always writes this key (nullable), but older rows may omit it. */
+  error?: AgentTraceError | null;
 }
 
 export interface AgentTraceAgentStartedEvent extends AgentTraceEventBase {
@@ -1400,7 +1401,8 @@ export interface AgentTraceAgentFinishedEvent extends AgentTraceEventBase {
   type: "agent.finished";
   outcome: "succeeded" | "failed" | "cancelled" | "refused";
   durationMs: number;
-  error: AgentTraceError | null;
+  /** The canonical schema always writes this key (nullable), but older rows may omit it. */
+  error?: AgentTraceError | null;
 }
 
 export interface AgentTraceBrowserSessionStartedEvent extends AgentTraceEventBase {

@@ -7,6 +7,11 @@ This module contains clean, modern type definitions for the v2 API.
 import warnings
 from datetime import datetime
 from typing import Any, Dict, Generic, List, Literal, Optional, TypeVar, Union
+
+try:
+    from typing import Annotated
+except ImportError:  # Python 3.8
+    from typing_extensions import Annotated
 import logging
 from pydantic import (
     BaseModel,
@@ -1569,14 +1574,17 @@ class AgentTraceToolCallStartedEvent(AgentTraceEventBase):
     type: Literal["tool_call.started"]
     tool_call_id: str = Field(alias="toolCallId")
     tool_name: str = Field(alias="toolName")
-    parameters: Any = None
+    # Required key on the wire (zod `.json()`), values may be null: Field(...)
+    # keeps the key required so a malformed event cannot silently pass.
+    parameters: Any = Field(...)
 
 
 class AgentTraceToolCallFinishedEvent(AgentTraceEventBase):
     type: Literal["tool_call.finished"]
     tool_call_id: str = Field(alias="toolCallId")
     tool_name: str = Field(alias="toolName")
-    result: Any = None
+    # See AgentTraceToolCallStartedEvent.parameters.
+    result: Any = Field(...)
 
 
 class AgentTraceArtifactUpdatedEvent(AgentTraceEventBase):
@@ -1589,20 +1597,25 @@ class AgentTraceErrorOccurredEvent(AgentTraceEventBase):
     error: AgentTraceError
 
 
-AgentTraceEvent = Union[
-    AgentTraceRunStartedEvent,
-    AgentTraceRunCancelRequestedEvent,
-    AgentTraceRunFinishedEvent,
-    AgentTraceAgentStartedEvent,
-    AgentTraceAgentFinishedEvent,
-    AgentTraceBrowserSessionStartedEvent,
-    AgentTraceBrowserSessionFinishedEvent,
-    AgentTraceProgressReportedEvent,
-    AgentTraceReasoningSummaryEvent,
-    AgentTraceToolCallStartedEvent,
-    AgentTraceToolCallFinishedEvent,
-    AgentTraceArtifactUpdatedEvent,
-    AgentTraceErrorOccurredEvent,
+# Discriminated on the wire's `type` tag so generated schemas expose the
+# discriminator and validation dispatches on it directly.
+AgentTraceEvent = Annotated[
+    Union[
+        AgentTraceRunStartedEvent,
+        AgentTraceRunCancelRequestedEvent,
+        AgentTraceRunFinishedEvent,
+        AgentTraceAgentStartedEvent,
+        AgentTraceAgentFinishedEvent,
+        AgentTraceBrowserSessionStartedEvent,
+        AgentTraceBrowserSessionFinishedEvent,
+        AgentTraceProgressReportedEvent,
+        AgentTraceReasoningSummaryEvent,
+        AgentTraceToolCallStartedEvent,
+        AgentTraceToolCallFinishedEvent,
+        AgentTraceArtifactUpdatedEvent,
+        AgentTraceErrorOccurredEvent,
+    ],
+    Field(discriminator="type"),
 ]
 
 

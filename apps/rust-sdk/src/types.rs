@@ -1014,6 +1014,16 @@ pub enum AgentEffort {
     Low,
     Medium,
     High,
+    /// An effort level this SDK release does not know about.
+    ///
+    /// Read-only catch-all, same rationale as `AgentModel::Unknown`: the
+    /// server ships effort levels without an SDK release, and an exhaustive
+    /// enum would fail the whole `AgentStatusResponse` parse — and therefore
+    /// the status wait loop — the first time an unrecognized value came back.
+    /// Do not send this variant in a request; it serializes to `"unknown"`,
+    /// which the API rejects.
+    #[serde(other)]
+    Unknown,
 }
 
 /// Search source types.
@@ -1123,6 +1133,24 @@ mod tests {
         let parsed: AgentModel = serde_json::from_str("\"spark-9-unreleased\"")
             .expect("unknown model should deserialize");
         assert_eq!(parsed, AgentModel::Unknown);
+    }
+
+    #[test]
+    fn test_agent_effort_unknown_degrades_instead_of_failing_the_parse() {
+        // Same as the model catch-all: an effort level the server ships before
+        // this SDK knows about must not take down status polling.
+        let parsed: AgentEffort =
+            serde_json::from_str("\"extreme\"").expect("unknown effort should deserialize");
+        assert_eq!(parsed, AgentEffort::Unknown);
+        for (name, expected) in [
+            ("low", AgentEffort::Low),
+            ("medium", AgentEffort::Medium),
+            ("high", AgentEffort::High),
+        ] {
+            let parsed: AgentEffort = serde_json::from_str(&format!("\"{name}\""))
+                .unwrap_or_else(|e| panic!("{name} should deserialize: {e}"));
+            assert_eq!(parsed, expected);
+        }
     }
 
     #[test]
