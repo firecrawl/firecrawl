@@ -96,8 +96,14 @@ async def get_batch_scrape_status(
     payload = _parse_batch_scrape_status_response(body)
     docs = payload["data"]
     
-    # Handle pagination if requested
-    auto_paginate = pagination_config.auto_paginate if pagination_config else True
+    # Unset auto_paginate only paginates a terminal job, since following `next`
+    # on a running job re-downloads pages on every poll.
+    is_terminal = payload["status"] in ("completed", "failed", "cancelled")
+    auto_paginate = (
+        pagination_config.auto_paginate
+        if (pagination_config is not None and pagination_config.auto_paginate is not None)
+        else is_terminal
+    )
     if auto_paginate and payload["next"]:
         docs = await _fetch_all_batch_pages_async(
             client, 

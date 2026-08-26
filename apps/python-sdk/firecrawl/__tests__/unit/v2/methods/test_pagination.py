@@ -34,7 +34,7 @@ class TestPaginationConfig:
     def test_default_values(self):
         """Test default values for PaginationConfig."""
         config = PaginationConfig()
-        assert config.auto_paginate is True
+        assert config.auto_paginate is None
         assert config.max_pages is None
         assert config.max_results is None
         assert config.max_wait_time is None
@@ -510,6 +510,58 @@ class TestBatchScrapePagination:
         # Should have 1 initial + 3 from pages (limited by max_results=4)
         assert len(result) == 4
         assert self.mock_client.get.call_count == 2  # Should fetch 2 pages
+
+    def test_default_no_pagination_while_running(self):
+        """A running job polled with no config makes exactly one request and keeps next."""
+        client = Mock()
+        response = Mock()
+        response.ok = True
+        response.json.return_value = {
+            "success": True,
+            "status": "scraping",
+            "completed": 1,
+            "total": 5,
+            "next": "https://api.example.com/next1",
+            "data": [{"markdown": "a", "metadata": {"sourceURL": "https://x.com"}}],
+        }
+        client.get.return_value = response
+
+        job = get_batch_scrape_status(client, "job-1")
+
+        assert client.get.call_count == 1
+        assert job.next == "https://api.example.com/next1"
+        assert len(job.data) == 1
+
+    def test_default_paginates_when_terminal(self):
+        """A completed job polled with no config still aggregates all pages."""
+        client = Mock()
+        first = Mock()
+        first.ok = True
+        first.json.return_value = {
+            "success": True,
+            "status": "completed",
+            "completed": 2,
+            "total": 2,
+            "next": "https://api.example.com/next1",
+            "data": [{"markdown": "a", "metadata": {"sourceURL": "https://x.com"}}],
+        }
+        second = Mock()
+        second.ok = True
+        second.json.return_value = {
+            "success": True,
+            "status": "completed",
+            "completed": 2,
+            "total": 2,
+            "next": None,
+            "data": [{"markdown": "b", "metadata": {"sourceURL": "https://y.com"}}],
+        }
+        client.get.side_effect = [first, second]
+
+        job = get_batch_scrape_status(client, "job-1")
+
+        assert client.get.call_count == 2
+        assert len(job.data) == 2
+        assert job.next is None
 
 
 class TestAsyncPagination:
