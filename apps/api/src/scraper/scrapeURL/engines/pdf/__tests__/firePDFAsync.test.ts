@@ -11,6 +11,10 @@ import {
   FirePdfAsyncFailure,
   scrapePDFWithFirePDFAsync,
 } from "../fire-pdf/async";
+import {
+  getPdfResultFromCache,
+  savePdfResultToCache,
+} from "../../../../../lib/gcs-pdf-cache";
 import { config } from "../../../../../config";
 
 // ── Fixtures ─────────────────────────────────────────────────────────────
@@ -1145,6 +1149,8 @@ describe("scrapePDFWithFirePDFAsync", () => {
     };
 
     it("submits input_gcs_uri + input_sha256 instead of pdf_b64", async () => {
+      vi.mocked(getPdfResultFromCache).mockClear();
+      vi.mocked(savePdfResultToCache).mockClear();
       const { fetchImpl, calls } = makeFetchFromSequence([
         {
           matchUrl: /\/jobs$/,
@@ -1188,6 +1194,19 @@ describe("scrapePDFWithFirePDFAsync", () => {
       );
 
       expect(result.markdown).toBe("# big doc");
+      // By-reference requests are cache-addressed by the raw-byte sha,
+      // namespaced apart from inline base64-keyed entries.
+      expect(vi.mocked(getPdfResultFromCache)).toHaveBeenCalledWith(
+        { key: `raw-${BY_REF.sha256}` },
+        "firepdf",
+        undefined,
+      );
+      expect(vi.mocked(savePdfResultToCache)).toHaveBeenCalledWith(
+        { key: `raw-${BY_REF.sha256}` },
+        expect.anything(),
+        "firepdf",
+        undefined,
+      );
       const body = calls[0].body as Record<string, unknown>;
       expect(body.input_gcs_uri).toBe(BY_REF.gcsUri);
       expect(body.input_sha256).toBe(BY_REF.sha256);
@@ -1197,7 +1216,7 @@ describe("scrapePDFWithFirePDFAsync", () => {
       );
     });
 
-    it("honors an explicit caller timeout up to the 30min ceiling", async () => {
+    it("clamps an explicit caller timeout to the 30min ceiling", async () => {
       let submittedBody: any;
       const fetchImpl: any = async (url: string, init: any) => {
         if (/\/jobs$/.test(url) && (init?.method ?? "GET") === "POST") {
@@ -1214,9 +1233,10 @@ describe("scrapePDFWithFirePDFAsync", () => {
       };
       // Long documents need an explicit timeout: the no-budget default
       // stays at 5 minutes because scrapeURLLoop kills no-timeout scrapes
-      // at 5 minutes regardless of the advertised FirePDF deadline.
+      // at 5 minutes regardless of the advertised FirePDF deadline. A
+      // timeout above MAX_DEADLINE_MS must be clamped to it.
       const meta = makeMeta();
-      meta.abort.scrapeTimeout = vi.fn(() => 20 * 60 * 1_000);
+      meta.abort.scrapeTimeout = vi.fn(() => 40 * 60 * 1_000);
 
       await scrapePDFWithFirePDFAsync(
         meta,
@@ -1232,7 +1252,7 @@ describe("scrapePDFWithFirePDFAsync", () => {
       );
 
       const delta = new Date(submittedBody.deadline_at).getTime() - Date.now();
-      expect(delta).toBeGreaterThan(19 * 60 * 1_000);
+      expect(delta).toBeGreaterThan(29 * 60 * 1_000);
       expect(delta).toBeLessThanOrEqual(30 * 60 * 1_000);
     });
 
@@ -1259,16 +1279,18 @@ describe("scrapePDFWithFirePDFAsync", () => {
     });
 
     it("rejects a by-reference submit without a positive pages estimate", async () => {
-      await expect(
-        scrapePDFWithFirePDFAsync(
-          makeMeta(),
-          { ...BY_REF },
-          undefined,
-          undefined,
-          undefined,
-          { fetchImpl: vi.fn(), fallbackImpl: vi.fn(), sleepImpl: noopSleep },
-        ),
-      ).rejects.toThrow(/pages estimate/);
+      for (const pagesEstimate of [undefined, 0, -1]) {
+        await expect(
+          scrapePDFWithFirePDFAsync(
+            makeMeta(),
+            { ...BY_REF },
+            undefined,
+            pagesEstimate,
+            undefined,
+            { fetchImpl: vi.fn(), fallbackImpl: vi.fn(), sleepImpl: noopSleep },
+          ),
+        ).rejects.toThrow(/pages estimate/);
+      }
     });
   });
 });

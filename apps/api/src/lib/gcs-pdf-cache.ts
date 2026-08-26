@@ -30,8 +30,19 @@ export function createPdfCacheKey(pdfContent: string | Buffer): string {
   return crypto.createHash("sha256").update(pdfContent).digest("hex");
 }
 
+/** Cache addressing: historically the key is sha256 of the inline base64
+ * payload. Callers that never materialize the base64 (large PDFs submitted
+ * by GCS reference) pass a precomputed key instead — namespaced by the
+ * caller (e.g. `raw-<sha256-of-bytes>`) so the two keyspaces stay
+ * distinct. */
+export type PdfCacheKeyInput = string | { key: string };
+
+function resolvePdfCacheKey(input: PdfCacheKeyInput): string {
+  return typeof input === "string" ? createPdfCacheKey(input) : input.key;
+}
+
 export async function savePdfResultToCache(
-  pdfContent: string,
+  pdfContent: PdfCacheKeyInput,
   result: CachedPdfResult,
   provider: PdfCacheProvider = "runpod",
   variant?: string,
@@ -42,7 +53,7 @@ export async function savePdfResultToCache(
     }
 
     const prefix = PROVIDER_PREFIXES[provider];
-    const cacheKey = createPdfCacheKey(pdfContent);
+    const cacheKey = resolvePdfCacheKey(pdfContent);
     const objectKey = variant ? `${cacheKey}-${variant}` : cacheKey;
     const bucket = storage.bucket(config.GCS_BUCKET_NAME);
     const blob = bucket.file(`${prefix}${objectKey}.json`);
@@ -89,7 +100,7 @@ export async function savePdfResultToCache(
 }
 
 export async function getPdfResultFromCache(
-  pdfContent: string,
+  pdfContent: PdfCacheKeyInput,
   provider: PdfCacheProvider = "runpod",
   variant?: string,
 ): Promise<CachedPdfResult | null> {
@@ -99,7 +110,7 @@ export async function getPdfResultFromCache(
     }
 
     const prefix = PROVIDER_PREFIXES[provider];
-    const cacheKey = createPdfCacheKey(pdfContent);
+    const cacheKey = resolvePdfCacheKey(pdfContent);
     const objectKey = variant ? `${cacheKey}-${variant}` : cacheKey;
     const bucket = storage.bucket(config.GCS_BUCKET_NAME);
     const blob = bucket.file(`${prefix}${objectKey}.json`);

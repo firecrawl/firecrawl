@@ -4,6 +4,7 @@ import type { PDFProcessorResult } from "../types";
 import {
   getPdfResultFromCache,
   savePdfResultToCache,
+  type PdfCacheKeyInput,
 } from "../../../../../lib/gcs-pdf-cache";
 import { firePdfBlockPagesSchema } from "./schema";
 
@@ -143,7 +144,7 @@ export function cacheKeyShape(
 
 export async function tryGetCached(
   meta: Meta,
-  base64Content: string,
+  base64Content: PdfCacheKeyInput,
   mode: PDFMode | undefined,
   maxPages: number | undefined,
   pagesProcessed: number | undefined,
@@ -205,7 +206,7 @@ export async function tryGetCached(
 
 export async function maybeSaveResult(args: {
   meta: Meta;
-  base64Content: string;
+  base64Content: PdfCacheKeyInput;
   mode: PDFMode | undefined;
   maxPages: number | undefined;
   includePageMarkdown: boolean;

@@ -354,7 +354,11 @@ const configSchema = z.object({
   // match fire-pdf's FIRE_PDF_GCS_BUCKET. Upload failures (e.g. missing
   // IAM grant) fall back to the pre-by-reference behavior for oversized
   // files rather than failing the scrape.
-  FIRE_PDF_GCS_INPUT_BUCKET: z.string().default("firecrawl-pdf-pipeline"),
+  FIRE_PDF_GCS_INPUT_BUCKET: z
+    .string()
+    .trim()
+    .min(1)
+    .default("firecrawl-pdf-pipeline"),
 
   // RunPod
   RUNPOD_MU_API_KEY: z.string().optional(),
