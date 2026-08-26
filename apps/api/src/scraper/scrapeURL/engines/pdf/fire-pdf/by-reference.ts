@@ -150,18 +150,6 @@ export async function rewritePdfInputForFirePdf(
  * mirroring the inline path's rule; otherwise both the master switch and
  * the by-reference switch must be on.
  */
-/** Streaming sha-256 of a file on disk — used to verify a fire-engine
- * handoff's claimed hash against the exact bytes that were sniffed and
- * page-counted locally, before that hash is sent to fire-pdf as the
- * job's idempotency identity. */
-export async function sha256OfFile(path: string): Promise<string> {
-  const hash = createHash("sha256");
-  for await (const chunk of createReadStream(path)) {
-    hash.update(chunk as Buffer);
-  }
-  return hash.digest("hex");
-}
-
 /**
  * The per-team large-PDF byte limit: the privileged cap for allowlisted
  * team ids, the default cap for everyone else, both clamped to the 256MB
