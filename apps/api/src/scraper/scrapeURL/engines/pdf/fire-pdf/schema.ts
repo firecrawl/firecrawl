@@ -41,6 +41,11 @@ export const pollResponseSchema = z.object({
   ]),
   retry_after_ms: z.number().optional(),
   pages_processed: z.number().optional(),
+  // Live remaining-time estimate computed server-side from lane
+  // throughput + backlog (fire-pdf phase 2). Optional and additive;
+  // absent on older fire-pdf builds or when the lane has no measured
+  // throughput.
+  estimated_remaining_ms: z.number().optional(),
   failed_pages: z.array(z.number()).nullable().optional(),
   partial_pages: z.array(z.number()).nullable().optional(),
   error_class: z.string().optional(),

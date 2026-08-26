@@ -97,6 +97,47 @@ describe("composeTimeoutProcessing", () => {
   });
 });
 
+describe("composeTimeoutProcessing — server estimate preference", () => {
+  it("prefers fire-pdf's live estimate, aged since observation", () => {
+    // Server said 9.5 minutes remaining, observed 90s ago → 8 minutes
+    // after aging and minute-ceiling; the static formula (700 pages)
+    // would have said 5 minutes here.
+    const { message, details } = composeTimeoutProcessing({
+      pagesEstimate: 700,
+      submittedAtMs: T0,
+      lastStatus: "running",
+      nowMs: T0 + 2 * 60_000,
+      serverEstimateMs: 9.5 * 60_000,
+      serverEstimateAtMs: T0 + 30_000,
+    });
+    expect(details.estimatedRemainingSeconds).toBe(8 * 60);
+    expect(message).toContain("~8 minutes");
+  });
+
+  it("an aged-out server estimate floors at one minute", () => {
+    const { details } = composeTimeoutProcessing({
+      pagesEstimate: 700,
+      submittedAtMs: T0,
+      lastStatus: "running",
+      nowMs: T0 + 20 * 60_000,
+      serverEstimateMs: 60_000,
+      serverEstimateAtMs: T0,
+    });
+    expect(details.estimatedRemainingSeconds).toBe(60);
+  });
+
+  it("falls back to static math when no server estimate was observed", () => {
+    const withServer = composeTimeoutProcessing({
+      pagesEstimate: 700,
+      submittedAtMs: T0,
+      lastStatus: "running",
+      nowMs: T0 + 2 * 60_000,
+    });
+    // 700×500ms + 60s − 2min elapsed → 5 minutes (static path).
+    expect(withServer.details.estimatedRemainingSeconds).toBe(300);
+  });
+});
+
 describe("SCRAPE_TIMEOUT processing details transport", () => {
   it("survives the worker→controller serde round trip", () => {
     const { message, details } = composeTimeoutProcessing({

@@ -1298,6 +1298,82 @@ describe("scrapePDFWithFirePDFAsync", () => {
       }
     });
 
+    it("records fire-pdf's live estimate from 202 polls for timeout enrichment", async () => {
+      const { fetchImpl } = makeFetchFromSequence([
+        {
+          matchUrl: /\/jobs$/,
+          matchMethod: "POST",
+          response: {
+            status: 202,
+            body: { scrape_id: "scrape-id-test", status: "queued", lane: "xl" },
+          },
+        },
+        {
+          matchUrl: /\/jobs\/scrape-id-test$/,
+          matchMethod: "GET",
+          response: {
+            status: 202,
+            body: {
+              scrape_id: "scrape-id-test",
+              status: "running",
+              estimated_remaining_ms: 240_000,
+            },
+          },
+        },
+        {
+          matchUrl: /\/jobs\/scrape-id-test$/,
+          matchMethod: "GET",
+          response: {
+            status: 200,
+            body: {
+              scrape_id: "scrape-id-test",
+              status: "done",
+              pages_processed: 500,
+            },
+          },
+        },
+        {
+          matchUrl: /\/jobs\/scrape-id-test\/result$/,
+          matchMethod: "GET",
+          response: {
+            status: 200,
+            body: {
+              schema_version: 1,
+              markdown: "# ok",
+              pages_processed: 500,
+              failed_pages: null,
+              partial_pages: null,
+            },
+          },
+        },
+      ]);
+
+      const meta = makeMeta();
+      let observed: unknown;
+      const sleepSpy = async () => {
+        // Snapshot mid-flight state after the first 202 recorded it —
+        // completion clears the container, so assert before that.
+        observed = { ...(meta.largePdfProcessing.current ?? {}) };
+      };
+      await scrapePDFWithFirePDFAsync(
+        { ...meta, logger: meta.logger },
+        { ...BY_REF },
+        undefined,
+        500,
+        undefined,
+        { fetchImpl, fallbackImpl: vi.fn(), sleepImpl: sleepSpy },
+      );
+
+      // The last snapshot before completion carries the server estimate.
+      expect(observed).toMatchObject({
+        lastStatus: "running",
+        serverEstimateMs: 240_000,
+      });
+      expect(
+        (observed as { serverEstimateAtMs?: number }).serverEstimateAtMs,
+      ).toBeGreaterThan(0);
+    });
+
     it("advertises a page-scaled deadline decoupled from the caller window", async () => {
       let submittedBody: any;
       const fetchImpl: any = async (url: string, init: any) => {

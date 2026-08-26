@@ -25,8 +25,12 @@ type PollDeps = {
   random?: () => number;
   /** Observes each non-terminal status seen while polling — lets the
    * caller keep a live "where is this job" snapshot (used to enrich
-   * timeout errors for by-reference jobs that outlive the scrape). */
-  onNonTerminalStatus?: (status: "queued" | "published" | "running") => void;
+   * timeout errors for by-reference jobs that outlive the scrape).
+   * `estimatedRemainingMs` is fire-pdf's live estimate when present. */
+  onNonTerminalStatus?: (
+    status: "queued" | "published" | "running",
+    estimatedRemainingMs?: number,
+  ) => void;
 };
 
 type PollOk = { poll: PollResponse; pollCount: number };
@@ -144,7 +148,10 @@ export async function pollUntilTerminal(deps: PollDeps): Promise<PollOk> {
       parsed.data.status === "published" ||
       parsed.data.status === "running"
     ) {
-      deps.onNonTerminalStatus?.(parsed.data.status);
+      deps.onNonTerminalStatus?.(
+        parsed.data.status,
+        parsed.data.estimated_remaining_ms,
+      );
     }
 
     lastDelay = nextPollDelay(lastDelay, parsed.data.retry_after_ms, random);

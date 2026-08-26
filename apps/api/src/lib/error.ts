@@ -109,6 +109,12 @@ export function composeTimeoutProcessing(args: {
   lastStatus: "queued" | "published" | "running";
   nowMs: number;
   perPageMs?: number;
+  /** fire-pdf's live estimate from the last poll that carried one, and
+   * when it was observed. Preferred over the static per-page math: the
+   * server sees measured lane throughput and real queue depth, which
+   * the static formula cannot. */
+  serverEstimateMs?: number;
+  serverEstimateAtMs?: number;
 }): { message: string; details: ScrapeTimeoutProcessingDetails } {
   const perPageMs = args.perPageMs ?? PROCESSING_ESTIMATE_PER_PAGE_MS;
   const pages = args.pagesEstimate;
@@ -117,7 +123,18 @@ export function composeTimeoutProcessing(args: {
       ? pages * perPageMs + PROCESSING_ESTIMATE_BASE_MS
       : 5 * 60_000;
   const elapsedMs = Math.max(0, args.nowMs - args.submittedAtMs);
-  const remainingMs = Math.max(60_000, totalMs - elapsedMs);
+  // Live server estimate wins when available, aged by the time since we
+  // observed it; the static formula is the fallback for older fire-pdf
+  // builds and lanes without measured throughput.
+  const serverRemainingMs =
+    args.serverEstimateMs !== undefined && args.serverEstimateAtMs !== undefined
+      ? args.serverEstimateMs -
+        Math.max(0, args.nowMs - args.serverEstimateAtMs)
+      : undefined;
+  const remainingMs =
+    serverRemainingMs !== undefined
+      ? Math.max(60_000, serverRemainingMs)
+      : Math.max(60_000, totalMs - elapsedMs);
   const remainingMinutes = Math.ceil(remainingMs / 60_000);
   const estimatedRemainingSeconds = remainingMinutes * 60;
   const retryAfterSeconds = Math.min(600, estimatedRemainingSeconds);
