@@ -11,16 +11,32 @@ import (
 	"github.com/firecrawl/firecrawl/apps/go-sdk/option"
 )
 
+// capturedRequest ferries the request the httptest handler received to the
+// test goroutine over a channel. Plain shared variables would trip the race
+// detector (the handler runs on its own goroutine), and t.Fatal inside the
+// handler would Goexit without writing a response, surfacing as a connection
+// error instead of the assertion message.
+type capturedRequest struct {
+	method string
+	path   string
+	query  string
+	body   string
+}
+
+func captureRequest(r *http.Request) capturedRequest {
+	c := capturedRequest{method: r.Method, path: r.URL.Path, query: r.URL.RawQuery}
+	if r.Body != nil {
+		data, _ := io.ReadAll(r.Body)
+		c.body = string(data)
+	}
+	return c
+}
+
 func TestStartAgentSendsEffort(t *testing.T) {
-	var gotBody, gotMethod, gotPath string
+	captured := make(chan capturedRequest, 1)
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Capture only: t.Fatal in a handler goroutine would Goexit without
-		// writing a response, surfacing as a connection error instead of the
-		// assertion message. Assertions run on the test goroutine below.
-		gotMethod, gotPath = r.Method, r.URL.Path
-		data, _ := io.ReadAll(r.Body)
-		gotBody = string(data)
+		captured <- captureRequest(r)
 
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
@@ -45,26 +61,26 @@ func TestStartAgentSendsEffort(t *testing.T) {
 		t.Fatalf("StartAgent: %v", err)
 	}
 
-	if gotMethod != http.MethodPost || gotPath != "/v2/agent" {
-		t.Errorf("unexpected request: %s %s", gotMethod, gotPath)
+	req := <-captured
+	if req.method != http.MethodPost || req.path != "/v2/agent" {
+		t.Errorf("unexpected request: %s %s", req.method, req.path)
 	}
 	if resp.ID != "job-123" {
 		t.Errorf("id = %q, want job-123", resp.ID)
 	}
-	if !strings.Contains(gotBody, `"effort":"high"`) {
-		t.Errorf("request body missing effort: %q", gotBody)
+	if !strings.Contains(req.body, `"effort":"high"`) {
+		t.Errorf("request body missing effort: %q", req.body)
 	}
-	if !strings.Contains(gotBody, `"model":"spark-2"`) {
-		t.Errorf("request body missing model: %q", gotBody)
+	if !strings.Contains(req.body, `"model":"spark-2"`) {
+		t.Errorf("request body missing model: %q", req.body)
 	}
 }
 
 func TestStartAgentOmitsEffortWhenUnset(t *testing.T) {
-	var gotBody string
+	captured := make(chan capturedRequest, 1)
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		data, _ := io.ReadAll(r.Body)
-		gotBody = string(data)
+		captured <- captureRequest(r)
 
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
@@ -84,16 +100,17 @@ func TestStartAgentOmitsEffortWhenUnset(t *testing.T) {
 		t.Fatalf("StartAgent: %v", err)
 	}
 
-	if strings.Contains(gotBody, `"effort"`) {
-		t.Errorf("request body should omit effort: %q", gotBody)
+	req := <-captured
+	if strings.Contains(req.body, `"effort"`) {
+		t.Errorf("request body should omit effort: %q", req.body)
 	}
 }
 
 func TestGetAgentTraceParsesEvents(t *testing.T) {
-	var gotMethod, gotPath, gotQuery string
+	captured := make(chan capturedRequest, 1)
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		gotMethod, gotPath, gotQuery = r.Method, r.URL.Path, r.URL.RawQuery
+		captured <- captureRequest(r)
 
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
@@ -148,11 +165,12 @@ func TestGetAgentTraceParsesEvents(t *testing.T) {
 		t.Fatalf("GetAgentTrace: %v", err)
 	}
 
-	if gotMethod != http.MethodGet || gotPath != "/v2/agent/job-123/trace" {
-		t.Errorf("unexpected request: %s %s", gotMethod, gotPath)
+	req := <-captured
+	if req.method != http.MethodGet || req.path != "/v2/agent/job-123/trace" {
+		t.Errorf("unexpected request: %s %s", req.method, req.path)
 	}
-	if gotQuery != "" {
-		t.Errorf("unexpected query params: %q", gotQuery)
+	if req.query != "" {
+		t.Errorf("unexpected query params: %q", req.query)
 	}
 	if !trace.Success || trace.ID != "job-123" {
 		t.Fatalf("trace = %+v", trace)
@@ -195,10 +213,10 @@ func TestGetAgentTraceParsesEvents(t *testing.T) {
 }
 
 func TestGetAgentTraceSendsLiveView(t *testing.T) {
-	var gotMethod, gotPath, gotQuery string
+	captured := make(chan capturedRequest, 1)
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		gotMethod, gotPath, gotQuery = r.Method, r.URL.Path, r.URL.RawQuery
+		captured <- captureRequest(r)
 
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
@@ -230,11 +248,12 @@ func TestGetAgentTraceSendsLiveView(t *testing.T) {
 		t.Fatalf("GetAgentTrace: %v", err)
 	}
 
-	if gotMethod != http.MethodGet || gotPath != "/v2/agent/job-123/trace" {
-		t.Errorf("unexpected request: %s %s", gotMethod, gotPath)
+	req := <-captured
+	if req.method != http.MethodGet || req.path != "/v2/agent/job-123/trace" {
+		t.Errorf("unexpected request: %s %s", req.method, req.path)
 	}
-	if gotQuery != "liveView=true" {
-		t.Errorf("liveView query param = %q, want true", gotQuery)
+	if req.query != "liveView=true" {
+		t.Errorf("liveView query param = %q, want true", req.query)
 	}
 	if len(trace.ActiveBrowserSessions) != 1 {
 		t.Fatalf("activeBrowserSessions len = %d, want 1", len(trace.ActiveBrowserSessions))
@@ -263,10 +282,10 @@ func TestGetAgentTraceRequiresJobID(t *testing.T) {
 }
 
 func TestGetAgentSnapshotParsesResponse(t *testing.T) {
-	var gotMethod, gotPath string
+	captured := make(chan capturedRequest, 1)
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		gotMethod, gotPath = r.Method, r.URL.Path
+		captured <- captureRequest(r)
 
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
@@ -292,8 +311,9 @@ func TestGetAgentSnapshotParsesResponse(t *testing.T) {
 		t.Fatalf("GetAgentSnapshot: %v", err)
 	}
 
-	if gotMethod != http.MethodGet || gotPath != "/v2/agent/job-123/snapshots/snap-1" {
-		t.Errorf("unexpected request: %s %s", gotMethod, gotPath)
+	req := <-captured
+	if req.method != http.MethodGet || req.path != "/v2/agent/job-123/snapshots/snap-1" {
+		t.Errorf("unexpected request: %s %s", req.method, req.path)
 	}
 	if !snapshot.Success || snapshot.ID != "job-123" || snapshot.SnapshotID != "snap-1" {
 		t.Fatalf("snapshot = %+v", snapshot)
