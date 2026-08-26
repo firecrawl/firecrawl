@@ -97,6 +97,8 @@ class V2Proxy:
             self.start_agent = client_instance.start_agent
             self.get_agent_status = client_instance.get_agent_status
             self.cancel_agent = client_instance.cancel_agent
+            self.get_agent_trace = client_instance.get_agent_trace
+            self.get_agent_snapshot = client_instance.get_agent_snapshot
 
             self.start_batch_scrape = client_instance.start_batch_scrape
             self.get_batch_scrape_status = client_instance.get_batch_scrape_status
@@ -185,6 +187,8 @@ class AsyncV2Proxy:
             self.start_agent = client_instance.start_agent
             self.get_agent_status = client_instance.get_agent_status
             self.cancel_agent = client_instance.cancel_agent
+            self.get_agent_trace = client_instance.get_agent_trace
+            self.get_agent_snapshot = client_instance.get_agent_snapshot
 
             self.start_batch_scrape = client_instance.start_batch_scrape
             self.get_batch_scrape_status = client_instance.get_batch_scrape_status
@@ -307,6 +311,8 @@ class Firecrawl:
         self.start_agent = self._v2_client.start_agent
         self.get_agent_status = self._v2_client.get_agent_status
         self.cancel_agent = self._v2_client.cancel_agent
+        self.get_agent_trace = self._v2_client.get_agent_trace
+        self.get_agent_snapshot = self._v2_client.get_agent_snapshot
         self.agent = self._v2_client.agent
 
         self.get_concurrency = self._v2_client.get_concurrency
@@ -442,6 +448,8 @@ class AsyncFirecrawl:
         self.start_agent = self._v2_client.start_agent
         self.get_agent_status = self._v2_client.get_agent_status
         self.cancel_agent = self._v2_client.cancel_agent
+        self.get_agent_trace = self._v2_client.get_agent_trace
+        self.get_agent_snapshot = self._v2_client.get_agent_snapshot
         self.agent = self._v2_client.agent
 
         self.get_concurrency = self._v2_client.get_concurrency

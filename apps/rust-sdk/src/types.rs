@@ -1006,6 +1006,16 @@ pub enum AgentModel {
     Unknown,
 }
 
+/// Agent reasoning effort. Every level runs spark-2; the effort sets the
+/// reasoning budget inside it.
+#[derive(Deserialize, Serialize, Clone, Copy, Debug, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum AgentEffort {
+    Low,
+    Medium,
+    High,
+}
+
 /// Search source types.
 #[derive(Deserialize, Serialize, Clone, Copy, Debug, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]

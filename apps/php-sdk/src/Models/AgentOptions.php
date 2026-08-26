@@ -9,6 +9,8 @@ final class AgentOptions
     /**
      * @param list<string>|null          $urls
      * @param array<string, mixed>|null  $schema
+     * @param string|null                $effort Reasoning budget: "low", "medium",
+     *        or "high". Every level runs spark-2.
      * @param AuditMetadata|null         $auditMetadata
      */
     private function __construct(
@@ -19,6 +21,7 @@ final class AgentOptions
         private readonly ?int $maxCredits = null,
         private readonly ?bool $strictConstrainToURLs = null,
         private readonly ?string $model = null,
+        private readonly ?string $effort = null,
         private readonly ?WebhookConfig $webhook = null,
         private readonly ?AuditMetadata $auditMetadata = null,
     ) {}
@@ -26,6 +29,8 @@ final class AgentOptions
     /**
      * @param list<string>|null         $urls
      * @param array<string, mixed>|null $schema
+     * @param string|null                $effort Reasoning budget: "low", "medium",
+     *        or "high". Every level runs spark-2.
      * @param AuditMetadata|null         $auditMetadata
      */
     public static function with(
@@ -36,12 +41,13 @@ final class AgentOptions
         ?int $maxCredits = null,
         ?bool $strictConstrainToURLs = null,
         ?string $model = null,
+        ?string $effort = null,
         ?WebhookConfig $webhook = null,
         ?AuditMetadata $auditMetadata = null,
     ): self {
         return new self(
             $urls, $prompt, $schema, $integration,
-            $maxCredits, $strictConstrainToURLs, $model, $webhook, $auditMetadata,
+            $maxCredits, $strictConstrainToURLs, $model, $effort, $webhook, $auditMetadata,
         );
     }
 
@@ -56,6 +62,7 @@ final class AgentOptions
             'maxCredits' => $this->maxCredits,
             'strictConstrainToURLs' => $this->strictConstrainToURLs,
             'model' => $this->model,
+            'effort' => $this->effort,
             'webhook' => $this->webhook?->toArray(),
             'auditMetadata' => $this->auditMetadata?->toArray(),
         ];

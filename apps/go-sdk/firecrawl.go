@@ -795,6 +795,50 @@ func (c *Client) CancelAgent(ctx context.Context, jobID string) (map[string]inte
 	return resp, nil
 }
 
+// GetAgentTrace gets the event trace of an agent task. When liveView is true,
+// the response also includes any active browser sessions with live view URLs.
+func (c *Client) GetAgentTrace(ctx context.Context, jobID string, liveView bool) (*AgentTraceResponse, error) {
+	if jobID == "" {
+		return nil, &FirecrawlError{Message: "job ID is required"}
+	}
+
+	path := "/v2/agent/" + jobID + "/trace"
+	if liveView {
+		path += "?liveView=true"
+	}
+	raw, err := c.http.get(ctx, path)
+	if err != nil {
+		return nil, err
+	}
+
+	var resp AgentTraceResponse
+	if err := json.Unmarshal(raw, &resp); err != nil {
+		return nil, &FirecrawlError{Message: fmt.Sprintf("failed to decode response: %v", err)}
+	}
+	return &resp, nil
+}
+
+// GetAgentSnapshot gets a snapshot of an agent task.
+func (c *Client) GetAgentSnapshot(ctx context.Context, jobID string, snapshotID string) (*AgentSnapshotResponse, error) {
+	if jobID == "" {
+		return nil, &FirecrawlError{Message: "job ID is required"}
+	}
+	if snapshotID == "" {
+		return nil, &FirecrawlError{Message: "snapshot ID is required"}
+	}
+
+	raw, err := c.http.get(ctx, "/v2/agent/"+jobID+"/snapshots/"+snapshotID)
+	if err != nil {
+		return nil, err
+	}
+
+	var resp AgentSnapshotResponse
+	if err := json.Unmarshal(raw, &resp); err != nil {
+		return nil, &FirecrawlError{Message: fmt.Sprintf("failed to decode response: %v", err)}
+	}
+	return &resp, nil
+}
+
 // ================================================================
 // BROWSER
 // ================================================================

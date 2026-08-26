@@ -26,7 +26,7 @@ import {
   batchScrape as batchWaiter,
 } from "./methods/batch";
 import { startExtract, getExtractStatus, extract as extractWaiter } from "./methods/extract";
-import { startAgent, getAgentStatus, cancelAgent, agent as agentWaiter } from "./methods/agent";
+import { startAgent, getAgentStatus, getAgentTrace, getAgentSnapshot, cancelAgent, agent as agentWaiter } from "./methods/agent";
 import {
   browser as browserMethod,
   browserExecute,
@@ -68,6 +68,8 @@ import type {
   ExtractResponse,
   AgentResponse,
   AgentStatusResponse,
+  AgentTraceResponse,
+  AgentSnapshotResponse,
   CrawlOptions,
   BatchScrapeOptions,
   PaginationConfig,
@@ -534,6 +536,22 @@ export class FirecrawlClient {
    */
   async cancelAgent(jobId: string): Promise<boolean> {
     return cancelAgent(this.http, jobId);
+  }
+  /**
+   * Get the execution trace of an agent job (spark-2 runs only).
+   * @param jobId Agent job id.
+   * @param options.liveView Also include currently active browser sessions with live view URLs.
+   */
+  async getAgentTrace(jobId: string, options?: { liveView?: boolean }): Promise<AgentTraceResponse> {
+    return getAgentTrace(this.http, jobId, options);
+  }
+  /**
+   * Get the full content of an artifact snapshot referenced by a trace event.
+   * @param jobId Agent job id.
+   * @param snapshotId Snapshot id from an artifact.updated trace event.
+   */
+  async getAgentSnapshot(jobId: string, snapshotId: string): Promise<AgentSnapshotResponse> {
+    return getAgentSnapshot(this.http, jobId, snapshotId);
   }
 
   // Browser

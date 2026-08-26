@@ -1,5 +1,17 @@
 ## CHANGELOG
 
+## [2.17.0] - 2026-08-26
+
+### Added
+
+- Added `AgentOptions::effort` (`AgentEffort`) for the agent reasoning budget,
+  and `AgentStatusResponse::effort` for the effort a run used.
+- Added `Client::get_agent_trace` returning the job's execution trace as typed
+  `AgentTraceEvent`s (canonical event schema v1), with optional live-view
+  browser sessions.
+- Added `Client::get_agent_snapshot` returning the full content of an artifact
+  snapshot referenced by an `artifact.updated` trace event.
+
 ## [2.16.1] - 2026-08-26
 
 ### Fixed

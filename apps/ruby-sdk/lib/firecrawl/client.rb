@@ -493,6 +493,31 @@ module Firecrawl
       @http.delete("/v2/agent/#{job_id}")
     end
 
+    # Gets the trace of an agent task.
+    #
+    # @param job_id [String] the agent job ID
+    # @param live_view [Boolean] include live view URLs for active browser sessions
+    # @return [Models::AgentTraceResponse]
+    def get_agent_trace(job_id, live_view: false)
+      raise ArgumentError, "Job ID is required" if job_id.nil?
+
+      raw = @http.get("/v2/agent/#{job_id}/trace#{query(liveView: live_view ? true : nil)}")
+      Models::AgentTraceResponse.new(raw)
+    end
+
+    # Gets a snapshot of an agent task.
+    #
+    # @param job_id [String] the agent job ID
+    # @param snapshot_id [String] the snapshot ID
+    # @return [Models::AgentSnapshotResponse]
+    def get_agent_snapshot(job_id, snapshot_id)
+      raise ArgumentError, "Job ID is required" if job_id.nil?
+      raise ArgumentError, "Snapshot ID is required" if snapshot_id.nil?
+
+      raw = @http.get("/v2/agent/#{job_id}/snapshots/#{snapshot_id}")
+      Models::AgentSnapshotResponse.new(raw)
+    end
+
     # ================================================================
     # USAGE & METRICS
     # ================================================================

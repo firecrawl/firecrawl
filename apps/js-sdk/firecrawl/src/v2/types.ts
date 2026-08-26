@@ -1328,8 +1328,170 @@ export interface AgentStatusResponse {
    * names makes every future model a type error at the call site.
    */
   model?: "spark-1-pro" | "spark-1-mini" | "spark-2" | (string & {});
+  /**
+   * Reasoning effort the job ran with. Only set for runs that specified it;
+   * older rows and default runs have no effort.
+   */
+  effort?: "low" | "medium" | "high";
   expiresAt: string;
   creditsUsed?: number;
+}
+
+/** Reasoning effort for agent jobs. Every level runs spark-2. */
+export type AgentEffort = "low" | "medium" | "high";
+
+export type AgentTraceAgentRole = "orchestrator" | "subagent" | "browser" | "system";
+
+export interface AgentTraceAgentIdentity {
+  id: string;
+  role: AgentTraceAgentRole;
+  name: string;
+  parentId?: string;
+}
+
+export interface AgentTraceError {
+  code: "cancelled" | "credit_limit_reached" | "parent_finished" | "refused" | "internal";
+  source: "agent" | "tool" | "billing" | "system";
+  retryable: boolean;
+  message: string;
+}
+
+export interface AgentTraceArtifactChange {
+  kind: "json" | "markdown" | "html" | "screenshot" | "text";
+  artifactId: string;
+  path?: string;
+  /** Fetch the full content via getAgentSnapshot(jobId, snapshotId). */
+  snapshotId: string;
+  change: "init" | "partial" | "append" | "modify" | "update";
+  changedFields?: string[];
+  itemCount?: number;
+  sourceToolCallId?: string;
+}
+
+interface AgentTraceEventBase {
+  schemaVersion: 1;
+  eventId: string;
+  runId: string;
+  occurredAt: string;
+  producerSequence: number;
+  agent: AgentTraceAgentIdentity;
+}
+
+export interface AgentTraceRunStartedEvent extends AgentTraceEventBase {
+  type: "run.started";
+}
+
+export interface AgentTraceRunCancelRequestedEvent extends AgentTraceEventBase {
+  type: "run.cancel_requested";
+  reason: "user";
+}
+
+export interface AgentTraceRunFinishedEvent extends AgentTraceEventBase {
+  type: "run.finished";
+  outcome: "succeeded" | "failed" | "cancelled" | "refused" | "credit_limit_reached";
+  error: AgentTraceError | null;
+}
+
+export interface AgentTraceAgentStartedEvent extends AgentTraceEventBase {
+  type: "agent.started";
+}
+
+export interface AgentTraceAgentFinishedEvent extends AgentTraceEventBase {
+  type: "agent.finished";
+  outcome: "succeeded" | "failed" | "cancelled" | "refused";
+  durationMs: number;
+  error: AgentTraceError | null;
+}
+
+export interface AgentTraceBrowserSessionStartedEvent extends AgentTraceEventBase {
+  type: "browser.session.started";
+  sessionId: string;
+}
+
+export interface AgentTraceBrowserSessionFinishedEvent extends AgentTraceEventBase {
+  type: "browser.session.finished";
+  sessionId: string;
+  durationMs: number;
+}
+
+export interface AgentTraceProgressReportedEvent extends AgentTraceEventBase {
+  type: "progress.reported";
+  phase: "planning" | "working" | "finalizing";
+  message: string;
+}
+
+export interface AgentTraceReasoningSummaryEvent extends AgentTraceEventBase {
+  type: "reasoning.summary";
+  text: string;
+}
+
+export interface AgentTraceToolCallStartedEvent extends AgentTraceEventBase {
+  type: "tool_call.started";
+  toolCallId: string;
+  toolName: string;
+  parameters: unknown;
+}
+
+export interface AgentTraceToolCallFinishedEvent extends AgentTraceEventBase {
+  type: "tool_call.finished";
+  toolCallId: string;
+  toolName: string;
+  result: unknown;
+}
+
+export interface AgentTraceArtifactUpdatedEvent extends AgentTraceEventBase {
+  type: "artifact.updated";
+  artifact: AgentTraceArtifactChange;
+}
+
+export interface AgentTraceErrorOccurredEvent extends AgentTraceEventBase {
+  type: "error.occurred";
+  error: AgentTraceError;
+}
+
+/**
+ * One event in an agent job's trace. Mirrors the canonical event schema of
+ * the agent service (schemaVersion 1); `usage.recorded` events are withheld
+ * server-side and `agent.started` carries no model name.
+ */
+export type AgentTraceEvent =
+  | AgentTraceRunStartedEvent
+  | AgentTraceRunCancelRequestedEvent
+  | AgentTraceRunFinishedEvent
+  | AgentTraceAgentStartedEvent
+  | AgentTraceAgentFinishedEvent
+  | AgentTraceBrowserSessionStartedEvent
+  | AgentTraceBrowserSessionFinishedEvent
+  | AgentTraceProgressReportedEvent
+  | AgentTraceReasoningSummaryEvent
+  | AgentTraceToolCallStartedEvent
+  | AgentTraceToolCallFinishedEvent
+  | AgentTraceArtifactUpdatedEvent
+  | AgentTraceErrorOccurredEvent;
+
+export interface AgentTraceActiveBrowserSession {
+  id: string;
+  liveViewUrl: string;
+  viewport: { width: number; height: number };
+}
+
+export interface AgentTraceResponse {
+  success: boolean;
+  id?: string;
+  events?: AgentTraceEvent[];
+  creditsUsed?: number;
+  /** Present only when the trace was requested with liveView: true. */
+  activeBrowserSessions?: AgentTraceActiveBrowserSession[];
+  error?: string;
+}
+
+export interface AgentSnapshotResponse {
+  success: boolean;
+  id?: string;
+  snapshotId?: string;
+  /** Full artifact content as a JSON/string blob. */
+  snapshot?: string;
+  error?: string;
 }
 
 export interface AgentOptions {

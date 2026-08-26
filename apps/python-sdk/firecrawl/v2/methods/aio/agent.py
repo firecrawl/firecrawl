@@ -1,7 +1,14 @@
 from typing import Any, Dict, List, Literal, Optional, Union
 import asyncio
 
-from ...types import AgentResponse, AgentWebhookConfig, AuditMetadata, ThreatProtectionOptions
+from ...types import (
+    AgentResponse,
+    AgentSnapshotResponse,
+    AgentTraceResponse,
+    AgentWebhookConfig,
+    AuditMetadata,
+    ThreatProtectionOptions,
+)
 from ...utils.error_handler import handle_response_error
 from ...utils.http_client_async import AsyncHttpClient
 from ...utils.validation import _normalize_schema
@@ -16,6 +23,7 @@ def _prepare_agent_request(
     max_credits: Optional[int] = None,
     strict_constrain_to_urls: Optional[bool] = None,
     model: Optional[Literal["spark-1-pro", "spark-1-mini", "spark-2"]] = None,
+    effort: Optional[Literal["low", "medium", "high"]] = None,
     webhook: Optional[Union[str, AgentWebhookConfig]] = None,
     threat_protection: Optional[ThreatProtectionOptions] = None,
     audit_metadata: Optional[AuditMetadata] = None,
@@ -41,6 +49,8 @@ def _prepare_agent_request(
         body["strictConstrainToURLs"] = strict_constrain_to_urls
     if model is not None:
         body["model"] = model
+    if effort is not None:
+        body["effort"] = effort
     if webhook is not None:
         if isinstance(webhook, str):
             body["webhook"] = webhook
@@ -74,6 +84,7 @@ async def start_agent(
     max_credits: Optional[int] = None,
     strict_constrain_to_urls: Optional[bool] = None,
     model: Optional[Literal["spark-1-pro", "spark-1-mini", "spark-2"]] = None,
+    effort: Optional[Literal["low", "medium", "high"]] = None,
     webhook: Optional[Union[str, AgentWebhookConfig]] = None,
     threat_protection: Optional[ThreatProtectionOptions] = None,
     audit_metadata: Optional[AuditMetadata] = None,
@@ -86,6 +97,7 @@ async def start_agent(
         max_credits=max_credits,
         strict_constrain_to_urls=strict_constrain_to_urls,
         model=model,
+        effort=effort,
         webhook=webhook,
         threat_protection=threat_protection,
         audit_metadata=audit_metadata,
@@ -134,6 +146,7 @@ async def agent(
     max_credits: Optional[int] = None,
     strict_constrain_to_urls: Optional[bool] = None,
     model: Optional[Literal["spark-1-pro", "spark-1-mini", "spark-2"]] = None,
+    effort: Optional[Literal["low", "medium", "high"]] = None,
     webhook: Optional[Union[str, AgentWebhookConfig]] = None,
     threat_protection: Optional[ThreatProtectionOptions] = None,
     audit_metadata: Optional[AuditMetadata] = None,
@@ -147,6 +160,7 @@ async def agent(
         max_credits=max_credits,
         strict_constrain_to_urls=strict_constrain_to_urls,
         model=model,
+        effort=effort,
         webhook=webhook,
         threat_protection=threat_protection,
         audit_metadata=audit_metadata,
@@ -155,6 +169,46 @@ async def agent(
     if not job_id:
         return started
     return await wait_agent(client, job_id, poll_interval=poll_interval, timeout=timeout)
+
+
+async def get_agent_trace(
+    client: AsyncHttpClient,
+    job_id: str,
+    *,
+    live_view: bool = False,
+) -> AgentTraceResponse:
+    """Get the execution trace of an agent job (spark-2 runs only).
+
+    Args:
+        client: Async HTTP client instance
+        job_id: ID of the agent job
+        live_view: Also include currently active browser sessions with live view URLs
+    """
+    endpoint = f"/v2/agent/{job_id}/trace"
+    if live_view:
+        endpoint += "?liveView=true"
+    resp = await client.get(endpoint)
+    if not resp.ok:
+        handle_response_error(resp, "agent-trace")
+    return AgentTraceResponse(**resp.json())
+
+
+async def get_agent_snapshot(
+    client: AsyncHttpClient,
+    job_id: str,
+    snapshot_id: str,
+) -> AgentSnapshotResponse:
+    """Get the full content of an artifact snapshot referenced by a trace event.
+
+    Args:
+        client: Async HTTP client instance
+        job_id: ID of the agent job
+        snapshot_id: Snapshot ID from an artifact.updated trace event
+    """
+    resp = await client.get(f"/v2/agent/{job_id}/snapshots/{snapshot_id}")
+    if not resp.ok:
+        handle_response_error(resp, "agent-snapshot")
+    return AgentSnapshotResponse(**resp.json())
 
 
 async def cancel_agent(client: AsyncHttpClient, job_id: str) -> bool:

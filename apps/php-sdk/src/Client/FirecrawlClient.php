@@ -9,7 +9,9 @@ use Firecrawl\Version;
 use Firecrawl\Exceptions\JobTimeoutException;
 use Firecrawl\Models\AgentOptions;
 use Firecrawl\Models\AgentResponse;
+use Firecrawl\Models\AgentSnapshotResponse;
 use Firecrawl\Models\AgentStatusResponse;
+use Firecrawl\Models\AgentTraceResponse;
 use Firecrawl\Models\BatchScrapeJob;
 use Firecrawl\Models\BatchScrapeOptions;
 use Firecrawl\Models\BatchScrapeResponse;
@@ -631,6 +633,31 @@ final class FirecrawlClient
     public function cancelAgent(string $jobId): array
     {
         return $this->http->delete("/v2/agent/{$jobId}");
+    }
+
+    /**
+     * Get the execution trace of an agent task.
+     *
+     * When $liveView is true, the response also carries the run's currently
+     * active browser sessions with live view URLs.
+     */
+    public function getAgentTrace(string $jobId, bool $liveView = false): AgentTraceResponse
+    {
+        return AgentTraceResponse::fromArray(
+            $this->http->get("/v2/agent/{$jobId}/trace" . $this->query([
+                'liveView' => $liveView ? 'true' : null,
+            ])),
+        );
+    }
+
+    /**
+     * Get a snapshot of an artifact produced by an agent task.
+     */
+    public function getAgentSnapshot(string $jobId, string $snapshotId): AgentSnapshotResponse
+    {
+        return AgentSnapshotResponse::fromArray(
+            $this->http->get("/v2/agent/{$jobId}/snapshots/{$snapshotId}"),
+        );
     }
 
     // ================================================================

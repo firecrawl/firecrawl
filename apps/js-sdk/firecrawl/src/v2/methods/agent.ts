@@ -1,4 +1,4 @@
-import { type AgentResponse, type AgentStatusResponse, type AgentWebhookConfig, type AuditMetadata, type ThreatProtectionOptions } from "../types";
+import { type AgentEffort, type AgentResponse, type AgentSnapshotResponse, type AgentStatusResponse, type AgentTraceResponse, type AgentWebhookConfig, type AuditMetadata, type ThreatProtectionOptions } from "../types";
 import { HttpClient } from "../utils/httpClient";
 import { normalizeAxiosError, throwForBadResponse } from "../utils/errorHandler";
 import { isZodSchema, zodSchemaToJsonSchema } from "../../utils/zodSchemaToJson";
@@ -13,6 +13,7 @@ function prepareAgentPayload(args: {
   maxCredits?: number;
   strictConstrainToURLs?: boolean;
   model?: "spark-1-pro" | "spark-1-mini" | "spark-2";
+  effort?: AgentEffort;
   webhook?: string | AgentWebhookConfig;
   threatProtection?: ThreatProtectionOptions;
   auditMetadata?: AuditMetadata;
@@ -28,6 +29,7 @@ function prepareAgentPayload(args: {
   if (args.maxCredits !== null && args.maxCredits !== undefined) body.maxCredits = args.maxCredits;
   if (args.strictConstrainToURLs !== null && args.strictConstrainToURLs !== undefined) body.strictConstrainToURLs = args.strictConstrainToURLs;
   if (args.model !== null && args.model !== undefined) body.model = args.model;
+  if (args.effort !== null && args.effort !== undefined) body.effort = args.effort;
   if (args.webhook != null) body.webhook = args.webhook;
   if (args.threatProtection != null)
     body.threatProtection = args.threatProtection;
@@ -82,6 +84,37 @@ export async function agent(
   const jobId = started.id;
   if (!jobId) return started as unknown as AgentStatusResponse;
   return waitAgent(http, jobId, args.pollInterval ?? 2, args.timeout);
+}
+
+export async function getAgentTrace(
+  http: HttpClient,
+  jobId: string,
+  options?: { liveView?: boolean }
+): Promise<AgentTraceResponse> {
+  try {
+    const query = options?.liveView ? "?liveView=true" : "";
+    const res = await http.get<AgentTraceResponse>(`/v2/agent/${jobId}/trace${query}`);
+    if (res.status !== 200) throwForBadResponse(res, "agent trace");
+    return res.data;
+  } catch (err: any) {
+    if (err?.isAxiosError) return normalizeAxiosError(err, "agent trace");
+    throw err;
+  }
+}
+
+export async function getAgentSnapshot(
+  http: HttpClient,
+  jobId: string,
+  snapshotId: string
+): Promise<AgentSnapshotResponse> {
+  try {
+    const res = await http.get<AgentSnapshotResponse>(`/v2/agent/${jobId}/snapshots/${snapshotId}`);
+    if (res.status !== 200) throwForBadResponse(res, "agent snapshot");
+    return res.data;
+  } catch (err: any) {
+    if (err?.isAxiosError) return normalizeAxiosError(err, "agent snapshot");
+    throw err;
+  }
 }
 
 export async function cancelAgent(http: HttpClient, jobId: string): Promise<boolean> {

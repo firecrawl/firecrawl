@@ -623,6 +623,7 @@ type AgentStatusResponse struct {
 	Error       string      `json:"error,omitempty"`
 	Data        interface{} `json:"data,omitempty"`
 	Model       string      `json:"model,omitempty"`
+	Effort      string      `json:"effort,omitempty"`
 	ExpiresAt   string      `json:"expiresAt,omitempty"`
 	CreditsUsed *int        `json:"creditsUsed,omitempty"`
 }
@@ -630,6 +631,94 @@ type AgentStatusResponse struct {
 // IsDone returns true if the agent task has finished.
 func (a *AgentStatusResponse) IsDone() bool {
 	return a.Status == "completed" || a.Status == "failed" || a.Status == "cancelled"
+}
+
+// AgentTraceResponse is returned when fetching the event trace of an agent task.
+type AgentTraceResponse struct {
+	Success               bool                             `json:"success"`
+	ID                    string                           `json:"id,omitempty"`
+	Events                []AgentTraceEvent                `json:"events,omitempty"`
+	CreditsUsed           *int                             `json:"creditsUsed,omitempty"`
+	ActiveBrowserSessions []AgentTraceActiveBrowserSession `json:"activeBrowserSessions,omitempty"`
+	Error                 string                           `json:"error,omitempty"`
+}
+
+// AgentTraceActiveBrowserSession represents a live browser session attached to
+// an agent run.
+type AgentTraceActiveBrowserSession struct {
+	ID          string             `json:"id"`
+	LiveViewURL string             `json:"liveViewUrl,omitempty"`
+	Viewport    AgentTraceViewport `json:"viewport,omitempty"`
+}
+
+// AgentTraceViewport represents the viewport dimensions of a live browser session.
+type AgentTraceViewport struct {
+	Width  int `json:"width"`
+	Height int `json:"height"`
+}
+
+// AgentTraceEvent represents a single event in an agent run trace. The Type
+// field discriminates the event kind (e.g. "run.started", "tool_call.finished",
+// "artifact.updated"); only the fields relevant to that kind are set.
+type AgentTraceEvent struct {
+	Type             string                    `json:"type"`
+	SchemaVersion    int                       `json:"schemaVersion"`
+	EventID          string                    `json:"eventId"`
+	RunID            string                    `json:"runId"`
+	OccurredAt       string                    `json:"occurredAt"`
+	ProducerSequence int                       `json:"producerSequence"`
+	Agent            AgentTraceAgentIdentity   `json:"agent"`
+	Reason           string                    `json:"reason,omitempty"`
+	Outcome          string                    `json:"outcome,omitempty"`
+	Error            *AgentTraceError          `json:"error,omitempty"`
+	DurationMs       *int64                    `json:"durationMs,omitempty"`
+	SessionID        string                    `json:"sessionId,omitempty"`
+	Phase            string                    `json:"phase,omitempty"`
+	Message          string                    `json:"message,omitempty"`
+	Text             string                    `json:"text,omitempty"`
+	ToolCallID       string                    `json:"toolCallId,omitempty"`
+	ToolName         string                    `json:"toolName,omitempty"`
+	Parameters       interface{}               `json:"parameters,omitempty"`
+	Result           interface{}               `json:"result,omitempty"`
+	Artifact         *AgentTraceArtifactChange `json:"artifact,omitempty"`
+}
+
+// AgentTraceAgentIdentity identifies the agent that produced a trace event.
+type AgentTraceAgentIdentity struct {
+	ID       string `json:"id"`
+	Role     string `json:"role"`
+	Name     string `json:"name"`
+	ParentID string `json:"parentId,omitempty"`
+}
+
+// AgentTraceError represents an error attached to a trace event.
+type AgentTraceError struct {
+	Code      string `json:"code"`
+	Source    string `json:"source"`
+	Retryable bool   `json:"retryable"`
+	Message   string `json:"message"`
+}
+
+// AgentTraceArtifactChange describes the artifact mutation reported by an
+// "artifact.updated" trace event.
+type AgentTraceArtifactChange struct {
+	Kind             string   `json:"kind"`
+	ArtifactID       string   `json:"artifactId"`
+	Path             string   `json:"path,omitempty"`
+	SnapshotID       string   `json:"snapshotId"`
+	Change           string   `json:"change"`
+	ChangedFields    []string `json:"changedFields,omitempty"`
+	ItemCount        *int     `json:"itemCount,omitempty"`
+	SourceToolCallID string   `json:"sourceToolCallId,omitempty"`
+}
+
+// AgentSnapshotResponse is returned when fetching a snapshot of an agent task.
+type AgentSnapshotResponse struct {
+	Success    bool   `json:"success"`
+	ID         string `json:"id,omitempty"`
+	SnapshotID string `json:"snapshotId,omitempty"`
+	Snapshot   string `json:"snapshot,omitempty"`
+	Error      string `json:"error,omitempty"`
 }
 
 // BrowserCreateResponse is returned when creating a browser session.

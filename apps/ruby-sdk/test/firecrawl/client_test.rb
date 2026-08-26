@@ -636,6 +636,95 @@ class ClientTest < Minitest::Test
     assert_raises(ArgumentError) { Firecrawl::Models::AgentOptions.new }
   end
 
+  def test_start_agent_with_effort
+    stub_request(:post, "#{BASE_URL}/v2/agent")
+      .with { |req| body = JSON.parse(req.body); body["effort"] == "high" && body["model"] == "spark-1-pro" }
+      .to_return(
+        status: 200,
+        body: JSON.generate(success: true, id: "agent-effort"),
+        headers: { "Content-Type" => "application/json" }
+      )
+
+    options = Firecrawl::Models::AgentOptions.new(prompt: "Find pricing info", model: "spark-1-pro", effort: "high")
+    response = @client.start_agent(options)
+    assert_equal "agent-effort", response.id
+  end
+
+  def test_get_agent_status_with_effort
+    stub_request(:get, "#{BASE_URL}/v2/agent/agent-effort")
+      .to_return(
+        status: 200,
+        body: JSON.generate(status: "completed", effort: "high"),
+        headers: { "Content-Type" => "application/json" }
+      )
+
+    status = @client.get_agent_status("agent-effort")
+    assert_equal "completed", status.status
+    assert_equal "high", status.effort
+  end
+
+  def test_get_agent_trace
+    stub_request(:get, "#{BASE_URL}/v2/agent/agent-123/trace")
+      .to_return(
+        status: 200,
+        body: JSON.generate(
+          success: true,
+          id: "agent-123",
+          events: [{ type: "run.started" }, { type: "run.finished" }],
+          creditsUsed: 5
+        ),
+        headers: { "Content-Type" => "application/json" }
+      )
+
+    trace = @client.get_agent_trace("agent-123")
+    assert_instance_of Firecrawl::Models::AgentTraceResponse, trace
+    assert_equal true, trace.success
+    assert_equal "agent-123", trace.id
+    assert_equal 5, trace.credits_used
+    assert_equal 2, trace.events.size
+    assert_equal "run.started", trace.events.first["type"]
+    assert_nil trace.active_browser_sessions
+  end
+
+  def test_get_agent_trace_with_live_view
+    stub_request(:get, "#{BASE_URL}/v2/agent/agent-123/trace")
+      .with(query: { liveView: "true" })
+      .to_return(
+        status: 200,
+        body: JSON.generate(
+          success: true,
+          id: "agent-123",
+          events: [],
+          creditsUsed: 5,
+          activeBrowserSessions: [
+            { id: "bs-1", liveViewUrl: "https://live.example.com/bs-1", viewport: { width: 1280, height: 720 } }
+          ]
+        ),
+        headers: { "Content-Type" => "application/json" }
+      )
+
+    trace = @client.get_agent_trace("agent-123", live_view: true)
+    assert_equal 1, trace.active_browser_sessions.size
+    assert_equal "https://live.example.com/bs-1", trace.active_browser_sessions.first["liveViewUrl"]
+    assert_equal 1280, trace.active_browser_sessions.first["viewport"]["width"]
+  end
+
+  def test_get_agent_snapshot
+    stub_request(:get, "#{BASE_URL}/v2/agent/agent-123/snapshots/snap-1")
+      .to_return(
+        status: 200,
+        body: JSON.generate(success: true, id: "agent-123", snapshotId: "snap-1", snapshot: "<html>snapshot</html>"),
+        headers: { "Content-Type" => "application/json" }
+      )
+
+    snapshot = @client.get_agent_snapshot("agent-123", "snap-1")
+    assert_instance_of Firecrawl::Models::AgentSnapshotResponse, snapshot
+    assert_equal true, snapshot.success
+    assert_equal "agent-123", snapshot.id
+    assert_equal "snap-1", snapshot.snapshot_id
+    assert_equal "<html>snapshot</html>", snapshot.snapshot
+  end
+
   # ================================================================
   # USAGE & METRICS
   # ================================================================
@@ -873,6 +962,17 @@ class ClientTest < Minitest::Test
     assert_equal ["https://example.com"], h["urls"]
     assert_equal 100, h["maxCredits"]
     assert_equal "spark-1-pro", h["model"]
+  end
+
+  def test_agent_options_to_h_with_effort
+    opts = Firecrawl::Models::AgentOptions.new(
+      prompt: "Find data",
+      model: "spark-1-pro",
+      effort: "high"
+    )
+    h = opts.to_h
+    assert_equal "spark-1-pro", h["model"]
+    assert_equal "high", h["effort"]
   end
 
   def test_audit_metadata_to_h

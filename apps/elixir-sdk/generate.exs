@@ -145,7 +145,10 @@ defmodule Firecrawl.Generator do
       @type response :: {:ok, Req.Response.t()} | {:error, Exception.t() | Firecrawl.Error.t()}
 
       @base_url "#{base_url}"
-      @sdk_origin "elixir-sdk@1.9.1"
+      # Sourced from mix.exs at compile time so the origin header cannot drift
+      # from the published package version.
+      @version Mix.Project.config()[:version]
+      @sdk_origin "elixir-sdk@" <> @version
 
       defp client(opts) do
         api_key =

@@ -41,7 +41,10 @@ defmodule Firecrawl do
   @type response :: {:ok, Req.Response.t()} | {:error, Exception.t() | Firecrawl.Error.t()}
 
   @base_url "https://api.firecrawl.dev/v2"
-  @sdk_origin "elixir-sdk@1.9.1"
+  # Sourced from mix.exs at compile time so the origin header cannot drift
+  # from the published package version.
+  @version Mix.Project.config()[:version]
+  @sdk_origin "elixir-sdk@" <> @version
 
   defp client(opts) do
     api_key =
@@ -530,6 +533,40 @@ defmodule Firecrawl do
 
 
   @doc """
+  Get a snapshot of an agent job
+
+  `GET /agent/{jobId}/snapshots/{snapshotId}`
+
+  Tag: Agent
+
+  ## Path Parameters
+
+    * `job_id` - Path parameter `jobId`
+    * `snapshot_id` - Path parameter `snapshotId`
+
+  ## Returns
+
+    * `{:ok, %Req.Response{}}` on success
+    * `{:error, exception}` on HTTP or validation failure
+
+  Success JSON: `%{"success" => true, "id" => "...", "snapshotId" => "...", "snapshot" => "<string content>"}`.
+  """
+  @spec get_agent_snapshot(String.t(), String.t(), keyword()) :: response()
+  def get_agent_snapshot(job_id, snapshot_id, opts \\ []) do
+    Req.get(client(opts), url: "/agent/#{job_id}/snapshots/#{snapshot_id}")
+  end
+
+
+  @doc """
+  Bang variant of `get_agent_snapshot`. Raises on error.
+  """
+  @spec get_agent_snapshot!(String.t(), String.t(), keyword()) :: Req.Response.t()
+  def get_agent_snapshot!(job_id, snapshot_id, opts \\ []) do
+    Req.get!(client(opts), url: "/agent/#{job_id}/snapshots/#{snapshot_id}")
+  end
+
+
+  @doc """
   Get the status of an agent job
 
   `GET /agent/{jobId}`
@@ -557,6 +594,56 @@ defmodule Firecrawl do
   @spec get_agent_status!(String.t(), keyword()) :: Req.Response.t()
   def get_agent_status!(job_id, opts \\ []) do
     Req.get!(client(opts), url: "/agent/#{job_id}")
+  end
+
+
+  @doc """
+  Get the execution trace of an agent job
+
+  `GET /agent/{jobId}/trace`
+
+  Tag: Agent
+
+  The trace is only available for agent runs on spark-2.
+
+  ## Path Parameters
+
+    * `job_id` - Path parameter `jobId`
+
+  ## Options
+
+    * `:live_view` - when `true`, the query parameter `liveView=true` is sent and
+      the response may additionally carry `activeBrowserSessions`, a list of
+      `%{"id" => "...", "liveViewUrl" => "...", "viewport" => %{"width" => 1280, "height" => 720}}`
+      entries for the run's live browser sessions.
+
+  ## Returns
+
+    * `{:ok, %Req.Response{}}` on success
+    * `{:error, exception}` on HTTP or validation failure
+
+  Success JSON: `%{"success" => true, "id" => "...", "events" => [...], "creditsUsed" => 5}`.
+
+  Each event has a `type` field (e.g. `"run.started"`, `"tool_call.started"`,
+  `"artifact.updated"`) plus the base fields `schemaVersion`, `eventId`, `runId`,
+  `occurredAt`, `producerSequence`, and `agent`.
+  """
+  @spec get_agent_trace(String.t(), keyword()) :: response()
+  def get_agent_trace(job_id, opts \\ []) do
+    {live_view, opts} = Keyword.pop(opts, :live_view, false)
+    params = if live_view, do: [{"liveView", "true"}], else: []
+    Req.get(client(opts), url: "/agent/#{job_id}/trace", params: params)
+  end
+
+
+  @doc """
+  Bang variant of `get_agent_trace`. Raises on error.
+  """
+  @spec get_agent_trace!(String.t(), keyword()) :: Req.Response.t()
+  def get_agent_trace!(job_id, opts \\ []) do
+    {live_view, opts} = Keyword.pop(opts, :live_view, false)
+    params = if live_view, do: [{"liveView", "true"}], else: []
+    Req.get!(client(opts), url: "/agent/#{job_id}/trace", params: params)
   end
 
 
@@ -1347,6 +1434,7 @@ defmodule Firecrawl do
 
   @start_agent_schema NimbleOptions.new!([
     audit_metadata: [type: :keyword_list, keys: [username: [type: :string, required: true]], doc: "User attribution to include with SIEM logging events."],
+    effort: [type: {:in, ["low", "medium", "high"]}, doc: "Reasoning effort for the agent task. Every level runs spark-2."],
     max_credits: [type: {:or, [:integer, :float]}, doc: "Maximum credits to spend on this agent task. Defaults to 2500 if not set. Values above 2,500 are always billed as paid requests."],
     model: [type: {:or, [{:in, [:"spark-1-mini", :"spark-1-pro", :"spark-2"]}, :string]}, doc: "The model to use for the agent task. spark-1-pro (default) offers higher accuracy for complex tasks, spark-1-mini is 60% cheaper than spark-1-pro, spark-2 handles most tasks"],
     prompt: [type: :string, required: true, doc: "The prompt describing what data to extract"],
@@ -1355,7 +1443,7 @@ defmodule Firecrawl do
     urls: [type: {:list, :string}, doc: "Optional list of URLs to constrain the agent to"]
   ])
 
-  @start_agent_key_mapping %{audit_metadata: "auditMetadata", max_credits: "maxCredits", model: "model", prompt: "prompt", schema: "schema", strict_constrain_to_urls: "strictConstrainToURLs", urls: "urls"}
+  @start_agent_key_mapping %{audit_metadata: "auditMetadata", effort: "effort", max_credits: "maxCredits", model: "model", prompt: "prompt", schema: "schema", strict_constrain_to_urls: "strictConstrainToURLs", urls: "urls"}
 
   @doc """
   Start an agent task for agentic data extraction
