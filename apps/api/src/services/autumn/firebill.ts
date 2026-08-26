@@ -349,13 +349,24 @@ export async function firebillCheck({
       return unavailable("answered without a usable `allowed`");
     }
 
-    // `remaining` clamps downstream limits, so a missing one must not read as
-    // zero — that would silently shrink a crawl to nothing. Absent means "no
-    // usable figure", which for an allowed request is unbounded.
+    // `remaining` clamps downstream limits, and the safe default inverts with
+    // `allowed`, so there is no single one.
+    //
+    // `checkCreditsMiddleware` treats a denial with `remaining > 0` as a
+    // *partial* crawl: it rewrites `limit` to that figure and calls `next()`
+    // rather than returning 402. So defaulting a denial to `Infinity` would
+    // turn "cannot afford this" into an unbounded crawl — the opposite of a
+    // refusal, and worse than the 402 this endpoint exists to avoid.
+    //
+    // Allowed keeps `Infinity`, for the mirror-image reason: zero there would
+    // silently shrink a crawl the customer *can* pay for down to nothing.
+    // A usable figure is always preferred to either default.
     const remaining =
       typeof body.remaining === "number" && Number.isFinite(body.remaining)
         ? body.remaining
-        : Infinity;
+        : body.allowed
+          ? Infinity
+          : 0;
 
     firebillCheckTotal.labels(body.allowed ? "allowed" : "denied").inc();
     if (!body.allowed) {

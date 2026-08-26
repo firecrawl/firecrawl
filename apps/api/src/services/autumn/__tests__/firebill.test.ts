@@ -246,7 +246,30 @@ describe("firebillCheck", () => {
 
   // A missing figure must not read as zero: callers clamp crawl limits with
   // it, so zero would silently shrink an allowed crawl to nothing.
-  it("treats an absent remaining as unbounded, not as zero", async () => {
+  // The inverse of the case below, and the dangerous direction: the middleware
+  // reads a denial with `remaining > 0` as a *partial* crawl and calls next(),
+  // so an unbounded default would turn a refusal into an unlimited crawl.
+  it("treats an absent remaining on a DENIAL as zero, not unbounded", async () => {
+    answer({ success: true, allowed: false });
+    await expect(firebillCheck(checkParams)).resolves.toEqual({
+      status: "answered",
+      allowed: false,
+      remaining: 0,
+    });
+  });
+
+  // A denial that *does* carry a figure keeps it: that is a legitimate partial
+  // crawl, and the existing middleware behaviour we must not change.
+  it("keeps a usable remaining on a denial", async () => {
+    answer({ success: true, allowed: false, remaining: 25 });
+    await expect(firebillCheck(checkParams)).resolves.toEqual({
+      status: "answered",
+      allowed: false,
+      remaining: 25,
+    });
+  });
+
+  it("treats an absent remaining on an ALLOWED check as unbounded, not zero", async () => {
     answer({ success: true, allowed: true });
     await expect(firebillCheck(checkParams)).resolves.toEqual({
       status: "answered",
