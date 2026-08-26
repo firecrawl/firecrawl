@@ -65,6 +65,12 @@ export async function downloadFireEngineGcsFile(
    * by-reference ceiling. */
   maxBytes?: number,
 ): Promise<{ sizeBytes: number; generation?: string } | null> {
+  // An already-cancelled scrape must not proceed through any branch of
+  // this function — not even the cheap allowlist rejections, whose null
+  // returns would let the caller keep working on a dead request.
+  if (signal?.aborted) {
+    throw signal.reason ?? new Error("aborted");
+  }
   const parsed = parseGcsUri(file.uri);
   if (!parsed || parsed.bucket !== config.FIRE_ENGINE_PDF_GCS_BUCKET) {
     logger.warn("fire-engine GCS file reference outside the handoff bucket", {
@@ -77,11 +83,6 @@ export async function downloadFireEngineGcsFile(
     maxBytes ?? FIRE_PDF_BY_REFERENCE_MAX_FILE_SIZE,
     FIRE_PDF_BY_REFERENCE_MAX_FILE_SIZE,
   );
-
-  // An already-cancelled scrape must not start the timer or any GCS RPC.
-  if (signal?.aborted) {
-    throw signal.reason ?? new Error("aborted");
-  }
 
   const timeoutAbort = new AbortController();
   const combined = signal

@@ -165,15 +165,12 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
       pageMarkers) &&
     !!config.FIRE_PDF_BASE_URL;
 
-  // The MinerU diversion draw happens BEFORE the download so the admission
-  // cap can honor it: a diverted request cannot use the by-reference route,
-  // so it must keep the historical download cap instead of pulling up to
-  // 256MB it would only hand to pdf-parse. Forced Fire PDF takes
-  // precedence — don't divert those requests.
-  const routeToMinerU =
-    !forceFirePDF &&
-    config.MINERU_PERCENT > 0 &&
-    Math.random() * 100 < config.MINERU_PERCENT;
+  // The MinerU diversion is deterministic on the scrape id (see
+  // mineruDiverted) so this routing verdict is BY CONSTRUCTION the same
+  // one inside byReferenceReachableForRequest() — and the same one
+  // fire-engine used when granting the handoff. Forced Fire PDF takes
+  // precedence and is never diverted.
+  const routeToMinerU = !forceFirePDF && mineruDiverted(meta);
 
   // Only admit large downloads when the by-reference FirePDF path is even
   // reachable for this request (same predicate the routing gate uses; the

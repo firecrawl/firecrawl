@@ -146,18 +146,6 @@ export async function rewritePdfInputForFirePdf(
 }
 
 /**
- * Whether by-reference FirePDF routing is configured and permitted for this
- * request, judged from signals available before the file is downloaded.
- * Both the download-size admission and the routing gate use this ONE
- * predicate; the routing gate then adds the file-dependent conditions
- * (size window, page count, MinerU diversion).
- *
- * ZDR is excluded because the by-reference input object persists in GCS.
- * A forced FirePDF request (pages/blocks/markers) needs only the base URL,
- * mirroring the inline path's rule; otherwise both the master switch and
- * the by-reference switch must be on.
- */
-/**
  * The per-team large-PDF byte limit: the privileged cap for allowlisted
  * team ids, the default cap for everyone else, both clamped to the 256MB
  * architectural ceiling. Every acquisition path enforces this one number —
@@ -213,6 +201,15 @@ export function byReferenceReachableForRequest(meta: Meta): boolean {
   );
 }
 
+/**
+ * Whether by-reference FirePDF routing is configured and permitted for this
+ * request, judged from signals available before the file is downloaded.
+ *
+ * ZDR is excluded because the by-reference input object persists in GCS.
+ * A forced FirePDF request (pages/blocks/markers) needs only the base URL,
+ * mirroring the inline path's rule; otherwise both the master switch and
+ * the by-reference switch must be on.
+ */
 function byReferenceConfigured(
   meta: Meta,
   forceFirePdfRequested: boolean,
