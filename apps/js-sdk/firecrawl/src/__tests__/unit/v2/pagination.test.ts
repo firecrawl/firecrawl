@@ -128,6 +128,23 @@ describe("JS SDK v2 pagination", () => {
       nowSpy.mockRestore();
     }
   });
+
+  test("batch: default autoPaginate does not follow next while status is non-terminal", async () => {
+    const first = { status: 200, data: { success: true, status: "scraping", completed: 1, total: 5, next: "https://api/b1", data: [{ markdown: "a" }] } };
+    const http = makeHttp(() => first);
+    const res = await getBatchScrapeStatus(http, "jobB");
+    expect(http.get).toHaveBeenCalledTimes(1);
+    expect(res.data.length).toBe(1);
+    expect(res.next).toBe("https://api/b1");
+  });
+
+  test("batch: explicit autoPaginate=true still aggregates while non-terminal", async () => {
+    const first = { status: 200, data: { success: true, status: "scraping", completed: 1, total: 2, next: "https://api/b1", data: [{ markdown: "a" }] } };
+    const second = { status: 200, data: { success: true, next: null, data: [{ markdown: "b" }] } };
+    const http = makeHttp((url) => (url.includes("/v2/batch/scrape/") ? first : second));
+    const res = await getBatchScrapeStatus(http, "jobB", { autoPaginate: true });
+    expect(res.data.length).toBe(2);
+  });
 });
 
 
