@@ -47,7 +47,7 @@ import {
   sha256OfFile,
   uploadPdfInputForFirePdf,
 } from "./fire-pdf/by-reference";
-import { tryGetCached } from "./fire-pdf/cache";
+import { cacheKeyShape, tryGetCached } from "./fire-pdf/cache";
 import { decideFirePdfAsyncRoute } from "./fire-pdf/routing";
 import { scrapePDFWithParsePDF } from "./pdfParse";
 import { toPublicBlocks } from "./blocks";
@@ -471,18 +471,48 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
           // a repeat scrape of the same document should cost one streamed
           // disk read, not a full re-upload. scrapePDFWithFirePDFAsync
           // deliberately skips the by-reference lookup for the same reason
-          // (it runs post-upload) and only saves.
-          const localSha256 = await sha256OfFile(tempFilePath);
-          const cachedByRef = await tryGetCached(
-            meta,
-            { key: `raw-${localSha256}` },
+          // (it runs post-upload) and only saves. Uncacheable requests
+          // (fast mode / maxPages) skip the pre-hash entirely — it could
+          // never produce a hit, and the upload computes its own hash
+          // in-pipeline. A failed pre-hash falls through to the upload
+          // path (legacy fallback semantics), never errors the scrape.
+          const { cacheable: byRefCacheable } = cacheKeyShape(
             mode,
             maxPages,
-            effectivePageCount,
             includePageMarkdown,
             includeBlocks,
             pageMarkers,
           );
+          let localSha256: string | undefined;
+          if (byRefCacheable) {
+            try {
+              localSha256 = await sha256OfFile(tempFilePath);
+            } catch (error) {
+              meta.logger.warn(
+                "Pre-upload hash of large PDF failed; continuing without cache lookup",
+                {
+                  method: "scrapePDF/firePdfByReference",
+                  error,
+                  scrape_id: meta.id,
+                },
+              );
+            }
+          }
+          const cachedByRef = localSha256
+            ? await tryGetCached(
+                meta,
+                { key: `raw-${localSha256}` },
+                mode,
+                maxPages,
+                effectivePageCount,
+                includePageMarkdown,
+                includeBlocks,
+                pageMarkers,
+              )
+            : null;
+          // A scrape cancelled during the hash/lookup must not return a
+          // success out of the cache.
+          meta.abort.throwIfAborted();
           if (cachedByRef) {
             result = cachedByRef;
             effectivePageCount = reconcilePageCountWithFirePdf(
