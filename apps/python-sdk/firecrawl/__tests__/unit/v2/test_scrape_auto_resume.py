@@ -84,6 +84,20 @@ def test_gives_up_after_attempt_bound(monkeypatch):
     assert len(sleeps) == 5
 
 
+def test_gives_up_after_total_wait_bound(monkeypatch):
+    # Delays at the 600s clamp trip the 20-minute wait bound (after two
+    # resumes) before the 5-attempt bound would.
+    sleeps = []
+    monkeypatch.setattr(scrape_module.time, "sleep", sleeps.append)
+    client = MagicMock()
+    client.post.side_effect = [_processing_continues_408(600)] * 10
+
+    with pytest.raises(FirecrawlError):
+        scrape_module.scrape(client, "https://example.com/big.pdf")
+    assert sleeps == [600.0, 600.0]
+    assert client.post.call_count == 3
+
+
 def test_plain_timeout_does_not_resume(monkeypatch):
     monkeypatch.setattr(scrape_module.time, "sleep", lambda s: pytest.fail("slept"))
     client = MagicMock()
@@ -114,6 +128,10 @@ def test_delay_clamps_and_header_fallback():
     inf_payload.json.return_value["details"]["retryAfterSeconds"] = float("inf")
     inf_payload.headers = {}
     assert auto_resume_module.processing_continues_delay_s(inf_payload) == 60
+    huge_payload = _processing_continues_408(0)
+    huge_payload.json.return_value["details"]["retryAfterSeconds"] = 10**400
+    huge_payload.headers = {}
+    assert auto_resume_module.processing_continues_delay_s(huge_payload) == 60
 
 
 def test_async_scrape_resumes(monkeypatch):

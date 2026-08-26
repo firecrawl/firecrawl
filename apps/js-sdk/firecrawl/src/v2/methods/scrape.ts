@@ -92,6 +92,27 @@ export async function scrape(
   const payload: Record<string, unknown> = { url: url.trim() };
   Object.assign(payload, requestOptions);
 
+  // Per-request timeout. With auto-resume disabled this is exactly the
+  // pre-existing behavior (explicit timeout +5s, else the client's own
+  // default). With auto-resume on, the client-side timeout must outlast
+  // the SERVER's wall — options.timeout, or the API's 5-minute default —
+  // otherwise axios can abort in a photo-finish with the server's
+  // processing_continues response and the resume signal is lost exactly
+  // when it matters. The caller's configured client timeout is
+  // respected as a floor, never overridden downward.
+  const requestTimeout: { timeoutMs?: number } =
+    autoResume === false
+      ? typeof options?.timeout === "number"
+        ? { timeoutMs: options.timeout + 5000 }
+        : {}
+      : {
+          timeoutMs:
+            Math.max(
+              typeof options?.timeout === "number" ? options.timeout : 300_000,
+              typeof http.getTimeoutMs === "function" ? http.getTimeoutMs() : 0,
+            ) + 30_000,
+        };
+
   let resumes = 0;
   let resumeWaitedMs = 0;
   while (true) {
@@ -103,12 +124,7 @@ export async function scrape(
       }>(
         "/v2/scrape",
         payload,
-        // The client-side timeout must outlast the server's own wall
-        // (which equals options.timeout, or the API's 5-minute default),
-        // otherwise axios can abort in a photo-finish with the server's
-        // processing_continues response and the resume signal is lost
-        // exactly when it matters.
-        { timeoutMs: (typeof options?.timeout === "number" ? options.timeout : 300_000) + 30_000 },
+        requestTimeout,
       );
       if (res.status !== 200 || !res.data?.success) {
         throwForBadResponse(res, "scrape");

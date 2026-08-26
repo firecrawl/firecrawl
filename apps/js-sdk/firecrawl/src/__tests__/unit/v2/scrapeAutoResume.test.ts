@@ -104,6 +104,33 @@ describe("v2.scrape auto-resume", () => {
     expect(sleepImpl).not.toHaveBeenCalled();
   });
 
+  test("request timeout: opt-out keeps legacy behavior, resume adds the cushion", async () => {
+    const ok = { status: 200, data: { success: true, data: DOC } };
+    // Opt-out, no explicit timeout → no per-request override at all.
+    const post1 = jest.fn().mockResolvedValueOnce(ok);
+    await scrape({ post: post1 } as any, "https://example.com/x", { autoResume: false });
+    expect(post1.mock.calls[0][2]).toEqual({});
+    // Opt-out with explicit timeout → the pre-existing +5s.
+    const post2 = jest.fn().mockResolvedValueOnce(ok);
+    await scrape({ post: post2 } as any, "https://example.com/x", {
+      autoResume: false,
+      timeout: 10_000,
+    });
+    expect(post2.mock.calls[0][2]).toEqual({ timeoutMs: 15_000 });
+    // Resume enabled → cushion over the server wall, respecting a larger
+    // configured client default as the floor.
+    const post3 = jest.fn().mockResolvedValueOnce(ok);
+    await scrape(
+      { post: post3, getTimeoutMs: () => 600_000 } as any,
+      "https://example.com/x",
+    );
+    expect(post3.mock.calls[0][2]).toEqual({ timeoutMs: 630_000 });
+    // Resume enabled, no client getter → server wall default + cushion.
+    const post4 = jest.fn().mockResolvedValueOnce(ok);
+    await scrape({ post: post4 } as any, "https://example.com/x", { timeout: 900_000 });
+    expect(post4.mock.calls[0][2]).toEqual({ timeoutMs: 930_000 });
+  });
+
   test("processingContinuesDelayMs clamps and falls back sensibly", () => {
     expect(processingContinuesDelayMs(processingContinues408(1))).toBe(5_000);
     expect(processingContinuesDelayMs(processingContinues408(3_600))).toBe(600_000);

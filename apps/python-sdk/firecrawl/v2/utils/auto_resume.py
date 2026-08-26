@@ -55,7 +55,11 @@ def _finite_seconds(value) -> Optional[float]:
     # as 1 second; NaN/Infinity must not survive into the clamp.
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         return None
-    value = float(value)
+    try:
+        value = float(value)
+    except OverflowError:
+        # Arbitrarily large JSON integers overflow float conversion.
+        return None
     return value if math.isfinite(value) else None
 
 
