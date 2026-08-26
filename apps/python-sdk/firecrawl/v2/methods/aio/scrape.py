@@ -10,11 +10,7 @@ from ...utils.normalize import normalize_document_input
 from ...utils.error_handler import handle_response_error
 from ...utils.validation import prepare_scrape_options, validate_scrape_options
 from ...utils.http_client_async import AsyncHttpClient
-from ...utils.auto_resume import (
-    RESUME_MAX_ATTEMPTS,
-    RESUME_MAX_TOTAL_WAIT_S,
-    processing_continues_delay_s,
-)
+from ...utils.auto_resume import ResumeTracker
 
 
 async def _prepare_scrape_request(url: str, options: Optional[ScrapeOptions] = None) -> Dict[str, Any]:
@@ -39,22 +35,15 @@ async def scrape(
 ) -> Document:
     payload = await _prepare_scrape_request(url, options)
 
-    resumes = 0
-    resume_waited_s = 0.0
+    resume = ResumeTracker(enabled=auto_resume is not False)
     while True:
         response = await client.post("/v2/scrape", payload)
         if response.status_code >= 400:
-            delay_s = None if auto_resume is False else processing_continues_delay_s(response)
-            if (
-                delay_s is not None
-                and resumes < RESUME_MAX_ATTEMPTS
-                and resume_waited_s + delay_s <= RESUME_MAX_TOTAL_WAIT_S
-            ):
+            delay_s = resume.delay_or_none(response)
+            if delay_s is not None:
                 # The document keeps processing server-side; the retry
                 # attaches to the same in-flight job (content adoption)
                 # and returns the finished result.
-                resumes += 1
-                resume_waited_s += delay_s
                 await asyncio.sleep(delay_s)
                 continue
             handle_response_error(response, "scrape")

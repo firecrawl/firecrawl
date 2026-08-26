@@ -45,3 +45,29 @@ def processing_continues_delay_s(response) -> Optional[float]:
         except (TypeError, ValueError):
             seconds = 60
     return min(RESUME_MAX_DELAY_S, max(RESUME_MIN_DELAY_S, float(seconds)))
+
+
+class ResumeTracker:
+    """The full resume decision, stateful, shared by both transports so
+    bounds and accounting cannot drift between sync and async."""
+
+    def __init__(self, enabled: bool):
+        self._enabled = enabled
+        self._resumes = 0
+        self._waited_s = 0.0
+
+    def delay_or_none(self, response) -> Optional[float]:
+        """Delay to sleep before re-issuing, or None to surface the error.
+        Recording is internal: a returned delay counts against the bounds."""
+        if not self._enabled:
+            return None
+        delay_s = processing_continues_delay_s(response)
+        if delay_s is None:
+            return None
+        if self._resumes >= RESUME_MAX_ATTEMPTS:
+            return None
+        if self._waited_s + delay_s > RESUME_MAX_TOTAL_WAIT_S:
+            return None
+        self._resumes += 1
+        self._waited_s += delay_s
+        return delay_s

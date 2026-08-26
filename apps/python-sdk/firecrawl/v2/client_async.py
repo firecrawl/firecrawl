@@ -114,10 +114,10 @@ class AsyncFirecrawlClient:
     async def scrape(
         self,
         url: str,
+        *,
+        auto_resume: Optional[bool] = None,
         **kwargs,
     ):
-        # SDK-only resume control — not a ScrapeOptions field.
-        auto_resume = kwargs.pop("auto_resume", None)
         options = ScrapeOptions(**{k: v for k, v in kwargs.items() if v is not None}) if kwargs else None
         return await async_scrape.scrape(
             self.async_http_client, url, options, auto_resume=auto_resume
