@@ -281,8 +281,10 @@ export async function scrapePDFWithFirePDFAsync(
             if (!current) return;
             current.lastStatus = status;
             if (estimatedRemainingMs !== undefined) {
-              current.serverEstimateMs = estimatedRemainingMs;
-              current.serverEstimateAtMs = now();
+              current.serverEstimate = {
+                remainingMs: estimatedRemainingMs,
+                observedAtMs: now(),
+              };
             }
           },
         });

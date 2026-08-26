@@ -107,8 +107,7 @@ describe("composeTimeoutProcessing — server estimate preference", () => {
       submittedAtMs: T0,
       lastStatus: "running",
       nowMs: T0 + 2 * 60_000,
-      serverEstimateMs: 9.5 * 60_000,
-      serverEstimateAtMs: T0 + 30_000,
+      serverEstimate: { remainingMs: 9.5 * 60_000, observedAtMs: T0 + 30_000 },
     });
     expect(details.estimatedRemainingSeconds).toBe(8 * 60);
     expect(message).toContain("~8 minutes");
@@ -120,8 +119,7 @@ describe("composeTimeoutProcessing — server estimate preference", () => {
       submittedAtMs: T0,
       lastStatus: "running",
       nowMs: T0 + 20 * 60_000,
-      serverEstimateMs: 60_000,
-      serverEstimateAtMs: T0,
+      serverEstimate: { remainingMs: 60_000, observedAtMs: T0 },
     });
     expect(details.estimatedRemainingSeconds).toBe(60);
   });

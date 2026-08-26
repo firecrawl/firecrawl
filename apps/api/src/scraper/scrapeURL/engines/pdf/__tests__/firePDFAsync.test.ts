@@ -1367,10 +1367,11 @@ describe("scrapePDFWithFirePDFAsync", () => {
       // The last snapshot before completion carries the server estimate.
       expect(observed).toMatchObject({
         lastStatus: "running",
-        serverEstimateMs: 240_000,
+        serverEstimate: { remainingMs: 240_000 },
       });
       expect(
-        (observed as { serverEstimateAtMs?: number }).serverEstimateAtMs,
+        (observed as { serverEstimate?: { observedAtMs: number } })
+          .serverEstimate?.observedAtMs,
       ).toBeGreaterThan(0);
     });
 

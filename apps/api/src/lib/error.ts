@@ -113,8 +113,7 @@ export function composeTimeoutProcessing(args: {
    * when it was observed. Preferred over the static per-page math: the
    * server sees measured lane throughput and real queue depth, which
    * the static formula cannot. */
-  serverEstimateMs?: number;
-  serverEstimateAtMs?: number;
+  serverEstimate?: { remainingMs: number; observedAtMs: number };
 }): { message: string; details: ScrapeTimeoutProcessingDetails } {
   const perPageMs = args.perPageMs ?? PROCESSING_ESTIMATE_PER_PAGE_MS;
   const pages = args.pagesEstimate;
@@ -127,9 +126,9 @@ export function composeTimeoutProcessing(args: {
   // observed it; the static formula is the fallback for older fire-pdf
   // builds and lanes without measured throughput.
   const serverRemainingMs =
-    args.serverEstimateMs !== undefined && args.serverEstimateAtMs !== undefined
-      ? args.serverEstimateMs -
-        Math.max(0, args.nowMs - args.serverEstimateAtMs)
+    args.serverEstimate !== undefined
+      ? args.serverEstimate.remainingMs -
+        Math.max(0, args.nowMs - args.serverEstimate.observedAtMs)
       : undefined;
   const remainingMs =
     serverRemainingMs !== undefined

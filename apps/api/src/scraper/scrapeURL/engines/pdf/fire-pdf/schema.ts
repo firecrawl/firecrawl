@@ -44,8 +44,15 @@ export const pollResponseSchema = z.object({
   // Live remaining-time estimate computed server-side from lane
   // throughput + backlog (fire-pdf phase 2). Optional and additive;
   // absent on older fire-pdf builds or when the lane has no measured
-  // throughput.
-  estimated_remaining_ms: z.number().optional(),
+  // throughput. `.catch(undefined)` so a malformed value (negative,
+  // NaN, Infinity) degrades to "no estimate" instead of failing the
+  // whole poll response.
+  estimated_remaining_ms: z
+    .number()
+    .finite()
+    .nonnegative()
+    .optional()
+    .catch(undefined),
   failed_pages: z.array(z.number()).nullable().optional(),
   partial_pages: z.array(z.number()).nullable().optional(),
   error_class: z.string().optional(),
