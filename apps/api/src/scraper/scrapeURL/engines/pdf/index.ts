@@ -147,18 +147,30 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
     }
   }
 
+  const forceFirePDF =
+    (!!meta.options.__forceFirePDF ||
+      includePageMarkdown ||
+      includeBlocks ||
+      pageMarkers) &&
+    !!config.FIRE_PDF_BASE_URL;
+
+  // The MinerU diversion draw happens BEFORE the download so the admission
+  // cap can honor it: a diverted request cannot use the by-reference route,
+  // so it must keep the historical download cap instead of pulling up to
+  // 256MB it would only hand to pdf-parse. Forced Fire PDF takes
+  // precedence — don't divert those requests.
+  const routeToMinerU =
+    !forceFirePDF &&
+    config.MINERU_PERCENT > 0 &&
+    Math.random() * 100 < config.MINERU_PERCENT;
+
   // Only admit large downloads when the by-reference FirePDF path is even
   // reachable for this request (same predicate the routing gate uses; the
   // gate adds the signals that need the file first). Otherwise keep the
   // historical cap — an oversized file would only burn bandwidth and temp
   // disk to fall through to text-only extraction.
-  const byReferenceReachable = byReferenceConfigured(
-    meta,
-    !!meta.options.__forceFirePDF ||
-      includePageMarkdown ||
-      includeBlocks ||
-      pageMarkers,
-  );
+  const byReferenceReachable =
+    !routeToMinerU && byReferenceConfigured(meta, forceFirePDF);
 
   const { response, tempFilePath } =
     meta.pdfPrefetch !== undefined && meta.pdfPrefetch !== null
@@ -219,21 +231,8 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
     let shadowIneligibleReason: string | null | undefined;
     let shadowPagesNeedingOcr: number[] | undefined;
 
-    const forceFirePDF =
-      (!!meta.options.__forceFirePDF ||
-        includePageMarkdown ||
-        includeBlocks ||
-        pageMarkers) &&
-      !!config.FIRE_PDF_BASE_URL;
     const rustEnabled = !!config.PDF_RUST_EXTRACT_ENABLE;
     const logger = meta.logger.child({ method: "scrapePDF/processPdf" });
-
-    // Route a percentage of traffic directly to MinerU, bypassing Rust extraction.
-    // Forced Fire PDF takes precedence — don't divert those requests.
-    const routeToMinerU =
-      !forceFirePDF &&
-      config.MINERU_PERCENT > 0 &&
-      Math.random() * 100 < config.MINERU_PERCENT;
 
     if (routeToMinerU) {
       logger.info("Routing to MinerU via MINERU_PERCENT", {
@@ -486,7 +485,10 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
           let localSha256: string | undefined;
           if (byRefCacheable) {
             try {
-              localSha256 = await sha256OfFile(tempFilePath);
+              localSha256 = await sha256OfFile(
+                tempFilePath,
+                meta.abort.asSignal(),
+              );
             } catch (error) {
               meta.logger.warn(
                 "Pre-upload hash of large PDF failed; continuing without cache lookup",

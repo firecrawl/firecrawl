@@ -65,9 +65,12 @@ export function byReferenceConfigured(
  * computed BEFORE any upload so a cache hit skips the 30-256MB transfer
  * entirely. A disk read is orders of magnitude cheaper than the upload it
  * can save. */
-export async function sha256OfFile(path: string): Promise<string> {
+export async function sha256OfFile(
+  path: string,
+  signal?: AbortSignal,
+): Promise<string> {
   const hash = createHash("sha256");
-  for await (const chunk of createReadStream(path)) {
+  for await (const chunk of createReadStream(path, { signal })) {
     hash.update(chunk as Buffer);
   }
   return hash.digest("hex");
@@ -110,17 +113,19 @@ export async function uploadPdfInputForFirePdf(
     );
     const hash =
       opts?.precomputedSha256 === undefined ? createHash("sha256") : null;
-    const writeStream = storage
-      .bucket(bucketName)
-      .file(objectKey)
-      .createWriteStream({
-        resumable: true,
-        metadata: {
-          contentType: "application/pdf",
-          metadata: { scrape_id: meta.id, source: "firecrawl" },
-        },
-      });
     try {
+      // Stream construction lives inside the timer-owning try: a
+      // synchronous createWriteStream throw must still clear the timeout.
+      const writeStream = storage
+        .bucket(bucketName)
+        .file(objectKey)
+        .createWriteStream({
+          resumable: true,
+          metadata: {
+            contentType: "application/pdf",
+            metadata: { scrape_id: meta.id, source: "firecrawl" },
+          },
+        });
       if (hash) {
         const hashThrough = new Transform({
           transform(chunk, _encoding, callback) {
