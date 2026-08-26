@@ -112,6 +112,17 @@ export async function specialtyScrapeCheck(
     x => x[0].toLowerCase() === "content-type",
   ) ?? [])[1];
 
+  // A GCS reference is a PDF signal on its own — fire-engine only hands
+  // off verified PDFs — so it is handled before the content-type guard:
+  // some responses omit the header entirely, and the reference must still
+  // reach the FirePDF path.
+  if (feRes?.file?.gcs_uri !== undefined) {
+    throw new AddFeatureError(
+      ["pdf"],
+      await feResToPdfPrefetch(logger, feRes, signal, maxFileBytes),
+    );
+  }
+
   if (!contentType) {
     logger.warn("Failed to check contentType -- was not present in headers", {
       headers,
@@ -168,11 +179,8 @@ export async function specialtyScrapeCheck(
     }
   }
 
-  // Check for PDF. A GCS reference is itself a PDF signal: fire-engine only
-  // hands files off by reference after verifying they are PDFs, and a
-  // reference-shaped file has no inline base64 for the signature sniffs.
-  const isPdfReference = feRes?.file?.gcs_uri !== undefined;
-  if (isPdf || isPdfReference) {
+  // Check for PDF (references were already handled above the header guard).
+  if (isPdf) {
     throw new AddFeatureError(
       ["pdf"],
       await feResToPdfPrefetch(logger, feRes, signal, maxFileBytes),

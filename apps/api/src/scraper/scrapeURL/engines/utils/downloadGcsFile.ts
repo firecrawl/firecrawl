@@ -118,13 +118,18 @@ export async function downloadFireEngineGcsFile(
       generation: Number.isFinite(generation) ? generation : undefined,
     };
   } catch (error) {
+    // A failed stream may have written a partial file that no prefetch
+    // cleanup will ever see — remove it here.
+    await unlink(destPath).catch(() => {});
+    if (signal?.aborted) {
+      // Caller cancellation propagates as a cancellation, never as a
+      // synthetic prefetch failure.
+      throw signal.reason ?? error;
+    }
     logger.warn("fire-engine GCS file download failed", {
       uri: file.uri,
       error,
     });
-    // A failed stream may have written a partial file that no prefetch
-    // cleanup will ever see — remove it here.
-    await unlink(destPath).catch(() => {});
     return null;
   } finally {
     clearTimeout(timer);

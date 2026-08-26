@@ -28,6 +28,38 @@ function makeMeta() {
 }
 
 describe("fire-engine GCS handoff (bucket allowlists)", () => {
+  // The inbound allowlist is opt-in: configure it for these tests so the
+  // rejection cases exercise the bucket comparison, not the unset guard.
+  const ORIGINAL_BUCKET = config.FIRE_ENGINE_PDF_GCS_BUCKET;
+  beforeAll(() => {
+    (config as any).FIRE_ENGINE_PDF_GCS_BUCKET = "fire-engine-scrape-storage";
+  });
+  afterAll(() => {
+    (config as any).FIRE_ENGINE_PDF_GCS_BUCKET = ORIGINAL_BUCKET;
+  });
+
+  it("refuses every reference when the allowlist is unconfigured", async () => {
+    (config as any).FIRE_ENGINE_PDF_GCS_BUCKET = undefined;
+    try {
+      await expect(
+        downloadFireEngineGcsFile(
+          makeMeta().logger,
+          { uri: "gs://fire-engine-scrape-storage/pdf-handoff/x.pdf" },
+          "/tmp/never-written.pdf",
+        ),
+      ).resolves.toBeNull();
+      await expect(
+        rewritePdfInputForFirePdf(makeMeta(), {
+          uri: "gs://fire-engine-scrape-storage/pdf-handoff/x.pdf",
+          sha256: "ab".repeat(32),
+          sizeBytes: 1024,
+        }),
+      ).resolves.toBeNull();
+    } finally {
+      (config as any).FIRE_ENGINE_PDF_GCS_BUCKET = "fire-engine-scrape-storage";
+    }
+  });
+
   it("rewrite refuses a source outside fire-engine's handoff bucket", async () => {
     // Never copies out of an arbitrary bucket named by response data; the
     // caller falls back to the streaming upload of the local temp file.

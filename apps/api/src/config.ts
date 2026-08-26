@@ -361,15 +361,11 @@ const configSchema = z.object({
     .default("firecrawl-pdf-pipeline"),
   // Bucket fire-engine uses for its large-PDF handoff (files too big to
   // inline as base64 in its response). Acts as the allowlist for inbound
-  // `file.gcs_uri` references — objects outside it are never fetched. Must
-  // match fire-engine's GCS_PDF_BUCKET_NAME. Nonblank for the same reason
-  // as the input bucket above: a blank value would silently disable the
-  // path instead of failing at startup.
-  FIRE_ENGINE_PDF_GCS_BUCKET: z
-    .string()
-    .trim()
-    .min(1)
-    .default("fire-engine-scrape-storage"),
+  // `file.gcs_uri` references — objects outside it are never fetched or
+  // copied. Deliberately no default: this is a security-sensitive inbound
+  // allowlist, so consuming references requires explicit opt-in (set to
+  // fire-engine's GCS_PDF_BUCKET_NAME); unset disables the path.
+  FIRE_ENGINE_PDF_GCS_BUCKET: emptyStringAsUndefined(z.string().trim().min(1)),
   // Large-PDF size policy, applied per team on every acquisition path
   // (direct download, fire-engine handoff, by-reference submit) and sent to
   // fire-engine as the per-request pdfMaxSize. The default applies to every
@@ -377,9 +373,13 @@ const configSchema = z.object({
   // the 256MB architectural ceiling.
   PDF_BY_REFERENCE_MAX_BYTES_DEFAULT: z.coerce
     .number()
+    .int()
+    .positive()
     .default(50 * 1024 * 1024),
   PDF_BY_REFERENCE_MAX_BYTES_PRIVILEGED: z.coerce
     .number()
+    .int()
+    .positive()
     .default(200 * 1024 * 1024),
   // Comma-separated team ids granted the privileged cap.
   PDF_BY_REFERENCE_PRIVILEGED_TEAM_IDS: z.string().optional(),

@@ -71,6 +71,9 @@ export async function rewritePdfInputForFirePdf(
   const destKey = firePdfInputObjectKey(meta.id);
   const startedAt = Date.now();
   try {
+    // Never start the server-side copy for an already-cancelled scrape —
+    // it would only create an orphaned input object.
+    meta.abort.throwIfAborted();
     const destFile = storage.bucket(destBucket).file(destKey);
     let timer: NodeJS.Timeout | undefined;
     // copy() accepts no AbortSignal, so this only stops the wait (timeout or
@@ -170,7 +173,10 @@ export function largePdfLimitBytes(meta: Meta): number {
     teamId && privilegedIds.has(teamId)
       ? config.PDF_BY_REFERENCE_MAX_BYTES_PRIVILEGED
       : config.PDF_BY_REFERENCE_MAX_BYTES_DEFAULT;
-  return Math.min(raw, FIRE_PDF_BY_REFERENCE_MAX_FILE_SIZE);
+  // Config is schema-validated to positive integers; the clamp bounds both
+  // ends anyway so an invalid value can never reject every PDF or send
+  // fire-engine a nonsensical pdfMaxSize.
+  return Math.min(Math.max(raw, 1), FIRE_PDF_BY_REFERENCE_MAX_FILE_SIZE);
 }
 
 /** The full request-level reachability check — byReferenceConfigured plus
