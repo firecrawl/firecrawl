@@ -252,9 +252,7 @@ trace_event_struct!(AgentTraceAgentFinishedEvent {
     duration_ms: u64,
     error: Option<AgentTraceError>
 });
-trace_event_struct!(AgentTraceBrowserSessionStartedEvent {
-    session_id: String
-});
+trace_event_struct!(AgentTraceBrowserSessionStartedEvent { session_id: String });
 trace_event_struct!(AgentTraceBrowserSessionFinishedEvent {
     session_id: String,
     duration_ms: u64
@@ -263,9 +261,7 @@ trace_event_struct!(AgentTraceProgressReportedEvent {
     phase: AgentTraceProgressPhase,
     message: String
 });
-trace_event_struct!(AgentTraceReasoningSummaryEvent {
-    text: String
-});
+trace_event_struct!(AgentTraceReasoningSummaryEvent { text: String });
 trace_event_struct!(AgentTraceToolCallStartedEvent {
     tool_call_id: String,
     tool_name: String,
