@@ -241,6 +241,18 @@ export interface PdfPageBlocks {
 }
 
 export interface ScrapeOptions {
+  /**
+   * SDK-only (never sent to the API). Large documents (big PDFs) that
+   * outlive the request window keep processing server-side; the API's
+   * timeout error then carries `details.state === "processing_continues"`
+   * and a Retry-After. When this is not `false`, the SDK sleeps that
+   * long and re-issues the same request — the retry attaches to the
+   * in-flight job and returns the finished result, so a large document
+   * behaves like one slow successful call. Bounded (at most 5 resumes /
+   * 20 minutes total wait); set `false` to surface the timeout error
+   * immediately instead.
+   */
+  autoResume?: boolean;
   formats?: FormatOption[];
   headers?: Record<string, string>;
   includeTags?: string[];
