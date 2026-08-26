@@ -7,14 +7,16 @@ import {
   Request as PlaywrightRequest,
   Page,
 } from 'playwright';
-import dotenv from 'dotenv';
 import UserAgent from 'user-agents';
 import { getError } from './helpers/get_error';
-import { lookup } from 'dns/promises';
-import IPAddr from 'ipaddr.js';
+import {
+  ALLOW_LOCAL_WEBHOOKS,
+  ALLOW_PRIVATE_IP_SCRAPING,
+  assertSafeTargetUrl,
+  InsecureConnectionError,
+  isInternalHost,
+} from './helpers/url-safety';
 import { Server, RequestError } from 'proxy-chain';
-
-dotenv.config();
 
 const app = express();
 const port = process.env.PORT || 3003;
@@ -27,63 +29,10 @@ const MAX_CONCURRENT_PAGES = Math.max(
   1,
   Number.parseInt(process.env.MAX_CONCURRENT_PAGES ?? '10', 10) || 10,
 );
-const ALLOW_LOCAL_WEBHOOKS =
-  (process.env.ALLOW_LOCAL_WEBHOOKS || 'False').toUpperCase() === 'TRUE';
 
 const PROXY_SERVER = process.env.PROXY_SERVER || null;
 const PROXY_USERNAME = process.env.PROXY_USERNAME || null;
 const PROXY_PASSWORD = process.env.PROXY_PASSWORD || null;
-
-class InsecureConnectionError extends Error {
-  constructor(
-    public readonly blockedUrl: string,
-    reason: string,
-  ) {
-    super(`Blocked insecure target URL "${blockedUrl}": ${reason}`);
-    this.name = 'InsecureConnectionError';
-  }
-}
-
-const isInternalHost = async (hostname: string): Promise<boolean> => {
-  const host = hostname.toLowerCase().replace(/\.$/, '');
-  if (!host) return true;
-
-  let addresses: string[];
-  if (IPAddr.isValid(host)) {
-    addresses = [host];
-  } else {
-    try {
-      addresses = (await lookup(host, { all: true })).map((a) => a.address);
-    } catch {
-      return true;
-    }
-  }
-  return (
-    addresses.length === 0 ||
-    addresses.some((a) => IPAddr.parse(a).range() !== 'unicast')
-  );
-};
-
-const assertSafeTargetUrl = async (urlString: string): Promise<void> => {
-  let parsedUrl: URL;
-  try {
-    parsedUrl = new URL(urlString);
-  } catch {
-    throw new InsecureConnectionError(urlString, 'URL is invalid');
-  }
-  if (parsedUrl.protocol !== 'http:' && parsedUrl.protocol !== 'https:') {
-    throw new InsecureConnectionError(
-      urlString,
-      `unsupported protocol "${parsedUrl.protocol}"`,
-    );
-  }
-  if (!ALLOW_LOCAL_WEBHOOKS && (await isInternalHost(parsedUrl.hostname))) {
-    throw new InsecureConnectionError(
-      urlString,
-      'resolves to a private/internal address',
-    );
-  }
-};
 
 const buildUpstreamProxyUrl = (): string | undefined => {
   if (!PROXY_SERVER) return undefined;
@@ -101,7 +50,11 @@ const startSSRFProxy = async (): Promise<number> => {
     port: 0,
     host: '127.0.0.1',
     prepareRequestFunction: async ({ hostname }) => {
-      if (!ALLOW_LOCAL_WEBHOOKS && (await isInternalHost(hostname))) {
+      if (
+        !ALLOW_LOCAL_WEBHOOKS &&
+        !ALLOW_PRIVATE_IP_SCRAPING &&
+        (await isInternalHost(hostname))
+      ) {
         throw new RequestError(
           'Blocked: target resolves to a private/internal address',
           403,
