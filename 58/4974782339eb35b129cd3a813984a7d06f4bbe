@@ -1,0 +1,38 @@
+apps/api/src/scraper/scrapeURL/engines/fire-engine/index.ts
+  s_3a865ed3798c21::t_7fd697fec6fabc 231-234
+  s_3a865ed3798c21::t_03568b70bb59c4 213
+apps/api/src/scraper/scrapeURL/index.ts
+  s_3a865ed3798c21::t_4c5552867b0874 154-158
+apps/api/src/scraper/scrapeURL/engines/utils/downloadGcsFile.ts
+  s_3a865ed3798c21::t_948a0b8a6575d6 1,3-12,14-18,39,41-60,68-75,80,92-93,95,98-100,102-105,113-115,120-124,128,131-132
+  s_3a865ed3798c21::t_107ddb7dd54aea 13
+  s_3a865ed3798c21::t_4c874c10cd2362 61
+apps/api/src/scraper/scrapeURL/engines/utils/specialtyHandler.ts
+  s_3a865ed3798c21::t_f3765c48975c2b 9,20-21,30-43,46-53,55-56,64-66,179,191
+  s_3a865ed3798c21::t_5ad8230124d5de 171-175
+apps/api/src/scraper/scrapeURL/engines/pdf/index.ts
+  s_3a865ed3798c21::t_a39bbb457d582a 13
+  s_3a865ed3798c21::t_5571bb996c7eac 49
+  s_3a865ed3798c21::t_e845eeb6080b9e 50
+  s_3a865ed3798c21::t_6a946c2d9306e4 101-107
+  s_3a865ed3798c21::t_444c15c1c2d38d 526,553,556
+apps/api/src/scraper/scrapeURL/engines/pdf/fire-pdf/by-reference.ts
+  s_3a865ed3798c21::t_3a4bf43745469a 26-28,30,34-37,39-52,62-74,79-85,96-97,107-139,164-165
+  s_3a865ed3798c21::t_2409664a7028cd 98-99
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "584974782339eb35b129cd3a813984a7d06f4bbe",
+  "prompts": {},
+  "sessions": {
+    "s_3a865ed3798c21": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "505fa387-89c1-4431-8ded-ab301ee7e38b",
+        "model": "claude-fable-5"
+      },
+      "human_author": "Abimael Martell <1450169+abimaelmartell@users.noreply.github.com>"
+    }
+  }
+}
