@@ -1185,8 +1185,9 @@ describe("scrapePDFWithFirePDFAsync", () => {
         },
       ]);
 
+      const meta = makeMeta();
       const result = await scrapePDFWithFirePDFAsync(
-        makeMeta(),
+        meta,
         BY_REF,
         undefined,
         6543,
@@ -1195,6 +1196,9 @@ describe("scrapePDFWithFirePDFAsync", () => {
       );
 
       expect(result.markdown).toBe("# big doc");
+      // Completed within this scrape — no "processing continues" state
+      // may leak into a later timeout.
+      expect(meta.largePdfProcessing).toBeUndefined();
       // The by-reference LOOKUP happens at the call site before the input
       // object is uploaded (a hit must skip the transfer, which has already
       // happened by the time this function runs) — so no lookup here, only
@@ -1353,8 +1357,9 @@ describe("scrapePDFWithFirePDFAsync", () => {
         },
       ]);
 
+      const meta = makeMeta();
       const error = await scrapePDFWithFirePDFAsync(
-        makeMeta(),
+        meta,
         { ...BY_REF },
         undefined,
         500,
@@ -1368,6 +1373,16 @@ describe("scrapePDFWithFirePDFAsync", () => {
       expect(error).toBeInstanceOf(FirePdfAsyncFailure);
       expect(error.reason).toBe("network_error");
       expect(calls.map(call => call.method)).toEqual(["POST", "GET"]);
+      // The live job's state survives for timeout-error enrichment
+      // ("processing continues, retry in ~N minutes").
+      expect(meta.largePdfProcessing).toMatchObject({
+        jobScrapeId: "scrape-id-test",
+        pagesEstimate: 500,
+        lastStatus: "queued",
+      });
+      expect(meta.largePdfProcessing.jobDeadlineAtMs).toBeGreaterThan(
+        meta.largePdfProcessing.submittedAtMs,
+      );
     });
   });
 
@@ -1443,8 +1458,9 @@ describe("scrapePDFWithFirePDFAsync", () => {
         },
       ]);
 
+      const meta = makeMeta();
       const error = await scrapePDFWithFirePDFAsync(
-        makeMeta(),
+        meta,
         ADOPTED,
         undefined,
         500,
@@ -1456,6 +1472,8 @@ describe("scrapePDFWithFirePDFAsync", () => {
       expect(error.reason).toBe("terminal_expired");
       // Never DELETE a job this caller does not own.
       expect(calls.map(call => call.method)).toEqual(["GET"]);
+      // The job is dead — no "processing continues" state may survive.
+      expect(meta.largePdfProcessing).toBeUndefined();
     });
 
     it("throws for adopted input under ZDR", async () => {

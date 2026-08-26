@@ -23,6 +23,10 @@ type PollDeps = {
   sleep: (ms: number, signal?: AbortSignal) => Promise<void>;
   now: () => number;
   random?: () => number;
+  /** Observes each non-terminal status seen while polling — lets the
+   * caller keep a live "where is this job" snapshot (used to enrich
+   * timeout errors for by-reference jobs that outlive the scrape). */
+  onNonTerminalStatus?: (status: "queued" | "published" | "running") => void;
 };
 
 type PollOk = { poll: PollResponse; pollCount: number };
@@ -133,6 +137,14 @@ export async function pollUntilTerminal(deps: PollDeps): Promise<PollOk> {
         });
       }
       return { poll: parsed.data, pollCount };
+    }
+
+    if (
+      parsed.data.status === "queued" ||
+      parsed.data.status === "published" ||
+      parsed.data.status === "running"
+    ) {
+      deps.onNonTerminalStatus?.(parsed.data.status);
     }
 
     lastDelay = nextPollDelay(lastDelay, parsed.data.retry_after_ms, random);

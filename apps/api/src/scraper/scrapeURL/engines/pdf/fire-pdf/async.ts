@@ -212,6 +212,15 @@ export async function scrapePDFWithFirePDFAsync(
         scrapeId: meta.id,
         adoptedScrapeId: jobScrapeId,
       });
+      // Adopted jobs are live by definition (done ones return on the
+      // first poll); the true start time is unknown, so the estimate
+      // conservatively counts from now.
+      meta.largePdfProcessing = {
+        jobScrapeId,
+        pagesEstimate: pagesProcessed,
+        submittedAtMs: submitTime,
+        lastStatus: "running",
+      };
     } else {
       const submit = await submitJob({
         meta,
@@ -230,6 +239,18 @@ export async function scrapePDFWithFirePDFAsync(
       submissionAccepted = true;
       alreadyDone = submit.alreadyDone;
       initialDelay = submit.retryAfterMs ?? POLL_FLOOR_MS;
+      if (byReference && !alreadyDone) {
+        // The job now exists server-side and (per the cancel policy
+        // above) will keep running if this scrape is abandoned — record
+        // enough state for the timeout error to say so.
+        meta.largePdfProcessing = {
+          jobScrapeId,
+          pagesEstimate: pagesProcessed,
+          submittedAtMs: submitTime,
+          jobDeadlineAtMs: submitTime + deadlineFromNow,
+          lastStatus: "queued",
+        };
+      }
     }
     terminalReached = alreadyDone;
 
@@ -249,6 +270,11 @@ export async function scrapePDFWithFirePDFAsync(
           sleep,
           now,
           random,
+          onNonTerminalStatus: status => {
+            if (meta.largePdfProcessing) {
+              meta.largePdfProcessing.lastStatus = status;
+            }
+          },
         });
     terminalReached = true;
 
@@ -268,6 +294,10 @@ export async function scrapePDFWithFirePDFAsync(
       (error.reason === "terminal_failed" ||
         error.reason === "terminal_expired" ||
         error.reason === "terminal_cancelled");
+    if (jobAlreadyTerminal || terminalReached) {
+      // The job is dead — a "processing continues" message would lie.
+      meta.largePdfProcessing = undefined;
+    }
     if (
       cancelOnAbandon &&
       (submissionAccepted || submitMayHaveBeenAccepted) &&
@@ -302,6 +332,9 @@ export async function scrapePDFWithFirePDFAsync(
       note: "FirePDF result did not acknowledge requested page markers",
     });
   }
+  // Job completed within this scrape's lifetime — nothing continues.
+  meta.largePdfProcessing = undefined;
+
   const durationMs = now() - overallStartedAt;
   firePdfAsyncTotalDurationSeconds.observe(durationMs / 1000);
 

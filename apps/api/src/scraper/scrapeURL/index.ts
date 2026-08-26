@@ -76,6 +76,7 @@ import {
 } from "./lib/abortManager";
 import {
   ScrapeJobTimeoutError,
+  composeTimeoutProcessing,
   CrawlDenialError,
   ActionsNotSupportedError,
 } from "../../lib/error";
@@ -167,6 +168,20 @@ export type Meta = {
       }
     | null
     | undefined; // undefined: no prefetch yet, null: prefetch came back empty
+  /** Live state of a by-reference FirePDF job (large PDFs) this scrape
+   * submitted or adopted. Such jobs outlive an abandoned scrape BY
+   * DESIGN (see fire-pdf/async.ts's cancel policy), so a SCRAPE_TIMEOUT
+   * uses this to tell the caller processing continues and when a retry
+   * of the same URL will pick up the finished result. Set by
+   * fire-pdf/async.ts; cleared when the job reaches a terminal state
+   * within this scrape's lifetime. */
+  largePdfProcessing?: {
+    jobScrapeId: string;
+    pagesEstimate?: number;
+    submittedAtMs: number;
+    jobDeadlineAtMs?: number;
+    lastStatus: "queued" | "published" | "running";
+  };
   documentPrefetch:
     | {
         filePath: string;
@@ -1415,6 +1430,27 @@ export async function scrapeURL(
       // if (Object.values(meta.results).length > 0 && Object.values(meta.results).every(x => x.state === "error" && x.error instanceof FEPageLoadFailed)) {
       //   throw new FEPageLoadFailed();
       // } else
+      // A timed-out large-PDF scrape leaves its fire-pdf job running by
+      // design (fire-pdf/async.ts cancel policy); upgrade the timeout
+      // error IN PLACE so the caller learns processing continues and
+      // when a retry of the same URL picks the result up. Covers both
+      // the engine race's own timer and the abort manager's inner
+      // timeout, which exits through the early rethrow below.
+      const timeoutCandidate =
+        error instanceof AbortManagerThrownError ? error.inner : error;
+      if (
+        meta.largePdfProcessing &&
+        timeoutCandidate instanceof ScrapeJobTimeoutError &&
+        timeoutCandidate.processing === undefined
+      ) {
+        const composed = composeTimeoutProcessing({
+          ...meta.largePdfProcessing,
+          nowMs: Date.now(),
+        });
+        timeoutCandidate.processing = composed.details;
+        timeoutCandidate.message = composed.message;
+      }
+
       meta.logger.debug("scrapeURL metrics", {
         module: "scrapeURL/metrics",
         timeTaken: Date.now() - startTime,
