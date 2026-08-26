@@ -52,6 +52,7 @@ from .types import (
 )
 from .utils.http_client import HttpClient
 from .utils.http_client_async import AsyncHttpClient
+from .utils.error_handler import JobFailedError
 
 from .methods.aio import scrape as async_scrape  # type: ignore[attr-defined]
 from .methods.aio import parse as async_parse  # type: ignore[attr-defined]
@@ -593,8 +594,13 @@ class AsyncFirecrawlClient:
         start = asyncio.get_event_loop().time()
         while True:
             status = await async_batch.get_batch_scrape_status(self.async_http_client, job_id)
-            if status.status in ["completed", "failed", "cancelled"]:
+            if status.status == "completed":
                 return status
+            if status.status in ("failed", "cancelled"):
+                raise JobFailedError(
+                    f"Batch scrape job {job_id} ended with status {status.status}",
+                    job=status,
+                )
             if timeout and (asyncio.get_event_loop().time() - start) > timeout:
                 raise TimeoutError("Batch wait timed out")
             await asyncio.sleep(poll_interval)

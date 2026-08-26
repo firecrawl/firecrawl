@@ -14,7 +14,7 @@ from ..types import (
     PaginationConfig,
     AuditMetadata,
 )
-from ..utils import HttpClient, handle_response_error, validate_scrape_options, prepare_scrape_options
+from ..utils import HttpClient, handle_response_error, validate_scrape_options, prepare_scrape_options, JobFailedError
 from ..utils.normalize import normalize_document_input
 from ..types import CrawlErrorsResponse
 
@@ -303,22 +303,27 @@ def wait_for_batch_completion(
         BatchScrapeStatusResponse when job completes
         
     Raises:
-        FirecrawlError: If the job fails or timeout is reached
+        JobFailedError: If the job ends with status failed or cancelled
         TimeoutError: If timeout is reached
     """
     start_time = time.monotonic()
-    
+
     while True:
         status_job = get_batch_scrape_status(client, job_id)
-        
-        # Check if job is complete
-        if status_job.status in ["completed", "failed", "cancelled"]:
+
+        if status_job.status == "completed":
             return status_job
-        
+
+        if status_job.status in ("failed", "cancelled"):
+            raise JobFailedError(
+                f"Batch scrape job {job_id} ended with status {status_job.status}",
+                job=status_job,
+            )
+
         # Check timeout
         if timeout and (time.monotonic() - start_time) > timeout:
             raise TimeoutError(f"Batch scrape job {job_id} did not complete within {timeout} seconds")
-        
+
         # Wait before next poll
         time.sleep(poll_interval)
 
@@ -353,7 +358,8 @@ def batch_scrape(
         BatchScrapeStatusResponse when job completes
         
     Raises:
-        FirecrawlError: If the batch scrape fails to start or complete
+        FirecrawlError: If the batch scrape fails to start
+        JobFailedError: If the job ends with status failed or cancelled
         TimeoutError: If timeout is reached
     """
     # Start the batch scrape
