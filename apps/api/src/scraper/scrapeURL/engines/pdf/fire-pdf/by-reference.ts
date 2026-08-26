@@ -61,10 +61,27 @@ export function byReferenceConfigured(
  * the caller falls back to the pre-by-reference behavior for oversized
  * files instead of failing the scrape on infra misconfiguration.
  */
+/** Streaming sha-256 of a file on disk. The by-reference cache identity —
+ * computed BEFORE any upload so a cache hit skips the 30-256MB transfer
+ * entirely. A disk read is orders of magnitude cheaper than the upload it
+ * can save. */
+export async function sha256OfFile(path: string): Promise<string> {
+  const hash = createHash("sha256");
+  for await (const chunk of createReadStream(path)) {
+    hash.update(chunk as Buffer);
+  }
+  return hash.digest("hex");
+}
+
 export async function uploadPdfInputForFirePdf(
   meta: Meta,
   tempFilePath: string,
   sizeBytes: number,
+  opts?: {
+    /** sha-256 already computed over this exact file (e.g. for the
+     * pre-upload cache check) — skips the in-pipeline hash pass. */
+    precomputedSha256?: string;
+  },
 ): Promise<FirePdfByReferenceInput | null> {
   const bucketName = config.FIRE_PDF_GCS_INPUT_BUCKET;
   // Scrape ids are UUIDv7 (time-ordered); a short hash prefix spreads the
@@ -91,33 +108,41 @@ export async function uploadPdfInputForFirePdf(
         ),
       UPLOAD_TIMEOUT_MS,
     );
-    const hash = createHash("sha256");
-    const hashThrough = new Transform({
-      transform(chunk, _encoding, callback) {
-        hash.update(chunk as Buffer);
-        callback(null, chunk);
-      },
-    });
+    const hash =
+      opts?.precomputedSha256 === undefined ? createHash("sha256") : null;
+    const writeStream = storage
+      .bucket(bucketName)
+      .file(objectKey)
+      .createWriteStream({
+        resumable: true,
+        metadata: {
+          contentType: "application/pdf",
+          metadata: { scrape_id: meta.id, source: "firecrawl" },
+        },
+      });
     try {
-      await pipeline(
-        createReadStream(tempFilePath),
-        hashThrough,
-        storage
-          .bucket(bucketName)
-          .file(objectKey)
-          .createWriteStream({
-            resumable: true,
-            metadata: {
-              contentType: "application/pdf",
-              metadata: { scrape_id: meta.id, source: "firecrawl" },
-            },
-          }),
-        { signal },
-      );
+      if (hash) {
+        const hashThrough = new Transform({
+          transform(chunk, _encoding, callback) {
+            hash.update(chunk as Buffer);
+            callback(null, chunk);
+          },
+        });
+        await pipeline(
+          createReadStream(tempFilePath),
+          hashThrough,
+          writeStream,
+          {
+            signal,
+          },
+        );
+      } else {
+        await pipeline(createReadStream(tempFilePath), writeStream, { signal });
+      }
     } finally {
       clearTimeout(timer);
     }
-    const sha256 = hash.digest("hex");
+    const sha256 = opts?.precomputedSha256 ?? hash!.digest("hex");
     meta.logger.info("Uploaded large PDF for by-reference FirePDF submit", {
       method: "scrapePDF/firePdfByReference",
       event: "fire_pdf_by_reference_uploaded",

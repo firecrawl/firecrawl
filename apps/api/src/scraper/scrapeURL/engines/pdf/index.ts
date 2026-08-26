@@ -44,8 +44,10 @@ import { reconcilePageCountWithFirePdf, scrapePDFWithFirePDF } from "./firePDF";
 import { scrapePDFWithFirePDFAsync } from "./fire-pdf/async";
 import {
   byReferenceConfigured,
+  sha256OfFile,
   uploadPdfInputForFirePdf,
 } from "./fire-pdf/by-reference";
+import { tryGetCached } from "./fire-pdf/cache";
 import { decideFirePdfAsyncRoute } from "./fire-pdf/routing";
 import { scrapePDFWithParsePDF } from "./pdfParse";
 import { toPublicBlocks } from "./blocks";
@@ -464,11 +466,40 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
             },
           );
         } else {
-          const uploaded = await uploadPdfInputForFirePdf(
+          // Cache BEFORE upload: the raw-byte sha is the by-reference cache
+          // identity, and it must be checked before the 30-256MB transfer —
+          // a repeat scrape of the same document should cost one streamed
+          // disk read, not a full re-upload. scrapePDFWithFirePDFAsync
+          // deliberately skips the by-reference lookup for the same reason
+          // (it runs post-upload) and only saves.
+          const localSha256 = await sha256OfFile(tempFilePath);
+          const cachedByRef = await tryGetCached(
             meta,
-            tempFilePath,
-            fileSizeBytes,
+            { key: `raw-${localSha256}` },
+            mode,
+            maxPages,
+            effectivePageCount,
+            includePageMarkdown,
+            includeBlocks,
+            pageMarkers,
           );
+          if (cachedByRef) {
+            result = cachedByRef;
+            effectivePageCount = reconcilePageCountWithFirePdf(
+              effectivePageCount,
+              result,
+            );
+          }
+          const uploaded = result
+            ? null
+            : await uploadPdfInputForFirePdf(
+                meta,
+                tempFilePath,
+                fileSizeBytes,
+                {
+                  precomputedSha256: localSha256,
+                },
+              );
           if (uploaded) {
             try {
               result = await scrapePDFWithFirePDFAsync(

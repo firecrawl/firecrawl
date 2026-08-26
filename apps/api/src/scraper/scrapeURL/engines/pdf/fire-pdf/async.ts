@@ -77,24 +77,30 @@ export async function scrapePDFWithFirePDFAsync(
 
   // Cache addressing: inline submits keep the historical key (sha256 of
   // the base64 payload); by-reference submits use a `raw-` prefixed key
-  // over the raw-byte sha they already carry, so repeat scrapes of the
-  // same large document don't re-upload and reprocess it. The two
-  // keyspaces are deliberately distinct — an inline and a by-reference
-  // parse of the same document do not share entries.
+  // over the raw-byte sha, so repeat scrapes of the same large document
+  // don't reprocess it. The two keyspaces are deliberately distinct — an
+  // inline and a by-reference parse of the same document do not share
+  // entries. The LOOKUP for by-reference happens at the call site BEFORE
+  // the input object is uploaded (a hit must skip the 30-256MB transfer,
+  // which has already happened by the time this function runs); only the
+  // inline path looks up here. Both paths save here.
   const cacheInput =
     typeof input === "string"
       ? input
       : { key: `raw-${input.sha256.toLowerCase()}` };
-  const cached = await tryGetCached(
-    meta,
-    cacheInput,
-    mode,
-    maxPages,
-    pagesProcessed,
-    includePageMarkdown,
-    includeBlocks,
-    pageMarkers,
-  );
+  const cached =
+    typeof input === "string"
+      ? await tryGetCached(
+          meta,
+          cacheInput,
+          mode,
+          maxPages,
+          pagesProcessed,
+          includePageMarkdown,
+          includeBlocks,
+          pageMarkers,
+        )
+      : null;
   if (cached) return cached;
 
   meta.abort.throwIfAborted();

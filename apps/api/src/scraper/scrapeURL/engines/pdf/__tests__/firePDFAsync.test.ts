@@ -1194,13 +1194,12 @@ describe("scrapePDFWithFirePDFAsync", () => {
       );
 
       expect(result.markdown).toBe("# big doc");
-      // By-reference requests are cache-addressed by the raw-byte sha,
-      // namespaced apart from inline base64-keyed entries.
-      expect(vi.mocked(getPdfResultFromCache)).toHaveBeenCalledWith(
-        { key: `raw-${BY_REF.sha256}` },
-        "firepdf",
-        undefined,
-      );
+      // The by-reference LOOKUP happens at the call site before the input
+      // object is uploaded (a hit must skip the transfer, which has already
+      // happened by the time this function runs) — so no lookup here, only
+      // the save, addressed by the raw-byte sha namespaced apart from
+      // inline base64-keyed entries.
+      expect(vi.mocked(getPdfResultFromCache)).not.toHaveBeenCalled();
       expect(vi.mocked(savePdfResultToCache)).toHaveBeenCalledWith(
         { key: `raw-${BY_REF.sha256}` },
         expect.anything(),
