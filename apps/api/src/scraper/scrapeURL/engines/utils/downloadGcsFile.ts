@@ -64,7 +64,7 @@ export async function downloadFireEngineGcsFile(
    * handoff never consumes network and temp disk. Clamped to the
    * by-reference ceiling. */
   maxBytes?: number,
-): Promise<{ sizeBytes: number; generation?: number } | null> {
+): Promise<{ sizeBytes: number; generation?: string } | null> {
   const parsed = parseGcsUri(file.uri);
   if (!parsed || parsed.bucket !== config.FIRE_ENGINE_PDF_GCS_BUCKET) {
     logger.warn("fire-engine GCS file reference outside the handoff bucket", {
@@ -77,6 +77,11 @@ export async function downloadFireEngineGcsFile(
     maxBytes ?? FIRE_PDF_BY_REFERENCE_MAX_FILE_SIZE,
     FIRE_PDF_BY_REFERENCE_MAX_FILE_SIZE,
   );
+
+  // An already-cancelled scrape must not start the timer or any GCS RPC.
+  if (signal?.aborted) {
+    throw signal.reason ?? new Error("aborted");
+  }
 
   const timeoutAbort = new AbortController();
   const combined = signal
@@ -93,7 +98,11 @@ export async function downloadFireEngineGcsFile(
     const object = storage.bucket(parsed.bucket).file(parsed.objectKey);
     const [metadata] = await raceWithSignal(object.getMetadata(), combined);
     const sizeBytes = Number(metadata.size ?? file.sizeBytes ?? 0);
-    const generation = Number(metadata.generation);
+    // Generations are int64 — keep the SDK's string form, never a JS number.
+    const generation =
+      metadata.generation !== undefined && metadata.generation !== null
+        ? String(metadata.generation)
+        : undefined;
     if (!(sizeBytes > 0) || sizeBytes > effectiveMaxBytes) {
       logger.warn("fire-engine GCS file reference has unusable size", {
         uri: file.uri,
@@ -106,17 +115,15 @@ export async function downloadFireEngineGcsFile(
     {
       // Pin the read to the generation whose size was just validated, so a
       // concurrent replacement of the object cannot bypass the size gate.
-      const pinned = Number.isFinite(generation)
-        ? storage.bucket(parsed.bucket).file(parsed.objectKey, { generation })
-        : object;
+      const pinned =
+        generation !== undefined
+          ? storage.bucket(parsed.bucket).file(parsed.objectKey, { generation })
+          : object;
       await pipeline(pinned.createReadStream(), createWriteStream(destPath), {
         signal: combined,
       });
     }
-    return {
-      sizeBytes,
-      generation: Number.isFinite(generation) ? generation : undefined,
-    };
+    return { sizeBytes, generation };
   } catch (error) {
     // A failed stream may have written a partial file that no prefetch
     // cleanup will ever see — remove it here.

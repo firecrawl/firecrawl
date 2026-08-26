@@ -6,9 +6,11 @@ import type { Meta } from "../../..";
 import { config } from "../../../../../config";
 import {
   getPDFBlocks,
+  getPDFMode,
   getPDFPageMarkdown,
   getPDFPageMarkers,
 } from "../../../../../controllers/v2/types";
+import { deterministicPercentage } from "./routing";
 import { storage } from "../../../../../lib/gcs-jobs";
 import { FIRE_PDF_BY_REFERENCE_MAX_FILE_SIZE } from "../types";
 
@@ -57,8 +59,10 @@ export async function rewritePdfInputForFirePdf(
     sizeBytes: number;
     /** Generation validated (and read) by the prefetch download — the copy
      * is pinned to it so a replaced object can never smuggle different
-     * bytes past the local size/sniff checks. */
-    generation?: number;
+     * bytes past the local size/sniff checks. Kept as the SDK's string
+     * representation: generations are int64 and must not be rounded
+     * through a JS number. */
+    generation?: string;
   },
 ): Promise<FirePdfByReferenceInput | null> {
   const match = /^gs:\/\/([^/]+)\/(.+)$/.exec(source.uri);
@@ -179,21 +183,37 @@ export function largePdfLimitBytes(meta: Meta): number {
   return Math.min(Math.max(raw, 1), FIRE_PDF_BY_REFERENCE_MAX_FILE_SIZE);
 }
 
-/** The full request-level reachability check — byReferenceConfigured plus
- * the parser options that force FirePDF. One definition shared by the PDF
- * engine's download admission/routing gate AND the fire-engine handoff
- * download cap, so the two can never drift. */
-export function byReferenceReachableForRequest(meta: Meta): boolean {
-  return byReferenceConfigured(
-    meta,
-    !!meta.options.__forceFirePDF ||
-      getPDFPageMarkdown(meta.options.parsers) ||
-      getPDFBlocks(meta.options.parsers) ||
-      getPDFPageMarkers(meta.options.parsers),
+/** Whether this request is diverted to MinerU. Deterministic on the scrape
+ * id (same distribution as a random draw) precisely so every gate — the
+ * fire-engine handoff grant, the download admission, and the PDF engine's
+ * routing — sees the SAME verdict; a per-call random draw would let them
+ * drift. Keyed apart from the async-cohort hash. */
+export function mineruDiverted(meta: Meta): boolean {
+  return (
+    config.MINERU_PERCENT > 0 &&
+    deterministicPercentage(`mineru:${meta.id}`) < config.MINERU_PERCENT
   );
 }
 
-export function byReferenceConfigured(
+/** The full request-level reachability check — byReferenceConfigured plus
+ * the parser options that force FirePDF, fast-mode exclusion (its cost
+ * ceiling skips the whole FirePDF chain), and the MinerU diversion. One
+ * definition shared by the PDF engine's download admission/routing gate
+ * AND the fire-engine handoff grant, so the gates can never drift. */
+export function byReferenceReachableForRequest(meta: Meta): boolean {
+  const forceRequested =
+    !!meta.options.__forceFirePDF ||
+    getPDFPageMarkdown(meta.options.parsers) ||
+    getPDFBlocks(meta.options.parsers) ||
+    getPDFPageMarkers(meta.options.parsers);
+  return (
+    getPDFMode(meta.options.parsers) !== "fast" &&
+    !(!forceRequested && mineruDiverted(meta)) &&
+    byReferenceConfigured(meta, forceRequested)
+  );
+}
+
+function byReferenceConfigured(
   meta: Meta,
   forceFirePdfRequested: boolean,
 ): boolean {

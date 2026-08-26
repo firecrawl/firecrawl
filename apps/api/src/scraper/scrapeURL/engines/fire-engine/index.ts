@@ -33,6 +33,18 @@ import {
   largePdfLimitBytes,
 } from "../pdf/fire-pdf/by-reference";
 import { PDF_DOWNLOAD_MAX_FILE_SIZE } from "../pdf/types";
+import { config } from "../../../../config";
+
+/** The handoff additionally requires the inbound allowlist bucket to be
+ * configured: without it, a reference fire-engine returned could never be
+ * consumed, so granting the raise would only turn large-PDF scrapes into
+ * prefetch failures. */
+function fireEngineHandoffEligible(meta: Meta): boolean {
+  return (
+    config.FIRE_ENGINE_PDF_GCS_BUCKET !== undefined &&
+    byReferenceReachableForRequest(meta)
+  );
+}
 import { fireEngineDelete } from "./delete";
 import { MockState } from "../../lib/mock";
 import { getInnerJson } from "@mendable/firecrawl-rs";
@@ -214,7 +226,7 @@ async function performFireEngineScrape<
         // Handoff downloads only admit large files when the FirePDF
         // by-reference route can actually take them, and only up to the
         // requesting team's large-PDF limit.
-        byReferenceReachableForRequest(meta)
+        fireEngineHandoffEligible(meta)
           ? largePdfLimitBytes(meta)
           : PDF_DOWNLOAD_MAX_FILE_SIZE,
       );
@@ -469,7 +481,7 @@ export async function scrapeURLWithFireEngineChromeCDP(
       // Team-scoped ceiling for fire-engine's large-PDF GCS handoff: without
       // it fire-engine grants no raise and PDFs keep its inline cap, so the
       // worker never captures bytes this team may not use.
-      ...(byReferenceReachableForRequest(meta)
+      ...(fireEngineHandoffEligible(meta)
         ? { pdfMaxSize: largePdfLimitBytes(meta) }
         : {}),
       ...(shouldAllowMedia ? { blockMedia: false } : {}),

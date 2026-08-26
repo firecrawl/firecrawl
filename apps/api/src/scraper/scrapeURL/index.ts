@@ -160,7 +160,9 @@ export type Meta = {
           uri: string;
           sha256?: string;
           sizeBytes?: number;
-          generation?: number;
+          /** int64 as the SDK's string form — never rounded through a JS
+           * number. */
+          generation?: string;
         };
       }
     | null

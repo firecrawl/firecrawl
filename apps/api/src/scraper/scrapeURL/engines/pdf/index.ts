@@ -44,9 +44,9 @@ import { scrapePDFWithRunPodMU } from "./runpodMU";
 import { reconcilePageCountWithFirePdf, scrapePDFWithFirePDF } from "./firePDF";
 import { scrapePDFWithFirePDFAsync } from "./fire-pdf/async";
 import {
-  byReferenceConfigured,
   byReferenceReachableForRequest,
   largePdfLimitBytes,
+  mineruDiverted,
   rewritePdfInputForFirePdf,
   sha256OfFile,
   uploadPdfInputForFirePdf,
@@ -180,14 +180,10 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
   // gate adds the signals that need the file first). Otherwise keep the
   // historical cap — an oversized file would only burn bandwidth and temp
   // disk to fall through to text-only extraction.
-  // Fast mode is excluded: its hard cost ceiling skips the whole OCR/
-  // FirePDF chain (skipOCR), so the by-reference route it would justify is
-  // unreachable and the raised admission would only buffer bytes for the
-  // native path.
-  const byReferenceReachable =
-    !routeToMinerU &&
-    mode !== "fast" &&
-    byReferenceReachableForRequest(meta);
+  // The shared predicate covers fast-mode exclusion and the MinerU
+  // diversion too, so this is the same verdict fire-engine used when
+  // granting (or withholding) the handoff for this request.
+  const byReferenceReachable = byReferenceReachableForRequest(meta);
 
   const { response, tempFilePath } =
     meta.pdfPrefetch !== undefined && meta.pdfPrefetch !== null
@@ -461,13 +457,8 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
     // the file-dependent conditions are added here.
     if (!result && !skipOCR) {
       const fileSizeBytes = (await stat(tempFilePath)).size;
-      // mode !== "fast" mirrors the admission gate above: fast mode keeps
-      // its pre-by-reference behavior on every path (with Rust extraction
-      // disabled, skipOCR alone would not exclude it here).
       const useFirePdfByReference =
-        !routeToMinerU &&
-        mode !== "fast" &&
-        byReferenceConfigured(meta, forceFirePDF) &&
+        byReferenceReachable &&
         fileSizeBytes >= FIRE_PDF_MAX_FILE_SIZE &&
         fileSizeBytes <= largePdfLimitBytes(meta);
 
