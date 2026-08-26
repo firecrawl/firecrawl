@@ -370,6 +370,19 @@ const configSchema = z.object({
     .trim()
     .min(1)
     .default("fire-engine-scrape-storage"),
+  // Large-PDF size policy, applied per team on every acquisition path
+  // (direct download, fire-engine handoff, by-reference submit) and sent to
+  // fire-engine as the per-request pdfMaxSize. The default applies to every
+  // team; ids on the allowlist get the privileged cap. Both are clamped to
+  // the 256MB architectural ceiling.
+  PDF_BY_REFERENCE_MAX_BYTES_DEFAULT: z.coerce
+    .number()
+    .default(50 * 1024 * 1024),
+  PDF_BY_REFERENCE_MAX_BYTES_PRIVILEGED: z.coerce
+    .number()
+    .default(200 * 1024 * 1024),
+  // Comma-separated team ids granted the privileged cap.
+  PDF_BY_REFERENCE_PRIVILEGED_TEAM_IDS: z.string().optional(),
 
   // RunPod
   RUNPOD_MU_API_KEY: z.string().optional(),

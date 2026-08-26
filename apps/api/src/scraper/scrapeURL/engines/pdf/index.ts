@@ -46,6 +46,7 @@ import { scrapePDFWithFirePDFAsync } from "./fire-pdf/async";
 import {
   byReferenceConfigured,
   byReferenceReachableForRequest,
+  largePdfLimitBytes,
   rewritePdfInputForFirePdf,
   sha256OfFile,
   uploadPdfInputForFirePdf,
@@ -200,9 +201,10 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
             signal: meta.abort.asSignal(),
           },
           // Parse path streams to disk and can hand large files to FirePDF
-          // by GCS reference, so it admits more than the raw fetch path.
+          // by GCS reference, so it admits more than the raw fetch path —
+          // up to the requesting team's large-PDF limit.
           byReferenceReachable
-            ? FIRE_PDF_BY_REFERENCE_MAX_FILE_SIZE
+            ? largePdfLimitBytes(meta)
             : PDF_DOWNLOAD_MAX_FILE_SIZE,
         );
 
@@ -467,7 +469,7 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
         mode !== "fast" &&
         byReferenceConfigured(meta, forceFirePDF) &&
         fileSizeBytes >= FIRE_PDF_MAX_FILE_SIZE &&
-        fileSizeBytes <= FIRE_PDF_BY_REFERENCE_MAX_FILE_SIZE;
+        fileSizeBytes <= largePdfLimitBytes(meta);
 
       if (useFirePdfByReference) {
         if (effectivePageCount <= 0) {

@@ -1,5 +1,9 @@
-import { rewritePdfInputForFirePdf } from "../fire-pdf/by-reference";
+import {
+  largePdfLimitBytes,
+  rewritePdfInputForFirePdf,
+} from "../fire-pdf/by-reference";
 import { downloadFireEngineGcsFile } from "../../utils/downloadGcsFile";
+import { config } from "../../../../../config";
 
 function makeMeta() {
   const noopLogger: any = {
@@ -62,5 +66,40 @@ describe("fire-engine GCS handoff (bucket allowlists)", () => {
         "/tmp/never-written.pdf",
       ),
     ).resolves.toBeNull();
+  });
+});
+
+describe("largePdfLimitBytes (team tiers)", () => {
+  const ORIGINAL = {
+    ids: config.PDF_BY_REFERENCE_PRIVILEGED_TEAM_IDS,
+    def: config.PDF_BY_REFERENCE_MAX_BYTES_DEFAULT,
+    priv: config.PDF_BY_REFERENCE_MAX_BYTES_PRIVILEGED,
+  };
+  afterEach(() => {
+    (config as any).PDF_BY_REFERENCE_PRIVILEGED_TEAM_IDS = ORIGINAL.ids;
+    (config as any).PDF_BY_REFERENCE_MAX_BYTES_DEFAULT = ORIGINAL.def;
+    (config as any).PDF_BY_REFERENCE_MAX_BYTES_PRIVILEGED = ORIGINAL.priv;
+  });
+
+  function metaForTeam(teamId?: string) {
+    return { internalOptions: { teamId } } as any;
+  }
+
+  it("returns the default cap (50MB) for unlisted teams", () => {
+    (config as any).PDF_BY_REFERENCE_PRIVILEGED_TEAM_IDS = "team-a, team-b";
+    expect(largePdfLimitBytes(metaForTeam("team-x"))).toBe(50 * 1024 * 1024);
+    expect(largePdfLimitBytes(metaForTeam(undefined))).toBe(50 * 1024 * 1024);
+  });
+
+  it("returns the privileged cap (200MB) for allowlisted teams", () => {
+    (config as any).PDF_BY_REFERENCE_PRIVILEGED_TEAM_IDS = "team-a, team-b";
+    expect(largePdfLimitBytes(metaForTeam("team-a"))).toBe(200 * 1024 * 1024);
+    expect(largePdfLimitBytes(metaForTeam("team-b"))).toBe(200 * 1024 * 1024);
+  });
+
+  it("clamps configured caps to the 256MB architectural ceiling", () => {
+    (config as any).PDF_BY_REFERENCE_PRIVILEGED_TEAM_IDS = "team-a";
+    (config as any).PDF_BY_REFERENCE_MAX_BYTES_PRIVILEGED = 999 * 1024 * 1024;
+    expect(largePdfLimitBytes(metaForTeam("team-a"))).toBe(256 * 1024 * 1024);
   });
 });

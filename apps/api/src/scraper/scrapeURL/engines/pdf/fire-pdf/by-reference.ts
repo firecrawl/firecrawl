@@ -10,6 +10,7 @@ import {
   getPDFPageMarkers,
 } from "../../../../../controllers/v2/types";
 import { storage } from "../../../../../lib/gcs-jobs";
+import { FIRE_PDF_BY_REFERENCE_MAX_FILE_SIZE } from "../types";
 
 /** Input handle for a FirePDF async submit that travels by GCS reference
  * instead of inline base64. Produced by {@link uploadPdfInputForFirePdf}. */
@@ -159,6 +160,29 @@ export async function sha256OfFile(path: string): Promise<string> {
     hash.update(chunk as Buffer);
   }
   return hash.digest("hex");
+}
+
+/**
+ * The per-team large-PDF byte limit: the privileged cap for allowlisted
+ * team ids, the default cap for everyone else, both clamped to the 256MB
+ * architectural ceiling. Every acquisition path enforces this one number —
+ * the direct-download admission, the fire-engine handoff download, the
+ * by-reference routing gate, and (as pdfMaxSize) fire-engine's own capture
+ * ceiling, so no path can admit bytes another would reject.
+ */
+export function largePdfLimitBytes(meta: Meta): number {
+  const teamId = meta.internalOptions.teamId;
+  const privilegedIds = new Set(
+    (config.PDF_BY_REFERENCE_PRIVILEGED_TEAM_IDS ?? "")
+      .split(",")
+      .map(id => id.trim())
+      .filter(Boolean),
+  );
+  const raw =
+    teamId && privilegedIds.has(teamId)
+      ? config.PDF_BY_REFERENCE_MAX_BYTES_PRIVILEGED
+      : config.PDF_BY_REFERENCE_MAX_BYTES_DEFAULT;
+  return Math.min(raw, FIRE_PDF_BY_REFERENCE_MAX_FILE_SIZE);
 }
 
 /** The full request-level reachability check — byReferenceConfigured plus

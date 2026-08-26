@@ -28,11 +28,11 @@ import {
 import * as Sentry from "@sentry/node";
 import { gunzipSync } from "node:zlib";
 import { specialtyScrapeCheck } from "../utils/specialtyHandler";
-import { byReferenceReachableForRequest } from "../pdf/fire-pdf/by-reference";
 import {
-  FIRE_PDF_BY_REFERENCE_MAX_FILE_SIZE,
-  PDF_DOWNLOAD_MAX_FILE_SIZE,
-} from "../pdf/types";
+  byReferenceReachableForRequest,
+  largePdfLimitBytes,
+} from "../pdf/fire-pdf/by-reference";
+import { PDF_DOWNLOAD_MAX_FILE_SIZE } from "../pdf/types";
 import { fireEngineDelete } from "./delete";
 import { MockState } from "../../lib/mock";
 import { getInnerJson } from "@mendable/firecrawl-rs";
@@ -212,9 +212,10 @@ async function performFireEngineScrape<
         status,
         meta.abort.asSignal(),
         // Handoff downloads only admit large files when the FirePDF
-        // by-reference route can actually take them.
+        // by-reference route can actually take them, and only up to the
+        // requesting team's large-PDF limit.
         byReferenceReachableForRequest(meta)
-          ? FIRE_PDF_BY_REFERENCE_MAX_FILE_SIZE
+          ? largePdfLimitBytes(meta)
           : PDF_DOWNLOAD_MAX_FILE_SIZE,
       );
     }
@@ -465,6 +466,12 @@ export async function scrapeURLWithFireEngineChromeCDP(
         !meta.internalOptions.zeroDataRetention &&
         meta.internalOptions.saveScrapeResultToGCS,
       zeroDataRetention: meta.internalOptions.zeroDataRetention,
+      // Team-scoped ceiling for fire-engine's large-PDF GCS handoff: without
+      // it fire-engine grants no raise and PDFs keep its inline cap, so the
+      // worker never captures bytes this team may not use.
+      ...(byReferenceReachableForRequest(meta)
+        ? { pdfMaxSize: largePdfLimitBytes(meta) }
+        : {}),
       ...(shouldAllowMedia ? { blockMedia: false } : {}),
       ...(forceNonRender ? { forceNonRender: true } : {}),
       persistentStorage: meta.options.profile
