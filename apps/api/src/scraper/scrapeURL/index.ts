@@ -172,15 +172,22 @@ export type Meta = {
    * submitted or adopted. Such jobs outlive an abandoned scrape BY
    * DESIGN (see fire-pdf/async.ts's cancel policy), so a SCRAPE_TIMEOUT
    * uses this to tell the caller processing continues and when a retry
-   * of the same URL will pick up the finished result. Set by
-   * fire-pdf/async.ts; cleared when the job reaches a terminal state
-   * within this scrape's lifetime. */
+   * of the same URL will pick up the finished result.
+   *
+   * Shaped as a mutable container (like `threatDecisions`) on purpose:
+   * engine dispatch and the pdf engine hand out SPREAD COPIES of meta,
+   * and only the shared inner object makes writes from those copies
+   * visible to the outer timeout handler here. Set by fire-pdf/async.ts;
+   * `current` is cleared when the job reaches a terminal state within
+   * this scrape's lifetime. */
   largePdfProcessing?: {
-    jobScrapeId: string;
-    pagesEstimate?: number;
-    submittedAtMs: number;
-    jobDeadlineAtMs?: number;
-    lastStatus: "queued" | "published" | "running";
+    current?: {
+      jobScrapeId: string;
+      pagesEstimate?: number;
+      submittedAtMs: number;
+      jobDeadlineAtMs?: number;
+      lastStatus: "queued" | "published" | "running";
+    };
   };
   documentPrefetch:
     | {
@@ -472,6 +479,7 @@ async function buildMetaObject(
     fetchPrefetch,
     costTracking,
     threatDecisions: [],
+    largePdfProcessing: {},
   };
 }
 
@@ -1439,12 +1447,12 @@ export async function scrapeURL(
       const timeoutCandidate =
         error instanceof AbortManagerThrownError ? error.inner : error;
       if (
-        meta.largePdfProcessing &&
+        meta.largePdfProcessing?.current &&
         timeoutCandidate instanceof ScrapeJobTimeoutError &&
         timeoutCandidate.processing === undefined
       ) {
         const composed = composeTimeoutProcessing({
-          ...meta.largePdfProcessing,
+          ...meta.largePdfProcessing.current,
           nowMs: Date.now(),
         });
         timeoutCandidate.processing = composed.details;

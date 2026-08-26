@@ -82,6 +82,7 @@ function makeMeta(overrides: Record<string, unknown> = {}) {
     options: {
       parsers: [{ type: "pdf", __firePdfAsync: true }],
     },
+    largePdfProcessing: {},
     ...overrides,
   } as any;
 }
@@ -1187,7 +1188,7 @@ describe("scrapePDFWithFirePDFAsync", () => {
 
       const meta = makeMeta();
       const result = await scrapePDFWithFirePDFAsync(
-        meta,
+        { ...meta, logger: meta.logger },
         BY_REF,
         undefined,
         6543,
@@ -1198,7 +1199,7 @@ describe("scrapePDFWithFirePDFAsync", () => {
       expect(result.markdown).toBe("# big doc");
       // Completed within this scrape — no "processing continues" state
       // may leak into a later timeout.
-      expect(meta.largePdfProcessing).toBeUndefined();
+      expect(meta.largePdfProcessing.current).toBeUndefined();
       // The by-reference LOOKUP happens at the call site before the input
       // object is uploaded (a hit must skip the transfer, which has already
       // happened by the time this function runs) — so no lookup here, only
@@ -1358,8 +1359,12 @@ describe("scrapePDFWithFirePDFAsync", () => {
       ]);
 
       const meta = makeMeta();
+      // Call through a spread copy, exactly like the real callers (engine
+      // dispatch and the by-reference flow's child logger): the shared
+      // container is what makes the write visible on the original meta
+      // that the outer timeout handler inspects.
       const error = await scrapePDFWithFirePDFAsync(
-        meta,
+        { ...meta, logger: meta.logger },
         { ...BY_REF },
         undefined,
         500,
@@ -1375,13 +1380,13 @@ describe("scrapePDFWithFirePDFAsync", () => {
       expect(calls.map(call => call.method)).toEqual(["POST", "GET"]);
       // The live job's state survives for timeout-error enrichment
       // ("processing continues, retry in ~N minutes").
-      expect(meta.largePdfProcessing).toMatchObject({
+      expect(meta.largePdfProcessing.current).toMatchObject({
         jobScrapeId: "scrape-id-test",
         pagesEstimate: 500,
         lastStatus: "queued",
       });
-      expect(meta.largePdfProcessing.jobDeadlineAtMs).toBeGreaterThan(
-        meta.largePdfProcessing.submittedAtMs,
+      expect(meta.largePdfProcessing.current.jobDeadlineAtMs).toBeGreaterThan(
+        meta.largePdfProcessing.current.submittedAtMs,
       );
     });
   });
@@ -1473,7 +1478,7 @@ describe("scrapePDFWithFirePDFAsync", () => {
       // Never DELETE a job this caller does not own.
       expect(calls.map(call => call.method)).toEqual(["GET"]);
       // The job is dead — no "processing continues" state may survive.
-      expect(meta.largePdfProcessing).toBeUndefined();
+      expect(meta.largePdfProcessing.current).toBeUndefined();
     });
 
     it("throws for adopted input under ZDR", async () => {

@@ -214,13 +214,17 @@ export async function scrapePDFWithFirePDFAsync(
       });
       // Adopted jobs are live by definition (done ones return on the
       // first poll); the true start time is unknown, so the estimate
-      // conservatively counts from now.
-      meta.largePdfProcessing = {
-        jobScrapeId,
-        pagesEstimate: pagesProcessed,
-        submittedAtMs: submitTime,
-        lastStatus: "running",
-      };
+      // conservatively counts from now. Written into the shared
+      // container so it survives the spread copies between here and the
+      // outer timeout handler.
+      if (meta.largePdfProcessing) {
+        meta.largePdfProcessing.current = {
+          jobScrapeId,
+          pagesEstimate: pagesProcessed,
+          submittedAtMs: submitTime,
+          lastStatus: "running",
+        };
+      }
     } else {
       const submit = await submitJob({
         meta,
@@ -239,11 +243,13 @@ export async function scrapePDFWithFirePDFAsync(
       submissionAccepted = true;
       alreadyDone = submit.alreadyDone;
       initialDelay = submit.retryAfterMs ?? POLL_FLOOR_MS;
-      if (byReference && !alreadyDone) {
+      if (byReference && !alreadyDone && meta.largePdfProcessing) {
         // The job now exists server-side and (per the cancel policy
         // above) will keep running if this scrape is abandoned — record
-        // enough state for the timeout error to say so.
-        meta.largePdfProcessing = {
+        // enough state for the timeout error to say so. Written into the
+        // shared container so it survives the spread copies between here
+        // and the outer timeout handler.
+        meta.largePdfProcessing.current = {
           jobScrapeId,
           pagesEstimate: pagesProcessed,
           submittedAtMs: submitTime,
@@ -271,8 +277,8 @@ export async function scrapePDFWithFirePDFAsync(
           now,
           random,
           onNonTerminalStatus: status => {
-            if (meta.largePdfProcessing) {
-              meta.largePdfProcessing.lastStatus = status;
+            if (meta.largePdfProcessing?.current) {
+              meta.largePdfProcessing.current.lastStatus = status;
             }
           },
         });
@@ -294,9 +300,9 @@ export async function scrapePDFWithFirePDFAsync(
       (error.reason === "terminal_failed" ||
         error.reason === "terminal_expired" ||
         error.reason === "terminal_cancelled");
-    if (jobAlreadyTerminal || terminalReached) {
+    if ((jobAlreadyTerminal || terminalReached) && meta.largePdfProcessing) {
       // The job is dead — a "processing continues" message would lie.
-      meta.largePdfProcessing = undefined;
+      meta.largePdfProcessing.current = undefined;
     }
     if (
       cancelOnAbandon &&
@@ -307,6 +313,13 @@ export async function scrapePDFWithFirePDFAsync(
       await cancelJob({ baseUrl, scrapeId: meta.id, meta, fetchImpl });
     }
     throw submitMayHaveBeenAccepted ? error.originalError : error;
+  }
+
+  // The job reached a terminal state and its result was fetched — nothing
+  // "continues", regardless of how the validations below turn out (their
+  // failAsync throws must not leave stale processing state behind).
+  if (meta.largePdfProcessing) {
+    meta.largePdfProcessing.current = undefined;
   }
 
   // ── Assemble + cache save ─────────────────────────────────────────────
@@ -332,9 +345,6 @@ export async function scrapePDFWithFirePDFAsync(
       note: "FirePDF result did not acknowledge requested page markers",
     });
   }
-  // Job completed within this scrape's lifetime — nothing continues.
-  meta.largePdfProcessing = undefined;
-
   const durationMs = now() - overallStartedAt;
   firePdfAsyncTotalDurationSeconds.observe(durationMs / 1000);
 
