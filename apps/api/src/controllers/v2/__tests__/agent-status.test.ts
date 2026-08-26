@@ -119,9 +119,20 @@ describe("agentStatusController", () => {
     expect(body.effort).toBeUndefined();
   });
 
-  it.each(["python-sdk@4.37.0", "python-sdk@4.0.0", "python-sdk@3.99.99"])(
-    "reports spark-2 as spark-1-pro to incompatible %s clients",
-    async origin => {
+  it.each([
+    // python-sdk < 4.37.1 cannot parse "spark-2" and is lied to
+    ["python-sdk@4.37.0", "spark-1-pro"],
+    ["python-sdk@4.0.0", "spark-1-pro"],
+    ["python-sdk@3.99.99", "spark-1-pro"],
+    // everything else sees the real model
+    ["python-sdk@4.37.1", "spark-2"],
+    ["python-sdk@4.38.0", "spark-2"],
+    ["python-sdk@5.0.0", "spark-2"],
+    ["js-sdk@4.0.0", "spark-2"],
+    ["api", "spark-2"],
+  ] as const)(
+    "reports a spark-2 job as %s to origin %s",
+    async (origin, expectedModel) => {
       (supabaseGetAgentRequestByIdDirect as Mock).mockResolvedValue({
         team_id: "team-123",
         created_at: "2025-01-01T00:00:00Z",
@@ -139,38 +150,10 @@ describe("agentStatusController", () => {
 
       expect(res.status).toHaveBeenCalledWith(200);
       expect(res.json).toHaveBeenCalledWith(
-        expect.objectContaining({ model: "spark-1-pro" }),
+        expect.objectContaining({ model: expectedModel }),
       );
     },
   );
-
-  it.each([
-    "python-sdk@4.37.1",
-    "python-sdk@4.38.0",
-    "python-sdk@5.0.0",
-    "js-sdk@4.0.0",
-    "api",
-  ])("reports spark-2 truthfully to %s", async origin => {
-    (supabaseGetAgentRequestByIdDirect as Mock).mockResolvedValue({
-      team_id: "team-123",
-      created_at: "2025-01-01T00:00:00Z",
-      origin,
-    });
-    (supabaseGetAgentByIdDirect as Mock).mockResolvedValue({
-      id: "job-123",
-      is_successful: false,
-      options: { model: "spark-2" },
-      created_at: "2025-01-01T00:00:00Z",
-    });
-
-    const res = buildRes();
-    await agentStatusController(baseReq, res);
-
-    expect(res.status).toHaveBeenCalledWith(200);
-    expect(res.json).toHaveBeenCalledWith(
-      expect.objectContaining({ model: "spark-2" }),
-    );
-  });
 
   it("keeps a genuine spark-1 model truthful even for old python-sdk clients", async () => {
     (supabaseGetAgentRequestByIdDirect as Mock).mockResolvedValue({
