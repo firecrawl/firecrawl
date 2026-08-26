@@ -480,11 +480,16 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
           // a repeat scrape of the same document should cost one streamed
           // disk read, not a full re-upload. scrapePDFWithFirePDFAsync
           // deliberately skips the by-reference lookup for the same reason
-          // (it runs post-upload) and only saves. Uncacheable requests
-          // (fast mode / maxPages) skip the pre-hash entirely — it could
-          // never produce a hit, and the upload computes its own hash
-          // in-pipeline. A failed pre-hash falls through to the upload
-          // path (legacy fallback semantics), never errors the scrape.
+          // (it runs post-upload) and only saves.
+          //
+          // The local hash also verifies a fire-engine handoff before the
+          // server-side copy, so it is computed whenever a handoff carries
+          // a sha — even for uncacheable requests (maxPages), which skip
+          // only the cache LOOKUP. Requests with neither use skip the
+          // pre-hash entirely; the upload hashes in-pipeline. A failed
+          // pre-hash falls through to the upload path (legacy fallback
+          // semantics), never errors the scrape.
+          const handoff = meta.pdfPrefetch?.gcsReference;
           const { cacheable: byRefCacheable } = cacheKeyShape(
             mode,
             maxPages,
@@ -493,7 +498,7 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
             pageMarkers,
           );
           let localSha256: string | undefined;
-          if (byRefCacheable) {
+          if (byRefCacheable || handoff?.sha256 !== undefined) {
             try {
               localSha256 = await sha256OfFile(
                 tempFilePath,
@@ -510,18 +515,19 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
               );
             }
           }
-          const cachedByRef = localSha256
-            ? await tryGetCached(
-                meta,
-                { key: `raw-${localSha256}` },
-                mode,
-                maxPages,
-                effectivePageCount,
-                includePageMarkdown,
-                includeBlocks,
-                pageMarkers,
-              )
-            : null;
+          const cachedByRef =
+            byRefCacheable && localSha256
+              ? await tryGetCached(
+                  meta,
+                  { key: `raw-${localSha256}` },
+                  mode,
+                  maxPages,
+                  effectivePageCount,
+                  includePageMarkdown,
+                  includeBlocks,
+                  pageMarkers,
+                )
+              : null;
           // A scrape cancelled during the hash/lookup must not return a
           // success out of the cache.
           meta.abort.throwIfAborted();
@@ -536,7 +542,6 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
           // GCS, a server-side rewrite moves it into the fire-pdf input
           // bucket without the bytes transiting this process; otherwise
           // (or if the rewrite fails) stream-upload the local temp file.
-          const handoff = meta.pdfPrefetch?.gcsReference;
           // The handoff hash becomes fire-pdf's idempotency identity, so it
           // must match the raw-byte sha already computed for the cache
           // check above (no second disk read needed); any mismatch falls
