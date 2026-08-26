@@ -481,7 +481,18 @@ export class AutumnService {
       // `unavailable` becomes `null`, which this method's existing contract
       // already means "fail open" — the same answer a null from Autumn gets
       // below, for the same reason.
-      if (shouldRouteToFirebill(customerId)) {
+      //
+      // `gatewayProvisioned` matters more here than on the charge paths. A
+      // partner-provisioned org that misses firebill on a *charge* is billed to
+      // the wrong account; one that misses firebill on the *gate* is refused
+      // outright, because Autumn is asked about a balance the org was never
+      // meant to pay from. So the org this most needs to reach firebill is
+      // exactly the one a sampling bucket might leave behind.
+      if (
+        shouldRouteToFirebill(customerId, {
+          gatewayProvisioned: await this.isGatewayProvisioned(teamId),
+        })
+      ) {
         const result = await firebillCheck({
           customerId,
           entityId: teamId,
