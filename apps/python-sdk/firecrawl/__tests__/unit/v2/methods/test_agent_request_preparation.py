@@ -521,3 +521,23 @@ class TestAgentTraceAndSnapshotParsing:
 
         assert response.snapshot_id == "snap-1"
         assert response.snapshot == '{"price": 42}'
+
+    def test_trace_parses_terminal_events_without_error_key(self):
+        """Terminal events missing the error key still parse (older rows)."""
+        from firecrawl.v2.types import AgentTraceResponse
+
+        events = [
+            {"type": "run.finished", "outcome": "succeeded"},
+            {"type": "agent.finished", "outcome": "succeeded", "durationMs": 7},
+        ]
+
+        response = AgentTraceResponse(
+            **{
+                "success": True,
+                "id": "job-1",
+                "events": [{**self.BASE_EVENT, **e} for e in events],
+            }
+        )
+
+        assert response.events[0].error is None
+        assert response.events[1].error is None

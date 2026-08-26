@@ -1526,7 +1526,9 @@ class AgentTraceRunCancelRequestedEvent(AgentTraceEventBase):
 class AgentTraceRunFinishedEvent(AgentTraceEventBase):
     type: Literal["run.finished"]
     outcome: Literal["succeeded", "failed", "cancelled", "refused", "credit_limit_reached"]
-    error: Optional[AgentTraceError]
+    # The canonical schema always writes this key (nullable), but default it so
+    # a trace with the key absent still parses instead of raising.
+    error: Optional[AgentTraceError] = None
 
 
 class AgentTraceAgentStartedEvent(AgentTraceEventBase):
@@ -1537,7 +1539,8 @@ class AgentTraceAgentFinishedEvent(AgentTraceEventBase):
     type: Literal["agent.finished"]
     outcome: Literal["succeeded", "failed", "cancelled", "refused"]
     duration_ms: int = Field(alias="durationMs")
-    error: Optional[AgentTraceError]
+    # See AgentTraceRunFinishedEvent.error for why this has a default.
+    error: Optional[AgentTraceError] = None
 
 
 class AgentTraceBrowserSessionStartedEvent(AgentTraceEventBase):
