@@ -596,18 +596,25 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
       // fallthrough (ZDR, MinerU-diverted, by-reference failure) and go
       // straight to pdf-parse, which reads from disk — buffering and
       // base64-encoding hundreds of MB here would only burn worker memory.
-      // Inline bytes are only worth materializing when an engine that
-      // accepts them is actually configured; otherwise even small files go
-      // straight to disk-based pdf-parse without a wasted base64 pass.
-      const inlineEngineAvailable =
-        forceFirePDF ||
-        (!!config.FIRE_PDF_ENABLE && !!config.FIRE_PDF_BASE_URL) ||
-        (!!config.RUNPOD_MU_API_KEY && !!config.RUNPOD_MU_POD_ID);
-      const inlineEligible =
-        inlineEngineAvailable &&
+      // Inline bytes are only materialized when an engine that can accept
+      // them on THIS route and size actually exists: FirePDF inline (not
+      // MinerU-diverted; under its cap, or forced up to the wire ceiling)
+      // or RunPod MU (under its own cap). Everything else goes straight to
+      // disk-based pdf-parse without a wasted base64 pass.
+      const firePdfInlineUsable =
+        (forceFirePDF ||
+          (!routeToMinerU &&
+            !!config.FIRE_PDF_ENABLE &&
+            !!config.FIRE_PDF_BASE_URL)) &&
         (fileSizeBytes < FIRE_PDF_MAX_FILE_SIZE ||
           (forceFirePDF &&
             fileSizeBytes <= FIRE_PDF_INLINE_HARD_MAX_FILE_SIZE));
+      const runpodMuUsable =
+        !forceFirePDF &&
+        fileSizeBytes < MAX_FILE_SIZE &&
+        !!config.RUNPOD_MU_API_KEY &&
+        !!config.RUNPOD_MU_POD_ID;
+      const inlineEligible = firePdfInlineUsable || runpodMuUsable;
       const base64Content = inlineEligible
         ? (await readFile(tempFilePath)).toString("base64")
         : undefined;
