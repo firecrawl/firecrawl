@@ -4,7 +4,7 @@ import { fetch as undiciFetch } from "undici";
 import { AbortManagerThrownError } from "../../../lib/abortManager";
 import { firePdfAsyncSubmittedTotal } from "./metrics";
 import { submitResponseSchema } from "./schema";
-import { failAsync, firePdfHeaders } from "./utils";
+import { buildFirePdfJobOptions, failAsync, firePdfHeaders } from "./utils";
 
 type SubmitOutcome = {
   lane: string | undefined;
@@ -110,19 +110,16 @@ export async function submitJob(args: SubmitArgs): Promise<SubmitOutcome> {
     ...(teamConcurrency !== undefined && {
       team_concurrency: teamConcurrency,
     }),
-    options: {
-      ...(pagesProcessed !== undefined && { pages_estimate: pagesProcessed }),
-      ...(maxPages !== undefined && { max_pages: maxPages }),
-      ...(mode !== undefined && { mode }),
-      ...(includePageMarkdown && { include_page_markdown: true }),
-      ...(includeBlocks && { include_blocks: true }),
-      // Intentionally camelCase, unlike its siblings: the fire-pdf async
-      // /jobs options schema named this key `pageMarkers` (fire-pdf
-      // api/src/http/schemas/jobs.ts) while the sync /ocr path uses
-      // `page_markers`. Sending snake_case here would be rejected as an
-      // unknown option.
-      ...(pageMarkers && { pageMarkers: true }),
-    },
+    // Shared with the POST /jobs/lookup adoption client — the two must
+    // build identical options or adoption never matches this job.
+    options: buildFirePdfJobOptions({
+      maxPages,
+      pagesProcessed,
+      mode,
+      includePageMarkdown,
+      includeBlocks,
+      pageMarkers,
+    }),
   };
 
   let status: number;

@@ -11,10 +11,12 @@ import { firePdfAsyncTotalDurationSeconds } from "./metrics";
 import { pollUntilTerminal } from "./poll";
 import { fetchResult } from "./result";
 import type { FirePdfByReferenceInput } from "./by-reference";
+import type { FirePdfAdoptedJobInput } from "./lookup";
 import { FIRE_PDF_ASYNC_MIN_REMAINING_MS } from "./routing";
 import { POLL_FLOOR_MS, POLL_TIMEOUT_BUFFER_MS } from "./schema";
 import { submitJob, SubmitJobMayHaveBeenAcceptedError } from "./submit";
 import {
+  computeByReferenceDeadlineMs,
   computeDeadlineMs,
   defaultSleep,
   failAsync,
@@ -33,11 +35,13 @@ type FirePdfAsyncDeps = {
 
 export async function scrapePDFWithFirePDFAsync(
   meta: Meta,
-  /** Inline base64 (string, the historical shape) or a pre-uploaded GCS
-   * reference for large files. By-reference has no sync fallback — the
-   * bytes don't fit fire-pdf's inline paths — so infra fallbacks below
-   * only apply to the string form. */
-  input: string | FirePdfByReferenceInput,
+  /** Inline base64 (string, the historical shape), a pre-uploaded GCS
+   * reference for large files, or an existing job to adopt (found by
+   * content lookup — no upload, no submit, just poll + fetch). Neither
+   * non-string form has a sync fallback — the bytes don't fit fire-pdf's
+   * inline paths — so infra fallbacks below only apply to the string
+   * form. */
+  input: string | FirePdfByReferenceInput | FirePdfAdoptedJobInput,
   maxPages?: number,
   pagesProcessed?: number,
   mode?: PDFMode,
@@ -52,13 +56,21 @@ export async function scrapePDFWithFirePDFAsync(
   const now = deps.nowImpl ?? Date.now;
   const random = deps.randomImpl ?? Math.random;
   const base64Content = typeof input === "string" ? input : undefined;
+  const adopted =
+    typeof input !== "string" && "adoptScrapeId" in input ? input : undefined;
+  const byReference =
+    typeof input !== "string" && "gcsUri" in input ? input : undefined;
+  // Which fire-pdf job this attempt watches: our own scrape_id, or the
+  // adopted job's. Poll, result-fetch, and cancel must all agree.
+  const jobScrapeId = adopted ? adopted.adoptScrapeId : meta.id;
 
   // Async persists inputs and queue state, so ZDR is excluded until that
   // lifecycle has an explicit delete-on-completion contract.
   if (meta.internalOptions.zeroDataRetention) {
     if (base64Content === undefined) {
-      // By-reference already persisted the input object; the routing layer
-      // must never send ZDR traffic here.
+      // By-reference already persisted the input object, and adoption
+      // reads another submitter's persisted job; the routing layer must
+      // never send ZDR traffic here.
       throw new Error(
         "fire-pdf by-reference submit is not available under zero data retention",
       );
@@ -136,13 +148,25 @@ export async function scrapePDFWithFirePDFAsync(
 
   const overallStartedAt = now();
   const submitTime = now();
-  // Note for large by-reference documents: the no-budget fallback inside
-  // computeDeadlineMs is 5 minutes because scrapeURLLoop kills no-timeout
-  // scrapes at 5 minutes anyway. Callers wanting the full multi-minute
-  // window for big documents must pass an explicit `timeout`.
-  const deadlineFromNow = computeDeadlineMs(remainingMs);
+  // The caller's window governs how long THIS attempt polls: scrapeURLLoop
+  // kills no-timeout scrapes at 5 minutes regardless of what the job is
+  // allowed, so polling past it only burns a dead scrape's cycles.
+  const callerWindowMs = computeDeadlineMs(remainingMs);
+  // The JOB deadline is decoupled from the caller for by-reference
+  // submits: page-scaled, never below the caller window, capped at
+  // 30 min. An inline job's deadline stays the caller window exactly —
+  // when its caller dies, the job is cancelled and the work discarded, so
+  // advertising more time would be a lie. A by-reference job instead
+  // outlives its caller on purpose (cancel is skipped below): it finishes
+  // server-side, lands in the raw-sha cache and the content-adoption
+  // lookup, and the customer's retry — with a fresh scrape_id — converges
+  // instead of restarting a multi-minute document from zero. Callers
+  // wanting first-attempt success must still pass an explicit `timeout`.
+  const deadlineFromNow = byReference
+    ? computeByReferenceDeadlineMs(remainingMs, pagesProcessed)
+    : callerWindowMs;
   const deadlineAt = new Date(submitTime + deadlineFromNow).toISOString();
-  const pollingDeadline = submitTime + deadlineFromNow + POLL_TIMEOUT_BUFFER_MS;
+  const pollingDeadline = submitTime + callerWindowMs + POLL_TIMEOUT_BUFFER_MS;
 
   // Account context for FirePDF's per-team admission observation,
   // snapshotted from the request ACUC into internalOptions at
@@ -154,46 +178,71 @@ export async function scrapePDFWithFirePDFAsync(
       ? rawConcurrency
       : undefined;
 
-  // ── Step 1: POST /jobs ────────────────────────────────────────────────
+  // ── Step 1: POST /jobs (skipped when adopting an existing job) ────────
   let submissionAccepted = false;
   let terminalReached = false;
   let polled: Awaited<ReturnType<typeof pollUntilTerminal>>;
   let fetched: Awaited<ReturnType<typeof fetchResult>>;
+  // What goes on the wire for step 1 — null means nothing does: an
+  // adopted job was submitted by an earlier attempt and is only watched.
+  const wireInput = byReference
+    ? ({
+        kind: "byReference",
+        gcsUri: byReference.gcsUri,
+        sha256: byReference.sha256,
+      } as const)
+    : base64Content !== undefined
+      ? ({ kind: "inline", base64Content } as const)
+      : null;
+  // Ownership policy, in one place: only an abandoned INLINE job is
+  // cancelled. An adopted job is not ours to kill — its owner or other
+  // retries may still be watching. A by-reference job is left running BY
+  // DESIGN: its input is durably content-addressed, so the completion
+  // this caller never sees still lands in the raw-sha cache and the
+  // adoption lookup, converting the customer's retry loop into a cache
+  // hit. The cost is bounded — the job's own deadline (≤30 min) — and
+  // strictly smaller than the redo loop it replaces.
+  const cancelOnAbandon = wireInput?.kind === "inline";
+
   try {
-    const submit = await submitJob({
-      meta,
-      baseUrl,
-      input:
-        typeof input === "string"
-          ? { kind: "inline", base64Content: input }
-          : {
-              kind: "byReference",
-              gcsUri: input.gcsUri,
-              sha256: input.sha256,
-            },
-      maxPages,
-      pagesProcessed,
-      mode,
-      includePageMarkdown,
-      includeBlocks,
-      pageMarkers,
-      deadlineAt,
-      teamConcurrency,
-      fetchImpl,
-    });
-    submissionAccepted = true;
-    terminalReached = submit.alreadyDone;
+    let alreadyDone = false;
+    let initialDelay: number = POLL_FLOOR_MS;
+    if (wireInput === null) {
+      meta.logger.info("FirePDF async adopting existing job", {
+        scrapeId: meta.id,
+        adoptedScrapeId: jobScrapeId,
+      });
+    } else {
+      const submit = await submitJob({
+        meta,
+        baseUrl,
+        input: wireInput,
+        maxPages,
+        pagesProcessed,
+        mode,
+        includePageMarkdown,
+        includeBlocks,
+        pageMarkers,
+        deadlineAt,
+        teamConcurrency,
+        fetchImpl,
+      });
+      submissionAccepted = true;
+      alreadyDone = submit.alreadyDone;
+      initialDelay = submit.retryAfterMs ?? POLL_FLOOR_MS;
+    }
+    terminalReached = alreadyDone;
 
     // ── Step 2: poll until terminal (skip on idempotent-replay done) ──────
-    polled = submit.alreadyDone
+    polled = alreadyDone
       ? {
-          poll: { scrape_id: meta.id, status: "done" as const },
+          poll: { scrape_id: jobScrapeId, status: "done" as const },
           pollCount: 0,
         }
       : await pollUntilTerminal({
           baseUrl,
-          scrapeId: meta.id,
-          initialDelay: submit.retryAfterMs ?? POLL_FLOOR_MS,
+          scrapeId: jobScrapeId,
+          initialDelay,
           pollingDeadline,
           meta,
           fetchImpl,
@@ -206,7 +255,7 @@ export async function scrapePDFWithFirePDFAsync(
     // ── Step 3: GET /jobs/:id/result ────────────────────────────────────
     fetched = await fetchResult({
       baseUrl,
-      scrapeId: meta.id,
+      scrapeId: jobScrapeId,
       meta,
       fetchImpl,
       sleep,
@@ -220,6 +269,7 @@ export async function scrapePDFWithFirePDFAsync(
         error.reason === "terminal_expired" ||
         error.reason === "terminal_cancelled");
     if (
+      cancelOnAbandon &&
       (submissionAccepted || submitMayHaveBeenAccepted) &&
       !terminalReached &&
       !jobAlreadyTerminal

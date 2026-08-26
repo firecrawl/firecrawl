@@ -11,6 +11,7 @@ import {
   FirePdfAsyncFailure,
   scrapePDFWithFirePDFAsync,
 } from "../fire-pdf/async";
+import { lookupAdoptableFirePdfJob } from "../fire-pdf/lookup";
 import {
   getPdfResultFromCache,
   savePdfResultToCache,
@@ -1291,5 +1292,249 @@ describe("scrapePDFWithFirePDFAsync", () => {
         ).rejects.toThrow(/pages estimate/);
       }
     });
+
+    it("advertises a page-scaled deadline decoupled from the caller window", async () => {
+      let submittedBody: any;
+      const fetchImpl: any = async (url: string, init: any) => {
+        if (/\/jobs$/.test(url) && (init?.method ?? "GET") === "POST") {
+          submittedBody = JSON.parse(init.body as string);
+          return jsonResp({
+            status: 200,
+            body: { scrape_id: "x", status: "done", pages_processed: 1000 },
+          });
+        }
+        return jsonResp({
+          status: 200,
+          body: { markdown: "ok", pages_processed: 1000 },
+        });
+      };
+      // Caller has only 60s left, but the JOB gets what the document
+      // needs: 5min base + 1000 pages × 500ms ≈ 13.3min. The job then
+      // outlives this caller by design — cancel-on-abandon is skipped for
+      // by-reference — so the completion feeds the raw-sha cache and the
+      // adoption lookup for the customer's retry.
+      const meta = makeMeta();
+      meta.abort.scrapeTimeout = vi.fn(() => 60_000);
+
+      await scrapePDFWithFirePDFAsync(
+        meta,
+        { ...BY_REF },
+        undefined,
+        1000,
+        undefined,
+        {
+          fetchImpl,
+          fallbackImpl: vi.fn(),
+          sleepImpl: noopSleep,
+        },
+      );
+
+      const delta = new Date(submittedBody.deadline_at).getTime() - Date.now();
+      expect(delta).toBeGreaterThan(12 * 60 * 1_000);
+      expect(delta).toBeLessThanOrEqual(14 * 60 * 1_000);
+    });
+
+    it("does NOT cancel a by-reference job when polling is abandoned", async () => {
+      const { fetchImpl, calls } = makeFetchFromSequence([
+        {
+          matchUrl: /\/jobs$/,
+          matchMethod: "POST",
+          response: {
+            status: 202,
+            body: { scrape_id: "scrape-id-test", status: "queued", lane: "xl" },
+          },
+        },
+        {
+          matchUrl: /\/jobs\/scrape-id-test$/,
+          matchMethod: "GET",
+          response: () => {
+            throw new Error("poll transport failed");
+          },
+        },
+      ]);
+
+      const error = await scrapePDFWithFirePDFAsync(
+        makeMeta(),
+        { ...BY_REF },
+        undefined,
+        500,
+        undefined,
+        { fetchImpl, fallbackImpl: vi.fn(), sleepImpl: noopSleep },
+      ).catch(error => error);
+
+      // Same abandonment as the inline cancel test above — but the
+      // by-reference job is left to finish server-side: its completion
+      // still has value through the raw-sha cache and adoption.
+      expect(error).toBeInstanceOf(FirePdfAsyncFailure);
+      expect(error.reason).toBe("network_error");
+      expect(calls.map(call => call.method)).toEqual(["POST", "GET"]);
+    });
+  });
+
+  describe("adopted job input (content-level retry convergence)", () => {
+    const ADOPTED = {
+      adoptScrapeId: "adopted-123",
+      sha256: "cd".repeat(32),
+    };
+
+    it("polls the adopted scrape_id without submitting anything", async () => {
+      vi.mocked(getPdfResultFromCache).mockClear();
+      vi.mocked(savePdfResultToCache).mockClear();
+      const { fetchImpl, calls } = makeFetchFromSequence([
+        {
+          matchUrl: /\/jobs\/adopted-123$/,
+          matchMethod: "GET",
+          response: {
+            status: 200,
+            body: {
+              scrape_id: "adopted-123",
+              status: "done",
+              pages_processed: 500,
+            },
+          },
+        },
+        {
+          matchUrl: /\/jobs\/adopted-123\/result$/,
+          matchMethod: "GET",
+          response: {
+            status: 200,
+            body: {
+              schema_version: 1,
+              markdown: "# adopted doc",
+              pages_processed: 500,
+              failed_pages: null,
+              partial_pages: null,
+            },
+          },
+        },
+      ]);
+
+      const result = await scrapePDFWithFirePDFAsync(
+        makeMeta(),
+        ADOPTED,
+        undefined,
+        500,
+        undefined,
+        { fetchImpl, fallbackImpl: vi.fn(), sleepImpl: noopSleep },
+      );
+
+      expect(result.markdown).toBe("# adopted doc");
+      // No POST /jobs — the whole point is not duplicating the job.
+      expect(calls.map(call => call.method)).toEqual(["GET", "GET"]);
+      // The adopted result populates the same raw-sha cache a fresh
+      // by-reference run would, so the attempt after next is a cache hit.
+      expect(vi.mocked(savePdfResultToCache)).toHaveBeenCalledWith(
+        { key: `raw-${ADOPTED.sha256}` },
+        expect.anything(),
+        "firepdf",
+        undefined,
+      );
+    });
+
+    it("surfaces an adopted job's terminal failure without cancelling it", async () => {
+      const { fetchImpl, calls } = makeFetchFromSequence([
+        {
+          matchUrl: /\/jobs\/adopted-123$/,
+          matchMethod: "GET",
+          response: {
+            status: 410,
+            body: { scrape_id: "adopted-123", status: "expired" },
+          },
+        },
+      ]);
+
+      const error = await scrapePDFWithFirePDFAsync(
+        makeMeta(),
+        ADOPTED,
+        undefined,
+        500,
+        undefined,
+        { fetchImpl, fallbackImpl: vi.fn(), sleepImpl: noopSleep },
+      ).catch(error => error);
+
+      expect(error).toBeInstanceOf(FirePdfAsyncFailure);
+      expect(error.reason).toBe("terminal_expired");
+      // Never DELETE a job this caller does not own.
+      expect(calls.map(call => call.method)).toEqual(["GET"]);
+    });
+
+    it("throws for adopted input under ZDR", async () => {
+      await expect(
+        scrapePDFWithFirePDFAsync(
+          makeMeta({
+            internalOptions: {
+              zeroDataRetention: true,
+              teamId: "team-x",
+              teamConcurrency: 12,
+              crawlId: undefined,
+            },
+          }),
+          ADOPTED,
+          undefined,
+          500,
+          undefined,
+          { fetchImpl: vi.fn(), fallbackImpl: vi.fn(), sleepImpl: noopSleep },
+        ),
+      ).rejects.toThrow(/zero data retention/);
+    });
+  });
+});
+
+describe("lookupAdoptableFirePdfJob", () => {
+  const SHA = "ef".repeat(32);
+
+  it("returns an adoption handle on a 200 hit", async () => {
+    const { fetchImpl, calls } = makeFetchFromSequence([
+      {
+        matchUrl: /\/jobs\/lookup$/,
+        matchMethod: "POST",
+        response: {
+          status: 200,
+          body: { scrape_id: "found-1", status: "running" },
+        },
+      },
+    ]);
+    const found = await lookupAdoptableFirePdfJob(
+      makeMeta(),
+      SHA,
+      { mode: "auto", pages_estimate: 100 },
+      fetchImpl,
+    );
+    expect(found).toEqual({ adoptScrapeId: "found-1", sha256: SHA });
+    const body = calls[0].body as Record<string, unknown>;
+    expect(body.input_sha256).toBe(SHA);
+    expect(body.options).toEqual({ mode: "auto", pages_estimate: 100 });
+  });
+
+  it("returns null on 404, non-200, malformed bodies, and transport failure", async () => {
+    for (const response of [
+      { status: 404, body: { error: "not_found" } },
+      { status: 503, body: { error: "lookup_failed" } },
+      { status: 200, body: { nope: true } },
+    ]) {
+      const { fetchImpl } = makeFetchFromSequence([
+        { matchUrl: /\/jobs\/lookup$/, matchMethod: "POST", response },
+      ]);
+      expect(
+        await lookupAdoptableFirePdfJob(makeMeta(), SHA, {}, fetchImpl),
+      ).toBeNull();
+    }
+    const throwing: any = async () => {
+      throw new Error("connect ECONNREFUSED");
+    };
+    expect(
+      await lookupAdoptableFirePdfJob(makeMeta(), SHA, {}, throwing),
+    ).toBeNull();
+  });
+
+  it("propagates a scrape abort instead of swallowing it", async () => {
+    const meta = makeMeta();
+    const abortError = new Error("scrape aborted");
+    meta.abort.throwIfAborted = vi.fn(() => {
+      throw abortError;
+    });
+    await expect(
+      lookupAdoptableFirePdfJob(meta, SHA, {}, vi.fn()),
+    ).rejects.toBe(abortError);
   });
 });

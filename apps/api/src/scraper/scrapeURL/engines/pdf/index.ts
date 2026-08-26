@@ -47,11 +47,8 @@ import {
   byReferenceReachableForRequest,
   largePdfLimitBytes,
   mineruDiverted,
-  rewritePdfInputForFirePdf,
-  sha256OfFile,
-  uploadPdfInputForFirePdf,
 } from "./fire-pdf/by-reference";
-import { cacheKeyShape, tryGetCached } from "./fire-pdf/cache";
+import { runFirePdfByReferenceAttempt } from "./fire-pdf/by-reference-flow";
 import { decideFirePdfAsyncRoute } from "./fire-pdf/routing";
 import { scrapePDFWithParsePDF } from "./pdfParse";
 import { toPublicBlocks } from "./blocks";
@@ -475,164 +472,30 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
             },
           );
         } else {
-          // Cache BEFORE upload: the raw-byte sha is the by-reference cache
-          // identity, and it must be checked before the 30-256MB transfer —
-          // a repeat scrape of the same document should cost one streamed
-          // disk read, not a full re-upload. scrapePDFWithFirePDFAsync
-          // deliberately skips the by-reference lookup for the same reason
-          // (it runs post-upload) and only saves.
-          //
-          // The local hash also verifies a fire-engine handoff before the
-          // server-side copy, so it is computed whenever a handoff carries
-          // a sha — even for uncacheable requests (maxPages), which skip
-          // only the cache LOOKUP. Requests with neither use skip the
-          // pre-hash entirely; the upload hashes in-pipeline. A failed
-          // pre-hash falls through to the upload path (legacy fallback
-          // semantics), never errors the scrape.
-          const handoff = meta.pdfPrefetch?.gcsReference;
-          const { cacheable: byRefCacheable } = cacheKeyShape(
+          // The whole attempt — raw-sha cache, content adoption, handoff
+          // rewrite / streaming upload, fresh async submit — lives in
+          // by-reference-flow.ts; this router only gates and reconciles.
+          // A null return means the input never made it into the fire-pdf
+          // bucket: fall through to the legacy chain, whose oversized-skip
+          // warning below still fires (pre-by-reference behavior).
+          const byRefResult = await runFirePdfByReferenceAttempt({
+            meta,
+            tempFilePath,
+            fileSizeBytes,
+            pagesEstimate: effectivePageCount,
             mode,
             maxPages,
             includePageMarkdown,
             includeBlocks,
             pageMarkers,
-          );
-          let localSha256: string | undefined;
-          if (byRefCacheable || handoff?.sha256 !== undefined) {
-            try {
-              localSha256 = await sha256OfFile(
-                tempFilePath,
-                meta.abort.asSignal(),
-              );
-            } catch (error) {
-              meta.logger.warn(
-                "Pre-upload hash of large PDF failed; continuing without cache lookup",
-                {
-                  method: "scrapePDF/firePdfByReference",
-                  error,
-                  scrape_id: meta.id,
-                },
-              );
-            }
-          }
-          const cachedByRef =
-            byRefCacheable && localSha256
-              ? await tryGetCached(
-                  meta,
-                  { key: `raw-${localSha256}` },
-                  mode,
-                  maxPages,
-                  effectivePageCount,
-                  includePageMarkdown,
-                  includeBlocks,
-                  pageMarkers,
-                )
-              : null;
-          // A scrape cancelled during the hash/lookup must not return a
-          // success out of the cache.
-          meta.abort.throwIfAborted();
-          if (cachedByRef) {
-            result = cachedByRef;
+          });
+          if (byRefResult) {
+            result = byRefResult;
             effectivePageCount = reconcilePageCountWithFirePdf(
               effectivePageCount,
               result,
             );
           }
-          // On a miss: when fire-engine already handed the file off via
-          // GCS, a server-side rewrite moves it into the fire-pdf input
-          // bucket without the bytes transiting this process; otherwise
-          // (or if the rewrite fails) stream-upload the local temp file.
-          // The handoff hash becomes fire-pdf's idempotency identity, so it
-          // must match the raw-byte sha already computed for the cache
-          // check above (no second disk read needed); any mismatch falls
-          // back to the hashing upload.
-          const handoffShaMatches =
-            localSha256 !== undefined &&
-            handoff?.sha256 !== undefined &&
-            handoff.sha256.toLowerCase() === localSha256;
-          if (
-            localSha256 !== undefined &&
-            handoff?.sha256 !== undefined &&
-            !handoffShaMatches
-          ) {
-            meta.logger.warn(
-              "fire-engine handoff sha256 does not match local bytes; using streaming upload",
-              {
-                method: "scrapePDF/firePdfByReference",
-                event: "fire_pdf_handoff_sha_mismatch",
-                scrape_id: meta.id,
-              },
-            );
-          }
-          const rewriteEligible =
-            !result &&
-            handoffShaMatches &&
-            handoff!.sizeBytes === fileSizeBytes;
-          const uploaded = result
-            ? null
-            : ((rewriteEligible && handoff
-                ? await rewritePdfInputForFirePdf(meta, {
-                    uri: handoff.uri,
-                    // rewriteEligible implies handoffShaMatches implies defined
-                    sha256: localSha256!,
-                    sizeBytes: fileSizeBytes,
-                    generation: handoff.generation,
-                  })
-                : null) ??
-              // A distinct key when a rewrite was attempted: a timed-out
-              // copy may still complete and must never overwrite this
-              // upload.
-              (await uploadPdfInputForFirePdf(
-                meta,
-                tempFilePath,
-                fileSizeBytes,
-                {
-                  keyVariant: rewriteEligible ? "s" : undefined,
-                  precomputedSha256: localSha256,
-                },
-              )));
-          if (uploaded) {
-            try {
-              result = await scrapePDFWithFirePDFAsync(
-                {
-                  ...meta,
-                  logger: meta.logger.child({
-                    method: "scrapePDF/firePDFAsyncByReference",
-                  }),
-                },
-                uploaded,
-                maxPages,
-                effectivePageCount,
-                mode,
-                undefined,
-                includePageMarkdown,
-                includeBlocks,
-                pageMarkers,
-              );
-              effectivePageCount = reconcilePageCountWithFirePdf(
-                effectivePageCount,
-                result,
-              );
-            } catch (error) {
-              // No inline retry exists at this size, and the legacy chain
-              // below would silently degrade a large document to text-only
-              // extraction. Surface the failure instead.
-              meta.logger.error(
-                "FirePDF by-reference scrape failed (no fallback at this size)",
-                {
-                  method: "scrapePDF/firePDFAsyncByReference",
-                  error,
-                  file_size_bytes: fileSizeBytes,
-                  scrape_id: meta.id,
-                  team_id: meta.internalOptions.teamId,
-                },
-              );
-              throw error;
-            }
-          }
-          // Upload failure: fall through to the legacy chain — the
-          // oversized-skip warning below still fires, preserving the
-          // pre-by-reference behavior.
         }
       }
     }
