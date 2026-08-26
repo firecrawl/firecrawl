@@ -329,6 +329,13 @@ export async function firebillCheck({
     });
 
     if (!response.ok) {
+      // Release the socket. Returning without reading or cancelling leaves the
+      // body unconsumed, and undici keeps the connection pinned until it is —
+      // so a firebill that is erroring would exhaust the pool and turn one
+      // failure into a run of them. Matters most here: this path is the one
+      // that fails open, so the leak would be silently widening the window in
+      // which credit checks are skipped.
+      response.body?.cancel().catch(() => {});
       return unavailable("non-OK response", { status: response.status });
     }
 
