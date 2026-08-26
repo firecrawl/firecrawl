@@ -70,7 +70,11 @@ export async function runFirePdfByReferenceAttempt(
   // key, it is the content-adoption identity (fire-pdf's
   // POST /jobs/lookup) and it verifies a fire-engine handoff
   // before the server-side copy. Uncacheable requests (maxPages)
-  // skip only the cache LOOKUP — they still adopt. A failed
+  // skip only the cache LOOKUP — they still adopt; gating the hash
+  // on cacheability (the pre-adoption rule) would permanently lock
+  // those requests out of adoption. The cost is one extra streamed
+  // disk read — seconds even at 256MB — against the upload and
+  // multi-minute processing run an adoption hit skips. A failed
   // pre-hash falls through to the upload path (which hashes
   // in-pipeline), never errors the scrape.
   const handoff = meta.pdfPrefetch?.gcsReference;
