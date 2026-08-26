@@ -554,9 +554,14 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
           // check above (no second disk read needed); any mismatch falls
           // back to the hashing upload.
           const handoffShaMatches =
+            localSha256 !== undefined &&
             handoff?.sha256 !== undefined &&
             handoff.sha256.toLowerCase() === localSha256;
-          if (handoff?.sha256 !== undefined && !handoffShaMatches) {
+          if (
+            localSha256 !== undefined &&
+            handoff?.sha256 !== undefined &&
+            !handoffShaMatches
+          ) {
             meta.logger.warn(
               "fire-engine handoff sha256 does not match local bytes; using streaming upload",
               {
@@ -575,7 +580,8 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
             : ((rewriteEligible && handoff
                 ? await rewritePdfInputForFirePdf(meta, {
                     uri: handoff.uri,
-                    sha256: localSha256,
+                    // rewriteEligible implies handoffShaMatches implies defined
+                    sha256: localSha256!,
                     sizeBytes: fileSizeBytes,
                     generation: handoff.generation,
                   })
