@@ -866,13 +866,6 @@ class AuditMetadata(BaseModel):
 
 class ScrapeOptions(BaseModel):
     """Options for scraping operations."""
-    # SDK-only (never sent to the API). Large documents that outlive the
-    # request window keep processing server-side; the API's timeout error
-    # then carries details.state == "processing_continues" plus a retry
-    # delay. Unless this is False, the SDK sleeps that long and re-issues
-    # the request — the retry attaches to the in-flight job and returns
-    # the finished result. Bounded (5 resumes / 20 minutes total wait).
-    auto_resume: Optional[bool] = None
 
     formats: Optional[Union["ScrapeFormats", List[FormatOption]]] = None
     headers: Optional[Dict[str, str]] = None

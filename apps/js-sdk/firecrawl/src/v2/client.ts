@@ -1,6 +1,6 @@
 import { HttpClient } from "./utils/httpClient";
 import {
-  scrape,
+  scrape, type ScrapeCallOptions,
   interact as interactMethod,
   stopInteraction as stopInteractionMethod,
 } from "./methods/scrape";
@@ -170,8 +170,8 @@ export class FirecrawlClient {
     url: string,
     options: Opts
   ): Promise<Omit<Document, "json"> & { json?: InferredJsonFromOptions<Opts> }>;
-  async scrape(url: string, options?: ScrapeOptions): Promise<Document>;
-  async scrape(url: string, options?: ScrapeOptions): Promise<Document> {
+  async scrape(url: string, options?: ScrapeCallOptions): Promise<Document>;
+  async scrape(url: string, options?: ScrapeCallOptions): Promise<Document> {
     return scrape(this.http, url, options);
   }
   /**

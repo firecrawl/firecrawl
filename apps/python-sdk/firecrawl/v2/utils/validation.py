@@ -547,8 +547,6 @@ def prepare_scrape_options(options: Optional[ScrapeOptions]) -> Optional[Dict[st
     
     # Convert to dict and handle manual snake_case to camelCase conversion
     options_data = validated_options.model_dump(exclude_none=True)
-    # SDK-only resume behavior — must never reach the wire payload.
-    options_data.pop("auto_resume", None)
     
     # Apply defaults for None fields
     for field, default_value in default_values.items():

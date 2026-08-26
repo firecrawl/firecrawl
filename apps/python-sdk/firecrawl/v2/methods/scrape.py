@@ -12,6 +12,11 @@ from ..types import (
 )
 from ..utils.normalize import normalize_document_input
 from ..utils import HttpClient, handle_response_error, prepare_scrape_options, validate_scrape_options
+from ..utils.auto_resume import (
+    RESUME_MAX_ATTEMPTS,
+    RESUME_MAX_TOTAL_WAIT_S,
+    processing_continues_delay_s,
+)
 
 
 def _prepare_scrape_request(url: str, options: Optional[ScrapeOptions] = None) -> Dict[str, Any]:
@@ -41,48 +46,13 @@ def _prepare_scrape_request(url: str, options: Optional[ScrapeOptions] = None) -
 
 
 
-# Auto-resume bounds: a resume only ever follows the server's explicit
-# "processing continues" signal, and stops after this many resumes or
-# this much total sleeping - whichever comes first.
-_RESUME_MAX_ATTEMPTS = 5
-_RESUME_MAX_TOTAL_WAIT_S = 20 * 60
-_RESUME_MIN_DELAY_S = 5
-_RESUME_MAX_DELAY_S = 10 * 60
-
-
-def _processing_continues_delay_s(response) -> Optional[float]:
-    """Delay (seconds) to wait before re-issuing a request whose document
-    is still processing server-side, or None for every other response.
-
-    Large documents (big PDFs) outlive their request window by design;
-    the API's timeout error then carries
-    ``details.state == "processing_continues"`` plus a retry delay, and a
-    retry attaches to the in-flight job instead of restarting the work.
-    """
-    if response.status_code != 408:
-        return None
-    try:
-        body = response.json()
-    except Exception:
-        return None
-    details = body.get("details") if isinstance(body, dict) else None
-    if (
-        not isinstance(body, dict)
-        or body.get("code") != "SCRAPE_TIMEOUT"
-        or not isinstance(details, dict)
-        or details.get("state") != "processing_continues"
-    ):
-        return None
-    seconds = details.get("retryAfterSeconds")
-    if not isinstance(seconds, (int, float)):
-        try:
-            seconds = float(response.headers.get("Retry-After", ""))
-        except (TypeError, ValueError):
-            seconds = 60
-    return min(_RESUME_MAX_DELAY_S, max(_RESUME_MIN_DELAY_S, float(seconds)))
-
-
-def scrape(client: HttpClient, url: str, options: Optional[ScrapeOptions] = None) -> Document:
+def scrape(
+    client: HttpClient,
+    url: str,
+    options: Optional[ScrapeOptions] = None,
+    *,
+    auto_resume: Optional[bool] = None,
+) -> Document:
     """
     Scrape a single URL and return the document.
     
@@ -98,7 +68,6 @@ def scrape(client: HttpClient, url: str, options: Optional[ScrapeOptions] = None
         Document
     """
     payload = _prepare_scrape_request(url, options)
-    auto_resume = options.auto_resume if options is not None else None
 
     resumes = 0
     resume_waited_s = 0.0
@@ -106,11 +75,11 @@ def scrape(client: HttpClient, url: str, options: Optional[ScrapeOptions] = None
         response = client.post("/v2/scrape", payload)
 
         if not response.ok:
-            delay_s = None if auto_resume is False else _processing_continues_delay_s(response)
+            delay_s = None if auto_resume is False else processing_continues_delay_s(response)
             if (
                 delay_s is not None
-                and resumes < _RESUME_MAX_ATTEMPTS
-                and resume_waited_s + delay_s <= _RESUME_MAX_TOTAL_WAIT_S
+                and resumes < RESUME_MAX_ATTEMPTS
+                and resume_waited_s + delay_s <= RESUME_MAX_TOTAL_WAIT_S
             ):
                 # The document keeps processing server-side; the retry
                 # attaches to the same in-flight job (content adoption)

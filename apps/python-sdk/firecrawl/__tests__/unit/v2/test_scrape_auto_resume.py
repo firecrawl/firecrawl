@@ -7,8 +7,7 @@ import pytest
 
 from firecrawl.v2.methods import scrape as scrape_module
 from firecrawl.v2.methods.aio import scrape as aio_scrape_module
-from firecrawl.v2.types import ScrapeOptions
-from firecrawl.v2.utils.validation import prepare_scrape_options
+from firecrawl.v2.utils import auto_resume as auto_resume_module
 
 DOC_BODY = {"success": True, "data": {"markdown": "# big doc"}}
 
@@ -58,17 +57,17 @@ def test_auto_resume_false_surfaces_timeout(monkeypatch):
     client.post.side_effect = [_processing_continues_408()]
 
     with pytest.raises(Exception):
-        scrape_module.scrape(
-            client, "https://example.com/big.pdf", ScrapeOptions(auto_resume=False)
-        )
+        scrape_module.scrape(client, "https://example.com/big.pdf", auto_resume=False)
     assert client.post.call_count == 1
 
 
-def test_auto_resume_never_reaches_payload():
-    prepared = prepare_scrape_options(ScrapeOptions(auto_resume=True))
-    assert prepared is not None
-    assert "auto_resume" not in prepared
-    assert "autoResume" not in prepared
+def test_auto_resume_never_reaches_payload(monkeypatch):
+    monkeypatch.setattr(scrape_module.time, "sleep", lambda s: None)
+    client = MagicMock()
+    client.post.side_effect = [_response(200, DOC_BODY)]
+    scrape_module.scrape(client, "https://example.com/x", auto_resume=True)
+    payload = client.post.call_args[0][1]
+    assert payload == {"url": "https://example.com/x"}
 
 
 def test_gives_up_after_attempt_bound(monkeypatch):
@@ -97,14 +96,14 @@ def test_plain_timeout_does_not_resume(monkeypatch):
 
 
 def test_delay_clamps_and_header_fallback():
-    assert scrape_module._processing_continues_delay_s(_processing_continues_408(1)) == 5
-    assert scrape_module._processing_continues_delay_s(_processing_continues_408(3600)) == 600
+    assert auto_resume_module.processing_continues_delay_s(_processing_continues_408(1)) == 5
+    assert auto_resume_module.processing_continues_delay_s(_processing_continues_408(3600)) == 600
     header_only = _processing_continues_408(0)
     body = header_only.json.return_value
     del body["details"]["retryAfterSeconds"]
     header_only.headers = {"Retry-After": "90"}
-    assert scrape_module._processing_continues_delay_s(header_only) == 90
-    assert scrape_module._processing_continues_delay_s(_response(500, {})) is None
+    assert auto_resume_module.processing_continues_delay_s(header_only) == 90
+    assert auto_resume_module.processing_continues_delay_s(_response(500, {})) is None
 
 
 def test_async_scrape_resumes(monkeypatch):

@@ -10,10 +10,10 @@ from ...utils.normalize import normalize_document_input
 from ...utils.error_handler import handle_response_error
 from ...utils.validation import prepare_scrape_options, validate_scrape_options
 from ...utils.http_client_async import AsyncHttpClient
-from ..scrape import (
-    _RESUME_MAX_ATTEMPTS,
-    _RESUME_MAX_TOTAL_WAIT_S,
-    _processing_continues_delay_s,
+from ...utils.auto_resume import (
+    RESUME_MAX_ATTEMPTS,
+    RESUME_MAX_TOTAL_WAIT_S,
+    processing_continues_delay_s,
 )
 
 
@@ -30,20 +30,25 @@ async def _prepare_scrape_request(url: str, options: Optional[ScrapeOptions] = N
     return payload
 
 
-async def scrape(client: AsyncHttpClient, url: str, options: Optional[ScrapeOptions] = None) -> Document:
+async def scrape(
+    client: AsyncHttpClient,
+    url: str,
+    options: Optional[ScrapeOptions] = None,
+    *,
+    auto_resume: Optional[bool] = None,
+) -> Document:
     payload = await _prepare_scrape_request(url, options)
-    auto_resume = options.auto_resume if options is not None else None
 
     resumes = 0
     resume_waited_s = 0.0
     while True:
         response = await client.post("/v2/scrape", payload)
         if response.status_code >= 400:
-            delay_s = None if auto_resume is False else _processing_continues_delay_s(response)
+            delay_s = None if auto_resume is False else processing_continues_delay_s(response)
             if (
                 delay_s is not None
-                and resumes < _RESUME_MAX_ATTEMPTS
-                and resume_waited_s + delay_s <= _RESUME_MAX_TOTAL_WAIT_S
+                and resumes < RESUME_MAX_ATTEMPTS
+                and resume_waited_s + delay_s <= RESUME_MAX_TOTAL_WAIT_S
             ):
                 # The document keeps processing server-side; the retry
                 # attaches to the same in-flight job (content adoption)

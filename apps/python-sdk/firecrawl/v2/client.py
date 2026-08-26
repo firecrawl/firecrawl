@@ -151,6 +151,7 @@ class FirecrawlClient:
         self,
         url: str,
         *,
+        auto_resume: Optional[bool] = None,
         formats: Optional[List['FormatOption']] = None,
         headers: Optional[Dict[str, str]] = None,
         include_tags: Optional[List[str]] = None,
@@ -234,7 +235,7 @@ class FirecrawlClient:
                 integration=integration,
             ).items() if v is not None}
         ) if any(v is not None for v in [formats, headers, include_tags, exclude_tags, only_main_content, timeout, wait_for, mobile, parsers, actions, location, skip_tls_verification, remove_base64_images, fast_mode, use_mock, block_ads, proxy, max_age, store_in_cache, lockdown, threat_protection, profile, audit_metadata, integration]) else None
-        return scrape_module.scrape(self.http_client, url, options)
+        return scrape_module.scrape(self.http_client, url, options, auto_resume=auto_resume)
 
     # Research paper index (/v2/search/research)
     @doc(CLIENT_SEARCH_PAPERS_DOC)

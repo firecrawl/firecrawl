@@ -52,10 +52,31 @@ export function processingContinuesDelayMs(err: unknown): number | undefined {
   return Math.min(RESUME_MAX_DELAY_MS, Math.max(RESUME_MIN_DELAY_MS, seconds * 1000));
 }
 
+/**
+ * Options for a direct scrape call. `autoResume` lives here — NOT on the
+ * shared ScrapeOptions — because that type is reused verbatim inside
+ * batch/crawl/search/extract payloads, where an SDK-only key would leak
+ * onto the wire and fail strict endpoints.
+ */
+export type ScrapeCallOptions = ScrapeOptions & {
+  /**
+   * SDK-only (never sent to the API). Large documents (big PDFs) that
+   * outlive the request window keep processing server-side; the API's
+   * timeout error then carries `details.state === "processing_continues"`
+   * and a Retry-After. When this is not `false`, the SDK sleeps that
+   * long and re-issues the same request — the retry attaches to the
+   * in-flight job and returns the finished result, so a large document
+   * behaves like one slow successful call. Bounded (at most 5 resumes /
+   * 20 minutes total wait); set `false` to surface the timeout error
+   * immediately instead.
+   */
+  autoResume?: boolean;
+};
+
 export async function scrape(
   http: HttpClient,
   url: string,
-  options?: ScrapeOptions,
+  options?: ScrapeCallOptions,
   deps: { sleepImpl?: (ms: number) => Promise<void> } = {},
 ): Promise<Document> {
   const sleep =

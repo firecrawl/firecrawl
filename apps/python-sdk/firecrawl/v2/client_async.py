@@ -116,8 +116,12 @@ class AsyncFirecrawlClient:
         url: str,
         **kwargs,
     ):
+        # SDK-only resume control — not a ScrapeOptions field.
+        auto_resume = kwargs.pop("auto_resume", None)
         options = ScrapeOptions(**{k: v for k, v in kwargs.items() if v is not None}) if kwargs else None
-        return await async_scrape.scrape(self.async_http_client, url, options)
+        return await async_scrape.scrape(
+            self.async_http_client, url, options, auto_resume=auto_resume
+        )
 
     # Research paper index (/v2/search/research)
     @doc(ASYNC_CLIENT_SEARCH_PAPERS_DOC)
