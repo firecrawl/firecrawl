@@ -1,4 +1,4 @@
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Tuple
 from ...types import ScrapeOptions, WebhookConfig, Document, BatchScrapeResponse, BatchScrapeJob, PaginationConfig
 from ...utils.http_client_async import AsyncHttpClient
 from ...utils.validation import prepare_scrape_options
@@ -95,7 +95,8 @@ async def get_batch_scrape_status(
     body = response.json()
     payload = _parse_batch_scrape_status_response(body)
     docs = payload["data"]
-    
+    next_url = payload["next"]
+
     # Unset auto_paginate only paginates a terminal job, since following `next`
     # on a running job re-downloads pages on every poll.
     is_terminal = payload["status"] in ("completed", "failed", "cancelled")
@@ -104,21 +105,21 @@ async def get_batch_scrape_status(
         if (pagination_config is not None and pagination_config.auto_paginate is not None)
         else is_terminal
     )
-    if auto_paginate and payload["next"]:
-        docs = await _fetch_all_batch_pages_async(
-            client, 
-            payload["next"], 
-            docs, 
+    if auto_paginate and next_url:
+        docs, next_url = await _fetch_all_batch_pages_async(
+            client,
+            next_url,
+            docs,
             pagination_config
         )
-    
+
     return BatchScrapeJob(
         status=payload["status"],
         completed=payload["completed"],
         total=payload["total"],
         credits_used=payload["credits_used"],
         expires_at=payload["expires_at"],
-        next=payload["next"] if not auto_paginate else None,
+        next=next_url,
         data=docs,
     )
 
@@ -164,70 +165,56 @@ async def _fetch_all_batch_pages_async(
     next_url: str,
     initial_documents: List[Document],
     pagination_config: Optional[PaginationConfig] = None
-) -> List[Document]:
+) -> Tuple[List[Document], Optional[str]]:
     """
-    Fetch all pages of batch scrape results asynchronously.
-    
-    Args:
-        client: Async HTTP client instance
-        next_url: URL for the next page
-        initial_documents: Documents from the first page
-        pagination_config: Optional configuration for pagination limits
-        
+    Fetch pages of batch scrape results until drained or a caller limit stops early.
+
     Returns:
-        List of all documents from all pages
+        Tuple of (documents, unconsumed next URL or None)
+
+    Raises:
+        FirecrawlError: If a page fetch fails; partial data is never returned silently
     """
     documents = initial_documents.copy()
-    current_url = next_url
+    current_url: Optional[str] = next_url
     page_count = 0
-    
-    # Apply pagination limits
+
     max_pages = pagination_config.max_pages if pagination_config else None
     max_results = pagination_config.max_results if pagination_config else None
     max_wait_time = pagination_config.max_wait_time if pagination_config else None
-    
+
     start_time = time.monotonic()
-    
+
     while current_url:
         # Check pagination limits
         if (max_pages is not None) and (page_count >= max_pages):
             break
-            
+
         if (max_wait_time is not None) and (time.monotonic() - start_time) > max_wait_time:
             break
-        
-        # Fetch next page
+
         response = await client.get(current_url)
-        
+
         if response.status_code >= 400:
-            # Log error but continue with what we have
-            import logging
-            logger = logging.getLogger("firecrawl")
-            logger.warning(f"Failed to fetch next page: {response.status_code}")
-            break
-        
-        page_data = response.json()
-        try:
-            page_payload = _parse_batch_scrape_status_response(page_data)
-        except Exception:
-            break
-        
+            handle_response_error(response, "get batch scrape status page")
+
+        page_payload = _parse_batch_scrape_status_response(response.json())
+
         # Add documents from this page
         for document in page_payload["data"]:
             # Check max_results limit
             if (max_results is not None) and (len(documents) >= max_results):
                 break
             documents.append(document)
-        
+
         # Check if we hit max_results limit
         if (max_results is not None) and (len(documents) >= max_results):
-            break
-        
-        # Get next URL
+            return documents, page_payload["next"]
+
         current_url = page_payload["next"]
         page_count += 1
-    
-    return documents
+
+    return documents, current_url
 
 
 async def cancel_batch_scrape(client: AsyncHttpClient, job_id: str) -> bool:

@@ -500,13 +500,13 @@ class TestBatchScrapePagination:
         
         # Test with max_pages=2, max_results=4 (total docs we want)
         pagination_config = PaginationConfig(max_pages=2, max_results=4)
-        result = _fetch_all_batch_pages(
-            self.mock_client, 
-            "https://api.firecrawl.dev/v2/batch/scrape/test-batch-123?page=2", 
+        result, next_url = _fetch_all_batch_pages(
+            self.mock_client,
+            "https://api.firecrawl.dev/v2/batch/scrape/test-batch-123?page=2",
             [Document(**self.sample_doc)],  # 1 initial doc
             pagination_config
         )
-        
+
         # Should have 1 initial + 3 from pages (limited by max_results=4)
         assert len(result) == 4
         assert self.mock_client.get.call_count == 2  # Should fetch 2 pages
@@ -562,6 +562,61 @@ class TestBatchScrapePagination:
         assert client.get.call_count == 2
         assert len(job.data) == 2
         assert job.next is None
+
+    def test_failed_page_fetch_raises(self):
+        """A failed page fetch during aggregation raises instead of returning partial data."""
+        client = Mock()
+        first = Mock()
+        first.ok = True
+        first.json.return_value = {
+            "success": True,
+            "status": "completed",
+            "completed": 2,
+            "total": 2,
+            "next": "https://api.example.com/next1",
+            "data": [{"markdown": "a", "metadata": {"sourceURL": "https://x.com"}}],
+        }
+        bad = Mock()
+        bad.ok = False
+        bad.status_code = 500
+        bad.json.return_value = {"success": False, "error": "internal error"}
+        bad.text = '{"success": false, "error": "internal error"}'
+        client.get.side_effect = [first, bad]
+
+        with pytest.raises(Exception):
+            get_batch_scrape_status(client, "job-1")
+
+    def test_max_pages_truncation_preserves_next(self):
+        """Stopping on max_pages returns the unconsumed cursor instead of None."""
+        client = Mock()
+        first = Mock()
+        first.ok = True
+        first.json.return_value = {
+            "success": True,
+            "status": "completed",
+            "completed": 3,
+            "total": 3,
+            "next": "https://api.example.com/next1",
+            "data": [{"markdown": "a", "metadata": {"sourceURL": "https://x.com"}}],
+        }
+        second = Mock()
+        second.ok = True
+        second.json.return_value = {
+            "success": True,
+            "status": "completed",
+            "completed": 3,
+            "total": 3,
+            "next": "https://api.example.com/next2",
+            "data": [{"markdown": "b", "metadata": {"sourceURL": "https://y.com"}}],
+        }
+        client.get.side_effect = [first, second]
+
+        job = get_batch_scrape_status(
+            client, "job-1", pagination_config=PaginationConfig(max_pages=1)
+        )
+
+        assert len(job.data) == 2
+        assert job.next == "https://api.example.com/next2"
 
 
 class TestAsyncPagination:

@@ -3,7 +3,7 @@ Batch scraping functionality for Firecrawl v2 API.
 """
 
 import time
-from typing import Optional, List, Callable, Dict, Any, Union
+from typing import Optional, List, Callable, Dict, Any, Union, Tuple
 from ..types import (
     BatchScrapeRequest,
     BatchScrapeResponse,
@@ -133,6 +133,7 @@ def get_batch_scrape_status(
     body = response.json()
     payload = _parse_batch_scrape_status_response(body)
     documents = payload["data"]
+    next_url = payload["next"]
 
     # Unset auto_paginate only paginates a terminal job, since following `next`
     # on a running job re-downloads pages on every poll.
@@ -142,11 +143,11 @@ def get_batch_scrape_status(
         if (pagination_config is not None and pagination_config.auto_paginate is not None)
         else is_terminal
     )
-    if auto_paginate and payload["next"]:
-        documents = _fetch_all_batch_pages(
-            client, 
-            payload["next"], 
-            documents, 
+    if auto_paginate and next_url:
+        documents, next_url = _fetch_all_batch_pages(
+            client,
+            next_url,
+            documents,
             pagination_config
         )
 
@@ -156,7 +157,7 @@ def get_batch_scrape_status(
         total=payload["total"],
         credits_used=payload["credits_used"],
         expires_at=payload["expires_at"],
-        next=payload["next"] if not auto_paginate else None,
+        next=next_url,
         data=documents,
     )
 
@@ -205,70 +206,53 @@ def _fetch_all_batch_pages(
     next_url: str,
     initial_documents: List[Document],
     pagination_config: Optional[PaginationConfig] = None
-) -> List[Document]:
+) -> Tuple[List[Document], Optional[str]]:
     """
-    Fetch all pages of batch scrape results.
-    
-    Args:
-        client: HTTP client instance
-        next_url: URL for the next page
-        initial_documents: Documents from the first page
-        pagination_config: Optional configuration for pagination limits
-        
+    Fetch pages of batch scrape results until drained or a caller limit stops early.
+
     Returns:
-        List of all documents from all pages
+        Tuple of (documents, unconsumed next URL or None)
+
+    Raises:
+        FirecrawlError: If a page fetch fails; partial data is never returned silently
     """
     documents = initial_documents.copy()
-    current_url = next_url
+    current_url: Optional[str] = next_url
     page_count = 0
-    
-    # Apply pagination limits
+
     max_pages = pagination_config.max_pages if pagination_config else None
     max_results = pagination_config.max_results if pagination_config else None
     max_wait_time = pagination_config.max_wait_time if pagination_config else None
-    
+
     start_time = time.monotonic()
-    
+
     while current_url:
         # Check pagination limits (treat 0 as a valid limit)
         if (max_pages is not None) and page_count >= max_pages:
             break
-        
+
         if (max_wait_time is not None) and (time.monotonic() - start_time) > max_wait_time:
             break
-        
-        # Fetch next page
+
         response = client.get(current_url)
-        
+
         if not response.ok:
-            # Log error but continue with what we have
-            import logging
-            logger = logging.getLogger("firecrawl")
-            logger.warning("Failed to fetch next page", extra={"status_code": response.status_code})
-            break
-        
-        page_data = response.json()
-        try:
-            page_payload = _parse_batch_scrape_status_response(page_data)
-        except Exception:
-            break
-        
-        # Add documents from this page
+            handle_response_error(response, "get batch scrape status page")
+
+        page_payload = _parse_batch_scrape_status_response(response.json())
+
         for document in page_payload["data"]:
-            # Check max_results limit
             if max_results is not None and len(documents) >= max_results:
                 break
             documents.append(document)
-        
-        # Check if we hit max_results limit after adding all docs from this page
+
         if max_results is not None and len(documents) >= max_results:
-            break
-        
-        # Get next URL
+            return documents, page_payload["next"]
+
         current_url = page_payload["next"]
         page_count += 1
-    
-    return documents
+
+    return documents, current_url
 
 
 def cancel_batch_scrape(
