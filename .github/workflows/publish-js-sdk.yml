@@ -35,10 +35,10 @@ jobs:
         run: |
           pnpm install
           pnpm run build
-          npm publish --access public
+          pnpm publish --access public --no-git-checks
           sed -i 's/"name": "@mendable\/firecrawl-js"/"name": "@mendable\/firecrawl"/g' package.json
-          npm publish --access public
+          pnpm publish --access public --no-git-checks
           sed -i 's/"name": "@mendable\/firecrawl"/"name": "firecrawl"/g' package.json
           sed -i '/"firecrawl":/d' package.json
-          npm publish --access public
+          pnpm publish --access public --no-git-checks
         working-directory: ./apps/js-sdk/firecrawl
