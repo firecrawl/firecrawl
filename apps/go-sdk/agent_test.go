@@ -12,12 +12,13 @@ import (
 )
 
 func TestStartAgentSendsEffort(t *testing.T) {
-	var gotBody string
+	var gotBody, gotMethod, gotPath string
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost || r.URL.Path != "/v2/agent" {
-			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
-		}
+		// Capture only: t.Fatal in a handler goroutine would Goexit without
+		// writing a response, surfacing as a connection error instead of the
+		// assertion message. Assertions run on the test goroutine below.
+		gotMethod, gotPath = r.Method, r.URL.Path
 		data, _ := io.ReadAll(r.Body)
 		gotBody = string(data)
 
@@ -44,6 +45,9 @@ func TestStartAgentSendsEffort(t *testing.T) {
 		t.Fatalf("StartAgent: %v", err)
 	}
 
+	if gotMethod != http.MethodPost || gotPath != "/v2/agent" {
+		t.Errorf("unexpected request: %s %s", gotMethod, gotPath)
+	}
 	if resp.ID != "job-123" {
 		t.Errorf("id = %q, want job-123", resp.ID)
 	}
@@ -86,13 +90,10 @@ func TestStartAgentOmitsEffortWhenUnset(t *testing.T) {
 }
 
 func TestGetAgentTraceParsesEvents(t *testing.T) {
+	var gotMethod, gotPath, gotQuery string
+
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet || r.URL.Path != "/v2/agent/job-123/trace" {
-			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
-		}
-		if r.URL.Query().Get("liveView") != "" {
-			t.Fatalf("unexpected liveView query param: %q", r.URL.RawQuery)
-		}
+		gotMethod, gotPath, gotQuery = r.Method, r.URL.Path, r.URL.RawQuery
 
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
@@ -147,6 +148,12 @@ func TestGetAgentTraceParsesEvents(t *testing.T) {
 		t.Fatalf("GetAgentTrace: %v", err)
 	}
 
+	if gotMethod != http.MethodGet || gotPath != "/v2/agent/job-123/trace" {
+		t.Errorf("unexpected request: %s %s", gotMethod, gotPath)
+	}
+	if gotQuery != "" {
+		t.Errorf("unexpected query params: %q", gotQuery)
+	}
 	if !trace.Success || trace.ID != "job-123" {
 		t.Fatalf("trace = %+v", trace)
 	}
@@ -188,13 +195,10 @@ func TestGetAgentTraceParsesEvents(t *testing.T) {
 }
 
 func TestGetAgentTraceSendsLiveView(t *testing.T) {
+	var gotMethod, gotPath, gotQuery string
+
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet || r.URL.Path != "/v2/agent/job-123/trace" {
-			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
-		}
-		if r.URL.Query().Get("liveView") != "true" {
-			t.Fatalf("liveView query param = %q, want true", r.URL.RawQuery)
-		}
+		gotMethod, gotPath, gotQuery = r.Method, r.URL.Path, r.URL.RawQuery
 
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
@@ -226,6 +230,12 @@ func TestGetAgentTraceSendsLiveView(t *testing.T) {
 		t.Fatalf("GetAgentTrace: %v", err)
 	}
 
+	if gotMethod != http.MethodGet || gotPath != "/v2/agent/job-123/trace" {
+		t.Errorf("unexpected request: %s %s", gotMethod, gotPath)
+	}
+	if gotQuery != "liveView=true" {
+		t.Errorf("liveView query param = %q, want true", gotQuery)
+	}
 	if len(trace.ActiveBrowserSessions) != 1 {
 		t.Fatalf("activeBrowserSessions len = %d, want 1", len(trace.ActiveBrowserSessions))
 	}
@@ -253,10 +263,10 @@ func TestGetAgentTraceRequiresJobID(t *testing.T) {
 }
 
 func TestGetAgentSnapshotParsesResponse(t *testing.T) {
+	var gotMethod, gotPath string
+
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet || r.URL.Path != "/v2/agent/job-123/snapshots/snap-1" {
-			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
-		}
+		gotMethod, gotPath = r.Method, r.URL.Path
 
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
@@ -282,6 +292,9 @@ func TestGetAgentSnapshotParsesResponse(t *testing.T) {
 		t.Fatalf("GetAgentSnapshot: %v", err)
 	}
 
+	if gotMethod != http.MethodGet || gotPath != "/v2/agent/job-123/snapshots/snap-1" {
+		t.Errorf("unexpected request: %s %s", gotMethod, gotPath)
+	}
 	if !snapshot.Success || snapshot.ID != "job-123" || snapshot.SnapshotID != "snap-1" {
 		t.Fatalf("snapshot = %+v", snapshot)
 	}
