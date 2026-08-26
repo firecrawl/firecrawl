@@ -74,17 +74,21 @@ export async function lookupAdoptableFirePdfJob(
       }),
       signal,
     });
-    if (resp.status === 404) return null;
     if (resp.status !== 200) {
-      meta.logger.warn(
-        "FirePDF adoption lookup returned non-200; submitting fresh",
-        {
-          method: "scrapePDF/firePdfByReference",
-          event: "fire_pdf_adoption_lookup_miss",
-          status: resp.status,
-          scrape_id: meta.id,
-        },
-      );
+      // Drain the unused body so undici can return the pooled connection
+      // immediately instead of holding it until GC.
+      await resp.body?.cancel().catch(() => {});
+      if (resp.status !== 404) {
+        meta.logger.warn(
+          "FirePDF adoption lookup returned non-200; submitting fresh",
+          {
+            method: "scrapePDF/firePdfByReference",
+            event: "fire_pdf_adoption_lookup_miss",
+            status: resp.status,
+            scrape_id: meta.id,
+          },
+        );
+      }
       return null;
     }
     const json = (await resp.json()) as {

@@ -81,6 +81,11 @@ export async function runFirePdfByReferenceAttempt(
     includeBlocks,
     pageMarkers,
   );
+  // asSignal() after an abort returns a signal whose listeners never
+  // fire — check the manager directly (outside the swallowing catch
+  // below) so an already-cancelled scrape doesn't stream-read the whole
+  // file first.
+  meta.abort.throwIfAborted();
   let localSha256: string | undefined;
   try {
     localSha256 = await sha256OfFile(tempFilePath, meta.abort.asSignal());
