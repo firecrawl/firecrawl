@@ -145,6 +145,24 @@ describe("JS SDK v2 pagination", () => {
     const res = await getBatchScrapeStatus(http, "jobB", { autoPaginate: true });
     expect(res.data.length).toBe(2);
   });
+
+  test("batch: failed page fetch during aggregation throws instead of returning partial data", async () => {
+    const first = { status: 200, data: { success: true, status: "completed", completed: 3, total: 3, next: "https://api/b1", data: [{ markdown: "a" }] } };
+    const http = makeHttp((url) => {
+      if (url.includes("/v2/batch/scrape/")) return first;
+      throw Object.assign(new Error("Request failed with status code 500"), { response: { status: 500 } });
+    });
+    await expect(getBatchScrapeStatus(http, "jobB")).rejects.toMatchObject({ code: "PAGINATION_FETCH_FAILED" });
+  });
+
+  test("batch: maxPages truncation preserves the unconsumed next cursor", async () => {
+    const first = { status: 200, data: { success: true, status: "completed", completed: 3, total: 3, next: "https://api/b1", data: [{ markdown: "a" }] } };
+    const p1 = { status: 200, data: { success: true, next: "https://api/b2", data: [{ markdown: "b" }] } };
+    const http = makeHttp((url) => (url.includes("/v2/batch/scrape/") ? first : p1));
+    const res = await getBatchScrapeStatus(http, "jobB", { autoPaginate: true, maxPages: 1 });
+    expect(res.data.length).toBe(2);
+    expect(res.next).toBe("https://api/b2");
+  });
 });
 
 

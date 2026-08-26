@@ -120,8 +120,8 @@ export async function getBatchScrapeStatus(
       total: body.total ?? 0,
       creditsUsed: body.creditsUsed,
       expiresAt: body.expiresAt,
-      next: null,
-      data: aggregated,
+      next: aggregated.next,
+      data: aggregated.documents,
     };
   } catch (err: any) {
     if (err?.isAxiosError)

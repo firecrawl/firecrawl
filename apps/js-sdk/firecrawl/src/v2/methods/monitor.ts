@@ -164,15 +164,16 @@ export async function getMonitorCheck(
       return { ...detail, next };
     }
 
+    const paged = await fetchAllPages<MonitorCheckPage>(
+      http,
+      next,
+      detail.pages || [],
+      options,
+    );
     return {
       ...detail,
-      pages: await fetchAllPages<MonitorCheckPage>(
-        http,
-        next,
-        detail.pages || [],
-        options,
-      ),
-      next: null,
+      pages: paged.documents,
+      next: paged.next,
     };
   } catch (err: any) {
     if (err?.isAxiosError) return normalizeAxiosError(err, "get monitor check");
