@@ -9,6 +9,7 @@ after ``RESUME_MAX_ATTEMPTS`` resumes or ``RESUME_MAX_TOTAL_WAIT_S`` of
 total sleeping - whichever comes first.
 """
 
+import math
 from typing import Optional
 
 RESUME_MAX_ATTEMPTS = 5
@@ -38,13 +39,24 @@ def processing_continues_delay_s(response) -> Optional[float]:
         or details.get("state") != "processing_continues"
     ):
         return None
-    seconds = details.get("retryAfterSeconds")
-    if not isinstance(seconds, (int, float)):
+    seconds = _finite_seconds(details.get("retryAfterSeconds"))
+    if seconds is None:
         try:
-            seconds = float(response.headers.get("Retry-After", ""))
+            seconds = _finite_seconds(float(response.headers.get("Retry-After", "")))
         except (TypeError, ValueError):
-            seconds = 60
-    return min(RESUME_MAX_DELAY_S, max(RESUME_MIN_DELAY_S, float(seconds)))
+            seconds = None
+    if seconds is None:
+        seconds = 60.0
+    return min(RESUME_MAX_DELAY_S, max(RESUME_MIN_DELAY_S, seconds))
+
+
+def _finite_seconds(value) -> Optional[float]:
+    # bool is an int subclass in Python — a payload `true` must not read
+    # as 1 second; NaN/Infinity must not survive into the clamp.
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    value = float(value)
+    return value if math.isfinite(value) else None
 
 
 class ResumeTracker:

@@ -103,9 +103,12 @@ export async function scrape(
       }>(
         "/v2/scrape",
         payload,
-        typeof options?.timeout === "number"
-          ? { timeoutMs: options.timeout + 5000 }
-          : {},
+        // The client-side timeout must outlast the server's own wall
+        // (which equals options.timeout, or the API's 5-minute default),
+        // otherwise axios can abort in a photo-finish with the server's
+        // processing_continues response and the resume signal is lost
+        // exactly when it matters.
+        { timeoutMs: (typeof options?.timeout === "number" ? options.timeout : 300_000) + 30_000 },
       );
       if (res.status !== 200 || !res.data?.success) {
         throwForBadResponse(res, "scrape");

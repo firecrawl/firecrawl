@@ -8,6 +8,7 @@ import pytest
 from firecrawl.v2.methods import scrape as scrape_module
 from firecrawl.v2.methods.aio import scrape as aio_scrape_module
 from firecrawl.v2.utils import auto_resume as auto_resume_module
+from firecrawl.v2.utils.error_handler import FirecrawlError
 
 DOC_BODY = {"success": True, "data": {"markdown": "# big doc"}}
 
@@ -56,7 +57,7 @@ def test_auto_resume_false_surfaces_timeout(monkeypatch):
     client = MagicMock()
     client.post.side_effect = [_processing_continues_408()]
 
-    with pytest.raises(Exception):
+    with pytest.raises(FirecrawlError):
         scrape_module.scrape(client, "https://example.com/big.pdf", auto_resume=False)
     assert client.post.call_count == 1
 
@@ -76,7 +77,7 @@ def test_gives_up_after_attempt_bound(monkeypatch):
     client = MagicMock()
     client.post.side_effect = [_processing_continues_408(10)] * 10
 
-    with pytest.raises(Exception):
+    with pytest.raises(FirecrawlError):
         scrape_module.scrape(client, "https://example.com/big.pdf")
     # 1 initial + 5 resumes.
     assert client.post.call_count == 6
@@ -90,7 +91,7 @@ def test_plain_timeout_does_not_resume(monkeypatch):
         _response(408, {"success": False, "code": "SCRAPE_TIMEOUT", "error": "Request timed out"})
     ]
 
-    with pytest.raises(Exception):
+    with pytest.raises(FirecrawlError):
         scrape_module.scrape(client, "https://example.com/slow")
     assert client.post.call_count == 1
 
@@ -104,6 +105,15 @@ def test_delay_clamps_and_header_fallback():
     header_only.headers = {"Retry-After": "90"}
     assert auto_resume_module.processing_continues_delay_s(header_only) == 90
     assert auto_resume_module.processing_continues_delay_s(_response(500, {})) is None
+    # bool / non-finite payload values fall back instead of clamping.
+    bool_payload = _processing_continues_408(0)
+    bool_payload.json.return_value["details"]["retryAfterSeconds"] = True
+    bool_payload.headers = {"Retry-After": "45"}
+    assert auto_resume_module.processing_continues_delay_s(bool_payload) == 45
+    inf_payload = _processing_continues_408(0)
+    inf_payload.json.return_value["details"]["retryAfterSeconds"] = float("inf")
+    inf_payload.headers = {}
+    assert auto_resume_module.processing_continues_delay_s(inf_payload) == 60
 
 
 def test_async_scrape_resumes(monkeypatch):
