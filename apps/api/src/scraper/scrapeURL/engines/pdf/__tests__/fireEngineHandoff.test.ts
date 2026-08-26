@@ -71,10 +71,11 @@ vi.mock("../../../../../lib/gcs-jobs", async () => {
 import {
   largePdfLimitBytes,
   rewritePdfInputForFirePdf,
+  uploadPdfInputForFirePdf,
 } from "../fire-pdf/by-reference";
 import { downloadFireEngineGcsFile } from "../../utils/downloadGcsFile";
 import { config } from "../../../../../config";
-import { stat, readFile as readFileAsync } from "node:fs/promises";
+import { stat, readFile as readFileAsync, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
@@ -293,5 +294,95 @@ describe("fire-engine GCS handoff (positive paths, mocked storage)", () => {
     expect(gcsFake.copies[0].destKey).toMatch(
       /^inputs\/[0-9a-f]{8}-scrape-id-handoff\.pdf$/,
     );
+  });
+});
+
+describe("per-team cap enforcement at the placement functions", () => {
+  const ORIGINAL_BUCKET = config.FIRE_ENGINE_PDF_GCS_BUCKET;
+  const ORIGINAL_IDS = config.PDF_BY_REFERENCE_PRIVILEGED_TEAM_IDS;
+  beforeAll(() => {
+    (config as any).FIRE_ENGINE_PDF_GCS_BUCKET = "fire-engine-scrape-storage";
+  });
+  afterAll(() => {
+    (config as any).FIRE_ENGINE_PDF_GCS_BUCKET = ORIGINAL_BUCKET;
+  });
+  beforeEach(() => {
+    gcsFake.reset();
+    (config as any).PDF_BY_REFERENCE_PRIVILEGED_TEAM_IDS = "team-privileged";
+  });
+  afterEach(() => {
+    (config as any).PDF_BY_REFERENCE_PRIVILEGED_TEAM_IDS = ORIGINAL_IDS;
+  });
+
+  const HANDOFF = {
+    uri: "gs://fire-engine-scrape-storage/pdf-handoff/x.pdf",
+    sha256: "ab".repeat(32),
+    generation: "123456789012345678",
+  };
+
+  function metaForTeam(teamId: string) {
+    const meta = makeMeta();
+    meta.internalOptions.teamId = teamId;
+    return meta;
+  }
+
+  it("rewrite refuses a handoff above the default cap for an unlisted team", async () => {
+    await expect(
+      rewritePdfInputForFirePdf(metaForTeam("team-x"), {
+        ...HANDOFF,
+        sizeBytes: 60 * 1024 * 1024,
+      }),
+    ).resolves.toBeNull();
+    expect(gcsFake.copies).toEqual([]);
+  });
+
+  it("rewrite allows the same size for a privileged team", async () => {
+    const res = await rewritePdfInputForFirePdf(
+      metaForTeam("team-privileged"),
+      {
+        ...HANDOFF,
+        sizeBytes: 60 * 1024 * 1024,
+      },
+    );
+    expect(res).toMatchObject({ sizeBytes: 60 * 1024 * 1024 });
+    expect(gcsFake.copies).toHaveLength(1);
+  });
+
+  it("rewrite refuses above the privileged cap even for a privileged team", async () => {
+    await expect(
+      rewritePdfInputForFirePdf(metaForTeam("team-privileged"), {
+        ...HANDOFF,
+        sizeBytes: 205 * 1024 * 1024,
+      }),
+    ).resolves.toBeNull();
+    expect(gcsFake.copies).toEqual([]);
+  });
+
+  it("upload refuses an over-cap file before reading a byte", async () => {
+    // The path deliberately does not exist: an over-cap upload must be
+    // refused by the size guard alone, before any disk or network I/O.
+    await expect(
+      uploadPdfInputForFirePdf(
+        metaForTeam("team-x"),
+        path.join(tmpdir(), "does-not-exist.pdf"),
+        60 * 1024 * 1024,
+      ),
+    ).resolves.toBeNull();
+  });
+
+  it("upload accepts a within-cap size for a privileged team", async () => {
+    const filePath = path.join(
+      tmpdir(),
+      `upload-test-${crypto.randomUUID()}.pdf`,
+    );
+    await writeFile(filePath, Buffer.alloc(1024, 7));
+    const res = await uploadPdfInputForFirePdf(
+      metaForTeam("team-privileged"),
+      filePath,
+      // Declared size sits over the default tier but under the privileged
+      // one — the guard must use the team's own cap.
+      60 * 1024 * 1024,
+    );
+    expect(res).toMatchObject({ sizeBytes: 60 * 1024 * 1024 });
   });
 });

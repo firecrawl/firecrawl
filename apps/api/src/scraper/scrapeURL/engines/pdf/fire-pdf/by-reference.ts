@@ -71,6 +71,24 @@ export async function rewritePdfInputForFirePdf(
     // bucket named by response data.
     return null;
   }
+  const limitBytes = largePdfLimitBytes(meta);
+  if (source.sizeBytes > limitBytes) {
+    // The routing gate already rejects oversized files, but this placement
+    // is the last step before bytes land in the fire-pdf bucket — it must
+    // enforce the team cap itself rather than trust every caller.
+    meta.logger.warn(
+      "fire-engine PDF handoff exceeds this team's large-PDF limit; refusing rewrite",
+      {
+        method: "scrapePDF/firePdfByReference",
+        event: "fire_pdf_by_reference_rewrite_over_cap",
+        scrape_id: meta.id,
+        team_id: meta.internalOptions.teamId,
+        size_bytes: source.sizeBytes,
+        limit_bytes: limitBytes,
+      },
+    );
+    return null;
+  }
   const destBucket = config.FIRE_PDF_GCS_INPUT_BUCKET;
   const destKey = firePdfInputObjectKey(meta.id);
   const startedAt = Date.now();
@@ -151,7 +169,10 @@ export async function rewritePdfInputForFirePdf(
  * architectural ceiling. Every acquisition path enforces this one number —
  * the direct-download admission, the fire-engine handoff download, the
  * by-reference routing gate, and (as pdfMaxSize) fire-engine's own capture
- * ceiling, so no path can admit bytes another would reject.
+ * ceiling, so no path can admit bytes another would reject. Both placement
+ * functions (the handoff rewrite and the streaming upload) enforce it once
+ * more themselves: nothing lands in the fire-pdf bucket above the team cap
+ * even if a caller skips the gates.
  */
 export function largePdfLimitBytes(meta: Meta): number {
   const teamId = meta.internalOptions.teamId;
@@ -269,6 +290,24 @@ export async function uploadPdfInputForFirePdf(
     keyVariant?: string;
   },
 ): Promise<FirePdfByReferenceInput | null> {
+  const limitBytes = largePdfLimitBytes(meta);
+  if (sizeBytes > limitBytes) {
+    // Same placement-level enforcement as the rewrite: the router's gate
+    // already rejects oversized files, but nothing may reach the fire-pdf
+    // bucket above the team cap regardless of which caller asked.
+    meta.logger.warn(
+      "Large PDF exceeds this team's large-PDF limit; refusing upload",
+      {
+        method: "scrapePDF/firePdfByReference",
+        event: "fire_pdf_by_reference_upload_over_cap",
+        scrape_id: meta.id,
+        team_id: meta.internalOptions.teamId,
+        size_bytes: sizeBytes,
+        limit_bytes: limitBytes,
+      },
+    );
+    return null;
+  }
   const bucketName = config.FIRE_PDF_GCS_INPUT_BUCKET;
   const objectKey = firePdfInputObjectKey(meta.id, opts?.keyVariant);
   const startedAt = Date.now();
