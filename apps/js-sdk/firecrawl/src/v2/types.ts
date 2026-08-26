@@ -1614,6 +1614,21 @@ export class JobTimeoutError extends SdkError {
   }
 }
 
+export class JobFailedError extends SdkError {
+  job: BatchScrapeJob;
+  constructor(job: BatchScrapeJob, jobId: string) {
+    super(
+      `Batch scrape job ${jobId} ended with status ${job.status}`,
+      undefined,
+      "JOB_FAILED",
+      undefined,
+      jobId,
+    );
+    this.name = "JobFailedError";
+    this.job = job;
+  }
+}
+
 export interface QueueStatusResponse {
   success: boolean;
   jobsInQueue: number;

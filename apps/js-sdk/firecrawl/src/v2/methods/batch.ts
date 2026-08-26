@@ -6,6 +6,7 @@ import {
   type BatchScrapeOptions,
   type PaginationConfig,
   JobTimeoutError,
+  JobFailedError,
   SdkError,
 } from "../types";
 import { HttpClient } from "../utils/httpClient";
@@ -178,16 +179,12 @@ export async function waitForBatchCompletion(
   const start = Date.now();
 
   while (true) {
+    let status: BatchScrapeJob | null = null;
     try {
-      const status = await getBatchScrapeStatus(http, jobId);
-
-      if (["completed", "failed", "cancelled"].includes(status.status)) {
-        return status;
-      }
+      status = await getBatchScrapeStatus(http, jobId);
     } catch (err: any) {
       // Don't retry on permanent errors (4xx) - re-throw immediately with jobId context
       if (!isRetryableError(err)) {
-        // Create new error with jobId for better debugging (non-retryable errors like 404)
         if (err instanceof SdkError) {
           const errorWithJobId = new SdkError(
             err.message,
@@ -201,6 +198,13 @@ export async function waitForBatchCompletion(
         throw err;
       }
       // Otherwise, retry after delay - error might be transient (network issue, timeout, 5xx, etc.)
+    }
+
+    if (status) {
+      if (status.status === "completed") return status;
+      if (status.status === "failed" || status.status === "cancelled") {
+        throw new JobFailedError(status, jobId);
+      }
     }
 
     if (timeout != null && Date.now() - start > timeout * 1000) {
