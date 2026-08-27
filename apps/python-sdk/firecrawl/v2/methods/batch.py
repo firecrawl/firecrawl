@@ -234,6 +234,9 @@ def _fetch_all_batch_pages(
         if (max_wait_time is not None) and (time.monotonic() - start_time) > max_wait_time:
             break
 
+        if (max_results is not None) and len(documents) >= max_results:
+            break
+
         response = client.get(current_url)
 
         if not response.ok:
@@ -241,17 +244,11 @@ def _fetch_all_batch_pages(
 
         page_payload = _parse_batch_scrape_status_response(response.json())
 
-        page_fully_consumed = True
-        for document in page_payload["data"]:
-            if max_results is not None and len(documents) >= max_results:
-                page_fully_consumed = False
-                break
-            documents.append(document)
+        if max_results is not None and len(documents) + len(page_payload["data"]) > max_results:
+            # A page that would overshoot max_results is skipped whole, so resume never drops or duplicates data.
+            return documents, current_url
 
-        if max_results is not None and len(documents) >= max_results:
-            # A partially consumed page must be re-read, or its unread tail is lost silently.
-            return documents, (page_payload["next"] if page_fully_consumed else current_url)
-
+        documents.extend(page_payload["data"])
         current_url = page_payload["next"]
         page_count += 1
 

@@ -34,4 +34,12 @@ describe("waitForBatchCompletion terminal handling", () => {
     const http = makeHttp([cancelled]);
     await expect(waitForBatchCompletion(http, "job3", 1)).rejects.toBeInstanceOf(JobFailedError);
   });
+
+  test("rejects instead of looping when a terminal job's pagination page returns success:false", async () => {
+    const completed = { status: 200, data: { success: true, status: "completed", completed: 2, total: 2, next: "https://api/next1", data: [{ markdown: "a" }] } };
+    const badPage = { status: 200, data: { success: false, error: "boom" } };
+    const http = makeHttp([completed, badPage]);
+    await expect(waitForBatchCompletion(http, "job4", 1)).rejects.toMatchObject({ code: "PAGINATION_RESPONSE_INVALID" });
+    expect(http.get).toHaveBeenCalledTimes(2);
+  });
 });

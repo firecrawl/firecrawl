@@ -28,6 +28,7 @@ export async function fetchAllPages<T = Document>(
   while (current) {
     if (maxPages != null && pageCount >= maxPages) break;
     if (maxWaitTime != null && (Date.now() - started) / 1000 > maxWaitTime) break;
+    if (maxResults != null && docs.length >= maxResults) break;
 
     type PagePayload = { success: boolean; next?: string | null; data?: T[] | { pages?: T[]; next?: string | null } };
     let payload: PagePayload;
@@ -45,7 +46,7 @@ export async function fetchAllPages<T = Document>(
       throw new SdkError(
         `Results page ${pageCount + 1} returned an unsuccessful response during pagination`,
         undefined,
-        "PAGINATION_FETCH_FAILED",
+        "PAGINATION_RESPONSE_INVALID",
       );
     }
 
@@ -53,18 +54,12 @@ export async function fetchAllPages<T = Document>(
       ? payload.data
       : payload.data?.pages || [];
     const pageNext = (payload.next ?? (Array.isArray(payload.data) ? null : payload.data?.next) ?? null) as string | null;
-    let pageFullyConsumed = true;
-    for (const d of pageData) {
-      if (maxResults != null && docs.length >= maxResults) {
-        pageFullyConsumed = false;
-        break;
-      }
-      docs.push(d as T);
+
+    if (maxResults != null && docs.length + pageData.length > maxResults) {
+      // A page that would overshoot maxResults is skipped whole, so resume never drops or duplicates data.
+      return { documents: docs, next: current };
     }
-    if (maxResults != null && docs.length >= maxResults) {
-      // A partially consumed page must be re-read, or its unread tail is lost silently.
-      return { documents: docs, next: pageFullyConsumed ? pageNext : current };
-    }
+    docs.push(...(pageData as T[]));
     current = pageNext;
     pageCount += 1;
   }

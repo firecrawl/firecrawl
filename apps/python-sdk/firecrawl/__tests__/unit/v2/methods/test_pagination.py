@@ -508,9 +508,9 @@ class TestBatchScrapePagination:
             pagination_config
         )
 
-        # Should have 1 initial + 3 from pages (limited by max_results=4)
-        assert len(result) == 4
-        assert self.mock_client.get.call_count == 2  # Should fetch 2 pages
+        # 1 initial + page 1's 2 docs = 3; page 2's 2 docs would overshoot 4, so it's skipped whole
+        assert len(result) == 3
+        assert self.mock_client.get.call_count == 2  # Fetches page 2 to size it, then skips it
 
     def test_default_no_pagination_while_running(self):
         """A running job polled with no config makes exactly one request and keeps next."""
@@ -619,8 +619,8 @@ class TestBatchScrapePagination:
         assert len(job.data) == 2
         assert job.next == "https://api.example.com/next2"
 
-    def test_max_results_mid_page_truncation_rereads_current_page(self):
-        """Stopping mid-page on max_results returns the partially consumed page's own URL."""
+    def test_max_results_skips_page_that_would_overshoot(self):
+        """A page that would push past max_results is skipped whole, not partially appended."""
         client = Mock()
         first = Mock()
         first.ok = True
@@ -651,7 +651,7 @@ class TestBatchScrapePagination:
             client, "job-1", pagination_config=PaginationConfig(max_results=2)
         )
 
-        assert len(job.data) == 2
+        assert len(job.data) == 1
         assert job.next == "https://api.example.com/next1"
 
 
