@@ -554,17 +554,11 @@ export class AutumnService {
     }
     const resolvedLockId = lockId ?? `billing_${randomUUID()}`;
 
-    // firebill could not answer. For an ordinary hold that is "proceed
-    // unlocked" — losing a reservation is recoverable and refusing one would
-    // turn a firebill blip into a customer outage.
-    //
-    // For a gated run it is the opposite, and the asymmetry is the whole point
-    // of the gate: no answer means no run token, so the work could never be
-    // billed to the partner and doing it would mean doing it for free. firebill
-    // fails closed when it cannot reach the partner; it cannot fail closed on
-    // its own behalf when it is the thing that is down, so that has to happen
-    // here. Only token-bearing locks are affected — every other caller of this
-    // method keeps today's behaviour exactly.
+    // An ordinary hold proceeds unlocked; refusing would turn a firebill blip
+    // into a customer outage. A gated run is the opposite: no answer means no
+    // run token, so the work could never be billed. firebill fails closed when
+    // it cannot reach the partner, but it cannot do so when it is the thing
+    // that is down.
     const unreachable = (): LockCreditsResult =>
       partnerJobToken
         ? { status: "denied", reason: "gate_unavailable" }
@@ -577,8 +571,8 @@ export class AutumnService {
       // their holds through firebill. The hold still lives in Autumn (firebill
       // keeps no lock state), but only firebill pins the retry/timeout budget
       // around the call. An unavailable answer maps to "skipped" — proceed
-      // unlocked — exactly like a direct-Autumn check failure below, EXCEPT
-      // when a partner gate is involved; see `unreachable` below.
+      // unlocked — like a direct-Autumn check failure below, except when a
+      // partner gate is involved; see `unreachable` above.
       if (
         shouldRouteToFirebill(customerId, {
           gatewayProvisioned: await this.isGatewayProvisioned(teamId),
@@ -615,10 +609,8 @@ export class AutumnService {
         return unreachable();
       }
 
-      // Direct Autumn cannot ask a partner anything. Unreachable in practice —
-      // a partner-provisioned org always routes to firebill, whatever the ramp
-      // says (#4403) — but a token that got here would silently skip the gate,
-      // which is the one failure this whole path exists to prevent.
+      // Unreachable — a partner-provisioned org always routes to firebill
+      // (#4403) — but a token here would silently skip the gate.
       if (partnerJobToken) {
         logger.error(
           "A partner job token reached the direct-Autumn lock path, where no partner can be asked; refusing the hold",
@@ -668,8 +660,7 @@ export class AutumnService {
           error,
         },
       );
-      // Same asymmetry: a gated run that threw before it could ask anyone is
-      // still a run nobody authorized.
+      // A gated run that threw before asking anyone is still unauthorized.
       return unreachable();
     }
   }
@@ -683,14 +674,10 @@ export class AutumnService {
    * just expires, leaving a confirm's work unbilled. Either route lands on the
    * same Autumn lock, so routing is a durability choice, not a correctness one.
    *
-   * **Except when a run token is in hand.** Then it is a correctness choice:
-   * only firebill can report the operation to the partner, so a finalize that
-   * goes direct silently drops the report. And the routing predicate is not
-   * stable across the hour between a lock and its finalize — it re-derives from
-   * a TTL-cached provisioning lookup and a rollout percentage, either of which
-   * can flip in between. A run token only exists because firebill minted it on
-   * the lock, so its presence is proof of the route the lock actually took, and
-   * it wins over asking again.
+   * **Except with a run token in hand**, where it is a correctness choice: only
+   * firebill reports the operation to the partner, and the routing predicate is
+   * not stable across the hour between a lock and its finalize. The token is
+   * proof of the route the lock took, so it wins over asking again.
    */
   async finalizeCreditsLock({
     lockId,

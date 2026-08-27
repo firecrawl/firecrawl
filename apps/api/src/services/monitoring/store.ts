@@ -803,16 +803,9 @@ export async function listMonitorChecks(params: {
 }
 
 /**
- * How many of this monitor's most recent checks, ending at the newest, were
- * skipped for want of credits — counting the leading run only, so one
- * successful check in between resets it to zero.
- *
- * No column and no counter: a streak is derivable from the rows that already
- * exist, and a stored counter would be a second source of truth to keep
- * correct across retries and manual runs.
- *
- * Reads at most `limit` rows, because nothing above needs a number larger
- * than the threshold it is comparing against.
+ * The leading run of credit-skipped checks ending at the newest, so one
+ * successful check resets it. Derived rather than counted: a stored counter
+ * would be a second source of truth to keep correct across retries.
  */
 export async function countRecentConsecutiveSkippedForCredits(params: {
   teamId: string;
@@ -844,13 +837,9 @@ export async function countRecentConsecutiveSkippedForCredits(params: {
 }
 
 /**
- * Stop a monitor's schedule without destroying it.
- *
- * `paused`, not `deleted`: the customer's configuration, targets and history
- * survive, and they (or we) can start it again by flipping one field. Nothing
- * a partner says on their side should be able to delete a customer's monitor.
- * `monitoring_claim_due_monitors` only ever claims `active` rows, so this is
- * enough to stop the runs.
+ * `paused`, not `deleted`: nothing a partner says should destroy a customer's
+ * configuration. `monitoring_claim_due_monitors` only claims `active` rows, so
+ * this is enough to stop the runs.
  */
 export async function pauseMonitor(monitorId: string): Promise<void> {
   await run(

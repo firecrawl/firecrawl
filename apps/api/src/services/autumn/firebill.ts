@@ -21,10 +21,8 @@ type FirebillLockResult =
   | { status: "unavailable" };
 
 /**
- * The `reason` values firebill puts on a denial its partner gate produced. An
- * unrecognised one is dropped rather than passed through: a caller reading an
- * unknown reason as `job_revoked` would stop a customer's schedule over a
- * string it does not understand.
+ * An unrecognised reason is dropped rather than passed through: reading one we
+ * do not understand as `job_revoked` would stop a customer's schedule.
  */
 const LOCK_DENIED_REASONS: readonly LockDeniedReason[] = [
   "out_of_credits",
@@ -67,11 +65,8 @@ function firebillOrgIds(): Set<string> {
 }
 
 /**
- * Whether firebill is reachable at all from this process. Separate from
- * {@link shouldRouteToFirebill} because one caller needs the question without
- * the rollout: a finalize carrying a run token has to follow the lock through
- * firebill whatever the ramp currently says, and the only thing that can stop
- * it is firebill not being configured here.
+ * Configured, without the rollout question — a finalize carrying a run token
+ * follows the lock through firebill whatever the ramp says.
  */
 export function firebillConfigured(): boolean {
   return Boolean(config.FIREBILL_URL && config.FIREBILL_SECRET);
@@ -457,9 +452,7 @@ export async function firebillLock({
         lock_id: lockId,
         expires_at: expiresAt,
         properties,
-        // Present is what arms firebill's partner gate: it asks the partner
-        // whether they will fund this occurrence before Autumn holds anything.
-        // Omitted → today's path exactly, no lookup and no outbound call.
+        // Present arms firebill's partner gate; omitted is today's path.
         ...(partnerJobToken ? { partner_job_token: partnerJobToken } : {}),
       }),
       signal: AbortSignal.timeout(FIREBILL_TIMEOUT_MS),
@@ -601,9 +594,7 @@ export async function firebillFinalize({
         // settle — e.g. the reconciler re-running a check it raced — dedupes
         // upstream instead of settling twice.
         idempotency_key: `fc:finalize:${action}:${lockId}`,
-        // The run token the lock handed back, brought home as the operation id
-        // this settle is reported under. One check, one run, one token, one
-        // charge.
+        // The run token, brought home as this settle's operation id.
         ...(externalRequestId
           ? { external_request_id: externalRequestId }
           : {}),

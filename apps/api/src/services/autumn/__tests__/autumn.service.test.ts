@@ -1245,8 +1245,7 @@ describe("firebill routing", () => {
     );
   });
 
-  // Every lock in production today. The key must be absent, not null: present
-  // is what arms the gate, and firebill decides that on presence.
+  // Absent, not null: firebill arms the gate on presence.
   it("omits the token entirely for a monitor no partner created", async () => {
     state.configRef = firebillConfig();
     mockFetch.mockResolvedValue(
@@ -1270,9 +1269,8 @@ describe("firebill routing", () => {
     }
   });
 
-  // The caller acts on these differently: one skips an occurrence, one stops a
-  // schedule. Collapsing them would either strand a revoked job forever or
-  // cancel a monitor over a customer topping up late.
+  // Collapsing these would strand a revoked job or cancel a monitor over a
+  // customer topping up late.
   it("carries the partner's denial reason through, and only ones it knows", async () => {
     state.configRef = firebillConfig();
     const svc = makeService();
@@ -1295,10 +1293,8 @@ describe("firebill routing", () => {
       ).toEqual({ status: "denied", reason });
     }
 
-    // An unknown reason is dropped rather than passed on: reading one we do
-    // not understand as `job_revoked` would pause a customer's monitor over a
-    // string. A plain denial is the safe reading, and is what Autumn's own
-    // denials already look like.
+    // Reading an unknown reason as `job_revoked` would pause a monitor over a
+    // string; a plain denial is the safe reading.
     mockFetch.mockResolvedValueOnce(
       lockResponse({ success: true, allowed: false, reason: "who-knows" }),
     );
@@ -1312,9 +1308,7 @@ describe("firebill routing", () => {
     ).toEqual({ status: "denied" });
   });
 
-  // Unreachable in practice — a partner-provisioned org always routes to
-  // firebill whatever the ramp says (#4403) — but a token that got here would
-  // silently skip the gate, which is the one failure the gate exists for.
+  // Unreachable (#4403), but a token here would silently skip the gate.
   it("refuses a hold when a job token reaches the direct-Autumn path", async () => {
     state.configRef = {
       ...firebillConfig(),
@@ -1333,10 +1327,7 @@ describe("firebill routing", () => {
     expect(mockCheck).not.toHaveBeenCalled();
   });
 
-  // The gate's whole premise is that it fails closed, and firebill cannot fail
-  // closed on its own behalf when firebill is the thing that is down. Without
-  // this the run proceeds unlocked and ungated: work done, nobody asked, and no
-  // run token to ever bill it under.
+  // firebill cannot fail closed on its own behalf when it is what is down.
   it("denies a gated run when firebill itself cannot answer", async () => {
     state.configRef = firebillConfig();
     const svc = makeService();
@@ -1369,9 +1360,8 @@ describe("firebill routing", () => {
     expect(mockCheck).not.toHaveBeenCalled();
   });
 
-  // The inverse, and it is what makes the change above affordable: an ordinary
-  // hold is still "proceed unlocked" when firebill blinks. Refusing those would
-  // turn a firebill blip into a customer-facing outage.
+  // What makes the above affordable: refusing ordinary holds would turn a
+  // firebill blip into a customer-facing outage.
   it("still skips rather than denies when no partner gate is involved", async () => {
     state.configRef = firebillConfig();
     const svc = makeService();
@@ -1382,10 +1372,8 @@ describe("firebill routing", () => {
     ).toEqual({ status: "skipped" });
   });
 
-  // Routing re-derives from a TTL-cached provisioning lookup and a rollout
-  // percentage, either of which can flip in the hour between a lock and its
-  // finalize. A run token is proof of the route the lock actually took, and
-  // going direct would silently drop the partner's only report of the run.
+  // Routing can flip in the hour between a lock and its finalize; going direct
+  // would drop the partner's only report of the run.
   it("follows the run token to firebill even when routing says otherwise", async () => {
     state.configRef = {
       ...firebillConfig(),

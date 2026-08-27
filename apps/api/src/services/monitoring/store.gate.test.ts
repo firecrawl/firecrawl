@@ -53,9 +53,7 @@ describe("counting a monitor's credit-skip streak", () => {
     expect(await streak()).toBe(3);
   });
 
-  // The streak is what makes a revoked job wait rather than pause on one bad
-  // response, so a single good run in between has to reset it — otherwise a
-  // partner that recovered would still lose the monitor on its next blip.
+  // A partner that recovered must not lose the monitor on its next blip.
   it("stops at the first check that ran", async () => {
     seed(skipped, "completed", skipped);
     expect(await streak()).toBe(1);
@@ -68,8 +66,6 @@ describe("counting a monitor's credit-skip streak", () => {
     expect(await streak()).toBe(0);
   });
 
-  // Nothing above needs a number bigger than the threshold it compares
-  // against, so the query never reads more rows than that.
   it("reads no more rows than the caller's limit", async () => {
     seed(skipped, skipped, skipped, skipped, skipped);
     expect(await streak(3)).toBe(3);
@@ -78,9 +74,7 @@ describe("counting a monitor's credit-skip streak", () => {
 });
 
 describe("pausing a monitor", () => {
-  // paused, not deleted: nothing a partner says on their side should destroy a
-  // customer's configuration, and clearing next_run_at is what actually stops
-  // the runs from being claimed.
+  // Clearing next_run_at is what actually stops the runs being claimed.
   it("stops the schedule without destroying the monitor", async () => {
     updates.length = 0;
     await pauseMonitor("22222222-2222-2222-2222-222222222222");

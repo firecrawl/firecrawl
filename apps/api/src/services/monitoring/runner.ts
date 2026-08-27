@@ -89,17 +89,10 @@ const MONITOR_CHECK_REVOKED_ERROR =
   "Monitor check skipped: the partner has revoked this job.";
 
 /**
- * Consecutive credit-skipped checks — this one included — before a `job_revoked`
- * denial stops the schedule.
- *
- * A 410 is permanent by contract, but pausing a customer's monitor is not a
- * thing to do on one response: a partner deploying a bad build would otherwise
- * take every monitor they fund down with it, and nothing here would start them
- * again. Three occurrences is cheap to wait for — the runs are skipped either
- * way, and the only cost of waiting is three rows.
- *
- * Never reached by a 402: the current denial must itself be `job_revoked`, so
- * a customer simply out of credits is skipped forever and never paused.
+ * Consecutive credit-skipped checks, this one included, before a `job_revoked`
+ * denial stops the schedule. A 410 is permanent, but pausing on one response
+ * would let a partner's bad build take down every monitor they fund. Never
+ * reached by a 402: the current denial must itself be `job_revoked`.
  */
 const MONITOR_GATE_REVOKED_STREAK = 3;
 const TERMINAL_CHECK_STATUSES = new Set([
@@ -378,8 +371,7 @@ async function billMonitorCheck(params: {
         jobId: params.check.id,
       },
       teamId: params.monitor.team_id,
-      // The confirm only. A release bills nothing, so there is no operation to
-      // report and nothing for the partner to hear about.
+      // Confirm only: a release bills nothing, so there is nothing to report.
       externalRequestId: params.check.partner_run_token,
     });
   }
@@ -966,16 +958,9 @@ export async function processMonitorCheckJob(
         endpoint: "monitor",
         jobId: check.id,
       },
-      // Arms the partner's own credit gate inside firebill for a monitor a
-      // gateway partner created. NULL for every other monitor, and NULL is
-      // simply today's lock.
-      //
-      // Not sent when this check already holds a run token. A redelivery of
-      // the same check is the same occurrence, and firebill keeps no lock
-      // table — so re-sending the token would ask the partner to authorize it
-      // a second time, and the second run token would orphan the first
-      // (credits they committed against an operation no cost event ever
-      // names). Autumn dedupes the hold itself via the lock id.
+      // Arms firebill's partner gate; NULL is today's lock. Withheld once this
+      // check holds a run token: a redelivery is the same occurrence, and
+      // asking twice would orphan the first token.
       partnerJobToken: check.partner_run_token
         ? null
         : monitor.partner_job_token,
@@ -993,9 +978,8 @@ export async function processMonitorCheckJob(
           : MONITOR_CHECK_NO_CREDITS_ERROR,
       });
 
-      // A revoked job never becomes unrevoked, so retrying it forever is a
-      // schedule doing nothing but writing skipped rows. Waited out rather
-      // than acted on immediately: see MONITOR_GATE_REVOKED_STREAK.
+      // A revoked job never becomes unrevoked; see MONITOR_GATE_REVOKED_STREAK
+      // for why it is waited out rather than acted on at once.
       const paused =
         revoked &&
         (await countRecentConsecutiveSkippedForCredits({
@@ -1014,8 +998,8 @@ export async function processMonitorCheckJob(
         });
       }
 
-      // A paused monitor must not be handed a next_run_at, and this reads the
-      // status off the object it is given rather than the row.
+      // Reads status off the object it is given, not the row — a paused
+      // monitor must not be handed a next_run_at.
       await updateMonitorScheduleAfterRun({
         monitor: paused ? { ...monitor, status: "paused" } : monitor,
         check,
@@ -1034,11 +1018,8 @@ export async function processMonitorCheckJob(
 
     check = await updateMonitorCheck(check.id, {
       autumn_lock_id: lockId,
-      // Beside the lock id, and for the same span: the finalize carries it
-      // back as the operation id this run is billed under. A token already on
-      // the row wins — the gate was not re-asked, so there is no newer one,
-      // and clobbering it with null would lose the operation the partner
-      // already authorized.
+      // A token already on the row wins: the gate was not re-asked, so there
+      // is no newer one, and null would lose the authorized operation.
       partner_run_token:
         check.partner_run_token ??
         (lock.status === "locked" ? (lock.operationToken ?? null) : null),

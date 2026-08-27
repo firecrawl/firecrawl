@@ -52,26 +52,14 @@ export type LockCreditsParams = {
   expiresAt?: number;
   properties?: Record<string, unknown>;
   featureId?: string;
-  /**
-   * A gateway partner's opaque token for the recurring job this hold is one
-   * occurrence of. Present is what arms the partner's own credit gate inside
-   * firebill: it asks the partner whether they will fund this run *before*
-   * Autumn is asked to hold anything, and only then takes the hold.
-   *
-   * Honoured on the firebill route only — but a partner-provisioned org always
-   * routes there ({@link shouldRouteToFirebill}), so a token that matters is
-   * never on the direct-Autumn path.
-   */
+  /** Arms firebill's partner credit gate, which is asked before Autumn holds anything. */
   partnerJobToken?: string | null;
 };
 
 /**
- * Why a hold was refused, when a gateway partner's own gate is what refused it
- * rather than Autumn. Absent on an ordinary Autumn denial.
- *
- * `job_revoked` is the only one that never resolves on its own, and the only
- * one a caller may answer by stopping a schedule rather than waiting for the
- * next occurrence.
+ * Why a partner's gate refused, as opposed to Autumn. `job_revoked` is the only
+ * one that never resolves on its own, and so the only one a caller may answer
+ * by stopping a schedule.
  */
 export type LockDeniedReason =
   | "out_of_credits"
@@ -81,13 +69,10 @@ export type LockDeniedReason =
 /**
  * Outcome of an Autumn credit lock attempt.
  *
- * - `denied`: Autumn refused (`allowed: false`), or a gateway partner's gate
- *   did — see `reason`; either way the caller must NOT proceed.
- * - `skipped`: billing not in effect (no client, preview team, or API fallback);
- *   the caller should proceed without a lock.
- * - `locked`: reserved; `lockId` must be finalized later. `operationToken` is
- *   the partner's own id for this occurrence, when a partner gate authorized
- *   it: hand it back on the finalize and the run is reported under it.
+ * - `denied`: Autumn refused, or a partner's gate did — see `reason`.
+ * - `skipped`: billing not in effect; proceed without a lock.
+ * - `locked`: reserved; finalize with `lockId`. `operationToken` is the
+ *   partner's id for this occurrence — hand it back on the finalize.
  */
 export type LockCreditsResult =
   | { status: "locked"; lockId: string; operationToken?: string }
@@ -107,12 +92,7 @@ export type FinalizeCreditsLockParams = {
    * loses firebill's durable retry).
    */
   teamId?: string;
-  /**
-   * The partner's own id for the work being settled — for a gated run, the
-   * `operationToken` its lock handed back. firebill carries it as the
-   * operation id the charge is reported under. Ignored on the direct-Autumn
-   * route, which reports to no partner.
-   */
+  /** For a gated run, the `operationToken` its lock handed back. */
   externalRequestId?: string | null;
 };
 
