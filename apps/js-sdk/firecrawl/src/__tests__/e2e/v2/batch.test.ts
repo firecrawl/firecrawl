@@ -2,7 +2,7 @@
  * E2E tests for v2 batch scrape (translated from Python tests)
  */
 import Firecrawl from "../../../index";
-import { JobFailedError } from "../../../v2/types";
+import { JobFailedError, type BatchScrapeJob } from "../../../v2/types";
 import { config } from "dotenv";
 import { getIdentity, getApiUrl } from "./utils/idmux";
 import { describe, test, expect, beforeAll } from "@jest/globals";
@@ -23,17 +23,19 @@ describe("v2.batch e2e", () => {
       "https://docs.firecrawl.dev",
       "https://firecrawl.dev",
     ];
+    let job: BatchScrapeJob;
     try {
-      const job = await client.batchScrape(urls, { options: { formats: ["markdown"] }, pollInterval: 1, timeout: 180 });
-      expect(job.status).toBe("completed");
-      expect(job.completed).toBeGreaterThanOrEqual(0);
-      expect(job.total).toBeGreaterThanOrEqual(0);
-      expect(Array.isArray(job.data)).toBe(true);
+      job = await client.batchScrape(urls, { options: { formats: ["markdown"] }, pollInterval: 1, timeout: 180 });
     } catch (e: any) {
       // failed/cancelled now raise JobFailedError instead of returning a terminal job.
-      expect(e).toBeInstanceOf(JobFailedError);
+      if (!(e instanceof JobFailedError)) throw e;
       expect(["failed"]).toContain(e.job.status);
+      return;
     }
+    expect(job.status).toBe("completed");
+    expect(job.completed).toBeGreaterThanOrEqual(0);
+    expect(job.total).toBeGreaterThanOrEqual(0);
+    expect(Array.isArray(job.data)).toBe(true);
   }, 240_000);
 
   test("batch scrape with wait returns job id for error retrieval", async () => {
@@ -68,8 +70,9 @@ describe("v2.batch e2e", () => {
 
   test("wait batch with all params", async () => {
     const urls = ["https://docs.firecrawl.dev", "https://firecrawl.dev"];
+    let job: BatchScrapeJob;
     try {
-      const job = await client.batchScrape(urls, {
+      job = await client.batchScrape(urls, {
         options: {
           formats: [
             "markdown",
@@ -85,15 +88,16 @@ describe("v2.batch e2e", () => {
         pollInterval: 1,
         timeout: 180,
       });
-      expect(job.status).toBe("completed");
-      expect(job.completed).toBeGreaterThanOrEqual(0);
-      expect(job.total).toBeGreaterThanOrEqual(0);
-      expect(Array.isArray(job.data)).toBe(true);
     } catch (e: any) {
       // failed/cancelled now raise JobFailedError instead of returning a terminal job.
-      expect(e).toBeInstanceOf(JobFailedError);
+      if (!(e instanceof JobFailedError)) throw e;
       expect(["failed", "cancelled"]).toContain(e.job.status);
+      return;
     }
+    expect(job.status).toBe("completed");
+    expect(job.completed).toBeGreaterThanOrEqual(0);
+    expect(job.total).toBeGreaterThanOrEqual(0);
+    expect(Array.isArray(job.data)).toBe(true);
   }, 300_000);
 
   test("cancel batch", async () => {
