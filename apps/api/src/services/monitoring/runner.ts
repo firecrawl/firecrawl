@@ -386,6 +386,25 @@ async function billMonitorCheck(params: {
   if (params.actualCredits <= 0 || !config.USE_DB_AUTHENTICATION)
     return settled;
 
+  // The settle did not land, so Autumn has nothing and the hold expires by
+  // itself. Debiting the team's ledger anyway charges them for a run Autumn
+  // never billed, leaving the two ledgers disagreeing while the row already
+  // says `failed`. `autumnTrackInRequest` below would be a lie too: it tells
+  // the batch Autumn already has this, and it does not.
+  //
+  // So nothing is charged. Firecrawl absorbs the run — the direction this path
+  // errs everywhere else — and `billing_status: "failed"` plus the error beside
+  // it are how it is found.
+  if (!settled) {
+    logger.error("Not billing a monitor check whose settle did not land", {
+      monitorId: params.monitor.id,
+      checkId: params.check.id,
+      lockId: params.lockId,
+      actualCredits: params.actualCredits,
+    });
+    return false;
+  }
+
   await getBillingQueue().add(
     "bill_team",
     {
