@@ -706,7 +706,7 @@ export interface Document {
 
 // Pagination configuration for auto-fetching pages from v2 endpoints that return a `next` URL
 export interface PaginationConfig {
-  /** When true (default), automatically follow `next` links and aggregate all documents. */
+  /** Unset lets the SDK decide: batch status paginates only once the job is terminal; other endpoints keep auto-pagination on. Explicit true/false always wins. */
   autoPaginate?: boolean;
   /** Maximum number of additional pages to fetch after the first response. */
   maxPages?: number;

@@ -163,6 +163,15 @@ describe("JS SDK v2 pagination", () => {
     expect(res.data.length).toBe(2);
     expect(res.next).toBe("https://api/b2");
   });
+
+  test("batch: maxResults mid-page truncation re-reads the partially consumed page", async () => {
+    const first = { status: 200, data: { success: true, status: "completed", completed: 3, total: 3, next: "https://api/b1", data: [{ markdown: "a" }] } };
+    const p1 = { status: 200, data: { success: true, next: "https://api/b2", data: [{ markdown: "b" }, { markdown: "c" }] } };
+    const http = makeHttp((url) => (url.includes("/v2/batch/scrape/") ? first : p1));
+    const res = await getBatchScrapeStatus(http, "jobB", { autoPaginate: true, maxResults: 2 });
+    expect(res.data.length).toBe(2);
+    expect(res.next).toBe("https://api/b1");
+  });
 });
 
 

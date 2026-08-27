@@ -26,6 +26,7 @@ from firecrawl.v2.methods.aio.batch import (
     get_batch_scrape_status_page as get_batch_scrape_status_page_async,
     _fetch_all_batch_pages_async,
 )
+from firecrawl.v2.utils import FirecrawlError
 
 
 class TestPaginationConfig:
@@ -583,7 +584,7 @@ class TestBatchScrapePagination:
         bad.text = '{"success": false, "error": "internal error"}'
         client.get.side_effect = [first, bad]
 
-        with pytest.raises(Exception):
+        with pytest.raises(FirecrawlError):
             get_batch_scrape_status(client, "job-1")
 
     def test_max_pages_truncation_preserves_next(self):
@@ -617,6 +618,41 @@ class TestBatchScrapePagination:
 
         assert len(job.data) == 2
         assert job.next == "https://api.example.com/next2"
+
+    def test_max_results_mid_page_truncation_rereads_current_page(self):
+        """Stopping mid-page on max_results returns the partially consumed page's own URL."""
+        client = Mock()
+        first = Mock()
+        first.ok = True
+        first.json.return_value = {
+            "success": True,
+            "status": "completed",
+            "completed": 3,
+            "total": 3,
+            "next": "https://api.example.com/next1",
+            "data": [{"markdown": "a", "metadata": {"sourceURL": "https://x.com"}}],
+        }
+        second = Mock()
+        second.ok = True
+        second.json.return_value = {
+            "success": True,
+            "status": "completed",
+            "completed": 3,
+            "total": 3,
+            "next": "https://api.example.com/next2",
+            "data": [
+                {"markdown": "b", "metadata": {"sourceURL": "https://y.com"}},
+                {"markdown": "c", "metadata": {"sourceURL": "https://z.com"}},
+            ],
+        }
+        client.get.side_effect = [first, second]
+
+        job = get_batch_scrape_status(
+            client, "job-1", pagination_config=PaginationConfig(max_results=2)
+        )
+
+        assert len(job.data) == 2
+        assert job.next == "https://api.example.com/next1"
 
 
 class TestAsyncPagination:

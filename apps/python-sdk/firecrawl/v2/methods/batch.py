@@ -241,13 +241,16 @@ def _fetch_all_batch_pages(
 
         page_payload = _parse_batch_scrape_status_response(response.json())
 
+        page_fully_consumed = True
         for document in page_payload["data"]:
             if max_results is not None and len(documents) >= max_results:
+                page_fully_consumed = False
                 break
             documents.append(document)
 
         if max_results is not None and len(documents) >= max_results:
-            return documents, page_payload["next"]
+            # A partially consumed page must be re-read, or its unread tail is lost silently.
+            return documents, (page_payload["next"] if page_fully_consumed else current_url)
 
         current_url = page_payload["next"]
         page_count += 1

@@ -53,12 +53,17 @@ export async function fetchAllPages<T = Document>(
       ? payload.data
       : payload.data?.pages || [];
     const pageNext = (payload.next ?? (Array.isArray(payload.data) ? null : payload.data?.next) ?? null) as string | null;
+    let pageFullyConsumed = true;
     for (const d of pageData) {
-      if (maxResults != null && docs.length >= maxResults) break;
+      if (maxResults != null && docs.length >= maxResults) {
+        pageFullyConsumed = false;
+        break;
+      }
       docs.push(d as T);
     }
     if (maxResults != null && docs.length >= maxResults) {
-      return { documents: docs, next: pageNext };
+      // A partially consumed page must be re-read, or its unread tail is lost silently.
+      return { documents: docs, next: pageFullyConsumed ? pageNext : current };
     }
     current = pageNext;
     pageCount += 1;
