@@ -2,6 +2,7 @@ import { Response } from "express";
 import { z } from "zod";
 import { logger as _logger } from "../../lib/logger";
 import { RequestWithAuth } from "./types";
+import { externalRequestId } from "../../lib/external-request-id";
 import { getScrapeZDR } from "../../lib/zdr-helpers";
 import { getMonitorDiffArtifact } from "../../lib/gcs-monitoring";
 import {
@@ -210,6 +211,11 @@ export async function createMonitorController(
     input,
     nextRunAt: schedule.nextRunAt,
     intervalMs: schedule.intervalMs,
+    // The same header every other gateway route reads, and the same helper —
+    // an oversized value is dropped and the monitor is still created, because
+    // a customer's request must not fail over telemetry. Kept on the row
+    // because a scheduled run writes no `requests` row to find it on later.
+    partnerJobToken: externalRequestId(req),
   });
 
   trackMonitorConfiguredInterest({

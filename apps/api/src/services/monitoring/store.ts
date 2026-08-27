@@ -351,6 +351,19 @@ export async function createMonitor(params: {
   input: CreateMonitorRequest;
   nextRunAt: Date;
   intervalMs: number;
+  /**
+   * The gateway partner's opaque token for this monitor, off the creation
+   * request's `External-Request-Id` header.
+   *
+   * A scheduled run writes no `requests` row — the runner wakes on
+   * `next_run_at`, so nothing calls `logRequest` — which is why the token is
+   * kept here rather than found again later. firebill presents it to the
+   * partner before each run; it is never billed itself.
+   *
+   * Written for every monitor, gateway or not. Conditioning the write would
+   * mean a partner-provisioning lookup on the create path to save a NULL.
+   */
+  partnerJobToken?: string | null;
 }): Promise<MonitorRow> {
   const targets = ensureTargetIds(params.input.targets);
   const judgeEnabled =
@@ -376,6 +389,7 @@ export async function createMonitor(params: {
     targets,
     webhook: params.input.webhook ?? null,
     notification: params.input.notification ?? null,
+    partner_job_token: params.partnerJobToken ?? null,
   };
   if (params.input.goal !== undefined) {
     insert.goal = normalizeGoal(params.input.goal);

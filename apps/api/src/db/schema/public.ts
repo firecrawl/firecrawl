@@ -454,6 +454,7 @@ export const monitors = pgTable("monitors", {
   deleted_at: ts("deleted_at"),
   goal: text("goal"),
   judge_enabled: boolean("judge_enabled").notNull().default(false),
+  partner_job_token: text("partner_job_token"),
 });
 
 export const slack_installations = pgTable("slack_installations", {
