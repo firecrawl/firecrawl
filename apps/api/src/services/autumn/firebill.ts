@@ -39,6 +39,12 @@ function lockDeniedReason(value: unknown): LockDeniedReason | undefined {
 // direct Autumn client.
 const FIREBILL_TIMEOUT_MS = 5000;
 
+// A gated lock legitimately does more: firebill asks the partner (2.5s ceiling)
+// before the Autumn hold (2s), on top of the funding lookup. Giving up at 5s
+// would abandon a call that is still going to take the hold - the run marked
+// skipped here, the balance reserved there.
+const FIREBILL_GATED_LOCK_TIMEOUT_MS = 10000;
+
 // Safe to retry because the idempotency key is stable across attempts: if the
 // first attempt did land (ambiguous confirm timeout), Autumn dedupes the second.
 // Small because a caller may be waiting, and a firebill refusing events usually
@@ -455,7 +461,9 @@ export async function firebillLock({
         // Present arms firebill's partner gate; omitted is today's path.
         ...(partnerJobToken ? { partner_job_token: partnerJobToken } : {}),
       }),
-      signal: AbortSignal.timeout(FIREBILL_TIMEOUT_MS),
+      signal: AbortSignal.timeout(
+        partnerJobToken ? FIREBILL_GATED_LOCK_TIMEOUT_MS : FIREBILL_TIMEOUT_MS,
+      ),
     });
 
     if (!response.ok) {

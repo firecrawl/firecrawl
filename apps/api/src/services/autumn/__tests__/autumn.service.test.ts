@@ -1271,6 +1271,49 @@ describe("firebill routing", () => {
 
   // Collapsing these would strand a revoked job or cancel a monitor over a
   // customer topping up late.
+  // A gated lock waits longer because it does more: firebill asks the partner
+  // before taking the hold. Giving up at 5s would abandon a call that still
+  // takes the hold - run skipped here, balance reserved there.
+  it("waits longer for a gated lock than an ordinary one", async () => {
+    state.configRef = firebillConfig();
+    mockFetch.mockResolvedValue(
+      lockResponse({ success: true, allowed: true, lock_id: "lock-1" }),
+    );
+    const svc = makeService();
+
+    // Capture the deadline each call asks for; two AbortSignals always differ
+    // as objects, so only the number proves anything.
+    const timeouts: number[] = [];
+    const realTimeout = AbortSignal.timeout.bind(AbortSignal);
+    const spy = vi
+      .spyOn(AbortSignal, "timeout")
+      .mockImplementation((ms: number) => {
+        timeouts.push(ms);
+        return realTimeout(ms);
+      });
+
+    await svc.lockCredits({ teamId: "team-1", value: 1, lockId: "lock-1" });
+    const plain = mockFetch.mock.calls
+      .filter(([url]) => String(url).endsWith("/v1/lock"))
+      .pop();
+
+    await svc.lockCredits({
+      teamId: "team-1",
+      value: 1,
+      lockId: "lock-1",
+      partnerJobToken: "job-token-abc",
+    });
+    const gated = mockFetch.mock.calls
+      .filter(([url]) => String(url).endsWith("/v1/lock"))
+      .pop();
+
+    expect(timeouts.at(-1)).toBe(10000);
+    expect(timeouts.at(-2)).toBe(5000);
+    expect(gated![1].signal).toBeDefined();
+    expect(plain![1].signal).toBeDefined();
+    spy.mockRestore();
+  });
+
   it("carries the partner's denial reason through, and only ones it knows", async () => {
     state.configRef = firebillConfig();
     const svc = makeService();
