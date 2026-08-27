@@ -546,6 +546,7 @@ export class AutumnService {
     expiresAt,
     properties,
     featureId = CREDITS_FEATURE_ID,
+    partnerJobToken,
   }: LockCreditsParams): Promise<LockCreditsResult> {
     if (!autumnClient || this.isPreviewTeam(teamId)) {
       return { status: "skipped" };
@@ -576,14 +577,36 @@ export class AutumnService {
           // monitor runner's convention, when the caller sets none.
           expiresAt: expiresAt ?? Date.now() + 60 * 60 * 1000,
           properties,
+          partnerJobToken,
         });
         if (result.status === "locked") {
-          return { status: "locked", lockId: result.lockId };
+          return {
+            status: "locked",
+            lockId: result.lockId,
+            ...(result.operationToken
+              ? { operationToken: result.operationToken }
+              : {}),
+          };
         }
         if (result.status === "denied") {
-          return { status: "denied" };
+          return {
+            status: "denied",
+            ...(result.reason ? { reason: result.reason } : {}),
+          };
         }
         return { status: "skipped" };
+      }
+
+      // Direct Autumn cannot ask a partner anything. Unreachable in practice —
+      // a partner-provisioned org always routes to firebill, whatever the ramp
+      // says (#4403) — but a token that got here would silently skip the gate,
+      // which is the one failure this whole path exists to prevent.
+      if (partnerJobToken) {
+        logger.error(
+          "A partner job token reached the direct-Autumn lock path, where no partner can be asked; refusing the hold",
+          { teamId, lockId: resolvedLockId },
+        );
+        return { status: "denied", reason: "gate_unavailable" };
       }
 
       const { allowed } = await autumnClient.check({
@@ -646,9 +669,16 @@ export class AutumnService {
     overrideValue,
     properties,
     teamId,
+    externalRequestId,
   }: FinalizeCreditsLockParams): Promise<void> {
     if (teamId && (await this.isRoutedThroughFirebill(teamId))) {
-      await firebillFinalize({ lockId, action, overrideValue, properties });
+      await firebillFinalize({
+        lockId,
+        action,
+        overrideValue,
+        properties,
+        externalRequestId,
+      });
       return;
     }
 

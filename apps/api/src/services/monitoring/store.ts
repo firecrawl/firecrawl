@@ -802,6 +802,71 @@ export async function listMonitorChecks(params: {
   return data as MonitorCheckRow[];
 }
 
+/**
+ * How many of this monitor's most recent checks, ending at the newest, were
+ * skipped for want of credits — counting the leading run only, so one
+ * successful check in between resets it to zero.
+ *
+ * No column and no counter: a streak is derivable from the rows that already
+ * exist, and a stored counter would be a second source of truth to keep
+ * correct across retries and manual runs.
+ *
+ * Reads at most `limit` rows, because nothing above needs a number larger
+ * than the threshold it is comparing against.
+ */
+export async function countRecentConsecutiveSkippedForCredits(params: {
+  teamId: string;
+  monitorId: string;
+  limit: number;
+}): Promise<number> {
+  const rows = await run(
+    () =>
+      dbRr
+        .select({ status: schema.monitor_checks.status })
+        .from(schema.monitor_checks)
+        .where(
+          and(
+            eq(schema.monitor_checks.monitor_id, params.monitorId),
+            eq(schema.monitor_checks.team_id, params.teamId),
+          ),
+        )
+        .orderBy(desc(schema.monitor_checks.created_at))
+        .limit(params.limit),
+    "Failed to count skipped monitor checks",
+  );
+
+  let streak = 0;
+  for (const row of rows) {
+    if (row.status !== "skipped_no_credits") break;
+    streak += 1;
+  }
+  return streak;
+}
+
+/**
+ * Stop a monitor's schedule without destroying it.
+ *
+ * `paused`, not `deleted`: the customer's configuration, targets and history
+ * survive, and they (or we) can start it again by flipping one field. Nothing
+ * a partner says on their side should be able to delete a customer's monitor.
+ * `monitoring_claim_due_monitors` only ever claims `active` rows, so this is
+ * enough to stop the runs.
+ */
+export async function pauseMonitor(monitorId: string): Promise<void> {
+  await run(
+    () =>
+      db
+        .update(schema.monitors)
+        .set({
+          status: "paused",
+          next_run_at: null,
+          updated_at: new Date().toISOString(),
+        })
+        .where(eq(schema.monitors.id, monitorId)),
+    "Failed to pause monitor",
+  );
+}
+
 export async function updateMonitorCheck(
   checkId: string,
   patch: Partial<MonitorCheckRow>,

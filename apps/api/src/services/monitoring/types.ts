@@ -353,6 +353,13 @@ export type MonitorCheckRow = {
   reserved_credits: number | null;
   actual_credits: number | null;
   autumn_lock_id: string | null;
+  /**
+   * The gateway partner's own id for this occurrence, minted when their credit
+   * gate authorized it. Carried back on the finalize as the operation id the
+   * run is billed under. Beside `autumn_lock_id` because it has the same
+   * lifetime: one check row, one hold, one settle.
+   */
+  partner_run_token: string | null;
   billing_status:
     | "not_applicable"
     | "reserved"

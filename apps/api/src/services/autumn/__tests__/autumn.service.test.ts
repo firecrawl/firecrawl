@@ -1209,6 +1209,169 @@ describe("firebill routing", () => {
     expect(mockCheck).not.toHaveBeenCalled();
   });
 
+  // -------------------------------------------------------------------------
+  // The partner's credit gate (firebill asks; we only carry the tokens)
+  // -------------------------------------------------------------------------
+
+  it("sends a partner job token so firebill can arm the gate, and brings the run token back", async () => {
+    state.configRef = firebillConfig();
+    mockFetch.mockResolvedValue(
+      lockResponse({
+        success: true,
+        allowed: true,
+        lock_id: "monitor_check-1",
+        operation_token: "run-42",
+      }),
+    );
+    const svc = makeService();
+
+    const result = await svc.lockCredits({
+      teamId: "team-1",
+      value: 10,
+      lockId: "monitor_check-1",
+      partnerJobToken: "job-token-abc",
+    });
+
+    expect(result).toEqual({
+      status: "locked",
+      lockId: "monitor_check-1",
+      operationToken: "run-42",
+    });
+    const lockCall = mockFetch.mock.calls.find(([url]) =>
+      String(url).endsWith("/v1/lock"),
+    );
+    expect(JSON.parse(lockCall![1].body).partner_job_token).toBe(
+      "job-token-abc",
+    );
+  });
+
+  // Every lock in production today. The key must be absent, not null: present
+  // is what arms the gate, and firebill decides that on presence.
+  it("omits the token entirely for a monitor no partner created", async () => {
+    state.configRef = firebillConfig();
+    mockFetch.mockResolvedValue(
+      lockResponse({ success: true, allowed: true, lock_id: "lock-1" }),
+    );
+    const svc = makeService();
+
+    for (const partnerJobToken of [undefined, null]) {
+      await svc.lockCredits({
+        teamId: "team-1",
+        value: 10,
+        lockId: "lock-1",
+        partnerJobToken,
+      });
+      const lockCall = mockFetch.mock.calls
+        .filter(([url]) => String(url).endsWith("/v1/lock"))
+        .pop();
+      expect(JSON.parse(lockCall![1].body)).not.toHaveProperty(
+        "partner_job_token",
+      );
+    }
+  });
+
+  // The caller acts on these differently: one skips an occurrence, one stops a
+  // schedule. Collapsing them would either strand a revoked job forever or
+  // cancel a monitor over a customer topping up late.
+  it("carries the partner's denial reason through, and only ones it knows", async () => {
+    state.configRef = firebillConfig();
+    const svc = makeService();
+
+    for (const reason of [
+      "out_of_credits",
+      "job_revoked",
+      "gate_unavailable",
+    ]) {
+      mockFetch.mockResolvedValueOnce(
+        lockResponse({ success: true, allowed: false, reason }),
+      );
+      expect(
+        await svc.lockCredits({
+          teamId: "team-1",
+          value: 10,
+          lockId: "lock-1",
+          partnerJobToken: "job-token-abc",
+        }),
+      ).toEqual({ status: "denied", reason });
+    }
+
+    // An unknown reason is dropped rather than passed on: reading one we do
+    // not understand as `job_revoked` would pause a customer's monitor over a
+    // string. A plain denial is the safe reading, and is what Autumn's own
+    // denials already look like.
+    mockFetch.mockResolvedValueOnce(
+      lockResponse({ success: true, allowed: false, reason: "who-knows" }),
+    );
+    expect(
+      await svc.lockCredits({
+        teamId: "team-1",
+        value: 10,
+        lockId: "lock-1",
+        partnerJobToken: "job-token-abc",
+      }),
+    ).toEqual({ status: "denied" });
+  });
+
+  // Unreachable in practice — a partner-provisioned org always routes to
+  // firebill whatever the ramp says (#4403) — but a token that got here would
+  // silently skip the gate, which is the one failure the gate exists for.
+  it("refuses a hold when a job token reaches the direct-Autumn path", async () => {
+    state.configRef = {
+      ...firebillConfig(),
+      FIREBILL_ORG_IDS: ["some-other-org"],
+    };
+    const svc = makeService();
+
+    expect(
+      await svc.lockCredits({
+        teamId: "team-1",
+        value: 10,
+        lockId: "lock-1",
+        partnerJobToken: "job-token-abc",
+      }),
+    ).toEqual({ status: "denied", reason: "gate_unavailable" });
+    expect(mockCheck).not.toHaveBeenCalled();
+  });
+
+  it("hands the run token back on the finalize as the operation id", async () => {
+    state.configRef = firebillConfig();
+    const svc = makeService();
+
+    await svc.finalizeCreditsLock({
+      lockId: "monitor_check-1",
+      action: "confirm",
+      overrideValue: 7,
+      teamId: "team-1",
+      externalRequestId: "run-42",
+    });
+
+    const finalizeCall = mockFetch.mock.calls.find(([url]) =>
+      String(url).endsWith("/v1/finalize"),
+    );
+    expect(JSON.parse(finalizeCall![1].body).external_request_id).toBe(
+      "run-42",
+    );
+  });
+
+  it("omits the operation id when there is no partner to report to", async () => {
+    state.configRef = firebillConfig();
+    const svc = makeService();
+
+    await svc.finalizeCreditsLock({
+      lockId: "monitor_check-1",
+      action: "confirm",
+      teamId: "team-1",
+      externalRequestId: null,
+    });
+
+    const finalizeCall = mockFetch.mock.calls.find(([url]) =>
+      String(url).endsWith("/v1/finalize"),
+    );
+    expect(JSON.parse(finalizeCall![1].body)).not.toHaveProperty(
+      "external_request_id",
+    );
+  });
+
   it("uses the direct Autumn lock path for orgs NOT on the allowlist", async () => {
     state.configRef = {
       ...firebillConfig(),

@@ -36,6 +36,7 @@ import { sendMonitoringSlackSummary } from "../notification/monitoring_slack";
 import {
   bulkUpsertMonitorPages,
   calculateMonitorCheckActualCredits,
+  countRecentConsecutiveSkippedForCredits,
   getMonitorCheck,
   getMonitorForUpdate,
   countMonitorCheckPages,
@@ -45,6 +46,7 @@ import {
   listMonitorCheckPages,
   listRunningMonitorChecks,
   markMonitorRunning,
+  pauseMonitor,
   updateMonitorCheck,
   updateMonitorCheckIfRunning,
   updateMonitorScheduleAfterRun,
@@ -83,6 +85,23 @@ const MONITOR_NOTIFY_CLAIM_TTL_SECONDS = 7 * 24 * 60 * 60;
 const MONITOR_CHECK_PAGE_SCAN_LIMIT = 100_000;
 const MONITOR_CHECK_NO_CREDITS_ERROR =
   "Monitor check skipped: insufficient credits.";
+const MONITOR_CHECK_REVOKED_ERROR =
+  "Monitor check skipped: the partner has revoked this job.";
+
+/**
+ * Consecutive credit-skipped checks — this one included — before a `job_revoked`
+ * denial stops the schedule.
+ *
+ * A 410 is permanent by contract, but pausing a customer's monitor is not a
+ * thing to do on one response: a partner deploying a bad build would otherwise
+ * take every monitor they fund down with it, and nothing here would start them
+ * again. Three occurrences is cheap to wait for — the runs are skipped either
+ * way, and the only cost of waiting is three rows.
+ *
+ * Never reached by a 402: the current denial must itself be `job_revoked`, so
+ * a customer simply out of credits is skipped forever and never paused.
+ */
+const MONITOR_GATE_REVOKED_STREAK = 3;
 const TERMINAL_CHECK_STATUSES = new Set([
   "completed",
   "partial",
@@ -359,6 +378,9 @@ async function billMonitorCheck(params: {
         jobId: params.check.id,
       },
       teamId: params.monitor.team_id,
+      // The confirm only. A release bills nothing, so there is no operation to
+      // report and nothing for the partner to hear about.
+      externalRequestId: params.check.partner_run_token,
     });
   }
 
@@ -944,23 +966,66 @@ export async function processMonitorCheckJob(
         endpoint: "monitor",
         jobId: check.id,
       },
+      // Arms the partner's own credit gate inside firebill for a monitor a
+      // gateway partner created. NULL for every other monitor, and NULL is
+      // simply today's lock.
+      //
+      // Not sent when this check already holds a run token. A redelivery of
+      // the same check is the same occurrence, and firebill keeps no lock
+      // table — so re-sending the token would ask the partner to authorize it
+      // a second time, and the second run token would orphan the first
+      // (credits they committed against an operation no cost event ever
+      // names). Autumn dedupes the hold itself via the lock id.
+      partnerJobToken: check.partner_run_token
+        ? null
+        : monitor.partner_job_token,
     });
 
     if (lock.status === "denied") {
+      const revoked = lock.reason === "job_revoked";
       check = await updateMonitorCheck(check.id, {
         status: "skipped_no_credits",
         finished_at: new Date().toISOString(),
         actual_credits: 0,
         billing_status: "not_applicable",
-        error: MONITOR_CHECK_NO_CREDITS_ERROR,
+        error: revoked
+          ? MONITOR_CHECK_REVOKED_ERROR
+          : MONITOR_CHECK_NO_CREDITS_ERROR,
       });
 
-      await updateMonitorScheduleAfterRun({ monitor, check });
+      // A revoked job never becomes unrevoked, so retrying it forever is a
+      // schedule doing nothing but writing skipped rows. Waited out rather
+      // than acted on immediately: see MONITOR_GATE_REVOKED_STREAK.
+      const paused =
+        revoked &&
+        (await countRecentConsecutiveSkippedForCredits({
+          teamId: monitor.team_id,
+          monitorId: monitor.id,
+          limit: MONITOR_GATE_REVOKED_STREAK,
+        })) >= MONITOR_GATE_REVOKED_STREAK;
 
-      logger.info("Skipped monitor check: insufficient credits", {
+      if (paused) {
+        await pauseMonitor(monitor.id);
+        logger.warn("Paused monitor: the partner has revoked this job", {
+          monitorId: monitor.id,
+          checkId: check.id,
+          teamId: monitor.team_id,
+          consecutiveSkips: MONITOR_GATE_REVOKED_STREAK,
+        });
+      }
+
+      // A paused monitor must not be handed a next_run_at, and this reads the
+      // status off the object it is given rather than the row.
+      await updateMonitorScheduleAfterRun({
+        monitor: paused ? { ...monitor, status: "paused" } : monitor,
+        check,
+      });
+
+      logger.info("Skipped monitor check: no credit authority allowed it", {
         monitorId: monitor.id,
         checkId: check.id,
         teamId: monitor.team_id,
+        reason: lock.reason,
       });
       return;
     }
@@ -969,6 +1034,14 @@ export async function processMonitorCheckJob(
 
     check = await updateMonitorCheck(check.id, {
       autumn_lock_id: lockId,
+      // Beside the lock id, and for the same span: the finalize carries it
+      // back as the operation id this run is billed under. A token already on
+      // the row wins — the gate was not re-asked, so there is no newer one,
+      // and clobbering it with null would lose the operation the partner
+      // already authorized.
+      partner_run_token:
+        check.partner_run_token ??
+        (lock.status === "locked" ? (lock.operationToken ?? null) : null),
       reserved_credits: lockId ? (check.estimated_credits ?? 1) : null,
       billing_status: lockId ? "reserved" : "not_applicable",
     });

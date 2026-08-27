@@ -2,7 +2,7 @@ import { randomUUID } from "crypto";
 import { config } from "../../config";
 import { logger } from "../../lib/logger";
 import { sampled } from "../../lib/rollout";
-import type { TrackParams } from "./types";
+import type { LockDeniedReason, TrackParams } from "./types";
 import {
   firebillCheckTotal,
   firebillRetryTotal,
@@ -16,9 +16,25 @@ import {
  * Autumn at all and the caller decides how its endpoint fails.
  */
 type FirebillLockResult =
-  | { status: "locked"; lockId: string }
-  | { status: "denied" }
+  | { status: "locked"; lockId: string; operationToken?: string }
+  | { status: "denied"; reason?: LockDeniedReason }
   | { status: "unavailable" };
+
+/**
+ * The `reason` values firebill puts on a denial its partner gate produced. An
+ * unrecognised one is dropped rather than passed through: a caller reading an
+ * unknown reason as `job_revoked` would stop a customer's schedule over a
+ * string it does not understand.
+ */
+const LOCK_DENIED_REASONS: readonly LockDeniedReason[] = [
+  "out_of_credits",
+  "job_revoked",
+  "gate_unavailable",
+];
+
+function lockDeniedReason(value: unknown): LockDeniedReason | undefined {
+  return LOCK_DENIED_REASONS.find(reason => reason === value);
+}
 
 // firebill's own internal budget (durable write + forward attempt) is up to
 // ~3.5s worst case, so this is deliberately looser than the 2s timeout on the
@@ -400,6 +416,7 @@ export async function firebillLock({
   lockId,
   expiresAt,
   properties,
+  partnerJobToken,
 }: {
   customerId: string;
   entityId: string;
@@ -408,6 +425,7 @@ export async function firebillLock({
   lockId: string;
   expiresAt: number;
   properties?: Record<string, unknown>;
+  partnerJobToken?: string | null;
 }): Promise<FirebillLockResult> {
   const url = firebillUrl("/v1/lock");
   try {
@@ -428,6 +446,10 @@ export async function firebillLock({
         lock_id: lockId,
         expires_at: expiresAt,
         properties,
+        // Present is what arms firebill's partner gate: it asks the partner
+        // whether they will fund this occurrence before Autumn holds anything.
+        // Omitted → today's path exactly, no lookup and no outbound call.
+        ...(partnerJobToken ? { partner_job_token: partnerJobToken } : {}),
       }),
       signal: AbortSignal.timeout(FIREBILL_TIMEOUT_MS),
     });
@@ -448,6 +470,8 @@ export async function firebillLock({
       success?: boolean;
       allowed?: boolean;
       lock_id?: string;
+      reason?: unknown;
+      operation_token?: unknown;
     };
 
     if (body.success !== true) {
@@ -462,14 +486,16 @@ export async function firebillLock({
     }
 
     if (body.allowed === false) {
+      const reason = lockDeniedReason(body.reason);
       logger.info("firebill lock denied", {
         customerId,
         entityId,
         featureId,
         value,
         lockId,
+        reason,
       });
-      return { status: "denied" };
+      return { status: "denied", ...(reason ? { reason } : {}) };
     }
 
     // Only an explicit `allowed: false` is a denial. `success: true` with a
@@ -487,14 +513,24 @@ export async function firebillLock({
       return { status: "unavailable" };
     }
 
+    const operationToken =
+      typeof body.operation_token === "string" && body.operation_token.length > 0
+        ? body.operation_token
+        : undefined;
+
     logger.info("firebill lock succeeded", {
       customerId,
       entityId,
       featureId,
       value,
       lockId,
+      gated: operationToken !== undefined,
     });
-    return { status: "locked", lockId: body.lock_id ?? lockId };
+    return {
+      status: "locked",
+      lockId: body.lock_id ?? lockId,
+      ...(operationToken ? { operationToken } : {}),
+    };
   } catch (error) {
     logger.error("firebill lock failed — firebill may be unavailable", {
       customerId,
@@ -525,11 +561,13 @@ export async function firebillFinalize({
   action,
   overrideValue,
   properties,
+  externalRequestId,
 }: {
   lockId: string;
   action: "confirm" | "release";
   overrideValue?: number;
   properties?: Record<string, unknown>;
+  externalRequestId?: string | null;
 }): Promise<boolean> {
   const url = firebillUrl("/v1/finalize");
   try {
@@ -551,6 +589,12 @@ export async function firebillFinalize({
         // settle — e.g. the reconciler re-running a check it raced — dedupes
         // upstream instead of settling twice.
         idempotency_key: `fc:finalize:${action}:${lockId}`,
+        // The run token the lock handed back, brought home as the operation id
+        // this settle is reported under. One check, one run, one token, one
+        // charge.
+        ...(externalRequestId
+          ? { external_request_id: externalRequestId }
+          : {}),
       }),
       signal: AbortSignal.timeout(FIREBILL_TIMEOUT_MS),
     });
