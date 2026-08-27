@@ -172,6 +172,15 @@ describe("JS SDK v2 pagination", () => {
     expect(res.data.length).toBe(1);
     expect(res.next).toBe("https://api/b1");
   });
+
+  test("batch: a next cursor identical to the page just fetched is treated as drained, not looped", async () => {
+    const first = { status: 200, data: { success: true, status: "cancelled", completed: 0, total: 0, next: "https://api/loop", data: [] } };
+    const loop = { status: 200, data: { success: true, next: "https://api/loop", data: [] } };
+    const http = makeHttp((url) => (url.includes("/v2/batch/scrape/") ? first : loop));
+    const res = await getBatchScrapeStatus(http, "jobB");
+    expect(res.data.length).toBe(0);
+    expect(res.next).toBeNull();
+  });
 });
 
 

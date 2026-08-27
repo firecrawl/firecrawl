@@ -493,7 +493,7 @@ class TestBatchScrapePagination:
             mock_response.json.return_value = {
                 "success": True,
                 "data": [self.sample_doc, self.sample_doc],  # 2 docs per page
-                "next": f"https://api.firecrawl.dev/v2/batch/scrape/test-batch-123?page={i+2}" if i < 4 else None
+                "next": f"https://api.firecrawl.dev/v2/batch/scrape/test-batch-123?page={i+3}" if i < 4 else None
             }
             mock_responses.append(mock_response)
         
@@ -653,6 +653,37 @@ class TestBatchScrapePagination:
 
         assert len(job.data) == 1
         assert job.next == "https://api.example.com/next1"
+
+    def test_self_referencing_next_is_treated_as_drained(self):
+        """A next cursor identical to the page just fetched stops instead of looping forever."""
+        client = Mock()
+        first = Mock()
+        first.ok = True
+        first.json.return_value = {
+            "success": True,
+            "status": "cancelled",
+            "completed": 0,
+            "total": 0,
+            "next": "https://api.example.com/loop",
+            "data": [],
+        }
+        loop = Mock()
+        loop.ok = True
+        loop.json.return_value = {
+            "success": True,
+            "status": "cancelled",
+            "completed": 0,
+            "total": 0,
+            "next": "https://api.example.com/loop",
+            "data": [],
+        }
+        client.get.side_effect = [first, loop]
+
+        job = get_batch_scrape_status(client, "job-1")
+
+        assert len(job.data) == 0
+        assert job.next is None
+        assert client.get.call_count == 2
 
 
 class TestAsyncPagination:

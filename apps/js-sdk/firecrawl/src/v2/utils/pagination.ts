@@ -60,6 +60,10 @@ export async function fetchAllPages<T = Document>(
       return { documents: docs, next: current };
     }
     docs.push(...(pageData as T[]));
+    if (pageNext === current) {
+      // A next cursor identical to the page just fetched can never advance; treat as drained.
+      return { documents: docs, next: null };
+    }
     current = pageNext;
     pageCount += 1;
   }

@@ -208,6 +208,9 @@ async def _fetch_all_batch_pages_async(
             return documents, current_url
 
         documents.extend(page_payload["data"])
+        if page_payload["next"] == current_url:
+            # A next cursor identical to the page just fetched can never advance; treat as drained.
+            return documents, None
         current_url = page_payload["next"]
         page_count += 1
 
