@@ -485,6 +485,22 @@ export function generateURLPermutations(url: string | URL): URL[] {
   return [...new Set(permutations.map(x => x.href))].map(x => new URL(x));
 }
 
+const LOCK_URL_WITH_LIMIT_SCRIPT = `
+if redis.call("SCARD", KEYS[2]) >= tonumber(ARGV[3]) then
+  return 0
+end
+
+local added = redis.call("SADD", KEYS[1], ARGV[1])
+redis.call("EXPIRE", KEYS[1], ARGV[4])
+if added == 0 then
+  return -1
+end
+
+redis.call("SADD", KEYS[2], ARGV[2])
+redis.call("EXPIRE", KEYS[2], ARGV[4])
+return 1
+`;
+
 export async function lockURL(
   id: string,
   sc: StoredCrawl,
@@ -499,26 +515,38 @@ export async function lockURL(
       operation: "lock_url",
     });
 
+    const visitedKey = "crawl:" + id + ":visited";
+    const visitedUniqueKey = "crawl:" + id + ":visited_unique";
+    const visitedUrl = !sc.crawlerOptions?.deduplicateSimilarURLs
+      ? normalizedUrl
+      : generateURLPermutations(normalizedUrl)[0].href;
+
     if (typeof sc.crawlerOptions?.limit === "number") {
-      if (
-        (await redisEvictConnection.scard("crawl:" + id + ":visited_unique")) >=
-        sc.crawlerOptions.limit
-      ) {
+      const result = Number(
+        await redisEvictConnection.eval(
+          LOCK_URL_WITH_LIMIT_SCRIPT,
+          2,
+          visitedKey,
+          visitedUniqueKey,
+          visitedUrl,
+          normalizedUrl,
+          sc.crawlerOptions.limit,
+          24 * 60 * 60,
+        ),
+      );
+
+      if (result === 0) {
         setSpanAttributes(span, { "crawl.limit_reached": true });
-        return false;
       }
+
+      const res = result === 1;
+      setSpanAttributes(span, { "crawl.url_locked": res });
+      return res;
     }
 
     const pipeline = redisEvictConnection.pipeline();
-
-    if (!sc.crawlerOptions?.deduplicateSimilarURLs) {
-      pipeline.sadd("crawl:" + id + ":visited", normalizedUrl);
-    } else {
-      const permutation = generateURLPermutations(normalizedUrl)[0].href;
-      pipeline.sadd("crawl:" + id + ":visited", permutation);
-    }
-
-    pipeline.expire("crawl:" + id + ":visited", 24 * 60 * 60);
+    pipeline.sadd(visitedKey, visitedUrl);
+    pipeline.expire(visitedKey, 24 * 60 * 60);
 
     const results = await pipeline.exec();
     const saddResult = results?.[0]?.[1] as number;
@@ -526,8 +554,8 @@ export async function lockURL(
 
     if (res) {
       const uniquePipeline = redisEvictConnection.pipeline();
-      uniquePipeline.sadd("crawl:" + id + ":visited_unique", normalizedUrl);
-      uniquePipeline.expire("crawl:" + id + ":visited_unique", 24 * 60 * 60);
+      uniquePipeline.sadd(visitedUniqueKey, normalizedUrl);
+      uniquePipeline.expire(visitedUniqueKey, 24 * 60 * 60);
       await uniquePipeline.exec();
     }
 
