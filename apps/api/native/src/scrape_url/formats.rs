@@ -47,6 +47,7 @@ pub enum Format {
   Markdown,
   Html,
   RawHtml,
+  RawBase64,
   Links,
   Images,
   Summary,

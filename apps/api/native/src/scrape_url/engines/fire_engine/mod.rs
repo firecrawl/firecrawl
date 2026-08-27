@@ -18,6 +18,7 @@ use super::super::{
   feature_flags::{ConstFeatureFlags, FeatureFlag},
   formats::FormatKind,
   meta::Meta,
+  options::ProxyMode,
 };
 use super::{
   Engine, EngineScrapeContent, EngineScrapeProxy, EngineScrapeResult, EngineScrapeResultActions,
@@ -115,6 +116,7 @@ impl FireEngine {
       timeout: 300000, // TODO: timeout
       disable_smart_wait_cache: meta.internal_options.disable_smart_wait_cache,
       mobile_proxy: proxy == EngineScrapeProxy::Enhanced,
+      auto_proxy: meta.options.proxy == ProxyMode::Auto,
       max_age: meta.options.max_age,
       save_scrape_result_to_gcs: false,
       zero_data_retention: meta.internal_options.zero_data_retention,

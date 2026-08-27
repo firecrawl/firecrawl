@@ -57,5 +57,5 @@ generate_execute_tranformers!(
   // TODO: derive_diff
   // TODO: fetch_audio
   // TODO: fetch_video
-  // TODO: coerce_fields_to_formats
+  // TODO: coerce_fields_to_formats // TODO: deal with raw_base64 format here
 );

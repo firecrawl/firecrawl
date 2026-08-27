@@ -80,10 +80,11 @@ async fn _scrape_url(meta: Meta) -> Result<Document, ScrapeURLError> {
   let should_use_index = should_use_index(&meta);
 
   let index_run = {
-    let index_attempted =
-      meta.options.lockdown || meta.internal_options.agent_index_only || should_use_index;
+    if (meta.options.lockdown || meta.internal_options.agent_index_only) && !should_use_index {
+      panic!("throw") // TODO
+    }
 
-    if index_attempted && let Some(index) = EngineKind::index().await {
+    if should_use_index && let Some(index) = EngineKind::index().await {
       let result = index.scrape(&meta, discrete_proxy).await;
       match result {
         Ok(result) => Ok(Some(EngineRun {

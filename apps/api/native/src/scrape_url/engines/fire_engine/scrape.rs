@@ -51,6 +51,7 @@ pub struct FireEngineScrapeRequest<'a> {
   pub force_non_renderer: bool,
 
   pub mobile_proxy: bool,
+  pub auto_proxy: bool,
 
   pub timeout: u32,
   #[serde(skip_serializing_if = "Option::is_none")]
