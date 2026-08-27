@@ -1,6 +1,9 @@
-requests
+requests>=2.32.3
 beautifulsoup4
 firecrawl
 pydantic
 python-dotenv
 firecrawl-py
+httpx>=0.27.2
+h11>=0.14.0
+idna>=3.7

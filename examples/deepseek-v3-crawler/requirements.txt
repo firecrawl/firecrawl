@@ -1,3 +1,4 @@
 firecrawl==1.13.5
 python-dotenv==1.0.1
-huggingface-hub>=0.20.0 
+huggingface-hub>=0.20.0
+requests>=2.32.3

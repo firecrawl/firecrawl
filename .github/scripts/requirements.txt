@@ -1,3 +1,4 @@
 requests>=2.32.3
 packaging
 toml
+idna>=3.10

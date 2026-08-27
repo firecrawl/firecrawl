@@ -4,3 +4,4 @@ python-dotenv>=1.0.0
 requests>=2.32.3
 firecrawl>=0.1.0
 tqdm>=4.66.3
+aiohttp>=3.10.11
