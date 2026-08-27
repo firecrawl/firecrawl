@@ -241,18 +241,28 @@ describe("runShardedFirePdfAttempt", () => {
       _container: unknown,
       markMayExist: () => void,
     ): Promise<PDFProcessorResult> => {
-      if (range[0] === 1000) throw new Error("shard exploded");
+      // The second shard, wherever config puts its boundary.
+      if (range[0] === config.PDF_SHARD_PAGES)
+        throw new Error("shard exploded");
       // Successful shards mark existence, as runOneShard does before any
       // adoption/submit.
       markMayExist();
       return { html: "", markdown: "ok" } as PDFProcessorResult;
     };
     await expect(
-      runShardedFirePdfAttempt({ ...baseArgs, meta, runShardImpl }),
+      runShardedFirePdfAttempt({
+        ...baseArgs,
+        // At least two shards so the config-derived failing boundary exists.
+        effectivePages: config.PDF_SHARD_PAGES * 2,
+        meta,
+        runShardImpl,
+      }),
     ).rejects.toThrow("shard exploded");
     // Sibling shards exist and keep running server-side after one shard
     // fails, so "processing continues" stays true for the document.
-    expect(meta.largePdfProcessing?.current?.pagesEstimate).toBe(2600);
+    expect(meta.largePdfProcessing?.current?.pagesEstimate).toBe(
+      config.PDF_SHARD_PAGES * 2,
+    );
   });
 
   it("clears processing state when no shard ever materialized server-side", async () => {
@@ -284,10 +294,13 @@ describe("runShardedFirePdfAttempt", () => {
       launched.push(range[0]);
       throw new Error("first shard fails");
     };
+    // More shards than one concurrency wave, whatever config says.
+    const effectivePages =
+      config.PDF_SHARD_PAGES * (config.PDF_SHARD_CONCURRENCY + 2);
     await expect(
       runShardedFirePdfAttempt({
         ...baseArgs,
-        effectivePages: 10_000, // 10 shards, concurrency 4
+        effectivePages,
         meta,
         runShardImpl,
       }),
@@ -297,7 +310,7 @@ describe("runShardedFirePdfAttempt", () => {
     // attempt only burns GPU).
     expect(launched.length).toBeLessThanOrEqual(config.PDF_SHARD_CONCURRENCY);
     expect(launched.length).toBeLessThan(
-      computeShardRanges(10_000, config.PDF_SHARD_PAGES).length,
+      computeShardRanges(effectivePages, config.PDF_SHARD_PAGES).length,
     );
   });
 });
