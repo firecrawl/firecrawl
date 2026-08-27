@@ -82,8 +82,14 @@ export function cacheKeyShape(
   includePageMarkdown: boolean,
   includeBlocks: boolean,
   pageMarkers = false,
+  pageRange?: [number, number],
 ) {
-  const cacheable = mode !== "fast" && !maxPages;
+  // A page_range job is one SHARD of a document: its result must never be
+  // stored or served under the whole-document key (the key shape carries
+  // no range), so shard-scoped requests are uncacheable at this layer.
+  // The shard flow caches the MERGED whole-document result itself, and
+  // fire-pdf's content adoption still dedupes shard work server-side.
+  const cacheable = mode !== "fast" && !maxPages && pageRange === undefined;
   const isOcr = mode === "ocr";
   const baseVariant: string | undefined = isOcr ? "ocr" : undefined;
   const ownVariant: string | undefined =
@@ -212,6 +218,8 @@ export async function maybeSaveResult(args: {
   includePageMarkdown: boolean;
   includeBlocks: boolean;
   pageMarkers?: boolean;
+  /** Shard slice — makes this save a no-op (see cacheKeyShape). */
+  pageRange?: [number, number];
   result: PDFProcessorResult & { markdown: string };
 }): Promise<void> {
   const {
@@ -222,6 +230,7 @@ export async function maybeSaveResult(args: {
     includePageMarkdown,
     includeBlocks,
     pageMarkers = false,
+    pageRange,
     result,
   } = args;
   if (meta.internalOptions.zeroDataRetention) return;
@@ -231,6 +240,7 @@ export async function maybeSaveResult(args: {
     includePageMarkdown,
     includeBlocks,
     pageMarkers,
+    pageRange,
   );
   if (!cacheable) return;
 

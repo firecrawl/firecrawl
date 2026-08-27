@@ -30,6 +30,12 @@ type SubmitArgs = {
   includePageMarkdown: boolean;
   includeBlocks: boolean;
   pageMarkers: boolean;
+  /** Shard slice for this job (fire-pdf options.page_range). */
+  pageRange?: [number, number];
+  /** Job identity override. Shards of one scrape submit under derived ids
+   * (`<meta.id>_sK`) because fire-pdf's scrape_id is unique per job — two
+   * shards under one id would 409 as an options conflict. */
+  scrapeIdOverride?: string;
   deadlineAt: string;
   /** Team's sold concurrency from the ACUC (ENG-5049 account context).
    * Optional: entitlement lookup must never block or fail a scrape. */
@@ -75,8 +81,10 @@ export async function submitJob(args: SubmitArgs): Promise<SubmitOutcome> {
     deadlineAt,
     teamConcurrency,
     fetchImpl,
+    pageRange,
+    scrapeIdOverride,
   } = args;
-  const scrapeId = meta.id;
+  const scrapeId = scrapeIdOverride ?? meta.id;
 
   if (
     input.kind === "byReference" &&
@@ -119,6 +127,7 @@ export async function submitJob(args: SubmitArgs): Promise<SubmitOutcome> {
       includePageMarkdown,
       includeBlocks,
       pageMarkers,
+      pageRange,
     }),
   };
 

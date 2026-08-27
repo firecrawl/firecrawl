@@ -378,6 +378,23 @@ const configSchema = z.object({
   // fire-engine as the per-request pdfMaxSize. The default applies to every
   // team; ids on the allowlist get the privileged cap. Both are clamped to
   // the 256MB architectural ceiling.
+  /** Documents past this page count are split into page-range shard jobs
+   * (fire-pdf options.page_range) instead of one monster job. Sharding
+   * requires the by-reference path; 0 disables. */
+  PDF_SHARD_THRESHOLD_PAGES: z.coerce
+    .number()
+    .int()
+    .nonnegative()
+    .default(2500),
+  /** Pages per shard. ~1000 pages ≈ a 10-15 min job — comfortably inside
+   * every per-job ceiling (deadline cap, RMQ consumer window, lease).
+   * Bounded so a config override cannot silently reintroduce the
+   * one-monster-job failure mode sharding exists to avoid. */
+  PDF_SHARD_PAGES: z.coerce.number().int().positive().max(2500).default(1000),
+  /** Shards of one document in flight at once. Bounded on purpose: an
+   * unbounded fan-out floods the GPU fleet's standing headroom and trips
+   * the OCR timeout-retry spiral (measured 2026-08-27). */
+  PDF_SHARD_CONCURRENCY: z.coerce.number().int().positive().max(8).default(4),
   PDF_BY_REFERENCE_MAX_BYTES_DEFAULT: z.coerce
     .number()
     .int()

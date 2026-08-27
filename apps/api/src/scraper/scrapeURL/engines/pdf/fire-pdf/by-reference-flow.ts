@@ -1,14 +1,17 @@
+import { config } from "../../../../../config";
 import type { Meta } from "../../..";
 import type { PDFMode } from "../../../../../controllers/v2/types";
 import type { PDFProcessorResult } from "../types";
 import { scrapePDFWithFirePDFAsync } from "./async";
 import {
+  type FirePdfByReferenceInput,
   rewritePdfInputForFirePdf,
   sha256OfFile,
   uploadPdfInputForFirePdf,
 } from "./by-reference";
 import { cacheKeyShape, tryGetCached } from "./cache";
 import { lookupAdoptableFirePdfJob } from "./lookup";
+import { runShardedFirePdfAttempt, ShardPlacementFailedError } from "./shard";
 import { buildFirePdfJobOptions, FirePdfAsyncFailure } from "./utils";
 
 type FirePdfByReferenceAttemptArgs = {
@@ -134,7 +137,15 @@ export async function runFirePdfByReferenceAttempt(
   // or fire-pdf errors, fall through to a fresh upload+submit —
   // except when the failure says this caller's own budget is
   // gone, where a fresh submit could not succeed either.
-  if (localSha256) {
+  // Monster documents take the shard path below; jobs it creates carry
+  // page_range in their options identity, so the whole-document adoption
+  // lookup is a guaranteed miss for them — skip it (per-shard lookups
+  // inside the shard flow do the adopting).
+  const willShard =
+    config.PDF_SHARD_THRESHOLD_PAGES > 0 &&
+    maxPages === undefined &&
+    pagesEstimate > config.PDF_SHARD_THRESHOLD_PAGES;
+  if (localSha256 && !willShard) {
     const adoptable = await lookupAdoptableFirePdfJob(
       meta,
       localSha256,
@@ -221,7 +232,7 @@ export async function runFirePdfByReferenceAttempt(
     handoffShaMatches &&
     handoff !== undefined &&
     handoff.sizeBytes === fileSizeBytes;
-  const uploaded =
+  const placeInput = async (): Promise<FirePdfByReferenceInput | null> =>
     (rewriteEligible && handoff
       ? await rewritePdfInputForFirePdf(meta, {
           uri: handoff.uri,
@@ -238,6 +249,39 @@ export async function runFirePdfByReferenceAttempt(
       keyVariant: rewriteEligible ? "s" : undefined,
       precomputedSha256: localSha256,
     }));
+
+  // ---- monster documents: shard instead of one job -------------------
+  // Past the threshold a single job cannot finish inside the per-job
+  // ceilings (~30 min: async deadline cap, RMQ consumer window, lease).
+  // Deliberately BEFORE the upload: placement is lazy inside the shard
+  // flow, so a retry whose shards all adopt prior work never re-uploads
+  // the (up to 256MB) input. maxPages requests keep the single-job path:
+  // page_range and max_pages are mutually exclusive on the fire-pdf
+  // side, and a capped monster is effectively not a monster.
+  if (willShard) {
+    try {
+      return await runShardedFirePdfAttempt({
+        meta,
+        placeInput,
+        effectivePages: pagesEstimate,
+        mode,
+        includePageMarkdown,
+        includeBlocks,
+        pageMarkers,
+        localSha256,
+        cacheable: byRefCacheable,
+      });
+    } catch (error) {
+      if (error instanceof ShardPlacementFailedError) {
+        // Same contract as the single-job upload failure below: the
+        // caller falls through to the legacy chain.
+        return null;
+      }
+      throw error;
+    }
+  }
+
+  const uploaded = await placeInput();
   if (!uploaded) {
     // Upload failure: the caller falls through to the legacy chain — its
     // oversized-skip warning still fires, preserving the

@@ -49,6 +49,12 @@ export async function scrapePDFWithFirePDFAsync(
   includePageMarkdown = false,
   includeBlocks = false,
   pageMarkers = false,
+  /** Shard context: this call processes one `page_range` slice of a larger
+   * document (see by-reference shard flow). Carries the range for the
+   * submit options and cache suppression, and the derived job id fresh
+   * submits use (shards can't share `meta.id` — fire-pdf's scrape_id is
+   * unique per job). */
+  shard?: { pageRange: [number, number]; scrapeIdOverride: string },
 ): Promise<PDFProcessorResult> {
   const fetchImpl = deps.fetchImpl ?? undiciFetch;
   const fallbackImpl = deps.fallbackImpl ?? scrapePDFWithFirePDF;
@@ -62,7 +68,9 @@ export async function scrapePDFWithFirePDFAsync(
     typeof input !== "string" && "gcsUri" in input ? input : undefined;
   // Which fire-pdf job this attempt watches: our own scrape_id, or the
   // adopted job's. Poll, result-fetch, and cancel must all agree.
-  const jobScrapeId = adopted ? adopted.adoptScrapeId : meta.id;
+  const jobScrapeId = adopted
+    ? adopted.adoptScrapeId
+    : (shard?.scrapeIdOverride ?? meta.id);
 
   // Async persists inputs and queue state, so ZDR is excluded until that
   // lifecycle has an explicit delete-on-completion contract.
@@ -236,6 +244,8 @@ export async function scrapePDFWithFirePDFAsync(
         includePageMarkdown,
         includeBlocks,
         pageMarkers,
+        pageRange: shard?.pageRange,
+        scrapeIdOverride: shard?.scrapeIdOverride,
         deadlineAt,
         teamConcurrency,
         fetchImpl,
@@ -368,7 +378,13 @@ export async function scrapePDFWithFirePDFAsync(
 
   const processorResult: PDFProcessorResult & { markdown: string } = {
     markdown: fetched.markdown,
-    html: await safeMarkdownToHtml(fetched.markdown, meta.logger, meta.id),
+    // A shard's HTML is never consumed: the shard flow renders HTML once
+    // from the MERGED markdown. Rendering it here too would repeat the
+    // full markdown->HTML parse per shard just to throw it away.
+    html:
+      shard !== undefined
+        ? ""
+        : await safeMarkdownToHtml(fetched.markdown, meta.logger, meta.id),
     pagesProcessed: pages,
     ...(fetched.pages ? { pageMarkdown: fetched.pages } : {}),
     ...(fetched.blocks ? { blocks: fetched.blocks } : {}),
@@ -382,6 +398,7 @@ export async function scrapePDFWithFirePDFAsync(
     includePageMarkdown,
     includeBlocks,
     pageMarkers,
+    pageRange: shard?.pageRange,
     result: processorResult,
   });
 

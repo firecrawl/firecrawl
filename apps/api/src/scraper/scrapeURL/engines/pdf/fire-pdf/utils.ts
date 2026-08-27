@@ -99,12 +99,16 @@ export function buildFirePdfJobOptions(args: {
   includePageMarkdown: boolean;
   includeBlocks: boolean;
   pageMarkers: boolean;
+  /** Shard slice `[start, end)` (0-based, half-open). Idempotency-bearing
+   * on the fire-pdf side: shards of the same bytes adopt/cache per range. */
+  pageRange?: [number, number];
 }): Record<string, unknown> {
   return {
     ...(args.pagesProcessed !== undefined && {
       pages_estimate: args.pagesProcessed,
     }),
     ...(args.maxPages !== undefined && { max_pages: args.maxPages }),
+    ...(args.pageRange !== undefined && { page_range: args.pageRange }),
     ...(args.mode !== undefined && { mode: args.mode }),
     ...(args.includePageMarkdown && { include_page_markdown: true }),
     ...(args.includeBlocks && { include_blocks: true }),
