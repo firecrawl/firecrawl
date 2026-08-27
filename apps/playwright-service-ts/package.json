@@ -8,6 +8,7 @@
     "build": "tsc",
     "dev": "tsx api.ts",
     "test:snips": "tsx --test ./helpers/url-safety.test.ts",
+    "test:typecheck": "tsc --noEmit -p tsconfig.test.json",
     "test": "tsx --test ./helpers/url-safety.test.ts"
   },
   "keywords": [],
