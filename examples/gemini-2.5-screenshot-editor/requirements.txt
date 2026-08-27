@@ -1,5 +1,6 @@
 firecrawl-py>=4.3.6
 google-genai>=1.29.0
-Pillow>=11.1.0
+Pillow>=11.1.1
 requests>=2.32.3
 python-dotenv>=1.0.0
+aiohttp>=3.10.11

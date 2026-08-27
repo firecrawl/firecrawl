@@ -1,3 +1,4 @@
 firecrawl-py
 groq
 python-dotenv
+requests>=2.32.3
