@@ -1,0 +1,26 @@
+apps/api/native/src/document.rs
+  s_8144e09977b3f1::t_11d6c8785cb91f 8-11,13-23,25-34
+apps/api/src/scraper/scrapeURL/engines/document/__tests__/nativeBinding.test.ts
+  s_8144e09977b3f1::t_23294e3d9e9a9b 1-14,16-63
+apps/api/src/__tests__/snips/v2/document-converter.test.ts
+  s_8144e09977b3f1::t_2d63b8f80616c7 45,48-50
+  s_8144e09977b3f1::t_df2f7713242980 70-71,73
+  s_8144e09977b3f1::t_47ac48a36d787f 32-34
+  s_8144e09977b3f1::t_71783733b877cd 56,59-62
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "ce2be957b94d1e6acdc3ee32f261188db6970021",
+  "prompts": {},
+  "sessions": {
+    "s_8144e09977b3f1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2e3d3683-db58-48a5-a06e-355e94f3fa9b",
+        "model": "claude-fable-5"
+      },
+      "human_author": "Abimael Martell <1450169+abimaelmartell@users.noreply.github.com>"
+    }
+  }
+}
