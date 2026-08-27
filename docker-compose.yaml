@@ -71,6 +71,10 @@ services:
       PROXY_USERNAME: ${PROXY_USERNAME}
       PROXY_PASSWORD: ${PROXY_PASSWORD}
       ALLOW_LOCAL_WEBHOOKS: ${ALLOW_LOCAL_WEBHOOKS}
+      # When set to True, disables internal/private address filtering for the
+      # entire browser session (target page and all subresources). Only enable
+      # this in trusted air-gapped/self-hosted networks where private scraping
+      # is explicitly intended.
       ALLOW_PRIVATE_IP_SCRAPING: ${ALLOW_PRIVATE_IP_SCRAPING:-False}
       BLOCK_MEDIA: ${BLOCK_MEDIA}
       # Configure maximum concurrent pages for Playwright browser instances
