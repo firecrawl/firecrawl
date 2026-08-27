@@ -237,17 +237,35 @@ describe("runShardedFirePdfAttempt", () => {
       _getUploaded: unknown,
       range: [number, number],
       _shardIndex: number,
-      _container: unknown,
+      container: unknown,
     ): Promise<PDFProcessorResult> => {
       if (range[0] === 1000) throw new Error("shard exploded");
+      // Successful shards mark themselves accepted, as the async runner
+      // does on submit-accept.
+      (container as { current?: object }).current = { lastStatus: "running" };
       return { html: "", markdown: "ok" } as PDFProcessorResult;
     };
     await expect(
       runShardedFirePdfAttempt({ ...baseArgs, meta, runShardImpl }),
     ).rejects.toThrow("shard exploded");
-    // Sibling shards keep running server-side after one shard fails, so
-    // "processing continues" stays true for the document.
+    // Sibling shards exist and keep running server-side after one shard
+    // fails, so "processing continues" stays true for the document.
     expect(meta.largePdfProcessing?.current?.pagesEstimate).toBe(2600);
+  });
+
+  it("clears processing state when no shard ever materialized server-side", async () => {
+    const meta = makeMeta();
+    const runShardImpl = async (): Promise<PDFProcessorResult> => {
+      // Aborted/failed before any submit was accepted — no container
+      // write, mirroring the async runner's behavior.
+      throw new Error("aborted before submit");
+    };
+    await expect(
+      runShardedFirePdfAttempt({ ...baseArgs, meta, runShardImpl }),
+    ).rejects.toThrow("aborted before submit");
+    // A timeout must not tell the caller that processing continues for
+    // a job that never existed.
+    expect(meta.largePdfProcessing?.current).toBeUndefined();
   });
 
   it("stops launching queued shards once one fails", async () => {

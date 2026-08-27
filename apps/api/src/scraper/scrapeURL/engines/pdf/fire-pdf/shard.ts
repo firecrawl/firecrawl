@@ -269,12 +269,16 @@ export async function runShardedFirePdfAttempt(
   try {
     await Promise.all(workers);
   } catch (error) {
-    if (error instanceof ShardPlacementFailedError && meta.largePdfProcessing) {
-      // Placement failed before a fresh submit existed. Adopted siblings
-      // may still be running server-side, but the recorded job id is not
-      // theirs — clearing is the honest state (never claims processing
-      // that this attempt cannot name; their finished work still lands
-      // for the retry via adoption).
+    // The shard-local containers double as an existence signal: the
+    // async runner writes them on submit-accept/adoption. If NONE was
+    // ever written (abort or placement failure before the first shard
+    // was accepted), the recorded whole-document state names a job that
+    // does not exist server-side — clear it so a timeout never tells
+    // the caller that processing continues. When any shard DOES exist,
+    // keep the state: those jobs run on server-side and feed the
+    // retry's adoption.
+    const anyShardExists = shardContainers.some(c => c.current !== undefined);
+    if (!anyShardExists && meta.largePdfProcessing) {
       meta.largePdfProcessing.current = undefined;
     }
     throw error;
