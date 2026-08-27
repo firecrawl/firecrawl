@@ -204,6 +204,7 @@ describe("runShardedFirePdfAttempt", () => {
       range: [number, number],
       _shardIndex: number,
       _container: unknown,
+      _markMayExist: () => void,
     ): Promise<PDFProcessorResult> => {
       calls.push(range);
       return {
@@ -237,12 +238,13 @@ describe("runShardedFirePdfAttempt", () => {
       _getUploaded: unknown,
       range: [number, number],
       _shardIndex: number,
-      container: unknown,
+      _container: unknown,
+      markMayExist: () => void,
     ): Promise<PDFProcessorResult> => {
       if (range[0] === 1000) throw new Error("shard exploded");
-      // Successful shards mark themselves accepted, as the async runner
-      // does on submit-accept.
-      (container as { current?: object }).current = { lastStatus: "running" };
+      // Successful shards mark existence, as runOneShard does before any
+      // adoption/submit.
+      markMayExist();
       return { html: "", markdown: "ok" } as PDFProcessorResult;
     };
     await expect(
@@ -277,6 +279,7 @@ describe("runShardedFirePdfAttempt", () => {
       range: [number, number],
       _shardIndex: number,
       _container: unknown,
+      _markMayExist: () => void,
     ): Promise<PDFProcessorResult> => {
       launched.push(range[0]);
       throw new Error("first shard fails");

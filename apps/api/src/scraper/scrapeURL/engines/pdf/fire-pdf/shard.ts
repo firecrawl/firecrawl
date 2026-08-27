@@ -207,6 +207,12 @@ export async function runShardedFirePdfAttempt(
   const shardContainers: NonNullable<Meta["largePdfProcessing"]>[] = ranges.map(
     () => ({}),
   );
+  // Monotonic: flipped when a shard's job is known or MAY exist
+  // server-side (adoption found one, or a fresh submit was attempted —
+  // a submit error can strike after fire-pdf accepted). Container
+  // writes can't carry this: the async runner clears them on terminal,
+  // and a may-have-been-accepted submit never writes one at all.
+  const shardMayExist: boolean[] = ranges.map(() => false);
   if (meta.largePdfProcessing) {
     meta.largePdfProcessing.current = {
       jobScrapeId: `${meta.id}_s0`,
@@ -254,6 +260,9 @@ export async function runShardedFirePdfAttempt(
           ranges[i],
           i,
           shardContainers[i],
+          () => {
+            shardMayExist[i] = true;
+          },
         );
       } catch (err) {
         failed = true;
@@ -269,16 +278,17 @@ export async function runShardedFirePdfAttempt(
   try {
     await Promise.all(workers);
   } catch (error) {
-    // The shard-local containers double as an existence signal: the
-    // async runner writes them on submit-accept/adoption. If NONE was
-    // ever written (abort or placement failure before the first shard
-    // was accepted), the recorded whole-document state names a job that
-    // does not exist server-side — clear it so a timeout never tells
-    // the caller that processing continues. When any shard DOES exist,
-    // keep the state: those jobs run on server-side and feed the
-    // retry's adoption.
-    const anyShardExists = shardContainers.some(c => c.current !== undefined);
-    if (!anyShardExists && meta.largePdfProcessing) {
+    // If no shard's job can exist server-side (abort or placement
+    // failure before the first adoption/submit was even attempted), the
+    // recorded whole-document state names a job that does not exist —
+    // clear it so a timeout never tells the caller that processing
+    // continues. When any shard may exist, keep the state: those jobs
+    // run server-side and feed the retry's adoption. The flag is
+    // deliberately pessimistic (set before a fresh submit, since an
+    // acceptance can precede the error that reports it) — over-claiming
+    // in that sliver resolves harmlessly on retry, under-claiming would
+    // hide genuinely running work.
+    if (!shardMayExist.some(Boolean) && meta.largePdfProcessing) {
       meta.largePdfProcessing.current = undefined;
     }
     throw error;
@@ -347,6 +357,9 @@ async function runOneShard(
    * runShardedFirePdfAttempt derives its status from these, so shard
    * writes surface without overwriting whole-document page counts. */
   shardContainer: NonNullable<Meta["largePdfProcessing"]>,
+  /** Monotonic signal that this shard's job is known or may exist
+   * server-side — called on adoption, and before any fresh submit. */
+  markMayExist: () => void,
 ): Promise<PDFProcessorResult> {
   const shardPages = range[1] - range[0];
   const shardMeta: Meta = {
@@ -390,6 +403,7 @@ async function runOneShard(
       { pageRange: range, scrapeIdOverride: `${args.meta.id}_s${shardIndex}` },
     );
   if (adoptable) {
+    markMayExist();
     try {
       return await submitShard(adoptable);
     } catch (error) {
@@ -417,5 +431,7 @@ async function runOneShard(
       );
     }
   }
-  return submitShard(await getUploaded());
+  const uploaded = await getUploaded();
+  markMayExist();
+  return submitShard(uploaded);
 }
