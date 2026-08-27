@@ -20,7 +20,7 @@ FROM base AS build
 WORKDIR /app
 
 # Install system dependencies
-RUN apt-get update && apt-get install -y \
+RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     build-essential \
     pkg-config \
@@ -73,7 +73,7 @@ RUN pnpm prune --prod --ignore-scripts
 FROM base AS runtime
 
 # Install runtime dependencies
-RUN apt-get update && apt-get install -y \
+RUN apt-get update && apt-get install -y --no-install-recommends \
     git \
     procps \
     curl \
@@ -87,20 +87,26 @@ RUN ARCH=$(dpkg --print-architecture) && \
       "https://github.com/apple/foundationdb/releases/download/${FDB_VERSION}/foundationdb-clients_${FDB_VERSION}-1_${FDB_ARCH}.deb" && \
     dpkg -i /tmp/fdb-clients.deb && rm /tmp/fdb-clients.deb
 
+# Create dedicated non-root user
+RUN groupadd -g 1001 appgroup && \
+    useradd -u 1001 -g appgroup -m -s /bin/bash appuser
+
 EXPOSE 8080
 WORKDIR /app
 ARG GIT_SHA=unknown
 ENV FIRECRAWL_BUILD_SHA=$GIT_SHA
 
 # Copy built application
-COPY --from=build /app/node_modules ./node_modules
-COPY --from=build /app/dist ./dist
-COPY --from=build /app/native ./native
-COPY --from=build /app/BUILD_SHA ./BUILD_SHA
+COPY --from=build --chown=appuser:appgroup /app/node_modules ./node_modules
+COPY --from=build --chown=appuser:appgroup /app/dist ./dist
+COPY --from=build --chown=appuser:appgroup /app/native ./native
+COPY --from=build --chown=appuser:appgroup /app/BUILD_SHA ./BUILD_SHA
 
 # Copy Go shared library
-COPY --from=go-build /app/sharedLibs/go-html-to-md/libhtml-to-markdown.so ./sharedLibs/go-html-to-md/
+COPY --from=go-build --chown=appuser:appgroup /app/sharedLibs/go-html-to-md/libhtml-to-markdown.so ./sharedLibs/go-html-to-md/
 
 RUN node -e 'const fs = require("fs"); for (const p of ["dist/src/harness.js", "dist/src/controllers/v0/crawl-status.js", "BUILD_SHA"]) { if (!fs.statSync(p).size) throw new Error(`${p} missing or empty`); }'
+
+USER appuser
 
 CMD ["node", "dist/src/harness.js", "--start-docker"]

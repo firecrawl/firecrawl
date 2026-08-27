@@ -3,4 +3,6 @@ FROM bitnami/redis:${REDIS_VERSION}
 
 COPY start-redis-server.sh /usr/bin/start-redis-server.sh
 
+USER 1001
+
 CMD ["/usr/bin/start-redis-server.sh"]

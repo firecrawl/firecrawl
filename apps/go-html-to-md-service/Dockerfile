@@ -22,13 +22,17 @@ RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o html-to-markdown-
 # Final stage
 FROM alpine:latest
 
-# Install ca-certificates for HTTPS requests
-RUN apk --no-cache add ca-certificates
+# Install ca-certificates for HTTPS requests and create non-root user
+RUN apk --no-cache add ca-certificates && \
+    addgroup -g 1000 appuser && \
+    adduser -D -u 1000 -G appuser appuser
 
-WORKDIR /root/
+WORKDIR /app
 
 # Copy the binary from builder
-COPY --from=builder /app/html-to-markdown-service .
+COPY --from=builder --chown=appuser:appuser /app/html-to-markdown-service .
+
+USER appuser
 
 # Expose port
 EXPOSE 8080

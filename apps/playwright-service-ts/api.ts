@@ -1,4 +1,4 @@
-import express, { Request, Response } from 'express';
+import express, { Request, Response, NextFunction } from 'express';
 import {
   chromium,
   Browser,
@@ -33,6 +33,8 @@ const ALLOW_LOCAL_WEBHOOKS =
 const PROXY_SERVER = process.env.PROXY_SERVER || null;
 const PROXY_USERNAME = process.env.PROXY_USERNAME || null;
 const PROXY_PASSWORD = process.env.PROXY_PASSWORD || null;
+const PLAYWRIGHT_AUTH_TOKEN =
+  process.env.PLAYWRIGHT_AUTH_TOKEN || process.env.PLAYWRIGHT_API_KEY || null;
 
 class InsecureConnectionError extends Error {
   constructor(
@@ -369,7 +371,23 @@ app.get('/health', async (req: Request, res: Response) => {
   }
 });
 
-app.post('/scrape', async (req: Request, res: Response) => {
+const authenticateRequest = (req: Request, res: Response, next: NextFunction) => {
+  if (PLAYWRIGHT_AUTH_TOKEN) {
+    const authHeader = req.headers.authorization;
+    const token = authHeader?.startsWith('Bearer ')
+      ? authHeader.substring(7)
+      : authHeader;
+
+    if (!token || token !== PLAYWRIGHT_AUTH_TOKEN) {
+      return res
+        .status(401)
+        .json({ error: 'Unauthorized: Invalid or missing authorization token' });
+    }
+  }
+  next();
+};
+
+app.post('/scrape', authenticateRequest, async (req: Request, res: Response) => {
   const {
     url,
     wait_after_load = 0,

@@ -1,9 +1,10 @@
-requests
-httpx
+requests>=2.32.3
+httpx>=0.27.2
 pytest
 pytest-asyncio
 python-dotenv
 websockets
 nest-asyncio
 pydantic>=2.0
-aiohttp
+aiohttp>=3.10.11
+
