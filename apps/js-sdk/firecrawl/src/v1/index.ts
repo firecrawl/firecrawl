@@ -181,6 +181,7 @@ export interface ScrapeParams<LLMSchema extends zt.ZodSchema = any, ActionsSchem
     prompt?: string;
     schema?: LLMSchema;
     systemPrompt?: string;
+    checkPromptInjection?: boolean;
   }
   changeTrackingOptions?: {
     prompt?: string;

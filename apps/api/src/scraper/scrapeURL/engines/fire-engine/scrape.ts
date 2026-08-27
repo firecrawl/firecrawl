@@ -61,6 +61,9 @@ export type FireEngineScrapeRequestCommon = {
 export type FireEngineScrapeRequestChromeCDP = {
   engine: "chrome-cdp";
   skipTlsVerification?: boolean;
+  /** Team-scoped ceiling (bytes) for fire-engine's large-PDF GCS handoff.
+   * Absent = fire-engine grants no raise and PDFs keep its inline cap. */
+  pdfMaxSize?: number;
   actions?: InternalAction[];
   blockMedia?: boolean;
   /** Opt out of render-engine routing (blockMedia: false normally forces it). */

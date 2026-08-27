@@ -214,6 +214,7 @@ class V1JsonConfig(pydantic.BaseModel):
     prompt: Optional[str] = None
     schema_field: Optional[Any] = pydantic.Field(None, alias='schema')
     systemPrompt: Optional[str] = None
+    checkPromptInjection: Optional[bool] = None
     agent: Optional[V1ExtractAgent] = None
 
 class V1ScrapeParams(V1ScrapeOptions):

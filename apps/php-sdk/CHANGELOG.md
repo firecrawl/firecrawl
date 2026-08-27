@@ -5,6 +5,18 @@ All notable changes to the Firecrawl PHP SDK will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.14.0] - 2026-08-26
+
+### Added
+- Agent `effort` option ("low", "medium", "high") on `AgentOptions` to set the
+  reasoning budget (every level runs spark-2), and `AgentStatusResponse::getEffort()`
+  exposing the effort a job ran with.
+- `getAgentTrace()` returning an `AgentTraceResponse` with typed `AgentTraceEvent`
+  models for every trace event kind, plus `activeBrowserSessions` with live view
+  URLs when the `liveView` query parameter is requested.
+- `getAgentSnapshot()` returning an `AgentSnapshotResponse` with the snapshot
+  content of an artifact produced by an agent task.
+
 ## [1.13.0] - 2026-08-21
 
 ### Added

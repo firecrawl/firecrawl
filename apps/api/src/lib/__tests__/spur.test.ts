@@ -13,7 +13,12 @@ vi.mock("../logger", () => ({
 }));
 
 vi.mock("../../services/rate-limiter", () => ({
-  redisRateLimitClient: { get: vi.fn(), set: vi.fn(), eval: vi.fn() },
+  redisRateLimitClient: {
+    get: vi.fn(),
+    mget: vi.fn(),
+    set: vi.fn(),
+    eval: vi.fn(),
+  },
 }));
 
 // Minimal in-memory Redis backing the mock: enough SET semantics (NX guard,
@@ -22,6 +27,10 @@ function installFakeRedis(): Map<string, string> {
   const store = new Map<string, string>();
   (redisRateLimitClient.get as Mock).mockImplementation(async (k: string) =>
     store.has(k) ? store.get(k)! : null,
+  );
+  (redisRateLimitClient.mget as Mock).mockImplementation(
+    async (...keys: (string | string[])[]) =>
+      keys.flat().map(k => (store.has(k) ? store.get(k)! : null)),
   );
   (redisRateLimitClient.set as Mock).mockImplementation(
     async (k: string, v: string, ...args: unknown[]) => {
@@ -63,9 +72,34 @@ describe("Spur keyless IP reputation", () => {
 
   it("flags an IP fronting a live VPN/proxy tunnel", async () => {
     mockFetch(async () =>
-      okResponse({ ip: "1.2.3.4", tunnels: [{ type: "VPN" }] }),
+      okResponse({
+        ip: "1.2.3.4",
+        tunnels: [{ anonymous: true, type: "VPN" }],
+      }),
     );
     expect(await isKeylessIpSuspicious("1.2.3.4")).toBe(true);
+  });
+
+  it("allows a non-anonymous tunnel such as an enterprise VPN", async () => {
+    mockFetch(async () =>
+      okResponse({
+        ip: "1.2.3.14",
+        tunnels: [{ anonymous: false, operator: "ZSCALER", type: "VPN" }],
+      }),
+    );
+    expect(await isKeylessIpSuspicious("1.2.3.14")).toBe(false);
+  });
+
+  it("fails open on a malformed cached context instead of throwing", async () => {
+    store.set(
+      "spur_context:1.2.3.17",
+      JSON.stringify({ tunnels: 5, risks: "TUNNEL", client: { proxies: {} } }),
+    );
+    const fetchFn = mockFetch(async () =>
+      okResponse({ tunnels: [{ anonymous: true, type: "VPN" }] }),
+    );
+    expect(await isKeylessIpSuspicious("1.2.3.17")).toBe(false);
+    expect(fetchFn).not.toHaveBeenCalled();
   });
 
   it("allows a clean (datacenter-only) IP", async () => {
@@ -119,25 +153,46 @@ describe("Spur keyless IP reputation", () => {
     expect(results).toEqual([false, false, false, false, false]);
   });
 
-  it("fails open on a non-200 Spur response and caches nothing", async () => {
+  it("fails open on a non-200 Spur response and does not retry within the negative-cache window", async () => {
     const fetchFn = mockFetch(async () => ({ ok: false, status: 429 }));
     expect(await isKeylessIpSuspicious("1.2.3.7")).toBe(false);
+    expect(await isKeylessIpSuspicious("1.2.3.7")).toBe(false);
     expect(fetchFn).toHaveBeenCalledTimes(1);
-    expect(store.has("spur_context:1.2.3.7")).toBe(false);
   });
 
-  it("fails open when the Spur call throws, and releases the lock so a later call retries", async () => {
+  it("fails open when the Spur call throws, and retries once the negative cache expires", async () => {
     const fetchFn = mockFetch(async () => {
       throw new Error("network down");
     });
     expect(await isKeylessIpSuspicious("1.2.3.8")).toBe(false);
 
-    // Lock must be freed: a subsequent call gets to fetch again.
+    expect(await isKeylessIpSuspicious("1.2.3.8")).toBe(false);
+    expect(fetchFn).toHaveBeenCalledTimes(1);
+
+    // The fake redis ignores EX; clearing it stands in for the negative TTL
+    // expiring. The lock was released, so a later call gets to fetch again.
+    store.clear();
     fetchFn.mockImplementation(async () =>
-      okResponse({ ip: "1.2.3.8", tunnels: [{ type: "TOR" }] }),
+      okResponse({
+        ip: "1.2.3.8",
+        tunnels: [{ anonymous: true, type: "TOR" }],
+      }),
     );
     expect(await isKeylessIpSuspicious("1.2.3.8")).toBe(true);
     expect(fetchFn).toHaveBeenCalledTimes(2);
+  });
+
+  it("never looks up a non-IPv4 identity", async () => {
+    const fetchFn = mockFetch(async () =>
+      okResponse({ tunnels: [{ type: "VPN" }] }),
+    );
+    // Raw IPv6 and IPv4-mapped IPv6 both fail open without a Spur call: the
+    // call sites normalize `::ffff:` first, and raw IPv6 is too cheap to
+    // rotate for a per-IP cache to bound spend.
+    expect(await isKeylessIpSuspicious("2001:db8::1")).toBe(false);
+    expect(await isKeylessIpSuspicious("::ffff:1.2.3.4")).toBe(false);
+    expect(fetchFn).not.toHaveBeenCalled();
+    expect(store.size).toBe(0);
   });
 
   it("a lock loser fails open within the bound when no result ever lands", async () => {

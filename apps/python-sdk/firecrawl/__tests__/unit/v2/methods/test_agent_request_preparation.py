@@ -368,3 +368,176 @@ class TestAgentResponseParsing:
         )
 
         assert response.model == "spark-3"
+
+
+class TestAgentEffort:
+    """Unit tests for the agent effort parameter."""
+
+    @pytest.mark.parametrize("effort", ["low", "medium", "high"])
+    def test_effort_forwarded_verbatim(self, effort):
+        """Every documented effort level reaches the request body."""
+        data = _prepare_agent_request(None, prompt="Effort test", effort=effort)
+
+        assert data["effort"] == effort
+
+    def test_effort_omitted_when_unset(self):
+        data = _prepare_agent_request(None, prompt="Effort test")
+
+        assert "effort" not in data
+
+    def test_status_payload_parses_effort(self):
+        """The status response carries the effort the run used."""
+        response = AgentResponse(
+            **{
+                "success": True,
+                "id": "job-1",
+                "status": "completed",
+                "model": "spark-2",
+                "effort": "high",
+            }
+        )
+
+        assert response.effort == "high"
+
+
+class TestAgentTraceAndSnapshotParsing:
+    """Unit tests for parsing agent trace and snapshot payloads."""
+
+    BASE_EVENT = {
+        "schemaVersion": 1,
+        "eventId": "018f3c5e-0000-7000-8000-000000000000",
+        "runId": "018f3c5e-0000-7000-8000-000000000001",
+        "occurredAt": "2026-08-26T12:00:00+00:00",
+        "producerSequence": 1,
+        "agent": {
+            "id": "018f3c5e-0000-7000-8000-000000000002",
+            "role": "orchestrator",
+            "name": "main",
+        },
+    }
+
+    def test_trace_parses_representative_events(self):
+        from firecrawl.v2.types import AgentTraceResponse
+
+        events = [
+            {"type": "run.started"},
+            {"type": "run.cancel_requested", "reason": "user"},
+            {
+                "type": "run.finished",
+                "outcome": "credit_limit_reached",
+                "error": {
+                    "code": "credit_limit_reached",
+                    "source": "billing",
+                    "retryable": False,
+                    "message": "out of credits",
+                },
+            },
+            {"type": "agent.started"},
+            {
+                "type": "agent.finished",
+                "outcome": "succeeded",
+                "durationMs": 1234,
+                "error": None,
+            },
+            {"type": "browser.session.started", "sessionId": "sess-1"},
+            {"type": "browser.session.finished", "sessionId": "sess-1", "durationMs": 42},
+            {"type": "progress.reported", "phase": "working", "message": "reading"},
+            {"type": "reasoning.summary", "text": "thinking"},
+            {
+                "type": "tool_call.started",
+                "toolCallId": "tc-1",
+                "toolName": "scrape",
+                "parameters": {"url": "https://example.com"},
+            },
+            {
+                "type": "tool_call.finished",
+                "toolCallId": "tc-1",
+                "toolName": "scrape",
+                "result": {"ok": True},
+            },
+            {
+                "type": "artifact.updated",
+                "artifact": {
+                    "kind": "json",
+                    "artifactId": "result",
+                    "path": "/workspace/data.json",
+                    "snapshotId": "018f3c5e-0000-7000-8000-000000000003",
+                    "change": "partial",
+                    "changedFields": ["price"],
+                    "itemCount": 3,
+                    "sourceToolCallId": "tc-1",
+                },
+            },
+            {
+                "type": "error.occurred",
+                "error": {
+                    "code": "internal",
+                    "source": "system",
+                    "retryable": True,
+                    "message": "boom",
+                },
+            },
+        ]
+
+        response = AgentTraceResponse(
+            **{
+                "success": True,
+                "id": "job-1",
+                "events": [{**self.BASE_EVENT, **e} for e in events],
+                "creditsUsed": 5,
+                "activeBrowserSessions": [
+                    {
+                        "id": "sess-1",
+                        "liveViewUrl": "https://browser.example.com/sess-1",
+                        "viewport": {"width": 1280, "height": 720},
+                    }
+                ],
+            }
+        )
+
+        assert len(response.events) == 13
+        assert response.events[0].type == "run.started"
+        assert response.events[4].duration_ms == 1234
+        assert response.events[4].error is None
+        artifact = response.events[11].artifact
+        assert artifact.snapshot_id == "018f3c5e-0000-7000-8000-000000000003"
+        assert artifact.change == "partial"
+        assert artifact.changed_fields == ["price"]
+        assert response.events[12].error.code == "internal"
+        assert response.credits_used == 5
+        assert response.active_browser_sessions[0].viewport.width == 1280
+
+    def test_snapshot_payload_parses(self):
+        from firecrawl.v2.types import AgentSnapshotResponse
+
+        response = AgentSnapshotResponse(
+            **{
+                "success": True,
+                "id": "job-1",
+                "snapshotId": "snap-1",
+                "snapshot": '{"price": 42}',
+            }
+        )
+
+        assert response.snapshot_id == "snap-1"
+        assert response.snapshot == '{"price": 42}'
+
+    def test_trace_parses_terminal_events_without_error_key(self):
+        """Terminal events missing the error key still parse (older rows)."""
+        from firecrawl.v2.types import AgentTraceResponse
+
+        events = [
+            {"type": "run.finished", "outcome": "succeeded"},
+            {"type": "agent.finished", "outcome": "succeeded", "durationMs": 7},
+        ]
+
+        response = AgentTraceResponse(
+            **{
+                "success": True,
+                "id": "job-1",
+                "events": [{**self.BASE_EVENT, **e} for e in events],
+            }
+        )
+
+        assert response.events[0].error is None
+        assert response.events[1].error is None

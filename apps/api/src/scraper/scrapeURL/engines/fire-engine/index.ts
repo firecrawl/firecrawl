@@ -28,6 +28,23 @@ import {
 import * as Sentry from "@sentry/node";
 import { gunzipSync } from "node:zlib";
 import { specialtyScrapeCheck } from "../utils/specialtyHandler";
+import {
+  byReferenceReachableForRequest,
+  largePdfLimitBytes,
+} from "../pdf/fire-pdf/by-reference";
+import { PDF_DOWNLOAD_MAX_FILE_SIZE } from "../pdf/types";
+import { config } from "../../../../config";
+
+/** The handoff additionally requires the inbound allowlist bucket to be
+ * configured: without it, a reference fire-engine returned could never be
+ * consumed, so granting the raise would only turn large-PDF scrapes into
+ * prefetch failures. */
+function fireEngineHandoffEligible(meta: Meta): boolean {
+  return (
+    config.FIRE_ENGINE_PDF_GCS_BUCKET !== undefined &&
+    byReferenceReachableForRequest(meta)
+  );
+}
 import { fireEngineDelete } from "./delete";
 import { MockState } from "../../lib/mock";
 import { getInnerJson } from "@mendable/firecrawl-rs";
@@ -205,6 +222,13 @@ async function performFireEngineScrape<
         }),
         status.responseHeaders,
         status,
+        meta.abort.asSignal(),
+        // Handoff downloads only admit large files when the FirePDF
+        // by-reference route can actually take them, and only up to the
+        // requesting team's large-PDF limit.
+        fireEngineHandoffEligible(meta)
+          ? largePdfLimitBytes(meta)
+          : PDF_DOWNLOAD_MAX_FILE_SIZE,
       );
     }
 
@@ -217,7 +241,10 @@ async function performFireEngineScrape<
       status.content = await getInnerJson(status.content);
     }
 
-    if (status.file && !wantsRawBase64) {
+    // Reference-shaped files (gcs_uri without content) belong to the
+    // specialty prefetch path above and never reach this inline-decode
+    // block; guard on `content` so one slipping through can't crash it.
+    if (status.file?.content !== undefined && !wantsRawBase64) {
       const content = status.file.content;
       delete status.file;
       let buffer = Buffer.from(content, "base64");
@@ -451,6 +478,12 @@ export async function scrapeURLWithFireEngineChromeCDP(
         !meta.internalOptions.zeroDataRetention &&
         meta.internalOptions.saveScrapeResultToGCS,
       zeroDataRetention: meta.internalOptions.zeroDataRetention,
+      // Team-scoped ceiling for fire-engine's large-PDF GCS handoff: without
+      // it fire-engine grants no raise and PDFs keep its inline cap, so the
+      // worker never captures bytes this team may not use.
+      ...(fireEngineHandoffEligible(meta)
+        ? { pdfMaxSize: largePdfLimitBytes(meta) }
+        : {}),
       ...(shouldAllowMedia ? { blockMedia: false } : {}),
       ...(forceNonRender ? { forceNonRender: true } : {}),
       persistentStorage: meta.options.profile
@@ -527,6 +560,19 @@ export async function scrapeURLWithFireEngineChromeCDP(
       (Object.entries(response.responseHeaders ?? {}).find(
         x => x[0].toLowerCase() === "content-type",
       ) ?? [])[1] ?? undefined;
+
+    // A GCS-reference file cannot serve rawBase64 (the caller wants inline
+    // bytes). fire-engine never grants the large-PDF raise to rawBase64
+    // requests, so this is defense in depth with a clear error rather than
+    // a silent rawBase64: undefined.
+    if (
+      hasFormatOfType(meta.options.formats, "rawBase64") !== undefined &&
+      response.file &&
+      response.file.content === undefined &&
+      response.file.gcs_uri !== undefined
+    ) {
+      throw new UnsupportedFileError("File exceeds size limit");
+    }
 
     return {
       url: response.url ?? meta.url,

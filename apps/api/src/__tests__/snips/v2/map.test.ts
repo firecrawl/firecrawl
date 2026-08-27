@@ -78,6 +78,53 @@ describe("Map tests", () => {
     60000,
   );
 
+  it.concurrent(
+    "sitemap=only returns every URL of the sitemap",
+    async () => {
+      const response = await map(
+        {
+          url: "https://www.hfea.gov.uk",
+          sitemap: "only",
+          useMock: "map-sitemap-all-urls",
+          ignoreCache: true,
+        },
+        identity,
+      );
+
+      expect(response.statusCode).toBe(200);
+      expect(response.body.success).toBe(true);
+
+      // The first URL the sitemap yields used to be discarded, so
+      // /first-page never made it into the response.
+      const urls = response.body.links.map(x => x.url);
+      expect(urls).toContain("https://www.hfea.gov.uk/first-page");
+      expect(urls).toContain("https://www.hfea.gov.uk/second-page");
+      expect(urls).toContain("https://www.hfea.gov.uk/third-page");
+    },
+    60000,
+  );
+
+  it.concurrent(
+    "sitemap=only still respects a limit smaller than the sitemap",
+    async () => {
+      const response = await map(
+        {
+          url: "https://www.hfea.gov.uk",
+          sitemap: "only",
+          useMock: "map-sitemap-all-urls",
+          ignoreCache: true,
+          limit: 2,
+        },
+        identity,
+      );
+
+      expect(response.statusCode).toBe(200);
+      expect(response.body.success).toBe(true);
+      expect(response.body.links.length).toBe(2);
+    },
+    60000,
+  );
+
   concurrentIf(ALLOW_TEST_SUITE_WEBSITE)(
     "sitemap=only respects limit",
     async () => {

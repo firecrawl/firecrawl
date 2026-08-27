@@ -9,6 +9,7 @@ import {
 import type { HighlightFailureReason } from "./highlight-model";
 import { config } from "../config";
 import { logger as rootLogger } from "../lib/logger";
+import { sampled } from "../lib/rollout";
 
 // How far back into the index we're willing to reach for highlight source text.
 const HIGHLIGHTS_INDEX_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
@@ -26,18 +27,6 @@ export function highlightsEnvReady(): boolean {
   return (
     useIndex && !!config.GCS_INDEX_BUCKET_NAME && !!config.HIGHLIGHT_MODEL_URL
   );
-}
-
-function sampled(cohortKey: string, percent: number): boolean {
-  if (percent <= 0) return false;
-  if (percent >= 100) return true;
-
-  let hash = 2166136261;
-  for (let i = 0; i < cohortKey.length; i++) {
-    hash ^= cohortKey.charCodeAt(i);
-    hash = Math.imul(hash, 16777619);
-  }
-  return ((hash >>> 0) / 0x1_0000_0000) * 100 < percent;
 }
 
 export function searchHighlightsMode(options: {

@@ -76,6 +76,7 @@ import {
 } from "./lib/abortManager";
 import {
   ScrapeJobTimeoutError,
+  composeTimeoutProcessing,
   CrawlDenialError,
   ActionsNotSupportedError,
 } from "../../lib/error";
@@ -151,9 +152,48 @@ export type Meta = {
         status: number;
         proxyUsed: "basic" | "stealth";
         contentType?: string;
+        /** Set when fire-engine handed the file off by GCS reference (large
+         * PDFs): the object it uploaded, so the FirePDF by-reference path
+         * can server-side copy it instead of re-uploading the bytes. The
+         * local filePath is still materialized (sniffing and page-count
+         * detection need bytes on disk). */
+        gcsReference?: {
+          uri: string;
+          sha256?: string;
+          sizeBytes?: number;
+          /** int64 as the SDK's string form — never rounded through a JS
+           * number. */
+          generation?: string;
+        };
       }
     | null
     | undefined; // undefined: no prefetch yet, null: prefetch came back empty
+  /** Live state of a by-reference FirePDF job (large PDFs) this scrape
+   * submitted or adopted. Such jobs outlive an abandoned scrape BY
+   * DESIGN (see fire-pdf/async.ts's cancel policy), so a SCRAPE_TIMEOUT
+   * uses this to tell the caller processing continues and when a retry
+   * of the same URL will pick up the finished result.
+   *
+   * Shaped as a mutable container (like `threatDecisions`) on purpose:
+   * engine dispatch and the pdf engine hand out SPREAD COPIES of meta,
+   * and only the shared inner object makes writes from those copies
+   * visible to the outer timeout handler here. Set by fire-pdf/async.ts;
+   * `current` is cleared when the job reaches a terminal state within
+   * this scrape's lifetime. */
+  largePdfProcessing?: {
+    current?: {
+      jobScrapeId: string;
+      pagesEstimate?: number;
+      submittedAtMs: number;
+      jobDeadlineAtMs?: number;
+      lastStatus: "queued" | "published" | "running";
+      /** fire-pdf's live remaining estimate from the last poll that
+       * carried one, with its observation time — one atomic datum,
+       * preferred over the static per-page math when composing the
+       * timeout message. */
+      serverEstimate?: { remainingMs: number; observedAtMs: number };
+    };
+  };
   documentPrefetch:
     | {
         filePath: string;
@@ -444,6 +484,7 @@ async function buildMetaObject(
     fetchPrefetch,
     costTracking,
     threatDecisions: [],
+    largePdfProcessing: {},
   };
 }
 
@@ -1402,6 +1443,27 @@ export async function scrapeURL(
       // if (Object.values(meta.results).length > 0 && Object.values(meta.results).every(x => x.state === "error" && x.error instanceof FEPageLoadFailed)) {
       //   throw new FEPageLoadFailed();
       // } else
+      // A timed-out large-PDF scrape leaves its fire-pdf job running by
+      // design (fire-pdf/async.ts cancel policy); upgrade the timeout
+      // error IN PLACE so the caller learns processing continues and
+      // when a retry of the same URL picks the result up. Covers both
+      // the engine race's own timer and the abort manager's inner
+      // timeout, which exits through the early rethrow below.
+      const timeoutCandidate =
+        error instanceof AbortManagerThrownError ? error.inner : error;
+      if (
+        meta.largePdfProcessing?.current &&
+        timeoutCandidate instanceof ScrapeJobTimeoutError &&
+        timeoutCandidate.processing === undefined
+      ) {
+        const composed = composeTimeoutProcessing({
+          ...meta.largePdfProcessing.current,
+          nowMs: Date.now(),
+        });
+        timeoutCandidate.processing = composed.details;
+        timeoutCandidate.message = composed.message;
+      }
+
       meta.logger.debug("scrapeURL metrics", {
         module: "scrapeURL/metrics",
         timeTaken: Date.now() - startTime,

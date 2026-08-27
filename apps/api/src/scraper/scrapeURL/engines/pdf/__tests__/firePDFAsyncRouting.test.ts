@@ -5,6 +5,7 @@ import {
   FIRE_PDF_ASYNC_MIN_REMAINING_MS,
 } from "../fire-pdf/routing";
 import {
+  computeByReferenceDeadlineMs,
   computeDeadlineMs,
   firePdfHeaders,
   nextPollDelay,
@@ -80,6 +81,63 @@ describe("FirePDF async routing", () => {
       reason: "percentage",
     });
   });
+
+  it("routes crawl/batch children on their own cohort", () => {
+    expect(
+      decideFirePdfAsyncRoute({
+        ...baseInput,
+        bulkOrigin: true,
+        bulkOriginPercentage: 100,
+      }),
+    ).toEqual({ enabled: true, reason: "bulk_origin" });
+    // Traffic-neutral by default, like every other cohort.
+    expect(decideFirePdfAsyncRoute({ ...baseInput, bulkOrigin: true })).toEqual(
+      { enabled: false, reason: "percentage_disabled" },
+    );
+    // Never applies to non-bulk scrapes.
+    expect(
+      decideFirePdfAsyncRoute({ ...baseInput, bulkOriginPercentage: 100 }),
+    ).toEqual({ enabled: false, reason: "percentage_disabled" });
+  });
+
+  it("keeps the hard exclusions ahead of the bulk cohort", () => {
+    const bulk = {
+      ...baseInput,
+      bulkOrigin: true,
+      bulkOriginPercentage: 100,
+    };
+    expect(
+      decideFirePdfAsyncRoute({ ...bulk, zeroDataRetention: true }),
+    ).toEqual({ enabled: false, reason: "zdr" });
+    expect(
+      decideFirePdfAsyncRoute({
+        ...bulk,
+        remainingMs: FIRE_PDF_ASYNC_MIN_REMAINING_MS - 1,
+      }),
+    ).toEqual({ enabled: false, reason: "deadline_too_close" });
+    expect(
+      decideFirePdfAsyncRoute({ ...bulk, disableTeamIds: "team-1" }),
+    ).toEqual({ enabled: false, reason: "team_disabled" });
+  });
+
+  it("cohorts bulk and general percentages independently", () => {
+    // The bulk cohort hashes a prefixed key, so a scrape's position in
+    // one cohort says nothing about its position in the other.
+    const scrapeId = "cohort-independence-probe";
+    expect(deterministicPercentage(`bulk-origin:${scrapeId}`)).not.toBe(
+      deterministicPercentage(scrapeId),
+    );
+    // A bulk scrape outside its cohort still falls through to the
+    // general percentage.
+    expect(
+      decideFirePdfAsyncRoute({
+        ...baseInput,
+        bulkOrigin: true,
+        bulkOriginPercentage: 0,
+        percentage: 100,
+      }),
+    ).toEqual({ enabled: true, reason: "percentage" });
+  });
 });
 
 describe("FirePDF async transport helpers", () => {
@@ -92,6 +150,24 @@ describe("FirePDF async transport helpers", () => {
 
   it("does not inflate a caller deadline", () => {
     expect(computeDeadlineMs(4_000)).toBe(4_000);
+  });
+
+  it("page-scales the by-reference job deadline independently of the caller", () => {
+    // 5min base + pages × 500ms, floored at the caller window, capped at
+    // MAX_DEADLINE_MS. The caller's own polling stops at its window; the
+    // decoupled job deadline is what lets the job finish server-side.
+    const FIVE_MIN = 5 * 60 * 1_000;
+    // Small doc, tiny caller window → base dominates.
+    expect(computeByReferenceDeadlineMs(60_000, 100)).toBe(FIVE_MIN + 50_000);
+    // Big doc → page term dominates, capped at 30 min.
+    expect(computeByReferenceDeadlineMs(60_000, 6_543)).toBe(30 * 60 * 1_000);
+    // A caller with a LONGER explicit window than the page-scaled need
+    // keeps its window (never advertise less than the caller has).
+    expect(computeByReferenceDeadlineMs(20 * 60 * 1_000, 100)).toBe(
+      20 * 60 * 1_000,
+    );
+    // No pages estimate → base + caller floor semantics still hold.
+    expect(computeByReferenceDeadlineMs(undefined, undefined)).toBe(FIVE_MIN);
   });
 
   it("adds the shared FirePDF bearer credential when configured", () => {

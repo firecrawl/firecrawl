@@ -1,5 +1,27 @@
 ## CHANGELOG
 
+## [2.17.0] - 2026-08-26
+
+### Added
+
+- Added `AgentOptions::effort` (`AgentEffort`) for the agent reasoning budget,
+  and `AgentStatusResponse::effort` for the effort a run used.
+- Added `Client::get_agent_trace` returning the job's execution trace as typed
+  `AgentTraceEvent`s (canonical event schema v1), with optional live-view
+  browser sessions.
+- Added `Client::get_agent_snapshot` returning the full content of an artifact
+  snapshot referenced by an `artifact.updated` trace event.
+
+## [2.16.1] - 2026-08-26
+
+### Fixed
+
+- Agent, crawl, batch scrape, map, and parse requests now send
+  `origin: "rust-sdk@<version>"` for request attribution, matching the other
+  SDKs. Agent requests previously sent no origin at all, which made them
+  indistinguishable from raw API traffic server-side. A caller-provided
+  `origin` is still respected.
+
 ## [2.16.0] - 2026-08-21
 
 ### Added

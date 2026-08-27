@@ -114,10 +114,14 @@ class AsyncFirecrawlClient:
     async def scrape(
         self,
         url: str,
+        *,
+        auto_resume: Optional[bool] = None,
         **kwargs,
     ):
         options = ScrapeOptions(**{k: v for k, v in kwargs.items() if v is not None}) if kwargs else None
-        return await async_scrape.scrape(self.async_http_client, url, options)
+        return await async_scrape.scrape(
+            self.async_http_client, url, options, auto_resume=auto_resume
+        )
 
     # Research paper index (/v2/search/research)
     @doc(ASYNC_CLIENT_SEARCH_PAPERS_DOC)
@@ -735,6 +739,7 @@ class AsyncFirecrawlClient:
         max_credits: Optional[int] = None,
         strict_constrain_to_urls: Optional[bool] = None,
         model: Optional[Literal["spark-1-pro", "spark-1-mini", "spark-2"]] = None,
+        effort: Optional[Literal["low", "medium", "high"]] = None,
         webhook: Optional[Union[str, AgentWebhookConfig]] = None,
         threat_protection: Optional[ThreatProtectionOptions] = None,
         audit_metadata: Optional[AuditMetadata] = None,
@@ -750,6 +755,7 @@ class AsyncFirecrawlClient:
             max_credits=max_credits,
             strict_constrain_to_urls=strict_constrain_to_urls,
             model=model,
+            effort=effort,
             webhook=webhook,
             threat_protection=threat_protection,
             audit_metadata=audit_metadata,
@@ -768,6 +774,7 @@ class AsyncFirecrawlClient:
         max_credits: Optional[int] = None,
         strict_constrain_to_urls: Optional[bool] = None,
         model: Optional[Literal["spark-1-pro", "spark-1-mini", "spark-2"]] = None,
+        effort: Optional[Literal["low", "medium", "high"]] = None,
         webhook: Optional[Union[str, AgentWebhookConfig]] = None,
         threat_protection: Optional[ThreatProtectionOptions] = None,
         audit_metadata: Optional[AuditMetadata] = None,
@@ -781,6 +788,7 @@ class AsyncFirecrawlClient:
             max_credits=max_credits,
             strict_constrain_to_urls=strict_constrain_to_urls,
             model=model,
+            effort=effort,
             webhook=webhook,
             threat_protection=threat_protection,
             audit_metadata=audit_metadata,
@@ -796,6 +804,34 @@ class AsyncFirecrawlClient:
             True if the agent was cancelled
         """
         return await async_agent.cancel_agent(self.async_http_client, job_id)
+
+    async def get_agent_trace(self, job_id: str, *, live_view: bool = False):
+        """Get the execution trace of an agent job (spark-2 runs only).
+
+        Args:
+            job_id: Agent job ID
+            live_view: Also include currently active browser sessions with live view URLs
+
+        Returns:
+            AgentTraceResponse with the ordered trace events
+        """
+        return await async_agent.get_agent_trace(
+            self.async_http_client, job_id, live_view=live_view
+        )
+
+    async def get_agent_snapshot(self, job_id: str, snapshot_id: str):
+        """Get the full content of an artifact snapshot referenced by a trace event.
+
+        Args:
+            job_id: Agent job ID
+            snapshot_id: Snapshot ID from an artifact.updated trace event
+
+        Returns:
+            AgentSnapshotResponse with the snapshot content
+        """
+        return await async_agent.get_agent_snapshot(
+            self.async_http_client, job_id, snapshot_id
+        )
 
     # Browser
     async def browser(

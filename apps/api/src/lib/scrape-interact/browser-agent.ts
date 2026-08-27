@@ -24,6 +24,13 @@ const MAX_STEPS = 25;
 const SNAPSHOT_TIMEOUT = 15;
 const SNAPSHOT_MAX_CHARS = 40_000;
 
+// Vertex is the preferred provider so usage is traceable via Vertex billing
+// labels; the GenAI (Gemini) API is only a fallback when Vertex credentials
+// aren't configured (e.g. self-hosted). Mirrors services/monitoring/search/tuning.ts.
+function hasVertex(): boolean {
+  return Boolean(config.VERTEX_CREDENTIALS);
+}
+
 // ---------------------------------------------------------------------------
 // Debug log
 // ---------------------------------------------------------------------------
@@ -352,7 +359,7 @@ export async function executePromptViaBrowserAgent(
 
   try {
     const result = await generateText({
-      model: getModel("gemini-3.5-flash", "google"),
+      model: getModel("gemini-3.5-flash", hasVertex() ? "vertex" : "google"),
       system: SYSTEM_PROMPT,
       messages: [
         {

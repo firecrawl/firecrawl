@@ -327,6 +327,7 @@ export type MonitorRow = {
   last_check_summary: MonitorSummary | null;
   goal: string | null;
   judge_enabled: boolean;
+  partner_job_token: string | null;
   created_at: string;
   updated_at: string;
   deleted_at: string | null;

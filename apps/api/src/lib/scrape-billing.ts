@@ -113,6 +113,15 @@ export async function calculateCreditsToBeBilled(
       creditsToBeBilled = 1;
     }
 
+    const promptInjectionGuardRan = costTrackingJSON.calls?.some(
+      call =>
+        call.metadata?.module === "scrapeURL" &&
+        call.metadata?.method === "checkForPromptInjection",
+    );
+    if (creditsToBeBilled === 0 && promptInjectionGuardRan) {
+      creditsToBeBilled = 5;
+    }
+
     // Failed scrapes bill no base cost (except the cases above), but threat
     // protection scans that already happened still bill — including scrapes
     // blocked by the policy itself.
@@ -142,6 +151,17 @@ export async function calculateCreditsToBeBilled(
     changeTrackingFormat?.modes?.includes("json")
   ) {
     creditsToBeBilled = 5;
+  }
+
+  if (hasFormatOfType(options.formats, "json")?.checkPromptInjection) {
+    const promptInjectionGuardRan = costTrackingJSON.calls?.some(
+      call =>
+        call.metadata?.module === "scrapeURL" &&
+        call.metadata?.method === "checkForPromptInjection",
+    );
+    if (promptInjectionGuardRan) {
+      creditsToBeBilled += 4;
+    }
   }
 
   if (hasFormatOfType(options.formats, "deterministicJson")) {

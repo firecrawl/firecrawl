@@ -388,6 +388,8 @@ def _validate_json_format(format_obj: Any) -> Dict[str, Any]:
     # schema is recommended; if provided, normalize Pydantic forms
     schema = format_obj.get('schema')
     normalized = dict(format_obj)
+    if "check_prompt_injection" in normalized:
+        normalized["checkPromptInjection"] = normalized.pop("check_prompt_injection")
     if schema is not None:
         normalized_schema = _normalize_schema(schema)
         if normalized_schema is not None:

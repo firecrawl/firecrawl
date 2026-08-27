@@ -129,6 +129,7 @@ export async function executeSearch(
     : ((await search({
         query: searchQuery,
         logger,
+        requestId: context.requestId,
         advanced: false,
         num_results: num_results_buffer,
         tbs: options.tbs,

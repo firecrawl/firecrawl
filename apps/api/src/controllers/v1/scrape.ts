@@ -311,6 +311,22 @@ export async function scrapeController(
         });
       }
 
+      if (e.code === "SCRAPE_PROMPT_INJECTION_DETECTED") {
+        return res.status(403).json({
+          success: false,
+          code: e.code,
+          error: e.message,
+        });
+      }
+
+      if (e.code === "SCRAPE_JSON_CONTENT_TOO_LARGE") {
+        return res.status(400).json({
+          success: false,
+          code: e.code,
+          error: e.message,
+        });
+      }
+
       return res.status(e.code === "SCRAPE_TIMEOUT" ? 408 : 500).json({
         success: false,
         code: e.code,

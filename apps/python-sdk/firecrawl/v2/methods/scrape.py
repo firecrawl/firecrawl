@@ -2,6 +2,7 @@
 Scraping functionality for Firecrawl v2 API.
 """
 
+import time
 from typing import Optional, Dict, Any, Literal
 from ..types import (
     ScrapeOptions,
@@ -11,6 +12,7 @@ from ..types import (
 )
 from ..utils.normalize import normalize_document_input
 from ..utils import HttpClient, handle_response_error, prepare_scrape_options, validate_scrape_options
+from ..utils.auto_resume import ResumeTracker
 
 
 def _prepare_scrape_request(url: str, options: Optional[ScrapeOptions] = None) -> Dict[str, Any]:
@@ -38,7 +40,15 @@ def _prepare_scrape_request(url: str, options: Optional[ScrapeOptions] = None) -
 
     return request_data
 
-def scrape(client: HttpClient, url: str, options: Optional[ScrapeOptions] = None) -> Document:
+
+
+def scrape(
+    client: HttpClient,
+    url: str,
+    options: Optional[ScrapeOptions] = None,
+    *,
+    auto_resume: Optional[bool] = None,
+) -> Document:
     """
     Scrape a single URL and return the document.
     
@@ -55,18 +65,27 @@ def scrape(client: HttpClient, url: str, options: Optional[ScrapeOptions] = None
     """
     payload = _prepare_scrape_request(url, options)
 
-    response = client.post("/v2/scrape", payload)
+    resume = ResumeTracker(enabled=auto_resume is not False)
+    while True:
+        response = client.post("/v2/scrape", payload)
 
-    if not response.ok:
-        handle_response_error(response, "scrape")
+        if not response.ok:
+            delay_s = resume.delay_or_none(response)
+            if delay_s is not None:
+                # The document keeps processing server-side; the retry
+                # attaches to the same in-flight job (content adoption)
+                # and returns the finished result.
+                time.sleep(delay_s)
+                continue
+            handle_response_error(response, "scrape")
 
-    body = response.json()
-    if not body.get("success"):
-        raise Exception(body.get("error", "Unknown error occurred"))
+        body = response.json()
+        if not body.get("success"):
+            raise Exception(body.get("error", "Unknown error occurred"))
 
-    document_data = body.get("data", {})
-    normalized = normalize_document_input(document_data)
-    return Document(**normalized)
+        document_data = body.get("data", {})
+        normalized = normalize_document_input(document_data)
+        return Document(**normalized)
 
 
 def interact(

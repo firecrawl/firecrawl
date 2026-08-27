@@ -454,6 +454,7 @@ export const monitors = pgTable("monitors", {
   deleted_at: ts("deleted_at"),
   goal: text("goal"),
   judge_enabled: boolean("judge_enabled").notNull().default(false),
+  partner_job_token: text("partner_job_token"),
 });
 
 export const slack_installations = pgTable("slack_installations", {
@@ -679,6 +680,16 @@ export const subscriptions = pgTable("subscriptions", {
   pending_price_effective_at: ts("pending_price_effective_at"),
   pending_schedule_id: text("pending_schedule_id"),
 });
+
+export const partner_provisioned_accounts = pgTable(
+  "partner_provisioned_accounts",
+  {
+    id: bigintNum("id").notNull().generatedByDefaultAsIdentity(),
+    integration_id: bigintNum("integration_id").notNull(),
+    team_id: uuid("team_id").notNull(),
+    org_id: uuid("org_id").notNull(),
+  },
+);
 
 export const teams = pgTable("teams", {
   id: uuid("id").notNull().defaultRandom(),

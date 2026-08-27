@@ -66,11 +66,9 @@ function keylessHeaders(forwardedIp: string): Record<string, string> {
 // blocking KEYS scan on the shared rate-limit Redis, and stays deterministic
 // under concurrency: every parallel no-secret snip bumps the same client-IP
 // key, so the diff below still identifies exactly one bumped candidate.
-// The server keys counters on the RAW client-IP string: only keyless
-// *eligibility* strips the ::ffff: prefix (lib/keyless.ts normalizeKeylessIpv4
-// is not applied before consumeKeylessRequest/keylessTeamId), so an
-// IPv6-mapped connection legitimately produces keys like
-// `keyless_requests:::ffff:127.0.0.1`. Cover both spellings per candidate.
+// The server normalizes ::ffff:-mapped IPs to plain IPv4 before keying
+// (lib/keyless.ts normalizeKeylessIpv4, applied in auth), but keys written by
+// older builds may still carry the raw spelling, so cover both per candidate.
 function candidateKeylessIps(): string[] {
   const bare = new Set<string>(["127.0.0.1"]);
   for (const addrs of Object.values(os.networkInterfaces())) {

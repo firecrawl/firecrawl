@@ -181,7 +181,6 @@ export async function getMapResults({
 
     if (sitemap > 0) {
       mapResults = mapResults
-        .slice(1)
         .map(x => {
           try {
             return {

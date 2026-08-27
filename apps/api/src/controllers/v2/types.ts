@@ -358,6 +358,7 @@ const jsonFormatWithOptions = z.strictObject({
       message: OPENAI_SCHEMA_ERROR_MESSAGE,
     }),
   prompt: z.string().max(10000).optional(),
+  checkPromptInjection: z.boolean().optional(),
 });
 
 export type JsonFormatWithOptions = z.output<typeof jsonFormatWithOptions>;
@@ -998,42 +999,52 @@ const agentWebhookSchema = createWebhookSchema([
   "cancelled",
 ]);
 
-export const agentRequestSchema = z.strictObject({
-  urls: URL.array().optional(),
-  prompt: z.string().max(10000),
-  schema: z
-    .any()
-    .optional()
-    .superRefine((val, ctx) => {
-      if (!val) return; // Allow undefined schema
-      try {
-        agentAjv.compile(val);
-      } catch (e) {
-        const message =
-          e instanceof Error
-            ? e.message
-            : typeof e === "string"
-              ? e
-              : "Unknown error";
-        ctx.addIssue({
-          code: "custom",
-          message: `Invalid JSON schema: ${message}`,
-        });
-      }
-    }),
-  origin: z.string().optional().prefault("api"),
-  integration: integrationSchema.optional().transform(val => val || null),
-  maxCredits: z.number().optional(),
-  strictConstrainToURLs: z.boolean().optional(),
-  webhook: agentWebhookSchema.optional(),
+export const agentRequestSchema = z
+  .strictObject({
+    urls: URL.array().optional(),
+    prompt: z.string().max(10000),
+    schema: z
+      .any()
+      .optional()
+      .superRefine((val, ctx) => {
+        if (!val) return; // Allow undefined schema
+        try {
+          agentAjv.compile(val);
+        } catch (e) {
+          const message =
+            e instanceof Error
+              ? e.message
+              : typeof e === "string"
+                ? e
+                : "Unknown error";
+          ctx.addIssue({
+            code: "custom",
+            message: `Invalid JSON schema: ${message}`,
+          });
+        }
+      }),
+    origin: z.string().optional().prefault("api"),
+    integration: integrationSchema.optional().transform(val => val || null),
+    maxCredits: z.number().optional(),
+    strictConstrainToURLs: z.boolean().optional(),
+    webhook: agentWebhookSchema.optional(),
 
-  overrideWhitelist: z.string().optional(),
-  model: z
-    .enum(["spark-1-pro", "spark-1-mini", "spark-2"])
-    .default("spark-1-pro"),
-  threatProtection: threatProtectionOverrideSchema.optional(),
-  auditMetadata: auditMetadataSchema.optional(),
-});
+    overrideWhitelist: z.string().optional(),
+    // The spark-1 preset names stay accepted so existing callers keep working,
+    // but spark-1 is retired: the transform below runs every request on
+    // spark-2 regardless of what was sent.
+    model: z.enum(["spark-1-pro", "spark-1-mini", "spark-2"]).optional(),
+    effort: z.enum(["low", "medium", "high"]).optional(),
+    threatProtection: threatProtectionOverrideSchema.optional(),
+    auditMetadata: auditMetadataSchema.optional(),
+  })
+  // spark-1 is retired and spark-2 is the default. The spark-1 preset names
+  // remain valid input and silently resolve to spark-2, so every request —
+  // with or without effort, with or without a model — runs spark-2.
+  .transform(x => ({
+    ...x,
+    model: "spark-2" as const,
+  }));
 
 export type AgentRequest = z.infer<typeof agentRequestSchema>;
 // export type AgentRequestInput = z.input<typeof agentRequestSchema>;
@@ -1512,6 +1523,7 @@ export type AgentStatusResponse =
       error?: string;
       data?: any;
       model?: "spark-1-pro" | "spark-1-mini" | "spark-2";
+      effort?: "low" | "medium" | "high";
       expiresAt: string;
       creditsUsed?: number;
     };
@@ -1918,6 +1930,7 @@ export function fromV1ScrapeOptions(
               type: "json",
               schema: opts?.schema,
               prompt: opts?.prompt,
+              checkPromptInjection: opts?.checkPromptInjection ?? false,
             };
             return fmt;
           } else if (x === "json") {
@@ -1928,6 +1941,7 @@ export function fromV1ScrapeOptions(
                 type: "json",
                 schema: opts.schema,
                 prompt: opts.prompt,
+                checkPromptInjection: opts.checkPromptInjection ?? false,
               };
               return includesFormat(v1ScrapeOptions.formats as any, "extract")
                 ? null
@@ -2193,18 +2207,15 @@ export const searchRequestSchema = z
     x => !(x.includeDomains?.length && x.excludeDomains?.length),
     "includeDomains and excludeDomains cannot both be specified",
   )
-  .refine(
-    x => {
-      const categories = x.categories ?? [];
-      const hasDeveloper = categories.some(category =>
-        typeof category === "string"
-          ? category === "developer"
-          : category.type === "developer",
-      );
-      return !hasDeveloper || categories.length === 1;
-    },
-    "the developer category cannot be combined with other categories",
-  )
+  .refine(x => {
+    const categories = x.categories ?? [];
+    const hasDeveloper = categories.some(category =>
+      typeof category === "string"
+        ? category === "developer"
+        : category.type === "developer",
+    );
+    return !hasDeveloper || categories.length === 1;
+  }, "the developer category cannot be combined with other categories")
   .refine(x => waitForRefine(x.scrapeOptions), waitForRefineOpts)
   .transform(x => {
     const country =

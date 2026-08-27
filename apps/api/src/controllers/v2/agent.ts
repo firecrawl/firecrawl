@@ -180,6 +180,7 @@ export async function agentController(
         strictConstrainToURLs: req.body.strictConstrainToURLs ?? undefined,
         webhook: req.body.webhook ?? undefined,
         model: req.body.model,
+        effort: req.body.effort,
         auditMetadata: req.body.auditMetadata,
       }),
     },

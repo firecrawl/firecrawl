@@ -11,7 +11,10 @@ import {
 } from "./types";
 import { v7 as uuidv7 } from "uuid";
 import { hasFormatOfType } from "../../lib/format-utils";
-import { TransportableError } from "../../lib/error";
+import {
+  getTimeoutProcessingDetails,
+  TransportableError,
+} from "../../lib/error";
 import { NuQJob } from "../../services/worker/nuq";
 import { checkPermissions } from "../../lib/permissions";
 import {
@@ -470,14 +473,46 @@ export async function scrapeController(
             });
           }
 
+          if (e.code === "SCRAPE_PROMPT_INJECTION_DETECTED") {
+            setSpanAttributes(span, {
+              "scrape.status_code": 403,
+            });
+            return res.status(403).json({
+              success: false,
+              code: e.code,
+              error: e.message,
+            });
+          }
+
+          if (e.code === "SCRAPE_JSON_CONTENT_TOO_LARGE") {
+            setSpanAttributes(span, {
+              "scrape.status_code": 400,
+            });
+            return res.status(400).json({
+              success: false,
+              code: e.code,
+              error: e.message,
+            });
+          }
+
           const statusCode = e.code === "SCRAPE_TIMEOUT" ? 408 : 500;
           setSpanAttributes(span, {
             "scrape.status_code": statusCode,
           });
+          // Large-PDF timeouts where the fire-pdf job keeps processing
+          // server-side carry structured retry guidance: surface it as
+          // `details` plus a standard Retry-After header so clients (and
+          // retry libraries) know a timed retry returns the finished
+          // result instead of restarting the work.
+          const processing = getTimeoutProcessingDetails(e);
+          if (processing) {
+            res.setHeader("Retry-After", String(processing.retryAfterSeconds));
+          }
           return res.status(statusCode).json({
             success: false,
             code: e.code,
             error: e.message,
+            ...(processing && { details: processing }),
           });
         } else {
           const id = uuidv7();

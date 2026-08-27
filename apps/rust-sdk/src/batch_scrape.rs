@@ -39,6 +39,10 @@ pub struct BatchScrapeOptions {
     /// Integration identifier for tracking.
     pub integration: Option<String>,
 
+    /// Origin label for request attribution (e.g., "rust-sdk@2.16.1").
+    /// Defaults to `rust-sdk@<version>` when unset.
+    pub origin: Option<String>,
+
     /// Poll interval for synchronous batch scrape (milliseconds).
     #[serde(skip)]
     pub poll_interval: Option<u64>,
@@ -132,7 +136,10 @@ impl Client {
         urls: Vec<String>,
         options: impl Into<Option<BatchScrapeOptions>>,
     ) -> Result<BatchScrapeResponse, FirecrawlError> {
-        let options = options.into().unwrap_or_default();
+        let mut options = options.into().unwrap_or_default();
+        if options.origin.is_none() {
+            options.origin = Some(format!("rust-sdk@{}", env!("CARGO_PKG_VERSION")));
+        }
         let body = BatchScrapeRequest {
             urls,
             options: options.clone(),
@@ -372,6 +379,7 @@ impl Client {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use mockito::Matcher;
     use serde_json::json;
 
     #[tokio::test]
@@ -402,6 +410,38 @@ mod tests {
 
         assert!(response.success);
         assert_eq!(response.id, "batch-123");
+        mock.assert();
+    }
+
+    #[tokio::test]
+    async fn test_start_batch_scrape_injects_sdk_origin() {
+        let mut server = mockito::Server::new_async().await;
+
+        // The mock only matches when the request body carries the SDK origin,
+        // so a regression in the injection fails the request itself.
+        let mock = server
+            .mock("POST", "/v2/batch/scrape")
+            .match_body(Matcher::PartialJson(json!({
+                "origin": format!("rust-sdk@{}", env!("CARGO_PKG_VERSION"))
+            })))
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(
+                json!({
+                    "success": true,
+                    "id": "batch-123",
+                    "url": "https://api.firecrawl.dev/v2/batch/scrape/batch-123"
+                })
+                .to_string(),
+            )
+            .create();
+
+        let client = Client::new_selfhosted(server.url(), Some("test_key")).unwrap();
+        let urls = vec!["https://example.com".to_string()];
+
+        let response = client.start_batch_scrape(urls, None).await.unwrap();
+
+        assert!(response.success);
         mock.assert();
     }
 

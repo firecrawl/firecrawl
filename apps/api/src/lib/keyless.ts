@@ -43,7 +43,11 @@ const DAY_SECONDS = 86400;
 // logging. Rotation intentionally creates a new cohort namespace.
 export const KEYLESS_CONVERSION_COHORT_VERSION = "v1";
 
-function normalizeKeylessIpv4(ip: string): string {
+// Canonicalizes an IPv4-mapped IPv6 address (`::ffff:1.2.3.4`, what Node's
+// dual-stack sockets report) to plain IPv4. Every per-IP artifact (quota
+// buckets, team ids, Spur cache) must key off this form, or the same client
+// counts as two identities.
+export function normalizeKeylessIpv4(ip: string): string {
   const trimmed = ip.trim();
   const lower = trimmed.toLowerCase();
   return lower.startsWith("::ffff:") && isIPv4(trimmed.slice(7))
@@ -329,6 +333,8 @@ export async function checkKeylessEligibility(ip: string): Promise<{
   if (!ip || !isKeylessIpEligible(ip)) {
     return { eligible: false, reason: "ineligible_ip" };
   }
+  // Key the Spur cache and quota buckets below off the canonical IPv4 form.
+  ip = normalizeKeylessIpv4(ip);
   // Optional Spur Context check (only when SPUR_API_KEY is set): treat IPs on
   // anonymizing/rotating infrastructure as ineligible so the hosted MCP can
   // return a bounded recovery result instead of serving a request auth rejects.

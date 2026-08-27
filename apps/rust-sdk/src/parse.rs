@@ -134,7 +134,8 @@ pub struct ParseOptions {
     pub redact_pii: Option<bool>,
     /// User attribution to include with SIEM logging events.
     pub audit_metadata: Option<AuditMetadata>,
-    /// Request origin identifier.
+    /// Origin label for request attribution (e.g., "rust-sdk@2.16.1").
+    /// Defaults to `rust-sdk@<version>` when unset.
     pub origin: Option<String>,
     /// Zero data retention mode.
     pub zero_data_retention: Option<bool>,
@@ -164,7 +165,10 @@ impl Client {
             ));
         }
 
-        let options = options.into().unwrap_or_default();
+        let mut options = options.into().unwrap_or_default();
+        if options.origin.is_none() {
+            options.origin = Some(format!("rust-sdk@{}", env!("CARGO_PKG_VERSION")));
+        }
         let options_json =
             serde_json::to_string(&options).map_err(FirecrawlError::ResponseParseError)?;
 
@@ -231,6 +235,45 @@ mod tests {
 
         assert!(doc.markdown.is_some());
         assert!(doc.markdown.unwrap().contains("Parsed File"));
+        mock.assert();
+    }
+
+    #[tokio::test]
+    async fn test_parse_injects_sdk_origin() {
+        let mut server = mockito::Server::new_async().await;
+
+        // The options travel as a JSON text field inside the multipart body;
+        // the mock only matches when that JSON carries the SDK origin, so a
+        // regression in the injection fails the request itself.
+        let mock = server
+            .mock("POST", "/v2/parse")
+            .match_body(Matcher::Regex(format!(
+                "\"origin\":\"rust-sdk@{}\"",
+                env!("CARGO_PKG_VERSION")
+            )))
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(
+                json!({
+                    "success": true,
+                    "data": {
+                        "markdown": "# Parsed File",
+                        "metadata": {
+                            "sourceURL": "https://parse.firecrawl.dev/uploads/upload.html",
+                            "statusCode": 200
+                        }
+                    }
+                })
+                .to_string(),
+            )
+            .create();
+
+        let client = Client::new_selfhosted(server.url(), Some("test_key")).unwrap();
+        let file = ParseFile::from_bytes("upload.html", b"<html><body>ok</body></html>".to_vec())
+            .with_content_type("text/html");
+        let doc = client.parse(file, None).await.unwrap();
+
+        assert!(doc.markdown.is_some());
         mock.assert();
     }
 

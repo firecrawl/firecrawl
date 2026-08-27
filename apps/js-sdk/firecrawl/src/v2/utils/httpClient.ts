@@ -51,6 +51,12 @@ export class HttpClient {
     return this.apiKey;
   }
 
+  /** The client-wide default request timeout, for callers that need to
+   * extend a specific request beyond it (e.g. scrape auto-resume). */
+  getTimeoutMs(): number {
+    return (this.instance.defaults.timeout as number | undefined) ?? 300000;
+  }
+
   private async request<T = any>(
     config: AxiosRequestConfig,
   ): Promise<AxiosResponse<T>> {

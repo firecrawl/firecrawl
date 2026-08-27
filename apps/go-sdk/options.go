@@ -187,8 +187,11 @@ type AgentOptions struct {
 	MaxCredits            *int                   `json:"maxCredits,omitempty"`
 	StrictConstrainToURLs *bool                  `json:"strictConstrainToURLs,omitempty"`
 	Model                 *string                `json:"model,omitempty"`
-	Webhook               *WebhookConfig         `json:"webhook,omitempty"`
-	AuditMetadata         *AuditMetadata         `json:"auditMetadata,omitempty"`
+	// Effort sets the reasoning budget for the agent. Valid values are "low",
+	// "medium", and "high". Every effort level runs spark-2.
+	Effort        *string        `json:"effort,omitempty"`
+	Webhook       *WebhookConfig `json:"webhook,omitempty"`
+	AuditMetadata *AuditMetadata `json:"auditMetadata,omitempty"`
 }
 
 // AuditMetadata identifies the user associated with a SIEM logging event.
@@ -212,8 +215,9 @@ type WebhookConfig struct {
 
 // JsonOptions configures JSON extraction within formats.
 type JsonOptions struct {
-	Prompt string                 `json:"prompt,omitempty"`
-	Schema map[string]interface{} `json:"schema,omitempty"`
+	Prompt               string                 `json:"prompt,omitempty"`
+	Schema               map[string]interface{} `json:"schema,omitempty"`
+	CheckPromptInjection *bool                  `json:"checkPromptInjection,omitempty"`
 }
 
 // Pointer helpers for optional fields.

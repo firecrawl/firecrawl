@@ -17,6 +17,7 @@ import {
   keylessExhaustionTelemetry,
   isKeylessIpEligible,
   keylessTeamId,
+  normalizeKeylessIpv4,
 } from "../lib/keyless";
 import { isKeylessIpSuspicious } from "../lib/spur";
 import { checkIpRestriction } from "../lib/ip-restriction";
@@ -458,6 +459,10 @@ async function handleKeylessAuth(
   // per-IP cap to mean anything, and malformed/forwarded values must not be
   // usable as arbitrary limiter buckets. Anything else falls through to 401.
   if (!isKeylessIpEligible(ip)) return unauthorized;
+
+  // Canonicalize `::ffff:`-mapped IPv4 so a client gets one Spur cache entry,
+  // one quota bucket, and one team id regardless of how the socket reported it.
+  ip = normalizeKeylessIpv4(ip);
 
   // Optional Spur Context check (only when SPUR_API_KEY is set): refuse keyless
   // for IPs fronting anonymizing/rotating infrastructure (VPN/proxy/TOR), the

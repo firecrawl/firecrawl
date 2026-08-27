@@ -104,11 +104,21 @@ const successSchema = z.object({
     .array()
     .optional(),
 
-  // chrome-cdp only -- file download handler
+  // chrome-cdp only -- file download handler. Small files arrive inline as
+  // base64 `content`; large PDFs arrive as a GCS reference instead
+  // (fire-engine uploads them to its handoff bucket rather than inlining
+  // hundreds of MB of base64 into this response). Exactly one of
+  // `content` / `gcs_uri` is expected.
   file: z
     .object({
       name: z.string(),
-      content: z.string(),
+      content: z.string().optional(),
+      gcs_uri: z.string().optional(),
+      sha256: z.string().optional(),
+      size_bytes: z.number().optional(),
+    })
+    .refine(f => (f.content !== undefined) !== (f.gcs_uri !== undefined), {
+      message: "file must carry exactly one of content or gcs_uri",
     })
     .optional()
     .or(z.null()),

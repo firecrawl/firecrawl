@@ -140,6 +140,173 @@ defmodule FirecrawlTest do
       "Expected connection error, got validation error: #{inspect(err)}"
   end
 
+  test "start_agent sends effort in the request body" do
+    parent = self()
+
+    adapter = fn request ->
+      send(parent, {:request, request})
+
+      resp = Req.Response.new(
+        status: 200,
+        headers: %{"content-type" => ["application/json"]},
+        body: Jason.encode!(%{"success" => true, "id" => "agent-job"})
+      )
+
+      {request, resp}
+    end
+
+    assert {:ok, %Req.Response{status: 200}} =
+             Firecrawl.start_agent(
+               [prompt: "find pricing", effort: "high"],
+               api_key: "test-key",
+               adapter: adapter
+             )
+
+    assert_receive {:request, request}
+
+    body =
+      cond do
+        is_binary(request.body) -> Jason.decode!(request.body)
+        is_map(request.body) -> request.body
+        true -> request.options[:json]
+      end
+
+    assert body["effort"] == "high"
+    assert body["prompt"] == "find pricing"
+    # @sdk_origin is built from the mix.exs @version so the two cannot drift
+    assert body["origin"] == "elixir-sdk@" <> Mix.Project.config()[:version]
+  end
+
+  test "start_agent rejects invalid effort values" do
+    Application.put_env(:firecrawl, :api_key, "test-key")
+    on_exit(fn -> Application.delete_env(:firecrawl, :api_key) end)
+
+    assert {:error, %NimbleOptions.ValidationError{}} =
+             Firecrawl.start_agent(prompt: "test", effort: "ultra")
+  end
+
+  test "get_agent_trace hits /v2/agent/:id/trace" do
+    parent = self()
+
+    adapter = fn request ->
+      send(parent, {:request, request})
+
+      resp = Req.Response.new(
+        status: 200,
+        headers: %{"content-type" => ["application/json"]},
+        body:
+          Jason.encode!(%{
+            "success" => true,
+            "id" => "job-123",
+            "events" => [
+              %{
+                "type" => "run.started",
+                "schemaVersion" => 1,
+                "eventId" => "evt-1",
+                "runId" => "job-123",
+                "occurredAt" => "2026-08-26T00:00:00Z",
+                "producerSequence" => 0,
+                "agent" => %{"id" => "agent", "name" => "spark-2"}
+              }
+            ],
+            "creditsUsed" => 5
+          })
+      )
+
+      {request, resp}
+    end
+
+    assert {:ok, %Req.Response{status: 200}} =
+             Firecrawl.get_agent_trace("job-123", api_key: "test-key", adapter: adapter)
+
+    assert_receive {:request, request}
+    assert request.url.path == "/v2/agent/job-123/trace"
+    refute Map.has_key?(URI.decode_query(request.url.query || ""), "liveView")
+  end
+
+  test "get_agent_trace sends liveView=true query param when live_view: true" do
+    parent = self()
+
+    adapter = fn request ->
+      send(parent, {:request, request})
+
+      resp = Req.Response.new(
+        status: 200,
+        headers: %{"content-type" => ["application/json"]},
+        body:
+          Jason.encode!(%{
+            "success" => true,
+            "id" => "job-123",
+            "events" => [],
+            "creditsUsed" => 5,
+            "activeBrowserSessions" => [
+              %{
+                "id" => "sess-1",
+                "liveViewUrl" => "https://example.com/live",
+                "viewport" => %{"width" => 1280, "height" => 720}
+              }
+            ]
+          })
+      )
+
+      {request, resp}
+    end
+
+    assert {:ok, %Req.Response{status: 200}} =
+             Firecrawl.get_agent_trace("job-123",
+               live_view: true,
+               api_key: "test-key",
+               adapter: adapter
+             )
+
+    assert_receive {:request, request}
+    assert request.url.path == "/v2/agent/job-123/trace"
+    assert URI.decode_query(request.url.query || "")["liveView"] == "true"
+  end
+
+  test "get_agent_trace! returns the response on success" do
+    adapter = fn request ->
+      resp = Req.Response.new(
+        status: 200,
+        headers: %{"content-type" => ["application/json"]},
+        body: Jason.encode!(%{"success" => true, "id" => "job-123", "events" => [], "creditsUsed" => 5})
+      )
+
+      {request, resp}
+    end
+
+    assert %Req.Response{status: 200} =
+             Firecrawl.get_agent_trace!("job-123", api_key: "test-key", adapter: adapter)
+  end
+
+  test "get_agent_snapshot hits /v2/agent/:id/snapshots/:snapshot_id" do
+    parent = self()
+
+    adapter = fn request ->
+      send(parent, {:request, request})
+
+      resp = Req.Response.new(
+        status: 200,
+        headers: %{"content-type" => ["application/json"]},
+        body:
+          Jason.encode!(%{
+            "success" => true,
+            "id" => "job-123",
+            "snapshotId" => "snap-456",
+            "snapshot" => "snapshot content"
+          })
+      )
+
+      {request, resp}
+    end
+
+    assert {:ok, %Req.Response{status: 200}} =
+             Firecrawl.get_agent_snapshot("job-123", "snap-456", api_key: "test-key", adapter: adapter)
+
+    assert_receive {:request, request}
+    assert request.url.path == "/v2/agent/job-123/snapshots/snap-456"
+  end
+
   test "accepts string values for enum params (sitemap)" do
     Application.put_env(:firecrawl, :api_key, "test-key")
     on_exit(fn -> Application.delete_env(:firecrawl, :api_key) end)
@@ -443,7 +610,11 @@ defmodule FirecrawlTest do
       {:parse_file, 3},
       {:parse_file!, 1},
       {:parse_file!, 2},
-      {:parse_file!, 3}
+      {:parse_file!, 3},
+      {:get_agent_trace, 2},
+      {:get_agent_trace!, 2},
+      {:get_agent_snapshot, 3},
+      {:get_agent_snapshot!, 3}
     ]
 
     for {name, arity} <- expected do

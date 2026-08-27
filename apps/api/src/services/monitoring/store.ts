@@ -351,6 +351,8 @@ export async function createMonitor(params: {
   input: CreateMonitorRequest;
   nextRunAt: Date;
   intervalMs: number;
+  /** Partner's `External-Request-Id`; a scheduled run writes no requests row to find it on later. */
+  partnerJobToken?: string | null;
 }): Promise<MonitorRow> {
   const targets = ensureTargetIds(params.input.targets);
   const judgeEnabled =
@@ -363,7 +365,7 @@ export async function createMonitor(params: {
   const estimatedCreditsPerMonth =
     estimatedCreditsPerRun * estimateRunsPerMonth(params.intervalMs);
 
-  // Omit goal/judge_enabled when undefined so a pre-migration DB doesn't reject the insert.
+  // Omit goal/judge_enabled/partner_job_token when undefined so a pre-migration DB doesn't reject the insert.
   const insert: typeof schema.monitors.$inferInsert = {
     id: uuidv7(),
     team_id: params.teamId,
@@ -377,6 +379,9 @@ export async function createMonitor(params: {
     webhook: params.input.webhook ?? null,
     notification: params.input.notification ?? null,
   };
+  if (params.partnerJobToken) {
+    insert.partner_job_token = params.partnerJobToken;
+  }
   if (params.input.goal !== undefined) {
     insert.goal = normalizeGoal(params.input.goal);
   }

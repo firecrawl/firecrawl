@@ -7,6 +7,11 @@ This module contains clean, modern type definitions for the v2 API.
 import warnings
 from datetime import datetime
 from typing import Any, Dict, Generic, List, Literal, Optional, TypeVar, Union
+
+try:
+    from typing import Annotated
+except ImportError:  # Python 3.8
+    from typing_extensions import Annotated
 import logging
 from pydantic import (
     BaseModel,
@@ -682,6 +687,7 @@ class JsonFormat(Format):
     type: Literal["json"] = "json"
     prompt: Optional[str] = None
     schema: Optional[Any] = None
+    check_prompt_injection: Optional[bool] = None
 
 
 class ChangeTrackingFormat(Format):
@@ -1451,8 +1457,208 @@ class AgentResponse(BaseModel):
     # models ship without an SDK release, so a narrow type turns an unknown
     # model name into a ValidationError on every status poll.
     model: Optional[str] = None
+    # Reasoning effort the job ran with; only set for runs that specified it.
+    effort: Optional[Literal["low", "medium", "high"]] = None
     expires_at: Optional[datetime] = None
     credits_used: Optional[int] = None
+
+
+# Agent trace types (GET /v2/agent/{job_id}/trace).
+# These mirror the agent service's canonical event schema (schemaVersion 1):
+# usage.recorded events are withheld server-side and agent.started carries no
+# model name.
+
+
+class AgentTraceAgentIdentity(BaseModel):
+    """Which agent produced a trace event."""
+
+    model_config = {"populate_by_name": True}
+
+    id: str
+    role: Literal["orchestrator", "subagent", "browser", "system"]
+    name: str
+    parent_id: Optional[str] = Field(default=None, alias="parentId")
+
+
+class AgentTraceError(BaseModel):
+    """Structured error attached to terminal/error trace events."""
+
+    code: Literal[
+        "cancelled", "credit_limit_reached", "parent_finished", "refused", "internal"
+    ]
+    source: Literal["agent", "tool", "billing", "system"]
+    retryable: bool
+    message: str
+
+
+class AgentTraceArtifactChange(BaseModel):
+    """Reference to an artifact snapshot; fetch content via get_agent_snapshot."""
+
+    model_config = {"populate_by_name": True}
+
+    kind: Literal["json", "markdown", "html", "screenshot", "text"]
+    artifact_id: str = Field(alias="artifactId")
+    path: Optional[str] = None
+    snapshot_id: str = Field(alias="snapshotId")
+    change: Literal["init", "partial", "append", "modify", "update"]
+    changed_fields: Optional[List[str]] = Field(default=None, alias="changedFields")
+    item_count: Optional[int] = Field(default=None, alias="itemCount")
+    source_tool_call_id: Optional[str] = Field(default=None, alias="sourceToolCallId")
+
+
+class AgentTraceEventBase(BaseModel):
+    """Fields every trace event carries."""
+
+    model_config = {"populate_by_name": True}
+
+    schema_version: Literal[1] = Field(alias="schemaVersion")
+    event_id: str = Field(alias="eventId")
+    run_id: str = Field(alias="runId")
+    occurred_at: datetime = Field(alias="occurredAt")
+    producer_sequence: int = Field(alias="producerSequence")
+    agent: AgentTraceAgentIdentity
+
+
+class AgentTraceRunStartedEvent(AgentTraceEventBase):
+    type: Literal["run.started"]
+
+
+class AgentTraceRunCancelRequestedEvent(AgentTraceEventBase):
+    type: Literal["run.cancel_requested"]
+    reason: Literal["user"]
+
+
+class AgentTraceRunFinishedEvent(AgentTraceEventBase):
+    type: Literal["run.finished"]
+    outcome: Literal["succeeded", "failed", "cancelled", "refused", "credit_limit_reached"]
+    # The canonical schema always writes this key (nullable), but default it so
+    # a trace with the key absent still parses instead of raising.
+    error: Optional[AgentTraceError] = None
+
+
+class AgentTraceAgentStartedEvent(AgentTraceEventBase):
+    type: Literal["agent.started"]
+
+
+class AgentTraceAgentFinishedEvent(AgentTraceEventBase):
+    type: Literal["agent.finished"]
+    outcome: Literal["succeeded", "failed", "cancelled", "refused"]
+    duration_ms: int = Field(alias="durationMs")
+    # See AgentTraceRunFinishedEvent.error for why this has a default.
+    error: Optional[AgentTraceError] = None
+
+
+class AgentTraceBrowserSessionStartedEvent(AgentTraceEventBase):
+    type: Literal["browser.session.started"]
+    session_id: str = Field(alias="sessionId")
+
+
+class AgentTraceBrowserSessionFinishedEvent(AgentTraceEventBase):
+    type: Literal["browser.session.finished"]
+    session_id: str = Field(alias="sessionId")
+    duration_ms: int = Field(alias="durationMs")
+
+
+class AgentTraceProgressReportedEvent(AgentTraceEventBase):
+    type: Literal["progress.reported"]
+    phase: Literal["planning", "working", "finalizing"]
+    message: str
+
+
+class AgentTraceReasoningSummaryEvent(AgentTraceEventBase):
+    type: Literal["reasoning.summary"]
+    text: str
+
+
+class AgentTraceToolCallStartedEvent(AgentTraceEventBase):
+    type: Literal["tool_call.started"]
+    tool_call_id: str = Field(alias="toolCallId")
+    tool_name: str = Field(alias="toolName")
+    # Required key on the wire (zod `.json()`), values may be null: Field(...)
+    # keeps the key required so a malformed event cannot silently pass.
+    parameters: Any = Field(...)
+
+
+class AgentTraceToolCallFinishedEvent(AgentTraceEventBase):
+    type: Literal["tool_call.finished"]
+    tool_call_id: str = Field(alias="toolCallId")
+    tool_name: str = Field(alias="toolName")
+    # See AgentTraceToolCallStartedEvent.parameters.
+    result: Any = Field(...)
+
+
+class AgentTraceArtifactUpdatedEvent(AgentTraceEventBase):
+    type: Literal["artifact.updated"]
+    artifact: AgentTraceArtifactChange
+
+
+class AgentTraceErrorOccurredEvent(AgentTraceEventBase):
+    type: Literal["error.occurred"]
+    error: AgentTraceError
+
+
+# Discriminated on the wire's `type` tag so generated schemas expose the
+# discriminator and validation dispatches on it directly.
+AgentTraceEvent = Annotated[
+    Union[
+        AgentTraceRunStartedEvent,
+        AgentTraceRunCancelRequestedEvent,
+        AgentTraceRunFinishedEvent,
+        AgentTraceAgentStartedEvent,
+        AgentTraceAgentFinishedEvent,
+        AgentTraceBrowserSessionStartedEvent,
+        AgentTraceBrowserSessionFinishedEvent,
+        AgentTraceProgressReportedEvent,
+        AgentTraceReasoningSummaryEvent,
+        AgentTraceToolCallStartedEvent,
+        AgentTraceToolCallFinishedEvent,
+        AgentTraceArtifactUpdatedEvent,
+        AgentTraceErrorOccurredEvent,
+    ],
+    Field(discriminator="type"),
+]
+
+
+class AgentTraceViewport(BaseModel):
+    width: int
+    height: int
+
+
+class AgentTraceActiveBrowserSession(BaseModel):
+    """Live browser session, present only when trace is requested with live_view."""
+
+    model_config = {"populate_by_name": True}
+
+    id: str
+    live_view_url: str = Field(alias="liveViewUrl")
+    viewport: AgentTraceViewport
+
+
+class AgentTraceResponse(BaseModel):
+    """Response from GET /v2/agent/{job_id}/trace."""
+
+    model_config = {"populate_by_name": True}
+
+    success: Optional[bool] = None
+    id: Optional[str] = None
+    events: Optional[List[AgentTraceEvent]] = None
+    credits_used: Optional[int] = Field(default=None, alias="creditsUsed")
+    active_browser_sessions: Optional[List[AgentTraceActiveBrowserSession]] = Field(
+        default=None, alias="activeBrowserSessions"
+    )
+    error: Optional[str] = None
+
+
+class AgentSnapshotResponse(BaseModel):
+    """Response from GET /v2/agent/{job_id}/snapshots/{snapshot_id}."""
+
+    model_config = {"populate_by_name": True}
+
+    success: Optional[bool] = None
+    id: Optional[str] = None
+    snapshot_id: Optional[str] = Field(default=None, alias="snapshotId")
+    snapshot: Optional[str] = None
+    error: Optional[str] = None
 
 
 # Browser types

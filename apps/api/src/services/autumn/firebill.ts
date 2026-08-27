@@ -1,6 +1,13 @@
+import { randomUUID } from "crypto";
 import { config } from "../../config";
 import { logger } from "../../lib/logger";
+import { sampled } from "../../lib/rollout";
 import type { TrackParams } from "./types";
+import {
+  firebillCheckTotal,
+  firebillRetryTotal,
+  firebillTrackTotal,
+} from "./metrics";
 
 /**
  * Outcome of a firebill `/v1/lock` call, mirroring firebill's three-state
@@ -17,6 +24,13 @@ type FirebillLockResult =
 // ~3.5s worst case, so this is deliberately looser than the 2s timeout on the
 // direct Autumn client.
 const FIREBILL_TIMEOUT_MS = 5000;
+
+// Safe to retry because the idempotency key is stable across attempts: if the
+// first attempt did land (ambiguous confirm timeout), Autumn dedupes the second.
+// Small because a caller may be waiting, and a firebill refusing events usually
+// cannot reach the broker — which more attempts will not fix.
+const FIREBILL_ATTEMPTS = 2;
+const FIREBILL_RETRY_DELAY_MS = 150;
 
 // FIREBILL_ORG_IDS is decoded once at startup by the config schema; the Set is
 // built lazily on first use and cached, keyed on the decoded array reference.
@@ -37,13 +51,40 @@ function firebillOrgIds(): Set<string> {
 }
 
 /**
- * Whether usage tracking for this org should be routed through firebill
- * instead of directly to Autumn. Requires firebill to be fully configured AND
- * the org to be on the rollout allowlist.
+ * Whether this org's usage goes through firebill rather than straight to Autumn.
+ * Needs firebill configured, then any of: the allowlist, being
+ * partner-provisioned, or the sticky percentage.
+ *
+ * `gatewayProvisioned` is deliberately a parameter rather than a lookup in here:
+ * this stays a pure function of config so it can be reasoned about and tested
+ * without a database, and the caller already has the answer cached.
+ *
+ * It arrives in an options object rather than as a second positional argument
+ * because this predicate is used as a callback — `orgs.filter(shouldRouteToFirebill)`
+ * would otherwise pass the array *index* as it, routing everything but element
+ * zero. Destructuring a field off a number yields undefined, so the object form
+ * cannot be fooled that way.
+ *
+ * **This whole gateway branch is meant to be deleted.** It exists only because
+ * the ramp is below 100: a gateway partner's usage must route deterministically,
+ * and a sticky sample is a probability. At `FIREBILL_ROLLOUT_PERCENT=100` every
+ * org routes anyway, the branch stops changing any outcome, and it — along with
+ * the lookup feeding it — should go.
  */
-export function shouldRouteToFirebill(orgId: string): boolean {
+export function shouldRouteToFirebill(
+  orgId: string,
+  opts?: { gatewayProvisioned?: boolean },
+): boolean {
   if (!config.FIREBILL_URL || !config.FIREBILL_SECRET) return false;
-  return firebillOrgIds().has(orgId);
+  // Always-on set: test orgs stay routed even at 0 percent.
+  if (firebillOrgIds().has(orgId)) return true;
+  // A partner-provisioned org always routes: firebill is the only thing that
+  // knows how to split its usage between that org's own balance and the
+  // partner's, so a charge that misses firebill is billed wholly to an account
+  // nobody pays for, and the partner is silently never charged.
+  if (opts?.gatewayProvisioned) return true;
+  // Sticky by org, so a ramp only ever adds and 0 is the kill switch.
+  return sampled(orgId, config.FIREBILL_ROLLOUT_PERCENT);
 }
 
 // Plain concatenation rather than new URL(path, base): a leading-slash path
@@ -53,26 +94,88 @@ function firebillUrl(path: string): string {
 }
 
 /**
- * Sends a usage event to firebill, which records it durably in Postgres and
- * forwards it to Autumn (replaying failed deliveries instead of losing them).
+ * Sends a usage event to firebill, which publishes it to a durable quorum queue
+ * and answers once the broker has confirmed it, then forwards it to Autumn from
+ * a consumer (retrying failed deliveries instead of losing them).
  *
  * A negative value is a refund (refundCredits negates before calling track);
  * firebill's /v1/refund endpoint expects the POSITIVE amount and negates it
  * itself, so the absolute value is sent either way.
  *
  * Returns true when firebill accepted the event, mirroring the boolean
- * contract of the direct Autumn track path. A `false` here means "not billed
- * yet" — firebill keeps retrying delivery on its side.
+ * contract of the direct Autumn track path. A `false` means firebill never
+ * took it: nothing is retrying, and the usage goes unbilled.
  */
-export async function firebillTrack({
-  customerId,
-  entityId,
-  featureId,
-  value,
-  properties,
-  idempotencyKey,
-}: TrackParams): Promise<boolean> {
-  const path = value < 0 ? "/v1/refund" : "/v1/track";
+export async function firebillTrack(params: TrackParams): Promise<boolean> {
+  const operation = params.value < 0 ? "refund" : "track";
+  const path = `/v1/${operation}`;
+  // Both attempts must be the same event. Without a caller key firebill mints
+  // one per request, so a retry after an accepted-but-lost first attempt would
+  // be a second charge; minting here instead keeps one identity per call while
+  // separate calls stay distinct, exactly as before.
+  const attempted = {
+    ...params,
+    idempotencyKey: params.idempotencyKey ?? randomUUID(),
+  };
+
+  for (let attempt = 1; attempt < FIREBILL_ATTEMPTS; attempt++) {
+    const result = await firebillAttempt(path, attempted);
+    if (result.ok) {
+      firebillTrackTotal.labels(operation, "accepted").inc();
+      return true;
+    }
+    firebillRetryTotal.labels(result.reason).inc();
+    await new Promise(resolve => setTimeout(resolve, FIREBILL_RETRY_DELAY_MS));
+  }
+
+  const last = await firebillAttempt(path, attempted);
+  if (last.ok) {
+    firebillTrackTotal.labels(operation, "accepted").inc();
+    return true;
+  }
+
+  // `refused` only for an explicit `success: false`, which is firebill saying it
+  // did not take the event. A transport failure is `ambiguous`: firebill may
+  // have accepted it and be delivering it right now, so this is not proof of
+  // lost usage. Either way the caller is told false and must not assume a
+  // charge landed. A counter rather than a throw: billing must not fail the
+  // customer's request, and a log alone is too quiet to alert on.
+  const outcome = last.reason === "not_success" ? "refused" : "ambiguous";
+  logger.error(
+    outcome === "refused"
+      ? "firebill refused a usage event; it will not be billed"
+      : "firebill did not answer; the event may or may not have been accepted",
+    {
+      customerId: params.customerId,
+      entityId: params.entityId,
+      featureId: params.featureId,
+      value: params.value,
+      idempotencyKey: attempted.idempotencyKey,
+      callerSuppliedKey: params.idempotencyKey !== undefined,
+      path,
+      attempts: FIREBILL_ATTEMPTS,
+      reason: last.reason,
+    },
+  );
+  firebillTrackTotal.labels(operation, outcome).inc();
+  return false;
+}
+
+type AttemptResult =
+  | { ok: true }
+  | { ok: false; reason: "not_ok" | "not_success" | "exception" };
+
+async function firebillAttempt(
+  path: string,
+  {
+    customerId,
+    entityId,
+    featureId,
+    value,
+    properties,
+    idempotencyKey,
+  }: TrackParams,
+): Promise<AttemptResult> {
   const url = firebillUrl(path);
   try {
     const response = await fetch(url, {
@@ -90,17 +193,17 @@ export async function firebillTrack({
         feature_id: featureId,
         value: Math.abs(value),
         properties,
-        // Stable per-charge key: firebill makes it the intent row's primary
-        // key, so a caller retry (or a requeued job re-billing the same work)
-        // is answered from the existing row instead of charged again. Omitted
-        // → firebill mints a per-request UUID (dedupes only its own retries).
+        // firebill carries this to Autumn as the Idempotency-Key on every
+        // attempt, so a requeued job re-billing the same work is deduped rather
+        // than charged twice. Omitted → firebill mints a per-request UUID,
+        // which dedupes only its own retries.
         ...(idempotencyKey ? { idempotency_key: idempotencyKey } : {}),
       }),
       signal: AbortSignal.timeout(FIREBILL_TIMEOUT_MS),
     });
 
     if (!response.ok) {
-      logger.error("firebill track failed — non-OK response", {
+      logger.warn("firebill track attempt failed — non-OK response", {
         customerId,
         entityId,
         featureId,
@@ -108,19 +211,19 @@ export async function firebillTrack({
         path,
         status: response.status,
       });
-      return false;
+      return { ok: false, reason: "not_ok" };
     }
 
     const body = (await response.json()) as { success?: boolean };
     if (body.success !== true) {
-      logger.error("firebill track did not succeed", {
+      logger.warn("firebill track attempt did not succeed", {
         customerId,
         entityId,
         featureId,
         value,
         path,
       });
-      return false;
+      return { ok: false, reason: "not_success" };
     }
 
     logger.info("firebill track succeeded", {
@@ -130,14 +233,12 @@ export async function firebillTrack({
       value,
       path,
     });
-    return true;
+    return { ok: true };
   } catch (error) {
-    // DO NOT fall back to calling Autumn directly here: firebill may have
-    // durably recorded the event before this call failed and will deliver it
-    // to Autumn later, so a direct-Autumn fallback could double-bill the
-    // customer. A firebill failure (timeout, 5xx, connection refused) is
-    // treated exactly like an Autumn track failure: log and return false.
-    logger.error("firebill track failed — firebill may be unavailable", {
+    // DO NOT fall back to Autumn directly: firebill may have accepted the event
+    // before this failed, and the Autumn SDK sends no idempotency key, so the
+    // pair could not be deduped and the customer would be billed twice.
+    logger.warn("firebill track attempt failed — firebill may be unavailable", {
       customerId,
       entityId,
       featureId,
@@ -145,7 +246,7 @@ export async function firebillTrack({
       path,
       error,
     });
-    return false;
+    return { ok: false, reason: "exception" };
   }
 }
 
@@ -160,6 +261,137 @@ export async function firebillTrack({
  * lock's lifecycle across two routes would let a firebill-side hold and a
  * fallback hold coexist under retries.
  */
+/**
+ * Three outcomes, and callers must tell them apart: `answered` carries a real
+ * yes/no, `unavailable` means firebill could not answer at all.
+ */
+type FirebillCheckResult =
+  | { status: "answered"; allowed: boolean; remaining: number }
+  | { status: "unavailable" };
+
+/**
+ * Asks firebill whether a customer can afford a charge.
+ *
+ * For a gateway-funded org this counts the funder's pool, which is the reason
+ * it exists: a ghost spends credits it does not have, so a gate reading the
+ * ghost's balance alone refuses the requests the partner pool is there to pay
+ * for. firebill answers with the same arithmetic settlement uses.
+ *
+ * **Fails open, unlike {@link firebillTrack}.** Every failure maps to
+ * `unavailable`, and the caller's contract is to let the request through.
+ * Declining to charge loses nothing that cannot be replayed; declining to
+ * *answer* an authorization question would turn a firebill blip into a
+ * customer-facing outage. There is deliberately no retry either — this sits on
+ * the request path, and a second round trip buys less than failing open fast.
+ */
+export async function firebillCheck({
+  customerId,
+  entityId,
+  featureId,
+  value,
+  properties,
+}: {
+  customerId: string;
+  entityId: string;
+  featureId: string;
+  value: number;
+  properties?: Record<string, unknown>;
+}): Promise<FirebillCheckResult> {
+  const unavailable = (
+    reason: string,
+    extra?: Record<string, unknown>,
+  ): FirebillCheckResult => {
+    logger.error(`firebill check unavailable — ${reason}`, {
+      customerId,
+      entityId,
+      featureId,
+      value,
+      ...extra,
+    });
+    firebillCheckTotal.labels("unavailable").inc();
+    return { status: "unavailable" };
+  };
+
+  try {
+    const response = await fetch(firebillUrl("/v1/check"), {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${config.FIREBILL_SECRET}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        customer_id: customerId,
+        entity_id: entityId,
+        feature_id: featureId,
+        value,
+        properties,
+      }),
+      signal: AbortSignal.timeout(FIREBILL_TIMEOUT_MS),
+    });
+
+    if (!response.ok) {
+      // Release the socket. Returning without reading or cancelling leaves the
+      // body unconsumed, and undici keeps the connection pinned until it is —
+      // so a firebill that is erroring would exhaust the pool and turn one
+      // failure into a run of them. Matters most here: this path is the one
+      // that fails open, so the leak would be silently widening the window in
+      // which credit checks are skipped.
+      response.body?.cancel().catch(() => {});
+      return unavailable("non-OK response", { status: response.status });
+    }
+
+    const body = (await response.json()) as {
+      success?: boolean;
+      allowed?: boolean;
+      remaining?: number;
+    };
+
+    // `success: false` is firebill saying it does not know — an unanswered
+    // balance, or a gateway lookup that failed. Never a denial.
+    if (body.success !== true) {
+      return unavailable("firebill could not answer");
+    }
+    // A missing or mis-shaped `allowed` is not something firebill sends today.
+    // Reading it as a denial would 402 a paying customer, so it fails open.
+    if (typeof body.allowed !== "boolean") {
+      return unavailable("answered without a usable `allowed`");
+    }
+
+    // `remaining` clamps downstream limits, and the safe default inverts with
+    // `allowed`, so there is no single one.
+    //
+    // `checkCreditsMiddleware` treats a denial with `remaining > 0` as a
+    // *partial* crawl: it rewrites `limit` to that figure and calls `next()`
+    // rather than returning 402. So defaulting a denial to `Infinity` would
+    // turn "cannot afford this" into an unbounded crawl — the opposite of a
+    // refusal, and worse than the 402 this endpoint exists to avoid.
+    //
+    // Allowed keeps `Infinity`, for the mirror-image reason: zero there would
+    // silently shrink a crawl the customer *can* pay for down to nothing.
+    // A usable figure is always preferred to either default.
+    const remaining =
+      typeof body.remaining === "number" && Number.isFinite(body.remaining)
+        ? body.remaining
+        : body.allowed
+          ? Infinity
+          : 0;
+
+    firebillCheckTotal.labels(body.allowed ? "allowed" : "denied").inc();
+    if (!body.allowed) {
+      logger.info("firebill check denied", {
+        customerId,
+        entityId,
+        featureId,
+        value,
+        remaining,
+      });
+    }
+    return { status: "answered", allowed: body.allowed, remaining };
+  } catch (error) {
+    return unavailable("request threw", { error });
+  }
+}
+
 export async function firebillLock({
   customerId,
   entityId,
