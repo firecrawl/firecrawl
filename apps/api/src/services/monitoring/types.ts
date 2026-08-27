@@ -327,12 +327,6 @@ export type MonitorRow = {
   last_check_summary: MonitorSummary | null;
   goal: string | null;
   judge_enabled: boolean;
-  /**
-   * A gateway partner's opaque token for this monitor, from the
-   * `External-Request-Id` header on the creation request. NULL for every
-   * monitor nobody proxied. Presented to the partner's credit gate before
-   * each scheduled run; never billed itself, and never logged.
-   */
   partner_job_token: string | null;
   created_at: string;
   updated_at: string;

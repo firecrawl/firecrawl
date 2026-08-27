@@ -39,19 +39,16 @@ async function create(partnerJobToken?: string | null) {
 }
 
 describe("createMonitor and the partner job token", () => {
-  // A scheduled run writes no `requests` row — the runner wakes on
-  // `next_run_at`, so nothing calls logRequest — which is the whole reason
-  // the token has to be kept here instead of found again at billing time.
   it("keeps the partner's token on the monitor row", async () => {
     expect((await create("job-token-abc")).partner_job_token).toBe(
       "job-token-abc",
     );
   });
 
-  // Stored for every monitor, gateway or not: conditioning the write would
-  // mean a partner-provisioning lookup on the create path to save a NULL.
-  it("writes null rather than nothing when nobody sent one", async () => {
-    expect((await create(null)).partner_job_token).toBeNull();
-    expect((await create(undefined)).partner_job_token).toBeNull();
+  // Omitted, not null: a deploy ahead of the migration must still create
+  // ordinary monitors.
+  it("omits the key entirely when nobody sent one", async () => {
+    expect(await create(null)).not.toHaveProperty("partner_job_token");
+    expect(await create(undefined)).not.toHaveProperty("partner_job_token");
   });
 });
