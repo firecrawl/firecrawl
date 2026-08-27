@@ -67,6 +67,17 @@ function firebillOrgIds(): Set<string> {
 }
 
 /**
+ * Whether firebill is reachable at all from this process. Separate from
+ * {@link shouldRouteToFirebill} because one caller needs the question without
+ * the rollout: a finalize carrying a run token has to follow the lock through
+ * firebill whatever the ramp currently says, and the only thing that can stop
+ * it is firebill not being configured here.
+ */
+export function firebillConfigured(): boolean {
+  return Boolean(config.FIREBILL_URL && config.FIREBILL_SECRET);
+}
+
+/**
  * Whether this org's usage goes through firebill rather than straight to Autumn.
  * Needs firebill configured, then any of: the allowlist, being
  * partner-provisioned, or the sticky percentage.
@@ -91,7 +102,7 @@ export function shouldRouteToFirebill(
   orgId: string,
   opts?: { gatewayProvisioned?: boolean },
 ): boolean {
-  if (!config.FIREBILL_URL || !config.FIREBILL_SECRET) return false;
+  if (!firebillConfigured()) return false;
   // Always-on set: test orgs stay routed even at 0 percent.
   if (firebillOrgIds().has(orgId)) return true;
   // A partner-provisioned org always routes: firebill is the only thing that
@@ -514,7 +525,8 @@ export async function firebillLock({
     }
 
     const operationToken =
-      typeof body.operation_token === "string" && body.operation_token.length > 0
+      typeof body.operation_token === "string" &&
+      body.operation_token.length > 0
         ? body.operation_token
         : undefined;
 

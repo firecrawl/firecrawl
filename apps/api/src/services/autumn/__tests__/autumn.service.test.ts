@@ -1333,6 +1333,84 @@ describe("firebill routing", () => {
     expect(mockCheck).not.toHaveBeenCalled();
   });
 
+  // The gate's whole premise is that it fails closed, and firebill cannot fail
+  // closed on its own behalf when firebill is the thing that is down. Without
+  // this the run proceeds unlocked and ungated: work done, nobody asked, and no
+  // run token to ever bill it under.
+  it("denies a gated run when firebill itself cannot answer", async () => {
+    state.configRef = firebillConfig();
+    const svc = makeService();
+    const gated = {
+      teamId: "team-1",
+      value: 10,
+      lockId: "lock-1",
+      partnerJobToken: "job-token-abc",
+    };
+
+    mockFetch.mockResolvedValueOnce(lockResponse({ success: false }));
+    expect(await svc.lockCredits(gated)).toEqual({
+      status: "denied",
+      reason: "gate_unavailable",
+    });
+
+    mockFetch.mockRejectedValueOnce(new Error("ECONNREFUSED"));
+    expect(await svc.lockCredits(gated)).toEqual({
+      status: "denied",
+      reason: "gate_unavailable",
+    });
+
+    // An answer we cannot read is not an answer either.
+    mockFetch.mockResolvedValueOnce(lockResponse({ success: true }));
+    expect(await svc.lockCredits(gated)).toEqual({
+      status: "denied",
+      reason: "gate_unavailable",
+    });
+
+    expect(mockCheck).not.toHaveBeenCalled();
+  });
+
+  // The inverse, and it is what makes the change above affordable: an ordinary
+  // hold is still "proceed unlocked" when firebill blinks. Refusing those would
+  // turn a firebill blip into a customer-facing outage.
+  it("still skips rather than denies when no partner gate is involved", async () => {
+    state.configRef = firebillConfig();
+    const svc = makeService();
+
+    mockFetch.mockResolvedValueOnce(lockResponse({ success: false }));
+    expect(
+      await svc.lockCredits({ teamId: "team-1", value: 10, lockId: "lock-1" }),
+    ).toEqual({ status: "skipped" });
+  });
+
+  // Routing re-derives from a TTL-cached provisioning lookup and a rollout
+  // percentage, either of which can flip in the hour between a lock and its
+  // finalize. A run token is proof of the route the lock actually took, and
+  // going direct would silently drop the partner's only report of the run.
+  it("follows the run token to firebill even when routing says otherwise", async () => {
+    state.configRef = {
+      ...firebillConfig(),
+      FIREBILL_ORG_IDS: ["some-other-org"],
+    };
+    const svc = makeService();
+
+    await svc.finalizeCreditsLock({
+      lockId: "monitor_check-1",
+      action: "confirm",
+      overrideValue: 7,
+      teamId: "team-1",
+      externalRequestId: "run-42",
+    });
+
+    expect(mockFinalize).not.toHaveBeenCalled();
+    const finalizeCall = mockFetch.mock.calls.find(([url]) =>
+      String(url).endsWith("/v1/finalize"),
+    );
+    expect(finalizeCall).toBeDefined();
+    expect(JSON.parse(finalizeCall![1].body).external_request_id).toBe(
+      "run-42",
+    );
+  });
+
   it("hands the run token back on the finalize as the operation id", async () => {
     state.configRef = firebillConfig();
     const svc = makeService();

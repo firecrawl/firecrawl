@@ -10,6 +10,7 @@ import {
   firebillLock,
   firebillTrack,
   firebillCheck,
+  firebillConfigured,
   shouldRouteToFirebill,
 } from "./firebill";
 import { billingRouteTotal } from "./metrics";
@@ -553,6 +554,22 @@ export class AutumnService {
     }
     const resolvedLockId = lockId ?? `billing_${randomUUID()}`;
 
+    // firebill could not answer. For an ordinary hold that is "proceed
+    // unlocked" — losing a reservation is recoverable and refusing one would
+    // turn a firebill blip into a customer outage.
+    //
+    // For a gated run it is the opposite, and the asymmetry is the whole point
+    // of the gate: no answer means no run token, so the work could never be
+    // billed to the partner and doing it would mean doing it for free. firebill
+    // fails closed when it cannot reach the partner; it cannot fail closed on
+    // its own behalf when it is the thing that is down, so that has to happen
+    // here. Only token-bearing locks are affected — every other caller of this
+    // method keeps today's behaviour exactly.
+    const unreachable = (): LockCreditsResult =>
+      partnerJobToken
+        ? { status: "denied", reason: "gate_unavailable" }
+        : { status: "skipped" };
+
     try {
       const customerId = await this.ensureTrackingContext(teamId);
 
@@ -560,7 +577,8 @@ export class AutumnService {
       // their holds through firebill. The hold still lives in Autumn (firebill
       // keeps no lock state), but only firebill pins the retry/timeout budget
       // around the call. An unavailable answer maps to "skipped" — proceed
-      // unlocked — exactly like a direct-Autumn check failure below.
+      // unlocked — exactly like a direct-Autumn check failure below, EXCEPT
+      // when a partner gate is involved; see `unreachable` below.
       if (
         shouldRouteToFirebill(customerId, {
           gatewayProvisioned: await this.isGatewayProvisioned(teamId),
@@ -594,7 +612,7 @@ export class AutumnService {
             ...(result.reason ? { reason: result.reason } : {}),
           };
         }
-        return { status: "skipped" };
+        return unreachable();
       }
 
       // Direct Autumn cannot ask a partner anything. Unreachable in practice —
@@ -650,7 +668,9 @@ export class AutumnService {
           error,
         },
       );
-      return { status: "skipped" };
+      // Same asymmetry: a gated run that threw before it could ask anyone is
+      // still a run nobody authorized.
+      return unreachable();
     }
   }
 
@@ -662,6 +682,15 @@ export class AutumnService {
    * durably and retries delivery — a dropped direct finalize means the hold
    * just expires, leaving a confirm's work unbilled. Either route lands on the
    * same Autumn lock, so routing is a durability choice, not a correctness one.
+   *
+   * **Except when a run token is in hand.** Then it is a correctness choice:
+   * only firebill can report the operation to the partner, so a finalize that
+   * goes direct silently drops the report. And the routing predicate is not
+   * stable across the hour between a lock and its finalize — it re-derives from
+   * a TTL-cached provisioning lookup and a rollout percentage, either of which
+   * can flip in between. A run token only exists because firebill minted it on
+   * the lock, so its presence is proof of the route the lock actually took, and
+   * it wins over asking again.
    */
   async finalizeCreditsLock({
     lockId,
@@ -671,7 +700,8 @@ export class AutumnService {
     teamId,
     externalRequestId,
   }: FinalizeCreditsLockParams): Promise<void> {
-    if (teamId && (await this.isRoutedThroughFirebill(teamId))) {
+    const gated = Boolean(externalRequestId) && firebillConfigured();
+    if (gated || (teamId && (await this.isRoutedThroughFirebill(teamId)))) {
       await firebillFinalize({
         lockId,
         action,
