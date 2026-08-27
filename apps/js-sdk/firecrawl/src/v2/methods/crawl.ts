@@ -75,7 +75,8 @@ export async function getCrawlStatus(
     const body = res.data;
     const initialDocs = (body.data || []) as Document[];
 
-    const auto = pagination?.autoPaginate ?? true;
+    // Unset autoPaginate paginates only once the job is completed, matching batch's default gate.
+    const auto = pagination?.autoPaginate ?? (body.status === "completed");
     if (!auto || !body.next) {
       return {
         id: jobId,

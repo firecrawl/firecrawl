@@ -42,4 +42,16 @@ describe("waitForBatchCompletion terminal handling", () => {
     await expect(waitForBatchCompletion(http, "job4", 1)).rejects.toMatchObject({ code: "PAGINATION_RESPONSE_INVALID" });
     expect(http.get).toHaveBeenCalledTimes(2);
   });
+
+  test("throws JobFailedError with the API error string when the job fails during kickoff", async () => {
+    const kickoffFailed = { status: 200, data: { success: false, error: "queue full", status: "failed", completed: 0, total: 0, data: [] } };
+    const http = makeHttp([kickoffFailed]);
+    const err = await waitForBatchCompletion(http, "job5", 1).then(
+      () => { throw new Error("expected JobFailedError"); },
+      (e) => e,
+    );
+    expect(err).toBeInstanceOf(JobFailedError);
+    expect(err.job.status).toBe("failed");
+    expect(err.message).toContain("queue full");
+  });
 });

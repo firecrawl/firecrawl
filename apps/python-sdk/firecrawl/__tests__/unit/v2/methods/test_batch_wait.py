@@ -3,7 +3,7 @@ Unit tests for batch scrape wait behavior on terminal states.
 """
 
 import pytest
-from unittest.mock import patch
+from unittest.mock import patch, Mock
 
 from firecrawl.v2.types import BatchScrapeJob
 from firecrawl.v2.methods import batch
@@ -33,3 +33,24 @@ class TestWaitForBatchCompletion:
     def test_job_failed_error_is_a_firecrawl_error(self):
         from firecrawl.v2.utils import FirecrawlError
         assert issubclass(JobFailedError, FirecrawlError)
+
+    def test_kickoff_failure_raises_job_failed_error_with_api_message(self):
+        """A 200 success:false status:failed response raises JobFailedError with the API error string."""
+        client = Mock()
+        response = Mock()
+        response.ok = True
+        response.json.return_value = {
+            "success": False,
+            "error": "queue full",
+            "status": "failed",
+            "completed": 0,
+            "total": 0,
+            "data": [],
+        }
+        client.get.return_value = response
+
+        with pytest.raises(JobFailedError) as exc_info:
+            batch.wait_for_batch_completion(client, job_id="job-6")
+
+        assert exc_info.value.job.status == "failed"
+        assert "queue full" in str(exc_info.value)

@@ -1119,6 +1119,7 @@ class BatchScrapeJob(BaseModel):
     expires_at: Optional[datetime] = None
     next: Optional[str] = None
     data: List[Document] = []
+    error: Optional[str] = None
 
 
 class BatchScrapeStatusRequest(BaseModel):

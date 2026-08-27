@@ -87,14 +87,18 @@ export async function getBatchScrapeStatus(
       expiresAt?: string;
       next?: string | null;
       data?: Document[];
+      error?: string;
     }>(`/v2/batch/scrape/${jobId}`);
-    if (res.status !== 200 || !res.data?.success)
+    // A kickoff failure responds 200 with success:false and status:"failed"; parse it as a
+    // normal terminal job instead of throwing, so the waiter can raise JobFailedError.
+    const isKickoffFailure = res.status === 200 && res.data?.success === false && res.data?.status === "failed";
+    if (!isKickoffFailure && (res.status !== 200 || !res.data?.success))
       throwForBadResponse(res, "get batch scrape status");
     const body = res.data;
     const initialDocs = (body.data || []) as Document[];
-    // Following `next` while the job runs would re-download pages on every poll.
-    const isTerminal = ["completed", "failed", "cancelled"].includes(body.status);
-    const auto = pagination?.autoPaginate ?? isTerminal;
+    // Unset autoPaginate paginates only once the job is completed, so a failed/cancelled
+    // job's result pages are never fetched before the waiter can raise JobFailedError.
+    const auto = pagination?.autoPaginate ?? (body.status === "completed");
     if (!auto || !body.next) {
       return {
         id: jobId,
@@ -105,6 +109,7 @@ export async function getBatchScrapeStatus(
         expiresAt: body.expiresAt,
         next: body.next ?? null,
         data: initialDocs,
+        error: body.error,
       };
     }
 
@@ -123,6 +128,7 @@ export async function getBatchScrapeStatus(
       expiresAt: body.expiresAt,
       next: aggregated.next,
       data: aggregated.documents,
+      error: body.error,
     };
   } catch (err: any) {
     if (err?.isAxiosError)
@@ -203,7 +209,7 @@ export async function waitForBatchCompletion(
     if (status) {
       if (status.status === "completed") return status;
       if (status.status === "failed" || status.status === "cancelled") {
-        throw new JobFailedError(status, jobId);
+        throw new JobFailedError(status, jobId, status.error);
       }
     }
 

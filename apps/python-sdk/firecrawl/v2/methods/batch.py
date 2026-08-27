@@ -29,7 +29,9 @@ def _parse_batch_scrape_documents(data_list: Optional[List[Any]]) -> List[Docume
 
 
 def _parse_batch_scrape_status_response(body: Dict[str, Any]) -> Dict[str, Any]:
-    if not body.get("success"):
+    # A kickoff failure responds 200 with success:false and status:"failed"; parse it as a
+    # normal terminal job instead of raising, so the waiter can raise JobFailedError.
+    if not body.get("success") and body.get("status") != "failed":
         raise Exception(body.get("error", "Unknown error occurred"))
 
     return {
@@ -40,6 +42,7 @@ def _parse_batch_scrape_status_response(body: Dict[str, Any]) -> Dict[str, Any]:
         "expires_at": body.get("expiresAt"),
         "next": body.get("next"),
         "data": _parse_batch_scrape_documents(body.get("data", []) or []),
+        "error": body.get("error"),
     }
 
 
@@ -135,13 +138,12 @@ def get_batch_scrape_status(
     documents = payload["data"]
     next_url = payload["next"]
 
-    # Unset auto_paginate only paginates a terminal job, since following `next`
-    # on a running job re-downloads pages on every poll.
-    is_terminal = payload["status"] in ("completed", "failed", "cancelled")
+    # Unset auto_paginate only paginates once the job is completed, so a failed/cancelled
+    # job's result pages are never fetched before the waiter can raise JobFailedError.
     auto_paginate = (
         pagination_config.auto_paginate
         if (pagination_config is not None and pagination_config.auto_paginate is not None)
-        else is_terminal
+        else payload["status"] == "completed"
     )
     if auto_paginate and next_url:
         documents, next_url = _fetch_all_batch_pages(
@@ -159,6 +161,7 @@ def get_batch_scrape_status(
         expires_at=payload["expires_at"],
         next=next_url,
         data=documents,
+        error=payload.get("error"),
     )
 
 
@@ -198,6 +201,7 @@ def get_batch_scrape_status_page(
         expires_at=payload["expires_at"],
         next=payload["next"],
         data=payload["data"],
+        error=payload.get("error"),
     )
 
 
@@ -318,10 +322,10 @@ def wait_for_batch_completion(
             return status_job
 
         if status_job.status in ("failed", "cancelled"):
-            raise JobFailedError(
-                f"Batch scrape job {job_id} ended with status {status_job.status}",
-                job=status_job,
-            )
+            message = f"Batch scrape job {job_id} ended with status {status_job.status}"
+            if status_job.error:
+                message += f": {status_job.error}"
+            raise JobFailedError(message, job=status_job)
 
         # Check timeout
         if timeout and (time.monotonic() - start_time) > timeout:

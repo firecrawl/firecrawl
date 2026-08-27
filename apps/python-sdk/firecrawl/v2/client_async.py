@@ -597,10 +597,10 @@ class AsyncFirecrawlClient:
             if status.status == "completed":
                 return status
             if status.status in ("failed", "cancelled"):
-                raise JobFailedError(
-                    f"Batch scrape job {job_id} ended with status {status.status}",
-                    job=status,
-                )
+                message = f"Batch scrape job {job_id} ended with status {status.status}"
+                if status.error:
+                    message += f": {status.error}"
+                raise JobFailedError(message, job=status)
             if timeout and (asyncio.get_event_loop().time() - start) > timeout:
                 raise TimeoutError("Batch wait timed out")
             await asyncio.sleep(poll_interval)

@@ -3,7 +3,7 @@ Crawling functionality for Firecrawl v2 API.
 """
 
 import time
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, Any, List, Tuple
 from ..types import (
     CrawlRequest,
     CrawlJob,
@@ -205,21 +205,18 @@ def get_crawl_status(
     payload = _parse_crawl_status_response(response_data)
 
     documents = payload["data"]
+    next_url = payload["next"]
 
-    # Handle pagination if requested
+    # Unset auto_paginate only paginates once the job is completed, matching batch's default gate.
     auto_paginate = (
         pagination_config.auto_paginate
         if (pagination_config is not None and pagination_config.auto_paginate is not None)
-        else True
+        else payload["status"] == "completed"
     )
-    if auto_paginate and payload["next"] and not (
-        pagination_config
-        and pagination_config.max_results is not None
-        and len(documents) >= pagination_config.max_results
-    ):
-        documents = _fetch_all_pages(
+    if auto_paginate and next_url:
+        documents, next_url = _fetch_all_pages(
             client,
-            payload["next"],
+            next_url,
             documents,
             pagination_config,
             request_timeout=request_timeout,
@@ -232,7 +229,7 @@ def get_crawl_status(
         total=payload["total"],
         credits_used=payload["credits_used"],
         expires_at=payload["expires_at"],
-        next=payload["next"] if not auto_paginate else None,
+        next=next_url,
         data=documents,
     )
 
@@ -283,25 +280,20 @@ def _fetch_all_pages(
     pagination_config: Optional[PaginationConfig] = None,
     *,
     request_timeout: Optional[float] = None,
-) -> List[Document]:
+) -> Tuple[List[Document], Optional[str]]:
     """
-    Fetch all pages of crawl results.
-
-    Args:
-        client: HTTP client instance
-        next_url: URL for the next page
-        initial_documents: Documents from the first page
-        pagination_config: Optional configuration for pagination limits
-        request_timeout: Optional timeout (in seconds) for the underlying HTTP request
+    Fetch pages of crawl results until drained or a caller limit stops early.
 
     Returns:
-        List of all documents from all pages
+        Tuple of (documents, unconsumed next URL or None)
+
+    Raises:
+        FirecrawlError: If a page fetch fails; partial data is never returned silently
     """
     documents = initial_documents.copy()
-    current_url = next_url
+    current_url: Optional[str] = next_url
     page_count = 0
 
-    # Apply pagination limits
     max_pages = pagination_config.max_pages if pagination_config else None
     max_results = pagination_config.max_results if pagination_config else None
     max_wait_time = pagination_config.max_wait_time if pagination_config else None
@@ -316,39 +308,28 @@ def _fetch_all_pages(
         if (max_wait_time is not None) and (time.monotonic() - start_time) > max_wait_time:
             break
 
-        # Fetch next page
+        if (max_results is not None) and len(documents) >= max_results:
+            break
+
         response = client.get(current_url, timeout=request_timeout)
 
         if not response.ok:
-            # Log error but continue with what we have
-            import logging
-            logger = logging.getLogger("firecrawl")
-            logger.warning("Failed to fetch next page", extra={"status_code": response.status_code})
-            break
+            handle_response_error(response, "get crawl status page")
 
-        page_data = response.json()
+        page_payload = _parse_crawl_status_response(response.json())
 
-        try:
-            page_payload = _parse_crawl_status_response(page_data)
-        except Exception:
-            break
+        if max_results is not None and len(documents) + len(page_payload["data"]) > max_results:
+            # A page that would overshoot max_results is skipped whole, so resume never drops or duplicates data.
+            return documents, current_url
 
-        # Add documents from this page
-        for document in page_payload["data"]:
-            # Check max_results limit BEFORE adding each document
-            if max_results is not None and len(documents) >= max_results:
-                break
-            documents.append(document)
-
-        # Check if we hit max_results limit
-        if max_results is not None and len(documents) >= max_results:
-            break
-
-        # Get next URL
+        documents.extend(page_payload["data"])
+        if page_payload["next"] == current_url:
+            # A next cursor identical to the page just fetched can never advance; treat as drained.
+            return documents, None
         current_url = page_payload["next"]
         page_count += 1
 
-    return documents
+    return documents, current_url
 
 
 def cancel_crawl(client: HttpClient, job_id: str) -> bool:
