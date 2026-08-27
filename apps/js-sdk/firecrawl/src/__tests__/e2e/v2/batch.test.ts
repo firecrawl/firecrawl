@@ -29,7 +29,7 @@ describe("v2.batch e2e", () => {
     } catch (e: any) {
       // failed/cancelled now raise JobFailedError instead of returning a terminal job.
       if (!(e instanceof JobFailedError)) throw e;
-      expect(["failed"]).toContain(e.job.status);
+      expect(["failed", "cancelled"]).toContain(e.job.status);
       return;
     }
     expect(job.status).toBe("completed");

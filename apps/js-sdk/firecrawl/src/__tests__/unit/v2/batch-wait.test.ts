@@ -1,4 +1,4 @@
-import { describe, test, expect, jest } from "@jest/globals";
+import { describe, test, expect, jest, afterEach } from "@jest/globals";
 import { waitForBatchCompletion } from "../../../v2/methods/batch";
 import { JobFailedError } from "../../../v2/types";
 
@@ -8,11 +8,19 @@ describe("waitForBatchCompletion terminal handling", () => {
     return { get: jest.fn(async () => responses[Math.min(i++, responses.length - 1)]) } as any;
   }
 
+  afterEach(() => {
+    jest.useRealTimers();
+  });
+
   test("returns the job when it completes", async () => {
+    // Fake timers avoid the real 1s poll-interval sleep between the scraping and completed polls.
+    jest.useFakeTimers();
     const scraping = { status: 200, data: { success: true, status: "scraping", completed: 1, total: 2, next: null, data: [] } };
     const completed = { status: 200, data: { success: true, status: "completed", completed: 2, total: 2, next: null, data: [{ markdown: "a" }, { markdown: "b" }] } };
     const http = makeHttp([scraping, completed]);
-    const job = await waitForBatchCompletion(http, "job1", 1);
+    const jobPromise = waitForBatchCompletion(http, "job1", 1);
+    await jest.advanceTimersByTimeAsync(1000);
+    const job = await jobPromise;
     expect(job.status).toBe("completed");
     expect(job.data.length).toBe(2);
   });

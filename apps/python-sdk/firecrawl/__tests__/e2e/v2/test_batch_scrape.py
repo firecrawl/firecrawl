@@ -35,7 +35,7 @@ class TestBatchScrapeE2E:
             assert job.total >= 0
             assert isinstance(job.data, list)
         except JobFailedError as e:
-            assert e.job.status in ["failed"]
+            assert e.job.status in ["failed", "cancelled"]
 
     def test_start_batch_minimal_and_status(self):
         """Start via start_batch_scrape (minimal), then fetch status once."""
@@ -128,7 +128,7 @@ class TestBatchScrapeE2E:
             assert job.total >= 0
             assert isinstance(job.data, list)
         except JobFailedError as e:
-            assert e.job.status in ["failed"]
+            assert e.job.status in ["failed", "cancelled"]
 
     def test_cancel_batch(self):
         """Start a batch and cancel it."""

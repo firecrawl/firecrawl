@@ -32,7 +32,7 @@ async def test_async_batch_wait_minimal(api_key, api_url):
         ], formats=["markdown"], poll_interval=1, timeout=120)
         assert job.status == "completed"
     except JobFailedError as e:
-        assert e.job.status in ("failed",)
+        assert e.job.status in ("failed", "cancelled")
 
 
 @pytest.mark.asyncio
@@ -61,7 +61,7 @@ async def test_async_batch_wait_with_all_params(api_key, api_url):
         )
         assert job.status == "completed"
     except JobFailedError as e:
-        assert e.job.status in ("failed",)
+        assert e.job.status in ("failed", "cancelled")
 
 
 @pytest.mark.asyncio
