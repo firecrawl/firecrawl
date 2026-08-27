@@ -8,6 +8,7 @@ import { authMiddleware, wrap } from "./shared";
 
 const DISCOVER_TIMEOUT_MS = 10_000;
 const RETRIEVE_TIMEOUT_MS = 50_000;
+const ANALYTICS_TIMEOUT_MS = 20_000;
 
 const FORWARDED_REQUEST_HEADERS = ["accept", "x-request-id"];
 const FORWARDED_RESPONSE_HEADERS = ["content-type", "x-request-id"];
@@ -115,4 +116,10 @@ exchangeRouter.post(
   "/retrieve",
   authMiddleware(RateLimiterMode.Labs),
   wrap(exchangeProxy(RETRIEVE_TIMEOUT_MS)),
+);
+
+exchangeRouter.get(
+  "/analytics{/*path}",
+  authMiddleware(RateLimiterMode.Labs),
+  wrap(exchangeProxy(ANALYTICS_TIMEOUT_MS)),
 );
