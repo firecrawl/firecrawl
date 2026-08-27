@@ -575,12 +575,14 @@ export async function firebillFinalize({
   overrideValue,
   properties,
   externalRequestId,
+  customerId,
 }: {
   lockId: string;
   action: "confirm" | "release";
   overrideValue?: number;
   properties?: Record<string, unknown>;
   externalRequestId?: string | null;
+  customerId?: string | null;
 }): Promise<boolean> {
   const url = firebillUrl("/v1/finalize");
   try {
@@ -606,6 +608,10 @@ export async function firebillFinalize({
         ...(externalRequestId
           ? { external_request_id: externalRequestId }
           : {}),
+        // Who the lock was for. The Autumn finalize body carries no customer
+        // and firebill keeps no lock table, so without this it cannot find the
+        // integration to report the run to.
+        ...(customerId ? { customer_id: customerId } : {}),
       }),
       signal: AbortSignal.timeout(FIREBILL_TIMEOUT_MS),
     });

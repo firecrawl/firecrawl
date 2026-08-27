@@ -689,12 +689,20 @@ export class AutumnService {
   }: FinalizeCreditsLockParams): Promise<void> {
     const gated = Boolean(externalRequestId) && firebillConfigured();
     if (gated || (teamId && (await this.isRoutedThroughFirebill(teamId)))) {
+      // Only resolved for a gated settle: firebill needs the org to find the
+      // integration to report to, and an ordinary finalize reports to nobody.
+      // Cached, but not worth a lookup on every settle that cannot use it.
+      const customerId =
+        externalRequestId && teamId
+          ? await this.ensureTrackingContext(teamId).catch(() => null)
+          : null;
       await firebillFinalize({
         lockId,
         action,
         overrideValue,
         properties,
         externalRequestId,
+        customerId,
       });
       return;
     }

@@ -1462,6 +1462,50 @@ describe("firebill routing", () => {
     );
   });
 
+  // firebill has no lock table and the Autumn finalize body carries no
+  // customer, so without this it cannot find the integration to report to.
+  it("sends the customer alongside the run token so the run can be reported", async () => {
+    state.configRef = firebillConfig();
+    const svc = makeService();
+
+    await svc.finalizeCreditsLock({
+      lockId: "monitor_check-1",
+      action: "confirm",
+      overrideValue: 7,
+      teamId: "team-1",
+      externalRequestId: "run-42",
+    });
+
+    const body = JSON.parse(
+      mockFetch.mock.calls
+        .filter(([url]) => String(url).endsWith("/v1/finalize"))
+        .pop()![1].body,
+    );
+    expect(body.customer_id).toBe("org-1");
+    expect(body.external_request_id).toBe("run-42");
+  });
+
+  // An ordinary settle reports to nobody, so it should not pay for the lookup
+  // or put a customer on the wire.
+  it("omits the customer when the settle is not gated", async () => {
+    state.configRef = firebillConfig();
+    const svc = makeService();
+
+    await svc.finalizeCreditsLock({
+      lockId: "monitor_check-1",
+      action: "confirm",
+      overrideValue: 7,
+      teamId: "team-1",
+    });
+
+    const body = JSON.parse(
+      mockFetch.mock.calls
+        .filter(([url]) => String(url).endsWith("/v1/finalize"))
+        .pop()![1].body,
+    );
+    expect(body).not.toHaveProperty("customer_id");
+  });
+
   it("omits the operation id when there is no partner to report to", async () => {
     state.configRef = firebillConfig();
     const svc = makeService();
