@@ -25,10 +25,13 @@ import type { PDFMode } from "../../../../../controllers/v2/types";
 import type { Meta } from "../../..";
 import { safeMarkdownToHtml } from "../markdownToHtml";
 import type { PDFProcessorResult } from "../types";
-import { scrapePDFWithFirePDFAsync } from "./async";
+import { FirePdfAsyncFailure, scrapePDFWithFirePDFAsync } from "./async";
 import type { FirePdfByReferenceInput } from "./by-reference";
 import { maybeSaveResult } from "./cache";
-import { lookupAdoptableFirePdfJob } from "./lookup";
+import {
+  type FirePdfAdoptedJobInput,
+  lookupAdoptableFirePdfJob,
+} from "./lookup";
 import { buildFirePdfJobOptions } from "./utils";
 
 /** Disjoint `[start, end)` ranges covering `[0, totalPages)`. Every
@@ -192,19 +195,28 @@ export async function runShardedFirePdfAttempt(
   // they keep running when this caller's window ends and a retry adopts
   // them per shard.
   // Written before the first shard submit on purpose: the alternative —
-  // waiting for a shard to confirm submission — either delays timeout
-  // enrichment by minutes (first shard completion) or reports
-  // shard-local page counts to the customer. The exposure is the
-  // seconds-wide window between here and the first submit; an abort in
-  // that window over-claims "processing continues", which a retry
-  // resolves with one fresh submit. "queued" is the honest status until
-  // shards start reporting.
+  // waiting for a shard to confirm submission — delays timeout
+  // enrichment by minutes. The exposure is the seconds-wide window
+  // between here and the first submit; an abort in that window
+  // over-claims "processing continues", which a retry resolves with one
+  // fresh submit. Status stays LIVE: each shard call gets its own
+  // container (below), and the whole-document view derives its status
+  // from them via a getter, so a mid-run timeout reports "running" as
+  // soon as any shard does — while shard-local page counts never
+  // overwrite the whole-document estimate.
+  const shardContainers: NonNullable<Meta["largePdfProcessing"]>[] = ranges.map(
+    () => ({}),
+  );
   if (meta.largePdfProcessing) {
     meta.largePdfProcessing.current = {
       jobScrapeId: `${meta.id}_s0`,
       pagesEstimate: args.effectivePages,
       submittedAtMs: Date.now(),
-      lastStatus: "queued",
+      get lastStatus() {
+        return shardContainers.some(c => c.current?.lastStatus === "running")
+          ? ("running" as const)
+          : ("queued" as const);
+      },
     };
   }
 
@@ -236,7 +248,13 @@ export async function runShardedFirePdfAttempt(
       if (i >= ranges.length) return;
       meta.abort.throwIfAborted();
       try {
-        results[i] = await runShard(args, getUploaded, ranges[i], i);
+        results[i] = await runShard(
+          args,
+          getUploaded,
+          ranges[i],
+          i,
+          shardContainers[i],
+        );
       } catch (err) {
         failed = true;
         throw err;
@@ -248,7 +266,19 @@ export async function runShardedFirePdfAttempt(
   // left to finish server-side BY DESIGN — they are by-reference jobs,
   // so the work lands in adoption/cache and the customer's retry picks
   // every completed shard up instead of redoing it.
-  await Promise.all(workers);
+  try {
+    await Promise.all(workers);
+  } catch (error) {
+    if (error instanceof ShardPlacementFailedError && meta.largePdfProcessing) {
+      // Placement failed before a fresh submit existed. Adopted siblings
+      // may still be running server-side, but the recorded job id is not
+      // theirs — clearing is the honest state (never claims processing
+      // that this attempt cannot name; their finished work still lands
+      // for the retry via adoption).
+      meta.largePdfProcessing.current = undefined;
+    }
+    throw error;
+  }
 
   // Every shard reached a terminal state and its result was fetched —
   // nothing "continues" from here on, regardless of how the local merge,
@@ -309,14 +339,15 @@ async function runOneShard(
   getUploaded: () => Promise<FirePdfByReferenceInput>,
   range: [number, number],
   shardIndex: number,
+  /** Shard-local processing container. The whole-document view in
+   * runShardedFirePdfAttempt derives its status from these, so shard
+   * writes surface without overwriting whole-document page counts. */
+  shardContainer: NonNullable<Meta["largePdfProcessing"]>,
 ): Promise<PDFProcessorResult> {
   const shardPages = range[1] - range[0];
   const shardMeta: Meta = {
     ...args.meta,
-    // No processing container: the whole-document state set by
-    // runShardedFirePdfAttempt must not be overwritten with shard-local
-    // page counts.
-    largePdfProcessing: undefined,
+    largePdfProcessing: shardContainer,
     logger: args.meta.logger.child({
       method: "scrapePDF/firePdfShard",
       shard: shardIndex,
@@ -339,17 +370,48 @@ async function runOneShard(
       )
     : null;
   shardMeta.abort.throwIfAborted();
-  const input = adoptable ?? (await getUploaded());
-  return scrapePDFWithFirePDFAsync(
-    shardMeta,
-    input,
-    undefined,
-    shardPages,
-    args.mode,
-    undefined,
-    args.includePageMarkdown,
-    args.includeBlocks,
-    args.pageMarkers,
-    { pageRange: range, scrapeIdOverride: `${args.meta.id}_s${shardIndex}` },
-  );
+  const submitShard = async (
+    input: FirePdfByReferenceInput | FirePdfAdoptedJobInput,
+  ) =>
+    scrapePDFWithFirePDFAsync(
+      shardMeta,
+      input,
+      undefined,
+      shardPages,
+      args.mode,
+      undefined,
+      args.includePageMarkdown,
+      args.includeBlocks,
+      args.pageMarkers,
+      { pageRange: range, scrapeIdOverride: `${args.meta.id}_s${shardIndex}` },
+    );
+  if (adoptable) {
+    try {
+      return await submitShard(adoptable);
+    } catch (error) {
+      // Mirrors the whole-document adoption fallback: an adopted shard
+      // that died (expired/failed) or errored must not fail the attempt
+      // when a fresh submit can still succeed — except when this
+      // caller's own budget is gone, where resubmitting cannot help.
+      shardMeta.abort.throwIfAborted();
+      if (
+        error instanceof FirePdfAsyncFailure &&
+        (error.reason === "polling_timeout" ||
+          error.reason === "deadline_too_close")
+      ) {
+        throw error;
+      }
+      shardMeta.logger.warn(
+        "Adopted shard job did not deliver; submitting fresh",
+        {
+          method: "scrapePDF/firePdfShard",
+          event: "fire_pdf_shard_adoption_fallthrough",
+          error,
+          adopted_scrape_id: adoptable.adoptScrapeId,
+          shard: shardIndex,
+        },
+      );
+    }
+  }
+  return submitShard(await getUploaded());
 }

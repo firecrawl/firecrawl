@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { config } from "../../../../../config";
 import type { Meta } from "../../..";
 import {
   computeShardRanges,
@@ -202,6 +203,7 @@ describe("runShardedFirePdfAttempt", () => {
       _getUploaded: unknown,
       range: [number, number],
       _shardIndex: number,
+      _container: unknown,
     ): Promise<PDFProcessorResult> => {
       calls.push(range);
       return {
@@ -215,11 +217,11 @@ describe("runShardedFirePdfAttempt", () => {
       meta,
       runShardImpl,
     });
-    // 2600 pages at the default 1000/shard: the 600 tail stays its own
-    // shard (>= half), so 3 shards.
-    expect(calls).toHaveLength(3);
+    // Derive from config so env overrides don't break the assertion.
+    const expectedRanges = computeShardRanges(2600, config.PDF_SHARD_PAGES);
+    expect(calls).toEqual(expectedRanges);
     expect(result.markdown).toBe(
-      "pages-0-1000\n\n---\n\npages-1000-2000\n\n---\n\npages-2000-2600",
+      expectedRanges.map(r => `pages-${r[0]}-${r[1]}`).join("\n\n---\n\n"),
     );
     expect(result.pagesProcessed).toBe(2600);
     // Every shard is terminal — nothing "continues" past this point, so
@@ -235,6 +237,7 @@ describe("runShardedFirePdfAttempt", () => {
       _getUploaded: unknown,
       range: [number, number],
       _shardIndex: number,
+      _container: unknown,
     ): Promise<PDFProcessorResult> => {
       if (range[0] === 1000) throw new Error("shard exploded");
       return { html: "", markdown: "ok" } as PDFProcessorResult;
@@ -255,6 +258,7 @@ describe("runShardedFirePdfAttempt", () => {
       _getUploaded: unknown,
       range: [number, number],
       _shardIndex: number,
+      _container: unknown,
     ): Promise<PDFProcessorResult> => {
       launched.push(range[0]);
       throw new Error("first shard fails");
@@ -270,6 +274,9 @@ describe("runShardedFirePdfAttempt", () => {
     // Only the first concurrency wave may have launched — never the
     // remaining queued shards (submitting more work for a doomed
     // attempt only burns GPU).
-    expect(launched.length).toBeLessThanOrEqual(4);
+    expect(launched.length).toBeLessThanOrEqual(config.PDF_SHARD_CONCURRENCY);
+    expect(launched.length).toBeLessThan(
+      computeShardRanges(10_000, config.PDF_SHARD_PAGES).length,
+    );
   });
 });
