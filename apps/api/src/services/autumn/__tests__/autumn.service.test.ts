@@ -1485,6 +1485,31 @@ describe("firebill routing", () => {
     expect(body.external_request_id).toBe("run-42");
   });
 
+  // Sending it without the org would settle the lock and report nothing, and
+  // this finalize is the run's only chance to be reported.
+  it("refuses to send a gated finalize it cannot name the org for", async () => {
+    state.configRef = firebillConfig();
+    // No org row for this team, so resolving the customer throws.
+    state.supabaseStubData = { data: null, error: null };
+    const svc = makeService();
+
+    await expect(
+      svc.finalizeCreditsLock({
+        lockId: "monitor_check-1",
+        action: "confirm",
+        overrideValue: 7,
+        teamId: "team-99",
+        externalRequestId: "run-42",
+      }),
+    ).rejects.toThrow();
+
+    expect(
+      mockFetch.mock.calls.filter(([url]) =>
+        String(url).endsWith("/v1/finalize"),
+      ),
+    ).toHaveLength(0);
+  });
+
   // An ordinary settle reports to nobody, so it should not pay for the lookup
   // or put a customer on the wire.
   it("omits the customer when the settle is not gated", async () => {

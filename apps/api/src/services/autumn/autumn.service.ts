@@ -691,10 +691,14 @@ export class AutumnService {
     if (gated || (teamId && (await this.isRoutedThroughFirebill(teamId)))) {
       // Only resolved for a gated settle: firebill needs the org to find the
       // integration to report to, and an ordinary finalize reports to nobody.
-      // Cached, but not worth a lookup on every settle that cannot use it.
+      //
+      // Deliberately not caught. A gated finalize sent without the org settles
+      // the lock and reports nothing — silently, and this is the run's only
+      // chance to be reported. Better to fail here and be retried than to
+      // succeed at the half that moves money and drop the half that records it.
       const customerId =
         externalRequestId && teamId
-          ? await this.ensureTrackingContext(teamId).catch(() => null)
+          ? await this.ensureTrackingContext(teamId)
           : null;
       await firebillFinalize({
         lockId,
