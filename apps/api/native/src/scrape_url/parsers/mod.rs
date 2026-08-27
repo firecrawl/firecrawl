@@ -6,6 +6,8 @@ use super::{
   meta::Meta,
 };
 
+pub use self::pdf::{PdfBlockItem, PdfPage};
+
 mod document;
 mod fallback;
 mod pdf;

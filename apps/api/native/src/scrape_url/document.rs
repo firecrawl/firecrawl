@@ -3,9 +3,10 @@ use serde::Serialize;
 use serde_json::Value;
 use url::Url;
 
-use crate::scrape_url::engines::EngineScrapeResultActions;
-
-use super::engines::EngineScrapeProxy;
+use super::{
+  engines::{EngineScrapeProxy, EngineScrapeResultActions},
+  parsers::{PdfBlockItem, PdfPage},
+};
 use std::{collections::HashMap, fmt::Display};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -60,6 +61,7 @@ pub struct Document {
   pub markdown: Option<String>,
   pub html: Option<String>,
   pub raw_html: Option<String>,
+  pub raw_base64: Option<String>,
   pub links: Option<Vec<String>>,
   pub images: Option<Vec<String>>,
   pub screenshot: Option<Url>,
@@ -74,6 +76,8 @@ pub struct Document {
   // branding:
   // product:
   // menu:
+  pub pages: Option<Vec<PdfPage>>,
+  pub blocks: Option<Vec<PdfBlockItem>>,
   pub warning: Option<String>,
   pub attributes: Option<Vec<DocumentAttribute>>,
   pub actions: Option<EngineScrapeResultActions>,

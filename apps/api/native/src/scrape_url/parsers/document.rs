@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+use base64::Engine;
 use bytes::Bytes;
 
 use super::super::{
@@ -72,6 +73,7 @@ pub fn parse_document(meta: &Meta, result: EngineScrapeResult) -> Result<Documen
         markdown: Some(markdown),
         html: None,
         raw_html: Some(html),
+        raw_base64: Some(base64::engine::general_purpose::STANDARD.encode(bytes.as_ref())),
         links: None,
         images: None,
         screenshot: result.screenshot,
@@ -82,6 +84,8 @@ pub fn parse_document(meta: &Meta, result: EngineScrapeResult) -> Result<Documen
         highlights: None,
         attributes: None,
         actions: result.actions,
+        pages: None,
+        blocks: None,
         warning: None,
         metadata: DocumentMetadata {
           scrape_id: meta.id.clone(),
@@ -108,6 +112,7 @@ pub fn parse_document(meta: &Meta, result: EngineScrapeResult) -> Result<Documen
       Ok(Document {
         markdown: None,
         html: None,
+        raw_base64: Some(base64::engine::general_purpose::STANDARD.encode(&html)),
         raw_html: Some(html),
         links: None,
         images: None,
@@ -119,6 +124,8 @@ pub fn parse_document(meta: &Meta, result: EngineScrapeResult) -> Result<Documen
         highlights: None,
         attributes: None,
         actions: result.actions,
+        pages: None,
+        blocks: None,
         warning: None,
         metadata: DocumentMetadata {
           scrape_id: meta.id.clone(),

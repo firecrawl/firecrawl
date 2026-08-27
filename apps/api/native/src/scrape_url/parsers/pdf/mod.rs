@@ -3,7 +3,7 @@ use std::fmt::Display;
 use base64::Engine;
 use bytes::Bytes;
 use pdf_inspector::{PdfProcessResult, PdfType, process_pdf_mem_with_options};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use tracing::warn;
 
 use self::firepdf::FirePDF;
@@ -26,13 +26,54 @@ pub enum PdfMode {
   Ocr,
 }
 
+#[derive(Debug, Clone, Serialize)]
+pub struct PdfBlockItemConfidence {
+  pub layout: Option<u64>, // TODO: wtf is this type
+  pub ocr: Option<u64>,    // TODO: wtf is this type
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PdfBlockItem {
+  pub id: String,
+  pub r#type: String,
+  pub label: Option<String>,
+  pub bbox: Option<(i64, i64, i64, i64)>, // TODO: wtf is this type
+  pub content: String,
+  pub markdown_span: Option<(usize, usize)>, // TODO: wtf is this type
+  pub reading_order: u64,                    // TODO: wtf is this type
+  pub source: Option<String>,
+  pub confidence: PdfBlockItemConfidence,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct PdfPage {
+  pub page: u32,
+  pub markdown: String,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct PdfOptions {
+  #[serde(default)]
   pub mode: PdfMode,
+
   pub max_pages: Option<u32>,
 
   /// Include physical per-page markdown alongside document markdown.
-  pub page_markdown: bool,
+  #[serde(default)]
+  pub pages: bool,
+
+  /// Include per-page types layout blocks (bounding boxes, block types, reading order) alongside document markdown.
+  #[serde(default)]
+  pub blocks: bool,
+
+  /// Join PDF pages in `document.markdown` with `\n\n---\n\n<!-- page N -->\n\n` where N is the 1-based physical page
+  /// of the content that follows. Markers appear between pages only (no leading marker for page 1), and numbering may
+  /// skip pages merged by cross-page stitching — callers that need every physical page should use `pages: true` instead.
+  /// No new response field.
+  #[serde(default)]
+  pub page_markers: bool,
 }
 
 enum Eligibility {
@@ -121,6 +162,11 @@ pub fn has_pdf_signal(result: &EngineScrapeResult) -> bool {
 struct PdfResult {
   markdown: String,
   html: String,
+  title: Option<String>,
+  pages: Option<Vec<PdfPage>>,
+  blocks: Option<Vec<PdfBlockItem>>,
+  page_count: u32,
+  pages_processed: u32,
 }
 
 pub async fn parse_pdf(
@@ -141,6 +187,7 @@ pub async fn parse_pdf(
         // Let's serve it as a done document.
         return Ok(Document {
           markdown: None,
+          raw_base64: Some(base64::engine::general_purpose::STANDARD.encode(&html)), // TODO: THIS IS FAKE RAW
           raw_html: Some(html),
           html: None,
           links: None,
@@ -153,6 +200,8 @@ pub async fn parse_pdf(
           highlights: None,
           attributes: None,
           actions: result.actions,
+          pages: None,
+          blocks: None,
           warning: None,
           metadata: DocumentMetadata {
             scrape_id: meta.id.clone(),
@@ -182,60 +231,57 @@ pub async fn parse_pdf(
   if let Some(parser) = meta.options.parsers.pdf() {
     if pdf_binary_match(&bytes) {
       let force_fire_pdf =
-        (meta.options.__force_fire_pdf || parser.page_markdown) && FirePDF::get().is_some();
+        meta.options.__force_fire_pdf || parser.pages || parser.blocks || parser.page_markers;
 
-      let (mut res, pdf_result): (Option<PdfResult>, PdfProcessResult) = {
-        if force_fire_pdf || parser.mode == PdfMode::Ocr {
-          Ok((
-            None,
-            process_pdf_mem_with_options(&bytes, pdf_inspector::PdfOptions::detect_only()).unwrap(),
-          ))
-        } else {
-          let process = process_pdf_mem_with_options(
-            &bytes,
-            match parser.max_pages {
-              Some(n) if n > 0 => pdf_inspector::PdfOptions::new().pages(1..=n),
-              _ => pdf_inspector::PdfOptions::new(),
+      if force_fire_pdf && FirePDF::get().is_none() {
+        panic!("Page markers are unavailable because FirePDF is not configured") // TODO:
+      }
+
+      let mut res: Option<PdfResult> = {
+        let process = process_pdf_mem_with_options(
+          &bytes,
+          match parser.max_pages {
+            Some(n) if n > 0 => pdf_inspector::PdfOptions::new().pages(1..=n),
+            _ => pdf_inspector::PdfOptions::new(),
+          },
+        )
+        .unwrap();
+
+        let elig = Eligibility::new(&process);
+
+        // TODO: SHADOW STUFF
+        // let chars_per_page = process.markdown.as_ref().map(|x| x.len()).unwrap_or(0) as f64
+        //   / f64::max(process.page_count as f64, 1.);
+        // let shadow_eligible = process.markdown.is_some()
+        //   // && PDF_SHADOW_COMPARISON_ENABLE.is_some() // TODO:
+        //   && (process.pdf_type == PdfType::TextBased
+        //     || (process.pdf_type == PdfType::Mixed && chars_per_page >= 200.));
+
+        if parser.mode == PdfMode::Fast
+          && (process.pdf_type == PdfType::Scanned || process.pdf_type == PdfType::ImageBased)
+        {
+          Err(ScrapeURLError::PDFOCRRequiredError(process.pdf_type))
+        } else if elig.is_eligible()
+          && let Some(markdown) = process.markdown.as_ref()
+        {
+          Ok(Some(PdfResult {
+            html: markdown::to_html_with_options(markdown, &markdown::Options::gfm())
+              .expect("this cannot error"),
+            markdown: markdown.clone(),
+            title: process.title.clone(),
+            pages: None,
+            blocks: None,
+            page_count: process.page_count,
+            pages_processed: if let Some(max_pages) = parser.max_pages {
+              process.page_count.min(max_pages)
+            } else {
+              process.page_count
             },
-          )
-          .unwrap();
-
-          let elig = Eligibility::new(&process);
-
-          // TODO: SHADOW STUFF
-          // let chars_per_page = process.markdown.as_ref().map(|x| x.len()).unwrap_or(0) as f64
-          //   / f64::max(process.page_count as f64, 1.);
-          // let shadow_eligible = process.markdown.is_some()
-          //   // && PDF_SHADOW_COMPARISON_ENABLE.is_some() // TODO:
-          //   && (process.pdf_type == PdfType::TextBased
-          //     || (process.pdf_type == PdfType::Mixed && chars_per_page >= 200.));
-
-          if parser.mode == PdfMode::Fast
-            && (process.pdf_type == PdfType::Scanned || process.pdf_type == PdfType::ImageBased)
-          {
-            Err(ScrapeURLError::PDFOCRRequiredError(process.pdf_type))
-          } else if elig.is_eligible()
-            && let Some(markdown) = process.markdown.as_ref()
-          {
-            Ok((
-              Some(PdfResult {
-                html: markdown::to_html_with_options(markdown, &markdown::Options::gfm())
-                  .expect("this cannot error"),
-                markdown: markdown.clone(),
-              }),
-              process,
-            ))
-          } else {
-            Ok((None, process))
-          }
+          }))
+        } else {
+          Ok(None)
         }
       }?;
-
-      let effective_page_count = if let Some(max_pages) = parser.max_pages {
-        pdf_result.page_count.min(max_pages)
-      } else {
-        pdf_result.page_count
-      };
 
       // if result.is_none() && effective_page_count > 0 && effective_page_count * 150
       // TODO: timeout check
@@ -263,12 +309,18 @@ pub async fn parse_pdf(
         PdfResult {
           markdown: "".to_string(),
           html: "".to_string(),
+          title: None,
+          blocks: None,
+          pages: None,
+          page_count: 0,
+          pages_processed: 0,
         }
       };
 
       Ok(Document {
         markdown: Some(res.markdown),
         raw_html: Some(res.html),
+        raw_base64: Some(base64::engine::general_purpose::STANDARD.encode(bytes.as_ref())),
         html: None,
         links: None,
         images: None,
@@ -281,7 +333,8 @@ pub async fn parse_pdf(
         attributes: None,
         actions: result.actions,
         warning: None,
-        // TODO: pages
+        pages: res.pages,
+        blocks: res.blocks,
         metadata: DocumentMetadata {
           scrape_id: meta.id.clone(),
           source_url: meta.source_url(),
@@ -296,9 +349,9 @@ pub async fn parse_pdf(
           credits_used: None,
           concurrency_limited: false,
           concurrency_queue_duration_ms: None,
-          title: pdf_result.title,
-          num_pages: Some(effective_page_count),
-          total_pages: Some(pdf_result.page_count),
+          title: res.title,
+          num_pages: Some(res.pages_processed),
+          total_pages: Some(res.page_count),
           extra: Default::default(),
         },
       })
@@ -310,7 +363,8 @@ pub async fn parse_pdf(
     Ok(Document {
       markdown: Some(encoded.clone()),
       raw_html: Some(encoded.clone()),
-      html: Some(encoded.clone()),
+      raw_base64: Some(encoded.clone()),
+      html: Some(encoded),
       links: None,
       images: None,
       screenshot: result.screenshot,
@@ -321,6 +375,8 @@ pub async fn parse_pdf(
       highlights: None,
       attributes: None,
       actions: result.actions,
+      pages: None,
+      blocks: None,
       warning: None,
       metadata: DocumentMetadata {
         scrape_id: meta.id.clone(),

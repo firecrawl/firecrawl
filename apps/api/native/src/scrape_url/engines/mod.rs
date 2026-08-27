@@ -160,8 +160,15 @@ pub fn should_use_index(meta: &Meta) -> bool {
     false
   };
 
+  let has_custom_pdf_settings = if let Some(pdf) = meta.options.parsers.pdf() {
+    pdf.blocks || pdf.pages || pdf.page_markers
+  } else {
+    false
+  };
+
   !meta.options.formats.contains(FormatKind::ChangeTracking)
     && !meta.options.formats.contains(FormatKind::Branding)
+    && !has_custom_pdf_settings
     && !has_custom_screenshot_settings
     && meta.options.max_age != Some(0)
     && meta.options.headers.is_empty()
