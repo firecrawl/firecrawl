@@ -96,6 +96,9 @@ export type FinalizeCreditsLockParams = {
   externalRequestId?: string | null;
   /** Which balance the hold was against; lets firebill split the settle. */
   featureId?: string;
+  /** What the lock reserved. Autumn nets outstanding holds out of a reported
+   * balance, so firebill adds this back to see what the ghost can really pay. */
+  heldValue?: number | null;
 };
 
 export type TrackCreditsParams = {

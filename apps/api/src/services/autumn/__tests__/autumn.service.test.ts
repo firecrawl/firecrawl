@@ -1474,6 +1474,7 @@ describe("firebill routing", () => {
       overrideValue: 7,
       teamId: "team-1",
       externalRequestId: "run-42",
+      heldValue: 12,
     });
 
     const body = JSON.parse(
@@ -1483,9 +1484,10 @@ describe("firebill routing", () => {
     );
     expect(body.customer_id).toBe("org-1");
     expect(body.external_request_id).toBe("run-42");
-    // Which balance the hold was against — without it firebill cannot split
-    // the settle and the ghost pays the whole run.
+    // The other two the split needs: which balance, and what was held —
+    // Autumn reports a balance net of that hold.
     expect(body.feature_id).toBe("CREDITS");
+    expect(body.held_value).toBe(12);
   });
 
   // There is no durable retry here: billMonitorCheck's caller catches, writes
@@ -1517,6 +1519,7 @@ describe("firebill routing", () => {
     // No org, so firebill cannot split or report — and counts the omission.
     expect(body).not.toHaveProperty("customer_id");
     expect(body).not.toHaveProperty("feature_id");
+    expect(body).not.toHaveProperty("held_value");
   });
 
   // An ordinary settle reports to nobody, so it should not pay for the lookup

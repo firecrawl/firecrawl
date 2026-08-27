@@ -687,6 +687,7 @@ export class AutumnService {
     teamId,
     externalRequestId,
     featureId = CREDITS_FEATURE_ID,
+    heldValue,
   }: FinalizeCreditsLockParams): Promise<void> {
     const gated = Boolean(externalRequestId) && firebillConfigured();
     if (gated || (teamId && (await this.isRoutedThroughFirebill(teamId)))) {
@@ -719,6 +720,7 @@ export class AutumnService {
         externalRequestId,
         customerId,
         featureId: customerId ? featureId : null,
+        heldValue: customerId ? heldValue : null,
       });
       return;
     }

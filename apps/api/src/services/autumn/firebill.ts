@@ -577,6 +577,7 @@ export async function firebillFinalize({
   externalRequestId,
   customerId,
   featureId,
+  heldValue,
 }: {
   lockId: string;
   action: "confirm" | "release";
@@ -585,6 +586,7 @@ export async function firebillFinalize({
   externalRequestId?: string | null;
   customerId?: string | null;
   featureId?: string | null;
+  heldValue?: number | null;
 }): Promise<boolean> {
   const url = firebillUrl("/v1/finalize");
   try {
@@ -618,6 +620,12 @@ export async function firebillFinalize({
         // the ghost and its funder — it reads what the ghost has left of this
         // feature. Without it the whole cost falls on the ghost.
         ...(featureId ? { feature_id: featureId } : {}),
+        // What the lock reserved. Autumn reports a balance net of outstanding
+        // holds, so firebill needs this to know what the ghost can actually
+        // pay for this run; without it the whole cost falls on the ghost.
+        ...(heldValue !== undefined && heldValue !== null
+          ? { held_value: heldValue }
+          : {}),
       }),
       signal: AbortSignal.timeout(FIREBILL_TIMEOUT_MS),
     });

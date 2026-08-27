@@ -373,6 +373,9 @@ async function billMonitorCheck(params: {
       teamId: params.monitor.team_id,
       // Confirm only: a release bills nothing, so there is nothing to report.
       externalRequestId: params.check.partner_run_token,
+      // What the lock reserved. firebill adds it back to the ghost's reported
+      // balance, which Autumn returns net of this very hold.
+      heldValue: params.check.reserved_credits,
     });
   }
 
