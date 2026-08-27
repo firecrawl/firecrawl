@@ -1488,9 +1488,11 @@ describe("firebill routing", () => {
     expect(body.feature_id).toBe("CREDITS");
   });
 
-  // Sending it without the org would settle the lock and report nothing, and
-  // this finalize is the run's only chance to be reported.
-  it("refuses to send a gated finalize it cannot name the org for", async () => {
+  // There is no durable retry here: billMonitorCheck's caller catches, writes
+  // billing_status "failed", and nothing reads that back. Throwing would
+  // abandon the finalize, so the hold expires and the run goes unbilled as
+  // well as unreported — a worse loss than the missing label.
+  it("still finalizes when it cannot name the org, rather than abandoning the settle", async () => {
     state.configRef = firebillConfig();
     // No org row for this team, so resolving the customer throws.
     state.supabaseStubData = { data: null, error: null };
@@ -1504,13 +1506,17 @@ describe("firebill routing", () => {
         teamId: "team-99",
         externalRequestId: "run-42",
       }),
-    ).rejects.toThrow();
+    ).resolves.toBeUndefined();
 
-    expect(
-      mockFetch.mock.calls.filter(([url]) =>
-        String(url).endsWith("/v1/finalize"),
-      ),
-    ).toHaveLength(0);
+    const body = JSON.parse(
+      mockFetch.mock.calls
+        .filter(([url]) => String(url).endsWith("/v1/finalize"))
+        .pop()![1].body,
+    );
+    expect(body.lock_id).toBe("monitor_check-1");
+    // No org, so firebill cannot split or report — and counts the omission.
+    expect(body).not.toHaveProperty("customer_id");
+    expect(body).not.toHaveProperty("feature_id");
   });
 
   // An ordinary settle reports to nobody, so it should not pay for the lookup

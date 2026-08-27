@@ -690,16 +690,26 @@ export class AutumnService {
   }: FinalizeCreditsLockParams): Promise<void> {
     const gated = Boolean(externalRequestId) && firebillConfigured();
     if (gated || (teamId && (await this.isRoutedThroughFirebill(teamId)))) {
-      // Only resolved for a gated settle: firebill needs the org to find the
-      // integration to report to, and an ordinary finalize reports to nobody.
+      // Only resolved for a gated settle: firebill needs the org to split the
+      // settle and to find the integration to report to. An ordinary finalize
+      // does neither, so it does not pay for the lookup.
       //
-      // Deliberately not caught. A gated finalize sent without the org settles
-      // the lock and reports nothing — silently, and this is the run's only
-      // chance to be reported. Better to fail here and be retried than to
-      // succeed at the half that moves money and drop the half that records it.
+      // A failure degrades to omitting it rather than throwing. There is no
+      // durable retry on this path — `billMonitorCheck`'s only caller catches,
+      // writes `billing_status: "failed"`, and moves on, and nothing ever reads
+      // that back — so throwing would abandon the finalize entirely: the hold
+      // expires and the run goes unbilled at Autumn as well as unreported.
+      // Settling and losing the label is the lesser loss, and firebill counts
+      // the lost label as `partner_events_total{outcome="no_customer"}`.
       const customerId =
         externalRequestId && teamId
-          ? await this.ensureTrackingContext(teamId)
+          ? await this.ensureTrackingContext(teamId).catch(error => {
+              logger.error(
+                "Could not resolve the org for a gated settle; finalizing anyway, but this run cannot be reported to its partner",
+                { teamId, lockId, error },
+              );
+              return null;
+            })
           : null;
       await firebillFinalize({
         lockId,
