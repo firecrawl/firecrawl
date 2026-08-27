@@ -63,4 +63,35 @@ describe('assertSafeTargetUrl', () => {
       assertSafeTargetUrl('http://1.1.1.1/'),
     );
   });
+
+  it('allows a public IPv6 literal target (URL.hostname brackets it)', async () => {
+    process.env.ALLOW_PRIVATE_IP_SCRAPING = 'False';
+    process.env.ALLOW_LOCAL_WEBHOOKS = 'False';
+
+    const { assertSafeTargetUrl }: typeof import('./url-safety') =
+      require('./url-safety');
+
+    await assert.doesNotReject(() =>
+      assertSafeTargetUrl('http://[2606:4700::1111]/'),
+    );
+  });
+
+  it('blocks the IPv6 loopback literal', async () => {
+    process.env.ALLOW_PRIVATE_IP_SCRAPING = 'False';
+    process.env.ALLOW_LOCAL_WEBHOOKS = 'False';
+
+    const {
+      assertSafeTargetUrl,
+      InsecureConnectionError,
+    }: typeof import('./url-safety') = require('./url-safety');
+
+    await assert.rejects(
+      () => assertSafeTargetUrl('http://[::1]/'),
+      (err: unknown) => {
+        assert.ok(err instanceof InsecureConnectionError);
+        assert.ok((err as Error).message.includes('private/internal address'));
+        return true;
+      },
+    );
+  });
 });

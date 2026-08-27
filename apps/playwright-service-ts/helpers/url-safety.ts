@@ -20,7 +20,13 @@ export class InsecureConnectionError extends Error {
 }
 
 export const isInternalHost = async (hostname: string): Promise<boolean> => {
-  const host = hostname.toLowerCase().replace(/\.$/, '');
+  // URL.hostname returns IPv6 literals bracketed ("[::1]"); ipaddr.js and
+  // dns.lookup both reject bracketed forms, so unwrap before validating.
+  const host = hostname
+    .toLowerCase()
+    .replace(/^[\[]/, '')
+    .replace(/[\]]$/, '')
+    .replace(/\.$/, '');
   if (!host) return true;
 
   let addresses: string[];
