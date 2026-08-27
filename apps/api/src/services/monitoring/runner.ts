@@ -354,14 +354,18 @@ function summarize(pages: PageResult[]) {
   };
 }
 
+/// `false` means the settle did not land: the hold is still out there and this
+/// run is not billed. Only the caller can decide what to record for that, so it
+/// is returned rather than swallowed.
 async function billMonitorCheck(params: {
   monitor: MonitorRow;
   check: MonitorCheckRow;
   actualCredits: number;
   lockId: string | null;
-}): Promise<void> {
+}): Promise<boolean> {
+  let settled = true;
   if (params.lockId) {
-    await autumnService.finalizeCreditsLock({
+    settled = await autumnService.finalizeCreditsLock({
       lockId: params.lockId,
       action: "confirm",
       overrideValue: params.actualCredits,
@@ -379,7 +383,8 @@ async function billMonitorCheck(params: {
     });
   }
 
-  if (params.actualCredits <= 0 || !config.USE_DB_AUTHENTICATION) return;
+  if (params.actualCredits <= 0 || !config.USE_DB_AUTHENTICATION)
+    return settled;
 
   await getBillingQueue().add(
     "bill_team",
@@ -401,6 +406,8 @@ async function billMonitorCheck(params: {
       priority: 10,
     },
   );
+
+  return settled;
 }
 
 async function sendNotifications(params: {
@@ -1492,7 +1499,10 @@ export async function reconcileRunningMonitorChecks(
         status: errorCount > 0 ? "partial" : "completed",
         finished_at: new Date().toISOString(),
         actual_credits: actualCredits,
-        billing_status: check.autumn_lock_id ? "confirmed" : "not_applicable",
+        // Not `confirmed` yet — the settle has not been attempted. Claiming it
+        // here and then finding firebill refused leaves a run permanently
+        // recorded as billed that nobody billed, with no retry.
+        billing_status: check.autumn_lock_id ? "reserved" : "not_applicable",
         total_pages: totalPages,
         same_count: same,
         changed_count: changed,
@@ -1502,8 +1512,9 @@ export async function reconcileRunningMonitorChecks(
         target_results: targetResults,
       });
 
+      let settled = false;
       try {
-        await billMonitorCheck({
+        settled = await billMonitorCheck({
           monitor,
           check: finalized,
           actualCredits,
@@ -1515,10 +1526,27 @@ export async function reconcileRunningMonitorChecks(
           checkId: finalized.id,
           error,
         });
+      }
+
+      // A refusal and a throw are the same fact — the settle did not land — and
+      // both must be recorded as such. `firebillFinalize` answers `false`
+      // without throwing, so the catch alone never saw them.
+      if (check.autumn_lock_id) {
+        if (!settled) {
+          logger.error(
+            "Monitor check settle did not land; the hold is unsettled and this run is unbilled",
+            {
+              monitorId: monitor.id,
+              checkId: finalized.id,
+              lockId: check.autumn_lock_id,
+              actualCredits,
+            },
+          );
+        }
         finalized = await updateMonitorCheck(check.id, {
-          billing_status: "failed",
+          billing_status: settled ? "confirmed" : "failed",
         }).catch(updateError => {
-          logger.warn("Failed to record monitor check billing failure", {
+          logger.warn("Failed to record monitor check billing outcome", {
             monitorId: monitor.id,
             checkId: finalized.id,
             error: updateError,

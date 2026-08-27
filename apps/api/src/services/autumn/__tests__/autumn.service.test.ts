@@ -1508,7 +1508,7 @@ describe("firebill routing", () => {
         teamId: "team-99",
         externalRequestId: "run-42",
       }),
-    ).resolves.toBeUndefined();
+    ).resolves.not.toThrow();
 
     const body = JSON.parse(
       mockFetch.mock.calls
@@ -1524,6 +1524,50 @@ describe("firebill routing", () => {
 
   // An ordinary settle reports to nobody, so it should not pay for the lookup
   // or put a customer on the wire.
+  // firebill answers `false` for a refusal, a timeout, or a non-OK, and none of
+  // them throw. A caller that cannot see that records a run as billed that
+  // nobody billed, with no retry — so the verdict has to come back.
+  it("reports whether the settle actually landed", async () => {
+    state.configRef = firebillConfig();
+    const svc = makeService();
+
+    mockFetch.mockResolvedValueOnce(
+      new Response(JSON.stringify({ success: true }), { status: 200 }),
+    );
+    await expect(
+      svc.finalizeCreditsLock({
+        lockId: "monitor_check-1",
+        action: "confirm",
+        overrideValue: 7,
+        teamId: "team-1",
+      }),
+    ).resolves.toBe(true);
+
+    // firebill took it but says it did not land.
+    mockFetch.mockResolvedValueOnce(
+      new Response(JSON.stringify({ success: false }), { status: 200 }),
+    );
+    await expect(
+      svc.finalizeCreditsLock({
+        lockId: "monitor_check-2",
+        action: "confirm",
+        overrideValue: 7,
+        teamId: "team-1",
+      }),
+    ).resolves.toBe(false);
+
+    // Never answered at all.
+    mockFetch.mockRejectedValueOnce(new Error("ECONNREFUSED"));
+    await expect(
+      svc.finalizeCreditsLock({
+        lockId: "monitor_check-3",
+        action: "confirm",
+        overrideValue: 7,
+        teamId: "team-1",
+      }),
+    ).resolves.toBe(false);
+  });
+
   it("omits the customer when the settle is not gated", async () => {
     state.configRef = firebillConfig();
     const svc = makeService();

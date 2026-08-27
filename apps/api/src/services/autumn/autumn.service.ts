@@ -688,7 +688,7 @@ export class AutumnService {
     externalRequestId,
     featureId = CREDITS_FEATURE_ID,
     heldValue,
-  }: FinalizeCreditsLockParams): Promise<void> {
+  }: FinalizeCreditsLockParams): Promise<boolean> {
     const gated = Boolean(externalRequestId) && firebillConfigured();
     if (gated || (teamId && (await this.isRoutedThroughFirebill(teamId)))) {
       // Only resolved for a gated settle: firebill needs the org to split the
@@ -712,7 +712,10 @@ export class AutumnService {
               return null;
             })
           : null;
-      await firebillFinalize({
+      // Surfaced, not discarded. firebill answers `false` for a refusal, a
+      // timeout, or a non-OK — none of which throw — so a caller that ignores
+      // this records a run as billed that nobody billed.
+      return await firebillFinalize({
         lockId,
         action,
         overrideValue,
@@ -722,10 +725,11 @@ export class AutumnService {
         featureId: customerId ? featureId : null,
         heldValue: customerId ? heldValue : null,
       });
-      return;
     }
 
-    if (!autumnClient) return;
+    // No client means no hold was ever taken, so nothing can have gone
+    // unsettled.
+    if (!autumnClient) return true;
 
     try {
       await autumnClient.balances.finalize({
@@ -739,6 +743,7 @@ export class AutumnService {
         action,
         overrideValue,
       });
+      return true;
     } catch (error) {
       logger.error(
         "Autumn finalizeCreditsLock failed — billing API may be unavailable",
@@ -749,6 +754,7 @@ export class AutumnService {
           error,
         },
       );
+      return false;
     }
   }
 
