@@ -576,6 +576,7 @@ export async function firebillFinalize({
   properties,
   externalRequestId,
   customerId,
+  featureId,
 }: {
   lockId: string;
   action: "confirm" | "release";
@@ -583,6 +584,7 @@ export async function firebillFinalize({
   properties?: Record<string, unknown>;
   externalRequestId?: string | null;
   customerId?: string | null;
+  featureId?: string | null;
 }): Promise<boolean> {
   const url = firebillUrl("/v1/finalize");
   try {
@@ -612,6 +614,10 @@ export async function firebillFinalize({
         // and firebill keeps no lock table, so without this it cannot find the
         // integration to report the run to.
         ...(customerId ? { customer_id: customerId } : {}),
+        // With customer_id, this is what lets firebill split the settle across
+        // the ghost and its funder — it reads what the ghost has left of this
+        // feature. Without it the whole cost falls on the ghost.
+        ...(featureId ? { feature_id: featureId } : {}),
       }),
       signal: AbortSignal.timeout(FIREBILL_TIMEOUT_MS),
     });

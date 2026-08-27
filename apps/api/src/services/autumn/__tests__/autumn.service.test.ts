@@ -1483,6 +1483,9 @@ describe("firebill routing", () => {
     );
     expect(body.customer_id).toBe("org-1");
     expect(body.external_request_id).toBe("run-42");
+    // Which balance the hold was against — without it firebill cannot split
+    // the settle and the ghost pays the whole run.
+    expect(body.feature_id).toBe("CREDITS");
   });
 
   // Sending it without the org would settle the lock and report nothing, and
@@ -1529,6 +1532,7 @@ describe("firebill routing", () => {
         .pop()![1].body,
     );
     expect(body).not.toHaveProperty("customer_id");
+    expect(body).not.toHaveProperty("feature_id");
   });
 
   it("omits the operation id when there is no partner to report to", async () => {

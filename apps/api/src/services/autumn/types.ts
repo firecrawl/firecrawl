@@ -94,6 +94,8 @@ export type FinalizeCreditsLockParams = {
   teamId?: string;
   /** For a gated run, the `operationToken` its lock handed back. */
   externalRequestId?: string | null;
+  /** Which balance the hold was against; lets firebill split the settle. */
+  featureId?: string;
 };
 
 export type TrackCreditsParams = {
