@@ -13,8 +13,9 @@ import {
   ALLOW_LOCAL_WEBHOOKS,
   ALLOW_PRIVATE_IP_SCRAPING,
   assertSafeTargetUrl,
+  createSafeDnsLookup,
   InsecureConnectionError,
-  isInternalHost,
+  resolvePublicHostAddresses,
 } from './helpers/url-safety';
 import { Server, RequestError } from 'proxy-chain';
 
@@ -50,17 +51,28 @@ const startSSRFProxy = async (): Promise<number> => {
     port: 0,
     host: '127.0.0.1',
     prepareRequestFunction: async ({ hostname }) => {
-      if (
-        !ALLOW_LOCAL_WEBHOOKS &&
-        !ALLOW_PRIVATE_IP_SCRAPING &&
-        (await isInternalHost(hostname))
-      ) {
-        throw new RequestError(
-          'Blocked: target resolves to a private/internal address',
-          403,
-        );
+      const upstreamProxyUrl = buildUpstreamProxyUrl();
+
+      if (!ALLOW_LOCAL_WEBHOOKS && !ALLOW_PRIVATE_IP_SCRAPING) {
+        const safeAddresses = await resolvePublicHostAddresses(hostname);
+        if (!safeAddresses) {
+          throw new RequestError(
+            'Blocked: target resolves to a private/internal address',
+            403,
+          );
+        }
+        // When there is no upstream proxy, pin the resolved public address so
+        // a later DNS rebind cannot swap it for a private one before the
+        // browser/proxy opens the actual socket.
+        if (!upstreamProxyUrl) {
+          return {
+            upstreamProxyUrl,
+            dnsLookup: createSafeDnsLookup(safeAddresses),
+          };
+        }
       }
-      return { upstreamProxyUrl: buildUpstreamProxyUrl() };
+
+      return { upstreamProxyUrl };
     },
   });
   await server.listen();
