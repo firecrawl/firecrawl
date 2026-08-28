@@ -479,7 +479,7 @@ export async function generateCompletions({
                 },
               },
               experimental_telemetry: {
-                isEnabled: true,
+                isEnabled: !zeroDataRetention,
                 functionId: metadata.functionId
                   ? metadata.functionId + "/generateText"
                   : "generateText",
@@ -650,7 +650,7 @@ export async function generateCompletions({
               },
             },
             experimental_telemetry: {
-              isEnabled: true,
+              isEnabled: !zeroDataRetention,
               functionId: metadata.functionId
                 ? metadata.functionId + "/repairText"
                 : "repairText",
@@ -746,7 +746,7 @@ export async function generateCompletions({
         },
       }),
       experimental_telemetry: {
-        isEnabled: true,
+        isEnabled: !zeroDataRetention,
         functionId: metadata.functionId,
         metadata: {
           teamId: metadata.teamId,
