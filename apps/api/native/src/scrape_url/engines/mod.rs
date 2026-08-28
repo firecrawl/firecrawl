@@ -63,8 +63,20 @@ impl Display for EngineScrapeProxy {
   }
 }
 
+pub struct BytesOffloaded {
+  /// URI of file on GCS bucket (gs://{bucket name}/{object name})
+  pub gcs_uri: String,
+
+  /// SHA-256 hash of file
+  pub sha256: String,
+
+  /// File size in bytes
+  pub size_bytes: usize,
+}
+
 pub enum EngineScrapeContent {
   Bytes(Bytes),
+  BytesOffloaded(BytesOffloaded),
   ChromeRenderedDOM(String),
   IndexFakeHTML(String, Option<IndexPDFMetadata>),
   GeneratedMarkdown(String),

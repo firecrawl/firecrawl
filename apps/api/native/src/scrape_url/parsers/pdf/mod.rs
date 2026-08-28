@@ -225,6 +225,9 @@ pub async fn parse_pdf(
         });
       }
     }
+    EngineScrapeContent::BytesOffloaded(offloaded) => {
+      unimplemented!() // TODO:
+    }
     _ => unreachable!(),
   };
 

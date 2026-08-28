@@ -23,6 +23,7 @@ mod document;
 mod engines;
 mod error;
 mod feature_flags;
+mod file_size_limit;
 mod formats;
 mod kinded;
 mod meta;
