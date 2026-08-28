@@ -39,7 +39,7 @@ const commonReasoningPromptProperties = {
   },
   smartscrape_prompt: {
     type: ["string", "null"],
-    description: `A clear, outcome-focused prompt describing what information to find on the page. 
+    description: `A clear, outcome-focused prompt describing what information to find on the page.
       Example: "Find the product specifications in the expandable section" rather than "Click the button to reveal product specs".
       Used by the smart scraping agent to determine what actions to take.
       Dont mention anything about extraction, smartscrape just returns page content.`,
@@ -289,6 +289,7 @@ export async function extractData({
           ? metadata.functionId + "/extractData"
           : "extractData",
       },
+      extractOptions.zeroDataRetention,
     );
     schema = genRes.extract;
   }
@@ -372,6 +373,7 @@ export async function extractData({
           logger,
           costTracking: extractOptions.costTrackingOptions.costTracking,
           metadata,
+          zeroDataRetention: !!extractOptions.zeroDataRetention,
         })
       : Promise.resolve(),
     generateCompletions({
@@ -429,6 +431,13 @@ export async function extractData({
     });
 
     if (useAgent && extract?.shouldUseSmartscrape) {
+      // technically this should be checked upstream but might as well add another guard - Mogery
+      if (extractOptions.zeroDataRetention) {
+        throw new Error(
+          "JSON mode with agent is not supported with Zero Data Retention.",
+        );
+      }
+
       let smartscrapeResults: SmartScrapeResult[];
       if (isSingleUrl) {
         smartscrapeResults = [
@@ -495,6 +504,7 @@ export async function extractData({
               logger,
               costTracking: extractOptions.costTrackingOptions.costTracking,
               metadata,
+              zeroDataRetention: !!extractOptions.zeroDataRetention,
             });
           }
 
