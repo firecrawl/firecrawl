@@ -1,0 +1,19 @@
+apps/api/src/scraper/scrapeURL/transformers/llmExtract.ts
+  ai_agent 374,480,651,747,973,975,1013-1015
+apps/api/src/routes/exchange.ts
+  ai_agent 13,133-146,152-168
+apps/api/src/scraper/scrapeURL/engines/pdf/__tests__/fireEngineHandoff.test.ts
+  ai_agent 205,207-208
+apps/api/src/config.ts
+  ai_agent 390
+apps/api/src/scraper/scrapeURL/lib/extractSmartScrape.ts
+  ai_agent 42
+apps/api/src/scraper/scrapeURL/lib/promptInjectionGuard.ts
+  ai_agent 110,207
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "60ec1ca01f35ae432498702048fa4712c2f844c8",
+  "prompts": {}
+}
