@@ -170,8 +170,8 @@ const configSchema = z.object({
   // process.env at request time when the createOpenAI option is undefined
   // (loadApiKey / loadOptionalSetting), so config.ts also deletes these keys
   // from process.env below after parsing (see #4083).
-  OPENAI_API_KEY: emptyOrWhitespaceStringAsUndefined(z.string()),
-  OPENAI_BASE_URL: emptyOrWhitespaceStringAsUndefined(z.string()),
+  OPENAI_API_KEY: emptyOrWhitespaceStringAsUndefined(z.string().trim()),
+  OPENAI_BASE_URL: emptyOrWhitespaceStringAsUndefined(z.string().trim()),
   OPENROUTER_API_KEY: z.string().optional(),
   XAI_API_KEY: z.string().optional(),
   LLAMAPARSE_API_KEY: z.string().optional(),
@@ -597,7 +597,9 @@ for (const key of ["OPENAI_API_KEY", "OPENAI_BASE_URL"] as const) {
     // console.warn (not the winston logger): config.ts is imported before the
     // logger exists, and logger.ts imports config — a cycle.
     console.warn(
-      `[config] ${key} is set but empty/whitespace-only; the OpenAI provider will be unavailable (see #4083)`,
+      key === "OPENAI_API_KEY"
+        ? "[config] OPENAI_API_KEY is set but empty/whitespace-only; the OpenAI provider will be unavailable (see #4083)"
+        : "[config] OPENAI_BASE_URL is set but empty/whitespace-only; defaulting to https://api.openai.com/v1 (see #4083)",
     );
   }
 }

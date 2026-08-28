@@ -6,6 +6,8 @@ import { afterAll, describe, expect, it, vi } from "vitest";
 describe("config empty/whitespace OpenAI env vars (#4083)", () => {
   const originalOpenAiKey = process.env.OPENAI_API_KEY;
   const originalOpenAiBaseUrl = process.env.OPENAI_BASE_URL;
+  const originalFirebrainUrl = process.env.FIREBRAIN_TRACKS_URL;
+  const originalFirebrainApiKey = process.env.FIREBRAIN_TRACKS_API_KEY;
 
   async function loadConfig() {
     vi.resetModules();
@@ -23,6 +25,16 @@ describe("config empty/whitespace OpenAI env vars (#4083)", () => {
       delete process.env.OPENAI_BASE_URL;
     } else {
       process.env.OPENAI_BASE_URL = originalOpenAiBaseUrl;
+    }
+    if (originalFirebrainUrl === undefined) {
+      delete process.env.FIREBRAIN_TRACKS_URL;
+    } else {
+      process.env.FIREBRAIN_TRACKS_URL = originalFirebrainUrl;
+    }
+    if (originalFirebrainApiKey === undefined) {
+      delete process.env.FIREBRAIN_TRACKS_API_KEY;
+    } else {
+      process.env.FIREBRAIN_TRACKS_API_KEY = originalFirebrainApiKey;
     }
   });
 
@@ -74,12 +86,12 @@ describe("config empty/whitespace OpenAI env vars (#4083)", () => {
     expect(process.env.OPENAI_BASE_URL).toBe("https://api.openai.com/v1");
   });
 
-  it("keeps whitespace-padded real values untrimmed", async () => {
+  it("trims whitespace-padded real values", async () => {
     process.env.OPENAI_API_KEY = "  sk-key  ";
     process.env.OPENAI_BASE_URL = " https://api.openai.com/v1\n";
     const config = await loadConfig();
-    expect(config.OPENAI_API_KEY).toBe("  sk-key  ");
-    expect(config.OPENAI_BASE_URL).toBe(" https://api.openai.com/v1\n");
+    expect(config.OPENAI_API_KEY).toBe("sk-key");
+    expect(config.OPENAI_BASE_URL).toBe("https://api.openai.com/v1");
   });
 
   it("preserves FIREBRAIN_TRACKS whitespace semantics after helper consolidation", async () => {
