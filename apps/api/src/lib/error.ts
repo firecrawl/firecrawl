@@ -88,9 +88,11 @@ type ScrapeTimeoutProcessingDetails = {
 
 /** Matches BY_REFERENCE_DEADLINE_PER_PAGE_MS (fire-pdf/utils.ts) — the
  * conservative worst-case processing rate the job deadline is built
- * from. Kept as a default parameter here so lib/error stays free of
- * scraper imports. */
-const PROCESSING_ESTIMATE_PER_PAGE_MS = 500;
+ * from (covers fully scanned documents, not the text-extraction
+ * median). Kept as a default parameter here so lib/error stays free of
+ * scraper imports; keep the two constants in lockstep or the retry
+ * hints understate what the deadline actually allows. */
+const PROCESSING_ESTIMATE_PER_PAGE_MS = 1_250;
 /** Fixed overhead the estimate grants beyond pure page work: queue
  * pickup, render bootstrap, result assembly. */
 const PROCESSING_ESTIMATE_BASE_MS = 60_000;

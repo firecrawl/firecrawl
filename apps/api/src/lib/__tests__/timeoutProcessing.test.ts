@@ -13,12 +13,12 @@ const T0 = 1_756_200_000_000;
 
 describe("composeTimeoutProcessing", () => {
   it("estimates from pages minus elapsed, rounded up to whole minutes", () => {
-    // 700 pages × 500ms + 60s base = 410s total; 2min elapsed → 290s
-    // remaining → rounds up to 5 minutes.
+    // 700 pages × 1.25s + 60s base = 935s total; 2min elapsed → 815s
+    // remaining → rounds up to 14 minutes; Retry-After caps at 10min.
     const { message, details } = composeTimeoutProcessing({
       pagesEstimate: 700,
       submittedAtMs: T0,
-      jobDeadlineAtMs: T0 + 11 * 60_000,
+      jobDeadlineAtMs: T0 + 20 * 60_000,
       lastStatus: "running",
       nowMs: T0 + 2 * 60_000,
     });
@@ -26,11 +26,11 @@ describe("composeTimeoutProcessing", () => {
       state: "processing_continues",
       documentPages: 700,
       jobStatus: "running",
-      estimatedRemainingSeconds: 300,
-      retryAfterSeconds: 300,
+      estimatedRemainingSeconds: 840,
+      retryAfterSeconds: 600,
     });
     expect(message).toContain("700-page PDF is still being processed");
-    expect(message).toContain("~5 minutes");
+    expect(message).toContain("~14 minutes");
   });
 
   it("queued and published statuses read as queued, place is kept", () => {
@@ -65,12 +65,12 @@ describe("composeTimeoutProcessing", () => {
       lastStatus: "running",
       nowMs: T0,
     });
-    expect(monster.details.estimatedRemainingSeconds).toBe(3_060);
+    expect(monster.details.estimatedRemainingSeconds).toBe(7_560);
     expect(monster.details.retryAfterSeconds).toBe(600);
   });
 
   it("flags documents that may exceed the job's processing window", () => {
-    // 6000 pages ≈ 51min of work against a 30-minute job deadline.
+    // 6000 pages ≈ 126min of work against a 30-minute job deadline.
     const { message, details } = composeTimeoutProcessing({
       pagesEstimate: 6_000,
       submittedAtMs: T0,
@@ -101,7 +101,7 @@ describe("composeTimeoutProcessing — server estimate preference", () => {
   it("prefers fire-pdf's live estimate, aged since observation", () => {
     // Server said 9.5 minutes remaining, observed 90s ago → 8 minutes
     // after aging and minute-ceiling; the static formula (700 pages)
-    // would have said 5 minutes here.
+    // would have said 14 minutes here.
     const { message, details } = composeTimeoutProcessing({
       pagesEstimate: 700,
       submittedAtMs: T0,
@@ -131,8 +131,8 @@ describe("composeTimeoutProcessing — server estimate preference", () => {
       lastStatus: "running",
       nowMs: T0 + 2 * 60_000,
     });
-    // 700×500ms + 60s − 2min elapsed → 5 minutes (static path).
-    expect(withServer.details.estimatedRemainingSeconds).toBe(300);
+    // 700×1.25s + 60s − 2min elapsed → 14 minutes (static path).
+    expect(withServer.details.estimatedRemainingSeconds).toBe(840);
   });
 });
 
