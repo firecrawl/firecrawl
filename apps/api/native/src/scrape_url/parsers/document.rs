@@ -108,6 +108,9 @@ pub fn parse_document(meta: &Meta, result: EngineScrapeResult) -> Result<Documen
         },
       })
     }
+    EngineScrapeContent::BytesOffloaded(offloaded) => {
+      unimplemented!() // TODO:
+    }
     EngineScrapeContent::IndexFakeHTML(html, _) => {
       Ok(Document {
         markdown: None,

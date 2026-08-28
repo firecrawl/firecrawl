@@ -89,6 +89,9 @@ pub fn parse_fallback(meta: &Meta, result: EngineScrapeResult) -> Result<Documen
         .expect("this error is impossible"),
       Some(md),
     ),
+    EngineScrapeContent::BytesOffloaded(offloaded) => {
+      unimplemented!() // TODO
+    }
   };
 
   Ok(Document {

@@ -28,6 +28,7 @@ use super::{
 mod actions;
 mod check_status;
 mod delete;
+mod file;
 mod scrape;
 
 static FIRE_ENGINE_BETA_URL: LazyLock<Option<String>> = LazyLock::new(|| {
@@ -145,6 +146,13 @@ impl FireEngine {
           ),
         }
       }),
+
+      // pdf_max_size: if file::file_offload_available().await && true {
+      //   Some(meta.file_size_limit())
+      // } else {
+      //   None
+      // },
+      pdf_max_size: None, // TODO
     };
 
     let scrape = self.call_scrape(request).await;
@@ -237,15 +245,9 @@ impl FireEngine {
       result: EngineScrapeResult {
         url: result.url.unwrap_or_else(|| meta.get_url().to_owned()),
 
-        content: if let Some(file) = result.file.as_ref() {
-          EngineScrapeContent::Bytes(
-            base64::engine::Engine::decode(
-              &base64::engine::general_purpose::STANDARD,
-              &file.content,
-            )
-            .unwrap() // TODO: error handling
-            .into(),
-          )
+        filename: result.file.as_ref().map(|x| x.name.to_owned()),
+        content: if let Some(file) = result.file {
+          file.content.into()
         } else {
           EngineScrapeContent::ChromeRenderedDOM(result.content)
         },
@@ -302,7 +304,6 @@ impl FireEngine {
           None
         },
 
-        filename: result.file.map(|x| x.name),
         proxy_used: if result.used_mobile_proxy {
           EngineScrapeProxy::Enhanced
         } else {
