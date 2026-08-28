@@ -241,6 +241,7 @@ class Firecrawl:
         timeout: float = None,
         max_retries: int = 3,
         backoff_factor: float = 0.5,
+        origin: str = None,
     ):
         """Initialize the unified client.
 
@@ -250,6 +251,8 @@ class Firecrawl:
             timeout: Default request timeout in seconds for all HTTP requests
             max_retries: Maximum number of retries for failed requests (default: 3)
             backoff_factor: Exponential backoff factor for retries (default: 0.5)
+            origin: Attribution string stamped into API request payloads
+                (defaults to ``python-sdk@<version>``)
         """
         self.api_key = api_key
         self.api_url = api_url
@@ -262,6 +265,7 @@ class Firecrawl:
             timeout=timeout,
             max_retries=max_retries,
             backoff_factor=backoff_factor,
+            origin=origin,
         ) if V2FirecrawlClient else None
         
         # Create version-specific proxies
@@ -289,6 +293,7 @@ class Firecrawl:
 
         self.crawl = self._v2_client.crawl
         self.start_crawl = self._v2_client.start_crawl
+        self.wait_crawl = self._v2_client.wait_crawl
         self.crawl_params_preview = self._v2_client.crawl_params_preview
         self.get_crawl_status = self._v2_client.get_crawl_status
         self.get_crawl_status_page = self._v2_client.get_crawl_status_page
@@ -386,6 +391,7 @@ class AsyncFirecrawl:
         timeout: float = None,
         max_retries: int = 3,
         backoff_factor: float = 0.5,
+        origin: str = None,
     ):
         self.api_key = api_key
         self.api_url = api_url
@@ -398,6 +404,7 @@ class AsyncFirecrawl:
             timeout=timeout,
             max_retries=max_retries,
             backoff_factor=backoff_factor,
+            origin=origin,
         ) if AsyncFirecrawlClient else None
         
         # Create version-specific proxies
@@ -426,6 +433,7 @@ class AsyncFirecrawl:
         self.get_monitor_check = self._v2_client.get_monitor_check
 
         self.start_crawl = self._v2_client.start_crawl
+        self.wait_crawl = self._v2_client.wait_crawl
         self.get_crawl_status = self._v2_client.get_crawl_status
         self.get_crawl_status_page = self._v2_client.get_crawl_status_page
         self.cancel_crawl = self._v2_client.cancel_crawl

@@ -43,7 +43,11 @@ from .research_docs import (
 
 
 BASE = "/v2/search/research"
-ORIGIN = f"python-sdk@{get_version()}"
+_DEFAULT_ORIGIN = f"python-sdk@{get_version()}"
+
+
+def _origin(client: HttpClient) -> str:
+    return getattr(client, "origin", None) or _DEFAULT_ORIGIN
 
 
 def _query(params: Dict[str, Any]) -> str:
@@ -88,7 +92,7 @@ def search_papers(
                 "categories": categories,
                 "from": from_date,
                 "to": to_date,
-                "origin": ORIGIN,
+                "origin": _origin(client),
             }
         ),
     )
@@ -98,7 +102,7 @@ def search_papers(
 def inspect_paper(client: HttpClient, paper_id: str) -> Dict[str, Any]:
     return _get(
         client,
-        f"{BASE}/papers/{quote(paper_id, safe='')}" + _query({"origin": ORIGIN}),
+        f"{BASE}/papers/{quote(paper_id, safe='')}" + _query({"origin": _origin(client)}),
     )
 
 
@@ -113,7 +117,7 @@ def read_paper(
     return _get(
         client,
         f"{BASE}/papers/{quote(paper_id, safe='')}"
-        + _query({"query": query, "k": k, "origin": ORIGIN}),
+        + _query({"query": query, "k": k, "origin": _origin(client)}),
     )
 
 
@@ -138,7 +142,7 @@ def related_papers(
                 "k": k,
                 "rerank": None if rerank is None else str(rerank).lower(),
                 "anchor": anchor,
-                "origin": ORIGIN,
+                "origin": _origin(client),
             }
         ),
     )
@@ -153,5 +157,5 @@ def search_github(
 ) -> Dict[str, Any]:
     return _get(
         client,
-        BASE + "/github" + _query({"query": query, "k": k, "origin": ORIGIN}),
+        BASE + "/github" + _query({"query": query, "k": k, "origin": _origin(client)}),
     )

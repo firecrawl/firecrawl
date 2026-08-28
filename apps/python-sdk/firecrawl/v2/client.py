@@ -111,7 +111,8 @@ class FirecrawlClient:
         api_url: str = "https://api.firecrawl.dev",
         timeout: Optional[float] = None,
         max_retries: int = 3,
-        backoff_factor: float = 0.5
+        backoff_factor: float = 0.5,
+        origin: Optional[str] = None,
     ):
         """
         Initialize the Firecrawl client.
@@ -122,6 +123,8 @@ class FirecrawlClient:
             timeout: Request timeout in seconds
             max_retries: Maximum number of retries for failed requests
             backoff_factor: Exponential backoff factor for retries (e.g. 0.5 means wait 0.5s, then 1s, then 2s between retries)
+            origin: Attribution string stamped into API request payloads
+                (defaults to ``python-sdk@<version>``)
         """
         if api_key is None:
             api_key = os.getenv("FIRECRAWL_API_KEY")
@@ -145,6 +148,7 @@ class FirecrawlClient:
             timeout=timeout,
             max_retries=max_retries,
             backoff_factor=backoff_factor,
+            origin=origin,
         )
     
     def scrape(

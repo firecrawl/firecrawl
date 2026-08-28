@@ -103,7 +103,7 @@ async def start_agent(
         audit_metadata=audit_metadata,
     )
     resp = await client.post("/v2/agent", body)
-    if not resp.ok:
+    if resp.status_code >= 400:
         handle_response_error(resp, "agent")
     payload = _normalize_agent_response_payload(resp.json())
     return AgentResponse(**payload)
@@ -111,7 +111,7 @@ async def start_agent(
 
 async def get_agent_status(client: AsyncHttpClient, job_id: str) -> AgentResponse:
     resp = await client.get(f"/v2/agent/{job_id}")
-    if not resp.ok:
+    if resp.status_code >= 400:
         handle_response_error(resp, "agent-status")
     payload = _normalize_agent_response_payload(resp.json())
     return AgentResponse(**payload)
@@ -188,7 +188,7 @@ async def get_agent_trace(
     if live_view:
         endpoint += "?liveView=true"
     resp = await client.get(endpoint)
-    if not resp.ok:
+    if resp.status_code >= 400:
         handle_response_error(resp, "agent-trace")
     return AgentTraceResponse(**resp.json())
 
@@ -206,7 +206,7 @@ async def get_agent_snapshot(
         snapshot_id: Snapshot ID from an artifact.updated trace event
     """
     resp = await client.get(f"/v2/agent/{job_id}/snapshots/{snapshot_id}")
-    if not resp.ok:
+    if resp.status_code >= 400:
         handle_response_error(resp, "agent-snapshot")
     return AgentSnapshotResponse(**resp.json())
 
@@ -226,6 +226,6 @@ async def cancel_agent(client: AsyncHttpClient, job_id: str) -> bool:
         Exception: If the cancellation fails
     """
     resp = await client.delete(f"/v2/agent/{job_id}")
-    if not resp.ok:
+    if resp.status_code >= 400:
         handle_response_error(resp, "cancel agent")
     return resp.json().get("success", False)
