@@ -77,14 +77,8 @@ const configSchema = z.object({
   FIRECRAWL_DASHBOARD_URL: z.url().default("https://www.firecrawl.dev"),
   SUPPORT_AGENT_URL: z.string().url().optional(),
   SUPPORT_AGENT_VERCEL_BYPASS_SECRET: z.string().optional(),
-  FIREBRAIN_TRACKS_URL: z.preprocess(
-    v => (typeof v === "string" && v.trim() === "" ? undefined : v),
-    z.string().url().optional(),
-  ),
-  FIREBRAIN_TRACKS_API_KEY: z.preprocess(
-    v => (typeof v === "string" && v.trim() === "" ? undefined : v),
-    z.string().trim().optional(),
-  ),
+  FIREBRAIN_TRACKS_URL: emptyStringAsUndefined(z.string().url()),
+  FIREBRAIN_TRACKS_API_KEY: emptyStringAsUndefined(z.string().trim()),
   RESEARCH_PROXY_URL: z.string().url().optional(),
   RESEARCH_KEYLESS_DISABLED: researchKeylessDisabled,
   LABS_SEARCH_URL: z.string().url().optional(),
@@ -159,8 +153,10 @@ const configSchema = z.object({
   S2S_FIRECRAWL_INTEGRATIONS_TO_FIRECRAWL_API_KEY: emptyStringAsUndefined(
     z.string().trim().min(1),
   ),
-  // Empty strings from docker-compose ${VAR} passthrough must become undefined
-  // so loadApiKey / createOpenAI fall back correctly (see #4083).
+  // Empty strings from docker-compose ${VAR} passthrough must become
+  // undefined: an empty value would otherwise be forwarded to createOpenAI as
+  // a literal apiKey/baseURL and falsely signal provider availability,
+  // producing opaque "Failed to parse URL" failures (see #4083).
   OPENAI_API_KEY: emptyStringAsUndefined(z.string()),
   OPENAI_BASE_URL: emptyStringAsUndefined(z.string()),
   OPENROUTER_API_KEY: z.string().optional(),
