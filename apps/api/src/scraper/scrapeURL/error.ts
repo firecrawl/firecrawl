@@ -298,6 +298,35 @@ export class PDFInsufficientTimeError extends TransportableError {
   }
 }
 
+export class PDFPageLimitExceededError extends TransportableError {
+  constructor(
+    public pageCount: number,
+    public limit: number,
+  ) {
+    super(
+      "SCRAPE_PDF_PAGE_LIMIT_EXCEEDED",
+      `This PDF has ${pageCount} pages, which exceeds the ${limit}-page limit for requests without an API key. Sign up at https://firecrawl.dev and use an API key to parse larger documents, or pass parsers: [{ "type": "pdf", "maxPages": ${limit} }] to parse the first ${limit} pages.`,
+    );
+  }
+
+  serialize() {
+    return {
+      ...super.serialize(),
+      pageCount: this.pageCount,
+      limit: this.limit,
+    };
+  }
+
+  static deserialize(
+    _: ErrorCodes,
+    data: ReturnType<typeof this.prototype.serialize>,
+  ) {
+    const x = new PDFPageLimitExceededError(data.pageCount, data.limit);
+    x.stack = data.stack;
+    return x;
+  }
+}
+
 export class DNSResolutionError extends TransportableError {
   constructor(public hostname: string) {
     super(

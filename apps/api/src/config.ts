@@ -223,6 +223,15 @@ const configSchema = z.object({
     z.coerce.number().int().positive().default(16),
   ),
 
+  // Page ceiling for PDF parsing on preview/keyless teams (team_id prefix
+  // "preview"). Documents whose effective page count exceeds this are
+  // rejected with a clear upgrade message instead of parsed. 0 disables the
+  // check. Explicit maxPages at or under the ceiling is honored (parsing
+  // the first N pages of a larger document stays allowed).
+  PREVIEW_PDF_MAX_PAGES: emptyStringAsDefault(
+    z.coerce.number().int().nonnegative().default(50),
+  ),
+
   // Google Cloud Storage
   GCS_BUCKET_NAME: z.string().optional(),
   GCS_CREDENTIALS: z.string().optional(),

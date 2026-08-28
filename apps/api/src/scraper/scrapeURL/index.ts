@@ -38,6 +38,7 @@ import {
   UnsupportedFileError,
   SSLError,
   PDFInsufficientTimeError,
+  PDFPageLimitExceededError,
   PDFOCRRequiredError,
   IndexMissError,
   NoCachedDataError,
@@ -884,6 +885,7 @@ async function scrapeURLLoop(meta: Meta): Promise<ScrapeUrlResponse> {
               error.error instanceof PDFOCRRequiredError ||
               error.error instanceof DocumentAntibotError ||
               error.error instanceof PDFInsufficientTimeError ||
+              error.error instanceof PDFPageLimitExceededError ||
               error.error instanceof ProxySelectionError ||
               error.error instanceof NoCachedDataError ||
               error.error instanceof AgentIndexOnlyError ||
@@ -1538,6 +1540,11 @@ export async function scrapeURL(
       } else if (error instanceof PDFInsufficientTimeError) {
         errorType = "PDFInsufficientTimeError";
         meta.logger.warn("scrapeURL: Insufficient time to process PDF", {
+          error,
+        });
+      } else if (error instanceof PDFPageLimitExceededError) {
+        errorType = "PDFPageLimitExceededError";
+        meta.logger.warn("scrapeURL: PDF exceeds preview-tier page limit", {
           error,
         });
       } else if (error instanceof PDFOCRRequiredError) {
