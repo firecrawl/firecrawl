@@ -387,7 +387,7 @@ const configSchema = z.object({
     .number()
     .int()
     .positive()
-    .default(200 * 1024 * 1024),
+    .default(256 * 1024 * 1024),
   // Comma-separated team ids granted the privileged cap.
   PDF_BY_REFERENCE_PRIVILEGED_TEAM_IDS: z.string().optional(),
 
