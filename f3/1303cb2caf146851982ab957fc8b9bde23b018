@@ -1,0 +1,9 @@
+apps/api/.env.example
+  ai_agent 151-161
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "f31303cb2caf146851982ab957fc8b9bde23b018",
+  "prompts": {}
+}
