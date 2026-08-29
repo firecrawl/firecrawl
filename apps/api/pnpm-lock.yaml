@@ -272,6 +272,9 @@ importers:
       ws:
         specifier: ^8.21.0
         version: 8.21.0
+      x-twitter-scraper:
+        specifier: 0.12.4
+        version: 0.12.4
       xml2js:
         specifier: ^0.6.2
         version: 0.6.2
@@ -4496,6 +4499,10 @@ packages:
       utf-8-validate:
         optional: true
 
+  x-twitter-scraper@0.12.4:
+    resolution: {integrity: sha512-OTIteHnIYAD/2N7M58JqChr6wNAZ3pyJBPvUnsvr9c0H0dKFSyC67lMO0/Hxs5PejdmGVpR2Hys3cRBcAENzhw==}
+    engines: {node: '>=20.0.0'}
+
   xml-name-validator@5.0.0:
     resolution: {integrity: sha512-EvGK8EJ3DhaHfbRlETOWAS5pO9MZITeauHKJyb8wyajUfQUenkIg2MvLDTZ4T/TgIcm3HU0TFBgWWboAZ30UHg==}
     engines: {node: '>=18'}
@@ -8296,6 +8303,8 @@ snapshots:
   ws@7.5.11: {}
 
   ws@8.21.0: {}
+
+  x-twitter-scraper@0.12.4: {}
 
   xml-name-validator@5.0.0: {}
 

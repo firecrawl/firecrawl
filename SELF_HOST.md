@@ -40,6 +40,18 @@ Get this baseline working before swapping backends or adding providers.
 The root `.env` overrides only variables referenced by `docker-compose.yaml`.
 Do not use `apps/api/.env.example` as a drop-in Compose contract.
 
+## Scrape X/Twitter profiles and posts
+
+Set one provider key in the root `.env` to enable the X/Twitter engine:
+
+- `X_TWITTER_SCRAPER_API_KEY` uses the
+  [Xquik TypeScript SDK](https://docs.xquik.com/sdks/typescript).
+- `XAI_API_KEY` uses Grok with X search.
+
+Firecrawl uses Xquik when both keys are present. Set
+`X_TWITTER_SCRAPER_BASE_URL` only when the Xquik API uses a custom endpoint.
+Restart the API and worker services after changing these values.
+
 ## What the stack runs
 
 At this revision, Compose runs the Firecrawl API and workers, Playwright, Redis,

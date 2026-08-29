@@ -53,6 +53,7 @@ import {
   ScrapeRetryLimitError,
   BrandingNotSupportedError,
   XTwitterConfigurationError,
+  XTwitterProfileNotFoundError,
 } from "./error";
 import { ScrapeRetryTracker } from "./retryTracker";
 import { executeTransformers } from "./transformers";
@@ -843,9 +844,11 @@ async function scrapeURLLoop(meta: Meta): Promise<ScrapeUrlResponse> {
         } catch (error) {
           if (error instanceof WrappedEngineError) {
             if (error.engine === "x-twitter") {
-              meta.logger.warn("X/Twitter scrape failed fatally.", {
-                error: error.error,
-              });
+              if (!(error.error instanceof XTwitterProfileNotFoundError)) {
+                meta.logger.warn("X/Twitter scrape failed fatally.", {
+                  error: error.error,
+                });
+              }
               throw error.error;
             } else if (error.error instanceof EngineError) {
               meta.logger.warn(
