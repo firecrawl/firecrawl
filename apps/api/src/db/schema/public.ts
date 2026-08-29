@@ -378,6 +378,7 @@ export const monitor_checks = pgTable("monitor_checks", {
   reserved_credits: integer("reserved_credits"),
   actual_credits: integer("actual_credits"),
   autumn_lock_id: text("autumn_lock_id"),
+  partner_run_token: text("partner_run_token"),
   billing_status: text("billing_status").notNull().default("not_applicable"),
   total_pages: integer("total_pages").notNull().default(0),
   same_count: integer("same_count").notNull().default(0),

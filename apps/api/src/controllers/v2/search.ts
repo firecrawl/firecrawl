@@ -182,8 +182,13 @@ export async function searchController(
       }
     }
 
+    // Kick off the `requests` row insert without blocking: it queues on the
+    // Postgres pool and can take seconds under pool pressure. We only need it
+    // committed before the child-row writes (logSearch et al. below) to keep
+    // the request_id FK ordering — same pattern as the scrape controllers.
+    let logRequestPromise: Promise<void> | undefined;
     if (!agentRequestId) {
-      await logRequest({
+      logRequestPromise = logRequest({
         id: jobId,
         kind: "search",
         api_version: "v2",
@@ -291,6 +296,12 @@ export async function searchController(
 
     const endTime = new Date().getTime();
     const timeTakenInSeconds = (endTime - middlewareStartTime) / 1000;
+
+    // Ensure the parent `requests` row is committed before the child
+    // `searches` insert, to avoid a request_id FK violation. The insert has
+    // been in flight since the top of the controller, so this is ~free in
+    // practice; robustInsert never rejects, so this await cannot throw.
+    await logRequestPromise;
 
     logSearch(
       {

@@ -8,6 +8,9 @@ import { authMiddleware, wrap } from "./shared";
 
 const DISCOVER_TIMEOUT_MS = 10_000;
 const RETRIEVE_TIMEOUT_MS = 50_000;
+const ANALYTICS_TIMEOUT_MS = 20_000;
+const APPLICATIONS_TIMEOUT_MS = 15_000;
+const CLAIMS_TIMEOUT_MS = 20_000;
 
 const FORWARDED_REQUEST_HEADERS = ["accept", "x-request-id"];
 const FORWARDED_RESPONSE_HEADERS = ["content-type", "x-request-id"];
@@ -29,7 +32,11 @@ function upstreamBase(): string | null {
   return config.FIRE_EXCHANGE_URL.replace(/\/+$/, "");
 }
 
-function exchangeProxy(timeout: number) {
+function exchangeProxy(
+  timeout: number,
+  options: { requiresRetrieveFlag?: boolean } = {},
+) {
+  const requiresRetrieveFlag = options.requiresRetrieveFlag !== false;
   const dispatcher = dispatcherFor(timeout);
 
   return async function controller(req: Request, res: Response) {
@@ -46,7 +53,7 @@ function exchangeProxy(timeout: number) {
       return exchangeError(res, 503, "This endpoint is not available.");
     }
 
-    if (!authedReq.acuc?.flags?.exchangeRetrieve) {
+    if (requiresRetrieveFlag && !authedReq.acuc?.flags?.exchangeRetrieve) {
       return exchangeError(
         res,
         403,
@@ -115,4 +122,70 @@ exchangeRouter.post(
   "/retrieve",
   authMiddleware(RateLimiterMode.Labs),
   wrap(exchangeProxy(RETRIEVE_TIMEOUT_MS)),
+);
+
+exchangeRouter.get(
+  "/analytics{/*path}",
+  authMiddleware(RateLimiterMode.Labs),
+  wrap(exchangeProxy(ANALYTICS_TIMEOUT_MS)),
+);
+
+exchangeRouter.get(
+  "/platform{/*path}",
+  authMiddleware(RateLimiterMode.Labs),
+  wrap(exchangeProxy(ANALYTICS_TIMEOUT_MS, { requiresRetrieveFlag: false })),
+);
+
+exchangeRouter.post(
+  "/platform{/*path}",
+  authMiddleware(RateLimiterMode.Labs),
+  wrap(exchangeProxy(ANALYTICS_TIMEOUT_MS, { requiresRetrieveFlag: false })),
+);
+
+exchangeRouter.post(
+  "/rates/lookup",
+  authMiddleware(RateLimiterMode.Labs),
+  wrap(exchangeProxy(ANALYTICS_TIMEOUT_MS, { requiresRetrieveFlag: false })),
+);
+
+exchangeRouter.get(
+  "/rates/lookup",
+  authMiddleware(RateLimiterMode.Labs),
+  wrap(exchangeProxy(ANALYTICS_TIMEOUT_MS, { requiresRetrieveFlag: false })),
+);
+
+exchangeRouter.get(
+  "/publisher{/*path}",
+  authMiddleware(RateLimiterMode.Labs),
+  wrap(exchangeProxy(ANALYTICS_TIMEOUT_MS, { requiresRetrieveFlag: false })),
+);
+
+exchangeRouter.post(
+  "/applications",
+  authMiddleware(RateLimiterMode.Labs),
+  wrap(exchangeProxy(APPLICATIONS_TIMEOUT_MS, { requiresRetrieveFlag: false })),
+);
+
+exchangeRouter.get(
+  "/claims",
+  authMiddleware(RateLimiterMode.Labs),
+  wrap(exchangeProxy(CLAIMS_TIMEOUT_MS, { requiresRetrieveFlag: false })),
+);
+
+exchangeRouter.post(
+  "/claims",
+  authMiddleware(RateLimiterMode.Labs),
+  wrap(exchangeProxy(CLAIMS_TIMEOUT_MS, { requiresRetrieveFlag: false })),
+);
+
+exchangeRouter.post(
+  "/claims/:id/release",
+  authMiddleware(RateLimiterMode.Labs),
+  wrap(exchangeProxy(CLAIMS_TIMEOUT_MS, { requiresRetrieveFlag: false })),
+);
+
+exchangeRouter.post(
+  "/claims/:id/verify",
+  authMiddleware(RateLimiterMode.Labs),
+  wrap(exchangeProxy(CLAIMS_TIMEOUT_MS, { requiresRetrieveFlag: false })),
 );

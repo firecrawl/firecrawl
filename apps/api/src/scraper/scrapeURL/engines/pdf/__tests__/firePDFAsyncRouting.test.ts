@@ -153,21 +153,33 @@ describe("FirePDF async transport helpers", () => {
   });
 
   it("page-scales the by-reference job deadline independently of the caller", () => {
-    // 5min base + pages × 500ms, floored at the caller window, capped at
+    // 10min base + pages × 1.25s, floored at the caller window, capped at
     // MAX_DEADLINE_MS. The caller's own polling stops at its window; the
     // decoupled job deadline is what lets the job finish server-side.
-    const FIVE_MIN = 5 * 60 * 1_000;
+    // Base covers burst queue wait (measured 12-14min); per-page covers
+    // the scanned worst case (~1.3s/page p90), not the text median.
+    const TEN_MIN = 10 * 60 * 1_000;
     // Small doc, tiny caller window → base dominates.
-    expect(computeByReferenceDeadlineMs(60_000, 100)).toBe(FIVE_MIN + 50_000);
+    expect(computeByReferenceDeadlineMs(60_000, 100)).toBe(TEN_MIN + 125_000);
     // Big doc → page term dominates, capped at 30 min.
     expect(computeByReferenceDeadlineMs(60_000, 6_543)).toBe(30 * 60 * 1_000);
+    // The 931-page starvation case (2026-08-27): queue wait ate a
+    // 12.8-min deadline down to 84s of processing. Now: 29.4min.
+    expect(computeByReferenceDeadlineMs(60_000, 931)).toBe(
+      TEN_MIN + 931 * 1_250,
+    );
+    // A scanned 798-pager needs ~17min of OCR; its budget now clears
+    // that even before the queue-wait base is spent.
+    expect(computeByReferenceDeadlineMs(60_000, 798)).toBe(
+      TEN_MIN + 798 * 1_250,
+    );
     // A caller with a LONGER explicit window than the page-scaled need
     // keeps its window (never advertise less than the caller has).
-    expect(computeByReferenceDeadlineMs(20 * 60 * 1_000, 100)).toBe(
-      20 * 60 * 1_000,
+    expect(computeByReferenceDeadlineMs(25 * 60 * 1_000, 100)).toBe(
+      25 * 60 * 1_000,
     );
     // No pages estimate → base + caller floor semantics still hold.
-    expect(computeByReferenceDeadlineMs(undefined, undefined)).toBe(FIVE_MIN);
+    expect(computeByReferenceDeadlineMs(undefined, undefined)).toBe(TEN_MIN);
   });
 
   it("adds the shared FirePDF bearer credential when configured", () => {

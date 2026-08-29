@@ -53,13 +53,24 @@ export function computeDeadlineMs(scrapeTimeoutMs: number | undefined): number {
   return Math.min(MAX_DEADLINE_MS, candidate);
 }
 
-/** Rough worst-case processing rate for the page-scaled by-reference
- * deadline. Prod xl-lane runs land well under this (a 6,543-page document
- * processed in ~29 minutes ≈ 270ms/page including queue wait); the slack
- * absorbs queue depth without pushing every big document to the 30-min
- * ceiling. */
-const BY_REFERENCE_DEADLINE_PER_PAGE_MS = 500;
-const BY_REFERENCE_DEADLINE_BASE_MS = 5 * 60 * 1_000;
+/** Worst-case processing rate for the page-scaled by-reference deadline.
+ * Must cover the SLOW class, not the median: scanned giants run full-page
+ * OCR at ~1.3s/page p90 in prod (2026-08-27), and the original 500ms —
+ * calibrated on a text-heavy 6,543-page run — starved them into deadline
+ * fallback (a 798-page scan got 11.6min against ~17min of real OCR).
+ *
+ * The base must absorb QUEUE WAIT, which spends the same budget as
+ * processing (the deadline clock starts at submit, not claim): measured
+ * bursts queued giants 12-14 minutes behind five xl workers, so a 5-min
+ * base guaranteed starvation regardless of the per-page term (a 931-page
+ * doc reached its worker with 84s left and degraded 93% of its pages —
+ * and that degraded result then poisoned content-adoption for every
+ * retry). 10 min covers observed burst queues; genuinely fixing the
+ * queue/processing conflation (claim-time budgets) is fire-pdf-side
+ * follow-up work.
+ */
+const BY_REFERENCE_DEADLINE_PER_PAGE_MS = 1_250;
+const BY_REFERENCE_DEADLINE_BASE_MS = 10 * 60 * 1_000;
 
 /**
  * Job deadline for by-reference submits, DECOUPLED from the caller's

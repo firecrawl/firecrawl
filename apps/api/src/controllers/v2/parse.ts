@@ -545,7 +545,9 @@ export async function parseController(
         }
 
         const timeoutErr =
-          e instanceof TransportableError && e.code === "SCRAPE_TIMEOUT";
+          e instanceof TransportableError &&
+          (e.code === "SCRAPE_TIMEOUT" ||
+            e.code === "CONCURRENCY_QUEUE_TIMEOUT");
 
         setSpanAttributes(span, {
           "parse.error": e instanceof Error ? e.message : String(e),
@@ -596,7 +598,7 @@ export async function parseController(
             });
           }
 
-          const statusCode = e.code === "SCRAPE_TIMEOUT" ? 408 : 500;
+          const statusCode = timeoutErr ? 408 : 500;
           setSpanAttributes(span, {
             "parse.status_code": statusCode,
           });

@@ -7,6 +7,7 @@ import {
 } from "../../lib/crawl-redis";
 import { getCrawl } from "../../lib/crawl-redis";
 import { creditsBilledByCrawlId } from "../../db/rpc";
+import { db } from "../../db/connection";
 import { getJobs } from "../../controllers/v1/crawl-status";
 import { logCrawl, logBatchScrape } from "../logging/log_job";
 import { createWebhookSender, WebhookEvent } from "../webhook/index";
@@ -144,7 +145,7 @@ export async function finishCrawlSuper(job: NuQJob<any>) {
 
     if (config.USE_DB_AUTHENTICATION) {
       try {
-        const creditsRows = await creditsBilledByCrawlId(crawlId);
+        const creditsRows = await creditsBilledByCrawlId(db, crawlId);
         credits_billed = creditsRows?.[0]?.credits_billed ?? null;
       } catch (error) {
         logger.warn("Credits billed is null", { error });

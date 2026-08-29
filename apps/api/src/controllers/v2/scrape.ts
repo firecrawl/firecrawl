@@ -378,7 +378,9 @@ export async function scrapeController(
         }
 
         const timeoutErr =
-          e instanceof TransportableError && e.code === "SCRAPE_TIMEOUT";
+          e instanceof TransportableError &&
+          (e.code === "SCRAPE_TIMEOUT" ||
+            e.code === "CONCURRENCY_QUEUE_TIMEOUT");
 
         setSpanAttributes(span, {
           "scrape.error": e instanceof Error ? e.message : String(e),
@@ -495,7 +497,7 @@ export async function scrapeController(
             });
           }
 
-          const statusCode = e.code === "SCRAPE_TIMEOUT" ? 408 : 500;
+          const statusCode = timeoutErr ? 408 : 500;
           setSpanAttributes(span, {
             "scrape.status_code": statusCode,
           });

@@ -36,6 +36,7 @@ import { sendMonitoringSlackSummary } from "../notification/monitoring_slack";
 import {
   bulkUpsertMonitorPages,
   calculateMonitorCheckActualCredits,
+  countRecentConsecutiveSkippedForCredits,
   getMonitorCheck,
   getMonitorForUpdate,
   countMonitorCheckPages,
@@ -45,6 +46,7 @@ import {
   listMonitorCheckPages,
   listRunningMonitorChecks,
   markMonitorRunning,
+  pauseMonitor,
   updateMonitorCheck,
   updateMonitorCheckIfRunning,
   updateMonitorScheduleAfterRun,
@@ -83,6 +85,16 @@ const MONITOR_NOTIFY_CLAIM_TTL_SECONDS = 7 * 24 * 60 * 60;
 const MONITOR_CHECK_PAGE_SCAN_LIMIT = 100_000;
 const MONITOR_CHECK_NO_CREDITS_ERROR =
   "Monitor check skipped: insufficient credits.";
+const MONITOR_CHECK_REVOKED_ERROR =
+  "Monitor check skipped: the partner has revoked this job.";
+
+/**
+ * Consecutive credit-skipped checks, this one included, before a `job_revoked`
+ * denial stops the schedule. A 410 is permanent, but pausing on one response
+ * would let a partner's bad build take down every monitor they fund. Never
+ * reached by a 402: the current denial must itself be `job_revoked`.
+ */
+const MONITOR_GATE_REVOKED_STREAK = 3;
 const TERMINAL_CHECK_STATUSES = new Set([
   "completed",
   "partial",
@@ -342,14 +354,18 @@ function summarize(pages: PageResult[]) {
   };
 }
 
+/// `false` means the settle did not land: the hold is still out there and this
+/// run is not billed. Only the caller can decide what to record for that, so it
+/// is returned rather than swallowed.
 async function billMonitorCheck(params: {
   monitor: MonitorRow;
   check: MonitorCheckRow;
   actualCredits: number;
   lockId: string | null;
-}): Promise<void> {
+}): Promise<boolean> {
+  let settled = true;
   if (params.lockId) {
-    await autumnService.finalizeCreditsLock({
+    settled = await autumnService.finalizeCreditsLock({
       lockId: params.lockId,
       action: "confirm",
       overrideValue: params.actualCredits,
@@ -359,10 +375,35 @@ async function billMonitorCheck(params: {
         jobId: params.check.id,
       },
       teamId: params.monitor.team_id,
+      // Confirm only: a release bills nothing, so there is nothing to report.
+      externalRequestId: params.check.partner_run_token,
+      // What the lock reserved. firebill adds it back to the ghost's reported
+      // balance, which Autumn returns net of this very hold.
+      heldValue: params.check.reserved_credits,
     });
   }
 
-  if (params.actualCredits <= 0 || !config.USE_DB_AUTHENTICATION) return;
+  if (params.actualCredits <= 0 || !config.USE_DB_AUTHENTICATION)
+    return settled;
+
+  // The settle did not land, so Autumn has nothing and the hold expires by
+  // itself. Debiting the team's ledger anyway charges them for a run Autumn
+  // never billed, leaving the two ledgers disagreeing while the row already
+  // says `failed`. `autumnTrackInRequest` below would be a lie too: it tells
+  // the batch Autumn already has this, and it does not.
+  //
+  // So nothing is charged. Firecrawl absorbs the run — the direction this path
+  // errs everywhere else — and `billing_status: "failed"` plus the error beside
+  // it are how it is found.
+  if (!settled) {
+    logger.error("Not billing a monitor check whose settle did not land", {
+      monitorId: params.monitor.id,
+      checkId: params.check.id,
+      lockId: params.lockId,
+      actualCredits: params.actualCredits,
+    });
+    return false;
+  }
 
   await getBillingQueue().add(
     "bill_team",
@@ -384,6 +425,8 @@ async function billMonitorCheck(params: {
       priority: 10,
     },
   );
+
+  return settled;
 }
 
 async function sendNotifications(params: {
@@ -944,23 +987,58 @@ export async function processMonitorCheckJob(
         endpoint: "monitor",
         jobId: check.id,
       },
+      // Arms firebill's partner gate; NULL is today's lock. Withheld once this
+      // check holds a run token: a redelivery is the same occurrence, and
+      // asking twice would orphan the first token.
+      partnerJobToken: check.partner_run_token
+        ? null
+        : monitor.partner_job_token,
     });
 
     if (lock.status === "denied") {
+      const revoked = lock.reason === "job_revoked";
       check = await updateMonitorCheck(check.id, {
         status: "skipped_no_credits",
         finished_at: new Date().toISOString(),
         actual_credits: 0,
         billing_status: "not_applicable",
-        error: MONITOR_CHECK_NO_CREDITS_ERROR,
+        error: revoked
+          ? MONITOR_CHECK_REVOKED_ERROR
+          : MONITOR_CHECK_NO_CREDITS_ERROR,
       });
 
-      await updateMonitorScheduleAfterRun({ monitor, check });
+      // A revoked job never becomes unrevoked; see MONITOR_GATE_REVOKED_STREAK
+      // for why it is waited out rather than acted on at once.
+      const paused =
+        revoked &&
+        (await countRecentConsecutiveSkippedForCredits({
+          teamId: monitor.team_id,
+          monitorId: monitor.id,
+          limit: MONITOR_GATE_REVOKED_STREAK,
+        })) >= MONITOR_GATE_REVOKED_STREAK;
 
-      logger.info("Skipped monitor check: insufficient credits", {
+      if (paused) {
+        await pauseMonitor(monitor.id);
+        logger.warn("Paused monitor: the partner has revoked this job", {
+          monitorId: monitor.id,
+          checkId: check.id,
+          teamId: monitor.team_id,
+          consecutiveSkips: MONITOR_GATE_REVOKED_STREAK,
+        });
+      }
+
+      // Reads status off the object it is given, not the row — a paused
+      // monitor must not be handed a next_run_at.
+      await updateMonitorScheduleAfterRun({
+        monitor: paused ? { ...monitor, status: "paused" } : monitor,
+        check,
+      });
+
+      logger.info("Skipped monitor check: no credit authority allowed it", {
         monitorId: monitor.id,
         checkId: check.id,
         teamId: monitor.team_id,
+        reason: lock.reason,
       });
       return;
     }
@@ -969,6 +1047,11 @@ export async function processMonitorCheckJob(
 
     check = await updateMonitorCheck(check.id, {
       autumn_lock_id: lockId,
+      // A token already on the row wins: the gate was not re-asked, so there
+      // is no newer one, and null would lose the authorized operation.
+      partner_run_token:
+        check.partner_run_token ??
+        (lock.status === "locked" ? (lock.operationToken ?? null) : null),
       reserved_credits: lockId ? (check.estimated_credits ?? 1) : null,
       billing_status: lockId ? "reserved" : "not_applicable",
     });
@@ -1435,7 +1518,10 @@ export async function reconcileRunningMonitorChecks(
         status: errorCount > 0 ? "partial" : "completed",
         finished_at: new Date().toISOString(),
         actual_credits: actualCredits,
-        billing_status: check.autumn_lock_id ? "confirmed" : "not_applicable",
+        // Not `confirmed` yet — the settle has not been attempted. Claiming it
+        // here and then finding firebill refused leaves a run permanently
+        // recorded as billed that nobody billed, with no retry.
+        billing_status: check.autumn_lock_id ? "reserved" : "not_applicable",
         total_pages: totalPages,
         same_count: same,
         changed_count: changed,
@@ -1445,8 +1531,9 @@ export async function reconcileRunningMonitorChecks(
         target_results: targetResults,
       });
 
+      let settled = false;
       try {
-        await billMonitorCheck({
+        settled = await billMonitorCheck({
           monitor,
           check: finalized,
           actualCredits,
@@ -1458,10 +1545,27 @@ export async function reconcileRunningMonitorChecks(
           checkId: finalized.id,
           error,
         });
+      }
+
+      // A refusal and a throw are the same fact — the settle did not land — and
+      // both must be recorded as such. `firebillFinalize` answers `false`
+      // without throwing, so the catch alone never saw them.
+      if (check.autumn_lock_id) {
+        if (!settled) {
+          logger.error(
+            "Monitor check settle did not land; the hold is unsettled and this run is unbilled",
+            {
+              monitorId: monitor.id,
+              checkId: finalized.id,
+              lockId: check.autumn_lock_id,
+              actualCredits,
+            },
+          );
+        }
         finalized = await updateMonitorCheck(check.id, {
-          billing_status: "failed",
+          billing_status: settled ? "confirmed" : "failed",
         }).catch(updateError => {
-          logger.warn("Failed to record monitor check billing failure", {
+          logger.warn("Failed to record monitor check billing outcome", {
             monitorId: monitor.id,
             checkId: finalized.id,
             error: updateError,

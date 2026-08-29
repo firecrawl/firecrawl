@@ -196,11 +196,11 @@ async function getACUC(
     let retries = 0;
     const maxRetries = 5;
     while (retries < maxRetries) {
-      const database = requiresPrimaryRead
-        ? db
-        : Math.random() > 2 / 3
-          ? dbRr
-          : db;
+      // General-purpose reads prefer the replica: the result is Redis-cached
+      // for 10 minutes, so sub-second replication lag is irrelevant. Fall back
+      // to the primary on replica error. hosted_mcp_oauth must stay on the
+      // primary — revocation has to observe fresh state.
+      const database = requiresPrimaryRead ? db : retries === 0 ? dbRr : db;
       try {
         data = await authCreditUsageChunk(database, api_key, credentialPurpose);
         break;
@@ -320,7 +320,9 @@ export async function getACUCTeam(
     const maxRetries = 5;
 
     while (retries < maxRetries) {
-      const database = Math.random() > 2 / 3 ? dbRr : db;
+      // Prefer the replica (10-minute Redis cache makes lag irrelevant); fall
+      // back to the primary on replica error.
+      const database = retries === 0 ? dbRr : db;
       try {
         data = await authCreditUsageChunkFromTeam(database, team_id);
         break;

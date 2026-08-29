@@ -273,6 +273,13 @@ const configSchema = z.object({
   SCRAPE_MAX_FEATURE_REMOVALS: z.coerce.number().int().positive().default(3),
   SCRAPE_MAX_PDF_PREFETCHES: z.coerce.number().int().positive().default(2),
   SCRAPE_MAX_DOCUMENT_PREFETCHES: z.coerce.number().int().positive().default(2),
+  // Max concurrent native PDF extractions per process. Each extraction holds
+  // the (≤50MB) PDF plus its parsed text/markdown in memory on a tokio blocking
+  // thread; unbounded concurrency OOM-killed pods when several large PDFs
+  // landed on one process at once. 3 keeps the worst-case transient memory
+  // (~3 × ~0.5GB) well under the 8G limit while being far above typical demand
+  // (per-pod average concurrency is ~0.02).
+  PDF_EXTRACTION_CONCURRENCY: z.coerce.number().int().positive().default(3),
 
   // Search Services
   SEARXNG_ENDPOINT: z.string().optional(),
@@ -380,7 +387,7 @@ const configSchema = z.object({
     .number()
     .int()
     .positive()
-    .default(200 * 1024 * 1024),
+    .default(256 * 1024 * 1024),
   // Comma-separated team ids granted the privileged cap.
   PDF_BY_REFERENCE_PRIVILEGED_TEAM_IDS: z.string().optional(),
 
@@ -487,7 +494,12 @@ const configSchema = z.object({
   // the same question, and trusting a negative for longer than firebill trusts
   // an answer turns this cache back into the stale allowlist it replaced. 0
   // disables caching negatives entirely.
-  FIREBILL_GATEWAY_NEGATIVE_TTL_SECONDS: z.coerce.number().int().min(0).max(300).default(60),
+  FIREBILL_GATEWAY_NEGATIVE_TTL_SECONDS: z.coerce
+    .number()
+    .int()
+    .min(0)
+    .max(300)
+    .default(60),
   // Sticky percentage ramp, on top of the allowlist above. The bucket is a
   // hash of the org id, so an org that is in at 5 is still in at 30 — a ramp
   // only ever adds, and never reshuffles who is on which path mid-rollout.

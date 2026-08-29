@@ -163,7 +163,8 @@ const monitorNotificationInner = z
     if (notification.slack?.enabled && !notification.slack.channelId) {
       ctx.addIssue({
         code: "custom",
-        message: "A Slack channel is required when Slack notifications are enabled",
+        message:
+          "A Slack channel is required when Slack notifications are enabled",
         path: ["slack", "channelId"],
       });
     }
@@ -353,6 +354,8 @@ export type MonitorCheckRow = {
   reserved_credits: number | null;
   actual_credits: number | null;
   autumn_lock_id: string | null;
+  /** The partner's id for this occurrence; carried back on the finalize. */
+  partner_run_token: string | null;
   billing_status:
     | "not_applicable"
     | "reserved"

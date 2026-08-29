@@ -12,6 +12,9 @@ interface PoolSizing {
   min?: number;
 }
 
+// Registry of every pool we create, for /metrics exposure.
+const dbPools: { name: string; pool: Pool }[] = [];
+
 function makeDb(
   connectionString: string | undefined,
   applicationName: string,
@@ -34,6 +37,7 @@ function makeDb(
     min: sizing.min ?? 0,
     keepAlive: true,
   });
+  dbPools.push({ name: applicationName, pool });
   pool.on("error", err =>
     logger.error("Error in idle Postgres client", {
       err,
@@ -63,6 +67,47 @@ function makeDb(
   });
 
   return drizzle({ client: pool });
+}
+
+/** Prometheus text-format gauges for every DB pool in this process. */
+export function getDbPoolMetrics(): string {
+  const lines: string[] = [
+    "# HELP db_pool_waiting_count Number of queries queued waiting for a free connection in this pool",
+    "# TYPE db_pool_waiting_count gauge",
+  ];
+  for (const { name, pool } of dbPools) {
+    lines.push(
+      `db_pool_waiting_count{application_name="${name}"} ${pool.waitingCount}`,
+    );
+  }
+  lines.push(
+    "# HELP db_pool_idle_count Number of idle connections in this pool",
+    "# TYPE db_pool_idle_count gauge",
+  );
+  for (const { name, pool } of dbPools) {
+    lines.push(
+      `db_pool_idle_count{application_name="${name}"} ${pool.idleCount}`,
+    );
+  }
+  lines.push(
+    "# HELP db_pool_total_count Number of connections currently open in this pool",
+    "# TYPE db_pool_total_count gauge",
+  );
+  for (const { name, pool } of dbPools) {
+    lines.push(
+      `db_pool_total_count{application_name="${name}"} ${pool.totalCount}`,
+    );
+  }
+  lines.push(
+    "# HELP db_pool_max_count Configured maximum connections for this pool",
+    "# TYPE db_pool_max_count gauge",
+  );
+  for (const { name, pool } of dbPools) {
+    lines.push(
+      `db_pool_max_count{application_name="${name}"} ${pool.options.max ?? 20}`,
+    );
+  }
+  return lines.join("\n");
 }
 
 const useDbAuthentication = config.USE_DB_AUTHENTICATION;

@@ -1,9 +1,11 @@
 import { and, desc, eq, isNull } from "drizzle-orm";
-import { db } from "../../../db/connection";
+import { db, dbRr } from "../../../db/connection";
 import * as schema from "../../../db/schema";
 import type { SlackIncomingWebhook, SlackInstallationRow } from "./types";
 
-function toRow(row: typeof schema.slack_installations.$inferSelect): SlackInstallationRow {
+function toRow(
+  row: typeof schema.slack_installations.$inferSelect,
+): SlackInstallationRow {
   return {
     id: row.id,
     team_id: row.team_id,
@@ -15,7 +17,8 @@ function toRow(row: typeof schema.slack_installations.$inferSelect): SlackInstal
     scope: row.scope,
     authed_user_id: row.authed_user_id,
     app_id: row.app_id,
-    incoming_webhook: (row.incoming_webhook as SlackIncomingWebhook | null) ?? null,
+    incoming_webhook:
+      (row.incoming_webhook as SlackIncomingWebhook | null) ?? null,
     revoked_at: row.revoked_at,
     created_at: row.created_at,
     updated_at: row.updated_at,
@@ -66,7 +69,7 @@ export async function upsertSlackInstallation(params: {
 export async function getSlackInstallationByTeam(
   teamId: string,
 ): Promise<SlackInstallationRow | null> {
-  const rows = await db
+  const rows = await dbRr
     .select()
     .from(schema.slack_installations)
     .where(
@@ -85,7 +88,7 @@ export async function getSlackInstallationByTeam(
 export async function getSlackInstallationBySlackTeam(
   slackTeamId: string,
 ): Promise<SlackInstallationRow | null> {
-  const rows = await db
+  const rows = await dbRr
     .select()
     .from(schema.slack_installations)
     .where(

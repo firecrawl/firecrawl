@@ -10,6 +10,7 @@ import {
   firebillLock,
   firebillTrack,
   firebillCheck,
+  firebillConfigured,
   shouldRouteToFirebill,
 } from "./firebill";
 import { billingRouteTotal } from "./metrics";
@@ -546,11 +547,22 @@ export class AutumnService {
     expiresAt,
     properties,
     featureId = CREDITS_FEATURE_ID,
+    partnerJobToken,
   }: LockCreditsParams): Promise<LockCreditsResult> {
     if (!autumnClient || this.isPreviewTeam(teamId)) {
       return { status: "skipped" };
     }
     const resolvedLockId = lockId ?? `billing_${randomUUID()}`;
+
+    // An ordinary hold proceeds unlocked; refusing would turn a firebill blip
+    // into a customer outage. A gated run is the opposite: no answer means no
+    // run token, so the work could never be billed. firebill fails closed when
+    // it cannot reach the partner, but it cannot do so when it is the thing
+    // that is down.
+    const unreachable = (): LockCreditsResult =>
+      partnerJobToken
+        ? { status: "denied", reason: "gate_unavailable" }
+        : { status: "skipped" };
 
     try {
       const customerId = await this.ensureTrackingContext(teamId);
@@ -559,7 +571,8 @@ export class AutumnService {
       // their holds through firebill. The hold still lives in Autumn (firebill
       // keeps no lock state), but only firebill pins the retry/timeout budget
       // around the call. An unavailable answer maps to "skipped" — proceed
-      // unlocked — exactly like a direct-Autumn check failure below.
+      // unlocked — like a direct-Autumn check failure below, except when a
+      // partner gate is involved; see `unreachable` above.
       if (
         shouldRouteToFirebill(customerId, {
           gatewayProvisioned: await this.isGatewayProvisioned(teamId),
@@ -576,14 +589,34 @@ export class AutumnService {
           // monitor runner's convention, when the caller sets none.
           expiresAt: expiresAt ?? Date.now() + 60 * 60 * 1000,
           properties,
+          partnerJobToken,
         });
         if (result.status === "locked") {
-          return { status: "locked", lockId: result.lockId };
+          return {
+            status: "locked",
+            lockId: result.lockId,
+            ...(result.operationToken
+              ? { operationToken: result.operationToken }
+              : {}),
+          };
         }
         if (result.status === "denied") {
-          return { status: "denied" };
+          return {
+            status: "denied",
+            ...(result.reason ? { reason: result.reason } : {}),
+          };
         }
-        return { status: "skipped" };
+        return unreachable();
+      }
+
+      // Unreachable — a partner-provisioned org always routes to firebill
+      // (#4403) — but a token here would silently skip the gate.
+      if (partnerJobToken) {
+        logger.error(
+          "A partner job token reached the direct-Autumn lock path, where no partner can be asked; refusing the hold",
+          { teamId, lockId: resolvedLockId },
+        );
+        return { status: "denied", reason: "gate_unavailable" };
       }
 
       const { allowed } = await autumnClient.check({
@@ -627,7 +660,8 @@ export class AutumnService {
           error,
         },
       );
-      return { status: "skipped" };
+      // A gated run that threw before asking anyone is still unauthorized.
+      return unreachable();
     }
   }
 
@@ -639,6 +673,11 @@ export class AutumnService {
    * durably and retries delivery — a dropped direct finalize means the hold
    * just expires, leaving a confirm's work unbilled. Either route lands on the
    * same Autumn lock, so routing is a durability choice, not a correctness one.
+   *
+   * **Except with a run token in hand**, where it is a correctness choice: only
+   * firebill reports the operation to the partner, and the routing predicate is
+   * not stable across the hour between a lock and its finalize. The token is
+   * proof of the route the lock took, so it wins over asking again.
    */
   async finalizeCreditsLock({
     lockId,
@@ -646,13 +685,51 @@ export class AutumnService {
     overrideValue,
     properties,
     teamId,
-  }: FinalizeCreditsLockParams): Promise<void> {
-    if (teamId && (await this.isRoutedThroughFirebill(teamId))) {
-      await firebillFinalize({ lockId, action, overrideValue, properties });
-      return;
+    externalRequestId,
+    featureId = CREDITS_FEATURE_ID,
+    heldValue,
+  }: FinalizeCreditsLockParams): Promise<boolean> {
+    const gated = Boolean(externalRequestId) && firebillConfigured();
+    if (gated || (teamId && (await this.isRoutedThroughFirebill(teamId)))) {
+      // Only resolved for a gated settle: firebill needs the org to split the
+      // settle and to find the integration to report to. An ordinary finalize
+      // does neither, so it does not pay for the lookup.
+      //
+      // A failure degrades to omitting it rather than throwing. There is no
+      // durable retry on this path — `billMonitorCheck`'s only caller catches,
+      // writes `billing_status: "failed"`, and moves on, and nothing ever reads
+      // that back — so throwing would abandon the finalize entirely: the hold
+      // expires and the run goes unbilled at Autumn as well as unreported.
+      // Settling and losing the label is the lesser loss, and firebill counts
+      // the lost label as `partner_events_total{outcome="no_customer"}`.
+      const customerId =
+        externalRequestId && teamId
+          ? await this.ensureTrackingContext(teamId).catch(error => {
+              logger.error(
+                "Could not resolve the org for a gated settle; finalizing anyway, but this run cannot be reported to its partner",
+                { teamId, lockId, error },
+              );
+              return null;
+            })
+          : null;
+      // Surfaced, not discarded. firebill answers `false` for a refusal, a
+      // timeout, or a non-OK — none of which throw — so a caller that ignores
+      // this records a run as billed that nobody billed.
+      return await firebillFinalize({
+        lockId,
+        action,
+        overrideValue,
+        properties,
+        externalRequestId,
+        customerId,
+        featureId: customerId ? featureId : null,
+        heldValue: customerId ? heldValue : null,
+      });
     }
 
-    if (!autumnClient) return;
+    // No client means no hold was ever taken, so nothing can have gone
+    // unsettled.
+    if (!autumnClient) return true;
 
     try {
       await autumnClient.balances.finalize({
@@ -666,6 +743,7 @@ export class AutumnService {
         action,
         overrideValue,
       });
+      return true;
     } catch (error) {
       logger.error(
         "Autumn finalizeCreditsLock failed — billing API may be unavailable",
@@ -676,6 +754,7 @@ export class AutumnService {
           error,
         },
       );
+      return false;
     }
   }
 

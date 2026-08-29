@@ -1391,10 +1391,10 @@ describe("scrapePDFWithFirePDFAsync", () => {
         });
       };
       // Caller has only 60s left, but the JOB gets what the document
-      // needs: 5min base + 1000 pages × 500ms ≈ 13.3min. The job then
-      // outlives this caller by design — cancel-on-abandon is skipped for
-      // by-reference — so the completion feeds the raw-sha cache and the
-      // adoption lookup for the customer's retry.
+      // needs: 10min base + 1000 pages × 1.25s ≈ 30min (capped). The job
+      // then outlives this caller by design — cancel-on-abandon is
+      // skipped for by-reference — so the completion feeds the raw-sha
+      // cache and the adoption lookup for the customer's retry.
       const meta = makeMeta();
       meta.abort.scrapeTimeout = vi.fn(() => 60_000);
 
@@ -1412,8 +1412,8 @@ describe("scrapePDFWithFirePDFAsync", () => {
       );
 
       const delta = new Date(submittedBody.deadline_at).getTime() - Date.now();
-      expect(delta).toBeGreaterThan(12 * 60 * 1_000);
-      expect(delta).toBeLessThanOrEqual(14 * 60 * 1_000);
+      expect(delta).toBeGreaterThan(29 * 60 * 1_000);
+      expect(delta).toBeLessThanOrEqual(30 * 60 * 1_000);
     });
 
     it("does NOT cancel a by-reference job when polling is abandoned", async () => {

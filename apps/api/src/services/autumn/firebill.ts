@@ -2,7 +2,7 @@ import { randomUUID } from "crypto";
 import { config } from "../../config";
 import { logger } from "../../lib/logger";
 import { sampled } from "../../lib/rollout";
-import type { TrackParams } from "./types";
+import type { LockDeniedReason, TrackParams } from "./types";
 import {
   firebillCheckTotal,
   firebillRetryTotal,
@@ -16,14 +16,34 @@ import {
  * Autumn at all and the caller decides how its endpoint fails.
  */
 type FirebillLockResult =
-  | { status: "locked"; lockId: string }
-  | { status: "denied" }
+  | { status: "locked"; lockId: string; operationToken?: string }
+  | { status: "denied"; reason?: LockDeniedReason }
   | { status: "unavailable" };
+
+/**
+ * An unrecognised reason is dropped rather than passed through: reading one we
+ * do not understand as `job_revoked` would stop a customer's schedule.
+ */
+const LOCK_DENIED_REASONS: readonly LockDeniedReason[] = [
+  "out_of_credits",
+  "job_revoked",
+  "gate_unavailable",
+];
+
+function lockDeniedReason(value: unknown): LockDeniedReason | undefined {
+  return LOCK_DENIED_REASONS.find(reason => reason === value);
+}
 
 // firebill's own internal budget (durable write + forward attempt) is up to
 // ~3.5s worst case, so this is deliberately looser than the 2s timeout on the
 // direct Autumn client.
 const FIREBILL_TIMEOUT_MS = 5000;
+
+// A gated lock legitimately does more: firebill asks the partner (2.5s ceiling)
+// before the Autumn hold (2s), on top of the funding lookup. Giving up at 5s
+// would abandon a call that is still going to take the hold - the run marked
+// skipped here, the balance reserved there.
+const FIREBILL_GATED_LOCK_TIMEOUT_MS = 10000;
 
 // Safe to retry because the idempotency key is stable across attempts: if the
 // first attempt did land (ambiguous confirm timeout), Autumn dedupes the second.
@@ -51,6 +71,14 @@ function firebillOrgIds(): Set<string> {
 }
 
 /**
+ * Configured, without the rollout question — a finalize carrying a run token
+ * follows the lock through firebill whatever the ramp says.
+ */
+export function firebillConfigured(): boolean {
+  return Boolean(config.FIREBILL_URL && config.FIREBILL_SECRET);
+}
+
+/**
  * Whether this org's usage goes through firebill rather than straight to Autumn.
  * Needs firebill configured, then any of: the allowlist, being
  * partner-provisioned, or the sticky percentage.
@@ -75,7 +103,7 @@ export function shouldRouteToFirebill(
   orgId: string,
   opts?: { gatewayProvisioned?: boolean },
 ): boolean {
-  if (!config.FIREBILL_URL || !config.FIREBILL_SECRET) return false;
+  if (!firebillConfigured()) return false;
   // Always-on set: test orgs stay routed even at 0 percent.
   if (firebillOrgIds().has(orgId)) return true;
   // A partner-provisioned org always routes: firebill is the only thing that
@@ -400,6 +428,7 @@ export async function firebillLock({
   lockId,
   expiresAt,
   properties,
+  partnerJobToken,
 }: {
   customerId: string;
   entityId: string;
@@ -408,6 +437,7 @@ export async function firebillLock({
   lockId: string;
   expiresAt: number;
   properties?: Record<string, unknown>;
+  partnerJobToken?: string | null;
 }): Promise<FirebillLockResult> {
   const url = firebillUrl("/v1/lock");
   try {
@@ -428,8 +458,12 @@ export async function firebillLock({
         lock_id: lockId,
         expires_at: expiresAt,
         properties,
+        // Present arms firebill's partner gate; omitted is today's path.
+        ...(partnerJobToken ? { partner_job_token: partnerJobToken } : {}),
       }),
-      signal: AbortSignal.timeout(FIREBILL_TIMEOUT_MS),
+      signal: AbortSignal.timeout(
+        partnerJobToken ? FIREBILL_GATED_LOCK_TIMEOUT_MS : FIREBILL_TIMEOUT_MS,
+      ),
     });
 
     if (!response.ok) {
@@ -448,6 +482,8 @@ export async function firebillLock({
       success?: boolean;
       allowed?: boolean;
       lock_id?: string;
+      reason?: unknown;
+      operation_token?: unknown;
     };
 
     if (body.success !== true) {
@@ -462,14 +498,16 @@ export async function firebillLock({
     }
 
     if (body.allowed === false) {
+      const reason = lockDeniedReason(body.reason);
       logger.info("firebill lock denied", {
         customerId,
         entityId,
         featureId,
         value,
         lockId,
+        reason,
       });
-      return { status: "denied" };
+      return { status: "denied", ...(reason ? { reason } : {}) };
     }
 
     // Only an explicit `allowed: false` is a denial. `success: true` with a
@@ -487,14 +525,25 @@ export async function firebillLock({
       return { status: "unavailable" };
     }
 
+    const operationToken =
+      typeof body.operation_token === "string" &&
+      body.operation_token.length > 0
+        ? body.operation_token
+        : undefined;
+
     logger.info("firebill lock succeeded", {
       customerId,
       entityId,
       featureId,
       value,
       lockId,
+      gated: operationToken !== undefined,
     });
-    return { status: "locked", lockId: body.lock_id ?? lockId };
+    return {
+      status: "locked",
+      lockId: body.lock_id ?? lockId,
+      ...(operationToken ? { operationToken } : {}),
+    };
   } catch (error) {
     logger.error("firebill lock failed — firebill may be unavailable", {
       customerId,
@@ -525,11 +574,19 @@ export async function firebillFinalize({
   action,
   overrideValue,
   properties,
+  externalRequestId,
+  customerId,
+  featureId,
+  heldValue,
 }: {
   lockId: string;
   action: "confirm" | "release";
   overrideValue?: number;
   properties?: Record<string, unknown>;
+  externalRequestId?: string | null;
+  customerId?: string | null;
+  featureId?: string | null;
+  heldValue?: number | null;
 }): Promise<boolean> {
   const url = firebillUrl("/v1/finalize");
   try {
@@ -551,6 +608,24 @@ export async function firebillFinalize({
         // settle — e.g. the reconciler re-running a check it raced — dedupes
         // upstream instead of settling twice.
         idempotency_key: `fc:finalize:${action}:${lockId}`,
+        // The run token, brought home as this settle's operation id.
+        ...(externalRequestId
+          ? { external_request_id: externalRequestId }
+          : {}),
+        // Who the lock was for. The Autumn finalize body carries no customer
+        // and firebill keeps no lock table, so without this it cannot find the
+        // integration to report the run to.
+        ...(customerId ? { customer_id: customerId } : {}),
+        // With customer_id, this is what lets firebill split the settle across
+        // the ghost and its funder — it reads what the ghost has left of this
+        // feature. Without it the whole cost falls on the ghost.
+        ...(featureId ? { feature_id: featureId } : {}),
+        // What the lock reserved. Autumn reports a balance net of outstanding
+        // holds, so firebill needs this to know what the ghost can actually
+        // pay for this run; without it the whole cost falls on the ghost.
+        ...(heldValue !== undefined && heldValue !== null
+          ? { held_value: heldValue }
+          : {}),
       }),
       signal: AbortSignal.timeout(FIREBILL_TIMEOUT_MS),
     });

@@ -11,7 +11,10 @@ import {
   UnsupportedFunctionalityError,
 } from "ai";
 import { getModel } from "../../../lib/generic-ai";
-import { CostLimitExceededError, CostTracking } from "../../../lib/cost-tracking";
+import {
+  CostLimitExceededError,
+  CostTracking,
+} from "../../../lib/cost-tracking";
 import { calculateCost } from "../transformers/llmExtract";
 import { PromptInjectionDetectedError } from "../error";
 import { captureExceptionWithZdrCheck } from "../../../services/sentry";
@@ -88,6 +91,7 @@ async function classifyChunk(
   logger: Logger,
   costTracking: CostTracking,
   metadata: { teamId: string; functionId?: string },
+  zeroDataRetention: boolean,
 ): Promise<void> {
   const tagName = `untrusted_page_content_${crypto.randomUUID()}`;
 
@@ -104,7 +108,7 @@ async function classifyChunk(
         },
       },
       experimental_telemetry: {
-        isEnabled: true,
+        isEnabled: !zeroDataRetention,
         functionId: metadata.functionId
           ? metadata.functionId + "/promptInjectionGuard"
           : "promptInjectionGuard",
@@ -176,11 +180,13 @@ export async function checkForPromptInjection({
   logger,
   costTracking,
   metadata,
+  zeroDataRetention,
 }: {
   markdown: string | undefined;
   logger: Logger;
   costTracking: CostTracking;
   metadata: { teamId: string; functionId?: string };
+  zeroDataRetention: boolean;
 }): Promise<void> {
   if (!markdown || markdown.trim().length === 0) {
     return;
@@ -201,7 +207,15 @@ export async function checkForPromptInjection({
     const batch = chunks.slice(i, i + GUARD_CONCURRENCY_LIMIT);
     await Promise.all(
       batch.map(chunk =>
-        classifyChunk(chunk, model, modelId, logger, costTracking, metadata),
+        classifyChunk(
+          chunk,
+          model,
+          modelId,
+          logger,
+          costTracking,
+          metadata,
+          zeroDataRetention,
+        ),
       ),
     );
   }

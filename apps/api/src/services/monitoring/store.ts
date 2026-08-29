@@ -762,7 +762,7 @@ export async function listRunningMonitorChecks(
 ): Promise<MonitorCheckRow[]> {
   const data = await run(
     () =>
-      db
+      dbRr
         .select()
         .from(schema.monitor_checks)
         .where(eq(schema.monitor_checks.status, "running"))
@@ -800,6 +800,60 @@ export async function listMonitorChecks(params: {
     "Failed to list monitor checks",
   );
   return data as MonitorCheckRow[];
+}
+
+/**
+ * The leading run of credit-skipped checks ending at the newest, so one
+ * successful check resets it. Derived rather than counted: a stored counter
+ * would be a second source of truth to keep correct across retries.
+ */
+export async function countRecentConsecutiveSkippedForCredits(params: {
+  teamId: string;
+  monitorId: string;
+  limit: number;
+}): Promise<number> {
+  const rows = await run(
+    () =>
+      dbRr
+        .select({ status: schema.monitor_checks.status })
+        .from(schema.monitor_checks)
+        .where(
+          and(
+            eq(schema.monitor_checks.monitor_id, params.monitorId),
+            eq(schema.monitor_checks.team_id, params.teamId),
+          ),
+        )
+        .orderBy(desc(schema.monitor_checks.created_at))
+        .limit(params.limit),
+    "Failed to count skipped monitor checks",
+  );
+
+  let streak = 0;
+  for (const row of rows) {
+    if (row.status !== "skipped_no_credits") break;
+    streak += 1;
+  }
+  return streak;
+}
+
+/**
+ * `paused`, not `deleted`: nothing a partner says should destroy a customer's
+ * configuration. `monitoring_claim_due_monitors` only claims `active` rows, so
+ * this is enough to stop the runs.
+ */
+export async function pauseMonitor(monitorId: string): Promise<void> {
+  await run(
+    () =>
+      db
+        .update(schema.monitors)
+        .set({
+          status: "paused",
+          next_run_at: null,
+          updated_at: new Date().toISOString(),
+        })
+        .where(eq(schema.monitors.id, monitorId)),
+    "Failed to pause monitor",
+  );
 }
 
 export async function updateMonitorCheck(

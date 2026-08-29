@@ -55,10 +55,11 @@ import { toPublicBlocks } from "./blocks";
 import { captureExceptionWithZdrCheck } from "../../../../services/sentry";
 import { isPdfBuffer, PDF_SNIFF_WINDOW } from "./pdfUtils";
 import { comparePdfOutputs } from "./shadowComparison";
+import { withPdfExtractionPermit } from "./semaphore";
 
 /** Check if the PDF is eligible for Rust extraction, returning a rejection reason or null. */
 function getIneligibleReason(
-  result: ReturnType<typeof processPdf>,
+  result: Awaited<ReturnType<typeof processPdf>>,
 ): string | null {
   if (result.pdfType !== "TextBased") return `pdfType=${result.pdfType}`;
   if (result.confidence < 0.95) return `confidence=${result.confidence}`;
@@ -260,7 +261,9 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
         };
         const startedAt = Date.now();
         const detection = await withSpan("native.pdf.detect", async span => {
-          const result = detectPdf(tempFilePath, nativeCtx);
+          const result = await withPdfExtractionPermit(() =>
+            detectPdf(tempFilePath, nativeCtx),
+          );
           setSpanAttributes(span, {
             "native.module": "pdf",
             "native.pdf_type": result.pdfType,
@@ -309,10 +312,8 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
         };
         const startedAt = Date.now();
         const pdfResult = await withSpan("native.pdf.process", async span => {
-          const result = processPdf(
-            tempFilePath,
-            maxPages ?? undefined,
-            nativeCtx,
+          const result = await withPdfExtractionPermit(() =>
+            processPdf(tempFilePath, maxPages ?? undefined, nativeCtx),
           );
           setSpanAttributes(span, {
             "native.module": "pdf",

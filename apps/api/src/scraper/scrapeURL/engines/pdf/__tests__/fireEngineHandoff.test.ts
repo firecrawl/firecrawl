@@ -202,10 +202,10 @@ describe("largePdfLimitBytes (team tiers)", () => {
     expect(largePdfLimitBytes(metaForTeam(undefined))).toBe(50 * 1024 * 1024);
   });
 
-  it("returns the privileged cap (200MB) for allowlisted teams", () => {
+  it("returns the privileged cap (256MB) for allowlisted teams", () => {
     (config as any).PDF_BY_REFERENCE_PRIVILEGED_TEAM_IDS = "team-a, team-b";
-    expect(largePdfLimitBytes(metaForTeam("team-a"))).toBe(200 * 1024 * 1024);
-    expect(largePdfLimitBytes(metaForTeam("team-b"))).toBe(200 * 1024 * 1024);
+    expect(largePdfLimitBytes(metaForTeam("team-a"))).toBe(256 * 1024 * 1024);
+    expect(largePdfLimitBytes(metaForTeam("team-b"))).toBe(256 * 1024 * 1024);
   });
 
   it("clamps configured caps to the 256MB architectural ceiling", () => {

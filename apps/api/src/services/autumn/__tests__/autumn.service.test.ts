@@ -1209,6 +1209,404 @@ describe("firebill routing", () => {
     expect(mockCheck).not.toHaveBeenCalled();
   });
 
+  // -------------------------------------------------------------------------
+  // The partner's credit gate (firebill asks; we only carry the tokens)
+  // -------------------------------------------------------------------------
+
+  it("sends a partner job token so firebill can arm the gate, and brings the run token back", async () => {
+    state.configRef = firebillConfig();
+    mockFetch.mockResolvedValue(
+      lockResponse({
+        success: true,
+        allowed: true,
+        lock_id: "monitor_check-1",
+        operation_token: "run-42",
+      }),
+    );
+    const svc = makeService();
+
+    const result = await svc.lockCredits({
+      teamId: "team-1",
+      value: 10,
+      lockId: "monitor_check-1",
+      partnerJobToken: "job-token-abc",
+    });
+
+    expect(result).toEqual({
+      status: "locked",
+      lockId: "monitor_check-1",
+      operationToken: "run-42",
+    });
+    const lockCall = mockFetch.mock.calls.find(([url]) =>
+      String(url).endsWith("/v1/lock"),
+    );
+    expect(JSON.parse(lockCall![1].body).partner_job_token).toBe(
+      "job-token-abc",
+    );
+  });
+
+  // Absent, not null: firebill arms the gate on presence.
+  it("omits the token entirely for a monitor no partner created", async () => {
+    state.configRef = firebillConfig();
+    mockFetch.mockResolvedValue(
+      lockResponse({ success: true, allowed: true, lock_id: "lock-1" }),
+    );
+    const svc = makeService();
+
+    for (const partnerJobToken of [undefined, null]) {
+      await svc.lockCredits({
+        teamId: "team-1",
+        value: 10,
+        lockId: "lock-1",
+        partnerJobToken,
+      });
+      const lockCall = mockFetch.mock.calls
+        .filter(([url]) => String(url).endsWith("/v1/lock"))
+        .pop();
+      expect(JSON.parse(lockCall![1].body)).not.toHaveProperty(
+        "partner_job_token",
+      );
+    }
+  });
+
+  // Collapsing these would strand a revoked job or cancel a monitor over a
+  // customer topping up late.
+  // A gated lock waits longer because it does more: firebill asks the partner
+  // before taking the hold. Giving up at 5s would abandon a call that still
+  // takes the hold - run skipped here, balance reserved there.
+  it("waits longer for a gated lock than an ordinary one", async () => {
+    state.configRef = firebillConfig();
+    mockFetch.mockResolvedValue(
+      lockResponse({ success: true, allowed: true, lock_id: "lock-1" }),
+    );
+    const svc = makeService();
+
+    // Capture the deadline each call asks for; two AbortSignals always differ
+    // as objects, so only the number proves anything.
+    const timeouts: number[] = [];
+    const realTimeout = AbortSignal.timeout.bind(AbortSignal);
+    const spy = vi
+      .spyOn(AbortSignal, "timeout")
+      .mockImplementation((ms: number) => {
+        timeouts.push(ms);
+        return realTimeout(ms);
+      });
+
+    await svc.lockCredits({ teamId: "team-1", value: 1, lockId: "lock-1" });
+    const plain = mockFetch.mock.calls
+      .filter(([url]) => String(url).endsWith("/v1/lock"))
+      .pop();
+
+    await svc.lockCredits({
+      teamId: "team-1",
+      value: 1,
+      lockId: "lock-1",
+      partnerJobToken: "job-token-abc",
+    });
+    const gated = mockFetch.mock.calls
+      .filter(([url]) => String(url).endsWith("/v1/lock"))
+      .pop();
+
+    expect(timeouts.at(-1)).toBe(10000);
+    expect(timeouts.at(-2)).toBe(5000);
+    expect(gated![1].signal).toBeDefined();
+    expect(plain![1].signal).toBeDefined();
+    spy.mockRestore();
+  });
+
+  it("carries the partner's denial reason through, and only ones it knows", async () => {
+    state.configRef = firebillConfig();
+    const svc = makeService();
+
+    for (const reason of [
+      "out_of_credits",
+      "job_revoked",
+      "gate_unavailable",
+    ]) {
+      mockFetch.mockResolvedValueOnce(
+        lockResponse({ success: true, allowed: false, reason }),
+      );
+      expect(
+        await svc.lockCredits({
+          teamId: "team-1",
+          value: 10,
+          lockId: "lock-1",
+          partnerJobToken: "job-token-abc",
+        }),
+      ).toEqual({ status: "denied", reason });
+    }
+
+    // Reading an unknown reason as `job_revoked` would pause a monitor over a
+    // string; a plain denial is the safe reading.
+    mockFetch.mockResolvedValueOnce(
+      lockResponse({ success: true, allowed: false, reason: "who-knows" }),
+    );
+    expect(
+      await svc.lockCredits({
+        teamId: "team-1",
+        value: 10,
+        lockId: "lock-1",
+        partnerJobToken: "job-token-abc",
+      }),
+    ).toEqual({ status: "denied" });
+  });
+
+  // Unreachable (#4403), but a token here would silently skip the gate.
+  it("refuses a hold when a job token reaches the direct-Autumn path", async () => {
+    state.configRef = {
+      ...firebillConfig(),
+      FIREBILL_ORG_IDS: ["some-other-org"],
+    };
+    const svc = makeService();
+
+    expect(
+      await svc.lockCredits({
+        teamId: "team-1",
+        value: 10,
+        lockId: "lock-1",
+        partnerJobToken: "job-token-abc",
+      }),
+    ).toEqual({ status: "denied", reason: "gate_unavailable" });
+    expect(mockCheck).not.toHaveBeenCalled();
+  });
+
+  // firebill cannot fail closed on its own behalf when it is what is down.
+  it("denies a gated run when firebill itself cannot answer", async () => {
+    state.configRef = firebillConfig();
+    const svc = makeService();
+    const gated = {
+      teamId: "team-1",
+      value: 10,
+      lockId: "lock-1",
+      partnerJobToken: "job-token-abc",
+    };
+
+    mockFetch.mockResolvedValueOnce(lockResponse({ success: false }));
+    expect(await svc.lockCredits(gated)).toEqual({
+      status: "denied",
+      reason: "gate_unavailable",
+    });
+
+    mockFetch.mockRejectedValueOnce(new Error("ECONNREFUSED"));
+    expect(await svc.lockCredits(gated)).toEqual({
+      status: "denied",
+      reason: "gate_unavailable",
+    });
+
+    // An answer we cannot read is not an answer either.
+    mockFetch.mockResolvedValueOnce(lockResponse({ success: true }));
+    expect(await svc.lockCredits(gated)).toEqual({
+      status: "denied",
+      reason: "gate_unavailable",
+    });
+
+    expect(mockCheck).not.toHaveBeenCalled();
+  });
+
+  // What makes the above affordable: refusing ordinary holds would turn a
+  // firebill blip into a customer-facing outage.
+  it("still skips rather than denies when no partner gate is involved", async () => {
+    state.configRef = firebillConfig();
+    const svc = makeService();
+
+    mockFetch.mockResolvedValueOnce(lockResponse({ success: false }));
+    expect(
+      await svc.lockCredits({ teamId: "team-1", value: 10, lockId: "lock-1" }),
+    ).toEqual({ status: "skipped" });
+  });
+
+  // Routing can flip in the hour between a lock and its finalize; going direct
+  // would drop the partner's only report of the run.
+  it("follows the run token to firebill even when routing says otherwise", async () => {
+    state.configRef = {
+      ...firebillConfig(),
+      FIREBILL_ORG_IDS: ["some-other-org"],
+    };
+    const svc = makeService();
+
+    await svc.finalizeCreditsLock({
+      lockId: "monitor_check-1",
+      action: "confirm",
+      overrideValue: 7,
+      teamId: "team-1",
+      externalRequestId: "run-42",
+    });
+
+    expect(mockFinalize).not.toHaveBeenCalled();
+    const finalizeCall = mockFetch.mock.calls.find(([url]) =>
+      String(url).endsWith("/v1/finalize"),
+    );
+    expect(finalizeCall).toBeDefined();
+    expect(JSON.parse(finalizeCall![1].body).external_request_id).toBe(
+      "run-42",
+    );
+  });
+
+  it("hands the run token back on the finalize as the operation id", async () => {
+    state.configRef = firebillConfig();
+    const svc = makeService();
+
+    await svc.finalizeCreditsLock({
+      lockId: "monitor_check-1",
+      action: "confirm",
+      overrideValue: 7,
+      teamId: "team-1",
+      externalRequestId: "run-42",
+    });
+
+    const finalizeCall = mockFetch.mock.calls.find(([url]) =>
+      String(url).endsWith("/v1/finalize"),
+    );
+    expect(JSON.parse(finalizeCall![1].body).external_request_id).toBe(
+      "run-42",
+    );
+  });
+
+  // firebill has no lock table and the Autumn finalize body carries no
+  // customer, so without this it cannot find the integration to report to.
+  it("sends the customer alongside the run token so the run can be reported", async () => {
+    state.configRef = firebillConfig();
+    const svc = makeService();
+
+    await svc.finalizeCreditsLock({
+      lockId: "monitor_check-1",
+      action: "confirm",
+      overrideValue: 7,
+      teamId: "team-1",
+      externalRequestId: "run-42",
+      heldValue: 12,
+    });
+
+    const body = JSON.parse(
+      mockFetch.mock.calls
+        .filter(([url]) => String(url).endsWith("/v1/finalize"))
+        .pop()![1].body,
+    );
+    expect(body.customer_id).toBe("org-1");
+    expect(body.external_request_id).toBe("run-42");
+    // The other two the split needs: which balance, and what was held —
+    // Autumn reports a balance net of that hold.
+    expect(body.feature_id).toBe("CREDITS");
+    expect(body.held_value).toBe(12);
+  });
+
+  // There is no durable retry here: billMonitorCheck's caller catches, writes
+  // billing_status "failed", and nothing reads that back. Throwing would
+  // abandon the finalize, so the hold expires and the run goes unbilled as
+  // well as unreported — a worse loss than the missing label.
+  it("still finalizes when it cannot name the org, rather than abandoning the settle", async () => {
+    state.configRef = firebillConfig();
+    // No org row for this team, so resolving the customer throws.
+    state.supabaseStubData = { data: null, error: null };
+    const svc = makeService();
+
+    await expect(
+      svc.finalizeCreditsLock({
+        lockId: "monitor_check-1",
+        action: "confirm",
+        overrideValue: 7,
+        teamId: "team-99",
+        externalRequestId: "run-42",
+      }),
+    ).resolves.not.toThrow();
+
+    const body = JSON.parse(
+      mockFetch.mock.calls
+        .filter(([url]) => String(url).endsWith("/v1/finalize"))
+        .pop()![1].body,
+    );
+    expect(body.lock_id).toBe("monitor_check-1");
+    // No org, so firebill cannot split or report — and counts the omission.
+    expect(body).not.toHaveProperty("customer_id");
+    expect(body).not.toHaveProperty("feature_id");
+    expect(body).not.toHaveProperty("held_value");
+  });
+
+  // An ordinary settle reports to nobody, so it should not pay for the lookup
+  // or put a customer on the wire.
+  // firebill answers `false` for a refusal, a timeout, or a non-OK, and none of
+  // them throw. A caller that cannot see that records a run as billed that
+  // nobody billed, with no retry — so the verdict has to come back.
+  it("reports whether the settle actually landed", async () => {
+    state.configRef = firebillConfig();
+    const svc = makeService();
+
+    mockFetch.mockResolvedValueOnce(
+      new Response(JSON.stringify({ success: true }), { status: 200 }),
+    );
+    await expect(
+      svc.finalizeCreditsLock({
+        lockId: "monitor_check-1",
+        action: "confirm",
+        overrideValue: 7,
+        teamId: "team-1",
+      }),
+    ).resolves.toBe(true);
+
+    // firebill took it but says it did not land.
+    mockFetch.mockResolvedValueOnce(
+      new Response(JSON.stringify({ success: false }), { status: 200 }),
+    );
+    await expect(
+      svc.finalizeCreditsLock({
+        lockId: "monitor_check-2",
+        action: "confirm",
+        overrideValue: 7,
+        teamId: "team-1",
+      }),
+    ).resolves.toBe(false);
+
+    // Never answered at all.
+    mockFetch.mockRejectedValueOnce(new Error("ECONNREFUSED"));
+    await expect(
+      svc.finalizeCreditsLock({
+        lockId: "monitor_check-3",
+        action: "confirm",
+        overrideValue: 7,
+        teamId: "team-1",
+      }),
+    ).resolves.toBe(false);
+  });
+
+  it("omits the customer when the settle is not gated", async () => {
+    state.configRef = firebillConfig();
+    const svc = makeService();
+
+    await svc.finalizeCreditsLock({
+      lockId: "monitor_check-1",
+      action: "confirm",
+      overrideValue: 7,
+      teamId: "team-1",
+    });
+
+    const body = JSON.parse(
+      mockFetch.mock.calls
+        .filter(([url]) => String(url).endsWith("/v1/finalize"))
+        .pop()![1].body,
+    );
+    expect(body).not.toHaveProperty("customer_id");
+    expect(body).not.toHaveProperty("feature_id");
+  });
+
+  it("omits the operation id when there is no partner to report to", async () => {
+    state.configRef = firebillConfig();
+    const svc = makeService();
+
+    await svc.finalizeCreditsLock({
+      lockId: "monitor_check-1",
+      action: "confirm",
+      teamId: "team-1",
+      externalRequestId: null,
+    });
+
+    const finalizeCall = mockFetch.mock.calls.find(([url]) =>
+      String(url).endsWith("/v1/finalize"),
+    );
+    expect(JSON.parse(finalizeCall![1].body)).not.toHaveProperty(
+      "external_request_id",
+    );
+  });
+
   it("uses the direct Autumn lock path for orgs NOT on the allowlist", async () => {
     state.configRef = {
       ...firebillConfig(),

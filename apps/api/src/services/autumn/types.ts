@@ -52,19 +52,31 @@ export type LockCreditsParams = {
   expiresAt?: number;
   properties?: Record<string, unknown>;
   featureId?: string;
+  /** Arms firebill's partner credit gate, which is asked before Autumn holds anything. */
+  partnerJobToken?: string | null;
 };
+
+/**
+ * Why a partner's gate refused, as opposed to Autumn. `job_revoked` is the only
+ * one that never resolves on its own, and so the only one a caller may answer
+ * by stopping a schedule.
+ */
+export type LockDeniedReason =
+  | "out_of_credits"
+  | "job_revoked"
+  | "gate_unavailable";
 
 /**
  * Outcome of an Autumn credit lock attempt.
  *
- * - `denied`: Autumn refused (`allowed: false`); the caller must NOT proceed.
- * - `skipped`: billing not in effect (no client, preview team, or API fallback);
- *   the caller should proceed without a lock.
- * - `locked`: reserved; `lockId` must be finalized later.
+ * - `denied`: Autumn refused, or a partner's gate did — see `reason`.
+ * - `skipped`: billing not in effect; proceed without a lock.
+ * - `locked`: reserved; finalize with `lockId`. `operationToken` is the
+ *   partner's id for this occurrence — hand it back on the finalize.
  */
 export type LockCreditsResult =
-  | { status: "locked"; lockId: string }
-  | { status: "denied" }
+  | { status: "locked"; lockId: string; operationToken?: string }
+  | { status: "denied"; reason?: LockDeniedReason }
   | { status: "skipped" };
 
 export type FinalizeCreditsLockParams = {
@@ -80,6 +92,13 @@ export type FinalizeCreditsLockParams = {
    * loses firebill's durable retry).
    */
   teamId?: string;
+  /** For a gated run, the `operationToken` its lock handed back. */
+  externalRequestId?: string | null;
+  /** Which balance the hold was against; lets firebill split the settle. */
+  featureId?: string;
+  /** What the lock reserved. Autumn nets outstanding holds out of a reported
+   * balance, so firebill adds this back to see what the ghost can really pay. */
+  heldValue?: number | null;
 };
 
 export type TrackCreditsParams = {

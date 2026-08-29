@@ -37,6 +37,7 @@ export type ErrorCodes =
   | "MAP_FAILED"
   | "BAD_REQUEST_INVALID_JSON"
   | "BAD_REQUEST"
+  | "CONCURRENCY_QUEUE_TIMEOUT"
   // Threat protection (enterprise domain risk blocking). Lowercase by design:
   // this is the documented, user-facing error code for the feature.
   | "unsafe_domain_blocked";
@@ -88,9 +89,11 @@ type ScrapeTimeoutProcessingDetails = {
 
 /** Matches BY_REFERENCE_DEADLINE_PER_PAGE_MS (fire-pdf/utils.ts) — the
  * conservative worst-case processing rate the job deadline is built
- * from. Kept as a default parameter here so lib/error stays free of
- * scraper imports. */
-const PROCESSING_ESTIMATE_PER_PAGE_MS = 500;
+ * from (covers fully scanned documents, not the text-extraction
+ * median). Kept as a default parameter here so lib/error stays free of
+ * scraper imports; keep the two constants in lockstep or the retry
+ * hints understate what the deadline actually allows. */
+const PROCESSING_ESTIMATE_PER_PAGE_MS = 1_250;
 /** Fixed overhead the estimate grants beyond pure page work: queue
  * pickup, render bootstrap, result assembly. */
 const PROCESSING_ESTIMATE_BASE_MS = 60_000;
@@ -198,6 +201,27 @@ export class ScrapeJobTimeoutError extends TransportableError {
     data: ReturnType<typeof this.prototype.serialize>,
   ) {
     const x = new ScrapeJobTimeoutError(data.message, data.processing);
+    x.stack = data.stack;
+    return x;
+  }
+}
+
+export class ConcurrencyQueueTimeoutError extends TransportableError {
+  constructor(
+    message: string = "The operation timed out while waiting for a concurrency slot to become available. This means that your requests are exhausting your concurrent browsers limit. Consider using batch endpoints which wait for concurrency slots to become available indefinitely, or consider upgrading your plan to incrase your concurrency limit at https://firecrawl.dev/pricing.",
+  ) {
+    super("CONCURRENCY_QUEUE_TIMEOUT", message);
+  }
+
+  serialize() {
+    return super.serialize();
+  }
+
+  static deserialize(
+    _code: ErrorCodes,
+    data: ReturnType<typeof this.prototype.serialize>,
+  ) {
+    const x = new ConcurrencyQueueTimeoutError(data.message);
     x.stack = data.stack;
     return x;
   }
