@@ -1,5 +1,6 @@
 import {
   ActionsNotSupportedError,
+  ConcurrencyQueueTimeoutError,
   CrawlDenialError,
   ErrorCodes,
   MapFailedError,
@@ -78,6 +79,7 @@ const errorMap: Record<ErrorCodes, any> = {
   SCRAPE_JSON_CONTENT_TOO_LARGE: JsonExtractionContentTooLargeError,
   SCRAPE_X_TWITTER_CONFIGURATION_ERROR: XTwitterConfigurationError,
   MAP_FAILED: MapFailedError,
+  CONCURRENCY_QUEUE_TIMEOUT: ConcurrencyQueueTimeoutError,
   unsafe_domain_blocked: UnsafeDomainBlockedError,
 
   // Zod errors
