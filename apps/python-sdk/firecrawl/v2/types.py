@@ -894,6 +894,7 @@ class ScrapeOptions(BaseModel):
     location: Optional["Location"] = None
     skip_tls_verification: Optional[bool] = None
     remove_base64_images: Optional[bool] = None
+    only_clean_content: Optional[bool] = None
     fast_mode: Optional[bool] = None
     use_mock: Optional[str] = None
     block_ads: Optional[bool] = None

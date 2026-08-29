@@ -436,3 +436,21 @@ class TestPrepareScrapeOptions:
         assert result["minAge"] == 1000
         assert "min_age" not in result
         assert result["maxAge"] == 5000
+
+    def test_prepare_only_clean_content_maps_to_camel_case(self):
+        """only_clean_content must be sent as onlyCleanContent; the server drops the snake_case key."""
+        options = ScrapeOptions(only_clean_content=True)
+
+        result = prepare_scrape_options(options)
+
+        assert result["onlyCleanContent"] is True
+        assert "only_clean_content" not in result
+
+    def test_prepare_only_clean_content_false_is_preserved(self):
+        """Explicit only_clean_content=False must still be forwarded (not dropped as falsy)."""
+        options = ScrapeOptions(only_clean_content=False)
+
+        result = prepare_scrape_options(options)
+
+        assert result["onlyCleanContent"] is False
+        assert "only_clean_content" not in result
