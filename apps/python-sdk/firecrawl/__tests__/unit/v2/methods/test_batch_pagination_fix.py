@@ -52,7 +52,7 @@ class TestWaitBatchCompletionPagination:
     """Verify the sync wait loop passes auto_paginate=False."""
 
     def test_poll_uses_pagination_config(self):
-        """Each poll call should include pagination_config with auto_paginate=False."""
+        """Each poll call hits the same endpoint; assertions cover request URL and call count."""
         from firecrawl.v2.methods.batch import wait_for_batch_completion
 
         client = MagicMock()
@@ -60,37 +60,77 @@ class TestWaitBatchCompletionPagination:
             FakeResponse(200, _make_status_response("scraping", 0, 100)),
             FakeResponse(200, _make_status_response("scraping", 50, 100)),
             FakeResponse(200, _make_status_response("completed", 100, 100)),
+            FakeResponse(200, _make_status_response("completed", 100, 100)),  # terminal re-fetch
         ])
 
         result = wait_for_batch_completion(client, "job-1", poll_interval=0)
 
         assert result.status == "completed"
         assert result.completed == 100
-        # get_batch_scrape_status is called once per poll
-        assert client.get.call_count == 3
+        # get_batch_scrape_status is called once per poll + 1 terminal re-fetch
+        assert client.get.call_count == 4
         for call in client.get.call_args_list:
             assert call[0][0] == "/v2/batch/scrape/job-1"
 
     def test_auto_paginate_false_passed(self):
-        """The poll_config should have auto_paginate=False."""
+        """Intermediate polls receive PaginationConfig(auto_paginate=False); the
+        terminal re-fetch uses default pagination so callers get all documents."""
         from firecrawl.v2.methods.batch import wait_for_batch_completion
 
-        with patch("firecrawl.v2.methods.batch.get_batch_scrape_status") as mock_status:
-            mock_status.return_value = BatchScrapeJob(
-                status="completed",
-                completed=1,
-                total=1,
+        call_count = 0
+
+        def _side_effect(client, job_id, pagination_config=None):
+            nonlocal call_count
+            call_count += 1
+            if call_count <= 3:
+                # First three calls are intermediate polls — must carry auto_paginate=False.
+                assert pagination_config is not None
+                assert pagination_config.auto_paginate is False
+            else:
+                # Terminal re-fetch — no auto_paginate=False override.
+                assert pagination_config is None
+            return BatchScrapeJob(
+                status="completed" if call_count >= 3 else "scraping",
+                completed=call_count,
+                total=3,
                 data=[],
             )
-            client = MagicMock()
-            wait_for_batch_completion(client, "job-1", poll_interval=0)
 
-            # Verify the last call (completion) received the config
-            for call in mock_status.call_args_list:
-                _, kwargs = call
-                config = kwargs.get("pagination_config")
-                assert config is not None
-                assert config.auto_paginate is False
+        with patch("firecrawl.v2.methods.batch.get_batch_scrape_status", side_effect=_side_effect):
+            client = MagicMock()
+            result = wait_for_batch_completion(client, "job-1", poll_interval=0)
+
+            assert result.status == "completed"
+            assert call_count == 4  # 3 polls + 1 terminal re-fetch
+
+    def test_failed_cancelled_no_refetch(self):
+        """Failed/cancelled terminal states return immediately without re-fetch."""
+        from firecrawl.v2.methods.batch import wait_for_batch_completion
+
+        call_count = 0
+
+        def _side_effect(client, job_id, pagination_config=None):
+            nonlocal call_count
+            call_count += 1
+            if call_count <= 3:
+                assert pagination_config is not None
+                assert pagination_config.auto_paginate is False
+            else:
+                # Should never reach here for failed/cancelled
+                assert False, "No re-fetch expected for failed/cancelled"
+            return BatchScrapeJob(
+                status="failed" if call_count >= 3 else "scraping",
+                completed=call_count,
+                total=3,
+                data=[],
+            )
+
+        with patch("firecrawl.v2.methods.batch.get_batch_scrape_status", side_effect=_side_effect):
+            client = MagicMock()
+            result = wait_for_batch_completion(client, "job-1", poll_interval=0)
+
+            assert result.status == "failed"
+            assert call_count == 3  # No terminal re-fetch for failed
 
 
 # ---------------------------------------------------------------------------
@@ -105,7 +145,7 @@ class TestAsyncWaitBatchScrapePagination:
 
     @pytest.mark.asyncio
     async def test_async_poll_uses_pagination_config(self):
-        """Each async poll should include pagination_config with auto_paginate=False."""
+        """Each async poll re-fetches with full pagination on terminal state."""
         from firecrawl.v2.client_async import AsyncFirecrawlClient
 
         app = AsyncFirecrawlClient(api_key="test-key")
@@ -114,13 +154,48 @@ class TestAsyncWaitBatchScrapePagination:
             mock_status.side_effect = [
                 BatchScrapeJob(status="scraping", completed=0, total=100, data=[]),
                 BatchScrapeJob(status="completed", completed=100, total=100, data=[]),
+                BatchScrapeJob(status="completed", completed=100, total=100, data=[]),
             ]
             result = await app.wait_batch_scrape("job-1", poll_interval=0)
 
             assert result.status == "completed"
-            assert mock_status.call_count == 2
-            for call in mock_status.call_args_list:
+            assert mock_status.call_count == 3
+            # All calls except the last (terminal re-fetch) carry auto_paginate=False.
+            for call in mock_status.call_args_list[:-1]:
                 _, kwargs = call
                 config = kwargs.get("pagination_config")
                 assert config is not None
                 assert config.auto_paginate is False
+            # The last call (terminal re-fetch) should use default pagination (no override).
+            _, kwargs = mock_status.call_args_list[-1]
+            assert kwargs.get("pagination_config") is None
+
+    @pytest.mark.asyncio
+    async def test_async_failed_cancelled_no_refetch(self):
+        """Async failed/cancelled terminal states return immediately without re-fetch."""
+        from firecrawl.v2.client_async import AsyncFirecrawlClient
+
+        app = AsyncFirecrawlClient(api_key="test-key")
+
+        call_count = 0
+
+        async def _side_effect(client, job_id, pagination_config=None):
+            nonlocal call_count
+            call_count += 1
+            if call_count <= 2:
+                assert pagination_config is not None
+                assert pagination_config.auto_paginate is False
+            else:
+                assert False, "No re-fetch expected for failed/cancelled"
+            return BatchScrapeJob(
+                status="cancelled" if call_count >= 2 else "scraping",
+                completed=call_count,
+                total=2,
+                data=[],
+            )
+
+        with patch("firecrawl.v2.client_async.async_batch.get_batch_scrape_status", side_effect=_side_effect):
+            result = await app.wait_batch_scrape("job-1", poll_interval=0)
+
+            assert result.status == "cancelled"
+            assert call_count == 2  # No terminal re-fetch for cancelled

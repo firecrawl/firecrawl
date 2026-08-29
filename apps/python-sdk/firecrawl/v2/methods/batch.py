@@ -322,22 +322,28 @@ def wait_for_batch_completion(
         TimeoutError: If timeout is reached
     """
     start_time = time.monotonic()
-    
+
     # Disable auto-pagination while polling — we only need status fields,
     # not the full document payload, on each intermediate check.
     poll_config = PaginationConfig(auto_paginate=False)
-    
+
     while True:
         status_job = get_batch_scrape_status(client, job_id, pagination_config=poll_config)
-        
+
         # Check if job is complete
         if status_job.status in ["completed", "failed", "cancelled"]:
+            # Only re-fetch with full pagination for completed jobs,
+            # where a full document set is expected. For failed/cancelled
+            # there's no complete document set to gain; re-fetch would add
+            # latency and a failure point without benefit.
+            if status_job.status == "completed":
+                return get_batch_scrape_status(client, job_id)
             return status_job
-        
+
         # Check timeout
         if timeout and (time.monotonic() - start_time) > timeout:
             raise TimeoutError(f"Batch scrape job {job_id} did not complete within {timeout} seconds")
-        
+
         # Wait before next poll
         time.sleep(poll_interval)
 

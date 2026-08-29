@@ -597,6 +597,12 @@ class AsyncFirecrawlClient:
         while True:
             status = await async_batch.get_batch_scrape_status(self.async_http_client, job_id, pagination_config=poll_config)
             if status.status in ["completed", "failed", "cancelled"]:
+                # Only re-fetch with full pagination for completed jobs,
+                # where a full document set is expected. For failed/cancelled
+                # there's no complete document set to gain; re-fetch would add
+                # latency and a failure point without benefit.
+                if status.status == "completed":
+                    return await async_batch.get_batch_scrape_status(self.async_http_client, job_id)
                 return status
             if timeout and (asyncio.get_event_loop().time() - start) > timeout:
                 raise TimeoutError("Batch wait timed out")
