@@ -53,7 +53,11 @@ import { decideFirePdfAsyncRoute } from "./fire-pdf/routing";
 import { scrapePDFWithParsePDF } from "./pdfParse";
 import { toPublicBlocks } from "./blocks";
 import { captureExceptionWithZdrCheck } from "../../../../services/sentry";
-import { isPdfBuffer, PDF_SNIFF_WINDOW } from "./pdfUtils";
+import {
+  isPdfBuffer,
+  PDF_SNIFF_WINDOW,
+  extractEmbeddedPdfUrl,
+} from "./pdfUtils";
 import { comparePdfOutputs } from "./shadowComparison";
 import { withPdfExtractionPermit } from "./semaphore";
 
@@ -129,6 +133,32 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
       );
 
       if (!isPdfBuffer(file.buffer)) {
+        // Check if it's an HTML page with an embedded PDF
+        const embeddedUrl = extractEmbeddedPdfUrl(
+          file.buffer.toString("utf8", 0, Math.min(file.buffer.length, 8192)),
+          meta.rewrittenUrl ?? meta.url,
+        );
+        if (embeddedUrl) {
+          meta.logger.info("Found embedded PDF in HTML page, re-fetching", {
+            embeddedUrl,
+          });
+          const pdfFile = await fetchFileToBuffer(
+            embeddedUrl,
+            meta.options.skipTlsVerification,
+            { headers: meta.options.headers, signal: meta.abort.asSignal() },
+          );
+          if (isPdfBuffer(pdfFile.buffer)) {
+            const content = pdfFile.buffer.toString("base64");
+            return {
+              url: embeddedUrl,
+              statusCode: pdfFile.response.status,
+              html: content,
+              markdown: content,
+              contentType: "application/pdf",
+              proxyUsed: "basic",
+            };
+          }
+        }
         // downloaded content isn't a valid PDF
         if (meta.pdfPrefetch === undefined) {
           // for non-PDF URLs, this is expected, not anti-bot
@@ -216,6 +246,63 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
     }
 
     if (!isPdfBuffer(header.subarray(0, headerBytesRead))) {
+      // Check if it's an HTML page with an embedded PDF
+      const htmlSnippet = await readFile(tempFilePath, {
+        encoding: "utf8",
+        flag: "r",
+      })
+        .then(s => s.slice(0, 8192))
+        .catch(() => "");
+      const embeddedUrl = extractEmbeddedPdfUrl(
+        htmlSnippet,
+        meta.rewrittenUrl ?? meta.url,
+      );
+      if (embeddedUrl) {
+        meta.logger.info("Found embedded PDF in HTML page, re-downloading", {
+          embeddedUrl,
+        });
+        // Replace the temp file with the real PDF
+        const { response: embeddedResponse, tempFilePath: embeddedTempPath } =
+          await downloadFile(
+            meta.id,
+            embeddedUrl,
+            meta.options.skipTlsVerification,
+            { headers: meta.options.headers, signal: meta.abort.asSignal() },
+          );
+        // Swap the temp file path by unlinking the HTML file and using the new one
+        await unlink(tempFilePath);
+        // Re-enter the function logic with the real PDF by updating the reference
+        // We do this by recursively calling with a patched meta
+        const pdfHeader = Buffer.alloc(PDF_SNIFF_WINDOW);
+        const pdfFh = await open(embeddedTempPath, "r");
+        let pdfHeaderBytesRead: number;
+        try {
+          ({ bytesRead: pdfHeaderBytesRead } = await pdfFh.read(
+            pdfHeader,
+            0,
+            PDF_SNIFF_WINDOW,
+            0,
+          ));
+        } finally {
+          await pdfFh.close();
+        }
+        if (isPdfBuffer(pdfHeader.subarray(0, pdfHeaderBytesRead))) {
+          // Patch meta to use the embedded PDF's prefetch info and recurse
+          return await scrapePDF({
+            ...meta,
+            url: embeddedUrl,
+            rewrittenUrl: embeddedUrl,
+            pdfPrefetch: {
+              ...embeddedResponse,
+              filePath: embeddedTempPath,
+              url: embeddedUrl,
+              status: embeddedResponse.status,
+              proxyUsed: "basic" as const,
+            },
+          });
+        }
+        await unlink(embeddedTempPath).catch(() => {});
+      }
       if (meta.pdfPrefetch === undefined) {
         if (!meta.featureFlags.has("pdf")) {
           throw new EngineUnsuccessfulError("pdf");
