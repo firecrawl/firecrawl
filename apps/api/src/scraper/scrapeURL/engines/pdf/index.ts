@@ -216,6 +216,18 @@ export async function scrapePDF(meta: Meta): Promise<EngineScrapeResult> {
     }
 
     if (!isPdfBuffer(header.subarray(0, headerBytesRead))) {
+      if (meta.pdfPrefetch !== undefined || meta.featureFlags.has("pdf")) {
+        meta.logger.warn(
+          "Non-PDF content received in PDF engine (file path)",
+          {
+            url: meta.rewrittenUrl ?? meta.url,
+            contentType:
+              (response as any).headers?.get?.("Content-Type") ?? null,
+            statusCode: response.status,
+            hasPdfFeature: meta.featureFlags.has("pdf"),
+          },
+        );
+      }
       if (meta.pdfPrefetch === undefined) {
         if (!meta.featureFlags.has("pdf")) {
           throw new EngineUnsuccessfulError("pdf");
