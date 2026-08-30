@@ -1678,6 +1678,7 @@ class BrowserExecuteResponse(BaseModel):
     """Response from executing code in a browser session."""
 
     success: bool
+    session_id: Optional[str] = None
     cdp_url: Optional[str] = None
     live_view_url: Optional[str] = None
     interactive_live_view_url: Optional[str] = None

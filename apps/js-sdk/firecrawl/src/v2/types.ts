@@ -1661,6 +1661,8 @@ export interface ScrapeExecuteRequest {
   language?: "python" | "node" | "bash";
   timeout?: number;
   origin?: string;
+  ttl?: number;
+  activityTtl?: number;
 }
 
 export type ScrapeExecuteResponse = BrowserExecuteResponse;

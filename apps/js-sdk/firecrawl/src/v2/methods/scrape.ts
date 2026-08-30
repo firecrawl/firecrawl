@@ -171,6 +171,8 @@ export async function interact(
   body.language = args.language ?? "node";
   if (args.timeout != null) body.timeout = args.timeout;
   if (args.origin) body.origin = args.origin;
+  if (args.ttl != null) body.ttl = args.ttl;
+  if (args.activityTtl != null) body.activityTtl = args.activityTtl;
 
   try {
     const res = await http.post<ScrapeExecuteResponse>(
