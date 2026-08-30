@@ -8,6 +8,34 @@ import { Meta } from "../..";
 import { documentExtensionFromContentType } from "../../../../lib/document-formats";
 import { downloadFireEngineGcsFile } from "./downloadGcsFile";
 
+// Some CDNs serve image/video files with Content-Type: application/octet-stream
+// rather than image/* or video/*, which bypasses the prefix-based rejection in
+// specialtyScrapeCheck. Detect ISOBMFF-family files (AVIF/HEIF/HEIC, MP4, MOV)
+// by the "ftyp" box at byte offset 4 so they can still be rejected.
+const ISOBMFF_BRAND_TO_MIME: Record<string, string> = {
+  avif: "image/avif",
+  avis: "image/avif",
+  heic: "image/heic",
+  heix: "image/heic",
+  hevc: "image/heic",
+  hevx: "image/heic",
+  mif1: "image/heif",
+  msf1: "image/heif",
+  mp41: "video/mp4",
+  mp42: "video/mp4",
+  isom: "video/mp4",
+  iso2: "video/mp4",
+  "M4V ": "video/mp4",
+  "qt  ": "video/quicktime",
+};
+
+export function detectIsobmffMime(buf: Buffer): string | null {
+  if (buf.length < 12) return null;
+  if (buf.toString("ascii", 4, 8) !== "ftyp") return null;
+  const brand = buf.toString("ascii", 8, 12);
+  return ISOBMFF_BRAND_TO_MIME[brand] ?? null;
+}
+
 async function feResToFilePrefetch(
   logger: Logger,
   feRes: FireEngineCheckStatusSuccess | undefined,
@@ -197,6 +225,17 @@ export async function specialtyScrapeCheck(
       ["pdf"],
       await feResToPdfPrefetch(logger, feRes, signal, maxFileBytes),
     );
+  }
+
+  // Check for octet-stream with ISOBMFF signature (AVIF/HEIF/HEIC, MP4, MOV).
+  // Some CDNs label these as application/octet-stream rather than image/* or
+  // video/*, which would otherwise slip past the prefix check below.
+  if (isOctetStream && feRes?.file?.content) {
+    const head = Buffer.from(feRes.file.content.slice(0, 32), "base64");
+    const isobmffMime = detectIsobmffMime(head);
+    if (isobmffMime) {
+      throw new UnsupportedFileError(isobmffMime);
+    }
   }
 
   // Reject unsupported binary content types (images, video, audio, archives, etc.)
