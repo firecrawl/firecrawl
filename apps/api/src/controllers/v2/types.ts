@@ -1532,7 +1532,7 @@ export type AgentListResponse =
           effort?: "low" | "medium" | "high";
         };
       }[];
-      next: string;
+      next?: string;
     };
 
 export type AgentResponse =
