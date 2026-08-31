@@ -92,9 +92,10 @@ export async function agentListController(
         query_params: {
           teamId: req.auth.team_id,
           limit,
-          before: parsedBefore
-            ? new Date(parsedBefore).toISOString()
-            : new Date().toISOString(),
+          before:
+            parsedBefore !== undefined
+              ? new Date(parsedBefore).toISOString()
+              : new Date().toISOString(),
         },
         format: "JSONEachRow",
       });
@@ -159,6 +160,17 @@ export async function agentListController(
 
   const recentAgents: Map<string, RecentAgent> =
     recentResult.status === "fulfilled" ? recentResult.value : new Map();
+
+  // Recent agents are merged into every response, so without this filter they
+  // would repeat on every paginated page. Only include the ones that fall
+  // within the requested page range.
+  if (parsedBefore !== undefined) {
+    for (const [id, agent] of recentAgents) {
+      if (new Date(agent.createdAt).valueOf() >= parsedBefore) {
+        recentAgents.delete(id);
+      }
+    }
+  }
   if (dbResult.status === "rejected") {
     throw dbResult.reason;
   }
@@ -233,6 +245,13 @@ export async function agentListController(
           : undefined,
     });
   }
+
+  // The merged list is recent agents followed by ClickHouse rows; sort so the
+  // page is globally ordered by creation time and the next cursor (taken from
+  // the last entry) is correct.
+  agents.sort(
+    (a, b) => new Date(b.createdAt).valueOf() - new Date(a.createdAt).valueOf(),
+  );
 
   return res.json({
     success: true,
