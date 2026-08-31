@@ -33,7 +33,15 @@ export function isNearBlack(hex: string): boolean {
 }
 
 function isNearWhite(hex: string): boolean {
-  return contrastYIQ(hex) > 220;
+  const h = hex.replace("#", "");
+  if (h.length < 6) return contrastYIQ(hex) > 220;
+  const r = parseInt(h.slice(0, 2), 16);
+  const g = parseInt(h.slice(2, 4), 16);
+  const b = parseInt(h.slice(4, 6), 16);
+  // Bright but saturated fills (#FFFF00) are real CTA colors; only a bright
+  // AND low-chroma fill reads as white / a pale wash.
+  const chroma = Math.max(r, g, b) - Math.min(r, g, b);
+  return contrastYIQ(hex) > 220 && chroma < 60;
 }
 
 /** Solid CTA fill — black is allowed; white / pale washes are not. */
@@ -52,7 +60,7 @@ export function isUsableBrandPrimary(
   opts?: { cta?: string },
 ): boolean {
   if (sameHex(hex, opts?.cta) && isUsableCtaBackground(hex)) return true;
-  if (isGrayish(hex) && !isNearBlack(hex)) return false;
+  if (isGrayish(hex)) return false;
   if (colorScheme !== "dark" && isNearBlack(hex)) return false;
   return true;
 }

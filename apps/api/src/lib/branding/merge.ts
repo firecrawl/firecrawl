@@ -282,7 +282,13 @@ export function mergeBrandingResults(
     const llmAccent = normalizeRoleHex(llm.colorRoles.accentColor);
     const llmBackground = normalizeRoleHex(llm.colorRoles.backgroundColor);
     const llmText = normalizeRoleHex(llm.colorRoles.textPrimary);
-    const cta = normalizeRoleHex(merged.components?.buttonPrimary?.background);
+    const mergedBg = normalizeRoleHex(merged.colors?.background);
+    const ctaRaw = normalizeRoleHex(
+      merged.components?.buttonPrimary?.background,
+    );
+    // An outline/ghost button reports the page background as its fill — that
+    // is chrome, not a CTA color.
+    const cta = ctaRaw && ctaRaw !== mergedBg ? ctaRaw : undefined;
     const usablePrimary =
       llmPrimary &&
       isUsableBrandPrimary(llmPrimary, merged.colorScheme, { cta })
@@ -323,10 +329,17 @@ export function mergeBrandingResults(
 
   // Identity/CTA wins primary — including black buttons. A lilac wash or
   // default-link blue from the LLM must not replace a detected CTA fill.
+  // A fill that matches the page background (outline/ghost button) is chrome
+  // and must not become the brand primary.
   const ctaPrimary = normalizeRoleHex(
     merged.components?.buttonPrimary?.background,
   );
-  if (ctaPrimary && isUsableCtaBackground(ctaPrimary)) {
+  const pageBackground = normalizeRoleHex(merged.colors?.background);
+  if (
+    ctaPrimary &&
+    ctaPrimary !== pageBackground &&
+    isUsableCtaBackground(ctaPrimary)
+  ) {
     merged.colors = { ...merged.colors, primary: ctaPrimary };
   }
 

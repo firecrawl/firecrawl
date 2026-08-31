@@ -184,12 +184,20 @@ function inferPalette(
   const ctaPool = ctaButtons.some(s => s.hasCTAIndicator)
     ? ctaButtons.filter(s => s.hasCTAIndicator)
     : ctaButtons;
-  const cta = ctaPool
-    .map(s => hexify(s.colors.background, pageBackground))
-    .find(
-      (hex): hex is string =>
-        !!hex && hex !== background && isUsableCtaBackground(hex),
-    );
+  // Score fills instead of taking the first DOM-order button: a secondary
+  // button can carry a CTA marker too, so rank by CTA text and how often a
+  // fill repeats across the pool.
+  const ctaTextRe =
+    /sign ?up|get started|start|deploy|try|demo|buy|subscribe|join|register|download|order|donate/i;
+  const ctaFillScores = new Map<string, number>();
+  for (const s of ctaPool) {
+    const hex = hexify(s.colors.background, pageBackground);
+    if (!hex || hex === background || !isUsableCtaBackground(hex)) continue;
+    const score =
+      (s.hasCTAIndicator ? 10 : 0) + (ctaTextRe.test(s.text ?? "") ? 5 : 0) + 1;
+    ctaFillScores.set(hex, (ctaFillScores.get(hex) ?? 0) + score);
+  }
+  const cta = [...ctaFillScores.entries()].sort((a, b) => b[1] - a[1])[0]?.[0];
 
   const primary = pickBrandPrimary(ranked, {
     background,
