@@ -42,9 +42,17 @@ const searchTarget: MonitorTarget = {
 };
 
 describe("search request tracking", () => {
-  it("pseudonymizes a keyless team before the ClickHouse event", async () => {
-    const previousSecret = config.KEYLESS_CONVERSION_HMAC_SECRET;
+  const previousSecret = config.KEYLESS_CONVERSION_HMAC_SECRET;
+
+  beforeEach(() => {
     config.KEYLESS_CONVERSION_HMAC_SECRET = "a".repeat(32);
+  });
+
+  afterEach(() => {
+    config.KEYLESS_CONVERSION_HMAC_SECRET = previousSecret;
+  });
+
+  it("pseudonymizes a keyless team before the ClickHouse event", async () => {
     await trackSearchRequest({
       searchId: "search-1",
       requestId: "request-1",
@@ -70,7 +78,6 @@ describe("search request tracking", () => {
         team_id: "preview_keyless_hmac_v1_bcd8d32706120436adde0e52",
       }),
     ]);
-    config.KEYLESS_CONVERSION_HMAC_SECRET = previousSecret;
   });
 });
 

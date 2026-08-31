@@ -61,6 +61,7 @@ import {
   logLlmsTxt,
   logMap,
   logRequest,
+  logResearchEndpoint,
   logScrape,
   logSearch,
   type LoggedSearch,
@@ -103,12 +104,32 @@ describe("keyless logger identity", () => {
   });
 
   it.each([
+    [
+      "request",
+      () =>
+        logRequest({
+          ...base,
+          kind: "search",
+          api_version: "v2",
+          origin: "api",
+        } as any),
+    ],
     ["scrape", () => logScrape({ ...base, options: {} } as any)],
     ["crawl", () => logCrawl({ ...base, options: {} } as any)],
     ["batch scrape", () => logBatchScrape(base as any)],
     ["extract", () => logExtract(base as any)],
     ["map", () => logMap({ ...base, results: [] } as any)],
     ["llms.txt", () => logLlmsTxt(base as any)],
+    ["search", () => logSearch(makeSearch({ team_id: teamId }))],
+    [
+      "research",
+      () =>
+        logResearchEndpoint({
+          ...base,
+          table: "code_searches",
+          target: "query",
+        } as any),
+    ],
     ["deep research", () => logDeepResearch(base as any)],
   ])("pseudonymizes %s logger context", async (_name, run) => {
     await run();
