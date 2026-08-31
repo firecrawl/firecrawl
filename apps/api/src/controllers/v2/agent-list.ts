@@ -99,10 +99,10 @@ export async function agentListController(
           // Fetch one extra row so we can tell whether another page exists
           // instead of emitting a next cursor whenever the page is full.
           limit: limit + 1,
-          before:
-            parsedBefore !== undefined
-              ? new Date(parsedBefore).toISOString()
-              : new Date().toISOString(),
+          before: (parsedBefore !== undefined
+            ? new Date(parsedBefore).toISOString()
+            : new Date().toISOString()
+          ).slice(-1), // slice Z off the end of the ISO string because clickhouse hates it
         },
         format: "JSONEachRow",
       });
