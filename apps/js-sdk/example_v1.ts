@@ -1,7 +1,7 @@
 // Placeholder v1 example (TypeScript)
 // Mirrors the older SDK usage. Replace with your API key before running.
 
-// import { Firecrawl } from 'firecrawl';
+// import FirecrawlApp from '@mendable/firecrawl-js';
 import Firecrawl from './firecrawl/src/index'
 
 async function main() {

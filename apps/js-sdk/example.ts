@@ -1,7 +1,7 @@
 // Placeholder v2 example (TypeScript)
 // Minimal usage of new FirecrawlClient. Replace with your API key before running.
 
-// import { Firecrawl } from 'firecrawl';
+// import FirecrawlApp from '@mendable/firecrawl-js';
 import Firecrawl from './firecrawl/src/index';
 
 const run = async () => {
@@ -36,9 +36,9 @@ run().catch((e) => {
 
 // old stuff:
 
-import { Firecrawl, CrawlStatusResponse, ErrorResponse } from 'firecrawl';
+import FirecrawlApp, { CrawlStatusResponse, ErrorResponse } from '@mendable/firecrawl-js';
 
-const app = new Firecrawl({apiKey: "fc-YOUR_API_KEY"});
+const app = new FirecrawlApp({apiKey: "fc-YOUR_API_KEY"});
 
 const main = async () => {
 
