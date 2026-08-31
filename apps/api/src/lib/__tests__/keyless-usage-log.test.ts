@@ -35,19 +35,23 @@ import { logger } from "../logger";
 
 const IP = "203.0.113.99";
 const KEYLESS_TEAM = keylessTeamId(IP);
-const KEYLESS_PSEUDONYM = "preview_keyless_sha256_4486f6066fbb206e1db1becf";
+const KEYLESS_PSEUDONYM = "preview_keyless_hmac_v1_2bb3385506da49adb864dfd3";
 
 let previousDbAuth: boolean | undefined;
+let previousHmacSecret: string | undefined;
 
 beforeEach(() => {
   vi.clearAllMocks();
   insertValues.mockResolvedValue(undefined);
   previousDbAuth = config.USE_DB_AUTHENTICATION;
+  previousHmacSecret = config.KEYLESS_CONVERSION_HMAC_SECRET;
   config.USE_DB_AUTHENTICATION = true;
+  config.KEYLESS_CONVERSION_HMAC_SECRET = "a".repeat(32);
 });
 
 afterEach(() => {
   config.USE_DB_AUTHENTICATION = previousDbAuth;
+  config.KEYLESS_CONVERSION_HMAC_SECRET = previousHmacSecret;
 });
 
 describe("logKeylessCreditUsage", () => {

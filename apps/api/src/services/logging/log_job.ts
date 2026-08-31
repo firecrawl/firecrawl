@@ -309,7 +309,7 @@ export async function logScrape(scrape: LoggedScrape, force: boolean = false) {
     method: "logScrape",
     scrapeId: scrape.id,
     requestId: scrape.request_id,
-    teamId: scrape.team_id,
+    teamId: keylessTeamPseudonym(scrape.team_id),
     zeroDataRetention: scrape.zeroDataRetention,
   });
 
@@ -387,7 +387,7 @@ export async function logScrape(scrape: LoggedScrape, force: boolean = false) {
         _logger.warn("Error inserting into change_tracking_scrapes", {
           error,
           scrapeId: scrape.id,
-          teamId: scrape.team_id,
+          teamId: keylessTeamPseudonym(scrape.team_id),
         });
       }
     }
@@ -414,7 +414,7 @@ export async function logCrawl(crawl: LoggedCrawl, force: boolean = false) {
     method: "logCrawl",
     crawlId: crawl.id,
     requestId: crawl.request_id,
-    teamId: crawl.team_id,
+    teamId: keylessTeamPseudonym(crawl.team_id),
     zeroDataRetention: crawl.zeroDataRetention,
   });
 
@@ -461,7 +461,7 @@ export async function logBatchScrape(
     method: "logBatchScrape",
     batchScrapeId: batchScrape.id,
     requestId: batchScrape.request_id,
-    teamId: batchScrape.team_id,
+    teamId: keylessTeamPseudonym(batchScrape.team_id),
     zeroDataRetention: batchScrape.zeroDataRetention,
   });
 
@@ -639,7 +639,7 @@ export async function logExtract(
     method: "logExtract",
     extractId: extract.id,
     requestId: extract.request_id,
-    teamId: extract.team_id,
+    teamId: keylessTeamPseudonym(extract.team_id),
   });
 
   await robustInsert(
@@ -690,7 +690,7 @@ export async function logMap(map: LoggedMap, force: boolean = false) {
     method: "logMap",
     mapId: map.id,
     requestId: map.request_id,
-    teamId: map.team_id,
+    teamId: keylessTeamPseudonym(map.team_id),
     zeroDataRetention: map.zeroDataRetention,
   });
 
@@ -740,7 +740,7 @@ export async function logLlmsTxt(
     method: "logLlmsTxt",
     llmsTxtId: llmsTxt.id,
     requestId: llmsTxt.request_id,
-    teamId: llmsTxt.team_id,
+    teamId: keylessTeamPseudonym(llmsTxt.team_id),
   });
 
   await robustInsert(
@@ -788,7 +788,7 @@ export async function logDeepResearch(
     method: "logDeepResearch",
     deepResearchId: deepResearch.id,
     requestId: deepResearch.request_id,
-    teamId: deepResearch.team_id,
+    teamId: keylessTeamPseudonym(deepResearch.team_id),
   });
 
   await robustInsert(

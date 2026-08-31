@@ -202,7 +202,7 @@ describe("authenticateUser", () => {
       expect.objectContaining({
         event: "keyless_exhausted",
         reason: "requests",
-        teamId: "preview_keyless_sha256_ddbea5471056690e5b1dcfe0",
+        teamId: "preview_keyless_hmac_v1_bcd8d32706120436adde0e52",
         conversionCohort: keylessConversionCohort("203.0.113.8"),
       }),
     );

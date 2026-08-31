@@ -10,6 +10,8 @@ import {
   keylessConversionCohort,
   keylessExhaustionTelemetry,
   keylessLimitBody,
+  keylessTeamId,
+  keylessTeamPseudonym,
 } from "./keyless";
 import { redisRateLimitClient } from "../services/rate-limiter";
 
@@ -19,6 +21,26 @@ describe("keyless conversion cohort telemetry", () => {
   afterEach(() => {
     config.KEYLESS_CONVERSION_HMAC_SECRET = originalSecret;
     vi.restoreAllMocks();
+  });
+
+  it("derives a stable HMAC team pseudonym", () => {
+    config.KEYLESS_CONVERSION_HMAC_SECRET = "a".repeat(32);
+
+    const pseudonym = keylessTeamPseudonym(keylessTeamId("203.0.113.8"));
+
+    expect(pseudonym).toBe("preview_keyless_hmac_v1_bcd8d32706120436adde0e52");
+    expect(pseudonym).not.toContain("203.0.113.8");
+    expect(keylessTeamPseudonym(keylessTeamId("::ffff:203.0.113.8"))).toBe(
+      pseudonym,
+    );
+  });
+
+  it("uses a non-identifying fallback when the HMAC secret is unset", () => {
+    config.KEYLESS_CONVERSION_HMAC_SECRET = undefined;
+
+    expect(keylessTeamPseudonym(keylessTeamId("203.0.113.8"))).toBe(
+      "preview_keyless_hmac_v1_unconfigured",
+    );
   });
 
   it("emits a deterministic, versioned HMAC cohort rather than the IP", () => {

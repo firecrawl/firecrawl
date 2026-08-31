@@ -1,3 +1,4 @@
+import { config } from "../config";
 import { chInsert } from "./clickhouse-client";
 import {
   buildMonitorTargetInterestRows,
@@ -42,6 +43,8 @@ const searchTarget: MonitorTarget = {
 
 describe("search request tracking", () => {
   it("pseudonymizes a keyless team before the ClickHouse event", async () => {
+    const previousSecret = config.KEYLESS_CONVERSION_HMAC_SECRET;
+    config.KEYLESS_CONVERSION_HMAC_SECRET = "a".repeat(32);
     await trackSearchRequest({
       searchId: "search-1",
       requestId: "request-1",
@@ -64,9 +67,10 @@ describe("search request tracking", () => {
 
     expect(chInsert).toHaveBeenCalledWith("search_requests", [
       expect.objectContaining({
-        team_id: "preview_keyless_sha256_ddbea5471056690e5b1dcfe0",
+        team_id: "preview_keyless_hmac_v1_bcd8d32706120436adde0e52",
       }),
     ]);
+    config.KEYLESS_CONVERSION_HMAC_SECRET = previousSecret;
   });
 });
 

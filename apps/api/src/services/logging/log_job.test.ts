@@ -23,6 +23,7 @@ vi.mock("@sentry/node", () => ({
 vi.mock("../../config", () => ({
   config: {
     GCS_BUCKET_NAME: undefined,
+    KEYLESS_CONVERSION_HMAC_SECRET: "a".repeat(32),
     USE_DB_AUTHENTICATION: true,
   },
 }));
@@ -52,7 +53,18 @@ vi.mock("../posthog", () => ({
   trackFirstSurfaceUse: vi.fn(),
 }));
 
-import { logRequest, logSearch, type LoggedSearch } from "./log_job";
+import {
+  logBatchScrape,
+  logCrawl,
+  logDeepResearch,
+  logExtract,
+  logLlmsTxt,
+  logMap,
+  logRequest,
+  logScrape,
+  logSearch,
+  type LoggedSearch,
+} from "./log_job";
 import * as schema from "../../db/schema";
 
 function makeSearch(overrides: Partial<LoggedSearch> = {}): LoggedSearch {
@@ -74,6 +86,39 @@ function makeSearch(overrides: Partial<LoggedSearch> = {}): LoggedSearch {
     ...overrides,
   };
 }
+
+describe("keyless logger identity", () => {
+  const teamId = "preview_keyless_203.0.113.8";
+  const expected = "preview_keyless_hmac_v1_bcd8d32706120436adde0e52";
+  const base = {
+    id: "019e6f45-7778-727d-adf0-0abe9d5062b6",
+    request_id: "019e6f45-7778-727d-adf0-0abe9d5062b6",
+    team_id: teamId,
+    zeroDataRetention: false,
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    values.mockResolvedValue(undefined);
+  });
+
+  it.each([
+    ["scrape", () => logScrape({ ...base, options: {} } as any)],
+    ["crawl", () => logCrawl({ ...base, options: {} } as any)],
+    ["batch scrape", () => logBatchScrape(base as any)],
+    ["extract", () => logExtract(base as any)],
+    ["map", () => logMap({ ...base, results: [] } as any)],
+    ["llms.txt", () => logLlmsTxt(base as any)],
+    ["deep research", () => logDeepResearch(base as any)],
+  ])("pseudonymizes %s logger context", async (_name, run) => {
+    await run();
+
+    expect(logger.child).toHaveBeenCalledWith(
+      expect.objectContaining({ teamId: expected }),
+    );
+    expect(JSON.stringify(logger.child.mock.calls)).not.toContain(teamId);
+  });
+});
 
 describe("logSearch", () => {
   beforeEach(() => {
@@ -147,7 +192,9 @@ describe("logRequest", () => {
     await logRequest(makeRequest("op_integration_42"));
 
     expect(insert).toHaveBeenCalledWith(schema.requests);
-    expect(values.mock.calls[0][0].external_request_id).toBe("op_integration_42");
+    expect(values.mock.calls[0][0].external_request_id).toBe(
+      "op_integration_42",
+    );
   });
 
   it("stores null, not a truncation, when the id exceeds the byte cap", async () => {

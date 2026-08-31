@@ -4,7 +4,10 @@ vi.mock("undici", () => ({
 }));
 
 vi.mock("../config", () => ({
-  config: { RESEARCH_PROXY_URL: "https://research.test/" },
+  config: {
+    KEYLESS_CONVERSION_HMAC_SECRET: "a".repeat(32),
+    RESEARCH_PROXY_URL: "https://research.test/",
+  },
 }));
 
 import { fetch } from "undici";
@@ -72,7 +75,7 @@ describe("searchDeveloperCategory", () => {
     );
 
     expect(firstCall()[1].headers).toEqual({
-      "firecrawl-team-id": "preview_keyless_sha256_ddbea5471056690e5b1dcfe0",
+      "firecrawl-team-id": "preview_keyless_hmac_v1_bcd8d32706120436adde0e52",
     });
   });
 

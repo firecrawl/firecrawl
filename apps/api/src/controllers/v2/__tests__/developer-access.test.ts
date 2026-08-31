@@ -44,6 +44,7 @@ vi.mock("../../../lib/logger", () => ({
 }));
 
 import { createDeveloperRouter } from "../research-proxy";
+import { config } from "../../../config";
 import { billTeam } from "../../../services/billing/credit_billing";
 import { chargeKeylessCredits, keylessTeamId } from "../../../lib/keyless";
 
@@ -52,6 +53,7 @@ const TEAM_ID = "11111111-1111-1111-1111-111111111111";
 // used only as a stand-in client IP for building a keyless team id.
 const KEYLESS_IP = "203.0.113.7";
 const KEYLESS_TEAM_ID = keylessTeamId(KEYLESS_IP);
+const ORIGINAL_HMAC_SECRET = config.KEYLESS_CONVERSION_HMAC_SECRET;
 
 /** Lets the un-awaited controller (wrapped by `wrap`) and its `finally` run. */
 const flush = () => new Promise(resolve => setImmediate(resolve));
@@ -117,6 +119,7 @@ function makeRes() {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  config.KEYLESS_CONVERSION_HMAC_SECRET = "a".repeat(32);
   mocks.logRequest.mockResolvedValue(undefined);
   mocks.logResearchEndpoint.mockResolvedValue(undefined);
   // The controller consumes this as a `fetch` Response: `.ok`, `.status`,
@@ -131,6 +134,10 @@ beforeEach(() => {
     text: async () =>
       JSON.stringify({ success: true, results: [{ id: "repo-one" }] }),
   });
+});
+
+afterAll(() => {
+  config.KEYLESS_CONVERSION_HMAC_SECRET = ORIGINAL_HMAC_SECRET;
 });
 
 describe.each([
@@ -167,7 +174,7 @@ describe.each([
       expect.objectContaining({
         headers: expect.objectContaining({
           "firecrawl-team-id":
-            "preview_keyless_sha256_fec52565aa0cf18f57d7cf5b",
+            "preview_keyless_hmac_v1_3031c7208ae268b72293b554",
         }),
       }),
     );
