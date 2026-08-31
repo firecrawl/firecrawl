@@ -29,7 +29,10 @@ export async function agentListController(
     ? parseInt(req.query.before as string)
     : undefined;
 
-  if (isNaN(parsedBefore) || !isFinite(parsedBefore) || parsedBefore < 0) {
+  if (
+    parsedBefore !== undefined &&
+    (isNaN(parsedBefore) || !isFinite(parsedBefore) || parsedBefore < 0)
+  ) {
     return res.status(400).json({
       success: false,
       error: "Invalid before timestamp.",

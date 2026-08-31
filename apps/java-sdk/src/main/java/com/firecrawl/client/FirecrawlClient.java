@@ -642,6 +642,34 @@ public class FirecrawlClient {
     }
 
     /**
+     * Lists agent runs, most recent first.
+     *
+     * @return the agent list response
+     */
+    public AgentListResponse listAgents() {
+        return listAgents(null);
+    }
+
+    /**
+     * Lists agent runs, most recent first.
+     *
+     * Pages are fixed at 20 runs. To fetch the next page, pass the before
+     * value from the previous page's next URL. This method does not
+     * auto-paginate.
+     *
+     * @param before only return agent runs created before this unix
+     *               millisecond timestamp (nullable)
+     * @return the agent list response
+     */
+    public AgentListResponse listAgents(Long before) {
+        String endpoint = "/v2/agent";
+        if (before != null) {
+            endpoint += "?before=" + before;
+        }
+        return http.get(endpoint, AgentListResponse.class);
+    }
+
+    /**
      * Runs an agent task and waits for completion (auto-polling).
      *
      * @param options agent configuration options
@@ -1224,6 +1252,17 @@ public class FirecrawlClient {
      */
     public CompletableFuture<AgentStatusResponse> getAgentStatusAsync(String jobId) {
         return CompletableFuture.supplyAsync(() -> getAgentStatus(jobId), asyncExecutor);
+    }
+
+    /**
+     * Asynchronously lists agent runs, most recent first.
+     *
+     * @param before only return agent runs created before this unix
+     *               millisecond timestamp (nullable)
+     * @return a CompletableFuture that resolves to the AgentListResponse
+     */
+    public CompletableFuture<AgentListResponse> listAgentsAsync(Long before) {
+        return CompletableFuture.supplyAsync(() -> listAgents(before), asyncExecutor);
     }
 
     /**

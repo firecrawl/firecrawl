@@ -255,3 +255,75 @@ it('surfaces agent snapshot errors', function (): void {
 
     $client->getAgentSnapshot('agent-missing', 'snap-1');
 })->throws(FirecrawlException::class, 'Agent job not found');
+
+it('lists agent runs without a query param by default', function (): void {
+    $history = new ArrayObject();
+    $client = fakeFirecrawlClient([
+        new Response(200, [], json_encode([
+            'success' => true,
+            'agents' => [[
+                'id' => 'agent-123',
+                'createdAt' => '2026-08-31T12:00:00.000Z',
+                'targetHint' => 'https://example.com',
+                'origin' => 'api',
+                'settings' => ['hidden' => false, 'starred' => true, 'label' => 'prod'],
+                'status' => 'completed',
+                'options' => [
+                    'urls' => ['https://example.com'],
+                    'prompt' => 'find pricing',
+                    'model' => 'spark-1-pro',
+                ],
+            ]],
+        ])),
+    ], $history);
+
+    $response = $client->listAgents();
+
+    $request = $history[0]['request'];
+    expect($request->getMethod())->toBe('GET');
+    expect($request->getUri()->getPath())->toBe('/v2/agent');
+    expect($request->getUri()->getQuery())->toBe('');
+
+    expect($response->isSuccess())->toBeTrue();
+    expect($response->getNext())->toBeNull();
+    expect($response->getAgents())->toHaveCount(1);
+
+    $agent = $response->getAgents()[0];
+    expect($agent->getId())->toBe('agent-123');
+    expect($agent->getCreatedAt())->toBe('2026-08-31T12:00:00.000Z');
+    expect($agent->getTargetHint())->toBe('https://example.com');
+    expect($agent->getStatus())->toBe('completed');
+    expect($agent->getSettings()['starred'])->toBeTrue();
+    expect($agent->getSettings()['label'])->toBe('prod');
+    expect($agent->getOptions()['prompt'])->toBe('find pricing');
+});
+
+it('sends the before query param when listing agent runs', function (): void {
+    $history = new ArrayObject();
+    $client = fakeFirecrawlClient([
+        new Response(200, [], json_encode([
+            'success' => true,
+            'agents' => [],
+            'next' => 'https://api.firecrawl.dev/v2/agent?before=1756600000000',
+        ])),
+    ], $history);
+
+    $response = $client->listAgents(1756600000000);
+
+    $request = $history[0]['request'];
+    expect($request->getMethod())->toBe('GET');
+    expect($request->getUri()->getPath())->toBe('/v2/agent');
+    expect($request->getUri()->getQuery())->toBe('before=1756600000000');
+    expect($response->getNext())->toBe('https://api.firecrawl.dev/v2/agent?before=1756600000000');
+});
+
+it('surfaces agent list errors', function (): void {
+    $client = fakeFirecrawlClient([
+        new Response(400, [], json_encode([
+            'success' => false,
+            'error' => 'Invalid before timestamp.',
+        ])),
+    ]);
+
+    $client->listAgents(-1);
+})->throws(FirecrawlException::class, 'Invalid before timestamp.');

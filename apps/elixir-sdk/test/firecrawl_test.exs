@@ -279,6 +279,89 @@ defmodule FirecrawlTest do
              Firecrawl.get_agent_trace!("job-123", api_key: "test-key", adapter: adapter)
   end
 
+  test "list_agents hits /v2/agent" do
+    parent = self()
+
+    adapter = fn request ->
+      send(parent, {:request, request})
+
+      resp = Req.Response.new(
+        status: 200,
+        headers: %{"content-type" => ["application/json"]},
+        body:
+          Jason.encode!(%{
+            "success" => true,
+            "agents" => [
+              %{
+                "id" => "job-123",
+                "createdAt" => "2026-08-31T12:00:00.000Z",
+                "targetHint" => "https://example.com",
+                "origin" => "api",
+                "settings" => %{"hidden" => false, "starred" => true, "label" => "prod"},
+                "status" => "completed",
+                "options" => %{"urls" => ["https://example.com"], "prompt" => "find pricing", "model" => "spark-1-pro"}
+              }
+            ]
+          })
+      )
+
+      {request, resp}
+    end
+
+    assert {:ok, %Req.Response{status: 200} = response} =
+             Firecrawl.list_agents([], api_key: "test-key", adapter: adapter)
+
+    assert_receive {:request, request}
+    assert request.url.path == "/v2/agent"
+    refute Map.has_key?(URI.decode_query(request.url.query || ""), "before")
+
+    body = Jason.decode!(response.body)
+    assert [%{"id" => "job-123", "status" => "completed"}] = body["agents"]
+  end
+
+  test "list_agents sends before query param" do
+    parent = self()
+
+    adapter = fn request ->
+      send(parent, {:request, request})
+
+      resp = Req.Response.new(
+        status: 200,
+        headers: %{"content-type" => ["application/json"]},
+        body:
+          Jason.encode!(%{
+            "success" => true,
+            "agents" => [],
+            "next" => "https://api.firecrawl.dev/v2/agent?before=1756600000000"
+          })
+      )
+
+      {request, resp}
+    end
+
+    assert {:ok, %Req.Response{status: 200}} =
+             Firecrawl.list_agents([before: 1_756_600_000_000], api_key: "test-key", adapter: adapter)
+
+    assert_receive {:request, request}
+    assert request.url.path == "/v2/agent"
+    assert URI.decode_query(request.url.query || "")["before"] == "1756600000000"
+  end
+
+  test "list_agents! returns the response on success" do
+    adapter = fn request ->
+      resp = Req.Response.new(
+        status: 200,
+        headers: %{"content-type" => ["application/json"]},
+        body: Jason.encode!(%{"success" => true, "agents" => []})
+      )
+
+      {request, resp}
+    end
+
+    assert %Req.Response{status: 200} =
+             Firecrawl.list_agents!([], api_key: "test-key", adapter: adapter)
+  end
+
   test "get_agent_snapshot hits /v2/agent/:id/snapshots/:snapshot_id" do
     parent = self()
 
@@ -614,7 +697,13 @@ defmodule FirecrawlTest do
       {:get_agent_trace, 2},
       {:get_agent_trace!, 2},
       {:get_agent_snapshot, 3},
-      {:get_agent_snapshot!, 3}
+      {:get_agent_snapshot!, 3},
+      {:list_agents, 0},
+      {:list_agents, 1},
+      {:list_agents, 2},
+      {:list_agents!, 0},
+      {:list_agents!, 1},
+      {:list_agents!, 2}
     ]
 
     for {name, arity} <- expected do

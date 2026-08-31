@@ -721,6 +721,52 @@ type AgentSnapshotResponse struct {
 	Error      string `json:"error,omitempty"`
 }
 
+// ListAgentsOptions controls agent list pagination.
+type ListAgentsOptions struct {
+	// Before only returns agent runs created before this unix millisecond
+	// timestamp.
+	Before *int64
+}
+
+// AgentListItemSettings represents per-session settings attached to an agent
+// run.
+type AgentListItemSettings struct {
+	Hidden  bool   `json:"hidden"`
+	Starred bool   `json:"starred"`
+	Label   string `json:"label,omitempty"`
+}
+
+// AgentListItemOptions represents the options an agent run was started with.
+type AgentListItemOptions struct {
+	URLs   []string               `json:"urls,omitempty"`
+	Prompt string                 `json:"prompt,omitempty"`
+	Schema map[string]interface{} `json:"schema,omitempty"`
+	Model  string                 `json:"model,omitempty"`
+	Effort string                 `json:"effort,omitempty"`
+}
+
+// AgentListItem represents a single agent run in the agent list.
+type AgentListItem struct {
+	ID          string                `json:"id"`
+	CreatedAt   string                `json:"createdAt"`
+	TargetHint  string                `json:"targetHint"`
+	Origin      string                `json:"origin"`
+	Integration string                `json:"integration,omitempty"`
+	Settings    AgentListItemSettings `json:"settings"`
+	Status      string                `json:"status"`
+	Options     *AgentListItemOptions `json:"options,omitempty"`
+}
+
+// AgentListResponse is returned when listing agent runs.
+type AgentListResponse struct {
+	Success bool            `json:"success"`
+	Agents  []AgentListItem `json:"agents,omitempty"`
+	// Next is the absolute URL of the next page, only present when more pages
+	// exist.
+	Next  string `json:"next,omitempty"`
+	Error string `json:"error,omitempty"`
+}
+
 // BrowserCreateResponse is returned when creating a browser session.
 type BrowserCreateResponse struct {
 	Success     bool   `json:"success"`

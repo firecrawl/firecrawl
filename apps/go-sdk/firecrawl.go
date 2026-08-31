@@ -733,6 +733,34 @@ func (c *Client) GetAgentStatus(ctx context.Context, jobID string) (*AgentStatus
 	return &resp, nil
 }
 
+// ListAgents lists agent runs, most recent first.
+//
+// Pages are fixed at 20 runs. To fetch the next page, pass the before value
+// from the previous page's Next URL via ListAgentsOptions. This method does
+// not auto-paginate.
+func (c *Client) ListAgents(ctx context.Context, opts *ListAgentsOptions) (*AgentListResponse, error) {
+	values := url.Values{}
+	if opts != nil && opts.Before != nil {
+		values.Set("before", fmt.Sprint(*opts.Before))
+	}
+
+	path := "/v2/agent"
+	if encoded := values.Encode(); encoded != "" {
+		path += "?" + encoded
+	}
+
+	raw, err := c.http.get(ctx, path)
+	if err != nil {
+		return nil, err
+	}
+
+	var resp AgentListResponse
+	if err := json.Unmarshal(raw, &resp); err != nil {
+		return nil, &FirecrawlError{Message: fmt.Sprintf("failed to decode response: %v", err)}
+	}
+	return &resp, nil
+}
+
 // Agent runs an agent task and waits for completion with auto-polling.
 func (c *Client) Agent(ctx context.Context, opts *AgentOptions) (*AgentStatusResponse, error) {
 	return c.AgentWithPolling(ctx, opts, defaultPollInterval, defaultJobTimeout)

@@ -2,6 +2,7 @@ from typing import Any, Dict, List, Literal, Optional, Union
 import asyncio
 
 from ...types import (
+    AgentListResponse,
     AgentResponse,
     AgentSnapshotResponse,
     AgentTraceResponse,
@@ -115,6 +116,33 @@ async def get_agent_status(client: AsyncHttpClient, job_id: str) -> AgentRespons
         handle_response_error(resp, "agent-status")
     payload = _normalize_agent_response_payload(resp.json())
     return AgentResponse(**payload)
+
+
+async def list_agents(
+    client: AsyncHttpClient,
+    *,
+    before: Optional[int] = None,
+) -> AgentListResponse:
+    """List agent runs, most recent first.
+
+    Pages are fixed at 20 runs. To fetch the next page, pass the `before`
+    value from the previous page's `next` URL. This method does not
+    auto-paginate.
+
+    Args:
+        client: Async HTTP client instance
+        before: Only return agent runs created before this unix ms timestamp
+
+    Returns:
+        AgentListResponse with the list of agent runs and optional next URL
+    """
+    endpoint = "/v2/agent"
+    if before is not None:
+        endpoint = f"{endpoint}?before={before}"
+    resp = await client.get(endpoint)
+    if not resp.ok:
+        handle_response_error(resp, "list agents")
+    return AgentListResponse(**resp.json())
 
 
 async def wait_agent(

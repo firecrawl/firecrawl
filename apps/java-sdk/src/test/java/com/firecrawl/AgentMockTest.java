@@ -1,6 +1,8 @@
 package com.firecrawl;
 
 import com.firecrawl.client.FirecrawlClient;
+import com.firecrawl.models.AgentListItem;
+import com.firecrawl.models.AgentListResponse;
 import com.firecrawl.models.AgentOptions;
 import com.firecrawl.models.AgentResponse;
 import com.firecrawl.models.AgentSnapshotResponse;
@@ -40,7 +42,22 @@ class AgentMockTest {
         server.createContext("/v2/agent", exchange -> {
             lastRequestPath.set(exchange.getRequestURI().toString());
             lastRequestBody.set(new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
-            respond(exchange, 200, "{\"success\":true,\"id\":\"job-123\"}");
+            if ("GET".equals(exchange.getRequestMethod())) {
+                respond(exchange, 200, "{"
+                        + "\"success\":true,"
+                        + "\"agents\":[{"
+                        + "  \"id\":\"job-123\","
+                        + "  \"createdAt\":\"2026-08-31T12:00:00.000Z\","
+                        + "  \"targetHint\":\"https://example.com\","
+                        + "  \"origin\":\"api\","
+                        + "  \"settings\":{\"hidden\":false,\"starred\":true,\"label\":\"prod\"},"
+                        + "  \"status\":\"completed\","
+                        + "  \"options\":{\"urls\":[\"https://example.com\"],\"prompt\":\"find pricing\",\"model\":\"spark-1-pro\"}"
+                        + "}]"
+                        + "}");
+            } else {
+                respond(exchange, 200, "{\"success\":true,\"id\":\"job-123\"}");
+            }
         });
 
         server.createContext("/v2/agent/job-123/trace", exchange -> {
@@ -197,5 +214,40 @@ class AgentMockTest {
         assertEquals("snap-1", snapshot.getSnapshotId());
         assertEquals("snapshot content here", snapshot.getSnapshot());
         assertNull(snapshot.getError());
+    }
+
+    @Test
+    void testListAgents() {
+        AgentListResponse response = client.listAgents();
+
+        assertEquals("/v2/agent", lastRequestPath.get(),
+                "Should not send a query string by default");
+        assertTrue(response.isSuccess());
+        assertNull(response.getNext());
+        assertNotNull(response.getAgents());
+        assertEquals(1, response.getAgents().size());
+
+        AgentListItem agent = response.getAgents().get(0);
+        assertEquals("job-123", agent.getId());
+        assertEquals("2026-08-31T12:00:00.000Z", agent.getCreatedAt());
+        assertEquals("https://example.com", agent.getTargetHint());
+        assertEquals("api", agent.getOrigin());
+        assertEquals("completed", agent.getStatus());
+        assertNotNull(agent.getSettings());
+        assertFalse(agent.getSettings().isHidden());
+        assertTrue(agent.getSettings().isStarred());
+        assertEquals("prod", agent.getSettings().getLabel());
+        assertNotNull(agent.getOptions());
+        assertEquals("find pricing", agent.getOptions().getPrompt());
+        assertEquals("spark-1-pro", agent.getOptions().getModel());
+    }
+
+    @Test
+    void testListAgentsSendsBefore() {
+        AgentListResponse response = client.listAgents(1756600000000L);
+
+        assertEquals("/v2/agent?before=1756600000000", lastRequestPath.get(),
+                "Should append before query param");
+        assertTrue(response.isSuccess());
     }
 }

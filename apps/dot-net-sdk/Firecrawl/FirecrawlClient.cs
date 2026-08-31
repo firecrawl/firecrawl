@@ -569,6 +569,32 @@ public class FirecrawlClient
     }
 
     // ================================================================
+    // AGENT
+    // ================================================================
+
+    /// <summary>
+    /// Lists agent runs, most recent first.
+    /// </summary>
+    /// <remarks>
+    /// Pages are fixed at 20 runs. To fetch the next page, pass the before
+    /// value from the previous page's next URL. This method does not
+    /// auto-paginate.
+    /// </remarks>
+    /// <param name="before">Only return agent runs created before this unix millisecond timestamp.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    public async Task<AgentListResponse> ListAgentsAsync(
+        long? before = null,
+        CancellationToken cancellationToken = default)
+    {
+        var query = before.HasValue
+            ? $"?before={Uri.EscapeDataString(before.Value.ToString())}"
+            : string.Empty;
+
+        return await _http.GetAsync<AgentListResponse>(
+            $"/v2/agent{query}", cancellationToken);
+    }
+
+    // ================================================================
     // USAGE & METRICS
     // ================================================================
 

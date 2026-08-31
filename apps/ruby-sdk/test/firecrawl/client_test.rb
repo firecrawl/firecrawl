@@ -725,6 +725,55 @@ class ClientTest < Minitest::Test
     assert_equal "<html>snapshot</html>", snapshot.snapshot
   end
 
+  def test_list_agents
+    stub_request(:get, "#{BASE_URL}/v2/agent")
+      .to_return(
+        status: 200,
+        body: JSON.generate(
+          success: true,
+          agents: [
+            {
+              id: "agent-123",
+              createdAt: "2026-08-31T12:00:00.000Z",
+              targetHint: "https://example.com",
+              origin: "api",
+              settings: { hidden: false, starred: true, label: "prod" },
+              status: "completed",
+              options: { urls: ["https://example.com"], prompt: "find pricing", model: "spark-1-pro" }
+            }
+          ]
+        ),
+        headers: { "Content-Type" => "application/json" }
+      )
+
+    response = @client.list_agents
+    assert_instance_of Firecrawl::Models::AgentListResponse, response
+    assert_equal true, response.success
+    assert_nil response.next
+    assert_equal 1, response.agents.size
+    assert_equal "agent-123", response.agents.first["id"]
+    assert_equal "completed", response.agents.first["status"]
+    assert_equal true, response.agents.first["settings"]["starred"]
+  end
+
+  def test_list_agents_with_before
+    stub_request(:get, "#{BASE_URL}/v2/agent")
+      .with(query: { before: "1756600000000" })
+      .to_return(
+        status: 200,
+        body: JSON.generate(
+          success: true,
+          agents: [],
+          next: "https://api.firecrawl.dev/v2/agent?before=1756600000000"
+        ),
+        headers: { "Content-Type" => "application/json" }
+      )
+
+    response = @client.list_agents(before: 1756600000000)
+    assert_equal true, response.success
+    assert_equal "https://api.firecrawl.dev/v2/agent?before=1756600000000", response.next
+  end
+
   # ================================================================
   # USAGE & METRICS
   # ================================================================

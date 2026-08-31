@@ -1,4 +1,4 @@
-import { type AgentEffort, type AgentResponse, type AgentSnapshotResponse, type AgentStatusResponse, type AgentTraceResponse, type AgentWebhookConfig, type AuditMetadata, type ThreatProtectionOptions } from "../types";
+import { type AgentEffort, type AgentListOptions, type AgentListResponse, type AgentResponse, type AgentSnapshotResponse, type AgentStatusResponse, type AgentTraceResponse, type AgentWebhookConfig, type AuditMetadata, type ThreatProtectionOptions } from "../types";
 import { HttpClient } from "../utils/httpClient";
 import { normalizeAxiosError, throwForBadResponse } from "../utils/errorHandler";
 import { isZodSchema, zodSchemaToJsonSchema } from "../../utils/zodSchemaToJson";
@@ -57,6 +57,18 @@ export async function getAgentStatus(http: HttpClient, jobId: string): Promise<A
     return res.data;
   } catch (err: any) {
     if (err?.isAxiosError) return normalizeAxiosError(err, "agent status");
+    throw err;
+  }
+}
+
+export async function listAgents(http: HttpClient, options?: AgentListOptions): Promise<AgentListResponse> {
+  try {
+    const query = options?.before !== undefined ? `?before=${options.before}` : "";
+    const res = await http.get<AgentListResponse>(`/v2/agent${query}`);
+    if (res.status !== 200) throwForBadResponse(res, "list agents");
+    return res.data;
+  } catch (err: any) {
+    if (err?.isAxiosError) return normalizeAxiosError(err, "list agents");
     throw err;
   }
 }

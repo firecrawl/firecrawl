@@ -913,6 +913,49 @@ defmodule Firecrawl do
   end
 
 
+  @list_agents_query_schema NimbleOptions.new!([
+    before: [type: :integer, doc: "Only return agent runs created before this unix millisecond timestamp"]
+  ])
+
+  @list_agents_query_key_mapping %{before: "before"}
+
+  @doc """
+  List agent runs, most recent first
+
+  `GET /agent`
+
+  Tag: Agent
+
+  Pages are fixed at 20 runs. To fetch the next page, pass the `before` value
+  from the previous page's `next` URL. This function does not auto-paginate.
+
+  ## Query Parameters
+
+    * `before` — query parameter `before`
+
+  ## Returns
+
+    * `{:ok, %Req.Response{}}` on success
+    * `{:error, exception}` on HTTP or validation failure
+  """
+  @spec list_agents(keyword(), keyword()) :: response()
+  def list_agents(params \\ [], opts \\ []) do
+    with {:ok, params} <- NimbleOptions.validate(params, @list_agents_query_schema) do
+      Req.get(client(opts), url: "/agent", params: to_query(params, @list_agents_query_key_mapping))
+    end
+  end
+
+
+  @doc """
+  Bang variant of `list_agents`. Raises on error.
+  """
+  @spec list_agents!(keyword(), keyword()) :: Req.Response.t()
+  def list_agents!(params \\ [], opts \\ []) do
+    params = NimbleOptions.validate!(params, @list_agents_query_schema)
+    Req.get!(client(opts), url: "/agent", params: to_query(params, @list_agents_query_key_mapping))
+  end
+
+
   @list_browser_sessions_query_schema NimbleOptions.new!([
     status: [type: {:in, [:active, :destroyed]}, doc: "Filter sessions by status"]
   ])

@@ -805,6 +805,21 @@ class AsyncFirecrawlClient:
         """
         return await async_agent.cancel_agent(self.async_http_client, job_id)
 
+    async def list_agents(self, *, before: Optional[int] = None):
+        """List agent runs, most recent first.
+
+        Pages are fixed at 20 runs. To fetch the next page, pass the `before`
+        value from the previous page's `next` URL. This method does not
+        auto-paginate.
+
+        Args:
+            before: Only return agent runs created before this unix ms timestamp
+
+        Returns:
+            AgentListResponse with the list of agent runs and optional next URL
+        """
+        return await async_agent.list_agents(self.async_http_client, before=before)
+
     async def get_agent_trace(self, job_id: str, *, live_view: bool = False):
         """Get the execution trace of an agent job (spark-2 runs only).
 

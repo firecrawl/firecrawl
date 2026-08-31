@@ -52,6 +52,10 @@ warnings.filterwarnings(
     "ignore",
     message='Field name "json" in "MonitorPageSnapshot" shadows an attribute in parent "BaseModel"',
 )
+warnings.filterwarnings(
+    "ignore",
+    message='Field name "schema" in "AgentListItemOptions" shadows an attribute in parent "BaseModel"',
+)
 
 T = TypeVar("T")
 
@@ -1461,6 +1465,55 @@ class AgentResponse(BaseModel):
     effort: Optional[Literal["low", "medium", "high"]] = None
     expires_at: Optional[datetime] = None
     credits_used: Optional[int] = None
+
+
+class AgentListItemSettings(BaseModel):
+    """Per-session settings attached to an agent run."""
+
+    model_config = {"populate_by_name": True}
+
+    hidden: bool = False
+    starred: bool = False
+    label: Optional[str] = None
+
+
+class AgentListItemOptions(BaseModel):
+    """Options an agent run was started with."""
+
+    model_config = {"populate_by_name": True}
+
+    urls: Optional[List[str]] = None
+    prompt: str = ""
+    schema: Optional[Any] = None
+    # Plain str, not a Literal: server-provided, and new models ship without an
+    # SDK release (see AgentResponse.model).
+    model: Optional[str] = None
+    effort: Optional[Literal["low", "medium", "high"]] = None
+
+
+class AgentListItem(BaseModel):
+    """A single agent run as returned by the agent list endpoint."""
+
+    model_config = {"populate_by_name": True}
+
+    id: str
+    created_at: str = Field(alias="createdAt")
+    target_hint: str = Field(alias="targetHint")
+    origin: str = "api"
+    integration: Optional[str] = None
+    settings: AgentListItemSettings = Field(default_factory=AgentListItemSettings)
+    status: Optional[Literal["processing", "completed", "failed"]] = None
+    options: Optional[AgentListItemOptions] = None
+
+
+class AgentListResponse(BaseModel):
+    """Response from GET /v2/agent (list agent runs)."""
+
+    success: Optional[bool] = None
+    agents: Optional[List[AgentListItem]] = None
+    # Absolute URL of the next page; only present when more pages exist.
+    next: Optional[str] = None
+    error: Optional[str] = None
 
 
 # Agent trace types (GET /v2/agent/{job_id}/trace).

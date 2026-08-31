@@ -1340,6 +1340,50 @@ export interface AgentStatusResponse {
 /** Reasoning effort for agent jobs. Every level runs spark-2. */
 export type AgentEffort = "low" | "medium" | "high";
 
+/** A single agent run as returned by the agent list endpoint. */
+export interface AgentListItem {
+  id: string;
+  createdAt: string;
+  targetHint: string;
+  origin: string;
+  integration?: string;
+  settings: {
+    hidden: boolean;
+    starred: boolean;
+    label?: string;
+  };
+  status: "processing" | "completed" | "failed";
+  options?: {
+    urls?: string[];
+    prompt: string;
+    schema?: unknown;
+    /**
+     * Server-provided model name. Widened past the request-side union on
+     * purpose: new models ship without an SDK release, so pinning this to
+     * known names makes every future model a type error at the call site.
+     */
+    model: "spark-1-pro" | "spark-1-mini" | "spark-2" | (string & {});
+    effort?: AgentEffort;
+  };
+}
+
+export interface AgentListResponse {
+  success: boolean;
+  agents?: AgentListItem[];
+  /**
+   * Absolute URL of the next page (pass its `before` value to listAgents to
+   * continue). Only present when more pages exist.
+   */
+  next?: string;
+  error?: string;
+}
+
+/** Options for listing agent runs. */
+export interface AgentListOptions {
+  /** Only return agent runs created before this unix millisecond timestamp. */
+  before?: number;
+}
+
 export type AgentTraceAgentRole = "orchestrator" | "subagent" | "browser" | "system";
 
 export interface AgentTraceAgentIdentity {
