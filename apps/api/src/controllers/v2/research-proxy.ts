@@ -284,6 +284,8 @@ function createResearchController(
 ): ResearchController {
   return async (req, res: Response) => {
     const authedReq = req as RequestWithAuth<any, any, any>;
+    const zeroDataRetention =
+      getSearchForcedKind(authedReq.acuc?.flags) !== null;
 
     const started = Date.now();
     const jobId = uuidv7();
@@ -321,7 +323,7 @@ function createResearchController(
       origin: requestOrigin(params, req),
       integration: params.integration ?? null,
       target_hint: targetHint,
-      zeroDataRetention: false,
+      zeroDataRetention,
       api_key_id: authedReq.acuc?.api_key_id ?? null,
     });
 
@@ -428,7 +430,7 @@ function createResearchController(
         credits_cost: statusCode >= 200 && statusCode < 300 ? credits : 0,
         is_successful: statusCode >= 200 && statusCode < 300,
         error,
-        zeroDataRetention: false,
+        zeroDataRetention,
       }).catch(logError => {
         logger.warn("Research endpoint log failed", { error: logError });
       });
