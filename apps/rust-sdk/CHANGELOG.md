@@ -1,5 +1,14 @@
 ## CHANGELOG
 
+## [2.18.0] - 2026-08-31
+
+### Added
+
+- Added `Client::list_agents` returning a page of the team's agent runs
+  (most recent first) with an optional `before` cursor. The method does not
+  auto-paginate; pass the `before` value from the response's `next` URL to
+  fetch the next page.
+
 ## [2.17.0] - 2026-08-26
 
 ### Added

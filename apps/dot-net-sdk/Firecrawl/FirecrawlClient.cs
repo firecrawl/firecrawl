@@ -740,7 +740,7 @@ public class FirecrawlClient
     // INTERNAL UTILITIES
     // ================================================================
 
-    private const string SdkOrigin = "dotnet-sdk@1.13.0";
+    private const string SdkOrigin = "dotnet-sdk@1.14.0";
 
     private static Dictionary<string, object> BuildBody(object? options)
     {
