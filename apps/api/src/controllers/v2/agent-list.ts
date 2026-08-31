@@ -24,13 +24,11 @@ export async function agentListController(
   res: Response<AgentListResponse>,
 ) {
   if (!config.USE_DB_AUTHENTICATION) {
-    return res
-      .status(501)
-      .json({
-        success: false,
-        error:
-          "This endpoint is only available if your Firecrawl deployment is backed by a database.",
-      });
+    return res.status(501).json({
+      success: false,
+      error:
+        "This endpoint is only available if your Firecrawl deployment is backed by a database.",
+    });
   }
 
   if (!config.EXTRACT_V3_BETA_URL) {
@@ -38,12 +36,10 @@ export async function agentListController(
   }
 
   if (clickhouseClient === null) {
-    return res
-      .status(501)
-      .json({
-        success: false,
-        error: "This endpoint is only available if ClickHouse is configured.",
-      });
+    return res.status(501).json({
+      success: false,
+      error: "This endpoint is only available if ClickHouse is configured.",
+    });
   }
 
   const [recentResult, dbResult] = await Promise.allSettled([
@@ -60,7 +56,7 @@ export async function agentListController(
         },
       );
 
-      if (recentRes.ok) {
+      if (!recentRes.ok) {
         throw new Error(
           "Unexpected response: " +
             recentRes.statusText +
@@ -207,9 +203,9 @@ export async function agentListController(
         : recent?.options
           ? {
               urls: recent.options.urls ?? undefined,
-              prompt: recent.options.prompt,
+              prompt: recent.options.prompt ?? "",
               schema: recent.options.schema ?? undefined,
-              model: recent.options.modelPreset,
+              model: recent.options.modelPreset ?? "spark-1-pro",
               effort:
                 recent.options.effort ??
                 (recent.options.modelPreset === "spark-2"
