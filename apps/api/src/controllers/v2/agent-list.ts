@@ -25,13 +25,18 @@ export async function agentListController(
 ) {
   const limit = 20;
 
+  // Number() (not parseInt) so malformed values like "123abc" are rejected
+  // instead of silently truncated.
   const parsedBefore = req.query.before
-    ? parseInt(req.query.before as string)
+    ? Number(req.query.before as string)
     : undefined;
 
   if (
     parsedBefore !== undefined &&
-    (isNaN(parsedBefore) || !isFinite(parsedBefore) || parsedBefore < 0)
+    (isNaN(parsedBefore) ||
+      !isFinite(parsedBefore) ||
+      !Number.isInteger(parsedBefore) ||
+      parsedBefore < 0)
   ) {
     return res.status(400).json({
       success: false,
@@ -91,7 +96,9 @@ export async function agentListController(
           "SELECT id, created_at, target_hint, origin, integration FROM public_requests WHERE team_id = {teamId: UUID} AND kind = 'agent' AND created_at < {before: DateTime} ORDER BY created_at DESC LIMIT {limit: UInt32};",
         query_params: {
           teamId: req.auth.team_id,
-          limit,
+          // Fetch one extra row so we can tell whether another page exists
+          // instead of emitting a next cursor whenever the page is full.
+          limit: limit + 1,
           before:
             parsedBefore !== undefined
               ? new Date(parsedBefore).toISOString()
@@ -228,7 +235,7 @@ export async function agentListController(
       options: db?.agent
         ? {
             urls: db.agent.options.urls ?? undefined,
-            prompt: db.agent.options.prompt,
+            prompt: db.agent.options.prompt ?? "",
             schema: db.agent.options.schema ?? undefined,
             model: db.agent.options.model ?? "spark-1-pro",
             effort:
@@ -258,12 +265,17 @@ export async function agentListController(
     (a, b) => new Date(b.createdAt).valueOf() - new Date(a.createdAt).valueOf(),
   );
 
+  // The ClickHouse query fetched limit + 1 rows and recent agents are merged
+  // on top, so anything past limit means another page exists. Dropped entries
+  // are older than the new cursor and resurface on the next page.
+  const hasMore = agents.length > limit;
+  const page = agents.slice(0, limit);
+
   return res.json({
     success: true,
-    agents,
-    next:
-      agents.length < limit
-        ? undefined
-        : `${req.protocol}://${req.host}/v2/agent?before=${new Date(agents.slice(-1)[0].createdAt).valueOf()}`,
+    agents: page,
+    next: hasMore
+      ? `${req.protocol}://${req.host}/v2/agent?before=${new Date(page.slice(-1)[0].createdAt).valueOf()}`
+      : undefined,
   });
 }

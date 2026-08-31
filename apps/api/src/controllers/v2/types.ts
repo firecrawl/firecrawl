@@ -1528,7 +1528,10 @@ export type AgentListResponse =
           urls?: string[];
           prompt: string;
           schema?: any;
-          model: "spark-1-pro" | "spark-1-mini" | "spark-2";
+          // Widened past the known presets on purpose: this is the stored
+          // value from historical runs, and new models ship without an API
+          // type release.
+          model: "spark-1-pro" | "spark-1-mini" | "spark-2" | (string & {});
           effort?: "low" | "medium" | "high";
         };
       }[];
