@@ -102,7 +102,7 @@ export async function agentListController(
           before: (parsedBefore !== undefined
             ? new Date(parsedBefore).toISOString()
             : new Date().toISOString()
-          ).slice(0, -1), // slice Z off the end of the ISO string because clickhouse hates it
+          ).split(".")[0], // slice .nnnZ off the end of the ISO string because clickhouse hates it
         },
         format: "JSONEachRow",
       });
