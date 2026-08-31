@@ -1273,6 +1273,10 @@ export async function scrapeURL(
 
     try {
       let result: ScrapeUrlResponse;
+      let pdfRetries = 0;
+      let documentRetries = 0;
+      const MAX_RETRIES = parseInt(process.env.SCRAPE_MAX_RETRIES || "3", 10);
+
       while (true) {
         try {
           result = await scrapeURLLoop(meta);
@@ -1318,6 +1322,14 @@ export async function scrapeURL(
             error instanceof PDFAntibotError &&
             meta.internalOptions.forceEngine === undefined
           ) {
+            pdfRetries++;
+            if (pdfRetries > MAX_RETRIES) {
+              meta.logger.error(
+                `PDF was blocked by anti-bot ${MAX_RETRIES} times, giving up`,
+                { retries: pdfRetries }
+              );
+              throw new PDFPrefetchFailed();
+            }
             if (meta.pdfPrefetch !== undefined) {
               meta.logger.error(
                 "PDF was prefetched and still blocked by antibot, failing",
@@ -1327,6 +1339,7 @@ export async function scrapeURL(
               retryTracker.record("pdf_antibot", error);
               meta.logger.debug(
                 "PDF was blocked by anti-bot, prefetching with chrome-cdp",
+                { retries: pdfRetries }
               );
               meta.featureFlags = new Set(
                 [...meta.featureFlags].filter(x => x !== "pdf"),
@@ -1336,6 +1349,14 @@ export async function scrapeURL(
             error instanceof DocumentAntibotError &&
             meta.internalOptions.forceEngine === undefined
           ) {
+            documentRetries++;
+            if (documentRetries > MAX_RETRIES) {
+              meta.logger.error(
+                `Document was blocked by anti-bot ${MAX_RETRIES} times, giving up`,
+                { retries: documentRetries }
+              );
+              throw new DocumentPrefetchFailed();
+            }
             if (meta.documentPrefetch !== undefined) {
               meta.logger.error(
                 "Document was prefetched and still blocked by antibot, failing",
@@ -1345,6 +1366,7 @@ export async function scrapeURL(
               retryTracker.record("document_antibot", error);
               meta.logger.debug(
                 "Document was blocked by anti-bot, prefetching with chrome-cdp",
+                { retries: documentRetries }
               );
               meta.featureFlags = new Set(
                 [...meta.featureFlags].filter(x => x !== "document"),
