@@ -11,6 +11,7 @@ const RETRIEVE_TIMEOUT_MS = 50_000;
 const ANALYTICS_TIMEOUT_MS = 20_000;
 const APPLICATIONS_TIMEOUT_MS = 15_000;
 const CLAIMS_TIMEOUT_MS = 20_000;
+const SUPPLY_TIMEOUT_MS = 30_000;
 
 const FORWARDED_REQUEST_HEADERS = ["accept", "x-request-id"];
 const FORWARDED_RESPONSE_HEADERS = ["content-type", "x-request-id"];
@@ -166,6 +167,12 @@ exchangeRouter.post(
   wrap(exchangeProxy(APPLICATIONS_TIMEOUT_MS, { requiresRetrieveFlag: false })),
 );
 
+exchangeRouter.post(
+  "/applications/:id/withdraw",
+  authMiddleware(RateLimiterMode.Labs),
+  wrap(exchangeProxy(APPLICATIONS_TIMEOUT_MS, { requiresRetrieveFlag: false })),
+);
+
 exchangeRouter.get(
   "/claims",
   authMiddleware(RateLimiterMode.Labs),
@@ -188,4 +195,40 @@ exchangeRouter.post(
   "/claims/:id/verify",
   authMiddleware(RateLimiterMode.Labs),
   wrap(exchangeProxy(CLAIMS_TIMEOUT_MS, { requiresRetrieveFlag: false })),
+);
+
+exchangeRouter.get(
+  "/publisher/supply/key",
+  authMiddleware(RateLimiterMode.Labs),
+  wrap(exchangeProxy(SUPPLY_TIMEOUT_MS, { requiresRetrieveFlag: false })),
+);
+
+exchangeRouter.post(
+  "/publisher/supply/key",
+  authMiddleware(RateLimiterMode.Labs),
+  wrap(exchangeProxy(SUPPLY_TIMEOUT_MS, { requiresRetrieveFlag: false })),
+);
+
+exchangeRouter.get(
+  "/supply{/*path}",
+  authMiddleware(RateLimiterMode.Labs),
+  wrap(exchangeProxy(SUPPLY_TIMEOUT_MS, { requiresRetrieveFlag: false })),
+);
+
+exchangeRouter.post(
+  "/supply{/*path}",
+  authMiddleware(RateLimiterMode.Labs),
+  wrap(exchangeProxy(SUPPLY_TIMEOUT_MS, { requiresRetrieveFlag: false })),
+);
+
+exchangeRouter.put(
+  "/supply{/*path}",
+  authMiddleware(RateLimiterMode.Labs),
+  wrap(exchangeProxy(SUPPLY_TIMEOUT_MS, { requiresRetrieveFlag: false })),
+);
+
+exchangeRouter.delete(
+  "/supply{/*path}",
+  authMiddleware(RateLimiterMode.Labs),
+  wrap(exchangeProxy(SUPPLY_TIMEOUT_MS, { requiresRetrieveFlag: false })),
 );
