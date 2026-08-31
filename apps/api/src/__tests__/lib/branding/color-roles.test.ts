@@ -229,6 +229,45 @@ describe("merge color roles", () => {
     expect(merged.colors?.primary).toBe("#22C55E");
   });
 
+  it("guards ghost buttons against the real page background, not the LLM's", () => {
+    const merged = mergeBrandingResults(
+      {
+        colorScheme: "dark",
+        colors: { primary: "#22C55E", background: "#0A0A0A" },
+      },
+      {
+        ...emptyLlm,
+        buttonClassification: {
+          primaryButtonIndex: 0,
+          primaryButtonReasoning: "outline button",
+          secondaryButtonIndex: -1,
+          secondaryButtonReasoning: "n/a",
+          confidence: 0.9,
+        },
+        colorRoles: {
+          primaryColor: "#22C55E",
+          accentColor: "#22C55E",
+          // LLM disagrees about the background; the ghost fill still matches
+          // the real page and must not become primary.
+          backgroundColor: "#111827",
+          textPrimary: "#FFFFFF",
+          confidence: 0.9,
+        },
+      },
+      [
+        {
+          index: 0,
+          text: "Learn more",
+          html: "",
+          classes: "",
+          background: "#0A0A0A",
+          textColor: "#FFFFFF",
+        },
+      ],
+    );
+    expect(merged.colors?.primary).toBe("#22C55E");
+  });
+
   it("does not let a high-confidence navy LLM primary overwrite a brand color", () => {
     const merged = mergeBrandingResults(
       { colorScheme: "light", colors: { primary: "#635BFF" } },
@@ -390,6 +429,46 @@ describe("processRawBranding primary", () => {
     });
 
     expect(profile.colors?.primary).toBe("#000000");
+  });
+
+  it("does not give the CTA-text bonus to substring matches like Country", () => {
+    const profile = processRawBranding({
+      cssData: { colors: [], spacings: [], radii: [] },
+      snapshots: [
+        snap({
+          tag: "button",
+          text: "Country",
+          isButton: true,
+          hasCTAIndicator: true,
+          rect: { w: 120, h: 40 },
+          colors: {
+            background: "rgb(51, 68, 51)",
+            text: "rgb(255, 255, 255)",
+          },
+        }),
+        snap({
+          tag: "button",
+          text: "Get started",
+          isButton: true,
+          hasCTAIndicator: true,
+          rect: { w: 140, h: 44 },
+          colors: {
+            background: "rgb(99, 91, 255)",
+            text: "rgb(255, 255, 255)",
+          },
+        }),
+      ],
+      images: [],
+      typography: {
+        stacks: { body: ["Inter"], heading: ["Inter"], paragraph: ["Inter"] },
+        sizes: { h1: "32px", h2: "24px", body: "16px" },
+      },
+      frameworkHints: [],
+      colorScheme: "light",
+      pageBackground: "rgb(255, 255, 255)",
+    });
+
+    expect(profile.colors?.primary).toBe("#635BFF");
   });
 
   it("ranks CTA fills instead of taking the first DOM-order button", () => {

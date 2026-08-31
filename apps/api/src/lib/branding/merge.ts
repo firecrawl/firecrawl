@@ -269,6 +269,11 @@ export function mergeBrandingResults(
     }
   }
 
+  // Captured before the LLM gate can overwrite colors.background — the
+  // ghost-button guards below must compare CTA fills against the real page
+  // background, not whatever the LLM decided the background should be.
+  const heuristicPageBg = normalizeRoleHex(merged.colors?.background);
+
   if (
     shouldApplyLlmColorRoles(
       llm.colorRoles.confidence,
@@ -282,13 +287,12 @@ export function mergeBrandingResults(
     const llmAccent = normalizeRoleHex(llm.colorRoles.accentColor);
     const llmBackground = normalizeRoleHex(llm.colorRoles.backgroundColor);
     const llmText = normalizeRoleHex(llm.colorRoles.textPrimary);
-    const mergedBg = normalizeRoleHex(merged.colors?.background);
     const ctaRaw = normalizeRoleHex(
       merged.components?.buttonPrimary?.background,
     );
     // An outline/ghost button reports the page background as its fill — that
     // is chrome, not a CTA color.
-    const cta = ctaRaw && ctaRaw !== mergedBg ? ctaRaw : undefined;
+    const cta = ctaRaw && ctaRaw !== heuristicPageBg ? ctaRaw : undefined;
     const usablePrimary =
       llmPrimary &&
       isUsableBrandPrimary(llmPrimary, merged.colorScheme, { cta })
@@ -334,10 +338,11 @@ export function mergeBrandingResults(
   const ctaPrimary = normalizeRoleHex(
     merged.components?.buttonPrimary?.background,
   );
-  const pageBackground = normalizeRoleHex(merged.colors?.background);
+  const mergedPageBg = normalizeRoleHex(merged.colors?.background);
   if (
     ctaPrimary &&
-    ctaPrimary !== pageBackground &&
+    ctaPrimary !== heuristicPageBg &&
+    ctaPrimary !== mergedPageBg &&
     isUsableCtaBackground(ctaPrimary)
   ) {
     merged.colors = { ...merged.colors, primary: ctaPrimary };

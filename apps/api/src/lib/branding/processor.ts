@@ -188,7 +188,7 @@ function inferPalette(
   // button can carry a CTA marker too, so rank by CTA text and how often a
   // fill repeats across the pool.
   const ctaTextRe =
-    /sign ?up|get started|start|deploy|try|demo|buy|subscribe|join|register|download|order|donate/i;
+    /\b(sign ?up|get started|start|deploy|try|demo|buy|subscribe|join|register|download|order|donate)\b/i;
   const ctaFillScores = new Map<string, number>();
   for (const s of ctaPool) {
     const hex = hexify(s.colors.background, pageBackground);
